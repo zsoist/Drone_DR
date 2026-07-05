@@ -64,25 +64,53 @@ def process_upload(path: Path, j):
         job_end(j, "error", (e.stderr or str(e))[-300:])
 
 
+# LUT presets — investigados de los grandes (DaVinci/LightCut), intensidad ~50%
+LUTS = {
+    "none": "",
+    "cine": "curves=blue='0/0.04 0.5/0.47 1/0.96':red='0/0.02 0.5/0.53 1/1',eq=contrast=1.07:saturation=1.1",
+    "vivid": "eq=saturation=1.32:contrast=1.1:brightness=0.02",
+    "warm": "colorbalance=rs=0.07:gs=0.02:bs=-0.07,eq=saturation=1.12",
+    "moody": "eq=contrast=1.16:brightness=-0.05:saturation=0.82",
+    "bw": "hue=s=0,eq=contrast=1.22",
+}
+FONT = "/System/Library/Fonts/Helvetica.ttc"
+
+
 def run_edit(spec: dict, j):
     try:
         cid = re.sub(r"[^\w-]", "", spec["clip_id"])
         src = VAULT / "proxies" / f"{cid}.mp4"
         if not src.exists():
             raise FileNotFoundError("clip sin proxy (tier full requerido)")
-        vf = "crop=ih*9/16:ih,scale=1080:1920" if spec.get("vertical") else "scale=-2:1080"
+        base_vf = "crop=ih*9/16:ih,scale=1080:1920" if spec.get("vertical") else "scale=-2:1080"
+        lut = LUTS.get(spec.get("filter", "none"), "")
+        fade = spec.get("fade", True)
+        title = str(spec.get("title", ""))[:60].replace("\\", "").replace("'", "").replace(":", r"\:")
         tmp = VAULT / "reels" / ".tmp"
         tmp.mkdir(parents=True, exist_ok=True)
         segs = []
-        for i, (a, b) in enumerate(spec["segments"][:20]):
-            a, b = float(a), float(b)
+        raw_segs = spec["segments"][:20]
+        for i, s in enumerate(raw_segs):
+            a, b = float(s["a"] if isinstance(s, dict) else s[0]), float(s["b"] if isinstance(s, dict) else s[1])
+            speed = float(s.get("speed", 1)) if isinstance(s, dict) else 1.0
+            speed = min(max(speed, 0.25), 4.0)
             if b <= a:
                 continue
+            out_dur = min(b - a, 120) / speed
+            vf = [base_vf]
+            if lut:
+                vf.append(lut)
+            if speed != 1:
+                vf.append(f"setpts=PTS/{speed}")
+            if fade:
+                vf.append(f"fade=t=in:st=0:d=0.25,fade=t=out:st={max(out_dur - 0.25, 0):.2f}:d=0.25")
+            if title and i == 0:
+                vf.append(f"drawtext=fontfile={FONT}:text='{title}':fontcolor=white:fontsize=h/14"
+                          f":shadowx=2:shadowy=2:x=(w-text_w)/2:y=h*0.82:alpha='min(1,t)'")
             seg = tmp / f"e{i}.mp4"
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(a), "-i", str(src),
-                            "-t", str(min(b - a, 120)), "-vf", vf,
-                            "-c:v", "h264_videotoolbox", "-b:v", "8M",
-                            "-c:a", "aac", "-b:a", "128k", str(seg)], check=True)
+                            "-t", str(min(b - a, 120)), "-vf", ",".join(vf), "-an",
+                            "-c:v", "h264_videotoolbox", "-b:v", "10M", str(seg)], check=True)
             segs.append(seg)
         if not segs:
             raise ValueError("sin segmentos válidos")
@@ -148,7 +176,9 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(end - start + 1))
-        self.send_header("Cache-Control", "no-cache" if f.suffix == ".json" else "public, max-age=3600")
+        # media inmutable se cachea; código y datos siempre frescos (iPhone no debe ver CSS viejo)
+        cacheable = f.suffix in (".mp4", ".jpg", ".png", ".woff2")
+        self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-cache")
         self.end_headers()
         with open(f, "rb") as fh:
             fh.seek(start)
