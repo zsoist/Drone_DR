@@ -576,7 +576,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-store, must-revalidate")
         if f.suffix == ".html":
             self.send_header("Content-Security-Policy",
-                "default-src 'self'; script-src 'self'; "  # todo JS vendorizado/externalizado
+                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "  # wasm: el sort worker de splats compila WebAssembly
                 "style-src 'self' 'unsafe-inline'; "        # inline style attrs (bajo riesgo)
                 "img-src 'self' data: blob: https:; "
                 "connect-src 'self' https://server.arcgisonline.com https://basemaps.cartocdn.com; "

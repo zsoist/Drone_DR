@@ -752,12 +752,22 @@
 
   // splats: listar + ver inline + generar
   const splats = (sys.splats || []).filter(s => /\.(splat|ply|ksplat)$/.test(s.name));
-  document.getElementById('splats').innerHTML = splats.length ? splats.map(s => `
-    <div class="hl-item"><button class="tc" data-view="${esc(s.name)}">Ver</button>
-    <p class="mono">${esc(s.name)} · ${(s.bytes / 1e6).toFixed(0)}MB
-      <a href="data/splats/${encodeURIComponent(s.name)}" download style="color:var(--accent)">descargar</a></p></div>`).join('') :
-    `<p class="footer-note">Sin splats aún — "Generar splat" entrena OpenSplat sobre las poses
-    del proyecto ODM seleccionado (CPU, ~30-60 min). El resultado se ve aquí mismo.</p>`;
+  document.getElementById('splats').innerHTML = splats.length ? splats.map(s => {
+    const scid = s.name.replace(/\.(splat|ply|ksplat)$/, '');
+    const sf = flights.find(x => x.clip_id === scid);
+    const sm = models.find(x => x.clip_id === scid);
+    const title = (sm && sm.title) || (sf && (sf.label || fmt.date(sf.date) + ' · ' + sf.time)) || scid.slice(-11);
+    return `
+    <div class="splat-item">
+      <div class="si-t"><b>${esc(title)}</b>
+        <span class="mono">${(s.bytes / 1e6).toFixed(1)} MB · formato .splat</span></div>
+      <span class="spacer" style="flex:1"></span>
+      <a class="btn" href="data/splats/${encodeURIComponent(s.name)}" download title="Descargar">${icon('dl')}</a>
+      <button class="btn primary" data-view="${esc(s.name)}" style="padding:5px 16px">Ver</button>
+    </div>`;
+  }).join('') :
+    `<p class="footer-note">Sin splats aún — "Generar splat…" entrena uno sobre las poses
+    del proyecto que elijas. El resultado se ve aquí mismo.</p>`;
   document.getElementById('btn-splat').addEventListener('click', () => {
     if (!models.length) return alert('Procesa primero un vuelo en 3D — el splat entrena sobre sus fotos y poses.');
     const Q = [

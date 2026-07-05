@@ -725,3 +725,15 @@ details.explain b { color: var(--text); font-weight: 600; }
   position: absolute; inset: 0; display: grid; place-items: center; z-index: 4;
 }
 .splat-load > * { width: 70%; text-align: center; }
+
+/* lista de splats: filas legibles */
+.splat-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-2);
+}
+.splat-item + .splat-item { margin-top: 8px; }
+.splat-item .si-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.splat-item .si-t b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.splat-item .si-t .mono { font-size: 10.5px; color: var(--text-3); }
+.splat-item .btn svg.ic { width: 14px; height: 14px; }
