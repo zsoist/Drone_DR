@@ -17,13 +17,32 @@ const cid = new URLSearchParams(location.search).get('id');
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
   const speeds = pts.map((p, i) => i ? haversine(pts[i - 1], p) * 3.6 : 0);
 
+  let has3D = false;
+  try {
+    const sy = await (await fetch(`${DATA}/manifest/system.json`)).json();
+    has3D = (sy.models || []).some(m => m.clip_id === cid);
+  } catch {}
+
   main.innerHTML = `
-    <div class="page-head">
-      <a class="btn" href="index.html">${icon('chevL')} Vuelos</a>
-      <h1>${fmt.date(meta.date)} · ${meta.time}</h1>
-      <span class="count mono">${cid}</span>
-      <span class="spacer"></span>
-      <span class="tierdot ${meta.tier}" style="position:static"><i></i>${meta.tier}</span>
+    <div class="hero glass rise">
+      <a class="btn hero-back" href="index.html" data-tip="Volver a la galería">${icon('chevL')}</a>
+      <div class="hero-t">
+        <h1>${esc(meta.label) || fmt.date(meta.date) + ' · ' + meta.time}</h1>
+        <div class="hero-sub mono">${meta.label ? fmt.date(meta.date) + ' ' + meta.time + ' · ' : ''}${cid}</div>
+      </div>
+      <div class="hero-chips">
+        <span class="gchip ${meta.tier}" data-tip="${meta.tier === 'full' ? 'Tier full: video web + AI + GPS' : meta.tier === 'standard' ? 'Tier standard: AI y GPS, sin proxy' : 'Tier skim: solo telemetría'}">${esc(meta.tier)}</span>
+        <span class="gchip" data-tip="Resolución y cuadros por segundo del original">${meta.resolution === '3840x2160' ? '4K' : esc(meta.resolution)}${Math.round(meta.fps) >= 50 ? '60' : ''}</span>
+        <span class="gchip" data-tip="Duración del clip">${fmt.dur(meta.duration_s)}</span>
+        ${meta.has_srt ? `<span class="gchip" data-tip="Telemetría GPS de 1 Hz disponible">${icon('route')} GPS</span>` : ''}
+        ${has3D ? `<span class="gchip mint" data-tip="Este vuelo tiene modelo 3D procesado">${icon('cube')} 3D listo</span>` : ''}
+      </div>
+      <div class="hero-actions">
+        <button class="btn" id="btn-label" data-tip="Ponle nombre a este vuelo">${icon('tag')} Editar detalles</button>
+        ${meta.has_proxy ? `<a class="btn" href="studio.html?clip=${cid}" data-tip="Cortes, reels y LUTs">${icon('film')} Studio</a>` : ''}
+        ${has3D ? `<a class="btn primary" href="tresd.html" data-tip="Abrir el proyecto de fotogrametría">${icon('cube')} Ver en 3D</a>` : ''}
+        <button class="btn" id="btn-arch" data-tip="${meta.archived ? 'Devolver a la galería' : 'Ocultar de la galería (no borra nada)'}">${icon('db')}</button>
+      </div>
     </div>
 
     <div class="fl-layout">
@@ -34,8 +53,6 @@ const cid = new URLSearchParams(location.search).get('id');
             <button class="btn primary" id="btn-photo">${icon('iso')} Foto 4K</button>
             <div class="seg" id="q-seg"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd">1080p</button>' : ''}${meta.raw_rel ? '<button data-q="4k">4K</button>' : ''}</div>
             <span class="spacer"></span>
-            <button class="btn" id="btn-label" title="Renombrar">${icon('tag')}</button>
-            <button class="btn" id="btn-arch" title="${meta.archived ? 'Desarchivar' : 'Archivar'}">${icon('db')}</button>
           </div>
           <div class="hud" id="hud"></div>
         </div>
@@ -43,13 +60,7 @@ const cid = new URLSearchParams(location.search).get('id');
           <div class="ph">${icon('film')} Filmstrip — click para saltar</div>
           <div class="filmstrip" id="strip"></div>
         </div>` : ''}
-        ${pts.length ? `<div class="panel" style="margin-top:16px">
-          <div class="ph">${icon('activity')} Telemetría — click para saltar</div>
-          <div class="pb" style="padding:0">
-            <div class="chart-wrap" id="ch-alt"></div>
-            <div class="chart-wrap" id="ch-speed" style="border-top:1px solid var(--line)"></div>
-          </div>
-        </div>` : ''}
+
 
         <div class="panel" style="margin-top:16px">
           <div class="ph">${icon('activity')} Momentos
@@ -153,7 +164,15 @@ const cid = new URLSearchParams(location.search).get('id');
 
         </div>
       </div>
-    </div>`;
+    </div>
+
+    ${pts.length ? `<div class="panel rise" style="margin-top:16px">
+      <div class="ph">${icon('activity')} Telemetría en vivo — click en la curva para saltar el video</div>
+      <div class="pb" style="padding:0">
+        <div class="chart-wrap" id="ch-alt"></div>
+        <div class="chart-wrap" id="ch-speed" style="border-top:1px solid var(--line)"></div>
+      </div>
+    </div>` : ''}`;
 
   // ---- video ----
   const slot = document.getElementById('video-slot');
@@ -239,19 +258,89 @@ const cid = new URLSearchParams(location.search).get('id');
     const ov = document.createElement('div');
     ov.className = 'login-ov';
     ov.innerHTML = `
-      <div class="photo-modal">
-        <img src="${d.url}" alt="Foto 4K">
+      <div class="photo-modal pm2">
+        <canvas id="pm-cv"></canvas>
+        <div class="pm-tools">
+          <div class="pm-row"><span class="tool-lb" data-tip="Luz general de la imagen">Brillo</span>
+            <input type="range" data-f="bright" min="60" max="140" value="100"></div>
+          <div class="pm-row"><span class="tool-lb" data-tip="Diferencia entre luces y sombras">Contraste</span>
+            <input type="range" data-f="contrast" min="60" max="140" value="100"></div>
+          <div class="pm-row"><span class="tool-lb" data-tip="Intensidad del color">Saturación</span>
+            <input type="range" data-f="sat" min="0" max="200" value="100"></div>
+          <div class="pm-row"><span class="tool-lb" data-tip="Borde alrededor de la foto">Marco</span>
+            <button class="chip on" data-frame="none">Sin marco</button>
+            <button class="chip" data-frame="white">Blanco</button>
+            <button class="chip" data-frame="black">Negro</button></div>
+          <div class="pm-row"><span class="tool-lb" data-tip="Resolución del export">Tamaño</span>
+            <button class="chip on" data-size="4k">4K</button>
+            <button class="chip" data-size="1080">1080p</button>
+            <button class="chip" data-size="sq">Cuadrado</button></div>
+        </div>
         <div class="pm-bar">
-          <span>3840×2160 · mantén presionada la imagen para guardarla en Fotos</span>
-          <button class="btn primary" data-sharephoto="${d.url}">${icon('ext')} Guardar en Fotos</button>
-          <a class="btn" href="${d.url}" download>${icon('dl')} Descargar</a>
+          <button class="btn" data-reset data-tip="Volver a la foto original">Reset</button>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn primary" data-sharephoto>${icon('ext')} Guardar en Fotos</button>
+          <button class="btn" data-dl>${icon('dl')} Descargar</button>
           <button class="btn" data-close>Cerrar</button>
         </div>
       </div>`;
     document.body.appendChild(ov);
-    ov.querySelector('[data-sharephoto]')?.addEventListener('click', ev => {
-      shareFile(ev.currentTarget.dataset.sharephoto,
-                ev.currentTarget.dataset.sharephoto.split('/').pop(), 'image/jpeg', ev.currentTarget);
+
+    // --- editor: canvas + filtros en vivo (estilo CapCut, gratis y local) ---
+    const cv = ov.querySelector('#pm-cv');
+    const ctx = cv.getContext('2d');
+    const img = new Image();
+    const fx = { bright: 100, contrast: 100, sat: 100, frame: 'none', size: '4k' };
+    function render() {
+      if (!img.naturalWidth) return;
+      let sw = img.naturalWidth, sh = img.naturalHeight, sx = 0, sy = 0;
+      if (fx.size === 'sq') { const m = Math.min(sw, sh); sx = (sw - m) / 2; sy = (sh - m) / 2; sw = sh = m; }
+      const scale = fx.size === '1080' ? 1920 / sw : 1;
+      const pad = fx.frame === 'none' ? 0 : Math.round(sw * scale * 0.035);
+      cv.width = Math.round(sw * scale) + pad * 2;
+      cv.height = Math.round(sh * scale) + pad * 2;
+      if (pad) { ctx.fillStyle = fx.frame === 'white' ? '#fff' : '#0a0c10'; ctx.fillRect(0, 0, cv.width, cv.height); }
+      ctx.filter = `brightness(${fx.bright}%) contrast(${fx.contrast}%) saturate(${fx.sat}%)`;
+      ctx.drawImage(img, sx, sy, sw, sh, pad, pad, cv.width - pad * 2, cv.height - pad * 2);
+      ctx.filter = 'none';
+    }
+    img.onload = render;
+    img.src = d.url;
+    ov.addEventListener('input', ev => {
+      if (ev.target.dataset.f) { fx[ev.target.dataset.f] = +ev.target.value; render(); }
+    });
+    ov.addEventListener('click', ev => {
+      const fb = ev.target.closest('[data-frame]');
+      if (fb) { fx.frame = fb.dataset.frame; ov.querySelectorAll('[data-frame]').forEach(x => x.classList.toggle('on', x === fb)); render(); }
+      const sb = ev.target.closest('[data-size]');
+      if (sb) { fx.size = sb.dataset.size; ov.querySelectorAll('[data-size]').forEach(x => x.classList.toggle('on', x === sb)); render(); }
+      if (ev.target.closest('[data-reset]')) {
+        Object.assign(fx, { bright: 100, contrast: 100, sat: 100, frame: 'none', size: '4k' });
+        ov.querySelectorAll('input[data-f]').forEach(r => { r.value = 100; });
+        ov.querySelectorAll('[data-frame],[data-size]').forEach(x =>
+          x.classList.toggle('on', x.dataset.frame === 'none' || x.dataset.size === '4k'));
+        render();
+      }
+    });
+    const exportBlob = () => new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
+    ov.querySelector('[data-sharephoto]').addEventListener('click', async ev => {
+      const btn = ev.currentTarget, orig = btn.innerHTML;
+      btn.innerHTML = 'Preparando…';
+      const blob = await exportBlob();
+      const file = new File([blob], `${cid}_foto.jpg`, { type: 'image/jpeg' });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+        else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click(); }
+      } catch {}
+      btn.innerHTML = orig;
+    });
+    ov.querySelector('[data-dl]').addEventListener('click', async () => {
+      const blob = await exportBlob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${cid}_foto.jpg`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30000);
     });
     ov.addEventListener('click', e => {
       if (e.target === ov || e.target.closest('[data-close]')) ov.remove();
@@ -346,24 +435,49 @@ const cid = new URLSearchParams(location.search).get('id');
   }
 
   // ---- charts SVG ----
+  const CHARTS = {};
   function chart(el, series, label, unit, color) {
-    const w = 600, h = 92, max = Math.max(...series, 1);
-    const pth = series.map((v, i) => `${(i / (series.length - 1)) * w},${h - 6 - (v / max) * (h - 22)}`).join(' ');
+    const w = 800, h = 130, max = Math.max(...series, 1), pad = 8;
+    const X = i => (i / (series.length - 1)) * w;
+    const Y = v => h - pad - (v / max) * (h - 34);
+    const pth = series.map((v, i) => `${X(i)},${Y(v)}`).join(' ');
+    const gid = `g-${el.id}`;
     el.innerHTML = `
-      <span class="chart-lb">${label}</span><span class="chart-val" id="${el.id}-v"></span>
+      <span class="chart-lb">${label}</span>
+      <span class="chart-badge mono" id="${el.id}-v">— ${unit}</span>
       <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-        <polyline points="${pth} ${w},${h} 0,${h}" fill="${color}" opacity="0.08"/>
-        <polyline points="${pth}" fill="none" stroke="${color}" stroke-width="1.5"/>
-        <line id="${el.id}-c" x1="0" x2="0" y1="0" y2="${h}" stroke="#E6EBF2" stroke-width="0.75" opacity="0"/>
+        <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="${color}" stop-opacity="0.28"/>
+          <stop offset="1" stop-color="${color}" stop-opacity="0.02"/>
+        </linearGradient></defs>
+        ${[0.25, 0.5, 0.75].map(f => `<line x1="0" x2="${w}" y1="${Y(max * f)}" y2="${Y(max * f)}"
+          stroke="currentColor" stroke-width="0.4" opacity="0.10"/>`).join('')}
+        <text x="6" y="${Y(max) + 4}" font-size="9" fill="currentColor" opacity="0.4"
+          font-family="var(--mono)">${Math.round(max)} ${unit}</text>
+        <polyline points="${pth} ${w},${h} 0,${h}" fill="url(#${gid})" stroke="none"/>
+        <polyline class="ch-line" points="${pth}" fill="none" stroke="${color}" stroke-width="1.8"/>
+        <line id="${el.id}-c" x1="0" x2="0" y1="0" y2="${h}" stroke="currentColor" stroke-width="0.75" opacity="0"/>
+        <circle id="${el.id}-dot" r="4.5" fill="${color}" stroke="#fff" stroke-width="1.4"
+          cx="0" cy="${Y(series[0] || 0)}" style="filter:drop-shadow(0 0 6px ${color})"/>
       </svg>`;
+    // dibujo animado de la curva al montar
+    const line = el.querySelector('.ch-line');
+    const len = line.getTotalLength();
+    line.style.strokeDasharray = len;
+    line.style.strokeDashoffset = len;
+    requestAnimationFrame(() => {
+      line.style.transition = 'stroke-dashoffset 1100ms cubic-bezier(.25,.1,.25,1)';
+      line.style.strokeDashoffset = '0';
+    });
+    CHARTS[el.id] = { series, unit, X, Y };
     const svg = el.querySelector('svg');
     svg.addEventListener('mousemove', e => {
       const r = svg.getBoundingClientRect();
       const i = Math.round(((e.clientX - r.left) / r.width) * (series.length - 1));
       document.getElementById(`${el.id}-v`).textContent = `${Math.round(series[i] || 0)} ${unit} · ${fmt.dur(i)}`;
       const c = document.getElementById(`${el.id}-c`);
-      c.setAttribute('x1', (i / (series.length - 1)) * w); c.setAttribute('x2', (i / (series.length - 1)) * w);
-      c.setAttribute('opacity', 0.35);
+      c.setAttribute('x1', X(i)); c.setAttribute('x2', X(i));
+      c.setAttribute('opacity', 0.3);
     });
     svg.addEventListener('mouseleave', () => document.getElementById(`${el.id}-c`).setAttribute('opacity', 0));
     svg.addEventListener('click', e => {
@@ -376,8 +490,12 @@ const cid = new URLSearchParams(location.search).get('id');
     chart(document.getElementById('ch-alt'), pts.map(p => p.rel_alt), 'Altitud', 'm', '#45A0E6');
     chart(document.getElementById('ch-speed'), speeds, 'Velocidad', 'km/h', '#52C79A');
     cursorAt = i => ['ch-alt', 'ch-speed'].forEach(id => {
-      const c = document.getElementById(`${id}-c`);
-      if (c) { const x = (i / (pts.length - 1)) * 600; c.setAttribute('x1', x); c.setAttribute('x2', x); c.setAttribute('opacity', 0.5); }
+      const ch = CHARTS[id];
+      if (!ch) return;
+      const dot = document.getElementById(`${id}-dot`);
+      if (dot) { dot.setAttribute('cx', ch.X(i)); dot.setAttribute('cy', ch.Y(ch.series[i] || 0)); }
+      const badge = document.getElementById(`${id}-v`);
+      if (badge) badge.textContent = `${Math.round(ch.series[i] || 0)} ${ch.unit} · ${fmt.dur(i)}`;
     });
   }
 
