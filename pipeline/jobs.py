@@ -106,51 +106,94 @@ def running(kinds: tuple = ("3d", "splat")) -> dict | None:
         return dict(r) if r else None
 
 
+def _kill_pg(pid: int, sig=signal.SIGTERM) -> bool:
+    """Mata el grupo de procesos; True si algo fue señalizado."""
+    if not pid:
+        return False
+    try:
+        os.killpg(os.getpgid(pid), sig)
+        return True
+    except (ProcessLookupError, PermissionError):
+        try:
+            os.kill(pid, sig)
+            return True
+        except ProcessLookupError:
+            return False
+
+
+def _proc_gone(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return False
+    except (ProcessLookupError, TypeError):
+        return True
+
+
 def cancel(jid: str) -> bool:
+    """Cancela un job. Sólo marca 'cancelled' si el kill se CONFIRMA (o no había
+    proceso vivo); si el kill falla, deja el estado con la advertencia explícita."""
     j = get(jid)
     if not j or j["status"] != "running":
         return False
-    ok = False
+    notes = []
+    # 1) matar el proceso (grupo) — SIGTERM y, si sobrevive, SIGKILL
+    pid = j["pid"]
+    if pid and not _proc_gone(pid):
+        _kill_pg(pid, signal.SIGTERM)
+        for _ in range(15):
+            if _proc_gone(pid):
+                break
+            time.sleep(0.2)
+        if not _proc_gone(pid):
+            _kill_pg(pid, signal.SIGKILL)
+            time.sleep(0.5)
+        notes.append("pid vivo" if not _proc_gone(pid) else "pid terminado")
+    # 2) matar el contenedor docker si lo hay (los procesos python-cli no lo tumban)
     if j["container"]:
         r = subprocess.run(["/usr/local/bin/docker", "kill", j["container"]],
-                           capture_output=True, timeout=30)
-        ok = ok or r.returncode == 0
-    if j["pid"]:
-        try:
-            os.killpg(os.getpgid(j["pid"]), signal.SIGTERM)  # el grupo entero
-            ok = True
-        except (ProcessLookupError, PermissionError):
-            try:
-                os.kill(j["pid"], signal.SIGTERM)
-                ok = True
-            except ProcessLookupError:
-                pass
-    end(jid, "cancelled", "cancelado por el operador")
-    return ok
+                           capture_output=True, text=True, timeout=30)
+        notes.append("docker killed" if r.returncode == 0 else
+                     f"docker kill falló: {(r.stderr or '').strip()[:60]}")
+    # marca 'cancelled' para que el watcher de run_tracked corte la secuencia
+    confirmed = (not pid or _proc_gone(pid))
+    end(jid, "cancelled", "cancelado · " + (" · ".join(notes) or "sin proceso activo"))
+    return confirmed
 
 
 def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                 tail: int = 12) -> int:
-    """Popen con PID registrado (cancel real) + tail de log en vivo. Retorna returncode."""
+    """Popen con PID registrado + watcher de cancelación INDEPENDIENTE del stdout
+    (un proceso silencioso también se puede matar) + tail de log en vivo."""
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1, env=env, start_new_session=True)
     update(jid, pid=proc.pid)
+    stop = threading.Event()
+
+    def watcher():  # mata el proceso apenas el job pase a 'cancelled', sin esperar stdout
+        while not stop.wait(1.5):
+            cur = get(jid)
+            if not cur or cur["status"] != "running":
+                _kill_pg(proc.pid, signal.SIGTERM)
+                time.sleep(2)
+                if not _proc_gone(proc.pid):
+                    _kill_pg(proc.pid, signal.SIGKILL)
+                return
+    threading.Thread(target=watcher, daemon=True).start()
+
     lines: list[str] = []
     deadline = time.time() + timeout
-    for line in proc.stdout:  # streaming
-        lines.append(line.rstrip())
-        del lines[:-200]
-        update(jid, log="\n".join(lines[-tail:]))
-        if time.time() > deadline:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except Exception:
-                proc.kill()
-            raise TimeoutError(f"timeout tras {timeout}s")
-        # si el operador canceló, el status ya no es running → matar
-        cur = get(jid)
-        if cur and cur["status"] == "cancelled":
-            raise RuntimeError("cancelado por el operador")
+    try:
+        for line in proc.stdout:  # streaming
+            lines.append(line.rstrip())
+            del lines[:-200]
+            update(jid, log="\n".join(lines[-tail:]))
+            if time.time() > deadline:
+                _kill_pg(proc.pid, signal.SIGKILL)
+                raise TimeoutError(f"timeout tras {timeout}s")
+    finally:
+        stop.set()
     proc.wait()
     update(jid, pid=None)
+    if (get(jid) or {}).get("status") == "cancelled":
+        raise RuntimeError("cancelado por el operador")
     return proc.returncode

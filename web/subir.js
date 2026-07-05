@@ -66,7 +66,7 @@ async function upload(file) {
   const row = document.createElement('div');
   row.innerHTML = `
     <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px">
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${file.name}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(file.name)}</span>
       <span class="mono" id="pct" style="color:var(--text-3)">0%</span>
     </div>
     <div style="height:5px;background:var(--surface-2);border-radius:3px;overflow:hidden;margin-bottom:12px">

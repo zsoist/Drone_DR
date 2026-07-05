@@ -278,8 +278,12 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
             return self.send_json({"ok": False}, 403)
         if self.path.startswith("/api/jobs"):
+            if not self.auth():
+                return
             return self.send_json({"jobs": jobstore.recent()})
         if self.path.startswith("/api/properties"):
+            if not self.auth():
+                return
             return self.do_GET_properties()
         f = self.resolve()
         if not f:
@@ -369,11 +373,14 @@ class H(BaseHTTPRequestHandler):
 
     def send_json(self, obj, code=200):
         body = json.dumps(obj).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # cliente se fue; nada que enviar
 
     def do_POST(self):
         try:
@@ -490,30 +497,34 @@ class H(BaseHTTPRequestHandler):
             if not HEAVY.acquire(blocking=False):
                 busy = (jobstore.running() or {}).get("label", "?")
                 return self.send_json({"error": f"ya hay un job 3D corriendo ({busy})"}, 409)
-            j = job_add("3d", cid, container=f"odm-{cid[-6:]}")
+            container = f"odm-{j['id']}"  # único por job (evita colisión de nombres)
+            jobstore.update(j["id"], container=container)
 
             def _run3d():
                 try:
                     proj = VAULT / "odm" / f"proj_{cid}"
                     jobstore.update(j["id"], detail="1/3 frames + geotag")
-                    subprocess.run(["python3", str(PIPE / "odm_prep.py"), cid],
-                                   check=True, capture_output=True, text=True, cwd=PIPE)
+                    if jobstore.run_tracked(j["id"], ["python3", str(PIPE / "odm_prep.py"), cid],
+                                            timeout=1800) != 0:
+                        raise RuntimeError("odm_prep falló")
                     jobstore.update(j["id"], detail="2/3 fotogrametría ODM (~1h)")
-                    subprocess.run(["/usr/local/bin/docker", "run", "--rm", "--name", f"odm-{cid[-6:]}",
-                                    "-m", "7g", "-v", f"{proj}:/datasets/code", "opendronemap/odm",
-                                    "--project-path", "/datasets", "--pc-quality", "medium",
-                                    "--feature-quality", "medium", "--max-concurrency", "4",
-                                    "--orthophoto-resolution", "5"],
-                                   check=True, capture_output=True, text=True, timeout=3 * 3600)
+                    if jobstore.run_tracked(j["id"],
+                            ["/usr/local/bin/docker", "run", "--rm", "--name", container,
+                             "-m", "7g", "-v", f"{proj}:/datasets/code", "opendronemap/odm",
+                             "--project-path", "/datasets", "--pc-quality", "medium",
+                             "--feature-quality", "medium", "--max-concurrency", "4",
+                             "--orthophoto-resolution", "5"], timeout=3 * 3600) != 0:
+                        raise RuntimeError("ODM falló")
                     jobstore.update(j["id"], detail="3/3 publicando assets web")
-                    subprocess.run(["python3", str(PIPE / "tresd_publish.py"), cid, str(proj)],
-                                   check=True, capture_output=True, text=True, cwd=PIPE)
+                    if jobstore.run_tracked(j["id"],
+                            ["python3", str(PIPE / "tresd_publish.py"), cid, str(proj)],
+                            timeout=1800) != 0:
+                        raise RuntimeError("publicación falló")
                     rebuild_index()
                     job_end(j, "done", f"modelo 3D de {cid} listo")
-                except subprocess.CalledProcessError as e:
-                    job_end(j, "error", ((e.stderr or "") + str(e))[-250:])
                 except Exception as e:
-                    job_end(j, "error", str(e)[-250:])
+                    if (jobstore.get(j["id"]) or {}).get("status") != "cancelled":
+                        job_end(j, "error", str(e)[-250:])
                 finally:
                     HEAVY.release()
             threading.Thread(target=_run3d, daemon=True).start()
@@ -558,7 +569,8 @@ class H(BaseHTTPRequestHandler):
                                  f"{out.name} · loss {quality['final_loss']} · {n_cams} cámaras",
                                  artifact=f"splats/{out.name}")
                 except Exception as e:
-                    job_end(j, "error", str(getattr(e, 'stderr', '') or e)[-250:])
+                    if (jobstore.get(j["id"]) or {}).get("status") != "cancelled":
+                        job_end(j, "error", str(getattr(e, 'stderr', '') or e)[-250:])
                 finally:
                     HEAVY.release()
             threading.Thread(target=_splat, daemon=True).start()

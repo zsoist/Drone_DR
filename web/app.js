@@ -158,5 +158,5 @@ document.addEventListener('keydown', e => {
   ai = await getAIAll(flights);   // enriquece con AI cuando llegue
   render();
 })().catch(e => {
-  main.querySelector('#grid').innerHTML = `<div class="empty" style="grid-column:1/-1">${icon('warn')}<p>Error: ${e.message}</p></div>`;
+  main.querySelector('#grid').innerHTML = `<div class="empty" style="grid-column:1/-1">${icon('warn')}<p>Error: ${esc(e.message)}</p></div>`;
 });

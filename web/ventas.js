@@ -68,12 +68,14 @@ document.addEventListener('click', e => {
     (sys.reels || []).map(r => `<option value="${r.name}">Reel: ${r.name}</option>`).join('');
 
   async function loadList() {
-    const { properties } = await (await fetch('/api/properties')).json();
+    const res = await fetch('/api/properties');
+    if (res.status === 403) { document.getElementById('plist').innerHTML = '<p class="footer-note">Inicia sesión para ver propiedades.</p>'; return; }
+    const { properties } = await res.json();
     document.getElementById('plist').innerHTML = properties.length ? properties.map(p => `
       <div class="hl-item">
-        <a class="tc" href="p.html?id=${p.slug}" target="_blank">${esc(p.slug)}</a>
+        <a class="tc" href="p.html?id=${encodeURIComponent(p.slug)}" target="_blank">${esc(p.slug)}</a>
         <p>${esc(p.titulo)} · ${esc(p.precio) || 's/p'} <span class="mono" style="color:var(--text-3)">${p.updated}</span></p>
-        <button class="btn" data-edit="${p.slug}" style="padding:3px 9px;font-size:11px">Editar</button>
+        <button class="btn" data-edit="${esc(p.slug)}" style="padding:3px 9px;font-size:11px">Editar</button>
       </div>`).join('') :
       `<p class="footer-note">Aún no hay propiedades publicadas.</p>`;
   }
@@ -106,11 +108,12 @@ document.addEventListener('click', e => {
     const p = collect();
     if (!p.slug || !p.titulo) return alert('Slug y título son obligatorios.');
     const { url } = await api('/api/property', p);
-    const localUrl = `p.html?id=${p.slug}`;
+    const safeSlug = encodeURIComponent(p.slug);
+    const localUrl = `p.html?id=${safeSlug}`;
     document.getElementById('result').innerHTML = `
       <div class="panel"><div class="pb" style="text-align:center">
         <p style="font-size:13px;margin-bottom:8px">Publicada — comparte este link:</p>
-        <a class="mono" href="${localUrl}" target="_blank" style="color:var(--accent);font-size:13px">${url}</a>
+        <a class="mono" href="${localUrl}" target="_blank" style="color:var(--accent);font-size:13px">${esc(url)}</a>
         <div style="margin-top:12px"><img alt="QR" width="160" height="160" style="border-radius:8px;background:#fff;padding:8px"
           src="https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(url)}"></div>
         <button class="btn" style="margin-top:10px" data-copy="${url}">Copiar link</button>

@@ -48,7 +48,9 @@ localStorage.removeItem('ab_token');
 async function pollJobs(el, every = 2500) {
   const paint = async () => {
     try {
-      const { jobs } = await (await fetch('/api/jobs')).json();
+      const res = await fetch('/api/jobs');
+      if (res.status === 403) { el.innerHTML = '<p class="footer-note">Inicia sesión (una acción de operador) para ver trabajos.</p>'; return; }
+      const { jobs } = await res.json();
       el.innerHTML = jobs.length ? jobs.map(j => `
         <div class="hl-item">
           <span class="tc" style="${j.status === 'error' ? 'color:var(--red);background:rgba(217,106,106,.12)' :

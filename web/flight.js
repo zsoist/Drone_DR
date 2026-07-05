@@ -212,8 +212,8 @@ const cid = new URLSearchParams(location.search).get('id');
     set('alt', `${p.rel_alt.toFixed(0)}<small> m</small>`);
     set('dist', cum[i] >= 1000 ? `${(cum[i] / 1000).toFixed(2)}<small> km</small>` : `${Math.round(cum[i])}<small> m</small>`);
     set('speed', `${Math.round(speeds[i] || 0)}<small> km/h</small>`);
-    set('iso', p.iso);
-    set('shutter', `<small>${p.shutter}</small>`);
+    set('iso', esc(p.iso));
+    set('shutter', `<small>${esc(p.shutter)}</small>`);
     marker?.setLngLat([p.lon, p.lat]);
     cursorAt(i);
   }
