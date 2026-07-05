@@ -34,8 +34,23 @@ def _cancelled(jid: str) -> bool:
     return (jobstore.get(jid) or {}).get("status") in jobstore.CANCEL_STATES
 
 
+# presets de calidad ODM: mismo pipeline completo (dense+mesh+DSM), distinto trade-off
+PRESETS = {
+    "rapido":   {"eta": "~25-40 min", "timeout": 2 * 3600,
+                 "args": ["--pc-quality", "low", "--feature-quality", "medium",
+                          "--orthophoto-resolution", "8", "--dem-resolution", "15"]},
+    "estandar": {"eta": "~45-75 min", "timeout": 3 * 3600,
+                 "args": ["--pc-quality", "medium", "--feature-quality", "medium",
+                          "--orthophoto-resolution", "5", "--dem-resolution", "10"]},
+    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600,
+                 "args": ["--pc-quality", "high", "--feature-quality", "high",
+                          "--orthophoto-resolution", "3", "--dem-resolution", "5"]},
+}
+
+
 def run_3d(j: dict):
     cid = j["spec"]["clip_id"]
+    preset = PRESETS.get(j["spec"].get("preset", "estandar"), PRESETS["estandar"])
     proj = VAULT / "odm" / f"proj_{cid}"
     container = f"odm-{j['id']}"
     jobstore.update(j["id"], container=container)
@@ -45,15 +60,14 @@ def run_3d(j: dict):
                             timeout=1800) != 0:
         raise RuntimeError("odm_prep falló")
 
-    jobstore.update(j["id"], detail="2/3 fotogrametría ODM (~30-45 min)",
+    jobstore.update(j["id"], detail=f"2/3 fotogrametría ODM ({preset['eta']})",
                     stage="odm", progress=0.15)
     if jobstore.run_tracked(j["id"],
             [DOCKER, "run", "--rm", "--name", container,
              "-m", "7g", "-v", f"{proj}:/datasets/code", "opendronemap/odm",
-             "--project-path", "/datasets", "--pc-quality", "medium",
-             "--feature-quality", "medium", "--max-concurrency", "4",
-             "--orthophoto-resolution", "5", "--dsm", "--dtm",
-             "--dem-resolution", "10", "--skip-report"], timeout=3 * 3600) != 0:
+             "--project-path", "/datasets", "--max-concurrency", "4",
+             "--dsm", "--dtm", "--skip-report", *preset["args"]],
+            timeout=preset["timeout"]) != 0:
         raise RuntimeError("ODM falló")
 
     jobstore.update(j["id"], detail="3/3 publicando assets web", stage="publish", progress=0.9)

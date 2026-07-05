@@ -6,12 +6,52 @@
 
   const main = renderShell('tresd.html');
   main.innerHTML = `
-    <div class="page-head"><h1>3D</h1><span class="count">fotogrametría · nube de puntos · splats</span>
-      <span class="spacer"></span>
-      <select class="ctl" id="proj-sel"></select>
-    </div>
+    <div class="page-head"><h1>3D</h1><span class="count">fotogrametría · nube de puntos · splats</span></div>
 
     <div class="panel">
+      <div class="ph">${icon('layers')} Proyectos 3D <span class="count" id="proj-count"></span></div>
+      <div class="pb"><div class="proj-grid" id="proj-grid"></div></div>
+    </div>
+
+    <div class="fl-layout" style="margin-top:16px">
+      <div>
+        <div class="panel">
+          <div class="ph">${icon('activity')} Procesar un vuelo en 3D</div>
+          <div class="pb">
+            <div class="toolbar">
+              <select class="ctl" id="new-clip" style="flex:1;min-width:0"></select>
+              <select class="ctl" id="odm-preset">
+                <option value="rapido">Rápido</option>
+                <option value="estandar" selected>Estándar</option>
+                <option value="alta">Alta</option>
+              </select>
+              <button class="btn primary" id="btn-run3d">${icon('cube')} Procesar</button>
+            </div>
+            <p class="footer-note" id="preset-note"></p>
+            <div id="jobs3d" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="panel">
+          <div class="ph">${icon('cube')} Gaussian Splats
+            <span class="spacer" style="flex:1"></span>
+            <select class="ctl" id="splat-iters" style="font-size:11.5px;padding:4px 8px">
+              <option value="1000">Rápido · 1k iters</option>
+              <option value="2000" selected>Balanceado · 2k</option>
+              <option value="7000">Cinemático · 7k</option>
+              <option value="15000">Ultra · 15k</option>
+            </select>
+            <button class="btn primary" id="btn-splat" style="padding:4px 12px;font-size:11.5px">Generar</button>
+          </div>
+          <div class="pb" id="splats"></div>
+          <div id="splat-viewer" style="height:46dvh;display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="proj-view" style="display:none">
+    <div class="panel" style="margin-top:16px">
       <div class="ph">${icon('map')} Mapa del proyecto
         <span class="spacer" style="flex:1"></span>
         <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-2)">
@@ -63,41 +103,10 @@
       </div>
     </div>
 
-    <div class="fl-layout" style="margin-top:16px">
-      <div>
-        <div class="panel">
-          <div class="ph">${icon('activity')} Procesar un vuelo en 3D</div>
-          <div class="pb">
-            <div class="toolbar">
-              <select class="ctl" id="new-clip" style="flex:1"></select>
-              <button class="btn primary" id="btn-run3d">${icon('cube')} Procesar 3D</button>
-            </div>
-            <p class="footer-note">Un tap: frames 2K → geotag con tu GPS → fotogrametría ODM →
-            assets web. ~1h en el M4, todo local. Mejores resultados: vuelos en órbita o zigzag
-            con solape; el nadir alto (como el 0104) mapea de maravilla.</p>
-            <div id="jobs3d" style="margin-top:8px"></div>
-          </div>
-        </div>
-      </div>
-      <div>
-        <div class="panel">
-          <div class="ph">${icon('cube')} Gaussian Splats
-            <span class="spacer" style="flex:1"></span>
-            <select class="ctl" id="splat-iters" style="font-size:11.5px;padding:4px 8px">
-              <option value="1000">Rápido · 1k iters</option>
-              <option value="2000" selected>Balanceado · 2k</option>
-              <option value="7000">Cinemático · 7k</option>
-            </select>
-            <button class="btn primary" id="btn-splat" style="padding:4px 12px;font-size:11.5px">Generar</button>
-          </div>
-          <div class="pb" id="splats"></div>
-          <div id="splat-viewer" style="height:46dvh;display:none"></div>
-        </div>
-        <div class="panel" style="margin-top:16px">
-          <div class="ph">${icon('gauge')} Reporte de calidad & descargas</div>
-          <div class="pb" id="dls"></div>
-        </div>
-      </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="ph">${icon('gauge')} Reporte de calidad & descargas</div>
+      <div class="pb" id="dls"></div>
+    </div>
     </div>`;
 
   // ---------- estado ----------
@@ -116,21 +125,92 @@
     return f?.stats?.bbox || bboxFromCorners(model.dsm_corners || model.corners);
   }
 
-  const sel = document.getElementById('proj-sel');
-  sel.innerHTML = models.length
-    ? models.map(m => {
-        const f = flights.find(x => x.clip_id === m.clip_id);
-        return `<option value="${m.clip_id}">${f ? (esc(f.label) || fmt.date(f.date) + ' ' + f.time) : m.clip_id}</option>`;
-      }).join('')
-    : `<option value="">Sin proyectos 3D aún</option>`;
-  sel.addEventListener('change', () => setProject(sel.value));
+  // ---------- tarjetas de proyecto (abrir / renombrar / compartir / borrar) ----------
+  const PROJ_KEY = 'ab.proj3d';
+  const titleFor = m => {
+    const f = flights.find(x => x.clip_id === m.clip_id);
+    return m.title || (f ? (f.label || fmt.date(f.date) + ' ' + f.time) : m.clip_id);
+  };
+  function renderCards() {
+    const grid = document.getElementById('proj-grid');
+    document.getElementById('proj-count').textContent = models.length ? `(${models.length})` : '';
+    grid.innerHTML = models.length ? models.map(m => {
+      const q = m.qa || {};
+      const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(1) + ' ha' : Math.round(q.area_m2 || 0) + ' m²';
+      return `<div class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
+        <img src="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="" width="320" height="180">
+        <div class="pc-body">
+          <p class="pc-title">${esc(titleFor(m))}</p>
+          <p class="pc-meta mono">${q.gsd_cm_px ? q.gsd_cm_px + ' cm/px · ' : ''}${q.area_m2 ? ha : ''}${m.has_dsm ? ' · DSM' : ''}</p>
+          <div class="pc-actions">
+            <button class="btn primary" data-act="open">Abrir</button>
+            <button class="btn" data-act="rename">Renombrar</button>
+            <button class="btn" data-act="share">Compartir</button>
+            <button class="btn pc-del" data-act="del">Borrar</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('') : `<p class="footer-note" style="margin:0">Sin proyectos 3D aún — procesa un vuelo abajo para crear el primero.</p>`;
+  }
+  document.getElementById('proj-grid').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-act]');
+    const card = e.target.closest('.proj-card');
+    if (!card) return;
+    const cid = card.dataset.cid;
+    const m = models.find(x => x.clip_id === cid);
+    if (!btn) { setProject(cid); return; }                      // tap en la tarjeta = abrir
+    if (btn.dataset.act === 'open') setProject(cid);
+    if (btn.dataset.act === 'rename') {
+      const tEl = card.querySelector('.pc-title');
+      tEl.innerHTML = `<input class="ctl" style="width:100%;font-size:12.5px" value="${esc(titleFor(m))}" maxlength="80">`;
+      const inp = tEl.querySelector('input');
+      inp.focus(); inp.select();
+      const save = async () => {
+        const title = inp.value.trim();
+        const r = await api('/api/model_update', { clip_id: cid, title });
+        if (!r.error) m.title = r.title;
+        renderCards();
+      };
+      inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') renderCards(); });
+      inp.addEventListener('blur', save);
+    }
+    if (btn.dataset.act === 'share') {
+      const url = `${location.origin}/share.html?m=${encodeURIComponent(cid)}`;
+      try { await navigator.clipboard.writeText(url); btn.textContent = 'Copiado ✓'; }
+      catch { prompt('Copia el link:', url); }
+      setTimeout(() => { btn.textContent = 'Compartir'; }, 1800);
+    }
+    if (btn.dataset.act === 'del') {
+      if (!confirm(`¿Borrar "${titleFor(m)}"?\n\nSe eliminan el modelo 3D, sus splats y los archivos de procesamiento. El video original NO se toca.`)) return;
+      const r = await api('/api/model_delete', { clip_id: cid, purge_source: true });
+      if (r.error) return alert(r.error);
+      models = models.filter(x => x.clip_id !== cid);
+      if (cur?.clip_id === cid) {
+        cur = null;
+        localStorage.removeItem(PROJ_KEY);
+        document.getElementById('proj-view').style.display = 'none';
+      }
+      renderCards();
+    }
+  });
 
   // clips candidatos a 3D (con GPS y proxy)
   const candidates = flights.filter(f => f.has_srt && f.stats?.bbox && !f.archived);
   document.getElementById('new-clip').innerHTML =
     candidates.map(f => `<option value="${f.clip_id}">${esc(f.label) || fmt.date(f.date) + ' ' + f.time} · ${fmt.dur(f.duration_s)} · ${Math.round(f.stats.max_rel_alt_m || 0)}m</option>`).join('');
+  const PRESET_NOTES = {
+    rapido: 'Borrador en ~25-40 min: nube ligera, ortofoto 8 cm/px. Para revisar cobertura antes de invertir horas.',
+    estandar: 'Balanceado en ~45-75 min: nube media, ortofoto 5 cm/px, DSM 10 cm. El punto dulce para la mayoría de vuelos.',
+    alta: 'Máxima calidad en ~2-4 h: nube densa high, ortofoto 3 cm/px, DSM 5 cm. Para entregas, mediciones finas y splats premium.',
+  };
+  const presetSel = document.getElementById('odm-preset');
+  const presetNote = document.getElementById('preset-note');
+  const updNote = () => { presetNote.textContent = PRESET_NOTES[presetSel.value]; };
+  presetSel.addEventListener('change', updNote);
+  updNote();
   document.getElementById('btn-run3d').addEventListener('click', async () => {
-    const r = await api('/api/odm', { clip_id: document.getElementById('new-clip').value });
+    const r = await api('/api/odm', { clip_id: document.getElementById('new-clip').value,
+                                      preset: presetSel.value });
     if (r.error) alert(r.error);
   });
   pollJobs(document.getElementById('jobs3d'));
@@ -140,6 +220,9 @@
   function setProject(cid) {
     cur = models.find(m => m.clip_id === cid);
     if (!cur) return;
+    localStorage.setItem(PROJ_KEY, cid);
+    document.getElementById('proj-view').style.display = '';
+    document.querySelectorAll('.proj-card').forEach(c => c.classList.toggle('on', c.dataset.cid === cid));
     const base = `data/models/${cid}`;
     const q = cur.qa || {};
     const reproj = q.reprojection_error_px;
@@ -363,6 +446,7 @@
   function makeScene(box) {
     const w = box.clientWidth, h = box.clientHeight;
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.localClippingEnabled = true;   // recorte de suelo/techo en la nube
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     box.innerHTML = '';
@@ -473,6 +557,26 @@
     scene.add(pts);
     frameObject(pts, cam, controls);
     attachViewerTools(box, cam, controls);
+    // suite de limpieza en vivo: tamaño de punto + recorte por altura (quita
+    // ruido bajo el suelo y floaters del cielo sin re-procesar nada)
+    const bb = new THREE.Box3().setFromObject(pts);
+    const yLo = new THREE.Plane(new THREE.Vector3(0, 1, 0), -bb.min.y);
+    const yHi = new THREE.Plane(new THREE.Vector3(0, -1, 0), bb.max.y);
+    mat.clippingPlanes = [yLo, yHi];
+    const span = bb.max.y - bb.min.y;
+    const hud = document.createElement('div');
+    hud.className = 'viewer-hud';
+    hud.innerHTML = `
+      <label>Puntos <input type="range" data-h="size" min="4" max="60" value="18"></label>
+      <label>Suelo <input type="range" data-h="lo" min="0" max="100" value="0"></label>
+      <label>Techo <input type="range" data-h="hi" min="0" max="100" value="100"></label>`;
+    box.appendChild(hud);
+    hud.addEventListener('input', ev => {
+      const v = +ev.target.value;
+      if (ev.target.dataset.h === 'size') mat.size = v / 100;
+      if (ev.target.dataset.h === 'lo') yLo.constant = -(bb.min.y + span * v / 100);
+      if (ev.target.dataset.h === 'hi') yHi.constant = bb.min.y + span * v / 100;
+    });
   });
 
   // splats: listar + ver inline + generar
@@ -507,4 +611,7 @@
     attachViewerTools(box, null, null);
   });
 
-  if (models.length) setProject(models[0].clip_id);
+  // sin auto-abrir: solo se restaura una selección previa del usuario
+  renderCards();
+  const saved = localStorage.getItem(PROJ_KEY);
+  if (saved && models.some(m => m.clip_id === saved)) setProject(saved);

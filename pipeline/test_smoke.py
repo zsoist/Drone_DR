@@ -238,5 +238,15 @@ except subprocess.TimeoutExpired:
 check("orphans: restart del worker mata proceso heavy huérfano",
       jobs.get(_heavy["id"])["status"] == "error" and _heavy_gone)
 
+# --- presets ODM del worker ---
+import worker
+check("presets: rapido/estandar/alta definidos",
+      set(worker.PRESETS) == {"rapido", "estandar", "alta"})
+check("presets: todos con pc-quality + timeout coherentes",
+      all("--pc-quality" in p["args"] and p["timeout"] >= 3600 for p in worker.PRESETS.values()))
+check("presets: alta es mas fina que rapido (ortho res)",
+      int(worker.PRESETS["alta"]["args"][worker.PRESETS["alta"]["args"].index("--orthophoto-resolution") + 1])
+      < int(worker.PRESETS["rapido"]["args"][worker.PRESETS["rapido"]["args"].index("--orthophoto-resolution") + 1]))
+
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)

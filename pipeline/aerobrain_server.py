@@ -14,6 +14,7 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import threading
 import time
@@ -693,8 +694,47 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "clip_id requerido"}, 400)
             if jobstore.pending("3d", cid):
                 return self.send_json({"error": "ese vuelo ya está en cola o procesándose"}, 409)
-            j = jobstore.enqueue("3d", cid, {"clip_id": cid})
+            preset = str(spec.get("preset", "estandar"))
+            if preset not in ("rapido", "estandar", "alta"):
+                preset = "estandar"
+            j = jobstore.enqueue("3d", cid, {"clip_id": cid, "preset": preset})
             return self.send_json({"ok": True, "job": j["id"], "queued": True})
+        if u.path == "/api/model_update":
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            mdir = VAULT / "models" / cid
+            if not cid or not (mdir / "meta.json").exists():
+                return self.send_json({"error": "modelo no encontrado"}, 404)
+            meta = json.loads((mdir / "meta.json").read_text())
+            meta["title"] = str(spec.get("title", ""))[:80].strip()
+            (mdir / "meta.json").write_text(json.dumps(meta, indent=1))
+            rebuild_index()
+            return self.send_json({"ok": True, "title": meta["title"]})
+        if u.path == "/api/model_delete":
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            mdir = (VAULT / "models" / cid).resolve()
+            if not cid or mdir.parent != (VAULT / "models").resolve() or not mdir.is_dir():
+                return self.send_json({"error": "modelo no encontrado"}, 404)
+            if jobstore.pending("3d", cid) or jobstore.pending("splat", cid):
+                return self.send_json({"error": "hay un trabajo activo sobre este modelo — cancélalo primero"}, 409)
+            freed = ["models/" + cid]
+            shutil.rmtree(mdir)
+            for extra in [VAULT / "splats" / f"{cid}.splat", VAULT / "splats" / f"{cid}.meta.json"]:
+                if extra.exists():
+                    extra.unlink()
+                    freed.append("splats/" + extra.name)
+            # purga opcional del proyecto ODM (GBs de frames+etapas; el video RAW nunca se toca)
+            proj = (VAULT / "odm" / ("proj0104" if cid.endswith("0104_D") else f"proj_{cid}")).resolve()
+            if spec.get("purge_source") and proj.parent == (VAULT / "odm").resolve() and proj.is_dir():
+                shutil.rmtree(proj)
+                freed.append("odm/" + proj.name)
+            rebuild_index()
+            return self.send_json({"ok": True, "freed": freed})
         if u.path == "/api/splat":
             if not self.auth(q):
                 return
