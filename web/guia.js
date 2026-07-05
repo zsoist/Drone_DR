@@ -19,7 +19,7 @@
             <div class="pb"><table class="kv">
               <tr><td>1. Ve a Subir</td><td>desde cualquier dispositivo</td></tr>
               <tr><td>2. Arrastra el video</td><td>MP4, MOV, MKV, AVI, MTS, WEBM</td></tr>
-              <tr><td>3. Token</td><td>la primera vez: está en <span class="mono">drone-vault/.token</span></td></tr>
+              <tr><td>3. Inicia sesión</td><td>una vez con tu correo + contraseña (sesión de 30 días)</td></tr>
               <tr><td>4. Espera</td><td>el M4 hace proxy + AI solo</td></tr>
             </table></div>
           </div>
