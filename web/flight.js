@@ -70,7 +70,21 @@ const cid = new URLSearchParams(location.search).get('id');
                 ${aiData.quality.issues?.length ? `<br><span style="color:var(--amber)">⚠ ${esc(aiData.quality.issues.join(' · '))}</span>` : ''}</td></tr>` : ''}
               ${aiData.subjects?.length ? `<tr><td>Sujetos</td><td style="text-align:left;font-family:var(--font)">${esc(aiData.subjects.join(' · '))}</td></tr>` : ''}
             </table>` : ''}
-            ${aiData.tags?.length ? `<div class="chips" style="margin-top:12px">
+            ${aiData.story_arc ? `<p class="ai-arc">«${esc(aiData.story_arc)}»</p>` : ''}
+            ${aiData.director_notes?.length ? `<div class="dir-notes">
+              <p class="mlb" style="margin:14px 0 6px">Informe del director</p>
+              ${aiData.director_notes.map(n => `<p>${esc(n)}</p>`).join('')}</div>` : ''}
+            ${aiData.highlights?.length ? `<p class="mlb" style="margin:14px 0 6px">Momentos — tap para saltar</p>
+            <div class="chips">${aiData.highlights.map(h =>
+              `<button class="chip tc mom" data-t="${+h.t || 0}">▶ ${fmt.dur(+h.t || 0)}${h.type ? ' · ' + esc(h.type) : ''}</button>`).join('')}</div>
+            ${aiData.highlights[0]?.reason ? `<p class="footer-note" style="margin:6px 0 0" id="mom-why">${esc(aiData.highlights[0].reason)}</p>` : ''}` : ''}
+            ${aiData.edit_suggestions?.length ? `<p class="mlb" style="margin:14px 0 6px">Sugerencias de edición</p>
+            <ul class="ai-edits">${aiData.edit_suggestions.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+            ${aiData.uses?.length ? `<p class="mlb" style="margin:14px 0 6px">Úsalo para</p>
+            <ul class="ai-edits">${aiData.uses.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+            ${aiData.hashtags?.length ? `<div class="chips" style="margin-top:12px">
+              ${aiData.hashtags.map(t => `<span class="chip" style="color:var(--accent)">${esc(t)}</span>`).join('')}</div>` : ''}
+            ${aiData.tags?.length ? `<div class="chips" style="margin-top:10px">
               ${aiData.tags.map(t => `<a class="chip" href="index.html?q=${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}
             </div>` : ''}` : `<p class="footer-note">Este clip aún no tiene análisis — pídelo con el botón.</p>`}
           </div>
@@ -240,7 +254,8 @@ const cid = new URLSearchParams(location.search).get('id');
   });
 
   // ---- HUD ----
-  const HUDS = [['alt', 'Altura', 'm'], ['dist', 'Recorrido', ''], ['speed', 'Velocidad', 'km/h'], ['iso', 'ISO', ''], ['shutter', 'Shutter', '']];
+  const HUDS = [['alt', 'Altura', 'm'], ['dist', 'Recorrido', ''], ['speed', 'Velocidad', 'km/h'],
+                ['head', 'Rumbo', ''], ['home', 'Al despegue', 'm'], ['iso', 'ISO', ''], ['shutter', 'Shutter', '']];
   document.getElementById('hud').innerHTML = HUDS.map(([k, lb]) =>
     `<div><div class="lb">${lb}</div><div class="v" id="hud-${k}">—</div></div>`).join('');
   function showPoint(i) {
@@ -252,10 +267,30 @@ const cid = new URLSearchParams(location.search).get('id');
     set('speed', `${Math.round(speeds[i] || 0)}<small> km/h</small>`);
     set('iso', esc(p.iso));
     set('shutter', `<small>${esc(p.shutter)}</small>`);
+    // rumbo: bearing hacia el siguiente punto — flecha que gira con el dron
+    const q = pts[Math.min(i + 1, pts.length - 1)];
+    const brg = bearing(p, q);
+    const card = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(brg / 45) % 8];
+    set('head', `<span class="hud-arrow" style="transform:rotate(${Math.round(brg)}deg)">➤</span> <small>${card}</small>`);
+    const hm = s.home ? havm(s.home[1], s.home[0], p.lat, p.lon) : null;
+    set('home', hm != null ? `${Math.round(hm)}<small> m</small>` : '—');
     marker?.setLngLat([p.lon, p.lat]);
+    marker?.setRotation(brg);
     cursorAt(i);
   }
   const set = (k, v) => { document.getElementById(`hud-${k}`).innerHTML = v; };
+  const R0 = Math.PI / 180;
+  function bearing(a, b) {
+    const y = Math.sin((b.lon - a.lon) * R0) * Math.cos(b.lat * R0);
+    const x = Math.cos(a.lat * R0) * Math.sin(b.lat * R0) -
+              Math.sin(a.lat * R0) * Math.cos(b.lat * R0) * Math.cos((b.lon - a.lon) * R0);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360 + 270) % 360;  // +270: la flecha ➤ apunta al Este en 0°
+  }
+  function havm(la1, lo1, la2, lo2) {
+    const h = Math.sin((la2 - la1) * R0 / 2) ** 2 +
+              Math.cos(la1 * R0) * Math.cos(la2 * R0) * Math.sin((lo2 - lo1) * R0 / 2) ** 2;
+    return 12742000 * Math.asin(Math.sqrt(h));
+  }
   const seek = t => { if (video) { video.currentTime = t; video.play(); } };
 
   // ---- filmstrip (frame n = segundo n*2) ----
@@ -318,7 +353,7 @@ const cid = new URLSearchParams(location.search).get('id');
       map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-color': '#45A0E6', 'line-width': 2.2 } });
       const el = document.createElement('div');
       el.innerHTML = `<svg width="26" height="26" viewBox="0 0 20 20" style="filter:drop-shadow(0 1px 4px rgba(0,0,0,.9))"><circle cx="10" cy="10" r="5" fill="#45A0E6" stroke="#E6EBF2" stroke-width="1.6"/><circle cx="10" cy="10" r="1.6" fill="#0A0C10"/></svg>`;
-      marker = new maplibregl.Marker({ element: el }).setLngLat(coords[0]).addTo(map);
+      marker = new maplibregl.Marker({ element: el, rotationAlignment: 'map' }).setLngLat(coords[0]).addTo(map);
       map.on('click', 'route', e => {
         let best = 0, bd = Infinity;
         coords.forEach(([lon, lat], i) => {
@@ -338,6 +373,13 @@ const cid = new URLSearchParams(location.search).get('id');
     const i = Math.floor(video.currentTime);
     showPoint(i);
     document.querySelectorAll('#strip img').forEach(im => im.classList.toggle('on', +im.dataset.t === i - (i % 2)));
+  });
+  main.addEventListener('pointerover', e => {
+    const m = e.target.closest('.mom');
+    if (!m || !aiData?.highlights) return;
+    const h = aiData.highlights.find(x => (+x.t || 0) === +m.dataset.t);
+    const why = document.getElementById('mom-why');
+    if (h && why) why.textContent = h.reason || '';
   });
   main.addEventListener('click', e => {
     const b = e.target.closest('[data-t]');

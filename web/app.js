@@ -32,6 +32,9 @@ main.innerHTML = `
       <button class="chip" data-qf="model">${icon('cube')} 3D</button>
       <button class="chip" data-qf="ai">${icon('spark')} AI</button>
       <button class="chip" data-qf="alto">${icon('mountain')} +100 m</button>
+      <button class="chip" data-qf="4k60">${icon('film')} 4K60</button>
+      <button class="chip" data-qf="largo">${icon('clock')} +1 min</button>
+      <button class="chip" data-qf="top">${icon('spark')} Score 6+</button>
       <span class="spacer" style="flex:1"></span>
       <div class="seg" role="group" aria-label="Vista">
       <button data-view="grid" class="on" title="Cuadrícula">${icon('grid')}</button>
@@ -70,11 +73,21 @@ function stats(list) {
   const dist = list.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
   const dur = list.reduce((a, f) => a + f.duration_s, 0);
   const alt = Math.max(0, ...list.map(f => f.stats.max_rel_alt_m || 0));
+  const days = new Set(list.map(f => f.date)).size;
+  const best = Math.max(0, ...list.map(f => ai[f.clip_id]?.travel_score || 0));
   setHTML(document.getElementById('stats'), `
-    <div class="stat"><div class="lb">${icon('drone')} Vuelos</div><div class="v">${list.length}</div></div>
-    <div class="stat"><div class="lb">${icon('route')} Distancia</div><div class="v">${fmt.km(dist)}</div></div>
-    <div class="stat"><div class="lb">${icon('clock')} En el aire</div><div class="v">${fmt.hours(dur)}</div></div>
-    <div class="stat"><div class="lb">${icon('mountain')} Alt máx</div><div class="v">${Math.round(alt)}<small> m</small></div></div>`);
+    <div class="stat"><div class="lb">${icon('drone')} Vuelos</div><div class="v">${list.length}</div>
+      <div class="sub">${days} ${days === 1 ? 'día' : 'días'} de vuelo</div></div>
+    <div class="stat"><div class="lb">${icon('route')} Distancia</div><div class="v">${fmt.km(dist)}</div>
+      <div class="sub">recorrida en total</div></div>
+    <div class="stat"><div class="lb">${icon('clock')} En el aire</div><div class="v">${fmt.hours(dur)}</div>
+      <div class="sub">de metraje real</div></div>
+    <div class="stat"><div class="lb">${icon('mountain')} Alt máx</div><div class="v">${Math.round(alt)}<small> m</small></div>
+      <div class="sub">sobre el despegue</div></div>
+    <div class="stat"><div class="lb">${icon('film')} 4K60</div><div class="v">${list.filter(f => f.resolution === '3840x2160' && f.fps > 45).length}</div>
+      <div class="sub">clips premium</div></div>
+    <div class="stat"><div class="lb">${icon('spark')} Mejor score</div><div class="v">${best}<small>/10</small></div>
+      <div class="sub">según el análisis AI</div></div>`);
 }
 
 const spotKey = f => f.stats?.home ? `${Math.round(f.stats.home[0] / 0.005)}:${Math.round(f.stats.home[1] / 0.005)}` : null;
@@ -85,6 +98,9 @@ function matches(f) {
   if (state.has.has('model') && !models.has(f.clip_id)) return false;
   if (state.has.has('ai') && !ai[f.clip_id]) return false;
   if (state.has.has('alto') && (f.stats.max_rel_alt_m || 0) < 100) return false;
+  if (state.has.has('4k60') && !(f.resolution === '3840x2160' && f.fps > 45)) return false;
+  if (state.has.has('largo') && f.duration_s < 60) return false;
+  if (state.has.has('top') && (ai[f.clip_id]?.travel_score || 0) < 6) return false;
   if (state.tier === 'archived') { if (!f.archived) return false; }
   else if (f.archived) return false;
   if (state.tier !== 'all' && state.tier !== 'archived' && f.tier !== state.tier) return false;
@@ -150,6 +166,7 @@ function render() {
   if (state.view === 'places') { renderPlaces(list); return; }
   if (state.view === 'dates') { renderDates(list); return; }
   grid.className = `grid ${state.view === 'list' ? 'list' : ''}`;
+  grid.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
   grid.innerHTML = list.length ? list.map(card).join('') :
     `<div class="empty" style="grid-column:1/-1">${icon('search')}<p>Sin resultados para esa búsqueda.</p></div>`;
   grid.querySelectorAll('.card').forEach((c, i) => {

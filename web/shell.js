@@ -253,6 +253,12 @@ async function getFlights() {
 }
 // AI viene embebido en flights.json (0 requests extra — clave en móvil)
 async function getAI(cid) {
+  // la página de detalle lee el JSON completo (director_notes, edit_suggestions…);
+  // el embebido de flights.json es solo el resumen para las listas
+  try {
+    const r = await fetch(`${DATA}/ai/${encodeURIComponent(cid)}.json`);
+    if (r.ok) return await r.json();
+  } catch {}
   const fl = await getFlights();
   return fl.find(f => f.clip_id === cid)?.ai || null;
 }
@@ -289,7 +295,7 @@ document.addEventListener('click', e => {
 
 const SAT_STYLE = {
   version: 8,
-  sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 17, attribution: 'Esri World Imagery' } },
+  sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 18, attribution: 'Esri World Imagery' } },
   layers: [{ id: 'sat', type: 'raster', source: 'sat' }],
 };
 const FIT_OPTS = { padding: 50, maxZoom: 17.5 };
