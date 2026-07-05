@@ -78,7 +78,7 @@ check("policy: upload sin srt >=20s = full",
 
 # ---------- measure_dsm (sintético) ----------
 import numpy as np
-from aerobrain_server import measure_dsm
+from aerobrain_server import measure_dsm, check_polygon
 
 with tempfile.TemporaryDirectory() as td:
     mdir = Path(td)
@@ -99,6 +99,20 @@ with tempfile.TemporaryDirectory() as td:
     p = measure_dsm(mdir, {"type": "profile", "points": [poly[0], poly[2]]})
     check("measure: perfil con 121 muestras", len(p["profile"]) == 121)
     check("measure: perfil cruza la pila (max 110)", max(x for x in p["profile"] if x) > 109)
+
+try:
+    check_polygon([[0, 0], [1, 1]])
+    _bad_poly = False
+except ValueError:
+    _bad_poly = True
+check("measure: polígono con <3 vértices rechaza limpio", _bad_poly)
+
+try:
+    check_polygon([[-74, 4], [-73, 4], [-73, 5], [-74, 5]])
+    _huge_poly = False
+except ValueError as e:
+    _huge_poly = "área demasiado grande" in str(e)
+check("measure: polígono gigante rechaza antes de asignar malla", _huge_poly)
 
 # ---------- path containment ----------
 base = Path("/Volumes/SSD/drone-vault").resolve()

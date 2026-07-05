@@ -110,7 +110,7 @@ create table if not exists properties (
   updated_at timestamptz default now()
 );
 
--- ---------- RLS: público lee catálogo, sólo service_role escribe ----------
+-- ---------- RLS + grants: público lee catálogo, sólo service_role escribe ----------
 -- (el catálogo ya es público en vuelos.metislab.work/data — misma exposición)
 do $$ declare t text;
 begin
@@ -118,6 +118,9 @@ begin
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists pub_read on %I', t);
     execute format('create policy pub_read on %I for select using (true)', t);
+    execute format('revoke insert, update, delete on %I from anon, authenticated', t);
+    execute format('grant select on %I to anon, authenticated', t);
+    execute format('grant select, insert, update, delete on %I to service_role', t);
   end loop;
 end $$;
 
@@ -131,7 +134,7 @@ language sql stable as $$
   from ai_analysis a
   where a.embedding is not null
   order by a.embedding <=> query
-  limit k;
+  limit least(greatest(k, 1), 50);
 $$;
 
 -- vuelos que cubren un punto (lon,lat) — consulta espacial PostGIS
@@ -150,9 +153,16 @@ language sql stable as $$
   select f.clip_id, f.date,
          round((st_area(st_intersection(f.footprint::geometry, t.footprint::geometry))
                 / nullif(st_area(t.footprint::geometry), 0) * 100)::numeric, 1)::float
-  from flights f, flights t
+  from flights f
+  join models m on m.clip_id = f.clip_id and m.has_dsm is true,
+       flights t
+  join models tm on tm.clip_id = t.clip_id and tm.has_dsm is true
   where t.clip_id = target and f.clip_id <> target
     and f.footprint is not null and t.footprint is not null
     and st_intersects(f.footprint, t.footprint)
   order by 3 desc;
 $$;
+
+grant execute on function match_flights(vector, int) to anon, authenticated, service_role;
+grant execute on function flights_covering(float, float) to anon, authenticated, service_role;
+grant execute on function overlapping_flights(text) to anon, authenticated, service_role;

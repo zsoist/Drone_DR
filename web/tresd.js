@@ -101,6 +101,16 @@
   try { sys = await (await fetch('data/manifest/system.json')).json(); } catch {}
   models = sys.models || [];
   const flights = await getFlights();
+  function bboxFromCorners(corners) {
+    if (!Array.isArray(corners) || !corners.length) return null;
+    const lons = corners.map(p => Number(p?.[0])).filter(Number.isFinite);
+    const lats = corners.map(p => Number(p?.[1])).filter(Number.isFinite);
+    return lons.length && lats.length ? [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)] : null;
+  }
+  function footprintFor(model) {
+    const f = flights.find(x => x.clip_id === model.clip_id);
+    return f?.stats?.bbox || bboxFromCorners(model.dsm_corners || model.corners);
+  }
 
   const sel = document.getElementById('proj-sel');
   sel.innerHTML = models.length
@@ -223,9 +233,8 @@
       const cf = flights.find(x => x.clip_id === cur.clip_id);
       const bboxOverlap = (a, b) => a && b && !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]);
       const others = models.filter(m => {
-        if (m.clip_id === cur.clip_id || m.has_dsm === false) return false;
-        const mf = flights.find(x => x.clip_id === m.clip_id);
-        return bboxOverlap(cf?.stats?.bbox, mf?.stats?.bbox);
+        if (m.clip_id === cur.clip_id || m.has_dsm !== true) return false;
+        return bboxOverlap(cf?.stats?.bbox || footprintFor(cur), footprintFor(m));
       });
       cmpSel.innerHTML = others.length ? others.map(m => {
         const f = flights.find(x => x.clip_id === m.clip_id);
