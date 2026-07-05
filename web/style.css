@@ -971,3 +971,45 @@ button.exp { text-align: left; cursor: pointer; }
   border-radius: 0 2px 2px 0; box-shadow: 0 0 8px var(--accent);
 }
 .card.scrub .thumb { touch-action: pan-y; }
+
+/* ---- editor de fotos v3: tabs con tinta + sliders custom ---- */
+.photo-modal.pm2 { animation: pm-pop .32s cubic-bezier(.22,1.2,.36,1); }
+@keyframes pm-pop { from { opacity: 0; transform: scale(.94) translateY(14px); } to { opacity: 1; transform: none; } }
+.pm-tabs { position: relative; display: flex; gap: 4px; padding: 3px; margin: 2px 0;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
+.pm-tabs button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 10px; font-size: 12.5px; font-weight: 600; color: var(--text-3);
+  background: none; border: 0; border-radius: 8px; cursor: pointer; position: relative; z-index: 1;
+  transition: color .2s; }
+.pm-tabs button.on { color: var(--text-1); }
+.pm-tabs button svg { width: 14px; height: 14px; }
+.pm-ink { position: absolute; top: 3px; bottom: 3px; left: 3px; width: 0;
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 8px; transition: left .28s cubic-bezier(.4,1.4,.4,1), width .28s cubic-bezier(.4,1.4,.4,1);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 25%, transparent); }
+.pm-group { display: flex; flex-direction: column; gap: 8px; min-height: 118px; }
+.pm-range { -webkit-appearance: none; appearance: none; flex: 1; min-width: 120px; height: 5px;
+  border-radius: 99px; background: var(--surface-2); outline: none; cursor: pointer;
+  transition: box-shadow .2s; }
+.pm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 17px; height: 17px; border-radius: 50%;
+  background: #fff; border: 2.5px solid var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.45);
+  transition: transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .2s; }
+.pm-range::-webkit-slider-thumb:hover { transform: scale(1.2); }
+.pm-range:active::-webkit-slider-thumb { transform: scale(1.35);
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 18%, transparent), 0 2px 8px rgba(0,0,0,.45); }
+.pm-range::-moz-range-thumb { width: 17px; height: 17px; border-radius: 50%;
+  background: #fff; border: 2.5px solid var(--accent); }
+.pm-val { min-width: 36px; text-align: right; font-size: 11.5px; font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums; transition: transform .12s; }
+.pm-row .tool-lb[data-dbl] { cursor: pointer; }
+.pm-row .tool-lb[data-dbl]:hover { color: var(--text-1); }
+@media (max-width: 640px) {
+  .pm-group { min-height: 0; }
+  .pm-tabs button { font-size: 11.5px; padding: 6px 4px; }
+}
+.pm-tabs button { min-width: 0; }
+@media (max-width: 640px) {
+  .pm-tabs button svg { display: none; }
+  .pm-tabs button { padding: 6px 2px; }
+}
