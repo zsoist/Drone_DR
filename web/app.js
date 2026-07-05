@@ -1,42 +1,58 @@
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
 let flights = [], ai = {}, semRank = null, models = new Set();
-let state = { q: '', tier: 'all', sort: 'date', scene: null, semantic: false, spot: null,
+let state = { q: '', tier: 'all', sort: 'date', scene: null, semantic: false, spot: null, has: new Set(),
               view: localStorage.getItem('ab.vview') || 'grid' };
 
 main.innerHTML = `
   <div class="page-head"><h1>Vuelos</h1><span class="count" id="count"></span></div>
   <div class="statgrid" id="stats">${'<div class="sk" style="height:74px"></div>'.repeat(4)}</div>
-  <div class="toolbar">
-    <label class="search">${icon('search')}<input id="q" type="search" placeholder="Buscar por fecha, lugar, tags AI…" autocomplete="off"><kbd>/</kbd></label>
-    <button class="chip" id="sem-toggle" title="Búsqueda semántica AI (por significado)">${icon('spark')} Semántica</button>
-    <select class="ctl" id="tier" aria-label="Filtrar por tier">
-      <option value="all">Todos los tiers</option>
-      <option value="full">Full — con video</option>
-      <option value="standard">Standard</option>
-      <option value="skim">Skim</option>
-      <option value="archived">Archivados</option>
-    </select>
-    <select class="ctl" id="sort" aria-label="Ordenar">
-      <option value="date">Más recientes</option>
-      <option value="dur">Más largos</option>
-      <option value="dist">Más distancia</option>
-      <option value="alt">Más altura</option>
-      <option value="score">Mejor score AI</option>
-    </select>
-    <div class="seg" role="group" aria-label="Vista">
+  <div class="glass tbcard">
+    <div class="tb-row">
+      <label class="search">${icon('search')}<input id="q" type="search" placeholder="Buscar por fecha, lugar, tags AI…" autocomplete="off"><kbd>/</kbd></label>
+      <button class="chip" id="sem-toggle" title="Búsqueda semántica AI (por significado)">${icon('spark')} Semántica</button>
+      <span class="spacer" style="flex:1"></span>
+      <select class="ctl" id="tier" aria-label="Filtrar por tier">
+        <option value="all">Todos los tiers</option>
+        <option value="full">Full — con video</option>
+        <option value="standard">Standard</option>
+        <option value="skim">Skim</option>
+        <option value="archived">Archivados</option>
+      </select>
+      <select class="ctl" id="sort" aria-label="Ordenar">
+        <option value="date">Más recientes</option>
+        <option value="dur">Más largos</option>
+        <option value="dist">Más distancia</option>
+        <option value="alt">Más altura</option>
+        <option value="score">Mejor score AI</option>
+      </select>
+    </div>
+    <div class="tb-row">
+      <button class="chip" data-qf="video">${icon('play')} Video</button>
+      <button class="chip" data-qf="model">${icon('cube')} 3D</button>
+      <button class="chip" data-qf="ai">${icon('spark')} AI</button>
+      <button class="chip" data-qf="alto">${icon('mountain')} +100 m</button>
+      <span class="spacer" style="flex:1"></span>
+      <div class="seg" role="group" aria-label="Vista">
       <button data-view="grid" class="on" title="Cuadrícula">${icon('grid')}</button>
       <button data-view="list" title="Lista">${icon('list')}</button>
       <button data-view="map" title="Mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
       <button data-view="places" title="Lugares">${icon('pin')}<span class="seg-lb">Lugares</span></button>
       <button data-view="dates" title="Fechas">${icon('cal')}<span class="seg-lb">Fechas</span></button>
+      </div>
     </div>
+    <div class="chips" id="scene-chips"></div>
   </div>
-  <div class="chips" id="scene-chips" style="margin-bottom:14px"></div>
   <div class="grid" id="grid">${'<div class="sk" style="aspect-ratio:16/11"></div>'.repeat(6)}</div>
   <div id="mapview" style="display:none">
     <div class="panel" style="position:relative">
-      <div id="vmap" style="height:calc(100dvh - 330px);min-height:420px"></div>
+      <div class="tool-row" style="padding:10px 14px;border-bottom:1px solid var(--line)">
+        <span class="tool-lb">Color</span>
+        <button class="chip on" data-mc="uni">Ruta</button>
+        <button class="chip" data-mc="alt">Altura</button>
+        <button class="chip" data-mc="year">Año</button>
+      </div>
+      <div id="vmap" style="height:calc(100dvh - 380px);min-height:400px"></div>
       <button class="map-recenter" id="vm-fit" title="Ver todo">${icon('map')}</button>
     </div>
     <p class="footer-note" style="margin-top:10px">Los filtros y la búsqueda de arriba también
@@ -44,21 +60,31 @@ main.innerHTML = `
   </div>
   <p class="footer-note">Los clips en tier full incluyen video 1080p; standard tienen análisis AI sin proxy; skim solo telemetría. Procesado localmente en el Mac Mini M4.</p>`;
 
+function setHTML(el, html) {
+  if (el.__h === html) return;
+  el.__h = html;
+  el.innerHTML = html;
+}
+
 function stats(list) {
   const dist = list.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
   const dur = list.reduce((a, f) => a + f.duration_s, 0);
   const alt = Math.max(0, ...list.map(f => f.stats.max_rel_alt_m || 0));
-  document.getElementById('stats').innerHTML = `
+  setHTML(document.getElementById('stats'), `
     <div class="stat"><div class="lb">${icon('drone')} Vuelos</div><div class="v">${list.length}</div></div>
     <div class="stat"><div class="lb">${icon('route')} Distancia</div><div class="v">${fmt.km(dist)}</div></div>
     <div class="stat"><div class="lb">${icon('clock')} En el aire</div><div class="v">${fmt.hours(dur)}</div></div>
-    <div class="stat"><div class="lb">${icon('mountain')} Alt máx</div><div class="v">${Math.round(alt)}<small> m</small></div></div>`;
+    <div class="stat"><div class="lb">${icon('mountain')} Alt máx</div><div class="v">${Math.round(alt)}<small> m</small></div></div>`);
 }
 
 const spotKey = f => f.stats?.home ? `${Math.round(f.stats.home[0] / 0.005)}:${Math.round(f.stats.home[1] / 0.005)}` : null;
 function matches(f) {
   if (state.semantic && semRank) return semRank.has(f.clip_id);
   if (state.spot && spotKey(f) !== state.spot) return false;
+  if (state.has.has('video') && !f.has_proxy) return false;
+  if (state.has.has('model') && !models.has(f.clip_id)) return false;
+  if (state.has.has('ai') && !ai[f.clip_id]) return false;
+  if (state.has.has('alto') && (f.stats.max_rel_alt_m || 0) < 100) return false;
   if (state.tier === 'archived') { if (!f.archived) return false; }
   else if (f.archived) return false;
   if (state.tier !== 'all' && state.tier !== 'archived' && f.tier !== state.tier) return false;
@@ -102,10 +128,10 @@ function card(f) {
 
 function chipsRow() {
   const scenes = [...new Set(flights.map(f => ai[f.clip_id]?.scene_type).filter(Boolean))];
-  document.getElementById('scene-chips').innerHTML =
+  setHTML(document.getElementById('scene-chips'),
     (state.spot && spots[state.spot] ? `<button class="chip on" data-clearspot>✕ ${esc(spots[state.spot].name)}</button>` : '') +
     scenes.map(sc =>
-      `<button class="chip ${state.scene === sc ? 'on' : ''}" data-scene="${esc(sc)}">${esc(sc)}</button>`).join('');
+      `<button class="chip ${state.scene === sc ? 'on' : ''}" data-scene="${esc(sc)}">${esc(sc)}</button>`).join(''));
 }
 
 function render() {
@@ -237,8 +263,12 @@ function renderMap(list) {
     });
     vmap.on('load', () => {
       fetch(`${DATA}/manifest/routes.json`).then(r => r.json()).then(({ routes }) => {
-        const features = routes.map(r => ({ type: 'Feature', properties: { cid: r.cid },
-                                            geometry: { type: 'LineString', coordinates: r.line } }));
+        const byId = Object.fromEntries(flights.map(f => [f.clip_id, f]));
+        const features = routes.map(r => ({ type: 'Feature',
+          properties: { cid: r.cid,
+                        alt: Math.round(byId[r.cid]?.stats?.max_rel_alt_m || 0),
+                        year: (byId[r.cid]?.date || '').slice(0, 4) },
+          geometry: { type: 'LineString', coordinates: r.line } }));
         vmap.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features } });
         vmap.addLayer({ id: 'routes-glow', type: 'line', source: 'routes', paint: { 'line-color': '#45A0E6', 'line-width': 6, 'line-opacity': 0.18 } });
         vmap.addLayer({ id: 'routes', type: 'line', source: 'routes', paint: { 'line-color': '#45A0E6', 'line-width': 1.8, 'line-opacity': 0.9 } });
@@ -268,6 +298,20 @@ function renderMap(list) {
   }
   vmap.resize();
   if (vmapLoaded) applyMapFilter(ids);
+  if (!renderMap._colorWired) {
+    renderMap._colorWired = true;
+    const COLORS = {
+      uni: '#45A0E6',
+      alt: ['interpolate', ['linear'], ['get', 'alt'],
+            0, '#45A0E6', 80, '#52C79A', 150, '#E0A458', 260, '#D96A6A'],
+      year: ['match', ['get', 'year'], '2025', '#E0A458', '2026', '#45A0E6', '#8A97A8'],
+    };
+    document.querySelectorAll('[data-mc]').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('[data-mc]').forEach(x => x.classList.toggle('on', x === b));
+      if (vmap.getLayer('routes')) vmap.setPaintProperty('routes', 'line-color', COLORS[b.dataset.mc]);
+      if (vmap.getLayer('routes-glow')) vmap.setPaintProperty('routes-glow', 'line-color', COLORS[b.dataset.mc]);
+    }));
+  }
   Object.entries(spotPills).forEach(([k, el]) => {
     el.classList.toggle('on', k === state.spot);
     el.style.display = spots[k].flights.some(f => ids.includes(f.clip_id)) ? '' : 'none';
@@ -346,6 +390,11 @@ document.getElementById('sem-toggle').addEventListener('click', () => {
   if (!state.semantic) { semRank = null; }
   render();
 });
+document.querySelectorAll('[data-qf]').forEach(b => b.addEventListener('click', () => {
+  b.classList.toggle('on');
+  state.has.has(b.dataset.qf) ? state.has.delete(b.dataset.qf) : state.has.add(b.dataset.qf);
+  render();
+}));
 document.getElementById('tier').addEventListener('change', e => { state.tier = e.target.value; render(); });
 document.getElementById('sort').addEventListener('change', e => { state.sort = e.target.value; render(); });
 document.querySelectorAll('[data-view]').forEach(b =>

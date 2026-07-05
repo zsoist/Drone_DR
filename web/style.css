@@ -697,3 +697,17 @@ details.explain b { color: var(--text); font-weight: 600; }
 .panel.clpsd > .ph::after { transform: rotate(-90deg); }
 .panel.clpsd > *:not(.ph) { display: none !important; }
 .panel.clpsd > .ph { border-bottom: none; }
+
+/* ---------- glass toolbar (Vuelos) ---------- */
+.glass {
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+}
+.tbcard { padding: 12px 14px; margin-bottom: 16px; }
+.tb-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tb-row + .tb-row { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.tbcard .chips { margin-top: 10px; }
+.tbcard .chips:empty { display: none; }
+.tbcard .chip { display: inline-flex; align-items: center; gap: 5px; }
+.tbcard .chip svg.ic { width: 11px; height: 11px; }
