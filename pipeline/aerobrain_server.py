@@ -519,6 +519,20 @@ class H(BaseHTTPRequestHandler):
                 if j["status"] == "done" and j.get("artifact"):
                     j["artifact_exists"] = (VAULT / j["artifact"]).exists()
             return self.send_json({"jobs": jobs})
+        if self.path.startswith("/api/capture_report"):
+            if not self.auth():
+                return
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            cid = re.sub(r"[^\w-]", "", (qs.get("clip_id") or [""])[0])
+            if not cid:
+                return self.send_json({"error": "clip_id requerido"}, 400)
+            import capture_quality
+            try:
+                rep = (None if "force" in qs else capture_quality.cached(cid)) or capture_quality.analyze(cid)
+            except Exception as e:
+                return self.send_json({"error": str(e)[-200:]}, 500)
+            rep.pop("samples", None)
+            return self.send_json(rep)
         if self.path.startswith("/api/sd_scan"):
             if not self.auth():
                 return

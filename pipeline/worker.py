@@ -55,8 +55,13 @@ def run_3d(j: dict):
     container = f"odm-{j['id']}"
     jobstore.update(j["id"], container=container)
 
-    jobstore.update(j["id"], detail="1/3 frames + geotag", stage="frames", progress=0.05)
-    if jobstore.run_tracked(j["id"], ["python3", str(PIPE / "odm_prep.py"), cid],
+    frame_profile = {"rapido": "preview", "estandar": "balanced", "alta": "premium"}[
+        j["spec"].get("preset", "estandar") if j["spec"].get("preset", "estandar") in
+        ("rapido", "estandar", "alta") else "estandar"]
+    jobstore.update(j["id"], detail="1/3 frames + geotag + selección adaptativa",
+                    stage="frames", progress=0.05)
+    if jobstore.run_tracked(j["id"], ["python3", str(PIPE / "odm_prep.py"), cid,
+                                      "--profile", frame_profile],
                             timeout=1800) != 0:
         raise RuntimeError("odm_prep falló")
 

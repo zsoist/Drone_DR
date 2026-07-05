@@ -258,6 +258,7 @@
           <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m alt</span></div>
         </div>`).join('')}</div>
       <video id="m-prev" class="m-prev" muted playsinline controls preload="metadata"></video>
+      <div id="m-score"></div>
       <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
       <input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — órbita 60 m" style="width:100%">
       <p class="mlb">Calidad</p>
@@ -266,7 +267,28 @@
           <b>${p.n}</b><span class="mono">${p.t}</span><small>${p.d}</small></div>`).join('')}</div>
       <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('cube')} Encolar procesamiento</button>`);
     const prev = ov.querySelector('#m-prev');
-    const setPrev = cid => { prev.src = `data/proxies/${cid}.mp4`; };
+    const scoreBox = ov.querySelector('#m-score');
+    async function loadScore(cid) {
+      scoreBox.innerHTML = '<div class="sk" style="height:34px;border-radius:8px;margin-top:10px"></div>';
+      try {
+        const r = await fetch(`/api/capture_report?clip_id=${encodeURIComponent(cid)}`);
+        const rep = await r.json();
+        if (rep.error) { scoreBox.innerHTML = ''; return; }
+        const su = rep.suitability || {};
+        const col = v => v >= 7 ? 'var(--mint)' : v >= 4 ? 'var(--amber)' : 'var(--red)';
+        scoreBox.innerHTML = `
+          <div class="tool-row" style="margin-top:10px;padding:0">
+            <span class="tool-lb">Captura</span>
+            <span class="chip" style="color:${col(su.ortho_dsm)}">Ortho ${su.ortho_dsm}/10</span>
+            <span class="chip" style="color:${col(su.mesh)}">Malla ${su.mesh}/10</span>
+            <span class="chip" style="color:${col(su.splat)}">Splat ${su.splat}/10</span>
+            <span class="chip">${rep.recommended_frames} frames</span>
+          </div>
+          ${(rep.warnings || []).slice(0, 2).map(w =>
+            `<p class="footer-note" style="margin:6px 0 0;color:var(--amber)">${esc(w)}</p>`).join('')}`;
+      } catch { scoreBox.innerHTML = ''; }
+    }
+    const setPrev = cid => { prev.src = `data/proxies/${cid}.mp4`; loadScore(cid); };
     setPrev(candidates[0].clip_id);
     ov.querySelector('.mflights').addEventListener('click', e => {
       const c = e.target.closest('.mflight');

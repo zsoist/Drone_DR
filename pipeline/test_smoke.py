@@ -254,6 +254,29 @@ check("viewer mesh: vertices re-centrados cerca del origen",
 check("viewer mesh: caras y mtllib intactos",
       "f 1 2 1" in (_md / "viewer.obj").read_text() and "mtllib m.mtl" in (_md / "viewer.obj").read_text())
 
+# --- capture intelligence ---
+from capture_quality import sharpness, choose_frames, gps_metrics
+from PIL import Image as _Img, ImageFilter as _ImF
+_rng = np.random.default_rng(7)
+_sharp_img = _Img.fromarray((_rng.random((240, 320)) * 255).astype("uint8"))
+_blur_img = _sharp_img.filter(_ImF.GaussianBlur(6))
+check("captura: imagen nítida puntúa más que borrosa",
+      sharpness(_sharp_img) > sharpness(_blur_img) * 3)
+_track = [{"t": i, "lon": -74.0 + i * 0.00005, "lat": 4.0, "rel_alt": 60} for i in range(0, 300)]
+_times = [round(i + 0.5, 1) for i in range(0, 300)]
+_sh = {t: 100.0 for t in _times}
+_sel = choose_frames(_track, _times, _sh, "preview")
+check("captura: presupuesto de frames respetado (preview <= 160)", 0 < len(_sel) <= 160)
+_sh_blur = dict(_sh)
+for t in _times[:80]:
+    _sh_blur[t] = 1.0
+_sel2 = choose_frames(_track, _times, _sh_blur, "balanced")
+check("captura: los frames borrosos se descartan",
+      all(x["t"] not in set(_times[:20]) for x in _sel2[:5]))
+_gap_pts = [{"t": t, "lon": -74.0 + t * 0.0001, "lat": 4.0, "rel_alt": 50}
+            for t in [0, 1, 2, 10, 11, 20, 21]]
+check("captura: huecos GPS detectados", gps_metrics(_gap_pts)["gaps"] == 2)
+
 # --- presets ODM del worker ---
 import worker
 check("presets: rapido/estandar/alta definidos",
