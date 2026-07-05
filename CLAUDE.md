@@ -9,3 +9,6 @@
 - R2 requires one-time dashboard activation (error 10042) + card on file — AVOIDED by design: media is served from the vault via Cloudflare Tunnel ($0).
 - `cloudflared tunnel route dns` uses the default cert zone (danielreyes.work); for metislab.work pass TUNNEL_ORIGIN_CERT=~/.cloudflared/zone-certs/metislab.work.pem. (A stray CNAME vuelos.metislab.work.danielreyes.work was created by the first attempt — harmless, delete in dash when convenient.)
 - Media serving = python http.server behind the tunnel; if video seeking ever feels slow, swap to Caddy (proper Range support).
+- ODM photogrammetry from video frames REQUIRES GPS EXIF geotags (from the SRT track
+  via pipeline/odm_prep.py) — without them the orthophoto comes out 67x66px garbage.
+  ODM runs in Docker (-m 7g, --fast-orthophoto) fine on the M4 alongside OpenBrain.
