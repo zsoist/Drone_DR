@@ -150,15 +150,19 @@ corners = [[gt[0], gt[3]], [gt[0] + w * gt[1], gt[3]],
            [gt[0] + w * gt[1], gt[3] + h * gt[5]], [gt[0], gt[3] + h * gt[5]]]
 # DSM como binario plano float32: el host lo lee con numpy sin GDAL (mediciones rápidas)
 gdal.Translate('/d/.web_dsm.envi', dsm, format='ENVI', outputType=gdal.GDT_Float32)
-interval = 2 if (hi - lo) > 12 else 1
+interval = 5 if (hi - lo) > 25 else 2 if (hi - lo) > 12 else 1
+contour_w = min(450, dsm.RasterXSize)
+gdal.Translate('/d/.web_dsm_contours.tif', dsm, format='GTiff', width=contour_w, resampleAlg='bilinear')
+contour_ds = gdal.Open('/d/.web_dsm_contours.tif')
 ds_out = ogr.GetDriverByName('GeoJSON').CreateDataSource('/d/.web_contours.geojson')
 srs = osr.SpatialReference(); srs.ImportFromEPSG(4326)
 lyr = ds_out.CreateLayer('contours', srs)
 lyr.CreateField(ogr.FieldDefn('elev', ogr.OFTReal))
-gdal.ContourGenerate(dsm.GetRasterBand(1), interval, 0, [], 0, 0, lyr, -1, 0)
+gdal.ContourGenerate(contour_ds.GetRasterBand(1), interval, 0, [], 0, 0, lyr, -1, 0)
 ds_out = None
 print(json.dumps({"dsm_min": round(lo, 1), "dsm_max": round(hi, 1),
                   "contour_interval": interval, "dsm_corners": corners,
+                  "contour_max_width": contour_w,
                   "dsm_shape": [h, w], "dsm_gt": list(gt),
                   "dsm_nodata": dsm.GetRasterBand(1).GetNoDataValue()}))
 EOF""")

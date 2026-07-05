@@ -178,14 +178,6 @@
         omap.addSource('hills', { type: 'image', url: `${base}/${cur.hills_asset || 'hillshade.png'}`, coordinates: cur.dsm_corners });
         omap.addLayer({ id: 'hills', type: 'raster', source: 'hills',
                         layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.6 } });
-        omap.addSource('contours', { type: 'geojson', data: `${base}/contours.geojson` });
-        // curvas por color de altura (amarillo=alto, ámbar oscuro=bajo) — sin glyphs,
-        // así el estilo satelital offline no necesita servidor de fuentes
-        omap.addLayer({ id: 'contours', type: 'line', source: 'contours',
-                        layout: { visibility: 'none' },
-                        paint: { 'line-width': 1.1, 'line-opacity': 0.9,
-                                 'line-color': ['interpolate', ['linear'], ['get', 'elev'],
-                                   (cur.dsm_min || 0), '#6b4a1f', (cur.dsm_max || 100), '#f2c14e'] } });
       }
       // capa de dibujo para mediciones
       omap.addSource('draw', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -228,10 +220,23 @@
   }
   document.querySelectorAll('[data-layer]').forEach(b => b.addEventListener('click', () => {
     b.classList.toggle('on');
+    const id = b.dataset.layer;
     const vis = b.classList.contains('on') ? 'visible' : 'none';
-    const ids = [b.dataset.layer];
-    ids.forEach(id => omap.getLayer(id) && omap.setLayoutProperty(id, 'visibility', vis));
+    if (id === 'contours' && vis === 'visible') ensureContours();
+    omap.getLayer(id) && omap.setLayoutProperty(id, 'visibility', vis);
   }));
+  function ensureContours() {
+    if (!cur?.dsm_corners || omap.getLayer('contours')) return;
+    const base = `data/models/${cur.clip_id}`;
+    omap.addSource('contours', { type: 'geojson', data: `${base}/contours.geojson` });
+    // Curvas por color de altura (amarillo=alto, ámbar oscuro=bajo). Se cargan
+    // sólo a demanda: algunos vuelos generan GeoJSON pesado y no debe frenar el mapa inicial.
+    omap.addLayer({ id: 'contours', type: 'line', source: 'contours',
+                    layout: { visibility: 'visible' },
+                    paint: { 'line-width': 1.1, 'line-opacity': 0.9,
+                             'line-color': ['interpolate', ['linear'], ['get', 'elev'],
+                               (cur.dsm_min || 0), '#6b4a1f', (cur.dsm_max || 100), '#f2c14e'] } });
+  }
   document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('[data-tool]').forEach(x => x.classList.remove('on'));
     tool = tool === b.dataset.tool ? null : b.dataset.tool;
