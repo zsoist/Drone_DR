@@ -56,6 +56,13 @@ const cid = new URLSearchParams(location.search).get('id');
           </div>
           <div class="hud" id="hud"></div>
         </div>
+        ${pts.length ? `<div class="panel rise" style="margin-top:16px">
+          <div class="ph">${icon('activity')} Telemetría en vivo — click en la curva para saltar el video</div>
+          <div class="pb" style="padding:0">
+            <div class="chart-wrap" id="ch-alt"></div>
+            <div class="chart-wrap" id="ch-speed" style="border-top:1px solid var(--line)"></div>
+          </div>
+    </div>` : ''}
         ${meta.frame_count ? `<div class="panel" style="margin-top:16px">
           <div class="ph">${icon('film')} Filmstrip — click para saltar</div>
           <div class="filmstrip" id="strip"></div>
@@ -166,13 +173,7 @@ const cid = new URLSearchParams(location.search).get('id');
       </div>
     </div>
 
-    ${pts.length ? `<div class="panel rise" style="margin-top:16px">
-      <div class="ph">${icon('activity')} Telemetría en vivo — click en la curva para saltar el video</div>
-      <div class="pb" style="padding:0">
-        <div class="chart-wrap" id="ch-alt"></div>
-        <div class="chart-wrap" id="ch-speed" style="border-top:1px solid var(--line)"></div>
-      </div>
-    </div>` : ''}`;
+`;
 
   // ---- video ----
   const slot = document.getElementById('video-slot');
@@ -259,25 +260,41 @@ const cid = new URLSearchParams(location.search).get('id');
     ov.className = 'login-ov';
     ov.innerHTML = `
       <div class="photo-modal pm2">
-        <canvas id="pm-cv"></canvas>
+        <div class="pm-stage"><canvas id="pm-cv"></canvas></div>
         <div class="pm-tools">
-          <div class="pm-row"><span class="tool-lb" data-tip="Luz general de la imagen">Brillo</span>
-            <input type="range" data-f="bright" min="60" max="140" value="100"></div>
-          <div class="pm-row"><span class="tool-lb" data-tip="Diferencia entre luces y sombras">Contraste</span>
-            <input type="range" data-f="contrast" min="60" max="140" value="100"></div>
+          <div class="pm-row"><span class="tool-lb">Preset</span>
+            <button class="chip on" data-preset="orig">Original</button>
+            <button class="chip" data-preset="cine">Cine</button>
+            <button class="chip" data-preset="vivid">Vivid</button>
+            <button class="chip" data-preset="dorado">Dorado</button>
+            <button class="chip" data-preset="bn">B&N</button></div>
+          <div class="pm-row"><span class="tool-lb" data-tip="Luz general">Brillo</span>
+            <input type="range" data-f="bright" min="60" max="140" value="100">
+            <span class="mono pm-val" data-v="bright">100</span></div>
+          <div class="pm-row"><span class="tool-lb" data-tip="Luces vs sombras">Contraste</span>
+            <input type="range" data-f="contrast" min="60" max="140" value="100">
+            <span class="mono pm-val" data-v="contrast">100</span></div>
           <div class="pm-row"><span class="tool-lb" data-tip="Intensidad del color">Saturación</span>
-            <input type="range" data-f="sat" min="0" max="200" value="100"></div>
-          <div class="pm-row"><span class="tool-lb" data-tip="Borde alrededor de la foto">Marco</span>
-            <button class="chip on" data-frame="none">Sin marco</button>
-            <button class="chip" data-frame="white">Blanco</button>
-            <button class="chip" data-frame="black">Negro</button></div>
-          <div class="pm-row"><span class="tool-lb" data-tip="Resolución del export">Tamaño</span>
-            <button class="chip on" data-size="4k">4K</button>
-            <button class="chip" data-size="1080">1080p</button>
-            <button class="chip" data-size="sq">Cuadrado</button></div>
+            <input type="range" data-f="sat" min="0" max="200" value="100">
+            <span class="mono pm-val" data-v="sat">100</span></div>
+          <div class="pm-row"><span class="tool-lb" data-tip="Cálido ↔ frío">Temperatura</span>
+            <input type="range" data-f="temp" min="-40" max="40" value="0">
+            <span class="mono pm-val" data-v="temp">0</span></div>
+          <div class="pm-row"><span class="tool-lb" data-tip="Oscurece los bordes">Viñeta</span>
+            <input type="range" data-f="vig" min="0" max="60" value="0">
+            <span class="mono pm-val" data-v="vig">0</span></div>
+          <div class="pm-row"><span class="tool-lb" data-tip="Recorte optimizado para cada red">Formato</span>
+            <button class="chip on" data-ratio="orig">Original</button>
+            <button class="chip" data-ratio="45">4:5 Feed</button>
+            <button class="chip" data-ratio="11">1:1</button>
+            <button class="chip" data-ratio="916">9:16 Story</button>
+            <button class="chip" data-ratio="169">16:9</button></div>
+          <div class="pm-row"><span class="tool-lb" data-tip="Resolución del export">Calidad</span>
+            <button class="chip" data-size="ig">Instagram (1080)</button>
+            <button class="chip on" data-size="max">Máxima (4K)</button></div>
         </div>
         <div class="pm-bar">
-          <button class="btn" data-reset data-tip="Volver a la foto original">Reset</button>
+          <button class="btn" data-reset data-tip="Volver al original">Reset</button>
           <span class="spacer" style="flex:1"></span>
           <button class="btn primary" data-sharephoto>${icon('ext')} Guardar en Fotos</button>
           <button class="btn" data-dl>${icon('dl')} Descargar</button>
@@ -286,43 +303,116 @@ const cid = new URLSearchParams(location.search).get('id');
       </div>`;
     document.body.appendChild(ov);
 
-    // --- editor: canvas + filtros en vivo (estilo CapCut, gratis y local) ---
+    // --- editor v2: preview = CSS filter (Safari OK) · export = matemática de píxeles exacta ---
     const cv = ov.querySelector('#pm-cv');
     const ctx = cv.getContext('2d');
     const img = new Image();
-    const fx = { bright: 100, contrast: 100, sat: 100, frame: 'none', size: '4k' };
-    function render() {
-      if (!img.naturalWidth) return;
+    const DEF = { bright: 100, contrast: 100, sat: 100, temp: 0, vig: 0, ratio: 'orig', size: 'max' };
+    const fx = { ...DEF };
+    const RATIOS = { orig: null, '45': 4 / 5, '11': 1, '916': 9 / 16, '169': 16 / 9 };
+
+    function crop() {
       let sw = img.naturalWidth, sh = img.naturalHeight, sx = 0, sy = 0;
-      if (fx.size === 'sq') { const m = Math.min(sw, sh); sx = (sw - m) / 2; sy = (sh - m) / 2; sw = sh = m; }
-      const scale = fx.size === '1080' ? 1920 / sw : 1;
-      const pad = fx.frame === 'none' ? 0 : Math.round(sw * scale * 0.035);
-      cv.width = Math.round(sw * scale) + pad * 2;
-      cv.height = Math.round(sh * scale) + pad * 2;
-      if (pad) { ctx.fillStyle = fx.frame === 'white' ? '#fff' : '#0a0c10'; ctx.fillRect(0, 0, cv.width, cv.height); }
-      ctx.filter = `brightness(${fx.bright}%) contrast(${fx.contrast}%) saturate(${fx.sat}%)`;
-      ctx.drawImage(img, sx, sy, sw, sh, pad, pad, cv.width - pad * 2, cv.height - pad * 2);
-      ctx.filter = 'none';
+      const r = RATIOS[fx.ratio];
+      if (r) {
+        if (sw / sh > r) { const w = sh * r; sx = (sw - w) / 2; sw = w; }
+        else { const h = sw / r; sy = (sh - h) / 2; sh = h; }
+      }
+      return { sx, sy, sw, sh };
     }
-    img.onload = render;
+    function draw() {
+      if (!img.naturalWidth) return;
+      const { sx, sy, sw, sh } = crop();
+      const maxW = fx.size === 'ig' ? 1080 : 3840;
+      const sc = Math.min(1, maxW / sw);
+      cv.width = Math.round(sw * sc);
+      cv.height = Math.round(sh * sc);
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+      // temperatura y viñeta se DIBUJAN (funcionan igual en preview y export)
+      if (fx.temp) {
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.fillStyle = fx.temp > 0
+          ? `rgba(255,140,40,${Math.abs(fx.temp) / 130})`
+          : `rgba(60,130,255,${Math.abs(fx.temp) / 130})`;
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      if (fx.vig) {
+        const g = ctx.createRadialGradient(cv.width / 2, cv.height / 2, Math.min(cv.width, cv.height) * 0.42,
+                                           cv.width / 2, cv.height / 2, Math.max(cv.width, cv.height) * 0.75);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        g.addColorStop(1, `rgba(0,0,0,${fx.vig / 80})`);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, cv.width, cv.height);
+      }
+      // brillo/contraste/saturación: CSS en el preview (instantáneo, Safari incluido)
+      cv.style.filter = `brightness(${fx.bright}%) contrast(${fx.contrast}%) saturate(${fx.sat}%)`;
+    }
+    img.onload = draw;
     img.src = d.url;
+
+    // export: aplica B/C/S por píxel para que el archivo salga EXACTO al preview
+    function bakePixels() {
+      const b = fx.bright / 100, c = fx.contrast / 100, st = fx.sat / 100;
+      if (b === 1 && c === 1 && st === 1) return;
+      const im = ctx.getImageData(0, 0, cv.width, cv.height);
+      const d8 = im.data;
+      for (let i = 0; i < d8.length; i += 4) {
+        let r = d8[i] * b, g = d8[i + 1] * b, bl = d8[i + 2] * b;
+        r = (r - 128) * c + 128; g = (g - 128) * c + 128; bl = (bl - 128) * c + 128;
+        const lum = r * 0.299 + g * 0.587 + bl * 0.114;
+        d8[i] = Math.max(0, Math.min(255, lum + (r - lum) * st));
+        d8[i + 1] = Math.max(0, Math.min(255, lum + (g - lum) * st));
+        d8[i + 2] = Math.max(0, Math.min(255, lum + (bl - lum) * st));
+      }
+      ctx.putImageData(im, 0, 0);
+    }
+    async function exportBlob() {
+      draw();                                   // geometría + temp + viñeta frescas
+      bakePixels();                             // B/C/S horneados en píxeles
+      const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
+      draw();                                   // restaura el preview limpio
+      return blob;
+    }
+
+    const PRESETS = {
+      orig: { bright: 100, contrast: 100, sat: 100, temp: 0, vig: 0 },
+      cine: { bright: 98, contrast: 112, sat: 92, temp: -8, vig: 24 },
+      vivid: { bright: 104, contrast: 108, sat: 138, temp: 4, vig: 0 },
+      dorado: { bright: 104, contrast: 104, sat: 112, temp: 26, vig: 14 },
+      bn: { bright: 102, contrast: 118, sat: 0, temp: 0, vig: 18 },
+    };
+    function syncUI() {
+      ov.querySelectorAll('input[data-f]').forEach(r => { r.value = fx[r.dataset.f]; });
+      ov.querySelectorAll('.pm-val').forEach(v => { v.textContent = fx[v.dataset.v]; });
+      ov.querySelectorAll('[data-ratio]').forEach(x => x.classList.toggle('on', x.dataset.ratio === fx.ratio));
+      ov.querySelectorAll('[data-size]').forEach(x => x.classList.toggle('on', x.dataset.size === fx.size));
+    }
     ov.addEventListener('input', ev => {
-      if (ev.target.dataset.f) { fx[ev.target.dataset.f] = +ev.target.value; render(); }
+      const f = ev.target.dataset.f;
+      if (!f) return;
+      fx[f] = +ev.target.value;
+      ov.querySelector(`.pm-val[data-v="${f}"]`).textContent = fx[f];
+      ov.querySelectorAll('[data-preset]').forEach(x => x.classList.remove('on'));
+      draw();
     });
     ov.addEventListener('click', ev => {
-      const fb = ev.target.closest('[data-frame]');
-      if (fb) { fx.frame = fb.dataset.frame; ov.querySelectorAll('[data-frame]').forEach(x => x.classList.toggle('on', x === fb)); render(); }
+      const pb = ev.target.closest('[data-preset]');
+      if (pb) {
+        Object.assign(fx, PRESETS[pb.dataset.preset]);
+        ov.querySelectorAll('[data-preset]').forEach(x => x.classList.toggle('on', x === pb));
+        syncUI(); draw(); return;
+      }
+      const rb = ev.target.closest('[data-ratio]');
+      if (rb) { fx.ratio = rb.dataset.ratio; syncUI(); draw(); return; }
       const sb = ev.target.closest('[data-size]');
-      if (sb) { fx.size = sb.dataset.size; ov.querySelectorAll('[data-size]').forEach(x => x.classList.toggle('on', x === sb)); render(); }
+      if (sb) { fx.size = sb.dataset.size; syncUI(); draw(); return; }
       if (ev.target.closest('[data-reset]')) {
-        Object.assign(fx, { bright: 100, contrast: 100, sat: 100, frame: 'none', size: '4k' });
-        ov.querySelectorAll('input[data-f]').forEach(r => { r.value = 100; });
-        ov.querySelectorAll('[data-frame],[data-size]').forEach(x =>
-          x.classList.toggle('on', x.dataset.frame === 'none' || x.dataset.size === '4k'));
-        render();
+        Object.assign(fx, DEF);
+        ov.querySelectorAll('[data-preset]').forEach(x => x.classList.toggle('on', x.dataset.preset === 'orig'));
+        syncUI(); draw();
       }
     });
-    const exportBlob = () => new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
     ov.querySelector('[data-sharephoto]').addEventListener('click', async ev => {
       const btn = ev.currentTarget, orig = btn.innerHTML;
       btn.innerHTML = 'Preparando…';
