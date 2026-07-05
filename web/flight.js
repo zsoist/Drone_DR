@@ -32,7 +32,7 @@ const cid = new URLSearchParams(location.search).get('id');
           <div id="video-slot"></div>
           <div class="toolbar" style="padding:10px 12px;margin:0;border-top:1px solid var(--line)">
             <button class="btn primary" id="btn-photo">${icon('iso')} Foto 4K</button>
-            ${meta.raw_rel ? `<div class="seg"><button id="q-hd" class="on">1080p</button><button id="q-4k">4K</button></div>` : ''}
+            <div class="seg" id="q-seg"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd">1080p</button>' : ''}${meta.raw_rel ? '<button data-q="4k">4K</button>' : ''}</div>
             <span class="spacer"></span>
             <button class="btn" id="btn-label" title="Renombrar">${icon('tag')}</button>
             <button class="btn" id="btn-arch" title="${meta.archived ? 'Desarchivar' : 'Archivar'}">${icon('db')}</button>
@@ -130,25 +130,47 @@ const cid = new URLSearchParams(location.search).get('id');
   // ---- video ----
   const slot = document.getElementById('video-slot');
   let video = null;
-  const srcHD = `${DATA}/proxies/${cid}.mp4`;
-  const src4K = meta.raw_rel ? `${DATA}/raw/${meta.raw_rel}` : null;
-  if (meta.has_proxy || src4K) {
-    slot.innerHTML = `<video src="${meta.has_proxy ? srcHD : src4K}" controls playsinline webkit-playsinline preload="metadata" poster="${DATA}/thumbs/${cid}.jpg"></video>`;
+  const SRC = {
+    '720': meta.has_proxy720 ? `${DATA}/proxies720/${cid}.mp4` : null,
+    hd: meta.has_proxy ? `${DATA}/proxies/${cid}.mp4` : null,
+    '4k': meta.raw_rel ? `${DATA}/raw/${meta.raw_rel}` : null,
+  };
+  // Auto: red lenta o pantalla chica → 720; si no, 1080
+  function autoPick() {
+    const net = navigator.connection || {};
+    const slow = (net.downlink && net.downlink < 5) || /(^|-)(2|3)g$/.test(net.effectiveType || '');
+    if (SRC['720'] && (slow || innerWidth < 820)) return '720';
+    return SRC.hd ? 'hd' : SRC['720'] ? '720' : '4k';
+  }
+  let quality = localStorage.getItem('ab.vq') || 'auto';
+  const resolved = () => quality === 'auto' ? autoPick() : (SRC[quality] ? quality : autoPick());
+  if (SRC.hd || SRC['720'] || SRC['4k']) {
+    slot.innerHTML = `<video src="${SRC[resolved()]}" controls playsinline webkit-playsinline preload="metadata" poster="${DATA}/thumbs/${cid}.jpg"></video>`;
     video = slot.querySelector('video');
   } else {
     slot.innerHTML = `<img src="${DATA}/thumbs/${cid}.jpg" style="width:100%;display:block" alt="">`;
   }
+  function paintQ() {
+    document.querySelectorAll('#q-seg [data-q]').forEach(b =>
+      b.classList.toggle('on', b.dataset.q === quality));
+  }
   function setQuality(k) {
-    if (!video || !src4K) return;
+    quality = k;
+    localStorage.setItem('ab.vq', k);
+    paintQ();
+    if (!video) return;
+    const src = SRC[resolved()];
+    if (!src || video.src.endsWith(src)) return;
     const t = video.currentTime, playing = !video.paused;
-    video.src = k === '4k' ? src4K : srcHD;
+    video.src = src;
     video.currentTime = t;
     if (playing) video.play();
-    document.getElementById('q-hd')?.classList.toggle('on', k === 'hd');
-    document.getElementById('q-4k')?.classList.toggle('on', k === '4k');
   }
-  document.getElementById('q-hd')?.addEventListener('click', () => setQuality('hd'));
-  document.getElementById('q-4k')?.addEventListener('click', () => setQuality('4k'));
+  paintQ();
+  document.getElementById('q-seg')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-q]');
+    if (b) setQuality(b.dataset.q);
+  });
 
   // Foto 4K: el server extrae el frame del ORIGINAL en el segundo actual
   document.getElementById('btn-photo').addEventListener('click', async e => {

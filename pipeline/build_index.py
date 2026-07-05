@@ -22,6 +22,7 @@ def main():
         m["date"] = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
         m["time"] = f"{ts[8:10]}:{ts[10:12]}"
         m["has_proxy"] = (VAULT / "proxies" / f"{cid}.mp4").exists()
+        m["has_proxy720"] = (VAULT / "proxies720" / f"{cid}.mp4").exists()
         # ruta relativa del original: habilita reproducción 4K y foto-captura del raw
         raws = list((VAULT / "raw").rglob(f"{cid}.*"))
         vids = [r for r in raws if r.suffix.lower() in (".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm", ".mts")]

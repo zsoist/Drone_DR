@@ -92,7 +92,7 @@ document.getElementById('sd-list').addEventListener('click', e => {
     const v = volumes.find(x => x.volume === cl.dataset.cleanonly);
     const done = v.videos.filter(x => x.in_vault);
     if (!confirm(`¿Borrar de la SD "${v.volume}" los ${done.length} videos ya respaldados en el vault?\n\nSolo se borran archivos verificados; el vault no se toca.`)) return;
-    api('/api/sd_import', { volume: v.volume, files: done.map(x => x.rel), clean: true, drone: v.volume })
+    api('/api/sd_import', { volume: v.volume, files: done.map(x => x.rel), clean_only: true })
       .then(r => { if (r.error) alert(r.error); });
     return;
   }

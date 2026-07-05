@@ -142,11 +142,12 @@ def sd_volumes() -> list:
         vids = []
         for f in sorted((v / "DCIM").rglob("*")):
             if f.suffix in SD_VIDEO_EXT and f.is_file() and not f.name.startswith("."):
+                backup = find_raw(f.stem, f.stat().st_size)
                 vids.append({
                     "name": f.name,
                     "rel": str(f.relative_to(v)),
                     "bytes": f.stat().st_size,
-                    "in_vault": find_raw(f.stem) is not None,
+                    "in_vault": backup is not None,
                     "srt": f.with_suffix(".SRT").exists() or f.with_suffix(".srt").exists(),
                 })
         du = shutil.disk_usage(v)
@@ -156,14 +157,57 @@ def sd_volumes() -> list:
 
 def _sd_resolve(volume: str, rel: str) -> Path:
     """Valida que el archivo pedido viva dentro del volumen (sin traversal)."""
-    if "/" in volume or volume in SD_SKIP_VOLS:
+    if "/" in volume or volume in ("", ".", "..") or volume in SD_SKIP_VOLS:
         raise ValueError("volumen inválido")
     base = (Path("/Volumes") / volume).resolve()
+    if base.parent != Path("/Volumes").resolve() or not (base / "DCIM").is_dir():
+        raise ValueError("volumen inválido")
     f = (base / rel).resolve()
     f.relative_to(base)          # ValueError si escapa
     if f.suffix not in SD_VIDEO_EXT or not f.is_file():
         raise ValueError(f"no es un video válido: {rel}")
     return f
+
+
+def _same_size_copy(src: Path) -> Path | None:
+    """RAW respaldado con el mismo stem y tamaño. Un nombre igual no basta."""
+    return find_raw(src.stem, src.stat().st_size)
+
+
+def _srt_backed_up(src: Path, backup: Path) -> bool:
+    """Si la SD trae SRT, sólo borrarlo si existe copia junto al RAW respaldado."""
+    for ss in (src.with_suffix(".SRT"), src.with_suffix(".srt")):
+        if ss.exists() and not (backup.parent / ss.name).exists():
+            return False
+    return True
+
+
+def run_sd_clean(spec: dict, j):
+    """Libera espacio sin copiar ni reprocesar: borra sólo archivos ya respaldados
+    byte-a-byte en raw/. Si hay SRT sin copia, conserva ese par en la SD."""
+    try:
+        volume = str(spec.get("volume", ""))
+        rels = [str(x) for x in spec.get("files", [])][:200]
+        cleaned, kept = 0, 0
+        for i, rel in enumerate(rels):
+            src = _sd_resolve(volume, rel)
+            jobstore.update(j["id"], detail=f"verificando respaldo {i + 1}/{len(rels)} · {src.name}",
+                            stage="clean", progress=0.05 + 0.9 * i / max(1, len(rels)))
+            backup = _same_size_copy(src)
+            if not backup or not _srt_backed_up(src, backup):
+                kept += 1
+                continue
+            for ss in (src.with_suffix(".SRT"), src.with_suffix(".srt")):
+                ss.unlink(missing_ok=True)
+            src.unlink()
+            cleaned += 1
+        jobstore.update(j["id"], progress=1.0)
+        msg = f"{cleaned} videos respaldados borrados de la SD"
+        if kept:
+            msg += f" · {kept} conservados por respaldo incompleto"
+        job_end(j, "done", msg)
+    except Exception as e:
+        job_end(j, "error", str(e)[-250:])
 
 
 def run_sd_import(spec: dict, j):
@@ -174,6 +218,28 @@ def run_sd_import(spec: dict, j):
         drone = re.sub(r"[^\w -]", "", str(spec.get("drone", "") or volume)).strip() or volume
         rels = [str(x) for x in spec.get("files", [])][:200]
         clean = bool(spec.get("clean"))
+        clean_only = bool(spec.get("clean_only"))
+        if clean_only:
+            # liberar espacio: NO copia ni re-procesa — borra de la SD solo lo
+            # que ya esta verificado en el vault (mismo nombre y tamano)
+            freed = 0
+            for i, rel in enumerate(rels):
+                src = _sd_resolve(volume, rel)
+                dest = None
+                for hit in (VAULT / "raw").rglob(src.name):
+                    if hit.stat().st_size == src.stat().st_size:
+                        dest = hit
+                        break
+                jobstore.update(j["id"], detail=f"verificando {i + 1}/{len(rels)} · {src.name}",
+                                progress=0.05 + 0.9 * i / max(1, len(rels)))
+                if dest:
+                    for ss in (src.with_suffix(".SRT"), src.with_suffix(".srt")):
+                        ss.unlink(missing_ok=True)
+                    src.unlink()
+                    freed += 1
+            job_end(j, "done", f"{freed} videos borrados de la SD (ya respaldados) · "
+                               f"{len(rels) - freed} sin respaldo verificado, intactos")
+            return
         copied = []
         for i, rel in enumerate(rels):
             src = _sd_resolve(volume, rel)
@@ -211,11 +277,12 @@ def run_sd_import(spec: dict, j):
         job_end(j, "error", str(e)[-250:])
 
 
-def find_raw(cid: str) -> Path | None:
+def find_raw(cid: str, size: int | None = None) -> Path | None:
     for ext in (".MP4", ".mp4", ".MOV", ".mov", ".mkv", ".avi", ".webm", ".mts"):
         hits = list((VAULT / "raw").rglob(f"{cid}{ext}"))
-        if hits:
-            return hits[0]
+        for h in hits:
+            if size is None or h.stat().st_size == size:
+                return h
     return None
 
 
@@ -601,7 +668,7 @@ class H(BaseHTTPRequestHandler):
             fh.seek(start)
             left = end - start + 1
             while left > 0:
-                chunk = fh.read(min(1024 * 512, left))
+                chunk = fh.read(min(1024 * 1024, left))
                 if not chunk:
                     break
                 try:
@@ -790,7 +857,8 @@ class H(BaseHTTPRequestHandler):
             if not spec.get("files"):
                 return self.send_json({"error": "elige al menos un video"}, 400)
             j = job_add("ingest", f'SD {spec.get("volume", "?")} · {len(spec["files"])} videos')
-            threading.Thread(target=run_sd_import, args=(spec, j), daemon=True).start()
+            target = run_sd_clean if spec.get("clean_only") else run_sd_import
+            threading.Thread(target=target, args=(spec, j), daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"]})
         if u.path == "/api/frame":
             if not self.auth(q):

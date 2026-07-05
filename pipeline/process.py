@@ -49,6 +49,17 @@ def make_proxy(mp4: Path, out: Path, has_audio: bool):
     run_ffmpeg(args)
 
 
+def make_proxy_720(src: Path, out: Path, has_audio: bool):
+    """Escalón móvil: 720p ~2.2Mbps — fluido en LTE a través del túnel.
+    GOP de 2s (-g 120 a 60fps): balance entre seek fino y bitrate."""
+    args = ["-hwaccel", "videotoolbox", "-i", str(src),
+            "-vf", "scale=-2:720", "-c:v", "h264_videotoolbox",
+            "-b:v", "2200k", "-maxrate", "3M", "-g", "120"]
+    args += ["-c:a", "aac", "-b:a", "96k"] if has_audio else ["-an"]
+    args += ["-movflags", "+faststart", str(out)]
+    run_ffmpeg(args)
+
+
 def process_clip(mp4: Path) -> dict:
     cid = clip_id(mp4)
     probe = ffprobe(mp4)
@@ -83,6 +94,10 @@ def process_clip(mp4: Path) -> dict:
         proxy = VAULT / "proxies" / f"{cid}.mp4"
         make_proxy(mp4, proxy, has_audio)
         meta["proxy_bytes"] = proxy.stat().st_size
+        (VAULT / "proxies720").mkdir(exist_ok=True)
+        p720 = VAULT / "proxies720" / f"{cid}.mp4"
+        make_proxy_720(proxy, p720, has_audio)   # desde el 1080 ya decodificado: rapido
+        meta["proxy720_bytes"] = p720.stat().st_size
 
     if tier in ("full", "standard"):
         # decode the 1080p proxy when it exists — 4K60 HEVC decode is the bottleneck

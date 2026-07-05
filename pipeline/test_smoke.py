@@ -125,6 +125,19 @@ except ValueError:
     contained = False
 check("paths: drone-vault2 NO pasa el contención", not contained)
 
+# ---------- SD importer: respaldo por stem + tamaño, no sólo nombre ----------
+import aerobrain_server as _srv
+_old_vault = _srv.VAULT
+_sd_tmp = Path(tempfile.mkdtemp())
+try:
+    _srv.VAULT = _sd_tmp
+    (_sd_tmp / "raw" / "DJI Flip").mkdir(parents=True)
+    (_sd_tmp / "raw" / "DJI Flip" / "DJI_TEST.MP4").write_bytes(b"12345")
+    check("sd: find_raw exige tamaño cuando se pasa size",
+          _srv.find_raw("DJI_TEST", 5) is not None and _srv.find_raw("DJI_TEST", 6) is None)
+finally:
+    _srv.VAULT = _old_vault
+
 # ---------- jobs: sessions SQLite ----------
 import jobs
 jobs.DB = Path(tempfile.mkdtemp()) / "test-jobs.db"
