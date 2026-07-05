@@ -16,9 +16,21 @@ main.innerHTML = `
   <div class="panel rise" style="margin-top:16px">
     <div class="ph">${icon('activity')} Cola de importación</div>
     <div class="pb">
-      <p class="footer-note" style="margin:0 0 10px">Cada archivo se copia al SSD, se <b>verifica
-      byte a byte</b>, se procesa (proxies 1080p+720p · GPS · thumbnails) y solo entonces —si lo
-      pediste— se borra de la SD.</p>
+      <div class="pipe-strip">
+        <span class="pipe-step">${icon('db')}<b>SD</b><small>lectura</small></span>
+        <span class="pipe-arrow"></span>
+        <span class="pipe-step">${icon('dl')}<b>Copia</b><small>al SSD</small></span>
+        <span class="pipe-arrow"></span>
+        <span class="pipe-step">${icon('check')}<b>Verificación</b><small>byte a byte</small></span>
+        <span class="pipe-arrow"></span>
+        <span class="pipe-step">${icon('film')}<b>Proxies</b><small>1080p · 720p</small></span>
+        <span class="pipe-arrow"></span>
+        <span class="pipe-step">${icon('route')}<b>GPS</b><small>track + thumbs</small></span>
+        <span class="pipe-arrow"></span>
+        <span class="pipe-step pipe-end">${icon('drone')}<b>Vault</b><small>intocable</small></span>
+      </div>
+      <p class="footer-note" style="margin:0 0 10px">Solo tras completar TODA la cadena —y si lo
+      pediste— el archivo se borra de la SD. Un corte a mitad jamás pierde datos.</p>
       <div id="jobs-sd"></div>
     </div>
   </div>
@@ -36,6 +48,17 @@ let sys = {}, volumes = [];
 (async () => { try { sys = await (await fetch(`${DATA}/manifest/system.json`)).json(); paintStats(); } catch {} })();
 
 const gb = b => (b / 1e9).toFixed(1) + ' GB';
+function lastFlight(v) {
+  const dates = [...v.videos, ...v.photos]
+    .map(x => (x.name.match(/DJI_(\d{4})(\d{2})(\d{2})/) || []).slice(1))
+    .filter(d => d.length).map(d => `${d[0]}-${d[1]}-${d[2]}`).sort();
+  return dates.length ? fmt.date(dates[dates.length - 1]) : null;
+}
+function splitPct(v) {
+  const vb = v.videos.reduce((a, x) => a + x.bytes, 0);
+  const pb = v.photos.reduce((a, x) => a + x.bytes, 0);
+  return vb + pb ? Math.round(vb / (vb + pb) * 100) : 50;
+}
 const backedOf = v => [...v.videos, ...v.photos].filter(x => x.in_vault);
 const freeable = v => backedOf(v).reduce((a, x) => a + x.bytes, 0);
 
@@ -96,8 +119,16 @@ async function scan() {
         <span class="chip">${nuevos.length} nuevos</span>
         <span class="chip">${backed.length} respaldados</span>
         <span class="chip" style="color:var(--amber)">${gb(freeable(v))} liberables</span>
+        ${lastFlight(v) ? `<span class="chip">${icon('cal')} último vuelo ${lastFlight(v)}</span>` : ''}
         <span class="spacer" style="flex:1"></span>
         <button class="chip" data-browse="${esc(v.volume)}">Ver contenido ▾</button>
+      </div>
+      <div class="sd-split" title="Reparto del espacio usado">
+        <div class="ss-v" style="width:${splitPct(v)}%"></div>
+      </div>
+      <div class="sd-split-lb">
+        <span>${icon('film')} videos ${gb(v.videos.reduce((a, x) => a + x.bytes, 0))}</span>
+        <span>${icon('iso')} fotos ${gb(v.photos.reduce((a, x) => a + x.bytes, 0))}</span>
       </div>
       <div class="sd-browser" data-browser="${esc(v.volume)}" style="display:none"></div>
     </div>`;
@@ -169,7 +200,14 @@ document.getElementById('sd-list').addEventListener('click', e => {
     const st = bstate[v.volume] ??= { open: false, filtro: 'todo', q: '' };
     st.open = !st.open;
     br.textContent = st.open ? 'Ocultar contenido ▴' : 'Ver contenido ▾';
+    const card = br.closest('.sd-card');
+    const h0 = card.offsetHeight;
     renderBrowser(v);
+    const h1 = card.offsetHeight;
+    card.style.overflow = 'hidden';
+    card.animate([{ height: h0 + 'px' }, { height: h1 + 'px' }],
+                 { duration: 260, easing: 'cubic-bezier(.25,.1,.25,1)' })
+        .finished.then(() => { card.style.overflow = ''; });
     return;
   }
   const imp = e.target.closest('[data-import]');
@@ -222,34 +260,74 @@ function openImport(v) {
 function openOptimize(v) {
   const vidsB = v.videos.filter(x => x.in_vault);
   const fotosB = v.photos.filter(x => x.in_vault);
+  const nuevosV = v.videos.filter(x => !x.in_vault).length;
+  const nuevasF = v.photos.filter(x => !x.in_vault).length;
+  const sz = arr => arr.reduce((a, x) => a + x.bytes, 0);
   const LV = [
-    { k: 'conservador', n: 'Conservador', d: 'Solo videos respaldados — las fotos quedan en la tarjeta.',
-      files: vidsB, size: vidsB.reduce((a, x) => a + x.bytes, 0) },
-    { k: 'completo', n: 'Completo', d: 'Videos y fotos respaldados — libera el máximo verificado.',
-      files: [...vidsB, ...fotosB], size: [...vidsB, ...fotosB].reduce((a, x) => a + x.bytes, 0) },
-    { k: 'fabrica', n: 'Fábrica', d: 'Todo lo respaldado fuera — la SD queda lista para el próximo vuelo.',
-      files: [...vidsB, ...fotosB], size: [...vidsB, ...fotosB].reduce((a, x) => a + x.bytes, 0) },
+    { k: 'conservador', n: 'Conservador', ic: 'check',
+      d: 'Borra solo los videos ya respaldados. Las fotos se quedan en la tarjeta.',
+      files: vidsB,
+      borra: [`${vidsB.length} videos (${gb(sz(vidsB))})`],
+      queda: [`${fotosB.length} fotos respaldadas`, `${nuevosV + nuevasF} archivos sin respaldo`] },
+    { k: 'completo', n: 'Completo', ic: 'spark',
+      d: 'Borra videos y fotos respaldados — máximo espacio verificado.',
+      files: [...vidsB, ...fotosB],
+      borra: [`${vidsB.length} videos (${gb(sz(vidsB))})`, `${fotosB.length} fotos (${gb(sz(fotosB))})`],
+      queda: [`${nuevosV + nuevasF} archivos sin respaldo`, 'estructura DCIM intacta'] },
+    { k: 'fabrica', n: 'Fábrica', ic: 'drone',
+      d: 'Todo lo respaldado fuera — la SD lista para el próximo vuelo, como nueva.',
+      files: [...vidsB, ...fotosB],
+      borra: [`${vidsB.length + fotosB.length} archivos respaldados (${gb(sz([...vidsB, ...fotosB]))})`],
+      queda: [nuevosV + nuevasF ? `${nuevosV + nuevasF} sin respaldo (¡impórtalos primero!)` : 'nada — tarjeta limpia', 'carpetas DCIM del dron'] },
   ];
+  const usado = v.total - v.free;
+  const pctNow = Math.round(usado / v.total * 100);
+  const pctAfter = lv => Math.max(0, Math.round((usado - sz(lv.files)) / v.total * 100));
+
   const ov = document.createElement('div');
   ov.className = 'modal-ov';
-  ov.innerHTML = `<div class="modal" style="max-width:560px">
+  ov.innerHTML = `<div class="modal" style="max-width:580px">
     <div class="modal-h"><b>${icon('spark')} Optimizar «${esc(v.volume)}»</b>
       <button class="modal-x" aria-label="Cerrar">✕</button></div>
     <div class="modal-b">
-      <p class="footer-note" style="margin:0 0 12px">Solo se borra lo <b>verificado en el vault</b>
-      (mismo nombre y tamaño). Lo nuevo o sin respaldo jamás se toca.</p>
-      <div class="mpresets" style="grid-template-columns:1fr">${LV.map((l, i) => `
+      <div class="opt-safe">${icon('check')} <span>Solo se borra lo <b>verificado en el vault</b>
+        (mismo nombre y tamaño byte a byte). Lo nuevo o sin respaldo <b>jamás</b> se toca.</span></div>
+      <p class="mlb">Nivel de limpieza</p>
+      <div class="mpresets" style="grid-template-columns:1fr 1fr 1fr">${LV.map((l, i) => `
         <div class="mpreset${i === 1 ? ' on' : ''}" data-lv="${l.k}">
-          <b>${l.n}</b><span class="mono">${l.files.length} archivos · ${gb(l.size)}</span>
-          <small>${l.d}</small></div>`).join('')}</div>
-      <button class="btn primary" id="opt-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Optimizar tarjeta</button>
+          <b>${icon(l.ic)} ${l.n}</b>
+          <span class="mono">${l.files.length} arch · ${gb(sz(l.files))}</span>
+        </div>`).join('')}</div>
+      <div id="opt-detail"></div>
+      <button class="btn primary" id="opt-go" style="width:100%;justify-content:center;margin-top:14px;padding:10px 0">${icon('spark')} Optimizar tarjeta</button>
     </div></div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) ov.remove(); });
+
+  function paintDetail() {
+    const lv = LV.find(l => l.k === ov.querySelector('.mpreset.on')?.dataset.lv) || LV[1];
+    ov.querySelector('#opt-detail').innerHTML = `
+      <p class="footer-note" style="margin:12px 0 10px">${esc(lv.d)}</p>
+      <div class="opt-cols">
+        <div class="opt-col opt-del"><b>${icon('dl')} Se borra de la SD</b>
+          ${lv.borra.map(x => `<span>· ${esc(x)}</span>`).join('')}</div>
+        <div class="opt-col opt-keep"><b>${icon('check')} Se queda</b>
+          ${lv.queda.map(x => `<span>· ${esc(x)}</span>`).join('')}</div>
+      </div>
+      <div class="opt-after">
+        <span class="mono">${pctNow}% usado</span>
+        <span class="opt-arrow">→</span>
+        <span class="mono" style="color:var(--mint)">${pctAfter(lv)}% tras optimizar</span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="mono" style="color:var(--amber)">libera ${gb(sz(lv.files))}</span>
+      </div>`;
+  }
+  paintDetail();
   ov.querySelector('.mpresets').addEventListener('click', e => {
     const c = e.target.closest('.mpreset');
     if (!c) return;
     ov.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
+    paintDetail();
   });
   ov.querySelector('#opt-go').addEventListener('click', async () => {
     const lv = LV.find(l => l.k === ov.querySelector('.mpreset.on')?.dataset.lv) || LV[1];

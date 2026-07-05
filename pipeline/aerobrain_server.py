@@ -870,7 +870,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": str(e)}, 400)
             if not spec.get("files"):
                 return self.send_json({"error": "elige al menos un video"}, 400)
-            j = job_add("ingest", f'SD {spec.get("volume", "?")} · {len(spec["files"])} videos')
+            j = job_add("ingest", f'{spec.get("volume", "?")} · {len(spec["files"])} archivos')
             target = run_sd_clean if spec.get("clean_only") else run_sd_import
             threading.Thread(target=target, args=(spec, j), daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"]})
