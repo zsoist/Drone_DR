@@ -125,11 +125,13 @@ svg.ic { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-wid
 .seg { display: flex; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
 .seg button { padding: 7px 12px; font-size: 12.5px; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
 .seg button.on { background: var(--surface-2); color: var(--text); }
-select.ctl {
+select.ctl, input.ctl {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
   color: var(--text); padding: 7px 10px; font: inherit; font-size: 12.5px; outline: none;
   -webkit-appearance: none; appearance: none;
 }
+input.ctl::placeholder { color: var(--text-3); }
+input.ctl:focus { border-color: var(--accent); }
 .btn {
   display: inline-flex; align-items: center; gap: 7px;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
@@ -634,8 +636,8 @@ details.explain b { color: var(--text); font-weight: 600; }
 .mcard:hover { border-color: rgba(69,160,230,0.5); transform: translateY(-1px); }
 .mcard img { width: 96px; height: 64px; object-fit: cover; border-radius: 8px; background: #0c1016; flex: none; }
 .mcard .mc-b { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.mcard .mc-b b { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mcard .mc-b > span { font-size: 10.5px; color: var(--text-3); }
+.mcard .mc-b b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mcard .mc-b > span { font-size: 11px; color: var(--text-3); letter-spacing: 0.2px; }
 .mc-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
 .mc-badges .chip { padding: 1px 8px; font-size: 9.5px; display: inline-flex; align-items: center; gap: 4px; }
 .mc-badges .chip svg.ic { width: 10px; height: 10px; }
@@ -659,4 +661,5 @@ details.explain b { color: var(--text); font-weight: 600; }
 @media (max-width: 900px) {
   .map-wrap { grid-template-columns: 1fr; grid-template-rows: 46dvh minmax(0, 1fr); height: calc(100dvh - 150px); }
   .map-side { border-left: none; border-top: 1px solid var(--line); }
+  .spot-pill { font-size: 10px; padding: 4px 9px; }
 }

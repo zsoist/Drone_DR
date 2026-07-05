@@ -55,6 +55,11 @@ main.innerHTML = `
     attributionControl: { compact: true },
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  // el contenedor cambia de tamaño despues del primer layout: sin esto el canvas
+  // queda corto y el panel muestra una banda muerta abajo
+  new ResizeObserver(() => map.resize()).observe(document.getElementById('map'));
+  map.once('load', () => map.resize());
+  setTimeout(() => map.resize(), 450);
   document.getElementById('mv-fit').addEventListener('click', () => {
     state.spot = null;
     syncSpotChip();
