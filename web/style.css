@@ -374,3 +374,27 @@ select.ctl {
   background: var(--surface); border-radius: var(--r-sm); padding: 8px; }
 .jobs-older { margin-top: 4px; }
 .jobs-older summary { font-size: 11.5px; color: var(--text-3); cursor: pointer; padding: 6px 2px; }
+
+/* ---------- viewer 3D tools + fullscreen CSS (iOS-safe) ---------- */
+.viewer-tools { position: absolute; top: 10px; right: 10px; z-index: 5; display: flex; gap: 6px; }
+.viewer-tools button {
+  width: 36px; height: 36px; border-radius: var(--r-md); display: grid; place-items: center;
+  background: rgba(10,12,16,0.72); border: 1px solid var(--line); color: #E6EBF2;
+  backdrop-filter: blur(6px);
+}
+.viewer-fs {
+  position: fixed !important; inset: 0 !important; z-index: 300 !important;
+  height: 100dvh !important; min-height: 100dvh !important;
+  background: #000; border-radius: 0 !important;
+}
+
+/* ---------- 3D toolbar rows + photo modal ---------- */
+.tool-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 4px 0; }
+.tool-row + .tool-row { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 10px; }
+.tool-lb { font-size: 10px; letter-spacing: .8px; text-transform: uppercase;
+  color: var(--text-3); width: 46px; flex: none; }
+.photo-modal { width: min(96vw, 1100px); max-height: 92dvh; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.photo-modal img { width: 100%; object-fit: contain; max-height: 76dvh; background: #000; }
+.photo-modal .pm-bar { display: flex; gap: 10px; align-items: center; padding: 12px 14px; flex-wrap: wrap; }
+.photo-modal .pm-bar span { font-size: 11.5px; color: var(--text-3); flex: 1; min-width: 160px; }

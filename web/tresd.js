@@ -18,21 +18,20 @@
           Opacidad <input type="range" id="op" min="0" max="100" value="88" style="width:110px"></label>
       </div>
       <div class="pb" style="padding:10px 12px;border-bottom:1px solid var(--line)">
-        <div class="toolbar" style="margin:0">
-          <span style="font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-3)">Capas</span>
+        <div class="tool-row"><span class="tool-lb">Capas</span>
           <button class="chip on" data-layer="ortho">Ortofoto</button>
           <button class="chip" data-layer="dsm">Elevación</button>
           <button class="chip" data-layer="hills">Relieve</button>
           <button class="chip" data-layer="contours">Curvas</button>
-          <span class="spacer"></span>
-          <span style="font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-3)">Medir</span>
+        </div>
+        <div class="tool-row"><span class="tool-lb">Medir</span>
           <button class="chip" data-tool="dist">Distancia</button>
           <button class="chip" data-tool="area">Área</button>
           <button class="chip" data-tool="volume">Volumen</button>
           <button class="chip" data-tool="profile">Perfil</button>
-          <button class="chip" data-tool="compare">Comparar fechas</button>
+          <button class="chip" data-tool="compare">Comparar</button>
           <select class="ctl" id="cmp-date" style="display:none;font-size:12px"></select>
-          <button class="btn" id="m-clear" style="padding:3px 10px;font-size:11px">Limpiar</button>
+          <button class="btn" id="m-clear" style="padding:4px 11px;font-size:11px;margin-left:auto">Limpiar</button>
         </div>
       </div>
       <div id="omap" style="height:56dvh;min-height:340px"></div>
@@ -84,7 +83,12 @@
         <div class="panel">
           <div class="ph">${icon('cube')} Gaussian Splats
             <span class="spacer" style="flex:1"></span>
-            <button class="btn primary" id="btn-splat" style="padding:4px 12px;font-size:11.5px">Generar splat</button>
+            <select class="ctl" id="splat-iters" style="font-size:11.5px;padding:4px 8px">
+              <option value="1000">Rápido · 1k iters</option>
+              <option value="2000" selected>Balanceado · 2k</option>
+              <option value="7000">Cinemático · 7k</option>
+            </select>
+            <button class="btn primary" id="btn-splat" style="padding:4px 12px;font-size:11.5px">Generar</button>
           </div>
           <div class="pb" id="splats"></div>
           <div id="splat-viewer" style="height:46dvh;display:none"></div>
@@ -164,7 +168,7 @@
     });
     omap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     omap.on('load', () => {
-      omap.addSource('ortho', { type: 'image', url: `${base}/ortho.jpg`, coordinates: cur.corners });
+      omap.addSource('ortho', { type: 'image', url: `${base}/ortho.png`, coordinates: cur.corners });
       omap.addLayer({ id: 'ortho', type: 'raster', source: 'ortho',
                       paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 0 } });
       if (cur.dsm_corners) {
@@ -359,6 +363,13 @@
     const cam = new THREE.PerspectiveCamera(55, w / h, 0.1, 5000);
     const controls = new OrbitControls(cam, renderer.domElement);
     controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    new ResizeObserver(() => {
+      const W = box.clientWidth, H = box.clientHeight;
+      if (!W || !H) return;
+      renderer.setSize(W, H);
+      cam.aspect = W / H; cam.updateProjectionMatrix();
+    }).observe(box);
     scene.add(new THREE.AmbientLight(0xffffff, 1.15));
     const dl = new THREE.DirectionalLight(0xffffff, 1.2);
     dl.position.set(1, 2, 1.5);
@@ -368,13 +379,42 @@
   }
   function frameObject(obj, cam, controls) {
     const bb = new THREE.Box3().setFromObject(obj);
-    const c = bb.getCenter(new THREE.Vector3()), size = bb.getSize(new THREE.Vector3()).length();
+    const c = bb.getCenter(new THREE.Vector3());
+    const sz = bb.getSize(new THREE.Vector3());
+    const maxDim = Math.max(sz.x, sz.y, sz.z);
     obj.position.sub(c);                       // centra en el origen
-    cam.position.set(size * 0.45, size * 0.35, size * 0.45);
-    cam.near = size / 500; cam.far = size * 6; cam.updateProjectionMatrix();
+    // distancia para que el objeto LLENE ~80% del viewport (fov-aware)
+    const fov = cam.fov * Math.PI / 180;
+    const dist = (maxDim / 2) / Math.tan(fov / 2) / 0.8;
+    cam.position.set(dist * 0.5, dist * 0.55, dist * 0.5);
+    cam.near = maxDim / 1000; cam.far = dist * 8; cam.updateProjectionMatrix();
     controls.target.set(0, 0, 0);
+    controls.maxDistance = dist * 3;
+    controls.update();
   }
   const spin = box => { box.innerHTML = `<div class="sk" style="width:80%;height:10px;border-radius:5px"></div>`; };
+
+  // fullscreen CSS (el Fullscreen API de iOS Safari sólo funciona en <video>)
+  function attachViewerTools(box, cam, controls) {
+    const bar = document.createElement('div');
+    bar.className = 'viewer-tools';
+    bar.innerHTML = `
+      <button data-vt="center" title="Centrar">${icon('pin')}</button>
+      <button data-vt="fs" title="Pantalla completa">${icon('ext')}</button>`;
+    box.style.position = 'relative';
+    box.appendChild(bar);
+    const cam0 = cam.position.clone();
+    bar.addEventListener('click', e => {
+      const b = e.target.closest('[data-vt]');
+      if (!b) return;
+      if (b.dataset.vt === 'center') { cam.position.copy(cam0); controls.target.set(0, 0, 0); }
+      if (b.dataset.vt === 'fs') {
+        const on = box.classList.toggle('viewer-fs');
+        b.innerHTML = on ? icon('chevL') : icon('ext');
+        document.body.style.overflow = on ? 'hidden' : '';
+      }
+    });
+  }
 
   document.getElementById('load-mesh').addEventListener('click', async e => {
     if (!cur) return;
@@ -385,10 +425,21 @@
     const mtl = await new MTLLoader().setPath(base).loadAsync('odm_textured_model_geo.mtl');
     mtl.preload();
     const obj = await new OBJLoader().setMaterials(mtl).setPath(base).loadAsync('odm_textured_model_geo.obj');
+    // FOTOGRAMETRÍA = material SIN luces (la textura ya trae la iluminación real);
+    // con Phong+luces débiles el modelo salía como una masa negra
+    obj.traverse(n => {
+      if (n.isMesh) {
+        const maps = Array.isArray(n.material) ? n.material : [n.material];
+        n.material = maps.map(m => new THREE.MeshBasicMaterial({
+          map: m.map || null, color: m.map ? 0xffffff : 0x8a97a8, side: THREE.DoubleSide }));
+        if (n.material.length === 1) n.material = n.material[0];
+      }
+    });
     const { scene, cam, controls } = makeScene(box);
     obj.rotation.x = -Math.PI / 2;             // ODM: Z-up → three.js: Y-up
     scene.add(obj);
     frameObject(obj, cam, controls);
+    attachViewerTools(box, cam, controls);
   });
 
   document.getElementById('load-cloud').addEventListener('click', async e => {
@@ -403,6 +454,7 @@
     pts.rotation.x = -Math.PI / 2;
     scene.add(pts);
     frameObject(pts, cam, controls);
+    attachViewerTools(box, cam, controls);
   });
 
   // splats: listar + ver inline + generar
@@ -415,7 +467,7 @@
     del proyecto ODM seleccionado (CPU, ~30-60 min). El resultado se ve aquí mismo.</p>`;
   document.getElementById('btn-splat').addEventListener('click', async () => {
     if (!cur) return alert('Procesa primero un vuelo en 3D.');
-    const r = await api('/api/splat', { clip_id: cur.clip_id });
+    const r = await api('/api/splat', { clip_id: cur.clip_id, iters: +document.getElementById('splat-iters').value });
     if (r.error) alert(r.error); else alert('Entrenando splat — mira Trabajos (~30-60 min).');
   });
   document.getElementById('splats').addEventListener('click', async e => {

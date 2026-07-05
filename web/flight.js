@@ -158,8 +158,24 @@ const cid = new URLSearchParams(location.search).get('id');
     btn.textContent = 'Capturando…';
     const d = await api('/api/frame', { clip_id: cid, t: +(video?.currentTime || 0).toFixed(1) });
     btn.innerHTML = `${icon('iso')} Foto 4K`;
-    if (d.ok) window.open(d.url, '_blank');
-    else alert(d.error || 'error');
+    if (!d.ok) return alert(d.error || 'error');
+    // modal (iOS Safari bloquea window.open async y no siempre respeta download):
+    // imagen inline + botón descargar + hint de guardar con long-press
+    const ov = document.createElement('div');
+    ov.className = 'login-ov';
+    ov.innerHTML = `
+      <div class="photo-modal">
+        <img src="${d.url}" alt="Foto 4K">
+        <div class="pm-bar">
+          <span>3840×2160 · mantén presionada la imagen para guardarla en Fotos</span>
+          <a class="btn primary" href="${d.url}" download>${icon('dl')} Descargar</a>
+          <button class="btn" data-close>Cerrar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => {
+      if (e.target === ov || e.target.closest('[data-close]')) ov.remove();
+    });
   });
 
   // análisis profundo on-demand (16 frames, prompt de director de fotografía)

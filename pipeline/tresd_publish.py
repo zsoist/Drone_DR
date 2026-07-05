@@ -56,6 +56,9 @@ def px(x, y):
 corners = [px(0, 0), px(w, 0), px(w, h), px(0, h)]  # TL TR BR BL
 gdal.Translate('/d/.web_ortho.jpg', ds, format='JPEG', bandList=[1, 2, 3], width=2000)
 gdal.Translate('/d/.web_ortho_full.jpg', ds, format='JPEG', bandList=[1, 2, 3], width=5000)
+# PNG RGBA para el overlay del mapa: el nodata queda TRANSPARENTE (el JPG lo
+# pintaba negro y se veian bordes irregulares horribles sobre el satelite)
+gdal.Translate('/d/.web_ortho.png', ds, format='PNG', width=2000)
 print(json.dumps({"corners": corners, "size": [w, h]}))
 EOF""")
     ometa = json.loads(info.strip().splitlines()[-1])
@@ -70,6 +73,7 @@ EOF""")
         -f filters.decimation --filters.decimation.step=$STEP""")
 
     for src_name, dst_name in [(".web_ortho.jpg", "ortho.jpg"), (".web_ortho_full.jpg", "ortho_full.jpg"),
+                               (".web_ortho.png", "ortho.png"),
                                (".web_cloud.ply", "cloud.ply")]:
         p = proj / src_name
         if p.exists():
