@@ -218,6 +218,8 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
 
     update(jid, pid=None)
     if reason == "timeout":
+        # primitiva auto-consistente: deja el row en 'error' antes de lanzar
+        end(jid, "error", f"timeout tras {timeout}s")
         raise TimeoutError(f"timeout tras {timeout}s")
     if reason == "cancel" or (get(jid) or {}).get("status") in CANCEL_STATES:
         raise RuntimeError("cancelado por el operador")

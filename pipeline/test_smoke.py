@@ -141,6 +141,22 @@ time.sleep(1.2)
 check("job: cancel MATA el proceso", alive and not _pid_alive(pid))
 check("job: status queda cancelled", jobs.get(j["id"])["status"] == "cancelled")
 
+# ---------- run_tracked timeout is self-consistent (row -> error) ----------
+jt = jobs.add("splat", "timeout-test")
+to_pid = {}
+def _to_run():
+    try:
+        jobs.run_tracked(jt["id"], ["sleep", "30"], timeout=2)
+    except TimeoutError:
+        to_pid["timed_out"] = True
+threading.Thread(target=_to_run, daemon=True).start()
+time.sleep(0.8); to_pid["pid"] = jobs.get(jt["id"])["pid"]
+time.sleep(2.5)
+_jt = jobs.get(jt["id"])
+check("job: timeout mata el proceso silencioso", not _pid_alive(to_pid.get("pid")))
+check("job: timeout deja row en 'error' (auto-consistente)",
+      _jt["status"] == "error" and "timeout" in (_jt["detail"] or ""))
+
 # ---------- splat quality gate ----------
 from aerobrain_server import splat_quality
 import types
@@ -155,6 +171,21 @@ q2 = splat_quality(FakeOut(50_000), log_ok, 40, 2000)
 check("splat: archivo chico FALLA el gate", not q2["passed"])
 q3 = splat_quality(FakeOut(700_000), log_ok, 3, 2000)
 check("splat: <8 cámaras FALLA el gate", not q3["passed"])
+
+# ---------- multi-date volume comparison (compare_dsm) ----------
+from aerobrain_server import compare_dsm
+_cd = Path(tempfile.mkdtemp())
+_gt = [-74.001, 0.00001, 0, 4.001, 0, -0.00001]
+_A = _cd / "A"; _A.mkdir(); (_A / "meta.json").write_text(json.dumps({"dsm_shape": [200, 200], "dsm_gt": _gt, "dsm_nodata": None}))
+np.full((200, 200), 100.0, dtype=np.float32).tofile(_A / "dsm.bin")
+_arrb = np.full((200, 200), 100.0, dtype=np.float32); _arrb[30:70, 30:70] = 105.0  # +5m edificio
+_B = _cd / "B"; _B.mkdir(); (_B / "meta.json").write_text(json.dumps({"dsm_shape": [200, 200], "dsm_gt": _gt, "dsm_nodata": None}))
+_arrb.tofile(_B / "dsm.bin")
+_poly = [[-74.0009, 4.0009], [-74.0001, 4.0009], [-74.0001, 4.0001], [-74.0009, 4.0001]]
+_r = compare_dsm(_A, _B, _poly)
+check("compare: edificio 5m detectado como +volumen (~9800 m³)", 9000 < _r["net_change_m3"] < 10500)
+check("compare: nada removido (sólo se agregó)", _r["removed_m3"] < 1)
+check("compare: altura de cambio = 5m", abs(_r["max_rise_m"] - 5) < 0.1)
 
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)

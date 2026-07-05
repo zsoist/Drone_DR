@@ -30,6 +30,8 @@
           <button class="chip" data-tool="area">Área</button>
           <button class="chip" data-tool="volume">Volumen</button>
           <button class="chip" data-tool="profile">Perfil</button>
+          <button class="chip" data-tool="compare">Comparar fechas</button>
+          <select class="ctl" id="cmp-date" style="display:none;font-size:12px"></select>
           <button class="btn" id="m-clear" style="padding:3px 10px;font-size:11px">Limpiar</button>
         </div>
       </div>
@@ -216,10 +218,22 @@
     document.querySelectorAll('[data-tool]').forEach(x => x.classList.remove('on'));
     tool = tool === b.dataset.tool ? null : b.dataset.tool;
     if (tool) b.classList.add('on');
+    const cmpSel = document.getElementById('cmp-date');
+    if (tool === 'compare') {
+      const others = models.filter(m => m.clip_id !== cur.clip_id);
+      cmpSel.innerHTML = others.length ? others.map(m => {
+        const f = flights.find(x => x.clip_id === m.clip_id);
+        return `<option value="${m.clip_id}">vs ${f ? fmt.date(f.date) : m.clip_id}</option>`;
+      }).join('') : '<option value="">— procesa otra fecha del mismo sector —</option>';
+      cmpSel.style.display = others.length ? '' : 'none';
+      if (!others.length) result('Necesitas 2+ fechas procesadas en 3D del mismo sector. Procesa otro vuelo con "Procesar 3D".');
+    } else { cmpSel.style.display = 'none'; }
     mpts = []; paintDraw();
-    result(tool ? ({ dist: 'Toca puntos en el mapa para medir distancia.',
+    const noSecond = tool === 'compare' && models.filter(m => m.clip_id !== cur.clip_id).length === 0;
+    if (!noSecond) result(tool ? ({ dist: 'Toca puntos en el mapa para medir distancia.',
       area: 'Toca los vértices del área.', volume: 'Dibuja el polígono sobre el stockpile/edificio y toca "Calcular".',
-      profile: 'Toca 2 puntos: inicio y fin del perfil.' })[tool] : null);
+      profile: 'Toca 2 puntos: inicio y fin del perfil.',
+      compare: 'Dibuja el polígono del área a comparar entre las dos fechas y toca "Comparar".' })[tool] : null);
   }));
   document.getElementById('m-clear').addEventListener('click', () => {
     tool = null; mpts = []; paintDraw(); result(null);
@@ -265,6 +279,28 @@
             <div class="stat"><div class="lb">Área</div><div class="v">${Math.round(r.area_m2).toLocaleString()}<small> m²</small></div></div>
             <div class="stat"><div class="lb">Altura máx</div><div class="v">${r.max_height}<small> m</small></div></div>
           </div><p class="footer-note">Base: ${r.base_elev} m snm (percentil 5 del polígono). Método cut/fill estándar survey.</p>`);
+      };
+    }
+    if (tool === 'compare' && mpts.length > 2) {
+      result(`<button class="btn primary" id="calc-cmp">Comparar (${mpts.length} vértices)</button>`);
+      document.getElementById('calc-cmp').onclick = async () => {
+        const other = document.getElementById('cmp-date').value;
+        if (!other) return result('Elige la fecha a comparar.');
+        result('Comparando las dos fechas contra el DSM…');
+        const r = await api('/api/compare', { clip_a: other, clip_b: cur.clip_id, points: mpts });
+        if (r.error) return result(`<span style="color:var(--red)">${esc(r.error)}</span>`);
+        const of = flights.find(x => x.clip_id === other);
+        const sign = r.net_change_m3 >= 0 ? '+' : '';
+        const color = r.net_change_m3 >= 0 ? 'var(--mint)' : 'var(--amber)';
+        result(`
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Cambio desde ${of ? fmt.date(of.date) : 'fecha A'} → ${fmt.date(cur.dsm_date || (flights.find(x=>x.clip_id===cur.clip_id)||{}).date)}</div>
+          <div class="statgrid" style="margin:0">
+            <div class="stat"><div class="lb">Cambio neto</div><div class="v" style="color:${color}">${sign}${r.net_change_m3.toLocaleString()}<small> m³</small></div></div>
+            <div class="stat"><div class="lb">Agregado</div><div class="v">${r.added_m3.toLocaleString()}<small> m³</small></div></div>
+            <div class="stat"><div class="lb">Removido</div><div class="v">${r.removed_m3.toLocaleString()}<small> m³</small></div></div>
+            <div class="stat"><div class="lb">Cambio medio</div><div class="v">${r.mean_change_m}<small> m</small></div></div>
+          </div>
+          <p class="footer-note">Positivo = material agregado (construcción/relleno). Subida máx ${r.max_rise_m}m · bajada máx ${r.max_drop_m}m · ${Math.round(r.area_m2).toLocaleString()} m² comparados. Método cut/fill entre DSMs, tipo DroneDeploy.</p>`);
       };
     }
     if (tool === 'profile' && mpts.length === 2) {

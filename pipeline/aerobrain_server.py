@@ -122,15 +122,73 @@ def capture_frame(spec: dict, j):
         job_end(j, "error", str(e)[-200:])
 
 
+def _load_dsm(mdir: Path):
+    """Carga DSM binario + georreferencia. Devuelve (arr, gt, h, w, nodata)."""
+    import numpy as np
+    meta = read_json_file(mdir / "meta.json", 4_000_000)
+    h, w = meta["dsm_shape"]
+    gt = meta["dsm_gt"]
+    arr = np.memmap(mdir / "dsm.bin", dtype=np.float32, mode="r", shape=(h, w))
+    return arr, gt, h, w, meta.get("dsm_nodata")
+
+
+def _poly_grid(pts, step_m=0.5):
+    """Malla regular lon/lat dentro del bbox del polígono + máscara ray-casting."""
+    import math
+    import numpy as np
+    lons = [p[0] for p in pts]; lats = [p[1] for p in pts]
+    lat0 = sum(lats) / len(lats)
+    dlon = step_m / (111320 * math.cos(math.radians(lat0)))
+    dlat = step_m / 110540
+    LON, LAT = np.meshgrid(np.arange(min(lons), max(lons), dlon),
+                           np.arange(min(lats), max(lats), dlat))
+    mask = np.zeros(LON.shape, dtype=bool)
+    P = pts + [pts[0]]
+    for i in range(len(P) - 1):
+        (x1, y1), (x2, y2) = P[i], P[i + 1]
+        mask ^= ((y1 <= LAT) != (y2 <= LAT)) & \
+                (LON < (x2 - x1) * (LAT - y1) / (y2 - y1 + 1e-15) + x1)
+    return LON, LAT, mask, step_m * step_m
+
+
+def _sample_grid(arr, gt, h, w, nod, LON, LAT):
+    """Muestrea el DSM en cada punto de la malla (nearest). NaN fuera/nodata."""
+    import numpy as np
+    X = ((LON - gt[0]) / gt[1]).astype(int)
+    Y = ((LAT - gt[3]) / gt[5]).astype(int)
+    inside = (X >= 0) & (X < w) & (Y >= 0) & (Y < h)
+    out = np.full(LON.shape, np.nan, dtype=np.float64)
+    vals = np.asarray(arr)[np.clip(Y, 0, h - 1), np.clip(X, 0, w - 1)]
+    out[inside] = vals[inside]
+    if nod is not None:
+        out[np.abs(out - nod) < 1e-3] = np.nan
+    return out
+
+
+def compare_dsm(mdir_a: Path, mdir_b: Path, pts: list) -> dict:
+    """Multi-fecha: cambio de volumen entre dos DSMs del mismo sector.
+    B = más nuevo; positivo = material AGREGADO desde A (construcción/relleno)."""
+    import numpy as np
+    LON, LAT, mask, cell = _poly_grid(pts, step_m=0.5)
+    za = _sample_grid(*_load_dsm(mdir_a), LON, LAT)
+    zb = _sample_grid(*_load_dsm(mdir_b), LON, LAT)
+    valid = mask & ~np.isnan(za) & ~np.isnan(zb)
+    if not valid.any():
+        return {"error": "sin solape entre las dos fechas en ese polígono"}
+    diff = (zb - za)[valid]
+    added = float(np.clip(diff, 0, None).sum() * cell)
+    removed = float(np.clip(-diff, 0, None).sum() * cell)
+    return {"net_change_m3": round(added - removed, 1), "added_m3": round(added, 1),
+            "removed_m3": round(removed, 1), "mean_change_m": round(float(diff.mean()), 2),
+            "max_rise_m": round(float(diff.max()), 1), "max_drop_m": round(float(diff.min()), 1),
+            "area_m2": round(cell * int(valid.sum()), 1), "overlap_cells": int(valid.sum())}
+
+
 def measure_dsm(mdir: Path, spec: dict) -> dict:
     """Mediciones survey en el host: numpy sobre el DSM binario (sin docker)."""
     import math
     import numpy as np
-    meta = json.loads((mdir / "meta.json").read_text())
-    h, w = meta["dsm_shape"]
-    gt = meta["dsm_gt"]
-    nod = meta.get("dsm_nodata")
-    arr = np.memmap(mdir / "dsm.bin", dtype=np.float32, mode="r", shape=(h, w))
+    arr, gt, h, w, nod = _load_dsm(mdir)
     pts = spec.get("points", [])
 
     def elev(lon, lat):
@@ -498,6 +556,19 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json(measure_dsm(mdir, spec))
             except Exception as e:
                 return self.send_json({"error": str(e)[-200:]}, 500)
+        if u.path == "/api/compare":
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            a = re.sub(r"[^\w-]", "", str(spec.get("clip_a", "")))
+            b = re.sub(r"[^\w-]", "", str(spec.get("clip_b", "")))
+            da, db = VAULT / "models" / a, VAULT / "models" / b
+            if not ((da / "dsm.bin").exists() and (db / "dsm.bin").exists()):
+                return self.send_json({"error": "ambas fechas necesitan modelo 3D con DSM"}, 404)
+            try:
+                return self.send_json(compare_dsm(da, db, spec.get("points", [])))
+            except Exception as e:
+                return self.send_json({"error": str(e)[-200:]}, 500)
         if u.path == "/api/odm":
             if not self.auth(q):
                 return
@@ -523,7 +594,8 @@ class H(BaseHTTPRequestHandler):
                              "-m", "7g", "-v", f"{proj}:/datasets/code", "opendronemap/odm",
                              "--project-path", "/datasets", "--pc-quality", "medium",
                              "--feature-quality", "medium", "--max-concurrency", "4",
-                             "--orthophoto-resolution", "5"], timeout=3 * 3600) != 0:
+                             "--orthophoto-resolution", "5", "--dsm", "--dtm",
+                             "--dem-resolution", "10"], timeout=3 * 3600) != 0:
                         raise RuntimeError("ODM falló")
                     jobstore.update(j["id"], detail="3/3 publicando assets web")
                     if jobstore.run_tracked(j["id"],
