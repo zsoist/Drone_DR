@@ -8,6 +8,7 @@ import json
 import os
 import signal
 import sqlite3
+import re
 import subprocess
 import threading
 import time
@@ -249,7 +250,7 @@ CANCEL_STATES = ("cancelled", "cancel_failed")
 
 
 def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
-                tail: int = 12) -> int:
+                tail: int = 12, abort_re: str | None = None) -> int:
     """Popen con PID registrado. El control (timeout Y cancelación) se hace con
     proc.wait(timeout=1) en un bucle — INDEPENDIENTE del stdout, así un proceso
     totalmente silencioso también respeta timeout y cancel. Un hilo lector sólo
@@ -259,12 +260,15 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
     update(jid, pid=proc.pid)
 
     lines: list[str] = []
+    abort_hit = threading.Event()
 
-    def reader():  # sólo espeja el log; nunca controla el ciclo de vida
+    def reader():  # espeja el log; si aparece el patron de aborto, alza la bandera
         for line in proc.stdout:
             lines.append(line.rstrip())
             del lines[:-200]
             update(jid, log="\n".join(lines[-tail:]))
+            if abort_re and re.search(abort_re, line):
+                abort_hit.set()
     threading.Thread(target=reader, daemon=True).start()
 
     deadline = time.time() + timeout
@@ -277,6 +281,8 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
             pass
         if time.time() > deadline:
             reason = "timeout"
+        elif abort_hit.is_set():
+            reason = "abort"
         elif (get(jid) or {}).get("status") in CANCEL_STATES:
             reason = "cancel"
         if reason:
@@ -301,6 +307,8 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
         # primitiva auto-consistente: deja el row en 'error' antes de lanzar
         end(jid, "error", f"timeout tras {timeout}s")
         raise TimeoutError(f"timeout tras {timeout}s")
+    if reason == "abort":
+        raise RuntimeError(f"abortado: el log matcheó '{abort_re}'")
     if reason == "cancel" or (get(jid) or {}).get("status") in CANCEL_STATES:
         raise RuntimeError("cancelado por el operador")
     return proc.returncode

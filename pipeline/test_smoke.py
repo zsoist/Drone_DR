@@ -186,6 +186,9 @@ q2 = splat_quality(FakeOut(50_000), log_ok, 40, 2000)
 check("splat: archivo chico FALLA el gate", not q2["passed"])
 q3 = splat_quality(FakeOut(700_000), log_ok, 3, 2000)
 check("splat: <8 cámaras FALLA el gate", not q3["passed"])
+q4 = splat_quality(FakeOut(700_000), "Step 1071: 0.1334 (15%)\nStep 1278: nan (18%)", 40, 7000)
+check("splat: loss=nan (divergencia) FALLA el gate", not q4["passed"] and "divergió" in q4["reason"])
+check("splat: final_loss ignora los nan y toma el último numérico", q4["final_loss"] == 0.1334)
 
 # ---------- multi-date volume comparison (compare_dsm) ----------
 from aerobrain_server import compare_dsm

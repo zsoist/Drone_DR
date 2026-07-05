@@ -120,6 +120,12 @@ function jobCard(j, flightsIdx) {
     <div class="jc-head">${icon(meta.ic)}<span class="jc-title">${title}</span>
       <span class="jc-status ${esc(j.status)}">${esc(stLabel)}${pct != null && j.status === 'running' ? ` ${pct}%` : ''}</span></div>
     ${j.status === 'running' ? `
+      ${j.kind === '3d' ? (() => {
+        const steps = [['frames', 'Frames'], ['odm', 'Fotogrametr\u00eda'], ['publish', 'Publicar']];
+        const at = steps.findIndex(s => s[0] === j.stage);
+        return `<div class="jc-steps">${steps.map(([, lb], i) =>
+          `<span class="jc-step${i < at ? ' done' : i === at ? ' act' : ''}">${i < at ? '\u2713 ' : ''}${lb}</span>`).join('')}</div>`;
+      })() : ''}
       <div class="jc-stage">${esc(humanStage(j))}</div>
       ${pct != null ? `<div class="jc-bar"><div style="width:${pct}%"></div></div>` : ''}
       <div class="jc-meta"><span>${j.mins ? j.mins + ' min transcurridos' : ''}</span>

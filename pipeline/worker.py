@@ -76,6 +76,12 @@ def run_3d(j: dict):
             timeout=1800) != 0:
         raise RuntimeError("publicación falló")
 
+    # graba el preset usado en el meta (la UI muestra el nivel de calidad de la malla)
+    mf = VAULT / "models" / cid / "meta.json"
+    if mf.exists():
+        m = json.loads(mf.read_text())
+        m["preset"] = j["spec"].get("preset", "estandar")
+        mf.write_text(json.dumps(m, indent=1))
     rebuild_index()
     jobstore.update(j["id"], progress=1.0)
     jobstore.end(j["id"], "done", f"modelo 3D de {cid} listo — míralo en el tab 3D",
@@ -95,10 +101,17 @@ def run_splat(j: dict):
     ITERS = int(j["spec"].get("iters", 2000))
     jobstore.update(j["id"], detail=f"entrenando {ITERS} iters sobre {n_cams} cámaras (CPU)",
                     stage="train", progress=0.1)
-    rc = jobstore.run_tracked(j["id"],
-        [str(SPLAT_BIN), str(proj), "--cpu", "-n", str(ITERS), "-o", str(out)],
-        timeout=4 * 3600,
-        env={**os.environ, "DYLD_LIBRARY_PATH": str(SPLAT_BIN.parent.parent.parent.parent / "libtorch" / "lib")})
+    try:
+        rc = jobstore.run_tracked(j["id"],
+            [str(SPLAT_BIN), str(proj), "--cpu", "-n", str(ITERS), "-o", str(out)],
+            timeout=4 * 3600, abort_re=r"Step \d+: nan",
+            env={**os.environ, "DYLD_LIBRARY_PATH": str(SPLAT_BIN.parent.parent.parent.parent / "libtorch" / "lib")})
+    except RuntimeError as e:
+        if "abortado" in str(e):
+            # una vez el loss es nan los pesos no se recuperan: seguir es quemar CPU
+            raise RuntimeError("el entrenamiento divergió (loss=nan) — se abortó para no quemar "
+                               "horas de CPU. Reintenta: la inicialización aleatoria suele converger.")
+        raise
     if rc != 0:
         raise RuntimeError(f"opensplat salió con código {rc}")
     quality = splat_quality(out, (jobstore.get(j["id"]) or {}).get("log", ""), n_cams, ITERS)

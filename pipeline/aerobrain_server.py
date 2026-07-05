@@ -311,10 +311,12 @@ def measure_dsm(mdir: Path, spec: dict) -> dict:
 def splat_quality(out: Path, log: str, n_cams: int, iters: int) -> dict:
     """Quality gate del splat: tamaño + cámaras + convergencia de loss."""
     size = out.stat().st_size if out.exists() else 0
-    losses = re.findall(r"Step\s+\d+:\s+([\d.]+)", log or "")
-    final_loss = float(losses[-1]) if losses else None
+    losses = re.findall(r"Step\s+\d+:\s+([\d.]+|nan|inf)", log or "")
+    final_loss = next((float(x) for x in reversed(losses) if x not in ("nan", "inf")), None)
     steps = len(losses)
     reasons = []
+    if losses and losses[-1] in ("nan", "inf"):
+        reasons.append("el entrenamiento divergió (loss=nan) — reintenta o baja las iteraciones")
     if size < 200_000:
         reasons.append(f"archivo muy pequeño ({size} bytes) — escena insuficiente")
     if n_cams < 8:

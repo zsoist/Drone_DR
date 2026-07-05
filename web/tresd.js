@@ -28,7 +28,19 @@
               <button class="btn primary" id="btn-run3d">${icon('cube')} Procesar</button>
             </div>
             <p class="footer-note" id="preset-note"></p>
-            <div id="jobs3d" style="margin-top:8px"></div>
+            <details class="explain">
+              <summary>¿Cómo funciona el procesamiento?</summary>
+              <p><b>1 · Frames + geotag</b> — extrae fotos 2K del video y les inyecta el GPS de tu
+              telemetría DJI (sin esto la fotogrametría no sabe dónde está nada).</p>
+              <p><b>2 · Fotogrametría ODM</b> — encuentra miles de puntos comunes entre fotos,
+              triangula la posición 3D de cada uno (nube densa) y reconstruye malla, ortofoto y
+              modelo de elevación. Es la etapa larga.</p>
+              <p><b>3 · Publicar</b> — genera los assets web: ortofoto con bordes fundidos, nube
+              para el visor, DSM con curvas de nivel y reporte de calidad.</p>
+              <p><b>Presets</b> — <b>Rápido</b>: nube ligera y ortofoto 8 cm/px para revisar
+              cobertura. <b>Estándar</b>: 5 cm/px, el equilibrio para casi todo. <b>Alta</b>: nube
+              densa y 3 cm/px para entregas profesionales y splats premium.</p>
+            </details>
           </div>
         </div>
       </div>
@@ -46,8 +58,27 @@
           </div>
           <div class="pb" id="splats"></div>
           <div id="splat-viewer" style="height:46dvh;display:none"></div>
+          <div class="pb" style="border-top:1px solid var(--line)">
+            <details class="explain">
+              <summary>¿Qué es un gaussian splat?</summary>
+              <p>Reconstruye la escena como millones de <b>manchas 3D translúcidas</b> en vez de
+              triángulos — se ve fotorrealista desde cualquier ángulo y no deja los huecos típicos
+              de la malla en vuelos nadir. Se entrena sobre las poses del proyecto ODM
+              (procesa el vuelo primero).</p>
+              <p><b>Iteraciones = calidad</b> — cada iteración refina posición, color y opacidad de
+              las manchas. 1k es un boceto, 2k ya luce, 7k es cinemático, 15k exprime el detalle
+              (más iteraciones = más horas de CPU).</p>
+              <p><b>Formato .splat</b> — se ve aquí mismo, en el link de compartir, y es compatible
+              con SuperSplat, Polycam y visores web estándar.</p>
+            </details>
+          </div>
         </div>
       </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="ph">${icon('activity')} Cola de procesamiento</div>
+      <div class="pb" id="jobs3d"></div>
     </div>
 
     <div id="proj-view" style="display:none">
@@ -93,10 +124,11 @@
       <div>
         <div class="panel">
           <div class="ph">${icon('cube')} Malla texturizada
+            <span class="chip" id="mesh-q" style="font-size:10.5px;padding:2px 9px"></span>
             <span class="spacer" style="flex:1"></span>
             <button class="btn" id="load-mesh" style="padding:4px 12px;font-size:11.5px">Cargar</button>
           </div>
-          <div id="mesh-box" style="height:44dvh;min-height:280px;display:grid;place-items:center">
+          <div id="mesh-box" style="height:52dvh;min-height:340px;display:grid;place-items:center">
             <p class="footer-note" style="margin:0">Malla sólida — óptima con vuelos en órbita/oblicuos; en nadir puede tener huecos.</p>
           </div>
         </div>
@@ -227,20 +259,43 @@
     const q = cur.qa || {};
     const reproj = q.reprojection_error_px;
     const grade = reproj == null ? '—' : reproj < 1.5 ? 'excelente' : reproj < 2.5 ? 'buena' : 'aceptable';
+    document.getElementById('mesh-q').textContent =
+      { rapido: 'calidad rápida', alta: 'calidad alta' }[cur.preset] || 'calidad estándar';
+    const sp = (sys.splats || []).find(s => s.name === `${cid}.splat`);
     document.getElementById('dls').innerHTML = `
       ${q.cameras_reconstructed != null ? `<table class="kv" style="margin-bottom:12px">
         <tr><td>Cámaras reconstruidas</td><td>${q.cameras_reconstructed} / ${q.cameras_total}</td></tr>
         <tr><td>Error de reproyección</td><td>${reproj} px · <span style="color:${reproj < 1.5 ? 'var(--mint)' : 'var(--amber)'}">${grade}</span></td></tr>
         <tr><td>Resolución (GSD)</td><td>${q.gsd_cm_px ?? '—'} cm/px</td></tr>
         <tr><td>Área cubierta</td><td>${q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(2) + ' ha' : Math.round(q.area_m2) + ' m²'}</td></tr>
-        <tr><td>Puntos sparse</td><td>${(q.sparse_points || 0).toLocaleString()}</td></tr>
-        <tr><td>Datum</td><td>WGS84 · elipsoidal</td></tr>
       </table>
-      <p class="footer-note" style="margin:0 0 12px">Sin GCPs: precisión relativa alta, absoluta ±GPS del dron (~2-5 m). Para grado topográfico certificable, importa puntos de control.</p>` : ''}
-      <div class="navrow" style="flex-wrap:wrap">
-        <a class="btn" href="${base}/ortho_full.jpg" target="_blank">${icon('map')} Ortofoto 5K</a>
-        <a class="btn" href="${base}/${cur.model_obj}" download>${icon('cube')} Modelo .obj</a>
-        <a class="btn" href="${base}/cloud.ply" download>${icon('layers')} Nube .ply</a>
+      <details class="explain" style="margin-bottom:14px">
+        <summary>Detalles técnicos</summary>
+        <table class="kv">
+          <tr><td>Puntos sparse</td><td>${(q.sparse_points || 0).toLocaleString()}</td></tr>
+          <tr><td>Nube densa</td><td>${cur.cloud_bytes ? (cur.cloud_bytes / 1e6).toFixed(0) + ' MB · PLY' : '—'}</td></tr>
+          <tr><td>Ortofoto fuente</td><td>${(cur.ortho_px || []).join(' × ')} px</td></tr>
+          ${cur.dsm_min != null ? `<tr><td>Rango de elevación</td><td>${cur.dsm_min} – ${cur.dsm_max} m</td></tr>
+          <tr><td>Curvas de nivel</td><td>cada ${cur.contour_interval} m</td></tr>` : ''}
+          <tr><td>Texturas de malla</td><td>${cur.textures || 0}</td></tr>
+          <tr><td>Borde fundido</td><td>${cur.ortho_feather_px || 0} px</td></tr>
+          <tr><td>Datum</td><td>WGS84 · elipsoidal</td></tr>
+        </table>
+        <p class="footer-note" style="margin:8px 0 0">Sin GCPs: precisión relativa alta, absoluta
+        ±GPS del dron (~2-5 m). Para grado topográfico certificable, importa puntos de control.</p>
+      </details>` : ''}
+      <div class="exp-grid">
+        <a class="exp" href="${base}/ortho_full.jpg" target="_blank" rel="noopener"><b>Ortofoto 5K</b><span>JPG · presentaciones</span></a>
+        <a class="exp" href="${base}/${cur.ortho_asset || 'ortho.png'}" download><b>Ortofoto transparente</b><span>WebP · overlays</span></a>
+        ${cur.has_dsm ? `
+        <a class="exp" href="${base}/dsm_4326.tif" download><b>DSM GeoTIFF</b><span>TIF · QGIS / GIS</span></a>
+        <a class="exp" href="${base}/contours.geojson" download><b>Curvas de nivel</b><span>GeoJSON · CAD / GIS</span></a>
+        <a class="exp" href="${base}/hillshade.png" download><b>Relieve sombreado</b><span>PNG · mapas</span></a>
+        <a class="exp" href="${base}/dsm_color.png" download><b>Elevación color</b><span>PNG · mapas</span></a>` : ''}
+        <a class="exp" href="${base}/cloud.ply" download><b>Nube de puntos</b><span>PLY · CloudCompare</span></a>
+        <a class="exp" href="${base}/${cur.model_obj}" download><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></a>
+        ${sp ? `<a class="exp" href="data/splats/${encodeURIComponent(sp.name)}" download><b>Gaussian splat</b><span>SPLAT · SuperSplat</span></a>` : ''}
+        <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener"><b>Página pública</b><span>LINK · compartir</span></a>
       </div>`;
     if (omap) omap.remove();
     const b = new maplibregl.LngLatBounds();
@@ -275,6 +330,13 @@
                                'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } });
       omap.on('click', onMapClick);
     });
+    // recentrar: volver al encuadre del proyecto cuando te pierdes navegando
+    const rc = document.createElement('button');
+    rc.className = 'map-recenter';
+    rc.title = 'Recentrar en el proyecto';
+    rc.innerHTML = icon('pin');
+    rc.addEventListener('click', () => omap.fitBounds(b, { padding: 40 }));
+    document.getElementById('omap').appendChild(rc);
     document.getElementById('op').oninput = e => {
       omap.getLayer('ortho') && omap.setPaintProperty('ortho', 'raster-opacity', +e.target.value / 100);
     };
@@ -496,7 +558,8 @@
     const bar = document.createElement('div');
     bar.className = 'viewer-tools';
     bar.innerHTML = `
-      ${cam ? `<button data-vt="center" title="Centrar">${icon('pin')}</button>` : ''}
+      ${cam ? `<button data-vt="center" title="Centrar">${icon('pin')}</button>
+      <button data-vt="rot" title="Auto-rotar">${icon('route')}</button>` : ''}
       <button data-vt="fs" title="Pantalla completa">${icon('ext')}</button>`;
     box.style.position = 'relative';
     box.appendChild(bar);
@@ -505,6 +568,11 @@
       const b = e.target.closest('[data-vt]');
       if (!b) return;
       if (b.dataset.vt === 'center') { cam.position.copy(cam0); controls.target.set(0, 0, 0); }
+      if (b.dataset.vt === 'rot') {
+        controls.autoRotate = !controls.autoRotate;
+        controls.autoRotateSpeed = 1.1;
+        b.classList.toggle('on', controls.autoRotate);
+      }
       if (b.dataset.vt === 'fs') {
         const on = box.classList.toggle('viewer-fs');
         b.innerHTML = on ? icon('chevL') : icon('ext');
@@ -540,6 +608,22 @@
     scene.add(obj);
     frameObject(obj, cam, controls);
     attachViewerTools(box, cam, controls);
+    // HUD malla: alternar textura / wireframe (para inspeccionar la geometría)
+    const mhud = document.createElement('div');
+    mhud.className = 'viewer-hud';
+    mhud.innerHTML = `<button class="chip on" data-mv="tex">Textura</button>
+      <button class="chip" data-mv="wire">Wireframe</button>`;
+    box.appendChild(mhud);
+    mhud.addEventListener('click', ev => {
+      const bt = ev.target.closest('[data-mv]');
+      if (!bt) return;
+      const wire = bt.dataset.mv === 'wire';
+      obj.traverse(n => {
+        if (!n.isMesh) return;
+        (Array.isArray(n.material) ? n.material : [n.material]).forEach(m => { m.wireframe = wire; });
+      });
+      mhud.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === bt));
+    });
   });
 
   document.getElementById('load-cloud-main').addEventListener('click', async e => {
