@@ -737,3 +737,28 @@ details.explain b { color: var(--text); font-weight: 600; }
 .splat-item .si-t b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .splat-item .si-t .mono { font-size: 10.5px; color: var(--text-3); }
 .splat-item .btn svg.ic { width: 14px; height: 14px; }
+
+/* ---------- Dron v2: gauge + explorador ---------- */
+.sd-gauge { flex: none; }
+.sd-gauge circle[data-target] { transition: stroke-dashoffset 900ms cubic-bezier(.25,.1,.25,1); }
+.sd-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sd-title b { font-size: 14px; }
+.sd-title .mono { font-size: 10.5px; color: var(--text-3); }
+.sd-ok { color: var(--mint); border-color: rgba(82,199,154,0.4); }
+.sd-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 11px; }
+.sd-meta .chip { font-size: 10.5px; padding: 2px 10px; }
+.sd-files { max-height: 300px; overflow-y: auto; border-top: 1px solid var(--line); }
+.sd-file {
+  display: flex; align-items: center; gap: 9px; padding: 6px 2px;
+  border-bottom: 1px solid var(--line); font-size: 12px;
+  animation: riseIn 200ms var(--ease) backwards;
+}
+.sd-file:last-child { border-bottom: none; }
+.sd-file .sf-ic svg.ic { width: 13px; height: 13px; color: var(--text-3); }
+.sd-file .sf-name { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sd-file .sf-size { font-size: 10.5px; color: var(--text-3); }
+.sd-file .sf-st { font-size: 10.5px; font-weight: 600; }
+@media (max-width: 700px) {
+  .sd-head { flex-wrap: wrap; }
+  .sd-file .sf-size { display: none; }
+}

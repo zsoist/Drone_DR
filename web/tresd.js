@@ -628,6 +628,23 @@
     controls.maxDistance = dist * 3;
     controls.update();
   }
+  function fitSplatViewer(viewer) {
+    const mesh = viewer?.splatMesh;
+    const center = mesh?.calculatedSceneCenter || new THREE.Vector3();
+    const radius = Math.max(mesh?.maxSplatDistanceFromSceneCenter || mesh?.visibleRegionRadius || 1, 1);
+    const dist = radius * 3.2;
+    const dir = new THREE.Vector3(0.18, 0.78, 0.62).normalize();
+    viewer.camera.position.copy(center).addScaledVector(dir, dist);
+    viewer.camera.near = Math.max(radius / 800, 0.01);
+    viewer.camera.far = Math.max(radius * 80, dist * 8);
+    viewer.camera.updateProjectionMatrix();
+    if (viewer.controls) {
+      viewer.controls.target.copy(center);
+      viewer.controls.minDistance = Math.max(radius * 0.55, 0.25);
+      viewer.controls.maxDistance = Math.max(radius * 18, 20);
+      viewer.controls.update();
+    }
+  }
   const spin = (box, label = 'Cargando…') => {
     box.innerHTML = `<div style="width:80%;text-align:center">
       <div class="sk" style="height:10px;border-radius:5px"></div>
@@ -883,7 +900,7 @@
       sceneRevealMode: GaussianSplats3D.SceneRevealMode.Instant,
       splatRenderMode: GaussianSplats3D.SplatRenderMode.ThreeD,
       cameraUp: [0, 1, 0],
-      initialCameraPosition: [0, 42, 34],
+      initialCameraPosition: [0, 5, 4],
       initialCameraLookAt: [0, 0, 0],
     });
     box._viewer = viewer;
@@ -905,6 +922,7 @@
         `<p class="footer-note">No se pudo cargar ${esc(name)} · ${esc(String(err && err.message || err).slice(0, 90))}</p>`;
       return;
     }
+    fitSplatViewer(viewer);
     viewer.start();
     // navegacion domada: damping suave, nunca por debajo del suelo, zoom acotado
     const c = viewer.controls;
@@ -914,8 +932,6 @@
       c.rotateSpeed = 0.5;
       c.zoomSpeed = 0.8;
       c.maxPolarAngle = Math.PI * 0.49;
-      c.minDistance = 4;
-      c.maxDistance = 320;
     }
     box.querySelector('.splat-load')?.remove();
     // HUD premium: auto-rotar + pantalla completa

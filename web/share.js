@@ -153,6 +153,24 @@ function frame(obj, cam, controls, topDown = false) {
   controls.target.set(0, 0, 0);
 }
 
+function fitSplatViewer(viewer) {
+  const mesh = viewer?.splatMesh;
+  const center = mesh?.calculatedSceneCenter || new THREE.Vector3();
+  const radius = Math.max(mesh?.maxSplatDistanceFromSceneCenter || mesh?.visibleRegionRadius || 1, 1);
+  const dist = radius * 3.2;
+  const dir = new THREE.Vector3(0.18, 0.78, 0.62).normalize();
+  viewer.camera.position.copy(center).addScaledVector(dir, dist);
+  viewer.camera.near = Math.max(radius / 800, 0.01);
+  viewer.camera.far = Math.max(radius * 80, dist * 8);
+  viewer.camera.updateProjectionMatrix();
+  if (viewer.controls) {
+    viewer.controls.target.copy(center);
+    viewer.controls.minDistance = Math.max(radius * 0.55, 0.25);
+    viewer.controls.maxDistance = Math.max(radius * 18, 20);
+    viewer.controls.update();
+  }
+}
+
 const loaders = {
   async cloud() {
     const st = spinner('Descargando nube de puntos…');
@@ -202,7 +220,7 @@ const loaders = {
       showLoadingUI: false,
       sceneRevealMode: GaussianSplats3D.SceneRevealMode.Instant,
       cameraUp: [0, 1, 0],
-      initialCameraPosition: [0, 42, 34],
+      initialCameraPosition: [0, 5, 4],
       initialCameraLookAt: [0, 0, 0],
     });
     await Promise.race([
@@ -213,6 +231,7 @@ const loaders = {
       }),
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout de 45s procesando el splat')), 45000)),
     ]);
+    fitSplatViewer(viewer);
     viewer.start();
     const c = viewer.controls;
     if (c) {
@@ -221,8 +240,6 @@ const loaders = {
       c.rotateSpeed = 0.5;
       c.zoomSpeed = 0.8;
       c.maxPolarAngle = Math.PI * 0.49;
-      c.minDistance = 4;
-      c.maxDistance = 320;
     }
     view._splatViewer = viewer;
     view.querySelector('.sh-st')?.parentElement?.remove();

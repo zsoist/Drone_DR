@@ -127,35 +127,45 @@ def _deepseek(prompt: str) -> str:
 
 
 SD_VIDEO_EXT = (".MP4", ".mp4", ".MOV", ".mov")
+SD_PHOTO_EXT = (".JPG", ".jpg", ".JPEG", ".DNG", ".dng", ".PNG", ".png")
 SD_SKIP_VOLS = ("SSD", "Macintosh HD", "com.apple.TimeMachine.localsnapshots")
 
 
 def sd_volumes() -> list:
     """Tarjetas montadas con estructura DCIM (DJI). Nunca lista el SSD."""
     vols = []
+    vault_idx = None
     for v in sorted(Path("/Volumes").iterdir()):
         try:
             if v.name in SD_SKIP_VOLS or not (v / "DCIM").is_dir():
                 continue
         except OSError:
             continue
-        vids = []
+        if vault_idx is None:
+            # nombre -> tamaños en raw/: una pasada, O(1) por archivo de la SD
+            vault_idx = {}
+            for rf in (VAULT / "raw").rglob("*"):
+                if rf.is_file():
+                    vault_idx.setdefault(rf.name, set()).add(rf.stat().st_size)
+        vids, fotos = [], []
         for f in sorted((v / "DCIM").rglob("*")):
-            if f.suffix in SD_VIDEO_EXT and f.is_file() and not f.name.startswith("."):
-                backup = find_raw(f.stem, f.stat().st_size)
-                vids.append({
-                    "name": f.name,
-                    "rel": str(f.relative_to(v)),
-                    "bytes": f.stat().st_size,
-                    "in_vault": backup is not None,
-                    "srt": f.with_suffix(".SRT").exists() or f.with_suffix(".srt").exists(),
-                })
+            if not f.is_file() or f.name.startswith("."):
+                continue
+            size = f.stat().st_size
+            entry = {"name": f.name, "rel": str(f.relative_to(v)),
+                     "bytes": size, "in_vault": size in vault_idx.get(f.name, ())}
+            if f.suffix in SD_VIDEO_EXT:
+                entry["srt"] = f.with_suffix(".SRT").exists() or f.with_suffix(".srt").exists()
+                vids.append(entry)
+            elif f.suffix in SD_PHOTO_EXT:
+                fotos.append(entry)
         du = shutil.disk_usage(v)
-        vols.append({"volume": v.name, "total": du.total, "free": du.free, "videos": vids})
+        vols.append({"volume": v.name, "total": du.total, "free": du.free,
+                     "videos": vids, "photos": fotos})
     return vols
 
 
-def _sd_resolve(volume: str, rel: str) -> Path:
+def _sd_resolve(volume: str, rel: str, exts: tuple = SD_VIDEO_EXT) -> Path:
     """Valida que el archivo pedido viva dentro del volumen (sin traversal)."""
     if "/" in volume or volume in ("", ".", "..") or volume in SD_SKIP_VOLS:
         raise ValueError("volumen inválido")
@@ -164,8 +174,8 @@ def _sd_resolve(volume: str, rel: str) -> Path:
         raise ValueError("volumen inválido")
     f = (base / rel).resolve()
     f.relative_to(base)          # ValueError si escapa
-    if f.suffix not in SD_VIDEO_EXT or not f.is_file():
-        raise ValueError(f"no es un video válido: {rel}")
+    if f.suffix not in exts or not f.is_file():
+        raise ValueError(f"archivo no permitido: {rel}")
     return f
 
 
@@ -187,7 +197,7 @@ def run_sd_clean(spec: dict, j):
     byte-a-byte en raw/. Si hay SRT sin copia, conserva ese par en la SD."""
     try:
         volume = str(spec.get("volume", ""))
-        rels = [str(x) for x in spec.get("files", [])][:200]
+        rels = [str(x) for x in spec.get("files", [])][:500]
         cleaned, kept = 0, 0
         for i, rel in enumerate(rels):
             src = _sd_resolve(volume, rel)
@@ -216,7 +226,7 @@ def run_sd_import(spec: dict, j):
     try:
         volume = str(spec.get("volume", ""))
         drone = re.sub(r"[^\w -]", "", str(spec.get("drone", "") or volume)).strip() or volume
-        rels = [str(x) for x in spec.get("files", [])][:200]
+        rels = [str(x) for x in spec.get("files", [])][:500]
         clean = bool(spec.get("clean"))
         clean_only = bool(spec.get("clean_only"))
         if clean_only:
@@ -224,7 +234,7 @@ def run_sd_import(spec: dict, j):
             # que ya esta verificado en el vault (mismo nombre y tamano)
             freed = 0
             for i, rel in enumerate(rels):
-                src = _sd_resolve(volume, rel)
+                src = _sd_resolve(volume, rel, SD_VIDEO_EXT + SD_PHOTO_EXT)
                 dest = None
                 for hit in (VAULT / "raw").rglob(src.name):
                     if hit.stat().st_size == src.stat().st_size:
@@ -849,9 +859,10 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
+            _exts = SD_VIDEO_EXT + (SD_PHOTO_EXT if spec.get("clean_only") else ())
             try:
-                for rel in list(spec.get("files", []))[:200]:
-                    _sd_resolve(str(spec.get("volume", "")), str(rel))
+                for rel in list(spec.get("files", []))[:500]:
+                    _sd_resolve(str(spec.get("volume", "")), str(rel), _exts)
             except (ValueError, OSError) as e:
                 return self.send_json({"error": str(e)}, 400)
             if not spec.get("files"):
