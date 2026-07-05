@@ -20,8 +20,23 @@
   --sidebar-w: 220px;
   --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
+[data-theme="light"] {
+  --bg: #F2F4F8;
+  --surface: #FFFFFF;
+  --surface-2: #EAEEF4;
+  --line: #DDE3EC;
+  --text: #17202B;
+  --text-2: #4E5D70;
+  --text-3: #8794A6;
+  --accent: #1E7FD1;
+  --accent-dim: rgba(30, 127, 209, 0.10);
+  --amber: #B97A1F;
+  --mint: #1E8F63;
+  --red: #C24C4C;
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { color-scheme: dark; }
+html[data-theme="light"] { color-scheme: light; }
 body {
   background: var(--bg);
   color: var(--text);

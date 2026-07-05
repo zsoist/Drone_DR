@@ -74,6 +74,22 @@ LUTS = {
     "bw": "hue=s=0,eq=contrast=1.22",
 }
 FONT = "/System/Library/Fonts/Helvetica.ttc"
+KEYS_ENV = Path("/Volumes/SSD/_system/claude/.api-keys.env")
+
+
+def _deepseek(prompt: str) -> str:
+    import urllib.request
+    key = ""
+    for line in KEYS_ENV.read_text().splitlines():
+        if line.startswith("DEEPSEEK_API_KEY="):
+            key = line.split("=", 1)[1].strip().strip('"')
+    req = urllib.request.Request(
+        "https://api.deepseek.com/chat/completions",
+        data=json.dumps({"model": "deepseek-chat", "temperature": 0.6,
+                         "messages": [{"role": "user", "content": prompt}]}).encode(),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        return json.loads(r.read())["choices"][0]["message"]["content"]
 
 
 def run_edit(spec: dict, j):
@@ -149,6 +165,8 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/api/jobs"):
             return self.send_json({"jobs": list(reversed(JOBS))})
+        if self.path.startswith("/api/properties"):
+            return self.do_GET_properties()
         f = self.resolve()
         if not f:
             return self.send_error(404)
@@ -259,7 +277,47 @@ class H(BaseHTTPRequestHandler):
                 return
             rebuild_index()
             return self.send_json({"ok": True})
+        if u.path == "/api/property":
+            if not self.auth(q):
+                return
+            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            slug = re.sub(r"[^a-z0-9-]", "", str(spec.get("slug", "")).lower())[:40]
+            if not slug:
+                return self.send_json({"error": "slug requerido"}, 400)
+            spec["slug"] = slug
+            spec["updated"] = time.strftime("%Y-%m-%d %H:%M")
+            pdir = VAULT / "properties"
+            pdir.mkdir(exist_ok=True)
+            (pdir / f"{slug}.json").write_text(json.dumps(spec, ensure_ascii=False, indent=1))
+            return self.send_json({"ok": True, "url": f"https://vuelos.metislab.work/p.html?id={slug}"})
+        if u.path == "/api/property_ai":
+            if not self.auth(q):
+                return
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            slug = re.sub(r"[^a-z0-9-]", "", str(body.get("slug", "")).lower())
+            pf = VAULT / "properties" / f"{slug}.json"
+            if not pf.exists():
+                return self.send_json({"error": "propiedad no existe"}, 404)
+            p = json.loads(pf.read_text())
+            prompt = (
+                "Escribe la descripción de venta para una propiedad, en español, tono premium "
+                "inmobiliario, 2 párrafos cortos + 4 líneas de características precedidas por '· '. "
+                "TEXTO PLANO: sin markdown, sin asteriscos, sin títulos, sin emojis, sin exagerar. "
+                "Datos: " + json.dumps(p, ensure_ascii=False))
+            p["descripcion"] = _deepseek(prompt)
+            pf.write_text(json.dumps(p, ensure_ascii=False, indent=1))
+            return self.send_json({"ok": True, "descripcion": p["descripcion"]})
         self.send_error(404)
+
+    def do_GET_properties(self):
+        pdir = VAULT / "properties"
+        out = []
+        if pdir.exists():
+            for f in sorted(pdir.glob("*.json")):
+                p = json.loads(f.read_text())
+                out.append({"slug": p.get("slug"), "titulo": p.get("titulo", ""),
+                            "precio": p.get("precio", ""), "updated": p.get("updated", "")})
+        return self.send_json({"properties": out})
 
 
 if __name__ == "__main__":

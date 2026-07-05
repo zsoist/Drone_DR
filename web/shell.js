@@ -37,6 +37,15 @@ async function pollJobs(el, every = 2500) {
   return setInterval(paint, every);
 }
 
+// tema: aplicar ANTES de pintar para evitar flash
+document.documentElement.dataset.theme = localStorage.getItem('ab_theme') || 'dark';
+function toggleTheme() {
+  const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = t;
+  localStorage.setItem('ab_theme', t);
+  document.querySelectorAll('.theme-lb').forEach(e => { e.textContent = t === 'light' ? 'Oscuro' : 'Claro'; });
+}
+
 function renderShell(active) {
   const cur = location.pathname.split('/').pop() || 'index.html';
   document.body.insertAdjacentHTML('afterbegin', `
@@ -50,6 +59,7 @@ function renderShell(active) {
           <a class="nav-item ${n.href === (active || cur) ? 'active' : ''}" href="${n.href}">
             ${icon(n.ic)}<span>${n.label}</span>
           </a>`).join('')}
+        <button class="nav-item" onclick="toggleTheme()">${icon('sun')}<span class="theme-lb">${document.documentElement.dataset.theme === 'light' ? 'Oscuro' : 'Claro'}</span></button>
         <div class="foot"><span class="dot"></span>Mac Mini M4 · vault local · $0/mes<br>
           <a href="guia.html" style="color:var(--accent)">Guía de operación</a></div>
       </aside>
@@ -78,15 +88,14 @@ async function getFlights() {
   }
   return _flights;
 }
+// AI viene embebido en flights.json (0 requests extra — clave en móvil)
 async function getAI(cid) {
-  try {
-    const r = await fetch(`${DATA}/ai/${cid}.json`);
-    return r.ok ? await r.json() : null;
-  } catch { return null; }
+  const fl = await getFlights();
+  return fl.find(f => f.clip_id === cid)?.ai || null;
 }
 async function getAIAll(flights) {
   const out = {};
-  await Promise.all(flights.map(async f => { out[f.clip_id] = await getAI(f.clip_id); }));
+  flights.forEach(f => { out[f.clip_id] = f.ai || null; });
   return out;
 }
 function haversine(a, b) {

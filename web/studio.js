@@ -8,19 +8,38 @@ main.innerHTML = `
       <div class="toolbar" style="margin-bottom:12px">
         <select class="ctl" id="ed-clip" style="max-width:340px"></select>
         <div class="seg"><button id="ed-h" class="on">16:9</button><button id="ed-v">9:16 vertical</button></div>
+        <select class="ctl" id="ed-lut" title="Look / LUT">
+          <option value="none">Sin look</option>
+          <option value="cine">Cine (teal &amp; orange)</option>
+          <option value="vivid">Vivid</option>
+          <option value="warm">Cálido atardecer</option>
+          <option value="moody">Moody</option>
+          <option value="bw">Blanco y negro</option>
+        </select>
+        <select class="ctl" id="ed-speed" title="Velocidad del próximo corte">
+          <option value="0.25">0.25x slow-mo</option>
+          <option value="0.5">0.5x slow-mo</option>
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+          <option value="4">4x hyperlapse</option>
+        </select>
       </div>
+      <input class="ctl" id="ed-title" placeholder="Título sobre el video (opcional)"
+        style="width:100%;margin-bottom:12px" maxlength="60">
       <video id="ed-video" controls playsinline webkit-playsinline preload="metadata"
         style="width:100%;max-height:46dvh;background:#000;border-radius:8px;display:none"></video>
       <div class="toolbar" style="margin-top:12px">
-        <button class="btn" id="ed-in">${icon('chevR')} Marcar IN</button>
-        <button class="btn" id="ed-out">${icon('chevL')} Marcar OUT · añadir corte</button>
+        <button class="btn" id="ed-in">${icon('chevR')} IN</button>
+        <button class="btn" id="ed-out">${icon('chevL')} OUT · añadir corte</button>
+        <label class="btn" style="gap:6px"><input type="checkbox" id="ed-fade" checked> Fades</label>
         <span class="mono" id="ed-cur" style="color:var(--text-3);font-size:12px"></span>
         <span class="spacer"></span>
         <button class="btn primary" id="ed-export">${icon('check')} Exportar</button>
       </div>
       <div id="ed-segs" style="margin-top:10px"></div>
-      <p class="footer-note">Marca IN y OUT sobre el video para acumular cortes; el M4 los une
-      con ffmpeg por hardware. El resultado aparece abajo en Reels.</p>
+      <p class="footer-note">Marca IN/OUT para acumular cortes — cada corte hereda la velocidad
+      elegida (slow-mo real: tus clips son 60fps). El look, fades y título aplican al export completo.
+      El M4 procesa por hardware y el resultado aparece en Reels.</p>
     </div>
   </div>
   <div class="fl-layout">
@@ -51,6 +70,7 @@ main.innerHTML = `
             <tr><td>Reel vertical 9:16</td><td><span class="mono">ai/reel.py --vertical</span></td></tr>
             <tr><td>Análisis AI nuevo</td><td><span class="mono">ai/analyze.py --all</span></td></tr>
             <tr><td>Modelo 3D de un vuelo</td><td><span class="mono">splat/make_splat.sh &lt;clip&gt;</span></td></tr>
+            <tr><td>Página de venta</td><td><a href="ventas.html" style="color:var(--accent)">Ventas — crear propiedad con link + QR</a></td></tr>
           </table>
           <p class="footer-note">Todo corre local en el M4 — sin cloud, sin costos. Los reels usan los
           highlights que el análisis AI detectó en cada clip.</p>
@@ -117,7 +137,8 @@ main.innerHTML = `
   document.getElementById('ed-in').addEventListener('click', () => { inPoint = vid.currentTime; vid.dispatchEvent(new Event('timeupdate')); });
   document.getElementById('ed-out').addEventListener('click', () => {
     if (inPoint == null || vid.currentTime <= inPoint) return;
-    segs.push([+inPoint.toFixed(1), +vid.currentTime.toFixed(1)]);
+    segs.push({ a: +inPoint.toFixed(1), b: +vid.currentTime.toFixed(1),
+                speed: +document.getElementById('ed-speed').value });
     inPoint = null; paintSegs();
   });
   document.getElementById('ed-h').addEventListener('click', () => setAR(false));
@@ -130,8 +151,8 @@ main.innerHTML = `
   function paintSegs() {
     document.getElementById('ed-segs').innerHTML = segs.map((s, i) => `
       <div class="hl-item">
-        <button class="tc" data-play="${s[0]}">${fmt.dur(s[0])} → ${fmt.dur(s[1])}</button>
-        <p>corte ${i + 1} · ${(s[1] - s[0]).toFixed(1)}s</p>
+        <button class="tc" data-play="${s.a}">${fmt.dur(s.a)} → ${fmt.dur(s.b)}</button>
+        <p>corte ${i + 1} · ${(s.b - s.a).toFixed(1)}s${s.speed !== 1 ? ` · <b>${s.speed}x</b> → ${((s.b - s.a) / s.speed).toFixed(1)}s` : ''}</p>
         <button class="btn" data-rm="${i}" style="padding:3px 9px;font-size:11px">Quitar</button>
       </div>`).join('');
   }
@@ -145,7 +166,12 @@ main.innerHTML = `
     if (!token) return;
     const r = await fetch(`/api/edit?token=${encodeURIComponent(token)}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clip_id: sel.value, segments: segs, vertical }),
+      body: JSON.stringify({
+        clip_id: sel.value, segments: segs, vertical,
+        filter: document.getElementById('ed-lut').value,
+        title: document.getElementById('ed-title').value.trim(),
+        fade: document.getElementById('ed-fade').checked,
+      }),
     });
     if (r.status === 403) return getToken(true);
     segs = []; paintSegs();

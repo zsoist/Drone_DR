@@ -46,6 +46,9 @@ def parse_srt(srt_path: Path) -> dict:
         second = t.group(1)  # datetime truncated to the second → 1Hz downsample
         if second == last_second:
             continue
+        # drop pre-GPS-lock points: DJI logs 0,0 until it gets a fix
+        if abs(float(f.group("lat"))) < 0.01 and abs(float(f.group("lon"))) < 0.01:
+            continue
         last_second = second
         points.append({
             "t": second,

@@ -21,13 +21,13 @@ main.innerHTML = `
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
   async function drawRoutes() {
-    const tracks = await Promise.all(flights.map(f =>
-      fetch(`${DATA}/tracks/${f.clip_id}.flight.json`).then(r => r.json()).catch(() => null)));
-    const features = tracks.map((t, i) => t && {
+    // un solo routes.json pre-simplificado — no 40 fetches de tracks
+    const { routes } = await (await fetch(`${DATA}/manifest/routes.json`)).json();
+    const features = routes.map(r => ({
       type: 'Feature',
-      properties: { cid: flights[i].clip_id },
-      geometry: { type: 'LineString', coordinates: t.points.map(p => [p.lon, p.lat]) },
-    }).filter(Boolean);
+      properties: { cid: r.cid },
+      geometry: { type: 'LineString', coordinates: r.line },
+    }));
     if (map.getSource('routes')) return;
     map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features } });
     map.addLayer({ id: 'routes-glow', type: 'line', source: 'routes', paint: { 'line-color': '#45A0E6', 'line-width': 6, 'line-opacity': 0.18 } });

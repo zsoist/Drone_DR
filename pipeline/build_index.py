@@ -12,6 +12,7 @@ def dir_size(p: Path) -> int:
 
 def main():
     flights = []
+    routes = []
     clip_manifests = sorted([*(VAULT / "manifest").glob("DJI_*.json"),
                              *(VAULT / "manifest").glob("UP_*.json")])
     for mf in clip_manifests:
@@ -21,10 +22,25 @@ def main():
         m["date"] = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
         m["time"] = f"{ts[8:10]}:{ts[10:12]}"
         m["has_proxy"] = (VAULT / "proxies" / f"{cid}.mp4").exists()
+        # AI embebido: evita 1 fetch por clip en cada página (móvil sufre)
+        aif = VAULT / "ai" / f"{cid}.json"
+        if aif.exists():
+            a = json.loads(aif.read_text())
+            m["ai"] = {k: a.get(k) for k in
+                       ("summary", "scene_type", "tags", "highlights", "travel_score")}
         flights.append(m)
+        # ruta simplificada (1 punto cada 4s) para el mapa global: 1 request, no 40
+        tf = VAULT / "tracks" / f"{cid}.flight.json"
+        if tf.exists():
+            pts = json.loads(tf.read_text())["points"][::4]
+            if pts:
+                routes.append({"cid": cid,
+                               "line": [[round(p["lon"], 6), round(p["lat"], 6)] for p in pts]})
     flights.sort(key=lambda f: f["clip_id"].split("_")[1], reverse=True)
     (VAULT / "manifest" / "flights.json").write_text(
         json.dumps({"flights": flights}, separators=(",", ":")))
+    (VAULT / "manifest" / "routes.json").write_text(
+        json.dumps({"routes": routes}, separators=(",", ":")))
 
     # system.json: storage + reels + splats + last ingest
     ingests = sorted((VAULT / "manifest").glob("ingest-*.json"))
