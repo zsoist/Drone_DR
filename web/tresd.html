@@ -43,9 +43,9 @@
     // ortofoto: aparece cuando el job de ODM termina y se publica el preview
     (async () => {
       const el = document.getElementById('ortho');
-      const r = await fetch('data/odm/proj0104/ortho_preview.jpg', { method: 'HEAD' });
+      const r = await fetch('data/odm/proj0104/ortho_0104_v2.jpg', { method: 'HEAD' });
       if (r.ok) {
-        el.innerHTML = `<img src="data/odm/proj0104/ortho_preview.jpg" style="width:100%;border-radius:8px" alt="Ortofoto">
+        el.innerHTML = `<img src="data/odm/proj0104/ortho_0104_v2.jpg" style="width:100%;border-radius:8px" alt="Ortofoto">
           <p class="footer-note">Ortofoto del vuelo 0104 (4 jul) — generada localmente con OpenDroneMap.</p>`;
       } else {
         el.innerHTML = `<div class="empty">${icon('activity')}<p>ODM está procesando el vuelo 0104 en Docker
