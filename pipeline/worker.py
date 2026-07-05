@@ -104,8 +104,13 @@ def run_splat(j: dict):
     jobstore.update(j["id"], detail=f"entrenando {ITERS} iters sobre {n_cams} cámaras (CPU)",
                     stage="train", progress=0.1)
     try:
+        # --sh-degree-interval > iters: el salto de armónicos esféricos del step
+        # 1000 era lo que hacía divergir el loss a nan en CPU (3 corridas murieron
+        # justo después). El formato .splat ni siquiera exporta los coeficientes
+        # SH, así que entrenar solo el grado 0 no pierde nada y es estable.
         rc = jobstore.run_tracked(j["id"],
-            [str(SPLAT_BIN), str(proj), "--cpu", "-n", str(ITERS), "-o", str(out)],
+            [str(SPLAT_BIN), str(proj), "--cpu", "-n", str(ITERS), "-o", str(out),
+             "--sh-degree-interval", str(ITERS + 1)],
             timeout=4 * 3600, abort_re=r"Step \d+: nan",
             env={**os.environ, "DYLD_LIBRARY_PATH": str(SPLAT_BIN.parent.parent.parent.parent / "libtorch" / "lib")})
     except RuntimeError as e:
