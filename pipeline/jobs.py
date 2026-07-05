@@ -171,6 +171,8 @@ def recent(n: int = 30) -> list[dict]:
         d["ts"] = time.strftime("%H:%M:%S", time.localtime(d["started"]))
         if d["status"] == "running" and d["started"]:
             d["mins"] = round((time.time() - d["started"]) / 60, 1)
+        elif d.get("finished") and d.get("started"):
+            d["mins"] = round((d["finished"] - d["started"]) / 60, 1)
         out.append(d)
     return out
 

@@ -431,9 +431,26 @@ class H(BaseHTTPRequestHandler):
         f = self.resolve()
         if not f:
             return self.send_error(404)
-        size = f.stat().st_size
         ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
         rng = self.headers.get("Range")
+        # sidecar .gz pre-comprimido (nube/malla): Content-Encoding gzip transparente.
+        # Solo sin Range — gzip + rangos parciales no se mezclan.
+        gz = Path(str(f) + ".gz")
+        if not rng and gz.is_file() and "gzip" in self.headers.get("Accept-Encoding", ""):
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(gz.stat().st_size))
+            self.send_header("Cache-Control", "no-store, must-revalidate")
+            self.end_headers()
+            with open(gz, "rb") as fh:
+                while chunk := fh.read(1 << 19):
+                    try:
+                        self.wfile.write(chunk)
+                    except (BrokenPipeError, ConnectionResetError):
+                        return
+            return
+        size = f.stat().st_size
         start, end = 0, size - 1
         if rng:
             m = re.match(r"bytes=(\d*)-(\d*)", rng)

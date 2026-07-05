@@ -568,3 +568,49 @@ details.explain b { color: var(--text); font-weight: 600; }
 /* ---------- micro-polish global ---------- */
 .panel { transition: border-color 200ms var(--ease); }
 .panel:hover { border-color: rgba(69,160,230,0.18); }
+
+/* ---------- animación de entrada (dashboard / share) ---------- */
+.rise { animation: riseIn 340ms var(--ease) backwards; }
+.rise:nth-child(2) { animation-delay: 50ms; } .rise:nth-child(3) { animation-delay: 100ms; }
+.rise:nth-child(4) { animation-delay: 150ms; } .rise:nth-child(5) { animation-delay: 200ms; }
+.rise:nth-child(6) { animation-delay: 250ms; } .rise:nth-child(7) { animation-delay: 300ms; }
+.rise:nth-child(8) { animation-delay: 350ms; }
+@keyframes riseIn { from { opacity: 0; transform: translateY(8px); } }
+
+/* barras de storage/duración animadas */
+.sbar { height: 5px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.sbar > div { height: 100%; background: var(--accent); border-radius: 3px; animation: sbarIn 700ms var(--ease) backwards; }
+@keyframes sbarIn { from { width: 0 !important; } }
+
+/* feed de actividad */
+.act-row { display: flex; align-items: center; gap: 9px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.act-row:last-child { border-bottom: none; }
+.act-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.act-k { font-weight: 600; }
+.act-l { color: var(--text-3); font-size: 11px; }
+
+/* tabla de contenido */
+.dtable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.dtable th {
+  text-align: left; font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase;
+  color: var(--text-3); font-weight: 600; padding: 8px 14px; border-bottom: 1px solid var(--line);
+}
+.dtable td { padding: 8px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.dtable tbody tr { cursor: pointer; transition: background 120ms var(--ease); }
+.dtable tbody tr:hover { background: var(--surface-2); }
+.dtable tbody tr:last-child td { border-bottom: none; }
+
+/* ---------- comparador foto <-> elevación ---------- */
+.cmp { position: relative; overflow: hidden; cursor: ew-resize; user-select: none; touch-action: none; background: #0a0e14; }
+.cmp img { width: 100%; display: block; pointer-events: none; }
+.cmp-over { position: absolute; inset: 0; width: 100%; }
+.cmp-handle {
+  position: absolute; top: 0; bottom: 0; width: 2px; background: #fff;
+  box-shadow: 0 0 12px rgba(0,0,0,0.6); transform: translateX(-1px);
+}
+.cmp-handle span {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 34px; height: 34px; border-radius: 50%; background: #fff;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+}
+.cmp-handle span::before { content: "↔"; display: grid; place-items: center; height: 100%; color: #222; font-size: 15px; }

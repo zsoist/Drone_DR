@@ -547,7 +547,9 @@
     const cam = new THREE.PerspectiveCamera(55, w / h, 0.1, 5000);
     const controls = new OrbitControls(cam, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
+    controls.dampingFactor = 0.07;
+    controls.rotateSpeed = 0.55;
+    controls.zoomSpeed = 0.9;
     new ResizeObserver(() => {
       const W = box.clientWidth, H = box.clientHeight;
       if (!W || !H) return;
@@ -558,7 +560,10 @@
     const dl = new THREE.DirectionalLight(0xffffff, 1.2);
     dl.position.set(1, 2, 1.5);
     scene.add(dl);
-    (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, cam); })();
+    (function loop() {
+      if (!renderer.domElement.isConnected) { renderer.dispose(); return; }  // visor reemplazado
+      requestAnimationFrame(loop); controls.update(); renderer.render(scene, cam);
+    })();
     return { scene, cam, controls, renderer };
   }
   function frameObject(obj, cam, controls) {

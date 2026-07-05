@@ -148,6 +148,16 @@ Image.fromarray(ha).save('/d/.web_hillshade.webp', quality=82, method=4)
 gt = dsm.GetGeoTransform(); w, h = dsm.RasterXSize, dsm.RasterYSize
 corners = [[gt[0], gt[3]], [gt[0] + w * gt[1], gt[3]],
            [gt[0] + w * gt[1], gt[3] + h * gt[5]], [gt[0], gt[3] + h * gt[5]]]
+# ortofoto warpeada EXACTAMENTE a la grilla del DSM: par pixel-perfect para el
+# comparador foto <-> elevacion del share (misma huella, mismo alpha fundido)
+oc = gdal.Warp('', '/d/odm_orthophoto/odm_orthophoto.tif', format='MEM', dstSRS='EPSG:4326',
+               outputBounds=(gt[0], gt[3] + h * gt[5], gt[0] + w * gt[1], gt[3]),
+               width=alpha.shape[1], height=alpha.shape[0])
+gdal.Translate('/d/.web_ortho_cmp.png', oc, format='PNG')
+ci = Image.open('/d/.web_ortho_cmp.png').convert('RGBA')
+ca = np.array(ci)
+ca[..., 3] = alpha
+Image.fromarray(ca).save('/d/.web_ortho_cmp.webp', quality=82, method=4)
 # DSM como binario plano float32: el host lo lee con numpy sin GDAL (mediciones rápidas)
 gdal.Translate('/d/.web_dsm.envi', dsm, format='ENVI', outputType=gdal.GDT_Float32)
 interval = 5 if (hi - lo) > 25 else 2 if (hi - lo) > 12 else 1
@@ -171,6 +181,7 @@ EOF""")
                                    (".web_dsm_color.webp", "dsm_color.webp"),
                                    (".web_hillshade.png", "hillshade.png"),
                                    (".web_hillshade.webp", "hillshade.webp"),
+                                   (".web_ortho_cmp.webp", "ortho_cmp.webp"),
                                    (".web_dsm.envi", "dsm.bin"),
                                    (".web_contours.geojson", "contours.geojson")]:
             p = proj / src_name
@@ -209,9 +220,20 @@ EOF""")
             "gsd_cm_px": gsd_cm,
         }
 
+    # sidecars .gz: el server los sirve con Content-Encoding gzip — la malla OBJ
+    # (texto) baja ~70% y la nube PLY ~30%; el browser descomprime transparente
+    import gzip as _gzip
+    for gf in [out / "cloud.ply", out / "model" / "odm_textured_model_geo.obj",
+               out / "model" / "odm_textured_model_geo.mtl"]:
+        if gf.exists():
+            with open(gf, "rb") as fi, _gzip.open(str(gf) + ".gz", "wb", compresslevel=6) as fo:
+                while chunk := fi.read(1 << 20):
+                    fo.write(chunk)
+
     meta = {
         "clip_id": cid,
         "corners": ometa["corners"],
+        "cmp_asset": "ortho_cmp.webp" if (out / "ortho_cmp.webp").exists() else None,
         "ortho_px": ometa["size"],
         "ortho_asset": "ortho.webp" if (out / "ortho.webp").exists() else "ortho.png",
         "dsm_asset": "dsm_color.webp" if (out / "dsm_color.webp").exists() else "dsm_color.png",
