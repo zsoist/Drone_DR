@@ -180,8 +180,11 @@ def _sd_resolve(volume: str, rel: str, exts: tuple = SD_VIDEO_EXT) -> Path:
 
 
 def _same_size_copy(src: Path) -> Path | None:
-    """RAW respaldado con el mismo stem y tamaño. Un nombre igual no basta."""
-    return find_raw(src.stem, src.stat().st_size)
+    """Archivo respaldado con el mismo nombre y tamaño. Un nombre igual no basta."""
+    for hit in (VAULT / "raw").rglob(src.name):
+        if hit.is_file() and hit.stat().st_size == src.stat().st_size:
+            return hit
+    return None
 
 
 def _srt_backed_up(src: Path, backup: Path) -> bool:
@@ -200,7 +203,7 @@ def run_sd_clean(spec: dict, j):
         rels = [str(x) for x in spec.get("files", [])][:500]
         cleaned, kept = 0, 0
         for i, rel in enumerate(rels):
-            src = _sd_resolve(volume, rel)
+            src = _sd_resolve(volume, rel, SD_VIDEO_EXT + SD_PHOTO_EXT)
             jobstore.update(j["id"], detail=f"verificando respaldo {i + 1}/{len(rels)} · {src.name}",
                             stage="clean", progress=0.05 + 0.9 * i / max(1, len(rels)))
             backup = _same_size_copy(src)
@@ -212,7 +215,7 @@ def run_sd_clean(spec: dict, j):
             src.unlink()
             cleaned += 1
         jobstore.update(j["id"], progress=1.0)
-        msg = f"{cleaned} videos respaldados borrados de la SD"
+        msg = f"{cleaned} archivos respaldados borrados de la SD"
         if kept:
             msg += f" · {kept} conservados por respaldo incompleto"
         job_end(j, "done", msg)

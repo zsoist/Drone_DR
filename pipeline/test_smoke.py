@@ -133,8 +133,11 @@ try:
     _srv.VAULT = _sd_tmp
     (_sd_tmp / "raw" / "DJI Flip").mkdir(parents=True)
     (_sd_tmp / "raw" / "DJI Flip" / "DJI_TEST.MP4").write_bytes(b"12345")
+    (_sd_tmp / "raw" / "DJI Flip" / "DJI_PHOTO.JPG").write_bytes(b"abc")
     check("sd: find_raw exige tamaño cuando se pasa size",
           _srv.find_raw("DJI_TEST", 5) is not None and _srv.find_raw("DJI_TEST", 6) is None)
+    check("sd: limpieza reconoce fotos respaldadas por nombre+tamaño",
+          _srv._same_size_copy(_sd_tmp / "raw" / "DJI Flip" / "DJI_PHOTO.JPG") is not None)
 finally:
     _srv.VAULT = _old_vault
 
