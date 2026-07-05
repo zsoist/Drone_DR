@@ -34,8 +34,7 @@ if not TOKEN_FILE.exists():
     TOKEN_FILE.chmod(0o600)
 TOKEN = TOKEN_FILE.read_text().strip()
 
-jobstore.init()
-HEAVY = threading.Semaphore(1)  # un solo job pesado (ODM/splat) a la vez — 16GB de RAM
+jobstore.init(orphan_kinds=jobstore.LIGHT_KINDS)
 JLOCK = threading.Lock()         # compat: secciones que actualizan detail
 
 
@@ -658,43 +657,12 @@ class H(BaseHTTPRequestHandler):
                 return
             spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
-            if not HEAVY.acquire(blocking=False):
-                busy = (jobstore.running() or {}).get("label", "?")
-                return self.send_json({"error": f"ya hay un job 3D corriendo ({busy})"}, 409)
-            j = job_add("3d", cid)
-            container = f"odm-{j['id']}"  # único por job (evita colisión de nombres)
-            jobstore.update(j["id"], container=container)
-
-            def _run3d():
-                try:
-                    proj = VAULT / "odm" / f"proj_{cid}"
-                    jobstore.update(j["id"], detail="1/3 frames + geotag")
-                    if jobstore.run_tracked(j["id"], ["python3", str(PIPE / "odm_prep.py"), cid],
-                                            timeout=1800) != 0:
-                        raise RuntimeError("odm_prep falló")
-                    jobstore.update(j["id"], detail="2/3 fotogrametría ODM (~1h)")
-                    if jobstore.run_tracked(j["id"],
-                            ["/usr/local/bin/docker", "run", "--rm", "--name", container,
-                             "-m", "7g", "-v", f"{proj}:/datasets/code", "opendronemap/odm",
-                             "--project-path", "/datasets", "--pc-quality", "medium",
-                             "--feature-quality", "medium", "--max-concurrency", "4",
-                             "--orthophoto-resolution", "5", "--dsm", "--dtm",
-                             "--dem-resolution", "10"], timeout=3 * 3600) != 0:
-                        raise RuntimeError("ODM falló")
-                    jobstore.update(j["id"], detail="3/3 publicando assets web")
-                    if jobstore.run_tracked(j["id"],
-                            ["python3", str(PIPE / "tresd_publish.py"), cid, str(proj)],
-                            timeout=1800) != 0:
-                        raise RuntimeError("publicación falló")
-                    rebuild_index()
-                    job_end(j, "done", f"modelo 3D de {cid} listo")
-                except Exception as e:
-                    if (jobstore.get(j["id"]) or {}).get("status") not in jobstore.CANCEL_STATES:
-                        job_end(j, "error", str(e)[-250:])
-                finally:
-                    HEAVY.release()
-            threading.Thread(target=_run3d, daemon=True).start()
-            return self.send_json({"ok": True, "job": j["id"], "eta_min": 60})
+            if not cid:
+                return self.send_json({"error": "clip_id requerido"}, 400)
+            if jobstore.pending("3d", cid):
+                return self.send_json({"error": "ese vuelo ya está en cola o procesándose"}, 409)
+            j = jobstore.enqueue("3d", cid, {"clip_id": cid})
+            return self.send_json({"ok": True, "job": j["id"], "queued": True})
         if u.path == "/api/splat":
             if not self.auth(q):
                 return
@@ -705,53 +673,10 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "primero procesa el vuelo en 3D (necesita las poses de ODM)"}, 400)
             if not SPLAT_BIN.exists():
                 return self.send_json({"error": "opensplat no está compilado"}, 500)
-            if not HEAVY.acquire(blocking=False):
-                busy = (jobstore.running() or {}).get("label", "?")
-                return self.send_json({"error": f"ya hay un job 3D corriendo ({busy})"}, 409)
-            j = job_add("splat", cid)
-
-            def _splat():
-                try:
-                    il = proj / "opensfm" / "image_list.txt"
-                    il.write_text(il.read_text().replace("/datasets/code", str(proj)))
-                    n_cams = len([ln for ln in il.read_text().splitlines() if ln.strip()])
-                    (VAULT / "splats").mkdir(exist_ok=True)
-                    out = VAULT / "splats" / f"{cid}.splat"
-                    ITERS = 2000
-                    jobstore.update(j["id"], detail=f"entrenando {ITERS} iters sobre {n_cams} cámaras (CPU)")
-                    rc = jobstore.run_tracked(j["id"],
-                        [str(SPLAT_BIN), str(proj), "--cpu", "-n", str(ITERS), "-o", str(out)],
-                        timeout=4 * 3600,
-                        env={**os.environ, "DYLD_LIBRARY_PATH":
-                             str(SPLAT_BIN.parent.parent.parent.parent / "libtorch" / "lib")})
-                    if rc != 0:
-                        raise RuntimeError(f"opensplat salió con código {rc}")
-                    quality = splat_quality(out, jobstore.get(j["id"]).get("log", ""), n_cams, ITERS)
-                    (VAULT / "splats" / f"{cid}.meta.json").write_text(json.dumps(quality, indent=1))
-                    if not quality["passed"]:
-                        raise RuntimeError(quality["reason"])
-                    rebuild_index()
-                    jobstore.end(j["id"], "done",
-                                 f"{out.name} · loss {quality['final_loss']} · {n_cams} cámaras",
-                                 artifact=f"splats/{out.name}")
-                except Exception as e:
-                    if (jobstore.get(j["id"]) or {}).get("status") not in jobstore.CANCEL_STATES:
-                        job_end(j, "error", str(getattr(e, 'stderr', '') or e)[-250:])
-                finally:
-                    HEAVY.release()
-            threading.Thread(target=_splat, daemon=True).start()
-            return self.send_json({"ok": True, "job": j["id"]})
-        if u.path == "/api/search":
-            if not self.auth(q):
-                return
-            spec = self.read_json(4096)
-            query = str(spec.get("q", "")).strip()
-            if not query:
-                return self.send_json({"error": "consulta vacía", "results": []}, 400)
-            try:
-                return self.send_json(semantic_search(query))
-            except Exception as e:
-                return self.send_json({"error": str(e)[-160:], "results": []}, 502)
+            if jobstore.pending("splat", cid):
+                return self.send_json({"error": "ese splat ya está en cola o entrenando"}, 409)
+            j = jobstore.enqueue("splat", cid, {"clip_id": cid, "iters": int(spec.get("iters", 2000))})
+            return self.send_json({"ok": True, "job": j["id"], "queued": True})
         if u.path == "/api/analyze":
             if not self.auth(q):
                 return

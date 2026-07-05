@@ -23,21 +23,32 @@ def _conn():
     return c
 
 
-def init():
+HEAVY_KINDS = ("3d", "splat")          # los ejecuta el worker desacoplado
+LIGHT_KINDS = ("upload", "edit", "analyze", "foto4k")  # threads del server web
+
+
+def init(orphan_kinds: tuple = ()):
+    """Crea/migra el schema. orphan_kinds: SOLO el proceso dueño de esos kinds debe
+    marcarlos huérfanos en su arranque (server → light, worker → heavy). Así un
+    restart del server web YA NO mata jobs 3D del worker."""
     DB.parent.mkdir(parents=True, exist_ok=True)
     with _LOCK, _conn() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY, kind TEXT, label TEXT, status TEXT, detail TEXT,
             started REAL, finished REAL, pid INTEGER, container TEXT, artifact TEXT, log TEXT)""")
         c.execute("""CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, expiry REAL)""")
-        # migración: DBs viejas no tienen 'log' (SQLite no soporta ADD COLUMN IF NOT EXISTS)
+        # migraciones aditivas (SQLite no soporta ADD COLUMN IF NOT EXISTS)
         have = {r[1] for r in c.execute("PRAGMA table_info(jobs)").fetchall()}
-        if "log" not in have:
-            c.execute("ALTER TABLE jobs ADD COLUMN log TEXT")
-        # jobs que quedaron "running" de una sesión anterior = huérfanos
-        c.execute("UPDATE jobs SET status='error', detail='servidor reiniciado durante el job', "
-                  "finished=? WHERE status='running'", (time.time(),))
-        # todo job terminado no debe conservar pid (tabla confiable)
+        for col, typ in (("log", "TEXT"), ("spec", "TEXT"), ("stage", "TEXT"),
+                         ("progress", "REAL")):
+            if col not in have:
+                c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
+        if orphan_kinds:
+            ph = ",".join("?" * len(orphan_kinds))
+            c.execute(f"UPDATE jobs SET status='error', detail='proceso dueño reiniciado "
+                      f"durante el job', finished=?, pid=NULL "
+                      f"WHERE status='running' AND kind IN ({ph})",
+                      (time.time(), *orphan_kinds))
         c.execute("UPDATE jobs SET pid=NULL WHERE status != 'running' AND pid IS NOT NULL")
         c.execute("DELETE FROM sessions WHERE expiry < ?", (time.time(),))
 
@@ -64,6 +75,46 @@ def session_valid(sid: str) -> bool:
 def session_delete(sid: str):
     with _LOCK, _conn() as c:
         c.execute("DELETE FROM sessions WHERE id=?", (sid,))
+
+
+def enqueue(kind: str, label: str, spec: dict | None = None) -> dict:
+    """Encola un job pesado; el worker lo reclama. NO arranca nada aquí."""
+    j = {"id": f"{kind}-{int(time.time() * 1000)}", "kind": kind, "label": label,
+         "status": "queued"}
+    with _LOCK, _conn() as c:
+        c.execute("INSERT INTO jobs (id, kind, label, status, detail, started, spec) "
+                  "VALUES (?,?,?,?,?,?,?)",
+                  (j["id"], kind, label, "queued", "en cola", time.time(),
+                   json.dumps(spec or {})))
+    return j
+
+
+def claim(kinds: tuple = HEAVY_KINDS) -> dict | None:
+    """El worker reclama atómicamente el job encolado más antiguo (BEGIN IMMEDIATE
+    serializa: dos claims concurrentes nunca toman el mismo job)."""
+    ph = ",".join("?" * len(kinds))
+    with _LOCK, _conn() as c:
+        c.execute("BEGIN IMMEDIATE")
+        r = c.execute(f"SELECT * FROM jobs WHERE status='queued' AND kind IN ({ph}) "
+                      "ORDER BY started ASC LIMIT 1", kinds).fetchone()
+        if not r:
+            c.execute("COMMIT")
+            return None
+        c.execute("UPDATE jobs SET status='running', detail='iniciando', started=? "
+                  "WHERE id=?", (time.time(), r["id"]))
+        c.execute("COMMIT")
+        d = dict(r)
+        d["status"] = "running"
+        d["spec"] = json.loads(d.get("spec") or "{}")
+        return d
+
+
+def pending(kind: str, label: str) -> bool:
+    """¿Ya hay un job queued/running para este kind+label? (dedupe de doble tap)"""
+    with _LOCK, _conn() as c:
+        r = c.execute("SELECT 1 FROM jobs WHERE kind=? AND label=? "
+                      "AND status IN ('queued','running') LIMIT 1", (kind, label)).fetchone()
+        return bool(r)
 
 
 def add(kind: str, label: str, container: str = "") -> dict:
@@ -141,7 +192,12 @@ def cancel(jid: str) -> bool:
     """Cancela un job. Sólo marca 'cancelled' si el kill se CONFIRMA (o no había
     proceso vivo); si el kill falla, deja el estado con la advertencia explícita."""
     j = get(jid)
-    if not j or j["status"] != "running":
+    if not j:
+        return False
+    if j["status"] == "queued":
+        end(jid, "cancelled", "cancelado en cola (no llegó a ejecutar)")
+        return True
+    if j["status"] != "running":
         return False
     notes = []
     # 1) matar el proceso (grupo) — SIGTERM y, si sobrevive, SIGKILL

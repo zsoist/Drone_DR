@@ -82,12 +82,13 @@ async function pollJobs(el, every = 2500) {
         <div class="hl-item">
           <span class="tc" style="${j.status === 'error' || j.status === 'cancel_failed' ? 'color:var(--red);background:rgba(217,106,106,.12)' :
             j.status === 'done' ? 'color:var(--mint);background:rgba(82,199,154,.12)' :
-            j.status === 'cancelled' ? 'color:var(--amber);background:rgba(224,164,88,.12)' : ''}">${esc(j.status === 'cancel_failed' ? 'cancel falló' : j.status)}</span>
+            j.status === 'queued' ? 'color:var(--text-3);background:var(--surface-2)' :
+            j.status === 'cancelled' ? 'color:var(--amber);background:rgba(224,164,88,.12)' : ''}">${esc(j.status === 'cancel_failed' ? 'cancel falló' : j.status === 'queued' ? 'en cola' : j.status)}${j.status === 'running' && j.progress ? ` ${Math.round(j.progress * 100)}%` : ''}</span>
           <p><b>${esc(j.kind)}</b> · ${esc(j.label)} <span class="mono" style="color:var(--text-3)">${esc(j.ts)}${j.mins ? ` · ${j.mins} min` : ''}</span>
           ${j.detail ? `<br><span class="mono" style="font-size:11px;color:var(--text-3)">${esc(j.detail)}</span>` : ''}
           ${j.status === 'running' && j.log && ['3d', 'splat'].includes(j.kind) ? `<br><span class="mono" style="font-size:10px;color:var(--text-3)">${esc(j.log.split('\n').slice(-1)[0] || '')}</span>` : ''}
           ${j.status === 'error' && j.log ? `<br><details style="margin-top:4px"><summary style="font-size:10.5px;color:var(--text-3);cursor:pointer">ver log del error</summary><pre class="mono" style="font-size:10px;color:var(--text-3);white-space:pre-wrap;max-height:160px;overflow:auto;margin-top:4px">${esc(j.log)}</pre></details>` : ''}</p>
-          ${j.status === 'running' && ['3d', 'splat'].includes(j.kind) ?
+          ${['running', 'queued'].includes(j.status) && ['3d', 'splat'].includes(j.kind) ?
             `<button class="btn" style="padding:3px 9px;font-size:11px" data-cancel="${esc(j.id)}">Cancelar</button>` : ''}
         </div>`).join('') :
         `<p class="footer-note">Sin trabajos aún.</p>`;

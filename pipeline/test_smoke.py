@@ -201,5 +201,29 @@ check("compare: edificio 5m detectado como +volumen (~9800 m³)", 9000 < _r["net
 check("compare: nada removido (sólo se agregó)", _r["removed_m3"] < 1)
 check("compare: altura de cambio = 5m", abs(_r["max_rise_m"] - 5) < 0.1)
 
+# ---------- worker queue: enqueue / claim atómico / cancel / orphans por dueño ----------
+jobs.DB = Path(tempfile.mkdtemp()) / "q.db"
+jobs.init()
+qj = jobs.enqueue("3d", "DJI_TEST", {"clip_id": "DJI_TEST"})
+check("queue: enqueue deja status 'queued'", jobs.get(qj["id"])["status"] == "queued")
+check("queue: pending() detecta el encolado", jobs.pending("3d", "DJI_TEST"))
+c1 = jobs.claim(("3d", "splat"))
+check("queue: claim devuelve el job y lo pone running", c1 and c1["status"] == "running")
+check("queue: claim parsea el spec JSON", c1["spec"]["clip_id"] == "DJI_TEST")
+c2 = jobs.claim(("3d", "splat"))
+check("queue: segundo claim NO re-toma el mismo (atómico)", c2 is None)
+# cancelar un job en cola: sin proceso, se marca cancelled limpio
+qj2 = jobs.enqueue("splat", "DJI_Q2", {"clip_id": "DJI_Q2"})
+check("queue: cancel de un 'queued' -> cancelled", jobs.cancel(qj2["id"]) and jobs.get(qj2["id"])["status"] == "cancelled")
+# orphans por dueño: el server (light) NO debe marcar huérfano un 3D del worker
+jobs.update(c1["id"], status="running")  # simula 3D corriendo en el worker
+jobs.add("upload", "u1")  # un light running
+_light = [r for r in jobs.recent() if r["kind"] == "upload"][0]["id"]
+jobs.init(orphan_kinds=jobs.LIGHT_KINDS)  # reinicia el SERVER
+check("orphans: restart del server NO mata el 3D del worker",
+      jobs.get(c1["id"])["status"] == "running")
+check("orphans: restart del server SÍ limpia sus light huérfanos",
+      jobs.get(_light)["status"] == "error")
+
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)
