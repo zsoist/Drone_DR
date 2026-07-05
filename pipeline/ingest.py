@@ -51,7 +51,8 @@ def main():
     dest.mkdir(parents=True, exist_ok=True)
 
     print(f"card: {card} → {dest}")
-    cmd = ["rsync", "-a", "--info=progress2"]
+    # macOS ships openrsync: no --info=progress2; -a alone keeps it compatible
+    cmd = ["rsync", "-a"]
     if dry:
         cmd.append("--dry-run")
     cmd += [str(card / "DCIM") + "/", str(dest) + "/"]
