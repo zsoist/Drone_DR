@@ -15,7 +15,7 @@
       <div class="ph">${icon('map')} Mapa del proyecto
         <span class="spacer" style="flex:1"></span>
         <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-2)">
-          Opacidad <input type="range" id="op" min="0" max="100" value="88" style="width:110px"></label>
+          Opacidad <input type="range" id="op" min="0" max="100" value="82" style="width:110px"></label>
       </div>
       <div class="pb" style="padding:10px 12px;border-bottom:1px solid var(--line)">
         <div class="tool-row"><span class="tool-lb">Capas</span>
@@ -168,14 +168,14 @@
     });
     omap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     omap.on('load', () => {
-      omap.addSource('ortho', { type: 'image', url: `${base}/ortho.png`, coordinates: cur.corners });
+      omap.addSource('ortho', { type: 'image', url: `${base}/${cur.ortho_asset || 'ortho.png'}`, coordinates: cur.corners });
       omap.addLayer({ id: 'ortho', type: 'raster', source: 'ortho',
-                      paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 0 } });
+                      paint: { 'raster-opacity': 0.82, 'raster-fade-duration': 0 } });
       if (cur.dsm_corners) {
-        omap.addSource('dsm', { type: 'image', url: `${base}/dsm_color.png`, coordinates: cur.dsm_corners });
+        omap.addSource('dsm', { type: 'image', url: `${base}/${cur.dsm_asset || 'dsm_color.png'}`, coordinates: cur.dsm_corners });
         omap.addLayer({ id: 'dsm', type: 'raster', source: 'dsm',
                         layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.75 } });
-        omap.addSource('hills', { type: 'image', url: `${base}/hillshade.png`, coordinates: cur.dsm_corners });
+        omap.addSource('hills', { type: 'image', url: `${base}/${cur.hills_asset || 'hillshade.png'}`, coordinates: cur.dsm_corners });
         omap.addLayer({ id: 'hills', type: 'raster', source: 'hills',
                         layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.6 } });
         omap.addSource('contours', { type: 'geojson', data: `${base}/contours.geojson` });
@@ -203,9 +203,12 @@
     document.getElementById('op').oninput = e => {
       omap.getLayer('ortho') && omap.setPaintProperty('ortho', 'raster-opacity', +e.target.value / 100);
     };
-    resetViewer('cloud-box', 'Cargando nube de puntos…', 'load-cloud-main');
+    const cloudMB = (cur.cloud_bytes || 0) / 1e6;
+    resetViewer('cloud-box', `Nube de puntos${cloudMB ? ` · ${cloudMB.toFixed(0)} MB` : ''}`, 'load-cloud-main');
     resetViewer('mesh-box', 'Malla sólida — óptima con vuelos en órbita/oblicuos.', 'load-mesh');
-    setTimeout(() => document.getElementById('load-cloud-main')?.click(), 300);  // auto-carga la estrella
+    // auto-carga la estrella — salvo nubes pesadas en móvil (datos + memoria)
+    if (!(matchMedia('(max-width: 700px)').matches && cloudMB > 25))
+      setTimeout(() => document.getElementById('load-cloud-main')?.click(), 300);
   }
   // ---------- capas + mediciones ----------
   let tool = null, mpts = [];
@@ -392,18 +395,23 @@
     controls.maxDistance = dist * 3;
     controls.update();
   }
-  const spin = box => { box.innerHTML = `<div class="sk" style="width:80%;height:10px;border-radius:5px"></div>`; };
+  const spin = (box, label = 'Cargando…') => {
+    box.innerHTML = `<div style="width:80%;text-align:center">
+      <div class="sk" style="height:10px;border-radius:5px"></div>
+      <p class="footer-note vload-status" style="margin:10px 0 0">${label}</p></div>`;
+    return box.querySelector('.vload-status');
+  };
 
   // fullscreen CSS (el Fullscreen API de iOS Safari sólo funciona en <video>)
   function attachViewerTools(box, cam, controls) {
     const bar = document.createElement('div');
     bar.className = 'viewer-tools';
     bar.innerHTML = `
-      <button data-vt="center" title="Centrar">${icon('pin')}</button>
+      ${cam ? `<button data-vt="center" title="Centrar">${icon('pin')}</button>` : ''}
       <button data-vt="fs" title="Pantalla completa">${icon('ext')}</button>`;
     box.style.position = 'relative';
     box.appendChild(bar);
-    const cam0 = cam.position.clone();
+    const cam0 = cam ? cam.position.clone() : null;
     bar.addEventListener('click', e => {
       const b = e.target.closest('[data-vt]');
       if (!b) return;
@@ -412,6 +420,8 @@
         const on = box.classList.toggle('viewer-fs');
         b.innerHTML = on ? icon('chevL') : icon('ext');
         document.body.style.overflow = on ? 'hidden' : '';
+        // GaussianSplats3D dimensiona con window.resize (no ResizeObserver)
+        window.dispatchEvent(new Event('resize'));
       }
     });
   }
@@ -420,11 +430,12 @@
     if (!cur) return;
     e.currentTarget.style.display = 'none';
     const box = document.getElementById('mesh-box');
-    spin(box);
+    const stM = spin(box, 'Cargando malla texturizada…');
     const base = `data/models/${cur.clip_id}/model/`;
     const mtl = await new MTLLoader().setPath(base).loadAsync('odm_textured_model_geo.mtl');
     mtl.preload();
-    const obj = await new OBJLoader().setMaterials(mtl).setPath(base).loadAsync('odm_textured_model_geo.obj');
+    const obj = await new OBJLoader().setMaterials(mtl).setPath(base).loadAsync('odm_textured_model_geo.obj',
+      ev => { if (ev.loaded) stM.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB descargados`; });
     // FOTOGRAMETRÍA = material SIN luces (la textura ya trae la iluminación real);
     // con Phong+luces débiles el modelo salía como una masa negra
     obj.traverse(n => {
@@ -446,8 +457,10 @@
     if (!cur) return;
     e.currentTarget.style.display = 'none';
     const box = document.getElementById('cloud-box');
-    spin(box);
-    const geo = await new PLYLoader().loadAsync(`data/models/${cur.clip_id}/cloud.ply`);
+    const stC = spin(box, 'Descargando nube de puntos…');
+    const geo = await new PLYLoader().loadAsync(`data/models/${cur.clip_id}/cloud.ply`,
+      ev => { stC.textContent = ev.total ? `Nube · ${Math.round(ev.loaded / ev.total * 100)}%`
+                                         : `Nube · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
     const mat = new THREE.PointsMaterial({ size: 0.18, sizeAttenuation: true, vertexColors: geo.hasAttribute('color') });
     const pts = new THREE.Points(geo, mat);
     const { scene, cam, controls } = makeScene(box);
@@ -478,9 +491,15 @@
     box.innerHTML = '<div class="sk" style="height:10px;width:70%;margin:20px auto"></div>';
     const { GaussianSplats3D } = await import('/vendor/gaussian-splats-3d.module.min.js');
     box.innerHTML = '';
-    const viewer = new GaussianSplats3D.Viewer({ rootElement: box, sharedMemoryForWorkers: false });
-    await viewer.addSplatScene(`data/splats/${name}`, { progressiveLoad: true });
+    // antialiased + descarte de splats casi-invisibles = render notablemente más limpio
+    const viewer = new GaussianSplats3D.Viewer({
+      rootElement: box, sharedMemoryForWorkers: false, antialiased: true,
+      splatRenderMode: GaussianSplats3D.SplatRenderMode.ThreeD,
+    });
+    await viewer.addSplatScene(`data/splats/${name}`,
+      { progressiveLoad: true, splatAlphaRemovalThreshold: 5 });
     viewer.start();
+    attachViewerTools(box, null, null);
   });
 
   if (models.length) setProject(models[0].clip_id);

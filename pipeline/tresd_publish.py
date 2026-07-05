@@ -36,11 +36,34 @@ def main():
     out = VAULT / "models" / cid
     (out / "model").mkdir(parents=True, exist_ok=True)
 
-    # 1) ortofoto: previews + corners WGS84
+    # 1) ortofoto: previews + corners WGS84 + alpha con feather (borde fundido)
     print("ortofoto…")
     info = sh_in_odm(proj, r"""python3 - << 'EOF'
 import json
+import numpy as np
 from osgeo import gdal, osr
+from scipy import ndimage
+from PIL import Image
+FEATHER = 36  # px de fundido en el borde del PNG de 2000px
+
+def feather_png(path, px=FEATHER):
+    # erosiona 3px (mata el halo oscuro de interpolacion del borde) y luego
+    # funde hacia adentro con la distancia al nodata: el overlay se disuelve
+    # en el satelite en vez de cortarse como una losa pegada.
+    # Nota: PIL en vez de gdal ReadAsArray — el gdal_array del contenedor no
+    # carga con numpy 2.x, pero el PNG ya esta escrito y PIL lo lee sin drama.
+    im = Image.open(path).convert('RGBA')
+    arr = np.array(im)
+    a = arr[..., 3]
+    if not (a < 255).any():                      # PNG sin nodata: alpha desde negro puro
+        a = (~np.all(arr[..., :3] == 0, axis=-1)).astype(np.uint8) * 255
+    valid = ndimage.binary_erosion(a > 128, iterations=3, border_value=0)
+    dist = ndimage.distance_transform_edt(valid)
+    arr[..., 3] = np.minimum(a, np.clip(dist / px, 0, 1) * 255).astype(np.uint8)
+    Image.fromarray(arr).save(path)
+    Image.fromarray(arr).save(path[:-4] + '.webp', quality=82, method=4)  # movil
+    return arr[..., 3]
+
 ds = gdal.Open('/d/odm_orthophoto/odm_orthophoto.tif')
 gt = ds.GetGeoTransform()
 w, h = ds.RasterXSize, ds.RasterYSize
@@ -56,10 +79,9 @@ def px(x, y):
 corners = [px(0, 0), px(w, 0), px(w, h), px(0, h)]  # TL TR BR BL
 gdal.Translate('/d/.web_ortho.jpg', ds, format='JPEG', bandList=[1, 2, 3], width=2000)
 gdal.Translate('/d/.web_ortho_full.jpg', ds, format='JPEG', bandList=[1, 2, 3], width=5000)
-# PNG RGBA para el overlay del mapa: el nodata queda TRANSPARENTE (el JPG lo
-# pintaba negro y se veian bordes irregulares horribles sobre el satelite)
 gdal.Translate('/d/.web_ortho.png', ds, format='PNG', width=2000)
-print(json.dumps({"corners": corners, "size": [w, h]}))
+feather_png('/d/.web_ortho.png')
+print(json.dumps({"corners": corners, "size": [w, h], "feather_px": FEATHER}))
 EOF""")
     ometa = json.loads(info.strip().splitlines()[-1])
 
@@ -74,6 +96,7 @@ EOF""")
 
     for src_name, dst_name in [(".web_ortho.jpg", "ortho.jpg"), (".web_ortho_full.jpg", "ortho_full.jpg"),
                                (".web_ortho.png", "ortho.png"),
+                               (".web_ortho.webp", "ortho.webp"),
                                (".web_cloud.ply", "cloud.ply")]:
         p = proj / src_name
         if p.exists():
@@ -85,7 +108,23 @@ EOF""")
         print("elevación (DSM + curvas)…")
         out_dem = sh_in_odm(proj, r"""python3 - << 'EOF'
 import json
+import numpy as np
 from osgeo import gdal, ogr, osr
+from scipy import ndimage
+from PIL import Image
+FEATHER = 36
+
+def feather_png(path, px=FEATHER):
+    im = Image.open(path).convert('RGBA')
+    arr = np.array(im)
+    a = arr[..., 3]
+    valid = ndimage.binary_erosion(a > 128, iterations=3, border_value=0)
+    dist = ndimage.distance_transform_edt(valid)
+    arr[..., 3] = np.minimum(a, np.clip(dist / px, 0, 1) * 255).astype(np.uint8)
+    Image.fromarray(arr).save(path)
+    Image.fromarray(arr).save(path[:-4] + '.webp', quality=82, method=4)  # movil
+    return arr[..., 3]
+
 # todo desde el DSM ya warpeado a WGS84: overlays y esquinas quedan alineados
 gdal.Warp('/d/.web_dsm_4326.tif', '/d/odm_dem/dsm.tif', dstSRS='EPSG:4326')
 dsm = gdal.Open('/d/.web_dsm_4326.tif')
@@ -97,6 +136,15 @@ gdal.DEMProcessing('/d/.web_dsm_color.tif', dsm, 'color-relief', colorFilename='
 gdal.DEMProcessing('/d/.web_hillshade.tif', dsm, 'hillshade', zFactor=1.3)
 gdal.Translate('/d/.web_dsm_color.png', '/d/.web_dsm_color.tif', format='PNG', width=2000)
 gdal.Translate('/d/.web_hillshade.png', '/d/.web_hillshade.tif', format='PNG', width=2000)
+# color: feather sobre su propio alpha (el 'nv 0 0 0 0' de la rampa marca el nodata)
+alpha = feather_png('/d/.web_dsm_color.png')
+# hillshade: gris sin canal alpha — hereda el alpha ya fundido del color
+# (misma grilla DSM, mismo width=2000 → dimensiones identicas)
+hs = Image.open('/d/.web_hillshade.png').convert('RGBA')
+ha = np.array(hs)
+ha[..., 3] = alpha
+Image.fromarray(ha).save('/d/.web_hillshade.png')
+Image.fromarray(ha).save('/d/.web_hillshade.webp', quality=82, method=4)
 gt = dsm.GetGeoTransform(); w, h = dsm.RasterXSize, dsm.RasterYSize
 corners = [[gt[0], gt[3]], [gt[0] + w * gt[1], gt[3]],
            [gt[0] + w * gt[1], gt[3] + h * gt[5]], [gt[0], gt[3] + h * gt[5]]]
@@ -116,7 +164,9 @@ print(json.dumps({"dsm_min": round(lo, 1), "dsm_max": round(hi, 1),
 EOF""")
         dsm_meta = json.loads(out_dem.strip().splitlines()[-1])
         for src_name, dst_name in [(".web_dsm_color.png", "dsm_color.png"),
+                                   (".web_dsm_color.webp", "dsm_color.webp"),
                                    (".web_hillshade.png", "hillshade.png"),
+                                   (".web_hillshade.webp", "hillshade.webp"),
                                    (".web_dsm.envi", "dsm.bin"),
                                    (".web_contours.geojson", "contours.geojson")]:
             p = proj / src_name
@@ -159,6 +209,11 @@ EOF""")
         "clip_id": cid,
         "corners": ometa["corners"],
         "ortho_px": ometa["size"],
+        "ortho_asset": "ortho.webp" if (out / "ortho.webp").exists() else "ortho.png",
+        "dsm_asset": "dsm_color.webp" if (out / "dsm_color.webp").exists() else "dsm_color.png",
+        "hills_asset": "hillshade.webp" if (out / "hillshade.webp").exists() else "hillshade.png",
+        "ortho_feather_px": ometa.get("feather_px", 0),
+        "ortho_bytes": (out / "ortho.webp").stat().st_size if (out / "ortho.webp").exists() else 0,
         "qa": qa,
         "cloud_bytes": (out / "cloud.ply").stat().st_size if (out / "cloud.ply").exists() else 0,
         "model_obj": "model/odm_textured_model_geo.obj",
