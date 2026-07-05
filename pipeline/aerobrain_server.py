@@ -617,6 +617,22 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             return self.send_json({"volumes": sd_volumes()})
+        if self.path.startswith("/api/studio_media"):
+            if not self.auth():
+                return
+            out = {}
+            for key, sub, ext in (("reels", "reels", ".mp4"), ("photos", "photos", ".jpg")):
+                base = VAULT / sub
+                items = []
+                if base.is_dir():
+                    for f in base.iterdir():
+                        if f.name.startswith(".") or f.is_symlink() or not f.is_file() or f.suffix.lower() != ext:
+                            continue
+                        st = f.stat()
+                        items.append({"name": f.name, "bytes": st.st_size, "mtime": st.st_mtime})
+                items.sort(key=lambda x: x["mtime"], reverse=True)
+                out[key] = items
+            return self.send_json(out)
         if self.path.startswith("/api/properties"):
             if not self.auth():
                 return
@@ -971,6 +987,59 @@ class H(BaseHTTPRequestHandler):
             jobstore.clear_artifacts(cid)
             rebuild_index()
             return self.send_json({"ok": True, "freed": freed})
+        if u.path == "/api/media_op":
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            op = str(spec.get("op", ""))
+            mtype = str(spec.get("type", ""))
+            name = str(spec.get("name", ""))
+            if op not in ("rename", "delete", "duplicate"):
+                return self.send_json({"error": "op inválida"}, 400)
+            if mtype not in ("reel", "photo"):
+                return self.send_json({"error": "type inválido"}, 400)
+            if not name or "/" in name or "\\" in name or name.startswith("."):
+                return self.send_json({"error": "nombre inválido"}, 400)
+            base = (VAULT / ("reels" if mtype == "reel" else "photos")).resolve()
+            if (base / name).is_symlink():
+                return self.send_json({"error": "nombre inválido"}, 400)
+            src = (base / name).resolve()
+            try:
+                src.relative_to(base)  # contención: nunca fuera del directorio
+            except ValueError:
+                return self.send_json({"error": "nombre inválido"}, 400)
+            if not src.is_file():
+                return self.send_json({"error": "archivo no encontrado"}, 400)
+            if op == "delete":
+                tdir = VAULT / "trash" / mtype
+                tdir.mkdir(parents=True, exist_ok=True)
+                dst = tdir / src.name
+                if dst.exists():
+                    dst = tdir / f"{src.stem}.{time.time_ns()}{src.suffix}"
+                shutil.move(str(src), str(dst))
+                rebuild_index()
+                return self.send_json({"ok": True, "name": dst.name})
+            if op == "rename":
+                new_name = re.sub(r"[^\w.\- ]", "", str(spec.get("new_name", ""))).strip()
+                if new_name.lower().endswith(src.suffix.lower()):  # quita ext duplicada
+                    new_name = new_name[: -len(src.suffix)].strip()
+                if not new_name or new_name.startswith("."):
+                    return self.send_json({"error": "nombre nuevo inválido"}, 400)
+                dst = base / (new_name + src.suffix)
+                if dst.exists():
+                    return self.send_json({"error": "ya existe un archivo con ese nombre"}, 400)
+                src.rename(dst)
+                rebuild_index()
+                return self.send_json({"ok": True, "name": dst.name})
+            # duplicate: sufijo " copia" (o " copia 2", " copia 3", ...)
+            dst = base / f"{src.stem} copia{src.suffix}"
+            n = 2
+            while dst.exists():
+                dst = base / f"{src.stem} copia {n}{src.suffix}"
+                n += 1
+            shutil.copy2(src, dst)
+            rebuild_index()
+            return self.send_json({"ok": True, "name": dst.name})
         if u.path == "/api/splat":
             if not self.auth(q):
                 return

@@ -1092,3 +1092,50 @@ button.exp { text-align: left; cursor: pointer; }
   .deck-hero { padding-top: 18px; }
   .deck-stats { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ---- Studio v5 ---- */
+.st-hero { padding: 22px 6px 6px; }
+.st-hero h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -.03em;
+  line-height: 1.05; margin: 6px 0 8px;
+  background: linear-gradient(100deg, #eaf2ff 20%, #7db5ff 55%, #38d9e5 85%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+
+.st-mod { display: block; }
+
+.media-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+
+.media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+
+.m-card { background: var(--surface-1, var(--surface)); border: 1px solid var(--line);
+  border-radius: 14px; overflow: hidden;
+  animation: cardIn 380ms var(--ease) both;
+  transition: transform .28s cubic-bezier(.22,1.2,.36,1), border-color .25s, box-shadow .3s; }
+.m-card:hover { transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow: 0 12px 30px -14px color-mix(in srgb, var(--accent) 40%, transparent); }
+
+.m-prevbox { aspect-ratio: 16 / 9; background: #000; position: relative; }
+.m-prevbox video, .m-prevbox img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.m-prevbox .gchip { position: absolute; bottom: 8px; right: 8px; }
+
+.m-name { font-weight: 700; padding: 10px 12px 2px; font-size: 13.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-meta { font-size: 11px; color: var(--text-3); padding: 0 12px; }
+
+.m-actions { display: flex; gap: 6px; padding: 10px 12px 12px; }
+.m-actions button { width: 32px; height: 32px; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 9px; background: transparent;
+  color: var(--text-2); cursor: pointer;
+  transition: color 160ms var(--ease), border-color 160ms var(--ease), background 160ms var(--ease); }
+.m-actions button svg { width: 15px; height: 15px; }
+.m-actions button:hover { color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.m-actions button.danger:hover { color: #ff6b6b;
+  border-color: color-mix(in srgb, #ff6b6b 55%, var(--line));
+  background: color-mix(in srgb, #ff6b6b 10%, transparent); }
+
+@media (max-width: 640px) {
+  .media-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .m-actions button { width: 30px; height: 30px; }
+}
