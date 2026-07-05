@@ -126,6 +126,91 @@ def _deepseek(prompt: str) -> str:
         return json.loads(r.read())["choices"][0]["message"]["content"]
 
 
+SD_VIDEO_EXT = (".MP4", ".mp4", ".MOV", ".mov")
+SD_SKIP_VOLS = ("SSD", "Macintosh HD", "com.apple.TimeMachine.localsnapshots")
+
+
+def sd_volumes() -> list:
+    """Tarjetas montadas con estructura DCIM (DJI). Nunca lista el SSD."""
+    vols = []
+    for v in sorted(Path("/Volumes").iterdir()):
+        try:
+            if v.name in SD_SKIP_VOLS or not (v / "DCIM").is_dir():
+                continue
+        except OSError:
+            continue
+        vids = []
+        for f in sorted((v / "DCIM").rglob("*")):
+            if f.suffix in SD_VIDEO_EXT and f.is_file() and not f.name.startswith("."):
+                vids.append({
+                    "name": f.name,
+                    "rel": str(f.relative_to(v)),
+                    "bytes": f.stat().st_size,
+                    "in_vault": find_raw(f.stem) is not None,
+                    "srt": f.with_suffix(".SRT").exists() or f.with_suffix(".srt").exists(),
+                })
+        du = shutil.disk_usage(v)
+        vols.append({"volume": v.name, "total": du.total, "free": du.free, "videos": vids})
+    return vols
+
+
+def _sd_resolve(volume: str, rel: str) -> Path:
+    """Valida que el archivo pedido viva dentro del volumen (sin traversal)."""
+    if "/" in volume or volume in SD_SKIP_VOLS:
+        raise ValueError("volumen inválido")
+    base = (Path("/Volumes") / volume).resolve()
+    f = (base / rel).resolve()
+    f.relative_to(base)          # ValueError si escapa
+    if f.suffix not in SD_VIDEO_EXT or not f.is_file():
+        raise ValueError(f"no es un video válido: {rel}")
+    return f
+
+
+def run_sd_import(spec: dict, j):
+    """Copia videos de la SD al vault (verificando tamaño), procesa proxies y,
+    si se pidió, limpia la SD — SOLO los archivos cuya copia quedó verificada."""
+    try:
+        volume = str(spec.get("volume", ""))
+        drone = re.sub(r"[^\w -]", "", str(spec.get("drone", "") or volume)).strip() or volume
+        rels = [str(x) for x in spec.get("files", [])][:200]
+        clean = bool(spec.get("clean"))
+        copied = []
+        for i, rel in enumerate(rels):
+            src = _sd_resolve(volume, rel)
+            dest = VAULT / "raw" / drone / src.parent.name / src.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            jobstore.update(j["id"], detail=f"copiando {i + 1}/{len(rels)} · {src.name}",
+                            stage="copy", progress=0.05 + 0.45 * i / max(1, len(rels)))
+            if not dest.exists() or dest.stat().st_size != src.stat().st_size:
+                shutil.copy2(src, dest)
+            for ss in (src.with_suffix(".SRT"), src.with_suffix(".srt")):
+                if ss.exists():
+                    shutil.copy2(ss, dest.parent / ss.name)
+            if dest.stat().st_size != src.stat().st_size:
+                raise RuntimeError(f"copia no verificada: {src.name}")
+            copied.append((src, dest))
+        for i, (src, dest) in enumerate(copied):
+            jobstore.update(j["id"], detail=f"procesando {i + 1}/{len(copied)} · proxy + GPS + thumbs",
+                            stage="process", progress=0.5 + 0.4 * i / max(1, len(copied)))
+            subprocess.run(["python3", str(PIPE / "process.py"), str(dest)],
+                           check=True, cwd=PIPE, capture_output=True, text=True)
+        cleaned = 0
+        if clean:
+            jobstore.update(j["id"], detail="limpiando la SD (solo copias verificadas)", stage="clean", progress=0.93)
+            for src, dest in copied:
+                if dest.exists() and dest.stat().st_size == src.stat().st_size:
+                    for ss in (src.with_suffix(".SRT"), src.with_suffix(".srt")):
+                        ss.unlink(missing_ok=True)
+                    src.unlink()
+                    cleaned += 1
+        rebuild_index()
+        jobstore.update(j["id"], progress=1.0)
+        job_end(j, "done", f"{len(copied)} videos importados a raw/{drone}"
+                           + (f" · {cleaned} borrados de la SD" if clean else ""))
+    except Exception as e:
+        job_end(j, "error", str(e)[-250:])
+
+
 def find_raw(cid: str) -> Path | None:
     for ext in (".MP4", ".mp4", ".MOV", ".mov", ".mkv", ".avi", ".webm", ".mts"):
         hits = list((VAULT / "raw").rglob(f"{cid}{ext}"))
@@ -434,6 +519,10 @@ class H(BaseHTTPRequestHandler):
                 if j["status"] == "done" and j.get("artifact"):
                     j["artifact_exists"] = (VAULT / j["artifact"]).exists()
             return self.send_json({"jobs": jobs})
+        if self.path.startswith("/api/sd_scan"):
+            if not self.auth():
+                return
+            return self.send_json({"volumes": sd_volumes()})
         if self.path.startswith("/api/properties"):
             if not self.auth():
                 return
@@ -674,6 +763,20 @@ class H(BaseHTTPRequestHandler):
             spec = self.read_json()
             j = job_add("edit", f'{len(spec.get("segments", []))} cortes')
             threading.Thread(target=run_edit, args=(spec, j), daemon=True).start()
+            return self.send_json({"ok": True, "job": j["id"]})
+        if u.path == "/api/sd_import":
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            try:
+                for rel in list(spec.get("files", []))[:200]:
+                    _sd_resolve(str(spec.get("volume", "")), str(rel))
+            except (ValueError, OSError) as e:
+                return self.send_json({"error": str(e)}, 400)
+            if not spec.get("files"):
+                return self.send_json({"error": "elige al menos un video"}, 400)
+            j = job_add("ingest", f'SD {spec.get("volume", "?")} · {len(spec["files"])} videos')
+            threading.Thread(target=run_sd_import, args=(spec, j), daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"]})
         if u.path == "/api/frame":
             if not self.auth(q):

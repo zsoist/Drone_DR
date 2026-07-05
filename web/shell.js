@@ -3,6 +3,7 @@ const DATA = 'data';
 
 const NAV = [
   { href: 'index.html', ic: 'grid', label: 'Vuelos' },
+  { href: 'drone.html', ic: 'drone', label: 'Dron' },
   { href: 'trips.html', ic: 'pin', label: 'Viajes' },
   { href: 'studio.html', ic: 'film', label: 'Studio' },
   { href: 'tresd.html', ic: 'cube', label: '3D' },
@@ -76,6 +77,7 @@ function cleanLog(t) {
   return String(t || '').replace(/\u001b\[[0-9;]*m/g, '').replace(/\^?\[\[[0-9;]*m/g, '').trim();
 }
 const KIND_META = {
+  ingest: { ic: 'dl', name: 'Importar SD' },
   '3d': { ic: 'cube', name: 'Modelo 3D' },
   splat: { ic: 'layers', name: 'Gaussian Splat' },
   edit: { ic: 'film', name: 'Edición' },

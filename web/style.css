@@ -711,3 +711,11 @@ details.explain b { color: var(--text); font-weight: 600; }
 .tbcard .chips:empty { display: none; }
 .tbcard .chip { display: inline-flex; align-items: center; gap: 5px; }
 .tbcard .chip svg.ic { width: 11px; height: 11px; }
+
+/* ---------- Dron: tarjetas SD ---------- */
+.sd-card { border: 1px solid var(--line); border-radius: 12px; padding: 13px 15px; background: var(--surface-2); }
+.sd-card + .sd-card { margin-top: 10px; }
+.sd-head { display: flex; align-items: center; gap: 9px; }
+.sd-head svg.ic { width: 15px; height: 15px; color: var(--accent); }
+.sd-head b { font-size: 13.5px; }
+.mflight input[type=checkbox] { margin: 0 2px 0 6px; }

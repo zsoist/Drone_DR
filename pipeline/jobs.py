@@ -25,7 +25,7 @@ def _conn():
 
 
 HEAVY_KINDS = ("3d", "splat")          # los ejecuta el worker desacoplado
-LIGHT_KINDS = ("upload", "edit", "analyze", "foto4k")  # threads del server web
+LIGHT_KINDS = ("upload", "edit", "analyze", "foto4k", "ingest")  # threads del server web
 
 
 def init(orphan_kinds: tuple = ()):
