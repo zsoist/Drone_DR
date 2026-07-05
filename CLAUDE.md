@@ -12,3 +12,7 @@
 - ODM photogrammetry from video frames REQUIRES GPS EXIF geotags (from the SRT track
   via pipeline/odm_prep.py) — without them the orthophoto comes out 67x66px garbage.
   ODM runs in Docker (-m 7g, --fast-orthophoto) fine on the M4 alongside OpenBrain.
+- GeoTIFF de ODM: ffmpeg lo lee NEGRO (tiled TIFF). Convertir SIEMPRE con GDAL dentro
+  del contenedor: docker run --entrypoint bash opendronemap/odm -c "python3 -c 'from osgeo import gdal; gdal.Translate(...)'"
+- ODM full pipeline (con openmvs densify) sí produce ortho+mesh reales; --fast-orthophoto
+  desde video frames da sparse inservible. --rerun-from openmvs reutiliza las cámaras.

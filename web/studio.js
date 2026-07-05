@@ -101,6 +101,22 @@ main.innerHTML = `
     if (it) loadClip(it.dataset.cid);
   });
 
+  // llegada desde la vista de vuelo: ?clip=<id>&a=&b= precarga clip y corte
+  const params = new URLSearchParams(location.search);
+  const pClip = params.get('clip');
+  if (pClip && editable.some(f => f.clip_id === pClip)) {
+    setTimeout(() => {
+      loadClip(pClip);
+      document.querySelector(`.cr-item[data-cid="${pClip}"]`)?.scrollIntoView({ inline: 'center', block: 'nearest' });
+      if (params.get('a') != null) {
+        A = Math.max(0, +params.get('a'));
+        B = Math.min(dur, +params.get('b') || A + 5);
+        paintRange();
+        vid.currentTime = A;
+      }
+    }, 100);
+  }
+
   function loadClip(cid) {
     cur = editable.find(f => f.clip_id === cid);
     dur = cur.duration_s;

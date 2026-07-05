@@ -55,18 +55,46 @@ const cid = new URLSearchParams(location.search).get('id');
       <div>
         <div class="panel"><div id="map"></div></div>
 
-        ${aiData ? `<div class="panel" style="margin-top:16px">
-          <div class="ph">${icon('spark')} Análisis AI</div>
+        <div class="panel" style="margin-top:16px">
+          <div class="ph">${icon('spark')} Análisis AI ${aiData?.deep ? '· profundo' : ''}
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn" id="btn-deep" style="padding:4px 10px;font-size:11px">${aiData ? 'Re-analizar profundo' : 'Analizar ahora'}</button>
+          </div>
           <div class="pb">
+            ${aiData ? `
             <div class="gauge">${scoreRing(aiData.travel_score)}<p>${aiData.summary || ''}</p></div>
+            ${aiData.camera_motion || aiData.quality ? `<table class="kv" style="margin-top:12px">
+              ${aiData.camera_motion ? `<tr><td>Cámara</td><td style="text-align:left;font-family:var(--font)">${aiData.camera_motion}</td></tr>` : ''}
+              ${aiData.quality ? `<tr><td>Calidad</td><td style="text-align:left;font-family:var(--font)">
+                exposición ${aiData.quality.exposure} · ${aiData.quality.stability} · luz ${aiData.quality.light}
+                ${aiData.quality.issues?.length ? `<br><span style="color:var(--amber)">⚠ ${aiData.quality.issues.join(' · ')}</span>` : ''}</td></tr>` : ''}
+              ${aiData.subjects?.length ? `<tr><td>Sujetos</td><td style="text-align:left;font-family:var(--font)">${aiData.subjects.join(' · ')}</td></tr>` : ''}
+            </table>` : ''}
             ${aiData.tags?.length ? `<div class="chips" style="margin-top:12px">
               ${aiData.tags.map(t => `<a class="chip" href="index.html?q=${encodeURIComponent(t)}">${t}</a>`).join('')}
-            </div>` : ''}
-            ${aiData.highlights?.length ? `<div style="margin-top:8px">
-              ${aiData.highlights.map(h => `<div class="hl-item">
-                <button class="tc" data-t="${h.t}">${fmt.dur(h.t)}</button><p>${h.reason}</p>
-              </div>`).join('')}
-            </div>` : ''}
+            </div>` : ''}` : `<p class="footer-note">Este clip aún no tiene análisis — pídelo con el botón.</p>`}
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:16px">
+          <div class="ph">${icon('activity')} Momentos
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn primary" id="btn-hl" style="padding:4px 10px;font-size:11px">+ Highlight aquí</button>
+          </div>
+          <div class="pb" id="hl-list">
+            ${(aiData?.highlights || []).map(h => `<div class="hl-item">
+              <button class="tc" data-t="${h.t}">${fmt.dur(h.t)}</button>
+              <p>${h.reason}${h.type ? ` <span class="mono" style="font-size:10px;color:${h.type === 'manual' ? 'var(--mint)' : 'var(--text-3)'}">${h.type}</span>` : ''}</p>
+              <a class="btn" style="padding:3px 9px;font-size:11px" href="studio.html?clip=${cid}&a=${Math.max(0, h.t - 3)}&b=${h.t + 4}">Editar</a>
+            </div>`).join('') || '<p class="footer-note">Sin momentos aún — marca uno con el video pausado donde quieras.</p>'}
+          </div>
+        </div>
+
+        ${aiData?.edit_suggestions?.length ? `<div class="panel" style="margin-top:16px">
+          <div class="ph">${icon('film')} Sugerencias de edición</div>
+          <div class="pb">
+            ${aiData.edit_suggestions.map(s => `<div class="hl-item"><p>${s}</p></div>`).join('')}
+            ${aiData.hashtags?.length ? `<div class="chips" style="margin-top:10px">${aiData.hashtags.map(h => `<span class="chip">${h}</span>`).join('')}</div>` : ''}
           </div>
         </div>` : ''}
 
@@ -74,17 +102,21 @@ const cid = new URLSearchParams(location.search).get('id');
           <div class="ph">${icon('gauge')} Datos técnicos</div>
           <div class="pb"><table class="kv">
             <tr><td>Resolución</td><td>${meta.resolution} @ ${meta.fps}fps</td></tr>
-            <tr><td>Original</td><td>${fmt.gb(meta.size_bytes)}</td></tr>
-            ${meta.proxy_bytes ? `<tr><td>Proxy web</td><td>${fmt.gb(meta.proxy_bytes)}</td></tr>` : ''}
+            <tr><td>Codec / bitrate</td><td>HEVC 10-bit · ${(meta.size_bytes * 8 / meta.duration_s / 1e6).toFixed(0)} Mbps</td></tr>
+            <tr><td>Original / proxy</td><td>${fmt.gb(meta.size_bytes)}${meta.proxy_bytes ? ` / ${fmt.gb(meta.proxy_bytes)}` : ''}</td></tr>
+            <tr><td>Duración / frames</td><td>${fmt.dur(meta.duration_s)} · ${Math.round(meta.duration_s * meta.fps).toLocaleString()} f</td></tr>
             <tr><td>Distancia</td><td>${fmt.km(s.distance_m || 0)}</td></tr>
-            <tr><td>Altura máxima</td><td>${s.max_rel_alt_m ?? '—'} m</td></tr>
-            <tr><td>Vel. máxima</td><td>${speeds.length ? Math.round(Math.max(...speeds)) + ' km/h' : '—'}</td></tr>
+            <tr><td>Altura máx / prom</td><td>${s.max_rel_alt_m ?? '—'} m${pts.length ? ` / ${Math.round(pts.reduce((a, p) => a + p.rel_alt, 0) / pts.length)} m` : ''}</td></tr>
+            <tr><td>Vel. máx / prom</td><td>${speeds.length ? `${Math.round(Math.max(...speeds))} / ${Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length)} km/h` : '—'}</td></tr>
+            ${pts.length ? `<tr><td>Alejamiento máx</td><td>${Math.round(Math.max(...pts.map(p => haversine({ lat: s.home[1], lon: s.home[0] }, p))))} m del despegue</td></tr>
+            <tr><td>ISO rango</td><td>${Math.min(...pts.map(p => p.iso))} – ${Math.max(...pts.map(p => p.iso))}</td></tr>` : ''}
             ${s.home ? `<tr><td>Despegue</td><td><button class="mono" id="copy-home" title="Copiar coordenadas" style="color:var(--accent)">${s.home[1].toFixed(5)}, ${s.home[0].toFixed(5)}</button></td></tr>` : ''}
           </table>
           <div class="navrow">
-            ${meta.has_proxy ? `<a class="btn" href="${DATA}/proxies/${cid}.mp4" download>${icon('dl')} Proxy 1080p</a>` : ''}
-            ${meta.has_srt ? `<a class="btn" href="${DATA}/tracks/${cid}.flight.json" download>${icon('dl')} Track GPS</a>` : ''}
-            ${s.home ? `<a class="btn" target="_blank" rel="noopener" href="https://maps.google.com/?q=${s.home[1]},${s.home[0]}">${icon('ext')} Google Maps</a>` : ''}
+            ${meta.has_proxy ? `<a class="btn primary" href="studio.html?clip=${cid}">${icon('film')} Editar en Studio</a>` : ''}
+            ${meta.has_proxy ? `<a class="btn" href="${DATA}/proxies/${cid}.mp4" download>${icon('dl')} 1080p</a>` : ''}
+            ${meta.has_srt ? `<a class="btn" href="${DATA}/tracks/${cid}.flight.json" download>${icon('dl')} GPS</a>` : ''}
+            ${s.home ? `<a class="btn" target="_blank" rel="noopener" href="https://maps.google.com/?q=${s.home[1]},${s.home[0]}">${icon('ext')} Maps</a>` : ''}
           </div></div>
         </div>
 
@@ -132,6 +164,34 @@ const cid = new URLSearchParams(location.search).get('id');
     btn.innerHTML = `${icon('iso')} Foto 4K`;
     if (d.ok) window.open(d.url, '_blank');
     else alert(d.error || 'error');
+  });
+
+  // análisis profundo on-demand (16 frames, prompt de director de fotografía)
+  document.getElementById('btn-deep')?.addEventListener('click', async e => {
+    const token = getToken();
+    if (!token) return;
+    e.currentTarget.textContent = 'Analizando… (~30s)';
+    await fetch(`/api/analyze?token=${encodeURIComponent(token)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clip_id: cid }) });
+    const poll = setInterval(async () => {
+      const { jobs } = await (await fetch('/api/jobs')).json();
+      const j = jobs.find(x => x.kind === 'analyze' && x.label.includes(cid));
+      if (j && j.status !== 'running') { clearInterval(poll); location.reload(); }
+    }, 3000);
+  });
+
+  // highlight manual en el segundo actual del video
+  document.getElementById('btn-hl')?.addEventListener('click', async () => {
+    const token = getToken();
+    if (!token) return;
+    const t = +(video?.currentTime || 0).toFixed(1);
+    const reason = prompt(`Highlight en ${fmt.dur(t)} — ¿por qué?`, 'momento favorito');
+    if (reason == null) return;
+    await fetch(`/api/highlight?token=${encodeURIComponent(token)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clip_id: cid, t, reason }) });
+    location.reload();
   });
 
   document.getElementById('btn-label').addEventListener('click', async () => {
@@ -223,7 +283,7 @@ const cid = new URLSearchParams(location.search).get('id');
     const map = new maplibregl.Map({
       container: 'map', style: SAT_STYLE,
       bounds: [[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]],
-      fitBoundsOptions: { padding: 50 }, attributionControl: { compact: true },
+      fitBoundsOptions: FIT_OPTS, attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.on('load', () => {

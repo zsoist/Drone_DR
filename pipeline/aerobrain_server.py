@@ -323,6 +323,40 @@ class H(BaseHTTPRequestHandler):
             done = j["status"] == "done"
             return self.send_json({"ok": done, "url": f"/data/{j['detail']}" if done else None,
                                    "error": None if done else j["detail"]})
+        if u.path == "/api/analyze":
+            if not self.auth(q):
+                return
+            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            j = job_add("analyze", f"{cid} (profundo)")
+
+            def _run():
+                try:
+                    subprocess.run(["python3", str(PIPE.parent / "ai" / "analyze.py"),
+                                    cid, "--deep"], check=True, capture_output=True, text=True,
+                                   cwd=PIPE.parent / "ai")
+                    rebuild_index()
+                    job_end(j, "done", cid)
+                except subprocess.CalledProcessError as e:
+                    job_end(j, "error", (e.stderr or str(e))[-250:])
+            threading.Thread(target=_run, daemon=True).start()
+            return self.send_json({"ok": True, "job": j["id"]})
+        if u.path == "/api/highlight":
+            if not self.auth(q):
+                return
+            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            aif = VAULT / "ai" / f"{cid}.json"
+            data = json.loads(aif.read_text()) if aif.exists() else {"clip_id": cid, "tags": [], "highlights": []}
+            data.setdefault("highlights", []).append({
+                "t": round(float(spec.get("t", 0)), 1),
+                "reason": str(spec.get("reason", "marcado por Daniel"))[:120],
+                "type": "manual"})
+            data["highlights"].sort(key=lambda h: h["t"])
+            aif.parent.mkdir(exist_ok=True)
+            aif.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+            rebuild_index()
+            return self.send_json({"ok": True, "highlights": data["highlights"]})
         if u.path == "/api/clip":
             if not self.auth(q):
                 return

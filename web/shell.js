@@ -104,11 +104,14 @@ function haversine(a, b) {
     Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin((b.lon - a.lon) * r / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
+// maxzoom 19 en el source: más allá, MapLibre sobre-escala la tile en vez de
+// mostrar "Map data not available" (vuelos cortos fuerzan zoom 20+)
 const SAT_STYLE = {
   version: 8,
-  sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: 'Esri World Imagery' } },
+  sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: 'Esri World Imagery' } },
   layers: [{ id: 'sat', type: 'raster', source: 'sat' }],
 };
+const FIT_OPTS = { padding: 50, maxZoom: 17.5 };
 const DARK_STYLE = {
   version: 8,
   sources: { c: { type: 'raster', tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'], tileSize: 256, attribution: 'CARTO · OSM' } },

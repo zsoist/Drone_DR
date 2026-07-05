@@ -50,7 +50,7 @@ main.innerHTML = `
     flights.forEach(f => {
       if (!f.stats.home) return;
       const el = document.createElement('div');
-      el.innerHTML = `<svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="#0A0C10" stroke="#45A0E6" stroke-width="2"/></svg>`;
+      el.innerHTML = `<svg width="22" height="22"><circle cx="11" cy="11" r="7.5" fill="rgba(69,160,230,0.25)" stroke="#45A0E6" stroke-width="2.5"/><circle cx="11" cy="11" r="2.5" fill="#E6EBF2"/></svg>`;
       el.style.cursor = 'pointer';
       el.addEventListener('click', () => { location.href = `flight.html?id=${f.clip_id}`; });
       new maplibregl.Marker({ element: el }).setLngLat(f.stats.home).addTo(map);

@@ -1,6 +1,6 @@
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
-let flights = [], ai = {}, state = { q: '', tier: 'all', sort: 'date', view: 'grid' };
+let flights = [], ai = {}, state = { q: '', tier: 'all', sort: 'date', view: 'grid', scene: null };
 
 main.innerHTML = `
   <div class="page-head"><h1>Vuelos</h1><span class="count" id="count"></span></div>
@@ -26,6 +26,7 @@ main.innerHTML = `
       <button id="v-list" title="Lista">${icon('list')}</button>
     </div>
   </div>
+  <div class="chips" id="scene-chips" style="margin-bottom:14px"></div>
   <div class="grid" id="grid">${'<div class="sk" style="aspect-ratio:16/11"></div>'.repeat(6)}</div>
   <p class="footer-note">Los clips en tier full incluyen video 1080p; standard tienen análisis AI sin proxy; skim solo telemetría. Procesado localmente en el Mac Mini M4.</p>`;
 
@@ -44,6 +45,7 @@ function matches(f) {
   if (state.tier === 'archived') { if (!f.archived) return false; }
   else if (f.archived) return false;
   if (state.tier !== 'all' && state.tier !== 'archived' && f.tier !== state.tier) return false;
+  if (state.scene && ai[f.clip_id]?.scene_type !== state.scene) return false;
   if (!state.q) return true;
   const a = ai[f.clip_id];
   const hay = [f.clip_id, f.date, f.time, f.label, a?.summary, a?.scene_type, ...(a?.tags || [])]
@@ -67,6 +69,7 @@ function card(f) {
       <span class="tierdot ${f.tier}"><i></i>${f.tier}</span>
       ${a?.travel_score != null ? `<span class="score-pill">${a.travel_score}/10</span>` : ''}
       <span class="ovl mono">${fmt.dur(f.duration_s)}</span>
+      <button class="rename-btn" data-rename="${f.clip_id}" title="Renombrar">${icon('tag')}</button>
     </div>
     <div class="body">
       <div class="t"><span>${f.label || fmt.date(f.date)}</span><time>${f.label ? fmt.date(f.date) + ' ' : ''}${f.time}</time></div>
@@ -88,9 +91,33 @@ function render() {
   grid.className = `grid ${state.view === 'list' ? 'list' : ''}`;
   grid.innerHTML = list.length ? list.map(card).join('') :
     `<div class="empty" style="grid-column:1/-1">${icon('search')}<p>Sin resultados para esa búsqueda.</p></div>`;
+  grid.querySelectorAll('.card').forEach((c, i) => {
+    c.style.animation = `cardIn 340ms cubic-bezier(.25,.1,.25,1) both ${Math.min(i * 35, 420)}ms`;
+  });
   hoverScrub(grid);
   stats(list);
+  // chips de escena (derivados del AI)
+  const scenes = [...new Set(flights.map(f => ai[f.clip_id]?.scene_type).filter(Boolean))];
+  document.getElementById('scene-chips').innerHTML = scenes.map(sc =>
+    `<button class="chip ${state.scene === sc ? 'on' : ''}" data-scene="${sc}">${sc}</button>`).join('');
 }
+document.addEventListener('click', async e => {
+  const sc = e.target.closest('[data-scene]');
+  if (sc) { state.scene = state.scene === sc.dataset.scene ? null : sc.dataset.scene; render(); }
+  const rn = e.target.closest('[data-rename]');
+  if (rn) {
+    e.preventDefault(); e.stopPropagation();
+    const token = getToken();
+    if (!token) return;
+    const f = flights.find(x => x.clip_id === rn.dataset.rename);
+    const label = prompt('Nombre para este vuelo:', f?.label || '');
+    if (label == null) return;
+    await fetch(`/api/clip?token=${encodeURIComponent(token)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clip_id: rn.dataset.rename, label }) });
+    f.label = label; render();
+  }
+}, true);
 
 // hover sobre la card = scrub por los keyframes del clip
 function hoverScrub(grid) {
