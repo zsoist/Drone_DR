@@ -16,19 +16,46 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-// sesión de operador: cookie HttpOnly (el token NUNCA se guarda en el navegador)
+// sesión de operador: cookie HttpOnly (credenciales NUNCA se guardan en el navegador)
 async function ensureAuth() {
   if ((await fetch('/api/whoami')).ok) return true;
-  for (let i = 0; i < 3; i++) {
-    const t = prompt('Token de operador (está en drone-vault/.token):');
-    if (t == null) return false;
-    const r = await fetch('/api/login', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: t.trim() }) });
-    if (r.ok) return true;
-    alert('Token inválido.');
-  }
-  return false;
+  return loginModal();
+}
+function loginModal() {
+  return new Promise(resolve => {
+    if (document.getElementById('login-ov')) { resolve(false); return; }
+    const ov = document.createElement('div');
+    ov.id = 'login-ov';
+    ov.className = 'login-ov';
+    ov.innerHTML = `
+      <form class="login-card" id="login-form">
+        <div class="login-brand"><span class="mark">${icon('drone')}</span>
+          <div><b>AeroBrain</b><span>Iniciar sesión</span></div></div>
+        <label>Correo<input type="email" id="lg-user" autocomplete="username" value="reyesusma@hotmail.com" required></label>
+        <label>Contraseña<input type="password" id="lg-pass" autocomplete="current-password" required autofocus></label>
+        <div class="login-err" id="lg-err"></div>
+        <button class="btn primary big" type="submit" id="lg-go">Entrar</button>
+        <button class="btn" type="button" id="lg-cancel">Cancelar</button>
+      </form>`;
+    document.body.appendChild(ov);
+    const done = ok => { ov.remove(); resolve(ok); };
+    ov.querySelector('#lg-cancel').onclick = () => done(false);
+    ov.addEventListener('click', e => { if (e.target === ov) done(false); });
+    ov.querySelector('#login-form').onsubmit = async e => {
+      e.preventDefault();
+      const go = ov.querySelector('#lg-go'); go.textContent = 'Entrando…'; go.disabled = true;
+      const r = await fetch('/api/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user: ov.querySelector('#lg-user').value.trim(),
+          password: ov.querySelector('#lg-pass').value }) });
+      if (r.ok) return done(true);
+      ov.querySelector('#lg-err').textContent = 'Correo o contraseña incorrectos.';
+      go.textContent = 'Entrar'; go.disabled = false;
+      ov.querySelector('#lg-pass').select();
+    };
+    setTimeout(() => ov.querySelector('#lg-pass').focus(), 50);
+  });
 }
 // POST autenticado vía cookie de sesión; pide login solo si hace falta
 async function api(path, body) {
@@ -82,7 +109,14 @@ function toggleTheme() {
   document.querySelectorAll('.theme-lb').forEach(e => { e.textContent = t === 'light' ? 'Oscuro' : 'Claro'; });
 }
 
-document.addEventListener('click', e => { if (e.target.closest('[data-theme-toggle]')) toggleTheme(); });
+document.addEventListener('click', async e => {
+  if (e.target.closest('[data-theme-toggle]')) toggleTheme();
+  if (e.target.id === 'auth-link') {
+    e.preventDefault();
+    if ((await fetch('/api/whoami')).ok) { await fetch('/api/logout', { method: 'POST' }); alert('Sesión cerrada.'); }
+    else await loginModal();
+  }
+});
 function renderShell(active) {
   const cur = location.pathname.split('/').pop() || 'index.html';
   document.body.insertAdjacentHTML('afterbegin', `
@@ -98,7 +132,7 @@ function renderShell(active) {
           </a>`).join('')}
         <button class="nav-item" data-theme-toggle>${icon('sun')}<span class="theme-lb">${document.documentElement.dataset.theme === 'light' ? 'Oscuro' : 'Claro'}</span></button>
         <div class="foot"><span class="dot"></span>Mac Mini M4 · vault local · $0/mes<br>
-          <a href="guia.html" style="color:var(--accent)">Guía de operación</a></div>
+          <a href="guia.html" style="color:var(--accent)">Guía</a> · <a href="#" id="auth-link" style="color:var(--accent)">Sesión</a></div>
       </aside>
       <main class="main" id="main"></main>
     </div>`);

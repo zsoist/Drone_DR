@@ -516,9 +516,19 @@ class H(BaseHTTPRequestHandler):
                 body = self.read_json(4096)
             except Exception:
                 return self.send_json({"error": "body inválido"}, 400)
-            if str(body.get("token", "")) != TOKEN:
+            ok = False
+            if body.get("token"):
+                ok = str(body["token"]) == TOKEN
+            elif body.get("user") and body.get("password") is not None:
+                import hashlib
+                env = _sb_keys()
+                u_ok = str(body["user"]).strip().lower() == env.get("AEROBRAIN_USER", "").strip().lower()
+                p_ok = (hashlib.sha256(str(body["password"]).encode()).hexdigest()
+                        == env.get("AEROBRAIN_PASS_SHA256", ""))
+                ok = u_ok and p_ok
+            if not ok:
                 time.sleep(1)  # frena fuerza bruta
-                return self.send_json({"error": "token inválido"}, 403)
+                return self.send_json({"error": "credenciales inválidas"}, 403)
             jobstore.session_delete(self._cookie("ab_s"))  # rota el id viejo
             sid = jobstore.session_create(30)
             body_out = json.dumps({"ok": True}).encode()
