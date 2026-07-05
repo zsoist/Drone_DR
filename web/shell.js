@@ -3,7 +3,6 @@ const DATA = 'data';
 
 const NAV = [
   { href: 'index.html', ic: 'grid', label: 'Vuelos' },
-  { href: 'map.html', ic: 'map', label: 'Mapa' },
   { href: 'trips.html', ic: 'pin', label: 'Viajes' },
   { href: 'studio.html', ic: 'film', label: 'Studio' },
   { href: 'tresd.html', ic: 'cube', label: '3D' },

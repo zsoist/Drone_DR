@@ -675,3 +675,11 @@ details.explain b { color: var(--text); font-weight: 600; }
   .jc-steps::-webkit-scrollbar { display: none; }
   .job-card .jc-meta { font-size: 10.5px; }
 }
+
+/* ---------- vista Fechas: encabezado de mes ---------- */
+.month-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 14px 4px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+}
+.month-head b { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+.month-head span { font-size: 11px; color: var(--text-3); }
