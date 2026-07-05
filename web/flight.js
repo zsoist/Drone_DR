@@ -50,6 +50,67 @@ const cid = new URLSearchParams(location.search).get('id');
             <div class="chart-wrap" id="ch-speed" style="border-top:1px solid var(--line)"></div>
           </div>
         </div>` : ''}
+
+        <div class="panel" style="margin-top:16px">
+          <div class="ph">${icon('activity')} Momentos
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn primary" id="btn-hl" style="padding:4px 10px;font-size:11px">+ Highlight aquí</button>
+          </div>
+          <div class="pb" id="hl-list">
+            ${(aiData?.highlights || []).map(h => `<div class="hl-item">
+              <button class="tc" data-t="${h.t}">${fmt.dur(h.t)}</button>
+              <p>${esc(h.reason)}${h.type ? ` <span class="mono" style="font-size:10px;color:${h.type === 'manual' ? 'var(--mint)' : 'var(--text-3)'}">${esc(h.type)}</span>` : ''}</p>
+              <a class="btn" style="padding:3px 9px;font-size:11px" href="studio.html?clip=${cid}&a=${Math.max(0, h.t - 3)}&b=${h.t + 4}">Editar</a>
+            </div>`).join('') || '<p class="footer-note">Sin momentos aún — marca uno con el video pausado donde quieras.</p>'}
+          </div>
+        </div>
+
+        ${aiData?.edit_suggestions?.length ? `<div class="panel" style="margin-top:16px">
+          <div class="ph">${icon('film')} Sugerencias de edición</div>
+          <div class="pb">
+            ${aiData.edit_suggestions.map(s => `<div class="hl-item"><p>${esc(s)}</p></div>`).join('')}
+            ${aiData.hashtags?.length ? `<div class="chips" style="margin-top:10px">${aiData.hashtags.map(h => `<span class="chip">${esc(h)}</span>`).join('')}</div>` : ''}
+          </div>
+        </div>` : ''}
+
+        <div class="panel" style="margin-top:16px">
+          <div class="ph">${icon('gauge')} Datos técnicos</div>
+          <div class="pb">
+          <div class="kv2">
+            <table class="kv">
+              <tr><td colspan="2" class="kv-h">Vuelo</td></tr>
+              <tr><td>Duración</td><td>${fmt.dur(meta.duration_s)}</td></tr>
+              <tr><td>Distancia</td><td>${fmt.km(s.distance_m || 0)}</td></tr>
+              <tr><td>Altura máx/prom</td><td>${s.max_rel_alt_m ?? '—'}${pts.length ? ` / ${Math.round(pts.reduce((a, p) => a + p.rel_alt, 0) / pts.length)}` : ''} m</td></tr>
+              <tr><td>Vel. máx/prom</td><td>${speeds.length ? `${Math.round(Math.max(...speeds))} / ${Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length)} km/h` : '—'}</td></tr>
+              ${pts.length ? `<tr><td>Alejamiento</td><td>${Math.round(Math.max(...pts.map(p => haversine({ lat: s.home[1], lon: s.home[0] }, p))))} m máx</td></tr>` : ''}
+              ${s.home ? `<tr><td>Despegue</td><td><button class="mono" id="copy-home" title="Copiar" style="color:var(--accent)">${s.home[1].toFixed(5)}, ${s.home[0].toFixed(5)}</button></td></tr>` : ''}
+            </table>
+            <table class="kv">
+              <tr><td colspan="2" class="kv-h">Cámara y archivo</td></tr>
+              <tr><td>Resolución</td><td>${meta.resolution}<br><small>@ ${Math.round(meta.fps)} fps</small></td></tr>
+              <tr><td>Codec</td><td>HEVC 10-bit<br><small>${(meta.size_bytes * 8 / meta.duration_s / 1e6).toFixed(0)} Mbps</small></td></tr>
+              <tr><td>Original</td><td>${fmt.gb(meta.size_bytes)}</td></tr>
+              ${meta.proxy_bytes ? `<tr><td>Proxy 1080</td><td>${fmt.gb(meta.proxy_bytes)}</td></tr>` : ''}
+              <tr><td>Frames</td><td>${Math.round(meta.duration_s * meta.fps).toLocaleString()}</td></tr>
+              ${pts.length ? `<tr><td>ISO rango</td><td>${Math.min(...pts.map(p => p.iso))} – ${Math.max(...pts.map(p => p.iso))}</td></tr>` : ''}
+            </table>
+          </div>
+          <div class="exp-grid" style="margin-top:4px">
+            ${meta.has_proxy ? `<a class="exp" href="studio.html?clip=${cid}">${icon('film')}<div><b>Editar en Studio</b><span>cortes · reels · LUTs</span></div></a>` : ''}
+            ${meta.has_proxy ? `<button class="exp" id="share-video">${icon('ext')}<div><b>Guardar en Fotos</b><span>iPhone · share sheet</span></div></button>` : ''}
+            ${meta.has_proxy ? `<a class="exp" href="${DATA}/proxies/${cid}.mp4" download>${icon('dl')}<div><b>Video 1080p</b><span>MP4 · ${meta.proxy_bytes ? fmt.gb(meta.proxy_bytes) : ''}</span></div></a>` : ''}
+            ${meta.has_proxy720 ? `<a class="exp" href="${DATA}/proxies720/${cid}.mp4" download>${icon('dl')}<div><b>Video 720p</b><span>MP4 · ligero</span></div></a>` : ''}
+            ${meta.raw_rel ? `<a class="exp" href="${DATA}/raw/${meta.raw_rel}" download>${icon('db')}<div><b>Original 4K</b><span>HEVC · ${fmt.gb(meta.size_bytes)}</span></div></a>` : ''}
+            ${meta.has_srt ? `<a class="exp" href="${DATA}/tracks/${cid}.flight.json" download>${icon('route')}<div><b>Track GPS</b><span>JSON · 1 Hz</span></div></a>` : ''}
+            ${s.home ? `<a class="exp" href="https://maps.apple.com/?ll=${s.home[1]},${s.home[0]}&q=Despegue" target="_blank" rel="noopener">${icon('pin')}<div><b>Ver despegue</b><span>Apple Maps</span></div></a>` : ''}
+          </div></div>
+        </div>
+
+        <div class="navrow">
+          ${flights[idx + 1] ? `<a class="btn" href="flight.html?id=${flights[idx + 1].clip_id}">${icon('chevL')} Anterior</a>` : '<span></span>'}
+          ${flights[idx - 1] ? `<a class="btn" href="flight.html?id=${flights[idx - 1].clip_id}">Siguiente ${icon('chevR')}</a>` : '<span></span>'}
+        </div>
       </div>
 
       <div>
@@ -90,53 +151,6 @@ const cid = new URLSearchParams(location.search).get('id');
           </div>
         </div>
 
-        <div class="panel" style="margin-top:16px">
-          <div class="ph">${icon('activity')} Momentos
-            <span class="spacer" style="flex:1"></span>
-            <button class="btn primary" id="btn-hl" style="padding:4px 10px;font-size:11px">+ Highlight aquí</button>
-          </div>
-          <div class="pb" id="hl-list">
-            ${(aiData?.highlights || []).map(h => `<div class="hl-item">
-              <button class="tc" data-t="${h.t}">${fmt.dur(h.t)}</button>
-              <p>${esc(h.reason)}${h.type ? ` <span class="mono" style="font-size:10px;color:${h.type === 'manual' ? 'var(--mint)' : 'var(--text-3)'}">${esc(h.type)}</span>` : ''}</p>
-              <a class="btn" style="padding:3px 9px;font-size:11px" href="studio.html?clip=${cid}&a=${Math.max(0, h.t - 3)}&b=${h.t + 4}">Editar</a>
-            </div>`).join('') || '<p class="footer-note">Sin momentos aún — marca uno con el video pausado donde quieras.</p>'}
-          </div>
-        </div>
-
-        ${aiData?.edit_suggestions?.length ? `<div class="panel" style="margin-top:16px">
-          <div class="ph">${icon('film')} Sugerencias de edición</div>
-          <div class="pb">
-            ${aiData.edit_suggestions.map(s => `<div class="hl-item"><p>${esc(s)}</p></div>`).join('')}
-            ${aiData.hashtags?.length ? `<div class="chips" style="margin-top:10px">${aiData.hashtags.map(h => `<span class="chip">${esc(h)}</span>`).join('')}</div>` : ''}
-          </div>
-        </div>` : ''}
-
-        <div class="panel" style="margin-top:16px">
-          <div class="ph">${icon('gauge')} Datos técnicos</div>
-          <div class="pb"><table class="kv">
-            <tr><td>Resolución</td><td>${meta.resolution} @ ${meta.fps}fps</td></tr>
-            <tr><td>Codec / bitrate</td><td>HEVC 10-bit · ${(meta.size_bytes * 8 / meta.duration_s / 1e6).toFixed(0)} Mbps</td></tr>
-            <tr><td>Original / proxy</td><td>${fmt.gb(meta.size_bytes)}${meta.proxy_bytes ? ` / ${fmt.gb(meta.proxy_bytes)}` : ''}</td></tr>
-            <tr><td>Duración / frames</td><td>${fmt.dur(meta.duration_s)} · ${Math.round(meta.duration_s * meta.fps).toLocaleString()} f</td></tr>
-            <tr><td>Distancia</td><td>${fmt.km(s.distance_m || 0)}</td></tr>
-            <tr><td>Altura máx / prom</td><td>${s.max_rel_alt_m ?? '—'} m${pts.length ? ` / ${Math.round(pts.reduce((a, p) => a + p.rel_alt, 0) / pts.length)} m` : ''}</td></tr>
-            <tr><td>Vel. máx / prom</td><td>${speeds.length ? `${Math.round(Math.max(...speeds))} / ${Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length)} km/h` : '—'}</td></tr>
-            ${pts.length ? `<tr><td>Alejamiento máx</td><td>${Math.round(Math.max(...pts.map(p => haversine({ lat: s.home[1], lon: s.home[0] }, p))))} m del despegue</td></tr>
-            <tr><td>ISO rango</td><td>${Math.min(...pts.map(p => p.iso))} – ${Math.max(...pts.map(p => p.iso))}</td></tr>` : ''}
-            ${s.home ? `<tr><td>Despegue</td><td><button class="mono" id="copy-home" title="Copiar coordenadas" style="color:var(--accent)">${s.home[1].toFixed(5)}, ${s.home[0].toFixed(5)}</button></td></tr>` : ''}
-          </table>
-          <div class="navrow">
-            ${meta.has_proxy ? `<a class="btn primary" href="studio.html?clip=${cid}">${icon('film')} Editar en Studio</a>` : ''}
-            ${meta.has_proxy ? `<a class="btn" href="${DATA}/proxies/${cid}.mp4" download>${icon('dl')} 1080p</a>` : ''}
-            ${meta.has_srt ? `<a class="btn" href="${DATA}/tracks/${cid}.flight.json" download>${icon('dl')} GPS</a>` : ''}
-            ${s.home ? `<a class="btn" target="_blank" rel="noopener" href="https://maps.google.com/?q=${s.home[1]},${s.home[0]}">${icon('ext')} Maps</a>` : ''}
-          </div></div>
-        </div>
-
-        <div class="navrow">
-          ${flights[idx + 1] ? `<a class="btn" href="flight.html?id=${flights[idx + 1].clip_id}">${icon('chevL')} Anterior</a>` : '<span></span>'}
-          ${flights[idx - 1] ? `<a class="btn" href="flight.html?id=${flights[idx - 1].clip_id}">Siguiente ${icon('chevR')}</a>` : '<span></span>'}
         </div>
       </div>
     </div>`;
@@ -186,6 +200,31 @@ const cid = new URLSearchParams(location.search).get('id');
     if (b) setQuality(b.dataset.q);
   });
 
+  // Compartir a Fotos (iOS): Web Share API con archivo — el share sheet ofrece
+  // "Guardar video/imagen" directo al carrete; fallback = descarga normal
+  async function shareFile(url, name, type, btn) {
+    const orig = btn.innerHTML;
+    btn.innerHTML = 'Preparando…';
+    try {
+      const blob = await (await fetch(url)).blob();
+      const file = new File([blob], name, { type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+      } else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+      }
+    } catch {}
+    btn.innerHTML = orig;
+  }
+  document.getElementById('share-video')?.addEventListener('click', e => {
+    const src = meta.has_proxy720 ? `${DATA}/proxies720/${cid}.mp4` : `${DATA}/proxies/${cid}.mp4`;
+    shareFile(src, `${cid}.mp4`, 'video/mp4', e.currentTarget);
+  });
+
   // Foto 4K: el server extrae el frame del ORIGINAL en el segundo actual
   document.getElementById('btn-photo').addEventListener('click', async e => {
     const token = getToken();
@@ -204,11 +243,16 @@ const cid = new URLSearchParams(location.search).get('id');
         <img src="${d.url}" alt="Foto 4K">
         <div class="pm-bar">
           <span>3840×2160 · mantén presionada la imagen para guardarla en Fotos</span>
-          <a class="btn primary" href="${d.url}" download>${icon('dl')} Descargar</a>
+          <button class="btn primary" data-sharephoto="${d.url}">${icon('ext')} Guardar en Fotos</button>
+          <a class="btn" href="${d.url}" download>${icon('dl')} Descargar</a>
           <button class="btn" data-close>Cerrar</button>
         </div>
       </div>`;
     document.body.appendChild(ov);
+    ov.querySelector('[data-sharephoto]')?.addEventListener('click', ev => {
+      shareFile(ev.currentTarget.dataset.sharephoto,
+                ev.currentTarget.dataset.sharephoto.split('/').pop(), 'image/jpeg', ev.currentTarget);
+    });
     ov.addEventListener('click', e => {
       if (e.target === ov || e.target.closest('[data-close]')) ov.remove();
     });

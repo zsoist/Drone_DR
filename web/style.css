@@ -819,3 +819,15 @@ details.explain b { color: var(--text); font-weight: 600; }
 .chip.mom { color: var(--accent); border-color: rgba(69,160,230,0.45); font-variant-numeric: tabular-nums; }
 .chip.mom:hover { background: var(--accent-dim); }
 .hud-arrow { display: inline-block; transition: transform 400ms var(--ease); color: var(--accent); }
+
+/* datos tecnicos v2: dos grupos, sin overflow */
+.kv2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+.kv2 .kv td { white-space: normal; word-break: break-word; }
+.kv2 .kv td small { color: var(--text-3); font-size: 10px; }
+.kv-h {
+  font-size: 10px !important; letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--text-3) !important; font-weight: 600; padding-top: 10px !important;
+  font-family: var(--font) !important; text-align: left !important;
+}
+@media (max-width: 700px) { .kv2 { grid-template-columns: 1fr; } }
+button.exp { text-align: left; cursor: pointer; }
