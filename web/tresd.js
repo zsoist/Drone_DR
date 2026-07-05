@@ -44,7 +44,6 @@
             <button class="btn primary" id="btn-splat" style="padding:5px 14px;font-size:11.5px">${icon('spark')} Generar splat…</button>
           </div>
           <div class="pb" id="splats"></div>
-          <div id="splat-viewer" style="height:46dvh;display:none"></div>
           <div class="pb" style="border-top:1px solid var(--line)">
             <details class="explain">
               <summary>¿Qué es un gaussian splat?</summary>
@@ -123,6 +122,17 @@
             <p class="footer-note" style="margin:0">Modelo sólido con textura foto-real — brilla con vuelos en órbita/oblicuos.</p>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="ph">${icon('spark')} Gaussian splat del proyecto
+        <span class="chip" id="sp-status" style="font-size:10.5px;padding:2px 9px"></span>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn primary" id="load-splat" style="padding:4px 12px;font-size:11.5px">Cargar</button>
+      </div>
+      <div id="splat-box" style="height:56dvh;min-height:360px;display:grid;place-items:center;position:relative">
+        <p class="footer-note" style="margin:0" id="splat-note"></p>
       </div>
     </div>
 
@@ -375,6 +385,14 @@
     document.getElementById('op').oninput = e => {
       omap.getLayer('ortho') && omap.setPaintProperty('ortho', 'raster-opacity', +e.target.value / 100);
     };
+    const spMeta = (sys.splats || []).find(x => x.name === `${cid}.splat`);
+    document.getElementById('sp-status').textContent = spMeta ? `${(spMeta.bytes / 1e6).toFixed(1)} MB` : 'sin entrenar';
+    document.getElementById('load-splat').style.display = spMeta ? '' : 'none';
+    const sbox = document.getElementById('splat-box');
+    if (sbox._viewer) { try { sbox._viewer.dispose(); } catch {} sbox._viewer = null; }
+    sbox.innerHTML = `<p class="footer-note" style="margin:0" id="splat-note">${spMeta
+      ? 'Splat entrenado y listo — pulsa Cargar para el render foto-real.'
+      : 'Este proyecto aún no tiene splat — entrénalo con "Generar splat…" arriba.'}</p>`;
     const cloudMB = (cur.cloud_bytes || 0) / 1e6;
     document.getElementById('mesh-q').textContent =
       { rapido: 'calidad rápida', alta: 'calidad alta' }[cur.preset] || 'calidad estándar';
@@ -811,15 +829,23 @@
       close();
     });
   });
-  document.getElementById('splats').addEventListener('click', async e => {
+  document.getElementById('splats').addEventListener('click', e => {
     const name = e.target.dataset.view;
     if (!name) return;
-    const box = document.getElementById('splat-viewer');
-    box.style.display = 'block';
-    box.style.height = '58dvh';
-    box.style.position = 'relative';
+    const scid = name.replace(/\.(splat|ply|ksplat)$/, '');
+    if (!models.some(m => m.clip_id === scid)) return alert('Este splat no tiene proyecto 3D publicado.');
+    setProject(scid);
+    document.getElementById('load-splat').click();
+    setTimeout(() => document.getElementById('splat-box').scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
+  });
+
+  document.getElementById('load-splat').addEventListener('click', async () => {
+    if (!cur) return;
+    const name = `${cur.clip_id}.splat`;
+    const box = document.getElementById('splat-box');
     // visor anterior fuera ANTES de crear otro (workers + GPU buffers liberados)
     if (box._viewer) { try { box._viewer.dispose(); } catch {} box._viewer = null; }
+    box.style.position = 'relative';
     box.innerHTML = `<div class="splat-load"><div class="sk" style="height:10px;border-radius:5px"></div>
       <p class="footer-note splat-st" style="margin:10px 0 0">Descargando splat…</p></div>`;
     const st = box.querySelector('.splat-st');
