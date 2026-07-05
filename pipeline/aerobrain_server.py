@@ -647,9 +647,10 @@ class H(BaseHTTPRequestHandler):
             th = threading.Thread(target=capture_frame, args=(spec, j), daemon=True)
             th.start()
             th.join(timeout=25)  # las fotos son rápidas: respuesta síncrona con la URL
-            done = j["status"] == "done"
-            return self.send_json({"ok": done, "url": f"/data/{j['detail']}" if done else None,
-                                   "error": None if done else j["detail"]})
+            fresh = jobstore.get(j["id"]) or {}   # re-lee del store (el dict local es stale)
+            done = fresh.get("status") == "done"
+            return self.send_json({"ok": done, "url": f"/data/{fresh.get('detail')}" if done else None,
+                                   "error": None if done else (fresh.get("detail") or "captura falló o tardó demasiado")})
         if u.path == "/api/measure":
             # mediciones survey contra el DSM: volumen (stockpile) y perfil de elevación
             if not self.auth(q):
