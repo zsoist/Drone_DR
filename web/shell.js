@@ -105,7 +105,7 @@ function humanStage(j) {
   for (const [re, label] of M) if (re.test(src)) return label;
   return j.detail || '';
 }
-function jobCard(j, flightsIdx) {
+function jobCard(j, flightsIdx, entering = true) {
   const meta = KIND_META[j.kind] || { ic: 'activity', name: j.kind };
   const f = flightsIdx?.[j.label];
   const title = `${meta.name} · ${f ? (esc(f.label) || fmt.date(f.date) + ' ' + f.time) : esc(j.label.length > 30 ? j.label.slice(-14) : j.label)}`;
@@ -116,7 +116,7 @@ function jobCard(j, flightsIdx) {
     ? Math.max(1, Math.round(j.mins / j.progress * (1 - j.progress))) : null;
   const lastLog = cleanLog((j.log || '').split('\n').pop());
   return `
-  <div class="job-card">
+  <div class="job-card${entering ? '' : ' upd'}" data-jid="${esc(j.id)}">
     <div class="jc-head">${icon(meta.ic)}<span class="jc-title">${title}</span>
       <span class="jc-status ${esc(j.status)}">${esc(stLabel)}${pct != null && j.status === 'running' ? ` ${pct}%` : ''}</span></div>
     ${j.status === 'running' ? `
@@ -157,11 +157,30 @@ async function pollJobs(el, every = 2500) {
       const active = jobs.filter(j => ['running', 'queued'].includes(j.status));
       const doneRecent = jobs.filter(j => !['running', 'queued'].includes(j.status)).slice(0, 3);
       const older = jobs.filter(j => !['running', 'queued'].includes(j.status)).slice(3);
-      el.innerHTML =
-        active.map(j => jobCard(j, flightsIdx)).join('') +
-        doneRecent.map(j => jobCard(j, flightsIdx)).join('') +
-        (older.length ? `<details class="jobs-older"><summary>${older.length} trabajos anteriores</summary>
-          ${older.map(j => jobCard(j, flightsIdx)).join('')}</details>` : '');
+      const list = [...active, ...doneRecent];
+      const hash = j => [j.status, j.progress, j.mins, j.detail, j.stage, (j.log || '').slice(-80)].join('|');
+      const ids = list.map(j => j.id).join(',') + '§' + older.length;
+      if (el.dataset.ids !== ids) {
+        // cambio estructural (job nuevo / cambio de zona): rebuild completo
+        const wasOpen = el.querySelector('details.jobs-older')?.open;
+        el.dataset.ids = ids;
+        el.innerHTML =
+          list.map(j => jobCard(j, flightsIdx)).join('') +
+          (older.length ? `<details class="jobs-older"${wasOpen ? ' open' : ''}><summary>${older.length} trabajos anteriores</summary>
+            ${older.map(j => jobCard(j, flightsIdx)).join('')}</details>` : '');
+        list.forEach(j => { el.querySelector(`[data-jid="${CSS.escape(j.id)}"]`)?.setAttribute('data-h', hash(j)); });
+      } else {
+        // mismos jobs: actualiza EN SITIO solo las tarjetas cuyo contenido cambió
+        list.forEach(j => {
+          const node = el.querySelector(`[data-jid="${CSS.escape(j.id)}"]`);
+          if (!node || node.dataset.h === hash(j)) return;
+          const tmp = document.createElement('div');
+          tmp.innerHTML = jobCard(j, flightsIdx, false);
+          const next = tmp.firstElementChild;
+          next.dataset.h = hash(j);
+          node.replaceWith(next);
+        });
+      }
     } catch {}
   };
   paint();
