@@ -92,6 +92,7 @@ main.innerHTML = `
         <div class="cc-stats">
           <span data-tip="Vuelos en este lugar">${icon('drone')} ${c.flights.length}</span>
           <span data-tip="Días distintos">${icon('cal')} ${c.dates.length}</span>
+          <span data-tip="Tiempo total en el aire">${icon('clock')} ${fmt.hours(c.dur)}</span>
           <span data-tip="Distancia total volada">${icon('route')} ${fmt.km(c.dist)}</span>
           <span data-tip="Altura máxima alcanzada">${icon('mountain')} ${Math.round(c.alt)} m</span>
           <span class="spacer" style="flex:1"></span>
@@ -103,40 +104,66 @@ main.innerHTML = `
   }
 
   // ---------- vista 2: detalle de ciudad (días adentro) ----------
+  const dstate = { q: '', has: new Set(), scene: null };
   function renderDetail(c) {
     const el = document.getElementById('detail');
     document.getElementById('cities').style.display = 'none';
     el.style.display = '';
+    const list = c.flights.filter(f => {
+      if (dstate.has.has('video') && !f.has_proxy) return false;
+      if (dstate.has.has('ai') && !ai[f.clip_id]) return false;
+      if (dstate.has.has('top') && (ai[f.clip_id]?.travel_score || 0) < 6) return false;
+      if (dstate.scene && ai[f.clip_id]?.scene_type !== dstate.scene) return false;
+      const hay = `${f.label || ''} ${f.date} ${ai[f.clip_id]?.summary || ''}`.toLowerCase();
+      return !dstate.q || hay.includes(dstate.q);
+    });
+    const scenes = [...new Set(c.flights.map(f => ai[f.clip_id]?.scene_type).filter(Boolean))];
     const byDay = {};
-    c.flights.forEach(f => (byDay[f.date] = byDay[f.date] || []).push(f));
+    list.forEach(f => (byDay[f.date] = byDay[f.date] || []).push(f));
     const days = Object.entries(byDay).sort((a, b) => b[0].localeCompare(a[0]));
     el.innerHTML = `
-      <div class="hero glass rise" style="margin-bottom:16px">
+      <div class="hero glass rise" style="margin-bottom:14px">
         <button class="btn hero-back" id="city-back" data-tip="Volver a los lugares">${icon('chevL')}</button>
         <div class="hero-t"><h1>${esc(c.name)}</h1>
-          <div class="hero-sub mono">${c.flights.length} vuelos · ${c.dates.length} días · ${fmt.km(c.dist)} · alt máx ${Math.round(c.alt)} m</div></div>
+          <div class="hero-sub mono">${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates[c.dates.length - 1]) : ''}</div></div>
+        <div class="hero-chips">
+          <span class="gchip" data-tip="Vuelos filtrados / totales">${list.length}/${c.flights.length} vuelos</span>
+          <span class="gchip" data-tip="Tiempo total en el aire">${fmt.hours(c.dur)}</span>
+          ${c.score ? `<span class="gchip mint" data-tip="Mejor score AI">${c.score}/10</span>` : ''}
+        </div>
         <div class="hero-actions">
           <a class="btn" href="index.html?v=map" data-tip="Ver las rutas en el mapa">${icon('map')} Mapa</a>
-          <button class="btn primary" data-postal="${esc(c.key)}">${icon('dl')} Postal del lugar</button>
+          <button class="btn primary" data-postal="${esc(c.key)}">${icon('dl')} Postal</button>
         </div>
       </div>
-      ${days.map(([date, list], di) => {
-        const dist = list.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
-        const dur = list.reduce((a, f) => a + f.duration_s, 0);
+      <div class="glass tbcard rise" style="animation-delay:60ms">
+        <div class="tb-row">
+          <label class="search" style="max-width:280px">${icon('search')}<input id="d-q" placeholder="Buscar en ${esc(c.name)}…" value="${esc(dstate.q)}"></label>
+          <button class="chip ${dstate.has.has('video') ? 'on' : ''}" data-df="video">${icon('play')} Video</button>
+          <button class="chip ${dstate.has.has('ai') ? 'on' : ''}" data-df="ai">${icon('spark')} AI</button>
+          <button class="chip ${dstate.has.has('top') ? 'on' : ''}" data-df="top">${icon('spark')} Score 6+</button>
+          <span class="spacer" style="flex:1"></span>
+          ${scenes.map(sc => `<button class="chip ${dstate.scene === sc ? 'on' : ''}" data-dscene="${esc(sc)}">${esc(sc)}</button>`).join('')}
+        </div>
+      </div>
+      ${days.map(([date, dl], di) => {
+        const dist = dl.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
+        const dur = dl.reduce((a, f) => a + f.duration_s, 0);
         const diary = diaries[date];
         return `
-        <section class="trip rise" style="animation-delay:${di * 60}ms">
+        <section class="trip rise" style="animation-delay:${100 + di * 60}ms">
           <div class="trip-head">
             <h2>${fmt.date(date)}</h2>
-            <span class="mono">${list.length} vuelos · ${fmt.km(dist)} · ${fmt.hours(dur)}</span>
+            <span class="mono">${dl.length} vuelos · ${fmt.km(dist)} · ${fmt.hours(dur)}</span>
           </div>
           ${diary ? `<div class="summary">${esc(diary)}</div>` : ''}
-          <div class="grid">${list.map(f => `
-            <a class="card" href="flight.html?id=${f.clip_id}">
+          <div class="grid">${dl.map(f => `
+            <a class="card scrub" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
               <div class="thumb">
                 <img src="${DATA}/thumbs/${f.clip_id}.jpg" alt="" loading="lazy" width="960" height="540">
                 <span class="tierdot ${f.tier}"><i></i>${f.tier}</span>
-                <span class="ovl mono">${fmt.dur(f.duration_s)}</span>
+                <span class="ovl mono">${icon('clock')} ${fmt.dur(f.duration_s)}</span>
+                <span class="scrub-line"></span>
               </div>
               <div class="body">
                 <div class="t"><span>${esc(f.label) || f.time}</span></div>
@@ -149,11 +176,69 @@ main.innerHTML = `
             </a>`).join('')}
           </div>
         </section>`;
-      }).join('')}`;
+      }).join('') || '<div class="empty">' + icon('search') + '<p>Nada con esos filtros.</p></div>'}`;
     el.querySelector('#city-back').addEventListener('click', () => {
-      el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 150 }).finished.then(renderCities);
+      el.animate([{ opacity: 1, transform: 'translateX(0)' }, { opacity: 0, transform: 'translateX(24px)' }],
+                 { duration: 180, easing: 'ease-in' }).finished.then(() => {
+        Object.assign(dstate, { q: '', scene: null });
+        dstate.has.clear();
+        renderCities();
+        const cg = document.getElementById('cities');
+        cg.animate([{ opacity: 0, transform: 'translateX(-18px)' }, { opacity: 1, transform: 'translateX(0)' }],
+                   { duration: 220, easing: 'ease-out' });
+      });
     });
+    el.querySelector('#d-q').addEventListener('input', e => {
+      dstate.q = e.target.value.toLowerCase();
+      clearTimeout(dstate._t);
+      dstate._t = setTimeout(() => { renderDetail(c); el.querySelector('#d-q').focus(); }, 220);
+    });
+    el.querySelectorAll('[data-df]').forEach(b => b.addEventListener('click', () => {
+      dstate.has.has(b.dataset.df) ? dstate.has.delete(b.dataset.df) : dstate.has.add(b.dataset.df);
+      renderDetail(c);
+    }));
+    el.querySelectorAll('[data-dscene]').forEach(b => b.addEventListener('click', () => {
+      dstate.scene = dstate.scene === b.dataset.dscene ? null : b.dataset.dscene;
+      renderDetail(c);
+    }));
+    attachScrub(el);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // scrub de video en miniaturas: mouse (hover) y touch (deslizar) con línea de progreso
+  function attachScrub(root) {
+    root.querySelectorAll('.card.scrub').forEach(cardEl => {
+      const n = +cardEl.dataset.frames;
+      if (!n) return;
+      const img = cardEl.querySelector('img');
+      const line = cardEl.querySelector('.scrub-line');
+      const orig = img.src;
+      const at = frac => {
+        const i = Math.max(1, Math.ceil(frac * n));
+        img.src = `${DATA}/frames/${cardEl.dataset.cid}/f_${String(i).padStart(4, '0')}.jpg`;
+        line.style.width = `${(frac * 100).toFixed(1)}%`;
+        line.style.opacity = 1;
+      };
+      cardEl.addEventListener('pointermove', e => {
+        if (e.pointerType === 'touch') return;              // touch usa el gesto propio
+        const r = cardEl.getBoundingClientRect();
+        at((e.clientX - r.left) / r.width);
+      });
+      cardEl.addEventListener('pointerleave', () => { img.src = orig; line.style.opacity = 0; });
+      // iOS: deslizar horizontal sobre el thumb scrubbea; vertical sigue scrolleando
+      let t0 = null;
+      cardEl.addEventListener('touchstart', e => { t0 = e.touches[0]; }, { passive: true });
+      cardEl.addEventListener('touchmove', e => {
+        if (!t0) return;
+        const t = e.touches[0];
+        if (Math.abs(t.clientX - t0.clientX) > Math.abs(t.clientY - t0.clientY) + 6) {
+          const r = cardEl.getBoundingClientRect();
+          at(Math.max(0, Math.min(1, (t.clientX - r.left) / r.width)));
+          e.preventDefault();
+        }
+      }, { passive: false });
+      cardEl.addEventListener('touchend', () => { t0 = null; setTimeout(() => { img.src = orig; line.style.opacity = 0; }, 900); });
+    });
   }
 
   // ---------- postal descargable (canvas: portada + nombre + stats) ----------

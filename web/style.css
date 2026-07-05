@@ -948,3 +948,26 @@ button.exp { text-align: left; cursor: pointer; }
 /* HUD: tipografia consistente */
 .hud .v { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .hud .v small { color: var(--text-3); font-size: 10px; }
+
+/* pills de miniatura legibles (glass) — antes: negro sobre oscuro ilegible */
+.card .ovl, .thumb .ovl {
+  background: color-mix(in srgb, #0a0c10 72%, transparent) !important;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #fff !important; font-size: 10.5px !important;
+  padding: 3px 9px !important; border-radius: 10px !important;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.card .ovl svg.ic, .thumb .ovl svg.ic { width: 10px; height: 10px; }
+.score-pill {
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.16);
+}
+
+/* linea de scrub en miniaturas */
+.scrub-line {
+  position: absolute; left: 0; bottom: 0; height: 3px; width: 0;
+  background: var(--accent); opacity: 0; transition: opacity 160ms var(--ease);
+  border-radius: 0 2px 2px 0; box-shadow: 0 0 8px var(--accent);
+}
+.card.scrub .thumb { touch-action: pan-y; }
