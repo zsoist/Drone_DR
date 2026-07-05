@@ -53,7 +53,7 @@ def run_3d(j: dict):
              "--project-path", "/datasets", "--pc-quality", "medium",
              "--feature-quality", "medium", "--max-concurrency", "4",
              "--orthophoto-resolution", "5", "--dsm", "--dtm",
-             "--dem-resolution", "10"], timeout=3 * 3600) != 0:
+             "--dem-resolution", "10", "--skip-report"], timeout=3 * 3600) != 0:
         raise RuntimeError("ODM falló")
 
     jobstore.update(j["id"], detail="3/3 publicando assets web", stage="publish", progress=0.9)
