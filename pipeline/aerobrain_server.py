@@ -384,8 +384,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/api/whoami"):
-            if self.headers.get("X-Token", "") == TOKEN or self.session_ok():
-                return self.send_json({"ok": True})
+            if self._is_local() or self.headers.get("X-Token", "") == TOKEN or self.session_ok():
+                return self.send_json({"ok": True, "local": self._is_local()})
             return self.send_json({"ok": False}, 403)
         if self.path.startswith("/api/jobs"):
             if not self.auth():
@@ -465,11 +465,22 @@ class H(BaseHTTPRequestHandler):
                 return v
         return ""
 
+    def _is_local(self) -> bool:
+        # El server bindea 127.0.0.1 y sólo se expone al mundo por el túnel de
+        # Cloudflare, que estampa CF-Connecting-IP/CF-Ray en TODO request externo.
+        # Su ausencia ⇒ un proceso EN el Mac golpeó localhost directo = agente de
+        # confianza (Claude Code / Codex / curl local). Loopback no es alcanzable
+        # desde la LAN, así que esto no amplía superficie de ataque.
+        return not (self.headers.get("CF-Connecting-IP") or self.headers.get("CF-Ray"))
+
     def session_ok(self) -> bool:
         return jobstore.session_valid(self._cookie("ab_s"))
 
     def auth(self, q=None):
-        # query tokens RECHAZADOS (quedan en logs); header X-Token o cookie de sesión
+        # agentes locales (mismo Mac): acceso sin fricción para test/automatización
+        if self._is_local():
+            return True
+        # externos (vía túnel): header X-Token o cookie de sesión; query tokens NO
         if self.headers.get("X-Token", "") == TOKEN or self.session_ok():
             return True
         self.send_json({"error": "auth requerida (header X-Token o sesión)"}, 403)
