@@ -683,3 +683,17 @@ details.explain b { color: var(--text); font-weight: 600; }
 }
 .month-head b { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
 .month-head span { font-size: 11px; color: var(--text-3); }
+
+/* etiquetas de modo (solo desktop) */
+.seg-lb { margin-left: 2px; }
+@media (max-width: 700px) { .seg-lb { display: none; } }
+
+/* ---------- paneles colapsables ---------- */
+.panel > .ph { cursor: pointer; }
+.panel > .ph::after {
+  content: "▾"; font-size: 9px; color: var(--text-3); flex: none;
+  transition: transform 220ms var(--ease); margin-left: 4px;
+}
+.panel.clpsd > .ph::after { transform: rotate(-90deg); }
+.panel.clpsd > *:not(.ph) { display: none !important; }
+.panel.clpsd > .ph { border-bottom: none; }

@@ -3,6 +3,7 @@ const DATA = 'data';
 
 const NAV = [
   { href: 'index.html', ic: 'grid', label: 'Vuelos' },
+  { href: 'index.html?v=map', ic: 'map', label: 'Mapa' },
   { href: 'trips.html', ic: 'pin', label: 'Viajes' },
   { href: 'studio.html', ic: 'film', label: 'Studio' },
   { href: 'tresd.html', ic: 'cube', label: '3D' },
@@ -270,6 +271,21 @@ function haversine(a, b) {
 // satelite: maxzoom 17 — mas alla MapLibre ESCALA el tile (suave) en vez de
 // pedir niveles que Esri no tiene en zonas rurales (tiles "not available");
 // la ortofoto del dron va encima con su propia nitidez de todos modos
+// paneles colapsables: click en el titulo (no en sus botones) pliega el cuerpo
+document.addEventListener('click', e => {
+  const ph = e.target.closest('.panel > .ph');
+  if (!ph || e.target.closest('button, a, input, select, label, .seg, .chip')) return;
+  const panel = ph.parentElement;
+  const collapsed = panel.classList.contains('clpsd');
+  const from = panel.offsetHeight;
+  panel.classList.toggle('clpsd');
+  const to = panel.offsetHeight;
+  panel.style.overflow = 'hidden';
+  panel.animate([{ height: from + 'px' }, { height: to + 'px' }],
+                { duration: 230, easing: 'cubic-bezier(.25,.1,.25,1)' })
+       .finished.then(() => { panel.style.overflow = ''; });
+});
+
 const SAT_STYLE = {
   version: 8,
   sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 17, attribution: 'Esri World Imagery' } },

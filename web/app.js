@@ -27,9 +27,9 @@ main.innerHTML = `
     <div class="seg" role="group" aria-label="Vista">
       <button data-view="grid" class="on" title="Cuadrícula">${icon('grid')}</button>
       <button data-view="list" title="Lista">${icon('list')}</button>
-      <button data-view="map" title="Mapa">${icon('map')}</button>
-      <button data-view="places" title="Lugares">${icon('pin')}</button>
-      <button data-view="dates" title="Fechas">${icon('cal')}</button>
+      <button data-view="map" title="Mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
+      <button data-view="places" title="Lugares">${icon('pin')}<span class="seg-lb">Lugares</span></button>
+      <button data-view="dates" title="Fechas">${icon('cal')}<span class="seg-lb">Fechas</span></button>
     </div>
   </div>
   <div class="chips" id="scene-chips" style="margin-bottom:14px"></div>
