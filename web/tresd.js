@@ -874,18 +874,28 @@
     const GaussianSplats3D = await import('/vendor/gaussian-splats-3d.module.min.js');
     // perf: covarianzas half-precision en GPU + antialiased + descarte de splats
     // casi-invisibles; spinner propio (el built-in es feo y no respeta el theme)
+    // escena OpenSfM es Z-up: rotamos a Y-up y arrancamos con vista aerea —
+    // sin esto el splat aparece torcido y navegar es una pesadilla
+    const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
     const viewer = new GaussianSplats3D.Viewer({
       rootElement: box, sharedMemoryForWorkers: false, antialiased: true,
       halfPrecisionCovariancesOnGPU: true, showLoadingUI: false,
       sceneRevealMode: GaussianSplats3D.SceneRevealMode.Instant,
       splatRenderMode: GaussianSplats3D.SplatRenderMode.ThreeD,
+      cameraUp: [0, 1, 0],
+      initialCameraPosition: [0, 42, 34],
+      initialCameraLookAt: [0, 0, 0],
     });
     box._viewer = viewer;
     try {
       // progressiveLoad:false — hang conocido de .splat en iOS ("Processing splats")
       await Promise.race([
         viewer.addSplatScene(`data/splats/${name}`, {
-          progressiveLoad: false, splatAlphaRemovalThreshold: 5, showLoadingUI: false,
+          progressiveLoad: false, showLoadingUI: false,
+          // umbral de alpha agresivo: mata la "suciedad" de manchas fantasma
+          // de los entrenamientos cortos (estilo Polycam)
+          splatAlphaRemovalThreshold: 40,
+          rotation: SPLAT_ROT,
           onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
         }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout de 45s procesando el splat')), 45000)),
@@ -896,6 +906,17 @@
       return;
     }
     viewer.start();
+    // navegacion domada: damping suave, nunca por debajo del suelo, zoom acotado
+    const c = viewer.controls;
+    if (c) {
+      c.enableDamping = true;
+      c.dampingFactor = 0.08;
+      c.rotateSpeed = 0.5;
+      c.zoomSpeed = 0.8;
+      c.maxPolarAngle = Math.PI * 0.49;
+      c.minDistance = 4;
+      c.maxDistance = 320;
+    }
     box.querySelector('.splat-load')?.remove();
     // HUD premium: auto-rotar + pantalla completa
     const bar = document.createElement('div');

@@ -196,19 +196,34 @@ const loaders = {
     const holder = document.createElement('div');
     holder.style.cssText = 'position:absolute;inset:0';
     view.appendChild(holder);
+    const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];  // Z-up -> Y-up
     const viewer = new GaussianSplats3D.Viewer({
       rootElement: holder, sharedMemoryForWorkers: false, antialiased: true,
       showLoadingUI: false,
       sceneRevealMode: GaussianSplats3D.SceneRevealMode.Instant,
+      cameraUp: [0, 1, 0],
+      initialCameraPosition: [0, 42, 34],
+      initialCameraLookAt: [0, 0, 0],
     });
     await Promise.race([
       viewer.addSplatScene(`data/splats/${splat.name}`, {
-        progressiveLoad: false, splatAlphaRemovalThreshold: 5, showLoadingUI: false,
+        progressiveLoad: false, splatAlphaRemovalThreshold: 40, showLoadingUI: false,
+        rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
         onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
       }),
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout de 45s procesando el splat')), 45000)),
     ]);
     viewer.start();
+    const c = viewer.controls;
+    if (c) {
+      c.enableDamping = true;
+      c.dampingFactor = 0.08;
+      c.rotateSpeed = 0.5;
+      c.zoomSpeed = 0.8;
+      c.maxPolarAngle = Math.PI * 0.49;
+      c.minDistance = 4;
+      c.maxDistance = 320;
+    }
     view._splatViewer = viewer;
     view.querySelector('.sh-st')?.parentElement?.remove();
   },
