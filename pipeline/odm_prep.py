@@ -37,10 +37,22 @@ def main():
     images = proj / "images"
     images.mkdir(parents=True, exist_ok=True)
 
-    print(f"frames 2K de {raw.name}…")
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(raw),
-                    "-vf", f"fps={FPS},scale={WIDTH}:-2", "-q:v", "2",
-                    str(images / "f_%04d.jpg")], check=True)
+    expected = int(json.loads((VAULT / "manifest" / f"{cid}.json").read_text())
+                   .get("duration_s", 0) * FPS) if (VAULT / "manifest" / f"{cid}.json").exists() else 0
+    print(f"frames 2K de {raw.name} (~{expected or '?'} esperados)…", flush=True)
+    # -hwaccel videotoolbox: decodifica el HEVC 4K60 10-bit en el Media Engine del M4
+    # (antes: software decode = fase 1 de ~4-5 min; ahora ~2-3x más rápido)
+    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y",
+                             "-hwaccel", "videotoolbox", "-i", str(raw),
+                             "-vf", f"fps={FPS},scale={WIDTH}:-2", "-q:v", "2",
+                             str(images / "f_%04d.jpg")])
+    import time as _t
+    while proc.poll() is None:
+        _t.sleep(8)
+        n = len(list(images.glob("f_*.jpg")))
+        print(f"frames: {n}/{expected or '?'}", flush=True)   # → log tail de la UI
+    if proc.returncode != 0:
+        raise SystemExit("ffmpeg falló extrayendo frames")
 
     frames = sorted(images.glob("f_*.jpg"))
     args = []
