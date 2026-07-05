@@ -190,7 +190,7 @@ const loaders = {
   },
   async splat() {
     spinner('Cargando gaussian splat…');
-    const { GaussianSplats3D } = await import('/vendor/gaussian-splats-3d.module.min.js');
+    const GaussianSplats3D = await import('/vendor/gaussian-splats-3d.module.min.js');
     view.innerHTML = '';
     const viewer = new GaussianSplats3D.Viewer({ rootElement: view, sharedMemoryForWorkers: false, antialiased: true });
     await viewer.addSplatScene(`data/splats/${splat.name}`, { progressiveLoad: true, splatAlphaRemovalThreshold: 5 });

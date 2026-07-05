@@ -807,7 +807,7 @@
     const box = document.getElementById('splat-viewer');
     box.style.display = 'block';
     box.innerHTML = '<div class="sk" style="height:10px;width:70%;margin:20px auto"></div>';
-    const { GaussianSplats3D } = await import('/vendor/gaussian-splats-3d.module.min.js');
+    const GaussianSplats3D = await import('/vendor/gaussian-splats-3d.module.min.js');
     box.innerHTML = '';
     // antialiased + descarte de splats casi-invisibles = render notablemente más limpio
     const viewer = new GaussianSplats3D.Viewer({
