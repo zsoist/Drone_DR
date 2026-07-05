@@ -62,16 +62,16 @@ const cid = new URLSearchParams(location.search).get('id');
           </div>
           <div class="pb">
             ${aiData ? `
-            <div class="gauge">${scoreRing(aiData.travel_score)}<p>${aiData.summary || ''}</p></div>
+            <div class="gauge">${scoreRing(aiData.travel_score)}<p>${esc(aiData.summary || '')}</p></div>
             ${aiData.camera_motion || aiData.quality ? `<table class="kv" style="margin-top:12px">
-              ${aiData.camera_motion ? `<tr><td>Cámara</td><td style="text-align:left;font-family:var(--font)">${aiData.camera_motion}</td></tr>` : ''}
+              ${aiData.camera_motion ? `<tr><td>Cámara</td><td style="text-align:left;font-family:var(--font)">${esc(aiData.camera_motion)}</td></tr>` : ''}
               ${aiData.quality ? `<tr><td>Calidad</td><td style="text-align:left;font-family:var(--font)">
-                exposición ${aiData.quality.exposure} · ${aiData.quality.stability} · luz ${aiData.quality.light}
-                ${aiData.quality.issues?.length ? `<br><span style="color:var(--amber)">⚠ ${aiData.quality.issues.join(' · ')}</span>` : ''}</td></tr>` : ''}
-              ${aiData.subjects?.length ? `<tr><td>Sujetos</td><td style="text-align:left;font-family:var(--font)">${aiData.subjects.join(' · ')}</td></tr>` : ''}
+                exposición ${esc(aiData.quality.exposure)} · ${esc(aiData.quality.stability)} · luz ${esc(aiData.quality.light)}
+                ${aiData.quality.issues?.length ? `<br><span style="color:var(--amber)">⚠ ${esc(aiData.quality.issues.join(' · '))}</span>` : ''}</td></tr>` : ''}
+              ${aiData.subjects?.length ? `<tr><td>Sujetos</td><td style="text-align:left;font-family:var(--font)">${esc(aiData.subjects.join(' · '))}</td></tr>` : ''}
             </table>` : ''}
             ${aiData.tags?.length ? `<div class="chips" style="margin-top:12px">
-              ${aiData.tags.map(t => `<a class="chip" href="index.html?q=${encodeURIComponent(t)}">${t}</a>`).join('')}
+              ${aiData.tags.map(t => `<a class="chip" href="index.html?q=${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}
             </div>` : ''}` : `<p class="footer-note">Este clip aún no tiene análisis — pídelo con el botón.</p>`}
           </div>
         </div>
@@ -84,7 +84,7 @@ const cid = new URLSearchParams(location.search).get('id');
           <div class="pb" id="hl-list">
             ${(aiData?.highlights || []).map(h => `<div class="hl-item">
               <button class="tc" data-t="${h.t}">${fmt.dur(h.t)}</button>
-              <p>${h.reason}${h.type ? ` <span class="mono" style="font-size:10px;color:${h.type === 'manual' ? 'var(--mint)' : 'var(--text-3)'}">${h.type}</span>` : ''}</p>
+              <p>${esc(h.reason)}${h.type ? ` <span class="mono" style="font-size:10px;color:${h.type === 'manual' ? 'var(--mint)' : 'var(--text-3)'}">${esc(h.type)}</span>` : ''}</p>
               <a class="btn" style="padding:3px 9px;font-size:11px" href="studio.html?clip=${cid}&a=${Math.max(0, h.t - 3)}&b=${h.t + 4}">Editar</a>
             </div>`).join('') || '<p class="footer-note">Sin momentos aún — marca uno con el video pausado donde quieras.</p>'}
           </div>
@@ -93,8 +93,8 @@ const cid = new URLSearchParams(location.search).get('id');
         ${aiData?.edit_suggestions?.length ? `<div class="panel" style="margin-top:16px">
           <div class="ph">${icon('film')} Sugerencias de edición</div>
           <div class="pb">
-            ${aiData.edit_suggestions.map(s => `<div class="hl-item"><p>${s}</p></div>`).join('')}
-            ${aiData.hashtags?.length ? `<div class="chips" style="margin-top:10px">${aiData.hashtags.map(h => `<span class="chip">${h}</span>`).join('')}</div>` : ''}
+            ${aiData.edit_suggestions.map(s => `<div class="hl-item"><p>${esc(s)}</p></div>`).join('')}
+            ${aiData.hashtags?.length ? `<div class="chips" style="margin-top:10px">${aiData.hashtags.map(h => `<span class="chip">${esc(h)}</span>`).join('')}</div>` : ''}
           </div>
         </div>` : ''}
 
@@ -156,11 +156,7 @@ const cid = new URLSearchParams(location.search).get('id');
     if (!token) return;
     const btn = e.currentTarget;
     btn.textContent = 'Capturando…';
-    const r = await fetch(`/api/frame?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clip_id: cid, t: +(video?.currentTime || 0).toFixed(1) }),
-    });
-    const d = await r.json();
+    const d = await api('/api/frame', { clip_id: cid, t: +(video?.currentTime || 0).toFixed(1) });
     btn.innerHTML = `${icon('iso')} Foto 4K`;
     if (d.ok) window.open(d.url, '_blank');
     else alert(d.error || 'error');
@@ -171,9 +167,7 @@ const cid = new URLSearchParams(location.search).get('id');
     const token = getToken();
     if (!token) return;
     e.currentTarget.textContent = 'Analizando… (~30s)';
-    await fetch(`/api/analyze?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clip_id: cid }) });
+    await api('/api/analyze', { clip_id: cid });
     const poll = setInterval(async () => {
       const { jobs } = await (await fetch('/api/jobs')).json();
       const j = jobs.find(x => x.kind === 'analyze' && x.label.includes(cid));
@@ -188,9 +182,7 @@ const cid = new URLSearchParams(location.search).get('id');
     const t = +(video?.currentTime || 0).toFixed(1);
     const reason = prompt(`Highlight en ${fmt.dur(t)} — ¿por qué?`, 'momento favorito');
     if (reason == null) return;
-    await fetch(`/api/highlight?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clip_id: cid, t, reason }) });
+    await api('/api/highlight', { clip_id: cid, t, reason });
     location.reload();
   });
 
@@ -199,17 +191,13 @@ const cid = new URLSearchParams(location.search).get('id');
     if (!token) return;
     const label = prompt('Nombre para este vuelo:', meta.label || '');
     if (label == null) return;
-    await fetch(`/api/clip?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clip_id: cid, label }) });
+    await api('/api/clip', { clip_id: cid, label });
     location.reload();
   });
   document.getElementById('btn-arch').addEventListener('click', async () => {
     const token = getToken();
     if (!token) return;
-    await fetch(`/api/clip?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clip_id: cid, archived: !meta.archived }) });
+    await api('/api/clip', { clip_id: cid, archived: !meta.archived });
     location.href = 'index.html';
   });
 

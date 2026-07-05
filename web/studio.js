@@ -94,7 +94,7 @@ main.innerHTML = `
   document.getElementById('rail').innerHTML = editable.map(f => `
     <div class="cr-item" data-cid="${f.clip_id}">
       <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="">
-      <span class="cr-lb">${f.label || fmt.date(f.date)} · ${fmt.dur(f.duration_s)}</span>
+      <span class="cr-lb">${esc(f.label) || fmt.date(f.date)} · ${fmt.dur(f.duration_s)}</span>
     </div>`).join('');
   document.getElementById('rail').addEventListener('click', e => {
     const it = e.target.closest('.cr-item');
@@ -256,16 +256,13 @@ main.innerHTML = `
     if (!segs.length) return;
     const token = getToken();
     if (!token) return;
-    const r = await fetch(`/api/edit?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        segments: segs,
-        aspect: document.getElementById('ed-aspect').value,
-        filter: document.getElementById('ed-lut').value,
-        title: document.getElementById('ed-title').value.trim(),
-        fade: document.getElementById('ed-fade').checked,
-      }) });
-    if (r.status === 403) return getToken(true);
+    await api('/api/edit', {
+      segments: segs,
+      aspect: document.getElementById('ed-aspect').value,
+      filter: document.getElementById('ed-lut').value,
+      title: document.getElementById('ed-title').value.trim(),
+      fade: document.getElementById('ed-fade').checked,
+    });
     segs = []; paintCuts();
   });
 
@@ -294,7 +291,7 @@ main.innerHTML = `
   document.getElementById('moments').innerHTML = moments.slice(0, 6).map(m => `
     <div class="hl-item">
       <a class="tc" href="flight.html?id=${m.f.clip_id}">${fmt.date(m.f.date)} · ${fmt.dur(m.h.t)}</a>
-      <p>${m.h.reason}</p>
+      <p>${esc(m.h.reason)}</p>
     </div>`).join('') || `<p class="footer-note">Corre el análisis AI primero.</p>`;
 
   pollJobs(document.getElementById('jobs'));

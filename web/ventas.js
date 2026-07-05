@@ -67,8 +67,8 @@ main.innerHTML = `
     const { properties } = await (await fetch('/api/properties')).json();
     document.getElementById('plist').innerHTML = properties.length ? properties.map(p => `
       <div class="hl-item">
-        <a class="tc" href="p.html?id=${p.slug}" target="_blank">${p.slug}</a>
-        <p>${p.titulo} · ${p.precio || 's/p'} <span class="mono" style="color:var(--text-3)">${p.updated}</span></p>
+        <a class="tc" href="p.html?id=${p.slug}" target="_blank">${esc(p.slug)}</a>
+        <p>${esc(p.titulo)} · ${esc(p.precio) || 's/p'} <span class="mono" style="color:var(--text-3)">${p.updated}</span></p>
         <button class="btn" data-edit="${p.slug}" style="padding:3px 9px;font-size:11px">Editar</button>
       </div>`).join('') :
       `<p class="footer-note">Aún no hay propiedades publicadas.</p>`;
@@ -101,10 +101,7 @@ main.innerHTML = `
     if (!token) return;
     const p = collect();
     if (!p.slug || !p.titulo) return alert('Slug y título son obligatorios.');
-    const r = await fetch(`/api/property?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
-    if (r.status === 403) return getToken(true);
-    const { url } = await r.json();
+    const { url } = await api('/api/property', p);
     const localUrl = `p.html?id=${p.slug}`;
     document.getElementById('result').innerHTML = `
       <div class="panel"><div class="pb" style="text-align:center">
@@ -122,13 +119,10 @@ main.innerHTML = `
     if (!token) return;
     const p = collect();
     if (!p.slug) return alert('Guarda primero (necesita slug).');
-    await fetch(`/api/property?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
+    await api('/api/property', p);
     const btn = document.getElementById('btn-ai');
     btn.textContent = 'DeepSeek escribiendo…';
-    const r = await fetch(`/api/property_ai?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug: p.slug }) });
-    const d = await r.json();
+    const d = await api('/api/property_ai', { slug: p.slug });
     if (d.descripcion) document.getElementById('f-descripcion').value = d.descripcion;
     btn.innerHTML = `${icon('spark')} Generar descripción AI`;
   });

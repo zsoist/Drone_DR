@@ -77,7 +77,8 @@ function upload(file) {
   const bar = row.querySelector('#bar'), pct = row.querySelector('#pct');
 
   const xhr = new XMLHttpRequest();
-  xhr.open('POST', `/upload?name=${encodeURIComponent(file.name)}&token=${encodeURIComponent(token)}`);
+  xhr.open('POST', `/upload?name=${encodeURIComponent(file.name)}`);
+  xhr.setRequestHeader('X-Token', token);
   xhr.upload.onprogress = e => {
     const p = Math.round((e.loaded / e.total) * 100);
     bar.style.width = `${p}%`; pct.textContent = `${p}% · ${(e.loaded / 1e6).toFixed(0)}MB`;

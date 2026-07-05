@@ -33,9 +33,9 @@ main.innerHTML = `
       <div class="trip-head">
         <h2>${fmt.date(date)}</h2>
         <span class="mono">${list.length} vuelos · ${fmt.km(dist)} · ${fmt.hours(dur)}${best ? ` · mejor score ${best}/10` : ''}</span>
-        ${scenes.length ? `<span class="chips">${scenes.map(s => `<span class="chip">${s}</span>`).join('')}</span>` : ''}
+        ${scenes.length ? `<span class="chips">${scenes.map(s => `<span class="chip">${esc(s)}</span>`).join('')}</span>` : ''}
       </div>
-      ${diary ? `<div class="summary">${diary}</div>` : ''}
+      ${diary ? `<div class="summary">${esc(diary)}</div>` : ''}
       <div class="grid">${list.map(f => `
         <a class="card" href="flight.html?id=${f.clip_id}">
           <div class="thumb">
@@ -49,7 +49,7 @@ main.innerHTML = `
               <span>${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b></span>
               <span>${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b></span>
             </div>
-            ${ai[f.clip_id]?.summary ? `<p class="ai-line">${ai[f.clip_id].summary}</p>` : ''}
+            ${ai[f.clip_id]?.summary ? `<p class="ai-line">${esc(ai[f.clip_id].summary)}</p>` : ''}
           </div>
         </a>`).join('')}
       </div>

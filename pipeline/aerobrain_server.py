@@ -34,6 +34,15 @@ TOKEN = TOKEN_FILE.read_text().strip()
 
 JOBS: list[dict] = []          # [{id, kind, label, status, detail, ts}]
 JLOCK = threading.Lock()
+HEAVY = threading.Semaphore(1)  # un solo job pesado (ODM/splat) a la vez — 16GB de RAM
+
+
+def heavy_running() -> str | None:
+    with JLOCK:
+        for j in JOBS:
+            if j["kind"] in ("3d", "splat") and j["status"] == "running":
+                return j["label"]
+    return None
 
 
 def job_add(kind, label):
@@ -75,6 +84,7 @@ LUTS = {
 }
 FONT = "/System/Library/Fonts/Helvetica.ttc"
 KEYS_ENV = Path("/Volumes/SSD/_system/claude/.api-keys.env")
+SPLAT_BIN = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/OpenSplat/build/opensplat")
 
 
 def _deepseek(prompt: str) -> str:
@@ -247,12 +257,14 @@ class H(BaseHTTPRequestHandler):
         p = urllib.parse.unquote(p)
         if p == "/":
             p = "/index.html"
-        base = VAULT if p.startswith("/data/") else WEB
+        base = (VAULT if p.startswith("/data/") else WEB).resolve()
         rel = p[6:] if p.startswith("/data/") else p.lstrip("/")
         f = (base / rel).resolve()
-        if not str(f).startswith(str(base)) or not f.is_file():
+        try:
+            f.relative_to(base)  # contención estricta (startswith es bypasseable: vault2/)
+        except ValueError:
             return None
-        return f
+        return f if f.is_file() else None
 
     def do_GET(self):
         if self.path.startswith("/api/jobs"):
@@ -454,9 +466,13 @@ EOF"""
                 return
             spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            busy = heavy_running()
+            if busy:
+                return self.send_json({"error": f"ya hay un job 3D corriendo ({busy}) — espera a que termine"}, 409)
             j = job_add("3d", cid)
 
             def _run3d():
+                HEAVY.acquire()
                 try:
                     proj = VAULT / "odm" / f"proj_{cid}"
                     with JLOCK:
@@ -481,8 +497,47 @@ EOF"""
                     job_end(j, "error", ((e.stderr or "") + str(e))[-250:])
                 except Exception as e:
                     job_end(j, "error", str(e)[-250:])
+                finally:
+                    HEAVY.release()
             threading.Thread(target=_run3d, daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"], "eta_min": 60})
+        if u.path == "/api/splat":
+            if not self.auth(q):
+                return
+            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            proj = VAULT / "odm" / ("proj0104" if cid.endswith("0104_D") else f"proj_{cid}")
+            if not (proj / "opensfm" / "reconstruction.json").exists():
+                return self.send_json({"error": "primero procesa el vuelo en 3D (necesita las poses de ODM)"}, 400)
+            if not SPLAT_BIN.exists():
+                return self.send_json({"error": "opensplat no está compilado"}, 500)
+            busy = heavy_running()
+            if busy:
+                return self.send_json({"error": f"ya hay un job 3D corriendo ({busy})"}, 409)
+            j = job_add("splat", cid)
+
+            def _splat():
+                HEAVY.acquire()
+                try:
+                    il = proj / "opensfm" / "image_list.txt"
+                    il.write_text(il.read_text().replace("/datasets/code", str(proj)))
+                    (VAULT / "splats").mkdir(exist_ok=True)
+                    out = VAULT / "splats" / f"{cid}.splat"
+                    with JLOCK:
+                        j["detail"] = "entrenando (CPU, ~30-60 min)"
+                    subprocess.run([str(SPLAT_BIN), str(proj), "--cpu", "-n", "1500",
+                                    "-o", str(out)],
+                                   check=True, capture_output=True, text=True, timeout=4 * 3600,
+                                   env={**os.environ,
+                                        "DYLD_LIBRARY_PATH": str(SPLAT_BIN.parent.parent.parent.parent / "libtorch" / "lib")})
+                    rebuild_index()
+                    job_end(j, "done", out.name)
+                except Exception as e:
+                    job_end(j, "error", str(getattr(e, 'stderr', '') or e)[-250:])
+                finally:
+                    HEAVY.release()
+            threading.Thread(target=_splat, daemon=True).start()
+            return self.send_json({"ok": True, "job": j["id"]})
         if u.path == "/api/analyze":
             if not self.auth(q):
                 return

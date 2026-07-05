@@ -72,13 +72,13 @@ function card(f) {
       <button class="rename-btn" data-rename="${f.clip_id}" title="Renombrar">${icon('tag')}</button>
     </div>
     <div class="body">
-      <div class="t"><span>${f.label || fmt.date(f.date)}</span><time>${f.label ? fmt.date(f.date) + ' ' : ''}${f.time}</time></div>
+      <div class="t"><span>${esc(f.label) || fmt.date(f.date)}</span><time>${f.label ? fmt.date(f.date) + ' ' : ''}${f.time}</time></div>
       <div class="metrics">
         <span>${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b></span>
         <span>${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b></span>
         <span>${icon('film')}<b>${f.resolution.split('x')[1]}p${Math.round(f.fps)}</b></span>
       </div>
-      ${a?.summary ? `<p class="ai-line">${a.summary}</p>` : ''}
+      ${a?.summary ? `<p class="ai-line">${esc(a.summary)}</p>` : ''}
     </div>
   </a>`;
 }
@@ -99,7 +99,7 @@ function render() {
   // chips de escena (derivados del AI)
   const scenes = [...new Set(flights.map(f => ai[f.clip_id]?.scene_type).filter(Boolean))];
   document.getElementById('scene-chips').innerHTML = scenes.map(sc =>
-    `<button class="chip ${state.scene === sc ? 'on' : ''}" data-scene="${sc}">${sc}</button>`).join('');
+    `<button class="chip ${state.scene === sc ? 'on' : ''}" data-scene="${esc(sc)}">${esc(sc)}</button>`).join('');
 }
 document.addEventListener('click', async e => {
   const sc = e.target.closest('[data-scene]');
@@ -112,9 +112,7 @@ document.addEventListener('click', async e => {
     const f = flights.find(x => x.clip_id === rn.dataset.rename);
     const label = prompt('Nombre para este vuelo:', f?.label || '');
     if (label == null) return;
-    await fetch(`/api/clip?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clip_id: rn.dataset.rename, label }) });
+    await api('/api/clip', { clip_id: rn.dataset.rename, label });
     f.label = label; render();
   }
 }, true);

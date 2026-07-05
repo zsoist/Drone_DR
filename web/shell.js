@@ -11,6 +11,24 @@ const NAV = [
   { href: 'system.html', ic: 'db', label: 'Sistema' },
 ];
 
+// escape HTML: TODO texto de usuario/LLM pasa por aquí antes de innerHTML
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// POST autenticado: token SOLO en header (no en URL → no queda en logs)
+async function api(path, body) {
+  const token = getToken();
+  if (!token) throw new Error('sin token');
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Token': token },
+    body: JSON.stringify(body || {}),
+  });
+  if (r.status === 403) { getToken(true); throw new Error('token inválido'); }
+  return r.json();
+}
+
 // token de operador (upload/edición) — se pide una vez y queda en el navegador
 function getToken(force) {
   let t = localStorage.getItem('ab_token');
@@ -27,9 +45,9 @@ async function pollJobs(el, every = 2500) {
       el.innerHTML = jobs.length ? jobs.map(j => `
         <div class="hl-item">
           <span class="tc" style="${j.status === 'error' ? 'color:var(--red);background:rgba(217,106,106,.12)' :
-            j.status === 'done' ? 'color:var(--mint);background:rgba(82,199,154,.12)' : ''}">${j.status}</span>
-          <p><b>${j.kind}</b> · ${j.label} <span class="mono" style="color:var(--text-3)">${j.ts}</span>
-          ${j.detail ? `<br><span class="mono" style="font-size:11px;color:var(--text-3)">${j.detail}</span>` : ''}</p>
+            j.status === 'done' ? 'color:var(--mint);background:rgba(82,199,154,.12)' : ''}">${esc(j.status)}</span>
+          <p><b>${esc(j.kind)}</b> · ${esc(j.label)} <span class="mono" style="color:var(--text-3)">${esc(j.ts)}</span>
+          ${j.detail ? `<br><span class="mono" style="font-size:11px;color:var(--text-3)">${esc(j.detail)}</span>` : ''}</p>
         </div>`).join('') :
         `<p class="footer-note">Sin trabajos aún.</p>`;
     } catch {}

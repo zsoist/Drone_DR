@@ -14,6 +14,7 @@ Usage:
 import json
 import subprocess
 import sys
+from fractions import Fraction
 from pathlib import Path
 
 from srt_parser import parse_srt
@@ -66,7 +67,7 @@ def process_clip(mp4: Path) -> dict:
         "raw": mp4.name,  # name only: vault layout is canonical, not the source path
         "duration_s": round(duration, 1),
         "resolution": f'{vstream["width"]}x{vstream["height"]}',
-        "fps": round(eval(vstream["avg_frame_rate"]), 2),
+        "fps": round(float(Fraction(vstream["avg_frame_rate"])), 2),
         "size_bytes": int(probe["format"]["size"]),
         "has_srt": track is not None,
         "stats": (track or {}).get("stats", {}),

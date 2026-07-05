@@ -100,11 +100,12 @@
       </div>
       <div>
         <div class="panel">
-          <div class="ph">${icon('cube')} Gaussian Splats</div>
-          <div class="pb" id="splats">
-            <p class="footer-note">Fase foto-real: OpenSplat entrena sobre las poses que ODM ya
-            resolvió. En build — aparecerán aquí.</p>
+          <div class="ph">${icon('cube')} Gaussian Splats
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn primary" id="btn-splat" style="padding:4px 12px;font-size:11.5px">Generar splat</button>
           </div>
+          <div class="pb" id="splats"></div>
+          <div id="splat-viewer" style="height:46dvh;display:none"></div>
         </div>
         <div class="panel" style="margin-top:16px">
           <div class="ph">${icon('dl')} Descargas del proyecto</div>
@@ -123,7 +124,7 @@
   sel.innerHTML = models.length
     ? models.map(m => {
         const f = flights.find(x => x.clip_id === m.clip_id);
-        return `<option value="${m.clip_id}">${f ? (f.label || fmt.date(f.date) + ' ' + f.time) : m.clip_id}</option>`;
+        return `<option value="${m.clip_id}">${f ? (esc(f.label) || fmt.date(f.date) + ' ' + f.time) : m.clip_id}</option>`;
       }).join('')
     : `<option value="">Sin proyectos 3D aún</option>`;
   sel.addEventListener('change', () => setProject(sel.value));
@@ -131,13 +132,10 @@
   // clips candidatos a 3D (con GPS y proxy)
   const candidates = flights.filter(f => f.has_srt && f.stats?.bbox && !f.archived);
   document.getElementById('new-clip').innerHTML =
-    candidates.map(f => `<option value="${f.clip_id}">${f.label || fmt.date(f.date) + ' ' + f.time} · ${fmt.dur(f.duration_s)} · ${Math.round(f.stats.max_rel_alt_m || 0)}m</option>`).join('');
+    candidates.map(f => `<option value="${f.clip_id}">${esc(f.label) || fmt.date(f.date) + ' ' + f.time} · ${fmt.dur(f.duration_s)} · ${Math.round(f.stats.max_rel_alt_m || 0)}m</option>`).join('');
   document.getElementById('btn-run3d').addEventListener('click', async () => {
-    const token = getToken();
-    if (!token) return;
-    await fetch(`/api/odm?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clip_id: document.getElementById('new-clip').value }) });
+    const r = await api('/api/odm', { clip_id: document.getElementById('new-clip').value });
+    if (r.error) alert(r.error);
   });
   pollJobs(document.getElementById('jobs3d'));
 
@@ -268,10 +266,7 @@
       result(`<button class="btn primary" id="calc-vol">Calcular volumen (${mpts.length} vértices)</button>`);
       document.getElementById('calc-vol').onclick = async () => {
         result('Calculando contra el DSM…');
-        const token = getToken();
-        const r = await (await fetch(`/api/measure?token=${encodeURIComponent(token)}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'volume', clip_id: cur.clip_id, points: mpts }) })).json();
+        const r = await api('/api/measure', { type: 'volume', clip_id: cur.clip_id, points: mpts });
         result(r.error ? `<span style="color:var(--red)">${r.error}</span>` : `
           <div class="statgrid" style="margin:0">
             <div class="stat"><div class="lb">Volumen (fill)</div><div class="v">${r.volume_m3.toLocaleString()}<small> m³</small></div></div>
@@ -284,10 +279,7 @@
     if (tool === 'profile' && mpts.length === 2) {
       (async () => {
         result('Muestreando el DSM…');
-        const token = getToken();
-        const r = await (await fetch(`/api/measure?token=${encodeURIComponent(token)}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'profile', clip_id: cur.clip_id, points: mpts }) })).json();
+        const r = await api('/api/measure', { type: 'profile', clip_id: cur.clip_id, points: mpts });
         if (r.error) return result(`<span style="color:var(--red)">${r.error}</span>`);
         const vals = r.profile.filter(v => v != null);
         const lo = Math.min(...vals), hi = Math.max(...vals);
@@ -370,13 +362,31 @@
     frameObject(pts, cam, controls);
   });
 
-  // splats existentes
+  // splats: listar + ver inline + generar
   const splats = (sys.splats || []).filter(s => /\.(splat|ply|ksplat)$/.test(s.name));
-  if (splats.length) {
-    document.getElementById('splats').innerHTML = splats.map(s => `
-      <div class="hl-item"><a class="tc" href="data/splats/${s.name}" download>Descargar</a>
-      <p class="mono">${s.name} · ${(s.bytes / 1e6).toFixed(0)}MB</p></div>`).join('');
-  }
+  document.getElementById('splats').innerHTML = splats.length ? splats.map(s => `
+    <div class="hl-item"><button class="tc" data-view="${esc(s.name)}">Ver</button>
+    <p class="mono">${esc(s.name)} · ${(s.bytes / 1e6).toFixed(0)}MB
+      <a href="data/splats/${encodeURIComponent(s.name)}" download style="color:var(--accent)">descargar</a></p></div>`).join('') :
+    `<p class="footer-note">Sin splats aún — "Generar splat" entrena OpenSplat sobre las poses
+    del proyecto ODM seleccionado (CPU, ~30-60 min). El resultado se ve aquí mismo.</p>`;
+  document.getElementById('btn-splat').addEventListener('click', async () => {
+    if (!cur) return alert('Procesa primero un vuelo en 3D.');
+    const r = await api('/api/splat', { clip_id: cur.clip_id });
+    if (r.error) alert(r.error); else alert('Entrenando splat — mira Trabajos (~30-60 min).');
+  });
+  document.getElementById('splats').addEventListener('click', async e => {
+    const name = e.target.dataset.view;
+    if (!name) return;
+    const box = document.getElementById('splat-viewer');
+    box.style.display = 'block';
+    box.innerHTML = '<div class="sk" style="height:10px;width:70%;margin:20px auto"></div>';
+    const { GaussianSplats3D } = await import('https://unpkg.com/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.min.js');
+    box.innerHTML = '';
+    const viewer = new GaussianSplats3D.Viewer({ rootElement: box, sharedMemoryForWorkers: false });
+    await viewer.addSplatScene(`data/splats/${name}`, { progressiveLoad: true });
+    viewer.start();
+  });
 
   if (models.length) setProject(models[0].clip_id);
 </script>
