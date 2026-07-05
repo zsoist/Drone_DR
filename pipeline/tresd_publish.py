@@ -301,6 +301,9 @@ EOF""")
     for junk in [*out.rglob(".DS_Store"), *out.glob(".*.tif"), *out.glob("*.aux.xml")]:
         junk.unlink(missing_ok=True)
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
+    # el manifest NUNCA queda stale tras publicar (el audit encontró model_viewer
+    # ausente del system.json porque el rebuild solo lo hacía el worker)
+    subprocess.run(["python3", str(Path(__file__).parent / "build_index.py")], check=True)
     print(f"✅ publicado → {out} · nube {meta['cloud_bytes'] / 1e6:.0f}MB · {meta['textures']} texturas")
 
 
