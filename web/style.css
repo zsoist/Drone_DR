@@ -889,3 +889,53 @@ button.exp { text-align: left; cursor: pointer; }
 .pm-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pm-row input[type=range] { flex: 1; min-width: 120px; }
 .pm-row .tool-lb { min-width: 76px; }
+
+/* ---------- Viajes: selector de ciudades (videojuego) ---------- */
+.city-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.city-card {
+  border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+  background: var(--surface); cursor: pointer;
+  animation: riseIn 400ms var(--ease) backwards;
+  transition: transform 220ms var(--ease), border-color 220ms var(--ease), box-shadow 220ms var(--ease);
+}
+.city-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(69,160,230,0.55);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(69,160,230,0.25);
+}
+.cc-cover { position: relative; aspect-ratio: 16/10; overflow: hidden; }
+.cc-cover > img:first-child {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform 600ms var(--ease);
+}
+.city-card:hover .cc-cover > img:first-child { transform: scale(1.06); }
+.cc-tile {
+  position: absolute; top: 10px; right: 10px; width: 74px; height: 74px;
+  border-radius: 10px; object-fit: cover; border: 2px solid rgba(255,255,255,0.85);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+  transition: transform 220ms var(--ease);
+}
+.city-card:hover .cc-tile { transform: scale(1.08) rotate(1.5deg); }
+.cc-shade {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, transparent 40%, rgba(6,9,14,0.88) 100%);
+}
+.cc-cover h2 {
+  position: absolute; left: 16px; bottom: 30px; margin: 0;
+  font-size: 24px; font-weight: 750; color: #fff; letter-spacing: 0.2px;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+}
+.cc-range { position: absolute; left: 17px; bottom: 12px; font-size: 10.5px; color: rgba(255,255,255,0.75); }
+.cc-score {
+  position: absolute; left: 16px; top: 12px;
+  background: rgba(69,160,230,0.9); color: #fff; font-weight: 700;
+  font-size: 12px; padding: 3px 10px; border-radius: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.cc-stats {
+  display: flex; align-items: center; gap: 12px; padding: 11px 14px;
+  font-size: 12px; color: var(--text-2); flex-wrap: wrap;
+}
+.cc-stats svg.ic { width: 12px; height: 12px; vertical-align: -2px; color: var(--text-3); }
+.cc-stats .btn { padding: 4px 9px; }
+.cc-stats .btn svg.ic { width: 13px; height: 13px; }
