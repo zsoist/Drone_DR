@@ -72,26 +72,90 @@ async function api(path, body) {
 function getToken() { return 'session'; }
 // migración: borra el token que versiones anteriores dejaron en localStorage
 localStorage.removeItem('ab_token');
+// limpia códigos ANSI/escape que ODM mete en el log
+function cleanLog(t) {
+  return String(t || '').replace(/\u001b\[[0-9;]*m/g, '').replace(/\^?\[\[[0-9;]*m/g, '').trim();
+}
+const KIND_META = {
+  '3d': { ic: 'cube', name: 'Modelo 3D' },
+  splat: { ic: 'layers', name: 'Gaussian Splat' },
+  edit: { ic: 'film', name: 'Edición' },
+  upload: { ic: 'dl', name: 'Subida' },
+  analyze: { ic: 'spark', name: 'Análisis AI' },
+  foto4k: { ic: 'iso', name: 'Foto 4K' },
+};
+// etapa humana a partir del log/detail de ODM
+function humanStage(j) {
+  const src = cleanLog(j.log) + ' ' + (j.detail || '');
+  const M = [
+    [/frames: \d+/, 'Extrayendo frames del video'],
+    [/geotag|exiftool/i, 'Geoetiquetando con tu GPS'],
+    [/feature|opensfm.*extract/i, 'Detectando características'],
+    [/match/i, 'Emparejando imágenes'],
+    [/reconstruct|bundle/i, 'Reconstruyendo cámaras 3D'],
+    [/Densify|depthmap|openmvs/i, 'Densificando nube de puntos'],
+    [/filterpoints/i, 'Filtrando nube de puntos'],
+    [/meshing|PoissonRecon|dem2mesh/i, 'Generando malla 3D'],
+    [/texturing|mvstex|texture/i, 'Texturizando el modelo'],
+    [/dem|dsm|dtm|tiles\.tif|merged\.vrt/i, 'Calculando elevación (DSM)'],
+    [/orthophoto/i, 'Generando ortofoto'],
+    [/publicando|publish|gdal_translate.*ortho/i, 'Publicando assets web'],
+    [/entrenando|Step \d+/i, 'Entrenando el splat'],
+  ];
+  for (const [re, label] of M) if (re.test(src)) return label;
+  return j.detail || '';
+}
+function jobCard(j, flightsIdx) {
+  const meta = KIND_META[j.kind] || { ic: 'activity', name: j.kind };
+  const f = flightsIdx?.[j.label];
+  const title = `${meta.name} · ${f ? (esc(f.label) || fmt.date(f.date) + ' ' + f.time) : esc(j.label.length > 30 ? j.label.slice(-14) : j.label)}`;
+  const stLabel = { running: 'procesando', queued: 'en cola', done: 'listo',
+    error: 'falló', cancelled: 'cancelado', cancel_failed: 'cancel falló' }[j.status] || j.status;
+  const pct = j.progress ? Math.round(j.progress * 100) : null;
+  const eta = (j.status === 'running' && j.progress > 0.1 && j.mins > 0.5)
+    ? Math.max(1, Math.round(j.mins / j.progress * (1 - j.progress))) : null;
+  const lastLog = cleanLog((j.log || '').split('\n').pop());
+  return `
+  <div class="job-card">
+    <div class="jc-head">${icon(meta.ic)}<span class="jc-title">${title}</span>
+      <span class="jc-status ${esc(j.status)}">${esc(stLabel)}${pct != null && j.status === 'running' ? ` ${pct}%` : ''}</span></div>
+    ${j.status === 'running' ? `
+      <div class="jc-stage">${esc(humanStage(j))}</div>
+      ${pct != null ? `<div class="jc-bar"><div style="width:${pct}%"></div></div>` : ''}
+      <div class="jc-meta"><span>${j.mins ? j.mins + ' min transcurridos' : ''}</span>
+        <span>${eta ? '~' + eta + ' min restantes' : ''}</span></div>
+      ${lastLog ? `<div class="jc-log">${esc(lastLog)}</div>` : ''}` : ''}
+    ${j.status === 'queued' ? `<div class="jc-stage">Esperando turno — el worker procesa un trabajo pesado a la vez.</div>` : ''}
+    ${j.status === 'done' ? `<div class="jc-meta"><span>${esc(j.detail || '')}</span>
+      ${j.kind === '3d' ? '<a href="tresd.html" style="color:var(--accent)">Ver en 3D →</a>' :
+        j.kind === 'splat' ? '<a href="tresd.html" style="color:var(--accent)">Ver splat →</a>' :
+        j.artifact ? `<a href="data/${esc(j.artifact)}" target="_blank" style="color:var(--accent)">Abrir →</a>` : ''}</div>` : ''}
+    ${j.status === 'cancelled' || j.status === 'cancel_failed' ? `<div class="jc-meta"><span>${esc(j.detail || '')}</span></div>` : ''}
+    ${j.status === 'error' ? `<details class="jc-err"><summary>${esc((j.detail || 'error').slice(0, 90))} — ver log</summary><pre>${esc(cleanLog(j.log) || 'sin log')}</pre></details>` : ''}
+    ${['running', 'queued'].includes(j.status) && ['3d', 'splat'].includes(j.kind) ?
+      `<div class="jc-actions"><button class="btn" style="padding:4px 11px;font-size:11px" data-cancel="${esc(j.id)}">Cancelar</button></div>` : ''}
+  </div>`;
+}
 async function pollJobs(el, every = 2500) {
+  let flightsIdx = null;
+  try {
+    const fl = await getFlights();
+    flightsIdx = Object.fromEntries(fl.map(f => [f.clip_id, f]));
+  } catch {}
   const paint = async () => {
     try {
       const res = await fetch('/api/jobs');
-      if (res.status === 403) { el.innerHTML = '<p class="footer-note">Inicia sesión (una acción de operador) para ver trabajos.</p>'; return; }
+      if (res.status === 403) { el.innerHTML = '<p class="footer-note">Inicia sesión para ver trabajos.</p>'; return; }
       const { jobs } = await res.json();
-      el.innerHTML = jobs.length ? jobs.map(j => `
-        <div class="hl-item">
-          <span class="tc" style="${j.status === 'error' || j.status === 'cancel_failed' ? 'color:var(--red);background:rgba(217,106,106,.12)' :
-            j.status === 'done' ? 'color:var(--mint);background:rgba(82,199,154,.12)' :
-            j.status === 'queued' ? 'color:var(--text-3);background:var(--surface-2)' :
-            j.status === 'cancelled' ? 'color:var(--amber);background:rgba(224,164,88,.12)' : ''}">${esc(j.status === 'cancel_failed' ? 'cancel falló' : j.status === 'queued' ? 'en cola' : j.status)}${j.status === 'running' && j.progress ? ` ${Math.round(j.progress * 100)}%` : ''}</span>
-          <p><b>${esc(j.kind)}</b> · ${esc(j.label)} <span class="mono" style="color:var(--text-3)">${esc(j.ts)}${j.mins ? ` · ${j.mins} min` : ''}</span>
-          ${j.detail ? `<br><span class="mono" style="font-size:11px;color:var(--text-3)">${esc(j.detail)}</span>` : ''}
-          ${j.status === 'running' && j.log && ['3d', 'splat'].includes(j.kind) ? `<br><span class="mono" style="font-size:10px;color:var(--text-3)">${esc(j.log.split('\n').slice(-1)[0] || '')}</span>` : ''}
-          ${j.status === 'error' && j.log ? `<br><details style="margin-top:4px"><summary style="font-size:10.5px;color:var(--text-3);cursor:pointer">ver log del error</summary><pre class="mono" style="font-size:10px;color:var(--text-3);white-space:pre-wrap;max-height:160px;overflow:auto;margin-top:4px">${esc(j.log)}</pre></details>` : ''}</p>
-          ${['running', 'queued'].includes(j.status) && ['3d', 'splat'].includes(j.kind) ?
-            `<button class="btn" style="padding:3px 9px;font-size:11px" data-cancel="${esc(j.id)}">Cancelar</button>` : ''}
-        </div>`).join('') :
-        `<p class="footer-note">Sin trabajos aún.</p>`;
+      if (!jobs.length) { el.innerHTML = '<p class="footer-note">Sin trabajos aún.</p>'; return; }
+      const active = jobs.filter(j => ['running', 'queued'].includes(j.status));
+      const doneRecent = jobs.filter(j => !['running', 'queued'].includes(j.status)).slice(0, 3);
+      const older = jobs.filter(j => !['running', 'queued'].includes(j.status)).slice(3);
+      el.innerHTML =
+        active.map(j => jobCard(j, flightsIdx)).join('') +
+        doneRecent.map(j => jobCard(j, flightsIdx)).join('') +
+        (older.length ? `<details class="jobs-older"><summary>${older.length} trabajos anteriores</summary>
+          ${older.map(j => jobCard(j, flightsIdx)).join('')}</details>` : '');
     } catch {}
   };
   paint();

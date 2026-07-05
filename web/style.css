@@ -337,3 +337,40 @@ select.ctl {
 .login-card input:focus { border-color: var(--accent); }
 .login-card .btn { justify-content: center; margin-top: 2px; }
 .login-err { color: var(--red); font-size: 12.5px; min-height: 4px; text-align: center; }
+
+/* ---------- job cards v2 ---------- */
+.job-card {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.job-card .jc-head { display: flex; align-items: center; gap: 9px; }
+.job-card .jc-head svg.ic { width: 15px; height: 15px; color: var(--text-3); }
+.job-card .jc-title { font-size: 13px; font-weight: 650; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-card .jc-status {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 12px; flex: none;
+}
+.jc-status.running { color: var(--accent); background: var(--accent-dim); }
+.jc-status.queued { color: var(--text-3); background: var(--surface); }
+.jc-status.done { color: var(--mint); background: rgba(82,199,154,.12); }
+.jc-status.error, .jc-status.cancel_failed { color: var(--red); background: rgba(217,106,106,.12); }
+.jc-status.cancelled { color: var(--amber); background: rgba(224,164,88,.12); }
+.job-card .jc-stage { font-size: 12.5px; color: var(--text-2); margin-top: 8px; }
+.job-card .jc-bar { height: 6px; background: var(--surface); border-radius: 3px;
+  overflow: hidden; margin-top: 8px; }
+.job-card .jc-bar > div { height: 100%; background: var(--accent); border-radius: 3px;
+  transition: width 600ms var(--ease); }
+.job-card .jc-meta { display: flex; justify-content: space-between; gap: 10px;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 10.5px; color: var(--text-3); margin-top: 6px; }
+.job-card .jc-log { font-family: var(--mono); font-size: 10px; color: var(--text-3);
+  margin-top: 8px; padding: 7px 9px; background: var(--surface); border-radius: var(--r-sm);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-card .jc-actions { display: flex; gap: 8px; margin-top: 10px; }
+.job-card details.jc-err summary { font-size: 11px; color: var(--red); cursor: pointer; margin-top: 8px; }
+.job-card details.jc-err pre { font-family: var(--mono); font-size: 10px; color: var(--text-3);
+  white-space: pre-wrap; max-height: 180px; overflow: auto; margin-top: 6px;
+  background: var(--surface); border-radius: var(--r-sm); padding: 8px; }
+.jobs-older { margin-top: 4px; }
+.jobs-older summary { font-size: 11.5px; color: var(--text-3); cursor: pointer; padding: 6px 2px; }
