@@ -806,18 +806,55 @@
     if (!name) return;
     const box = document.getElementById('splat-viewer');
     box.style.display = 'block';
-    box.innerHTML = '<div class="sk" style="height:10px;width:70%;margin:20px auto"></div>';
+    box.style.height = '58dvh';
+    box.style.position = 'relative';
+    // visor anterior fuera ANTES de crear otro (workers + GPU buffers liberados)
+    if (box._viewer) { try { box._viewer.dispose(); } catch {} box._viewer = null; }
+    box.innerHTML = `<div class="splat-load"><div class="sk" style="height:10px;border-radius:5px"></div>
+      <p class="footer-note splat-st" style="margin:10px 0 0">Descargando splat…</p></div>`;
+    const st = box.querySelector('.splat-st');
     const GaussianSplats3D = await import('/vendor/gaussian-splats-3d.module.min.js');
-    box.innerHTML = '';
-    // antialiased + descarte de splats casi-invisibles = render notablemente más limpio
+    // perf: covarianzas half-precision en GPU + antialiased + descarte de splats
+    // casi-invisibles; spinner propio (el built-in es feo y no respeta el theme)
     const viewer = new GaussianSplats3D.Viewer({
       rootElement: box, sharedMemoryForWorkers: false, antialiased: true,
+      halfPrecisionCovariancesOnGPU: true, showLoadingUI: false,
       splatRenderMode: GaussianSplats3D.SplatRenderMode.ThreeD,
     });
-    await viewer.addSplatScene(`data/splats/${name}`,
-      { progressiveLoad: true, splatAlphaRemovalThreshold: 5 });
+    box._viewer = viewer;
+    try {
+      await viewer.addSplatScene(`data/splats/${name}`, {
+        progressiveLoad: true, splatAlphaRemovalThreshold: 5, showLoadingUI: false,
+        onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
+      });
+    } catch (err) {
+      box.querySelector('.splat-load').innerHTML =
+        `<p class="footer-note">No se pudo cargar ${esc(name)} · ${esc(String(err && err.message || err).slice(0, 90))}</p>`;
+      return;
+    }
     viewer.start();
-    attachViewerTools(box, null, null);
+    box.querySelector('.splat-load')?.remove();
+    // HUD premium: auto-rotar + pantalla completa
+    const bar = document.createElement('div');
+    bar.className = 'viewer-tools';
+    bar.innerHTML = `<button data-svt="rot" title="Auto-rotar">${icon('route')}</button>
+      <button data-svt="fs" title="Pantalla completa">${icon('ext')}</button>`;
+    box.appendChild(bar);
+    bar.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-svt]');
+      if (!b) return;
+      if (b.dataset.svt === 'rot' && viewer.controls) {
+        viewer.controls.autoRotate = !viewer.controls.autoRotate;
+        viewer.controls.autoRotateSpeed = 0.9;
+        b.classList.toggle('on', viewer.controls.autoRotate);
+      }
+      if (b.dataset.svt === 'fs') {
+        const on = box.classList.toggle('viewer-fs');
+        b.innerHTML = on ? icon('chevL') : icon('ext');
+        document.body.style.overflow = on ? 'hidden' : '';
+        window.dispatchEvent(new Event('resize'));
+      }
+    });
   });
 
   // sin auto-abrir: solo se restaura una selección previa del usuario

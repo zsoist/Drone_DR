@@ -719,3 +719,9 @@ details.explain b { color: var(--text); font-weight: 600; }
 .sd-head svg.ic { width: 15px; height: 15px; color: var(--accent); }
 .sd-head b { font-size: 13.5px; }
 .mflight input[type=checkbox] { margin: 0 2px 0 6px; }
+
+/* visor de splat: overlay de carga propio */
+.splat-load {
+  position: absolute; inset: 0; display: grid; place-items: center; z-index: 4;
+}
+.splat-load > * { width: 70%; text-align: center; }
