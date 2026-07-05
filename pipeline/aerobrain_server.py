@@ -570,7 +570,7 @@ class H(BaseHTTPRequestHandler):
         p = urllib.parse.urlparse(self.path).path
         p = urllib.parse.unquote(p)
         if p == "/":
-            p = "/index.html"
+            p = "/home.html"
         base = (VAULT if p.startswith("/data/") else WEB).resolve()
         rel = p[6:] if p.startswith("/data/") else p.lstrip("/")
         f = (base / rel).resolve()

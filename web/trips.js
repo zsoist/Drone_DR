@@ -205,42 +205,6 @@ main.innerHTML = `
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  // scrub de video en miniaturas: mouse (hover) y touch (deslizar) con línea de progreso
-  function attachScrub(root) {
-    root.querySelectorAll('.card.scrub').forEach(cardEl => {
-      const n = +cardEl.dataset.frames;
-      if (!n) return;
-      const img = cardEl.querySelector('img');
-      const line = cardEl.querySelector('.scrub-line');
-      const orig = img.src;
-      const at = frac => {
-        const i = Math.max(1, Math.ceil(frac * n));
-        img.src = `${DATA}/frames/${cardEl.dataset.cid}/f_${String(i).padStart(4, '0')}.jpg`;
-        line.style.width = `${(frac * 100).toFixed(1)}%`;
-        line.style.opacity = 1;
-      };
-      cardEl.addEventListener('pointermove', e => {
-        if (e.pointerType === 'touch') return;              // touch usa el gesto propio
-        const r = cardEl.getBoundingClientRect();
-        at((e.clientX - r.left) / r.width);
-      });
-      cardEl.addEventListener('pointerleave', () => { img.src = orig; line.style.opacity = 0; });
-      // iOS: deslizar horizontal sobre el thumb scrubbea; vertical sigue scrolleando
-      let t0 = null;
-      cardEl.addEventListener('touchstart', e => { t0 = e.touches[0]; }, { passive: true });
-      cardEl.addEventListener('touchmove', e => {
-        if (!t0) return;
-        const t = e.touches[0];
-        if (Math.abs(t.clientX - t0.clientX) > Math.abs(t.clientY - t0.clientY) + 6) {
-          const r = cardEl.getBoundingClientRect();
-          at(Math.max(0, Math.min(1, (t.clientX - r.left) / r.width)));
-          e.preventDefault();
-        }
-      }, { passive: false });
-      cardEl.addEventListener('touchend', () => { t0 = null; setTimeout(() => { img.src = orig; line.style.opacity = 0; }, 900); });
-    });
-  }
-
   // ---------- postal descargable (canvas: portada + nombre + stats) ----------
   async function makePostal(c, btn) {
     const orig = btn.innerHTML;

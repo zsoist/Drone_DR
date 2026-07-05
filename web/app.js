@@ -122,12 +122,14 @@ const SORTS = {
 function card(f) {
   const a = ai[f.clip_id];
   return `
-  <a class="card" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
+  <a class="card scrub" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
     <div class="thumb">
       <img src="${DATA}/thumbs/${f.clip_id}.jpg" alt="" loading="lazy" width="960" height="540">
       <span class="tierdot ${f.tier}"><i></i>${f.tier}</span>
       ${a?.travel_score != null ? `<span class="score-pill">${a.travel_score}/10</span>` : ''}
       <span class="ovl mono">${fmt.dur(f.duration_s)}</span>
+      ${f.has_proxy ? `<span class="play-badge" data-tip="Ver vuelo con streaming">${icon('play')}</span>` : ''}
+      <span class="scrub-line"></span>
       <button class="rename-btn" data-rename="${f.clip_id}" title="Renombrar">${icon('tag')}</button>
     </div>
     <div class="body">
@@ -172,7 +174,7 @@ function render() {
   grid.querySelectorAll('.card').forEach((c, i) => {
     c.style.animation = `cardIn 340ms cubic-bezier(.25,.1,.25,1) both ${Math.min(i * 35, 420)}ms`;
   });
-  hoverScrub(grid);
+  attachScrub(grid);
 }
 
 // ---------- lugares: spots agrupados por punto de despegue (~500 m) ----------
@@ -239,7 +241,7 @@ function renderDates(list) {
       <span class="mono">${fs.length} vuelos · ${fmt.km(dist)} · ${fmt.hours(dur)}</span></div>` +
       fs.map(card).join('');
   }).join('') : `<div class="empty" style="grid-column:1/-1">${icon('cal')}<p>Sin vuelos con esos filtros.</p></div>`;
-  hoverScrub(grid);
+  attachScrub(grid);
 }
 document.addEventListener('click', async e => {
   const sc = e.target.closest('[data-scene]');
@@ -350,7 +352,7 @@ function openPreview(f) {
       <button class="modal-x" aria-label="Cerrar">✕</button></div>
     <div class="modal-b">
       ${f.has_proxy
-        ? `<video class="m-prev" style="max-height:320px" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" controls muted playsinline preload="metadata"></video>`
+        ? `<video class="m-prev" style="max-height:320px" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" controls muted playsinline preload="none"></video>`
         : `<img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" style="width:100%;border-radius:10px" alt="">`}
       <div class="tool-row" style="margin-top:12px">
         <span class="chip">${fmt.dur(f.duration_s)}</span>
@@ -367,22 +369,6 @@ function openPreview(f) {
   document.body.appendChild(ov);
   ov.addEventListener('click', e => {
     if (e.target === ov || e.target.closest('.modal-x')) { ov.querySelector('video')?.pause(); ov.remove(); }
-  });
-}
-
-// hover sobre la card = scrub por los keyframes del clip
-function hoverScrub(grid) {
-  grid.querySelectorAll('.card').forEach(c => {
-    const n = +c.dataset.frames;
-    if (!n) return;
-    const img = c.querySelector('img');
-    const orig = img.src;
-    c.addEventListener('mousemove', e => {
-      const r = c.getBoundingClientRect();
-      const i = Math.max(1, Math.ceil(((e.clientX - r.left) / r.width) * n));
-      img.src = `${DATA}/frames/${c.dataset.cid}/f_${String(i).padStart(4, '0')}.jpg`;
-    });
-    c.addEventListener('mouseleave', () => { img.src = orig; });
   });
 }
 
