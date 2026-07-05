@@ -5,72 +5,230 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
   <title>AeroBrain — 3D</title>
   <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="icons.js?v=3"></script>
   <script src="shell.js?v=3"></script>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    } }
+  </script>
 </head>
 <body>
-  <script type="module">
-    const main = renderShell('studio.html');
-    main.innerHTML = `
-      <div class="page-head"><h1>3D</h1><span class="count">fotogrametría y gaussian splatting</span></div>
-      <div class="fl-layout">
-        <div>
-          <div class="panel">
-            <div class="ph">${icon('map')} Ortofoto — OpenDroneMap</div>
-            <div class="pb" id="ortho"><div class="sk" style="height:80px"></div></div>
-          </div>
-          <div class="panel" style="margin-top:16px">
-            <div class="ph">${icon('cube')} Escenas 3D — Gaussian Splats</div>
-            <div class="pb" id="splats"></div>
-            <div id="viewer" style="height:52dvh;display:none"></div>
-          </div>
-        </div>
-        <div>
-          <div class="panel">
-            <div class="ph">${icon('layers')} Pipeline 3D</div>
-            <div class="pb"><table class="kv">
-              <tr><td>Ortofoto 2D</td><td>video → frames 2K → ODM (Docker, local)</td></tr>
-              <tr><td>Modelo 3D</td><td>ODM point cloud + textured mesh</td></tr>
-              <tr><td>Splat (foto-real)</td><td>OpenSplat sobre poses de ODM (Metal)</td></tr>
-              <tr><td>Costo</td><td>$0 — todo corre en el M4</td></tr>
-            </table>
-            <p class="footer-note">Para mejores resultados 3D: vuela en órbita alrededor del objetivo
-            (2 vueltas, 45° de gimbal) o en zigzag con 70% de solape para mapear áreas.</p></div>
-          </div>
-        </div>
-      </div>`;
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+  import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+  import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 
-    // ortofoto: aparece cuando el job de ODM termina y se publica el preview
-    (async () => {
-      const el = document.getElementById('ortho');
-      const r = await fetch('data/odm/proj0104/ortho_0104_v2.jpg', { method: 'HEAD' });
-      if (r.ok) {
-        el.innerHTML = `<img src="data/odm/proj0104/ortho_0104_v2.jpg" style="width:100%;border-radius:8px" alt="Ortofoto">
-          <p class="footer-note">Ortofoto del vuelo 0104 (4 jul) — generada localmente con OpenDroneMap.</p>`;
-      } else {
-        el.innerHTML = `<div class="empty">${icon('activity')}<p>ODM está procesando el vuelo 0104 en Docker
-          (~1h). La ortofoto aparecerá aquí sola.</p></div>`;
-      }
-      // splats
-      let sys = {};
-      try { sys = await (await fetch('data/manifest/system.json')).json(); } catch {}
-      const list = (sys.splats || []).filter(s => /\.(splat|ply|ksplat)$/.test(s.name));
-      document.getElementById('splats').innerHTML = list.length ? list.map(s => `
-        <div class="hl-item"><button class="tc" data-splat="${s.name}">Ver</button>
-        <p class="mono">${s.name} · ${(s.bytes / 1e6).toFixed(0)}MB</p></div>`).join('') :
-        `<div class="empty">${icon('cube')}<p>Sin splats aún — se generan con OpenSplat cuando ODM
-        termina las poses de cámara (fase 2 del pipeline).</p></div>`;
-      document.getElementById('splats').addEventListener('click', async e => {
-        const name = e.target.dataset.splat;
-        if (!name) return;
-        const { GaussianSplats3D } = await import('https://unpkg.com/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.min.js');
-        const box = document.getElementById('viewer');
-        box.style.display = 'block';
-        const viewer = new GaussianSplats3D.Viewer({ rootElement: box, sharedMemoryForWorkers: false });
-        await viewer.addSplatScene(`data/splats/${name}`);
-        viewer.start();
-      });
-    })();
-  </script>
+  const main = renderShell('tresd.html');
+  main.innerHTML = `
+    <div class="page-head"><h1>3D</h1><span class="count">fotogrametría · nube de puntos · splats</span>
+      <span class="spacer"></span>
+      <select class="ctl" id="proj-sel"></select>
+    </div>
+
+    <div class="panel">
+      <div class="ph">${icon('map')} Ortofoto sobre el mundo real
+        <span class="spacer" style="flex:1"></span>
+        <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-2)">
+          Opacidad <input type="range" id="op" min="0" max="100" value="88" style="width:110px"></label>
+      </div>
+      <div id="omap" style="height:56dvh;min-height:340px"></div>
+    </div>
+
+    <div class="fl-layout" style="margin-top:16px">
+      <div>
+        <div class="panel">
+          <div class="ph">${icon('cube')} Modelo 3D texturizado
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn primary" id="load-mesh" style="padding:4px 12px;font-size:11.5px">Cargar</button>
+          </div>
+          <div id="mesh-box" style="height:46dvh;min-height:300px;display:grid;place-items:center">
+            <p class="footer-note" style="margin:0">Mesh con textura real del vuelo — arrastra para orbitar.</p>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="panel">
+          <div class="ph">${icon('layers')} Nube de puntos
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn primary" id="load-cloud" style="padding:4px 12px;font-size:11.5px">Cargar</button>
+          </div>
+          <div id="cloud-box" style="height:46dvh;min-height:300px;display:grid;place-items:center">
+            <p class="footer-note" style="margin:0">~800k puntos con color real, georreferenciados.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fl-layout" style="margin-top:16px">
+      <div>
+        <div class="panel">
+          <div class="ph">${icon('activity')} Procesar un vuelo en 3D</div>
+          <div class="pb">
+            <div class="toolbar">
+              <select class="ctl" id="new-clip" style="flex:1"></select>
+              <button class="btn primary" id="btn-run3d">${icon('cube')} Procesar 3D</button>
+            </div>
+            <p class="footer-note">Un tap: frames 2K → geotag con tu GPS → fotogrametría ODM →
+            assets web. ~1h en el M4, todo local. Mejores resultados: vuelos en órbita o zigzag
+            con solape; el nadir alto (como el 0104) mapea de maravilla.</p>
+            <div id="jobs3d" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="panel">
+          <div class="ph">${icon('cube')} Gaussian Splats</div>
+          <div class="pb" id="splats">
+            <p class="footer-note">Fase foto-real: OpenSplat entrena sobre las poses que ODM ya
+            resolvió. En build — aparecerán aquí.</p>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:16px">
+          <div class="ph">${icon('dl')} Descargas del proyecto</div>
+          <div class="pb" id="dls"></div>
+        </div>
+      </div>
+    </div>`;
+
+  // ---------- estado ----------
+  let sys = {}, models = [], cur = null;
+  try { sys = await (await fetch('data/manifest/system.json')).json(); } catch {}
+  models = sys.models || [];
+  const flights = await getFlights();
+
+  const sel = document.getElementById('proj-sel');
+  sel.innerHTML = models.length
+    ? models.map(m => {
+        const f = flights.find(x => x.clip_id === m.clip_id);
+        return `<option value="${m.clip_id}">${f ? (f.label || fmt.date(f.date) + ' ' + f.time) : m.clip_id}</option>`;
+      }).join('')
+    : `<option value="">Sin proyectos 3D aún</option>`;
+  sel.addEventListener('change', () => setProject(sel.value));
+
+  // clips candidatos a 3D (con GPS y proxy)
+  const candidates = flights.filter(f => f.has_srt && f.stats?.bbox && !f.archived);
+  document.getElementById('new-clip').innerHTML =
+    candidates.map(f => `<option value="${f.clip_id}">${f.label || fmt.date(f.date) + ' ' + f.time} · ${fmt.dur(f.duration_s)} · ${Math.round(f.stats.max_rel_alt_m || 0)}m</option>`).join('');
+  document.getElementById('btn-run3d').addEventListener('click', async () => {
+    const token = getToken();
+    if (!token) return;
+    await fetch(`/api/odm?token=${encodeURIComponent(token)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clip_id: document.getElementById('new-clip').value }) });
+  });
+  pollJobs(document.getElementById('jobs3d'));
+
+  // ---------- ortofoto en MapLibre ----------
+  let omap = null;
+  function setProject(cid) {
+    cur = models.find(m => m.clip_id === cid);
+    if (!cur) return;
+    const base = `data/models/${cid}`;
+    document.getElementById('dls').innerHTML = `
+      <div class="navrow" style="flex-wrap:wrap">
+        <a class="btn" href="${base}/ortho_full.jpg" target="_blank">${icon('map')} Ortofoto 5K</a>
+        <a class="btn" href="${base}/${cur.model_obj}" download>${icon('cube')} Modelo .obj</a>
+        <a class="btn" href="${base}/cloud.ply" download>${icon('layers')} Nube .ply</a>
+      </div>`;
+    if (omap) omap.remove();
+    const b = new maplibregl.LngLatBounds();
+    cur.corners.forEach(c => b.extend(c));
+    omap = new maplibregl.Map({
+      container: 'omap', style: SAT_STYLE, bounds: b,
+      fitBoundsOptions: { padding: 40 }, attributionControl: { compact: true },
+    });
+    omap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    omap.on('load', () => {
+      omap.addSource('ortho', { type: 'image', url: `${base}/ortho.jpg`, coordinates: cur.corners });
+      omap.addLayer({ id: 'ortho', type: 'raster', source: 'ortho',
+                      paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 0 } });
+    });
+    document.getElementById('op').oninput = e => {
+      omap.getLayer('ortho') && omap.setPaintProperty('ortho', 'raster-opacity', +e.target.value / 100);
+    };
+    resetViewer('mesh-box', 'Mesh con textura real del vuelo — arrastra para orbitar.', 'load-mesh');
+    resetViewer('cloud-box', '~800k puntos con color real, georreferenciados.', 'load-cloud');
+  }
+  function resetViewer(boxId, msg, btnId) {
+    const box = document.getElementById(boxId);
+    box.innerHTML = `<p class="footer-note" style="margin:0">${msg}</p>`;
+    document.getElementById(btnId).style.display = '';
+  }
+
+  // ---------- three.js viewers ----------
+  function makeScene(box) {
+    const w = box.clientWidth, h = box.clientHeight;
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    box.innerHTML = '';
+    box.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#0A0C10');
+    const cam = new THREE.PerspectiveCamera(55, w / h, 0.1, 5000);
+    const controls = new OrbitControls(cam, renderer.domElement);
+    controls.enableDamping = true;
+    scene.add(new THREE.AmbientLight(0xffffff, 1.15));
+    const dl = new THREE.DirectionalLight(0xffffff, 1.2);
+    dl.position.set(1, 2, 1.5);
+    scene.add(dl);
+    (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, cam); })();
+    return { scene, cam, controls };
+  }
+  function frameObject(obj, cam, controls) {
+    const bb = new THREE.Box3().setFromObject(obj);
+    const c = bb.getCenter(new THREE.Vector3()), size = bb.getSize(new THREE.Vector3()).length();
+    obj.position.sub(c);                       // centra en el origen
+    cam.position.set(size * 0.45, size * 0.35, size * 0.45);
+    cam.near = size / 500; cam.far = size * 6; cam.updateProjectionMatrix();
+    controls.target.set(0, 0, 0);
+  }
+  const spin = box => { box.innerHTML = `<div class="sk" style="width:80%;height:10px;border-radius:5px"></div>`; };
+
+  document.getElementById('load-mesh').addEventListener('click', async e => {
+    if (!cur) return;
+    e.currentTarget.style.display = 'none';
+    const box = document.getElementById('mesh-box');
+    spin(box);
+    const base = `data/models/${cur.clip_id}/model/`;
+    const mtl = await new MTLLoader().setPath(base).loadAsync('odm_textured_model_geo.mtl');
+    mtl.preload();
+    const obj = await new OBJLoader().setMaterials(mtl).setPath(base).loadAsync('odm_textured_model_geo.obj');
+    const { scene, cam, controls } = makeScene(box);
+    obj.rotation.x = -Math.PI / 2;             // ODM: Z-up → three.js: Y-up
+    scene.add(obj);
+    frameObject(obj, cam, controls);
+  });
+
+  document.getElementById('load-cloud').addEventListener('click', async e => {
+    if (!cur) return;
+    e.currentTarget.style.display = 'none';
+    const box = document.getElementById('cloud-box');
+    spin(box);
+    const geo = await new PLYLoader().loadAsync(`data/models/${cur.clip_id}/cloud.ply`);
+    const mat = new THREE.PointsMaterial({ size: 0.28, vertexColors: geo.hasAttribute('color') });
+    const pts = new THREE.Points(geo, mat);
+    const { scene, cam, controls } = makeScene(box);
+    pts.rotation.x = -Math.PI / 2;
+    scene.add(pts);
+    frameObject(pts, cam, controls);
+  });
+
+  // splats existentes
+  const splats = (sys.splats || []).filter(s => /\.(splat|ply|ksplat)$/.test(s.name));
+  if (splats.length) {
+    document.getElementById('splats').innerHTML = splats.map(s => `
+      <div class="hl-item"><a class="tc" href="data/splats/${s.name}" download>Descargar</a>
+      <p class="mono">${s.name} · ${(s.bytes / 1e6).toFixed(0)}MB</p></div>`).join('');
+  }
+
+  if (models.length) setProject(models[0].clip_id);
+</script>
 </body>
 </html>

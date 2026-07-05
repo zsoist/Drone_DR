@@ -6,6 +6,7 @@ const NAV = [
   { href: 'map.html', ic: 'map', label: 'Mapa' },
   { href: 'trips.html', ic: 'pin', label: 'Viajes' },
   { href: 'studio.html', ic: 'film', label: 'Studio' },
+  { href: 'tresd.html', ic: 'cube', label: '3D' },
   { href: 'subir.html', ic: 'dl', label: 'Subir' },
   { href: 'system.html', ic: 'db', label: 'Sistema' },
 ];

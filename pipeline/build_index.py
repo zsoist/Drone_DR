@@ -64,6 +64,9 @@ def main():
                    if p.is_file()] if (VAULT / "splats").exists() else [],
         "last_ingest": {"files": last["file_count"], "bytes": last["total_bytes"],
                         "at": last["ingested_at"]} if last else None,
+        "models": [json.loads((d / "meta.json").read_text())
+                   for d in sorted((VAULT / "models").iterdir())
+                   if (d / "meta.json").exists()] if (VAULT / "models").exists() else [],
     }
     (VAULT / "manifest" / "system.json").write_text(json.dumps(system, separators=(",", ":")))
     print(f"flights.json: {len(flights)} vuelos · system.json: "

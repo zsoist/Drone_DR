@@ -323,6 +323,40 @@ class H(BaseHTTPRequestHandler):
             done = j["status"] == "done"
             return self.send_json({"ok": done, "url": f"/data/{j['detail']}" if done else None,
                                    "error": None if done else j["detail"]})
+        if u.path == "/api/odm":
+            if not self.auth(q):
+                return
+            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            j = job_add("3d", cid)
+
+            def _run3d():
+                try:
+                    proj = VAULT / "odm" / f"proj_{cid}"
+                    with JLOCK:
+                        j["detail"] = "1/3 frames + geotag"
+                    subprocess.run(["python3", str(PIPE / "odm_prep.py"), cid],
+                                   check=True, capture_output=True, text=True, cwd=PIPE)
+                    with JLOCK:
+                        j["detail"] = "2/3 fotogrametría ODM (~1h)"
+                    subprocess.run(["/usr/local/bin/docker", "run", "--rm", "--name", f"odm-{cid[-6:]}",
+                                    "-m", "7g", "-v", f"{proj}:/datasets/code", "opendronemap/odm",
+                                    "--project-path", "/datasets", "--pc-quality", "medium",
+                                    "--feature-quality", "medium", "--max-concurrency", "4",
+                                    "--orthophoto-resolution", "5"],
+                                   check=True, capture_output=True, text=True, timeout=3 * 3600)
+                    with JLOCK:
+                        j["detail"] = "3/3 publicando assets web"
+                    subprocess.run(["python3", str(PIPE / "tresd_publish.py"), cid, str(proj)],
+                                   check=True, capture_output=True, text=True, cwd=PIPE)
+                    rebuild_index()
+                    job_end(j, "done", f"modelo 3D de {cid} listo")
+                except subprocess.CalledProcessError as e:
+                    job_end(j, "error", ((e.stderr or "") + str(e))[-250:])
+                except Exception as e:
+                    job_end(j, "error", str(e)[-250:])
+            threading.Thread(target=_run3d, daemon=True).start()
+            return self.send_json({"ok": True, "job": j["id"], "eta_min": 60})
         if u.path == "/api/analyze":
             if not self.auth(q):
                 return
