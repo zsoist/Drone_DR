@@ -1,12 +1,13 @@
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
-let flights = [], ai = {}, state = { q: '', tier: 'all', sort: 'date', view: 'grid', scene: null };
+let flights = [], ai = {}, semRank = null, state = { q: '', tier: 'all', sort: 'date', view: 'grid', scene: null, semantic: false };
 
 main.innerHTML = `
   <div class="page-head"><h1>Vuelos</h1><span class="count" id="count"></span></div>
   <div class="statgrid" id="stats">${'<div class="sk" style="height:74px"></div>'.repeat(4)}</div>
   <div class="toolbar">
     <label class="search">${icon('search')}<input id="q" type="search" placeholder="Buscar por fecha, lugar, tags AI…" autocomplete="off"><kbd>/</kbd></label>
+    <button class="chip" id="sem-toggle" title="Búsqueda semántica AI (por significado)">${icon('spark')} Semántica</button>
     <select class="ctl" id="tier" aria-label="Filtrar por tier">
       <option value="all">Todos los tiers</option>
       <option value="full">Full — con video</option>
@@ -42,6 +43,7 @@ function stats(list) {
 }
 
 function matches(f) {
+  if (state.semantic && semRank) return semRank.has(f.clip_id);
   if (state.tier === 'archived') { if (!f.archived) return false; }
   else if (f.archived) return false;
   if (state.tier !== 'all' && state.tier !== 'archived' && f.tier !== state.tier) return false;
@@ -84,7 +86,8 @@ function card(f) {
 }
 
 function render() {
-  const list = flights.filter(matches).sort(SORTS[state.sort]);
+  const list = flights.filter(matches).sort(
+    state.semantic && semRank ? (a, b) => (semRank.get(b.clip_id) || 0) - (semRank.get(a.clip_id) || 0) : SORTS[state.sort]);
   document.getElementById('count').textContent =
     `${list.length} de ${flights.length}` + (state.q ? ` · "${state.q}"` : '');
   const grid = document.getElementById('grid');
@@ -133,7 +136,27 @@ function hoverScrub(grid) {
   });
 }
 
-document.getElementById('q').addEventListener('input', e => { state.q = e.target.value; render(); });
+const qEl = document.getElementById('q');
+qEl.addEventListener('input', e => { state.q = e.target.value; if (!state.semantic) render(); });
+qEl.addEventListener('keydown', async e => {
+  if (e.key === 'Enter' && state.semantic && state.q.trim()) {
+    qEl.blur();
+    document.getElementById('count').textContent = 'buscando por significado…';
+    try {
+      const { results, error } = await api('/api/search', { q: state.q.trim() });
+      if (error) { document.getElementById('count').textContent = 'error: ' + error; return; }
+      semRank = new Map(results.map((r, i) => [r.clip_id, results.length - i]));
+      render();
+    } catch (err) { document.getElementById('count').textContent = 'sin sesión para búsqueda AI'; }
+  }
+});
+document.getElementById('sem-toggle').addEventListener('click', () => {
+  state.semantic = !state.semantic;
+  document.getElementById('sem-toggle').classList.toggle('on', state.semantic);
+  qEl.placeholder = state.semantic ? 'Describe lo que buscas y pulsa Enter…' : 'Buscar por fecha, lugar, tags AI…';
+  if (!state.semantic) { semRank = null; }
+  render();
+});
 document.getElementById('tier').addEventListener('change', e => { state.tier = e.target.value; render(); });
 document.getElementById('sort').addEventListener('change', e => { state.sort = e.target.value; render(); });
 document.getElementById('v-grid').addEventListener('click', () => setView('grid'));

@@ -82,6 +82,35 @@ KEYS_ENV = Path("/Volumes/SSD/_system/claude/.api-keys.env")
 SPLAT_BIN = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/OpenSplat/build/opensplat")
 
 
+def _sb_keys():
+    k = {}
+    for line in KEYS_ENV.read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            a, _, b = line.strip().partition("=")
+            k[a] = b.strip().strip('"')
+    return k
+
+
+def semantic_search(q: str, k: int = 12) -> dict:
+    """Embeds la consulta (OpenAI, server-side) y pide a Supabase los vuelos más
+    parecidos vía el RPC match_flights. La OpenAI key NUNCA toca el frontend."""
+    import urllib.request
+    keys = _sb_keys()
+    url = keys.get("SUPABASE_DRONE_URL", "").rstrip("/")
+    pub = keys.get("SUPABASE_DRONE_PUBLISHABLE_KEY", "")
+    oa = keys.get("OPENAI_API_KEY", "")
+    if not (url and pub and oa):
+        return {"error": "Supabase/OpenAI no configurados", "results": []}
+    er = urllib.request.Request("https://api.openai.com/v1/embeddings",
+        data=json.dumps({"model": "text-embedding-3-small", "input": q[:400]}).encode(),
+        headers={"Authorization": f"Bearer {oa}", "Content-Type": "application/json"})
+    vec = json.loads(urllib.request.urlopen(er, timeout=30).read())["data"][0]["embedding"]
+    rr = urllib.request.Request(f"{url}/rest/v1/rpc/match_flights",
+        data=json.dumps({"query": vec, "k": k}).encode(),
+        headers={"apikey": pub, "Authorization": f"Bearer {pub}", "Content-Type": "application/json"})
+    return {"results": json.loads(urllib.request.urlopen(rr, timeout=30).read())}
+
+
 def _deepseek(prompt: str) -> str:
     import urllib.request
     key = ""
@@ -680,6 +709,17 @@ class H(BaseHTTPRequestHandler):
                     HEAVY.release()
             threading.Thread(target=_splat, daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"]})
+        if u.path == "/api/search":
+            if not self.auth(q):
+                return
+            spec = self.read_json(4096)
+            query = str(spec.get("q", "")).strip()
+            if not query:
+                return self.send_json({"error": "consulta vacía", "results": []}, 400)
+            try:
+                return self.send_json(semantic_search(query))
+            except Exception as e:
+                return self.send_json({"error": str(e)[-160:], "results": []}, 502)
         if u.path == "/api/analyze":
             if not self.auth(q):
                 return
