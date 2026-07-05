@@ -84,8 +84,12 @@ def main():
         if "--embed" not in sys.argv and len(sys.argv) == 2:
             return
 
-    require(keys, "SUPABASE_DRONE_URL", "SUPABASE_DRONE_SERVICE_KEY")
-    url, svc = keys["SUPABASE_DRONE_URL"].rstrip("/"), keys["SUPABASE_DRONE_SERVICE_KEY"]
+    require(keys, "SUPABASE_DRONE_URL")
+    svc = keys.get("SUPABASE_DRONE_SECRET_KEY") or keys.get("SUPABASE_DRONE_SERVICE_KEY")
+    if not svc:
+        import sys as _s
+        _s.exit("Falta SUPABASE_DRONE_SECRET_KEY (sb_secret_…) para escribir datos.")
+    url = keys["SUPABASE_DRONE_URL"].rstrip("/")
 
     flights = json.loads((VAULT / "manifest" / "flights.json").read_text())["flights"]
     frows = []
