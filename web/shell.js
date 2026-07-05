@@ -53,8 +53,9 @@ async function pollJobs(el, every = 2500) {
       const { jobs } = await res.json();
       el.innerHTML = jobs.length ? jobs.map(j => `
         <div class="hl-item">
-          <span class="tc" style="${j.status === 'error' ? 'color:var(--red);background:rgba(217,106,106,.12)' :
-            j.status === 'done' ? 'color:var(--mint);background:rgba(82,199,154,.12)' : ''}">${esc(j.status)}</span>
+          <span class="tc" style="${j.status === 'error' || j.status === 'cancel_failed' ? 'color:var(--red);background:rgba(217,106,106,.12)' :
+            j.status === 'done' ? 'color:var(--mint);background:rgba(82,199,154,.12)' :
+            j.status === 'cancelled' ? 'color:var(--amber);background:rgba(224,164,88,.12)' : ''}">${esc(j.status === 'cancel_failed' ? 'cancel falló' : j.status)}</span>
           <p><b>${esc(j.kind)}</b> · ${esc(j.label)} <span class="mono" style="color:var(--text-3)">${esc(j.ts)}${j.mins ? ` · ${j.mins} min` : ''}</span>
           ${j.detail ? `<br><span class="mono" style="font-size:11px;color:var(--text-3)">${esc(j.detail)}</span>` : ''}</p>
           ${j.status === 'running' && ['3d', 'splat'].includes(j.kind) ?

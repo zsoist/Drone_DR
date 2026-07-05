@@ -51,6 +51,13 @@ def rebuild_index():
     subprocess.run(["python3", str(PIPE / "build_index.py")], check=True)
 
 
+def read_json_file(path: Path, max_bytes: int = 8_000_000):
+    """Lee un JSON nuestro con tope de tamaño (defensa OOM ante archivos corruptos/enormes)."""
+    if path.stat().st_size > max_bytes:
+        raise ValueError(f"archivo {path.name} excede {max_bytes} bytes")
+    return json.loads(path.read_text())
+
+
 def process_upload(path: Path, j):
     try:
         subprocess.run(["python3", str(PIPE / "process.py"), str(path)],
@@ -497,6 +504,7 @@ class H(BaseHTTPRequestHandler):
             if not HEAVY.acquire(blocking=False):
                 busy = (jobstore.running() or {}).get("label", "?")
                 return self.send_json({"error": f"ya hay un job 3D corriendo ({busy})"}, 409)
+            j = job_add("3d", cid)
             container = f"odm-{j['id']}"  # único por job (evita colisión de nombres)
             jobstore.update(j["id"], container=container)
 
@@ -523,7 +531,7 @@ class H(BaseHTTPRequestHandler):
                     rebuild_index()
                     job_end(j, "done", f"modelo 3D de {cid} listo")
                 except Exception as e:
-                    if (jobstore.get(j["id"]) or {}).get("status") != "cancelled":
+                    if (jobstore.get(j["id"]) or {}).get("status") not in jobstore.CANCEL_STATES:
                         job_end(j, "error", str(e)[-250:])
                 finally:
                     HEAVY.release()
@@ -569,7 +577,7 @@ class H(BaseHTTPRequestHandler):
                                  f"{out.name} · loss {quality['final_loss']} · {n_cams} cámaras",
                                  artifact=f"splats/{out.name}")
                 except Exception as e:
-                    if (jobstore.get(j["id"]) or {}).get("status") != "cancelled":
+                    if (jobstore.get(j["id"]) or {}).get("status") not in jobstore.CANCEL_STATES:
                         job_end(j, "error", str(getattr(e, 'stderr', '') or e)[-250:])
                 finally:
                     HEAVY.release()
@@ -599,7 +607,7 @@ class H(BaseHTTPRequestHandler):
             spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
             aif = VAULT / "ai" / f"{cid}.json"
-            data = json.loads(aif.read_text()) if aif.exists() else {"clip_id": cid, "tags": [], "highlights": []}
+            data = read_json_file(aif) if aif.exists() else {"clip_id": cid, "tags": [], "highlights": []}
             data.setdefault("highlights", []).append({
                 "t": round(float(spec.get("t", 0)), 1),
                 "reason": str(spec.get("reason", "marcado por Daniel"))[:120],
@@ -617,7 +625,7 @@ class H(BaseHTTPRequestHandler):
             mf = VAULT / "manifest" / f"{cid}.json"
             if not mf.exists():
                 return self.send_json({"error": "clip no existe"}, 404)
-            m = json.loads(mf.read_text())
+            m = read_json_file(mf)
             for k in ("label", "archived"):
                 if k in spec:
                     m[k] = spec[k]
@@ -650,7 +658,7 @@ class H(BaseHTTPRequestHandler):
             pf = VAULT / "properties" / f"{slug}.json"
             if not pf.exists():
                 return self.send_json({"error": "propiedad no existe"}, 404)
-            p = json.loads(pf.read_text())
+            p = read_json_file(pf)
             prompt = (
                 "Escribe la descripción de venta para una propiedad, en español, tono premium "
                 "inmobiliario, 2 párrafos cortos + 4 líneas de características precedidas por '· '. "

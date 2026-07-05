@@ -258,7 +258,7 @@
       document.getElementById('calc-vol').onclick = async () => {
         result('Calculando contra el DSM…');
         const r = await api('/api/measure', { type: 'volume', clip_id: cur.clip_id, points: mpts });
-        result(r.error ? `<span style="color:var(--red)">${r.error}</span>` : `
+        result(r.error ? `<span style="color:var(--red)">${esc(r.error)}</span>` : `
           <div class="statgrid" style="margin:0">
             <div class="stat"><div class="lb">Volumen (fill)</div><div class="v">${r.volume_m3.toLocaleString()}<small> m³</small></div></div>
             <div class="stat"><div class="lb">Corte (cut)</div><div class="v">${r.cut_m3.toLocaleString()}<small> m³</small></div></div>
@@ -271,7 +271,7 @@
       (async () => {
         result('Muestreando el DSM…');
         const r = await api('/api/measure', { type: 'profile', clip_id: cur.clip_id, points: mpts });
-        if (r.error) return result(`<span style="color:var(--red)">${r.error}</span>`);
+        if (r.error) return result(`<span style="color:var(--red)">${esc(r.error)}</span>`);
         const vals = r.profile.filter(v => v != null);
         const lo = Math.min(...vals), hi = Math.max(...vals);
         const W = 600, H = 90;

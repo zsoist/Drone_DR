@@ -117,7 +117,7 @@ def _kill_pg(pid: int, sig=signal.SIGTERM) -> bool:
         try:
             os.kill(pid, sig)
             return True
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             return False
 
 
@@ -150,50 +150,67 @@ def cancel(jid: str) -> bool:
         notes.append("pid vivo" if not _proc_gone(pid) else "pid terminado")
     # 2) matar el contenedor docker si lo hay (los procesos python-cli no lo tumban)
     if j["container"]:
-        r = subprocess.run(["/usr/local/bin/docker", "kill", j["container"]],
-                           capture_output=True, text=True, timeout=30)
-        notes.append("docker killed" if r.returncode == 0 else
-                     f"docker kill falló: {(r.stderr or '').strip()[:60]}")
+        try:
+            r = subprocess.run(["/usr/local/bin/docker", "kill", j["container"]],
+                               capture_output=True, text=True, timeout=30)
+            notes.append("docker killed" if r.returncode == 0 else
+                         f"docker kill falló: {(r.stderr or '').strip()[:60]}")
+        except (subprocess.TimeoutExpired, OSError) as e:
+            notes.append(f"docker kill error: {type(e).__name__}")
     # marca 'cancelled' para que el watcher de run_tracked corte la secuencia
     confirmed = (not pid or _proc_gone(pid))
-    end(jid, "cancelled", "cancelado · " + (" · ".join(notes) or "sin proceso activo"))
+    # estado honesto: 'cancelled' sólo si el kill se confirmó; si no, 'cancel_failed'
+    status = "cancelled" if confirmed else "cancel_failed"
+    end(jid, status, "cancelado · " + (" · ".join(notes) or "sin proceso activo"))
     return confirmed
+
+
+CANCEL_STATES = ("cancelled", "cancel_failed")
 
 
 def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                 tail: int = 12) -> int:
-    """Popen con PID registrado + watcher de cancelación INDEPENDIENTE del stdout
-    (un proceso silencioso también se puede matar) + tail de log en vivo."""
+    """Popen con PID registrado. El control (timeout Y cancelación) se hace con
+    proc.wait(timeout=1) en un bucle — INDEPENDIENTE del stdout, así un proceso
+    totalmente silencioso también respeta timeout y cancel. Un hilo lector sólo
+    actualiza el tail del log."""
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1, env=env, start_new_session=True)
     update(jid, pid=proc.pid)
-    stop = threading.Event()
-
-    def watcher():  # mata el proceso apenas el job pase a 'cancelled', sin esperar stdout
-        while not stop.wait(1.5):
-            cur = get(jid)
-            if not cur or cur["status"] != "running":
-                _kill_pg(proc.pid, signal.SIGTERM)
-                time.sleep(2)
-                if not _proc_gone(proc.pid):
-                    _kill_pg(proc.pid, signal.SIGKILL)
-                return
-    threading.Thread(target=watcher, daemon=True).start()
 
     lines: list[str] = []
-    deadline = time.time() + timeout
-    try:
-        for line in proc.stdout:  # streaming
+
+    def reader():  # sólo espeja el log; nunca controla el ciclo de vida
+        for line in proc.stdout:
             lines.append(line.rstrip())
             del lines[:-200]
             update(jid, log="\n".join(lines[-tail:]))
-            if time.time() > deadline:
+    threading.Thread(target=reader, daemon=True).start()
+
+    deadline = time.time() + timeout
+    reason = None
+    while True:
+        try:
+            proc.wait(timeout=1.0)  # avanza aunque no haya stdout
+            break
+        except subprocess.TimeoutExpired:
+            pass
+        if time.time() > deadline:
+            reason = "timeout"
+        elif (get(jid) or {}).get("status") in CANCEL_STATES:
+            reason = "cancel"
+        if reason:
+            _kill_pg(proc.pid, signal.SIGTERM)
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
                 _kill_pg(proc.pid, signal.SIGKILL)
-                raise TimeoutError(f"timeout tras {timeout}s")
-    finally:
-        stop.set()
-    proc.wait()
+                proc.wait()
+            break
+
     update(jid, pid=None)
-    if (get(jid) or {}).get("status") == "cancelled":
+    if reason == "timeout":
+        raise TimeoutError(f"timeout tras {timeout}s")
+    if reason == "cancel" or (get(jid) or {}).get("status") in CANCEL_STATES:
         raise RuntimeError("cancelado por el operador")
     return proc.returncode
