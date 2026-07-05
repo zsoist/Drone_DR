@@ -273,16 +273,16 @@ main.innerHTML = `
   document.getElementById('reels').innerHTML =
     (reels.length ? reels.map(r => `
       <div style="margin-bottom:14px">
-        <video src="${DATA}/reels/${r.name}" controls playsinline webkit-playsinline preload="metadata"
+        <video src="${DATA}/reels/${encodeURIComponent(r.name)}" controls playsinline webkit-playsinline preload="metadata"
           style="width:100%;border-radius:8px;background:#000"></video>
         <div style="display:flex;justify-content:space-between;margin-top:6px">
-          <span class="mono" style="font-size:12px">${r.name}</span>
-          <a class="mono" href="${DATA}/reels/${r.name}" download style="font-size:12px;color:var(--accent)">Descargar</a>
+          <span class="mono" style="font-size:12px">${esc(r.name)}</span>
+          <a class="mono" href="${DATA}/reels/${encodeURIComponent(r.name)}" download style="font-size:12px;color:var(--accent)">Descargar</a>
         </div>
       </div>`).join('') : `<p class="footer-note">Aún no hay reels.</p>`) +
     (photos.length ? `<p style="font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-3);margin:12px 0 8px">Fotos 4K capturadas</p>
       <div class="gal" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
-      ${photos.map(p => `<a href="${DATA}/photos/${p.name}" target="_blank"><img src="${DATA}/photos/${p.name}" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:6px" loading="lazy" alt=""></a>`).join('')}</div>` : '');
+      ${photos.map(p => `<a href="${DATA}/photos/${encodeURIComponent(p.name)}" target="_blank"><img src="${DATA}/photos/${encodeURIComponent(p.name)}" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:6px" loading="lazy" alt=""></a>`).join('')}</div>` : '');
 
   const moments = [];
   flights.forEach(f => (ai[f.clip_id]?.highlights || []).forEach(h =>

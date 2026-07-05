@@ -4,6 +4,7 @@ Cubre las piezas puras: parser SRT (con puntos 0,0), política de tiers,
 mediciones DSM (volumen y perfil sobre un DSM sintético), y contención de paths.
 """
 import json
+import sqlite3
 import sys
 import tempfile
 import time
@@ -118,6 +119,13 @@ check("session: creada y válida", jobs.session_valid(sid))
 check("session: id inexistente inválido", not jobs.session_valid("nope"))
 jobs.session_delete(sid)
 check("session: eliminada (logout) invalida", not jobs.session_valid(sid))
+# corrupted DB row with NULL expiry must reject cleanly, not crash auth
+with sqlite3.connect(jobs.DB) as _c:
+    _c.execute("INSERT INTO sessions (id, expiry) VALUES ('null_row', NULL)")
+try:
+    check("session: NULL expiry rechazada sin crash", jobs.session_valid('null_row') is False)
+except TypeError:
+    check("session: NULL expiry rechazada sin crash", False, "TypeError")
 
 # ---------- jobs: run_tracked records PID + cancel kills ----------
 import threading, os

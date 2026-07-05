@@ -52,7 +52,7 @@ def session_valid(sid: str) -> bool:
         return False
     with _LOCK, _conn() as c:
         r = c.execute("SELECT expiry FROM sessions WHERE id=?", (sid,)).fetchone()
-    return bool(r and r["expiry"] > time.time())
+    return bool(r and r["expiry"] is not None and r["expiry"] > time.time())
 
 
 def session_delete(sid: str):
@@ -206,6 +206,14 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
             except subprocess.TimeoutExpired:
                 _kill_pg(proc.pid, signal.SIGKILL)
                 proc.wait()
+            # el contenedor no muere al matar la CLI de docker: tumbarlo explícito
+            cont = (get(jid) or {}).get("container")
+            if cont:
+                try:
+                    subprocess.run(["/usr/local/bin/docker", "kill", cont],
+                                   capture_output=True, timeout=30)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
             break
 
     update(jid, pid=None)

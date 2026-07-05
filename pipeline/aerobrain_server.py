@@ -450,6 +450,8 @@ class H(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             if not length:
                 return self.send_json({"error": "body vacío"}, 400)
+            if length > 25 * 1024**3:  # 25GB tope de cordura (video 4K real cabe de sobra)
+                return self.send_json({"error": "archivo > 25GB"}, 413)
             cid = f"UP_{time.strftime('%Y%m%d%H%M%S')}_{Path(name).stem[:40]}"
             dest = VAULT / "raw" / "uploads"
             dest.mkdir(parents=True, exist_ok=True)
