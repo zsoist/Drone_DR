@@ -268,9 +268,12 @@ function haversine(a, b) {
 }
 // maxzoom 19 en el source: más allá, MapLibre sobre-escala la tile en vez de
 // mostrar "Map data not available" (vuelos cortos fuerzan zoom 20+)
+// satelite: maxzoom 17 — mas alla MapLibre ESCALA el tile (suave) en vez de
+// pedir niveles que Esri no tiene en zonas rurales (tiles "not available");
+// la ortofoto del dron va encima con su propia nitidez de todos modos
 const SAT_STYLE = {
   version: 8,
-  sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: 'Esri World Imagery' } },
+  sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 17, attribution: 'Esri World Imagery' } },
   layers: [{ id: 'sat', type: 'raster', source: 'sat' }],
 };
 const FIT_OPTS = { padding: 50, maxZoom: 17.5 };
