@@ -496,3 +496,75 @@ details.explain b { color: var(--text); font-weight: 600; }
 
 /* ---------- visor: boton toggle activo ---------- */
 .viewer-tools button.on { color: var(--accent); border-color: rgba(69,160,230,0.6); background: var(--accent-dim); }
+
+/* ---------- mini-modal ---------- */
+.modal-ov {
+  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+  background: rgba(6, 9, 14, 0.62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  animation: ovIn 180ms var(--ease); padding: 16px;
+}
+@keyframes ovIn { from { opacity: 0; } }
+.modal {
+  width: 100%; max-width: 560px; max-height: 88dvh; overflow: auto;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  animation: mIn 220ms var(--ease); box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+}
+@keyframes mIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
+.modal-h {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--surface); z-index: 2;
+}
+.modal-h b { font-size: 14px; display: flex; align-items: center; gap: 9px; }
+.modal-h svg.ic { width: 16px; height: 16px; color: var(--accent); }
+.modal-x { font-size: 13px; color: var(--text-3); padding: 4px 8px; border-radius: 6px; }
+.modal-x:hover { color: var(--text); background: var(--surface-2); }
+.modal-b { padding: 16px 18px 18px; }
+.mlb {
+  font-size: 10px; letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--text-3); margin: 14px 0 7px; font-weight: 600;
+}
+.mlb:first-child { margin-top: 0; }
+
+/* selector de vuelo/proyecto dentro del modal */
+.mflights { display: flex; flex-direction: column; gap: 7px; max-height: 200px; overflow: auto; }
+.mflight {
+  display: flex; align-items: center; gap: 11px; padding: 7px;
+  border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+  background: var(--surface-2); transition: border-color 140ms var(--ease);
+}
+.mflight:hover { border-color: rgba(69,160,230,0.4); }
+.mflight.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.mflight img { width: 74px; height: 44px; object-fit: cover; border-radius: 6px; background: #0c1016; flex: none; }
+.mflight .mf-t { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mflight .mf-t b { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mflight .mf-t span { font-size: 10.5px; color: var(--text-3); }
+.m-prev { width: 100%; max-height: 190px; border-radius: 10px; margin-top: 10px; background: #000; display: block; }
+
+/* tarjetas de preset/calidad */
+.mpresets { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.mpreset {
+  display: flex; flex-direction: column; gap: 3px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+  background: var(--surface-2); transition: border-color 140ms var(--ease);
+}
+.mpreset:hover { border-color: rgba(69,160,230,0.4); }
+.mpreset.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.mpreset b { font-size: 12.5px; }
+.mpreset span { font-size: 10.5px; color: var(--accent); }
+.mpreset small { font-size: 10.5px; color: var(--text-3); }
+
+/* ---------- cola: grid denso en desktop ---------- */
+#jobs3d { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 10px; align-items: start; }
+#jobs3d .job-card { margin-bottom: 0; }
+#jobs3d > details.jobs-older { grid-column: 1 / -1; }
+@media (max-width: 700px) { #jobs3d { grid-template-columns: 1fr; } }
+
+/* ---------- exports con icono ---------- */
+.exp { flex-direction: row; align-items: center; gap: 12px; }
+.exp svg.ic { width: 17px; height: 17px; color: var(--accent); flex: none; }
+.exp > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* ---------- micro-polish global ---------- */
+.panel { transition: border-color 200ms var(--ease); }
+.panel:hover { border-color: rgba(69,160,230,0.18); }

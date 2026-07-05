@@ -76,11 +76,13 @@ def run_3d(j: dict):
             timeout=1800) != 0:
         raise RuntimeError("publicación falló")
 
-    # graba el preset usado en el meta (la UI muestra el nivel de calidad de la malla)
+    # graba preset + título elegidos en el asistente (la UI los muestra en tarjeta/reporte)
     mf = VAULT / "models" / cid / "meta.json"
     if mf.exists():
         m = json.loads(mf.read_text())
         m["preset"] = j["spec"].get("preset", "estandar")
+        if j["spec"].get("title"):
+            m["title"] = j["spec"]["title"]
         mf.write_text(json.dumps(m, indent=1))
     rebuild_index()
     jobstore.update(j["id"], progress=1.0)

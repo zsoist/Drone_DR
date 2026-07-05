@@ -1,7 +1,5 @@
   import * as THREE from '/vendor/three.module.js';
   import { OrbitControls } from '/vendor/three-addons/controls/OrbitControls.js';
-  import { OBJLoader } from '/vendor/three-addons/loaders/OBJLoader.js';
-  import { MTLLoader } from '/vendor/three-addons/loaders/MTLLoader.js';
   import { PLYLoader } from '/vendor/three-addons/loaders/PLYLoader.js';
 
   const main = renderShell('tresd.html');
@@ -18,16 +16,9 @@
         <div class="panel">
           <div class="ph">${icon('activity')} Procesar un vuelo en 3D</div>
           <div class="pb">
-            <div class="toolbar">
-              <select class="ctl" id="new-clip" style="flex:1;min-width:0"></select>
-              <select class="ctl" id="odm-preset">
-                <option value="rapido">Rápido</option>
-                <option value="estandar" selected>Estándar</option>
-                <option value="alta">Alta</option>
-              </select>
-              <button class="btn primary" id="btn-run3d">${icon('cube')} Procesar</button>
-            </div>
-            <p class="footer-note" id="preset-note"></p>
+            <button class="btn primary" id="btn-run3d" style="width:100%;justify-content:center;padding:10px 0;font-size:13px">${icon('cube')} Procesar un vuelo…</button>
+            <p class="footer-note" style="margin:10px 0 0">El asistente te deja elegir el vuelo con
+            vista previa, ponerle nombre al proyecto y escoger la calidad.</p>
             <details class="explain">
               <summary>¿Cómo funciona el procesamiento?</summary>
               <p><b>1 · Frames + geotag</b> — extrae fotos 2K del video y les inyecta el GPS de tu
@@ -48,13 +39,7 @@
         <div class="panel">
           <div class="ph">${icon('cube')} Gaussian Splats
             <span class="spacer" style="flex:1"></span>
-            <select class="ctl" id="splat-iters" style="font-size:11.5px;padding:4px 8px">
-              <option value="1000">Rápido · 1k iters</option>
-              <option value="2000" selected>Balanceado · 2k</option>
-              <option value="7000">Cinemático · 7k</option>
-              <option value="15000">Ultra · 15k</option>
-            </select>
-            <button class="btn primary" id="btn-splat" style="padding:4px 12px;font-size:11.5px">Generar</button>
+            <button class="btn primary" id="btn-splat" style="padding:5px 14px;font-size:11.5px">${icon('spark')} Generar splat…</button>
           </div>
           <div class="pb" id="splats"></div>
           <div id="splat-viewer" style="height:46dvh;display:none"></div>
@@ -109,29 +94,13 @@
       <div class="pb" id="m-result" style="display:none;border-top:1px solid var(--line)"></div>
     </div>
 
-    <div class="fl-layout" style="margin-top:16px">
-      <div>
-        <div class="panel">
-          <div class="ph">${icon('cube')} Nube de puntos 3D
-            <span class="spacer" style="flex:1"></span>
-            <button class="btn primary" id="load-cloud-main" style="padding:4px 12px;font-size:11.5px">Cargar</button>
-          </div>
-          <div id="cloud-box" style="height:52dvh;min-height:340px;display:grid;place-items:center">
-            <p class="footer-note" style="margin:0">Nube de ~800k puntos con color real — arrastra para orbitar. Es la mejor vista para capturas nadir.</p>
-          </div>
-        </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="ph">${icon('cube')} Nube de puntos 3D
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn primary" id="load-cloud-main" style="padding:4px 12px;font-size:11.5px">Cargar</button>
       </div>
-      <div>
-        <div class="panel">
-          <div class="ph">${icon('cube')} Malla texturizada
-            <span class="chip" id="mesh-q" style="font-size:10.5px;padding:2px 9px"></span>
-            <span class="spacer" style="flex:1"></span>
-            <button class="btn" id="load-mesh" style="padding:4px 12px;font-size:11.5px">Cargar</button>
-          </div>
-          <div id="mesh-box" style="height:52dvh;min-height:340px;display:grid;place-items:center">
-            <p class="footer-note" style="margin:0">Malla sólida — óptima con vuelos en órbita/oblicuos; en nadir puede tener huecos.</p>
-          </div>
-        </div>
+      <div id="cloud-box" style="height:62dvh;min-height:380px;display:grid;place-items:center">
+        <p class="footer-note" style="margin:0">Nube de ~800k puntos con color real — arrastra para orbitar.</p>
       </div>
     </div>
 
@@ -226,24 +195,67 @@
     }
   });
 
-  // clips candidatos a 3D (con GPS y proxy)
+  // ---------- mini-modal reutilizable ----------
+  function openModal(title, body) {
+    const ov = document.createElement('div');
+    ov.className = 'modal-ov';
+    ov.innerHTML = `<div class="modal">
+      <div class="modal-h"><b>${title}</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+      <div class="modal-b">${body}</div></div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) close(); });
+    return { ov, close };
+  }
+
+  // ---------- asistente: procesar un vuelo ----------
   const candidates = flights.filter(f => f.has_srt && f.stats?.bbox && !f.archived);
-  document.getElementById('new-clip').innerHTML =
-    candidates.map(f => `<option value="${f.clip_id}">${esc(f.label) || fmt.date(f.date) + ' ' + f.time} · ${fmt.dur(f.duration_s)} · ${Math.round(f.stats.max_rel_alt_m || 0)}m</option>`).join('');
-  const PRESET_NOTES = {
-    rapido: 'Borrador en ~25-40 min: nube ligera, ortofoto 8 cm/px. Para revisar cobertura antes de invertir horas.',
-    estandar: 'Balanceado en ~45-75 min: nube media, ortofoto 5 cm/px, DSM 10 cm. El punto dulce para la mayoría de vuelos.',
-    alta: 'Máxima calidad en ~2-4 h: nube densa high, ortofoto 3 cm/px, DSM 5 cm. Para entregas, mediciones finas y splats premium.',
-  };
-  const presetSel = document.getElementById('odm-preset');
-  const presetNote = document.getElementById('preset-note');
-  const updNote = () => { presetNote.textContent = PRESET_NOTES[presetSel.value]; };
-  presetSel.addEventListener('change', updNote);
-  updNote();
-  document.getElementById('btn-run3d').addEventListener('click', async () => {
-    const r = await api('/api/odm', { clip_id: document.getElementById('new-clip').value,
-                                      preset: presetSel.value });
-    if (r.error) alert(r.error);
+  document.getElementById('btn-run3d').addEventListener('click', () => {
+    if (!candidates.length) return alert('Sin vuelos con GPS listos para 3D — sube un video con telemetría.');
+    const PRE = [
+      { k: 'rapido', n: 'Rápido', t: '~25-40 min', d: 'Borrador · 8 cm/px' },
+      { k: 'estandar', n: 'Estándar', t: '~45-75 min', d: '5 cm/px · DSM 10 cm' },
+      { k: 'alta', n: 'Alta', t: '~2-4 h', d: 'Nube densa · 3 cm/px' },
+    ];
+    const { ov, close } = openModal(`${icon('cube')} Procesar un vuelo en 3D`, `
+      <p class="mlb">Vuelo</p>
+      <div class="mflights">${candidates.map((f, i) => `
+        <div class="mflight${i === 0 ? ' on' : ''}" data-cid="${esc(f.clip_id)}">
+          <img src="data/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">
+          <div class="mf-t"><b>${esc(f.label) || fmt.date(f.date) + ' ' + f.time}</b>
+          <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m alt</span></div>
+        </div>`).join('')}</div>
+      <video id="m-prev" class="m-prev" muted playsinline controls preload="metadata"></video>
+      <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
+      <input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — órbita 60 m" style="width:100%">
+      <p class="mlb">Calidad</p>
+      <div class="mpresets">${PRE.map(p => `
+        <div class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
+          <b>${p.n}</b><span class="mono">${p.t}</span><small>${p.d}</small></div>`).join('')}</div>
+      <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('cube')} Encolar procesamiento</button>`);
+    const prev = ov.querySelector('#m-prev');
+    const setPrev = cid => { prev.src = `data/proxies/${cid}.mp4`; };
+    setPrev(candidates[0].clip_id);
+    ov.querySelector('.mflights').addEventListener('click', e => {
+      const c = e.target.closest('.mflight');
+      if (!c) return;
+      ov.querySelectorAll('.mflight').forEach(x => x.classList.toggle('on', x === c));
+      setPrev(c.dataset.cid);
+    });
+    ov.querySelector('.mpresets').addEventListener('click', e => {
+      const c = e.target.closest('.mpreset');
+      if (!c) return;
+      ov.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
+    });
+    ov.querySelector('#m-go').addEventListener('click', async () => {
+      const r = await api('/api/odm', {
+        clip_id: ov.querySelector('.mflight.on')?.dataset.cid,
+        preset: ov.querySelector('.mpreset.on')?.dataset.k || 'estandar',
+        title: ov.querySelector('#m-title').value.trim(),
+      });
+      if (r.error) return alert(r.error);
+      close();
+    });
   });
   pollJobs(document.getElementById('jobs3d'));
 
@@ -259,8 +271,6 @@
     const q = cur.qa || {};
     const reproj = q.reprojection_error_px;
     const grade = reproj == null ? '—' : reproj < 1.5 ? 'excelente' : reproj < 2.5 ? 'buena' : 'aceptable';
-    document.getElementById('mesh-q').textContent =
-      { rapido: 'calidad rápida', alta: 'calidad alta' }[cur.preset] || 'calidad estándar';
     const sp = (sys.splats || []).find(s => s.name === `${cid}.splat`);
     document.getElementById('dls').innerHTML = `
       ${q.cameras_reconstructed != null ? `<table class="kv" style="margin-bottom:12px">
@@ -285,17 +295,17 @@
         ±GPS del dron (~2-5 m). Para grado topográfico certificable, importa puntos de control.</p>
       </details>` : ''}
       <div class="exp-grid">
-        <a class="exp" href="${base}/ortho_full.jpg" target="_blank" rel="noopener"><b>Ortofoto 5K</b><span>JPG · presentaciones</span></a>
-        <a class="exp" href="${base}/${cur.ortho_asset || 'ortho.png'}" download><b>Ortofoto transparente</b><span>WebP · overlays</span></a>
+        <a class="exp" href="${base}/ortho_full.jpg" target="_blank" rel="noopener">${icon('map')}<div><b>Ortofoto 5K</b><span>JPG · presentaciones</span></div></a>
+        <a class="exp" href="${base}/${cur.ortho_asset || 'ortho.png'}" download>${icon('grid')}<div><b>Ortofoto transparente</b><span>WebP · overlays</span></div></a>
         ${cur.has_dsm ? `
-        <a class="exp" href="${base}/dsm_4326.tif" download><b>DSM GeoTIFF</b><span>TIF · QGIS / GIS</span></a>
-        <a class="exp" href="${base}/contours.geojson" download><b>Curvas de nivel</b><span>GeoJSON · CAD / GIS</span></a>
-        <a class="exp" href="${base}/hillshade.png" download><b>Relieve sombreado</b><span>PNG · mapas</span></a>
-        <a class="exp" href="${base}/dsm_color.png" download><b>Elevación color</b><span>PNG · mapas</span></a>` : ''}
-        <a class="exp" href="${base}/cloud.ply" download><b>Nube de puntos</b><span>PLY · CloudCompare</span></a>
-        <a class="exp" href="${base}/${cur.model_obj}" download><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></a>
-        ${sp ? `<a class="exp" href="data/splats/${encodeURIComponent(sp.name)}" download><b>Gaussian splat</b><span>SPLAT · SuperSplat</span></a>` : ''}
-        <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener"><b>Página pública</b><span>LINK · compartir</span></a>
+        <a class="exp" href="${base}/dsm_4326.tif" download>${icon('mountain')}<div><b>DSM GeoTIFF</b><span>TIF · QGIS / GIS</span></div></a>
+        <a class="exp" href="${base}/contours.geojson" download>${icon('route')}<div><b>Curvas de nivel</b><span>GeoJSON · CAD / GIS</span></div></a>
+        <a class="exp" href="${base}/hillshade.png" download>${icon('sun')}<div><b>Relieve sombreado</b><span>PNG · mapas</span></div></a>
+        <a class="exp" href="${base}/dsm_color.png" download>${icon('gauge')}<div><b>Elevación color</b><span>PNG · mapas</span></div></a>` : ''}
+        <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>Nube de puntos</b><span>PLY · CloudCompare</span></div></a>
+        <a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></div></a>
+        ${sp ? `<a class="exp" href="data/splats/${encodeURIComponent(sp.name)}" download>${icon('spark')}<div><b>Gaussian splat</b><span>SPLAT · SuperSplat</span></div></a>` : ''}
+        <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Página pública</b><span>LINK · compartir</span></div></a>
       </div>`;
     if (omap) omap.remove();
     const b = new maplibregl.LngLatBounds();
@@ -342,7 +352,6 @@
     };
     const cloudMB = (cur.cloud_bytes || 0) / 1e6;
     resetViewer('cloud-box', `Nube de puntos${cloudMB ? ` · ${cloudMB.toFixed(0)} MB` : ''}`, 'load-cloud-main');
-    resetViewer('mesh-box', 'Malla sólida — óptima con vuelos en órbita/oblicuos.', 'load-mesh');
     // auto-carga la estrella — salvo nubes pesadas en móvil (datos + memoria)
     if (!(matchMedia('(max-width: 700px)').matches && cloudMB > 25))
       setTimeout(() => document.getElementById('load-cloud-main')?.click(), 300);
@@ -583,49 +592,6 @@
     });
   }
 
-  document.getElementById('load-mesh').addEventListener('click', async e => {
-    if (!cur) return;
-    e.currentTarget.style.display = 'none';
-    const box = document.getElementById('mesh-box');
-    const stM = spin(box, 'Cargando malla texturizada…');
-    const base = `data/models/${cur.clip_id}/model/`;
-    const mtl = await new MTLLoader().setPath(base).loadAsync('odm_textured_model_geo.mtl');
-    mtl.preload();
-    const obj = await new OBJLoader().setMaterials(mtl).setPath(base).loadAsync('odm_textured_model_geo.obj',
-      ev => { if (ev.loaded) stM.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB descargados`; });
-    // FOTOGRAMETRÍA = material SIN luces (la textura ya trae la iluminación real);
-    // con Phong+luces débiles el modelo salía como una masa negra
-    obj.traverse(n => {
-      if (n.isMesh) {
-        const maps = Array.isArray(n.material) ? n.material : [n.material];
-        n.material = maps.map(m => new THREE.MeshBasicMaterial({
-          map: m.map || null, color: m.map ? 0xffffff : 0x8a97a8, side: THREE.DoubleSide }));
-        if (n.material.length === 1) n.material = n.material[0];
-      }
-    });
-    const { scene, cam, controls } = makeScene(box);
-    obj.rotation.x = -Math.PI / 2;             // ODM: Z-up → three.js: Y-up
-    scene.add(obj);
-    frameObject(obj, cam, controls);
-    attachViewerTools(box, cam, controls);
-    // HUD malla: alternar textura / wireframe (para inspeccionar la geometría)
-    const mhud = document.createElement('div');
-    mhud.className = 'viewer-hud';
-    mhud.innerHTML = `<button class="chip on" data-mv="tex">Textura</button>
-      <button class="chip" data-mv="wire">Wireframe</button>`;
-    box.appendChild(mhud);
-    mhud.addEventListener('click', ev => {
-      const bt = ev.target.closest('[data-mv]');
-      if (!bt) return;
-      const wire = bt.dataset.mv === 'wire';
-      obj.traverse(n => {
-        if (!n.isMesh) return;
-        (Array.isArray(n.material) ? n.material : [n.material]).forEach(m => { m.wireframe = wire; });
-      });
-      mhud.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === bt));
-    });
-  });
-
   document.getElementById('load-cloud-main').addEventListener('click', async e => {
     if (!cur) return;
     e.currentTarget.style.display = 'none';
@@ -653,13 +619,49 @@
     hud.innerHTML = `
       <label>Puntos <input type="range" data-h="size" min="4" max="60" value="18"></label>
       <label>Suelo <input type="range" data-h="lo" min="0" max="100" value="0"></label>
-      <label>Techo <input type="range" data-h="hi" min="0" max="100" value="100"></label>`;
+      <label>Techo <input type="range" data-h="hi" min="0" max="100" value="100"></label>
+      <label>Color <button class="chip on" data-cm="rgb">Real</button>
+        <button class="chip" data-cm="alt">Altura</button></label>`;
     box.appendChild(hud);
     hud.addEventListener('input', ev => {
       const v = +ev.target.value;
       if (ev.target.dataset.h === 'size') mat.size = v / 100;
       if (ev.target.dataset.h === 'lo') yLo.constant = -(bb.min.y + span * v / 100);
       if (ev.target.dataset.h === 'hi') yHi.constant = bb.min.y + span * v / 100;
+    });
+    // modo de color: RGB real vs rampa por altura (misma paleta del DSM)
+    const colAttr = geo.getAttribute('color');
+    const origCol = colAttr ? colAttr.array.slice() : null;
+    hud.addEventListener('click', ev => {
+      const bt = ev.target.closest('[data-cm]');
+      if (!bt) return;
+      hud.querySelectorAll('[data-cm]').forEach(c => c.classList.toggle('on', c === bt));
+      let arr = geo.getAttribute('color');
+      if (bt.dataset.cm === 'rgb') {
+        if (arr && origCol) { arr.array.set(origCol); arr.needsUpdate = true; }
+        return;
+      }
+      const pos = geo.getAttribute('position');
+      const n = pos.count;
+      if (!arr) {
+        geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+        arr = geo.getAttribute('color');
+        mat.vertexColors = true;
+        mat.needsUpdate = true;
+      }
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < n; i++) { const z = pos.getZ(i); if (z < lo) lo = z; if (z > hi) hi = z; }
+      const mx = arr.array instanceof Uint8Array ? 255 : 1;   // PLY trae uint8 normalizado
+      const R = [[38, 84, 124], [82, 155, 104], [222, 190, 88], [194, 82, 60]];
+      for (let i = 0; i < n; i++) {
+        const t = Math.min(2.999, ((pos.getZ(i) - lo) / (hi - lo || 1)) * 3);
+        const k = Math.floor(t), f = t - k;
+        arr.setXYZ(i,
+          (R[k][0] + (R[k + 1][0] - R[k][0]) * f) / 255 * mx,
+          (R[k][1] + (R[k + 1][1] - R[k][1]) * f) / 255 * mx,
+          (R[k][2] + (R[k + 1][2] - R[k][2]) * f) / 255 * mx);
+      }
+      arr.needsUpdate = true;
     });
   });
 
@@ -671,10 +673,48 @@
       <a href="data/splats/${encodeURIComponent(s.name)}" download style="color:var(--accent)">descargar</a></p></div>`).join('') :
     `<p class="footer-note">Sin splats aún — "Generar splat" entrena OpenSplat sobre las poses
     del proyecto ODM seleccionado (CPU, ~30-60 min). El resultado se ve aquí mismo.</p>`;
-  document.getElementById('btn-splat').addEventListener('click', async () => {
-    if (!cur) return alert('Procesa primero un vuelo en 3D.');
-    const r = await api('/api/splat', { clip_id: cur.clip_id, iters: +document.getElementById('splat-iters').value });
-    if (r.error) alert(r.error); else alert('Entrenando splat — mira Trabajos (~30-60 min).');
+  document.getElementById('btn-splat').addEventListener('click', () => {
+    if (!models.length) return alert('Procesa primero un vuelo en 3D — el splat entrena sobre sus fotos y poses.');
+    const Q = [
+      { v: 1000, n: 'Rápido', t: '~15-25 min', d: 'Boceto para previsualizar' },
+      { v: 2000, n: 'Balanceado', t: '~30-50 min', d: 'Buen detalle general' },
+      { v: 7000, n: 'Cinemático', t: '~2-3 h', d: 'Nítido, para compartir' },
+      { v: 15000, n: 'Ultra', t: '~5-7 h', d: 'Máximo detalle (déjalo de noche)' },
+    ];
+    const { ov, close } = openModal(`${icon('spark')} Generar gaussian splat`, `
+      <p class="footer-note" style="margin:0 0 12px">Entrena un archivo <b>.splat</b> nuevo con las
+      fotos y poses del proyecto elegido — <b>no modifica</b> la nube ni la malla. Al terminar
+      aparece en la lista, en el visor y en la página pública.</p>
+      <p class="mlb">Proyecto base</p>
+      <div class="mflights">${models.map((m, i) => `
+        <div class="mflight${(cur ? m.clip_id === cur.clip_id : i === 0) ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
+          <img src="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="">
+          <div class="mf-t"><b>${esc(titleFor(m))}</b>
+          <span class="mono">${m.qa?.cameras_reconstructed || '?'} cámaras</span></div>
+        </div>`).join('')}</div>
+      <p class="mlb">Calidad del entrenamiento</p>
+      <div class="mpresets">${Q.map(q => `
+        <div class="mpreset${q.v === 2000 ? ' on' : ''}" data-v="${q.v}">
+          <b>${q.n}</b><span class="mono">${q.t}</span><small>${q.d}</small></div>`).join('')}</div>
+      <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Entrenar splat</button>`);
+    ov.querySelector('.mflights').addEventListener('click', e => {
+      const c = e.target.closest('.mflight');
+      if (!c) return;
+      ov.querySelectorAll('.mflight').forEach(x => x.classList.toggle('on', x === c));
+    });
+    ov.querySelector('.mpresets').addEventListener('click', e => {
+      const c = e.target.closest('.mpreset');
+      if (!c) return;
+      ov.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
+    });
+    ov.querySelector('#m-go').addEventListener('click', async () => {
+      const r = await api('/api/splat', {
+        clip_id: ov.querySelector('.mflight.on')?.dataset.cid,
+        iters: +(ov.querySelector('.mpreset.on')?.dataset.v || 2000),
+      });
+      if (r.error) return alert(r.error);
+      close();
+    });
   });
   document.getElementById('splats').addEventListener('click', async e => {
     const name = e.target.dataset.view;

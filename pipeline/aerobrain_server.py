@@ -699,7 +699,8 @@ class H(BaseHTTPRequestHandler):
             preset = str(spec.get("preset", "estandar"))
             if preset not in ("rapido", "estandar", "alta"):
                 preset = "estandar"
-            j = jobstore.enqueue("3d", cid, {"clip_id": cid, "preset": preset})
+            j = jobstore.enqueue("3d", cid, {"clip_id": cid, "preset": preset,
+                                             "title": str(spec.get("title", ""))[:80].strip()})
             return self.send_json({"ok": True, "job": j["id"], "queued": True})
         if u.path == "/api/model_update":
             if not self.auth(q):
