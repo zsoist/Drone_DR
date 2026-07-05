@@ -61,9 +61,8 @@ drop.addEventListener('drop', e => {
 fileIn.addEventListener('change', () => [...fileIn.files].forEach(upload));
 document.getElementById('retoken').addEventListener('click', () => getToken(true));
 
-function upload(file) {
-  const token = getToken();
-  if (!token) return;
+async function upload(file) {
+  if (!await ensureAuth()) return;
   const row = document.createElement('div');
   row.innerHTML = `
     <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px">
@@ -77,8 +76,7 @@ function upload(file) {
   const bar = row.querySelector('#bar'), pct = row.querySelector('#pct');
 
   const xhr = new XMLHttpRequest();
-  xhr.open('POST', `/upload?name=${encodeURIComponent(file.name)}`);
-  xhr.setRequestHeader('X-Token', token);
+  xhr.open('POST', `/upload?name=${encodeURIComponent(file.name)}`);  // cookie de sesión va sola
   xhr.upload.onprogress = e => {
     const p = Math.round((e.loaded / e.total) * 100);
     bar.style.width = `${p}%`; pct.textContent = `${p}% · ${(e.loaded / 1e6).toFixed(0)}MB`;

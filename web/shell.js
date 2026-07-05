@@ -16,28 +16,35 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-// POST autenticado: token SOLO en header (no en URL → no queda en logs)
+// sesión de operador: cookie HttpOnly (el token NUNCA se guarda en el navegador)
+async function ensureAuth() {
+  if ((await fetch('/api/whoami')).ok) return true;
+  for (let i = 0; i < 3; i++) {
+    const t = prompt('Token de operador (está en drone-vault/.token):');
+    if (t == null) return false;
+    const r = await fetch('/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: t.trim() }) });
+    if (r.ok) return true;
+    alert('Token inválido.');
+  }
+  return false;
+}
+// POST autenticado vía cookie de sesión; pide login solo si hace falta
 async function api(path, body) {
-  const token = getToken();
-  if (!token) throw new Error('sin token');
-  const r = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Token': token },
-    body: JSON.stringify(body || {}),
-  });
-  if (r.status === 403) { getToken(true); throw new Error('token inválido'); }
+  let r = await fetch(path, { method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  if (r.status === 403) {
+    if (!await ensureAuth()) throw new Error('sin sesión');
+    r = await fetch(path, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  }
   return r.json();
 }
-
-// token de operador (upload/edición) — se pide una vez y queda en el navegador
-function getToken(force) {
-  let t = localStorage.getItem('ab_token');
-  if (!t || force) {
-    t = prompt('Token de operador (está en /Volumes/SSD/drone-vault/.token):') || '';
-    if (t) localStorage.setItem('ab_token', t.trim());
-  }
-  return (t || '').trim();
-}
+// compat: código viejo llama getToken() como gate — ahora solo asegura sesión
+function getToken() { return 'session'; }
+// migración: borra el token que versiones anteriores dejaron en localStorage
+localStorage.removeItem('ab_token');
 async function pollJobs(el, every = 2500) {
   const paint = async () => {
     try {
@@ -46,8 +53,10 @@ async function pollJobs(el, every = 2500) {
         <div class="hl-item">
           <span class="tc" style="${j.status === 'error' ? 'color:var(--red);background:rgba(217,106,106,.12)' :
             j.status === 'done' ? 'color:var(--mint);background:rgba(82,199,154,.12)' : ''}">${esc(j.status)}</span>
-          <p><b>${esc(j.kind)}</b> · ${esc(j.label)} <span class="mono" style="color:var(--text-3)">${esc(j.ts)}</span>
+          <p><b>${esc(j.kind)}</b> · ${esc(j.label)} <span class="mono" style="color:var(--text-3)">${esc(j.ts)}${j.mins ? ` · ${j.mins} min` : ''}</span>
           ${j.detail ? `<br><span class="mono" style="font-size:11px;color:var(--text-3)">${esc(j.detail)}</span>` : ''}</p>
+          ${j.status === 'running' && ['3d', 'splat'].includes(j.kind) ?
+            `<button class="btn" style="padding:3px 9px;font-size:11px" onclick="api('/api/job_cancel',{id:'${esc(j.id)}'})">Cancelar</button>` : ''}
         </div>`).join('') :
         `<p class="footer-note">Sin trabajos aún.</p>`;
     } catch {}

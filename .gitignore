@@ -3,3 +3,6 @@ web/data
 splat/OpenSplat/
 splat/libtorch/
 splat/*.zip
+__pycache__/
+.DS_Store
+*.pyc

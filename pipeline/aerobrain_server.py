@@ -19,6 +19,8 @@ import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import jobs as jobstore
 from pathlib import Path
 
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
@@ -32,31 +34,18 @@ if not TOKEN_FILE.exists():
     TOKEN_FILE.chmod(0o600)
 TOKEN = TOKEN_FILE.read_text().strip()
 
-JOBS: list[dict] = []          # [{id, kind, label, status, detail, ts}]
-JLOCK = threading.Lock()
+jobstore.init()
 HEAVY = threading.Semaphore(1)  # un solo job pesado (ODM/splat) a la vez — 16GB de RAM
+SESSIONS: dict[str, float] = {}  # session_id -> expiry epoch (cookie HttpOnly)
+JLOCK = threading.Lock()         # compat: secciones que actualizan detail
 
 
-def heavy_running() -> str | None:
-    with JLOCK:
-        for j in JOBS:
-            if j["kind"] in ("3d", "splat") and j["status"] == "running":
-                return j["label"]
-    return None
-
-
-def job_add(kind, label):
-    with JLOCK:
-        j = {"id": f"{kind}-{int(time.time() * 1000)}", "kind": kind, "label": label,
-             "status": "running", "detail": "", "ts": time.strftime("%H:%M:%S")}
-        JOBS.append(j)
-        del JOBS[:-30]
-        return j
+def job_add(kind, label, container=""):
+    return jobstore.add(kind, label, container)
 
 
 def job_end(j, status, detail=""):
-    with JLOCK:
-        j["status"], j["detail"] = status, detail
+    jobstore.end(j["id"], status, detail)
 
 
 def rebuild_index():
@@ -267,8 +256,12 @@ class H(BaseHTTPRequestHandler):
         return f if f.is_file() else None
 
     def do_GET(self):
+        if self.path.startswith("/api/whoami"):
+            if self.headers.get("X-Token", "") == TOKEN or self.session_ok():
+                return self.send_json({"ok": True})
+            return self.send_json({"ok": False}, 403)
         if self.path.startswith("/api/jobs"):
-            return self.send_json({"jobs": list(reversed(JOBS))})
+            return self.send_json({"jobs": jobstore.recent()})
         if self.path.startswith("/api/properties"):
             return self.do_GET_properties()
         f = self.resolve()
@@ -301,6 +294,15 @@ class H(BaseHTTPRequestHandler):
         # media inmutable se cachea; código y datos NUNCA (iPhone quedó quemado con CSS viejo)
         cacheable = f.suffix in (".mp4", ".jpg", ".png", ".woff2")
         self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-store, must-revalidate")
+        if f.suffix == ".html":
+            self.send_header("Content-Security-Policy",
+                "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; "
+                "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+                "img-src 'self' data: blob: https:; "
+                "connect-src 'self' https://unpkg.com https://server.arcgisonline.com "
+                "https://basemaps.cartocdn.com; "
+                "worker-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'")
+            self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         with open(f, "rb") as fh:
             fh.seek(start)
@@ -326,12 +328,26 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
 
     # ---------- API ----------
-    def auth(self, q):
-        tok = q.get("token", [""])[0] or self.headers.get("X-Token", "")
-        if tok != TOKEN:
-            self.send_json({"error": "token inválido"}, 403)
-            return False
-        return True
+    def session_ok(self) -> bool:
+        cookies = self.headers.get("Cookie", "")
+        for part in cookies.split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "ab_s" and SESSIONS.get(v, 0) > time.time():
+                return True
+        return False
+
+    def auth(self, q=None):
+        # query tokens RECHAZADOS (quedan en logs); header X-Token o cookie de sesión
+        if self.headers.get("X-Token", "") == TOKEN or self.session_ok():
+            return True
+        self.send_json({"error": "auth requerida (header X-Token o sesión)"}, 403)
+        return False
+
+    def read_json(self, max_bytes=1_000_000):
+        n = int(self.headers.get("Content-Length", 0))
+        if not 0 < n <= max_bytes:
+            raise ValueError(f"body inválido ({n} bytes)")
+        return json.loads(self.rfile.read(n))
 
     def send_json(self, obj, code=200):
         body = json.dumps(obj).encode()
@@ -344,6 +360,31 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
+        if u.path == "/api/login":
+            try:
+                body = self.read_json(4096)
+            except Exception:
+                return self.send_json({"error": "body inválido"}, 400)
+            if str(body.get("token", "")) != TOKEN:
+                time.sleep(1)  # frena fuerza bruta
+                return self.send_json({"error": "token inválido"}, 403)
+            sid = secrets.token_urlsafe(24)
+            SESSIONS[sid] = time.time() + 30 * 86400
+            body_out = json.dumps({"ok": True}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Set-Cookie",
+                             f"ab_s={sid}; Path=/; Max-Age={30*86400}; HttpOnly; SameSite=Strict; Secure")
+            self.send_header("Content-Length", str(len(body_out)))
+            self.end_headers()
+            self.wfile.write(body_out)
+            return
+        if u.path == "/api/job_cancel":
+            if not self.auth(q):
+                return
+            spec = self.read_json(4096)
+            ok = jobstore.cancel(str(spec.get("id", "")))
+            return self.send_json({"ok": ok})
         if u.path == "/upload":
             if not self.auth(q):
                 return
@@ -372,14 +413,14 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/edit":
             if not self.auth(q):
                 return
-            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            spec = self.read_json()
             j = job_add("edit", f'{len(spec.get("segments", []))} cortes')
             threading.Thread(target=run_edit, args=(spec, j), daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"]})
         if u.path == "/api/frame":
             if not self.auth(q):
                 return
-            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            spec = self.read_json()
             j = job_add("foto4k", f'{spec.get("clip_id", "?")} @ {spec.get("t", 0)}s')
             th = threading.Thread(target=capture_frame, args=(spec, j), daemon=True)
             th.start()
@@ -391,7 +432,7 @@ class H(BaseHTTPRequestHandler):
             # mediciones survey contra el DSM: volumen (stockpile) y perfil de elevación
             if not self.auth(q):
                 return
-            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
             mdir = VAULT / "models" / cid
             if not (mdir / "dsm.bin").exists():
@@ -464,31 +505,27 @@ EOF"""
         if u.path == "/api/odm":
             if not self.auth(q):
                 return
-            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
-            busy = heavy_running()
-            if busy:
-                return self.send_json({"error": f"ya hay un job 3D corriendo ({busy}) — espera a que termine"}, 409)
-            j = job_add("3d", cid)
+            if not HEAVY.acquire(blocking=False):
+                busy = (jobstore.running() or {}).get("label", "?")
+                return self.send_json({"error": f"ya hay un job 3D corriendo ({busy})"}, 409)
+            j = job_add("3d", cid, container=f"odm-{cid[-6:]}")
 
             def _run3d():
-                HEAVY.acquire()
                 try:
                     proj = VAULT / "odm" / f"proj_{cid}"
-                    with JLOCK:
-                        j["detail"] = "1/3 frames + geotag"
+                    jobstore.update(j["id"], detail="1/3 frames + geotag")
                     subprocess.run(["python3", str(PIPE / "odm_prep.py"), cid],
                                    check=True, capture_output=True, text=True, cwd=PIPE)
-                    with JLOCK:
-                        j["detail"] = "2/3 fotogrametría ODM (~1h)"
+                    jobstore.update(j["id"], detail="2/3 fotogrametría ODM (~1h)")
                     subprocess.run(["/usr/local/bin/docker", "run", "--rm", "--name", f"odm-{cid[-6:]}",
                                     "-m", "7g", "-v", f"{proj}:/datasets/code", "opendronemap/odm",
                                     "--project-path", "/datasets", "--pc-quality", "medium",
                                     "--feature-quality", "medium", "--max-concurrency", "4",
                                     "--orthophoto-resolution", "5"],
                                    check=True, capture_output=True, text=True, timeout=3 * 3600)
-                    with JLOCK:
-                        j["detail"] = "3/3 publicando assets web"
+                    jobstore.update(j["id"], detail="3/3 publicando assets web")
                     subprocess.run(["python3", str(PIPE / "tresd_publish.py"), cid, str(proj)],
                                    check=True, capture_output=True, text=True, cwd=PIPE)
                     rebuild_index()
@@ -504,34 +541,34 @@ EOF"""
         if u.path == "/api/splat":
             if not self.auth(q):
                 return
-            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
             proj = VAULT / "odm" / ("proj0104" if cid.endswith("0104_D") else f"proj_{cid}")
             if not (proj / "opensfm" / "reconstruction.json").exists():
                 return self.send_json({"error": "primero procesa el vuelo en 3D (necesita las poses de ODM)"}, 400)
             if not SPLAT_BIN.exists():
                 return self.send_json({"error": "opensplat no está compilado"}, 500)
-            busy = heavy_running()
-            if busy:
+            if not HEAVY.acquire(blocking=False):
+                busy = (jobstore.running() or {}).get("label", "?")
                 return self.send_json({"error": f"ya hay un job 3D corriendo ({busy})"}, 409)
             j = job_add("splat", cid)
 
             def _splat():
-                HEAVY.acquire()
                 try:
                     il = proj / "opensfm" / "image_list.txt"
                     il.write_text(il.read_text().replace("/datasets/code", str(proj)))
                     (VAULT / "splats").mkdir(exist_ok=True)
                     out = VAULT / "splats" / f"{cid}.splat"
-                    with JLOCK:
-                        j["detail"] = "entrenando (CPU, ~30-60 min)"
+                    jobstore.update(j["id"], detail="entrenando (CPU, ~30-60 min)")
                     subprocess.run([str(SPLAT_BIN), str(proj), "--cpu", "-n", "1500",
                                     "-o", str(out)],
                                    check=True, capture_output=True, text=True, timeout=4 * 3600,
                                    env={**os.environ,
                                         "DYLD_LIBRARY_PATH": str(SPLAT_BIN.parent.parent.parent.parent / "libtorch" / "lib")})
+                    if not out.exists() or out.stat().st_size < 200_000:
+                        raise RuntimeError(f"splat demasiado pequeño ({out.stat().st_size if out.exists() else 0} bytes) — escena insuficiente, vuela una órbita con más solape")
                     rebuild_index()
-                    job_end(j, "done", out.name)
+                    jobstore.end(j["id"], "done", out.name, artifact=f"splats/{out.name}")
                 except Exception as e:
                     job_end(j, "error", str(getattr(e, 'stderr', '') or e)[-250:])
                 finally:
@@ -541,7 +578,7 @@ EOF"""
         if u.path == "/api/analyze":
             if not self.auth(q):
                 return
-            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
             j = job_add("analyze", f"{cid} (profundo)")
 
@@ -559,7 +596,7 @@ EOF"""
         if u.path == "/api/highlight":
             if not self.auth(q):
                 return
-            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
             aif = VAULT / "ai" / f"{cid}.json"
             data = json.loads(aif.read_text()) if aif.exists() else {"clip_id": cid, "tags": [], "highlights": []}
@@ -575,7 +612,7 @@ EOF"""
         if u.path == "/api/clip":
             if not self.auth(q):
                 return
-            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
             mf = VAULT / "manifest" / f"{cid}.json"
             if not mf.exists():
@@ -595,7 +632,7 @@ EOF"""
         if u.path == "/api/property":
             if not self.auth(q):
                 return
-            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            spec = self.read_json()
             slug = re.sub(r"[^a-z0-9-]", "", str(spec.get("slug", "")).lower())[:40]
             if not slug:
                 return self.send_json({"error": "slug requerido"}, 400)
@@ -608,7 +645,7 @@ EOF"""
         if u.path == "/api/property_ai":
             if not self.auth(q):
                 return
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            body = self.read_json()
             slug = re.sub(r"[^a-z0-9-]", "", str(body.get("slug", "")).lower())
             pf = VAULT / "properties" / f"{slug}.json"
             if not pf.exists():
