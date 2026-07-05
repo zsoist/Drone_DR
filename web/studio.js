@@ -7,7 +7,12 @@ main.innerHTML = `
     <div class="pb">
       <div class="toolbar" style="margin-bottom:12px">
         <select class="ctl" id="ed-clip" style="max-width:340px"></select>
-        <div class="seg"><button id="ed-h" class="on">16:9</button><button id="ed-v">9:16 vertical</button></div>
+        <select class="ctl" id="ed-aspect">
+          <option value="16:9">16:9 YouTube</option>
+          <option value="9:16">9:16 Reels/TikTok</option>
+          <option value="1:1">1:1 cuadrado</option>
+          <option value="4:5">4:5 feed IG</option>
+        </select>
         <select class="ctl" id="ed-lut" title="Look / LUT">
           <option value="none">Sin look</option>
           <option value="cine">Cine (teal &amp; orange)</option>
@@ -61,6 +66,9 @@ main.innerHTML = `
       <div class="panel">
         <div class="ph">${icon('cube')} Modelos 3D — Gaussian Splatting</div>
         <div class="pb" id="splats"></div>
+        <div class="pb" style="border-top:1px solid var(--line)">
+          <a class="btn" href="tresd.html">${icon('cube')} Ir a 3D — ortofotos y splats</a>
+        </div>
       </div>
       <div class="panel" style="margin-top:16px">
         <div class="ph">${icon('activity')} Generar contenido</div>
@@ -122,10 +130,21 @@ main.innerHTML = `
   sel.innerHTML = `<option value="">Elige un clip (tier full)…</option>` +
     editable.map(f => `<option value="${f.clip_id}">${fmt.date(f.date)} ${f.time} · ${fmt.dur(f.duration_s)} · ${f.clip_id.startsWith('UP_') ? 'subido' : 'dron'}</option>`).join('');
   const vid = document.getElementById('ed-video');
-  let segs = [], inPoint = null, vertical = false;
+  let segs = [], inPoint = null;
 
+  // preview del look EN VIVO sobre el video (aproximación CSS del LUT del server)
+  const CSS_LUTS = {
+    none: '', cine: 'contrast(1.07) saturate(1.1) hue-rotate(-6deg)',
+    vivid: 'saturate(1.35) contrast(1.1)', warm: 'sepia(0.18) saturate(1.2)',
+    moody: 'contrast(1.16) brightness(0.94) saturate(0.82)', bw: 'grayscale(1) contrast(1.2)',
+  };
+  document.getElementById('ed-lut').addEventListener('change', e => {
+    vid.style.filter = CSS_LUTS[e.target.value] || '';
+  });
+
+  // cambiar de clip NO borra los cortes: cada corte recuerda su clip (timeline multi-clip)
   sel.addEventListener('change', () => {
-    segs = []; inPoint = null; paintSegs();
+    inPoint = null;
     if (!sel.value) { vid.style.display = 'none'; return; }
     vid.src = `${DATA}/proxies/${sel.value}.mp4`;
     vid.style.display = 'block';
@@ -136,38 +155,49 @@ main.innerHTML = `
   });
   document.getElementById('ed-in').addEventListener('click', () => { inPoint = vid.currentTime; vid.dispatchEvent(new Event('timeupdate')); });
   document.getElementById('ed-out').addEventListener('click', () => {
-    if (inPoint == null || vid.currentTime <= inPoint) return;
-    segs.push({ a: +inPoint.toFixed(1), b: +vid.currentTime.toFixed(1),
+    if (inPoint == null || vid.currentTime <= inPoint || !sel.value) return;
+    segs.push({ clip_id: sel.value, a: +inPoint.toFixed(1), b: +vid.currentTime.toFixed(1),
                 speed: +document.getElementById('ed-speed').value });
     inPoint = null; paintSegs();
   });
-  document.getElementById('ed-h').addEventListener('click', () => setAR(false));
-  document.getElementById('ed-v').addEventListener('click', () => setAR(true));
-  function setAR(v) {
-    vertical = v;
-    document.getElementById('ed-h').classList.toggle('on', !v);
-    document.getElementById('ed-v').classList.toggle('on', v);
-  }
+  const clipShort = cid => {
+    const f = editable.find(x => x.clip_id === cid);
+    return f ? `${f.date.slice(5)} ${f.time}` : cid.slice(-8);
+  };
   function paintSegs() {
+    const total = segs.reduce((a, s) => a + (s.b - s.a) / s.speed, 0);
     document.getElementById('ed-segs').innerHTML = segs.map((s, i) => `
       <div class="hl-item">
-        <button class="tc" data-play="${s.a}">${fmt.dur(s.a)} → ${fmt.dur(s.b)}</button>
-        <p>corte ${i + 1} · ${(s.b - s.a).toFixed(1)}s${s.speed !== 1 ? ` · <b>${s.speed}x</b> → ${((s.b - s.a) / s.speed).toFixed(1)}s` : ''}</p>
-        <button class="btn" data-rm="${i}" style="padding:3px 9px;font-size:11px">Quitar</button>
-      </div>`).join('');
+        <button class="tc" data-play="${i}">${fmt.dur(s.a)} → ${fmt.dur(s.b)}</button>
+        <p><b>${clipShort(s.clip_id)}</b> · ${(s.b - s.a).toFixed(1)}s${s.speed !== 1 ? ` · <b>${s.speed}x</b>` : ''}</p>
+        <span style="display:flex;gap:4px">
+          <button class="btn" data-up="${i}" style="padding:3px 8px;font-size:11px" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="btn" data-dn="${i}" style="padding:3px 8px;font-size:11px" ${i === segs.length - 1 ? 'disabled' : ''}>↓</button>
+          <button class="btn" data-rm="${i}" style="padding:3px 8px;font-size:11px">✕</button>
+        </span>
+      </div>`).join('') +
+      (segs.length ? `<p class="footer-note">Timeline: ${segs.length} cortes · ${total.toFixed(1)}s de reel</p>` : '');
   }
   document.getElementById('ed-segs').addEventListener('click', e => {
-    if (e.target.dataset.play) { vid.currentTime = +e.target.dataset.play; vid.play(); }
-    if (e.target.dataset.rm) { segs.splice(+e.target.dataset.rm, 1); paintSegs(); }
+    const d = e.target.dataset;
+    if (d.play != null) {
+      const s = segs[+d.play];
+      if (sel.value !== s.clip_id) { sel.value = s.clip_id; sel.dispatchEvent(new Event('change')); }
+      setTimeout(() => { vid.currentTime = s.a; vid.play(); }, 60);
+    }
+    if (d.rm != null) { segs.splice(+d.rm, 1); paintSegs(); }
+    if (d.up != null) { const i = +d.up; [segs[i - 1], segs[i]] = [segs[i], segs[i - 1]]; paintSegs(); }
+    if (d.dn != null) { const i = +d.dn; [segs[i + 1], segs[i]] = [segs[i], segs[i + 1]]; paintSegs(); }
   });
   document.getElementById('ed-export').addEventListener('click', async () => {
-    if (!sel.value || !segs.length) return alert('Elige un clip y marca al menos un corte (IN → OUT).');
+    if (!segs.length) return alert('Marca al menos un corte (IN → OUT).');
     const token = getToken();
     if (!token) return;
     const r = await fetch(`/api/edit?token=${encodeURIComponent(token)}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        clip_id: sel.value, segments: segs, vertical,
+        clip_id: sel.value, segments: segs,
+        aspect: document.getElementById('ed-aspect').value,
         filter: document.getElementById('ed-lut').value,
         title: document.getElementById('ed-title').value.trim(),
         fade: document.getElementById('ed-fade').checked,

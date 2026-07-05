@@ -22,6 +22,11 @@ def main():
         m["date"] = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
         m["time"] = f"{ts[8:10]}:{ts[10:12]}"
         m["has_proxy"] = (VAULT / "proxies" / f"{cid}.mp4").exists()
+        # ruta relativa del original: habilita reproducción 4K y foto-captura del raw
+        raws = list((VAULT / "raw").rglob(f"{cid}.*"))
+        vids = [r for r in raws if r.suffix.lower() in (".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm", ".mts")]
+        if vids:
+            m["raw_rel"] = str(vids[0].relative_to(VAULT / "raw"))
         # AI embebido: evita 1 fetch por clip en cada página (móvil sufre)
         aif = VAULT / "ai" / f"{cid}.json"
         if aif.exists():
@@ -52,6 +57,8 @@ def main():
         "ai_count": len(list((VAULT / "ai").glob("DJI_*.json"))) if (VAULT / "ai").exists() else 0,
         "reels": [{"name": p.name, "bytes": p.stat().st_size}
                   for p in sorted((VAULT / "reels").glob("*.mp4"))] if (VAULT / "reels").exists() else [],
+        "photos": [{"name": p.name, "bytes": p.stat().st_size}
+                   for p in sorted((VAULT / "photos").glob("*.jpg"), reverse=True)] if (VAULT / "photos").exists() else [],
         "splats": [{"name": p.name, "bytes": p.stat().st_size}
                    for p in sorted((VAULT / "splats").glob("*"))
                    if p.is_file()] if (VAULT / "splats").exists() else [],

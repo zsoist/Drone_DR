@@ -30,6 +30,13 @@ const cid = new URLSearchParams(location.search).get('id');
       <div>
         <div class="panel videobox">
           <div id="video-slot"></div>
+          <div class="toolbar" style="padding:10px 12px;margin:0;border-top:1px solid var(--line)">
+            <button class="btn primary" id="btn-photo">${icon('iso')} Foto 4K</button>
+            ${meta.raw_rel ? `<div class="seg"><button id="q-hd" class="on">1080p</button><button id="q-4k">4K</button></div>` : ''}
+            <span class="spacer"></span>
+            <button class="btn" id="btn-label" title="Renombrar">${icon('tag')}</button>
+            <button class="btn" id="btn-arch" title="${meta.archived ? 'Desarchivar' : 'Archivar'}">${icon('db')}</button>
+          </div>
           <div class="hud" id="hud"></div>
         </div>
         ${meta.frame_count ? `<div class="panel" style="margin-top:16px">
@@ -91,12 +98,60 @@ const cid = new URLSearchParams(location.search).get('id');
   // ---- video ----
   const slot = document.getElementById('video-slot');
   let video = null;
-  if (meta.has_proxy) {
-    slot.innerHTML = `<video src="${DATA}/proxies/${cid}.mp4" controls playsinline webkit-playsinline preload="metadata" poster="${DATA}/thumbs/${cid}.jpg"></video>`;
+  const srcHD = `${DATA}/proxies/${cid}.mp4`;
+  const src4K = meta.raw_rel ? `${DATA}/raw/${meta.raw_rel}` : null;
+  if (meta.has_proxy || src4K) {
+    slot.innerHTML = `<video src="${meta.has_proxy ? srcHD : src4K}" controls playsinline webkit-playsinline preload="metadata" poster="${DATA}/thumbs/${cid}.jpg"></video>`;
     video = slot.querySelector('video');
   } else {
     slot.innerHTML = `<img src="${DATA}/thumbs/${cid}.jpg" style="width:100%;display:block" alt="">`;
   }
+  function setQuality(k) {
+    if (!video || !src4K) return;
+    const t = video.currentTime, playing = !video.paused;
+    video.src = k === '4k' ? src4K : srcHD;
+    video.currentTime = t;
+    if (playing) video.play();
+    document.getElementById('q-hd')?.classList.toggle('on', k === 'hd');
+    document.getElementById('q-4k')?.classList.toggle('on', k === '4k');
+  }
+  document.getElementById('q-hd')?.addEventListener('click', () => setQuality('hd'));
+  document.getElementById('q-4k')?.addEventListener('click', () => setQuality('4k'));
+
+  // Foto 4K: el server extrae el frame del ORIGINAL en el segundo actual
+  document.getElementById('btn-photo').addEventListener('click', async e => {
+    const token = getToken();
+    if (!token) return;
+    const btn = e.currentTarget;
+    btn.textContent = 'Capturando…';
+    const r = await fetch(`/api/frame?token=${encodeURIComponent(token)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clip_id: cid, t: +(video?.currentTime || 0).toFixed(1) }),
+    });
+    const d = await r.json();
+    btn.innerHTML = `${icon('iso')} Foto 4K`;
+    if (d.ok) window.open(d.url, '_blank');
+    else alert(d.error || 'error');
+  });
+
+  document.getElementById('btn-label').addEventListener('click', async () => {
+    const token = getToken();
+    if (!token) return;
+    const label = prompt('Nombre para este vuelo:', meta.label || '');
+    if (label == null) return;
+    await fetch(`/api/clip?token=${encodeURIComponent(token)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clip_id: cid, label }) });
+    location.reload();
+  });
+  document.getElementById('btn-arch').addEventListener('click', async () => {
+    const token = getToken();
+    if (!token) return;
+    await fetch(`/api/clip?token=${encodeURIComponent(token)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clip_id: cid, archived: !meta.archived }) });
+    location.href = 'index.html';
+  });
 
   // ---- HUD ----
   const HUDS = [['alt', 'Altura', 'm'], ['dist', 'Recorrido', ''], ['speed', 'Velocidad', 'km/h'], ['iso', 'ISO', ''], ['shutter', 'Shutter', '']];

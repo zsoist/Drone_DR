@@ -12,6 +12,7 @@ main.innerHTML = `
       <option value="full">Full — con video</option>
       <option value="standard">Standard</option>
       <option value="skim">Skim</option>
+      <option value="archived">Archivados</option>
     </select>
     <select class="ctl" id="sort" aria-label="Ordenar">
       <option value="date">Más recientes</option>
@@ -40,10 +41,12 @@ function stats(list) {
 }
 
 function matches(f) {
-  if (state.tier !== 'all' && f.tier !== state.tier) return false;
+  if (state.tier === 'archived') { if (!f.archived) return false; }
+  else if (f.archived) return false;
+  if (state.tier !== 'all' && state.tier !== 'archived' && f.tier !== state.tier) return false;
   if (!state.q) return true;
   const a = ai[f.clip_id];
-  const hay = [f.clip_id, f.date, f.time, a?.summary, a?.scene_type, ...(a?.tags || [])]
+  const hay = [f.clip_id, f.date, f.time, f.label, a?.summary, a?.scene_type, ...(a?.tags || [])]
     .join(' ').toLowerCase();
   return state.q.toLowerCase().split(/\s+/).every(w => hay.includes(w));
 }
@@ -66,7 +69,7 @@ function card(f) {
       <span class="ovl mono">${fmt.dur(f.duration_s)}</span>
     </div>
     <div class="body">
-      <div class="t"><span>${fmt.date(f.date)}</span><time>${f.time}</time></div>
+      <div class="t"><span>${f.label || fmt.date(f.date)}</span><time>${f.label ? fmt.date(f.date) + ' ' : ''}${f.time}</time></div>
       <div class="metrics">
         <span>${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b></span>
         <span>${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b></span>

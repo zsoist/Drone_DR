@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+  <title>AeroBrain — 3D</title>
+  <link rel="stylesheet" href="style.css?v=3">
+  <script src="icons.js?v=3"></script>
+  <script src="shell.js?v=3"></script>
+</head>
+<body>
+  <script type="module">
+    const main = renderShell('studio.html');
+    main.innerHTML = `
+      <div class="page-head"><h1>3D</h1><span class="count">fotogrametría y gaussian splatting</span></div>
+      <div class="fl-layout">
+        <div>
+          <div class="panel">
+            <div class="ph">${icon('map')} Ortofoto — OpenDroneMap</div>
+            <div class="pb" id="ortho"><div class="sk" style="height:80px"></div></div>
+          </div>
+          <div class="panel" style="margin-top:16px">
+            <div class="ph">${icon('cube')} Escenas 3D — Gaussian Splats</div>
+            <div class="pb" id="splats"></div>
+            <div id="viewer" style="height:52dvh;display:none"></div>
+          </div>
+        </div>
+        <div>
+          <div class="panel">
+            <div class="ph">${icon('layers')} Pipeline 3D</div>
+            <div class="pb"><table class="kv">
+              <tr><td>Ortofoto 2D</td><td>video → frames 2K → ODM (Docker, local)</td></tr>
+              <tr><td>Modelo 3D</td><td>ODM point cloud + textured mesh</td></tr>
+              <tr><td>Splat (foto-real)</td><td>OpenSplat sobre poses de ODM (Metal)</td></tr>
+              <tr><td>Costo</td><td>$0 — todo corre en el M4</td></tr>
+            </table>
+            <p class="footer-note">Para mejores resultados 3D: vuela en órbita alrededor del objetivo
+            (2 vueltas, 45° de gimbal) o en zigzag con 70% de solape para mapear áreas.</p></div>
+          </div>
+        </div>
+      </div>`;
+
+    // ortofoto: aparece cuando el job de ODM termina y se publica el preview
+    (async () => {
+      const el = document.getElementById('ortho');
+      const r = await fetch('data/odm/proj0104/ortho_preview.jpg', { method: 'HEAD' });
+      if (r.ok) {
+        el.innerHTML = `<img src="data/odm/proj0104/ortho_preview.jpg" style="width:100%;border-radius:8px" alt="Ortofoto">
+          <p class="footer-note">Ortofoto del vuelo 0104 (4 jul) — generada localmente con OpenDroneMap.</p>`;
+      } else {
+        el.innerHTML = `<div class="empty">${icon('activity')}<p>ODM está procesando el vuelo 0104 en Docker
+          (~1h). La ortofoto aparecerá aquí sola.</p></div>`;
+      }
+      // splats
+      let sys = {};
+      try { sys = await (await fetch('data/manifest/system.json')).json(); } catch {}
+      const list = (sys.splats || []).filter(s => /\.(splat|ply|ksplat)$/.test(s.name));
+      document.getElementById('splats').innerHTML = list.length ? list.map(s => `
+        <div class="hl-item"><button class="tc" data-splat="${s.name}">Ver</button>
+        <p class="mono">${s.name} · ${(s.bytes / 1e6).toFixed(0)}MB</p></div>`).join('') :
+        `<div class="empty">${icon('cube')}<p>Sin splats aún — se generan con OpenSplat cuando ODM
+        termina las poses de cámara (fase 2 del pipeline).</p></div>`;
+      document.getElementById('splats').addEventListener('click', async e => {
+        const name = e.target.dataset.splat;
+        if (!name) return;
+        const { GaussianSplats3D } = await import('https://unpkg.com/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.min.js');
+        const box = document.getElementById('viewer');
+        box.style.display = 'block';
+        const viewer = new GaussianSplats3D.Viewer({ rootElement: box, sharedMemoryForWorkers: false });
+        await viewer.addSplatScene(`data/splats/${name}`);
+        viewer.start();
+      });
+    })();
+  </script>
+</body>
+</html>

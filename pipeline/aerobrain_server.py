@@ -92,36 +92,76 @@ def _deepseek(prompt: str) -> str:
         return json.loads(r.read())["choices"][0]["message"]["content"]
 
 
-def run_edit(spec: dict, j):
+def find_raw(cid: str) -> Path | None:
+    for ext in (".MP4", ".mp4", ".MOV", ".mov", ".mkv", ".avi", ".webm", ".mts"):
+        hits = list((VAULT / "raw").rglob(f"{cid}{ext}"))
+        if hits:
+            return hits[0]
+    return None
+
+
+def capture_frame(spec: dict, j):
+    """Foto 4K real: extrae el frame del ORIGINAL (no del proxy 1080p)."""
     try:
         cid = re.sub(r"[^\w-]", "", spec["clip_id"])
-        src = VAULT / "proxies" / f"{cid}.mp4"
+        t = max(0.0, float(spec.get("t", 0)))
+        src = find_raw(cid) or (VAULT / "proxies" / f"{cid}.mp4")
         if not src.exists():
-            raise FileNotFoundError("clip sin proxy (tier full requerido)")
-        base_vf = "crop=ih*9/16:ih,scale=1080:1920" if spec.get("vertical") else "scale=-2:1080"
+            raise FileNotFoundError("clip no encontrado")
+        (VAULT / "photos").mkdir(exist_ok=True)
+        out = VAULT / "photos" / f"{cid}_{t:07.1f}s.jpg"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(t), "-i", str(src),
+                        "-frames:v", "1", "-q:v", "2", str(out)], check=True)
+        job_end(j, "done", f"photos/{out.name}")
+    except Exception as e:
+        job_end(j, "error", str(e)[-200:])
+
+
+ASPECTS = {
+    "16:9": "scale=-2:1080",
+    "9:16": "crop=ih*9/16:ih,scale=1080:1920",
+    "1:1": "crop=ih:ih,scale=1080:1080",
+    "4:5": "crop=ih*4/5:ih,scale=1080:1350",
+}
+
+
+def run_edit(spec: dict, j):
+    try:
+        default_cid = re.sub(r"[^\w-]", "", spec.get("clip_id", ""))
+        aspect = spec.get("aspect") or ("9:16" if spec.get("vertical") else "16:9")
+        base_vf = ASPECTS.get(aspect, ASPECTS["16:9"])
         lut = LUTS.get(spec.get("filter", "none"), "")
         fade = spec.get("fade", True)
         title = str(spec.get("title", ""))[:60].replace("\\", "").replace("'", "").replace(":", r"\:")
         tmp = VAULT / "reels" / ".tmp"
         tmp.mkdir(parents=True, exist_ok=True)
         segs = []
-        raw_segs = spec["segments"][:20]
+        raw_segs = spec["segments"][:24]
         for i, s in enumerate(raw_segs):
-            a, b = float(s["a"] if isinstance(s, dict) else s[0]), float(s["b"] if isinstance(s, dict) else s[1])
-            speed = float(s.get("speed", 1)) if isinstance(s, dict) else 1.0
-            speed = min(max(speed, 0.25), 4.0)
+            if not isinstance(s, dict):
+                s = {"a": s[0], "b": s[1]}
+            a, b = float(s["a"]), float(s["b"])
+            speed = min(max(float(s.get("speed", 1)), 0.25), 4.0)
             if b <= a:
                 continue
+            # multi-clip: cada corte puede venir de un clip distinto (timeline CapCut-style)
+            cid = re.sub(r"[^\w-]", "", s.get("clip_id", "") or default_cid)
+            src = VAULT / "proxies" / f"{cid}.mp4"
+            if not src.exists():
+                raise FileNotFoundError(f"{cid} sin proxy")
+            seg_lut = LUTS.get(s.get("filter", spec.get("filter", "none")), lut)
+            seg_title = str(s.get("title", ""))[:60].replace("\\", "").replace("'", "").replace(":", r"\:")
             out_dur = min(b - a, 120) / speed
             vf = [base_vf]
-            if lut:
-                vf.append(lut)
+            if seg_lut:
+                vf.append(seg_lut)
             if speed != 1:
                 vf.append(f"setpts=PTS/{speed}")
             if fade:
                 vf.append(f"fade=t=in:st=0:d=0.25,fade=t=out:st={max(out_dur - 0.25, 0):.2f}:d=0.25")
-            if title and i == 0:
-                vf.append(f"drawtext=fontfile={FONT}:text='{title}':fontcolor=white:fontsize=h/14"
+            if seg_title or (title and i == 0):
+                txt = seg_title or title
+                vf.append(f"drawtext=fontfile={FONT}:text='{txt}':fontcolor=white:fontsize=h/14"
                           f":shadowx=2:shadowy=2:x=(w-text_w)/2:y=h*0.82:alpha='min(1,t)'")
             seg = tmp / f"e{i}.mp4"
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(a), "-i", str(src),
@@ -194,9 +234,9 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(end - start + 1))
-        # media inmutable se cachea; código y datos siempre frescos (iPhone no debe ver CSS viejo)
+        # media inmutable se cachea; código y datos NUNCA (iPhone quedó quemado con CSS viejo)
         cacheable = f.suffix in (".mp4", ".jpg", ".png", ".woff2")
-        self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-cache")
+        self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-store, must-revalidate")
         self.end_headers()
         with open(f, "rb") as fh:
             fh.seek(start)
@@ -269,9 +309,35 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-            j = job_add("edit", spec.get("clip_id", "?"))
+            j = job_add("edit", f'{len(spec.get("segments", []))} cortes')
             threading.Thread(target=run_edit, args=(spec, j), daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"]})
+        if u.path == "/api/frame":
+            if not self.auth(q):
+                return
+            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            j = job_add("foto4k", f'{spec.get("clip_id", "?")} @ {spec.get("t", 0)}s')
+            th = threading.Thread(target=capture_frame, args=(spec, j), daemon=True)
+            th.start()
+            th.join(timeout=25)  # las fotos son rápidas: respuesta síncrona con la URL
+            done = j["status"] == "done"
+            return self.send_json({"ok": done, "url": f"/data/{j['detail']}" if done else None,
+                                   "error": None if done else j["detail"]})
+        if u.path == "/api/clip":
+            if not self.auth(q):
+                return
+            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            mf = VAULT / "manifest" / f"{cid}.json"
+            if not mf.exists():
+                return self.send_json({"error": "clip no existe"}, 404)
+            m = json.loads(mf.read_text())
+            for k in ("label", "archived"):
+                if k in spec:
+                    m[k] = spec[k]
+            mf.write_text(json.dumps(m, indent=1))
+            rebuild_index()
+            return self.send_json({"ok": True})
         if u.path == "/api/rescan":
             if not self.auth(q):
                 return
