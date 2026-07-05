@@ -5,6 +5,7 @@ mediciones DSM (volumen y perfil sobre un DSM sintético), y contención de path
 """
 import json
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import time
@@ -224,6 +225,18 @@ check("orphans: restart del server NO mata el 3D del worker",
       jobs.get(c1["id"])["status"] == "running")
 check("orphans: restart del server SÍ limpia sus light huérfanos",
       jobs.get(_light)["status"] == "error")
+_heavy = jobs.add("3d", "worker-owned")
+_hp = subprocess.Popen(["sleep", "30"], start_new_session=True)
+jobs.update(_heavy["id"], pid=_hp.pid)
+jobs.init(orphan_kinds=jobs.HEAVY_KINDS)  # reinicia el WORKER
+try:
+    _hp.wait(timeout=1)
+    _heavy_gone = True
+except subprocess.TimeoutExpired:
+    _heavy_gone = False
+    _hp.kill()
+check("orphans: restart del worker mata proceso heavy huérfano",
+      jobs.get(_heavy["id"])["status"] == "error" and _heavy_gone)
 
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)

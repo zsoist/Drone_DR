@@ -45,6 +45,22 @@ def init(orphan_kinds: tuple = ()):
                 c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
         if orphan_kinds:
             ph = ",".join("?" * len(orphan_kinds))
+            orphans = c.execute(f"SELECT id, pid, container FROM jobs "
+                                f"WHERE status='running' AND kind IN ({ph})",
+                                orphan_kinds).fetchall()
+            for o in orphans:
+                pid = o["pid"]
+                if pid:
+                    _kill_pg(pid, signal.SIGTERM)
+                    time.sleep(0.2)
+                    if not _proc_gone(pid):
+                        _kill_pg(pid, signal.SIGKILL)
+                if o["container"]:
+                    try:
+                        subprocess.run(["/usr/local/bin/docker", "kill", o["container"]],
+                                       capture_output=True, timeout=30)
+                    except (subprocess.TimeoutExpired, OSError):
+                        pass
             c.execute(f"UPDATE jobs SET status='error', detail='proceso dueño reiniciado "
                       f"durante el job', finished=?, pid=NULL "
                       f"WHERE status='running' AND kind IN ({ph})",
