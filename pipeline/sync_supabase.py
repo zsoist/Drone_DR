@@ -69,12 +69,17 @@ def main():
 
     if "--schema" in sys.argv:
         require(keys, "SUPABASE_DRONE_DB_URL")
-        print("aplicando schema.sql vía psql…")
-        r = subprocess.run(["psql", keys["SUPABASE_DRONE_DB_URL"],
-                            "-v", "ON_ERROR_STOP=1", "-f", str(ROOT / "supabase" / "schema.sql")],
-                           capture_output=True, text=True)
-        if r.returncode != 0:
-            sys.exit(f"psql falló:\n{r.stderr[-800:]}")
+        migs = sorted((ROOT / "supabase" / "migrations").glob("*.sql"))
+        if not migs:
+            sys.exit("no hay migraciones en supabase/migrations/")
+        print(f"aplicando {len(migs)} migración(es) vía psql (idempotentes)…")
+        for m in migs:
+            r = subprocess.run(["psql", keys["SUPABASE_DRONE_DB_URL"],
+                                "-v", "ON_ERROR_STOP=1", "-f", str(m)],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                sys.exit(f"psql falló en {m.name}:\n{r.stderr[-800:]}")
+            print(f"  ✓ {m.name}")
         print("✅ schema aplicado (PostGIS + pgvector + tablas + RLS + RPCs)")
         if "--embed" not in sys.argv and len(sys.argv) == 2:
             return

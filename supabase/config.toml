@@ -1,0 +1,6 @@
+# Supabase CLI config — the GitHub integration links the target project in the
+# dashboard (Settings → Integrations → GitHub). Set project_id for local CLI use.
+project_id = "drone"
+
+[db]
+major_version = 17
