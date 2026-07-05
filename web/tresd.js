@@ -41,23 +41,23 @@
     <div class="fl-layout" style="margin-top:16px">
       <div>
         <div class="panel">
-          <div class="ph">${icon('cube')} Modelo 3D texturizado
+          <div class="ph">${icon('cube')} Nube de puntos 3D
             <span class="spacer" style="flex:1"></span>
-            <button class="btn primary" id="load-mesh" style="padding:4px 12px;font-size:11.5px">Cargar</button>
+            <button class="btn primary" id="load-cloud-main" style="padding:4px 12px;font-size:11.5px">Cargar</button>
           </div>
-          <div id="mesh-box" style="height:46dvh;min-height:300px;display:grid;place-items:center">
-            <p class="footer-note" style="margin:0">Mesh con textura real del vuelo — arrastra para orbitar.</p>
+          <div id="cloud-box" style="height:52dvh;min-height:340px;display:grid;place-items:center">
+            <p class="footer-note" style="margin:0">Nube de ~800k puntos con color real — arrastra para orbitar. Es la mejor vista para capturas nadir.</p>
           </div>
         </div>
       </div>
       <div>
         <div class="panel">
-          <div class="ph">${icon('layers')} Nube de puntos
+          <div class="ph">${icon('cube')} Malla texturizada
             <span class="spacer" style="flex:1"></span>
-            <button class="btn primary" id="load-cloud" style="padding:4px 12px;font-size:11.5px">Cargar</button>
+            <button class="btn" id="load-mesh" style="padding:4px 12px;font-size:11.5px">Cargar</button>
           </div>
-          <div id="cloud-box" style="height:46dvh;min-height:300px;display:grid;place-items:center">
-            <p class="footer-note" style="margin:0">~800k puntos con color real, georreferenciados.</p>
+          <div id="mesh-box" style="height:44dvh;min-height:280px;display:grid;place-items:center">
+            <p class="footer-note" style="margin:0">Malla sólida — óptima con vuelos en órbita/oblicuos; en nadir puede tener huecos.</p>
           </div>
         </div>
       </div>
@@ -203,8 +203,9 @@
     document.getElementById('op').oninput = e => {
       omap.getLayer('ortho') && omap.setPaintProperty('ortho', 'raster-opacity', +e.target.value / 100);
     };
-    resetViewer('mesh-box', 'Mesh con textura real del vuelo — arrastra para orbitar.', 'load-mesh');
-    resetViewer('cloud-box', '~800k puntos con color real, georreferenciados.', 'load-cloud');
+    resetViewer('cloud-box', 'Cargando nube de puntos…', 'load-cloud-main');
+    resetViewer('mesh-box', 'Malla sólida — óptima con vuelos en órbita/oblicuos.', 'load-mesh');
+    setTimeout(() => document.getElementById('load-cloud-main')?.click(), 300);  // auto-carga la estrella
   }
   // ---------- capas + mediciones ----------
   let tool = null, mpts = [];
@@ -353,13 +354,12 @@
   // ---------- three.js viewers ----------
   function makeScene(box) {
     const w = box.clientWidth, h = box.clientHeight;
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     box.innerHTML = '';
     box.appendChild(renderer.domElement);
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#0A0C10');
+    const scene = new THREE.Scene();  // fondo transparente → gradiente CSS del box
     const cam = new THREE.PerspectiveCamera(55, w / h, 0.1, 5000);
     const controls = new OrbitControls(cam, renderer.domElement);
     controls.enableDamping = true;
@@ -386,7 +386,7 @@
     // distancia para que el objeto LLENE ~80% del viewport (fov-aware)
     const fov = cam.fov * Math.PI / 180;
     const dist = (maxDim / 2) / Math.tan(fov / 2) / 0.8;
-    cam.position.set(dist * 0.5, dist * 0.55, dist * 0.5);
+    cam.position.set(dist * 0.15, dist * 0.92, dist * 0.28);  // casi cenital: data nadir se ve densa
     cam.near = maxDim / 1000; cam.far = dist * 8; cam.updateProjectionMatrix();
     controls.target.set(0, 0, 0);
     controls.maxDistance = dist * 3;
@@ -442,13 +442,13 @@
     attachViewerTools(box, cam, controls);
   });
 
-  document.getElementById('load-cloud').addEventListener('click', async e => {
+  document.getElementById('load-cloud-main').addEventListener('click', async e => {
     if (!cur) return;
     e.currentTarget.style.display = 'none';
     const box = document.getElementById('cloud-box');
     spin(box);
     const geo = await new PLYLoader().loadAsync(`data/models/${cur.clip_id}/cloud.ply`);
-    const mat = new THREE.PointsMaterial({ size: 0.28, vertexColors: geo.hasAttribute('color') });
+    const mat = new THREE.PointsMaterial({ size: 0.18, sizeAttenuation: true, vertexColors: geo.hasAttribute('color') });
     const pts = new THREE.Points(geo, mat);
     const { scene, cam, controls } = makeScene(box);
     pts.rotation.x = -Math.PI / 2;
