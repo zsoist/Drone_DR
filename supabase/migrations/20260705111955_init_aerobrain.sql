@@ -37,7 +37,7 @@ begin
       (new.stats->'home'->>0)::float, (new.stats->'home'->>1)::float), 4326)::geography;
   end if;
   if new.stats ? 'bbox' then
-    new.footprint := st_setsrid(st_makeenvelope(
+    new.footprint := st_makeenvelope(
       (new.stats->'bbox'->>0)::float, (new.stats->'bbox'->>1)::float,
       (new.stats->'bbox'->>2)::float, (new.stats->'bbox'->>3)::float, 4326)::geography;
   end if;
