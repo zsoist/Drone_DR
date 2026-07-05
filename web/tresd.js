@@ -315,7 +315,8 @@
             <div class="stat"><div class="lb">Removido</div><div class="v">${r.removed_m3.toLocaleString()}<small> m³</small></div></div>
             <div class="stat"><div class="lb">Cambio medio</div><div class="v">${r.mean_change_m}<small> m</small></div></div>
           </div>
-          <p class="footer-note">Positivo = material agregado (construcción/relleno). Subida máx ${r.max_rise_m}m · bajada máx ${r.max_drop_m}m · ${Math.round(r.area_m2).toLocaleString()} m² comparados. Método cut/fill entre DSMs, tipo DroneDeploy.</p>`);
+          <p class="footer-note">Positivo = material agregado (construcción/relleno). Subida máx ${r.max_rise_m}m · bajada máx ${r.max_drop_m}m · ${Math.round(r.area_m2).toLocaleString()} m² comparados.
+          Co-registro automático: sesgo vertical de ${r.vertical_bias_corrected_m}m corregido (GPS sin GCPs) · incertidumbre ±${r.uncertainty_m}m — cambios menores a eso no son concluyentes.</p>`);
       };
     }
     if (tool === 'profile' && mpts.length === 2) {

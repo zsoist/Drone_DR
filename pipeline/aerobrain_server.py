@@ -219,12 +219,43 @@ def compare_dsm(mdir_a: Path, mdir_b: Path, pts: list) -> dict:
     valid = mask & ~np.isnan(za) & ~np.isnan(zb)
     if not valid.any():
         return {"error": "sin solape entre las dos fechas en ese polígono"}
-    diff = (zb - za)[valid]
+    # CO-REGISTRO VERTICAL (offset + tilt): sin GCPs cada reconstrucción hereda la
+    # cota GPS del dron (error de decenas de metros) Y puede quedar inclinada
+    # respecto a la otra. Ajustamos un plano robusto a la diferencia sobre el
+    # terreno estable y lo restamos; sólo lo que sobrevive es cambio real.
+    # (Validación same-day: sesgo puro daba -79.5m; mediana lo bajó a 2.3m; el
+    #  plano corrige también el tilt residual.)
+    D = (zb - za)
+    X, Y = LON[valid], LAT[valid]
+    dv = D[valid]
+    # arranque ROBUSTO: los inliers de la mediana definen el "terreno estable";
+    # los cambios reales (edificios/pilas) son outliers y NUNCA entran al fit
+    med0 = np.median(dv)
+    nmad0 = 1.4826 * np.median(np.abs(dv - med0))
+    keep = np.abs(dv - med0) <= max(3 * nmad0, 0.5)
+    if keep.sum() < 100:  # solape casi todo cambiado: sólo offset por mediana
+        keep = np.ones(dv.shape, dtype=bool)
+    coef = np.array([0.0, 0.0, med0])
+    Aall = np.column_stack([X - X.mean(), Y - Y.mean(), np.ones(len(X))])
+    for _ in range(2):
+        A = Aall[keep]
+        coef, *_ = np.linalg.lstsq(A, dv[keep], rcond=None)
+        resid = dv - Aall @ coef
+        m = np.median(resid[keep])
+        n = 1.4826 * np.median(np.abs(resid[keep] - m))
+        keep = np.abs(resid - m) <= max(3 * n, 0.5)
+        if keep.sum() < 100:
+            break
+    diff = dv - Aall @ coef
+    # incertidumbre honesta: NMAD del residual sobre terreno estable
+    nmad = float(1.4826 * np.median(np.abs(diff[keep] - np.median(diff[keep]))))
     added = float(np.clip(diff, 0, None).sum() * cell)
     removed = float(np.clip(-diff, 0, None).sum() * cell)
     return {"net_change_m3": round(added - removed, 1), "added_m3": round(added, 1),
             "removed_m3": round(removed, 1), "mean_change_m": round(float(diff.mean()), 2),
             "max_rise_m": round(float(diff.max()), 1), "max_drop_m": round(float(diff.min()), 1),
+            "vertical_bias_corrected_m": round(float(coef[2]), 2),
+            "uncertainty_m": round(nmad, 2),
             "area_m2": round(cell * int(valid.sum()), 1), "overlap_cells": int(valid.sum())}
 
 
