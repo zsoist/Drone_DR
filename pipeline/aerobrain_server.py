@@ -117,6 +117,58 @@ def capture_frame(spec: dict, j):
         job_end(j, "error", str(e)[-200:])
 
 
+def measure_dsm(mdir: Path, spec: dict) -> dict:
+    """Mediciones survey en el host: numpy sobre el DSM binario (sin docker)."""
+    import math
+    import numpy as np
+    meta = json.loads((mdir / "meta.json").read_text())
+    h, w = meta["dsm_shape"]
+    gt = meta["dsm_gt"]
+    nod = meta.get("dsm_nodata")
+    arr = np.memmap(mdir / "dsm.bin", dtype=np.float32, mode="r", shape=(h, w))
+    pts = spec.get("points", [])
+
+    def elev(lon, lat):
+        x = int((lon - gt[0]) / gt[1]); y = int((lat - gt[3]) / gt[5])
+        if 0 <= y < h and 0 <= x < w:
+            v = float(arr[y, x])
+            return None if (nod is not None and abs(v - nod) < 1e-3) else v
+        return None
+
+    if spec.get("type") == "profile":
+        (lon1, lat1), (lon2, lat2) = pts[0], pts[-1]
+        prof = [elev(lon1 + (lon2 - lon1) * i / 120, lat1 + (lat2 - lat1) * i / 120)
+                for i in range(121)]
+        dlat, dlon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) ** 2 +
+             math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
+        return {"profile": prof, "distance_m": round(2 * 6371000 * math.asin(math.sqrt(a)), 1)}
+
+    # volumen: ray-casting vectorizado dentro del polígono
+    lons = gt[0] + (np.arange(w) + 0.5) * gt[1]
+    lats = gt[3] + (np.arange(h) + 0.5) * gt[5]
+    LON, LAT = np.meshgrid(lons, lats)
+    mask = np.zeros((h, w), dtype=bool)
+    P = pts + [pts[0]]
+    for i in range(len(P) - 1):
+        (x1, y1), (x2, y2) = P[i], P[i + 1]
+        mask ^= ((y1 <= LAT) != (y2 <= LAT)) & \
+                (LON < (x2 - x1) * (LAT - y1) / (y2 - y1 + 1e-15) + x1)
+    if nod is not None:
+        mask &= np.abs(arr - nod) > 1e-3
+    if not mask.any():
+        return {"error": "polígono fuera del DSM"}
+    vals = arr[mask].astype(np.float64)
+    base = float(np.percentile(vals, 5))
+    lat0 = float(np.mean([p[1] for p in pts]))
+    cell = abs(gt[1]) * 111320 * math.cos(math.radians(lat0)) * abs(gt[5]) * 110540
+    return {"volume_m3": round(float(np.clip(vals - base, 0, None).sum() * cell), 1),
+            "cut_m3": round(float(np.clip(base - vals, 0, None).sum() * cell), 1),
+            "base_elev": round(base, 1),
+            "area_m2": round(cell * int(mask.sum()), 1),
+            "max_height": round(float(vals.max() - base), 1)}
+
+
 ASPECTS = {
     "16:9": "scale=-2:1080",
     "9:16": "crop=ih*9/16:ih,scale=1080:1920",
@@ -323,6 +375,80 @@ class H(BaseHTTPRequestHandler):
             done = j["status"] == "done"
             return self.send_json({"ok": done, "url": f"/data/{j['detail']}" if done else None,
                                    "error": None if done else j["detail"]})
+        if u.path == "/api/measure":
+            # mediciones survey contra el DSM: volumen (stockpile) y perfil de elevación
+            if not self.auth(q):
+                return
+            spec = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            mdir = VAULT / "models" / cid
+            if not (mdir / "dsm.bin").exists():
+                return self.send_json({"error": "este proyecto no tiene DSM aún"}, 404)
+            try:
+                return self.send_json(measure_dsm(mdir, spec))
+            except Exception as e:
+                return self.send_json({"error": str(e)[-200:]}, 500)
+            # (versión docker retirada: gdal_array del contenedor tiene numpy roto)
+            pts = json.dumps(spec.get("points", []))
+            kind = "volume" if spec.get("type") == "volume" else "profile"
+            script = f"""python3 - << 'EOF'
+import json, math
+from osgeo import gdal
+import numpy as np
+ds = gdal.Open('/m/dsm_4326.tif'); gt = ds.GetGeoTransform()
+band = ds.GetRasterBand(1); arr = band.ReadAsArray(); nod = band.GetNoDataValue()
+pts = json.loads('{pts}')
+def to_px(lon, lat):
+    return int((lon - gt[0]) / gt[1]), int((lat - gt[3]) / gt[5])
+def elev(lon, lat):
+    x, y = to_px(lon, lat)
+    if 0 <= y < arr.shape[0] and 0 <= x < arr.shape[1]:
+        v = float(arr[y, x])
+        return None if (nod is not None and v == nod) else v
+    return None
+if "{kind}" == "profile":
+    (lon1, lat1), (lon2, lat2) = pts[0], pts[-1]
+    N = 120
+    prof = [elev(lon1 + (lon2 - lon1) * i / N, lat1 + (lat2 - lat1) * i / N) for i in range(N + 1)]
+    R = 6371000; dlat = math.radians(lat2 - lat1); dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
+    dist = 2 * R * math.asin(math.sqrt(a))
+    print(json.dumps({{"profile": prof, "distance_m": round(dist, 1)}}))
+else:
+    # point-in-polygon vectorizado (ray casting) — sin dependencias extra
+    lons = gt[0] + (np.arange(arr.shape[1]) + 0.5) * gt[1]
+    lats = gt[3] + (np.arange(arr.shape[0]) + 0.5) * gt[5]
+    LON, LAT = np.meshgrid(lons, lats)
+    mask = np.zeros(arr.shape, dtype=bool)
+    P = pts + [pts[0]]
+    for i in range(len(P) - 1):
+        (x1, y1), (x2, y2) = P[i], P[i + 1]
+        cond = ((y1 <= LAT) != (y2 <= LAT)) & \
+               (LON < (x2 - x1) * (LAT - y1) / (y2 - y1 + 1e-15) + x1)
+        mask ^= cond
+    if nod is not None: mask &= (arr != nod)
+    if not mask.any():
+        print(json.dumps({{"error": "polígono fuera del DSM"}})); raise SystemExit
+    vals = arr[mask].astype(float)
+    base = float(np.percentile(vals, 5))          # plano base = suelo alrededor
+    lat0 = float(np.mean(pts, axis=0)[1])
+    px_w = abs(gt[1]) * 111320 * math.cos(math.radians(lat0))
+    px_h = abs(gt[5]) * 110540
+    cell = px_w * px_h
+    fill = float(((vals - base).clip(min=0) * cell).sum())
+    cut = float(((base - vals).clip(min=0) * cell).sum())
+    print(json.dumps({{"volume_m3": round(fill, 1), "cut_m3": round(cut, 1),
+                      "base_elev": round(base, 1), "area_m2": round(cell * mask.sum(), 1),
+                      "max_height": round(float(vals.max() - base), 1)}}))
+EOF"""
+            try:
+                r = subprocess.run(["/usr/local/bin/docker", "run", "--rm",
+                                    "-v", f"{VAULT / 'models' / cid}:/m",
+                                    "--entrypoint", "bash", "opendronemap/odm", "-c", script],
+                                   capture_output=True, text=True, timeout=120)
+                return self.send_json(json.loads(r.stdout.strip().splitlines()[-1]))
+            except Exception as e:
+                return self.send_json({"error": str(e)[-200:]}, 500)
         if u.path == "/api/odm":
             if not self.auth(q):
                 return

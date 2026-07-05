@@ -32,12 +32,29 @@
     </div>
 
     <div class="panel">
-      <div class="ph">${icon('map')} Ortofoto sobre el mundo real
+      <div class="ph">${icon('map')} Mapa del proyecto
         <span class="spacer" style="flex:1"></span>
         <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-2)">
           Opacidad <input type="range" id="op" min="0" max="100" value="88" style="width:110px"></label>
       </div>
+      <div class="pb" style="padding:10px 12px;border-bottom:1px solid var(--line)">
+        <div class="toolbar" style="margin:0">
+          <span style="font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-3)">Capas</span>
+          <button class="chip on" data-layer="ortho">Ortofoto</button>
+          <button class="chip" data-layer="dsm">Elevación</button>
+          <button class="chip" data-layer="hills">Relieve</button>
+          <button class="chip" data-layer="contours">Curvas</button>
+          <span class="spacer"></span>
+          <span style="font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-3)">Medir</span>
+          <button class="chip" data-tool="dist">Distancia</button>
+          <button class="chip" data-tool="area">Área</button>
+          <button class="chip" data-tool="volume">Volumen</button>
+          <button class="chip" data-tool="profile">Perfil</button>
+          <button class="btn" id="m-clear" style="padding:3px 10px;font-size:11px">Limpiar</button>
+        </div>
+      </div>
       <div id="omap" style="height:56dvh;min-height:340px"></div>
+      <div class="pb" id="m-result" style="display:none;border-top:1px solid var(--line)"></div>
     </div>
 
     <div class="fl-layout" style="margin-top:16px">
@@ -148,6 +165,35 @@
       omap.addSource('ortho', { type: 'image', url: `${base}/ortho.jpg`, coordinates: cur.corners });
       omap.addLayer({ id: 'ortho', type: 'raster', source: 'ortho',
                       paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 0 } });
+      if (cur.dsm_corners) {
+        omap.addSource('dsm', { type: 'image', url: `${base}/dsm_color.png`, coordinates: cur.dsm_corners });
+        omap.addLayer({ id: 'dsm', type: 'raster', source: 'dsm',
+                        layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.75 } });
+        omap.addSource('hills', { type: 'image', url: `${base}/hillshade.png`, coordinates: cur.dsm_corners });
+        omap.addLayer({ id: 'hills', type: 'raster', source: 'hills',
+                        layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.6 } });
+        omap.addSource('contours', { type: 'geojson', data: `${base}/contours.geojson` });
+        omap.addLayer({ id: 'contours', type: 'line', source: 'contours',
+                        layout: { visibility: 'none' },
+                        paint: { 'line-color': '#E0A458', 'line-width': 1, 'line-opacity': 0.85 } });
+        omap.addLayer({ id: 'contour-lb', type: 'symbol', source: 'contours',
+                        layout: { visibility: 'none', 'symbol-placement': 'line',
+                                  'text-field': ['concat', ['to-string', ['get', 'elev']], ' m'],
+                                  'text-size': 10 },
+                        paint: { 'text-color': '#E0A458', 'text-halo-color': '#000', 'text-halo-width': 1 } });
+      }
+      // capa de dibujo para mediciones
+      omap.addSource('draw', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      omap.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw',
+                      filter: ['==', '$type', 'Polygon'],
+                      paint: { 'fill-color': '#45A0E6', 'fill-opacity': 0.18 } });
+      omap.addLayer({ id: 'draw-line', type: 'line', source: 'draw',
+                      paint: { 'line-color': '#45A0E6', 'line-width': 2.5, 'line-dasharray': [1.5, 1] } });
+      omap.addLayer({ id: 'draw-pts', type: 'circle', source: 'draw',
+                      filter: ['==', '$type', 'Point'],
+                      paint: { 'circle-radius': 4.5, 'circle-color': '#45A0E6',
+                               'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } });
+      omap.on('click', onMapClick);
     });
     document.getElementById('op').oninput = e => {
       omap.getLayer('ortho') && omap.setPaintProperty('ortho', 'raster-opacity', +e.target.value / 100);
@@ -155,6 +201,110 @@
     resetViewer('mesh-box', 'Mesh con textura real del vuelo — arrastra para orbitar.', 'load-mesh');
     resetViewer('cloud-box', '~800k puntos con color real, georreferenciados.', 'load-cloud');
   }
+  // ---------- capas + mediciones ----------
+  let tool = null, mpts = [];
+  const R = 6371000, rad = Math.PI / 180;
+  const hav = (a, b) => 2 * R * Math.asin(Math.sqrt(
+    Math.sin((b[1] - a[1]) * rad / 2) ** 2 +
+    Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin((b[0] - a[0]) * rad / 2) ** 2));
+  function areaM2(pts) {                       // shoelace en metros locales
+    const lat0 = pts[0][1] * rad;
+    const xy = pts.map(p => [p[0] * rad * R * Math.cos(lat0), p[1] * rad * R]);
+    let s = 0;
+    for (let i = 0; i < xy.length; i++) {
+      const [x1, y1] = xy[i], [x2, y2] = xy[(i + 1) % xy.length];
+      s += x1 * y2 - x2 * y1;
+    }
+    return Math.abs(s / 2);
+  }
+  document.querySelectorAll('[data-layer]').forEach(b => b.addEventListener('click', () => {
+    b.classList.toggle('on');
+    const vis = b.classList.contains('on') ? 'visible' : 'none';
+    const ids = b.dataset.layer === 'contours' ? ['contours', 'contour-lb'] : [b.dataset.layer];
+    ids.forEach(id => omap.getLayer(id) && omap.setLayoutProperty(id, 'visibility', vis));
+  }));
+  document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-tool]').forEach(x => x.classList.remove('on'));
+    tool = tool === b.dataset.tool ? null : b.dataset.tool;
+    if (tool) b.classList.add('on');
+    mpts = []; paintDraw();
+    result(tool ? ({ dist: 'Toca puntos en el mapa para medir distancia.',
+      area: 'Toca los vértices del área.', volume: 'Dibuja el polígono sobre el stockpile/edificio y toca "Calcular".',
+      profile: 'Toca 2 puntos: inicio y fin del perfil.' })[tool] : null);
+  }));
+  document.getElementById('m-clear').addEventListener('click', () => {
+    tool = null; mpts = []; paintDraw(); result(null);
+    document.querySelectorAll('[data-tool]').forEach(x => x.classList.remove('on'));
+  });
+  function paintDraw() {
+    if (!omap?.getSource('draw')) return;
+    const feats = mpts.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: p } }));
+    if (mpts.length > 1) feats.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: mpts } });
+    if (mpts.length > 2 && (tool === 'area' || tool === 'volume'))
+      feats.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...mpts, mpts[0]]] } });
+    omap.getSource('draw').setData({ type: 'FeatureCollection', features: feats });
+  }
+  function result(html) {
+    const el = document.getElementById('m-result');
+    el.style.display = html ? 'block' : 'none';
+    el.innerHTML = html || '';
+  }
+  function onMapClick(e) {
+    if (!tool) return;
+    mpts.push([e.lngLat.lng, e.lngLat.lat]);
+    paintDraw();
+    if (tool === 'dist' && mpts.length > 1) {
+      let d = 0;
+      for (let i = 1; i < mpts.length; i++) d += hav(mpts[i - 1], mpts[i]);
+      result(`<b class="mono" style="font-size:16px;color:var(--accent)">${d >= 1000 ? (d / 1000).toFixed(2) + ' km' : d.toFixed(1) + ' m'}</b>
+        <span class="footer-note" style="margin:0 0 0 10px">distancia · ${mpts.length} puntos</span>`);
+    }
+    if (tool === 'area' && mpts.length > 2) {
+      const a = areaM2(mpts);
+      result(`<b class="mono" style="font-size:16px;color:var(--accent)">${a >= 10000 ? (a / 10000).toFixed(2) + ' ha' : Math.round(a).toLocaleString() + ' m²'}</b>
+        <span class="footer-note" style="margin:0 0 0 10px">área · ${mpts.length} vértices</span>`);
+    }
+    if (tool === 'volume' && mpts.length > 2) {
+      result(`<button class="btn primary" id="calc-vol">Calcular volumen (${mpts.length} vértices)</button>`);
+      document.getElementById('calc-vol').onclick = async () => {
+        result('Calculando contra el DSM…');
+        const token = getToken();
+        const r = await (await fetch(`/api/measure?token=${encodeURIComponent(token)}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'volume', clip_id: cur.clip_id, points: mpts }) })).json();
+        result(r.error ? `<span style="color:var(--red)">${r.error}</span>` : `
+          <div class="statgrid" style="margin:0">
+            <div class="stat"><div class="lb">Volumen (fill)</div><div class="v">${r.volume_m3.toLocaleString()}<small> m³</small></div></div>
+            <div class="stat"><div class="lb">Corte (cut)</div><div class="v">${r.cut_m3.toLocaleString()}<small> m³</small></div></div>
+            <div class="stat"><div class="lb">Área</div><div class="v">${Math.round(r.area_m2).toLocaleString()}<small> m²</small></div></div>
+            <div class="stat"><div class="lb">Altura máx</div><div class="v">${r.max_height}<small> m</small></div></div>
+          </div><p class="footer-note">Base: ${r.base_elev} m snm (percentil 5 del polígono). Método cut/fill estándar survey.</p>`);
+      };
+    }
+    if (tool === 'profile' && mpts.length === 2) {
+      (async () => {
+        result('Muestreando el DSM…');
+        const token = getToken();
+        const r = await (await fetch(`/api/measure?token=${encodeURIComponent(token)}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'profile', clip_id: cur.clip_id, points: mpts }) })).json();
+        if (r.error) return result(`<span style="color:var(--red)">${r.error}</span>`);
+        const vals = r.profile.filter(v => v != null);
+        const lo = Math.min(...vals), hi = Math.max(...vals);
+        const W = 600, H = 90;
+        const pth = r.profile.map((v, i) =>
+          v == null ? null : `${(i / (r.profile.length - 1)) * W},${H - 8 - ((v - lo) / (hi - lo || 1)) * (H - 24)}`)
+          .filter(Boolean).join(' ');
+        result(`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3)">
+            <span>Perfil de elevación · ${r.distance_m} m</span><span class="mono">${lo.toFixed(1)}–${hi.toFixed(1)} m snm · Δ${(hi - lo).toFixed(1)} m</span></div>
+          <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px">
+            <polyline points="${pth} ${W},${H} 0,${H}" fill="#45A0E6" opacity="0.1"/>
+            <polyline points="${pth}" fill="none" stroke="#45A0E6" stroke-width="1.6"/></svg>`);
+        mpts = [];
+      })();
+    }
+  }
+
   function resetViewer(boxId, msg, btnId) {
     const box = document.getElementById(boxId);
     box.innerHTML = `<p class="footer-note" style="margin:0">${msg}</p>`;

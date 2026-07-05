@@ -16,3 +16,9 @@
   del contenedor: docker run --entrypoint bash opendronemap/odm -c "python3 -c 'from osgeo import gdal; gdal.Translate(...)'"
 - ODM full pipeline (con openmvs densify) sí produce ortho+mesh reales; --fast-orthophoto
   desde video frames da sparse inservible. --rerun-from openmvs reutiliza las cámaras.
+- gdal_array (ReadAsArray) está ROTO en la imagen ODM (numpy mismatch). Para mediciones:
+  exportar DSM como binario ENVI en tresd_publish y leer con numpy en el HOST (memmap).
+- OpenSplat en macOS: LibTorch >=2.7 (2.5 choca con Clang moderno por is_arithmetic),
+  Metal necesita 'xcodebuild -downloadComponent MetalToolchain' (requiere first-launch/sudo)
+  → build CPU con -DGPU_RUNTIME=CPU y correr con --cpu. image_list.txt de opensfm trae
+  rutas del contenedor: sed a rutas host antes de entrenar.

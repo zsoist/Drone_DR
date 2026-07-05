@@ -75,6 +75,53 @@ EOF""")
         if p.exists():
             p.replace(out / dst_name)
 
+    # 2.5) DSM → relieve coloreado + hillshade + curvas de nivel (si existe)
+    dsm_meta = {}
+    if (proj / "odm_dem" / "dsm.tif").exists():
+        print("elevación (DSM + curvas)…")
+        out_dem = sh_in_odm(proj, r"""python3 - << 'EOF'
+import json
+from osgeo import gdal, ogr, osr
+# todo desde el DSM ya warpeado a WGS84: overlays y esquinas quedan alineados
+gdal.Warp('/d/.web_dsm_4326.tif', '/d/odm_dem/dsm.tif', dstSRS='EPSG:4326')
+dsm = gdal.Open('/d/.web_dsm_4326.tif')
+b = dsm.GetRasterBand(1)
+lo, hi = b.ComputeStatistics(True)[:2]
+ramp = f"{lo} 38 84 124\n{lo + (hi-lo)*0.35} 82 155 104\n{lo + (hi-lo)*0.65} 222 190 88\n{hi} 194 82 60\nnv 0 0 0 0\n"
+open('/tmp/ramp.txt','w').write(ramp)
+gdal.DEMProcessing('/d/.web_dsm_color.tif', dsm, 'color-relief', colorFilename='/tmp/ramp.txt', addAlpha=True)
+gdal.DEMProcessing('/d/.web_hillshade.tif', dsm, 'hillshade', zFactor=1.3)
+gdal.Translate('/d/.web_dsm_color.png', '/d/.web_dsm_color.tif', format='PNG', width=2000)
+gdal.Translate('/d/.web_hillshade.png', '/d/.web_hillshade.tif', format='PNG', width=2000)
+gt = dsm.GetGeoTransform(); w, h = dsm.RasterXSize, dsm.RasterYSize
+corners = [[gt[0], gt[3]], [gt[0] + w * gt[1], gt[3]],
+           [gt[0] + w * gt[1], gt[3] + h * gt[5]], [gt[0], gt[3] + h * gt[5]]]
+# DSM como binario plano float32: el host lo lee con numpy sin GDAL (mediciones rápidas)
+gdal.Translate('/d/.web_dsm.envi', dsm, format='ENVI', outputType=gdal.GDT_Float32)
+interval = 2 if (hi - lo) > 12 else 1
+ds_out = ogr.GetDriverByName('GeoJSON').CreateDataSource('/d/.web_contours.geojson')
+srs = osr.SpatialReference(); srs.ImportFromEPSG(4326)
+lyr = ds_out.CreateLayer('contours', srs)
+lyr.CreateField(ogr.FieldDefn('elev', ogr.OFTReal))
+gdal.ContourGenerate(dsm.GetRasterBand(1), interval, 0, [], 0, 0, lyr, -1, 0)
+ds_out = None
+print(json.dumps({"dsm_min": round(lo, 1), "dsm_max": round(hi, 1),
+                  "contour_interval": interval, "dsm_corners": corners,
+                  "dsm_shape": [h, w], "dsm_gt": list(gt),
+                  "dsm_nodata": dsm.GetRasterBand(1).GetNoDataValue()}))
+EOF""")
+        dsm_meta = json.loads(out_dem.strip().splitlines()[-1])
+        for src_name, dst_name in [(".web_dsm_color.png", "dsm_color.png"),
+                                   (".web_hillshade.png", "hillshade.png"),
+                                   (".web_dsm.envi", "dsm.bin"),
+                                   (".web_contours.geojson", "contours.geojson")]:
+            p = proj / src_name
+            if p.exists():
+                p.replace(out / dst_name)
+        # copia el DSM warpeado a 4326: es la base de mediciones de volumen/perfil
+        if (proj / ".web_dsm_4326.tif").exists():
+            (proj / ".web_dsm_4326.tif").replace(out / "dsm_4326.tif")
+
     # 3) mesh texturizado → carpeta web (obj + mtl + texturas)
     print("modelo texturizado…")
     tex = proj / "odm_texturing"
@@ -91,6 +138,8 @@ EOF""")
         "cloud_bytes": (out / "cloud.ply").stat().st_size if (out / "cloud.ply").exists() else 0,
         "model_obj": "model/odm_textured_model_geo.obj",
         "textures": len([*(out / "model").glob("*.jpg"), *(out / "model").glob("*.png")]),
+        **dsm_meta,
+        "has_dsm": (out / "dsm_4326.tif").exists(),
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
     print(f"✅ publicado → {out} · nube {meta['cloud_bytes'] / 1e6:.0f}MB · {meta['textures']} texturas")
