@@ -122,6 +122,22 @@ def capture_frame(spec: dict, j):
         job_end(j, "error", str(e)[-200:])
 
 
+def check_polygon(pts, step_m=0.5, max_cells=20_000_000):
+    """Rechaza polígonos absurdos antes de asignar una malla enorme en memoria."""
+    import math
+    if not isinstance(pts, list) or len(pts) < 3:
+        raise ValueError("polígono necesita >=3 vértices")
+    if len(pts) > 500:
+        raise ValueError("demasiados vértices (máx 500)")
+    lons = [float(p[0]) for p in pts]; lats = [float(p[1]) for p in pts]
+    lat0 = sum(lats) / len(lats)
+    w = (max(lons) - min(lons)) * 111320 * math.cos(math.radians(lat0))
+    h = (max(lats) - min(lats)) * 110540
+    cells = (w / step_m) * (h / step_m)
+    if cells > max_cells:
+        raise ValueError(f"área demasiado grande (~{w*h/1e6:.1f} km²) — dibuja un polígono más chico")
+
+
 def _load_dsm(mdir: Path):
     """Carga DSM binario + georreferencia. Devuelve (arr, gt, h, w, nodata)."""
     import numpy as np
@@ -553,7 +569,11 @@ class H(BaseHTTPRequestHandler):
             if not (mdir / "dsm.bin").exists():
                 return self.send_json({"error": "este proyecto no tiene DSM aún"}, 404)
             try:
+                if spec.get("type") == "volume":
+                    check_polygon(spec.get("points", []))
                 return self.send_json(measure_dsm(mdir, spec))
+            except ValueError as e:
+                return self.send_json({"error": str(e)}, 400)
             except Exception as e:
                 return self.send_json({"error": str(e)[-200:]}, 500)
         if u.path == "/api/compare":
@@ -566,7 +586,10 @@ class H(BaseHTTPRequestHandler):
             if not ((da / "dsm.bin").exists() and (db / "dsm.bin").exists()):
                 return self.send_json({"error": "ambas fechas necesitan modelo 3D con DSM"}, 404)
             try:
+                check_polygon(spec.get("points", []))
                 return self.send_json(compare_dsm(da, db, spec.get("points", [])))
+            except ValueError as e:
+                return self.send_json({"error": str(e)}, 400)
             except Exception as e:
                 return self.send_json({"error": str(e)[-200:]}, 500)
         if u.path == "/api/odm":

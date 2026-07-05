@@ -30,9 +30,15 @@ def init():
             id TEXT PRIMARY KEY, kind TEXT, label TEXT, status TEXT, detail TEXT,
             started REAL, finished REAL, pid INTEGER, container TEXT, artifact TEXT, log TEXT)""")
         c.execute("""CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, expiry REAL)""")
+        # migración: DBs viejas no tienen 'log' (SQLite no soporta ADD COLUMN IF NOT EXISTS)
+        have = {r[1] for r in c.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "log" not in have:
+            c.execute("ALTER TABLE jobs ADD COLUMN log TEXT")
         # jobs que quedaron "running" de una sesión anterior = huérfanos
         c.execute("UPDATE jobs SET status='error', detail='servidor reiniciado durante el job', "
                   "finished=? WHERE status='running'", (time.time(),))
+        # todo job terminado no debe conservar pid (tabla confiable)
+        c.execute("UPDATE jobs SET pid=NULL WHERE status != 'running' AND pid IS NOT NULL")
         c.execute("DELETE FROM sessions WHERE expiry < ?", (time.time(),))
 
 
@@ -77,7 +83,9 @@ def update(jid: str, **kw):
 
 
 def end(jid: str, status: str, detail: str = "", artifact: str = ""):
-    update(jid, status=status, detail=detail[:400], artifact=artifact, finished=time.time())
+    # un job terminado nunca conserva pid (evita pids fantasma en la tabla)
+    update(jid, status=status, detail=detail[:400], artifact=artifact,
+           finished=time.time(), pid=None)
 
 
 def get(jid: str) -> dict | None:

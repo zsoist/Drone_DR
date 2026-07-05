@@ -220,16 +220,22 @@
     if (tool) b.classList.add('on');
     const cmpSel = document.getElementById('cmp-date');
     if (tool === 'compare') {
-      const others = models.filter(m => m.clip_id !== cur.clip_id);
+      const cf = flights.find(x => x.clip_id === cur.clip_id);
+      const bboxOverlap = (a, b) => a && b && !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]);
+      const others = models.filter(m => {
+        if (m.clip_id === cur.clip_id || m.has_dsm === false) return false;
+        const mf = flights.find(x => x.clip_id === m.clip_id);
+        return bboxOverlap(cf?.stats?.bbox, mf?.stats?.bbox);
+      });
       cmpSel.innerHTML = others.length ? others.map(m => {
         const f = flights.find(x => x.clip_id === m.clip_id);
         return `<option value="${m.clip_id}">vs ${f ? fmt.date(f.date) : m.clip_id}</option>`;
-      }).join('') : '<option value="">— procesa otra fecha del mismo sector —</option>';
+      }).join('') : '<option value="">— sin otra fecha con 3D que solape este sector —</option>';
       cmpSel.style.display = others.length ? '' : 'none';
       if (!others.length) result('Necesitas 2+ fechas procesadas en 3D del mismo sector. Procesa otro vuelo con "Procesar 3D".');
     } else { cmpSel.style.display = 'none'; }
     mpts = []; paintDraw();
-    const noSecond = tool === 'compare' && models.filter(m => m.clip_id !== cur.clip_id).length === 0;
+    const noSecond = tool === 'compare' && document.getElementById('cmp-date').options.length && !document.getElementById('cmp-date').value;
     if (!noSecond) result(tool ? ({ dist: 'Toca puntos en el mapa para medir distancia.',
       area: 'Toca los vértices del área.', volume: 'Dibuja el polígono sobre el stockpile/edificio y toca "Calcular".',
       profile: 'Toca 2 puntos: inicio y fin del perfil.',
@@ -243,7 +249,7 @@
     if (!omap?.getSource('draw')) return;
     const feats = mpts.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: p } }));
     if (mpts.length > 1) feats.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: mpts } });
-    if (mpts.length > 2 && (tool === 'area' || tool === 'volume'))
+    if (mpts.length > 2 && (tool === 'area' || tool === 'volume' || tool === 'compare'))
       feats.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...mpts, mpts[0]]] } });
     omap.getSource('draw').setData({ type: 'FeatureCollection', features: feats });
   }
