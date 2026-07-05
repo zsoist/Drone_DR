@@ -423,7 +423,17 @@ class H(BaseHTTPRequestHandler):
         if self.path.startswith("/api/jobs"):
             if not self.auth():
                 return
-            return self.send_json({"jobs": jobstore.recent()})
+            jobs = jobstore.recent()
+            for j in jobs:
+                # progreso derivado del log si el worker corre codigo viejo (stale DB)
+                if j["kind"] == "splat" and j["status"] == "running":
+                    m = re.findall(r"\((\d+)%\)", j.get("log") or "")
+                    if m:
+                        j["progress"] = max(j.get("progress") or 0, 0.05 + 0.93 * int(m[-1]) / 100)
+                # los links de jobs viejos no deben apuntar a modelos borrados
+                if j["status"] == "done" and j.get("artifact"):
+                    j["artifact_exists"] = (VAULT / j["artifact"]).exists()
+            return self.send_json({"jobs": jobs})
         if self.path.startswith("/api/properties"):
             if not self.auth():
                 return
@@ -501,9 +511,15 @@ class H(BaseHTTPRequestHandler):
         f = self.resolve()
         if not f:
             return self.send_error(404)
+        gz = Path(str(f) + ".gz")
         self.send_response(200)
         self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Content-Length", str(f.stat().st_size))
+        if gz.is_file() and "gzip" in self.headers.get("Accept-Encoding", ""):
+            # espejo exacto de lo que GET va a servir (audit: HEAD mentia el tamano)
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(gz.stat().st_size))
+        else:
+            self.send_header("Content-Length", str(f.stat().st_size))
         self.send_header("Content-Type", mimetypes.guess_type(f.name)[0] or "application/octet-stream")
         self.end_headers()
 
@@ -753,6 +769,7 @@ class H(BaseHTTPRequestHandler):
             if spec.get("purge_source") and proj.parent == (VAULT / "odm").resolve() and proj.is_dir():
                 shutil.rmtree(proj)
                 freed.append("odm/" + proj.name)
+            jobstore.clear_artifacts(cid)
             rebuild_index()
             return self.send_json({"ok": True, "freed": freed})
         if u.path == "/api/splat":

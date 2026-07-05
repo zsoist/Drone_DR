@@ -241,6 +241,19 @@ except subprocess.TimeoutExpired:
 check("orphans: restart del worker mata proceso heavy huérfano",
       jobs.get(_heavy["id"])["status"] == "error" and _heavy_gone)
 
+# --- viewer mesh re-centrado (audit P1: coords UTM rompen float32) ---
+from tresd_publish import make_viewer_mesh
+_md = Path(tempfile.mkdtemp())
+(_md / "geo.obj").write_text(
+    "mtllib m.mtl\nv 500000.5 4500000.25 2550.0\nv 500002.5 4500002.25 2552.0\nf 1 2 1\n")
+make_viewer_mesh(_md / "geo.obj", _md / "viewer.obj")
+_vl = (_md / "viewer.obj").read_text().splitlines()
+_verts = [ln.split()[1:] for ln in _vl if ln.startswith("v ")]
+check("viewer mesh: vertices re-centrados cerca del origen",
+      all(abs(float(c)) < 10 for v in _verts for c in v))
+check("viewer mesh: caras y mtllib intactos",
+      "f 1 2 1" in (_md / "viewer.obj").read_text() and "mtllib m.mtl" in (_md / "viewer.obj").read_text())
+
 # --- presets ODM del worker ---
 import worker
 check("presets: rapido/estandar/alta definidos",

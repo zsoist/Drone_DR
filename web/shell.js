@@ -134,7 +134,7 @@ function jobCard(j, flightsIdx, entering = true) {
     ${j.status === 'done' ? `<div class="jc-meta"><span>${esc(j.detail || '')}</span>
       ${j.kind === '3d' ? '<a href="tresd.html" style="color:var(--accent)">Ver en 3D →</a>' :
         j.kind === 'splat' ? '<a href="tresd.html" style="color:var(--accent)">Ver splat →</a>' :
-        j.artifact ? `<a href="data/${esc(j.artifact)}" target="_blank" style="color:var(--accent)">Abrir →</a>` : ''}</div>` : ''}
+        (j.artifact && j.artifact_exists !== false) ? `<a href="data/${esc(j.artifact)}" target="_blank" style="color:var(--accent)">Abrir →</a>` : ''}</div>` : ''}
     ${j.status === 'cancelled' || j.status === 'cancel_failed' ? `<div class="jc-meta"><span>${esc(j.detail || '')}</span></div>` : ''}
     ${j.status === 'error' ? `<details class="jc-err"><summary>${esc((j.detail || 'error').slice(0, 90))} — ver log</summary><pre>${esc(cleanLog(j.log) || 'sin log')}</pre></details>` : ''}
     ${['running', 'queued'].includes(j.status) && ['3d', 'splat'].includes(j.kind) ?

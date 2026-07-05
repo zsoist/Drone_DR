@@ -30,6 +30,28 @@ def sh_in_odm(proj: Path, script: str) -> str:
     return r.stdout
 
 
+def make_viewer_mesh(geo, dst):
+    n = 0
+    sx = sy = sz = 0.0
+    with open(geo) as f:
+        for line in f:
+            if line.startswith("v "):
+                p = line.split()
+                sx += float(p[1]); sy += float(p[2]); sz += float(p[3])
+                n += 1
+    if not n:
+        return
+    cx, cy, cz = sx / n, sy / n, sz / n
+    with open(geo) as f, open(dst, "w") as o:
+        for line in f:
+            if line.startswith("v "):
+                p = line.split()
+                rest = (" " + " ".join(p[4:])) if len(p) > 4 else ""
+                o.write(f"v {float(p[1]) - cx:.3f} {float(p[2]) - cy:.3f} {float(p[3]) - cz:.3f}{rest}\n")
+            else:
+                o.write(line)
+
+
 def main():
     cid = sys.argv[1]
     proj = Path(sys.argv[2]) if len(sys.argv) > 2 else VAULT / "odm" / "proj0104"
@@ -199,8 +221,16 @@ EOF""")
     for f in [*tex.glob("*.jpg"), *tex.glob("*.png")]:
         (out / "model" / f.name).write_bytes(f.read_bytes())
     # el .mtl referencia texturas por nombre relativo — ya quedan al lado
+    # viewer mesh: vertices re-centrados al origen. El OBJ georeferenciado vive en
+    # coordenadas UTM (~cientos de miles) y three.js parsea a float32 → artefactos
+    # de precision. GIS/descarga usan el geo; el visor usa este.
+    geo_obj = out / "model" / "odm_textured_model_geo.obj"
+    if geo_obj.exists():
+        make_viewer_mesh(geo_obj, out / "model" / "odm_textured_model_viewer.obj")
 
-    # QA de la reconstrucción (estilo Pix4D/DroneDeploy report)
+    # QA de la reconstrucción (estilo Pix4D/DroneDeploy report).
+    # GATE del audit: un modelo NUNCA se publica con qa vacio — si stats.json
+    # falta, cae a metricas parciales de reconstruction.json o marca "missing".
     qa = {}
     stats_f = proj / "opensfm" / "stats" / "stats.json"
     if stats_f.exists():
@@ -212,6 +242,7 @@ EOF""")
         px_total = ometa["size"][0] * ometa["size"][1]
         gsd_cm = round((area / px_total) ** 0.5 * 100, 1) if px_total and area else None
         qa = {
+            "status": "ok",
             "cameras_reconstructed": rs.get("reconstructed_shots_count"),
             "cameras_total": rs.get("initial_shots_count"),
             "reprojection_error_px": round(rs.get("reprojection_error_pixels", 0), 2),
@@ -219,11 +250,27 @@ EOF""")
             "area_m2": round(area, 1),
             "gsd_cm_px": gsd_cm,
         }
+    else:
+        rec_f = proj / "opensfm" / "reconstruction.json"
+        if rec_f.exists():
+            try:
+                rec = json.loads(rec_f.read_text())
+                total = len([ln for ln in (proj / "opensfm" / "image_list.txt").read_text().splitlines() if ln.strip()]) \
+                    if (proj / "opensfm" / "image_list.txt").exists() else None
+                qa = {"status": "parcial",
+                      "cameras_reconstructed": sum(len(r.get("shots", {})) for r in rec),
+                      "cameras_total": total,
+                      "sparse_points": sum(len(r.get("points", {})) for r in rec)}
+            except (ValueError, OSError):
+                qa = {"status": "missing"}
+        else:
+            qa = {"status": "missing"}
 
     # sidecars .gz: el server los sirve con Content-Encoding gzip — la malla OBJ
     # (texto) baja ~70% y la nube PLY ~30%; el browser descomprime transparente
     import gzip as _gzip
     for gf in [out / "cloud.ply", out / "model" / "odm_textured_model_geo.obj",
+               out / "model" / "odm_textured_model_viewer.obj",
                out / "model" / "odm_textured_model_geo.mtl"]:
         if gf.exists():
             with open(gf, "rb") as fi, _gzip.open(str(gf) + ".gz", "wb", compresslevel=6) as fo:
@@ -243,10 +290,16 @@ EOF""")
         "qa": qa,
         "cloud_bytes": (out / "cloud.ply").stat().st_size if (out / "cloud.ply").exists() else 0,
         "model_obj": "model/odm_textured_model_geo.obj",
+        "model_viewer": "model/odm_textured_model_viewer.obj"
+                        if (out / "model" / "odm_textured_model_viewer.obj").exists()
+                        else "model/odm_textured_model_geo.obj",
         "textures": len([*(out / "model").glob("*.jpg"), *(out / "model").glob("*.png")]),
         **dsm_meta,
         "has_dsm": (out / "dsm_4326.tif").exists(),
     }
+    # limpieza: temporales y basura de macOS no se publican
+    for junk in [*out.rglob(".DS_Store"), *out.glob(".*.tif"), *out.glob("*.aux.xml")]:
+        junk.unlink(missing_ok=True)
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
     print(f"✅ publicado → {out} · nube {meta['cloud_bytes'] / 1e6:.0f}MB · {meta['textures']} texturas")
 

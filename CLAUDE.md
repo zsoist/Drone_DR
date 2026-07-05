@@ -11,7 +11,7 @@
 - Media serving = python http.server behind the tunnel; if video seeking ever feels slow, swap to Caddy (proper Range support).
 - ODM photogrammetry from video frames REQUIRES GPS EXIF geotags (from the SRT track
   via pipeline/odm_prep.py) — without them the orthophoto comes out 67x66px garbage.
-  ODM runs in Docker (-m 7g, --fast-orthophoto) fine on the M4 alongside OpenBrain.
+  ODM runs in Docker (-m 7g, FULL pipeline con presets pc-quality low/medium/high) fine on the M4 alongside OpenBrain. OrbStack necesita memory_mib>=10240.
 - GeoTIFF de ODM: ffmpeg lo lee NEGRO (tiled TIFF). Convertir SIEMPRE con GDAL dentro
   del contenedor: docker run --entrypoint bash opendronemap/odm -c "python3 -c 'from osgeo import gdal; gdal.Translate(...)'"
 - ODM full pipeline (con openmvs densify) sí produce ortho+mesh reales; --fast-orthophoto

@@ -295,11 +295,14 @@
     const grade = reproj == null ? '—' : reproj < 1.5 ? 'excelente' : reproj < 2.5 ? 'buena' : 'aceptable';
     const sp = (sys.splats || []).find(s => s.name === `${cid}.splat`);
     document.getElementById('dls').innerHTML = `
+      ${q.status && q.status !== 'ok' ? `<p class="footer-note" style="margin:0 0 10px;color:var(--amber)">
+        ${icon('warn')} Métricas de calidad ${q.status === 'parcial' ? 'parciales' : 'no disponibles'} para esta corrida
+        — el modelo es usable, pero re-procesa para el reporte completo.</p>` : ''}
       ${q.cameras_reconstructed != null ? `<table class="kv" style="margin-bottom:12px">
-        <tr><td>Cámaras reconstruidas</td><td>${q.cameras_reconstructed} / ${q.cameras_total}</td></tr>
-        <tr><td>Error de reproyección</td><td>${reproj} px · <span style="color:${reproj < 1.5 ? 'var(--mint)' : 'var(--amber)'}">${grade}</span></td></tr>
-        <tr><td>Resolución (GSD)</td><td>${q.gsd_cm_px ?? '—'} cm/px</td></tr>
-        <tr><td>Área cubierta</td><td>${q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(2) + ' ha' : Math.round(q.area_m2) + ' m²'}</td></tr>
+        <tr><td>Cámaras reconstruidas</td><td>${q.cameras_reconstructed}${q.cameras_total ? ' / ' + q.cameras_total : ''}</td></tr>
+        ${reproj != null ? `<tr><td>Error de reproyección</td><td>${reproj} px · <span style="color:${reproj < 1.5 ? 'var(--mint)' : 'var(--amber)'}">${grade}</span></td></tr>` : ''}
+        ${q.gsd_cm_px != null ? `<tr><td>Resolución (GSD)</td><td>${q.gsd_cm_px} cm/px</td></tr>` : ''}
+        ${q.area_m2 != null ? `<tr><td>Área cubierta</td><td>${q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(2) + ' ha' : Math.round(q.area_m2) + ' m²'}</td></tr>` : ''}
       </table>
       <details class="explain" style="margin-bottom:14px">
         <summary>Detalles técnicos</summary>
@@ -630,7 +633,8 @@
     const base = `data/models/${cur.clip_id}/model/`;
     const mtl = await new MTLLoader().setPath(base).loadAsync('odm_textured_model_geo.mtl');
     mtl.preload();
-    const obj = await new OBJLoader().setMaterials(mtl).setPath(base).loadAsync('odm_textured_model_geo.obj',
+    const meshFile = (cur.model_viewer || cur.model_obj || 'model/odm_textured_model_geo.obj').split('/').pop();
+    const obj = await new OBJLoader().setMaterials(mtl).setPath(base).loadAsync(meshFile,
       ev => { if (ev.loaded) stM.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB descargados`; });
     const { scene, cam, controls, renderer } = makeScene(box);
     // dos renders intercambiables: Foto (unlit — la textura ya trae la luz real)

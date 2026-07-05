@@ -170,7 +170,8 @@ const loaders = {
     const mbase = `${base}/model/`;
     const mtl = await new MTLLoader().setPath(mbase).loadAsync('odm_textured_model_geo.mtl');
     mtl.preload();
-    const obj = await new OBJLoader().setMaterials(mtl).setPath(mbase).loadAsync('odm_textured_model_geo.obj',
+    const meshFile = (meta.model_viewer || 'model/odm_textured_model_geo.obj').split('/').pop();
+    const obj = await new OBJLoader().setMaterials(mtl).setPath(mbase).loadAsync(meshFile,
       ev => { if (ev.loaded) st.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
     const { scene, cam, controls, renderer } = makeScene();
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -201,6 +202,13 @@ document.querySelector('.seg').addEventListener('click', e => {
   const b = e.target.closest('[data-v]');
   if (!b) return;
   document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
-  loaders[b.dataset.v]().catch(() => { view.innerHTML = '<p class="footer-note">No se pudo cargar esta vista.</p>'; });
+  const NAMES = { cloud: 'la nube de puntos (cloud.ply)', mesh: 'la malla texturizada (OBJ/MTL)', splat: 'el gaussian splat (.splat)' };
+  loaders[b.dataset.v]().catch(err => {
+    view.innerHTML = `<p class="footer-note">No se pudo cargar ${NAMES[b.dataset.v]} del modelo ${esc(cid)}.
+      <span style="color:var(--text-3)">${esc(String(err && err.message || err).slice(0, 120))}</span></p>`;
+  });
 });
-loaders.cloud().catch(() => { view.innerHTML = '<p class="footer-note">No se pudo cargar la nube.</p>'; });
+loaders.cloud().catch(err => {
+  view.innerHTML = `<p class="footer-note">No se pudo cargar la nube de puntos (cloud.ply) del modelo ${esc(cid)}.
+    <span style="color:var(--text-3)">${esc(String(err && err.message || err).slice(0, 120))}</span></p>`;
+});

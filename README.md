@@ -51,8 +51,12 @@ python3 ai/reel.py --vertical         # reel para IG/TikTok
 Servicios launchd: `com.aerobrain.web` (:8790) · `com.metislab.tunnel` (Cloudflare).
 
 ## Roadmap
-V1 ✅ pipeline + Flight Deck live · V2 detección YOLO/open-vocab · V3 mapping
-WebODM + gaussian splatting (OpenSplat/Metal, estilo Polycam pero local y gratis) ·
+V1 ✅ pipeline + Flight Deck live · V3 ✅ SHIPPED: fotogrametría ODM completa
+(worker desacoplado + cola SQLite, presets rápido/estándar/alta, DSM + curvas +
+mediciones de volumen/perfil/comparación multi-fecha, ortos feathered WebP,
+malla re-centrada para viewer, página pública /share.html, gzip sidecars) +
+gaussian splats (OpenSplat CPU estable tras fix de divergencia SH; Metal/GPU
+pendiente para calidad cinemática) · V2 detección YOLO/open-vocab pendiente ·
 V4 travel mode + diarios AI · V5 watcher autónomo (SD in → todo solo).
 
 ---

@@ -5,7 +5,7 @@ en inteligencia: mapas, detección de objetos, escenas 3D y diarios de viaje.
 
 ## Arquitectura
 - **Mac Mini M4** = compute: ingesta SD, ffmpeg/VideoToolbox, YOLO (MPS), WebODM
-- **Cloudflare** = serving: Pages + R2 (video, egress gratis) + dominio propio
+- **Cloudflare** = SOLO túnel + dominio (vuelos.metislab.work → localhost:8790). Sin Pages ni R2: el media se sirve del SSD local con HTTP Range + gzip sidecars — $0/mes real. (Actualizado 2026-07-05; ver 3D_PROCESSING_AUDIT.md)
 - **drone-vault** (`/Volumes/SSD/drone-vault/`) = datos, fuera del repo
 
 ## Principios

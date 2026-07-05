@@ -156,6 +156,14 @@ def end(jid: str, status: str, detail: str = "", artifact: str = ""):
            finished=time.time(), pid=None)
 
 
+def clear_artifacts(cid: str):
+    """Al borrar un modelo, los jobs done que apuntaban a el pierden el link
+    (el audit encontro tarjetas 'Abrir' hacia assets muertos)."""
+    with _LOCK, _conn() as c:
+        c.execute("UPDATE jobs SET artifact='', detail=detail || ' · modelo eliminado' "
+                  "WHERE label=? AND status='done' AND artifact != ''", (cid,))
+
+
 def get(jid: str) -> dict | None:
     with _LOCK, _conn() as c:
         r = c.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()

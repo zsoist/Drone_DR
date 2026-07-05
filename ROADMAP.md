@@ -18,8 +18,14 @@
 - [ ] YOLO-World open-vocabulary search cross-vuelos
 - [ ] Heatmaps de objetos sobre el mapa
 
-## V3 — Mapping 3D
-- [ ] WebODM ortomosaico (fotos JPG/DNG)
+## V3 — Mapping 3D ✅ 2026-07-05 (superado: ODM directo desde video, no WebODM)
+- [x] ✅ ODM ortomosaico desde video (frames geotagged con SRT) + DSM/DTM + presets
+- [x] ✅ Worker desacoplado + cola SQLite + progreso vivo + cancel + abort-on-nan
+- [x] ✅ Visores nube/malla/splat + mediciones (distancia/área/volumen/perfil/comparar)
+- [x] ✅ Página pública compartible + exports (GeoTIFF, GeoJSON, PLY, OBJ, SPLAT)
+- [ ] OpenSplat Metal/GPU (CPU estable pero lento; ver 3D_PROCESSING_AUDIT.md)
+- [ ] .ksplat export + COPC/EPT para nubes grandes
+- [ ] WebODM ortomosaico (fotos JPG/DNG) — ya no necesario, ODM directo lo cubre
 - [ ] Gaussian splatting MLX de un vuelo orbital (experimental)
 
 ## V4 — Travel mode
