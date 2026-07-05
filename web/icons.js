@@ -1,0 +1,35 @@
+// AeroBrain icon set — 20px grid, 1.5px stroke, no fills. Usage: icon('route')
+const ICONS = {
+  drone: '<path d="M5 5l3.5 3.5M15 5l-3.5 3.5M5 15l3.5-3.5M15 15l-3.5-3.5"/><circle cx="10" cy="10" r="2.2"/><circle cx="4.5" cy="4.5" r="2"/><circle cx="15.5" cy="4.5" r="2"/><circle cx="4.5" cy="15.5" r="2"/><circle cx="15.5" cy="15.5" r="2"/>',
+  grid: '<rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/>',
+  list: '<path d="M7 5h10M7 10h10M7 15h10"/><circle cx="3.5" cy="5" r="0.8"/><circle cx="3.5" cy="10" r="0.8"/><circle cx="3.5" cy="15" r="0.8"/>',
+  map: '<path d="M3 5.5L7.5 3.5l5 2 4.5-2v11l-4.5 2-5-2L3 16.5zM7.5 3.5v11M12.5 5.5v11"/>',
+  pin: '<path d="M10 17.5s-5.5-4.6-5.5-8.7a5.5 5.5 0 1111 0c0 4.1-5.5 8.7-5.5 8.7z"/><circle cx="10" cy="8.5" r="2"/>',
+  route: '<circle cx="4.5" cy="15.5" r="2"/><circle cx="15.5" cy="4.5" r="2"/><path d="M6.5 15.5H12a3 3 0 003-3v-1a3 3 0 00-3-3H8a3 3 0 01-3-3"/>',
+  mountain: '<path d="M2.5 16.5L8 6l3 5.5 2-3 4.5 8z"/>',
+  gauge: '<path d="M3.5 13.5a7 7 0 1113 0"/><path d="M10 12.5l3.5-4"/><circle cx="10" cy="12.5" r="1.2"/>',
+  clock: '<circle cx="10" cy="10" r="7"/><path d="M10 6.5V10l2.5 1.8"/>',
+  cal: '<rect x="3" y="4.5" width="14" height="12.5" rx="2"/><path d="M3 8.5h14M7 3v3M13 3v3"/>',
+  play: '<path d="M7 5.2v9.6l8-4.8z"/>',
+  film: '<rect x="3" y="4" width="14" height="12" rx="2"/><path d="M7 4v12M13 4v12M3 8h4M3 12h4M13 8h4M13 12h4"/>',
+  cube: '<path d="M10 2.8l6.5 3.7v7L10 17.2l-6.5-3.7v-7z"/><path d="M10 10l6.5-3.5M10 10L3.5 6.5M10 10v7.2"/>',
+  db: '<ellipse cx="10" cy="5" rx="6.5" ry="2.5"/><path d="M3.5 5v10c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5V5M3.5 10c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5"/>',
+  tag: '<path d="M3 9V4a1 1 0 011-1h5l8 8-6 6-8-8z"/><circle cx="7" cy="7" r="1.2"/>',
+  search: '<circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/>',
+  spark: '<path d="M3 14l3.5-5 3 3 3.5-6 4 5"/>',
+  activity: '<path d="M2.5 10h3l2-5 3.5 10 2.5-6.5 1.5 1.5h2.5"/>',
+  dl: '<path d="M10 3v9M6.5 9L10 12.5 13.5 9M4 16.5h12"/>',
+  copy: '<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2"/>',
+  check: '<path d="M4 10.5l4 4 8-8.5"/>',
+  chevL: '<path d="M12 4.5L6.5 10 12 15.5"/>',
+  chevR: '<path d="M8 4.5L13.5 10 8 15.5"/>',
+  ext: '<path d="M8.5 4H5a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-3.5M12 3h5v5M17 3l-8 8"/>',
+  layers: '<path d="M10 2.8l7 3.7-7 3.7-7-3.7zM3 10.3l7 3.7 7-3.7M3 13.8l7 3.7 7-3.7"/>',
+  wifi: '<path d="M3 8.5a10 10 0 0114 0M5.5 11.5a6.5 6.5 0 019 0M8 14.2a3 3 0 014 0"/><circle cx="10" cy="16.4" r="0.9"/>',
+  sun: '<circle cx="10" cy="10" r="3.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4"/>',
+  warn: '<path d="M10 3.5l7.5 13h-15z"/><path d="M10 8.5v3.5"/><circle cx="10" cy="14.2" r="0.5"/>',
+  iso: '<circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="2.5"/><path d="M10 3.5v2M10 14.5v2M3.5 10h2M14.5 10h2"/>',
+};
+function icon(name, cls = '') {
+  return `<svg class="ic ${cls}" viewBox="0 0 20 20" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+}
