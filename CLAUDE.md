@@ -22,3 +22,10 @@
   Metal necesita 'xcodebuild -downloadComponent MetalToolchain' (requiere first-launch/sudo)
   → build CPU con -DGPU_RUNTIME=CPU y correr con --cpu. image_list.txt de opensfm trae
   rutas del contenedor: sed a rutas host antes de entrenar.
+- Docker corre en ORBSTACK y su VM tenía 3.9GB totales — el -m 7g del contenedor ODM
+  era ilusorio (OOM exit 137 en mvs_texturing con texturas 8192). Fix aplicado:
+  `orb config set memory_mib 10240` + `orb stop/start` → VM 9.77GB. Si ODM vuelve a
+  dar 137, revisar `docker info | grep "Total Memory"` ANTES de bajar calidad.
+- Jobs pesados: worker desacoplado (com.aerobrain.worker) — restart del server web
+  NO los mata (probado en vivo). Restart del WORKER mata sus procesos huérfanos
+  antes de re-reclamar (fix de codex).
