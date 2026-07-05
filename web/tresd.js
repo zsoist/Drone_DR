@@ -1,5 +1,7 @@
   import * as THREE from '/vendor/three.module.js';
   import { OrbitControls } from '/vendor/three-addons/controls/OrbitControls.js';
+  import { OBJLoader } from '/vendor/three-addons/loaders/OBJLoader.js';
+  import { MTLLoader } from '/vendor/three-addons/loaders/MTLLoader.js';
   import { PLYLoader } from '/vendor/three-addons/loaders/PLYLoader.js';
 
   const main = renderShell('tresd.html');
@@ -94,13 +96,29 @@
       <div class="pb" id="m-result" style="display:none;border-top:1px solid var(--line)"></div>
     </div>
 
-    <div class="panel" style="margin-top:16px">
-      <div class="ph">${icon('cube')} Nube de puntos 3D
-        <span class="spacer" style="flex:1"></span>
-        <button class="btn primary" id="load-cloud-main" style="padding:4px 12px;font-size:11.5px">Cargar</button>
+    <div class="fl-layout" style="margin-top:16px">
+      <div>
+        <div class="panel">
+          <div class="ph">${icon('cube')} Nube de puntos 3D
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn primary" id="load-cloud-main" style="padding:4px 12px;font-size:11.5px">Cargar</button>
+          </div>
+          <div id="cloud-box" style="height:54dvh;min-height:360px;display:grid;place-items:center">
+            <p class="footer-note" style="margin:0">Nube de ~800k puntos con color real — arrastra para orbitar.</p>
+          </div>
+        </div>
       </div>
-      <div id="cloud-box" style="height:62dvh;min-height:380px;display:grid;place-items:center">
-        <p class="footer-note" style="margin:0">Nube de ~800k puntos con color real — arrastra para orbitar.</p>
+      <div>
+        <div class="panel">
+          <div class="ph">${icon('cube')} Malla texturizada
+            <span class="chip" id="mesh-q" style="font-size:10.5px;padding:2px 9px"></span>
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn primary" id="load-mesh" style="padding:4px 12px;font-size:11.5px">Cargar</button>
+          </div>
+          <div id="mesh-box" style="height:54dvh;min-height:360px;display:grid;place-items:center">
+            <p class="footer-note" style="margin:0">Modelo sólido con textura foto-real — brilla con vuelos en órbita/oblicuos.</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -351,7 +369,10 @@
       omap.getLayer('ortho') && omap.setPaintProperty('ortho', 'raster-opacity', +e.target.value / 100);
     };
     const cloudMB = (cur.cloud_bytes || 0) / 1e6;
+    document.getElementById('mesh-q').textContent =
+      { rapido: 'calidad rápida', alta: 'calidad alta' }[cur.preset] || 'calidad estándar';
     resetViewer('cloud-box', `Nube de puntos${cloudMB ? ` · ${cloudMB.toFixed(0)} MB` : ''}`, 'load-cloud-main');
+    resetViewer('mesh-box', 'Modelo sólido con textura foto-real.', 'load-mesh');
     // auto-carga la estrella — salvo nubes pesadas en móvil (datos + memoria)
     if (!(matchMedia('(max-width: 700px)').matches && cloudMB > 25))
       setTimeout(() => document.getElementById('load-cloud-main')?.click(), 300);
@@ -538,7 +559,7 @@
     dl.position.set(1, 2, 1.5);
     scene.add(dl);
     (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, cam); })();
-    return { scene, cam, controls };
+    return { scene, cam, controls, renderer };
   }
   function frameObject(obj, cam, controls) {
     const bb = new THREE.Box3().setFromObject(obj);
@@ -592,6 +613,49 @@
     });
   }
 
+  document.getElementById('load-mesh').addEventListener('click', async e => {
+    if (!cur) return;
+    e.currentTarget.style.display = 'none';
+    const box = document.getElementById('mesh-box');
+    const stM = spin(box, 'Cargando malla texturizada…');
+    const base = `data/models/${cur.clip_id}/model/`;
+    const mtl = await new MTLLoader().setPath(base).loadAsync('odm_textured_model_geo.mtl');
+    mtl.preload();
+    const obj = await new OBJLoader().setMaterials(mtl).setPath(base).loadAsync('odm_textured_model_geo.obj',
+      ev => { if (ev.loaded) stM.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB descargados`; });
+    const { scene, cam, controls, renderer } = makeScene(box);
+    // dos renders intercambiables: Foto (unlit — la textura ya trae la luz real)
+    // y Relieve (con luces — revela la profundidad de la geometría)
+    const maxAniso = renderer.capabilities.getMaxAnisotropy();
+    const sets = { foto: [], relieve: [] };
+    obj.traverse(n => {
+      if (!n.isMesh) return;
+      n.geometry.computeVertexNormals();          // sombreado suave en modo Relieve
+      const src = Array.isArray(n.material) ? n.material : [n.material];
+      src.forEach(m => { if (m.map) { m.map.anisotropy = maxAniso; m.map.needsUpdate = true; } });
+      const mk = C => src.map(m => new C({ map: m.map || null, color: m.map ? 0xffffff : 0x8a97a8, side: THREE.DoubleSide }));
+      const foto = mk(THREE.MeshBasicMaterial), rel = mk(THREE.MeshLambertMaterial);
+      sets.foto.push([n, foto]);
+      sets.relieve.push([n, rel]);
+      n.material = foto.length === 1 ? foto[0] : foto;
+    });
+    obj.rotation.x = -Math.PI / 2;
+    scene.add(obj);
+    frameObject(obj, cam, controls);
+    attachViewerTools(box, cam, controls);
+    const mhud = document.createElement('div');
+    mhud.className = 'viewer-hud';
+    mhud.innerHTML = `<label>Render <button class="chip on" data-mr="foto">Foto</button>
+      <button class="chip" data-mr="relieve">Relieve</button></label>`;
+    box.appendChild(mhud);
+    mhud.addEventListener('click', ev => {
+      const bt = ev.target.closest('[data-mr]');
+      if (!bt) return;
+      mhud.querySelectorAll('[data-mr]').forEach(c => c.classList.toggle('on', c === bt));
+      sets[bt.dataset.mr].forEach(([n, m]) => { n.material = m.length === 1 ? m[0] : m; });
+    });
+  });
+
   document.getElementById('load-cloud-main').addEventListener('click', async e => {
     if (!cur) return;
     e.currentTarget.style.display = 'none';
@@ -621,7 +685,9 @@
       <label>Suelo <input type="range" data-h="lo" min="0" max="100" value="0"></label>
       <label>Techo <input type="range" data-h="hi" min="0" max="100" value="100"></label>
       <label>Color <button class="chip on" data-cm="rgb">Real</button>
-        <button class="chip" data-cm="alt">Altura</button></label>`;
+        <button class="chip" data-cm="alt">Altura</button>
+        <button class="chip" data-cm="term">Térmico</button>
+        <button class="chip" data-cm="gris">Gris</button></label>`;
     box.appendChild(hud);
     hud.addEventListener('input', ev => {
       const v = +ev.target.value;
@@ -629,7 +695,12 @@
       if (ev.target.dataset.h === 'lo') yLo.constant = -(bb.min.y + span * v / 100);
       if (ev.target.dataset.h === 'hi') yHi.constant = bb.min.y + span * v / 100;
     });
-    // modo de color: RGB real vs rampa por altura (misma paleta del DSM)
+    // modos de color: RGB real o rampas por altura (elevación / térmico / gris)
+    const RAMPS = {
+      alt: [[38, 84, 124], [82, 155, 104], [222, 190, 88], [194, 82, 60]],   // paleta DSM
+      term: [[13, 8, 135], [126, 3, 168], [204, 71, 120], [248, 149, 64], [240, 249, 33]],  // plasma
+      gris: [[28, 30, 34], [120, 124, 130], [236, 239, 243]],
+    };
     const colAttr = geo.getAttribute('color');
     const origCol = colAttr ? colAttr.array.slice() : null;
     hud.addEventListener('click', ev => {
@@ -652,9 +723,10 @@
       let lo = Infinity, hi = -Infinity;
       for (let i = 0; i < n; i++) { const z = pos.getZ(i); if (z < lo) lo = z; if (z > hi) hi = z; }
       const mx = arr.array instanceof Uint8Array ? 255 : 1;   // PLY trae uint8 normalizado
-      const R = [[38, 84, 124], [82, 155, 104], [222, 190, 88], [194, 82, 60]];
+      const R = RAMPS[bt.dataset.cm];
+      const segs = R.length - 1;
       for (let i = 0; i < n; i++) {
-        const t = Math.min(2.999, ((pos.getZ(i) - lo) / (hi - lo || 1)) * 3);
+        const t = Math.min(segs - 0.001, ((pos.getZ(i) - lo) / (hi - lo || 1)) * segs);
         const k = Math.floor(t), f = t - k;
         arr.setXYZ(i,
           (R[k][0] + (R[k + 1][0] - R[k][0]) * f) / 255 * mx,
