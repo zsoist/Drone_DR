@@ -1,10 +1,12 @@
-"""Job store en SQLite: sobrevive reinicios del server, soporta cancel.
+"""Job + session store en SQLite: sobrevive reinicios del server, cancel real.
 
 Tabla jobs: id, kind, label, status(running|done|error|cancelled), detail,
-started, finished, pid, container, artifact.
+started, finished, pid, container, artifact, log.
+Tabla sessions: id, expiry — cookies HttpOnly que persisten reinicios.
 """
 import json
 import os
+import signal
 import sqlite3
 import subprocess
 import threading
@@ -26,10 +28,36 @@ def init():
     with _LOCK, _conn() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY, kind TEXT, label TEXT, status TEXT, detail TEXT,
-            started REAL, finished REAL, pid INTEGER, container TEXT, artifact TEXT)""")
+            started REAL, finished REAL, pid INTEGER, container TEXT, artifact TEXT, log TEXT)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, expiry REAL)""")
         # jobs que quedaron "running" de una sesión anterior = huérfanos
         c.execute("UPDATE jobs SET status='error', detail='servidor reiniciado durante el job', "
                   "finished=? WHERE status='running'", (time.time(),))
+        c.execute("DELETE FROM sessions WHERE expiry < ?", (time.time(),))
+
+
+# ---------------- sessions (cookies HttpOnly, persistentes) ----------------
+def session_create(days: int = 30) -> str:
+    import secrets
+    sid = secrets.token_urlsafe(24)
+    with _LOCK, _conn() as c:
+        c.execute("INSERT INTO sessions (id, expiry) VALUES (?, ?)",
+                  (sid, time.time() + days * 86400))
+        c.execute("DELETE FROM sessions WHERE expiry < ?", (time.time(),))
+    return sid
+
+
+def session_valid(sid: str) -> bool:
+    if not sid:
+        return False
+    with _LOCK, _conn() as c:
+        r = c.execute("SELECT expiry FROM sessions WHERE id=?", (sid,)).fetchone()
+    return bool(r and r["expiry"] > time.time())
+
+
+def session_delete(sid: str):
+    with _LOCK, _conn() as c:
+        c.execute("DELETE FROM sessions WHERE id=?", (sid,))
 
 
 def add(kind: str, label: str, container: str = "") -> dict:
@@ -86,12 +114,43 @@ def cancel(jid: str) -> bool:
     if j["container"]:
         r = subprocess.run(["/usr/local/bin/docker", "kill", j["container"]],
                            capture_output=True, timeout=30)
-        ok = r.returncode == 0
+        ok = ok or r.returncode == 0
     if j["pid"]:
         try:
-            os.kill(j["pid"], 15)
+            os.killpg(os.getpgid(j["pid"]), signal.SIGTERM)  # el grupo entero
             ok = True
-        except ProcessLookupError:
-            pass
+        except (ProcessLookupError, PermissionError):
+            try:
+                os.kill(j["pid"], signal.SIGTERM)
+                ok = True
+            except ProcessLookupError:
+                pass
     end(jid, "cancelled", "cancelado por el operador")
     return ok
+
+
+def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
+                tail: int = 12) -> int:
+    """Popen con PID registrado (cancel real) + tail de log en vivo. Retorna returncode."""
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1, env=env, start_new_session=True)
+    update(jid, pid=proc.pid)
+    lines: list[str] = []
+    deadline = time.time() + timeout
+    for line in proc.stdout:  # streaming
+        lines.append(line.rstrip())
+        del lines[:-200]
+        update(jid, log="\n".join(lines[-tail:]))
+        if time.time() > deadline:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except Exception:
+                proc.kill()
+            raise TimeoutError(f"timeout tras {timeout}s")
+        # si el operador canceló, el status ya no es running → matar
+        cur = get(jid)
+        if cur and cur["status"] == "cancelled":
+            raise RuntimeError("cancelado por el operador")
+    proc.wait()
+    update(jid, pid=None)
+    return proc.returncode

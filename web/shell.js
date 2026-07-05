@@ -56,12 +56,16 @@ async function pollJobs(el, every = 2500) {
           <p><b>${esc(j.kind)}</b> · ${esc(j.label)} <span class="mono" style="color:var(--text-3)">${esc(j.ts)}${j.mins ? ` · ${j.mins} min` : ''}</span>
           ${j.detail ? `<br><span class="mono" style="font-size:11px;color:var(--text-3)">${esc(j.detail)}</span>` : ''}</p>
           ${j.status === 'running' && ['3d', 'splat'].includes(j.kind) ?
-            `<button class="btn" style="padding:3px 9px;font-size:11px" onclick="api('/api/job_cancel',{id:'${esc(j.id)}'})">Cancelar</button>` : ''}
+            `<button class="btn" style="padding:3px 9px;font-size:11px" data-cancel="${esc(j.id)}">Cancelar</button>` : ''}
         </div>`).join('') :
         `<p class="footer-note">Sin trabajos aún.</p>`;
     } catch {}
   };
   paint();
+  el.addEventListener('click', e => {
+    const c = e.target.closest('[data-cancel]');
+    if (c) api('/api/job_cancel', { id: c.dataset.cancel });
+  });
   return setInterval(paint, every);
 }
 
@@ -74,6 +78,7 @@ function toggleTheme() {
   document.querySelectorAll('.theme-lb').forEach(e => { e.textContent = t === 'light' ? 'Oscuro' : 'Claro'; });
 }
 
+document.addEventListener('click', e => { if (e.target.closest('[data-theme-toggle]')) toggleTheme(); });
 function renderShell(active) {
   const cur = location.pathname.split('/').pop() || 'index.html';
   document.body.insertAdjacentHTML('afterbegin', `
@@ -87,7 +92,7 @@ function renderShell(active) {
           <a class="nav-item ${n.href === (active || cur) ? 'active' : ''}" href="${n.href}">
             ${icon(n.ic)}<span>${n.label}</span>
           </a>`).join('')}
-        <button class="nav-item" onclick="toggleTheme()">${icon('sun')}<span class="theme-lb">${document.documentElement.dataset.theme === 'light' ? 'Oscuro' : 'Claro'}</span></button>
+        <button class="nav-item" data-theme-toggle>${icon('sun')}<span class="theme-lb">${document.documentElement.dataset.theme === 'light' ? 'Oscuro' : 'Claro'}</span></button>
         <div class="foot"><span class="dot"></span>Mac Mini M4 · vault local · $0/mes<br>
           <a href="guia.html" style="color:var(--accent)">Guía de operación</a></div>
       </aside>

@@ -36,7 +36,6 @@ TOKEN = TOKEN_FILE.read_text().strip()
 
 jobstore.init()
 HEAVY = threading.Semaphore(1)  # un solo job pesado (ODM/splat) a la vez — 16GB de RAM
-SESSIONS: dict[str, float] = {}  # session_id -> expiry epoch (cookie HttpOnly)
 JLOCK = threading.Lock()         # compat: secciones que actualizan detail
 
 
@@ -168,6 +167,24 @@ def measure_dsm(mdir: Path, spec: dict) -> dict:
             "max_height": round(float(vals.max() - base), 1)}
 
 
+def splat_quality(out: Path, log: str, n_cams: int, iters: int) -> dict:
+    """Quality gate del splat: tamaño + cámaras + convergencia de loss."""
+    size = out.stat().st_size if out.exists() else 0
+    losses = re.findall(r"Step\s+\d+:\s+([\d.]+)", log or "")
+    final_loss = float(losses[-1]) if losses else None
+    steps = len(losses)
+    reasons = []
+    if size < 200_000:
+        reasons.append(f"archivo muy pequeño ({size} bytes) — escena insuficiente")
+    if n_cams < 8:
+        reasons.append(f"solo {n_cams} cámaras — vuela una órbita con más solape (>=8)")
+    if final_loss is not None and final_loss > 0.5:
+        reasons.append(f"loss final alto ({final_loss}) — captura ruidosa")
+    return {"passed": not reasons, "reason": " · ".join(reasons) or "ok",
+            "bytes": size, "cameras": n_cams, "final_loss": final_loss,
+            "steps_logged": steps, "target_iters": iters}
+
+
 ASPECTS = {
     "16:9": "scale=-2:1080",
     "9:16": "crop=ih*9/16:ih,scale=1080:1920",
@@ -296,11 +313,10 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-store, must-revalidate")
         if f.suffix == ".html":
             self.send_header("Content-Security-Policy",
-                "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; "
-                "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+                "default-src 'self'; script-src 'self'; "  # todo JS vendorizado/externalizado
+                "style-src 'self' 'unsafe-inline'; "        # inline style attrs (bajo riesgo)
                 "img-src 'self' data: blob: https:; "
-                "connect-src 'self' https://unpkg.com https://server.arcgisonline.com "
-                "https://basemaps.cartocdn.com; "
+                "connect-src 'self' https://server.arcgisonline.com https://basemaps.cartocdn.com; "
                 "worker-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'")
             self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
@@ -328,13 +344,15 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
 
     # ---------- API ----------
-    def session_ok(self) -> bool:
-        cookies = self.headers.get("Cookie", "")
-        for part in cookies.split(";"):
+    def _cookie(self, name):
+        for part in self.headers.get("Cookie", "").split(";"):
             k, _, v = part.strip().partition("=")
-            if k == "ab_s" and SESSIONS.get(v, 0) > time.time():
-                return True
-        return False
+            if k == name:
+                return v
+        return ""
+
+    def session_ok(self) -> bool:
+        return jobstore.session_valid(self._cookie("ab_s"))
 
     def auth(self, q=None):
         # query tokens RECHAZADOS (quedan en logs); header X-Token o cookie de sesión
@@ -358,6 +376,22 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
+        try:
+            self._post()
+        except (ValueError, json.JSONDecodeError):
+            self._safe_send({"error": "JSON inválido o body demasiado grande"}, 400)
+        except BrokenPipeError:
+            pass
+        except Exception as e:
+            self._safe_send({"error": "error interno del servidor"}, 500)
+
+    def _safe_send(self, obj, code):
+        try:
+            self.send_json(obj, code)
+        except Exception:
+            pass
+
+    def _post(self):
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
         if u.path == "/api/login":
@@ -368,8 +402,8 @@ class H(BaseHTTPRequestHandler):
             if str(body.get("token", "")) != TOKEN:
                 time.sleep(1)  # frena fuerza bruta
                 return self.send_json({"error": "token inválido"}, 403)
-            sid = secrets.token_urlsafe(24)
-            SESSIONS[sid] = time.time() + 30 * 86400
+            jobstore.session_delete(self._cookie("ab_s"))  # rota el id viejo
+            sid = jobstore.session_create(30)
             body_out = json.dumps({"ok": True}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -378,6 +412,13 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body_out)))
             self.end_headers()
             self.wfile.write(body_out)
+            return
+        if u.path == "/api/logout":
+            jobstore.session_delete(self._cookie("ab_s"))
+            self.send_response(200)
+            self.send_header("Set-Cookie", "ab_s=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
             return
         if u.path == "/api/job_cancel":
             if not self.auth(q):
@@ -441,67 +482,6 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json(measure_dsm(mdir, spec))
             except Exception as e:
                 return self.send_json({"error": str(e)[-200:]}, 500)
-            # (versión docker retirada: gdal_array del contenedor tiene numpy roto)
-            pts = json.dumps(spec.get("points", []))
-            kind = "volume" if spec.get("type") == "volume" else "profile"
-            script = f"""python3 - << 'EOF'
-import json, math
-from osgeo import gdal
-import numpy as np
-ds = gdal.Open('/m/dsm_4326.tif'); gt = ds.GetGeoTransform()
-band = ds.GetRasterBand(1); arr = band.ReadAsArray(); nod = band.GetNoDataValue()
-pts = json.loads('{pts}')
-def to_px(lon, lat):
-    return int((lon - gt[0]) / gt[1]), int((lat - gt[3]) / gt[5])
-def elev(lon, lat):
-    x, y = to_px(lon, lat)
-    if 0 <= y < arr.shape[0] and 0 <= x < arr.shape[1]:
-        v = float(arr[y, x])
-        return None if (nod is not None and v == nod) else v
-    return None
-if "{kind}" == "profile":
-    (lon1, lat1), (lon2, lat2) = pts[0], pts[-1]
-    N = 120
-    prof = [elev(lon1 + (lon2 - lon1) * i / N, lat1 + (lat2 - lat1) * i / N) for i in range(N + 1)]
-    R = 6371000; dlat = math.radians(lat2 - lat1); dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
-    dist = 2 * R * math.asin(math.sqrt(a))
-    print(json.dumps({{"profile": prof, "distance_m": round(dist, 1)}}))
-else:
-    # point-in-polygon vectorizado (ray casting) — sin dependencias extra
-    lons = gt[0] + (np.arange(arr.shape[1]) + 0.5) * gt[1]
-    lats = gt[3] + (np.arange(arr.shape[0]) + 0.5) * gt[5]
-    LON, LAT = np.meshgrid(lons, lats)
-    mask = np.zeros(arr.shape, dtype=bool)
-    P = pts + [pts[0]]
-    for i in range(len(P) - 1):
-        (x1, y1), (x2, y2) = P[i], P[i + 1]
-        cond = ((y1 <= LAT) != (y2 <= LAT)) & \
-               (LON < (x2 - x1) * (LAT - y1) / (y2 - y1 + 1e-15) + x1)
-        mask ^= cond
-    if nod is not None: mask &= (arr != nod)
-    if not mask.any():
-        print(json.dumps({{"error": "polígono fuera del DSM"}})); raise SystemExit
-    vals = arr[mask].astype(float)
-    base = float(np.percentile(vals, 5))          # plano base = suelo alrededor
-    lat0 = float(np.mean(pts, axis=0)[1])
-    px_w = abs(gt[1]) * 111320 * math.cos(math.radians(lat0))
-    px_h = abs(gt[5]) * 110540
-    cell = px_w * px_h
-    fill = float(((vals - base).clip(min=0) * cell).sum())
-    cut = float(((base - vals).clip(min=0) * cell).sum())
-    print(json.dumps({{"volume_m3": round(fill, 1), "cut_m3": round(cut, 1),
-                      "base_elev": round(base, 1), "area_m2": round(cell * mask.sum(), 1),
-                      "max_height": round(float(vals.max() - base), 1)}}))
-EOF"""
-            try:
-                r = subprocess.run(["/usr/local/bin/docker", "run", "--rm",
-                                    "-v", f"{VAULT / 'models' / cid}:/m",
-                                    "--entrypoint", "bash", "opendronemap/odm", "-c", script],
-                                   capture_output=True, text=True, timeout=120)
-                return self.send_json(json.loads(r.stdout.strip().splitlines()[-1]))
-            except Exception as e:
-                return self.send_json({"error": str(e)[-200:]}, 500)
         if u.path == "/api/odm":
             if not self.auth(q):
                 return
@@ -557,18 +537,26 @@ EOF"""
                 try:
                     il = proj / "opensfm" / "image_list.txt"
                     il.write_text(il.read_text().replace("/datasets/code", str(proj)))
+                    n_cams = len([ln for ln in il.read_text().splitlines() if ln.strip()])
                     (VAULT / "splats").mkdir(exist_ok=True)
                     out = VAULT / "splats" / f"{cid}.splat"
-                    jobstore.update(j["id"], detail="entrenando (CPU, ~30-60 min)")
-                    subprocess.run([str(SPLAT_BIN), str(proj), "--cpu", "-n", "1500",
-                                    "-o", str(out)],
-                                   check=True, capture_output=True, text=True, timeout=4 * 3600,
-                                   env={**os.environ,
-                                        "DYLD_LIBRARY_PATH": str(SPLAT_BIN.parent.parent.parent.parent / "libtorch" / "lib")})
-                    if not out.exists() or out.stat().st_size < 200_000:
-                        raise RuntimeError(f"splat demasiado pequeño ({out.stat().st_size if out.exists() else 0} bytes) — escena insuficiente, vuela una órbita con más solape")
+                    ITERS = 2000
+                    jobstore.update(j["id"], detail=f"entrenando {ITERS} iters sobre {n_cams} cámaras (CPU)")
+                    rc = jobstore.run_tracked(j["id"],
+                        [str(SPLAT_BIN), str(proj), "--cpu", "-n", str(ITERS), "-o", str(out)],
+                        timeout=4 * 3600,
+                        env={**os.environ, "DYLD_LIBRARY_PATH":
+                             str(SPLAT_BIN.parent.parent.parent.parent / "libtorch" / "lib")})
+                    if rc != 0:
+                        raise RuntimeError(f"opensplat salió con código {rc}")
+                    quality = splat_quality(out, jobstore.get(j["id"]).get("log", ""), n_cams, ITERS)
+                    (VAULT / "splats" / f"{cid}.meta.json").write_text(json.dumps(quality, indent=1))
+                    if not quality["passed"]:
+                        raise RuntimeError(quality["reason"])
                     rebuild_index()
-                    jobstore.end(j["id"], "done", out.name, artifact=f"splats/{out.name}")
+                    jobstore.end(j["id"], "done",
+                                 f"{out.name} · loss {quality['final_loss']} · {n_cams} cámaras",
+                                 artifact=f"splats/{out.name}")
                 except Exception as e:
                     job_end(j, "error", str(getattr(e, 'stderr', '') or e)[-250:])
                 finally:

@@ -6,10 +6,27 @@ mediciones DSM (volumen y perfil sobre un DSM sintético), y contención de path
 import json
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 FAILS = []
+
+
+def _pid_alive(pid):
+    import os
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, TypeError):
+        return False
+
+
+def _swallow(fn):
+    try:
+        fn()
+    except Exception:
+        pass
 
 
 def check(name, cond, detail=""):
@@ -91,6 +108,45 @@ try:
 except ValueError:
     contained = False
 check("paths: drone-vault2 NO pasa el contención", not contained)
+
+# ---------- jobs: sessions SQLite ----------
+import jobs
+jobs.DB = Path(tempfile.mkdtemp()) / "test-jobs.db"
+jobs.init()
+sid = jobs.session_create(1)
+check("session: creada y válida", jobs.session_valid(sid))
+check("session: id inexistente inválido", not jobs.session_valid("nope"))
+jobs.session_delete(sid)
+check("session: eliminada (logout) invalida", not jobs.session_valid(sid))
+
+# ---------- jobs: run_tracked records PID + cancel kills ----------
+import threading, os
+j = jobs.add("splat", "kill-test")
+threading.Thread(target=lambda: _swallow(lambda: jobs.run_tracked(j["id"], ["sleep", "30"], 60)),
+                 daemon=True).start()
+time.sleep(1.2)
+pid = jobs.get(j["id"])["pid"]
+check("job: run_tracked registra PID", bool(pid))
+alive = _pid_alive(pid)
+jobs.cancel(j["id"])
+time.sleep(1.2)
+check("job: cancel MATA el proceso", alive and not _pid_alive(pid))
+check("job: status queda cancelled", jobs.get(j["id"])["status"] == "cancelled")
+
+# ---------- splat quality gate ----------
+from aerobrain_server import splat_quality
+import types
+class FakeOut:
+    def __init__(self, size): self._s = size
+    def exists(self): return True
+    def stat(self): return types.SimpleNamespace(st_size=self._s)
+log_ok = "Step 1998: 0.18 (99%)\nStep 1999: 0.17 (100%)"
+q = splat_quality(FakeOut(700_000), log_ok, 40, 2000)
+check("splat: escena buena PASA el gate", q["passed"] and q["final_loss"] == 0.17)
+q2 = splat_quality(FakeOut(50_000), log_ok, 40, 2000)
+check("splat: archivo chico FALLA el gate", not q2["passed"])
+q3 = splat_quality(FakeOut(700_000), log_ok, 3, 2000)
+check("splat: <8 cámaras FALLA el gate", not q3["passed"])
 
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)

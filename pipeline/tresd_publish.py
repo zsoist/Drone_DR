@@ -131,10 +131,31 @@ EOF""")
         (out / "model" / f.name).write_bytes(f.read_bytes())
     # el .mtl referencia texturas por nombre relativo — ya quedan al lado
 
+    # QA de la reconstrucción (estilo Pix4D/DroneDeploy report)
+    qa = {}
+    stats_f = proj / "opensfm" / "stats" / "stats.json"
+    if stats_f.exists():
+        st = json.loads(stats_f.read_text())
+        rs = st.get("reconstruction_statistics", {})
+        ps = st.get("processing_statistics", {})
+        area = ps.get("area") or 0
+        # resolución de la ortofoto en cm/px = sqrt(área / nº píxeles) * 100
+        px_total = ometa["size"][0] * ometa["size"][1]
+        gsd_cm = round((area / px_total) ** 0.5 * 100, 1) if px_total and area else None
+        qa = {
+            "cameras_reconstructed": rs.get("reconstructed_shots_count"),
+            "cameras_total": rs.get("initial_shots_count"),
+            "reprojection_error_px": round(rs.get("reprojection_error_pixels", 0), 2),
+            "sparse_points": rs.get("reconstructed_points_count"),
+            "area_m2": round(area, 1),
+            "gsd_cm_px": gsd_cm,
+        }
+
     meta = {
         "clip_id": cid,
         "corners": ometa["corners"],
         "ortho_px": ometa["size"],
+        "qa": qa,
         "cloud_bytes": (out / "cloud.ply").stat().st_size if (out / "cloud.ply").exists() else 0,
         "model_obj": "model/odm_textured_model_geo.obj",
         "textures": len([*(out / "model").glob("*.jpg"), *(out / "model").glob("*.png")]),

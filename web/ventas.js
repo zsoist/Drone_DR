@@ -50,6 +50,10 @@ main.innerHTML = `
     </div>
   </div>`;
 
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-copy]');
+  if (b) { navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copiado'; }
+});
 (async () => {
   const flights = await getFlights();
   const clips = flights.filter(f => f.frame_count);
@@ -109,7 +113,7 @@ main.innerHTML = `
         <a class="mono" href="${localUrl}" target="_blank" style="color:var(--accent);font-size:13px">${url}</a>
         <div style="margin-top:12px"><img alt="QR" width="160" height="160" style="border-radius:8px;background:#fff;padding:8px"
           src="https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(url)}"></div>
-        <button class="btn" style="margin-top:10px" onclick="navigator.clipboard.writeText('${url}');this.textContent='Copiado'">Copiar link</button>
+        <button class="btn" style="margin-top:10px" data-copy="${url}">Copiar link</button>
       </div></div>`;
     loadList();
   });
