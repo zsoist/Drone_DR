@@ -252,7 +252,9 @@ CANCEL_STATES = ("cancelled", "cancel_failed")
 
 
 def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
-                tail: int = 12, abort_re: str | None = None) -> int:
+                tail: int = 12, abort_re: str | None = None,
+                progress_re: str | None = None,
+                progress_span: tuple = (0.05, 0.98)) -> int:
     """Popen con PID registrado. El control (timeout Y cancelación) se hace con
     proc.wait(timeout=1) en un bucle — INDEPENDIENTE del stdout, así un proceso
     totalmente silencioso también respeta timeout y cancel. Un hilo lector sólo
@@ -264,11 +266,19 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
     lines: list[str] = []
     abort_hit = threading.Event()
 
-    def reader():  # espeja el log; si aparece el patron de aborto, alza la bandera
+    def reader():  # espeja el log; abort/progreso se detectan aqui, el control vive afuera
+        last_pct = -1
         for line in proc.stdout:
             lines.append(line.rstrip())
             del lines[:-200]
-            update(jid, log="\n".join(lines[-tail:]))
+            fields = {"log": "\n".join(lines[-tail:])}
+            if progress_re:
+                m = re.search(progress_re, line)
+                if m and int(m.group(1)) != last_pct:
+                    last_pct = int(m.group(1))
+                    lo, hi = progress_span
+                    fields["progress"] = round(lo + (hi - lo) * last_pct / 100, 3)
+            update(jid, **fields)
             if abort_re and re.search(abort_re, line):
                 abort_hit.set()
     threading.Thread(target=reader, daemon=True).start()

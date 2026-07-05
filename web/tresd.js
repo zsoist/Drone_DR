@@ -65,7 +65,11 @@
 
     <div class="panel" style="margin-top:16px">
       <div class="ph">${icon('activity')} Cola de procesamiento</div>
-      <div class="pb" id="jobs3d"></div>
+      <div class="pb">
+        <p class="footer-note" style="margin:0 0 10px">El worker procesa un trabajo pesado a la
+        vez y sobrevive a que cierres la app o se reinicie el servidor — vuelve cuando quieras.</p>
+        <div id="jobs3d"></div>
+      </div>
     </div>
 
     <div id="proj-view" style="display:none">

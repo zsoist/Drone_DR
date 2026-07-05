@@ -663,3 +663,15 @@ details.explain b { color: var(--text); font-weight: 600; }
   .map-side { border-left: none; border-top: 1px solid var(--line); }
   .spot-pill { font-size: 10px; padding: 4px 9px; }
 }
+
+/* ---------- cola: pulido móvil ---------- */
+.job-card .jc-log { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 700px) {
+  .job-card { padding: 11px 12px; }
+  .job-card .jc-head { flex-wrap: wrap; row-gap: 5px; }
+  .job-card .jc-title { font-size: 12.5px; flex: 1 1 60%; }
+  .job-card .jc-status { font-size: 9.5px; padding: 2px 8px; letter-spacing: 0.5px; }
+  .jc-steps { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .jc-steps::-webkit-scrollbar { display: none; }
+  .job-card .jc-meta { font-size: 10.5px; }
+}

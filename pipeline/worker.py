@@ -112,6 +112,7 @@ def run_splat(j: dict):
             [str(SPLAT_BIN), str(proj), "--cpu", "-n", str(ITERS), "-o", str(out),
              "--sh-degree-interval", str(ITERS + 1)],
             timeout=4 * 3600, abort_re=r"Step \d+: nan",
+            progress_re=r"\((\d+)%\)",
             env={**os.environ, "DYLD_LIBRARY_PATH": str(SPLAT_BIN.parent.parent.parent.parent / "libtorch" / "lib")})
     except RuntimeError as e:
         if "abortado" in str(e):
