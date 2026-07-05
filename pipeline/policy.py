@@ -12,12 +12,25 @@ Tiers (what process.py does per tier):
   stats        dict   — del SRT: distance_m, max_rel_alt_m, bbox... ({} si no hay)
   resolution   str    — "3840x2160"
   fps          float  — 59.94
+
+Default policy (Daniel: ajusta los umbrales a tu gusto — esta es la palanca
+costo/performance de toda la plataforma):
+  - <15s  = prueba/despegue fallido → skim
+  - vuelo real (recorrió ≥150m o duró ≥60s) → full (aparece con video en la web)
+  - resto → standard (buscable por AI, sin proxy hasta que lo pidas)
 """
 
 
 def processing_tier(meta: dict) -> str:
-    """Return "full" | "standard" | "skim" for this clip.
+    """Return "full" | "standard" | "skim" for this clip."""
+    stats = meta.get("stats") or {}
+    duration = meta.get("duration_s", 0)
+    distance = stats.get("distance_m", 0)
 
-    TODO(human): implementa la política de tiers.
-    """
-    raise NotImplementedError("TODO(human)")
+    if duration < 15:
+        return "skim"
+    if not meta.get("has_srt"):
+        return "standard"
+    if distance >= 150 or duration >= 60:
+        return "full"
+    return "standard"

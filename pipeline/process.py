@@ -38,9 +38,11 @@ def clip_id(mp4: Path) -> str:
 
 
 def make_proxy(mp4: Path, out: Path, has_audio: bool):
+    # H.264 (not HEVC): universal browser playback (Firefox/Android choke on HEVC)
+    # 6Mbps @1080p ≈ 45MB/min → ~40 clips full-tier fit in R2's 10GB free tier
     args = ["-hwaccel", "videotoolbox", "-i", str(mp4),
-            "-vf", "scale=-2:1080", "-c:v", "hevc_videotoolbox",
-            "-q:v", "45", "-tag:v", "hvc1"]
+            "-vf", "scale=-2:1080", "-c:v", "h264_videotoolbox",
+            "-b:v", "6M", "-maxrate", "8M"]
     args += ["-c:a", "aac", "-b:a", "128k"] if has_audio else ["-an"]
     args += ["-movflags", "+faststart", str(out)]
     run_ffmpeg(args)
@@ -61,7 +63,7 @@ def process_clip(mp4: Path) -> dict:
 
     meta = {
         "clip_id": cid,
-        "raw": str(mp4),
+        "raw": mp4.name,  # name only: vault layout is canonical, not the source path
         "duration_s": round(duration, 1),
         "resolution": f'{vstream["width"]}x{vstream["height"]}',
         "fps": round(eval(vstream["avg_frame_rate"]), 2),
@@ -76,17 +78,19 @@ def process_clip(mp4: Path) -> dict:
     run_ffmpeg(["-ss", str(duration * 0.25), "-i", str(mp4),
                 "-frames:v", "1", "-vf", "scale=-2:720", "-q:v", "3", str(thumb)])
 
-    if tier in ("full", "standard"):
-        fdir = VAULT / "frames" / cid
-        fdir.mkdir(parents=True, exist_ok=True)
-        run_ffmpeg(["-i", str(mp4), "-vf", "fps=1/2,scale=960:-2",
-                    "-q:v", "4", str(fdir / "f_%04d.jpg")])
-        meta["frame_count"] = len(list(fdir.glob("f_*.jpg")))
-
     if tier == "full":
         proxy = VAULT / "proxies" / f"{cid}.mp4"
         make_proxy(mp4, proxy, has_audio)
         meta["proxy_bytes"] = proxy.stat().st_size
+
+    if tier in ("full", "standard"):
+        # decode the 1080p proxy when it exists — 4K60 HEVC decode is the bottleneck
+        src = VAULT / "proxies" / f"{cid}.mp4" if tier == "full" else mp4
+        fdir = VAULT / "frames" / cid
+        fdir.mkdir(parents=True, exist_ok=True)
+        run_ffmpeg(["-i", str(src), "-vf", "fps=1/2,scale=960:-2",
+                    "-q:v", "4", str(fdir / "f_%04d.jpg")])
+        meta["frame_count"] = len(list(fdir.glob("f_*.jpg")))
 
     (VAULT / "manifest" / f"{cid}.json").write_text(json.dumps(meta, indent=1))
     print(f"✅ {cid} [{tier}] {meta['duration_s']}s "

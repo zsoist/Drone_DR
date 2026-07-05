@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>AeroBrain — Vuelo</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+</head>
+<body>
+  <header>
+    <a class="back" href="index.html">← Vuelos</a>
+    <h1 id="title" style="font-size:15px"></h1>
+    <span class="sub" id="subtitle"></span>
+  </header>
+
+  <div class="flight-wrap">
+    <div id="map"></div>
+    <div class="player">
+      <div id="video-slot"></div>
+      <div class="hud">
+        <div><b id="h-alt">—</b><span>altura</span></div>
+        <div><b id="h-dist">—</b><span>recorrido</span></div>
+        <div><b id="h-speed">—</b><span>velocidad</span></div>
+        <div><b id="h-iso">—</b><span>iso</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="flight.js"></script>
+</body>
+</html>
