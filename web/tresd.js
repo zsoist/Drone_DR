@@ -819,14 +819,19 @@
     const viewer = new GaussianSplats3D.Viewer({
       rootElement: box, sharedMemoryForWorkers: false, antialiased: true,
       halfPrecisionCovariancesOnGPU: true, showLoadingUI: false,
+      sceneRevealMode: GaussianSplats3D.SceneRevealMode.Instant,
       splatRenderMode: GaussianSplats3D.SplatRenderMode.ThreeD,
     });
     box._viewer = viewer;
     try {
-      await viewer.addSplatScene(`data/splats/${name}`, {
-        progressiveLoad: true, splatAlphaRemovalThreshold: 5, showLoadingUI: false,
-        onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
-      });
+      // progressiveLoad:false — hang conocido de .splat en iOS ("Processing splats")
+      await Promise.race([
+        viewer.addSplatScene(`data/splats/${name}`, {
+          progressiveLoad: false, splatAlphaRemovalThreshold: 5, showLoadingUI: false,
+          onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout de 45s procesando el splat')), 45000)),
+      ]);
     } catch (err) {
       box.querySelector('.splat-load').innerHTML =
         `<p class="footer-note">No se pudo cargar ${esc(name)} · ${esc(String(err && err.message || err).slice(0, 90))}</p>`;

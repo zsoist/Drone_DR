@@ -189,18 +189,35 @@ const loaders = {
     frame(obj, cam, controls);
   },
   async splat() {
-    spinner('Cargando gaussian splat…');
+    const st = spinner('Descargando gaussian splat…');
     const GaussianSplats3D = await import('/vendor/gaussian-splats-3d.module.min.js');
-    view.innerHTML = '';
-    const viewer = new GaussianSplats3D.Viewer({ rootElement: view, sharedMemoryForWorkers: false, antialiased: true });
-    await viewer.addSplatScene(`data/splats/${splat.name}`, { progressiveLoad: true, splatAlphaRemovalThreshold: 5 });
+    // progressiveLoad:false — el streaming del formato .splat se colgaba en
+    // "Processing splats" en iOS Safari; con <1MB la carga completa es instantánea.
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:absolute;inset:0';
+    view.appendChild(holder);
+    const viewer = new GaussianSplats3D.Viewer({
+      rootElement: holder, sharedMemoryForWorkers: false, antialiased: true,
+      showLoadingUI: false,
+      sceneRevealMode: GaussianSplats3D.SceneRevealMode.Instant,
+    });
+    await Promise.race([
+      viewer.addSplatScene(`data/splats/${splat.name}`, {
+        progressiveLoad: false, splatAlphaRemovalThreshold: 5, showLoadingUI: false,
+        onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
+      }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout de 45s procesando el splat')), 45000)),
+    ]);
     viewer.start();
+    view._splatViewer = viewer;
+    view.querySelector('.sh-st')?.parentElement?.remove();
   },
 };
 
 document.querySelector('.seg').addEventListener('click', e => {
   const b = e.target.closest('[data-v]');
   if (!b) return;
+  if (view._splatViewer) { try { view._splatViewer.dispose(); } catch {} view._splatViewer = null; }
   document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
   const NAMES = { cloud: 'la nube de puntos (cloud.ply)', mesh: 'la malla texturizada (OBJ/MTL)', splat: 'el gaussian splat (.splat)' };
   loaders[b.dataset.v]().catch(err => {
