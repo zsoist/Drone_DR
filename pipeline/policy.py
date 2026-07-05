@@ -30,7 +30,8 @@ def processing_tier(meta: dict) -> str:
     if duration < 15:
         return "skim"
     if not meta.get("has_srt"):
-        return "standard"
+        # sin telemetría = subido a mano (web/inbox) → es contenido intencional
+        return "full" if duration >= 20 else "standard"
     if distance >= 150 or duration >= 60:
         return "full"
     return "standard"

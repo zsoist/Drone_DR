@@ -6,8 +6,36 @@ const NAV = [
   { href: 'map.html', ic: 'map', label: 'Mapa' },
   { href: 'trips.html', ic: 'pin', label: 'Viajes' },
   { href: 'studio.html', ic: 'film', label: 'Studio' },
+  { href: 'subir.html', ic: 'dl', label: 'Subir' },
   { href: 'system.html', ic: 'db', label: 'Sistema' },
 ];
+
+// token de operador (upload/edición) — se pide una vez y queda en el navegador
+function getToken(force) {
+  let t = localStorage.getItem('ab_token');
+  if (!t || force) {
+    t = prompt('Token de operador (está en /Volumes/SSD/drone-vault/.token):') || '';
+    if (t) localStorage.setItem('ab_token', t.trim());
+  }
+  return (t || '').trim();
+}
+async function pollJobs(el, every = 2500) {
+  const paint = async () => {
+    try {
+      const { jobs } = await (await fetch('/api/jobs')).json();
+      el.innerHTML = jobs.length ? jobs.map(j => `
+        <div class="hl-item">
+          <span class="tc" style="${j.status === 'error' ? 'color:var(--red);background:rgba(217,106,106,.12)' :
+            j.status === 'done' ? 'color:var(--mint);background:rgba(82,199,154,.12)' : ''}">${j.status}</span>
+          <p><b>${j.kind}</b> · ${j.label} <span class="mono" style="color:var(--text-3)">${j.ts}</span>
+          ${j.detail ? `<br><span class="mono" style="font-size:11px;color:var(--text-3)">${j.detail}</span>` : ''}</p>
+        </div>`).join('') :
+        `<p class="footer-note">Sin trabajos aún.</p>`;
+    } catch {}
+  };
+  paint();
+  return setInterval(paint, every);
+}
 
 function renderShell(active) {
   const cur = location.pathname.split('/').pop() || 'index.html';
@@ -22,7 +50,8 @@ function renderShell(active) {
           <a class="nav-item ${n.href === (active || cur) ? 'active' : ''}" href="${n.href}">
             ${icon(n.ic)}<span>${n.label}</span>
           </a>`).join('')}
-        <div class="foot"><span class="dot"></span>Mac Mini M4 · vault local · $0/mes</div>
+        <div class="foot"><span class="dot"></span>Mac Mini M4 · vault local · $0/mes<br>
+          <a href="guia.html" style="color:var(--accent)">Guía de operación</a></div>
       </aside>
       <main class="main" id="main"></main>
     </div>`);

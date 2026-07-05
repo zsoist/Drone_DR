@@ -12,7 +12,9 @@ def dir_size(p: Path) -> int:
 
 def main():
     flights = []
-    for mf in sorted((VAULT / "manifest").glob("DJI_*.json")):
+    clip_manifests = sorted([*(VAULT / "manifest").glob("DJI_*.json"),
+                             *(VAULT / "manifest").glob("UP_*.json")])
+    for mf in clip_manifests:
         m = json.loads(mf.read_text())
         cid = m["clip_id"]                     # DJI_20260704160358_0104_D
         ts = cid.split("_")[1]                 # 20260704160358

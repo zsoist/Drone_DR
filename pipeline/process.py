@@ -101,8 +101,10 @@ def process_clip(mp4: Path) -> dict:
 
 def main():
     if "--all" in sys.argv:
-        done = {p.stem for p in (VAULT / "manifest").glob("DJI_*.json")}
-        clips = [p for p in sorted((VAULT / "raw").rglob("*.MP4")) if p.stem not in done]
+        done = {p.stem for p in (VAULT / "manifest").glob("*.json")}
+        exts = (".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm")
+        clips = [p for p in sorted((VAULT / "raw").rglob("*"))
+                 if p.suffix.lower() in exts and p.is_file() and p.stem not in done]
     else:
         clips = [Path(a) for a in sys.argv[1:]]
     if not clips:

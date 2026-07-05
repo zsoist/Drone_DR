@@ -92,7 +92,7 @@ const cid = new URLSearchParams(location.search).get('id');
   const slot = document.getElementById('video-slot');
   let video = null;
   if (meta.has_proxy) {
-    slot.innerHTML = `<video src="${DATA}/proxies/${cid}.mp4" controls playsinline poster="${DATA}/thumbs/${cid}.jpg"></video>`;
+    slot.innerHTML = `<video src="${DATA}/proxies/${cid}.mp4" controls playsinline webkit-playsinline preload="metadata" poster="${DATA}/thumbs/${cid}.jpg"></video>`;
     video = slot.querySelector('video');
   } else {
     slot.innerHTML = `<img src="${DATA}/thumbs/${cid}.jpg" style="width:100%;display:block" alt="">`;
