@@ -466,12 +466,23 @@ class H(BaseHTTPRequestHandler):
         return ""
 
     def _is_local(self) -> bool:
-        # El server bindea 127.0.0.1 y sólo se expone al mundo por el túnel de
-        # Cloudflare, que estampa CF-Connecting-IP/CF-Ray en TODO request externo.
-        # Su ausencia ⇒ un proceso EN el Mac golpeó localhost directo = agente de
-        # confianza (Claude Code / Codex / curl local). Loopback no es alcanzable
-        # desde la LAN, así que esto no amplía superficie de ataque.
-        return not (self.headers.get("CF-Connecting-IP") or self.headers.get("CF-Ray"))
+        # El server bindea 127.0.0.1 y sólo se expone al mundo por Cloudflare
+        # Tunnel, que estampa CF-Connecting-IP/CF-Ray en requests externos.
+        # Además bloqueamos browser-CSRF desde páginas externas hacia localhost:
+        # agentes/curl no mandan Sec-Fetch-Site; la UI local manda same-origin.
+        if self.headers.get("CF-Connecting-IP") or self.headers.get("CF-Ray"):
+            return False
+        host, _ = self.client_address
+        if host not in ("127.0.0.1", "::1"):
+            return False
+        site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+        if site and site not in ("same-origin", "same-site", "none"):
+            return False
+        origin = self.headers.get("Origin") or ""
+        if origin and not (origin.startswith("http://127.0.0.1:8790") or
+                           origin.startswith("http://localhost:8790")):
+            return False
+        return True
 
     def session_ok(self) -> bool:
         return jobstore.session_valid(self._cookie("ab_s"))
