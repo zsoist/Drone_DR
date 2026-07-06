@@ -19,6 +19,7 @@ import subprocess
 import threading
 import time
 import urllib.parse
+from email.utils import formatdate, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import jobs as jobstore
@@ -28,6 +29,8 @@ os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bi
 
 WEB = Path("/Volumes/SSD/work/forge-projects/aerobrain/web")
 VAULT = Path("/Volumes/SSD/drone-vault")
+# binarios 3D grandes con URL estable: cachean con revalidación 304 (nunca stale, nunca re-bajar MBs)
+REVALIDATE_EXTS = (".ply", ".splat", ".ksplat", ".obj", ".mtl", ".laz", ".geojson", ".tif")
 PIPE = Path("/Volumes/SSD/work/forge-projects/aerobrain/pipeline")
 TOKEN_FILE = VAULT / ".token"
 if not TOKEN_FILE.exists():
@@ -895,6 +898,24 @@ class H(BaseHTTPRequestHandler):
             return self.send_error(404)
         ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
         rng = self.headers.get("Range")
+        # binarios 3D pesados (nube/malla/splat): cachear PERO revalidar (no-cache + 304).
+        # Las URLs no llevan versión y un re-entreno reescribe el mismo nombre — max-age
+        # serviría stale; no-store re-bajaría MBs en cada visita. 304 = lo mejor de ambos.
+        revalidate = f.suffix.lower() in REVALIDATE_EXTS
+        mtime = int(f.stat().st_mtime)
+        if revalidate and not rng:
+            ims = self.headers.get("If-Modified-Since")
+            if ims:
+                try:
+                    since = parsedate_to_datetime(ims).timestamp()
+                except (TypeError, ValueError):
+                    since = -1
+                if mtime <= since:
+                    self.send_response(304)
+                    self.send_header("Last-Modified", formatdate(mtime, usegmt=True))
+                    self.send_header("Cache-Control", "no-cache")
+                    self.end_headers()
+                    return
         # sidecar .gz pre-comprimido (nube/malla): Content-Encoding gzip transparente.
         # Solo sin Range — gzip + rangos parciales no se mezclan.
         gz = Path(str(f) + ".gz")
@@ -903,7 +924,11 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Encoding", "gzip")
             self.send_header("Content-Length", str(gz.stat().st_size))
-            self.send_header("Cache-Control", "no-store, must-revalidate")
+            if revalidate:
+                self.send_header("Last-Modified", formatdate(mtime, usegmt=True))
+                self.send_header("Cache-Control", "no-cache")
+            else:
+                self.send_header("Cache-Control", "no-store, must-revalidate")
             self.end_headers()
             with open(gz, "rb") as fh:
                 while chunk := fh.read(1 << 19):
@@ -934,9 +959,14 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(end - start + 1))
-        # media inmutable se cachea; código y datos NUNCA (iPhone quedó quemado con CSS viejo)
+        # media inmutable se cachea; binarios 3D revalidan (304); código NUNCA se cachea
+        # (iPhone quedó quemado con CSS viejo)
         cacheable = f.suffix in (".mp4", ".jpg", ".png", ".woff2", ".svg", ".webp")
-        self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-store, must-revalidate")
+        if revalidate:
+            self.send_header("Last-Modified", formatdate(mtime, usegmt=True))
+            self.send_header("Cache-Control", "no-cache")
+        else:
+            self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-store, must-revalidate")
         if f.suffix == ".html":
             self.send_header("Content-Security-Policy",
                 "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "  # wasm: el sort worker de splats compila WebAssembly
@@ -966,6 +996,10 @@ class H(BaseHTTPRequestHandler):
         gz = Path(str(f) + ".gz")
         self.send_response(200)
         self.send_header("Accept-Ranges", "bytes")
+        # espejo del GET: binarios 3D anuncian validador para el caché condicional
+        if f.suffix.lower() in REVALIDATE_EXTS:
+            self.send_header("Last-Modified", formatdate(int(f.stat().st_mtime), usegmt=True))
+            self.send_header("Cache-Control", "no-cache")
         if gz.is_file() and "gzip" in self.headers.get("Accept-Encoding", ""):
             # espejo exacto de lo que GET va a servir (audit: HEAD mentia el tamano)
             self.send_header("Content-Encoding", "gzip")

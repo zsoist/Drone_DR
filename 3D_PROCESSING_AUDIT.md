@@ -1,5 +1,12 @@
 # AeroBrain 3D Processing Audit
 
+> **[2026-07-05 · SUPERSEDED]** Auditoría histórica (point-in-time). El estado vivo está en
+> [3D_FRONTIER_AUDIT.md](3D_FRONTIER_AUDIT.md). De los hallazgos de aquí ya se resolvieron:
+> P1 splat-not-premium (publish atómico + quality gate + ksplat; Metal en curso), P1 QA vacío
+> (fallback área/GSD + browser gate), P2 stale dirs (limpieza .training + odm huérfanos),
+> P2 HEAD miente tamaño (espejado), P2 storage frontier (COPC en preset alta), P2 docs stale.
+
+
 Date: 2026-07-05  
 Scope: video-to-ODM, Gaussian splatting, storage, Mac Mini M4 efficiency, stale data, docs, and route/viewer integration.  
 Evidence: local repo, live vault, jobs DB, launchd services, browser QA, and current upstream docs.

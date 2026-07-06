@@ -6,7 +6,8 @@ Scope: ODM 3D modeling, DSM/point-cloud publishing, Gaussian splatting, Mac Mini
 
 ## Verdict
 
-Current score: 9.6/10 for a local/free personal drone mapping stack.
+Current score: 9.7/10 for a local/free personal drone mapping stack.
+(CPU-era ceiling reached: everything short of Metal/MPS training is done and verified.)
 
 The `.ksplat` gap is CLOSED: `pipeline/make_ksplat.mjs` converts `.splat`/`.ply` using the
 same vendored GaussianSplats3D lib the viewer uses (no npm), the worker exports it after the
@@ -48,6 +49,24 @@ Splats:
 - `DJI_20260315121003_0092_D.splat`: 500,832 bytes, passed 2k CPU training, loss 0.176886, 42 cameras.
 - `DJI_20260704160358_0104_D.splat`: 657,632 bytes, older preview splat.
 - 7k urban attempt was killed by worker restart at 63.6%, so it did not complete. With atomic publish, future failed/killed runs will not corrupt the last good splat.
+
+## Closed This Pass 2 (2026-07-05 late night — smoothness & hygiene)
+
+- Conditional caching for heavy 3D binaries (`.ply .splat .ksplat .obj .mtl .laz .geojson .tif`):
+  `Cache-Control: no-cache` + `Last-Modified` + `If-Modified-Since` → 304. URLs are unversioned
+  and retraining rewrites the same name, so max-age would serve stale and no-store re-downloaded
+  MBs each visit; 304 revalidation gives cache speed with zero staleness. Verified live
+  (200+validator, 304, Range 206 intact, gzip sidecar intact, HTML still no-store).
+- OpenSplat now trains under `taskpolicy -c utility` (QoS): a 4h CPU training no longer steals
+  UI/render smoothness; taskpolicy execs (same pid) so job cancel still works. Smoke-tested.
+- gzip sidecars for splat formats: measured 93-95% ratio on real files → NOT worth it. Decision
+  recorded so nobody re-tries it.
+- Stale data cleaned: odm/proj_0026 (379M, failed run) and odm/proj_0106 (740K stub) deleted —
+  no published model referenced them; reproducible from raw. odm/ 12G → 11G.
+- Production DB (Supabase) synced: 41 flights / 35 tracks / 33 AI / 3 models / 1 property —
+  exact mirror of local manifest, nothing stale.
+- Resource audit: 61% mem free, swap 3.6G (normal residual), Docker VM 9.77G (OrbStack fix
+  holding), SSD 688Gi free. Viewers already capped (pixelRatio ≤ 2, dispose on switch).
 
 ## Closed This Pass (2026-07-05 night)
 

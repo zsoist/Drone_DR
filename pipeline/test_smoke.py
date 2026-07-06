@@ -330,6 +330,9 @@ check("splat backend: Metal/MPS NO fuerza --cpu",
       and _gpu_backend["device"] == "Metal/MPS")
 check("splat backend: sh-degree-interval queda por encima de iters",
       worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _gpu_backend)[-1] == "7001")
+check("splat backend: entrena con QoS utility (UI fluida durante 4h de CPU)",
+      worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _cpu_backend)[:3]
+      == ["/usr/sbin/taskpolicy", "-c", "utility"])
 import browser_gate
 check("browser gate: default usa 127.0.0.1 para evitar localhost IPv6 ajeno",
       browser_gate.DEFAULT_BASE_URL == "http://127.0.0.1:8790"

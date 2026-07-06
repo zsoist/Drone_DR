@@ -146,7 +146,9 @@ def choose_splat_backend(iters: int, force_cpu: bool = False, mps_ready: bool | 
 
 
 def opensplat_train_cmd(project: Path, out: Path, iters: int, backend: dict) -> list[str]:
-    cmd = [str(backend["bin"]), str(project)]
+    # taskpolicy -c utility: QoS bajo para que 4h de entrenamiento CPU no roben fluidez
+    # a la UI/web (taskpolicy hace exec — mismo pid, el cancel del jobstore sigue funcionando)
+    cmd = ["/usr/sbin/taskpolicy", "-c", "utility", str(backend["bin"]), str(project)]
     if backend.get("cpu_flag"):
         cmd.append("--cpu")
     cmd += ["-n", str(iters), "-o", str(out), "--sh-degree-interval", str(iters + 1)]
