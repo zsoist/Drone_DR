@@ -60,7 +60,9 @@ def main():
                   for p in sorted((VAULT / "reels").glob("*.mp4"))] if (VAULT / "reels").exists() else [],
         "photos": [{"name": p.name, "bytes": p.stat().st_size}
                    for p in sorted((VAULT / "photos").glob("*.jpg"), reverse=True)] if (VAULT / "photos").exists() else [],
-        "splats": [{"name": p.name, "bytes": p.stat().st_size}
+        "splats": [{"name": p.name, "bytes": p.stat().st_size,
+                    "format": p.suffix.lower().lstrip("."),
+                    "clip_id": p.stem}
                    for p in sorted((VAULT / "splats").glob("*"))
                    if p.is_file() and p.suffix.lower() in (".splat", ".ksplat", ".ply")]
                   if (VAULT / "splats").exists() else [],

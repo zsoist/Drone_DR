@@ -2417,12 +2417,18 @@ button.exp { text-align: left; cursor: pointer; }
   content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background: radial-gradient(130% 90% at 50% 12%, transparent 40%, color-mix(in srgb, var(--bg) 72%, transparent) 100%);
 }
-/* modo claro: la escena es nocturna → la dejamos como textura tenue bajo un velo claro */
+/* modo claro: la escena es nocturna → NO se muestra (se veía como lavado gris sucio).
+   Tema claro limpio con un susurro de acento arriba. */
 [data-theme="light"] .deck-main::before {
-  background:
-    linear-gradient(180deg, rgba(244,247,251,.80) 0%, rgba(244,247,251,.90) 55%, var(--bg) 92%),
-    url('assets/hero-pixel.png') center top / cover no-repeat;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, var(--bg)) 0%, var(--bg) 55%);
 }
+[data-theme="light"] .deck-main::after { background: none; }
+/* dron en claro: el filtro no debe blanquearlo (es grafito oscuro sobre fondo claro) */
+[data-theme="light"] .fly-drone.v10 .dr-img {
+  filter: saturate(1.25) contrast(1.14) brightness(.94) drop-shadow(0 6px 5px rgba(20,30,50,.22));
+}
+[data-theme="light"] .deck-title.v6 { text-shadow: none; }
+[data-theme="light"] .deck-greet { text-shadow: none; }
 /* el cielo animado (nubes/hojas/polvo) y el contenido van por encima del fondo */
 .deck-sky { z-index: 1; }
 /* la escena ya trae estrellas: atenúa el polvo propio para no saturar */
