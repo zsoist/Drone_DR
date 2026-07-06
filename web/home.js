@@ -59,45 +59,65 @@ main.classList.add('deck-main');
       img: thumb(byDate[4]) },
   ];
 
-  // dron héroe v7: sprite PIXEL-ART generado desde un mapa de píxeles (crispEdges = 4K nítido).
-  // Vista lateral; la cámara vive en #d-gimbal para estabilizarse (contra-rota el lean).
-  const PAL = { p: 'rgba(150,205,255,.32)', P: 'rgba(190,225,255,.5)', k: '#0b1119', d: '#28313f',
-    m: '#47576c', h: '#d6e6fb', c: '#38d9e5', g: '#3ddc97', r: '#ff5b5b', l: '#080e15', y: '#8fb6e6' };
-  const U = 4;   // tamaño de cada píxel en unidades de viewBox
-  const px = (rows, y0) => rows.map((row, y) => [...row].map((ch, x) => {
+  // dron héroe v8: pixel-art top-down con brazos que ROTAN por frames (steps) y cuerpo
+  // sombreado (luz arriba-izq) → parece girar en 3D. crispEdges = nítido a cualquier escala.
+  const PAL = {
+    k: '#0a0f16', s: '#151c26', d: '#232c39', m: '#3c4a5e', L: '#5a6c85', h: '#cfe0f5', H: '#ffffff',
+    c: '#38d9e5', C: '#8ef0ff', g: '#3ddc97', r: '#ff5b5b', y: '#ffcf5b', o: '#ff9f43',
+    p: 'rgba(150,210,255,.22)', P: 'rgba(215,240,255,.62)',
+  };
+  const U = 4;   // tamaño de cada píxel (unidades de viewBox)
+  const px = (rows, ox, oy) => rows.map((row, gy) => [...row].map((ch, gx) => {
     const col = PAL[ch]; if (!col) return '';
     const cls = (ch === 'p' || ch === 'P') ? ' class="pp"' : '';
-    return `<rect x="${x * U}" y="${(y + y0) * U}" width="${U}" height="${U}" fill="${col}"${cls}/>`;
+    return `<rect x="${(gx + ox) * U}" y="${(gy + oy) * U}" width="${U}" height="${U}" fill="${col}"${cls}/>`;
   }).join('')).join('');
-  // fuselaje + hélices + brazos (vista lateral, morro a la derecha)
+
+  // ---- cuerpo central (estático): octágono domado con luz arriba-izq y sombra abajo-der ----
   const BODY = [
-    '....pPPp..............pPPp..',
-    '...pPPPPp............pPPPPp.',
-    '....pPPp..............pPPp..',
-    '.....kk................kk...',
-    '.....km..............mk.....',
-    '......km............mk......',
-    '.......km..........mk.......',
-    '........kmddddddddmk........',
-    '........kdmhhhhhhmddk.......',
-    '........kdgdddddddcdk.......',
-    '........kdddddddddcdk.......',
-    '........kdrddddddddk........',
-    '.........kmddddddmk.........',
-    '..........kkddddkk.........',
+    '....kkkk....',
+    '..kkhHHhkk..',   // H = brillo especular
+    '.khhhmmmhhk.',
+    'khhhmmmmmssk',
+    'khhmcCCcmssk',   // domo de cámara (c) con lente clara (C)
+    'khmmCCCCmssk',
+    'khmmcCCcmssk',
+    'khmmmyymmssk',   // sensor amarillo
+    'khdmmmmmmdsk',
+    '.kddmmmmssk.',
+    '..kddmmssk..',
+    '....kkkk....',
   ];
-  // gimbal + cámara (grupo propio: se estabiliza por JS)
-  const GIMBAL = [
-    '............k..k...........',
-    '...........kcccck.........',
-    '...........kclck..........',
-    '............kk............',
+
+  // ---- un brazo (apunta arriba): disco de hélice + motor cilíndrico + manga + LED ----
+  // borde izq iluminado (h), borde der en sombra (s/k) → parece un tubo 3D al rotar
+  const armRows = (led) => [
+    '..pPPp..',
+    '.pPPPPp.',
+    'pPPPPPPp',
+    'pPPkkPPp',   // hub oscuro
+    'pPPPPPPp',
+    '.pPPPPp.',
+    '..pPPp..',
+    '..hddk..',   // tapa del motor (h lit-izq, k shadow-der)
+    '..h' + led + led + 'k..',   // LEDs
+    '..hmmk..',   // manga cilíndrica
+    '..hmmk..',
+    '..hmms..',
+    '..kmmk..',   // base (conecta al cuerpo)
   ];
+  const arm = (led) => px(armRows(led), 12, 2);   // centrado en x=64 (col 16), base ≈ y56
+
   const DRONE = `
-    <svg class="fly-drone v7" id="hero-drone" viewBox="0 0 112 76" shape-rendering="crispEdges"
+    <svg class="fly-drone v8" id="hero-drone" viewBox="0 0 128 128" shape-rendering="crispEdges"
          data-tip="Doble click = que te siga · click = pirueta">
-      ${px(BODY, 0)}
-      <g id="d-gimbal">${px(GIMBAL, 14)}</g>
+      <g id="d-rotor">
+        <g transform="rotate(45 64 64)">${arm('g')}</g>
+        <g transform="rotate(315 64 64)">${arm('g')}</g>
+        <g transform="rotate(135 64 64)">${arm('r')}</g>
+        <g transform="rotate(225 64 64)">${arm('r')}</g>
+      </g>
+      ${px(BODY, 10, 10)}
     </svg>`;
 
   main.innerHTML = `
@@ -200,7 +220,6 @@ main.classList.add('deck-main');
   // ---- motor de vuelo del dron: resorte hacia un objetivo, banking, gimbal, giro ----
   const drone = document.getElementById('hero-drone');
   const air = document.getElementById('hero-air');
-  const gimbal = drone.querySelector('#d-gimbal');
   const titleEl = document.getElementById('deck-title');
   const clmp = (v, a, b) => Math.max(a, Math.min(b, v));
   const D = { x: 130, y: 60, vx: 70, vy: 0, face: 1, faceT: 1, lean: 0,
@@ -249,18 +268,18 @@ main.classList.add('deck-main');
     D.vx += ((D.tx - D.x) * K - D.vx * DP) * dt;
     D.vy += ((D.ty - D.y) * K - D.vy * DP) * dt;
     D.x += D.vx * dt; D.y += D.vy * dt;
-    if (D.vx > 14) D.faceT = 1; else if (D.vx < -14) D.faceT = -1;
-    D.face += (D.faceT - D.face) * Math.min(1, dt * 5.5);
-    const leanT = clmp(Math.abs(D.vx) * 0.055, 0, 19) * Math.sign(D.vx || 1) + clmp(D.vy * 0.03, -8, 8);
-    D.lean += (leanT - D.lean) * Math.min(1, dt * 9);
+    // vista top-down: sin scaleX/lean (el grupo de brazos rota por CSS). Ligera inclinación
+    // hacia el avance = sensación de empuje, y el "trick" es una vuelta extra.
+    const tiltT = clmp(D.vx * 0.04, -10, 10);
+    D.lean += (tiltT - D.lean) * Math.min(1, dt * 8);
     if (D.trick > 0) D.trick = Math.max(0, D.trick - dt / 0.85);
-    const roll = D.trick > 0 ? (1 - D.trick) * 360 * (D.face < 0 ? -1 : 1) : 0;
-    const bob = Math.sin(D.t * 3.4) * 1.5;
+    const roll = D.trick > 0 ? (1 - D.trick) * 360 : 0;
+    const bob = Math.sin(D.t * 3.4) * 1.6;
     const speed = Math.hypot(D.vx, D.vy);
     drone.style.transform =
-      `translate(${D.x.toFixed(1)}px,${(D.y + bob).toFixed(1)}px) translate(-50%,-50%) scaleX(${D.face.toFixed(3)}) rotate(${(D.lean + roll).toFixed(1)}deg)`;
-    gimbal.setAttribute('transform', `rotate(${(-D.lean * 0.85).toFixed(1)} 50 62)`);
-    drone.style.setProperty('--spin', `${(0.14 - clmp(speed * 0.0004, 0, 0.08)).toFixed(3)}s`);
+      `translate(${D.x.toFixed(1)}px,${(D.y + bob).toFixed(1)}px) translate(-50%,-50%) rotate(${(D.lean + roll).toFixed(1)}deg)`;
+    drone.style.setProperty('--spin', `${(0.12 - clmp(speed * 0.0004, 0, 0.07)).toFixed(3)}s`);
+    drone.style.setProperty('--yaw', `${(4.4 - clmp(speed * 0.012, 0, 2.6)).toFixed(2)}s`);   // gira más rápido al volar
     // downwash pixel: cae del dron, más denso cuanto más rápido vuela (interacción con el fondo)
     if (now - lastPuff > (speed > 70 ? 55 : 130)) {
       lastPuff = now;

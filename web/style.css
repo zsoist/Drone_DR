@@ -2437,3 +2437,16 @@ button.exp { text-align: left; cursor: pointer; }
 
 /* el fondo fijo de la home cubre todo el viewport → el sidebar debe ir POR ENCIMA */
 .sidebar { z-index: 60; background: var(--surface); }
+
+/* ===== BLOQUE 16 · dron v8 top-down que rota por frames ===== */
+.fly-drone.v8 { position: absolute; left: 0; top: 0; width: 126px; height: auto;
+  pointer-events: auto; cursor: pointer; will-change: transform; image-rendering: pixelated;
+  filter: drop-shadow(0 5px 0 rgba(0,0,0,.4)); animation: none; }
+/* grupo de brazos: yaw en pasos discretos = frames de rotación (parece girar en 3D) */
+.fly-drone.v8 #d-rotor { transform-box: view-box; transform-origin: 64px 64px;
+  animation: yaw var(--yaw, 4.4s) steps(24) infinite; }
+@keyframes yaw { to { transform: rotate(360deg); } }
+.fly-drone.v8 .pp { animation: prop-flick var(--spin, .12s) steps(2) infinite; }
+.fly-drone.v8:hover { filter: drop-shadow(0 5px 0 rgba(0,0,0,.4)) drop-shadow(0 0 9px color-mix(in srgb, var(--accent) 60%, transparent)); }
+.hero-air.following .fly-drone.v8 { filter: drop-shadow(0 5px 0 rgba(0,0,0,.4)) drop-shadow(0 0 7px var(--accent)); }
+@media (max-width: 640px) { .fly-drone.v8 { width: 96px; } }

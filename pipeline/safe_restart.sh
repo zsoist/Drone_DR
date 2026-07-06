@@ -3,14 +3,26 @@
 # uso: safe_restart.sh [web|worker|both]
 T="${1:-web}"
 if [[ "$T" == "worker" || "$T" == "both" ]]; then
-  BUSY=$(curl -s http://localhost:8790/api/jobs | python3 -c "
-import json,sys
-try: d=json.load(sys.stdin)
-except: d={}
-heavy=[j for j in d.get('jobs',[]) if j.get('status')=='running' and j.get('kind') in ('splat','3d')]
-print(len(heavy))
-for j in heavy: print(' -', j['id'], f\"{round(j.get('progress',0)*100)}%\", file=sys.stderr)
-")
+  BUSY=$(python3 - <<'PY'
+import sqlite3, sys
+db = "/Volumes/SSD/drone-vault/manifest/jobs.db"
+try:
+    con = sqlite3.connect(db, timeout=5)
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "select id, kind, label, progress from jobs "
+        "where status='running' and kind in ('splat','3d') "
+        "order by started desc").fetchall()
+except Exception as e:
+    print("1")
+    print(f" - no se pudo leer {db}: {e}", file=sys.stderr)
+    sys.exit(0)
+print(len(rows))
+for j in rows:
+    pct = round(float(j["progress"] or 0) * 100)
+    print(f" - {j['kind']} {j['label']} {j['id']} {pct}%", file=sys.stderr)
+PY
+)
   if [[ "${BUSY%%$'\n'*}" != "0" ]]; then
     echo "ABORTADO: hay trabajos pesados corriendo (splat/3d). Espera o cancélalos primero." >&2
     exit 1

@@ -22,7 +22,10 @@ os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bi
 
 VAULT = Path("/Volumes/SSD/drone-vault")
 PIPE = Path(__file__).resolve().parent
-SPLAT_BIN = PIPE.parent / "splat" / "OpenSplat" / "build" / "opensplat"
+SPLAT_ROOT = PIPE.parent / "splat" / "OpenSplat"
+SPLAT_CPU_BIN = SPLAT_ROOT / "build" / "opensplat"
+SPLAT_MPS_BIN = SPLAT_ROOT / "build-mps" / "opensplat"
+LIBTORCH_LIB = PIPE.parent / "splat" / "libtorch" / "lib"
 DOCKER = "/usr/local/bin/docker"
 POLL_S = 3
 
@@ -71,6 +74,52 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
         os.replace(cam, splat_dir / f"{cid}.cameras.json")
     shutil.rmtree(stage, ignore_errors=True)
     return final_out
+
+
+def opensplat_runtime(bin_path: Path) -> str:
+    """Return the CMake GPU runtime for an OpenSplat binary, if discoverable."""
+    cache = bin_path.parent / "CMakeCache.txt"
+    if not bin_path.exists() or not cache.exists():
+        return "missing"
+    for line in cache.read_text(errors="ignore").splitlines():
+        if line.startswith("GPU_RUNTIME:"):
+            return line.rsplit("=", 1)[-1].strip() or "CPU"
+    return "unknown"
+
+
+def metal_toolchain_available() -> bool:
+    try:
+        return subprocess.run(["xcrun", "--find", "metal"], capture_output=True,
+                              timeout=5).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def choose_splat_backend(iters: int, force_cpu: bool = False, mps_ready: bool | None = None,
+                         mps_bin: Path = SPLAT_MPS_BIN, cpu_bin: Path = SPLAT_CPU_BIN) -> dict:
+    """Select the strongest local OpenSplat backend without losing CPU fallback.
+
+    OpenSplat uses GPU automatically when built with MPS; passing --cpu disables
+    that path. The current stable binary is CPU-only, while build-mps/ is the
+    safe slot for a Metal build. Keeping both lets us upgrade quality without
+    breaking the known-good CPU trainer.
+    """
+    if mps_ready is None:
+        mps_ready = opensplat_runtime(mps_bin) == "MPS" and metal_toolchain_available()
+    if not force_cpu and mps_ready:
+        return {"bin": mps_bin, "device": "Metal/MPS", "cpu_flag": False,
+                "note": f"{iters} iters aceleradas por GPU local"}
+    runtime = opensplat_runtime(cpu_bin)
+    return {"bin": cpu_bin, "device": "CPU", "cpu_flag": True,
+            "note": f"{iters} iters en CPU fallback ({runtime})"}
+
+
+def opensplat_train_cmd(project: Path, out: Path, iters: int, backend: dict) -> list[str]:
+    cmd = [str(backend["bin"]), str(project)]
+    if backend.get("cpu_flag"):
+        cmd.append("--cpu")
+    cmd += ["-n", str(iters), "-o", str(out), "--sh-degree-interval", str(iters + 1)]
+    return cmd
 
 
 def run_3d(j: dict):
@@ -136,7 +185,10 @@ def run_splat(j: dict):
     stage.mkdir(parents=True, exist_ok=True)
     tmp_out = stage / f"{cid}.splat"
     ITERS = int(j["spec"].get("iters", 2000))
-    jobstore.update(j["id"], detail=f"entrenando {ITERS} iters sobre {n_cams} cámaras (CPU)",
+    backend = choose_splat_backend(ITERS, force_cpu=bool(j["spec"].get("force_cpu")))
+    if not backend["bin"].exists():
+        raise RuntimeError(f"opensplat no está compilado: {backend['bin']}")
+    jobstore.update(j["id"], detail=f"entrenando {ITERS} iters sobre {n_cams} cámaras ({backend['device']})",
                     stage="train", progress=0.1)
     try:
         # --sh-degree-interval > iters: el salto de armónicos esféricos del step
@@ -144,11 +196,10 @@ def run_splat(j: dict):
         # justo después). El formato .splat ni siquiera exporta los coeficientes
         # SH, así que entrenar solo el grado 0 no pierde nada y es estable.
         rc = jobstore.run_tracked(j["id"],
-            [str(SPLAT_BIN), str(proj), "--cpu", "-n", str(ITERS), "-o", str(tmp_out),
-             "--sh-degree-interval", str(ITERS + 1)],
+            opensplat_train_cmd(proj, tmp_out, ITERS, backend),
             timeout=4 * 3600, abort_re=r"Step \d+: nan",
             progress_re=r"\((\d+)%\)",
-            env={**os.environ, "DYLD_LIBRARY_PATH": str(SPLAT_BIN.parent.parent.parent.parent / "libtorch" / "lib")})
+            env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)})
     except RuntimeError as e:
         if "abortado" in str(e):
             # una vez el loss es nan los pesos no se recuperan: seguir es quemar CPU

@@ -310,6 +310,19 @@ check("presets: todos con pc-quality + timeout coherentes",
 check("presets: alta es mas fina que rapido (ortho res)",
       int(worker.PRESETS["alta"]["args"][worker.PRESETS["alta"]["args"].index("--orthophoto-resolution") + 1])
       < int(worker.PRESETS["rapido"]["args"][worker.PRESETS["rapido"]["args"].index("--orthophoto-resolution") + 1]))
+_cpu_backend = worker.choose_splat_backend(7000, mps_ready=False,
+                                           mps_bin=Path("/tmp/opensplat-mps"),
+                                           cpu_bin=Path("/tmp/opensplat-cpu"))
+_gpu_backend = worker.choose_splat_backend(7000, mps_ready=True,
+                                           mps_bin=Path("/tmp/opensplat-mps"),
+                                           cpu_bin=Path("/tmp/opensplat-cpu"))
+check("splat backend: CPU fallback conserva --cpu",
+      "--cpu" in worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _cpu_backend))
+check("splat backend: Metal/MPS NO fuerza --cpu",
+      "--cpu" not in worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _gpu_backend)
+      and _gpu_backend["device"] == "Metal/MPS")
+check("splat backend: sh-degree-interval queda por encima de iters",
+      worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _gpu_backend)[-1] == "7001")
 
 # --- splat publish: stage -> atomic public artifact ---
 _spdir = Path(tempfile.mkdtemp())
