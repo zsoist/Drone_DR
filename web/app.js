@@ -6,45 +6,49 @@ let state = { q: '', tier: 'all', sort: 'date', scene: null, semantic: false, sp
 
 main.innerHTML = `
   <div class="page-head"><h1>Vuelos</h1><span class="count" id="count"></span></div>
-  <div class="statgrid" id="stats">${'<div class="sk" style="height:74px"></div>'.repeat(4)}</div>
-  <div class="glass tbcard">
+  <div class="glass tbcard tb2">
     <div class="tb-row">
-      <label class="search">${icon('search')}<input id="q" type="search" placeholder="Buscar por fecha, lugar, tags AI…" autocomplete="off"><kbd>/</kbd></label>
-      <button class="chip" id="sem-toggle" title="Búsqueda semántica AI (por significado)">${icon('spark')} Semántica</button>
+      <label class="search" data-tip="Busca por fecha, lugar o cualquier tag del análisis AI">${icon('search')}<input id="q" type="search" placeholder="Buscar por fecha, lugar, tags AI…" autocomplete="off"><kbd>/</kbd></label>
+      <button class="chip" id="sem-toggle" data-tip="Busca por significado con embeddings — escribe y pulsa Enter">${icon('spark')} Semántica</button>
       <span class="spacer" style="flex:1"></span>
+      <label class="eb-field"><span>Tier</span>
       <select class="ctl" id="tier" aria-label="Filtrar por tier">
-        <option value="all">Todos los tiers</option>
+        <option value="all">Todos</option>
         <option value="full">Full — con video</option>
         <option value="standard">Standard</option>
         <option value="skim">Skim</option>
         <option value="archived">Archivados</option>
-      </select>
+      </select></label>
+      <label class="eb-field"><span>Orden</span>
       <select class="ctl" id="sort" aria-label="Ordenar">
         <option value="date">Más recientes</option>
         <option value="dur">Más largos</option>
         <option value="dist">Más distancia</option>
         <option value="alt">Más altura</option>
         <option value="score">Mejor score AI</option>
-      </select>
+      </select></label>
     </div>
+    <div class="tb-div"></div>
     <div class="tb-row">
-      <button class="chip" data-qf="video">${icon('play')} Video</button>
-      <button class="chip" data-qf="model">${icon('cube')} 3D</button>
-      <button class="chip" data-qf="ai">${icon('spark')} AI</button>
-      <button class="chip" data-qf="alto">${icon('mountain')} +100 m</button>
-      <button class="chip" data-qf="4k60">${icon('film')} 4K60</button>
-      <button class="chip" data-qf="largo">${icon('clock')} +1 min</button>
-      <button class="chip" data-qf="top">${icon('spark')} Score 6+</button>
+      <span class="tb-lb">Filtros</span>
+      <button class="chip" data-qf="video" data-tip="Solo clips con streaming">${icon('play')} Video</button>
+      <button class="chip" data-qf="model" data-tip="Con modelo 3D procesado">${icon('cube')} 3D</button>
+      <button class="chip" data-qf="ai" data-tip="Con análisis AI">${icon('spark')} AI</button>
+      <button class="chip" data-qf="alto" data-tip="Altura máxima sobre 100 m">${icon('mountain')} +100 m</button>
+      <button class="chip" data-qf="4k60" data-tip="4K a 60 cuadros">${icon('film')} 4K60</button>
+      <button class="chip" data-qf="largo" data-tip="Duración sobre 1 minuto">${icon('clock')} +1 min</button>
+      <button class="chip" data-qf="top" data-tip="Score AI de 6 o más">${icon('spark')} Score 6+</button>
       <span class="spacer" style="flex:1"></span>
+      <span class="tb-lb">Vista</span>
       <div class="seg" role="group" aria-label="Vista">
-      <button data-view="grid" class="on" title="Cuadrícula">${icon('grid')}</button>
-      <button data-view="list" title="Lista">${icon('list')}</button>
-      <button data-view="map" title="Mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
-      <button data-view="places" title="Lugares">${icon('pin')}<span class="seg-lb">Lugares</span></button>
-      <button data-view="dates" title="Fechas">${icon('cal')}<span class="seg-lb">Fechas</span></button>
+      <button data-view="grid" class="on" data-tip="Cuadrícula">${icon('grid')}</button>
+      <button data-view="list" data-tip="Lista compacta">${icon('list')}</button>
+      <button data-view="map" data-tip="Rutas en el mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
+      <button data-view="places" data-tip="Agrupados por lugar de despegue">${icon('pin')}<span class="seg-lb">Lugares</span></button>
+      <button data-view="dates" data-tip="Agrupados por fecha">${icon('cal')}<span class="seg-lb">Fechas</span></button>
       </div>
     </div>
-    <div class="chips" id="scene-chips"></div>
+    <div class="chips tb-scenes" id="scene-chips"></div>
   </div>
   <div class="grid" id="grid">${'<div class="sk" style="aspect-ratio:16/11"></div>'.repeat(6)}</div>
   <div id="mapview" style="display:none">
@@ -69,26 +73,6 @@ function setHTML(el, html) {
   el.innerHTML = html;
 }
 
-function stats(list) {
-  const dist = list.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
-  const dur = list.reduce((a, f) => a + f.duration_s, 0);
-  const alt = Math.max(0, ...list.map(f => f.stats.max_rel_alt_m || 0));
-  const days = new Set(list.map(f => f.date)).size;
-  const best = Math.max(0, ...list.map(f => ai[f.clip_id]?.travel_score || 0));
-  setHTML(document.getElementById('stats'), `
-    <div class="stat"><div class="lb">${icon('drone')} Vuelos</div><div class="v">${list.length}</div>
-      <div class="sub">${days} ${days === 1 ? 'día' : 'días'} de vuelo</div></div>
-    <div class="stat"><div class="lb">${icon('route')} Distancia</div><div class="v">${fmt.km(dist)}</div>
-      <div class="sub">recorrida en total</div></div>
-    <div class="stat"><div class="lb">${icon('clock')} En el aire</div><div class="v">${fmt.hours(dur)}</div>
-      <div class="sub">de metraje real</div></div>
-    <div class="stat"><div class="lb">${icon('mountain')} Alt máx</div><div class="v">${Math.round(alt)}<small> m</small></div>
-      <div class="sub">sobre el despegue</div></div>
-    <div class="stat"><div class="lb">${icon('film')} 4K60</div><div class="v">${list.filter(f => f.resolution === '3840x2160' && f.fps > 45).length}</div>
-      <div class="sub">clips premium</div></div>
-    <div class="stat"><div class="lb">${icon('spark')} Mejor score</div><div class="v">${best}<small>/10</small></div>
-      <div class="sub">según el análisis AI</div></div>`);
-}
 
 const spotKey = f => f.stats?.home ? `${Math.round(f.stats.home[0] / 0.005)}:${Math.round(f.stats.home[1] / 0.005)}` : null;
 function matches(f) {
@@ -162,7 +146,6 @@ function render() {
   const isMap = state.view === 'map';
   grid.style.display = isMap ? 'none' : '';
   mapv.style.display = isMap ? '' : 'none';
-  stats(list);
   chipsRow();
   if (isMap) { renderMap(list); return; }
   if (state.view === 'places') { renderPlaces(list); return; }
