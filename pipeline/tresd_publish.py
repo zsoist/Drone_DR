@@ -13,6 +13,7 @@ Usage: python3 tresd_publish.py <clip_id> [<proj_dir>]
 """
 import json
 import re
+import os
 import shutil
 import subprocess
 import sys
@@ -96,7 +97,12 @@ def _budget_side(n_pages: int, cap: int, budget_mb: int) -> int:
 
 
 def make_viewer_textures(model_dir: Path) -> dict:
-    """Genera los sets de textura del visor (bajo + alto) + sus .mtl. Idempotente."""
+    """Genera los sets de textura del visor (bajo/alto/extra) + sus .mtl. Idempotente.
+
+    Decodifica cada página fuente UNA sola vez (no una por tier: eran N×3 decodes de 4096²)
+    y reescala en memoria a cada tier de mayor a menor — cada reescalado parte del anterior,
+    más pequeño = más rápido que reabrir el 4096 original tres veces.
+    """
     from PIL import Image
     mtl = model_dir / "odm_textured_model_geo.mtl"
     if not mtl.exists():
@@ -105,31 +111,30 @@ def make_viewer_textures(model_dir: Path) -> dict:
     pages = [ln.split()[1] for ln in lines if ln.strip().startswith("map_Kd")]
     if not pages:
         return {}
-    # cachea las fuentes una vez; reescala por tier
+    # lados por tier, ordenados de mayor a menor (reescalado en cascada)
+    tiers = sorted(VIEWER_TIERS.items(), key=lambda kv: -kv[1]["cap"])
+    sides = {t: _budget_side(len(pages), cfg["cap"], cfg["budget_mb"]) for t, cfg in tiers}
+    for ln in lines:
+        if not ln.strip().startswith("map_Kd"):
+            continue
+        src = model_dir / ln.split()[1]
+        if not src.exists():
+            continue
+        im = Image.open(src).convert("RGB")      # UNA decodificación por página
+        for tier, cfg in tiers:
+            side = sides[tier]
+            if max(im.size) > side:              # reescala desde el estado actual (cascada)
+                r = side / max(im.size)
+                im = im.resize((max(1, round(im.width * r)), max(1, round(im.height * r))), Image.LANCZOS)
+            im.save(model_dir / f"{cfg['prefix']}{Path(src.name).stem}.jpg", quality=82, optimize=True)
+    # .mtl por tier (apunta a las páginas reescaladas)
     out = {}
-    for tier, cfg in VIEWER_TIERS.items():
-        side = _budget_side(len(pages), cfg["cap"], cfg["budget_mb"])
-        out_lines = []
-        for ln in lines:
-            if ln.strip().startswith("map_Kd"):
-                src_name = ln.split()[1]
-                src = model_dir / src_name
-                dst_name = f"{cfg['prefix']}{Path(src_name).stem}.jpg"
-                if src.exists():
-                    im = Image.open(src).convert("RGB")
-                    if max(im.size) > side:            # preserva aspecto (páginas no-cuadradas)
-                        r = side / max(im.size)
-                        im = im.resize((max(1, round(im.width * r)), max(1, round(im.height * r))),
-                                       Image.LANCZOS)
-                    im.save(model_dir / dst_name, quality=82, optimize=True)
-                    out_lines.append(ln.replace(src_name, dst_name))
-                else:
-                    out_lines.append(ln)
-            else:
-                out_lines.append(ln)
+    for tier, cfg in tiers:
+        out_lines = [ln.replace(ln.split()[1], f"{cfg['prefix']}{Path(ln.split()[1]).stem}.jpg")
+                     if ln.strip().startswith("map_Kd") else ln for ln in lines]
         (model_dir / cfg["mtl"]).write_text("\n".join(out_lines) + "\n")
-        out[tier] = {"mtl": cfg["mtl"], "side": side, "pages": len(pages),
-                     "gpu_mb": round(len(pages) * side * side * 4 / 1048576)}
+        out[tier] = {"mtl": cfg["mtl"], "side": sides[tier], "pages": len(pages),
+                     "gpu_mb": round(len(pages) * sides[tier] * sides[tier] * 4 / 1048576)}
     return out
 
 
@@ -421,8 +426,6 @@ EOF""")
         "qa": qa,
         "cloud_bytes": (out / "cloud.ply").stat().st_size if (out / "cloud.ply").exists() else 0,
         "cloud_points": ply_vertex_count(out / "cloud.ply"),
-        "cloud_source_points": source_points,
-        "cloud_decimation_step": decimation_step,
         "cloud_copc_asset": copc_asset,
         "cloud_copc_bytes": (out / copc_asset).stat().st_size if copc_asset and (out / copc_asset).exists() else 0,
         "model_obj": "model/odm_textured_model_geo.obj",
@@ -436,7 +439,8 @@ EOF""")
     # limpieza: temporales y basura de macOS no se publican
     for junk in [*out.rglob(".DS_Store"), *out.glob(".*.tif"), *out.glob("*.aux.xml")]:
         junk.unlink(missing_ok=True)
-    (out / "meta.json").write_text(json.dumps(meta, indent=1))
+    _mtmp = out / "meta.json.tmp"; _mtmp.write_text(json.dumps(meta, indent=1))
+    os.replace(_mtmp, out / "meta.json")   # atómico: un write parcial vaciaría el índice
     # el manifest NUNCA queda stale tras publicar (el audit encontró model_viewer
     # ausente del system.json porque el rebuild solo lo hacía el worker)
     subprocess.run(["python3", str(Path(__file__).parent / "build_index.py")], check=True)

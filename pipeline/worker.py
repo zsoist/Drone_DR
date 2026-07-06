@@ -232,7 +232,7 @@ def run_3d(j: dict):
             m["preset_requested"] = j["spec"].get("preset")
         if j["spec"].get("title"):
             m["title"] = j["spec"]["title"]
-        mf.write_text(json.dumps(m, indent=1))
+        _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
     rebuild_index()
     browser_gate(j["id"], "model", cid)
     jobstore.update(j["id"], progress=1.0)

@@ -908,8 +908,12 @@ class H(BaseHTTPRequestHandler):
         # binarios 3D pesados (nube/malla/splat): cachear PERO revalidar (no-cache + 304).
         # Las URLs no llevan versión y un re-entreno reescribe el mismo nombre — max-age
         # serviría stale; no-store re-bajaría MBs en cada visita. 304 = lo mejor de ambos.
-        # los bundles de SuperSplat (23MB dist) solo cambian al rebuildear: 304 también
-        revalidate = f.suffix.lower() in REVALIDATE_EXTS or str(f).startswith(str(SUPERSPLAT))
+        # los bundles de SuperSplat (23MB dist) solo cambian al rebuildear: 304 también.
+        # imágenes bajo models/ (vt*/ortho/dsm) cambian en re-procesado → revalidan, no 24h stale
+        model_img = (f.suffix.lower() in (".jpg", ".png", ".webp")
+                     and str(f).startswith(str(VAULT / "models")))
+        revalidate = (f.suffix.lower() in REVALIDATE_EXTS or str(f).startswith(str(SUPERSPLAT))
+                      or model_img)
         mtime = int(f.stat().st_mtime)
         if revalidate and not rng:
             ims = self.headers.get("If-Modified-Since")
@@ -1176,6 +1180,8 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "cid requerido"}, 400)
             if ext not in (".ply", ".splat", ".ksplat"):
                 return self.send_json({"error": f"formato {ext or '?'} no soportado (.ply/.splat/.ksplat)"}, 400)
+            if jobstore.pending("splat", cid):     # no pisar un entrenamiento que escribe el mismo .splat
+                return self.send_json({"error": "hay un entrenamiento de splat activo para este clip — espera a que termine"}, 409)
             length = int(self.headers.get("Content-Length", 0))
             if not length:
                 return self.send_json({"error": "body vacío"}, 400)
@@ -1183,7 +1189,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "archivo > 2GB"}, 413)
             sdir = VAULT / "splats"
             sdir.mkdir(parents=True, exist_ok=True)
-            tmp = sdir / f".upload-{cid}{ext}"
+            tmp = sdir / f".upload-{cid}-{secrets.token_hex(4)}{ext}"   # único: 2 uploads no colisionan
             read = 0
             with open(tmp, "wb") as f:
                 while read < length:
@@ -1205,6 +1211,11 @@ class H(BaseHTTPRequestHandler):
                 if old.is_file() and old.suffix.lower() in (".ply", ".splat", ".ksplat"):
                     os.replace(old, hist / f"{old.stem}-{ts}{old.suffix}")
                     archived.append(old.name)
+            # poda del historial: conserva las 6 versiones más recientes de este clip (evita
+            # crecimiento sin límite; cada re-subida deja .splat+.ksplat = ~2MB)
+            past = sorted(hist.glob(f"{cid}-*"), key=lambda p: p.stat().st_mtime, reverse=True)
+            for stale in past[6:]:
+                stale.unlink(missing_ok=True)
             final = sdir / f"{cid}{ext}"
             os.replace(tmp, final)
             kname = None
@@ -1316,7 +1327,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "modelo no encontrado"}, 404)
             meta = json.loads((mdir / "meta.json").read_text())
             meta["title"] = str(spec.get("title", ""))[:80].strip()
-            (mdir / "meta.json").write_text(json.dumps(meta, indent=1))
+            _mt = mdir / "meta.json.tmp"; _mt.write_text(json.dumps(meta, indent=1)); os.replace(_mt, mdir / "meta.json")
             rebuild_index()
             return self.send_json({"ok": True, "title": meta["title"]})
         if u.path == "/api/model_delete":
@@ -1331,10 +1342,17 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "hay un trabajo activo sobre este modelo — cancélalo primero"}, 409)
             freed = ["models/" + cid]
             shutil.rmtree(mdir)
-            for extra in [VAULT / "splats" / f"{cid}.splat", VAULT / "splats" / f"{cid}.meta.json"]:
-                if extra.exists():
-                    extra.unlink()
-                    freed.append("splats/" + extra.name)
+            # borra TODO el set de splat del clip + historial: si sobrevive el .ksplat, best_splats
+            # lo rankea sobre el .splat y el splat "borrado" RESUCITA en la UI (cid ya saneado)
+            sdir = VAULT / "splats"
+            for extra in sdir.glob(f"{cid}.*"):        # .splat .ksplat .cameras.json .meta.json
+                if extra.is_file():
+                    extra.unlink(); freed.append("splats/" + extra.name)
+            hist = sdir / "history"
+            if hist.is_dir():
+                for h in hist.glob(f"{cid}-*"):        # re-subidas archivadas de SuperSplat
+                    if h.is_file():
+                        h.unlink(); freed.append("splats/history/" + h.name)
             # purga opcional del proyecto ODM (GBs de frames+etapas; el video RAW nunca se toca)
             proj = (VAULT / "odm" / ("proj0104" if cid.endswith("0104_D") else f"proj_{cid}")).resolve()
             if spec.get("purge_source") and proj.parent == (VAULT / "odm").resolve() and proj.is_dir():

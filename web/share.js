@@ -137,12 +137,17 @@ function makeScene() {
   const dl = new THREE.DirectionalLight(0xffffff, 1.2);
   dl.position.set(1, 2, 1.5);
   scene.add(dl);
+  let renderFrames = 90;                                       // render on-demand (idle = 0 GPU)
+  const wake = () => { renderFrames = 90; };
+  view._wake = wake;
+  controls.addEventListener('change', wake);
   const ro = new ResizeObserver(() => {
     const W = view.clientWidth, H = view.clientHeight;
     if (!W || !H) return;
     renderer.setSize(W, H);
     cam.aspect = W / H;
     cam.updateProjectionMatrix();
+    wake();
   });
   ro.observe(view);
   (function loop() {
@@ -162,8 +167,8 @@ function makeScene() {
       return;
     }
     requestAnimationFrame(loop);
-    controls.update();
-    renderer.render(scene, cam);
+    if (controls.update()) renderFrames = Math.max(renderFrames, 2);   // damping/autoRotate
+    if (renderFrames > 0) { renderer.render(scene, cam); renderFrames--; }
   })();
   return { scene, cam, controls, renderer };
 }
@@ -206,9 +211,11 @@ function fitSplatViewer(viewer) {
 
 const loaders = {
   async cloud() {
+    const myLoad = view._loadToken;                            // currency (#1)
     const st = spinner('Descargando nube de puntos…');
     const geo = await new PLYLoader().loadAsync(`${base}/cloud.ply`,
       ev => { st.textContent = ev.total ? `Nube · ${Math.round(ev.loaded / ev.total * 100)}%` : `Nube · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
+    if (view._loadToken !== myLoad) { geo.dispose(); return; }
     const { scene, cam, controls } = makeScene();
     const mat = new THREE.PointsMaterial({ size: 0.18, sizeAttenuation: true, vertexColors: geo.hasAttribute('color') });
     const pts = new THREE.Points(geo, mat);
@@ -217,6 +224,7 @@ const loaders = {
     frame(pts, cam, controls, true);
   },
   async mesh() {
+    const myLoad = view._loadToken;                            // currency (#1)
     const st = spinner('Descargando malla texturizada…');
     const mbase = `${base}/model/`;
     // switch de calidad 4-tier con supersampling por tier (Metal). extra/ultra desktop-only
@@ -250,6 +258,7 @@ const loaders = {
     const meshFile = (meta.model_viewer || 'model/odm_textured_model_geo.obj').split('/').pop();
     const obj = await new OBJLoader().setMaterials(mc0).setPath(mbase).loadAsync(meshFile,
       ev => { if (ev.loaded) st.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
+    if (view._loadToken !== myLoad) return;                    // tab cambió durante la descarga
     const { scene, cam, controls, renderer } = makeScene();
     renderer.setPixelRatio(prFor(curTier));
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -276,6 +285,7 @@ const loaders = {
       }));
       renderer.setPixelRatio(prFor(tier));
       curTier = tier;
+      view._wake?.();
       return true;
     }
     obj.rotation.x = -Math.PI / 2;
@@ -359,6 +369,7 @@ const loaders = {
 document.querySelector('.seg').addEventListener('click', e => {
   const b = e.target.closest('[data-v]');
   if (!b) return;
+  view._loadToken = (view._loadToken || 0) + 1;   // invalida carga mesh/cloud/splat en vuelo (#1)
   // dispose async del vendored lanza NotFoundError → silenciar el rechazo del promise (#5)
   if (view._splatViewer) { const v = view._splatViewer; view._splatViewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
   document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));

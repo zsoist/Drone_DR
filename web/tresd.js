@@ -331,6 +331,11 @@
     cur = models.find(m => m.clip_id === cid);
     if (!cur) return;
     clearTimeout(autoloadTimer);                  // cancela auto-carga del proyecto anterior (#12)
+    // invalida cargas mesh/cloud en vuelo del proyecto anterior (#1 currency guard)
+    ['mesh-box', 'cloud-box'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b._loadToken = (b._loadToken || 0) + 1;
+    });
     localStorage.setItem(PROJ_KEY, cid);
     document.getElementById('proj-view').style.display = '';
     document.querySelectorAll('.proj-card').forEach(c => c.classList.toggle('on', c.dataset.cid === cid));
@@ -616,11 +621,19 @@
     controls.dampingFactor = 0.07;
     controls.rotateSpeed = 0.55;
     controls.zoomSpeed = 0.9;
+    // render ON-DEMAND: dibuja al inicio y ~1.5s tras cada cambio (para captar decodes async
+    // de textura), luego se duerme = 0 trabajo de GPU cuando la escena está quieta. wake()
+    // lo despiertan interacción, resize, tier-swap y cambio de modo.
+    let renderFrames = 90;
+    const wake = () => { renderFrames = 90; };
+    box._wake = wake;
+    controls.addEventListener('change', wake);
     const ro = new ResizeObserver(() => {
       const W = box.clientWidth, H = box.clientHeight;
       if (!W || !H) return;
       renderer.setSize(W, H);
       cam.aspect = W / H; cam.updateProjectionMatrix();
+      wake();
     });
     ro.observe(box);
     scene.add(new THREE.AmbientLight(0xffffff, 1.15));
@@ -644,7 +657,9 @@
         renderer.forceContextLoss(); renderer.dispose();
         return;
       }
-      requestAnimationFrame(loop); controls.update(); renderer.render(scene, cam);
+      requestAnimationFrame(loop);
+      if (controls.update()) renderFrames = Math.max(renderFrames, 2);   // damping activo
+      if (renderFrames > 0) { renderer.render(scene, cam); renderFrames--; }
     })();
     return { scene, cam, controls, renderer };
   }
@@ -767,11 +782,14 @@
     return mc;
   }
   async function buildMeshViewer(box, base, model, stM) {
+    const myLoad = box._loadToken;                 // token de currency: si cambia de proyecto, aborta
     let curTier = matchMedia('(max-width: 820px), (pointer: coarse)').matches ? 'bajo' : 'alto';
     const mc0 = await tierMaterials(base, curTier, true);
+    if (box._loadToken !== myLoad) return;         // el usuario cambió de proyecto durante la carga
     const meshFile = (model.model_viewer || model.model_obj || 'model/odm_textured_model_geo.obj').split('/').pop();
     const obj = await new OBJLoader().setMaterials(mc0).setPath(base).loadAsync(meshFile,
       ev => { if (ev.loaded) stM.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB descargados`; });
+    if (box._loadToken !== myLoad) return;         // no montar la malla del proyecto viejo en el box nuevo
     const { scene, cam, controls, renderer } = makeScene(box);
     renderer.setPixelRatio(prFor(curTier));                    // supersampling del tier inicial
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -788,7 +806,7 @@
       n.material = swatches[swatches.length - 1].foto.length === 1 ? swatches[swatches.length - 1].foto[0] : swatches[swatches.length - 1].foto;
     });
     let renderMode = 'foto';
-    const applyMode = () => swatches.forEach(s => { s.mesh.material = s[renderMode].length === 1 ? s[renderMode][0] : s[renderMode]; });
+    const applyMode = () => { swatches.forEach(s => { s.mesh.material = s[renderMode].length === 1 ? s[renderMode][0] : s[renderMode]; }); box._wake?.(); };
     async function switchTier(tier) {
       if (tier === curTier) return false;
       let mc;
@@ -806,6 +824,7 @@
       }));
       renderer.setPixelRatio(prFor(tier));                    // supersampling por tier (Metal)
       curTier = tier;
+      box._wake?.();                                          // redibuja con las texturas nuevas
       return true;
     }
     obj.rotation.x = -Math.PI / 2;
@@ -841,10 +860,12 @@
     if (!cur) return;
     e.currentTarget.style.display = 'none';
     const box = document.getElementById('cloud-box');
+    const myLoad = box._loadToken;                 // currency: bail si cambia de proyecto (#1)
     const stC = spin(box, 'Descargando nube de puntos…');
     const geo = await new PLYLoader().loadAsync(`data/models/${cur.clip_id}/cloud.ply`,
       ev => { stC.textContent = ev.total ? `Nube · ${Math.round(ev.loaded / ev.total * 100)}%`
                                          : `Nube · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
+    if (box._loadToken !== myLoad) { geo.dispose(); return; }   // proyecto cambió durante la descarga
     const mat = new THREE.PointsMaterial({ size: 0.18, sizeAttenuation: true, vertexColors: geo.hasAttribute('color') });
     const pts = new THREE.Points(geo, mat);
     const { scene, cam, controls } = makeScene(box);

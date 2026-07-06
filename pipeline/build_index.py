@@ -1,5 +1,6 @@
 """Aggregate per-clip manifests into flights.json + system.json for the web app."""
 import json
+import os
 import time
 from pathlib import Path
 
@@ -8,6 +9,30 @@ VAULT = Path("/Volumes/SSD/drone-vault")
 
 def dir_size(p: Path) -> int:
     return sum(f.stat().st_size for f in p.rglob("*") if f.is_file()) if p.exists() else 0
+
+
+def write_atomic(path: Path, text: str):
+    """tmp + os.replace: la app lee estos manifests directo; un write parcial concurrente
+    (worker + server llaman rebuild_index) los dejaría truncados y vaciaría la UI."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+def load_models(models_dir: Path) -> list:
+    """Un meta.json corrupto (write parcial) NO debe tumbar todo el índice: skip + log."""
+    out = []
+    if not models_dir.exists():
+        return out
+    for d in sorted(models_dir.iterdir()):
+        mf = d / "meta.json"
+        if not mf.exists():
+            continue
+        try:
+            out.append(json.loads(mf.read_text()))
+        except (ValueError, OSError) as e:
+            print(f"  skip meta.json corrupto {d.name}: {e}", flush=True)
+    return out
 
 
 # el mismo clip puede tener .ksplat (optimizado) y .splat (fuente): UNA entrada por clip,
@@ -63,10 +88,10 @@ def main():
                 routes.append({"cid": cid,
                                "line": [[round(p["lon"], 6), round(p["lat"], 6)] for p in pts]})
     flights.sort(key=lambda f: f["clip_id"].split("_")[1], reverse=True)
-    (VAULT / "manifest" / "flights.json").write_text(
-        json.dumps({"flights": flights}, separators=(",", ":")))
-    (VAULT / "manifest" / "routes.json").write_text(
-        json.dumps({"routes": routes}, separators=(",", ":")))
+    write_atomic(VAULT / "manifest" / "flights.json",
+                 json.dumps({"flights": flights}, separators=(",", ":")))
+    write_atomic(VAULT / "manifest" / "routes.json",
+                 json.dumps({"routes": routes}, separators=(",", ":")))
 
     # system.json: storage + reels + splats + last ingest
     ingests = sorted((VAULT / "manifest").glob("ingest-*.json"))
@@ -83,11 +108,9 @@ def main():
         "splats": best_splats(VAULT / "splats"),
         "last_ingest": {"files": last["file_count"], "bytes": last["total_bytes"],
                         "at": last["ingested_at"]} if last else None,
-        "models": [json.loads((d / "meta.json").read_text())
-                   for d in sorted((VAULT / "models").iterdir())
-                   if (d / "meta.json").exists()] if (VAULT / "models").exists() else [],
+        "models": load_models(VAULT / "models"),   # tolera meta.json corrupto (no vacía la UI)
     }
-    (VAULT / "manifest" / "system.json").write_text(json.dumps(system, separators=(",", ":")))
+    write_atomic(VAULT / "manifest" / "system.json", json.dumps(system, separators=(",", ":")))
     print(f"flights.json: {len(flights)} vuelos · system.json: "
           f"{system['storage']['raw'] / 1e9:.0f}GB raw, {system['ai_count']} AI")
 
