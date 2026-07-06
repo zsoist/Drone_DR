@@ -104,13 +104,29 @@ main.classList.add('lab-main');
   }
   fileIn.addEventListener('change', () => { publish(fileIn.files[0]); fileIn.value = ''; });
   // drag&drop: contador de profundidad (dragleave dispara al cruzar hijos → parpadeo sin él) (#33/#36/#43)
+  // el <iframe> (same-origin /supersplat/) se traga los eventos de drag y jamás llegan a #lab-drop:
+  // mientras hay un drag de ARCHIVOS activo le quitamos pointer-events para que dragover/drop caigan
+  // en la zona de abajo. Sólo para 'Files' → no rompe el DnD interno de SuperSplat (capas/paneles).
   let dragDepth = 0;
-  drop.addEventListener('dragenter', e => { e.preventDefault(); if (dragDepth++ === 0) hint.hidden = false; });
+  const isFileDrag = e => Array.from(e.dataTransfer?.types || []).includes('Files');
+  const armFrame = () => { frame.style.pointerEvents = 'none'; };
+  const disarmFrame = () => { frame.style.pointerEvents = ''; };
+  drop.addEventListener('dragenter', e => { e.preventDefault(); if (isFileDrag(e)) armFrame(); if (dragDepth++ === 0) hint.hidden = false; });
   drop.addEventListener('dragover', e => e.preventDefault());
-  drop.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; hint.hidden = true; } });
+  drop.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; hint.hidden = true; disarmFrame(); } });
   drop.addEventListener('drop', e => {
-    e.preventDefault(); dragDepth = 0; hint.hidden = true;
+    e.preventDefault(); dragDepth = 0; hint.hidden = true; disarmFrame();
     if (e.dataTransfer?.files[0]) publish(e.dataTransfer.files[0]);
+  });
+  // un drag que entra DIRECTO sobre el editor dispara dragenter dentro del iframe (same-origin):
+  // lo detectamos ahí y desarmamos el iframe → el siguiente dragover ya cae en #lab-drop.
+  frame.addEventListener('load', () => {
+    try {
+      const idoc = frame.contentDocument;
+      if (!idoc) return;
+      idoc.addEventListener('dragenter', e => { if (isFileDrag(e)) { armFrame(); hint.hidden = false; } }, true);
+      idoc.addEventListener('dragover', e => { if (isFileDrag(e)) e.preventDefault(); }, true);
+    } catch { /* cross-origin: no aplica en el mismo host */ }
   });
 
   // ---- pantalla completa CSS (el Fullscreen API de iOS Safari solo funciona en <video>)
