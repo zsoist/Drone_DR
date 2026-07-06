@@ -76,10 +76,12 @@ PRESETS = {
     "estandar": {"eta": "~45-75 min", "timeout": 3 * 3600,
                  "args": ["--pc-quality", "medium", "--feature-quality", "medium",
                           "--orthophoto-resolution", "5", "--dem-resolution", "10"]},
+    # alta: pc-quality high (ultra = 8.5x tiempo, no vale en M4 16GB — community ODM);
+    # mesh-size 300k = recomendación urbana oficial para edificios/techos (default 200k)
     "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600,
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5",
-                          "--pc-copc"]},
+                          "--mesh-size", "300000", "--pc-copc"]},
 }
 
 
@@ -207,7 +209,12 @@ def run_splat(j: dict):
     # import tardío: reutiliza el quality gate del server sin duplicarlo
     from aerobrain_server import splat_quality
     cid = j["spec"]["clip_id"]
-    proj = VAULT / "odm" / ("proj0104" if cid.endswith("0104_D") else f"proj_{cid}")
+    # preferir la reconstrucción más nueva con opensfm válido: un re-run alta crea
+    # proj_<cid> premium; proj0104 es el dir legacy de 0104 (fallback)
+    candidates = [VAULT / "odm" / f"proj_{cid}"]
+    if cid.endswith("0104_D"):
+        candidates.append(VAULT / "odm" / "proj0104")
+    proj = next((c for c in candidates if (c / "opensfm" / "image_list.txt").exists()), candidates[0])
     il = proj / "opensfm" / "image_list.txt"
     il.write_text(il.read_text().replace("/datasets/code", str(proj)))
     n_cams = len([ln for ln in il.read_text().splitlines() if ln.strip()])
