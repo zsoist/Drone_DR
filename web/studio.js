@@ -49,31 +49,55 @@ main.innerHTML = `
 
           <!-- 32-35 · transporte -->
           <div class="tl-transport" id="tl-transport">
-            <button class="tl-tool" data-tp="start" data-tip="Inicio">${icon('skipStart')}</button>
-            <button class="tl-tool" data-tp="prev" data-tip="Clip anterior">${icon('prev')}</button>
-            <button class="tl-tool" data-tp="play" data-tip="Reproducir / Pausa">${icon('play')}</button>
-            <button class="tl-tool" data-tp="next" data-tip="Clip siguiente">${icon('next')}</button>
-            <button class="tl-tool" data-tp="end" data-tip="Final">${icon('skipEnd')}</button>
-            <button class="tl-tool" data-tp="mute" data-tip="Silenciar">${icon('volume')}</button>
-            <button class="tl-tool" data-tp="loop" data-tip="Bucle">${icon('loop')}</button>
+            <div class="tl-group">
+              <div class="tl-group-btns">
+                <button class="tl-tool" data-tp="start" data-tip="Ir al inicio">${icon('skipStart')}<span class="tl-lb">Inicio</span></button>
+                <button class="tl-tool" data-tp="prev" data-tip="Clip anterior">${icon('prev')}<span class="tl-lb">Atrás</span></button>
+                <button class="tl-tool big" data-tp="play" data-tip="Reproducir / Pausa (Espacio)">${icon('play')}<span class="tl-lb">Play</span></button>
+                <button class="tl-tool" data-tp="next" data-tip="Clip siguiente">${icon('next')}<span class="tl-lb">Sig.</span></button>
+                <button class="tl-tool" data-tp="end" data-tip="Ir al final">${icon('skipEnd')}<span class="tl-lb">Final</span></button>
+              </div>
+              <span class="tl-group-lb">Reproducción</span>
+            </div>
+            <div class="tl-group">
+              <div class="tl-group-btns">
+                <button class="tl-tool" data-tp="mute" data-tip="Activar / silenciar audio">${icon('volume')}<span class="tl-lb">Audio</span></button>
+                <button class="tl-tool" data-tp="loop" data-tip="Repetir en bucle">${icon('loop')}<span class="tl-lb">Bucle</span></button>
+              </div>
+              <span class="tl-group-lb">Sonido</span>
+            </div>
             <span class="spacer"></span>
             <span class="tl-time mono" id="tl-time">0:00 / 0:00</span>
           </div>
 
           <!-- 12,14,15,16,17 + zoom 5,6 · barra de herramientas -->
           <div class="tl-toolbar" id="tl-toolbar">
-            <button class="tl-tool" data-tool="razor" data-tip="Cortar en playhead (S)">${icon('scissors')}</button>
-            <button class="tl-tool" data-tool="dup" data-tip="Duplicar clip">${icon('copy')}</button>
-            <button class="tl-tool" data-tool="left" data-tip="Mover ← (⌥←)">${icon('chevL')}</button>
-            <button class="tl-tool" data-tool="right" data-tip="Mover → (⌥→)">${icon('chevR')}</button>
-            <button class="tl-tool" data-tool="del" data-tip="Eliminar (Supr)">${icon('trash')}</button>
+            <div class="tl-group">
+              <div class="tl-group-btns">
+                <button class="tl-tool" data-tool="razor" data-tip="Cortar en playhead (S)">${icon('scissors')}<span class="tl-lb">Cortar</span></button>
+                <button class="tl-tool" data-tool="dup" data-tip="Duplicar clip">${icon('copy')}<span class="tl-lb">Duplicar</span></button>
+                <button class="tl-tool" data-tool="left" data-tip="Mover antes (⌥←)">${icon('chevL')}<span class="tl-lb">Antes</span></button>
+                <button class="tl-tool" data-tool="right" data-tip="Mover después (⌥→)">${icon('chevR')}<span class="tl-lb">Después</span></button>
+                <button class="tl-tool" data-tool="del" data-tip="Eliminar clip (Supr)">${icon('trash')}<span class="tl-lb">Eliminar</span></button>
+                <button class="tl-tool" data-tool="clear" data-tip="Vaciar todo el timeline">${icon('broom')}<span class="tl-lb">Vaciar</span></button>
+              </div>
+              <span class="tl-group-lb">Edición</span>
+            </div>
+            <div class="tl-group">
+              <div class="tl-group-btns">
+                <button class="tl-tool ai" data-tool="magic" id="btn-magic" data-tip="Autoarmar el reel con los mejores momentos">${icon('spark')}<span class="tl-lb">Momentos</span></button>
+              </div>
+              <span class="tl-group-lb">IA</span>
+            </div>
             <span class="spacer"></span>
-            <button class="tl-tool" data-tool="magic" id="btn-magic" data-tip="Autoarmar highlights">${icon('spark')} Momentos AI</button>
-            <button class="tl-tool" data-tool="clear" data-tip="Limpiar timeline">${icon('broom')}</button>
-            <span style="width:8px"></span>
-            <button class="tl-tool" data-tool="zoomout" data-tip="Alejar">${icon('zoomOut')}</button>
-            <button class="tl-tool" data-tool="zoomin" data-tip="Acercar">${icon('zoomIn')}</button>
-            <button class="tl-tool" data-tool="fit" data-tip="Ajustar a ventana">${icon('fit')}</button>
+            <div class="tl-group">
+              <div class="tl-group-btns">
+                <button class="tl-tool" data-tool="zoomout" data-tip="Alejar timeline">${icon('zoomOut')}<span class="tl-lb">Alejar</span></button>
+                <button class="tl-tool" data-tool="zoomin" data-tip="Acercar timeline">${icon('zoomIn')}<span class="tl-lb">Acercar</span></button>
+                <button class="tl-tool" data-tool="fit" data-tip="Ajustar todo a la ventana">${icon('fit')}<span class="tl-lb">Ajustar</span></button>
+              </div>
+              <span class="tl-group-lb">Vista</span>
+            </div>
           </div>
 
           <!-- 3,4,7 · regla + track con scroll horizontal -->
@@ -85,10 +109,9 @@ main.innerHTML = `
 
           <!-- 18-23 · inspector del clip seleccionado (v7 · secciones agrupadas) -->
           <div class="tl-inspect" id="tl-inspect" style="display:none">
-            <div class="tl-inspect-row">
+            <div class="tl-io">
               <span class="mono" id="tli-io">—</span>
-              <span class="spacer"></span>
-              <button class="btn" id="tli-goto" data-tip="Ir al clip">${icon('play')} Ir al clip</button>
+              <button class="btn" id="tli-goto" data-tip="Saltar el playhead a este clip">${icon('play')} Ir al clip</button>
             </div>
 
             <!-- copiar/pegar atributos entre clips -->
@@ -217,6 +240,7 @@ main.innerHTML = `
 
       <!-- 47 · barra de export (v7 · presets + resolución + proyectos) -->
       <div class="exportbar" id="exportbar" style="display:none">
+        <label class="eb-field"><span>Preset</span>
         <select class="ctl" id="ed-preset" data-tip="Preset de export">
           <option value="">Preset…</option>
           <option value="yt4k">YouTube 4K</option>
@@ -224,19 +248,23 @@ main.innerHTML = `
           <option value="reels">Reels/TikTok</option>
           <option value="square">Cuadrado</option>
           <option value="feed45">Feed 4:5</option>
-        </select>
+        </select></label>
+        <label class="eb-field"><span>Aspecto</span>
         <select class="ctl" id="ed-aspect">
           <option value="16:9">16:9</option><option value="9:16">9:16 Reels</option>
           <option value="1:1">1:1</option><option value="4:5">4:5</option>
-        </select>
+        </select></label>
+        <label class="eb-field"><span>Calidad</span>
         <select class="ctl" id="ed-res" data-tip="Resolución de salida">
           <option value="1080">1080p</option><option value="2160">2160p (4K)</option>
-        </select>
+        </select></label>
+        <label class="eb-field"><span>Look</span>
         <select class="ctl" id="ed-lut" data-tip="Look de respaldo global">
           <option value="none">Sin look</option><option value="cine">Cine</option>
           <option value="vivid">Vivid</option><option value="warm">Cálido</option>
           <option value="moody">Moody</option><option value="bw">B&amp;N</option>
-        </select>
+        </select></label>
+        <label class="eb-field"><span>Transición</span>
         <select class="ctl" id="ed-trans" data-tip="Transición por defecto">
           <option value="none">Sin transición</option>
           <option value="fade">Fundido</option>
@@ -252,11 +280,13 @@ main.innerHTML = `
           <option value="pixelize">Pixelar</option>
           <option value="fadeblack">A negro</option>
           <option value="fadewhite">A blanco</option>
-        </select>
+        </select></label>
+        <label class="eb-field"><span>Audio</span>
         <select class="ctl" id="ed-audio" data-tip="Audio del reel">
           <option value="none">Silencio</option><option value="original">Audio original</option>
-        </select>
-        <input class="ctl" id="ed-title" placeholder="Título…" style="flex:1;min-width:110px" maxlength="60">
+        </select></label>
+        <label class="eb-field grow"><span>Título del reel</span>
+        <input class="ctl" id="ed-title" placeholder="Escríbelo aquí…" maxlength="60"></label>
         <label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" id="ed-fade" checked>Fades</label>
         <button class="btn primary big" id="ed-export">${icon('check')} Exportar</button>
       </div>
@@ -579,6 +609,16 @@ pollJobs(document.getElementById('jobs'));
   function redo() { if (!redoStack.length) return; undoStack.push(snap()); tl = redoStack.pop(); clampSel(); renderAll(); }
   function clampSel() { if (sel >= tl.length) sel = tl.length - 1; }
 
+  // sliders con relleno de progreso (mismo look que el editor de fotos)
+  function paintR(r) {
+    const p = ((+r.value) - (+r.min)) / ((+r.max) - (+r.min)) * 100;
+    r.style.background = `linear-gradient(90deg, var(--accent) ${p}%, var(--surface-2) ${p}%)`;
+  }
+  const paintAllRanges = () => document.querySelectorAll('.tl-inspect .tl-range').forEach(paintR);
+  document.getElementById('tl-inspect').addEventListener('input', e => {
+    if (e.target.classList.contains('tl-range')) paintR(e.target);
+  });
+
   // ---- render maestro ----
   function renderAll() {
     renderRuler();
@@ -589,8 +629,11 @@ pollJobs(document.getElementById('jobs'));
     exportbar.style.display = tl.length ? 'flex' : 'none';
     emptyEl.style.display = tl.length ? 'none' : 'flex';
     playhead = Math.min(playhead, total());
+    phEl.style.display = tl.length ? '' : 'none';
+    scroll.classList.toggle('empty', !tl.length);
     paintPlayhead();
     if (!tl.length) { video.removeAttribute('src'); video.load?.(); }
+    paintAllRanges();
   }
 
   // 3,4 · regla de tiempo con marcas
@@ -598,11 +641,17 @@ pollJobs(document.getElementById('jobs'));
     const T = total(), W = Math.max(T * pps, scroll.clientWidth || 320);
     ruler.style.width = W + 'px';
     track.style.width = W + 'px';
-    // paso de marca legible según zoom
-    const step = pps >= 90 ? 1 : pps >= 45 ? 2 : pps >= 22 ? 5 : 10;
+    // tres niveles de marca según zoom: mayor (etiqueta) / media / menor
+    const major = pps >= 90 ? 1 : pps >= 45 ? 2 : pps >= 22 ? 5 : 10;
+    const minor = major / 5;
     let html = '';
-    for (let t = 0; t <= T + 0.001; t += step) {
-      html += `<span class="tl-tick" style="left:${t * pps}px">${fmt.dur(t)}</span>`;
+    for (let t = 0; t <= T + 0.001; t += minor) {
+      const x = Math.round(t * pps) + 0.5;              // píxel exacto = línea nítida
+      const isMajor = Math.abs(t / major - Math.round(t / major)) < 0.001;
+      const isMid = !isMajor && Math.abs(t / (major / 2) - Math.round(t / (major / 2))) < 0.001;
+      html += isMajor
+        ? `<span class="tl-tick major" style="left:${x}px" data-t="${fmt.dur(t)}"></span>`
+        : `<span class="tl-tick ${isMid ? 'mid' : 'minor'}" style="left:${x}px"></span>`;
     }
     // 50 · markers de highlights AI sobre la regla
     tl.forEach((s, i) => {
@@ -630,7 +679,7 @@ pollJobs(document.getElementById('jobs'));
       const badges = [
         s.speed !== 1 ? `<span class="tl-badge speed">${s.speed}x</span>` : '',
         s.reverse ? `<span class="tl-badge rev" data-tip="Reversa">${icon('reverse')}</span>` : '',
-        s.freeze > 0 ? `<span class="tl-badge freeze" data-tip="Congelar ${s.freeze}s">❄</span>` : '',
+        s.freeze > 0 ? `<span class="tl-badge freeze" data-tip="Congelar ${s.freeze}s">${icon('freeze')}</span>` : '',
         s.filter && s.filter !== 'none' ? `<span class="tl-badge filter">${esc(s.filter)}</span>` : '',
         (s.grade && !isNeutralGrade(s.grade)) ? `<span class="tl-badge grade" data-tip="Color ajustado">${icon('sun')}</span>` : '',
         s.title ? `<span class="tl-badge title">${icon('tag')}</span>` : '',
@@ -705,7 +754,7 @@ pollJobs(document.getElementById('jobs'));
     set('razor', canRazor);
     set('dup', hasSel); set('del', hasSel); set('left', hasSel && sel > 0); set('right', hasSel && sel < tl.length - 1);
     set('clear', has); set('fit', has);
-    document.querySelector('.tl-tool[data-tp="mute"]').innerHTML = muted ? icon('volumeOff') : icon('volume');
+    document.querySelector('.tl-tool[data-tp="mute"]').innerHTML = (muted ? icon('volumeOff') : icon('volume')) + '<span class="tl-lb">Audio</span>';
     document.querySelector('.tl-tool[data-tp="loop"]').classList.toggle('on', loop);
   }
 
@@ -790,7 +839,7 @@ pollJobs(document.getElementById('jobs'));
   function togglePlay() { playing ? pause() : play(); }
   function setPlayIcon() {
     const b = document.querySelector('.tl-tool[data-tp="play"]');
-    b.innerHTML = playing ? icon('pause') : icon('play');
+    b.innerHTML = (playing ? icon('pause') : icon('play')) + '<span class="tl-lb">Play</span>';
   }
 
   // ---- añadir / insertar clips ----
@@ -987,6 +1036,22 @@ pollJobs(document.getElementById('jobs'));
     else if (t === 'zoomout') { pps = Math.max(8, pps / 1.4); renderAll(); }
     else if (t === 'fit') fit();
   });
+  // pinch con dos dedos = zoom del timeline (móvil)
+  let pinch = null;
+  const pdist = e => Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                                e.touches[0].clientY - e.touches[1].clientY);
+  scroll.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) pinch = { d: pdist(e), pps0: pps };
+  }, { passive: true });
+  scroll.addEventListener('touchmove', e => {
+    if (pinch && e.touches.length === 2) {
+      e.preventDefault();
+      pps = Math.max(8, Math.min(240, pinch.pps0 * (pdist(e) / pinch.d)));
+      renderAll();
+    }
+  }, { passive: false });
+  scroll.addEventListener('touchend', () => { pinch = null; });
+
   function fit() {   // 6 · ajustar a ventana
     const T = total(); if (!T) return;
     pps = Math.max(8, Math.min(240, (scroll.clientWidth - 24) / T));
