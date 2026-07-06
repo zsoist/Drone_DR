@@ -26,6 +26,15 @@ async function jfetch(url) {
   return r.json();
 }
 
+const SPLAT_EXT = /\.(ksplat|splat|ply)$/i;
+const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
+function splatAssetFor(clipId, system) {
+  return (system.splats || [])
+    .filter(s => SPLAT_EXT.test(s.name) && s.name.replace(SPLAT_EXT, '') === clipId)
+    .sort((a, b) => (SPLAT_RANK[(a.format || a.name.split('.').pop()).toLowerCase()] ?? 9)
+      - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9))[0] || null;
+}
+
 let meta = null, sys = {};
 try {
   meta = await jfetch(`data/models/${cid}/meta.json`);
@@ -39,7 +48,8 @@ document.getElementById('sh-title').textContent = meta.title || `Vuelo ${cid.sli
 document.title = `AeroBrain — ${meta.title || cid}`;
 const q = meta.qa || {};
 const base = `data/models/${cid}`;
-const splat = (sys.splats || []).find(s => s.name === `${cid}.splat`);
+const splat = splatAssetFor(cid, sys);
+const splatFmt = (splat?.format || splat?.name.split('.').pop() || 'splat').toUpperCase();
 const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(2) + ' ha' : Math.round(q.area_m2 || 0) + ' m²';
 
 body.innerHTML = `
@@ -79,7 +89,7 @@ body.innerHTML = `
       <a class="exp" href="${base}/ortho_full.jpg" target="_blank" rel="noopener"><div><b>Ortofoto 5K</b><span>JPG</span></div></a>
       <a class="exp" href="${base}/cloud.ply" download><div><b>Nube de puntos</b><span>PLY</span></div></a>
       <a class="exp" href="${base}/model/odm_textured_model_geo.obj" download><div><b>Malla 3D</b><span>OBJ</span></div></a>
-      ${splat ? `<a class="exp" href="data/splats/${encodeURIComponent(splat.name)}" download><div><b>Gaussian splat</b><span>SPLAT</span></div></a>` : ''}
+      ${splat ? `<a class="exp" href="data/splats/${encodeURIComponent(splat.name)}" download><div><b>Gaussian splat</b><span>${splatFmt}</span></div></a>` : ''}
     </div>
     <p class="footer-note" style="margin:10px 0 0">Procesado localmente con AeroBrain — fotogrametría ODM sobre video de dron DJI.</p></div>
   </div>`;
@@ -251,7 +261,7 @@ document.querySelector('.seg').addEventListener('click', e => {
   if (!b) return;
   if (view._splatViewer) { try { view._splatViewer.dispose(); } catch {} view._splatViewer = null; }
   document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
-  const NAMES = { cloud: 'la nube de puntos (cloud.ply)', mesh: 'la malla texturizada (OBJ/MTL)', splat: 'el gaussian splat (.splat)' };
+  const NAMES = { cloud: 'la nube de puntos (cloud.ply)', mesh: 'la malla texturizada (OBJ/MTL)', splat: `el gaussian splat (.${splatFmt.toLowerCase()})` };
   loaders[b.dataset.v]().catch(err => {
     view.innerHTML = `<p class="footer-note">No se pudo cargar ${NAMES[b.dataset.v]} del modelo ${esc(cid)}.
       <span style="color:var(--text-3)">${esc(String(err && err.message || err).slice(0, 120))}</span></p>`;

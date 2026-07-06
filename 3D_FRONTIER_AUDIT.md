@@ -24,7 +24,8 @@ Not 10/10 yet because the premium Gaussian path is prepared for Metal/MPS but th
 - Gaussian splat backend selection is explicit and tested: `build-mps/opensplat` runs without `--cpu` when compiled with `GPU_RUNTIME=MPS`; otherwise the worker keeps the CPU fallback with `--cpu`.
 - `pipeline/build_opensplat_mps.sh` is the repeatable local build path: it refuses to run during heavy jobs, downloads Apple's Metal Toolchain, builds `build-mps`, and validates `GPU_RUNTIME=MPS`.
 - `pipeline/safe_restart.sh worker` now checks SQLite directly instead of trusting the web API, so a stale server response cannot kill a running 3D/splat job.
-- `system.json` counts only visualizable splat assets (`.splat`, `.ksplat`, `.ply`), not sidecar metadata.
+- `system.json` counts only visualizable splat assets (`.splat`, `.ksplat`, `.ply`), not sidecar metadata, and now records `clip_id` + `format` for each splat.
+- `tresd.html` and `share.html` now select the best splat asset per project by format priority: `.ksplat` first, `.splat` second, `.ply` fallback.
 - Browser QA on localhost loads `share.html` splat and `tresd.html` without console errors.
 - `pipeline/audit_vault.py` reports 0 findings.
 
@@ -45,7 +46,7 @@ Splats:
 ## Remaining Gap To 10/10
 
 1. Complete Apple Metal Toolchain download and run `pipeline/build_opensplat_mps.sh`, then process a 7k/15k splat through `build-mps/opensplat`.
-2. Export `.ksplat` after `.splat` training, then prefer `.ksplat` in viewers.
+2. Export `.ksplat` after `.splat` training. Viewer preference is already wired and browser-verified.
 3. Add optional ODM `--pc-ept` or `--pc-copc` path for large point-cloud streaming/GIS.
 4. Add browser screenshot gate for every published model/splat before marking the job done.
 5. Add capture recipe presets in the UI: nadir survey, oblique orbit, hybrid premium.

@@ -4,6 +4,15 @@
   import { MTLLoader } from '/vendor/three-addons/loaders/MTLLoader.js';
   import { PLYLoader } from '/vendor/three-addons/loaders/PLYLoader.js';
 
+  const SPLAT_EXT = /\.(ksplat|splat|ply)$/i;
+  const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
+  function splatAssetFor(clipId) {
+    return (sys.splats || [])
+      .filter(s => SPLAT_EXT.test(s.name) && s.name.replace(SPLAT_EXT, '') === clipId)
+      .sort((a, b) => (SPLAT_RANK[(a.format || a.name.split('.').pop()).toLowerCase()] ?? 9)
+        - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9))[0] || null;
+  }
+
   const main = renderShell('tresd.html');
   main.innerHTML = `
     <div class="page-head"><h1>3D</h1><span class="count">fotogrametría · nube de puntos · splats</span></div>
@@ -54,8 +63,8 @@
               <p><b>Iteraciones = calidad</b> — cada iteración refina posición, color y opacidad de
               las manchas. 1k es un boceto, 2k ya luce, 7k es cinemático, 15k exprime el detalle
               (más iteraciones = más horas de CPU).</p>
-              <p><b>Formato .splat</b> — se ve aquí mismo, en el link de compartir, y es compatible
-              con SuperSplat, Polycam y visores web estándar.</p>
+              <p><b>Formatos</b> — el entrenamiento genera .splat; si existe una conversión .ksplat,
+              la app la prefiere automáticamente por ser más ligera para web móvil.</p>
             </details>
           </div>
         </div>
@@ -325,7 +334,8 @@
     const q = cur.qa || {};
     const reproj = q.reprojection_error_px;
     const grade = reproj == null ? '—' : reproj < 1.5 ? 'excelente' : reproj < 2.5 ? 'buena' : 'aceptable';
-    const sp = (sys.splats || []).find(s => s.name === `${cid}.splat`);
+    const sp = splatAssetFor(cid);
+    const spFmt = (sp?.format || sp?.name.split('.').pop() || 'splat').toUpperCase();
     document.getElementById('dls').innerHTML = `
       ${q.status && q.status !== 'ok' ? `<p class="footer-note" style="margin:0 0 10px;color:var(--amber)">
         ${icon('warn')} Métricas de calidad ${q.status === 'parcial' ? 'parciales' : 'no disponibles'} para esta corrida
@@ -361,7 +371,7 @@
         <a class="exp" href="${base}/dsm_color.png" download>${icon('gauge')}<div><b>Elevación color</b><span>PNG · mapas</span></div></a>` : ''}
         <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>Nube de puntos</b><span>PLY · CloudCompare</span></div></a>
         <a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></div></a>
-        ${sp ? `<a class="exp" href="data/splats/${encodeURIComponent(sp.name)}" download>${icon('spark')}<div><b>Gaussian splat</b><span>SPLAT · SuperSplat</span></div></a>` : ''}
+        ${sp ? `<a class="exp" href="data/splats/${encodeURIComponent(sp.name)}" download>${icon('spark')}<div><b>Gaussian splat</b><span>${spFmt} · SuperSplat</span></div></a>` : ''}
         <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Página pública</b><span>LINK · compartir</span></div></a>
       </div>`;
     if (omap) omap.remove();
@@ -407,8 +417,9 @@
     document.getElementById('op').oninput = e => {
       omap.getLayer('ortho') && omap.setPaintProperty('ortho', 'raster-opacity', +e.target.value / 100);
     };
-    const spMeta = (sys.splats || []).find(x => x.name === `${cid}.splat`);
-    document.getElementById('sp-status').textContent = spMeta ? `${(spMeta.bytes / 1e6).toFixed(1)} MB` : 'sin entrenar';
+    const spMeta = splatAssetFor(cid);
+    const spStatusFmt = (spMeta?.format || spMeta?.name.split('.').pop() || 'splat').toUpperCase();
+    document.getElementById('sp-status').textContent = spMeta ? `${(spMeta.bytes / 1e6).toFixed(1)} MB · ${spStatusFmt}` : 'sin entrenar';
     document.getElementById('load-splat').style.display = spMeta ? '' : 'none';
     const sbox = document.getElementById('splat-box');
     if (sbox._viewer) { try { sbox._viewer.dispose(); } catch {} sbox._viewer = null; }
@@ -808,16 +819,17 @@
   });
 
   // splats: listar + ver inline + generar
-  const splats = (sys.splats || []).filter(s => /\.(splat|ply|ksplat)$/.test(s.name));
+  const splats = (sys.splats || []).filter(s => SPLAT_EXT.test(s.name));
   document.getElementById('splats').innerHTML = splats.length ? splats.map(s => {
-    const scid = s.name.replace(/\.(splat|ply|ksplat)$/, '');
+    const scid = s.name.replace(SPLAT_EXT, '');
     const sf = flights.find(x => x.clip_id === scid);
     const sm = models.find(x => x.clip_id === scid);
+    const sFmt = (s.format || s.name.split('.').pop()).toUpperCase();
     const title = (sm && sm.title) || (sf && (sf.label || fmt.date(sf.date) + ' · ' + sf.time)) || scid.slice(-11);
     return `
     <div class="splat-item">
       <div class="si-t"><b>${esc(title)}</b>
-        <span class="mono">${(s.bytes / 1e6).toFixed(1)} MB · formato .splat</span></div>
+        <span class="mono">${(s.bytes / 1e6).toFixed(1)} MB · formato .${sFmt.toLowerCase()}</span></div>
       <span class="spacer" style="flex:1"></span>
       <a class="btn" href="data/splats/${encodeURIComponent(s.name)}" download title="Descargar">${icon('dl')}</a>
       <button class="btn primary" data-view="${esc(s.name)}" style="padding:5px 16px">Ver</button>
@@ -871,7 +883,7 @@
   document.getElementById('splats').addEventListener('click', e => {
     const name = e.target.dataset.view;
     if (!name) return;
-    const scid = name.replace(/\.(splat|ply|ksplat)$/, '');
+    const scid = name.replace(SPLAT_EXT, '');
     if (!models.some(m => m.clip_id === scid)) return alert('Este splat no tiene proyecto 3D publicado.');
     setProject(scid);
     document.getElementById('load-splat').click();
@@ -880,7 +892,9 @@
 
   document.getElementById('load-splat').addEventListener('click', async () => {
     if (!cur) return;
-    const name = `${cur.clip_id}.splat`;
+    const asset = splatAssetFor(cur.clip_id);
+    if (!asset) return;
+    const name = asset.name;
     const box = document.getElementById('splat-box');
     // visor anterior fuera ANTES de crear otro (workers + GPU buffers liberados)
     if (box._viewer) { try { box._viewer.dispose(); } catch {} box._viewer = null; }

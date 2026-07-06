@@ -357,12 +357,15 @@ try:
     for d in ("manifest", "raw", "proxies", "frames", "thumbs", "tracks", "reels", "splats", "models", "ai"):
         (_bi_tmp / d).mkdir(parents=True, exist_ok=True)
     (_bi_tmp / "splats" / "A.splat").write_bytes(b"1")
+    (_bi_tmp / "splats" / "A.ksplat").write_bytes(b"2")
     (_bi_tmp / "splats" / "A.meta.json").write_bytes(b"{}")
     (_bi_tmp / "splats" / "A.cameras.json").write_bytes(b"{}")
     _bi.main()
     _sys = json.loads((_bi_tmp / "manifest" / "system.json").read_text())
     check("system: splats lista sólo assets visualizables",
-          [s["name"] for s in _sys["splats"]] == ["A.splat"])
+          [s["name"] for s in _sys["splats"]] == ["A.ksplat", "A.splat"])
+    check("system: splats declaran clip_id + formato",
+          [(s["clip_id"], s["format"]) for s in _sys["splats"]] == [("A", "ksplat"), ("A", "splat")])
 finally:
     _bi.VAULT = _old_bi_vault
 
