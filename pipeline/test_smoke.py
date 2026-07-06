@@ -262,7 +262,7 @@ check("orphans: restart del worker mata proceso heavy huérfano",
 
 # --- viewer mesh re-centrado (audit P1: coords UTM rompen float32) ---
 from tresd_publish import make_viewer_mesh
-from tresd_publish import wgs84_area_m2
+from tresd_publish import wgs84_area_m2, ply_vertex_count
 _md = Path(tempfile.mkdtemp())
 (_md / "geo.obj").write_text(
     "mtllib m.mtl\nv 500000.5 4500000.25 2550.0\nv 500002.5 4500002.25 2552.0\nf 1 2 1\n")
@@ -275,6 +275,8 @@ check("viewer mesh: caras y mtllib intactos",
       "f 1 2 1" in (_md / "viewer.obj").read_text() and "mtllib m.mtl" in (_md / "viewer.obj").read_text())
 check("qa: área WGS84 fallback calcula una huella realista",
       12_000 < wgs84_area_m2([[0, 0], [0.001, 0], [0.001, 0.001], [0, 0.001]]) < 13_000)
+(_md / "cloud.ply").write_text("ply\nformat ascii 1.0\nelement vertex 12345\nend_header\n")
+check("qa: PLY vertex count sale del header", ply_vertex_count(_md / "cloud.ply") == 12345)
 
 # --- capture intelligence ---
 from capture_quality import sharpness, choose_frames, gps_metrics

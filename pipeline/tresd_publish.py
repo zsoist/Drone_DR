@@ -70,6 +70,19 @@ def make_viewer_mesh(geo, dst):
                 o.write(line)
 
 
+def ply_vertex_count(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    with open(path, "rb") as f:
+        for raw in f:
+            line = raw.decode("ascii", "ignore").strip()
+            if line.startswith("element vertex "):
+                return int(line.split()[-1])
+            if line == "end_header":
+                break
+    return None
+
+
 def main():
     cid = sys.argv[1]
     proj = Path(sys.argv[2]) if len(sys.argv) > 2 else VAULT / "odm" / "proj0104"
@@ -127,12 +140,15 @@ EOF""")
 
     # 2) nube de puntos → PLY submuestreado para el browser (pdal vive en SuperBuild)
     print("nube de puntos…")
-    sh_in_odm(proj, """set -e; P=/code/SuperBuild/install/bin/pdal; export LD_LIBRARY_PATH=/code/SuperBuild/install/lib;
+    cloud_info = sh_in_odm(proj, """set -e; P=/code/SuperBuild/install/bin/pdal; export LD_LIBRARY_PATH=/code/SuperBuild/install/lib;
       N=$($P info --summary /d/odm_georeferencing/odm_georeferenced_model.laz 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin)['summary']['num_points'])");
       STEP=$(( (N + 799999) / 800000 )); [ $STEP -lt 1 ] && STEP=1;
       echo "puntos: $N → step $STEP";
       $P translate /d/odm_georeferencing/odm_georeferenced_model.laz /d/.web_cloud.ply \
         -f filters.decimation --filters.decimation.step=$STEP""")
+    cm = re.search(r"puntos:\s*(\d+)\s*.*step\s*(\d+)", cloud_info)
+    source_points = int(cm.group(1)) if cm else None
+    decimation_step = int(cm.group(2)) if cm else None
 
     for src_name, dst_name in [(".web_ortho.jpg", "ortho.jpg"), (".web_ortho_full.jpg", "ortho_full.jpg"),
                                (".web_ortho.png", "ortho.png"),
@@ -315,6 +331,9 @@ EOF""")
         "ortho_bytes": (out / "ortho.webp").stat().st_size if (out / "ortho.webp").exists() else 0,
         "qa": qa,
         "cloud_bytes": (out / "cloud.ply").stat().st_size if (out / "cloud.ply").exists() else 0,
+        "cloud_points": ply_vertex_count(out / "cloud.ply"),
+        "cloud_source_points": source_points,
+        "cloud_decimation_step": decimation_step,
         "model_obj": "model/odm_textured_model_geo.obj",
         "model_viewer": "model/odm_textured_model_viewer.obj"
                         if (out / "model" / "odm_textured_model_viewer.obj").exists()
