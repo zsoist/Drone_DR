@@ -167,6 +167,23 @@ def find_copc_asset(proj: Path) -> Path | None:
     return found[0] if found else None
 
 
+def find_texture_dir(proj: Path) -> tuple[Path | None, str]:
+    """Prefer full ODM texturing; fall back to fast-orthophoto/25D texturing.
+
+    OpenMVS densification can fail on otherwise valid video reconstructions. ODM's
+    fast-orthophoto path still emits odm_texturing_25d plus a georeferenced ortho,
+    which is useful and should publish as an honest fallback instead of leaving
+    the job as a dead error.
+    """
+    full = proj / "odm_texturing"
+    fast = proj / "odm_texturing_25d"
+    if (full / "odm_textured_model_geo.obj").exists():
+        return full, "full_3d"
+    if (fast / "odm_textured_model_geo.obj").exists():
+        return fast, "ortho_25d_fallback"
+    return None, "missing"
+
+
 def main():
     cid = sys.argv[1]
     proj = Path(sys.argv[2]) if len(sys.argv) > 2 else VAULT / "odm" / "proj0104"
@@ -342,7 +359,9 @@ EOF""")
     print("modelo texturizado…")
     shutil.rmtree(out / "model", ignore_errors=True)
     (out / "model").mkdir(parents=True, exist_ok=True)
-    tex = proj / "odm_texturing"
+    tex, pipeline_mode = find_texture_dir(proj)
+    if tex is None:
+        raise RuntimeError("ODM no produjo malla texturizada (ni odm_texturing ni odm_texturing_25d)")
     for f in tex.glob("odm_textured_model_geo*"):
         (out / "model" / f.name).write_bytes(f.read_bytes())
     for f in [*tex.glob("*.jpg"), *tex.glob("*.png")]:
@@ -401,6 +420,9 @@ EOF""")
             qa["area_m2"] = round(area, 1)
             qa["gsd_cm_px"] = round((area / px_total) ** 0.5 * 100, 1)
             qa.setdefault("status", "parcial")
+    if pipeline_mode == "ortho_25d_fallback":
+        qa["status"] = "ortho_25d"
+        qa["note"] = "OpenMVS densify falló; publicado con fallback fast-orthophoto/25D sin DSM."
 
     # sidecars .gz: el server los sirve con Content-Encoding gzip — la malla OBJ
     # (texto) baja ~70% y la nube PLY ~30%; el browser descomprime transparente
@@ -424,6 +446,7 @@ EOF""")
         "ortho_feather_px": ometa.get("feather_px", 0),
         "ortho_bytes": (out / "ortho.webp").stat().st_size if (out / "ortho.webp").exists() else 0,
         "qa": qa,
+        "pipeline_mode": pipeline_mode,
         "cloud_bytes": (out / "cloud.ply").stat().st_size if (out / "cloud.ply").exists() else 0,
         "cloud_points": ply_vertex_count(out / "cloud.ply"),
         "cloud_copc_asset": copc_asset,

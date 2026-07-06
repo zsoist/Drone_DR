@@ -262,7 +262,7 @@ check("orphans: restart del worker mata proceso heavy huérfano",
 
 # --- viewer mesh re-centrado (audit P1: coords UTM rompen float32) ---
 from tresd_publish import make_viewer_mesh
-from tresd_publish import wgs84_area_m2, ply_vertex_count, find_copc_asset
+from tresd_publish import wgs84_area_m2, ply_vertex_count, find_copc_asset, find_texture_dir
 _md = Path(tempfile.mkdtemp())
 (_md / "geo.obj").write_text(
     "mtllib m.mtl\nv 500000.5 4500000.25 2550.0\nv 500002.5 4500002.25 2552.0\nf 1 2 1\n")
@@ -281,6 +281,11 @@ check("qa: PLY vertex count sale del header", ply_vertex_count(_md / "cloud.ply"
 (_md / "odm_georeferencing" / "odm_georeferenced_model.copc.laz").write_bytes(b"copc")
 check("qa: publisher encuentra COPC de ODM si existe",
       find_copc_asset(_md).name == "odm_georeferenced_model.copc.laz")
+(_md / "odm_texturing_25d").mkdir()
+(_md / "odm_texturing_25d" / "odm_textured_model_geo.obj").write_text("v 0 0 0\n")
+_tex_dir, _tex_mode = find_texture_dir(_md)
+check("qa: publisher cae a odm_texturing_25d si OpenMVS full falla",
+      _tex_dir.name == "odm_texturing_25d" and _tex_mode == "ortho_25d_fallback")
 
 # --- capture intelligence ---
 from capture_quality import sharpness, choose_frames, gps_metrics
@@ -323,6 +328,10 @@ check("presets: ultra usa pc-quality ultra + malla mas densa que alta",
       "ultra" in worker.PRESETS["ultra"]["args"]
       and int(worker.PRESETS["ultra"]["args"][worker.PRESETS["ultra"]["args"].index("--mesh-size") + 1])
       > int(worker.PRESETS["alta"]["args"][worker.PRESETS["alta"]["args"].index("--mesh-size") + 1]))
+_fast_cmd = worker.fast_ortho_cmd("odm-test", Path("/tmp/proj"))
+check("presets: fallback ODM usa fast-orthophoto 25D desde georreferenciación",
+      "--fast-orthophoto" in _fast_cmd and "--rerun-from" in _fast_cmd
+      and _fast_cmd[_fast_cmd.index("--rerun-from") + 1] == "odm_georeferencing")
 _cpu_backend = worker.choose_splat_backend(7000, mps_ready=False,
                                            mps_bin=Path("/tmp/opensplat-mps"),
                                            cpu_bin=Path("/tmp/opensplat-cpu"))

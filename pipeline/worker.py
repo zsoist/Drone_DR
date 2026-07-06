@@ -210,6 +210,31 @@ def run_odm_container(jid, container, proj, preset, preset_name):
         timeout=preset["timeout"])
 
 
+def fast_ortho_cmd(container: str, proj: Path, ortho_res: str = "5") -> list[str]:
+    """Last-resort ODM path when OpenMVS dense/full mesh fails.
+
+    Official ODM `--fast-orthophoto` skips dense reconstruction/full 3D model and
+    generates an orthophoto from the sparse/25D path. It is the right degraded
+    product for valid reconstructions that crash in DensifyPointCloud.
+    """
+    return [DOCKER, "run", "--rm", "--name", container,
+            "-m", "7g", "-v", f"{proj}:/datasets/code", "opendronemap/odm",
+            "--project-path", "/datasets", "--max-concurrency", "4",
+            "--fast-orthophoto", "--skip-report",
+            "--orthophoto-resolution", ortho_res,
+            "--rerun-from", "odm_georeferencing"]
+
+
+def run_fast_ortho_fallback(jid: str, proj: Path, container: str) -> int:
+    jobstore.update(jid, detail="2/3 OpenMVS falló → fallback fast-orthophoto/25D",
+                    stage="odm-fallback", progress=0.55)
+    try:
+        return jobstore.run_tracked(jid, fast_ortho_cmd(container, proj), timeout=2 * 3600)
+    except TimeoutError:
+        print("  ODM fast-orthophoto agotó el tiempo", flush=True)
+        return 124
+
+
 def run_odm_step(jid, container, proj, preset, preset_name):
     """ODM degradando el TIMEOUT a rc=124 en vez de propagar la excepción: un preset demasiado
     agresivo suele AGOTAR el tiempo (no reventar con exit code), y run_tracked lanza TimeoutError.
@@ -255,7 +280,11 @@ def run_3d(j: dict):
         preset_name, preset = fb, PRESETS[fb]
         rc = run_odm_step(j["id"], container, proj, preset, preset_name)
     if rc != 0:
-        raise RuntimeError("ODM falló")
+        fb_container = f"{container}-ortho"
+        rc2 = run_fast_ortho_fallback(j["id"], proj, fb_container)
+        if rc2 != 0:
+            raise RuntimeError("ODM falló (incluido fallback fast-orthophoto/25D)")
+        preset_name = "ortho_25d_fallback"
 
     jobstore.update(j["id"], detail="3/3 publicando assets web", stage="publish", progress=0.9)
     if jobstore.run_tracked(j["id"],
