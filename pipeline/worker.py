@@ -98,22 +98,23 @@ PRESETS = {
                  "args": ["--pc-quality", "medium", "--feature-quality", "medium",
                           "--orthophoto-resolution", "5", "--dem-resolution", "10"]},
     # alta: mesh-size 300k = recomendación urbana oficial para edificios/techos (default 200k)
-    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "7g",
+    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "7g", "fallback": "estandar",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5",
                           "--mesh-size", "300000", "--pc-copc"]},
-    # extra: malla mucho más densa (mesh 600k + octree 12) manteniendo pc-quality high (memoria
-    # segura). Ortho/DEM más finos. El salto real de detalle geométrico sin el costo de 'ultra'.
+    # extra: malla más densa (mesh 600k + octree 11) con pc-quality high. octree 12 CRASHEA
+    # ("strange values", exit 134) en datasets reales — la comunidad ODM recomienda <=11.
     "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "8g", "fallback": "alta",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "2", "--dem-resolution", "4",
-                          "--mesh-size", "600000", "--mesh-octree-depth", "12", "--pc-copc"]},
-    # ultra: pc-quality ultra (~8.5x tiempo, community ODM) + mesh 800k. El máximo del M4;
-    # si la VM no da la memoria, el worker reintenta solo en 'extra'.
+                          "--mesh-size", "600000", "--mesh-octree-depth", "11", "--pc-copc"]},
+    # ultra: pc-quality ultra (~8.5x tiempo) + mesh 800k, octree 11 (12 revienta). El máximo
+    # del M4; la CADENA de fallback (ultra→extra→alta→estandar) garantiza que nunca se pierda
+    # el trabajo por un preset demasiado agresivo.
     "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, "mem": "9g", "fallback": "extra",
                  "args": ["--pc-quality", "ultra", "--feature-quality", "ultra",
                           "--orthophoto-resolution", "2", "--dem-resolution", "3",
-                          "--mesh-size", "800000", "--mesh-octree-depth", "12", "--pc-copc"]},
+                          "--mesh-size", "800000", "--mesh-octree-depth", "11", "--pc-copc"]},
 }
 
 
@@ -224,12 +225,13 @@ def run_3d(j: dict):
     jobstore.update(j["id"], detail=f"2/3 fotogrametría ODM {preset_name} ({preset['eta']})",
                     stage="odm", progress=0.15)
     rc = run_odm_container(j["id"], container, proj, preset, preset_name)
-    if rc != 0 and not _cancelled(j["id"]) and preset.get("fallback"):
-        # "si no es capaz, baja": ODM reventó (OOM/timeout) en un preset pesado → reintenta
-        # automáticamente en el preset de fallback (extra→alta, ultra→extra)
+    # CADENA de fallback (no un solo nivel): un preset pesado puede reventar por OOM (137) o por
+    # "strange values" (134, malla demasiado densa) → baja escalón por escalón hasta uno probado
+    # (ultra→extra→alta→estandar). Antes: un solo fallback y si ese también fallaba, 2h perdidas.
+    while rc != 0 and not _cancelled(j["id"]) and preset.get("fallback"):
         fb = preset["fallback"]
         print(f"  ODM {preset_name} falló (rc={rc}) → fallback a {fb}", flush=True)
-        jobstore.update(j["id"], detail=f"2/3 ODM {preset_name} no fue capaz → reintentando en {fb}",
+        jobstore.update(j["id"], detail=f"2/3 ODM {preset_name} no fue capaz → bajando a {fb}",
                         stage="odm", progress=0.15)
         preset_name, preset = fb, PRESETS[fb]
         rc = run_odm_container(j["id"], container, proj, preset, preset_name)
