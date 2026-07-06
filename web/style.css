@@ -2399,3 +2399,41 @@ button.exp { text-align: left; cursor: pointer; }
 }
 
 @media (max-width: 640px) { .fly-drone.v7 { width: 104px; } }
+
+/* ===== BLOQUE 15 · fondo pixel-art de TODA la home ===== */
+/* retira la tira del héroe (BLOQUE 14): ahora el fondo cubre toda la página */
+.deck-hero::before { display: none !important; }
+
+/* escena pixel-art fija detrás de todo el contenido (parallax tipo mundo bajo el HUD) */
+.deck-main::before {
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  image-rendering: pixelated;
+  background:
+    linear-gradient(180deg, rgba(6,9,14,.30) 0%, rgba(6,9,14,.58) 46%, rgba(6,9,14,.86) 78%, var(--bg) 100%),
+    url('assets/hero-pixel.png') center top / cover no-repeat;
+}
+/* viñeta lateral para fundir con el sidebar y los bordes */
+.deck-main::after {
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(130% 90% at 50% 12%, transparent 40%, color-mix(in srgb, var(--bg) 72%, transparent) 100%);
+}
+/* modo claro: la escena es nocturna → la dejamos como textura tenue bajo un velo claro */
+[data-theme="light"] .deck-main::before {
+  background:
+    linear-gradient(180deg, rgba(244,247,251,.80) 0%, rgba(244,247,251,.90) 55%, var(--bg) 92%),
+    url('assets/hero-pixel.png') center top / cover no-repeat;
+}
+/* el cielo animado (nubes/hojas/polvo) y el contenido van por encima del fondo */
+.deck-sky { z-index: 1; }
+/* la escena ya trae estrellas: atenúa el polvo propio para no saturar */
+.deck-sky .dust { opacity: 0; }
+.deck-sky .dust { animation-name: sky-dust; }
+.deck-main > * { position: relative; z-index: 1; }
+
+/* el héroe respira sobre la escena: menos relleno inútil, texto con sombra legible */
+.deck-hero { background: none; }
+.deck-title.v6 { text-shadow: 0 3px 22px rgba(4,6,10,.55); }
+.deck-greet { text-shadow: 0 1px 8px rgba(4,6,10,.7); }
+
+/* el fondo fijo de la home cubre todo el viewport → el sidebar debe ir POR ENCIMA */
+.sidebar { z-index: 60; background: var(--surface); }
