@@ -22,20 +22,21 @@ const main = renderShell('home.html');
   const saludo = h < 6 ? 'Vuelos nocturnos' : h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
 
   // ---- tarjetas de sección: acento propio + dato vivo ----
+  // metric = valor clave extraído del sub, lo resalta el CSS (.dc-metric); '' = sin métrica
   const SECTIONS = [
-    { href: 'index.html', ic: 'grid', ac: '#4da3ff', t: 'Vuelos',
+    { href: 'index.html', ic: 'grid', ac: '#4da3ff', t: 'Vuelos', metric: `${flights.length}`,
       sub: `${flights.length} clips · ${withVideo} con streaming`, d: 'Galería, lista, mapa, lugares y fechas.' },
-    { href: 'trips.html', ic: 'pin', ac: '#3ddc97', t: 'Viajes',
+    { href: 'trips.html', ic: 'pin', ac: '#3ddc97', t: 'Viajes', metric: `${days}`,
       sub: `${days} días de vuelo`, d: 'Ciudades, postales y diarios por fecha.' },
-    { href: 'tresd.html', ic: 'cube', ac: '#ff9f43', t: '3D',
+    { href: 'tresd.html', ic: 'cube', ac: '#ff9f43', t: '3D', metric: `${models.length}+${splats.length}`,
       sub: `${models.length} modelos · ${splats.length} splats`, d: 'Ortomosaicos, mallas y gaussian splats.' },
-    { href: 'drone.html', ic: 'drone', ac: '#38d9e5', t: 'Dron',
+    { href: 'drone.html', ic: 'drone', ac: '#38d9e5', t: 'Dron', metric: sys.last_ingest ? `${sys.last_ingest.files}` : '',
       sub: sys.last_ingest ? `último ingest: ${sys.last_ingest.files} archivos` : 'SD y flota', d: 'Importa, verifica y limpia la micro SD.' },
-    { href: 'studio.html', ic: 'film', ac: '#b78cff', t: 'Studio',
+    { href: 'studio.html', ic: 'film', ac: '#b78cff', t: 'Studio', metric: `${(sys.reels || []).length}+${(sys.photos || []).length}`,
       sub: `${(sys.reels || []).length} reels · ${(sys.photos || []).length} fotos`, d: 'Reels, exportes y edición de fotos.' },
-    { href: 'subir.html', ic: 'dl', ac: '#ff7eb0', t: 'Subir',
+    { href: 'subir.html', ic: 'dl', ac: '#ff7eb0', t: 'Subir', metric: '',
       sub: 'ingesta manual', d: 'Arrastra videos DJI y procesa el pipeline.' },
-    { href: 'system.html', ic: 'db', ac: '#8fa3c0', t: 'Sistema',
+    { href: 'system.html', ic: 'db', ac: '#8fa3c0', t: 'Sistema', metric: fmt.gb(vaultBytes),
       sub: fmt.gb(vaultBytes), d: 'Bóveda, trabajos y salud del servidor.' },
   ];
 
@@ -59,6 +60,7 @@ const main = renderShell('home.html');
     <div class="deck-stats rise" style="animation-delay:70ms">
       ${STATS.map(s => `
         <div class="dstat">
+          <span class="dstat-ring"></span>
           <span class="dstat-ic">${icon(s.ic)}</span>
           <b class="dstat-v" data-count="${s.v}" data-fmt="${s.f}">0</b>
           <span class="dstat-lb">${s.lb}</span>
@@ -69,8 +71,10 @@ const main = renderShell('home.html');
     <div class="deck-grid">
       ${SECTIONS.map((s, i) => `
         <a class="deck-card" href="${s.href}" style="--ac:${s.ac};animation-delay:${140 + i * 55}ms">
+          <span class="dc-sheen"></span>
           <span class="dc-ic">${icon(s.ic)}</span>
           <span class="dc-t">${s.t}</span>
+          ${s.metric ? `<span class="dc-metric mono">${esc(s.metric)}</span>` : ''}
           <span class="dc-sub mono">${esc(s.sub)}</span>
           <span class="dc-d">${s.d}</span>
           <span class="dc-arrow">${icon('ext')}</span>

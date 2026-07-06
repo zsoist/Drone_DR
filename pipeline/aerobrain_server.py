@@ -500,6 +500,43 @@ ASPECTS = {
     "4:5": "crop=ih*4/5:ih,scale=1080:1350",
 }
 
+XFADE_DUR = 0.4  # duración de crossfade (video + audio)
+
+
+def _atempo_chain(speed):
+    # atempo solo acepta 0.5..2.0 → encadena factores para speeds fuera de rango
+    # p.ej. 4x = atempo=2.0,atempo=2.0 ; 0.25x = atempo=0.5,atempo=0.5
+    if speed == 1:
+        return []
+    factors, rem = [], speed
+    while rem > 2.0:
+        factors.append(2.0)
+        rem /= 2.0
+    while rem < 0.5:
+        factors.append(0.5)
+        rem /= 0.5
+    factors.append(rem)
+    return [f"atempo={f:.4f}".rstrip("0").rstrip(".") for f in factors]
+
+
+def _has_audio(src):
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a",
+                            "-show_entries", "stream=index", "-of", "csv=p=0", str(src)],
+                           capture_output=True, text=True)
+        return bool(r.stdout.strip())
+    except Exception:
+        return False
+
+
+def _probe_dur(path):
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                        "-of", "csv=p=0", str(path)], capture_output=True, text=True)
+    try:
+        return float(r.stdout.strip())
+    except ValueError:
+        return 0.0
+
 
 def run_edit(spec: dict, j):
     try:
@@ -508,10 +545,12 @@ def run_edit(spec: dict, j):
         base_vf = ASPECTS.get(aspect, ASPECTS["16:9"])
         lut = LUTS.get(spec.get("filter", "none"), "")
         fade = spec.get("fade", True)
+        keep_audio = spec.get("audio") == "original"  # NUEVO: conservar audio del fuente
         title = str(spec.get("title", ""))[:60].replace("\\", "").replace("'", "").replace(":", r"\:")
         tmp = VAULT / "reels" / ".tmp"
         tmp.mkdir(parents=True, exist_ok=True)
         segs = []
+        transitions = []  # transición de ENTRADA a cada corte ('none'|'fade'|'crossfade')
         raw_segs = spec["segments"][:24]
         for i, s in enumerate(raw_segs):
             if not isinstance(s, dict):
@@ -527,7 +566,8 @@ def run_edit(spec: dict, j):
                 raise FileNotFoundError(f"{cid} sin proxy")
             seg_lut = LUTS.get(s.get("filter", spec.get("filter", "none")), lut)
             seg_title = str(s.get("title", ""))[:60].replace("\\", "").replace("'", "").replace(":", r"\:")
-            out_dur = min(b - a, 120) / speed
+            in_dur = min(b - a, 120)
+            out_dur = in_dur / speed
             vf = [base_vf]
             if seg_lut:
                 vf.append(seg_lut)
@@ -540,18 +580,77 @@ def run_edit(spec: dict, j):
                 vf.append(f"drawtext=fontfile={FONT}:text='{txt}':fontcolor=white:fontsize=h/14"
                           f":shadowx=2:shadowy=2:x=(w-text_w)/2:y=h*0.82:alpha='min(1,t)'")
             seg = tmp / f"e{i}.mp4"
-            subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(a), "-i", str(src),
-                            "-t", str(min(b - a, 120)), "-vf", ",".join(vf), "-an",
-                            "-c:v", "h264_videotoolbox", "-b:v", "10M", str(seg)], check=True)
+            cmd = ["ffmpeg", "-v", "error", "-y", "-ss", str(a), "-i", str(src)]
+            if keep_audio:
+                src_audio = _has_audio(src)
+                if not src_audio:
+                    # fuente sin pista de audio → silencio nulo para no desparejar streams en la concat
+                    cmd += ["-f", "lavfi", "-t", f"{out_dur:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
+                # audio recortado al mismo rango, atempo para la velocidad, normalizado aac/48k/stereo
+                af = []
+                if src_audio and speed != 1:
+                    af += _atempo_chain(speed)
+                af.append("aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo")
+                a_map = "0:a:0" if src_audio else "1:a:0"
+                # -t = out_dur (duración REAL del segmento tras setpts): el video y el
+                # silencio anullsrc quedan de la misma longitud → sin desfase A/V en la concat
+                cmd += ["-t", f"{out_dur:.3f}", "-map", "0:v:0", "-map", a_map,
+                        "-vf", ",".join(vf), "-af", ",".join(af),
+                        "-c:v", "h264_videotoolbox", "-b:v", "10M",
+                        "-c:a", "aac", "-ar", "48000", "-ac", "2", str(seg)]
+            else:
+                cmd += ["-t", f"{out_dur:.3f}", "-vf", ",".join(vf), "-an",
+                        "-c:v", "h264_videotoolbox", "-b:v", "10M", str(seg)]
+            subprocess.run(cmd, check=True)
             segs.append(seg)
+            transitions.append(s.get("transition", "none"))
         if not segs:
             raise ValueError("sin segmentos válidos")
-        lst = tmp / "l.txt"
-        lst.write_text("".join(f"file '{s}'\n" for s in segs))
         out = VAULT / "reels" / f"edit-{time.strftime('%Y%m%d-%H%M%S')}{'-v' if spec.get('vertical') else ''}.mp4"
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
-                        "-i", str(lst), "-c", "copy", str(out)], check=True)
-        for s in [*segs, lst]:
+
+        wants_xfade = len(segs) > 1 and any(t == "crossfade" for t in transitions[1:])
+        if not wants_xfade:
+            # ruta concat actual (rápida, probada) — cortes duros; 'fade' ya aplicado por segmento
+            lst = tmp / "l.txt"
+            lst.write_text("".join(f"file '{s}'\n" for s in segs))
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
+                            "-i", str(lst), "-c", "copy", str(out)], check=True)
+            lst.unlink()
+        else:
+            # pase final con xfade encadenado donde el corte pide crossfade; demás cortes van duros
+            durs = [_probe_dur(s) for s in segs]
+            cmd = ["ffmpeg", "-v", "error", "-y"]
+            for s in segs:
+                cmd += ["-i", str(s)]
+            fc = []
+            vprev, aprev = "[0:v]", "[0:a]"
+            acc = durs[0]  # tiempo acumulado del stream de video ya compuesto
+            for i in range(1, len(segs)):
+                cross = transitions[i] == "crossfade"
+                d = XFADE_DUR if cross else 0.0
+                vout = f"[v{i}]"
+                offset = acc - d  # inicio del solape sobre la línea de tiempo actual
+                fc.append(f"{vprev}[{i}:v]xfade=transition=fade:duration={d if cross else 0.001:.3f}"
+                          f":offset={max(offset, 0):.3f}{vout}")
+                if keep_audio:
+                    aout = f"[a{i}]"
+                    if cross:
+                        fc.append(f"{aprev}[{i}:a]acrossfade=d={XFADE_DUR}{aout}")
+                    else:
+                        fc.append(f"{aprev}[{i}:a]concat=n=2:v=0:a=1{aout}")
+                    aprev = aout
+                vprev = vout
+                acc = acc + durs[i] - d
+            maps = ["-map", vprev]
+            if keep_audio:
+                maps += ["-map", aprev]
+            cmd += ["-filter_complex", ";".join(fc), *maps,
+                    "-c:v", "h264_videotoolbox", "-b:v", "10M"]
+            if keep_audio:
+                cmd += ["-c:a", "aac", "-ar", "48000", "-ac", "2"]
+            cmd.append(str(out))
+            subprocess.run(cmd, check=True)
+        for s in segs:
             s.unlink()
         rebuild_index()
         job_end(j, "done", out.name)
