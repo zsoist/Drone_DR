@@ -34,6 +34,13 @@ def rebuild_index():
     subprocess.run(["python3", str(PIPE / "build_index.py")], check=True)
 
 
+def browser_gate(jid: str, kind: str, cid: str, timeout: int = 75):
+    jobstore.update(jid, detail=f"verificando {kind} en navegador", stage="browser-qa", progress=0.97)
+    if jobstore.run_tracked(jid, ["python3", str(PIPE / "browser_gate.py"), kind, cid],
+                            timeout=timeout) != 0:
+        raise RuntimeError(f"browser gate falló para {kind} {cid}")
+
+
 def _cancelled(jid: str) -> bool:
     return (jobstore.get(jid) or {}).get("status") in jobstore.CANCEL_STATES
 
@@ -165,6 +172,7 @@ def run_3d(j: dict):
             m["title"] = j["spec"]["title"]
         mf.write_text(json.dumps(m, indent=1))
     rebuild_index()
+    browser_gate(j["id"], "model", cid)
     jobstore.update(j["id"], progress=1.0)
     jobstore.end(j["id"], "done", f"modelo 3D de {cid} listo — míralo en el tab 3D",
                  artifact=f"models/{cid}/meta.json")
@@ -214,6 +222,7 @@ def run_splat(j: dict):
         raise RuntimeError(quality["reason"])
     final_out = publish_splat_stage(stage, cid, quality, splat_dir)
     rebuild_index()
+    browser_gate(j["id"], "splat", cid, timeout=90)
     jobstore.update(j["id"], progress=1.0)
     jobstore.end(j["id"], "done",
                  f"{final_out.name} · loss {quality['final_loss']} · {n_cams} cámaras",

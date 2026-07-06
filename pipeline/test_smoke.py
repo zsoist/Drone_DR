@@ -330,6 +330,11 @@ check("splat backend: Metal/MPS NO fuerza --cpu",
       and _gpu_backend["device"] == "Metal/MPS")
 check("splat backend: sh-degree-interval queda por encima de iters",
       worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _gpu_backend)[-1] == "7001")
+import browser_gate
+check("browser gate: default usa 127.0.0.1 para evitar localhost IPv6 ajeno",
+      browser_gate.DEFAULT_BASE_URL == "http://127.0.0.1:8790"
+      and browser_gate.CHROME.name == "Google Chrome"
+      and browser_gate.QA_DIR.name == "qa")
 
 # --- splat publish: stage -> atomic public artifact ---
 _spdir = Path(tempfile.mkdtemp())
