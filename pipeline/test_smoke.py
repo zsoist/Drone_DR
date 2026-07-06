@@ -328,10 +328,22 @@ check("presets: ultra usa pc-quality ultra + malla mas densa que alta",
       "ultra" in worker.PRESETS["ultra"]["args"]
       and int(worker.PRESETS["ultra"]["args"][worker.PRESETS["ultra"]["args"].index("--mesh-size") + 1])
       > int(worker.PRESETS["alta"]["args"][worker.PRESETS["alta"]["args"].index("--mesh-size") + 1]))
+_ultra_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), worker.PRESETS["ultra"])
+check("presets: ultra baja concurrencia para aguantar frames premium en M4",
+      _ultra_cmd[_ultra_cmd.index("--max-concurrency") + 1] == "2")
+_retry_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), worker.PRESETS["extra"],
+                            rerun_from="openmvs", stable_dense=True)
+check("presets: retry estable reinicia desde OpenMVS y desactiva geometric estimates",
+      "--pc-skip-geometric" in _retry_cmd and "--rerun-from" in _retry_cmd
+      and _retry_cmd[_retry_cmd.index("--rerun-from") + 1] == "openmvs")
 _fast_cmd = worker.fast_ortho_cmd("odm-test", Path("/tmp/proj"))
 check("presets: fallback ODM usa fast-orthophoto 25D desde georreferenciación",
       "--fast-orthophoto" in _fast_cmd and "--rerun-from" in _fast_cmd
       and _fast_cmd[_fast_cmd.index("--rerun-from") + 1] == "odm_georeferencing")
+import odm_prep
+check("prep: premium extrae más ancho que balanced sin llegar a 4K completo",
+      odm_prep.PROFILE_WIDTH["premium"] > odm_prep.PROFILE_WIDTH["balanced"]
+      and odm_prep.PROFILE_WIDTH["premium"] < 3840)
 _cpu_backend = worker.choose_splat_backend(7000, mps_ready=False,
                                            mps_bin=Path("/tmp/opensplat-mps"),
                                            cpu_bin=Path("/tmp/opensplat-cpu"))

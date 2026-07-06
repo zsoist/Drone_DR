@@ -88,30 +88,32 @@ def _cancelled(jid: str) -> bool:
 
 
 # presets de calidad ODM: mismo pipeline completo (dense+mesh+DSM), distinto trade-off.
-# mem = RAM del contenedor ODM (VM OrbStack = 9.77G). fallback = preset al que se degrada
-# automáticamente si ODM revienta por memoria (OOM exit 137) — "si no es capaz, baja".
+# mem = RAM del contenedor ODM (VM OrbStack ≈10G). concurrency baja en alta/extra/ultra:
+# la doc ODM estima ~1GB por thread a 2MP; nuestros frames premium son ~5MP, así que
+# subir calidad y mantener 4 workers es pedirle a OpenMVS que se estrelle.
+# fallback = preset al que se degrada automáticamente si ODM revienta — "si no es capaz, baja".
 PRESETS = {
-    "rapido":   {"eta": "~25-40 min", "timeout": 2 * 3600, "mem": "7g",
+    "rapido":   {"eta": "~25-40 min", "timeout": 2 * 3600, "mem": "7g", "concurrency": 4,
                  "args": ["--pc-quality", "low", "--feature-quality", "medium",
                           "--orthophoto-resolution", "8", "--dem-resolution", "15"]},
-    "estandar": {"eta": "~45-75 min", "timeout": 3 * 3600, "mem": "7g",
+    "estandar": {"eta": "~45-75 min", "timeout": 3 * 3600, "mem": "7g", "concurrency": 4,
                  "args": ["--pc-quality", "medium", "--feature-quality", "medium",
                           "--orthophoto-resolution", "5", "--dem-resolution", "10"]},
     # alta: mesh-size 300k = recomendación urbana oficial para edificios/techos (default 200k)
-    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "7g", "fallback": "estandar",
+    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "8500m", "concurrency": 3, "fallback": "estandar",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5",
                           "--mesh-size", "300000", "--pc-copc"]},
     # extra: malla más densa (mesh 600k + octree 11) con pc-quality high. octree 12 CRASHEA
     # ("strange values", exit 134) en datasets reales — la comunidad ODM recomienda <=11.
-    "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "8g", "fallback": "alta",
+    "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "alta",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "2", "--dem-resolution", "4",
                           "--mesh-size", "600000", "--mesh-octree-depth", "11", "--pc-copc"]},
     # ultra: pc-quality ultra (~8.5x tiempo) + mesh 800k, octree 11 (12 revienta). El máximo
     # del M4; la CADENA de fallback (ultra→extra→alta→estandar) garantiza que nunca se pierda
     # el trabajo por un preset demasiado agresivo.
-    "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, "mem": "9g", "fallback": "extra",
+    "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "extra",
                  "args": ["--pc-quality", "ultra", "--feature-quality", "ultra",
                           "--orthophoto-resolution", "2", "--dem-resolution", "3",
                           "--mesh-size", "800000", "--mesh-octree-depth", "11", "--pc-copc"]},
@@ -200,14 +202,24 @@ ODM_FRAME_PROFILE = {"rapido": "preview", "estandar": "balanced",
                      "alta": "premium", "extra": "premium", "ultra": "premium"}
 
 
-def run_odm_container(jid, container, proj, preset, preset_name):
+def odm_cmd(container: str, proj: Path, preset: dict, rerun_from: str | None = None,
+            stable_dense: bool = False) -> list[str]:
+    cmd = [DOCKER, "run", "--rm", "--name", container,
+           "-m", preset.get("mem", "7g"), "-v", f"{proj}:/datasets/code", "opendronemap/odm",
+           "--project-path", "/datasets", "--max-concurrency", str(preset.get("concurrency", 4)),
+           "--dsm", "--dtm", "--skip-report", *preset["args"]]
+    if stable_dense:
+        cmd.append("--pc-skip-geometric")
+    if rerun_from:
+        cmd += ["--rerun-from", rerun_from]
+    return cmd
+
+
+def run_odm_container(jid, container, proj, preset, preset_name, rerun_from: str | None = None,
+                      stable_dense: bool = False):
     """Corre ODM con la memoria del preset; devuelve el exit code de run_tracked."""
-    return jobstore.run_tracked(jid,
-        [DOCKER, "run", "--rm", "--name", container,
-         "-m", preset.get("mem", "7g"), "-v", f"{proj}:/datasets/code", "opendronemap/odm",
-         "--project-path", "/datasets", "--max-concurrency", "4",
-         "--dsm", "--dtm", "--skip-report", *preset["args"]],
-        timeout=preset["timeout"])
+    return jobstore.run_tracked(jid, odm_cmd(container, proj, preset, rerun_from, stable_dense),
+                                timeout=preset["timeout"])
 
 
 def fast_ortho_cmd(container: str, proj: Path, ortho_res: str = "5") -> list[str]:
@@ -235,16 +247,25 @@ def run_fast_ortho_fallback(jid: str, proj: Path, container: str) -> int:
         return 124
 
 
-def run_odm_step(jid, container, proj, preset, preset_name):
+def run_odm_step(jid, container, proj, preset, preset_name, rerun_from: str | None = None,
+                 stable_dense: bool = False):
     """ODM degradando el TIMEOUT a rc=124 en vez de propagar la excepción: un preset demasiado
     agresivo suele AGOTAR el tiempo (no reventar con exit code), y run_tracked lanza TimeoutError.
     Sin esto, el timeout se saltaba TODA la cadena de fallback ultra→extra→alta→estandar y se
     perdían horas. Cancel/abort (RuntimeError) SÍ propagan: el operador manda."""
     try:
-        return run_odm_container(jid, container, proj, preset, preset_name)
+        return run_odm_container(jid, container, proj, preset, preset_name, rerun_from, stable_dense)
     except TimeoutError:
         print(f"  ODM {preset_name} agotó el tiempo → tratado como fallo (rc=124) para el fallback", flush=True)
         return 124
+
+
+def _openmvs_unstable(jid: str, rc: int) -> bool:
+    if rc in (134, 139):
+        return True
+    log = ((jobstore.get(jid) or {}).get("log") or "").lower()
+    return any(s in log for s in ("densifypointcloud", "openmvs", "strange values",
+                                  "corrupted double-linked list"))
 
 
 def run_3d(j: dict):
@@ -272,13 +293,24 @@ def run_3d(j: dict):
     # "strange values" (134, malla demasiado densa) o AGOTAR EL TIEMPO (124 vía run_odm_step) →
     # baja escalón por escalón hasta uno probado (ultra→extra→alta→estandar). Antes: un solo
     # fallback, y un timeout se saltaba la cadena entera perdiendo horas.
-    while rc != 0 and not _cancelled(j["id"]) and preset.get("fallback"):
+    stable_tried = set()
+    while rc != 0 and not _cancelled(j["id"]):
+        if preset_name in ("alta", "extra", "ultra") and preset_name not in stable_tried and _openmvs_unstable(j["id"], rc):
+            stable_tried.add(preset_name)
+            print(f"  ODM {preset_name} falló en OpenMVS (rc={rc}) → retry estable sin geometric estimates", flush=True)
+            jobstore.update(j["id"], detail=f"2/3 ODM {preset_name}: retry estable desde OpenMVS",
+                            stage="odm", progress=0.15)
+            rc = run_odm_step(j["id"], container, proj, preset, preset_name,
+                              rerun_from="openmvs", stable_dense=True)
+            continue
+        if not preset.get("fallback"):
+            break
         fb = preset["fallback"]
         print(f"  ODM {preset_name} falló (rc={rc}) → fallback a {fb}", flush=True)
         jobstore.update(j["id"], detail=f"2/3 ODM {preset_name} no fue capaz → bajando a {fb}",
                         stage="odm", progress=0.15)
         preset_name, preset = fb, PRESETS[fb]
-        rc = run_odm_step(j["id"], container, proj, preset, preset_name)
+        rc = run_odm_step(j["id"], container, proj, preset, preset_name, rerun_from="openmvs")
     if rc != 0:
         fb_container = f"{container}-ortho"
         rc2 = run_fast_ortho_fallback(j["id"], proj, fb_container)

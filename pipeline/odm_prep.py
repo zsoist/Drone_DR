@@ -18,7 +18,7 @@ from pathlib import Path
 
 VAULT = Path("/Volumes/SSD/drone-vault")
 FPS = 0.5          # 1 frame cada 2s
-WIDTH = 2688       # 2K: balance calidad/EOM en 16GB RAM
+WIDTH = 2688       # default: balance calidad/RAM en 16GB
 
 
 def find_raw(cid: str) -> Path:
@@ -29,6 +29,10 @@ def find_raw(cid: str) -> Path:
 
 
 PROFILE_FPS = {"preview": 0.33, "balanced": 0.5, "premium": 1.0, "splat": 0.75}
+# Extra/ultra necesitan más detalle de textura, pero ODM/OpenMVS en el M4 de
+# 16GB no aguanta 4 workers sobre 4K completo. La estrategia correcta es subir
+# moderadamente la imagen y bajar concurrencia en el worker.
+PROFILE_WIDTH = {"preview": 2048, "balanced": 2688, "premium": 3072, "splat": 3072}
 
 
 def prune_frames(images, track_pts, fps, profile):
@@ -55,7 +59,7 @@ def prune_frames(images, track_pts, fps, profile):
             dropped += 1
     (images.parent / "frames_manifest.json").write_text(json.dumps(
         {"profile": profile, "kept": len(keep), "dropped": dropped,
-         "frames": chosen}, indent=1))
+         "width": PROFILE_WIDTH.get(profile, WIDTH), "fps": fps, "frames": chosen}, indent=1))
     print(f"poda adaptativa [{profile}]: {len(keep)} frames elegidos · {dropped} descartados "
           f"(blur / casi-duplicados)", flush=True)
     return len(keep)
@@ -73,15 +77,18 @@ def main():
     images = proj / "images"
     images.mkdir(parents=True, exist_ok=True)
 
+    fps = PROFILE_FPS.get(profile, FPS)
+    width = PROFILE_WIDTH.get(profile, WIDTH)
     expected = int(json.loads((VAULT / "manifest" / f"{cid}.json").read_text())
-                   .get("duration_s", 0) * FPS) if (VAULT / "manifest" / f"{cid}.json").exists() else 0
-    print(f"frames 2K de {raw.name} (~{expected or '?'} esperados)…", flush=True)
+                   .get("duration_s", 0) * fps) if (VAULT / "manifest" / f"{cid}.json").exists() else 0
+    print(f"frames {width}px de {raw.name} (~{expected or '?'} esperados)…", flush=True)
+    for old in images.glob("f_*.jpg"):
+        old.unlink()
     # -hwaccel videotoolbox: decodifica el HEVC 4K60 10-bit en el Media Engine del M4
     # (antes: software decode = fase 1 de ~4-5 min; ahora ~2-3x más rápido)
-    fps = PROFILE_FPS.get(profile, FPS)
     proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y",
                              "-hwaccel", "videotoolbox", "-i", str(raw),
-                             "-vf", f"fps={fps},scale={WIDTH}:-2", "-q:v", "2",
+                             "-vf", f"fps={fps},scale={width}:-2", "-q:v", "2",
                              str(images / "f_%04d.jpg")])
     import time as _t
     while proc.poll() is None:
