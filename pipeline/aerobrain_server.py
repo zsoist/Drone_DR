@@ -1,13 +1,16 @@
 """AeroBrain server — static con HTTP Range (iOS lo exige) + upload + edit API.
 
 Endpoints:
-  GET  /...                       estáticos de web/ y /data/ (vault) con 206 Range
-  POST /upload?name=f.mp4&token=  sube video (cualquier formato) → procesa solo
-  POST /api/edit   (token)        {clip_id, segments:[[in,out]...], vertical} → ffmpeg
-  GET  /api/jobs                  estado de uploads/edits
-  POST /api/rescan (token)        regenera índices
+  GET  /...                     estáticos de web/ y /data/ (vault) con 206 Range
+  POST /upload?name=f.mp4       sube video (auth por cookie o X-Token) → procesa solo
+  POST /api/edit                {clip_id, segments:[...]} → ffmpeg
+  POST /api/odm                 encola fotogrametría ODM en el worker
+  POST /api/splat               encola entrenamiento OpenSplat en el worker
+  GET  /api/jobs                estado de cola/trabajos
+  POST /api/rescan              regenera índices
 
-Token: /Volumes/SSD/drone-vault/.token (se genera solo la primera vez).
+Auth externa: cookie HttpOnly o header X-Token. Los agentes locales en 127.0.0.1
+son trusted por diseño; tokens en querystring no se aceptan.
 """
 import json
 import mimetypes
@@ -960,6 +963,10 @@ class H(BaseHTTPRequestHandler):
                         self.wfile.write(chunk)
                     except (BrokenPipeError, ConnectionResetError):
                         return
+            try:
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                return
             return
         size = f.stat().st_size
         start, end = 0, size - 1
@@ -1014,6 +1021,10 @@ class H(BaseHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError):
                     return
                 left -= len(chunk)
+        try:
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
 
     def do_HEAD(self):
         f = self.resolve()
