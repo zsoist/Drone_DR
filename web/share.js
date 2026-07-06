@@ -5,6 +5,7 @@ import { OrbitControls } from '/vendor/three-addons/controls/OrbitControls.js';
 import { OBJLoader } from '/vendor/three-addons/loaders/OBJLoader.js';
 import { MTLLoader } from '/vendor/three-addons/loaders/MTLLoader.js';
 import { PLYLoader } from '/vendor/three-addons/loaders/PLYLoader.js';
+import { mountSplatViewer } from '/splatview.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -312,58 +313,19 @@ const loaders = {
     });
   },
   async splat() {
+    const myLoad = view._loadToken;
     const st = spinner('Descargando gaussian splat…');
-    const GaussianSplats3D = await import('/vendor/gaussian-splats-3d.module.min.js');
-    // progressiveLoad:false — el streaming del formato .splat se colgaba en
-    // "Processing splats" en iOS Safari; con <1MB la carga completa es instantánea.
-    const holder = document.createElement('div');
-    holder.style.cssText = 'position:absolute;inset:0';
-    view.appendChild(holder);
-    const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];  // Z-up -> Y-up
-    const viewer = new GaussianSplats3D.Viewer({
-      rootElement: holder, sharedMemoryForWorkers: false, antialiased: true,
-      showLoadingUI: false,
-      sceneRevealMode: GaussianSplats3D.SceneRevealMode.Instant,
-      cameraUp: [0, 1, 0],
-      initialCameraPosition: [0, 5, 4],
-      initialCameraLookAt: [0, 0, 0],
-    });
-    // trackea el viewer YA (antes del await): si el usuario cambia de tab a mitad de carga,
-    // el dispatcher puede disponerlo — si no, quedan workers + contexto WebGL huérfanos (#4)
-    view._splatViewer = viewer;
-    // timeout proporcional al peso (45s base + 3s/MB, techo 120s): los cinemáticos
-    // de 10-20MB por el tunnel en móvil lento reventaban los 45s fijos
-    const tmoMs = Math.min(120000, 45000 + Math.round((splat.bytes || 0) / 1048576) * 3000);
+    let handle;
     try {
-      await Promise.race([
-        viewer.addSplatScene(`data/splats/${splat.name}`, {
-          progressiveLoad: false, splatAlphaRemovalThreshold: 60, showLoadingUI: false,
-          rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
-          onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
-        }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs)),
-      ]);
+      handle = await mountSplatViewer(view, `data/splats/${splat.name}`,
+        { bytes: splat.bytes, onStatus: t => { if (st) st.textContent = t; } });
     } catch (err) {
-      try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}   // no dejar workers vivos (#17)
-      if (view._splatViewer !== viewer) return;     // superado por otro load: no pintes error falso (#1)
-      view._splatViewer = null;
-      throw err;                                    // el .catch del dispatcher pinta el error real
+      if (view._loadToken !== myLoad) return;       // superado por otro load: no error falso
+      throw err;
     }
-    // guarda de currency: si el tab cambió durante la carga, este viewer ya no manda
-    if (view._splatViewer !== viewer || !holder.isConnected) {
-      try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}
-      return;
-    }
-    fitSplatViewer(viewer);
-    viewer.start();
-    const c = viewer.controls;
-    if (c) {
-      c.enableDamping = true;
-      c.dampingFactor = 0.08;
-      c.rotateSpeed = 0.5;
-      c.zoomSpeed = 0.8;
-      c.maxPolarAngle = Math.PI * 0.49;
-    }
+    if (view._loadToken !== myLoad) { handle.dispose(); return; }   // tab cambió durante la carga
+    view._splatViewer = handle.viewer;
+    view._splatDispose = handle.dispose;            // dispose premium (limpia HUD + listeners + viewer)
     view.querySelector('.sh-st')?.parentElement?.remove();
   },
 };
@@ -372,8 +334,9 @@ document.querySelector('.seg').addEventListener('click', e => {
   const b = e.target.closest('[data-v]');
   if (!b) return;
   view._loadToken = (view._loadToken || 0) + 1;   // invalida carga mesh/cloud/splat en vuelo (#1)
-  // dispose async del vendored lanza NotFoundError → silenciar el rechazo del promise (#5)
-  if (view._splatViewer) { const v = view._splatViewer; view._splatViewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
+  // el módulo premium expone su propio dispose (limpia HUD + listeners + viewer)
+  if (view._splatDispose) { const d = view._splatDispose; view._splatDispose = null; view._splatViewer = null; try { d(); } catch {} }
+  else if (view._splatViewer) { const v = view._splatViewer; view._splatViewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
   document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
   const NAMES = { cloud: 'la nube de puntos (cloud.ply)', mesh: 'la malla texturizada (OBJ/MTL)', splat: `el gaussian splat (.${splatFmt.toLowerCase()})` };
   loaders[b.dataset.v]().catch(err => {

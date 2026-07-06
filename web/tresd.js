@@ -3,6 +3,7 @@
   import { OBJLoader } from '/vendor/three-addons/loaders/OBJLoader.js';
   import { MTLLoader } from '/vendor/three-addons/loaders/MTLLoader.js';
   import { PLYLoader } from '/vendor/three-addons/loaders/PLYLoader.js';
+  import { mountSplatViewer } from '/splatview.js';
 
   const SPLAT_EXT = /\.(ksplat|splat|ply)$/i;
   const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
@@ -434,7 +435,8 @@
     const sbox = document.getElementById('splat-box');
     // dispose() del visor de splat es ASYNC y el vendored lanza NotFoundError (removeChild
     // sobre un rootElement anidado) → hay que silenciar el rechazo del promise, no basta try/catch
-    if (sbox._viewer) { try { const p = sbox._viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {} sbox._viewer = null; }
+    if (sbox._splatDispose) { const d = sbox._splatDispose; sbox._splatDispose = null; sbox._viewer = null; try { d(); } catch {} }
+    else if (sbox._viewer) { try { const p = sbox._viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {} sbox._viewer = null; }
     sbox._loading = false;
     sbox.innerHTML = `<p class="footer-note" style="margin:0" id="splat-note">${spMeta
       ? 'Splat entrenado y listo — pulsa Cargar para el render foto-real.'
@@ -1033,90 +1035,27 @@
     const box = document.getElementById('splat-box');
     if (box._loading) return;                     // re-entrada: un solo load a la vez (#3)
     box._loading = true;
-    // visor anterior fuera ANTES de crear otro (workers + GPU buffers liberados); dispose async
-    if (box._viewer) { const v = box._viewer; box._viewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
+    // visor anterior fuera ANTES de crear otro (dispose premium del módulo si lo hay)
+    if (box._splatDispose) { const d = box._splatDispose; box._splatDispose = null; box._viewer = null; try { d(); } catch {} }
+    else if (box._viewer) { const v = box._viewer; box._viewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
     box.style.position = 'relative';
     box.innerHTML = `<div class="splat-load"><div class="sk" style="height:10px;border-radius:5px"></div>
       <p class="footer-note splat-st" style="margin:10px 0 0">Descargando splat…</p></div>`;
     const st = box.querySelector('.splat-st');
-    const GaussianSplats3D = await import('/vendor/gaussian-splats-3d.module.min.js');
-    // perf: covarianzas half-precision en GPU + antialiased + descarte de splats
-    // casi-invisibles; spinner propio (el built-in es feo y no respeta el theme)
-    // escena OpenSfM es Z-up: rotamos a Y-up y arrancamos con vista aerea —
-    // sin esto el splat aparece torcido y navegar es una pesadilla
-    const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
-    const viewer = new GaussianSplats3D.Viewer({
-      rootElement: box, sharedMemoryForWorkers: false, antialiased: true,
-      halfPrecisionCovariancesOnGPU: true, showLoadingUI: false,
-      sceneRevealMode: GaussianSplats3D.SceneRevealMode.Instant,
-      splatRenderMode: GaussianSplats3D.SplatRenderMode.ThreeD,
-      cameraUp: [0, 1, 0],
-      initialCameraPosition: [0, 5, 4],
-      initialCameraLookAt: [0, 0, 0],
-    });
-    box._viewer = viewer;
+    let handle;
     try {
-      // progressiveLoad:false — hang conocido de .splat en iOS ("Processing splats")
-      // timeout proporcional al peso: los cinemáticos (10-20MB) por el tunnel en móvil
-      // lento reventaban los 45s fijos. 45s base + 3s/MB, techo 120s.
-      const tmoMs = Math.min(120000, 45000 + Math.round((asset.bytes || 0) / 1048576) * 3000);
-      await Promise.race([
-        viewer.addSplatScene(`data/splats/${name}`, {
-          progressiveLoad: false, showLoadingUI: false,
-          // umbral de alpha agresivo: mata la "suciedad" de manchas fantasma
-          // de los entrenamientos cortos (estilo Polycam)
-          splatAlphaRemovalThreshold: 60,
-          rotation: SPLAT_ROT,
-          onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
-        }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs)),
-      ]);
+      handle = await mountSplatViewer(box, `data/splats/${name}`,
+        { bytes: asset.bytes, onStatus: t => { if (st) st.textContent = t; } });
     } catch (err) {
-      // timeout/fallo: dispone el visor a medias (workers + GPU) — no dejarlo huérfano (#11/#15)
-      try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}
-      if (box._viewer === viewer) box._viewer = null;
       box._loading = false;
       const el = box.querySelector('.splat-load');
-      if (el) el.innerHTML =
-        `<p class="footer-note">No se pudo cargar ${esc(name)} · ${esc(String(err && err.message || err).slice(0, 90))}</p>`;
+      if (el) el.innerHTML = `<p class="footer-note">No se pudo cargar ${esc(name)} · ${esc(String(err && err.message || err).slice(0, 90))}</p>`;
       return;
     }
-    // guarda de currency: si otro load/proyecto ya reemplazó este visor, descártalo (#16)
-    if (box._viewer !== viewer) { try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {} box._loading = false; return; }
     box._loading = false;
-    fitSplatViewer(viewer);
-    viewer.start();
-    // navegacion domada: damping suave, nunca por debajo del suelo, zoom acotado
-    const c = viewer.controls;
-    if (c) {
-      c.enableDamping = true;
-      c.dampingFactor = 0.08;
-      c.rotateSpeed = 0.5;
-      c.zoomSpeed = 0.8;
-      c.maxPolarAngle = Math.PI * 0.49;
-    }
+    box._viewer = handle.viewer;
+    box._splatDispose = handle.dispose;           // dispose premium (HUD + listeners + viewer)
     box.querySelector('.splat-load')?.remove();
-    // HUD premium: auto-rotar + pantalla completa
-    const bar = document.createElement('div');
-    bar.className = 'viewer-tools';
-    bar.innerHTML = `<button data-svt="rot" title="Auto-rotar">${icon('route')}</button>
-      <button data-svt="fs" title="Pantalla completa">${icon('ext')}</button>`;
-    box.appendChild(bar);
-    bar.addEventListener('click', ev => {
-      const b = ev.target.closest('[data-svt]');
-      if (!b) return;
-      if (b.dataset.svt === 'rot' && viewer.controls) {
-        viewer.controls.autoRotate = !viewer.controls.autoRotate;
-        viewer.controls.autoRotateSpeed = 0.9;
-        b.classList.toggle('on', viewer.controls.autoRotate);
-      }
-      if (b.dataset.svt === 'fs') {
-        const on = box.classList.toggle('viewer-fs');
-        b.innerHTML = on ? icon('chevL') : icon('ext');
-        document.body.style.overflow = on ? 'hidden' : '';
-        window.dispatchEvent(new Event('resize'));
-      }
-    });
   });
 
   // sin auto-abrir: solo se restaura una selección previa del usuario
