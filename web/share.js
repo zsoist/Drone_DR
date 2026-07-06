@@ -203,28 +203,78 @@ const loaders = {
   async mesh() {
     const st = spinner('Descargando malla texturizada…');
     const mbase = `${base}/model/`;
-    const mtlName = await fetch(mbase + 'odm_textured_model_viewer.mtl', { method: 'HEAD' })
-      .then(r => r.ok ? 'odm_textured_model_viewer.mtl' : 'odm_textured_model_geo.mtl')
-      .catch(() => 'odm_textured_model_geo.mtl');
-    const mtl = await new MTLLoader().setPath(mbase).loadAsync(mtlName);
-    mtl.preload();
+    // switch de calidad 4-tier con supersampling por tier (Metal). extra/ultra desktop-only
+    // (Safari/iPhone evictan >~1GB → parches negros). ultra = geo.mtl 4096 original.
+    const TIERS = {
+      bajo:  { mtl: 'odm_textured_model_viewer_low.mtl',   pr: 1.5, label: 'Rápido' },
+      alto:  { mtl: 'odm_textured_model_viewer.mtl',       pr: 2,   label: 'HD' },
+      extra: { mtl: 'odm_textured_model_viewer_extra.mtl', pr: 2,   label: 'Extra', hires: true },
+      ultra: { mtl: 'odm_textured_model_geo.mtl',          pr: 3,   label: 'Ultra', hires: true },
+    };
+    const HIRES_OK = !matchMedia('(pointer: coarse)').matches && window.innerWidth >= 900;
+    const prFor = tier => {
+      const dpr = devicePixelRatio || 1;
+      if (tier === 'ultra') return Math.min(3, dpr + 1);       // SSAA por encima del nativo
+      if (tier === 'extra') return Math.min(2.5, dpr + 0.5);
+      return Math.min(dpr, TIERS[tier].pr);
+    };
+    const tierMaterials = async tier => {
+      const nm = TIERS[tier].mtl;
+      const ok = await fetch(mbase + nm, { method: 'HEAD' }).then(r => r.ok).catch(() => false);
+      const mc = await new MTLLoader().setPath(mbase).loadAsync(ok ? nm : 'odm_textured_model_geo.mtl');
+      mc.preload();
+      return mc;
+    };
+    let curTier = matchMedia('(max-width: 820px), (pointer: coarse)').matches ? 'bajo' : 'alto';
+    const mc0 = await tierMaterials(curTier);
     const meshFile = (meta.model_viewer || 'model/odm_textured_model_geo.obj').split('/').pop();
-    const obj = await new OBJLoader().setMaterials(mtl).setPath(mbase).loadAsync(meshFile,
+    const obj = await new OBJLoader().setMaterials(mc0).setPath(mbase).loadAsync(meshFile,
       ev => { if (ev.loaded) st.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
     const { scene, cam, controls, renderer } = makeScene();
+    renderer.setPixelRatio(prFor(curTier));
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
+    const swatches = [];
     obj.traverse(n => {
       if (!n.isMesh) return;
       const src = Array.isArray(n.material) ? n.material : [n.material];
-      const mats = src.map(m => {
-        if (m.map) { m.map.anisotropy = maxAniso; m.map.needsUpdate = true; }
-        return new THREE.MeshBasicMaterial({ map: m.map || null, color: m.map ? 0xffffff : 0x8a97a8, side: THREE.DoubleSide });
-      });
+      src.forEach(m => { if (m.map) { m.map.anisotropy = maxAniso; m.map.needsUpdate = true; } });
+      const mats = src.map(m => new THREE.MeshBasicMaterial({ map: m.map || null, color: m.map ? 0xffffff : 0x8a97a8, side: THREE.DoubleSide }));
+      swatches.push({ names: src.map(m => m.name), mats });
       n.material = mats.length === 1 ? mats[0] : mats;
     });
+    async function switchTier(tier) {
+      if (tier === curTier) return false;
+      let mc; try { mc = await tierMaterials(tier); } catch { return false; }
+      swatches.forEach(s => s.names.forEach((nm, i) => {
+        const newMap = mc.materials[nm]?.map || null;
+        if (newMap) newMap.anisotropy = maxAniso;
+        const old = s.mats[i].map;
+        s.mats[i].map = newMap; s.mats[i].needsUpdate = true;
+        if (old && old !== newMap) old.dispose();
+      }));
+      renderer.setPixelRatio(prFor(tier));
+      curTier = tier;
+      return true;
+    }
     obj.rotation.x = -Math.PI / 2;
     scene.add(obj);
     frame(obj, cam, controls);
+    // HUD de calidad (share.html no tiene foto/relieve; solo el switch de resolución)
+    const tierBtns = Object.entries(TIERS)
+      .filter(([, t]) => !t.hires || HIRES_OK)
+      .map(([k, t]) => `<button class="chip${k === curTier ? ' on' : ''}" data-mq="${k}">${t.label}</button>`).join('');
+    const hud = document.createElement('div');
+    hud.className = 'viewer-hud';
+    hud.innerHTML = `<label>Calidad ${tierBtns}</label>`;
+    view.appendChild(hud);
+    hud.addEventListener('click', async ev => {
+      const mq = ev.target.closest('[data-mq]');
+      if (!mq || mq.classList.contains('on')) return;
+      mq.disabled = true; const t = mq.textContent; mq.textContent = '…';
+      const ok = await switchTier(mq.dataset.mq);
+      mq.textContent = t; mq.disabled = false;
+      if (ok) hud.querySelectorAll('[data-mq]').forEach(c => c.classList.toggle('on', c === mq));
+    });
   },
   async splat() {
     const st = spinner('Descargando gaussian splat…');

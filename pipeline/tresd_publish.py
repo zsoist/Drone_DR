@@ -71,45 +71,64 @@ def make_viewer_mesh(geo, dst):
                 o.write(line)
 
 
-def make_viewer_textures(model_dir: Path, budget_mb: int = 600) -> str | None:
-    """Texturas del VISOR con presupuesto de memoria GPU.
+# tiers de textura del VISOR con presupuesto de memoria GPU. Cada página se sube
+# DESCOMPRIMIDA (lado²×4 bytes) sin importar el peso del JPEG, así que N páginas de
+# 4096² = GBs: Chrome desktop aguanta, Safari/iPhone las evicta EN SILENCIO → parches
+# negros ("malla destrozada"). Dos calidades para que el visor elija/cambie:
+#   bajo (vtl_): 1024px, ~256MB techo — móvil/rápido
+#   alto (vth_): 2048px, ~1024MB techo — desktop/HD
+# El detalle fino real vive en la ortofoto 5K y en el OBJ 4096 de descarga.
+# El M4 (10-core GPU, Metal 4, 16GB unificada) aguanta desktop tiers grandes; el techo
+# lo pone Safari/iPhone (evicta >~1GB). Por eso extra/ultra los sirve el visor SOLO en
+# desktop. "ultra" no se regenera: usa el geo.mtl 4096 original (ya publicado).
+VIEWER_TIERS = {
+    "bajo":  {"prefix": "vtl_", "mtl": "odm_textured_model_viewer_low.mtl",   "cap": 1024, "budget_mb": 256},
+    "alto":  {"prefix": "vth_", "mtl": "odm_textured_model_viewer.mtl",       "cap": 2048, "budget_mb": 1024},
+    "extra": {"prefix": "vtx_", "mtl": "odm_textured_model_viewer_extra.mtl", "cap": 3072, "budget_mb": 2560},
+}
 
-    Las páginas de ODM (4096²) suman GBs descomprimidas en GPU (57 páginas = 3.8GB):
-    Chrome desktop aguanta, pero Safari/iPhone evicta texturas en silencio → parches
-    NEGROS ("malla destrozada"). Genera vt_*.jpg reescaladas para que
-    páginas × lado² × 4B <= budget y un odm_textured_model_viewer.mtl que las usa.
-    El detalle fino sigue en la ortofoto 5K; el visor 3D es contexto navegable.
-    """
+
+def _budget_side(n_pages: int, cap: int, budget_mb: int) -> int:
+    side = cap
+    while n_pages and n_pages * side * side * 4 > budget_mb * 1024 * 1024 and side > 512:
+        side -= 512
+    return side
+
+
+def make_viewer_textures(model_dir: Path) -> dict:
+    """Genera los sets de textura del visor (bajo + alto) + sus .mtl. Idempotente."""
     from PIL import Image
     mtl = model_dir / "odm_textured_model_geo.mtl"
     if not mtl.exists():
-        return None
+        return {}
     lines = mtl.read_text().splitlines()
     pages = [ln.split()[1] for ln in lines if ln.strip().startswith("map_Kd")]
     if not pages:
-        return None
-    side = 2048
-    while pages and len(pages) * side * side * 4 > budget_mb * 1024 * 1024 and side > 1024:
-        side -= 512                      # 2048 → 1536 → 1024
-    out_lines = []
-    for ln in lines:
-        if ln.strip().startswith("map_Kd"):
-            src_name = ln.split()[1]
-            src = model_dir / src_name
-            dst_name = f"vt_{Path(src_name).stem}.jpg"
-            if src.exists():
-                im = Image.open(src).convert("RGB")
-                if max(im.size) > side:
-                    im = im.resize((side, side), Image.LANCZOS)
-                im.save(model_dir / dst_name, quality=82, optimize=True)
-                out_lines.append(ln.replace(src_name, dst_name))
+        return {}
+    # cachea las fuentes una vez; reescala por tier
+    out = {}
+    for tier, cfg in VIEWER_TIERS.items():
+        side = _budget_side(len(pages), cfg["cap"], cfg["budget_mb"])
+        out_lines = []
+        for ln in lines:
+            if ln.strip().startswith("map_Kd"):
+                src_name = ln.split()[1]
+                src = model_dir / src_name
+                dst_name = f"{cfg['prefix']}{Path(src_name).stem}.jpg"
+                if src.exists():
+                    im = Image.open(src).convert("RGB")
+                    if max(im.size) > side:
+                        im = im.resize((side, side), Image.LANCZOS)
+                    im.save(model_dir / dst_name, quality=82, optimize=True)
+                    out_lines.append(ln.replace(src_name, dst_name))
+                else:
+                    out_lines.append(ln)
             else:
                 out_lines.append(ln)
-        else:
-            out_lines.append(ln)
-    viewer_mtl = model_dir / "odm_textured_model_viewer.mtl"
-    viewer_mtl.write_text("\n".join(out_lines) + "\n")
-    return viewer_mtl.name
+        (model_dir / cfg["mtl"]).write_text("\n".join(out_lines) + "\n")
+        out[tier] = {"mtl": cfg["mtl"], "side": side, "pages": len(pages),
+                     "gpu_mb": round(len(pages) * side * side * 4 / 1048576)}
+    return out
 
 
 def ply_vertex_count(path: Path) -> int | None:

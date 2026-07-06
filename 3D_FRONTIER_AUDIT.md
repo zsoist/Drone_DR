@@ -51,6 +51,22 @@ Splats:
 - `DJI_20260704160358_0104_D.splat`: 657,632 bytes, older preview splat.
 - 7k urban attempt was killed by worker restart at 63.6%, so it did not complete. With atomic publish, future failed/killed runs will not corrupt the last good splat.
 
+## Closed This Pass 9 (2026-07-06 — 4 tiers de render + Ultra Metal SSAA)
+
+- **Switch de calidad de 4 niveles** en malla (tresd + share): Rápido(1024/pr1.5) ·
+  HD(2048/pr2) · Extra(3072/pr2.5) · Ultra(4096/pr3). extra/ultra gated a desktop
+  (coarse pointer o <900px → solo Rápido/HD, evita eviction en Safari/iPhone).
+- **Ultra explota el M4 (10-core, Metal 4, 16GB)**: texturas 4096 originales (geo.mtl,
+  sin regenerar) + SUPERSAMPLING (pixelRatio 3 → buffer 3258px en viewport 1400) = SSAA
+  por fuerza bruta. Verificado en vivo: 57 tex 4096 cargadas, 0 pérdida de contexto WebGL,
+  malla nítida. GPU de texturas: 0092 2.5GB, 0104 3.6GB, 0099 2.8GB — trivial en 16GB.
+- Tier-swap NO re-descarga el OBJ ni reparsea: swapea maps por nombre de material + ajusta
+  pixelRatio. old.map.dispose() libera la VRAM del tier anterior.
+- Publisher genera bajo/alto/extra (vtl_/vth_/vtx_); ultra reusa el geo.mtl 4096 publicado.
+- Nota de frontera: WebGL ya corre sobre Metal en macOS (ANGLE→Metal / Safari nativo). El
+  siguiente salto sería WebGPU (three.js WebGPURenderer = Metal 4 directo) pero la lib
+  vendoreada es WebGL — anotado, no reescrito.
+
 ## Closed This Pass 8 (2026-07-06 — mesh "destrozado": CAUSA RAÍZ REAL = memoria GPU de texturas)
 
 - El destrozo con sesión fresca y ángulo válido en Safari/iPhone NO era cámara ni geometría:

@@ -704,48 +704,106 @@
     const box = document.getElementById('mesh-box');
     const stM = spin(box, 'Cargando malla texturizada…');
     const base = `data/models/${cur.clip_id}/model/`;
-    // viewer.mtl = texturas con presupuesto de memoria GPU (Safari/iPhone evictan
-    // 4096² silenciosamente -> parches negros); fallback al mtl original si no existe
-    const mtlName = await fetch(base + 'odm_textured_model_viewer.mtl', { method: 'HEAD' })
-      .then(r => r.ok ? 'odm_textured_model_viewer.mtl' : 'odm_textured_model_geo.mtl')
-      .catch(() => 'odm_textured_model_geo.mtl');
-    const mtl = await new MTLLoader().setPath(base).loadAsync(mtlName);
-    mtl.preload();
-    const meshFile = (cur.model_viewer || cur.model_obj || 'model/odm_textured_model_geo.obj').split('/').pop();
-    const obj = await new OBJLoader().setMaterials(mtl).setPath(base).loadAsync(meshFile,
+    await buildMeshViewer(box, base, cur, stM);
+  });
+
+  // visor de malla con SWITCH de calidad (bajo=1024/256MB · alto=2048/1024MB) y render
+  // (foto/relieve). El default en móvil es "bajo" para no evictar texturas (Safari/iPhone
+  // se queda negro con 4096²). Cambiar calidad NO re-descarga el OBJ: solo swapea texturas.
+  // 4 tiers de calidad. pr = techo de pixelRatio (supersampling: renderiza interno a Nx
+  // y baja = antialiasing por fuerza bruta, gratis en el GPU Metal del M4). extra/ultra
+  // son desktop-only (Safari/iPhone evictan >~1GB → pantalla negra). ultra = geo.mtl 4096.
+  const TIERS = {
+    bajo:  { mtl: 'odm_textured_model_viewer_low.mtl',   pr: 1.5, label: 'Rápido' },
+    alto:  { mtl: 'odm_textured_model_viewer.mtl',       pr: 2,   label: 'HD' },
+    extra: { mtl: 'odm_textured_model_viewer_extra.mtl', pr: 2,   label: 'Extra', hires: true },
+    ultra: { mtl: 'odm_textured_model_geo.mtl',          pr: 3,   label: 'Ultra', hires: true },
+  };
+  // gate de hardware: coarse pointer (móvil/tablet) o pantalla chica → sin extra/ultra
+  const HIRES_OK = !matchMedia('(pointer: coarse)').matches && window.innerWidth >= 900;
+  // extra/ultra SUPERSAMPLEAN por encima del nativo (renderiza +px y baja = SSAA, barato en
+  // el GPU del M4); bajo/alto no exceden el nativo para no malgastar en equipos flojos.
+  const prFor = tier => {
+    const dpr = devicePixelRatio || 1;
+    if (tier === 'ultra') return Math.min(3, dpr + 1);
+    if (tier === 'extra') return Math.min(2.5, dpr + 0.5);
+    return Math.min(dpr, TIERS[tier].pr);
+  };
+  async function tierMaterials(base, tier) {
+    const name = TIERS[tier].mtl;
+    const ok = await fetch(base + name, { method: 'HEAD' }).then(r => r.ok).catch(() => false);
+    const mc = await new MTLLoader().setPath(base).loadAsync(ok ? name : 'odm_textured_model_geo.mtl');
+    mc.preload();
+    return mc;
+  }
+  async function buildMeshViewer(box, base, model, stM) {
+    let curTier = matchMedia('(max-width: 820px), (pointer: coarse)').matches ? 'bajo' : 'alto';
+    const mc0 = await tierMaterials(base, curTier);
+    const meshFile = (model.model_viewer || model.model_obj || 'model/odm_textured_model_geo.obj').split('/').pop();
+    const obj = await new OBJLoader().setMaterials(mc0).setPath(base).loadAsync(meshFile,
       ev => { if (ev.loaded) stM.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB descargados`; });
     const { scene, cam, controls, renderer } = makeScene(box);
-    // dos renders intercambiables: Foto (unlit — la textura ya trae la luz real)
-    // y Relieve (con luces — revela la profundidad de la geometría)
+    renderer.setPixelRatio(prFor(curTier));                    // supersampling del tier inicial
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
-    const sets = { foto: [], relieve: [] };
+    // por cada submalla guardo su NOMBRE de material (idéntico entre tiers) + los
+    // materiales Foto (unlit) y Relieve (con luces) para intercambiar sin reparsear.
+    const swatches = [];
     obj.traverse(n => {
       if (!n.isMesh) return;
-      n.geometry.computeVertexNormals();          // sombreado suave en modo Relieve
+      n.geometry.computeVertexNormals();
       const src = Array.isArray(n.material) ? n.material : [n.material];
       src.forEach(m => { if (m.map) { m.map.anisotropy = maxAniso; m.map.needsUpdate = true; } });
       const mk = C => src.map(m => new C({ map: m.map || null, color: m.map ? 0xffffff : 0x8a97a8, side: THREE.DoubleSide }));
-      const foto = mk(THREE.MeshBasicMaterial), rel = mk(THREE.MeshLambertMaterial);
-      sets.foto.push([n, foto]);
-      sets.relieve.push([n, rel]);
-      n.material = foto.length === 1 ? foto[0] : foto;
+      swatches.push({ mesh: n, names: src.map(m => m.name), foto: mk(THREE.MeshBasicMaterial), relieve: mk(THREE.MeshLambertMaterial) });
+      n.material = swatches[swatches.length - 1].foto.length === 1 ? swatches[swatches.length - 1].foto[0] : swatches[swatches.length - 1].foto;
     });
+    let renderMode = 'foto';
+    const applyMode = () => swatches.forEach(s => { s.mesh.material = s[renderMode].length === 1 ? s[renderMode][0] : s[renderMode]; });
+    async function switchTier(tier) {
+      if (tier === curTier) return false;
+      let mc;
+      try { mc = await tierMaterials(base, tier); }
+      catch { return false; }                                 // deja el tier actual intacto
+      swatches.forEach(s => s.names.forEach((nm, i) => {
+        const newMap = mc.materials[nm]?.map || null;
+        if (newMap) newMap.anisotropy = maxAniso;
+        [s.foto[i], s.relieve[i]].forEach(mat => {
+          const old = mat.map;
+          mat.map = newMap; mat.needsUpdate = true;
+          if (old && old !== newMap) old.dispose();          // libera la VRAM del tier anterior
+        });
+      }));
+      renderer.setPixelRatio(prFor(tier));                    // supersampling por tier (Metal)
+      curTier = tier;
+      return true;
+    }
     obj.rotation.x = -Math.PI / 2;
     scene.add(obj);
     frameObject(obj, cam, controls);
     attachViewerTools(box, cam, controls);
     const mhud = document.createElement('div');
     mhud.className = 'viewer-hud';
+    const tierBtns = Object.entries(TIERS)
+      .filter(([, t]) => !t.hires || HIRES_OK)
+      .map(([k, t]) => `<button class="chip${k === curTier ? ' on' : ''}" data-mq="${k}">${t.label}</button>`).join('');
     mhud.innerHTML = `<label>Render <button class="chip on" data-mr="foto">Foto</button>
-      <button class="chip" data-mr="relieve">Relieve</button></label>`;
+      <button class="chip" data-mr="relieve">Relieve</button></label>
+      <label style="margin-left:10px">Calidad ${tierBtns}</label>`;
     box.appendChild(mhud);
-    mhud.addEventListener('click', ev => {
-      const bt = ev.target.closest('[data-mr]');
-      if (!bt) return;
-      mhud.querySelectorAll('[data-mr]').forEach(c => c.classList.toggle('on', c === bt));
-      sets[bt.dataset.mr].forEach(([n, m]) => { n.material = m.length === 1 ? m[0] : m; });
+    mhud.addEventListener('click', async ev => {
+      const mr = ev.target.closest('[data-mr]'), mq = ev.target.closest('[data-mq]');
+      if (mr) {
+        mhud.querySelectorAll('[data-mr]').forEach(c => c.classList.toggle('on', c === mr));
+        renderMode = mr.dataset.mr; applyMode();
+      } else if (mq && !mq.classList.contains('on')) {
+        mq.disabled = true;
+        const prevTxt = mq.textContent; mq.textContent = '…';
+        const ok = await switchTier(mq.dataset.mq);
+        mq.textContent = prevTxt; mq.disabled = false;
+        if (ok) mhud.querySelectorAll('[data-mq]').forEach(c => c.classList.toggle('on', c === mq));
+      }
     });
-  });
+  }
 
   document.getElementById('load-cloud-main').addEventListener('click', async e => {
     if (!cur) return;
