@@ -53,7 +53,8 @@ import jobs as jobstore
 if jobstore.pending("splat", "$CID"):
     print("ya hay splat pendiente para $CID")
 else:
-    j = jobstore.enqueue("splat", "$CID cinemático",
+    # label = cid pelado: pending() dedupea por label exacto (la UI usa el cid)
+    j = jobstore.enqueue("splat", "$CID",
                          {"clip_id": "$CID", "iters": $ITERS})
     print("splat cinemático encolado:", j["id"], "· $DEVICE")
 PY

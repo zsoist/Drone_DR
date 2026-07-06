@@ -275,20 +275,30 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
     abort_hit = threading.Event()
 
     def reader():  # espeja el log; abort/progreso se detectan aqui, el control vive afuera
+        # throttle: ODM/OpenSplat escupen miles de líneas — un UPDATE por línea es
+        # churn de disco + contención del lock con el server leyendo /api/jobs.
+        # Escribimos si el % cambió o pasaron >=0.5s desde la última escritura.
         last_pct = -1
+        last_write = 0.0
         for line in proc.stdout:
             lines.append(line.rstrip())
             del lines[:-200]
-            fields = {"log": "\n".join(lines[-tail:])}
+            fields = {}
             if progress_re:
                 m = re.search(progress_re, line)
                 if m and int(m.group(1)) != last_pct:
                     last_pct = int(m.group(1))
                     lo, hi = progress_span
                     fields["progress"] = round(lo + (hi - lo) * last_pct / 100, 3)
-            update(jid, **fields)
+            now = time.time()
+            if fields or now - last_write >= 0.5:
+                last_write = now
+                fields["log"] = "\n".join(lines[-tail:])
+                update(jid, **fields)
             if abort_re and re.search(abort_re, line):
                 abort_hit.set()
+        # flush final: que el tail del log quede completo al cerrar stdout
+        update(jid, log="\n".join(lines[-tail:]))
     threading.Thread(target=reader, daemon=True).start()
 
     deadline = time.time() + timeout
