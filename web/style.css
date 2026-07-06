@@ -169,7 +169,7 @@ input.ctl:focus { border-color: var(--accent); }
 .stat .v small { font-size: 12px; color: var(--text-3); font-weight: 400; }
 
 /* ---------- flight cards ---------- */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 14px; }  /* 248 no 280: iPad portrait (≈560px de contenido) entra a 2 columnas en vez de 1 */
 .grid.list { grid-template-columns: 1fr; }
 .card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
@@ -336,7 +336,8 @@ input.ctl:focus { border-color: var(--accent); }
 .login-ov {
   position: fixed; inset: 0; z-index: 200;
   background: rgba(6, 8, 11, 0.72); backdrop-filter: blur(8px);
-  display: grid; place-items: center; padding: 20px;
+  display: grid; place-items: safe center; padding: 20px;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;   /* teclado iOS: la tarjeta se puede desplazar en vez de quedar tapada */
   animation: fadeIn 160ms var(--ease);
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -922,7 +923,7 @@ button.exp { text-align: left; cursor: pointer; }
 }
 
 /* ---------- editor de foto ---------- */
-.photo-modal.pm2 { max-width: 760px; }
+.photo-modal.pm2 { max-width: 760px; overflow-y: auto; -webkit-overflow-scrolling: touch; }  /* viewport bajo (teclado/landscape): los controles se desplazan en vez de quedar recortados */
 .photo-modal.pm2 canvas { width: 100%; max-height: 52dvh; object-fit: contain; border-radius: 10px 10px 0 0; background: #000; display: block; }
 .pm-tools { padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); }
 .pm-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -2573,7 +2574,7 @@ button.exp { text-align: left; cursor: pointer; }
 @media (max-width: 640px) { .fly-drone.v10 { width: 122px; } }
 
 /* ===== BLOQUE 19 · Splat Lab (SuperSplat embebido) ===== */
-.lab-main { display: flex; flex-direction: column; min-height: calc(100vh - 40px); }
+.lab-main { display: flex; flex-direction: column; min-height: calc(100dvh - 40px); }  /* dvh: 100vh incluye la barra de URL móvil → franja fantasma */
 .lab-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 12px; }
 .lab-h { margin: 0; font-size: 30px; }
 .lab-picker { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -2581,7 +2582,7 @@ button.exp { text-align: left; cursor: pointer; }
   border: 1px solid var(--line); background: #0b0d10; }
 .lab-frame { width: 100%; height: 100%; min-height: 520px; border: 0; display: block; }
 .lab-tip { margin: 10px 2px 0; }
-@media (max-width: 640px) { .lab-frame-wrap, .lab-frame { min-height: 70vh; } }
+@media (max-width: 640px) { .lab-frame-wrap, .lab-frame { min-height: 70dvh; } }
 .lab-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 10px; }
 .lab-frame-wrap { position: relative; }
 .lab-drophint { position: absolute; inset: 0; display: grid; place-items: center; z-index: 5;
@@ -2671,4 +2672,12 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 /* --- iPad: rescata el "limbo" 821-1049px (sidebar de escritorio pero contenido a 1 columna) --- */
 @media (min-width: 821px) and (max-width: 1049px) {
   .fl-layout { grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.7fr); }  /* video+mapa | panel */
+}
+
+/* --- timeline de Studio en TÁCTIL (crít): los elementos arrastrables (clips, manijas de recorte,
+   playhead) necesitan touch-action:none o el navegador se traga el gesto como pan/scroll — el
+   .tl-scroll declara pan-x pero los hijos no lo reseteaban, y en iPad (>640px) ni había pan-x. --- */
+.tl-clip, .tl-handle, .tl-playhead, .tl-playhead::before, .tl-trans { touch-action: none; }
+@media (pointer: coarse) {
+  .tl-scroll { touch-action: pan-x; }        /* también iPad, no solo ≤640px */
 }
