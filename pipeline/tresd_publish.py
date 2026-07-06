@@ -117,8 +117,10 @@ def make_viewer_textures(model_dir: Path) -> dict:
                 dst_name = f"{cfg['prefix']}{Path(src_name).stem}.jpg"
                 if src.exists():
                     im = Image.open(src).convert("RGB")
-                    if max(im.size) > side:
-                        im = im.resize((side, side), Image.LANCZOS)
+                    if max(im.size) > side:            # preserva aspecto (páginas no-cuadradas)
+                        r = side / max(im.size)
+                        im = im.resize((max(1, round(im.width * r)), max(1, round(im.height * r))),
+                                       Image.LANCZOS)
                     im.save(model_dir / dst_name, quality=82, optimize=True)
                     out_lines.append(ln.replace(src_name, dst_name))
                 else:

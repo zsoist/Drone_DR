@@ -324,9 +324,11 @@
 
   // ---------- ortofoto en MapLibre ----------
   let omap = null;
+  let autoloadTimer = 0;
   function setProject(cid) {
     cur = models.find(m => m.clip_id === cid);
     if (!cur) return;
+    clearTimeout(autoloadTimer);                  // cancela auto-carga del proyecto anterior (#12)
     localStorage.setItem(PROJ_KEY, cid);
     document.getElementById('proj-view').style.display = '';
     document.querySelectorAll('.proj-card').forEach(c => c.classList.toggle('on', c.dataset.cid === cid));
@@ -423,7 +425,10 @@
     document.getElementById('sp-status').textContent = spMeta ? `${(spMeta.bytes / 1e6).toFixed(1)} MB · ${spStatusFmt}` : 'sin entrenar';
     document.getElementById('load-splat').style.display = spMeta ? '' : 'none';
     const sbox = document.getElementById('splat-box');
-    if (sbox._viewer) { try { sbox._viewer.dispose(); } catch {} sbox._viewer = null; }
+    // dispose() del visor de splat es ASYNC y el vendored lanza NotFoundError (removeChild
+    // sobre un rootElement anidado) → hay que silenciar el rechazo del promise, no basta try/catch
+    if (sbox._viewer) { try { const p = sbox._viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {} sbox._viewer = null; }
+    sbox._loading = false;
     sbox.innerHTML = `<p class="footer-note" style="margin:0" id="splat-note">${spMeta
       ? 'Splat entrenado y listo — pulsa Cargar para el render foto-real.'
       : 'Este proyecto aún no tiene splat — entrénalo con "Generar splat…" arriba.'}</p>`;
@@ -434,7 +439,7 @@
     resetViewer('mesh-box', 'Modelo sólido con textura foto-real.', 'load-mesh');
     // auto-carga la estrella — salvo nubes pesadas en móvil (datos + memoria)
     if (!(matchMedia('(max-width: 700px)').matches && cloudMB > 25))
-      setTimeout(() => document.getElementById('load-cloud-main')?.click(), 300);
+      autoloadTimer = setTimeout(() => document.getElementById('load-cloud-main')?.click(), 300);
   }
   // ---------- capas + mediciones ----------
   let tool = null, mpts = [];
@@ -609,18 +614,34 @@
     controls.dampingFactor = 0.07;
     controls.rotateSpeed = 0.55;
     controls.zoomSpeed = 0.9;
-    new ResizeObserver(() => {
+    const ro = new ResizeObserver(() => {
       const W = box.clientWidth, H = box.clientHeight;
       if (!W || !H) return;
       renderer.setSize(W, H);
       cam.aspect = W / H; cam.updateProjectionMatrix();
-    }).observe(box);
+    });
+    ro.observe(box);
     scene.add(new THREE.AmbientLight(0xffffff, 1.15));
     const dl = new THREE.DirectionalLight(0xffffff, 1.2);
     dl.position.set(1, 2, 1.5);
     scene.add(dl);
     (function loop() {
-      if (!renderer.domElement.isConnected) { renderer.dispose(); return; }  // visor reemplazado
+      // teardown al reemplazar el visor: libera GEOMETRÍA + MATERIALES + TEXTURAS (no solo
+      // el renderer) y suelta el contexto WebGL (dispose() no lo hace; el navegador capa ~16).
+      if (!renderer.domElement.isConnected) {
+        ro.disconnect();
+        const freed = new Set();
+        scene.traverse(o => {
+          o.geometry?.dispose();
+          (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+            if (!m) return;
+            if (m.map && !freed.has(m.map)) { freed.add(m.map); m.map.dispose(); }
+            m.dispose();
+          });
+        });
+        renderer.forceContextLoss(); renderer.dispose();
+        return;
+      }
       requestAnimationFrame(loop); controls.update(); renderer.render(scene, cam);
     })();
     return { scene, cam, controls, renderer };
@@ -629,7 +650,8 @@
     const bb = new THREE.Box3().setFromObject(obj);
     const c = bb.getCenter(new THREE.Vector3());
     const sz = bb.getSize(new THREE.Vector3());
-    const maxDim = Math.max(sz.x, sz.y, sz.z);
+    let maxDim = Math.max(sz.x, sz.y, sz.z);
+    if (!isFinite(maxDim) || maxDim <= 0) maxDim = 1;          // geometría degenerada -> sin NaN
     obj.position.sub(c);                       // centra en el origen
     // distancia para que el objeto LLENE ~80% del viewport (fov-aware)
     const fov = cam.fov * Math.PI / 180;
@@ -729,16 +751,22 @@
     if (tier === 'extra') return Math.min(2.5, dpr + 0.5);
     return Math.min(dpr, TIERS[tier].pr);
   };
-  async function tierMaterials(base, tier) {
-    const name = TIERS[tier].mtl;
-    const ok = await fetch(base + name, { method: 'HEAD' }).then(r => r.ok).catch(() => false);
-    const mc = await new MTLLoader().setPath(base).loadAsync(ok ? name : 'odm_textured_model_geo.mtl');
+  // carga directa del .mtl del tier (sin HEAD: evita TOCTOU + ahorra un request). fallback=true
+  // SOLO en la carga inicial y jamás cae al geo.mtl 4096 para 'bajo' (rompería el propósito).
+  async function tierMaterials(base, tier, fallback = false) {
+    let mc;
+    try {
+      mc = await new MTLLoader().setPath(base).loadAsync(TIERS[tier].mtl);
+    } catch (e) {
+      if (!fallback || tier === 'bajo') throw e;      // switchTier / móvil: no degradar a 4096
+      mc = await new MTLLoader().setPath(base).loadAsync('odm_textured_model_geo.mtl');
+    }
     mc.preload();
     return mc;
   }
   async function buildMeshViewer(box, base, model, stM) {
     let curTier = matchMedia('(max-width: 820px), (pointer: coarse)').matches ? 'bajo' : 'alto';
-    const mc0 = await tierMaterials(base, curTier);
+    const mc0 = await tierMaterials(base, curTier, true);
     const meshFile = (model.model_viewer || model.model_obj || 'model/odm_textured_model_geo.obj').split('/').pop();
     const obj = await new OBJLoader().setMaterials(mc0).setPath(base).loadAsync(meshFile,
       ev => { if (ev.loaded) stM.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB descargados`; });
@@ -764,14 +792,15 @@
       let mc;
       try { mc = await tierMaterials(base, tier); }
       catch { return false; }                                 // deja el tier actual intacto
+      const freed = new Set();
       swatches.forEach(s => s.names.forEach((nm, i) => {
-        const newMap = mc.materials[nm]?.map || null;
-        if (newMap) newMap.anisotropy = maxAniso;
-        [s.foto[i], s.relieve[i]].forEach(mat => {
-          const old = mat.map;
-          mat.map = newMap; mat.needsUpdate = true;
-          if (old && old !== newMap) old.dispose();          // libera la VRAM del tier anterior
-        });
+        const newMap = mc.materials[nm]?.map;
+        if (!newMap) return;                                  // tier sin este material: conserva el actual
+        newMap.anisotropy = maxAniso;
+        const old = s.foto[i].map;                            // foto y relieve comparten el mismo Texture
+        s.foto[i].map = s.relieve[i].map = newMap;
+        s.foto[i].needsUpdate = s.relieve[i].needsUpdate = true;
+        if (old && old !== newMap && !freed.has(old)) { freed.add(old); old.dispose(); }  // una vez
       }));
       renderer.setPixelRatio(prFor(tier));                    // supersampling por tier (Metal)
       curTier = tier;
@@ -796,11 +825,12 @@
         mhud.querySelectorAll('[data-mr]').forEach(c => c.classList.toggle('on', c === mr));
         renderMode = mr.dataset.mr; applyMode();
       } else if (mq && !mq.classList.contains('on')) {
-        mq.disabled = true;
+        const btns = [...mhud.querySelectorAll('[data-mq]')];
+        btns.forEach(b => b.disabled = true);                 // congela TODO el switch en vuelo
         const prevTxt = mq.textContent; mq.textContent = '…';
         const ok = await switchTier(mq.dataset.mq);
-        mq.textContent = prevTxt; mq.disabled = false;
-        if (ok) mhud.querySelectorAll('[data-mq]').forEach(c => c.classList.toggle('on', c === mq));
+        mq.textContent = prevTxt; btns.forEach(b => b.disabled = false);
+        if (ok) btns.forEach(c => c.classList.toggle('on', c === mq));
       }
     });
   }
@@ -966,8 +996,10 @@
     if (!asset) return;
     const name = asset.name;
     const box = document.getElementById('splat-box');
-    // visor anterior fuera ANTES de crear otro (workers + GPU buffers liberados)
-    if (box._viewer) { try { box._viewer.dispose(); } catch {} box._viewer = null; }
+    if (box._loading) return;                     // re-entrada: un solo load a la vez (#3)
+    box._loading = true;
+    // visor anterior fuera ANTES de crear otro (workers + GPU buffers liberados); dispose async
+    if (box._viewer) { const v = box._viewer; box._viewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
     box.style.position = 'relative';
     box.innerHTML = `<div class="splat-load"><div class="sk" style="height:10px;border-radius:5px"></div>
       <p class="footer-note splat-st" style="margin:10px 0 0">Descargando splat…</p></div>`;
@@ -1005,10 +1037,18 @@
         new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs)),
       ]);
     } catch (err) {
-      box.querySelector('.splat-load').innerHTML =
+      // timeout/fallo: dispone el visor a medias (workers + GPU) — no dejarlo huérfano (#11/#15)
+      try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}
+      if (box._viewer === viewer) box._viewer = null;
+      box._loading = false;
+      const el = box.querySelector('.splat-load');
+      if (el) el.innerHTML =
         `<p class="footer-note">No se pudo cargar ${esc(name)} · ${esc(String(err && err.message || err).slice(0, 90))}</p>`;
       return;
     }
+    // guarda de currency: si otro load/proyecto ya reemplazó este visor, descártalo (#16)
+    if (box._viewer !== viewer) { try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {} box._loading = false; return; }
+    box._loading = false;
     fitSplatViewer(viewer);
     viewer.start();
     // navegacion domada: damping suave, nunca por debajo del suelo, zoom acotado

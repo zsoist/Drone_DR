@@ -137,15 +137,30 @@ function makeScene() {
   const dl = new THREE.DirectionalLight(0xffffff, 1.2);
   dl.position.set(1, 2, 1.5);
   scene.add(dl);
-  new ResizeObserver(() => {
+  const ro = new ResizeObserver(() => {
     const W = view.clientWidth, H = view.clientHeight;
     if (!W || !H) return;
     renderer.setSize(W, H);
     cam.aspect = W / H;
     cam.updateProjectionMatrix();
-  }).observe(view);
+  });
+  ro.observe(view);
   (function loop() {
-    if (!renderer.domElement.isConnected) { renderer.dispose(); return; }  // tab cambiado
+    // tab cambiado: libera geometría+materiales+texturas y suelta el contexto WebGL
+    if (!renderer.domElement.isConnected) {
+      ro.disconnect();
+      const freed = new Set();
+      scene.traverse(o => {
+        o.geometry?.dispose();
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+          if (!m) return;
+          if (m.map && !freed.has(m.map)) { freed.add(m.map); m.map.dispose(); }
+          m.dispose();
+        });
+      });
+      renderer.forceContextLoss(); renderer.dispose();
+      return;
+    }
     requestAnimationFrame(loop);
     controls.update();
     renderer.render(scene, cam);
@@ -157,7 +172,8 @@ function frame(obj, cam, controls, topDown = false) {
   const bb = new THREE.Box3().setFromObject(obj);
   const c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
   obj.position.sub(c);
-  const maxDim = Math.max(sz.x, sz.y, sz.z);
+  let maxDim = Math.max(sz.x, sz.y, sz.z);
+  if (!isFinite(maxDim) || maxDim <= 0) maxDim = 1;            // geometría degenerada -> sin NaN
   const dist = maxDim * 0.9;
   if (topDown) cam.position.set(dist * 0.15, dist * 0.92, dist * 0.28);
   else cam.position.set(dist * 0.6, dist * 0.55, dist * 0.6);
@@ -218,15 +234,19 @@ const loaders = {
       if (tier === 'extra') return Math.min(2.5, dpr + 0.5);
       return Math.min(dpr, TIERS[tier].pr);
     };
-    const tierMaterials = async tier => {
-      const nm = TIERS[tier].mtl;
-      const ok = await fetch(mbase + nm, { method: 'HEAD' }).then(r => r.ok).catch(() => false);
-      const mc = await new MTLLoader().setPath(mbase).loadAsync(ok ? nm : 'odm_textured_model_geo.mtl');
+    const tierMaterials = async (tier, fallback = false) => {
+      let mc;
+      try {
+        mc = await new MTLLoader().setPath(mbase).loadAsync(TIERS[tier].mtl);
+      } catch (e) {
+        if (!fallback || tier === 'bajo') throw e;             // no degradar 'bajo' a 4096
+        mc = await new MTLLoader().setPath(mbase).loadAsync('odm_textured_model_geo.mtl');
+      }
       mc.preload();
       return mc;
     };
     let curTier = matchMedia('(max-width: 820px), (pointer: coarse)').matches ? 'bajo' : 'alto';
-    const mc0 = await tierMaterials(curTier);
+    const mc0 = await tierMaterials(curTier, true);
     const meshFile = (meta.model_viewer || 'model/odm_textured_model_geo.obj').split('/').pop();
     const obj = await new OBJLoader().setMaterials(mc0).setPath(mbase).loadAsync(meshFile,
       ev => { if (ev.loaded) st.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
@@ -245,12 +265,14 @@ const loaders = {
     async function switchTier(tier) {
       if (tier === curTier) return false;
       let mc; try { mc = await tierMaterials(tier); } catch { return false; }
+      const freed = new Set();
       swatches.forEach(s => s.names.forEach((nm, i) => {
-        const newMap = mc.materials[nm]?.map || null;
-        if (newMap) newMap.anisotropy = maxAniso;
+        const newMap = mc.materials[nm]?.map;
+        if (!newMap) return;                                  // conserva el actual si falta en el tier
+        newMap.anisotropy = maxAniso;
         const old = s.mats[i].map;
         s.mats[i].map = newMap; s.mats[i].needsUpdate = true;
-        if (old && old !== newMap) old.dispose();
+        if (old && old !== newMap && !freed.has(old)) { freed.add(old); old.dispose(); }
       }));
       renderer.setPixelRatio(prFor(tier));
       curTier = tier;
@@ -270,10 +292,12 @@ const loaders = {
     hud.addEventListener('click', async ev => {
       const mq = ev.target.closest('[data-mq]');
       if (!mq || mq.classList.contains('on')) return;
-      mq.disabled = true; const t = mq.textContent; mq.textContent = '…';
+      const btns = [...hud.querySelectorAll('[data-mq]')];
+      btns.forEach(b => b.disabled = true);
+      const t = mq.textContent; mq.textContent = '…';
       const ok = await switchTier(mq.dataset.mq);
-      mq.textContent = t; mq.disabled = false;
-      if (ok) hud.querySelectorAll('[data-mq]').forEach(c => c.classList.toggle('on', c === mq));
+      mq.textContent = t; btns.forEach(b => b.disabled = false);
+      if (ok) btns.forEach(c => c.classList.toggle('on', c === mq));
     });
   },
   async splat() {
@@ -293,17 +317,31 @@ const loaders = {
       initialCameraPosition: [0, 5, 4],
       initialCameraLookAt: [0, 0, 0],
     });
+    // trackea el viewer YA (antes del await): si el usuario cambia de tab a mitad de carga,
+    // el dispatcher puede disponerlo — si no, quedan workers + contexto WebGL huérfanos (#4)
+    view._splatViewer = viewer;
     // timeout proporcional al peso (45s base + 3s/MB, techo 120s): los cinemáticos
     // de 10-20MB por el tunnel en móvil lento reventaban los 45s fijos
     const tmoMs = Math.min(120000, 45000 + Math.round((splat.bytes || 0) / 1048576) * 3000);
-    await Promise.race([
-      viewer.addSplatScene(`data/splats/${splat.name}`, {
-        progressiveLoad: false, splatAlphaRemovalThreshold: 40, showLoadingUI: false,
-        rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
-        onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
-      }),
-      new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs)),
-    ]);
+    try {
+      await Promise.race([
+        viewer.addSplatScene(`data/splats/${splat.name}`, {
+          progressiveLoad: false, splatAlphaRemovalThreshold: 40, showLoadingUI: false,
+          rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+          onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs)),
+      ]);
+    } catch (err) {
+      try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}   // no dejar workers vivos (#17)
+      if (view._splatViewer === viewer) view._splatViewer = null;
+      throw err;                                    // el .catch del dispatcher pinta el error
+    }
+    // guarda de currency: si el tab cambió durante la carga, este viewer ya no manda
+    if (view._splatViewer !== viewer || !holder.isConnected) {
+      try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}
+      return;
+    }
     fitSplatViewer(viewer);
     viewer.start();
     const c = viewer.controls;
@@ -314,7 +352,6 @@ const loaders = {
       c.zoomSpeed = 0.8;
       c.maxPolarAngle = Math.PI * 0.49;
     }
-    view._splatViewer = viewer;
     view.querySelector('.sh-st')?.parentElement?.remove();
   },
 };
@@ -322,7 +359,8 @@ const loaders = {
 document.querySelector('.seg').addEventListener('click', e => {
   const b = e.target.closest('[data-v]');
   if (!b) return;
-  if (view._splatViewer) { try { view._splatViewer.dispose(); } catch {} view._splatViewer = null; }
+  // dispose async del vendored lanza NotFoundError → silenciar el rechazo del promise (#5)
+  if (view._splatViewer) { const v = view._splatViewer; view._splatViewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
   document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
   const NAMES = { cloud: 'la nube de puntos (cloud.ply)', mesh: 'la malla texturizada (OBJ/MTL)', splat: `el gaussian splat (.${splatFmt.toLowerCase()})` };
   loaders[b.dataset.v]().catch(err => {
