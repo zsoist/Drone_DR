@@ -44,6 +44,18 @@ jobstore.init(orphan_kinds=jobstore.LIGHT_KINDS)
 JLOCK = threading.Lock()         # compat: secciones que actualizan detail
 
 
+def clip_history_files(hist_dir: Path, cid: str) -> list:
+    """Archivos de historial que pertenecen EXACTAMENTE a este clip.
+    Formato de archivado: '{cid}-{YYYYMMDD}-{HHMMSS}.{splat|ksplat|ply}'. Un glob '{cid}-*'
+    cruzaría el guion y capturaría el historial de un clip VECINO '{cid}-<suf>' (p.ej. el clip
+    'A' se comería el de 'A-2') — pérdida de datos entre clips. El regex ancla los 8+6 dígitos
+    del timestamp, así 'A-2-...' nunca cae en el conjunto de 'A'."""
+    if not hist_dir.is_dir():
+        return []
+    pat = re.compile(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.(splat|ksplat|ply)$", re.IGNORECASE)
+    return [p for p in hist_dir.iterdir() if p.is_file() and pat.fullmatch(p.name)]
+
+
 def job_add(kind, label, container=""):
     return jobstore.add(kind, label, container)
 
@@ -1213,7 +1225,7 @@ class H(BaseHTTPRequestHandler):
                     archived.append(old.name)
             # poda del historial: conserva las 6 versiones más recientes de este clip (evita
             # crecimiento sin límite; cada re-subida deja .splat+.ksplat = ~2MB)
-            past = sorted(hist.glob(f"{cid}-*"), key=lambda p: p.stat().st_mtime, reverse=True)
+            past = sorted(clip_history_files(hist, cid), key=lambda p: p.stat().st_mtime, reverse=True)
             for stale in past[6:]:
                 stale.unlink(missing_ok=True)
             final = sdir / f"{cid}{ext}"
@@ -1349,12 +1361,12 @@ class H(BaseHTTPRequestHandler):
                 if extra.is_file():
                     extra.unlink(); freed.append("splats/" + extra.name)
             hist = sdir / "history"
-            if hist.is_dir():
-                for h in hist.glob(f"{cid}-*"):        # re-subidas archivadas de SuperSplat
-                    if h.is_file():
-                        h.unlink(); freed.append("splats/history/" + h.name)
+            for h in clip_history_files(hist, cid):     # re-subidas archivadas de SuperSplat (solo ESTE clip)
+                if h.is_file():
+                    h.unlink(); freed.append("splats/history/" + h.name)
             # purga opcional del proyecto ODM (GBs de frames+etapas; el video RAW nunca se toca)
-            proj = (VAULT / "odm" / ("proj0104" if cid.endswith("0104_D") else f"proj_{cid}")).resolve()
+            # sin alias legacy proj0104: cada clip usa SU proyecto (proj0104 compartido = data-loss si 2 clips 0104_D)
+            proj = (VAULT / "odm" / f"proj_{cid}").resolve()
             if spec.get("purge_source") and proj.parent == (VAULT / "odm").resolve() and proj.is_dir():
                 shutil.rmtree(proj)
                 freed.append("odm/" + proj.name)
@@ -1388,10 +1400,9 @@ class H(BaseHTTPRequestHandler):
                 if extra.is_file() and not extra.is_symlink() and extra.resolve().parent == sdir:
                     _to_trash(extra, "splats/")
             hist = sdir / "history"
-            if hist.is_dir():
-                for h in sorted(hist.glob(f"{cid}-*")):     # re-subidas archivadas de SuperSplat
-                    if h.is_file() and not h.is_symlink():
-                        _to_trash(h, "splats/history/")
+            for h in sorted(clip_history_files(hist, cid)):   # re-subidas archivadas de SuperSplat (solo ESTE clip)
+                if h.is_file() and not h.is_symlink():
+                    _to_trash(h, "splats/history/")
             if not moved:
                 return self.send_json({"error": "no hay splat para este clip"}, 404)
             rebuild_index()
@@ -1454,7 +1465,7 @@ class H(BaseHTTPRequestHandler):
                 return
             spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
-            proj = VAULT / "odm" / ("proj0104" if cid.endswith("0104_D") else f"proj_{cid}")
+            proj = VAULT / "odm" / f"proj_{cid}"    # sin alias legacy: cada clip usa SU proyecto (proj0104 compartido = data-loss si 2 clips 0104_D)
             if not (proj / "opensfm" / "reconstruction.json").exists():
                 return self.send_json({"error": "primero procesa el vuelo en 3D (necesita las poses de ODM)"}, 400)
             if not SPLAT_BIN.exists():
@@ -1561,5 +1572,15 @@ class H(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # limpia temporales de subida huérfanos (.upload-<cid>-<hex>.<ext>): una subida cortada por
+    # reinicio/OOM deja el tmp en splats/. best_splats ya los ignora, pero purgarlos evita acumular
+    # GBs invisibles (igual que el worker limpia .training/). Solo al arrancar el server, no en import.
+    try:
+        for _tmp in (VAULT / "splats").glob(".upload-*"):
+            if _tmp.is_file():
+                _tmp.unlink(missing_ok=True)
+                print(f"limpiado upload huérfano: {_tmp.name}")
+    except OSError:
+        pass
     print(f"AeroBrain server :8790 · token en {TOKEN_FILE}")
     ThreadingHTTPServer(("127.0.0.1", 8790), H).serve_forever()

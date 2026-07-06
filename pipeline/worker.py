@@ -133,12 +133,14 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
         raise RuntimeError(quality.get("reason") or "splat no pasó el quality gate")
     splat_dir.mkdir(parents=True, exist_ok=True)
     tmp_meta.write_text(json.dumps(quality, indent=1))
-    os.replace(tmp_out, final_out)
-    os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
-    # borra el .ksplat/.ply VIEJO: si el export nuevo falla (no fatal), best_splats prefiere el
-    # .ksplat y serviría el modelo ANTERIOR (el gate pasaría sobre contenido stale) — #4/#8/#9
+    # ORDEN de commit (importa ante un SIGKILL a media publicación): 1) borra el .ksplat/.ply
+    # VIEJO — best_splats lo prefiere sobre el .splat, así que si sobrevive se serviría el modelo
+    # ANTERIOR; 2) publica el meta; 3) publica el .splat AL FINAL = punto de commit. Así el .splat
+    # nuevo nunca coexiste con un .ksplat stale ni con un meta viejo. (#4/#8/#9 + atomicidad)
     for stale in (splat_dir / f"{cid}.ksplat", splat_dir / f"{cid}.ply"):
         stale.unlink(missing_ok=True)
+    os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
+    os.replace(tmp_out, final_out)
     cam = stage / "cameras.json"
     if cam.exists():
         os.replace(cam, splat_dir / f"{cid}.cameras.json")
@@ -208,6 +210,18 @@ def run_odm_container(jid, container, proj, preset, preset_name):
         timeout=preset["timeout"])
 
 
+def run_odm_step(jid, container, proj, preset, preset_name):
+    """ODM degradando el TIMEOUT a rc=124 en vez de propagar la excepción: un preset demasiado
+    agresivo suele AGOTAR el tiempo (no reventar con exit code), y run_tracked lanza TimeoutError.
+    Sin esto, el timeout se saltaba TODA la cadena de fallback ultra→extra→alta→estandar y se
+    perdían horas. Cancel/abort (RuntimeError) SÍ propagan: el operador manda."""
+    try:
+        return run_odm_container(jid, container, proj, preset, preset_name)
+    except TimeoutError:
+        print(f"  ODM {preset_name} agotó el tiempo → tratado como fallo (rc=124) para el fallback", flush=True)
+        return 124
+
+
 def run_3d(j: dict):
     cid = j["spec"]["clip_id"]
     preset_name = j["spec"].get("preset", "estandar")
@@ -228,17 +242,18 @@ def run_3d(j: dict):
 
     jobstore.update(j["id"], detail=f"2/3 fotogrametría ODM {preset_name} ({preset['eta']})",
                     stage="odm", progress=0.15)
-    rc = run_odm_container(j["id"], container, proj, preset, preset_name)
-    # CADENA de fallback (no un solo nivel): un preset pesado puede reventar por OOM (137) o por
-    # "strange values" (134, malla demasiado densa) → baja escalón por escalón hasta uno probado
-    # (ultra→extra→alta→estandar). Antes: un solo fallback y si ese también fallaba, 2h perdidas.
+    rc = run_odm_step(j["id"], container, proj, preset, preset_name)
+    # CADENA de fallback (no un solo nivel): un preset pesado puede reventar por OOM (137), por
+    # "strange values" (134, malla demasiado densa) o AGOTAR EL TIEMPO (124 vía run_odm_step) →
+    # baja escalón por escalón hasta uno probado (ultra→extra→alta→estandar). Antes: un solo
+    # fallback, y un timeout se saltaba la cadena entera perdiendo horas.
     while rc != 0 and not _cancelled(j["id"]) and preset.get("fallback"):
         fb = preset["fallback"]
         print(f"  ODM {preset_name} falló (rc={rc}) → fallback a {fb}", flush=True)
         jobstore.update(j["id"], detail=f"2/3 ODM {preset_name} no fue capaz → bajando a {fb}",
                         stage="odm", progress=0.15)
         preset_name, preset = fb, PRESETS[fb]
-        rc = run_odm_container(j["id"], container, proj, preset, preset_name)
+        rc = run_odm_step(j["id"], container, proj, preset, preset_name)
     if rc != 0:
         raise RuntimeError("ODM falló")
 
@@ -338,6 +353,13 @@ def main():
         for d in training.iterdir():
             shutil.rmtree(d, ignore_errors=True)
             print(f"limpiado stage huérfano: {d.name}", flush=True)
+    # auto-sana el manifest: si un SIGKILL cayó a media publicación (entre publicar el .splat y el
+    # rebuild final, ventana de segundos por crop+ksplat), system.json quedó con stats del splat
+    # ANTERIOR mientras el disco ya tiene el nuevo. launchd reinicia el worker → reconciliamos aquí.
+    try:
+        rebuild_index()
+    except Exception as e:
+        print(f"rebuild_index de arranque falló (no fatal): {e}", flush=True)
     print(f"worker listo · poll {POLL_S}s · kinds {jobstore.HEAVY_KINDS}", flush=True)
     while True:
         j = jobstore.claim(jobstore.HEAVY_KINDS)

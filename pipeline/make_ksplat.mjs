@@ -46,10 +46,14 @@ const data = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 const fmt = GS.LoaderUtils.sceneFormatFromPath(inFile.toLowerCase());
 
 let splatBuffer;
+// 4º arg = flag "optimizar/comprimir": DEBE ser true. En false la lib toma la rama que devuelve
+// un SplatBuffer SIN comprimir (44 B/gaussiana) e IGNORA compressionLevel+alphaThreshold, dejando
+// el .ksplat MÁS grande que el .splat fuente. Con true: finalize() -> getStandardGenerator(alpha,
+// comp) aplica compressionLevel=1 (16-bit) y el alpha correctamente. Verificado contra la lib vendida.
 if (fmt === GS.SceneFormat.Ply) {
-  splatBuffer = await GS.PlyLoader.loadFromFileData(data, alphaThreshold, compressionLevel, false);
+  splatBuffer = await GS.PlyLoader.loadFromFileData(data, alphaThreshold, compressionLevel, true);
 } else if (fmt === GS.SceneFormat.Splat) {
-  splatBuffer = await GS.SplatLoader.loadFromFileData(data, alphaThreshold, compressionLevel, false);
+  splatBuffer = await GS.SplatLoader.loadFromFileData(data, alphaThreshold, compressionLevel, true);
 } else {
   console.error(`formato no soportado para conversión: ${inFile}`);
   process.exit(2);

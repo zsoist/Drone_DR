@@ -72,7 +72,9 @@ def best_splats(splat_dir: Path) -> list:
         return []
     by_clip = {}
     for p in sorted(splat_dir.glob("*")):
-        if not (p.is_file() and p.suffix.lower() in SPLAT_PRIORITY):
+        # glob('*') SÍ incluye dotfiles: un '.upload-<cid>-<hex>.splat' huérfano (subida cortada)
+        # se publicaría como splat FANTASMA e imborrable desde la UI (el cid saneado pierde el punto).
+        if p.name.startswith(".") or not (p.is_file() and p.suffix.lower() in SPLAT_PRIORITY):
             continue
         cur = by_clip.get(p.stem)
         if cur is None or SPLAT_PRIORITY[p.suffix.lower()] < SPLAT_PRIORITY[cur.suffix.lower()]:
