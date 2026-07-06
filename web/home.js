@@ -61,16 +61,29 @@ main.classList.add('deck-main');
 
   // dron héroe: OVI pixel-art (SVG del usuario) + hélices que giran superpuestas sobre los
   // 4 motores (parseados de los aros cyan). El motor de vuelo mueve el contenedor.
-  // hélice iso: 2 aspas con punta cyan girando dentro de un óvalo achatado (scaleY = perspectiva)
-  const blade = (x, y, sz) => `<span class="blade" style="left:${x}%;top:${y}%;width:${sz}%">
-      <svg viewBox="-12 -12 24 24"><ellipse rx="11.5" ry="11.5" fill="rgba(130,190,230,.12)"/>
-        <g class="spin"><rect x="-11.5" y="-1.5" width="23" height="3" rx="1.5" fill="#d2e0ee"/>
-          <rect x="-11.5" y="-1.5" width="4.6" height="3" fill="#40a6d8"/><rect x="6.9" y="-1.5" width="4.6" height="3" fill="#40a6d8"/></g>
-        <circle r="2.5" fill="#0b0d10"/></svg></span>`;
+  // hélice: cuerpo NEGRO con borde neón cian (rim estático fuera de .spin), disco de motion-blur
+  // (radial-gradient) para que a alta rpm lea como disco iluminado, y puntas que brillan.
+  // Todos los colores van por CLASE en CSS (var() no resuelve en atributos SVG en WebKit).
+  // i = id único por hélice para que los gradientes no colisionen.
+  const blade = (x, y, sz, i = 0) => `<span class="blade" style="left:${x}%;top:${y}%;width:${sz}%">
+      <svg viewBox="-13 -13 26 26">
+        <defs><radialGradient id="bd${i}" cx="50%" cy="50%" r="50%">
+          <stop class="bd-s" offset="50%" stop-opacity="0"/><stop class="bd-s" offset="84%" stop-opacity=".16"/>
+          <stop class="bd-s" offset="97%" stop-opacity=".32"/><stop class="bd-s" offset="100%" stop-opacity="0"/>
+        </radialGradient></defs>
+        <circle class="disc" r="12" fill="url(#bd${i})"/>
+        <circle class="rim" r="12.1"/>
+        <g class="spin">
+          <rect class="bglow" x="-12" y="-1.85" width="24" height="3.7" rx="1.85"/>
+          <rect class="body" x="-11.6" y="-1.45" width="23.2" height="2.9" rx="1.45"/>
+          <rect class="edge" x="-11.6" y="-1.45" width="23.2" height="2.9" rx="1.45"/>
+          <circle class="tip" cx="11.6" cy="0" r="1.25"/><circle class="tip" cx="-11.6" cy="0" r="1.25"/>
+          <circle class="hub" r="1.9"/>
+        </g></svg></span>`;
   const DRONE = `
     <div class="fly-drone v10" id="hero-drone" data-tip="Doble click = que te siga · click = pirueta">
-      <img class="dr-img" src="assets/ovi-drone.svg?v=28" alt="" draggable="false">
-      ${blade(22, 24, 22)}${blade(80, 31, 22)}${blade(20, 61, 29)}${blade(68, 72, 30)}
+      <img class="dr-img" src="assets/ovi-drone.svg?v=31" alt="" draggable="false">
+      ${blade(27, 20, 21, 0)}${blade(84, 30, 21, 1)}${blade(9, 57, 29, 2)}${blade(65, 73, 33, 3)}
     </div>`;
 
   main.innerHTML = `
@@ -234,15 +247,27 @@ main.classList.add('deck-main');
     drone.style.setProperty('--spin', `${(0.5 - clmp(speed * 0.0016, 0, 0.34)).toFixed(3)}s`);   // hélice gira más rápido al volar
     drone.style.setProperty('--yaw', `${(4.4 - clmp(speed * 0.012, 0, 2.6)).toFixed(2)}s`);   // gira más rápido al volar
     // downwash pixel: cae del dron, más denso cuanto más rápido vuela (interacción con el fondo)
-    if (now - lastPuff > (speed > 70 ? 55 : 130)) {
+    if (now - lastPuff > (speed > 70 ? 20 : 40)) {   // cadencia fina -> estela densa
       lastPuff = now;
-      const p = document.createElement('i');
-      p.style.left = (D.x + (Math.random() * 16 - 8)).toFixed(0) + 'px';
-      p.style.top = (D.y + 12).toFixed(0) + 'px';
-      p.style.setProperty('--drift', (Math.random() * 26 - 13).toFixed(0) + 'px');
-      p.style.setProperty('--pf', (0.5 + Math.random() * 0.5).toFixed(2));
-      fx.appendChild(p);
-      p.addEventListener('animationend', () => p.remove());
+      const burst = speed > 70 ? 3 : 2;              // 2-3 partículas por tick
+      for (let k = 0; k < burst; k++) {
+        const p = document.createElement('i');
+        const depth = Math.random();                 // 0 = cerca/pequeña, 1 = lejos/grande-suave
+        const fine = Math.random() < 0.45;           // ~45% son "finos" de 1px (capa de textura densa)
+        const jx = Math.random() * 22 - 11;          // jitter lateral: reparte el spawn por el ancho del rotor
+        const sz = fine ? 1 : (1.6 + depth * 2.0);   // finos 1px; motas 1.6..3.6px
+        if (fine) p.className = 'f';
+        p.style.left = (D.x + jx).toFixed(1) + 'px';
+        p.style.top = (D.y + 10 + Math.random() * 5).toFixed(1) + 'px';
+        p.style.setProperty('--sz', sz.toFixed(1) + 'px');
+        p.style.setProperty('--drift', (jx * 1.5 + (Math.random() * 20 - 10)).toFixed(1) + 'px'); // turbulencia
+        p.style.setProperty('--fall', (44 + depth * 30).toFixed(0) + 'px');   // las lejanas caen más
+        p.style.setProperty('--life', (0.75 + depth * 0.6).toFixed(2) + 's'); // las lejanas perduran
+        p.style.setProperty('--glow', (2 + depth * 2).toFixed(1) + 'px');
+        p.style.setProperty('--pf', (0.4 + depth * 0.5).toFixed(2));          // varianza de opacidad
+        fx.appendChild(p);
+        p.addEventListener('animationend', () => p.remove());
+      }
     }
     // ráfaga en el título cuando el dron cruza por encima
     if (titleEl) {

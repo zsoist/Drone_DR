@@ -2387,16 +2387,39 @@ button.exp { text-align: left; cursor: pointer; }
   color: var(--accent); text-transform: uppercase; opacity: .9; animation: foll-pulse 1.4s ease-in-out infinite; }
 @keyframes foll-pulse { 50% { opacity: .4; } }
 
-/* partículas de downwash (pixel) */
+/* downwash: rotor wash fino, denso y premium. SIN mix-blend-mode (screen muere en blanco).
+   Legibilidad en AMBOS temas por 3 ingredientes: (1) núcleo blanco-caliente se separa en cualquier
+   fondo, (2) aro oscuro hairline = borde nítido en claro, (3) bloom cian suave = neón en oscuro.
+   Un radial + máx 2 sombras diminutas = barato. */
 .pixel-fx { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
-.pixel-fx i { position: absolute; width: 4px; height: 4px; image-rendering: pixelated;
-  background: color-mix(in srgb, var(--accent) 60%, #dbeafe); opacity: 0;
-  animation: puff 1.1s linear forwards; }
-@keyframes puff {
-  0% { opacity: calc(.55 * var(--pf, 1)); transform: translate(0, 0) scale(1); }
-  70% { opacity: calc(.3 * var(--pf, 1)); }
-  100% { opacity: 0; transform: translate(var(--drift, 0), 46px) scale(.5); }
+.pixel-fx i {
+  position: absolute; border-radius: 50%;
+  width: var(--sz, 3px); height: var(--sz, 3px);
+  background: radial-gradient(circle at 50% 42%,
+    #ffffff 0%,
+    color-mix(in srgb, var(--accent) 95%, #ffffff) 24%,
+    color-mix(in srgb, var(--accent) 80%, transparent) 54%,
+    color-mix(in srgb, var(--accent) 28%, transparent) 82%,
+    transparent 100%);
+  box-shadow:
+    0 0 0 .5px rgba(3, 26, 32, .5),                                          /* aro oscuro -> nítido en claro */
+    0 0 var(--glow, 3px) color-mix(in srgb, var(--accent) 45%, transparent); /* bloom -> neón en oscuro */
+  opacity: 0; will-change: transform, opacity;
+  animation: puff var(--life, 1.1s) cubic-bezier(.22, .61, .36, 1) forwards;
 }
+/* "finos" de 1px = capa de textura densa; sombra más leve para que no ensucien */
+.pixel-fx i.f {
+  box-shadow:
+    0 0 0 .4px rgba(3, 26, 32, .45),
+    0 0 2px 0 color-mix(in srgb, var(--accent) 60%, transparent);
+}
+@keyframes puff {
+  0%   { opacity: 0; transform: translate(0, -2px) scale(.35); }
+  14%  { opacity: calc(.85 * var(--pf, 1)); transform: translate(calc(var(--drift, 0px) * .18), 6px) scale(1); }
+  55%  { opacity: calc(.42 * var(--pf, 1)); }
+  100% { opacity: 0; transform: translate(var(--drift, 0px), var(--fall, 52px)) scale(.3); }
+}
+@media (prefers-reduced-motion: reduce) { .pixel-fx i { animation-duration: .5s; } }
 
 @media (max-width: 640px) { .fly-drone.v7 { width: 104px; } }
 
@@ -2423,10 +2446,17 @@ button.exp { text-align: left; cursor: pointer; }
   background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, var(--bg)) 0%, var(--bg) 55%);
 }
 [data-theme="light"] .deck-main::after { background: none; }
-/* dron en claro: el filtro no debe blanquearlo (es grafito oscuro sobre fondo claro) */
+/* dron en claro: grafito oscuro sobre fondo claro → NO brillo (blanquea),
+   sí contraste+saturación fuertes para recortar nítido (HD) y encender cian/naranja */
 [data-theme="light"] .fly-drone.v10 .dr-img {
-  filter: saturate(1.25) contrast(1.14) brightness(.94) drop-shadow(0 6px 5px rgba(20,30,50,.22));
+  filter: saturate(1.6) contrast(1.44) brightness(.9) drop-shadow(0 7px 6px rgba(15,22,40,.3));
 }
+[data-theme="light"] .fly-drone.v10:hover .dr-img {
+  filter: saturate(1.7) contrast(1.5) brightness(.92)
+    drop-shadow(0 7px 6px rgba(15,22,40,.3)) drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 55%, transparent)); }
+[data-theme="light"] .hero-air.following .fly-drone.v10 .dr-img {
+  filter: saturate(1.7) contrast(1.5) brightness(.92)
+    drop-shadow(0 7px 6px rgba(15,22,40,.3)) drop-shadow(0 0 9px var(--accent)); }
 [data-theme="light"] .deck-title.v6 { text-shadow: none; }
 [data-theme="light"] .deck-greet { text-shadow: none; }
 /* el cielo animado (nubes/hojas/polvo) y el contenido van por encima del fondo */
@@ -2478,11 +2508,30 @@ button.exp { text-align: left; cursor: pointer; }
   drop-shadow(0 8px 6px rgba(0,0,0,.55)) drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 60%, transparent)); }
 .hero-air.following .fly-drone.v10 .dr-img { filter: saturate(1.5) contrast(1.14) brightness(1.18)
   drop-shadow(0 8px 6px rgba(0,0,0,.55)) drop-shadow(0 0 9px var(--accent)); }
-/* hélices: óvalo iso (scaleY) con 2 aspas girando */
+/* hélices: aspa NEGRA con borde neón cian. scaleY(.5) = escorzo iso (el disco traza una elipse).
+   TODOS los colores por clase (var() no resuelve en atributos SVG en WebKit). Un solo blur = barato. */
 .fly-drone.v10 .blade { position: absolute; transform: translate(-50%, -50%) scaleY(.5);
-  pointer-events: none; }
+  pointer-events: none; will-change: transform; }
 .fly-drone.v10 .blade svg { display: block; width: 100%; height: auto; overflow: visible; }
+/* stops del disco de motion-blur (radial) */
+.fly-drone.v10 .blade .bd-s { stop-color: var(--accent); }
+.fly-drone.v10 .blade .disc { opacity: .9; }
+/* rim neón ESTÁTICO: aro nítido + glow contenido (una sola sombra, no un halo gordo) */
+.fly-drone.v10 .blade .rim { fill: none; stroke: var(--accent); stroke-width: .7; opacity: .78;
+  filter: drop-shadow(0 0 1.4px color-mix(in srgb, var(--accent) 85%, transparent)); }
+/* cuerpo negro del aspa + borde neón nítido */
+.fly-drone.v10 .blade .body { fill: #0a0d12; }
+.fly-drone.v10 .blade .edge { fill: none; stroke: var(--accent); stroke-width: .62; }
+/* puntas que brillan (specular) */
+.fly-drone.v10 .blade .tip { fill: color-mix(in srgb, var(--accent) 70%, #ffffff);
+  filter: drop-shadow(0 0 1.6px var(--accent)); }
+/* hub negro con aro neón */
+.fly-drone.v10 .blade .hub { fill: #0a0d12; stroke: var(--accent); stroke-width: .62; }
+/* glow del aspa: UN blur (todo el "neón" del cuerpo), sin apilar sombras */
+.fly-drone.v10 .blade .bglow { fill: var(--accent); filter: blur(1.4px); opacity: .5; }
+/* spin honra la var --spin en vivo del motor de vuelo */
 .fly-drone.v10 .blade .spin { transform-box: fill-box; transform-origin: center;
   animation: bspin var(--spin, .42s) linear infinite; }
 @keyframes bspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .fly-drone.v10 .blade .spin { animation: none; } }
 @media (max-width: 640px) { .fly-drone.v10 { width: 122px; } }
