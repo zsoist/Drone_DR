@@ -48,7 +48,8 @@ PRESETS = {
                           "--orthophoto-resolution", "5", "--dem-resolution", "10"]},
     "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600,
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
-                          "--orthophoto-resolution", "3", "--dem-resolution", "5"]},
+                          "--orthophoto-resolution", "3", "--dem-resolution", "5",
+                          "--pc-copc"]},
 }
 
 

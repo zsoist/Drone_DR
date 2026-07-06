@@ -88,6 +88,7 @@ body.innerHTML = `
     <div class="pb"><div class="exp-grid">
       <a class="exp" href="${base}/ortho_full.jpg" target="_blank" rel="noopener"><div><b>Ortofoto 5K</b><span>JPG</span></div></a>
       <a class="exp" href="${base}/cloud.ply" download><div><b>Nube de puntos</b><span>PLY</span></div></a>
+      ${meta.cloud_copc_asset ? `<a class="exp" href="${base}/${meta.cloud_copc_asset}" download><div><b>Nube optimizada</b><span>COPC</span></div></a>` : ''}
       <a class="exp" href="${base}/model/odm_textured_model_geo.obj" download><div><b>Malla 3D</b><span>OBJ</span></div></a>
       ${splat ? `<a class="exp" href="data/splats/${encodeURIComponent(splat.name)}" download><div><b>Gaussian splat</b><span>${splatFmt}</span></div></a>` : ''}
     </div>

@@ -13,6 +13,7 @@ Usage: python3 tresd_publish.py <clip_id> [<proj_dir>]
 """
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -83,6 +84,22 @@ def ply_vertex_count(path: Path) -> int | None:
     return None
 
 
+def find_copc_asset(proj: Path) -> Path | None:
+    """Find an ODM COPC output if --pc-copc was enabled for the run."""
+    geo = proj / "odm_georeferencing"
+    names = [
+        "odm_georeferenced_model.copc.laz",
+        "odm_georeferenced_model.copc.las",
+        "odm_georeferenced_model_copc.laz",
+    ]
+    for name in names:
+        p = geo / name
+        if p.exists():
+            return p
+    found = sorted([*geo.glob("*.copc.laz"), *geo.glob("*.copc.las"), *geo.glob("*copc*.laz")])
+    return found[0] if found else None
+
+
 def main():
     cid = sys.argv[1]
     proj = Path(sys.argv[2]) if len(sys.argv) > 2 else VAULT / "odm" / "proj0104"
@@ -149,6 +166,11 @@ EOF""")
     cm = re.search(r"puntos:\s*(\d+)\s*.*step\s*(\d+)", cloud_info)
     source_points = int(cm.group(1)) if cm else None
     decimation_step = int(cm.group(2)) if cm else None
+    copc_src = find_copc_asset(proj)
+    copc_asset = None
+    if copc_src:
+        copc_asset = "cloud.copc.laz"
+        shutil.copy2(copc_src, out / copc_asset)
 
     for src_name, dst_name in [(".web_ortho.jpg", "ortho.jpg"), (".web_ortho_full.jpg", "ortho_full.jpg"),
                                (".web_ortho.png", "ortho.png"),
@@ -334,6 +356,8 @@ EOF""")
         "cloud_points": ply_vertex_count(out / "cloud.ply"),
         "cloud_source_points": source_points,
         "cloud_decimation_step": decimation_step,
+        "cloud_copc_asset": copc_asset,
+        "cloud_copc_bytes": (out / copc_asset).stat().st_size if copc_asset and (out / copc_asset).exists() else 0,
         "model_obj": "model/odm_textured_model_geo.obj",
         "model_viewer": "model/odm_textured_model_viewer.obj"
                         if (out / "model" / "odm_textured_model_viewer.obj").exists()

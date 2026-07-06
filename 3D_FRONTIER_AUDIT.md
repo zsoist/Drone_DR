@@ -26,6 +26,7 @@ Not 10/10 yet because the premium Gaussian path is prepared for Metal/MPS but th
 - `pipeline/safe_restart.sh worker` now checks SQLite directly instead of trusting the web API, so a stale server response cannot kill a running 3D/splat job.
 - `system.json` counts only visualizable splat assets (`.splat`, `.ksplat`, `.ply`), not sidecar metadata, and now records `clip_id` + `format` for each splat.
 - `tresd.html` and `share.html` now select the best splat asset per project by format priority: `.ksplat` first, `.splat` second, `.ply` fallback.
+- High-quality ODM preset now requests `--pc-copc`; when ODM emits a COPC LAZ, `tresd_publish.py` publishes it as `cloud.copc.laz` and both private/public 3D pages expose it as a GIS download. Existing models need reprocessing in `alta` to gain this asset.
 - Browser QA on localhost loads `share.html` splat and `tresd.html` without console errors.
 - `pipeline/audit_vault.py` reports 0 findings.
 
@@ -47,7 +48,7 @@ Splats:
 
 1. Complete Apple Metal Toolchain download and run `pipeline/build_opensplat_mps.sh`, then process a 7k/15k splat through `build-mps/opensplat`.
 2. Export `.ksplat` after `.splat` training. Viewer preference is already wired and browser-verified.
-3. Add optional ODM `--pc-ept` or `--pc-copc` path for large point-cloud streaming/GIS.
+3. Add browser-side streamed point-cloud viewing for COPC/EPT. COPC export/download is wired for future high-quality runs.
 4. Add browser screenshot gate for every published model/splat before marking the job done.
 5. Add capture recipe presets in the UI: nadir survey, oblique orbit, hybrid premium.
 6. Add versioned model/splat history instead of one public file per clip.

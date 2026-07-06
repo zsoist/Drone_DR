@@ -370,6 +370,7 @@
         <a class="exp" href="${base}/hillshade.png" download>${icon('sun')}<div><b>Relieve sombreado</b><span>PNG · mapas</span></div></a>
         <a class="exp" href="${base}/dsm_color.png" download>${icon('gauge')}<div><b>Elevación color</b><span>PNG · mapas</span></div></a>` : ''}
         <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>Nube de puntos</b><span>PLY · CloudCompare</span></div></a>
+        ${cur.cloud_copc_asset ? `<a class="exp" href="${base}/${cur.cloud_copc_asset}" download>${icon('database')}<div><b>Nube optimizada</b><span>COPC · ${(cur.cloud_copc_bytes / 1e6).toFixed(0)} MB · GIS</span></div></a>` : ''}
         <a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></div></a>
         ${sp ? `<a class="exp" href="data/splats/${encodeURIComponent(sp.name)}" download>${icon('spark')}<div><b>Gaussian splat</b><span>${spFmt} · SuperSplat</span></div></a>` : ''}
         <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Página pública</b><span>LINK · compartir</span></div></a>
