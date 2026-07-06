@@ -1685,3 +1685,86 @@ button.exp { text-align: left; cursor: pointer; }
 
 /* separación clara entre transporte y toolbar */
 .tl-transport { padding-bottom: 6px; }
+
+/* ===== BLOQUE 6 · home v3: cards portal premium + fixes de tema ===== */
+/* FIX light mode: el gradiente del título arrancaba casi blanco → invisible */
+[data-theme="light"] .deck-hero .deck-title {
+  background: linear-gradient(100deg, #0b3a66 12%, #0e7fbf 50%, #0a9c94 88%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+[data-theme="light"] .deck-hero .deck-title em {
+  background: linear-gradient(100deg, #0a9c94, #0e8f5f);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+/* card portal v3 */
+.deck-card.dc3 { min-height: 200px; isolation: isolate; }
+.deck-card.dc3 > * { position: relative; z-index: 2; }
+.dc-img { position: absolute !important; inset: 0; z-index: 0 !important;
+  background-size: cover; background-position: center;
+  opacity: 0; transform: scale(1.14); filter: saturate(1.05);
+  transition: opacity .5s var(--ease), transform 1.4s cubic-bezier(.2,.6,.2,1); }
+.dc-scrim { position: absolute !important; inset: 0; z-index: 1 !important; opacity: 0;
+  background: linear-gradient(185deg, color-mix(in srgb, var(--surface-1) 30%, transparent) 0%,
+    color-mix(in srgb, var(--surface-1) 88%, transparent) 62%, var(--surface-1) 100%);
+  transition: opacity .5s var(--ease); }
+.deck-card.dc3:hover .dc-img { opacity: .5; transform: scale(1.04); }
+.deck-card.dc3:hover .dc-scrim { opacity: 1; }
+[data-theme="light"] .deck-card.dc3:hover .dc-img { opacity: .38; }
+
+/* flip del título: al hover gira y muestra el verbo de acción */
+.dc-flip { display: block; height: 1.5em; perspective: 300px; }
+.dc-face { position: absolute; inset: 0; display: flex; align-items: center; gap: 6px;
+  font-size: 17px; font-weight: 800; letter-spacing: -.01em;
+  backface-visibility: hidden; transition: transform .45s cubic-bezier(.34,1.3,.5,1), opacity .3s;
+  transform-origin: 50% 50%; }
+.dc-face svg.ic { width: 15px; height: 15px; }
+.dc-back { transform: rotateX(-92deg); opacity: 0; }
+.deck-card.dc3:hover .dc-front { transform: rotateX(92deg); opacity: 0; }
+.deck-card.dc3:hover .dc-back { transform: rotateX(0); opacity: 1; }
+
+/* hover: glass de alta gama */
+.deck-card.dc3:hover {
+  transform: translateY(-5px) scale(1.02);
+  backdrop-filter: blur(10px);
+  border-color: color-mix(in srgb, var(--ac) 65%, var(--line));
+  box-shadow: 0 22px 50px -18px color-mix(in srgb, var(--ac) 55%, transparent),
+              inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
+}
+.deck-card.dc3:hover .dc-metric { transform: scale(1.12); color: var(--ac); }
+.dc-metric { transition: transform .35s cubic-bezier(.34,1.56,.64,1), color .3s; transform-origin: left bottom; }
+
+/* click: smash bounce tipo súper impacto */
+.deck-card.smash { animation: dc-smash .43s cubic-bezier(.3,1.6,.4,1) both; pointer-events: none; }
+@keyframes dc-smash {
+  0% { transform: translateY(-5px) scale(1.02); }
+  28% { transform: scale(.9) rotate(-1.2deg); }
+  62% { transform: scale(1.09) rotate(.6deg); }
+  100% { transform: scale(1.03); opacity: .88; }
+}
+/* estallido de partículas del color de la sección */
+.dc-burst { position: absolute !important; z-index: 5 !important; width: 0; height: 0; pointer-events: none; }
+.dc-burst i { position: absolute; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ac); box-shadow: 0 0 8px var(--ac);
+  animation: dc-part .55s cubic-bezier(.2,.7,.4,1) both; }
+@keyframes dc-part {
+  from { opacity: 1; transform: translate(0, 0) scale(1); }
+  to   { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.25); }
+}
+
+/* footer del sidebar: botones grandes premium */
+.sidebar .foot { padding: 12px 8px 4px; }
+.foot-status { display: block; font-size: 10.5px; color: var(--text-3); margin-bottom: 10px;
+  letter-spacing: .04em; }
+.foot-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fbtn { display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 11px 10px; border-radius: 12px; font-size: 12.5px; font-weight: 700;
+  color: var(--text-1); text-decoration: none;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 14%, var(--surface-1)),
+    var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  transition: transform .25s cubic-bezier(.34,1.4,.5,1), box-shadow .3s, border-color .25s; }
+.fbtn svg.ic { width: 15px; height: 15px; color: var(--accent); }
+.fbtn:hover { transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--line));
+  box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--accent) 50%, transparent); }

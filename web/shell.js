@@ -244,7 +244,7 @@ function toggleTheme() {
 
 document.addEventListener('click', async e => {
   if (e.target.closest('[data-theme-toggle]')) toggleTheme();
-  if (e.target.id === 'auth-link') {
+  if (e.target.closest('#auth-link')) {
     e.preventDefault();
     if ((await fetch('/api/whoami')).ok) { await fetch('/api/logout', { method: 'POST' }); alert('Sesión cerrada.'); }
     else await loginModal();
@@ -264,8 +264,13 @@ function renderShell(active) {
             ${icon(n.ic)}<span>${n.label}</span>
           </a>`).join('')}
         <button class="nav-item" data-theme-toggle>${icon('sun')}<span class="theme-lb">${document.documentElement.dataset.theme === 'light' ? 'Oscuro' : 'Claro'}</span></button>
-        <div class="foot"><span class="dot"></span>Mac Mini M4 · vault local · $0/mes<br>
-          <a href="guia.html" style="color:var(--accent)">Guía</a> · <a href="#" id="auth-link" style="color:var(--accent)">Sesión</a></div>
+        <div class="foot">
+          <span class="foot-status"><span class="dot"></span>Mac Mini M4 · vault local</span>
+          <div class="foot-btns">
+            <a class="fbtn" href="guia.html">${icon('list')} Guía</a>
+            <a class="fbtn" href="#" id="auth-link">${icon('iso')} Sesión</a>
+          </div>
+        </div>
       </aside>
       <main class="main" id="main"></main>
     </div>`);
