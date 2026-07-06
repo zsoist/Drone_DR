@@ -40,3 +40,8 @@
 - MobileAsset gotcha: xcodebuild -downloadComponent puede bajar un asset STALE de una
   versión vieja de Xcode (baja completo y queda "Status: uninstalled" sin error). Cura:
   reintentar el mismo comando — el segundo intento trae la versión correcta y activa.
+- Texturas de malla ODM (44-57 páginas de 4096²) = 2.5-3.8GB DESCOMPRIMIDOS en GPU:
+  Chrome desktop aguanta pero Safari/iPhone evictan texturas EN SILENCIO -> parches
+  negros ("malla destrozada", sin error en consola). El visor debe usar el set
+  vt_*.jpg con presupuesto (<=600MB; make_viewer_textures en tresd_publish). El
+  detalle fino vive en la ortofoto, no en la malla.

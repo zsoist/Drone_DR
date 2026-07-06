@@ -51,6 +51,21 @@ Splats:
 - `DJI_20260704160358_0104_D.splat`: 657,632 bytes, older preview splat.
 - 7k urban attempt was killed by worker restart at 63.6%, so it did not complete. With atomic publish, future failed/killed runs will not corrupt the last good splat.
 
+## Closed This Pass 8 (2026-07-06 — mesh "destrozado": CAUSA RAÍZ REAL = memoria GPU de texturas)
+
+- El destrozo con sesión fresca y ángulo válido en Safari/iPhone NO era cámara ni geometría:
+  el modelo alta trae 57 páginas de textura de 4096² = **3.8GB descomprimidos en GPU**.
+  Chrome (desktop, 24GB unificada) los sube; Safari/iPhone los evictan EN SILENCIO →
+  páginas negras intercaladas = "esquirlas". Forense previo confirmó geometría sana
+  (F/V y % de borde MEJORES que los modelos que sí se veían bien).
+- Fix: `make_viewer_textures()` en tresd_publish — set `vt_*.jpg` (JPEG q82) reescalado
+  hasta que páginas × lado² × 4B ≤ 600MB (2048→1536→1024) + `odm_textured_model_viewer.mtl`.
+  Viewers (tresd+share) prefieren el viewer.mtl con fallback. Resultados: 0104 3648→513MB,
+  0099 2816→396MB, 0092 2496→351MB. Los downloads/exports siguen usando las 4096 originales.
+- Aplicado a los 3 modelos publicados sin re-procesar ODM. Gate + visual verificados.
+- El clamp de cámara (0.42π) de la pasada 6 sigue siendo correcto — era necesario pero
+  no suficiente; los dos bugs se solapaban en el mismo síntoma.
+
 ## Closed This Pass 7 (2026-07-06 — Splat Lab móvil + fullscreen + eficiencia verificada)
 
 - **Móvil re-armado**: capa CSS dedicada (`web/supersplat-mobile.css`) inyectada al iframe

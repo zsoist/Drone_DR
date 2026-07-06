@@ -71,6 +71,47 @@ def make_viewer_mesh(geo, dst):
                 o.write(line)
 
 
+def make_viewer_textures(model_dir: Path, budget_mb: int = 600) -> str | None:
+    """Texturas del VISOR con presupuesto de memoria GPU.
+
+    Las páginas de ODM (4096²) suman GBs descomprimidas en GPU (57 páginas = 3.8GB):
+    Chrome desktop aguanta, pero Safari/iPhone evicta texturas en silencio → parches
+    NEGROS ("malla destrozada"). Genera vt_*.jpg reescaladas para que
+    páginas × lado² × 4B <= budget y un odm_textured_model_viewer.mtl que las usa.
+    El detalle fino sigue en la ortofoto 5K; el visor 3D es contexto navegable.
+    """
+    from PIL import Image
+    mtl = model_dir / "odm_textured_model_geo.mtl"
+    if not mtl.exists():
+        return None
+    lines = mtl.read_text().splitlines()
+    pages = [ln.split()[1] for ln in lines if ln.strip().startswith("map_Kd")]
+    if not pages:
+        return None
+    side = 2048
+    while pages and len(pages) * side * side * 4 > budget_mb * 1024 * 1024 and side > 1024:
+        side -= 512                      # 2048 → 1536 → 1024
+    out_lines = []
+    for ln in lines:
+        if ln.strip().startswith("map_Kd"):
+            src_name = ln.split()[1]
+            src = model_dir / src_name
+            dst_name = f"vt_{Path(src_name).stem}.jpg"
+            if src.exists():
+                im = Image.open(src).convert("RGB")
+                if max(im.size) > side:
+                    im = im.resize((side, side), Image.LANCZOS)
+                im.save(model_dir / dst_name, quality=82, optimize=True)
+                out_lines.append(ln.replace(src_name, dst_name))
+            else:
+                out_lines.append(ln)
+        else:
+            out_lines.append(ln)
+    viewer_mtl = model_dir / "odm_textured_model_viewer.mtl"
+    viewer_mtl.write_text("\n".join(out_lines) + "\n")
+    return viewer_mtl.name
+
+
 def ply_vertex_count(path: Path) -> int | None:
     if not path.exists():
         return None
@@ -287,6 +328,7 @@ EOF""")
     geo_obj = out / "model" / "odm_textured_model_geo.obj"
     if geo_obj.exists():
         make_viewer_mesh(geo_obj, out / "model" / "odm_textured_model_viewer.obj")
+    make_viewer_textures(out / "model")
 
     # QA de la reconstrucción (estilo Pix4D/DroneDeploy report).
     # GATE del audit: un modelo NUNCA se publica con qa vacio — si stats.json

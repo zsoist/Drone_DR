@@ -203,7 +203,10 @@ const loaders = {
   async mesh() {
     const st = spinner('Descargando malla texturizada…');
     const mbase = `${base}/model/`;
-    const mtl = await new MTLLoader().setPath(mbase).loadAsync('odm_textured_model_geo.mtl');
+    const mtlName = await fetch(mbase + 'odm_textured_model_viewer.mtl', { method: 'HEAD' })
+      .then(r => r.ok ? 'odm_textured_model_viewer.mtl' : 'odm_textured_model_geo.mtl')
+      .catch(() => 'odm_textured_model_geo.mtl');
+    const mtl = await new MTLLoader().setPath(mbase).loadAsync(mtlName);
     mtl.preload();
     const meshFile = (meta.model_viewer || 'model/odm_textured_model_geo.obj').split('/').pop();
     const obj = await new OBJLoader().setMaterials(mtl).setPath(mbase).loadAsync(meshFile,

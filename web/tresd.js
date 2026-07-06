@@ -704,7 +704,12 @@
     const box = document.getElementById('mesh-box');
     const stM = spin(box, 'Cargando malla texturizada…');
     const base = `data/models/${cur.clip_id}/model/`;
-    const mtl = await new MTLLoader().setPath(base).loadAsync('odm_textured_model_geo.mtl');
+    // viewer.mtl = texturas con presupuesto de memoria GPU (Safari/iPhone evictan
+    // 4096² silenciosamente -> parches negros); fallback al mtl original si no existe
+    const mtlName = await fetch(base + 'odm_textured_model_viewer.mtl', { method: 'HEAD' })
+      .then(r => r.ok ? 'odm_textured_model_viewer.mtl' : 'odm_textured_model_geo.mtl')
+      .catch(() => 'odm_textured_model_geo.mtl');
+    const mtl = await new MTLLoader().setPath(base).loadAsync(mtlName);
     mtl.preload();
     const meshFile = (cur.model_viewer || cur.model_obj || 'model/odm_textured_model_geo.obj').split('/').pop();
     const obj = await new OBJLoader().setMaterials(mtl).setPath(base).loadAsync(meshFile,
