@@ -207,6 +207,8 @@ main.innerHTML = `
 
   // ---------- postal descargable (canvas: portada + nombre + stats) ----------
   async function makePostal(c, btn) {
+    if (btn._busy) return;                                // doble-click en vuelo corrompía el botón (#16)
+    btn._busy = true;
     const orig = btn.innerHTML;
     btn.innerHTML = '…';
     try {
@@ -243,7 +245,7 @@ main.innerHTML = `
         setTimeout(() => URL.revokeObjectURL(a.href), 30000);
       }
     } catch { alert('No se pudo generar la postal.'); }
-    btn.innerHTML = orig;
+    btn.innerHTML = orig; btn._busy = false;
   }
 
   // ---------- interacciones ----------

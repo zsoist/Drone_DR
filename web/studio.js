@@ -1110,9 +1110,11 @@ pollJobs(document.getElementById('jobs'));
       const gt = Math.max(0, Math.min(total(), (ev.clientX - r.left + scroll.scrollLeft) / pps));
       seek(gt); syncTools();   // seek recarga solo si cruza a otro clip; dentro del mismo = fluido
     };
-    const up = () => { phEl.removeEventListener('pointermove', drag); phEl.removeEventListener('pointerup', up); };
+    // pointercancel (touch interrumpido) también debe soltar los listeners, si no se acumulan (#20)
+    const up = () => { phEl.removeEventListener('pointermove', drag); phEl.removeEventListener('pointerup', up); phEl.removeEventListener('pointercancel', up); };
     phEl.addEventListener('pointermove', drag);
     phEl.addEventListener('pointerup', up);
+    phEl.addEventListener('pointercancel', up);
   });
 
   // ================= transporte (32-34) =================

@@ -121,7 +121,7 @@ function card(f) {
       <div class="metrics">
         <span>${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b></span>
         <span>${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b></span>
-        <span>${icon('film')}<b>${f.resolution.split('x')[1]}p${Math.round(f.fps)}</b></span>
+        <span>${icon('film')}<b>${(f.resolution || '').split('x')[1] || '?'}p${Math.round(f.fps || 0)}</b></span>
       </div>
       ${a?.summary ? `<p class="ai-line">${esc(a.summary)}</p>` : ''}
     </div>
@@ -240,8 +240,10 @@ document.addEventListener('click', async e => {
     const f = flights.find(x => x.clip_id === rn.dataset.rename);
     const label = prompt('Nombre para este vuelo:', f?.label || '');
     if (label == null) return;
-    await api('/api/clip', { clip_id: rn.dataset.rename, label });
-    f.label = label; render();
+    try {                                                 // api() puede rechazar (403/red) → no dejar unhandled (#7)
+      await api('/api/clip', { clip_id: rn.dataset.rename, label });
+      if (f) { f.label = label; render(); }
+    } catch { alert('No se pudo renombrar — revisa tu sesión.'); }
   }
 }, true);
 
@@ -362,16 +364,19 @@ function openPreview(f) {
 
 const qEl = document.getElementById('q');
 qEl.addEventListener('input', e => { state.q = e.target.value; if (!state.semantic) render(); });
+let semSeq = 0;
 qEl.addEventListener('keydown', async e => {
   if (e.key === 'Enter' && state.semantic && state.q.trim()) {
     qEl.blur();
+    const mySeq = ++semSeq;                              // token: respuestas fuera de orden no pisan (#6)
     document.getElementById('count').textContent = 'buscando por significado…';
     try {
       const { results, error } = await api('/api/search', { q: state.q.trim() });
+      if (mySeq !== semSeq) return;                      // llegó una búsqueda más nueva → descarta esta
       if (error) { document.getElementById('count').textContent = 'error: ' + error; return; }
       semRank = new Map(results.map((r, i) => [r.clip_id, results.length - i]));
       render();
-    } catch (err) { document.getElementById('count').textContent = 'sin sesión para búsqueda AI'; }
+    } catch (err) { if (mySeq === semSeq) document.getElementById('count').textContent = 'sin sesión para búsqueda AI'; }
   }
 });
 document.getElementById('sem-toggle').addEventListener('click', () => {

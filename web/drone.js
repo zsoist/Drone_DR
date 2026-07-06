@@ -222,6 +222,9 @@ async function scan() {
   requestAnimationFrame(() => el.querySelectorAll('.sd-gauge [data-target]').forEach(c => {
     c.style.strokeDashoffset = c.dataset.target;
   }));
+  // el re-scan cada 10s reconstruye las tarjetas → re-abre el explorador que estuviera abierto
+  // (antes se colapsaba solo y perdía sus listeners de filtro/búsqueda) (#8/#9/#11)
+  volumes.forEach(v => { if (typeof bstate !== 'undefined' && bstate[v.volume]?.open) renderBrowser(v); });
 }
 
 document.getElementById('sd-rescan').addEventListener('click', scan);
