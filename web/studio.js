@@ -413,7 +413,11 @@ function showMod(name) {
       m.style.display = '';
       m.animate([{ opacity: 0, transform: 'translateX(14px)' }, { opacity: 1, transform: 'translateX(0)' }],
                 { duration: 220, easing: 'ease-out' });
-    } else if (!show) m.style.display = 'none';
+    } else if (!show) {
+      // teardown SPA: los <video> del grid siguen decodificando si no se pausan al ocultar el tab
+      m.querySelectorAll('.media-grid video').forEach(v => { try { v.pause(); } catch {} });
+      m.style.display = 'none';
+    }
   });
 }
 stTabs.addEventListener('click', e => {
@@ -487,6 +491,9 @@ function cardHTML(kind, it) {
 
 function renderGrid(kind) {
   const grid = document.getElementById(`grid-${kind}`);
+  // libera los decoders de los <video> previos antes de reemplazar el grid (si no, quedan
+  // huérfanos decodificando hasta el GC)
+  grid.querySelectorAll('video').forEach(v => { try { v.pause(); v.removeAttribute('src'); v.load(); } catch {} });
   const items = viewOf(kind);
   grid.innerHTML = items.map(it => cardHTML(kind, it)).join('') ||
     `<div class="empty" style="grid-column:1/-1">${kind === 'reels' ? 'Aún no hay reels — exporta uno desde el Editor.' : 'Aún no hay fotos capturadas.'}</div>`;
@@ -633,7 +640,9 @@ pollJobs(document.getElementById('jobs'));
   video.loop = false;   // el bucle lo maneja el compositor, no el <video>
 
   // ---- geometría del compositor ----
-  const segDur = s => (s.b - s.a) / s.speed;                 // duración en timeline
+  // freeze REEMPLAZA la duración: el exporter usa out_dur = freeze (congela el frame 'a');
+  // ver aerobrain_server.py:709. Sumarlo desincronizaría timeline vs. reel exportado.
+  const segDur = s => s.freeze > 0 ? s.freeze : (s.b - s.a) / s.speed;   // duración en timeline
   const total  = () => tl.reduce((a, s) => a + segDur(s), 0);
   const offset = i => { let o = 0; for (let k = 0; k < i; k++) o += segDur(tl[k]); return o; };
   function clipAt(gt) {                                       // {clip,idx,local}
@@ -861,6 +870,8 @@ pollJobs(document.getElementById('jobs'));
   }
 
   let pendingCancel = null;   // aborta el ciclo de carga en curso (listeners + timeout)
+  let pendingTarget = 0, pendingPlay = false;   // target/andPlay VIGENTES del ciclo (no capturados)
+  const cancelSeek = () => { if (pendingCancel) { pendingCancel(); pendingCancel = null; } };
   function seek(gt, andPlay) {
     gt = Math.max(0, Math.min(total(), gt));
     playhead = gt;
@@ -868,14 +879,16 @@ pollJobs(document.getElementById('jobs'));
     if (!tl.length) return;
     const at = clipAt(gt);                       // una sola pasada por el timeline
     const clip = at.clip, idx = at.idx;
-    const target = clip.a + at.local * clip.speed;
+    // freeze fija el frame 'a' (coincide con el exporter); si no, tiempo fuente escalado por speed
+    const target = clip.freeze > 0 ? clip.a : clip.a + at.local * clip.speed;
     video.playbackRate = clip.speed;
     video.style.filter = cssFilterFor(clip);
     // recarga SOLO si cambia el clip fuente; el mismo clip (scrub, trim, arrastre del
     // playhead dentro del corte) solo reposiciona currentTime → sin stalls ni flash.
     if (curCid !== clip.clip_id) {
-      if (pendingCancel) { pendingCancel(); pendingCancel = null; }   // cancela el ciclo anterior
+      cancelSeek();   // cancela el ciclo anterior
       curCid = clip.clip_id;
+      pendingTarget = target; pendingPlay = !!andPlay;
       video.src = srcFor(clip.clip_id);
       // arranca con 'canplay' (readyState>=3) para evitar stutter; fija currentTime solo
       // con metadata; fallback a 'loadeddata' + timeout por si canplay no dispara.
@@ -888,12 +901,14 @@ pollJobs(document.getElementById('jobs'));
       };
       const start = () => {
         if (done) return; done = true; cleanup();
-        if (video.readyState >= 1) { try { video.currentTime = target; } catch {} }
-        if (andPlay) video.play().catch(() => {});
+        // el timeline pudo vaciarse/cambiar de clip durante la carga (pause/clearTL/delClip)
+        if (!tl.length || curCid !== clip.clip_id) return;
+        if (video.readyState >= 1) { try { video.currentTime = pendingTarget; } catch {} }
+        if (pendingPlay && playing) video.play().catch(() => {});   // no reanudar si el usuario pausó
       };
       const onData = () => {   // fallback: fija el tiempo aunque aún no haya canplay
         if (done) return;
-        if (video.readyState >= 1) { try { video.currentTime = target; } catch {} }
+        if (video.readyState >= 1) { try { video.currentTime = pendingTarget; } catch {} }
         if (video.readyState >= 3) start();
       };
       pendingCancel = () => { done = true; cleanup(); };   // abortar sin ejecutar start
@@ -902,6 +917,9 @@ pollJobs(document.getElementById('jobs'));
       safety = setTimeout(start, 1500);
       video.load();
     } else {
+      // mismo clip: reposiciona ya y, si el ciclo inicial sigue cargando, actualiza su target
+      // (si no, un scrub/trim durante la carga aplicaría el target viejo al llegar canplay/safety)
+      if (pendingCancel) { pendingTarget = target; pendingPlay = pendingPlay || !!andPlay; }
       try { video.currentTime = target; } catch {}
       if (andPlay) video.play().catch(() => {});
     }
@@ -996,6 +1014,7 @@ pollJobs(document.getElementById('jobs'));
   function clearTL() {
     if (!tl.length) return;
     if (!confirm('¿Vaciar el timeline?')) return;
+    cancelSeek();   // aborta cualquier ciclo de carga en vuelo antes de vaciar
     pushUndo(); tl = []; sel = -1; playhead = 0; curCid = null; renderAll();
   }
 
@@ -1212,18 +1231,24 @@ pollJobs(document.getElementById('jobs'));
   // --- look (LUT) ---
   $('tli-filter').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.filter = e.target.value; renderTrack(); livePreview(); } });
 
+  // --- undo de ediciones continuas (texto/slider/color): una instantánea ANTES del primer
+  // cambio de la sesión (bug: el snapshot en 'change' se tomaba DESPUÉS de mutar → undo no
+  // revertía). Se re-arma en cada focus; commitEdit sólo empuja en el primer input real.
+  let editArmed = false;
+  const armEdit = () => { editArmed = true; };
+  const commitEdit = () => { if (editArmed) { editArmed = false; if (selSeg()) pushUndo(); } };
+  ['tli-title', 'tli-title-size', 'tli-title-color', 'tli-trans-dur'].forEach(id => $(id).addEventListener('focus', armEdit));
+
   // --- título + estilo ---
-  $('tli-title').addEventListener('input', e => { const s = selSeg(); if (s) { s.title = e.target.value; renderTrack(); } });
+  $('tli-title').addEventListener('input', e => { const s = selSeg(); if (!s) return; commitEdit(); s.title = e.target.value; renderTrack(); });
   $('tli-title-pos').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.pos = e.target.value; } });
-  $('tli-title-size').addEventListener('input', e => { const s = selSeg(); if (s) s.titleStyle.size = +e.target.value; });
-  $('tli-title-size').addEventListener('change', () => { if (selSeg()) pushUndo(); });
-  $('tli-title-color').addEventListener('input', e => { const s = selSeg(); if (s) s.titleStyle.color = e.target.value.replace('#', ''); });
+  $('tli-title-size').addEventListener('input', e => { const s = selSeg(); if (!s) return; commitEdit(); s.titleStyle.size = +e.target.value; });
+  $('tli-title-color').addEventListener('input', e => { const s = selSeg(); if (!s) return; commitEdit(); s.titleStyle.color = e.target.value.replace('#', ''); });
   $('tli-title-box').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.box = e.target.checked; } });
 
   // --- transición de entrada (librería) + duración ---
   $('tli-trans').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.transition = e.target.value; renderTrack(); } });
-  $('tli-trans-dur').addEventListener('input', e => { const s = selSeg(); if (s) { s.transDur = +e.target.value; $('tli-trans-dur-v').textContent = (+e.target.value).toFixed(1) + 's'; } });
-  $('tli-trans-dur').addEventListener('change', () => { if (selSeg()) pushUndo(); });
+  $('tli-trans-dur').addEventListener('input', e => { const s = selSeg(); if (!s) return; commitEdit(); s.transDur = +e.target.value; $('tli-trans-dur-v').textContent = (+e.target.value).toFixed(1) + 's'; });
 
   // --- copiar / pegar atributos entre clips ---
   const STYLE_KEYS = ['speed', 'filter', 'grade', 'titleStyle', 'transition', 'transDur', 'reverse', 'freeze'];
@@ -1306,10 +1331,13 @@ pollJobs(document.getElementById('jobs'));
   document.getElementById('eb-open').addEventListener('click', openExSheet);
   document.getElementById('ex-close').addEventListener('click', closeExSheet);
   exSheet.addEventListener('click', e => { if (e.target === exSheet) closeExSheet(); });
+  function syncFpsChips() {   // refleja edFps en el chip activo (evita desync tras restore)
+    document.querySelectorAll('#ed-fps .chip').forEach(x => x.classList.toggle('on', (x.dataset.fps || '') === String(edFps ?? '')));
+  }
   document.getElementById('ed-fps').addEventListener('click', e => {
     const b = e.target.closest('[data-fps]'); if (!b) return;
     edFps = b.dataset.fps;
-    document.querySelectorAll('#ed-fps .chip').forEach(x => x.classList.toggle('on', x === b));
+    syncFpsChips();
     updateExportUI();
   });
   document.getElementById('ed-bitrate').addEventListener('input', updateExportUI);
@@ -1374,13 +1402,16 @@ pollJobs(document.getElementById('jobs'));
     };
   }
   function restoreProject(p) {
-    tl = (p.tl || []).map(s => ({ ...s, id: uid() }));   // ids frescos para evitar colisiones
+    // descarta segmentos cuyo clip_id ya no existe (proyecto viejo / clip archivado / manipulado):
+    // uno huérfano rompería byId[cid] en makeSeg/render y dejaría el editor inconsistente
+    tl = (p.tl || []).filter(s => s && byId[s.clip_id]).map(s => ({ ...s, id: uid() }));   // ids frescos
     const g = p.globals || {};
     const set = (id, v, chk) => { const el = document.getElementById(id); if (el && v != null) { if (chk) el.checked = !!v; else el.value = v; } };
     set('ed-aspect', g.aspect); set('ed-res', g.resolution); set('ed-preset', g.preset);
     set('ed-lut', g.lut); set('ed-trans', g.trans); set('ed-audio', g.audio);
     set('ed-title', g.title); set('ed-fade', g.fade, true);
     set('ed-bitrate', g.bitrate); if (g.fps != null) edFps = g.fps;
+    syncFpsChips();   // alinea el chip de fps con edFps restaurado
     sel = tl.length ? 0 : -1; playhead = 0; curCid = null;
     applyAspect(); undoStack = []; redoStack = [];
     renderAll(); if (tl.length) { fit(); seek(0); }
@@ -1438,8 +1469,11 @@ pollJobs(document.getElementById('jobs'));
     showMod('editor');
     setTimeout(() => {
       const f = byId[pClip];
-      const a = params.get('a') != null ? Math.max(0, +params.get('a')) : 0;
-      const b = params.get('b') != null ? Math.min(f.duration_s, +params.get('b')) : Math.min(a + 5, f.duration_s);
+      // ?a=/?b= no numéricos (+'abc' = NaN) insertarían un segmento con rango NaN → rompe la geometría
+      const finite = (v, d) => Number.isFinite(v) ? v : d;
+      const a = Math.max(0, Math.min(f.duration_s, finite(+params.get('a'), 0)));
+      let b = Math.max(a, Math.min(f.duration_s, finite(+params.get('b'), Math.min(a + 5, f.duration_s))));
+      if (b <= a) b = Math.min(f.duration_s, a + 5);
       tl.push(makeSeg(pClip, a, b));
       sel = 0; renderAll(); seek(0);
       document.querySelector(`.cr-item[data-cid="${pClip}"]`)?.scrollIntoView({ inline: 'center', block: 'nearest' });
