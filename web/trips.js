@@ -51,7 +51,7 @@ main.innerHTML = `
     c.name = saved || (near && near[1] < 30 ? near[0] : `Zona ${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}`);
     c.dates = [...new Set(c.flights.map(f => f.date))].sort();
     c.dist = c.flights.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
-    c.dur = c.flights.reduce((a, f) => a + f.duration_s, 0);
+    c.dur = c.flights.reduce((a, f) => a + (f.duration_s || 0), 0);   // duration_s ausente → 0, no NaN
     c.alt = Math.max(0, ...c.flights.map(f => f.stats.max_rel_alt_m || 0));
     c.best = [...c.flights].sort((a, b) => (ai[b.clip_id]?.travel_score || 0) - (ai[a.clip_id]?.travel_score || 0))[0];
     c.score = ai[c.best?.clip_id]?.travel_score || 0;
@@ -115,7 +115,7 @@ main.innerHTML = `
       if (dstate.has.has('top') && (ai[f.clip_id]?.travel_score || 0) < 6) return false;
       if (dstate.scene && ai[f.clip_id]?.scene_type !== dstate.scene) return false;
       const hay = `${f.label || ''} ${f.date} ${ai[f.clip_id]?.summary || ''}`.toLowerCase();
-      return !dstate.q || hay.includes(dstate.q);
+      return !dstate.q || hay.includes(dstate.q.toLowerCase());   // q se guarda crudo; se compara insensible
     });
     const scenes = [...new Set(c.flights.map(f => ai[f.clip_id]?.scene_type).filter(Boolean))];
     const byDay = {};
@@ -148,7 +148,7 @@ main.innerHTML = `
       </div>
       ${days.map(([date, dl], di) => {
         const dist = dl.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
-        const dur = dl.reduce((a, f) => a + f.duration_s, 0);
+        const dur = dl.reduce((a, f) => a + (f.duration_s || 0), 0);   // idem: sin NaN min por día
         const diary = diaries[date];
         return `
         <section class="trip rise" style="animation-delay:${100 + di * 60}ms">
@@ -178,21 +178,32 @@ main.innerHTML = `
         </section>`;
       }).join('') || '<div class="empty">' + icon('search') + '<p>Nada con esos filtros.</p></div>'}`;
     el.querySelector('#city-back').addEventListener('click', () => {
+      if (dstate._leaving) return;                        // ya saliendo → evita doble animación y su race
+      dstate._leaving = true;
       clearTimeout(dstate._t);                            // cancela el debounce: no re-abrir el detalle tras volver (#14)
-      el.animate([{ opacity: 1, transform: 'translateX(0)' }, { opacity: 0, transform: 'translateX(24px)' }],
-                 { duration: 180, easing: 'ease-in' }).finished.then(() => {
+      const back = () => {
+        dstate._leaving = false;
         Object.assign(dstate, { q: '', scene: null });
         dstate.has.clear();
         renderCities();
         const cg = document.getElementById('cities');
         cg.animate([{ opacity: 0, transform: 'translateX(-18px)' }, { opacity: 1, transform: 'translateX(0)' }],
                    { duration: 220, easing: 'ease-out' });
-      });
+      };
+      el.animate([{ opacity: 1, transform: 'translateX(0)' }, { opacity: 0, transform: 'translateX(24px)' }],
+                 { duration: 180, easing: 'ease-in' })
+        .finished.then(back).catch(() => { dstate._leaving = false; });   // AbortError al interrumpir → sin unhandled rejection
     });
     el.querySelector('#d-q').addEventListener('input', e => {
-      dstate.q = e.target.value.toLowerCase();
+      dstate.q = e.target.value;                          // crudo (sin lowercase): no muta lo tecleado al re-render
       clearTimeout(dstate._t);
-      dstate._t = setTimeout(() => { renderDetail(c); el.querySelector('#d-q').focus(); }, 220);
+      dstate._t = setTimeout(() => {
+        const cur = document.getElementById('d-q');
+        const caret = cur ? cur.selectionStart : null;    // preserva caret y evita el salto de scroll
+        renderDetail(c);
+        const next = document.getElementById('d-q');
+        if (next) { next.focus({ preventScroll: true }); if (caret != null) { try { next.setSelectionRange(caret, caret); } catch {} } }
+      }, 220);
     });
     el.querySelectorAll('[data-df]').forEach(b => b.addEventListener('click', () => {
       dstate.has.has(b.dataset.df) ? dstate.has.delete(b.dataset.df) : dstate.has.add(b.dataset.df);
