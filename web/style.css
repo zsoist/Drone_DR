@@ -731,16 +731,39 @@ details.explain b { color: var(--text); font-weight: 600; }
 .splat-load > * { width: 70%; text-align: center; }
 
 /* lista de splats: filas legibles */
+/* tarjeta de gestión: apilada (columna estrecha) — título+badge / stats / acciones */
 .splat-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
-  background: var(--surface-2);
+  display: flex; flex-direction: column; align-items: stretch; gap: 9px;
+  padding: 11px 13px; border: 1px solid var(--line); border-radius: 11px;
+  background: var(--surface-2); transition: border-color .18s, background .18s;
 }
+.splat-item:hover { border-color: rgba(69,160,230,0.3); }
 .splat-item + .splat-item { margin-top: 8px; }
-.splat-item .si-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.splat-item .si-main { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.splat-item .si-t,
+.splat-item .si-hd { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.splat-item .si-hd b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.splat-item .si-t { flex-direction: column; gap: 2px; }
 .splat-item .si-t b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .splat-item .si-t .mono { font-size: 10.5px; color: var(--text-3); }
-.splat-item .btn svg.ic { width: 14px; height: 14px; }
+.splat-item .si-q {
+  flex: none; font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px; line-height: 1.5;
+}
+.splat-item .si-q.q-exc  { color: #34d399; background: rgba(52,211,153,0.14); }
+.splat-item .si-q.q-good { color: #60d0e6; background: rgba(96,208,230,0.14); }
+.splat-item .si-q.q-mid  { color: #e0b64a; background: rgba(224,182,74,0.14); }
+.splat-item .si-q.q-low  { color: #e08a6a; background: rgba(224,138,106,0.14); }
+.splat-item .si-stats { display: flex; flex-wrap: wrap; gap: 5px 14px; font-size: 11px; color: var(--text-3); }
+.splat-item .si-stats span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.splat-item .si-stats svg { width: 13px; height: 13px; opacity: .75; }
+.splat-item .si-acts { display: flex; align-items: center; gap: 6px; }
+.splat-item .si-acts .btn.primary { flex: 1; justify-content: center; }   /* "Ver" ocupa el ancho */
+.splat-item .si-acts .btn:not(.primary) { flex: none; padding: 5px 8px; }
+.splat-item .btn svg.ic,
+.splat-item .si-acts .btn svg { width: 14px; height: 14px; }
+.splat-item .btn.danger { color: var(--text-3); }
+.splat-item .btn.danger:hover { color: #f06b5a; border-color: rgba(240,107,90,0.4); background: rgba(240,107,90,0.08); }
 
 /* ---------- Dron v2: gauge + explorador ---------- */
 .sd-gauge { flex: none; }

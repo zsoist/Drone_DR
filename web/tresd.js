@@ -953,23 +953,44 @@
     });
   });
 
-  // splats: listar + ver inline + generar
+  // splats: gestión rica (calidad/gaussianas/cámaras) + ver inline + compartir + borrar + generar
   const splats = (sys.splats || []).filter(s => SPLAT_EXT.test(s.name));
+  const gfmt = n => n >= 1e6 ? (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M'
+    : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
+  const qOf = loss => loss == null ? null       // umbrales de loss L1 de OpenSplat en escala 0-1
+    : loss <= 0.05 ? { c: 'exc', t: 'Excelente' }
+      : loss <= 0.09 ? { c: 'good', t: 'Buena' }
+        : loss <= 0.15 ? { c: 'mid', t: 'Media' }
+          : { c: 'low', t: 'Básica' };
   document.getElementById('splats').innerHTML = splats.length ? splats.map(s => {
     const scid = s.name.replace(SPLAT_EXT, '');
     const sf = flights.find(x => x.clip_id === scid);
     const sm = models.find(x => x.clip_id === scid);
-    const sFmt = (s.format || s.name.split('.').pop()).toUpperCase();
+    const sFmt = (s.format || s.name.split('.').pop()).toLowerCase();
     const title = (sm && sm.title) || (sf && (sf.label || fmt.date(sf.date) + ' · ' + sf.time)) || scid.slice(-11);
+    const hasModel = models.some(m => m.clip_id === scid);
+    const q = qOf(s.loss);
+    const stats = [
+      s.gaussians ? `<span title="Gaussianas">${icon('spark')}${gfmt(s.gaussians)}</span>` : '',
+      s.cameras ? `<span title="Fotos / cámaras usadas">${icon('film')}${s.cameras}</span>` : '',
+      s.iters ? `<span title="Iteraciones de entrenamiento">${icon('loop')}${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters}</span>` : '',
+      `<span title="Tamaño del archivo">${icon('db')}${(s.bytes / 1e6).toFixed(1)} MB</span>`,
+      `<span title="Formato">.${sFmt}</span>`,
+    ].filter(Boolean).join('');
     return `
-    <div class="splat-item">
-      <div class="si-t"><b>${esc(title)}</b>
-        <span class="mono">${(s.bytes / 1e6).toFixed(1)} MB · formato .${sFmt.toLowerCase()}</span></div>
-      <span class="spacer" style="flex:1"></span>
-      <a class="btn" href="data/splats/${encodeURIComponent(s.name)}" download title="Descargar">${icon('dl')}</a>
-      <a class="btn" target="_blank" title="Editar en SuperSplat (limpiar floaters, recortar, exportar)"
-         href="/supersplat/?load=${encodeURIComponent('/data/splats/' + s.name)}&filename=${encodeURIComponent(s.name)}">${icon('edit')} Editar</a>
-      <button class="btn primary" data-view="${esc(s.name)}" style="padding:5px 16px">Ver</button>
+    <div class="splat-item" data-cid="${esc(scid)}">
+      <div class="si-main">
+        <div class="si-hd"><b>${esc(title)}</b>${q ? `<span class="si-q q-${q.c}" title="loss ${s.loss}">${q.t}</span>` : ''}</div>
+        <div class="si-stats mono">${stats}</div>
+      </div>
+      <div class="si-acts">
+        <button class="btn primary" data-view="${esc(s.name)}"${hasModel ? '' : ' disabled title="Sin proyecto 3D publicado"'} style="padding:5px 16px">Ver</button>
+        <a class="btn" href="data/splats/${encodeURIComponent(s.name)}" download title="Descargar .${sFmt}">${icon('dl')}</a>
+        <a class="btn" target="_blank" rel="noopener" title="Editar en SuperSplat (limpiar floaters, recortar, exportar)"
+           href="/supersplat/?load=${encodeURIComponent('/data/splats/' + s.name)}&filename=${encodeURIComponent(s.name)}">${icon('edit')}</a>
+        ${hasModel ? `<button class="btn" data-share="${esc(scid)}" title="Copiar link público">${icon('ext')}</button>` : ''}
+        <button class="btn danger" data-del="${esc(scid)}" data-title="${esc(title)}" title="Borrar splat (a la papelera)">${icon('trash')}</button>
+      </div>
     </div>`;
   }).join('') :
     `<p class="footer-note">Sin splats aún — "Generar splat…" entrena uno sobre las poses
@@ -1017,14 +1038,30 @@
       close();
     });
   });
-  document.getElementById('splats').addEventListener('click', e => {
-    const name = e.target.dataset.view;
-    if (!name) return;
-    const scid = name.replace(SPLAT_EXT, '');
-    if (!models.some(m => m.clip_id === scid)) return alert('Este splat no tiene proyecto 3D publicado.');
-    setProject(scid);
-    document.getElementById('load-splat').click();
-    setTimeout(() => document.getElementById('splat-box').scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
+  document.getElementById('splats').addEventListener('click', async e => {
+    const viewBtn = e.target.closest('[data-view]');
+    const shareBtn = e.target.closest('[data-share]');
+    const delBtn = e.target.closest('[data-del]');
+    if (viewBtn && !viewBtn.disabled) {
+      const scid = viewBtn.dataset.view.replace(SPLAT_EXT, '');
+      if (!models.some(m => m.clip_id === scid)) return alert('Este splat no tiene proyecto 3D publicado.');
+      setProject(scid);
+      document.getElementById('load-splat').click();
+      setTimeout(() => document.getElementById('splat-box').scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
+    } else if (shareBtn) {
+      const url = `${location.origin}/share.html?m=${encodeURIComponent(shareBtn.dataset.share)}`;
+      try { await navigator.clipboard.writeText(url); shareBtn.innerHTML = icon('check'); setTimeout(() => { shareBtn.innerHTML = icon('ext'); }, 1300); }
+      catch { prompt('Link público (cópialo):', url); }
+    } else if (delBtn) {
+      const scid = delBtn.dataset.del, title = delBtn.dataset.title || scid;
+      if (!confirm(`¿Borrar el splat "${title}"?\n\nVa a la papelera (reversible). El modelo 3D, la nube y el video NO se tocan.`)) return;
+      delBtn.disabled = true;
+      const r = await api('/api/splat_delete', { clip_id: scid });
+      if (r.error) { delBtn.disabled = false; return alert(r.error); }
+      const box = document.getElementById('splat-box');
+      if (box && box._pcid === scid && box._splatDispose) { try { box._splatDispose(); } catch {} box._splatDispose = null; box._viewer = null; }
+      delBtn.closest('.splat-item')?.remove();
+    }
   });
 
   document.getElementById('load-splat').addEventListener('click', async () => {
@@ -1055,6 +1092,7 @@
     box._loading = false;
     box._viewer = handle.viewer;
     box._splatDispose = handle.dispose;           // dispose premium (HUD + listeners + viewer)
+    box._pcid = cur.clip_id;                       // qué clip está en pantalla (para borrar en vivo)
     box.querySelector('.splat-load')?.remove();
   });
 

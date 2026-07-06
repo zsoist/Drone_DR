@@ -1361,6 +1361,41 @@ class H(BaseHTTPRequestHandler):
             jobstore.clear_artifacts(cid)
             rebuild_index()
             return self.send_json({"ok": True, "freed": freed})
+        if u.path == "/api/splat_delete":
+            # borra SOLO el splat (a la papelera, reversible) — el modelo 3D, la nube y el
+            # video RAW no se tocan. Para nuke completo del clip existe /api/model_delete.
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            if not cid:
+                return self.send_json({"error": "clip_id requerido"}, 400)
+            if jobstore.pending("splat", cid):
+                return self.send_json({"error": "hay un entrenamiento activo sobre este splat — cancélalo primero"}, 409)
+            sdir = (VAULT / "splats").resolve()
+            tdir = VAULT / "trash" / "splats"
+            tdir.mkdir(parents=True, exist_ok=True)
+            moved = []
+
+            def _to_trash(src: Path, rel: str):
+                dst = tdir / src.name
+                if dst.exists():
+                    dst = tdir / f"{src.stem}.{time.time_ns()}{src.suffix}"
+                shutil.move(str(src), str(dst))
+                moved.append(rel + src.name)
+
+            for extra in sorted(sdir.glob(f"{cid}.*")):     # .splat .ksplat .cameras.json .meta.json
+                if extra.is_file() and not extra.is_symlink() and extra.resolve().parent == sdir:
+                    _to_trash(extra, "splats/")
+            hist = sdir / "history"
+            if hist.is_dir():
+                for h in sorted(hist.glob(f"{cid}-*")):     # re-subidas archivadas de SuperSplat
+                    if h.is_file() and not h.is_symlink():
+                        _to_trash(h, "splats/history/")
+            if not moved:
+                return self.send_json({"error": "no hay splat para este clip"}, 404)
+            rebuild_index()
+            return self.send_json({"ok": True, "moved": moved})
         if u.path == "/api/media_op":
             if not self.auth(q):
                 return

@@ -1,5 +1,6 @@
 """Aggregate per-clip manifests into flights.json + system.json for the web app."""
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -40,6 +41,32 @@ def load_models(models_dir: Path) -> list:
 SPLAT_PRIORITY = {".ksplat": 0, ".splat": 1, ".ply": 2}
 
 
+def _splat_stats(splat_dir: Path, stem: str) -> dict:
+    """Calidad del splat para las tarjetas: cámaras/loss/iters del sidecar .meta.json +
+    conteo de gaussianas derivado del .splat fuente (32 bytes/gaussiana exactos)."""
+    out = {}
+    meta_p = splat_dir / f"{stem}.meta.json"
+    if meta_p.exists():
+        try:
+            m = json.loads(meta_p.read_text())
+            if isinstance(m.get("cameras"), int):
+                out["cameras"] = m["cameras"]
+            loss = m.get("final_loss")
+            if isinstance(loss, (int, float)) and math.isfinite(loss):
+                out["loss"] = round(float(loss), 4)
+            iters = m.get("last_step") or m.get("target_iters")
+            if isinstance(iters, int):
+                out["iters"] = iters
+        except (ValueError, OSError):
+            pass
+    src = splat_dir / f"{stem}.splat"     # el .splat siempre acompaña al .ksplat
+    if src.exists():
+        n = src.stat().st_size // 32
+        if n > 0:
+            out["gaussians"] = n
+    return out
+
+
 def best_splats(splat_dir: Path) -> list:
     if not splat_dir.exists():
         return []
@@ -51,7 +78,8 @@ def best_splats(splat_dir: Path) -> list:
         if cur is None or SPLAT_PRIORITY[p.suffix.lower()] < SPLAT_PRIORITY[cur.suffix.lower()]:
             by_clip[p.stem] = p
     return [{"name": p.name, "bytes": p.stat().st_size,
-             "format": p.suffix.lower().lstrip("."), "clip_id": p.stem}
+             "format": p.suffix.lower().lstrip("."), "clip_id": p.stem,
+             **_splat_stats(splat_dir, p.stem)}
             for p in sorted(by_clip.values())]
 
 
