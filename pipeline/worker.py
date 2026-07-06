@@ -87,6 +87,30 @@ def _cancelled(jid: str) -> bool:
     return (jobstore.get(jid) or {}).get("status") in jobstore.CANCEL_STATES
 
 
+def clean_odm_outputs(proj: Path) -> list[str]:
+    """Start a fresh ODM solve without deleting the just-geotagged images.
+
+    Reprocessing a failed project with new frame extraction while keeping stale
+    opensfm/odm_* outputs can poison match_features or make a fallback inherit a
+    half-written dense stage. For a new 3D job, generated outputs are disposable;
+    the source of truth is images/ + frames_manifest.json.
+    """
+    odm_root = (VAULT / "odm").resolve()
+    if proj.resolve().parent != odm_root or not proj.name.startswith("proj_"):
+        raise RuntimeError(f"ruta ODM insegura para limpiar: {proj}")
+    keep = {"images", "frames_manifest.json", ".geotag.args"}
+    removed = []
+    for p in proj.iterdir():
+        if p.name in keep:
+            continue
+        if p.is_dir():
+            shutil.rmtree(p)
+        else:
+            p.unlink()
+        removed.append(p.name)
+    return removed
+
+
 # presets de calidad ODM: mismo pipeline completo (dense+mesh+DSM), distinto trade-off.
 # mem = RAM del contenedor ODM (VM OrbStack ≈10G). concurrency baja en alta/extra/ultra:
 # la doc ODM estima ~1GB por thread a 2MP; nuestros frames premium son ~5MP, así que
@@ -285,6 +309,9 @@ def run_3d(j: dict):
                                       "--profile", frame_profile],
                             timeout=1800) != 0:
         raise RuntimeError("odm_prep falló")
+    removed = clean_odm_outputs(proj)
+    if removed:
+        print(f"  ODM fresh start: limpiados {len(removed)} outputs previos", flush=True)
 
     jobstore.update(j["id"], detail=f"2/3 fotogrametría ODM {preset_name} ({preset['eta']})",
                     stage="odm", progress=0.15)

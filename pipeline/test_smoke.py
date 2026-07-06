@@ -336,6 +336,23 @@ _retry_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), worker.PRESETS["extra
 check("presets: retry estable reinicia desde OpenMVS y desactiva geometric estimates",
       "--pc-skip-geometric" in _retry_cmd and "--rerun-from" in _retry_cmd
       and _retry_cmd[_retry_cmd.index("--rerun-from") + 1] == "openmvs")
+_old_vault = worker.VAULT
+_odm_root = Path(tempfile.mkdtemp()) / "odm"
+worker.VAULT = _odm_root.parent
+_proj = _odm_root / "proj_TEST"
+(_proj / "images").mkdir(parents=True)
+(_proj / "images" / "f_0001.jpg").write_bytes(b"jpg")
+(_proj / "opensfm").mkdir()
+(_proj / "opensfm" / "reconstruction.json").write_text("stale")
+(_proj / "odm_texturing").mkdir()
+(_proj / "log.json").write_text("old")
+(_proj / "frames_manifest.json").write_text("{}")
+_removed = worker.clean_odm_outputs(_proj)
+check("presets: fresh ODM rerun limpia outputs stale y conserva imágenes geotagged",
+      "opensfm" in _removed and "odm_texturing" in _removed and "log.json" in _removed
+      and (_proj / "images" / "f_0001.jpg").exists()
+      and (_proj / "frames_manifest.json").exists())
+worker.VAULT = _old_vault
 _fast_cmd = worker.fast_ortho_cmd("odm-test", Path("/tmp/proj"))
 check("presets: fallback ODM usa fast-orthophoto 25D desde georreferenciación",
       "--fast-orthophoto" in _fast_cmd and "--rerun-from" in _fast_cmd
