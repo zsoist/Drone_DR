@@ -178,6 +178,7 @@ main.innerHTML = `
         </section>`;
       }).join('') || '<div class="empty">' + icon('search') + '<p>Nada con esos filtros.</p></div>'}`;
     el.querySelector('#city-back').addEventListener('click', () => {
+      clearTimeout(dstate._t);                            // cancela el debounce: no re-abrir el detalle tras volver (#14)
       el.animate([{ opacity: 1, transform: 'translateX(0)' }, { opacity: 0, transform: 'translateX(24px)' }],
                  { duration: 180, easing: 'ease-in' }).finished.then(() => {
         Object.assign(dstate, { q: '', scene: null });
