@@ -38,6 +38,7 @@ como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9G
 | `ai/reel.py` | Auto-editor: top highlights → reel 1080p o 9:16 vertical |
 | `pipeline/browser_gate.py` | QA real en Chrome headless (CDP stdlib) antes de dar un job 3D por done |
 | `pipeline/make_ksplat.mjs` | .splat/.ply → .ksplat con la lib vendoreada del viewer (sin npm) |
+| `/supersplat/` | Editor SuperSplat (MIT) self-hosted — post-pro de splats: floaters, crop, export |
 | `web/` | Flight Deck: galería + mapa MapLibre/Esri sincronizado al video |
 
 ## Operación

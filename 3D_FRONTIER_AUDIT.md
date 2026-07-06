@@ -51,6 +51,19 @@ Splats:
 - `DJI_20260704160358_0104_D.splat`: 657,632 bytes, older preview splat.
 - 7k urban attempt was killed by worker restart at 63.6%, so it did not complete. With atomic publish, future failed/killed runs will not corrupt the last good splat.
 
+## Closed This Pass 4 (2026-07-05 midnight — Metal LIVE + SuperSplat post-pro)
+
+- **First Metal/MPS GPU training running**: 15k cinematic splat of 0104 on the alta premium
+  reconstruction. Evidence: 29% CPU (vs ~900% CPU-only), loss 0.095 @ step 560 (the old 2k
+  CPU run FINISHED at 0.177), ~6 steps/s → 15k in ~40 min (CPU took 3.8h for 63% of 7k).
+- MPS build compiled clean in ~1 min (only sign-compare warnings in metal kernels).
+- **SuperSplat v2.28.1 self-hosted** at `/supersplat/` (MIT, built from source, gitignored
+  clone in splat/supersplat, 23MB dist, Node 26). Loads our splats via `?load=` — verified
+  live with 15,651 splats in scene, full toolbar, zero CSP violations. "Editar" button per
+  splat in the 3D tab. Rebuild: `cd splat/supersplat && npm install && npm run build`.
+- Post-pro flow: Editar → limpiar floaters/crop en SuperSplat → export .ply/.splat →
+  (siguiente reto: endpoint de re-subida versionada para cerrar el round-trip).
+
 ## Closed This Pass 3 (2026-07-05 night — Metal ready + final hardening)
 
 - **Metal Toolchain 17F109 installed** (no sudo). Gotcha documented: the first

@@ -31,6 +31,8 @@ WEB = Path("/Volumes/SSD/work/forge-projects/aerobrain/web")
 VAULT = Path("/Volumes/SSD/drone-vault")
 # binarios 3D grandes con URL estable: cachean con revalidación 304 (nunca stale, nunca re-bajar MBs)
 REVALIDATE_EXTS = (".ply", ".splat", ".ksplat", ".obj", ".mtl", ".laz", ".geojson", ".tif")
+# editor SuperSplat auto-hosteado (post-procesado de splats: limpiar floaters, crop, export)
+SUPERSPLAT = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/supersplat/dist")
 PIPE = Path("/Volumes/SSD/work/forge-projects/aerobrain/pipeline")
 TOKEN_FILE = VAULT / ".token"
 if not TOKEN_FILE.exists():
@@ -827,8 +829,13 @@ class H(BaseHTTPRequestHandler):
         p = urllib.parse.unquote(p)
         if p == "/":
             p = "/home.html"
-        base = (VAULT if p.startswith("/data/") else WEB).resolve()
-        rel = p[6:] if p.startswith("/data/") else p.lstrip("/")
+        if p.startswith("/supersplat"):
+            # editor SuperSplat (MIT, build local en splat/supersplat/dist) — post-pro de splats
+            base = SUPERSPLAT.resolve()
+            rel = p[len("/supersplat"):].lstrip("/") or "index.html"
+        else:
+            base = (VAULT if p.startswith("/data/") else WEB).resolve()
+            rel = p[6:] if p.startswith("/data/") else p.lstrip("/")
         f = (base / rel).resolve()
         try:
             f.relative_to(base)  # contención estricta (startswith es bypasseable: vault2/)

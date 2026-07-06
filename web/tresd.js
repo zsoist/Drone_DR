@@ -833,6 +833,8 @@
         <span class="mono">${(s.bytes / 1e6).toFixed(1)} MB · formato .${sFmt.toLowerCase()}</span></div>
       <span class="spacer" style="flex:1"></span>
       <a class="btn" href="data/splats/${encodeURIComponent(s.name)}" download title="Descargar">${icon('dl')}</a>
+      <a class="btn" target="_blank" title="Editar en SuperSplat (limpiar floaters, recortar, exportar)"
+         href="/supersplat/?load=${encodeURIComponent('/data/splats/' + s.name)}&filename=${encodeURIComponent(s.name)}">${icon('edit')} Editar</a>
       <button class="btn primary" data-view="${esc(s.name)}" style="padding:5px 16px">Ver</button>
     </div>`;
   }).join('') :
