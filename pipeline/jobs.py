@@ -12,16 +12,25 @@ import re
 import subprocess
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 DB = Path("/Volumes/SSD/drone-vault/manifest/jobs.db")
 _LOCK = threading.Lock()
 
 
+@contextmanager
 def _conn():
     c = sqlite3.connect(DB, timeout=10)
     c.row_factory = sqlite3.Row
-    return c
+    try:
+        yield c
+        c.commit()
+    except Exception:
+        c.rollback()
+        raise
+    finally:
+        c.close()
 
 
 HEAVY_KINDS = ("3d", "splat")          # los ejecuta el worker desacoplado
