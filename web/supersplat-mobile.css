@@ -1,0 +1,21 @@
+/* Capa móvil de AeroBrain para SuperSplat (inyectada al iframe same-origin por splatlab.js
+   cuando el viewport es angosto). SuperSplat ya colapsa su panel izquierdo solo (body.collapsed
+   + botón ">"): NO lo duplicamos. Aquí va lo que el editor no hace: toolbars compactos y
+   scrolleables, safe-area de iPhone, y targets táctiles dignos. */
+
+body.ab-mobile #menu-bar { transform: scale(.9); transform-origin: top left; }
+
+/* toolbar inferior: full-width, scrolleable en X, sobre el safe-area del iPhone */
+body.ab-mobile #bottom-toolbar {
+  left: 4px !important; right: 4px !important; bottom: calc(6px + env(safe-area-inset-bottom)) !important;
+  max-width: none !important; overflow-x: auto; overflow-y: hidden;
+  -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  transform: scale(.92); transform-origin: bottom center;
+}
+body.ab-mobile #bottom-toolbar::-webkit-scrollbar { display: none; }
+
+body.ab-mobile #right-toolbar { transform: scale(.85); transform-origin: right center; right: 2px !important; }
+body.ab-mobile #view-cube-container { transform: scale(.72); transform-origin: top right; }
+
+/* targets táctiles: mínimo digno de 38px */
+body.ab-mobile #bottom-toolbar > *, body.ab-mobile #right-toolbar > * { min-width: 38px; min-height: 38px; }

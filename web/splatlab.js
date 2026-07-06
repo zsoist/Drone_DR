@@ -28,11 +28,12 @@ main.classList.add('lab-main');
       <h1 class="lab-h">Splat Lab</h1>
       <div class="lab-picker" id="lab-picker"></div>
       <span class="spacer" style="flex:1"></span>
-      <a class="btn" id="lab-full" target="_blank" title="Abrir el editor a pantalla completa" aria-label="Abrir editor a pantalla completa">${icon('ext')} Completo</a>
+      <button class="btn" id="lab-full" title="Editor a pantalla completa (Esc para salir)" aria-label="Editor a pantalla completa">${icon('fit')} Completo</button>
     </div>
     <div class="lab-actions" id="lab-actions" role="toolbar" aria-label="Acciones del splat"></div>
     <div class="lab-frame-wrap" id="lab-drop">
       <iframe id="lab-frame" class="lab-frame" allow="fullscreen" title="Editor SuperSplat"></iframe>
+      <button class="btn lab-exit" id="lab-exit" hidden aria-label="Salir de pantalla completa">✕ Salir</button>
       <div class="lab-drophint" id="lab-drophint" hidden>Suelta el splat editado (.ply / .splat / .ksplat) para publicarlo</div>
     </div>
     <p class="footer-note lab-tip"><b>Flujo:</b> limpia floaters con pincel/lazo + borrar · recorta con crop ·
@@ -41,7 +42,6 @@ main.classList.add('lab-main');
     <input type="file" id="lab-file" accept=".ply,.splat,.ksplat" hidden aria-hidden="true">`;
 
   const frame = document.getElementById('lab-frame');
-  const full = document.getElementById('lab-full');
   const picker = document.getElementById('lab-picker');
   const actions = document.getElementById('lab-actions');
   const fileIn = document.getElementById('lab-file');
@@ -71,7 +71,6 @@ main.classList.add('lab-main');
     if (!splats[i]) return;
     cur = i;
     frame.src = editorUrl(splats[i]);
-    full.href = editorUrl(splats[i]);
     renderPicker(); renderActions();
   };
 
@@ -111,6 +110,36 @@ main.classList.add('lab-main');
     e.preventDefault(); if (ev === 'drop' && e.dataTransfer?.files[0]) publish(e.dataTransfer.files[0]);
     hint.hidden = true;
   }));
+
+  // ---- pantalla completa CSS (el Fullscreen API de iOS Safari solo funciona en <video>)
+  //      con botón de salida siempre visible + Esc en desktop ----
+  const exitBtn = document.getElementById('lab-exit');
+  const setFull = on => {
+    drop.classList.toggle('lab-fullscreen', on);
+    exitBtn.hidden = !on;
+    document.documentElement.classList.toggle('lab-noscroll', on);
+  };
+  document.getElementById('lab-full').addEventListener('click', () => setFull(true));
+  exitBtn.addEventListener('click', () => setFull(false));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') setFull(false); });
+
+  // ---- capa móvil: inyecta CSS + pestaña del drawer DENTRO del iframe (same-origin).
+  //      SuperSplat es desktop-first; en <768px su panel izquierdo tapa el canvas ----
+  const MOBILE = matchMedia('(max-width: 767px), (pointer: coarse) and (max-width: 1024px)');
+  frame.addEventListener('load', () => {
+    if (!MOBILE.matches) return;
+    try {
+      const doc = frame.contentDocument;
+      if (!doc || doc.getElementById('ab-mobile-css')) return;
+      const link = doc.createElement('link');
+      link.id = 'ab-mobile-css'; link.rel = 'stylesheet';
+      link.href = '/supersplat-mobile.css?v=' + Date.now();
+      doc.head.appendChild(link);
+      doc.body.classList.add('ab-mobile');
+      // nota: el drawer del panel izquierdo NO se duplica — SuperSplat ya trae su
+      // colapso responsive nativo (body.collapsed + botón ">")
+    } catch { /* cross-origin imposible aquí (mismo host), pero por si acaso */ }
+  });
 
   renderPicker(); renderActions();
   if (splats.length) load(0);

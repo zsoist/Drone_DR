@@ -99,10 +99,14 @@ svg.ic { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-wid
     width: 100%; height: auto; position: fixed; bottom: 0; top: auto; z-index: 50;
     flex-direction: row; padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
     border-right: none; border-top: 1px solid var(--line);
-    justify-content: space-around;
+    justify-content: flex-start;
+    /* 8 items no caben a lo ancho: scroll-x sin barra (el 8vo quedaba cortado) */
+    overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; gap: 2px;
   }
+  .sidebar::-webkit-scrollbar { display: none; }
   .brand, .sidebar .foot { display: none; }
-  .nav-item { flex-direction: column; gap: 3px; font-size: 10px; padding: 6px 10px; }
+  .nav-item { flex-direction: column; gap: 3px; font-size: 10px; padding: 6px 9px; flex: 0 0 auto; }
   .nav-item.active::before { display: none; }
   .main { padding: 16px 14px 90px; }
 }
@@ -2553,3 +2557,12 @@ button.exp { text-align: left; cursor: pointer; }
   color: var(--accent); font-weight: 600; font-size: 15px; pointer-events: none;
   border: 2px dashed var(--accent); border-radius: 14px; }
 .lab-drophint[hidden] { display: none; }  /* display:grid pisaba el atributo hidden */
+
+/* Splat Lab: pantalla completa CSS (iOS no soporta Fullscreen API fuera de <video>) */
+.lab-frame-wrap.lab-fullscreen { position: fixed; inset: 0; z-index: 300; border-radius: 0;
+  min-height: 100dvh; }
+.lab-fullscreen .lab-frame { min-height: 100dvh; height: 100dvh; }
+.lab-exit { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 12px; z-index: 310;
+  background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(6px); }
+.lab-exit[hidden] { display: none; }
+html.lab-noscroll, html.lab-noscroll body { overflow: hidden; }

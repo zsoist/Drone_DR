@@ -51,6 +51,23 @@ Splats:
 - `DJI_20260704160358_0104_D.splat`: 657,632 bytes, older preview splat.
 - 7k urban attempt was killed by worker restart at 63.6%, so it did not complete. With atomic publish, future failed/killed runs will not corrupt the last good splat.
 
+## Closed This Pass 7 (2026-07-06 — Splat Lab móvil + fullscreen + eficiencia verificada)
+
+- **Móvil re-armado**: capa CSS dedicada (`web/supersplat-mobile.css`) inyectada al iframe
+  same-origin cuando el viewport es angosto — toolbar inferior full-width scrolleable sobre
+  el safe-area del iPhone, right-toolbar/view-cube compactos, targets táctiles >=38px.
+  Descubrimiento: SuperSplat YA trae colapso responsive nativo del panel izquierdo
+  (body.collapsed + botón ">") — no se duplicó, se dejó el nativo. QA vivo 375x812.
+- **Salida de pantalla completa**: "Completo" ahora es fullscreen CSS (fixed inset:0) con
+  botón "✕ Salir" flotante + Esc — el Fullscreen API de iOS solo funciona en <video>, por
+  eso CSS. Ciclo entrar/salir verificado en móvil.
+- Nav móvil: 8 items desbordaban la bottom bar (Splat Lab quedaba cortado) — ahora
+  scrolleable-x sin barra visible.
+- **Eficiencia idle VERIFICADA en la fuente**: SuperSplat usa render on-demand
+  (`app.autoRender = false`, scene.ts:128 — solo dibuja con renderNextFrame en cambios).
+  Idle GPU ~= 0 por diseño; el rAF de fondo lo throttlea el browser en tabs ocultos.
+  Carga: bundles con 304 (revalidación), dist 23MB solo se baja una vez.
+
 ## Closed This Pass 6 (2026-07-06 — round-trip Splat Lab + mesh clamp definitivo)
 
 - **Round-trip de edición CERRADO**: `POST /api/splat_upload?cid=&name=` publica el splat
