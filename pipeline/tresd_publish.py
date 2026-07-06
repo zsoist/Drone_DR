@@ -270,7 +270,11 @@ EOF""")
             (proj / ".web_dsm_4326.tif").replace(out / "dsm_4326.tif")
 
     # 3) mesh texturizado → carpeta web (obj + mtl + texturas)
+    # limpiar primero: un re-publish (p.ej. estandar→alta) puede producir MENOS
+    # materiales — sin wipe, las texturas del run viejo quedan huérfanas mezcladas
     print("modelo texturizado…")
+    shutil.rmtree(out / "model", ignore_errors=True)
+    (out / "model").mkdir(parents=True, exist_ok=True)
     tex = proj / "odm_texturing"
     for f in tex.glob("odm_textured_model_geo*"):
         (out / "model" / f.name).write_bytes(f.read_bytes())
