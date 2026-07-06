@@ -165,7 +165,7 @@ function frame(obj, cam, controls, topDown = false) {
   controls.target.set(0, 0, 0);
   // terreno 2.5D: bajo el horizonte solo hay underside roto; y sin minDistance el
   // zoom atraviesa la malla (near-clip = "modelo destrozado")
-  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.maxPolarAngle = Math.PI * 0.42;   // ~75°: rasante en una malla 2.5D = bosque de faldones 'destrozado' (estándar Pix4D/DroneDeploy)
   controls.minDistance = maxDim * 0.06;
   controls.maxDistance = dist * 3.5;
 }

@@ -2546,3 +2546,10 @@ button.exp { text-align: left; cursor: pointer; }
 .lab-frame { width: 100%; height: 100%; min-height: 520px; border: 0; display: block; }
 .lab-tip { margin: 10px 2px 0; }
 @media (max-width: 640px) { .lab-frame-wrap, .lab-frame { min-height: 70vh; } }
+.lab-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 10px; }
+.lab-frame-wrap { position: relative; }
+.lab-drophint { position: absolute; inset: 0; display: grid; place-items: center; z-index: 5;
+  background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(3px);
+  color: var(--accent); font-weight: 600; font-size: 15px; pointer-events: none;
+  border: 2px dashed var(--accent); border-radius: 14px; }
+.lab-drophint[hidden] { display: none; }  /* display:grid pisaba el atributo hidden */

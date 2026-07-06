@@ -51,6 +51,25 @@ Splats:
 - `DJI_20260704160358_0104_D.splat`: 657,632 bytes, older preview splat.
 - 7k urban attempt was killed by worker restart at 63.6%, so it did not complete. With atomic publish, future failed/killed runs will not corrupt the last good splat.
 
+## Closed This Pass 6 (2026-07-06 — round-trip Splat Lab + mesh clamp definitivo)
+
+- **Round-trip de edición CERRADO**: `POST /api/splat_upload?cid=&name=` publica el splat
+  editado (SuperSplat export) de forma versionada — TODAS las variantes previas del clip van
+  a `splats/history/<cid>-<ts>.<ext>` (si quedara un .ksplat viejo, el dedupe lo preferiría
+  sobre el archivo editado), regenera `.ksplat`, rebuild_index. Probado end-to-end con curl:
+  archive ✓ publish ✓ ksplat ✓ manifest ✓.
+- Splat Lab: botonera completa (Original/Subir editado/Compartir/Ver en 3D), subida por
+  botón o drag&drop con overlay, estado aria-live, picker con aria-pressed. QA móvil 375x812
+  (chips wrap, editor táctil vivo). Bug cazado en móvil: `display:grid` del drophint pisaba
+  el atributo `hidden` — fix `[hidden]{display:none}`.
+- **Mesh "destrozado", causa raíz definitiva**: geometría SANA (mediana 0.25m²/tri, 3% borde,
+  0 no-manifold; top-down cercano se ve impecable). El destrozo es la vista RASANTE: una malla
+  2.5D vista horizontal es un bosque de faldones texturizados. Clamp final `maxPolarAngle
+  0.42π` (~75°, estándar Pix4D/DroneDeploy) en tresd+share. El clamp anterior (89°) aún
+  permitía la vista degenerada.
+- Doming/tilt leve del terreno queda documentado (rolling shutter de video sin GCPs) —
+  palanca: `--rolling-shutter` de ODM o capturas oblicuas.
+
 ## Closed This Pass 5 (2026-07-06 — Splat Lab tab + mesh viewer fix)
 
 - **Splat Lab**: pestaña propia en el sidebar (`splatlab.html`). Picker de splats del vault +

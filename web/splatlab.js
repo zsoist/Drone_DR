@@ -1,16 +1,20 @@
 // Splat Lab — SuperSplat (MIT, self-hosted en /supersplat/) integrado al shell.
-// Picker de splats del vault → editor embebido. Flujo: limpiar floaters / crop /
-// transformar → File > Export → descarga local (re-subida versionada: próximo reto).
+// Flujo completo: elegir splat → editar (floaters/crop/transform) → File > Export
+// → SUBIR AQUÍ MISMO (drag&drop o botón) → se publica versionado (history/) y el
+// viewer/manifest se actualizan solos. El original nunca se pierde.
 const main = renderShell('splatlab.html');
 main.classList.add('lab-main');
 
 (async () => {
-  let sys = {};
-  try { sys = await (await fetch(`${DATA}/manifest/system.json`)).json(); } catch {}
-  const splats = sys.splats || [];
-  const models = sys.models || [];
+  let sys = {}, splats = [], cur = 0;
+  const load_sys = async () => {
+    sys = await (await fetch(`${DATA}/manifest/system.json`, { cache: 'no-store' })).json();
+    splats = sys.splats || [];
+  };
+  try { await load_sys(); } catch {}
+  const models = () => sys.models || [];
   const title = s => {
-    const m = models.find(x => x.clip_id === s.clip_id);
+    const m = models().find(x => x.clip_id === s.clip_id);
     if (m && m.title) return m.title;
     const ts = (s.clip_id.split('_')[1] || '');
     return ts ? `${fmt.date(`${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)}`)} · ${ts.slice(8, 10)}:${ts.slice(10, 12)}` : s.clip_id;
@@ -20,37 +24,94 @@ main.classList.add('lab-main');
 
   main.innerHTML = `
     <div class="deck-greet mono" style="margin-bottom:2px">edición de gaussian splats · SuperSplat</div>
-    <div class="lab-bar">
+    <div class="lab-bar" role="toolbar" aria-label="Splats disponibles">
       <h1 class="lab-h">Splat Lab</h1>
-      <div class="lab-picker" id="lab-picker">
-        ${splats.map((s, i) => `
-          <button class="chip ${i === 0 ? 'on' : ''}" data-i="${i}" title="${esc(s.name)}">
-            ${esc(title(s))} <span class="mono" style="opacity:.6">${(s.bytes / 1e6).toFixed(1)}MB</span>
-          </button>`).join('') || '<span class="footer-note">Sin splats aún — entrena uno en el tab 3D.</span>'}
-      </div>
+      <div class="lab-picker" id="lab-picker"></div>
       <span class="spacer" style="flex:1"></span>
-      <a class="btn" id="lab-full" target="_blank" title="Abrir el editor a pantalla completa">${icon('ext')} Completo</a>
+      <a class="btn" id="lab-full" target="_blank" title="Abrir el editor a pantalla completa" aria-label="Abrir editor a pantalla completa">${icon('ext')} Completo</a>
     </div>
-    <div class="lab-frame-wrap">
-      <iframe id="lab-frame" class="lab-frame" allow="fullscreen"
-        title="SuperSplat editor"></iframe>
+    <div class="lab-actions" id="lab-actions" role="toolbar" aria-label="Acciones del splat"></div>
+    <div class="lab-frame-wrap" id="lab-drop">
+      <iframe id="lab-frame" class="lab-frame" allow="fullscreen" title="Editor SuperSplat"></iframe>
+      <div class="lab-drophint" id="lab-drophint" hidden>Suelta el splat editado (.ply / .splat / .ksplat) para publicarlo</div>
     </div>
-    <p class="footer-note lab-tip">Selecciona splats con el pincel o el lazo y bórralos para limpiar
-      floaters · recorta con la caja de crop · <b>File → Export</b> descarga el resultado
-      (.ply/.splat/comprimido). El original del vault no se toca.</p>`;
+    <p class="footer-note lab-tip"><b>Flujo:</b> limpia floaters con pincel/lazo + borrar · recorta con crop ·
+      <b>File → Export</b> descarga el resultado · súbelo aquí (botón o arrástralo) y queda publicado —
+      la versión anterior se archiva en <span class="mono">splats/history/</span>.</p>
+    <input type="file" id="lab-file" accept=".ply,.splat,.ksplat" hidden aria-hidden="true">`;
 
   const frame = document.getElementById('lab-frame');
   const full = document.getElementById('lab-full');
-  const load = i => {
-    const s = splats[i];
-    if (!s) return;
-    frame.src = editorUrl(s);
-    full.href = editorUrl(s);
-    document.querySelectorAll('#lab-picker .chip').forEach((c, j) => c.classList.toggle('on', j === i));
+  const picker = document.getElementById('lab-picker');
+  const actions = document.getElementById('lab-actions');
+  const fileIn = document.getElementById('lab-file');
+  const drop = document.getElementById('lab-drop');
+  const hint = document.getElementById('lab-drophint');
+
+  const renderPicker = () => {
+    picker.innerHTML = splats.map((s, i) => `
+      <button class="chip ${i === cur ? 'on' : ''}" data-i="${i}" title="${esc(s.name)}"
+              aria-pressed="${i === cur}">
+        ${esc(title(s))} <span class="mono" style="opacity:.6">${(s.bytes / 1e6).toFixed(1)}MB</span>
+      </button>`).join('') ||
+      '<span class="footer-note">Sin splats aún — entrena uno en el tab 3D.</span>';
   };
-  document.getElementById('lab-picker').addEventListener('click', e => {
+  const renderActions = () => {
+    const s = splats[cur];
+    if (!s) { actions.innerHTML = ''; return; }
+    actions.innerHTML = `
+      <a class="btn" href="data/splats/${encodeURIComponent(s.name)}" download aria-label="Descargar splat original">${icon('dl')} Original</a>
+      <button class="btn" id="lab-upload" aria-label="Subir splat editado">${icon('save')} Subir editado</button>
+      <a class="btn" href="share.html?m=${encodeURIComponent(s.clip_id)}" target="_blank" aria-label="Página pública para compartir">${icon('ext')} Compartir</a>
+      <a class="btn" href="tresd.html" aria-label="Ver en el tab 3D">${icon('cube')} Ver en 3D</a>
+      <span class="footer-note mono" id="lab-status" role="status" aria-live="polite"></span>`;
+    document.getElementById('lab-upload').addEventListener('click', () => fileIn.click());
+  };
+  const load = i => {
+    if (!splats[i]) return;
+    cur = i;
+    frame.src = editorUrl(splats[i]);
+    full.href = editorUrl(splats[i]);
+    renderPicker(); renderActions();
+  };
+
+  picker.addEventListener('click', e => {
     const b = e.target.closest('[data-i]');
     if (b) load(+b.dataset.i);
   });
+
+  // ---- subida del splat editado (botón o drag&drop) ----
+  const statusEl = () => document.getElementById('lab-status');
+  async function publish(file) {
+    const s = splats[cur];
+    if (!s || !file) return;
+    if (!/\.(ply|splat|ksplat)$/i.test(file.name)) {
+      statusEl().textContent = 'formato no soportado (.ply/.splat/.ksplat)'; return;
+    }
+    statusEl().textContent = `Subiendo ${file.name} (${(file.size / 1e6).toFixed(1)}MB)…`;
+    try {
+      const r = await fetch(`/api/splat_upload?cid=${encodeURIComponent(s.clip_id)}&name=${encodeURIComponent(file.name)}`,
+        { method: 'POST', body: file });
+      const out = await r.json();
+      if (!r.ok || out.error) throw new Error(out.error || r.status);
+      statusEl().textContent = `✓ publicado ${out.published}${out.ksplat ? ' + ' + out.ksplat : ''} · anterior en history/`;
+      await load_sys();                                   // manifest fresco
+      cur = Math.max(0, splats.findIndex(x => x.clip_id === s.clip_id));
+      load(cur);                                          // editor recarga la versión nueva
+    } catch (err) {
+      statusEl().textContent = `✗ ${String(err.message || err).slice(0, 80)}`;
+    }
+  }
+  fileIn.addEventListener('change', () => { publish(fileIn.files[0]); fileIn.value = ''; });
+  // drag&drop sobre el marco del editor
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); hint.hidden = false;
+  }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); if (ev === 'drop' && e.dataTransfer?.files[0]) publish(e.dataTransfer.files[0]);
+    hint.hidden = true;
+  }));
+
+  renderPicker(); renderActions();
   if (splats.length) load(0);
 })();

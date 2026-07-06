@@ -1164,6 +1164,65 @@ class H(BaseHTTPRequestHandler):
             j = job_add("upload", name)
             threading.Thread(target=process_upload, args=(path, j), daemon=True).start()
             return self.send_json({"ok": True, "clip_id": cid, "bytes": read, "job": j["id"]})
+        if u.path == "/api/splat_upload":
+            # round-trip de Splat Lab: sube el splat EDITADO (SuperSplat export) y publícalo
+            # versionado — los formatos anteriores del clip van a splats/history/ (nada se pierde)
+            if not self.auth(q):
+                return
+            cid = re.sub(r"[^\w-]", "", q.get("cid", [""])[0])
+            name = re.sub(r"[^\w.\-]", "_", Path(q.get("name", [""])[0]).name)
+            ext = Path(name).suffix.lower()
+            if not cid:
+                return self.send_json({"error": "cid requerido"}, 400)
+            if ext not in (".ply", ".splat", ".ksplat"):
+                return self.send_json({"error": f"formato {ext or '?'} no soportado (.ply/.splat/.ksplat)"}, 400)
+            length = int(self.headers.get("Content-Length", 0))
+            if not length:
+                return self.send_json({"error": "body vacío"}, 400)
+            if length > 2 * 1024**3:
+                return self.send_json({"error": "archivo > 2GB"}, 413)
+            sdir = VAULT / "splats"
+            sdir.mkdir(parents=True, exist_ok=True)
+            tmp = sdir / f".upload-{cid}{ext}"
+            read = 0
+            with open(tmp, "wb") as f:
+                while read < length:
+                    chunk = self.rfile.read(min(1024 * 512, length - read))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    read += len(chunk)
+            if read != length:
+                tmp.unlink(missing_ok=True)
+                return self.send_json({"error": f"subida incompleta ({read}/{length} bytes)"}, 400)
+            # archiva TODAS las variantes publicadas: si quedara un .ksplat viejo, el
+            # dedupe del manifest lo preferiría sobre el archivo editado recién subido
+            hist = sdir / "history"
+            hist.mkdir(exist_ok=True)
+            ts = time.strftime("%Y%m%d-%H%M%S")
+            archived = []
+            for old in sdir.glob(f"{cid}.*"):
+                if old.is_file() and old.suffix.lower() in (".ply", ".splat", ".ksplat"):
+                    os.replace(old, hist / f"{old.stem}-{ts}{old.suffix}")
+                    archived.append(old.name)
+            final = sdir / f"{cid}{ext}"
+            os.replace(tmp, final)
+            kname = None
+            if ext != ".ksplat":   # optimizado para el viewer (no fatal si node falla)
+                ktmp = sdir / f"{cid}.ksplat.tmp"
+                try:
+                    r = subprocess.run(["node", str(PIPE / "make_ksplat.mjs"), str(final), str(ktmp)],
+                                       capture_output=True, text=True, timeout=600)
+                    if r.returncode == 0 and ktmp.exists() and ktmp.stat().st_size > 1024:
+                        os.replace(ktmp, sdir / f"{cid}.ksplat")
+                        kname = f"{cid}.ksplat"
+                    else:
+                        ktmp.unlink(missing_ok=True)
+                except (OSError, subprocess.TimeoutExpired):
+                    ktmp.unlink(missing_ok=True)
+            rebuild_index()
+            return self.send_json({"ok": True, "published": final.name, "ksplat": kname,
+                                   "archived": archived, "bytes": read})
         if u.path == "/api/edit":
             if not self.auth(q):
                 return

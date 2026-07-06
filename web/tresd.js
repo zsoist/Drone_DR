@@ -640,7 +640,7 @@
     controls.maxDistance = dist * 3;
     // una malla 2.5D no tiene "abajo": orbitar bajo el horizonte muestra el underside
     // (esquirlas de textura con huecos) y el zoom infinito atraviesa la geometría
-    controls.maxPolarAngle = Math.PI * 0.495;
+    controls.maxPolarAngle = Math.PI * 0.42;   // ~75°: rasante en una malla 2.5D = bosque de faldones 'destrozado' (estándar Pix4D/DroneDeploy)
     controls.minDistance = maxDim * 0.06;
     controls.update();
   }
