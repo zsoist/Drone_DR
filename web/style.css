@@ -2207,3 +2207,76 @@ button.exp { text-align: left; cursor: pointer; }
   .dc-fleet { width: 120px; }
   .dc-cloud { width: 74%; height: 56%; }
 }
+
+/* ===== BLOQUE 11 · Subir v2: zona premium, cola con velocidad/ETA ===== */
+.up-wrap { max-width: 780px; display: flex; flex-direction: column; gap: 14px; }
+.up-gate { display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+  border-radius: 14px; border: 1px solid color-mix(in srgb, var(--amber, #e0a458) 45%, var(--line));
+  background: color-mix(in srgb, var(--amber, #e0a458) 9%, var(--surface-1)); }
+.up-gate > svg.ic { width: 22px; height: 22px; color: var(--amber, #e0a458); flex: none; }
+.up-gate b { font-size: 14px; }
+.up-gate p { font-size: 12.5px; color: var(--text-2); margin: 2px 0 0; }
+.up-gate .btn { margin-left: auto; flex: none; }
+
+.up-zone { position: relative; padding: 46px 24px 34px; text-align: center; cursor: pointer;
+  border-radius: 18px; overflow: hidden;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
+  background:
+    radial-gradient(120% 100% at 50% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
+    var(--surface-1);
+  transition: border-color .25s, transform .25s, box-shadow .3s; }
+.up-zone:hover, .up-zone.over { border-color: var(--accent); transform: translateY(-2px);
+  box-shadow: 0 16px 40px -18px color-mix(in srgb, var(--accent) 50%, transparent); }
+.up-zone.over { background:
+  radial-gradient(120% 100% at 50% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
+  var(--surface-1); }
+.up-zone.locked { opacity: .55; }
+.up-zone > svg.ic { width: 34px; height: 34px; color: var(--accent); }
+.up-ring { position: absolute; inset: -40% -10%; pointer-events: none; opacity: 0;
+  background: radial-gradient(50% 50% at 50% 50%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%);
+  transition: opacity .4s; }
+.up-zone:hover .up-ring, .up-zone.over .up-ring { opacity: 1; }
+.up-t { margin-top: 12px; font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
+.up-s { color: var(--text-2); font-size: 13px; margin-top: 5px; }
+.up-devices { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.up-devices .gchip svg.ic { width: 12px; height: 12px; }
+
+.up-steps { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 14px; border-radius: 12px; background: var(--surface-1);
+  border: 1px solid var(--line); }
+.up-steps span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+  font-weight: 600; color: var(--text-2); }
+.up-steps span svg.ic { width: 13px; height: 13px; color: var(--accent); }
+.up-steps i { color: var(--text-3); display: inline-flex; }
+.up-steps i svg.ic { width: 11px; height: 11px; }
+
+.up-queue { display: flex; flex-direction: column; gap: 10px; }
+.up-card { display: flex; align-items: center; gap: 13px; padding: 13px 15px;
+  border-radius: 14px; border: 1px solid var(--line); background: var(--surface-1);
+  animation: cardIn 300ms var(--ease) both; }
+.up-ic { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+  flex: none; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--line); }
+.up-ic svg.ic { width: 17px; height: 17px; }
+.up-card.run .up-ic { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  background: var(--accent-dim); }
+.up-card.ok .up-ic { color: var(--mint); border-color: color-mix(in srgb, var(--mint) 50%, var(--line)); }
+.up-card.bad .up-ic { color: #ff6b6b; border-color: color-mix(in srgb, #ff6b6b 50%, var(--line)); }
+.up-card.off { opacity: .6; }
+.up-info { flex: 1; min-width: 0; }
+.up-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.up-meta { font-size: 11px; color: var(--text-3); margin: 3px 0 7px; }
+.up-card.bad .up-meta { color: #ff6b6b; }
+.up-bar { height: 5px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.up-bar i { display: block; height: 100%; border-radius: 99px; background: var(--accent);
+  transition: width .25s linear; }
+.up-card.ok .up-bar i { background: var(--mint); }
+.up-card.bad .up-bar i { background: #ff6b6b; }
+.up-acts { display: flex; gap: 6px; flex: none; }
+.up-acts .btn svg.ic { width: 13px; height: 13px; }
+
+@media (max-width: 640px) {
+  .up-zone { padding: 36px 16px 26px; }
+  .up-steps { gap: 6px; }
+  .up-card { flex-wrap: wrap; }
+  .up-acts { width: 100%; justify-content: flex-end; }
+}
