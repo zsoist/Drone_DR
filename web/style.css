@@ -2461,10 +2461,22 @@ button.exp { text-align: left; cursor: pointer; }
 .hero-air.following .fly-drone.v9 { filter: drop-shadow(0 6px 0 rgba(0,0,0,.45)) drop-shadow(0 0 7px #ff7a1a); }
 @media (max-width: 640px) { .fly-drone.v9 { width: 112px; } }
 
-/* ===== BLOQUE 18 · dron OVI (img SVG) ===== */
-.fly-drone.v10 { position: absolute; left: 0; top: 0; width: 190px; height: auto;
-  pointer-events: auto; cursor: pointer; will-change: transform; image-rendering: pixelated;
-  filter: drop-shadow(0 8px 6px rgba(0,0,0,.5)); animation: none; user-select: none; }
-.fly-drone.v10:hover { filter: drop-shadow(0 8px 6px rgba(0,0,0,.5)) drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 55%, transparent)); }
-.hero-air.following .fly-drone.v10 { filter: drop-shadow(0 8px 6px rgba(0,0,0,.5)) drop-shadow(0 0 9px var(--accent)); }
-@media (max-width: 640px) { .fly-drone.v10 { width: 150px; } }
+/* ===== BLOQUE 18 · dron OVI (img SVG) + hélices que giran ===== */
+.fly-drone.v10 { position: absolute; left: 0; top: 0; width: 150px; height: auto;
+  pointer-events: auto; cursor: pointer; will-change: transform; animation: none; }
+.fly-drone.v10 .dr-img { width: 100%; height: auto; display: block; image-rendering: pixelated;
+  user-select: none;
+  /* menos translúcido + colores realzados para que resalte sobre la escena oscura */
+  filter: saturate(1.4) contrast(1.12) brightness(1.14) drop-shadow(0 8px 6px rgba(0,0,0,.55)); }
+.fly-drone.v10:hover .dr-img { filter: saturate(1.5) contrast(1.14) brightness(1.18)
+  drop-shadow(0 8px 6px rgba(0,0,0,.55)) drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 60%, transparent)); }
+.hero-air.following .fly-drone.v10 .dr-img { filter: saturate(1.5) contrast(1.14) brightness(1.18)
+  drop-shadow(0 8px 6px rgba(0,0,0,.55)) drop-shadow(0 0 9px var(--accent)); }
+/* hélices: óvalo iso (scaleY) con 2 aspas girando */
+.fly-drone.v10 .blade { position: absolute; transform: translate(-50%, -50%) scaleY(.5);
+  pointer-events: none; }
+.fly-drone.v10 .blade svg { display: block; width: 100%; height: auto; overflow: visible; }
+.fly-drone.v10 .blade .spin { transform-box: fill-box; transform-origin: center;
+  animation: bspin var(--spin, .42s) linear infinite; }
+@keyframes bspin { to { transform: rotate(360deg); } }
+@media (max-width: 640px) { .fly-drone.v10 { width: 122px; } }

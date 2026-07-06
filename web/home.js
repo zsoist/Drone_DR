@@ -59,11 +59,19 @@ main.classList.add('deck-main');
       img: thumb(byDate[4]) },
   ];
 
-  // dron héroe: sprite OVI pixel-art (SVG vectorizado generado por el usuario, fondo quitado).
-  // Se usa como <img> → el navegador lo rasteriza una vez y el motor de vuelo lo mueve por transform.
+  // dron héroe: OVI pixel-art (SVG del usuario) + hélices que giran superpuestas sobre los
+  // 4 motores (parseados de los aros cyan). El motor de vuelo mueve el contenedor.
+  // hélice iso: 2 aspas con punta cyan girando dentro de un óvalo achatado (scaleY = perspectiva)
+  const blade = (x, y, sz) => `<span class="blade" style="left:${x}%;top:${y}%;width:${sz}%">
+      <svg viewBox="-12 -12 24 24"><ellipse rx="11.5" ry="11.5" fill="rgba(130,190,230,.12)"/>
+        <g class="spin"><rect x="-11.5" y="-1.5" width="23" height="3" rx="1.5" fill="#d2e0ee"/>
+          <rect x="-11.5" y="-1.5" width="4.6" height="3" fill="#40a6d8"/><rect x="6.9" y="-1.5" width="4.6" height="3" fill="#40a6d8"/></g>
+        <circle r="2.5" fill="#0b0d10"/></svg></span>`;
   const DRONE = `
-    <img class="fly-drone v10" id="hero-drone" src="assets/ovi-drone.svg?v=27" alt=""
-         data-tip="Doble click = que te siga · click = pirueta" draggable="false">`;
+    <div class="fly-drone v10" id="hero-drone" data-tip="Doble click = que te siga · click = pirueta">
+      <img class="dr-img" src="assets/ovi-drone.svg?v=28" alt="" draggable="false">
+      ${blade(22, 24, 22)}${blade(80, 31, 22)}${blade(20, 61, 29)}${blade(68, 72, 30)}
+    </div>`;
 
   main.innerHTML = `
     <div class="deck-sky" aria-hidden="true">
