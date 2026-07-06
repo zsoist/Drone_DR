@@ -6,9 +6,9 @@ Scope: ODM 3D modeling, DSM/point-cloud publishing, Gaussian splatting, Mac Mini
 
 ## Verdict
 
-Current score: 9.0/10 for a local/free personal drone mapping stack.
+Current score: 9.2/10 for a local/free personal drone mapping stack.
 
-Not 10/10 yet because the premium Gaussian path is still CPU-only and exports `.splat`, not a web-optimized `.ksplat`. OpenSplat documents Apple Metal as the right path for serious local training, while CPU mode is a fallback. GaussianSplats3D documents `.ksplat` as its fastest-loading format.
+Not 10/10 yet because the premium Gaussian path is prepared for Metal/MPS but the Mac still needs the Xcode Metal Toolchain component installed before `build-mps/opensplat` can compile. The pipeline now auto-selects a Metal build when present and falls back to the known-good CPU binary otherwise. It still exports `.splat`, not a web-optimized `.ksplat`. OpenSplat documents Apple Metal as the right path for serious local training, while CPU mode is a fallback. GaussianSplats3D documents `.ksplat` as its fastest-loading format.
 
 ## What Is Now Solid
 
@@ -21,6 +21,9 @@ Not 10/10 yet because the premium Gaussian path is still CPU-only and exports `.
 - Point clouds now publish `cloud_points` from the PLY header.
 - Gaussian splat quality gate checks size, camera count, final loss, divergence, and incomplete training.
 - Gaussian splat publish is now atomic: training writes to `splats/.training/<job>/`; only a passed quality gate can replace the public `.splat`.
+- Gaussian splat backend selection is explicit and tested: `build-mps/opensplat` runs without `--cpu` when compiled with `GPU_RUNTIME=MPS`; otherwise the worker keeps the CPU fallback with `--cpu`.
+- `pipeline/build_opensplat_mps.sh` is the repeatable local build path: it refuses to run during heavy jobs, downloads Apple's Metal Toolchain, builds `build-mps`, and validates `GPU_RUNTIME=MPS`.
+- `pipeline/safe_restart.sh worker` now checks SQLite directly instead of trusting the web API, so a stale server response cannot kill a running 3D/splat job.
 - `system.json` counts only visualizable splat assets (`.splat`, `.ksplat`, `.ply`), not sidecar metadata.
 - Browser QA on localhost loads `share.html` splat and `tresd.html` without console errors.
 - `pipeline/audit_vault.py` reports 0 findings.
@@ -41,12 +44,20 @@ Splats:
 
 ## Remaining Gap To 10/10
 
-1. Enable OpenSplat Metal build and route non-preview splats to GPU.
+1. Complete Apple Metal Toolchain download and run `pipeline/build_opensplat_mps.sh`, then process a 7k/15k splat through `build-mps/opensplat`.
 2. Export `.ksplat` after `.splat` training, then prefer `.ksplat` in viewers.
 3. Add optional ODM `--pc-ept` or `--pc-copc` path for large point-cloud streaming/GIS.
 4. Add browser screenshot gate for every published model/splat before marking the job done.
 5. Add capture recipe presets in the UI: nadir survey, oblique orbit, hybrid premium.
 6. Add versioned model/splat history instead of one public file per clip.
+
+## Metal Build Attempt
+
+- Existing binary: `splat/OpenSplat/build/opensplat`, `GPU_RUNTIME=CPU`.
+- System readiness: full Xcode selected, Apple M4 arm64, `xcrun --find metal` available.
+- MPS configure: succeeded with `-DGPU_RUNTIME=MPS`.
+- MPS compile: blocked by missing Apple Metal Toolchain component.
+- `xcodebuild -downloadComponent MetalToolchain` started successfully but was cancelled at 42 MB / 687.9 MB because the network rate was too slow for this audit turn. Resume with `pipeline/build_opensplat_mps.sh`.
 
 ## Research Anchors
 
@@ -55,4 +66,3 @@ Splats:
 - OpenDroneMap `pc-ept`: official EPT export exists for tiled point-cloud delivery.
 - OpenSplat: Apple Metal is the serious path; CPU exists but is much slower.
 - GaussianSplats3D: `.ksplat` is the fastest-loading viewer format.
-
