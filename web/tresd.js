@@ -677,13 +677,14 @@
     const fov = cam.fov * Math.PI / 180;
     const dist = (maxDim / 2) / Math.tan(fov / 2) / 0.8;
     cam.position.set(dist * 0.15, dist * 0.92, dist * 0.28);  // casi cenital: data nadir se ve densa
-    cam.near = maxDim / 1000; cam.far = dist * 8; cam.updateProjectionMatrix();
+    cam.near = Math.max(maxDim / 10000, 0.0005); cam.far = dist * 8; cam.updateProjectionMatrix();
     controls.target.set(0, 0, 0);
     controls.maxDistance = dist * 3;
     // una malla 2.5D no tiene "abajo": orbitar bajo el horizonte muestra el underside
     // (esquirlas de textura con huecos) y el zoom infinito atraviesa la geometría
     controls.maxPolarAngle = Math.PI * 0.42;   // ~75°: rasante en una malla 2.5D = bosque de faldones 'destrozado' (estándar Pix4D/DroneDeploy)
-    controls.minDistance = maxDim * 0.06;
+    controls.minDistance = Math.max(maxDim * 0.012, 0.01);
+    if ('zoomToCursor' in controls) controls.zoomToCursor = true;
     controls.update();
   }
   function fitSplatViewer(viewer) {
@@ -693,13 +694,14 @@
     const dist = radius * 1.7;                    // encuadre CERCA (antes 3.2 = punto diminuto)
     const dir = new THREE.Vector3(0.2, 0.72, 0.66).normalize();
     viewer.camera.position.copy(center).addScaledVector(dir, dist);
-    viewer.camera.near = Math.max(radius / 1500, 0.004);
+    viewer.camera.near = Math.max(radius / 10000, 0.0005);
     viewer.camera.far = Math.max(radius * 80, dist * 8);
     viewer.camera.updateProjectionMatrix();
     if (viewer.controls) {
       viewer.controls.target.copy(center);
-      viewer.controls.minDistance = radius * 0.2;   // afuera del volumen (0.02 = cámara adentro)
+      viewer.controls.minDistance = Math.max(radius * 0.015, 0.003);
       viewer.controls.maxDistance = radius * 14;
+      if ('zoomToCursor' in viewer.controls) viewer.controls.zoomToCursor = true;
       viewer.controls.update();
     }
   }
@@ -716,6 +718,8 @@
     bar.className = 'viewer-tools';
     bar.innerHTML = `
       ${cam ? `<button data-vt="center" title="Centrar">${icon('pin')}</button>
+      <button data-vt="zin" title="Acercar">${icon('zoomIn')}</button>
+      <button data-vt="zout" title="Alejar">${icon('zoomOut')}</button>
       <button data-vt="rot" title="Auto-rotar">${icon('route')}</button>` : ''}
       <button data-vt="fs" title="Pantalla completa">${icon('ext')}</button>`;
     box.style.position = 'relative';
@@ -724,11 +728,23 @@
     bar.addEventListener('click', e => {
       const b = e.target.closest('[data-vt]');
       if (!b) return;
-      if (b.dataset.vt === 'center') { cam.position.copy(cam0); controls.target.set(0, 0, 0); }
+      const wakeControls = () => { controls.update(); controls.dispatchEvent?.({ type: 'change' }); };
+      const dolly = mult => {
+        const dir = cam.position.clone().sub(controls.target);
+        const d = dir.length();
+        if (!Number.isFinite(d) || d <= 0) return;
+        const nd = Math.max(controls.minDistance || 0.01, Math.min(controls.maxDistance || d * 4, d * mult));
+        cam.position.copy(controls.target).addScaledVector(dir.normalize(), nd);
+        wakeControls();
+      };
+      if (b.dataset.vt === 'center') { cam.position.copy(cam0); controls.target.set(0, 0, 0); wakeControls(); }
+      if (b.dataset.vt === 'zin') dolly(0.55);
+      if (b.dataset.vt === 'zout') dolly(1.55);
       if (b.dataset.vt === 'rot') {
         controls.autoRotate = !controls.autoRotate;
         controls.autoRotateSpeed = 1.1;
         b.classList.toggle('on', controls.autoRotate);
+        wakeControls();
       }
       if (b.dataset.vt === 'fs') {
         const on = box.classList.toggle('viewer-fs');

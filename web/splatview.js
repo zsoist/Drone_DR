@@ -16,6 +16,8 @@ const I = {
   size: '<circle cx="12" cy="12" r="2.5"/><path d="M5 5h3M5 5v3M19 5h-3M19 5v3M5 19h3M5 19v-3M19 19h-3M19 19v-3"/>',
   cam: '<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/>',
   full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
 };
 const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
@@ -24,7 +26,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   const GS = await import('/vendor/gaussian-splats-3d.module.min.js');
   host.style.position = 'relative';
   const holder = document.createElement('div');
-  holder.style.cssText = 'position:absolute;inset:0';
+  holder.style.cssText = 'position:absolute;inset:0;touch-action:none';
   host.appendChild(holder);
 
   const viewer = new GS.Viewer({
@@ -70,15 +72,17 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     Number.isFinite(rawR) ? rawR : (Number.isFinite(rawR2) ? rawR2 : 1), 0.5);
   const cam = viewer.camera, ctrl = viewer.controls;
   const homeState = {};
+  const homeMin = radius * 0.015;
+  const inspectMin = Math.max(radius * 0.0015, 0.003);
 
   function frame() {
     const dir = new THREEV.Vector3(0.2, 0.72, 0.66).normalize();
     cam.position.copy(center).addScaledVector(dir, radius * 1.7);
-    cam.near = Math.max(radius / 2000, 0.003);          // near diminuto = acercarse sin clip
+    cam.near = Math.max(radius / 10000, 0.0005);        // near muy chico = acercarse sin clip
     cam.far = Math.max(radius * 100, 50);
     cam.updateProjectionMatrix();
     ctrl.target.copy(center);
-    ctrl.minDistance = radius * 0.2;                    // afuera del volumen (el focus lo baja)
+    ctrl.minDistance = homeMin;                         // inspección cercana sin atravesar fácil
     ctrl.maxDistance = radius * 20;
     ctrl.update();
     homeState.pos = cam.position.clone();
@@ -90,8 +94,9 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
 
   // navegación premium
   ctrl.enableDamping = true; ctrl.dampingFactor = 0.06;
-  ctrl.rotateSpeed = 0.6; ctrl.zoomSpeed = 1.0; ctrl.panSpeed = 0.85;
+  ctrl.rotateSpeed = 0.6; ctrl.zoomSpeed = 1.45; ctrl.panSpeed = 0.85;
   ctrl.maxPolarAngle = Math.PI * 0.495;
+  if ('zoomToCursor' in ctrl) ctrl.zoomToCursor = true;
   try { ctrl.listenToKeyEvents(window); } catch {}   // flechas = pan
 
   // ---- FOCUS por doble-click: raycast al splat -> target ahí -> minDistance diminuto ----
@@ -127,12 +132,22 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     // clamp al radio de la escena (un rayo casi paralelo al suelo daría un punto lejísimos)
     if (p.distanceTo(center) > radius * 1.5) return false;
     // baja el piso YA (no al final de la animación) → puedes seguir con la rueda hasta pegarte
-    viewer.controls.minDistance = Math.max(radius * 0.003, 0.02);
+    viewer.controls.minDistance = inspectMin;
     // acércate al punto: nueva posición a ~min(dist actual, radius*0.3) del edificio
     const d = vcam.position.distanceTo(p);
-    const newPos = p.clone().addScaledVector(vcam.position.clone().sub(p).normalize(), Math.min(d, radius * 0.3));
+    const newPos = p.clone().addScaledVector(vcam.position.clone().sub(p).normalize(), Math.min(d, radius * 0.12));
     animateTo(p, newPos);
     return true;
+  }
+  function dolly(mult) {
+    const vcam = viewer.camera, vctrl = viewer.controls;
+    const dir = vcam.position.clone().sub(vctrl.target);
+    const d = dir.length();
+    if (!Number.isFinite(d) || d <= 0) return;
+    const nd = Math.max(vctrl.minDistance || inspectMin, Math.min(vctrl.maxDistance || radius * 20, d * mult));
+    vcam.position.copy(vctrl.target).addScaledVector(dir.normalize(), nd);
+    vctrl.update();
+    kick();
   }
   // el canvas del viewer captura los pointer events de sus controles; escuchamos en el HOST
   // en fase de captura (baja top-down antes que nada) para no depender del bubbling
@@ -154,6 +169,8 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   hud.className = 'sv-hud';
   hud.innerHTML =
     btn('home', 'Reiniciar vista (R)', I.home) +
+    btn('zin', 'Acercar', I.plus) +
+    btn('zout', 'Alejar', I.minus) +
     btn('rot', 'Auto-rotar', I.rot) +
     `<span class="sv-sep"></span>` +
     `<label class="sv-slider" title="Campo de visión">${svg(I.fov)}<input type="range" data-sv="fov" min="30" max="80" value="${Math.round(cam.fov)}"></label>` +
@@ -167,8 +184,8 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   tip.className = 'sv-tip';
   const coarse = matchMedia('(hover: none), (pointer: coarse)').matches;
   tip.textContent = coarse
-    ? 'Doble-toca un edificio para acercarte · arrastra = orbitar · pellizca = zoom · 2 dedos = desplazar'
-    : 'Doble-click en un edificio para acercarte · arrastra = orbitar · rueda = zoom · click-derecho = mover';
+    ? 'Doble-toca un punto para enfocar · + acerca más · pellizca = zoom · 2 dedos = desplazar'
+    : 'Doble-click en un punto para enfocar · rueda/+ acerca · click-derecho = mover';
   host.appendChild(tip);
   setTimeout(() => tip.classList.add('fade'), 4200);
 
@@ -187,12 +204,14 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     const k = b.dataset.sv;
     const vcam = viewer.camera, vctrl = viewer.controls;   // refs frescas: el viewer intercambia cámara tras montar
     if (k === 'home') {
-      vctrl.minDistance = radius * 0.2;
-      animateTo(homeState.target, homeState.pos, radius * 0.2);
+      vctrl.minDistance = homeMin;
+      animateTo(homeState.target, homeState.pos, homeMin);
       vcam.fov = homeState.fov; vcam.updateProjectionMatrix();
       const fovIn = hud.querySelector('[data-sv="fov"]'); if (fovIn) fovIn.value = Math.round(homeState.fov);  // re-sincroniza el slider
       kick();
     }
+    else if (k === 'zin') dolly(0.55);
+    else if (k === 'zout') dolly(1.55);
     else if (k === 'rot') { vctrl.autoRotate = !vctrl.autoRotate; vctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', vctrl.autoRotate); kick(); }
     else if (k === 'shot') screenshot();
     else if (k === 'full') toggleFull();

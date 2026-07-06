@@ -188,8 +188,9 @@ function frame(obj, cam, controls, topDown = false) {
   // terreno 2.5D: bajo el horizonte solo hay underside roto; y sin minDistance el
   // zoom atraviesa la malla (near-clip = "modelo destrozado")
   controls.maxPolarAngle = Math.PI * 0.42;   // ~75°: rasante en una malla 2.5D = bosque de faldones 'destrozado' (estándar Pix4D/DroneDeploy)
-  controls.minDistance = maxDim * 0.06;
+  controls.minDistance = Math.max(maxDim * 0.012, 0.01);
   controls.maxDistance = dist * 3.5;
+  if ('zoomToCursor' in controls) controls.zoomToCursor = true;
 }
 
 function fitSplatViewer(viewer) {
@@ -199,13 +200,14 @@ function fitSplatViewer(viewer) {
   const dist = radius * 1.7;                      // encuadre CERCA (antes 3.2 = punto diminuto)
   const dir = new THREE.Vector3(0.2, 0.72, 0.66).normalize();
   viewer.camera.position.copy(center).addScaledVector(dir, dist);
-  viewer.camera.near = Math.max(radius / 1500, 0.004);   // near chico → acercar sin clip
+  viewer.camera.near = Math.max(radius / 10000, 0.0005);   // near chico → acercar sin clip
   viewer.camera.far = Math.max(radius * 80, dist * 8);
   viewer.camera.updateProjectionMatrix();
   if (viewer.controls) {
     viewer.controls.target.copy(center);
-    viewer.controls.minDistance = radius * 0.2;   // afuera del volumen del splat (0.02 metía la cámara adentro)
+    viewer.controls.minDistance = Math.max(radius * 0.015, 0.003);
     viewer.controls.maxDistance = radius * 14;
+    if ('zoomToCursor' in viewer.controls) viewer.controls.zoomToCursor = true;
     viewer.controls.update();
   }
 }
