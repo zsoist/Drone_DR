@@ -658,6 +658,10 @@ def _probe_dur(path):
 
 def run_edit(spec: dict, j):
     try:
+        fps = int(spec.get("fps") or 0)
+        fps = fps if fps in (24, 30, 60) else 0        # 0 = fps del fuente
+        br = f'{_clampf(spec.get("bitrate", 10), 3, 60, 10):g}M'
+        rate = ["-r", str(fps)] if fps else []
         default_cid = re.sub(r"[^\w-]", "", spec.get("clip_id", ""))
         aspect = spec.get("aspect") or ("9:16" if spec.get("vertical") else "16:9")
         resolution = "2160" if str(spec.get("resolution", "1080")) == "2160" else "1080"
@@ -732,11 +736,11 @@ def run_edit(spec: dict, j):
                 # silencio anullsrc quedan de la misma longitud → sin desfase A/V en la concat
                 cmd += ["-t", f"{out_dur:.3f}", "-map", "0:v:0", "-map", a_map,
                         "-vf", ",".join(vf), "-af", ",".join(af),
-                        "-c:v", "h264_videotoolbox", "-b:v", "10M",
+                        *rate, "-c:v", "h264_videotoolbox", "-b:v", br,
                         "-c:a", "aac", "-ar", "48000", "-ac", "2", str(seg)]
             else:
                 cmd += ["-t", f"{out_dur:.3f}", "-vf", ",".join(vf), "-an",
-                        "-c:v", "h264_videotoolbox", "-b:v", "10M", str(seg)]
+                        *rate, "-c:v", "h264_videotoolbox", "-b:v", br, str(seg)]
             subprocess.run(cmd, check=True)
             segs.append(seg)
             transitions.append(s.get("transition", "none"))
@@ -790,7 +794,7 @@ def run_edit(spec: dict, j):
             if keep_audio:
                 maps += ["-map", aprev]
             cmd += ["-filter_complex", ";".join(fc), *maps,
-                    "-c:v", "h264_videotoolbox", "-b:v", "10M"]
+                    "-c:v", "h264_videotoolbox", "-b:v", br]
             if keep_audio:
                 cmd += ["-c:a", "aac", "-ar", "48000", "-ac", "2"]
             cmd.append(str(out))

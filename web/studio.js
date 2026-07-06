@@ -89,6 +89,13 @@ main.innerHTML = `
               </div>
               <span class="tl-group-lb">IA</span>
             </div>
+            <div class="tl-group">
+              <div class="tl-group-btns">
+                <button class="tl-tool" data-tool="undo" data-tip="Deshacer (⌘Z)">${icon('undo')}<span class="tl-lb">Deshacer</span></button>
+                <button class="tl-tool" data-tool="redo" data-tip="Rehacer (⌘⇧Z)">${icon('redo')}<span class="tl-lb">Rehacer</span></button>
+              </div>
+              <span class="tl-group-lb">Historial</span>
+            </div>
             <span class="spacer"></span>
             <div class="tl-group">
               <div class="tl-group-btns">
@@ -240,55 +247,92 @@ main.innerHTML = `
 
       <!-- 47 · barra de export (v7 · presets + resolución + proyectos) -->
       <div class="exportbar" id="exportbar" style="display:none">
-        <label class="eb-field"><span>Preset</span>
-        <select class="ctl" id="ed-preset" data-tip="Preset de export">
-          <option value="">Preset…</option>
-          <option value="yt4k">YouTube 4K</option>
-          <option value="yt1080">YouTube 1080</option>
-          <option value="reels">Reels/TikTok</option>
-          <option value="square">Cuadrado</option>
-          <option value="feed45">Feed 4:5</option>
-        </select></label>
-        <label class="eb-field"><span>Aspecto</span>
-        <select class="ctl" id="ed-aspect">
-          <option value="16:9">16:9</option><option value="9:16">9:16 Reels</option>
-          <option value="1:1">1:1</option><option value="4:5">4:5</option>
-        </select></label>
-        <label class="eb-field"><span>Calidad</span>
-        <select class="ctl" id="ed-res" data-tip="Resolución de salida">
-          <option value="1080">1080p</option><option value="2160">2160p (4K)</option>
-        </select></label>
-        <label class="eb-field"><span>Look</span>
-        <select class="ctl" id="ed-lut" data-tip="Look de respaldo global">
-          <option value="none">Sin look</option><option value="cine">Cine</option>
-          <option value="vivid">Vivid</option><option value="warm">Cálido</option>
-          <option value="moody">Moody</option><option value="bw">B&amp;N</option>
-        </select></label>
-        <label class="eb-field"><span>Transición</span>
-        <select class="ctl" id="ed-trans" data-tip="Transición por defecto">
-          <option value="none">Sin transición</option>
-          <option value="fade">Fundido</option>
-          <option value="crossfade" selected>Crossfade</option>
-          <option value="dissolve">Disolver</option>
-          <option value="wipeleft">Cortina izq.</option>
-          <option value="wiperight">Cortina der.</option>
-          <option value="slideup">Deslizar arriba</option>
-          <option value="slidedown">Deslizar abajo</option>
-          <option value="circleopen">Círculo abre</option>
-          <option value="circleclose">Círculo cierra</option>
-          <option value="radial">Radial</option>
-          <option value="pixelize">Pixelar</option>
-          <option value="fadeblack">A negro</option>
-          <option value="fadewhite">A blanco</option>
-        </select></label>
-        <label class="eb-field"><span>Audio</span>
-        <select class="ctl" id="ed-audio" data-tip="Audio del reel">
-          <option value="none">Silencio</option><option value="original">Audio original</option>
-        </select></label>
-        <label class="eb-field grow"><span>Título del reel</span>
-        <input class="ctl" id="ed-title" placeholder="Escríbelo aquí…" maxlength="60"></label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" id="ed-fade" checked>Fades</label>
-        <button class="btn primary big" id="ed-export">${icon('check')} Exportar</button>
+        <span class="mono" id="eb-sum">—</span>
+        <span class="spacer"></span>
+        <button class="btn primary big" id="eb-open">${icon('check')} Exportar</button>
+      </div>
+
+      <!-- hoja de export estilo CapCut: ajustes agrupados + estimación en vivo -->
+      <div class="ex-sheet" id="ex-sheet" style="display:none">
+        <div class="ex-card">
+          <div class="ph">${icon('dl')} Exportar reel
+            <span class="spacer"></span>
+            <button class="btn" id="ex-close" data-tip="Cerrar">${icon('close')}</button>
+          </div>
+          <div class="ex-body">
+            <div class="ex-row">
+              <label class="eb-field"><span>Preset</span>
+              <select class="ctl" id="ed-preset">
+                <option value="">Manual…</option>
+                <option value="yt4k">YouTube 4K</option>
+                <option value="yt1080">YouTube 1080</option>
+                <option value="reels">Reels/TikTok</option>
+                <option value="square">Cuadrado</option>
+                <option value="feed45">Feed 4:5</option>
+              </select></label>
+              <label class="eb-field"><span>Aspecto</span>
+              <select class="ctl" id="ed-aspect">
+                <option value="16:9">16:9</option><option value="9:16">9:16 Reels</option>
+                <option value="1:1">1:1</option><option value="4:5">4:5</option>
+              </select></label>
+              <label class="eb-field"><span>Resolución</span>
+              <select class="ctl" id="ed-res">
+                <option value="1080">1080p</option><option value="2160">2160p (4K)</option>
+              </select></label>
+            </div>
+            <div class="ex-sec">
+              <span class="ex-lb">Cuadros por segundo</span>
+              <div class="tl-chips" id="ed-fps">
+                <button class="chip on" data-fps="">Fuente</button>
+                <button class="chip" data-fps="24">24</button>
+                <button class="chip" data-fps="30">30</button>
+                <button class="chip" data-fps="60">60</button>
+              </div>
+            </div>
+            <div class="ex-sec">
+              <span class="ex-lb">Bitrate <b class="mono" id="ed-bitrate-v">10 Mbps</b></span>
+              <input class="tl-range" id="ed-bitrate" type="range" min="5" max="50" step="1" value="10">
+            </div>
+            <div class="ex-row">
+              <label class="eb-field"><span>Look global</span>
+              <select class="ctl" id="ed-lut">
+                <option value="none">Sin look</option><option value="cine">Cine</option>
+                <option value="vivid">Vivid</option><option value="warm">Cálido</option>
+                <option value="moody">Moody</option><option value="bw">B&amp;N</option>
+              </select></label>
+              <label class="eb-field"><span>Transición por defecto</span>
+              <select class="ctl" id="ed-trans">
+                <option value="none">Sin transición</option>
+                <option value="fade">Fundido</option>
+                <option value="crossfade" selected>Crossfade</option>
+                <option value="dissolve">Disolver</option>
+                <option value="wipeleft">Cortina izq.</option>
+                <option value="wiperight">Cortina der.</option>
+                <option value="slideup">Deslizar arriba</option>
+                <option value="slidedown">Deslizar abajo</option>
+                <option value="circleopen">Círculo abre</option>
+                <option value="circleclose">Círculo cierra</option>
+                <option value="radial">Radial</option>
+                <option value="pixelize">Pixelar</option>
+                <option value="fadeblack">A negro</option>
+                <option value="fadewhite">A blanco</option>
+              </select></label>
+              <label class="eb-field"><span>Audio</span>
+              <select class="ctl" id="ed-audio">
+                <option value="none">Silencio</option><option value="original">Audio original</option>
+              </select></label>
+            </div>
+            <div class="ex-row">
+              <label class="eb-field grow"><span>Título del reel</span>
+              <input class="ctl" id="ed-title" placeholder="Escríbelo aquí…" maxlength="60"></label>
+              <label class="ex-check"><input type="checkbox" id="ed-fade" checked> Fades de entrada/salida</label>
+            </div>
+            <div class="ex-est mono" id="ex-est">—</div>
+          </div>
+          <div class="ex-foot">
+            <button class="btn primary big" id="ed-export">${icon('check')} Exportar ahora</button>
+          </div>
+        </div>
       </div>
 
       <!-- v7 · modal de proyectos guardados (localStorage) -->
@@ -695,7 +739,8 @@ pollJobs(document.getElementById('jobs'));
           <div class="tl-handle l" data-i="${i}"></div>
           <div class="tl-handle r" data-i="${i}"></div>
         </div>`;
-    }).join('');
+    }).join('') + (tl.length
+      ? `<button class="tl-add" data-tip="Añadir más clips">${icon('plus')}</button>` : '');
   }
 
   // 18-23 · inspector del clip seleccionado (v7 · velocidad+color+título+transición)
@@ -740,6 +785,7 @@ pollJobs(document.getElementById('jobs'));
 
   function updateStat() {
     statEl.textContent = `${tl.length} clip${tl.length === 1 ? '' : 's'} · ${fmt.dur(total())}`;
+    if (typeof updateExportUI === 'function') try { updateExportUI(); } catch {}
   }
 
   // 44 · deshabilitar herramientas según contexto
@@ -754,6 +800,7 @@ pollJobs(document.getElementById('jobs'));
     set('razor', canRazor);
     set('dup', hasSel); set('del', hasSel); set('left', hasSel && sel > 0); set('right', hasSel && sel < tl.length - 1);
     set('clear', has); set('fit', has);
+    set('undo', undoStack.length > 0); set('redo', redoStack.length > 0);
     document.querySelector('.tl-tool[data-tp="mute"]').innerHTML = (muted ? icon('volumeOff') : icon('volume')) + '<span class="tl-lb">Audio</span>';
     document.querySelector('.tl-tool[data-tp="loop"]').classList.toggle('on', loop);
   }
@@ -1035,6 +1082,8 @@ pollJobs(document.getElementById('jobs'));
     else if (t === 'zoomin') { pps = Math.min(240, pps * 1.4); renderAll(); }
     else if (t === 'zoomout') { pps = Math.max(8, pps / 1.4); renderAll(); }
     else if (t === 'fit') fit();
+    else if (t === 'undo') undo();
+    else if (t === 'redo') redo();
   });
   // pinch con dos dedos = zoom del timeline (móvil)
   let pinch = null;
@@ -1175,6 +1224,44 @@ pollJobs(document.getElementById('jobs'));
     }
   });
 
+  // botón + del track: lleva a la biblioteca y la resalta
+  track.addEventListener('click', e => {
+    if (!e.target.closest('.tl-add')) return;
+    const lib = document.querySelector('.tl-lib');
+    lib.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    lib.classList.add('pulse');
+    setTimeout(() => lib.classList.remove('pulse'), 1400);
+  });
+
+  // ================= hoja de export (CapCut-style) =================
+  const exSheet = document.getElementById('ex-sheet');
+  let edFps = '';
+  function openExSheet() { exSheet.style.display = 'flex'; updateExportUI();
+    exSheet.querySelector('.ex-card').animate(
+      [{ transform: 'translateY(40px)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }],
+      { duration: 260, easing: 'cubic-bezier(.22,1.2,.36,1)' }); }
+  function closeExSheet() { exSheet.style.display = 'none'; }
+  document.getElementById('eb-open').addEventListener('click', openExSheet);
+  document.getElementById('ex-close').addEventListener('click', closeExSheet);
+  exSheet.addEventListener('click', e => { if (e.target === exSheet) closeExSheet(); });
+  document.getElementById('ed-fps').addEventListener('click', e => {
+    const b = e.target.closest('[data-fps]'); if (!b) return;
+    edFps = b.dataset.fps;
+    document.querySelectorAll('#ed-fps .chip').forEach(x => x.classList.toggle('on', x === b));
+    updateExportUI();
+  });
+  document.getElementById('ed-bitrate').addEventListener('input', updateExportUI);
+  document.getElementById('ed-res').addEventListener('change', updateExportUI);
+  function updateExportUI() {
+    const br = +document.getElementById('ed-bitrate').value;
+    document.getElementById('ed-bitrate-v').textContent = `${br} Mbps`;
+    const mb = (br * total()) / 8;
+    document.getElementById('ex-est').textContent =
+      tl.length ? `≈ ${mb < 1000 ? mb.toFixed(0) + ' MB' : (mb / 1000).toFixed(2) + ' GB'} estimados · ${fmt.dur(total())} · ${document.getElementById('ed-res').value}p${edFps ? ' · ' + edFps + ' fps' : ''}` : '—';
+    const sum = document.getElementById('eb-sum');
+    if (sum) sum.textContent = `${tl.length} clip${tl.length === 1 ? '' : 's'} · ${fmt.dur(total())} · ${document.getElementById('ed-aspect').value} · ${document.getElementById('ed-res').value}p`;
+  }
+
   // ================= export (46,47) =================
   document.getElementById('ed-export').addEventListener('click', async () => {
     if (!tl.length) return;
@@ -1198,7 +1285,10 @@ pollJobs(document.getElementById('jobs'));
       title: document.getElementById('ed-title').value.trim(),
       fade: document.getElementById('ed-fade').checked,
       audio: document.getElementById('ed-audio').value,
+      fps: edFps ? +edFps : undefined,
+      bitrate: +document.getElementById('ed-bitrate').value,
     });
+    closeExSheet();
     if (r && r.error) { alert(r.error); return; }
     pushUndo(); tl = []; sel = -1; playhead = 0; curCid = null; renderAll();
     loadMedia();   // el reel exportado aparecerá en el módulo Reels al terminar el job
@@ -1216,6 +1306,7 @@ pollJobs(document.getElementById('jobs'));
       globals: {
         aspect: G('ed-aspect').value, resolution: G('ed-res').value, preset: G('ed-preset').value,
         lut: G('ed-lut').value, trans: G('ed-trans').value, audio: G('ed-audio').value,
+        fps: edFps, bitrate: G('ed-bitrate').value,
         title: G('ed-title').value, fade: G('ed-fade').checked,
       },
     };
@@ -1227,6 +1318,7 @@ pollJobs(document.getElementById('jobs'));
     set('ed-aspect', g.aspect); set('ed-res', g.resolution); set('ed-preset', g.preset);
     set('ed-lut', g.lut); set('ed-trans', g.trans); set('ed-audio', g.audio);
     set('ed-title', g.title); set('ed-fade', g.fade, true);
+    set('ed-bitrate', g.bitrate); if (g.fps != null) edFps = g.fps;
     sel = tl.length ? 0 : -1; playhead = 0; curCid = null;
     applyAspect(); undoStack = []; redoStack = [];
     renderAll(); if (tl.length) { fit(); seek(0); }
