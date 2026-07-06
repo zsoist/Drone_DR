@@ -11,7 +11,7 @@ main.classList.add('deck-main');
   const days = new Set(flights.map(f => f.date)).size;
   const models = sys.models || [];
   const splats = sys.splats || [];
-  const vaultBytes = Object.values(sys.storage || {}).reduce((a, b) => a + b, 0);
+  const vaultBytes = Object.values(sys.storage || {}).reduce((a, b) => a + (+b || 0), 0);   // no NaN si un valor no es número
   const withVideo = flights.filter(f => f.has_proxy).length;
   const durH = flights.reduce((a, f) => a + (f.duration_s || 0), 0);
   const kmT = flights.reduce((a, f) => a + (f.stats?.distance_m || 0), 0);
@@ -35,7 +35,7 @@ main.classList.add('deck-main');
       img: thumb(last) },
     { href: 'trips.html', ic: 'pin', ac: '#3ddc97', t: 'Viajes', media: 'globe',
       d: 'Tus vuelos agrupados por ciudad, con diarios por fecha y postales listas para compartir.',
-      chips: [`${days} días`, `${fmt.date(firstDate)} → ${fmt.date(lastDate)}`],
+      chips: [`${days} días`, firstDate && lastDate ? `${fmt.date(firstDate)} → ${fmt.date(lastDate)}` : 'Aún sin vuelos'],
       img: thumb(otherDay) },
     { href: 'tresd.html', ic: 'cube', ac: '#ff9f43', t: '3D', media: 'cloud',
       d: 'Ortomosaicos con medición de volumen y perfiles, mallas texturizadas y gaussian splats.',
@@ -344,6 +344,8 @@ main.classList.add('deck-main');
   document.getElementById('deck-grid').addEventListener('click', e => {
     const card = e.target.closest('.deck-card');
     if (!card) return;
+    // cmd/ctrl/shift/middle-click = deja al navegador abrir en pestaña nueva (no interceptes) (#3)
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
     e.preventDefault();
     if (card._busy) return;
     card._busy = true;

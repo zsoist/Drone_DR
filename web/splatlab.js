@@ -16,7 +16,7 @@ main.classList.add('lab-main');
   const title = s => {
     const m = models().find(x => x.clip_id === s.clip_id);
     if (m && m.title) return m.title;
-    const ts = (s.clip_id.split('_')[1] || '');
+    const ts = ((s.clip_id || '').split('_')[1] || '');
     return ts ? `${fmt.date(`${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)}`)} · ${ts.slice(8, 10)}:${ts.slice(10, 12)}` : s.clip_id;
   };
   const editorUrl = s =>
@@ -81,35 +81,37 @@ main.classList.add('lab-main');
 
   // ---- subida del splat editado (botón o drag&drop) ----
   const statusEl = () => document.getElementById('lab-status');
+  // setStatus re-consulta el nodo cada vez (load() re-renderiza las acciones → el span cambia) (#35)
+  const setStatus = t => { const el = statusEl(); if (el) el.textContent = t; };
   async function publish(file) {
-    const s = splats[cur];
+    const s = splats[cur];                                // captura el clip fijo (#34)
     if (!s || !file) return;
-    if (!/\.(ply|splat|ksplat)$/i.test(file.name)) {
-      statusEl().textContent = 'formato no soportado (.ply/.splat/.ksplat)'; return;
-    }
-    statusEl().textContent = `Subiendo ${file.name} (${(file.size / 1e6).toFixed(1)}MB)…`;
+    if (!/\.(ply|splat|ksplat)$/i.test(file.name)) { setStatus('formato no soportado (.ply/.splat/.ksplat)'); return; }
+    setStatus(`Subiendo ${file.name} (${(file.size / 1e6).toFixed(1)}MB)…`);
     try {
       const r = await fetch(`/api/splat_upload?cid=${encodeURIComponent(s.clip_id)}&name=${encodeURIComponent(file.name)}`,
         { method: 'POST', body: file });
       const out = await r.json();
       if (!r.ok || out.error) throw new Error(out.error || r.status);
-      statusEl().textContent = `✓ publicado ${out.published}${out.ksplat ? ' + ' + out.ksplat : ''} · anterior en history/`;
       await load_sys();                                   // manifest fresco
-      cur = Math.max(0, splats.findIndex(x => x.clip_id === s.clip_id));
+      const idx = splats.findIndex(x => x.clip_id === s.clip_id);
+      if (idx >= 0) cur = idx;                            // no forces 0 si no se encuentra (#41)
       load(cur);                                          // editor recarga la versión nueva
+      setStatus(`✓ publicado ${out.published}${out.ksplat ? ' + ' + out.ksplat : ''} · anterior en history/`);  // DESPUÉS de load (#37/#40)
     } catch (err) {
-      statusEl().textContent = `✗ ${String(err.message || err).slice(0, 80)}`;
+      setStatus(`✗ ${String(err.message || err).slice(0, 80)}`);
     }
   }
   fileIn.addEventListener('change', () => { publish(fileIn.files[0]); fileIn.value = ''; });
-  // drag&drop sobre el marco del editor
-  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
-    e.preventDefault(); hint.hidden = false;
-  }));
-  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
-    e.preventDefault(); if (ev === 'drop' && e.dataTransfer?.files[0]) publish(e.dataTransfer.files[0]);
-    hint.hidden = true;
-  }));
+  // drag&drop: contador de profundidad (dragleave dispara al cruzar hijos → parpadeo sin él) (#33/#36/#43)
+  let dragDepth = 0;
+  drop.addEventListener('dragenter', e => { e.preventDefault(); if (dragDepth++ === 0) hint.hidden = false; });
+  drop.addEventListener('dragover', e => e.preventDefault());
+  drop.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; hint.hidden = true; } });
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); dragDepth = 0; hint.hidden = true;
+    if (e.dataTransfer?.files[0]) publish(e.dataTransfer.files[0]);
+  });
 
   // ---- pantalla completa CSS (el Fullscreen API de iOS Safari solo funciona en <video>)
   //      con botón de salida siempre visible + Esc en desktop ----

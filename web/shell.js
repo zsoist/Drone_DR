@@ -190,11 +190,14 @@ async function pollJobs(el, every = 2500) {
     const fl = await getFlights();
     flightsIdx = Object.fromEntries(fl.map(f => [f.clip_id, f]));
   } catch {}
+  let busy = false;
   const paint = async () => {
+    if (busy) return;                                     // guard de overlap: polls lentos no se pisan (#44)
+    busy = true;
     try {
       const res = await fetch('/api/jobs');
       if (res.status === 403) { el.innerHTML = '<p class="footer-note">Inicia sesión para ver trabajos.</p>'; return; }
-      const { jobs } = await res.json();
+      const { jobs = [] } = await res.json();             // respuesta sin jobs → [] (no crash) (#46)
       if (!jobs.length) { el.innerHTML = '<p class="footer-note">Sin trabajos aún.</p>'; return; }
       const active = jobs.filter(j => ['running', 'queued'].includes(j.status));
       const doneRecent = jobs.filter(j => !['running', 'queued'].includes(j.status)).slice(0, 3);
@@ -223,14 +226,19 @@ async function pollJobs(el, every = 2500) {
           node.replaceWith(next);
         });
       }
-    } catch {}
+    } catch {} finally { busy = false; }
   };
   paint();
-  el.addEventListener('click', e => {
-    const c = e.target.closest('[data-cancel]');
-    if (c) api('/api/job_cancel', { id: c.dataset.cancel });
-  });
-  return setInterval(paint, every);
+  if (!el._pollBound) {                                   // listener idempotente (no lo dupliques por llamada) (#47)
+    el._pollBound = true;
+    el.addEventListener('click', e => {
+      const c = e.target.closest('[data-cancel]');
+      if (c) api('/api/job_cancel', { id: c.dataset.cancel }).catch(() => {});   // no unhandled rejection (#68)
+    });
+  }
+  clearInterval(el._pollTimer);                           // no acumules intervalos si se re-llama (#47)
+  el._pollTimer = setInterval(paint, every);
+  return el._pollTimer;
 }
 
 // tema: aplicar ANTES de pintar para evitar flash
@@ -278,10 +286,15 @@ function renderShell(active) {
 }
 
 const fmt = {
-  dur: s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`,
+  // Math.floor en los segundos también (no Math.round) → nunca "0:60"/"1:60"; guard de NaN
+  dur: s => {
+    s = Math.max(0, Math.round(+s || 0));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  },
   km: m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`,
   gb: b => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`,
   date: d => {
+    if (!d || typeof d !== 'string') return '';        // fmt.date(undefined) ya no tumba la página
     const M = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
     const [y, m, day] = d.split('-');
     return `${+day} ${M[+m - 1]} ${y}`;
@@ -292,8 +305,10 @@ const fmt = {
 let _flights = null;
 async function getFlights() {
   if (!_flights) {
-    const r = await fetch(`${DATA}/manifest/flights.json`);
-    _flights = (await r.json()).flights;
+    try {
+      const r = await fetch(`${DATA}/manifest/flights.json`);
+      _flights = (await r.json()).flights || [];        // manifest vacío/malo → [] (no undefined)
+    } catch { return []; }                               // no cachea el fallo: reintentará
   }
   return _flights;
 }

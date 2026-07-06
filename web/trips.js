@@ -36,7 +36,7 @@ main.innerHTML = `
   const clusters = [];
   flights.forEach(f => {
     const h = f.stats?.home;
-    if (!h) return;
+    if (!Array.isArray(h) || h.length < 2) return;   // home malformado no debe tumbar el cluster (#19)
     let c = clusters.find(x => havKm(x.lat, x.lon, h[1], h[0]) < 30);
     if (!c) {
       c = { lat: h[1], lon: h[0], flights: [] };
@@ -166,7 +166,7 @@ main.innerHTML = `
                 <span class="scrub-line"></span>
               </div>
               <div class="body">
-                <div class="t"><span>${esc(f.label) || f.time}</span></div>
+                <div class="t"><span>${esc(f.label || f.time || "")}</span></div>
                 <div class="metrics">
                   <span>${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b></span>
                   <span>${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b></span>

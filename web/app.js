@@ -254,14 +254,19 @@ function renderMap(list) {
     const withBox = flights.filter(f => f.stats?.bbox);
     const bounds = new maplibregl.LngLatBounds();
     withBox.forEach(f => { bounds.extend([f.stats.bbox[0], f.stats.bbox[1]]); bounds.extend([f.stats.bbox[2], f.stats.bbox[3]]); });
-    vmap = new maplibregl.Map({ container: 'vmap', style: SAT_STYLE, bounds,
-                                fitBoundsOptions: { padding: 60 }, attributionControl: { compact: true } });
+    // sin ningún bbox, un LngLatBounds vacío hace throw en el constructor y en fitBounds (#2):
+    // arranca el mapa centrado por defecto y no intenta encuadrar la nada
+    const hasBounds = withBox.length > 0;
+    const opts = { container: 'vmap', style: SAT_STYLE, attributionControl: { compact: true } };
+    if (hasBounds) { opts.bounds = bounds; opts.fitBoundsOptions = { padding: 60 }; }
+    else { opts.center = [-74.08, 4.65]; opts.zoom = 9; }   // Bogotá por defecto
+    vmap = new maplibregl.Map(opts);
     vmap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     new ResizeObserver(() => vmap.resize()).observe(document.getElementById('vmap'));
     document.getElementById('vm-fit').addEventListener('click', () => {
       state.spot = null;
       render();
-      vmap.fitBounds(bounds, { padding: 60, duration: 1200 });
+      if (hasBounds) vmap.fitBounds(bounds, { padding: 60, duration: 1200 });
     });
     vmap.on('load', () => {
       fetch(`${DATA}/manifest/routes.json`).then(r => r.json()).then(({ routes }) => {

@@ -140,7 +140,7 @@ main.innerHTML = `
     return `<div class="act-row">
       <span class="act-dot" style="background:${stc}"></span>
       <span class="act-k">${esc(KINDS[j.kind] || j.kind)}</span>
-      <span class="act-l mono">${esc(j.label.length > 26 ? j.label.slice(-16) : j.label)}</span>
+      <span class="act-l mono">${esc((j.label || j.id || "job").length > 26 ? (j.label || "").slice(-16) : (j.label || j.id || "job"))}</span>
       <span class="spacer" style="flex:1"></span>
       ${j.mins ? `<span class="mono" style="color:var(--text-3);font-size:11px">${j.mins} min</span>` : ''}
       <span class="mono" style="color:var(--text-3);font-size:11px">${Number.isFinite(ts) ? rel(ts) : ''}</span>
