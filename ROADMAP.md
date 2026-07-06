@@ -6,12 +6,12 @@
 - [x] srt_parser.py: SRT → flight.json (1Hz + stats) ✅ 2026-07-05
 - [x] process.py: proxy 1080p VT + thumbs + keyframes ✅ 2026-07-05
 - [x] policy.py: tiers de procesamiento ✅ 2026-07-05 (defaults, umbrales ajustables)
-- [ ] Batch completo de la SD (40 clips)
+- [x] Batch completo de la SD ✅ 2026-07-05 (41 vuelos en flights.json)
 
 ## V1b — Flight Deck web
 - [x] Web app: mapa MapLibre + player sincronizado con ruta GPS ✅ 2026-07-05
 - [x] LIVE: vuelos.metislab.work via Tunnel ($0, sin R2) ✅ 2026-07-05
-- [ ] Galería de vuelos por fecha/lugar
+- [x] Galería de vuelos con filtros por lugar/fecha ✅ 2026-07-05
 
 ## V2 — Detección
 - [ ] YOLO/RF-DETR sobre keyframes (MPS)
@@ -24,7 +24,8 @@
 - [x] ✅ Visores nube/malla/splat + mediciones (distancia/área/volumen/perfil/comparar)
 - [x] ✅ Página pública compartible + exports (GeoTIFF, GeoJSON, PLY, OBJ, SPLAT)
 - [ ] OpenSplat Metal/GPU (CPU estable pero lento; ver 3D_PROCESSING_AUDIT.md)
-- [ ] .ksplat export + COPC/EPT para nubes grandes
+- [x] .ksplat export ✅ 2026-07-05 (make_ksplat.mjs con la lib vendoreada del viewer; worker lo exporta post-quality-gate) · COPC cableado en preset alta (pendiente 1er run)
+- [x] Browser gate: jobs 3d/splat no se marcan done sin QA real en Chrome headless ✅ 2026-07-05
 - [ ] WebODM ortomosaico (fotos JPG/DNG) — ya no necesario, ODM directo lo cubre
 - [ ] Gaussian splatting MLX de un vuelo orbital (experimental)
 

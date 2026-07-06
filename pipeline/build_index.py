@@ -10,6 +10,26 @@ def dir_size(p: Path) -> int:
     return sum(f.stat().st_size for f in p.rglob("*") if f.is_file()) if p.exists() else 0
 
 
+# el mismo clip puede tener .ksplat (optimizado) y .splat (fuente): UNA entrada por clip,
+# el mejor formato gana — así el conteo de la UI no se infla al exportar .ksplat
+SPLAT_PRIORITY = {".ksplat": 0, ".splat": 1, ".ply": 2}
+
+
+def best_splats(splat_dir: Path) -> list:
+    if not splat_dir.exists():
+        return []
+    by_clip = {}
+    for p in sorted(splat_dir.glob("*")):
+        if not (p.is_file() and p.suffix.lower() in SPLAT_PRIORITY):
+            continue
+        cur = by_clip.get(p.stem)
+        if cur is None or SPLAT_PRIORITY[p.suffix.lower()] < SPLAT_PRIORITY[cur.suffix.lower()]:
+            by_clip[p.stem] = p
+    return [{"name": p.name, "bytes": p.stat().st_size,
+             "format": p.suffix.lower().lstrip("."), "clip_id": p.stem}
+            for p in sorted(by_clip.values())]
+
+
 def main():
     flights = []
     routes = []
@@ -60,12 +80,7 @@ def main():
                   for p in sorted((VAULT / "reels").glob("*.mp4"))] if (VAULT / "reels").exists() else [],
         "photos": [{"name": p.name, "bytes": p.stat().st_size}
                    for p in sorted((VAULT / "photos").glob("*.jpg"), reverse=True)] if (VAULT / "photos").exists() else [],
-        "splats": [{"name": p.name, "bytes": p.stat().st_size,
-                    "format": p.suffix.lower().lstrip("."),
-                    "clip_id": p.stem}
-                   for p in sorted((VAULT / "splats").glob("*"))
-                   if p.is_file() and p.suffix.lower() in (".splat", ".ksplat", ".ply")]
-                  if (VAULT / "splats").exists() else [],
+        "splats": best_splats(VAULT / "splats"),
         "last_ingest": {"files": last["file_count"], "bytes": last["total_bytes"],
                         "at": last["ingested_at"]} if last else None,
         "models": [json.loads((d / "meta.json").read_text())

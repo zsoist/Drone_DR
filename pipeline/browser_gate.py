@@ -71,20 +71,28 @@ class WS:
         head += mask
         self.sock.sendall(bytes(head) + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
 
+    def _read_exact(self, n: int) -> bytes:
+        # recv() puede devolver menos bytes de los pedidos: leer exacto o fallar claro
+        data = bytearray()
+        while len(data) < n:
+            chunk = self.sock.recv(n - len(data))
+            if not chunk:
+                raise RuntimeError("websocket cerrado a mitad de frame")
+            data.extend(chunk)
+        return bytes(data)
+
     def recv_json(self, timeout=10) -> dict:
         self.sock.settimeout(timeout)
-        b1, b2 = self.sock.recv(2)
+        b1, b2 = self._read_exact(2)
         opcode = b1 & 0x0F
         n = b2 & 0x7F
         if n == 126:
-            n = struct.unpack("!H", self.sock.recv(2))[0]
+            n = struct.unpack("!H", self._read_exact(2))[0]
         elif n == 127:
-            n = struct.unpack("!Q", self.sock.recv(8))[0]
+            n = struct.unpack("!Q", self._read_exact(8))[0]
         masked = b2 & 0x80
-        mask = self.sock.recv(4) if masked else b""
-        data = bytearray()
-        while len(data) < n:
-            data.extend(self.sock.recv(n - len(data)))
+        mask = self._read_exact(4) if masked else b""
+        data = bytearray(self._read_exact(n))
         if masked:
             data = bytearray(b ^ mask[i % 4] for i, b in enumerate(data))
         if opcode == 8:
@@ -196,7 +204,10 @@ def gate(kind: str, cid: str, base_url: str, timeout: int) -> Path:
         deadline = time.time() + timeout
         while time.time() < deadline:
             cdp.pump(0.5)
-            body = cdp.eval("document.body.innerText")
+            try:
+                body = cdp.eval("document.body.innerText") or ""
+            except RuntimeError:
+                continue   # navegación en vuelo: "Execution context was destroyed" no es fallo
             body_l = body.lower()
             if "visor 3d" in body_l or "este modelo no existe" in body_l:
                 break

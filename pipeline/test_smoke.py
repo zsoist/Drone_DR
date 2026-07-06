@@ -372,12 +372,15 @@ try:
     (_bi_tmp / "splats" / "A.ksplat").write_bytes(b"2")
     (_bi_tmp / "splats" / "A.meta.json").write_bytes(b"{}")
     (_bi_tmp / "splats" / "A.cameras.json").write_bytes(b"{}")
+    (_bi_tmp / "splats" / "B.ply").write_bytes(b"3")
     _bi.main()
     _sys = json.loads((_bi_tmp / "manifest" / "system.json").read_text())
-    check("system: splats lista sólo assets visualizables",
-          [s["name"] for s in _sys["splats"]] == ["A.ksplat", "A.splat"])
+    # contrato: UNA entrada por clip, gana el mejor formato (.ksplat > .splat > .ply);
+    # sidecars (.meta.json/.cameras.json) nunca cuentan como splats
+    check("system: splats dedupe por clip, mejor formato gana",
+          [s["name"] for s in _sys["splats"]] == ["A.ksplat", "B.ply"])
     check("system: splats declaran clip_id + formato",
-          [(s["clip_id"], s["format"]) for s in _sys["splats"]] == [("A", "ksplat"), ("A", "splat")])
+          [(s["clip_id"], s["format"]) for s in _sys["splats"]] == [("A", "ksplat"), ("B", "ply")])
 finally:
     _bi.VAULT = _old_bi_vault
 

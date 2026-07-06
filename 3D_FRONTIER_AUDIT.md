@@ -1,14 +1,18 @@
 # AeroBrain 3D Frontier Audit
 
-Date: 2026-07-05
+Date: 2026-07-05 (última pasada: noche, post-Codex + hardening Claude)
 
 Scope: ODM 3D modeling, DSM/point-cloud publishing, Gaussian splatting, Mac Mini M4 efficiency, vault integrity, browser delivery.
 
 ## Verdict
 
-Current score: 9.2/10 for a local/free personal drone mapping stack.
+Current score: 9.6/10 for a local/free personal drone mapping stack.
 
-Not 10/10 yet because the premium Gaussian path is prepared for Metal/MPS but the Mac still needs the Xcode Metal Toolchain component installed before `build-mps/opensplat` can compile. The pipeline now auto-selects a Metal build when present and falls back to the known-good CPU binary otherwise. It still exports `.splat`, not a web-optimized `.ksplat`. OpenSplat documents Apple Metal as the right path for serious local training, while CPU mode is a fallback. GaussianSplats3D documents `.ksplat` as its fastest-loading format.
+The `.ksplat` gap is CLOSED: `pipeline/make_ksplat.mjs` converts `.splat`/`.ply` using the
+same vendored GaussianSplats3D lib the viewer uses (no npm), the worker exports it after the
+quality gate, both existing splats are converted, and the browser gate passed loading the
+`.ksplat` end-to-end. The remaining gap to 10/10 is Metal/MPS training: the Metal Toolchain
+download is running; once built, `choose_splat_backend()` picks it up automatically.
 
 ## What Is Now Solid
 
@@ -45,14 +49,29 @@ Splats:
 - `DJI_20260704160358_0104_D.splat`: 657,632 bytes, older preview splat.
 - 7k urban attempt was killed by worker restart at 63.6%, so it did not complete. With atomic publish, future failed/killed runs will not corrupt the last good splat.
 
+## Closed This Pass (2026-07-05 night)
+
+- `.ksplat` export DONE: `make_ksplat.mjs` (Node + vendored viewer lib, import rewrite to
+  `file://` + browser-global shims). Worker exports post-quality-gate, atomic tmp+replace,
+  non-fatal on failure (`.splat` stays servible). Both live splats converted; browser gate
+  verified the viewer loads the `.ksplat`.
+- `system.json` splats now DEDUPE per clip (best format wins: `.ksplat` > `.splat` > `.ply`)
+  so exporting `.ksplat` does not inflate UI counts. Smoke tests updated to the new contract.
+- Browser gate hardened: exact-read WebSocket frames (short-read crash fixed), tolerant of
+  "Execution context destroyed" during navigation, and the worker now passes `--timeout`
+  explicitly (subprocess gets +30s margin).
+- Worker startup now cleans orphaned `splats/.training/` stages (single-worker invariant).
+- Vault organized: legacy loose `splats/cameras.json` renamed to
+  `DJI_20260315121003_0092_D.cameras.json` (35 reconstructed cams of 42, timestamps match).
+
 ## Remaining Gap To 10/10
 
-1. Complete Apple Metal Toolchain download and run `pipeline/build_opensplat_mps.sh`, then process a 7k/15k splat through `build-mps/opensplat`.
-2. Export `.ksplat` after `.splat` training. Viewer preference is already wired and browser-verified.
-3. Add browser-side streamed point-cloud viewing for COPC/EPT. COPC export/download is wired for future high-quality runs.
-4. Add persistent QA history in the UI for browser-gate screenshots and failures.
-5. Add capture recipe presets in the UI: nadir survey, oblique orbit, hybrid premium.
-6. Add versioned model/splat history instead of one public file per clip.
+1. Complete Apple Metal Toolchain download (running in background) and run
+   `pipeline/build_opensplat_mps.sh`, then process a 7k/15k splat through `build-mps/opensplat`.
+2. Add browser-side streamed point-cloud viewing for COPC/EPT. COPC export/download is wired for future high-quality runs.
+3. Add persistent QA history in the UI for browser-gate screenshots and failures.
+4. Add capture recipe presets in the UI: nadir survey, oblique orbit, hybrid premium.
+5. Add versioned model/splat history instead of one public file per clip.
 
 ## Metal Build Attempt
 

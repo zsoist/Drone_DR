@@ -36,6 +36,8 @@ como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9G
 | `ai/router.py` | Lanes multi-LLM: Gemini (vision) · DeepSeek (texto) · OpenAI (fallback) |
 | `ai/analyze.py` | Keyframes → resumen, tags, highlights, travel_score (~$0.002/clip) |
 | `ai/reel.py` | Auto-editor: top highlights → reel 1080p o 9:16 vertical |
+| `pipeline/browser_gate.py` | QA real en Chrome headless (CDP stdlib) antes de dar un job 3D por done |
+| `pipeline/make_ksplat.mjs` | .splat/.ply → .ksplat con la lib vendoreada del viewer (sin npm) |
 | `web/` | Flight Deck: galería + mapa MapLibre/Esri sincronizado al video |
 
 ## Operación
@@ -55,8 +57,9 @@ V1 ✅ pipeline + Flight Deck live · V3 ✅ SHIPPED: fotogrametría ODM complet
 (worker desacoplado + cola SQLite, presets rápido/estándar/alta, DSM + curvas +
 mediciones de volumen/perfil/comparación multi-fecha, ortos feathered WebP,
 malla re-centrada para viewer, página pública /share.html, gzip sidecars) +
-gaussian splats (OpenSplat CPU estable tras fix de divergencia SH; Metal/GPU
-pendiente para calidad cinemática) · V2 detección YOLO/open-vocab pendiente ·
+gaussian splats (OpenSplat CPU estable tras fix de divergencia SH; publish atómico,
+.ksplat export para carga rápida, browser-gate en Chrome headless antes de marcar done;
+Metal/GPU en camino para calidad cinemática) · V2 detección YOLO/open-vocab pendiente ·
 V4 travel mode + diarios AI · V5 watcher autónomo (SD in → todo solo).
 
 ---

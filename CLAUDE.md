@@ -30,3 +30,10 @@
   NO los mata (probado en vivo). Restart del WORKER mata sus procesos huérfanos
   antes de re-reclamar (fix de codex).
 - (2026-07-05) NUNCA `launchctl kickstart -k com.aerobrain.worker` sin revisar `/api/jobs` antes: mató un splat 7k al 63% (3.8h de CPU). El jobstore marca huérfanos como error al reiniciar el worker. drawtext/HAS_DRAWTEXT solo requiere reiniciar com.aerobrain.web (run_edit vive en el server, no en el worker). Usar pipeline/safe_restart.sh.
+- GaussianSplats3D vendoreado importa "/vendor/three.module.js" (URL de navegador): para
+  usarlo en Node (make_ksplat.mjs) reescribe ese import a file:// en una copia temporal y
+  shimea window/self/document/navigator ANTES del import. Sin npm.
+- var(--x) NO resuelve en ATRIBUTOS de presentación SVG en WebKit (fill="var(--x)" cae a
+  negro en iPhone/iPad). Colores temeables de SVG inline SIEMPRE por clase CSS.
+- xcodebuild -downloadComponent MetalToolchain corre como usuario normal (sin sudo);
+  ~688MB — lanzarlo en background y dejar que termine, no cancelarlo por lento.

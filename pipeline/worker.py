@@ -36,9 +36,32 @@ def rebuild_index():
 
 def browser_gate(jid: str, kind: str, cid: str, timeout: int = 75):
     jobstore.update(jid, detail=f"verificando {kind} en navegador", stage="browser-qa", progress=0.97)
-    if jobstore.run_tracked(jid, ["python3", str(PIPE / "browser_gate.py"), kind, cid],
-                            timeout=timeout) != 0:
+    # el timeout del gate (página) va explícito; el del subprocess deja margen para Chrome
+    if jobstore.run_tracked(jid, ["python3", str(PIPE / "browser_gate.py"), kind, cid,
+                                  "--timeout", str(timeout)],
+                            timeout=timeout + 30) != 0:
         raise RuntimeError(f"browser gate falló para {kind} {cid}")
+
+
+def export_ksplat(splat_path: Path) -> Path | None:
+    """Exporta <cid>.ksplat junto al .splat publicado (carga más rápida en el viewer).
+
+    No fatal: si node o la conversión fallan, el .splat sigue siendo el asset servible.
+    Escritura atómica (tmp + os.replace) para que el viewer nunca vea un .ksplat a medias.
+    """
+    out = splat_path.with_suffix(".ksplat")
+    tmp = splat_path.with_suffix(".ksplat.tmp")
+    try:
+        r = subprocess.run(["node", str(PIPE / "make_ksplat.mjs"), str(splat_path), str(tmp)],
+                           capture_output=True, text=True, timeout=600)
+        if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size < 1024:
+            raise RuntimeError((r.stderr or r.stdout or "sin salida")[-200:])
+        os.replace(tmp, out)
+        return out
+    except Exception as e:
+        tmp.unlink(missing_ok=True)
+        print(f"  ksplat export falló (no fatal): {e}", flush=True)
+        return None
 
 
 def _cancelled(jid: str) -> bool:
@@ -221,6 +244,8 @@ def run_splat(j: dict):
     if not quality["passed"]:
         raise RuntimeError(quality["reason"])
     final_out = publish_splat_stage(stage, cid, quality, splat_dir)
+    jobstore.update(j["id"], detail="exportando .ksplat optimizado para el viewer", progress=0.94)
+    export_ksplat(final_out)
     rebuild_index()
     browser_gate(j["id"], "splat", cid, timeout=90)
     jobstore.update(j["id"], progress=1.0)
@@ -235,6 +260,13 @@ RUNNERS = {"3d": run_3d, "splat": run_splat}
 def main():
     # al arrancar, SOLO los heavy jobs (de este dueño) que quedaron running son huérfanos
     jobstore.init(orphan_kinds=jobstore.HEAVY_KINDS)
+    # el worker es único: al arrancar no hay entrenamientos vivos, así que cualquier
+    # stage de .training/ es de un job muerto — límpialo para no acumular GBs huérfanos
+    training = VAULT / "splats" / ".training"
+    if training.exists():
+        for d in training.iterdir():
+            shutil.rmtree(d, ignore_errors=True)
+            print(f"limpiado stage huérfano: {d.name}", flush=True)
     print(f"worker listo · poll {POLL_S}s · kinds {jobstore.HEAVY_KINDS}", flush=True)
     while True:
         j = jobstore.claim(jobstore.HEAVY_KINDS)
