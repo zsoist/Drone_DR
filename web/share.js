@@ -203,7 +203,7 @@ function fitSplatViewer(viewer) {
   viewer.camera.updateProjectionMatrix();
   if (viewer.controls) {
     viewer.controls.target.copy(center);
-    viewer.controls.minDistance = radius * 0.02;  // deja acercarse MUCHO (antes 0.55× = bloqueado)
+    viewer.controls.minDistance = radius * 0.2;   // afuera del volumen del splat (0.02 metía la cámara adentro)
     viewer.controls.maxDistance = radius * 14;
     viewer.controls.update();
   }
@@ -238,8 +238,8 @@ const loaders = {
     const HIRES_OK = !matchMedia('(pointer: coarse)').matches && window.innerWidth >= 900;
     const prFor = tier => {
       const dpr = devicePixelRatio || 1;
-      if (tier === 'ultra') return Math.min(3, dpr + 1);       // SSAA por encima del nativo
-      if (tier === 'extra') return Math.min(2.5, dpr + 0.5);
+      if (tier === 'ultra') return Math.min(2.5, dpr + 0.75);   // SSAA capado (pr3+MSAA = framebuffer enorme, redundante) (#11)       // SSAA por encima del nativo
+      if (tier === 'extra') return Math.min(2.25, dpr + 0.4);
       return Math.min(dpr, TIERS[tier].pr);
     };
     const tierMaterials = async (tier, fallback = false) => {
@@ -286,6 +286,7 @@ const loaders = {
       renderer.setPixelRatio(prFor(tier));
       curTier = tier;
       view._wake?.();
+      setTimeout(() => view._wake?.(), 900);                  // re-arma por upload GPU lento de tier grande (#7)
       return true;
     }
     obj.rotation.x = -Math.PI / 2;
@@ -344,8 +345,9 @@ const loaders = {
       ]);
     } catch (err) {
       try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}   // no dejar workers vivos (#17)
-      if (view._splatViewer === viewer) view._splatViewer = null;
-      throw err;                                    // el .catch del dispatcher pinta el error
+      if (view._splatViewer !== viewer) return;     // superado por otro load: no pintes error falso (#1)
+      view._splatViewer = null;
+      throw err;                                    // el .catch del dispatcher pinta el error real
     }
     // guarda de currency: si el tab cambió durante la carga, este viewer ya no manda
     if (view._splatViewer !== viewer || !holder.isConnected) {

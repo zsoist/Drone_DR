@@ -45,11 +45,11 @@ def browser_gate(jid: str, kind: str, cid: str, timeout: int = 75):
 
 def crop_floaters(splat_path: Path) -> bool:
     """Quita los floaters outlier del .splat (halo de baja confianza en los bordes de splats
-    aéreos; el alpha-removal del viewer NO los toca). Percentil 90 + factor 1.05 = corta el
-    ~6-7% exterior conservando toda la escena. In-place, atómico, no fatal."""
+    aéreos; el alpha-removal del viewer NO los toca). Caja por-eje (P2..P98 × 1.06) = corta el
+    ~6% exterior respetando footprints cuadrados/corredor. In-place, atómico, no fatal."""
     tmp = splat_path.with_suffix(".crop.tmp")
     try:
-        r = subprocess.run(["node", str(PIPE / "crop_splat.mjs"), str(splat_path), str(tmp), "0.90", "1.05"],
+        r = subprocess.run(["node", str(PIPE / "crop_splat.mjs"), str(splat_path), str(tmp), "0.02", "1.06"],
                            capture_output=True, text=True, timeout=300)
         if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size < splat_path.stat().st_size * 0.5:
             raise RuntimeError((r.stderr or r.stdout or "sin salida")[-200:])
@@ -135,6 +135,10 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
     tmp_meta.write_text(json.dumps(quality, indent=1))
     os.replace(tmp_out, final_out)
     os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
+    # borra el .ksplat/.ply VIEJO: si el export nuevo falla (no fatal), best_splats prefiere el
+    # .ksplat y serviría el modelo ANTERIOR (el gate pasaría sobre contenido stale) — #4/#8/#9
+    for stale in (splat_dir / f"{cid}.ksplat", splat_dir / f"{cid}.ply"):
+        stale.unlink(missing_ok=True)
     cam = stage / "cameras.json"
     if cam.exists():
         os.replace(cam, splat_dir / f"{cid}.cameras.json")

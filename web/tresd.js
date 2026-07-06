@@ -695,7 +695,7 @@
     viewer.camera.updateProjectionMatrix();
     if (viewer.controls) {
       viewer.controls.target.copy(center);
-      viewer.controls.minDistance = radius * 0.02;  // acercarse MUCHO (antes 0.55× = bloqueado)
+      viewer.controls.minDistance = radius * 0.2;   // afuera del volumen (0.02 = cámara adentro)
       viewer.controls.maxDistance = radius * 14;
       viewer.controls.update();
     }
@@ -764,8 +764,8 @@
   // el GPU del M4); bajo/alto no exceden el nativo para no malgastar en equipos flojos.
   const prFor = tier => {
     const dpr = devicePixelRatio || 1;
-    if (tier === 'ultra') return Math.min(3, dpr + 1);
-    if (tier === 'extra') return Math.min(2.5, dpr + 0.5);
+    if (tier === 'ultra') return Math.min(2.5, dpr + 0.75);   // SSAA capado (pr3+MSAA = framebuffer enorme, redundante) (#11)
+    if (tier === 'extra') return Math.min(2.25, dpr + 0.4);
     return Math.min(dpr, TIERS[tier].pr);
   };
   // carga directa del .mtl del tier (sin HEAD: evita TOCTOU + ahorra un request). fallback=true
@@ -798,15 +798,23 @@
     const swatches = [];
     obj.traverse(n => {
       if (!n.isMesh) return;
-      n.geometry.computeVertexNormals();
+      // normales NO se computan aquí: solo 'Relieve' (Lambert, con luz) las usa; el default
+      // 'Foto' (Basic, unlit) no. Se calculan perezosamente al primer switch a Relieve (#18)
       const src = Array.isArray(n.material) ? n.material : [n.material];
       src.forEach(m => { if (m.map) { m.map.anisotropy = maxAniso; m.map.needsUpdate = true; } });
       const mk = C => src.map(m => new C({ map: m.map || null, color: m.map ? 0xffffff : 0x8a97a8, side: THREE.DoubleSide }));
       swatches.push({ mesh: n, names: src.map(m => m.name), foto: mk(THREE.MeshBasicMaterial), relieve: mk(THREE.MeshLambertMaterial) });
       n.material = swatches[swatches.length - 1].foto.length === 1 ? swatches[swatches.length - 1].foto[0] : swatches[swatches.length - 1].foto;
     });
-    let renderMode = 'foto';
-    const applyMode = () => { swatches.forEach(s => { s.mesh.material = s[renderMode].length === 1 ? s[renderMode][0] : s[renderMode]; }); box._wake?.(); };
+    let renderMode = 'foto', normalsReady = false;
+    const applyMode = () => {
+      if (renderMode === 'relieve' && !normalsReady) {       // computa normales una sola vez, al pedirse
+        normalsReady = true;
+        swatches.forEach(s => s.mesh.geometry.computeVertexNormals());
+      }
+      swatches.forEach(s => { s.mesh.material = s[renderMode].length === 1 ? s[renderMode][0] : s[renderMode]; });
+      box._wake?.();
+    };
     async function switchTier(tier) {
       if (tier === curTier) return false;
       let mc;
@@ -825,6 +833,7 @@
       renderer.setPixelRatio(prFor(tier));                    // supersampling por tier (Metal)
       curTier = tier;
       box._wake?.();                                          // redibuja con las texturas nuevas
+      setTimeout(() => box._wake?.(), 900);                   // re-arma: el upload GPU de un tier grande puede exceder 1.5s (#7)
       return true;
     }
     obj.rotation.x = -Math.PI / 2;
@@ -896,6 +905,7 @@
       if (ev.target.dataset.h === 'size') mat.size = v / 100;
       if (ev.target.dataset.h === 'lo') yLo.constant = -(bb.min.y + span * v / 100);
       if (ev.target.dataset.h === 'hi') yHi.constant = bb.min.y + span * v / 100;
+      box._wake?.();                                          // on-demand: redibuja el cambio (#6)
     });
     // modos de color: RGB real o rampas por altura (elevación / térmico / gris)
     const RAMPS = {
@@ -912,6 +922,7 @@
       let arr = geo.getAttribute('color');
       if (bt.dataset.cm === 'rgb') {
         if (arr && origCol) { arr.array.set(origCol); arr.needsUpdate = true; }
+        box._wake?.();
         return;
       }
       const pos = geo.getAttribute('position');
@@ -936,6 +947,7 @@
           (R[k][2] + (R[k + 1][2] - R[k][2]) * f) / 255 * mx);
       }
       arr.needsUpdate = true;
+      box._wake?.();                                          // redibuja el nuevo color (#6/#17)
     });
   });
 
