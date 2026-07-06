@@ -435,6 +435,7 @@
     const sbox = document.getElementById('splat-box');
     // dispose() del visor de splat es ASYNC y el vendored lanza NotFoundError (removeChild
     // sobre un rootElement anidado) → hay que silenciar el rechazo del promise, no basta try/catch
+    sbox._loadToken = (sbox._loadToken || 0) + 1;   // invalida cualquier mount en vuelo (evita 2 viewers)
     if (sbox._splatDispose) { const d = sbox._splatDispose; sbox._splatDispose = null; sbox._viewer = null; try { d(); } catch {} }
     else if (sbox._viewer) { try { const p = sbox._viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {} sbox._viewer = null; }
     sbox._loading = false;
@@ -1058,8 +1059,13 @@
       delBtn.disabled = true;
       const r = await api('/api/splat_delete', { clip_id: scid });
       if (r.error) { delBtn.disabled = false; return alert(r.error); }
+      // saca el splat del estado del cliente: si no, splatAssetFor lo sigue viendo y RESUCITA
+      // (botón "Cargar" reaparece, apunta a un archivo ya en la papelera → 404) al reabrir el proyecto
+      if (sys.splats) sys.splats = sys.splats.filter(s => s.name.replace(SPLAT_EXT, '') !== scid);
       const box = document.getElementById('splat-box');
-      if (box && box._pcid === scid && box._splatDispose) { try { box._splatDispose(); } catch {} box._splatDispose = null; box._viewer = null; }
+      if (box && box._pcid === scid && box._splatDispose) { try { box._splatDispose(); } catch {} box._splatDispose = null; box._viewer = null; box._pcid = null; }
+      // si el proyecto borrado está abierto, refresca su panel de splat (oculta "Cargar")
+      if (cur && cur.clip_id === scid) setProject(scid);
       delBtn.closest('.splat-item')?.remove();
     }
   });
@@ -1072,6 +1078,7 @@
     const box = document.getElementById('splat-box');
     if (box._loading) return;                     // re-entrada: un solo load a la vez (#3)
     box._loading = true;
+    const myToken = (box._loadToken = (box._loadToken || 0) + 1);   // currency: gana el último
     // visor anterior fuera ANTES de crear otro (dispose premium del módulo si lo hay)
     if (box._splatDispose) { const d = box._splatDispose; box._splatDispose = null; box._viewer = null; try { d(); } catch {} }
     else if (box._viewer) { const v = box._viewer; box._viewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
@@ -1084,11 +1091,15 @@
       handle = await mountSplatViewer(box, `data/splats/${name}`,
         { bytes: asset.bytes, onStatus: t => { if (st) st.textContent = t; } });
     } catch (err) {
-      box._loading = false;
-      const el = box.querySelector('.splat-load');
-      if (el) el.innerHTML = `<p class="footer-note">No se pudo cargar ${esc(name)} · ${esc(String(err && err.message || err).slice(0, 90))}</p>`;
+      if (box._loadToken === myToken) {
+        box._loading = false;
+        const el = box.querySelector('.splat-load');
+        if (el) el.innerHTML = `<p class="footer-note">No se pudo cargar ${esc(name)} · ${esc(String(err && err.message || err).slice(0, 90))}</p>`;
+      }
       return;
     }
+    // otro load (o un setProject) arrancó mientras descargábamos → este visor es obsoleto: tíralo
+    if (box._loadToken !== myToken) { try { handle.dispose(); } catch {} return; }
     box._loading = false;
     box._viewer = handle.viewer;
     box._splatDispose = handle.dispose;           // dispose premium (HUD + listeners + viewer)

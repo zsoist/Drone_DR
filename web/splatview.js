@@ -32,22 +32,42 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     halfPrecisionCovariancesOnGPU: true, showLoadingUI: false,
     sceneRevealMode: GS.SceneRevealMode.Instant,
     splatRenderMode: GS.SplatRenderMode.ThreeD,
+    // renderMode Always (default): OnChange congela autoRotate/damping/focus (el loop deja de
+    // llamar controls.update()). La batería en móvil se cuida pausando el loop cuando la pestaña
+    // se oculta (visibilitychange, abajo) — cubre el caso "abrió el share y lo dejó de fondo".
     cameraUp: [0, 1, 0], initialCameraPosition: [0, 5, 4], initialCameraLookAt: [0, 0, 0],
   });
 
   const tmoMs = Math.min(120000, 45000 + Math.round((bytes || 0) / 1048576) * 3000);
-  await Promise.race([
-    viewer.addSplatScene(splatUrl, {
-      progressiveLoad: false, showLoadingUI: false, splatAlphaRemovalThreshold: 60,
-      rotation: SPLAT_ROT, onProgress: p => onStatus?.(`Splat · ${Math.round(p)}%`),
-    }),
-    new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs)),
-  ]);
+  let tmoId = 0;
+  try {
+    await Promise.race([
+      viewer.addSplatScene(splatUrl, {
+        progressiveLoad: false, showLoadingUI: false, splatAlphaRemovalThreshold: 60,
+        rotation: SPLAT_ROT, onProgress: p => onStatus?.(`Splat · ${Math.round(p)}%`),
+      }),
+      new Promise((_, rej) => { tmoId = setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs); }),
+    ]);
+  } catch (err) {
+    // el viewer YA existe (contexto WebGL + workers WASM): si no lo desechamos aquí, el caller
+    // recibe la excepción sin `handle`, nunca llama dispose() y el visor queda huérfano (fuga
+    // de contexto GPU; el navegador limita ~16 y el visor deja de renderizar tras varios timeouts).
+    clearTimeout(tmoId);
+    try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}
+    holder.remove();
+    throw err;
+  }
+  clearTimeout(tmoId);   // éxito: cancela el timer pendiente (si no, dispara un reject no-op tardío)
 
   const THREEV = THREE;
   const mesh = viewer.splatMesh;
   const center = (mesh?.calculatedSceneCenter && mesh.calculatedSceneCenter.clone()) || new THREEV.Vector3();
-  const radius = Math.max(mesh?.maxSplatDistanceFromSceneCenter || mesh?.visibleRegionRadius || 1, 0.5);
+  // guarda contra Infinity (splat con posiciones no acotadas): 'NaN || x' cae al fallback pero
+  // 'Infinity || x' es truthy → near/far/minDistance=Infinity → proyección degenerada, visor negro.
+  const rawR = mesh?.maxSplatDistanceFromSceneCenter;
+  const rawR2 = mesh?.visibleRegionRadius;
+  const radius = Math.max(
+    Number.isFinite(rawR) ? rawR : (Number.isFinite(rawR2) ? rawR2 : 1), 0.5);
   const cam = viewer.camera, ctrl = viewer.controls;
   const homeState = {};
 
@@ -87,6 +107,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
       vctrl.target.lerpVectors(sT, toTarget, e);
       vcam.position.lerpVectors(sP, toPos, e);
       vctrl.update();
+      viewer.forceRenderNextFrame?.();          // OnChange: garantiza que la animación de focus se dibuje
       if (k < 1) anim = requestAnimationFrame(step);
       else if (toMin != null) vctrl.minDistance = toMin;
     })();
@@ -115,11 +136,18 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   }
   // el canvas del viewer captura los pointer events de sus controles; escuchamos en el HOST
   // en fase de captura (baja top-down antes que nada) para no depender del bubbling
-  host.addEventListener('dblclick', e => {
-    if (!holder.contains(e.target) && e.target !== holder) return;   // solo dentro del visor
-    e.preventDefault(); e.stopPropagation();
-    focusAt(e.clientX, e.clientY);
-  }, true);
+  const inViewer = e => holder.contains(e.target) || e.target === holder;   // solo dentro del visor
+  const onDbl = e => { if (!inViewer(e)) return; e.preventDefault(); e.stopPropagation(); focusAt(e.clientX, e.clientY); };
+  host.addEventListener('dblclick', onDbl, true);
+  // TÁCTIL: dblclick es poco fiable en móvil/iPad → detector propio de doble-tap sobre pointerup
+  let lastTap = 0, lastTX = 0, lastTY = 0;
+  const onPtrUp = e => {
+    if (e.pointerType === 'mouse' || !inViewer(e)) return;
+    if (e.timeStamp - lastTap < 320 && Math.abs(e.clientX - lastTX) < 32 && Math.abs(e.clientY - lastTY) < 32) {
+      lastTap = 0; focusAt(e.clientX, e.clientY);
+    } else { lastTap = e.timeStamp; lastTX = e.clientX; lastTY = e.clientY; }
+  };
+  host.addEventListener('pointerup', onPtrUp, true);
 
   // ---- HUD premium ----
   const hud = document.createElement('div');
@@ -137,12 +165,18 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   host.appendChild(hud);
   const tip = document.createElement('div');
   tip.className = 'sv-tip';
-  tip.textContent = 'Doble-click en un edificio para acercarte · arrastra = orbitar · rueda = zoom · click-derecho = mover';
+  const coarse = matchMedia('(hover: none), (pointer: coarse)').matches;
+  tip.textContent = coarse
+    ? 'Doble-toca un edificio para acercarte · arrastra = orbitar · pellizca = zoom · 2 dedos = desplazar'
+    : 'Doble-click en un edificio para acercarte · arrastra = orbitar · rueda = zoom · click-derecho = mover';
   host.appendChild(tip);
   setTimeout(() => tip.classList.add('fade'), 4200);
 
   function svg(p) { return `<svg viewBox="0 0 24 24">${p}</svg>`; }
 
+  // fuerza un frame: en renderMode OnChange, cambiar FOV/brillo/tamaño no mueve la cámara y
+  // no re-dibujaría solo. forceRenderNextFrame() de la lib pinta el siguiente frame.
+  const kick = () => { try { viewer.forceRenderNextFrame?.(); } catch {} };
   // brillo/exposición del render (si el renderer lo soporta)
   const setExposure = v => { try { if (viewer.renderer) { viewer.renderer.toneMappingExposure = v; } } catch {} };
   // tamaño de splat (uniform del mesh, si existe)
@@ -151,32 +185,60 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   hud.addEventListener('click', e => {
     const b = e.target.closest('[data-sv]'); if (!b) return;
     const k = b.dataset.sv;
-    if (k === 'home') { ctrl.minDistance = radius * 0.2; animateTo(homeState.target, homeState.pos, radius * 0.2); cam.fov = homeState.fov; cam.updateProjectionMatrix(); }
-    else if (k === 'rot') { ctrl.autoRotate = !ctrl.autoRotate; ctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', ctrl.autoRotate); }
+    const vcam = viewer.camera, vctrl = viewer.controls;   // refs frescas: el viewer intercambia cámara tras montar
+    if (k === 'home') {
+      vctrl.minDistance = radius * 0.2;
+      animateTo(homeState.target, homeState.pos, radius * 0.2);
+      vcam.fov = homeState.fov; vcam.updateProjectionMatrix();
+      const fovIn = hud.querySelector('[data-sv="fov"]'); if (fovIn) fovIn.value = Math.round(homeState.fov);  // re-sincroniza el slider
+      kick();
+    }
+    else if (k === 'rot') { vctrl.autoRotate = !vctrl.autoRotate; vctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', vctrl.autoRotate); kick(); }
     else if (k === 'shot') screenshot();
     else if (k === 'full') toggleFull();
   });
   hud.addEventListener('input', e => {
     const k = e.target.dataset.sv, v = +e.target.value;
-    if (k === 'fov') { cam.fov = v; cam.updateProjectionMatrix(); }
+    const vcam = viewer.camera;
+    if (k === 'fov') { vcam.fov = v; vcam.updateProjectionMatrix(); }
     else if (k === 'exp') setExposure(v / 100);
     else if (k === 'scale') setScale(v / 100);
+    kick();
   });
 
   function screenshot() {
     try {
+      // frame SÍNCRONO justo antes de leer: el renderer vendido no usa preserveDrawingBuffer,
+      // así que fuera del instante posterior a un draw el buffer sale negro. update()+render()
+      // deja píxeles frescos que toDataURL sí captura en el mismo tick.
+      try { viewer.update?.(); viewer.render?.(); } catch {}
       const cv = holder.querySelector('canvas');
       const url = cv.toDataURL('image/png');
       const a = document.createElement('a');
       a.href = url; a.download = 'splat.png'; a.click();
     } catch { onStatus?.('captura no disponible en este navegador'); }
   }
-  function toggleFull() {
-    host.classList.toggle('sv-fullscreen');
-    document.documentElement.classList.toggle('sv-noscroll', host.classList.contains('sv-fullscreen'));
-    setTimeout(() => { try { viewer.renderer && viewer.getRenderDimensions(new THREEV.Vector2()); } catch {} }, 60);
+  function setFull(on) {
+    if (on === host.classList.contains('sv-fullscreen')) return;
+    host.classList.toggle('sv-fullscreen', on);
+    document.documentElement.classList.toggle('sv-noscroll', on);
+    setTimeout(() => { try { viewer.getRenderDimensions(new THREEV.Vector2()); kick(); } catch {} }, 60);
   }
+  function toggleFull() {
+    if (!host.classList.contains('sv-fullscreen')) {
+      setFull(true);
+      // estado de historia: en móvil/iPad el botón/gesto Atrás cierra el fullscreen en vez de
+      // abandonar la página (antes Atrás salía del visor entero).
+      try { history.pushState({ svFull: true }, ''); } catch {}
+    } else if (history.state && history.state.svFull) {
+      try { history.back(); } catch { setFull(false); }   // consume el estado → dispara onPop → cierra
+    } else {
+      setFull(false);
+    }
+  }
+  function onPop() { if (host.classList.contains('sv-fullscreen')) setFull(false); }
   window.addEventListener('keydown', onKey);
+  window.addEventListener('popstate', onPop);
   function onKey(e) {
     if (!holder.isConnected) return;
     if (e.key === 'r' || e.key === 'R') hud.querySelector('[data-sv="home"]').click();
@@ -186,6 +248,9 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
 
   function dispose() {
     window.removeEventListener('keydown', onKey);
+    window.removeEventListener('popstate', onPop);
+    host.removeEventListener('dblclick', onDbl, true);     // el leak #1 del hunt: se acumulaban por carga
+    host.removeEventListener('pointerup', onPtrUp, true);
     cancelAnimationFrame(anim);
     host.classList.remove('sv-fullscreen');
     document.documentElement.classList.remove('sv-noscroll');
