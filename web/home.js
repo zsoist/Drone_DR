@@ -156,7 +156,7 @@ main.classList.add('deck-main');
        data-cid="${last.clip_id}" data-frames="${last.frame_count || 0}" style="animation-delay:220ms">
       <div class="thumb">
         <img src="${DATA}/thumbs/${last.clip_id}.jpg" alt="" loading="lazy" width="960" height="540">
-        <span class="ovl mono">${icon('clock')} ${fmt.dur(last.duration_s)}</span>
+        <span class="ovl mono">${icon('clock')} ${fmt.dur(last.duration_s || 0)}</span>
         ${last.has_proxy ? `<span class="play-badge">${icon('play')}</span>` : ''}
         <span class="scrub-line"></span>
       </div>
@@ -288,10 +288,10 @@ main.classList.add('deck-main');
   })();
   const flyStart = () => { if (!flyRaf) { flyLast = 0; flyRaf = requestAnimationFrame(frame); } };
   const flyStop = () => { if (flyRaf) { cancelAnimationFrame(flyRaf); flyRaf = 0; } };
-  document.addEventListener('visibilitychange', () => document.hidden ? flyStop() : flyStart());
-  flyStart();
+  flyStart();   // el listener de visibilidad se registra unificado abajo (dron + nubes)
 
   // ---- nube de puntos 3D en la card de 3D (canvas, rotación suave) ----
+  const cloudLoops = [];   // { start, stop } por canvas — permite pausar/cancelar en bloque
   document.querySelectorAll('.dc-cloud').forEach(cv => {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const fit = () => { cv.width = cv.offsetWidth * dpr; cv.height = cv.offsetHeight * dpr; };
@@ -302,9 +302,9 @@ main.classList.add('deck-main');
       const x = (Math.random() - 0.5) * 2, z = (Math.random() - 0.5) * 2;
       pts.push({ x, z, y: (Math.sin(x * 2.6) + Math.cos(z * 2.2)) * 0.16 + (Math.random() - 0.5) * 0.07 });
     }
-    let a = 0;
-    (function frame() {
-      if (!cv.isConnected) return;
+    let a = 0, raf = 0;
+    const loop = () => {
+      if (!cv.isConnected) { raf = 0; return; }   // canvas detached → no re-encolar (sin loop huérfano)
       a += 0.0038;
       const W = cv.width, H = cv.height;
       ctx.clearRect(0, 0, W, H);
@@ -317,9 +317,24 @@ main.classList.add('deck-main');
         ctx.fillStyle = `rgba(255,159,67,${(0.2 + 0.6 * pr).toFixed(2)})`;
         ctx.beginPath(); ctx.arc(X, Y, Math.max(0.7, 3.4 * pr * dpr), 0, 7); ctx.fill();
       }
-      requestAnimationFrame(frame);
-    })();
+      raf = requestAnimationFrame(loop);
+    };
+    const start = () => { if (!raf && cv.isConnected) raf = requestAnimationFrame(loop); };
+    const stop = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; } };
+    cloudLoops.push({ start, stop });
+    start();
   });
+
+  // ---- contrato único de teardown/visibilidad para las DOS familias de rAF + el listener global ----
+  const onVisibility = () => {
+    if (document.hidden) { flyStop(); cloudLoops.forEach(l => l.stop()); }
+    else { flyStart(); cloudLoops.forEach(l => l.start()); }
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', () => {   // navegación/bfcache: apaga todo y suelta el listener global
+    flyStop(); cloudLoops.forEach(l => l.stop());
+    document.removeEventListener('visibilitychange', onVisibility);
+  }, { once: true });
 
   // ---- tilt 3D + glare (hover) ----
   if (matchMedia('(hover:hover)').matches) {
@@ -384,7 +399,13 @@ main.classList.add('deck-main');
     document.body.appendChild(veil);
     // rAF no dispara con tab oculto (patrón del repo)
     (document.hidden ? fn => setTimeout(fn, 16) : requestAnimationFrame.bind(window))(() => veil.classList.add('on'));
-    setTimeout(() => { location.href = card.getAttribute('href'); }, 500);
+    // salto diferido tras la animación, pero CANCELABLE: si el usuario cambió de tab o inició
+    // otra navegación durante los 500ms, no lo arrastres a la card que reventó
+    const navTimer = setTimeout(() => {
+      if (document.hidden) { card._busy = false; return; }   // tab en segundo plano → no navegar
+      location.href = card.getAttribute('href');
+    }, 500);
+    window.addEventListener('pagehide', () => clearTimeout(navTimer), { once: true });
   });
 })();
 
