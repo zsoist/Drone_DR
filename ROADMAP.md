@@ -23,7 +23,7 @@
 - [x] ✅ Worker desacoplado + cola SQLite + progreso vivo + cancel + abort-on-nan
 - [x] ✅ Visores nube/malla/splat + mediciones (distancia/área/volumen/perfil/comparar)
 - [x] ✅ Página pública compartible + exports (GeoTIFF, GeoJSON, PLY, OBJ, SPLAT)
-- [ ] OpenSplat Metal/GPU (CPU estable pero lento; ver 3D_PROCESSING_AUDIT.md)
+- [~] OpenSplat Metal/GPU — Toolchain 17F109 INSTALADO 2026-07-05; build MPS + 1er splat cinemático orquestados esta noche (auto_cinematic_0104.sh)
 - [x] .ksplat export ✅ 2026-07-05 (make_ksplat.mjs con la lib vendoreada del viewer; worker lo exporta post-quality-gate) · COPC cableado en preset alta (pendiente 1er run)
 - [x] Browser gate: jobs 3d/splat no se marcan done sin QA real en Chrome headless ✅ 2026-07-05
 - [ ] WebODM ortomosaico (fotos JPG/DNG) — ya no necesario, ODM directo lo cubre

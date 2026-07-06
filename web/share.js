@@ -234,13 +234,16 @@ const loaders = {
       initialCameraPosition: [0, 5, 4],
       initialCameraLookAt: [0, 0, 0],
     });
+    // timeout proporcional al peso (45s base + 3s/MB, techo 120s): los cinemáticos
+    // de 10-20MB por el tunnel en móvil lento reventaban los 45s fijos
+    const tmoMs = Math.min(120000, 45000 + Math.round((splat.bytes || 0) / 1048576) * 3000);
     await Promise.race([
       viewer.addSplatScene(`data/splats/${splat.name}`, {
         progressiveLoad: false, splatAlphaRemovalThreshold: 40, showLoadingUI: false,
         rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
         onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
       }),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout de 45s procesando el splat')), 45000)),
+      new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs)),
     ]);
     fitSplatViewer(viewer);
     viewer.start();

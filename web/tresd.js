@@ -921,6 +921,9 @@
     box._viewer = viewer;
     try {
       // progressiveLoad:false — hang conocido de .splat en iOS ("Processing splats")
+      // timeout proporcional al peso: los cinemáticos (10-20MB) por el tunnel en móvil
+      // lento reventaban los 45s fijos. 45s base + 3s/MB, techo 120s.
+      const tmoMs = Math.min(120000, 45000 + Math.round((asset.bytes || 0) / 1048576) * 3000);
       await Promise.race([
         viewer.addSplatScene(`data/splats/${name}`, {
           progressiveLoad: false, showLoadingUI: false,
@@ -930,7 +933,7 @@
           rotation: SPLAT_ROT,
           onProgress: p => { if (st) st.textContent = `Splat · ${Math.round(p)}%`; },
         }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout de 45s procesando el splat')), 45000)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs)),
       ]);
     } catch (err) {
       box.querySelector('.splat-load').innerHTML =

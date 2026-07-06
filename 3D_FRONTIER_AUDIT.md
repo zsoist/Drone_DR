@@ -7,7 +7,8 @@ Scope: ODM 3D modeling, DSM/point-cloud publishing, Gaussian splatting, Mac Mini
 ## Verdict
 
 Current score: 9.7/10 for a local/free personal drone mapping stack.
-(CPU-era ceiling reached: everything short of Metal/MPS training is done and verified.)
+(CPU-era ceiling reached. **Metal Toolchain 17F109 INSTALLED** — the 0.3 lands when the
+orchestrated MPS build + first cinematic GPU splat complete tonight.)
 
 The `.ksplat` gap is CLOSED: `pipeline/make_ksplat.mjs` converts `.splat`/`.ply` using the
 same vendored GaussianSplats3D lib the viewer uses (no npm), the worker exports it after the
@@ -49,6 +50,24 @@ Splats:
 - `DJI_20260315121003_0092_D.splat`: 500,832 bytes, passed 2k CPU training, loss 0.176886, 42 cameras.
 - `DJI_20260704160358_0104_D.splat`: 657,632 bytes, older preview splat.
 - 7k urban attempt was killed by worker restart at 63.6%, so it did not complete. With atomic publish, future failed/killed runs will not corrupt the last good splat.
+
+## Closed This Pass 3 (2026-07-05 night — Metal ready + final hardening)
+
+- **Metal Toolchain 17F109 installed** (no sudo). Gotcha documented: the first
+  `-downloadComponent` served a STALE asset (17F42) that downloaded fully but stayed
+  "uninstalled"; the retry fetched 17F109 and activated. Trivial `.metal` kernel compiles ✓.
+- `build-mps/` wiped for a clean configure (the old cache was from the toolchain-missing era).
+- Orchestrated chain live: 3D alta 0104 (219 premium frames, mesh 300k, COPC) → MPS build →
+  worker reload → cinematic splat 15k GPU auto-enqueued (`auto_cinematic_0104.sh`, detached).
+- `run_tracked` SQLite writes throttled (1/0.5s max vs per-line) — less disk churn and lock
+  contention with `/api/jobs` during chatty ODM/OpenSplat runs; final flush keeps the tail.
+- Splat viewer timeout now size-aware (45s + 3s/MB, cap 120s) in tresd + share — fixed 45s
+  would spuriously kill 10-20MB cinematic loads on slow mobile links. Gate re-verified.
+- `progressiveLoad` stays FALSE deliberately: the iOS Safari hang was reproduced with .splat
+  streaming; 304 caching + explicit % progress + size-aware timeout is the safer frontier.
+- `run_splat` now prefers the freshest reconstruction (`proj_<cid>` premium over legacy
+  `proj0104`) — the cinematic splat trains on alta cameras/points, not medium.
+- `alta` preset upgraded: `--mesh-size 300000` (ODM urban guidance; ultra rejected at 8.5x).
 
 ## Closed This Pass 2 (2026-07-05 late night — smoothness & hygiene)
 
