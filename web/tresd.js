@@ -638,6 +638,10 @@
     cam.near = maxDim / 1000; cam.far = dist * 8; cam.updateProjectionMatrix();
     controls.target.set(0, 0, 0);
     controls.maxDistance = dist * 3;
+    // una malla 2.5D no tiene "abajo": orbitar bajo el horizonte muestra el underside
+    // (esquirlas de textura con huecos) y el zoom infinito atraviesa la geometría
+    controls.maxPolarAngle = Math.PI * 0.495;
+    controls.minDistance = maxDim * 0.06;
     controls.update();
   }
   function fitSplatViewer(viewer) {

@@ -2535,3 +2535,14 @@ button.exp { text-align: left; cursor: pointer; }
 @keyframes bspin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .fly-drone.v10 .blade .spin { animation: none; } }
 @media (max-width: 640px) { .fly-drone.v10 { width: 122px; } }
+
+/* ===== BLOQUE 19 · Splat Lab (SuperSplat embebido) ===== */
+.lab-main { display: flex; flex-direction: column; min-height: calc(100vh - 40px); }
+.lab-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 12px; }
+.lab-h { margin: 0; font-size: 30px; }
+.lab-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+.lab-frame-wrap { flex: 1; min-height: 520px; border-radius: 14px; overflow: hidden;
+  border: 1px solid var(--line); background: #0b0d10; }
+.lab-frame { width: 100%; height: 100%; min-height: 520px; border: 0; display: block; }
+.lab-tip { margin: 10px 2px 0; }
+@media (max-width: 640px) { .lab-frame-wrap, .lab-frame { min-height: 70vh; } }

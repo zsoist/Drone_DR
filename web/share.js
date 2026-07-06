@@ -157,11 +157,17 @@ function frame(obj, cam, controls, topDown = false) {
   const bb = new THREE.Box3().setFromObject(obj);
   const c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
   obj.position.sub(c);
-  const dist = Math.max(sz.x, sz.y, sz.z) * 0.9;
+  const maxDim = Math.max(sz.x, sz.y, sz.z);
+  const dist = maxDim * 0.9;
   if (topDown) cam.position.set(dist * 0.15, dist * 0.92, dist * 0.28);
   else cam.position.set(dist * 0.6, dist * 0.55, dist * 0.6);
   cam.lookAt(0, 0, 0);
   controls.target.set(0, 0, 0);
+  // terreno 2.5D: bajo el horizonte solo hay underside roto; y sin minDistance el
+  // zoom atraviesa la malla (near-clip = "modelo destrozado")
+  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.minDistance = maxDim * 0.06;
+  controls.maxDistance = dist * 3.5;
 }
 
 function fitSplatViewer(viewer) {

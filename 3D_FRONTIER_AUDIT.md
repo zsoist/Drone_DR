@@ -51,6 +51,21 @@ Splats:
 - `DJI_20260704160358_0104_D.splat`: 657,632 bytes, older preview splat.
 - 7k urban attempt was killed by worker restart at 63.6%, so it did not complete. With atomic publish, future failed/killed runs will not corrupt the last good splat.
 
+## Closed This Pass 5 (2026-07-06 — Splat Lab tab + mesh viewer fix)
+
+- **Splat Lab**: pestaña propia en el sidebar (`splatlab.html`). Picker de splats del vault +
+  SuperSplat embebido en iframe same-origin (CSP `frame-ancestors 'self'` SOLO para
+  /supersplat/; el resto de la app sigue en 'none') + botón "Completo". Verificado vivo:
+  editor con 15,625 splats dentro del shell. Bundles de SuperSplat sirven con 304.
+- **Mesh "destrozado" DIAGNOSTICADO y arreglado**: no era la malla (geometría sana: 292k
+  verts, spikes <1%) sino la CÁMARA — los viewers de malla/nube no clampeaban el ángulo
+  polar ni minDistance: orbitar bajo el horizonte muestra el underside de la malla 2.5D
+  (esquirlas + huecos) y el zoom atravesaba la geometría (near-clip). Fix en tresd+share:
+  `maxPolarAngle = 0.495π` + `minDistance` proporcional (como ya hacía el viewer de splats).
+- Conocido (no bloqueante): leve doming/tilt del terreno en reconstrucciones de video
+  (rolling shutter sin GCPs). Palanca futura: `--rolling-shutter` de ODM si el perfil del
+  Flip está en su DB, u oblicuos en la captura.
+
 ## Closed This Pass 4 (2026-07-05 midnight — Metal LIVE + SuperSplat post-pro)
 
 - **First Metal/MPS GPU training running**: 15k cinematic splat of 0104 on the alta premium

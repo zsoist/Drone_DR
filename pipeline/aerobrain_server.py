@@ -908,7 +908,8 @@ class H(BaseHTTPRequestHandler):
         # binarios 3D pesados (nube/malla/splat): cachear PERO revalidar (no-cache + 304).
         # Las URLs no llevan versión y un re-entreno reescribe el mismo nombre — max-age
         # serviría stale; no-store re-bajaría MBs en cada visita. 304 = lo mejor de ambos.
-        revalidate = f.suffix.lower() in REVALIDATE_EXTS
+        # los bundles de SuperSplat (23MB dist) solo cambian al rebuildear: 304 también
+        revalidate = f.suffix.lower() in REVALIDATE_EXTS or str(f).startswith(str(SUPERSPLAT))
         mtime = int(f.stat().st_mtime)
         if revalidate and not rng:
             ims = self.headers.get("If-Modified-Since")
@@ -975,12 +976,14 @@ class H(BaseHTTPRequestHandler):
         else:
             self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-store, must-revalidate")
         if f.suffix == ".html":
+            # SuperSplat vive embebido en un iframe de splatlab.html (mismo origen)
+            anc = "'self'" if str(f).startswith(str(SUPERSPLAT)) else "'none'"
             self.send_header("Content-Security-Policy",
                 "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "  # wasm: el sort worker de splats compila WebAssembly
                 "style-src 'self' 'unsafe-inline'; "        # inline style attrs (bajo riesgo)
                 "img-src 'self' data: blob: https:; "
                 "connect-src 'self' https://server.arcgisonline.com https://basemaps.cartocdn.com; "
-                "worker-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'")
+                f"worker-src 'self' blob:; media-src 'self' blob:; frame-src 'self'; frame-ancestors {anc}")
             self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         with open(f, "rb") as fh:

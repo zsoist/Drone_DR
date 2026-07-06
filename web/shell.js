@@ -8,6 +8,7 @@ const NAV = [
   { href: 'trips.html', ic: 'pin', label: 'Viajes' },
   { href: 'studio.html', ic: 'film', label: 'Studio' },
   { href: 'tresd.html', ic: 'cube', label: '3D' },
+  { href: 'splatlab.html', ic: 'spark', label: 'Splat Lab' },
   { href: 'system.html', ic: 'db', label: 'Sistema' },
 ];
 
