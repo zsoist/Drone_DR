@@ -51,6 +51,36 @@ Splats:
 - `DJI_20260704160358_0104_D.splat`: 657,632 bytes, older preview splat.
 - 7k urban attempt was killed by worker restart at 63.6%, so it did not complete. With atomic publish, future failed/killed runs will not corrupt the last good splat.
 
+## Closed This Pass 11 (2026-07-06 — audit adversarial de 8 pasadas: 25 fixes + ODM extra/ultra)
+
+- **Bug hunt de 8 lentes** (render/pipeline/storage/cache/wiring/stale/concurrency/smoothness),
+  45 raw → 25 confirmados adversarialmente. Aplicados TODOS:
+  · mesh/cloud currency guard (token) — el fix de splat no cubría malla/nube; cambiar de
+    proyecto a mitad de carga fugaba contexto + montaba el modelo viejo en el box nuevo.
+  · **model_delete resucitaba el splat borrado**: dejaba `.ksplat` huérfano y best_splats lo
+    rankea sobre `.splat` → re-listado. Ahora borra el set completo + history/.
+  · meta.json atómico (3 sitios) + build_index tolera meta corrupto — un write parcial ya no
+    vacía TODA la UI. flights/system.json también atómicos.
+  · splat_upload: temp único + guard 409 contra entrenamiento activo del mismo clip.
+  · imágenes bajo models/ revalidan (304) — vt*/ortho cambian en re-procesado.
+  · **render ON-DEMAND**: idle = 0 GPU (antes rAF dibujaba cada frame siempre); wake() +
+    contador de 90 frames capta decodes async. history/ podado a 6 por clip.
+  · make_viewer_textures decode-once (era N×3 decodes de 4096²).
+- **Presets ODM Extra/Ultra** con auto-fallback: extra (mesh 600k/octree 12, pc-quality high),
+  ultra (pc-quality ultra/mesh 800k, ~8.5x). Si la VM OrbStack no da la memoria, el worker
+  reintenta solo (ultra→extra→alta). UI 'Procesar' con 5 tarjetas. meta graba el preset REAL.
+- Experimentos en vuelo: cinemático 15k de 0104 (Metal, ~65%), cinemático de Casa 4 Julio (0099)
+  encolado, orquestador ultra 0099 (ODM ultra→cinemático) difiriendo hasta drenar la cola.
+
+## Closed This Pass 10 (2026-07-06 — 18 fixes del bug-hunt adversarial de 5 pasadas)
+
+- makeScene teardown completo (geometría+materiales+texturas) + forceContextLoss +
+  ResizeObserver.disconnect (verificado: 1 canvas vivo tras ciclo agresivo).
+- splat: re-entrancy guard, track-antes-del-await, dispose en timeout/fallo, currency guard,
+  dispose().catch (el vendored lanza NotFoundError async que try/catch no atrapa).
+- tier-swap: dispose-una-vez (foto/relieve comparten Texture), conserva textura si falta en el
+  tier, sin HEAD (TOCTOU), 'bajo' nunca degrada a 4096. frameObject: piso maxDim (sin cámara NaN).
+
 ## Closed This Pass 9 (2026-07-06 — 4 tiers de render + Ultra Metal SSAA)
 
 - **Switch de calidad de 4 niveles** en malla (tresd + share): Rápido(1024/pr1.5) ·
