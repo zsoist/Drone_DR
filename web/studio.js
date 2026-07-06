@@ -676,7 +676,7 @@ pollJobs(document.getElementById('jobs'));
     phEl.style.display = tl.length ? '' : 'none';
     scroll.classList.toggle('empty', !tl.length);
     paintPlayhead();
-    if (!tl.length) { video.removeAttribute('src'); video.load?.(); }
+    if (!tl.length) { video.removeAttribute('src'); video.load?.(); curCid = null; preloadClip(null); }
     paintAllRanges();
   }
 
@@ -824,29 +824,89 @@ pollJobs(document.getElementById('jobs'));
 
   // ---- COMPOSITOR: seek/play a través de los clips ----
   let curCid = null;
+
+  // srcFor: elige el proxy adecuado al editar — 720p móvil si existe, si no 1080p.
+  // Editar no necesita 1080p: bajar de escalón alivia iPhone/iPad y el túnel.
+  const srcFor = cid => `${DATA}/${byId[cid]?.has_proxy720 ? 'proxies720' : 'proxies'}/${cid}.mp4`;
+
+  // <video> oculto reutilizable: precarga (calienta la caché HTTP) del PRÓXIMO clip
+  // distinto. No reproduce — solo carga bytes para que el swap en la frontera sea
+  // casi instantáneo (adiós flash negro). En iOS preload="auto" puede limitarse,
+  // pero el objetivo es calentar la caché, no reproducir.
+  const preVideo = document.createElement('video');
+  preVideo.preload = 'auto';
+  preVideo.muted = true;
+  preVideo.setAttribute('muted', '');
+  preVideo.setAttribute('playsinline', '');
+  preVideo.setAttribute('webkit-playsinline', '');
+  preVideo.style.display = 'none';
+  stage.appendChild(preVideo);
+  let preCid = null;   // cid actualmente precargado (evita recargar el mismo)
+
+  // apunta la precarga al cid dado; limpia si es null o coincide con el clip actual
+  function preloadClip(cid) {
+    if (!cid || cid === curCid) {   // nada que precargar (o es el mismo del compositor)
+      if (preCid !== null) { preCid = null; preVideo.removeAttribute('src'); preVideo.load?.(); }
+      return;
+    }
+    if (cid === preCid) return;   // ya está caliente
+    preCid = cid;
+    preVideo.src = srcFor(cid);
+    preVideo.load();
+  }
+  // precarga el clip idx+1 relativo a un índice (el "siguiente" en el timeline)
+  function preloadNextOf(idx) {
+    const next = (idx >= 0 && idx + 1 < tl.length) ? tl[idx + 1].clip_id : null;
+    preloadClip(next);
+  }
+
+  let pendingCancel = null;   // aborta el ciclo de carga en curso (listeners + timeout)
   function seek(gt, andPlay) {
     gt = Math.max(0, Math.min(total(), gt));
     playhead = gt;
     paintPlayhead();
     if (!tl.length) return;
-    const { clip } = clipAt(gt);
-    const target = clip.a + clipAt(gt).local * clip.speed;
+    const at = clipAt(gt);                       // una sola pasada por el timeline
+    const clip = at.clip, idx = at.idx;
+    const target = clip.a + at.local * clip.speed;
     video.playbackRate = clip.speed;
     video.style.filter = cssFilterFor(clip);
+    // recarga SOLO si cambia el clip fuente; el mismo clip (scrub, trim, arrastre del
+    // playhead dentro del corte) solo reposiciona currentTime → sin stalls ni flash.
     if (curCid !== clip.clip_id) {
+      if (pendingCancel) { pendingCancel(); pendingCancel = null; }   // cancela el ciclo anterior
       curCid = clip.clip_id;
-      video.src = `${DATA}/proxies/${clip.clip_id}.mp4`;
-      const onReady = () => {
-        video.removeEventListener('loadeddata', onReady);
-        try { video.currentTime = target; } catch {}
+      video.src = srcFor(clip.clip_id);
+      // arranca con 'canplay' (readyState>=3) para evitar stutter; fija currentTime solo
+      // con metadata; fallback a 'loadeddata' + timeout por si canplay no dispara.
+      let done = false, safety = 0;
+      const cleanup = () => {
+        video.removeEventListener('canplay', start);
+        video.removeEventListener('loadeddata', onData);
+        clearTimeout(safety);
+        pendingCancel = null;
+      };
+      const start = () => {
+        if (done) return; done = true; cleanup();
+        if (video.readyState >= 1) { try { video.currentTime = target; } catch {} }
         if (andPlay) video.play().catch(() => {});
       };
-      video.addEventListener('loadeddata', onReady);
+      const onData = () => {   // fallback: fija el tiempo aunque aún no haya canplay
+        if (done) return;
+        if (video.readyState >= 1) { try { video.currentTime = target; } catch {} }
+        if (video.readyState >= 3) start();
+      };
+      pendingCancel = () => { done = true; cleanup(); };   // abortar sin ejecutar start
+      video.addEventListener('canplay', start);
+      video.addEventListener('loadeddata', onData);
+      safety = setTimeout(start, 1500);
       video.load();
     } else {
       try { video.currentTime = target; } catch {}
       if (andPlay) video.play().catch(() => {});
     }
+    // mantén caliente el clip siguiente al del playhead
+    preloadNextOf(idx);
   }
 
   function play() {
@@ -984,7 +1044,7 @@ pollJobs(document.getElementById('jobs'));
     const clip = e.target.closest('.tl-clip');
     if (!clip) return;
     const i = +clip.dataset.i;
-    sel = i; renderInspector(); track.querySelectorAll('.tl-clip').forEach(c => c.classList.toggle('sel', +c.dataset.i === i));
+    sel = i; renderInspector(); preloadNextOf(i); track.querySelectorAll('.tl-clip').forEach(c => c.classList.toggle('sel', +c.dataset.i === i));
     track.setPointerCapture(e.pointerId);
     if (handle) {
       action = { type: handle.classList.contains('l') ? 'trim-l' : 'trim-r', i, startX: e.clientX, orig: { ...tl[i] } };
@@ -1004,7 +1064,7 @@ pollJobs(document.getElementById('jobs'));
       else s.b = Math.min(byId[s.clip_id].duration_s, Math.max(action.orig.a + 0.3, action.orig.b + dSec));
       renderTrack(); renderInspector(); updateStat();
       track.querySelector(`.tl-clip[data-i="${action.i}"]`)?.classList.add('sel');
-      curCid = null; seek(offset(action.i) + (action.type === 'trim-l' ? 0 : segDur(s) - 0.05));   // 49 · scrub en vivo
+      seek(offset(action.i) + (action.type === 'trim-l' ? 0 : segDur(s) - 0.05));   // 49 · scrub en vivo (mismo clip = sin recarga)
     } else if (action.type === 'reorder') {
       if (Math.abs(dx) > 12) action.moved = true;
       // reordenar cuando cruza el centro del vecino
@@ -1022,7 +1082,7 @@ pollJobs(document.getElementById('jobs'));
   });
   track.addEventListener('pointerup', () => {
     if (action && (action.type === 'trim-l' || action.type === 'trim-r')) { renderAll(); track.querySelector(`.tl-clip[data-i="${action.i}"]`)?.classList.add('sel'); }
-    if (action && action.type === 'reorder') renderAll();
+    if (action && action.type === 'reorder') { renderAll(); preloadNextOf(sel); }
     action = null;
   });
 
@@ -1039,7 +1099,7 @@ pollJobs(document.getElementById('jobs'));
     }
     seekPaused(gt);
   });
-  function seekPaused(gt) { pause(); curCid = null; seek(gt); syncTools(); }
+  function seekPaused(gt) { pause(); seek(gt); syncTools(); }
 
   // 4 · playhead arrastrable
   phEl.addEventListener('pointerdown', e => {
@@ -1048,7 +1108,7 @@ pollJobs(document.getElementById('jobs'));
     const drag = ev => {
       const r = track.getBoundingClientRect();
       const gt = Math.max(0, Math.min(total(), (ev.clientX - r.left + scroll.scrollLeft) / pps));
-      curCid = null; seek(gt); syncTools();
+      seek(gt); syncTools();   // seek recarga solo si cruza a otro clip; dentro del mismo = fluido
     };
     const up = () => { phEl.removeEventListener('pointermove', drag); phEl.removeEventListener('pointerup', up); };
     phEl.addEventListener('pointermove', drag);

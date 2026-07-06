@@ -202,6 +202,7 @@ const cid = new URLSearchParams(location.search).get('id');
     document.querySelectorAll('#q-seg [data-q]').forEach(b =>
       b.classList.toggle('on', b.dataset.q === quality));
   }
+  let onMeta = null; // guarda contra listeners duplicados si cambian calidad rápido
   function setQuality(k) {
     quality = k;
     localStorage.setItem('ab.vq', k);
@@ -210,9 +211,15 @@ const cid = new URLSearchParams(location.search).get('id');
     const src = SRC[resolved()];
     if (!src || video.src.endsWith(src)) return;
     const t = video.currentTime, playing = !video.paused;
+    if (onMeta) video.removeEventListener('loadedmetadata', onMeta);
+    onMeta = () => {
+      video.currentTime = t;      // seek recién con metadata del nuevo source
+      if (playing) video.play();
+      onMeta = null;
+    };
+    video.addEventListener('loadedmetadata', onMeta, { once: true });
     video.src = src;
-    video.currentTime = t;
-    if (playing) video.play();
+    video.load();
   }
   paintQ();
   document.getElementById('q-seg')?.addEventListener('click', e => {

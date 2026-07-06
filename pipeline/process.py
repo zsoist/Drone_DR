@@ -41,9 +41,11 @@ def clip_id(mp4: Path) -> str:
 def make_proxy(mp4: Path, out: Path, has_audio: bool):
     # H.264 (not HEVC): universal browser playback (Firefox/Android choke on HEVC)
     # 6Mbps @1080p ≈ 45MB/min → ~40 clips full-tier fit in R2's 10GB free tier
+    # GOP fijo de 2s (-g 120 a 60fps): seek fino al arrastrar, igual que el 720p.
+    # OJO: solo afecta a proxies NUEVOS; los existentes no se re-codifican (no batch).
     args = ["-hwaccel", "videotoolbox", "-i", str(mp4),
             "-vf", "scale=-2:1080", "-c:v", "h264_videotoolbox",
-            "-b:v", "6M", "-maxrate", "8M"]
+            "-b:v", "6M", "-maxrate", "8M", "-g", "120"]
     args += ["-c:a", "aac", "-b:a", "128k"] if has_audio else ["-an"]
     args += ["-movflags", "+faststart", str(out)]
     run_ffmpeg(args)

@@ -190,7 +190,7 @@ main.innerHTML = `
         <button class="modal-x" aria-label="Cerrar">✕</button></div>
       <div class="modal-b">
         ${f.has_proxy
-          ? `<video class="m-prev" style="max-height:320px" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" controls muted playsinline preload="metadata"></video>`
+          ? `<video class="m-prev" style="max-height:320px" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" controls muted playsinline preload="none"></video>`
           : `<img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" style="width:100%;border-radius:10px" alt="">`}
         <div class="tool-row" style="margin-top:12px">
           <span class="chip">${fmt.dur(f.duration_s)}</span>

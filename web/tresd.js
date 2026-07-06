@@ -257,7 +257,7 @@
           <div class="mf-t"><b>${esc(f.label) || fmt.date(f.date) + ' ' + f.time}</b>
           <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m alt</span></div>
         </div>`).join('')}</div>
-      <video id="m-prev" class="m-prev" muted playsinline controls preload="metadata"></video>
+      <video id="m-prev" class="m-prev" muted playsinline controls preload="none"></video>
       <div id="m-score"></div>
       <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
       <input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — órbita 60 m" style="width:100%">
@@ -288,7 +288,7 @@
             `<p class="footer-note" style="margin:6px 0 0;color:var(--amber)">${esc(w)}</p>`).join('')}`;
       } catch { scoreBox.innerHTML = ''; }
     }
-    const setPrev = cid => { prev.src = `data/proxies/${cid}.mp4`; loadScore(cid); };
+    const setPrev = cid => { prev.poster = `data/thumbs/${cid}.jpg`; prev.src = `data/proxies/${cid}.mp4`; loadScore(cid); };
     setPrev(candidates[0].clip_id);
     ov.querySelector('.mflights').addEventListener('click', e => {
       const c = e.target.closest('.mflight');
