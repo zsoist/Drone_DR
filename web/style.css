@@ -1472,3 +1472,216 @@ button.exp { text-align: left; cursor: pointer; }
     scroll-snap-align: start;
   }
 }
+
+/* ============================================================
+   BLOQUE 4 — TIMELINE v7: fix toolbar + inspector expandido
+   Reglas nuevas, más específicas que .tl-* previas. Solo pulen.
+   ============================================================ */
+
+/* ---- 4.1 · FIX toolbar: botones icono-primero, sin solape con la regla ---- */
+/* la toolbar envuelve limpio y se separa claramente de la regla de tiempo */
+.tl-editor .tl-toolbar {
+  gap: 6px;
+  padding: 4px 0 0;
+  margin-bottom: 14px;                 /* aire claro respecto a .tl-ruler */
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+  row-gap: 8px;
+}
+/* el separador flexible empuja los grupos (edición | zoom) a cada lado */
+.tl-editor .tl-toolbar > .spacer { flex: 1 1 auto; min-width: 8px; }
+
+/* botón compacto: caja mínima táctil, sin alto rígido que recorte texto */
+.tl-editor .tl-toolbar .tl-tool {
+  width: auto; height: auto; min-width: 34px; min-height: 34px;
+  padding: 0 8px; gap: 0; line-height: 1;
+  white-space: nowrap; overflow: hidden;
+}
+/* botones con icono SVG: ocultan su etiqueta de texto (va al [data-tip]) */
+.tl-editor .tl-toolbar .tl-tool:has(> svg.ic) { font-size: 0; padding: 0; width: 34px; }
+.tl-editor .tl-toolbar .tl-tool:has(> svg.ic) > svg.ic { width: 16px; height: 16px; }
+/* botón "Limpiar" (sin icono en el markup): le inyectamos glifo y ocultamos texto */
+.tl-editor .tl-toolbar .tl-tool[data-tool="clear"] { font-size: 0; width: 34px; padding: 0; }
+.tl-editor .tl-toolbar .tl-tool[data-tool="clear"]::before {
+  content: "⌦"; font-size: 16px; line-height: 1; color: inherit;
+}
+/* glifos unicode (← → − + ⏮ …) siguen visibles: no tienen svg.ic ni son [clear] */
+
+/* grupo de zoom: pegado a la derecha, con separador propio */
+.tl-editor .tl-toolbar .tl-zoom {
+  margin-left: auto; gap: 6px; padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+.tl-editor .tl-toolbar .tl-zoom input[type=range] { width: 88px; }
+
+/* el transporte (arriba) también respira sobre la toolbar */
+.tl-editor .tl-transport { margin-bottom: 2px; }
+
+/* ---- 4.2 · INSPECTOR expandido: secciones agrupadas ---- */
+/* sección: bloque con etiqueta encabezado en mayúsculas pequeñas */
+.tl-inspect .tl-sec {
+  background: color-mix(in srgb, var(--surface-2) 42%, transparent);
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 11px 13px 12px; display: grid; gap: 9px;
+  transition: border-color 180ms var(--ease);
+}
+.tl-inspect .tl-sec:hover { border-color: color-mix(in srgb, var(--accent) 22%, var(--line)); }
+.tl-seclabel {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 10px; letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--text-3); font-weight: 650;
+}
+.tl-seclabel svg.ic { width: 13px; height: 13px; color: var(--accent); }
+.tl-seclabel .spacer { flex: 1; }
+.tl-seclabel .btn { padding: 3px 9px; font-size: 10.5px; font-weight: 500; }
+
+/* chips de velocidad rápidos (0.5× / 1× / 2× …) */
+.tl-chips { display: inline-flex; flex-wrap: wrap; gap: 5px; }
+.tl-chips .chip { padding: 3px 11px; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+/* grade: grid de sliders de color con relleno de progreso (look .pm-range) */
+.tl-grade { display: grid; gap: 8px; }
+.tl-grade .tl-inspect-row { grid-template-columns: 78px 1fr auto; gap: 10px; }
+.tl-grade .tl-inspect-row > label {
+  font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-3);
+}
+.tl-grade .mono { min-width: 34px; text-align: right; font-size: 11.5px; font-weight: 700;
+  color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* slider custom reutilizado del editor de fotos (.pm-range) para toda la sección */
+.tl-inspect input.tl-range,
+.tl-inspect input[type=range].tl-range {
+  -webkit-appearance: none; appearance: none; flex: 1; min-width: 90px; height: 5px;
+  border-radius: 99px; outline: none; cursor: pointer; background: var(--surface-2);
+  /* relleno de progreso: variable --p (0..1) opcional desde el JS; fallback plano */
+  background-image: linear-gradient(90deg, var(--accent) 0, var(--accent) calc(var(--p, 0) * 100%),
+    var(--surface-2) calc(var(--p, 0) * 100%));
+  transition: box-shadow .2s;
+}
+.tl-inspect input.tl-range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; border: 2.5px solid var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.45);
+  transition: transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .2s;
+}
+.tl-inspect input.tl-range::-webkit-slider-thumb:hover { transform: scale(1.18); }
+.tl-inspect input.tl-range:active::-webkit-slider-thumb { transform: scale(1.32);
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 18%, transparent), 0 2px 8px rgba(0,0,0,.45); }
+.tl-inspect input.tl-range::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2.5px solid var(--accent); }
+.tl-inspect input.tl-range::-moz-range-progress { background: var(--accent); height: 5px; border-radius: 99px; }
+
+/* input de color del título: cuadrado limpio sin cromo del navegador */
+.tl-inspect input[type=color] {
+  -webkit-appearance: none; appearance: none; border: 1px solid var(--line);
+  border-radius: 8px; height: 30px; cursor: pointer; background: var(--surface-2);
+}
+.tl-inspect input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+.tl-inspect input[type=color]::-webkit-color-swatch { border: none; border-radius: 6px; }
+
+/* checkboxes (reversa / fondo título) alineados al acento */
+.tl-inspect input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+.tl-inspect label { color: var(--text-2); font-size: 12px; }
+
+/* ---- 4.3 · copiar/pegar atributos entre clips ---- */
+.tl-copybar {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--line);
+}
+.tl-copybar .btn { padding: 6px 11px; font-size: 11.5px; }
+.tl-copybar .btn svg.ic { width: 13px; height: 13px; }
+
+/* ---- 4.4 · preset de export (v7): resalta el selector de preset ---- */
+.exportbar #ed-preset {
+  font-weight: 600; color: var(--accent);
+  border-color: rgba(69,160,230,0.4); background: var(--accent-dim);
+}
+.exportbar #ed-preset:hover { border-color: rgba(69,160,230,0.6); }
+.exportbar select.ctl { min-width: 0; }
+
+/* ---- 4.5 · modal de proyectos guardados (localStorage) ---- */
+.tl-projmodal {
+  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+  background: rgba(6, 9, 14, 0.62);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  animation: ovIn 180ms var(--ease); padding: 16px;
+}
+.tl-projcard {
+  width: 100%; max-width: 440px; max-height: 80dvh; overflow: hidden;
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+  animation: mIn 220ms var(--ease);
+}
+.tl-projcard > .ph { flex: none; }
+.tl-projcard > .ph .btn { padding: 3px 9px; font-size: 12px; }
+.tl-projcard > .pb { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.tl-projcard > .pb:empty::after {
+  content: "Aún no hay proyectos guardados."; color: var(--text-3); font-size: 12.5px;
+}
+
+/* fila de proyecto guardado: nombre + fecha + cargar/borrar */
+.tl-projrow {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-2);
+  transition: border-color 140ms var(--ease), transform 140ms var(--ease);
+}
+.tl-projrow:hover { border-color: rgba(69,160,230,0.4); transform: translateY(-1px); }
+.tl-projrow .pr-t { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.tl-projrow .pr-t b { font-size: 13px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-projrow .pr-t span { font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tl-projrow .btn { padding: 5px 10px; font-size: 11px; flex: none; }
+.tl-projrow .btn svg.ic { width: 13px; height: 13px; }
+.tl-projrow .pr-del:hover { color: var(--red); border-color: var(--red); }
+
+/* ---- 4.6 · verificado a 375px: nada desborda ---- */
+@media (max-width: 640px) {
+  .tl-editor .tl-toolbar { gap: 5px; padding-bottom: 10px; margin-bottom: 12px; }
+  .tl-editor .tl-toolbar .tl-tool { min-width: 36px; min-height: 36px; }  /* táctil ≥36px */
+  .tl-editor .tl-toolbar .tl-tool:has(> svg.ic),
+  .tl-editor .tl-toolbar .tl-tool[data-tool="clear"] { width: 36px; }
+  .tl-editor .tl-toolbar .tl-zoom {
+    margin-left: 0; flex: 1 0 100%;
+    border-left: none; border-top: 1px solid var(--line);
+    padding-left: 0; padding-top: 8px;
+  }
+  .tl-editor .tl-toolbar .tl-zoom input[type=range] { flex: 1; width: auto; }
+  .tl-inspect .tl-sec { padding: 10px 11px; }
+  .tl-grade .tl-inspect-row { grid-template-columns: 66px 1fr auto; gap: 8px; }
+  .tl-copybar .btn { flex: 1 1 auto; justify-content: center; }
+  .tl-projcard { max-width: 100%; }
+  .tl-projrow { flex-wrap: wrap; }
+  .tl-projrow .pr-t { flex: 1 1 100%; }
+}
+
+/* ===== BLOQUE 5 · pulido v8 del editor ===== */
+/* preview más grande y protagonista */
+.tl-stage { max-height: 56dvh; }
+.tl-video { max-height: 56dvh; }
+@media (max-width: 820px) { .tl-stage, .tl-video { max-height: 44dvh; } }
+
+/* "Limpiar" ya trae icono (broom): retira el glifo ⌦ inyectado por v7 */
+.tl-editor .tl-toolbar .tl-tool[data-tool="clear"]::before { content: none; }
+.tl-editor .tl-toolbar .tl-tool[data-tool="clear"] { font-size: 0; width: 34px; padding: 0; }
+.tl-editor .tl-toolbar .tl-tool[data-tool="clear"] > svg.ic { width: 16px; height: 16px; }
+/* Momentos AI conserva etiqueta (acción hero); resto icon-only ya lo maneja v7 */
+.tl-editor .tl-toolbar .tl-tool[data-tool="magic"] { font-size: 12px; padding: 0 12px; width: auto; gap: 6px; }
+.tl-editor .tl-toolbar .tl-tool[data-tool="magic"] > svg.ic { width: 15px; height: 15px; }
+
+/* transporte: botones-icono uniformes, sin glifos */
+.tl-transport button > svg.ic { width: 16px; height: 16px; }
+
+/* marker de highlight en la regla: rombo pequeño, no un icono gigante */
+.tl-tick.mark { width: auto; background: none; z-index: 3; }
+.tl-tick.mark > svg.ic { width: 11px; height: 11px; color: var(--amber);
+  position: absolute; top: 1px; left: -5px; }
+
+/* barra de proyecto (Nuevo · Guardar · Proyectos) */
+.tl-projbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.tl-projbar .btn { display: inline-flex; align-items: center; gap: 6px; }
+.tl-projbar .btn svg.ic { width: 15px; height: 15px; }
+.tl-projbar .btn.ok { color: var(--mint); border-color: color-mix(in srgb, var(--mint) 55%, var(--line)); }
+
+/* separación clara entre transporte y toolbar */
+.tl-transport { padding-bottom: 6px; }

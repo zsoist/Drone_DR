@@ -78,6 +78,19 @@ LUTS = {
     "bw": "hue=s=0,eq=contrast=1.22",
 }
 FONT = "/System/Library/Fonts/Helvetica.ttc"
+
+
+def _ffmpeg_has(filter_name: str) -> bool:
+    """¿El ffmpeg activo trae este filtro? (algunos builds vienen sin freetype→drawtext)."""
+    try:
+        out = subprocess.run(["ffmpeg", "-hide_banner", "-filters"],
+                             capture_output=True, text=True, timeout=15).stdout
+        return f" {filter_name} " in out
+    except Exception:
+        return False
+
+
+HAS_DRAWTEXT = _ffmpeg_has("drawtext")   # sin drawtext, el título se omite (el export NO falla)
 KEYS_ENV = Path("/Volumes/SSD/_system/claude/.api-keys.env")
 SPLAT_BIN = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/OpenSplat/build/opensplat")
 
@@ -500,7 +513,112 @@ ASPECTS = {
     "4:5": "crop=ih*4/5:ih,scale=1080:1350",
 }
 
+# altura destino por aspecto/resolución → aspect_vf() escala el resto en proporción
+_ASPECT_H = {
+    "16:9": {"1080": 1080, "2160": 2160},
+    "9:16": {"1080": 1920, "2160": 3840},
+    "1:1":  {"1080": 1080, "2160": 2160},
+    "4:5":  {"1080": 1350, "2160": 2700},
+}
+
+
+def aspect_vf(aspect, resolution="1080"):
+    # devuelve el filtro de crop/scale para el aspecto en la resolución pedida.
+    # 1080 = comportamiento actual (default); 2160 duplica el destino.
+    res = "2160" if str(resolution) == "2160" else "1080"
+    if res == "1080":
+        return ASPECTS.get(aspect, ASPECTS["16:9"])
+    # 2160 (4K): mismo recorte, destino duplicado
+    if aspect == "16:9":
+        return "scale=-2:2160"
+    if aspect == "9:16":
+        return "crop=ih*9/16:ih,scale=2160:3840"
+    if aspect == "1:1":
+        return "crop=ih:ih,scale=2160:2160"
+    if aspect == "4:5":
+        return "crop=ih*4/5:ih,scale=2160:2700"
+    return "scale=-2:2160"
+
+
 XFADE_DUR = 0.4  # duración de crossfade (video + audio)
+XFADE_DEFAULT = 0.4  # transDur por defecto para transiciones de librería
+
+# nombres del contrato v7 → nombres válidos de transición de xfade en ffmpeg.
+# crossfade/fade → 'fade'; el resto mapea 1:1 a la librería de xfade.
+XFADE_MAP = {
+    "fade": "fade",
+    "crossfade": "fade",
+    "dissolve": "dissolve",
+    "wipeleft": "wipeleft",
+    "wiperight": "wiperight",
+    "slideup": "slideup",
+    "slidedown": "slidedown",
+    "circleopen": "circleopen",
+    "circleclose": "circleclose",
+    "radial": "radial",
+    "smoothleft": "smoothleft",
+    "fadeblack": "fadeblack",
+    "fadewhite": "fadewhite",
+    "pixelize": "pixelize",
+}
+
+
+def _clampf(v, lo, hi, default):
+    # sanitiza numéricos del cliente: float + clamp, fallback si no es número.
+    try:
+        return max(lo, min(hi, float(v)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _grade_vf(grade):
+    # traduce grade{bright,contrast,sat,temp} del contrato a filtros ffmpeg.
+    # 100 = neutro para bright/contrast/sat; temp -100..100 (frío→cálido).
+    # devuelve "" si todo es neutro (nada que aplicar).
+    if not isinstance(grade, dict) or not grade:
+        return ""
+    bright = _clampf(grade.get("bright", 100), 50, 150, 100)
+    contrast = _clampf(grade.get("contrast", 100), 50, 150, 100)
+    sat = _clampf(grade.get("sat", 100), 0, 200, 100)
+    temp = _clampf(grade.get("temp", 0), -100, 100, 0)
+    parts = []
+    # eq: brightness (bright-100)/100 → -0.5..0.5 ; contrast/100 ; saturation/100
+    if bright != 100 or contrast != 100 or sat != 100:
+        b = (bright - 100) / 100.0
+        c = contrast / 100.0
+        s = sat / 100.0
+        parts.append(f"eq=brightness={b:.4f}:contrast={c:.4f}:saturation={s:.4f}")
+    # temp: cálido (>0) sube rojos y baja azules; frío (<0) inverso. escala suave.
+    if temp != 0:
+        shift = temp / 100.0 * 0.3
+        parts.append(f"colorbalance=rs={shift:.4f}:bs={-shift:.4f}")
+    return ",".join(parts)
+
+
+def _valid_hex6(c):
+    # valida color hex de 6 dígitos (sin #). fallback 'ffffff'.
+    c = str(c or "").lstrip("#").strip()
+    if len(c) == 6 and all(ch in "0123456789abcdefABCDEF" for ch in c):
+        return c.lower()
+    return "ffffff"
+
+
+def _title_drawtext(txt, style):
+    # construye el filtro drawtext respetando titleStyle{pos,size,color,box}.
+    # mantiene sombra + fade de alpha. txt ya viene sanitizado por el caller.
+    style = style if isinstance(style, dict) else {}
+    pos = style.get("pos", "bottom")
+    y = {"top": "h*0.08", "mid": "(h-th)/2", "bottom": "h*0.82"}.get(pos, "h*0.82")
+    # size 1..100 → divisor ~28 (pequeño) .. 8 (grande); mayor size = divisor menor
+    size = _clampf(style.get("size", 42), 1, 100, 42)
+    div = 28 - (size - 1) / 99.0 * 20  # 1→28 , 100→8
+    color = _valid_hex6(style.get("color", "ffffff"))
+    box = ""
+    if style.get("box"):
+        box = ":box=1:boxcolor=black@0.45:boxborderw=12"
+    return (f"drawtext=fontfile={FONT}:text='{txt}':fontcolor=0x{color}"
+            f":fontsize=h/{div:.2f}{box}"
+            f":shadowx=2:shadowy=2:x=(w-text_w)/2:y={y}:alpha='min(1,t)'")
 
 
 def _atempo_chain(speed):
@@ -542,21 +660,23 @@ def run_edit(spec: dict, j):
     try:
         default_cid = re.sub(r"[^\w-]", "", spec.get("clip_id", ""))
         aspect = spec.get("aspect") or ("9:16" if spec.get("vertical") else "16:9")
-        base_vf = ASPECTS.get(aspect, ASPECTS["16:9"])
+        resolution = "2160" if str(spec.get("resolution", "1080")) == "2160" else "1080"
+        base_vf = aspect_vf(aspect, resolution)
         lut = LUTS.get(spec.get("filter", "none"), "")
         fade = spec.get("fade", True)
         keep_audio = spec.get("audio") == "original"  # NUEVO: conservar audio del fuente
-        title = str(spec.get("title", ""))[:60].replace("\\", "").replace("'", "").replace(":", r"\:")
+        title = str(spec.get("title", ""))[:60].replace("\\", "").replace("'", "").replace("%", "").replace(":", r"\:")
         tmp = VAULT / "reels" / ".tmp"
         tmp.mkdir(parents=True, exist_ok=True)
         segs = []
-        transitions = []  # transición de ENTRADA a cada corte ('none'|'fade'|'crossfade')
+        transitions = []  # transición de ENTRADA a cada corte (nombre del contrato v7)
+        trans_durs = []   # transDur por corte (paralelo a transitions)
         raw_segs = spec["segments"][:24]
         for i, s in enumerate(raw_segs):
             if not isinstance(s, dict):
                 s = {"a": s[0], "b": s[1]}
             a, b = float(s["a"]), float(s["b"])
-            speed = min(max(float(s.get("speed", 1)), 0.25), 4.0)
+            speed = min(max(float(s.get("speed", 1)), 0.1), 100.0)
             if b <= a:
                 continue
             # multi-clip: cada corte puede venir de un clip distinto (timeline CapCut-style)
@@ -565,33 +685,49 @@ def run_edit(spec: dict, j):
             if not src.exists():
                 raise FileNotFoundError(f"{cid} sin proxy")
             seg_lut = LUTS.get(s.get("filter", spec.get("filter", "none")), lut)
-            seg_title = str(s.get("title", ""))[:60].replace("\\", "").replace("'", "").replace(":", r"\:")
+            seg_title = str(s.get("title", ""))[:60].replace("\\", "").replace("'", "").replace("%", "").replace(":", r"\:")
+            title_style = s.get("titleStyle") if isinstance(s.get("titleStyle"), dict) else {}
+            grade_vf = _grade_vf(s.get("grade"))
+            reverse = bool(s.get("reverse"))
+            freeze = _clampf(s.get("freeze", 0), 0, 30, 0) if s.get("freeze") else 0
             in_dur = min(b - a, 120)
-            out_dur = in_dur / speed
+            # freeze congela el frame de 'a' durante 'freeze' seg; ignora speed/reverse
+            out_dur = freeze if freeze else in_dur / speed
             vf = [base_vf]
             if seg_lut:
                 vf.append(seg_lut)
-            if speed != 1:
-                vf.append(f"setpts=PTS/{speed}")
+            # grade DESPUÉS del LUT y ANTES de setpts (contrato v7)
+            if grade_vf:
+                vf.append(grade_vf)
+            if freeze:
+                # congela el primer frame: recorta ~1 frame y lo clona por 'freeze' seg
+                vf.append(f"trim=0:0.04,setpts=N/FRAME_RATE/TB,tpad=stop_duration={freeze:.2f}:stop_mode=clone")
+            else:
+                if reverse:
+                    vf.append("reverse")
+                if speed != 1:
+                    vf.append(f"setpts=PTS/{speed}")
             if fade:
                 vf.append(f"fade=t=in:st=0:d=0.25,fade=t=out:st={max(out_dur - 0.25, 0):.2f}:d=0.25")
-            if seg_title or (title and i == 0):
+            if (seg_title or (title and i == 0)) and HAS_DRAWTEXT:
                 txt = seg_title or title
-                vf.append(f"drawtext=fontfile={FONT}:text='{txt}':fontcolor=white:fontsize=h/14"
-                          f":shadowx=2:shadowy=2:x=(w-text_w)/2:y=h*0.82:alpha='min(1,t)'")
+                vf.append(_title_drawtext(txt, title_style if seg_title else {}))
             seg = tmp / f"e{i}.mp4"
             cmd = ["ffmpeg", "-v", "error", "-y", "-ss", str(a), "-i", str(src)]
             if keep_audio:
                 src_audio = _has_audio(src)
-                if not src_audio:
-                    # fuente sin pista de audio → silencio nulo para no desparejar streams en la concat
+                # audio real solo tiene sentido a velocidad normal (o casi): reverse, freeze y
+                # speeds extremos (fuera de 0.5..4) no se pueden mapear a atempo sin romper →
+                # se silencia ESE segmento con anullsrc de out_dur (streams siguen emparejados).
+                audio_ok = src_audio and not reverse and not freeze and 0.5 <= speed <= 4.0
+                if not audio_ok:
                     cmd += ["-f", "lavfi", "-t", f"{out_dur:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
                 # audio recortado al mismo rango, atempo para la velocidad, normalizado aac/48k/stereo
                 af = []
-                if src_audio and speed != 1:
+                if audio_ok and speed != 1:
                     af += _atempo_chain(speed)
                 af.append("aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo")
-                a_map = "0:a:0" if src_audio else "1:a:0"
+                a_map = "0:a:0" if audio_ok else "1:a:0"
                 # -t = out_dur (duración REAL del segmento tras setpts): el video y el
                 # silencio anullsrc quedan de la misma longitud → sin desfase A/V en la concat
                 cmd += ["-t", f"{out_dur:.3f}", "-map", "0:v:0", "-map", a_map,
@@ -604,11 +740,15 @@ def run_edit(spec: dict, j):
             subprocess.run(cmd, check=True)
             segs.append(seg)
             transitions.append(s.get("transition", "none"))
+            trans_durs.append(_clampf(s.get("transDur", XFADE_DEFAULT), 0.2, 1.5, XFADE_DEFAULT))
         if not segs:
             raise ValueError("sin segmentos válidos")
         out = VAULT / "reels" / f"edit-{time.strftime('%Y%m%d-%H%M%S')}{'-v' if spec.get('vertical') else ''}.mp4"
 
-        wants_xfade = len(segs) > 1 and any(t == "crossfade" for t in transitions[1:])
+        # cualquier corte (idx>=1) con transición != 'none' entra a la ruta xfade encadenada
+        def _xname(t):
+            return XFADE_MAP.get(t) if t and t != "none" else None
+        wants_xfade = len(segs) > 1 and any(_xname(t) for t in transitions[1:])
         if not wants_xfade:
             # ruta concat actual (rápida, probada) — cortes duros; 'fade' ya aplicado por segmento
             lst = tmp / "l.txt"
@@ -617,7 +757,8 @@ def run_edit(spec: dict, j):
                             "-i", str(lst), "-c", "copy", str(out)], check=True)
             lst.unlink()
         else:
-            # pase final con xfade encadenado donde el corte pide crossfade; demás cortes van duros
+            # pase final con xfade encadenado en cada corte que pida transición de librería;
+            # los cortes 'none' van duros (xfade fade con duración ~0.001).
             durs = [_probe_dur(s) for s in segs]
             cmd = ["ffmpeg", "-v", "error", "-y"]
             for s in segs:
@@ -626,16 +767,20 @@ def run_edit(spec: dict, j):
             vprev, aprev = "[0:v]", "[0:a]"
             acc = durs[0]  # tiempo acumulado del stream de video ya compuesto
             for i in range(1, len(segs)):
-                cross = transitions[i] == "crossfade"
-                d = XFADE_DUR if cross else 0.0
+                xname = _xname(transitions[i])  # nombre mapeado de ffmpeg o None si 'none'
+                td = trans_durs[i]              # transDur ya clamp 0.2..1.5
+                # transición no puede durar más que el clip más corto del par
+                td = min(td, max(min(durs[i - 1], durs[i]) - 0.05, 0.05))
+                d = td if xname else 0.0
                 vout = f"[v{i}]"
                 offset = acc - d  # inicio del solape sobre la línea de tiempo actual
-                fc.append(f"{vprev}[{i}:v]xfade=transition=fade:duration={d if cross else 0.001:.3f}"
+                fc.append(f"{vprev}[{i}:v]xfade=transition={xname or 'fade'}"
+                          f":duration={d if xname else 0.001:.3f}"
                           f":offset={max(offset, 0):.3f}{vout}")
                 if keep_audio:
                     aout = f"[a{i}]"
-                    if cross:
-                        fc.append(f"{aprev}[{i}:a]acrossfade=d={XFADE_DUR}{aout}")
+                    if xname:
+                        fc.append(f"{aprev}[{i}:a]acrossfade=d={td:.3f}{aout}")
                     else:
                         fc.append(f"{aprev}[{i}:a]concat=n=2:v=0:a=1{aout}")
                     aprev = aout

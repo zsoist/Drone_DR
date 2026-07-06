@@ -20,6 +20,14 @@ main.innerHTML = `
   <section class="st-mod" data-mod="editor">
     <div class="tl-editor" id="tl-editor">
 
+      <!-- barra de proyecto: nuevo · guardar · abrir -->
+      <div class="tl-projbar">
+        <button class="btn" id="ed-new" data-tip="Vaciar y empezar de cero">${icon('plusFile')} Nuevo proyecto</button>
+        <span class="spacer"></span>
+        <button class="btn" id="ed-save" data-tip="Guardar este proyecto">${icon('save')} Guardar</button>
+        <button class="btn" id="ed-open" data-tip="Abrir proyectos guardados">${icon('folder')} Proyectos</button>
+      </div>
+
       <!-- encabezado del editor: contador de clips + longitud del reel -->
       <div class="panel" style="margin-bottom:14px">
         <div class="ph">${icon('film')} Editor
@@ -41,31 +49,31 @@ main.innerHTML = `
 
           <!-- 32-35 · transporte -->
           <div class="tl-transport" id="tl-transport">
-            <button class="tl-tool" data-tp="start" data-tip="Inicio">⏮</button>
-            <button class="tl-tool" data-tp="prev" data-tip="Clip anterior">◁</button>
+            <button class="tl-tool" data-tp="start" data-tip="Inicio">${icon('skipStart')}</button>
+            <button class="tl-tool" data-tp="prev" data-tip="Clip anterior">${icon('prev')}</button>
             <button class="tl-tool" data-tp="play" data-tip="Reproducir / Pausa">${icon('play')}</button>
-            <button class="tl-tool" data-tp="next" data-tip="Clip siguiente">▷</button>
-            <button class="tl-tool" data-tp="end" data-tip="Final">⏭</button>
-            <button class="tl-tool" data-tp="mute" data-tip="Silenciar">🔊</button>
-            <button class="tl-tool" data-tp="loop" data-tip="Bucle">↻</button>
+            <button class="tl-tool" data-tp="next" data-tip="Clip siguiente">${icon('next')}</button>
+            <button class="tl-tool" data-tp="end" data-tip="Final">${icon('skipEnd')}</button>
+            <button class="tl-tool" data-tp="mute" data-tip="Silenciar">${icon('volume')}</button>
+            <button class="tl-tool" data-tp="loop" data-tip="Bucle">${icon('loop')}</button>
             <span class="spacer"></span>
             <span class="tl-time mono" id="tl-time">0:00 / 0:00</span>
           </div>
 
           <!-- 12,14,15,16,17 + zoom 5,6 · barra de herramientas -->
           <div class="tl-toolbar" id="tl-toolbar">
-            <button class="tl-tool" data-tool="razor" data-tip="Cortar en playhead (S)">${icon('layers')} Cortar</button>
+            <button class="tl-tool" data-tool="razor" data-tip="Cortar en playhead (S)">${icon('scissors')}</button>
             <button class="tl-tool" data-tool="dup" data-tip="Duplicar clip">${icon('copy')}</button>
-            <button class="tl-tool" data-tool="left" data-tip="Mover ← (⌥←)">←</button>
-            <button class="tl-tool" data-tool="right" data-tip="Mover → (⌥→)">→</button>
-            <button class="tl-tool" data-tool="del" data-tip="Eliminar (Supr)">${icon('warn')}</button>
+            <button class="tl-tool" data-tool="left" data-tip="Mover ← (⌥←)">${icon('chevL')}</button>
+            <button class="tl-tool" data-tool="right" data-tip="Mover → (⌥→)">${icon('chevR')}</button>
+            <button class="tl-tool" data-tool="del" data-tip="Eliminar (Supr)">${icon('trash')}</button>
             <span class="spacer"></span>
             <button class="tl-tool" data-tool="magic" id="btn-magic" data-tip="Autoarmar highlights">${icon('spark')} Momentos AI</button>
-            <button class="tl-tool" data-tool="clear" data-tip="Limpiar timeline">Limpiar</button>
+            <button class="tl-tool" data-tool="clear" data-tip="Limpiar timeline">${icon('broom')}</button>
             <span style="width:8px"></span>
-            <button class="tl-tool" data-tool="zoomout" data-tip="Alejar">−</button>
-            <button class="tl-tool" data-tool="zoomin" data-tip="Acercar">+</button>
-            <button class="tl-tool" data-tool="fit" data-tip="Ajustar a ventana">${icon('grid')} Ajustar</button>
+            <button class="tl-tool" data-tool="zoomout" data-tip="Alejar">${icon('zoomOut')}</button>
+            <button class="tl-tool" data-tool="zoomin" data-tip="Acercar">${icon('zoomIn')}</button>
+            <button class="tl-tool" data-tool="fit" data-tip="Ajustar a ventana">${icon('fit')}</button>
           </div>
 
           <!-- 3,4,7 · regla + track con scroll horizontal -->
@@ -75,32 +83,124 @@ main.innerHTML = `
             <div class="tl-playhead" id="tl-playhead"></div>
           </div>
 
-          <!-- 18-23 · inspector del clip seleccionado -->
+          <!-- 18-23 · inspector del clip seleccionado (v7 · secciones agrupadas) -->
           <div class="tl-inspect" id="tl-inspect" style="display:none">
             <div class="tl-inspect-row">
               <span class="mono" id="tli-io">—</span>
               <span class="spacer"></span>
               <button class="btn" id="tli-goto" data-tip="Ir al clip">${icon('play')} Ir al clip</button>
             </div>
-            <div class="tl-inspect-row">
-              <label>Velocidad</label>
-              <span id="tli-speed" class="tl-chips"></span>
+
+            <!-- copiar/pegar atributos entre clips -->
+            <div class="tl-copybar">
+              <button class="btn" id="tli-copy" data-tip="Copiar estilo de este clip">${icon('copy')} Copiar estilo</button>
+              <button class="btn" id="tli-paste-sel" data-tip="Pegar al clip seleccionado">${icon('check')} Pegar</button>
+              <button class="btn" id="tli-paste-all" data-tip="Pegar a todos los clips">${icon('layers')} Pegar a todos</button>
             </div>
-            <div class="tl-inspect-row">
-              <label>Look</label>
-              <select class="ctl" id="tli-filter">
-                <option value="none">Sin look</option><option value="cine">Cine</option>
-                <option value="vivid">Vivid</option><option value="warm">Cálido</option>
-                <option value="moody">Moody</option><option value="bw">B&amp;N</option>
-              </select>
-              <label>Transición</label>
-              <select class="ctl" id="tli-trans">
-                <option value="none">Ninguna</option><option value="fade">Fade</option><option value="crossfade">Crossfade</option>
-              </select>
+
+            <!-- sección Velocidad + reversa + congelar -->
+            <div class="tl-sec" data-sec="speed">
+              <div class="tl-seclabel">${icon('gauge')} Velocidad</div>
+              <div class="tl-inspect-row">
+                <span id="tli-speed" class="tl-chips"></span>
+              </div>
+              <div class="tl-inspect-row">
+                <input class="ctl tl-range" id="tli-speed-range" type="range" min="0.1" max="100" step="0.05" style="flex:1">
+                <input class="ctl" id="tli-speed-num" type="number" min="0.1" max="100" step="0.05" style="width:74px">
+                <span class="mono">x</span>
+              </div>
+              <div class="tl-inspect-row">
+                <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="tli-reverse"> Reversa</label>
+                <span class="spacer"></span>
+                <label>Congelar</label>
+                <input class="ctl" id="tli-freeze" type="number" min="0" max="10" step="0.1" value="0" style="width:74px">
+                <span class="mono">s</span>
+              </div>
             </div>
-            <div class="tl-inspect-row">
-              <label>Título</label>
-              <input class="ctl" id="tli-title" placeholder="Título de este corte…" maxlength="60" style="flex:1">
+
+            <!-- sección Color (grade) -->
+            <div class="tl-sec" data-sec="color">
+              <div class="tl-seclabel">${icon('sun')} Color
+                <span class="spacer"></span>
+                <button class="btn" id="tli-grade-reset" data-tip="Restablecer color">Reset color</button>
+              </div>
+              <div class="tl-grade">
+                <div class="tl-inspect-row"><label>Brillo</label>
+                  <input class="tl-range" id="tli-bright" type="range" min="50" max="150" step="1" value="100" style="flex:1">
+                  <span class="mono" id="tli-bright-v">100</span></div>
+                <div class="tl-inspect-row"><label>Contraste</label>
+                  <input class="tl-range" id="tli-contrast" type="range" min="50" max="150" step="1" value="100" style="flex:1">
+                  <span class="mono" id="tli-contrast-v">100</span></div>
+                <div class="tl-inspect-row"><label>Saturación</label>
+                  <input class="tl-range" id="tli-sat" type="range" min="0" max="200" step="1" value="100" style="flex:1">
+                  <span class="mono" id="tli-sat-v">100</span></div>
+                <div class="tl-inspect-row"><label>Temperatura</label>
+                  <input class="tl-range" id="tli-temp" type="range" min="-100" max="100" step="1" value="0" style="flex:1">
+                  <span class="mono" id="tli-temp-v">0</span></div>
+              </div>
+            </div>
+
+            <!-- sección Look (LUT) -->
+            <div class="tl-sec" data-sec="look">
+              <div class="tl-seclabel">${icon('layers')} Look</div>
+              <div class="tl-inspect-row">
+                <select class="ctl" id="tli-filter" style="flex:1">
+                  <option value="none">Sin look</option><option value="cine">Cine</option>
+                  <option value="vivid">Vivid</option><option value="warm">Cálido</option>
+                  <option value="moody">Moody</option><option value="bw">B&amp;N</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- sección Título con estilo -->
+            <div class="tl-sec" data-sec="title">
+              <div class="tl-seclabel">${icon('tag')} Título</div>
+              <div class="tl-inspect-row">
+                <input class="ctl" id="tli-title" placeholder="Título de este corte…" maxlength="60" style="flex:1">
+              </div>
+              <div class="tl-inspect-row">
+                <label>Posición</label>
+                <select class="ctl" id="tli-title-pos">
+                  <option value="top">Arriba</option><option value="mid">Centro</option><option value="bottom">Abajo</option>
+                </select>
+                <label>Tamaño</label>
+                <input class="tl-range" id="tli-title-size" type="range" min="1" max="100" step="1" value="40" style="flex:1;min-width:70px">
+              </div>
+              <div class="tl-inspect-row">
+                <label>Color</label>
+                <input class="ctl" id="tli-title-color" type="color" value="#ffffff" style="width:52px;padding:2px">
+                <span class="spacer"></span>
+                <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="tli-title-box"> Fondo</label>
+              </div>
+            </div>
+
+            <!-- sección Transición de entrada (librería) -->
+            <div class="tl-sec" data-sec="trans">
+              <div class="tl-seclabel">${icon('activity')} Transición de entrada</div>
+              <div class="tl-inspect-row">
+                <select class="ctl" id="tli-trans" style="flex:1">
+                  <option value="none">Ninguna</option>
+                  <option value="fade">Fundido</option>
+                  <option value="crossfade">Crossfade</option>
+                  <option value="dissolve">Disolver</option>
+                  <option value="wipeleft">Cortina izq.</option>
+                  <option value="wiperight">Cortina der.</option>
+                  <option value="slideup">Deslizar arriba</option>
+                  <option value="slidedown">Deslizar abajo</option>
+                  <option value="circleopen">Círculo abre</option>
+                  <option value="circleclose">Círculo cierra</option>
+                  <option value="radial">Radial</option>
+                  <option value="smoothleft">Suave izq.</option>
+                  <option value="pixelize">Pixelar</option>
+                  <option value="fadeblack">A negro</option>
+                  <option value="fadewhite">A blanco</option>
+                </select>
+              </div>
+              <div class="tl-inspect-row">
+                <label>Duración</label>
+                <input class="tl-range" id="tli-trans-dur" type="range" min="0.2" max="1.5" step="0.1" value="0.4" style="flex:1">
+                <span class="mono" id="tli-trans-dur-v">0.4s</span>
+              </div>
             </div>
           </div>
         </div>
@@ -108,18 +208,29 @@ main.innerHTML = `
 
       <!-- 24-27 · biblioteca de clips fuente -->
       <div class="tl-lib panel" style="margin-bottom:14px">
-        <div class="ph">${icon('layers')} Clips fuente
+        <div class="ph">${icon('film')} Paso 1 · Elige tu video
           <span class="spacer"></span>
-          <span class="footer-note" style="font-size:11px">Toca = añadir al final · ⊕ = insertar en playhead</span>
+          <span class="footer-note" style="font-size:11px">Toca = añadir al final · botón + = insertar en playhead</span>
         </div>
         <div class="pb"><div class="clip-rail" id="rail"></div></div>
       </div>
 
-      <!-- 47 · barra de export -->
+      <!-- 47 · barra de export (v7 · presets + resolución + proyectos) -->
       <div class="exportbar" id="exportbar" style="display:none">
+        <select class="ctl" id="ed-preset" data-tip="Preset de export">
+          <option value="">Preset…</option>
+          <option value="yt4k">YouTube 4K</option>
+          <option value="yt1080">YouTube 1080</option>
+          <option value="reels">Reels/TikTok</option>
+          <option value="square">Cuadrado</option>
+          <option value="feed45">Feed 4:5</option>
+        </select>
         <select class="ctl" id="ed-aspect">
           <option value="16:9">16:9</option><option value="9:16">9:16 Reels</option>
           <option value="1:1">1:1</option><option value="4:5">4:5</option>
+        </select>
+        <select class="ctl" id="ed-res" data-tip="Resolución de salida">
+          <option value="1080">1080p</option><option value="2160">2160p (4K)</option>
         </select>
         <select class="ctl" id="ed-lut" data-tip="Look de respaldo global">
           <option value="none">Sin look</option><option value="cine">Cine</option>
@@ -127,7 +238,20 @@ main.innerHTML = `
           <option value="moody">Moody</option><option value="bw">B&amp;N</option>
         </select>
         <select class="ctl" id="ed-trans" data-tip="Transición por defecto">
-          <option value="none">Sin transición</option><option value="fade">Fade</option><option value="crossfade" selected>Crossfade</option>
+          <option value="none">Sin transición</option>
+          <option value="fade">Fundido</option>
+          <option value="crossfade" selected>Crossfade</option>
+          <option value="dissolve">Disolver</option>
+          <option value="wipeleft">Cortina izq.</option>
+          <option value="wiperight">Cortina der.</option>
+          <option value="slideup">Deslizar arriba</option>
+          <option value="slidedown">Deslizar abajo</option>
+          <option value="circleopen">Círculo abre</option>
+          <option value="circleclose">Círculo cierra</option>
+          <option value="radial">Radial</option>
+          <option value="pixelize">Pixelar</option>
+          <option value="fadeblack">A negro</option>
+          <option value="fadewhite">A blanco</option>
         </select>
         <select class="ctl" id="ed-audio" data-tip="Audio del reel">
           <option value="none">Silencio</option><option value="original">Audio original</option>
@@ -135,6 +259,17 @@ main.innerHTML = `
         <input class="ctl" id="ed-title" placeholder="Título…" style="flex:1;min-width:110px" maxlength="60">
         <label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" id="ed-fade" checked>Fades</label>
         <button class="btn primary big" id="ed-export">${icon('check')} Exportar</button>
+      </div>
+
+      <!-- v7 · modal de proyectos guardados (localStorage) -->
+      <div class="tl-projmodal" id="tl-projmodal" style="display:none">
+        <div class="tl-projcard">
+          <div class="ph">${icon('db')} Proyectos guardados
+            <span class="spacer"></span>
+            <button class="btn" id="proj-close" data-tip="Cerrar">${icon('close')}</button>
+          </div>
+          <div class="pb" id="proj-list"></div>
+        </div>
       </div>
 
       <!-- 48 · ayuda de atajos -->
@@ -150,11 +285,6 @@ main.innerHTML = `
         </div>
       </details>
 
-      <!-- panel Mejores momentos (lógica intacta) -->
-      <div class="panel" style="margin-top:16px;max-width:640px">
-        <div class="ph">${icon('spark')} Mejores momentos</div>
-        <div class="pb" id="moments"><div class="sk" style="height:80px"></div></div>
-      </div>
     </div>
   </section>
 
@@ -377,7 +507,28 @@ pollJobs(document.getElementById('jobs'));
   const CSS_LUTS = { none: '', cine: 'contrast(1.07) saturate(1.1) hue-rotate(-6deg)',
     vivid: 'saturate(1.35) contrast(1.1)', warm: 'sepia(0.18) saturate(1.2)',
     moody: 'contrast(1.16) brightness(0.94) saturate(0.82)', bw: 'grayscale(1) contrast(1.2)' };
-  const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 4];
+  const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
+
+  // v7 · defaults de color/título (neutro) — un {} vacío en export = sin grade
+  const GRADE_NEUTRAL = { bright: 100, contrast: 100, sat: 100, temp: 0 };
+  const isNeutralGrade = g => !g || (g.bright === 100 && g.contrast === 100 && g.sat === 100 && g.temp === 0);
+  const TITLE_DEFAULT = { pos: 'bottom', size: 40, color: 'ffffff', box: false };
+
+  // combina LUT + grade → filtro CSS para el preview del compositor.
+  // temp: -100(frío)→+100(cálido) se aproxima con sepia + hue-rotate.
+  function cssFilterFor(s) {
+    let out = CSS_LUTS[s.filter] || '';
+    const g = s.grade;
+    if (g && !isNeutralGrade(g)) {
+      out += ` brightness(${(g.bright ?? 100) / 100}) contrast(${(g.contrast ?? 100) / 100}) saturate(${(g.sat ?? 100) / 100})`;
+      const t = g.temp || 0;
+      if (t) out += ` sepia(${Math.min(1, Math.abs(t) / 100 * 0.5).toFixed(3)}) hue-rotate(${(t < 0 ? 12 : -8) * Math.abs(t) / 100}deg)`;
+    }
+    return out.trim();
+  }
+
+  // v7 · portapapeles de estilo entre clips (Copiar/Pegar atributos)
+  let styleClip = null;
 
   // ---- estado (MODELO magnético: un track, sin huecos) ----
   let tl = [];                 // [{id,clip_id,a,b,speed,filter,title,transition}]
@@ -455,7 +606,7 @@ pollJobs(document.getElementById('jobs'));
     }
     // 50 · markers de highlights AI sobre la regla
     tl.forEach((s, i) => {
-      if (s._mark) html += `<span class="tl-tick mark" style="left:${offset(i) * pps}px" data-tip="Highlight AI">◆</span>`;
+      if (s._mark) html += `<span class="tl-tick mark" style="left:${offset(i) * pps}px" data-tip="Highlight AI">${icon('marker')}</span>`;
     });
     ruler.innerHTML = html;
   }
@@ -478,11 +629,14 @@ pollJobs(document.getElementById('jobs'));
       }
       const badges = [
         s.speed !== 1 ? `<span class="tl-badge speed">${s.speed}x</span>` : '',
+        s.reverse ? `<span class="tl-badge rev" data-tip="Reversa">${icon('reverse')}</span>` : '',
+        s.freeze > 0 ? `<span class="tl-badge freeze" data-tip="Congelar ${s.freeze}s">❄</span>` : '',
         s.filter && s.filter !== 'none' ? `<span class="tl-badge filter">${esc(s.filter)}</span>` : '',
+        (s.grade && !isNeutralGrade(s.grade)) ? `<span class="tl-badge grade" data-tip="Color ajustado">${icon('sun')}</span>` : '',
         s.title ? `<span class="tl-badge title">${icon('tag')}</span>` : '',
       ].join('');
       const trans = (i > 0 && s.transition && s.transition !== 'none')
-        ? `<span class="tl-trans" data-tip="${esc(s.transition)}">${s.transition === 'crossfade' ? '⋈' : '⧗'}</span>` : '';
+        ? `<span class="tl-trans" data-tip="${esc(s.transition)}">${s.transition === 'crossfade' || s.transition === 'dissolve' ? '⋈' : '⧗'}</span>` : '';
       const lb = esc(f?.label) || fmt.date(f?.date || 0);
       return `${trans}<div class="tl-clip${i === sel ? ' sel' : ''}" data-i="${i}" data-cid="${s.clip_id}"
                 style="width:${w}px" draggable="false">
@@ -495,18 +649,44 @@ pollJobs(document.getElementById('jobs'));
     }).join('');
   }
 
-  // 18-23 · inspector del clip seleccionado
+  // 18-23 · inspector del clip seleccionado (v7 · velocidad+color+título+transición)
   function renderInspector() {
     if (sel < 0 || !tl[sel]) { inspect.style.display = 'none'; return; }
     const s = tl[sel];
+    // normaliza campos v7 por si el seg viene de un proyecto viejo
+    s.grade = s.grade && Object.keys(s.grade).length ? { ...GRADE_NEUTRAL, ...s.grade } : { ...GRADE_NEUTRAL };
+    s.titleStyle = { ...TITLE_DEFAULT, ...(s.titleStyle || {}) };
+    if (s.transDur == null) s.transDur = 0.4;
+    if (s.reverse == null) s.reverse = false;
+    if (s.freeze == null) s.freeze = 0;
+    const g = (id) => document.getElementById(id);
     inspect.style.display = '';
-    document.getElementById('tli-io').textContent =
+    g('tli-io').textContent =
       `In ${fmt.dur(s.a)} · Out ${fmt.dur(s.b)} · dur ${segDur(s).toFixed(1)}s (fuente ${(s.b - s.a).toFixed(1)}s)`;
-    document.getElementById('tli-speed').innerHTML = SPEEDS.map(v =>
+    // velocidad: chips + slider + input numérico sincronizados
+    g('tli-speed').innerHTML = SPEEDS.map(v =>
       `<button class="chip${s.speed === v ? ' on' : ''}" data-spd="${v}">${v}x</button>`).join('');
-    document.getElementById('tli-filter').value = s.filter || 'none';
-    document.getElementById('tli-trans').value = s.transition || 'none';
-    document.getElementById('tli-title').value = s.title || '';
+    g('tli-speed-range').value = s.speed;
+    g('tli-speed-num').value = s.speed;
+    g('tli-reverse').checked = !!s.reverse;
+    g('tli-freeze').value = s.freeze || 0;
+    // color grade
+    g('tli-bright').value = s.grade.bright;   g('tli-bright-v').textContent = s.grade.bright;
+    g('tli-contrast').value = s.grade.contrast; g('tli-contrast-v').textContent = s.grade.contrast;
+    g('tli-sat').value = s.grade.sat;         g('tli-sat-v').textContent = s.grade.sat;
+    g('tli-temp').value = s.grade.temp;       g('tli-temp-v').textContent = s.grade.temp;
+    // look
+    g('tli-filter').value = s.filter || 'none';
+    // título + estilo
+    g('tli-title').value = s.title || '';
+    g('tli-title-pos').value = s.titleStyle.pos;
+    g('tli-title-size').value = s.titleStyle.size;
+    g('tli-title-color').value = '#' + (s.titleStyle.color || 'ffffff');
+    g('tli-title-box').checked = !!s.titleStyle.box;
+    // transición
+    g('tli-trans').value = s.transition || 'none';
+    g('tli-trans-dur').value = s.transDur;
+    g('tli-trans-dur-v').textContent = (+s.transDur).toFixed(1) + 's';
   }
 
   function updateStat() {
@@ -525,7 +705,7 @@ pollJobs(document.getElementById('jobs'));
     set('razor', canRazor);
     set('dup', hasSel); set('del', hasSel); set('left', hasSel && sel > 0); set('right', hasSel && sel < tl.length - 1);
     set('clear', has); set('fit', has);
-    document.querySelector('.tl-tool[data-tp="mute"]').textContent = muted ? '🔇' : '🔊';
+    document.querySelector('.tl-tool[data-tp="mute"]').innerHTML = muted ? icon('volumeOff') : icon('volume');
     document.querySelector('.tl-tool[data-tp="loop"]').classList.toggle('on', loop);
   }
 
@@ -556,7 +736,7 @@ pollJobs(document.getElementById('jobs'));
     const { clip } = clipAt(gt);
     const target = clip.a + clipAt(gt).local * clip.speed;
     video.playbackRate = clip.speed;
-    video.style.filter = CSS_LUTS[clip.filter] || '';
+    video.style.filter = cssFilterFor(clip);
     if (curCid !== clip.clip_id) {
       curCid = clip.clip_id;
       video.src = `${DATA}/proxies/${clip.clip_id}.mp4`;
@@ -610,7 +790,7 @@ pollJobs(document.getElementById('jobs'));
   function togglePlay() { playing ? pause() : play(); }
   function setPlayIcon() {
     const b = document.querySelector('.tl-tool[data-tp="play"]');
-    b.innerHTML = playing ? '⏸' : icon('play');
+    b.innerHTML = playing ? icon('pause') : icon('play');
   }
 
   // ---- añadir / insertar clips ----
@@ -618,7 +798,9 @@ pollJobs(document.getElementById('jobs'));
     const f = byId[cid];
     return { id: uid(), clip_id: cid, a: +Math.max(0, a).toFixed(2),
       b: +Math.min(f.duration_s, b).toFixed(2), speed: 1, filter: 'none',
-      title: '', transition: document.getElementById('ed-trans').value, ...extra };
+      title: '', transition: document.getElementById('ed-trans').value,
+      transDur: 0.4, reverse: false, freeze: 0,
+      grade: { ...GRADE_NEUTRAL }, titleStyle: { ...TITLE_DEFAULT }, ...extra };
   }
   function addClip(cid, atPlayhead) {
     const f = byId[cid]; if (!f) return;
@@ -635,7 +817,9 @@ pollJobs(document.getElementById('jobs'));
 
   // ---- edición de clips ----
   function delClip(i = sel) { if (i < 0) return; pushUndo(); tl.splice(i, 1); if (sel >= tl.length) sel = tl.length - 1; renderAll(); curCid = null; seek(playhead); }
-  function dupClip(i = sel) { if (i < 0) return; pushUndo(); const c = { ...tl[i], id: uid() }; tl.splice(i + 1, 0, c); sel = i + 1; renderAll(); }
+  // clona un seg copiando en profundidad grade/titleStyle (objetos mutables)
+  const cloneSeg = s => ({ ...s, id: uid(), grade: { ...(s.grade || GRADE_NEUTRAL) }, titleStyle: { ...(s.titleStyle || TITLE_DEFAULT) } });
+  function dupClip(i = sel) { if (i < 0) return; pushUndo(); const c = cloneSeg(tl[i]); tl.splice(i + 1, 0, c); sel = i + 1; renderAll(); }
   function moveClip(dir) {
     const i = sel, j = i + dir;
     if (i < 0 || j < 0 || j >= tl.length) return;
@@ -648,7 +832,7 @@ pollJobs(document.getElementById('jobs'));
     if (local < 0.1 || local > segDur(clip) - 0.1) return;
     pushUndo();
     const cutSrc = clip.a + local * clip.speed;             // punto de corte en tiempo fuente
-    const right = { ...clip, id: uid(), a: +cutSrc.toFixed(2), transition: 'none' };
+    const right = { ...cloneSeg(clip), a: +cutSrc.toFixed(2), transition: 'none' };
     const left  = { ...clip, b: +cutSrc.toFixed(2) };
     tl.splice(idx, 1, left, right);
     sel = idx + 1; renderAll();
@@ -685,7 +869,7 @@ pollJobs(document.getElementById('jobs'));
       <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="">
       <span class="scrub-line"></span>
       <span class="cr-lb">${esc(f.label) || fmt.date(f.date)} · ${fmt.dur(f.duration_s)}</span>
-      <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar en playhead">⊕</button>
+      <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar en playhead">${icon('plus')}</button>
     </div>`).join('') || `<div class="empty">No hay clips con proxy disponibles.</div>`;
   rail.querySelectorAll('.cr-item').forEach(el => el.classList.add('scrub'));
   attachScrub(rail);   // 27 · scrub por hover reutilizando el helper del repo
@@ -809,18 +993,99 @@ pollJobs(document.getElementById('jobs'));
     renderAll(); scroll.scrollLeft = 0;
   }
 
-  // ================= inspector: ajustes por clip (18-23) =================
-  document.getElementById('tli-speed').addEventListener('click', e => {
-    const b = e.target.closest('[data-spd]'); if (b && sel >= 0) { pushUndo(); tl[sel].speed = +b.dataset.spd; renderAll(); seek(offset(sel)); }
+  // ================= inspector: ajustes por clip (18-23 · v7) =================
+  const $ = id => document.getElementById(id);
+  const selSeg = () => (sel >= 0 && tl[sel]) ? tl[sel] : null;
+  // aplica solo el filtro CSS en vivo sin re-renderizar el track (preview fluido)
+  const livePreview = () => { const s = selSeg(); if (s) video.style.filter = cssFilterFor(s); };
+
+  // --- velocidad: chips + slider + input numérico (0.1..100) ---
+  function setSpeed(v, doSeek = true) {
+    const s = selSeg(); if (!s) return;
+    v = Math.max(0.1, Math.min(100, +v || 1));
+    pushUndo(); s.speed = +v.toFixed(2); renderAll(); if (doSeek) seek(offset(sel));
+  }
+  $('tli-speed').addEventListener('click', e => {
+    const b = e.target.closest('[data-spd]'); if (b) setSpeed(+b.dataset.spd);
   });
-  document.getElementById('tli-filter').addEventListener('change', e => { if (sel >= 0) { pushUndo(); tl[sel].filter = e.target.value; renderAll(); video.style.filter = CSS_LUTS[e.target.value] || ''; } });
-  document.getElementById('tli-trans').addEventListener('change', e => { if (sel >= 0) { pushUndo(); tl[sel].transition = e.target.value; renderTrack(); } });
-  document.getElementById('tli-title').addEventListener('input', e => { if (sel >= 0) { tl[sel].title = e.target.value; renderTrack(); } });
-  document.getElementById('tli-goto').addEventListener('click', () => { if (sel >= 0) seekPaused(offset(sel)); });
+  $('tli-speed-range').addEventListener('input', e => { $('tli-speed-num').value = e.target.value; });
+  $('tli-speed-range').addEventListener('change', e => setSpeed(e.target.value));
+  $('tli-speed-num').addEventListener('change', e => setSpeed(e.target.value));
+  $('tli-reverse').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.reverse = e.target.checked; renderTrack(); } });
+  $('tli-freeze').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.freeze = Math.max(0, +e.target.value || 0); renderTrack(); } });
+
+  // --- color grade: 4 sliders + reset; preview en vivo ---
+  const gradeBind = (id, key, vId) => $(id).addEventListener('input', e => {
+    const s = selSeg(); if (!s) return;
+    s.grade[key] = +e.target.value;
+    $(vId).textContent = e.target.value;
+    livePreview(); renderTrack();
+  });
+  gradeBind('tli-bright', 'bright', 'tli-bright-v');
+  gradeBind('tli-contrast', 'contrast', 'tli-contrast-v');
+  gradeBind('tli-sat', 'sat', 'tli-sat-v');
+  gradeBind('tli-temp', 'temp', 'tli-temp-v');
+  // pushUndo una sola vez al empezar a arrastrar cualquier slider de grade
+  ['tli-bright', 'tli-contrast', 'tli-sat', 'tli-temp'].forEach(id =>
+    $(id).addEventListener('pointerdown', () => { if (selSeg()) pushUndo(); }));
+  $('tli-grade-reset').addEventListener('click', () => {
+    const s = selSeg(); if (!s) return;
+    pushUndo(); s.grade = { ...GRADE_NEUTRAL }; renderInspector(); livePreview(); renderTrack();
+  });
+
+  // --- look (LUT) ---
+  $('tli-filter').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.filter = e.target.value; renderTrack(); livePreview(); } });
+
+  // --- título + estilo ---
+  $('tli-title').addEventListener('input', e => { const s = selSeg(); if (s) { s.title = e.target.value; renderTrack(); } });
+  $('tli-title-pos').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.pos = e.target.value; } });
+  $('tli-title-size').addEventListener('input', e => { const s = selSeg(); if (s) s.titleStyle.size = +e.target.value; });
+  $('tli-title-size').addEventListener('change', () => { if (selSeg()) pushUndo(); });
+  $('tli-title-color').addEventListener('input', e => { const s = selSeg(); if (s) s.titleStyle.color = e.target.value.replace('#', ''); });
+  $('tli-title-box').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.box = e.target.checked; } });
+
+  // --- transición de entrada (librería) + duración ---
+  $('tli-trans').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.transition = e.target.value; renderTrack(); } });
+  $('tli-trans-dur').addEventListener('input', e => { const s = selSeg(); if (s) { s.transDur = +e.target.value; $('tli-trans-dur-v').textContent = (+e.target.value).toFixed(1) + 's'; } });
+  $('tli-trans-dur').addEventListener('change', () => { if (selSeg()) pushUndo(); });
+
+  // --- copiar / pegar atributos entre clips ---
+  const STYLE_KEYS = ['speed', 'filter', 'grade', 'titleStyle', 'transition', 'transDur', 'reverse', 'freeze'];
+  function grabStyle(s) {
+    const o = {};
+    STYLE_KEYS.forEach(k => { o[k] = (k === 'grade' || k === 'titleStyle') ? { ...(s[k] || {}) } : s[k]; });
+    return o;
+  }
+  function applyStyle(s) {
+    if (!styleClip) return;
+    STYLE_KEYS.forEach(k => { s[k] = (k === 'grade' || k === 'titleStyle') ? { ...styleClip[k] } : styleClip[k]; });
+  }
+  $('tli-copy').addEventListener('click', () => { const s = selSeg(); if (s) { styleClip = grabStyle(s); flashBtn('tli-copy'); } });
+  $('tli-paste-sel').addEventListener('click', () => { const s = selSeg(); if (s && styleClip) { pushUndo(); applyStyle(s); renderAll(); seek(offset(sel)); } });
+  $('tli-paste-all').addEventListener('click', () => { if (!styleClip || !tl.length) return; pushUndo(); tl.forEach(applyStyle); renderAll(); seek(offset(Math.max(0, sel))); });
+  function flashBtn(id) { const b = $(id); b.classList.add('ok'); setTimeout(() => b.classList.remove('ok'), 700); }
+
+  $('tli-goto').addEventListener('click', () => { if (sel >= 0) seekPaused(offset(sel)); });
 
   // ================= aspecto en vivo =================
   document.getElementById('ed-aspect').addEventListener('change', applyAspect);
   applyAspect();
+
+  // ================= presets de export (v7) =================
+  // cada preset fija aspect + resolution; el usuario puede sobreescribir manual
+  const PRESETS = {
+    yt4k:   { aspect: '16:9', res: '2160' },
+    yt1080: { aspect: '16:9', res: '1080' },
+    reels:  { aspect: '9:16', res: '1080' },
+    square: { aspect: '1:1',  res: '1080' },
+    feed45: { aspect: '4:5',  res: '1080' },
+  };
+  document.getElementById('ed-preset').addEventListener('change', e => {
+    const p = PRESETS[e.target.value]; if (!p) return;
+    document.getElementById('ed-aspect').value = p.aspect;
+    document.getElementById('ed-res').value = p.res;
+    applyAspect();
+  });
 
   // ================= atajos de teclado (36-40) =================
   function editorVisible() { return document.querySelector('.st-mod[data-mod="editor"]')?.style.display !== 'none'; }
@@ -849,13 +1114,21 @@ pollJobs(document.getElementById('jobs'));
   document.getElementById('ed-export').addEventListener('click', async () => {
     if (!tl.length) return;
     if (!getToken()) return;   // gate
-    const segments = tl.map(s => ({
-      clip_id: s.clip_id, a: +s.a.toFixed(2), b: +s.b.toFixed(2), speed: s.speed,
-      filter: s.filter || 'none', title: s.title || '', transition: s.transition || 'none',
-    }));
+    const segments = tl.map(s => {
+      const seg = {
+        clip_id: s.clip_id, a: +s.a.toFixed(2), b: +s.b.toFixed(2), speed: s.speed,
+        filter: s.filter || 'none', title: s.title || '', transition: s.transition || 'none',
+        transDur: +(s.transDur ?? 0.4), reverse: !!s.reverse, freeze: +(s.freeze || 0),
+        titleStyle: { ...TITLE_DEFAULT, ...(s.titleStyle || {}) },
+      };
+      // grade: {} u omitido = sin grade (contrato v7). Solo mandar si no es neutro.
+      seg.grade = isNeutralGrade(s.grade) ? {} : { ...GRADE_NEUTRAL, ...s.grade };
+      return seg;
+    });
     const r = await api('/api/edit', {
       segments,
       aspect: document.getElementById('ed-aspect').value,
+      resolution: document.getElementById('ed-res').value,
       filter: document.getElementById('ed-lut').value,
       title: document.getElementById('ed-title').value.trim(),
       fade: document.getElementById('ed-fade').checked,
@@ -864,6 +1137,79 @@ pollJobs(document.getElementById('jobs'));
     if (r && r.error) { alert(r.error); return; }
     pushUndo(); tl = []; sel = -1; playhead = 0; curCid = null; renderAll();
     loadMedia();   // el reel exportado aparecerá en el módulo Reels al terminar el job
+  });
+
+  // ================= guardar / cargar proyectos (localStorage · v7) =================
+  const PROJ_KEY = 'ab.studio.projects';
+  const loadProjects = () => { try { return JSON.parse(localStorage.getItem(PROJ_KEY)) || []; } catch { return []; } };
+  const saveProjects = list => { try { localStorage.setItem(PROJ_KEY, JSON.stringify(list)); } catch (e) { alert('No se pudo guardar (almacenamiento lleno).'); } };
+  // snapshot completo: clips del timeline + ajustes globales del exportbar
+  function projectPayload() {
+    const G = id => document.getElementById(id);
+    return {
+      tl: JSON.parse(JSON.stringify(tl)),
+      globals: {
+        aspect: G('ed-aspect').value, resolution: G('ed-res').value, preset: G('ed-preset').value,
+        lut: G('ed-lut').value, trans: G('ed-trans').value, audio: G('ed-audio').value,
+        title: G('ed-title').value, fade: G('ed-fade').checked,
+      },
+    };
+  }
+  function restoreProject(p) {
+    tl = (p.tl || []).map(s => ({ ...s, id: uid() }));   // ids frescos para evitar colisiones
+    const g = p.globals || {};
+    const set = (id, v, chk) => { const el = document.getElementById(id); if (el && v != null) { if (chk) el.checked = !!v; else el.value = v; } };
+    set('ed-aspect', g.aspect); set('ed-res', g.resolution); set('ed-preset', g.preset);
+    set('ed-lut', g.lut); set('ed-trans', g.trans); set('ed-audio', g.audio);
+    set('ed-title', g.title); set('ed-fade', g.fade, true);
+    sel = tl.length ? 0 : -1; playhead = 0; curCid = null;
+    applyAspect(); undoStack = []; redoStack = [];
+    renderAll(); if (tl.length) { fit(); seek(0); }
+  }
+  document.getElementById('ed-new').addEventListener('click', () => {
+    if (tl.length) clearTL(); else { document.getElementById('ed-title').value = ''; }
+  });
+  document.getElementById('ed-save').addEventListener('click', () => {
+    if (!tl.length) { alert('Timeline vacío — nada que guardar.'); return; }
+    const name = prompt('Nombre del proyecto:', 'Proyecto ' + new Date().toLocaleDateString('es'));
+    if (!name || !name.trim()) return;
+    const list = loadProjects();
+    list.unshift({ name: name.trim(), date: Date.now(), payload: projectPayload() });
+    saveProjects(list.slice(0, 40));   // tope razonable
+    flashBtn('ed-save');
+  });
+  // modal de proyectos: listar / cargar / borrar
+  const projModal = document.getElementById('tl-projmodal');
+  function renderProjList() {
+    const list = loadProjects();
+    const box = document.getElementById('proj-list');
+    box.innerHTML = list.length ? list.map((p, i) => `
+      <div class="tl-projrow" data-i="${i}">
+        <div class="tl-projmeta">
+          <b>${esc(p.name)}</b>
+          <span class="mono">${(p.payload?.tl?.length || 0)} clips · ${mdate(p.date / 1000)}</span>
+        </div>
+        <span class="spacer"></span>
+        <button class="btn" data-proj="load" data-i="${i}">${icon('play')} Cargar</button>
+        <button class="btn danger" data-proj="del" data-i="${i}" data-tip="Borrar">${icon('warn')}</button>
+      </div>`).join('') : `<div class="empty">Aún no has guardado proyectos.</div>`;
+  }
+  function openProjModal() { renderProjList(); projModal.style.display = 'flex'; }
+  function closeProjModal() { projModal.style.display = 'none'; }
+  document.getElementById('ed-open').addEventListener('click', openProjModal);
+  document.getElementById('proj-close').addEventListener('click', closeProjModal);
+  projModal.addEventListener('click', e => {
+    if (e.target === projModal) { closeProjModal(); return; }   // click fuera de la tarjeta
+    const b = e.target.closest('[data-proj]'); if (!b) return;
+    const i = +b.dataset.i, list = loadProjects();
+    if (b.dataset.proj === 'load') {
+      const p = list[i]; if (!p) return;
+      if (tl.length && !confirm('Se reemplazará el timeline actual. ¿Cargar proyecto?')) return;
+      restoreProject(p.payload); closeProjModal();
+    } else if (b.dataset.proj === 'del') {
+      if (!confirm(`¿Borrar "${list[i]?.name}"?`)) return;
+      list.splice(i, 1); saveProjects(list); renderProjList();
+    }
   });
 
   // ================= deep-link (?clip=&a=&b=) =================
@@ -884,14 +1230,4 @@ pollJobs(document.getElementById('jobs'));
   // pintado inicial (setTimeout: rAF no dispara con el tab oculto, patrón del repo)
   setTimeout(() => { renderAll(); fit(); }, 30);
 
-  // ================= Mejores momentos (lógica intacta) =================
-  const moments = [];
-  flights.forEach(f => (ai[f.clip_id]?.highlights || []).forEach(h =>
-    moments.push({ f, h, score: ai[f.clip_id].travel_score || 0 })));
-  moments.sort((a, b) => b.score - a.score);
-  document.getElementById('moments').innerHTML = moments.slice(0, 6).map(m => `
-    <div class="hl-item">
-      <a class="tc" href="flight.html?id=${m.f.clip_id}">${fmt.date(m.f.date)} · ${fmt.dur(m.h.t)}</a>
-      <p>${esc(m.h.reason)}</p>
-    </div>`).join('') || `<p class="footer-note">Corre el análisis AI primero.</p>`;
 })();
