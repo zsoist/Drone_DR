@@ -307,8 +307,8 @@ check("captura: huecos GPS detectados", gps_metrics(_gap_pts)["gaps"] == 2)
 
 # --- presets ODM del worker ---
 import worker
-check("presets: rapido/estandar/alta definidos",
-      set(worker.PRESETS) == {"rapido", "estandar", "alta"})
+check("presets: rapido..ultra definidos",
+      set(worker.PRESETS) == {"rapido", "estandar", "alta", "extra", "ultra"})
 check("presets: todos con pc-quality + timeout coherentes",
       all("--pc-quality" in p["args"] and p["timeout"] >= 3600 for p in worker.PRESETS.values()))
 check("presets: alta es mas fina que rapido (ortho res)",
@@ -317,6 +317,12 @@ check("presets: alta es mas fina que rapido (ortho res)",
 check("presets: alta publica COPC para nubes grandes",
       "--pc-copc" in worker.PRESETS["alta"]["args"]
       and "--pc-copc" not in worker.PRESETS["rapido"]["args"])
+check("presets: ultra pesados tienen fallback de degradado",
+      worker.PRESETS["ultra"]["fallback"] == "extra" and worker.PRESETS["extra"]["fallback"] == "alta")
+check("presets: ultra usa pc-quality ultra + malla mas densa que alta",
+      "ultra" in worker.PRESETS["ultra"]["args"]
+      and int(worker.PRESETS["ultra"]["args"][worker.PRESETS["ultra"]["args"].index("--mesh-size") + 1])
+      > int(worker.PRESETS["alta"]["args"][worker.PRESETS["alta"]["args"].index("--mesh-size") + 1]))
 _cpu_backend = worker.choose_splat_backend(7000, mps_ready=False,
                                            mps_bin=Path("/tmp/opensplat-mps"),
                                            cpu_bin=Path("/tmp/opensplat-cpu"))

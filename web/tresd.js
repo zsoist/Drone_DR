@@ -257,6 +257,8 @@
       { k: 'rapido', n: 'Rápido', t: '~25-40 min', d: 'Borrador · 8 cm/px' },
       { k: 'estandar', n: 'Estándar', t: '~45-75 min', d: '5 cm/px · DSM 10 cm' },
       { k: 'alta', n: 'Alta', t: '~2-4 h', d: 'Nube densa · 3 cm/px' },
+      { k: 'extra', n: 'Extra', t: '~4-7 h', d: 'Malla 600k · octree 12 · 2 cm/px' },
+      { k: 'ultra', n: 'Ultra', t: '~8-14 h', d: 'pc-quality ultra · malla 800k · máx M4' },
     ];
     const { ov, close } = openModal(`${icon('cube')} Procesar un vuelo en 3D`, `
       <p class="mlb">Vuelo</p>

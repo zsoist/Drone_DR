@@ -68,20 +68,33 @@ def _cancelled(jid: str) -> bool:
     return (jobstore.get(jid) or {}).get("status") in jobstore.CANCEL_STATES
 
 
-# presets de calidad ODM: mismo pipeline completo (dense+mesh+DSM), distinto trade-off
+# presets de calidad ODM: mismo pipeline completo (dense+mesh+DSM), distinto trade-off.
+# mem = RAM del contenedor ODM (VM OrbStack = 9.77G). fallback = preset al que se degrada
+# automáticamente si ODM revienta por memoria (OOM exit 137) — "si no es capaz, baja".
 PRESETS = {
-    "rapido":   {"eta": "~25-40 min", "timeout": 2 * 3600,
+    "rapido":   {"eta": "~25-40 min", "timeout": 2 * 3600, "mem": "7g",
                  "args": ["--pc-quality", "low", "--feature-quality", "medium",
                           "--orthophoto-resolution", "8", "--dem-resolution", "15"]},
-    "estandar": {"eta": "~45-75 min", "timeout": 3 * 3600,
+    "estandar": {"eta": "~45-75 min", "timeout": 3 * 3600, "mem": "7g",
                  "args": ["--pc-quality", "medium", "--feature-quality", "medium",
                           "--orthophoto-resolution", "5", "--dem-resolution", "10"]},
-    # alta: pc-quality high (ultra = 8.5x tiempo, no vale en M4 16GB — community ODM);
-    # mesh-size 300k = recomendación urbana oficial para edificios/techos (default 200k)
-    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600,
+    # alta: mesh-size 300k = recomendación urbana oficial para edificios/techos (default 200k)
+    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "7g",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5",
                           "--mesh-size", "300000", "--pc-copc"]},
+    # extra: malla mucho más densa (mesh 600k + octree 12) manteniendo pc-quality high (memoria
+    # segura). Ortho/DEM más finos. El salto real de detalle geométrico sin el costo de 'ultra'.
+    "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "8g", "fallback": "alta",
+                 "args": ["--pc-quality", "high", "--feature-quality", "high",
+                          "--orthophoto-resolution", "2", "--dem-resolution", "4",
+                          "--mesh-size", "600000", "--mesh-octree-depth", "12", "--pc-copc"]},
+    # ultra: pc-quality ultra (~8.5x tiempo, community ODM) + mesh 800k. El máximo del M4;
+    # si la VM no da la memoria, el worker reintenta solo en 'extra'.
+    "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, "mem": "9g", "fallback": "extra",
+                 "args": ["--pc-quality", "ultra", "--feature-quality", "ultra",
+                          "--orthophoto-resolution", "2", "--dem-resolution", "3",
+                          "--mesh-size", "800000", "--mesh-octree-depth", "12", "--pc-copc"]},
 }
 
 
@@ -157,16 +170,31 @@ def opensplat_train_cmd(project: Path, out: Path, iters: int, backend: dict) -> 
     return cmd
 
 
+ODM_FRAME_PROFILE = {"rapido": "preview", "estandar": "balanced",
+                     "alta": "premium", "extra": "premium", "ultra": "premium"}
+
+
+def run_odm_container(jid, container, proj, preset, preset_name):
+    """Corre ODM con la memoria del preset; devuelve el exit code de run_tracked."""
+    return jobstore.run_tracked(jid,
+        [DOCKER, "run", "--rm", "--name", container,
+         "-m", preset.get("mem", "7g"), "-v", f"{proj}:/datasets/code", "opendronemap/odm",
+         "--project-path", "/datasets", "--max-concurrency", "4",
+         "--dsm", "--dtm", "--skip-report", *preset["args"]],
+        timeout=preset["timeout"])
+
+
 def run_3d(j: dict):
     cid = j["spec"]["clip_id"]
-    preset = PRESETS.get(j["spec"].get("preset", "estandar"), PRESETS["estandar"])
+    preset_name = j["spec"].get("preset", "estandar")
+    if preset_name not in PRESETS:
+        preset_name = "estandar"
+    preset = PRESETS[preset_name]
     proj = VAULT / "odm" / f"proj_{cid}"
     container = f"odm-{j['id']}"
     jobstore.update(j["id"], container=container)
 
-    frame_profile = {"rapido": "preview", "estandar": "balanced", "alta": "premium"}[
-        j["spec"].get("preset", "estandar") if j["spec"].get("preset", "estandar") in
-        ("rapido", "estandar", "alta") else "estandar"]
+    frame_profile = ODM_FRAME_PROFILE.get(preset_name, "balanced")
     jobstore.update(j["id"], detail="1/3 frames + geotag + selección adaptativa",
                     stage="frames", progress=0.05)
     if jobstore.run_tracked(j["id"], ["python3", str(PIPE / "odm_prep.py"), cid,
@@ -174,14 +202,19 @@ def run_3d(j: dict):
                             timeout=1800) != 0:
         raise RuntimeError("odm_prep falló")
 
-    jobstore.update(j["id"], detail=f"2/3 fotogrametría ODM ({preset['eta']})",
+    jobstore.update(j["id"], detail=f"2/3 fotogrametría ODM {preset_name} ({preset['eta']})",
                     stage="odm", progress=0.15)
-    if jobstore.run_tracked(j["id"],
-            [DOCKER, "run", "--rm", "--name", container,
-             "-m", "7g", "-v", f"{proj}:/datasets/code", "opendronemap/odm",
-             "--project-path", "/datasets", "--max-concurrency", "4",
-             "--dsm", "--dtm", "--skip-report", *preset["args"]],
-            timeout=preset["timeout"]) != 0:
+    rc = run_odm_container(j["id"], container, proj, preset, preset_name)
+    if rc != 0 and not _cancelled(j["id"]) and preset.get("fallback"):
+        # "si no es capaz, baja": ODM reventó (OOM/timeout) en un preset pesado → reintenta
+        # automáticamente en el preset de fallback (extra→alta, ultra→extra)
+        fb = preset["fallback"]
+        print(f"  ODM {preset_name} falló (rc={rc}) → fallback a {fb}", flush=True)
+        jobstore.update(j["id"], detail=f"2/3 ODM {preset_name} no fue capaz → reintentando en {fb}",
+                        stage="odm", progress=0.15)
+        preset_name, preset = fb, PRESETS[fb]
+        rc = run_odm_container(j["id"], container, proj, preset, preset_name)
+    if rc != 0:
         raise RuntimeError("ODM falló")
 
     jobstore.update(j["id"], detail="3/3 publicando assets web", stage="publish", progress=0.9)
@@ -194,7 +227,9 @@ def run_3d(j: dict):
     mf = VAULT / "models" / cid / "meta.json"
     if mf.exists():
         m = json.loads(mf.read_text())
-        m["preset"] = j["spec"].get("preset", "estandar")
+        m["preset"] = preset_name                 # el REAL usado (puede ser el fallback)
+        if preset_name != j["spec"].get("preset"):
+            m["preset_requested"] = j["spec"].get("preset")
         if j["spec"].get("title"):
             m["title"] = j["spec"]["title"]
         mf.write_text(json.dumps(m, indent=1))

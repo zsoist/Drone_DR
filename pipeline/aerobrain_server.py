@@ -1301,7 +1301,7 @@ class H(BaseHTTPRequestHandler):
             if jobstore.pending("3d", cid):
                 return self.send_json({"error": "ese vuelo ya está en cola o procesándose"}, 409)
             preset = str(spec.get("preset", "estandar"))
-            if preset not in ("rapido", "estandar", "alta"):
+            if preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
                 preset = "estandar"
             j = jobstore.enqueue("3d", cid, {"clip_id": cid, "preset": preset,
                                              "title": str(spec.get("title", ""))[:80].strip()})
