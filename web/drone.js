@@ -2,47 +2,129 @@
 // optimiza la tarjeta por niveles, y explora su contenido con filtros.
 const main = renderShell('drone.html');
 main.innerHTML = `
-  <div class="page-head"><h1>Dron</h1><span class="count">tarjetas SD · importación · optimización</span></div>
-  <div class="statgrid" id="d-stats">${'<div class="sk" style="height:74px"></div>'.repeat(5)}</div>
-
-  <div class="panel rise">
-    <div class="ph">${icon('db')} Tarjetas SD detectadas
-      <span class="spacer" style="flex:1"></span>
-      <button class="btn" id="sd-rescan" style="padding:4px 12px;font-size:11.5px">Escanear</button>
-    </div>
-    <div class="pb" id="sd-list"><div class="sk" style="height:80px"></div></div>
+  <div class="st-hero rise">
+    <h1>Dron</h1>
+    <p style="color:var(--text-2);font-size:14px;margin:0 0 12px">
+      Todo el material entra por aquí — elige tu vía.</p>
+    <span class="gchip" id="up-session" data-tip="La subida directa requiere sesión de operador">${icon('activity')} comprobando sesión…</span>
   </div>
 
-  <div class="panel rise" style="margin-top:16px">
-    <div class="ph">${icon('activity')} Cola de importación</div>
-    <div class="pb">
-      <div class="pipe-strip">
-        <span class="pipe-step">${icon('db')}<b>SD</b><small>lectura</small></span>
-        <span class="pipe-arrow"></span>
-        <span class="pipe-step">${icon('dl')}<b>Copia</b><small>al SSD</small></span>
-        <span class="pipe-arrow"></span>
-        <span class="pipe-step">${icon('check')}<b>Verificación</b><small>byte a byte</small></span>
-        <span class="pipe-arrow"></span>
-        <span class="pipe-step">${icon('film')}<b>Proxies</b><small>1080p · 720p</small></span>
-        <span class="pipe-arrow"></span>
-        <span class="pipe-step">${icon('route')}<b>GPS</b><small>track + thumbs</small></span>
-        <span class="pipe-arrow"></span>
-        <span class="pipe-step pipe-end">${icon('drone')}<b>Vault</b><small>intocable</small></span>
+  <div class="pm-tabs rise" id="dr-tabs" style="margin-bottom:16px;max-width:640px">
+    <button class="on" data-tab="sd" data-tip="La vía recomendada: los .SRT traen GPS, mapa y telemetría">${icon('db')} Tarjeta SD · con GPS</button>
+    <button data-tab="up" data-tip="Desde Fotos del iPhone/iPad o arrastrando en PC — sin telemetría">${icon('dl')} Subida directa</button>
+    <span class="pm-ink"></span>
+  </div>
+
+  <section class="dr-mod" data-mod="sd">
+    <div class="statgrid" id="d-stats">${'<div class="sk" style="height:74px"></div>'.repeat(5)}</div>
+
+    <div class="panel rise">
+      <div class="ph">${icon('db')} Tarjetas SD detectadas
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn" id="sd-rescan" style="padding:4px 12px;font-size:11.5px" data-tip="Vuelve a buscar tarjetas montadas (carpeta DCIM)">Escanear</button>
       </div>
-      <p class="footer-note" style="margin:0 0 10px">Solo tras completar TODA la cadena —y si lo
-      pediste— el archivo se borra de la SD. Un corte a mitad jamás pierde datos.</p>
-      <div id="jobs-sd"></div>
+      <div class="pb" id="sd-list"><div class="sk" style="height:80px"></div></div>
     </div>
-  </div>
 
-  <div class="panel rise" style="margin-top:16px">
-    <div class="ph">${icon('check')} Flujo recomendado</div>
-    <div class="pb">
-      <p class="footer-note" style="margin:0">1 · Aterriza → 2 · SD al Mac → 3 · «Importar
-      nuevos…» → 4 · «Optimizar SD» nivel Fábrica → 5 · La tarjeta vuelve al dron vacía y lista.
-      Los originales viven intocables en <span class="mono">raw/&lt;dron&gt;/</span>.</p>
+    <div class="panel rise" style="margin-top:16px">
+      <div class="ph">${icon('route')} La cadena de importación</div>
+      <div class="pb">
+        <div class="pipe-strip">
+          <span class="pipe-step" data-tip="Lee la carpeta DCIM de la tarjeta">${icon('db')}<b>SD</b><small>lectura</small></span>
+          <span class="pipe-arrow"></span>
+          <span class="pipe-step" data-tip="Copia cada archivo al SSD del Mac">${icon('dl')}<b>Copia</b><small>al SSD</small></span>
+          <span class="pipe-arrow"></span>
+          <span class="pipe-step" data-tip="Compara tamaño byte a byte antes de dar por buena la copia">${icon('check')}<b>Verificación</b><small>byte a byte</small></span>
+          <span class="pipe-arrow"></span>
+          <span class="pipe-step" data-tip="Genera streaming 1080p y 720p por hardware">${icon('film')}<b>Proxies</b><small>1080p · 720p</small></span>
+          <span class="pipe-arrow"></span>
+          <span class="pipe-step" data-tip="Extrae la telemetría del .SRT: ruta, altura, velocidad">${icon('route')}<b>GPS</b><small>track + thumbs</small></span>
+          <span class="pipe-arrow"></span>
+          <span class="pipe-step pipe-end" data-tip="El original queda intocable en raw/">${icon('drone')}<b>Vault</b><small>intocable</small></span>
+        </div>
+        <p class="footer-note" style="margin:0">Solo tras completar TODA la cadena —y si lo
+        pediste— el archivo se borra de la SD. Un corte a mitad jamás pierde datos.</p>
+      </div>
     </div>
+
+    <div class="panel rise" style="margin-top:16px">
+      <div class="ph">${icon('check')} Flujo recomendado</div>
+      <div class="pb">
+        <p class="footer-note" style="margin:0">1 · Aterriza → 2 · SD al Mac → 3 · «Importar
+        nuevos…» → 4 · «Optimizar SD» nivel Fábrica → 5 · La tarjeta vuelve al dron vacía y lista.
+        Los originales viven intocables en <span class="mono">raw/&lt;dron&gt;/</span>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="dr-mod" data-mod="up" style="display:none">
+    <div class="up-wrap">
+      <div class="up-gate" id="up-gate" style="display:none">
+        ${icon('warn')}
+        <div><b>Inicia sesión para subir</b>
+          <p>Solo el operador puede añadir videos a la bóveda.</p></div>
+        <button class="btn primary" id="up-login">Iniciar sesión</button>
+      </div>
+
+      <div class="up-zone rise" id="drop" data-tip="También puedes soltar varios a la vez — van en cola">
+        <span class="up-ring"></span>
+        ${icon('dl')}
+        <p class="up-t">Arrastra videos o toca para elegir</p>
+        <p class="up-s">En iPhone y iPad se abre tu app de <b>Fotos</b> directamente.</p>
+        <div class="up-devices">
+          <span class="gchip" data-tip="El selector abre la fototeca — exporta del dron a Fotos y sube">${icon('iso')} iPhone · Fotos</span>
+          <span class="gchip" data-tip="Igual que iPhone, con pantalla grande">${icon('grid')} iPad</span>
+          <span class="gchip" data-tip="Arrastra archivos desde el Finder o Explorador">${icon('db')} PC · arrastra</span>
+        </div>
+        <input type="file" id="file" multiple accept="video/*,.mts,.mkv" style="display:none">
+      </div>
+
+      <div class="up-steps rise">
+        <span data-tip="Cola secuencial con velocidad y ETA">${icon('dl')} Subes</span><i>${icon('chevR')}</i>
+        <span data-tip="Streaming 1080p por hardware del M4">${icon('gauge')} Proxy 1080p</span><i>${icon('chevR')}</i>
+        <span data-tip="Resumen, tags y highlights automáticos">${icon('spark')} Análisis AI</span><i>${icon('chevR')}</i>
+        <span data-tip="Aparece en la galería y en el editor">${icon('check')} En Vuelos y Studio</span>
+      </div>
+      <p class="footer-note" style="margin:2px 4px 0">
+        Sin telemetría: esta vía no trae GPS ni mapa. Si el video salió del dron con su .SRT,
+        usa la <b>Tarjeta SD</b> — es la diferencia entre un clip y un vuelo completo.</p>
+
+      <div id="queue" class="up-queue"></div>
+    </div>
+  </section>
+
+  <div class="panel rise" style="margin-top:18px">
+    <div class="ph">${icon('activity')} Trabajos del servidor</div>
+    <div class="pb" id="jobs-sd"></div>
   </div>`;
+
+// ---- tabs de método (SD / Directa) con tinta deslizante ----
+const drTabs = document.getElementById('dr-tabs');
+const drInk = drTabs.querySelector('.pm-ink');
+function drInkMove() {
+  const on = drTabs.querySelector('button.on');
+  drInk.style.left = on.offsetLeft + 'px';
+  drInk.style.width = on.offsetWidth + 'px';
+}
+setTimeout(drInkMove, 30);
+window.addEventListener('resize', () => setTimeout(drInkMove, 30));
+function showVia(name) {
+  drTabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  drInkMove();
+  document.querySelectorAll('.dr-mod').forEach(m => {
+    const show = m.dataset.mod === name;
+    if (show && m.style.display === 'none') {
+      m.style.display = '';
+      m.animate([{ opacity: 0, transform: 'translateX(14px)' }, { opacity: 1, transform: 'translateX(0)' }],
+                { duration: 220, easing: 'ease-out' });
+    } else if (!show) m.style.display = 'none';
+  });
+}
+drTabs.addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]');
+  if (b) showVia(b.dataset.tab);
+});
+if (new URLSearchParams(location.search).get('via') === 'subir') showVia('up');
 
 let sys = {}, volumes = [];
 (async () => { try { sys = await (await fetch(`${DATA}/manifest/system.json`)).json(); paintStats(); } catch {} })();
@@ -339,3 +421,124 @@ function openOptimize(v) {
     ov.remove();
   });
 }
+
+
+// ================= subida directa (fusionado de Subir v2) =================
+const drop = document.getElementById('drop');
+const fileIn = document.getElementById('file');
+const upQueue = document.getElementById('queue');
+let upLogged = false;
+
+async function upCheckSession() {
+  try { upLogged = (await fetch('/api/whoami')).ok; } catch { upLogged = false; }
+  const chip = document.getElementById('up-session');
+  chip.innerHTML = upLogged
+    ? `${icon('check')} sesión activa — listo para importar y subir`
+    : `${icon('warn')} sin sesión — solo lectura`;
+  chip.classList.toggle('mint', upLogged);
+  document.getElementById('up-gate').style.display = upLogged ? 'none' : 'flex';
+  drop.classList.toggle('locked', !upLogged);
+}
+upCheckSession();
+document.getElementById('up-login').addEventListener('click', async () => {
+  if (await ensureAuth()) upCheckSession();
+});
+
+drop.addEventListener('click', async () => {
+  if (!upLogged) { if (await ensureAuth()) await upCheckSession(); else return; }
+  if (upLogged) fileIn.click();
+});
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', async e => {
+  e.preventDefault(); drop.classList.remove('over');
+  if (!upLogged) { if (await ensureAuth()) await upCheckSession(); else return; }
+  [...e.dataTransfer.files].forEach(upEnqueue);
+});
+fileIn.addEventListener('change', () => { [...fileIn.files].forEach(upEnqueue); fileIn.value = ''; });
+
+const upQ = [];
+let upActive = null;
+
+function upEnqueue(file) {
+  if (!/\.(mp4|mov|m4v|mkv|avi|mts|webm)$/i.test(file.name)) {
+    alert(`"${file.name}" no es un formato de video soportado.`); return;
+  }
+  upQ.push({ file, status: 'pendiente', pct: 0, speed: 0, eta: 0, loaded: 0, xhr: null });
+  upRender(); upPump();
+}
+function upPump() {
+  if (upActive || !upQ.some(i => i.status === 'pendiente')) return;
+  upActive = upQ.find(i => i.status === 'pendiente');
+  upStart(upActive);
+}
+function upStart(item) {
+  item.status = 'subiendo';
+  const xhr = item.xhr = new XMLHttpRequest();
+  xhr.open('POST', `/upload?name=${encodeURIComponent(item.file.name)}`);
+  let lastT = performance.now(), lastL = 0;
+  xhr.upload.onprogress = e => {
+    const now = performance.now(), dt = (now - lastT) / 1000;
+    if (dt > 0.4) {
+      const inst = (e.loaded - lastL) / dt;
+      item.speed = item.speed ? item.speed * 0.6 + inst * 0.4 : inst;
+      item.eta = item.speed > 0 ? (e.total - e.loaded) / item.speed : 0;
+      lastT = now; lastL = e.loaded;
+    }
+    item.pct = Math.round((e.loaded / e.total) * 100);
+    item.loaded = e.loaded;
+    upPaint(item);
+  };
+  const finish = st => { item.status = st; item.xhr = null; upActive = null; upRender(); upPump(); };
+  xhr.onload = () => {
+    if (xhr.status === 200) finish('procesando');
+    else if (xhr.status === 403) { item.err = 'sesión expirada'; finish('error'); upCheckSession(); }
+    else { item.err = (JSON.parse(xhr.responseText || '{}').error) || `error ${xhr.status}`; finish('error'); }
+  };
+  xhr.onerror = () => { item.err = 'error de red — reintenta'; finish('error'); };
+  xhr.onabort = () => finish('cancelado');
+  xhr.send(item.file);
+  upRender();
+}
+const UP_STATE = {
+  pendiente: { ic: 'clock', cls: '' }, subiendo: { ic: 'dl', cls: 'run' },
+  procesando: { ic: 'gauge', cls: 'ok' }, cancelado: { ic: 'close', cls: 'off' },
+  error: { ic: 'warn', cls: 'bad' },
+};
+function upRender() {
+  upQueue.innerHTML = upQ.map((it, i) => `
+    <div class="up-card ${UP_STATE[it.status].cls}">
+      <span class="up-ic">${icon(UP_STATE[it.status].ic)}</span>
+      <div class="up-info">
+        <div class="up-name">${esc(it.file.name)}</div>
+        <div class="up-meta mono" data-meta="${i}">${upMeta(it)}</div>
+        <div class="up-bar"><i data-bar="${i}" style="width:${it.pct}%"></i></div>
+      </div>
+      <div class="up-acts">
+        ${it.status === 'subiendo' ? `<button class="btn" data-cancel="${i}">Cancelar</button>` : ''}
+        ${it.status === 'error' || it.status === 'cancelado' ? `<button class="btn" data-retry="${i}">${icon('loop')} Reintentar</button>` : ''}
+      </div>
+    </div>`).join('');
+}
+function upMeta(it) {
+  const mb = v => (v / 1e6).toFixed(0);
+  if (it.status === 'subiendo')
+    return `${it.pct}% · ${mb(it.loaded)}/${mb(it.file.size)} MB · ${(it.speed / 1e6).toFixed(1)} MB/s · ~${fmt.dur(Math.min(5940, it.eta))} restantes`;
+  if (it.status === 'procesando') return `${mb(it.file.size)} MB · proxy + AI en curso, mira Trabajos abajo`;
+  if (it.status === 'error') return it.err || 'error';
+  return `${mb(it.file.size)} MB`;
+}
+function upPaint(it) {
+  const i = upQ.indexOf(it);
+  const m = upQueue.querySelector(`[data-meta="${i}"]`);
+  const b = upQueue.querySelector(`[data-bar="${i}"]`);
+  if (m) m.textContent = upMeta(it);
+  if (b) b.style.width = `${it.pct}%`;
+}
+upQueue.addEventListener('click', e => {
+  const c = e.target.closest('[data-cancel]');
+  if (c) { upQ[+c.dataset.cancel]?.xhr?.abort(); return; }
+  const r = e.target.closest('[data-retry]');
+  if (r) { const it = upQ[+r.dataset.retry]; if (it) { it.status = 'pendiente'; it.pct = 0; it.err = null; upRender(); upPump(); } }
+});
+window.addEventListener('beforeunload', e => { if (upActive) { e.preventDefault(); e.returnValue = ''; } });

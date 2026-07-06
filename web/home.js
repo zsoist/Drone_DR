@@ -49,7 +49,7 @@ main.classList.add('deck-main');
       d: 'Timeline multi-clip con razor, color por corte, títulos y export hasta 4K.',
       chips: [`${(sys.reels || []).length} reels`, `${(sys.photos || []).length} fotos`, '15 transiciones'],
       img: photo },
-    { href: 'subir.html', ic: 'dl', ac: '#ff7eb0', t: 'Subir',
+    { href: 'drone.html?via=subir', ic: 'dl', ac: '#ff7eb0', t: 'Subir',
       d: 'Suelta cualquier video DJI: el proxy, la telemetría y el análisis salen solos.',
       chips: ['arrastra y suelta', 'hasta 25 GB'],
       img: thumb(byDate[3]) },
