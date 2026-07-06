@@ -43,6 +43,25 @@ def browser_gate(jid: str, kind: str, cid: str, timeout: int = 75):
         raise RuntimeError(f"browser gate falló para {kind} {cid}")
 
 
+def crop_floaters(splat_path: Path) -> bool:
+    """Quita los floaters outlier del .splat (halo de baja confianza en los bordes de splats
+    aéreos; el alpha-removal del viewer NO los toca). Percentil 90 + factor 1.05 = corta el
+    ~6-7% exterior conservando toda la escena. In-place, atómico, no fatal."""
+    tmp = splat_path.with_suffix(".crop.tmp")
+    try:
+        r = subprocess.run(["node", str(PIPE / "crop_splat.mjs"), str(splat_path), str(tmp), "0.90", "1.05"],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size < splat_path.stat().st_size * 0.5:
+            raise RuntimeError((r.stderr or r.stdout or "sin salida")[-200:])
+        print(f"  {r.stdout.strip()}", flush=True)
+        os.replace(tmp, splat_path)
+        return True
+    except Exception as e:
+        tmp.unlink(missing_ok=True)
+        print(f"  crop de floaters falló (no fatal): {e}", flush=True)
+        return False
+
+
 def export_ksplat(splat_path: Path) -> Path | None:
     """Exporta <cid>.ksplat junto al .splat publicado (carga más rápida en el viewer).
 
@@ -288,6 +307,8 @@ def run_splat(j: dict):
     if not quality["passed"]:
         raise RuntimeError(quality["reason"])
     final_out = publish_splat_stage(stage, cid, quality, splat_dir)
+    jobstore.update(j["id"], detail="limpiando floaters de los bordes", progress=0.93)
+    crop_floaters(final_out)                    # de-halo antes de generar el ksplat
     jobstore.update(j["id"], detail="exportando .ksplat optimizado para el viewer", progress=0.94)
     export_ksplat(final_out)
     rebuild_index()
