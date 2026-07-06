@@ -37,3 +37,6 @@
   negro en iPhone/iPad). Colores temeables de SVG inline SIEMPRE por clase CSS.
 - xcodebuild -downloadComponent MetalToolchain corre como usuario normal (sin sudo);
   ~688MB — lanzarlo en background y dejar que termine, no cancelarlo por lento.
+- MobileAsset gotcha: xcodebuild -downloadComponent puede bajar un asset STALE de una
+  versión vieja de Xcode (baja completo y queda "Status: uninstalled" sin error). Cura:
+  reintentar el mismo comando — el segundo intento trae la versión correcta y activa.
