@@ -70,7 +70,8 @@ main.innerHTML = `
   let sys = {}, jobs = [];
   try { sys = await (await fetch(`${DATA}/manifest/system.json`)).json(); } catch {}
   try { jobs = (await (await fetch('/api/jobs')).json()).jobs || []; } catch {}
-  const flights = await getFlights();
+  let flights = [];
+  try { flights = await getFlights(); } catch {}   // fallo de flights.json NO debe congelar el tab entero
   const st = sys.storage || {};
   const models = new Set((sys.models || []).map(m => m.clip_id));
 
@@ -134,7 +135,7 @@ main.innerHTML = `
     return m < 60 ? `hace ${Math.max(1, Math.round(m))} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`;
   };
   document.getElementById('feed').innerHTML = jobs.slice(0, 9).map(j => {
-    const ts = +(j.id.split('-').pop());
+    const ts = +((j.id || '').split('-').pop() || NaN);   // job sin id no rompe el feed (mismo blast radius que label)
     const stc = { done: 'var(--mint)', running: 'var(--accent)', queued: 'var(--text-3)',
                   error: 'var(--red)', cancelled: 'var(--amber)', cancel_failed: 'var(--red)' }[j.status] || 'var(--text-3)';
     return `<div class="act-row">
