@@ -2084,3 +2084,126 @@ button.exp { text-align: left; cursor: pointer; }
 /* la tarjeta de export debe ser opaca (surface-1 es translúcido) */
 .ex-card { background: var(--surface); }
 .ex-card .ex-body, .ex-card .ph, .ex-card .ex-foot { background: color-mix(in srgb, var(--surface-1) 60%, var(--surface)); }
+
+/* ===== BLOQUE 10 · home v5: dron interactivo, cielo rico, cards con media ===== */
+/* título con gradiente vivo que respira */
+.deck-title.v5 { font-size: clamp(32px, 4.4vw, 46px); letter-spacing: -.02em;
+  background: linear-gradient(100deg, #eaf2ff 10%, #7db5ff 38%, #38d9e5 62%, #3ddc97 90%);
+  background-size: 220% 100%; -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; animation: title-flow 9s ease-in-out infinite; }
+[data-theme="light"] .deck-title.v5 {
+  background: linear-gradient(100deg, #0b3a66 10%, #0e7fbf 40%, #0a9c94 65%, #0e8f5f 90%);
+  background-size: 220% 100%; -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; }
+@keyframes title-flow { 0%,100% { background-position: 0% 0; } 50% { background-position: 100% 0; } }
+
+/* nubes blandas + hojas al viento */
+.deck-sky .cloud { position: absolute; height: 60px; width: 200px; border-radius: 99px;
+  background: radial-gradient(60% 100% at 40% 60%, rgba(255,255,255,.09), transparent 70%);
+  filter: blur(10px); animation: cloud-drift linear infinite; }
+[data-theme="light"] .deck-sky .cloud { background: radial-gradient(60% 100% at 40% 60%, rgba(255,255,255,.9), transparent 70%); }
+.deck-sky .c1 { top: 6%; animation-duration: 46s; }
+.deck-sky .c2 { top: 22%; animation-duration: 64s; animation-delay: -30s; width: 300px; }
+.deck-sky .c3 { top: 44%; animation-duration: 55s; animation-delay: -12s; width: 150px; }
+@keyframes cloud-drift { from { transform: translateX(-320px); } to { transform: translateX(calc(100vw + 320px)); } }
+.deck-sky .w4 { top: 76%; animation-duration: 9s; animation-delay: 3.4s; width: 190px; }
+.deck-sky .leaf { position: absolute; top: -20px; width: 9px; height: 12px;
+  border-radius: 0 60% 0 60%; background: color-mix(in srgb, #3ddc97 55%, transparent);
+  animation: leaf-fall ease-in infinite; opacity: 0; }
+.deck-sky .lf1 { left: 16%; animation-duration: 12s; }
+.deck-sky .lf2 { left: 42%; animation-duration: 15s; animation-delay: 5s; background: color-mix(in srgb, #9ccf62 55%, transparent); }
+.deck-sky .lf3 { left: 68%; animation-duration: 13s; animation-delay: 9s; }
+.deck-sky .lf4 { left: 88%; animation-duration: 17s; animation-delay: 2.5s; background: color-mix(in srgb, #c9a75a 50%, transparent); }
+.deck-sky .d7 { left: 36%; animation-duration: 12s; animation-delay: 7s; }
+.deck-sky .d8 { left: 55%; animation-duration: 18s; animation-delay: 10s; }
+@keyframes leaf-fall {
+  0% { transform: translateY(-4vh) rotate(0) translateX(0); opacity: 0; }
+  8% { opacity: .85; }
+  50% { transform: translateY(45vh) rotate(200deg) translateX(34px); }
+  90% { opacity: .5; }
+  100% { transform: translateY(102vh) rotate(420deg) translateX(-22px); opacity: 0; }
+}
+
+/* dron v5: detallado e interactivo */
+.fly-drone.v5 { width: 128px; height: 64px; pointer-events: auto; cursor: pointer; }
+.fly-drone.v5 .guard { fill: none; stroke: color-mix(in srgb, var(--text-2) 55%, transparent); stroke-width: 2; }
+.fly-drone.v5 .visor { fill: color-mix(in srgb, var(--accent) 70%, #0a1420); }
+.fly-drone.v5 .cam { fill: #0d131c; stroke: var(--accent); stroke-width: 1.6; }
+.fly-drone.v5 .cam-i { fill: color-mix(in srgb, var(--accent) 80%, #fff); }
+.fly-drone.v5 .leg { stroke: color-mix(in srgb, var(--text-2) 75%, transparent); stroke-width: 2.4; stroke-linecap: round; fill: none; }
+.fly-drone.v5 .led.l1 { fill: #ff6b6b; animation: led-blink 1s steps(2) infinite; }
+.fly-drone.v5 .led.l2 { fill: #3ddc97; animation: led-blink 1.35s steps(2) infinite .3s; }
+/* acrobacias al click */
+.fly-drone.trick-roll  { animation: fly-x 17s linear infinite, drone-roll .95s cubic-bezier(.4,1.3,.5,1) !important; }
+.fly-drone.trick-dip   { animation: fly-x 17s linear infinite, drone-dip .9s ease-in-out !important; }
+.fly-drone.trick-spin  { animation: fly-x 17s linear infinite, drone-spin .85s cubic-bezier(.4,1.2,.5,1) !important; }
+.fly-drone.trick-boost { animation: fly-x 17s linear infinite, drone-boost .8s cubic-bezier(.3,1.4,.4,1) !important; }
+@keyframes drone-roll { 0% { transform: rotate(0) scale(1); } 55% { transform: rotate(360deg) scale(.92); } 100% { transform: rotate(360deg) scale(1); } }
+@keyframes drone-dip { 0%,100% { transform: translateY(0); } 45% { transform: translateY(34px) rotate(9deg) scale(.96); } }
+@keyframes drone-spin { 0% { transform: rotateY(0); } 100% { transform: rotateY(720deg); } }
+@keyframes drone-boost { 0% { transform: translateX(0) rotate(0); } 40% { transform: translateX(90px) rotate(-7deg) scaleX(1.08); } 100% { transform: translateX(0) rotate(0); } }
+
+/* cards v5: icono grande junto al título gigante + chips de datos */
+.dc5 { min-height: 300px; }
+.dc-head { display: flex; align-items: center; gap: 12px; }
+.dc-ic5 { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 14px;
+  color: #fff; background: color-mix(in srgb, var(--ac) 42%, rgba(8,10,14,.5));
+  border: 1px solid color-mix(in srgb, var(--ac) 60%, transparent); backdrop-filter: blur(6px);
+  flex: none; }
+.dc-ic5 svg.ic { width: 23px; height: 23px; }
+.dc5 .dc-t { font-size: 32px; font-weight: 800; letter-spacing: -.025em; color: #fff;
+  text-shadow: 0 2px 14px rgba(0,0,0,.6); }
+.dc5 .dc-d { font-size: 14px; line-height: 1.55; color: rgba(255,255,255,.92);
+  text-shadow: 0 1px 8px rgba(0,0,0,.65); max-width: 48ch; }
+.dc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.dc-chips .gchip { background: rgba(10,13,18,.55); border-color: color-mix(in srgb, var(--ac) 45%, transparent);
+  color: #fff; backdrop-filter: blur(4px); font-size: 10.5px; }
+
+/* capas de media especiales */
+.dc-cloud { position: absolute; right: 0; top: 0; width: 62%; height: 68%; z-index: 2; pointer-events: none; }
+.dc-globe { position: absolute; right: 12px; top: 12px; width: 108px; height: 108px; z-index: 2;
+  pointer-events: none; opacity: .95; }
+.dc-globe .g-out { fill: rgba(6,10,14,.25); stroke: color-mix(in srgb, #3ddc97 80%, transparent); stroke-width: 1.6; }
+.dc-globe .g-par { fill: none; stroke: color-mix(in srgb, #3ddc97 45%, transparent); stroke-width: 1; }
+.dc-globe .g-mer { fill: none; stroke: color-mix(in srgb, #3ddc97 60%, transparent); stroke-width: 1.2;
+  transform-origin: 50% 50%; transform-box: view-box; }
+.dc-globe .m1 { animation: globe-mer 7s linear infinite; }
+.dc-globe .m2 { animation: globe-mer 7s linear infinite -2.33s; }
+.dc-globe .m3 { animation: globe-mer 7s linear infinite -4.66s; }
+@keyframes globe-mer { 0% { transform: scaleX(1); } 50% { transform: scaleX(-1); } 100% { transform: scaleX(1); } }
+.dc-globe .g-dot { fill: #3ddc97; animation: led-blink 1.6s steps(2) infinite; }
+.dc-globe .gd2 { animation-delay: .7s; }
+.dc-fleet { position: absolute; right: 10px; top: 14px; width: 150px; height: 66px; z-index: 2;
+  pointer-events: none; }
+.dc-fleet .guard { fill: none; stroke: color-mix(in srgb, #38d9e5 70%, transparent); stroke-width: 1.6; }
+.dc-fleet .rotor ellipse { fill: color-mix(in srgb, #38d9e5 60%, transparent); }
+.dc-fleet .rotor { transform-origin: center; transform-box: fill-box; animation: rotor-spin .15s linear infinite; }
+.dc-fleet .arm { stroke: color-mix(in srgb, #cfe9f2 65%, transparent); stroke-width: 2; stroke-linecap: round; fill: none; }
+.dc-fleet .body { fill: color-mix(in srgb, #dfeef5 85%, transparent); }
+.dc-fleet .cam { fill: none; stroke: #38d9e5; stroke-width: 1.4; }
+.dc-fleet .fd.big { animation: fleet-bob 3s ease-in-out infinite; }
+.dc-fleet .fd.small { animation: fleet-bob 2.4s ease-in-out infinite -1s; }
+@keyframes fleet-bob { 50% { transform: translateY(-5px); } }
+
+/* velo cósmico v3: absorbe desde el punto del click, estrellas, sin flash beige */
+.nav-veil.v3 { position: fixed; inset: 0; z-index: 999; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle at var(--cx, 50%) var(--cy, 50%),
+    color-mix(in srgb, var(--ac, #4da3ff) 30%, #05070d) 0%, #04060b 62%);
+  transition: opacity .34s cubic-bezier(.3,.7,.4,1); }
+.nav-veil.v3::before { content: ''; position: absolute; left: var(--cx); top: var(--cy);
+  width: 10px; height: 10px; margin: -5px; border-radius: 50%;
+  box-shadow: 0 0 60px 30px color-mix(in srgb, var(--ac, #4da3ff) 55%, transparent);
+  animation: veil-core .5s cubic-bezier(.2,.8,.3,1) both; }
+@keyframes veil-core { from { transform: scale(.2); opacity: 0; } 60% { opacity: 1; } to { transform: scale(3.2); opacity: .7; } }
+.nav-veil.v3 i { position: absolute; width: 2.5px; height: 2.5px; border-radius: 50%;
+  background: #fff; opacity: 0; animation: veil-star .45s ease-out both; }
+@keyframes veil-star { 0% { opacity: 0; transform: scale(.4); } 45% { opacity: .95; } 100% { opacity: .2; transform: scale(1.4); } }
+.nav-veil.v3.on { opacity: 1; }
+
+@media (max-width: 640px) {
+  .dc5 .dc-t { font-size: 26px; }
+  .dc-ic5 { width: 40px; height: 40px; }
+  .dc-globe { width: 84px; height: 84px; }
+  .dc-fleet { width: 120px; }
+  .dc-cloud { width: 74%; height: 56%; }
+}
