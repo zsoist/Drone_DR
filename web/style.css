@@ -2450,3 +2450,21 @@ button.exp { text-align: left; cursor: pointer; }
 .fly-drone.v8:hover { filter: drop-shadow(0 5px 0 rgba(0,0,0,.4)) drop-shadow(0 0 9px color-mix(in srgb, var(--accent) 60%, transparent)); }
 .hero-air.following .fly-drone.v8 { filter: drop-shadow(0 5px 0 rgba(0,0,0,.4)) drop-shadow(0 0 7px var(--accent)); }
 @media (max-width: 640px) { .fly-drone.v8 { width: 96px; } }
+
+/* ===== BLOQUE 17 · dron v9 isométrico (naranja/negro/blanco) ===== */
+.fly-drone.v9 { position: absolute; left: 0; top: 0; width: 132px; height: auto;
+  pointer-events: auto; cursor: pointer; will-change: transform; image-rendering: pixelated;
+  filter: drop-shadow(0 6px 0 rgba(0,0,0,.45)); animation: none; }
+.fly-drone.v9 .prop { animation: prop-yaw var(--spin, .5s) linear infinite; }
+@keyframes prop-yaw { to { transform: rotate(360deg); } }
+.fly-drone.v9:hover { filter: drop-shadow(0 6px 0 rgba(0,0,0,.45)) drop-shadow(0 0 9px color-mix(in srgb, var(--accent) 55%, transparent)); }
+.hero-air.following .fly-drone.v9 { filter: drop-shadow(0 6px 0 rgba(0,0,0,.45)) drop-shadow(0 0 7px #ff7a1a); }
+@media (max-width: 640px) { .fly-drone.v9 { width: 112px; } }
+
+/* ===== BLOQUE 18 · dron OVI (img SVG) ===== */
+.fly-drone.v10 { position: absolute; left: 0; top: 0; width: 190px; height: auto;
+  pointer-events: auto; cursor: pointer; will-change: transform; image-rendering: pixelated;
+  filter: drop-shadow(0 8px 6px rgba(0,0,0,.5)); animation: none; user-select: none; }
+.fly-drone.v10:hover { filter: drop-shadow(0 8px 6px rgba(0,0,0,.5)) drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 55%, transparent)); }
+.hero-air.following .fly-drone.v10 { filter: drop-shadow(0 8px 6px rgba(0,0,0,.5)) drop-shadow(0 0 9px var(--accent)); }
+@media (max-width: 640px) { .fly-drone.v10 { width: 150px; } }

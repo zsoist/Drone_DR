@@ -59,66 +59,11 @@ main.classList.add('deck-main');
       img: thumb(byDate[4]) },
   ];
 
-  // dron héroe v8: pixel-art top-down con brazos que ROTAN por frames (steps) y cuerpo
-  // sombreado (luz arriba-izq) → parece girar en 3D. crispEdges = nítido a cualquier escala.
-  const PAL = {
-    k: '#0a0f16', s: '#151c26', d: '#232c39', m: '#3c4a5e', L: '#5a6c85', h: '#cfe0f5', H: '#ffffff',
-    c: '#38d9e5', C: '#8ef0ff', g: '#3ddc97', r: '#ff5b5b', y: '#ffcf5b', o: '#ff9f43',
-    p: 'rgba(150,210,255,.22)', P: 'rgba(215,240,255,.62)',
-  };
-  const U = 4;   // tamaño de cada píxel (unidades de viewBox)
-  const px = (rows, ox, oy) => rows.map((row, gy) => [...row].map((ch, gx) => {
-    const col = PAL[ch]; if (!col) return '';
-    const cls = (ch === 'p' || ch === 'P') ? ' class="pp"' : '';
-    return `<rect x="${(gx + ox) * U}" y="${(gy + oy) * U}" width="${U}" height="${U}" fill="${col}"${cls}/>`;
-  }).join('')).join('');
-
-  // ---- cuerpo central (estático): octágono domado con luz arriba-izq y sombra abajo-der ----
-  const BODY = [
-    '....kkkk....',
-    '..kkhHHhkk..',   // H = brillo especular
-    '.khhhmmmhhk.',
-    'khhhmmmmmssk',
-    'khhmcCCcmssk',   // domo de cámara (c) con lente clara (C)
-    'khmmCCCCmssk',
-    'khmmcCCcmssk',
-    'khmmmyymmssk',   // sensor amarillo
-    'khdmmmmmmdsk',
-    '.kddmmmmssk.',
-    '..kddmmssk..',
-    '....kkkk....',
-  ];
-
-  // ---- un brazo (apunta arriba): disco de hélice + motor cilíndrico + manga + LED ----
-  // borde izq iluminado (h), borde der en sombra (s/k) → parece un tubo 3D al rotar
-  const armRows = (led) => [
-    '..pPPp..',
-    '.pPPPPp.',
-    'pPPPPPPp',
-    'pPPkkPPp',   // hub oscuro
-    'pPPPPPPp',
-    '.pPPPPp.',
-    '..pPPp..',
-    '..hddk..',   // tapa del motor (h lit-izq, k shadow-der)
-    '..h' + led + led + 'k..',   // LEDs
-    '..hmmk..',   // manga cilíndrica
-    '..hmmk..',
-    '..hmms..',
-    '..kmmk..',   // base (conecta al cuerpo)
-  ];
-  const arm = (led) => px(armRows(led), 12, 2);   // centrado en x=64 (col 16), base ≈ y56
-
+  // dron héroe: sprite OVI pixel-art (SVG vectorizado generado por el usuario, fondo quitado).
+  // Se usa como <img> → el navegador lo rasteriza una vez y el motor de vuelo lo mueve por transform.
   const DRONE = `
-    <svg class="fly-drone v8" id="hero-drone" viewBox="0 0 128 128" shape-rendering="crispEdges"
-         data-tip="Doble click = que te siga · click = pirueta">
-      <g id="d-rotor">
-        <g transform="rotate(45 64 64)">${arm('g')}</g>
-        <g transform="rotate(315 64 64)">${arm('g')}</g>
-        <g transform="rotate(135 64 64)">${arm('r')}</g>
-        <g transform="rotate(225 64 64)">${arm('r')}</g>
-      </g>
-      ${px(BODY, 10, 10)}
-    </svg>`;
+    <img class="fly-drone v10" id="hero-drone" src="assets/ovi-drone.svg?v=27" alt=""
+         data-tip="Doble click = que te siga · click = pirueta" draggable="false">`;
 
   main.innerHTML = `
     <div class="deck-sky" aria-hidden="true">
@@ -278,7 +223,7 @@ main.classList.add('deck-main');
     const speed = Math.hypot(D.vx, D.vy);
     drone.style.transform =
       `translate(${D.x.toFixed(1)}px,${(D.y + bob).toFixed(1)}px) translate(-50%,-50%) rotate(${(D.lean + roll).toFixed(1)}deg)`;
-    drone.style.setProperty('--spin', `${(0.12 - clmp(speed * 0.0004, 0, 0.07)).toFixed(3)}s`);
+    drone.style.setProperty('--spin', `${(0.5 - clmp(speed * 0.0016, 0, 0.34)).toFixed(3)}s`);   // hélice gira más rápido al volar
     drone.style.setProperty('--yaw', `${(4.4 - clmp(speed * 0.012, 0, 2.6)).toFixed(2)}s`);   // gira más rápido al volar
     // downwash pixel: cae del dron, más denso cuanto más rápido vuela (interacción con el fondo)
     if (now - lastPuff > (speed > 70 ? 55 : 130)) {

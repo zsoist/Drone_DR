@@ -935,7 +935,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(end - start + 1))
         # media inmutable se cachea; código y datos NUNCA (iPhone quedó quemado con CSS viejo)
-        cacheable = f.suffix in (".mp4", ".jpg", ".png", ".woff2")
+        cacheable = f.suffix in (".mp4", ".jpg", ".png", ".woff2", ".svg", ".webp")
         self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-store, must-revalidate")
         if f.suffix == ".html":
             self.send_header("Content-Security-Policy",
