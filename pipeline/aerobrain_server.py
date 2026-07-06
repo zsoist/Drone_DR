@@ -489,12 +489,17 @@ def measure_dsm(mdir: Path, spec: dict) -> dict:
 def splat_quality(out: Path, log: str, n_cams: int, iters: int) -> dict:
     """Quality gate del splat: tamaño + cámaras + convergencia de loss."""
     size = out.stat().st_size if out.exists() else 0
-    losses = re.findall(r"Step\s+\d+:\s+([\d.]+|nan|inf)", log or "")
+    step_rows = re.findall(
+        r"Step\s+(\d+):\s+([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?|nan|inf)",
+        log or "", flags=re.I)
+    losses = [v.lower() for _, v in step_rows]
     final_loss = next((float(x) for x in reversed(losses) if x not in ("nan", "inf")), None)
-    steps = len(losses)
+    last_step = max((int(s) for s, _ in step_rows), default=0)
     reasons = []
     if losses and losses[-1] in ("nan", "inf"):
         reasons.append("el entrenamiento divergió (loss=nan) — reintenta o baja las iteraciones")
+    if iters and last_step and last_step < int(iters * 0.95):
+        reasons.append(f"entrenamiento incompleto ({last_step}/{iters} pasos)")
     if size < 200_000:
         reasons.append(f"archivo muy pequeño ({size} bytes) — escena insuficiente")
     if n_cams < 8:
@@ -503,7 +508,7 @@ def splat_quality(out: Path, log: str, n_cams: int, iters: int) -> dict:
         reasons.append(f"loss final alto ({final_loss}) — captura ruidosa")
     return {"passed": not reasons, "reason": " · ".join(reasons) or "ok",
             "bytes": size, "cameras": n_cams, "final_loss": final_loss,
-            "steps_logged": steps, "target_iters": iters}
+            "last_step": last_step, "steps_logged": len(step_rows), "target_iters": iters}
 
 
 ASPECTS = {

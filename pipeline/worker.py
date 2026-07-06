@@ -11,6 +11,7 @@ run_tracked (compartido) detecta el cambio y corta la secuencia.
 """
 import json
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -46,6 +47,30 @@ PRESETS = {
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5"]},
 }
+
+
+def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | None = None) -> Path:
+    """Atomically promote a staged OpenSplat output to the public vault.
+
+    Training writes into splats/.training/<job>. Only a passed quality gate may
+    replace splats/<cid>.splat, so killed/restarted jobs cannot corrupt the last
+    known-good public splat.
+    """
+    splat_dir = splat_dir or (VAULT / "splats")
+    tmp_out = stage / f"{cid}.splat"
+    tmp_meta = stage / f"{cid}.meta.json"
+    final_out = splat_dir / f"{cid}.splat"
+    if not quality.get("passed"):
+        raise RuntimeError(quality.get("reason") or "splat no pasó el quality gate")
+    splat_dir.mkdir(parents=True, exist_ok=True)
+    tmp_meta.write_text(json.dumps(quality, indent=1))
+    os.replace(tmp_out, final_out)
+    os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
+    cam = stage / "cameras.json"
+    if cam.exists():
+        os.replace(cam, splat_dir / f"{cid}.cameras.json")
+    shutil.rmtree(stage, ignore_errors=True)
+    return final_out
 
 
 def run_3d(j: dict):
@@ -103,8 +128,13 @@ def run_splat(j: dict):
     il = proj / "opensfm" / "image_list.txt"
     il.write_text(il.read_text().replace("/datasets/code", str(proj)))
     n_cams = len([ln for ln in il.read_text().splitlines() if ln.strip()])
-    (VAULT / "splats").mkdir(exist_ok=True)
-    out = VAULT / "splats" / f"{cid}.splat"
+    splat_dir = VAULT / "splats"
+    splat_dir.mkdir(exist_ok=True)
+    stage = splat_dir / ".training" / j["id"]
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(parents=True, exist_ok=True)
+    tmp_out = stage / f"{cid}.splat"
     ITERS = int(j["spec"].get("iters", 2000))
     jobstore.update(j["id"], detail=f"entrenando {ITERS} iters sobre {n_cams} cámaras (CPU)",
                     stage="train", progress=0.1)
@@ -114,7 +144,7 @@ def run_splat(j: dict):
         # justo después). El formato .splat ni siquiera exporta los coeficientes
         # SH, así que entrenar solo el grado 0 no pierde nada y es estable.
         rc = jobstore.run_tracked(j["id"],
-            [str(SPLAT_BIN), str(proj), "--cpu", "-n", str(ITERS), "-o", str(out),
+            [str(SPLAT_BIN), str(proj), "--cpu", "-n", str(ITERS), "-o", str(tmp_out),
              "--sh-degree-interval", str(ITERS + 1)],
             timeout=4 * 3600, abort_re=r"Step \d+: nan",
             progress_re=r"\((\d+)%\)",
@@ -127,15 +157,15 @@ def run_splat(j: dict):
         raise
     if rc != 0:
         raise RuntimeError(f"opensplat salió con código {rc}")
-    quality = splat_quality(out, (jobstore.get(j["id"]) or {}).get("log", ""), n_cams, ITERS)
-    (VAULT / "splats" / f"{cid}.meta.json").write_text(json.dumps(quality, indent=1))
+    quality = splat_quality(tmp_out, (jobstore.get(j["id"]) or {}).get("log", ""), n_cams, ITERS)
     if not quality["passed"]:
         raise RuntimeError(quality["reason"])
+    final_out = publish_splat_stage(stage, cid, quality, splat_dir)
     rebuild_index()
     jobstore.update(j["id"], progress=1.0)
     jobstore.end(j["id"], "done",
-                 f"{out.name} · loss {quality['final_loss']} · {n_cams} cámaras",
-                 artifact=f"splats/{out.name}")
+                 f"{final_out.name} · loss {quality['final_loss']} · {n_cams} cámaras",
+                 artifact=f"splats/{final_out.name}")
 
 
 RUNNERS = {"3d": run_3d, "splat": run_splat}

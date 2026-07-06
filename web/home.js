@@ -59,21 +59,50 @@ main.classList.add('deck-main');
       img: thumb(byDate[4]) },
   ];
 
-  // dron héroe v5: cuerpo con gradiente, guardas, tren, props y LEDs — interactivo
+  // dron héroe v6: modelo detallado con gimbal estabilizado, props con blur, LEDs y tren.
+  // El vuelo (posición, banking, giro) lo maneja un motor de física en JS.
   const DRONE = `
-    <svg class="fly-drone v5" id="hero-drone" viewBox="0 0 140 70" data-tip="Tócame">
-      <defs><linearGradient id="dbody" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#3a4656"/><stop offset="1" stop-color="#161c26"/>
-      </linearGradient></defs>
-      <circle class="guard" cx="22" cy="16" r="15"/><circle class="guard" cx="118" cy="16" r="15"/>
-      <g class="rotor r1"><ellipse cx="22" cy="16" rx="12.5" ry="2.6"/></g>
-      <g class="rotor r2"><ellipse cx="118" cy="16" rx="12.5" ry="2.6"/></g>
-      <path class="arm" d="M28 20L56 30M112 20L84 30"/>
-      <rect class="body" x="52" y="26" width="36" height="15" rx="7" fill="url(#dbody)"/>
-      <rect class="visor" x="57" y="29" width="14" height="5" rx="2.5"/>
-      <circle class="cam" cx="66" cy="46" r="5.5"/><circle class="cam-i" cx="66" cy="46" r="2.2"/>
-      <path class="leg" d="M58 41l-4 8M82 41l4 8"/>
-      <circle class="led l1" cx="55" cy="33" r="1.8"/><circle class="led l2" cx="85" cy="33" r="1.8"/>
+    <svg class="fly-drone v6" id="hero-drone" viewBox="0 0 170 104" data-tip="Tócame — vuela conmigo">
+      <defs>
+        <linearGradient id="dbody" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#48566a"/><stop offset=".5" stop-color="#2b3444"/><stop offset="1" stop-color="#12171f"/>
+        </linearGradient>
+        <linearGradient id="dcanopy" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#8fb6e6"/><stop offset="1" stop-color="#2b5f9c"/>
+        </linearGradient>
+        <radialGradient id="ddisc" cx="50%" cy="50%" r="50%">
+          <stop offset="0" stop-color="#7fb4ff" stop-opacity=".05"/>
+          <stop offset=".75" stop-color="#7fb4ff" stop-opacity=".22"/>
+          <stop offset="1" stop-color="#7fb4ff" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <!-- brazos -->
+      <path class="arm" d="M64 58L40 36M106 58L130 36"/>
+      <!-- hélices izq/der: disco de blur + aspas girando -->
+      <circle class="guard" cx="40" cy="34" r="21"/>
+      <circle class="disc" cx="40" cy="34" r="20" fill="url(#ddisc)"/>
+      <g class="prop" style="transform-origin:40px 34px"><rect x="20" y="32.6" width="40" height="2.8" rx="1.4"/><rect x="38.6" y="14" width="2.8" height="40" rx="1.4"/></g>
+      <circle class="hub" cx="40" cy="34" r="3"/>
+      <circle class="guard" cx="130" cy="34" r="21"/>
+      <circle class="disc" cx="130" cy="34" r="20" fill="url(#ddisc)"/>
+      <g class="prop" style="transform-origin:130px 34px"><rect x="110" y="32.6" width="40" height="2.8" rx="1.4"/><rect x="128.6" y="14" width="2.8" height="40" rx="1.4"/></g>
+      <circle class="hub" cx="130" cy="34" r="3"/>
+      <!-- tren de aterrizaje -->
+      <path class="leg" d="M70 70l-8 16M100 70l8 16M56 86h16M98 86h16"/>
+      <!-- fuselaje -->
+      <rect class="body" x="58" y="50" width="54" height="24" rx="11" fill="url(#dbody)"/>
+      <rect class="canopy" x="66" y="53" width="26" height="9" rx="4.5" fill="url(#dcanopy)"/>
+      <path class="antenna" d="M62 50l-3-9M108 50l3-9"/>
+      <!-- gimbal + cámara (se mantiene nivelado: rotación por JS) -->
+      <g id="d-gimbal">
+        <path class="gmount" d="M85 74v6"/>
+        <circle class="gball" cx="85" cy="87" r="7.5"/>
+        <circle class="glens" cx="85" cy="87" r="3.4"/>
+        <circle class="gspec" cx="83" cy="85" r="1.1"/>
+      </g>
+      <!-- LEDs: verde adelante, rojo atrás -->
+      <circle class="led fwd" cx="62" cy="62" r="2.1"/>
+      <circle class="led aft" cx="108" cy="62" r="2.1"/>
     </svg>`;
 
   main.innerHTML = `
@@ -85,10 +114,9 @@ main.classList.add('deck-main');
     </div>
 
     <div class="deck-hero rise">
-      <div class="hero-flight" id="hero-flight">${DRONE}<i class="fly-trail"></i></div>
+      <div class="hero-air" id="hero-air">${DRONE}</div>
       <div class="deck-greet mono">${saludo} · ${fmt.date(new Date().toISOString().slice(0, 10))}</div>
-      <h1 class="deck-title v5">Flight <em>Deck</em></h1>
-      <p class="deck-sub">Todo lo que vuelas, bajo tu mando. Elige tu camino.</p>
+      <h1 class="deck-title v6" id="deck-title">Flight <em>Deck</em></h1>
       <div class="deck-jobs" id="deck-jobs"></div>
     </div>
 
@@ -174,22 +202,81 @@ main.classList.add('deck-main');
   attachScrub(main);
   liveJobs();
 
-  // ---- dron interactivo: click = acrobacia aleatoria ----
+  // ---- motor de vuelo del dron: resorte hacia un objetivo, banking, gimbal, giro ----
   const drone = document.getElementById('hero-drone');
-  const TRICKS = ['trick-roll', 'trick-dip', 'trick-spin', 'trick-boost'];
-  drone.addEventListener('click', e => {
-    e.preventDefault();
-    if (drone._busy) return;
-    drone._busy = true;
-    const t = TRICKS[Math.floor(Math.random() * TRICKS.length)];
-    drone.classList.add(t);
-    drone.addEventListener('animationend', function done(ev) {
-      if (!ev.animationName.startsWith('drone-')) return;
-      drone.classList.remove(t);
-      drone._busy = false;
-      drone.removeEventListener('animationend', done);
-    });
+  const air = document.getElementById('hero-air');
+  const gimbal = drone.querySelector('#d-gimbal');
+  const titleEl = document.getElementById('deck-title');
+  const clmp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const D = { x: 130, y: 60, vx: 70, vy: 0, face: 1, faceT: 1, lean: 0,
+              tx: 130, ty: 60, hover: false, trick: 0, t: 0, over: false };
+
+  const airBox = () => air.getBoundingClientRect();
+  // objetivo de crucero: patrulla lateral con onda vertical suave
+  function cruise(now) {
+    const b = airBox();
+    const px = Math.sin(now * 0.00019) * 0.5 + 0.5;            // 0..1 vaivén
+    D.tx = 46 + px * Math.max(60, b.width - 92);
+    D.ty = b.height * 0.46 + Math.sin(now * 0.0013) * Math.min(30, b.height * 0.3);
+  }
+  // seguir el cursor cuando el ratón está sobre el héroe (interactivo)
+  const hero = air.closest('.deck-hero');
+  hero.addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch') return;
+    const b = airBox();
+    D.hover = true; D.tx = clmp(e.clientX - b.left, 20, b.width - 20); D.ty = clmp(e.clientY - b.top, 8, b.height - 8);
   });
+  hero.addEventListener('pointerleave', () => { D.hover = false; });
+  drone.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); if (D.trick <= 0) D.trick = 1; });
+
+  let flyLast = 0, flyRaf = 0;
+  function frame(now) {
+    if (!drone.isConnected) { flyRaf = 0; return; }
+    const dt = flyLast ? Math.min(0.05, (now - flyLast) / 1000) : 0.016; flyLast = now;
+    D.t += dt;
+    if (!D.hover) cruise(now);
+    // resorte hacia el objetivo (más firme al seguir el cursor)
+    const K = D.hover ? 46 : 19, DP = D.hover ? 9.5 : 6.2;
+    D.vx += ((D.tx - D.x) * K - D.vx * DP) * dt;
+    D.vy += ((D.ty - D.y) * K - D.vy * DP) * dt;
+    D.x += D.vx * dt; D.y += D.vy * dt;
+    // giro suave hacia la dirección de avance (al cruzar 0 se ve de canto = otro ángulo)
+    if (D.vx > 14) D.faceT = 1; else if (D.vx < -14) D.faceT = -1;
+    D.face += (D.faceT - D.face) * Math.min(1, dt * 5.5);
+    // lean: nariz hacia el avance, corrige por ascenso
+    const leanT = clmp(Math.abs(D.vx) * 0.055, 0, 19) * Math.sign(D.vx || 1) + clmp(D.vy * 0.03, -8, 8);
+    D.lean += (leanT - D.lean) * Math.min(1, dt * 9);
+    // truco: rizo de 360° al hacer click
+    if (D.trick > 0) D.trick = Math.max(0, D.trick - dt / 0.85);
+    const roll = D.trick > 0 ? (1 - D.trick) * 360 * (D.face < 0 ? -1 : 1) : 0;
+    const bob = Math.sin(D.t * 3.4) * 1.5;
+    const speed = Math.hypot(D.vx, D.vy);
+    drone.style.transform =
+      `translate(${D.x.toFixed(1)}px,${(D.y + bob).toFixed(1)}px) translate(-50%,-50%) scaleX(${D.face.toFixed(3)}) rotate(${(D.lean + roll).toFixed(1)}deg)`;
+    // gimbal contra-rota el lean (la cámara se mantiene nivelada) — no el truco
+    gimbal.setAttribute('transform', `rotate(${(-D.lean * 0.85).toFixed(1)} 85 74)`);
+    drone.style.setProperty('--spin', `${(0.16 - clmp(speed * 0.0004, 0, 0.09)).toFixed(3)}s`);
+    // ráfaga en el título cuando el dron cruza por encima
+    if (titleEl) {
+      const tb = titleEl.getBoundingClientRect(), ab = airBox();
+      const sx = ab.left + D.x, sy = ab.top + D.y;
+      const over = sx > tb.left - 24 && sx < tb.right + 24 && sy < tb.bottom + 34 && sy > tb.top - 60;
+      if (over && !D.over) { titleEl.classList.remove('gust'); void titleEl.offsetWidth; titleEl.classList.add('gust'); }
+      D.over = over;
+    }
+    flyRaf = requestAnimationFrame(frame);
+  }
+  // primer render sincrónico: coloca el dron en su carril (evita el flash en 0,0 antes del 1er frame)
+  (function prime() {
+    const b = airBox();
+    D.x = b.width * 0.7; D.y = b.height * 0.42; D.tx = D.x; D.ty = D.y;
+    drone.style.transform = `translate(${D.x.toFixed(1)}px,${D.y.toFixed(1)}px) translate(-50%,-50%) scaleX(1) rotate(0deg)`;
+    drone.style.setProperty('--spin', '0.16s');
+  })();
+  const flyStart = () => { if (!flyRaf) { flyLast = 0; flyRaf = requestAnimationFrame(frame); } };
+  const flyStop = () => { if (flyRaf) { cancelAnimationFrame(flyRaf); flyRaf = 0; } };
+  document.addEventListener('visibilitychange', () => document.hidden ? flyStop() : flyStart());
+  flyStart();
 
   // ---- nube de puntos 3D en la card de 3D (canvas, rotación suave) ----
   document.querySelectorAll('.dc-cloud').forEach(cv => {

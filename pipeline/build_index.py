@@ -62,7 +62,8 @@ def main():
                    for p in sorted((VAULT / "photos").glob("*.jpg"), reverse=True)] if (VAULT / "photos").exists() else [],
         "splats": [{"name": p.name, "bytes": p.stat().st_size}
                    for p in sorted((VAULT / "splats").glob("*"))
-                   if p.is_file()] if (VAULT / "splats").exists() else [],
+                   if p.is_file() and p.suffix.lower() in (".splat", ".ksplat", ".ply")]
+                  if (VAULT / "splats").exists() else [],
         "last_ingest": {"files": last["file_count"], "bytes": last["total_bytes"],
                         "at": last["ingested_at"]} if last else None,
         "models": [json.loads((d / "meta.json").read_text())

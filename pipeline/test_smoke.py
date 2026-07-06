@@ -205,6 +205,9 @@ check("splat: <8 cámaras FALLA el gate", not q3["passed"])
 q4 = splat_quality(FakeOut(700_000), "Step 1071: 0.1334 (15%)\nStep 1278: nan (18%)", 40, 7000)
 check("splat: loss=nan (divergencia) FALLA el gate", not q4["passed"] and "divergió" in q4["reason"])
 check("splat: final_loss ignora los nan y toma el último numérico", q4["final_loss"] == 0.1334)
+q5 = splat_quality(FakeOut(700_000), "Step 100: 1.2e-1 (5%)", 40, 2000)
+check("splat: entrenamiento incompleto FALLA aunque el archivo exista",
+      not q5["passed"] and "incompleto" in q5["reason"] and q5["final_loss"] == 0.12)
 
 # ---------- multi-date volume comparison (compare_dsm) ----------
 from aerobrain_server import compare_dsm
@@ -259,6 +262,7 @@ check("orphans: restart del worker mata proceso heavy huérfano",
 
 # --- viewer mesh re-centrado (audit P1: coords UTM rompen float32) ---
 from tresd_publish import make_viewer_mesh
+from tresd_publish import wgs84_area_m2
 _md = Path(tempfile.mkdtemp())
 (_md / "geo.obj").write_text(
     "mtllib m.mtl\nv 500000.5 4500000.25 2550.0\nv 500002.5 4500002.25 2552.0\nf 1 2 1\n")
@@ -269,6 +273,8 @@ check("viewer mesh: vertices re-centrados cerca del origen",
       all(abs(float(c)) < 10 for v in _verts for c in v))
 check("viewer mesh: caras y mtllib intactos",
       "f 1 2 1" in (_md / "viewer.obj").read_text() and "mtllib m.mtl" in (_md / "viewer.obj").read_text())
+check("qa: área WGS84 fallback calcula una huella realista",
+      12_000 < wgs84_area_m2([[0, 0], [0.001, 0], [0.001, 0.001], [0, 0.001]]) < 13_000)
 
 # --- capture intelligence ---
 from capture_quality import sharpness, choose_frames, gps_metrics
@@ -302,6 +308,48 @@ check("presets: todos con pc-quality + timeout coherentes",
 check("presets: alta es mas fina que rapido (ortho res)",
       int(worker.PRESETS["alta"]["args"][worker.PRESETS["alta"]["args"].index("--orthophoto-resolution") + 1])
       < int(worker.PRESETS["rapido"]["args"][worker.PRESETS["rapido"]["args"].index("--orthophoto-resolution") + 1]))
+
+# --- splat publish: stage -> atomic public artifact ---
+_spdir = Path(tempfile.mkdtemp())
+_stage = _spdir / ".training" / "job1"
+_stage.mkdir(parents=True)
+(_spdir / "DJI_ATOMIC.splat").write_bytes(b"old-good")
+(_stage / "DJI_ATOMIC.splat").write_bytes(b"new-good")
+(_stage / "cameras.json").write_text("{}")
+try:
+    worker.publish_splat_stage(_stage, "DJI_ATOMIC", {"passed": False, "reason": "bad"}, _spdir)
+    _blocked = False
+except RuntimeError:
+    _blocked = True
+check("splat publish: quality fail NO pisa el splat existente",
+      _blocked and (_spdir / "DJI_ATOMIC.splat").read_bytes() == b"old-good")
+_stage.mkdir(parents=True, exist_ok=True)
+(_stage / "DJI_ATOMIC.splat").write_bytes(b"new-good")
+(_stage / "cameras.json").write_text("{}")
+worker.publish_splat_stage(_stage, "DJI_ATOMIC", {"passed": True, "final_loss": 0.1}, _spdir)
+check("splat publish: pass promueve splat/meta/cameras por proyecto",
+      (_spdir / "DJI_ATOMIC.splat").read_bytes() == b"new-good"
+      and (_spdir / "DJI_ATOMIC.meta.json").exists()
+      and (_spdir / "DJI_ATOMIC.cameras.json").exists()
+      and not _stage.exists())
+
+# --- system manifest: sólo cuenta formatos visualizables como splats ---
+import build_index as _bi
+_old_bi_vault = _bi.VAULT
+_bi_tmp = Path(tempfile.mkdtemp())
+try:
+    _bi.VAULT = _bi_tmp
+    for d in ("manifest", "raw", "proxies", "frames", "thumbs", "tracks", "reels", "splats", "models", "ai"):
+        (_bi_tmp / d).mkdir(parents=True, exist_ok=True)
+    (_bi_tmp / "splats" / "A.splat").write_bytes(b"1")
+    (_bi_tmp / "splats" / "A.meta.json").write_bytes(b"{}")
+    (_bi_tmp / "splats" / "A.cameras.json").write_bytes(b"{}")
+    _bi.main()
+    _sys = json.loads((_bi_tmp / "manifest" / "system.json").read_text())
+    check("system: splats lista sólo assets visualizables",
+          [s["name"] for s in _sys["splats"]] == ["A.splat"])
+finally:
+    _bi.VAULT = _old_bi_vault
 
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)

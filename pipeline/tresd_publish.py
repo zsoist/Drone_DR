@@ -21,6 +21,24 @@ VAULT = Path("/Volumes/SSD/drone-vault")
 DOCKER = "/usr/local/bin/docker"
 
 
+def wgs84_area_m2(corners):
+    """Área aproximada de una huella WGS84 chica, suficiente para QA/GSD UI."""
+    if not corners or len(corners) < 3:
+        return 0.0
+    import math
+    lat0 = sum(float(p[1]) for p in corners) / len(corners)
+    pts = []
+    for lon, lat in corners:
+        x = float(lon) * 111320 * math.cos(math.radians(lat0))
+        y = float(lat) * 110540
+        pts.append((x, y))
+    area = 0.0
+    for i, (x1, y1) in enumerate(pts):
+        x2, y2 = pts[(i + 1) % len(pts)]
+        area += x1 * y2 - x2 * y1
+    return abs(area) / 2
+
+
 def sh_in_odm(proj: Path, script: str) -> str:
     r = subprocess.run([DOCKER, "run", "--rm", "-v", f"{proj}:/d",
                         "--entrypoint", "bash", "opendronemap/odm", "-c", script],
@@ -265,6 +283,14 @@ EOF""")
                 qa = {"status": "missing"}
         else:
             qa = {"status": "missing"}
+
+    if not qa.get("area_m2"):
+        area = wgs84_area_m2(ometa.get("corners"))
+        px_total = ometa["size"][0] * ometa["size"][1]
+        if area and px_total:
+            qa["area_m2"] = round(area, 1)
+            qa["gsd_cm_px"] = round((area / px_total) ** 0.5 * 100, 1)
+            qa.setdefault("status", "parcial")
 
     # sidecars .gz: el server los sirve con Content-Encoding gzip — la malla OBJ
     # (texto) baja ~70% y la nube PLY ~30%; el browser descomprime transparente
