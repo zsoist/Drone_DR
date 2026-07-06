@@ -1883,3 +1883,141 @@ button.exp { text-align: left; cursor: pointer; }
   .cr-item { flex-basis: 138px; }
   .exportbar .eb-field { flex: 1 1 44%; }
 }
+
+/* ===== BLOQUE 8 · home v4: cielo vivo, dron en vuelo, game-cards ===== */
+.deck-main { position: relative; overflow-x: clip; }
+/* cielo del dashboard: viento + polvo flotando (sutil, solo aquí) */
+.deck-sky { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.deck-main > *:not(.deck-sky) { position: relative; z-index: 1; }
+.deck-sky .wind { position: absolute; height: 2px; width: 220px; border-radius: 99px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 30%, transparent), transparent);
+  animation: sky-wind linear infinite; opacity: .7; }
+.deck-sky .w1 { top: 12%; animation-duration: 7s; }
+.deck-sky .w2 { top: 34%; animation-duration: 10s; animation-delay: 2.4s; width: 150px; }
+.deck-sky .w3 { top: 58%; animation-duration: 8.5s; animation-delay: 5s; width: 260px; }
+@keyframes sky-wind { from { transform: translateX(-280px); } to { transform: translateX(calc(100vw + 280px)); } }
+.deck-sky .dust { position: absolute; width: 4px; height: 4px; border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: sky-dust ease-in-out infinite; opacity: 0; }
+.deck-sky .d1 { left: 8%;  animation-duration: 11s; }
+.deck-sky .d2 { left: 26%; animation-duration: 14s; animation-delay: 3s; }
+.deck-sky .d3 { left: 47%; animation-duration: 12s; animation-delay: 6s; width: 3px; height: 3px; }
+.deck-sky .d4 { left: 64%; animation-duration: 15s; animation-delay: 1.5s; }
+.deck-sky .d5 { left: 81%; animation-duration: 13s; animation-delay: 8s; width: 3px; height: 3px; }
+.deck-sky .d6 { left: 93%; animation-duration: 16s; animation-delay: 4.5s; }
+@keyframes sky-dust {
+  0% { transform: translateY(105vh) scale(.6); opacity: 0; }
+  12% { opacity: .8; } 82% { opacity: .5; }
+  100% { transform: translateY(-8vh) scale(1); opacity: 0; }
+}
+
+/* héroe v4: título más pequeño y fino + dron en vuelo */
+.deck-title.v4 { font-size: clamp(30px, 4.2vw, 44px); letter-spacing: -.02em; }
+.deck-sub { font-size: 15px; color: var(--text-2); }
+.hero-flight { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.deck-hero { position: relative; padding-bottom: 26px; }
+.fly-drone { position: absolute; top: 8px; width: 108px; height: 49px;
+  animation: fly-x 17s linear infinite, fly-bob 2.4s ease-in-out infinite; }
+.fly-drone .body { fill: color-mix(in srgb, var(--text-1) 82%, transparent); }
+.fly-drone .arm { stroke: color-mix(in srgb, var(--text-2) 80%, transparent); stroke-width: 2.5; stroke-linecap: round; fill: none; }
+.fly-drone .cam { fill: none; stroke: var(--accent); stroke-width: 2; }
+.fly-drone .rotor ellipse { fill: color-mix(in srgb, var(--accent) 55%, transparent); }
+.fly-drone .rotor { transform-origin: center; transform-box: fill-box;
+  animation: rotor-spin .16s linear infinite; }
+.fly-drone .led { fill: #3ddc97; animation: led-blink 1.1s steps(2) infinite; }
+@keyframes rotor-spin { 50% { transform: scaleX(.18); } }
+@keyframes led-blink { 50% { opacity: .15; } }
+@keyframes fly-x { from { left: -130px; } to { left: calc(100% + 40px); } }
+@keyframes fly-bob {
+  0%, 100% { transform: translateY(0) rotate(1.6deg); }
+  50% { transform: translateY(-11px) rotate(-2.2deg); }
+}
+.fly-trail { position: absolute; top: 40px; height: 1.5px; width: 90px; border-radius: 99px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 40%, transparent));
+  animation: fly-x 17s linear infinite; margin-left: -95px; opacity: .8; }
+
+/* game-cards v4: arte siempre visible, tilt 3D, glare, bento sin huecos */
+.deck-grid.v4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.deck-card.dc4 { grid-column: span 1; min-height: 285px; padding: 0; overflow: hidden;
+  isolation: isolate; border-radius: 18px; border: 1px solid var(--line);
+  display: flex; flex-direction: column; justify-content: flex-end;
+  transform: perspective(950px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform .1s linear, border-color .3s, box-shadow .35s;
+  animation: cardIn 420ms var(--ease) both; background: var(--surface-1); }
+.deck-card.dc4.wide { grid-column: span 2; }
+.deck-card.dc4:hover { border-color: color-mix(in srgb, var(--ac) 70%, var(--line));
+  box-shadow: 0 26px 60px -20px color-mix(in srgb, var(--ac) 60%, transparent),
+              inset 0 1px 0 color-mix(in srgb, #fff 15%, transparent); }
+.deck-card.dc4:not(:hover) { transition: transform .55s cubic-bezier(.22,1.2,.36,1), border-color .3s, box-shadow .35s; }
+.dc-art { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center;
+  transform: scale(1.03); transition: transform 1.1s cubic-bezier(.2,.6,.2,1), filter .5s;
+  filter: saturate(1.02); }
+.deck-card.dc4:hover .dc-art { transform: scale(1.1); filter: saturate(1.15); }
+.dc-art-ic { display: grid; place-items: center;
+  background: radial-gradient(120% 120% at 30% 10%, color-mix(in srgb, var(--ac) 32%, transparent), var(--surface-2) 75%); }
+.dc-art-ic svg.ic { width: 84px; height: 84px; color: color-mix(in srgb, var(--ac) 55%, transparent); }
+.dc-shade { position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(184deg, rgba(6,9,14,0) 26%, rgba(6,9,14,.62) 58%, rgba(6,9,14,.94) 100%); }
+[data-theme="light"] .dc-shade { background: linear-gradient(184deg, rgba(6,9,14,0) 26%, rgba(10,14,20,.55) 58%, rgba(8,11,16,.9) 100%); }
+.dc-glare { position: absolute; inset: 0; z-index: 2; opacity: 0; transition: opacity .3s;
+  background: radial-gradient(340px circle at var(--gx, 50%) var(--gy, 50%),
+    rgba(255,255,255,.2), transparent 62%); mix-blend-mode: screen; }
+.deck-card.dc4:hover .dc-glare { opacity: 1; }
+.dc4 .dc-ic { position: absolute; top: 14px; left: 14px; z-index: 3; width: 40px; height: 40px;
+  display: grid; place-items: center; border-radius: 12px; color: #fff;
+  background: color-mix(in srgb, var(--ac) 38%, rgba(8,10,14,.55)); backdrop-filter: blur(6px);
+  border: 1px solid color-mix(in srgb, var(--ac) 55%, transparent); margin: 0; }
+.dc-body { position: relative; z-index: 3; display: flex; flex-direction: column;
+  gap: 5px; padding: 16px 18px 16px; }
+.dc4 .dc-t { font-size: 27px; font-weight: 800; letter-spacing: -.02em; color: #fff;
+  text-shadow: 0 2px 12px rgba(0,0,0,.55); }
+.dc4 .dc-sub { font-size: 11.5px; color: color-mix(in srgb, var(--ac) 78%, #fff); text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+.dc4 .dc-d { font-size: 13.5px; line-height: 1.5; color: rgba(255,255,255,.86);
+  text-shadow: 0 1px 8px rgba(0,0,0,.6); max-width: 42ch; }
+.dc-go { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start;
+  margin-top: 7px; padding: 7px 13px; border-radius: 99px; font-size: 12.5px; font-weight: 700;
+  color: #fff; background: color-mix(in srgb, var(--ac) 45%, rgba(8,10,14,.4));
+  border: 1px solid color-mix(in srgb, var(--ac) 70%, transparent);
+  opacity: 0; transform: translateY(8px); transition: opacity .3s, transform .35s cubic-bezier(.34,1.4,.5,1); }
+.dc-go svg.ic { width: 13px; height: 13px; }
+.deck-card.dc4:hover .dc-go { opacity: 1; transform: translateY(0); }
+@media (hover: none) { .dc-go { opacity: 1; transform: none; } }
+
+/* smash v2: squash más profundo + onda expansiva + velo de transición */
+.deck-card.dc4.smash { animation: dc-smash2 .48s cubic-bezier(.3,1.5,.4,1) both; pointer-events: none; }
+@keyframes dc-smash2 {
+  0% { transform: perspective(950px) scale(1); }
+  26% { transform: perspective(950px) scale(.86) rotate(-1.6deg); }
+  58% { transform: perspective(950px) scale(1.1) rotate(.8deg); }
+  100% { transform: perspective(950px) scale(1.04); }
+}
+.dc-ring { position: absolute; z-index: 4; width: 14px; height: 14px; margin: -7px 0 0 -7px;
+  border-radius: 50%; border: 2.5px solid var(--ac); pointer-events: none;
+  animation: dc-ring .55s cubic-bezier(.2,.7,.3,1) both; }
+@keyframes dc-ring { from { transform: scale(.4); opacity: 1; } to { transform: scale(9); opacity: 0; } }
+.nav-veil { position: fixed; inset: 0; z-index: 999; pointer-events: none; opacity: 0;
+  background: radial-gradient(120% 100% at 50% 50%,
+    color-mix(in srgb, var(--ac, var(--accent)) 12%, var(--surface)) 0%, var(--surface) 100%);
+  transition: opacity .32s ease-out; }
+.nav-veil.on { opacity: .96; }
+
+/* bento responsive: siempre lleno, sin huecos */
+@media (max-width: 1100px) {
+  .deck-grid.v4 { grid-template-columns: repeat(2, 1fr); }
+  .deck-card.dc4.wide { grid-column: span 2; }
+}
+@media (max-width: 640px) {
+  .deck-grid.v4 { grid-template-columns: 1fr; }
+  .deck-card.dc4, .deck-card.dc4.wide { grid-column: span 1; min-height: 235px; }
+  .dc4 .dc-t { font-size: 23px; }
+  .fly-drone { width: 76px; }
+}
+
+/* fix: la regla genérica .deck-grid .deck-card > * pisaba las capas del game-card */
+.deck-grid .deck-card.dc4 > .dc-art { position: absolute; inset: 0; z-index: 0; }
+.deck-grid .deck-card.dc4 > .dc-shade { position: absolute; inset: 0; z-index: 1; }
+.deck-grid .deck-card.dc4 > .dc-glare { position: absolute; inset: 0; z-index: 2; }
+.deck-grid .deck-card.dc4 > .dc-ic { position: absolute; z-index: 3; }
+.deck-grid .deck-card.dc4 > .dc-body { position: relative; z-index: 3; }
+/* thumbs de atardecer: leve realce para que el arte respire */
+.dc-art { filter: saturate(1.08) brightness(1.18); }

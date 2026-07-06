@@ -29,3 +29,4 @@
 - Jobs pesados: worker desacoplado (com.aerobrain.worker) — restart del server web
   NO los mata (probado en vivo). Restart del WORKER mata sus procesos huérfanos
   antes de re-reclamar (fix de codex).
+- (2026-07-05) NUNCA `launchctl kickstart -k com.aerobrain.worker` sin revisar `/api/jobs` antes: mató un splat 7k al 63% (3.8h de CPU). El jobstore marca huérfanos como error al reiniciar el worker. drawtext/HAS_DRAWTEXT solo requiere reiniciar com.aerobrain.web (run_edit vive en el server, no en el worker). Usar pipeline/safe_restart.sh.

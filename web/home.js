@@ -1,6 +1,7 @@
-// Inicio — flight deck: portal de la app. Cards premium con visual real,
-// flip del título, física de click (bounce + partículas) y copy directo.
+// Inicio — flight deck v4: héroe con dron en vuelo, fondo vivo (viento+partículas),
+// cards estilo game-card (arte + tilt 3D + glare) en bento sin huecos, smash pulido.
 const main = renderShell('home.html');
+main.classList.add('deck-main');
 
 (async () => {
   const flights = await getFlights();
@@ -17,58 +18,85 @@ const main = renderShell('home.html');
   const h = new Date().getHours();
   const saludo = h < 6 ? 'Vuelos nocturnos' : h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
 
-  // visual real por sección: miniaturas y ortos que ya existen en la bóveda
+  // arte real por sección (bóveda local)
   const thumb = f => f ? `${DATA}/thumbs/${f.clip_id}.jpg` : '';
   const byDate = [...flights].sort((a, b) => b.date.localeCompare(a.date));
   const otherDay = byDate.find(f => f.date !== last?.date) || byDate[1];
   const ortho = models[0] ? `data/models/${models[0].clip_id}/${models[0].ortho_asset || 'ortho.jpg'}` : '';
   const photo = (sys.photos || [])[0] ? `/data/photos/${encodeURIComponent(sys.photos[0].name)}` : '';
 
-  // copy directo, sin relleno. verb = cara trasera del flip del título.
+  // texto útil de verdad: qué puedes HACER en cada sección
   const SECTIONS = [
-    { href: 'index.html', ic: 'grid', ac: '#4da3ff', t: 'Vuelos', verb: 'Explora',
-      metric: `${flights.length}`, sub: `${flights.length} clips · ${withVideo} con streaming`,
-      d: 'El archivo completo. Cada vuelo, cada metro.', img: thumb(last) },
-    { href: 'trips.html', ic: 'pin', ac: '#3ddc97', t: 'Viajes', verb: 'Viaja',
-      metric: `${days}`, sub: `${days} días de vuelo`,
-      d: 'Las ciudades, vistas desde arriba.', img: thumb(otherDay) },
-    { href: 'tresd.html', ic: 'cube', ac: '#ff9f43', t: '3D', verb: 'Entra',
-      metric: `${models.length + splats.length}`, sub: `${models.length} modelos · ${splats.length} splats`,
-      d: 'La realidad, reconstruida.', img: ortho },
-    { href: 'drone.html', ic: 'drone', ac: '#38d9e5', t: 'Dron', verb: 'Prepara',
-      metric: sys.last_ingest ? `${sys.last_ingest.files}` : '', sub: sys.last_ingest ? `último ingest: ${sys.last_ingest.files} archivos` : 'SD y flota',
-      d: 'La SD limpia. Siempre lista.', img: thumb(byDate[2]) },
-    { href: 'studio.html', ic: 'film', ac: '#b78cff', t: 'Studio', verb: 'Crea',
-      metric: `${(sys.reels || []).length + (sys.photos || []).length}`, sub: `${(sys.reels || []).length} reels · ${(sys.photos || []).length} fotos`,
-      d: 'Corta. Pule. Publica.', img: photo },
-    { href: 'subir.html', ic: 'dl', ac: '#ff7eb0', t: 'Subir', verb: 'Sube',
-      metric: '', sub: 'ingesta directa',
-      d: 'Trae el material. El pipeline hace el resto.', img: '' },
-    { href: 'system.html', ic: 'db', ac: '#8fa3c0', t: 'Sistema', verb: 'Vigila',
-      metric: fmt.gb(vaultBytes), sub: `${fmt.gb(vaultBytes)} en bóveda`,
-      d: 'La sala de máquinas.', img: '' },
+    { href: 'index.html', ic: 'grid', ac: '#4da3ff', t: 'Vuelos', wide: true,
+      sub: `${flights.length} clips · ${withVideo} con streaming`,
+      d: 'Busca cualquier vuelo, reprodúcelo con scrub instantáneo y salta a su mapa, análisis AI o modelo 3D.',
+      img: thumb(last) },
+    { href: 'trips.html', ic: 'pin', ac: '#3ddc97', t: 'Viajes',
+      sub: `${days} días de vuelo`,
+      d: 'Tus vuelos agrupados por ciudad y fecha, con postales descargables.',
+      img: thumb(otherDay) },
+    { href: 'tresd.html', ic: 'cube', ac: '#ff9f43', t: '3D',
+      sub: `${models.length} modelos · ${splats.length} splats`,
+      d: 'Ortomosaicos medibles, mallas y gaussian splats desde tus tomas.',
+      img: ortho },
+    { href: 'drone.html', ic: 'drone', ac: '#38d9e5', t: 'Dron',
+      sub: sys.last_ingest ? `último ingest: ${sys.last_ingest.files} archivos` : 'SD y flota',
+      d: 'Conecta la micro SD: importa verificado, limpia y deja todo listo.',
+      img: thumb(byDate[2]) },
+    { href: 'studio.html', ic: 'film', ac: '#b78cff', t: 'Studio',
+      sub: `${(sys.reels || []).length} reels · ${(sys.photos || []).length} fotos`,
+      d: 'Timeline profesional: corta, colorea, pon títulos y exporta a redes.',
+      img: photo },
+    { href: 'subir.html', ic: 'dl', ac: '#ff7eb0', t: 'Subir',
+      sub: 'ingesta directa',
+      d: 'Arrastra videos DJI: proxy, telemetría y análisis salen solos.',
+      img: thumb(byDate[3]) },
+    { href: 'system.html', ic: 'db', ac: '#8fa3c0', t: 'Sistema',
+      sub: `${fmt.gb(vaultBytes)} en bóveda`,
+      d: 'Bóveda, cola de trabajos, papelera y salud del servidor.',
+      img: thumb(byDate[4]) },
   ];
 
+  // dron SVG con rotores girando + LED — vuela por el héroe
+  const DRONE = `
+    <svg class="fly-drone" viewBox="0 0 120 54" aria-hidden="true">
+      <g class="rotor r1"><ellipse cx="18" cy="12" rx="15" ry="3"/></g>
+      <g class="rotor r2"><ellipse cx="102" cy="12" rx="15" ry="3"/></g>
+      <path class="arm" d="M18 14L48 26M102 14L72 26"/>
+      <rect class="body" x="44" y="22" width="32" height="13" rx="6"/>
+      <circle class="cam" cx="60" cy="38" r="5"/>
+      <circle class="led" cx="74" cy="28" r="2"/>
+    </svg>`;
+
   main.innerHTML = `
+    <div class="deck-sky" aria-hidden="true">
+      <i class="wind w1"></i><i class="wind w2"></i><i class="wind w3"></i>
+      <i class="dust d1"></i><i class="dust d2"></i><i class="dust d3"></i><i class="dust d4"></i><i class="dust d5"></i><i class="dust d6"></i>
+    </div>
+
     <div class="deck-hero rise">
+      <div class="hero-flight">${DRONE}<i class="fly-trail"></i></div>
       <div class="deck-greet mono">${saludo} · ${fmt.date(new Date().toISOString().slice(0, 10))}</div>
-      <h1 class="deck-title">Flight <em>Deck</em></h1>
+      <h1 class="deck-title v4">Flight <em>Deck</em></h1>
       <p class="deck-sub">Todo lo que vuelas, bajo tu mando. Elige tu camino.</p>
       <div class="deck-jobs" id="deck-jobs"></div>
     </div>
 
     <h2 class="deck-h rise" style="animation-delay:80ms">Explora</h2>
-    <div class="deck-grid" id="deck-grid">
+    <div class="deck-grid v4" id="deck-grid">
       ${SECTIONS.map((s, i) => `
-        <a class="deck-card dc3" href="${s.href}" style="--ac:${s.ac};animation-delay:${110 + i * 55}ms">
-          ${s.img ? `<span class="dc-img" style="background-image:url('${s.img}')"></span><span class="dc-scrim"></span>` : ''}
-          <span class="dc-sheen"></span>
+        <a class="deck-card dc4 ${s.wide ? 'wide' : ''}" href="${s.href}"
+           style="--ac:${s.ac};animation-delay:${110 + i * 55}ms">
+          ${s.img ? `<span class="dc-art" style="background-image:url('${s.img}')"></span>` : `<span class="dc-art dc-art-ic">${icon(s.ic)}</span>`}
+          <span class="dc-shade"></span>
+          <span class="dc-glare"></span>
           <span class="dc-ic">${icon(s.ic)}</span>
-          <span class="dc-flip"><span class="dc-face dc-front">${s.t}</span><span class="dc-face dc-back" style="color:${s.ac}">${s.verb} ${icon('chevR')}</span></span>
-          ${s.metric ? `<span class="dc-metric">${s.metric}</span>` : ''}
-          <span class="dc-sub mono">${esc(s.sub)}</span>
-          <span class="dc-d">${s.d}</span>
-          <span class="dc-arrow">${icon('ext')}</span>
+          <span class="dc-body">
+            <span class="dc-t">${s.t}</span>
+            <span class="dc-sub mono">${esc(s.sub)}</span>
+            <span class="dc-d">${s.d}</span>
+            <span class="dc-go">Entrar ${icon('chevR')}</span>
+          </span>
         </a>`).join('')}
     </div>
 
@@ -105,7 +133,26 @@ const main = renderShell('home.html');
   attachScrub(main);
   liveJobs();
 
-  // física de click: bounce + estallido de partículas, luego navega
+  // ---- tilt 3D + glare que sigue al cursor (solo dispositivos con hover) ----
+  if (matchMedia('(hover:hover)').matches) {
+    document.querySelectorAll('.dc4').forEach(card => {
+      card.addEventListener('pointermove', e => {
+        const r = card.getBoundingClientRect();
+        const x = (e.clientX - r.left) / r.width - 0.5;
+        const y = (e.clientY - r.top) / r.height - 0.5;
+        card.style.setProperty('--rx', `${(-y * 6).toFixed(2)}deg`);
+        card.style.setProperty('--ry', `${(x * 8).toFixed(2)}deg`);
+        card.style.setProperty('--gx', `${(x * 100 + 50).toFixed(1)}%`);
+        card.style.setProperty('--gy', `${(y * 100 + 50).toFixed(1)}%`);
+      });
+      card.addEventListener('pointerleave', () => {
+        card.style.setProperty('--rx', '0deg');
+        card.style.setProperty('--ry', '0deg');
+      });
+    });
+  }
+
+  // ---- smash v2: squash + onda expansiva + partículas + velo de transición ----
   document.getElementById('deck-grid').addEventListener('click', e => {
     const card = e.target.closest('.deck-card');
     if (!card) return;
@@ -114,20 +161,31 @@ const main = renderShell('home.html');
     card._busy = true;
     card.classList.add('smash');
     const r = card.getBoundingClientRect();
+    const cx = (e.clientX || r.left + r.width / 2) - r.left;
+    const cy = (e.clientY || r.top + r.height / 2) - r.top;
+    const ring = document.createElement('span');
+    ring.className = 'dc-ring';
+    ring.style.left = `${cx}px`; ring.style.top = `${cy}px`;
+    card.appendChild(ring);
     const host = document.createElement('span');
     host.className = 'dc-burst';
-    host.style.left = `${(e.clientX || r.left + r.width / 2) - r.left}px`;
-    host.style.top = `${(e.clientY || r.top + r.height / 2) - r.top}px`;
-    for (let i = 0; i < 12; i++) {
+    host.style.left = `${cx}px`; host.style.top = `${cy}px`;
+    for (let i = 0; i < 16; i++) {
       const p = document.createElement('i');
-      const a = Math.random() * Math.PI * 2, d = 36 + Math.random() * 52;
+      const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 70;
       p.style.setProperty('--dx', `${Math.cos(a) * d}px`);
       p.style.setProperty('--dy', `${Math.sin(a) * d}px`);
-      p.style.animationDelay = `${Math.random() * 70}ms`;
+      p.style.animationDelay = `${Math.random() * 80}ms`;
       host.appendChild(p);
     }
     card.appendChild(host);
-    setTimeout(() => { location.href = card.getAttribute('href'); }, 430);
+    // velo: la página funde suave antes de navegar (adiós corte seco)
+    const veil = document.createElement('div');
+    veil.className = 'nav-veil';
+    veil.style.setProperty('--ac', getComputedStyle(card).getPropertyValue('--ac'));
+    document.body.appendChild(veil);
+    requestAnimationFrame(() => veil.classList.add('on'));
+    setTimeout(() => { location.href = card.getAttribute('href'); }, 480);
   });
 })();
 
