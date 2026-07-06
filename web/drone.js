@@ -132,7 +132,7 @@ let sys = {}, volumes = [];
 const gb = b => (b / 1e9).toFixed(1) + ' GB';
 function lastFlight(v) {
   const dates = [...v.videos, ...v.photos]
-    .map(x => (x.name.match(/DJI_(\d{4})(\d{2})(\d{2})/) || []).slice(1))
+    .map(x => ((x.name || '').match(/DJI_(\d{4})(\d{2})(\d{2})/) || []).slice(1))
     .filter(d => d.length).map(d => `${d[0]}-${d[1]}-${d[2]}`).sort();
   return dates.length ? fmt.date(dates[dates.length - 1]) : null;
 }
@@ -182,7 +182,7 @@ async function scan() {
   el.innerHTML = volumes.length ? volumes.map(v => {
     const nuevos = v.videos.filter(x => !x.in_vault);
     const backed = backedOf(v);
-    const pct = Math.round((v.total - v.free) / v.total * 100);
+    const pct = v.total > 0 ? Math.round((v.total - v.free) / v.total * 100) : 0;
     return `
     <div class="sd-card rise" data-vol="${esc(v.volume)}">
       <div class="sd-head">
@@ -237,16 +237,22 @@ const bstate = {};   // vol -> { open, filtro, q }
 function renderBrowser(v) {
   const st = bstate[v.volume] ??= { open: false, filtro: 'todo', q: '' };
   const box = document.querySelector(`[data-browser="${CSS.escape(v.volume)}"]`);
+  if (!box) return;                       // la tarjeta pudo re-renderizarse (scan) → nodo detached
   if (!st.open) { box.style.display = 'none'; return; }
   const all = [...v.videos.map(x => ({ ...x, tipo: 'video' })),
                ...v.photos.map(x => ({ ...x, tipo: 'foto' }))];
+  const q = st.q.trim().toLowerCase();    // comparación case-insensitive SIN mutar lo tecleado
   const rows = all.filter(x => {
     if (st.filtro === 'nuevos' && x.in_vault) return false;
     if (st.filtro === 'respaldados' && !x.in_vault) return false;
     if (st.filtro === 'videos' && x.tipo !== 'video') return false;
     if (st.filtro === 'fotos' && x.tipo !== 'foto') return false;
-    return !st.q || x.name.toLowerCase().includes(st.q);
+    return !q || (x.name || '').toLowerCase().includes(q);
   }).sort((a, b) => b.bytes - a.bytes);
+  // preserva foco/caret del buscador si el usuario está tecleando (el innerHTML lo recrearía)
+  const prevBq = box.querySelector('[data-bq]');
+  const hadFocus = prevBq && document.activeElement === prevBq;
+  const caret = hadFocus ? prevBq.selectionStart : null;
   box.style.display = '';
   box.innerHTML = `
     <div class="tool-row" style="padding:10px 0 6px">
@@ -266,14 +272,20 @@ function renderBrowser(v) {
       ${rows.length > 120 ? `<p class="footer-note" style="padding:8px 0">…y ${rows.length - 120} más (usa los filtros).</p>` : ''}
       ${!rows.length ? '<p class="footer-note" style="padding:8px 0">Nada con ese filtro.</p>' : ''}
     </div>`;
+  // restaura foco/caret tras recrear el input (evita el salto al final)
+  if (hadFocus) {
+    const bq = box.querySelector('[data-bq]');
+    if (bq) { bq.focus(); try { bq.setSelectionRange(caret, caret); } catch {} }
+  }
+  const fresh = () => volumes.find(x => x.volume === v.volume) || v;   // dato vigente tras un scan
   box.querySelectorAll('[data-bf]').forEach(b => b.addEventListener('click', () => {
     st.filtro = b.dataset.bf;
-    renderBrowser(v);
+    renderBrowser(fresh());
   }));
   box.querySelector('[data-bq]').addEventListener('input', e => {
-    st.q = e.target.value.toLowerCase();
+    st.q = e.target.value;                 // guarda lo tecleado tal cual (sin lowercase)
     clearTimeout(st._t);
-    st._t = setTimeout(() => renderBrowser(v), 180);
+    st._t = setTimeout(() => renderBrowser(fresh()), 180);   // usa el volumen fresco, no el capturado
   });
 }
 
@@ -366,8 +378,8 @@ function openOptimize(v) {
       queda: [nuevosV + nuevasF ? `${nuevosV + nuevasF} sin respaldo (¡impórtalos primero!)` : 'nada — tarjeta limpia', 'carpetas DCIM del dron'] },
   ];
   const usado = v.total - v.free;
-  const pctNow = Math.round(usado / v.total * 100);
-  const pctAfter = lv => Math.max(0, Math.round((usado - sz(lv.files)) / v.total * 100));
+  const pctNow = v.total > 0 ? Math.round(usado / v.total * 100) : 0;
+  const pctAfter = lv => v.total > 0 ? Math.max(0, Math.round((usado - sz(lv.files)) / v.total * 100)) : 0;
 
   const ov = document.createElement('div');
   ov.className = 'modal-ov';
@@ -488,7 +500,7 @@ function upStart(item) {
       item.eta = item.speed > 0 ? (e.total - e.loaded) / item.speed : 0;
       lastT = now; lastL = e.loaded;
     }
-    item.pct = Math.round((e.loaded / e.total) * 100);
+    item.pct = e.total > 0 ? Math.round((e.loaded / e.total) * 100) : 100;   // zero-byte = completo, no NaN%
     item.loaded = e.loaded;
     upPaint(item);
   };
