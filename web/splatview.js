@@ -45,7 +45,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   try {
     await Promise.race([
       viewer.addSplatScene(splatUrl, {
-        progressiveLoad: false, showLoadingUI: false, splatAlphaRemovalThreshold: 60,
+        progressiveLoad: false, showLoadingUI: false, splatAlphaRemovalThreshold: 8,
         rotation: SPLAT_ROT, onProgress: p => onStatus?.(`Splat · ${Math.round(p)}%`),
       }),
       new Promise((_, rej) => { tmoId = setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs); }),

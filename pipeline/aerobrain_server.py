@@ -55,8 +55,27 @@ def clip_history_files(hist_dir: Path, cid: str) -> list:
     del timestamp, así 'A-2-...' nunca cae en el conjunto de 'A'."""
     if not hist_dir.is_dir():
         return []
-    pat = re.compile(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.(splat|ksplat|ply)$", re.IGNORECASE)
+    pat = re.compile(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.(splat|ksplat|ply|meta\.json|cameras\.json)$", re.IGNORECASE)
     return [p for p in hist_dir.iterdir() if p.is_file() and pat.fullmatch(p.name)]
+
+
+def prune_splat_history(hist_dir: Path, cid: str, keep: int = 6):
+    """Keep the latest N version groups, not merely N files.
+
+    A version can have .splat + .ksplat + .meta.json + .cameras.json. Pruning by file count
+    breaks old versions into unusable partial sets.
+    """
+    groups = {}
+    pat = re.compile(rf"({re.escape(cid)}-\d{{8}}-\d{{6}})\.(splat|ksplat|ply|meta\.json|cameras\.json)$",
+                     re.IGNORECASE)
+    for p in clip_history_files(hist_dir, cid):
+        m = pat.fullmatch(p.name)
+        if m:
+            groups.setdefault(m.group(1), []).append(p)
+    stale = sorted(groups.items(), key=lambda kv: max(p.stat().st_mtime for p in kv[1]), reverse=True)[keep:]
+    for _, files in stale:
+        for p in files:
+            p.unlink(missing_ok=True)
 
 
 def job_add(kind, label, container=""):
@@ -1225,20 +1244,19 @@ class H(BaseHTTPRequestHandler):
                 tmp.unlink(missing_ok=True)
                 return self.send_json({"error": f"subida incompleta ({read}/{length} bytes)"}, 400)
             # archiva TODAS las variantes publicadas: si quedara un .ksplat viejo, el
-            # dedupe del manifest lo preferiría sobre el archivo editado recién subido
+            # manifest lo preferiría sobre el archivo editado recién subido. Conservamos también
+            # metadata/cámaras para que el selector de versiones no pierda calidad/iters/cámaras.
             hist = sdir / "history"
             hist.mkdir(exist_ok=True)
             ts = time.strftime("%Y%m%d-%H%M%S")
             archived = []
-            for old in sdir.glob(f"{cid}.*"):
-                if old.is_file() and old.suffix.lower() in (".ply", ".splat", ".ksplat"):
-                    os.replace(old, hist / f"{old.stem}-{ts}{old.suffix}")
+            for old in (sdir / f"{cid}.splat", sdir / f"{cid}.ksplat", sdir / f"{cid}.ply",
+                        sdir / f"{cid}.meta.json", sdir / f"{cid}.cameras.json"):
+                if old.is_file():
+                    suffix = old.name[len(cid):]
+                    os.replace(old, hist / f"{cid}-{ts}{suffix}")
                     archived.append(old.name)
-            # poda del historial: conserva las 6 versiones más recientes de este clip (evita
-            # crecimiento sin límite; cada re-subida deja .splat+.ksplat = ~2MB)
-            past = sorted(clip_history_files(hist, cid), key=lambda p: p.stat().st_mtime, reverse=True)
-            for stale in past[6:]:
-                stale.unlink(missing_ok=True)
+            prune_splat_history(hist, cid, keep=6)
             final = sdir / f"{cid}{ext}"
             os.replace(tmp, final)
             kname = None

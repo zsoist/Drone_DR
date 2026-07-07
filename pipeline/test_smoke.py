@@ -416,6 +416,7 @@ check("splat publish: pass promueve splat/meta/cameras por proyecto",
       (_spdir / "DJI_ATOMIC.splat").read_bytes() == b"new-good"
       and (_spdir / "DJI_ATOMIC.meta.json").exists()
       and (_spdir / "DJI_ATOMIC.cameras.json").exists()
+      and len(list((_spdir / "history").glob("DJI_ATOMIC-*.splat"))) == 1
       and not _stage.exists())
 
 # --- system manifest: sólo cuenta formatos visualizables como splats ---
@@ -426,19 +427,27 @@ try:
     _bi.VAULT = _bi_tmp
     for d in ("manifest", "raw", "proxies", "frames", "thumbs", "tracks", "reels", "splats", "models", "ai"):
         (_bi_tmp / d).mkdir(parents=True, exist_ok=True)
-    (_bi_tmp / "splats" / "A.splat").write_bytes(b"1")
+    (_bi_tmp / "splats" / "A.splat").write_bytes(b"1" * 64)
     (_bi_tmp / "splats" / "A.ksplat").write_bytes(b"2")
     (_bi_tmp / "splats" / "A.meta.json").write_bytes(b"{}")
     (_bi_tmp / "splats" / "A.cameras.json").write_bytes(b"{}")
     (_bi_tmp / "splats" / "B.ply").write_bytes(b"3")
+    (_bi_tmp / "splats" / "history").mkdir()
+    (_bi_tmp / "splats" / "history" / "A-20260707-010203.splat").write_bytes(b"4" * 96)
+    (_bi_tmp / "splats" / "history" / "A-20260707-010203.ksplat").write_bytes(b"5")
+    (_bi_tmp / "splats" / "history" / "A-20260707-010203.meta.json").write_text(
+        json.dumps({"target_iters": 7000, "final_loss": 0.05, "cameras": 42}))
     _bi.main()
     _sys = json.loads((_bi_tmp / "manifest" / "system.json").read_text())
-    # contrato: UNA entrada por clip, gana el mejor formato (.ksplat > .splat > .ply);
-    # sidecars (.meta.json/.cameras.json) nunca cuentan como splats
-    check("system: splats dedupe por clip, mejor formato gana",
-          [s["name"] for s in _sys["splats"]] == ["A.ksplat", "B.ply"])
-    check("system: splats declaran clip_id + formato",
-          [(s["clip_id"], s["format"]) for s in _sys["splats"]] == [("A", "ksplat"), ("B", "ply")])
+    # contrato: UNA entrada por versión, gana el mejor formato (.ksplat > .splat > .ply);
+    # sidecars (.meta.json/.cameras.json) nunca cuentan como splats independientes
+    check("system: splats dedupe por versión, no por clip completo",
+          [s["path"] for s in _sys["splats"]] == ["A.ksplat", "history/A-20260707-010203.ksplat", "B.ply"])
+    check("system: splats declaran clip_id/formato y preservan historial",
+          [(s["clip_id"], s["format"], s.get("current")) for s in _sys["splats"]]
+          == [("A", "ksplat", True), ("A", "ksplat", False), ("B", "ply", True)])
+    check("system: stats de historial salen del sidecar versionado",
+          _sys["splats"][1].get("iters") == 7000 and _sys["splats"][1].get("cameras") == 42)
 finally:
     _bi.VAULT = _old_bi_vault
 

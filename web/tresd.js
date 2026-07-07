@@ -7,11 +7,23 @@
 
   const SPLAT_EXT = /\.(ksplat|splat|ply)$/i;
   const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
-  function splatAssetFor(clipId) {
+  const splatKey = s => s.path || s.name;
+  const splatUrl = s => 'data/splats/' + splatKey(s).split('/').map(encodeURIComponent).join('/');
+  function splatAssetsFor(clipId) {
     return (sys.splats || [])
       .filter(s => SPLAT_EXT.test(s.name) && s.name.replace(SPLAT_EXT, '') === clipId)
+      .concat((sys.splats || []).filter(s => SPLAT_EXT.test(s.name) && s.clip_id === clipId
+        && s.name.replace(SPLAT_EXT, '') !== clipId))
       .sort((a, b) => (SPLAT_RANK[(a.format || a.name.split('.').pop()).toLowerCase()] ?? 9)
-        - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9))[0] || null;
+        - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9)
+        || (b.current ? 1 : 0) - (a.current ? 1 : 0)
+        || (b.iters || 0) - (a.iters || 0)
+        || String(b.archived_at || '').localeCompare(String(a.archived_at || '')));
+  }
+  function splatAssetFor(clipId) {
+    const chosen = selectedSplatByClip[clipId];
+    const all = splatAssetsFor(clipId);
+    return all.find(s => splatKey(s) === chosen) || all[0] || null;
   }
 
   const main = renderShell('tresd.html');
@@ -139,6 +151,7 @@
       <div class="ph">${icon('spark')} Gaussian splat del proyecto
         <span class="chip" id="sp-status" style="font-size:10.5px;padding:2px 9px"></span>
         <span class="spacer" style="flex:1"></span>
+        <select id="sp-select" title="Versión del splat" style="display:none;max-width:260px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:11.5px"></select>
         <button class="btn primary" id="load-splat" style="padding:4px 12px;font-size:11.5px">Cargar</button>
       </div>
       <div id="splat-box" style="height:56dvh;min-height:360px;display:grid;place-items:center;position:relative">
@@ -154,6 +167,8 @@
 
   // ---------- estado ----------
   let sys = {}, models = [], cur = null;
+  const selectedSplatByClip = JSON.parse(localStorage.getItem('ab_splat_versions') || '{}');
+  const saveSplatChoice = () => localStorage.setItem('ab_splat_versions', JSON.stringify(selectedSplatByClip));
   try { sys = await (await fetch('data/manifest/system.json')).json(); } catch {}
   models = sys.models || [];
   const flights = await getFlights();
@@ -428,9 +443,19 @@
     document.getElementById('op').oninput = e => {
       omap.getLayer('ortho') && omap.setPaintProperty('ortho', 'raster-opacity', +e.target.value / 100);
     };
+    const spList = splatAssetsFor(cid);
+    const spSel = document.getElementById('sp-select');
     const spMeta = splatAssetFor(cid);
     const spStatusFmt = (spMeta?.format || spMeta?.name.split('.').pop() || 'splat').toUpperCase();
-    document.getElementById('sp-status').textContent = spMeta ? `${(spMeta.bytes / 1e6).toFixed(1)} MB · ${spStatusFmt}` : 'sin entrenar';
+    spSel.style.display = spList.length > 1 ? '' : 'none';
+    spSel.innerHTML = spList.map(s => {
+      const fmtS = (s.format || s.name.split('.').pop() || 'splat').toUpperCase();
+      const label = `${s.current ? 'Actual' : (s.archived_at || 'Historial')} · ${s.iters ? s.iters + ' iters · ' : ''}${(s.bytes / 1e6).toFixed(1)} MB · ${fmtS}`;
+      return `<option value="${esc(splatKey(s))}"${spMeta && splatKey(s) === splatKey(spMeta) ? ' selected' : ''}>${esc(label)}</option>`;
+    }).join('');
+    document.getElementById('sp-status').textContent = spMeta
+      ? `${spList.length} versión${spList.length === 1 ? '' : 'es'} · ${(spMeta.bytes / 1e6).toFixed(1)} MB · ${spStatusFmt}`
+      : 'sin entrenar';
     document.getElementById('load-splat').style.display = spMeta ? '' : 'none';
     const sbox = document.getElementById('splat-box');
     // dispose() del visor de splat es ASYNC y el vendored lanza NotFoundError (removeChild
@@ -440,7 +465,7 @@
     else if (sbox._viewer) { try { const p = sbox._viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {} sbox._viewer = null; }
     sbox._loading = false;
     sbox.innerHTML = `<p class="footer-note" style="margin:0" id="splat-note">${spMeta
-      ? 'Splat entrenado y listo — pulsa Cargar para el render foto-real.'
+      ? 'Splat entrenado y listo — elige versión y pulsa Cargar para el render foto-real.'
       : 'Este proyecto aún no tiene splat — entrénalo con "Generar splat…" arriba.'}</p>`;
     const cloudMB = (cur.cloud_bytes || 0) / 1e6;
     document.getElementById('mesh-q').textContent =
@@ -980,11 +1005,12 @@
         : loss <= 0.15 ? { c: 'mid', t: 'Media' }
           : { c: 'low', t: 'Básica' };
   document.getElementById('splats').innerHTML = splats.length ? splats.map(s => {
-    const scid = s.name.replace(SPLAT_EXT, '');
+    const scid = s.clip_id || s.name.replace(SPLAT_EXT, '');
     const sf = flights.find(x => x.clip_id === scid);
     const sm = models.find(x => x.clip_id === scid);
     const sFmt = (s.format || s.name.split('.').pop()).toLowerCase();
-    const title = (sm && sm.title) || (sf && (sf.label || fmt.date(sf.date) + ' · ' + sf.time)) || scid.slice(-11);
+    const baseTitle = (sm && sm.title) || (sf && (sf.label || fmt.date(sf.date) + ' · ' + sf.time)) || scid.slice(-11);
+    const title = s.current ? baseTitle : `${baseTitle} · ${s.archived_at || 'historial'}`;
     const hasModel = models.some(m => m.clip_id === scid);
     const q = qOf(s.loss);
     const stats = [
@@ -1001,12 +1027,12 @@
         <div class="si-stats mono">${stats}</div>
       </div>
       <div class="si-acts">
-        <button class="btn primary" data-view="${esc(s.name)}"${hasModel ? '' : ' disabled title="Sin proyecto 3D publicado"'} style="padding:5px 16px">Ver</button>
-        <a class="btn" href="data/splats/${encodeURIComponent(s.name)}" download title="Descargar .${sFmt}">${icon('dl')}</a>
+        <button class="btn primary" data-cid="${esc(scid)}" data-view="${esc(splatKey(s))}"${hasModel ? '' : ' disabled title="Sin proyecto 3D publicado"'} style="padding:5px 16px">Ver</button>
+        <a class="btn" href="${splatUrl(s)}" download title="Descargar .${sFmt}">${icon('dl')}</a>
         <a class="btn" target="_blank" rel="noopener" title="Editar en SuperSplat (limpiar floaters, recortar, exportar)"
-           href="/supersplat/?load=${encodeURIComponent('/data/splats/' + s.name)}&filename=${encodeURIComponent(s.name)}">${icon('edit')}</a>
-        ${hasModel ? `<button class="btn" data-share="${esc(scid)}" title="Copiar link público">${icon('ext')}</button>` : ''}
-        <button class="btn danger" data-del="${esc(scid)}" data-title="${esc(title)}" title="Borrar splat (a la papelera)">${icon('trash')}</button>
+           href="/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}">${icon('edit')}</a>
+        ${hasModel ? `<button class="btn" data-share="${esc(scid)}" data-splat="${esc(splatKey(s))}" title="Copiar link público de esta versión">${icon('ext')}</button>` : ''}
+        <button class="btn danger" data-del="${esc(scid)}" data-title="${esc(baseTitle)}" title="Borrar todos los splats de este proyecto (a la papelera)">${icon('trash')}</button>
       </div>
     </div>`;
   }).join('') :
@@ -1060,13 +1086,15 @@
     const shareBtn = e.target.closest('[data-share]');
     const delBtn = e.target.closest('[data-del]');
     if (viewBtn && !viewBtn.disabled) {
-      const scid = viewBtn.dataset.view.replace(SPLAT_EXT, '');
+      const scid = viewBtn.dataset.cid || viewBtn.dataset.view.replace(SPLAT_EXT, '');
       if (!models.some(m => m.clip_id === scid)) return alert('Este splat no tiene proyecto 3D publicado.');
+      selectedSplatByClip[scid] = viewBtn.dataset.view;
+      saveSplatChoice();
       setProject(scid);
       document.getElementById('load-splat').click();
       setTimeout(() => document.getElementById('splat-box').scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
     } else if (shareBtn) {
-      const url = `${location.origin}/share.html?m=${encodeURIComponent(shareBtn.dataset.share)}`;
+      const url = `${location.origin}/share.html?m=${encodeURIComponent(shareBtn.dataset.share)}${shareBtn.dataset.splat ? `&s=${encodeURIComponent(shareBtn.dataset.splat)}` : ''}`;
       try { await navigator.clipboard.writeText(url); shareBtn.innerHTML = icon('check'); setTimeout(() => { shareBtn.innerHTML = icon('ext'); }, 1300); }
       catch { prompt('Link público (cópialo):', url); }
     } else if (delBtn) {
@@ -1077,7 +1105,7 @@
       if (r.error) { delBtn.disabled = false; return alert(r.error); }
       // saca el splat del estado del cliente: si no, splatAssetFor lo sigue viendo y RESUCITA
       // (botón "Cargar" reaparece, apunta a un archivo ya en la papelera → 404) al reabrir el proyecto
-      if (sys.splats) sys.splats = sys.splats.filter(s => s.name.replace(SPLAT_EXT, '') !== scid);
+      if (sys.splats) sys.splats = sys.splats.filter(s => (s.clip_id || s.name.replace(SPLAT_EXT, '')) !== scid);
       const box = document.getElementById('splat-box');
       if (box && box._pcid === scid && box._splatDispose) { try { box._splatDispose(); } catch {} box._splatDispose = null; box._viewer = null; box._pcid = null; }
       // si el proyecto borrado está abierto, refresca su panel de splat (oculta "Cargar")
@@ -1086,11 +1114,26 @@
     }
   });
 
+  document.getElementById('sp-select').addEventListener('change', e => {
+    if (!cur) return;
+    selectedSplatByClip[cur.clip_id] = e.target.value;
+    saveSplatChoice();
+    const box = document.getElementById('splat-box');
+    if (box._splatDispose) { try { box._splatDispose(); } catch {} box._splatDispose = null; box._viewer = null; }
+    box._loadToken = (box._loadToken || 0) + 1;
+    const spMeta = splatAssetFor(cur.clip_id);
+    const fmtS = (spMeta?.format || spMeta?.name.split('.').pop() || 'splat').toUpperCase();
+    document.getElementById('sp-status').textContent = spMeta
+      ? `${splatAssetsFor(cur.clip_id).length} versiones · ${(spMeta.bytes / 1e6).toFixed(1)} MB · ${fmtS}`
+      : 'sin entrenar';
+    box.innerHTML = `<p class="footer-note" style="margin:0">Versión seleccionada — pulsa Cargar para verla.</p>`;
+  });
+
   document.getElementById('load-splat').addEventListener('click', async () => {
     if (!cur) return;
     const asset = splatAssetFor(cur.clip_id);
     if (!asset) return;
-    const name = asset.name;
+    const name = splatKey(asset);
     const box = document.getElementById('splat-box');
     if (box._loading) return;                     // re-entrada: un solo load a la vez (#3)
     box._loading = true;
@@ -1104,7 +1147,7 @@
     const st = box.querySelector('.splat-st');
     let handle;
     try {
-      handle = await mountSplatViewer(box, `data/splats/${name}`,
+      handle = await mountSplatViewer(box, splatUrl(asset),
         { bytes: asset.bytes, onStatus: t => { if (st) st.textContent = t; } });
     } catch (err) {
       if (box._loadToken === myToken) {

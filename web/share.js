@@ -29,11 +29,21 @@ async function jfetch(url) {
 
 const SPLAT_EXT = /\.(ksplat|splat|ply)$/i;
 const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
-function splatAssetFor(clipId, system) {
+const wantedSplat = new URLSearchParams(location.search).get('s') || '';
+const splatKey = s => s.path || s.name;
+const splatUrl = s => 'data/splats/' + splatKey(s).split('/').map(encodeURIComponent).join('/');
+function splatAssetsFor(clipId, system) {
   return (system.splats || [])
-    .filter(s => SPLAT_EXT.test(s.name) && s.name.replace(SPLAT_EXT, '') === clipId)
+    .filter(s => SPLAT_EXT.test(s.name) && ((s.clip_id || s.name.replace(SPLAT_EXT, '')) === clipId))
     .sort((a, b) => (SPLAT_RANK[(a.format || a.name.split('.').pop()).toLowerCase()] ?? 9)
-      - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9))[0] || null;
+      - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9)
+      || (b.current ? 1 : 0) - (a.current ? 1 : 0)
+      || (b.iters || 0) - (a.iters || 0)
+      || String(b.archived_at || '').localeCompare(String(a.archived_at || '')));
+}
+function splatAssetFor(clipId, system) {
+  const all = splatAssetsFor(clipId, system);
+  return all.find(s => splatKey(s) === wantedSplat || s.name === wantedSplat) || all[0] || null;
 }
 
 let meta = null, sys = {};
@@ -49,6 +59,7 @@ document.getElementById('sh-title').textContent = meta.title || `Vuelo ${cid.sli
 document.title = `AeroBrain — ${meta.title || cid}`;
 const q = meta.qa || {};
 const base = `data/models/${cid}`;
+const splats = splatAssetsFor(cid, sys);
 const splat = splatAssetFor(cid, sys);
 const splatFmt = (splat?.format || splat?.name.split('.').pop() || 'splat').toUpperCase();
 const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(2) + ' ha' : Math.round(q.area_m2 || 0) + ' m²';
@@ -91,10 +102,27 @@ body.innerHTML = `
       <a class="exp" href="${base}/cloud.ply" download><div><b>Nube de puntos</b><span>PLY</span></div></a>
       ${meta.cloud_copc_asset ? `<a class="exp" href="${base}/${meta.cloud_copc_asset}" download><div><b>Nube optimizada</b><span>COPC</span></div></a>` : ''}
       <a class="exp" href="${base}/model/odm_textured_model_geo.obj" download><div><b>Malla 3D</b><span>OBJ</span></div></a>
-      ${splat ? `<a class="exp" href="data/splats/${encodeURIComponent(splat.name)}" download><div><b>Gaussian splat</b><span>${splatFmt}</span></div></a>` : ''}
+      ${splat ? `<a class="exp" href="${splatUrl(splat)}" download><div><b>Gaussian splat</b><span>${splatFmt}</span></div></a>` : ''}
     </div>
     <p class="footer-note" style="margin:10px 0 0">Procesado localmente con AeroBrain — fotogrametría ODM sobre video de dron DJI.</p></div>
   </div>`;
+
+if (splat && splats.length > 1) {
+  const seg = document.querySelector('.seg');
+  const sel = document.createElement('select');
+  sel.title = 'Versión del splat';
+  sel.style.cssText = 'background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px';
+  sel.innerHTML = splats.map(s => {
+    const label = `${s.current ? 'Actual' : (s.archived_at || 'Historial')} · ${s.iters ? s.iters + ' iters · ' : ''}${(s.bytes / 1e6).toFixed(1)} MB`;
+    return `<option value="${esc(splatKey(s))}"${splatKey(s) === splatKey(splat) ? ' selected' : ''}>${esc(label)}</option>`;
+  }).join('');
+  sel.addEventListener('change', () => {
+    const u = new URL(location.href);
+    u.searchParams.set('s', sel.value);
+    location.href = u.toString();
+  });
+  seg?.appendChild(sel);
+}
 
 // ---------- comparador ----------
 const cmp = document.getElementById('cmp');
@@ -319,7 +347,7 @@ const loaders = {
     const st = spinner('Descargando gaussian splat…');
     let handle;
     try {
-      handle = await mountSplatViewer(view, `data/splats/${splat.name}`,
+      handle = await mountSplatViewer(view, splatUrl(splat),
         { bytes: splat.bytes, onStatus: t => { if (st) st.textContent = t; } });
     } catch (err) {
       if (view._loadToken !== myLoad) return;       // superado por otro load: no error falso

@@ -166,12 +166,17 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
         raise RuntimeError(quality.get("reason") or "splat no pasó el quality gate")
     splat_dir.mkdir(parents=True, exist_ok=True)
     tmp_meta.write_text(json.dumps(quality, indent=1))
-    # ORDEN de commit (importa ante un SIGKILL a media publicación): 1) borra el .ksplat/.ply
-    # VIEJO — best_splats lo prefiere sobre el .splat, así que si sobrevive se serviría el modelo
-    # ANTERIOR; 2) publica el meta; 3) publica el .splat AL FINAL = punto de commit. Así el .splat
-    # nuevo nunca coexiste con un .ksplat stale ni con un meta viejo. (#4/#8/#9 + atomicidad)
-    for stale in (splat_dir / f"{cid}.ksplat", splat_dir / f"{cid}.ply"):
-        stale.unlink(missing_ok=True)
+    # Antes se pisaba el splat anterior del mismo clip. Eso impedía comparar 2k/7k/15k o
+    # ediciones SuperSplat. Ahora el set actual se archiva como una versión fechada y la UI
+    # expone todas las versiones desde manifest/system.json.
+    hist = splat_dir / "history"
+    hist.mkdir(exist_ok=True)
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    for old in (splat_dir / f"{cid}.splat", splat_dir / f"{cid}.ksplat", splat_dir / f"{cid}.ply",
+                splat_dir / f"{cid}.meta.json", splat_dir / f"{cid}.cameras.json"):
+        if old.is_file():
+            suffix = old.name[len(cid):]
+            os.replace(old, hist / f"{cid}-{ts}{suffix}")
     os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
     os.replace(tmp_out, final_out)
     cam = stage / "cameras.json"
