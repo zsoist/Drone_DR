@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 import jobs as jobstore
+from splat_presets import resolve_splat_spec
 
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
 
@@ -426,12 +427,15 @@ def run_splat(j: dict):
         shutil.rmtree(stage)
     stage.mkdir(parents=True, exist_ok=True)
     tmp_out = stage / f"{cid}.splat"
-    ITERS = int(j["spec"].get("iters", 2000))
+    preset = resolve_splat_spec(j.get("spec") or {})
+    ITERS = int(preset["iters"])
     backend = choose_splat_backend(ITERS, force_cpu=bool(j["spec"].get("force_cpu")))
     if not backend["bin"].exists():
         raise RuntimeError(f"opensplat no está compilado: {backend['bin']}")
-    jobstore.update(j["id"], detail=f"entrenando {ITERS} iters sobre {n_cams} cámaras ({backend['device']})",
+    jobstore.update(j["id"],
+                    detail=f"{preset['label']}: entrenando {ITERS} iters sobre {n_cams} cámaras ({backend['device']})",
                     stage="train", progress=0.1)
+    train_start = time.time()
     try:
         # --sh-degree-interval > iters: el salto de armónicos esféricos del step
         # 1000 era lo que hacía divergir el loss a nan en CPU (3 corridas murieron
@@ -439,7 +443,7 @@ def run_splat(j: dict):
         # SH, así que entrenar solo el grado 0 no pierde nada y es estable.
         rc = jobstore.run_tracked(j["id"],
             opensplat_train_cmd(proj, tmp_out, ITERS, backend),
-            timeout=4 * 3600, abort_re=r"Step \d+: nan",
+            timeout=int(preset.get("timeout") or 4 * 3600), abort_re=r"Step \d+: nan",
             progress_re=r"\((\d+)%\)",
             env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)})
     except RuntimeError as e:
@@ -451,6 +455,13 @@ def run_splat(j: dict):
     if rc != 0:
         raise RuntimeError(f"opensplat salió con código {rc}")
     quality = splat_quality(tmp_out, (jobstore.get(j["id"]) or {}).get("log", ""), n_cams, ITERS)
+    quality.update({
+        "preset": preset["key"],
+        "preset_label": preset["label"],
+        "backend": backend["device"],
+        "backend_note": backend["note"],
+        "duration_s": round(time.time() - train_start, 1),
+    })
     if not quality["passed"]:
         raise RuntimeError(quality["reason"])
     final_out = publish_splat_stage(stage, cid, quality, splat_dir)

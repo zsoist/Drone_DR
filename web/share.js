@@ -32,6 +32,13 @@ const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
 const wantedSplat = new URLSearchParams(location.search).get('s') || '';
 const splatKey = s => s.path || s.name;
 const splatUrl = s => 'data/splats/' + splatKey(s).split('/').map(encodeURIComponent).join('/');
+const splatVersionLabel = s => [
+  s.current ? 'Actual' : (s.archived_at || 'Historial'),
+  s.preset_label || (s.preset ? s.preset[0].toUpperCase() + s.preset.slice(1) : ''),
+  s.iters ? `${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters} iters` : '',
+  s.backend || '',
+  `${(s.bytes / 1e6).toFixed(1)} MB`,
+].filter(Boolean).join(' · ');
 function splatAssetsFor(clipId, system) {
   return (system.splats || [])
     .filter(s => SPLAT_EXT.test(s.name) && ((s.clip_id || s.name.replace(SPLAT_EXT, '')) === clipId))
@@ -113,7 +120,7 @@ if (splat && splats.length > 1) {
   sel.title = 'Versión del splat';
   sel.style.cssText = 'background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px';
   sel.innerHTML = splats.map(s => {
-    const label = `${s.current ? 'Actual' : (s.archived_at || 'Historial')} · ${s.iters ? s.iters + ' iters · ' : ''}${(s.bytes / 1e6).toFixed(1)} MB`;
+    const label = splatVersionLabel(s);
     return `<option value="${esc(splatKey(s))}"${splatKey(s) === splatKey(splat) ? ' selected' : ''}>${esc(label)}</option>`;
   }).join('');
   sel.addEventListener('change', () => {

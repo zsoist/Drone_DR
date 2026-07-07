@@ -60,6 +60,12 @@ def _splat_stats(base: Path, stem: str) -> dict:
             iters = m.get("last_step") or m.get("target_iters")
             if isinstance(iters, int):
                 out["iters"] = iters
+            if isinstance(m.get("preset"), str):
+                out["preset"] = m["preset"]
+            if isinstance(m.get("preset_label"), str):
+                out["preset_label"] = m["preset_label"]
+            if isinstance(m.get("backend"), str):
+                out["backend"] = m["backend"]
         except (ValueError, OSError):
             pass
     src = base / f"{stem}.splat"     # si existe, da conteo exacto de gaussianas

@@ -18,6 +18,7 @@ const ICONS = {
   search: '<circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/>',
   spark: '<path d="M3 14l3.5-5 3 3 3.5-6 4 5"/>',
   activity: '<path d="M2.5 10h3l2-5 3.5 10 2.5-6.5 1.5 1.5h2.5"/>',
+  cpu: '<rect x="5" y="5" width="10" height="10" rx="1.8"/><path d="M8 2.8v2.2M12 2.8v2.2M8 15v2.2M12 15v2.2M2.8 8h2.2M2.8 12h2.2M15 8h2.2M15 12h2.2M8 8h4v4H8z"/>',
   dl: '<path d="M10 3v9M6.5 9L10 12.5 13.5 9M4 16.5h12"/>',
   copy: '<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2"/>',
   check: '<path d="M4 10.5l4 4 8-8.5"/>',

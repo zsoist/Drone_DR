@@ -26,6 +26,7 @@ from email.utils import formatdate, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import jobs as jobstore
+from splat_presets import resolve_splat_spec
 from pathlib import Path
 
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
@@ -1497,12 +1498,17 @@ class H(BaseHTTPRequestHandler):
             proj = VAULT / "odm" / f"proj_{cid}"    # sin alias legacy: cada clip usa SU proyecto (proj0104 compartido = data-loss si 2 clips 0104_D)
             if not (proj / "opensfm" / "reconstruction.json").exists():
                 return self.send_json({"error": "primero procesa el vuelo en 3D (necesita las poses de ODM)"}, 400)
+            try:
+                preset = resolve_splat_spec(spec)
+            except ValueError as e:
+                return self.send_json({"error": str(e)}, 400)
             if not SPLAT_BIN.exists():
                 return self.send_json({"error": "opensplat no está compilado"}, 500)
             if jobstore.pending("splat", cid):
                 return self.send_json({"error": "ese splat ya está en cola o entrenando"}, 409)
-            j = jobstore.enqueue("splat", cid, {"clip_id": cid, "iters": int(spec.get("iters", 2000))})
-            return self.send_json({"ok": True, "job": j["id"], "queued": True})
+            j = jobstore.enqueue("splat", cid, {"clip_id": cid, "preset": preset["key"], "iters": preset["iters"]})
+            return self.send_json({"ok": True, "job": j["id"], "queued": True,
+                                   "preset": preset["key"], "iters": preset["iters"]})
         if u.path == "/api/analyze":
             if not self.auth(q):
                 return

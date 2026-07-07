@@ -372,6 +372,12 @@ import odm_prep
 check("prep: premium extrae más ancho que balanced sin llegar a 4K completo",
       odm_prep.PROFILE_WIDTH["premium"] > odm_prep.PROFILE_WIDTH["balanced"]
       and odm_prep.PROFILE_WIDTH["premium"] < 3840)
+from splat_presets import resolve_splat_spec
+check("splat presets: medium/cinematic/ultra tienen contrato explícito",
+      [resolve_splat_spec({"preset": p})["iters"] for p in ("medium", "cinematic", "ultra")]
+      == [2000, 7000, 15000])
+check("splat presets: legacy iters 7000 se identifica como cinematic",
+      resolve_splat_spec({"iters": 7000})["key"] == "cinematic")
 _cpu_backend = worker.choose_splat_backend(7000, mps_ready=False,
                                            mps_bin=Path("/tmp/opensplat-mps"),
                                            cpu_bin=Path("/tmp/opensplat-cpu"))

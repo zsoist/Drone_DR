@@ -169,6 +169,14 @@
   let sys = {}, models = [], cur = null;
   const selectedSplatByClip = JSON.parse(localStorage.getItem('ab_splat_versions') || '{}');
   const saveSplatChoice = () => localStorage.setItem('ab_splat_versions', JSON.stringify(selectedSplatByClip));
+  const splatVersionLabel = s => [
+    s.current ? 'Actual' : (s.archived_at || 'Historial'),
+    s.preset_label || (s.preset ? s.preset[0].toUpperCase() + s.preset.slice(1) : ''),
+    s.iters ? `${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters} iters` : '',
+    s.backend || '',
+    `${(s.bytes / 1e6).toFixed(1)} MB`,
+    (s.format || s.name.split('.').pop() || 'splat').toUpperCase(),
+  ].filter(Boolean).join(' · ');
   try { sys = await (await fetch('data/manifest/system.json')).json(); } catch {}
   models = sys.models || [];
   const flights = await getFlights();
@@ -449,8 +457,7 @@
     const spStatusFmt = (spMeta?.format || spMeta?.name.split('.').pop() || 'splat').toUpperCase();
     spSel.style.display = spList.length > 1 ? '' : 'none';
     spSel.innerHTML = spList.map(s => {
-      const fmtS = (s.format || s.name.split('.').pop() || 'splat').toUpperCase();
-      const label = `${s.current ? 'Actual' : (s.archived_at || 'Historial')} · ${s.iters ? s.iters + ' iters · ' : ''}${(s.bytes / 1e6).toFixed(1)} MB · ${fmtS}`;
+      const label = splatVersionLabel(s);
       return `<option value="${esc(splatKey(s))}"${spMeta && splatKey(s) === splatKey(spMeta) ? ' selected' : ''}>${esc(label)}</option>`;
     }).join('');
     document.getElementById('sp-status').textContent = spMeta
@@ -1016,6 +1023,8 @@
     const stats = [
       s.gaussians ? `<span title="Gaussianas">${icon('spark')}${gfmt(s.gaussians)}</span>` : '',
       s.cameras ? `<span title="Fotos / cámaras usadas">${icon('film')}${s.cameras}</span>` : '',
+      (s.preset_label || s.preset) ? `<span title="Preset">${icon('spark')}${esc(s.preset_label || s.preset)}</span>` : '',
+      s.backend ? `<span title="Backend de entrenamiento">${icon('cpu')}${esc(s.backend)}</span>` : '',
       s.iters ? `<span title="Iteraciones de entrenamiento">${icon('loop')}${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters}</span>` : '',
       `<span title="Tamaño del archivo">${icon('db')}${(s.bytes / 1e6).toFixed(1)} MB</span>`,
       `<span title="Formato">.${sFmt}</span>`,
@@ -1041,10 +1050,9 @@
   document.getElementById('btn-splat').addEventListener('click', () => {
     if (!models.length) return alert('Procesa primero un vuelo en 3D — el splat entrena sobre sus fotos y poses.');
     const Q = [
-      { v: 1000, n: 'Rápido', t: '~15-25 min', d: 'Boceto para previsualizar' },
-      { v: 2000, n: 'Balanceado', t: '~30-50 min', d: 'Buen detalle general' },
-      { v: 7000, n: 'Cinemático', t: '~2-3 h', d: 'Nítido, para compartir' },
-      { v: 15000, n: 'Ultra', t: '~5-7 h', d: 'Máximo detalle (déjalo de noche)' },
+      { p: 'medium', n: 'Medium', t: '~15-35 min MPS', d: 'Default estable para inspección fina' },
+      { p: 'cinematic', n: 'Cinemático', t: '~45-100 min MPS', d: 'Nítido, para compartir' },
+      { p: 'ultra', n: 'Ultra', t: '~2-4 h MPS', d: 'Máximo detalle local' },
     ];
     const { ov, close } = openModal(`${icon('spark')} Generar gaussian splat`, `
       <p class="footer-note" style="margin:0 0 12px">Entrena un archivo <b>.splat</b> nuevo con las
@@ -1059,7 +1067,7 @@
         </div>`).join('')}</div>
       <p class="mlb">Calidad del entrenamiento</p>
       <div class="mpresets">${Q.map(q => `
-        <div class="mpreset${q.v === 2000 ? ' on' : ''}" data-v="${q.v}">
+        <div class="mpreset${q.p === 'medium' ? ' on' : ''}" data-preset="${q.p}">
           <b>${q.n}</b><span class="mono">${q.t}</span><small>${q.d}</small></div>`).join('')}</div>
       <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Entrenar splat</button>`);
     ov.querySelector('.mflights').addEventListener('click', e => {
@@ -1075,7 +1083,7 @@
     ov.querySelector('#m-go').addEventListener('click', async () => {
       const r = await api('/api/splat', {
         clip_id: ov.querySelector('.mflight.on')?.dataset.cid,
-        iters: +(ov.querySelector('.mpreset.on')?.dataset.v || 2000),
+        preset: ov.querySelector('.mpreset.on')?.dataset.preset || 'medium',
       });
       if (r.error) return alert(r.error);
       close();
