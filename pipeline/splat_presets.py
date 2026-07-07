@@ -13,6 +13,7 @@ SPLAT_PRESETS = {
         "eta_cpu": "~15-35 min",
         "description": "Draft preview for checking capture/poses.",
         "timeout": 2 * 3600,
+        "train_args": [],
     },
     "medium": {
         "iters": 2000,
@@ -21,6 +22,7 @@ SPLAT_PRESETS = {
         "eta_cpu": "~30-60 min",
         "description": "Reliable default for inspecting shape and coverage.",
         "timeout": 3 * 3600,
+        "train_args": [],
     },
     "cinematic": {
         "iters": 7000,
@@ -29,6 +31,7 @@ SPLAT_PRESETS = {
         "eta_cpu": "~2-3 h",
         "description": "Shareable photoreal quality with strong convergence.",
         "timeout": 6 * 3600,
+        "train_args": [],
     },
     "ultra": {
         "iters": 15000,
@@ -37,6 +40,17 @@ SPLAT_PRESETS = {
         "eta_cpu": "~5-8 h",
         "description": "Best local quality for overnight/premium runs.",
         "timeout": 10 * 3600,
+        # On a 16GB M4, OpenSplat defaults can exceed 1M gaussians before 25%
+        # on aerial video. That makes late iterations crawl and creates mobile-
+        # hostile assets. Ultra keeps the long refinement budget but bounds
+        # gaussian growth: fewer split passes, higher split threshold, and an
+        # earlier stop for large screen-space splits.
+        "train_args": [
+            "--save-every", "1000",
+            "--refine-every", "200",
+            "--densify-grad-thresh", "0.0005",
+            "--stop-screen-size-at", "2500",
+        ],
     },
 }
 
@@ -85,4 +99,5 @@ def resolve_splat_spec(spec: dict | None) -> dict:
         "eta_cpu": "variable",
         "description": "Custom iteration count",
         "timeout": max(2 * 3600, min(14 * 3600, int(iters * 2.5))),
+        "train_args": [],
     }

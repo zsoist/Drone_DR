@@ -124,16 +124,15 @@ PRESETS = {
     "estandar": {"eta": "~45-75 min", "timeout": 3 * 3600, "mem": "7g", "concurrency": 4,
                  "args": ["--pc-quality", "medium", "--feature-quality", "medium",
                           "--orthophoto-resolution", "5", "--dem-resolution", "10"]},
-    # alta: mesh-size 300k = recomendación urbana oficial para edificios/techos (default 200k).
-    # En el M4/16GB, geometric depthmaps + COPC/sub-scenes pueden matar OpenMVS después de
-    # una nube válida. Por eso alta/extra/ultra priorizan terminar el modelo web: dense estable,
-    # DSM/DTM/ortho/malla, y COPC queda como mejora offline no crítica. 9500m evita que la
-    # fusión high entre en el recovery tiled/sub-scene de ODM, que segfaulta en escenas nadir
-    # "unbounded" aunque ya exista una reconstrucción válida.
+    # alta: para video DJI nadir corto, el producto premium real es poses + nube + DSM/ortho
+    # + Gaussian splat. El mesh completo/2.5D puede quemar horas en renderdem sobre tiles
+    # vacíos y terminar con una malla inútil. --skip-3dmodel mantiene la ruta eficiente y
+    # publicable para inspección/splats; vuelos oblicuos/orbita pueden usar extra/ultra si se
+    # quiere forzar malla pesada.
     "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "9500m", "concurrency": 2, "fallback": "estandar",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5",
-                          "--mesh-size", "300000", "--pc-skip-geometric"]},
+                          "--mesh-size", "300000", "--pc-skip-geometric", "--skip-3dmodel"]},
     # extra: malla más densa (mesh 600k + octree 11) con pc-quality high. octree 12 CRASHEA
     # ("strange values", exit 134) en datasets reales — la comunidad ODM recomienda <=11.
     "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "9500m", "concurrency": 2, "fallback": "alta",
@@ -231,13 +230,15 @@ def choose_splat_backend(iters: int, force_cpu: bool = False, mps_ready: bool | 
             "note": f"{iters} iters en CPU fallback ({runtime})"}
 
 
-def opensplat_train_cmd(project: Path, out: Path, iters: int, backend: dict) -> list[str]:
+def opensplat_train_cmd(project: Path, out: Path, iters: int, backend: dict,
+                        extra_args: list[str] | None = None) -> list[str]:
     # taskpolicy -c utility: QoS bajo para que 4h de entrenamiento CPU no roben fluidez
     # a la UI/web (taskpolicy hace exec — mismo pid, el cancel del jobstore sigue funcionando)
     cmd = ["/usr/sbin/taskpolicy", "-c", "utility", str(backend["bin"]), str(project)]
     if backend.get("cpu_flag"):
         cmd.append("--cpu")
     cmd += ["-n", str(iters), "-o", str(out), "--sh-degree-interval", str(iters + 1)]
+    cmd += list(extra_args or [])
     return cmd
 
 
@@ -469,7 +470,7 @@ def run_splat(j: dict):
         # justo después). El formato .splat ni siquiera exporta los coeficientes
         # SH, así que entrenar solo el grado 0 no pierde nada y es estable.
         rc = jobstore.run_tracked(j["id"],
-            opensplat_train_cmd(proj, tmp_out, ITERS, backend),
+            opensplat_train_cmd(proj, tmp_out, ITERS, backend, preset.get("train_args")),
             timeout=int(preset.get("timeout") or 4 * 3600), abort_re=r"Step \d+: nan",
             progress_re=r"\((\d+)%\)",
             env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)})

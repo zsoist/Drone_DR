@@ -551,6 +551,51 @@ def splat_quality(out: Path, log: str, n_cams: int, iters: int) -> dict:
             "last_step": last_step, "steps_logged": len(step_rows), "target_iters": iters}
 
 
+def derive_odm_progress(log: str, current: float | None = None, cid: str = "") -> float | None:
+    """Best-effort progress for ODM jobs from log text.
+
+    The worker cannot easily stream structured progress from ODM, but the log has
+    stable stage markers. Keep this monotonic and conservative: it drives UI/ETA
+    only, never success/failure decisions.
+    """
+    txt = (log or "").lower()
+    marks = [
+        (0.18, ("opensfm", "extract_metadata")),
+        (0.24, ("detect_features", "feature")),
+        (0.32, ("match_features", "matching")),
+        (0.42, ("reconstruct", "bundle")),
+        (0.50, ("finished opensfm stage", "export_openmvs")),
+        (0.58, ("depthmap resolution", "densifypointcloud")),
+        (0.66, ("filterpoints", "filter point cloud")),
+        (0.74, ("meshing", "poissonrecon", "dem2mesh")),
+        (0.82, ("texturing", "mvstex", "texture")),
+        (0.88, ("dsm", "dtm", "dem", "merged.vrt")),
+        (0.92, ("orthophoto", "odm_orthophoto")),
+        (0.96, ("browser gate", "publicando", "verificando model")),
+    ]
+    best = None
+    for pct, needles in marks:
+        if any(n in txt for n in needles):
+            best = pct
+    best = max(float(current or 0), float(best or 0))
+    if cid:
+        safe_cid = re.sub(r"[^\w-]", "", cid)
+        proj = VAULT / "odm" / f"proj_{safe_cid}"
+        fs_marks = [
+            (0.50, proj / "opensfm" / "reconstruction.json"),
+            (0.66, proj / "odm_filterpoints" / "point_cloud.ply"),
+            (0.74, proj / "odm_meshing"),
+            (0.82, proj / "odm_texturing"),
+            (0.88, proj / "odm_dem"),
+            (0.92, proj / "odm_orthophoto"),
+            (0.96, VAULT / "models" / cid / "meta.json"),
+        ]
+        for pct, path in fs_marks:
+            if path.exists():
+                best = max(float(best or 0), pct)
+    return best
+
+
 ASPECTS = {
     "16:9": "scale=-2:1080",
     "9:16": "crop=ih*9/16:ih,scale=1080:1920",
@@ -893,6 +938,8 @@ class H(BaseHTTPRequestHandler):
                     m = re.findall(r"\((\d+)%\)", j.get("log") or "")
                     if m:
                         j["progress"] = max(j.get("progress") or 0, 0.05 + 0.93 * int(m[-1]) / 100)
+                if j["kind"] == "3d" and j["status"] == "running":
+                    j["progress"] = derive_odm_progress(j.get("log") or "", j.get("progress"), j.get("label") or "")
                 # los links de jobs viejos no deben apuntar a modelos borrados
                 if j["status"] == "done" and j.get("artifact"):
                     j["artifact_exists"] = (VAULT / j["artifact"]).exists()

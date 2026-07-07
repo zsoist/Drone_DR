@@ -4,6 +4,7 @@ Cubre las piezas puras: parser SRT (con puntos 0,0), política de tiers,
 mediciones DSM (volumen y perfil sobre un DSM sintético), y contención de paths.
 """
 import json
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -189,7 +190,7 @@ check("job: timeout deja row en 'error' (auto-consistente)",
       _jt["status"] == "error" and "timeout" in (_jt["detail"] or ""))
 
 # ---------- splat quality gate ----------
-from aerobrain_server import splat_quality
+from aerobrain_server import splat_quality, derive_odm_progress
 import types
 class FakeOut:
     def __init__(self, size): self._s = size
@@ -208,6 +209,21 @@ check("splat: final_loss ignora los nan y toma el último numérico", q4["final_
 q5 = splat_quality(FakeOut(700_000), "Step 100: 1.2e-1 (5%)", 40, 2000)
 check("splat: entrenamiento incompleto FALLA aunque el archivo exista",
       not q5["passed"] and "incompleto" in q5["reason"] and q5["final_loss"] == 0.12)
+check("odm progress: OpenMVS depthmaps sube sobre el 15% base",
+      derive_odm_progress("Finished opensfm stage\nRunning openmvs stage\nDepthmap resolution set to: 1536px", 0.15) >= 0.58)
+check("odm progress: derivado nunca retrocede",
+      derive_odm_progress("detect_features", 0.7) == 0.7)
+import aerobrain_server as _srv
+_old_srv_vault = _srv.VAULT
+_odm_tmp = Path(tempfile.mkdtemp())
+try:
+    _srv.VAULT = _odm_tmp
+    (_odm_tmp / "odm" / "proj_DJI_STAGE" / "odm_filterpoints").mkdir(parents=True)
+    (_odm_tmp / "odm" / "proj_DJI_STAGE" / "odm_filterpoints" / "point_cloud.ply").write_text("ply\n")
+    check("odm progress: filesystem stage sobrevive rotación del log",
+          _srv.derive_odm_progress("", 0.15, "DJI_STAGE") >= 0.66)
+finally:
+    _srv.VAULT = _old_srv_vault
 
 # ---------- multi-date volume comparison (compare_dsm) ----------
 from aerobrain_server import compare_dsm
@@ -261,7 +277,7 @@ check("orphans: restart del worker mata proceso heavy huérfano",
       jobs.get(_heavy["id"])["status"] == "error" and _heavy_gone)
 
 # --- viewer mesh re-centrado (audit P1: coords UTM rompen float32) ---
-from tresd_publish import make_viewer_mesh
+from tresd_publish import make_viewer_mesh, obj_stats
 from tresd_publish import wgs84_area_m2, ply_vertex_count, find_copc_asset, find_texture_dir
 _md = Path(tempfile.mkdtemp())
 (_md / "geo.obj").write_text(
@@ -273,6 +289,10 @@ check("viewer mesh: vertices re-centrados cerca del origen",
       all(abs(float(c)) < 10 for v in _verts for c in v))
 check("viewer mesh: caras y mtllib intactos",
       "f 1 2 1" in (_md / "viewer.obj").read_text() and "mtllib m.mtl" in (_md / "viewer.obj").read_text())
+(_md / "weak.obj").write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\n")
+_weak_stats = obj_stats(_md / "weak.obj")
+check("viewer mesh: stats detecta malla sin caras",
+      _weak_stats["vertices"] == 3 and _weak_stats["faces"] == 0)
 check("qa: área WGS84 fallback calcula una huella realista",
       12_000 < wgs84_area_m2([[0, 0], [0.001, 0], [0.001, 0.001], [0, 0.001]]) < 13_000)
 (_md / "cloud.ply").write_text("ply\nformat ascii 1.0\nelement vertex 12345\nend_header\n")
@@ -286,6 +306,10 @@ check("qa: publisher encuentra COPC de ODM si existe",
 _tex_dir, _tex_mode = find_texture_dir(_md)
 check("qa: publisher cae a odm_texturing_25d si OpenMVS full falla",
       _tex_dir.name == "odm_texturing_25d" and _tex_mode == "ortho_25d_fallback")
+shutil.rmtree(_md / "odm_texturing_25d")
+_tex_dir2, _tex_mode2 = find_texture_dir(_md)
+check("qa: publisher acepta corrida sin malla texturizada",
+      _tex_dir2 is None and _tex_mode2 == "no_mesh")
 
 # --- capture intelligence ---
 from capture_quality import sharpness, choose_frames, gps_metrics
@@ -322,6 +346,8 @@ check("presets: alta es mas fina que rapido (ortho res)",
 check("presets: alta prioriza dense estable sobre COPC crítico",
       "--pc-skip-geometric" in worker.PRESETS["alta"]["args"]
       and "--pc-copc" not in worker.PRESETS["alta"]["args"])
+check("presets: alta evita malla completa cara para ruta video→splat",
+      "--skip-3dmodel" in worker.PRESETS["alta"]["args"])
 check("presets: ultra pesados tienen fallback de degradado",
       worker.PRESETS["ultra"]["fallback"] == "extra" and worker.PRESETS["extra"]["fallback"] == "alta")
 check("presets: ultra usa pc-quality ultra + malla mas densa que alta",
@@ -378,6 +404,11 @@ check("splat presets: medium/cinematic/ultra tienen contrato explícito",
       == [2000, 7000, 15000])
 check("splat presets: legacy iters 7000 se identifica como cinematic",
       resolve_splat_spec({"iters": 7000})["key"] == "cinematic")
+_ultra_splat = resolve_splat_spec({"preset": "ultra"})
+check("splat presets: ultra limita densificación para M4",
+      "--densify-grad-thresh" in _ultra_splat["train_args"]
+      and "--refine-every" in _ultra_splat["train_args"]
+      and _ultra_splat["iters"] == 15000)
 _cpu_backend = worker.choose_splat_backend(7000, mps_ready=False,
                                            mps_bin=Path("/tmp/opensplat-mps"),
                                            cpu_bin=Path("/tmp/opensplat-cpu"))
@@ -391,6 +422,9 @@ check("splat backend: Metal/MPS NO fuerza --cpu",
       and _gpu_backend["device"] == "Metal/MPS")
 check("splat backend: sh-degree-interval queda por encima de iters",
       worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _gpu_backend)[-1] == "7001")
+check("splat backend: train_args llegan al comando OpenSplat",
+      "--densify-grad-thresh" in worker.opensplat_train_cmd(
+          Path("/p"), Path("/o.splat"), _ultra_splat["iters"], _gpu_backend, _ultra_splat["train_args"]))
 check("splat backend: entrena con QoS utility (UI fluida durante 4h de CPU)",
       worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _cpu_backend)[:3]
       == ["/usr/sbin/taskpolicy", "-c", "utility"])

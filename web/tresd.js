@@ -369,6 +369,16 @@
     const grade = reproj == null ? '—' : reproj < 1.5 ? 'excelente' : reproj < 2.5 ? 'buena' : 'aceptable';
     const sp = splatAssetFor(cid);
     const spFmt = (sp?.format || sp?.name.split('.').pop() || 'splat').toUpperCase();
+    const meshOk = cur.mesh_ok !== false;
+    const meshBtn = document.getElementById('load-mesh');
+    const meshBox = document.getElementById('mesh-box');
+    document.getElementById('mesh-q').textContent = meshOk ? 'lista' : 'no concluyente';
+    document.getElementById('mesh-q').style.color = meshOk ? 'var(--mint)' : 'var(--amber)';
+    if (meshBtn) meshBtn.style.display = meshOk ? '' : 'none';
+    if (!meshOk && meshBox) {
+      meshBox.innerHTML = `<p class="footer-note" style="margin:0;color:var(--amber)">
+        ${icon('warn')} ODM produjo una malla débil para este vuelo. Usa la nube de puntos o el gaussian splat para inspección cercana.</p>`;
+    }
     document.getElementById('dls').innerHTML = `
       ${q.status && q.status !== 'ok' ? `<p class="footer-note" style="margin:0 0 10px;color:var(--amber)">
         ${icon('warn')} Métricas de calidad ${q.status === 'parcial' ? 'parciales' : 'no disponibles'} para esta corrida
@@ -388,6 +398,7 @@
           ${cur.dsm_min != null ? `<tr><td>Rango de elevación</td><td>${cur.dsm_min} – ${cur.dsm_max} m</td></tr>
           <tr><td>Curvas de nivel</td><td>cada ${cur.contour_interval} m</td></tr>` : ''}
           <tr><td>Texturas de malla</td><td>${cur.textures || 0}</td></tr>
+          <tr><td>Malla</td><td>${meshOk ? 'usable' : 'débil'}${cur.mesh_stats ? ` · ${cur.mesh_stats.vertices || 0} vértices · ${cur.mesh_stats.faces || 0} caras` : ''}</td></tr>
           <tr><td>Borde fundido</td><td>${cur.ortho_feather_px || 0} px</td></tr>
           <tr><td>Datum</td><td>WGS84 · elipsoidal</td></tr>
         </table>
@@ -404,7 +415,7 @@
         <a class="exp" href="${base}/dsm_color.png" download>${icon('gauge')}<div><b>Elevación color</b><span>PNG · mapas</span></div></a>` : ''}
         <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>Nube de puntos</b><span>PLY · CloudCompare</span></div></a>
         ${cur.cloud_copc_asset ? `<a class="exp" href="${base}/${cur.cloud_copc_asset}" download>${icon('database')}<div><b>Nube optimizada</b><span>COPC · ${(cur.cloud_copc_bytes / 1e6).toFixed(0)} MB · GIS</span></div></a>` : ''}
-        <a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></div></a>
+        ${meshOk ? `<a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></div></a>` : ''}
         ${sp ? `<a class="exp" href="data/splats/${encodeURIComponent(sp.name)}" download>${icon('spark')}<div><b>Gaussian splat</b><span>${spFmt} · SuperSplat</span></div></a>` : ''}
         <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Página pública</b><span>LINK · compartir</span></div></a>
       </div>`;
@@ -789,7 +800,7 @@
   }
 
   document.getElementById('load-mesh').addEventListener('click', async e => {
-    if (!cur) return;
+    if (!cur || cur.mesh_ok === false) return;
     e.currentTarget.style.display = 'none';
     const box = document.getElementById('mesh-box');
     const stM = spin(box, 'Cargando malla texturizada…');

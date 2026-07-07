@@ -69,6 +69,7 @@ const base = `data/models/${cid}`;
 const splats = splatAssetsFor(cid, sys);
 const splat = splatAssetFor(cid, sys);
 const splatFmt = (splat?.format || splat?.name.split('.').pop() || 'splat').toUpperCase();
+const meshOk = meta.mesh_ok !== false;
 const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(2) + ' ha' : Math.round(q.area_m2 || 0) + ' m²';
 
 body.innerHTML = `
@@ -85,7 +86,7 @@ body.innerHTML = `
       <span class="spacer" style="flex:1"></span>
       <div class="seg">
         <button class="on" data-v="cloud">Nube de puntos</button>
-        <button data-v="mesh">Malla texturizada</button>
+        ${meshOk ? '<button data-v="mesh">Malla texturizada</button>' : ''}
         ${splat ? '<button data-v="splat">Gaussian splat</button>' : ''}
       </div>
     </div>
@@ -108,7 +109,7 @@ body.innerHTML = `
       <a class="exp" href="${base}/ortho_full.jpg" target="_blank" rel="noopener"><div><b>Ortofoto 5K</b><span>JPG</span></div></a>
       <a class="exp" href="${base}/cloud.ply" download><div><b>Nube de puntos</b><span>PLY</span></div></a>
       ${meta.cloud_copc_asset ? `<a class="exp" href="${base}/${meta.cloud_copc_asset}" download><div><b>Nube optimizada</b><span>COPC</span></div></a>` : ''}
-      <a class="exp" href="${base}/model/odm_textured_model_geo.obj" download><div><b>Malla 3D</b><span>OBJ</span></div></a>
+      ${meshOk ? `<a class="exp" href="${base}/model/odm_textured_model_geo.obj" download><div><b>Malla 3D</b><span>OBJ</span></div></a>` : ''}
       ${splat ? `<a class="exp" href="${splatUrl(splat)}" download><div><b>Gaussian splat</b><span>${splatFmt}</span></div></a>` : ''}
     </div>
     <p class="footer-note" style="margin:10px 0 0">Procesado localmente con AeroBrain — fotogrametría ODM sobre video de dron DJI.</p></div>

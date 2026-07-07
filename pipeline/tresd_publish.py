@@ -72,6 +72,19 @@ def make_viewer_mesh(geo, dst):
                 o.write(line)
 
 
+def obj_stats(path: Path) -> dict:
+    stats = {"vertices": 0, "faces": 0}
+    if not path.exists():
+        return stats
+    with open(path, errors="ignore") as f:
+        for line in f:
+            if line.startswith("v "):
+                stats["vertices"] += 1
+            elif line.startswith("f "):
+                stats["faces"] += 1
+    return stats
+
+
 # tiers de textura del VISOR con presupuesto de memoria GPU. Cada página se sube
 # DESCOMPRIMIDA (lado²×4 bytes) sin importar el peso del JPEG, así que N páginas de
 # 4096² = GBs: Chrome desktop aguanta, Safari/iPhone las evicta EN SILENCIO → parches
@@ -181,7 +194,7 @@ def find_texture_dir(proj: Path) -> tuple[Path | None, str]:
         return full, "full_3d"
     if (fast / "odm_textured_model_geo.obj").exists():
         return fast, "ortho_25d_fallback"
-    return None, "missing"
+    return None, "no_mesh"
 
 
 def main():
@@ -360,12 +373,11 @@ EOF""")
     shutil.rmtree(out / "model", ignore_errors=True)
     (out / "model").mkdir(parents=True, exist_ok=True)
     tex, pipeline_mode = find_texture_dir(proj)
-    if tex is None:
-        raise RuntimeError("ODM no produjo malla texturizada (ni odm_texturing ni odm_texturing_25d)")
-    for f in tex.glob("odm_textured_model_geo*"):
-        (out / "model" / f.name).write_bytes(f.read_bytes())
-    for f in [*tex.glob("*.jpg"), *tex.glob("*.png")]:
-        (out / "model" / f.name).write_bytes(f.read_bytes())
+    if tex is not None:
+        for f in tex.glob("odm_textured_model_geo*"):
+            (out / "model" / f.name).write_bytes(f.read_bytes())
+        for f in [*tex.glob("*.jpg"), *tex.glob("*.png")]:
+            (out / "model" / f.name).write_bytes(f.read_bytes())
     # el .mtl referencia texturas por nombre relativo — ya quedan al lado
     # viewer mesh: vertices re-centrados al origen. El OBJ georeferenciado vive en
     # coordenadas UTM (~cientos de miles) y three.js parsea a float32 → artefactos
@@ -374,6 +386,8 @@ EOF""")
     if geo_obj.exists():
         make_viewer_mesh(geo_obj, out / "model" / "odm_textured_model_viewer.obj")
     make_viewer_textures(out / "model")
+    mesh_stats = obj_stats(geo_obj)
+    mesh_ok = mesh_stats["vertices"] >= 100 and mesh_stats["faces"] >= 50
 
     # QA de la reconstrucción (estilo Pix4D/DroneDeploy report).
     # GATE del audit: un modelo NUNCA se publica con qa vacio — si stats.json
@@ -422,7 +436,15 @@ EOF""")
             qa.setdefault("status", "parcial")
     if pipeline_mode == "ortho_25d_fallback":
         qa["status"] = "ortho_25d"
-        qa["note"] = "OpenMVS densify falló; publicado con fallback fast-orthophoto/25D sin DSM."
+        qa["note"] = (
+            "Publicado con malla 25D de ODM: conserva ortofoto, DSM/DTM y nube; "
+            "la malla full 3D queda como producto secundario para vuelos nadir."
+        )
+    if pipeline_mode == "no_mesh":
+        qa["status"] = qa.get("status") if qa.get("status") not in (None, "ok") else "parcial"
+        qa["mesh_note"] = "Procesado sin malla texturizada completa; nube/DSM/ortho/splat son los productos principales."
+    if not mesh_ok:
+        qa["mesh_note"] = "ODM produjo una malla débil o vacía; usa nube de puntos / splat para inspección 3D."
 
     # sidecars .gz: el server los sirve con Content-Encoding gzip — la malla OBJ
     # (texto) baja ~70% y la nube PLY ~30%; el browser descomprime transparente
@@ -451,10 +473,12 @@ EOF""")
         "cloud_points": ply_vertex_count(out / "cloud.ply"),
         "cloud_copc_asset": copc_asset,
         "cloud_copc_bytes": (out / copc_asset).stat().st_size if copc_asset and (out / copc_asset).exists() else 0,
-        "model_obj": "model/odm_textured_model_geo.obj",
+        "model_obj": "model/odm_textured_model_geo.obj" if geo_obj.exists() else None,
+        "mesh_ok": mesh_ok,
+        "mesh_stats": mesh_stats,
         "model_viewer": "model/odm_textured_model_viewer.obj"
-                        if (out / "model" / "odm_textured_model_viewer.obj").exists()
-                        else "model/odm_textured_model_geo.obj",
+                        if mesh_ok and (out / "model" / "odm_textured_model_viewer.obj").exists()
+                        else None,
         "textures": len([*(out / "model").glob("*.jpg"), *(out / "model").glob("*.png")]),
         **dsm_meta,
         "has_dsm": (out / "dsm_4326.tif").exists(),
