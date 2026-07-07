@@ -16,7 +16,8 @@ checks, so a random website cannot silently trigger write actions.
 curl http://localhost:8790/api/whoami                      # -> {"ok":true,"local":true}
 curl http://localhost:8790/api/jobs                        # job list
 curl -X POST http://localhost:8790/api/search -d '{"q":"selva verde"}'   # semantic search
-curl -X POST http://localhost:8790/api/odm    -d '{"clip_id":"..."}'     # process 3D
+curl -X POST http://localhost:8790/api/odm    -d '{"clip_id":"...","preset":"alta"}'    # premium ODM video route
+curl -X POST http://localhost:8790/api/splat  -d '{"clip_id":"...","preset":"ultra"}'   # Metal/MPS Ultra splat
 ```
 
 The **preview browser pointed at `http://localhost:8790`** is also trusted — pages
@@ -63,6 +64,27 @@ rather than trying to log in over http.
 ## Restart the server after backend edits
 
 ```bash
-launchctl kickstart -k gui/501/com.aerobrain.web   # picks up pipeline/*.py changes
+pipeline/safe_restart.sh server     # picks up pipeline/*.py web-server changes
+pipeline/safe_restart.sh worker     # only when no 3D/splat job is running
 ```
 Static web/ + /data are served no-cache, so frontend edits are live immediately.
+
+## 3D acceptance checks for agents
+
+Before saying a 3D/splat change works:
+
+```bash
+python3 -m py_compile pipeline/*.py ai/*.py
+python3 pipeline/test_smoke.py
+node --check web/icons.js web/tresd.js web/share.js web/splatview.js web/splatlab.js
+python3 pipeline/audit_vault.py
+python3 pipeline/browser_gate.py model <clip_id>
+python3 pipeline/browser_gate.py splat <clip_id>
+```
+
+For splat history bugs, verify both current and archived URLs:
+
+```bash
+curl -I http://127.0.0.1:8790/data/splats/<clip>.ksplat
+curl -I http://127.0.0.1:8790/data/splats/history/<clip>-<timestamp>.ksplat
+```

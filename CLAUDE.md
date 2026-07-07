@@ -11,17 +11,20 @@
 - Media serving = python http.server behind the tunnel; if video seeking ever feels slow, swap to Caddy (proper Range support).
 - ODM photogrammetry from video frames REQUIRES GPS EXIF geotags (from the SRT track
   via pipeline/odm_prep.py) — without them the orthophoto comes out 67x66px garbage.
-  ODM runs in Docker (-m 7g, FULL pipeline con presets pc-quality low/medium/high) fine on the M4 alongside OpenBrain. OrbStack necesita memory_mib>=10240.
+  Current best default for DJI video is preset `alta`: 3072px frame prep, `pc-quality high`,
+  `feature-quality high`, DSM/DTM/ortho/nube and `--skip-3dmodel`. Full mesh is expensive
+  and weak for nadir-only video; splat + cloud + DSM are the premium outputs.
 - GeoTIFF de ODM: ffmpeg lo lee NEGRO (tiled TIFF). Convertir SIEMPRE con GDAL dentro
   del contenedor: docker run --entrypoint bash opendronemap/odm -c "python3 -c 'from osgeo import gdal; gdal.Translate(...)'"
-- ODM full pipeline (con openmvs densify) sí produce ortho+mesh reales; --fast-orthophoto
-  desde video frames da sparse inservible. --rerun-from openmvs reutiliza las cámaras.
+- ODM `alta` has been verified on `DJI_20260706133809_0101_D`: 30/30 cameras, DSM/DTM,
+  feathered ortho, 717k cloud points, browser gate OK, ~12.6 min on this M4. If OpenMVS
+  fails, worker falls back through stable dense or 25D publish with explicit QA, never silent.
 - gdal_array (ReadAsArray) está ROTO en la imagen ODM (numpy mismatch). Para mediciones:
   exportar DSM como binario ENVI en tresd_publish y leer con numpy en el HOST (memmap).
-- OpenSplat en macOS: LibTorch >=2.7 (2.5 choca con Clang moderno por is_arithmetic),
-  Metal necesita 'xcodebuild -downloadComponent MetalToolchain' (requiere first-launch/sudo)
-  → build CPU con -DGPU_RUNTIME=CPU y correr con --cpu. image_list.txt de opensfm trae
-  rutas del contenedor: sed a rutas host antes de entrenar.
+- OpenSplat en macOS: production path is `splat/OpenSplat/build-mps/opensplat` with
+  `GPU_RUNTIME=MPS`; CPU build is fallback only. Worker auto-selects Metal/MPS if available.
+  `image_list.txt` from OpenSfM carries container paths; worker rewrites `/datasets/code` to
+  the host project path before training.
 - Docker corre en ORBSTACK y su VM tenía 3.9GB totales — el -m 7g del contenedor ODM
   era ilusorio (OOM exit 137 en mvs_texturing con texturas 8192). Fix aplicado:
   `orb config set memory_mib 10240` + `orb stop/start` → VM 9.77GB. Si ODM vuelve a
@@ -33,6 +36,13 @@
 - GaussianSplats3D vendoreado importa "/vendor/three.module.js" (URL de navegador): para
   usarlo en Node (make_ksplat.mjs) reescribe ese import a file:// en una copia temporal y
   shimea window/self/document/navigator ANTES del import. Sin npm.
+- Splat presets are explicit and versioned:
+  - Medium: 2k iters, interactive QA.
+  - Cinematic: 7k iters, shareable photoreal. Can be better loss than Ultra on some scenes.
+  - Ultra: 15k iters, Metal/MPS, bounded densification (`--refine-every 200`,
+    `--densify-grad-thresh 0.0005`, `--stop-screen-size-at 2500`, future runs checkpoint with
+    `--save-every 1000`). This prevents 1M+ gaussian runaway on M4/16GB and keeps mobile assets
+    sane. Publish is atomic and previous splats move to `splats/history/`.
 - var(--x) NO resuelve en ATRIBUTOS de presentación SVG en WebKit (fill="var(--x)" cae a
   negro en iPhone/iPad). Colores temeables de SVG inline SIEMPRE por clase CSS.
 - xcodebuild -downloadComponent MetalToolchain corre como usuario normal (sin sudo);

@@ -321,6 +321,9 @@ shutil.rmtree(_md / "odm_texturing_25d")
 _tex_dir2, _tex_mode2 = find_texture_dir(_md)
 check("qa: publisher acepta corrida sin malla texturizada",
       _tex_dir2 is None and _tex_mode2 == "no_mesh")
+_publish_src = Path("pipeline/tresd_publish.py").read_text()
+check("qa: publisher conserva preset/title en re-publicación manual",
+      "prior_meta" in _publish_src and 'for k in ("preset", "preset_requested", "title")' in _publish_src)
 
 # --- capture intelligence ---
 from capture_quality import sharpness, choose_frames, gps_metrics
@@ -435,6 +438,9 @@ check("splat backend: sh-degree-interval queda por encima de iters",
       worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _gpu_backend)[-1] == "7001")
 check("splat backend: train_args llegan al comando OpenSplat",
       "--densify-grad-thresh" in worker.opensplat_train_cmd(
+          Path("/p"), Path("/o.splat"), _ultra_splat["iters"], _gpu_backend, _ultra_splat["train_args"]))
+check("splat backend: ultra checkpoint future-proof",
+      "--save-every" in worker.opensplat_train_cmd(
           Path("/p"), Path("/o.splat"), _ultra_splat["iters"], _gpu_backend, _ultra_splat["train_args"]))
 check("splat backend: entrena con QoS utility (UI fluida durante 4h de CPU)",
       worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _cpu_backend)[:3]

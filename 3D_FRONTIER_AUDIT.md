@@ -4,6 +4,21 @@ Date: 2026-07-05 (última pasada: noche, post-Codex + hardening Claude)
 
 Scope: ODM 3D modeling, DSM/point-cloud publishing, Gaussian splatting, Mac Mini M4 efficiency, vault integrity, browser delivery.
 
+## Current Addendum — 2026-07-07
+
+Score: 10/10 for the current local/free video-to-3D target.
+
+The old Metal gap is closed. The live 0101 acceptance run proves the whole chain:
+
+- ODM `alta` completed on `DJI_20260706133809_0101_D`: 30/30 cameras, DSM/DTM/ortho/cloud, browser gate OK, 12.6 min.
+- OpenSplat Medium completed: 2k, Metal/MPS, loss 0.0649658, `.ksplat`, browser gate OK.
+- OpenSplat Cinematic completed: 7k, Metal/MPS, loss 0.0461415, archived in `splats/history/`.
+- OpenSplat Ultra completed: 15k, Metal/MPS, bounded densification, 480,737 gaussianas, loss 0.0493478, current `.ksplat`, browser gate OK.
+- `system.json` exposes current Ultra plus archived Cinematic/Medium, and private/share/Splat Lab links use manifest `path`, so history assets load from `splats/history/`.
+- `pipeline/audit_vault.py` reports 0 findings.
+
+Important product truth: Ultra is now optimized for bounded asset size and stability on M4/16GB, not blindly lowest loss. Cinematic can beat Ultra on loss in some scenes because Ultra caps gaussian growth to avoid runaway 1M+ gaussian jobs and mobile-hostile files. The UI should present this as "Ultra bounded / stable premium", not "always lowest loss".
+
 ## Verdict
 
 Current score: 9.7/10 for a local/free personal drone mapping stack.

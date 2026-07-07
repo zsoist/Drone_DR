@@ -202,6 +202,12 @@ def main():
     proj = Path(sys.argv[2]) if len(sys.argv) > 2 else VAULT / "odm" / "proj0104"
     out = VAULT / "models" / cid
     (out / "model").mkdir(parents=True, exist_ok=True)
+    prior_meta = {}
+    if (out / "meta.json").exists():
+        try:
+            prior_meta = json.loads((out / "meta.json").read_text())
+        except (OSError, ValueError):
+            prior_meta = {}
 
     # 1) ortofoto: previews + corners WGS84 + alpha con feather (borde fundido)
     print("ortofoto…")
@@ -483,6 +489,12 @@ EOF""")
         **dsm_meta,
         "has_dsm": (out / "dsm_4326.tif").exists(),
     }
+    # Preserve operator-facing metadata across manual re-publish. The worker writes
+    # these after publish, but agents often run tresd_publish.py directly while fixing
+    # overlays/QA. Dropping the preset makes the UI/docs lie about which route built it.
+    for k in ("preset", "preset_requested", "title"):
+        if prior_meta.get(k) and not meta.get(k):
+            meta[k] = prior_meta[k]
     # limpieza: temporales y basura de macOS no se publican
     for junk in [*out.rglob(".DS_Store"), *out.glob(".*.tif"), *out.glob("*.aux.xml")]:
         junk.unlink(missing_ok=True)

@@ -36,10 +36,29 @@ como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9G
 | `ai/router.py` | Lanes multi-LLM: Gemini (vision) · DeepSeek (texto) · OpenAI (fallback) |
 | `ai/analyze.py` | Keyframes → resumen, tags, highlights, travel_score (~$0.002/clip) |
 | `ai/reel.py` | Auto-editor: top highlights → reel 1080p o 9:16 vertical |
+| `pipeline/worker.py` | Cola heavy 3D/splat: ODM, fallbacks, OpenSplat Metal/MPS, publish atómico |
 | `pipeline/browser_gate.py` | QA real en Chrome headless (CDP stdlib) antes de dar un job 3D por done |
 | `pipeline/make_ksplat.mjs` | .splat/.ply → .ksplat con la lib vendoreada del viewer (sin npm) |
 | `/supersplat/` | Editor SuperSplat (MIT) self-hosted — post-pro de splats: floaters, crop, export |
 | `web/` | Flight Deck: galería + mapa MapLibre/Esri sincronizado al video |
+
+## 3D pipeline actual
+
+El camino premium de video DJI ahora es local y gratis:
+
+1. `odm_prep.py` extrae frames con VideoToolbox, filtra blur/duplicados y escribe GPS EXIF desde SRT.
+2. Worker encola ODM en SQLite y corre Docker separado del server web. Reiniciar la web no mata jobs.
+3. Preset `alta` usa 3072px, `pc-quality high`, `feature-quality high`, DSM/DTM/ortho, nube densa y `--skip-3dmodel`. Para vuelos nadir, la malla full 3D es secundaria; nube, DSM, ortho y splat son el producto principal.
+4. `tresd_publish.py` publica ortho/DSM/hillshade WebP con feather alpha, DSM binario para mediciones, nube PLY gzip, malla viewer re-centrada si existe, QA y `system.json` atómico.
+5. OpenSplat entrena sobre poses ODM. Medium = 2k, Cinematic = 7k, Ultra = 15k bounded en Metal/MPS.
+6. Publicación de splats es atómica: current se archiva en `splats/history/`, se genera `.ksplat`, se reconstruye índice y Chrome gate debe pasar antes de marcar `done`.
+
+Evidencia viva 2026-07-07 (`DJI_20260706133809_0101_D`):
+
+- ODM `alta`: 30/30 cámaras, DSM/DTM/ortho/nube, browser gate OK, 12.6 min.
+- Medium splat: 2k, Metal/MPS, loss 0.0649658, 2.5 min.
+- Cinematic splat: 7k, Metal/MPS, loss 0.0461415, archivado.
+- Ultra splat: 15k bounded, Metal/MPS, 480,737 gaussianas, loss 0.0493478, `.ksplat` current, browser gate OK.
 
 ## Operación
 
@@ -58,9 +77,9 @@ V1 ✅ pipeline + Flight Deck live · V3 ✅ SHIPPED: fotogrametría ODM complet
 (worker desacoplado + cola SQLite, presets rápido/estándar/alta, DSM + curvas +
 mediciones de volumen/perfil/comparación multi-fecha, ortos feathered WebP,
 malla re-centrada para viewer, página pública /share.html, gzip sidecars) +
-gaussian splats (OpenSplat CPU estable tras fix de divergencia SH; publish atómico,
-.ksplat export para carga rápida, browser-gate en Chrome headless antes de marcar done;
-Metal/GPU en camino para calidad cinemática) · V2 detección YOLO/open-vocab pendiente ·
+gaussian splats ✅ (OpenSplat Metal/MPS, Medium/Cinematic/Ultra bounded, publish atómico,
+.ksplat export, historial versionado, browser-gate en Chrome antes de marcar done) ·
+V2 detección YOLO/open-vocab pendiente ·
 V4 travel mode + diarios AI · V5 watcher autónomo (SD in → todo solo).
 
 ---

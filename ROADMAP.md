@@ -18,16 +18,17 @@
 - [ ] YOLO-World open-vocabulary search cross-vuelos
 - [ ] Heatmaps de objetos sobre el mapa
 
-## V3 — Mapping 3D ✅ 2026-07-05 (superado: ODM directo desde video, no WebODM)
+## V3 — Mapping 3D ✅ 2026-07-07 (ODM directo desde video, no WebODM)
 - [x] ✅ ODM ortomosaico desde video (frames geotagged con SRT) + DSM/DTM + presets
 - [x] ✅ Worker desacoplado + cola SQLite + progreso vivo + cancel + abort-on-nan
 - [x] ✅ Visores nube/malla/splat + mediciones (distancia/área/volumen/perfil/comparar)
 - [x] ✅ Página pública compartible + exports (GeoTIFF, GeoJSON, PLY, OBJ, SPLAT)
-- [~] OpenSplat Metal/GPU — Toolchain 17F109 INSTALADO 2026-07-05; build MPS + 1er splat cinemático orquestados esta noche (auto_cinematic_0104.sh)
-- [x] .ksplat export ✅ 2026-07-05 (make_ksplat.mjs con la lib vendoreada del viewer; worker lo exporta post-quality-gate) · COPC cableado en preset alta (pendiente 1er run)
+- [x] ✅ OpenSplat Metal/MPS productivo: Medium 2k, Cinematic 7k, Ultra 15k bounded + quality gate + browser gate
+- [x] ✅ .ksplat export + historial versionado: current y history seleccionables en 3D/share/Splat Lab
 - [x] Browser gate: jobs 3d/splat no se marcan done sin QA real en Chrome headless ✅ 2026-07-05
-- [ ] WebODM ortomosaico (fotos JPG/DNG) — ya no necesario, ODM directo lo cubre
-- [ ] Gaussian splatting MLX de un vuelo orbital (experimental)
+- [x] ✅ Alta ODM optimizado para video nadir: 3072px, dense estable, DSM/ortho/nube/splat como producto principal, sin malla full cara por defecto
+- [ ] WebODM ortomosaico (fotos JPG/DNG) — opcional, ODM directo ya cubre video DJI
+- [ ] Captura orbital/oblicua dedicada para splats de fachada y malla full 3D premium
 
 ## V4 — Travel mode
 - [ ] Diario de viaje AI por lugar/fecha

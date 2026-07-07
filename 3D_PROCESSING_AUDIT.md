@@ -2,9 +2,10 @@
 
 > **[2026-07-05 · SUPERSEDED]** Auditoría histórica (point-in-time). El estado vivo está en
 > [3D_FRONTIER_AUDIT.md](3D_FRONTIER_AUDIT.md). De los hallazgos de aquí ya se resolvieron:
-> P1 splat-not-premium (publish atómico + quality gate + ksplat; Metal en curso), P1 QA vacío
+> P1 splat-not-premium (publish atómico + quality gate + ksplat; Metal/MPS productivo), P1 QA vacío
 > (fallback área/GSD + browser gate), P2 stale dirs (limpieza .training + odm huérfanos),
-> P2 HEAD miente tamaño (espejado), P2 storage frontier (COPC en preset alta), P2 docs stale.
+> P2 HEAD miente tamaño (espejado), P2 storage frontier (COPC en preset alta), P2 docs stale
+> (README/ROADMAP/SPEC/CLAUDE/AGENTS actualizados el 2026-07-07).
 
 
 Date: 2026-07-05  
@@ -244,7 +245,7 @@ Required fix:
 
 Evidence:
 
-- README still says V3 is future "WebODM + gaussian splatting".
+- [Historical, resolved 2026-07-07] README still said V3 was future "WebODM + gaussian splatting".
 - ROADMAP still says V3 unchecked.
 - SPEC still mentions Cloudflare Pages + R2, while actual architecture is local server + tunnel.
 - CLAUDE still mentions `--fast-orthophoto` in one pitfall while current worker runs full ODM.
