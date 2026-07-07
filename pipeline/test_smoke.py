@@ -335,11 +335,18 @@ _alta_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), worker.PRESETS["alta"]
 check("presets: alta usa concurrencia 2 y geometric off en el camino principal",
       _alta_cmd[_alta_cmd.index("--max-concurrency") + 1] == "2"
       and "--pc-skip-geometric" in _alta_cmd)
-_retry_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), worker.PRESETS["extra"],
+check("presets: alta usa casi todo el presupuesto ODM del M4 para evitar sub-scene recovery",
+      worker.PRESETS["alta"]["mem"] == "9500m")
+_retry_preset = worker.openmvs_retry_preset(worker.PRESETS["extra"])
+_retry_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), _retry_preset,
                             rerun_from="openmvs", stable_dense=True)
 check("presets: retry estable reinicia desde OpenMVS y desactiva geometric estimates",
       "--pc-skip-geometric" in _retry_cmd and "--rerun-from" in _retry_cmd
       and _retry_cmd[_retry_cmd.index("--rerun-from") + 1] == "openmvs")
+check("presets: retry OpenMVS baja solo la presión dense sin degradar la salida alta",
+      _retry_cmd[_retry_cmd.index("--pc-quality") + 1] == "medium"
+      and _retry_cmd[_retry_cmd.index("--orthophoto-resolution") + 1] == "2"
+      and _retry_cmd[_retry_cmd.index("--mesh-size") + 1] == "600000")
 _old_vault = worker.VAULT
 _odm_root = Path(tempfile.mkdtemp()) / "odm"
 worker.VAULT = _odm_root.parent

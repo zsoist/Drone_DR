@@ -126,14 +126,16 @@ PRESETS = {
     # alta: mesh-size 300k = recomendación urbana oficial para edificios/techos (default 200k).
     # En el M4/16GB, geometric depthmaps + COPC/sub-scenes pueden matar OpenMVS después de
     # una nube válida. Por eso alta/extra/ultra priorizan terminar el modelo web: dense estable,
-    # DSM/DTM/ortho/malla, y COPC queda como mejora offline no crítica.
-    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "estandar",
+    # DSM/DTM/ortho/malla, y COPC queda como mejora offline no crítica. 9500m evita que la
+    # fusión high entre en el recovery tiled/sub-scene de ODM, que segfaulta en escenas nadir
+    # "unbounded" aunque ya exista una reconstrucción válida.
+    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "9500m", "concurrency": 2, "fallback": "estandar",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5",
                           "--mesh-size", "300000", "--pc-skip-geometric"]},
     # extra: malla más densa (mesh 600k + octree 11) con pc-quality high. octree 12 CRASHEA
     # ("strange values", exit 134) en datasets reales — la comunidad ODM recomienda <=11.
-    "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "alta",
+    "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "9500m", "concurrency": 2, "fallback": "alta",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "2", "--dem-resolution", "4",
                           "--mesh-size", "600000", "--mesh-octree-depth", "11",
@@ -141,7 +143,7 @@ PRESETS = {
     # ultra: pc-quality ultra (~8.5x tiempo) + mesh 800k, octree 11 (12 revienta). El máximo
     # del M4; la CADENA de fallback (ultra→extra→alta→estandar) garantiza que nunca se pierda
     # el trabajo por un preset demasiado agresivo.
-    "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "extra",
+    "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, "mem": "9500m", "concurrency": 2, "fallback": "extra",
                  "args": ["--pc-quality", "ultra", "--feature-quality", "ultra",
                           "--orthophoto-resolution", "2", "--dem-resolution", "3",
                           "--mesh-size", "800000", "--mesh-octree-depth", "11",
@@ -244,6 +246,31 @@ def odm_cmd(container: str, proj: Path, preset: dict, rerun_from: str | None = N
     return cmd
 
 
+def _replace_arg(args: list[str], flag: str, value: str) -> list[str]:
+    out = list(args)
+    try:
+        out[out.index(flag) + 1] = value
+    except (ValueError, IndexError):
+        out += [flag, value]
+    return out
+
+
+def openmvs_retry_preset(preset: dict) -> dict:
+    """Retry high presets with the same web-facing outputs but safer dense depthmaps.
+
+    On M4/16GB, OpenMVS high fusion can be killed near the memory ceiling. ODM's
+    own recovery then enters a tiled/sub-scene pass that segfaults on nadir-only
+    unbounded scenes. A useful retry must therefore lower the dense map pressure;
+    repeating the same high/ultra dense command only burns time before the same
+    recovery crash.
+    """
+    retry = dict(preset)
+    retry["args"] = _replace_arg(list(preset["args"]), "--pc-quality", "medium")
+    retry["mem"] = "9500m"
+    retry["concurrency"] = 2
+    return retry
+
+
 def run_odm_container(jid, container, proj, preset, preset_name, rerun_from: str | None = None,
                       stable_dense: bool = False):
     """Corre ODM con la memoria del preset; devuelve el exit code de run_tracked."""
@@ -329,10 +356,11 @@ def run_3d(j: dict):
     while rc != 0 and not _cancelled(j["id"]):
         if preset_name in ("alta", "extra", "ultra") and preset_name not in stable_tried and _openmvs_unstable(j["id"], rc):
             stable_tried.add(preset_name)
-            print(f"  ODM {preset_name} falló en OpenMVS (rc={rc}) → retry estable sin geometric estimates", flush=True)
-            jobstore.update(j["id"], detail=f"2/3 ODM {preset_name}: retry estable desde OpenMVS",
+            retry_preset = openmvs_retry_preset(preset)
+            print(f"  ODM {preset_name} falló en OpenMVS (rc={rc}) → retry dense medio sin sub-scene recovery", flush=True)
+            jobstore.update(j["id"], detail=f"2/3 ODM {preset_name}: retry OpenMVS estable",
                             stage="odm", progress=0.15)
-            rc = run_odm_step(j["id"], container, proj, preset, preset_name,
+            rc = run_odm_step(j["id"], container, proj, retry_preset, preset_name,
                               rerun_from="openmvs", stable_dense=True)
             continue
         if not preset.get("fallback"):
