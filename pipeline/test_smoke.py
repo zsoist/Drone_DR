@@ -424,6 +424,23 @@ check("splat publish: pass promueve splat/meta/cameras por proyecto",
       and (_spdir / "DJI_ATOMIC.cameras.json").exists()
       and len(list((_spdir / "history").glob("DJI_ATOMIC-*.splat"))) == 1
       and not _stage.exists())
+_old_jobs_db = jobs.DB
+_jobs_db = Path(tempfile.mkdtemp()) / "jobs.db"
+try:
+    jobs.DB = _jobs_db
+    jobs.init()
+    _jold = jobs.add("splat", "DJI_RETARGET")
+    jobs.end(_jold["id"], "done", "old", "splats/DJI_RETARGET.splat")
+    _stage2 = _spdir / ".training" / "job2"
+    _stage2.mkdir(parents=True, exist_ok=True)
+    (_spdir / "DJI_RETARGET.splat").write_bytes(b"old-current")
+    (_stage2 / "DJI_RETARGET.splat").write_bytes(b"new-current")
+    worker.publish_splat_stage(_stage2, "DJI_RETARGET", {"passed": True}, _spdir)
+    _ret = jobs.get(_jold["id"])["artifact"]
+    check("splat publish: jobs antiguos apuntan al splat archivado exacto",
+          _ret.startswith("splats/history/DJI_RETARGET-") and _ret.endswith(".splat"))
+finally:
+    jobs.DB = _old_jobs_db
 
 # --- system manifest: sólo cuenta formatos visualizables como splats ---
 import build_index as _bi

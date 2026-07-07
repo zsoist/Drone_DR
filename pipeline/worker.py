@@ -173,11 +173,17 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
     hist = splat_dir / "history"
     hist.mkdir(exist_ok=True)
     ts = time.strftime("%Y%m%d-%H%M%S")
+    archived_splat = None
     for old in (splat_dir / f"{cid}.splat", splat_dir / f"{cid}.ksplat", splat_dir / f"{cid}.ply",
                 splat_dir / f"{cid}.meta.json", splat_dir / f"{cid}.cameras.json"):
         if old.is_file():
             suffix = old.name[len(cid):]
-            os.replace(old, hist / f"{cid}-{ts}{suffix}")
+            dst = hist / f"{cid}-{ts}{suffix}"
+            os.replace(old, dst)
+            if suffix == ".splat":
+                archived_splat = f"splats/history/{dst.name}"
+    if archived_splat:
+        jobstore.retarget_splat_artifacts(cid, archived_splat)
     os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
     os.replace(tmp_out, final_out)
     cam = stage / "cameras.json"
