@@ -330,12 +330,17 @@ def _openmvs_unstable(jid: str, rc: int) -> bool:
                                   "corrupted double-linked list"))
 
 
-def run_3d(j: dict):
-    cid = j["spec"]["clip_id"]
-    preset_name = j["spec"].get("preset", "estandar")
+def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str = "") -> str:
+    """Build ODM web assets for a clip and return the real preset used.
+
+    Shared by the normal 3D job and the "splat from video" path. It deliberately
+    does not call jobstore.end(); callers decide whether the job is complete or
+    whether another stage (OpenSplat) follows.
+    """
     if preset_name not in PRESETS:
         preset_name = "estandar"
     preset = PRESETS[preset_name]
+    requested_preset = preset_name
     proj = VAULT / "odm" / f"proj_{cid}"
     container = f"odm-{j['id']}"
     jobstore.update(j["id"], container=container)
@@ -395,13 +400,20 @@ def run_3d(j: dict):
     if mf.exists():
         m = json.loads(mf.read_text())
         m["preset"] = preset_name                 # el REAL usado (puede ser el fallback)
-        if preset_name != j["spec"].get("preset"):
-            m["preset_requested"] = j["spec"].get("preset")
-        if j["spec"].get("title"):
-            m["title"] = j["spec"]["title"]
+        if preset_name != requested_preset:
+            m["preset_requested"] = requested_preset
+        if title:
+            m["title"] = title
         _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
     rebuild_index()
     browser_gate(j["id"], "model", cid)
+    return preset_name
+
+
+def run_3d(j: dict):
+    cid = j["spec"]["clip_id"]
+    build_3d_assets(j, cid, j["spec"].get("preset", "estandar"),
+                    str(j["spec"].get("title", ""))[:80].strip())
     jobstore.update(j["id"], progress=1.0)
     jobstore.end(j["id"], "done", f"modelo 3D de {cid} listo — míralo en el tab 3D",
                  artifact=f"models/{cid}/meta.json")
@@ -417,6 +429,15 @@ def run_splat(j: dict):
     if cid.endswith("0104_D"):
         candidates.append(VAULT / "odm" / "proj0104")
     proj = next((c for c in candidates if (c / "opensfm" / "image_list.txt").exists()), candidates[0])
+    if not (proj / "opensfm" / "image_list.txt").exists():
+        if not j["spec"].get("auto_model"):
+            raise RuntimeError("primero procesa el vuelo en 3D (necesita las poses de ODM)")
+        model_preset = str(j["spec"].get("model_preset") or "estandar")
+        jobstore.update(j["id"], detail=f"preparando modelo base ODM {model_preset} para gaussian splat",
+                        stage="model-base", progress=0.03)
+        build_3d_assets(j, cid, model_preset,
+                        str(j["spec"].get("title") or f"{cid} · splat base")[:80].strip())
+        proj = VAULT / "odm" / f"proj_{cid}"
     il = proj / "opensfm" / "image_list.txt"
     il.write_text(il.read_text().replace("/datasets/code", str(proj)))
     n_cams = len([ln for ln in il.read_text().splitlines() if ln.strip()])

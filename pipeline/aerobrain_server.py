@@ -1496,17 +1496,26 @@ class H(BaseHTTPRequestHandler):
             spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
             proj = VAULT / "odm" / f"proj_{cid}"    # sin alias legacy: cada clip usa SU proyecto (proj0104 compartido = data-loss si 2 clips 0104_D)
-            if not (proj / "opensfm" / "reconstruction.json").exists():
+            has_model = (proj / "opensfm" / "reconstruction.json").exists()
+            if not has_model and not spec.get("auto_model"):
                 return self.send_json({"error": "primero procesa el vuelo en 3D (necesita las poses de ODM)"}, 400)
+            if not has_model and not (VAULT / "manifest" / f"{cid}.json").exists():
+                return self.send_json({"error": "clip no encontrado en el vault"}, 404)
             try:
                 preset = resolve_splat_spec(spec)
             except ValueError as e:
                 return self.send_json({"error": str(e)}, 400)
             if not SPLAT_BIN.exists():
                 return self.send_json({"error": "opensplat no está compilado"}, 500)
-            if jobstore.pending("splat", cid):
-                return self.send_json({"error": "ese splat ya está en cola o entrenando"}, 409)
-            j = jobstore.enqueue("splat", cid, {"clip_id": cid, "preset": preset["key"], "iters": preset["iters"]})
+            if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
+                return self.send_json({"error": "ese vuelo ya tiene un modelo/splat en cola o entrenando"}, 409)
+            model_preset = str(spec.get("model_preset") or "estandar")
+            if model_preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
+                model_preset = "estandar"
+            j = jobstore.enqueue("splat", cid, {"clip_id": cid, "preset": preset["key"], "iters": preset["iters"],
+                                                "auto_model": bool(spec.get("auto_model")),
+                                                "model_preset": model_preset,
+                                                "title": str(spec.get("title", ""))[:80].strip()})
             return self.send_json({"ok": True, "job": j["id"], "queued": True,
                                    "preset": preset["key"], "iters": preset["iters"]})
         if u.path == "/api/analyze":

@@ -655,7 +655,7 @@
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
     controls.rotateSpeed = 0.55;
-    controls.zoomSpeed = 0.9;
+    controls.zoomSpeed = 1.35;
     // render ON-DEMAND: dibuja al inicio y ~1.5s tras cada cambio (para captar decodes async
     // de textura), luego se duerme = 0 trabajo de GPU cuando la escena está quieta. wake()
     // lo despiertan interacción, resize, tier-swap y cambio de modo.
@@ -708,14 +708,14 @@
     // distancia para que el objeto LLENE ~80% del viewport (fov-aware)
     const fov = cam.fov * Math.PI / 180;
     const dist = (maxDim / 2) / Math.tan(fov / 2) / 0.8;
-    cam.position.set(dist * 0.15, dist * 0.92, dist * 0.28);  // casi cenital: data nadir se ve densa
-    cam.near = Math.max(maxDim / 10000, 0.0005); cam.far = dist * 8; cam.updateProjectionMatrix();
+    cam.position.set(dist * 0.12, dist * 0.78, dist * 0.22);  // casi cenital, pero más cerca
+    cam.near = Math.max(maxDim / 50000, 0.0001); cam.far = dist * 8; cam.updateProjectionMatrix();
     controls.target.set(0, 0, 0);
-    controls.maxDistance = dist * 3;
+    controls.maxDistance = dist * 4;
     // una malla 2.5D no tiene "abajo": orbitar bajo el horizonte muestra el underside
     // (esquirlas de textura con huecos) y el zoom infinito atraviesa la geometría
     controls.maxPolarAngle = Math.PI * 0.42;   // ~75°: rasante en una malla 2.5D = bosque de faldones 'destrozado' (estándar Pix4D/DroneDeploy)
-    controls.minDistance = Math.max(maxDim * 0.012, 0.01);
+    controls.minDistance = Math.max(maxDim * 0.0025, 0.003);
     if ('zoomToCursor' in controls) controls.zoomToCursor = true;
     controls.update();
   }
@@ -723,7 +723,7 @@
     const mesh = viewer?.splatMesh;
     const center = mesh?.calculatedSceneCenter || new THREE.Vector3();
     const radius = Math.max(mesh?.maxSplatDistanceFromSceneCenter || mesh?.visibleRegionRadius || 1, 0.5);
-    const dist = radius * 1.7;                    // encuadre CERCA (antes 3.2 = punto diminuto)
+    const dist = radius * 1.15;                   // encuadre close-up por defecto
     const dir = new THREE.Vector3(0.2, 0.72, 0.66).normalize();
     viewer.camera.position.copy(center).addScaledVector(dir, dist);
     viewer.camera.near = Math.max(radius / 10000, 0.0005);
@@ -731,8 +731,8 @@
     viewer.camera.updateProjectionMatrix();
     if (viewer.controls) {
       viewer.controls.target.copy(center);
-      viewer.controls.minDistance = Math.max(radius * 0.015, 0.003);
-      viewer.controls.maxDistance = radius * 14;
+      viewer.controls.minDistance = Math.max(radius * 0.0025, 0.002);
+      viewer.controls.maxDistance = radius * 18;
       if ('zoomToCursor' in viewer.controls) viewer.controls.zoomToCursor = true;
       viewer.controls.update();
     }
@@ -765,12 +765,12 @@
         const dir = cam.position.clone().sub(controls.target);
         const d = dir.length();
         if (!Number.isFinite(d) || d <= 0) return;
-        const nd = Math.max(controls.minDistance || 0.01, Math.min(controls.maxDistance || d * 4, d * mult));
+        const nd = Math.max(controls.minDistance || 0.003, Math.min(controls.maxDistance || d * 4, d * mult));
         cam.position.copy(controls.target).addScaledVector(dir.normalize(), nd);
         wakeControls();
       };
       if (b.dataset.vt === 'center') { cam.position.copy(cam0); controls.target.set(0, 0, 0); wakeControls(); }
-      if (b.dataset.vt === 'zin') dolly(0.55);
+      if (b.dataset.vt === 'zin') dolly(0.35);
       if (b.dataset.vt === 'zout') dolly(1.55);
       if (b.dataset.vt === 'rot') {
         controls.autoRotate = !controls.autoRotate;
@@ -1048,25 +1048,44 @@
     `<p class="footer-note">Sin splats aún — "Generar splat…" entrena uno sobre las poses
     del proyecto que elijas. El resultado se ve aquí mismo.</p>`;
   document.getElementById('btn-splat').addEventListener('click', () => {
-    if (!models.length) return alert('Procesa primero un vuelo en 3D — el splat entrena sobre sus fotos y poses.');
+    if (!flights.length) return alert('No hay vuelos en el vault.');
+    const modelIds = new Set(models.map(m => m.clip_id));
+    const modelChoices = models.map((m, i) => ({ kind: 'model', m, f: flights.find(x => x.clip_id === m.clip_id), i }));
+    const videoChoices = flights
+      .filter(f => !modelIds.has(f.clip_id))
+      .slice(-18)
+      .reverse()
+      .map((f, i) => ({ kind: 'video', f, i }));
+    const choices = modelChoices.concat(videoChoices);
     const Q = [
-      { p: 'medium', n: 'Medium', t: '~15-35 min MPS', d: 'Default estable para inspección fina' },
-      { p: 'cinematic', n: 'Cinemático', t: '~45-100 min MPS', d: 'Nítido, para compartir' },
+      { p: 'medium', n: 'Medium', t: '~4-12 min MPS', d: 'Default estable para inspección fina' },
+      { p: 'cinematic', n: 'Cinemático', t: '~45-75 min MPS', d: 'Nítido, para compartir' },
       { p: 'ultra', n: 'Ultra', t: '~2-4 h MPS', d: 'Máximo detalle local' },
     ];
     const { ov, close } = openModal(`${icon('spark')} Generar gaussian splat`, `
       <p class="footer-note" style="margin:0 0 12px">Entrena un archivo <b>.splat</b> nuevo con las
       fotos y poses del proyecto elegido — <b>no modifica</b> la nube ni la malla. Al terminar
       aparece en la lista, en el visor y en la página pública.</p>
-      <p class="mlb">Proyecto base</p>
-      <div class="mflights">${models.map((m, i) => `
-        <div class="mflight${(cur ? m.clip_id === cur.clip_id : i === 0) ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
-          <img src="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="">
-          <div class="mf-t"><b>${esc(titleFor(m))}</b>
-          <span class="mono">${m.qa?.cameras_reconstructed || '?'} cámaras</span></div>
-        </div>`).join('')}</div>
+      <p class="mlb">Base de captura</p>
+      <div class="mflights">${choices.map((c, i) => {
+        const m = c.m, f = c.f;
+        const cid = (m || f).clip_id;
+        const active = cur ? cid === cur.clip_id : i === 0;
+        const img = m ? `data/models/${esc(cid)}/${esc(m.ortho_asset || 'ortho.jpg')}` : `data/thumbs/${esc(cid)}.jpg`;
+        const title = m ? titleFor(m) : `${fmt.date(f.date)} · ${f.time}`;
+        return `
+        <div class="mflight${active ? ' on' : ''}" data-cid="${esc(cid)}" data-auto-model="${m ? '0' : '1'}">
+          <img src="${img}" loading="lazy" alt="">
+          <div class="mf-t"><b>${esc(title)}</b>
+          <span class="mono">${m ? `${m.qa?.cameras_reconstructed || '?'} cámaras` : 'video → ODM base → splat'}</span></div>
+        </div>`; }).join('')}</div>
+      <p class="mlb">Modelo base si partes de video</p>
+      <div class="mpresets">
+        <div class="mpreset on" data-model-preset="estandar"><b>Estándar</b><span class="mono">poses fiables</span><small>Más rápido para crear la base</small></div>
+        <div class="mpreset" data-model-preset="alta"><b>Alta</b><span class="mono">más detalle</span><small>Mejor base, tarda más</small></div>
+      </div>
       <p class="mlb">Calidad del entrenamiento</p>
-      <div class="mpresets">${Q.map(q => `
+      <div class="mpresets splat-presets">${Q.map(q => `
         <div class="mpreset${q.p === 'medium' ? ' on' : ''}" data-preset="${q.p}">
           <b>${q.n}</b><span class="mono">${q.t}</span><small>${q.d}</small></div>`).join('')}</div>
       <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Entrenar splat</button>`);
@@ -1075,15 +1094,18 @@
       if (!c) return;
       ov.querySelectorAll('.mflight').forEach(x => x.classList.toggle('on', x === c));
     });
-    ov.querySelector('.mpresets').addEventListener('click', e => {
+    ov.querySelectorAll('.mpresets').forEach(group => group.addEventListener('click', e => {
       const c = e.target.closest('.mpreset');
       if (!c) return;
-      ov.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
-    });
+      group.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
+    }));
     ov.querySelector('#m-go').addEventListener('click', async () => {
+      const base = ov.querySelector('.mflight.on');
       const r = await api('/api/splat', {
-        clip_id: ov.querySelector('.mflight.on')?.dataset.cid,
-        preset: ov.querySelector('.mpreset.on')?.dataset.preset || 'medium',
+        clip_id: base?.dataset.cid,
+        auto_model: base?.dataset.autoModel === '1',
+        model_preset: ov.querySelector('[data-model-preset].on')?.dataset.modelPreset || 'estandar',
+        preset: ov.querySelector('.splat-presets .mpreset.on')?.dataset.preset || 'medium',
       });
       if (r.error) return alert(r.error);
       close();

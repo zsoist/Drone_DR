@@ -17,7 +17,7 @@ SPLAT_PRESETS = {
     "medium": {
         "iters": 2000,
         "label": "Medium",
-        "eta_mps": "~15-35 min",
+        "eta_mps": "~4-12 min",
         "eta_cpu": "~30-60 min",
         "description": "Reliable default for inspecting shape and coverage.",
         "timeout": 3 * 3600,
@@ -25,7 +25,7 @@ SPLAT_PRESETS = {
     "cinematic": {
         "iters": 7000,
         "label": "Cinematic",
-        "eta_mps": "~45-100 min",
+        "eta_mps": "~45-75 min",
         "eta_cpu": "~2-3 h",
         "description": "Shareable photoreal quality with strong convergence.",
         "timeout": 6 * 3600,

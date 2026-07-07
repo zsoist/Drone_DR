@@ -18,6 +18,7 @@ const I = {
   full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
+  target: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
 };
 const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
@@ -72,18 +73,18 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     Number.isFinite(rawR) ? rawR : (Number.isFinite(rawR2) ? rawR2 : 1), 0.5);
   const cam = viewer.camera, ctrl = viewer.controls;
   const homeState = {};
-  const homeMin = radius * 0.015;
-  const inspectMin = Math.max(radius * 0.0015, 0.003);
+  const homeMin = Math.max(radius * 0.0025, 0.002);
+  const inspectMin = Math.max(radius * 0.00035, 0.0008);
 
   function frame() {
-    const dir = new THREEV.Vector3(0.2, 0.72, 0.66).normalize();
-    cam.position.copy(center).addScaledVector(dir, radius * 1.7);
-    cam.near = Math.max(radius / 10000, 0.0005);        // near muy chico = acercarse sin clip
+    const dir = new THREEV.Vector3(0.18, 0.78, 0.52).normalize();
+    cam.position.copy(center).addScaledVector(dir, radius * 1.15);
+    cam.near = Math.max(radius / 50000, 0.0001);        // near muy chico = acercarse sin clip
     cam.far = Math.max(radius * 100, 50);
     cam.updateProjectionMatrix();
     ctrl.target.copy(center);
     ctrl.minDistance = homeMin;                         // inspección cercana sin atravesar fácil
-    ctrl.maxDistance = radius * 20;
+    ctrl.maxDistance = radius * 18;
     ctrl.update();
     homeState.pos = cam.position.clone();
     homeState.target = center.clone();
@@ -94,7 +95,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
 
   // navegación premium
   ctrl.enableDamping = true; ctrl.dampingFactor = 0.06;
-  ctrl.rotateSpeed = 0.6; ctrl.zoomSpeed = 1.45; ctrl.panSpeed = 0.85;
+  ctrl.rotateSpeed = 0.6; ctrl.zoomSpeed = 2.15; ctrl.panSpeed = 0.95;
   ctrl.maxPolarAngle = Math.PI * 0.495;
   if ('zoomToCursor' in ctrl) ctrl.zoomToCursor = true;
   try { ctrl.listenToKeyEvents(window); } catch {}   // flechas = pan
@@ -135,7 +136,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     viewer.controls.minDistance = inspectMin;
     // acércate al punto: nueva posición a ~min(dist actual, radius*0.3) del edificio
     const d = vcam.position.distanceTo(p);
-    const newPos = p.clone().addScaledVector(vcam.position.clone().sub(p).normalize(), Math.min(d, radius * 0.12));
+    const newPos = p.clone().addScaledVector(vcam.position.clone().sub(p).normalize(), Math.min(d, radius * 0.045));
     animateTo(p, newPos);
     return true;
   }
@@ -169,6 +170,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   hud.className = 'sv-hud';
   hud.innerHTML =
     btn('home', 'Reiniciar vista (R)', I.home) +
+    btn('inspect', 'Modo cerca', I.target) +
     btn('zin', 'Acercar', I.plus) +
     btn('zout', 'Alejar', I.minus) +
     btn('rot', 'Auto-rotar', I.rot) +
@@ -210,7 +212,8 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
       const fovIn = hud.querySelector('[data-sv="fov"]'); if (fovIn) fovIn.value = Math.round(homeState.fov);  // re-sincroniza el slider
       kick();
     }
-    else if (k === 'zin') dolly(0.55);
+    else if (k === 'inspect') { vctrl.minDistance = inspectMin; dolly(0.22); b.classList.add('on'); }
+    else if (k === 'zin') dolly(0.35);
     else if (k === 'zout') dolly(1.55);
     else if (k === 'rot') { vctrl.autoRotate = !vctrl.autoRotate; vctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', vctrl.autoRotate); kick(); }
     else if (k === 'shot') screenshot();

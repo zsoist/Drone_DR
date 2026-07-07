@@ -166,6 +166,7 @@ function makeScene() {
   controls.enableDamping = true;
   controls.dampingFactor = 0.07;
   controls.rotateSpeed = 0.55;
+  controls.zoomSpeed = 1.35;
   controls.autoRotate = true;            // efecto de entrada — se apaga al tocar
   controls.autoRotateSpeed = 0.7;
   renderer.domElement.addEventListener('pointerdown', () => { controls.autoRotate = false; }, { once: true });
@@ -215,16 +216,19 @@ function frame(obj, cam, controls, topDown = false) {
   obj.position.sub(c);
   let maxDim = Math.max(sz.x, sz.y, sz.z);
   if (!isFinite(maxDim) || maxDim <= 0) maxDim = 1;            // geometría degenerada -> sin NaN
-  const dist = maxDim * 0.9;
-  if (topDown) cam.position.set(dist * 0.15, dist * 0.92, dist * 0.28);
+  const dist = maxDim * 0.72;
+  if (topDown) cam.position.set(dist * 0.12, dist * 0.78, dist * 0.22);
   else cam.position.set(dist * 0.6, dist * 0.55, dist * 0.6);
+  cam.near = Math.max(maxDim / 50000, 0.0001);
+  cam.far = Math.max(dist * 10, 50);
+  cam.updateProjectionMatrix();
   cam.lookAt(0, 0, 0);
   controls.target.set(0, 0, 0);
   // terreno 2.5D: bajo el horizonte solo hay underside roto; y sin minDistance el
   // zoom atraviesa la malla (near-clip = "modelo destrozado")
   controls.maxPolarAngle = Math.PI * 0.42;   // ~75°: rasante en una malla 2.5D = bosque de faldones 'destrozado' (estándar Pix4D/DroneDeploy)
-  controls.minDistance = Math.max(maxDim * 0.012, 0.01);
-  controls.maxDistance = dist * 3.5;
+  controls.minDistance = Math.max(maxDim * 0.0025, 0.003);
+  controls.maxDistance = dist * 5;
   if ('zoomToCursor' in controls) controls.zoomToCursor = true;
 }
 
@@ -232,7 +236,7 @@ function fitSplatViewer(viewer) {
   const mesh = viewer?.splatMesh;
   const center = mesh?.calculatedSceneCenter || new THREE.Vector3();
   const radius = Math.max(mesh?.maxSplatDistanceFromSceneCenter || mesh?.visibleRegionRadius || 1, 0.5);
-  const dist = radius * 1.7;                      // encuadre CERCA (antes 3.2 = punto diminuto)
+  const dist = radius * 1.15;                     // encuadre close-up por defecto
   const dir = new THREE.Vector3(0.2, 0.72, 0.66).normalize();
   viewer.camera.position.copy(center).addScaledVector(dir, dist);
   viewer.camera.near = Math.max(radius / 10000, 0.0005);   // near chico → acercar sin clip
@@ -240,8 +244,8 @@ function fitSplatViewer(viewer) {
   viewer.camera.updateProjectionMatrix();
   if (viewer.controls) {
     viewer.controls.target.copy(center);
-    viewer.controls.minDistance = Math.max(radius * 0.015, 0.003);
-    viewer.controls.maxDistance = radius * 14;
+    viewer.controls.minDistance = Math.max(radius * 0.0025, 0.002);
+    viewer.controls.maxDistance = radius * 18;
     if ('zoomToCursor' in viewer.controls) viewer.controls.zoomToCursor = true;
     viewer.controls.update();
   }
