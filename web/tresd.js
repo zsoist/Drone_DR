@@ -14,10 +14,10 @@
       .filter(s => SPLAT_EXT.test(s.name) && s.name.replace(SPLAT_EXT, '') === clipId)
       .concat((sys.splats || []).filter(s => SPLAT_EXT.test(s.name) && s.clip_id === clipId
         && s.name.replace(SPLAT_EXT, '') !== clipId))
-      .sort((a, b) => (SPLAT_RANK[(a.format || a.name.split('.').pop()).toLowerCase()] ?? 9)
-        - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9)
-        || (b.current ? 1 : 0) - (a.current ? 1 : 0)
+      .sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)
         || (b.iters || 0) - (a.iters || 0)
+        || (SPLAT_RANK[(a.format || a.name.split('.').pop()).toLowerCase()] ?? 9)
+        - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9)
         || String(b.archived_at || '').localeCompare(String(a.archived_at || '')));
   }
   function splatAssetFor(clipId) {
@@ -416,7 +416,7 @@
         <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>Nube de puntos</b><span>PLY · CloudCompare</span></div></a>
         ${cur.cloud_copc_asset ? `<a class="exp" href="${base}/${cur.cloud_copc_asset}" download>${icon('database')}<div><b>Nube optimizada</b><span>COPC · ${(cur.cloud_copc_bytes / 1e6).toFixed(0)} MB · GIS</span></div></a>` : ''}
         ${meshOk ? `<a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></div></a>` : ''}
-        ${sp ? `<a class="exp" href="data/splats/${encodeURIComponent(sp.name)}" download>${icon('spark')}<div><b>Gaussian splat</b><span>${spFmt} · SuperSplat</span></div></a>` : ''}
+        ${sp ? `<a class="exp" href="${splatUrl(sp)}" download>${icon('spark')}<div><b>Gaussian splat</b><span>${spFmt} · SuperSplat</span></div></a>` : ''}
         <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Página pública</b><span>LINK · compartir</span></div></a>
       </div>`;
     if (omap) omap.remove();

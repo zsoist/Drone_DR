@@ -190,6 +190,7 @@ check("job: timeout deja row en 'error' (auto-consistente)",
       _jt["status"] == "error" and "timeout" in (_jt["detail"] or ""))
 
 # ---------- splat quality gate ----------
+import aerobrain_server as _srv
 from aerobrain_server import splat_quality, derive_odm_progress
 import types
 class FakeOut:
@@ -209,11 +210,21 @@ check("splat: final_loss ignora los nan y toma el último numérico", q4["final_
 q5 = splat_quality(FakeOut(700_000), "Step 100: 1.2e-1 (5%)", 40, 2000)
 check("splat: entrenamiento incompleto FALLA aunque el archivo exista",
       not q5["passed"] and "incompleto" in q5["reason"] and q5["final_loss"] == 0.12)
+_old_splat_bin, _old_mps_bin = _srv.SPLAT_BIN, _srv.SPLAT_MPS_BIN
+_bin_tmp = Path(tempfile.mkdtemp())
+try:
+    _srv.SPLAT_BIN = _bin_tmp / "missing" / "opensplat"
+    _srv.SPLAT_MPS_BIN = _bin_tmp / "build-mps" / "opensplat"
+    _srv.SPLAT_MPS_BIN.parent.mkdir()
+    _srv.SPLAT_MPS_BIN.write_text("#!/bin/sh\n")
+    check("splat api: acepta instalación sólo Metal/MPS",
+          _srv.any_opensplat_bin_exists())
+finally:
+    _srv.SPLAT_BIN, _srv.SPLAT_MPS_BIN = _old_splat_bin, _old_mps_bin
 check("odm progress: OpenMVS depthmaps sube sobre el 15% base",
       derive_odm_progress("Finished opensfm stage\nRunning openmvs stage\nDepthmap resolution set to: 1536px", 0.15) >= 0.58)
 check("odm progress: derivado nunca retrocede",
       derive_odm_progress("detect_features", 0.7) == 0.7)
-import aerobrain_server as _srv
 _old_srv_vault = _srv.VAULT
 _odm_tmp = Path(tempfile.mkdtemp())
 try:
@@ -507,6 +518,19 @@ try:
           _sys["splats"][1].get("iters") == 7000 and _sys["splats"][1].get("cameras") == 42)
 finally:
     _bi.VAULT = _old_bi_vault
+
+# --- viewer URLs: archived splats live under history/ and must use path, not name ---
+_web_tresd = Path("web/tresd.js").read_text()
+_web_share = Path("web/share.js").read_text()
+_web_lab = Path("web/splatlab.js").read_text()
+check("viewer: splat selectors prefer current before file format",
+      ".sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)" in _web_tresd
+      and ".sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)" in _web_share)
+check("viewer: archived splat links use manifest path",
+      "const splatUrl = s => 'data/splats/' + splatKey(s).split('/')" in _web_tresd
+      and "const splatUrl = s => 'data/splats/' + splatKey(s).split('/')" in _web_lab
+      and "data/splats/${encodeURIComponent(s.name)}" not in _web_tresd
+      and "'/data/splats/' + s.name" not in _web_lab)
 
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)

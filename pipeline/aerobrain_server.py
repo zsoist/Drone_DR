@@ -133,6 +133,12 @@ def _ffmpeg_has(filter_name: str) -> bool:
 HAS_DRAWTEXT = _ffmpeg_has("drawtext")   # sin drawtext, el título se omite (el export NO falla)
 KEYS_ENV = Path("/Volumes/SSD/_system/claude/.api-keys.env")
 SPLAT_BIN = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/OpenSplat/build/opensplat")
+SPLAT_MPS_BIN = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/OpenSplat/build-mps/opensplat")
+
+
+def any_opensplat_bin_exists() -> bool:
+    """The worker can train with either CPU or Metal/MPS OpenSplat builds."""
+    return SPLAT_BIN.exists() or SPLAT_MPS_BIN.exists()
 
 
 def _sb_keys():
@@ -1552,7 +1558,7 @@ class H(BaseHTTPRequestHandler):
                 preset = resolve_splat_spec(spec)
             except ValueError as e:
                 return self.send_json({"error": str(e)}, 400)
-            if not SPLAT_BIN.exists():
+            if not any_opensplat_bin_exists():
                 return self.send_json({"error": "opensplat no está compilado"}, 500)
             if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
                 return self.send_json({"error": "ese vuelo ya tiene un modelo/splat en cola o entrenando"}, 409)

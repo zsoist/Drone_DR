@@ -19,8 +19,10 @@ main.classList.add('lab-main');
     const ts = ((s.clip_id || '').split('_')[1] || '');
     return ts ? `${fmt.date(`${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)}`)} · ${ts.slice(8, 10)}:${ts.slice(10, 12)}` : s.clip_id;
   };
+  const splatKey = s => s.path || s.name;
+  const splatUrl = s => 'data/splats/' + splatKey(s).split('/').map(encodeURIComponent).join('/');
   const editorUrl = s =>
-    `/supersplat/?load=${encodeURIComponent('/data/splats/' + s.name)}&filename=${encodeURIComponent(s.name)}`;
+    `/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}`;
 
   main.innerHTML = `
     <div class="deck-greet mono" style="margin-bottom:2px">edición de gaussian splats · SuperSplat</div>
@@ -60,7 +62,7 @@ main.classList.add('lab-main');
     const s = splats[cur];
     if (!s) { actions.innerHTML = ''; return; }
     actions.innerHTML = `
-      <a class="btn" href="data/splats/${encodeURIComponent(s.name)}" download aria-label="Descargar splat original">${icon('dl')} Original</a>
+      <a class="btn" href="${splatUrl(s)}" download aria-label="Descargar splat original">${icon('dl')} Original</a>
       <button class="btn" id="lab-upload" aria-label="Subir splat editado">${icon('save')} Subir editado</button>
       <a class="btn" href="share.html?m=${encodeURIComponent(s.clip_id)}" target="_blank" aria-label="Página pública para compartir">${icon('ext')} Compartir</a>
       <a class="btn" href="tresd.html" aria-label="Ver en el tab 3D">${icon('cube')} Ver en 3D</a>
