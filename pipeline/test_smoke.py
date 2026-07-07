@@ -319,9 +319,9 @@ check("presets: todos con pc-quality + timeout coherentes",
 check("presets: alta es mas fina que rapido (ortho res)",
       int(worker.PRESETS["alta"]["args"][worker.PRESETS["alta"]["args"].index("--orthophoto-resolution") + 1])
       < int(worker.PRESETS["rapido"]["args"][worker.PRESETS["rapido"]["args"].index("--orthophoto-resolution") + 1]))
-check("presets: alta publica COPC para nubes grandes",
-      "--pc-copc" in worker.PRESETS["alta"]["args"]
-      and "--pc-copc" not in worker.PRESETS["rapido"]["args"])
+check("presets: alta prioriza dense estable sobre COPC crítico",
+      "--pc-skip-geometric" in worker.PRESETS["alta"]["args"]
+      and "--pc-copc" not in worker.PRESETS["alta"]["args"])
 check("presets: ultra pesados tienen fallback de degradado",
       worker.PRESETS["ultra"]["fallback"] == "extra" and worker.PRESETS["extra"]["fallback"] == "alta")
 check("presets: ultra usa pc-quality ultra + malla mas densa que alta",
@@ -331,6 +331,10 @@ check("presets: ultra usa pc-quality ultra + malla mas densa que alta",
 _ultra_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), worker.PRESETS["ultra"])
 check("presets: ultra baja concurrencia para aguantar frames premium en M4",
       _ultra_cmd[_ultra_cmd.index("--max-concurrency") + 1] == "2")
+_alta_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), worker.PRESETS["alta"])
+check("presets: alta usa concurrencia 2 y geometric off en el camino principal",
+      _alta_cmd[_alta_cmd.index("--max-concurrency") + 1] == "2"
+      and "--pc-skip-geometric" in _alta_cmd)
 _retry_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), worker.PRESETS["extra"],
                             rerun_from="openmvs", stable_dense=True)
 check("presets: retry estable reinicia desde OpenMVS y desactiva geometric estimates",

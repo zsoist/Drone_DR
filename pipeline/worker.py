@@ -123,24 +123,29 @@ PRESETS = {
     "estandar": {"eta": "~45-75 min", "timeout": 3 * 3600, "mem": "7g", "concurrency": 4,
                  "args": ["--pc-quality", "medium", "--feature-quality", "medium",
                           "--orthophoto-resolution", "5", "--dem-resolution", "10"]},
-    # alta: mesh-size 300k = recomendación urbana oficial para edificios/techos (default 200k)
-    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "8500m", "concurrency": 3, "fallback": "estandar",
+    # alta: mesh-size 300k = recomendación urbana oficial para edificios/techos (default 200k).
+    # En el M4/16GB, geometric depthmaps + COPC/sub-scenes pueden matar OpenMVS después de
+    # una nube válida. Por eso alta/extra/ultra priorizan terminar el modelo web: dense estable,
+    # DSM/DTM/ortho/malla, y COPC queda como mejora offline no crítica.
+    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "estandar",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5",
-                          "--mesh-size", "300000", "--pc-copc"]},
+                          "--mesh-size", "300000", "--pc-skip-geometric"]},
     # extra: malla más densa (mesh 600k + octree 11) con pc-quality high. octree 12 CRASHEA
     # ("strange values", exit 134) en datasets reales — la comunidad ODM recomienda <=11.
     "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "alta",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "2", "--dem-resolution", "4",
-                          "--mesh-size", "600000", "--mesh-octree-depth", "11", "--pc-copc"]},
+                          "--mesh-size", "600000", "--mesh-octree-depth", "11",
+                          "--pc-skip-geometric"]},
     # ultra: pc-quality ultra (~8.5x tiempo) + mesh 800k, octree 11 (12 revienta). El máximo
     # del M4; la CADENA de fallback (ultra→extra→alta→estandar) garantiza que nunca se pierda
     # el trabajo por un preset demasiado agresivo.
     "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "extra",
                  "args": ["--pc-quality", "ultra", "--feature-quality", "ultra",
                           "--orthophoto-resolution", "2", "--dem-resolution", "3",
-                          "--mesh-size", "800000", "--mesh-octree-depth", "11", "--pc-copc"]},
+                          "--mesh-size", "800000", "--mesh-octree-depth", "11",
+                          "--pc-skip-geometric"]},
 }
 
 
