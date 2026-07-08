@@ -19,6 +19,7 @@ WORKER_LABEL = "com.aerobrain.worker"
 TUNNEL_LABEL = "com.metislab.tunnel"
 LOCAL_URL = "http://127.0.0.1:8790/api/healthz"
 PUBLIC_URL = "https://vuelos.metislab.work/api/healthz"
+PUBLIC_WWW_URL = "https://www.metislab.work/"
 STATE = Path("/tmp/aerobrain-watchdog-state.json")
 LOG = Path("/tmp/aerobrain-watchdog.log")
 VAULT = Path("/Volumes/SSD/drone-vault")
@@ -166,6 +167,15 @@ def main():
             log("public_probe", ok=ok2, detail=detail2, ms=ms2)
         else:
             log("public_probe", ok=True, detail=detail, ms=ms)
+
+        ok, detail, ms = probe(PUBLIC_WWW_URL, 12)
+        if not ok:
+            kick(TUNNEL_LABEL, f"public www probe failed: {detail}")
+            time.sleep(4)
+            ok2, detail2, ms2 = probe(PUBLIC_WWW_URL, 12)
+            log("public_www_probe", ok=ok2, detail=detail2, ms=ms2)
+        else:
+            log("public_www_probe", ok=True, detail=detail, ms=ms)
 
     if now - float(state.get("last_stream_probe", 0)) >= STREAM_INTERVAL_S:
         state["last_stream_probe"] = now

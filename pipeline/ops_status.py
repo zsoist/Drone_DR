@@ -83,6 +83,21 @@ def fetch_json(url: str, timeout: int) -> tuple[bool, dict | str]:
         return False, type(e).__name__
 
 
+def fetch_text(url: str, timeout: int) -> tuple[bool, str]:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "AeroBrainOpsStatus/1"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return 200 <= r.status < 400, f"{r.status} {r.read(180).decode('utf-8', 'replace')}"
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            detail = str(e)
+        return False, f"{e.code} {detail}"
+    except Exception as e:
+        return False, type(e).__name__
+
+
 def latest_proxy_url() -> str | None:
     try:
         flights = json.loads((VAULT / "manifest" / "flights.json").read_text()).get("flights", [])
@@ -171,7 +186,7 @@ def logs_status() -> dict:
 
 
 def latency_status() -> dict:
-    buckets = {"local_probe": [], "public_probe": [], "stream_probe": []}
+    buckets = {"local_probe": [], "public_probe": [], "public_www_probe": [], "stream_probe": []}
     try:
         lines = WATCHDOG_LOG.read_text(errors="replace").splitlines()[-500:]
     except OSError:
@@ -187,7 +202,7 @@ def latency_status() -> dict:
             buckets[event].append(float(ms))
     summary = {}
     ok = True
-    limits = {"local_probe": 1000, "public_probe": 3000, "stream_probe": 5000}
+    limits = {"local_probe": 1000, "public_probe": 3000, "public_www_probe": 3000, "stream_probe": 5000}
     for event, vals in buckets.items():
         if not vals:
             summary[event] = {"samples": 0}
@@ -211,7 +226,9 @@ def tunnel_config_status() -> dict:
         txt = TUNNEL_CONFIG.read_text()
     except OSError as e:
         return {"ok": False, "error": type(e).__name__}
-    ok = "hostname: vuelos.metislab.work" in txt and "service: http://127.0.0.1:8790" in txt
+    ok = ("hostname: vuelos.metislab.work" in txt
+          and "hostname: www.metislab.work" in txt
+          and "service: http://127.0.0.1:8790" in txt)
     return {"ok": ok, "config": str(TUNNEL_CONFIG)}
 
 
@@ -238,10 +255,15 @@ def main() -> int:
 
     local_ok, local = fetch_json("http://127.0.0.1:8790/api/healthz", 8)
     public_ok, public = fetch_json("https://vuelos.metislab.work/api/healthz", 15)
+    www_ok, www = fetch_text("https://www.metislab.work/", 15)
     report = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "services": {label: launch_state(label) for label in LABELS},
-        "health": {"local": {"ok": local_ok, "detail": local}, "public": {"ok": public_ok, "detail": public}},
+        "health": {
+            "local": {"ok": local_ok, "detail": local},
+            "public": {"ok": public_ok, "detail": public},
+            "www": {"ok": www_ok, "detail": www},
+        },
         "stream": range_probe(latest_proxy_url()),
         "jobs": jobs_status(),
         "resources": resource_status(),
@@ -252,7 +274,7 @@ def main() -> int:
     }
     checks = []
     checks.extend(v.get("ok", False) for v in report["services"].values())
-    checks.extend((local_ok, public_ok, report["stream"]["ok"], report["jobs"]["ok"],
+    checks.extend((local_ok, public_ok, www_ok, report["stream"]["ok"], report["jobs"]["ok"],
                    report["resources"]["ok"], report["logs"]["ok"],
                    report["latency"]["ok"],
                    report["tunnel_config"]["ok"], report["manifests"]["ok"]))
@@ -262,7 +284,7 @@ def main() -> int:
         print(json.dumps(report, indent=2))
     else:
         print(f"AeroBrain ops: {'PASS' if report['ok'] else 'FAIL'} · {report['ts']}")
-        print(f"  health: local={local_ok} public={public_ok}")
+        print(f"  health: local={local_ok} public={public_ok} www={www_ok}")
         print(f"  stream: ok={report['stream']['ok']} {report['stream'].get('content_range', report['stream'].get('detail', ''))} cache={report['stream'].get('cache', '')}")
         print(f"  resources: cpu={report['resources'].get('total_cpu')}% rss={report['resources'].get('total_rss_mb')}MB")
         lat = report.get("latency", {})
