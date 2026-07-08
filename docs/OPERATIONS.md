@@ -10,7 +10,7 @@ sin gastar CPU fuerte salvo cuando Daniel lanza ODM/OpenSplat/edicion.
 | Web origin | `com.aerobrain.web` | Sirve `127.0.0.1:8790`, `/web` y `/data` con Range para video |
 | Worker | `com.aerobrain.worker` | Ejecuta jobs pesados `3d` y `splat` fuera del server web |
 | Tunnel | `com.metislab.tunnel` | Cloudflare Tunnel hacia `http://127.0.0.1:8790` |
-| Watchdog | `com.aerobrain.watchdog` | `/api/healthz` local cada 60s, publico cada 5 min, kickstart si falla |
+| Watchdog | `com.aerobrain.watchdog` | `/api/healthz` local cada 60s, publico cada 5 min, Range de video cada 15 min |
 
 El tunel de vuelos debe apuntar a IPv4 explicito:
 
@@ -35,6 +35,8 @@ tail -20 /tmp/aerobrain-watchdog.log
 
 Expected video response: `206 Partial Content`, `Accept-Ranges: bytes`,
 `Content-Range`, and Cloudflare `cf-cache-status` eventually `HIT`.
+The watchdog uses the same idea but cheaper: `Range: bytes=0-0` against the
+latest proxy video, so streaming failures are detected without downloading video.
 
 ## Safe restarts
 
@@ -75,5 +77,6 @@ Actionable:
 
 - repeated local probe failures in watchdog log -> web origin issue
 - repeated public probe failures while local is OK -> tunnel/Cloudflare path issue
+- repeated `stream_probe` failures -> public video Range path is broken or too slow
 - `/api/healthz` 503 -> vault, manifest, disk free, or jobs DB issue
 - worker running job with no progress -> inspect `/api/jobs` log tail before restart

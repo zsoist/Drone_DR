@@ -10,6 +10,7 @@ import json
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -20,7 +21,9 @@ LOCAL_URL = "http://127.0.0.1:8790/api/healthz"
 PUBLIC_URL = "https://vuelos.metislab.work/api/healthz"
 STATE = Path("/tmp/aerobrain-watchdog-state.json")
 LOG = Path("/tmp/aerobrain-watchdog.log")
+VAULT = Path("/Volumes/SSD/drone-vault")
 PUBLIC_INTERVAL_S = 300
+STREAM_INTERVAL_S = 900
 
 
 def log(event: str, **fields):
@@ -81,6 +84,34 @@ def probe(url: str, timeout: int) -> tuple[bool, str]:
         return False, type(e).__name__
 
 
+def latest_proxy_url() -> str | None:
+    try:
+        flights = json.loads((VAULT / "manifest" / "flights.json").read_text()).get("flights", [])
+    except (OSError, ValueError):
+        return None
+    for f in flights:
+        cid = f.get("clip_id")
+        if cid and f.get("has_proxy") and (VAULT / "proxies" / f"{cid}.mp4").is_file():
+            return "https://vuelos.metislab.work/data/proxies/" + urllib.parse.quote(f"{cid}.mp4")
+    return None
+
+
+def range_probe(url: str, timeout: int) -> tuple[bool, str]:
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "AeroBrainWatchdog/1",
+        "Range": "bytes=0-0",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            r.read(1)
+            cr = r.headers.get("Content-Range", "")
+            return r.status == 206 and cr.startswith("bytes 0-0/"), f"{r.status} {cr}"
+    except urllib.error.HTTPError as e:
+        return False, f"{e.code} {e.headers.get('Content-Range', '')}"
+    except Exception as e:
+        return False, type(e).__name__
+
+
 def main():
     state = load_state()
     now = time.time()
@@ -111,6 +142,21 @@ def main():
             log("public_probe", ok=ok2, detail=detail2)
         else:
             log("public_probe", ok=True, detail=detail)
+
+    if now - float(state.get("last_stream_probe", 0)) >= STREAM_INTERVAL_S:
+        state["last_stream_probe"] = now
+        video_url = latest_proxy_url()
+        if not video_url:
+            log("stream_probe", ok=False, detail="no proxy video found")
+        else:
+            ok, detail = range_probe(video_url, 15)
+            if not ok:
+                kick(TUNNEL_LABEL, f"stream range probe failed: {detail}")
+                time.sleep(4)
+                ok2, detail2 = range_probe(video_url, 15)
+                log("stream_probe", ok=ok2, detail=detail2, url=video_url.rsplit("/", 1)[-1])
+            else:
+                log("stream_probe", ok=True, detail=detail, url=video_url.rsplit("/", 1)[-1])
 
     save_state(state)
 
