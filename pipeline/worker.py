@@ -173,6 +173,7 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
     hist.mkdir(exist_ok=True)
     ts = time.strftime("%Y%m%d-%H%M%S")
     archived_splat = None
+    archived_ksplat = None
     for old in (splat_dir / f"{cid}.splat", splat_dir / f"{cid}.ksplat", splat_dir / f"{cid}.ply",
                 splat_dir / f"{cid}.meta.json", splat_dir / f"{cid}.cameras.json"):
         if old.is_file():
@@ -181,8 +182,10 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
             os.replace(old, dst)
             if suffix == ".splat":
                 archived_splat = f"splats/history/{dst.name}"
+            elif suffix == ".ksplat":
+                archived_ksplat = f"splats/history/{dst.name}"
     if archived_splat:
-        jobstore.retarget_splat_artifacts(cid, archived_splat)
+        jobstore.retarget_splat_artifacts(cid, archived_ksplat or archived_splat)
     os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
     os.replace(tmp_out, final_out)
     cam = stage / "cameras.json"
@@ -496,13 +499,13 @@ def run_splat(j: dict):
     jobstore.update(j["id"], detail="limpiando floaters de los bordes", progress=0.93)
     crop_floaters(final_out)                    # de-halo antes de generar el ksplat
     jobstore.update(j["id"], detail="exportando .ksplat optimizado para el viewer", progress=0.94)
-    export_ksplat(final_out)
+    viewer_out = export_ksplat(final_out) or final_out
     rebuild_index()
     browser_gate(j["id"], "splat", cid, timeout=90)
     jobstore.update(j["id"], progress=1.0)
     jobstore.end(j["id"], "done",
-                 f"{final_out.name} · loss {quality['final_loss']} · {n_cams} cámaras",
-                 artifact=f"splats/{final_out.name}")
+                 f"{viewer_out.name} · loss {quality['final_loss']} · {n_cams} cámaras",
+                 artifact=f"splats/{viewer_out.name}")
 
 
 RUNNERS = {"3d": run_3d, "splat": run_splat}

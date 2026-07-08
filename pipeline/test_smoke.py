@@ -499,11 +499,12 @@ try:
     _stage2 = _spdir / ".training" / "job2"
     _stage2.mkdir(parents=True, exist_ok=True)
     (_spdir / "DJI_RETARGET.splat").write_bytes(b"old-current")
+    (_spdir / "DJI_RETARGET.ksplat").write_bytes(b"old-current-fast")
     (_stage2 / "DJI_RETARGET.splat").write_bytes(b"new-current")
     worker.publish_splat_stage(_stage2, "DJI_RETARGET", {"passed": True}, _spdir)
     _ret = jobs.get(_jold["id"])["artifact"]
-    check("splat publish: jobs antiguos apuntan al splat archivado exacto",
-          _ret.startswith("splats/history/DJI_RETARGET-") and _ret.endswith(".splat"))
+    check("splat publish: jobs antiguos apuntan al ksplat archivado si existe",
+          _ret.startswith("splats/history/DJI_RETARGET-") and _ret.endswith(".ksplat"))
 finally:
     jobs.DB = _old_jobs_db
 
