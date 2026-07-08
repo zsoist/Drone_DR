@@ -31,11 +31,57 @@
   main.innerHTML = `
     <div class="page-head"><h1>3D</h1><span class="count">fotogrametría · nube de puntos · splats</span></div>
 
-    <div class="panel">
-      <div class="ph">${icon('layers')} Proyectos 3D <span class="count" id="proj-count"></span></div>
-      <div class="pb"><div class="proj-grid" id="proj-grid"></div></div>
+    <div class="pm-tabs rise td-tabs" id="td-tabs" style="margin-bottom:14px">
+      <i class="pm-ink"></i>
+      <button class="on" data-tab="projects">${icon('layers')} Proyectos</button>
+      <button data-tab="process">${icon('activity')} Procesamiento</button>
+      <button data-tab="jobs">${icon('cpu')} Trabajos</button>
     </div>
 
+    <section class="td-mod" data-mod="projects">
+    <div class="panel">
+      <div class="ph">${icon('layers')} Proyectos 3D <span class="count" id="proj-count"></span></div>
+      <div class="pb">
+        <div class="td-browserbar">
+          <div class="search td-search">${icon('search')}<input id="proj-q" type="search" placeholder="Buscar proyecto, fecha, ubicación…" autocomplete="off"></div>
+          <select class="ctl" id="proj-filter" aria-label="Filtrar proyectos">
+            <option value="all">Todos</option>
+            <option value="dsm">Con DSM</option>
+            <option value="splat">Con splat</option>
+            <option value="weak">Malla débil</option>
+          </select>
+          <div class="seg td-viewseg" aria-label="Modo de vista">
+            <button class="on" data-proj-mode="cards">${icon('grid')} Cards</button>
+            <button data-proj-mode="list">${icon('list')} Lista</button>
+          </div>
+        </div>
+        <div class="td-project-hint">Finder 3D: selecciona un proyecto para abrir mapa, visores, metadata, descargas y enlaces públicos.</div>
+        <div class="proj-grid" id="proj-grid"></div>
+      </div>
+    </div>
+    </section>
+
+    <section class="td-mod" data-mod="process" style="display:none">
+    <div class="td-pipeline-grid">
+      <article class="td-pipe-card">
+        <div class="td-pipe-top">${icon('map')}<span>ODM / Ortofoto</span><b>Base survey</b></div>
+        <p>Extrae frames, geoetiqueta con SRT, reconstruye cámaras, DSM/DTM, ortofoto feathered y nube densa.</p>
+        <div class="td-pipe-steps"><span>Frames</span><span>OpenSfM</span><span>DSM</span><span>Publicar</span></div>
+        <button class="btn primary" data-open-run3d>${icon('cube')} Configurar ODM</button>
+      </article>
+      <article class="td-pipe-card">
+        <div class="td-pipe-top">${icon('layers')}<span>Nube / Malla</span><b>Inspección</b></div>
+        <p>La nube sale del ODM y es el visor principal para vuelos nadir; malla texturizada se usa cuando la captura tiene oblicuos.</p>
+        <div class="td-pipe-steps"><span>PLY</span><span>COPC</span><span>Viewer</span><span>QA</span></div>
+        <button class="btn" data-open-run3d>${icon('activity')} Crear con ODM</button>
+      </article>
+      <article class="td-pipe-card td-pipe-hot">
+        <div class="td-pipe-top">${icon('spark')}<span>Gaussian Splatting</span><b>MPS</b></div>
+        <p>Entrena Medium, Cinematic o Ultra sobre poses ODM. Puede partir de un proyecto existente o crear base ODM desde video.</p>
+        <div class="td-pipe-steps"><span>Poses</span><span>Train</span><span>.ksplat</span><span>Gate</span></div>
+        <button class="btn primary" data-open-splat>${icon('spark')} Configurar splat</button>
+      </article>
+    </div>
     <div class="fl-layout" style="margin-top:16px">
       <div>
         <div class="panel">
@@ -84,15 +130,24 @@
         </div>
       </div>
     </div>
+    </section>
 
+    <section class="td-mod" data-mod="jobs" style="display:none">
     <div class="panel" style="margin-top:16px">
       <div class="ph">${icon('activity')} Cola de procesamiento</div>
       <div class="pb">
+        <div class="td-jobbar">
+          <button class="chip on" data-job-filter="all">Todos</button>
+          <button class="chip" data-job-filter="running">Activos</button>
+          <button class="chip" data-job-filter="done">Listos</button>
+          <button class="chip" data-job-filter="error">Errores</button>
+        </div>
         <p class="footer-note" style="margin:0 0 10px">El worker procesa un trabajo pesado a la
         vez y sobrevive a que cierres la app o se reinicie el servidor — vuelve cuando quieras.</p>
         <div id="jobs3d"></div>
       </div>
     </div>
+    </section>
 
     <div id="proj-view" style="display:none">
     <div class="panel" style="margin-top:16px">
@@ -169,6 +224,48 @@
   const projView = document.getElementById('proj-view');
   main.querySelector('.panel')?.after(projView);
 
+  const tdTabs = document.getElementById('td-tabs');
+  const tdInk = tdTabs?.querySelector('.pm-ink');
+  function moveTdInk() {
+    const on = tdTabs?.querySelector('button.on');
+    if (!on || !tdInk) return;
+    tdInk.style.left = on.offsetLeft + 'px';
+    tdInk.style.width = on.offsetWidth + 'px';
+  }
+  function showTdMod(name) {
+    tdTabs?.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+    document.querySelectorAll('.td-mod').forEach(m => {
+      const show = m.dataset.mod === name;
+      if (show && m.style.display === 'none') {
+        m.style.display = '';
+        m.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }],
+          { duration: 190, easing: 'ease-out' });
+      } else if (!show) {
+        m.style.display = 'none';
+      }
+    });
+    requestAnimationFrame(moveTdInk);
+  }
+  tdTabs?.addEventListener('click', e => {
+    const b = e.target.closest('[data-tab]');
+    if (b) showTdMod(b.dataset.tab);
+  });
+  window.addEventListener('resize', () => setTimeout(moveTdInk, 30));
+  setTimeout(moveTdInk, 30);
+
+  document.querySelector('.td-pipeline-grid')?.addEventListener('click', e => {
+    if (e.target.closest('[data-open-run3d]')) document.getElementById('btn-run3d')?.click();
+    if (e.target.closest('[data-open-splat]')) document.getElementById('btn-splat')?.click();
+  });
+
+  const jobsBox = document.getElementById('jobs3d');
+  document.querySelector('.td-jobbar')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-job-filter]');
+    if (!b || !jobsBox) return;
+    document.querySelectorAll('[data-job-filter]').forEach(x => x.classList.toggle('on', x === b));
+    jobsBox.dataset.filter = b.dataset.jobFilter;
+  });
+
   // ---------- estado ----------
   let sys = {}, models = [], cur = null;
   const selectedSplatByClip = JSON.parse(localStorage.getItem('ab_splat_versions') || '{}');
@@ -197,21 +294,60 @@
 
   // ---------- tarjetas de proyecto (abrir / renombrar / compartir / borrar) ----------
   const PROJ_KEY = 'ab.proj3d';
+  let projQ = '';
+  let projFilter = 'all';
+  let projMode = localStorage.getItem('ab.3d.projectMode') || 'cards';
   const titleFor = m => {
     const f = flights.find(x => x.clip_id === m.clip_id);
     return m.title || (f ? (f.label || fmt.date(f.date) + ' ' + f.time) : m.clip_id);
   };
+  const flightFor = m => flights.find(x => x.clip_id === m.clip_id);
+  const splatQualityLabel = loss => loss == null ? 'calidad pendiente'
+    : loss <= 0.05 ? 'excelente'
+      : loss <= 0.09 ? 'buena'
+        : loss <= 0.15 ? 'media'
+          : 'básica';
+  function projectVisible(m) {
+    const f = flightFor(m);
+    const splats = splatAssetsFor(m.clip_id);
+    if (projFilter === 'dsm' && !m.has_dsm) return false;
+    if (projFilter === 'splat' && !splats.length) return false;
+    if (projFilter === 'weak' && m.mesh_ok !== false) return false;
+    const hay = [
+      m.clip_id, titleFor(m), f?.label, f?.date, f?.time,
+      m.has_dsm ? 'dsm elevacion curvas' : '',
+      splats.length ? 'splat gaussian' : '',
+    ].filter(Boolean).join(' ').toLowerCase();
+    return !projQ || hay.includes(projQ.toLowerCase().trim());
+  }
   function renderCards() {
     const grid = document.getElementById('proj-grid');
-    document.getElementById('proj-count').textContent = models.length ? `(${models.length})` : '';
-    grid.innerHTML = models.length ? models.map(m => {
+    const shown = models.filter(projectVisible);
+    document.getElementById('proj-count').textContent = models.length ? `(${shown.length}/${models.length})` : '';
+    grid.classList.toggle('proj-list', projMode === 'list');
+    document.querySelectorAll('[data-proj-mode]').forEach(b => b.classList.toggle('on', b.dataset.projMode === projMode));
+    grid.innerHTML = shown.length ? shown.map(m => {
+      const f = flightFor(m);
       const q = m.qa || {};
+      const splats = splatAssetsFor(m.clip_id);
+      const sp = splatAssetFor(m.clip_id);
       const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(1) + ' ha' : Math.round(q.area_m2 || 0) + ' m²';
+      const status = [
+        m.has_dsm ? 'DSM' : 'sin DSM',
+        m.mesh_ok === false ? 'malla débil' : 'malla',
+        splats.length ? `${splats.length} splat${splats.length === 1 ? '' : 's'}` : 'sin splat',
+      ];
       return `<div class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
         <img src="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="" width="320" height="180">
         <div class="pc-body">
-          <p class="pc-title">${esc(titleFor(m))}</p>
-          <p class="pc-meta mono">${q.gsd_cm_px ? q.gsd_cm_px + ' cm/px · ' : ''}${q.area_m2 ? ha : ''}${m.has_dsm ? ' · DSM' : ''}</p>
+          <div class="pc-top"><p class="pc-title">${esc(titleFor(m))}</p><span class="pc-date mono">${esc(f ? `${fmt.date(f.date)} ${f.time || ''}` : m.clip_id.slice(-8))}</span></div>
+          <p class="pc-meta mono">${f?.duration_s ? fmt.dur(f.duration_s) + ' · ' : ''}${q.gsd_cm_px ? q.gsd_cm_px + ' cm/px · ' : ''}${q.area_m2 ? ha : ''}</p>
+          <div class="pc-badges">${status.map(s => `<span>${esc(s)}</span>`).join('')}</div>
+          <div class="pc-kpis">
+            <span><b>${q.cameras_reconstructed ?? '—'}</b><small>cámaras</small></span>
+            <span><b>${sp ? splatQualityLabel(sp.loss) : '—'}</b><small>gaussian</small></span>
+            <span><b>${m.cloud_bytes ? (m.cloud_bytes / 1e6).toFixed(0) + 'MB' : '—'}</b><small>nube</small></span>
+          </div>
           <div class="pc-actions">
             <button class="btn primary" data-act="open">Abrir</button>
             <button class="btn" data-act="rename">Renombrar</button>
@@ -220,16 +356,30 @@
           </div>
         </div>
       </div>`;
-    }).join('') : `<p class="footer-note" style="margin:0">Sin proyectos 3D aún — procesa un vuelo abajo para crear el primero.</p>`;
+    }).join('') : `<p class="footer-note" style="margin:0">${models.length ? 'No hay proyectos que coincidan con ese filtro.' : 'Sin proyectos 3D aún — procesa un vuelo abajo para crear el primero.'}</p>`;
   }
+  document.getElementById('proj-q')?.addEventListener('input', e => { projQ = e.target.value; renderCards(); });
+  document.getElementById('proj-filter')?.addEventListener('change', e => { projFilter = e.target.value; renderCards(); });
+  document.querySelector('.td-viewseg')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-proj-mode]');
+    if (!b) return;
+    projMode = b.dataset.projMode;
+    localStorage.setItem('ab.3d.projectMode', projMode);
+    renderCards();
+  });
   document.getElementById('proj-grid').addEventListener('click', async e => {
     const btn = e.target.closest('[data-act]');
     const card = e.target.closest('.proj-card');
     if (!card) return;
     const cid = card.dataset.cid;
     const m = models.find(x => x.clip_id === cid);
-    if (!btn) { setProject(cid, { scroll: true }); return; }                      // tap en la tarjeta = abrir
-    if (btn.dataset.act === 'open') setProject(cid, { scroll: true });
+    const smashOpen = () => {
+      card.classList.add('smash');
+      setTimeout(() => card.classList.remove('smash'), 420);
+      setProject(cid, { scroll: true });
+    };
+    if (!btn) { smashOpen(); return; }                      // tap en la tarjeta = abrir
+    if (btn.dataset.act === 'open') smashOpen();
     if (btn.dataset.act === 'rename') {
       const tEl = card.querySelector('.pc-title');
       tEl.innerHTML = `<input class="ctl" style="width:100%;font-size:12.5px" value="${esc(titleFor(m))}" maxlength="80">`;
@@ -358,6 +508,7 @@
   function setProject(cid, opts = {}) {
     cur = models.find(m => m.clip_id === cid);
     if (!cur) return;
+    showTdMod('projects');
     clearTimeout(autoloadTimer);                  // cancela auto-carga del proyecto anterior (#12)
     // invalida cargas mesh/cloud en vuelo del proyecto anterior (#1 currency guard)
     ['mesh-box', 'cloud-box'].forEach(id => {
