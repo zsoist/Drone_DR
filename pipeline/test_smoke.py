@@ -556,9 +556,9 @@ _web_tresd = Path("web/tresd.js").read_text()
 _web_share = Path("web/share.js").read_text()
 _web_lab = Path("web/splatlab.js").read_text()
 _web_splatview = Path("web/splatview.js").read_text()
-check("viewer: splat selectors prefer current before file format",
-      ".sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)" in _web_tresd
-      and ".sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)" in _web_share)
+check("viewer: splat selectors prefer higher-quality iters before mutable current",
+      ".sort((a, b) => (b.iters || 0) - (a.iters || 0)" in _web_tresd
+      and ".sort((a, b) => (b.iters || 0) - (a.iters || 0)" in _web_share)
 check("viewer: archived splat links use manifest path",
       "const splatUrl = s => 'data/splats/' + splatKey(s).split('/')" in _web_tresd
       and "const splatUrl = s => 'data/splats/' + splatKey(s).split('/')" in _web_lab

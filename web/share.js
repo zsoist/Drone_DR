@@ -43,8 +43,8 @@ const splatVersionLabel = s => [
 function splatAssetsFor(clipId, system) {
   return (system.splats || [])
     .filter(s => SPLAT_EXT.test(s.name) && ((s.clip_id || s.name.replace(SPLAT_EXT, '')) === clipId))
-    .sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)
-      || (b.iters || 0) - (a.iters || 0)
+    .sort((a, b) => (b.iters || 0) - (a.iters || 0)
+      || (b.current ? 1 : 0) - (a.current ? 1 : 0)
       || (SPLAT_RANK[(a.format || a.name.split('.').pop()).toLowerCase()] ?? 9)
       - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9)
       || String(b.archived_at || '').localeCompare(String(a.archived_at || '')));
