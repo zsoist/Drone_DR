@@ -426,7 +426,8 @@ function vaultLegend(st) {
 // trabajos activos: solo si hay sesión — falla en silencio
 async function liveJobs() {
   try {
-    const d = await api('/api/jobs', {});
+    if (!['localhost', '127.0.0.1'].includes(location.hostname)) return;
+    const d = await (await fetch('/api/jobs')).json();
     const act = (d.jobs || []).filter(j => ['running', 'queued'].includes(j.status));
     if (!act.length) return;
     document.getElementById('deck-jobs').innerHTML =
