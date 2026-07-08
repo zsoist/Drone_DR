@@ -245,6 +245,36 @@ def opensplat_train_cmd(project: Path, out: Path, iters: int, backend: dict,
     return cmd
 
 
+def fmt_duration(seconds: float | int | None) -> str:
+    if not seconds:
+        return ""
+    seconds = float(seconds)
+    if seconds >= 3600:
+        return f"{seconds / 3600:.1f}h"
+    if seconds >= 60:
+        return f"{seconds / 60:.0f}m"
+    return f"{seconds:.0f}s"
+
+
+def fmt_iters(n: int | None) -> str:
+    if not n:
+        return ""
+    return f"{n // 1000}k" if n >= 1000 and n % 1000 == 0 else str(n)
+
+
+def splat_done_detail(viewer_out: Path, quality: dict, n_cams: int) -> str:
+    parts = [
+        viewer_out.name,
+        quality.get("preset_label") or quality.get("preset"),
+        (fmt_iters(int(quality["target_iters"])) + " iters") if quality.get("target_iters") else "",
+        quality.get("backend"),
+        fmt_duration(quality.get("duration_s")),
+        f"loss {quality.get('final_loss')}" if quality.get("final_loss") is not None else "",
+        f"{n_cams} cámaras",
+    ]
+    return " · ".join(str(p) for p in parts if p)
+
+
 ODM_FRAME_PROFILE = {"rapido": "preview", "estandar": "balanced",
                      "alta": "premium", "extra": "premium", "ultra": "premium"}
 
@@ -503,8 +533,7 @@ def run_splat(j: dict):
     rebuild_index()
     browser_gate(j["id"], "splat", cid, timeout=90)
     jobstore.update(j["id"], progress=1.0)
-    jobstore.end(j["id"], "done",
-                 f"{viewer_out.name} · loss {quality['final_loss']} · {n_cams} cámaras",
+    jobstore.end(j["id"], "done", splat_done_detail(viewer_out, quality, n_cams),
                  artifact=f"splats/{viewer_out.name}")
 
 

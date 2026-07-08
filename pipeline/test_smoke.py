@@ -459,6 +459,14 @@ check("splat backend: ultra checkpoint future-proof",
 check("splat backend: entrena con QoS utility (UI fluida durante 4h de CPU)",
       worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _cpu_backend)[:3]
       == ["/usr/sbin/taskpolicy", "-c", "utility"])
+_done_detail = worker.splat_done_detail(Path("DJI_QA.ksplat"), {
+    "preset_label": "Ultra", "target_iters": 15000, "backend": "Metal/MPS",
+    "duration_s": 7308.3, "final_loss": 0.0432,
+}, 127)
+check("splat jobs: detalle done incluye preset, backend, runtime, loss y cámaras",
+      "Ultra" in _done_detail and "15k iters" in _done_detail
+      and "Metal/MPS" in _done_detail and "2.0h" in _done_detail
+      and "loss 0.0432" in _done_detail and "127 cámaras" in _done_detail)
 import browser_gate
 check("browser gate: default usa 127.0.0.1 para evitar localhost IPv6 ajeno",
       browser_gate.DEFAULT_BASE_URL == "http://127.0.0.1:8790"
