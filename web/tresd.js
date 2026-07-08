@@ -27,6 +27,7 @@
   }
 
   const main = renderShell('tresd.html');
+  main.classList.add('page-3d');
   main.innerHTML = `
     <div class="page-head"><h1>3D</h1><span class="count">fotogrametría · nube de puntos · splats</span></div>
 
@@ -165,6 +166,9 @@
     </div>
     </div>`;
 
+  const projView = document.getElementById('proj-view');
+  main.querySelector('.panel')?.after(projView);
+
   // ---------- estado ----------
   let sys = {}, models = [], cur = null;
   const selectedSplatByClip = JSON.parse(localStorage.getItem('ab_splat_versions') || '{}');
@@ -224,8 +228,8 @@
     if (!card) return;
     const cid = card.dataset.cid;
     const m = models.find(x => x.clip_id === cid);
-    if (!btn) { setProject(cid); return; }                      // tap en la tarjeta = abrir
-    if (btn.dataset.act === 'open') setProject(cid);
+    if (!btn) { setProject(cid, { scroll: true }); return; }                      // tap en la tarjeta = abrir
+    if (btn.dataset.act === 'open') setProject(cid, { scroll: true });
     if (btn.dataset.act === 'rename') {
       const tEl = card.querySelector('.pc-title');
       tEl.innerHTML = `<input class="ctl" style="width:100%;font-size:12.5px" value="${esc(titleFor(m))}" maxlength="80">`;
@@ -351,7 +355,7 @@
   // ---------- ortofoto en MapLibre ----------
   let omap = null;
   let autoloadTimer = 0;
-  function setProject(cid) {
+  function setProject(cid, opts = {}) {
     cur = models.find(m => m.clip_id === cid);
     if (!cur) return;
     clearTimeout(autoloadTimer);                  // cancela auto-carga del proyecto anterior (#12)
@@ -362,6 +366,10 @@
     });
     localStorage.setItem(PROJ_KEY, cid);
     document.getElementById('proj-view').style.display = '';
+    if (opts.scroll) {
+      requestAnimationFrame(() => document.getElementById('proj-view')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }
     document.querySelectorAll('.proj-card').forEach(c => c.classList.toggle('on', c.dataset.cid === cid));
     const base = `data/models/${cid}`;
     const q = cur.qa || {};
@@ -1028,7 +1036,7 @@
     const sm = models.find(x => x.clip_id === scid);
     const sFmt = (s.format || s.name.split('.').pop()).toLowerCase();
     const baseTitle = (sm && sm.title) || (sf && (sf.label || fmt.date(sf.date) + ' · ' + sf.time)) || scid.slice(-11);
-    const title = s.current ? baseTitle : `${baseTitle} · ${s.archived_at || 'historial'}`;
+    const version = s.current ? 'Actual' : (s.archived_at || 'Historial');
     const hasModel = models.some(m => m.clip_id === scid);
     const q = qOf(s.loss);
     const stats = [
@@ -1043,14 +1051,15 @@
     return `
     <div class="splat-item" data-cid="${esc(scid)}">
       <div class="si-main">
-        <div class="si-hd"><b>${esc(title)}</b>${q ? `<span class="si-q q-${q.c}" title="loss ${s.loss}">${q.t}</span>` : ''}</div>
+        <div class="si-hd"><b>${esc(baseTitle)}</b>${q ? `<span class="si-q q-${q.c}" title="loss ${s.loss}">${q.t}</span>` : ''}</div>
+        <div class="si-version">${esc(version)}${s.preset_label || s.preset ? ` · ${esc(s.preset_label || s.preset)}` : ''}${s.iters ? ` · ${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters} iters` : ''}</div>
         <div class="si-stats mono">${stats}</div>
       </div>
       <div class="si-acts">
         <button class="btn primary" data-cid="${esc(scid)}" data-view="${esc(splatKey(s))}"${hasModel ? '' : ' disabled title="Sin proyecto 3D publicado"'} style="padding:5px 16px">Ver</button>
         <a class="btn" href="${splatUrl(s)}" download title="Descargar .${sFmt}">${icon('dl')}</a>
         <a class="btn" target="_blank" rel="noopener" title="Editar en SuperSplat (limpiar floaters, recortar, exportar)"
-           href="/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}">${icon('edit')}</a>
+           href="/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}">${icon('broom')}</a>
         ${hasModel ? `<button class="btn" data-share="${esc(scid)}" data-splat="${esc(splatKey(s))}" title="Copiar link público de esta versión">${icon('ext')}</button>` : ''}
         <button class="btn danger" data-del="${esc(scid)}" data-title="${esc(baseTitle)}" title="Borrar todos los splats de este proyecto (a la papelera)">${icon('trash')}</button>
       </div>

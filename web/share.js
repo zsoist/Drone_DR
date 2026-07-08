@@ -11,7 +11,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const cid = (new URLSearchParams(location.search).get('m') || '').replace(/[^\w-]/g, '');
-document.body.innerHTML = `<div style="max-width:1120px;margin:0 auto;padding:22px 16px 60px">
+document.body.classList.add('share-page');
+document.body.innerHTML = `<div class="share-main" style="max-width:1120px;margin:0 auto;padding:22px 16px 60px">
   <div class="page-head rise" style="align-items:center">
     <span style="width:32px;height:32px;border-radius:8px;background:var(--accent-dim);display:grid;place-items:center;color:var(--accent);font-weight:700;font-size:13px">A</span>
     <h1 id="sh-title">Modelo 3D</h1>
@@ -118,6 +119,7 @@ body.innerHTML = `
 if (splat && splats.length > 1) {
   const seg = document.querySelector('.seg');
   const sel = document.createElement('select');
+  sel.className = 'share-splat-select';
   sel.title = 'Versión del splat';
   sel.style.cssText = 'background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px';
   sel.innerHTML = splats.map(s => {
