@@ -493,6 +493,10 @@ check("splat audit: exige presets medium/cinematic/ultra y multi-versión",
       "REQUIRED_PRESETS" in _audit_splats_src
       and "missing required preset coverage" in _audit_splats_src
       and "no multi-version splat clip found" in _audit_splats_src)
+check("splat audit: exige jobs done por preset con browser QA",
+      "missing generated job coverage" in _audit_splats_src
+      and "done job lacks browser QA completion" in _audit_splats_src
+      and "generated_presets" in _audit_splats_src)
 
 # --- splat publish: stage -> atomic public artifact ---
 _spdir = Path(tempfile.mkdtemp())

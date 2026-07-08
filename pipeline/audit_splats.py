@@ -8,6 +8,7 @@ the splat product understandable and recoverable:
 Fails on:
   - manifest rows whose files do not exist
   - missing Medium/Cinematic/Ultra coverage
+  - missing end-to-end done job coverage for Medium/Cinematic/Ultra
   - no clip with multiple splat versions
   - duplicate current splats for a clip
   - missing critical quality metadata
@@ -29,6 +30,7 @@ VAULT = Path("/Volumes/SSD/drone-vault")
 SYSTEM = VAULT / "manifest" / "system.json"
 JOBS = VAULT / "manifest" / "jobs.db"
 REQUIRED_PRESETS = {"medium", "cinematic", "ultra"}
+PRESET_BY_ITERS = {1000: "fast", 2000: "medium", 7000: "cinematic", 15000: "ultra"}
 
 
 def load_system() -> dict:
@@ -40,11 +42,25 @@ def load_jobs() -> list[sqlite3.Row]:
     con.row_factory = sqlite3.Row
     try:
         return con.execute(
-            "SELECT id,label,status,detail,artifact FROM jobs "
+            "SELECT id,label,status,detail,artifact,spec,stage,progress FROM jobs "
             "WHERE kind='splat' ORDER BY started DESC"
         ).fetchall()
     finally:
         con.close()
+
+
+def job_preset(job: sqlite3.Row) -> str | None:
+    try:
+        spec = json.loads(job["spec"] or "{}")
+    except ValueError:
+        spec = {}
+    preset = str(spec.get("preset") or "").lower().strip()
+    if preset:
+        return preset
+    try:
+        return PRESET_BY_ITERS.get(int(spec.get("iters") or 0))
+    except (TypeError, ValueError):
+        return None
 
 
 def audit() -> tuple[list[str], list[str], dict]:
@@ -86,6 +102,7 @@ def audit() -> tuple[list[str], list[str], dict]:
     if not multi_version:
         failures.append("no multi-version splat clip found")
     jobs = load_jobs()
+    generated_presets = Counter()
     for j in jobs:
         if j["status"] != "done":
             continue
@@ -97,14 +114,24 @@ def audit() -> tuple[list[str], list[str], dict]:
             continue
         if not (VAULT / art).exists():
             failures.append(f"done job points to missing artifact: {j['id']} {art}")
+        else:
+            preset = job_preset(j)
+            if preset:
+                generated_presets[preset] += 1
         required_text = ("loss", "cámaras")
         if any(t not in detail for t in required_text):
             failures.append(f"done job detail lacks quality context: {j['id']} detail={detail!r}")
         if not any(p in detail for p in ("Medium", "Cinematic", "Ultra", "Fast", "custom")):
             failures.append(f"done job detail lacks preset: {j['id']} detail={detail!r}")
+        if j["stage"] != "browser-qa" or float(j["progress"] or 0) < 0.99:
+            failures.append(f"done job lacks browser QA completion: {j['id']} stage={j['stage']} progress={j['progress']}")
+    missing_generated = sorted(REQUIRED_PRESETS - set(generated_presets))
+    if missing_generated:
+        failures.append(f"missing generated job coverage: {missing_generated}")
     summary = {
         "splats": len(splats),
         "clips": len(by_clip),
+        "generated_presets": dict(sorted(generated_presets.items())),
         "multi_version_clips": multi_version,
         "presets": dict(sorted(preset_counts.items())),
         "warnings": len(warnings),
