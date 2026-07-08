@@ -70,6 +70,10 @@ tail -80 /tmp/metislab-tunnel.log
 tail -80 /tmp/aerobrain-watchdog.log
 ```
 
+Watchdog rotates these logs at 5MB, keeping one `.1` previous file:
+`aerobrain-web.log`, `aerobrain-worker.log`, `metislab-tunnel.log`,
+`aerobrain-watchdog.log`, and `aerobrain-watchdog.launchd.log`.
+
 Normal: Cloudflare may log client-cancelled streams when a browser navigates away.
 The web server suppresses socket-reset tracebacks so logs stay useful.
 

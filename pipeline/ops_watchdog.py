@@ -24,9 +24,31 @@ LOG = Path("/tmp/aerobrain-watchdog.log")
 VAULT = Path("/Volumes/SSD/drone-vault")
 PUBLIC_INTERVAL_S = 300
 STREAM_INTERVAL_S = 900
+MAX_LOG_BYTES = 5 * 1024 * 1024
+LOGS_TO_ROTATE = (
+    LOG,
+    Path("/tmp/aerobrain-watchdog.launchd.log"),
+    Path("/tmp/aerobrain-web.log"),
+    Path("/tmp/aerobrain-worker.log"),
+    Path("/tmp/metislab-tunnel.log"),
+)
+
+
+def rotate_logs():
+    for path in LOGS_TO_ROTATE:
+        try:
+            if path.is_file() and path.stat().st_size > MAX_LOG_BYTES:
+                prev = path.with_name(path.name + ".1")
+                prev.unlink(missing_ok=True)
+                prev.write_bytes(path.read_bytes())
+                with path.open("r+b") as fh:
+                    fh.truncate(0)
+        except OSError:
+            pass
 
 
 def log(event: str, **fields):
+    rotate_logs()
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "event": event, **fields}
     LOG.parent.mkdir(parents=True, exist_ok=True)
     with LOG.open("a") as fh:
