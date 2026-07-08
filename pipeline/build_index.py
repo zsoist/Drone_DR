@@ -3,6 +3,7 @@ import json
 import math
 import os
 import re
+import sqlite3
 import time
 from pathlib import Path
 
@@ -105,9 +106,53 @@ def _splat_version(stem: str) -> dict:
     }
 
 
+def _splat_job_facts(splat_dir: Path) -> dict:
+    """Best-effort facts from the jobs DB for legacy splats whose sidecar is sparse.
+
+    Older jobs predated duration/backend sidecars. Duration is objective in SQLite
+    (finished-started); backend is only copied when already visible in detail, never
+    guessed.
+    """
+    db = VAULT / "manifest" / "jobs.db"
+    if not db.exists():
+        return {}
+    out = {}
+    try:
+        con = sqlite3.connect(db)
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "SELECT artifact, detail, started, finished FROM jobs "
+            "WHERE kind='splat' AND status='done' AND artifact != ''"
+        ).fetchall()
+    except sqlite3.Error:
+        return out
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+    for r in rows:
+        art = r["artifact"] or ""
+        if not art.startswith("splats/"):
+            continue
+        rel = art[len("splats/"):]
+        fact = {}
+        if r["started"] and r["finished"] and r["finished"] > r["started"]:
+            fact["duration_s"] = round(float(r["finished"] - r["started"]), 1)
+        detail = r["detail"] or ""
+        if "Metal/MPS" in detail:
+            fact["backend"] = "Metal/MPS"
+        elif "CPU" in detail:
+            fact["backend"] = "CPU"
+        if fact:
+            out[rel] = fact
+    return out
+
+
 def all_splats(splat_dir: Path) -> list:
     if not splat_dir.exists():
         return []
+    job_facts = _splat_job_facts(splat_dir)
     by_version = {}
     for base, prefix in ((splat_dir, ""), (splat_dir / "history", "history/")):
         if not base.exists():
@@ -126,9 +171,11 @@ def all_splats(splat_dir: Path) -> list:
         base = p.parent
         rel = p.relative_to(splat_dir).as_posix()
         info = _splat_version(p.stem)
+        stats = _splat_stats(base, p.stem)
+        for k, v in job_facts.get(rel, {}).items():
+            stats.setdefault(k, v)
         out.append({"name": p.name, "path": rel, "bytes": p.stat().st_size,
-                    "format": p.suffix.lower().lstrip("."), **info,
-                    **_splat_stats(base, p.stem)})
+                    "format": p.suffix.lower().lstrip("."), **info, **stats})
     return sorted(out, key=lambda s: (s["clip_id"], 0 if s.get("current") else 1,
                                      -(s.get("iters") or 0), s.get("archived_at") or "", s["name"]))
 

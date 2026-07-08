@@ -39,6 +39,7 @@ como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9G
 | `pipeline/worker.py` | Cola heavy 3D/splat: ODM, fallbacks, OpenSplat Metal/MPS, publish atómico |
 | `pipeline/browser_gate.py` | QA real en Chrome headless (CDP stdlib) antes de dar un job 3D por done |
 | `pipeline/browser_matrix.py` | QA multi-viewport de splats: share + workspace en mobile/iPad/desktop, macro zoom, overflow y screenshots |
+| `pipeline/audit_splats.py` | Auditor de salud de splats: assets, current/history, metadata, jobs, warnings legacy |
 | `pipeline/make_ksplat.mjs` | .splat/.ply → .ksplat con la lib vendoreada del viewer (sin npm) |
 | `/supersplat/` | Editor SuperSplat (MIT) self-hosted — post-pro de splats: floaters, crop, export |
 | `web/` | Flight Deck: galería + mapa MapLibre/Esri sincronizado al video |

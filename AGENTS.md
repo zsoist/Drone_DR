@@ -78,6 +78,7 @@ python3 -m py_compile pipeline/*.py ai/*.py
 python3 pipeline/test_smoke.py
 node --check web/icons.js web/tresd.js web/share.js web/splatview.js web/splatlab.js
 python3 pipeline/audit_vault.py
+python3 pipeline/audit_splats.py
 python3 pipeline/browser_gate.py model <clip_id>
 python3 pipeline/browser_gate.py splat <clip_id>
 python3 pipeline/browser_matrix.py <clip_id>          # share + 3D workspace, mobile/iPad/desktop

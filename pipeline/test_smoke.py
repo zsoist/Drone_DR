@@ -480,6 +480,11 @@ check("browser matrix: cubre share y workspace",
       "def run_share" in _bm_src and "def run_workspace" in _bm_src)
 check("browser matrix: falla si no hay macro zoom real u overflow limpio",
       "verify_macro_zoom" in _bm_src and "overflow horizontal" in _bm_src)
+_audit_splats_src = Path("pipeline/audit_splats.py").read_text()
+check("splat audit: cubre assets, metadata y current duplicado",
+      "missing asset" in _audit_splats_src
+      and "metadata missing" in _audit_splats_src
+      and "duplicate current splats" in _audit_splats_src)
 
 # --- splat publish: stage -> atomic public artifact ---
 _spdir = Path(tempfile.mkdtemp())
@@ -539,6 +544,9 @@ try:
     (_bi_tmp / "splats" / "A.ksplat").write_bytes(b"2")
     (_bi_tmp / "splats" / "A.meta.json").write_bytes(b"{}")
     (_bi_tmp / "splats" / "A.cameras.json").write_bytes(b"{}")
+    with sqlite3.connect(_bi_tmp / "manifest" / "jobs.db") as _jdb:
+        _jdb.execute("CREATE TABLE jobs (id TEXT, kind TEXT, status TEXT, artifact TEXT, detail TEXT, started REAL, finished REAL)")
+        _jdb.execute("INSERT INTO jobs VALUES ('splat-a','splat','done','splats/A.ksplat','A.ksplat · Metal/MPS',100,250.5)")
     (_bi_tmp / "splats" / "B.ply").write_bytes(b"3")
     (_bi_tmp / "splats" / "history").mkdir()
     (_bi_tmp / "splats" / "history" / "A-20260707-010203.splat").write_bytes(b"4" * 96)
@@ -572,6 +580,8 @@ try:
           _sys["splats"][1].get("iters") == 7000 and _sys["splats"][1].get("cameras") == 42)
     check("system: duración de entrenamiento sale del sidecar versionado",
           _sys["splats"][1].get("duration_s") == 3600.4)
+    check("system: duración legacy se reconstruye desde jobs.db",
+          _sys["splats"][0].get("duration_s") == 150.5 and _sys["splats"][0].get("backend") == "Metal/MPS")
     check("system: preset se infiere de sidecars legacy sin preset explícito",
           _sys["splats"][1].get("preset") == "cinematic"
           and _sys["splats"][1].get("preset_label") == "Cinematic")
