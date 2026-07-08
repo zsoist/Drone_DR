@@ -80,6 +80,7 @@ node --check web/icons.js web/tresd.js web/share.js web/splatview.js web/splatla
 python3 pipeline/audit_vault.py
 python3 pipeline/browser_gate.py model <clip_id>
 python3 pipeline/browser_gate.py splat <clip_id>
+python3 pipeline/browser_matrix.py <clip_id>          # share + 3D workspace, mobile/iPad/desktop
 ```
 
 For splat history bugs, verify both current and archived URLs:

@@ -38,6 +38,7 @@ como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9G
 | `ai/reel.py` | Auto-editor: top highlights → reel 1080p o 9:16 vertical |
 | `pipeline/worker.py` | Cola heavy 3D/splat: ODM, fallbacks, OpenSplat Metal/MPS, publish atómico |
 | `pipeline/browser_gate.py` | QA real en Chrome headless (CDP stdlib) antes de dar un job 3D por done |
+| `pipeline/browser_matrix.py` | QA multi-viewport de splats: share + workspace en mobile/iPad/desktop, macro zoom, overflow y screenshots |
 | `pipeline/make_ksplat.mjs` | .splat/.ply → .ksplat con la lib vendoreada del viewer (sin npm) |
 | `/supersplat/` | Editor SuperSplat (MIT) self-hosted — post-pro de splats: floaters, crop, export |
 | `web/` | Flight Deck: galería + mapa MapLibre/Esri sincronizado al video |
@@ -52,13 +53,14 @@ El camino premium de video DJI ahora es local y gratis:
 4. `tresd_publish.py` publica ortho/DSM/hillshade WebP con feather alpha, DSM binario para mediciones, nube PLY gzip, malla viewer re-centrada si existe, QA y `system.json` atómico.
 5. OpenSplat entrena sobre poses ODM. Medium = 2k, Cinematic = 7k, Ultra = 15k bounded en Metal/MPS.
 6. Publicación de splats es atómica: current se archiva en `splats/history/`, se genera `.ksplat`, se reconstruye índice y Chrome gate debe pasar antes de marcar `done`.
+7. El viewer se verifica con matriz real: `share.html` y `tresd.html` en mobile, iPad y desktop deben renderizar canvas, exponer versiones, no desbordar horizontalmente y permitir macro zoom medible.
 
 Evidencia viva 2026-07-07 (`DJI_20260706133809_0101_D`):
 
 - ODM `alta`: 30/30 cámaras, DSM/DTM/ortho/nube, browser gate OK, 12.6 min.
 - Medium splat: 2k, Metal/MPS, loss 0.0649658, 2.5 min.
 - Cinematic splat: 7k, Metal/MPS, loss 0.0461415, archivado.
-- Ultra splat: 15k bounded, Metal/MPS, 480,737 gaussianas, loss 0.0493478, `.ksplat` current, browser gate OK.
+- Ultra splat: 15k bounded, Metal/MPS, 480,737 gaussianas, loss 0.0493478, `.ksplat` current, browser gate OK, matrix gate OK.
 
 ## Operación
 
@@ -78,7 +80,8 @@ V1 ✅ pipeline + Flight Deck live · V3 ✅ SHIPPED: fotogrametría ODM complet
 mediciones de volumen/perfil/comparación multi-fecha, ortos feathered WebP,
 malla re-centrada para viewer, página pública /share.html, gzip sidecars) +
 gaussian splats ✅ (OpenSplat Metal/MPS, Medium/Cinematic/Ultra bounded, publish atómico,
-.ksplat export, historial versionado, browser-gate en Chrome antes de marcar done) ·
+.ksplat export, historial versionado, browser-gate en Chrome antes de marcar done,
+browser-matrix mobile/iPad/desktop para share + workspace) ·
 V2 detección YOLO/open-vocab pendiente ·
 V4 travel mode + diarios AI · V5 watcher autónomo (SD in → todo solo).
 

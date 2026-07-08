@@ -464,6 +464,14 @@ check("browser gate: default usa 127.0.0.1 para evitar localhost IPv6 ajeno",
       browser_gate.DEFAULT_BASE_URL == "http://127.0.0.1:8790"
       and browser_gate.CHROME.name == "Google Chrome"
       and browser_gate.QA_DIR.name == "qa")
+import browser_matrix
+check("browser matrix: cubre mobile, iPad y desktop",
+      set(browser_matrix.VIEWPORTS) == {"mobile", "ipad", "desktop"})
+_bm_src = Path("pipeline/browser_matrix.py").read_text()
+check("browser matrix: cubre share y workspace",
+      "def run_share" in _bm_src and "def run_workspace" in _bm_src)
+check("browser matrix: falla si no hay macro zoom real u overflow limpio",
+      "verify_macro_zoom" in _bm_src and "overflow horizontal" in _bm_src)
 
 # --- splat publish: stage -> atomic public artifact ---
 _spdir = Path(tempfile.mkdtemp())
