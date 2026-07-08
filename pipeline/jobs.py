@@ -176,10 +176,13 @@ def clear_artifacts(cid: str):
 def retarget_splat_artifacts(cid: str, archived_artifact: str):
     """When a newer splat becomes current, previous done jobs must keep pointing to
     their exact archived version instead of the mutable splats/<cid>.splat path."""
+    archived_name = Path(archived_artifact).name
     with _LOCK, _conn() as c:
-        c.execute("UPDATE jobs SET artifact=? WHERE kind='splat' AND label=? "
+        c.execute("UPDATE jobs SET artifact=?, detail=replace(detail, ?, ?) "
+                  "WHERE kind='splat' AND label=? "
                   "AND status='done' AND artifact=?",
-                  (archived_artifact, cid, f"splats/{cid}.splat"))
+                  (archived_artifact, f"{cid}.splat", archived_name,
+                   cid, f"splats/{cid}.splat"))
 
 
 def get(jid: str) -> dict | None:
