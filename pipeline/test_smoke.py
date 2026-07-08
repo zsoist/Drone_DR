@@ -485,6 +485,10 @@ check("splat audit: cubre assets, metadata y current duplicado",
       "missing asset" in _audit_splats_src
       and "metadata missing" in _audit_splats_src
       and "duplicate current splats" in _audit_splats_src)
+check("splat audit: exige presets medium/cinematic/ultra y multi-versión",
+      "REQUIRED_PRESETS" in _audit_splats_src
+      and "missing required preset coverage" in _audit_splats_src
+      and "no multi-version splat clip found" in _audit_splats_src)
 
 # --- splat publish: stage -> atomic public artifact ---
 _spdir = Path(tempfile.mkdtemp())

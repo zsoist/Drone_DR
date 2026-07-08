@@ -7,6 +7,8 @@ the splat product understandable and recoverable:
 
 Fails on:
   - manifest rows whose files do not exist
+  - missing Medium/Cinematic/Ultra coverage
+  - no clip with multiple splat versions
   - duplicate current splats for a clip
   - missing critical quality metadata
   - done jobs pointing at dead artifacts
@@ -26,6 +28,7 @@ from pathlib import Path
 VAULT = Path("/Volumes/SSD/drone-vault")
 SYSTEM = VAULT / "manifest" / "system.json"
 JOBS = VAULT / "manifest" / "jobs.db"
+REQUIRED_PRESETS = {"medium", "cinematic", "ultra"}
 
 
 def load_system() -> dict:
@@ -75,6 +78,13 @@ def audit() -> tuple[list[str], list[str], dict]:
         current = [s for s in rows if s.get("current")]
         if len(current) > 1:
             failures.append(f"duplicate current splats for {clip}: {[s.get('path') for s in current]}")
+    preset_counts = Counter(s.get("preset") for s in splats)
+    missing_presets = sorted(REQUIRED_PRESETS - set(preset_counts))
+    if missing_presets:
+        failures.append(f"missing required preset coverage: {missing_presets}")
+    multi_version = {clip: len(rows) for clip, rows in by_clip.items() if len(rows) > 1}
+    if not multi_version:
+        failures.append("no multi-version splat clip found")
     jobs = load_jobs()
     for j in jobs:
         if j["status"] != "done":
@@ -92,10 +102,10 @@ def audit() -> tuple[list[str], list[str], dict]:
             failures.append(f"done job detail lacks quality context: {j['id']} detail={detail!r}")
         if not any(p in detail for p in ("Medium", "Cinematic", "Ultra", "Fast", "custom")):
             failures.append(f"done job detail lacks preset: {j['id']} detail={detail!r}")
-    preset_counts = Counter(s.get("preset") for s in splats)
     summary = {
         "splats": len(splats),
         "clips": len(by_clip),
+        "multi_version_clips": multi_version,
         "presets": dict(sorted(preset_counts.items())),
         "warnings": len(warnings),
         "failures": len(failures),
