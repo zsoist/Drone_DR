@@ -93,17 +93,18 @@ def kick(label: str, why: str):
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
 
 
-def probe(url: str, timeout: int) -> tuple[bool, str]:
+def probe(url: str, timeout: int) -> tuple[bool, str, int]:
     req = urllib.request.Request(url, headers={"User-Agent": "AeroBrainWatchdog/1"})
+    t0 = time.monotonic()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             detail = r.read(512).decode("utf-8", "replace")
-            return 200 <= r.status < 400, f"{r.status} {detail[:180]}"
+            return 200 <= r.status < 400, f"{r.status} {detail[:180]}", round((time.monotonic() - t0) * 1000)
     except urllib.error.HTTPError as e:
         detail = e.read(512).decode("utf-8", "replace")
-        return 200 <= e.code < 400, f"{e.code} {detail[:180]}"
+        return 200 <= e.code < 400, f"{e.code} {detail[:180]}", round((time.monotonic() - t0) * 1000)
     except Exception as e:
-        return False, type(e).__name__
+        return False, type(e).__name__, round((time.monotonic() - t0) * 1000)
 
 
 def latest_proxy_url() -> str | None:
@@ -118,20 +119,21 @@ def latest_proxy_url() -> str | None:
     return None
 
 
-def range_probe(url: str, timeout: int) -> tuple[bool, str]:
+def range_probe(url: str, timeout: int) -> tuple[bool, str, int]:
     req = urllib.request.Request(url, headers={
         "User-Agent": "AeroBrainWatchdog/1",
         "Range": "bytes=0-0",
     })
+    t0 = time.monotonic()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             r.read(1)
             cr = r.headers.get("Content-Range", "")
-            return r.status == 206 and cr.startswith("bytes 0-0/"), f"{r.status} {cr}"
+            return r.status == 206 and cr.startswith("bytes 0-0/"), f"{r.status} {cr}", round((time.monotonic() - t0) * 1000)
     except urllib.error.HTTPError as e:
-        return False, f"{e.code} {e.headers.get('Content-Range', '')}"
+        return False, f"{e.code} {e.headers.get('Content-Range', '')}", round((time.monotonic() - t0) * 1000)
     except Exception as e:
-        return False, type(e).__name__
+        return False, type(e).__name__, round((time.monotonic() - t0) * 1000)
 
 
 def main():
@@ -143,27 +145,27 @@ def main():
         if st != "running":
             kick(label, f"launchd state {st}")
 
-    ok, detail = probe(LOCAL_URL, 4)
+    ok, detail, ms = probe(LOCAL_URL, 4)
     if not ok:
         kick(WEB_LABEL, f"local probe failed: {detail}")
         time.sleep(2)
-        ok2, detail2 = probe(LOCAL_URL, 4)
-        log("local_probe", ok=ok2, detail=detail2)
+        ok2, detail2, ms2 = probe(LOCAL_URL, 4)
+        log("local_probe", ok=ok2, detail=detail2, ms=ms2)
     else:
-        log("local_probe", ok=True, detail=detail)
+        log("local_probe", ok=True, detail=detail, ms=ms)
 
     if now - float(state.get("last_public_probe", 0)) >= PUBLIC_INTERVAL_S:
         state["last_public_probe"] = now
-        ok, detail = probe(PUBLIC_URL, 12)
+        ok, detail, ms = probe(PUBLIC_URL, 12)
         if not ok:
             # The local origin was checked first. A public-only failure points at
             # cloudflared, DNS, or Cloudflare edge state, so restart only tunnel.
             kick(TUNNEL_LABEL, f"public probe failed: {detail}")
             time.sleep(4)
-            ok2, detail2 = probe(PUBLIC_URL, 12)
-            log("public_probe", ok=ok2, detail=detail2)
+            ok2, detail2, ms2 = probe(PUBLIC_URL, 12)
+            log("public_probe", ok=ok2, detail=detail2, ms=ms2)
         else:
-            log("public_probe", ok=True, detail=detail)
+            log("public_probe", ok=True, detail=detail, ms=ms)
 
     if now - float(state.get("last_stream_probe", 0)) >= STREAM_INTERVAL_S:
         state["last_stream_probe"] = now
@@ -171,14 +173,14 @@ def main():
         if not video_url:
             log("stream_probe", ok=False, detail="no proxy video found")
         else:
-            ok, detail = range_probe(video_url, 15)
+            ok, detail, ms = range_probe(video_url, 15)
             if not ok:
                 kick(TUNNEL_LABEL, f"stream range probe failed: {detail}")
                 time.sleep(4)
-                ok2, detail2 = range_probe(video_url, 15)
-                log("stream_probe", ok=ok2, detail=detail2, url=video_url.rsplit("/", 1)[-1])
+                ok2, detail2, ms2 = range_probe(video_url, 15)
+                log("stream_probe", ok=ok2, detail=detail2, ms=ms2, url=video_url.rsplit("/", 1)[-1])
             else:
-                log("stream_probe", ok=True, detail=detail, url=video_url.rsplit("/", 1)[-1])
+                log("stream_probe", ok=True, detail=detail, ms=ms, url=video_url.rsplit("/", 1)[-1])
 
     save_state(state)
 

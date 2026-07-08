@@ -40,8 +40,8 @@ The watchdog uses the same idea but cheaper: `Range: bytes=0-0` against the
 latest proxy video, so streaming failures are detected without downloading video.
 
 `pipeline/ops_status.py` is the one-shot audit: launchd state, local/public
-health, video Range, active/stale jobs, idle resource use, log sizes, manifests,
-and tunnel config.
+health, video Range, recent watchdog latency, active/stale jobs, idle resource
+use, log sizes, manifests, and tunnel config.
 
 ## Safe restarts
 

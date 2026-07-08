@@ -27,6 +27,7 @@ LOGS = (
     Path("/tmp/aerobrain-watchdog.log"),
     Path("/tmp/aerobrain-watchdog.launchd.log"),
 )
+WATCHDOG_LOG = Path("/tmp/aerobrain-watchdog.log")
 LABELS = ("com.aerobrain.web", "com.aerobrain.worker", "com.metislab.tunnel", "com.aerobrain.watchdog")
 
 
@@ -169,6 +170,42 @@ def logs_status() -> dict:
     return {"ok": ok, "logs": items}
 
 
+def latency_status() -> dict:
+    buckets = {"local_probe": [], "public_probe": [], "stream_probe": []}
+    try:
+        lines = WATCHDOG_LOG.read_text(errors="replace").splitlines()[-500:]
+    except OSError:
+        return {"ok": False, "error": "watchdog log missing"}
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        event = row.get("event")
+        ms = row.get("ms")
+        if event in buckets and isinstance(ms, (int, float)):
+            buckets[event].append(float(ms))
+    summary = {}
+    ok = True
+    limits = {"local_probe": 1000, "public_probe": 3000, "stream_probe": 5000}
+    for event, vals in buckets.items():
+        if not vals:
+            summary[event] = {"samples": 0}
+            continue
+        latest = vals[-1]
+        sorted_vals = sorted(vals)
+        p95 = sorted_vals[min(len(sorted_vals) - 1, int(len(sorted_vals) * 0.95))]
+        if p95 > limits[event]:
+            ok = False
+        summary[event] = {
+            "samples": len(vals),
+            "latest_ms": round(latest),
+            "p95_ms": round(p95),
+            "limit_ms": limits[event],
+        }
+    return {"ok": ok, **summary}
+
+
 def tunnel_config_status() -> dict:
     try:
         txt = TUNNEL_CONFIG.read_text()
@@ -209,6 +246,7 @@ def main() -> int:
         "jobs": jobs_status(),
         "resources": resource_status(),
         "logs": logs_status(),
+        "latency": latency_status(),
         "tunnel_config": tunnel_config_status(),
         "manifests": manifest_status(),
     }
@@ -216,6 +254,7 @@ def main() -> int:
     checks.extend(v.get("ok", False) for v in report["services"].values())
     checks.extend((local_ok, public_ok, report["stream"]["ok"], report["jobs"]["ok"],
                    report["resources"]["ok"], report["logs"]["ok"],
+                   report["latency"]["ok"],
                    report["tunnel_config"]["ok"], report["manifests"]["ok"]))
     report["ok"] = all(checks)
 
@@ -226,6 +265,10 @@ def main() -> int:
         print(f"  health: local={local_ok} public={public_ok}")
         print(f"  stream: ok={report['stream']['ok']} {report['stream'].get('content_range', report['stream'].get('detail', ''))} cache={report['stream'].get('cache', '')}")
         print(f"  resources: cpu={report['resources'].get('total_cpu')}% rss={report['resources'].get('total_rss_mb')}MB")
+        lat = report.get("latency", {})
+        print("  latency: " + " ".join(
+            f"{k}=p95:{v.get('p95_ms', 'n/a')}ms"
+            for k, v in lat.items() if isinstance(v, dict) and k.endswith("_probe")))
         print(f"  jobs: active={len(report['jobs'].get('active', []))} stale={len(report['jobs'].get('stale_running', []))}")
         for label, st in report["services"].items():
             print(f"  {label}: {st.get('state')} pid={st.get('pid')} runs={st.get('runs')} ok={st.get('ok')}")
