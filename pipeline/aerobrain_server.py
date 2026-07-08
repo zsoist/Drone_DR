@@ -19,6 +19,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -1668,6 +1669,23 @@ class H(BaseHTTPRequestHandler):
         return self.send_json({"properties": out})
 
 
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """Origin server behind Cloudflare Tunnel.
+
+    iOS, Cloudflare and browser QA cancel requests during navigation or when a
+    range/asset is no longer needed. The stock server prints those socket resets
+    as tracebacks; suppress only that noise so logs remain useful for real bugs.
+    """
+    daemon_threads = True
+    request_queue_size = 128
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
 if __name__ == "__main__":
     # limpia temporales de subida huérfanos (.upload-<cid>-<hex>.<ext>): una subida cortada por
     # reinicio/OOM deja el tmp en splats/. best_splats ya los ignora, pero purgarlos evita acumular
@@ -1680,4 +1698,4 @@ if __name__ == "__main__":
     except OSError:
         pass
     print(f"AeroBrain server :8790 · token en {TOKEN_FILE}")
-    ThreadingHTTPServer(("127.0.0.1", 8790), H).serve_forever()
+    QuietThreadingHTTPServer(("127.0.0.1", 8790), H).serve_forever()

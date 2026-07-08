@@ -1,7 +1,8 @@
 #!/bin/bash
 # Reinicia servicios de AeroBrain sin matar trabajos pesados.
-# uso: safe_restart.sh [web|worker|both]
+# uso: safe_restart.sh [web|server|worker|tunnel|both]
 T="${1:-web}"
+[[ "$T" == "server" ]] && T="web"
 if [[ "$T" == "worker" || "$T" == "both" ]]; then
   BUSY=$(python3 - <<'PY'
 import sqlite3, sys
@@ -31,4 +32,7 @@ PY
 fi
 if [[ "$T" == "web" || "$T" == "both" ]]; then
   launchctl kickstart -k gui/501/com.aerobrain.web && echo "web reiniciado"
+fi
+if [[ "$T" == "tunnel" ]]; then
+  launchctl kickstart -k gui/501/com.metislab.tunnel && echo "tunnel reiniciado"
 fi

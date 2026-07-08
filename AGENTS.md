@@ -64,8 +64,10 @@ rather than trying to log in over http.
 ## Restart the server after backend edits
 
 ```bash
-pipeline/safe_restart.sh server     # picks up pipeline/*.py web-server changes
-pipeline/safe_restart.sh worker     # only when no 3D/splat job is running
+pipeline/safe_restart.sh server     # alias for web; picks up backend changes
+pipeline/safe_restart.sh tunnel     # Cloudflare tunnel only
+pipeline/safe_restart.sh worker     # refuses while a 3D/splat job is running
+tail -20 /tmp/aerobrain-watchdog.log
 ```
 Static web/ + /data are served no-cache, so frontend edits are live immediately.
 

@@ -73,7 +73,10 @@ python3 pipeline/build_index.py       # refrescar flights.json (la web se actual
 python3 ai/reel.py --vertical         # reel para IG/TikTok
 ```
 
-Servicios launchd: `com.aerobrain.web` (:8790) · `com.metislab.tunnel` (Cloudflare).
+Servicios launchd: `com.aerobrain.web` (:8790) · `com.aerobrain.worker`
+(cola 3D/splat) · `com.metislab.tunnel` (Cloudflare) ·
+`com.aerobrain.watchdog` (health check local/public). Runbook:
+[docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Roadmap
 V1 ✅ pipeline + Flight Deck live · V3 ✅ SHIPPED: fotogrametría ODM completa
