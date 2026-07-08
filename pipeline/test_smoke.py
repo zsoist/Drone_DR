@@ -418,6 +418,15 @@ check("splat presets: medium/cinematic/ultra tienen contrato explícito",
       == [2000, 7000, 15000])
 check("splat presets: legacy iters 7000 se identifica como cinematic",
       resolve_splat_spec({"iters": 7000})["key"] == "cinematic")
+try:
+    resolve_splat_spec({"preset": "nonsense"})
+    _bad_preset_rejected = False
+except ValueError:
+    _bad_preset_rejected = True
+check("splat presets: preset explícito inválido no cae silenciosamente a medium",
+      _bad_preset_rejected)
+check("splat presets: custom auditado conserva iters acotados",
+      resolve_splat_spec({"preset": "custom", "iters": 5000})["key"] == "custom")
 _ultra_splat = resolve_splat_spec({"preset": "ultra"})
 check("splat presets: ultra limita densificación para M4",
       "--densify-grad-thresh" in _ultra_splat["train_args"]
@@ -511,6 +520,20 @@ try:
     (_bi_tmp / "splats" / "history" / "A-20260707-010203.ksplat").write_bytes(b"5")
     (_bi_tmp / "splats" / "history" / "A-20260707-010203.meta.json").write_text(
         json.dumps({"target_iters": 7000, "final_loss": 0.05, "cameras": 42}))
+    import threading
+    _atomic_target = _bi_tmp / "manifest" / "atomic.json"
+    _atomic_errors = []
+    def _atomic_writer(i):
+        try:
+            _bi.write_atomic(_atomic_target, json.dumps({"writer": i, "payload": "x" * 1000}))
+        except Exception as e:
+            _atomic_errors.append(str(e))
+    _threads = [threading.Thread(target=_atomic_writer, args=(i,)) for i in range(8)]
+    [t.start() for t in _threads]
+    [t.join() for t in _threads]
+    _atomic_json = json.loads(_atomic_target.read_text())
+    check("system: write_atomic tolera rebuild_index concurrente",
+          not _atomic_errors and isinstance(_atomic_json.get("writer"), int))
     _bi.main()
     _sys = json.loads((_bi_tmp / "manifest" / "system.json").read_text())
     # contrato: UNA entrada por versión, gana el mejor formato (.ksplat > .splat > .ply);
@@ -522,6 +545,9 @@ try:
           == [("A", "ksplat", True), ("A", "ksplat", False), ("B", "ply", True)])
     check("system: stats de historial salen del sidecar versionado",
           _sys["splats"][1].get("iters") == 7000 and _sys["splats"][1].get("cameras") == 42)
+    check("system: preset se infiere de sidecars legacy sin preset explícito",
+          _sys["splats"][1].get("preset") == "cinematic"
+          and _sys["splats"][1].get("preset_label") == "Cinematic")
 finally:
     _bi.VAULT = _old_bi_vault
 
@@ -529,6 +555,7 @@ finally:
 _web_tresd = Path("web/tresd.js").read_text()
 _web_share = Path("web/share.js").read_text()
 _web_lab = Path("web/splatlab.js").read_text()
+_web_splatview = Path("web/splatview.js").read_text()
 check("viewer: splat selectors prefer current before file format",
       ".sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)" in _web_tresd
       and ".sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)" in _web_share)
@@ -537,6 +564,11 @@ check("viewer: archived splat links use manifest path",
       and "const splatUrl = s => 'data/splats/' + splatKey(s).split('/')" in _web_lab
       and "data/splats/${encodeURIComponent(s.name)}" not in _web_tresd
       and "'/data/splats/' + s.name" not in _web_lab)
+check("viewer: splat macro mode permite inspección cercana real",
+      "radius * 0.00008" in _web_splatview
+      and "radius * 0.012" in _web_splatview
+      and "dolly(0.08)" in _web_splatview
+      and "Modo macro" in _web_splatview)
 
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)

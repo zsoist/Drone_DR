@@ -78,6 +78,9 @@ def resolve_splat_spec(spec: dict | None) -> dict:
     if key in SPLAT_PRESETS:
         out = {"key": key, **SPLAT_PRESETS[key]}
         return out
+    if raw and key != "custom":
+        allowed = ", ".join(("medium", "cinematic", "ultra"))
+        raise ValueError(f"preset de splat inválido: {raw} (usa {allowed})")
 
     try:
         iters = int(spec.get("iters") or SPLAT_PRESETS["medium"]["iters"])

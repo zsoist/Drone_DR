@@ -73,17 +73,17 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     Number.isFinite(rawR) ? rawR : (Number.isFinite(rawR2) ? rawR2 : 1), 0.5);
   const cam = viewer.camera, ctrl = viewer.controls;
   const homeState = {};
-  const homeMin = Math.max(radius * 0.0025, 0.002);
-  const inspectMin = Math.max(radius * 0.00035, 0.0008);
+  const homeMin = Math.max(radius * 0.0012, 0.001);
+  const inspectMin = Math.max(radius * 0.00008, 0.00018);
 
   function frame() {
     const dir = new THREEV.Vector3(0.18, 0.78, 0.52).normalize();
     cam.position.copy(center).addScaledVector(dir, radius * 1.15);
-    cam.near = Math.max(radius / 50000, 0.0001);        // near muy chico = acercarse sin clip
+    cam.near = Math.max(radius / 200000, 0.00002);      // near macro: acercarse sin clip
     cam.far = Math.max(radius * 100, 50);
     cam.updateProjectionMatrix();
     ctrl.target.copy(center);
-    ctrl.minDistance = homeMin;                         // inspección cercana sin atravesar fácil
+    ctrl.minDistance = homeMin;                         // home usable; macro baja el piso más
     ctrl.maxDistance = radius * 18;
     ctrl.update();
     homeState.pos = cam.position.clone();
@@ -134,9 +134,9 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     if (p.distanceTo(center) > radius * 1.5) return false;
     // baja el piso YA (no al final de la animación) → puedes seguir con la rueda hasta pegarte
     viewer.controls.minDistance = inspectMin;
-    // acércate al punto: nueva posición a ~min(dist actual, radius*0.3) del edificio
+    // acércate al punto: macro real para revisar fachadas/techos sin quedar flotando lejos.
     const d = vcam.position.distanceTo(p);
-    const newPos = p.clone().addScaledVector(vcam.position.clone().sub(p).normalize(), Math.min(d, radius * 0.045));
+    const newPos = p.clone().addScaledVector(vcam.position.clone().sub(p).normalize(), Math.min(d, radius * 0.012));
     animateTo(p, newPos);
     return true;
   }
@@ -170,7 +170,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   hud.className = 'sv-hud';
   hud.innerHTML =
     btn('home', 'Reiniciar vista (R)', I.home) +
-    btn('inspect', 'Modo cerca', I.target) +
+    btn('inspect', 'Modo macro', I.target) +
     btn('zin', 'Acercar', I.plus) +
     btn('zout', 'Alejar', I.minus) +
     btn('rot', 'Auto-rotar', I.rot) +
@@ -186,8 +186,8 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   tip.className = 'sv-tip';
   const coarse = matchMedia('(hover: none), (pointer: coarse)').matches;
   tip.textContent = coarse
-    ? 'Doble-toca un punto para enfocar · + acerca más · pellizca = zoom · 2 dedos = desplazar'
-    : 'Doble-click en un punto para enfocar · rueda/+ acerca · click-derecho = mover';
+    ? 'Doble-toca un punto para enfocar · objetivo = macro · + acerca · pellizca = zoom'
+    : 'Doble-click en un punto para enfocar · objetivo = macro · rueda/+ acerca · click-derecho = mover';
   host.appendChild(tip);
   setTimeout(() => tip.classList.add('fade'), 4200);
 
@@ -212,8 +212,8 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
       const fovIn = hud.querySelector('[data-sv="fov"]'); if (fovIn) fovIn.value = Math.round(homeState.fov);  // re-sincroniza el slider
       kick();
     }
-    else if (k === 'inspect') { vctrl.minDistance = inspectMin; dolly(0.22); b.classList.add('on'); }
-    else if (k === 'zin') dolly(0.35);
+    else if (k === 'inspect') { vctrl.minDistance = inspectMin; dolly(0.08); b.classList.add('on'); }
+    else if (k === 'zin') { vctrl.minDistance = inspectMin; dolly(0.25); }
     else if (k === 'zout') dolly(1.55);
     else if (k === 'rot') { vctrl.autoRotate = !vctrl.autoRotate; vctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', vctrl.autoRotate); kick(); }
     else if (k === 'shot') screenshot();
@@ -265,6 +265,8 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     if (!holder.isConnected) return;
     if (e.key === 'r' || e.key === 'R') hud.querySelector('[data-sv="home"]').click();
     else if (e.key === 'f' || e.key === 'F') toggleFull();
+    else if (e.key === '+' || e.key === '=') dolly(0.25);
+    else if (e.key === '-' || e.key === '_') dolly(1.55);
     else if (e.key === 'Escape' && host.classList.contains('sv-fullscreen')) toggleFull();
   }
 

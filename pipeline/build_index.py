@@ -16,9 +16,12 @@ def dir_size(p: Path) -> int:
 def write_atomic(path: Path, text: str):
     """tmp + os.replace: la app lee estos manifests directo; un write parcial concurrente
     (worker + server llaman rebuild_index) los dejaría truncados y vaciaría la UI."""
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text)
-    os.replace(tmp, path)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
+    try:
+        tmp.write_text(text)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def load_models(models_dir: Path) -> list:
@@ -42,6 +45,12 @@ def load_models(models_dir: Path) -> list:
 # (entrenos 2k/7k/15k, ediciones de SuperSplat, etc.) y la UI debe poder elegir entre todas.
 SPLAT_PRIORITY = {".ksplat": 0, ".splat": 1, ".ply": 2}
 HIST_RE = re.compile(r"^(?P<cid>.+)-(?P<date>\d{8})-(?P<time>\d{6})$")
+SPLAT_PRESET_BY_ITERS = {
+    1000: ("fast", "Fast"),
+    2000: ("medium", "Medium"),
+    7000: ("cinematic", "Cinematic"),
+    15000: ("ultra", "Ultra"),
+}
 
 
 def _splat_stats(base: Path, stem: str) -> dict:
@@ -68,6 +77,10 @@ def _splat_stats(base: Path, stem: str) -> dict:
                 out["backend"] = m["backend"]
         except (ValueError, OSError):
             pass
+    if out.get("iters") in SPLAT_PRESET_BY_ITERS:
+        key, label = SPLAT_PRESET_BY_ITERS[out["iters"]]
+        out.setdefault("preset", key)
+        out.setdefault("preset_label", label)
     src = base / f"{stem}.splat"     # si existe, da conteo exacto de gaussianas
     if src.exists():
         n = src.stat().st_size // 32
