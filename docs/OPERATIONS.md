@@ -10,7 +10,7 @@ sin gastar CPU fuerte salvo cuando Daniel lanza ODM/OpenSplat/edicion.
 | Web origin | `com.aerobrain.web` | Sirve `127.0.0.1:8790`, `/web` y `/data` con Range para video |
 | Worker | `com.aerobrain.worker` | Ejecuta jobs pesados `3d` y `splat` fuera del server web |
 | Tunnel | `com.metislab.tunnel` | Cloudflare Tunnel hacia `http://127.0.0.1:8790` |
-| Watchdog | `com.aerobrain.watchdog` | Probe local cada 60s, probe publico cada 5 min, kickstart si falla |
+| Watchdog | `com.aerobrain.watchdog` | `/api/healthz` local cada 60s, publico cada 5 min, kickstart si falla |
 
 El tunel de vuelos debe apuntar a IPv4 explicito:
 
@@ -25,8 +25,8 @@ escucha en `127.0.0.1`.
 ## Health checks
 
 ```bash
-curl -I http://127.0.0.1:8790/
-curl -I https://vuelos.metislab.work/
+curl http://127.0.0.1:8790/api/healthz
+curl https://vuelos.metislab.work/api/healthz
 curl -I https://vuelos.metislab.work/tresd.html
 curl -I -H 'Range: bytes=0-1048575' \
   https://vuelos.metislab.work/data/proxies/DJI_20260706133809_0101_D.mp4
@@ -75,5 +75,5 @@ Actionable:
 
 - repeated local probe failures in watchdog log -> web origin issue
 - repeated public probe failures while local is OK -> tunnel/Cloudflare path issue
+- `/api/healthz` 503 -> vault, manifest, disk free, or jobs DB issue
 - worker running job with no progress -> inspect `/api/jobs` log tail before restart
-

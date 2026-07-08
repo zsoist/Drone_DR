@@ -16,8 +16,8 @@ from pathlib import Path
 WEB_LABEL = "com.aerobrain.web"
 WORKER_LABEL = "com.aerobrain.worker"
 TUNNEL_LABEL = "com.metislab.tunnel"
-LOCAL_URL = "http://127.0.0.1:8790/"
-PUBLIC_URL = "https://vuelos.metislab.work/"
+LOCAL_URL = "http://127.0.0.1:8790/api/healthz"
+PUBLIC_URL = "https://vuelos.metislab.work/api/healthz"
 STATE = Path("/tmp/aerobrain-watchdog-state.json")
 LOG = Path("/tmp/aerobrain-watchdog.log")
 PUBLIC_INTERVAL_S = 300
@@ -68,13 +68,15 @@ def kick(label: str, why: str):
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
 
 
-def head(url: str, timeout: int) -> tuple[bool, str]:
-    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "AeroBrainWatchdog/1"})
+def probe(url: str, timeout: int) -> tuple[bool, str]:
+    req = urllib.request.Request(url, headers={"User-Agent": "AeroBrainWatchdog/1"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return 200 <= r.status < 400, str(r.status)
+            detail = r.read(512).decode("utf-8", "replace")
+            return 200 <= r.status < 400, f"{r.status} {detail[:180]}"
     except urllib.error.HTTPError as e:
-        return 200 <= e.code < 400, str(e.code)
+        detail = e.read(512).decode("utf-8", "replace")
+        return 200 <= e.code < 400, f"{e.code} {detail[:180]}"
     except Exception as e:
         return False, type(e).__name__
 
@@ -88,24 +90,24 @@ def main():
         if st != "running":
             kick(label, f"launchd state {st}")
 
-    ok, detail = head(LOCAL_URL, 4)
+    ok, detail = probe(LOCAL_URL, 4)
     if not ok:
         kick(WEB_LABEL, f"local probe failed: {detail}")
         time.sleep(2)
-        ok2, detail2 = head(LOCAL_URL, 4)
+        ok2, detail2 = probe(LOCAL_URL, 4)
         log("local_probe", ok=ok2, detail=detail2)
     else:
         log("local_probe", ok=True, detail=detail)
 
     if now - float(state.get("last_public_probe", 0)) >= PUBLIC_INTERVAL_S:
         state["last_public_probe"] = now
-        ok, detail = head(PUBLIC_URL, 12)
+        ok, detail = probe(PUBLIC_URL, 12)
         if not ok:
             # The local origin was checked first. A public-only failure points at
             # cloudflared, DNS, or Cloudflare edge state, so restart only tunnel.
             kick(TUNNEL_LABEL, f"public probe failed: {detail}")
             time.sleep(4)
-            ok2, detail2 = head(PUBLIC_URL, 12)
+            ok2, detail2 = probe(PUBLIC_URL, 12)
             log("public_probe", ok=ok2, detail=detail2)
         else:
             log("public_probe", ok=True, detail=detail)

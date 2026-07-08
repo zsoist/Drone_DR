@@ -18,6 +18,7 @@ import os
 import re
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -97,6 +98,39 @@ def read_json_file(path: Path, max_bytes: int = 8_000_000):
     if path.stat().st_size > max_bytes:
         raise ValueError(f"archivo {path.name} excede {max_bytes} bytes")
     return json.loads(path.read_text())
+
+
+def health_status() -> tuple[dict, int]:
+    checks = {}
+
+    checks["web"] = WEB.is_dir()
+    checks["vault"] = VAULT.is_dir()
+    try:
+        du = shutil.disk_usage(VAULT)
+        checks["disk_free_gb"] = round(du.free / 1024**3, 1)
+        checks["disk_ok"] = du.free > 10 * 1024**3
+    except OSError:
+        checks["disk_ok"] = False
+
+    for name in ("flights.json", "system.json"):
+        p = VAULT / "manifest" / name
+        try:
+            read_json_file(p, 2_000_000)
+            checks[name] = True
+        except Exception:
+            checks[name] = False
+
+    try:
+        with sqlite3.connect(jobstore.DB, timeout=2) as c:
+            c.execute("SELECT 1").fetchone()
+            active = c.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0]
+        checks["jobs_db"] = True
+        checks["active_jobs"] = int(active)
+    except Exception:
+        checks["jobs_db"] = False
+
+    ok = all(v for k, v in checks.items() if k not in ("disk_free_gb", "active_jobs"))
+    return {"ok": ok, "checks": checks, "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, (200 if ok else 503)
 
 
 def process_upload(path: Path, j):
@@ -931,6 +965,11 @@ class H(BaseHTTPRequestHandler):
         return f if f.is_file() else None
 
     def do_GET(self):
+        if self.path.startswith("/api/healthz"):
+            body, code = health_status()
+            if not (self._is_local() or self.headers.get("X-Token", "") == TOKEN or self.session_ok()):
+                body = {"ok": body["ok"], "ts": body["ts"]}
+            return self.send_json(body, code)
         if self.path.startswith("/api/whoami"):
             if self._is_local() or self.headers.get("X-Token", "") == TOKEN or self.session_ok():
                 return self.send_json({"ok": True, "local": self._is_local()})
@@ -1101,6 +1140,17 @@ class H(BaseHTTPRequestHandler):
             return
 
     def do_HEAD(self):
+        if self.path.startswith("/api/healthz"):
+            body, code = health_status()
+            if not (self._is_local() or self.headers.get("X-Token", "") == TOKEN or self.session_ok()):
+                body = {"ok": body["ok"], "ts": body["ts"]}
+            payload = json.dumps(body).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store, must-revalidate")
+            self.end_headers()
+            return
         f = self.resolve()
         if not f:
             return self.send_error(404)
