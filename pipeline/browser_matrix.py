@@ -26,11 +26,31 @@ from pathlib import Path
 from browser_gate import DEFAULT_BASE_URL, QA_DIR, launch_chrome, new_page
 
 
+VAULT = Path("/Volumes/SSD/drone-vault")
 VIEWPORTS = {
     "mobile": {"width": 390, "height": 844, "deviceScaleFactor": 3, "mobile": True},
     "ipad": {"width": 820, "height": 1180, "deviceScaleFactor": 2, "mobile": True},
     "desktop": {"width": 1440, "height": 960, "deviceScaleFactor": 1, "mobile": False},
 }
+
+
+def expected_splat_path(cid: str) -> str:
+    """The UI default must be the highest-quality visual splat, not just mutable current."""
+    sys = json.loads((VAULT / "manifest" / "system.json").read_text())
+    rows = [
+        s for s in (sys.get("splats") or [])
+        if s.get("clip_id") == cid and str(s.get("format") or "").lower() in {"ksplat", "splat", "ply"}
+    ]
+    if not rows:
+        raise RuntimeError(f"no splats in manifest for {cid}")
+    rank = {"ksplat": 0, "splat": 1, "ply": 2}
+    rows.sort(key=lambda s: (
+        -(s.get("iters") or 0),
+        -(1 if s.get("current") else 0),
+        rank.get(str(s.get("format") or "").lower(), 9),
+        str(s.get("archived_at") or ""),
+    ))
+    return rows[0].get("path") or rows[0].get("name")
 
 
 def js(s: str) -> str:
@@ -122,7 +142,7 @@ def screenshot(cdp, out: Path):
         raise RuntimeError(f"screenshot sospechosamente chico: {out.stat().st_size} bytes · {out}")
 
 
-def run_share(cdp, base_url: str, cid: str, viewport: str) -> dict:
+def run_share(cdp, base_url: str, cid: str, viewport: str, expected_path: str) -> dict:
     url = f"{base_url.rstrip('/')}/share.html?m={urllib.parse.quote(cid)}"
     cdp.send("Page.navigate", {"url": url})
     wait_for(cdp, "document.body && /VISOR 3D/i.test(document.body.innerText)", timeout=45, label="share shell")
@@ -142,13 +162,19 @@ def run_share(cdp, base_url: str, cid: str, viewport: str) -> dict:
     macro = verify_macro_zoom(cdp, "#sh-view")
     selected = cdp.eval(js("""
       const sel = document.querySelector('.share-splat-select');
-      return sel ? { count: sel.options.length, text: sel.selectedOptions[0]?.textContent || '' } : { count: 1, text: '' };
+      return sel ? {
+        count: sel.options.length,
+        value: sel.value,
+        text: sel.selectedOptions[0]?.textContent || ''
+      } : { count: 1, value: null, text: '' };
     """))
+    if selected.get("value") and selected["value"] != expected_path:
+        raise RuntimeError(f"share default splat incorrecto: {selected['value']} != {expected_path}")
     screenshot(cdp, QA_DIR / f"{cid}-share-{viewport}.png")
     return {"surface": "share", "viewport": viewport, "state": state, "macro": macro, "selected": selected}
 
 
-def run_workspace(cdp, base_url: str, cid: str, viewport: str) -> dict:
+def run_workspace(cdp, base_url: str, cid: str, viewport: str, expected_path: str) -> dict:
     url = f"{base_url.rstrip('/')}/tresd.html"
     cdp.send("Page.navigate", {"url": url})
     wait_for(cdp, "document.body && /Proyectos 3D/i.test(document.body.innerText)", timeout=45, label="3D workspace")
@@ -161,9 +187,12 @@ def run_workspace(cdp, base_url: str, cid: str, viewport: str) -> dict:
       return {
         selectVisible: !!(sel && getComputedStyle(sel).display !== 'none'),
         count: sel ? sel.options.length : 0,
+        value: sel ? sel.value : null,
         selected: sel && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : '',
       };
     """))
+    if meta.get("value") and meta["value"] != expected_path:
+        raise RuntimeError(f"workspace default splat incorrecto: {meta['value']} != {expected_path}")
     clicked = cdp.eval(js("""
       const b = document.querySelector('#load-splat');
       if (!b || getComputedStyle(b).display === 'none') return false;
@@ -184,6 +213,7 @@ def run_workspace(cdp, base_url: str, cid: str, viewport: str) -> dict:
 
 def run_matrix(cid: str, base_url: str, viewports: list[str]) -> list[dict]:
     results = []
+    expected_path = expected_splat_path(cid)
     for vp in viewports:
         for surface, runner in (("share", run_share), ("workspace", run_workspace)):
             proc, profile, port = launch_chrome()
@@ -191,7 +221,7 @@ def run_matrix(cid: str, base_url: str, viewports: list[str]) -> list[dict]:
             try:
                 cdp = new_page(port)
                 set_viewport(cdp, vp)
-                results.append(runner(cdp, base_url, cid, vp))
+                results.append(runner(cdp, base_url, cid, vp, expected_path))
                 if cdp.errors:
                     raise RuntimeError(f"errores de consola en {surface}/{vp}: {' | '.join(cdp.errors[:4])}")
             finally:

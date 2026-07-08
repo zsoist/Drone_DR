@@ -480,6 +480,10 @@ check("browser matrix: cubre share y workspace",
       "def run_share" in _bm_src and "def run_workspace" in _bm_src)
 check("browser matrix: falla si no hay macro zoom real u overflow limpio",
       "verify_macro_zoom" in _bm_src and "overflow horizontal" in _bm_src)
+check("browser matrix: exige default de mayor calidad en share y workspace",
+      "expected_splat_path" in _bm_src
+      and "share default splat incorrecto" in _bm_src
+      and "workspace default splat incorrecto" in _bm_src)
 _audit_splats_src = Path("pipeline/audit_splats.py").read_text()
 check("splat audit: cubre assets, metadata y current duplicado",
       "missing asset" in _audit_splats_src
