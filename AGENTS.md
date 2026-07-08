@@ -68,6 +68,7 @@ pipeline/safe_restart.sh server     # alias for web; picks up backend changes
 pipeline/safe_restart.sh tunnel     # Cloudflare tunnel only
 pipeline/safe_restart.sh worker     # refuses while a 3D/splat job is running
 tail -20 /tmp/aerobrain-watchdog.log
+python3 pipeline/ops_status.py        # one-shot 24/7 ops audit
 ```
 Static web/ + /data are served no-cache, so frontend edits are live immediately.
 

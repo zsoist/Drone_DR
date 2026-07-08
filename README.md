@@ -71,6 +71,7 @@ python3 pipeline/process.py --all     # procesar clips nuevos
 python3 ai/analyze.py --all           # análisis AI de escenas
 python3 pipeline/build_index.py       # refrescar flights.json (la web se actualiza sola)
 python3 ai/reel.py --vertical         # reel para IG/TikTok
+python3 pipeline/ops_status.py        # auditoría 24/7: servicios, health, streaming, recursos
 ```
 
 Servicios launchd: `com.aerobrain.web` (:8790) · `com.aerobrain.worker`

@@ -25,6 +25,7 @@ escucha en `127.0.0.1`.
 ## Health checks
 
 ```bash
+python3 pipeline/ops_status.py
 curl http://127.0.0.1:8790/api/healthz
 curl https://vuelos.metislab.work/api/healthz
 curl -I https://vuelos.metislab.work/tresd.html
@@ -37,6 +38,10 @@ Expected video response: `206 Partial Content`, `Accept-Ranges: bytes`,
 `Content-Range`, and Cloudflare `cf-cache-status` eventually `HIT`.
 The watchdog uses the same idea but cheaper: `Range: bytes=0-0` against the
 latest proxy video, so streaming failures are detected without downloading video.
+
+`pipeline/ops_status.py` is the one-shot audit: launchd state, local/public
+health, video Range, active/stale jobs, idle resource use, log sizes, manifests,
+and tunnel config.
 
 ## Safe restarts
 
