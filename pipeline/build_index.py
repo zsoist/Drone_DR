@@ -75,6 +75,9 @@ def _splat_stats(base: Path, stem: str) -> dict:
                 out["preset_label"] = m["preset_label"]
             if isinstance(m.get("backend"), str):
                 out["backend"] = m["backend"]
+            dur = m.get("duration_s")
+            if isinstance(dur, (int, float)) and math.isfinite(dur):
+                out["duration_s"] = round(float(dur), 1)
         except (ValueError, OSError):
             pass
     if out.get("iters") in SPLAT_PRESET_BY_ITERS:

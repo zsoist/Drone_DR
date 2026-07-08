@@ -427,6 +427,11 @@ check("splat presets: preset explícito inválido no cae silenciosamente a mediu
       _bad_preset_rejected)
 check("splat presets: custom auditado conserva iters acotados",
       resolve_splat_spec({"preset": "custom", "iters": 5000})["key"] == "custom")
+_cin_splat = resolve_splat_spec({"preset": "cinematic"})
+check("splat presets: cinematic limita densificación para MPS móvil",
+      "--densify-grad-thresh" in _cin_splat["train_args"]
+      and "--refine-every" in _cin_splat["train_args"]
+      and _cin_splat["iters"] == 7000)
 _ultra_splat = resolve_splat_spec({"preset": "ultra"})
 check("splat presets: ultra limita densificación para M4",
       "--densify-grad-thresh" in _ultra_splat["train_args"]
@@ -519,7 +524,7 @@ try:
     (_bi_tmp / "splats" / "history" / "A-20260707-010203.splat").write_bytes(b"4" * 96)
     (_bi_tmp / "splats" / "history" / "A-20260707-010203.ksplat").write_bytes(b"5")
     (_bi_tmp / "splats" / "history" / "A-20260707-010203.meta.json").write_text(
-        json.dumps({"target_iters": 7000, "final_loss": 0.05, "cameras": 42}))
+        json.dumps({"target_iters": 7000, "final_loss": 0.05, "cameras": 42, "duration_s": 3600.4}))
     import threading
     _atomic_target = _bi_tmp / "manifest" / "atomic.json"
     _atomic_errors = []
@@ -545,6 +550,8 @@ try:
           == [("A", "ksplat", True), ("A", "ksplat", False), ("B", "ply", True)])
     check("system: stats de historial salen del sidecar versionado",
           _sys["splats"][1].get("iters") == 7000 and _sys["splats"][1].get("cameras") == 42)
+    check("system: duración de entrenamiento sale del sidecar versionado",
+          _sys["splats"][1].get("duration_s") == 3600.4)
     check("system: preset se infiere de sidecars legacy sin preset explícito",
           _sys["splats"][1].get("preset") == "cinematic"
           and _sys["splats"][1].get("preset_label") == "Cinematic")
@@ -569,6 +576,11 @@ check("viewer: splat macro mode permite inspección cercana real",
       and "radius * 0.012" in _web_splatview
       and "dolly(0.08)" in _web_splatview
       and "Modo macro" in _web_splatview)
+check("viewer: etiquetas de splat muestran runtime y loss",
+      "fmtRun(s.duration_s)" in _web_tresd
+      and "fmtRun(s.duration_s)" in _web_share
+      and "loss ${s.loss}" in _web_tresd
+      and "loss ${s.loss}" in _web_share)
 
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)

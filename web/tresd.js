@@ -270,11 +270,17 @@
   let sys = {}, models = [], cur = null;
   const selectedSplatByClip = JSON.parse(localStorage.getItem('ab_splat_versions') || '{}');
   const saveSplatChoice = () => localStorage.setItem('ab_splat_versions', JSON.stringify(selectedSplatByClip));
+  const fmtRun = sec => !sec ? ''
+    : sec < 180 ? `${Math.round(sec)}s`
+      : sec < 7200 ? `${Math.round(sec / 60)}min`
+        : `${(sec / 3600).toFixed(1)}h`;
   const splatVersionLabel = s => [
     s.current ? 'Actual' : (s.archived_at || 'Historial'),
     s.preset_label || (s.preset ? s.preset[0].toUpperCase() + s.preset.slice(1) : ''),
     s.iters ? `${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters} iters` : '',
     s.backend || '',
+    fmtRun(s.duration_s),
+    s.loss != null ? `loss ${s.loss}` : '',
     `${(s.bytes / 1e6).toFixed(1)} MB`,
     (s.format || s.name.split('.').pop() || 'splat').toUpperCase(),
   ].filter(Boolean).join(' · ');
@@ -631,7 +637,7 @@
       return `<option value="${esc(splatKey(s))}"${spMeta && splatKey(s) === splatKey(spMeta) ? ' selected' : ''}>${esc(label)}</option>`;
     }).join('');
     document.getElementById('sp-status').textContent = spMeta
-      ? `${spList.length} versión${spList.length === 1 ? '' : 'es'} · ${(spMeta.bytes / 1e6).toFixed(1)} MB · ${spStatusFmt}`
+      ? `${spList.length} ${spList.length === 1 ? 'versión' : 'versiones'} · ${(spMeta.bytes / 1e6).toFixed(1)} MB · ${spStatusFmt}`
       : 'sin entrenar';
     document.getElementById('load-splat').style.display = spMeta ? '' : 'none';
     const sbox = document.getElementById('splat-box');
@@ -1196,6 +1202,8 @@
       (s.preset_label || s.preset) ? `<span title="Preset">${icon('spark')}${esc(s.preset_label || s.preset)}</span>` : '',
       s.backend ? `<span title="Backend de entrenamiento">${icon('cpu')}${esc(s.backend)}</span>` : '',
       s.iters ? `<span title="Iteraciones de entrenamiento">${icon('loop')}${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters}</span>` : '',
+      s.duration_s ? `<span title="Tiempo de entrenamiento">${icon('clock')}${fmtRun(s.duration_s)}</span>` : '',
+      s.loss != null ? `<span title="Loss final">loss ${s.loss}</span>` : '',
       `<span title="Tamaño del archivo">${icon('db')}${(s.bytes / 1e6).toFixed(1)} MB</span>`,
       `<span title="Formato">.${sFmt}</span>`,
     ].filter(Boolean).join('');
@@ -1325,7 +1333,7 @@
     const spMeta = splatAssetFor(cur.clip_id);
     const fmtS = (spMeta?.format || spMeta?.name.split('.').pop() || 'splat').toUpperCase();
     document.getElementById('sp-status').textContent = spMeta
-      ? `${splatAssetsFor(cur.clip_id).length} versiones · ${(spMeta.bytes / 1e6).toFixed(1)} MB · ${fmtS}`
+      ? `${splatAssetsFor(cur.clip_id).length} ${splatAssetsFor(cur.clip_id).length === 1 ? 'versión' : 'versiones'} · ${(spMeta.bytes / 1e6).toFixed(1)} MB · ${fmtS}`
       : 'sin entrenar';
     box.innerHTML = `<p class="footer-note" style="margin:0">Versión seleccionada — pulsa Cargar para verla.</p>`;
   });

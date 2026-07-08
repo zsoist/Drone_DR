@@ -31,7 +31,17 @@ SPLAT_PRESETS = {
         "eta_cpu": "~2-3 h",
         "description": "Shareable photoreal quality with strong convergence.",
         "timeout": 6 * 3600,
-        "train_args": [],
+        # Aerial scenes can balloon close to 1M gaussians by ~50%, making 7k
+        # MPS runs take ~1h and producing 20MB+ mobile assets. Keep the 7k
+        # refinement budget, but make densification less aggressive than the
+        # OpenSplat default while still richer than Ultra's bounded overnight
+        # profile.
+        "train_args": [
+            "--save-every", "1000",
+            "--refine-every", "150",
+            "--densify-grad-thresh", "0.00035",
+            "--stop-screen-size-at", "3000",
+        ],
     },
     "ultra": {
         "iters": 15000,

@@ -33,11 +33,17 @@ const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
 const wantedSplat = new URLSearchParams(location.search).get('s') || '';
 const splatKey = s => s.path || s.name;
 const splatUrl = s => 'data/splats/' + splatKey(s).split('/').map(encodeURIComponent).join('/');
+const fmtRun = sec => !sec ? ''
+  : sec < 180 ? `${Math.round(sec)}s`
+    : sec < 7200 ? `${Math.round(sec / 60)}min`
+      : `${(sec / 3600).toFixed(1)}h`;
 const splatVersionLabel = s => [
   s.current ? 'Actual' : (s.archived_at || 'Historial'),
   s.preset_label || (s.preset ? s.preset[0].toUpperCase() + s.preset.slice(1) : ''),
   s.iters ? `${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters} iters` : '',
   s.backend || '',
+  fmtRun(s.duration_s),
+  s.loss != null ? `loss ${s.loss}` : '',
   `${(s.bytes / 1e6).toFixed(1)} MB`,
 ].filter(Boolean).join(' · ');
 function splatAssetsFor(clipId, system) {
