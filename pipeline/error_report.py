@@ -98,6 +98,30 @@ def digest(items: list[dict]) -> list[dict]:
     return out
 
 
+def jobs_summary(days: int) -> dict:
+    """Salud de la operación (no solo errores): conteos, duraciones y tasa de éxito por kind.
+    Le da a DeepSeek contexto para juzgar EFICIENCIA (¿los ultra tardan lo esperado?)."""
+    cutoff = time.time() - days * 86400
+    out = {"by_kind": {}, "recent_done": []}
+    try:
+        c = sqlite3.connect(JOBS_DB, timeout=3)
+        c.row_factory = sqlite3.Row
+        for r in c.execute("SELECT kind, status, COUNT(*) n, AVG(finished-started) avg_s "
+                           "FROM jobs WHERE finished >= ? GROUP BY kind, status", (cutoff,)):
+            k = out["by_kind"].setdefault(r["kind"], {})
+            k[r["status"]] = {"n": r["n"], "avg_min": round((r["avg_s"] or 0) / 60)}
+        for r in c.execute("SELECT kind, label, detail, finished-started dur FROM jobs "
+                           "WHERE status='done' AND kind IN ('3d','splat') AND finished >= ? "
+                           "ORDER BY finished DESC LIMIT 8", (cutoff,)):
+            out["recent_done"].append({"kind": r["kind"], "clip": r["label"][-12:],
+                                       "dur_min": round(r["dur"] / 60),
+                                       "detail": (r["detail"] or "")[:80]})
+        c.close()
+    except sqlite3.Error:
+        pass
+    return out
+
+
 def deepseek(prompt: str) -> str:
     key = ""
     for line in KEYS_ENV.read_text().splitlines():
@@ -139,19 +163,27 @@ def main():
         lines.append("Sin errores en la ventana. 🎉")
 
     ai = None
-    if d and not dry:
+    jsum = jobs_summary(days)
+    if (d or jsum["by_kind"]) and not dry:
         prompt = ("Eres el analista de confiabilidad de AeroBrain, una plataforma de mapeo con "
-                  "drones en un Mac Mini M4 (pipeline ODM + gaussian splatting + web). Analiza "
-                  "este digest de errores deduplicados (fuente, firma, conteo, período, ejemplo). "
-                  "Devuelve en español y en markdown: 1) clusters por causa raíz sospechada, "
-                  "2) severidad de cada cluster (crítico/molesto/ruido), 3) qué investigar primero "
-                  "y qué evidencia falta, 4) si algo parece regresión reciente. Sé concreto y "
-                  "escéptico; si el dato no alcanza para concluir, dilo. NO propongas código.\n\n"
-                  + json.dumps(d[:40], ensure_ascii=False, indent=1))
+                  "drones en un Mac Mini M4 (pipeline ODM + gaussian splatting + web). Tienes: "
+                  "(A) digest de errores deduplicados y (B) resumen de salud de jobs (conteos, "
+                  "duración media, últimos completados — presets: rápido~30min, alta~2-4h, "
+                  "splat medium~10min, cinematic~1h, ultra~2-4h en Metal). "
+                  "Devuelve en español, markdown: 1) clusters de errores por causa raíz, "
+                  "2) severidad (crítico/molesto/ruido), 3) EFICIENCIA: ¿alguna duración anómala "
+                  "vs lo esperado? ¿tasa de error por kind preocupante?, 4) qué investigar primero, "
+                  "5) si algo parece regresión reciente. Sé concreto y escéptico; si el dato no "
+                  "alcanza, dilo. NO propongas código.\n\n(A) ERRORES:\n"
+                  + json.dumps(d[:40], ensure_ascii=False, indent=1)
+                  + "\n\n(B) SALUD DE JOBS:\n" + json.dumps(jsum, ensure_ascii=False, indent=1))
         try:
             ai = deepseek(prompt[:14000])
         except Exception as e:
             ai = f"_(análisis AI no disponible: {e})_"
+    if jsum["by_kind"]:
+        lines += ["", "## Salud de jobs (ventana)", "",
+                  "```json", json.dumps(jsum["by_kind"], ensure_ascii=False, indent=1), "```"]
     if ai:
         lines += ["", "## Análisis DeepSeek", "", ai]
     lines += ["", "---", "Estado: PENDIENTE DE REVISIÓN (Codex/Claude) · "
