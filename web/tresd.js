@@ -302,6 +302,21 @@
     if (!b || !jobsBox) return;
     document.querySelectorAll('[data-job-filter]').forEach(x => x.classList.toggle('on', x === b));
     jobsBox.dataset.filter = b.dataset.jobFilter;
+    // el filtro oculta con CSS: con 0 coincidencias el panel quedaba como área EN BLANCO
+    requestAnimationFrame(() => {
+      const visible = [...jobsBox.querySelectorAll('.job-card')].some(c => c.offsetParent !== null);
+      let note = jobsBox.parentElement.querySelector('.jf-empty');
+      if (!visible && jobsBox.children.length) {
+        if (!note) {
+          note = document.createElement('p');
+          note.className = 'footer-note jf-empty';
+          note.style.margin = '4px 0 0';
+          jobsBox.after(note);
+        }
+        note.textContent = { running: 'Sin trabajos activos ahora.', done: 'Sin trabajos listos aún.',
+          error: 'Sin errores — todo en orden. 🎉' }[b.dataset.jobFilter] || 'Sin trabajos en este filtro.';
+      } else note?.remove();
+    });
   });
 
   // ---------- estado ----------
@@ -685,6 +700,23 @@
       ? `${spList.length} ${spList.length === 1 ? 'versión' : 'versiones'} · ${(spMeta.bytes / 1e6).toFixed(1)} MB · ${spStatusFmt}`
       : 'sin entrenar';
     document.getElementById('load-splat').style.display = spMeta ? '' : 'none';
+    // estado PARCIAL visible: con un splat de ESTE clip en cola/entrenando, decía 'sin entrenar'
+    fetch('/api/jobs').then(r => r.ok ? r.json() : null).then(d => {
+      if (!d || !cur || cur.clip_id !== cid) return;   // cambió el proyecto mientras respondía
+      const act = (d.jobs || []).find(x => x.kind === 'splat' && x.label === cid
+        && ['running', 'queued'].includes(x.status));
+      if (act) document.getElementById('sp-status').textContent =
+        act.status === 'queued' ? 'splat en cola…' : `entrenando… ${Math.round((act.progress || 0) * 100)}%`;
+    }).catch(() => {});
+    // capas/herramientas que REQUIEREN DSM: deshabilitadas sin él (antes fallaban en silencio)
+    [['data-layer', ['dsm', 'hills', 'contours']], ['data-tool', ['volume', 'profile']]].forEach(([attr, keys]) =>
+      keys.forEach(k => {
+        const el = document.querySelector(`[${attr}="${k}"]`);
+        if (el) {
+          el.disabled = !cur.has_dsm;
+          el.title = cur.has_dsm ? '' : 'Requiere DSM — este proyecto se procesó sin él';
+        }
+      }));
     const sbox = document.getElementById('splat-box');
     // dispose() del visor de splat es ASYNC y el vendored lanza NotFoundError (removeChild
     // sobre un rootElement anidado) → hay que silenciar el rechazo del promise, no basta try/catch

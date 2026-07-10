@@ -3005,3 +3005,7 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   transition: opacity .3s var(--ease), transform .3s var(--ease);
 }
 .ed-toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* chips/botones deshabilitados: antes no había estado visual (parecían clickeables) */
+.chip:disabled, .btn:disabled { opacity: .38; cursor: not-allowed; }
+.chip:disabled:hover, .btn:disabled:hover { background: none; border-color: var(--line); }
