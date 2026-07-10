@@ -423,11 +423,15 @@ function vaultLegend(st) {
     `<span><i style="background:${c}"></i>${lb} ${fmt.gb(st[k])}</span>`).join('');
 }
 
-// trabajos activos: solo si hay sesión — falla en silencio
+// trabajos activos: solo si hay sesión — falla en silencio.
+// fetch crudo (NO api()): un visitante público recibe 403 y salimos callados sin abrir el
+// modal de login. El gate anterior por hostname===localhost mataba el chip también para el
+// OPERADOR autenticado en vuelos.metislab.work (su cookie da 200 y sí debe verlo).
 async function liveJobs() {
   try {
-    if (!['localhost', '127.0.0.1'].includes(location.hostname)) return;
-    const d = await (await fetch('/api/jobs')).json();
+    const r = await fetch('/api/jobs');
+    if (!r.ok) return;                 // sin sesión (403) u otro error → silencio
+    const d = await r.json();
     const act = (d.jobs || []).filter(j => ['running', 'queued'].includes(j.status));
     if (!act.length) return;
     document.getElementById('deck-jobs').innerHTML =

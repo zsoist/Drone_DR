@@ -30,12 +30,10 @@ Quedan 32 de menor severidad (polish: caret jumps, undo gaps, teardown en SPA, N
   · home.js, `${last ? ... }` block, line 159: `${fmt.dur(last.duration_s)}`
 
 ## shell
-- [medium] api(): concurrent 403 retries race through loginModal's singleton guard and spuriously throw 'sin sesión'
-  · api (shell.js:102-111) → ensureAuth (61-64) → loginModal singleton guard (67)
-- [low] attachScrub: touchend setTimeout resets img.src mid-scrub against changed state (timer never cleared)
-  · attachScrub touchend handler (shell.js:48-51) setTimeout(() => { img.src = orig; ... }, 900)
-- [low] Older-jobs section goes stale: structural key ignores older identities and in-place update skips them
-  · pollJobs() line 204 (ids = list ids + '§' + older.length) and lines 216-224 (in-place loop iterates 
+✅ CERRADO 2026-07-09:
+- [x] api(): concurrent 403 race → single-flight `authInFlight` en ensureAuth
+- [x] attachScrub: el timer de touchend se guarda y cancela (no resetea a mitad de scrub)
+- [x] Older-jobs stale: la clave estructural usa identidades (ids), no solo el conteo
 
 ## sistema
 - [medium] Unhandled promise rejection freezes the entire tab when flights.json fails to load

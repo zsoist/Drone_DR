@@ -228,7 +228,7 @@ function frame(obj, cam, controls, topDown = false) {
   const dist = maxDim * 0.72;
   if (topDown) cam.position.set(dist * 0.12, dist * 0.78, dist * 0.22);
   else cam.position.set(dist * 0.6, dist * 0.55, dist * 0.6);
-  cam.near = Math.max(maxDim / 50000, 0.0001);
+  cam.near = Math.max(maxDim / 20000, 0.00025);   // ratio near/far acotado: /50000 daba z-fighting en malla
   cam.far = Math.max(dist * 10, 50);
   cam.updateProjectionMatrix();
   cam.lookAt(0, 0, 0);

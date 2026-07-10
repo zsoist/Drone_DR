@@ -1,4 +1,4 @@
-    const main = renderShell('system.html');
+    const main = renderShell('guia.html');   // activo = ninguna tab del nav (antes resaltaba Sistema en falso)
     main.innerHTML = `
       <div class="page-head"><h1>Guía de operación</h1><span class="count">cómo hacer todo</span></div>
       <div class="fl-layout">
@@ -50,6 +50,18 @@
               <tr><td>Por viaje</td><td>Viajes → agrupado por día</td></tr>
               <tr><td>Atajo</td><td><span class="mono">/</span> enfoca la búsqueda</td></tr>
             </table></div>
+          </div>
+          <div class="panel" style="margin-top:16px"><div class="ph">Flujo 6 — 3D y Gaussian Splats</div>
+            <div class="pb"><table class="kv">
+              <tr><td>1. Procesa</td><td>3D → Procesamiento → elige vuelo y calidad (estándar/alta/extra/ultra)</td></tr>
+              <tr><td>2. Explora</td><td>Proyectos → Abrir: mapa, nube, malla y descargas</td></tr>
+              <tr><td>3. Entrena splat</td><td>"Generar splat…" (Rápido → Ultra; se puede dejar de noche)</td></tr>
+              <tr><td>4. Ver</td><td>doble-click/doble-toque = enfocar un edificio · 🎯 = modo macro · +/− = zoom fino</td></tr>
+              <tr><td>5. Pule</td><td>Editar abre SuperSplat (quitar floaters, recortar); cada re-subida guarda versión</td></tr>
+              <tr><td>6. Comparte</td><td>botón Compartir de la tarjeta = link público del visor</td></tr>
+            </table>
+            <p class="footer-note">Las tarjetas muestran calidad (loss), gaussianas, cámaras e iteraciones.
+            Borrar un splat va a la papelera y no toca el modelo 3D ni el video.</p></div>
           </div>
           <div class="panel" style="margin-top:16px"><div class="ph">Atajos del player</div>
             <div class="pb"><table class="kv">

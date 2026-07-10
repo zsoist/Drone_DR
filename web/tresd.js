@@ -514,7 +514,7 @@
   function setProject(cid, opts = {}) {
     cur = models.find(m => m.clip_id === cid);
     if (!cur) return;
-    showTdMod('projects');
+    if (!opts.keepTab) showTdMod('projects');   // keepTab: refrescar sin teletransportar de tab
     clearTimeout(autoloadTimer);                  // cancela auto-carga del proyecto anterior (#12)
     // invalida cargas mesh/cloud en vuelo del proyecto anterior (#1 currency guard)
     ['mesh-box', 'cloud-box'].forEach(id => {
@@ -651,10 +651,15 @@
       ? 'Splat entrenado y listo — elige versión y pulsa Cargar para el render foto-real.'
       : 'Este proyecto aún no tiene splat — entrénalo con "Generar splat…" arriba.'}</p>`;
     const cloudMB = (cur.cloud_bytes || 0) / 1e6;
-    document.getElementById('mesh-q').textContent =
-      { rapido: 'calidad rápida', alta: 'calidad alta' }[cur.preset] || 'calidad estándar';
     resetViewer('cloud-box', `Nube de puntos${cloudMB ? ` · ${cloudMB.toFixed(0)} MB` : ''}`, 'load-cloud-main');
-    resetViewer('mesh-box', 'Modelo sólido con textura foto-real.', 'load-mesh');
+    // solo si la malla es usable: con mesh_ok=false el bloque de arriba (línea ~540) ya puso
+    // "no concluyente" ámbar + aviso en mesh-box y OCULTÓ el botón — pisarlo aquí dejaba un
+    // botón Cargar visible que no hacía nada y el aviso jamás se veía
+    if (meshOk) {
+      document.getElementById('mesh-q').textContent =
+        { rapido: 'calidad rápida', alta: 'calidad alta' }[cur.preset] || 'calidad estándar';
+      resetViewer('mesh-box', 'Modelo sólido con textura foto-real.', 'load-mesh');
+    }
     // auto-carga la estrella — salvo nubes pesadas en móvil (datos + memoria)
     if (!(matchMedia('(max-width: 700px)').matches && cloudMB > 25))
       autoloadTimer = setTimeout(() => document.getElementById('load-cloud-main')?.click(), 300);
@@ -885,7 +890,7 @@
     const fov = cam.fov * Math.PI / 180;
     const dist = (maxDim / 2) / Math.tan(fov / 2) / 0.8;
     cam.position.set(dist * 0.12, dist * 0.78, dist * 0.22);  // casi cenital, pero más cerca
-    cam.near = Math.max(maxDim / 50000, 0.0001); cam.far = dist * 8; cam.updateProjectionMatrix();
+    cam.near = Math.max(maxDim / 20000, 0.00025); cam.far = dist * 8; cam.updateProjectionMatrix();   // ratio near/far acotado: /50000 daba z-fighting en malla (el splat no usa depth, la malla sí)
     controls.target.set(0, 0, 0);
     controls.maxDistance = dist * 4;
     // una malla 2.5D no tiene "abajo": orbitar bajo el horizonte muestra el underside
@@ -1231,7 +1236,9 @@
     const modelIds = new Set(models.map(m => m.clip_id));
     const modelChoices = models.map((m, i) => ({ kind: 'model', m, f: flights.find(x => x.clip_id === m.clip_id), i }));
     const videoChoices = flights
-      .filter(f => !modelIds.has(f.clip_id))
+      // mismo filtro que `candidates` del 3D: sin SRT/bbox el geotag de odm_prep muere a
+      // los minutos — no ofrecer videos que garantizan un job fallido
+      .filter(f => !modelIds.has(f.clip_id) && f.has_srt && f.stats?.bbox && !f.archived)
       .slice(-18)
       .reverse()
       .map((f, i) => ({ kind: 'video', f, i }));
@@ -1318,8 +1325,13 @@
       const box = document.getElementById('splat-box');
       if (box && box._pcid === scid && box._splatDispose) { try { box._splatDispose(); } catch {} box._splatDispose = null; box._viewer = null; box._pcid = null; }
       // si el proyecto borrado está abierto, refresca su panel de splat (oculta "Cargar")
-      if (cur && cur.clip_id === scid) setProject(scid);
-      delBtn.closest('.splat-item')?.remove();
+      // sin sacarte del tab donde estabas (keepTab)
+      if (cur && cur.clip_id === scid) setProject(scid, { keepTab: true });
+      // el server borra TODAS las versiones del clip: fuera TODAS sus tarjetas, no solo la
+      // clickeada (las hermanas quedaban con Descargar/Editar apuntando a la papelera → 404)
+      document.querySelectorAll('#splats .splat-item').forEach(el => {
+        if (el.dataset.cid === scid) el.remove();
+      });
     }
   });
 
@@ -1330,6 +1342,8 @@
     const box = document.getElementById('splat-box');
     if (box._splatDispose) { try { box._splatDispose(); } catch {} box._splatDispose = null; box._viewer = null; }
     box._loadToken = (box._loadToken || 0) + 1;
+    box._loading = false;   // sin esto, cambiar de versión a media descarga deja "Cargar" muerto
+                            // (el mount invalidado retorna sin resetear el guard de re-entrada)
     const spMeta = splatAssetFor(cur.clip_id);
     const fmtS = (spMeta?.format || spMeta?.name.split('.').pop() || 'splat').toUpperCase();
     document.getElementById('sp-status').textContent = spMeta

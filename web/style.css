@@ -518,6 +518,11 @@ input.ctl:focus { border-color: var(--accent); }
 #jobs3d[data-filter="running"] .job-card:not(:has(.jc-status.running)):not(:has(.jc-status.queued)) { display: none; }
 #jobs3d[data-filter="done"] .job-card:not(:has(.jc-status.done)) { display: none; }
 #jobs3d[data-filter="error"] .job-card:not(:has(.jc-status.error)):not(:has(.jc-status.cancel_failed)):not(:has(.jc-status.cancelled)) { display: none; }
+/* el <details> "N trabajos anteriores" también se oculta si NINGUNA de sus tarjetas pasa el
+   filtro (quedaba un summary huérfano que al abrirlo mostraba vacío) */
+#jobs3d[data-filter="running"] details.jobs-older:not(:has(.jc-status.running, .jc-status.queued)) { display: none; }
+#jobs3d[data-filter="done"] details.jobs-older:not(:has(.jc-status.done)) { display: none; }
+#jobs3d[data-filter="error"] details.jobs-older:not(:has(.jc-status.error, .jc-status.cancel_failed, .jc-status.cancelled)) { display: none; }
 @media (max-width: 760px) {
   .td-browserbar { grid-template-columns: 1fr; gap: 8px; }
   .td-search, .td-browserbar .ctl, .td-viewseg { width: 100%; min-width: 0; }

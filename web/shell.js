@@ -34,8 +34,8 @@ function attachScrub(root) {
     });
     cardEl.addEventListener('pointerleave', () => { img.src = orig; line.style.opacity = 0; });
     // iOS: deslizar horizontal sobre el thumb scrubbea; vertical sigue scrolleando
-    let t0 = null;
-    cardEl.addEventListener('touchstart', e => { t0 = e.touches[0]; }, { passive: true });
+    let t0 = null, scrubT = 0;
+    cardEl.addEventListener('touchstart', e => { t0 = e.touches[0]; clearTimeout(scrubT); }, { passive: true });   // cancela un reset pendiente del gesto anterior
     cardEl.addEventListener('touchmove', e => {
       if (!t0) return;
       const t = e.touches[0];
@@ -47,7 +47,8 @@ function attachScrub(root) {
     }, { passive: false });
     cardEl.addEventListener('touchend', () => {
       t0 = null;
-      setTimeout(() => { img.src = orig; line.style.opacity = 0; }, 900);
+      clearTimeout(scrubT);   // reemplaza (no acumula) el reset; se cancela si empieza otro scrub
+      scrubT = setTimeout(() => { img.src = orig; line.style.opacity = 0; }, 900);
     });
   });
 }
@@ -57,10 +58,19 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-// sesión de operador: cookie HttpOnly (credenciales NUNCA se guardan en el navegador)
+// sesión de operador: cookie HttpOnly (credenciales NUNCA se guardan en el navegador).
+// Varios api() pueden recibir 403 a la vez (al cargar la página se disparan varios POST):
+// deben COMPARTIR un único login en vuelo. Hoy el 2º+ ve el overlay #login-ov ya presente,
+// loginModal() resuelve false por su guard singleton, y api() lanza 'sin sesión' en falso.
+let authInFlight = null;   // promesa del login en curso, compartida entre llamadas concurrentes
 async function ensureAuth() {
   if ((await fetch('/api/whoami')).ok) return true;
-  return loginModal();
+  // single-flight: el primer 403 abre el modal; los demás esperan ESA misma promesa en vez de
+  // ver el overlay ya presente y resolver false ('sin sesión' en falso para sus POST)
+  if (!authInFlight) {
+    authInFlight = loginModal().finally(() => { authInFlight = null; });
+  }
+  return authInFlight;
 }
 function loginModal() {
   return new Promise(resolve => {
@@ -204,7 +214,7 @@ async function pollJobs(el, every = 2500) {
       const older = jobs.filter(j => !['running', 'queued'].includes(j.status)).slice(3);
       const list = [...active, ...doneRecent];
       const hash = j => [j.status, j.progress, j.mins, j.detail, j.stage, (j.log || '').slice(-80)].join('|');
-      const ids = list.map(j => j.id).join(',') + '§' + older.length;
+      const ids = list.map(j => j.id).join(',') + '§' + older.map(j => j.id).join(',');   // identidades, no sólo el conteo
       if (el.dataset.ids !== ids) {
         // cambio estructural (job nuevo / cambio de zona): rebuild completo
         const wasOpen = el.querySelector('details.jobs-older')?.open;
@@ -213,10 +223,10 @@ async function pollJobs(el, every = 2500) {
           list.map(j => jobCard(j, flightsIdx)).join('') +
           (older.length ? `<details class="jobs-older"${wasOpen ? ' open' : ''}><summary>${older.length} trabajos anteriores</summary>
             ${older.map(j => jobCard(j, flightsIdx)).join('')}</details>` : '');
-        list.forEach(j => { el.querySelector(`[data-jid="${CSS.escape(j.id)}"]`)?.setAttribute('data-h', hash(j)); });
+        [...list, ...older].forEach(j => { el.querySelector(`[data-jid="${CSS.escape(j.id)}"]`)?.setAttribute('data-h', hash(j)); });
       } else {
-        // mismos jobs: actualiza EN SITIO solo las tarjetas cuyo contenido cambió
-        list.forEach(j => {
+        // mismos jobs: actualiza EN SITIO solo las tarjetas cuyo contenido cambió (incluye las 'older')
+        [...list, ...older].forEach(j => {
           const node = el.querySelector(`[data-jid="${CSS.escape(j.id)}"]`);
           if (!node || node.dataset.h === hash(j)) return;
           const tmp = document.createElement('div');
@@ -282,6 +292,13 @@ function renderShell(active) {
       </aside>
       <main class="main" id="main"></main>
     </div>`);
+  // rail móvil (≤820px, scroll-x): centra el tab ACTIVO al cargar — sin esto, en las tabs del
+  // final (3D/Splat Lab/Sistema) la barra arranca mostrando Inicio y no ves dónde estás
+  const bar = document.querySelector('.sidebar');
+  const act = bar?.querySelector('.nav-item.active');
+  if (bar && act && bar.scrollWidth > bar.clientWidth + 1) {
+    bar.scrollLeft = act.offsetLeft - (bar.clientWidth - act.offsetWidth) / 2;
+  }
   return document.getElementById('main');
 }
 

@@ -263,6 +263,9 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   window.addEventListener('popstate', onPop);
   function onKey(e) {
     if (!holder.isConnected) return;
+    // escribir "r"/"+"/"-" en un input (renombrar proyecto, búsqueda) NO debe mover el visor
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
     if (e.key === 'r' || e.key === 'R') hud.querySelector('[data-sv="home"]').click();
     else if (e.key === 'f' || e.key === 'F') toggleFull();
     else if (e.key === '+' || e.key === '=') dolly(0.25);
