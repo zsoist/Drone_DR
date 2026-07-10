@@ -137,6 +137,35 @@ def range_probe(url: str, timeout: int) -> tuple[bool, str, int]:
         return False, type(e).__name__, round((time.monotonic() - t0) * 1000)
 
 
+def probe_and_heal(event: str, label: str, probe_fn, why: str,
+                   retry_delay: float = 2, restart_delay: float = 4,
+                   **fields) -> bool:
+    """Retry a failed probe before restarting its service.
+
+    A single network or disk scheduling hiccup must not kill a healthy service.
+    This matters most for the web process because light ingest/edit jobs still
+    run there. A process that launchd reports dead is restarted separately and
+    immediately at the top of ``main``.
+    """
+    ok, detail, ms = probe_fn()
+    if ok:
+        log(event, ok=True, detail=detail, ms=ms, **fields)
+        return True
+
+    time.sleep(retry_delay)
+    ok, detail, ms = probe_fn()
+    if ok:
+        log(event, ok=True, detail=detail, ms=ms, recovered="retry", **fields)
+        return True
+
+    kick(label, f"{why} failed twice: {detail}")
+    time.sleep(restart_delay)
+    ok, detail, ms = probe_fn()
+    log(event, ok=ok, detail=detail, ms=ms,
+        recovered="restart" if ok else "failed", **fields)
+    return ok
+
+
 def main():
     state = load_state()
     now = time.time()
@@ -146,36 +175,17 @@ def main():
         if st != "running":
             kick(label, f"launchd state {st}")
 
-    ok, detail, ms = probe(LOCAL_URL, 4)
-    if not ok:
-        kick(WEB_LABEL, f"local probe failed: {detail}")
-        time.sleep(2)
-        ok2, detail2, ms2 = probe(LOCAL_URL, 4)
-        log("local_probe", ok=ok2, detail=detail2, ms=ms2)
-    else:
-        log("local_probe", ok=True, detail=detail, ms=ms)
+    probe_and_heal("local_probe", WEB_LABEL, lambda: probe(LOCAL_URL, 4),
+                   "local probe")
 
     if now - float(state.get("last_public_probe", 0)) >= PUBLIC_INTERVAL_S:
         state["last_public_probe"] = now
-        ok, detail, ms = probe(PUBLIC_URL, 12)
-        if not ok:
-            # The local origin was checked first. A public-only failure points at
-            # cloudflared, DNS, or Cloudflare edge state, so restart only tunnel.
-            kick(TUNNEL_LABEL, f"public probe failed: {detail}")
-            time.sleep(4)
-            ok2, detail2, ms2 = probe(PUBLIC_URL, 12)
-            log("public_probe", ok=ok2, detail=detail2, ms=ms2)
-        else:
-            log("public_probe", ok=True, detail=detail, ms=ms)
-
-        ok, detail, ms = probe(PUBLIC_WWW_URL, 12)
-        if not ok:
-            kick(TUNNEL_LABEL, f"public www probe failed: {detail}")
-            time.sleep(4)
-            ok2, detail2, ms2 = probe(PUBLIC_WWW_URL, 12)
-            log("public_www_probe", ok=ok2, detail=detail2, ms=ms2)
-        else:
-            log("public_www_probe", ok=True, detail=detail, ms=ms)
+        # The local origin was checked first. A repeated public-only failure
+        # points at cloudflared, DNS, or Cloudflare edge state.
+        probe_and_heal("public_probe", TUNNEL_LABEL,
+                       lambda: probe(PUBLIC_URL, 12), "public probe")
+        probe_and_heal("public_www_probe", TUNNEL_LABEL,
+                       lambda: probe(PUBLIC_WWW_URL, 12), "public www probe")
 
     if now - float(state.get("last_stream_probe", 0)) >= STREAM_INTERVAL_S:
         state["last_stream_probe"] = now
@@ -183,14 +193,10 @@ def main():
         if not video_url:
             log("stream_probe", ok=False, detail="no proxy video found")
         else:
-            ok, detail, ms = range_probe(video_url, 15)
-            if not ok:
-                kick(TUNNEL_LABEL, f"stream range probe failed: {detail}")
-                time.sleep(4)
-                ok2, detail2, ms2 = range_probe(video_url, 15)
-                log("stream_probe", ok=ok2, detail=detail2, ms=ms2, url=video_url.rsplit("/", 1)[-1])
-            else:
-                log("stream_probe", ok=True, detail=detail, ms=ms, url=video_url.rsplit("/", 1)[-1])
+            probe_and_heal("stream_probe", TUNNEL_LABEL,
+                           lambda: range_probe(video_url, 15),
+                           "stream range probe",
+                           url=video_url.rsplit("/", 1)[-1])
 
     save_state(state)
 

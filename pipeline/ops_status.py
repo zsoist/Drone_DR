@@ -5,6 +5,7 @@ Read-only status check for the 24/7 Mac Mini setup. The watchdog heals common
 failures; this script proves current state for humans and agents.
 """
 import argparse
+import datetime
 import json
 import os
 import re
@@ -146,32 +147,58 @@ def jobs_status() -> dict:
         return {"ok": False, "error": type(e).__name__}
 
 
-def resource_status() -> dict:
+def resource_status(active_jobs: int = 0) -> dict:
     try:
         out = subprocess.check_output(["ps", "-axo", "pid,pcpu,pmem,rss,command"], text=True, timeout=5)
     except Exception as e:
         return {"ok": False, "error": type(e).__name__}
-    rows = []
+    base_rows = []
+    workload_rows = []
     total_cpu = 0.0
     total_rss = 0
-    pat = re.compile(r"(aerobrain_server|worker\.py|cloudflared)")
     for line in out.splitlines()[1:]:
-        if not pat.search(line):
-            continue
         parts = line.split(None, 4)
         if len(parts) < 5:
             continue
         pid, cpu, mem, rss, cmd = parts
+        is_base = ("pipeline/aerobrain_server.py" in cmd
+                   or "pipeline/worker.py" in cmd
+                   or ("cloudflared tunnel" in cmd and "metislab-work.yml" in cmd))
+        is_workload = ("splat/OpenSplat" in cmd
+                       or any(f"pipeline/{name}" in cmd for name in
+                              ("odm_prep.py", "tresd_publish.py", "process.py"))
+                       or ("ffmpeg" in cmd and "/Volumes/SSD/drone-vault" in cmd)
+                       or ("docker run" in cmd and "odm-" in cmd))
+        if not (is_base or is_workload):
+            continue
         cpu_f = float(cpu)
         rss_i = int(rss)
-        total_cpu += cpu_f
-        total_rss += rss_i
-        rows.append({"pid": int(pid), "cpu": cpu_f, "mem": float(mem), "rss_mb": round(rss_i / 1024, 1),
-                     "cmd": cmd[:90]})
-    return {"ok": total_cpu < 15 and total_rss < 500_000,
+        row = {"pid": int(pid), "cpu": cpu_f, "mem": float(mem),
+               "rss_mb": round(rss_i / 1024, 1), "cmd": cmd[:120]}
+        if is_base:
+            total_cpu += cpu_f
+            total_rss += rss_i
+            base_rows.append(row)
+        elif is_workload:
+            workload_rows.append(row)
+
+    odm_containers = []
+    try:
+        raw = subprocess.check_output(
+            ["/usr/local/bin/docker", "ps", "--filter", "name=odm-", "--format", "{{.Names}}"],
+            text=True, timeout=5)
+        odm_containers = [name for name in raw.splitlines() if name.startswith("odm-")]
+    except Exception:
+        pass
+    orphan_workload = bool((workload_rows or odm_containers) and active_jobs == 0)
+    return {"ok": total_cpu < 15 and total_rss < 500_000 and not orphan_workload,
+            "mode": "working" if active_jobs else "idle",
             "total_cpu": round(total_cpu, 1),
             "total_rss_mb": round(total_rss / 1024, 1),
-            "processes": rows}
+            "processes": base_rows,
+            "workload_processes": workload_rows,
+            "odm_containers": odm_containers,
+            "orphan_workload": orphan_workload}
 
 
 def logs_status() -> dict:
@@ -221,6 +248,77 @@ def latency_status() -> dict:
     return {"ok": ok, **summary}
 
 
+def reliability_status(window_hours: int = 24) -> dict:
+    """Prove continuity from watchdog history, not only current reachability."""
+    now = time.time()
+    cutoff = now - window_hours * 3600
+    rows = []
+    for path in (WATCHDOG_LOG.with_name(WATCHDOG_LOG.name + ".1"), WATCHDOG_LOG):
+        try:
+            lines = path.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                row = json.loads(line)
+                ts = datetime.datetime.strptime(row["ts"], "%Y-%m-%dT%H:%M:%S%z").timestamp()
+            except (KeyError, TypeError, ValueError):
+                continue
+            if ts >= cutoff:
+                row["_ts"] = ts
+                rows.append(row)
+    rows.sort(key=lambda r: r["_ts"])
+    local = [r for r in rows if r.get("event") == "local_probe"]
+    if not local:
+        return {"ok": False, "window_hours": window_hours, "error": "no watchdog samples"}
+
+    gaps = [b["_ts"] - a["_ts"] for a, b in zip(local, local[1:])]
+    coverage_h = max(0.0, (local[-1]["_ts"] - max(cutoff, local[0]["_ts"])) / 3600)
+    probe_rows = [r for r in rows if str(r.get("event", "")).endswith("_probe")]
+    failed = [r for r in probe_rows if r.get("ok") is False]
+    recovered = [r for r in probe_rows if r.get("recovered") in ("retry", "restart")]
+    kickstarts = [r for r in rows if r.get("event") == "kickstart"]
+    max_gap = max(gaps, default=0)
+    # Allow normal launchd jitter, but not a sleeping/stalled Mac. The first and
+    # last samples must cover virtually the whole requested window.
+    ok = coverage_h >= window_hours - 0.5 and max_gap <= 180 and not failed
+    return {
+        "ok": ok,
+        "window_hours": window_hours,
+        "coverage_hours": round(coverage_h, 2),
+        "samples": len(local),
+        "max_gap_s": round(max_gap, 1),
+        "failed_probes": len(failed),
+        "recoveries": len(recovered),
+        "kickstarts": len(kickstarts),
+        "first": datetime.datetime.fromtimestamp(local[0]["_ts"]).astimezone().isoformat(timespec="seconds"),
+        "last": datetime.datetime.fromtimestamp(local[-1]["_ts"]).astimezone().isoformat(timespec="seconds"),
+    }
+
+
+def power_status() -> dict:
+    """Verify AC settings required for an always-on local origin."""
+    try:
+        out = subprocess.check_output(["pmset", "-g", "custom"], text=True, timeout=5)
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__}
+    settings = {}
+    in_ac = False
+    for line in out.splitlines():
+        if line.strip() == "AC Power:":
+            in_ac = True
+            continue
+        if not in_ac:
+            continue
+        m = re.match(r"\s*(sleep|disksleep|autorestart)\s+(\d+)\s*$", line)
+        if m:
+            settings[m.group(1)] = int(m.group(2))
+    ok = (settings.get("sleep") == 0
+          and settings.get("disksleep") == 0
+          and settings.get("autorestart") == 1)
+    return {"ok": ok, **settings}
+
+
 def tunnel_config_status() -> dict:
     try:
         txt = TUNNEL_CONFIG.read_text()
@@ -256,6 +354,8 @@ def main() -> int:
     local_ok, local = fetch_json("http://127.0.0.1:8790/api/healthz", 8)
     public_ok, public = fetch_json("https://vuelos.metislab.work/api/healthz", 15)
     www_ok, www = fetch_text("https://www.metislab.work/", 15)
+    jobs = jobs_status()
+    running_jobs = sum(j.get("status") == "running" for j in jobs.get("active", []))
     report = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "services": {label: launch_state(label) for label in LABELS},
@@ -265,10 +365,12 @@ def main() -> int:
             "www": {"ok": www_ok, "detail": www},
         },
         "stream": range_probe(latest_proxy_url()),
-        "jobs": jobs_status(),
-        "resources": resource_status(),
+        "jobs": jobs,
+        "resources": resource_status(running_jobs),
         "logs": logs_status(),
         "latency": latency_status(),
+        "reliability": reliability_status(),
+        "power": power_status(),
         "tunnel_config": tunnel_config_status(),
         "manifests": manifest_status(),
     }
@@ -276,7 +378,8 @@ def main() -> int:
     checks.extend(v.get("ok", False) for v in report["services"].values())
     checks.extend((local_ok, public_ok, www_ok, report["stream"]["ok"], report["jobs"]["ok"],
                    report["resources"]["ok"], report["logs"]["ok"],
-                   report["latency"]["ok"],
+                   report["latency"]["ok"], report["reliability"]["ok"],
+                   report["power"]["ok"],
                    report["tunnel_config"]["ok"], report["manifests"]["ok"]))
     report["ok"] = all(checks)
 
@@ -286,11 +389,20 @@ def main() -> int:
         print(f"AeroBrain ops: {'PASS' if report['ok'] else 'FAIL'} · {report['ts']}")
         print(f"  health: local={local_ok} public={public_ok} www={www_ok}")
         print(f"  stream: ok={report['stream']['ok']} {report['stream'].get('content_range', report['stream'].get('detail', ''))} cache={report['stream'].get('cache', '')}")
-        print(f"  resources: cpu={report['resources'].get('total_cpu')}% rss={report['resources'].get('total_rss_mb')}MB")
+        print(f"  resources: mode={report['resources'].get('mode')} "
+              f"cpu={report['resources'].get('total_cpu')}% "
+              f"rss={report['resources'].get('total_rss_mb')}MB "
+              f"workloads={len(report['resources'].get('workload_processes', [])) + len(report['resources'].get('odm_containers', []))}")
         lat = report.get("latency", {})
         print("  latency: " + " ".join(
             f"{k}=p95:{v.get('p95_ms', 'n/a')}ms"
             for k, v in lat.items() if isinstance(v, dict) and k.endswith("_probe")))
+        rel = report["reliability"]
+        print(f"  reliability: {rel.get('coverage_hours', 0)}h "
+              f"failures={rel.get('failed_probes', 0)} max_gap={rel.get('max_gap_s', 0)}s")
+        pwr = report["power"]
+        print(f"  power: sleep={pwr.get('sleep')} disksleep={pwr.get('disksleep')} "
+              f"autorestart={pwr.get('autorestart')}")
         print(f"  jobs: active={len(report['jobs'].get('active', []))} stale={len(report['jobs'].get('stale_running', []))}")
         for label, st in report["services"].items():
             print(f"  {label}: {st.get('state')} pid={st.get('pid')} runs={st.get('runs')} ok={st.get('ok')}")

@@ -192,6 +192,23 @@ check("job: timeout deja row en 'error' (auto-consistente)",
 # ---------- splat quality gate ----------
 import aerobrain_server as _srv
 from aerobrain_server import splat_quality, derive_odm_progress
+_style_asset = _srv.WEB / "style.css"
+_style_version = _style_asset.stat().st_mtime_ns
+check("cache: fingerprint exacto es immutable en edge/browser",
+      _srv.static_cache_policy(_style_asset, f"/style.css?v={_style_version}")[1]
+      == "public, max-age=31536000, immutable")
+check("cache: versión inventada no recibe immutable",
+      _srv.static_cache_policy(_style_asset, "/style.css?v=wrong")[1] == "no-cache")
+check("cache: código sin versión revalida y no queda stale",
+      _srv.static_cache_policy(_srv.WEB / "shell.js", "/shell.js")[1] == "no-cache")
+check("cache: vendor local usa CDN con stale-while-revalidate",
+      "stale-while-revalidate" in _srv.static_cache_policy(
+          _srv.WEB / "vendor" / "maplibre-gl.js", "/vendor/maplibre-gl.js")[1])
+check("cache: HTML nunca queda congelado",
+      _srv.static_cache_policy(_srv.WEB / "home.html", "/")[1]
+      == "no-store, must-revalidate")
+check("cache: HTML inyecta fingerprint actual de cada asset",
+      f"style.css?v={_style_version}" in _srv.render_html(_srv.WEB / "home.html").decode())
 import types
 class FakeOut:
     def __init__(self, size): self._s = size
@@ -376,7 +393,7 @@ check("presets: alta usa concurrencia 2 y geometric off en el camino principal",
       _alta_cmd[_alta_cmd.index("--max-concurrency") + 1] == "2"
       and "--pc-skip-geometric" in _alta_cmd)
 check("presets: alta usa casi todo el presupuesto ODM del M4 para evitar sub-scene recovery",
-      worker.PRESETS["alta"]["mem"] == "9500m")
+      worker.PRESETS["alta"]["mem"] == "8500m")
 _retry_preset = worker.openmvs_retry_preset(worker.PRESETS["extra"])
 _retry_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), _retry_preset,
                             rerun_from="openmvs", stable_dense=True)
@@ -456,9 +473,11 @@ check("splat backend: train_args llegan al comando OpenSplat",
 check("splat backend: ultra checkpoint future-proof",
       "--save-every" in worker.opensplat_train_cmd(
           Path("/p"), Path("/o.splat"), _ultra_splat["iters"], _gpu_backend, _ultra_splat["train_args"]))
-check("splat backend: entrena con QoS utility (UI fluida durante 4h de CPU)",
+check("splat backend: arranca full power; prioridad adaptativa vive fuera del comando",
       worker.opensplat_train_cmd(Path("/p"), Path("/o.splat"), 7000, _cpu_backend)[:3]
-      == ["/usr/sbin/taskpolicy", "-c", "utility"])
+      == ["/usr/sbin/taskpolicy", "-m", "11000"]
+      and "utility" not in worker.opensplat_train_cmd(
+          Path("/p"), Path("/o.splat"), 7000, _cpu_backend))
 _done_detail = worker.splat_done_detail(Path("DJI_QA.ksplat"), {
     "preset_label": "Ultra", "target_iters": 15000, "backend": "Metal/MPS",
     "duration_s": 7308.3, "final_loss": 0.0432,

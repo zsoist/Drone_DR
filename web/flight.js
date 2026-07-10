@@ -198,6 +198,20 @@ const cid = new URLSearchParams(location.search).get('id');
   } else {
     slot.innerHTML = `<img src="${DATA}/thumbs/${cid}.jpg" style="width:100%;display:block" alt="">`;
   }
+  let viewerPingTimer = null;
+  const pingViewer = () => fetch('/api/viewer_ping', { cache: 'no-store', keepalive: true }).catch(() => {});
+  const startViewerPing = () => {
+    pingViewer();
+    if (!viewerPingTimer) viewerPingTimer = setInterval(pingViewer, 15_000);
+  };
+  const stopViewerPing = () => {
+    clearInterval(viewerPingTimer);
+    viewerPingTimer = null;
+  };
+  video?.addEventListener('play', startViewerPing);
+  video?.addEventListener('pause', stopViewerPing);
+  video?.addEventListener('ended', stopViewerPing);
+  addEventListener('pagehide', stopViewerPing, { once: true });
   function paintQ() {
     document.querySelectorAll('#q-seg [data-q]').forEach(b =>
       b.classList.toggle('on', b.dataset.q === quality));

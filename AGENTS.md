@@ -69,8 +69,12 @@ pipeline/safe_restart.sh tunnel     # Cloudflare tunnel only
 pipeline/safe_restart.sh worker     # refuses while a 3D/splat job is running
 tail -20 /tmp/aerobrain-watchdog.log
 python3 pipeline/ops_status.py        # one-shot 24/7 ops audit
+python3 pipeline/external_probe.py    # public health + HTML + video Range
 ```
-Static web/ + /data are served no-cache, so frontend edits are live immediately.
+HTML is no-store. The server replaces each placeholder `?v=` with the asset's
+exact `st_mtime_ns`; matching JS/CSS URLs are immutable. Agents do not need to
+bump versions manually. Unversioned/mismatched code revalidates; vendored
+libraries cache for 24h.
 
 ## 3D acceptance checks for agents
 

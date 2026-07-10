@@ -283,7 +283,8 @@ CANCEL_STATES = ("cancelled", "cancel_failed")
 def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                 tail: int = 12, abort_re: str | None = None,
                 progress_re: str | None = None,
-                progress_span: tuple = (0.05, 0.98)) -> int:
+                progress_span: tuple = (0.05, 0.98),
+                tick=None, tick_interval: float = 5.0) -> int:
     """Popen con PID registrado. El control (timeout Y cancelación) se hace con
     proc.wait(timeout=1) en un bucle — INDEPENDIENTE del stdout, así un proceso
     totalmente silencioso también respeta timeout y cancel. Un hilo lector sólo
@@ -324,12 +325,22 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
 
     deadline = time.time() + timeout
     reason = None
+    last_tick = 0.0
     while True:
         try:
             proc.wait(timeout=1.0)  # avanza aunque no haya stdout
             break
         except subprocess.TimeoutExpired:
             pass
+        now = time.time()
+        if tick and now - last_tick >= tick_interval:
+            last_tick = now
+            try:
+                tick(proc.pid)
+            except Exception as e:
+                # Resource policy is best-effort; never lose hours of valid ODM
+                # or splat training because a priority adjustment raced exit.
+                print(f"resource policy warning: {type(e).__name__}: {e}", flush=True)
         if time.time() > deadline:
             reason = "timeout"
         elif abort_hit.is_set():

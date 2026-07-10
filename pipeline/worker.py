@@ -29,10 +29,58 @@ SPLAT_MPS_BIN = SPLAT_ROOT / "build-mps" / "opensplat"
 LIBTORCH_LIB = PIPE.parent / "splat" / "libtorch" / "lib"
 DOCKER = "/usr/local/bin/docker"
 POLL_S = 3
+VIEWER_ACTIVITY = Path("/tmp/aerobrain-viewer-active")
+VIEWER_ACTIVE_S = 45
+FULL_CPUS = os.cpu_count() or 10
+STREAM_CPUS = max(2, FULL_CPUS - 3)
+OPENSPLAT_MEMORY_MIB = 11_000
 
 
 def rebuild_index():
     subprocess.run(["python3", str(PIPE / "build_index.py")], check=True)
+
+
+def viewer_active(now: float | None = None) -> bool:
+    try:
+        age = (time.time() if now is None else now) - VIEWER_ACTIVITY.stat().st_mtime
+        return 0 <= age <= VIEWER_ACTIVE_S
+    except OSError:
+        return False
+
+
+def adaptive_priority(container: str | None = None):
+    """Return a reversible policy callback for a running heavy process.
+
+    With no viewer, compute gets every CPU. During video playback, OpenSplat is
+    moved to Darwin background scheduling and ODM keeps seven of ten M4 cores,
+    reserving capacity for the origin, tunnel, browser and OS. The policy returns
+    to full power automatically 45 seconds after the last viewer heartbeat.
+    """
+    state = {"mode": None}
+
+    def apply(pid: int):
+        active = viewer_active()
+        mode = "streaming" if active else "full"
+        if state["mode"] == mode:
+            return
+        if container:
+            cpus = STREAM_CPUS if active else FULL_CPUS
+            r = subprocess.run([DOCKER, "update", "--cpus", str(cpus), container],
+                               capture_output=True, text=True, timeout=15)
+            if r.returncode != 0:
+                raise RuntimeError((r.stderr or r.stdout or "docker update failed")[-160:])
+            note = f"ODM {cpus}/{FULL_CPUS} CPU"
+        else:
+            flag = "-b" if active else "-B"
+            r = subprocess.run(["/usr/sbin/taskpolicy", flag, "-p", str(pid)],
+                               capture_output=True, text=True, timeout=5)
+            if r.returncode != 0:
+                raise RuntimeError((r.stderr or r.stdout or "taskpolicy failed")[-160:])
+            note = "OpenSplat background" if active else "OpenSplat full"
+        state["mode"] = mode
+        print(f"  resource policy → {mode}: {note}", flush=True)
+
+    return apply
 
 
 def browser_gate(jid: str, kind: str, cid: str, timeout: int = 75):
@@ -113,7 +161,8 @@ def clean_odm_outputs(proj: Path) -> list[str]:
 
 
 # presets de calidad ODM: mismo pipeline completo (dense+mesh+DSM), distinto trade-off.
-# mem = RAM del contenedor ODM (VM OrbStack ≈10G). concurrency baja en alta/extra/ultra:
+# mem = RAM del contenedor ODM (VM OrbStack 10G, ~0.75G ya usados por servicios).
+# 8.5G deja margen real a la VM. concurrency baja en alta/extra/ultra:
 # la doc ODM estima ~1GB por thread a 2MP; nuestros frames premium son ~5MP, así que
 # subir calidad y mantener 4 workers es pedirle a OpenMVS que se estrelle.
 # fallback = preset al que se degrada automáticamente si ODM revienta — "si no es capaz, baja".
@@ -129,13 +178,13 @@ PRESETS = {
     # vacíos y terminar con una malla inútil. --skip-3dmodel mantiene la ruta eficiente y
     # publicable para inspección/splats; vuelos oblicuos/orbita pueden usar extra/ultra si se
     # quiere forzar malla pesada.
-    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "9500m", "concurrency": 2, "fallback": "estandar",
+    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "estandar",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5",
                           "--mesh-size", "300000", "--pc-skip-geometric", "--skip-3dmodel"]},
     # extra: malla más densa (mesh 600k + octree 11) con pc-quality high. octree 12 CRASHEA
     # ("strange values", exit 134) en datasets reales — la comunidad ODM recomienda <=11.
-    "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "9500m", "concurrency": 2, "fallback": "alta",
+    "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "alta",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "2", "--dem-resolution", "4",
                           "--mesh-size", "600000", "--mesh-octree-depth", "11",
@@ -143,7 +192,7 @@ PRESETS = {
     # ultra: pc-quality ultra (~8.5x tiempo) + mesh 800k, octree 11 (12 revienta). El máximo
     # del M4; la CADENA de fallback (ultra→extra→alta→estandar) garantiza que nunca se pierda
     # el trabajo por un preset demasiado agresivo.
-    "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, "mem": "9500m", "concurrency": 2, "fallback": "extra",
+    "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "extra",
                  "args": ["--pc-quality", "ultra", "--feature-quality", "ultra",
                           "--orthophoto-resolution", "2", "--dem-resolution", "3",
                           "--mesh-size", "800000", "--mesh-octree-depth", "11",
@@ -235,9 +284,11 @@ def choose_splat_backend(iters: int, force_cpu: bool = False, mps_ready: bool | 
 
 def opensplat_train_cmd(project: Path, out: Path, iters: int, backend: dict,
                         extra_args: list[str] | None = None) -> list[str]:
-    # taskpolicy -c utility: QoS bajo para que 4h de entrenamiento CPU no roben fluidez
-    # a la UI/web (taskpolicy hace exec — mismo pid, el cancel del jobstore sigue funcionando)
-    cmd = ["/usr/sbin/taskpolicy", "-c", "utility", str(backend["bin"]), str(project)]
+    # Arranca a prioridad normal para usar toda la máquina cuando está ociosa.
+    # adaptive_priority() lo mueve de forma reversible a Darwin background si
+    # aparece un viewer y lo devuelve a full al terminar la reproducción.
+    cmd = ["/usr/sbin/taskpolicy", "-m", str(OPENSPLAT_MEMORY_MIB),
+           str(backend["bin"]), str(project)]
     if backend.get("cpu_flag"):
         cmd.append("--cpu")
     cmd += ["-n", str(iters), "-o", str(out), "--sh-degree-interval", str(iters + 1)]
@@ -312,7 +363,7 @@ def openmvs_retry_preset(preset: dict) -> dict:
     """
     retry = dict(preset)
     retry["args"] = _replace_arg(list(preset["args"]), "--pc-quality", "medium")
-    retry["mem"] = "9500m"
+    retry["mem"] = "8500m"
     retry["concurrency"] = 2
     return retry
 
@@ -321,7 +372,7 @@ def run_odm_container(jid, container, proj, preset, preset_name, rerun_from: str
                       stable_dense: bool = False):
     """Corre ODM con la memoria del preset; devuelve el exit code de run_tracked."""
     return jobstore.run_tracked(jid, odm_cmd(container, proj, preset, rerun_from, stable_dense),
-                                timeout=preset["timeout"])
+                                timeout=preset["timeout"], tick=adaptive_priority(container))
 
 
 def fast_ortho_cmd(container: str, proj: Path, ortho_res: str = "5") -> list[str]:
@@ -343,7 +394,8 @@ def run_fast_ortho_fallback(jid: str, proj: Path, container: str) -> int:
     jobstore.update(jid, detail="2/3 OpenMVS falló → fallback fast-orthophoto/25D",
                     stage="odm-fallback", progress=0.55)
     try:
-        return jobstore.run_tracked(jid, fast_ortho_cmd(container, proj), timeout=2 * 3600)
+        return jobstore.run_tracked(jid, fast_ortho_cmd(container, proj), timeout=2 * 3600,
+                                    tick=adaptive_priority(container))
     except TimeoutError:
         print("  ODM fast-orthophoto agotó el tiempo", flush=True)
         return 124
@@ -506,7 +558,8 @@ def run_splat(j: dict):
             opensplat_train_cmd(proj, tmp_out, ITERS, backend, preset.get("train_args")),
             timeout=int(preset.get("timeout") or 4 * 3600), abort_re=r"Step \d+: nan",
             progress_re=r"\((\d+)%\)",
-            env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)})
+            env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)},
+            tick=adaptive_priority())
     except RuntimeError as e:
         if "abortado" in str(e):
             # una vez el loss es nan los pesos no se recuperan: seguir es quemar CPU

@@ -36,7 +36,8 @@ como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9G
 | `ai/router.py` | Lanes multi-LLM: Gemini (vision) · DeepSeek (texto) · OpenAI (fallback) |
 | `ai/analyze.py` | Keyframes → resumen, tags, highlights, travel_score (~$0.002/clip) |
 | `ai/reel.py` | Auto-editor: top highlights → reel 1080p o 9:16 vertical |
-| `pipeline/worker.py` | Cola heavy 3D/splat: ODM, fallbacks, OpenSplat Metal/MPS, publish atómico |
+| `pipeline/worker.py` | Cola heavy única: ODM/OpenSplat MPS, límites de memoria y prioridad adaptativa al streaming |
+| `pipeline/external_probe.py` | SLO público: health + home + video Range desde GitHub Actions cada 15 min |
 | `pipeline/browser_gate.py` | QA real en Chrome headless (CDP stdlib) antes de dar un job 3D por done |
 | `pipeline/browser_matrix.py` | QA multi-viewport de splats: share + workspace en mobile/iPad/desktop, macro zoom, overflow y screenshots |
 | `pipeline/audit_splats.py` | Auditor de salud de splats: assets, current/history, metadata, jobs, warnings legacy |
@@ -72,11 +73,14 @@ python3 ai/analyze.py --all           # análisis AI de escenas
 python3 pipeline/build_index.py       # refrescar flights.json (la web se actualiza sola)
 python3 ai/reel.py --vertical         # reel para IG/TikTok
 python3 pipeline/ops_status.py        # auditoría 24/7: servicios, health, streaming, recursos
+python3 pipeline/external_probe.py    # mismo probe público que ejecuta GitHub Actions
 ```
 
 Servicios launchd: `com.aerobrain.web` (:8790) · `com.aerobrain.worker`
 (cola 3D/splat) · `com.metislab.tunnel` (Cloudflare) ·
-`com.aerobrain.watchdog` (health check local/public). Runbook:
+`com.aerobrain.watchdog` (health check local/public). Sin viewer, heavy compute usa
+10 cores/MPS; durante reproducción ODM baja a 7 cores y OpenSplat a background,
+restaurándose tras 45 s. Runbook:
 [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Roadmap

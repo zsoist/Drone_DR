@@ -45,9 +45,74 @@ if not TOKEN_FILE.exists():
     TOKEN_FILE.write_text(secrets.token_urlsafe(24))
     TOKEN_FILE.chmod(0o600)
 TOKEN = TOKEN_FILE.read_text().strip()
+VIEWER_ACTIVITY = Path("/tmp/aerobrain-viewer-active")
+VIEWER_ACTIVE_S = 45
 
 jobstore.init(orphan_kinds=jobstore.LIGHT_KINDS)
 JLOCK = threading.Lock()         # compat: secciones que actualizan detail
+
+
+def mark_viewer_activity():
+    try:
+        VIEWER_ACTIVITY.touch()
+    except OSError:
+        pass
+
+
+def viewer_activity() -> tuple[bool, float | None]:
+    try:
+        age = max(0.0, time.time() - VIEWER_ACTIVITY.stat().st_mtime)
+        return age <= VIEWER_ACTIVE_S, round(age, 1)
+    except OSError:
+        return False, None
+
+
+_HTML_ASSET_RE = re.compile(
+    r'(?P<prefix>(?:src|href)=["\'])(?P<path>[^"\']+\.(?:js|css))\?v=[^"\']+(?P<suffix>["\'])',
+    re.IGNORECASE)
+
+
+def render_html(f: Path) -> bytes:
+    """Replace placeholder asset versions with exact on-disk fingerprints."""
+    text = f.read_text()
+
+    def replace(match):
+        asset_path = urllib.parse.urlparse(match.group("path")).path.lstrip("/")
+        asset = (WEB / asset_path).resolve()
+        try:
+            asset.relative_to(WEB.resolve())
+        except ValueError:
+            return match.group(0)
+        if not asset.is_file():
+            return match.group(0)
+        version = asset.stat().st_mtime_ns
+        return (f'{match.group("prefix")}{match.group("path")}?v={version}'
+                f'{match.group("suffix")}')
+
+    return _HTML_ASSET_RE.sub(replace, text).encode()
+
+
+def static_cache_policy(f: Path, request_path: str) -> tuple[bool, str]:
+    """Return (revalidate, Cache-Control) for GET and HEAD consistently."""
+    suffix = f.suffix.lower()
+    model_img = suffix in (".jpg", ".png", ".webp") and str(f).startswith(str(VAULT / "models"))
+    request_qs = urllib.parse.parse_qs(urllib.parse.urlparse(request_path).query)
+    code_asset = suffix in (".js", ".css")
+    expected_version = str(f.stat().st_mtime_ns) if f.is_file() else ""
+    versioned_code = code_asset and request_qs.get("v") == [expected_version]
+    vendor_asset = code_asset and str(f).startswith(str(WEB / "vendor"))
+    revalidate = (suffix in REVALIDATE_EXTS or str(f).startswith(str(SUPERSPLAT))
+                  or model_img or (code_asset and not versioned_code and not vendor_asset))
+    cacheable = suffix in (".mp4", ".jpg", ".png", ".woff2", ".svg", ".webp")
+    if versioned_code:
+        return revalidate, "public, max-age=31536000, immutable"
+    if vendor_asset:
+        return revalidate, "public, max-age=86400, stale-while-revalidate=604800"
+    if revalidate:
+        return revalidate, "no-cache"
+    if cacheable:
+        return revalidate, "public, max-age=86400"
+    return revalidate, "no-store, must-revalidate"
 
 
 def clip_history_files(hist_dir: Path, cid: str) -> list:
@@ -129,7 +194,10 @@ def health_status() -> tuple[dict, int]:
     except Exception:
         checks["jobs_db"] = False
 
-    ok = all(v for k, v in checks.items() if k not in ("disk_free_gb", "active_jobs"))
+    checks["viewer_active"], checks["viewer_age_s"] = viewer_activity()
+
+    ok = all(v for k, v in checks.items()
+             if k not in ("disk_free_gb", "active_jobs", "viewer_active", "viewer_age_s"))
     return {"ok": ok, "checks": checks, "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, (200 if ok else 503)
 
 
@@ -974,6 +1042,12 @@ class H(BaseHTTPRequestHandler):
             if self._is_local() or self.headers.get("X-Token", "") == TOKEN or self.session_ok():
                 return self.send_json({"ok": True, "local": self._is_local()})
             return self.send_json({"ok": False}, 403)
+        if self.path.startswith("/api/viewer_ping"):
+            site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+            if site and site not in ("same-origin", "same-site", "none"):
+                return self.send_json({"ok": False}, 403)
+            mark_viewer_activity()
+            return self.send_json({"ok": True})
         if self.path.startswith("/api/jobs"):
             if not self.auth():
                 return
@@ -1031,17 +1105,36 @@ class H(BaseHTTPRequestHandler):
         f = self.resolve()
         if not f:
             return self.send_error(404)
+        if f.suffix.lower() == ".html" and str(f).startswith(str(WEB)):
+            payload = render_html(f)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store, must-revalidate")
+            self.send_header("Content-Security-Policy",
+                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
+                "connect-src 'self' https://server.arcgisonline.com https://basemaps.cartocdn.com; "
+                "worker-src 'self' blob:; media-src 'self' blob:; frame-src 'self'; frame-ancestors 'none'")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            try:
+                self.wfile.write(payload)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
         ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
         rng = self.headers.get("Range")
+        if f.suffix.lower() == ".mp4":
+            ua = self.headers.get("User-Agent", "")
+            if not ua.startswith(("AeroBrainWatchdog/", "AeroBrainOpsStatus/")):
+                mark_viewer_activity()
         # binarios 3D pesados (nube/malla/splat): cachear PERO revalidar (no-cache + 304).
         # Las URLs no llevan versión y un re-entreno reescribe el mismo nombre — max-age
         # serviría stale; no-store re-bajaría MBs en cada visita. 304 = lo mejor de ambos.
         # los bundles de SuperSplat (23MB dist) solo cambian al rebuildear: 304 también.
         # imágenes bajo models/ (vt*/ortho/dsm) cambian en re-procesado → revalidan, no 24h stale
-        model_img = (f.suffix.lower() in (".jpg", ".png", ".webp")
-                     and str(f).startswith(str(VAULT / "models")))
-        revalidate = (f.suffix.lower() in REVALIDATE_EXTS or str(f).startswith(str(SUPERSPLAT))
-                      or model_img)
+        revalidate, cache_header = static_cache_policy(f, self.path)
         mtime = int(f.stat().st_mtime)
         if revalidate and not rng:
             ims = self.headers.get("If-Modified-Since")
@@ -1066,9 +1159,7 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(gz.stat().st_size))
             if revalidate:
                 self.send_header("Last-Modified", formatdate(mtime, usegmt=True))
-                self.send_header("Cache-Control", "no-cache")
-            else:
-                self.send_header("Cache-Control", "no-store, must-revalidate")
+            self.send_header("Cache-Control", cache_header)
             self.end_headers()
             with open(gz, "rb") as fh:
                 while chunk := fh.read(1 << 19):
@@ -1103,14 +1194,11 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(end - start + 1))
-        # media inmutable se cachea; binarios 3D revalidan (304); código NUNCA se cachea
-        # (iPhone quedó quemado con CSS viejo)
-        cacheable = f.suffix in (".mp4", ".jpg", ".png", ".woff2", ".svg", ".webp")
+        # media se cachea; 3D revalida; código sólo es immutable con fingerprint exacto
+        # (evita tanto túnel lento como CSS viejo quemado en iPhone)
         if revalidate:
             self.send_header("Last-Modified", formatdate(mtime, usegmt=True))
-            self.send_header("Cache-Control", "no-cache")
-        else:
-            self.send_header("Cache-Control", "public, max-age=86400" if cacheable else "no-store, must-revalidate")
+        self.send_header("Cache-Control", cache_header)
         if f.suffix == ".html":
             # SuperSplat vive embebido en un iframe de splatlab.html (mismo origen)
             anc = "'self'" if str(f).startswith(str(SUPERSPLAT)) else "'none'"
@@ -1154,13 +1242,23 @@ class H(BaseHTTPRequestHandler):
         f = self.resolve()
         if not f:
             return self.send_error(404)
+        if f.suffix.lower() == ".html" and str(f).startswith(str(WEB)):
+            payload = render_html(f)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store, must-revalidate")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            return
         gz = Path(str(f) + ".gz")
+        revalidate, cache_header = static_cache_policy(f, self.path)
         self.send_response(200)
         self.send_header("Accept-Ranges", "bytes")
         # espejo del GET: binarios 3D anuncian validador para el caché condicional
-        if f.suffix.lower() in REVALIDATE_EXTS:
+        if revalidate:
             self.send_header("Last-Modified", formatdate(int(f.stat().st_mtime), usegmt=True))
-            self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", cache_header)
         if gz.is_file() and "gzip" in self.headers.get("Accept-Encoding", ""):
             # espejo exacto de lo que GET va a servir (audit: HEAD mentia el tamano)
             self.send_header("Content-Encoding", "gzip")
@@ -1222,6 +1320,7 @@ class H(BaseHTTPRequestHandler):
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):

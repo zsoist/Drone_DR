@@ -1,0 +1,22 @@
+name: AeroBrain external uptime
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aerobrain-uptime
+  cancel-in-progress: true
+
+jobs:
+  public-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Probe health, page and video Range
+        run: python3 pipeline/external_probe.py
