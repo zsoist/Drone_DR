@@ -197,6 +197,30 @@ def analyze(cid: str) -> dict:
     else:
         rec = "preview"
 
+    # ---- riesgo de MEMORIA del gaussian (predicción, no autopsia) ----
+    # La densificación crece con el ÁREA de escena, no con el nº de cámaras: un clip de
+    # ~47 ha reventó 3× el cap de 11GB donde uno de 13 ha con más cámaras pasó. Señales:
+    # footprint del vuelo (distancia × altura) + historial REAL de OOM (-9) del clip.
+    oom_hits = 0
+    try:
+        errlog = VAULT / "ops" / "errors.jsonl"
+        if errlog.exists():
+            for line in errlog.read_text().splitlines():
+                if "código -9" in line and cid in line:
+                    oom_hits += 1
+    except OSError:
+        pass
+    footprint_ha = (g.get("distance_m", 0) * max(g.get("alt_max_m", 40), 25) * 1.2) / 10000
+    mem = {"footprint_ha": round(footprint_ha, 1), "oom_previos": oom_hits}
+    if oom_hits >= 2 or footprint_ha > 38:
+        mem.update(level="alto", advice="Escena grande para el cap de 11GB — usa Cinematic, o "
+                   "Ultra sabiendo que degradará solo (media resolución / densificación acotada).")
+    elif oom_hits == 1 or footprint_ha > 22:
+        mem.update(level="medio", advice="Ultra puede requerir el reintento automático a media "
+                   "resolución; Cinematic pasa sin drama.")
+    else:
+        mem.update(level="bajo", advice="Cualquier preset cabe en memoria.")
+
     report = {
         "clip_id": cid,
         "video": video.name,
@@ -206,6 +230,7 @@ def analyze(cid: str) -> dict:
         "expo_drift": round(expo_drift, 1),
         "gps": g,
         "suitability": {"ortho_dsm": ortho, "mesh": mesh, "splat": splat},
+        "memory_risk": mem,
         "warnings": warnings,
         "recommended_profile": rec,
         "recommended_frames": PROFILES[rec]["budget"],

@@ -2935,3 +2935,62 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .perf-errs summary { cursor: pointer; font-size: 12.5px; color: var(--text-2); padding: 6px 0 2px; display: flex; align-items: center; gap: 7px; }
 .pf-report { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--accent); padding: 3px 0; }
 .pf-err { font-size: 11px; color: var(--text-2); padding: 3px 0; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: baseline; }
+
+/* ================= BLOQUE 23 · Escáner de captura (frontier style) ================= */
+.scan-card {
+  margin-top: 12px; padding: 13px 15px; border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, var(--surface-2)), var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  animation: riseIn 240ms var(--ease) backwards;
+}
+.scan-hd {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  font-size: 10px; font-weight: 700; letter-spacing: .12em; color: var(--text-3);
+}
+.scan-hd svg.ic { width: 14px; height: 14px; color: var(--accent); }
+.scan-verdict { font-size: 9.5px; padding: 2px 9px; border-radius: 999px; letter-spacing: .05em; }
+.scan-verdict.ok  { color: var(--mint); background: color-mix(in srgb, var(--mint) 14%, transparent); }
+.scan-verdict.mid { color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, transparent); }
+.scan-verdict.bad { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+.scan-hd .count { margin-left: auto; }
+.scan-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.scan-lb { font-size: 11px; color: var(--text-2); width: 88px; flex: none; }
+.scan-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--surface); overflow: hidden; }
+.scan-bar i { display: block; height: 100%; border-radius: 3px; transition: width .7s var(--ease); }
+.scan-bar i.ok  { background: linear-gradient(90deg, var(--mint), color-mix(in srgb, var(--mint) 60%, var(--accent))); }
+.scan-bar i.mid { background: var(--amber); }
+.scan-bar i.bad { background: var(--red); }
+.scan-v { font-family: var(--mono); font-size: 12px; width: 22px; text-align: right; }
+.scan-v.ok { color: var(--mint); } .scan-v.mid { color: var(--amber); } .scan-v.bad { color: var(--red); }
+.scan-mem, .scan-warn {
+  display: flex; gap: 8px; align-items: flex-start; margin-top: 8px;
+  font-size: 11px; line-height: 1.45; color: var(--text-2);
+}
+.scan-mem svg.ic, .scan-warn svg.ic { width: 13px; height: 13px; flex: none; margin-top: 1px; }
+.scan-mem.ok svg.ic { color: var(--mint); } .scan-mem.mid svg.ic { color: var(--amber); } .scan-mem.bad svg.ic { color: var(--red); }
+.scan-warn svg.ic { color: var(--amber); }
+
+/* ── modales: alineación + navegación (misaligned items del feedback) ── */
+.modal-card .mlb { margin: 14px 0 8px; }
+.mflights { max-height: 300px; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.mflight { scroll-margin: 8px; }
+.mpresets .mpreset { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+@media (max-width: 640px) {
+  .modal-card { max-height: 88dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .mflights { max-height: 220px; }
+}
+
+/* ── iconos poco visibles: trazo más presente en superficies oscuras ── */
+.btn svg.ic, .si-acts svg, .sv-hud svg { opacity: .92; }
+.chip svg.ic { width: 13px; height: 13px; }
+
+/* ── suavidad global: transiciones cortas en controles interactivos ── */
+.btn, .chip, .mpreset, .mflight, .proj-card, .splat-item, .nav-item {
+  transition: background 150ms var(--ease), border-color 150ms var(--ease),
+              color 150ms var(--ease), transform 150ms var(--ease);
+}
+.btn:active, .chip:active, .nav-item:active { transform: scale(.96); }
+@media (prefers-reduced-motion: reduce) {
+  .btn:active, .chip:active, .nav-item:active { transform: none; }
+  .scan-card { animation: none; }
+}

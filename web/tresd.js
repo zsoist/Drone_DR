@@ -9,6 +9,44 @@
   const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
   const splatKey = s => s.path || s.name;
   const splatUrl = s => 'data/splats/' + splatKey(s).split('/').map(encodeURIComponent).join('/');
+
+  // ═══ ESCÁNER DE CAPTURA (tarjeta premium compartida por los modales 3D y splat) ═══
+  // Analiza el video ANTES de quemar horas: aptitud por producto (barras), riesgo de
+  // memoria del gaussian (predicción por footprint + historial OOM real) y consejos.
+  const _scanCache = {};
+  async function renderScanCard(box, cid) {
+    if (!box) return;
+    box.innerHTML = '<div class="scan-card"><div class="sk" style="height:96px;border-radius:12px"></div></div>';
+    let rep = _scanCache[cid];
+    try {
+      if (!rep) {
+        rep = await (await fetch(`/api/capture_report?clip_id=${encodeURIComponent(cid)}`)).json();
+        if (!rep.error) _scanCache[cid] = rep;
+      }
+    } catch { rep = { error: 'red' }; }
+    if (rep.error) { box.innerHTML = ''; return; }
+    const su = rep.suitability || {};
+    const mem = rep.memory_risk || {};
+    const cls = v => v >= 7 ? 'ok' : v >= 4 ? 'mid' : 'bad';
+    const bar = (lb, v) => `
+      <div class="scan-row"><span class="scan-lb">${lb}</span>
+        <div class="scan-bar"><i class="${cls(v)}" style="width:${v * 10}%"></i></div>
+        <b class="scan-v ${cls(v)}">${v}</b></div>`;
+    const memCls = { bajo: 'ok', medio: 'mid', alto: 'bad' }[mem.level] || 'ok';
+    const verdictV = Math.max(su.ortho_dsm || 0, su.mesh || 0, su.splat || 0);
+    const verdict = verdictV >= 7 ? 'Captura sólida' : verdictV >= 4 ? 'Captura útil' : 'Captura débil';
+    box.innerHTML = `
+      <div class="scan-card">
+        <div class="scan-hd">${icon('activity')} ESCÁNER DE CAPTURA
+          <span class="scan-verdict ${cls(verdictV)}">${verdict}</span>
+          <span class="count mono">${rep.recommended_frames || '—'} frames</span></div>
+        ${bar('Ortofoto/DSM', su.ortho_dsm ?? 0)}${bar('Malla 3D', su.mesh ?? 0)}${bar('Gaussian', su.splat ?? 0)}
+        ${mem.level ? `<div class="scan-mem ${memCls}">${icon(mem.level === 'bajo' ? 'check' : 'warn')}
+          <span><b>Memoria (gaussian): ${mem.level}</b>${mem.oom_previos ? ` · ${mem.oom_previos} OOM previos` : ''}
+          · ${esc(mem.advice || '')}</span></div>` : ''}
+        ${(rep.warnings || []).slice(0, 3).map(w => `<div class="scan-warn">${icon('warn')}<span>${esc(w)}</span></div>`).join('')}
+      </div>`;
+  }
   function splatAssetsFor(clipId) {
     return (sys.splats || [])
       .filter(s => SPLAT_EXT.test(s.name) && s.name.replace(SPLAT_EXT, '') === clipId)
@@ -468,26 +506,7 @@
       <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('cube')} Encolar procesamiento</button>`);
     const prev = ov.querySelector('#m-prev');
     const scoreBox = ov.querySelector('#m-score');
-    async function loadScore(cid) {
-      scoreBox.innerHTML = '<div class="sk" style="height:34px;border-radius:8px;margin-top:10px"></div>';
-      try {
-        const r = await fetch(`/api/capture_report?clip_id=${encodeURIComponent(cid)}`);
-        const rep = await r.json();
-        if (rep.error) { scoreBox.innerHTML = ''; return; }
-        const su = rep.suitability || {};
-        const col = v => v >= 7 ? 'var(--mint)' : v >= 4 ? 'var(--amber)' : 'var(--red)';
-        scoreBox.innerHTML = `
-          <div class="tool-row" style="margin-top:10px;padding:0">
-            <span class="tool-lb">Captura</span>
-            <span class="chip" style="color:${col(su.ortho_dsm)}">Ortho ${su.ortho_dsm}/10</span>
-            <span class="chip" style="color:${col(su.mesh)}">Malla ${su.mesh}/10</span>
-            <span class="chip" style="color:${col(su.splat)}">Splat ${su.splat}/10</span>
-            <span class="chip">${rep.recommended_frames} frames</span>
-          </div>
-          ${(rep.warnings || []).slice(0, 2).map(w =>
-            `<p class="footer-note" style="margin:6px 0 0;color:var(--amber)">${esc(w)}</p>`).join('')}`;
-      } catch { scoreBox.innerHTML = ''; }
-    }
+    const loadScore = cid => renderScanCard(scoreBox, cid);
     const setPrev = cid => { prev.poster = `data/thumbs/${cid}.jpg`; prev.src = `data/proxies/${cid}.mp4`; loadScore(cid); };
     setPrev(candidates[0].clip_id);
     ov.querySelector('.mflights').addEventListener('click', e => {
@@ -1364,15 +1383,19 @@
         <div class="mpreset on" data-model-preset="estandar"><b>Estándar</b><span class="mono">poses fiables</span><small>Más rápido para crear la base</small></div>
         <div class="mpreset" data-model-preset="alta"><b>Alta</b><span class="mono">más detalle</span><small>Mejor base, tarda más</small></div>
       </div>
+      <div id="ms-score"></div>
       <p class="mlb">Calidad del entrenamiento</p>
       <div class="mpresets splat-presets">${Q.map(q => `
         <div class="mpreset${q.p === 'medium' ? ' on' : ''}" data-preset="${q.p}">
           <b>${q.n}</b><span class="mono">${q.t}</span><small>${q.d}</small></div>`).join('')}</div>
       <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Entrenar splat</button>`);
+    const msScore = ov.querySelector('#ms-score');
+    renderScanCard(msScore, (ov.querySelector('.mflight.on') || ov.querySelector('.mflight'))?.dataset.cid);
     ov.querySelector('.mflights').addEventListener('click', e => {
       const c = e.target.closest('.mflight');
       if (!c) return;
       ov.querySelectorAll('.mflight').forEach(x => x.classList.toggle('on', x === c));
+      renderScanCard(msScore, c.dataset.cid);      // el escáner sigue a la selección
     });
     ov.querySelectorAll('.mpresets').forEach(group => group.addEventListener('click', e => {
       const c = e.target.closest('.mpreset');

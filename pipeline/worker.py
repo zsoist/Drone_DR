@@ -574,14 +574,20 @@ def run_splat(j: dict):
     # CONTENIDO de la escena, no del nº de cámaras — un clip puede reventar el cap de 11GB
     # (taskpolicy -m → SIGKILL -9) donde otro con 3× cámaras pasa. Reintento con -d 2
     # (mitad de resolución de entrada ≈ 4× menos memoria de píxeles; mismos iters/preset).
-    for attempt, extra in enumerate(([], ["-d", "2"])):
+    # escalones: full → media resolución → media resolución + densificación acotada.
+    # El 3º existe porque un clip de 47 ha murió TAMBIÉN a media resolución: la memoria la
+    # domina el CONTEO de gaussianas (densificación ∝ área de escena), no los píxeles.
+    # densify-grad-thresh 3× el default = muchos menos splits ≈ mitad de gaussianas.
+    RUNGS = ([], ["-d", "2"], ["-d", "2", "--densify-grad-thresh", "0.0006"])
+    RUNG_LB = ("", "media resolución", "media resolución + densificación acotada")
+    for attempt, extra in enumerate(RUNGS):
         train_args = list(preset.get("train_args") or []) + extra
         if attempt:
             jobstore.update(j["id"], status="running", finished=None,   # run_tracked ya marcó error
-                            detail=f"{preset['label']}: sin memoria a resolución completa → "
-                                   f"reintentando a media resolución ({backend['device']})",
+                            detail=f"{preset['label']}: sin memoria → reintentando con "
+                                   f"{RUNG_LB[attempt]} ({backend['device']})",
                             stage="train", progress=0.1)
-            print(f"  opensplat OOM (-9) → reintento con -d 2", flush=True)
+            print(f"  opensplat OOM (-9) → reintento: {RUNG_LB[attempt]}", flush=True)
         try:
             # --sh-degree-interval > iters: el salto de armónicos esféricos del step
             # 1000 era lo que hacía divergir el loss a nan en CPU (3 corridas murieron
@@ -599,12 +605,12 @@ def run_splat(j: dict):
                 raise RuntimeError("el entrenamiento divergió (loss=nan) — se abortó para no quemar "
                                    "horas de CPU. Reintenta: la inicialización aleatoria suele converger.")
             raise
-        if rc == -9 and not attempt and not _cancelled(j["id"]):
-            continue                               # OOM en el 1er intento → prueba a media resolución
+        if rc == -9 and attempt < len(RUNGS) - 1 and not _cancelled(j["id"]):
+            continue                               # OOM → siguiente escalón de la cadena
         break
     if rc != 0:
         raise RuntimeError(f"opensplat salió con código {rc}"
-                           + (" (sin memoria incluso a media resolución — prueba el preset Cinematic)"
+                           + (" (sin memoria en los 3 escalones — usa el preset Cinematic)"
                               if rc == -9 else ""))
     quality = splat_quality(tmp_out, (jobstore.get(j["id"]) or {}).get("log", ""), n_cams, ITERS)
     quality.update({

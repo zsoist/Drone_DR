@@ -1135,7 +1135,10 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "clip_id requerido"}, 400)
             import capture_quality
             try:
-                rep = (None if "force" in qs else capture_quality.cached(cid)) or capture_quality.analyze(cid)
+                rep = None if "force" in qs else capture_quality.cached(cid)
+                if rep and "memory_risk" not in rep:
+                    rep = None                    # cache pre-upgrade: re-analiza para incluir el riesgo de memoria
+                rep = rep or capture_quality.analyze(cid)
             except Exception as e:
                 return self.send_json({"error": str(e)[-200:]}, 500)
             rep.pop("samples", None)
