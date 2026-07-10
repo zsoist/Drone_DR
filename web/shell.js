@@ -34,7 +34,7 @@ const NAV = [
 
 // scrub de miniaturas compartido (Vuelos, Viajes, Inicio): mouse hover + swipe horizontal iOS
 function attachScrub(root) {
-  root.querySelectorAll('.card.scrub').forEach(cardEl => {
+  root.querySelectorAll('.card.scrub, .cr-item.scrub').forEach(cardEl => {
     const n = +cardEl.dataset.frames;
     if (!n) return;
     const img = cardEl.querySelector('img');

@@ -48,6 +48,12 @@ Quedan 32 de menor severidad (polish: caret jumps, undo gaps, teardown en SPA, N
   · drag&drop handlers on `drop` (#lab-drop) — lines 106–112, combined with the iframe at line 35
 
 ## studio
+✅ VERIFICADO 2026-07-10 (hunt completo): los 9 findings de abajo están ARREGLADOS en el código actual.
+Fixes nuevos aplicados hoy: reverse con trim de entrada (A1), tmp por-job + guard doble-submit (A2),
+cap 120s explícito (A3), fps normalizado para xfade + timeline NO se vacía al encolar (A4),
+stderr de ffmpeg visible + timeout 30min (M1/M3), progreso por corte (M4), reel aparece solo
+vía onDone (M5), tl-video se pausa al cambiar módulo (M6), scrub del carrusel revivido (M9),
+modal de proyectos centrado (M10).
 - [medium] Reels preview <video> elements keep playing/decoding after module-tab switch and are orphaned on grid re-render
   · renderGrid(), reels branch mouseenter/mouseleave binding (lines 493-501); interacts with showMod() (
 - [medium] pause() and clearTL()/delClip() don't cancel the in-flight seek() load cycle, so a stale canplay/loadeddata handler calls video.play() and video.currentTime=target after the user paused or emptied the timeline
@@ -88,3 +94,13 @@ Quedan 32 de menor severidad (polish: caret jumps, undo gaps, teardown en SPA, N
 - [baja] splat_quality: métricas del tail de 12 líneas — si terminan en saves, los checks de convergencia se saltan en silencio
 - [baja] jobs.pending() check-then-enqueue no atómico (doble tap = 2 jobs) · fix: BEGIN IMMEDIATE
 - [baja] eficiencia: doble rebuild_index por 3D; tresd_publish copia OBJ con read_bytes (RAM) y lo parsea 3×; image_list.txt write no atómico
+
+## Hunt Studio 2026-07-10 — pendientes menores
+- [media] M7: preview de freeze/reverse diverge del export (playhead desincronizado en esos clips)
+- [media] M8: borrar clip/undo DURANTE reproducción congela el player (pause() al inicio de delClip/undo/redo)
+- [media] M3b: jobs 'edit' sin botón Cancelar (requiere migrar run_edit a run_tracked)
+- [baja] B2-B4: reorder multi-undo, tap en handle = undo espurio, tli-freeze sin clamp JS
+- [baja] B5: apóstrofes/':'/'%' del título se borran en silencio
+- [baja] B6: estimado de tamaño ignora xfade/límites/audio
+- [baja] B7/B8: authGate ante 500 dice 'Inicia sesión'; cancel de login = unhandled rejection
+- [baja] B10: 'Nuevo proyecto' no resetea título/LUT/fps/bitrate; sin beforeunload guard del timeline

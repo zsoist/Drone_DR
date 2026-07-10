@@ -416,6 +416,7 @@ function showMod(name) {
     } else if (!show) {
       // teardown SPA: los <video> del grid siguen decodificando si no se pausan al ocultar el tab
       m.querySelectorAll('.media-grid video').forEach(v => { try { v.pause(); } catch {} });
+      if (m.dataset.mod === 'editor' || m.querySelector('#tl-video')) { try { document.getElementById('tl-video')?.pause(); } catch {} }
       m.style.display = 'none';
     }
   });
@@ -575,7 +576,10 @@ for (const kind of ['reels', 'fotos']) {
 loadMedia();
 
 // ---- módulo Trabajos ----
-pollJobs(document.getElementById('jobs'));
+pollJobs(document.getElementById('jobs'), 2500, j => {
+  // el reel exportado aparece SOLO al terminar (antes: recargar la página a mano)
+  if (j.kind === 'edit') { loadMedia(); }
+});
 
 // ---- módulo Editor (v5 · timeline horizontal tipo CapCut/Premiere) ----
 (async () => {
@@ -1353,9 +1357,21 @@ pollJobs(document.getElementById('jobs'));
   }
 
   // ================= export (46,47) =================
-  document.getElementById('ed-export').addEventListener('click', async () => {
+  function toast(msg) {   // aviso no-bloqueante (alert() rompe el flujo en móvil)
+    const t = document.createElement('div');
+    t.className = 'ed-toast';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('on'));
+    setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 350); }, 3600);
+  }
+  document.getElementById('ed-export').addEventListener('click', async e => {
     if (!tl.length) return;
     if (!getToken()) return;   // gate
+    const exBtn = e.currentTarget;
+    if (exBtn.disabled) return;
+    exBtn.disabled = true;     // doble tap móvil = 2 exports concurrentes que se pisaban
+    setTimeout(() => { exBtn.disabled = false; }, 4000);
     const segments = tl.map(s => {
       const seg = {
         clip_id: s.clip_id, a: +s.a.toFixed(2), b: +s.b.toFixed(2), speed: s.speed,
@@ -1380,8 +1396,10 @@ pollJobs(document.getElementById('jobs'));
     });
     closeExSheet();
     if (r && r.error) { alert(r.error); return; }
-    pushUndo(); tl = []; sel = -1; playhead = 0; curCid = null; renderAll();
-    loadMedia();   // el reel exportado aparecerá en el módulo Reels al terminar el job
+    // NO vaciar el timeline aquí: el job apenas se ENCOLÓ. Si el export falla (fps mezclados,
+    // ffmpeg, cancel), vaciarlo destruía la edición del usuario — solo la rescataba un undo
+    // que muere al recargar. El reel aparece solo vía el hook onDone de pollJobs.
+    toast('Export encolado — míralo en Trabajos. Tu timeline sigue intacto.');
   });
 
   // ================= guardar / cargar proyectos (localStorage · v7) =================
@@ -1444,7 +1462,7 @@ pollJobs(document.getElementById('jobs'));
         <button class="btn danger" data-proj="del" data-i="${i}" data-tip="Borrar">${icon('warn')}</button>
       </div>`).join('') : `<div class="empty">Aún no has guardado proyectos.</div>`;
   }
-  function openProjModal() { renderProjList(); projModal.style.display = 'flex'; }
+  function openProjModal() { renderProjList(); projModal.style.display = 'grid'; }
   function closeProjModal() { projModal.style.display = 'none'; }
   document.getElementById('ed-open').addEventListener('click', openProjModal);
   document.getElementById('proj-close').addEventListener('click', closeProjModal);

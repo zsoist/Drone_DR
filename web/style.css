@@ -2994,3 +2994,14 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   .btn:active, .chip:active, .nav-item:active { transform: none; }
   .scan-card { animation: none; }
 }
+
+/* toast del Studio (aviso no-bloqueante) */
+.ed-toast {
+  position: fixed; left: 50%; bottom: calc(104px + env(safe-area-inset-bottom)); z-index: 400;
+  transform: translate(-50%, 14px); opacity: 0; pointer-events: none;
+  background: var(--surface); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  color: var(--text); font-size: 12.5px; padding: 10px 18px; border-radius: 999px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.45);
+  transition: opacity .3s var(--ease), transform .3s var(--ease);
+}
+.ed-toast.on { opacity: 1; transform: translate(-50%, 0); }

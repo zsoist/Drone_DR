@@ -860,6 +860,14 @@ def _probe_dur(path):
         return 0.0
 
 
+def _ff(cmd: list):
+    """ffmpeg con stderr CAPTURADO y timeout: antes un fallo daba 'returned non-zero exit
+    status 1' en la UI y la causa real moría en el stdout del server. 30 min por paso."""
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or "ffmpeg falló sin stderr").strip()[-300:])
+
+
 def run_edit(spec: dict, j):
     try:
         fps = int(spec.get("fps") or 0)
@@ -874,12 +882,23 @@ def run_edit(spec: dict, j):
         fade = spec.get("fade", True)
         keep_audio = spec.get("audio") == "original"  # NUEVO: conservar audio del fuente
         title = str(spec.get("title", ""))[:60].replace("\\", "").replace("'", "").replace("%", "").replace(":", r"\:")
-        tmp = VAULT / "reels" / ".tmp"
+        # tmp POR JOB (no compartido): dos exports concurrentes con e{i}.mp4 fijos se pisaban
+        # los segmentos → ambos reels corruptos. El finally lo limpia entero (también en error).
+        tmp = VAULT / "reels" / f".tmp-{j['id']}"
         tmp.mkdir(parents=True, exist_ok=True)
         segs = []
         transitions = []  # transición de ENTRADA a cada corte (nombre del contrato v7)
         trans_durs = []   # transDur por corte (paralelo a transitions)
+        if len(spec["segments"]) > 24:
+            raise ValueError(f"máximo 24 cortes por reel (llegaron {len(spec['segments'])})")
         raw_segs = spec["segments"][:24]
+        # xfade exige MISMO fps en todos los inputs: con 'Fuente' (fps=0) y clips 30/60
+        # mezclados el export moría. Si hay transiciones, normaliza los segmentos a 30.
+        wants_xfade_pre = len(raw_segs) > 1 and any(
+            XFADE_MAP.get(str((s if isinstance(s, dict) else {}).get("transition", "none")))
+            for s in raw_segs[1:] if isinstance(s, dict))
+        if wants_xfade_pre and not fps:
+            rate = ["-r", "30"]
         for i, s in enumerate(raw_segs):
             if not isinstance(s, dict):
                 s = {"a": s[0], "b": s[1]}
@@ -898,7 +917,10 @@ def run_edit(spec: dict, j):
             grade_vf = _grade_vf(s.get("grade"))
             reverse = bool(s.get("reverse"))
             freeze = _clampf(s.get("freeze", 0), 0, 30, 0) if s.get("freeze") else 0
-            in_dur = min(b - a, 120)
+            if b - a > 120:
+                # antes: min(b-a,120) truncaba EN SILENCIO (preview 3 min, reel 2 min)
+                raise ValueError(f"el corte {i + 1} dura {b - a:.0f}s — máximo 120s por corte")
+            in_dur = b - a
             # freeze congela el frame de 'a' durante 'freeze' seg; ignora speed/reverse
             out_dur = freeze if freeze else in_dur / speed
             vf = [base_vf]
@@ -921,7 +943,10 @@ def run_edit(spec: dict, j):
                 txt = seg_title or title
                 vf.append(_title_drawtext(txt, title_style if seg_title else {}))
             seg = tmp / f"e{i}.mp4"
-            cmd = ["ffmpeg", "-v", "error", "-y", "-ss", str(a), "-i", str(src)]
+            # -t de ENTRADA (antes de -i): sin él, 'reverse' bufferea desde 'a' hasta el FIN
+            # del archivo y el -t de salida se queda con los ÚLTIMOS out_dur seg invertidos
+            # (contenido equivocado) + pico de RAM de minutos de 1080p.
+            cmd = ["ffmpeg", "-v", "error", "-y", "-ss", str(a), "-t", f"{in_dur:.3f}", "-i", str(src)]
             if keep_audio:
                 src_audio = _has_audio(src)
                 # audio real solo tiene sentido a velocidad normal (o casi): reverse, freeze y
@@ -945,7 +970,9 @@ def run_edit(spec: dict, j):
             else:
                 cmd += ["-t", f"{out_dur:.3f}", "-vf", ",".join(vf), "-an",
                         *rate, "-c:v", "h264_videotoolbox", "-b:v", br, str(seg)]
-            subprocess.run(cmd, check=True)
+            _ff(cmd)
+            jobstore.update(j["id"], progress=(i + 1) / (len(raw_segs) + 1),
+                            detail=f"corte {i + 1}/{len(raw_segs)}")
             segs.append(seg)
             transitions.append(s.get("transition", "none"))
             trans_durs.append(_clampf(s.get("transDur", XFADE_DEFAULT), 0.2, 1.5, XFADE_DEFAULT))
@@ -961,8 +988,8 @@ def run_edit(spec: dict, j):
             # ruta concat actual (rápida, probada) — cortes duros; 'fade' ya aplicado por segmento
             lst = tmp / "l.txt"
             lst.write_text("".join(f"file '{s}'\n" for s in segs))
-            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
-                            "-i", str(lst), "-c", "copy", str(out)], check=True)
+            _ff(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
+                 "-i", str(lst), "-c", "copy", str(out)])
             lst.unlink()
         else:
             # pase final con xfade encadenado en cada corte que pida transición de librería;
@@ -1002,13 +1029,16 @@ def run_edit(spec: dict, j):
             if keep_audio:
                 cmd += ["-c:a", "aac", "-ar", "48000", "-ac", "2"]
             cmd.append(str(out))
-            subprocess.run(cmd, check=True)
+            jobstore.update(j["id"], detail="componiendo transiciones", progress=0.92)
+            _ff(cmd)
         for s in segs:
             s.unlink()
         rebuild_index()
         job_end(j, "done", out.name)
     except Exception as e:
         job_end(j, "error", str(e)[-300:])
+    finally:
+        shutil.rmtree(VAULT / "reels" / f".tmp-{j['id']}", ignore_errors=True)
 
 
 class H(BaseHTTPRequestHandler):
