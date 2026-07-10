@@ -427,7 +427,7 @@ input.ctl:focus { border-color: var(--accent); }
 .photo-modal .pm-bar span { font-size: 11.5px; color: var(--text-3); flex: 1; min-width: 160px; }
 
 /* fondo del viewer 3D: gradiente sutil en vez de negro plano (el modelo respira) */
-#mesh-box, #cloud-box, #splat-viewer {
+#mesh-box, #cloud-box, #splat-box {
   background: radial-gradient(ellipse at 50% 35%, #1a2230 0%, #0d1017 70%, #0a0c10 100%);
 }
 
@@ -1121,10 +1121,10 @@ button.exp { text-align: left; cursor: pointer; }
   padding: 7px 10px; font-size: 12.5px; font-weight: 600; color: var(--text-3);
   background: none; border: 0; border-radius: 8px; cursor: pointer; position: relative; z-index: 1;
   transition: color .2s; }
-.pm-tabs button.on { color: var(--text-1); }
+.pm-tabs button.on { color: var(--text); }
 .pm-tabs button svg { width: 14px; height: 14px; }
 .pm-ink { position: absolute; top: 3px; bottom: 3px; left: 3px; width: 0;
-  background: color-mix(in srgb, var(--accent) 22%, var(--surface-1));
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 8px; transition: left .28s cubic-bezier(.4,1.4,.4,1), width .28s cubic-bezier(.4,1.4,.4,1);
   box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 25%, transparent); }
@@ -1143,7 +1143,7 @@ button.exp { text-align: left; cursor: pointer; }
 .pm-val { min-width: 36px; text-align: right; font-size: 11.5px; font-weight: 700; color: var(--accent);
   font-variant-numeric: tabular-nums; transition: transform .12s; }
 .pm-row .tool-lb[data-dbl] { cursor: pointer; }
-.pm-row .tool-lb[data-dbl]:hover { color: var(--text-1); }
+.pm-row .tool-lb[data-dbl]:hover { color: var(--text); }
 @media (max-width: 640px) {
   .pm-group { min-height: 0; }
   .pm-tabs button { font-size: 11.5px; padding: 6px 4px; }
@@ -1184,7 +1184,7 @@ button.exp { text-align: left; cursor: pointer; }
 .deck-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;
   margin: 22px 0 8px; }
 .dstat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  padding: 14px 16px; border-radius: 14px; background: var(--surface-1);
+  padding: 14px 16px; border-radius: 14px; background: var(--surface-2);
   border: 1px solid var(--line); position: relative; overflow: hidden; }
 .dstat::before { content: ''; position: absolute; inset: 0;
   background: radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%); }
@@ -1197,10 +1197,10 @@ button.exp { text-align: left; cursor: pointer; }
   color: var(--text-3); margin: 26px 4px 12px; }
 .deck-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
 .deck-card { display: flex; flex-direction: column; gap: 4px; padding: 18px;
-  border-radius: 16px; border: 1px solid var(--line); text-decoration: none; color: var(--text-1);
+  border-radius: 16px; border: 1px solid var(--line); text-decoration: none; color: var(--text);
   background:
     radial-gradient(130% 100% at 12% 0%, color-mix(in srgb, var(--ac) 14%, transparent), transparent 55%),
-    var(--surface-1);
+    var(--surface-2);
   position: relative; overflow: hidden;
   animation: cardIn 420ms var(--ease) both;
   transition: transform .28s cubic-bezier(.22,1.2,.36,1), border-color .25s, box-shadow .3s; }
@@ -1227,7 +1227,7 @@ button.exp { text-align: left; cursor: pointer; }
 .dv-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--text-2); }
 .dv-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 3px; margin-right: 5px; }
 .dv-total { margin-top: 10px; font-size: 12.5px; color: var(--text-3); }
-.dv-total b { color: var(--text-1); }
+.dv-total b { color: var(--text); }
 @media (max-width: 640px) {
   .deck-hero { padding-top: 18px; }
   .deck-stats { grid-template-columns: repeat(2, 1fr); }
@@ -1844,8 +1844,8 @@ button.exp { text-align: left; cursor: pointer; }
   opacity: 0; transform: scale(1.14); filter: saturate(1.05);
   transition: opacity .5s var(--ease), transform 1.4s cubic-bezier(.2,.6,.2,1); }
 .dc-scrim { position: absolute !important; inset: 0; z-index: 1 !important; opacity: 0;
-  background: linear-gradient(185deg, color-mix(in srgb, var(--surface-1) 30%, transparent) 0%,
-    color-mix(in srgb, var(--surface-1) 88%, transparent) 62%, var(--surface-1) 100%);
+  background: linear-gradient(185deg, color-mix(in srgb, var(--surface-2) 30%, transparent) 0%,
+    color-mix(in srgb, var(--surface-2) 88%, transparent) 62%, var(--surface-2) 100%);
   transition: opacity .5s var(--ease); }
 .deck-card.dc3:hover .dc-img { opacity: .5; transform: scale(1.04); }
 .deck-card.dc3:hover .dc-scrim { opacity: 1; }
@@ -1898,9 +1898,9 @@ button.exp { text-align: left; cursor: pointer; }
 .foot-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .fbtn { display: flex; align-items: center; justify-content: center; gap: 7px;
   padding: 11px 10px; border-radius: 12px; font-size: 12.5px; font-weight: 700;
-  color: var(--text-1); text-decoration: none;
-  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 14%, var(--surface-1)),
-    var(--surface-1));
+  color: var(--text); text-decoration: none;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 14%, var(--surface-2)),
+    var(--surface-2));
   border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
   transition: transform .25s cubic-bezier(.34,1.4,.5,1), box-shadow .3s, border-color .25s; }
 .fbtn svg.ic { width: 15px; height: 15px; color: var(--accent); }
@@ -1929,7 +1929,7 @@ button.exp { text-align: left; cursor: pointer; }
 .tl-editor .tl-tool .tl-lb { font-size: 9.5px; font-weight: 600; letter-spacing: .02em;
   color: var(--text-3); line-height: 1; }
 .tl-editor .tl-tool:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.tl-editor .tl-tool:hover .tl-lb { color: var(--text-1); }
+.tl-editor .tl-tool:hover .tl-lb { color: var(--text); }
 .tl-editor .tl-tool.on { background: var(--accent-dim); color: var(--accent); }
 .tl-editor .tl-tool.on .tl-lb { color: var(--accent); }
 .tl-editor .tl-tool[disabled] { opacity: .35; }
@@ -2057,7 +2057,7 @@ button.exp { text-align: left; cursor: pointer; }
 .deck-hero { position: relative; padding-bottom: 26px; }
 .fly-drone { position: absolute; top: 8px; width: 108px; height: 49px;
   animation: fly-x 17s linear infinite, fly-bob 2.4s ease-in-out infinite; }
-.fly-drone .body { fill: color-mix(in srgb, var(--text-1) 82%, transparent); }
+.fly-drone .body { fill: color-mix(in srgb, var(--text) 82%, transparent); }
 .fly-drone .arm { stroke: color-mix(in srgb, var(--text-2) 80%, transparent); stroke-width: 2.5; stroke-linecap: round; fill: none; }
 .fly-drone .cam { fill: none; stroke: var(--accent); stroke-width: 2; }
 .fly-drone .rotor ellipse { fill: color-mix(in srgb, var(--accent) 55%, transparent); }
@@ -2082,7 +2082,7 @@ button.exp { text-align: left; cursor: pointer; }
   display: flex; flex-direction: column; justify-content: flex-end;
   transform: perspective(950px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
   transition: transform .1s linear, border-color .3s, box-shadow .35s;
-  animation: cardIn 420ms var(--ease) both; background: var(--surface-1); }
+  animation: cardIn 420ms var(--ease) both; background: var(--surface-2); }
 .deck-card.dc4.wide { grid-column: span 2; }
 .deck-card.dc4:hover { border-color: color-mix(in srgb, var(--ac) 70%, var(--line));
   box-shadow: 0 26px 60px -20px color-mix(in srgb, var(--ac) 60%, transparent),
@@ -2177,7 +2177,7 @@ button.exp { text-align: left; cursor: pointer; }
   align-items: flex-end; justify-content: center;
   background: rgba(4,6,10,.55); backdrop-filter: blur(6px); }
 .ex-card { width: min(680px, 100%); max-height: 88dvh; overflow-y: auto;
-  background: var(--surface-1); border: 1px solid var(--line);
+  background: var(--surface-2); border: 1px solid var(--line);
   border-radius: 18px 18px 0 0; box-shadow: 0 -18px 60px rgba(0,0,0,.5); }
 @media (min-width: 700px) {
   .ex-sheet { align-items: center; padding: 24px; }
@@ -2222,7 +2222,7 @@ button.exp { text-align: left; cursor: pointer; }
 }
 /* la tarjeta de export debe ser opaca (surface-1 es translúcido) */
 .ex-card { background: var(--surface); }
-.ex-card .ex-body, .ex-card .ph, .ex-card .ex-foot { background: color-mix(in srgb, var(--surface-1) 60%, var(--surface)); }
+.ex-card .ex-body, .ex-card .ph, .ex-card .ex-foot { background: color-mix(in srgb, var(--surface-2) 60%, var(--surface)); }
 
 /* ===== BLOQUE 10 · home v5: dron interactivo, cielo rico, cards con media ===== */
 /* título con gradiente vivo que respira */
@@ -2351,7 +2351,7 @@ button.exp { text-align: left; cursor: pointer; }
 .up-wrap { max-width: 780px; display: flex; flex-direction: column; gap: 14px; }
 .up-gate { display: flex; align-items: center; gap: 14px; padding: 14px 16px;
   border-radius: 14px; border: 1px solid color-mix(in srgb, var(--amber, #e0a458) 45%, var(--line));
-  background: color-mix(in srgb, var(--amber, #e0a458) 9%, var(--surface-1)); }
+  background: color-mix(in srgb, var(--amber, #e0a458) 9%, var(--surface-2)); }
 .up-gate > svg.ic { width: 22px; height: 22px; color: var(--amber, #e0a458); flex: none; }
 .up-gate b { font-size: 14px; }
 .up-gate p { font-size: 12.5px; color: var(--text-2); margin: 2px 0 0; }
@@ -2362,13 +2362,13 @@ button.exp { text-align: left; cursor: pointer; }
   border: 1.5px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
   background:
     radial-gradient(120% 100% at 50% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
-    var(--surface-1);
+    var(--surface-2);
   transition: border-color .25s, transform .25s, box-shadow .3s; }
 .up-zone:hover, .up-zone.over { border-color: var(--accent); transform: translateY(-2px);
   box-shadow: 0 16px 40px -18px color-mix(in srgb, var(--accent) 50%, transparent); }
 .up-zone.over { background:
   radial-gradient(120% 100% at 50% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
-  var(--surface-1); }
+  var(--surface-2); }
 .up-zone.locked { opacity: .55; }
 .up-zone > svg.ic { width: 34px; height: 34px; color: var(--accent); }
 .up-ring { position: absolute; inset: -40% -10%; pointer-events: none; opacity: 0;
@@ -2381,7 +2381,7 @@ button.exp { text-align: left; cursor: pointer; }
 .up-devices .gchip svg.ic { width: 12px; height: 12px; }
 
 .up-steps { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 12px 14px; border-radius: 12px; background: var(--surface-1);
+  padding: 12px 14px; border-radius: 12px; background: var(--surface-2);
   border: 1px solid var(--line); }
 .up-steps span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
   font-weight: 600; color: var(--text-2); }
@@ -2391,7 +2391,7 @@ button.exp { text-align: left; cursor: pointer; }
 
 .up-queue { display: flex; flex-direction: column; gap: 10px; }
 .up-card { display: flex; align-items: center; gap: 13px; padding: 13px 15px;
-  border-radius: 14px; border: 1px solid var(--line); background: var(--surface-1);
+  border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2);
   animation: cardIn 300ms var(--ease) both; }
 .up-ic { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
   flex: none; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--line); }

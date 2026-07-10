@@ -51,7 +51,7 @@
             <option value="weak">Malla débil</option>
           </select>
           <div class="seg td-viewseg" aria-label="Modo de vista">
-            <button class="on" data-proj-mode="cards">${icon('grid')} Cards</button>
+            <button class="on" data-proj-mode="cards">${icon('grid')} Tarjetas</button>
             <button data-proj-mode="list">${icon('list')} Lista</button>
           </div>
         </div>
@@ -207,7 +207,7 @@
       <div class="ph">${icon('spark')} Gaussian splat del proyecto
         <span class="chip" id="sp-status" style="font-size:10.5px;padding:2px 9px"></span>
         <span class="spacer" style="flex:1"></span>
-        <select id="sp-select" title="Versión del splat" style="display:none;max-width:260px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:11.5px"></select>
+        <select id="sp-select" title="Versión del splat" style="display:none;max-width:260px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:11.5px"></select>
         <button class="btn primary" id="load-splat" style="padding:4px 12px;font-size:11.5px">Cargar</button>
       </div>
       <div id="splat-box" style="height:56dvh;min-height:360px;display:grid;place-items:center;position:relative">
@@ -284,7 +284,8 @@
     `${(s.bytes / 1e6).toFixed(1)} MB`,
     (s.format || s.name.split('.').pop() || 'splat').toUpperCase(),
   ].filter(Boolean).join(' · ');
-  try { sys = await (await fetch('data/manifest/system.json')).json(); } catch {}
+  let sysErr = false;   // distinguir "no hay proyectos" de "no se pudo CARGAR el índice"
+  try { sys = await (await fetch('data/manifest/system.json')).json(); } catch { sysErr = true; }
   models = sys.models || [];
   const flights = await getFlights();
   function bboxFromCorners(corners) {
@@ -362,7 +363,10 @@
           </div>
         </div>
       </div>`;
-    }).join('') : `<p class="footer-note" style="margin:0">${models.length ? 'No hay proyectos que coincidan con ese filtro.' : 'Sin proyectos 3D aún — procesa un vuelo abajo para crear el primero.'}</p>`;
+    }).join('') : `<p class="footer-note" style="margin:0">${sysErr
+      ? 'No se pudo cargar el índice de proyectos — revisa la conexión y <a href="#" onclick="location.reload();return false" style="color:var(--accent)">recarga</a>.'
+      : models.length ? 'No hay proyectos que coincidan con ese filtro.'
+        : 'Sin proyectos 3D aún — ve a la pestaña <b>Procesamiento</b> (arriba) para crear el primero.'}</p>`;
   }
   document.getElementById('proj-q')?.addEventListener('input', e => { projQ = e.target.value; renderCards(); });
   document.getElementById('proj-filter')?.addEventListener('change', e => { projFilter = e.target.value; renderCards(); });
@@ -374,6 +378,7 @@
     renderCards();
   });
   document.getElementById('proj-grid').addEventListener('click', async e => {
+    if (e.target.tagName === 'INPUT') return;      // click DENTRO del input de renombrar ≠ acción de card
     const btn = e.target.closest('[data-act]');
     const card = e.target.closest('.proj-card');
     if (!card) return;
@@ -496,14 +501,19 @@
       if (!c) return;
       ov.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
     });
-    ov.querySelector('#m-go').addEventListener('click', async () => {
-      const r = await api('/api/odm', {
-        clip_id: ov.querySelector('.mflight.on')?.dataset.cid,
-        preset: ov.querySelector('.mpreset.on')?.dataset.k || 'estandar',
-        title: ov.querySelector('#m-title').value.trim(),
-      });
-      if (r.error) return alert(r.error);
-      close();
+    ov.querySelector('#m-go').addEventListener('click', async e2 => {
+      const btn = e2.currentTarget;
+      btn.disabled = true;                          // doble clic = doble job (el guard es server-side pero feo)
+      try {
+        const r = await api('/api/odm', {
+          clip_id: ov.querySelector('.mflight.on')?.dataset.cid,
+          preset: ov.querySelector('.mpreset.on')?.dataset.k || 'estandar',
+          title: ov.querySelector('#m-title').value.trim(),
+        });
+        if (r.error) return alert(r.error);
+        close();
+        showTdMod('jobs');                          // feedback: te lleva a VER el job encolado (antes: silencio)
+      } finally { btn.disabled = false; }
     });
   });
   pollJobs(document.getElementById('jobs3d'));
@@ -618,6 +628,7 @@
       omap.on('click', onMapClick);
     });
     // recentrar: volver al encuadre del proyecto cuando te pierdes navegando
+    document.querySelectorAll('#omap .map-recenter').forEach(x => x.remove());  // no acumular uno por setProject
     const rc = document.createElement('button');
     rc.className = 'map-recenter';
     rc.title = 'Recentrar en el proyecto';
@@ -649,7 +660,7 @@
     sbox._loading = false;
     sbox.innerHTML = `<p class="footer-note" style="margin:0" id="splat-note">${spMeta
       ? 'Splat entrenado y listo — elige versión y pulsa Cargar para el render foto-real.'
-      : 'Este proyecto aún no tiene splat — entrénalo con "Generar splat…" arriba.'}</p>`;
+      : 'Este proyecto aún no tiene splat — entrénalo desde la pestaña <b>Procesamiento</b> → "Generar splat…".'}</p>`;
     const cloudMB = (cur.cloud_bytes || 0) / 1e6;
     resetViewer('cloud-box', `Nube de puntos${cloudMB ? ` · ${cloudMB.toFixed(0)} MB` : ''}`, 'load-cloud-main');
     // solo si la malla es usable: con mesh_ok=false el bloque de arriba (línea ~540) ya puso
@@ -1016,11 +1027,20 @@
 
   document.getElementById('load-mesh').addEventListener('click', async e => {
     if (!cur || cur.mesh_ok === false) return;
-    e.currentTarget.style.display = 'none';
+    const meshLoadBtn = e.currentTarget;
+    meshLoadBtn.style.display = 'none';
     const box = document.getElementById('mesh-box');
     const stM = spin(box, 'Cargando malla texturizada…');
     const base = `data/models/${cur.clip_id}/model/`;
-    await buildMeshViewer(box, base, cur, stM);
+    try {
+      await buildMeshViewer(box, base, cur, stM);
+    } catch (err) {
+      // sin esto: spinner infinito con el botón ya oculto = pantalla muda sin salida
+      box.innerHTML = `<p class="footer-note" style="margin:0;color:var(--amber)">
+        ${icon('warn')} No se pudo cargar la malla · ${esc(String(err?.message || err).slice(0, 80))}</p>`;
+      meshLoadBtn.style.display = '';
+      meshLoadBtn.textContent = 'Reintentar';
+    }
   });
 
   // visor de malla con SWITCH de calidad (bajo=1024/256MB · alto=2048/1024MB) y render
@@ -1147,10 +1167,22 @@
     e.currentTarget.style.display = 'none';
     const box = document.getElementById('cloud-box');
     const myLoad = box._loadToken;                 // currency: bail si cambia de proyecto (#1)
+    const cloudBtn = e.currentTarget;
     const stC = spin(box, 'Descargando nube de puntos…');
-    const geo = await new PLYLoader().loadAsync(`data/models/${cur.clip_id}/cloud.ply`,
-      ev => { stC.textContent = ev.total ? `Nube · ${Math.round(ev.loaded / ev.total * 100)}%`
-                                         : `Nube · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
+    let geo;
+    try {
+      geo = await new PLYLoader().loadAsync(`data/models/${cur.clip_id}/cloud.ply`,
+        ev => { stC.textContent = ev.total ? `Nube · ${Math.round(ev.loaded / ev.total * 100)}%`
+                                           : `Nube · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
+    } catch (err) {
+      // 404/red caída: sin esto el skeleton giraba para siempre (y el autoload lo dispara solo)
+      if (box._loadToken !== myLoad) return;
+      box.innerHTML = `<p class="footer-note" style="margin:0;color:var(--amber)">
+        ${icon('warn')} No se pudo cargar la nube · ${esc(String(err?.message || err).slice(0, 80))}</p>`;
+      cloudBtn.style.display = '';
+      cloudBtn.textContent = 'Reintentar';
+      return;
+    }
     if (box._loadToken !== myLoad) { geo.dispose(); return; }   // proyecto cambió durante la descarga
     const mat = new THREE.PointsMaterial({ size: 0.18, sizeAttenuation: true, vertexColors: geo.hasAttribute('color') });
     const pts = new THREE.Points(geo, mat);
@@ -1329,16 +1361,21 @@
       if (!c) return;
       group.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
     }));
-    ov.querySelector('#m-go').addEventListener('click', async () => {
-      const base = ov.querySelector('.mflight.on');
-      const r = await api('/api/splat', {
-        clip_id: base?.dataset.cid,
-        auto_model: base?.dataset.autoModel === '1',
-        model_preset: ov.querySelector('[data-model-preset].on')?.dataset.modelPreset || 'estandar',
-        preset: ov.querySelector('.splat-presets .mpreset.on')?.dataset.preset || 'medium',
-      });
-      if (r.error) return alert(r.error);
-      close();
+    ov.querySelector('#m-go').addEventListener('click', async e2 => {
+      const btn = e2.currentTarget;
+      btn.disabled = true;
+      try {
+        const base = ov.querySelector('.mflight.on');
+        const r = await api('/api/splat', {
+          clip_id: base?.dataset.cid,
+          auto_model: base?.dataset.autoModel === '1',
+          model_preset: ov.querySelector('[data-model-preset].on')?.dataset.modelPreset || 'estandar',
+          preset: ov.querySelector('.splat-presets .mpreset.on')?.dataset.preset || 'medium',
+        });
+        if (r.error) return alert(r.error);
+        close();
+        showTdMod('jobs');                          // feedback inmediato del encolado
+      } finally { btn.disabled = false; }
     });
   });
   document.getElementById('splats').addEventListener('click', async e => {
@@ -1361,7 +1398,13 @@
       const scid = delBtn.dataset.del, title = delBtn.dataset.title || scid;
       if (!confirm(`¿Borrar el splat "${title}"?\n\nVa a la papelera (reversible). El modelo 3D, la nube y el video NO se tocan.`)) return;
       delBtn.disabled = true;
-      const r = await api('/api/splat_delete', { clip_id: scid });
+      let r;
+      try {
+        r = await api('/api/splat_delete', { clip_id: scid });
+      } catch (err) {
+        delBtn.disabled = false;                    // login cancelado / red: el botón no queda muerto
+        return alert(String(err?.message || err));
+      }
       if (r.error) { delBtn.disabled = false; return alert(r.error); }
       // saca el splat del estado del cliente: si no, splatAssetFor lo sigue viendo y RESUCITA
       // (botón "Cargar" reaparece, apunta a un archivo ya en la papelera → 404) al reabrir el proyecto
@@ -1376,6 +1419,7 @@
       document.querySelectorAll('#splats .splat-item').forEach(el => {
         if (el.dataset.cid === scid) el.remove();
       });
+      renderCards();   // la proj-card mostraba 'N splats' — refléjalo sin recargar
     }
   });
 
