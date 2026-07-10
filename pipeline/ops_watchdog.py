@@ -94,16 +94,29 @@ def kick(label: str, why: str):
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
 
 
+def _alive(status: int, body: str) -> bool:
+    """Vivo-a-efectos-de-reinicio. Un 503 cuyo body es el JSON de NUESTRO healthz significa
+    server vivo pero DEGRADADO (disco <10GB, manifest roto): kickstart -k no arregla nada y
+    mata uploads/edits en curso — sin esto, tormenta de reinicios cada 60s hasta que el disco
+    se libere. Un 502/530 de Cloudflare trae HTML (no parsea como JSON) → sí se cura."""
+    if 200 <= status < 400:
+        return True
+    try:
+        return isinstance(json.loads(body), dict)
+    except ValueError:
+        return False
+
+
 def probe(url: str, timeout: int) -> tuple[bool, str, int]:
     req = urllib.request.Request(url, headers={"User-Agent": "AeroBrainWatchdog/1"})
     t0 = time.monotonic()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            detail = r.read(512).decode("utf-8", "replace")
-            return 200 <= r.status < 400, f"{r.status} {detail[:180]}", round((time.monotonic() - t0) * 1000)
+            detail = r.read(2048).decode("utf-8", "replace")
+            return _alive(r.status, detail), f"{r.status} {detail[:180]}", round((time.monotonic() - t0) * 1000)
     except urllib.error.HTTPError as e:
-        detail = e.read(512).decode("utf-8", "replace")
-        return 200 <= e.code < 400, f"{e.code} {detail[:180]}", round((time.monotonic() - t0) * 1000)
+        detail = e.read(2048).decode("utf-8", "replace")
+        return _alive(e.code, detail), f"{e.code} {detail[:180]}", round((time.monotonic() - t0) * 1000)
     except Exception as e:
         return False, type(e).__name__, round((time.monotonic() - t0) * 1000)
 

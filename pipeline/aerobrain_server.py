@@ -48,7 +48,9 @@ TOKEN = TOKEN_FILE.read_text().strip()
 VIEWER_ACTIVITY = Path("/tmp/aerobrain-viewer-active")
 VIEWER_ACTIVE_S = 45
 
-jobstore.init(orphan_kinds=jobstore.LIGHT_KINDS)
+# OJO: jobstore.init(orphan_kinds=...) NO va aquí a nivel de módulo. El worker importa este
+# módulo (splat_quality/prune) y un init con LIGHT_KINDS desde el proceso worker MATARÍA los
+# jobs ligeros (edit/upload) que el server tiene corriendo. El init vive en __main__.
 JLOCK = threading.Lock()         # compat: secciones que actualizan detail
 
 
@@ -1067,8 +1069,11 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True, "local": self._is_local()})
             return self.send_json({"ok": False}, 403)
         if self.path.startswith("/api/viewer_ping"):
+            # Sec-Fetch-Site OBLIGATORIA y del propio sitio: todos los navegadores la mandan
+            # en fetch(); antes un `site` vacío (curl remoto) pasaba y cualquiera podía mantener
+            # ODM en 7 cores y OpenSplat en background 24/7 pingueando gratis. Local exento (tests).
             site = (self.headers.get("Sec-Fetch-Site") or "").lower()
-            if site and site not in ("same-origin", "same-site", "none"):
+            if not (self._is_local() or site in ("same-origin", "same-site")):
                 return self.send_json({"ok": False}, 403)
             mark_viewer_activity()
             return self.send_json({"ok": True})
@@ -1151,7 +1156,10 @@ class H(BaseHTTPRequestHandler):
         rng = self.headers.get("Range")
         if f.suffix.lower() == ".mp4":
             ua = self.headers.get("User-Agent", "")
-            if not ua.startswith(("AeroBrainWatchdog/", "AeroBrainOpsStatus/")):
+            # el probe externo TAMBIÉN va en la whitelist: su Range-GET cada 15 min marcaba
+            # actividad de viewer y degradaba ODM/OpenSplat 45s por corrida — el monitoreo
+            # se auto-infligía ~5% del wall-time de los jobs pesados
+            if not ua.startswith(("AeroBrainWatchdog/", "AeroBrainOpsStatus/", "AeroBrainExternalProbe/")):
                 mark_viewer_activity()
         # binarios 3D pesados (nube/malla/splat): cachear PERO revalidar (no-cache + 304).
         # Las URLs no llevan versión y un re-entreno reescribe el mismo nombre — max-age
@@ -1482,15 +1490,40 @@ class H(BaseHTTPRequestHandler):
             hist.mkdir(exist_ok=True)
             ts = time.strftime("%Y%m%d-%H%M%S")
             archived = []
+            # lee el meta ANTES de archivarlo: la versión editada hereda cámaras/iters (sin loss,
+            # ya no es medible tras la edición). Sin esto queda iters=0 y el sort "iters primero"
+            # dejaría el splat recién editado DEBAJO del viejo — el round-trip de SuperSplat no serviría.
+            old_meta = {}
+            meta_p = sdir / f"{cid}.meta.json"
+            if meta_p.is_file():
+                try:
+                    old_meta = json.loads(meta_p.read_text())
+                except (ValueError, OSError):
+                    old_meta = {}
+            archived_splat = archived_ksplat = None
             for old in (sdir / f"{cid}.splat", sdir / f"{cid}.ksplat", sdir / f"{cid}.ply",
-                        sdir / f"{cid}.meta.json", sdir / f"{cid}.cameras.json"):
+                        meta_p, sdir / f"{cid}.cameras.json"):
                 if old.is_file():
                     suffix = old.name[len(cid):]
-                    os.replace(old, hist / f"{cid}-{ts}{suffix}")
+                    dst = hist / f"{cid}-{ts}{suffix}"
+                    os.replace(old, dst)
                     archived.append(old.name)
+                    if suffix == ".splat":
+                        archived_splat = f"splats/history/{dst.name}"
+                    elif suffix == ".ksplat":
+                        archived_ksplat = f"splats/history/{dst.name}"
+            # los jobs 'done' del entrenamiento anterior deben seguir apuntando a SU versión
+            # archivada, no al path mutable que ahora es el archivo editado (mismo contrato que
+            # publish_splat_stage)
+            if archived_splat or archived_ksplat:
+                jobstore.retarget_splat_artifacts(cid, archived_splat, archived_ksplat)
             prune_splat_history(hist, cid, keep=6)
             final = sdir / f"{cid}{ext}"
             os.replace(tmp, final)
+            if old_meta:
+                new_meta = {k: v for k, v in old_meta.items() if k != "final_loss"}
+                new_meta["edited"] = True          # editado en SuperSplat: el loss ya no aplica
+                meta_p.write_text(json.dumps(new_meta, indent=1))
             kname = None
             if ext != ".ksplat":   # optimizado para el viewer (no fatal si node falla)
                 ktmp = sdir / f"{cid}.ksplat.tmp"
@@ -1864,6 +1897,7 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 
 if __name__ == "__main__":
+    jobstore.init(orphan_kinds=jobstore.LIGHT_KINDS)   # solo el server marca huérfanos sus LIGHT
     # limpia temporales de subida huérfanos (.upload-<cid>-<hex>.<ext>): una subida cortada por
     # reinicio/OOM deja el tmp en splats/. best_splats ya los ignora, pero purgarlos evita acumular
     # GBs invisibles (igual que el worker limpia .training/). Solo al arrancar el server, no en import.

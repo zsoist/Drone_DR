@@ -233,8 +233,12 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
                 archived_splat = f"splats/history/{dst.name}"
             elif suffix == ".ksplat":
                 archived_ksplat = f"splats/history/{dst.name}"
-    if archived_splat:
-        jobstore.retarget_splat_artifacts(cid, archived_ksplat or archived_splat)
+    if archived_splat or archived_ksplat:
+        jobstore.retarget_splat_artifacts(cid, archived_splat, archived_ksplat)
+    # poda de versiones también en la ruta de ENTRENAMIENTO (antes solo en /api/splat_upload):
+    # iterar cinematic/ultra archivaba 20MB+ por corrida sin límite
+    from aerobrain_server import prune_splat_history
+    prune_splat_history(hist, cid, keep=6)
     os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
     os.replace(tmp_out, final_out)
     cam = stage / "cameras.json"
@@ -371,6 +375,13 @@ def openmvs_retry_preset(preset: dict) -> dict:
 def run_odm_container(jid, container, proj, preset, preset_name, rerun_from: str | None = None,
                       stable_dense: bool = False):
     """Corre ODM con la memoria del preset; devuelve el exit code de run_tracked."""
+    # el AutoRemove de docker tras un kill es ASÍNCRONO: relanzar con el mismo --name en la
+    # cadena de fallback puede dar "name already in use" (rc 125) y quemar un escalón entero.
+    # rm -f síncrono garantiza el nombre libre (no-op si no existe).
+    try:
+        subprocess.run([DOCKER, "rm", "-f", container], capture_output=True, timeout=30)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
     return jobstore.run_tracked(jid, odm_cmd(container, proj, preset, rerun_from, stable_dense),
                                 timeout=preset["timeout"], tick=adaptive_priority(container))
 
@@ -391,7 +402,10 @@ def fast_ortho_cmd(container: str, proj: Path, ortho_res: str = "5") -> list[str
 
 
 def run_fast_ortho_fallback(jid: str, proj: Path, container: str) -> int:
-    jobstore.update(jid, detail="2/3 OpenMVS falló → fallback fast-orthophoto/25D",
+    # registra el NOMBRE REAL del contenedor: cancel/timeout matan `docker kill <job.container>`,
+    # y si sigue apuntando a `odm-{jid}` (ya muerto) el `-ortho` quedaría huérfano quemando CPU
+    jobstore.update(jid, container=container,
+                    detail="2/3 OpenMVS falló → fallback fast-orthophoto/25D",
                     stage="odm-fallback", progress=0.55)
     try:
         return jobstore.run_tracked(jid, fast_ortho_cmd(container, proj), timeout=2 * 3600,

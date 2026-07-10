@@ -138,10 +138,13 @@ def jobs_status() -> dict:
             active = [dict(r) for r in c.execute(
                 "SELECT id,kind,label,status,progress,started FROM jobs "
                 "WHERE status IN ('queued','running') ORDER BY started DESC LIMIT 10")]
+            # umbral por ENCIMA del timeout más largo del worker (ODM ultra = 16h): un run
+            # ultra nocturno legítimo NO debe poner el reporte en FAIL a las 8h — eso degradaba
+            # la señal para cualquier automatización que consuma el exit code
             stale = [dict(r) for r in c.execute(
                 "SELECT id,kind,label,status,started FROM jobs "
                 "WHERE status='running' AND started < ? ORDER BY started ASC LIMIT 10",
-                (time.time() - 8 * 3600,))]
+                (time.time() - 17 * 3600,))]
         return {"ok": not stale, "active": active, "stale_running": stale}
     except Exception as e:
         return {"ok": False, "error": type(e).__name__}

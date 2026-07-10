@@ -12,6 +12,8 @@ Usage:
       --pc-quality low --feature-quality medium --max-concurrency 4
 """
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -82,21 +84,34 @@ def main():
     expected = int(json.loads((VAULT / "manifest" / f"{cid}.json").read_text())
                    .get("duration_s", 0) * fps) if (VAULT / "manifest" / f"{cid}.json").exists() else 0
     print(f"frames {width}px de {raw.name} (~{expected or '?'} esperados)…", flush=True)
-    for old in images.glob("f_*.jpg"):
-        old.unlink()
+    # extrae a un dir TEMPORAL y haz swap al final: si se borran los frames viejos ANTES y
+    # ffmpeg falla (o cancelan el job), el opensfm previo queda apuntando a imágenes
+    # inexistentes y el próximo splat del clip revienta — se perdía poder re-entrenar
+    # hasta completar un 3D entero.
+    tmp_dir = proj / "images.new"
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    tmp_dir.mkdir(parents=True)
     # -hwaccel videotoolbox: decodifica el HEVC 4K60 10-bit en el Media Engine del M4
     # (antes: software decode = fase 1 de ~4-5 min; ahora ~2-3x más rápido)
     proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y",
                              "-hwaccel", "videotoolbox", "-i", str(raw),
                              "-vf", f"fps={fps},scale={width}:-2", "-q:v", "2",
-                             str(images / "f_%04d.jpg")])
+                             str(tmp_dir / "f_%04d.jpg")])
     import time as _t
     while proc.poll() is None:
         _t.sleep(8)
-        n = len(list(images.glob("f_*.jpg")))
+        n = len(list(tmp_dir.glob("f_*.jpg")))
         print(f"frames: {n}/{expected or '?'}", flush=True)   # → log tail de la UI
     if proc.returncode != 0:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         raise SystemExit("ffmpeg falló extrayendo frames")
+    # éxito: ahora sí, fuera los viejos y entran los nuevos
+    for old in images.glob("f_*.jpg"):
+        old.unlink()
+    for f in sorted(tmp_dir.glob("f_*.jpg")):
+        os.replace(f, images / f.name)
+    shutil.rmtree(tmp_dir, ignore_errors=True)
 
     if profile:
         prune_frames(images, pts, fps, profile)

@@ -173,16 +173,23 @@ def clear_artifacts(cid: str):
                   "WHERE label=? AND status='done' AND artifact != ''", (cid,))
 
 
-def retarget_splat_artifacts(cid: str, archived_artifact: str):
+def retarget_splat_artifacts(cid: str, archived_splat: str | None,
+                             archived_ksplat: str | None = None):
     """When a newer splat becomes current, previous done jobs must keep pointing to
-    their exact archived version instead of the mutable splats/<cid>.splat path."""
-    archived_name = Path(archived_artifact).name
+    their archived version instead of the mutable splats/<cid>.{splat,ksplat} path.
+    Ambos paths mutables retargetean al MEJOR archivado (ksplat > splat, carga mas rapida).
+    Los jobs nuevos terminan con artifact .ksplat: si solo se matchea .splat, la tarjeta
+    del job viejo abriria silenciosamente el modelo NUEVO (regresion de 221903f)."""
+    target = archived_ksplat or archived_splat
+    if not target:
+        return
+    tname = Path(target).name
     with _LOCK, _conn() as c:
-        c.execute("UPDATE jobs SET artifact=?, detail=replace(detail, ?, ?) "
-                  "WHERE kind='splat' AND label=? "
-                  "AND status='done' AND artifact=?",
-                  (archived_artifact, f"{cid}.splat", archived_name,
-                   cid, f"splats/{cid}.splat"))
+        for mutable in (f"splats/{cid}.splat", f"splats/{cid}.ksplat"):
+            c.execute("UPDATE jobs SET artifact=?, detail=replace(detail, ?, ?) "
+                      "WHERE kind='splat' AND label=? "
+                      "AND status='done' AND artifact=?",
+                      (target, Path(mutable).name, tname, cid, mutable))
 
 
 def get(jid: str) -> dict | None:
