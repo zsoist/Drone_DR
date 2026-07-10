@@ -1091,6 +1091,15 @@ class H(BaseHTTPRequestHandler):
             f.relative_to(base)  # contención estricta (startswith es bypasseable: vault2/)
         except ValueError:
             return None
+        # DENYLIST del vault (crítico): /data servía TODA la raíz sin auth — /data/.token filtraba
+        # el TOKEN MAESTRO por el túnel público (write total) y /data/manifest/jobs.db la BD entera.
+        # El vault mezcla assets públicos (models/thumbs/manifest/ai/splats) con secretos y estado.
+        if base == VAULT.resolve():
+            parts = f.relative_to(base).parts
+            if (any(seg.startswith(".") for seg in parts)                    # .token .training .tmp-* dotfiles
+                    or f.suffix.lower() in (".db", ".token", ".env", ".sqlite", ".jsonl", ".log")
+                    or parts[0] in ("ops", "trash", "odm", "raw")):          # dirs internos: nunca públicos
+                return None
         return f if f.is_file() else None
 
     def do_GET(self):
