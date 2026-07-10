@@ -180,7 +180,7 @@ function humanStage(j) {
 function jobCard(j, flightsIdx, entering = true) {
   const meta = KIND_META[j.kind] || { ic: 'activity', name: j.kind };
   const f = flightsIdx?.[j.label];
-  const title = `${meta.name} · ${f ? (esc(f.label) || fmt.date(f.date) + ' ' + f.time) : esc(j.label.length > 30 ? j.label.slice(-14) : j.label)}`;
+  const title = `${meta.name} · ${f ? (esc(f.label) || fmt.date(f.date) + ' ' + f.time) : esc((j.label || '').length > 30 ? (j.label || '').slice(-14) : (j.label || 'trabajo'))}`;
   const stLabel = { running: 'procesando', queued: 'en cola', done: 'listo',
     error: 'falló', cancelled: 'cancelado', cancel_failed: 'cancel falló' }[j.status] || j.status;
   const pct = j.progress ? Math.round(j.progress * 100) : null;

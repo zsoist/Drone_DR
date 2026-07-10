@@ -76,7 +76,7 @@ function setHTML(el, html) {
 
 const spotKey = f => f.stats?.home ? `${Math.round(f.stats.home[0] / 0.005)}:${Math.round(f.stats.home[1] / 0.005)}` : null;
 function matches(f) {
-  if (state.semantic && semRank) return semRank.has(f.clip_id);
+  if (state.semantic && semRank) return semRank.has(f.clip_id) && (!f.archived || state.tier === 'archived');   // la semántica no resucita archivados
   if (state.spot && spotKey(f) !== state.spot) return false;
   if (state.has.has('video') && !f.has_proxy) return false;
   if (state.has.has('model') && !models.has(f.clip_id)) return false;

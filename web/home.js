@@ -96,7 +96,7 @@ main.classList.add('deck-main');
 
     <div class="deck-hero rise">
       <div class="hero-air" id="hero-air">${DRONE}</div>
-      <div class="deck-greet mono">${saludo} · ${fmt.date(new Date().toISOString().slice(0, 10))}</div>
+      <div class="deck-greet mono">${saludo} · ${fmt.date([new Date().getFullYear(), String(new Date().getMonth() + 1).padStart(2, '0'), String(new Date().getDate()).padStart(2, '0')].join('-'))}</div>
       <h1 class="deck-title v6" id="deck-title">Flight <em>Deck</em></h1>
       <div class="deck-jobs" id="deck-jobs"></div>
     </div>
@@ -320,6 +320,7 @@ main.classList.add('deck-main');
       raf = requestAnimationFrame(loop);
     };
     const start = () => { if (!raf && cv.isConnected) raf = requestAnimationFrame(loop); };
+    new ResizeObserver(() => { if (cv.isConnected) fit(); }).observe(cv);   // rotar el móvil estiraba el bitmap
     const stop = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; } };
     cloudLoops.push({ start, stop });
     start();
@@ -402,7 +403,12 @@ main.classList.add('deck-main');
     // salto diferido tras la animación, pero CANCELABLE: si el usuario cambió de tab o inició
     // otra navegación durante los 500ms, no lo arrastres a la card que reventó
     const navTimer = setTimeout(() => {
-      if (document.hidden) { card._busy = false; return; }   // tab en segundo plano → no navegar
+      if (document.hidden) {
+        card._busy = false;
+        veil.remove();                                 // sin esto el velo (fixed z-999) cubría la página PARA SIEMPRE
+        card.classList.remove('smash');                // y la card quedaba pointer-events:none
+        return;
+      }
       location.href = card.getAttribute('href');
     }, 500);
     window.addEventListener('pagehide', () => clearTimeout(navTimer), { once: true });

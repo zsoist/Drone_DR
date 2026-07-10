@@ -4,6 +4,10 @@ Del bug hunt masivo de 8 tabs (72 confirmados): los HIGH + crashes + XSS + UX de
 Quedan 32 de menor severidad (polish: caret jumps, undo gaps, teardown en SPA, NaN de borde ya mitigados por los guards de fmt).
 
 ## dron
+✅ VERIFICADO 2026-07-10 (hunt Inicio+Vuelos+Dron): los 8 findings de abajo YA ESTABAN arreglados
+en el código. Nuevos fixes de hoy: diff del scan (foco del buscador ya no se pierde cada 10s),
+anti doble-submit importar/optimizar + dedupe server de ingest, drop captura files antes del await,
+403 pinta stats, /api/sd tolera SD extraída a mitad de escaneo.
 - [medium] Debounced search input and filter handlers in renderBrowser fire against a stale volume snapshot and a detached DOM node after scan()
   · renderBrowser() closures at lines 234-275: the [data-bq] input debounce (lines 270-274, st._t setTim
 - [medium] renderBrowser() dereferences a null querySelector result after the card set changes
@@ -22,6 +26,9 @@ Quedan 32 de menor severidad (polish: caret jumps, undo gaps, teardown en SPA, N
   · scan() line 185 (const pct = Math.round((v.total - v.free) / v.total * 100)); same divide-by-v.total
 
 ## home
+✅ VERIFICADO 2026-07-10: los 3 findings de abajo YA ESTABAN arreglados. Nuevos fixes de hoy:
+velo del smash ya no queda pegado al ocultar el tab, saludo con fecha LOCAL (no UTC), dc-cloud
+re-fit en rotación.
 - [low] Point-cloud rAF loop (.dc-cloud) is orphaned but keeps rendering after the fit() sizing is stale; on re-render a fresh loop starts while the old canvas element is detached
   · IIFE, lines 295-322: document.querySelectorAll('.dc-cloud').forEach(cv => { ... (function frame(){ i
 - [low] No cleanup/teardown contract at all: the module leaves two independent rAF families (drone frame + N point-cloud frames) and a global document listener with lifetimes tied only to isConnected checks that fire late
@@ -111,3 +118,7 @@ modal de proyectos centrado (M10).
 - [baja] /upload y /api/splat_upload responden 4xx sin drenar el body (browser reporta error de red)
 - [baja] pending()→enqueue() no atómico en /api/odm y /api/splat (2 clientes simultáneos)
 - [baja] maximum-scale=1.0 bloquea pinch-zoom de página en Android (deliberado por los visores)
+
+## Hunt Inicio+Vuelos+Dron 2026-07-10 — diferidos
+- [baja] dron héroe del Inicio intercepta taps sobre el chip de trabajos/título cuando vuela encima (trade-off de diseño: es interactivo a propósito)
+- [baja] /api/highlight: read-modify-write sin lock (2 marcas rápidas → 1 se pierde)

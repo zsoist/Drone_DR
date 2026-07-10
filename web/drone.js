@@ -174,11 +174,22 @@ function gauge(pct) {
 async function scan() {
   try {
     const r = await fetch('/api/sd_scan');
-    if (r.status === 403) { document.getElementById('sd-list').innerHTML = '<p class="footer-note">Inicia sesión para escanear.</p>'; return; }
+    if (r.status === 403) {
+      document.getElementById('sd-list').innerHTML = '<p class="footer-note">Inicia sesión para escanear.</p>';
+      volumes = []; paintStats();            // sin esto los 5 stats quedaban como skeletons brillando
+      return;
+    }
     volumes = (await r.json()).volumes || [];
   } catch { volumes = []; }
   paintStats();
   const el = document.getElementById('sd-list');
+  // DIFF antes de re-pintar: el poll de 10s reconstruía el DOM idéntico → replay de .rise y
+  // del sweep del gauge en cada tick, y si tecleabas en el buscador, innerHTML destruía el
+  // input ANTES de renderBrowser (foco/teclado perdidos cada 10s)
+  const sig = JSON.stringify(volumes.map(v => [v.volume, v.free, v.videos.length, v.photos.length,
+    v.videos.filter(x => !x.in_vault).length]));
+  if (el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
   el.innerHTML = volumes.length ? volumes.map(v => {
     const nuevos = v.videos.filter(x => !x.in_vault);
     const backed = backedOf(v);
@@ -340,7 +351,11 @@ function openImport(v) {
     </div></div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) ov.remove(); });
-  ov.querySelector('#sd-go').addEventListener('click', async () => {
+  ov.querySelector('#sd-go').addEventListener('click', async e2 => {
+    const goBtn = e2.currentTarget;
+    if (goBtn.disabled) return;
+    goBtn.disabled = true;                       // doble click = 2 ingest sobre los mismos archivos
+    setTimeout(() => { goBtn.disabled = false; }, 4000);
     const files = [...ov.querySelectorAll('input[data-rel]:checked')].map(c => c.dataset.rel);
     if (!files.length) return alert('Elige al menos un video.');
     const r = await api('/api/sd_import', {
@@ -426,7 +441,11 @@ function openOptimize(v) {
     ov.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
     paintDetail();
   });
-  ov.querySelector('#opt-go').addEventListener('click', async () => {
+  ov.querySelector('#opt-go').addEventListener('click', async e2 => {
+    const goBtn = e2.currentTarget;
+    if (goBtn.disabled) return;
+    goBtn.disabled = true;
+    setTimeout(() => { goBtn.disabled = false; }, 4000);
     const lv = LV.find(l => l.k === ov.querySelector('.mpreset.on')?.dataset.lv) || LV[1];
     if (!lv.files.length) return alert('Nada respaldado que borrar todavía.');
     const r = await api('/api/sd_import', {
@@ -467,8 +486,9 @@ drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add(
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', async e => {
   e.preventDefault(); drop.classList.remove('over');
+  const files = [...e.dataTransfer.files];   // ANTES del await: el drag data store se vacía al retornar
   if (!upLogged) { if (await ensureAuth()) await upCheckSession(); else return; }
-  [...e.dataTransfer.files].forEach(upEnqueue);
+  files.forEach(upEnqueue);
 });
 fileIn.addEventListener('change', () => { [...fileIn.files].forEach(upEnqueue); fileIn.value = ''; });
 

@@ -13,6 +13,7 @@ Auth externa: cookie HttpOnly o header X-Token. Los agentes locales en 127.0.0.1
 son trusted por diseño; tokens en querystring no se aceptan.
 """
 import json
+import math
 import mimetypes
 import os
 import re
@@ -318,7 +319,10 @@ def sd_volumes() -> list:
         for f in sorted((v / "DCIM").rglob("*")):
             if not f.is_file() or f.name.startswith("."):
                 continue
-            size = f.stat().st_size
+            try:
+                size = f.stat().st_size
+            except OSError:
+                continue                       # SD extraída a mitad del escaneo: salta el archivo, no 500
             entry = {"name": f.name, "rel": str(f.relative_to(v)),
                      "bytes": size, "in_vault": size in vault_idx.get(f.name, ())}
             if f.suffix in SD_VIDEO_EXT:
@@ -1501,7 +1505,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "body vacío"}, 400)
             if length > 25 * 1024**3:  # 25GB tope de cordura (video 4K real cabe de sobra)
                 return self.send_json({"error": "archivo > 25GB"}, 413)
-            cid = f"UP_{time.strftime('%Y%m%d%H%M%S')}_{Path(name).stem[:40]}"
+            cid = f"UP_{time.strftime('%Y%m%d%H%M%S')}{secrets.token_hex(2)}_{Path(name).stem[:40]}"
             dest = VAULT / "raw" / "uploads"
             dest.mkdir(parents=True, exist_ok=True)
             path = dest / f"{cid}{ext}"
@@ -1513,6 +1517,9 @@ class H(BaseHTTPRequestHandler):
                         break
                     f.write(chunk)
                     read += len(chunk)
+            if read != length:
+                path.unlink(missing_ok=True)   # corte de red/túnel: NO procesar un video truncado
+                return self.send_json({"error": f"subida incompleta ({read}/{length} bytes) — reintenta"}, 400)
             j = job_add("upload", name)
             threading.Thread(target=process_upload, args=(path, j), daemon=True).start()
             return self.send_json({"ok": True, "clip_id": cid, "bytes": read, "job": j["id"]})
@@ -1617,6 +1624,10 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
+            _vol = str(spec.get("volume", ""))
+            if any(x.get("kind") == "ingest" and x.get("status") in ("running", "queued")
+                   for x in jobstore.recent(10)):
+                return self.send_json({"error": "ya hay una importación corriendo — espera a que termine"}, 409)
             _exts = SD_VIDEO_EXT + (SD_PHOTO_EXT if spec.get("clean_only") else ())
             try:
                 for rel in list(spec.get("files", []))[:500]:
@@ -1889,11 +1900,31 @@ class H(BaseHTTPRequestHandler):
                     job_end(j, "error", str(e)[-200:])
             threading.Thread(target=_run_report, daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"]})
+        if u.path == "/api/search":
+            # búsqueda semántica (embeddings + Supabase RPC). Quedó MUERTA cuando el refactor
+            # del worker borró este handler — la UI mostraba 'sin sesión' en falso.
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            qtext = str(spec.get("q", "")).strip()[:400]
+            if not qtext:
+                return self.send_json({"results": []})
+            try:
+                return self.send_json(semantic_search(qtext))
+            except Exception as e:
+                return self.send_json({"error": f"búsqueda AI no disponible: {str(e)[-120:]}", "results": []}, 502)
         if u.path == "/api/analyze":
             if not self.auth(q):
                 return
             spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            # dedupe + validación: doble click = 2 análisis deep concurrentes (2× costo LLM
+            # y carrera sobre ai/{cid}.json); cid inexistente = job basura
+            if not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
+                return self.send_json({"error": "clip no encontrado"}, 404)
+            if any(x.get("kind") == "analyze" and x.get("label", "").startswith(cid)
+                   and x.get("status") in ("running", "queued") for x in jobstore.recent(12)):
+                return self.send_json({"error": "ese análisis ya está corriendo"}, 409)
             j = job_add("analyze", f"{cid} (profundo)")
 
             def _run():
@@ -1912,10 +1943,18 @@ class H(BaseHTTPRequestHandler):
                 return
             spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            if not cid:
+                return self.send_json({"error": "clip_id requerido"}, 400)
+            try:
+                t_val = float(spec.get("t", 0))
+            except (TypeError, ValueError):
+                t_val = 0.0
+            if not math.isfinite(t_val):
+                return self.send_json({"error": "t inválido"}, 400)   # NaN rompía el JSON del panel AI
             aif = VAULT / "ai" / f"{cid}.json"
             data = read_json_file(aif) if aif.exists() else {"clip_id": cid, "tags": [], "highlights": []}
             data.setdefault("highlights", []).append({
-                "t": round(float(spec.get("t", 0)), 1),
+                "t": round(t_val, 1),
                 "reason": str(spec.get("reason", "marcado por Daniel"))[:120],
                 "type": "manual"})
             data["highlights"].sort(key=lambda h: h["t"])
@@ -1932,9 +1971,10 @@ class H(BaseHTTPRequestHandler):
             if not mf.exists():
                 return self.send_json({"error": "clip no existe"}, 404)
             m = read_json_file(mf)
-            for k in ("label", "archived"):
-                if k in spec:
-                    m[k] = spec[k]
+            if "label" in spec:
+                m["label"] = str(spec["label"])[:80]     # sin cap, un body de 1MB entraba al flights.json público
+            if "archived" in spec:
+                m["archived"] = bool(spec["archived"])
             mf.write_text(json.dumps(m, indent=1))
             rebuild_index()
             return self.send_json({"ok": True})
