@@ -516,7 +516,22 @@
       } finally { btn.disabled = false; }
     });
   });
-  pollJobs(document.getElementById('jobs3d'));
+  // REFRESH EN VIVO: al completarse un 3D/splat, re-lee el índice y re-pinta todo sin recargar
+  // (antes sys/models se cargaban UNA vez: el proyecto nuevo o el splat recién entrenado eran
+  // invisibles hasta un F5 — el usuario creía que el job no hizo nada)
+  pollJobs(document.getElementById('jobs3d'), 2500, async job => {
+    if (!['3d', 'splat'].includes(job.kind)) return;
+    try {
+      sys = await (await fetch('data/manifest/system.json')).json();
+      models = sys.models || [];
+      renderCards();
+      renderSplatList();
+      if (cur) {
+        const fresh = models.find(m => m.clip_id === cur.clip_id);
+        if (fresh) { cur = fresh; setProject(cur.clip_id, { keepTab: true }); }
+      }
+    } catch { /* siguiente poll lo reintenta */ }
+  });
 
   // ---------- ortofoto en MapLibre ----------
   let omap = null;
@@ -1261,7 +1276,6 @@
   });
 
   // splats: gestión rica (calidad/gaussianas/cámaras) + ver inline + compartir + borrar + generar
-  const splats = (sys.splats || []).filter(s => SPLAT_EXT.test(s.name));
   const gfmt = n => n >= 1e6 ? (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M'
     : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
   const qOf = loss => loss == null ? null       // umbrales de loss L1 de OpenSplat en escala 0-1
@@ -1269,6 +1283,8 @@
       : loss <= 0.09 ? { c: 'good', t: 'Buena' }
         : loss <= 0.15 ? { c: 'mid', t: 'Media' }
           : { c: 'low', t: 'Básica' };
+  function renderSplatList() {                  // función (no bloque one-shot): el hook onDone la re-invoca
+  const splats = (sys.splats || []).filter(s => SPLAT_EXT.test(s.name));
   document.getElementById('splats').innerHTML = splats.length ? splats.map(s => {
     const scid = s.clip_id || s.name.replace(SPLAT_EXT, '');
     const sf = flights.find(x => x.clip_id === scid);
@@ -1307,6 +1323,8 @@
   }).join('') :
     `<p class="footer-note">Sin splats aún — "Generar splat…" entrena uno sobre las poses
     del proyecto que elijas. El resultado se ve aquí mismo.</p>`;
+  }
+  renderSplatList();
   document.getElementById('btn-splat').addEventListener('click', () => {
     if (!flights.length) return alert('No hay vuelos en el vault.');
     const modelIds = new Set(models.map(m => m.clip_id));

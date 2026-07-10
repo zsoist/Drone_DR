@@ -214,13 +214,14 @@ function jobCard(j, flightsIdx, entering = true) {
       `<div class="jc-actions"><button class="btn" style="padding:4px 11px;font-size:11px" data-cancel="${esc(j.id)}">Cancelar</button></div>` : ''}
   </div>`;
 }
-async function pollJobs(el, every = 2500) {
+async function pollJobs(el, every = 2500, onDone = null) {
   let flightsIdx = null;
   try {
     const fl = await getFlights();
     flightsIdx = Object.fromEntries(fl.map(f => [f.clip_id, f]));
   } catch {}
   let busy = false;
+  const prevStatus = {};   // detectar transición running/queued → done (hook onDone)
   const paint = async () => {
     if (busy) return;                                     // guard de overlap: polls lentos no se pisan (#44)
     busy = true;
@@ -228,6 +229,14 @@ async function pollJobs(el, every = 2500) {
       const res = await fetch('/api/jobs');
       if (res.status === 403) { el.innerHTML = '<p class="footer-note">Inicia sesión para ver trabajos.</p>'; return; }
       const { jobs = [] } = await res.json();             // respuesta sin jobs → [] (no crash) (#46)
+      if (onDone) {
+        for (const j of jobs) {
+          if (j.status === 'done' && ['running', 'queued'].includes(prevStatus[j.id])) {
+            try { onDone(j); } catch { /* el hook jamás rompe el poller */ }
+          }
+          prevStatus[j.id] = j.status;
+        }
+      }
       if (!jobs.length) { el.innerHTML = '<p class="footer-note">Sin trabajos aún.</p>'; return; }
       const active = jobs.filter(j => ['running', 'queued'].includes(j.status));
       const doneRecent = jobs.filter(j => !['running', 'queued'].includes(j.status)).slice(0, 3);
