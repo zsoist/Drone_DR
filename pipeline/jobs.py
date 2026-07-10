@@ -34,7 +34,7 @@ def _conn():
 
 
 HEAVY_KINDS = ("3d", "splat")          # los ejecuta el worker desacoplado
-LIGHT_KINDS = ("upload", "edit", "analyze", "foto4k", "ingest")  # threads del server web
+LIGHT_KINDS = ("upload", "edit", "analyze", "foto4k", "ingest", "error_report")  # threads del server web
 
 
 def init(orphan_kinds: tuple = ()):
@@ -163,6 +163,15 @@ def end(jid: str, status: str, detail: str = "", artifact: str = ""):
     # un job terminado nunca conserva pid (evita pids fantasma en la tabla)
     update(jid, status=status, detail=detail[:400], artifact=artifact,
            finished=time.time(), pid=None)
+    if status == "error":
+        # registro central de errores (ops/errors.jsonl) — lo consume error_report.py/DeepSeek
+        try:
+            from perf import log_error
+            j = get(jid) or {}
+            log_error(f"job:{j.get('kind', '?')}", detail or "error sin detalle",
+                      {"job": jid, "label": j.get("label", ""), "stage": j.get("stage", "")})
+        except Exception:
+            pass
 
 
 def clear_artifacts(cid: str):

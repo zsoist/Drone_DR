@@ -1,6 +1,26 @@
 // App shell: sidebar nav, shared formatters, data access. Requires icons.js.
 const DATA = 'data';
 
+// ---- captura global de errores JS → /api/client_error (registro central + reporte DeepSeek).
+// sendBeacon: no bloquea ni falla ruidoso; máx 5 por sesión de página (anti-loop de un error
+// que se repite en cada frame). El server además rate-limita globalmente.
+(() => {
+  let sent = 0;
+  const report = (msg, stack) => {
+    if (sent >= 5 || !navigator.sendBeacon) return;
+    sent++;
+    try {
+      navigator.sendBeacon('/api/client_error', new Blob([JSON.stringify({
+        msg: String(msg).slice(0, 300),
+        stack: String(stack || '').slice(0, 200),
+        page: location.pathname.split('/').pop(),
+      })], { type: 'application/json' }));
+    } catch { /* jamás romper la app por reportar */ }
+  };
+  addEventListener('error', e => report(e.message, e.error?.stack));
+  addEventListener('unhandledrejection', e => report(`unhandled: ${e.reason?.message || e.reason}`, e.reason?.stack));
+})();
+
 const NAV = [
   { href: 'home.html', ic: 'gauge', label: 'Inicio' },
   { href: 'index.html', ic: 'grid', label: 'Vuelos' },

@@ -5,6 +5,34 @@ main.innerHTML = `
   <div class="page-head"><h1>Sistema</h1><span class="count">inventario · actividad · contenido · costos</span></div>
   <div class="statgrid" id="top">${'<div class="sk" style="height:74px"></div>'.repeat(8)}</div>
 
+  <div class="panel rise" style="margin-bottom:16px">
+    <div class="ph">${icon('gauge')} Rendimiento del Mac Mini en vivo
+      <span class="count">muestreo 1s · render 60fps</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="perf-chip mono" id="pf-therm">térmica —</span>
+    </div>
+    <div class="pb">
+      <div class="perf-grid">
+        <div class="perf-cell"><div class="perf-lb">CPU <b id="pf-cpu">—</b></div><canvas id="pfc-cpu" height="72"></canvas></div>
+        <div class="perf-cell"><div class="perf-lb">GPU <b id="pf-gpu">—</b></div><canvas id="pfc-gpu" height="72"></canvas></div>
+        <div class="perf-cell"><div class="perf-lb">RAM <b id="pf-ram">—</b></div><canvas id="pfc-ram" height="72"></canvas></div>
+      </div>
+      <div class="perf-chips mono" id="pf-chips"></div>
+      <div id="pf-jobs"></div>
+      <details class="perf-errs" id="pf-errwrap">
+        <summary>${icon('warn')} Errores y reporte AI <span class="count" id="pf-errcount"></span></summary>
+        <div class="pb" style="padding:10px 0 0">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+            <button class="btn" id="pf-genreport">${icon('spark')} Generar reporte AI (DeepSeek)</button>
+            <span class="footer-note" style="margin:0">DeepSeek solo redacta el triage — lo valida Codex/Claude después.</span>
+          </div>
+          <div id="pf-reports"></div>
+          <div id="pf-errors"></div>
+        </div>
+      </details>
+    </div>
+  </div>
+
   <div class="fl-layout">
     <div>
       <div class="panel rise">
@@ -206,4 +234,117 @@ main.innerHTML = `
     const tr = e.target.closest('tr[data-cid]');
     if (tr) location.href = `flight.html?id=${encodeURIComponent(tr.dataset.cid)}`;
   });
+})();
+
+// ═══════════ Rendimiento en vivo — poll 1Hz, render 60fps (interpolación temporal) ═══════════
+(() => {
+  const $ = id => document.getElementById(id);
+  const charts = {
+    cpu: { cv: $('pfc-cpu'), color: '#45a0e6', max: 100, get: s => s.cpu, lb: v => v.toFixed(0) + '%' },
+    gpu: { cv: $('pfc-gpu'), color: '#3ddc97', max: 100, get: s => s.gpu, lb: v => v.toFixed(0) + '%' },
+    ram: { cv: $('pfc-ram'), color: '#e0b64a', max: 16, get: s => s.ram_used_gb, lb: v => v.toFixed(1) + ' GB' },
+  };
+  let hist = [], now = null, dead = false, unauth = false;
+
+  async function poll() {
+    if (document.hidden) return;
+    try {
+      const r = await fetch('/api/perf');
+      if (r.status === 403) { unauth = true; return; }   // sin sesión: panel queda estático, sin modal
+      if (!r.ok) return;
+      const d = await r.json();
+      hist = d.history || []; now = d.now;
+      charts.ram.max = (now?.ram_total_gb) || 16;
+      paintStatics(d);
+    } catch { /* red caída: el último frame queda en pantalla */ }
+  }
+
+  function paintStatics(d) {
+    if (!now) return;
+    $('pf-cpu').textContent = now.cpu.toFixed(0) + '%';
+    $('pf-gpu').textContent = now.gpu.toFixed(0) + '%';
+    $('pf-ram').textContent = `${now.ram_used_gb.toFixed(1)} / ${now.ram_total_gb} GB`;
+    const th = now.thermal || {};
+    const t = $('pf-therm');
+    t.textContent = th.throttling ? `⚠ THROTTLING ${th.speed_limit}%` : 'térmica nominal';
+    t.classList.toggle('warn', !!th.throttling);
+    $('pf-chips').innerHTML = [
+      `load ${now.load1.toFixed(2)}`,
+      `swap ${(now.swap_used_mb / 1024).toFixed(1)} GB`,
+      `disco ${now.disk_free_gb ?? '—'} GB libres`,
+      `${d.ncpu} cores`,
+    ].map(x => `<span class="perf-chip">${x}</span>`).join('');
+    // uso por job: la parte "cuando haya un job, sé eficiente" — cpu/rss/etapa/eta en vivo
+    $('pf-jobs').innerHTML = (now.jobs || []).length ? `<table class="kv perf-jobs">
+      <tr><th>Job</th><th>Etapa</th><th>CPU</th><th>RAM</th><th>Lleva</th><th>Progreso</th></tr>
+      ${now.jobs.map(j => `<tr>
+        <td class="mono">${esc(j.kind)} · ${esc((j.label || '').slice(-14))}</td>
+        <td>${esc(j.stage || '—')} <span class="count">${esc(j.detail || '')}</span></td>
+        <td class="mono">${j.cpu_pct}%</td><td class="mono">${(j.rss_mb / 1024).toFixed(1)}G</td>
+        <td class="mono">${j.elapsed_s >= 3600 ? (j.elapsed_s / 3600).toFixed(1) + 'h' : Math.round(j.elapsed_s / 60) + 'm'}</td>
+        <td><div class="pf-bar"><i style="width:${Math.round((j.progress || 0) * 100)}%"></i></div></td>
+      </tr>`).join('')}</table>` : '';
+  }
+
+  function draw() {
+    if (dead) return;
+    requestAnimationFrame(draw);
+    if (document.hidden || !hist.length) return;
+    const tNow = Date.now() / 1000;
+    for (const c of Object.values(charts)) {
+      const cv = c.cv; if (!cv) { dead = true; return; }
+      const W = cv.width = cv.clientWidth * devicePixelRatio || 600;
+      const H = cv.height;
+      const g = cv.getContext('2d');
+      g.clearRect(0, 0, W, H);
+      const SPAN = 120;                            // ventana de 2 min
+      const x = ts => W - ((tNow - ts) / SPAN) * W;   // el tiempo REAL fija x → scroll suave a 60fps
+      g.beginPath();
+      let started = false;
+      for (const s of hist) {
+        const px = x(s.ts), py = H - Math.min(1, c.get(s) / c.max) * (H - 6) - 3;
+        if (px < -4) continue;
+        started ? g.lineTo(px, py) : (g.moveTo(px, py), started = true);
+      }
+      g.strokeStyle = c.color; g.lineWidth = 1.6; g.stroke();
+      if (started) {                                // relleno suave bajo la línea
+        g.lineTo(W, H); g.lineTo(0, H); g.closePath();
+        g.globalAlpha = 0.12; g.fillStyle = c.color; g.fill(); g.globalAlpha = 1;
+      }
+    }
+  }
+
+  async function loadErrors() {
+    try {
+      const r = await fetch('/api/error_reports');
+      if (!r.ok) return;
+      const d = await r.json();
+      $('pf-errcount').textContent = d.recent_errors?.length ? `${d.recent_errors.length} recientes` : 'sin errores recientes';
+      $('pf-reports').innerHTML = (d.reports || []).slice(0, 5).map(rep => `
+        <a class="pf-report" href="data/ops/reports/${encodeURIComponent(rep.name)}" target="_blank" rel="noopener">
+          ${icon('list')} ${esc(rep.name)} <span class="count">${esc(rep.ts)}</span></a>`).join('')
+        || '<p class="footer-note" style="margin:0 0 8px">Aún no hay reportes — genera el primero.</p>';
+      $('pf-errors').innerHTML = (d.recent_errors || []).map(e2 => `
+        <div class="pf-err mono"><span class="count">${esc((e2.ts || '').slice(5, 16))}</span>
+        <b>[${esc(e2.source || '?')}]</b> ${esc((e2.msg || '').slice(0, 110))}</div>`).join('');
+    } catch { /* silencioso */ }
+  }
+
+  $('pf-genreport')?.addEventListener('click', async e => {
+    e.target.closest('button').disabled = true;
+    try {
+      const r = await api('/api/error_report', {});
+      if (r.error) alert(r.error);
+      else setTimeout(loadErrors, 8000);           // el reporte tarda unos s (DeepSeek)
+    } finally {
+      setTimeout(() => { const b = $('pf-genreport'); if (b) b.disabled = false; }, 9000);
+    }
+  });
+  $('pf-errwrap')?.addEventListener('toggle', ev => { if (ev.target.open) loadErrors(); });
+
+  poll();
+  const pollId = setInterval(() => { if (!unauth) poll(); }, 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !unauth) poll(); });  // al volver al tab: dato fresco YA
+  addEventListener('pagehide', () => { clearInterval(pollId); dead = true; }, { once: true });
+  draw();
 })();

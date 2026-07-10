@@ -28,6 +28,7 @@ from email.utils import formatdate, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import jobs as jobstore
+import perf as perfmod
 from splat_presets import resolve_splat_spec
 from pathlib import Path
 
@@ -52,6 +53,8 @@ VIEWER_ACTIVE_S = 45
 # módulo (splat_quality/prune) y un init con LIGHT_KINDS desde el proceso worker MATARÍA los
 # jobs ligeros (edit/upload) que el server tiene corriendo. El init vive en __main__.
 JLOCK = threading.Lock()         # compat: secciones que actualizan detail
+PERF = perfmod.PerfSampler(jobstore)   # panel de performance en vivo (hilo 1Hz solo si alguien mira)
+_CLIENT_ERR_BUDGET = {"n": 0, "reset": 0.0}   # rate-limit global de /api/client_error
 
 
 def mark_viewer_activity():
@@ -1077,6 +1080,36 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"ok": False}, 403)
             mark_viewer_activity()
             return self.send_json({"ok": True})
+        if self.path.startswith("/api/perf"):
+            # telemetría en vivo del Mac (CPU/GPU/RAM/swap/térmica/disk + uso por job).
+            # El sampler solo corre mientras alguien consulta — idle = 0 costo.
+            if not self.auth():
+                return
+            return self.send_json(PERF.get())
+        if self.path.startswith("/api/error_reports"):
+            # lista de reportes AI generados (los .md se sirven por /data/ops/reports/…)
+            if not self.auth():
+                return
+            rdir = VAULT / "ops" / "reports"
+            reps = sorted(rdir.glob("error-report-*.md"), reverse=True)[:12] if rdir.is_dir() else []
+            latest = {}
+            lj = rdir / "latest.json"
+            if lj.is_file():
+                try:
+                    latest = json.loads(lj.read_text())
+                except ValueError:
+                    pass
+            recent = []
+            if perfmod.ERRLOG.is_file():
+                for line in perfmod.ERRLOG.read_text().splitlines()[-15:][::-1]:
+                    try:
+                        recent.append(json.loads(line))
+                    except ValueError:
+                        continue
+            return self.send_json({"reports": [
+                {"name": p.name, "bytes": p.stat().st_size,
+                 "ts": time.strftime("%Y-%m-%d %H:%M", time.localtime(p.stat().st_mtime))}
+                for p in reps], "latest": latest, "recent_errors": recent})
         if self.path.startswith("/api/jobs"):
             if not self.auth():
                 return
@@ -1782,6 +1815,45 @@ class H(BaseHTTPRequestHandler):
                                                 "title": str(spec.get("title", ""))[:80].strip()})
             return self.send_json({"ok": True, "job": j["id"], "queued": True,
                                    "preset": preset["key"], "iters": preset["iters"]})
+        if u.path == "/api/client_error":
+            # errores JS del frontend → registro central. Sin auth (los reporta también la
+            # página pública), pero: mismo-origen obligatorio + presupuesto global 60/h
+            # (un abusador no puede inflar el log ni gastar disco).
+            site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+            if not (self._is_local() or site in ("same-origin", "same-site")):
+                return self.send_json({"ok": False}, 403)
+            now = time.time()
+            if now > _CLIENT_ERR_BUDGET["reset"]:
+                _CLIENT_ERR_BUDGET.update(n=0, reset=now + 3600)
+            if _CLIENT_ERR_BUDGET["n"] >= 60:
+                return self.send_json({"ok": False, "rate": True}, 429)
+            _CLIENT_ERR_BUDGET["n"] += 1
+            try:
+                spec = self.read_json(max_bytes=4000)
+            except (ValueError, json.JSONDecodeError):
+                return self.send_json({"error": "body inválido"}, 400)
+            perfmod.log_error("client", str(spec.get("msg", ""))[:300],
+                              {"page": str(spec.get("page", ""))[:80],
+                               "stack": str(spec.get("stack", ""))[:200]})
+            return self.send_json({"ok": True})
+        if u.path == "/api/error_report":
+            # genera el reporte AI (DeepSeek SOLO escribe; el .md queda para revisión humana/Codex)
+            if not self.auth(q):
+                return
+            j = job_add("error_report", "reporte de errores (DeepSeek)")
+
+            def _run_report():
+                try:
+                    r = subprocess.run(["python3", str(PIPE / "error_report.py"), "--days", "7"],
+                                       capture_output=True, text=True, timeout=300)
+                    if r.returncode == 0:
+                        job_end(j, "done", r.stdout.strip()[-200:])
+                    else:
+                        job_end(j, "error", (r.stderr or "error_report falló")[-200:])
+                except (subprocess.TimeoutExpired, OSError) as e:
+                    job_end(j, "error", str(e)[-200:])
+            threading.Thread(target=_run_report, daemon=True).start()
+            return self.send_json({"ok": True, "job": j["id"]})
         if u.path == "/api/analyze":
             if not self.auth(q):
                 return
