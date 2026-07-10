@@ -104,3 +104,10 @@ modal de proyectos centrado (M10).
 - [baja] B6: estimado de tamaño ignora xfade/límites/audio
 - [baja] B7/B8: authGate ante 500 dice 'Inicia sesión'; cancel de login = unhandled rejection
 - [baja] B10: 'Nuevo proyecto' no resetea título/LUT/fps/bitrate; sin beforeunload guard del timeline
+
+## Hunt 3D 2026-07-10 — diferidos menores
+- [baja] selectedSplatByClip (localStorage) no poda claves de clips borrados
+- [baja] /api/capture_report sin lock (clicks rápidos = análisis paralelos; mitigado por cache cliente)
+- [baja] /upload y /api/splat_upload responden 4xx sin drenar el body (browser reporta error de red)
+- [baja] pending()→enqueue() no atómico en /api/odm y /api/splat (2 clientes simultáneos)
+- [baja] maximum-scale=1.0 bloquea pinch-zoom de página en Android (deliberado por los visores)

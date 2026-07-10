@@ -1,7 +1,7 @@
 // splatview.js — visor PREMIUM de gaussian splats, compartido por tresd.js y share.js.
 // Feature clave: doble-click raycastea contra el splat y mueve el target de la órbita a ESE
 // punto — así te acercas a cualquier edificio (antes el target era el centroide = siempre
-// zoomeabas al medio). Más: reset, auto-rotar, FOV, brillo, tamaño, screenshot, pantalla
+// zoomeabas al medio). Más: reset, auto-rotar, FOV, tamaño, screenshot, pantalla
 // completa, teclado. Navegación suave con damping + animación de focus con easing.
 import * as THREE from '/vendor/three.module.js';
 
@@ -44,11 +44,13 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   const tmoMs = Math.min(120000, 45000 + Math.round((bytes || 0) / 1048576) * 3000);
   let tmoId = 0;
   try {
+    const loadP = viewer.addSplatScene(splatUrl, {
+      progressiveLoad: false, showLoadingUI: false, splatAlphaRemovalThreshold: 8,
+      rotation: SPLAT_ROT, onProgress: p => onStatus?.(`Splat · ${Math.round(p)}%`),
+    });
+    loadP.catch(() => {});   // si el timeout gana el race, este rechazo tardío no debe ser 'unhandled'
     await Promise.race([
-      viewer.addSplatScene(splatUrl, {
-        progressiveLoad: false, showLoadingUI: false, splatAlphaRemovalThreshold: 8,
-        rotation: SPLAT_ROT, onProgress: p => onStatus?.(`Splat · ${Math.round(p)}%`),
-      }),
+      loadP,
       new Promise((_, rej) => { tmoId = setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs); }),
     ]);
   } catch (err) {
@@ -183,7 +185,6 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     btn('rot', 'Auto-rotar', I.rot) +
     `<span class="sv-sep"></span>` +
     `<label class="sv-slider" title="Campo de visión">${svg(I.fov)}<input type="range" data-sv="fov" min="30" max="80" value="${Math.round(cam.fov)}"></label>` +
-    `<label class="sv-slider" title="Brillo">${svg(I.eye)}<input type="range" data-sv="exp" min="60" max="180" value="100"></label>` +
     `<label class="sv-slider" title="Tamaño de splat">${svg(I.size)}<input type="range" data-sv="scale" min="60" max="160" value="100"></label>` +
     `<span class="sv-sep"></span>` +
     btn('shot', 'Captura PNG', I.cam) +
@@ -219,7 +220,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
       const fovIn = hud.querySelector('[data-sv="fov"]'); if (fovIn) fovIn.value = Math.round(homeState.fov);  // re-sincroniza el slider
       kick();
     }
-    else if (k === 'inspect') { vctrl.minDistance = inspectMin; dolly(0.08); b.classList.add('on'); }
+    else if (k === 'inspect') { vctrl.minDistance = inspectMin; dolly(0.08); b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 700); }
     else if (k === 'zin') { vctrl.minDistance = inspectMin; dolly(0.25); }
     else if (k === 'zout') dolly(1.55);
     else if (k === 'rot') { vctrl.autoRotate = !vctrl.autoRotate; vctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', vctrl.autoRotate); kick(); }
@@ -230,7 +231,6 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     const k = e.target.dataset.sv, v = +e.target.value;
     const vcam = viewer.camera;
     if (k === 'fov') { vcam.fov = v; vcam.updateProjectionMatrix(); }
-    else if (k === 'exp') setExposure(v / 100);
     else if (k === 'scale') setScale(v / 100);
     kick();
   });
@@ -288,6 +288,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     cancelAnimationFrame(anim);
     host.classList.remove('sv-fullscreen');
     document.documentElement.classList.remove('sv-noscroll');
+    if (history.state && history.state.svFull) { try { history.back(); } catch {} }   // consume el estado fantasma
     hud.remove(); tip.remove();
     try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}
   }

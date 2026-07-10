@@ -16,6 +16,7 @@
   const _scanCache = {};
   async function renderScanCard(box, cid) {
     if (!box) return;
+    box._scanCid = cid;   // currency: dos clicks rápidos → el fetch viejo NO pinta bajo la selección nueva
     box.innerHTML = '<div class="scan-card"><div class="sk" style="height:96px;border-radius:12px"></div></div>';
     let rep = _scanCache[cid];
     try {
@@ -24,10 +25,12 @@
         if (!rep.error) _scanCache[cid] = rep;
       }
     } catch { rep = { error: 'red' }; }
+    if (box._scanCid !== cid) return;             // la selección cambió mientras descargaba
     if (rep.error) { box.innerHTML = ''; return; }
     const su = rep.suitability || {};
     const mem = rep.memory_risk || {};
     const cls = v => v >= 7 ? 'ok' : v >= 4 ? 'mid' : 'bad';
+    const num = v => Number.isFinite(+v) ? +v : 0;   // el reporte viene del server, pero un meta corrupto no debe inyectar HTML
     const bar = (lb, v) => `
       <div class="scan-row"><span class="scan-lb">${lb}</span>
         <div class="scan-bar"><i class="${cls(v)}" style="width:${v * 10}%"></i></div>
@@ -39,10 +42,10 @@
       <div class="scan-card">
         <div class="scan-hd">${icon('activity')} ESCÁNER DE CAPTURA
           <span class="scan-verdict ${cls(verdictV)}">${verdict}</span>
-          <span class="count mono">${rep.recommended_frames || '—'} frames</span></div>
-        ${bar('Ortofoto/DSM', su.ortho_dsm ?? 0)}${bar('Malla 3D', su.mesh ?? 0)}${bar('Gaussian', su.splat ?? 0)}
+          <span class="count mono">${num(rep.recommended_frames) || '—'} frames</span></div>
+        ${bar('Ortofoto/DSM', num(su.ortho_dsm))}${bar('Malla 3D', num(su.mesh))}${bar('Gaussian', num(su.splat))}
         ${mem.level ? `<div class="scan-mem ${memCls}">${icon(mem.level === 'bajo' ? 'check' : 'warn')}
-          <span><b>Memoria (gaussian): ${mem.level}</b>${mem.oom_previos ? ` · ${mem.oom_previos} OOM previos` : ''}
+          <span><b>Memoria (gaussian): ${esc(mem.level)}</b>${mem.oom_previos ? ` · ${mem.oom_previos} OOM previos` : ''}
           · ${esc(mem.advice || '')}</span></div>` : ''}
         ${(rep.warnings || []).slice(0, 3).map(w => `<div class="scan-warn">${icon('warn')}<span>${esc(w)}</span></div>`).join('')}
       </div>`;
@@ -52,8 +55,8 @@
       .filter(s => SPLAT_EXT.test(s.name) && s.name.replace(SPLAT_EXT, '') === clipId)
       .concat((sys.splats || []).filter(s => SPLAT_EXT.test(s.name) && s.clip_id === clipId
         && s.name.replace(SPLAT_EXT, '') !== clipId))
-      .sort((a, b) => (b.iters || 0) - (a.iters || 0)
-        || (b.current ? 1 : 0) - (a.current ? 1 : 0)
+      .sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)   // la versión ACTUAL manda: re-entrenar Medium tras Ultra debe reflejarse (antes ganaba iters y 'el entrenamiento no hizo nada')
+        || (b.iters || 0) - (a.iters || 0)
         || (SPLAT_RANK[(a.format || a.name.split('.').pop()).toLowerCase()] ?? 9)
         - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9)
         || String(b.archived_at || '').localeCompare(String(a.archived_at || '')));
@@ -451,8 +454,11 @@
       inp.focus(); inp.select();
       const save = async () => {
         const title = inp.value.trim();
-        const r = await api('/api/model_update', { clip_id: cid, title });
-        if (!r.error) m.title = r.title;
+        try {
+          const r = await api('/api/model_update', { clip_id: cid, title });
+          if (r.error) alert(r.error);
+          else m.title = r.title;
+        } catch { /* login cancelado / red: conserva el título anterior sin romper */ }
         renderCards();
       };
       inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') renderCards(); });
@@ -466,7 +472,9 @@
     }
     if (btn.dataset.act === 'del') {
       if (!confirm(`¿Borrar "${titleFor(m)}"?\n\nSe eliminan el modelo 3D, sus splats y los archivos de procesamiento. El video original NO se toca.`)) return;
-      const r = await api('/api/model_delete', { clip_id: cid, purge_source: true });
+      let r;
+      try { r = await api('/api/model_delete', { clip_id: cid, purge_source: true }); }
+      catch (err) { return alert(String(err?.message || err)); }
       if (r.error) return alert(r.error);
       models = models.filter(x => x.clip_id !== cid);
       if (cur?.clip_id === cid) {
@@ -547,6 +555,7 @@
         if (r.error) return alert(r.error);
         close();
         showTdMod('jobs');                          // feedback: te lleva a VER el job encolado (antes: silencio)
+        document.querySelector('[data-job-filter="all"]')?.click();   // un filtro viejo (Errores) ocultaría el job nuevo
       } finally { btn.disabled = false; }
     });
   });
@@ -558,9 +567,14 @@
     try {
       sys = await (await fetch('data/manifest/system.json')).json();
       models = sys.models || [];
-      renderCards();
+      delete _scanCache[job.label];                // el escáner re-lee estado/historial del clip
+      // no re-pintar el grid con un rename en curso (destruiría el input a mitad de tecleo)
+      if (!document.querySelector('#proj-grid input')) renderCards();
       renderSplatList();
-      if (cur) {
+      // SOLO refrescar el panel si el job era de ESTE proyecto: antes CUALQUIER job terminado
+      // destruía los visores/mediciones del proyecto abierto y el autoload re-descargaba la
+      // nube (~100MB) — justo cuando más se usa el visor (mirando A mientras entrena B)
+      if (cur && job.label === cur.clip_id) {
         const fresh = models.find(m => m.clip_id === cur.clip_id);
         if (fresh) { cur = fresh; setProject(cur.clip_id, { keepTab: true }); }
       }
@@ -638,7 +652,7 @@
         <a class="exp" href="${base}/hillshade.png" download>${icon('sun')}<div><b>Relieve sombreado</b><span>PNG · mapas</span></div></a>
         <a class="exp" href="${base}/dsm_color.png" download>${icon('gauge')}<div><b>Elevación color</b><span>PNG · mapas</span></div></a>` : ''}
         <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>Nube de puntos</b><span>PLY · CloudCompare</span></div></a>
-        ${cur.cloud_copc_asset ? `<a class="exp" href="${base}/${cur.cloud_copc_asset}" download>${icon('database')}<div><b>Nube optimizada</b><span>COPC · ${(cur.cloud_copc_bytes / 1e6).toFixed(0)} MB · GIS</span></div></a>` : ''}
+        ${cur.cloud_copc_asset ? `<a class="exp" href="${base}/${cur.cloud_copc_asset}" download>${icon('db')}<div><b>Nube optimizada</b><span>COPC · ${(cur.cloud_copc_bytes / 1e6).toFixed(0)} MB · GIS</span></div></a>` : ''}
         ${meshOk ? `<a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></div></a>` : ''}
         ${sp ? `<a class="exp" href="${splatUrl(sp)}" download>${icon('spark')}<div><b>Gaussian splat</b><span>${spFmt} · SuperSplat</span></div></a>` : ''}
         <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Página pública</b><span>LINK · compartir</span></div></a>
@@ -717,6 +731,15 @@
           el.title = cur.has_dsm ? '' : 'Requiere DSM — este proyecto se procesó sin él';
         }
       }));
+    // MEDICIÓN y CAPAS no se heredan entre proyectos: el chip activo + puntos del sitio
+    // anterior producían distancias/volúmenes ABSURDOS mezclando coordenadas de dos lugares,
+    // y los chips de capa quedaban desincronizados del mapa nuevo (ortho@82, dsm oculto)
+    tool = null; mpts = [];
+    try { result(null); } catch {}
+    document.querySelectorAll('[data-tool]').forEach(x => x.classList.remove('on'));
+    document.querySelectorAll('[data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === 'ortho'));
+    const opEl = document.getElementById('op');
+    if (opEl) opEl.value = 82;
     const sbox = document.getElementById('splat-box');
     // dispose() del visor de splat es ASYNC y el vendored lanza NotFoundError (removeChild
     // sobre un rootElement anidado) → hay que silenciar el rechazo del promise, no basta try/catch
@@ -739,7 +762,10 @@
     }
     // auto-carga la estrella — salvo nubes pesadas en móvil (datos + memoria)
     if (!(matchMedia('(max-width: 700px)').matches && cloudMB > 25))
-      autoloadTimer = setTimeout(() => document.getElementById('load-cloud-main')?.click(), 300);
+      autoloadTimer = setTimeout(() => {
+        const b = document.getElementById('load-cloud-main');
+        if (b && b.style.display !== 'none') b.click();   // si ya lo clickearon (botón oculto), no duplicar la descarga
+      }, 300);
   }
   // ---------- capas + mediciones ----------
   let tool = null, mpts = [];
@@ -765,7 +791,9 @@
     omap.getLayer(id) && omap.setLayoutProperty(id, 'visibility', vis);
   }));
   function ensureContours() {
-    if (!cur?.dsm_corners || omap.getLayer('contours')) return;
+    if (!cur?.dsm_corners) return;
+    if (!omap.loaded() && !omap.isStyleLoaded()) { omap.once('load', ensureContours); return; }  // click durante el ~1s de init lanzaba 'Style is not done loading'
+    if (omap.getLayer('contours')) return;
     const base = `data/models/${cur.clip_id}`;
     omap.addSource('contours', { type: 'geojson', data: `${base}/contours.geojson` });
     // Curvas por color de altura (amarillo=alto, ámbar oscuro=bajo). Se cargan
@@ -877,6 +905,7 @@
         const r = await api('/api/measure', { type: 'profile', clip_id: cur.clip_id, points: mpts });
         if (r.error) return result(`<span style="color:var(--red)">${esc(r.error)}</span>`);
         const vals = r.profile.filter(v => v != null);
+        if (!vals.length) return result('El perfil cae fuera del DSM — traza la línea dentro de la ortofoto.');
         const lo = Math.min(...vals), hi = Math.max(...vals);
         const W = 600, H = 90;
         const pth = r.profile.map((v, i) =>
@@ -894,8 +923,14 @@
 
   function resetViewer(boxId, msg, btnId) {
     const box = document.getElementById(boxId);
+    // salir de FULLSCREEN antes de vaciar: el refresh borraba la barra con el botón de salir
+    // y dejaba el box position:fixed inset:0 con scroll bloqueado = app "colgada" sin salida
+    box.classList.remove('viewer-fs');
+    document.body.style.overflow = '';
     box.innerHTML = `<p class="footer-note" style="margin:0">${msg}</p>`;
-    document.getElementById(btnId).style.display = '';
+    const btn = document.getElementById(btnId);
+    btn.style.display = '';
+    btn.textContent = 'Cargar';                   // deshace el 'Reintentar' pegajoso de un fallo previo
   }
 
   // ---------- three.js viewers ----------
@@ -1448,6 +1483,7 @@
         if (r.error) return alert(r.error);
         close();
         showTdMod('jobs');                          // feedback inmediato del encolado
+        document.querySelector('[data-job-filter="all"]')?.click();
       } finally { btn.disabled = false; }
     });
   });
@@ -1489,9 +1525,7 @@
       if (cur && cur.clip_id === scid) setProject(scid, { keepTab: true });
       // el server borra TODAS las versiones del clip: fuera TODAS sus tarjetas, no solo la
       // clickeada (las hermanas quedaban con Descargar/Editar apuntando a la papelera → 404)
-      document.querySelectorAll('#splats .splat-item').forEach(el => {
-        if (el.dataset.cid === scid) el.remove();
-      });
+      renderSplatList();                          // re-render completo: quita TODAS las versiones y deja empty-state si era el último
       renderCards();   // la proj-card mostraba 'N splats' — refléjalo sin recargar
     }
   });

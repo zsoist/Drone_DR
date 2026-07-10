@@ -49,8 +49,8 @@ const splatVersionLabel = s => [
 function splatAssetsFor(clipId, system) {
   return (system.splats || [])
     .filter(s => SPLAT_EXT.test(s.name) && ((s.clip_id || s.name.replace(SPLAT_EXT, '')) === clipId))
-    .sort((a, b) => (b.iters || 0) - (a.iters || 0)
-      || (b.current ? 1 : 0) - (a.current ? 1 : 0)
+    .sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)   // la versión ACTUAL manda (consistente con build_index y tresd)
+      || (b.iters || 0) - (a.iters || 0)
       || (SPLAT_RANK[(a.format || a.name.split('.').pop()).toLowerCase()] ?? 9)
       - (SPLAT_RANK[(b.format || b.name.split('.').pop()).toLowerCase()] ?? 9)
       || String(b.archived_at || '').localeCompare(String(a.archived_at || '')));
@@ -127,7 +127,7 @@ if (splat && splats.length > 1) {
   const sel = document.createElement('select');
   sel.className = 'share-splat-select';
   sel.title = 'Versión del splat';
-  sel.style.cssText = 'background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px';
+  sel.style.cssText = 'background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px';
   sel.innerHTML = splats.map(s => {
     const label = splatVersionLabel(s);
     return `<option value="${esc(splatKey(s))}"${splatKey(s) === splatKey(splat) ? ' selected' : ''}>${esc(label)}</option>`;

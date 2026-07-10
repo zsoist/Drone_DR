@@ -653,9 +653,12 @@ _web_tresd = Path("web/tresd.js").read_text()
 _web_share = Path("web/share.js").read_text()
 _web_lab = Path("web/splatlab.js").read_text()
 _web_splatview = Path("web/splatview.js").read_text()
-check("viewer: splat selectors prefer higher-quality iters before mutable current",
-      ".sort((a, b) => (b.iters || 0) - (a.iters || 0)" in _web_tresd
-      and ".sort((a, b) => (b.iters || 0) - (a.iters || 0)" in _web_share)
+# DECISIÓN 2026-07-10: la versión CURRENT manda sobre iters — re-entrenar Medium tras un
+# Ultra debe REFLEJARSE (antes ganaba iters y el usuario creía que 'el entrenamiento no hizo
+# nada'). Consistente con build_index (server ordena current-primero) y con el share mutable.
+check("viewer: splat selectors prefer mutable current before iters",
+      ".sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)" in _web_tresd
+      and ".sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0)" in _web_share)
 check("viewer: archived splat links use manifest path",
       "const splatUrl = s => 'data/splats/' + splatKey(s).split('/')" in _web_tresd
       and "const splatUrl = s => 'data/splats/' + splatKey(s).split('/')" in _web_lab

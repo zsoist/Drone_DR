@@ -1679,6 +1679,8 @@ class H(BaseHTTPRequestHandler):
                 return
             spec = self.read_json()
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            if not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
+                return self.send_json({"error": "clip no encontrado en el vault"}, 404)
             if not cid:
                 return self.send_json({"error": "clip_id requerido"}, 400)
             if jobstore.pending("3d", cid):
