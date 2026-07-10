@@ -43,12 +43,14 @@ re-fit en rotación.
 - [x] Older-jobs stale: la clave estructural usa identidades (ids), no solo el conteo
 
 ## sistema
+✅ VERIFICADO 2026-07-10: ambos ya estaban arreglados (try/catch en getFlights; jobCard tolera label null desde hoy en shell.js).
 - [medium] Unhandled promise rejection freezes the entire tab when flights.json fails to load
   · system.js line 73, top-level async IIFE: `const flights = await getFlights();`
 - [medium] Job missing `label` crashes the feed render (same blast radius: kills all filter/table listeners)
   · IIFE, "feed de trabajos recientes" — line 143: `esc(j.label.length > 26 ? j.label.slice(-16) : j.lab
 
 ## splatlab
+✅ CERRADO en commit 5f300ca (drag&drop sobre el iframe publica).
 - [medium] Drag & drop over the editor does nothing — the iframe swallows drag events so they never reach #lab-drop
   · drag&drop handlers on `drop` (#lab-drop), lines 106–112, with the <iframe id="lab-frame"> as a child
 - [medium] drag&drop over the iframe never delivers drop events — feature is dead over its visible area
@@ -81,6 +83,7 @@ modal de proyectos centrado (M10).
   · seek(), lines 882-903 (safety = setTimeout(start,1500); start sets video.currentTime=target)
 
 ## viajes
+✅ VERIFICADO 2026-07-10: los 5 ya estaban arreglados (caret preservado, AbortError capturado, ||0 en duraciones, debounce cancelado al volver, q sin mutar).
 - [medium] Search input caret jumps to end and page scrolls to top on every keystroke
   · renderDetail() — the #d-q 'input' handler debounce (lines 191-195) combined with the trailing window
 - [low] Interrupted '#city-back' WAAPI animation causes unhandled AbortError and races renderCities against re-entrant renderDetail
@@ -93,6 +96,10 @@ modal de proyectos centrado (M10).
   · renderDetail — #d-q input handler line 192 storing `dstate.q = e.target.value.toLowerCase()`, echoed
 
 ## Hunt pipelines 2026-07-09 (post-fixes) — pendientes de menor prioridad
+✅ CERRADOS 2026-07-10: browser_gate drena stderr; build_index tolera stat-race y manifest corrupto;
+splat_quality con tail=60 (el gate ya no se queda sin líneas Step); stages de splats fallidos se
+limpian al fallar. Quedan solo: pid-identity en init(), prune→artifacts huérfanos, pending atómico,
+eficiencias (doble rebuild, OBJ en RAM).
 - [media] jobs.py init(): mata pids guardados sin verificar identidad (pid reciclado tras reboot puede ser inocente) · fix: comparar lstart/comm antes de señalizar
 - [media] browser_gate.py:165: stderr de Chrome sin drenar tras el handshake → cuelgue si llena el PIPE de 64KB · fix: thread drenador
 - [baja] worker run_splat: cancel post-train pisado por updates intermedios; stages .training/ de jobs fallidos solo se limpian al reiniciar worker

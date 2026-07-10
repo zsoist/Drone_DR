@@ -179,6 +179,11 @@ def launch_chrome():
     if not ws_url:
         proc.terminate()
         raise RuntimeError("Chrome no abrió DevTools a tiempo")
+    # DRENAR stderr en background: dejarlo sin leer llena el buffer de 64KB del PIPE con
+    # warnings de GPU/GL (habitual en headless) → Chrome se bloquea escribiendo → gate cuelga
+    # → timeout → job en error con el asset YA publicado
+    threading.Thread(target=lambda: [None for _ in iter(proc.stderr.readline, "")],
+                     daemon=True).start()
     port = urllib.parse.urlparse(ws_url).port
     return proc, profile, port
 

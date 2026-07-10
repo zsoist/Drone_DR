@@ -595,6 +595,9 @@ def run_splat(j: dict):
             # SH, así que entrenar solo el grado 0 no pierde nada y es estable.
             rc = jobstore.run_tracked(j["id"],
                 opensplat_train_cmd(proj, tmp_out, ITERS, backend, train_args),
+                # tail=60 (default 12): OpenSplat termina con líneas de save/export — con tail
+                # corto el gate se quedaba SIN líneas 'Step' y saltaba los checks de convergencia
+                tail=60,
                 timeout=int(preset.get("timeout") or 4 * 3600), abort_re=r"Step \d+: nan",
                 progress_re=r"\((\d+)%\)",
                 env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)},
@@ -668,6 +671,9 @@ def main():
             if not _cancelled(j["id"]):
                 jobstore.end(j["id"], "error", str(e)[-250:])
             print(f"✗ {j['id']}: {e}", flush=True)
+            # stage huérfano de un splat fallido: cientos de MB que antes vivían hasta el
+            # próximo reinicio del worker (KeepAlive ≈ nunca)
+            shutil.rmtree(VAULT / "splats" / ".training" / j["id"], ignore_errors=True)
 
 
 if __name__ == "__main__":

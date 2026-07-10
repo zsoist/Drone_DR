@@ -174,7 +174,11 @@ def all_splats(splat_dir: Path) -> list:
         stats = _splat_stats(base, p.stem)
         for k, v in job_facts.get(rel, {}).items():
             stats.setdefault(k, v)
-        out.append({"name": p.name, "path": rel, "bytes": p.stat().st_size,
+        try:
+            size = p.stat().st_size
+        except OSError:
+            continue                    # el prune del server pudo borrar la versión a mitad del rebuild
+        out.append({"name": p.name, "path": rel, "bytes": size,
                     "format": p.suffix.lower().lstrip("."), **info, **stats})
     return sorted(out, key=lambda s: (s["clip_id"], 0 if s.get("current") else 1,
                                      -(s.get("iters") or 0), s.get("archived_at") or "", s["name"]))
@@ -186,7 +190,11 @@ def main():
     clip_manifests = sorted([*(VAULT / "manifest").glob("DJI_*.json"),
                              *(VAULT / "manifest").glob("UP_*.json")])
     for mf in clip_manifests:
-        m = json.loads(mf.read_text())
+        try:
+            m = json.loads(mf.read_text())
+        except (ValueError, OSError):
+            print(f"manifest corrupto (saltado): {mf.name}")
+            continue                    # un solo clip roto no debe tumbar TODO el índice
         cid = m["clip_id"]                     # DJI_20260704160358_0104_D
         ts = cid.split("_")[1]                 # 20260704160358
         m["date"] = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
