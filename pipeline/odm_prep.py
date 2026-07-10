@@ -112,6 +112,13 @@ def main():
     for f in sorted(tmp_dir.glob("f_*.jpg")):
         os.replace(f, images / f.name)
     shutil.rmtree(tmp_dir, ignore_errors=True)
+    # INVALIDA el opensfm viejo AQUÍ (no esperar al clean del worker): los frames nuevos pueden
+    # tener otro fps/width con los MISMOS nombres f_XXXX.jpg. Si cancelan en la ventana antes
+    # del wipe del worker, run_splat elegiría poses viejas sobre imágenes nuevas → splat corrupto
+    # que puede pasar el gate. ODM regenera estos archivos en la corrida que sigue.
+    for stale in (proj / "opensfm" / "image_list.txt",
+                  proj / "opensfm" / "reconstruction.json"):
+        stale.unlink(missing_ok=True)
 
     if profile:
         prune_frames(images, pts, fps, profile)
@@ -132,8 +139,13 @@ def main():
         ]
     argfile = proj / ".geotag.args"
     argfile.write_text("\n".join(args))
-    subprocess.run(["exiftool", "-overwrite_original", "-@", str(argfile)],
+    # -common_args: aplica -overwrite_original a TODOS los -execute del argfile. Antes (flag
+    # posicional antes de -@) solo aplicaba al primero → cientos de f_*.jpg_original fugados
+    # por proyecto (~50% del dir images/), que el swap nunca limpiaba.
+    subprocess.run(["exiftool", "-@", str(argfile), "-common_args", "-overwrite_original"],
                    check=True, capture_output=True)
+    for leak in images.glob("f_*.jpg_original"):   # limpia backups de corridas viejas
+        leak.unlink()
     print(f"✅ {len(frames)} frames geotagged → {proj}")
 
 

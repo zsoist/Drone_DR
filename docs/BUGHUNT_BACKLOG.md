@@ -78,3 +78,13 @@ Quedan 32 de menor severidad (polish: caret jumps, undo gaps, teardown en SPA, N
   · renderDetail — #city-back click handler (lines 180-190) vs. #d-q input handler (lines 191-195)
 - [low] Search input text is force-lowercased on re-render, so typed uppercase characters visibly mutate
   · renderDetail — #d-q input handler line 192 storing `dstate.q = e.target.value.toLowerCase()`, echoed
+
+## Hunt pipelines 2026-07-09 (post-fixes) — pendientes de menor prioridad
+- [media] jobs.py init(): mata pids guardados sin verificar identidad (pid reciclado tras reboot puede ser inocente) · fix: comparar lstart/comm antes de señalizar
+- [media] browser_gate.py:165: stderr de Chrome sin drenar tras el handshake → cuelgue si llena el PIPE de 64KB · fix: thread drenador
+- [baja] worker run_splat: cancel post-train pisado por updates intermedios; stages .training/ de jobs fallidos solo se limpian al reiniciar worker
+- [baja] prune_splat_history puede borrar versiones a las que retarget apuntó jobs done (tarjeta "Abrir" muerta) · fix: blanquear artifacts al podar
+- [baja] build_index: p.stat() sin tolerar archivo desaparecido (carrera con prune) + un manifest corrupto tumba main() · fix: try/except por archivo
+- [baja] splat_quality: métricas del tail de 12 líneas — si terminan en saves, los checks de convergencia se saltan en silencio
+- [baja] jobs.pending() check-then-enqueue no atómico (doble tap = 2 jobs) · fix: BEGIN IMMEDIATE
+- [baja] eficiencia: doble rebuild_index por 3D; tresd_publish copia OBJ con read_bytes (RAM) y lo parsea 3×; image_list.txt write no atómico

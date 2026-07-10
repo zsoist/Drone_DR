@@ -110,7 +110,7 @@ main.innerHTML = `
     ['drone', 'Clips', flights.length],
     ['db', 'Raw 4K', fmt.gb(st.raw || 0), true],
     ['cube', 'Modelos 3D', (sys.models || []).length],
-    ['spark', 'Splats', (sys.splats || []).filter(s => /\.splat$/.test(s.name)).length],
+    ['spark', 'Splats', (sys.splats || []).filter(s => /\.(splat|ksplat|ply)$/i.test(s.name)).length],  // los current son .ksplat — /\.splat$/ contaba 0
     ['film', 'Fotos 4K', (sys.photos || []).length],
     ['play', 'Reels', (sys.reels || []).length],
     ['check', 'Jobs completados', doneJobs.length],

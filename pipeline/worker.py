@@ -425,6 +425,10 @@ def run_odm_step(jid, container, proj, preset, preset_name, rerun_from: str | No
         return run_odm_container(jid, container, proj, preset, preset_name, rerun_from, stable_dense)
     except TimeoutError:
         print(f"  ODM {preset_name} agotó el tiempo → tratado como fallo (rc=124) para el fallback", flush=True)
+        # run_tracked ya hizo end(jid,'error') ANTES de lanzar: si seguimos la cadena con el job
+        # en 'error', cancel() lo rechaza (no-running), el orphan-recovery lo ignora si el worker
+        # muere (contenedor huérfano quemando CPU), y la UI muestra "error" mientras procesa.
+        jobstore.update(jid, status="running", finished=None)
         return 124
 
 
@@ -496,9 +500,12 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         preset_name = "ortho_25d_fallback"
 
     jobstore.update(j["id"], detail="3/3 publicando assets web", stage="publish", progress=0.9)
+    # 2h, no 30min: dentro corren TRES pasos docker (ortho/nube/DSM, hasta 1800s c/u) +
+    # texturas PIL + gzip del OBJ. En extra/ultra el kill a 1800s caía a MITAD de la
+    # publicación con model/ ya wipeado → visor roto con meta viejo.
     if jobstore.run_tracked(j["id"],
             ["python3", str(PIPE / "tresd_publish.py"), cid, str(proj)],
-            timeout=1800) != 0:
+            timeout=7200) != 0:
         raise RuntimeError("publicación falló")
 
     # graba preset + título elegidos en el asistente (la UI los muestra en tarjeta/reporte)

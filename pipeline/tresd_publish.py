@@ -42,7 +42,12 @@ def wgs84_area_m2(corners):
 
 
 def sh_in_odm(proj: Path, script: str) -> str:
-    r = subprocess.run([DOCKER, "run", "--rm", "-v", f"{proj}:/d",
+    # contenedor CON NOMBRE determinista: si cancelan el job, matar la CLI de docker NO mata
+    # el contenedor; con nombre, el siguiente run lo barre (rm -f) en vez de dejar un huérfano
+    # GDAL/PDAL quemando CPU hasta 30 min. (mismo patrón que fast-ortho/run_odm_container)
+    name = f"publish-{proj.name}"
+    subprocess.run([DOCKER, "rm", "-f", name], capture_output=True, timeout=30)
+    r = subprocess.run([DOCKER, "run", "--rm", "--name", name, "-v", f"{proj}:/d",
                         "--entrypoint", "bash", "opendronemap/odm", "-c", script],
                        capture_output=True, text=True, timeout=1800)
     if r.returncode != 0:
