@@ -37,6 +37,7 @@
         </div>`;
       if (p.lat && p.lon) {
         const map = new maplibregl.Map({
+          cooperativeGestures: true,               // página de cliente: el mapa no debe secuestrar el scroll
           container: 'pmap', center: [p.lon, p.lat], zoom: 16.5,
           style: { version: 8, sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: 'Esri' } }, layers: [{ id: 'sat', type: 'raster', source: 'sat' }] },
           attributionControl: { compact: true },

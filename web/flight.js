@@ -404,7 +404,8 @@ const cid = new URLSearchParams(location.search).get('id');
     });
     CHARTS[el.id] = { series, unit, X, Y };
     const svg = el.querySelector('svg');
-    svg.addEventListener('mousemove', e => {
+    svg.style.touchAction = 'pan-y';               // deslizar horizontal = scrub; vertical sigue scrolleando
+    svg.addEventListener('pointermove', e => {     // pointermove cubre mouse Y dedo (mousemove era desktop-only)
       const r = svg.getBoundingClientRect();
       const i = Math.round(((e.clientX - r.left) / r.width) * (series.length - 1));
       document.getElementById(`${el.id}-v`).textContent = `${Math.round(series[i] || 0)} ${unit} · ${fmt.dur(i)}`;
@@ -437,6 +438,7 @@ const cid = new URLSearchParams(location.search).get('id');
   if (pts.length) {
     const coords = pts.map(p => [p.lon, p.lat]);
     const map = new maplibregl.Map({
+      cooperativeGestures: true,                   // mapa mid-page: 1 dedo scrollea la página, 2 mueven el mapa
       container: 'map', style: SAT_STYLE,
       bounds: [[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]],
       fitBoundsOptions: FIT_OPTS, attributionControl: { compact: true },

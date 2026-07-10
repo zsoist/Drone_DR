@@ -275,7 +275,7 @@ main.innerHTML = `
       `${d.ncpu} cores`,
     ].map(x => `<span class="perf-chip">${x}</span>`).join('');
     // uso por job: la parte "cuando haya un job, sé eficiente" — cpu/rss/etapa/eta en vivo
-    $('pf-jobs').innerHTML = (now.jobs || []).length ? `<table class="kv perf-jobs">
+    $('pf-jobs').innerHTML = (now.jobs || []).length ? `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="kv perf-jobs">
       <tr><th>Job</th><th>Etapa</th><th>CPU</th><th>RAM</th><th>Lleva</th><th>Progreso</th></tr>
       ${now.jobs.map(j => `<tr>
         <td class="mono">${esc(j.kind)} · ${esc((j.label || '').slice(-14))}</td>
@@ -283,7 +283,7 @@ main.innerHTML = `
         <td class="mono">${j.cpu_pct}%</td><td class="mono">${(j.rss_mb / 1024).toFixed(1)}G</td>
         <td class="mono">${j.elapsed_s >= 3600 ? (j.elapsed_s / 3600).toFixed(1) + 'h' : Math.round(j.elapsed_s / 60) + 'm'}</td>
         <td><div class="pf-bar"><i style="width:${Math.round((j.progress || 0) * 100)}%"></i></div></td>
-      </tr>`).join('')}</table>` : '';
+      </tr>`).join('')}</table></div>` : '';
   }
 
   function draw() {

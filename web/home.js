@@ -24,8 +24,12 @@ main.classList.add('deck-main');
 
   const thumb = f => f ? `${DATA}/thumbs/${f.clip_id}.jpg` : '';
   const otherDay = byDate.find(f => f.date !== last?.date) || byDate[1];
-  const ortho = models[0] ? `data/models/${models[0].clip_id}/${models[0].ortho_asset || 'ortho.jpg'}` : '';
-  const photo = (sys.photos || [])[0] ? `/data/photos/${encodeURIComponent(sys.photos[0].name)}` : '';
+  // THUMBS, no assets completos: la ortofoto (715KB) y la foto 4K (942KB) como fondo de
+  // tarjetas de ~400px costaban ~1.7MB del ~7MB del home frío en celular
+  const orthoModel = models[0] && flights.find(f => f.clip_id === models[0].clip_id);
+  const ortho = orthoModel ? thumb(orthoModel)
+    : models[0] ? `data/models/${models[0].clip_id}/${models[0].ortho_asset || 'ortho.jpg'}` : '';
+  const photo = '';   // la foto 4K real pesa ~1MB; la tarjeta usa el thumb de un vuelo (abajo)
 
   // texto útil + chips de datos reales; media = capa especial (cloud/globe/drones)
   const SECTIONS = [
@@ -48,7 +52,7 @@ main.classList.add('deck-main');
     { href: 'studio.html', ic: 'film', ac: '#b78cff', t: 'Studio',
       d: 'Timeline multi-clip con razor, color por corte, títulos y export hasta 4K.',
       chips: [`${(sys.reels || []).length} reels`, `${(sys.photos || []).length} fotos`, '15 transiciones'],
-      img: photo },
+      img: thumb(byDate[3] || byDate[1] || byDate[0]) },
     { href: 'drone.html?via=subir', ic: 'dl', ac: '#ff7eb0', t: 'Subir',
       d: 'Suelta cualquier video DJI: el proxy, la telemetría y el análisis salen solos.',
       chips: ['arrastra y suelta', 'hasta 25 GB'],
@@ -82,7 +86,7 @@ main.classList.add('deck-main');
         </g></svg></span>`;
   const DRONE = `
     <div class="fly-drone v10" id="hero-drone" data-tip="Doble click = que te siga · click = pirueta">
-      <img class="dr-img" src="assets/ovi-drone.svg?v=31" alt="" draggable="false">
+      <img class="dr-img" src="assets/ovi-drone.png" alt="" draggable="false">
       ${blade(27, 20, 21, 0)}${blade(84, 30, 21, 1)}${blade(9, 57, 29, 2)}${blade(65, 73, 33, 3)}
     </div>`;
 

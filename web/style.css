@@ -2504,7 +2504,7 @@ button.exp { text-align: left; cursor: pointer; }
 /* ===== BLOQUE 14 · dron v7 pixel-art + partículas + fondo pixel ===== */
 /* fondo pixel-art del héroe (aparece si sueltas web/assets/hero-pixel.png) */
 .deck-hero::before { content: ''; position: absolute; inset: -10px 0 auto 0; height: 230px;
-  background-image: url('assets/hero-pixel.png'); background-size: auto 100%; background-repeat: repeat-x;
+  background-image: url('assets/hero-pixel.webp'); background-size: auto 100%; background-repeat: repeat-x;
   image-rendering: pixelated; opacity: .16; pointer-events: none; z-index: 0;
   -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent);
   mask-image: linear-gradient(180deg, #000 55%, transparent);
@@ -2572,7 +2572,7 @@ button.exp { text-align: left; cursor: pointer; }
   image-rendering: pixelated;
   background:
     linear-gradient(180deg, rgba(6,9,14,.30) 0%, rgba(6,9,14,.58) 46%, rgba(6,9,14,.86) 78%, var(--bg) 100%),
-    url('assets/hero-pixel.png') center top / cover no-repeat;
+    url('assets/hero-pixel.webp') center top / cover no-repeat;
 }
 /* viñeta lateral para fundir con el sidebar y los bordes */
 .deck-main::after {
@@ -2872,7 +2872,7 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   .seg button, .chip, .btn, .modal-x, .rename-btn, .hero-back,
   .cc-stats .btn, .lab-picker .chip, .lab-actions .btn, .splat-item .si-acts .btn,
   .sv-hud button, .map-recenter, #vm-fit, #copy-home, .fbtn,
-  .pm-tabs button, .td-tabs button {
+  .pm-tabs button, .td-tabs button, .nav-item {
     min-height: 44px;
   }
   /* botones de solo-icono: garantiza también el ancho */
@@ -2935,6 +2935,28 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .perf-errs summary { cursor: pointer; font-size: 12.5px; color: var(--text-2); padding: 6px 0 2px; display: flex; align-items: center; gap: 7px; }
 .pf-report { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--accent); padding: 3px 0; }
 .pf-err { font-size: 11px; color: var(--text-2); padding: 3px 0; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: baseline; }
+
+/* móvil: la vista Lista con thumb de 200px dejaba ~160px para título+métricas (recortadas) */
+@media (max-width: 640px) {
+  .grid.list .card { grid-template-columns: 120px 1fr; }
+}
+
+/* fullscreen de visores + notch: HUD/tips/tools respetan safe-area (home-indicator/Dynamic Island) */
+.sv-fullscreen .sv-hud { bottom: calc(12px + env(safe-area-inset-bottom)); }
+.sv-fullscreen .sv-tip { top: calc(12px + env(safe-area-inset-top)); }
+.viewer-fs .viewer-tools { top: calc(10px + env(safe-area-inset-top)); }
+.viewer-fs .viewer-hud { bottom: calc(10px + env(safe-area-inset-bottom)); }
+
+/* iOS: el scroll interno de modales/sheets no debe encadenar al body (rubber-band) */
+.modal, .ex-card, .login-ov, .photo-modal, .mflights, .lab-frame-wrap { overscroll-behavior: contain; }
+
+/* long-press en imágenes interactivas (scrub/galería) no debe abrir el callout de iOS */
+.card .thumb img, .cr-item img, .gal img, .dr-img, .proj-card img, .mflight img {
+  -webkit-touch-callout: none;
+}
+
+/* teclado físico hint (kbd /) no aplica en táctil */
+@media (pointer: coarse) { .search kbd { display: none; } }
 
 /* ================= BLOQUE 23 · Escáner de captura (frontier style) ================= */
 .scan-card {

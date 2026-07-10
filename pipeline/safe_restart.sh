@@ -2,6 +2,8 @@
 # Reinicia servicios de AeroBrain sin matar trabajos pesados.
 # uso: safe_restart.sh [web|server|worker|tunnel|both]
 T="${1:-web}"
+# sidecars gzip frescos antes de servir (barato; solo re-comprime lo cambiado)
+"$(dirname "$0")/gzip_assets.sh" >/dev/null 2>&1 || true
 [[ "$T" == "server" ]] && T="web"
 if [[ "$T" == "worker" || "$T" == "both" ]]; then
   BUSY=$(python3 - <<'PY'

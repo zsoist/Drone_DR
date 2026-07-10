@@ -90,7 +90,7 @@ def process_clip(mp4: Path) -> dict:
 
     thumb = VAULT / "thumbs" / f"{cid}.jpg"
     run_ffmpeg(["-ss", str(duration * 0.25), "-i", str(mp4),
-                "-frames:v", "1", "-vf", "scale=-2:720", "-q:v", "3", str(thumb)])
+                "-frames:v", "1", "-vf", "scale=-2:540", "-q:v", "7", str(thumb)])   # 540p q7 ≈ 85KB (720p q3 eran 300KB+ por tarjeta: 14MB el grid en celular)
 
     if tier == "full":
         proxy = VAULT / "proxies" / f"{cid}.mp4"

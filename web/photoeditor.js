@@ -223,11 +223,19 @@ function openPhotoEditor({ url, name }) {
     }
     if (ev.target.id === 'pm-custom') { fx.custom = Math.max(480, Math.min(3840, +ev.target.value || 1600)); draw(); }
   });
+  const dblReset = lb => { fx[lb.dataset.dbl] = DEF[lb.dataset.dbl]; syncUI(); draw(); };
+  let _lastTap = 0, _lastEl = null;                 // dblclick no dispara fiable en táctil → doble-tap propio
+  ov.addEventListener('pointerup', ev => {
+    if (ev.pointerType === 'mouse') return;
+    const lb = ev.target.closest('[data-dbl]');
+    if (!lb) { _lastEl = null; return; }
+    if (_lastEl === lb && ev.timeStamp - _lastTap < 350) { _lastTap = 0; _lastEl = null; dblReset(lb); }
+    else { _lastTap = ev.timeStamp; _lastEl = lb; }
+  });
   ov.addEventListener('dblclick', ev => {
     const lb = ev.target.closest('[data-dbl]');
     if (!lb) return;
-    fx[lb.dataset.dbl] = DEF[lb.dataset.dbl];
-    syncUI(); draw();
+    dblReset(lb);
   });
   ov.addEventListener('click', ev => {
     const pb = ev.target.closest('[data-preset]');

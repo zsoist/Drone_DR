@@ -1,0 +1,9 @@
+{
+  "name": "AeroBrain",
+  "short_name": "AeroBrain",
+  "start_url": "/home.html",
+  "display": "standalone",
+  "background_color": "#0A0C10",
+  "theme_color": "#0A0C10",
+  "icons": [{ "src": "/assets/touch-icon.png", "sizes": "180x180", "type": "image/png" }]
+}

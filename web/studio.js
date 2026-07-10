@@ -1365,6 +1365,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     requestAnimationFrame(() => t.classList.add('on'));
     setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 350); }, 3600);
   }
+  document.getElementById('ed-title')?.addEventListener('focus', e2 =>
+    setTimeout(() => e2.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250));  // el teclado iOS tapaba el input (sheet fija)
   document.getElementById('ed-export').addEventListener('click', async e => {
     if (!tl.length) return;
     if (!getToken()) return;   // gate
