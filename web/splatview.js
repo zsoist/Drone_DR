@@ -93,10 +93,16 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   frame();
   viewer.start();
 
-  // navegación premium
+  // navegación premium — esquema GOOGLE MAPS/EARTH: arrastrar = MOVER el mapa (pan),
+  // rueda = zoom al cursor, click-derecho o Ctrl+arrastrar = rotar/inclinar;
+  // táctil: 1 dedo = mover, pellizco = zoom, 2 dedos girando = rotar.
+  // (el fork de OrbitControls del viewer usa los mismos enums numéricos de three)
   ctrl.enableDamping = true; ctrl.dampingFactor = 0.06;
   ctrl.rotateSpeed = 0.6; ctrl.zoomSpeed = 2.15; ctrl.panSpeed = 0.95;
   ctrl.maxPolarAngle = Math.PI * 0.495;
+  ctrl.mouseButtons = { LEFT: THREEV.MOUSE.PAN, MIDDLE: THREEV.MOUSE.DOLLY, RIGHT: THREEV.MOUSE.ROTATE };
+  ctrl.touches = { ONE: THREEV.TOUCH.PAN, TWO: THREEV.TOUCH.DOLLY_ROTATE };
+  ctrl.screenSpacePanning = false;                   // pan pegado al suelo, como un mapa
   if ('zoomToCursor' in ctrl) ctrl.zoomToCursor = true;
   try { ctrl.listenToKeyEvents(window); } catch {}   // flechas = pan
 
@@ -123,6 +129,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   function focusAt(clientX, clientY) {
     const rect = holder.getBoundingClientRect();
     const vcam = viewer.camera;                         // FRESCO: el viewer intercambia su cámara tras montar
+    vcam.updateMatrixWorld();                           // matriz fresca aunque el rAF esté pausado (tab de fondo)
     // plano del suelo (la escena aérea ≈ plana): determinista y siempre acierta. Intersecta
     // el rayo del cursor con el plano a la altura del centro de escena → punto de focus.
     const ndc = new THREEV.Vector2((clientX - rect.left) / rect.width * 2 - 1,
@@ -186,8 +193,8 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   tip.className = 'sv-tip';
   const coarse = matchMedia('(hover: none), (pointer: coarse)').matches;
   tip.textContent = coarse
-    ? 'Doble-toca un punto para enfocar · objetivo = macro · + acerca · pellizca = zoom'
-    : 'Doble-click en un punto para enfocar · objetivo = macro · rueda/+ acerca · click-derecho = mover';
+    ? 'Arrastra = mover · pellizca = zoom · 2 dedos = rotar · doble-toca = enfocar'
+    : 'Arrastra = mover el mapa · rueda = zoom · click-derecho = rotar · doble-click = enfocar';
   host.appendChild(tip);
   setTimeout(() => tip.classList.add('fade'), 4200);
 

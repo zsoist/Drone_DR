@@ -56,7 +56,7 @@
               <tr><td>1. Procesa</td><td>3D → Procesamiento → elige vuelo y calidad (estándar/alta/extra/ultra)</td></tr>
               <tr><td>2. Explora</td><td>Proyectos → Abrir: mapa, nube, malla y descargas</td></tr>
               <tr><td>3. Entrena splat</td><td>"Generar splat…" (Rápido → Ultra; se puede dejar de noche)</td></tr>
-              <tr><td>4. Ver</td><td>doble-click/doble-toque = enfocar un edificio · 🎯 = modo macro · +/− = zoom fino</td></tr>
+              <tr><td>4. Ver</td><td>como Google Maps: arrastra = mover · rueda/pellizco = zoom · click-derecho/2 dedos = rotar · doble-click = enfocar · 🎯 = macro</td></tr>
               <tr><td>5. Pule</td><td>Editar abre SuperSplat (quitar floaters, recortar); cada re-subida guarda versión</td></tr>
               <tr><td>6. Comparte</td><td>botón Compartir de la tarjeta = link público del visor</td></tr>
             </table>

@@ -185,7 +185,7 @@
             <button class="btn primary" id="load-cloud-main" style="padding:4px 12px;font-size:11.5px">Cargar</button>
           </div>
           <div id="cloud-box" style="height:54dvh;min-height:360px;display:grid;place-items:center">
-            <p class="footer-note" style="margin:0">Nube de ~800k puntos con color real — arrastra para orbitar.</p>
+            <p class="footer-note" style="margin:0">Nube de ~800k puntos con color real — arrastra para mover, click-derecho rota, doble-click enfoca.</p>
           </div>
         </div>
       </div>
@@ -837,12 +837,20 @@
     controls.dampingFactor = 0.07;
     controls.rotateSpeed = 0.55;
     controls.zoomSpeed = 1.35;
+    // esquema GOOGLE MAPS/EARTH — arrastrar = MOVER el mapa (pan), rueda = zoom al cursor,
+    // click-derecho o Ctrl/Shift+arrastrar = rotar/inclinar; táctil: 1 dedo = mover,
+    // pellizco = zoom, 2 dedos girando = rotar. Antes arrastrar ORBITABA (default de
+    // OrbitControls) — desorientador para cualquiera acostumbrado a mapas.
+    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+    controls.screenSpacePanning = false;   // el pan corre pegado al plano del suelo, como un mapa
     // render ON-DEMAND: dibuja al inicio y ~1.5s tras cada cambio (para captar decodes async
     // de textura), luego se duerme = 0 trabajo de GPU cuando la escena está quieta. wake()
     // lo despiertan interacción, resize, tier-swap y cambio de modo.
     let renderFrames = 90;
     const wake = () => { renderFrames = 90; };
     box._wake = wake;
+    box._controls = controls;            // expuesto para QA/HUD (verificar mapping, mover cámara)
     controls.addEventListener('change', wake);
     const ro = new ResizeObserver(() => {
       const W = box.clientWidth, H = box.clientHeight;
@@ -856,11 +864,48 @@
     const dl = new THREE.DirectionalLight(0xffffff, 1.2);
     dl.position.set(1, 2, 1.5);
     scene.add(dl);
+    // doble-click / doble-toque = ENFOCAR ese punto (como Google Maps): rayo del cursor al
+    // plano del suelo → mueve el target ahí y acerca ~la mitad, con animación suave.
+    let fAnim = 0;
+    const focusAt = (cx, cy) => {
+      const r = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+      cam.updateMatrixWorld();   // el render-on-demand duerme: sin esto la matriz puede estar
+                                 // stale y el rayo desproyectado sale hacia el horizonte
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, cam);
+      const p = new THREE.Vector3();
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -controls.target.y);
+      if (!ray.ray.intersectPlane(plane, p)) return;
+      if (p.distanceTo(controls.target) > (controls.maxDistance || 1e9)) return;  // rayo rasante → punto absurdo
+      const d = cam.position.distanceTo(p);
+      const toPos = p.clone().addScaledVector(cam.position.clone().sub(p).normalize(),
+        Math.max(d * 0.45, (controls.minDistance || 0.003) * 3));
+      const t0 = performance.now(), dur = 420;
+      const sT = controls.target.clone(), sP = cam.position.clone();
+      cancelAnimationFrame(fAnim);
+      (function step() {
+        const k = Math.min(1, (performance.now() - t0) / dur), e = 1 - (1 - k) ** 3;
+        controls.target.lerpVectors(sT, p, e);
+        cam.position.lerpVectors(sP, toPos, e);
+        controls.update(); wake();
+        if (k < 1) fAnim = requestAnimationFrame(step);
+      })();
+    };
+    renderer.domElement.addEventListener('dblclick', e => { e.preventDefault(); focusAt(e.clientX, e.clientY); });
+    let lastTap = 0, lastTX = 0, lastTY = 0;                    // dblclick no dispara fiable en táctil
+    renderer.domElement.addEventListener('pointerup', e => {
+      if (e.pointerType === 'mouse') return;
+      if (e.timeStamp - lastTap < 320 && Math.abs(e.clientX - lastTX) < 32 && Math.abs(e.clientY - lastTY) < 32) {
+        lastTap = 0; focusAt(e.clientX, e.clientY);
+      } else { lastTap = e.timeStamp; lastTX = e.clientX; lastTY = e.clientY; }
+    });
     (function loop() {
       // teardown al reemplazar el visor: libera GEOMETRÍA + MATERIALES + TEXTURAS (no solo
       // el renderer) y suelta el contexto WebGL (dispose() no lo hace; el navegador capa ~16).
       if (!renderer.domElement.isConnected) {
         ro.disconnect();
+        cancelAnimationFrame(fAnim);
         const freed = new Set();
         scene.traverse(o => {
           o.geometry?.dispose();
@@ -1201,12 +1246,11 @@
     const version = s.current ? 'Actual' : (s.archived_at || 'Historial');
     const hasModel = models.some(m => m.clip_id === scid);
     const q = qOf(s.loss);
+    // preset+iters NO van aquí: ya viven en la línea si-version (evita duplicar en cada tarjeta)
     const stats = [
       s.gaussians ? `<span title="Gaussianas">${icon('spark')}${gfmt(s.gaussians)}</span>` : '',
       s.cameras ? `<span title="Fotos / cámaras usadas">${icon('film')}${s.cameras}</span>` : '',
-      (s.preset_label || s.preset) ? `<span title="Preset">${icon('spark')}${esc(s.preset_label || s.preset)}</span>` : '',
       s.backend ? `<span title="Backend de entrenamiento">${icon('cpu')}${esc(s.backend)}</span>` : '',
-      s.iters ? `<span title="Iteraciones de entrenamiento">${icon('loop')}${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters}</span>` : '',
       s.duration_s ? `<span title="Tiempo de entrenamiento">${icon('clock')}${fmtRun(s.duration_s)}</span>` : '',
       s.loss != null ? `<span title="Loss final">loss ${s.loss}</span>` : '',
       `<span title="Tamaño del archivo">${icon('db')}${(s.bytes / 1e6).toFixed(1)} MB</span>`,

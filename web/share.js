@@ -176,6 +176,12 @@ function makeScene() {
   controls.dampingFactor = 0.07;
   controls.rotateSpeed = 0.55;
   controls.zoomSpeed = 1.35;
+  // esquema GOOGLE MAPS: arrastrar = mover el mapa, rueda = zoom al cursor, click-derecho o
+  // Ctrl+arrastrar = rotar; táctil: 1 dedo = mover, pellizco = zoom, 2 dedos = rotar
+  controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+  controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+  controls.screenSpacePanning = false;   // el pan corre sobre el plano del suelo
+  if ('zoomToCursor' in controls) controls.zoomToCursor = true;
   controls.autoRotate = true;            // efecto de entrada — se apaga al tocar
   controls.autoRotateSpeed = 0.7;
   renderer.domElement.addEventListener('pointerdown', () => { controls.autoRotate = false; }, { once: true });

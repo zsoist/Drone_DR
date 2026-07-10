@@ -2871,7 +2871,8 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 @media (pointer: coarse), (max-width: 820px) {
   .seg button, .chip, .btn, .modal-x, .rename-btn, .hero-back,
   .cc-stats .btn, .lab-picker .chip, .lab-actions .btn, .splat-item .si-acts .btn,
-  .sv-hud button, .map-recenter, #vm-fit, #copy-home, .fbtn {
+  .sv-hud button, .map-recenter, #vm-fit, #copy-home, .fbtn,
+  .pm-tabs button, .td-tabs button {
     min-height: 44px;
   }
   /* botones de solo-icono: garantiza también el ancho */
