@@ -110,6 +110,10 @@ def gps_metrics(points: list) -> dict:
     """Continuidad, velocidad, spread de rumbos y paralaje desde el track 1Hz."""
     if len(points) < 3:
         return {"ok": False}
+    pts = [p for p in points if isinstance(p.get("lon"), (int, float)) and isinstance(p.get("lat"), (int, float))]
+    if len(pts) < 3:
+        return {"ok": False}          # dropout GPS (lon/lat null) ya no crashea math.radians(None)
+    points = pts
     lls = [(p["lon"], p["lat"]) for p in points]
     alts = [p.get("rel_alt", 0) or 0 for p in points]
     ts = _t_seconds(points)

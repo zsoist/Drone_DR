@@ -11,7 +11,16 @@ VAULT = Path("/Volumes/SSD/drone-vault")
 
 
 def dir_size(p: Path) -> int:
-    return sum(f.stat().st_size for f in p.rglob("*") if f.is_file()) if p.exists() else 0
+    if not p.exists():
+        return 0
+    total = 0
+    for f in p.rglob("*"):
+        try:
+            if f.is_file():
+                total += f.stat().st_size
+        except OSError:
+            continue          # ingest/prune borró el archivo a mitad del rglob (TOCTOU)
+    return total
 
 
 def write_atomic(path: Path, text: str):
@@ -209,17 +218,24 @@ def main():
         # AI embebido: evita 1 fetch por clip en cada página (móvil sufre)
         aif = VAULT / "ai" / f"{cid}.json"
         if aif.exists():
-            a = json.loads(aif.read_text())
-            m["ai"] = {k: a.get(k) for k in
-                       ("summary", "scene_type", "tags", "highlights", "travel_score")}
+            try:                              # AI JSON truncado (write parcial del pipeline LLM) NO debe tumbar TODO el índice
+                a = json.loads(aif.read_text())
+                m["ai"] = {k: a.get(k) for k in
+                           ("summary", "scene_type", "tags", "highlights", "travel_score")}
+            except (ValueError, OSError) as e:
+                print(f"  ai/{cid}.json corrupto (saltado): {e}", flush=True)
         flights.append(m)
         # ruta simplificada (1 punto cada 4s) para el mapa global: 1 request, no 40
         tf = VAULT / "tracks" / f"{cid}.flight.json"
         if tf.exists():
-            pts = json.loads(tf.read_text())["points"][::4]
-            if pts:
-                routes.append({"cid": cid,
-                               "line": [[round(p["lon"], 6), round(p["lat"], 6)] for p in pts]})
+            try:
+                pts = json.loads(tf.read_text()).get("points", [])[::4]
+            except (ValueError, OSError):
+                pts = []
+            line = [[round(p["lon"], 6), round(p["lat"], 6)] for p in pts
+                    if isinstance(p.get("lon"), (int, float)) and isinstance(p.get("lat"), (int, float))]
+            if line:                          # dropout GPS (lon/lat null) ya no rompe routes.json
+                routes.append({"cid": cid, "line": line})
     flights.sort(key=lambda f: f["clip_id"].split("_")[1], reverse=True)
     write_atomic(VAULT / "manifest" / "flights.json",
                  json.dumps({"flights": flights}, separators=(",", ":")))
@@ -228,7 +244,12 @@ def main():
 
     # system.json: storage + reels + splats + last ingest
     ingests = sorted((VAULT / "manifest").glob("ingest-*.json"))
-    last = json.loads(ingests[-1].read_text()) if ingests else None
+    last = None
+    if ingests:
+        try:
+            last = json.loads(ingests[-1].read_text())
+        except (ValueError, OSError):
+            last = None
     system = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M"),
         "storage": {k: dir_size(VAULT / k) for k in

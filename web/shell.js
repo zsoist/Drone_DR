@@ -115,11 +115,18 @@ function loginModal() {
     ov.querySelector('#login-form').onsubmit = async e => {
       e.preventDefault();
       const go = ov.querySelector('#lg-go'); go.textContent = 'Entrando…'; go.disabled = true;
-      const r = await fetch('/api/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user: ov.querySelector('#lg-user').value.trim(),
-          password: ov.querySelector('#lg-pass').value }) });
+      let r;
+      try {
+        r = await fetch('/api/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user: ov.querySelector('#lg-user').value.trim(),
+            password: ov.querySelector('#lg-pass').value }) });
+      } catch {
+        ov.querySelector('#lg-err').textContent = 'Sin conexión — revisa la red e intenta de nuevo.';
+        go.textContent = 'Entrar'; go.disabled = false;
+        return;
+      }
       if (r.ok) return done(true);
       ov.querySelector('#lg-err').textContent = 'Correo o contraseña incorrectos.';
       go.textContent = 'Entrar'; go.disabled = false;

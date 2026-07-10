@@ -42,7 +42,7 @@ def require(keys, *names):
 def upsert(url, key, table, rows, on_conflict):
     if not rows:
         return
-    body = json.dumps(rows).encode()
+    body = json.dumps(rows, allow_nan=False).encode()
     req = urllib.request.Request(
         f"{url}/rest/v1/{table}?on_conflict={on_conflict}",
         data=body, method="POST",
@@ -56,7 +56,7 @@ def upsert(url, key, table, rows, on_conflict):
 
 
 def embed(texts, key):
-    body = json.dumps({"model": "text-embedding-3-small", "input": texts}).encode()
+    body = json.dumps({"model": "text-embedding-3-small", "input": texts}, allow_nan=False).encode()
     req = urllib.request.Request(
         "https://api.openai.com/v1/embeddings", data=body,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
@@ -119,7 +119,7 @@ def main():
     # ai
     arows = []
     if (VAULT / "ai").exists():
-        for af in sorted((VAULT / "ai").glob("DJI_*.json")):
+        for af in sorted([*(VAULT / "ai").glob("DJI_*.json"), *(VAULT / "ai").glob("UP_*.json")]):
             a = json.loads(af.read_text())
             if any(f["clip_id"] == a.get("clip_id") for f in flights):
                 arows.append({

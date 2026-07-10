@@ -76,9 +76,9 @@ const cid = new URLSearchParams(location.search).get('id');
           </div>
           <div class="pb" id="hl-list">
             ${(aiData?.highlights || []).map(h => `<div class="hl-item">
-              <button class="tc" data-t="${h.t}">${fmt.dur(h.t)}</button>
+              <button class="tc" data-t="${+h.t || 0}">${fmt.dur(+h.t || 0)}</button>
               <p>${esc(h.reason)}${h.type ? ` <span class="mono" style="font-size:10px;color:${h.type === 'manual' ? 'var(--mint)' : 'var(--text-3)'}">${esc(h.type)}</span>` : ''}</p>
-              <a class="btn" style="padding:3px 9px;font-size:11px" href="studio.html?clip=${cid}&a=${Math.max(0, h.t - 3)}&b=${h.t + 4}">Editar</a>
+              <a class="btn" style="padding:3px 9px;font-size:11px" href="studio.html?clip=${cid}&a=${Math.max(0, (+h.t || 0) - 3)}&b=${(+h.t || 0) + 4}">Editar</a>
             </div>`).join('') || '<p class="footer-note">Sin momentos aún — marca uno con el video pausado donde quieras.</p>'}
           </div>
         </div>

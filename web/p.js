@@ -1,19 +1,25 @@
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     (async () => {
       const slug = new URLSearchParams(location.search).get('id');
-      const r = await fetch(`data/properties/${slug}.json`);
-      if (!r.ok) { document.getElementById('root').innerHTML = '<p style="padding:40px">Propiedad no encontrada.</p>'; return; }
-      const p = await r.json();
+      let p;
+      try {
+        const r = await fetch(`data/properties/${slug}.json`);
+        if (!r.ok) { document.getElementById('root').innerHTML = '<p style="padding:40px">Propiedad no encontrada.</p>'; return; }
+        p = await r.json();
+      } catch {
+        document.getElementById('root').innerHTML = '<p style="padding:40px">No se pudo cargar la propiedad — revisa la conexión.</p>';
+        return;
+      }
       document.title = `${(p.titulo || '').replace(/[<>]/g, '')} — en venta`;
       const video = p.video ? (p.video.endsWith('.mp4') ? `data/reels/${p.video}` : `data/proxies/${p.video}.mp4`) : null;
       const poster = p.clip ? `data/thumbs/${p.clip}.jpg` : '';
       const frames = p.clip ? Array.from({ length: Math.min(p.gallery_n || 8, 12) }, (_, i) =>
         `data/frames/${p.clip}/f_${String(i * 3 + 2).padStart(4, '0')}.jpg`) : [];
-      document.getElementById('root').addEventListener('click', e => { const g = e.target.closest('[data-full]'); if (g) window.open(g.dataset.full); });
+      document.getElementById('root').addEventListener('click', e => { const g = e.target.closest('[data-full]'); if (g) window.open(g.dataset.full, '_blank', 'noopener'); });
       document.getElementById('root').innerHTML = `
         <div class="hero">${video
           ? `<video src="${video}" controls playsinline webkit-playsinline preload="metadata" ${poster ? `poster="${poster}"` : ''} autoplay muted loop></video>`
-          : `<img src="${poster}" alt="">`}</div>
+          : poster ? `<img src="${poster}" alt="">` : '<div class="hero-empty"></div>'}</div>
         <div class="head">
           <h1>${esc(p.titulo) || 'Propiedad en venta'}</h1>
           <div class="loc">${esc(p.ubicacion || '')}</div>

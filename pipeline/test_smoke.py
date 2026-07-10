@@ -321,7 +321,7 @@ check("orphans: restart del server NO mata el 3D del worker",
 check("orphans: restart del server SÍ limpia sus light huérfanos",
       jobs.get(_light)["status"] == "error")
 _heavy = jobs.add("3d", "worker-owned")
-_hp = subprocess.Popen(["sleep", "30"], start_new_session=True)
+_hp = subprocess.Popen(["python3", "-c", "import time; time.sleep(30)"], start_new_session=True)  # huérfano REALISTA: init() ahora verifica que el pid sea un job nuestro (python3/opensplat/docker) antes de matarlo
 jobs.update(_heavy["id"], pid=_hp.pid)
 jobs.init(orphan_kinds=jobs.HEAVY_KINDS)  # reinicia el WORKER
 try:
@@ -330,7 +330,7 @@ try:
 except subprocess.TimeoutExpired:
     _heavy_gone = False
     _hp.kill()
-check("orphans: restart del worker mata proceso heavy huérfano",
+check("orphans: restart del worker mata proceso heavy huérfano (con verificación de identidad del pid)",
       jobs.get(_heavy["id"])["status"] == "error" and _heavy_gone)
 
 # --- viewer mesh re-centrado (audit P1: coords UTM rompen float32) ---

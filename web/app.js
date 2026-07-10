@@ -41,8 +41,8 @@ main.innerHTML = `
       <span class="spacer" style="flex:1"></span>
       <span class="tb-lb">Vista</span>
       <div class="seg" role="group" aria-label="Vista">
-      <button data-view="grid" class="on" data-tip="Cuadrícula">${icon('grid')}</button>
-      <button data-view="list" data-tip="Lista compacta">${icon('list')}</button>
+      <button data-view="grid" class="on" data-tip="Cuadrícula" aria-label="Vista de cuadrícula">${icon('grid')}</button>
+      <button data-view="list" data-tip="Lista compacta" aria-label="Vista de lista">${icon('list')}</button>
       <button data-view="map" data-tip="Rutas en el mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
       <button data-view="places" data-tip="Agrupados por lugar de despegue">${icon('pin')}<span class="seg-lb">Lugares</span></button>
       <button data-view="dates" data-tip="Agrupados por fecha">${icon('cal')}<span class="seg-lb">Fechas</span></button>

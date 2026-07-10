@@ -60,7 +60,7 @@ def init(orphan_kinds: tuple = ()):
                                 orphan_kinds).fetchall()
             for o in orphans:
                 pid = o["pid"]
-                if pid:
+                if pid and _proc_ours(pid):          # solo si el pid sigue siendo un job NUESTRO
                     _kill_pg(pid, signal.SIGTERM)
                     time.sleep(0.2)
                     if not _proc_gone(pid):
@@ -242,6 +242,18 @@ def _kill_pg(pid: int, sig=signal.SIGTERM) -> bool:
             return True
         except (ProcessLookupError, PermissionError):
             return False
+
+
+def _proc_ours(pid: int) -> bool:
+    """El pid huérfano en la BD PERTENECE a un job nuestro (python3/docker/opensplat/ffmpeg)?
+    Tras un reboot ese pid casi siempre lo reusa un proceso INOCENTE del sistema — matarlo a
+    ciegas (SIGKILL al process-group) podía tumbar dockerd, el server o cualquier cosa."""
+    try:
+        out = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=3).stdout.lower()
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return False
+    return any(t in out for t in ("python3", "opensplat", "docker", "ffmpeg", "odm_prep", "tresd_publish"))
 
 
 def _proc_gone(pid: int) -> bool:
