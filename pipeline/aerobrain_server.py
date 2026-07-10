@@ -1012,6 +1012,28 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def end_headers(self):
+        if self.headers.get("CF-Connecting-IP") or self.headers.get("CF-Ray"):
+            self.send_header("Strict-Transport-Security", "max-age=31536000")
+        super().end_headers()
+
+    def redirect_external_http(self) -> bool:
+        if not (self.headers.get("CF-Connecting-IP") or self.headers.get("CF-Ray")):
+            return False
+        proto = (self.headers.get("X-Forwarded-Proto") or "").lower()
+        visitor = (self.headers.get("CF-Visitor") or "").replace(" ", "").lower()
+        if proto != "http" and '"scheme":"http"' not in visitor:
+            return False
+        host = (self.headers.get("Host") or "vuelos.metislab.work").split(":", 1)[0].lower()
+        if host not in ("vuelos.metislab.work", "www.metislab.work"):
+            host = "vuelos.metislab.work"
+        self.send_response(308)
+        self.send_header("Location", f"https://{host}{self.path}")
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "public, max-age=3600")
+        self.end_headers()
+        return True
+
     # ---------- static with Range ----------
     def resolve(self):
         p = urllib.parse.urlparse(self.path).path
@@ -1033,6 +1055,8 @@ class H(BaseHTTPRequestHandler):
         return f if f.is_file() else None
 
     def do_GET(self):
+        if self.redirect_external_http():
+            return
         if self.path.startswith("/api/healthz"):
             body, code = health_status()
             if not (self._is_local() or self.headers.get("X-Token", "") == TOKEN or self.session_ok()):
@@ -1228,6 +1252,8 @@ class H(BaseHTTPRequestHandler):
             return
 
     def do_HEAD(self):
+        if self.redirect_external_http():
+            return
         if self.path.startswith("/api/healthz"):
             body, code = health_status()
             if not (self._is_local() or self.headers.get("X-Token", "") == TOKEN or self.session_ok()):
@@ -1327,6 +1353,8 @@ class H(BaseHTTPRequestHandler):
             pass  # cliente se fue; nada que enviar
 
     def do_POST(self):
+        if self.redirect_external_http():
+            return
         try:
             self._post()
         except (ValueError, json.JSONDecodeError):

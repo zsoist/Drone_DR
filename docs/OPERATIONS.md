@@ -106,6 +106,7 @@ redundantes; si UDP falla, cae a HTTP/2.
 Dashboard Cloudflare recomendado:
 
 - SSL/TLS: `Full (strict)`, Always Use HTTPS, TLS mínimo 1.2, TLS 1.3 habilitado.
+  El origin además fuerza `308` para HTTP externo y emite HSTS por defensa en profundidad.
 - Network: HTTP/2, HTTP/3 y Brotli habilitados.
 - No activar 0-RTT: existen POST autenticados y no necesitamos riesgo de replay.
 - WAF/rate limit sólo para `/api/login`, uploads y mutaciones; no desafiar

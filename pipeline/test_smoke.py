@@ -209,6 +209,35 @@ check("cache: HTML nunca queda congelado",
       == "no-store, must-revalidate")
 check("cache: HTML inyecta fingerprint actual de cada asset",
       f"style.css?v={_style_version}" in _srv.render_html(_srv.WEB / "home.html").decode())
+
+
+class _RedirectHarness:
+    def __init__(self, headers, path="/flight.html?id=1"):
+        self.headers = headers
+        self.path = path
+        self.response = None
+        self.out_headers = {}
+
+    def send_response(self, code):
+        self.response = code
+
+    def send_header(self, key, value):
+        self.out_headers[key] = value
+
+    def end_headers(self):
+        pass
+
+
+_http_req = _RedirectHarness({"CF-Ray": "x", "X-Forwarded-Proto": "http",
+                              "Host": "vuelos.metislab.work"})
+check("https: tráfico HTTP externo recibe 308 conservando path",
+      _srv.H.redirect_external_http(_http_req)
+      and _http_req.response == 308
+      and _http_req.out_headers.get("Location")
+      == "https://vuelos.metislab.work/flight.html?id=1")
+_local_req = _RedirectHarness({"Host": "127.0.0.1:8790"})
+check("https: localhost sigue disponible para agentes",
+      not _srv.H.redirect_external_http(_local_req) and _local_req.response is None)
 import types
 class FakeOut:
     def __init__(self, size): self._s = size
