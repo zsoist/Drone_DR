@@ -711,12 +711,13 @@ check("worker: presets ODM leen mem/concurrency del config (valores calibrados i
       and _wk.OPENSPLAT_MEMORY_MIB == _hwc["caps"]["opensplat_mib"])
 _inner_calls = []
 _pt = _wk.PeakTracker(inner=_inner_calls.append)
-_pt(os.getpgrp())              # el process-group del propio test: RSS real > 0
-check("worker: PeakTracker muestrea RSS del pgid y encadena el callback de prioridad",
-      _pt.peak_mib > 0 and _inner_calls == [os.getpgrp()])
-check("worker: run_splat registra peak en el sidecar y en cada OOM (standing rule)",
-      "tick=peak" in _w_src and '"peak_rss_mib": peak.peak_mib' in _w_src
-      and '"opensplat-oom"' in _w_src)
+_pt(os.getpid())               # el propio test: footprint del kernel > 0
+check("worker: PeakTracker lee phys_footprint_peak (RSS subestima MPS ~20×) y encadena prioridad",
+      _pt.peak_mib > 0 and _pt.peak_source == "phys_footprint"
+      and _inner_calls == [os.getpid()])
+check("worker: run_splat registra peak + fuente en el sidecar y en cada OOM (standing rule)",
+      "tick=peak" in _w_src and '"peak_mib": peak.peak_mib' in _w_src
+      and '"peak_source"' in _w_src and '"opensplat-oom"' in _w_src)
 _cq_src = Path("pipeline/capture_quality.py").read_text()
 check("capture_quality: el cap del advice deriva de hwconfig (no 'cap de 11GB' hardcodeado)",
       "cap de 11GB" not in _cq_src and 'hwconfig.load()["caps"]["opensplat_mib"]' in _cq_src

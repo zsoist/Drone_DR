@@ -30,6 +30,7 @@ Uso:
 """
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import time
@@ -98,32 +99,50 @@ def _strip_save_every(args: list) -> list:
     return out
 
 
+# ESPEJO de la cadena OOM de producción (worker.run_splat): la baseline mide lo
+# que SHIPPEA — y "Render ultra" shipped es ultra-que-degrada-solo, no ultra-o-muerte.
+# El primer intento de baseline sin escalones OOM'eó con 22 cámaras (rc=-9): la
+# memoria depende del CONTENIDO de la escena, no del nº de cámaras.
+RUNGS = ([], ["-d", "2"], ["-d", "2", "--densify-grad-thresh", "0.0006"])
+RUNG_LB = ("full", "media resolución", "media resolución + densificación acotada")
+
+
 def train(train_dir: Path, out_ply: Path, preset_key: str, force_cpu: bool = False) -> dict:
     preset = SPLAT_PRESETS[preset_key]
     iters = int(preset["iters"])
     backend = choose_splat_backend(iters, force_cpu=force_cpu)
-    train_args = _strip_save_every(list(preset.get("train_args") or []))
-    cmd = opensplat_train_cmd(train_dir, out_ply, iters, backend, train_args)
-    peak = PeakTracker()
-    t0 = time.time()
-    env = {"DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)}
-    proc = subprocess.Popen(cmd, env={**__import__("os").environ, **env},
-                            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
-                            start_new_session=True)
-    timeout = time.time() + int(preset.get("timeout") or 4 * 3600)
-    while proc.poll() is None:
-        if time.time() > timeout:
-            proc.kill()
-            raise SystemExit(f"train timeout ({preset_key})")
-        peak(proc.pid)
-        time.sleep(5)
-    if proc.returncode != 0:
-        raise SystemExit(f"opensplat rc={proc.returncode}"
-                         + (" (OOM: cap de memoria)" if proc.returncode == -9 else ""))
-    return {"cmd": cmd, "backend": backend["device"], "iters": iters,
-            "duration_s": round(time.time() - t0, 1), "peak_rss_mib": peak.peak_mib,
-            "mem_cap_mib": OPENSPLAT_MEMORY_MIB,
-            "caps_provisional": bool(_HWCFG.get("provisional"))}
+    base_args = _strip_save_every(list(preset.get("train_args") or []))
+    env = {**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)}
+    attempts = []
+    for rung, extra in enumerate(RUNGS):
+        cmd = opensplat_train_cmd(train_dir, out_ply, iters, backend, base_args + extra)
+        peak = PeakTracker()
+        t0 = time.time()
+        proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.STDOUT, start_new_session=True)
+        timeout = time.time() + int(preset.get("timeout") or 4 * 3600)
+        while proc.poll() is None:
+            if time.time() > timeout:
+                proc.kill()
+                raise SystemExit(f"train timeout ({preset_key})")
+            peak(proc.pid)
+            time.sleep(5)
+        rec = {"rung": rung, "rung_label": RUNG_LB[rung], "rc": proc.returncode,
+               "duration_s": round(time.time() - t0, 1), "peak_mib": peak.peak_mib,
+               "peak_source": peak.peak_source}
+        attempts.append(rec)
+        if proc.returncode == 0:
+            return {"cmd": cmd, "backend": backend["device"], "iters": iters,
+                    "rung": rung, "rung_label": RUNG_LB[rung], "attempts": attempts,
+                    "duration_s": rec["duration_s"], "peak_mib": peak.peak_mib,
+                    "peak_source": peak.peak_source,
+                    "mem_cap_mib": OPENSPLAT_MEMORY_MIB,
+                    "caps_provisional": bool(_HWCFG.get("provisional"))}
+        if proc.returncode != -9:
+            raise SystemExit(f"opensplat rc={proc.returncode} (no-OOM, no se degrada)")
+        print(f"  OOM escalón {rung} (peak {peak.peak_mib} MiB {peak.peak_source}) "
+              f"→ {RUNG_LB[min(rung + 1, 2)]}", flush=True)
+    raise SystemExit(f"OOM en los 3 escalones ({preset_key}): {attempts}")
 
 
 def render(test_dir: Path, model_ply: Path, out_dir: Path, force_cpu: bool = False) -> int:
@@ -132,8 +151,7 @@ def render(test_dir: Path, model_ply: Path, out_dir: Path, force_cpu: bool = Fal
            "--render-cameras", str(out_dir)]
     if backend.get("cpu_flag"):
         cmd.append("--cpu")
-    r = subprocess.run(cmd, env={**__import__("os").environ,
-                                 "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)},
+    r = subprocess.run(cmd, env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)},
                        capture_output=True, text=True, timeout=1800)
     if r.returncode != 0:
         raise SystemExit(f"render-cameras rc={r.returncode}: {(r.stdout or '')[-300:]}")
@@ -186,7 +204,12 @@ def score(render_dir: Path, use_lpips: bool = True, side_by_side: int = 3) -> di
             diff = np.abs(gi.astype(int) - ri.astype(int)).astype(np.uint8)
             sxs = np.concatenate([gi, ri, diff], axis=1)
             Image.fromarray(sxs).save(render_dir / f"sxs_{i}_{row['view']}.jpg", quality=80)
+    first = np.asarray(Image.open(pairs[0][0]))
     agg = {"n_test_views": len(per_view),
+           # evidencia de la regla de resolución: el render sale SIEMPRE a resolución
+           # GT completa (el modo render no hereda el -d del training) — un modelo
+           # entrenado a media res paga su pérdida de detalle en el número
+           "render_px": [int(first.shape[1]), int(first.shape[0])],
            "psnr": round(float(np.mean([v["psnr"] for v in per_view])), 2),
            "ssim": round(float(np.mean([v["ssim"] for v in per_view])), 4)}
     if lpips_net is not None:
@@ -194,6 +217,35 @@ def score(render_dir: Path, use_lpips: bool = True, side_by_side: int = 3) -> di
         agg["lpips_max_side"] = LPIPS_MAX_SIDE
     agg["per_view"] = per_view
     return agg
+
+
+def _trainer_context(force_cpu: bool = False) -> dict:
+    """Versión del binario + hash del patch local: 'mismo trainer' debe ser
+    verificable aunque OpenSplat se re-clone y el patch se reaplique sobre otra base."""
+    backend = choose_splat_backend(1, force_cpu=force_cpu)
+    try:
+        v = subprocess.run([str(backend["bin"]), "--version"],
+                           env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)},
+                           capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        v = "unknown"
+    patch = Path(__file__).resolve().parent.parent / "patches" / "opensplat-render-cameras.patch"
+    return {"version": v, "binary": str(backend["bin"]), "device": backend["device"],
+            "patch_sha": hashlib.sha1(patch.read_bytes()).hexdigest()[:12]
+            if patch.exists() else None}
+
+
+def _machine_load() -> dict:
+    """Condición de carga al arrancar el run: el cap de 11000 fue calibrado con el
+    sistema de producción vivo — una baseline con la máquina libre tiene headroom
+    que producción no tendrá, y el 'knee' del sweep 2.5 depende de eso."""
+    running = None
+    try:
+        import jobs
+        running = [j["id"] for j in jobs.recent(10) if j.get("status") == "running"]
+    except Exception:
+        pass
+    return {"load1": round(os.getloadavg()[0], 2), "worker_jobs_running": running}
 
 
 def run(cid: str, preset_key: str = "cinematic", force_cpu: bool = False) -> Path:
@@ -219,6 +271,8 @@ def run(cid: str, preset_key: str = "cinematic", force_cpu: bool = False) -> Pat
     rec = {"run_id": run_id, "clip_id": cid, "preset": preset_key,
            "params_hash": hashlib.sha1(json.dumps(
                [tinfo["cmd"], split["test_views"]]).encode()).hexdigest()[:12],
+           "trainer": _trainer_context(force_cpu),
+           "machine_load": _machine_load(),
            "split": split, "train": tinfo, "eval": ev,
            "created": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     (root / "run.json").write_text(json.dumps(rec, indent=1))

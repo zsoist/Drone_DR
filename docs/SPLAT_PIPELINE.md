@@ -96,7 +96,8 @@ con split.
 {"passed", "reason", "bytes", "cameras", "final_loss", "last_step",
  "steps_logged", "target_iters", "preset", "preset_label", "backend",
  "backend_note", "duration_s",
- "peak_rss_mib",   // ← nuevo 2026-07-11: peak del process-group, muestreo 5s
+ "peak_mib",       // ← nuevo 2026-07-11: phys_footprint_peak del kernel — ps RSS
+ "peak_source",    //   subestima ~20× los procesos MPS (RSS 489 MiB vs 10 GB reales)
  "mem_cap_mib"}    // ← cap vigente al entrenar (contexto del peak)
 ```
 

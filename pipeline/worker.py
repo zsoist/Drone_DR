@@ -11,6 +11,7 @@ run_tracked (compartido) detecta el cambio y corta la secuencia.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -296,20 +297,39 @@ def choose_splat_backend(iters: int, force_cpu: bool = False, mps_ready: bool | 
 
 
 class PeakTracker:
-    """Peak RSS (MiB) del process-group de un job, muestreado desde el tick de run_tracked.
+    """Peak de memoria del job vía phys_footprint del kernel (footprint(1)).
 
-    Hasta hoy el OOM era reactivo (exit 137/-9 → escalón de fallback) sin medir cuánta
-    memoria usó realmente la corrida — el sweep de densificación ("subir gaussianas hasta
-    peak > 80% del cap") era inejecutable. 5s de intervalo capta el envelope: la memoria
-    de la densificación crece en tendencia, no en spikes de sub-segundo.
+    ps RSS SUBESTIMA ~20× a los procesos MPS: las asignaciones Metal no viven en
+    el RSS (medido en vivo: RSS 489 MiB vs phys_footprint 10 GB en el MISMO
+    opensplat — por eso los primeros OOM reportaban "peak 2.5GB" contra un cap de
+    11GB). taskpolicy -m vigila el footprint, así que el peak honesto es ese.
+    El kernel además rastrea phys_footprint_peak él solo: el tick solo lo lee,
+    no persigue spikes. Fallback a RSS del process-group si footprint(1) falla.
     Envuelve el callback de prioridad existente: un solo tick hace ambas cosas.
     """
 
     def __init__(self, inner=None):
         self.inner = inner
         self.peak_mib = 0
+        self.peak_source = "rss"
 
     def __call__(self, pid: int):
+        try:
+            out = subprocess.run(["/usr/bin/footprint", "-f", "bytes", str(pid)],
+                                 capture_output=True, text=True, timeout=10).stdout
+            m = re.search(r"phys_footprint_peak:\s*(\d+)", out)
+            if m:
+                self.peak_mib = max(self.peak_mib, int(m.group(1)) // (1024 * 1024))
+                self.peak_source = "phys_footprint"
+            elif self.peak_source != "phys_footprint":
+                self._rss(pid)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            if self.peak_source != "phys_footprint":
+                self._rss(pid)                            # medir nunca tumba el job
+        if self.inner:
+            self.inner(pid)
+
+    def _rss(self, pid: int):
         try:
             out = subprocess.run(["ps", "-Ao", "pgid,rss"], capture_output=True,
                                  text=True, timeout=5).stdout
@@ -320,9 +340,7 @@ class PeakTracker:
                     rss_kb += int(p[1])
             self.peak_mib = max(self.peak_mib, rss_kb // 1024)
         except (OSError, ValueError, subprocess.TimeoutExpired):
-            pass                                          # medir nunca tumba el job
-        if self.inner:
-            self.inner(pid)
+            pass
 
 
 def opensplat_train_cmd(project: Path, out: Path, iters: int, backend: dict,
@@ -750,7 +768,8 @@ def run_splat(j: dict):
             # standing rule: todo OOM registra peak + escalón ANTES de reintentar más bajo
             perf.log_error("opensplat-oom", f"OOM en escalón {attempt} ({RUNG_LB[attempt] or 'full'})",
                            ctx={"cid": cid, "preset": preset["key"], "rung": attempt,
-                                "peak_rss_mib": peak.peak_mib, "cap_mib": OPENSPLAT_MEMORY_MIB})
+                                "peak_mib": peak.peak_mib, "peak_source": peak.peak_source,
+                                "cap_mib": OPENSPLAT_MEMORY_MIB})
             continue                               # OOM → siguiente escalón de la cadena
         break
     if rc != 0:
@@ -766,7 +785,8 @@ def run_splat(j: dict):
         "duration_s": round(time.time() - train_start, 1),
         # peak de la corrida publicada — el eje X del sweep de densificación (Phase 2.5)
         # y el campo peak_memory del futuro splat_runs[] naciendo en el schema semilla
-        "peak_rss_mib": peak.peak_mib if peak else 0,
+        "peak_mib": peak.peak_mib if peak else 0,
+        "peak_source": peak.peak_source if peak else None,
         "mem_cap_mib": OPENSPLAT_MEMORY_MIB,
         # sin esto, un run con caps heurísticos (mismatch de RAM) sería indistinguible
         # de uno calibrado — contaminación que la baseline de Phase 1 no puede permitirse
