@@ -73,3 +73,21 @@ Decidir la métrica después de ver resultados = p-hacking.
   del schedule es driver. Punto C candidato: B + --num-downscales 3 o
   --resolution-schedule 8000 (nunca dobla en 7000 iters) — trade: detalle final.
   Fila baseline escena 1 provisional = medium (único >fast bajo cap hoy).
+
+## Forma funcional del presupuesto (serie instrumentada, 11-jul)
+peak(step) ≈ conteo×g(res) + B(res). MEDIDO en re-run de B: pre-salto 2.39
+MiB/step; salto ¼→½ = ESCALÓN +1336 MiB (aditivo) Y pendiente ×1.55 → 3.71
+MiB/step (multiplicativo). AMBOS términos existen. serieB/series.csv = evidencia.
+- C (7000 it, nunca dobla) PRE-CONDENADO por aritmética: pendiente sola toca cap
+  a ~step 3700. Noche ahorrada — no se corre.
+- D (derivado de la curva): 3000 steps, acotado, schedule 8000 → proy. 84% cap.
+  CORRIENDO. Es la "C afilada": steps extra dentro del régimen ¼.
+- CUARTA FILA (review): "resolución temprana bajo cap" — salto a ½ en step ~500
+  con conteo acotado agresivo: ~4GB + 1336 + 3.7/step ≈ ~1700 steps de
+  presupuesto a ½. CONSTRUIBLE (full-res NO cabe: 2º escalón+pendiente).
+  Se corre tras D. Si gana en LPIPS → la resolución era el lever dominante;
+  si pierde → régimen ¼ es el techo real y SH/appearance quedan confirmados
+  por eliminación como únicos levers (rama estructural, 3er sospechoso:
+  PSNR~14 puede ser resolución ¼-vs-GT-full, más barato de probar que el NaN).
+- REGLA DE TABLA: toda fila lleva train_res_regime (¼ | ½@N | full@N) — el
+  número viaja con su régimen de medición.
