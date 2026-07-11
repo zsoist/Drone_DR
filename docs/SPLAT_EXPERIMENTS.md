@@ -222,3 +222,31 @@ estratificado por fuente (by_source en el eval block).
    sospechoso nuevo: la poda comiéndose frames-ancla de una fuente (hipótesis
    del review #4 sesión 1) — ni plumbing (pre-absuelto con artefactos) ni
    geometría (test #2).
+
+# ══════════ TABLA BASELINE CONGELADA — 2026-07-11 ══════════
+Regla de cabecera: deltas comparan DENTRO de escena; entre escenas viajan solo
+firmas cualitativas. Todos los runs: split determinista seed=cid, test excluido
+del training, render+GT por camino interno del trainer, GT a resolución del
+régimen (render_px en cada eval block), preset=medium (el que cabe bajo cap).
+
+| Escena | LPIPS | PSNR | SSIM | peak (cap%) | régimen | error dominante (ojo) | run_id |
+|---|---|---|---|---|---|---|---|
+| 1 easy 30cám | **0.567±0.005** (n=2) | 14.2±0.13 | 0.357 | 6992 (64%) | ¼-schedule @3072 | blur global uniforme | 20260711-135601-medium |
+| 2 grande 214img | **0.615** | 13.53 | 0.355 | 8354 (76%) | -d2 desde carga (hardware) | alta frecuencia (fachadas/vegetación), 0 floaters, 0 deriva expo | 20260711-142911-medium_d2 |
+| 3 multi 0103+0104 | **0.667** | 11.16 | 0.255 | 8801 (80%) | 2688 balanced (producción) | desplazamiento pose/parallax en vistas cross-source + blur periférico; SIN banding expo | 20260711-144810-medium |
+
+Escena 3 extra: merge FULL bajo poda (22/23+57/58); by_source Δ = ruido
+(ΔPSNR 0.07, ΔSSIM 0.024, n=2/6 — bajo umbral 0.03; nota: by_source aún sin
+LPIPS per-view — agregar antes del 2.0). Identity recon_c97cd120a1 (entity E2E ✓).
+
+LEYES (validez anotada): densificación agresiva > steps > resolución a
+presupuesto-igual (escena 1, verificada escena 2 con margen encogido Δ0.013);
+cap no vinculante en escenas chicas (1: 64%), mordido en grandes (2-3: 76-80%).
+
+SOSPECHOSOS PHASE 2 POR ESCENA (del ojo, no del promedio): escena 1 → SH=0 +
+resolución ¼ (E' debilitó resolución); escena 2 → resolución de carga (bloqueada
+por hardware/cap); escena 3 → POSE cross-source (2.1) sobre appearance (2.2) —
+el multi-source nominó a pose refinement, que OpenSplat NO expone (migración).
+El 2.0 (SH) corre en escena 1 con su protocolo pre-declarado; el caso de 2.1
+acaba de ganar su primera evidencia de producto.
+# ═══════════════════════════════════════════════════════════
