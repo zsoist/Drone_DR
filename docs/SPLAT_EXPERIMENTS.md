@@ -271,3 +271,29 @@ de mi propio naming, corregido leyendo el log. El 2.0 corre con NaN-watch
 (abort_re ya existe en producción; el harness lo hereda). Paso 1 del protocolo: ✓.
 Siguiente del 2.0: proyección de memoria con el modelo de 3 términos
 (el 67MB@3000steps ya insinúa el término de conteo×48coefs) → caso a/b → run.
+
+# ═══ Phase 2 — experimentos vs baseline-v1 ═══
+
+## 2.0 SH-liberado — VEREDICTO: NEGATIVO con mecanismo nombrado (11-jul)
+| celda | LPIPS↓ | PSNR | peak (proy→obs) | n | régimen | ojo |
+|---|---|---|---|---|---|---|
+| SH=0 (baseline-v1) | 0.567±0.005 | 14.2 | 6992 | 8 | ¼@3072, 2000it | borroso, LIMPIO |
+| SH=3, interval 1000 | 0.5675 (empate) | 14.18 | 7032→6668 (−5%, test nº7 ✓) | 8 | idem | VETADO: streaks direccionales |
+| SH=1, interval 1000 | 0.648 | 11.2 | 7005→6290 | 8 | idem | DESTRUCCIÓN total (esquirlas) |
+
+LECTURA (pre-declarada, rama 3 ejecutada): el workaround sh-degree-interval=∞
+NO solo evitaba el NaN — PROTEGÍA LA CALIDAD. Mecanismo: la TRANSICIÓN (activar
+coefs SH a mitad del run, step 1000) desestabiliza la optimización; degree
+menor NO suaviza (1 << 3 en calidad). En MPS ya no diverge (repro: 0 nan/3000
+steps) pero destroza igual. El veto del ojo salvó la conclusión: LPIPS promedió
+los streaks de SH=3 contra la ganancia de color y reportó "empate inofensivo" —
+edición perceptual del falso 82%.
+IMPLICACIONES (pre-escritas, ejecutan): (a) appearance/exposición (2.2) SUBE a
+sospechoso principal del techo de calidad; (b) la MIGRACIÓN de trainer revive
+con doble motivo — 2.1 pose (nominado por escena 3) y ahora SH-desde-step-0 /
+LR-warmup de coefs (cirugía que OpenSplat no expone); (c) el workaround se
+QUEDA (con razón documentada, ya no folklore). SIGUIENTE candidato 2.0b (NO
+corrido hoy — cero levers extra): sh activo desde step 0 vía --sh-degree-interval
+mínimo... NO existe como semántica en OpenSplat (interval=1 sube degree cada
+step: transiciones ×3) — confirmar semántica antes de diseñarlo; probablemente
+cae en la misma cirugía. Costo total del experimento: 2 celdas × ~95s + evals.
