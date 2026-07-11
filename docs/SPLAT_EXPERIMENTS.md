@@ -174,3 +174,17 @@ invisible en la escena 1 (22 imgs = 1.4GB). El "PASS" pre-cap del 7-jul de
 esta escena (55MB splat) era otro swap-swim. U1.3 (preflight) hereda el
 término: es el PRIMER check, antes que densificación (barato y determinista).
 Celda escena 2: (c-extrema) → fila 1 = medium@-d2, corriendo.
+
+## Escena 2 — CERRADA (2 puntos dirigidos, 11-jul)
+| fila | LPIPS | PSNR | peak | veredicto |
+|---|---|---|---|---|
+| medium@-d2 (agresivo) | **0.615** ← FILA | 13.53 | 8354 (76%) | error dominante: alta frecuencia (fachadas/vegetación), sin floaters ni deriva expo — firma del régimen -d2 |
+| acotado@-d2 | 0.628 | 13.57 | 8085 | LA LEY VIAJA con margen ENCOGIDO (Δ0.013 vs Δ0.058 escena 1): en régimen mordido la base aplana la ventaja |
+Régimen: -d2 desde carga (hardware), split 193/21, render GT full verificado.
+
+## Escena 3 — EN CURSO: doble gate (leyes + entity E2E)
+Encolada por /api/odm real: **recon_c97cd120a1** (0103+0104, estandar) — primer
+combinado con identidad propia en producción. Checklist E2E al completar:
+merge_label FULL esperado (test #2: 17,006 matches) · card renderiza (join
+null-safe) · share ?m=recon_… · visor · splat → luego fila eval con split
+estratificado por fuente (by_source en el eval block).
