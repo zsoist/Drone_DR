@@ -198,3 +198,18 @@ peak ~11-12GB ⇒ confirmada ⇒ P0 se reescribe como "preset al borde del cap" 
 los fixes son los del P1 (rungs sobre densificación + margen/preflight) + el
 peak del sidecar como guardia permanente. Si OOM'ea a 12500 ⇒ crecimiento no
 acotado ⇒ bisección real.
+
+### P0 — cap-12500 FALLÓ (11-jul): marginalidad simple DESCARTADA
+Murió a step ~2980/7000 (loss 0.032 sano) atravesando 12.5GB — la memoria CRECE
+con la densificación, no se aplana al borde del cap. LA ANOMALÍA CUANTIFICADA:
+hoy ~200-300k gaussianas > 12.5GB; el 7-jul 950k gaussianas < 11GB. Memoria-por-
+gaussiana ~5×, con binario/env/insumos/camino/boot absueltos (matriz completa
+arriba). SIGUIENTES DISCRIMINADORES (sesión fresca): (1) contar gaussianas
+exactas en model_2000.ply de hoy y correlacionar peak-vs-count por step — la
+curva memoria/gaussiana ES la evidencia; (2) run corto en backend CPU (--cpu,
+mismo preset, ~1000 steps medidos) — si CPU muestra memoria/gaussiana normal,
+el culpable es el allocator/rasterizador MPS y se bisecta ahí; (3) revisar si
+macOS/Metal actualizó algo entre 7-11 jul (softwareupdate ya dijo no, pero
+buscar en /Library/Updates receipts de componentes Metal/GPU driver).
+Deaths: siempre durante densificación a resolución 1/4 (step<3000, schedule
+dobla en 3000) — muere ANTES del salto de resolución.
