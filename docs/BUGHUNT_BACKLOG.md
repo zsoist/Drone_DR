@@ -250,3 +250,9 @@ un "completó" histórico esconde condiciones; nadie los usa como referencia.
    swap aunque complete. El sistema no puede volver a operar sobre-presupuesto
    en silencio.
 6. Tabla congelada → rama SH-fix vs migración.
+
+- [P2][worker] Sospecha post-reescritura del orphan test (4º rojo, 11-jul): el
+  polling ya es robusto → si sigue rojo BAJO CARGA, _proc_ours puede estar
+  fallando-seguro (ps lento/timeout → identidad no verificada → init NO mata al
+  huérfano). El test estaría reportando comportamiento real del sistema bajo
+  carga, no flakeando. Investigar: retry en _proc_ours + reproducir con stress.

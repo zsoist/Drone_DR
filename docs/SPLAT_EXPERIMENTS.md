@@ -120,3 +120,16 @@ tercer sospechoso (res ¼) revive. Escenas 2-3: puntos dirigidos a FALSIFICAR
 las leyes (¿medium-equivalente cabe con 214 img? ¿el estratificado protege a
 las fuentes?), no a repetir el sweep — 2-3 puntos por escena, proyectados.
 CANARIO: agendado explícito como ítem 1 de la sesión fresca (fin del limbo).
+
+## ESCENA 1 — CERRADA (11-jul, presupuesto-igual satisfecho)
+Medium re-run instrumentado: peak 6992 (63.6%) — MISMA clase de gasto que E'
+(6763, 61.5%). LEY DEMOSTRADA con presupuestos iguales: **densificación
+agresiva a ¼ > resolución ½ al mismo gasto** (LPIPS 0.567 vs 0.630).
+FILA DEFINITIVA: medium — LPIPS 0.567±0.005 (reproducido: 0.572/0.567),
+PSNR 14.2±0.13, peak ~7GB, régimen ¼, trained clean-9fb62fd.
+Reproducibilidad del harness: ±1% LPIPS entre runs idénticos (incertidumbre
+de tabla). Nota de modelo (5ª corrección): TODOS los presets sub-cap aterrizan
+en 61-64% — la densificación se auto-limita a 2000 iters; la presión del cap
+viene de runs LARGOS donde el conteo compone. Vara del 2.0: ALTA (el SH-fix
+compite contra el lever dominante demostrado). Siguiente: escenas 2-3 como
+falsificación dirigida → tabla congelada → 2.0. Canario = ítem 1 sesión fresca.
