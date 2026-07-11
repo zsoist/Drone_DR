@@ -213,3 +213,22 @@ macOS/Metal actualizó algo entre 7-11 jul (softwareupdate ya dijo no, pero
 buscar en /Library/Updates receipts de componentes Metal/GPU driver).
 Deaths: siempre durante densificación a resolución 1/4 (step<3000, schedule
 dobla en 3000) — muere ANTES del salto de resolución.
+
+### P0 — RESUELTO (11-jul, discriminador cero: git-forense del enforcement)
+**NO HAY REGRESIÓN. El cap taskpolicy -m 11000 nació el 9-jul 19:25 (0d5151a,
+"adaptive resource governance"). El run exitoso de producción fue el 7-jul 09:44
+— DOS DÍAS ANTES del cap.** El 7-jul cinematic corrió SIN límite: usó 13-15GB+
+(footprint real jamás medido) nadando en 5GB de swap (la firma del forense
+pre-reboot) durante 3502s. Todos los "fallos" post-11 son el cap haciendo su
+trabajo sobre un preset que SIEMPRE estuvo sobre-presupuesto en escenas densas.
+El "5×" se disuelve (denominador medido contra infinito). Primeros -9 en
+errors.jsonl: 9-jul 23:41 — horas después del commit del cap. Once absoluciones
+porque no había culpable: la pregunta presuponía una ruptura que nunca ocurrió.
+RECLASIFICACIÓN → alimenta el P1: cinematic/ultra necesitan presupuesto real
+medido (curva peak-vs-count desde los .ply preservados), rungs sobre
+densificación, y preflight que rechace presets sobre-presupuesto. BASELINE SE
+DESTRANCA: la fila honesta de cada escena = el preset máximo que HOY cabe bajo
+el cap (el sweep lo encuentra); "cinematic: sobre-presupuesto (cap 9-jul)" es
+dato de tabla, no bloqueo. Lección de instrumento para el writeup: cuando
+cambias el metro y la realidad "cambia" el mismo día, el primer sospechoso es
+el metro — y el git log del enforcement cuesta menos que once absoluciones.
