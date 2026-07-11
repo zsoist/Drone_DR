@@ -232,3 +232,21 @@ el cap (el sweep lo encuentra); "cinematic: sobre-presupuesto (cap 9-jul)" es
 dato de tabla, no bloqueo. Lección de instrumento para el writeup: cuando
 cambias el metro y la realidad "cambia" el mismo día, el primer sospechoso es
 el metro — y el git log del enforcement cuesta menos que once absoluciones.
+
+### Post-P0 — plan destrancado (secuencia sesión fresca, review 11-jul)
+✅ HECHO: 12 sidecars retroactivos (trained_pre_cap / trained_uninstrumented) —
+un "completó" histórico esconde condiciones; nadie los usa como referencia.
+1. Curva peak-vs-count desde los .ply preservados (eval/.../discriminator-30cam,
+   replica-cleanbin, cap12500-model_*.ply) — la curva DEFINE dónde muestrear.
+2. Sweep dirigido por la curva (2-3 puntos) → preset máximo con peak ≤ 85% del
+   cap (el P0 demostró que ±3% decide vida/muerte en el borde).
+3. DECISIÓN TOMADA (criterio review): baseline = preset-que-cabe bajo el cap de
+   PRODUCCIÓN (reproducible en el worker real). Cinematic-sin-cap entra como
+   fila informativa "qué entregaba el sistema pre-cap". Si el preflight sube el
+   cap con evidencia, la baseline se re-corre y la vieja se preserva.
+4. Baselines 1-2-3 vía worker, máquina sola, boot + machine_load anotados.
+5. CANARIO dual-series (launchd semanal): el gate splat fijo de Phase 0, trended
+   en peak_mib Y duration_s — duración 2× sin cambio de insumos = nadando en
+   swap aunque complete. El sistema no puede volver a operar sobre-presupuesto
+   en silencio.
+6. Tabla congelada → rama SH-fix vs migración.
