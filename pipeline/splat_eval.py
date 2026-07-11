@@ -304,7 +304,7 @@ def run(cid: str, preset_key: str = "cinematic", force_cpu: bool = False) -> Pat
     model = root / "model.ply"
     print(f"[{run_id}] train {preset_key}…", flush=True)
     tinfo = train(root / "train", model, preset_key, force_cpu)
-    print(f"  {tinfo['duration_s']}s · peak {tinfo['peak_rss_mib']} MiB", flush=True)
+    print(f"  {tinfo['duration_s']}s · peak {tinfo['peak_mib']} MiB ({tinfo['peak_source']})", flush=True)
     renders = root / "renders"
     print(f"[{run_id}] render vistas test…", flush=True)
     n = render(root / "test", model, renders, force_cpu)
