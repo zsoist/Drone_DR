@@ -120,3 +120,18 @@ error de centro de cámara max 6.2mm / media 3.6mm en frame topocéntrico —
 primera tolerancia (1e-3 abs) era arbitraria y "falló"; el umbral con principio
 es err < GSD — declarado con razón, no ajustado al resultado. El puente queda
 ABSUELTO por adelantado: si un candidato falla paridad, es del trainer.
+
+## Marco fino M1-Brush (pre-run, review)
+- PARIDAD = defaults de Brush + budget comparable (ELEGIDO: iters-similar a
+  medium=2000; anotado). Forzarlo a imitar config de OpenSplat = sesgo del
+  incumbente sutil (evaluar al candidato por su capacidad de ser OpenSplat).
+- PRE-DECLARADO M1+M2 colapsado: si Brush trae SH-desde-0 por default y LPIPS
+  sale notablemente < 0.567 → es paridad+lever EN UN RUN ("ganó por lever
+  activo", no "por mejor trainer"); el desglose exige run con SH off si lo
+  permite. No adjudicar en caliente.
+- MEMORIA: wgpu puede reservar pools upfront (footprint alto estable) vs
+  libtorch incremental — la sonda corta captura TRAYECTORIA, no solo peak;
+  el %cap de Brush entra con nota de familia distinta.
+- PROCEDENCIA: trainer brush-vX, args efectivos EXPLÍCITOS (defaults
+  capturados), puente citado. Si muere en instalación/crash: causa con fecha
+  = dato del campo citable en la re-evaluación.
