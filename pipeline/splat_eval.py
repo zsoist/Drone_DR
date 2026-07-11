@@ -48,9 +48,38 @@ MIN_TEST, MAX_TEST, TEST_FRAC = 8, 25, 0.10
 LPIPS_MAX_SIDE = 1024
 
 
+def _source_of(name: str) -> str:
+    """Prefijo de fuente multi-source ('s0_', 's1_', 'ph_') o '' para single-source."""
+    import re
+    m = re.match(r"^(s\d+_|ph_)", name)
+    return m.group(1) if m else ""
+
+
+def _pick_even(names: list, k: int, seed_key: str) -> set:
+    """k nombres espaciados uniformemente con offset determinista del seed."""
+    n = len(names)
+    if k >= n:
+        return set(names)
+    stride = n / k
+    offset = int(hashlib.sha1(seed_key.encode()).hexdigest(), 16) % max(1, int(stride))
+    idx: list = []
+    for j in range(k):
+        i = (int(j * stride) + offset) % n
+        while i in idx:
+            i = (i + 1) % n
+        idx.append(i)
+    return {names[i] for i in idx}
+
+
 def make_split(proj: Path, out_root: Path, seed_key: str) -> dict:
     """Parte reconstruction.json en train/test dirs mínimos (solo el JSON +
-    image_list; las imágenes se leen de las rutas originales). Determinista."""
+    image_list; las imágenes se leen de las rutas originales). Determinista.
+
+    Multi-source: el split se ESTRATIFICA por fuente (s0_/s1_/ph_) — muestrear
+    uniforme sobre el total dejaría los test views en el clip dominante y el
+    PSNR global escondería que las vistas de una fuente rinden 5 dB peor
+    (la versión eval del falso 82%). Cada fuente aporta ≥2 vistas test
+    (dejando ≥2 de train), proporcional a su tamaño."""
     src = proj / "opensfm" / "reconstruction.json"
     recons = json.loads(src.read_text())
     shots_all = sorted(n for r in recons for n in r.get("shots", {}))
@@ -58,15 +87,17 @@ def make_split(proj: Path, out_root: Path, seed_key: str) -> dict:
     if n < 12:
         raise SystemExit(f"{n} shots — muy pocos para un split honesto (mínimo 12)")
     n_test = max(MIN_TEST, min(MAX_TEST, round(n * TEST_FRAC)))
-    stride = n / n_test
-    offset = int(hashlib.sha1(seed_key.encode()).hexdigest(), 16) % max(1, int(stride))
-    test_idx: list = []
-    for k in range(n_test):
-        i = (int(k * stride) + offset) % n
-        while i in test_idx:
-            i = (i + 1) % n
-        test_idx.append(i)
-    test = {shots_all[i] for i in test_idx}
+    groups: dict = {}
+    for s in shots_all:
+        groups.setdefault(_source_of(s), []).append(s)
+    if len(groups) == 1:
+        test = _pick_even(shots_all, n_test, seed_key)
+    else:
+        test = set()
+        for pfx, names in sorted(groups.items()):
+            quota = max(2, round(n_test * len(names) / n))
+            quota = min(quota, max(0, len(names) - 2))   # cada fuente conserva ≥2 train
+            test |= _pick_even(names, quota, seed_key + pfx)
 
     il_src = proj / "opensfm" / "image_list.txt"
     il_txt = il_src.read_text().replace("/datasets/code", str(proj))
@@ -82,21 +113,18 @@ def make_split(proj: Path, out_root: Path, seed_key: str) -> dict:
         (d / "image_list.txt").write_text(il_txt)
     split = {"seed_key": seed_key, "n_total": n, "n_train": n - len(test),
              "n_test": len(test), "test_views": sorted(test)}
+    if len(groups) > 1:
+        split["by_source"] = {pfx or "(sin prefijo)": {
+            "total": len(names), "test": sum(1 for t in test if _source_of(t) == pfx)}
+            for pfx, names in sorted(groups.items())}
     (out_root / "split.json").write_text(json.dumps(split, indent=1))
     return split
 
 
-def _strip_save_every(args: list) -> list:
-    out, skip = [], False
-    for a in args:
-        if skip:
-            skip = False
-            continue
-        if a == "--save-every":
-            skip = True
-            continue
-        out.append(a)
-    return out
+# NO tocar los train_args del preset: la baseline reproduce el comando shipped
+# VERBATIM. La primera versión quitaba --save-every por "limpieza" y ese mismo
+# run OOM'eó donde producción había pasado — desviación no controlada. Los saves
+# intermedios caen dentro del run dir del eval y se limpian al final.
 
 
 # ESPEJO de la cadena OOM de producción (worker.run_splat): la baseline mide lo
@@ -111,7 +139,7 @@ def train(train_dir: Path, out_ply: Path, preset_key: str, force_cpu: bool = Fal
     preset = SPLAT_PRESETS[preset_key]
     iters = int(preset["iters"])
     backend = choose_splat_backend(iters, force_cpu=force_cpu)
-    base_args = _strip_save_every(list(preset.get("train_args") or []))
+    base_args = list(preset.get("train_args") or [])
     env = {**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)}
     attempts = []
     for rung, extra in enumerate(RUNGS):
@@ -266,8 +294,21 @@ def run(cid: str, preset_key: str = "cinematic", force_cpu: bool = False) -> Pat
     print(f"[{run_id}] render vistas test…", flush=True)
     n = render(root / "test", model, renders, force_cpu)
     print(f"  {n} pares render/gt", flush=True)
+    for inter in root.glob("model_*.ply"):
+        inter.unlink()                              # saves intermedios de --save-every
     print(f"[{run_id}] score…", flush=True)
     ev = score(renders)
+    # multi-source: métricas POR FUENTE — el PSNR global esconde que una fuente
+    # rinda 5 dB peor (la versión eval del falso 82%)
+    srcs = {_source_of(v["view"]) for v in ev["per_view"]}
+    if len(srcs) > 1:
+        ev["by_source"] = {}
+        for s in sorted(srcs):
+            vs = [v for v in ev["per_view"] if _source_of(v["view"]) == s]
+            ev["by_source"][s or "(sin prefijo)"] = {
+                "n": len(vs),
+                "psnr": round(float(np.mean([v["psnr"] for v in vs])), 2),
+                "ssim": round(float(np.mean([v["ssim"] for v in vs])), 4)}
     rec = {"run_id": run_id, "clip_id": cid, "preset": preset_key,
            "params_hash": hashlib.sha1(json.dumps(
                [tinfo["cmd"], split["test_views"]]).encode()).hexdigest()[:12],

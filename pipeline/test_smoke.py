@@ -779,6 +779,31 @@ check("splat_eval: cirugía disjunta y completa (train ∩ test = ∅, unión = 
       not (_trn & _tst) and len(_trn | _tst) == 100 and _tst == set(_s1["test_views"]))
 check("splat_eval: clamp mínimo de vistas test (40 shots → 8, no 4)",
       _se.make_split(_fake_proj(40), _tmp / "o3", "CID_X")["n_test"] == 8)
+
+
+def _fake_multi(spec):
+    p = _tmp / ("multi_" + "_".join(f"{k}{v}" for k, v in spec))
+    (p / "opensfm").mkdir(parents=True)
+    shots = {}
+    for pfx, cnt in spec:
+        for i in range(cnt):
+            shots[f"{pfx}f_{i:04d}.jpg"] = {"rotation": [0, 0, 0]}
+    (p / "opensfm" / "reconstruction.json").write_text(_json.dumps([{"cameras": {}, "shots": shots}]))
+    (p / "opensfm" / "image_list.txt").write_text("\n".join(sorted(shots)))
+    return p
+
+
+# estratificación multi-source: si el 90% de shots es s0_, un muestreo uniforme
+# dejaría los test views en el clip dominante (la versión eval del falso 82%)
+_ms = _se.make_split(_fake_multi([("s0_", 90), ("s1_", 15), ("ph_", 5)]), _tmp / "om", "CID_M")
+_per = {s: sum(1 for t in _ms["test_views"] if t.startswith(s)) for s in ("s0_", "s1_", "ph_")}
+check("splat_eval: split multi-source estratificado — TODAS las fuentes aportan ≥2 vistas test",
+      _per["s0_"] >= 2 and _per["s1_"] >= 2 and _per["ph_"] >= 2
+      and _ms["by_source"]["ph_"]["test"] == _per["ph_"]
+      and _ms["by_source"]["ph_"]["total"] == 5)
+check("splat_eval: estratificado determinista y cada fuente conserva ≥2 train",
+      _se.make_split(_tmp / "multi_s0_90_s1_15_ph_5", _tmp / "om2", "CID_M")["test_views"] == _ms["test_views"]
+      and all(v["total"] - v["test"] >= 2 for v in _ms["by_source"].values()))
 from PIL import Image as _Img
 _rd = _tmp / "renders"
 _rd.mkdir()
