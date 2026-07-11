@@ -1,0 +1,23 @@
+{
+ "caps": {
+  "opensplat_mib": 11000,
+  "odm_light": {
+   "mem": "7g",
+   "concurrency": 4
+  },
+  "odm_heavy": {
+   "mem": "8500m",
+   "concurrency": 2
+  }
+ },
+ "machine": {
+  "detected_at": "2026-07-11T08:28:20-0500",
+  "system_ram_gb": 16.0,
+  "cpu_cores": 10,
+  "perf_cores": 4,
+  "eff_cores": 6,
+  "gpu_cores": 10,
+  "unified_memory": true,
+  "container_mem_limit_gb": 9.77
+ }
+}

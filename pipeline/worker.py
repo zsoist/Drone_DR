@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 import jobs as jobstore
+import perf
 from splat_presets import resolve_splat_spec
 
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
@@ -33,7 +34,15 @@ VIEWER_ACTIVITY = Path("/tmp/aerobrain-viewer-active")
 VIEWER_ACTIVE_S = 45
 FULL_CPUS = os.cpu_count() or 10
 STREAM_CPUS = max(2, FULL_CPUS - 3)
-OPENSPLAT_MEMORY_MIB = 11_000
+# caps de memoria/concurrencia desde config/hardware.json (única fuente de verdad):
+# antes vivían como literales aquí y en capture_quality — calibrados para 16GB pero
+# atados a nada; mover el vault a otra máquina los dejaba corriendo sin aviso.
+import hwconfig
+_HWCFG = hwconfig.load()
+_CAPS = _HWCFG["caps"]
+OPENSPLAT_MEMORY_MIB = int(_CAPS["opensplat_mib"])
+ODM_LIGHT = _CAPS["odm_light"]     # rapido/estandar + fallback fast-ortho
+ODM_HEAVY = _CAPS["odm_heavy"]     # alta/extra/ultra + retry OpenMVS
 
 
 def rebuild_index():
@@ -167,10 +176,10 @@ def clean_odm_outputs(proj: Path) -> list[str]:
 # subir calidad y mantener 4 workers es pedirle a OpenMVS que se estrelle.
 # fallback = preset al que se degrada automáticamente si ODM revienta — "si no es capaz, baja".
 PRESETS = {
-    "rapido":   {"eta": "~25-40 min", "timeout": 2 * 3600, "mem": "7g", "concurrency": 4,
+    "rapido":   {"eta": "~25-40 min", "timeout": 2 * 3600, **ODM_LIGHT,
                  "args": ["--pc-quality", "low", "--feature-quality", "medium",
                           "--orthophoto-resolution", "8", "--dem-resolution", "15"]},
-    "estandar": {"eta": "~45-75 min", "timeout": 3 * 3600, "mem": "7g", "concurrency": 4,
+    "estandar": {"eta": "~45-75 min", "timeout": 3 * 3600, **ODM_LIGHT,
                  "args": ["--pc-quality", "medium", "--feature-quality", "medium",
                           "--orthophoto-resolution", "5", "--dem-resolution", "10"]},
     # alta: para video DJI nadir corto, el producto premium real es poses + nube + DSM/ortho
@@ -178,13 +187,13 @@ PRESETS = {
     # vacíos y terminar con una malla inútil. --skip-3dmodel mantiene la ruta eficiente y
     # publicable para inspección/splats; vuelos oblicuos/orbita pueden usar extra/ultra si se
     # quiere forzar malla pesada.
-    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "estandar",
+    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, **ODM_HEAVY, "fallback": "estandar",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5",
                           "--mesh-size", "300000", "--pc-skip-geometric", "--skip-3dmodel"]},
     # extra: malla más densa (mesh 600k + octree 11) con pc-quality high. octree 12 CRASHEA
     # ("strange values", exit 134) en datasets reales — la comunidad ODM recomienda <=11.
-    "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "alta",
+    "extra":    {"eta": "~4-7 h", "timeout": 9 * 3600, **ODM_HEAVY, "fallback": "alta",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "2", "--dem-resolution", "4",
                           "--mesh-size", "600000", "--mesh-octree-depth", "11",
@@ -192,7 +201,7 @@ PRESETS = {
     # ultra: pc-quality ultra (~8.5x tiempo) + mesh 800k, octree 11 (12 revienta). El máximo
     # del M4; la CADENA de fallback (ultra→extra→alta→estandar) garantiza que nunca se pierda
     # el trabajo por un preset demasiado agresivo.
-    "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, "mem": "8500m", "concurrency": 2, "fallback": "extra",
+    "ultra":    {"eta": "~8-14 h", "timeout": 16 * 3600, **ODM_HEAVY, "fallback": "extra",
                  "args": ["--pc-quality", "ultra", "--feature-quality", "ultra",
                           "--orthophoto-resolution", "2", "--dem-resolution", "3",
                           "--mesh-size", "800000", "--mesh-octree-depth", "11",
@@ -286,6 +295,36 @@ def choose_splat_backend(iters: int, force_cpu: bool = False, mps_ready: bool | 
             "note": f"{iters} iters en CPU fallback ({runtime})"}
 
 
+class PeakTracker:
+    """Peak RSS (MiB) del process-group de un job, muestreado desde el tick de run_tracked.
+
+    Hasta hoy el OOM era reactivo (exit 137/-9 → escalón de fallback) sin medir cuánta
+    memoria usó realmente la corrida — el sweep de densificación ("subir gaussianas hasta
+    peak > 80% del cap") era inejecutable. 5s de intervalo capta el envelope: la memoria
+    de la densificación crece en tendencia, no en spikes de sub-segundo.
+    Envuelve el callback de prioridad existente: un solo tick hace ambas cosas.
+    """
+
+    def __init__(self, inner=None):
+        self.inner = inner
+        self.peak_mib = 0
+
+    def __call__(self, pid: int):
+        try:
+            out = subprocess.run(["ps", "-Ao", "pgid,rss"], capture_output=True,
+                                 text=True, timeout=5).stdout
+            rss_kb = 0
+            for line in out.splitlines()[1:]:
+                p = line.split()
+                if len(p) == 2 and p[0] == str(pid):      # setsid: pgid == pid líder
+                    rss_kb += int(p[1])
+            self.peak_mib = max(self.peak_mib, rss_kb // 1024)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass                                          # medir nunca tumba el job
+        if self.inner:
+            self.inner(pid)
+
+
 def opensplat_train_cmd(project: Path, out: Path, iters: int, backend: dict,
                         extra_args: list[str] | None = None) -> list[str]:
     # Arranca a prioridad normal para usar toda la máquina cuando está ociosa.
@@ -337,8 +376,9 @@ ODM_FRAME_PROFILE = {"rapido": "preview", "estandar": "balanced",
 def odm_cmd(container: str, proj: Path, preset: dict, rerun_from: str | None = None,
             stable_dense: bool = False) -> list[str]:
     cmd = [DOCKER, "run", "--rm", "--name", container,
-           "-m", preset.get("mem", "7g"), "-v", f"{proj}:/datasets/code", "opendronemap/odm",
-           "--project-path", "/datasets", "--max-concurrency", str(preset.get("concurrency", 4)),
+           "-m", preset.get("mem", ODM_LIGHT["mem"]), "-v", f"{proj}:/datasets/code", "opendronemap/odm",
+           "--project-path", "/datasets",
+           "--max-concurrency", str(preset.get("concurrency", ODM_LIGHT["concurrency"])),
            "--dsm", "--dtm", "--skip-report", *preset["args"]]
     if stable_dense:
         cmd.append("--pc-skip-geometric")
@@ -367,8 +407,8 @@ def openmvs_retry_preset(preset: dict) -> dict:
     """
     retry = dict(preset)
     retry["args"] = _replace_arg(list(preset["args"]), "--pc-quality", "medium")
-    retry["mem"] = "8500m"
-    retry["concurrency"] = 2
+    retry["mem"] = ODM_HEAVY["mem"]
+    retry["concurrency"] = ODM_HEAVY["concurrency"]
     return retry
 
 
@@ -394,8 +434,8 @@ def fast_ortho_cmd(container: str, proj: Path, ortho_res: str = "5") -> list[str
     product for valid reconstructions that crash in DensifyPointCloud.
     """
     return [DOCKER, "run", "--rm", "--name", container,
-            "-m", "7g", "-v", f"{proj}:/datasets/code", "opendronemap/odm",
-            "--project-path", "/datasets", "--max-concurrency", "4",
+            "-m", ODM_LIGHT["mem"], "-v", f"{proj}:/datasets/code", "opendronemap/odm",
+            "--project-path", "/datasets", "--max-concurrency", str(ODM_LIGHT["concurrency"]),
             "--fast-orthophoto", "--skip-report",
             "--orthophoto-resolution", ortho_res,
             "--rerun-from", "odm_georeferencing"]
@@ -674,7 +714,11 @@ def run_splat(j: dict):
     # densify-grad-thresh 3× el default = muchos menos splits ≈ mitad de gaussianas.
     RUNGS = ([], ["-d", "2"], ["-d", "2", "--densify-grad-thresh", "0.0006"])
     RUNG_LB = ("", "media resolución", "media resolución + densificación acotada")
+    peak = None
     for attempt, extra in enumerate(RUNGS):
+        # tracker NUEVO por intento: el sidecar debe registrar el peak de la corrida
+        # que PUBLICÓ, no el máximo contaminado por los escalones OOM anteriores
+        peak = PeakTracker(adaptive_priority())
         train_args = list(preset.get("train_args") or []) + extra
         if attempt:
             jobstore.update(j["id"], status="running", finished=None,   # run_tracked ya marcó error
@@ -695,7 +739,7 @@ def run_splat(j: dict):
                 timeout=int(preset.get("timeout") or 4 * 3600), abort_re=r"Step \d+: nan",
                 progress_re=r"\((\d+)%\)",
                 env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)},
-                tick=adaptive_priority())
+                tick=peak)
         except RuntimeError as e:
             if "abortado" in str(e):
                 # una vez el loss es nan los pesos no se recuperan: seguir es quemar CPU
@@ -703,6 +747,10 @@ def run_splat(j: dict):
                                    "horas de CPU. Reintenta: la inicialización aleatoria suele converger.")
             raise
         if rc == -9 and attempt < len(RUNGS) - 1 and not _cancelled(j["id"]):
+            # standing rule: todo OOM registra peak + escalón ANTES de reintentar más bajo
+            perf.log_error("opensplat-oom", f"OOM en escalón {attempt} ({RUNG_LB[attempt] or 'full'})",
+                           ctx={"cid": cid, "preset": preset["key"], "rung": attempt,
+                                "peak_rss_mib": peak.peak_mib, "cap_mib": OPENSPLAT_MEMORY_MIB})
             continue                               # OOM → siguiente escalón de la cadena
         break
     if rc != 0:
@@ -716,6 +764,13 @@ def run_splat(j: dict):
         "backend": backend["device"],
         "backend_note": backend["note"],
         "duration_s": round(time.time() - train_start, 1),
+        # peak de la corrida publicada — el eje X del sweep de densificación (Phase 2.5)
+        # y el campo peak_memory del futuro splat_runs[] naciendo en el schema semilla
+        "peak_rss_mib": peak.peak_mib if peak else 0,
+        "mem_cap_mib": OPENSPLAT_MEMORY_MIB,
+        # sin esto, un run con caps heurísticos (mismatch de RAM) sería indistinguible
+        # de uno calibrado — contaminación que la baseline de Phase 1 no puede permitirse
+        "caps_provisional": bool(_HWCFG.get("provisional")),
     })
     if not quality["passed"]:
         raise RuntimeError(quality["reason"])

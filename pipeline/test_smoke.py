@@ -694,5 +694,62 @@ _w_src = Path("pipeline/worker.py").read_text()
 check("worker: build_3d_assets pasa --sources/--photos a odm_prep y el primario manda la identidad",
       '"--sources"' in _w_src and 'src_list[0] != cid' in _w_src)
 
+# --- Phase 0 frontier: hardware.json + peak recorder (gate: cero literales de memoria) ---
+import hwconfig as _hw
+_hwc = _hw.load()
+check("hwconfig: hardware.json existe con machine + caps completos",
+      _hw.CONFIG.exists() and _hwc["machine"].get("system_ram_gb", 0) > 0
+      and _hwc["caps"]["opensplat_mib"] > 0
+      and "mem" in _hwc["caps"]["odm_light"] and "mem" in _hwc["caps"]["odm_heavy"])
+check("worker: caps de memoria vienen de config, no de literales (gate 0.1)",
+      "11_000" not in _w_src and '"8500m"' not in _w_src and '"7g"' not in _w_src
+      and "_HWCFG = hwconfig.load()" in _w_src and '_CAPS = _HWCFG["caps"]' in _w_src)
+import worker as _wk
+check("worker: presets ODM leen mem/concurrency del config (valores calibrados intactos)",
+      _wk.PRESETS["rapido"]["mem"] == _hwc["caps"]["odm_light"]["mem"]
+      and _wk.PRESETS["ultra"]["concurrency"] == _hwc["caps"]["odm_heavy"]["concurrency"]
+      and _wk.OPENSPLAT_MEMORY_MIB == _hwc["caps"]["opensplat_mib"])
+_inner_calls = []
+_pt = _wk.PeakTracker(inner=_inner_calls.append)
+_pt(os.getpgrp())              # el process-group del propio test: RSS real > 0
+check("worker: PeakTracker muestrea RSS del pgid y encadena el callback de prioridad",
+      _pt.peak_mib > 0 and _inner_calls == [os.getpgrp()])
+check("worker: run_splat registra peak en el sidecar y en cada OOM (standing rule)",
+      "tick=peak" in _w_src and '"peak_rss_mib": peak.peak_mib' in _w_src
+      and '"opensplat-oom"' in _w_src)
+_cq_src = Path("pipeline/capture_quality.py").read_text()
+check("capture_quality: el cap del advice deriva de hwconfig (no 'cap de 11GB' hardcodeado)",
+      "cap de 11GB" not in _cq_src and 'hwconfig.load()["caps"]["opensplat_mib"]' in _cq_src
+      and "cap de {cap_gb:.0f}GB" in _cq_src)
+
+# política de mismatch de RAM: asimétrica, ruidosa, provisional (nunca reescribe el JSON)
+import copy as _copy
+import perf as _perf
+_orig_le = _perf.log_error
+_perf.log_error = lambda *a, **k: None            # el smoke no ensucia ops/errors.jsonl
+try:
+    _base = {"machine": {"system_ram_gb": 16.0}, "caps": {"opensplat_mib": 11000}}
+    _up = _hw._on_ram_mismatch(16.0, 24.0, _copy.deepcopy(_base))
+    check("hwconfig: mismatch hacia ARRIBA conserva caps + marca provisional",
+          _up["caps"]["opensplat_mib"] == 11000 and _up["provisional"] is True
+          and _up["provisional_reason"].startswith("ram_up"))
+    _dn = _hw._on_ram_mismatch(16.0, 8.0, _copy.deepcopy(_base))
+    check("hwconfig: mismatch hacia ABAJO escala proporcional con piso",
+          _dn["caps"]["opensplat_mib"] == 5500 and _dn["provisional"] is True
+          and _dn["provisional_reason"].startswith("ram_down_scaled"))
+    _fatal = False
+    try:
+        _hw._on_ram_mismatch(16.0, 4.0, _copy.deepcopy(_base))   # 2750 < piso 4096
+    except SystemExit:
+        _fatal = True
+    check("hwconfig: bajo el piso viable muere claro (SystemExit), no SIGKILL mudo", _fatal)
+finally:
+    _perf.log_error = _orig_le
+import inspect as _insp
+check("hwconfig: la política jamás reescribe hardware.json (calibración = humana)",
+      "write_text" not in _insp.getsource(_hw._on_ram_mismatch))
+check("worker: sidecar marca caps_provisional (runs heurísticos ≠ calibrados)",
+      '"caps_provisional"' in _w_src and '_HWCFG.get("provisional")' in _w_src)
+
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)
