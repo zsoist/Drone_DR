@@ -751,6 +751,24 @@ try:
     check("hwconfig: bajo el piso viable muere claro (SystemExit), no SIGKILL mudo", _fatal)
 finally:
     _perf.log_error = _orig_le
+_srv_src_pf = Path("pipeline/aerobrain_server.py").read_text()
+
+# --- U1.3 preflight: los cadáveres como gates (P1 ultra / escena2 / baseline) ---
+import preflight as _pf
+check("preflight: P1 ultra-denso → REJECTED (no quemar los 10 min de rungs)",
+      _pf.splat_preflight(22, 3072, "ultra")["verdict"] == "REJECTED")
+check("preflight: escena2 full-res → LIKELY_OOM con rung sobreviviente (la verdad: -d2 pasó)",
+      _pf.splat_preflight(214, 3072, "medium")["verdict"] == "LIKELY_OOM"
+      and _pf.splat_preflight(214, 3072, "medium")["surviving_rung"] == 1)
+check("preflight: baseline medium escena1 → SAFE (obs 64%)",
+      _pf.splat_preflight(22, 3072, "medium")["verdict"] == "SAFE")
+_e2 = _pf.splat_preflight(214, 3072, "medium", d=2)
+check("preflight: escena2 -d2 → ELEVATED conservador (proy 80% vs obs 76%)",
+      _e2["verdict"] == "ELEVATED" and 76 <= _e2["pct"] <= 90)
+check("preflight: /api/splat lo consulta, REJECTED bloquea (salvo force), proyección viaja al job",
+      '"preflight": pfv' in _srv_src_pf and 'force_preflight' in _srv_src_pf
+      and 'splat_preflight(n_imgs, w' in _srv_src_pf)
+
 import inspect as _insp
 check("hwconfig: la política jamás reescribe hardware.json (calibración = humana)",
       "write_text" not in _insp.getsource(_hw._on_ram_mismatch))

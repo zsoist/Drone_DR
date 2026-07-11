@@ -1891,12 +1891,33 @@ class H(BaseHTTPRequestHandler):
             model_preset = str(spec.get("model_preset") or "estandar")
             if model_preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
                 model_preset = "estandar"
+            # PREFLIGHT (U1.3): veredicto ANTES de encolar — el P1 hecho producto.
+            # Con proyecto existente el conteo es EXACTO (image_list); REJECTED no
+            # encola (salvo force_preflight: escape consciente). La proyección viaja
+            # al job = telemetría proyectado-vs-observado permanente del modelo.
+            pfv = None
+            il = proj / "opensfm" / "image_list.txt"
+            if il.exists():
+                import preflight as _pf
+                from PIL import Image as _Img
+                n_imgs = sum(1 for ln in il.read_text().splitlines() if ln.strip())
+                try:
+                    first = next(iter([l.strip() for l in il.read_text().splitlines() if l.strip()]))
+                    w = _Img.open(first.replace("/datasets/code", str(proj))).width
+                except Exception:
+                    w = 3072
+                pfv = _pf.splat_preflight(n_imgs, w, preset["key"])
+                if pfv["verdict"] == "REJECTED" and not spec.get("force_preflight"):
+                    return self.send_json({"error": "preflight: ningún escalón de memoria cabe — "
+                                           + pfv.get("note", ""), "preflight": pfv}, 409)
             j = jobstore.enqueue("splat", cid, {"clip_id": cid, "preset": preset["key"], "iters": preset["iters"],
                                                 "auto_model": bool(spec.get("auto_model")),
                                                 "model_preset": model_preset,
+                                                "preflight": pfv,
                                                 "title": str(spec.get("title", ""))[:80].strip()})
             return self.send_json({"ok": True, "job": j["id"], "queued": True,
-                                   "preset": preset["key"], "iters": preset["iters"]})
+                                   "preset": preset["key"], "iters": preset["iters"],
+                                   "preflight": pfv})
         if u.path == "/api/client_error":
             # errores JS del frontend → registro central. Sin auth (los reporta también la
             # página pública), pero: mismo-origen obligatorio + presupuesto global 60/h
