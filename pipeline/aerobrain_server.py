@@ -1721,15 +1721,22 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "máximo 6 videos por modelo combinado"}, 400)
             photos = [Path(str(p)).name for p in (spec.get("photos") or [])
                       if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][:40]
-            job_spec = {"clip_id": cid, "preset": preset,
+            # entity U0: los combinados nuevos nacen con identidad PROPIA (recon_<hash>,
+            # determinista por set de fuentes+fotos) — ya no usurpan el clip_id del primario.
+            # Los single-source conservan su cid: alias no-op, share links intactos.
+            ident = jobstore.recon_id_for(sources, photos) if (len(sources) > 1 or photos) else cid
+            if ident != cid and jobstore.pending("3d", ident):
+                return self.send_json({"error": "esa combinación ya está en cola o procesándose"}, 409)
+            job_spec = {"clip_id": ident, "primary_cid": cid, "preset": preset,
                         "title": str(spec.get("title", ""))[:80].strip(),
                         "sources": sources, "photos": photos}
             if spec.get("then_splat"):                   # phased: gaussian tras el 3D
                 job_spec["then_splat"] = True
                 sp = str(spec.get("splat_preset") or "cinematic")
                 job_spec["splat_preset"] = sp if sp in ("medium", "cinematic", "ultra", "fast") else "cinematic"
-            j = jobstore.enqueue("3d", cid, job_spec)
+            j = jobstore.enqueue("3d", ident, job_spec)
             return self.send_json({"ok": True, "job": j["id"], "queued": True,
+                                   "reconstruction": ident,
                                    "sources": len(sources), "photos": len(photos)})
         if u.path == "/api/model_update":
             if not self.auth(q):

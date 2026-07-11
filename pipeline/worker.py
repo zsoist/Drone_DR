@@ -543,6 +543,15 @@ def odm_registration(proj: Path, sources: list) -> dict:
     return out
 
 
+def merge_label(n_sources: int, n_photos: int, dropped: list) -> str:
+    """Label de fusión de la entity (U0): la composición al frente, jamás escondida.
+    SINGLE = una fuente sin fotos; PARTIAL = alguna fuente no co-registró;
+    FULL = todas fusionaron. FAILED lo pone el job al morir, no este derivador."""
+    if n_sources <= 1 and not n_photos:
+        return "SINGLE"
+    return "PARTIAL" if dropped else "FULL"
+
+
 def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str = "",
                     sources: list | None = None, photos: list | None = None) -> str:
     """Build ODM web assets for a clip and return the real preset used.
@@ -560,18 +569,20 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
     jobstore.update(j["id"], container=container)
 
     frame_profile = ODM_FRAME_PROFILE.get(preset_name, "balanced")
-    # MULTI-FUENTE: el primario (sources[0]) siempre es cid; las demás fuentes + fotos se
-    # funden en la misma carpeta images/ (más ángulos del mismo lugar = mejor reconstrucción).
+    # entity U0: cid puede ser un recon_<hash> (identidad propia del combinado) — en ese
+    # caso las fuentes son clips REALES distintos del cid y no se fuerza ninguno como
+    # primario de identidad. Para single-source legacy, cid sigue mandando (alias no-op).
     src_list = sources or [cid]
-    if src_list[0] != cid:
-        src_list = [cid] + [s for s in src_list if s != cid]   # cid manda la identidad del proyecto
+    is_recon = cid.startswith("recon_")
+    if not is_recon and src_list[0] != cid:
+        src_list = [cid] + [s for s in src_list if s != cid]   # cid manda la identidad (legacy)
     n_extra = len(src_list) - 1 + len(photos or [])
     jobstore.update(j["id"], detail=f"1/3 frames + geotag + selección adaptativa"
                     + (f" · {len(src_list)} videos" + (f" + {len(photos)} fotos" if photos else "")
                        if n_extra else ""),
                     stage="frames", progress=0.05)
     prep_cmd = ["python3", str(PIPE / "odm_prep.py"), "--sources", ",".join(src_list),
-                "--profile", frame_profile]
+                "--proj-id", cid, "--profile", frame_profile]
     if photos:
         prep_cmd += ["--photos", ",".join(photos)]
     if jobstore.run_tracked(j["id"], prep_cmd, timeout=1800 + 1200 * (len(src_list) - 1)) != 0:
@@ -631,7 +642,8 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
             m["preset_requested"] = requested_preset
         if title:
             m["title"] = title
-        if sources and len(sources) > 1 or photos:   # modelo combinado: registra sus fuentes
+        multi = (sources and len(sources) > 1) or photos
+        if multi:                                     # modelo combinado: registra sus fuentes
             m["sources"] = list(sources or [cid])
             if photos:
                 m["source_photos"] = list(photos)
@@ -643,6 +655,22 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
                 print(f"  ⚠ fusión PARCIAL: {reg['dropped_sources']} no co-registraron "
                       f"({reg['registered']}/{reg['total']} imgs) — el splat NO se auto-encolará",
                       flush=True)
+        else:
+            reg = {"by_source": {}, "dropped_sources": []}
+        # entity U0: bloque reconstruction UNIFORME (single y combinado) — la identidad,
+        # la composición per-fuente y los splat_runs viven juntos; la UI (U1-U3) renderiza
+        # esto, nunca lo re-deriva. splat_runs los va llenando run_splat al publicar.
+        m["reconstruction"] = {
+            "id": cid,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "sources": [{"clip_id": s, **reg["by_source"].get(s, {"merged": True})}
+                        for s in src_list],
+            "photos": list(photos or []),
+            "merge_label": merge_label(len(src_list), len(photos or []), reg["dropped_sources"]),
+            "effective_preset": preset_name,
+            "requested_preset": requested_preset,
+            "splat_runs": m.get("reconstruction", {}).get("splat_runs", []),
+        }
         _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
     rebuild_index()
     browser_gate(j["id"], "model", cid)
@@ -795,6 +823,24 @@ def run_splat(j: dict):
     if not quality["passed"]:
         raise RuntimeError(quality["reason"])
     final_out = publish_splat_stage(stage, cid, quality, splat_dir)
+    # entity U0: cada run publicado queda en reconstruction.splat_runs del modelo —
+    # el historial con peak/preset/backend/caps_provisional que la UI (U3.2) renderiza
+    # y que el modelo de memoria consume como dataset (proyectado-vs-observado)
+    mf = VAULT / "models" / cid / "meta.json"
+    if mf.exists():
+        try:
+            m = json.loads(mf.read_text())
+            recon = m.setdefault("reconstruction", {"id": cid, "splat_runs": []})
+            runs = recon.setdefault("splat_runs", [])
+            runs.append({"job_id": j["id"], "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                         **{k: quality.get(k) for k in
+                            ("preset", "target_iters", "last_step", "final_loss", "bytes",
+                             "duration_s", "peak_mib", "peak_source", "mem_cap_mib",
+                             "caps_provisional", "backend")}})
+            del runs[:-10]                            # historial acotado, como splats/history
+            _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
+        except (ValueError, OSError) as e:
+            print(f"  splat_runs no actualizado ({e}) — el sidecar sigue siendo la fuente", flush=True)
     jobstore.update(j["id"], detail="limpiando floaters de los bordes", progress=0.93)
     crop_floaters(final_out)                    # de-halo antes de generar el ksplat
     jobstore.update(j["id"], detail="exportando .ksplat optimizado para el viewer", progress=0.94)

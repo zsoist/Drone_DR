@@ -824,5 +824,29 @@ check("splat_eval: scorer — idéntico da PSNR 60 (cap) / SSIM 1.0; ruido da es
 check("splat_eval: run.json lleva params_hash (un número sin contexto no es dato)",
       '"params_hash"' in Path("pipeline/splat_eval.py").read_text())
 
+# --- entity U0: identidad de reconstrucción + merge_label + alias no-op ---
+check("entity: recon_id determinista por set (orden-independiente) y distinto por set distinto",
+      jobs.recon_id_for(["b", "a"]) == jobs.recon_id_for(["a", "b"])
+      and jobs.recon_id_for(["a", "b"]).startswith("recon_")
+      and jobs.recon_id_for(["a", "b"]) != jobs.recon_id_for(["a", "b"], ["p.jpg"])
+      and jobs.recon_id_for(["a", "b"], ["p.jpg"]) == jobs.recon_id_for(["a", "b"], ["p.jpg"]))
+check("entity: merge_label — SINGLE/FULL/PARTIAL por composición, no por adorno",
+      _wk.merge_label(1, 0, []) == "SINGLE" and _wk.merge_label(2, 0, []) == "FULL"
+      and _wk.merge_label(2, 0, ["x"]) == "PARTIAL" and _wk.merge_label(1, 3, []) == "FULL")
+check("entity: worker pasa --proj-id y escribe el bloque reconstruction uniforme",
+      '"--proj-id", cid' in _w_src and '"merge_label": merge_label(' in _w_src
+      and 'm["reconstruction"]' in _w_src and 'is_recon = cid.startswith("recon_")' in _w_src)
+check("entity: run_splat alimenta splat_runs[] al publicar (historial acotado)",
+      'recon.setdefault("splat_runs"' in _w_src and "del runs[:-10]" in _w_src)
+_srv_src = Path("pipeline/aerobrain_server.py").read_text()
+check("entity: /api/odm acuña recon_<hash> para combinados; single-source conserva su cid",
+      "jobstore.recon_id_for(sources, photos) if (len(sources) > 1 or photos) else cid" in _srv_src
+      and '"primary_cid": cid' in _srv_src)
+_mig = _json.loads(Path("/Volumes/SSD/drone-vault/models/DJI_20260706133809_0101_D/meta.json").read_text())
+check("entity: migración aplicada a modelos reales (SINGLE, alias no-op, splat_runs sembrado)",
+      _mig.get("reconstruction", {}).get("merge_label") == "SINGLE"
+      and _mig["reconstruction"]["id"] == _mig["clip_id"]
+      and isinstance(_mig["reconstruction"]["splat_runs"], list))
+
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)

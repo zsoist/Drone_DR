@@ -37,6 +37,21 @@ HEAVY_KINDS = ("3d", "splat")          # los ejecuta el worker desacoplado
 LIGHT_KINDS = ("upload", "edit", "analyze", "foto4k", "ingest", "error_report")  # threads del server web
 
 
+def recon_id_for(sources: list, photos: list | None = None) -> str:
+    """Identidad de primera clase para un modelo COMBINADO (entity U0).
+
+    Determinista: mismas fuentes+fotos → mismo id (re-procesar NO duplica
+    identidades por accidente; un set distinto SÍ es otra reconstrucción).
+    Los single-source conservan su clip_id como identidad — el alias
+    clip_id→reconstruction es un no-op permanente para ellos, y los share
+    links viejos (?m=<cid>) son contrato público intacto. Como todos los
+    namespaces del vault (proj_<id>, models/<id>, splats/<id>) llavean por
+    string, un recon_<hash> fluye por el plumbing existente sin tocarlo."""
+    import hashlib
+    key = "|".join(sorted(sources)) + "||" + "|".join(sorted(photos or []))
+    return "recon_" + hashlib.sha1(key.encode()).hexdigest()[:10]
+
+
 def init(orphan_kinds: tuple = ()):
     """Crea/migra el schema. orphan_kinds: SOLO el proceso dueño de esos kinds debe
     marcarlos huérfanos en su arranque (server → light, worker → heavy). Así un

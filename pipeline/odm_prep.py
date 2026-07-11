@@ -149,9 +149,12 @@ def main():
     else:
         sources = [a for a in argv if not a.startswith("--")][:1]
     if not sources:
-        raise SystemExit("uso: odm_prep.py <cid> | --sources a,b,c [--photos ...] [--profile ...]")
-    primary = sources[0]                            # el modelo combinado hereda la identidad del primario
-    proj = VAULT / "odm" / f"proj_{primary}"
+        raise SystemExit("uso: odm_prep.py <cid> | --sources a,b,c [--proj-id id] [--photos ...] [--profile ...]")
+    # entity U0: el proyecto puede llevar identidad propia (recon_<hash>) en vez de heredar
+    # la del primario — los combinados nuevos ya no usurpan el clip_id. --proj-id solo
+    # aplica junto a --sources (el modo posicional de compat lo ignora por diseño).
+    proj_id = argv[argv.index("--proj-id") + 1] if "--proj-id" in argv and "--sources" in argv else sources[0]
+    proj = VAULT / "odm" / f"proj_{proj_id}"
     images = proj / "images"
     images.mkdir(parents=True, exist_ok=True)
     fps = PROFILE_FPS.get(profile, FPS)
