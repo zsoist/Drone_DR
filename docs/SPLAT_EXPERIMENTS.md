@@ -109,3 +109,14 @@ PSNR~14 (res ¼) DEBILITADO: pagar ½ empeoró LPIPS → SH=0 + exposición qued
 al frente por eliminación parcial. Experimento 2.0 re-confirmado como el
 siguiente, con su protocolo pre-declarado. Siguiente: escenas 2-3 (con punto-½
 propio de diseño), tabla congelada.
+
+## E' (presupuesto-igual, cierra la escena 1 DE VERDAD) — corriendo 11-jul
+½ íntegra + densificación agresiva (0.0003/150) apuntando ~85% cap. Lecturas
+pre-escritas: E' pierde → "densificación es el uso dominante del presupuesto"
+DEMOSTRADA con presupuestos iguales, fila medium inatacable, y la vara del 2.0
+SUBE (el SH-fix compite por el mismo presupuesto que el lever dominante: debe
+comprar más LPIPS del que pierde cediendo conteo). E' gana → LA FILA cambia,
+tercer sospechoso (res ¼) revive. Escenas 2-3: puntos dirigidos a FALSIFICAR
+las leyes (¿medium-equivalente cabe con 214 img? ¿el estratificado protege a
+las fuentes?), no a repetir el sweep — 2-3 puntos por escena, proyectados.
+CANARIO: agendado explícito como ítem 1 de la sesión fresca (fin del limbo).
