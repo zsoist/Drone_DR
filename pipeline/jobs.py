@@ -42,6 +42,11 @@ def recon_id_for(sources: list, photos: list | None = None) -> str:
 
     Determinista: mismas fuentes+fotos → mismo id (re-procesar NO duplica
     identidades por accidente; un set distinto SÍ es otra reconstrucción).
+    DECISIÓN (no accidente): re-correr el mismo set ACTUALIZA la reconstruction
+    (nuevo odm_report/preset) — semántica replace-con-historial idéntica a la
+    de single-source en todo el sistema; splat_runs[] SE PRESERVA entre re-runs
+    (build_3d_assets lo hereda) y los splats archivan a history/ como siempre.
+    El "never overwrite" del spec v3 §8.1 queda superado por consistencia.
     Los single-source conservan su clip_id como identidad — el alias
     clip_id→reconstruction es un no-op permanente para ellos, y los share
     links viejos (?m=<cid>) son contrato público intacto. Como todos los

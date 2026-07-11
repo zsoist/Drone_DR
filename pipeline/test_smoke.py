@@ -847,6 +847,18 @@ check("entity: migración aplicada a modelos reales (SINGLE, alias no-op, splat_
       _mig.get("reconstruction", {}).get("merge_label") == "SINGLE"
       and _mig["reconstruction"]["id"] == _mig["clip_id"]
       and isinstance(_mig["reconstruction"]["splat_runs"], list))
+# el cadáver del test #1 como fixture (regla permanente): 0106 aportó 0/7, 0101 33/33
+_pp = _tmp / "proj_partial"; (_pp / "opensfm").mkdir(parents=True)
+(_pp / "opensfm" / "image_list.txt").write_text("\n".join(
+    [f"/x/images/s0_f_{i:04d}.jpg" for i in range(7)] + [f"/x/images/s1_f_{i:04d}.jpg" for i in range(33)]))
+(_pp / "opensfm" / "reconstruction.json").write_text(_json.dumps(
+    [{"shots": {f"s1_f_{i:04d}.jpg": {} for i in range(33)}}]))
+_reg = _wk.odm_registration(_pp, ["C0106", "C0101"])
+check("entity: camino PARTIAL con los datos del test #1 — 0106 0/7 dropped, label PARTIAL",
+      _reg["by_source"]["C0106"] == {"submitted": 7, "registered": 0, "ratio": 0.0, "merged": False}
+      and _reg["by_source"]["C0101"]["merged"] is True
+      and _reg["dropped_sources"] == ["C0106"]
+      and _wk.merge_label(2, 0, _reg["dropped_sources"]) == "PARTIAL")
 
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)
