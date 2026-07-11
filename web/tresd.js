@@ -551,6 +551,8 @@
             </label>`).join('')}</div>
         </div>`).join('')}</div>
       ${availPhotos.length ? `<details class="proc-photos"><summary>${icon('iso')} Añadir fotos sueltas <span class="count">(${availPhotos.length})</span></summary>
+        <p class="footer-note" style="margin:6px 0 0">Fotos del dron: heredan el GPS del video del que
+        salieron. Fusionan si comparten vista con el vuelo elegido; el reporte del modelo lo confirma.</p>
         <div class="pp-grid">${availPhotos.map(n => `
           <label class="pp-item" data-photo="${esc(n)}"><input type="checkbox">
             <img src="data/photos/${encodeURIComponent(n)}" loading="lazy" alt=""></label>`).join('')}</div></details>` : ''}

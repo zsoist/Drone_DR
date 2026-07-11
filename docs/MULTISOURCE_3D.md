@@ -7,6 +7,14 @@
   descartado (0/7). El 82% total era un FALSO pass. Diagnóstico: 0 features comunes (geometría),
   no config ni frames malos (538 features/img en ambos).
 - **Discriminante = compatibilidad de vista (altura/ángulo)**, NO el punto de despegue.
+- **video+FOTO PASA** (test #3): 0103 aéreo + 3 fotos de 0104 (misma sesión, fuente conocida-compatible)
+  → 61/61, **3/3 fotos co-registradas, 24.152 matches foto↔video**. Fotos = stills del dron (foto4k),
+  GPS heredado del track del clip padre.
+
+## Rango VALIDADO (mapa honesto de lo que sé)
+- Probado y PASA: misma sesión, ≤31m de separación de centros, solape de altitud ≥100m, mismo dron/cámara.
+- Fuera de eso: SIN datos. No sé la frontera (¿150m? ¿4h de diferencia? ¿solape parcial de altura?).
+- NO probado: fotos de OTRA cámara (celular) — eje distinto (perfil de cámara), su propia celda.
 
 ## Enviado
 - odm_prep multi-fuente (--sources/--photos, prefijo por fuente, geotag por track, swap atómico).
@@ -17,8 +25,7 @@
 - Fixture de regresión del path de geotag (el bug que me mordió).
 
 ## Pendiente (honesto — NO validado / diferido)
-1. **video+foto e2e**: el headline de la feature. Fotos = otra resolución/perfil de cámara; un
-   pass video+video NO se extrapola. Falta un test controlado (misma sesión, foto con EXIF GPS).
+1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).
 2. **Entidad `reconstruction` de 1ª clase**: hoy el modelo combinado hereda el clip_id del primario.
    Deuda: borrar el primario huérfana el combinado; re-correr single-source lo sobreescribe. Migrar
    a recon_<hash> con read-alias desde clip_id para links viejos.
