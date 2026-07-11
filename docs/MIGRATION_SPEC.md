@@ -135,3 +135,25 @@ ABSUELTO por adelantado: si un candidato falla paridad, es del trainer.
 - PROCEDENCIA: trainer brush-vX, args efectivos EXPLÍCITOS (defaults
   capturados), puente citado. Si muere en instalación/crash: causa con fecha
   = dato del campo citable en la re-evaluación.
+
+## M1-Brush: SONDA PASADA, compat de PLY pendiente (11-jul noche)
+✓ SMOKE: Brush v0.3.0 (binario oficial arm64) ENTRENA en Metal en el M4 —
+  800 steps sobre el export del puente sin fricción de formato de entrada;
+  headless por defecto; export_800.ply (4MB) producido.
+✓ TRAYECTORIA wgpu (como se pre-escribió, familia distinta): pico temprano
+  ~2.6GB → ESTABLE 1.8GB — no crece como libtorch; --max-splats = presupuesto
+  DURO (MCMC), el lever anti-OOM que la escalera nunca tuvo. NO leer "usa menos"
+  hasta run completo comparable.
+✓ CLI: --sh-degree (desde 0, MCMC), --seed, --eval-split-every +
+  --eval-save-to-disk (equivalente NATIVO de --render-cameras) → re-instrum. ≈1 sesión.
+✗ COMPAT PLY con nuestro renderer: FALLA con causa nombrada — dialecto:
+  (a) loadPly exige comment "at iteration N" (parcheable), (b) orden LÉXICO de
+  f_rest_* (0,1,10,11...), (c) "Vertical axis: y", (d) layout de propiedades
+  distinto → "Invalid PLY file" tras parchear (a).
+SIGUIENTE (2 caminos, elegir en sesión fresca): (1) conversor PLY Brush→dialecto
+opensplat (~40 líneas numpy: reordenar f_rest, ejes, header) → paridad
+apples-to-apples con los MISMOS 8 test views; (2) plan B: eval nativo de Brush
+(--eval-split-every) con nota de split distinto + GT-path distinto (el confound
+que el conversor evita). El camino 1 preserva el estándar del arco.
+Luego: export COLMAP train-only (cirugía ya existente) → paridad 2000 steps
+→ msplat con el mismo marco.
