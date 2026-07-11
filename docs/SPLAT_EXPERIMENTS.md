@@ -151,3 +151,13 @@ falsificación dirigida → tabla congelada → 2.0. Canario = ítem 1 sesión f
    alta. La proyección decide el caso ANTES de quemar el run = 6º test del
    modelo. El NaN sigue yendo PRIMERO — nada importa si la divergencia no tiene
    causa arreglable. Tabla: anotar "gasto natural vs cap" por fila.
+
+## GUARDA para escenas 2-3 (review de cierre, 11-jul)
+"Es solo ejecución" precedió al P0, a la colisión de presupuesto y a la
+corrección de la serie — el patrón del arco. Tratamiento obligatorio:
+- Escena 2 (214 img): proyección PRE-escrita (7× puntos iniciales; las 5
+  cláusulas del modelo se midieron con 30 cám — territorio nuevo); evento con
+  cifras clave cableadas; presupuesto de ≥1 celda no planeada.
+- Escena 3: la regen multi-source es el PRIMER ejercicio real del merge gate
+  post-refactor — es un test propio ANTES de entrenar nada. Mismo tratamiento.
+Si son aburridas: 10 min perdidos. Si no: el diagnóstico ya tiene marco.
