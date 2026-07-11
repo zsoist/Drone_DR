@@ -1,6 +1,12 @@
 # AeroBrain
 
 ## Pitfalls
+- NUNCA encadenar `test_smoke.py | tail && git commit`: el pipe se traga el exit
+  code y el `&&` comitea con tests rojos (pasó 2026-07-11). Correr el smoke SIN
+  pipe, o con `set -o pipefail`, antes de cualquier commit.
+- `ps` RSS subestima ~20× la memoria de procesos MPS/Metal (medido: RSS 489 MiB
+  vs phys_footprint 10 GB en el mismo opensplat). Para memoria real usar
+  `footprint -f bytes <pid>` (phys_footprint_peak; es lo que taskpolicy -m vigila).
 - macOS ships **openrsync**, not GNU rsync: `--info=progress2` fails with exit 1.
   Use plain `rsync -a`; monitor progress with `du -sh` on the destination.
 - DJI SD cards also carry a `HYPERLAPSE/` folder next to `DCIM/DJI_001/` — ingest

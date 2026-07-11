@@ -325,7 +325,7 @@ _hp = subprocess.Popen(["python3", "-c", "import time; time.sleep(30)"], start_n
 jobs.update(_heavy["id"], pid=_hp.pid)
 jobs.init(orphan_kinds=jobs.HEAVY_KINDS)  # reinicia el WORKER
 try:
-    _hp.wait(timeout=1)
+    _hp.wait(timeout=3)   # 1s flakeaba con la máquina cargada (SIGKILL entregado, reap pendiente)
     _heavy_gone = True
 except subprocess.TimeoutExpired:
     _heavy_gone = False

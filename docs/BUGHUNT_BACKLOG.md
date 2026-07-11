@@ -1,5 +1,22 @@
 # Bug Hunt Backlog — per-tab (findings verificados NO críticos pendientes)
 
+## P1 — descubierto por la baseline de eval (2026-07-11)
+- [P1][producto] **La escalera de escalones OOM no reduce el driver real de memoria.**
+  Evidencia: ultra OOM'eó los 3 rungs en ~200s c/u sobre la escena easy (22 cám,
+  `eval/DJI_20260706133809_0101_D/20260711-085950-ultra/FAILED.json`). Los rungs
+  bajan resolución (`-d 2`) pero el peak lo domina el CONTEO de gaussianas de la
+  densificación, que explota temprano e independiente del downscale (el propio
+  comentario de worker.py:672-674 ya lo sabía para el rung 3 — los datos ahora
+  dicen que aplica a la escalera entera en escenas densas). UX actual: usuario
+  elige ultra → ~10 min de cómputo quemado en 3 intentos garantizados a fallar →
+  error seco honesto ("usa el preset Cinematic", worker.py:777). Fix en dos
+  frentes (POST-baseline, no ahora): (a) los rungs deben degradar densificación
+  (densify-grad-thresh / refine-every / stop-screen-size-at), no solo resolución;
+  (b) preflight de memoria que rechace ultra ANTES de quemar los 10 min (la
+  predicción de capture_quality.memory_risk existe — cablearla al enqueue).
+  Implicación Phase 2.5: el sweep barre parámetros de densificación, no resolución
+  — demostrado empíricamente antes de diseñarlo.
+
 Del bug hunt masivo de 8 tabs (72 confirmados): los HIGH + crashes + XSS + UX de impacto YA arreglados.
 Quedan 32 de menor severidad (polish: caret jumps, undo gaps, teardown en SPA, NaN de borde ya mitigados por los guards de fmt).
 

@@ -1,0 +1,20 @@
+#!/bin/zsh
+# Gate mecánico: el smoke corre SIN pipe y su exit code manda.
+# Nace del incidente 2026-07-11: `test_smoke.py | tail && git commit` — el pipe
+# se tragó el exit code y un commit salió con un test rojo. Un pitfall escrito
+# se repite; un pitfall imposible es proceso.
+# Escape de emergencia (consciente y visible): SKIP_SMOKE=1 git commit ...
+if [[ -n "$SKIP_SMOKE" ]]; then
+  echo "⚠️  pre-commit: smoke SALTADO por SKIP_SMOKE=1" >&2
+  exit 0
+fi
+cd "$(git rev-parse --show-toplevel)" || exit 1
+echo "pre-commit: smoke suite…" >&2
+python3 pipeline/test_smoke.py > /tmp/aerobrain-smoke-precommit.log 2>&1
+rc=$?
+if [[ $rc -ne 0 ]]; then
+  echo "❌ pre-commit: smoke FALLÓ (exit $rc) — commit bloqueado" >&2
+  tail -8 /tmp/aerobrain-smoke-precommit.log >&2
+  exit $rc
+fi
+echo "✅ pre-commit: smoke verde" >&2
