@@ -281,3 +281,8 @@ un "completó" histórico esconde condiciones; nadie los usa como referencia.
 - [2.0] Primer experimento donde el arco puede FALLAR honestamente: si SH no
   mueve LPIPS, el sospechoso se reduce a appearance/exposición y la migración
   de trainer revive. El negativo va a la tabla con el mismo rigor.
+  · 10º dato (refina): rojo ~1 min DESPUÉS de terminar el scorer LPIPS, con
+    load residual 3.3 y cero procesos MPS — y 3/3 verde en aislamiento
+    inmediato. El trigger correlaciona con CARGA TRAILING (load>~3), no
+    estrictamente con MPS concurrente. Enunciado v2: "presión/scheduling
+    residual del sistema degrada el timing de subprocess del test".

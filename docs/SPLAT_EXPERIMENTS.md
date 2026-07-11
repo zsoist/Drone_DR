@@ -281,8 +281,12 @@ Siguiente del 2.0: proyección de memoria con el modelo de 3 términos
 | SH=3, interval 1000 | 0.5675 (empate) | 14.18 | 7032→6668 (−5%, test nº7 ✓) | 8 | idem | VETADO: streaks direccionales |
 | SH=1, interval 1000 | 0.648 | 11.2 | 7005→6290 | 8 | idem | DESTRUCCIÓN total (esquirlas) |
 
-LECTURA (pre-declarada, rama 3 ejecutada): el workaround sh-degree-interval=∞
-NO solo evitaba el NaN — PROTEGÍA LA CALIDAD. Mecanismo: la TRANSICIÓN (activar
+LECTURA (pre-declarada, rama 3 ejecutada; CLÁUSULA obligatoria): el workaround
+protegía la calidad **en OpenSplat, a 2000 iters, con transición mid-run** — la
+evidencia condena LA TRANSICIÓN VIOLENTA EN ESTE TRAINER, no SH per se.
+SH-desde-step-0 (como lo entrenan splatfacto/gsplat, con LR schedule propio
+para coefs) NO está testeado *porque OpenSplat no lo expone* — es motivo de
+migración, no conclusión sobre SH. Mecanismo: la TRANSICIÓN (activar
 coefs SH a mitad del run, step 1000) desestabiliza la optimización; degree
 menor NO suaviza (1 << 3 en calidad). En MPS ya no diverge (repro: 0 nan/3000
 steps) pero destroza igual. El veto del ojo salvó la conclusión: LPIPS promedió
@@ -297,3 +301,16 @@ corrido hoy — cero levers extra): sh activo desde step 0 vía --sh-degree-inte
 mínimo... NO existe como semántica en OpenSplat (interval=1 sube degree cada
 step: transiciones ×3) — confirmar semántica antes de diseñarlo; probablemente
 cae en la misma cirugía. Costo total del experimento: 2 celdas × ~95s + evals.
+
+### Evidencia del motivo "pose cross-source" (rastro completo, pedido del review)
+Origen: firma de OJO de la fila 3 de baseline-v1 — side-by-side
+eval/recon_c97cd120a1/20260711-144810-medium/renders/sxs_0_s0_f_0003.jpg.jpg:
+vista s0_ (fuente 0103) muestra DESPLAZAMIENTO de encuadre/pose vs GT (contenido
+correcto, posición corrida) + blur periférico; SIN banding de exposición pese a
+dos condiciones de luz. Corroboración numérica débil: PSNR de la escena 11.16
+(vs 13.5-14.2 single-source) con by_source parejo — consistente con error de
+pose GLOBAL de la fusión, no con una fuente mala. Estado: firma de ojo n=1
++ corroboración indirecta — motivo VÁLIDO para la matriz de migración, con su
+peso honesto (no es un delta medido de pose; medirse requeriría re-optimización
+de poses, que es... el lever bloqueado). Nota case study 2ª ed: "el negativo
+barato es el producto final de la infraestructura cara" (línea del review).
