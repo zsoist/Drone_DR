@@ -17,6 +17,7 @@ import json
 import os
 import socket
 import struct
+import threading
 import subprocess
 import tempfile
 import time
@@ -161,7 +162,11 @@ class CDP:
 def launch_chrome():
     if not CHROME.exists():
         raise RuntimeError(f"Chrome no encontrado: {CHROME}")
-    profile = tempfile.TemporaryDirectory(prefix="aerobrain-chrome-")
+    # ignore_cleanup_errors: el rmtree del teardown corre en RACE con Chrome aún
+    # escribiendo el perfil ("Directory not empty") — y ese flake de LIMPIEZA marcó
+    # error un job cuyo publish fue perfecto (recon_c97cd120a1, merge FULL, share 200).
+    # La limpieza jamás decide el estado de un job.
+    profile = tempfile.TemporaryDirectory(prefix="aerobrain-chrome-", ignore_cleanup_errors=True)
     proc = subprocess.Popen([
         str(CHROME), "--headless=new", "--remote-debugging-port=0",
         f"--user-data-dir={profile.name}", "--no-first-run", "--no-default-browser-check",

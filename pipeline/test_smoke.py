@@ -860,5 +860,18 @@ check("entity: camino PARTIAL con los datos del test #1 — 0106 0/7 dropped, la
       and _reg["dropped_sources"] == ["C0106"]
       and _wk.merge_label(2, 0, _reg["dropped_sources"]) == "PARTIAL")
 
+
+# browser_gate: el import fantasma de threading (11-jul) — el NameError en launch_chrome
+# se ENMASCARABA como OSError del rmtree del TemporaryDirectory (error secundario del
+# unwind). Compilar el módulo entero atrapa imports fantasma sin lanzar Chrome.
+import py_compile as _pyc
+_swallow(lambda: _pyc.compile("pipeline/browser_gate.py", doraise=True))
+import ast as _ast
+_bg_tree = _ast.parse(Path("pipeline/browser_gate.py").read_text())
+_bg_imports = {n.name.split(".")[0] for x in _ast.walk(_bg_tree) if isinstance(x, _ast.Import) for n in x.names}
+check("browser_gate: threading importado (el drain thread lo usa) + cleanup a prueba de race",
+      "threading" in _bg_imports
+      and "ignore_cleanup_errors=True" in Path("pipeline/browser_gate.py").read_text())
+
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)
