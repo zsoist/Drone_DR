@@ -57,3 +57,32 @@ spec ya distingue recon_ de single-source — el routing existe.
 | M1 | paridad ±2σ bajo cap por worker path, o candidato descartado con número |
 | M2 | delta de pose medido (LPIPS + ojo con firma nombrada) vs paridad propia |
 | M3 | decisión citando las 3 columnas; baseline-v2 solo si switch/híbrido |
+
+# ═══ M0 EJECUTADA — 2026-07-11 (búsqueda fresca, cero instalaciones) ═══
+
+## Matriz (evidencia de 2° orden citada por celda)
+| Candidato | MPS/Metal training | Pose refinement | SH desde 0 | I/O | Re-instrum. (est.) | Madurez |
+|---|---|---|---|---|---|---|
+| **Brush** (ArthurBrussee) | ✓ por arquitectura (Burn/CubeCL→wgpu→Metal); claim genérico "macOS", SIN doc explícita de Metal-training — verificar en M1 | **NO DOCUMENTADO** | probable (3DGS estándar) — NO documentado | COLMAP/nerfstudio → .ply/.compressed.ply; CLI headless | 2-3 sesiones (OpenSfM→COLMAP export + eval de su .ply + modelo memoria desde 0) | v0.3.0 sep-25, Apache-2.0, 4.3k★, 1205 commits, docs jun-26, 25 issues |
+| **msplat** (rayanht) | ✓ NATIVO — pipeline entero en Metal shaders fusionados; benchmarks propios M4 Max (7K iters: 77s garden; PSNR 25.68 vs gsplat 26.30) | NO ("sin optimización de cámaras" declarado) | ✓ probable (SH fwd/bwd fusionado sin schedule dinámico) | COLMAP/nerfstudio/Polycam → PLY + checkpoints resume; CLI headless + --eval | 2 sesiones (idem + su --eval nativo puede acortar) | v1.1.3 mar-26, Apache-2.0, **11 commits, 37★, ~1 contributor** — riesgo bus-factor |
+| splatfacto/nerfstudio | ✗ DESCARTADO: issue #3290 "fails to run on Apple Silicon" (Torch not compiled with CUDA); gsplat #163 "MPS Support?" abierto — gsplat es CUDA | (tiene, pero inaccesible) | (tiene) | — | — | el riesgo CUDA-only del audit 1, confirmado por el campo |
+| splat-apple (ghif) | ✓ claim (MLX+MPS) | claim dudoso del doc | claim | COLMAP | — | ✗ DESCARTADO: 20 commits, 27★, sin releases, **sin licencia declarada** |
+| OpenSplat upstream | (incumbente) | NO — sin releases post-1.1.4 con levers | NO (el 2.0 lo demostró) | — | 0 | quedarse no compra levers |
+
+## HALLAZGO CLAVE de M0
+**Ningún candidato MPS-viable documenta pose refinement** — el motivo de producción
+nº1 (escena 3) puede NO estar disponible en el campo Metal actual. La columna 2
+del criterio probablemente solo es satisfacible vía SH-desde-0. Consecuencia
+honesta: la migración compraría SH bien entrenado + (msplat) velocidad ~4×, pero
+el lever de pose podría requerir trabajo upstream en cualquier candidato — eso
+entra a la matriz de M3 como costo, no se descubre después.
+
+## VEREDICTO M0: rama (b) — DOS candidatos cercanos → M1 corre AMBOS
+- **Brush**: madurez/comunidad/multi-plataforma, levers sin documentar (M1 los
+  verifica con runs, no con README — regla del audit 1).
+- **msplat**: Metal-nativo con benchmarks publicados y --eval propio, pero
+  bus-factor 1 y 11 commits — la paridad de M1 es también su test de madurez.
+- Común: entrada COLMAP → puente OpenSfM→COLMAP (opensfm export existe en el
+  contenedor ODM) es prerequisito compartido de M1, se construye UNA vez.
+Costo rama (b): una sesión extra. Beneficio: la decisión más cara del arco no
+se toma con n=1. M1: paridad o muerte en escena 1, split de baseline-v1.
