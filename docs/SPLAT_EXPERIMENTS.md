@@ -250,3 +250,24 @@ el multi-source nominó a pose refinement, que OpenSplat NO expone (migración).
 El 2.0 (SH) corre en escena 1 con su protocolo pre-declarado; el caso de 2.1
 acaba de ganar su primera evidencia de producto.
 # ═══════════════════════════════════════════════════════════
+
+### Protocolo 2.0 — adenda a la rama "supervivencia" del NaN-repro (pre-escrita)
+Si el repro sobrevive 3000 steps: NO "el fantasma murió" — absuelve ESTA celda
+(esta config, esta escena, este conteo, MPS); no absuelve cinematic@7000 con
+densificación completa (donde producción lo habría sufrido), ni sabemos en qué
+celda se diagnosticó originalmente el workaround. Lectura: "no reproducido en
+la celda probada → SH se LIBERA para el 2.0 con NaN-WATCH activo" (detección
+de nan en loss → abort con step+contexto, no crash silencioso — el abort_re
+del run_tracked ya lo hace en producción; el harness lo hereda). Si el 2.0
+completo también sobrevive → el workaround muere con evidencia de DOS celdas
+y el watch queda como guardia permanente barata. Canario: corridas 1-4
+CALIBRAN, no alertan (umbrales a priori → re-derivar de la serie al mes).
+
+### NaN-repro: SOBREVIVIÓ (11-jul) — celda absuelta, no fantasma muerto
+3000 steps, SH degree 3, salto en 1000, MPS: CERO nan en loss (0.081 final,
+modelo 67MB — los 48 coefs visibles vs ~13-25MB de SH=0). Nota de proceso: el
+monitor gritó "NaN" por matchear el NOMBRE del dir nan-repro/ — falso positivo
+de mi propio naming, corregido leyendo el log. El 2.0 corre con NaN-watch
+(abort_re ya existe en producción; el harness lo hereda). Paso 1 del protocolo: ✓.
+Siguiente del 2.0: proyección de memoria con el modelo de 3 términos
+(el 67MB@3000steps ya insinúa el término de conteo×48coefs) → caso a/b → run.

@@ -323,7 +323,11 @@ def run(cid: str, preset_key: str = "cinematic", force_cpu: bool = False) -> Pat
             ev["by_source"][s or "(sin prefijo)"] = {
                 "n": len(vs),
                 "psnr": round(float(np.mean([v["psnr"] for v in vs])), 2),
-                "ssim": round(float(np.mean([v["ssim"] for v in vs])), 4)}
+                "ssim": round(float(np.mean([v["ssim"] for v in vs])), 4),
+                # LPIPS per-fuente (pedido pre-2.0): la métrica que DECIDE también
+                # debe leerse por composición, no solo PSNR/SSIM
+                **({"lpips": round(float(np.mean([v["lpips"] for v in vs])), 4)}
+                   if all("lpips" in v for v in vs) else {})}
     rec = {"run_id": run_id, "clip_id": cid, "preset": preset_key,
            "params_hash": hashlib.sha1(json.dumps(
                [tinfo["cmd"], split["test_views"]]).encode()).hexdigest()[:12],
