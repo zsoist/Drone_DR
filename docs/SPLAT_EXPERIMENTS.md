@@ -47,3 +47,23 @@ corren con la máquina desacoplada del worker (headroom ≥ producción) —
 | Lever | Escena | PSNR Δ | LPIPS Δ | train time Δ | peak MiB | Veredicto |
 |---|---|---|---|---|---|---|
 | _2.0 SH 0→N (fix NaN)_ | | | | | | _pendiente de baseline_ |
+
+## Protocolo experimento 2.0 (SH-fix) — PRE-declarado (review 11-jul)
+COLISIÓN DE PRESUPUESTO: SH 0→3 = 3→48 coefs/gaussiana (~3-4× params+Adam).
+La cota 55KB/gaussiana y todo el preflight se midieron A SH=0 — inválidos para
+SH=3. Orden obligatorio: (1) REPRODUCIR el NaN (step, tensor, causa: ¿lr de SH
+en MPS? ¿fp16? ¿exposición variable?) — sin diagnóstico no hay experimento,
+hay ruleta; (2) re-medir KB/gaussiana con SH activo (run corto instrumentado)
+→ nuevo conteo máximo bajo cap; (3) comparación PRESUPUESTO-IGUAL: SH=3-bajo-cap
+vs SH=0-bajo-cap, cada uno al conteo que su presupuesto permita (NO conteo
+igual). Pregunta real: ¿cuánto LPIPS compra el color view-dependent a costa de
+la densificación perdida? (4) MÉTRICA PRE-DECLARADA: LPIPS decide; PSNR y el
+side-by-side de ojo VETAN (LPIPS mejor + artefactos nuevos visibles = FAIL).
+Decidir la métrica después de ver resultados = p-hacking.
+
+## Sweep escena 1 (en curso)
+- A: medium → PSNR 14.14 / SSIM 0.356 / LPIPS 0.572, bajo cap ✅ (trained_binary
+  clean-9fb62fd, anotado). Divergencia PSNR↔LPIPS vs fast: PSNR premia blur.
+- B: cinematic-acotado (7000 it, thresh 0.0008, refine 300) — corriendo.
+  Proyección: conteo ~180k ≤ 85% cap vía 55KB/gaussiana.
+- Fila baseline escena 1 = la que domine cuando B termine. NO congelar antes.
