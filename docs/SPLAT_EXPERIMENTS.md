@@ -133,3 +133,21 @@ en 61-64% — la densificación se auto-limita a 2000 iters; la presión del cap
 viene de runs LARGOS donde el conteo compone. Vara del 2.0: ALTA (el SH-fix
 compite contra el lever dominante demostrado). Siguiente: escenas 2-3 como
 falsificación dirigida → tabla congelada → 2.0. Canario = ítem 1 sesión fresca.
+
+## Precisiones de cierre (review 11-jul noche)
+1. FORMULACIÓN EXACTA de la ley: "al gasto que ambas configs alcanzan
+   NATURALMENTE (~7GB), densificación ¼ > resolución ½". Región 64→85% sin
+   explorar. HALLAZGO IMPLÍCITO: **el cap NO es vinculante para presets
+   clase-medium en esta escena** — los OOMs del arco fueron todos por el salto
+   de resolución, nunca por conteo puro a ¼; la escena satura su densificación
+   bajo el presupuesto. Escena 2 (214 img) = primer test con el cap MORDIENDO.
+2. Reproducibilidad ±1% LPIPS: n=2, estimación PRELIMINAR — tercer punto gratis
+   con el re-run de control de escenas 2-3.
+3. VARA DEL 2.0 BAJÓ: cap no-vinculante → SH degree 3 (3→48 coefs + Adam) sobre
+   el conteo de medium probablemente CABE en los 4GB de headroom → caso (a)
+   comparación a CONTEO IGUAL (la versión más pura: mismas gaussianas ± color
+   view-dependent, LPIPS responde la pregunta limpia). Si la proyección del
+   modelo (5 cláusulas) dice que no cabe → caso (b) con cesión de conteo, vara
+   alta. La proyección decide el caso ANTES de quemar el run = 6º test del
+   modelo. El NaN sigue yendo PRIMERO — nada importa si la divergencia no tiene
+   causa arreglable. Tabla: anotar "gasto natural vs cap" por fila.
