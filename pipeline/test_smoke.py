@@ -324,11 +324,16 @@ _heavy = jobs.add("3d", "worker-owned")
 _hp = subprocess.Popen(["python3", "-c", "import time; time.sleep(30)"], start_new_session=True)  # huérfano REALISTA: init() ahora verifica que el pid sea un job nuestro (python3/opensplat/docker) antes de matarlo
 jobs.update(_heavy["id"], pid=_hp.pid)
 jobs.init(orphan_kinds=jobs.HEAVY_KINDS)  # reinicia el WORKER
-try:
-    _hp.wait(timeout=3)   # 1s flakeaba con la máquina cargada (SIGKILL entregado, reap pendiente)
-    _heavy_gone = True
-except subprocess.TimeoutExpired:
-    _heavy_gone = False
+# polling con deadline (3er flake 11-jul): wait(timeout=N) depende del scheduling
+# del OS bajo carga — la regla era reescribir a la 3ª, no escalar timeouts
+_deadline = time.time() + 10
+_heavy_gone = False
+while time.time() < _deadline:
+    if _hp.poll() is not None or not _pid_alive(_hp.pid):
+        _heavy_gone = True
+        break
+    time.sleep(0.2)
+if not _heavy_gone:
     _hp.kill()
 check("orphans: restart del worker mata proceso heavy huérfano (con verificación de identidad del pid)",
       jobs.get(_heavy["id"])["status"] == "error" and _heavy_gone)

@@ -91,3 +91,21 @@ MiB/step (multiplicativo). AMBOS términos existen. serieB/series.csv = evidenci
   PSNR~14 puede ser resolución ¼-vs-GT-full, más barato de probar que el NaN).
 - REGLA DE TABLA: toda fila lleva train_res_regime (¼ | ½@N | full@N) — el
   número viaja con su régimen de medición.
+
+## Fila escena 1 — CERRADA provisional (11-jul, 5 puntos medidos)
+| punto | régimen | PSNR/SSIM/LPIPS | peak (proy→obs) |
+|---|---|---|---|
+| fast 1000 | ¼ | 14.41/.394/.748 | — |
+| **medium 2000** | ¼ | **14.14/.356/.572** ← FILA | — |
+| D 3000 acotado | ¼ | 14.23/.375/.640 | 9240→7449 (−24%) |
+| B 7000 acotado | ¼→½@3000 | OOM @3430 | ≤85%→10925 |
+| E 2000 acotado | ½ íntegra | 14.30/.386/.696 | 6749 (61%) |
+LECCIONES MEDIDAS: (1) conteo > steps (D pierde vs medium con +1000 steps);
+(2) conteo > resolución a este presupuesto (E a ½ pierde vs medium a ¼);
+(3) la pendiente MiB/step es config-dependiente (proyección D erró −24%,
+conservadora). CELDA ABIERTA: E' = ½ + densificación agresiva (E dejó 4GB sin
+usar) — candidata si algún lever de Phase 2 la necesita. TERCER SOSPECHOSO del
+PSNR~14 (res ¼) DEBILITADO: pagar ½ empeoró LPIPS → SH=0 + exposición quedan
+al frente por eliminación parcial. Experimento 2.0 re-confirmado como el
+siguiente, con su protocolo pre-declarado. Siguiente: escenas 2-3 (con punto-½
+propio de diseño), tabla congelada.
