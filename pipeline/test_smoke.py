@@ -675,5 +675,24 @@ check("viewer: etiquetas de splat muestran runtime y loss",
       and "loss ${s.loss}" in _web_tresd
       and "loss ${s.loss}" in _web_share)
 
+# --- odm_prep multi-fuente: funciones puras + invariante del geotag (el bug de la ruta stale) ---
+import odm_prep as _op
+check("odm_prep: _photo_parent parsea clip + segundos",
+      _op._photo_parent("DJI_20260704155816_0102_D_00003.0s.jpg") == ("DJI_20260704155816_0102_D", 3.0)
+      and _op._photo_parent("basura.jpg") == (None, 0.0))
+_ga = _op._geotag(Path("/x/images/s0_f_0001.jpg"), {"lat": 4.5, "lon": -74.0, "abs_alt": 2600})
+check("odm_prep: _geotag arma lat/lon/alt + un -execute por imagen",
+      _ga[-1] == "-execute" and _ga[-2] == "/x/images/s0_f_0001.jpg"
+      and any(a.startswith("-GPSLatitude=4.5") for a in _ga) and "-GPSLongitudeRef=W" in _ga)
+_op_src = Path("pipeline/odm_prep.py").read_text()
+check("odm_prep: geotag apunta a images/ (ruta FINAL), NO a images.new/tmp_dir (regresión del swap)",
+      "_geotag(images / name" in _op_src and "_geotag(tmp_dir" not in _op_src
+      and "_geotag(dest" not in _op_src)
+check("odm_prep: 1 sola fuente conserva nombres f_XXXX (compat); multi usa prefijo s{idx}_",
+      'prefix = f"s{idx}_" if multi else ""' in _op_src and "multi = len(sources) > 1 or bool(photos)" in _op_src)
+_w_src = Path("pipeline/worker.py").read_text()
+check("worker: build_3d_assets pasa --sources/--photos a odm_prep y el primario manda la identidad",
+      '"--sources"' in _w_src and 'src_list[0] != cid' in _w_src)
+
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)

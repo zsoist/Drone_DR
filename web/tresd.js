@@ -510,52 +510,185 @@
       { k: 'extra', n: 'Extra', t: '~4-7 h', d: 'Malla 600k · octree 12 · 2 cm/px' },
       { k: 'ultra', n: 'Ultra', t: '~8-14 h', d: 'pc-quality ultra · malla 800k · máx M4' },
     ];
-    const { ov, close } = openModal(`${icon('cube')} Procesar un vuelo en 3D`, `
-      <p class="mlb">Vuelo</p>
-      <div class="mflights">${candidates.map((f, i) => `
-        <div class="mflight${i === 0 ? ' on' : ''}" data-cid="${esc(f.clip_id)}">
-          <img src="data/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">
-          <div class="mf-t"><b>${esc(f.label) || fmt.date(f.date) + ' ' + f.time}</b>
-          <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m alt</span></div>
+    // presets del gaussian para el modo phased (subconjunto compacto)
+    const SQ = [
+      { p: 'medium', n: 'Medium', t: '~10 min' },
+      { p: 'cinematic', n: 'Cinemático', t: '~1 h' },
+      { p: 'ultra', n: 'Ultra', t: '~2-4 h' },
+    ];
+    // clúster por LUGAR de despegue (~500 m): tomas del mismo sitio se funden en un modelo mejor
+    const spotKey = f => f.stats?.home
+      ? `${Math.round(f.stats.home[0] / 0.005)}:${Math.round(f.stats.home[1] / 0.005)}` : 'sin-gps';
+    const groups = {};
+    candidates.forEach(f => { (groups[spotKey(f)] ||= []).push(f); });
+    // ordena: lugares con MÁS tomas primero (ahí es donde combinar rinde)
+    const spots = Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
+    const placeName = fs => fs[0].place || fs[0].stats?.place
+      || (fs[0].stats?.home ? `${fs[0].stats.home[1].toFixed(3)}, ${fs[0].stats.home[0].toFixed(3)}` : 'Sin GPS');
+    const sel = new Set([candidates[0].clip_id]);   // primer clip pre-seleccionado
+    const photoSel = new Set();
+    const availPhotos = (sys.photos || []).map(p => p.name);
+
+    const { ov, close } = openModal(`${icon('cube')} Estudio 3D — combina tomas del mismo lugar`, `
+      <p class="footer-note" style="margin:0 0 10px">Elige uno o varios videos del <b>mismo sitio</b>
+      (mismo despegue): más ángulos = una reconstrucción más completa. El primero da el nombre y la identidad.</p>
+      <div class="proc-groups">${spots.map(([sk, fs], gi) => `
+        <div class="proc-group" data-spot="${esc(sk)}">
+          <div class="pg-head">
+            <span class="pg-place">${icon('pin')} ${esc(placeName(fs))}</span>
+            <span class="count mono">${fs.length} toma${fs.length === 1 ? '' : 's'}</span>
+            ${fs.length > 1 ? `<button class="pg-all" data-spot-all="${esc(sk)}">Combinar todo</button>` : ''}
+          </div>
+          <div class="pg-clips">${fs.map(f => `
+            <label class="pc-clip${sel.has(f.clip_id) ? ' on' : ''}" data-cid="${esc(f.clip_id)}">
+              <input type="checkbox" ${sel.has(f.clip_id) ? 'checked' : ''}>
+              <img src="data/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">
+              <div class="pc-meta">
+                <b>${esc(f.label) || fmt.date(f.date) + ' ' + f.time}</b>
+                <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m</span>
+              </div>
+              <span class="pc-score" data-score="${esc(f.clip_id)}">·</span>
+            </label>`).join('')}</div>
         </div>`).join('')}</div>
-      <video id="m-prev" class="m-prev" muted playsinline controls preload="none"></video>
-      <div id="m-score"></div>
+      ${availPhotos.length ? `<details class="proc-photos"><summary>${icon('iso')} Añadir fotos sueltas <span class="count">(${availPhotos.length})</span></summary>
+        <div class="pp-grid">${availPhotos.map(n => `
+          <label class="pp-item" data-photo="${esc(n)}"><input type="checkbox">
+            <img src="data/photos/${encodeURIComponent(n)}" loading="lazy" alt=""></label>`).join('')}</div></details>` : ''}
+      <div id="m-combined" class="proc-combined"></div>
       <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
-      <input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — órbita 60 m" style="width:100%">
-      <p class="mlb">Calidad</p>
+      <input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — combinado" style="width:100%">
+      <p class="mlb">Calidad de la fotogrametría</p>
       <div class="mpresets">${PRE.map(p => `
         <div class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
           <b>${p.n}</b><span class="mono">${p.t}</span><small>${p.d}</small></div>`).join('')}</div>
-      <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('cube')} Encolar procesamiento</button>`);
-    const prev = ov.querySelector('#m-prev');
-    const scoreBox = ov.querySelector('#m-score');
-    const loadScore = cid => renderScanCard(scoreBox, cid);
-    const setPrev = cid => { prev.poster = `data/thumbs/${cid}.jpg`; prev.src = `data/proxies/${cid}.mp4`; loadScore(cid); };
-    setPrev(candidates[0].clip_id);
-    ov.querySelector('.mflights').addEventListener('click', e => {
-      const c = e.target.closest('.mflight');
-      if (!c) return;
-      ov.querySelectorAll('.mflight').forEach(x => x.classList.toggle('on', x === c));
-      setPrev(c.dataset.cid);
+      <label class="proc-phase"><input type="checkbox" id="m-splat">
+        <span>${icon('spark')} <b>También entrenar gaussian splat</b> al terminar el 3D (foto-realista)</span></label>
+      <div id="m-splatpreset" class="mpresets" style="display:none">${SQ.map(q => `
+        <div class="mpreset${q.p === 'cinematic' ? ' on' : ''}" data-sp="${q.p}"><b>${q.n}</b><span class="mono">${q.t}</span></div>`).join('')}</div>
+      <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:11px 0">${icon('cube')} Encolar procesamiento</button>`);
+
+    const combinedBox = ov.querySelector('#m-combined');
+    const byCid = Object.fromEntries(candidates.map(f => [f.clip_id, f]));
+    // chip de score POR CLIP (aptitud individual del escáner — sí está fundamentado). NO predice
+    // la fusión: eso solo se sabe DESPUÉS de procesar (el modelo reporta qué fuentes co-registraron).
+    async function scoreChip(cid) {
+      if (_scanCache[cid]) return paintChip(cid, _scanCache[cid]);
+      try {
+        const rep = await (await fetch(`/api/capture_report?clip_id=${encodeURIComponent(cid)}`)).json();
+        if (!rep.error) _scanCache[cid] = rep;
+        return paintChip(cid, rep);
+      } catch { return null; }
+    }
+    function paintChip(cid, rep) {
+      const el = ov.querySelector(`[data-score="${CSS.escape(cid)}"]`);
+      if (!el) return rep;
+      if (!rep || rep.error) { el.textContent = ''; return null; }
+      const su = rep.suitability || {};
+      const best = Math.max(su.ortho_dsm || 0, su.mesh || 0, su.splat || 0);
+      el.textContent = best.toFixed(0);
+      el.className = `pc-score ${best >= 7 ? 'ok' : best >= 4 ? 'mid' : 'bad'}`;
+      return rep;
+    }
+    candidates.forEach(f => scoreChip(f.clip_id));   // llena los chips en background
+
+    // panel COMBINADO — señales de COMPATIBILIDAD honestas (no una predicción de éxito falsa).
+    // Basado en datos reales del track: altura, sesión, cercanía. Los merges fallan cuando mezclas
+    // una toma a ras de suelo con una aérea (0 features comunes) o clips de sesiones distintas
+    // (la iluminación cambia). Advertimos ESO; el resultado real lo reporta el modelo tras procesar.
+    function renderCombined() {
+      const cids = [...sel];
+      if (!cids.length) { combinedBox.innerHTML = '<div class="proc-combined-empty">Selecciona al menos un video.</div>'; return; }
+      const fs = cids.map(c => byCid[c]).filter(Boolean);
+      const alts = fs.map(f => Math.round(f.stats?.max_rel_alt_m || 0));
+      const days = new Set(fs.map(f => f.date));
+      const multi = cids.length + photoSel.size > 1;
+      const warns = [];
+      if (multi) {
+        const ground = alts.some(a => a < 12), aerial = alts.some(a => a >= 30);
+        if (ground && aerial) warns.push(['bad', 'Mezclas una toma a <b>ras de suelo</b> con otra <b>aérea</b> — ven cosas distintas, probablemente NO se fusionen.']);
+        if (days.size > 1) warns.push(['mid', 'Videos de <b>fechas distintas</b> — la luz cambia; el emparejamiento puede fallar. Ideal: misma salida.']);
+        const amax = Math.max(...alts), amin = Math.min(...alts.filter(a => a > 0), amax);
+        if (amax > 0 && amin > 0 && amax / amin > 4 && !(ground && aerial)) warns.push(['mid', `Alturas muy distintas (${amin}–${amax} m) — puede que solo fusione parte.`]);
+      }
+      const ok = multi && !warns.length;
+      combinedBox.innerHTML = `
+        <div class="scan-card">
+          <div class="scan-hd">${icon('layers')} MODELO COMBINADO
+            <span class="scan-verdict ${multi ? (warns.some(w => w[0] === 'bad') ? 'bad' : ok ? 'ok' : 'mid') : 'mid'}">${
+              !multi ? 'Toma única' : warns.some(w => w[0] === 'bad') ? 'Posible incompatibilidad' : ok ? 'Compatibles' : 'Revisa avisos'}</span>
+          </div>
+          <div class="pcm-row">
+            <span class="pcm"><b>${cids.length}</b> video${cids.length === 1 ? '' : 's'}${photoSel.size ? ` + <b>${photoSel.size}</b> fotos` : ''}</span>
+            <span class="pcm">altura <b>${alts.length ? Math.min(...alts) + '–' + Math.max(...alts) : '—'}</b> m</span>
+            <span class="pcm">${days.size === 1 ? 'misma sesión ✓' : days.size + ' fechas'}</span>
+          </div>
+          ${warns.map(([c, t]) => `<div class="scan-mem ${c}">${icon('warn')}<span>${t}</span></div>`).join('')}
+          ${ok ? `<div class="scan-mem ok">${icon('check')}<span>Tomas compatibles (misma salida, alturas parecidas). El modelo reportará qué fuentes fusionaron de verdad.</span></div>` : ''}
+        </div>`;
+    }
+    renderCombined();
+
+    const syncClip = cid => {
+      const lbl = ov.querySelector(`.pc-clip[data-cid="${CSS.escape(cid)}"]`);
+      if (lbl) { lbl.classList.toggle('on', sel.has(cid)); lbl.querySelector('input').checked = sel.has(cid); }
+    };
+    ov.querySelector('.proc-groups').addEventListener('click', e => {
+      const all = e.target.closest('[data-spot-all]');
+      if (all) {
+        e.preventDefault();
+        const fs = groups[all.dataset.spotAll] || [];
+        const allOn = fs.every(f => sel.has(f.clip_id));
+        fs.forEach(f => { allOn ? sel.delete(f.clip_id) : sel.add(f.clip_id); syncClip(f.clip_id); });
+        if (!sel.size && fs[0]) { sel.add(fs[0].clip_id); syncClip(fs[0].clip_id); }   // nunca vacío
+        renderCombined();
+        return;
+      }
+      const lbl = e.target.closest('.pc-clip');
+      if (!lbl) return;
+      const cid = lbl.dataset.cid;
+      setTimeout(() => {   // deja que el checkbox nativo togglee primero
+        lbl.querySelector('input').checked ? sel.add(cid) : sel.delete(cid);
+        if (!sel.size) { sel.add(cid); lbl.querySelector('input').checked = true; }   // mínimo 1
+        lbl.classList.toggle('on', sel.has(cid));
+        renderCombined();
+      }, 0);
+    });
+    ov.querySelector('.proc-photos')?.addEventListener('change', e => {
+      const it = e.target.closest('.pp-item'); if (!it) return;
+      const n = it.dataset.photo;
+      e.target.checked ? photoSel.add(n) : photoSel.delete(n);
+      it.classList.toggle('on', e.target.checked);
+      renderCombined();
     });
     ov.querySelector('.mpresets').addEventListener('click', e => {
-      const c = e.target.closest('.mpreset');
-      if (!c) return;
-      ov.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
+      const c = e.target.closest('.mpreset'); if (!c) return;
+      c.parentElement.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
     });
+    const splatChk = ov.querySelector('#m-splat'), splatPre = ov.querySelector('#m-splatpreset');
+    splatChk.addEventListener('change', () => { splatPre.style.display = splatChk.checked ? '' : 'none'; });
+    splatPre.addEventListener('click', e => {
+      const c = e.target.closest('.mpreset'); if (!c) return;
+      splatPre.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
+    });
+
     ov.querySelector('#m-go').addEventListener('click', async e2 => {
       const btn = e2.currentTarget;
-      btn.disabled = true;                          // doble clic = doble job (el guard es server-side pero feo)
+      btn.disabled = true;
       try {
+        const sources = [...sel];
         const r = await api('/api/odm', {
-          clip_id: ov.querySelector('.mflight.on')?.dataset.cid,
-          preset: ov.querySelector('.mpreset.on')?.dataset.k || 'estandar',
+          clip_id: sources[0],
+          sources,
+          photos: [...photoSel],
+          preset: ov.querySelector('.mpresets .mpreset.on')?.dataset.k || 'estandar',
           title: ov.querySelector('#m-title').value.trim(),
+          then_splat: splatChk.checked,
+          splat_preset: splatPre.querySelector('.mpreset.on')?.dataset.sp || 'cinematic',
         });
         if (r.error) return alert(r.error);
         close();
-        showTdMod('jobs');                          // feedback: te lleva a VER el job encolado (antes: silencio)
-        document.querySelector('[data-job-filter="all"]')?.click();   // un filtro viejo (Errores) ocultaría el job nuevo
+        showTdMod('jobs');
+        document.querySelector('[data-job-filter="all"]')?.click();
       } finally { btn.disabled = false; }
     });
   });

@@ -1701,16 +1701,36 @@ class H(BaseHTTPRequestHandler):
             cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
             if not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
                 return self.send_json({"error": "clip no encontrado en el vault"}, 404)
-            if not cid:
-                return self.send_json({"error": "clip_id requerido"}, 400)
             if jobstore.pending("3d", cid):
                 return self.send_json({"error": "ese vuelo ya está en cola o procesándose"}, 409)
             preset = str(spec.get("preset", "estandar"))
             if preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
                 preset = "estandar"
-            j = jobstore.enqueue("3d", cid, {"clip_id": cid, "preset": preset,
-                                             "title": str(spec.get("title", ""))[:80].strip()})
-            return self.send_json({"ok": True, "job": j["id"], "queued": True})
+            # MULTI-FUENTE: sources = videos a fundir (cid primario + otros del mismo lugar);
+            # cada uno debe tener track GPS. photos = fotos sueltas del vault.
+            raw_sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [cid]
+            sources, seen = [], set()
+            for s in raw_sources:
+                s = re.sub(r"[^\w-]", "", str(s))
+                if s and s not in seen and (VAULT / "tracks" / f"{s}.flight.json").exists():
+                    seen.add(s); sources.append(s)
+            if cid not in sources:                       # el primario manda la identidad
+                sources.insert(0, cid)
+            sources = [cid] + [s for s in sources if s != cid]
+            if len(sources) > 6:
+                return self.send_json({"error": "máximo 6 videos por modelo combinado"}, 400)
+            photos = [Path(str(p)).name for p in (spec.get("photos") or [])
+                      if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][:40]
+            job_spec = {"clip_id": cid, "preset": preset,
+                        "title": str(spec.get("title", ""))[:80].strip(),
+                        "sources": sources, "photos": photos}
+            if spec.get("then_splat"):                   # phased: gaussian tras el 3D
+                job_spec["then_splat"] = True
+                sp = str(spec.get("splat_preset") or "cinematic")
+                job_spec["splat_preset"] = sp if sp in ("medium", "cinematic", "ultra", "fast") else "cinematic"
+            j = jobstore.enqueue("3d", cid, job_spec)
+            return self.send_json({"ok": True, "job": j["id"], "queued": True,
+                                   "sources": len(sources), "photos": len(photos)})
         if u.path == "/api/model_update":
             if not self.auth(q):
                 return

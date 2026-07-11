@@ -440,7 +440,53 @@ def _openmvs_unstable(jid: str, rc: int) -> bool:
                                   "corrupted double-linked list"))
 
 
-def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str = "") -> str:
+def odm_registration(proj: Path, sources: list) -> dict:
+    """Lee opensfm/reconstruction.json tras el SfM y reporta CUÁNTAS imágenes de CADA fuente
+    se integraron de verdad. Sin esto, un modelo 'combinado' puede DESCARTAR una fuente entera
+    en silencio (SfM no la co-registra) y aún así verse OK (test real: 0106 aportó 0/7 frames).
+    Devuelve componentes, ratio global y por-fuente + qué fuentes NO fusionaron."""
+    rj = proj / "opensfm" / "reconstruction.json"
+    out = {"components": 0, "registered": 0, "total": 0, "by_source": {}, "dropped_sources": []}
+    try:
+        recs = json.loads(rj.read_text())
+    except (ValueError, OSError):
+        return out
+    def _pref(name):
+        return name.split("_")[0] + "_" if name.startswith("s") and "_f_" in name else "s0_"
+    # SUBMITTED por-fuente (del image_list) y REGISTERED por-fuente (de la reconstrucción)
+    submitted = {}
+    try:
+        for ln in (proj / "opensfm" / "image_list.txt").read_text().splitlines():
+            n = ln.strip().split("/")[-1]
+            if n:
+                submitted[_pref(n)] = submitted.get(_pref(n), 0) + 1
+    except OSError:
+        pass
+    total = sum(submitted.values())
+    reg_by_prefix = {}
+    for r in recs:
+        for shot in r.get("shots", {}):
+            reg_by_prefix[_pref(shot)] = reg_by_prefix.get(_pref(shot), 0) + 1
+    registered = sum(reg_by_prefix.values())
+    # una fuente FUSIONÓ si registró ≥5 imágenes Y ≥60% de las que aportó (regla del review §5;
+    # NO hard-fail: el modelo sobrevive, solo cambia el label y el auto-splat)
+    by_source = {}
+    for idx, src in enumerate(sources):
+        pref = f"s{idx}_" if len(sources) > 1 else "s0_"
+        reg = reg_by_prefix.get(pref, 0)
+        sub = submitted.get(pref, 0) or 1
+        merged = reg >= 5 and reg / sub >= 0.6
+        by_source[src] = {"submitted": submitted.get(pref, 0), "registered": reg,
+                          "ratio": round(reg / sub, 2), "merged": merged}
+        if len(sources) > 1 and not merged:
+            out["dropped_sources"].append(src)
+    out.update(components=len(recs), registered=registered, total=total, by_source=by_source,
+               merged_sources=len(sources) - len(out["dropped_sources"]))
+    return out
+
+
+def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str = "",
+                    sources: list | None = None, photos: list | None = None) -> str:
     """Build ODM web assets for a clip and return the real preset used.
 
     Shared by the normal 3D job and the "splat from video" path. It deliberately
@@ -456,11 +502,21 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
     jobstore.update(j["id"], container=container)
 
     frame_profile = ODM_FRAME_PROFILE.get(preset_name, "balanced")
-    jobstore.update(j["id"], detail="1/3 frames + geotag + selección adaptativa",
+    # MULTI-FUENTE: el primario (sources[0]) siempre es cid; las demás fuentes + fotos se
+    # funden en la misma carpeta images/ (más ángulos del mismo lugar = mejor reconstrucción).
+    src_list = sources or [cid]
+    if src_list[0] != cid:
+        src_list = [cid] + [s for s in src_list if s != cid]   # cid manda la identidad del proyecto
+    n_extra = len(src_list) - 1 + len(photos or [])
+    jobstore.update(j["id"], detail=f"1/3 frames + geotag + selección adaptativa"
+                    + (f" · {len(src_list)} videos" + (f" + {len(photos)} fotos" if photos else "")
+                       if n_extra else ""),
                     stage="frames", progress=0.05)
-    if jobstore.run_tracked(j["id"], ["python3", str(PIPE / "odm_prep.py"), cid,
-                                      "--profile", frame_profile],
-                            timeout=1800) != 0:
+    prep_cmd = ["python3", str(PIPE / "odm_prep.py"), "--sources", ",".join(src_list),
+                "--profile", frame_profile]
+    if photos:
+        prep_cmd += ["--photos", ",".join(photos)]
+    if jobstore.run_tracked(j["id"], prep_cmd, timeout=1800 + 1200 * (len(src_list) - 1)) != 0:
         raise RuntimeError("odm_prep falló")
     removed = clean_odm_outputs(proj)
     if removed:
@@ -517,6 +573,18 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
             m["preset_requested"] = requested_preset
         if title:
             m["title"] = title
+        if sources and len(sources) > 1 or photos:   # modelo combinado: registra sus fuentes
+            m["sources"] = list(sources or [cid])
+            if photos:
+                m["source_photos"] = list(photos)
+            # GATE por-fuente: cuántas imágenes de cada fuente se integraron de verdad
+            reg = odm_registration(proj, src_list)
+            m["odm_report"] = reg
+            if reg["dropped_sources"]:
+                m["partial_merge"] = reg["dropped_sources"]
+                print(f"  ⚠ fusión PARCIAL: {reg['dropped_sources']} no co-registraron "
+                      f"({reg['registered']}/{reg['total']} imgs) — el splat NO se auto-encolará",
+                      flush=True)
         _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
     rebuild_index()
     browser_gate(j["id"], "model", cid)
@@ -525,11 +593,37 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
 
 def run_3d(j: dict):
     cid = j["spec"]["clip_id"]
+    sources = j["spec"].get("sources") or [cid]
+    photos = j["spec"].get("photos") or []
     build_3d_assets(j, cid, j["spec"].get("preset", "estandar"),
-                    str(j["spec"].get("title", ""))[:80].strip())
+                    str(j["spec"].get("title", ""))[:80].strip(),
+                    sources=sources, photos=photos)
     jobstore.update(j["id"], progress=1.0)
-    jobstore.end(j["id"], "done", f"modelo 3D de {cid} listo — míralo en el tab 3D",
+    extra = ""
+    if len(sources) > 1 or photos:
+        extra = f" (fusión de {len(sources)} videos" + (f" + {len(photos)} fotos" if photos else "") + ")"
+    # ¿fusión parcial? (una fuente no co-registró) — el modelo NO es "mejor por combinar"
+    partial = []
+    try:
+        mm = json.loads((VAULT / "models" / cid / "meta.json").read_text())
+        partial = mm.get("partial_merge") or []
+    except (ValueError, OSError):
+        pass
+    if partial:
+        extra = f" · ⚠ {len(partial)} fuente(s) no fusionaron (mira el reporte)"
+    jobstore.end(j["id"], "done", f"modelo 3D de {cid} listo{extra} — míralo en el tab 3D",
                  artifact=f"models/{cid}/meta.json")
+    # phased: gaussian al terminar — pero NO sobre una fusión parcial (§gate del review)
+    if j["spec"].get("then_splat"):
+        if partial:
+            print(f"  splat phased OMITIDO: fusión parcial ({partial}) — reprocesa con otras fuentes", flush=True)
+        else:
+            try:
+                jobstore.enqueue("splat", cid, {"clip_id": cid,
+                                 "preset": str(j["spec"].get("splat_preset") or "cinematic")})
+                print(f"  encolado gaussian splat para {cid} (phased)", flush=True)
+            except Exception as e:
+                print(f"  no se pudo encolar el splat phased: {e}", flush=True)
 
 
 def run_splat(j: dict):

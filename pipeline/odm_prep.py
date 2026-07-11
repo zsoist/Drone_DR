@@ -37,9 +37,10 @@ PROFILE_FPS = {"preview": 0.33, "balanced": 0.5, "premium": 1.0, "splat": 0.75}
 PROFILE_WIDTH = {"preview": 2048, "balanced": 2688, "premium": 3072, "splat": 3072}
 
 
-def prune_frames(images, track_pts, fps, profile):
+def prune_frames(images, track_pts, fps, profile, manifest_path=None):
     """Poda adaptativa post-extracción: fuera el cuartil borroso y los frames
-    casi-duplicados (sin movimiento GPS). Escribe frames_manifest.json."""
+    casi-duplicados (sin movimiento GPS). Opera sobre los f_*.jpg de `images`.
+    Escribe frames_manifest.json solo si se pasa manifest_path (multi-fuente lo omite)."""
     from capture_quality import choose_frames, sharpness
     from PIL import Image
     files = sorted(images.glob("f_*.jpg"))
@@ -59,94 +60,164 @@ def prune_frames(images, track_pts, fps, profile):
         if t not in keep:
             f.unlink()
             dropped += 1
-    (images.parent / "frames_manifest.json").write_text(json.dumps(
-        {"profile": profile, "kept": len(keep), "dropped": dropped,
-         "width": PROFILE_WIDTH.get(profile, WIDTH), "fps": fps, "frames": chosen}, indent=1))
+    if manifest_path is not None:
+        manifest_path.write_text(json.dumps(
+            {"profile": profile, "kept": len(keep), "dropped": dropped,
+             "width": PROFILE_WIDTH.get(profile, WIDTH), "fps": fps, "frames": chosen}, indent=1))
     print(f"poda adaptativa [{profile}]: {len(keep)} frames elegidos · {dropped} descartados "
           f"(blur / casi-duplicados)", flush=True)
     return len(keep)
+    return len(keep)
+
+
+def _load_pts(cid: str) -> list:
+    tf = VAULT / "tracks" / f"{cid}.flight.json"
+    if not tf.exists():
+        return []
+    try:
+        pts = json.loads(tf.read_text()).get("points", [])
+    except (ValueError, OSError):
+        return []
+    return [p for p in pts if isinstance(p.get("lat"), (int, float))
+            and isinstance(p.get("lon"), (int, float))]
+
+
+def _geotag(path: Path, p: dict) -> list:
+    """Args de exiftool para escribir GPS en EXIF de una imagen (un -execute)."""
+    return [
+        f"-GPSLatitude={abs(p['lat'])}", f"-GPSLatitudeRef={'N' if p['lat'] >= 0 else 'S'}",
+        f"-GPSLongitude={abs(p['lon'])}", f"-GPSLongitudeRef={'E' if p['lon'] >= 0 else 'W'}",
+        f"-GPSAltitude={p.get('abs_alt', 0)}", "-GPSAltitudeRef=0",
+        str(path), "-execute",
+    ]
+
+
+def _photo_parent(name: str):
+    """Foto 'DJI_..._0104_D_00003.0s.jpg' → (clip_id, segundos). Devuelve (None, 0) si no calza."""
+    import re
+    m = re.match(r"^(.+?)_(\d+(?:\.\d+)?)s\.(?:jpg|jpeg|png)$", name, re.I)
+    if m:
+        return m.group(1), float(m.group(2))
+    return None, 0.0
+
+
+def _extract_source(tmp_dir: Path, images: Path, src_cid: str, prefix: str, profile, fps: float, width: int) -> list:
+    """Extrae + poda de UN video fuente hacia tmp_dir con `prefix`. Devuelve los args de geotag
+    apuntando a la ruta FINAL en images/ (exiftool corre DESPUÉS del swap, no sobre tmp_dir)."""
+    raw = find_raw(src_cid)
+    pts = _load_pts(src_cid)
+    if not pts:
+        raise SystemExit(f"{src_cid} sin track GPS — ODM no puede georreferenciarlo")
+    stmp = tmp_dir / f".ext_{prefix or 's'}"      # subdir por-fuente (nombres f_XXXX limpios para la poda)
+    if stmp.exists():
+        shutil.rmtree(stmp)
+    stmp.mkdir(parents=True)
+    print(f"[{prefix or 'único'}] frames {width}px de {raw.name}…", flush=True)
+    # -hwaccel videotoolbox: decodifica el HEVC 4K en el Media Engine del M4
+    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y",
+                             "-hwaccel", "videotoolbox", "-i", str(raw),
+                             "-vf", f"fps={fps},scale={width}:-2", "-q:v", "2",
+                             str(stmp / "f_%04d.jpg")])
+    import time as _t
+    while proc.poll() is None:
+        _t.sleep(8)
+        print(f"[{prefix or 'único'}] frames: {len(list(stmp.glob('f_*.jpg')))}", flush=True)
+    if proc.returncode != 0:
+        shutil.rmtree(stmp, ignore_errors=True)
+        raise SystemExit(f"ffmpeg falló extrayendo frames de {src_cid}")
+    if profile:
+        prune_frames(stmp, pts, fps, profile, manifest_path=None)
+    # mueve los supervivientes a tmp_dir con prefijo por-fuente + arma su geotag
+    args = []
+    for f in sorted(stmp.glob("f_*.jpg")):
+        num = int(f.stem.split("_")[1])            # el número del ARCHIVO fija el tiempo (no el índice tras poda)
+        sec = min(int((num - 0.5) / fps), len(pts) - 1)
+        name = f"{prefix}{f.name}" if prefix else f.name   # 's0_f_0042.jpg' o 'f_0042.jpg'
+        os.replace(f, tmp_dir / name)
+        args += _geotag(images / name, pts[sec])   # ruta FINAL: el geotag corre tras el swap
+    shutil.rmtree(stmp, ignore_errors=True)
+    return args
 
 
 def main():
-    cid = sys.argv[1]
-    profile = None
-    if "--profile" in sys.argv:
-        profile = sys.argv[sys.argv.index("--profile") + 1]
-    raw = find_raw(cid)
-    track = json.loads((VAULT / "tracks" / f"{cid}.flight.json").read_text())
-    pts = track["points"]
-    proj = VAULT / "odm" / f"proj_{cid}"
+    argv = sys.argv[1:]
+    profile = argv[argv.index("--profile") + 1] if "--profile" in argv else None
+    photos = [x for x in argv[argv.index("--photos") + 1].split(",") if x] if "--photos" in argv else []
+    # --sources a,b,c (multi-fuente) o cid posicional (compat 1 fuente)
+    if "--sources" in argv:
+        sources = [s for s in argv[argv.index("--sources") + 1].split(",") if s]
+    else:
+        sources = [a for a in argv if not a.startswith("--")][:1]
+    if not sources:
+        raise SystemExit("uso: odm_prep.py <cid> | --sources a,b,c [--photos ...] [--profile ...]")
+    primary = sources[0]                            # el modelo combinado hereda la identidad del primario
+    proj = VAULT / "odm" / f"proj_{primary}"
     images = proj / "images"
     images.mkdir(parents=True, exist_ok=True)
-
     fps = PROFILE_FPS.get(profile, FPS)
     width = PROFILE_WIDTH.get(profile, WIDTH)
-    expected = int(json.loads((VAULT / "manifest" / f"{cid}.json").read_text())
-                   .get("duration_s", 0) * fps) if (VAULT / "manifest" / f"{cid}.json").exists() else 0
-    print(f"frames {width}px de {raw.name} (~{expected or '?'} esperados)…", flush=True)
-    # extrae a un dir TEMPORAL y haz swap al final: si se borran los frames viejos ANTES y
-    # ffmpeg falla (o cancelan el job), el opensfm previo queda apuntando a imágenes
-    # inexistentes y el próximo splat del clip revienta — se perdía poder re-entrenar
-    # hasta completar un 3D entero.
+
+    # todo a un dir TEMPORAL y swap atómico al final: si ffmpeg falla o cancelan, el opensfm
+    # previo NO queda apuntando a imágenes inexistentes (se perdía poder re-entrenar el splat).
     tmp_dir = proj / "images.new"
     if tmp_dir.exists():
         shutil.rmtree(tmp_dir)
     tmp_dir.mkdir(parents=True)
-    # -hwaccel videotoolbox: decodifica el HEVC 4K60 10-bit en el Media Engine del M4
-    # (antes: software decode = fase 1 de ~4-5 min; ahora ~2-3x más rápido)
-    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y",
-                             "-hwaccel", "videotoolbox", "-i", str(raw),
-                             "-vf", f"fps={fps},scale={width}:-2", "-q:v", "2",
-                             str(tmp_dir / "f_%04d.jpg")])
-    import time as _t
-    while proc.poll() is None:
-        _t.sleep(8)
-        n = len(list(tmp_dir.glob("f_*.jpg")))
-        print(f"frames: {n}/{expected or '?'}", flush=True)   # → log tail de la UI
-    if proc.returncode != 0:
+
+    geotag_args = []
+    per_source = []
+    multi = len(sources) > 1 or bool(photos)
+    for idx, src in enumerate(sources):
+        prefix = f"s{idx}_" if multi else ""        # 1 sola fuente sin fotos → nombres f_XXXX intactos (compat)
+        geotag_args += _extract_source(tmp_dir, images, src, prefix, profile, fps, width)
+        per_source.append({"cid": src, "prefix": prefix or None})
+
+    # fotos: se copian y geotaggean desde el track del clip padre en su instante
+    n_photos = 0
+    for name in photos:
+        sp = VAULT / "photos" / Path(name).name
+        if not sp.is_file():
+            print(f"foto no encontrada, saltada: {name}", flush=True)
+            continue
+        name = f"ph_{sp.name}"
+        shutil.copy2(sp, tmp_dir / name)
+        parent, t = _photo_parent(sp.name)
+        pts = _load_pts(parent) if parent else []
+        if pts:
+            geotag_args += _geotag(images / name, pts[min(int(t), len(pts) - 1)])   # ruta final tras swap
+        n_photos += 1
+
+    total = sum(1 for a in geotag_args if a == "-execute")   # un -execute por imagen geotaggeada
+    if total == 0:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise SystemExit("ffmpeg falló extrayendo frames")
-    # éxito: ahora sí, fuera los viejos y entran los nuevos
-    for old in images.glob("f_*.jpg"):
-        old.unlink()
-    for f in sorted(tmp_dir.glob("f_*.jpg")):
-        os.replace(f, images / f.name)
+        raise SystemExit("cero imágenes geotaggeadas — nada que procesar")
+
+    # SWAP atómico: fuera todas las imágenes viejas (cualquier prefijo), entran las nuevas
+    for old in images.iterdir():
+        if old.is_file() and old.suffix.lower() in (".jpg", ".jpeg", ".png"):
+            old.unlink()
+    for f in tmp_dir.iterdir():
+        if f.is_file():
+            os.replace(f, images / f.name)
     shutil.rmtree(tmp_dir, ignore_errors=True)
-    # INVALIDA el opensfm viejo AQUÍ (no esperar al clean del worker): los frames nuevos pueden
-    # tener otro fps/width con los MISMOS nombres f_XXXX.jpg. Si cancelan en la ventana antes
-    # del wipe del worker, run_splat elegiría poses viejas sobre imágenes nuevas → splat corrupto
-    # que puede pasar el gate. ODM regenera estos archivos en la corrida que sigue.
+    # INVALIDA el opensfm viejo AQUÍ (frames nuevos, poses viejas = splat corrupto si cancelan)
     for stale in (proj / "opensfm" / "image_list.txt",
                   proj / "opensfm" / "reconstruction.json"):
         stale.unlink(missing_ok=True)
 
-    if profile:
-        prune_frames(images, pts, fps, profile)
-
-    frames = sorted(images.glob("f_*.jpg"))
-    args = []
-    for f in frames:
-        # el numero del ARCHIVO (no el indice tras la poda) fija el timestamp:
-        # f_0042.jpg = frame 42 de la extraccion a `fps`
-        num = int(f.stem.split("_")[1])
-        sec = min(int((num - 0.5) / fps), len(pts) - 1)
-        p = pts[sec]
-        args += [
-            f"-GPSLatitude={abs(p['lat'])}", f"-GPSLatitudeRef={'N' if p['lat'] >= 0 else 'S'}",
-            f"-GPSLongitude={abs(p['lon'])}", f"-GPSLongitudeRef={'E' if p['lon'] >= 0 else 'W'}",
-            f"-GPSAltitude={p['abs_alt']}", "-GPSAltitudeRef=0",
-            str(f), "-execute",
-        ]
+    # geotag de TODAS las imágenes en una sola pasada de exiftool
     argfile = proj / ".geotag.args"
-    argfile.write_text("\n".join(args))
-    # -common_args: aplica -overwrite_original a TODOS los -execute del argfile. Antes (flag
-    # posicional antes de -@) solo aplicaba al primero → cientos de f_*.jpg_original fugados
-    # por proyecto (~50% del dir images/), que el swap nunca limpiaba.
+    argfile.write_text("\n".join(geotag_args))
+    # -common_args: -overwrite_original aplica a TODOS los -execute (no solo el primero)
     subprocess.run(["exiftool", "-@", str(argfile), "-common_args", "-overwrite_original"],
                    check=True, capture_output=True)
-    for leak in images.glob("f_*.jpg_original"):   # limpia backups de corridas viejas
+    for leak in images.glob("*.jpg_original"):
         leak.unlink()
-    print(f"✅ {len(frames)} frames geotagged → {proj}")
+    (proj / "frames_manifest.json").write_text(json.dumps(
+        {"profile": profile, "sources": per_source, "photos": n_photos,
+         "total_frames": total, "width": width, "fps": fps}, indent=1))
+    src_lbl = f"{len(sources)} video(s)" + (f" + {n_photos} foto(s)" if n_photos else "")
+    print(f"✅ {total} frames geotagged de {src_lbl} → {proj}")
 
 
 if __name__ == "__main__":

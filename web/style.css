@@ -3031,3 +3031,38 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 /* chips/botones deshabilitados: antes no había estado visual (parecían clickeables) */
 .chip:disabled, .btn:disabled { opacity: .38; cursor: not-allowed; }
 .chip:disabled:hover, .btn:disabled:hover { background: none; border-color: var(--line); }
+
+/* ================= BLOQUE 24 · Estudio 3D multi-fuente ================= */
+.proc-groups { display: flex; flex-direction: column; gap: 12px; max-height: 340px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; margin-bottom: 6px; }
+.proc-group { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); overflow: hidden; }
+.pg-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.pg-place { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-2); min-width: 0; }
+.pg-place svg { width: 13px; height: 13px; color: var(--accent); flex: none; }
+.pg-head .count { margin-left: auto; }
+.pg-all { font-size: 11px; padding: 3px 10px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 999px; color: var(--accent); background: none; }
+.pg-clips { display: flex; flex-direction: column; }
+.pc-clip { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; transition: background .15s; border-top: 1px solid transparent; }
+.pc-clip:hover { background: var(--surface-3, var(--surface)); }
+.pc-clip.on { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.pc-clip input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.pc-clip img { width: 62px; height: 36px; object-fit: cover; border-radius: 6px; flex: none; background: var(--surface); }
+.pc-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.pc-meta b { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-meta .mono { font-size: 10.5px; color: var(--text-3); }
+.pc-score { font-family: var(--mono); font-size: 12px; font-weight: 700; width: 24px; text-align: center; flex: none; color: var(--text-3); }
+.pc-score.ok { color: var(--mint); } .pc-score.mid { color: var(--amber); } .pc-score.bad { color: var(--red); }
+.proc-photos { margin: 4px 0 8px; }
+.proc-photos summary { cursor: pointer; font-size: 12.5px; color: var(--text-2); display: flex; align-items: center; gap: 7px; padding: 6px 0; }
+.proc-photos summary svg { width: 14px; height: 14px; }
+.pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; padding: 6px 0; }
+.pp-item { position: relative; cursor: pointer; border-radius: 8px; overflow: hidden; aspect-ratio: 4/3; border: 2px solid transparent; }
+.pp-item.on { border-color: var(--accent); }
+.pp-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pp-item input { position: absolute; top: 5px; left: 5px; width: 16px; height: 16px; accent-color: var(--accent); }
+.proc-combined { margin: 4px 0 2px; }
+.proc-combined-empty { font-size: 12px; color: var(--text-3); padding: 10px 0; }
+.pcm-row { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; font-size: 11.5px; color: var(--text-2); }
+.pcm b { font-family: var(--mono); color: var(--text); }
+.proc-phase { display: flex; align-items: center; gap: 9px; margin: 14px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); cursor: pointer; font-size: 12.5px; }
+.proc-phase input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.proc-phase svg { width: 14px; height: 14px; color: var(--accent); vertical-align: -2px; }
