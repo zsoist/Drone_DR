@@ -48,6 +48,18 @@ MIN_TEST, MAX_TEST, TEST_FRAC = 8, 25, 0.10
 LPIPS_MAX_SIDE = 1024
 
 
+def _minimal_env() -> dict:
+    """Env explícito y MÍNIMO para el trainer — jamás heredar la shell interactiva.
+
+    Lección del P0 (11-jul): la shell de la sesión llevaba MallocNanoZone=0 (lo
+    setea Claude Code) y cada nohup lo heredó; launchd no. No fue la causa del P0,
+    pero fue contaminante confirmado del harness: los discriminadores comparaban
+    entornos distintos sin saberlo. Un run de eval solo lleva lo que declara."""
+    return {"PATH": "/usr/bin:/bin:/usr/sbin:/opt/homebrew/bin",
+            "HOME": os.environ.get("HOME", "/tmp"),
+            "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)}
+
+
 def _source_of(name: str) -> str:
     """Prefijo de fuente multi-source ('s0_', 's1_', 'ph_') o '' para single-source."""
     import re
@@ -140,7 +152,7 @@ def train(train_dir: Path, out_ply: Path, preset_key: str, force_cpu: bool = Fal
     iters = int(preset["iters"])
     backend = choose_splat_backend(iters, force_cpu=force_cpu)
     base_args = list(preset.get("train_args") or [])
-    env = {**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)}
+    env = _minimal_env()
     attempts = []
     for rung, extra in enumerate(RUNGS):
         cmd = opensplat_train_cmd(train_dir, out_ply, iters, backend, base_args + extra)
@@ -182,7 +194,7 @@ def render(test_dir: Path, model_ply: Path, out_dir: Path, force_cpu: bool = Fal
            "--render-cameras", str(out_dir)]
     if backend.get("cpu_flag"):
         cmd.append("--cpu")
-    r = subprocess.run(cmd, env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)},
+    r = subprocess.run(cmd, env=_minimal_env(),
                        capture_output=True, text=True, timeout=1800)
     if r.returncode != 0:
         raise SystemExit(f"render-cameras rc={r.returncode}: {(r.stdout or '')[-300:]}")

@@ -1,6 +1,13 @@
 # AeroBrain
 
 ## Pitfalls
+- GATE POST-PARCHE DEL TRAINER (P0 11-jul): tras CUALQUIER rebuild/patch de
+  OpenSplat, correr un cinematic conocido (proj_...133809_0101_D) ANTES de
+  declarar el binario bueno. "Aditivo por intención del diff" no es evidencia —
+  el comportamiento se mide. Un fast NO basta (densificación mínima no expone
+  overheads por-gaussiana).
+- El trainer se invoca SIEMPRE con env explícito mínimo (splat_eval._minimal_env)
+  — la shell de Claude Code lleva MallocNanoZone=0 y los nohup lo heredan.
 - NUNCA encadenar `test_smoke.py | tail && git commit`: el pipe se traga el exit
   code y el `&&` comitea con tests rojos (pasó 2026-07-11). Correr el smoke SIN
   pipe, o con `set -o pipefail`, antes de cualquier commit.

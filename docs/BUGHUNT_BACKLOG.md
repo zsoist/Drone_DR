@@ -168,3 +168,33 @@ eficiencias (doble rebuild, OBJ en RAM).
 ## Hunt Inicio+Vuelos+Dron 2026-07-10 — diferidos
 - [baja] dron héroe del Inicio intercepta taps sobre el chip de trabajos/título cuando vuela encima (trade-off de diseño: es interactivo a propósito)
 - [baja] /api/highlight: read-modify-write sin lock (2 marcas rápidas → 1 se pierde)
+
+### P0 — discriminador binario (lecturas PRE-escritas, 11-jul tarde)
+Worker limpio OOM ×3 → producción rota hoy. Binario sospechoso preservado:
+eval/logs/opensplat-suspect-20260711 (sha cec01b29). TRES BUILDS: (a) limpio 9fb62fd
+sin patch → si PASA, el binario de ayer era el problema → (b) re-aplicar patch +
+rebuild → si PASA, culpable = link de ayer (rebuildeá y listo); si FALLA, culpable =
+el patch mismo (rediseño; "aditivo post-carga" se verificó por intención, no por
+comportamiento — gate permanente: cinematic conocido tras CUALQUIER parche al trainer).
+Si (a) FALLA → bisección de insumos. Timeline: TODO fallo es post-patch; único pass
+post-patch = fast (densificación mínima — donde overhead por-gaussiana no se nota).
+
+### P0 — matriz cruzada completa + hipótesis de marginalidad (11-jul tarde)
+| binario | env | camino | resultado |
+|---|---|---|---|
+| parcheado | shell (MallocNanoZone=0) | nohup | OOM ×N |
+| parcheado | launchd limpio | worker run_tracked | OOM ×3 |
+| limpio 9fb62fd | shell | nohup | OOM (10766 — idéntico) |
+→ binario/patch/re-link ABSUELTOS conductualmente; env ABSUELTO (cruzado).
+HIPÓTESIS ACTIVA — MARGINALIDAD, no regresión: todas las muertes caen en
+10210-11000 MiB (±5% del cap; nunca 6GB, nunca 15GB). Cinematic en esta escena
+siempre necesitó ~10.5-11+ GB; el 7-jul pasó ROZANDO el cap sin instrumentación
+que lo viera (el peak recorder nació el 11); ruido de ±3% (init aleatorio,
+allocator, nº de cámaras) voltea el resultado. No apareció un acantilado —
+siempre estuvimos en el borde. Corrobora: reporte DeepSeek del 9-jul ya
+flaggeaba anomalías splat el 8-9 jul (PRE-patch) y "06/07 punto de inflexión".
+DISCRIMINADOR CORRIENDO: mismo run con taskpolicy -m 12500 — si completa con
+peak ~11-12GB ⇒ confirmada ⇒ P0 se reescribe como "preset al borde del cap" y
+los fixes son los del P1 (rungs sobre densificación + margen/preflight) + el
+peak del sidecar como guardia permanente. Si OOM'ea a 12500 ⇒ crecimiento no
+acotado ⇒ bisección real.
