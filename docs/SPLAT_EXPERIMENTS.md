@@ -67,3 +67,9 @@ Decidir la métrica después de ver resultados = p-hacking.
 - B: cinematic-acotado (7000 it, thresh 0.0008, refine 300) — corriendo.
   Proyección: conteo ~180k ≤ 85% cap vía 55KB/gaussiana.
 - Fila baseline escena 1 = la que domine cuando B termine. NO congelar antes.
+- B FALLÓ: OOM 10925 a step 3430 — PASÓ el salto de resolución del schedule
+  (¼→½ en 3000) y los buffers ×4 lo mataron. El bounding de conteo compró
+  1200 steps vs cinematic (~2200). Memoria = f(conteo × resolución): el SALTO
+  del schedule es driver. Punto C candidato: B + --num-downscales 3 o
+  --resolution-schedule 8000 (nunca dobla en 7000 iters) — trade: detalle final.
+  Fila baseline escena 1 provisional = medium (único >fast bajo cap hoy).
