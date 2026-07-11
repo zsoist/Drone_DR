@@ -24,7 +24,7 @@ escena). Ultra se registra igual: su techo de memoria ES parte de la baseline.
 
 | Escena | Preset | PSNR | SSIM | LPIPS | train s | peak MiB | run_id |
 |---|---|---|---|---|---|---|---|
-| easy `…133809_0101_D` (30 cám) | cinematic | _corriendo_ | | | | | |
+| easy `…133809_0101_D` (30 cám) | cinematic | **BLOQUEADA: regresión ambiental P0** (abajo) | | | | | |
 | easy `…133809_0101_D` | ultra (3 escalones) | **FAIL: OOM ×3** — el preset insignia no puede con esta escena en 16GB (~200s/escalón hasta el cap footprint 11000) | — | — | 195+241+211 | 11000 (cap) | `20260711-085950-ultra/FAILED.json` |
 | grande `…133243_0100_D` (214 img) | cinematic | _pendiente_ | | | | | |
 | multi-source test #2 (0103+0104) | cinematic | _pendiente: regenerar recon_ | | | | | |

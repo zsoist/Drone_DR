@@ -1,5 +1,23 @@
 # Bug Hunt Backlog — per-tab (findings verificados NO críticos pendientes)
 
+## P0 — regresión ambiental de memoria MPS (2026-07-11, descubierta por la baseline)
+- [P0][producto] **El pipeline de HOY no puede reproducir el artefacto que shippeó el 7-jul.**
+  Cinematic sobre proj_...133809_0101_D: 7-jul pasó (3502s, 7000 steps, ~950k gaussianas,
+  bajo el cap 11000). Hoy: OOM ×7 intentos (eval 22cám ×3 rungs, verbatim ×3, discriminador
+  30cám full = réplica EXACTA de producción, peak 10715 MiB muerto ~step 2200 con solo
+  ~200k gaussianas → la memoria-por-gaussiana o el allocator MPS creció, no el conteo).
+  ABSUELTOS con evidencia: inputs (recon/frames mtime 7-jul intactos), binario (solo
+  opensplat.cpp.o recompilado hoy; model.cpp.o del 5-jul), libtorch (oct-2025), split
+  (30cám también muere), --save-every, OS (sin updates desde marzo), reboot (MISMO boot:
+  uptime 8d19h cubre el 7-jul). SOSPECHOSO RESTANTE: estado acumulado del sistema
+  (5 días más de uptime, swap 2.8GB, driver Metal / fragmentación / presión).
+  DISCRIMINADORES pendientes: (1) reboot del Mac y re-run cinematic 30cám — el más
+  decisivo y barato; (2) medium 2000 iters para hallar el techo de HOY; (3) el
+  experimento PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.4 fue inconcluso (crash en
+  Model::Model, herramienta equivocada). Evidencia: eval/DJI_...0101_D/
+  {20260711-*-ultra/FAILED.json, discriminator-30cam/}, eval/logs/*.log.
+  BLOQUEA: baseline Phase 1 (cinematic/ultra), splats nuevos de producción >fast.
+
 ## P1 — descubierto por la baseline de eval (2026-07-11)
 - [P1][producto] **La escalera de escalones OOM no reduce el driver real de memoria.**
   Evidencia: ultra OOM'eó los 3 rungs en ~200s c/u sobre la escena easy (22 cám,

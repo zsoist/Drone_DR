@@ -146,7 +146,10 @@ def train(train_dir: Path, out_ply: Path, preset_key: str, force_cpu: bool = Fal
         cmd = opensplat_train_cmd(train_dir, out_ply, iters, backend, base_args + extra)
         peak = PeakTracker()
         t0 = time.time()
-        proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL,
+        # stdout a archivo, NO a DEVNULL: un rc=1 sin el mensaje del trainer es
+        # in-diagnosticable (aprendido con el experimento watermark)
+        tlog = open(out_ply.parent / f"train-rung{rung}.log", "w")
+        proc = subprocess.Popen(cmd, env=env, stdout=tlog,
                                 stderr=subprocess.STDOUT, start_new_session=True)
         timeout = time.time() + int(preset.get("timeout") or 4 * 3600)
         while proc.poll() is None:
