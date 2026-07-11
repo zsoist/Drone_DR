@@ -1,0 +1,46 @@
+diff --git a/opensplat.cpp b/opensplat.cpp
+index b2826d1..1d75c35 100644
+--- a/opensplat.cpp
++++ b/opensplat.cpp
+@@ -24,6 +24,7 @@ int main(int argc, char *argv[]){
+         ("val", "Withhold a camera shot for validating the scene loss")
+         ("val-image", "Filename of the image to withhold for validating scene loss", cxxopts::value<std::string>()->default_value("random"))
+         ("val-render", "Path of the directory where to render validation images", cxxopts::value<std::string>()->default_value(""))
++        ("render-cameras", "Load a trained model (requires --resume) and render every camera in the project plus its training-view ground truth into this directory, then exit without training. For held-out evaluation.", cxxopts::value<std::string>()->default_value(""))
+         ("keep-crs", "Retain the project input's coordinate reference system")
+         ("cpu", "Force CPU execution")
+         
+@@ -148,6 +149,33 @@ int main(int argc, char *argv[]){
+             step = model.loadPly(resume) + 1;
+         }
+ 
++        // AeroBrain eval harness: render-only mode. Renders every camera in the
++        // project ALONGSIDE the ground truth exactly as the trainer sees it
++        // (same cv::undistort, same tensor path) — honest pairs for external
++        // PSNR/SSIM/LPIPS scoring of held-out views. No training happens.
++        const std::string renderCameras = result["render-cameras"].as<std::string>();
++        if (!renderCameras.empty()){
++            if (resume == "") throw std::runtime_error("--render-cameras requires --resume <model.ply>");
++            if (!fs::exists(renderCameras)) fs::create_directories(renderCameras);
++            // step alto: fuerza downscale 1 y grado SH máximo aunque el modelo
++            // haya entrenado pocos iters (si no, un fast/1000 rendería a 1/4 de
++            // resolución y el PSNR saldría inflado en silencio)
++            const size_t rstep = (std::max)(step, (size_t)1000000);
++            for (Camera &cam : inputData.cameras){
++                torch::Tensor rgb = model.forward(cam, rstep);
++                cv::Mat image = tensorToImage(rgb.detach().cpu());
++                cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
++                const std::string name = fs::path(cam.filePath).filename().string();
++                cv::imwrite((fs::path(renderCameras) / (name + ".render.png")).string(), image);
++                torch::Tensor gt = cam.getImage(model.getDownscaleFactor(rstep));
++                cv::Mat gtImage = tensorToImage(gt.detach().cpu());
++                cv::cvtColor(gtImage, gtImage, cv::COLOR_RGB2BGR);
++                cv::imwrite((fs::path(renderCameras) / (name + ".gt.png")).string(), gtImage);
++                std::cout << "Rendered " << name << std::endl;
++            }
++            return EXIT_SUCCESS;
++        }
++
+         for (; step <= numIters; step++){
+             Camera& cam = cams[ camsIter.next() ];
+ 

@@ -751,5 +751,47 @@ check("hwconfig: la política jamás reescribe hardware.json (calibración = hum
 check("worker: sidecar marca caps_provisional (runs heurísticos ≠ calibrados)",
       '"caps_provisional"' in _w_src and '_HWCFG.get("provisional")' in _w_src)
 
+# --- splat_eval: split determinista + cirugía disjunta + scorer honesto (Phase 1) ---
+import json as _json
+import tempfile as _tf
+import numpy as _np
+import splat_eval as _se
+_tmp = Path(_tf.mkdtemp())
+
+
+def _fake_proj(n):
+    p = _tmp / f"proj{n}"
+    (p / "opensfm").mkdir(parents=True)
+    shots = {f"f_{i:04d}.jpg": {"rotation": [0, 0, 0]} for i in range(n)}
+    (p / "opensfm" / "reconstruction.json").write_text(_json.dumps([{"cameras": {}, "shots": shots}]))
+    (p / "opensfm" / "image_list.txt").write_text("\n".join(f"/datasets/code/images/f_{i:04d}.jpg" for i in range(n)))
+    return p
+
+
+_s1 = _se.make_split(_fake_proj(100), _tmp / "o1", "CID_X")
+check("splat_eval: split determinista (mismo seed → mismas vistas test) y 10% de 100",
+      _se.make_split(_tmp / "proj100", _tmp / "o2", "CID_X")["test_views"] == _s1["test_views"]
+      and _s1["n_test"] == 10)
+_trn = set(_json.loads((_tmp / "o1" / "train" / "reconstruction.json").read_text())[0]["shots"])
+_tst = set(_json.loads((_tmp / "o1" / "test" / "reconstruction.json").read_text())[0]["shots"])
+check("splat_eval: cirugía disjunta y completa (train ∩ test = ∅, unión = todo)",
+      not (_trn & _tst) and len(_trn | _tst) == 100 and _tst == set(_s1["test_views"]))
+check("splat_eval: clamp mínimo de vistas test (40 shots → 8, no 4)",
+      _se.make_split(_fake_proj(40), _tmp / "o3", "CID_X")["n_test"] == 8)
+from PIL import Image as _Img
+_rd = _tmp / "renders"
+_rd.mkdir()
+_gt = (_np.random.default_rng(7).random((64, 64, 3)) * 255).astype(_np.uint8)
+_Img.fromarray(_gt).save(_rd / "a.gt.png"); _Img.fromarray(_gt).save(_rd / "a.render.png")
+_noisy = _np.clip(_gt.astype(int) + _np.random.default_rng(8).integers(-40, 40, _gt.shape), 0, 255).astype(_np.uint8)
+_Img.fromarray(_gt).save(_rd / "b.gt.png"); _Img.fromarray(_noisy).save(_rd / "b.render.png")
+_sc = _se.score(_rd, use_lpips=False, side_by_side=0)
+_pv = {v["view"]: v for v in _sc["per_view"]}
+check("splat_eval: scorer — idéntico da PSNR 60 (cap) / SSIM 1.0; ruido da estrictamente menos",
+      _pv["a"]["psnr"] == 60.0 and _pv["a"]["ssim"] == 1.0
+      and _pv["b"]["psnr"] < 30 and _pv["b"]["ssim"] < 1.0 and _sc["n_test_views"] == 2)
+check("splat_eval: run.json lleva params_hash (un número sin contexto no es dato)",
+      '"params_hash"' in Path("pipeline/splat_eval.py").read_text())
+
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 sys.exit(1 if FAILS else 0)
