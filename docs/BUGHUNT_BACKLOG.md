@@ -264,3 +264,20 @@ un "completó" histórico esconde condiciones; nadie los usa como referencia.
     contención MPS/unified-memory durante training degrada el timing de
     subprocess del smoke" — rojo correlaciona con opensplat/MPS activo (5/5),
     verde con docker ODM corriendo (n=1) y en reposo.
+
+## Pendientes de fase (no-bugs, 11-jul — cierre Phase 1)
+- [método] Documento aparte del protocolo replicable (más corto que el case
+  study, más útil para más gente): proyección pre-escrita → evento con cifras
+  cableadas → presupuesto de sorpresa → lecturas pre-decididas → corrección
+  retroactiva de atribuciones → lector-frío como held-out. No es de splats:
+  es cómo trabajar con agentes donde los números pueden mentir.
+- [agenda] "¿Cuándo se muestra a alguien?" — el portafolio no rinde en repo
+  privado. Decisión de Daniel, no de commits. El case study ya sobrevivió a
+  su lector frío; candidatos: writeup público (blog/LinkedIn) tras el 2.0,
+  o con Phase 2 completa. Riesgo de patearlo para siempre: nombrado.
+- [vara U1-U3] El riesgo del tramo UI cambia de naturaleza: de "¿el número
+  miente?" a "¿el scope crece?" — la vara de cierre son los GATES del spec v2,
+  no la satisfacción visual.
+- [2.0] Primer experimento donde el arco puede FALLAR honestamente: si SH no
+  mueve LPIPS, el sospechoso se reduce a appearance/exposición y la migración
+  de trainer revive. El negativo va a la tabla con el mismo rigor.
