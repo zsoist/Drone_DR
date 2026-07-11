@@ -286,3 +286,11 @@ un "completó" histórico esconde condiciones; nadie los usa como referencia.
     inmediato. El trigger correlaciona con CARGA TRAILING (load>~3), no
     estrictamente con MPS concurrente. Enunciado v2: "presión/scheduling
     residual del sistema degrada el timing de subprocess del test".
+  · P2 RESUELTO (11-jul noche): mecanismo = carrera contra la ventana de re-exec
+    del python3 de Homebrew (~10-50ms de argv "python3" antes de reescribirse al
+    binario del framework). init-dentro-de-la-ventana → match → kill → verde;
+    bajo carga la latencia spawn→init supera la ventana → sin match → sin kill →
+    rojo. 11/11 datos explicados (la correlación con load era la latencia, no MPS
+    ni el scorer). Producción estaba a salvo POR CASUALIDAD (nombres de script en
+    argv sobreviven al re-exec); el término python.app/contents/macos/python
+    cierra el hueco real: un worker bare-python3 huérfano NO se mataba.

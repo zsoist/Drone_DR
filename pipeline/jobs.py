@@ -273,7 +273,13 @@ def _proc_ours(pid: int) -> bool:
                              capture_output=True, text=True, timeout=3).stdout.lower()
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return False
-    return any(t in out for t in ("python3", "opensplat", "docker", "ffmpeg", "odm_prep", "tresd_publish"))
+    # "python3" solo existe en el argv durante ~10-50ms: el python3 de Homebrew se
+    # RE-EJECUTA en .../Python.app/Contents/MacOS/Python y ps deja de mostrarlo
+    # (P2 resuelto 11-jul: el flake del smoke era ESTA carrera — verde si init
+    # corría dentro de la ventana, rojo bajo carga). El término del framework
+    # cubre el post-re-exec sin ampliar a cualquier "python" inocente.
+    return any(t in out for t in ("python3", "python.app/contents/macos/python",
+                                  "opensplat", "docker", "ffmpeg", "odm_prep", "tresd_publish"))
 
 
 def _proc_gone(pid: int) -> bool:
