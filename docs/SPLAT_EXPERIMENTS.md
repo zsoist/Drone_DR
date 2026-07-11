@@ -188,3 +188,22 @@ combinado con identidad propia en producción. Checklist E2E al completar:
 merge_label FULL esperado (test #2: 17,006 matches) · card renderiza (join
 null-safe) · share ?m=recon_… · visor · splat → luego fila eval con split
 estratificado por fuente (by_source en el eval block).
+
+### Reglas de lectura escena 3 — PRE-escritas (review, antes del veredicto)
+1. ORDEN: merge_label primero (gate entity/pipeline), eval después (gate
+   calidad) — NO se mezclan. FULL con by_source desbalanceado = "merge OK,
+   calidad no uniforme"; PARTIAL con buen LPIPS global = "bueno DE LO QUE
+   QUEDÓ". Si label ≠ FULL: sospechoso 1 = plumbing recon_/--proj-id
+   (prefijos/geotag), NO la geometría — absuelta por test #2 (17,006 matches,
+   estas fuentes exactas, vía harness; esto corre vía producción).
+2. by_source estrena regla provisional de desbalance: con repro ±1% (n=2) y
+   ~4-6 vistas/fuente, ΔLPIPS per-source <0.03 = ruido de muestreo probable;
+   >0.08 = señal (fuente peor reconstruida); entre medio = se anota sin
+   concluir. Confound conocido: las vistas de cada fuente miran partes
+   DISTINTAS de la escena (contenido, no solo fuente).
+3. E2E que los fixtures no cubren: card → share ?m=recon_… → visor → carga
+   del splat, camino completo de producción. Si pasa, la entity queda
+   EJERCIDA, no solo migrada.
+4. Tabla: verificar qué régimen (-d) eligió el camino de producción ANTES de
+   comparar LPIPS. Cabecera: deltas comparan DENTRO de escena; entre escenas
+   viajan solo firmas cualitativas.
