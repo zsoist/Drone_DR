@@ -11,8 +11,12 @@
   (30cám también muere), --save-every, OS (sin updates desde marzo), reboot (MISMO boot:
   uptime 8d19h cubre el 7-jul). SOSPECHOSO RESTANTE: estado acumulado del sistema
   (5 días más de uptime, swap 2.8GB, driver Metal / fragmentación / presión).
-  DISCRIMINADORES pendientes: (1) reboot del Mac y re-run cinematic 30cám — el más
-  decisivo y barato; (2) medium 2000 iters para hallar el techo de HOY; (3) el
+  DISCRIMINADOR REBOOT EJECUTADO 11-jul 13:0x: OOM OTRA VEZ (10732 MiB, swap 0, boot
+  fresco) — estado acumulado ABSUELTO. Forense pre-reboot en eval/logs/
+  pre_reboot_forensics.txt (swap estaba 5263/6144MB). SIGUIENTE: job splat-1783791846718
+  encolado al worker = camino de PRODUCCIÓN real (launchd env + run_tracked) sobre el
+  mismo cid/preset — si pasa, el delta está en el entorno/invocación del harness de eval;
+  si falla, producción misma está rota hoy. Luego: (1) (2) medium 2000 iters para hallar el techo de HOY; (3) el
   experimento PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.4 fue inconcluso (crash en
   Model::Model, herramienta equivocada). Evidencia: eval/DJI_...0101_D/
   {20260711-*-ultra/FAILED.json, discriminator-30cam/}, eval/logs/*.log.
