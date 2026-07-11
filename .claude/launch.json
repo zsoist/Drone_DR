@@ -4,8 +4,23 @@
     {
       "name": "aerobrain-web",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8787", "--directory", "/Volumes/SSD/work/forge-projects/aerobrain/web"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8787",
+        "--directory",
+        "/Volumes/SSD/work/forge-projects/aerobrain/web"
+      ],
       "port": 8787
+    },
+    {
+      "name": "aerobrain-live",
+      "runtimeExecutable": "tail",
+      "runtimeArgs": [
+        "-f",
+        "/dev/null"
+      ],
+      "port": 8790
     }
   ]
 }

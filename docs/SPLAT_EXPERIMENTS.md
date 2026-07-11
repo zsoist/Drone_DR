@@ -161,3 +161,16 @@ corrección de la serie — el patrón del arco. Tratamiento obligatorio:
 - Escena 3: la regen multi-source es el PRIMER ejercicio real del merge gate
   post-refactor — es un test propio ANTES de entrenar nada. Mismo tratamiento.
 Si son aburridas: 10 min perdidos. Si no: el diagnóstico ya tiene marco.
+
+## Escena 2 (214 img) — TERCER TÉRMINO del modelo + régimen decidido (11-jul)
+La guarda pagó ANTES de encolar: sondas de 50 iters revelaron que OpenSplat
+carga TODAS las imágenes upfront como tensores (~64MB/img float32 a 3072px) →
+**escena 2 muere EN LA CARGA a full-res** (214×64MB≈13.7GB > cap; log termina
+a mitad de Loading sin error = SIGKILL). Con -d 2 completa. VEREDICTO: el
+régimen de la escena 2 es -d 2 DESDE LA CARGA — decidido por hardware, anotado
+como condición de todas sus filas. MODELO DE MEMORIA gana su 3er término:
+base_imgs ≈ n_train × px_w × px_h × 12B / d² — dominante en escenas grandes,
+invisible en la escena 1 (22 imgs = 1.4GB). El "PASS" pre-cap del 7-jul de
+esta escena (55MB splat) era otro swap-swim. U1.3 (preflight) hereda el
+término: es el PRIMER check, antes que densificación (barato y determinista).
+Celda escena 2: (c-extrema) → fila 1 = medium@-d2, corriendo.

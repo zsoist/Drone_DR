@@ -256,3 +256,7 @@ un "completó" histórico esconde condiciones; nadie los usa como referencia.
   fallando-seguro (ps lento/timeout → identidad no verificada → init NO mata al
   huérfano). El test estaría reportando comportamiento real del sistema bajo
   carga, no flakeando. Investigar: retry en _proc_ours + reproducir con stress.
+  · 5º dato (11-jul 14:3x): rojo con medium_d2 entrenando, verde en reposo —
+    correlación carga/rojo ahora 5/5. La hipótesis _proc_ours-falla-seguro-bajo-
+    carga sube de sospecha a probable. Sigue P2 (no bloquea), pero al abrirlo:
+    empezar por timeout del ps en _proc_ours.
