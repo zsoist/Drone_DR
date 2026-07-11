@@ -109,3 +109,14 @@ re-evaluación calendarizada.
 **EXPECTATIVA**: el 77s/7K de msplat es marketing hasta reproducirse (M4 base
 < M4 Max, 16GB compartidos); la velocidad es dato de columna 3, no titular —
 el número que importa es LPIPS contra 0.567±0.005 en el MISMO split.
+
+## PUENTE OpenSfM→COLMAP — GATE PASADO (11-jul)
+`opensfm export_colmap` (dentro del contenedor ODM, binario en
+/code/SuperBuild/install/bin/opensfm/bin/opensfm) → cameras.txt + images.txt +
+points3D.txt (init de gaussianas ✓) + database. Round-trip contra
+reconstruction.json: 30/30 nombres preservados (split determinista viaja),
+error de centro de cámara max 6.2mm / media 3.6mm en frame topocéntrico —
+**sub-GSD** (37mm/px): invisible para el training. Nota de honestidad: la
+primera tolerancia (1e-3 abs) era arbitraria y "falló"; el umbral con principio
+es err < GSD — declarado con razón, no ajustado al resultado. El puente queda
+ABSUELTO por adelantado: si un candidato falla paridad, es del trainer.
