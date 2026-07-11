@@ -2,106 +2,123 @@
 
 ### Cómo una baseline de tres escenas tomó trece sesiones — porque cada atajo resultó ser un número mintiendo
 
-*AeroBrain, plataforma personal de fotogrametría de dron (DJI → ODM → Gaussian Splatting → visor web) corriendo entera en un Mac Mini M4 de 16GB. Este documento se ordenó desde los ledgers del proyecto; cada afirmación tiene commit, run_id o archivo de evidencia. Artefacto final: tag `baseline-v1`.*
+*AeroBrain, plataforma personal de fotogrametría de dron (DJI → reconstrucción 3D → Gaussian Splatting → visor web) corriendo entera en un Mac Mini M4 de 16GB. Este documento se ordenó desde los registros del proyecto; cada afirmación tiene commit, run_id o archivo de evidencia. Artefacto final: tag `baseline-v1`.*
+
+**Mini-glosario** (lo justo para leer sin contexto): *SfM* = Structure-from-Motion, la etapa que estima desde las fotos dónde estaba la cámara en cada toma; una imagen queda **"registrada"** cuando el sistema logra ubicar su cámara en el espacio 3D — si no registra, esa foto no aporta nada al modelo. *Gaussian splat* = modelo 3D hecho de millones de elipsoides translúcidos ("gaussianas") optimizados para reproducir las fotos; se entrena como una red neuronal y come memoria en proporción a cuántas gaussianas crea (*densificación*). *PSNR/SSIM/LPIPS* = métricas de fidelidad entre una vista renderizada y su foto real (*GT*, ground truth); PSNR/SSIM más alto = mejor, **LPIPS más bajo = mejor** (y es la perceptual: la que mejor coincide con el ojo). *Régimen* = a qué resolución entrenó realmente el modelo. *OOM* = muerte por exceso de memoria.
 
 ---
 
 ## Tesis: el falso 82%
 
-El proyecto necesitaba fusionar varios vuelos de dron en un solo modelo 3D. El primer test de fusión reportó **82% de imágenes registradas** — un éxito, a primera vista. La composición decía otra cosa: las 33 imágenes registradas venían TODAS de una fuente; la otra aportó **0 de 7**. El "modelo combinado" era un modelo de una sola fuente con disfraz.
+El proyecto necesitaba fusionar varios vuelos de dron en un solo modelo 3D. El primer test de fusión reportó **82% de imágenes registradas** — un éxito, a primera vista. La composición decía otra cosa: las 33 imágenes registradas venían TODAS de una fuente; la otra aportó **0 de 7**. El pipeline no había fallado: ante cero coincidencias visuales entre fuentes, descartó una en silencio y reportó el porcentaje global como si nada. El "modelo combinado" era un modelo de una sola fuente con disfraz.
 
 **Un número global esconde composición.** Esa oración se convirtió en la regla operativa de todo lo que siguió — y reapareció, con disfraz nuevo, tres veces más:
 
-| Edición | El número que mentía | Lo que escondía |
-|---|---|---|
-| 1ª — merge | "82% registrado" | una fuente entera descartada en silencio |
-| 2ª — memoria | "completó en 3502s" (7-jul) | un proceso sin límite nadando en 5GB de swap |
-| 3ª — calidad | "PSNR 14" entre escenas | regímenes de resolución incomparables |
-| 4ª — historia | "browser-qa: error" ×N | un `NameError` enmascarado por un race de limpieza |
+| Edición | El número que mentía | Lo que escondía | Resuelto en |
+|---|---|---|---|
+| 1ª — merge | "82% registrado" | una fuente entera descartada en silencio | cap. 1 |
+| 2ª — memoria | "completó en 3502s" | un proceso sin límite nadando en swap | cap. 3 |
+| 3ª — calidad | "PSNR 14" comparado entre escenas | regímenes de resolución incomparables | cap. 5 |
+| 4ª — historia | "error" ×N en un gate de QA | un bug de import enmascarado por un error secundario | cap. 6 |
 
-La respuesta a cada edición fue la misma: no arreglar el número — **hacer que el número viaje con su composición**. Merge report per-fuente. Peak con su cap y su fuente de medición. LPIPS con su régimen. Y errores con su causa nombrada.
-
----
+La respuesta a cada edición fue la misma: no arreglar el número — **hacer que el número viaje con su composición**.
 
 ## Capítulo 1 — Validar antes de construir
 
-La feature multi-source se validó con tres tests controlados de SfM **antes** de que la UI la prometiera:
+La fusión multi-fuente se validó con tres tests controlados de SfM **antes** de que la interfaz la prometiera:
 
-- **Test #1** (clip a 1m + vuelo a 90m, mismo punto de despegue): **0 matches cruzados.** Mató la primitiva de agrupación ("mismo takeoff = mismo sujeto") y produjo el falso 82%.
-- **Test #2** (dos vuelos aéreos, misma sesión): **17,006 matches**, fusión 100%.
-- **Test #3** (video + fotos del dron): **24,152 matches** foto↔video, 3/3 fotos.
+- **Test #1** (clip grabado a 1m de altura + vuelo a 90m, mismo punto de despegue): **0 coincidencias visuales entre fuentes** — ven mundos distintos aunque compartan GPS de despegue. Mató la heurística "mismo despegue = mismo sujeto" y produjo el falso 82%.
+- **Test #2** (dos vuelos aéreos de la misma sesión): **17,006 coincidencias**, fusión 100%.
+- **Test #3** (video + fotos del dron): **24,152 coincidencias** foto↔video, 3/3 fotos integradas.
 
-De ahí salió el **merge gate**: una fuente "fusionó" si registró ≥5 imágenes y ≥60% de las aportadas; el label (FULL/PARTIAL/SINGLE) viaja con el modelo y una fusión parcial nunca se presenta como total. La UI solo muestra lo que el backend puede demostrar — el "score de combinabilidad" original se extirpó por inventado.
+De ahí salió el **merge gate**: una fuente "fusionó" si registró ≥5 imágenes y ≥60% de las que aportó; el veredicto (FULL/PARTIAL/SINGLE) viaja con el modelo y una fusión parcial nunca se presenta como total. El "score de combinabilidad" que la primera interfaz inventaba se eliminó: la UI solo muestra lo que el backend puede demostrar.
 
 ## Capítulo 2 — El instrumento antes que el número
 
-"Splats 10/10" era inmedible: no existía evaluación held-out. Se construyó el harness primero:
+"Calidad 10/10" era inmedible: no existía evaluación con vistas reservadas. Se construyó el instrumento primero:
 
-- **Split determinista** (seed = identidad de la escena → mismo split entre runs) por **cirugía de reconstruction.json** — el trainer itera shots, no listas de archivos.
-- **Render de vistas test por el camino interno del trainer** (patch local de ~30 líneas a OpenSplat, `--render-cameras`): render y ground-truth salen del mismo `cv::undistort` — compararlos contra frames crudos daría métricas falsas por la distorsión de lente.
-- **Regla de resolución**: el eval compara SIEMPRE a resolución GT completa del régimen; un modelo entrenado a media resolución paga su pérdida en el número (`render_px` como evidencia en cada run).
-- **PSNR/SSIM/LPIPS** + 3 side-by-side (GT|render|diff) por run — porque el número decide pero **el ojo audita que el número mida lo que crees**: un PSNR de 14 con poses desalineadas y uno con render borroso son indistinguibles sin mirar.
+- **Split determinista**: ~10% de las vistas se excluyen del entrenamiento (mismas vistas en cada re-run de la misma escena, para que los números comparen).
+- **Render + GT por el mismo camino interno del trainer** (un patch local de ~30 líneas): ambos pasan por la misma corrección de lente — comparar contra las fotos crudas daría métricas falsas por la distorsión.
+- **Regla de resolución**: el eval compara siempre a resolución completa del régimen; un modelo entrenado a media resolución paga su pérdida de detalle en el número (cada run registra `render_px` como evidencia).
+- **PSNR/SSIM/LPIPS + 3 comparativas visuales (GT | render | diferencia) por run** — el número decide pero **el ojo audita que el número mida lo que crees**: un PSNR de 14 por poses desalineadas y uno por render borroso son indistinguibles sin mirar.
 - Reproducibilidad medida de paso: **±1% LPIPS** entre runs idénticos (n=2, preliminar).
 
-El primer número del harness (PSNR 14.41 en un preset rápido) vino con su side-by-side confirmando poses alineadas. El instrumento funcionaba. Y entonces midió algo que nadie pidió.
+El primer número del instrumento vino con su comparativa confirmando poses alineadas. Funcionaba. Y entonces midió algo que nadie pidió.
 
 ## Capítulo 3 — El P0: once absoluciones y una fecha
 
-La primera baseline seria (preset cinematic) **murió por memoria — siete veces**, en una escena donde producción había "pasado" cuatro días antes. La cacería, en orden, con cada sospechoso absuelto por evidencia:
+Timeline, porque el desenlace es una fecha:
 
-1. Los insumos (mtimes intactos del 7-jul). 2. El split (la réplica exacta de producción, 30 cámaras, también murió). 3. `--save-every` (el run verbatim murió igual). 4. El binario (solo el patch se recompiló; los objetos del trainer eran del 5-jul). 5. libtorch (octubre). 6. El OS (sin updates). 7. El boot (mismo uptime cubría el 7-jul). 8. **El reboot** (OOM idéntico con swap 0). 9. El entorno de shell (`MallocNanoZone=0` de la sesión — contaminante real del harness, pero el worker limpio también murió). 10. El camino de invocación (producción real vía launchd: OOM ×3). 11. El binario re-linkeado (rebuild limpio desde upstream: OOM idéntico).
+> **7-jul 09:44** — producción entrena la escena en preset alto: "PASS", 3502s.
+> **9-jul 19:25** — se añade un límite de memoria por proceso (11GB, `taskpolicy -m`: el kernel mata al que lo supere).
+> **11-jul** — nace el medidor de picos de memoria… y ese mismo día el mismo preset en la misma escena muere por memoria **siete veces**.
 
-Y en el camino, el instrumento se corrigió a sí mismo: el peak "de 2.5GB" que reportaban las primeras muertes era **RSS, que subestima ~20× los procesos Metal/MPS** (medido en vivo: RSS 489 MiB vs `phys_footprint` 10 GB en el mismo proceso). El PeakTracker pasó a leer el `phys_footprint_peak` del kernel — el número que `taskpolicy -m` realmente vigila.
+¿Qué se rompió entre el 7 y el 11? La cacería, con cada sospechoso absuelto por evidencia:
 
-Once absoluciones después, la pregunta correcta dejó de ser "¿qué se rompió?" y pasó a ser la del duodécimo sospechoso: **el metro mismo**. Dos comandos de git la respondieron:
+1. **Los insumos** — frames y reconstrucción con fechas intactas del 7-jul: nada cambió.
+2. **El split del eval** — la réplica exacta de producción (todas las cámaras, sin split) murió igual.
+3. **Un flag de guardado** que el eval había quitado "por limpieza" — restaurado verbatim, murió igual (y dejó la lección: la baseline reproduce el comando shipped al byte).
+4. **El binario** — solo el patch de render se había recompilado; los objetos del trainer eran previos al PASS.
+5. **libtorch** — la librería de tensores, sin cambios desde octubre.
+6. **El sistema operativo** — sin updates desde marzo.
+7. **El estado acumulado del sistema** — 8 días de uptime, swap lleno… y el reboot no cambió nada: OOM idéntico con swap en cero.
+8. **El entorno de shell** — la sesión de desarrollo inyectaba `MallocNanoZone=0` (una variable de macOS que altera el asignador de memoria) a cada proceso lanzado a mano; contaminante real del harness… pero el worker de producción, con entorno limpio, murió igual.
+9. **El camino de invocación** — el job por la vía de producción real (launchd, no shell): OOM ×3.
+10. **El re-link del binario** — rebuild limpio desde upstream sin el patch: OOM idéntico.
+11. **El borde del límite** — ¿estaría el preset siempre al filo? Se subió el cap a 12.5GB: llegó más lejos y murió igual — la memoria crecía sin techo.
 
-> El cap de memoria (`taskpolicy -m 11000`) nació el **9 de julio a las 19:25**.
-> El "PASS" de producción fue el **7 de julio a las 09:44** — dos días antes.
+Y en el camino, el instrumento se corrigió a sí mismo: los primeros peaks reportados ("murió a 2.5GB") eran **RSS, una métrica que subestima ~20× a los procesos con memoria de GPU en Apple Silicon** (medido en vivo: 489 MiB de RSS contra 10 GB de `phys_footprint`, la métrica que el kernel realmente vigila). Sin esa corrección, la investigación entera habría perseguido un fantasma en el lugar equivocado.
 
-Nunca hubo regresión. El run del 7-jul corrió **sin límite**, usando 13-15GB de footprint invisible mientras nadaba en los 5.3GB de swap que el forense pre-reboot había capturado (y que se absolvieron por la razón equivocada). Los tres mil quinientos segundos de duración eran el síntoma a la vista que nadie leyó. **El terreno no se hundió entre el 7 y el 11: siempre estuvo hundido — el 9 se puso el límite y el 11 se inventó el altímetro.**
+Once absoluciones después, la pregunta correcta dejó de ser "¿qué se rompió?" y pasó a ser: **¿y si el metro es nuevo?** Dos comandos de git la respondieron: el límite de memoria nació el 9-jul a las 19:25. El "PASS" fue el 7-jul a las 09:44 — **dos días antes de que existiera el límite**.
 
-La lección en una línea: **cuando cambias el instrumento y la realidad "cambia" el mismo día, el primer sospechoso es el instrumento** — y el git log del enforcement cuesta menos que once absoluciones.
+Nunca hubo regresión. El run del 7-jul corrió sin techo, usando 13-15GB invisibles mientras nadaba en los 5.3GB de swap que el forense pre-reboot había capturado. Sus 3502 segundos de duración eran el síntoma a la vista que nadie leyó: completar lento es un síntoma, no un pass. **El terreno no se hundió entre el 7 y el 11: siempre estuvo hundido — el 9 se puso el límite y el 11 se inventó el altímetro.**
 
-## Capítulo 4 — El modelo de tres términos (epílogo técnico)
+La lección: cuando cambias el instrumento y la realidad "cambia" el mismo día, el primer sospechoso es el instrumento — y el `git log` del enforcement cuesta menos que once absoluciones.
 
-Con el metro honesto, cada OOM dejó de ser misterio y pasó a ser medición. Tres cadáveres instrumentados, tres términos:
+## Capítulo 4 — El modelo de memoria (epílogo técnico)
+
+Con el metro honesto, cada OOM dejó de ser misterio y pasó a ser medición. Tres muertes instrumentadas, tres términos:
 
 ```
-peak(run) ≈ base_imgs(n × px × 12B / d²)   ← escena 2 murió EN LA CARGA a full-res
-          + conteo × g(config, res)         ← pendiente medida: 2.39 MiB/step (¼ res)
-          + escalón(salto del schedule)     ← +1336 MiB aditivo Y pendiente ×1.55 al doblar
+peak ≈ carga_de_imágenes  +  gaussianas × costo_por_gaussiana  +  escalón_de_resolución
 ```
 
-Con cinco cláusulas documentadas (la pendiente es config-dependiente; la densificación se debilita a media resolución; el error de proyección conocido: −24%, conservador...) y un dataset que crece solo: cada run guarda proyectado-vs-observado. Del modelo salieron **leyes medidas con presupuesto-igual** — la única comparación que el arco acepta:
+- **Carga de imágenes**: el trainer carga TODO el set en memoria al arrancar (~64MB por imagen 4K en float32). Invisible con 22 imágenes (1.4GB); letal con 214 — esa escena moría *antes de entrenar un solo paso*. Palanca: reducir resolución de entrada (`-d 2`).
+- **Costo por gaussiana**: pendiente medida de 2.39 MiB/paso durante densificación a ¼ de resolución — dependiente de la configuración (error de proyección conocido en el primer uso: −24%, en la dirección conservadora).
+- **Escalón de resolución**: cuando el entrenamiento dobla su resolución interna (paso 3000 del schedule), el footprint salta **+1336 MiB de una vez Y la pendiente se multiplica ×1.55** — ambos términos existen, medidos en una serie (paso, footprint) muestreada cada 5s.
 
-- **La densificación es el uso dominante del presupuesto**: gasta igual (~7GB) en gaussianas agresivas a ¼ de resolución o en media resolución con conteo acotado, y las gaussianas ganan (LPIPS 0.567 vs 0.630). Verificada en la escena grande con el margen encogido que la base predice (Δ0.013).
-- **El cap no muerde en escenas chicas** (64% de uso natural) **y sí en grandes** (76-80%) — el preflight per-preset hereda la aritmética.
+De ahí salieron **leyes con presupuesto-igual** — comparar solo configuraciones que gastan lo mismo:
+
+- **La densificación es el uso dominante del presupuesto**: a gasto igual (~7GB), gaussianas agresivas a ¼ de resolución ganan a media resolución con conteo acotado (LPIPS 0.567 vs 0.630 — recordar: más bajo es mejor). Verificada en la escena grande con el margen encogido que el término de carga predice (Δ0.013).
+- **El límite no muerde en escenas chicas** (64% de uso natural) **y sí en grandes** (76-80%).
 
 ## Capítulo 5 — baseline-v1
 
-| Escena | LPIPS | Régimen | Firma de error (ojo) |
-|---|---|---|---|
-| Easy (30 cám) | **0.567±0.005** | ¼-schedule @3072 | blur global uniforme |
-| Grande (214 img) | **0.615** | -d2 desde carga (decidido por hardware) | alta frecuencia; 0 floaters, 0 deriva de exposición |
-| Multi-source (fusión real) | **0.667** | 2688 (camino de producción) | desplazamiento de pose cross-source + blur periférico |
+| Escena | LPIPS ↓ | PSNR | peak MiB (%cap) | n test | régimen de entrenamiento | firma de error (ojo) |
+|---|---|---|---|---|---|---|
+| 1 — easy (30 cámaras) | **0.567±0.005** (n=2 runs) | 14.2±0.13 | 6992 (64%) | 8 | ¼ de 3072px (schedule) | blur global uniforme |
+| 2 — grande (214 imágenes) | **0.615** | 13.53 | 8354 (76%) | 21 | mitad de 3072px desde la carga (forzado por hardware) | pérdida de alta frecuencia; 0 floaters, 0 deriva de exposición |
+| 3 — multi-fuente (2 vuelos fusionados) | **0.667** | 11.16 | 8801 (80%) | 8 | 2688px (perfil de producción) | desplazamiento de pose entre fuentes + blur periférico |
 
-Cada fila con: peak y % de cap, procedencia de binario, condición de carga, incertidumbre con su n, y composición per-fuente donde aplica (la fila multi: fusión FULL bajo la poda de producción, 22/23 + 57/58; delta per-fuente = ruido, anotado con sus n). Deltas solo comparan dentro de escena; entre escenas viajan las firmas cualitativas — que ya reordenaron la fase siguiente: el multi-source no sufre de color (cero banding con dos vuelos) sino de **pose residual**, nominando un lever que nadie había priorizado.
+Fila 3, composición: fusión FULL bajo la poda de producción (22/23 + 57/58 imágenes registradas por fuente); delta de calidad entre fuentes = ruido (ΔSSIM 0.024 con n=2 y n=6 vistas — por debajo del umbral pre-declarado). Los deltas solo comparan **dentro** de cada escena; entre escenas viajan las firmas cualitativas — que ya reordenaron la fase siguiente: el modelo multi-fuente no sufre de color (cero banding pese a dos condiciones de luz) sino de **pose residual entre fuentes**, nominando un lever que nadie había priorizado.
 
 Congelada como artefacto versionado: **tag `baseline-v1`**, inmutable; re-runs futuros nacen v2 con changelog.
 
+## Capítulo 6 — La cuarta edición: cuando el número que miente es un estado de error
+
+Durante el cierre, el gate de QA de browser reportaba "error" en jobs cuyo resultado era perfecto. La causa real: un **import faltante** (`threading`) hacía crashear el gate al arrancar — pero el error visible era otro (un fallo de limpieza de directorio temporal durante el desmonte), que **enmascaraba al culpable como error secundario**. Todos los "browser-qa: error" del día tenían la misma causa oculta, incluido uno que se había atribuido — falsamente — a otra cosa. El fix fue doble: el import, y un fixture que compila el módulo entero y verifica sus imports por AST — no arreglar el bug, arreglar la *categoría*. Y la corrección se propagó hacia atrás: se revisó qué decisiones habían consumido la atribución falsa (ninguna) y se corrigió el registro del job afectado. Un historial de errores donde el estado no lleva su causa es la cuarta edición del mismo bug.
+
 ## Lo que el proceso dejó además de la tabla
 
-- **Tres hallazgos de producto** que ningún test unitario podía ver: armónicos esféricos silenciosamente deshabilitados en todos los presets (un workaround de NaN de tres líneas); una escalera de degradación por OOM que baja el parámetro equivocado; y el presupuesto invisible del P0.
-- **Gates mecánicos**: pre-commit que corre el smoke sin pipe (nació de un commit que pasó en rojo porque `| tail` se tragó el exit code — un pitfall escrito se repite; uno imposible es proceso); gate post-parche del trainer ("aditivo por intención del diff" no es evidencia — el comportamiento se mide).
-- **Una entity de identidad pagada en su mejor momento**: la reconstrucción como ciudadano de primera clase costó una fracción de lo temido porque tres sesiones de evidencia (el mapa de superficie, el merge report, el schema de runs) maduraron antes de escribirla — y su primer combinado real en producción encontró, como debía, el último bug enmascarado del sistema.
-- **Un canario semanal por condición**: el mismo splat corto, trended en peak Y duración — porque el 7-jul enseñó que completar lento es un síntoma, no un pass.
+- **Tres hallazgos de producto** invisibles para cualquier test unitario: el color view-dependent silenciosamente deshabilitado en todos los presets (un workaround de 3 líneas contra una divergencia numérica — hoy reproducido-negativo y liberado bajo vigilancia); una escalera de degradación por OOM que baja el parámetro equivocado (resolución, cuando el driver es el conteo de gaussianas); y el presupuesto invisible del capítulo 3.
+- **Gates mecánicos**: un pre-commit que corre la suite sin pipes — nació de un commit que pasó con un test rojo porque `| tail` se tragó el exit code (evidencia: el commit existe, y el hook lo hace irrepetible). Y un gate post-parche del trainer: "aditivo por intención del diff" no es evidencia; el comportamiento se mide con un run conocido.
+- **Identidad de primera clase para modelos combinados**: los modelos fusionados dejaron de heredar la identidad de su clip primario; la migración — temida durante semanas como "48 puntos de superficie a tocar" — costó un helper y cinco archivos, porque acuñar la identidad en el origen evitó traducirla en cada punto. Su primer uso en producción real fue el que desenterró el bug del capítulo 6.
+- **Un canario semanal por condición**: el mismo entrenamiento corto, trended en pico de memoria Y duración — con sus primeras 4 corridas declaradas de calibración, porque sus umbrales nacieron a priori y un canario también es un número que necesita contexto.
 
 ## La regla, destilada
-
-Trece sesiones de adversarialidad — cada plan estresado antes de ejecutarse, cada resultado leído con sus ramas pre-escritas, cada corrección propagada hacia atrás — destilaron una sola definición operativa de calidad:
 
 **Un número sin su contexto de medición no es un dato: es un riesgo con formato de dato.** Régimen, presupuesto, procedencia, incertidumbre, composición. Un sistema donde ningún número viaja solo.
 
 ---
 
-*Evidencia: `docs/SPLAT_EXPERIMENTS.md` (tabla y protocolo), `docs/BUGHUNT_BACKLOG.md` (P0/P1/P2 con cadenas completas), `docs/SPLAT_PIPELINE.md` (trainer), `docs/MULTISOURCE_3D.md` (tests #1-#3), `vault/eval/*/run.json` (cada número con su contexto), tag `baseline-v1`.*
+*Evidencia: `docs/SPLAT_EXPERIMENTS.md` (tabla y protocolo), `docs/BUGHUNT_BACKLOG.md` (cadenas de investigación completas), `docs/SPLAT_PIPELINE.md` (trainer), `docs/MULTISOURCE_3D.md` (tests #1-#3), `vault/eval/*/run.json` (cada número con su contexto), tag `baseline-v1`.*
