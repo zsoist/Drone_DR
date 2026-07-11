@@ -86,3 +86,26 @@ entra a la matriz de M3 como costo, no se descubre después.
   contenedor ODM) es prerequisito compartido de M1, se construye UNA vez.
 Costo rama (b): una sesión extra. Beneficio: la decisión más cara del arco no
 se toma con n=1. M1: paridad o muerte en escena 1, split de baseline-v1.
+
+## Pre-escritos de M1 (review post-M0 — ANTES del primer benchmark)
+**LA RAMA STAY, CON DIGNIDAD**: el caso de migración quedó sostenido por UN
+lever no demostrado (SH-desde-0; pose no existe en el campo MPS). Si M1 da
+paridad pero M2 muestra SH-desde-0 moviendo LPIPS <0.02 en escena 1 → veredicto
+STAY: OpenSplat + workaround justificado + preflight es un sistema que funciona
+e instrumentado hasta los dientes. La inversión en M1 compra INFORMACIÓN, no
+compromiso — volver a casa es veredicto, no derrota. (Escrito antes del puente
+para inmunizar contra el sunk cost de "ya llegamos hasta acá".)
+**PUENTE OpenSfM→COLMAP = infraestructura del harness con gate propio**:
+validar round-trip con el INCUMBENTE como control antes de que ningún candidato
+entrene — cámaras exportadas re-verificadas contra reconstruction.json dentro
+de tolerancia numérica, y PRESERVACIÓN de nombres (el split determinista
+train/test filtra por nombre — el puente debe mantenerlos). Si un candidato
+falla paridad, el puente ya está absuelto (lección del plumbing pre-absuelto).
+**ORDEN M1**: Brush primero (madurez → menos riesgo de morir en instalación),
+msplat segundo. LECTURAS: ambos paridad → M2 decide · uno → pasa, el otro
+documentado con causa (instalación/crash/calidad son diagnósticos distintos) ·
+ninguno → rama (c) revive con evidencia de 1ª mano, STAY por walkover +
+re-evaluación calendarizada.
+**EXPECTATIVA**: el 77s/7K de msplat es marketing hasta reproducirse (M4 base
+< M4 Max, 16GB compartidos); la velocidad es dato de columna 3, no titular —
+el número que importa es LPIPS contra 0.567±0.005 en el MISMO split.
