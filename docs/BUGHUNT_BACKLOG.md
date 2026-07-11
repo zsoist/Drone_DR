@@ -260,3 +260,7 @@ un "completó" histórico esconde condiciones; nadie los usa como referencia.
     correlación carga/rojo ahora 5/5. La hipótesis _proc_ours-falla-seguro-bajo-
     carga sube de sospecha a probable. Sigue P2 (no bloquea), pero al abrirlo:
     empezar por timeout del ps en _proc_ours.
+  · 6º dato + HIPÓTESIS NOMBRADA (falsable, para cuando se ataque): "la
+    contención MPS/unified-memory durante training degrada el timing de
+    subprocess del smoke" — rojo correlaciona con opensplat/MPS activo (5/5),
+    verde con docker ODM corriendo (n=1) y en reposo.

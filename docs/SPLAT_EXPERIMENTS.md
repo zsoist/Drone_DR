@@ -207,3 +207,18 @@ estratificado por fuente (by_source en el eval block).
 4. Tabla: verificar qué régimen (-d) eligió el camino de producción ANTES de
    comparar LPIPS. Cabecera: deltas comparan DENTRO de escena; entre escenas
    viajan solo firmas cualitativas.
+
+### Escena 3 — dos adendas pre-veredicto (review de medio vuelo)
+5. RÉGIMEN PROPIO SILENCIOSO: producción eligió 2688px (perfil balanced) — ni
+   3072 (escenas 1-2 origen) ni 1536 (-d2). La fila 3 estrena
+   train_input_px:2688 y su GT de eval será 2688-based → render_px esperado
+   [2687,~1511], NO [3071,1727]. Verificar AL CORRER el eval, no tras leer el
+   LPIPS. GT/render consistentes entre sí = válido; "full GT" significa otra
+   cosa en esta fila (anotar).
+6. EL VEREDICTO TESTEA EL PRUNING, no solo la entity: 81 frames (23+58, poda
+   activa) vs 169 del test #2 (sin poda, a propósito). TERCERA RAMA pre-escrita:
+   FULL con 81 = resultado MÁS FUERTE que test #2 (el merge sobrevive a la poda;
+   la enmienda "nunca dedup cross-source" validada en producción). PARTIAL =
+   sospechoso nuevo: la poda comiéndose frames-ancla de una fuente (hipótesis
+   del review #4 sesión 1) — ni plumbing (pre-absuelto con artefactos) ni
+   geometría (test #2).
