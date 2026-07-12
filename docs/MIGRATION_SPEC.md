@@ -157,3 +157,16 @@ apples-to-apples con los MISMOS 8 test views; (2) plan B: eval nativo de Brush
 que el conversor evita). El camino 1 preserva el estándar del arco.
 Luego: export COLMAP train-only (cirugía ya existente) → paridad 2000 steps
 → msplat con el mismo marco.
+
+## Conversor PLY + gate de ojo: GEOMETRÍA ABSUELTA (12-jul... 11-jul tarde-noche)
+pipeline/ply_bridge.py: mapeo POR NOMBRE (disuelve orden léxico), nx/ny/nz=0,
+header inria + iteration comment. HALLAZGO del diagnóstico por distribuciones:
+el bloqueo real no era orden ni ejes — era NORMALIZACIÓN de escena (Brush
+exporta en frame mundo topocéntrico z≈2500; nuestro renderer trabaja
+normalizado [-10,11]). FIX = --keep-crs en el render (flag existente), cero
+código. Convenciones log/logit/quat: IGUALES (verificado por distribución).
+Ojo: escena en frustum, encuadre correcto, magenta = cobertura rala de un
+modelo de 800 steps (esperable). ABIERTO: posible interleaving f_rest
+(canal-major vs otro) — tinte a adjudicar en paridad con LPIPS+ojo.
+Camino de paridad apples-to-apples COMPLETO: brush train → ply_bridge →
+render --keep-crs con NUESTRO GT-path y los MISMOS 8 test views.
