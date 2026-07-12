@@ -4,23 +4,23 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=73';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=73';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=73';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=73';
-import { createRecorder } from '/flightverse/recorder.js?v=73';
-import { createAudio } from '/flightverse/audio.js?v=73';
-import { createTouchSticks } from '/flightverse/touch.js?v=73';
-import { createSky } from '/flightverse/sky.js?v=73';
-import CameraControls from '/vendor/camera-controls.module.js?v=73';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=73';
+import * as THREE from '/flightverse/three.js?v=74';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=74';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=74';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=74';
+import { createRecorder } from '/flightverse/recorder.js?v=74';
+import { createAudio } from '/flightverse/audio.js?v=74';
+import { createTouchSticks } from '/flightverse/touch.js?v=74';
+import { createSky } from '/flightverse/sky.js?v=74';
+import CameraControls from '/vendor/camera-controls.module.js?v=74';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=74';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=73';
+} from '/vendor/postprocessing180.module.js?v=74';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -31,7 +31,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=73';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=74';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -64,7 +64,7 @@ function hud() {
       <div class="vl-dock" id="vl-dock">
         <button class="vl-chip" id="vl-mode"></button>
         <button class="vl-chip" id="vl-rig"></button>
-        <button class="vl-chip" id="vl-vista">vista · orto</button>
+        <button class="vl-chip" id="vl-vista">vista · 3D</button>
         <button class="vl-chip" id="vl-cielo">cielo · día</button>
         <button class="vl-chip vl-solo-fino" id="vl-calidad">calidad · auto</button>
         <button class="vl-chip" id="vl-reto">Gate Rush</button>
@@ -101,7 +101,8 @@ function hud() {
         <button data-pr="vivo">Vivo</button>
         <button data-pr="cine">Cine</button>
       </div>
-      <label>Brillo<input type="range" id="gr-b" min="0.6" max="1.3" step="0.01" value="0.88"></label>
+      <label>Brillo Gaussian<input type="range" id="gr-b" min="0.6" max="1.15" step="0.01" value="0.88"></label>
+      <label>Brillo 3D<input type="range" id="gr-t" min="0.6" max="1.5" step="0.01" value="1"></label>
       <label>Contraste<input type="range" id="gr-c" min="0" max="0.3" step="0.01" value="0.06"></label>
       <label>Saturación<input type="range" id="gr-s" min="-0.3" max="0.4" step="0.01" value="0.06"></label>
       <label>Bloom<input type="range" id="gr-g" min="0" max="1.2" step="0.02" value="0.32"></label>
@@ -126,7 +127,8 @@ function hud() {
           <div><span class="vl-gi">01</span><b>Controles RC reales</b><br>Stick IZQ: subir/bajar y girar · Stick DER: avanzar y ladear.<br>Teclado: WASD mover · R/F altura · Q/E girar · Shift turbo.</div>
           <div><span class="vl-gi">02</span><b>Los aros (Gate Rush)</b><br>Pulsa 🏁 y cruza los aros: el AZUL brillante es el siguiente, verde = superado. Están sobre la ruta que tu dron voló de verdad.</div>
           <div><span class="vl-gi">03</span><b>La bola verde (ghost)</b><br>Es tu vuelo REAL reproduciéndose — la estela es el GPS del dron. Persíguela o apágala con G.</div>
-          <div><span class="vl-gi">04</span><b>Vista foto-real</b><br>Cambia entre orto, mixta y el splat foto-realista con el botón "vista".</div>
+          <div><span class="vl-gi">04</span><b>Vistas</b><br>"3D" = malla del terreno · "foto-real" = gaussian puro · "mixta" = ambos. Rueda del mouse = gimbal en cualquier cámara.</div>
+          <div><span class="vl-gi">05</span><b>Calidad y look</b><br>"calidad" sube el render hasta 4K/ultra (desktop). "Imagen" = brillo Gaussian y 3D por separado, contraste, presets.</div>
         </div>
         <button id="vl-guide-ok">¡A volar!</button>
       </div>
@@ -149,9 +151,7 @@ async function main() {
   const man = await loadManifest(CID);
   if (!man.capabilities?.terrain) throw new Error('escena sin terreno volable');
   $('#vl-scene').textContent = man.name;
-  // primera impresión: controles visibles 6s (H los trae de vuelta)
-  $('#vl-help').classList.add('show');
-  setTimeout(() => $('#vl-help').classList.remove('show'), 6000);
+
 
   // ── escena three (flags según README de postprocessing: AA lo hace SMAA,
   // depth/stencil viven en los buffers del composer) ──
@@ -342,9 +342,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=73', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=74', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=73');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=74');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -435,9 +435,13 @@ async function main() {
   const applyVista = () => {
     if (!splat && vista !== 2) { vista = 2; }
     terrain.mesh.visible = vista !== 1;
-    mask.uMaskOn.value = (vista === 0 && splat && mask.uMaskR.value > 0) ? 1 : 0;
+    // mixta v3: el terreno BAJA 1.6m — el splat manda donde existe y el
+    // terreno asoma alrededor; sin discard = sin grano (mega overhaul)
+    terrain.mesh.position.y = vista === 0 ? -1.6 : 0;
+    terrain.mesh.updateMatrix();
+    mask.uMaskOn.value = 0;
     if (splat) splat.object.visible = vista !== 2;
-    $('#vl-vista').textContent = 'vista · ' + (vista === 0 ? 'mixta' : vista === 1 ? 'foto-real' : 'orto');
+    $('#vl-vista').textContent = 'vista · ' + (vista === 0 ? 'mixta' : vista === 1 ? 'foto-real' : '3D');
   };
   const cycleVista = () => { vista = (vista + 1) % 3; applyVista(); };
   $('#vl-vista').addEventListener('click', cycleVista);
@@ -458,17 +462,18 @@ async function main() {
   const GRADE_KEY = 'ab.fv.grade';
   const applyGrade = g => {
     fx.exp.uniforms.get('uExp').value = g.b;
+    terrain.mesh.material.color.setScalar(g.t ?? 1);   // ganancia SOLO del 3D
     fx.bc.contrast = g.c;
     fx.hs.saturation = g.s;
     fx.bloom.intensity = g.g;
     fx.vig.darkness = g.v;
-    for (const [id, k] of [['gr-b','b'],['gr-c','c'],['gr-s','s'],['gr-g','g'],['gr-v','v']]) $('#'+id).value = g[k];
+    for (const [id, k] of [['gr-b','b'],['gr-t','t'],['gr-c','c'],['gr-s','s'],['gr-g','g'],['gr-v','v']]) if ($('#'+id)) $('#'+id).value = g[k] ?? 1;
   };
-  const defGrade = { b: 0.88, c: 0.06, s: 0.06, g: 0.25, v: 0.42 };
+  const defGrade = { b: 0.88, t: 1, c: 0.06, s: 0.06, g: 0.25, v: 0.42 };
   let grade = { ...defGrade, ...(JSON.parse(localStorage.getItem(GRADE_KEY) || '{}')) };
   applyGrade(grade);
   document.getElementById('vl-grade').addEventListener('input', e => {
-    const map = { 'gr-b':'b','gr-c':'c','gr-s':'s','gr-g':'g','gr-v':'v' };
+    const map = { 'gr-b':'b','gr-t':'t','gr-c':'c','gr-s':'s','gr-g':'g','gr-v':'v' };
     const k = map[e.target.id]; if (!k) return;
     grade[k] = parseFloat(e.target.value);
     applyGrade(grade);
@@ -487,7 +492,7 @@ async function main() {
   });
   // grade fuera de rango guardado (el bug del fondo blanco): sanear
   grade.c = Math.max(0, grade.c);
-  if (!(grade.b >= 0.6 && grade.b <= 1.3)) grade.b = 0.88;   // migra el esquema aditivo viejo
+  if (!(grade.b >= 0.6 && grade.b <= 1.15)) grade.b = 0.88;  // migra esquemas viejos (y el 1.3 quemado)
   applyGrade(grade);
   $('#vl-guide-ok').addEventListener('click', () => {
     $('#vl-guide').classList.remove('show');
@@ -514,7 +519,7 @@ async function main() {
     if (modeKeys[e.code]) setMode(modeKeys[e.code]);
     if (e.code === 'KeyC') setRig(rigIx + 1);
     if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
-    if (e.code === 'KeyH') $('#vl-help').classList.toggle('show');
+    if (e.code === 'KeyH') $('#vl-guide').classList.toggle('show');
     if (e.code === 'KeyT') startReto();
     if (e.code === 'KeyP') cycleVista();
     if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
@@ -907,11 +912,13 @@ async function main() {
   });
   // ── CALIDAD de render (desktop): auto | extra | 4k | ultra ──
   // auto = gobernador adaptativo (≤2 DPR); manual = DPR fijo + anisotropía 16.
+  // escalera ABSOLUTA de supersampling (antes en Retina extra==auto y 4K<auto)
   const CALIDADES = {
     auto:  { label: 'auto',  dpr: null, aniso: 8 },
-    extra: { label: 'extra', dpr: 2,    aniso: 16 },
-    '4k':  { label: '4K',    dpr: Math.min(3, 3840 / innerWidth), aniso: 16 },
-    ultra: { label: 'ultra', dpr: Math.min(3.5, devicePixelRatio * 2), aniso: 16 },
+    hd:    { label: 'HD',    dpr: 2,    aniso: 8 },
+    extra: { label: 'extra', dpr: 2.5,  aniso: 16 },
+    '4k':  { label: '4K',    dpr: 3,    aniso: 16 },
+    ultra: { label: 'ultra', dpr: 4,    aniso: 16 },
   };
   let calidad = localStorage.getItem('ab.fv.calidad') || 'auto';
   if (!CALIDADES[calidad]) calidad = 'auto';

@@ -67,6 +67,24 @@ def bake(cid: str) -> dict:
     hom = np.hstack([pos, np.ones((len(pos), 1), np.float32)])
     game = (M @ hom.T).T[:, :3].astype("<f4")
 
+    # FILTRO ANTI-MUROS-FANTASMA: los floaters del splat se voxelizaban como
+    # paredes invisibles lejos del suelo ('me estrello con cosas super lejos').
+    # Solo sobreviven triángulos cuyo centroide esté en la banda [suelo-4, suelo+45].
+    lodm = json.loads((mdir / "dsm_lod.json").read_text())
+    rows, cols = lodm["grid"]; sx, sz = lodm["spacing_m"]; emin = lodm["elev_min"]
+    hf = np.frombuffer((mdir / lodm["bin"]).read_bytes(), dtype="<f4").reshape(rows, cols)
+    W2, H2 = sx * (cols - 1) / 2, sz * (rows - 1) / 2
+    tri = game[idx.reshape(-1, 3)]
+    cen = tri.mean(axis=1)
+    cx = np.clip(((cen[:, 0] + W2) / sx).astype(int), 0, cols - 1)
+    cz = np.clip(((cen[:, 2] + H2) / sz).astype(int), 0, rows - 1)
+    ground = hf[cz, cx] - emin
+    keep = (cen[:, 1] > ground - 4.0) & (cen[:, 1] < ground + 45.0)
+    idx = idx.reshape(-1, 3)[keep].reshape(-1).astype(np.uint32)
+    used = np.unique(idx)
+    remap = np.zeros(len(game), dtype=np.uint32); remap[used] = np.arange(len(used), dtype=np.uint32)
+    game = game[used]; idx = remap[idx]
+
     out = mdir / "collision.bin"
     out.write_bytes(game.tobytes() + idx.astype("<u4").tobytes())
     side = {
