@@ -3762,3 +3762,14 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 .vl-fpv-rec.on{ color:#ff453a; animation:recBlink 1s steps(2) infinite }
 .vl-fpv-rec.on::before{ content:'● ' }
 @keyframes recBlink{ 50%{ opacity:.25 } }
+
+/* BLOQUE 42 · dock premium ocultable */
+.vl-dock{ transition:transform .35s var(--ease), opacity .3s var(--ease);
+  border:1px solid rgba(69,160,230,.18);
+  box-shadow:0 10px 34px -14px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.05) }
+.vl-dock.min{ transform:translateX(calc(-100% - 20px)); opacity:0; pointer-events:none }
+.vl-dockmin{ pointer-events:auto; width:26px; height:44px; margin-bottom:6px;
+  border-radius:8px; border:1px solid rgba(255,255,255,.14); cursor:pointer;
+  background:rgba(10,12,16,.6); color:#8A97A8; font-size:15px;
+  transition:color .2s, border-color .2s }
+.vl-dockmin:hover{ color:#E6EBF2; border-color:rgba(69,160,230,.5) }

@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=77';
+import * as THREE from '/flightverse/three.js?v=78';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -170,6 +170,7 @@ export function createDrone({ heightAt, collide, spawn }) {
     yaw: 0, pitch: 0,
     prev: { pos: new THREE.Vector3(), yaw: 0, pitch: 0 },
     agl: null, crashedSoft: false, distance: 0,
+    _stuck: 0, _noColl: 0,
   };
   d.prev.pos.copy(d.pos);
 
@@ -219,21 +220,25 @@ export function createDrone({ heightAt, collide, spawn }) {
       d.vel.x *= 0.7; d.vel.z *= 0.7;         // fricción de “raspar” el suelo
     } else d.crashedSoft = false;
 
-    // colisión precisa (proxy BVH del splat): push-out + rebote amortiguado.
-    // Determinista: misma query, mismo resultado — el replay la reproduce.
-    if (!m.noclip && collide) {
+    // colisión v2: DESLIZAR (proyección tangencial), corrección suave, y
+    // escape honesto: si llevas ~0.7s clavado contra 'nada' (floater del
+    // proxy), la colisión se suspende 0.8s para soltarte — determinista.
+    if (!m.noclip && collide && d._noColl <= 0) {
       const hit = collide(d.pos, DRONE_R + 0.3);
       if (hit && hit.distance < DRONE_R) {
         _n.subVectors(d.pos, hit.point);
         const len = _n.length() || 1e-6;
         _n.multiplyScalar(1 / len);
-        d.pos.copy(hit.point).addScaledVector(_n, DRONE_R);
+        const pen = DRONE_R - len;
+        d.pos.addScaledVector(_n, pen * 0.5);             // salida SUAVE, no teleport
         const vn = d.vel.dot(_n);
-        if (vn < 0) d.vel.addScaledVector(_n, -vn * 1.5);   // rebote 0.5
-        d.vel.multiplyScalar(0.85);
-        d.crashedSoft = true;
-      }
+        if (vn < 0) d.vel.addScaledVector(_n, -vn);       // slide: mata solo la normal
+        d.crashedSoft = vn < -6;
+        d._stuck = d.vel.length() < 0.7 ? d._stuck + 1 : 0;
+        if (d._stuck > 84) { d._noColl = 0.8; d._stuck = 0; }
+      } else d._stuck = 0;
     }
+    if (d._noColl > 0) d._noColl -= dt;
   }
 
   d.lerpPose = (alpha, outPos) => {

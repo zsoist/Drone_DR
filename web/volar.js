@@ -4,23 +4,23 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=77';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=77';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=77';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=77';
-import { createRecorder } from '/flightverse/recorder.js?v=77';
-import { createAudio } from '/flightverse/audio.js?v=77';
-import { createTouchSticks } from '/flightverse/touch.js?v=77';
-import { createSky } from '/flightverse/sky.js?v=77';
-import CameraControls from '/vendor/camera-controls.module.js?v=77';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=77';
+import * as THREE from '/flightverse/three.js?v=78';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=78';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=78';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=78';
+import { createRecorder } from '/flightverse/recorder.js?v=78';
+import { createAudio } from '/flightverse/audio.js?v=78';
+import { createTouchSticks } from '/flightverse/touch.js?v=78';
+import { createSky } from '/flightverse/sky.js?v=78';
+import CameraControls from '/vendor/camera-controls.module.js?v=78';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=78';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=77';
+} from '/vendor/postprocessing180.module.js?v=78';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -31,7 +31,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=77';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=78';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -61,6 +61,7 @@ function hud() {
     </div>
     <div class="vl-corner bl">
       <button class="vl-fab" id="vl-fab">&#9776;</button>
+      <button class="vl-dockmin vl-solo-fino" id="vl-dockmin" title="Ocultar panel">«</button>
       <div class="vl-dock" id="vl-dock">
         <button class="vl-chip sec-nav" id="vl-mode"></button>
         <button class="vl-chip sec-nav" id="vl-rig"></button>
@@ -231,7 +232,7 @@ async function main() {
       splat = s;
       $('#vl-scene').textContent = `${man.name} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
       report.splat = { aligned: s.aligned, rmse_m: s.rmse };
-      vista = 1; applyVista();   // default foto-real: el splat es la escena
+      applyVista();               // default 3D siempre (pedido del operador)
     }).catch(e => {
       report.errors.push('splat: ' + e.message);
       $('#vl-scene').textContent = man.name;
@@ -360,9 +361,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=77', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=78', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=77');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=78');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -484,6 +485,10 @@ async function main() {
   $('#vl-ayuda').addEventListener('click', () => $('#vl-guide').classList.add('show'));
   $('#vl-ajustes').addEventListener('click', () => $('#vl-grade').classList.toggle('show'));
   $('#vl-fab').addEventListener('click', () => $('#vl-dock').classList.toggle('open'));
+  $('#vl-dockmin').addEventListener('click', () => {
+    const min = $('#vl-dock').classList.toggle('min');
+    $('#vl-dockmin').textContent = min ? '»' : '«';
+  });
   $('#vl-dock').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     b.classList.remove('zap'); void b.offsetWidth; b.classList.add('zap');
@@ -756,7 +761,7 @@ async function main() {
   // llegada cinematográfica: swoop desde vista de mapa hacia el rig (skip en autotest)
   let arrival = AT ? null : { t: 0, dur: 3.4 };
 
-  let simT = 0;
+  let simT = 0, propSpin = 14;
   const auto = AUTOTEST ? { until: 5 } : null;
   const autoReto = AT === 'gaterush' ? { last: 0, replayed: false } : null;
 
@@ -888,8 +893,12 @@ async function main() {
       }
       if (ghost?.on) ghost.marker.children[0].scale.setScalar(4 + Math.sin(simT * 3.2) * 0.8);
       if (reto?.pulse) reto.pulse(simT);
-      const spin = (14 + drone.vel.length() * 3) * STEP;
-      for (const pr of props) pr.g.rotation.y += spin * pr.dir;
+      // hélices con inercia (spin-up/down suave) + bob de hover premium
+      propSpin += ((14 + drone.vel.length() * 3) - propSpin) * 0.06;
+      for (const pr of props) pr.g.rotation.y += propSpin * STEP * pr.dir;
+      const hover = Math.max(0, 1 - drone.vel.length() / 1.6);
+      dmesh.position.y += Math.sin(simT * 2.1) * 0.05 * hover;
+      dmesh.rotation.z += Math.sin(simT * 1.3) * 0.008 * hover;
       dmesh.position.copy(P);
       dmesh.rotation.set(0, o.yaw, 0, 'YXZ');
       dmesh.rotation.x = THREE.MathUtils.clamp(-drone.vel.dot(new THREE.Vector3(-Math.sin(o.yaw), 0, -Math.cos(o.yaw))) * 0.012, -0.35, 0.35);

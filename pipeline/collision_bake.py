@@ -79,7 +79,7 @@ def bake(cid: str) -> dict:
     cx = np.clip(((cen[:, 0] + W2) / sx).astype(int), 0, cols - 1)
     cz = np.clip(((cen[:, 2] + H2) / sz).astype(int), 0, rows - 1)
     ground = hf[cz, cx] - emin
-    keep = (cen[:, 1] > ground - 4.0) & (cen[:, 1] < ground + 45.0)
+    keep = (cen[:, 1] > ground - 2.0) & (cen[:, 1] < ground + 32.0)
     idx = idx.reshape(-1, 3)[keep].reshape(-1).astype(np.uint32)
     used = np.unique(idx)
     remap = np.zeros(len(game), dtype=np.uint32); remap[used] = np.arange(len(used), dtype=np.uint32)
