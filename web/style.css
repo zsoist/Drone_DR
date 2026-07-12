@@ -3692,3 +3692,21 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 
 /* BLOQUE 38 · selector de calidad solo con puntero fino */
 @media (pointer:coarse){ .vl-solo-fino{ display:none } }
+
+/* ── BLOQUE 39 · dock seccionado por color + keycaps + zap ── */
+.vl-sep{ height:1px; margin:3px 6px; background:rgba(255,255,255,.09) }
+.vl-dock .vl-chip{ border-left:3px solid transparent; border-radius:9px }
+.sec-nav{ border-left-color:#45A0E6 !important }
+.sec-mundo{ border-left-color:#52C79A !important }
+.sec-juego{ border-left-color:#9a6cff !important }
+.sec-media{ border-left-color:#E0A458 !important }
+.sec-ayuda{ border-left-color:#8A97A8 !important }
+.vl-dock button.zap{ animation:chipZap .32s var(--ease) }
+@keyframes chipZap{ 30%{ transform:scale(1.06); filter:brightness(1.5) } }
+kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EAF2FB;
+  padding:2px 7px; margin:0 2px; border-radius:5px; border:1px solid rgba(255,255,255,.25);
+  border-bottom-width:2.5px; background:rgba(255,255,255,.08); vertical-align:middle }
+.vl-kmouse{ font:600 10.5px var(--mono); color:#7dffc9; border:1px dashed rgba(125,255,201,.4);
+  padding:2px 7px; border-radius:5px }
+#vl-ayuda kbd{ margin-left:6px }
+@media (pointer:coarse){ .vl-dock.open .vl-sep{ width:1px; height:auto; margin:6px 3px } }

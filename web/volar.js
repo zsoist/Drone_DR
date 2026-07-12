@@ -4,23 +4,23 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=74';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=74';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=74';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=74';
-import { createRecorder } from '/flightverse/recorder.js?v=74';
-import { createAudio } from '/flightverse/audio.js?v=74';
-import { createTouchSticks } from '/flightverse/touch.js?v=74';
-import { createSky } from '/flightverse/sky.js?v=74';
-import CameraControls from '/vendor/camera-controls.module.js?v=74';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=74';
+import * as THREE from '/flightverse/three.js?v=75';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=75';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=75';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=75';
+import { createRecorder } from '/flightverse/recorder.js?v=75';
+import { createAudio } from '/flightverse/audio.js?v=75';
+import { createTouchSticks } from '/flightverse/touch.js?v=75';
+import { createSky } from '/flightverse/sky.js?v=75';
+import CameraControls from '/vendor/camera-controls.module.js?v=75';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=75';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=74';
+} from '/vendor/postprocessing180.module.js?v=75';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -31,7 +31,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=74';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=75';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -62,16 +62,20 @@ function hud() {
     <div class="vl-corner bl">
       <button class="vl-fab" id="vl-fab">&#9776;</button>
       <div class="vl-dock" id="vl-dock">
-        <button class="vl-chip" id="vl-mode"></button>
-        <button class="vl-chip" id="vl-rig"></button>
-        <button class="vl-chip" id="vl-vista">vista · 3D</button>
-        <button class="vl-chip" id="vl-cielo">cielo · día</button>
-        <button class="vl-chip vl-solo-fino" id="vl-calidad">calidad · auto</button>
-        <button class="vl-chip" id="vl-reto">Gate Rush</button>
-        <button class="vl-chip" id="vl-sound">Sonido</button>
-        <button class="vl-chip" id="vl-ajustes">Imagen</button>
-        <button class="vl-chip" id="vl-ayuda">Guía</button>
-        <button class="vl-rec" id="vl-rec">● Grabar</button>
+        <button class="vl-chip sec-nav" id="vl-mode"></button>
+        <button class="vl-chip sec-nav" id="vl-rig"></button>
+        <i class="vl-sep"></i>
+        <button class="vl-chip sec-mundo" id="vl-vista">vista · 3D</button>
+        <button class="vl-chip sec-mundo" id="vl-cielo">cielo · día</button>
+        <button class="vl-chip sec-mundo vl-solo-fino" id="vl-calidad">calidad · auto</button>
+        <i class="vl-sep"></i>
+        <button class="vl-chip sec-juego" id="vl-reto">Gate Rush</button>
+        <i class="vl-sep"></i>
+        <button class="vl-chip sec-media" id="vl-sound">Sonido</button>
+        <button class="vl-chip sec-media" id="vl-ajustes">Imagen</button>
+        <button class="vl-rec sec-media" id="vl-rec">● Grabar</button>
+        <i class="vl-sep"></i>
+        <button class="vl-chip sec-ayuda" id="vl-ayuda">Guía <kbd>H</kbd></button>
       </div>
     </div>
     <div class="vl-corner br">
@@ -124,11 +128,18 @@ function hud() {
       <div class="vl-guide-card">
         <div class="vl-guide-k">GUÍA DE VUELO</div>
         <div class="vl-guide-rows">
-          <div><span class="vl-gi">01</span><b>Controles RC reales</b><br>Stick IZQ: subir/bajar y girar · Stick DER: avanzar y ladear.<br>Teclado: WASD mover · R/F altura · Q/E girar · Shift turbo.</div>
-          <div><span class="vl-gi">02</span><b>Los aros (Gate Rush)</b><br>Pulsa 🏁 y cruza los aros: el AZUL brillante es el siguiente, verde = superado. Están sobre la ruta que tu dron voló de verdad.</div>
-          <div><span class="vl-gi">03</span><b>La bola verde (ghost)</b><br>Es tu vuelo REAL reproduciéndose — la estela es el GPS del dron. Persíguela o apágala con G.</div>
-          <div><span class="vl-gi">04</span><b>Vistas</b><br>"3D" = malla del terreno · "foto-real" = gaussian puro · "mixta" = ambos. Rueda del mouse = gimbal en cualquier cámara.</div>
-          <div><span class="vl-gi">05</span><b>Calidad y look</b><br>"calidad" sube el render hasta 4K/ultra (desktop). "Imagen" = brillo Gaussian y 3D por separado, contraste, presets.</div>
+          <div><span class="vl-gi">01</span><b>Volar</b><br>
+            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> mover · <kbd>R</kbd><kbd>F</kbd> subir/bajar · <kbd>Q</kbd><kbd>E</kbd> girar<br>
+            <kbd>Shift</kbd> turbo · <kbd>Espacio</kbd> freno · <span class="vl-kmouse">rueda</span> gimbal</div>
+          <div><span class="vl-gi">02</span><b>Modos y cámaras</b><br>
+            <kbd>1</kbd>–<kbd>5</kbd> modo de vuelo · <kbd>C</kbd> cámara · <kbd>P</kbd> vista · <kbd>G</kbd> ghost</div>
+          <div><span class="vl-gi">03</span><b>Jugar y grabar</b><br>
+            <kbd>T</kbd> Gate Rush (aros sobre tu ruta REAL) · <kbd>V</kbd> grabar WebM · <kbd>M</kbd> sonido</div>
+          <div><span class="vl-gi">04</span><b>Vistas</b><br>
+            3D = malla · foto-real = gaussian · mixta = 3D realzado con foto-realismo encima.</div>
+          <div><span class="vl-gi">05</span><b>Calidad</b><br>
+            auto = fluidez adaptativa (recomendado al volar) · HD→ultra = supersampling real
+            (afila bordes y 3D; el gaussian conserva su blur natural). Ideal para fotos/tomas.</div>
         </div>
         <button id="vl-guide-ok">¡A volar!</button>
       </div>
@@ -342,9 +353,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=74', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=75', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=74');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=75');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -435,12 +446,13 @@ async function main() {
   const applyVista = () => {
     if (!splat && vista !== 2) { vista = 2; }
     terrain.mesh.visible = vista !== 1;
-    // mixta v3: el terreno BAJA 1.6m — el splat manda donde existe y el
-    // terreno asoma alrededor; sin discard = sin grano (mega overhaul)
-    terrain.mesh.position.y = vista === 0 ? -1.6 : 0;
+    // mixta v4: '3D realzado con foto-realismo' — gap mínimo anti-zfight y
+    // el terreno cede protagonismo (85% de ganancia) para que el splat pinte
+    terrain.mesh.position.y = vista === 0 ? -0.35 : 0;
     terrain.mesh.updateMatrix();
     mask.uMaskOn.value = 0;
     if (splat) splat.object.visible = vista !== 2;
+    terrain.mesh.material.color.setScalar((grade?.t ?? 1) * (vista === 0 ? 0.85 : 1));
     $('#vl-vista').textContent = 'vista · ' + (vista === 0 ? 'mixta' : vista === 1 ? 'foto-real' : '3D');
   };
   const cycleVista = () => { vista = (vista + 1) % 3; applyVista(); };
@@ -459,6 +471,10 @@ async function main() {
   $('#vl-ayuda').addEventListener('click', () => $('#vl-guide').classList.add('show'));
   $('#vl-ajustes').addEventListener('click', () => $('#vl-grade').classList.toggle('show'));
   $('#vl-fab').addEventListener('click', () => $('#vl-dock').classList.toggle('open'));
+  $('#vl-dock').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    b.classList.remove('zap'); void b.offsetWidth; b.classList.add('zap');
+  });
   const GRADE_KEY = 'ab.fv.grade';
   const applyGrade = g => {
     fx.exp.uniforms.get('uExp').value = g.b;
