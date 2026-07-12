@@ -192,3 +192,28 @@ DATOS YA FIRMES para M3: re-instrum. REAL = puente(existía) + ply_bridge(50
 líneas) + --keep-crs → ~½ sesión (vs 2-3 estimadas); peak 35% con presupuesto
 DURO (--max-splats) = perfil anti-OOM estructural; tinte f_rest pendiente de
 adjudicar (el liso del MCMC lo enmascara a 2000 steps).
+
+## Pregunta de vara — ANOTADA CON FECHA (11-jul, ANTES del veredicto M3)
+"LPIPS decide" se congeló comparando variantes de la MISMA familia (sweep
+escena 1: blur vs detalle intra-OpenSplat). Brush trae OTRA familia (MCMC:
+fiel-al-píxel, liso en alta frecuencia) y PSNR/LPIPS ahora discrepan en
+DIRECCIÓN. ¿Es LPIPS-decide vara inter-familia o era intra-familia
+generalizada sin notar? NO se reabre en caliente: se AUDITA con el
+adjudicador pre-declarado desde el 2.0 — EL OJO — en las celdas 2/3:
+ojo prefiere Brush + LPIPS prefiere medium → caso documentado contra la
+vara, M3 pondera con razón escrita; ojo coincide con LPIPS → vara
+re-ratificada con evidencia inter-familia. La vara no se enmienda: se audita.
+
+## Plan de celdas M1-Brush (ajuste review): 2 y 3 son DOS celdas
+- CELDA 2 tiempo-similar (~95.8s de medium): "¿qué entrega Brush al costo
+  operativo del incumbente?" — la comparación de producción.
+- CELDA 3 schedule-nativo (30000 steps, ~20-25 min est.): "¿qué entrega Brush
+  COMO BRUSH?" — el techo del candidato. VARIANTE 3b si --max-splats lo
+  permite: conteo-igual a medium (58k) = comparación cerrada en los 3 ejes.
+- TINTE f_rest se adjudica ANTES de las celdas (deuda del conversor, camino
+  absuelto no puede teñir la comparación inter-familia).
+
+## M3: fila HÍBRIDA en la matriz desde ahora (casos de uso nominales)
+Brush para escenas grandes (escena 2: muere en carga con OpenSplat; Brush
+peak 35% + presupuesto duro de gaussianas) · OpenSplat donde la alta
+frecuencia manda (escena 1). El routing ya existe (recon_ vs single-source).
