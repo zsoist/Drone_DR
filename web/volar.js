@@ -46,7 +46,8 @@ function hud() {
       <div class="vl-metric"><span id="vl-spd">—</span><label>VEL m/s</label></div>
     </div>
     <div class="vl-corner bl">
-      <div class="vl-dock">
+      <button class="vl-fab" id="vl-fab">☰</button>
+      <div class="vl-dock" id="vl-dock">
         <button class="vl-chip" id="vl-mode"></button>
         <button class="vl-chip" id="vl-rig"></button>
         <button class="vl-chip" id="vl-vista">vista · orto</button>
@@ -162,7 +163,7 @@ async function main() {
       splat = s;
       $('#vl-scene').textContent = `${man.name} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
       report.splat = { aligned: s.aligned, rmse_m: s.rmse };
-      vista = 0; applyVista();
+      vista = 1; applyVista();   // default foto-real: el splat es la escena
     }).catch(e => {
       report.errors.push('splat: ' + e.message);
       $('#vl-scene').textContent = man.name;
@@ -198,45 +199,50 @@ async function main() {
   // props que giran con la velocidad, gimbal frontal — solo primitivas three
   const drone = createDrone({ heightAt: terrain.heightAt, collide, spawn: man.spawn });
   const dmesh = new THREE.Group();
-  const matBody = new THREE.MeshLambertMaterial({ color: 0xE4E9F1 });
-  const matDark = new THREE.MeshLambertMaterial({ color: 0x2A313B });
-  const matLed = new THREE.MeshLambertMaterial({ color: 0x45A0E6, emissive: 0x2b6ea8 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.4, 6, 12), matBody);
-  body.rotation.x = Math.PI / 2;                       // cápsula tendida (nariz-cola)
-  body.scale.set(1.6, 0.62, 1);                        // ancho y bajo, perfil DJI
-  const top = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 8), matDark);
-  top.scale.set(1.2, 0.5, 1.6); top.position.set(0, 0.07, -0.06);
-  const gimbal = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), matDark);
-  gimbal.position.set(0, -0.05, -0.32);
-  const led = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.03), matLed);
-  led.position.set(0, 0.03, 0.31);
-  const navL = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 5),
-    new THREE.MeshBasicMaterial({ color: 0xff3b30 }));
-  navL.position.set(-0.34, 0.02, -0.4);
-  const navR = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 5),
-    new THREE.MeshBasicMaterial({ color: 0x34c759 }));
-  navR.position.set(0.34, 0.02, -0.4);
-  dmesh.add(body, top, gimbal, led, navL, navR);
+  const matHull = new THREE.MeshLambertMaterial({ color: 0xE8EDF4 });
+  const matGrey = new THREE.MeshLambertMaterial({ color: 0x8f99a8 });
+  const matDark = new THREE.MeshLambertMaterial({ color: 0x23282f });
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 14), matHull);
+  hull.scale.set(1.15, 0.52, 1.85);
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.135, 18, 12), matGrey);
+  shell.scale.set(1.05, 0.42, 1.5); shell.position.y = 0.055;
+  const gimbal = new THREE.Group();
+  const gb = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), matDark);
+  const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.03, 12), matGrey);
+  lens.rotation.x = Math.PI / 2; lens.position.z = -0.05;
+  const glass = new THREE.Mesh(new THREE.CircleGeometry(0.02, 10),
+    new THREE.MeshBasicMaterial({ color: 0x2f6db8 }));
+  glass.position.z = -0.066;
+  gimbal.add(gb, lens, glass); gimbal.position.set(0, -0.045, -0.27);
+  const navL = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 5),
+    new THREE.MeshBasicMaterial({ color: 0xff3b30 })); navL.position.set(-0.3, 0, -0.32);
+  const navR = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 5),
+    new THREE.MeshBasicMaterial({ color: 0x34c759 })); navR.position.set(0.3, 0, -0.32);
+  dmesh.add(hull, shell, gimbal, navL, navR);
   const props = [];
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.035, 0.05), matDark);
-    arm.position.set(x * 0.21, 0.01, z * 0.24);
-    arm.rotation.y = Math.atan2(z, x) + Math.PI / 2;
-    const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.05, 10), matDark);
-    motor.position.set(x * 0.34, 0.05, z * 0.4);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.055), matGrey);
+    arm.position.set(x * 0.2, 0.015, z * 0.21);
+    arm.rotation.y = Math.atan2(-z, x * 1.4);
+    arm.rotation.z = x * -0.08;                       // brazos levemente caídos
+    const bellB = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.052, 0.035, 12), matDark);
+    bellB.position.set(x * 0.33, 0.035, z * 0.34);
+    const bellT = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 12), matGrey);
+    bellT.position.set(x * 0.33, 0.065, z * 0.34);
     const prop = new THREE.Group();
-    for (const a of [0, Math.PI / 2]) {
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.008, 0.028), matBody);
-      blade.rotation.y = a;
+    for (const a of [0, Math.PI]) {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.006, 0.024), matDark);
+      blade.rotation.y = a; blade.rotation.x = 0.12;   // paso de pala
+      blade.position.x = Math.cos(a) * 0.06; blade.position.z = -Math.sin(a) * 0.06;
       prop.add(blade);
     }
-    const blur = new THREE.Mesh(new THREE.CircleGeometry(0.16, 20),
-      new THREE.MeshBasicMaterial({ color: 0x9fb2c8, transparent: true, opacity: 0.14, side: THREE.DoubleSide }));
-    blur.rotation.x = -Math.PI / 2; blur.position.y = 0.002;
+    const blur = new THREE.Mesh(new THREE.CircleGeometry(0.15, 20),
+      new THREE.MeshBasicMaterial({ color: 0x9fb2c8, transparent: true, opacity: 0.12, side: THREE.DoubleSide }));
+    blur.rotation.x = -Math.PI / 2; blur.position.y = 0.004;
     prop.add(blur);
-    prop.position.set(x * 0.34, 0.085, z * 0.4);
+    prop.position.set(x * 0.33, 0.085, z * 0.34);
     props.push({ g: prop, dir: x * z > 0 ? 1 : -1 });
-    dmesh.add(arm, motor, prop);
+    dmesh.add(arm, bellB, bellT, prop);
   }
   scene.add(dmesh);
 
@@ -307,6 +313,9 @@ async function main() {
   const applyVista = () => {
     if (!splat && vista !== 2) { vista = 2; }
     terrain.mesh.visible = vista !== 1;
+    terrain.mesh.material.transparent = vista === 0;
+    terrain.mesh.material.opacity = vista === 0 ? 0.55 : 1;   // en mixta el splat manda
+    terrain.mesh.material.depthWrite = vista !== 0;
     if (splat) splat.object.visible = vista !== 2;
     $('#vl-vista').textContent = 'vista · ' + (vista === 0 ? 'mixta' : vista === 1 ? 'foto-real' : 'orto');
   };
@@ -320,6 +329,7 @@ async function main() {
   $('#vl-reto').addEventListener('click', () => startReto());   // arrow: startReto se declara abajo
   $('#vl-ayuda').addEventListener('click', () => $('#vl-guide').classList.add('show'));
   $('#vl-ajustes').addEventListener('click', () => $('#vl-grade').classList.toggle('show'));
+  $('#vl-fab').addEventListener('click', () => $('#vl-dock').classList.toggle('open'));
   const GRADE_KEY = 'ab.fv.grade';
   const applyGrade = g => {
     fx.bc.brightness = g.b; fx.bc.contrast = g.c;
