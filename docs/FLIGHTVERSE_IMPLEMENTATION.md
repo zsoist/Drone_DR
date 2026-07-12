@@ -86,3 +86,18 @@ spec original (por valor):
 - P11: checklist formal de los 43 criterios de aceptación.
 Deudas menores: foto mode (P7), 4 rigs restantes, tuning fino del 6DOF con
 mando real, minimapa MapLibre opcional.
+
+## v93 (2026-07-12) — cielo realista v5 + LEDs escala + dock premium
+- **Bug raíz del "muro naranja"**: el hemisferio inferior del domo renderizaba color-horizonte
+  puro (h=clamp(d.y,0,1)=0) llenando media pantalla. Fix: bruma bajo el horizonte hacia uFogC.
+  Diagnóstico: franjas debug por h en el shader (patrón reutilizable).
+- Luna real: disco sólido vía mix() (no aditivo → sin blob de bloom), UV local, mares por
+  value-noise, limb darkening, halo apretado. Posición naciente (~9°) en frame por defecto.
+- Estrellas: mapeo az/el estable (sin estirón en horizonte), 2 capas, magnitud/tinte/twinkle
+  por celda (uTime nuevo).
+- Atardecer: banda horizonte estrecha (midPos .10, topPos .46), headroom R<1 (anti-clamp),
+  scatter Mie de juguete solo bajo y hacia el azimut del sol.
+- Nubes: fbm value-noise tileable (4 octavas, wrap) + cúmulos con base plana y panza sombreada.
+- LEDs del dron a escala real (0.055/0.075, núcleo duro), respiración sutil.
+- Dock premium: sheen sweep, glow por color de sección, entrada escalonada, prefers-reduced-motion.
+- Debug: window.__skyUni expone uniforms del cielo para QA por CDP.
