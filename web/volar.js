@@ -4,7 +4,7 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/vendor/three.module.js';
+import * as THREE from '/flightverse/three.js';
 import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js';
 import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js';
 import { createGateRush, bestTime } from '/flightverse/gaterush.js';
@@ -15,8 +15,8 @@ import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
-} from '/vendor/postprocessing.module.js';
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh.module.js';
+} from '/vendor/postprocessing180.module.js';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -116,6 +116,7 @@ async function main() {
   let splat = null;
   if (man.capabilities?.splat && man.transforms?.splat?.status === 'aligned') {
     attachSplat(man, scene, {
+      renderer,
       onProgress: p => { if (p < 100) $('#vl-scene').textContent = `${man.name} · splat ${Math.round(p)}%`; },
     }).then(s => {
       splat = s;

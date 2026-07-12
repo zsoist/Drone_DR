@@ -1255,7 +1255,7 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Security-Policy",
                 "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "
                 "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
-                "connect-src 'self' https://server.arcgisonline.com https://basemaps.cartocdn.com; "
+                "connect-src 'self' data: https://server.arcgisonline.com https://basemaps.cartocdn.com; "
                 "worker-src 'self' blob:; media-src 'self' blob:; frame-src 'self'; frame-ancestors 'none'")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
@@ -1350,7 +1350,7 @@ class H(BaseHTTPRequestHandler):
                 "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "  # wasm: el sort worker de splats compila WebAssembly
                 "style-src 'self' 'unsafe-inline'; "        # inline style attrs (bajo riesgo)
                 "img-src 'self' data: blob: https:; "
-                "connect-src 'self' https://server.arcgisonline.com https://basemaps.cartocdn.com; "
+                "connect-src 'self' data: https://server.arcgisonline.com https://basemaps.cartocdn.com; "
                 f"worker-src 'self' blob:; media-src 'self' blob:; frame-src 'self'; frame-ancestors {anc}")
             self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()

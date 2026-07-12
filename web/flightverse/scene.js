@@ -3,7 +3,7 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/vendor/three.module.js';
+import * as THREE from '/flightverse/three.js';
 
 export async function loadManifest(cid) {
   const id = String(cid || '').replace(/[^\w-]/g, '');
@@ -73,37 +73,37 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
 // RMSE sub-métrico), la matriz 4x4 coloca el splat SOBRE el terreno en
 // metros reales. Sin alineación el caller decide colocación explícita —
 // nunca se finge registro.
-export async function attachSplat(man, scene, { position, scale, onProgress } = {}) {
+export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   if (!man.capabilities?.splat) throw new Error('la escena no tiene splat');
-  const GS = await import('/vendor/gaussian-splats-3d.module.min.js');
+  if (!renderer) throw new Error('attachSplat necesita el renderer (SparkRenderer)');
+  // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
+  // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
+  // frames tras el primer render, irrelevante con nuestro loop.
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js');
+  if (!scene.userData.fvSpark) {
+    const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
+    scene.userData.fvSpark = sp;
+    scene.add(sp);
+  }
   const tr = man.transforms?.splat;
   const aligned = tr?.status === 'aligned' && Array.isArray(tr.matrix) && tr.matrix.length === 16;
-  const dv = new GS.DropInViewer({
-    sharedMemoryForWorkers: false, antialiased: true,
-    halfPrecisionCovariancesOnGPU: true, showLoadingUI: false,
-  });
-  await dv.addSplatScene(man.assets.splat, {
-    // alineado: la matriz subsume la rotación Z-up->Y-up; sin ella, quat legado
-    rotation: aligned ? undefined : (tr?.rotation || [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]),
-    splatAlphaRemovalThreshold: 8, showLoadingUI: false, progressiveLoad: false,
-    onProgress: p => onProgress?.(p),
-  });
+  const mesh = new SplatMesh({ url: man.assets.splat });   // URL termina en .ksplat → loader KSPLAT
+  onProgress?.(40);
+  await mesh.initialized;
+  onProgress?.(100);
   if (aligned) {
     const m = new THREE.Matrix4();
     m.set(...tr.matrix);                      // Matrix4.set es row-major, como el JSON
-    m.decompose(dv.position, dv.quaternion, dv.scale);
-  } else {
-    if (scale) dv.scale.setScalar(scale);
-    if (position) dv.position.set(...position);
+    m.decompose(mesh.position, mesh.quaternion, mesh.scale);
   }
-  scene.add(dv);
+  scene.add(mesh);
   return {
-    object: dv, aligned,
+    object: mesh, aligned,
     rmse: aligned ? tr.rmse_m : null,
-    radius: dv.splatMesh?.maxSplatDistanceFromSceneCenter ?? null,
+    splats: mesh.numSplats ?? null,
     dispose: async () => {
-      scene.remove(dv);
-      try { const p = dv.dispose?.(); if (p?.then) await p; } catch { /* ya liberado */ }
+      scene.remove(mesh);
+      try { mesh.dispose?.(); } catch { /* ya liberado */ }
     },
   };
 }
