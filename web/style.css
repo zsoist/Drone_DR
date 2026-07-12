@@ -3914,3 +3914,18 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   box-shadow:0 0 12px -4px rgba(82,199,154,.5) }
 @media (max-width:520px){ .vl-result-card.v2{ min-width:0; width:calc(100vw - 40px) }
   .vl-result-grid{ grid-template-columns:repeat(2, 1fr) } }
+
+/* ── BLOQUE 50: selector de armas + flash de colisión ── */
+.vl-weps{ display:flex; flex-direction:column; gap:4px }
+.vl-weps button{ pointer-events:auto; cursor:pointer; width:44px; padding:5px 0;
+  border-radius:8px; border:1px solid rgba(255,255,255,.12); color:#8A97A8;
+  background:rgba(12,10,10,.72); font:700 9.5px var(--mono); letter-spacing:.08em;
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  transition:all .16s var(--ease) }
+.vl-weps button:hover{ color:#EAF2FB; transform:translateX(-2px) }
+.vl-weps button.sel{ color:#ffb36b; border-color:rgba(232,120,70,.55);
+  background:rgba(60,26,14,.8); box-shadow:0 0 14px -4px rgba(232,120,70,.5) }
+.vl-hitfx{ position:absolute; inset:0; pointer-events:none; opacity:0; z-index:55;
+  background:radial-gradient(ellipse at center, transparent 55%, rgba(220,60,40,.45) 100%) }
+.vl-hitfx.go{ animation:vlHit .5s var(--ease) }
+@keyframes vlHit{ 0%{ opacity:1 } 100%{ opacity:0 } }

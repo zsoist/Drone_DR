@@ -6,7 +6,7 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=109';
+import * as THREE from '/flightverse/three.js?v=111';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -17,6 +17,35 @@ function glowTex(stops, size = 64) {
   return new THREE.CanvasTexture(cv);
 }
 
+// humo con ESTRUCTURA interna (lóbulos superpuestos, no un blob plano):
+// la diferencia entre 'disco negro' y nube — técnica estándar de VFX cuando
+// no hay flipbook: silueta irregular + densidad variable dentro
+function puffTex(size = 96) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = size;
+  const c = cv.getContext('2d');
+  const R = size / 2;
+  for (let i = 0; i < 26; i++) {
+    const a2 = Math.random() * 6.283, rr = Math.random() * R * 0.52;
+    const x = R + Math.cos(a2) * rr, y = R + Math.sin(a2) * rr;
+    const r2 = R * (0.16 + Math.random() * 0.3) * (1 - rr / R * 0.5);
+    const al = 0.05 + Math.random() * 0.09;
+    const g = c.createRadialGradient(x, y, 1, x, y, r2);
+    g.addColorStop(0, `rgba(255,255,255,${al})`);
+    g.addColorStop(0.65, `rgba(255,255,255,${al * 0.5})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g;
+    c.fillRect(x - r2, y - r2, r2 * 2, r2 * 2);
+  }
+  return new THREE.CanvasTexture(cv);
+}
+
+export const ARSENAL = {
+  mg: { label: 'MG',  auto: true,  rate: 0.085, max: 120, regen: 12,   speed: 150, dmg: 14 },
+  s:  { label: 'M·S', cd: 0.4,     max: 12,     regen: 0.55, speed: 74, big: 0.75 },
+  m:  { label: 'M·M', cd: 0.9,     max: 8,      regen: 0.4,  speed: 56, big: 1.25 },
+  l:  { label: 'M·L', cd: 2.2,     max: 3,      regen: 0.12, speed: 42, big: 2.2 },
+};
+
 export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) {
   const TEX = {
     fire: glowTex([[0, 'rgba(255,244,200,1)'], [0.25, 'rgba(255,150,40,.9)'], [0.6, 'rgba(200,60,10,.45)'], [1, 'rgba(120,20,0,0)']]),
@@ -24,9 +53,12 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     flash: glowTex([[0, 'rgba(255,255,240,1)'], [0.4, 'rgba(255,220,120,.6)'], [1, 'rgba(255,180,60,0)']]),
     puff: glowTex([[0, 'rgba(215,210,202,.4)'], [1, 'rgba(195,190,184,0)']]),
     dot: glowTex([[0, 'rgba(255,225,170,1)'], [0.5, 'rgba(255,170,80,.8)'], [1, 'rgba(255,120,40,0)']], 32),
+    puff3d: puffTex(),
+    scorch: glowTex([[0, 'rgba(8,6,4,.85)'], [0.55, 'rgba(12,10,8,.5)'], [1, 'rgba(14,12,10,0)']], 96),
   };
-  const S = { missiles: [], parts: [], decals: [], frags: [], rubble: [], fires: [], booms: [],
-    ammo: 8, MAX: 8, cool: 0, fired: 0, exploded: 0, destroyed: 0 };
+  const S = { missiles: [], bullets: [], parts: [], decals: [], frags: [], rubble: [], fires: [], booms: [],
+    weapon: 'm', cool: 0, fired: 0, exploded: 0, destroyed: 0,
+    ammo: { mg: 120, s: 12, m: 8, l: 3 } };
   const group = new THREE.Group(); group.name = 'fv-weapons'; scene.add(group);
 
   const missileGeo = new THREE.CylinderGeometry(0.05, 0.07, 0.62, 8);
@@ -50,7 +82,7 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     S.parts.push({ sp, vel, t: 0, life, size0, size1,
       rot: (Math.random() - 0.5) * (o.spin ?? 1.6),
       tint0: o.tint0 && new THREE.Color(o.tint0), tint1: o.tint1 && new THREE.Color(o.tint1),
-      drag: o.drag ?? 1.6, rise: o.rise ?? 0, tall: o.tall ?? 1 });
+      drag: o.drag ?? 1.6, rise: o.rise ?? 0, tall: o.tall ?? 1, smoke: !!o.smoke });
   };
 
   function fireAftermath(p) {                 // fuego residual que arde y muere
@@ -91,22 +123,22 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     // humo: columna que SUBE, oscura → gris, dura y crece mucho
     for (let i = 0; i < 18; i++) {
       const v = new THREE.Vector3((Math.random() - 0.5) * 3.4, 2 + Math.random() * 3.4, (Math.random() - 0.5) * 3.4);
-      emit(TEX.smoke, p.clone().add(new THREE.Vector3(0, i * 0.12, 0)), v,
+      emit(TEX.puff3d, p.clone().add(new THREE.Vector3(0, i * 0.12, 0)), v,
         (1.8 + Math.random() * 2.2) * big, (11 + Math.random() * 7) * big,
         3.2 + Math.random() * 2.2, THREE.NormalBlending,
-        { tint0: 0x211f1c, tint1: 0x7a7672, spin: 0.8, rise: 1.9, drag: 1.2 });
+        { tint0: 0xb56a34, tint1: 0x8f8b86, spin: 0.8, rise: 1.9, drag: 1.2, smoke: true });
     }
     // anillo de POLVO rasante (tierra levantada, corre por el suelo)
     for (let i = 0; i < 14; i++) {
       const a2 = (i / 14) * 6.283 + Math.random() * 0.3;
       const v = new THREE.Vector3(Math.cos(a2) * (9 + Math.random() * 6), 0.7, Math.sin(a2) * (9 + Math.random() * 6));
-      emit(TEX.smoke, new THREE.Vector3(p.x, gy + 0.6, p.z), v,
+      emit(TEX.puff3d, new THREE.Vector3(p.x, gy + 0.6, p.z), v,
         1.4 * big, (6 + Math.random() * 3) * big, 1.5 + Math.random() * 0.6,
-        THREE.NormalBlending, { tint0: 0x6e5c48, tint1: 0x8a7a64, spin: 1, drag: 2.2 });
+        THREE.NormalBlending, { tint0: 0x8a7256, tint1: 0x9a8a72, spin: 1, drag: 2.2, smoke: true });
     }
     // EYECTA: pedazos del suelo/edificio que vuelan y QUEDAN como escombro
     for (let i = 0; i < 12; i++) {
-      const sz3 = 0.15 + Math.random() * 0.4;
+      const sz3 = 0.1 + Math.random() * 0.26;
       const m2 = new THREE.Mesh(new THREE.BoxGeometry(sz3, sz3 * (0.5 + Math.random()), sz3),
         new THREE.MeshLambertMaterial({ color: [0x4a4238, 0x6b5d4a, 0x2e2a24, 0x57503f][i % 4] }));
       m2.position.set(p.x, gy + 0.4, p.z);
@@ -158,15 +190,15 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     group.add(ring);
     S.parts.push({ ring, t: 0, life: 0.55, big });
     // scorch persistente
-    const sc = new THREE.Mesh(new THREE.CircleGeometry(2.8 * big, 22),
-      new THREE.MeshBasicMaterial({ color: 0x0c0a08, transparent: true, opacity: 0.62, depthWrite: false }));
+    const sc = new THREE.Mesh(new THREE.CircleGeometry(3.2 * big, 24),
+      new THREE.MeshBasicMaterial({ map: TEX.scorch, transparent: true, opacity: 0.8, depthWrite: false }));
     sc.rotation.x = -Math.PI / 2;
     sc.position.set(p.x, (heightAt ? (heightAt(p.x, p.z) ?? gy) : gy) + 0.06, p.z);
     group.add(sc);
     S.decals.push(sc);
     if (S.decals.length > 14) group.remove(S.decals.shift());
     if (nearGround) fireAftermath(new THREE.Vector3(p.x, gy, p.z));
-    audio?.boom?.();
+    audio?.boom?.(big);
     onShake?.(p, big);
   }
 
@@ -225,11 +257,29 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     }
   }
 
+  const tracerGeo = new THREE.BoxGeometry(0.05, 0.05, 1.4);
+  const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+
   return {
     state: S,
+    setWeapon(k) { if (ARSENAL[k]) S.weapon = k; return S.weapon; },
     fire(pos, yaw, pitch = -0.05) {
-      if (S.ammo <= 0 || S.cool > 0) return false;
-      S.ammo--; S.cool = 0.9; S.fired++;
+      const W2 = ARSENAL[S.weapon];
+      if (S.ammo[S.weapon] < 1 || S.cool > 0) return false;
+      if (W2.auto) {
+        // ametralladora: tracer balístico con dispersión leve
+        S.ammo.mg--; S.cool = W2.rate; S.fired++;
+        const yj = yaw + (Math.random() - 0.5) * 0.012;
+        const pj = pitch + (Math.random() - 0.5) * 0.012;
+        const dir = new THREE.Vector3(-Math.sin(yj) * Math.cos(pj), Math.sin(pj), -Math.cos(yj) * Math.cos(pj));
+        const b = new THREE.Mesh(tracerGeo, tracerMat);
+        b.position.copy(pos).y -= 0.18;
+        group.add(b);
+        S.bullets.push({ m: b, vel: dir.multiplyScalar(W2.speed), t: 0 });
+        audio?.mg?.();
+        return true;
+      }
+      S.ammo[S.weapon]--; S.cool = W2.cd; S.fired++;
       const dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
       const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
       const body = new THREE.Group();
@@ -244,7 +294,8 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
       body.position.copy(pos).addScaledVector(right, (S.fired % 2 ? 0.28 : -0.28)).y -= 0.3;
       body.rotation.y = yaw;
       group.add(body);
-      S.missiles.push({ body, glow, vel: dir.clone().multiplyScalar(56), t: 0, trail: 0 });
+      body.scale.setScalar(S.weapon === 'l' ? 1.5 : S.weapon === 's' ? 0.75 : 1);
+      S.missiles.push({ body, glow, vel: dir.clone().multiplyScalar(W2.speed), t: 0, trail: 0, big: W2.big });
       audio?.launch?.();
       return true;
     },
@@ -256,7 +307,40 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         S.booms[i].t -= dt;
         if (S.booms[i].t <= 0) { const b = S.booms.splice(i, 1)[0]; explode(b.p.clone(), b.big); }
       }
-      if (S.ammo < S.MAX) { S.reload = (S.reload || 0) + dt; if (S.reload > 2.5) { S.ammo++; S.reload = 0; } }
+      for (const k of Object.keys(ARSENAL)) {           // recarga por arma
+        if (S.ammo[k] < ARSENAL[k].max) S.ammo[k] = Math.min(ARSENAL[k].max, S.ammo[k] + ARSENAL[k].regen * dt);
+      }
+      // ── balas MG: tracer balístico + impacto con daño acumulativo ──
+      for (let i = S.bullets.length - 1; i >= 0; i--) {
+        const B = S.bullets[i];
+        B.t += dt;
+        B.vel.y -= 4 * dt;
+        B.m.position.addScaledVector(B.vel, dt);
+        B.m.lookAt(B.m.position.clone().add(B.vel));
+        const bp = B.m.position;
+        let dead = B.t > 2.2;
+        const bgy = heightAt ? heightAt(bp.x, bp.z) : null;
+        let impact = null;
+        if (bgy != null && bp.y <= bgy + 0.15) impact = new THREE.Vector3(bp.x, bgy + 0.15, bp.z);
+        if (!impact && hittables) {
+          for (const h of hittables) {
+            if (h.node.userData.dead) continue;
+            if (bp.distanceToSquared(h.center) < h.r2) {
+              h.hp = (h.hp ?? (h.node.userData.kit?.health || 60)) - ARSENAL.mg.dmg;
+              if (h.hp <= 0) { smash(h.node, h.color, bp.clone()); explode(bp.clone(), 0.7); }
+              impact = bp.clone();
+              break;
+            }
+          }
+        }
+        if (impact) {
+          dead = true;
+          emit(TEX.dot, impact, new THREE.Vector3(0, 1.5, 0), 0.3, 0.9, 0.22, THREE.AdditiveBlending);
+          emit(TEX.puff3d, impact, new THREE.Vector3(0, 0.8, 0), 0.3, 1.3, 0.6,
+            THREE.NormalBlending, { smoke: true, tint0: 0x9a8a72, tint1: 0xb0a48e });
+        }
+        if (dead) { group.remove(B.m); S.bullets.splice(i, 1); }
+      }
       // ── misiles ──
       for (let i = S.missiles.length - 1; i >= 0; i--) {
         const M = S.missiles[i];
@@ -269,8 +353,8 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         M.trail += dt;
         if (M.trail > 0.018) {                 // estela FINA (no cono)
           M.trail = 0;
-          emit(TEX.puff, M.body.position.clone(), new THREE.Vector3(0, 0.35, 0),
-            0.16, 0.85, 0.75, THREE.NormalBlending, { spin: 0.6, drag: 0.4 });
+          emit(TEX.puff3d, M.body.position.clone(), new THREE.Vector3(0, 0.35, 0),
+            0.18, 0.9, 0.75, THREE.NormalBlending, { spin: 0.6, drag: 0.4, smoke: true, tint0: 0xcfc9c2, tint1: 0xb9b3ac });
         }
         const p = M.body.position;
         let hit = M.t > 6;
@@ -285,7 +369,7 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         if (hit) {
           group.remove(M.body);
           S.missiles.splice(i, 1);
-          explode(p.clone(), 1.25);
+          explode(p.clone(), M.big || 1.25);
         }
       }
       // ── partículas ──
@@ -304,7 +388,10 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
           P.vel.multiplyScalar(1 - P.drag * dt);
           const sz2 = P.size0 + (P.size1 - P.size0) * k;
           P.sp.scale.set(sz2, sz2 * P.tall, 1);
-          P.sp.material.opacity = 1 - k * k;
+          // curva VFX: entrada rápida, salida lenta; el humo nunca es tinta sólida
+          P.sp.material.opacity = P.smoke
+            ? 0.6 * Math.min(1, k * 5) * (1 - k * k)
+            : (1 - k * k);
           P.sp.material.rotation += P.rot * dt;
           if (P.tint0 && P.tint1) P.sp.material.color.lerpColors(P.tint0, P.tint1, Math.min(1, k * 1.4));
         }
@@ -349,8 +436,8 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
             0.6, 2.1, 0.5, THREE.AdditiveBlending,
             { tint0: 0xffe8b0, tint1: 0xa03008, spin: 2.4, drag: 0.3, tall: 2.1, rise: 2.5 });
           if (Math.random() < 0.4) {
-            emit(TEX.smoke, F.p.clone().add(j).add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, 1.8, 0),
-              0.8, 3.2, 2.6, THREE.NormalBlending, { tint0: 0x2e2b28, tint1: 0x777370, spin: 0.6, drag: 0.3 });
+            emit(TEX.puff3d, F.p.clone().add(j).add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, 1.8, 0),
+              0.8, 3.2, 2.6, THREE.NormalBlending, { tint0: 0x6a5344, tint1: 0x8a8681, spin: 0.6, drag: 0.3, smoke: true });
           }
         }
         if (F.t > F.life + 1.5) {
@@ -362,14 +449,15 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
       for (let i = S.frags.length - 1; i >= 0; i--) {
         const F = S.frags[i];
         F.t += dt;
-        F.vel.y -= 22 * dt;
+        F.vel.y -= 30 * dt;
+        F.vel.multiplyScalar(1 - 0.22 * dt);           // drag aerodinámico
         F.m.position.addScaledVector(F.vel, dt);
         F.m.rotation.x += F.rot.x * dt; F.m.rotation.y += F.rot.y * dt; F.m.rotation.z += F.rot.z * dt;
         const gy = heightAt ? heightAt(F.m.position.x, F.m.position.z) : null;
         let grounded = false;
         if (gy != null && F.m.position.y < gy + 0.12) {
           F.m.position.y = gy + 0.12;
-          F.vel.y = Math.abs(F.vel.y) * 0.3;
+          F.vel.y = Math.abs(F.vel.y) * 0.24;
           F.vel.x *= 0.62; F.vel.z *= 0.62;
           F.rot.multiplyScalar(0.6);
           grounded = true;

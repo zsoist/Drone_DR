@@ -205,3 +205,21 @@ mando real, minimapa MapLibre opcional.
 - Replay/Director muestran el VUELO PURO: el circuito (aros/beams/migas/tubo,
   aditivos) se ocultaba en velos gigantes al volar dentro — setVisible(false)
   al entrar, restore al salir (ESC y exitDirector).
+
+## v111 (2026-07-12) — VFX senior pass + arsenal completo
+- HUMO REAL: textura multi-lóbulo procedural (26 blobs con densidad variable —
+  silueta irregular, no disco de tinta), curva de opacidad VFX (entrada rápida
+  ×5, salida cuadrática, tope 0.6 — nunca negro sólido), y NACE ILUMINADO por el
+  fuego (rampa 0xb56a34 → gris 0x8f8b86). Aplicado a columna, polvo, estela y
+  fuegos residuales.
+- Scorch con gradiente radial suave (adiós 'landing pad' negro flotante).
+- Eyecta: gravedad 30 + drag aerodinámico, tamaños 0.1-0.36, rebote 0.24.
+- ARSENAL (export ARSENAL): MG (auto 11.8/s, tracers balísticos con dispersión,
+  daño acumulativo vs health del kit, impactos con polvito+chispa) + misiles
+  S/M/L (velocidad/boom/cooldown/munición/regen propios; L escala 1.5 y big 2.2).
+  Selector UI premium sobre el FIRE (MG/S/M/L), Z cicla, hold-to-fire (pointer
+  y tecla X sostenida). Munición y cooldown del HUD por arma.
+- Audio: mg() percusiva 60ms bandpass 1.6k; boom(big) — el L truena más grave
+  (sub 80→20Hz) y más largo (~1.9s), cuerpo con lowpass más profundo.
+- Colisión premium: flash rojo de viñeta 0.5s al chocar (vl-hitfx).
+- QA: &fuego=mg = ráfaga sostenida → 18 balas/1.6s, 0 errores, 70fps.

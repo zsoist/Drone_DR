@@ -4,25 +4,25 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=109';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=109';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=109';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=109';
-import { createRecorder } from '/flightverse/recorder.js?v=109';
-import { createAudio } from '/flightverse/audio.js?v=109';
-import { createTouchSticks } from '/flightverse/touch.js?v=109';
-import { createSky } from '/flightverse/sky.js?v=109';
-import { loadSceneObjects } from '/flightverse/objects.js?v=109';
-import { createWeapons } from '/flightverse/weapons.js?v=109';
-import CameraControls from '/vendor/camera-controls.module.js?v=109';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=109';
+import * as THREE from '/flightverse/three.js?v=111';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=111';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=111';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=111';
+import { createRecorder } from '/flightverse/recorder.js?v=111';
+import { createAudio } from '/flightverse/audio.js?v=111';
+import { createTouchSticks } from '/flightverse/touch.js?v=111';
+import { createSky } from '/flightverse/sky.js?v=111';
+import { loadSceneObjects } from '/flightverse/objects.js?v=111';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=111';
+import CameraControls from '/vendor/camera-controls.module.js?v=111';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=111';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=109';
+} from '/vendor/postprocessing180.module.js?v=111';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -33,7 +33,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=109';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=111';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -83,7 +83,13 @@ function hud() {
     </div>
     <div class="vl-corner br">
       <div class="vl-kills" id="vl-kills"></div>
-      <button class="vl-fire" id="vl-fire" title="X · disparar">
+      <div class="vl-weps" id="vl-weps">
+        <button data-w="mg">MG</button>
+        <button data-w="s">S</button>
+        <button data-w="m" class="sel">M</button>
+        <button data-w="l">L</button>
+      </div>
+      <button class="vl-fire" id="vl-fire" title="X · disparar (Z cambia arma)">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
           <circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>
         </svg>
@@ -93,6 +99,7 @@ function hud() {
       <div class="vl-ghost" id="vl-ghost"></div>
       <div class="vl-fps" id="vl-fps"></div>
     </div>
+    <div class="vl-hitfx" id="vl-hitfx"></div>
     <div class="vl-center-top" id="vl-challenge"></div>
     <div class="vl-diff" id="vl-diff">
       <button data-d="facil">Fácil<span>8 aros · 9m</span></button>
@@ -407,9 +414,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=109', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=111', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=109');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=111');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -547,7 +554,18 @@ async function main() {
     fireBtn.classList.remove('flash'); void fireBtn.offsetWidth;   // reinicia anim
     fireBtn.classList.add('flash');
   };
-  fireBtn.addEventListener('click', doFire);
+  let firing = false;
+  fireBtn.addEventListener('pointerdown', () => { firing = true; doFire(); });
+  addEventListener('pointerup', () => { firing = false; });
+  const setWeapon = k => {
+    weapons.setWeapon(k);
+    document.querySelectorAll('#vl-weps button').forEach(b =>
+      b.classList.toggle('sel', b.dataset.w === k));
+  };
+  $('#vl-weps').addEventListener('click', e => {
+    const b = e.target.closest('button[data-w]');
+    if (b) setWeapon(b.dataset.w);
+  });
   const sticks = createTouchSticks($('#vl-hud'));
   let sfx = { idx: 0, phase: '', crash: false, count: 0 };
   let modeKey = 'asistido', rigIx = 0;
@@ -700,7 +718,11 @@ async function main() {
     if (e.code === 'KeyT') startReto(localStorage.getItem('ab.fv.gr.diff') || 'media');
     if (e.code === 'KeyP') cycleVista();
     if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
-    if (e.code === 'KeyX') doFire();
+    if (e.code === 'KeyX') { firing = true; doFire(); }
+    if (e.code === 'KeyZ') {
+      const ks = Object.keys(ARSENAL);
+      setWeapon(ks[(ks.indexOf(weapons.state.weapon) + 1) % ks.length]);
+    }
     if (e.code === 'Escape' && replay) { replay = null; reto?.setVisible(true); if (resultShown) $('#vl-result').classList.add('show'); }
   });
   renderer.domElement.addEventListener('click', () => { if (modeKey === 'fpv') input.requestLock(); });
@@ -988,6 +1010,7 @@ async function main() {
   };
   recBtn.addEventListener('click', toggleRec);
   addEventListener('keydown', e => { if (e.code === 'KeyV') toggleRec(); });
+  addEventListener('keyup', e => { if (e.code === 'KeyX') firing = false; });
   if (AT === 'record') {
     setTimeout(() => {
       const started = recorder.start();
@@ -1104,7 +1127,11 @@ async function main() {
           sfx.idx = st.idx; sfx.phase = st.phase;
           if (st.phase === 'finished' && !resultShown) showResult();
         }
-        if (drone.crashedSoft && !sfx.crash) audio.crash();
+        if (drone.crashedSoft && !sfx.crash) {
+          audio.crash();
+          const hx = $('#vl-hitfx');
+          hx.classList.remove('go'); void hx.offsetWidth; hx.classList.add('go');
+        }
         sfx.crash = drone.crashedSoft;
       }
       if (ghost?.on) {
@@ -1185,7 +1212,10 @@ async function main() {
         const wdt = Math.min(0.05, (now - (weapons._lt || now)) / 1000);
         weapons._lt = now;
         weapons.update(wdt, sceneObjects?.hittables);
-        if (Q.get('fuego') && simT > 1 && !weapons.state.fired) doFire(-1.25);
+        if (Q.get('fuego') === 'mg' && simT > 1 && simT < 2.6) {
+          if (!weapons._mg) { weapons._mg = true; weapons.setWeapon('mg'); }
+          doFire(-0.5);                        // ráfaga sostenida de QA
+        } else if (Q.get('fuego') && simT > 1 && !weapons.state.fired) doFire(-1.25);
         if (Q.get('boom') && simT > 5.2 && !weapons._boomed) {
           weapons._boomed = true;             // QA: detonación a nivel de suelo bajo el dron
           const bx = P.x - Math.sin(curYaw) * 6, bz = P.z - Math.cos(curYaw) * 6;
@@ -1193,9 +1223,11 @@ async function main() {
           weapons.explodeAt(new THREE.Vector3(bx, bgy + 0.3, bz));
         }
         const st = weapons.state;
-        $('#vl-ammo').textContent = st.ammo;
-        $('#vl-cool').style.transform = `scaleX(${1 - st.cool / 0.9})`;
-        fireBtn.classList.toggle('empty', st.ammo === 0);
+        const WA = ARSENAL[st.weapon];
+        if (firing && WA.auto) doFire();               // MG sostenida
+        $('#vl-ammo').textContent = Math.floor(st.ammo[st.weapon]);
+        $('#vl-cool').style.transform = `scaleX(${1 - st.cool / (WA.cd || WA.rate)})`;
+        fireBtn.classList.toggle('empty', st.ammo[st.weapon] < 1);
         if (st.destroyed) { const k = $('#vl-kills'); k.textContent = `DERRIBOS ${st.destroyed}`; k.classList.add('show'); }
         // retícula: 80 pasos de balística contra el heightfield
         if (st.ammo > 0 && !director) {

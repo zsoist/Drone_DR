@@ -148,24 +148,38 @@ export function createAudio() {
       n.connect(f); f.connect(g); g.connect(master); n.start();
       blip(900, 240, 0.3, 'sawtooth', 0.1);
     },
-    boom() {                                   // explosión: sub + cuerpo de ruido
+    mg() {                                     // ráfaga corta percusiva
       if (!ctx || muted) return;
       const t = ctx.currentTime;
       const n = ctx.createBufferSource();
-      const b = ctx.createBuffer(1, ctx.sampleRate * 1.4, ctx.sampleRate);
+      const b = ctx.createBuffer(1, ctx.sampleRate * 0.06, ctx.sampleRate);
+      const c = b.getChannelData(0);
+      for (let i = 0; i < c.length; i++) c[i] = (Math.random() * 2 - 1) * (1 - i / c.length);
+      n.buffer = b;
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1600; f.Q.value = 1.5;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.34, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+      n.connect(f); f.connect(g); g.connect(master); n.start();
+    },
+    boom(big = 1) {                            // explosión: sub + cuerpo, escala por tamaño
+      if (!ctx || muted) return;
+      const t = ctx.currentTime;
+      const n = ctx.createBufferSource();
+      const b = ctx.createBuffer(1, ctx.sampleRate * (1.1 + big * 0.5), ctx.sampleRate);
       const c = b.getChannelData(0);
       for (let i = 0; i < c.length; i++) c[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / c.length, 1.6);
       n.buffer = b;
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
       lp.frequency.setValueAtTime(2600, t);
-      lp.frequency.exponentialRampToValueAtTime(180, t + 1.1);
+      lp.frequency.exponentialRampToValueAtTime(Math.max(90, 200 - big * 40), t + 0.9 + big * 0.3);
       const g = ctx.createGain();
-      g.gain.setValueAtTime(0.9, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 1.3);
+      g.gain.setValueAtTime(Math.min(1, 0.7 + big * 0.2), t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 1.0 + big * 0.4);
       n.connect(lp); lp.connect(g); g.connect(master); n.start();
       const sub = ctx.createOscillator(); sub.type = 'sine';
-      sub.frequency.setValueAtTime(72, t);
-      sub.frequency.exponentialRampToValueAtTime(28, t + 0.7);
+      sub.frequency.setValueAtTime(80 - big * 12, t);
+      sub.frequency.exponentialRampToValueAtTime(Math.max(20, 30 - big * 5), t + 0.6 + big * 0.25);
       const sg = ctx.createGain();
       sg.gain.setValueAtTime(0.55, t);
       sg.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
