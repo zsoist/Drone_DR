@@ -131,6 +131,46 @@ export function createAudio() {
     crash() { blip(160, 40, 0.28, 'sawtooth', 0.3); },
     finish() { blip(660, 660, 0.12); setTimeout(() => blip(880, 880, 0.12), 130); setTimeout(() => blip(1320, 1320, 0.2), 260); },
     rec(on) { blip(on ? 520 : 780, on ? 780 : 520, 0.1, 'sine', 0.18); },
+    launch() {                                 // whoosh de salida de misil
+      if (!ctx || muted) return;
+      const t = ctx.currentTime;
+      const n = ctx.createBufferSource();
+      const b = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
+      const c = b.getChannelData(0);
+      for (let i = 0; i < c.length; i++) c[i] = (Math.random() * 2 - 1) * (1 - i / c.length);
+      n.buffer = b;
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.2;
+      f.frequency.setValueAtTime(3200, t);
+      f.frequency.exponentialRampToValueAtTime(500, t + 0.45);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.5, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+      n.connect(f); f.connect(g); g.connect(master); n.start();
+      blip(900, 240, 0.3, 'sawtooth', 0.1);
+    },
+    boom() {                                   // explosión: sub + cuerpo de ruido
+      if (!ctx || muted) return;
+      const t = ctx.currentTime;
+      const n = ctx.createBufferSource();
+      const b = ctx.createBuffer(1, ctx.sampleRate * 1.4, ctx.sampleRate);
+      const c = b.getChannelData(0);
+      for (let i = 0; i < c.length; i++) c[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / c.length, 1.6);
+      n.buffer = b;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(2600, t);
+      lp.frequency.exponentialRampToValueAtTime(180, t + 1.1);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.9, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 1.3);
+      n.connect(lp); lp.connect(g); g.connect(master); n.start();
+      const sub = ctx.createOscillator(); sub.type = 'sine';
+      sub.frequency.setValueAtTime(72, t);
+      sub.frequency.exponentialRampToValueAtTime(28, t + 0.7);
+      const sg = ctx.createGain();
+      sg.gain.setValueAtTime(0.55, t);
+      sg.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+      sub.connect(sg); sg.connect(master); sub.start(); sub.stop(t + 0.85);
+    },
     toggleMute() {
       muted = !muted;
       if (ctx) (muted ? ctx.suspend() : ctx.resume());

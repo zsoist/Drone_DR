@@ -112,3 +112,20 @@ mando real, minimapa MapLibre opcional.
 - BPF sigue propSpin (la inercia de hélices ya existente) + lift.
 - Verificación headless: OfflineAudioContext render → RMS 0.074 / peak 0.21 (probe
   CDP con monkey-patch de AudioContext); report.audioArmed expuesto para gates.
+
+## v96 (2026-07-12) — armamento + pipeline ultra-HD de modelos
+- weapons.js: misiles (balística leve, estela de humo), explosión multicapa
+  (flash + PointLight, bola de fuego, humo, 70 chispas Points con gravedad,
+  onda expansiva expandiéndose a ras de suelo, scorch persistente máx 12 FIFO),
+  fragmentación de destruibles (14 chunks con rebote) — todo pools, cero assets.
+- objects.json: flag `destructible` → hittables (centro+radio²); 3 cajas de
+  prueba en la escena sample. HONESTO: la fotogrametría recibe scorch/metralla,
+  no se rompe; lo destruible son objetos de juego.
+- UI: botón FIRE circular premium (municion 8 + recarga 2.5s/u, barra cooldown,
+  anim flash, estado empty) + tecla X. Shake de cámara escalado por distancia.
+- audio: launch() whoosh bandpass + boom() ruido lowpass 2.6k→180 + sub 72→28Hz.
+- Ultra-HD: environment map procedural (scene.environment — PBR metálico ya no
+  sale negro), anisotropía máx en todas las texturas del GLB, receiveShadow.
+  Spec v2: 120k tris / 8 mats / 2048² / hardpoints / gimbal / prompts copia-pega.
+- Gate: &fuego=1 dispara a 1s con pitch -0.55 → report.weapons {fired, exploded}.
+  Verificado: fired 1 / exploded 1 / 68fps / 0 errores.

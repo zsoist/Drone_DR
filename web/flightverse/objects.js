@@ -4,7 +4,7 @@
 // (ring/beacon/box) con anclaje al suelo real (heightAt), animaciones
 // spin/bob y materiales emisivos. Optimizado: matrices estáticas quietas,
 // un solo update() barato para los animados.
-import * as THREE from '/flightverse/three.js?v=94';
+import * as THREE from '/flightverse/three.js?v=96';
 
 const PRIMS = {
   ring: ({ color }) => new THREE.Mesh(
@@ -37,13 +37,14 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
   group.name = 'fv-objects';
   scene.add(group);
   const animated = [];
+  const hittables = [];                      // objetos destruibles (armamento)
   let GLTFLoader = null;
 
   for (const o of data.objects) {
     let node = null;
     if (o.type === 'glb' && o.file) {
       try {
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=94'));
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=96'));
         const g = await new GLTFLoader().loadAsync(`/assets/props/${encodeURIComponent(o.file)}`);
         node = g.scene;
       } catch { continue; }               // prop ausente: se omite, no rompe
@@ -57,6 +58,11 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
     node.position.set(x, gy + y, z);
     node.rotation.y = o.yaw || 0;
     node.scale.setScalar(o.scale || 1);
+    if (o.destructible) {
+      const bb = new THREE.Box3().setFromObject(node);
+      const r = bb.getSize(new THREE.Vector3()).length() * 0.55;
+      hittables.push({ node, center: bb.getCenter(new THREE.Vector3()), r2: r * r, color: o.color });
+    }
     if (o.spin || o.bob) {
       animated.push({ node, spin: !!o.spin, bob: !!o.bob, y0: node.position.y, ph: Math.random() * 6 });
     } else {
@@ -67,6 +73,7 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
   }
   return {
     group,
+    hittables,
     count: group.children.length,
     update(t) {
       for (const a of animated) {

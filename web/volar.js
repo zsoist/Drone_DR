@@ -4,24 +4,25 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=94';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=94';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=94';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=94';
-import { createRecorder } from '/flightverse/recorder.js?v=94';
-import { createAudio } from '/flightverse/audio.js?v=94';
-import { createTouchSticks } from '/flightverse/touch.js?v=94';
-import { createSky } from '/flightverse/sky.js?v=94';
-import { loadSceneObjects } from '/flightverse/objects.js?v=94';
-import CameraControls from '/vendor/camera-controls.module.js?v=94';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=94';
+import * as THREE from '/flightverse/three.js?v=96';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=96';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=96';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=96';
+import { createRecorder } from '/flightverse/recorder.js?v=96';
+import { createAudio } from '/flightverse/audio.js?v=96';
+import { createTouchSticks } from '/flightverse/touch.js?v=96';
+import { createSky } from '/flightverse/sky.js?v=96';
+import { loadSceneObjects } from '/flightverse/objects.js?v=96';
+import { createWeapons } from '/flightverse/weapons.js?v=96';
+import CameraControls from '/vendor/camera-controls.module.js?v=96';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=96';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=94';
+} from '/vendor/postprocessing180.module.js?v=96';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -32,7 +33,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=94';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=96';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -81,6 +82,13 @@ function hud() {
       </div>
     </div>
     <div class="vl-corner br">
+      <button class="vl-fire" id="vl-fire" title="X · disparar">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>
+        </svg>
+        <span id="vl-ammo">8</span>
+        <i id="vl-cool"></i>
+      </button>
       <div class="vl-ghost" id="vl-ghost"></div>
       <div class="vl-fps" id="vl-fps"></div>
     </div>
@@ -190,6 +198,21 @@ async function main() {
   document.body.prepend(renderer.domElement);
   renderer.domElement.className = 'vl-canvas';
   const scene = new THREE.Scene();
+  {
+    // environment map procedural: reflejos PBR reales en GLBs metálicos
+    // (sin esto, metallic>0.5 se ve negro — el look 'Unreal' necesita entorno)
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 32;
+    const c = cv.getContext('2d');
+    const g = c.createLinearGradient(0, 0, 0, 32);
+    g.addColorStop(0, '#7fb2e8'); g.addColorStop(0.5, '#dce9f6');
+    g.addColorStop(0.52, '#5a5348'); g.addColorStop(1, '#2e2a24');
+    c.fillStyle = g; c.fillRect(0, 0, 64, 32);
+    const env = new THREE.CanvasTexture(cv);
+    env.mapping = THREE.EquirectangularReflectionMapping;
+    env.colorSpace = THREE.SRGBColorSpace;
+    scene.environment = env;
+    scene.environmentIntensity = 0.85;
+  }
   const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.3, 6000);
   // cielo vivo: domo gradiente + sol/estrellas + nubes a la deriva; las luces
   // y la niebla las gobierna el preset (dia/atardecer/noche)
@@ -377,9 +400,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=94', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=96', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=94');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=96');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -389,8 +412,15 @@ async function main() {
     bb.setFromObject(m); bb.getCenter(m.position).multiplyScalar(-1);
     while (dmesh.children.length) dmesh.remove(dmesh.children[0]);   // fuera el procedural
     props.length = 0;
+    const maxAniso = renderer.capabilities.getMaxAnisotropy();
     m.traverse(o => {
       o.castShadow = true;                    // el traverse del procedural corrio ANTES del swap
+      o.receiveShadow = true;                 // auto-sombra (brazos sobre el cuerpo)
+      if (o.isMesh && o.material) {
+        for (const k of ['map', 'normalMap', 'metalnessMap', 'roughnessMap', 'aoMap', 'emissiveMap']) {
+          if (o.material[k]) o.material[k].anisotropy = maxAniso;
+        }
+      }
       if (/^prop/i.test(o.name)) props.push({ g: o, dir: props.length % 2 ? 1 : -1 });
     });
     const mkGlow = (color, sc) => {
@@ -476,6 +506,24 @@ async function main() {
   // ── estado de juego ──
   const input = createInput(renderer.domElement);
   const audio = createAudio();
+  // ── armamento: misiles + explosiones + destrucción (X o botón FIRE) ──
+  const shake = { mag: 0 };
+  let curYaw = 0;
+  const weapons = createWeapons(scene, {
+    heightAt: terrain.heightAt, audio,
+    onShake: (pos, big) => {
+      const d = camera.position.distanceTo(pos);
+      shake.mag = Math.max(shake.mag, Math.min(0.9, (9 * big) / (5 + d)));
+    },
+  });
+  const fireBtn = $('#vl-fire');
+  const doFire = (pitch) => {
+    if (!weapons.fire(P.clone(), curYaw, pitch ?? gimbalTilt * 0.55)) return;
+    $('#vl-ammo').textContent = weapons.state.ammo;
+    fireBtn.classList.remove('flash'); void fireBtn.offsetWidth;   // reinicia anim
+    fireBtn.classList.add('flash');
+  };
+  fireBtn.addEventListener('click', doFire);
   const sticks = createTouchSticks($('#vl-hud'));
   let sfx = { idx: 0, phase: '', crash: false, count: 0 };
   let modeKey = 'asistido', rigIx = 0;
@@ -627,6 +675,7 @@ async function main() {
     if (e.code === 'KeyT') startReto();
     if (e.code === 'KeyP') cycleVista();
     if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
+    if (e.code === 'KeyX') doFire();
     if (e.code === 'Escape' && replay) { replay = null; if (resultShown) $('#vl-result').classList.add('show'); }
   });
   renderer.domElement.addEventListener('click', () => { if (modeKey === 'fpv') input.requestLock(); });
@@ -994,6 +1043,7 @@ async function main() {
     },
     render(alpha) {
       const o = drone.lerpPose(alpha, P);
+      curYaw = o.yaw;
       // FOV kick con turbo: sensación de velocidad AAA (lerp suave, barato)
       const wantFov = RIGS[rigIx].fov + (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') ? 9 : 0);
       if (Math.abs(camera.fov - wantFov) > 0.1) {
@@ -1055,6 +1105,23 @@ async function main() {
       }
       sky.update(STEP, camera.position, P);
       sceneObjects?.update(simT);
+      {
+        const now = performance.now();
+        const wdt = Math.min(0.05, (now - (weapons._lt || now)) / 1000);
+        weapons._lt = now;
+        weapons.update(wdt, sceneObjects?.hittables);
+        if (Q.get('fuego') && simT > 1 && !weapons.state.fired) doFire(-0.55);
+        const st = weapons.state;
+        $('#vl-ammo').textContent = st.ammo;
+        $('#vl-cool').style.transform = `scaleX(${1 - st.cool / 0.9})`;
+        fireBtn.classList.toggle('empty', st.ammo === 0);
+        if (shake.mag > 0.003) {                 // sacudida de impacto (decae)
+          camera.position.x += (Math.random() - 0.5) * shake.mag;
+          camera.position.y += (Math.random() - 0.5) * shake.mag * 0.6;
+          camera.rotation.z += (Math.random() - 0.5) * shake.mag * 0.02;
+          shake.mag *= Math.pow(0.02, wdt);      // ~decadencia 98%/s
+        } else shake.mag = 0;
+      }
       composer.render();
       drawMinimap();
       // HUD (barato: texto directo, sin re-layout)
@@ -1179,6 +1246,7 @@ async function main() {
     setTimeout(() => {
       report.fps = Math.round(loop.fps() || 0);
       report.audioArmed = audio.armed;
+      report.weapons = { fired: weapons.state.fired, exploded: weapons.state.exploded };
       report.pos = { x: +drone.pos.x.toFixed(1), y: +drone.pos.y.toFixed(1), z: +drone.pos.z.toFixed(1) };
       report.agl = drone.agl == null ? null : +drone.agl.toFixed(1);
       report.distance = Math.round(drone.distance);
