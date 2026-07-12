@@ -3588,3 +3588,22 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 @media (pointer:coarse){
   .vl-grade{ left:50%; bottom:auto; top:50%; transform:translate(-50%,-50%) }
 }
+
+/* BLOQUE 31 · Director */
+.vl-director{ position:absolute; left:50%; bottom:180px; transform:translateX(-50%);
+  display:none; flex-direction:column; gap:9px; z-index:5; width:min(560px, calc(100vw - 28px));
+  padding:14px 16px; border-radius:14px; border:1px solid rgba(69,160,230,.3);
+  background:linear-gradient(160deg, rgba(23,29,38,.92), rgba(10,12,16,.9));
+  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); pointer-events:auto }
+.vl-director.show{ display:flex }
+.vl-dir-row{ display:flex; gap:8px; flex-wrap:wrap }
+.vl-dir-row button{ flex:1; min-height:38px; font:600 12px var(--font); color:var(--text-2);
+  border:1px solid var(--line); border-radius:9px; background:rgba(255,255,255,.04); cursor:pointer }
+.vl-dir-row button:first-child{ color:#fff; background:linear-gradient(135deg,#45A0E6,#5A78E8); border:none }
+.vl-dir-row button:hover{ filter:brightness(1.15) }
+#dir-scrub{ accent-color:#45A0E6; height:24px }
+.vl-dir-keys{ display:flex; gap:6px; flex-wrap:wrap; font:500 10.5px var(--font); color:var(--text-3) }
+.vl-dir-keys button{ font:600 10.5px var(--mono); color:#B7C2D0; padding:4px 8px;
+  border-radius:6px; border:1px solid var(--line); background:transparent; cursor:pointer }
+.vl-dir-keys button:hover{ border-color:var(--red); color:var(--red) }
+@media (pointer:coarse){ .vl-director{ bottom:calc(34vh + 90px) } }

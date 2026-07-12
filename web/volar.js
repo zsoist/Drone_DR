@@ -11,6 +11,8 @@ import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=60';
 import { createRecorder } from '/flightverse/recorder.js?v=60';
 import { createAudio } from '/flightverse/audio.js?v=60';
 import { createTouchSticks } from '/flightverse/touch.js?v=60';
+import CameraControls from '/vendor/camera-controls.module.js?v=60';
+CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
@@ -82,6 +84,16 @@ function hud() {
       <label>Bloom<input type="range" id="gr-g" min="0" max="1.2" step="0.02" value="0.32"></label>
       <label>Viñeta<input type="range" id="gr-v" min="0" max="0.9" step="0.02" value="0.42"></label>
       <button id="gr-reset">Restablecer</button>
+    </div>
+    <div class="vl-director" id="vl-director">
+      <div class="vl-dir-row">
+        <button id="dir-key">+ Keyframe</button>
+        <button id="dir-play">Vista previa</button>
+        <button id="dir-rec">Grabar toma</button>
+        <button id="dir-exit">Salir</button>
+      </div>
+      <input type="range" id="dir-scrub" min="0" max="1" step="0.001" value="0">
+      <div class="vl-dir-keys" id="dir-keys"></div>
     </div>
     <div class="vl-guide" id="vl-guide">
       <div class="vl-guide-card">
@@ -453,6 +465,7 @@ async function main() {
         <div class="vl-result-btns">
           <button data-act="retry">Reintentar</button>
           <button data-act="replay">Ver replay</button>
+          <button data-act="director">Director</button>
           <a href="mundo.html">Mundo</a>
         </div>
       </div>`;
@@ -462,7 +475,79 @@ async function main() {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'retry') startReto();
     if (act === 'replay') startReplay();
+    if (act === 'director') enterDirector();
   });
+
+  // ── DIRECTOR (P6): keyframes de cámara sobre el replay grabado ──
+  let director = null;
+  const cc = new CameraControls(camera, renderer.domElement);
+  cc.enabled = false;
+  const recAt = f => {                     // pose del rec 60Hz con lerp
+    const rec = reto?.state.rec; if (!rec?.length) return;
+    const i = Math.min(Math.floor(f), rec.length - 1);
+    const b = rec[Math.min(i + 1, rec.length - 1)], a = rec[i], k = f - i;
+    drone.prev.pos.copy(drone.pos); drone.prev.yaw = drone.yaw;
+    drone.pos.set(a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k);
+    drone.yaw = a[3] + (b[3] - a[3]) * k;
+  };
+  function enterDirector() {
+    if (!reto?.state.rec?.length) return;
+    $('#vl-result').classList.remove('show');
+    replay = null;
+    director = { keys: [], playing: false, f: 0, len: reto.state.rec.length - 1 };
+    cc.enabled = true;
+    cc.setLookAt(drone.pos.x + 20, drone.pos.y + 12, drone.pos.z + 20,
+      drone.pos.x, drone.pos.y, drone.pos.z, false);
+    $('#vl-director').classList.add('show');
+    $('#dir-scrub').max = String(director.len);
+    paintKeys();
+  }
+  function exitDirector() {
+    director = null; cc.enabled = false;
+    $('#vl-director').classList.remove('show');
+    if (resultShown) $('#vl-result').classList.add('show');
+  }
+  function paintKeys() {
+    $('#dir-keys').innerHTML = director.keys.map((k, i) =>
+      `<button data-dk="${i}">${(k.f / 60).toFixed(1)}s ✕</button>`).join('')
+      || '<span>añade keyframes moviendo la cámara y pulsando + Keyframe</span>';
+  }
+  const dirCam = f => {                    // cámara interpolada entre keyframes
+    const ks = director.keys; if (!ks.length) return;
+    let a = ks[0], b = ks[ks.length - 1];
+    for (let i = 0; i < ks.length - 1; i++)
+      if (f >= ks[i].f && f <= ks[i + 1].f) { a = ks[i]; b = ks[i + 1]; break; }
+    const span = Math.max(1, b.f - a.f);
+    let k = Math.min(1, Math.max(0, (f - a.f) / span));
+    k = k * k * (3 - 2 * k);               // smoothstep
+    camera.position.lerpVectors(a.pos, b.pos, k);
+    _dirT.lerpVectors(a.target, b.target, k);
+    camera.lookAt(_dirT);
+  };
+  const _dirT = new THREE.Vector3();
+  $('#dir-key').addEventListener('click', () => {
+    if (!director) return;
+    const t = new THREE.Vector3(); cc.getTarget(t);
+    director.keys.push({ f: director.f, pos: camera.position.clone(), target: t });
+    director.keys.sort((x, y) => x.f - y.f);
+    paintKeys();
+  });
+  $('#dir-keys').addEventListener('click', e => {
+    const i = e.target.closest('[data-dk]')?.dataset.dk;
+    if (i == null || !director) return;
+    director.keys.splice(+i, 1); paintKeys();
+  });
+  $('#dir-scrub').addEventListener('input', e => {
+    if (director && !director.playing) { director.f = +e.target.value; recAt(director.f); }
+  });
+  const dirPlay = async (rec) => {
+    if (!director || director.keys.length < 2) return;
+    director.playing = true; director.f = 0; cc.enabled = false;
+    if (rec) { recorder.start(); }
+  };
+  $('#dir-play').addEventListener('click', () => dirPlay(false));
+  $('#dir-rec').addEventListener('click', () => dirPlay(true));
+  $('#dir-exit').addEventListener('click', exitDirector);
 
   // cinemático: tour orbital sobre el centro de la escena
   let tourT = 0;
@@ -540,7 +625,19 @@ async function main() {
   const loop = createLoop({
     update(dt) {
       simT += dt;
-      if (replay) {
+      if (director) {
+        if (director.playing) {
+          director.f += dt * 60;
+          if (director.f >= director.len) {
+            director.f = director.len; director.playing = false; cc.enabled = true;
+            if (recorder.recording) recorder.stop().then(b => {
+              if (b) recorder.download(b, `director_${CID}.webm`);
+            });
+          }
+          $('#dir-scrub').value = String(director.f);
+        }
+        recAt(director.f);
+      } else if (replay) {
         // replay: la grabación (60Hz) manda; física apagada, interpolación intacta
         replay.f += dt * 60;
         const n = replay.rec.length;
@@ -616,7 +713,10 @@ async function main() {
       dmesh.position.copy(P);
       dmesh.rotation.set(0, o.yaw, 0, 'YXZ');
       dmesh.rotation.x = THREE.MathUtils.clamp(-drone.vel.dot(new THREE.Vector3(-Math.sin(o.yaw), 0, -Math.cos(o.yaw))) * 0.012, -0.35, 0.35);
-      if (arrival) {
+      if (director) {
+        if (director.playing) dirCam(director.f);
+        else cc.update(STEP);
+      } else if (arrival) {
         // swoop de entrada: de vista-mapa al rig chase, easeOutCubic
         arrival.t += STEP;
         const k = Math.min(1, arrival.t / arrival.dur);
@@ -647,7 +747,19 @@ async function main() {
       const card = ['N','NE','E','SE','S','SO','O','NO'][Math.round(hdg / 45) % 8];
       $('#vl-heading').textContent = `${card} ${Math.round(hdg)}°`;
       const ch = $('#vl-challenge'), cnt = $('#vl-count');
-      if (replay) {
+      if (director) {
+        if (director.playing) {
+          director.f += dt * 60;
+          if (director.f >= director.len) {
+            director.f = director.len; director.playing = false; cc.enabled = true;
+            if (recorder.recording) recorder.stop().then(b => {
+              if (b) recorder.download(b, `director_${CID}.webm`);
+            });
+          }
+          $('#dir-scrub').value = String(director.f);
+        }
+        recAt(director.f);
+      } else if (replay) {
         ch.textContent = 'REPLAY · ESC para salir'; cnt.classList.remove('show');
       } else if (reto) {
         const st = reto.state;
