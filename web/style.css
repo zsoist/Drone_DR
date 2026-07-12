@@ -3469,3 +3469,66 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   .vl-dock.open{ display:flex; animation:dockIn .22s var(--ease) }
   @keyframes dockIn{ from{ opacity:0; transform:translateY(8px) } }
 }
+
+/* ── BLOQUE 28c · WORLD SELECT videojuego: islas, panel de misión, launch ── */
+.w-rail{ display:flex; gap:16px; overflow-x:auto; padding:6px 4px 18px;
+  scroll-snap-type:x mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch }
+.w-rail::-webkit-scrollbar{ display:none }
+.wi{ position:relative; flex:0 0 min(340px, 78vw); aspect-ratio:16/10; border-radius:18px;
+  overflow:hidden; border:1.5px solid var(--line); scroll-snap-align:center; cursor:pointer;
+  isolation:isolate; opacity:0; animation:wiIn .5s var(--ease) forwards; animation-delay:var(--d);
+  transition:transform .3s var(--ease), border-color .3s, box-shadow .3s }
+@keyframes wiIn{ from{ opacity:0; transform:translateY(18px) } to{ opacity:1 } }
+.wi:hover{ box-shadow:0 22px 50px -20px rgba(0,0,0,.8) }
+.wi.sel{ border-color:#45A0E6; box-shadow:0 0 0 3px rgba(69,160,230,.25), 0 24px 60px -20px rgba(69,160,230,.35) }
+.wi.off{ filter:saturate(.5) brightness(.8) }
+.wi-poster{ position:absolute; inset:0; background-size:cover; background-position:center;
+  z-index:-1; transition:transform .6s var(--ease) }
+.wi:hover .wi-poster,.wi.sel .wi-poster{ transform:scale(1.09) }
+.wi-shine{ position:absolute; inset:0; background:linear-gradient(115deg, transparent 30%,
+  rgba(255,255,255,.14) 46%, transparent 60%); transform:translateX(-120%);
+  transition:transform .8s var(--ease) }
+.wi:hover .wi-shine{ transform:translateX(120%) }
+.wi-shade{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(10,12,16,.05) 30%, rgba(10,12,16,.92) 85%) }
+.wi-badge{ position:absolute; top:12px; left:12px; font:700 9.5px var(--mono); letter-spacing:.22em;
+  color:#7cc4ff; padding:5px 9px; border-radius:999px; background:rgba(10,20,32,.75);
+  border:1px solid rgba(69,160,230,.4); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px) }
+.wi-rec{ position:absolute; top:12px; right:12px; font:700 10px var(--mono);
+  color:#ffd60a; padding:5px 9px; border-radius:999px; background:rgba(32,26,4,.7);
+  border:1px solid rgba(255,214,10,.35) }
+.wi-body{ position:absolute; inset:auto 0 0 0; padding:13px 15px }
+.wi-name{ font-weight:700; font-size:16.5px; color:#EDF1F7; letter-spacing:-.01em;
+  text-shadow:0 1px 10px rgba(0,0,0,.9) }
+.wi-meta{ font:500 10.5px var(--mono); color:#93A1B4; margin-top:3px }
+.w-panel{ opacity:0; transform:translateY(10px); transition:opacity .35s var(--ease), transform .35s var(--ease);
+  margin:6px 0 40px }
+.w-panel.show{ opacity:1; transform:none }
+.wp-in{ display:flex; gap:22px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+  padding:20px 22px; border-radius:18px; border:1px solid rgba(69,160,230,.22);
+  background:linear-gradient(165deg, rgba(23,29,38,.85), rgba(10,12,16,.8));
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px) }
+.wp-name{ font:700 20px/1.2 var(--font); letter-spacing:-.015em; margin-bottom:8px }
+.wp-chips{ display:flex; gap:6px; flex-wrap:wrap }
+.wp-missions{ display:flex; gap:10px; flex-wrap:wrap }
+.wp-m{ min-width:150px; text-align:left; padding:13px 16px; border-radius:13px; cursor:pointer;
+  border:1px solid var(--line); background:rgba(255,255,255,.04); color:var(--text);
+  transition:transform .15s var(--ease), border-color .2s, background .2s }
+.wp-m:hover{ transform:translateY(-2px); border-color:rgba(69,160,230,.5); background:rgba(69,160,230,.1) }
+.wp-m:active{ transform:scale(.97) }
+.wp-m b{ display:block; font:700 13.5px var(--font) }
+.wp-m span{ font:500 10.5px var(--mono); color:var(--text-2) }
+.wp-m.hot{ border-color:rgba(69,160,230,.45); background:linear-gradient(135deg, rgba(69,160,230,.18), rgba(90,120,232,.12)) }
+.w-launch{ position:fixed; inset:0; z-index:60; display:grid; place-items:center;
+  opacity:0; pointer-events:none; transition:opacity .3s var(--ease) }
+.w-launch .wl-bg{ position:absolute; inset:0; background-size:cover; background-position:center;
+  filter:brightness(.35) saturate(1.1); transform:scale(1.04) }
+.w-launch.go{ opacity:1; pointer-events:auto }
+.w-launch.go .wl-bg{ animation:wlZoom .55s var(--ease) forwards }
+@keyframes wlZoom{ to{ transform:scale(1.14); filter:brightness(.12) } }
+.wl-txt{ position:relative; font:700 13px var(--mono); letter-spacing:.4em; color:#E6EBF2 }
+.wl-bar{ display:block; height:2px; margin-top:12px; border-radius:2px; background:rgba(255,255,255,.15);
+  overflow:hidden; position:relative }
+.wl-bar::after{ content:''; position:absolute; inset:0; width:40%; background:#45A0E6;
+  animation:wlBar .9s linear infinite }
+@keyframes wlBar{ from{ transform:translateX(-100%) } to{ transform:translateX(260%) } }
+@media (max-width:640px){ .wp-in{ padding:16px } .wp-m{ flex:1; min-width:130px } }

@@ -366,7 +366,9 @@ async function main() {
       else { await navigator.clipboard.writeText(url); $('#vl-share').textContent = '✓ copiado'; setTimeout(() => { $('#vl-share').textContent = '↗ Compartir'; }, 1600); }
     } catch { /* usuario canceló */ }
   });
-  setMode('asistido'); setRig(0); applyVista();
+  const qModo = Q.get('modo');
+  setMode(qModo && MODES[qModo] ? qModo : 'asistido'); setRig(0); applyVista();
+  if (Q.get('reto') === '1' && !AT) setTimeout(() => startReto(), 3800);   // tras el arrival
   const modeKeys = { Digit1: 'cinematico', Digit2: 'asistido', Digit3: 'fpv', Digit4: 'arcade', Digit5: 'dios' };
   addEventListener('keydown', e => {
     if (modeKeys[e.code]) setMode(modeKeys[e.code]);
