@@ -227,3 +227,22 @@ A 2000 steps SH aporta ~0 (subentrenado) — el SIGNO POSITIVO se adjudica en
 celda 3 (SH real a 30000). Permutación adoptada en ply_bridge con nota.
 El camino de eval queda limpio: la comparación inter-familia no carga
 artefactos nuestros.
+
+## Marco de lectura de celdas 2/3/3b — anclado PRE-aterrizaje (review)
+1. Eval interno de Brush: NO corre en las celdas (no se pasó --eval-split-every)
+   — cero confound de split; el veredicto sale EXCLUSIVAMENTE de nuestro camino
+   (GT-path + 8 views de baseline-v1). Etiquetado, no problema.
+2. Celda 3b: --max-splats es TECHO, no destino. Verificar conteo FINAL vs 58k
+   antes de titular: si queda debajo → la celda se llama "conteo-libre-bajo-
+   techo-igual" (válida, otra pregunta) y deja dato doble (Brush juzga que la
+   escena no pide 58k / la comparación estricta no existe aquí).
+3. TRES comparaciones, CERO promedios entre celdas:
+   c2 vs medium = costo igual (la de producción) ·
+   c3 vs el TECHO-bajo-cap del incumbente — que ES medium@96s (cinematic era
+   sobre-presupuesto): dato a favor del incumbente que la tabla recuerda ·
+   c3b vs medium en conteo = eficiencia por gaussiana.
+   "Brush@25min > OpenSplat@96s" NO se lee como "Brush > OpenSplat".
+4. AUDITORÍA DE LA VARA en celda 3: nota de ojo COMPARATIVA y ESPECÍFICA
+   (liso-Brush vs detalle-con-ruido-medium, vistas de la MEDIANA, superficies
+   nombradas), con fecha — la evidencia que M3 pondera sobre si "LPIPS decide"
+   sobrevive al encuentro inter-familia. La mirada más cuidadosa del arco.
