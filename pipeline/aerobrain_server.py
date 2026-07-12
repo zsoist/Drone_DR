@@ -25,6 +25,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import urllib.request
 from email.utils import formatdate, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -262,7 +263,6 @@ def _sb_keys():
 def semantic_search(q: str, k: int = 12) -> dict:
     """Embeds la consulta (OpenAI, server-side) y pide a Supabase los vuelos más
     parecidos vía el RPC match_flights. La OpenAI key NUNCA toca el frontend."""
-    import urllib.request
     keys = _sb_keys()
     url = keys.get("SUPABASE_DRONE_URL", "").rstrip("/")
     pub = keys.get("SUPABASE_DRONE_PUBLISHABLE_KEY", "")
@@ -280,7 +280,6 @@ def semantic_search(q: str, k: int = 12) -> dict:
 
 
 def _deepseek(prompt: str) -> str:
-    import urllib.request
     key = ""
     for line in KEYS_ENV.read_text().splitlines():
         if line.startswith("DEEPSEEK_API_KEY="):
@@ -1169,6 +1168,40 @@ class H(BaseHTTPRequestHandler):
                 if j["status"] == "done" and j.get("artifact"):
                     j["artifact_exists"] = (VAULT / j["artifact"]).exists()
             return self.send_json({"jobs": jobs})
+        if self.path.startswith("/api/geocode"):
+            # nombres humanos (ciudad · barrio): proxy server-side a Nominatim con
+            # caché persistente — el cliente jamás toca hosts externos nuevos.
+            if not self.auth():
+                return
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                lat = round(float((qs.get("lat") or [""])[0]), 3)
+                lon = round(float((qs.get("lon") or [""])[0]), 3)
+            except ValueError:
+                return self.send_json({"error": "lat/lon inválidos"}, 400)
+            gc_file = VAULT / "manifest" / "geocode.json"
+            try:
+                cache = json.loads(gc_file.read_text()) if gc_file.exists() else {}
+            except ValueError:
+                cache = {}
+            key = f"{lat},{lon}"
+            if key not in cache:
+                try:
+                    req = urllib.request.Request(
+                        f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}"
+                        f"&format=jsonv2&zoom=16&accept-language=es",
+                        headers={"User-Agent": "AeroBrain/1.0 (uso personal)"})
+                    with urllib.request.urlopen(req, timeout=8) as r:
+                        a = json.loads(r.read()).get("address", {})
+                    barrio = a.get("neighbourhood") or a.get("suburb") or a.get("quarter") or a.get("village") or ""
+                    ciudad = a.get("city") or a.get("town") or a.get("municipality") or a.get("state") or ""
+                    cache[key] = {"name": " · ".join(x for x in (barrio, ciudad) if x) or None}
+                    _t = gc_file.with_suffix(".json.tmp")
+                    _t.write_text(json.dumps(cache, ensure_ascii=False))
+                    os.replace(_t, gc_file)
+                except Exception:
+                    return self.send_json({"name": None, "cached": False})
+            return self.send_json({**cache[key], "cached": True})
         if self.path.startswith("/api/capture_report"):
             if not self.auth():
                 return
@@ -1449,6 +1482,14 @@ class H(BaseHTTPRequestHandler):
         except BrokenPipeError:
             pass
         except Exception as e:
+            # un 500 sin causa registrada es in-diagnosticable (lección del arco):
+            # el estado siempre viaja con su porqué
+            try:
+                import traceback
+                perfmod.log_error("server-500", f"{type(e).__name__}: {e}",
+                                  ctx={"path": self.path, "tb": traceback.format_exc()[-400:]})
+            except Exception:
+                pass
             self._safe_send({"error": "error interno del servidor"}, 500)
 
     def _safe_send(self, obj, code):
@@ -1934,6 +1975,23 @@ class H(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 return self.send_json({"error": "parámetros inválidos"}, 400)
             return self.send_json(_pf.splat_preflight(n, w, p))
+        if u.path == "/api/suggest_name":
+            # DeepSeek (lane de texto): nombre de proyecto corto y humano desde lugar+fecha+tomas
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            place = str(spec.get("place", ""))[:80]
+            date = str(spec.get("date", ""))[:20]
+            n = max(1, min(20, int(spec.get("n", 1) or 1)))
+            try:
+                name = _deepseek(
+                    f"Nombre corto (máx 5 palabras, español, sin comillas ni emojis) para un proyecto "
+                    f"de fotogrametría con dron: lugar '{place}', fecha {date}, {n} video(s). "
+                    f"Estilo: evocador pero sobrio, tipo 'Atardecer en Suba' o 'Casa Chía — combinado'. "
+                    f"Responde SOLO el nombre.").strip().strip('"')[:60]
+                return self.send_json({"name": name})
+            except Exception as e:
+                return self.send_json({"error": f"DeepSeek no disponible: {e}"}, 502)
         if u.path == "/api/client_error":
             # errores JS del frontend → registro central. Sin auth (los reporta también la
             # página pública), pero: mismo-origen obligatorio + presupuesto global 60/h

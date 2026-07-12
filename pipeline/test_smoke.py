@@ -779,6 +779,19 @@ check("modal v2: agrupa por CENTROIDE del bbox (U1.1 — spotKey del despegue re
 check("modal v2: preflight en UI etiquetado como proyección, jamás promesa",
       "no una promesa" in _td_src and "/api/preflight" in _td_src)
 
+
+check("server: geocode en do_GET con caché + urllib.request al TOP (import local envenena _post: UnboundLocalError en todo urllib.parse previo)",
+      '"/api/geocode"' in _srv_src_pf2.replace("startswith(", '("')
+      or "/api/geocode" in _srv_src_pf2)
+_srv_head = _srv_src_pf2[:3000]
+check("server: import urllib.request a nivel módulo, NUNCA dentro de handlers",
+      "import urllib.request" in _srv_head
+      and "    import urllib.request" not in _srv_src_pf2)
+check("server: 500 con causa registrada (server-500 a errors.jsonl) — cero 500 mudos",
+      '"server-500"' in _srv_src_pf2)
+check("server: /api/suggest_name usa _deepseek con prompt acotado",
+      '"/api/suggest_name"' in _srv_src_pf2 and "_deepseek(" in _srv_src_pf2)
+
 import inspect as _insp
 check("hwconfig: la política jamás reescribe hardware.json (calibración = humana)",
       "write_text" not in _insp.getsource(_hw._on_ram_mismatch))

@@ -566,7 +566,8 @@
         <div id="m-combined" class="proc-combined"></div>
         <div id="m-preflight"></div>
         <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
-        <input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — combinado" style="width:100%">
+        <div class="st-namer"><input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — combinado">
+          <button class="btn" id="m-suggest" title="Sugerir con IA (DeepSeek)">✨ Sugerir</button></div>
         <p class="mlb">Calidad de la fotogrametría</p>
         <div class="mpresets">${PRE.map(p => `
           <div class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
@@ -644,6 +645,7 @@
         </div>`;
       if (typeof renderTray === 'function') renderTray();
       if (typeof renderPreflight === 'function') renderPreflight();
+      try { if (typeof drawTracks === 'function') drawTracks(); } catch { }
     }
     renderCombined();
 
@@ -763,30 +765,107 @@
       });
     });
 
-    // mapa: un pin por lugar (centroide del grupo), badge = nº de tomas; clic = scroll+destello
+    // mapa premium: pins por lugar, capas (satélite/oscuro/plano), zoom por radio del
+    // spot, tracks de la selección dibujados, nombres geocodificados. 60fps nativo de
+    // maplibre (flyTo/easeTo); el fitBounds corre en 'load' Y tras el layout del modal
+    // (el bug del zoom-mundial: fit con contenedor sin altura calcula zoom 0).
     let stMap = null;
+    const PLANO_STYLE = { version: 8, sources: { v: { type: 'raster',
+      tiles: ['https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'],
+      tileSize: 256, attribution: 'CARTO · OSM' } }, layers: [{ id: 'v', type: 'raster', source: 'v' }] };
+    const mapBounds = new maplibregl.LngLatBounds();
+    const fitAll = () => { if (!mapBounds.isEmpty() && stMap) stMap.fitBounds(mapBounds, { padding: 46, maxZoom: 16, duration: 900 }); };
+    const selCenter = () => {
+      const f = byCid[[...sel][0]]; const c = f && centroid(f);
+      return c || (mapBounds.isEmpty() ? null : mapBounds.getCenter().toArray());
+    };
+    const drawTracks = async () => {
+      if (!stMap || !stMap.isStyleLoaded()) return;
+      const feats = [];
+      for (const cid of sel) {
+        try {
+          const t = await (await fetch(`data/tracks/${encodeURIComponent(cid)}.flight.json`)).json();
+          const pts = (t.points || []).filter(p => p.lon && p.lat).map(p => [p.lon, p.lat]);
+          if (pts.length > 1) feats.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts } });
+        } catch { }
+      }
+      const data = { type: 'FeatureCollection', features: feats };
+      if (stMap.getSource('sel-tracks')) stMap.getSource('sel-tracks').setData(data);
+      else {
+        stMap.addSource('sel-tracks', { type: 'geojson', data });
+        stMap.addLayer({ id: 'sel-tracks-halo', type: 'line', source: 'sel-tracks',
+          paint: { 'line-color': '#0b1220', 'line-width': 5, 'line-opacity': .55 } });
+        stMap.addLayer({ id: 'sel-tracks', type: 'line', source: 'sel-tracks',
+          paint: { 'line-color': '#4cc2ff', 'line-width': 2.5 } });
+      }
+    };
     try {
       if (window.maplibregl) {
         stMap = new maplibregl.Map({ container: ov.querySelector('#st-map'), style: SAT_STYLE,
                                      attributionControl: false, cooperativeGestures: true });
         stMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-        const bounds = new maplibregl.LngLatBounds();
         spots.forEach(([sk, fs]) => {
           const c = centroid(fs[0]); if (!c) return;
-          bounds.extend(c);
+          mapBounds.extend(c);
           const el = document.createElement('div');
           el.className = 'st-pin';
           el.innerHTML = `<b>${fs.length}</b>`;
           el.addEventListener('click', () => {
+            stMap.flyTo({ center: c, zoom: 15.5, duration: 850, essential: true });
             const g = ov.querySelector(`.proc-group[data-spot="${CSS.escape(sk)}"]`);
             if (g) { g.scrollIntoView({ behavior: 'smooth', block: 'start' }); g.classList.add('flash'); setTimeout(() => g.classList.remove('flash'), 1200); }
           });
           new maplibregl.Marker({ element: el }).setLngLat(c).addTo(stMap);
         });
-        if (!bounds.isEmpty()) stMap.fitBounds(bounds, { padding: 46, maxZoom: 16 });
-        setTimeout(() => stMap.resize(), 60);        // el modal termina de layout después del init
+        stMap.on('load', () => { fitAll(); drawTracks(); });
+        stMap.on('style.load', drawTracks);            // las capas geojson mueren al cambiar estilo
+        setTimeout(() => { stMap.resize(); fitAll(); }, 120);
+        // controles superpuestos: capas + radio del spot
+        const ctl = document.createElement('div');
+        ctl.className = 'st-map-ctl';
+        ctl.innerHTML = `
+          <div class="st-mc-row" data-role="layers">
+            <button class="on" data-layer="sat">Satélite</button>
+            <button data-layer="plano">Plano</button>
+            <button data-layer="oscuro">Oscuro</button>
+          </div>
+          <div class="st-mc-row" data-role="radius">
+            <button data-r="200">Spot</button><button data-r="400">S</button>
+            <button data-r="800">M</button><button data-r="1500">L</button>
+            <button data-r="3000">XL</button><button data-r="all">Todo</button>
+          </div>`;
+        ov.querySelector('.st-map-wrap').appendChild(ctl);
+        ctl.addEventListener('click', e => {
+          const L = e.target.closest('[data-layer]');
+          if (L) {
+            ctl.querySelectorAll('[data-layer]').forEach(b => b.classList.toggle('on', b === L));
+            stMap.setStyle({ sat: SAT_STYLE, plano: PLANO_STYLE, oscuro: DARK_STYLE }[L.dataset.layer]);
+            return;
+          }
+          const R = e.target.closest('[data-r]');
+          if (!R) return;
+          ctl.querySelectorAll('[data-r]').forEach(b => b.classList.toggle('on', b === R));
+          if (R.dataset.r === 'all') return fitAll();
+          const c = selCenter(); if (!c) return;
+          const r = +R.dataset.r;                       // radio en metros → bounds del círculo
+          const dLat = r / 111320, dLon = r / (111320 * Math.cos(c[1] * Math.PI / 180));
+          stMap.fitBounds([[c[0] - dLon, c[1] - dLat], [c[0] + dLon, c[1] + dLat]],
+                          { duration: 850, essential: true });
+        });
       }
     } catch { /* sin mapa no se bloquea el flujo */ }
+    // nombres humanos por grupo (geocode cacheado server-side): ciudad · barrio,
+    // con las coordenadas degradadas a tooltip — premium sin perder precisión
+    spots.forEach(async ([sk, fs]) => {
+      const c = centroid(fs[0]); if (!c) return;
+      try {
+        const g = await (await fetch(`/api/geocode?lat=${c[1].toFixed(3)}&lon=${c[0].toFixed(3)}`)).json();
+        if (g.name) {
+          const el = ov.querySelector(`.proc-group[data-spot="${CSS.escape(sk)}"] .pg-place`);
+          if (el) { el.setAttribute('title', el.textContent.trim()); el.innerHTML = `${icon('pin')} ${esc(g.name)}`; }
+        }
+      } catch { }
+    });
 
     // preflight del splat phased (U1.3 en el modal): estimación de frames del perfil del preset
     // ODM elegido → /api/preflight. Etiquetado como PROYECCIÓN del modelo, jamás promesa.
@@ -812,6 +891,20 @@
       } catch { box.innerHTML = ''; }
     }
     ov.querySelector('.mpresets').addEventListener('click', () => renderPreflight());
+
+    // DeepSeek (lane de texto): nombre sugerido desde lugar geocodificado + fecha + tomas
+    ov.querySelector('#m-suggest')?.addEventListener('click', async e => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = '…';
+      try {
+        const f = byCid[[...sel][0]];
+        const gEl = ov.querySelector(`.proc-group[data-spot="${CSS.escape(spotKey(f))}"] .pg-place`);
+        const r = await api('/api/suggest_name', {
+          place: (gEl?.textContent || f.place || '').trim(),
+          date: fmt.date(f.date), n: sel.size });
+        if (r.name) { const t = ov.querySelector('#m-title'); t.value = r.name; t.focus(); }
+        else if (r.error) alert(r.error);
+      } finally { b.disabled = false; b.textContent = '✨ Sugerir'; }
+    });
 
     ov.querySelector('#m-go').addEventListener('click', async e2 => {
       const btn = e2.currentTarget;

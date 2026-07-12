@@ -3123,3 +3123,29 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .st-preview .modal-x{position:absolute;top:-14px;right:-14px}
 .st-proj-note{display:block;margin-top:3px;font-size:10px;color:var(--text-3);font-style:normal}
 @media(max-width:860px){.st-grid{grid-template-columns:1fr}.st-map-wrap{min-height:220px}}
+
+/* ══ BLOQUE 26 · Estudio 3D premium: capas, radio, tracks, transiciones ══ */
+.modal-ov{animation:ovIn .18s ease-out}
+@keyframes ovIn{from{opacity:0}to{opacity:1}}
+.modal--studio{animation:stIn .26s cubic-bezier(.2,.9,.3,1)}
+@keyframes stIn{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+.st-pane{animation:paneIn .22s ease-out}
+@keyframes paneIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:none}}
+.st-map-ctl{position:absolute;left:8px;top:8px;z-index:3;display:flex;flex-direction:column;gap:6px}
+.st-mc-row{display:flex;gap:4px;background:rgba(8,12,20,.78);backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:4px}
+.st-mc-row button{background:none;border:none;color:#cfd8e6;font-size:10.5px;font-family:var(--mono);
+  padding:4px 9px;border-radius:7px;cursor:pointer;transition:all .15s}
+.st-mc-row button:hover{color:#fff;background:rgba(255,255,255,.08)}
+.st-mc-row button.on{background:var(--accent);color:#04121f;font-weight:700}
+.st-pin{transition:transform .15s cubic-bezier(.2,.9,.3,1)}
+.st-pin:hover{transform:scale(1.22)}
+.pc-clip{transition:transform .13s ease,border-color .13s ease,background .13s ease}
+.pc-clip:hover{transform:translateX(2px)}
+.st-chip{transition:all .13s ease}
+.mpreset{transition:transform .13s ease,border-color .13s ease}
+.mpreset:hover{transform:translateY(-1px)}
+.st-namer{display:flex;gap:8px}
+.st-namer .ctl{flex:1}
+.st-namer .btn{white-space:nowrap}
+.proc-group{transition:outline-color .3s}
