@@ -101,3 +101,14 @@ mando real, minimapa MapLibre opcional.
 - LEDs del dron a escala real (0.055/0.075, núcleo duro), respiración sutil.
 - Dock premium: sheen sweep, glow por color de sección, entrada escalonada, prefers-reduced-motion.
 - Debug: window.__skyUni expone uniforms del cielo para QA por CDP.
+
+## v94 (2026-07-12) — audio overhaul: acústica de quad real
+- 4 rotores independientes (PeriodicWave 16 armónicos 1/n^1.25, pares atenuados),
+  detune fijo por rotor (batido cuádruple) + wander senoidal (correcciones FC).
+- WaveShaper tanh = grit; whine motor/ESC (saw ×9.5 BPF, muy tenue); propwash de
+  ruido bandpass con chop AM a la frecuencia de paso de pala; viento ∝ v² aparte.
+- Bus espacial: gain 1/d + lowpass de absorción de aire + StereoPanner, alimentado
+  desde volar con camera.worldToLocal(P) — FPV pega el oído, Lejos lo aleja.
+- BPF sigue propSpin (la inercia de hélices ya existente) + lift.
+- Verificación headless: OfflineAudioContext render → RMS 0.074 / peak 0.21 (probe
+  CDP con monkey-patch de AudioContext); report.audioArmed expuesto para gates.

@@ -1,35 +1,81 @@
 // flightverse/audio.js — audio 100% sintetizado (WebAudio, cero assets, cero
-// copyright). Rotores = 2 sierras detuned + lowpass cuyo pitch/volumen siguen
-// la velocidad real; viento = ruido por bandpass ∝ v². Eventos cortos por
-// osciladores. El contexto se crea en el PRIMER gesto (política de autoplay);
-// hasta entonces todo es no-op seguro (headless/autotest incluidos).
+// copyright). Acústica de quad REAL: 4 rotores independientes con frecuencia
+// de paso de pala detuned (el batido/wobble característico), onda periódica
+// rica en armónicos + saturación suave (grit), whine agudo de motor/ESC,
+// propwash de ruido con chop AM al ritmo de las palas, y bus espacial:
+// atenuación por distancia, paneo estéreo y absorción de aire (lowpass).
+// El contexto se crea en el PRIMER gesto (política de autoplay); hasta
+// entonces todo es no-op seguro (headless/autotest incluidos).
 export function createAudio() {
-  let ctx = null, rotor = null, wind = null, master = null, muted = false;
+  let ctx = null, eng = null, master = null, muted = false;
+  // detune fijo por rotor: 4 fuentes casi-iguales = batido cuádruple lento
+  const DET = [0.982, 0.994, 1.009, 1.021];
+  // tasa de 'wander' por rotor (correcciones del controlador de vuelo)
+  const RATE = [0.71, 1.13, 0.47, 0.93];
 
   function boot() {
     if (ctx || muted) return;
     try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
-    master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 5;
+    comp.attack.value = 0.004; comp.release.value = 0.18;
+    comp.connect(ctx.destination);
+    master = ctx.createGain(); master.gain.value = 0.85; master.connect(comp);
 
-    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
-    o1.type = 'sawtooth'; o2.type = 'sawtooth';
-    o1.frequency.value = 82; o2.frequency.value = 83.7;      // batido de rotores
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
-    const g = ctx.createGain(); g.gain.value = 0;
-    o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master);
-    o1.start(); o2.start();
-    rotor = { o1, o2, lp, g };
+    // ── bus espacial del dron: air(lowpass) → dist(gain) → pan → master ──
+    const pan = ctx.createStereoPanner();
+    const dist = ctx.createGain(); dist.gain.value = 0.8;
+    const air = ctx.createBiquadFilter(); air.type = 'lowpass'; air.frequency.value = 5200;
+    air.connect(dist); dist.connect(pan); pan.connect(master);
 
-    const n = ctx.createBufferSource();
+    // ── 4 rotores: onda periódica de paso de pala (armónicos 1/n^1.25) ──
+    const N = 16;
+    const real = new Float32Array(N + 1), imag = new Float32Array(N + 1);
+    for (let n = 1; n <= N; n++) imag[n] = Math.pow(n, -1.25) * (n % 2 ? 1 : 0.72);
+    const wave = ctx.createPeriodicWave(real, imag);
+    // saturación suave = grit de motor (los armónicos se intermodulan)
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(257);
+    for (let i = 0; i <= 256; i++) curve[i] = Math.tanh((i / 128 - 1) * 2.2);
+    shaper.curve = curve; shaper.connect(air);
+    const motorBus = ctx.createGain(); motorBus.gain.value = 0; motorBus.connect(shaper);
+    const rotors = DET.map((det, i) => {
+      const osc = ctx.createOscillator();
+      osc.setPeriodicWave(wave); osc.frequency.value = 110 * det;
+      const g = ctx.createGain(); g.gain.value = 0.24;
+      osc.connect(g); g.connect(motorBus); osc.start();
+      return { osc, det, rate: RATE[i], ph: i * 1.7 };
+    });
+
+    // ── whine agudo de motor/ESC (muy tenue, da el 'eléctrico') ──
+    const whine = ctx.createOscillator(); whine.type = 'sawtooth'; whine.frequency.value = 1050;
+    const whp = ctx.createBiquadFilter(); whp.type = 'highpass'; whp.frequency.value = 900;
+    const wg = ctx.createGain(); wg.gain.value = 0;
+    whine.connect(whp); whp.connect(wg); wg.connect(air); whine.start();
+
+    // ── propwash: ruido → bandpass → AM 'chop' al ritmo de las palas ──
     const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const ch = buf.getChannelData(0);
     for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
-    n.buffer = buf; n.loop = true;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 700; bp.Q.value = 0.6;
-    const wg = ctx.createGain(); wg.gain.value = 0;
-    n.connect(bp); bp.connect(wg); wg.connect(master);
-    n.start();
-    wind = { bp, g: wg };
+    const mkNoise = () => {
+      const n = ctx.createBufferSource(); n.buffer = buf; n.loop = true; n.start(); return n;
+    };
+    const noiseBp = ctx.createBiquadFilter(); noiseBp.type = 'bandpass';
+    noiseBp.frequency.value = 900; noiseBp.Q.value = 0.8;
+    const chopG = ctx.createGain(); chopG.gain.value = 0.65;   // base del AM
+    const ng = ctx.createGain(); ng.gain.value = 0;
+    mkNoise().connect(noiseBp); noiseBp.connect(chopG); chopG.connect(ng); ng.connect(air);
+    const chop = ctx.createOscillator(); chop.frequency.value = 110;
+    const chopDepth = ctx.createGain(); chopDepth.gain.value = 0.35;
+    chop.connect(chopDepth); chopDepth.connect(chopG.gain); chop.start();
+
+    // ── viento de velocidad (célula aparte: aire en el micrófono, no panea) ──
+    const windBp = ctx.createBiquadFilter(); windBp.type = 'bandpass';
+    windBp.frequency.value = 450; windBp.Q.value = 0.5;
+    const windG = ctx.createGain(); windG.gain.value = 0;
+    mkNoise().connect(windBp); windBp.connect(windG); windG.connect(master);
+
+    eng = { rotors, motorBus, whine, wg, noiseBp, ng, chop, windBp, windG, air, dist, pan };
   }
   // primer gesto arma el contexto (una sola vez)
   const arm = () => { boot(); removeEventListener('pointerdown', arm); removeEventListener('keydown', arm); };
@@ -51,14 +97,33 @@ export function createAudio() {
 
   return {
     get armed() { return !!ctx; },
-    update(speed, lift) {
-      if (!ctx || muted || !rotor) return;
-      const f = 78 + speed * 2.4 + Math.abs(lift) * 26;
-      rotor.o1.frequency.setTargetAtTime(f, ctx.currentTime, 0.08);
-      rotor.o2.frequency.setTargetAtTime(f * 1.021, ctx.currentTime, 0.08);
-      rotor.g.gain.setTargetAtTime(Math.min(0.13, 0.05 + speed * 0.002), ctx.currentTime, 0.15);
-      wind.g.gain.setTargetAtTime(Math.min(0.2, speed * speed * 0.00018), ctx.currentTime, 0.2);
-      wind.bp.frequency.setTargetAtTime(500 + speed * 26, ctx.currentTime, 0.25);
+    // rpm = propSpin del juego (14 ralentí … ~60 a fondo); dist/pan relativos
+    // a la cámara activa (FPV pega el oído al dron, Lejos lo aleja).
+    update(rpm, speed, lift, dist = 6, pan = 0) {
+      if (!ctx || muted || !eng) return;
+      const t = ctx.currentTime;
+      // frecuencia de paso de pala (2 palas): ~105Hz ralentí → ~210Hz a fondo
+      const bpf = 74 + rpm * 2.2 + Math.max(0, lift) * 6;
+      for (const r of eng.rotors) {
+        const wob = 1 + Math.sin(t * r.rate * 6.28 + r.ph) * 0.004;
+        r.osc.frequency.setTargetAtTime(bpf * r.det * wob, t, 0.06);
+      }
+      eng.whine.frequency.setTargetAtTime(bpf * 9.5, t, 0.08);
+      eng.chop.frequency.setTargetAtTime(bpf, t, 0.06);
+      // carga: más thrust = más cuerpo, más propwash, más whine
+      const load = Math.min(1, Math.max(0, (rpm - 12) / 46));
+      eng.motorBus.gain.setTargetAtTime(0.10 + load * 0.15, t, 0.12);
+      eng.ng.gain.setTargetAtTime(0.02 + load * 0.17, t, 0.15);
+      eng.noiseBp.frequency.setTargetAtTime(600 + load * 1500, t, 0.2);
+      eng.wg.gain.setTargetAtTime(0.006 + load * 0.014, t, 0.15);
+      // viento aparte ∝ v²
+      eng.windG.gain.setTargetAtTime(Math.min(0.22, speed * speed * 0.00016), t, 0.2);
+      eng.windBp.frequency.setTargetAtTime(400 + speed * 30, t, 0.25);
+      // espacio: 1/d + absorción de aire + paneo
+      const dd = Math.max(1.2, dist);
+      eng.dist.gain.setTargetAtTime(Math.min(1, 2.4 / dd), t, 0.12);
+      eng.air.frequency.setTargetAtTime(6500 / (1 + dd * 0.12), t, 0.15);
+      eng.pan.pan.setTargetAtTime(Math.max(-0.85, Math.min(0.85, pan)), t, 0.1);
     },
     gate() { blip(880, 1420, 0.14, 'sine', 0.26); },
     tick() { blip(660, 660, 0.07, 'square', 0.14); },

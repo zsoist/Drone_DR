@@ -4,24 +4,24 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=93';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=93';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=93';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=93';
-import { createRecorder } from '/flightverse/recorder.js?v=93';
-import { createAudio } from '/flightverse/audio.js?v=93';
-import { createTouchSticks } from '/flightverse/touch.js?v=93';
-import { createSky } from '/flightverse/sky.js?v=93';
-import { loadSceneObjects } from '/flightverse/objects.js?v=93';
-import CameraControls from '/vendor/camera-controls.module.js?v=93';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=93';
+import * as THREE from '/flightverse/three.js?v=94';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=94';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=94';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=94';
+import { createRecorder } from '/flightverse/recorder.js?v=94';
+import { createAudio } from '/flightverse/audio.js?v=94';
+import { createTouchSticks } from '/flightverse/touch.js?v=94';
+import { createSky } from '/flightverse/sky.js?v=94';
+import { loadSceneObjects } from '/flightverse/objects.js?v=94';
+import CameraControls from '/vendor/camera-controls.module.js?v=94';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=94';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=93';
+} from '/vendor/postprocessing180.module.js?v=94';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -32,7 +32,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=93';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=94';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -377,9 +377,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=93', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=94', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=93');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=94');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -1065,7 +1065,13 @@ async function main() {
       $('#vl-agl-b').style.transform = `scaleX(${drone.agl == null ? 0 : Math.min(1, drone.agl / 160)})`;
       $('#vl-fps').textContent = `${Math.round(loop.fps() || 0)} fps`;
       if (recorder.recording) recBtn.textContent = `■ REC ${recorder.seconds.toFixed(0)}s`;
-      audio.update(drone.vel.length(), drone.vel.y);
+      {
+        // oído en la cámara: distancia y paneo del dron relativo al rig activo
+        const lpv = camera.worldToLocal(P.clone());
+        const camDist = lpv.length();
+        audio.update(propSpin, spd, drone.vel.y, camDist,
+          lpv.x / Math.max(camDist, 0.001));
+      }
       if (RIGS[rigIx].hideDrone) {
         const rollV = new THREE.Vector3(1, 0, 0).applyQuaternion(drone.quat).y;
         $('#vl-horizon').style.transform =
@@ -1172,6 +1178,7 @@ async function main() {
   if (auto && AT === '1') {
     setTimeout(() => {
       report.fps = Math.round(loop.fps() || 0);
+      report.audioArmed = audio.armed;
       report.pos = { x: +drone.pos.x.toFixed(1), y: +drone.pos.y.toFixed(1), z: +drone.pos.z.toFixed(1) };
       report.agl = drone.agl == null ? null : +drone.agl.toFixed(1);
       report.distance = Math.round(drone.distance);
