@@ -69,9 +69,7 @@ Paso 0 ✓ · A nodata ✓ · B 6DOF ✓ · G SOG ✓ (5 escenas, -50% peso) ·
 C Director ✓ (camera-controls + keyframes + Grabar toma) ·
 D export determinista 1080p ✓ (WebCodecs+webm-muxer, CDP verde) ·
 F matriz ✓ (browser_matrix --flightverse: mundo+volar × 3 viewports 71-76fps).
-ÚNICA fase restante: E — migrar splatview.js (tresd/share/splatlab) a Spark
-r180 y retirar GS3D + three r160 del repo (prod-crítico: sesión fresca,
-gates browser_gate model|splat existentes). El slice §42 está COMPLETO:
+Fase E ✓ (2026-07-12): splatview portado a Spark, tresd/share en r180, GS3D+three160+addons160+pp637 BORRADOS del repo — un solo stack. Gates: browser_gate splat + matriz share/workspace 6/6 (macro real). PLAN COMPLETO 7/7. El slice §42 está COMPLETO:
 Mundo→Volar→Gate Rush→Result→Replay→Director→Export 1080p→Mundo.
 
 ## Siguiente paso ejecutable (sesión siguiente)
