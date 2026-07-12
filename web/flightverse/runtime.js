@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=69';
+import * as THREE from '/flightverse/three.js?v=70';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -42,8 +42,11 @@ export function createInput(el) {
   const ku = e => keys.delete(e.code);
   const mm = e => { if (locked) { mouseDX += e.movementX; mouseDY += e.movementY; } };
   const lc = () => { locked = document.pointerLockElement === el; };
+  let wheelAcc = 0;
+  const wh = e => { wheelAcc += e.deltaY; e.preventDefault(); };
   addEventListener('keydown', kd); addEventListener('keyup', ku);
   addEventListener('mousemove', mm); document.addEventListener('pointerlockchange', lc);
+  el.addEventListener('wheel', wh, { passive: false });
   const ax = (neg, pos) => (keys.has(pos) ? 1 : 0) - (keys.has(neg) ? 1 : 0);
   return {
     keys,
@@ -61,7 +64,9 @@ export function createInput(el) {
       mouseDX = 0; mouseDY = 0;
       return s;
     },
+    takeWheel() { const w = wheelAcc; wheelAcc = 0; return w; },
     dispose() {
+      el.removeEventListener('wheel', wh);
       removeEventListener('keydown', kd); removeEventListener('keyup', ku);
       removeEventListener('mousemove', mm); document.removeEventListener('pointerlockchange', lc);
     },
@@ -72,11 +77,11 @@ export function createInput(el) {
 // una skin: cambia el modelo de control (velocidad-objetivo vs tasas FPV).
 export const MODES = {
   cinematico: { label: 'Cinemático', vmax: 0, tour: true },
-  asistido:   { label: 'Asistido', vmax: 14, vboost: 24, vy: 5, resp: 3.2, yawRate: 1.6, autoLevel: true },
+  asistido:   { label: 'Asistido', vmax: 14, vboost: 24, vy: 9, vyBoost: 16, resp: 3.2, yawRate: 1.6, autoLevel: true },
   // FPV/Arcade: 6DOF real portado de ecctrl 2.0 (MIT, c) Erdong Chen) —
   // thrust por rotor + PD de actitud + mixer; ver docs/FLIGHTVERSE ledger
-  fpv:        { label: 'FPV', six: true, twr: 3.2, tilt: Math.PI / 3.6, vmaxH: 26, vmaxV: 9, yawRate: 3.4 },
-  arcade:     { label: 'Arcade', six: true, twr: 5.0, tilt: Math.PI / 4, vmaxH: 34, vmaxV: 14, yawRate: 2.6 },
+  fpv:        { label: 'FPV', six: true, twr: 3.6, tilt: Math.PI / 3.6, vmaxH: 26, vmaxV: 14, yawRate: 3.4 },
+  arcade:     { label: 'Arcade', six: true, twr: 5.5, tilt: Math.PI / 4, vmaxH: 34, vmaxV: 22, yawRate: 2.6 },
   dios:       { label: 'Dios', vmax: 60, vboost: 160, vy: 60, resp: 8, yawRate: 2.2, autoLevel: true, noclip: true },
 };
 
@@ -192,7 +197,8 @@ export function createDrone({ heightAt, collide, spawn }) {
     // objetivo de velocidad en el frame del mundo a partir del heading
     const tx = (inp.fwd * -sin + inp.strafe * cos) * vmax;
     const tz = (inp.fwd * -cos - inp.strafe * sin) * vmax;
-    const ty = inp.lift * m.vy + (modeKey === 'fpv' ? Math.sin(d.pitch) * inp.fwd * vmax * 0.35 : 0);
+    const vyMax = inp.boost ? (m.vyBoost || m.vy * 1.8) : m.vy;   // el turbo TAMBIÉN sube
+    const ty = inp.lift * vyMax;
     const k = 1 - Math.exp(-dt * m.resp);
     d.vel.x += (tx - d.vel.x) * k;
     d.vel.z += (tz - d.vel.z) * k;

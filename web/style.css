@@ -3673,3 +3673,12 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   font:700 10.5px var(--mono); letter-spacing:.18em; color:#B7C2D0;
   padding:4px 10px; border-radius:999px; background:rgba(10,12,16,.5) }
 @media (max-width:760px){ .vl-osd.tape-l{ left:8px } .vl-osd.tape-r{ right:8px } }
+
+/* BLOQUE 36 · rueda de gimbal (slider vertical, táctil en FPV) */
+.vl-gwheel{ position:absolute; right:calc(10px + env(safe-area-inset-right)); top:50%;
+  width:150px; height:34px; transform:translateY(-50%) rotate(-90deg);
+  transform-origin:center; display:none; pointer-events:auto; accent-color:#7dffc9;
+  opacity:.85; z-index:4 }
+@media (pointer:coarse){ .vl-fpv.show ~ .vl-gwheel, .vl-hud:has(.vl-fpv.show) .vl-gwheel{ display:block } }
+.vl-osd-gimbal{ position:absolute; left:50%; top:calc(50% + 78px); transform:translateX(-50%);
+  font:700 9.5px var(--mono); letter-spacing:.2em; color:#7dffc9; opacity:.8 }
