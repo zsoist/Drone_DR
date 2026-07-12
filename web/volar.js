@@ -4,23 +4,23 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=62';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=62';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=62';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=62';
-import { createRecorder } from '/flightverse/recorder.js?v=62';
-import { createAudio } from '/flightverse/audio.js?v=62';
-import { createTouchSticks } from '/flightverse/touch.js?v=62';
-import CameraControls from '/vendor/camera-controls.module.js?v=62';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=62';
+import * as THREE from '/flightverse/three.js?v=63';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=63';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=63';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=63';
+import { createRecorder } from '/flightverse/recorder.js?v=63';
+import { createAudio } from '/flightverse/audio.js?v=63';
+import { createTouchSticks } from '/flightverse/touch.js?v=63';
+import CameraControls from '/vendor/camera-controls.module.js?v=63';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=63';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=62';
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=62';
+} from '/vendor/postprocessing180.module.js?v=63';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=63';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -251,7 +251,9 @@ async function main() {
   const glass = new THREE.Mesh(new THREE.CircleGeometry(0.02, 10),
     new THREE.MeshBasicMaterial({ color: 0x2f6db8 }));
   glass.position.z = -0.066;
-  gimbal.add(gb, lens, glass); gimbal.position.set(0, -0.045, -0.27);
+  const cage = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.007, 6, 18, Math.PI), matGrey);
+  cage.rotation.z = Math.PI; cage.position.z = 0.01;
+  gimbal.add(gb, lens, glass, cage); gimbal.position.set(0, -0.045, -0.27);
   const navL = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 5),
     new THREE.MeshBasicMaterial({ color: 0xff3b30 })); navL.position.set(-0.3, 0, -0.32);
   const navR = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 5),
@@ -264,6 +266,11 @@ async function main() {
   }
   const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.012, 0.02), matDark);
   stripe.position.set(0, -0.02, -0.24);
+  for (let i = 0; i < 3; i++) {                          // rejillas de ventilación traseras
+    const vent = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.006, 0.016), matDark);
+    vent.position.set(0, 0.045 - i * 0.018, 0.24);
+    dmesh.add(vent);
+  }
   dmesh.add(hull, shell, gimbal, navL, navR, stripe);
   const props = [];
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
@@ -274,19 +281,25 @@ async function main() {
     arm.rotation.z = x * -0.08;                       // brazos levemente caídos
     const bellB = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.052, 0.035, 12), matDark);
     bellB.position.set(x * 0.33, 0.035, z * 0.34);
-    const bellT = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 12), matGrey);
+    const bellT = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 14), matGrey);
     bellT.position.set(x * 0.33, 0.065, z * 0.34);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.047, 0.006, 6, 16), matGrey);
+    rim.rotation.x = Math.PI / 2; rim.position.set(x * 0.33, 0.052, z * 0.34);
+    dmesh.add(rim);
     const prop = new THREE.Group();
+    const tipM = new THREE.MeshBasicMaterial({ color: 0xff8c1a });
     for (const a of [0, Math.PI]) {
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.006, 0.024), matDark);
-      blade.rotation.y = a; blade.rotation.x = 0.12;   // paso de pala
-      blade.position.x = Math.cos(a) * 0.06; blade.position.z = -Math.sin(a) * 0.06;
-      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.007, 0.025),
-        new THREE.MeshBasicMaterial({ color: 0xff8c1a }));   // puntas naranjas DJI
-      tip.position.copy(blade.position);
-      tip.position.x += Math.cos(a) * 0.15; tip.position.z -= Math.sin(a) * 0.15;
-      tip.rotation.copy(blade.rotation);
-      prop.add(blade, tip);
+      // pala en 2 segmentos con quiebre: raíz recta + exterior barrido (curva DJI)
+      const root = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.006, 0.026), matDark);
+      root.rotation.set(0.14, a, 0);
+      root.position.set(Math.cos(a) * 0.065, 0, -Math.sin(a) * 0.065);
+      const outer = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.005, 0.02), matDark);
+      outer.rotation.set(0.09, a + 0.18, 0);
+      outer.position.set(Math.cos(a + 0.13) * 0.175, 0.004, -Math.sin(a + 0.13) * 0.175);
+      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.006, 0.021), tipM);
+      tip.rotation.copy(outer.rotation);
+      tip.position.set(Math.cos(a + 0.18) * 0.235, 0.007, -Math.sin(a + 0.18) * 0.235);
+      prop.add(root, outer, tip);
     }
     const blur = new THREE.Mesh(new THREE.CircleGeometry(0.15, 20),
       new THREE.MeshBasicMaterial({ color: 0x9fb2c8, transparent: true, opacity: 0.12, side: THREE.DoubleSide }));
