@@ -4,8 +4,8 @@
 // La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
 // auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
 // contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
-import * as THREE from '/vendor/three180.module.js?v=106';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=106';
+import * as THREE from '/vendor/three180.module.js?v=107';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=107';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -24,7 +24,7 @@ const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
 
 export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } = {}) {
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=106');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=107');
   host.style.position = 'relative';
   const holder = document.createElement('div');
   holder.style.cssText = 'position:absolute;inset:0;touch-action:none';

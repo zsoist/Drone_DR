@@ -4,25 +4,25 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=106';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=106';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=106';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=106';
-import { createRecorder } from '/flightverse/recorder.js?v=106';
-import { createAudio } from '/flightverse/audio.js?v=106';
-import { createTouchSticks } from '/flightverse/touch.js?v=106';
-import { createSky } from '/flightverse/sky.js?v=106';
-import { loadSceneObjects } from '/flightverse/objects.js?v=106';
-import { createWeapons } from '/flightverse/weapons.js?v=106';
-import CameraControls from '/vendor/camera-controls.module.js?v=106';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=106';
+import * as THREE from '/flightverse/three.js?v=107';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=107';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=107';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=107';
+import { createRecorder } from '/flightverse/recorder.js?v=107';
+import { createAudio } from '/flightverse/audio.js?v=107';
+import { createTouchSticks } from '/flightverse/touch.js?v=107';
+import { createSky } from '/flightverse/sky.js?v=107';
+import { loadSceneObjects } from '/flightverse/objects.js?v=107';
+import { createWeapons } from '/flightverse/weapons.js?v=107';
+import CameraControls from '/vendor/camera-controls.module.js?v=107';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=107';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=106';
+} from '/vendor/postprocessing180.module.js?v=107';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -33,7 +33,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=106';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=107';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -94,6 +94,11 @@ function hud() {
       <div class="vl-fps" id="vl-fps"></div>
     </div>
     <div class="vl-center-top" id="vl-challenge"></div>
+    <div class="vl-diff" id="vl-diff">
+      <button data-d="facil">Fácil<span>8 aros · 9m</span></button>
+      <button data-d="media">Media<span>10 aros · 6.5m</span></button>
+      <button data-d="dificil">Difícil<span>13 aros · 4.2m</span></button>
+    </div>
     <div class="vl-compass" id="vl-compass"><span id="vl-heading">N 0°</span></div>
     <div class="vl-fpv" id="vl-fpv">
       <div class="vl-fpv-cross"></div>
@@ -402,9 +407,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=106', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=107', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=106');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=107');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -685,14 +690,14 @@ async function main() {
   });
   const qModo = Q.get('modo');
   setMode(qModo && MODES[qModo] ? qModo : 'asistido'); setRig(rigIx); applyVista();
-  if (Q.get('reto') === '1' && !AT) setTimeout(() => startReto(), 3800);   // tras el arrival
+  if (Q.get('reto') === '1' && !AT) setTimeout(() => startReto(Q.get('dif') || 'media'), 3800);   // tras el arrival
   const modeKeys = { Digit1: 'cinematico', Digit2: 'asistido', Digit3: 'arcade', Digit4: 'dios' };
   addEventListener('keydown', e => {
     if (modeKeys[e.code]) setMode(modeKeys[e.code]);
     if (e.code === 'KeyC') setRig(rigIx + 1);
     if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
     if (e.code === 'KeyH') $('#vl-guide').classList.toggle('show');
-    if (e.code === 'KeyT') startReto();
+    if (e.code === 'KeyT') startReto(localStorage.getItem('ab.fv.gr.diff') || 'media');
     if (e.code === 'KeyP') cycleVista();
     if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
     if (e.code === 'KeyX') doFire();
@@ -706,14 +711,27 @@ async function main() {
   });
 
   // ── Gate Rush (desafío del slice) + replay ──
-  let reto = null, replay = null, resultShown = false;
-  const startReto = () => {
+  let reto = null, replay = null, resultShown = false, retoFly = null;
+  const startReto = (diff) => {
+    const dp = $('#vl-diff');
+    if (!diff) { dp.classList.toggle('show'); return; }   // sin dif → picker
+    dp.classList.remove('show');
+    localStorage.setItem('ab.fv.gr.diff', diff);
     $('#vl-result').classList.remove('show'); $('#vl-result').innerHTML = '';
     replay = null; resultShown = false;
     if (reto) reto.dispose();
-    reto = createGateRush({ scene, trackPts: ghost?.pts, world: W, heightAt: terrain.heightAt });
-    reto.start();
+    reto = createGateRush({ scene, trackPts: ghost?.pts, world: W, heightAt: terrain.heightAt, difficulty: diff });
+    const ap = reto.approach();
+    if (drone.pos.distanceTo(ap) > 20) {
+      // vuelo grácil al punto de partida del circuito, luego countdown
+      retoFly = { from: drone.pos.clone(), to: ap, t: 0,
+        dur: Math.min(4, 1.2 + drone.pos.distanceTo(ap) / 55) };
+    } else reto.start();
   };
+  $('#vl-diff').addEventListener('click', e => {
+    const b = e.target.closest('button[data-d]');
+    if (b) startReto(b.dataset.d);
+  });
   const startReplay = () => {
     if (!reto?.state.rec.length) return;
     $('#vl-result').classList.remove('show');
@@ -722,7 +740,7 @@ async function main() {
   const showResult = () => {
     resultShown = true;
     const t = reto.state.time;
-    const { best, isNew } = bestTime(CID, t);
+    const { best, isNew } = bestTime(CID, t, reto.state.difficulty);
     $('#vl-result').innerHTML = `
       <div class="vl-result-card">
         <div class="vl-result-k">GATE RUSH · COMPLETADO</div>
@@ -1009,6 +1027,16 @@ async function main() {
         trail.push(drone.pos.clone());
         if (trail.length > 200) trail.shift();
         trailGeo.setFromPoints(trail);
+      } else if (retoFly) {
+        // aproximación grácil al circuito: easeInOut + arquito, luego countdown
+        retoFly.t += dt;
+        const k = Math.min(1, retoFly.t / retoFly.dur), e = k * k * (3 - 2 * k);
+        drone.prev.pos.copy(drone.pos); drone.prev.yaw = drone.yaw;
+        drone.pos.lerpVectors(retoFly.from, retoFly.to, e);
+        drone.pos.y += Math.sin(e * Math.PI) * 5;
+        drone.vel.set(0, 0, 0);
+        drone.yaw += (Math.atan2(-(retoFly.to.x - retoFly.from.x), -(retoFly.to.z - retoFly.from.z)) - drone.yaw) * 0.08;
+        if (k >= 1) { retoFly = null; reto.start(); }
       } else {
         let inp = input.sample();
         const ts = sticks?.sample();
@@ -1018,7 +1046,7 @@ async function main() {
         if (autoReto) {
           // autotest del slice: teleporta por los gates — prueba detección,
           // resultado y replay reales sin fingir sus verificaciones
-          if (!reto && simT > 0.5) startReto();
+          if (!reto && simT > 0.5) startReto('media');
           else if (reto?.state.phase === 'running' && simT - autoReto.last > 0.4) {
             autoReto.last = simT;
             const g = reto.gates[reto.state.idx];
@@ -1071,7 +1099,7 @@ async function main() {
         camera.updateProjectionMatrix();
       }
       if (ghost?.on) ghost.marker.children[0].scale.setScalar(4 + Math.sin(simT * 3.2) * 0.8);
-      if (reto?.pulse) reto.pulse(simT);
+      if (reto?.pulse) reto.pulse(simT, STEP * 2);
       const isAuto = MODES[modeKey]?.autopilot && apilot.curve && !apilot.transit;
       crumbs.forEach((sp, i) => {
         sp.visible = !!isAuto;
@@ -1213,12 +1241,20 @@ async function main() {
         ch.textContent = 'REPLAY · ESC para salir'; cnt.classList.remove('show');
       } else if (reto) {
         const st = reto.state;
+        if (retoFly) {
+          ch.textContent = '→ volando al circuito…'; cnt.classList.remove('show');
+        } else {
         if (st.phase === 'countdown') {
           cnt.textContent = String(Math.ceil(st.countdown)); cnt.classList.add('show');
-          ch.textContent = 'GATE RUSH';
+          ch.textContent = `GATE RUSH · ${st.difficulty.toUpperCase()}`;
         } else cnt.classList.remove('show');
-        if (st.phase === 'running') ch.textContent = `T ${st.t.toFixed(1)}s · gate ${Math.min(st.idx + 1, st.total)}/${st.total}`;
+        if (st.phase === 'running') {
+          const sp = st.lastSplit && (st.t - st.lastSplit.at) < 1.6
+            ? ` · +${st.lastSplit.delta.toFixed(1)}s` : '';
+          ch.textContent = `T ${st.t.toFixed(1)}s · gate ${Math.min(st.idx + 1, st.total)}/${st.total}${sp}`;
+        }
         if (st.phase === 'finished') ch.textContent = `GATE RUSH · ${st.time.toFixed(2)}s`;
+        }
       } else {
         ch.textContent = 'T · iniciar Gate Rush'; cnt.classList.remove('show');
       }

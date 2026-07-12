@@ -180,3 +180,17 @@ mando real, minimapa MapLibre opcional.
 - PERF: fragmentos del kit sin castShadow (70 ladrillos = 140 drawcalls de
   shadow pass) → 47fps → 71fps.
 - Evidencia visual: scorch + eyecta confirmados en techo (crop cenital).
+
+## v107 (2026-07-12) — Gate Rush v2: dificultades + aros HD + aproximación
+- DIFFS: fácil 8×9m verde / media 10×6.5m azul / difícil 13×4.2m púrpura (con
+  altura variada en fallback). Récords localStorage POR dificultad.
+- Picker premium bajo el HUD (colores por nivel, recuerda la última en
+  localStorage); T = arranca directo con la última.
+- Aros HD: torus 24×96 + aro fino interior + glow 12×72; el activo gira, pulsa
+  y proyecta BEAM de luz al suelo; flash-anillo blanco al pasar cada gate.
+- 14 migas de luz fluyendo por la ruta (getPointAt animado) + splits: el HUD
+  muestra +Δs por gate 1.6s.
+- Aproximación grácil: al iniciar, el dron VUELA al punto de entrada (easeInOut
+  + arquito, patrón del transit arcade), luego countdown — adiós teleport.
+- Autotest verde: reto {time 3.62, gates 10 (media), recFrames 217}, replay
+  activo, 70fps, 0 errores.
