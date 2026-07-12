@@ -86,6 +86,8 @@ def build(cid: str) -> dict:
             "splat_cameras": f"data/splats/{cid}.cameras.json" if cameras_json.exists() else None,
             "track": f"data/tracks/{cid}.flight.json" if track_p.exists() else None,
             "mesh_viewer": f"data/models/{cid}/{viewer_obj}" if viewer_obj else None,
+            "collision_bin": f"data/models/{cid}/collision.bin" if (mdir / "collision.bin").exists() else None,
+            "collision_meta": f"data/models/{cid}/collision.json" if (mdir / "collision.json").exists() else None,
             "poster": f"data/models/{cid}/{meta['ortho_asset']}" if meta.get("ortho_asset") else f"data/thumbs/{cid}.jpg",
         }.items() if v},
         # honestidad: la alineación splat<->terreno NO está resuelta; el runtime

@@ -79,8 +79,10 @@ export const MODES = {
 };
 
 const MIN_AGL = 1.2;             // el dron nunca “entra” al terreno: piso duro honesto
+const DRONE_R = 1.2;             // radio de colisión contra el proxy de edificios
+const _n = new THREE.Vector3();  // scratch de la respuesta de colisión
 
-export function createDrone({ heightAt, spawn }) {
+export function createDrone({ heightAt, collide, spawn }) {
   const d = {
     pos: new THREE.Vector3(...(spawn?.position_m || [0, 60, 0])),
     vel: new THREE.Vector3(),
@@ -122,6 +124,22 @@ export function createDrone({ heightAt, spawn }) {
       if (d.vel.y < 0) d.vel.y = 0;
       d.vel.x *= 0.7; d.vel.z *= 0.7;         // fricción de “raspar” el suelo
     } else d.crashedSoft = false;
+
+    // colisión precisa (proxy BVH del splat): push-out + rebote amortiguado.
+    // Determinista: misma query, mismo resultado — el replay la reproduce.
+    if (!m.noclip && collide) {
+      const hit = collide(d.pos, DRONE_R + 0.3);
+      if (hit && hit.distance < DRONE_R) {
+        _n.subVectors(d.pos, hit.point);
+        const len = _n.length() || 1e-6;
+        _n.multiplyScalar(1 / len);
+        d.pos.copy(hit.point).addScaledVector(_n, DRONE_R);
+        const vn = d.vel.dot(_n);
+        if (vn < 0) d.vel.addScaledVector(_n, -vn * 1.5);   // rebote 0.5
+        d.vel.multiplyScalar(0.85);
+        d.crashedSoft = true;
+      }
+    }
   };
 
   d.lerpPose = (alpha, outPos) => {

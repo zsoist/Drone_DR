@@ -14,6 +14,10 @@ import {
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
 } from '/vendor/postprocessing.module.js';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh.module.js';
+
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 
 const Q = new URLSearchParams(location.search);
 const CID = (Q.get('m') || '').replace(/[^\w-]/g, '');
@@ -121,8 +125,33 @@ async function main() {
     });
   }
 
+  // colisión precisa contra EDIFICIOS: proxy voxel del splat (splat-transform)
+  // horneado al frame del juego (collision_bake.py) + BVH. Lazy: el vuelo ya
+  // funciona con el heightfield mientras llega; queries closestPointToPoint
+  // ~17µs — cabe de sobra en el paso de 120Hz.
+  let coll = null;
+  const collV = new THREE.Vector3();
+  if (man.assets?.collision_bin && man.assets?.collision_meta) {
+    Promise.all([
+      fetch(man.assets.collision_meta).then(r => r.json()),
+      fetch(man.assets.collision_bin).then(r => r.arrayBuffer()),
+    ]).then(([cm, buf]) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(buf, 0, cm.verts * 3), 3));
+      g.setIndex(new THREE.BufferAttribute(new Uint32Array(buf, cm.bytes_pos, cm.tris * 3), 1));
+      g.computeBoundsTree();
+      coll = g.boundsTree;
+      report.collision = { tris: cm.tris };
+      $('#vl-ghost').textContent += ' · colisión ✓';
+    }).catch(e => report.errors.push('colisión: ' + e.message));
+  }
+  const collide = (p, r) => {
+    if (!coll) return null;
+    return coll.closestPointToPoint(collV.copy(p), {}, 0, r);
+  };
+
   // dron visible (proxy honesto: cuerpo + 4 rotores, sin assets externos)
-  const drone = createDrone({ heightAt: terrain.heightAt, spawn: man.spawn });
+  const drone = createDrone({ heightAt: terrain.heightAt, collide, spawn: man.spawn });
   const dmesh = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 1.6),
     new THREE.MeshLambertMaterial({ color: 0xE6EBF2 }));
