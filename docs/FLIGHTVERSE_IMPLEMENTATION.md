@@ -240,3 +240,24 @@ mando real, minimapa MapLibre opcional.
   activos + barra de salud (mordida −8hp con flash rojo).
 - Botón "Modo Tierra" en el dock (sección juego). QA &zombies=1 → oleada 1,
   6 activos, 70fps, 0 errores.
+
+## v114 (2026-07-12) — MODO INVASIÓN + VFX v4 + MG overhaul
+- invasion.js (reemplaza zombies.js): 7 enemigos ORIGINALES procedurales —
+  zombies, arqueros (flechas en arco con compensación balística), soldados
+  (ráfagas de 3), OVNIs (órbita cerrada + plasma), aviones (pasadas), dragón
+  (serpenteo + bolas de fuego + alas batiendo), gigantes ~12m (melee manotazo).
+  Modal de selección multi-tipo al pulsar "Modo Invasión"; oleadas mixtas.
+- Suelo: walkable() con footprint por-tipo (gigante 5m/pendiente 6) y ALTURA
+  SUAVIZADA (lerp dt*8 — sin escalones). Voladores con patrones propios.
+- Proyectiles enemigos dañan salud (flecha 6/bala 3/plasma 10/fuego 15) con
+  flash rojo; muerte de enemigo metálico = explosión (fx bridge a weapons).
+- weapons v4: hitEnemy genérico (sangre SOLO orgánicos, chispa en metal), MG
+  con FOGONAZO de boca + tracer con glow (balas visibles de verdad), misil con
+  encendido cinemático (25%→100% en 0.6s + puff de salida), brasas sin confeti
+  (80×0.42, caen a 34), texturas 128/192px (42 lóbulos), onda de choque v2:
+  frente brillante 64seg + banda de compresión oscura (aire comprimido).
+- Punch de FOV de concusión: explosión cercana golpea el FOV hasta +7° con
+  decaimiento — la 'distorsión' de una detonación real.
+- HUD: mini-barra de munición bajo cada arma del selector (--ammo var CSS).
+- Gate: invasion=zombie,ufo,gigante,dragon → oleada 1, 8 vivos, 73fps, 0 err.
+  OVNI visible en screenshot orbitando.

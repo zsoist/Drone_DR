@@ -4,26 +4,26 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=113';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=113';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=113';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=113';
-import { createRecorder } from '/flightverse/recorder.js?v=113';
-import { createAudio } from '/flightverse/audio.js?v=113';
-import { createTouchSticks } from '/flightverse/touch.js?v=113';
-import { createSky } from '/flightverse/sky.js?v=113';
-import { loadSceneObjects } from '/flightverse/objects.js?v=113';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=113';
-import { createZombies } from '/flightverse/zombies.js?v=113';
-import CameraControls from '/vendor/camera-controls.module.js?v=113';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=113';
+import * as THREE from '/flightverse/three.js?v=114';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=114';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=114';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=114';
+import { createRecorder } from '/flightverse/recorder.js?v=114';
+import { createAudio } from '/flightverse/audio.js?v=114';
+import { createTouchSticks } from '/flightverse/touch.js?v=114';
+import { createSky } from '/flightverse/sky.js?v=114';
+import { loadSceneObjects } from '/flightverse/objects.js?v=114';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=114';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=114';
+import CameraControls from '/vendor/camera-controls.module.js?v=114';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=114';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=113';
+} from '/vendor/postprocessing180.module.js?v=114';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -34,7 +34,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=113';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=114';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -74,7 +74,7 @@ function hud() {
         <button class="vl-chip sec-mundo vl-solo-fino" id="vl-calidad">calidad · auto</button>
         <i class="vl-sep"></i>
         <button class="vl-chip sec-juego" id="vl-reto">Gate Rush</button>
-        <button class="vl-chip sec-juego" id="vl-zombies">Modo Tierra</button>
+        <button class="vl-chip sec-juego" id="vl-zombies">Modo Invasión</button>
         <i class="vl-sep"></i>
         <button class="vl-chip sec-media" id="vl-sound">Sonido</button>
         <button class="vl-chip sec-media" id="vl-ajustes">Imagen</button>
@@ -102,6 +102,19 @@ function hud() {
       <div class="vl-fps" id="vl-fps"></div>
     </div>
     <div class="vl-hitfx" id="vl-hitfx"></div>
+    <div class="vl-inv" id="vl-inv">
+      <b>INVASIÓN · elige enemigos</b>
+      <div class="vl-inv-grid">
+        <button data-e="zombie" class="sel">Zombies</button>
+        <button data-e="arquero">Arqueros</button>
+        <button data-e="soldado">Soldados</button>
+        <button data-e="ufo">OVNIs</button>
+        <button data-e="avion">Aviones</button>
+        <button data-e="dragon">Dragón</button>
+        <button data-e="gigante">Gigantes</button>
+      </div>
+      <button id="vl-inv-go">INICIAR INVASIÓN</button>
+    </div>
     <div class="vl-zhud" id="vl-zhud">
       <div class="vl-zwave"><span id="vl-zwave">OLEADA 1</span><small id="vl-zkill">0 abatidos</small></div>
       <div class="vl-zhp"><i id="vl-zhp"></i></div>
@@ -420,9 +433,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=113', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=114', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=113');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=114');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -535,6 +548,7 @@ async function main() {
     onShake: (pos, big) => {
       const d = camera.position.distanceTo(pos);
       shake.mag = Math.max(shake.mag, Math.min(0.9, (9 * big) / (5 + d)));
+      shake.fov = Math.max(shake.fov || 0, Math.min(7, (26 * big) / (4 + d)));
     },
   });
   // retícula de impacto: simula la balística y marca dónde caerá el misil
@@ -549,23 +563,42 @@ async function main() {
   }
   aim.visible = false;
   scene.add(aim);
-  // ── MODO TIERRA: horda de zombies original (toggle) ──
+  // ── MODO INVASIÓN: enemigos originales a elección (modal) ──
   const health = { hp: 100 };
-  const zombies = createZombies(scene, {
+  const hitFlash = () => {
+    const hx = $('#vl-hitfx'); hx.classList.remove('go'); void hx.offsetWidth; hx.classList.add('go');
+  };
+  const invasion = createInvasion(scene, {
     heightAt: terrain.heightAt, audio,
-    onBite: () => {
-      health.hp = Math.max(0, health.hp - 8);
-      const hx = $('#vl-hitfx'); hx.classList.remove('go'); void hx.offsetWidth; hx.classList.add('go');
-      audio.crash?.();
+    onHit: dmg => { health.hp = Math.max(0, health.hp - dmg); hitFlash(); audio.crash?.(); },
+    fx: {
+      impact: pos => weapons.explodeAt(pos, 0.5),
+      explode: (pos, big) => weapons.explodeAt(pos, big),
     },
   });
-  weapons.state._zombies = zombies.hittables;      // splash de explosión a la horda
+  weapons.state._enemies = invasion.hittables;     // splash de explosión a la horda
   const zBtn = $('#vl-zombies');
+  const invModal = $('#vl-inv');
   zBtn.addEventListener('click', () => {
-    const on = zombies.toggle(P);
-    zBtn.classList.toggle('on', on);
-    if (on) health.hp = 100;
-    $('#vl-zhud').classList.toggle('show', on);
+    if (invasion.state.on) {                       // apagar directo
+      invasion.toggle(P);
+      zBtn.classList.remove('on');
+      $('#vl-zhud').classList.remove('show');
+      return;
+    }
+    invModal.classList.toggle('show');             // elegir enemigos
+  });
+  invModal.addEventListener('click', e => {
+    const chip = e.target.closest('button[data-e]');
+    if (chip) { chip.classList.toggle('sel'); return; }
+    if (e.target.closest('#vl-inv-go')) {
+      const sel = [...invModal.querySelectorAll('button[data-e].sel')].map(b => b.dataset.e);
+      invModal.classList.remove('show');
+      invasion.toggle(P, sel.length ? sel : ['zombie']);
+      zBtn.classList.add('on');
+      health.hp = 100;
+      $('#vl-zhud').classList.add('show');
+    }
   });
   const fireBtn = $('#vl-fire');
   const doFire = (pitch) => {
@@ -1171,7 +1204,9 @@ async function main() {
       const o = drone.lerpPose(alpha, P);
       curYaw = o.yaw;
       // FOV kick con turbo: sensación de velocidad AAA (lerp suave, barato)
-      const wantFov = RIGS[rigIx].fov + (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') ? 9 : 0);
+      if (shake.fov > 0.05) shake.fov *= Math.pow(0.006, STEP * 2);   // decae ~rápido
+      const wantFov = RIGS[rigIx].fov + (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') ? 9 : 0)
+        + (shake.fov || 0);
       if (Math.abs(camera.fov - wantFov) > 0.1) {
         camera.fov += (wantFov - camera.fov) * 0.08;
         camera.updateProjectionMatrix();
@@ -1235,20 +1270,26 @@ async function main() {
         const now = performance.now();
         const wdt = Math.min(0.05, (now - (weapons._lt || now)) / 1000);
         weapons._lt = now;
-        const allHit = zombies.state.on
-          ? [...(sceneObjects?.hittables || []), ...zombies.hittables]
+        const allHit = invasion.state.on
+          ? [...(sceneObjects?.hittables || []), ...invasion.hittables]
           : sceneObjects?.hittables;
         weapons.update(wdt, allHit);
-        if (Q.get('zombies') === '1' && !zombies.state.on && simT > 0.5) {
-          zombies.toggle(P); zBtn.classList.add('on'); $('#vl-zhud').classList.add('show');
+        if (Q.get('invasion') && !invasion.state.on && simT > 0.5) {
+          invasion.toggle(P, Q.get('invasion').split(',').filter(k => ENEMIES[k]));
+          zBtn.classList.add('on'); $('#vl-zhud').classList.add('show');
         }
-        zombies.update(wdt, P, weapons);
-        report.zombies = { on: zombies.state.on, wave: zombies.state.wave, alive: zombies.state.alive };
-        if (zombies.state.on) {
-          $('#vl-zwave').textContent = `OLEADA ${zombies.state.wave || 1}`;
-          $('#vl-zkill').textContent = `${zombies.state.killed} abatidos · ${zombies.state.alive} activos`;
+        invasion.update(wdt, P);
+        report.invasion = { on: invasion.state.on, wave: invasion.state.wave, alive: invasion.state.alive, killed: invasion.state.killed };
+        if (invasion.state.on) {
+          $('#vl-zwave').textContent = `OLEADA ${invasion.state.wave || 1}`;
+          $('#vl-zkill').textContent = `${invasion.state.killed} abatidos · ${invasion.state.alive} activos`;
           $('#vl-zhp').style.transform = `scaleX(${health.hp / 100})`;
         }
+        // mini-barras de munición por arma (HUD de vida de armas)
+        document.querySelectorAll('#vl-weps button').forEach(b => {
+          const k = b.dataset.w;
+          b.style.setProperty('--ammo', `${(weapons.state.ammo[k] / ARSENAL[k].max) * 100}%`);
+        });
         if (Q.get('fuego') === 'mg' && simT > 1 && simT < 2.6) {
           if (!weapons._mg) { weapons._mg = true; weapons.setWeapon('mg'); }
           doFire(-0.5);                        // ráfaga sostenida de QA

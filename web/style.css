@@ -3944,3 +3944,30 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.12) }
 .vl-zhp i{ display:block; width:100%; height:100%; transform-origin:left;
   background:linear-gradient(90deg, #E85A5A, #52C79A); transition:transform .2s var(--ease) }
+
+/* ── BLOQUE 52: modal invasión + barras de munición ── */
+.vl-inv{ display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  flex-direction:column; gap:12px; align-items:center; padding:22px 26px; z-index:70;
+  border-radius:18px; border:1px solid rgba(232,90,90,.3);
+  background:linear-gradient(165deg, rgba(26,16,14,.95), rgba(10,8,8,.93));
+  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+  box-shadow:0 30px 80px -30px rgba(0,0,0,.9) }
+.vl-inv.show{ display:flex; animation:gradeIn .3s var(--ease) }
+.vl-inv > b{ font:800 12px var(--mono); color:#ff9d8a; letter-spacing:.22em }
+.vl-inv-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:7px }
+.vl-inv-grid button{ pointer-events:auto; cursor:pointer; padding:10px 12px; border-radius:10px;
+  border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.04); color:#8A97A8;
+  font:700 11px var(--mono); transition:all .16s var(--ease) }
+.vl-inv-grid button:hover{ transform:translateY(-2px); color:#EAF2FB }
+.vl-inv-grid button.sel{ color:#ffb36b; border-color:rgba(232,120,70,.55);
+  background:rgba(60,26,14,.7); box-shadow:0 0 14px -5px rgba(232,120,70,.6) }
+#vl-inv-go{ pointer-events:auto; cursor:pointer; width:100%; padding:12px; border-radius:11px;
+  border:none; font:800 12px var(--mono); letter-spacing:.14em; color:#1a0e08;
+  background:linear-gradient(90deg, #E85A5A, #ffb36b);
+  transition:transform .14s var(--ease), box-shadow .2s var(--ease) }
+#vl-inv-go:hover{ transform:scale(1.03); box-shadow:0 8px 26px -8px rgba(232,120,70,.7) }
+.vl-weps button{ position:relative; overflow:hidden }
+.vl-weps button::after{ content:''; position:absolute; left:0; bottom:0; height:2.5px;
+  width:var(--ammo, 100%); background:linear-gradient(90deg, #E85A5A, #ffb36b);
+  transition:width .2s linear }
+@media (max-width:520px){ .vl-inv-grid{ grid-template-columns:repeat(2, 1fr) } }

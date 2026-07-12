@@ -6,7 +6,7 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=113';
+import * as THREE from '/flightverse/three.js?v=114';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -20,11 +20,11 @@ function glowTex(stops, size = 64) {
 // humo con ESTRUCTURA interna (lóbulos superpuestos, no un blob plano):
 // la diferencia entre 'disco negro' y nube — técnica estándar de VFX cuando
 // no hay flipbook: silueta irregular + densidad variable dentro
-function puffTex(size = 96) {
+function puffTex(size = 192) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
   const c = cv.getContext('2d');
   const R = size / 2;
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 42; i++) {
     const a2 = Math.random() * 6.283, rr = Math.random() * R * 0.52;
     const x = R + Math.cos(a2) * rr, y = R + Math.sin(a2) * rr;
     const r2 = R * (0.16 + Math.random() * 0.3) * (1 - rr / R * 0.5);
@@ -48,7 +48,7 @@ export const ARSENAL = {
 
 export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) {
   const TEX = {
-    fire: glowTex([[0, 'rgba(255,244,200,1)'], [0.25, 'rgba(255,150,40,.9)'], [0.6, 'rgba(200,60,10,.45)'], [1, 'rgba(120,20,0,0)']]),
+    fire: glowTex([[0, 'rgba(255,244,200,1)'], [0.25, 'rgba(255,150,40,.9)'], [0.6, 'rgba(200,60,10,.45)'], [1, 'rgba(120,20,0,0)']], 128),
     smoke: glowTex([[0, 'rgba(72,68,64,.5)'], [0.5, 'rgba(58,55,52,.28)'], [1, 'rgba(44,42,40,0)']]),
     flash: glowTex([[0, 'rgba(255,255,240,1)'], [0.4, 'rgba(255,220,120,.6)'], [1, 'rgba(255,180,60,0)']]),
     puff: glowTex([[0, 'rgba(215,210,202,.4)'], [1, 'rgba(195,190,184,0)']]),
@@ -104,12 +104,13 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         THREE.NormalBlending, { drag: 2, tint0: 0x7a1518 });
     }
   }
-  function hitZombie(h, dmg, pos) {
+  function hitEnemy(h, dmg, pos) {
     h.hp -= dmg;
-    bloodBurst(pos, 1);
+    if (h.blood) bloodBurst(pos, 1);
+    else emit(TEX.dot, pos, new THREE.Vector3(0, 2, 0), 0.4, 1.1, 0.25, THREE.AdditiveBlending);
     if (h.hp <= 0 && !h.g.userData.dead) {
       h.g.userData.dead = true;
-      bloodBurst(pos, 2.2);
+      if (h.blood) bloodBurst(pos, 2.2);
       S.destroyed++;
     }
   }
@@ -170,7 +171,7 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     }
     // brasas: Points con textura suave (adiós cuadrados) + gravedad
     {
-      const n = 110, pos = new Float32Array(n * 3), vel = [];
+      const n = 80, pos = new Float32Array(n * 3), vel = [];
       for (let i = 0; i < n; i++) {
         pos.set([p.x, p.y + 0.3, p.z], i * 3);
         const a = Math.random() * 6.283, e = Math.random() * 1.3, s2 = 9 + Math.random() * 16;
@@ -179,10 +180,10 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
       const gg = new THREE.BufferGeometry();
       gg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       const pts = new THREE.Points(gg, new THREE.PointsMaterial({
-        map: TEX.dot, color: 0xffc37a, size: 0.7 * big, transparent: true,
+        map: TEX.dot, color: 0xffc37a, size: 0.42 * big, transparent: true,
         depthWrite: false, blending: THREE.AdditiveBlending }));
       group.add(pts);
-      S.parts.push({ pts, vel, t: 0, life: 1.3, grav: 22 });
+      S.parts.push({ pts, vel, t: 0, life: 0.9, grav: 34 });
     }
     // streaks: chispas estiradas por velocidad (LineSegments, técnica quarks)
     {
@@ -201,12 +202,19 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
       S.parts.push({ ln, vel, t: 0, life: 0.8, grav: 30 });
     }
     // onda expansiva a ras de suelo
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.4, 1.0, 40),
-      new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.85,
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.0, 64),
+      new THREE.MeshBasicMaterial({ color: 0xffe6c0, transparent: true, opacity: 0.9,
         side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
-    ring.rotation.x = -Math.PI / 2; ring.position.set(p.x, gy + 0.4, p.z);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(p.x, gy + 0.35, p.z);
     group.add(ring);
-    S.parts.push({ ring, t: 0, life: 0.55, big });
+    S.parts.push({ ring, t: 0, life: 0.5, big });
+    // banda de compresión: anillo oscuro sutil detrás del frente (lente de aire)
+    const ring2 = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.95, 64),
+      new THREE.MeshBasicMaterial({ color: 0x1a1611, transparent: true, opacity: 0.28,
+        side: THREE.DoubleSide, depthWrite: false }));
+    ring2.rotation.x = -Math.PI / 2; ring2.position.set(p.x, gy + 0.32, p.z);
+    group.add(ring2);
+    S.parts.push({ ring: ring2, t: 0, life: 0.62, big: big * 0.92 });
     // scorch persistente
     const sc = new THREE.Mesh(new THREE.CircleGeometry(3.2 * big, 24),
       new THREE.MeshBasicMaterial({ map: TEX.scorch, transparent: true, opacity: 0.8, depthWrite: false }));
@@ -215,8 +223,8 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     group.add(sc);
     S.decals.push(sc);
     if (S.decals.length > 14) group.remove(S.decals.shift());
-    if (S._zombies) for (const h of S._zombies) {   // splash a la horda
-      if (!h.g.userData.dead && p.distanceToSquared(h.center) < (7 * big) ** 2) hitZombie(h, 220 * big, h.center.clone());
+    if (S._enemies) for (const h of S._enemies) {   // splash a la horda
+      if (!h.g.userData.dead && p.distanceToSquared(h.center) < (7 * big) ** 2) hitEnemy(h, 220 * big, h.center.clone());
     }
     if (nearGround) fireAftermath(new THREE.Vector3(p.x, gy, p.z));
     audio?.boom?.(big);
@@ -294,8 +302,11 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         const pj = pitch + (Math.random() - 0.5) * 0.012;
         const dir = new THREE.Vector3(-Math.sin(yj) * Math.cos(pj), Math.sin(pj), -Math.cos(yj) * Math.cos(pj));
         const b = new THREE.Mesh(tracerGeo, tracerMat);
+        const tg = sprite(TEX.dot); tg.scale.set(0.5, 0.5, 1); b.add(tg);
         b.position.copy(pos).y -= 0.18;
         group.add(b);
+        // fogonazo de boca: flash corto en el origen
+        emit(TEX.flash, pos.clone(), new THREE.Vector3(0, 0, 0), 0.5, 1.3, 0.07, THREE.AdditiveBlending);
         S.bullets.push({ m: b, vel: dir.multiplyScalar(W2.speed), t: 0 });
         audio?.mg?.();
         return true;
@@ -316,7 +327,10 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
       body.rotation.y = yaw;
       group.add(body);
       body.scale.setScalar(S.weapon === 'l' ? 1.5 : S.weapon === 's' ? 0.75 : 1);
-      S.missiles.push({ body, glow, vel: dir.clone().multiplyScalar(W2.speed), t: 0, trail: 0, big: W2.big });
+      emit(TEX.puff3d, body.position.clone(), new THREE.Vector3(0, -0.5, 0), 0.5, 1.6, 0.7,
+        THREE.NormalBlending, { smoke: true, tint0: 0xcfc9c2, tint1: 0xb0aaa4 });
+      S.missiles.push({ body, glow, dir: dir.clone(), full: W2.speed,
+        vel: dir.clone().multiplyScalar(W2.speed * 0.25), t: 0, trail: 0, big: W2.big });
       audio?.launch?.();
       return true;
     },
@@ -345,9 +359,9 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         if (bgy != null && bp.y <= bgy + 0.15) impact = new THREE.Vector3(bp.x, bgy + 0.15, bp.z);
         if (!impact && hittables) {
           for (const h of hittables) {
-            if (h.zombie) {
+            if (h.enemy) {
               if (h.g.userData.dead) continue;
-              if (bp.distanceToSquared(h.center) < h.r2) { hitZombie(h, ARSENAL.mg.dmg, bp.clone()); impact = bp.clone(); break; }
+              if (bp.distanceToSquared(h.center) < h.r2 * h.r2) { hitEnemy(h, ARSENAL.mg.dmg, bp.clone()); impact = bp.clone(); break; }
               continue;
             }
             if (h.node.userData.dead) continue;
@@ -371,6 +385,7 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
       for (let i = S.missiles.length - 1; i >= 0; i--) {
         const M = S.missiles[i];
         M.t += dt;
+        if (M.t < 0.6) M.vel.copy(M.dir).multiplyScalar(M.full * (0.25 + (M.t / 0.6) * 0.75));
         M.vel.y -= 2.2 * dt;
         M.body.position.addScaledVector(M.vel, dt);
         M.body.lookAt(M.body.position.clone().add(M.vel));
@@ -388,8 +403,8 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         if (gy != null && p.y <= gy + 0.3) { hit = true; p.y = gy + 0.3; }
         if (!hit && hittables) {
           for (const h of hittables) {
-            if (h.zombie) {
-              if (!h.g.userData.dead && p.distanceToSquared(h.center) < h.r2 * 4) { hit = true; hitZombie(h, 500, p.clone()); break; }
+            if (h.enemy) {
+              if (!h.g.userData.dead && p.distanceToSquared(h.center) < h.r2 * h.r2 * 4) { hit = true; hitEnemy(h, 900, p.clone()); break; }
               continue;
             }
             if (h.node.userData.dead) continue;
