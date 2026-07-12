@@ -38,6 +38,14 @@ def convert(src: str, dst: str, iteration: int = 2000) -> int:
             out[:, j] = arr[:, cols[name]]
         elif name not in ("nx", "ny", "nz"):
             missing.append(name)
+    # INTERLEAVING f_rest: Brush escribe coeff-major (c0:RGB,c1:RGB,…); inria espera
+    # channel-major (R0-14,G0-14,B0-14). Adjudicado por render 11-jul: sin permutar
+    # el SH EMPEORA el error (22.5 vs 21.1 con f_rest=0); permutado lo elimina
+    # (21.1). A 2000 steps SH aporta ~0 (subentrenado) — adjudicación FINAL del
+    # signo positivo en celda 3 (30000 steps, SH real).
+    fr0 = TARGET.index("f_rest_0")
+    block = out[:, fr0:fr0 + 45]
+    out[:, fr0:fr0 + 45] = block.reshape(n, 15, 3).transpose(0, 2, 1).reshape(n, 45)
     if missing:
         raise SystemExit(f"faltan propiedades no-opcionales: {missing}")
     hdr = ("ply\nformat binary_little_endian 1.0\n"

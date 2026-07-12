@@ -217,3 +217,13 @@ re-ratificada con evidencia inter-familia. La vara no se enmienda: se audita.
 Brush para escenas grandes (escena 2: muere en carga con OpenSplat; Brush
 peak 35% + presupuesto duro de gaussianas) · OpenSplat donde la alta
 frecuencia manda (escena 1). El routing ya existe (recon_ vs single-source).
+
+## Tinte f_rest — ADJUDICADO (11-jul noche, antes de las celdas como manda)
+Test quirúrgico (mismo PLY, misma vista mediana): f_rest convertido-sin-permutar
+EMPEORA el error vs GT (22.5) frente a f_rest=0 (21.1) — SH correcto jamás daña
+→ interleaving culpable. Permutación coeff-major(Brush: c0RGB,c1RGB…) →
+channel-major(inria: R0-14,G0-14,B0-14): elimina el daño (21.1 = neutro).
+A 2000 steps SH aporta ~0 (subentrenado) — el SIGNO POSITIVO se adjudica en
+celda 3 (SH real a 30000). Permutación adoptada en ply_bridge con nota.
+El camino de eval queda limpio: la comparación inter-familia no carga
+artefactos nuestros.
