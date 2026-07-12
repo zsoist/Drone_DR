@@ -878,7 +878,7 @@ async function main() {
         let inp = input.sample();
         const ts = sticks?.sample();
         if (ts?.active) { inp.fwd = ts.fwd; inp.strafe = ts.strafe; inp.yaw = ts.yaw; inp.lift = ts.lift; }
-        if (auto && simT < apilot.until) inp = { fwd: 1, strafe: 0, yaw: 0.15, lift: 0.1, boost: simT > 2, brake: false, mouseDX: 0, mouseDY: 0 };
+        if (auto && simT < auto.until) inp = { fwd: 1, strafe: 0, yaw: 0.15, lift: 0.1, boost: simT > 2, brake: false, mouseDX: 0, mouseDY: 0 };
         drone.step(dt, inp, modeKey);
         if (autoReto) {
           // autotest del slice: teleporta por los gates — prueba detección,
