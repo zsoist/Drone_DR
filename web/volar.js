@@ -12,6 +12,7 @@ import { createRecorder } from '/flightverse/recorder.js?v=60';
 import { createAudio } from '/flightverse/audio.js?v=60';
 import { createTouchSticks } from '/flightverse/touch.js?v=60';
 import CameraControls from '/vendor/camera-controls.module.js?v=60';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=60';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass,
@@ -90,6 +91,7 @@ function hud() {
         <button id="dir-key">+ Keyframe</button>
         <button id="dir-play">Vista previa</button>
         <button id="dir-rec">Grabar toma</button>
+        <button id="dir-hd">Exportar 1080p</button>
         <button id="dir-exit">Salir</button>
       </div>
       <input type="range" id="dir-scrub" min="0" max="1" step="0.001" value="0">
@@ -548,6 +550,35 @@ async function main() {
   $('#dir-play').addEventListener('click', () => dirPlay(false));
   $('#dir-rec').addEventListener('click', () => dirPlay(true));
   $('#dir-exit').addEventListener('click', exitDirector);
+  $('#dir-hd').addEventListener('click', async () => {
+    if (!director || director.keys.length < 2) return;
+    if (!canExport()) { $('#dir-hd').textContent = 'sin WebCodecs — usa Grabar'; return; }
+    const btn = $('#dir-hd');
+    btn.disabled = true;
+    // resolución fija: cada frame es un paso del rec — determinista de verdad
+    const oldDpr = renderer.getPixelRatio();
+    renderer.setPixelRatio(1); renderer.setSize(1920, 1080, false);
+    composer.setSize(1920, 1080);
+    camera.aspect = 1920 / 1080; camera.updateProjectionMatrix();
+    try {
+      const blob = await exportDeterministic({
+        frames: director.len, canvas: renderer.domElement,
+        drawFrame: f => { recAt(f); drone.lerpPose(1, P); dmesh.position.copy(P);
+          dmesh.rotation.set(0, drone.yaw, 0); dirCam(f); composer.render(); },
+        onProgress: p => { btn.textContent = `Exportando ${(p * 100) | 0}%`; },
+      });
+      recorder.download(blob, `director_${CID}_1080p.webm`);
+      btn.textContent = 'Exportar 1080p';
+    } catch (e) {
+      btn.textContent = 'error: ' + String(e.message).slice(0, 24);
+      report.errors.push('export: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      renderer.setPixelRatio(oldDpr); renderer.setSize(innerWidth, innerHeight);
+      composer.setSize(innerWidth, innerHeight);
+      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+    }
+  });
 
   // cinemático: tour orbital sobre el centro de la escena
   let tourT = 0;
