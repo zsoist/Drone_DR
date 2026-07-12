@@ -39,15 +39,23 @@
 | P4 Gate Rush (slice) | HECHA (núcleo) | flightverse/gaterush.js — circuito sobre el track REAL (8 gates), countdown/timer/result/récord localStorage, replay 60Hz; gate CDP autotest=gaterush ok (detección+resultado+replay verificados, 0 errores) |
 | P5 God/creator | — | |
 | P6 Director | — | |
-| P7 Video Studio | — | |
+| P7 Video Studio | Quick Record HECHO | flightverse/recorder.js — captureStream+MediaRecorder VP9, botón+tecla V, gate: 2.3MB WebM/2.5s, 0 errores. Falta: export determinista WebCodecs 1080p, foto mode |
 | P8 AI creator | — | |
 | P9 Showcase | — | |
 | P10 perf/resiliencia | — | |
 | P11 polish/QA | — | |
 
-## Siguiente paso ejecutable
-Al aterrizar A+E: consolidar en docs/FLIGHTVERSE_UI_AUDIT.md (+screenshots
-6 breakpoints vía pane con sesión ab_s), baseline de perf (bytes/first-frame
-del visor actual), commit P0. Luego P1: spike del renderer sobre escena 1
-(cargar ksplat + mesh DSM + query de posición + captura de frame limpio +
-ciclo enter/exit sin leak) → FLIGHTVERSE_RENDERER_DECISION.md.
+## Siguiente paso ejecutable (sesión siguiente)
+Slice vertical FUNCIONAL: Mundo→Volar→Gate Rush→Result→Replay→Quick Record.
+Faltan del slice §42: Director (keyframes/timeline sobre el replay, P6) y
+export determinista 1080p (WebCodecs re-simulando el replay a paso fijo, P7b).
+Orden sugerido: P6 Director mínimo (keyframes de cámara sobre replay.rec +
+scrubber) → P7b export → P5 creator de desafíos (Dios coloca gates, JSON en
+vault vía handler nuevo) → P8 AI creator (plantilla /api/analyze + ai/router,
+drafts estructurados NUNCA código) → P9 showcase (patrón share.html + control
+de privacidad de ubicación) → P10 (governor perf, touch dual-stick móvil,
+progressiveLoad del splat, COOP/COEP si WebCodecs multithread) → P11 QA 43
+criterios. Deudas técnicas anotadas: dientes nodata del terreno (emplumar),
+alineación splat<->terreno (cameras.json + offset centroide en publish),
+audio desde cero, 4 rigs restantes, minimapa MapLibre, splat en /volar
+(hoy solo terreno — honesto hasta alinear).

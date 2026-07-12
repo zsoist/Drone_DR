@@ -3295,3 +3295,12 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .vl-result-btns button:first-child{ background:linear-gradient(135deg,#45A0E6,#5A78E8);
   color:#fff; border:none }
 .vl-result-btns :is(button,a):hover{ filter:brightness(1.2) }
+
+/* BLOQUE 29c · Quick Record */
+.vl-rec{ pointer-events:auto; cursor:pointer; font:600 11px var(--mono);
+  color:#B7C2D0; padding:5px 10px; border-radius:7px; text-align:left;
+  border:1px solid rgba(255,255,255,.14); background:rgba(10,12,16,.55) }
+.vl-rec:hover{ border-color:rgba(69,160,230,.5) }
+.vl-rec.on{ color:#fff; background:rgba(217,106,106,.85); border-color:transparent;
+  animation:recPulse 1.2s ease-in-out infinite }
+@keyframes recPulse{ 50%{ filter:brightness(1.25) } }

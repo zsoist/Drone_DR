@@ -8,10 +8,12 @@ import * as THREE from '/vendor/three.module.js';
 import { loadManifest, loadTerrain, loadTrack } from '/flightverse/scene.js';
 import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js';
 import { createGateRush, bestTime } from '/flightverse/gaterush.js';
+import { createRecorder } from '/flightverse/recorder.js';
 
 const Q = new URLSearchParams(location.search);
 const CID = (Q.get('m') || '').replace(/[^\w-]/g, '');
-const AUTOTEST = Q.get('autotest') === '1';
+const AT = Q.get('autotest');
+const AUTOTEST = AT === '1' || AT === 'record';   // ambos vuelan input sintético
 const report = { ready: false, done: false, errors: [], cid: CID };
 window.__volar = report;
 
@@ -33,6 +35,7 @@ function hud() {
     <div class="vl-corner bl">
       <div class="vl-mode" id="vl-mode"></div>
       <div class="vl-rig" id="vl-rig"></div>
+      <button class="vl-rec" id="vl-rec">● Grabar</button>
     </div>
     <div class="vl-corner br">
       <div class="vl-ghost" id="vl-ghost"></div>
@@ -206,7 +209,33 @@ async function main() {
 
   let simT = 0;
   const auto = AUTOTEST ? { until: 5 } : null;
-  const autoReto = Q.get('autotest') === 'gaterush' ? { last: 0, replayed: false } : null;
+  const autoReto = AT === 'gaterush' ? { last: 0, replayed: false } : null;
+
+  // ── Quick Record (WebM del canvas — camino instantáneo del Video Studio) ──
+  const recorder = createRecorder(renderer.domElement);
+  const recBtn = $('#vl-rec');
+  const toggleRec = async () => {
+    if (!recorder.supported) { recBtn.textContent = 'grabación no soportada'; return; }
+    if (recorder.recording) {
+      const blob = await recorder.stop();
+      recBtn.classList.remove('on'); recBtn.textContent = '● Grabar';
+      if (blob) recorder.download(blob, `volar_${CID}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.webm`);
+    } else if (recorder.start()) recBtn.classList.add('on');
+  };
+  recBtn.addEventListener('click', toggleRec);
+  addEventListener('keydown', e => { if (e.code === 'KeyV') toggleRec(); });
+  if (AT === 'record') {
+    setTimeout(() => {
+      const started = recorder.start();
+      setTimeout(async () => {
+        const blob = started ? await recorder.stop() : null;
+        report.recordBytes = blob?.size || 0;
+        report.recordMime = blob?.type || null;
+        report.ok = (blob?.size || 0) > 50000;
+        report.done = true;
+      }, 2500);
+    }, 1000);
+  }
   const P = new THREE.Vector3();
   const loop = createLoop({
     update(dt) {
@@ -277,6 +306,7 @@ async function main() {
       $('#vl-agl').textContent = drone.agl == null ? 'fuera' : `${drone.agl.toFixed(1)} m`;
       $('#vl-spd').textContent = drone.vel.length().toFixed(1);
       $('#vl-fps').textContent = `${Math.round(loop.fps() || 0)} fps`;
+      if (recorder.recording) recBtn.textContent = `■ REC ${recorder.seconds.toFixed(0)}s`;
       const ch = $('#vl-challenge'), cnt = $('#vl-count');
       if (replay) {
         ch.textContent = 'REPLAY · ESC para salir'; cnt.classList.remove('show');
@@ -296,7 +326,7 @@ async function main() {
   loop.start();
   report.ready = true;
 
-  if (auto) {
+  if (auto && AT === '1') {
     setTimeout(() => {
       report.fps = Math.round(loop.fps() || 0);
       report.pos = { x: +drone.pos.x.toFixed(1), y: +drone.pos.y.toFixed(1), z: +drone.pos.z.toFixed(1) };
