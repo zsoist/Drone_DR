@@ -4,23 +4,23 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=72';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=72';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=72';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=72';
-import { createRecorder } from '/flightverse/recorder.js?v=72';
-import { createAudio } from '/flightverse/audio.js?v=72';
-import { createTouchSticks } from '/flightverse/touch.js?v=72';
-import { createSky } from '/flightverse/sky.js?v=72';
-import CameraControls from '/vendor/camera-controls.module.js?v=72';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=72';
+import * as THREE from '/flightverse/three.js?v=73';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=73';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=73';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=73';
+import { createRecorder } from '/flightverse/recorder.js?v=73';
+import { createAudio } from '/flightverse/audio.js?v=73';
+import { createTouchSticks } from '/flightverse/touch.js?v=73';
+import { createSky } from '/flightverse/sky.js?v=73';
+import CameraControls from '/vendor/camera-controls.module.js?v=73';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=73';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=72';
+} from '/vendor/postprocessing180.module.js?v=73';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -31,7 +31,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=72';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=73';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -66,6 +66,7 @@ function hud() {
         <button class="vl-chip" id="vl-rig"></button>
         <button class="vl-chip" id="vl-vista">vista · orto</button>
         <button class="vl-chip" id="vl-cielo">cielo · día</button>
+        <button class="vl-chip vl-solo-fino" id="vl-calidad">calidad · auto</button>
         <button class="vl-chip" id="vl-reto">Gate Rush</button>
         <button class="vl-chip" id="vl-sound">Sonido</button>
         <button class="vl-chip" id="vl-ajustes">Imagen</button>
@@ -196,6 +197,7 @@ async function main() {
   ));
 
   const terrain = await loadTerrain(man, { anisotropy: 8 });
+  terrain.mesh.matrixAutoUpdate = false; terrain.mesh.updateMatrix();   // estática
   scene.add(terrain.mesh);
   const W = terrain.world;
   const mask = { uMaskOn: terrain.splatMask.uSplatOn, uMaskC: terrain.splatMask.uSplatC, uMaskR: terrain.splatMask.uSplatR };
@@ -340,9 +342,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=72', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=73', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=72');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=73');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -903,22 +905,52 @@ async function main() {
       }
     },
   });
-  // governor de perf: ajusta pixelRatio según fps medidos (fill-rate del splat)
+  // ── CALIDAD de render (desktop): auto | extra | 4k | ultra ──
+  // auto = gobernador adaptativo (≤2 DPR); manual = DPR fijo + anisotropía 16.
+  const CALIDADES = {
+    auto:  { label: 'auto',  dpr: null, aniso: 8 },
+    extra: { label: 'extra', dpr: 2,    aniso: 16 },
+    '4k':  { label: '4K',    dpr: Math.min(3, 3840 / innerWidth), aniso: 16 },
+    ultra: { label: 'ultra', dpr: Math.min(3.5, devicePixelRatio * 2), aniso: 16 },
+  };
+  let calidad = localStorage.getItem('ab.fv.calidad') || 'auto';
+  if (!CALIDADES[calidad]) calidad = 'auto';
+  const applyDpr = d => {
+    renderer.setPixelRatio(d);
+    renderer.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
+  };
+  const setCalidad = k => {
+    calidad = k;
+    const c = CALIDADES[k];
+    $('#vl-calidad').textContent = `calidad · ${c.label}`;
+    if (terrain.mesh.material.map) {
+      terrain.mesh.material.map.anisotropy = c.aniso;
+      terrain.mesh.material.map.needsUpdate = true;
+    }
+    if (c.dpr) { dprNow = c.dpr; applyDpr(c.dpr); }
+    else { dprNow = Math.min(devicePixelRatio, 2); applyDpr(dprNow); }
+    localStorage.setItem('ab.fv.calidad', k);
+    report.calidad = { k, dpr: +dprNow.toFixed(2) };
+  };
+  $('#vl-calidad').addEventListener('click', () => {
+    const ks = Object.keys(CALIDADES);
+    setCalidad(ks[(ks.indexOf(calidad) + 1) % ks.length]);
+  });
+
   let dprNow = Math.min(devicePixelRatio, 2);
+  setCalidad(calidad);
   setInterval(() => {
+    if (calidad !== 'auto') return;              // manual manda; el governor descansa
     const f = loop.fps() || 60;
     const maxDpr = Math.min(devicePixelRatio, 2);
     let want = dprNow;
     if (f < 52) want = Math.max(1, dprNow - 0.25);
     else if (f > 58 && dprNow < maxDpr) want = Math.min(maxDpr, dprNow + 0.25);
-    if (want !== dprNow) {
-      dprNow = want;
-      renderer.setPixelRatio(dprNow);
-      renderer.setSize(innerWidth, innerHeight);
-      composer.setSize(innerWidth, innerHeight);
-    }
+    if (want !== dprNow) { dprNow = want; applyDpr(want); }
   }, 2000);
 
+  renderer.compile(scene, camera);             // warmup: sin hitch del primer frame
   loop.start();
   report.ready = true;
 
