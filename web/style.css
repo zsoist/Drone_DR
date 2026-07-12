@@ -3783,3 +3783,9 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   box-shadow:0 8px 26px -8px rgba(125,255,201,.5) }
 .vl-goto.show{ display:block; animation:wiIn .4s var(--ease) }
 .vl-goto:active{ transform:translateX(-50%) scale(.96) }
+
+/* BLOQUE 44 · header FPV goggles */
+.vl-fpv-head{ position:absolute; top:calc(8% - 26px); left:50%; transform:translateX(-50%);
+  font:700 11px var(--mono); letter-spacing:.14em; color:#DFF6EC; white-space:nowrap;
+  padding:5px 14px; border-radius:7px; background:rgba(8,12,16,.45);
+  border:1px solid rgba(125,255,201,.2) }

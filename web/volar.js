@@ -4,24 +4,24 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=81';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=81';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=81';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=81';
-import { createRecorder } from '/flightverse/recorder.js?v=81';
-import { createAudio } from '/flightverse/audio.js?v=81';
-import { createTouchSticks } from '/flightverse/touch.js?v=81';
-import { createSky } from '/flightverse/sky.js?v=81';
-import { loadSceneObjects } from '/flightverse/objects.js?v=81';
-import CameraControls from '/vendor/camera-controls.module.js?v=81';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=81';
+import * as THREE from '/flightverse/three.js?v=82';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=82';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=82';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=82';
+import { createRecorder } from '/flightverse/recorder.js?v=82';
+import { createAudio } from '/flightverse/audio.js?v=82';
+import { createTouchSticks } from '/flightverse/touch.js?v=82';
+import { createSky } from '/flightverse/sky.js?v=82';
+import { loadSceneObjects } from '/flightverse/objects.js?v=82';
+import CameraControls from '/vendor/camera-controls.module.js?v=82';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=82';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=81';
+} from '/vendor/postprocessing180.module.js?v=82';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -32,7 +32,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=81';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=82';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -93,6 +93,7 @@ function hud() {
       <div class="vl-osd tape-r"><div class="vl-osd-ticks" id="osd-at"></div><b id="osd-a">0</b><label>AGL</label></div>
       <div class="vl-osd-home" id="osd-home">HOME 0 m</div>
       <div class="vl-osd-gimbal" id="osd-gimbal">GIMBAL -7°</div>
+      <div class="vl-fpv-head" id="fpv-head">FLT 00:00 · HS 0.0 · VS +0.0 · DIST 0 m · LNK ●●●</div>
       <i class="vl-fpv-br tl"></i><i class="vl-fpv-br tr"></i><i class="vl-fpv-br bl"></i><i class="vl-fpv-br br"></i>
       <div class="vl-fpv-sig" id="fpv-sig"><i></i><i></i><i></i></div>
       <div class="vl-fpv-rec" id="fpv-rec">REC</div>
@@ -110,12 +111,12 @@ function hud() {
         <button data-pr="vivo">Vivo</button>
         <button data-pr="cine">Cine</button>
       </div>
-      <label>Brillo Gaussian<input type="range" id="gr-b" min="0.6" max="1.15" step="0.01" value="0.88"></label>
-      <label>Brillo 3D<input type="range" id="gr-t" min="0.6" max="1.5" step="0.01" value="1"></label>
-      <label>Contraste<input type="range" id="gr-c" min="0" max="0.3" step="0.01" value="0.06"></label>
-      <label>Saturación<input type="range" id="gr-s" min="-0.3" max="0.4" step="0.01" value="0.06"></label>
-      <label>Bloom<input type="range" id="gr-g" min="0" max="1.2" step="0.02" value="0.32"></label>
-      <label>Viñeta<input type="range" id="gr-v" min="0" max="0.9" step="0.02" value="0.42"></label>
+      <label>Brillo Gaussian<input type="range" id="gr-b" min="0.35" max="1.6" step="0.01" value="0.88"></label>
+      <label>Brillo 3D<input type="range" id="gr-t" min="0.3" max="2.2" step="0.01" value="1"></label>
+      <label>Contraste<input type="range" id="gr-c" min="-0.15" max="0.55" step="0.01" value="0.06"></label>
+      <label>Saturación<input type="range" id="gr-s" min="-1" max="1" step="0.01" value="0.06"></label>
+      <label>Bloom<input type="range" id="gr-g" min="0" max="2" step="0.02" value="0.25"></label>
+      <label>Viñeta<input type="range" id="gr-v" min="0" max="1" step="0.02" value="0.42"></label>
       <button id="gr-reset">Restablecer</button>
     </div>
     <button class="vl-goto" id="vl-goto">Ir al inicio de la ruta »</button>
@@ -372,9 +373,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=81', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=82', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=81');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=82');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -547,8 +548,8 @@ async function main() {
     localStorage.setItem(GRADE_KEY, JSON.stringify(grade));
   });
   // grade fuera de rango guardado (el bug del fondo blanco): sanear
-  grade.c = Math.max(0, grade.c);
-  if (!(grade.b >= 0.6 && grade.b <= 1.15)) grade.b = 0.88;  // migra esquemas viejos (y el 1.3 quemado)
+  grade.c = Math.max(-0.15, Math.min(0.55, grade.c));
+  if (!(grade.b >= 0.35 && grade.b <= 1.6)) grade.b = 0.88;  // migra esquemas viejos (y el 1.3 quemado)
   applyGrade(grade);
   $('#vl-guide-ok').addEventListener('click', () => {
     $('#vl-guide').classList.remove('show');
@@ -1023,6 +1024,10 @@ async function main() {
         const f = loop.fps() || 60;
         $('#fpv-sig').dataset.n = f > 50 ? 3 : f > 32 ? 2 : 1;   // señal honesta = fps
         $('#fpv-rec').classList.toggle('on', recorder.recording);
+        const mm2 = Math.floor(simT / 60), ss2 = Math.floor(simT % 60);
+        const hs = Math.hypot(drone.vel.x, drone.vel.z), vs = drone.vel.y;
+        $('#fpv-head').textContent =
+          `FLT ${String(mm2).padStart(2,'0')}:${String(ss2).padStart(2,'0')} · HS ${hs.toFixed(1)} · VS ${vs >= 0 ? '+' : ''}${vs.toFixed(1)} · DIST ${Math.hypot(drone.pos.x, drone.pos.z).toFixed(0)} m · LNK ${'●'.repeat(+($('#fpv-sig').dataset.n || 3))}`;
       }
       const hdg = ((-o.yaw * 180 / Math.PI) % 360 + 360) % 360;
       const card = ['N','NE','E','SE','S','SO','O','NO'][Math.round(hdg / 45) % 8];
@@ -1063,6 +1068,7 @@ async function main() {
     renderer.setSize(innerWidth, innerHeight);
     composer.setSize(innerWidth, innerHeight);
   };
+  let fullTex = null;
   const setCalidad = k => {
     calidad = k;
     const c = CALIDADES[k];
@@ -1070,6 +1076,18 @@ async function main() {
     if (terrain.mesh.material.map) {
       terrain.mesh.material.map.anisotropy = c.aniso;
       terrain.mesh.material.map.needsUpdate = true;
+    }
+    // el supersampling no inventa textura: extra+ sube a la ORTO COMPLETA
+    if (c.aniso >= 16 && man.assets.ortho_full && !fullTex) {
+      new THREE.TextureLoader().loadAsync(man.assets.ortho_full).then(t => {
+        t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 16;
+        fullTex = t;
+        terrain.mesh.material.map = t;
+        terrain.mesh.material.needsUpdate = true;
+        report.orthoFull = true;
+      }).catch(() => {});
+    } else if (fullTex) {
+      terrain.mesh.material.map = fullTex;   // ya cargada: persiste
     }
     if (c.dpr) { dprNow = c.dpr; applyDpr(c.dpr); }
     else { dprNow = Math.min(devicePixelRatio, 2); applyDpr(dprNow); }

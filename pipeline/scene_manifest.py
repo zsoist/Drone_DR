@@ -86,6 +86,7 @@ def build(cid: str) -> dict:
             "dsm_lod_bin": f"data/models/{cid}/{lod['bin']}" if lod else None,
             "dsm_lod_mask": f"data/models/{cid}/{lod['mask_bin']}" if lod and lod.get("mask_bin") else None,
             "ortho": f"data/models/{cid}/{meta['ortho_asset']}" if meta.get("ortho_asset") else None,
+            "ortho_full": f"data/models/{cid}/ortho_full.jpg" if (mdir / "ortho_full.jpg").exists() else None,
             "splat": f"data/splats/{splat_bin.name}" if splat_bin else None,
             "splat_cameras": f"data/splats/{cid}.cameras.json" if cameras_json.exists() else None,
             "track": f"data/tracks/{cid}.flight.json" if track_p.exists() else None,

@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=81';
+import * as THREE from '/flightverse/three.js?v=82';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -170,7 +170,7 @@ export function createDrone({ heightAt, collide, spawn }) {
     yaw: 0, pitch: 0,
     prev: { pos: new THREE.Vector3(), yaw: 0, pitch: 0 },
     agl: null, crashedSoft: false, distance: 0,
-    _stuck: 0, _noColl: 0,
+    _stuck: 0, _noColl: 0, _t: 0,
   };
   d.prev.pos.copy(d.pos);
 
@@ -204,6 +204,13 @@ export function createDrone({ heightAt, collide, spawn }) {
     d.vel.z += (tz - d.vel.z) * k;
     d.vel.y += (ty - d.vel.y) * (1 - Math.exp(-dt * (m.resp + 1.5)));
     if (inp.brake) d.vel.multiplyScalar(Math.exp(-dt * 6));
+
+    // viento determinista (replay-safe): rachas suaves de ~1.2 m/s que
+    // derivan el hover como un Flip real; el drag del modo lo compensa
+    d._t += dt;
+    const wx = Math.sin(d._t * 0.13 + 1.7) + Math.sin(d._t * 0.041) * 0.6;
+    const wz = Math.cos(d._t * 0.09) + Math.sin(d._t * 0.023 + 0.8) * 0.5;
+    d.vel.x += wx * 0.5 * dt; d.vel.z += wz * 0.5 * dt;
 
     d.distance += d.vel.length() * dt;
     d.pos.addScaledVector(d.vel, dt);
