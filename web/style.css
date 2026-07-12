@@ -3710,3 +3710,30 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   padding:2px 7px; border-radius:5px }
 #vl-ayuda kbd{ margin-left:6px }
 @media (pointer:coarse){ .vl-dock.open .vl-sep{ width:1px; height:auto; margin:6px 3px } }
+
+/* ── BLOQUE 40 · Mapa v2: pins limpios, barra de mapa, popup misión ── */
+.fv-pin, .fv-pin.splat{ background:none !important; border:none !important;
+  box-shadow:none !important; animation:none !important; width:auto; height:auto }
+.fv-pin2{ display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer }
+.fv-pin2 .fv-pin-img{ width:46px; height:46px; border-radius:50%; background-size:cover;
+  background-position:center; border:2.5px solid #E6EBF2;
+  box-shadow:0 4px 16px rgba(0,0,0,.6); transition:transform .2s var(--ease) }
+.fv-pin2:hover .fv-pin-img{ transform:scale(1.16) }
+.fv-pin2.splat .fv-pin-img{ border-color:var(--accent) }
+.fv-mapwrap{ margin-bottom:32px }
+.fv-mapbar{ display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap }
+.fv-viewtoggle.sm button{ padding:6px 12px; font-size:11px; min-height:30px }
+.fv-mapbtn{ font:600 11.5px var(--font); color:var(--text-2); padding:7px 14px;
+  border-radius:999px; border:1px solid var(--line); background:transparent; cursor:pointer;
+  min-height:32px; transition:all .2s var(--ease) }
+.fv-mapbtn:hover{ border-color:rgba(69,160,230,.5) }
+.fv-mapbtn.on{ color:var(--mint); border-color:rgba(82,199,154,.5); background:rgba(82,199,154,.08) }
+.fv-map{ height:min(68dvh, 680px); border-radius:var(--r-lg); overflow:hidden;
+  border:1px solid rgba(69,160,230,.25); box-shadow:0 24px 70px -30px rgba(0,0,0,.8) }
+.fv-pop{ font-family:var(--font); color:#16202b; display:flex; flex-direction:column; gap:6px; min-width:210px }
+.fv-pop-poster{ height:86px; border-radius:8px; background-size:cover; background-position:center }
+.fv-pop b{ font-size:13.5px } .fv-pop span{ font:500 10.5px var(--mono); color:#5a6a7a }
+.fv-pop-btns{ display:flex; gap:6px; margin-top:2px }
+.fv-pop-btns a{ flex:1; text-align:center; padding:7px 4px; border-radius:7px; cursor:pointer;
+  font:700 11px var(--font); color:#1d5f9e; background:rgba(69,160,230,.14); text-decoration:none }
+.fv-pop-btns a.hot{ color:#fff; background:linear-gradient(135deg,#45A0E6,#5A78E8) }

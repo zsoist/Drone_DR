@@ -4,23 +4,23 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=75';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=75';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=75';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=75';
-import { createRecorder } from '/flightverse/recorder.js?v=75';
-import { createAudio } from '/flightverse/audio.js?v=75';
-import { createTouchSticks } from '/flightverse/touch.js?v=75';
-import { createSky } from '/flightverse/sky.js?v=75';
-import CameraControls from '/vendor/camera-controls.module.js?v=75';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=75';
+import * as THREE from '/flightverse/three.js?v=76';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=76';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=76';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=76';
+import { createRecorder } from '/flightverse/recorder.js?v=76';
+import { createAudio } from '/flightverse/audio.js?v=76';
+import { createTouchSticks } from '/flightverse/touch.js?v=76';
+import { createSky } from '/flightverse/sky.js?v=76';
+import CameraControls from '/vendor/camera-controls.module.js?v=76';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=76';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=75';
+} from '/vendor/postprocessing180.module.js?v=76';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -31,7 +31,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=75';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=76';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -353,9 +353,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=75', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=76', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=75');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=76');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);

@@ -103,7 +103,18 @@ async function boot() {
       </div>
       <div class="w-panel" id="w-panel"></div>
     </div>
-    <div class="fv-map" id="fv-map" hidden></div>
+    <div class="fv-mapwrap" id="fv-mapwrap" hidden>
+      <div class="fv-mapbar">
+        <div class="fv-viewtoggle sm" id="fv-layers">
+          <button class="on" data-ly="sat">Satélite</button>
+          <button data-ly="dark">Oscuro</button>
+          <button data-ly="plano">Plano</button>
+        </div>
+        <button class="fv-mapbtn" id="fv-rutas">Rutas reales</button>
+        <button class="fv-mapbtn" id="fv-fit">Encuadrar todo</button>
+      </div>
+      <div class="fv-map" id="fv-map"></div>
+    </div>
     <div class="w-launch" id="w-launch"><div class="wl-bg"></div><div class="wl-txt">CARGANDO ESCENA<span class="wl-bar"></span></div></div>
   </div>`;
   let sys;
@@ -162,37 +173,111 @@ async function boot() {
     const r = el.getBoundingClientRect();
     el.style.transform = `perspective(700px) rotateY(${((e.clientX-r.left)/r.width-.5)*7}deg) rotateX(${(.5-(e.clientY-r.top)/r.height)*5}deg)`;
   }), rail.addEventListener('mouseout', e => { const el = e.target.closest('.wi'); if (el) el.style.transform=''; });
-  // ── mapa (igual que antes) ──
-  let map = null;
-  const SAT = { version:8, sources:{ sat:{ type:'raster',
-    tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-    tileSize:256, attribution:'Esri' } }, layers:[{ id:'sat', type:'raster', source:'sat' }] };
+  // ── MAPA v2: capas, huellas de cobertura, rutas reales, popup de misión ──
+  let map = null, rutasOn = false;
+  const RASTER = t => ({ version:8, sources:{ b:{ type:'raster', tiles:[t], tileSize:256 } },
+    layers:[{ id:'b', type:'raster', source:'b' }] });
+  const LAYERS = {
+    sat: RASTER('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
+    dark: RASTER('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'),
+    plano: RASTER('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'),
+  };
+  const mapBounds = new maplibregl.LngLatBounds();
+  const MLAT = 111320;
+  const footprints = { type:'FeatureCollection', features: scenes.flatMap(sc => {
+    const c = sc.world?.center_wgs84, s = sc.world?.size_m; if (!c || !s) return [];
+    const rx = (s[0] / 2) / (MLAT * Math.cos(c[1] * Math.PI / 180)), ry = (s[1] / 2) / MLAT;
+    const ring = [];
+    for (let i = 0; i <= 40; i++) {
+      const a = i / 40 * Math.PI * 2;
+      ring.push([c[0] + Math.cos(a) * rx, c[1] + Math.sin(a) * ry]);
+    }
+    return [{ type:'Feature', properties:{ splat: sc.capabilities?.splat ? 1 : 0 },
+              geometry:{ type:'Polygon', coordinates:[ring] } }];
+  }) };
+  const addOverlays = () => {
+    if (map.getSource('fp')) return;
+    map.addSource('fp', { type:'geojson', data: footprints });
+    map.addLayer({ id:'fp-fill', type:'fill', source:'fp',
+      paint:{ 'fill-color':['case',['==',['get','splat'],1],'#45A0E6','#8A97A8'], 'fill-opacity':0.14 } });
+    map.addLayer({ id:'fp-line', type:'line', source:'fp',
+      paint:{ 'line-color':['case',['==',['get','splat'],1],'#45A0E6','#8A97A8'], 'line-width':1.6, 'line-opacity':0.65 } });
+    if (rutasOn) drawRutas();
+  };
+  async function drawRutas() {
+    const feats = [];
+    for (const sc of scenes) {
+      if (!sc.assets?.track) continue;
+      try {
+        const t = await (await fetch(sc.assets.track)).json();
+        feats.push({ type:'Feature', properties:{},
+          geometry:{ type:'LineString', coordinates: t.points.map(p => [p.lon, p.lat]) } });
+      } catch { /* sin ruta */ }
+    }
+    if (!map.getSource('rt')) {
+      map.addSource('rt', { type:'geojson', data:{ type:'FeatureCollection', features: feats } });
+      map.addLayer({ id:'rt-line', type:'line', source:'rt',
+        paint:{ 'line-color':'#52C79A', 'line-width':2.2, 'line-opacity':0.85 } });
+    }
+  }
+  const missionPopup = sc => {
+    const rec = best(sc.clip_id), st = sc.stats || {};
+    const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}`;
+    return `<div class="fv-pop">
+      <div class="fv-pop-poster" style="background-image:url('${esc(sc.assets?.poster||'')}')"></div>
+      <b>${esc(sc.name)}</b>
+      <span>${st.gsd_cm_px ? st.gsd_cm_px + ' cm/px · ' : ''}${st.track_duration_s ? dur(st.track_duration_s) + ' vuelo real' : ''}${rec != null ? ' · récord ' + rec.toFixed(1) + 's' : ''}</span>
+      ${sc.capabilities?.terrain ? `<div class="fv-pop-btns">
+        <a data-golaunch="${go('')}" data-poster="${esc(sc.assets?.poster||'')}">Libre</a>
+        <a class="hot" data-golaunch="${go('&reto=1')}" data-poster="${esc(sc.assets?.poster||'')}">Gate Rush</a>
+        <a data-golaunch="${go('&modo=cinematico')}" data-poster="${esc(sc.assets?.poster||'')}">Cine</a>
+      </div>` : '<em>en preparación</em>'}
+    </div>`;
+  };
   function showMap() {
-    const el = document.getElementById('fv-map');
-    el.hidden = false; document.getElementById('w-cards').style.display = 'none';
+    document.getElementById('fv-mapwrap').hidden = false;
+    document.getElementById('w-cards').style.display = 'none';
     if (map) { map.resize(); return; }
-    map = new maplibregl.Map({ container: el, style: SAT, center: [-74.06,4.75], zoom: 11, attributionControl: false });
-    map.addControl(new maplibregl.NavigationControl({ showCompass:false }), 'top-right');
-    const bounds = new maplibregl.LngLatBounds();
+    map = new maplibregl.Map({ container: document.getElementById('fv-map'), style: LAYERS.sat,
+      center: [-74.06, 4.75], zoom: 11, attributionControl: false });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    map.on('load', addOverlays);
     for (const sc of scenes) {
       const c = sc.world?.center_wgs84; if (!c) continue;
-      bounds.extend(c);
-      const pop = new maplibregl.Popup({ offset:18, closeButton:false }).setHTML(
-        `<div style="font:600 12px ui-monospace,monospace;color:#111">${esc(sc.name)}<br>`+
-        (sc.capabilities?.terrain ? `<a href="volar.html?m=${encodeURIComponent(sc.clip_id)}" style="display:inline-block;margin-top:6px;padding:6px 12px;border-radius:6px;background:#2b7fd4;color:#fff;text-decoration:none;font-weight:700">VOLAR</a>` : 'en preparación')+'</div>');
+      mapBounds.extend(c);
+      const pop = new maplibregl.Popup({ offset: 20, closeButton: false, maxWidth: '260px' })
+        .setHTML(missionPopup(sc));
       const dot = document.createElement('div');
-      dot.className = 'fv-pin' + (sc.capabilities?.splat ? ' splat' : '');
+      dot.className = 'fv-pin2' + (sc.capabilities?.splat ? ' splat' : '');
       dot.innerHTML = `<span class="fv-pin-img" style="background-image:url('${esc(sc.assets?.poster||'')}')"></span><span class="fv-pin-lb">${esc(sc.name.split(' · ')[0])}</span>`;
       new maplibregl.Marker({ element: dot }).setLngLat(c).setPopup(pop).addTo(map);
-      dot.addEventListener('click', () => map.flyTo({ center: c, zoom: 15.5, speed: 1.4 }));
+      dot.addEventListener('click', () => map.flyTo({ center: c, zoom: 15.5, speed: 1.35 }));
     }
-    if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 70, maxZoom: 14 });
+    if (!mapBounds.isEmpty()) map.fitBounds(mapBounds, { padding: 70, maxZoom: 14 });
+    document.getElementById('fv-layers').addEventListener('click', e => {
+      const b = e.target.closest('[data-ly]'); if (!b) return;
+      document.querySelectorAll('#fv-layers button').forEach(x => x.classList.toggle('on', x === b));
+      map.setStyle(LAYERS[b.dataset.ly]);
+      map.once('styledata', () => setTimeout(addOverlays, 80));
+    });
+    document.getElementById('fv-rutas').addEventListener('click', e => {
+      rutasOn = !rutasOn;
+      e.target.classList.toggle('on', rutasOn);
+      if (rutasOn) drawRutas();
+      else if (map.getLayer('rt-line')) { map.removeLayer('rt-line'); map.removeSource('rt'); }
+    });
+    document.getElementById('fv-fit').addEventListener('click', () =>
+      map.fitBounds(mapBounds, { padding: 70, maxZoom: 14, duration: 900 }));
+    document.getElementById('fv-map').addEventListener('click', e => {
+      const a = e.target.closest('[data-golaunch]'); if (!a) return;
+      launch(a.dataset.golaunch, a.dataset.poster);
+    });
   }
   document.querySelector('.fv-viewtoggle').addEventListener('click', e => {
     const b = e.target.closest('[data-fvv]'); if (!b) return;
     document.querySelectorAll('.fv-viewtoggle button').forEach(x => x.classList.toggle('on', x===b));
     if (b.dataset.fvv === 'map') showMap();
-    else { document.getElementById('fv-map').hidden = true; document.getElementById('w-cards').style.display = ''; }
+    else { document.getElementById('fv-mapwrap').hidden = true; document.getElementById('w-cards').style.display = ''; }
   });
 }
 boot().catch(e => main.insertAdjacentHTML('beforeend', `<div class="fv-loading">Error: ${esc(e.message)}</div>`));

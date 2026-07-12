@@ -4,7 +4,7 @@
 // alrededor del centro, documentado como fallback. Detección de paso por
 // proximidad al plano del gate en timestep fijo (determinista → replay).
 // Grabación de poses a 60Hz para replay/ghost-de-ti-mismo.
-import * as THREE from '/flightverse/three.js?v=75';
+import * as THREE from '/flightverse/three.js?v=76';
 
 const GATE_R = 7;                 // radio del anillo (m) — generoso, es el primer reto
 const PASS_R = GATE_R * 1.15;
