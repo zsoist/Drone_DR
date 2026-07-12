@@ -3,7 +3,7 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=71';
+import * as THREE from '/flightverse/three.js?v=72';
 
 const PRESETS = {
   dia: {
@@ -13,18 +13,20 @@ const PRESETS = {
     clouds: 0.55, cloudTint: 0xffffff,
   },
   atardecer: {
-    // 3 paradas reales: azul profundo → magenta → banda naranja al horizonte
-    top: 0x141c46, mid: 0xb04a6e, horizon: 0xff9440, midPos: 0.26,
-    sun: 0xffb066, sunPos: [0.85, 0.07, 0.25], sunSize: 90,   // sol BAJO y grande
-    fog: 0xd98a63, ambient: 0.55, sunI: 1.0, stars: 0.18, moon: 0, galaxy: 0,
+    top: 0x1a2350, mid: 0x8f4a72, horizon: 0xf07a3a, midPos: 0.38,
+    sun: 0xffdcb0, sunPos: [0.85, 0.09, 0.25], sunSize: 160,
+    fog: 0xc98a68, ambient: 0.6, sunI: 1.0, stars: 0.12, moon: 0, galaxy: 0,
     clouds: 0.5, cloudTint: 0xffc9a0,
   },
   noche: {
-    top: 0x04060c, mid: 0x0a1322, horizon: 0x16222f, midPos: 0.3,
+    top: 0x050810, mid: 0x0b1526, horizon: 0x1a2839, midPos: 0.32,
     sun: 0x000000, sunPos: [0.8, 0.1, 0.2], sunSize: 340,
-    moonPos: [-0.5, 0.55, -0.35],
-    fog: 0x0b1119, ambient: 0.36, sunI: 0.5, stars: 1.15, moon: 1, galaxy: 0.85,
-    clouds: 0.2, cloudTint: 0x8fa5c2,
+    moonPos: [-0.42, 0.6, -0.3],
+    // luz REAL de luna: la direccional se mueve a la luna (fría) y el
+    // ambiente sube — el orto dejaba de verse (reporte)
+    fog: 0x0c1420, ambient: 0.58, sunI: 0.85, sunTint: 0xbdd4ff,
+    stars: 1.1, moon: 1, galaxy: 0.5,
+    clouds: 0.18, cloudTint: 0x8fa5c2,
   },
 };
 
@@ -85,7 +87,11 @@ export function createSky(scene, { radius = 2600 } = {}) {
           vec3 col = mix(uHorizon, uMid, smoothstep(0.0, uMidPos, h));
           col = mix(col, uTop, smoothstep(uMidPos, 1.0, h));
           float s = max(dot(d, normalize(uSunDir)), 0.);
-          col += uSunColor * (pow(s, uSunSize) * 1.25 + pow(s, 14.0) * 0.22);
+          // disco de dos tonos (núcleo cálido claro + corona del color del preset)
+          float disc = pow(s, uSunSize);
+          col += mix(uSunColor, vec3(1.0, 0.97, 0.9), 0.55) * disc * 1.15;
+          col += uSunColor * pow(s, 24.0) * 0.28;
+          col += uSunColor * pow(s, 5.0) * 0.10 * (1.0 - h);   // resplandor bajo del horizonte
           if (uMoon > 0.01) {
             float m = max(dot(d, uMoonDir), 0.);
             float disc = smoothstep(0.9994, 0.99965, m);
@@ -96,10 +102,11 @@ export function createSky(scene, { radius = 2600 } = {}) {
           }
           if (uGalaxy > 0.01 && d.y > 0.02) {
             // vía láctea: banda alrededor de un gran círculo inclinado
-            float band = exp(-pow(dot(d, normalize(vec3(0.5, 0.22, -0.82))) / 0.16, 2.0));
-            col += vec3(0.16, 0.18, 0.26) * band * uGalaxy;
+            float band = exp(-pow(dot(d, normalize(vec3(0.35, 0.05, -0.93))) / 0.09, 2.0));
+            band *= smoothstep(0.12, 0.4, d.y);                 // solo en el cielo alto
+            col += vec3(0.10, 0.12, 0.19) * band * uGalaxy;
             vec2 gcell = floor(d.xz / max(d.y, 0.05) * 210.0);
-            col += vec3(step(0.994, hash(gcell)) * band * uGalaxy * 0.5);
+            col += vec3(step(0.9955, hash(gcell)) * band * uGalaxy * 0.6);
           }
           if (uStars > 0.01 && d.y > 0.06) {
             vec2 cell = floor(d.xz / d.y * 90.0);
@@ -107,6 +114,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
             float st = step(0.9973, hash(cell)) * uStars * tw * smoothstep(0.06, 0.35, d.y);
             col += vec3(st);
           }
+          col += (hash(gl_FragCoord.xy) - 0.5) * 0.012;        // dither anti-banding
           gl_FragColor = vec4(col, 1.);
         }`,
     }));
@@ -148,8 +156,9 @@ export function createSky(scene, { radius = 2600 } = {}) {
     if (p.moonPos) uni.uMoonDir.value.set(...p.moonPos).normalize();
     uni.uGalaxy.value = p.galaxy;
     uni.uStars.value = p.stars;
-    sun.color.set(p.sun); sun.intensity = p.sunI;
-    sun.position.set(p.sunPos[0] * 600, p.sunPos[1] * 600, p.sunPos[2] * 600);
+    sun.color.set(p.sunTint || p.sun || 0xffffff); sun.intensity = p.sunI;
+    const lp = (p.moon > 0 && p.moonPos) ? p.moonPos : p.sunPos;
+    sun.position.set(lp[0] * 600, lp[1] * 600, lp[2] * 600);
     ambient.intensity = p.ambient;
     scene.fog = new THREE.Fog(p.fog, 600, 2200);
     for (const c of clouds) {

@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=71';
+import * as THREE from '/flightverse/three.js?v=72';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -82,12 +82,12 @@ export const MODES = {
   // thrust por rotor + PD de actitud + mixer; ver docs/FLIGHTVERSE ledger
   fpv:        { label: 'FPV', six: true, twr: 3.6, tilt: Math.PI / 3.6, vmaxH: 26, vmaxV: 14, yawRate: 3.4 },
   arcade:     { label: 'Arcade', six: true, twr: 5.5, tilt: Math.PI / 4, vmaxH: 34, vmaxV: 22, yawRate: 2.6 },
-  dios:       { label: 'Dios', vmax: 60, vboost: 160, vy: 60, resp: 8, yawRate: 2.2, autoLevel: true, noclip: true },
+  dios:       { label: 'Dios', vmax: 34, vboost: 85, vy: 30, resp: 4.2, yawRate: 1.8, autoLevel: true, noclip: true },
 };
 
 // ── 6DOF (port ecctrl): constantes en unidades de nuestro dron (masa 1kg) ──
 const G6 = 9.81, MASS6 = 1, DRAG6 = 0.25, TORQUE_RATIO = 0.6;
-const TILT_P = 3.5, TILT_D = 0.6, YAW_P = 1.2, HORIZ_P = 1.0, VERT_P = 2.0;
+const TILT_P = 4.2, TILT_D = 1.15, YAW_P = 2.2, HORIZ_P = 1.0, VERT_P = 2.0;
 const I6 = 0.06;                               // inercia media (caja 0.85m, 1kg)
 const ROTORS6 = [                              // pares diagonales contra-rotantes
   { p: [+0.33, 0, +0.34], s: -1 }, { p: [-0.33, 0, +0.34], s: +1 },
@@ -147,7 +147,8 @@ function step6(d, inp, m, dt) {
   d.vel.addScaledVector(F, dt / MASS6);
   d.pos.addScaledVector(d.vel, dt);
   d.angVel.addScaledVector(T, dt / I6);
-  d.angVel.multiplyScalar(Math.exp(-dt * 1.2));           // damping aerodinámico
+  d.angVel.multiplyScalar(Math.exp(-dt * 2.4));           // damping aerodinámico
+  if (d.angVel.length() > 5) d.angVel.setLength(5);       // sin barrenas imposibles
   // integrar quaternion: dq = 0.5·ω·q·dt
   const w = d.angVel;
   _q1.set(w.x * dt / 2, w.y * dt / 2, w.z * dt / 2, 0).multiply(d.quat);

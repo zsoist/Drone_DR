@@ -4,7 +4,7 @@
 // alrededor del centro, documentado como fallback. Detección de paso por
 // proximidad al plano del gate en timestep fijo (determinista → replay).
 // Grabación de poses a 60Hz para replay/ghost-de-ti-mismo.
-import * as THREE from '/flightverse/three.js?v=71';
+import * as THREE from '/flightverse/three.js?v=72';
 
 const GATE_R = 7;                 // radio del anillo (m) — generoso, es el primer reto
 const PASS_R = GATE_R * 1.15;
@@ -43,9 +43,30 @@ export function createGateRush({ scene, trackPts, world, heightAt }) {
     const m = new THREE.Mesh(ringGeo, matIdle);
     m.position.copy(c);
     m.lookAt(next);                                 // el anillo mira al siguiente gate
+    const glow = new THREE.Mesh(
+      new THREE.TorusGeometry(GATE_R * 1.12, 0.9, 8, 36),
+      new THREE.MeshBasicMaterial({ color: 0x45A0E6, transparent: true, opacity: 0.12,
+        blending: THREE.AdditiveBlending, depthWrite: false }));
+    m.add(glow);
     grp.add(m);
-    return { mesh: m, center: c, passed: false };
+    return { mesh: m, glow, center: c, passed: false };
   });
+  // CAMINO estilo Mario Galaxy: tubo aditivo con gradiente entre gates
+  const curve = new THREE.CatmullRomCurve3(centers, false, 'catmullrom', 0.35);
+  const pathGeo = new THREE.TubeGeometry(curve, centers.length * 14, 0.55, 8, false);
+  const nP = pathGeo.attributes.position.count;
+  const colors = new Float32Array(nP * 3);
+  const cA = new THREE.Color(0x45A0E6), cB = new THREE.Color(0x9a6cff);
+  for (let i = 0; i < nP; i++) {
+    const t = (i / nP);
+    const c2 = cA.clone().lerp(cB, 0.5 + 0.5 * Math.sin(t * Math.PI * 6));
+    colors[i * 3] = c2.r; colors[i * 3 + 1] = c2.g; colors[i * 3 + 2] = c2.b;
+  }
+  pathGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const pathMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true,
+    opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false });
+  const path = new THREE.Mesh(pathGeo, pathMat);
+  grp.add(path);
   scene.add(grp);
 
   const st = {
@@ -66,6 +87,12 @@ export function createGateRush({ scene, trackPts, world, heightAt }) {
   return {
     state: st,
     gates,
+    pulse(t) {                                     // latido del camino + glow del gate activo
+      pathMat.opacity = 0.26 + Math.sin(t * 2.6) * 0.1;
+      gates.forEach((gg, i) => {
+        gg.glow.material.opacity = i === st.idx ? 0.2 + Math.sin(t * 4) * 0.12 : 0.05;
+      });
+    },
     start() {
       gates.forEach(g => { g.passed = false; });
       st.phase = 'countdown'; st.countdown = 3; st.idx = 0; st.t = 0;
@@ -94,6 +121,7 @@ export function createGateRush({ scene, trackPts, world, heightAt }) {
     dispose() {
       scene.remove(grp);
       ringGeo.dispose(); matNext.dispose(); matIdle.dispose(); matDone.dispose();
+      pathGeo.dispose(); pathMat.dispose();
     },
   };
 }
