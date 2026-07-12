@@ -3,7 +3,7 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=104';
+import * as THREE from '/flightverse/three.js?v=106';
 
 const PRESETS = {
   dia: {
@@ -225,10 +225,10 @@ export function createSky(scene, { radius = 2600 } = {}) {
       const py = Math.max(-3, Math.sin(j * 2.1) * 8);        // base plana: cúmulo real
       sp.position.set((j - 2) * 26 + Math.sin(i * 3 + j) * 9, py, Math.cos(i + j) * 12);
       sp.scale.set(58 + Math.sin(i * 7 + j * 3) * 18, 26 + Math.cos(i + j * 2) * 8, 1);
-      sp.userData.shade = 0.78 + 0.22 * Math.min(1, (py + 3) / 11);  // panza en sombra
+      sp.userData.shade = 0.88 + 0.12 * Math.min(1, (py + 3) / 11);  // panza en sombra sutil
       g.add(sp);
     }
-    g.position.set(Math.sin(i * 1.9) * 700, 170 + (i % 3) * 45, Math.cos(i * 2.4) * 700);
+    g.position.set(Math.sin(i * 1.9) * 700, 300 + (i % 3) * 60, Math.cos(i * 2.4) * 700);
     scene.add(g);
     puffs.push(g);
   }

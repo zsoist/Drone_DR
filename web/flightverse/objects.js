@@ -4,7 +4,7 @@
 // (ring/beacon/box) con anclaje al suelo real (heightAt), animaciones
 // spin/bob y materiales emisivos. Optimizado: matrices estáticas quietas,
 // un solo update() barato para los animados.
-import * as THREE from '/flightverse/three.js?v=104';
+import * as THREE from '/flightverse/three.js?v=106';
 
 const PRIMS = {
   ring: ({ color }) => new THREE.Mesh(
@@ -44,7 +44,7 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
     let node = null;
     if ((o.type === 'glb' || o.type === 'kit') && o.file) {
       try {
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=104'));
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=106'));
         const base = o.type === 'kit' ? '/assets/destruction/models/' : '/assets/props/';
         const g = await new GLTFLoader().loadAsync(base + encodeURIComponent(o.file));
         node = g.scene;
@@ -66,7 +66,7 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
       node = PRIMS[o.type](o);
     }
     if (!node) continue;
-    node.traverse(mm => { mm.castShadow = true; });
+    node.traverse(mm => { mm.castShadow = mm.userData.role !== 'fragment'; });
     const [x, y, z] = o.pos;
     const gy = o.ground !== false && heightAt ? (heightAt(x, z) ?? 0) : 0;
     node.position.set(x, gy + y, z);

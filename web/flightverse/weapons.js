@@ -6,7 +6,7 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=104';
+import * as THREE from '/flightverse/three.js?v=106';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -43,13 +43,14 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
   };
   // partícula sprite: vida, velocidad, crecimiento, giro y rampa de color
   const emit = (tex, pos, vel, size0, size1, life, blending, o = {}) => {
+    if (S.parts.length > 460) return;         // tope de seguridad (drawcalls)
     const sp = sprite(tex, blending);
     sp.position.copy(pos);
     if (o.tint0) sp.material.color.set(o.tint0);
     S.parts.push({ sp, vel, t: 0, life, size0, size1,
       rot: (Math.random() - 0.5) * (o.spin ?? 1.6),
       tint0: o.tint0 && new THREE.Color(o.tint0), tint1: o.tint1 && new THREE.Color(o.tint1),
-      drag: o.drag ?? 1.6, rise: o.rise ?? 0 });
+      drag: o.drag ?? 1.6, rise: o.rise ?? 0, tall: o.tall ?? 1 });
   };
 
   function fireAftermath(p) {                 // fuego residual que arde y muere
@@ -69,28 +70,57 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     const nearGround = p.y - gy < 3.5;
     if (nearGround && crater) crater(p.x, p.z, 3.4 * big, 1.15 * big);
     // flash + luz
-    emit(TEX.flash, p, new THREE.Vector3(), 7 * big, 16 * big, 0.15, THREE.AdditiveBlending);
-    const light = new THREE.PointLight(0xffb066, 90 * big, 60 * big, 1.8);
+    emit(TEX.flash, p, new THREE.Vector3(), 9 * big, 24 * big, 0.16, THREE.AdditiveBlending);
+    const light = new THREE.PointLight(0xffb066, 150 * big, 85 * big, 1.8);
     light.position.copy(p).y += 1.5;
     group.add(light);
     S.parts.push({ light, t: 0, life: 0.22 });
-    // bola de fuego con rampa blanco→naranja→rojo oscuro y giro
-    for (let i = 0; i < 14; i++) {
-      const v = new THREE.Vector3((Math.random() - 0.5) * 8, 2.5 + Math.random() * 6.5, (Math.random() - 0.5) * 8);
-      emit(TEX.fire, p, v, (1.1 + Math.random() * 1.8) * big, (3.6 + Math.random() * 2.6) * big,
-        0.4 + Math.random() * 0.3, THREE.AdditiveBlending,
-        { tint0: 0xfff4d8, tint1: 0x8a2508, spin: 3.2 });
+    // núcleo blanco-caliente (el 'punch' del estallido)
+    for (let i = 0; i < 7; i++) {
+      const v = new THREE.Vector3((Math.random() - 0.5) * 5, 3 + Math.random() * 5, (Math.random() - 0.5) * 5);
+      emit(TEX.flash, p, v, 1.4 * big, (2.8 + Math.random()) * big, 0.22 + Math.random() * 0.1,
+        THREE.AdditiveBlending, { tint0: 0xffffff, tint1: 0xffc060, spin: 4, tall: 1.25 });
     }
-    // humo: gira lento, aclara al expandirse, dura
+    // bola de fuego: llamas ALTAS (no bolas) con rampa blanco→naranja→rojo
+    for (let i = 0; i < 22; i++) {
+      const v = new THREE.Vector3((Math.random() - 0.5) * 9, 3 + Math.random() * 8, (Math.random() - 0.5) * 9);
+      emit(TEX.fire, p, v, (1.1 + Math.random() * 1.8) * big, (3.8 + Math.random() * 3) * big,
+        0.42 + Math.random() * 0.34, THREE.AdditiveBlending,
+        { tint0: 0xfff4d8, tint1: 0x8a2508, spin: 3.2, tall: 1.5 + Math.random() * 0.5, rise: 3 });
+    }
+    // humo: columna que SUBE, oscura → gris, dura y crece mucho
+    for (let i = 0; i < 18; i++) {
+      const v = new THREE.Vector3((Math.random() - 0.5) * 3.4, 2 + Math.random() * 3.4, (Math.random() - 0.5) * 3.4);
+      emit(TEX.smoke, p.clone().add(new THREE.Vector3(0, i * 0.12, 0)), v,
+        (1.8 + Math.random() * 2.2) * big, (11 + Math.random() * 7) * big,
+        3.2 + Math.random() * 2.2, THREE.NormalBlending,
+        { tint0: 0x211f1c, tint1: 0x7a7672, spin: 0.8, rise: 1.9, drag: 1.2 });
+    }
+    // anillo de POLVO rasante (tierra levantada, corre por el suelo)
+    for (let i = 0; i < 14; i++) {
+      const a2 = (i / 14) * 6.283 + Math.random() * 0.3;
+      const v = new THREE.Vector3(Math.cos(a2) * (9 + Math.random() * 6), 0.7, Math.sin(a2) * (9 + Math.random() * 6));
+      emit(TEX.smoke, new THREE.Vector3(p.x, gy + 0.6, p.z), v,
+        1.4 * big, (6 + Math.random() * 3) * big, 1.5 + Math.random() * 0.6,
+        THREE.NormalBlending, { tint0: 0x6e5c48, tint1: 0x8a7a64, spin: 1, drag: 2.2 });
+    }
+    // EYECTA: pedazos del suelo/edificio que vuelan y QUEDAN como escombro
     for (let i = 0; i < 12; i++) {
-      const v = new THREE.Vector3((Math.random() - 0.5) * 3.2, 1.4 + Math.random() * 2.6, (Math.random() - 0.5) * 3.2);
-      emit(TEX.smoke, p, v, (1.8 + Math.random() * 2) * big, (8 + Math.random() * 5) * big,
-        2.4 + Math.random() * 1.6, THREE.NormalBlending,
-        { tint0: 0x2e2b28, tint1: 0x6e6a66, spin: 0.8, rise: 1.2 });
+      const sz3 = 0.15 + Math.random() * 0.4;
+      const m2 = new THREE.Mesh(new THREE.BoxGeometry(sz3, sz3 * (0.5 + Math.random()), sz3),
+        new THREE.MeshLambertMaterial({ color: [0x4a4238, 0x6b5d4a, 0x2e2a24, 0x57503f][i % 4] }));
+      m2.position.set(p.x, gy + 0.4, p.z);
+      m2.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      m2.castShadow = true;
+      group.add(m2);
+      const a3 = Math.random() * 6.283, e3 = 0.5 + Math.random() * 0.9, s3 = (7 + Math.random() * 13) * big;
+      S.frags.push({ m: m2, t: 0,
+        vel: new THREE.Vector3(Math.cos(a3) * Math.cos(e3) * s3, Math.sin(e3) * s3, Math.sin(a3) * Math.cos(e3) * s3),
+        rot: new THREE.Vector3(Math.random() * 9, Math.random() * 9, Math.random() * 9) });
     }
     // brasas: Points con textura suave (adiós cuadrados) + gravedad
     {
-      const n = 60, pos = new Float32Array(n * 3), vel = [];
+      const n = 110, pos = new Float32Array(n * 3), vel = [];
       for (let i = 0; i < n; i++) {
         pos.set([p.x, p.y + 0.3, p.z], i * 3);
         const a = Math.random() * 6.283, e = Math.random() * 1.3, s2 = 9 + Math.random() * 16;
@@ -106,7 +136,7 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     }
     // streaks: chispas estiradas por velocidad (LineSegments, técnica quarks)
     {
-      const n = 26, pos = new Float32Array(n * 6), vel = [];
+      const n = 40, pos = new Float32Array(n * 6), vel = [];
       for (let i = 0; i < n; i++) {
         const a = Math.random() * 6.283, e = 0.15 + Math.random() * 1.2, s2 = 24 + Math.random() * 30;
         const v = new THREE.Vector3(Math.cos(a) * Math.cos(e) * s2, Math.sin(e) * s2, Math.sin(a) * Math.cos(e) * s2);
@@ -255,7 +285,7 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         if (hit) {
           group.remove(M.body);
           S.missiles.splice(i, 1);
-          explode(p.clone());
+          explode(p.clone(), 1.25);
         }
       }
       // ── partículas ──
@@ -272,7 +302,8 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
           P.sp.position.addScaledVector(P.vel, dt);
           P.vel.y += (P.rise || 0) * dt;
           P.vel.multiplyScalar(1 - P.drag * dt);
-          P.sp.scale.setScalar(P.size0 + (P.size1 - P.size0) * k);
+          const sz2 = P.size0 + (P.size1 - P.size0) * k;
+          P.sp.scale.set(sz2, sz2 * P.tall, 1);
           P.sp.material.opacity = 1 - k * k;
           P.sp.material.rotation += P.rot * dt;
           if (P.tint0 && P.tint1) P.sp.material.color.lerpColors(P.tint0, P.tint1, Math.min(1, k * 1.4));
@@ -314,8 +345,9 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         if (F.t < F.life && F.acc > 0.09) {
           F.acc = 0;
           const j = new THREE.Vector3((Math.random() - 0.5) * 1.4, 0.2, (Math.random() - 0.5) * 1.4);
-          emit(TEX.fire, F.p.clone().add(j), new THREE.Vector3(0, 1.6 + Math.random(), 0),
-            0.5, 1.6, 0.55, THREE.AdditiveBlending, { tint0: 0xffe0a0, tint1: 0xa03008, spin: 2, drag: 0.3 });
+          emit(TEX.fire, F.p.clone().add(j), new THREE.Vector3(0, 2.2 + Math.random() * 1.4, 0),
+            0.6, 2.1, 0.5, THREE.AdditiveBlending,
+            { tint0: 0xffe8b0, tint1: 0xa03008, spin: 2.4, drag: 0.3, tall: 2.1, rise: 2.5 });
           if (Math.random() < 0.4) {
             emit(TEX.smoke, F.p.clone().add(j).add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, 1.8, 0),
               0.8, 3.2, 2.6, THREE.NormalBlending, { tint0: 0x2e2b28, tint1: 0x777370, spin: 0.6, drag: 0.3 });

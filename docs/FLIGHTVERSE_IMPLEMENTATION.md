@@ -166,3 +166,17 @@ mando real, minimapa MapLibre opcional.
   12 aletas de refrigeración/motor, tornillería, antenas, GPS puck, 24 radios,
   hardpoint_1..4 REALES — doFire dispara desde el hardpoint en turno.
 - Gates: 12 objetos cargan limpio, customDrone true, fired/exploded 1/1, 67fps.
+
+## v106 (2026-07-12) — explosión v3: potencia real + perf recuperada
+- Núcleo blanco-caliente (7 sprites flash con rampa a naranja), 22 llamas ALTAS
+  (escala no uniforme tall 1.5-2x + rise), columna de humo que sube (18, vida
+  3.2-5.4s, crece a 11-18m), anillo de POLVO rasante terroso (14), EYECTA: 12
+  pedazos de suelo/edificio que vuelan con arco y QUEDAN como escombro (esto
+  faltaba al disparar a la fotogrametría), brasas 60→110, streaks 26→40,
+  flash 24m, luz 150. Misiles explotan a big 1.25. Tope 460 sprites (drawcalls).
+- Fuego residual: llamas estiradas 2.1x con aceleración vertical.
+- Nubes billboard subidas 170→300m + sombreado suave (parecían blobs bug a baja
+  altitud urbana).
+- PERF: fragmentos del kit sin castShadow (70 ladrillos = 140 drawcalls de
+  shadow pass) → 47fps → 71fps.
+- Evidencia visual: scorch + eyecta confirmados en techo (crop cenital).

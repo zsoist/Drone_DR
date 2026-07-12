@@ -3,7 +3,7 @@
 // vendorizado). Cada frame es el paso f del rec 60Hz: mismo input → mismo
 // video, independiente del framerate de la máquina. Fallback honesto: si
 // WebCodecs no existe, el caller usa Quick Record.
-import { Muxer, ArrayBufferTarget } from '/vendor/webm-muxer.module.js?v=104';
+import { Muxer, ArrayBufferTarget } from '/vendor/webm-muxer.module.js?v=106';
 
 export const canExport = () => typeof VideoEncoder !== 'undefined';
 
