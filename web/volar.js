@@ -748,17 +748,8 @@ async function main() {
       $('#vl-heading').textContent = `${card} ${Math.round(hdg)}°`;
       const ch = $('#vl-challenge'), cnt = $('#vl-count');
       if (director) {
-        if (director.playing) {
-          director.f += dt * 60;
-          if (director.f >= director.len) {
-            director.f = director.len; director.playing = false; cc.enabled = true;
-            if (recorder.recording) recorder.stop().then(b => {
-              if (b) recorder.download(b, `director_${CID}.webm`);
-            });
-          }
-          $('#dir-scrub').value = String(director.f);
-        }
-        recAt(director.f);
+        ch.textContent = director.playing ? 'DIRECTOR · reproduciendo' : 'DIRECTOR · edición';
+        cnt.classList.remove('show');
       } else if (replay) {
         ch.textContent = 'REPLAY · ESC para salir'; cnt.classList.remove('show');
       } else if (reto) {
