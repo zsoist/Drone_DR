@@ -45,11 +45,30 @@
 | P10 perf/resiliencia | — | |
 | P11 polish/QA | — | |
 
+## Arco 10/10 (2026-07-11/12) — overhaul con stack investigado
+Auditoría paralela de 6 libs (workflow, veredictos con evidencia medida en
+scratchpad). Integrado y GATEADO (CDP, 0 errores, 73-78fps):
+- **Alineación splat<->terreno** (splat_align.py, Umeyama cámaras vs
+  reconstruction.topocentric — RMSE 0.003-0.018m × 5 escenas) → splat héroe
+  EN /volar (P foto-real, ±cm en HUD).
+- **Spark 2.1 + three r180** (shim flightverse/three.js): ksplat nativo, LOD
+  presupuesto fijo; GS3D retirado del juego (legacy tresd/share sigue r160 —
+  migrarlos = tarea aparte). CSP connect-src +data:.
+- **Colisión edificios**: splat-transform (tools/) → collision GLB → 
+  collision_bake.py (matriz horneada) → three-mesh-bvh closestPointToPoint
+  120Hz determinista, push-out+rebote.
+- **postprocessing 6.39**: SMAA+Bloom+ACES+Vignette (un EffectPass).
+- **Audio sintetizado** (rotores/viento/eventos, M mute) + **dual-stick
+  táctil** + **minimapa orto** + **llegada cinematográfica** + LOD 512.
+- Vendorizados listos sin consumir: camera-controls 3.1.2 (Director P6).
+- Port ecctrl (modelo 6DOF rotores, constantes en journal del workflow
+  wf_710e9b72-d8a) = upgrade de game-feel pendiente.
+
 ## Siguiente paso ejecutable (sesión siguiente)
 Slice vertical FUNCIONAL: Mundo→Volar→Gate Rush→Result→Replay→Quick Record.
 Faltan del slice §42: Director (keyframes/timeline sobre el replay, P6) y
 export determinista 1080p (WebCodecs re-simulando el replay a paso fijo, P7b).
-Orden sugerido: P6 Director mínimo (keyframes de cámara sobre replay.rec +
+Orden sugerido: migrar splatview.js (tresd/share) a Spark r180 y retirar GS3D del repo · P6 Director mínimo (sobre camera-controls ya vendorizado) (keyframes de cámara sobre replay.rec +
 scrubber) → P7b export → P5 creator de desafíos (Dios coloca gates, JSON en
 vault vía handler nuevo) → P8 AI creator (plantilla /api/analyze + ai/router,
 drafts estructurados NUNCA código) → P9 showcase (patrón share.html + control
