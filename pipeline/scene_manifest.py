@@ -44,7 +44,10 @@ def build(cid: str) -> dict:
     if not lod and meta.get("has_dsm") and (mdir / "dsm.bin").exists():
         lod = dsm_lod.build(cid)
 
-    splat_bin = next((p for p in (VAULT / "splats" / f"{cid}.ksplat",
+    # preferencia: .clean.sog (floaters filtrados, ~50% más liviano, Spark
+    # lo lee nativo) > ksplat > splat
+    splat_bin = next((p for p in (VAULT / "splats" / f"{cid}.clean.sog",
+                                  VAULT / "splats" / f"{cid}.ksplat",
                                   VAULT / "splats" / f"{cid}.splat") if p.exists()), None)
     splat_meta = _load(VAULT / "splats" / f"{cid}.meta.json") or {}
     cameras_json = VAULT / "splats" / f"{cid}.cameras.json"
