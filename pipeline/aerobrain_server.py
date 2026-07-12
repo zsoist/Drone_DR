@@ -1918,6 +1918,22 @@ class H(BaseHTTPRequestHandler):
             return self.send_json({"ok": True, "job": j["id"], "queued": True,
                                    "preset": preset["key"], "iters": preset["iters"],
                                    "preflight": pfv})
+        if u.path == "/api/preflight":
+            # U1.3 en el modal: proyección de memoria per-preset ANTES de encolar.
+            # Etiquetada como proyección del modelo (±25%) — la UI jamás la vende como promesa.
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            import preflight as _pf
+            try:
+                n = max(1, min(5000, int(spec.get("n_images", 0))))
+                w = max(640, min(8192, int(spec.get("width", 2688))))
+                p = str(spec.get("preset", "medium"))
+                if p not in _pf.PRESET_ITERS:
+                    return self.send_json({"error": "preset desconocido"}, 400)
+            except (TypeError, ValueError):
+                return self.send_json({"error": "parámetros inválidos"}, 400)
+            return self.send_json(_pf.splat_preflight(n, w, p))
         if u.path == "/api/client_error":
             # errores JS del frontend → registro central. Sin auth (los reporta también la
             # página pública), pero: mismo-origen obligatorio + presupuesto global 60/h

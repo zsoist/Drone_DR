@@ -769,6 +769,16 @@ check("preflight: /api/splat lo consulta, REJECTED bloquea (salvo force), proyec
       '"preflight": pfv' in _srv_src_pf and 'force_preflight' in _srv_src_pf
       and 'splat_preflight(n_imgs, w' in _srv_src_pf)
 
+_srv_src_pf2 = Path("pipeline/aerobrain_server.py").read_text()
+
+check("server: /api/preflight expone el motor U1.3 con validación de preset",
+      '"/api/preflight"' in _srv_src_pf2 and "preset desconocido" in _srv_src_pf2)
+_td_src = Path("web/tresd.js").read_text()
+check("modal v2: agrupa por CENTROIDE del bbox (U1.1 — spotKey del despegue refutado por test #1)",
+      "(b[0] + b[2]) / 2" in _td_src and "0.0012" in _td_src)
+check("modal v2: preflight en UI etiquetado como proyección, jamás promesa",
+      "no una promesa" in _td_src and "/api/preflight" in _td_src)
+
 import inspect as _insp
 check("hwconfig: la política jamás reescribe hardware.json (calibración = humana)",
       "write_text" not in _insp.getsource(_hw._on_ram_mismatch))

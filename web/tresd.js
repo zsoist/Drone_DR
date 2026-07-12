@@ -103,73 +103,33 @@
     </section>
 
     <section class="td-mod" data-mod="process" style="display:none">
-    <div class="td-pipeline-grid">
-      <article class="td-pipe-card">
-        <div class="td-pipe-top">${icon('map')}<span>ODM / Ortofoto</span><b>Base survey</b></div>
-        <p>Extrae frames, geoetiqueta con SRT, reconstruye cámaras, DSM/DTM, ortofoto feathered y nube densa.</p>
-        <div class="td-pipe-steps"><span>Frames</span><span>OpenSfM</span><span>DSM</span><span>Publicar</span></div>
-        <button class="btn primary" data-open-run3d>${icon('cube')} Configurar ODM</button>
-      </article>
-      <article class="td-pipe-card">
-        <div class="td-pipe-top">${icon('layers')}<span>Nube / Malla</span><b>Inspección</b></div>
-        <p>La nube sale del ODM y es el visor principal para vuelos nadir; malla texturizada se usa cuando la captura tiene oblicuos.</p>
-        <div class="td-pipe-steps"><span>PLY</span><span>COPC</span><span>Viewer</span><span>QA</span></div>
-        <button class="btn" data-open-run3d>${icon('activity')} Crear con ODM</button>
-      </article>
-      <article class="td-pipe-card td-pipe-hot">
-        <div class="td-pipe-top">${icon('spark')}<span>Gaussian Splatting</span><b>MPS</b></div>
-        <p>Entrena Medium, Cinematic o Ultra sobre poses ODM. Puede partir de un proyecto existente o crear base ODM desde video.</p>
-        <div class="td-pipe-steps"><span>Poses</span><span>Train</span><span>.ksplat</span><span>Gate</span></div>
-        <button class="btn primary" data-open-splat>${icon('spark')} Configurar splat</button>
-      </article>
+    <div class="panel td-flow">
+      <div class="ph">${icon('activity')} Pipeline de procesamiento
+        <span class="spacer" style="flex:1"></span>
+        <button class="linklike" id="td-how">¿Cómo funciona?</button>
+      </div>
+      <div class="pb">
+        <div class="td-stepper">
+          ${[['film', 'Video', 'DJI + SRT'], ['pin', 'Frames + GPS', 'geotag'], ['map', 'ODM', 'SfM · DSM · orto'],
+             ['layers', 'Nube / Malla', 'visor'], ['spark', 'Splat', 'Metal/MPS'], ['ext', 'Publicar', 'share']]
+            .map(([ic, t, s], i, a) => `
+            <div class="td-step"><i>${icon(ic)}</i><b>${t}</b><span>${s}</span></div>
+            ${i < a.length - 1 ? '<div class="td-step-arrow">›</div>' : ''}`).join('')}
+        </div>
+        <div class="td-actions">
+          <button class="btn primary td-cta" id="btn-run3d" data-open-run3d>
+            ${icon('cube')}<span><b>Procesar un vuelo…</b><small>frames + geotag + fotogrametría · combina tomas del mismo lugar</small></span></button>
+          <button class="btn td-cta" id="btn-splat" data-open-splat>
+            ${icon('spark')}<span><b>Generar splat…</b><small>foto-realista sobre poses de un proyecto existente</small></span></button>
+        </div>
+      </div>
     </div>
-    <div class="fl-layout" style="margin-top:16px">
-      <div>
-        <div class="panel">
-          <div class="ph">${icon('activity')} Procesar un vuelo en 3D</div>
-          <div class="pb">
-            <button class="btn primary" id="btn-run3d" style="width:100%;justify-content:center;padding:10px 0;font-size:13px">${icon('cube')} Procesar un vuelo…</button>
-            <p class="footer-note" style="margin:10px 0 0">El asistente te deja elegir el vuelo con
-            vista previa, ponerle nombre al proyecto y escoger la calidad.</p>
-            <details class="explain">
-              <summary>¿Cómo funciona el procesamiento?</summary>
-              <p><b>1 · Frames + geotag</b> — extrae fotos 2K del video y les inyecta el GPS de tu
-              telemetría DJI (sin esto la fotogrametría no sabe dónde está nada).</p>
-              <p><b>2 · Fotogrametría ODM</b> — encuentra miles de puntos comunes entre fotos,
-              triangula la posición 3D de cada uno (nube densa) y reconstruye malla, ortofoto y
-              modelo de elevación. Es la etapa larga.</p>
-              <p><b>3 · Publicar</b> — genera los assets web: ortofoto con bordes fundidos, nube
-              para el visor, DSM con curvas de nivel y reporte de calidad.</p>
-              <p><b>Presets</b> — <b>Rápido</b>: nube ligera y ortofoto 8 cm/px para revisar
-              cobertura. <b>Estándar</b>: 5 cm/px, el equilibrio para casi todo. <b>Alta</b>: nube
-              densa y 3 cm/px para entregas profesionales y splats premium.</p>
-            </details>
-          </div>
-        </div>
+    <div class="panel" style="margin-top:14px">
+      <div class="ph">${icon('cube')} Gaussian Splats <span class="count" id="splat-count"></span>
+        <span class="spacer" style="flex:1"></span>
+        <button class="linklike" id="td-what-splat">¿Qué es un splat?</button>
       </div>
-      <div>
-        <div class="panel">
-          <div class="ph">${icon('cube')} Gaussian Splats
-            <span class="spacer" style="flex:1"></span>
-            <button class="btn primary" id="btn-splat" style="padding:5px 14px;font-size:11.5px">${icon('spark')} Generar splat…</button>
-          </div>
-          <div class="pb" id="splats"></div>
-          <div class="pb" style="border-top:1px solid var(--line)">
-            <details class="explain">
-              <summary>¿Qué es un gaussian splat?</summary>
-              <p>Reconstruye la escena como millones de <b>manchas 3D translúcidas</b> en vez de
-              triángulos — se ve fotorrealista desde cualquier ángulo y no deja los huecos típicos
-              de la malla en vuelos nadir. Se entrena sobre las poses del proyecto ODM
-              (procesa el vuelo primero).</p>
-              <p><b>Iteraciones = calidad</b> — cada iteración refina posición, color y opacidad de
-              las manchas. 1k es un boceto, 2k ya luce, 7k es cinemático, 15k exprime el detalle
-              (más iteraciones = más horas de CPU).</p>
-              <p><b>Formatos</b> — el entrenamiento genera .splat; si existe una conversión .ksplat,
-              la app la prefiere automáticamente por ser más ligera para web móvil.</p>
-            </details>
-          </div>
-        </div>
-      </div>
+      <div class="pb td-splats-wide" id="splats"></div>
     </div>
     </section>
 
@@ -487,10 +447,10 @@
   });
 
   // ---------- mini-modal reutilizable ----------
-  function openModal(title, body) {
+  function openModal(title, body, cls = '') {
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
-    ov.innerHTML = `<div class="modal">
+    ov.innerHTML = `<div class="modal ${cls}">
       <div class="modal-h"><b>${title}</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
       <div class="modal-b">${body}</div></div>`;
     document.body.appendChild(ov);
@@ -516,61 +476,116 @@
       { p: 'cinematic', n: 'Cinemático', t: '~1 h' },
       { p: 'ultra', n: 'Ultra', t: '~2-4 h' },
     ];
-    // clúster por LUGAR de despegue (~500 m): tomas del mismo sitio se funden en un modelo mejor
-    const spotKey = f => f.stats?.home
-      ? `${Math.round(f.stats.home[0] / 0.005)}:${Math.round(f.stats.home[1] / 0.005)}` : 'sin-gps';
+    // U1.1: agrupar por CENTROIDE del track (~130 m) — el test #1 refutó "mismo despegue
+    // = mismo sujeto" (clip a 1m + vuelo a 90m compartían home y 0 features). El centro
+    // del bbox describe QUÉ vio el vuelo; el despegue solo describe de dónde salió.
+    const centroid = f => {
+      const b = f.stats?.bbox;                     // [minLng,minLat,maxLng,maxLat]
+      return b ? [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2] : (f.stats?.home || null);
+    };
+    const spotKey = f => {
+      const c = centroid(f);
+      return c ? `${Math.round(c[0] / 0.0012)}:${Math.round(c[1] / 0.0012)}` : 'sin-gps';
+    };
     const groups = {};
     candidates.forEach(f => { (groups[spotKey(f)] ||= []).push(f); });
-    // ordena: lugares con MÁS tomas primero (ahí es donde combinar rinde)
     const spots = Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
     const placeName = fs => fs[0].place || fs[0].stats?.place
-      || (fs[0].stats?.home ? `${fs[0].stats.home[1].toFixed(3)}, ${fs[0].stats.home[0].toFixed(3)}` : 'Sin GPS');
+      || (centroid(fs[0]) ? `${centroid(fs[0])[1].toFixed(3)}, ${centroid(fs[0])[0].toFixed(3)}` : 'Sin GPS');
     const sel = new Set([candidates[0].clip_id]);   // primer clip pre-seleccionado
     const photoSel = new Set();
     const availPhotos = (sys.photos || []).map(p => p.name);
+    const byCid = Object.fromEntries(candidates.map(f => [f.clip_id, f]));
+    const altOf = f => Math.round(f.stats?.max_rel_alt_m || 0);
+    const groupMeta = fs => {
+      const alts = fs.map(altOf).filter(a => a > 0);
+      const dates = [...new Set(fs.map(f => f.date))];
+      return { alts: alts.length ? `${Math.min(...alts)}–${Math.max(...alts)} m` : '—',
+               dates: dates.length === 1 ? fmt.date(dates[0]) : `${dates.length} fechas` };
+    };
 
-    const { ov, close } = openModal(`${icon('cube')} Estudio 3D — combina tomas del mismo lugar`, `
-      <p class="footer-note" style="margin:0 0 10px">Elige uno o varios videos del <b>mismo sitio</b>
-      (mismo despegue): más ángulos = una reconstrucción más completa. El primero da el nombre y la identidad.</p>
-      <div class="proc-groups">${spots.map(([sk, fs], gi) => `
-        <div class="proc-group" data-spot="${esc(sk)}">
-          <div class="pg-head">
-            <span class="pg-place">${icon('pin')} ${esc(placeName(fs))}</span>
-            <span class="count mono">${fs.length} toma${fs.length === 1 ? '' : 's'}</span>
-            ${fs.length > 1 ? `<button class="pg-all" data-spot-all="${esc(sk)}">Combinar todo</button>` : ''}
+    const clipRow = f => `
+      <label class="pc-clip${sel.has(f.clip_id) ? ' on' : ''}" data-cid="${esc(f.clip_id)}"
+             data-alt="${altOf(f)}" data-date="${esc(f.date || '')}"
+             data-q="${esc(((f.label || '') + ' ' + (f.date || '') + ' ' + fmt.date(f.date) + ' ' + (f.time || '') + ' ' + (f.place || '')).toLowerCase())}">
+        <input type="checkbox" ${sel.has(f.clip_id) ? 'checked' : ''}>
+        <span class="pc-thumb" data-preview="${esc(f.clip_id)}" title="Ver preview">
+          <img src="data/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">${icon('play')}</span>
+        <div class="pc-meta">
+          <b>${esc(f.label) || fmt.date(f.date) + ' ' + f.time}</b>
+          <span class="mono">${fmt.dur(f.duration_s)} · ${altOf(f)} m · ${fmt.date(f.date)}</span>
+        </div>
+        <span class="pc-score" data-score="${esc(f.clip_id)}">·</span>
+      </label>`;
+
+    const { ov, close } = openModal(`${icon('cube')} Estudio 3D`, `
+      <div class="st-steps"><span class="st-step on" data-st="1">1 · Seleccionar tomas</span>
+        <span class="st-sep">›</span><span class="st-step" data-st="2">2 · Configurar y encolar</span></div>
+
+      <div class="st-pane" data-pane="1">
+        <div class="st-grid">
+          <div class="st-map-wrap"><div id="st-map"></div>
+            <div class="st-map-hint">${icon('pin')} Cada pin es un lugar — clic para ver sus tomas</div></div>
+          <div class="st-list">
+            <div class="st-toolbar">
+              <div class="search td-search">${icon('search')}<input id="st-q" type="search" placeholder="Buscar por nombre, fecha, lugar…" autocomplete="off"></div>
+              <select class="ctl" id="st-sort" aria-label="Ordenar">
+                <option value="spot">Por lugar</option><option value="date">Más recientes</option>
+                <option value="dur">Más largos</option><option value="alt">Más altos</option>
+              </select>
+            </div>
+            <div class="st-filters">
+              <span class="st-fl">Altura:</span>
+              <button class="chip on" data-alt-band="all">Todas</button>
+              <button class="chip" data-alt-band="ground">&lt;12 m</button>
+              <button class="chip" data-alt-band="mid">12–40 m</button>
+              <button class="chip" data-alt-band="high">40+ m</button>
+            </div>
+            <div class="proc-groups" id="st-groups">${spots.map(([sk, fs]) => {
+              const gm = groupMeta(fs);
+              return `
+              <div class="proc-group" data-spot="${esc(sk)}">
+                <div class="pg-head">
+                  <span class="pg-place">${icon('pin')} ${esc(placeName(fs))}</span>
+                  <span class="pg-chips mono">${fs.length} toma${fs.length === 1 ? '' : 's'} · ${gm.alts} · ${gm.dates}</span>
+                  ${fs.length > 1 ? `<button class="pg-all" data-spot-all="${esc(sk)}">Combinar todo</button>` : ''}
+                </div>
+                <div class="pg-clips">${fs.map(clipRow).join('')}</div>
+              </div>`; }).join('')}</div>
+            ${availPhotos.length ? `<details class="proc-photos"><summary>${icon('iso')} Añadir fotos sueltas <span class="count">(${availPhotos.length})</span></summary>
+              <p class="footer-note" style="margin:6px 0 0">Fotos del dron: heredan el GPS del video del que
+              salieron. Probado con fotos del dron de la misma sesión; el reporte del modelo confirma la fusión.</p>
+              <div class="pp-grid">${availPhotos.map(n => `
+                <label class="pp-item" data-photo="${esc(n)}"><input type="checkbox">
+                  <img src="data/photos/${encodeURIComponent(n)}" loading="lazy" alt=""></label>`).join('')}</div></details>` : ''}
           </div>
-          <div class="pg-clips">${fs.map(f => `
-            <label class="pc-clip${sel.has(f.clip_id) ? ' on' : ''}" data-cid="${esc(f.clip_id)}">
-              <input type="checkbox" ${sel.has(f.clip_id) ? 'checked' : ''}>
-              <img src="data/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">
-              <div class="pc-meta">
-                <b>${esc(f.label) || fmt.date(f.date) + ' ' + f.time}</b>
-                <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m</span>
-              </div>
-              <span class="pc-score" data-score="${esc(f.clip_id)}">·</span>
-            </label>`).join('')}</div>
-        </div>`).join('')}</div>
-      ${availPhotos.length ? `<details class="proc-photos"><summary>${icon('iso')} Añadir fotos sueltas <span class="count">(${availPhotos.length})</span></summary>
-        <p class="footer-note" style="margin:6px 0 0">Fotos del dron: heredan el GPS del video del que
-        salieron. Fusionan si comparten vista con el vuelo elegido; el reporte del modelo lo confirma.</p>
-        <div class="pp-grid">${availPhotos.map(n => `
-          <label class="pp-item" data-photo="${esc(n)}"><input type="checkbox">
-            <img src="data/photos/${encodeURIComponent(n)}" loading="lazy" alt=""></label>`).join('')}</div></details>` : ''}
-      <div id="m-combined" class="proc-combined"></div>
-      <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
-      <input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — combinado" style="width:100%">
-      <p class="mlb">Calidad de la fotogrametría</p>
-      <div class="mpresets">${PRE.map(p => `
-        <div class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
-          <b>${p.n}</b><span class="mono">${p.t}</span><small>${p.d}</small></div>`).join('')}</div>
-      <label class="proc-phase"><input type="checkbox" id="m-splat">
-        <span>${icon('spark')} <b>También entrenar gaussian splat</b> al terminar el 3D (foto-realista)</span></label>
-      <div id="m-splatpreset" class="mpresets" style="display:none">${SQ.map(q => `
-        <div class="mpreset${q.p === 'cinematic' ? ' on' : ''}" data-sp="${q.p}"><b>${q.n}</b><span class="mono">${q.t}</span></div>`).join('')}</div>
-      <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:11px 0">${icon('cube')} Encolar procesamiento</button>`);
+        </div>
+      </div>
+
+      <div class="st-pane" data-pane="2" style="display:none">
+        <div id="m-combined" class="proc-combined"></div>
+        <div id="m-preflight"></div>
+        <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
+        <input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — combinado" style="width:100%">
+        <p class="mlb">Calidad de la fotogrametría</p>
+        <div class="mpresets">${PRE.map(p => `
+          <div class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
+            <b>${p.n}</b><span class="mono">${p.t}</span><small>${p.d}</small></div>`).join('')}</div>
+        <label class="proc-phase"><input type="checkbox" id="m-splat">
+          <span>${icon('spark')} <b>También entrenar gaussian splat</b> al terminar el 3D (foto-realista)</span></label>
+        <div id="m-splatpreset" class="mpresets" style="display:none">${SQ.map(q => `
+          <div class="mpreset${q.p === 'cinematic' ? ' on' : ''}" data-sp="${q.p}"><b>${q.n}</b><span class="mono">${q.t}</span></div>`).join('')}</div>
+      </div>
+
+      <div class="st-tray" id="st-tray"></div>
+      <div class="st-footer">
+        <button class="btn" id="st-back" style="display:none">‹ Atrás</button>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn primary" id="st-next">Continuar ›</button>
+        <button class="btn primary" id="m-go" style="display:none">${icon('cube')} Encolar procesamiento</button>
+      </div>`, 'modal--studio');
 
     const combinedBox = ov.querySelector('#m-combined');
-    const byCid = Object.fromEntries(candidates.map(f => [f.clip_id, f]));
     // chip de score POR CLIP (aptitud individual del escáner — sí está fundamentado). NO predice
     // la fusión: eso solo se sabe DESPUÉS de procesar (el modelo reporta qué fuentes co-registraron).
     async function scoreChip(cid) {
@@ -627,6 +642,8 @@
           ${warns.map(([c, t]) => `<div class="scan-mem ${c}">${icon('warn')}<span>${t}</span></div>`).join('')}
           ${ok ? `<div class="scan-mem ok">${icon('check')}<span>Tomas compatibles (misma salida, alturas parecidas). El modelo reportará qué fuentes fusionaron de verdad.</span></div>` : ''}
         </div>`;
+      if (typeof renderTray === 'function') renderTray();
+      if (typeof renderPreflight === 'function') renderPreflight();
     }
     renderCombined();
 
@@ -667,11 +684,134 @@
       c.parentElement.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
     });
     const splatChk = ov.querySelector('#m-splat'), splatPre = ov.querySelector('#m-splatpreset');
-    splatChk.addEventListener('change', () => { splatPre.style.display = splatChk.checked ? '' : 'none'; });
+    splatChk.addEventListener('change', () => { splatPre.style.display = splatChk.checked ? '' : 'none'; renderPreflight(); });
     splatPre.addEventListener('click', e => {
       const c = e.target.closest('.mpreset'); if (!c) return;
       splatPre.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
+      renderPreflight();
     });
+
+    // ---------- v2: pasos, tray, mapa, filtros, preview ----------
+    const setStep = n => {
+      ov.querySelectorAll('.st-pane').forEach(p => p.style.display = p.dataset.pane == n ? '' : 'none');
+      ov.querySelectorAll('.st-step').forEach(s => s.classList.toggle('on', s.dataset.st == n));
+      ov.querySelector('#st-back').style.display = n === 2 ? '' : 'none';
+      ov.querySelector('#st-next').style.display = n === 1 ? '' : 'none';
+      ov.querySelector('#m-go').style.display = n === 2 ? '' : 'none';
+      if (n === 2) { renderCombined(); renderPreflight(); }
+    };
+    ov.querySelector('#st-next').addEventListener('click', () => setStep(2));
+    ov.querySelector('#st-back').addEventListener('click', () => setStep(1));
+
+    // tray de selección: chips con quitar — visible en ambos pasos
+    function renderTray() {
+      const tray = ov.querySelector('#st-tray');
+      const fs = [...sel].map(c => byCid[c]).filter(Boolean);
+      const durTot = fs.reduce((a, f) => a + (f.duration_s || 0), 0);
+      tray.innerHTML = fs.length
+        ? `<span class="st-tray-l">${icon('layers')} ${fs.length} video${fs.length === 1 ? '' : 's'}${photoSel.size ? ` + ${photoSel.size} fotos` : ''} · ${fmt.dur(durTot)}</span>`
+          + fs.map(f => `<span class="st-chip" data-untray="${esc(f.clip_id)}">${esc((f.label || fmt.date(f.date) + ' ' + f.time).slice(0, 22))} ✕</span>`).join('')
+        : '<span class="st-tray-l">Selecciona al menos un video</span>';
+    }
+    ov.querySelector('#st-tray').addEventListener('click', e => {
+      const c = e.target.closest('[data-untray]'); if (!c || sel.size <= 1) return;
+      sel.delete(c.dataset.untray); syncClip(c.dataset.untray); renderTray(); renderCombined();
+    });
+    renderTray();
+
+    // preview del proxy en overlay liviano (clic en el thumb, no togglea el checkbox)
+    ov.querySelector('#st-groups').addEventListener('click', e => {
+      const th = e.target.closest('[data-preview]');
+      if (!th) return;
+      e.preventDefault(); e.stopPropagation();
+      const cid = th.dataset.preview;
+      const pv = document.createElement('div');
+      pv.className = 'st-preview-ov';
+      pv.innerHTML = `<div class="st-preview"><video src="data/proxies/${encodeURIComponent(cid)}.mp4" controls autoplay muted playsinline></video>
+        <button class="modal-x">✕</button></div>`;
+      pv.addEventListener('click', ev => { if (ev.target === pv || ev.target.closest('.modal-x')) { pv.querySelector('video').pause(); pv.remove(); } });
+      document.body.appendChild(pv);
+    }, true);
+
+    // filtros: búsqueda + banda de altura + orden (re-ordena DENTRO de cada grupo; 'spot' = original)
+    const applyFilters = () => {
+      const q = (ov.querySelector('#st-q').value || '').toLowerCase().trim();
+      const band = ov.querySelector('[data-alt-band].on')?.dataset.altBand || 'all';
+      const inBand = a => band === 'all' || (band === 'ground' ? a < 12 : band === 'mid' ? a >= 12 && a < 40 : a >= 40);
+      ov.querySelectorAll('.pc-clip').forEach(el => {
+        const vis = (!q || el.dataset.q.includes(q)) && inBand(+el.dataset.alt);
+        el.style.display = vis ? '' : 'none';
+      });
+      ov.querySelectorAll('.proc-group').forEach(g => {
+        g.style.display = [...g.querySelectorAll('.pc-clip')].some(c => c.style.display !== 'none') ? '' : 'none';
+      });
+    };
+    ov.querySelector('#st-q').addEventListener('input', applyFilters);
+    ov.querySelector('.st-filters').addEventListener('click', e => {
+      const c = e.target.closest('[data-alt-band]'); if (!c) return;
+      ov.querySelectorAll('[data-alt-band]').forEach(x => x.classList.toggle('on', x === c));
+      applyFilters();
+    });
+    ov.querySelector('#st-sort').addEventListener('change', e => {
+      const mode = e.target.value;
+      const key = { date: f => f.date + (f.time || ''), dur: f => f.duration_s || 0, alt: altOf }[mode];
+      ov.querySelectorAll('.proc-group').forEach(g => {
+        const rows = [...g.querySelectorAll('.pc-clip')];
+        if (mode === 'spot') return;
+        rows.sort((a, b) => key(byCid[b.dataset.cid]) > key(byCid[a.dataset.cid]) ? 1 : -1)
+            .forEach(r => r.parentElement.appendChild(r));
+      });
+    });
+
+    // mapa: un pin por lugar (centroide del grupo), badge = nº de tomas; clic = scroll+destello
+    let stMap = null;
+    try {
+      if (window.maplibregl) {
+        stMap = new maplibregl.Map({ container: ov.querySelector('#st-map'), style: SAT_STYLE,
+                                     attributionControl: false, cooperativeGestures: true });
+        stMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+        const bounds = new maplibregl.LngLatBounds();
+        spots.forEach(([sk, fs]) => {
+          const c = centroid(fs[0]); if (!c) return;
+          bounds.extend(c);
+          const el = document.createElement('div');
+          el.className = 'st-pin';
+          el.innerHTML = `<b>${fs.length}</b>`;
+          el.addEventListener('click', () => {
+            const g = ov.querySelector(`.proc-group[data-spot="${CSS.escape(sk)}"]`);
+            if (g) { g.scrollIntoView({ behavior: 'smooth', block: 'start' }); g.classList.add('flash'); setTimeout(() => g.classList.remove('flash'), 1200); }
+          });
+          new maplibregl.Marker({ element: el }).setLngLat(c).addTo(stMap);
+        });
+        if (!bounds.isEmpty()) stMap.fitBounds(bounds, { padding: 46, maxZoom: 16 });
+        setTimeout(() => stMap.resize(), 60);        // el modal termina de layout después del init
+      }
+    } catch { /* sin mapa no se bloquea el flujo */ }
+
+    // preflight del splat phased (U1.3 en el modal): estimación de frames del perfil del preset
+    // ODM elegido → /api/preflight. Etiquetado como PROYECCIÓN del modelo, jamás promesa.
+    async function renderPreflight() {
+      const box = ov.querySelector('#m-preflight');
+      if (!box) return;
+      if (!splatChk.checked) { box.innerHTML = ''; return; }
+      const fs = [...sel].map(c => byCid[c]).filter(Boolean);
+      const odmK = ov.querySelector('.mpresets .mpreset.on')?.dataset.k || 'estandar';
+      const fps = { rapido: 0.33, estandar: 0.5, alta: 1.0, extra: 1.0, ultra: 1.0 }[odmK] || 0.5;
+      const width = { rapido: 2048, estandar: 2688, alta: 3072, extra: 3072, ultra: 3072 }[odmK] || 2688;
+      const nEst = Math.max(8, Math.round(fs.reduce((a, f) => a + (f.duration_s || 0) * fps, 0) * 0.72) + photoSel.size);
+      const sp = splatPre.querySelector('.mpreset.on')?.dataset.sp || 'cinematic';
+      try {
+        const r = await api('/api/preflight', { n_images: nEst, width, preset: sp });
+        if (r.error) { box.innerHTML = ''; return; }
+        const cls = { SAFE: 'ok', ELEVATED: 'mid', LIKELY_OOM: 'mid', REJECTED: 'bad' }[r.verdict] || 'mid';
+        box.innerHTML = `<div class="scan-mem ${cls}">${icon(r.verdict === 'SAFE' ? 'check' : 'warn')}
+          <span><b>Preflight de memoria (${esc(sp)})</b>: ${esc(r.verdict)} — proyección ${r.projected_peak_mib} MiB
+          (${r.pct}% del límite) sobre ~${nEst} imágenes estimadas.
+          ${r.verdict === 'REJECTED' ? 'Este preset NO cabe: elige uno menor.' : r.note ? esc(r.note) : ''}
+          <i class="st-proj-note">Proyección del modelo de memoria (±25%, conservador) — no una promesa.</i></span></div>`;
+      } catch { box.innerHTML = ''; }
+    }
+    ov.querySelector('.mpresets').addEventListener('click', () => renderPreflight());
 
     ov.querySelector('#m-go').addEventListener('click', async e2 => {
       const btn = e2.currentTarget;
