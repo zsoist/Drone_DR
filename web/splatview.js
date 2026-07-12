@@ -1,9 +1,11 @@
 // splatview.js — visor PREMIUM de gaussian splats, compartido por tresd.js y share.js.
-// Feature clave: doble-click raycastea contra el splat y mueve el target de la órbita a ESE
-// punto — así te acercas a cualquier edificio (antes el target era el centroide = siempre
-// zoomeabas al medio). Más: reset, auto-rotar, FOV, tamaño, screenshot, pantalla
-// completa, teclado. Navegación suave con damping + animación de focus con easing.
-import * as THREE from '/vendor/three.module.js';
+// MOTOR: Spark 2.1 (r180) — migrado desde GaussianSplats3D 0.4.7 (fase E del
+// plan FLIGHTVERSE; el autor de GS3D descontinuó la lib y recomienda Spark).
+// La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
+// auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
+// contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
+import * as THREE from '/vendor/three180.module.js?v=62';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=62';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -11,9 +13,7 @@ const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> view
 const I = {
   home: '<path d="M3 10.5 12 3l9 7.5M5 9v11h5v-6h4v6h5V9"/>',
   rot: '<path d="M21 12a9 9 0 1 1-3-6.7M21 4v4h-4"/>',
-  eye: '<circle cx="12" cy="12" r="3"/><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/>',
   fov: '<path d="M12 12 3 6m9 6L3 18m9-6h9"/>',
-  size: '<circle cx="12" cy="12" r="2.5"/><path d="M5 5h3M5 5v3M19 5h-3M19 5v3M5 19h3M5 19v-3M19 19h-3M19 19v-3"/>',
   cam: '<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/>',
   full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -24,68 +24,83 @@ const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
 
 export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } = {}) {
-  const GS = await import('/vendor/gaussian-splats-3d.module.min.js');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=62');
   host.style.position = 'relative';
   const holder = document.createElement('div');
   holder.style.cssText = 'position:absolute;inset:0;touch-action:none';
   host.appendChild(holder);
 
-  const viewer = new GS.Viewer({
-    rootElement: holder, sharedMemoryForWorkers: false, antialiased: true,
-    halfPrecisionCovariancesOnGPU: true, showLoadingUI: false,
-    sceneRevealMode: GS.SceneRevealMode.Instant,
-    splatRenderMode: GS.SplatRenderMode.ThreeD,
-    // renderMode Always (default): OnChange congela autoRotate/damping/focus (el loop deja de
-    // llamar controls.update()). La batería en móvil se cuida pausando el loop cuando la pestaña
-    // se oculta (visibilitychange, abajo) — cubre el caso "abrió el share y lo dejó de fondo".
-    cameraUp: [0, 1, 0], initialCameraPosition: [0, 5, 4], initialCameraLookAt: [0, 0, 0],
-  });
+  // ── escena propia (Spark es drop-in sobre three normal) ──
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(holder.clientWidth || 640, holder.clientHeight || 420);
+  renderer.setClearColor(0x0a0e14, 1);
+  holder.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(55, 16 / 9, 0.02, 5000);
+  const spark = new SparkRenderer({ renderer });
+  scene.add(spark);
+  const ctrl = new OrbitControls(cam, renderer.domElement);
 
+  let rafId = 0, running = true;
+  const loop = () => { rafId = requestAnimationFrame(loop); ctrl.update(); renderer.render(scene, cam); };
+  const onVis = () => {
+    if (document.hidden) { running = false; cancelAnimationFrame(rafId); }
+    else if (!running) { running = true; loop(); }
+  };
+  document.addEventListener('visibilitychange', onVis);
+
+  function teardownCore() {
+    cancelAnimationFrame(rafId);
+    document.removeEventListener('visibilitychange', onVis);
+    try { ctrl.dispose(); } catch {}
+    try { mesh?.dispose?.(); } catch {}
+    try { renderer.forceContextLoss(); renderer.dispose(); } catch {}
+    holder.remove();
+  }
+
+  // ── carga con timeout proporcional al peso (mismo contrato que antes) ──
   const tmoMs = Math.min(120000, 45000 + Math.round((bytes || 0) / 1048576) * 3000);
   let tmoId = 0;
+  const mesh = new SplatMesh({ url: splatUrl });
+  mesh.quaternion.set(...SPLAT_ROT);
+  scene.add(mesh);
   try {
-    const loadP = viewer.addSplatScene(splatUrl, {
-      progressiveLoad: false, showLoadingUI: false, splatAlphaRemovalThreshold: 8,
-      rotation: SPLAT_ROT, onProgress: p => onStatus?.(`Splat · ${Math.round(p)}%`),
-    });
+    const loadP = mesh.initialized;
     loadP.catch(() => {});   // si el timeout gana el race, este rechazo tardío no debe ser 'unhandled'
     await Promise.race([
       loadP,
       new Promise((_, rej) => { tmoId = setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs); }),
     ]);
   } catch (err) {
-    // el viewer YA existe (contexto WebGL + workers WASM): si no lo desechamos aquí, el caller
-    // recibe la excepción sin `handle`, nunca llama dispose() y el visor queda huérfano (fuga
-    // de contexto GPU; el navegador limita ~16 y el visor deja de renderizar tras varios timeouts).
     clearTimeout(tmoId);
-    try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}
-    holder.remove();
+    teardownCore();
     throw err;
   }
-  clearTimeout(tmoId);   // éxito: cancela el timer pendiente (si no, dispara un reject no-op tardío)
+  clearTimeout(tmoId);
+  onStatus?.('Splat · 100%');
 
-  const THREEV = THREE;
-  const mesh = viewer.splatMesh;
-  const center = (mesh?.calculatedSceneCenter && mesh.calculatedSceneCenter.clone()) || new THREEV.Vector3();
-  // guarda contra Infinity (splat con posiciones no acotadas): 'NaN || x' cae al fallback pero
-  // 'Infinity || x' es truthy → near/far/minDistance=Infinity → proyección degenerada, visor negro.
-  const rawR = mesh?.maxSplatDistanceFromSceneCenter;
-  const rawR2 = mesh?.visibleRegionRadius;
-  const radius = Math.max(
-    Number.isFinite(rawR) ? rawR : (Number.isFinite(rawR2) ? rawR2 : 1), 0.5);
-  const cam = viewer.camera, ctrl = viewer.controls;
+  // ── bounds: Spark no expone centro/radio como GS3D — Box3 del mesh con
+  // guard anti no-finito (mismo patrón defensivo del visor anterior) ──
+  const bb = new THREE.Box3().setFromObject(mesh);
+  const center = new THREE.Vector3();
+  let radius = 1;
+  if (Number.isFinite(bb.min.x) && Number.isFinite(bb.max.x)) {
+    bb.getCenter(center);
+    radius = Math.max(bb.getSize(new THREE.Vector3()).length() / 2, 0.5);
+  }
   const homeState = {};
   const homeMin = Math.max(radius * 0.0012, 0.001);
   const inspectMin = Math.max(radius * 0.00008, 0.00018);
 
   function frame() {
-    const dir = new THREEV.Vector3(0.18, 0.78, 0.52).normalize();
+    const dir = new THREE.Vector3(0.18, 0.78, 0.52).normalize();
     cam.position.copy(center).addScaledVector(dir, radius * 1.15);
-    cam.near = Math.max(radius / 200000, 0.00002);      // near macro: acercarse sin clip
+    cam.near = Math.max(radius / 200000, 0.00002);
     cam.far = Math.max(radius * 100, 50);
     cam.updateProjectionMatrix();
     ctrl.target.copy(center);
-    ctrl.minDistance = homeMin;                         // home usable; macro baja el piso más
+    ctrl.minDistance = homeMin;
     ctrl.maxDistance = radius * 18;
     ctrl.update();
     homeState.pos = cam.position.clone();
@@ -93,78 +108,70 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     homeState.fov = cam.fov;
   }
   frame();
-  viewer.start();
+  loop();
 
-  // navegación premium — esquema GOOGLE MAPS/EARTH: arrastrar = MOVER el mapa (pan),
-  // rueda = zoom al cursor, click-derecho o Ctrl+arrastrar = rotar/inclinar;
-  // táctil: 1 dedo = mover, pellizco = zoom, 2 dedos girando = rotar.
-  // (el fork de OrbitControls del viewer usa los mismos enums numéricos de three)
+  // resize: el host puede cambiar (fullscreen, layout) — GS lo hacía interno
+  const ro = new ResizeObserver(() => {
+    const w = holder.clientWidth, h = holder.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h);
+    cam.aspect = w / h; cam.updateProjectionMatrix();
+  });
+  ro.observe(holder);
+
+  // navegación premium — esquema GOOGLE MAPS/EARTH (idéntico al visor anterior)
   ctrl.enableDamping = true; ctrl.dampingFactor = 0.06;
   ctrl.rotateSpeed = 0.6; ctrl.zoomSpeed = 2.15; ctrl.panSpeed = 0.95;
   ctrl.maxPolarAngle = Math.PI * 0.495;
-  ctrl.mouseButtons = { LEFT: THREEV.MOUSE.PAN, MIDDLE: THREEV.MOUSE.DOLLY, RIGHT: THREEV.MOUSE.ROTATE };
-  ctrl.touches = { ONE: THREEV.TOUCH.PAN, TWO: THREEV.TOUCH.DOLLY_ROTATE };
-  ctrl.screenSpacePanning = false;                   // pan pegado al suelo, como un mapa
+  ctrl.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+  ctrl.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+  ctrl.screenSpacePanning = false;
   if ('zoomToCursor' in ctrl) ctrl.zoomToCursor = true;
-  try { ctrl.listenToKeyEvents(window); } catch {}   // flechas = pan
+  try { ctrl.listenToKeyEvents(window); } catch {}
 
-  // ---- FOCUS por doble-click: raycast al splat -> target ahí -> minDistance diminuto ----
-  const dims = new THREEV.Vector2();
+  // ---- FOCUS por doble-click: rayo al plano del suelo -> target ahí ----
   let anim = 0;
   function animateTo(toTarget, toPos, toMin) {
-    const vcam = viewer.camera, vctrl = viewer.controls;   // refs frescas (la cámara puede cambiar)
     const t0 = performance.now(), dur = 550;
-    const sT = vctrl.target.clone(), sP = vcam.position.clone();
+    const sT = ctrl.target.clone(), sP = cam.position.clone();
     cancelAnimationFrame(anim);
     (function step() {
       const k = Math.min(1, (performance.now() - t0) / dur), e = 1 - (1 - k) ** 3;
-      vctrl.target.lerpVectors(sT, toTarget, e);
-      vcam.position.lerpVectors(sP, toPos, e);
-      vctrl.update();
-      viewer.forceRenderNextFrame?.();          // OnChange: garantiza que la animación de focus se dibuje
+      ctrl.target.lerpVectors(sT, toTarget, e);
+      cam.position.lerpVectors(sP, toPos, e);
+      ctrl.update();
       if (k < 1) anim = requestAnimationFrame(step);
-      else if (toMin != null) vctrl.minDistance = toMin;
+      else if (toMin != null) ctrl.minDistance = toMin;
     })();
   }
-  const groundPlane = new THREEV.Plane(new THREEV.Vector3(0, 1, 0), -center.y);
-  const groundRay = new THREEV.Raycaster();
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -center.y);
+  const groundRay = new THREE.Raycaster();
   function focusAt(clientX, clientY) {
     const rect = holder.getBoundingClientRect();
-    const vcam = viewer.camera;                         // FRESCO: el viewer intercambia su cámara tras montar
-    vcam.updateMatrixWorld();                           // matriz fresca aunque el rAF esté pausado (tab de fondo)
-    // plano del suelo (la escena aérea ≈ plana): determinista y siempre acierta. Intersecta
-    // el rayo del cursor con el plano a la altura del centro de escena → punto de focus.
-    const ndc = new THREEV.Vector2((clientX - rect.left) / rect.width * 2 - 1,
-                                   -((clientY - rect.top) / rect.height) * 2 + 1);
-    groundRay.setFromCamera(ndc, vcam);
-    const p = new THREEV.Vector3();
+    cam.updateMatrixWorld();
+    const ndc = new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1,
+                                  -((clientY - rect.top) / rect.height) * 2 + 1);
+    groundRay.setFromCamera(ndc, cam);
+    const p = new THREE.Vector3();
     if (!groundRay.ray.intersectPlane(groundPlane, p)) return false;
-    // clamp al radio de la escena (un rayo casi paralelo al suelo daría un punto lejísimos)
     if (p.distanceTo(center) > radius * 1.5) return false;
-    // baja el piso YA (no al final de la animación) → puedes seguir con la rueda hasta pegarte
-    viewer.controls.minDistance = inspectMin;
-    // acércate al punto: macro real para revisar fachadas/techos sin quedar flotando lejos.
-    const d = vcam.position.distanceTo(p);
-    const newPos = p.clone().addScaledVector(vcam.position.clone().sub(p).normalize(), Math.min(d, radius * 0.012));
+    ctrl.minDistance = inspectMin;
+    const d = cam.position.distanceTo(p);
+    const newPos = p.clone().addScaledVector(cam.position.clone().sub(p).normalize(), Math.min(d, radius * 0.012));
     animateTo(p, newPos);
     return true;
   }
   function dolly(mult) {
-    const vcam = viewer.camera, vctrl = viewer.controls;
-    const dir = vcam.position.clone().sub(vctrl.target);
+    const dir = cam.position.clone().sub(ctrl.target);
     const d = dir.length();
     if (!Number.isFinite(d) || d <= 0) return;
-    const nd = Math.max(vctrl.minDistance || inspectMin, Math.min(vctrl.maxDistance || radius * 20, d * mult));
-    vcam.position.copy(vctrl.target).addScaledVector(dir.normalize(), nd);
-    vctrl.update();
-    kick();
+    const nd = Math.max(ctrl.minDistance || inspectMin, Math.min(ctrl.maxDistance || radius * 20, d * mult));
+    cam.position.copy(ctrl.target).addScaledVector(dir.normalize(), nd);
+    ctrl.update();
   }
-  // el canvas del viewer captura los pointer events de sus controles; escuchamos en el HOST
-  // en fase de captura (baja top-down antes que nada) para no depender del bubbling
-  const inViewer = e => holder.contains(e.target) || e.target === holder;   // solo dentro del visor
+  const inViewer = e => holder.contains(e.target) || e.target === holder;
   const onDbl = e => { if (!inViewer(e)) return; e.preventDefault(); e.stopPropagation(); focusAt(e.clientX, e.clientY); };
   host.addEventListener('dblclick', onDbl, true);
-  // TÁCTIL: dblclick es poco fiable en móvil/iPad → detector propio de doble-tap sobre pointerup
   let lastTap = 0, lastTX = 0, lastTY = 0;
   const onPtrUp = e => {
     if (e.pointerType === 'mouse' || !inViewer(e)) return;
@@ -174,7 +181,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   };
   host.addEventListener('pointerup', onPtrUp, true);
 
-  // ---- HUD premium ----
+  // ---- HUD premium (sin slider de tamaño: era un uniform de GS3D) ----
   const hud = document.createElement('div');
   hud.className = 'sv-hud';
   hud.innerHTML =
@@ -185,7 +192,6 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     btn('rot', 'Auto-rotar', I.rot) +
     `<span class="sv-sep"></span>` +
     `<label class="sv-slider" title="Campo de visión">${svg(I.fov)}<input type="range" data-sv="fov" min="30" max="80" value="${Math.round(cam.fov)}"></label>` +
-    `<label class="sv-slider" title="Tamaño de splat">${svg(I.size)}<input type="range" data-sv="scale" min="60" max="160" value="100"></label>` +
     `<span class="sv-sep"></span>` +
     btn('shot', 'Captura PNG', I.cam) +
     btn('full', 'Pantalla completa (F)', I.full);
@@ -201,48 +207,31 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
 
   function svg(p) { return `<svg viewBox="0 0 24 24">${p}</svg>`; }
 
-  // fuerza un frame: en renderMode OnChange, cambiar FOV/brillo/tamaño no mueve la cámara y
-  // no re-dibujaría solo. forceRenderNextFrame() de la lib pinta el siguiente frame.
-  const kick = () => { try { viewer.forceRenderNextFrame?.(); } catch {} };
-  // brillo/exposición del render (si el renderer lo soporta)
-  const setExposure = v => { try { if (viewer.renderer) { viewer.renderer.toneMappingExposure = v; } } catch {} };
-  // tamaño de splat (uniform del mesh, si existe)
-  const setScale = v => { try { if (mesh && 'splatScale' in mesh) mesh.splatScale = v; } catch {} };
-
   hud.addEventListener('click', e => {
     const b = e.target.closest('[data-sv]'); if (!b) return;
     const k = b.dataset.sv;
-    const vcam = viewer.camera, vctrl = viewer.controls;   // refs frescas: el viewer intercambia cámara tras montar
     if (k === 'home') {
-      vctrl.minDistance = homeMin;
+      ctrl.minDistance = homeMin;
       animateTo(homeState.target, homeState.pos, homeMin);
-      vcam.fov = homeState.fov; vcam.updateProjectionMatrix();
-      const fovIn = hud.querySelector('[data-sv="fov"]'); if (fovIn) fovIn.value = Math.round(homeState.fov);  // re-sincroniza el slider
-      kick();
+      cam.fov = homeState.fov; cam.updateProjectionMatrix();
+      const fovIn = hud.querySelector('[data-sv="fov"]'); if (fovIn) fovIn.value = Math.round(homeState.fov);
     }
-    else if (k === 'inspect') { vctrl.minDistance = inspectMin; dolly(0.08); b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 700); }
-    else if (k === 'zin') { vctrl.minDistance = inspectMin; dolly(0.25); }
+    else if (k === 'inspect') { ctrl.minDistance = inspectMin; dolly(0.08); b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 700); }
+    else if (k === 'zin') { ctrl.minDistance = inspectMin; dolly(0.25); }
     else if (k === 'zout') dolly(1.55);
-    else if (k === 'rot') { vctrl.autoRotate = !vctrl.autoRotate; vctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', vctrl.autoRotate); kick(); }
+    else if (k === 'rot') { ctrl.autoRotate = !ctrl.autoRotate; ctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', ctrl.autoRotate); }
     else if (k === 'shot') screenshot();
     else if (k === 'full') toggleFull();
   });
   hud.addEventListener('input', e => {
-    const k = e.target.dataset.sv, v = +e.target.value;
-    const vcam = viewer.camera;
-    if (k === 'fov') { vcam.fov = v; vcam.updateProjectionMatrix(); }
-    else if (k === 'scale') setScale(v / 100);
-    kick();
+    if (e.target.dataset.sv === 'fov') { cam.fov = +e.target.value; cam.updateProjectionMatrix(); }
   });
 
   function screenshot() {
     try {
-      // frame SÍNCRONO justo antes de leer: el renderer vendido no usa preserveDrawingBuffer,
-      // así que fuera del instante posterior a un draw el buffer sale negro. update()+render()
-      // deja píxeles frescos que toDataURL sí captura en el mismo tick.
-      try { viewer.update?.(); viewer.render?.(); } catch {}
-      const cv = holder.querySelector('canvas');
-      const url = cv.toDataURL('image/png');
+      // render síncrono justo antes de leer (sin preserveDrawingBuffer)
+      renderer.render(scene, cam);
+      const url = renderer.domElement.toDataURL('image/png');
       const a = document.createElement('a');
       a.href = url; a.download = 'splat.png'; a.click();
     } catch { onStatus?.('captura no disponible en este navegador'); }
@@ -251,16 +240,13 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     if (on === host.classList.contains('sv-fullscreen')) return;
     host.classList.toggle('sv-fullscreen', on);
     document.documentElement.classList.toggle('sv-noscroll', on);
-    setTimeout(() => { try { viewer.getRenderDimensions(new THREEV.Vector2()); kick(); } catch {} }, 60);
   }
   function toggleFull() {
     if (!host.classList.contains('sv-fullscreen')) {
       setFull(true);
-      // estado de historia: en móvil/iPad el botón/gesto Atrás cierra el fullscreen en vez de
-      // abandonar la página (antes Atrás salía del visor entero).
       try { history.pushState({ svFull: true }, ''); } catch {}
     } else if (history.state && history.state.svFull) {
-      try { history.back(); } catch { setFull(false); }   // consume el estado → dispara onPop → cierra
+      try { history.back(); } catch { setFull(false); }
     } else {
       setFull(false);
     }
@@ -270,7 +256,6 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   window.addEventListener('popstate', onPop);
   function onKey(e) {
     if (!holder.isConnected) return;
-    // escribir "r"/"+"/"-" en un input (renombrar proyecto, búsqueda) NO debe mover el visor
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
     if (e.key === 'r' || e.key === 'R') hud.querySelector('[data-sv="home"]').click();
@@ -283,14 +268,17 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   function dispose() {
     window.removeEventListener('keydown', onKey);
     window.removeEventListener('popstate', onPop);
-    host.removeEventListener('dblclick', onDbl, true);     // el leak #1 del hunt: se acumulaban por carga
+    host.removeEventListener('dblclick', onDbl, true);
     host.removeEventListener('pointerup', onPtrUp, true);
     cancelAnimationFrame(anim);
+    ro.disconnect();
     host.classList.remove('sv-fullscreen');
     document.documentElement.classList.remove('sv-noscroll');
-    if (history.state && history.state.svFull) { try { history.back(); } catch {} }   // consume el estado fantasma
+    if (history.state && history.state.svFull) { try { history.back(); } catch {} }
     hud.remove(); tip.remove();
-    try { const p = viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {}
+    teardownCore();
   }
+  // interfaz compatible con los callers y browser_matrix: camera/controls/dispose
+  const viewer = { camera: cam, controls: ctrl, renderer, splatMesh: mesh, dispose };
   return { viewer, dispose };
 }

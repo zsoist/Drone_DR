@@ -1,10 +1,10 @@
 // AeroBrain — visor público de un modelo 3D (link compartible, sin sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
-import * as THREE from '/vendor/three.module.js';
-import { OrbitControls } from '/vendor/three-addons/controls/OrbitControls.js';
-import { OBJLoader } from '/vendor/three-addons/loaders/OBJLoader.js';
-import { MTLLoader } from '/vendor/three-addons/loaders/MTLLoader.js';
-import { PLYLoader } from '/vendor/three-addons/loaders/PLYLoader.js';
+import * as THREE from '/vendor/three180.module.js';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js';
+import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js';
 import { mountSplatViewer } from '/splatview.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
