@@ -236,14 +236,87 @@ def run_matrix(cid: str, base_url: str, viewports: list[str]) -> list[dict]:
     return results
 
 
+def run_mundo(cdp, base_url: str, viewport: str) -> dict:
+    """FLIGHTVERSE world-select: islas + filtros + panel de misión + sin overflow."""
+    cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/mundo.html"})
+    state = wait_for(cdp, js("""
+      const islas = document.querySelectorAll('.wi').length;
+      if (!islas) return null;
+      return {
+        islas,
+        filtros: document.querySelectorAll('#w-filters button').length,
+        misiones: document.querySelectorAll('.w-panel .wp-m').length,
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    """), timeout=30, label="mundo world-select")
+    if state["islas"] < 1 or state["filtros"] < 4 or state["misiones"] < 2:
+        raise RuntimeError(f"mundo incompleto: {state}")
+    if state["overflow"] > 3:
+        raise RuntimeError(f"overflow horizontal {state['overflow']}px en mundo/{viewport}")
+    screenshot(cdp, QA_DIR / f"matrix-mundo-{viewport}.png")
+    return {"surface": "mundo", "viewport": viewport, **state}
+
+
+def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
+    """FLIGHTVERSE juego: autotest de vuelo verde + HUD presente + sin overflow."""
+    cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/volar.html?m={cid}&autotest=1"})
+    rep = wait_for(cdp, js("""
+      const r = window.__volar;
+      if (!r || !r.done) return null;
+      return { ok: r.ok, fps: r.fps };
+    """), timeout=120, label="volar autotest")
+    if not rep.get("ok"):
+        raise RuntimeError(f"volar autotest rojo: {rep}")
+    hud = cdp.eval(js("""
+      return {
+        dock: !!document.querySelector('.vl-dock'),
+        metricas: document.querySelectorAll('.vl-metric').length,
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    """))
+    if not hud["dock"] or hud["metricas"] < 2:
+        raise RuntimeError(f"HUD incompleto: {hud}")
+    if hud["overflow"] > 3:
+        raise RuntimeError(f"overflow {hud['overflow']}px en volar/{viewport}")
+    screenshot(cdp, QA_DIR / f"matrix-volar-{viewport}.png")
+    return {"surface": "volar", "viewport": viewport, "fps": rep.get("fps"), **hud}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("clip_id")
     ap.add_argument("--base-url", default=DEFAULT_BASE_URL)
     ap.add_argument("--viewport", action="append", choices=sorted(VIEWPORTS),
                     help="Repeat to limit the matrix. Default: mobile, iPad, desktop.")
+    ap.add_argument("--flightverse", action="store_true",
+                    help="Matriz FLIGHTVERSE (mundo + volar) en vez de share/workspace.")
     args = ap.parse_args()
     viewports = args.viewport or ["mobile", "ipad", "desktop"]
+    if args.flightverse:
+        results = []
+        for vp in viewports:
+            for runner in (lambda c, b, v=None: run_mundo(c, b, vp),
+                           lambda c, b, v=None: run_volar(c, b, args.clip_id, vp)):
+                proc, profile, port = launch_chrome()
+                cdp = None
+                try:
+                    cdp = new_page(port)
+                    set_viewport(cdp, vp)
+                    results.append(runner(cdp, args.base_url))
+                    if cdp.errors:
+                        raise RuntimeError(f"errores de consola en {vp}: {' | '.join(cdp.errors[:4])}")
+                finally:
+                    if cdp:
+                        cdp.close()
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except Exception:
+                        proc.kill()
+                    profile.cleanup()
+        for r in results:
+            print(f"{r['surface']}/{r['viewport']}: ok" + (f" · {r['fps']}fps" if r.get('fps') else f" · {r['islas']} islas"))
+        return
     results = run_matrix(args.clip_id, args.base_url, viewports)
     for r in results:
         macro = r["macro"]

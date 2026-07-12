@@ -64,6 +64,16 @@ scratchpad). Integrado y GATEADO (CDP, 0 errores, 73-78fps):
 - Port ecctrl (modelo 6DOF rotores, constantes en journal del workflow
   wf_710e9b72-d8a) = upgrade de game-feel pendiente.
 
+## Estado del plan 'cierre 10/10' (2026-07-12)
+Paso 0 ✓ · A nodata ✓ · B 6DOF ✓ · G SOG ✓ (5 escenas, -50% peso) ·
+C Director ✓ (camera-controls + keyframes + Grabar toma) ·
+D export determinista 1080p ✓ (WebCodecs+webm-muxer, CDP verde) ·
+F matriz ✓ (browser_matrix --flightverse: mundo+volar × 3 viewports 71-76fps).
+ÚNICA fase restante: E — migrar splatview.js (tresd/share/splatlab) a Spark
+r180 y retirar GS3D + three r160 del repo (prod-crítico: sesión fresca,
+gates browser_gate model|splat existentes). El slice §42 está COMPLETO:
+Mundo→Volar→Gate Rush→Result→Replay→Director→Export 1080p→Mundo.
+
 ## Siguiente paso ejecutable (sesión siguiente)
 Slice vertical FUNCIONAL: Mundo→Volar→Gate Rush→Result→Replay→Quick Record.
 Faltan del slice §42: Director (keyframes/timeline sobre el replay, P6) y
