@@ -12,6 +12,7 @@ import { createRecorder } from '/flightverse/recorder.js?v=80';
 import { createAudio } from '/flightverse/audio.js?v=80';
 import { createTouchSticks } from '/flightverse/touch.js?v=80';
 import { createSky } from '/flightverse/sky.js?v=80';
+import { loadSceneObjects } from '/flightverse/objects.js?v=80';
 import CameraControls from '/vendor/camera-controls.module.js?v=80';
 import { canExport, exportDeterministic } from '/flightverse/export.js?v=80';
 CameraControls.install({ THREE });
@@ -219,6 +220,11 @@ async function main() {
   const terrain = await loadTerrain(man, { anisotropy: 8 });
   terrain.mesh.matrixAutoUpdate = false; terrain.mesh.updateMatrix();   // estática
   scene.add(terrain.mesh);
+  // objetos de escena (plataforma de juegos: docs/SCENE_OBJECTS.md)
+  let sceneObjects = null;
+  loadSceneObjects(man, scene, { heightAt: terrain.heightAt })
+    .then(so => { sceneObjects = so; if (so) report.objects = so.count; })
+    .catch(e => report.errors.push('objects: ' + e.message));
   const W = terrain.world;
   const mask = { uMaskOn: terrain.splatMask.uSplatOn, uMaskC: terrain.splatMask.uSplatC, uMaskR: terrain.splatMask.uSplatR };
 
@@ -981,6 +987,7 @@ async function main() {
         else camera.rotateX(gimbalTilt + 0.12);   // gimbal también en chase/orbita (offset neutro)
       }
       sky.update(STEP, camera.position);
+      sceneObjects?.update(simT);
       composer.render();
       drawMinimap();
       // HUD (barato: texto directo, sin re-layout)

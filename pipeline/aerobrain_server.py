@@ -2069,6 +2069,47 @@ class H(BaseHTTPRequestHandler):
                     job_end(j, "error", (e.stderr or str(e))[-250:])
             threading.Thread(target=_run, daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"]})
+        if u.path == "/api/scene_objects":
+            # objetos de escena del juego (FLIGHTVERSE): valida contra el
+            # contrato de docs/SCENE_OBJECTS.md y escribe objects.json
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            mdir = VAULT / "models" / cid
+            if not cid or not (mdir / "meta.json").exists():
+                return self.send_json({"error": "clip_id inválido"}, 400)
+            objs = spec.get("objects")
+            if not isinstance(objs, list) or len(objs) > 200:
+                return self.send_json({"error": "objects: lista de máx 200"}, 400)
+            clean = []
+            for o in objs:
+                if not isinstance(o, dict):
+                    return self.send_json({"error": "objeto no es dict"}, 400)
+                typ = str(o.get("type", ""))
+                if typ not in ("glb", "ring", "beacon", "box"):
+                    return self.send_json({"error": f"type inválido: {typ}"}, 400)
+                try:
+                    pos = [float(v) for v in o.get("pos", [])]
+                    assert len(pos) == 3 and all(abs(v) < 5000 for v in pos)
+                except Exception:
+                    return self.send_json({"error": "pos inválida"}, 400)
+                item = {"type": typ, "pos": pos,
+                        "yaw": float(o.get("yaw", 0)),
+                        "scale": max(0.05, min(50.0, float(o.get("scale", 1)))),
+                        "ground": bool(o.get("ground", True))}
+                if typ == "glb":
+                    f = re.sub(r"[^\w.-]", "", str(o.get("file", "")))
+                    if not f.endswith(".glb"):
+                        return self.send_json({"error": "glb requiere file *.glb"}, 400)
+                    item["file"] = f
+                for k in ("spin", "bob", "color"):
+                    if k in o:
+                        item[k] = o[k] if k == "color" else bool(o[k])
+                clean.append(item)
+            (mdir / "objects.json").write_text(json.dumps({"version": 1, "objects": clean}, ensure_ascii=False))
+            return self.send_json({"ok": True, "count": len(clean)})
+
         if u.path == "/api/highlight":
             if not self.auth(q):
                 return
