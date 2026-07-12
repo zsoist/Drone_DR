@@ -151,6 +151,19 @@ async function main() {
   const terrain = await loadTerrain(man, { anisotropy: 8 });
   scene.add(terrain.mesh);
   const W = terrain.world;
+  // máscara "best of both worlds": uniforms inyectados al Lambert del terreno;
+  // en mixta se descartan los fragmentos dentro del radio del splat
+  const mask = { uMaskOn: { value: 0 }, uMaskC: { value: new THREE.Vector2() }, uMaskR: { value: 0 } };
+  terrain.mesh.material.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, mask);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFvW;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvFvW = (modelMatrix * vec4(transformed,1.)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFvW;\nuniform float uMaskOn;uniform vec2 uMaskC;uniform float uMaskR;')
+      .replace('#include <map_fragment>', 'if (uMaskOn > .5 && distance(vFvW.xz, uMaskC) < uMaskR) discard;\n#include <map_fragment>');
+  };
+  terrain.mesh.material.needsUpdate = true;
 
   // splat héroe: solo si splat_align.py lo dejó 'aligned' (RMSE sub-métrico).
   // Carga DESPUÉS del terreno (el juego ya es volable mientras llega el ksplat).
@@ -185,6 +198,11 @@ async function main() {
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(buf, 0, cm.verts * 3), 3));
       g.setIndex(new THREE.BufferAttribute(new Uint32Array(buf, cm.bytes_pos, cm.tris * 3), 1));
       g.computeBoundsTree();
+      g.computeBoundingBox();
+      const bb = g.boundingBox;
+      mask.uMaskC.value.set((bb.min.x + bb.max.x) / 2, (bb.min.z + bb.max.z) / 2);
+      mask.uMaskR.value = Math.min(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.42;
+      applyVista();                       // re-evalúa mixta ahora que hay huella
       coll = g.boundsTree;
       report.collision = { tris: cm.tris };
       $('#vl-ghost').textContent += ' · colisión ✓';
@@ -202,7 +220,7 @@ async function main() {
   const matHull = new THREE.MeshLambertMaterial({ color: 0xE8EDF4 });
   const matGrey = new THREE.MeshLambertMaterial({ color: 0x8f99a8 });
   const matDark = new THREE.MeshLambertMaterial({ color: 0x23282f });
-  const hull = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 14), matHull);
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(0.16, 28, 20), matHull);
   hull.scale.set(1.15, 0.52, 1.85);
   const shell = new THREE.Mesh(new THREE.SphereGeometry(0.135, 18, 12), matGrey);
   shell.scale.set(1.05, 0.42, 1.5); shell.position.y = 0.055;
@@ -218,7 +236,15 @@ async function main() {
     new THREE.MeshBasicMaterial({ color: 0xff3b30 })); navL.position.set(-0.3, 0, -0.32);
   const navR = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 5),
     new THREE.MeshBasicMaterial({ color: 0x34c759 })); navR.position.set(0.3, 0, -0.32);
-  dmesh.add(hull, shell, gimbal, navL, navR);
+  const sensorM = new THREE.MeshBasicMaterial({ color: 0x11151c });
+  for (const sx of [-0.055, 0.055]) {
+    const eye = new THREE.Mesh(new THREE.CircleGeometry(0.016, 10), sensorM);
+    eye.position.set(sx, 0.015, -0.293); eye.rotation.x = -0.12;
+    dmesh.add(eye);
+  }
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.012, 0.02), matDark);
+  stripe.position.set(0, -0.02, -0.24);
+  dmesh.add(hull, shell, gimbal, navL, navR, stripe);
   const props = [];
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
     const arm = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.055), matGrey);
@@ -234,7 +260,12 @@ async function main() {
       const blade = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.006, 0.024), matDark);
       blade.rotation.y = a; blade.rotation.x = 0.12;   // paso de pala
       blade.position.x = Math.cos(a) * 0.06; blade.position.z = -Math.sin(a) * 0.06;
-      prop.add(blade);
+      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.007, 0.025),
+        new THREE.MeshBasicMaterial({ color: 0xff8c1a }));   // puntas naranjas DJI
+      tip.position.copy(blade.position);
+      tip.position.x += Math.cos(a) * 0.15; tip.position.z -= Math.sin(a) * 0.15;
+      tip.rotation.copy(blade.rotation);
+      prop.add(blade, tip);
     }
     const blur = new THREE.Mesh(new THREE.CircleGeometry(0.15, 20),
       new THREE.MeshBasicMaterial({ color: 0x9fb2c8, transparent: true, opacity: 0.12, side: THREE.DoubleSide }));
@@ -313,9 +344,7 @@ async function main() {
   const applyVista = () => {
     if (!splat && vista !== 2) { vista = 2; }
     terrain.mesh.visible = vista !== 1;
-    terrain.mesh.material.transparent = vista === 0;
-    terrain.mesh.material.opacity = vista === 0 ? 0.55 : 1;   // en mixta el splat manda
-    terrain.mesh.material.depthWrite = vista !== 0;
+    mask.uMaskOn.value = (vista === 0 && splat && mask.uMaskR.value > 0) ? 1 : 0;
     if (splat) splat.object.visible = vista !== 2;
     $('#vl-vista').textContent = 'vista · ' + (vista === 0 ? 'mixta' : vista === 1 ? 'foto-real' : 'orto');
   };
