@@ -3,7 +3,7 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=68';
+import * as THREE from '/flightverse/three.js?v=69';
 
 const PRESETS = {
   dia: {
@@ -63,9 +63,9 @@ export function createSky(scene, { radius = 2600 } = {}) {
           vec3 col = mix(uHorizon, uTop, pow(h, 0.62));
           float s = max(dot(normalize(vDir), normalize(uSunDir)), 0.);
           col += uSunColor * (pow(s, 340.0) * 1.2 + pow(s, 18.0) * 0.18);   // disco + halo
-          if (uStars > 0.01) {
-            vec2 cell = floor(vDir.xz / max(vDir.y, 0.02) * 90.0);
-            float st = step(0.9975, hash(cell)) * uStars * smoothstep(0.05, 0.35, vDir.y);
+          if (uStars > 0.01 && vDir.y > 0.06) {
+            vec2 cell = floor(vDir.xz / vDir.y * 90.0);
+            float st = step(0.9975, hash(cell)) * uStars * smoothstep(0.06, 0.35, vDir.y);
             col += vec3(st);
           }
           gl_FragColor = vec4(col, 1.);

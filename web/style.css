@@ -3656,3 +3656,20 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   margin-left:calc(min(46vw,520px) / -2); will-change:transform }
 .vl-fpv-horizon i{ display:block; height:1.5px;
   background:linear-gradient(90deg, transparent, rgba(125,255,201,.8) 18%, rgba(125,255,201,.8) 82%, transparent) }
+
+/* BLOQUE 35 · OSD FPV: cintas de velocidad/altitud + home (estilo goggles) */
+.vl-osd{ position:absolute; top:50%; transform:translateY(-50%); width:64px; height:180px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  overflow:hidden }
+.vl-osd.tape-l{ left:calc(50% - min(33vw, 380px)) }
+.vl-osd.tape-r{ right:calc(50% - min(33vw, 380px)) }
+.vl-osd-ticks{ position:absolute; inset:-20px 0; will-change:transform;
+  background:repeating-linear-gradient(180deg, rgba(255,255,255,.35) 0 1.5px, transparent 1.5px 18px) }
+.vl-osd.tape-l .vl-osd-ticks{ -webkit-mask:linear-gradient(90deg, transparent, #000 30%); mask:linear-gradient(90deg, transparent, #000 30%) }
+.vl-osd.tape-r .vl-osd-ticks{ -webkit-mask:linear-gradient(270deg, transparent, #000 30%); mask:linear-gradient(270deg, transparent, #000 30%) }
+.vl-osd b{ font:700 22px var(--mono); color:#EAF6FF; text-shadow:0 0 12px rgba(125,255,201,.35); z-index:1 }
+.vl-osd label{ font:700 9px var(--mono); letter-spacing:.24em; color:#8A97A8; z-index:1 }
+.vl-osd-home{ position:absolute; left:50%; top:calc(50% + 54px); transform:translateX(-50%);
+  font:700 10.5px var(--mono); letter-spacing:.18em; color:#B7C2D0;
+  padding:4px 10px; border-radius:999px; background:rgba(10,12,16,.5) }
+@media (max-width:760px){ .vl-osd.tape-l{ left:8px } .vl-osd.tape-r{ right:8px } }

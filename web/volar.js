@@ -4,23 +4,23 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=68';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=68';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=68';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=68';
-import { createRecorder } from '/flightverse/recorder.js?v=68';
-import { createAudio } from '/flightverse/audio.js?v=68';
-import { createTouchSticks } from '/flightverse/touch.js?v=68';
-import { createSky } from '/flightverse/sky.js?v=68';
-import CameraControls from '/vendor/camera-controls.module.js?v=68';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=68';
+import * as THREE from '/flightverse/three.js?v=69';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=69';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=69';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=69';
+import { createRecorder } from '/flightverse/recorder.js?v=69';
+import { createAudio } from '/flightverse/audio.js?v=69';
+import { createTouchSticks } from '/flightverse/touch.js?v=69';
+import { createSky } from '/flightverse/sky.js?v=69';
+import CameraControls from '/vendor/camera-controls.module.js?v=69';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=69';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=68';
+} from '/vendor/postprocessing180.module.js?v=69';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -31,7 +31,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=68';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=69';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -82,6 +82,9 @@ function hud() {
     <div class="vl-fpv" id="vl-fpv">
       <div class="vl-fpv-cross"></div>
       <div class="vl-fpv-horizon" id="vl-horizon"><i></i></div>
+      <div class="vl-osd tape-l"><div class="vl-osd-ticks" id="osd-vt"></div><b id="osd-v">0.0</b><label>M/S</label></div>
+      <div class="vl-osd tape-r"><div class="vl-osd-ticks" id="osd-at"></div><b id="osd-a">0</b><label>AGL</label></div>
+      <div class="vl-osd-home" id="osd-home">HOME 0 m</div>
     </div>
     <div class="vl-flash" id="vl-flash"></div>
     <div class="vl-scrim top"></div><div class="vl-scrim bottom"></div>
@@ -175,7 +178,13 @@ async function main() {
     bloom: new BloomEffect({ mipmapBlur: true, luminanceThreshold: 1.0, intensity: 0.25, radius: 0.6 }),
     vig: new VignetteEffect({ offset: 0.3, darkness: 0.42 }),
   };
-  const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType });
+  // HalfFloat solo si el contexto puede RENDERIZAR a half-float (Safari viejo
+  // no → frame basura blanquecina, reporte 'noche/atardecer blancos')
+  const halfOk = !!renderer.extensions.get('EXT_color_buffer_half_float')
+    || !!renderer.extensions.get('EXT_color_buffer_float');
+  const composer = new EffectComposer(renderer, {
+    frameBufferType: halfOk ? THREE.HalfFloatType : THREE.UnsignedByteType });
+  report.halfFloat = halfOk;
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new EffectPass(camera,
     new SMAAEffect({ preset: SMAAPreset.HIGH }),
@@ -329,9 +338,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=68', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=69', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=68');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=69');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -852,6 +861,11 @@ async function main() {
         const rollV = new THREE.Vector3(1, 0, 0).applyQuaternion(drone.quat).y;
         $('#vl-horizon').style.transform =
           `translateY(${(-o.pitch * 260).toFixed(1)}px) rotate(${(-rollV * 40).toFixed(1)}deg)`;
+        $('#osd-v').textContent = spd.toFixed(1);
+        $('#osd-a').textContent = drone.agl == null ? '—' : drone.agl.toFixed(0);
+        $('#osd-vt').style.transform = `translateY(${(spd * 9) % 18}px)`;
+        $('#osd-at').style.transform = `translateY(${((drone.agl || 0) * 4) % 18}px)`;
+        $('#osd-home').textContent = `HOME ${Math.hypot(drone.pos.x, drone.pos.z).toFixed(0)} m`;
       }
       const hdg = ((-o.yaw * 180 / Math.PI) % 360 + 360) % 360;
       const card = ['N','NE','E','SE','S','SO','O','NO'][Math.round(hdg / 45) % 8];
