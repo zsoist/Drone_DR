@@ -32,8 +32,8 @@
 ## Estado por fase
 | Fase | Estado | Evidencia |
 |---|---|---|
-| P0 baseline+audit | EN CURSO | agentes A/E corriendo; screenshots pendientes |
-| P1 renderer gate + SceneManifest V2 | — | |
+| P0 baseline+audit | HECHA | FLIGHTVERSE_UI_AUDIT.md (A+E consolidados, I1-I4, baseline perf) |
+| P1 renderer gate + SceneManifest V2 | gate HECHO · manifest EN CURSO | FLIGHTVERSE_RENDERER_DECISION.md — spike OK (92/100 incumbente, 5/5 preguntas, qa/*-flightverse-spike.png); dsm_lod.py (126MB→234KB) + spike_flightverse.{html,js} + flightverse_spike_gate.py |
 | P2 world shell (/mundo) | — | |
 | P3 vuelo jugable (loop fijo, modos, rigs) | — | |
 | P4 Gate Rush (slice) | — | |
