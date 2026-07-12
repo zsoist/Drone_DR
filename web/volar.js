@@ -42,6 +42,7 @@ function hud() {
       <div class="vl-fps" id="vl-fps"></div>
     </div>
     <div class="vl-center-top" id="vl-challenge"></div>
+    <canvas class="vl-minimap" id="vl-minimap" width="180" height="180"></canvas>
     <div class="vl-count" id="vl-count"></div>
     <div class="vl-result" id="vl-result"></div>
     <div class="vl-help" id="vl-help">
@@ -224,6 +225,45 @@ async function main() {
   let tourT = 0;
   const diag = Math.hypot(...W.size_m);
 
+  // ── minimapa táctico: la ortofoto REAL como radar (dron/ghost/gates) ──
+  const mm = { cv: $('#vl-minimap'), img: null, ready: false };
+  if (man.assets?.ortho) {
+    const im = new Image();
+    im.onload = () => { mm.img = im; mm.ready = true; };
+    im.src = man.assets.ortho;
+  }
+  const mmXY = (x, z) => [
+    (x / W.size_m[0] + 0.5) * mm.cv.width,
+    (z / W.size_m[1] + 0.5) * mm.cv.height,
+  ];
+  function drawMinimap() {
+    if (!mm.ready) return;
+    const c = mm.cv.getContext('2d');
+    c.clearRect(0, 0, mm.cv.width, mm.cv.height);
+    c.globalAlpha = 0.92;
+    c.drawImage(mm.img, 0, 0, mm.cv.width, mm.cv.height);
+    c.globalAlpha = 1;
+    if (reto?.gates) for (let i = 0; i < reto.gates.length; i++) {
+      const g = reto.gates[i];
+      const [gx, gz] = mmXY(g.center.x, g.center.z);
+      c.beginPath(); c.arc(gx, gz, 3, 0, 7);
+      c.strokeStyle = g.passed ? '#52C79A' : (i === reto.state.idx ? '#45A0E6' : '#566274');
+      c.lineWidth = 1.6; c.stroke();
+    }
+    if (ghost?.on) {
+      const [gx, gz] = mmXY(ghost.marker.position.x, ghost.marker.position.z);
+      c.fillStyle = '#52C79A'; c.beginPath(); c.arc(gx, gz, 2.4, 0, 7); c.fill();
+    }
+    const [dx, dz] = mmXY(drone.pos.x, drone.pos.z);
+    c.save(); c.translate(dx, dz); c.rotate(-drone.yaw);
+    c.fillStyle = '#fff';
+    c.beginPath(); c.moveTo(0, -6); c.lineTo(4, 5); c.lineTo(-4, 5); c.closePath(); c.fill();
+    c.restore();
+  }
+
+  // llegada cinematográfica: swoop desde vista de mapa hacia el rig (skip en autotest)
+  let arrival = AT ? null : { t: 0, dur: 3.4 };
+
   let simT = 0;
   const auto = AUTOTEST ? { until: 5 } : null;
   const autoReto = AT === 'gaterush' ? { last: 0, replayed: false } : null;
@@ -310,7 +350,18 @@ async function main() {
       dmesh.position.copy(P);
       dmesh.rotation.set(0, o.yaw, 0, 'YXZ');
       dmesh.rotation.x = THREE.MathUtils.clamp(-drone.vel.dot(new THREE.Vector3(-Math.sin(o.yaw), 0, -Math.cos(o.yaw))) * 0.012, -0.35, 0.35);
-      if (modeKey === 'cinematico') {
+      if (arrival) {
+        // swoop de entrada: de vista-mapa al rig chase, easeOutCubic
+        arrival.t += STEP;
+        const k = Math.min(1, arrival.t / arrival.dur);
+        const e = 1 - Math.pow(1 - k, 3);
+        const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(14);
+        const want = P.clone().add(back).add(new THREE.Vector3(0, 6, 0));
+        const hi = P.clone().add(new THREE.Vector3(diag * 0.25, diag * 0.55, diag * 0.35));
+        camera.position.lerpVectors(hi, want, e);
+        camera.lookAt(P);
+        if (k >= 1) arrival = null;
+      } else if (modeKey === 'cinematico') {
         tourT += STEP * 0.14;
         camera.position.set(Math.cos(tourT) * diag * 0.42, diag * 0.3, Math.sin(tourT) * diag * 0.42);
         camera.lookAt(0, (W.elev_max - W.elev_min) * 0.4, 0);
@@ -319,6 +370,7 @@ async function main() {
         rig.fn(P, o, camera, STEP, rig);
       }
       renderer.render(scene, camera);
+      drawMinimap();
       // HUD (barato: texto directo, sin re-layout)
       $('#vl-agl').textContent = drone.agl == null ? 'fuera' : `${drone.agl.toFixed(1)} m`;
       $('#vl-spd').textContent = drone.vel.length().toFixed(1);

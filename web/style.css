@@ -3304,3 +3304,9 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .vl-rec.on{ color:#fff; background:rgba(217,106,106,.85); border-color:transparent;
   animation:recPulse 1.2s ease-in-out infinite }
 @keyframes recPulse{ 50%{ filter:brightness(1.25) } }
+
+/* BLOQUE 29d · minimapa táctico */
+.vl-minimap{ position:absolute; left:50%; bottom:14px; transform:translateX(-50%);
+  width:150px; height:150px; border-radius:10px; border:1px solid rgba(255,255,255,.18);
+  background:rgba(10,12,16,.5); box-shadow:0 10px 30px -12px rgba(0,0,0,.8) }
+@media (max-width:640px){ .vl-minimap{ width:104px; height:104px; bottom:12px } }
