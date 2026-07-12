@@ -6,7 +6,7 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=115';
+import * as THREE from '/flightverse/three.js?v=116';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -45,6 +45,20 @@ export const ARSENAL = {
   m:  { label: 'M·M', cd: 0.9,     max: 8,      regen: 0.4,  speed: 56, big: 1.25 },
   l:  { label: 'M·L', cd: 2.2,     max: 3,      regen: 0.12, speed: 42, big: 2.2 },
 };
+
+// eyecta con FRAGMENTOS REALES del destruction kit (debris_pack.glb: 16
+// chunks PBR de concreto/ladrillo). Clonar comparte geometría/material —
+// barato. Sin el GLB (o mientras carga): cajas procedurales (fallback).
+let debrisFrags = null;
+(async () => {
+  try {
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=116');
+    const g = await new GLTFLoader().loadAsync('/assets/destruction/models/debris_pack.glb');
+    const frags = [];
+    g.scene.traverse(n => { if (n.isMesh && n.userData.role === 'fragment') frags.push(n); });
+    if (frags.length) debrisFrags = frags;
+  } catch { /* opcional */ }
+})();
 
 export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) {
   const TEX = {
@@ -158,8 +172,15 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     // EYECTA: pedazos del suelo/edificio que vuelan y QUEDAN como escombro
     for (let i = 0; i < 12; i++) {
       const sz3 = 0.1 + Math.random() * 0.26;
-      const m2 = new THREE.Mesh(new THREE.BoxGeometry(sz3, sz3 * (0.5 + Math.random()), sz3),
-        new THREE.MeshLambertMaterial({ color: [0x4a4238, 0x6b5d4a, 0x2e2a24, 0x57503f][i % 4] }));
+      let m2;
+      if (debrisFrags) {
+        // fragmento PBR real del kit (geometría/material compartidos)
+        m2 = debrisFrags[(Math.random() * debrisFrags.length) | 0].clone();
+        m2.scale.setScalar(0.5 + Math.random() * 0.9);
+      } else {
+        m2 = new THREE.Mesh(new THREE.BoxGeometry(sz3, sz3 * (0.5 + Math.random()), sz3),
+          new THREE.MeshLambertMaterial({ color: [0x4a4238, 0x6b5d4a, 0x2e2a24, 0x57503f][i % 4] }));
+      }
       m2.position.set(p.x, gy + 0.4, p.z);
       m2.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
       m2.castShadow = true;

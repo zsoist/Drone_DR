@@ -274,3 +274,15 @@ mando real, minimapa MapLibre opcional.
   ORIGINALES brand-free) + lista de archivos a entregar a ChatGPT + pasos de
   instalación y gate de verificación.
 - Gate: invasión procedural intacta (71fps, 0 errores).
+
+## v116 (2026-07-12) — destruction kit v3: eyecta PBR real + regenerabilidad
+- Los 3 kits comparados: GLBs byte-idénticos; kit-3 aporta el GENERADOR
+  (generate_destruction_kit.py → pipeline/, kit regenerable/ajustable a
+  voluntad) y los passes intermedios (no vendorizados).
+- EYECTA REAL: debris_pack.glb (16 fragmentos PBR de concreto/ladrillo del
+  kit, original brand-free) se carga perezoso; cada explosión clona
+  fragmentos texturizados (geometría/material compartidos — barato) en vez
+  de cajas de colores. Fallback procedural mientras carga o sin el GLB.
+- impact_crater.glb añadido a assets/destruction/models (disponible como
+  prop type:'kit' para vestir escenas con cráteres persistentes).
+- Gate: fuego=1 verde, 77fps, 0 errores.
