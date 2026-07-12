@@ -4,23 +4,23 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=60';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=60';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=60';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=60';
-import { createRecorder } from '/flightverse/recorder.js?v=60';
-import { createAudio } from '/flightverse/audio.js?v=60';
-import { createTouchSticks } from '/flightverse/touch.js?v=60';
-import CameraControls from '/vendor/camera-controls.module.js?v=60';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=60';
+import * as THREE from '/flightverse/three.js?v=61';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=61';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=61';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=61';
+import { createRecorder } from '/flightverse/recorder.js?v=61';
+import { createAudio } from '/flightverse/audio.js?v=61';
+import { createTouchSticks } from '/flightverse/touch.js?v=61';
+import CameraControls from '/vendor/camera-controls.module.js?v=61';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=61';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=60';
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=60';
+} from '/vendor/postprocessing180.module.js?v=61';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=61';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -228,10 +228,22 @@ async function main() {
   const matHull = new THREE.MeshLambertMaterial({ color: 0xE8EDF4 });
   const matGrey = new THREE.MeshLambertMaterial({ color: 0x8f99a8 });
   const matDark = new THREE.MeshLambertMaterial({ color: 0x23282f });
-  const hull = new THREE.Mesh(new THREE.SphereGeometry(0.16, 28, 20), matHull);
-  hull.scale.set(1.15, 0.52, 1.85);
-  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.135, 18, 12), matGrey);
-  shell.scale.set(1.05, 0.42, 1.5); shell.position.y = 0.055;
+  const prof = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    prof.push(new THREE.Vector2(Math.sin(t * Math.PI) * 0.165 * (1 - t * 0.22) + 0.001, (t - 0.5) * 0.56));
+  }
+  const hull = new THREE.Mesh(new THREE.LatheGeometry(prof, 26), matHull);
+  hull.rotation.x = Math.PI / 2;                       // gota tendida, nariz -z
+  hull.scale.set(1.05, 0.55, 1);
+  const shell = new THREE.Mesh(new THREE.LatheGeometry(prof, 26), matGrey);
+  shell.rotation.x = Math.PI / 2;
+  shell.scale.set(0.86, 0.4, 0.84); shell.position.y = 0.052;
+  for (const sx of [-0.09, 0.09]) {                    // patas de aterrizaje
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.05, 4, 6), matDark);
+    leg.position.set(sx, -0.085, 0.12);
+    dmesh.add(leg);
+  }
   const gimbal = new THREE.Group();
   const gb = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), matDark);
   const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.03, 12), matGrey);
@@ -255,7 +267,8 @@ async function main() {
   dmesh.add(hull, shell, gimbal, navL, navR, stripe);
   const props = [];
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.055), matGrey);
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.019, 0.27, 4, 8), matGrey);
+    arm.rotation.z = Math.PI / 2;
     arm.position.set(x * 0.2, 0.015, z * 0.21);
     arm.rotation.y = Math.atan2(-z, x * 1.4);
     arm.rotation.z = x * -0.08;                       // brazos levemente caídos
