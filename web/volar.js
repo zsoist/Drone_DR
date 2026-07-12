@@ -4,23 +4,23 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=76';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=76';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=76';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=76';
-import { createRecorder } from '/flightverse/recorder.js?v=76';
-import { createAudio } from '/flightverse/audio.js?v=76';
-import { createTouchSticks } from '/flightverse/touch.js?v=76';
-import { createSky } from '/flightverse/sky.js?v=76';
-import CameraControls from '/vendor/camera-controls.module.js?v=76';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=76';
+import * as THREE from '/flightverse/three.js?v=77';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=77';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=77';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=77';
+import { createRecorder } from '/flightverse/recorder.js?v=77';
+import { createAudio } from '/flightverse/audio.js?v=77';
+import { createTouchSticks } from '/flightverse/touch.js?v=77';
+import { createSky } from '/flightverse/sky.js?v=77';
+import CameraControls from '/vendor/camera-controls.module.js?v=77';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=77';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=76';
+} from '/vendor/postprocessing180.module.js?v=77';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -31,7 +31,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=76';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=77';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -91,6 +91,9 @@ function hud() {
       <div class="vl-osd tape-r"><div class="vl-osd-ticks" id="osd-at"></div><b id="osd-a">0</b><label>AGL</label></div>
       <div class="vl-osd-home" id="osd-home">HOME 0 m</div>
       <div class="vl-osd-gimbal" id="osd-gimbal">GIMBAL -7°</div>
+      <i class="vl-fpv-br tl"></i><i class="vl-fpv-br tr"></i><i class="vl-fpv-br bl"></i><i class="vl-fpv-br br"></i>
+      <div class="vl-fpv-sig" id="fpv-sig"><i></i><i></i><i></i></div>
+      <div class="vl-fpv-rec" id="fpv-rec">REC</div>
     </div>
     <div class="vl-flash" id="vl-flash"></div>
     <div class="vl-scrim top"></div><div class="vl-scrim bottom"></div>
@@ -113,6 +116,10 @@ function hud() {
       <label>Viñeta<input type="range" id="gr-v" min="0" max="0.9" step="0.02" value="0.42"></label>
       <button id="gr-reset">Restablecer</button>
     </div>
+    <div class="vl-cine" id="vl-cine">
+      <label>Velocidad<input type="range" id="cine-v" min="0.03" max="0.5" step="0.01" value="0.14"></label>
+      <label>Ángulo<input type="range" id="cine-a" min="0.12" max="0.6" step="0.01" value="0.24"></label>
+    </div>
     <div class="vl-director" id="vl-director">
       <div class="vl-dir-row">
         <button id="dir-key">+ Keyframe</button>
@@ -132,7 +139,7 @@ function hud() {
             <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> mover · <kbd>R</kbd><kbd>F</kbd> subir/bajar · <kbd>Q</kbd><kbd>E</kbd> girar<br>
             <kbd>Shift</kbd> turbo · <kbd>Espacio</kbd> freno · <span class="vl-kmouse">rueda</span> gimbal</div>
           <div><span class="vl-gi">02</span><b>Modos y cámaras</b><br>
-            <kbd>1</kbd>–<kbd>5</kbd> modo de vuelo · <kbd>C</kbd> cámara · <kbd>P</kbd> vista · <kbd>G</kbd> ghost</div>
+            <kbd>1</kbd>–<kbd>4</kbd> modo (Cine·Normal·Arcade·Dios) · <kbd>C</kbd> cámara · <kbd>P</kbd> vista · <kbd>G</kbd> ghost</div>
           <div><span class="vl-gi">03</span><b>Jugar y grabar</b><br>
             <kbd>T</kbd> Gate Rush (aros sobre tu ruta REAL) · <kbd>V</kbd> grabar WebM · <kbd>M</kbd> sonido</div>
           <div><span class="vl-gi">04</span><b>Vistas</b><br>
@@ -353,9 +360,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=76', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=77', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=76');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=77');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -433,7 +440,13 @@ async function main() {
     $('#osd-gimbal').textContent = `GIMBAL ${Math.round(gimbalTilt * 180 / Math.PI)}°`;
   };
   $('#vl-gwheel').addEventListener('input', e => setGimbal(+e.target.value * Math.PI / 180));
-  const setMode = k => { modeKey = k; $('#vl-mode').textContent = `modo · ${MODES[k].label}`; };
+  const cine = { v: 0.14, a: 0.24 };
+  $('#cine-v').addEventListener('input', e => { cine.v = +e.target.value; });
+  $('#cine-a').addEventListener('input', e => { cine.a = +e.target.value; });
+  const setMode = k => {
+    modeKey = k; $('#vl-mode').textContent = `modo · ${MODES[k].label}`;
+    $('#vl-cine').classList.toggle('show', k === 'cinematico');
+  };
   const setRig = ix => {
     rigIx = ((ix % RIGS.length) + RIGS.length) % RIGS.length;
     camera.fov = RIGS[rigIx].fov; camera.updateProjectionMatrix();
@@ -530,7 +543,7 @@ async function main() {
   const qModo = Q.get('modo');
   setMode(qModo && MODES[qModo] ? qModo : 'asistido'); setRig(0); applyVista();
   if (Q.get('reto') === '1' && !AT) setTimeout(() => startReto(), 3800);   // tras el arrival
-  const modeKeys = { Digit1: 'cinematico', Digit2: 'asistido', Digit3: 'fpv', Digit4: 'arcade', Digit5: 'dios' };
+  const modeKeys = { Digit1: 'cinematico', Digit2: 'asistido', Digit3: 'arcade', Digit4: 'dios' };
   addEventListener('keydown', e => {
     if (modeKeys[e.code]) setMode(modeKeys[e.code]);
     if (e.code === 'KeyC') setRig(rigIx + 1);
@@ -731,6 +744,15 @@ async function main() {
     c.restore();
   }
 
+  // estela del autopiloto Arcade (luces aditivas que siguen al dron)
+  const ghostAuto = { f: 0 };
+  const trail = [];
+  const trailGeo = new THREE.BufferGeometry();
+  const trailLine = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({
+    color: 0x7dffc9, transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending, depthWrite: false }));
+  scene.add(trailLine);
+
   // llegada cinematográfica: swoop desde vista de mapa hacia el rig (skip en autotest)
   let arrival = AT ? null : { t: 0, dur: 3.4 };
 
@@ -789,6 +811,21 @@ async function main() {
         drone.prev.pos.copy(drone.pos); drone.prev.yaw = drone.yaw;
         drone.pos.set(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f);
         drone.yaw = a[3] + (b[3] - a[3]) * f;
+      } else if (MODES[modeKey]?.autopilot && ghost) {
+        // autopiloto del vuelo REAL: recorre el track suave con estela de luces
+        ghostAuto.f = (ghostAuto.f + dt * 1.35) % ghost.dur;
+        const i = ghost.T.findIndex(t2 => t2 > ghostAuto.f);
+        const a = Math.max(0, i - 1), b = Math.max(0, i);
+        const ta = ghost.T[a], tb = ghost.T[b] || ta + 1;
+        const f = tb > ta ? (ghostAuto.f - ta) / (tb - ta) : 0;
+        drone.prev.pos.copy(drone.pos); drone.prev.yaw = drone.yaw;
+        drone.pos.lerpVectors(ghost.pts[a], ghost.pts[b] || ghost.pts[a], f);
+        const nx = ghost.pts[Math.min(b + 1, ghost.pts.length - 1)];
+        drone.yaw = Math.atan2(-(nx.x - drone.pos.x), -(nx.z - drone.pos.z));
+        drone.vel.set(0, 0, 0);
+        trail.push(drone.pos.clone());
+        if (trail.length > 160) trail.shift();
+        trailGeo.setFromPoints(trail);
       } else {
         let inp = input.sample();
         const ts = sticks?.sample();
@@ -871,8 +908,9 @@ async function main() {
         camera.lookAt(P);
         if (k >= 1) arrival = null;
       } else if (modeKey === 'cinematico') {
-        tourT += STEP * 0.14;
-        camera.position.set(Math.cos(tourT) * diag * 0.42, diag * 0.3, Math.sin(tourT) * diag * 0.42);
+        tourT += STEP * cine.v;
+        const r = diag * 0.3;                        // más cerca (pedido)
+        camera.position.set(Math.cos(tourT) * r, diag * cine.a, Math.sin(tourT) * r);
         camera.lookAt(0, (W.elev_max - W.elev_min) * 0.4, 0);
       } else {
         const rig = RIGS[rigIx];
@@ -903,6 +941,9 @@ async function main() {
         $('#osd-vt').style.transform = `translateY(${(spd * 9) % 18}px)`;
         $('#osd-at').style.transform = `translateY(${((drone.agl || 0) * 4) % 18}px)`;
         $('#osd-home').textContent = `HOME ${Math.hypot(drone.pos.x, drone.pos.z).toFixed(0)} m`;
+        const f = loop.fps() || 60;
+        $('#fpv-sig').dataset.n = f > 50 ? 3 : f > 32 ? 2 : 1;   // señal honesta = fps
+        $('#fpv-rec').classList.toggle('on', recorder.recording);
       }
       const hdg = ((-o.yaw * 180 / Math.PI) % 360 + 360) % 360;
       const card = ['N','NE','E','SE','S','SO','O','NO'][Math.round(hdg / 45) % 8];

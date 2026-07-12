@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=76';
+import * as THREE from '/flightverse/three.js?v=77';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -77,11 +77,9 @@ export function createInput(el) {
 // una skin: cambia el modelo de control (velocidad-objetivo vs tasas FPV).
 export const MODES = {
   cinematico: { label: 'Cinemático', vmax: 0, tour: true },
-  asistido:   { label: 'Asistido', vmax: 14, vboost: 24, vy: 9, vyBoost: 16, resp: 3.2, yawRate: 1.6, autoLevel: true },
-  // FPV/Arcade: 6DOF real portado de ecctrl 2.0 (MIT, c) Erdong Chen) —
-  // thrust por rotor + PD de actitud + mixer; ver docs/FLIGHTVERSE ledger
-  fpv:        { label: 'FPV', six: true, twr: 3.6, tilt: Math.PI / 3.6, vmaxH: 26, vmaxV: 14, yawRate: 3.4 },
-  arcade:     { label: 'Arcade', six: true, twr: 5.5, tilt: Math.PI / 4, vmaxH: 34, vmaxV: 22, yawRate: 2.6 },
+  asistido:   { label: 'Normal', vmax: 14, vboost: 24, vy: 9, vyBoost: 16, resp: 3.2, yawRate: 1.6, autoLevel: true },
+  // Arcade = AUTOPILOTO del vuelo real: recorre el track con estela de luces
+  arcade:     { label: 'Arcade', autopilot: true },
   dios:       { label: 'Dios', vmax: 34, vboost: 85, vy: 30, resp: 4.2, yawRate: 1.8, autoLevel: true, noclip: true },
 };
 
@@ -249,18 +247,18 @@ export function createDrone({ heightAt, collide, spawn }) {
 // Rigs de cámara — cada rig es una función pura (drone interpolado → cámara).
 // Registro extensible; C cicla. (6 de los 10 del spec; el resto con Director.)
 export const RIGS = [
-  { key: 'chase', label: 'Persecución', fov: 60,
+  { key: 'cerca', label: 'Cerca', fov: 62,
     fn: (p, o, cam, dt) => {
-      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(8);
-      const want = p.clone().add(back).add(new THREE.Vector3(0, 3.2, 0));
-      cam.position.lerp(want, 1 - Math.exp(-dt * 5));
+      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(4.6);
+      const want = p.clone().add(back).add(new THREE.Vector3(0, 1.9, 0));
+      cam.position.lerp(want, 1 - Math.exp(-dt * 6));
       cam.lookAt(p);
     } },
-  { key: 'chase-far', label: 'Persecución lejana', fov: 55,
+  { key: 'lejos', label: 'Lejos', fov: 57,
     fn: (p, o, cam, dt) => {
-      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(20);
-      const want = p.clone().add(back).add(new THREE.Vector3(0, 8, 0));
-      cam.position.lerp(want, 1 - Math.exp(-dt * 3));
+      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(12);
+      const want = p.clone().add(back).add(new THREE.Vector3(0, 4.6, 0));
+      cam.position.lerp(want, 1 - Math.exp(-dt * 4));
       cam.lookAt(p);
     } },
   { key: 'fpv', label: 'FPV', fov: 78, hideDrone: true,
