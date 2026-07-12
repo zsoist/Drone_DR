@@ -3532,3 +3532,28 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   animation:wlBar .9s linear infinite }
 @keyframes wlBar{ from{ transform:translateX(-100%) } to{ transform:translateX(260%) } }
 @media (max-width:640px){ .wp-in{ padding:16px } .wp-m{ flex:1; min-width:130px } }
+
+/* BLOQUE 28d · filtros, flechas del carrusel, datos del panel — sin emojis */
+.w-filters{ display:flex; gap:6px; margin:2px 0 14px; flex-wrap:wrap }
+.w-filters button{ font:600 11.5px var(--font); color:var(--text-2); padding:8px 14px;
+  border-radius:999px; border:1px solid var(--line); background:transparent; cursor:pointer;
+  min-height:34px; transition:all .2s var(--ease); -webkit-tap-highlight-color:transparent }
+.w-filters button.on{ color:var(--accent); border-color:rgba(69,160,230,.5); background:var(--accent-dim) }
+.w-railwrap{ position:relative }
+.w-arrow{ position:absolute; top:50%; transform:translateY(-50%); z-index:3;
+  width:40px; height:40px; border-radius:50%; border:1px solid rgba(255,255,255,.15);
+  background:rgba(10,12,16,.75); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  color:#E6EBF2; font-size:22px; line-height:1; cursor:pointer;
+  transition:border-color .2s, transform .15s }
+.w-arrow:hover{ border-color:rgba(69,160,230,.6) }
+.w-arrow:active{ transform:translateY(-50%) scale(.92) }
+.w-arrow.prev{ left:-6px } .w-arrow.next{ right:-6px }
+@media (pointer:coarse){ .w-arrow{ display:none } }
+.wp-data{ display:flex; gap:22px; flex-wrap:wrap; margin-top:14px }
+.wp-data div{ display:flex; flex-direction:column }
+.wp-data b{ font:700 16px var(--mono); color:var(--text); letter-spacing:-.01em }
+.wp-data span{ font:600 9.5px var(--mono); letter-spacing:.16em; color:var(--text-3); text-transform:uppercase; margin-top:2px }
+.wi-rec{ display:inline-flex; align-items:center; gap:4px }
+.wp-m b{ display:flex; align-items:center; gap:7px }
+.vl-gi{ font:700 10px var(--mono); color:var(--accent); letter-spacing:.1em;
+  border:1px solid rgba(69,160,230,.35); border-radius:6px; padding:3px 6px; float:left; margin:2px 10px 0 0 }

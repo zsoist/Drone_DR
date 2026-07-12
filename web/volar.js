@@ -38,7 +38,7 @@ function hud() {
   <div class="vl-hud" id="vl-hud">
     <div class="vl-corner tl">
       <a class="vl-back" href="mundo.html">← Mundo</a>
-      <button class="vl-chip" id="vl-share">↗ Compartir</button>
+      <button class="vl-chip" id="vl-share">Compartir</button>
       <div class="vl-scene" id="vl-scene"></div>
     </div>
     <div class="vl-corner tr">
@@ -46,15 +46,15 @@ function hud() {
       <div class="vl-metric"><span id="vl-spd">—</span><label>VEL m/s</label></div>
     </div>
     <div class="vl-corner bl">
-      <button class="vl-fab" id="vl-fab">☰</button>
+      <button class="vl-fab" id="vl-fab">&#9776;</button>
       <div class="vl-dock" id="vl-dock">
         <button class="vl-chip" id="vl-mode"></button>
         <button class="vl-chip" id="vl-rig"></button>
         <button class="vl-chip" id="vl-vista">vista · orto</button>
-        <button class="vl-chip" id="vl-reto">🏁 Gate Rush</button>
-        <button class="vl-chip" id="vl-sound">🔊 sonido</button>
-        <button class="vl-chip" id="vl-ajustes">🎚 imagen</button>
-        <button class="vl-chip" id="vl-ayuda">? guía</button>
+        <button class="vl-chip" id="vl-reto">Gate Rush</button>
+        <button class="vl-chip" id="vl-sound">Sonido</button>
+        <button class="vl-chip" id="vl-ajustes">Imagen</button>
+        <button class="vl-chip" id="vl-ayuda">Guía</button>
         <button class="vl-rec" id="vl-rec">● Grabar</button>
       </div>
     </div>
@@ -81,10 +81,10 @@ function hud() {
       <div class="vl-guide-card">
         <div class="vl-guide-k">GUÍA DE VUELO</div>
         <div class="vl-guide-rows">
-          <div><span class="vl-gi">🕹</span><b>Controles RC reales</b><br>Stick IZQ: subir/bajar y girar · Stick DER: avanzar y ladear.<br>Teclado: WASD mover · R/F altura · Q/E girar · Shift turbo.</div>
-          <div><span class="vl-gi">◎</span><b>Los aros (Gate Rush)</b><br>Pulsa 🏁 y cruza los aros: el AZUL brillante es el siguiente, verde = superado. Están sobre la ruta que tu dron voló de verdad.</div>
-          <div><span class="vl-gi">●</span><b>La bola verde (ghost)</b><br>Es tu vuelo REAL reproduciéndose — la estela es el GPS del dron. Persíguela o apágala con G.</div>
-          <div><span class="vl-gi">◆</span><b>Vista foto-real</b><br>Cambia entre orto, mixta y el splat foto-realista con el botón "vista".</div>
+          <div><span class="vl-gi">01</span><b>Controles RC reales</b><br>Stick IZQ: subir/bajar y girar · Stick DER: avanzar y ladear.<br>Teclado: WASD mover · R/F altura · Q/E girar · Shift turbo.</div>
+          <div><span class="vl-gi">02</span><b>Los aros (Gate Rush)</b><br>Pulsa 🏁 y cruza los aros: el AZUL brillante es el siguiente, verde = superado. Están sobre la ruta que tu dron voló de verdad.</div>
+          <div><span class="vl-gi">03</span><b>La bola verde (ghost)</b><br>Es tu vuelo REAL reproduciéndose — la estela es el GPS del dron. Persíguela o apágala con G.</div>
+          <div><span class="vl-gi">04</span><b>Vista foto-real</b><br>Cambia entre orto, mixta y el splat foto-realista con el botón "vista".</div>
         </div>
         <button id="vl-guide-ok">¡A volar!</button>
       </div>
@@ -385,14 +385,14 @@ async function main() {
   if (!localStorage.getItem('ab.fv.guided') && !AT) $('#vl-guide').classList.add('show');
   $('#vl-sound').addEventListener('click', () => {
     const m = audio.toggleMute();
-    $('#vl-sound').textContent = m ? '🔇 sonido' : '🔊 sonido';
+    $('#vl-sound').textContent = m ? 'Sonido off' : 'Sonido';
     $('#vl-sound').classList.toggle('off', m);
   });
   $('#vl-share').addEventListener('click', async () => {
     const url = `${location.origin}/volar.html?m=${encodeURIComponent(CID)}`;
     try {
       if (navigator.share) await navigator.share({ title: `Vuela ${man.name} — AeroBrain`, url });
-      else { await navigator.clipboard.writeText(url); $('#vl-share').textContent = '✓ copiado'; setTimeout(() => { $('#vl-share').textContent = '↗ Compartir'; }, 1600); }
+      else { await navigator.clipboard.writeText(url); $('#vl-share').textContent = 'Copiado'; setTimeout(() => { $('#vl-share').textContent = 'Compartir'; }, 1600); }
     } catch { /* usuario canceló */ }
   });
   const qModo = Q.get('modo');
@@ -439,7 +439,7 @@ async function main() {
         <div class="vl-result-k">GATE RUSH · COMPLETADO</div>
         <div class="vl-result-time">${t.toFixed(2)}<small>s</small></div>
         <div class="vl-result-rows">
-          <span>${isNew ? '★ nuevo récord' : `récord ${best?.toFixed(2)}s`}</span>
+          <span>${isNew ? 'nuevo récord' : `récord ${best?.toFixed(2)}s`}</span>
           <span>vel. máx ${reto.state.topSpeed.toFixed(1)} m/s</span>
           <span>${reto.state.total} gates</span>
         </div>
@@ -638,8 +638,8 @@ async function main() {
           cnt.textContent = String(Math.ceil(st.countdown)); cnt.classList.add('show');
           ch.textContent = 'GATE RUSH';
         } else cnt.classList.remove('show');
-        if (st.phase === 'running') ch.textContent = `⏱ ${st.t.toFixed(1)}s · gate ${Math.min(st.idx + 1, st.total)}/${st.total}`;
-        if (st.phase === 'finished') ch.textContent = `✔ GATE RUSH · ${st.time.toFixed(2)}s`;
+        if (st.phase === 'running') ch.textContent = `T ${st.t.toFixed(1)}s · gate ${Math.min(st.idx + 1, st.total)}/${st.total}`;
+        if (st.phase === 'finished') ch.textContent = `GATE RUSH · ${st.time.toFixed(2)}s`;
       } else {
         ch.textContent = 'T · iniciar Gate Rush'; cnt.classList.remove('show');
       }

@@ -8,7 +8,15 @@ const dur = s => { s = Math.round(s||0); return `${Math.floor(s/60)}:${String(s%
 const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const best = cid => { const t = parseFloat(localStorage.getItem(`ab.fv.best.${cid}.gaterush`)); return Number.isFinite(t) ? t : null; };
 
+const SV = (d, s=13) => `<svg width="${s}" height="${s}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const I = {
+  plane: SV('<path d="M2.5 10.5L17 3l-4.5 14-3-6z"/>'),
+  flag: SV('<path d="M5 17V4c3-1.8 6 1.8 9 0v8c-3 1.8-6-1.8-9 0"/>'),
+  cam: SV('<rect x="2.5" y="5.5" width="11" height="9" rx="2"/><path d="M13.5 9l4-2.5v7l-4-2.5z"/>'),
+  trophy: SV('<path d="M6 3.5h8v4a4 4 0 01-8 0zM6 5H3.5a2.5 2.5 0 002.5 3M14 5h2.5A2.5 2.5 0 0114 8M10 11.5V15M7 16.5h6"/>', 11),
+};
 const main = renderShell('mundo.html');
+let filtro = 'todas';
 let scenes = [], sel = null;
 
 function isla(sc, i) {
@@ -19,8 +27,8 @@ function isla(sc, i) {
     <div class="wi-poster" style="background-image:url('${esc(sc.assets?.poster||'')}')"></div>
     <div class="wi-shine"></div>
     <div class="wi-shade"></div>
-    ${c.splat?'<span class="wi-badge">◆ FOTO-REAL</span>':''}
-    ${rec!=null?`<span class="wi-rec">🏆 ${rec.toFixed(1)}s</span>`:''}
+    ${c.splat?'<span class="wi-badge">FOTO-REAL</span>':''}
+    ${rec!=null?`<span class="wi-rec">${I.trophy} ${rec.toFixed(1)}s</span>`:''}
     <div class="wi-body">
       <div class="wi-name">${esc(sc.name)}</div>
       <div class="wi-meta">${fechaDe(sc.clip_id)||''}${st.track_duration_s?` · vuelo ${dur(st.track_duration_s)}`:''}</div>
@@ -40,16 +48,22 @@ function pick(i) {
       <div>
         <div class="wp-name">${esc(sel.name)}</div>
         <div class="wp-chips">
-          ${c.splat?`<span class="fv-chip on">◆ splat ${st.splat_cameras||''} cams</span>`:''}
-          ${w.size_m?`<span class="fv-chip">${Math.round(w.size_m[0])}×${Math.round(w.size_m[1])} m</span>`:''}
-          ${st.gsd_cm_px?`<span class="fv-chip">${st.gsd_cm_px} cm/px</span>`:''}
-          ${rec!=null?`<span class="fv-chip on">🏆 récord ${rec.toFixed(2)}s</span>`:''}
+          ${c.splat?`<span class="fv-chip on">splat ${st.splat_cameras||''} cams</span>`:''}
+          ${rec!=null?`<span class="fv-chip on">récord ${rec.toFixed(2)}s</span>`:''}
+        </div>
+        <div class="wp-data">
+          ${w.size_m?`<div><b>${(w.size_m[0]*w.size_m[1]/10000).toFixed(1)}</b><span>hectáreas</span></div>`:''}
+          ${w.elev_max?`<div><b>${(w.elev_max-w.elev_min).toFixed(0)} m</b><span>desnivel</span></div>`:''}
+          ${st.gsd_cm_px?`<div><b>${st.gsd_cm_px}</b><span>cm/px</span></div>`:''}
+          ${st.track_distance_m?`<div><b>${(st.track_distance_m/1000).toFixed(2)} km</b><span>vuelo real</span></div>`:''}
+          ${st.cloud_points?`<div><b>${(st.cloud_points/1e6).toFixed(1)}M</b><span>puntos</span></div>`:''}
+          ${sel.quality?.splat_bytes?`<div><b>${(sel.quality.splat_bytes/1048576).toFixed(0)} MB</b><span>splat</span></div>`:''}
         </div>
       </div>
       <div class="wp-missions">
-        <button class="wp-m" data-go="${go()}"><b>✈ Vuelo libre</b><span>explora sin límites</span></button>
-        <button class="wp-m hot" data-go="${go('&reto=1')}"><b>🏁 Gate Rush</b><span>${rec!=null?`bate tu ${rec.toFixed(1)}s`:'contra tu ruta real'}</span></button>
-        <button class="wp-m" data-go="${go('&modo=cinematico')}"><b>🎬 Cinemático</b><span>tour orbital</span></button>
+        <button class="wp-m" data-go="${go()}"><b>${I.plane} Vuelo libre</b><span>explora sin límites</span></button>
+        <button class="wp-m hot" data-go="${go('&reto=1')}"><b>${I.flag} Gate Rush</b><span>${rec!=null?`bate tu ${rec.toFixed(1)}s`:'contra tu ruta real'}</span></button>
+        <button class="wp-m" data-go="${go('&modo=cinematico')}"><b>${I.cam} Cinemático</b><span>tour orbital</span></button>
       </div>
     </div>` : `<div class="wp-in"><div class="wp-name">${esc(sel.name)}</div>
       <a class="fv-cta ghost" href="tresd.html" style="max-width:280px">Procesar en Estudio 3D</a></div>`;
@@ -76,7 +90,17 @@ async function boot() {
       </div>
     </header>
     <div id="w-cards">
-      <div class="w-rail" id="w-rail"><div class="fv-loading">Cargando mundo…</div></div>
+      <div class="w-filters" id="w-filters">
+        <button class="on" data-f="todas">Todas</button>
+        <button data-f="fotoreal">Foto-real</button>
+        <button data-f="record">Con récord</button>
+        <button data-f="volables">Volables</button>
+      </div>
+      <div class="w-railwrap">
+        <button class="w-arrow prev" id="w-prev" aria-label="anterior">‹</button>
+        <div class="w-rail" id="w-rail"><div class="fv-loading">Cargando mundo…</div></div>
+        <button class="w-arrow next" id="w-next" aria-label="siguiente">›</button>
+      </div>
       <div class="w-panel" id="w-panel"></div>
     </div>
     <div class="fv-map" id="fv-map" hidden></div>
@@ -100,7 +124,29 @@ async function boot() {
     (secs?`<span><b>${dur(secs)}</b> de vuelo real</span>`:'');
 
   const rail = document.getElementById('w-rail');
-  rail.innerHTML = scenes.map(isla).join('');
+  const applyFiltro = () => {
+    const f = filtro;
+    const list = scenes.map((sc, i) => ({ sc, i })).filter(({ sc }) =>
+      f === 'todas' ? true
+      : f === 'fotoreal' ? sc.capabilities?.splat
+      : f === 'record' ? best(sc.clip_id) != null
+      : sc.capabilities?.terrain);
+    rail.innerHTML = list.length
+      ? list.map(({ sc, i }) => isla(sc, i)).join('')
+      : '<div class="fv-loading">Nada con ese filtro.</div>';
+    const first = list[0];
+    if (first) pick(first.i);
+  };
+  document.getElementById('w-filters').addEventListener('click', e => {
+    const b = e.target.closest('[data-f]'); if (!b) return;
+    filtro = b.dataset.f;
+    document.querySelectorAll('#w-filters button').forEach(x => x.classList.toggle('on', x === b));
+    applyFiltro();
+  });
+  const step = () => (rail.querySelector('.wi')?.getBoundingClientRect().width || 320) + 16;
+  document.getElementById('w-prev').addEventListener('click', () => rail.scrollBy({ left: -step(), behavior: 'smooth' }));
+  document.getElementById('w-next').addEventListener('click', () => rail.scrollBy({ left: step(), behavior: 'smooth' }));
+  applyFiltro();
   rail.addEventListener('click', e => {
     const el = e.target.closest('.wi'); if (!el) return;
     pick(+el.dataset.i);
@@ -116,8 +162,6 @@ async function boot() {
     const r = el.getBoundingClientRect();
     el.style.transform = `perspective(700px) rotateY(${((e.clientX-r.left)/r.width-.5)*7}deg) rotateX(${(.5-(e.clientY-r.top)/r.height)*5}deg)`;
   }), rail.addEventListener('mouseout', e => { const el = e.target.closest('.wi'); if (el) el.style.transform=''; });
-  pick(0);
-
   // ── mapa (igual que antes) ──
   let map = null;
   const SAT = { version:8, sources:{ sat:{ type:'raster',
