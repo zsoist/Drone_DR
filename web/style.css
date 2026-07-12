@@ -3362,3 +3362,60 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 
 /* hidden debe ganar a .fv-grid{display:grid} */
 .fv-grid[hidden],.fv-map[hidden]{ display:none }
+
+/* ── BLOQUE 29g · HUD PREMIUM: glass, dock, brújula, scrims, orientación ── */
+.vl-scrim{ position:absolute; left:0; right:0; height:120px; pointer-events:none }
+.vl-scrim.top{ top:0; background:linear-gradient(180deg, rgba(6,8,11,.55), transparent) }
+.vl-scrim.bottom{ bottom:0; background:linear-gradient(0deg, rgba(6,8,11,.5), transparent) }
+.vl-corner,.vl-center-top,.vl-minimap,.vl-compass{ z-index:2 }
+.vl-metric{ border:1px solid rgba(255,255,255,.09); border-radius:12px;
+  background:linear-gradient(160deg, rgba(23,29,38,.78), rgba(10,12,16,.72));
+  -webkit-backdrop-filter:blur(14px) saturate(1.3); backdrop-filter:blur(14px) saturate(1.3);
+  box-shadow:0 8px 28px -12px rgba(0,0,0,.7); padding:9px 14px }
+.vl-metric span{ font-size:19px; letter-spacing:.02em }
+.vl-metric label{ color:#6E7B8D; margin-top:2px; display:block }
+.vl-center-top{ border-radius:11px; border:1px solid rgba(69,160,230,.28);
+  background:linear-gradient(160deg, rgba(23,29,38,.82), rgba(10,12,16,.75));
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+  box-shadow:0 8px 28px -12px rgba(0,0,0,.75) }
+.vl-compass{ position:absolute; top:calc(60px + env(safe-area-inset-top)); left:50%;
+  transform:translateX(-50%); font:700 11px var(--mono); color:#B7C2D0;
+  padding:5px 14px; border-radius:999px; border:1px solid rgba(255,255,255,.12);
+  background:rgba(10,12,16,.6); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  letter-spacing:.14em }
+.vl-dock{ display:flex; flex-direction:column; gap:7px; padding:9px;
+  border-radius:14px; border:1px solid rgba(255,255,255,.09);
+  background:linear-gradient(160deg, rgba(23,29,38,.75), rgba(10,12,16,.68));
+  -webkit-backdrop-filter:blur(14px) saturate(1.3); backdrop-filter:blur(14px) saturate(1.3);
+  box-shadow:0 10px 34px -14px rgba(0,0,0,.8) }
+.vl-dock .vl-chip,.vl-dock .vl-rec{ border:none; background:rgba(255,255,255,.05);
+  border-radius:9px; transition:background .18s var(--ease), transform .12s var(--ease) }
+.vl-dock .vl-chip:hover{ background:rgba(69,160,230,.16) }
+.vl-dock .vl-chip:active,.vl-dock .vl-rec:active{ transform:scale(.96) }
+#vl-sound.off{ color:#566274 }
+.vl-back{ border-radius:11px; background:linear-gradient(160deg, rgba(23,29,38,.8), rgba(10,12,16,.7));
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px) }
+.vl-scene{ border-radius:9px; -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  background:rgba(10,12,16,.62); border:1px solid rgba(255,255,255,.07) }
+.vl-minimap{ border:1px solid rgba(255,255,255,.14); border-radius:14px;
+  box-shadow:0 12px 36px -14px rgba(0,0,0,.85) }
+/* móvil VERTICAL: métricas compactas, dock horizontal scrolleable sobre sticks */
+@media (pointer:coarse) and (orientation:portrait){
+  .vl-corner.tr{ flex-direction:column; gap:6px }
+  .vl-metric{ min-width:64px; padding:6px 10px } .vl-metric span{ font-size:14px }
+  .vl-dock{ flex-direction:row; overflow-x:auto; max-width:calc(100vw - 24px);
+    scrollbar-width:none; -webkit-overflow-scrolling:touch }
+  .vl-dock::-webkit-scrollbar{ display:none }
+  .vl-dock .vl-chip,.vl-dock .vl-rec{ white-space:nowrap; flex:none }
+  .vl-corner.bl{ bottom:calc(34vh + 12px); left:12px; right:12px; max-width:none }
+  .vl-minimap{ width:92px; height:92px; left:auto; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); transform:none }
+  .vl-compass{ top:calc(52px + env(safe-area-inset-top)) }
+}
+/* móvil HORIZONTAL (landscape juego): dock vertical izquierda, sticks a los lados */
+@media (pointer:coarse) and (orientation:landscape){
+  .vl-corner.bl{ bottom:calc(12px + env(safe-area-inset-bottom)); left:calc(12px + env(safe-area-inset-left)) }
+  .vl-dock{ flex-direction:column }
+  .vl-stick{ width:30vw; height:52vh }
+  .vl-minimap{ width:110px; height:110px }
+  .vl-help{ display:none }
+}

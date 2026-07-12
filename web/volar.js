@@ -4,19 +4,19 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js';
-import { createRecorder } from '/flightverse/recorder.js';
-import { createAudio } from '/flightverse/audio.js';
-import { createTouchSticks } from '/flightverse/touch.js';
+import * as THREE from '/flightverse/three.js?v=60';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=60';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=60';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=60';
+import { createRecorder } from '/flightverse/recorder.js?v=60';
+import { createAudio } from '/flightverse/audio.js?v=60';
+import { createTouchSticks } from '/flightverse/touch.js?v=60';
 import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
-} from '/vendor/postprocessing180.module.js';
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js';
+} from '/vendor/postprocessing180.module.js?v=60';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=60';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -45,17 +45,22 @@ function hud() {
       <div class="vl-metric"><span id="vl-spd">—</span><label>VEL m/s</label></div>
     </div>
     <div class="vl-corner bl">
-      <button class="vl-chip" id="vl-mode"></button>
-      <button class="vl-chip" id="vl-rig"></button>
-      <button class="vl-chip" id="vl-vista">vista · orto</button>
-      <button class="vl-chip" id="vl-reto">🏁 Gate Rush</button>
-      <button class="vl-rec" id="vl-rec">● Grabar</button>
+      <div class="vl-dock">
+        <button class="vl-chip" id="vl-mode"></button>
+        <button class="vl-chip" id="vl-rig"></button>
+        <button class="vl-chip" id="vl-vista">vista · orto</button>
+        <button class="vl-chip" id="vl-reto">🏁 Gate Rush</button>
+        <button class="vl-chip" id="vl-sound">🔊 sonido</button>
+        <button class="vl-rec" id="vl-rec">● Grabar</button>
+      </div>
     </div>
     <div class="vl-corner br">
       <div class="vl-ghost" id="vl-ghost"></div>
       <div class="vl-fps" id="vl-fps"></div>
     </div>
     <div class="vl-center-top" id="vl-challenge"></div>
+    <div class="vl-compass" id="vl-compass"><span id="vl-heading">N 0°</span></div>
+    <div class="vl-scrim top"></div><div class="vl-scrim bottom"></div>
     <canvas class="vl-minimap" id="vl-minimap" width="180" height="180"></canvas>
     <div class="vl-count" id="vl-count"></div>
     <div class="vl-result" id="vl-result"></div>
@@ -257,6 +262,11 @@ async function main() {
   });
   $('#vl-rig').addEventListener('click', () => setRig(rigIx + 1));
   $('#vl-reto').addEventListener('click', () => startReto());   // arrow: startReto se declara abajo
+  $('#vl-sound').addEventListener('click', () => {
+    const m = audio.toggleMute();
+    $('#vl-sound').textContent = m ? '🔇 sonido' : '🔊 sonido';
+    $('#vl-sound').classList.toggle('off', m);
+  });
   $('#vl-share').addEventListener('click', async () => {
     const url = `${location.origin}/volar.html?m=${encodeURIComponent(CID)}`;
     try {
@@ -492,6 +502,9 @@ async function main() {
       $('#vl-fps').textContent = `${Math.round(loop.fps() || 0)} fps`;
       if (recorder.recording) recBtn.textContent = `■ REC ${recorder.seconds.toFixed(0)}s`;
       audio.update(drone.vel.length(), drone.vel.y);
+      const hdg = ((-o.yaw * 180 / Math.PI) % 360 + 360) % 360;
+      const card = ['N','NE','E','SE','S','SO','O','NO'][Math.round(hdg / 45) % 8];
+      $('#vl-heading').textContent = `${card} ${Math.round(hdg)}°`;
       const ch = $('#vl-challenge'), cnt = $('#vl-count');
       if (replay) {
         ch.textContent = 'REPLAY · ESC para salir'; cnt.classList.remove('show');
