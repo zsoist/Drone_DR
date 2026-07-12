@@ -74,7 +74,7 @@ vault vía handler nuevo) → P8 AI creator (plantilla /api/analyze + ai/router,
 drafts estructurados NUNCA código) → P9 showcase (patrón share.html + control
 de privacidad de ubicación) → P10 (governor perf, touch dual-stick móvil,
 progressiveLoad del splat, COOP/COEP si WebCodecs multithread) → P11 QA 43
-criterios. Deudas técnicas anotadas: dientes nodata del terreno (emplumar),
+criterios. Deudas técnicas: dientes nodata RESUELTOS (máscara uint8 + discard, fase A del plan);
 alineación splat<->terreno (cameras.json + offset centroide en publish),
 audio desde cero, 4 rigs restantes, minimapa MapLibre, splat en /volar
 (hoy solo terreno — honesto hasta alinear).

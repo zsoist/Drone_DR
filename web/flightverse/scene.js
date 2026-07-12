@@ -61,9 +61,40 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
   } else {
     material = new THREE.MeshLambertMaterial({ color: 0x39424f });
   }
+
+  // UNA inyección de shader con dos deberes: (a) descartar celdas nodata
+  // (adiós acantilados del borde), (b) máscara espacial de la vista mixta
+  // (el splat es dueño de su huella). Consolidada aquí porque dos
+  // onBeforeCompile sobre el mismo material se pisan.
+  let maskTex = null;
+  if (man.assets.dsm_lod_mask) {
+    const mbuf = await fetch(man.assets.dsm_lod_mask).then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
+    if (mbuf && mbuf.byteLength === rows * cols) {
+      maskTex = new THREE.DataTexture(new Uint8Array(mbuf), cols, rows, THREE.RedFormat, THREE.UnsignedByteType);
+      maskTex.flipY = true;                 // fila 0 = norte = v alto del plano
+      maskTex.needsUpdate = true;
+    }
+  }
+  const splatMask = { uSplatOn: { value: 0 }, uSplatC: { value: new THREE.Vector2() }, uSplatR: { value: 0 } };
+  material.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, splatMask);
+    if (maskTex) sh.uniforms.uValid = { value: maskTex };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFvW;\nvarying vec2 vFvUv;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvFvUv = uv;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvFvW = (modelMatrix * vec4(transformed,1.)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFvW;\nvarying vec2 vFvUv;\nuniform float uSplatOn;uniform vec2 uSplatC;uniform float uSplatR;'
+        + (maskTex ? '\nuniform sampler2D uValid;' : ''))
+      .replace('#include <map_fragment>',
+        (maskTex ? 'if (texture2D(uValid, vFvUv).r < 0.5) discard;\n' : '')
+        + 'if (uSplatOn > .5 && distance(vFvW.xz, uSplatC) < uSplatR) discard;\n#include <map_fragment>');
+  };
+
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'fv-terrain';
   return {
+    splatMask,
     mesh, hf,
     heightAt: makeHeightSampler(hf, { ...lodMeta, elev_min: lodMeta.elev_min }),
     world: lodMeta,

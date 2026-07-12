@@ -151,19 +151,7 @@ async function main() {
   const terrain = await loadTerrain(man, { anisotropy: 8 });
   scene.add(terrain.mesh);
   const W = terrain.world;
-  // máscara "best of both worlds": uniforms inyectados al Lambert del terreno;
-  // en mixta se descartan los fragmentos dentro del radio del splat
-  const mask = { uMaskOn: { value: 0 }, uMaskC: { value: new THREE.Vector2() }, uMaskR: { value: 0 } };
-  terrain.mesh.material.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, mask);
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vFvW;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvFvW = (modelMatrix * vec4(transformed,1.)).xyz;');
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vFvW;\nuniform float uMaskOn;uniform vec2 uMaskC;uniform float uMaskR;')
-      .replace('#include <map_fragment>', 'if (uMaskOn > .5 && distance(vFvW.xz, uMaskC) < uMaskR) discard;\n#include <map_fragment>');
-  };
-  terrain.mesh.material.needsUpdate = true;
+  const mask = { uMaskOn: terrain.splatMask.uSplatOn, uMaskC: terrain.splatMask.uSplatC, uMaskR: terrain.splatMask.uSplatR };
 
   // splat héroe: solo si splat_align.py lo dejó 'aligned' (RMSE sub-métrico).
   // Carga DESPUÉS del terreno (el juego ya es volable mientras llega el ksplat).

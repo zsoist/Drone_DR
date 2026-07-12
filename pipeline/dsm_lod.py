@@ -47,11 +47,14 @@ def build(cid: str, target: int = 256) -> dict:
     spacing_x = step * abs(gt[1]) * m_lon
     spacing_z = step * abs(gt[5]) * M_PER_DEG_LAT
 
+    mask = (~invalid).astype(np.uint8) * 255
+    (mdir / f"dsm_lod{target}.mask.bin").write_bytes(mask.tobytes())
     bin_name = f"dsm_lod{target}.bin"
     (mdir / bin_name).write_bytes(sub.astype("<f4").tobytes())
     side = {
         "clip_id": cid,
         "bin": bin_name,
+        "mask_bin": f"dsm_lod{target}.mask.bin",
         "grid": [hh, ww],                       # filas, columnas (fila 0 = norte)
         "step_px": step,
         "spacing_m": [round(spacing_x, 4), round(spacing_z, 4)],  # x=este, z=sur
