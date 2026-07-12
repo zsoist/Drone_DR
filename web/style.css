@@ -3438,3 +3438,20 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   font:700 14px var(--font); letter-spacing:.12em; color:#fff; cursor:pointer;
   background:linear-gradient(135deg,#45A0E6,#5A78E8) }
 #vl-guide-ok:active{ transform:scale(.98) }
+
+/* BLOQUE 29i · panel de imagen + fixes de layout */
+.vl-grade{ position:absolute; left:calc(14px + env(safe-area-inset-left)); bottom:50%;
+  transform:translateY(50%); display:none; flex-direction:column; gap:9px; z-index:5;
+  padding:16px 18px; border-radius:14px; border:1px solid rgba(69,160,230,.28);
+  background:linear-gradient(160deg, rgba(23,29,38,.92), rgba(10,12,16,.88));
+  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+  box-shadow:0 20px 60px -20px rgba(0,0,0,.9); pointer-events:auto; width:220px }
+.vl-grade.show{ display:flex }
+.vl-grade-k{ font:700 10px var(--mono); letter-spacing:.3em; color:var(--accent) }
+.vl-grade label{ font:600 10.5px var(--mono); color:#8A97A8; display:flex;
+  flex-direction:column; gap:4px; text-transform:uppercase; letter-spacing:.12em }
+.vl-grade input[type=range]{ accent-color:#45A0E6; height:22px }
+#gr-reset{ margin-top:4px; padding:8px; border:1px solid var(--line); border-radius:8px;
+  background:transparent; color:var(--text-2); font:600 11px var(--font); cursor:pointer }
+.vl-help{ bottom:190px }   /* no pisar el minimapa */
+@media (pointer:coarse){ .vl-grade{ width:min(260px, calc(100vw - 32px)) } }

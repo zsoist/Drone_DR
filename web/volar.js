@@ -15,6 +15,7 @@ import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
+  BrightnessContrastEffect, HueSaturationEffect,
 } from '/vendor/postprocessing180.module.js?v=60';
 import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=60';
 
@@ -51,6 +52,7 @@ function hud() {
         <button class="vl-chip" id="vl-vista">vista · orto</button>
         <button class="vl-chip" id="vl-reto">🏁 Gate Rush</button>
         <button class="vl-chip" id="vl-sound">🔊 sonido</button>
+        <button class="vl-chip" id="vl-ajustes">🎚 imagen</button>
         <button class="vl-chip" id="vl-ayuda">? guía</button>
         <button class="vl-rec" id="vl-rec">● Grabar</button>
       </div>
@@ -65,6 +67,15 @@ function hud() {
     <canvas class="vl-minimap" id="vl-minimap" width="180" height="180"></canvas>
     <div class="vl-count" id="vl-count"></div>
     <div class="vl-result" id="vl-result"></div>
+    <div class="vl-grade" id="vl-grade">
+      <div class="vl-grade-k">IMAGEN</div>
+      <label>Brillo<input type="range" id="gr-b" min="-0.3" max="0.3" step="0.01" value="0"></label>
+      <label>Contraste<input type="range" id="gr-c" min="-0.3" max="0.4" step="0.01" value="0.06"></label>
+      <label>Saturación<input type="range" id="gr-s" min="-0.5" max="0.5" step="0.01" value="0.06"></label>
+      <label>Bloom<input type="range" id="gr-g" min="0" max="1.2" step="0.02" value="0.32"></label>
+      <label>Viñeta<input type="range" id="gr-v" min="0" max="0.9" step="0.02" value="0.42"></label>
+      <button id="gr-reset">Restablecer</button>
+    </div>
     <div class="vl-guide" id="vl-guide">
       <div class="vl-guide-card">
         <div class="vl-guide-k">GUÍA DE VUELO</div>
@@ -119,13 +130,21 @@ async function main() {
   scene.add(sun);
 
   // look premium: un solo EffectPass fusiona SMAA+Bloom+ACES+Vignette en un shader
+  // NEUTRAL (no ACES): los colores del splat ya son display-referred — ACES
+  // los lavaba; bloom umbral 1.0 para que los blancos del splat no lo disparen
+  const fx = {
+    bc: new BrightnessContrastEffect({ brightness: 0, contrast: 0.06 }),
+    hs: new HueSaturationEffect({ saturation: 0.06 }),
+    bloom: new BloomEffect({ mipmapBlur: true, luminanceThreshold: 1.0, intensity: 0.32, radius: 0.6 }),
+    vig: new VignetteEffect({ offset: 0.3, darkness: 0.42 }),
+  };
   const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType });
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new EffectPass(camera,
     new SMAAEffect({ preset: SMAAPreset.HIGH }),
-    new BloomEffect({ mipmapBlur: true, luminanceThreshold: 0.9, intensity: 0.55, radius: 0.7 }),
-    new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC }),
-    new VignetteEffect({ offset: 0.32, darkness: 0.48 }),
+    fx.bloom, fx.bc, fx.hs,
+    new ToneMappingEffect({ mode: ToneMappingMode.NEUTRAL }),
+    fx.vig,
   ));
 
   const terrain = await loadTerrain(man, { anisotropy: 8 });
@@ -179,7 +198,7 @@ async function main() {
   // props que giran con la velocidad, gimbal frontal — solo primitivas three
   const drone = createDrone({ heightAt: terrain.heightAt, collide, spawn: man.spawn });
   const dmesh = new THREE.Group();
-  const matBody = new THREE.MeshLambertMaterial({ color: 0xBFC7D2 });
+  const matBody = new THREE.MeshLambertMaterial({ color: 0xE4E9F1 });
   const matDark = new THREE.MeshLambertMaterial({ color: 0x2A313B });
   const matLed = new THREE.MeshLambertMaterial({ color: 0x45A0E6, emissive: 0x2b6ea8 });
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.4, 6, 12), matBody);
@@ -191,7 +210,13 @@ async function main() {
   gimbal.position.set(0, -0.05, -0.32);
   const led = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.03), matLed);
   led.position.set(0, 0.03, 0.31);
-  dmesh.add(body, top, gimbal, led);
+  const navL = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 5),
+    new THREE.MeshBasicMaterial({ color: 0xff3b30 }));
+  navL.position.set(-0.34, 0.02, -0.4);
+  const navR = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 5),
+    new THREE.MeshBasicMaterial({ color: 0x34c759 }));
+  navR.position.set(0.34, 0.02, -0.4);
+  dmesh.add(body, top, gimbal, led, navL, navR);
   const props = [];
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
     const arm = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.035, 0.05), matDark);
@@ -229,11 +254,23 @@ async function main() {
       (g0 ?? 0) + (p.rel_alt || 0),
       (clat - p.lat) * M_LAT,
     ));
-    const line = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color: 0x52C79A, transparent: true, opacity: 0.55 }));
-    const marker = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 10),
-      new THREE.MeshLambertMaterial({ color: 0x52C79A }));
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const line = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, Math.min(600, pts.length * 3), 0.22, 6, false),
+      new THREE.MeshBasicMaterial({ color: 0x52C79A, transparent: true, opacity: 0.32,
+        blending: THREE.AdditiveBlending, depthWrite: false }));
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(0.55, 14, 12),
+      new THREE.MeshBasicMaterial({ color: 0x7dffc9 }));
+    const haloCv = document.createElement('canvas'); haloCv.width = haloCv.height = 64;
+    const hc = haloCv.getContext('2d');
+    const grd = hc.createRadialGradient(32, 32, 2, 32, 32, 30);
+    grd.addColorStop(0, 'rgba(125,255,201,.85)'); grd.addColorStop(1, 'rgba(125,255,201,0)');
+    hc.fillStyle = grd; hc.fillRect(0, 0, 64, 64);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: new THREE.CanvasTexture(haloCv), transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending }));
+    halo.scale.setScalar(4.5);
+    marker.add(halo);
     const grp = new THREE.Group();
     grp.add(line); grp.add(marker); grp.visible = true;
     scene.add(grp);
@@ -282,6 +319,26 @@ async function main() {
   $('#vl-rig').addEventListener('click', () => setRig(rigIx + 1));
   $('#vl-reto').addEventListener('click', () => startReto());   // arrow: startReto se declara abajo
   $('#vl-ayuda').addEventListener('click', () => $('#vl-guide').classList.add('show'));
+  $('#vl-ajustes').addEventListener('click', () => $('#vl-grade').classList.toggle('show'));
+  const GRADE_KEY = 'ab.fv.grade';
+  const applyGrade = g => {
+    fx.bc.brightness = g.b; fx.bc.contrast = g.c;
+    fx.hs.saturation = g.s;
+    fx.bloom.intensity = g.g;
+    fx.vig.darkness = g.v;
+    for (const [id, k] of [['gr-b','b'],['gr-c','c'],['gr-s','s'],['gr-g','g'],['gr-v','v']]) $('#'+id).value = g[k];
+  };
+  const defGrade = { b: 0, c: 0.06, s: 0.06, g: 0.32, v: 0.42 };
+  let grade = { ...defGrade, ...(JSON.parse(localStorage.getItem(GRADE_KEY) || '{}')) };
+  applyGrade(grade);
+  document.getElementById('vl-grade').addEventListener('input', e => {
+    const map = { 'gr-b':'b','gr-c':'c','gr-s':'s','gr-g':'g','gr-v':'v' };
+    const k = map[e.target.id]; if (!k) return;
+    grade[k] = parseFloat(e.target.value);
+    applyGrade(grade);
+    localStorage.setItem(GRADE_KEY, JSON.stringify(grade));
+  });
+  $('#gr-reset').addEventListener('click', () => { grade = { ...defGrade }; applyGrade(grade); localStorage.removeItem(GRADE_KEY); });
   $('#vl-guide-ok').addEventListener('click', () => {
     $('#vl-guide').classList.remove('show');
     localStorage.setItem('ab.fv.guided', '1');
@@ -495,6 +552,7 @@ async function main() {
     },
     render(alpha) {
       const o = drone.lerpPose(alpha, P);
+      if (ghost?.on) ghost.marker.children[0].scale.setScalar(4 + Math.sin(simT * 3.2) * 0.8);
       const spin = (14 + drone.vel.length() * 3) * STEP;
       for (const pr of props) pr.g.rotation.y += spin * pr.dir;
       dmesh.position.copy(P);
@@ -546,6 +604,22 @@ async function main() {
       }
     },
   });
+  // governor de perf: ajusta pixelRatio según fps medidos (fill-rate del splat)
+  let dprNow = Math.min(devicePixelRatio, 2);
+  setInterval(() => {
+    const f = loop.fps() || 60;
+    const maxDpr = Math.min(devicePixelRatio, 2);
+    let want = dprNow;
+    if (f < 52) want = Math.max(1, dprNow - 0.25);
+    else if (f > 58 && dprNow < maxDpr) want = Math.min(maxDpr, dprNow + 0.25);
+    if (want !== dprNow) {
+      dprNow = want;
+      renderer.setPixelRatio(dprNow);
+      renderer.setSize(innerWidth, innerHeight);
+      composer.setSize(innerWidth, innerHeight);
+    }
+  }, 2000);
+
   loop.start();
   report.ready = true;
 
