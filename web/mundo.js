@@ -48,8 +48,13 @@ async function boot() {
       <h1>Mundo</h1>
       <p class="fv-sub">Vuela tus propios mapas — cada escena es un lugar real, reconstruido desde tus vuelos.</p>
       <div class="fv-statbar" id="fv-stats"></div>
+      <div class="fv-viewtoggle">
+        <button class="on" data-fvv="cards">Tarjetas</button>
+        <button data-fvv="map">Mapa</button>
+      </div>
     </header>
     <div class="fv-grid" id="fv-grid"><div class="fv-loading">Cargando escenas…</div></div>
+    <div class="fv-map" id="fv-map" hidden></div>
   </div>`;
   const grid = document.getElementById('fv-grid');
   let sys;
@@ -82,6 +87,43 @@ async function boot() {
     (secs ? `<span><b>${dur(secs)}</b> de vuelo real capturado</span>` : '');
 
   grid.innerHTML = scenes.map(card).join('');
+
+  // vista mapa: MapLibre satelital con pin por escena (flyTo + VOLAR)
+  let map = null;
+  const SAT = { version: 8, sources: { sat: { type: 'raster',
+    tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+    tileSize: 256, attribution: 'Esri' } }, layers: [{ id: 'sat', type: 'raster', source: 'sat' }] };
+  function showMap() {
+    const el = document.getElementById('fv-map');
+    el.hidden = false; grid.hidden = true;
+    if (map) { map.resize(); return; }
+    map = new maplibregl.Map({ container: el, style: SAT, center: [-74.06, 4.75], zoom: 11, attributionControl: false });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    const bounds = new maplibregl.LngLatBounds();
+    for (const sc of scenes) {
+      const c = sc.world?.center_wgs84;
+      if (!c) continue;
+      bounds.extend(c);
+      const pop = new maplibregl.Popup({ offset: 18, closeButton: false }).setHTML(
+        `<div style="font:600 12px ui-monospace,monospace;color:#111">${esc(sc.name)}<br>` +
+        `<span style="color:#556">${fechaDe(sc.clip_id)}</span><br>` +
+        (sc.capabilities?.terrain
+          ? `<a href="volar.html?m=${encodeURIComponent(sc.clip_id)}" style="display:inline-block;margin-top:6px;padding:6px 12px;border-radius:6px;background:#2b7fd4;color:#fff;text-decoration:none;font-weight:700">VOLAR</a>`
+          : 'en preparación') + '</div>');
+      const dot = document.createElement('div');
+      dot.className = 'fv-pin' + (sc.capabilities?.splat ? ' splat' : '');
+      new maplibregl.Marker({ element: dot }).setLngLat(c).setPopup(pop).addTo(map);
+      dot.addEventListener('click', () => map.flyTo({ center: c, zoom: 15.5, speed: 1.4 }));
+    }
+    if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 70, maxZoom: 14 });
+  }
+  document.querySelector('.fv-viewtoggle').addEventListener('click', e => {
+    const b = e.target.closest('[data-fvv]');
+    if (!b) return;
+    document.querySelectorAll('.fv-viewtoggle button').forEach(x => x.classList.toggle('on', x === b));
+    if (b.dataset.fvv === 'map') showMap();
+    else { document.getElementById('fv-map').hidden = true; grid.hidden = false; }
+  });
 }
 
 boot().catch(e => {

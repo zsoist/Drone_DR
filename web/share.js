@@ -91,6 +91,10 @@ body.innerHTML = `
   <div class="panel rise">
     <div class="ph">Visor 3D
       <span class="spacer" style="flex:1"></span>
+      <a id="sh-volar" href="volar.html?m=${encodeURIComponent(cid)}" style="display:none;
+        text-decoration:none;font:650 12px var(--font);letter-spacing:.1em;color:#fff;
+        padding:8px 14px;border-radius:8px;background:linear-gradient(135deg,#45A0E6,#5A78E8);
+        margin-right:10px">✈ VOLAR EN 3D</a>
       <div class="seg">
         <button class="on" data-v="cloud">Nube de puntos</button>
         ${meshOk ? '<button data-v="mesh">Malla texturizada</button>' : ''}
@@ -123,7 +127,10 @@ body.innerHTML = `
   </div>`;
 
 if (splat && splats.length > 1) {
-  const seg = document.querySelector('.seg');
+  fetch(`data/models/${cid}/scene.v2.json`).then(r => r.ok ? r.json() : null)
+  .then(sc => { if (sc?.capabilities?.terrain) { const b = document.getElementById('sh-volar'); if (b) b.style.display = 'inline-block'; } })
+  .catch(() => {});
+const seg = document.querySelector('.seg');
   const sel = document.createElement('select');
   sel.className = 'share-splat-select';
   sel.title = 'Versión del splat';

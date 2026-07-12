@@ -3321,3 +3321,44 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .vl-stick-nub{ position:absolute; inset:0; margin:auto; width:46px; height:46px;
   border-radius:50%; background:rgba(69,160,230,.75); box-shadow:0 2px 14px rgba(69,160,230,.5) }
 @media (pointer:coarse){ .vl-stick{ display:block } .vl-help{ display:none } }
+
+/* BLOQUE 29f · UX táctil iOS/iPad: targets 44px+, safe-areas, chips-botón */
+.vl-chip{ pointer-events:auto; cursor:pointer; font:600 11px var(--mono); color:#B7C2D0;
+  padding:5px 10px; border-radius:7px; border:1px solid rgba(255,255,255,.14);
+  background:rgba(10,12,16,.55); text-align:left; -webkit-tap-highlight-color:transparent }
+.vl-chip:hover{ border-color:rgba(69,160,230,.5) }
+#vl-mode{ color:var(--accent) }
+.vl-corner.tl{ top:calc(14px + env(safe-area-inset-top)); left:calc(14px + env(safe-area-inset-left)) }
+.vl-corner.tr{ top:calc(14px + env(safe-area-inset-top)); right:calc(14px + env(safe-area-inset-right)) }
+.vl-corner.bl{ bottom:calc(14px + env(safe-area-inset-bottom)); left:calc(14px + env(safe-area-inset-left)) }
+.vl-corner.br{ bottom:calc(14px + env(safe-area-inset-bottom)); right:calc(14px + env(safe-area-inset-right)) }
+.vl-canvas{ touch-action:none }
+@media (pointer:coarse){
+  .vl-chip,.vl-rec,.vl-back{ padding:12px 15px; font-size:13px; border-radius:11px;
+    min-height:44px; display:flex; align-items:center }
+  .vl-corner.bl{ gap:9px; max-width:46vw }
+  .vl-metric{ min-width:78px }
+  .vl-minimap{ bottom:calc(12px + env(safe-area-inset-bottom)) }
+  .vl-count{ font-size:72px }
+  .vl-result-btns button,.vl-result-btns a{ padding:13px 18px; font-size:14px }
+}
+@media (pointer:coarse) and (max-width:920px){
+  .vl-corner.bl{ bottom:calc(30vh + 20px) }   /* chips sobre el stick izquierdo */
+}
+
+/* BLOQUE 28b · mundo: toggle de vista + mapa + pins */
+.fv-viewtoggle{ display:inline-flex; gap:4px; margin-top:14px; padding:4px;
+  border:1px solid var(--line); border-radius:9px; background:var(--surface) }
+.fv-viewtoggle button{ font:600 12px var(--font); color:var(--text-2); border:none;
+  background:transparent; padding:7px 16px; border-radius:6px; cursor:pointer;
+  min-height:34px; -webkit-tap-highlight-color:transparent }
+.fv-viewtoggle button.on{ background:var(--accent-dim); color:var(--accent) }
+.fv-map{ height:min(64dvh,620px); border-radius:var(--r-lg); overflow:hidden;
+  border:1px solid var(--line); margin-bottom:32px }
+.fv-pin{ width:18px; height:18px; border-radius:50%; cursor:pointer;
+  background:#566274; border:2.5px solid #E6EBF2; box-shadow:0 2px 10px rgba(0,0,0,.6) }
+.fv-pin.splat{ background:var(--accent); animation:pinPulseFv 2.2s ease-in-out infinite }
+@keyframes pinPulseFv{ 50%{ box-shadow:0 0 0 7px rgba(69,160,230,.25) } }
+
+/* hidden debe ganar a .fv-grid{display:grid} */
+.fv-grid[hidden],.fv-map[hidden]{ display:none }

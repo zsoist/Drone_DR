@@ -155,15 +155,15 @@ export function createDrone({ heightAt, collide, spawn }) {
 export const RIGS = [
   { key: 'chase', label: 'Persecución', fov: 60,
     fn: (p, o, cam, dt) => {
-      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(14);
-      const want = p.clone().add(back).add(new THREE.Vector3(0, 6, 0));
+      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(8);
+      const want = p.clone().add(back).add(new THREE.Vector3(0, 3.2, 0));
       cam.position.lerp(want, 1 - Math.exp(-dt * 5));
       cam.lookAt(p);
     } },
   { key: 'chase-far', label: 'Persecución lejana', fov: 55,
     fn: (p, o, cam, dt) => {
-      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(34);
-      const want = p.clone().add(back).add(new THREE.Vector3(0, 16, 0));
+      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(20);
+      const want = p.clone().add(back).add(new THREE.Vector3(0, 8, 0));
       cam.position.lerp(want, 1 - Math.exp(-dt * 3));
       cam.lookAt(p);
     } },
@@ -174,20 +174,20 @@ export const RIGS = [
     } },
   { key: 'top', label: 'Cenital', fov: 55,
     fn: (p, o, cam, dt) => {
-      cam.position.lerp(p.clone().add(new THREE.Vector3(0, 90, 0.01)), 1 - Math.exp(-dt * 4));
+      cam.position.lerp(p.clone().add(new THREE.Vector3(0, 55, 0.01)), 1 - Math.exp(-dt * 4));
       cam.lookAt(p);
     } },
   { key: 'orbit', label: 'Órbita', fov: 58, t: 0,
     fn: (p, o, cam, dt, rig) => {
       rig.t = (rig.t || 0) + dt * 0.25;
       cam.position.lerp(p.clone().add(new THREE.Vector3(
-        Math.cos(rig.t) * 22, 10, Math.sin(rig.t) * 22)), 1 - Math.exp(-dt * 6));
+        Math.cos(rig.t) * 12, 5.5, Math.sin(rig.t) * 12)), 1 - Math.exp(-dt * 6));
       cam.lookAt(p);
     } },
   { key: 'lado', label: 'Lateral', fov: 50,
     fn: (p, o, cam, dt) => {
-      const side = new THREE.Vector3(Math.cos(o.yaw), 0, -Math.sin(o.yaw)).multiplyScalar(20);
-      cam.position.lerp(p.clone().add(side).add(new THREE.Vector3(0, 4, 0)), 1 - Math.exp(-dt * 4));
+      const side = new THREE.Vector3(Math.cos(o.yaw), 0, -Math.sin(o.yaw)).multiplyScalar(10);
+      cam.position.lerp(p.clone().add(side).add(new THREE.Vector3(0, 2.4, 0)), 1 - Math.exp(-dt * 4));
       cam.lookAt(p);
     } },
 ];

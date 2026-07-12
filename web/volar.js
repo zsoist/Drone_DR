@@ -37,6 +37,7 @@ function hud() {
   <div class="vl-hud" id="vl-hud">
     <div class="vl-corner tl">
       <a class="vl-back" href="mundo.html">← Mundo</a>
+      <button class="vl-chip" id="vl-share">↗ Compartir</button>
       <div class="vl-scene" id="vl-scene"></div>
     </div>
     <div class="vl-corner tr">
@@ -44,8 +45,10 @@ function hud() {
       <div class="vl-metric"><span id="vl-spd">—</span><label>VEL m/s</label></div>
     </div>
     <div class="vl-corner bl">
-      <div class="vl-mode" id="vl-mode"></div>
-      <div class="vl-rig" id="vl-rig"></div>
+      <button class="vl-chip" id="vl-mode"></button>
+      <button class="vl-chip" id="vl-rig"></button>
+      <button class="vl-chip" id="vl-vista">vista · orto</button>
+      <button class="vl-chip" id="vl-reto">🏁 Gate Rush</button>
       <button class="vl-rec" id="vl-rec">● Grabar</button>
     </div>
     <div class="vl-corner br">
@@ -122,6 +125,7 @@ async function main() {
       splat = s;
       $('#vl-scene').textContent = `${man.name} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
       report.splat = { aligned: s.aligned, rmse_m: s.rmse };
+      vista = 0; applyVista();
     }).catch(e => {
       report.errors.push('splat: ' + e.message);
       $('#vl-scene').textContent = man.name;
@@ -153,17 +157,37 @@ async function main() {
     return coll.closestPointToPoint(collV.copy(p), {}, 0, r);
   };
 
-  // dron visible (proxy honesto: cuerpo + 4 rotores, sin assets externos)
+  // dron rediseñado: proporciones DJI (~0.85m), cuerpo bajo, brazos finos,
+  // props que giran con la velocidad, gimbal frontal — solo primitivas three
   const drone = createDrone({ heightAt: terrain.heightAt, collide, spawn: man.spawn });
   const dmesh = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 1.6),
-    new THREE.MeshLambertMaterial({ color: 0xE6EBF2 }));
-  dmesh.add(body);
-  const rotG = new THREE.MeshLambertMaterial({ color: 0x45A0E6 });
+  const matBody = new THREE.MeshLambertMaterial({ color: 0xBFC7D2 });
+  const matDark = new THREE.MeshLambertMaterial({ color: 0x2A313B });
+  const matLed = new THREE.MeshLambertMaterial({ color: 0x45A0E6, emissive: 0x2b6ea8 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.11, 0.62), matBody);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.07, 0.44), matDark);
+  top.position.y = 0.08;
+  const gimbal = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), matDark);
+  gimbal.position.set(0, -0.05, -0.32);
+  const led = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.03), matLed);
+  led.position.set(0, 0.03, 0.31);
+  dmesh.add(body, top, gimbal, led);
+  const props = [];
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.08, 12), rotG);
-    r.position.set(x * 1.05, 0.25, z * 1.05);
-    dmesh.add(r);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.035, 0.05), matDark);
+    arm.position.set(x * 0.21, 0.01, z * 0.24);
+    arm.rotation.y = Math.atan2(z, x) + Math.PI / 2;
+    const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.05, 10), matDark);
+    motor.position.set(x * 0.34, 0.05, z * 0.4);
+    const prop = new THREE.Group();
+    for (const a of [0, Math.PI / 2]) {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.008, 0.03), matBody);
+      blade.rotation.y = a;
+      prop.add(blade);
+    }
+    prop.position.set(x * 0.34, 0.085, z * 0.4);
+    props.push({ g: prop, dir: x * z > 0 ? 1 : -1 });
+    dmesh.add(arm, motor, prop);
   }
   scene.add(dmesh);
 
@@ -217,7 +241,30 @@ async function main() {
     camera.fov = RIGS[rigIx].fov; camera.updateProjectionMatrix();
     $('#vl-rig').textContent = `cámara · ${RIGS[rigIx].label}`;
   };
-  setMode('asistido'); setRig(0);
+  // vista: 0 mixta · 1 foto-real (solo splat) · 2 orto (solo terreno)
+  let vista = 2;
+  const applyVista = () => {
+    if (!splat && vista !== 2) { vista = 2; }
+    terrain.mesh.visible = vista !== 1;
+    if (splat) splat.object.visible = vista !== 2;
+    $('#vl-vista').textContent = 'vista · ' + (vista === 0 ? 'mixta' : vista === 1 ? 'foto-real' : 'orto');
+  };
+  const cycleVista = () => { vista = (vista + 1) % 3; applyVista(); };
+  $('#vl-vista').addEventListener('click', cycleVista);
+  $('#vl-mode').addEventListener('click', () => {
+    const ks = Object.keys(MODES);
+    setMode(ks[(ks.indexOf(modeKey) + 1) % ks.length]);
+  });
+  $('#vl-rig').addEventListener('click', () => setRig(rigIx + 1));
+  $('#vl-reto').addEventListener('click', () => startReto());   // arrow: startReto se declara abajo
+  $('#vl-share').addEventListener('click', async () => {
+    const url = `${location.origin}/volar.html?m=${encodeURIComponent(CID)}`;
+    try {
+      if (navigator.share) await navigator.share({ title: `Vuela ${man.name} — AeroBrain`, url });
+      else { await navigator.clipboard.writeText(url); $('#vl-share').textContent = '✓ copiado'; setTimeout(() => { $('#vl-share').textContent = '↗ Compartir'; }, 1600); }
+    } catch { /* usuario canceló */ }
+  });
+  setMode('asistido'); setRig(0); applyVista();
   const modeKeys = { Digit1: 'cinematico', Digit2: 'asistido', Digit3: 'fpv', Digit4: 'arcade', Digit5: 'dios' };
   addEventListener('keydown', e => {
     if (modeKeys[e.code]) setMode(modeKeys[e.code]);
@@ -225,7 +272,7 @@ async function main() {
     if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
     if (e.code === 'KeyH') $('#vl-help').classList.toggle('show');
     if (e.code === 'KeyT') startReto();
-    if (e.code === 'KeyP' && splat) splat.object.visible = !splat.object.visible;
+    if (e.code === 'KeyP') cycleVista();
     if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
     if (e.code === 'Escape' && replay) { replay = null; if (resultShown) $('#vl-result').classList.add('show'); }
   });
@@ -413,6 +460,8 @@ async function main() {
     },
     render(alpha) {
       const o = drone.lerpPose(alpha, P);
+      const spin = (14 + drone.vel.length() * 3) * STEP;
+      for (const pr of props) pr.g.rotation.y += spin * pr.dir;
       dmesh.position.copy(P);
       dmesh.rotation.set(0, o.yaw, 0, 'YXZ');
       dmesh.rotation.x = THREE.MathUtils.clamp(-drone.vel.dot(new THREE.Vector3(-Math.sin(o.yaw), 0, -Math.cos(o.yaw))) * 0.012, -0.35, 0.35);
