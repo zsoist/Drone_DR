@@ -4,6 +4,7 @@ const ICONS = {
   grid: '<rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/>',
   list: '<path d="M7 5h10M7 10h10M7 15h10"/><circle cx="3.5" cy="5" r="0.8"/><circle cx="3.5" cy="10" r="0.8"/><circle cx="3.5" cy="15" r="0.8"/>',
   map: '<path d="M3 5.5L7.5 3.5l5 2 4.5-2v11l-4.5 2-5-2L3 16.5zM7.5 3.5v11M12.5 5.5v11"/>',
+  globe: '<circle cx="10" cy="10" r="7"/><path d="M3 10h14M10 3c2.6 2.3 2.6 11.7 0 14-2.6-2.3-2.6-11.7 0-14z"/>',
   pin: '<path d="M10 17.5s-5.5-4.6-5.5-8.7a5.5 5.5 0 1111 0c0 4.1-5.5 8.7-5.5 8.7z"/><circle cx="10" cy="8.5" r="2"/>',
   route: '<circle cx="4.5" cy="15.5" r="2"/><circle cx="15.5" cy="4.5" r="2"/><path d="M6.5 15.5H12a3 3 0 003-3v-1a3 3 0 00-3-3H8a3 3 0 01-3-3"/>',
   mountain: '<path d="M2.5 16.5L8 6l3 5.5 2-3 4.5 8z"/>',

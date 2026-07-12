@@ -26,6 +26,7 @@ const NAV = [
   { href: 'index.html', ic: 'grid', label: 'Vuelos' },
   { href: 'drone.html', ic: 'drone', label: 'Dron' },
   { href: 'trips.html', ic: 'pin', label: 'Viajes' },
+  { href: 'mundo.html', ic: 'globe', label: 'Mundo' },
   { href: 'studio.html', ic: 'film', label: 'Studio' },
   { href: 'tresd.html', ic: 'cube', label: '3D' },
   { href: 'splatlab.html', ic: 'spark', label: 'Splat Lab' },
