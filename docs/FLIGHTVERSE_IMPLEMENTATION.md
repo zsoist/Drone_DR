@@ -223,3 +223,20 @@ mando real, minimapa MapLibre opcional.
   (sub 80→20Hz) y más largo (~1.9s), cuerpo con lowpass más profundo.
 - Colisión premium: flash rojo de viñeta 0.5s al chocar (vl-hitfx).
 - QA: &fuego=mg = ráfaga sostenida → 18 balas/1.6s, 0 errores, 70fps.
+
+## v113 (2026-07-12) — Modo Tierra: horda de zombies ORIGINAL
+- LEGAL: NO se extrajo nada del APK/DZ de Black Ops Zombies (copyright Activision).
+  Solo mecánicas (idea, no protegible): zombies procedurales originales de
+  primitivas, IA de persecución, oleadas. Cero assets de terceros.
+- zombies.js: humanoide encorvado (cápsulas/esferas) con animación de caminata
+  (balanceo piernas/brazos + bamboleo), persigue al dron por XZ; y = terreno.
+- Suelo CAMINABLE: walkable() muestrea 4 vecinos, rechaza pendiente >4.5m —
+  los zombies no se paran en acantilados de la fotogrametría (donde SÍ pueden ir
+  tiene sentido físico). Mejora directa del límite de colisión a nivel de suelo.
+- Oleadas: 4+2·wave zombies, hp y velocidad crecen por oleada; spawn en anillo
+  caminable 12-40m alrededor del dron.
+- Integración armamento: zombies son hittables (.zombie); MG daño acumulativo +
+  sangre, misil directo mata, explosión salpica radio. HUD: oleada/abatidos/
+  activos + barra de salud (mordida −8hp con flash rojo).
+- Botón "Modo Tierra" en el dock (sección juego). QA &zombies=1 → oleada 1,
+  6 activos, 70fps, 0 errores.

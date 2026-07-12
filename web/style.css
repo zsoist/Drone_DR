@@ -3929,3 +3929,18 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   background:radial-gradient(ellipse at center, transparent 55%, rgba(220,60,40,.45) 100%) }
 .vl-hitfx.go{ animation:vlHit .5s var(--ease) }
 @keyframes vlHit{ 0%{ opacity:1 } 100%{ opacity:0 } }
+
+/* ── BLOQUE 51: HUD de Modo Tierra (horda) ── */
+#vl-zombies.on{ color:#ff9d8a; border-left-color:#E85A5A !important }
+.vl-zhud{ display:none; position:absolute; top:calc(96px + env(safe-area-inset-top)); left:50%;
+  transform:translateX(-50%); flex-direction:column; align-items:center; gap:6px; z-index:25 }
+.vl-zhud.show{ display:flex; animation:vlDockIn .3s var(--ease) }
+.vl-zwave{ display:flex; flex-direction:column; align-items:center; gap:1px;
+  padding:6px 18px; border-radius:12px; border:1px solid rgba(232,90,90,.3);
+  background:rgba(20,10,10,.72); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px) }
+.vl-zwave span{ font:800 13px var(--mono); color:#ff9d8a; letter-spacing:.12em }
+.vl-zwave small{ font:600 9.5px var(--mono); color:#8A97A8; letter-spacing:.06em }
+.vl-zhp{ width:180px; height:6px; border-radius:999px; overflow:hidden;
+  background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.12) }
+.vl-zhp i{ display:block; width:100%; height:100%; transform-origin:left;
+  background:linear-gradient(90deg, #E85A5A, #52C79A); transition:transform .2s var(--ease) }

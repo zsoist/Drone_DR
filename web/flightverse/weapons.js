@@ -6,7 +6,7 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=111';
+import * as THREE from '/flightverse/three.js?v=113';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -55,6 +55,7 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     dot: glowTex([[0, 'rgba(255,225,170,1)'], [0.5, 'rgba(255,170,80,.8)'], [1, 'rgba(255,120,40,0)']], 32),
     puff3d: puffTex(),
     scorch: glowTex([[0, 'rgba(8,6,4,.85)'], [0.55, 'rgba(12,10,8,.5)'], [1, 'rgba(14,12,10,0)']], 96),
+    blood: glowTex([[0, 'rgba(150,20,24,.95)'], [0.5, 'rgba(110,10,14,.6)'], [1, 'rgba(80,6,10,0)']], 48),
   };
   const S = { missiles: [], bullets: [], parts: [], decals: [], frags: [], rubble: [], fires: [], booms: [],
     weapon: 'm', cool: 0, fired: 0, exploded: 0, destroyed: 0,
@@ -94,6 +95,23 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     light.position.copy(p).y += 1.2;
     group.add(light);
     S.fires.push({ p: p.clone(), t: 0, life: 5.5, acc: 0, light });
+  }
+
+  function bloodBurst(pos, big = 1) {
+    for (let i = 0; i < 8 * big; i++) {
+      const v = new THREE.Vector3((Math.random() - 0.5) * 6, 1 + Math.random() * 4, (Math.random() - 0.5) * 6);
+      emit(TEX.blood, pos, v, 0.3, 0.9 + Math.random(), 0.4 + Math.random() * 0.3,
+        THREE.NormalBlending, { drag: 2, tint0: 0x7a1518 });
+    }
+  }
+  function hitZombie(h, dmg, pos) {
+    h.hp -= dmg;
+    bloodBurst(pos, 1);
+    if (h.hp <= 0 && !h.g.userData.dead) {
+      h.g.userData.dead = true;
+      bloodBurst(pos, 2.2);
+      S.destroyed++;
+    }
   }
 
   function explode(p, big = 1) {
@@ -197,6 +215,9 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     group.add(sc);
     S.decals.push(sc);
     if (S.decals.length > 14) group.remove(S.decals.shift());
+    if (S._zombies) for (const h of S._zombies) {   // splash a la horda
+      if (!h.g.userData.dead && p.distanceToSquared(h.center) < (7 * big) ** 2) hitZombie(h, 220 * big, h.center.clone());
+    }
     if (nearGround) fireAftermath(new THREE.Vector3(p.x, gy, p.z));
     audio?.boom?.(big);
     onShake?.(p, big);
@@ -324,6 +345,11 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         if (bgy != null && bp.y <= bgy + 0.15) impact = new THREE.Vector3(bp.x, bgy + 0.15, bp.z);
         if (!impact && hittables) {
           for (const h of hittables) {
+            if (h.zombie) {
+              if (h.g.userData.dead) continue;
+              if (bp.distanceToSquared(h.center) < h.r2) { hitZombie(h, ARSENAL.mg.dmg, bp.clone()); impact = bp.clone(); break; }
+              continue;
+            }
             if (h.node.userData.dead) continue;
             if (bp.distanceToSquared(h.center) < h.r2) {
               h.hp = (h.hp ?? (h.node.userData.kit?.health || 60)) - ARSENAL.mg.dmg;
@@ -362,6 +388,10 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         if (gy != null && p.y <= gy + 0.3) { hit = true; p.y = gy + 0.3; }
         if (!hit && hittables) {
           for (const h of hittables) {
+            if (h.zombie) {
+              if (!h.g.userData.dead && p.distanceToSquared(h.center) < h.r2 * 4) { hit = true; hitZombie(h, 500, p.clone()); break; }
+              continue;
+            }
             if (h.node.userData.dead) continue;
             if (p.distanceToSquared(h.center) < h.r2) { hit = true; smash(h.node, h.color, p.clone()); break; }
           }

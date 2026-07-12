@@ -4,25 +4,26 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=111';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=111';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=111';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=111';
-import { createRecorder } from '/flightverse/recorder.js?v=111';
-import { createAudio } from '/flightverse/audio.js?v=111';
-import { createTouchSticks } from '/flightverse/touch.js?v=111';
-import { createSky } from '/flightverse/sky.js?v=111';
-import { loadSceneObjects } from '/flightverse/objects.js?v=111';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=111';
-import CameraControls from '/vendor/camera-controls.module.js?v=111';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=111';
+import * as THREE from '/flightverse/three.js?v=113';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=113';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=113';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=113';
+import { createRecorder } from '/flightverse/recorder.js?v=113';
+import { createAudio } from '/flightverse/audio.js?v=113';
+import { createTouchSticks } from '/flightverse/touch.js?v=113';
+import { createSky } from '/flightverse/sky.js?v=113';
+import { loadSceneObjects } from '/flightverse/objects.js?v=113';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=113';
+import { createZombies } from '/flightverse/zombies.js?v=113';
+import CameraControls from '/vendor/camera-controls.module.js?v=113';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=113';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=111';
+} from '/vendor/postprocessing180.module.js?v=113';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -33,7 +34,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=111';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=113';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -73,6 +74,7 @@ function hud() {
         <button class="vl-chip sec-mundo vl-solo-fino" id="vl-calidad">calidad · auto</button>
         <i class="vl-sep"></i>
         <button class="vl-chip sec-juego" id="vl-reto">Gate Rush</button>
+        <button class="vl-chip sec-juego" id="vl-zombies">Modo Tierra</button>
         <i class="vl-sep"></i>
         <button class="vl-chip sec-media" id="vl-sound">Sonido</button>
         <button class="vl-chip sec-media" id="vl-ajustes">Imagen</button>
@@ -100,6 +102,10 @@ function hud() {
       <div class="vl-fps" id="vl-fps"></div>
     </div>
     <div class="vl-hitfx" id="vl-hitfx"></div>
+    <div class="vl-zhud" id="vl-zhud">
+      <div class="vl-zwave"><span id="vl-zwave">OLEADA 1</span><small id="vl-zkill">0 abatidos</small></div>
+      <div class="vl-zhp"><i id="vl-zhp"></i></div>
+    </div>
     <div class="vl-center-top" id="vl-challenge"></div>
     <div class="vl-diff" id="vl-diff">
       <button data-d="facil">Fácil<span>8 aros · 9m</span></button>
@@ -414,9 +420,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=111', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=113', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=111');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=113');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -543,6 +549,24 @@ async function main() {
   }
   aim.visible = false;
   scene.add(aim);
+  // ── MODO TIERRA: horda de zombies original (toggle) ──
+  const health = { hp: 100 };
+  const zombies = createZombies(scene, {
+    heightAt: terrain.heightAt, audio,
+    onBite: () => {
+      health.hp = Math.max(0, health.hp - 8);
+      const hx = $('#vl-hitfx'); hx.classList.remove('go'); void hx.offsetWidth; hx.classList.add('go');
+      audio.crash?.();
+    },
+  });
+  weapons.state._zombies = zombies.hittables;      // splash de explosión a la horda
+  const zBtn = $('#vl-zombies');
+  zBtn.addEventListener('click', () => {
+    const on = zombies.toggle(P);
+    zBtn.classList.toggle('on', on);
+    if (on) health.hp = 100;
+    $('#vl-zhud').classList.toggle('show', on);
+  });
   const fireBtn = $('#vl-fire');
   const doFire = (pitch) => {
     // si el GLB trae hardpoints, el misil sale del siguiente en turno
@@ -1211,7 +1235,20 @@ async function main() {
         const now = performance.now();
         const wdt = Math.min(0.05, (now - (weapons._lt || now)) / 1000);
         weapons._lt = now;
-        weapons.update(wdt, sceneObjects?.hittables);
+        const allHit = zombies.state.on
+          ? [...(sceneObjects?.hittables || []), ...zombies.hittables]
+          : sceneObjects?.hittables;
+        weapons.update(wdt, allHit);
+        if (Q.get('zombies') === '1' && !zombies.state.on && simT > 0.5) {
+          zombies.toggle(P); zBtn.classList.add('on'); $('#vl-zhud').classList.add('show');
+        }
+        zombies.update(wdt, P, weapons);
+        report.zombies = { on: zombies.state.on, wave: zombies.state.wave, alive: zombies.state.alive };
+        if (zombies.state.on) {
+          $('#vl-zwave').textContent = `OLEADA ${zombies.state.wave || 1}`;
+          $('#vl-zkill').textContent = `${zombies.state.killed} abatidos · ${zombies.state.alive} activos`;
+          $('#vl-zhp').style.transform = `scaleX(${health.hp / 100})`;
+        }
         if (Q.get('fuego') === 'mg' && simT > 1 && simT < 2.6) {
           if (!weapons._mg) { weapons._mg = true; weapons.setWeapon('mg'); }
           doFire(-0.5);                        // ráfaga sostenida de QA
