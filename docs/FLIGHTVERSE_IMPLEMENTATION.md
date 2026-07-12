@@ -73,16 +73,16 @@ Fase E ✓ (2026-07-12): splatview portado a Spark, tresd/share en r180, GS3D+th
 Mundo→Volar→Gate Rush→Result→Replay→Director→Export 1080p→Mundo.
 
 ## Siguiente paso ejecutable (sesión siguiente)
-Slice vertical FUNCIONAL: Mundo→Volar→Gate Rush→Result→Replay→Quick Record.
-Faltan del slice §42: Director (keyframes/timeline sobre el replay, P6) y
-export determinista 1080p (WebCodecs re-simulando el replay a paso fijo, P7b).
-Fase G nueva (ruido del splat): limpiar floaters por escena con tools/splat-transform '--filter-nan --filter-floaters 0.05,0.1,0.004' → salida .sog (Spark lee SOG nativo; ksplat no se puede re-escribir) → manifest prefiere .sog si existe. Orden sugerido: migrar splatview.js (tresd/share) a Spark r180 y retirar GS3D del repo · P6 Director mínimo (sobre camera-controls ya vendorizado) (keyframes de cámara sobre replay.rec +
-scrubber) → P7b export → P5 creator de desafíos (Dios coloca gates, JSON en
-vault vía handler nuevo) → P8 AI creator (plantilla /api/analyze + ai/router,
-drafts estructurados NUNCA código) → P9 showcase (patrón share.html + control
-de privacidad de ubicación) → P10 (governor perf, touch dual-stick móvil,
-progressiveLoad del splat, COOP/COEP si WebCodecs multithread) → P11 QA 43
-criterios. Deudas técnicas: dientes nodata RESUELTOS (máscara uint8 + discard, fase A del plan);
-alineación splat<->terreno (cameras.json + offset centroide en publish),
-audio desde cero, 4 rigs restantes, minimapa MapLibre, splat en /volar
-(hoy solo terreno — honesto hasta alinear).
+El plan 'cierre 10/10' está 7/7 y el slice §42 completo. Backlog restante del
+spec original (por valor):
+- P5 creator de desafíos: en modo Dios colocar gates → JSON en vault vía
+  handler nuevo (patrón /api/property).
+- P8 AI creator: plantilla /api/analyze + ai/router — drafts estructurados,
+  NUNCA código ejecutable (regla del spec).
+- P9 showcase: patrón share.html + control de privacidad de ubicación
+  (no exponer center_wgs84 en replays públicos sin opt-in).
+- P10 restos: progressiveLoad/streaming del SOG, COOP/COEP si algún día
+  WebCodecs multithread, gamepad.
+- P11: checklist formal de los 43 criterios de aceptación.
+Deudas menores: foto mode (P7), 4 rigs restantes, tuning fino del 6DOF con
+mando real, minimapa MapLibre opcional.
