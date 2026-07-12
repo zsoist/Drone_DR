@@ -9,6 +9,11 @@ import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/
 import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js';
 import { createGateRush, bestTime } from '/flightverse/gaterush.js';
 import { createRecorder } from '/flightverse/recorder.js';
+import {
+  EffectComposer, RenderPass, EffectPass,
+  SMAAEffect, SMAAPreset, BloomEffect,
+  ToneMappingEffect, ToneMappingMode, VignetteEffect,
+} from '/vendor/postprocessing.module.js';
 
 const Q = new URLSearchParams(location.search);
 const CID = (Q.get('m') || '').replace(/[^\w-]/g, '');
@@ -67,8 +72,12 @@ async function main() {
   $('#vl-help').classList.add('show');
   setTimeout(() => $('#vl-help').classList.remove('show'), 6000);
 
-  // ── escena three ──
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // ── escena three (flags según README de postprocessing: AA lo hace SMAA,
+  // depth/stencil viven en los buffers del composer) ──
+  const renderer = new THREE.WebGLRenderer({
+    powerPreference: 'high-performance', antialias: false, stencil: false, depth: false,
+  });
+  renderer.toneMapping = THREE.NoToneMapping;   // el tone mapping va al FINAL del pipeline
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   document.body.prepend(renderer.domElement);
@@ -81,6 +90,16 @@ async function main() {
   const sun = new THREE.DirectionalLight(0xffffff, 1.25);
   sun.position.set(250, 420, 120);
   scene.add(sun);
+
+  // look premium: un solo EffectPass fusiona SMAA+Bloom+ACES+Vignette en un shader
+  const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType });
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new EffectPass(camera,
+    new SMAAEffect({ preset: SMAAPreset.HIGH }),
+    new BloomEffect({ mipmapBlur: true, luminanceThreshold: 0.9, intensity: 0.55, radius: 0.7 }),
+    new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC }),
+    new VignetteEffect({ offset: 0.32, darkness: 0.48 }),
+  ));
 
   const terrain = await loadTerrain(man, { anisotropy: 8 });
   scene.add(terrain.mesh);
@@ -178,6 +197,7 @@ async function main() {
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
   });
 
   // ── Gate Rush (desafío del slice) + replay ──
@@ -369,7 +389,7 @@ async function main() {
         const rig = RIGS[rigIx];
         rig.fn(P, o, camera, STEP, rig);
       }
-      renderer.render(scene, camera);
+      composer.render();
       drawMinimap();
       // HUD (barato: texto directo, sin re-layout)
       $('#vl-agl').textContent = drone.agl == null ? 'fuera' : `${drone.agl.toFixed(1)} m`;
