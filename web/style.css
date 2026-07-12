@@ -3643,3 +3643,16 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 }
 /* la causa raíz del recorte: cascada de flex-shrink aplastaba grupos a 70px */
 .proc-groups, .proc-group, .proc-photos{ flex-shrink:0 }
+
+/* BLOQUE 34 · HUD FPV: crosshair + horizonte artificial */
+.vl-fpv{ position:absolute; inset:0; display:none; pointer-events:none; z-index:1 }
+.vl-fpv.show{ display:block }
+.vl-fpv-cross{ position:absolute; left:50%; top:50%; width:26px; height:26px;
+  transform:translate(-50%,-50%) }
+.vl-fpv-cross::before,.vl-fpv-cross::after{ content:''; position:absolute; background:rgba(255,255,255,.85) }
+.vl-fpv-cross::before{ left:50%; top:0; width:1.5px; height:100%; transform:translateX(-50%) }
+.vl-fpv-cross::after{ top:50%; left:0; height:1.5px; width:100%; transform:translateY(-50%) }
+.vl-fpv-horizon{ position:absolute; left:50%; top:50%; width:min(46vw,520px); height:0;
+  margin-left:calc(min(46vw,520px) / -2); will-change:transform }
+.vl-fpv-horizon i{ display:block; height:1.5px;
+  background:linear-gradient(90deg, transparent, rgba(125,255,201,.8) 18%, rgba(125,255,201,.8) 82%, transparent) }

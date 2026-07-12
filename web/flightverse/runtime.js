@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=66';
+import * as THREE from '/flightverse/three.js?v=67';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -256,10 +256,12 @@ export const RIGS = [
       cam.position.lerp(want, 1 - Math.exp(-dt * 3));
       cam.lookAt(p);
     } },
-  { key: 'fpv', label: 'FPV', fov: 78,
+  { key: 'fpv', label: 'FPV', fov: 78, hideDrone: true,
     fn: (p, o, cam) => {
-      cam.position.copy(p);
-      cam.rotation.set(o.pitch * 0.6, o.yaw + Math.PI, 0, 'YXZ');
+      // cámara EN el gimbal (nariz -Z del cuerpo), mirando al frente del dron
+      cam.position.set(
+        p.x - Math.sin(o.yaw) * 0.28, p.y - 0.02, p.z - Math.cos(o.yaw) * 0.28);
+      cam.rotation.set(o.pitch * 0.7, o.yaw, 0, 'YXZ');
     } },
   { key: 'top', label: 'Cenital', fov: 55,
     fn: (p, o, cam, dt) => {

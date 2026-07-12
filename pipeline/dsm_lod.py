@@ -47,7 +47,21 @@ def build(cid: str, target: int = 256) -> dict:
     spacing_x = step * abs(gt[1]) * m_lon
     spacing_z = step * abs(gt[5]) * M_PER_DEG_LAT
 
-    mask = (~invalid).astype(np.uint8) * 255
+    # descartar SOLO el nodata conectado al borde (el faldón exterior):
+    # los huecos INTERIORES se quedan rellenos (p05) — descartarlos perforaba
+    # techos/suelo con manchas blancas (reporte del operador)
+    border = np.zeros_like(invalid)
+    border[0, :] = invalid[0, :]; border[-1, :] = invalid[-1, :]
+    border[:, 0] |= invalid[:, 0]; border[:, -1] |= invalid[:, -1]
+    for _ in range(max(hh, ww)):
+        grown = border.copy()
+        grown[1:, :] |= border[:-1, :]; grown[:-1, :] |= border[1:, :]
+        grown[:, 1:] |= border[:, :-1]; grown[:, :-1] |= border[:, 1:]
+        grown &= invalid
+        if (grown == border).all():
+            break
+        border = grown
+    mask = (~border).astype(np.uint8) * 255
     (mdir / f"dsm_lod{target}.mask.bin").write_bytes(mask.tobytes())
     bin_name = f"dsm_lod{target}.bin"
     (mdir / bin_name).write_bytes(sub.astype("<f4").tobytes())

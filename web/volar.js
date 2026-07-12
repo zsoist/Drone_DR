@@ -4,24 +4,24 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=66';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=66';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=66';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=66';
-import { createRecorder } from '/flightverse/recorder.js?v=66';
-import { createAudio } from '/flightverse/audio.js?v=66';
-import { createTouchSticks } from '/flightverse/touch.js?v=66';
-import { createSky } from '/flightverse/sky.js?v=66';
-import CameraControls from '/vendor/camera-controls.module.js?v=66';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=66';
+import * as THREE from '/flightverse/three.js?v=67';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=67';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=67';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=67';
+import { createRecorder } from '/flightverse/recorder.js?v=67';
+import { createAudio } from '/flightverse/audio.js?v=67';
+import { createTouchSticks } from '/flightverse/touch.js?v=67';
+import { createSky } from '/flightverse/sky.js?v=67';
+import CameraControls from '/vendor/camera-controls.module.js?v=67';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=67';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=66';
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=66';
+} from '/vendor/postprocessing180.module.js?v=67';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=67';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -69,6 +69,10 @@ function hud() {
     </div>
     <div class="vl-center-top" id="vl-challenge"></div>
     <div class="vl-compass" id="vl-compass"><span id="vl-heading">N 0°</span></div>
+    <div class="vl-fpv" id="vl-fpv">
+      <div class="vl-fpv-cross"></div>
+      <div class="vl-fpv-horizon" id="vl-horizon"><i></i></div>
+    </div>
     <div class="vl-flash" id="vl-flash"></div>
     <div class="vl-scrim top"></div><div class="vl-scrim bottom"></div>
     <canvas class="vl-minimap" id="vl-minimap" width="180" height="180"></canvas>
@@ -311,6 +315,25 @@ async function main() {
     dmesh.add(arm, bellB, bellT, prop);
   }
   scene.add(dmesh);
+  // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
+  // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
+  // vuela el procedural de arriba.
+  fetch('/assets/manifest.json?v=67', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+    if (!am.drone_glb) return;
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=67');
+    const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
+    const m = g.scene;
+    const bb = new THREE.Box3().setFromObject(m);
+    const size = bb.getSize(new THREE.Vector3());
+    const s = 0.85 / Math.max(size.x, size.z || 0.001);
+    m.scale.setScalar(s);
+    bb.setFromObject(m); bb.getCenter(m.position).multiplyScalar(-1);
+    while (dmesh.children.length) dmesh.remove(dmesh.children[0]);   // fuera el procedural
+    props.length = 0;
+    m.traverse(o => { if (/^prop/i.test(o.name)) props.push({ g: o, dir: props.length % 2 ? 1 : -1 }); });
+    dmesh.add(m);
+    report.customDrone = true;
+  }).catch(() => { /* GLB opcional */ });
 
   // ── ghost del vuelo real ──
   let ghost = null;
@@ -373,6 +396,8 @@ async function main() {
     rigIx = ((ix % RIGS.length) + RIGS.length) % RIGS.length;
     camera.fov = RIGS[rigIx].fov; camera.updateProjectionMatrix();
     $('#vl-rig').textContent = `cámara · ${RIGS[rigIx].label}`;
+    dmesh.visible = !RIGS[rigIx].hideDrone;
+    $('#vl-fpv').classList.toggle('show', !!RIGS[rigIx].hideDrone);
   };
   // vista: 0 mixta · 1 foto-real (solo splat) · 2 orto (solo terreno)
   let vista = 2;
@@ -810,6 +835,11 @@ async function main() {
       $('#vl-fps').textContent = `${Math.round(loop.fps() || 0)} fps`;
       if (recorder.recording) recBtn.textContent = `■ REC ${recorder.seconds.toFixed(0)}s`;
       audio.update(drone.vel.length(), drone.vel.y);
+      if (RIGS[rigIx].hideDrone) {
+        const rollV = new THREE.Vector3(1, 0, 0).applyQuaternion(drone.quat).y;
+        $('#vl-horizon').style.transform =
+          `translateY(${(-o.pitch * 260).toFixed(1)}px) rotate(${(-rollV * 40).toFixed(1)}deg)`;
+      }
       const hdg = ((-o.yaw * 180 / Math.PI) % 360 + 360) % 360;
       const card = ['N','NE','E','SE','S','SO','O','NO'][Math.round(hdg / 45) % 8];
       $('#vl-heading').textContent = `${card} ${Math.round(hdg)}°`;
