@@ -4,25 +4,25 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=102';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=102';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=102';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=102';
-import { createRecorder } from '/flightverse/recorder.js?v=102';
-import { createAudio } from '/flightverse/audio.js?v=102';
-import { createTouchSticks } from '/flightverse/touch.js?v=102';
-import { createSky } from '/flightverse/sky.js?v=102';
-import { loadSceneObjects } from '/flightverse/objects.js?v=102';
-import { createWeapons } from '/flightverse/weapons.js?v=102';
-import CameraControls from '/vendor/camera-controls.module.js?v=102';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=102';
+import * as THREE from '/flightverse/three.js?v=104';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=104';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=104';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=104';
+import { createRecorder } from '/flightverse/recorder.js?v=104';
+import { createAudio } from '/flightverse/audio.js?v=104';
+import { createTouchSticks } from '/flightverse/touch.js?v=104';
+import { createSky } from '/flightverse/sky.js?v=104';
+import { loadSceneObjects } from '/flightverse/objects.js?v=104';
+import { createWeapons } from '/flightverse/weapons.js?v=104';
+import CameraControls from '/vendor/camera-controls.module.js?v=104';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=104';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=102';
+} from '/vendor/postprocessing180.module.js?v=104';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -33,7 +33,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=102';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=104';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -359,6 +359,7 @@ async function main() {
   dmesh.add(hull, shell, gimbal, navL, navR, stripe);
   const props = [];
   const navLights = [];                       // LEDs: [strobe, rojo babor, verde estribor]
+  const hardpoints = [];                      // nodos hardpoint_N del GLB (anclaje de misiles)
   const propBlurs = [];                       // discos motion-blur bajo cada helice
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
     const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.019, 0.27, 4, 8), matGrey);
@@ -401,9 +402,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=102', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=104', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=102');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=104');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -423,6 +424,7 @@ async function main() {
         }
       }
       if (/^prop/i.test(o.name)) props.push({ g: o, dir: props.length % 2 ? 1 : -1 });
+      if (/^hardpoint_/i.test(o.name)) hardpoints.push(o);
     });
     const mkGlow = (color, sc) => {
       const cv = document.createElement('canvas'); cv.width = cv.height = 32;
@@ -531,7 +533,11 @@ async function main() {
   scene.add(aim);
   const fireBtn = $('#vl-fire');
   const doFire = (pitch) => {
-    if (!weapons.fire(P.clone(), curYaw, pitch ?? gimbalTilt * 0.55)) return;
+    // si el GLB trae hardpoints, el misil sale del siguiente en turno
+    const hp = hardpoints.length
+      ? hardpoints[weapons.state.fired % hardpoints.length].getWorldPosition(new THREE.Vector3())
+      : P.clone();
+    if (!weapons.fire(hp, curYaw, pitch ?? gimbalTilt * 0.55)) return;
     $('#vl-ammo').textContent = weapons.state.ammo;
     fireBtn.classList.remove('flash'); void fireBtn.offsetWidth;   // reinicia anim
     fireBtn.classList.add('flash');

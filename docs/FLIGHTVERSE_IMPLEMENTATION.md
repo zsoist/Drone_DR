@@ -149,3 +149,20 @@ mando real, minimapa MapLibre opcional.
   frame — anillo naranja pulsante donde caerá el misil. Chip DERRIBOS n.
 - QA params: &fuego=1 (dispara), &boom=1 (detona a suelo), &rig=N (cámara).
   6 gates verdes consecutivos, 66-75fps, 0 errores.
+
+## v104 (2026-07-12) — destruction kit integrado + dron ultra-HD
+- Kit de ChatGPT (threejs_destruction_kit) integrado SIN Rapier: usamos sus GLBs
+  pre-fracturados (extras: role/massKg/mode/explosive) con NUESTRA física de
+  weapons.js — cero deps nuevas, determinismo intacto. Rapier queda como opción
+  futura (physics/ del kit conservado en Downloads).
+- objects.json type:'kit' → assets/destruction/models/ (barril explosivo, bloque
+  concreto, muro 70 ladrillos, pino, debris_pack; 17MB; THIRD_PARTY.md copiado).
+- smash v3: fragmentos REALES del kit vuelan con velocidad ∝ 1/√massKg desde el
+  punto de impacto; barriles encadenan detonación (+0.12s). Fallback: shatter.
+- CSP: connect-src + blob: (GLTFLoader carga texturas embebidas via blob) —
+  safe_restart.sh web aplicado.
+- Dron ultra-HD: pipeline/generate_drone_hd.py (derivado del generador del
+  operador): 40,336 tris, 3 mats (acento naranja EMISIVO), palas con twist,
+  12 aletas de refrigeración/motor, tornillería, antenas, GPS puck, 24 radios,
+  hardpoint_1..4 REALES — doFire dispara desde el hardpoint en turno.
+- Gates: 12 objetos cargan limpio, customDrone true, fired/exploded 1/1, 67fps.

@@ -4,7 +4,7 @@
 // (ring/beacon/box) con anclaje al suelo real (heightAt), animaciones
 // spin/bob y materiales emisivos. Optimizado: matrices estáticas quietas,
 // un solo update() barato para los animados.
-import * as THREE from '/flightverse/three.js?v=102';
+import * as THREE from '/flightverse/three.js?v=104';
 
 const PRIMS = {
   ring: ({ color }) => new THREE.Mesh(
@@ -42,11 +42,25 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
 
   for (const o of data.objects) {
     let node = null;
-    if (o.type === 'glb' && o.file) {
+    if ((o.type === 'glb' || o.type === 'kit') && o.file) {
       try {
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=102'));
-        const g = await new GLTFLoader().loadAsync(`/assets/props/${encodeURIComponent(o.file)}`);
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=104'));
+        const base = o.type === 'kit' ? '/assets/destruction/models/' : '/assets/props/';
+        const g = await new GLTFLoader().loadAsync(base + encodeURIComponent(o.file));
         node = g.scene;
+        if (o.type === 'kit') {
+          // contrato del destruction kit: extras en userData (roles, masas,
+          // modo swap/activate, explosive) — weapons.js fractura con esto
+          let root = null;
+          node.traverse(n => { if (!root && n.userData.destructible) root = n; });
+          if (root) {
+            node.userData.kit = root.userData;
+            node.traverse(n => {
+              if (n.userData.initialHidden) n.visible = false;
+              if (n.userData.role === 'fragments' && n.userData.initialHidden) n.visible = false;
+            });
+          }
+        }
       } catch { continue; }               // prop ausente: se omite, no rompe
     } else if (PRIMS[o.type]) {
       node = PRIMS[o.type](o);

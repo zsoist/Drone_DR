@@ -6,7 +6,7 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=102';
+import * as THREE from '/flightverse/three.js?v=104';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -25,7 +25,7 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     puff: glowTex([[0, 'rgba(215,210,202,.4)'], [1, 'rgba(195,190,184,0)']]),
     dot: glowTex([[0, 'rgba(255,225,170,1)'], [0.5, 'rgba(255,170,80,.8)'], [1, 'rgba(255,120,40,0)']], 32),
   };
-  const S = { missiles: [], parts: [], decals: [], frags: [], rubble: [], fires: [],
+  const S = { missiles: [], parts: [], decals: [], frags: [], rubble: [], fires: [], booms: [],
     ammo: 8, MAX: 8, cool: 0, fired: 0, exploded: 0, destroyed: 0 };
   const group = new THREE.Group(); group.name = 'fv-weapons'; scene.add(group);
 
@@ -140,9 +140,41 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     onShake?.(p, big);
   }
 
-  // fragmentación: 18 chunks (30% carbonizados) que PERSISTEN como escombros
-  function smash(node, color) {
+  // fragmentación v3: si el objeto trae fragmentos pre-esculpidos (destruction
+  // kit: role=fragment con massKg), vuelan ESOS con velocidad ∝ 1/√masa desde
+  // el punto de impacto; barriles explosivos encadenan detonación. Fallback:
+  // shatter procedural de cajas.
+  function smash(node, color, blastP) {
     S.destroyed++;
+    const kit = node.userData.kit;
+    if (kit) {
+      const frags = [];
+      node.traverse(n => {
+        if (n.userData.role === 'fragment') frags.push(n);
+        if (n.userData.role === 'intact' || n.userData.role === 'intactMesh' || n.userData.role === 'intactDetail') n.visible = false;
+      });
+      const c0 = new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3());
+      const bp = blastP || c0;
+      const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
+      for (const f of frags) {
+        f.updateWorldMatrix(true, false);
+        f.matrixWorld.decompose(wp, wq, ws);
+        group.add(f);
+        f.position.copy(wp); f.quaternion.copy(wq); f.scale.copy(ws);
+        f.visible = true; f.matrixAutoUpdate = true; f.castShadow = true;
+        const mass = Math.max(0.5, f.userData.massKg || 8);
+        const dir = wp.clone().sub(bp);
+        dir.y = Math.abs(dir.y) + 0.4;
+        dir.normalize();
+        const speed = 3 + 26 / Math.sqrt(mass);
+        S.frags.push({ m: f, t: 0,
+          vel: dir.multiplyScalar(speed).add(new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2)),
+          rot: new THREE.Vector3((Math.random() - 0.5) * 10 / Math.sqrt(mass), (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10 / Math.sqrt(mass)) });
+      }
+      node.userData.dead = true;
+      if (kit.explosive) S.booms.push({ p: c0, t: 0.12, big: 1.5 });   // cadena
+      return;
+    }
     const bb = new THREE.Box3().setFromObject(node);
     const c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
     node.visible = false; node.userData.dead = true;
@@ -190,6 +222,10 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
     explodeAt: explode,
     update(dt, hittables) {
       S.cool = Math.max(0, S.cool - dt);
+      for (let i = S.booms.length - 1; i >= 0; i--) {   // detonaciones encadenadas
+        S.booms[i].t -= dt;
+        if (S.booms[i].t <= 0) { const b = S.booms.splice(i, 1)[0]; explode(b.p.clone(), b.big); }
+      }
       if (S.ammo < S.MAX) { S.reload = (S.reload || 0) + dt; if (S.reload > 2.5) { S.ammo++; S.reload = 0; } }
       // ── misiles ──
       for (let i = S.missiles.length - 1; i >= 0; i--) {
@@ -213,7 +249,7 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         if (!hit && hittables) {
           for (const h of hittables) {
             if (h.node.userData.dead) continue;
-            if (p.distanceToSquared(h.center) < h.r2) { hit = true; smash(h.node, h.color); break; }
+            if (p.distanceToSquared(h.center) < h.r2) { hit = true; smash(h.node, h.color, p.clone()); break; }
           }
         }
         if (hit) {
