@@ -3,20 +3,28 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=70';
+import * as THREE from '/flightverse/three.js?v=71';
 
 const PRESETS = {
   dia: {
-    top: 0x2f6bb8, horizon: 0xbfd7ee, sun: 0xfff4d6, sunPos: [0.45, 0.62, 0.3],
-    fog: 0xbfd7ee, ambient: 0.85, sunI: 1.25, stars: 0, clouds: 0.5, cloudTint: 0xffffff,
+    top: 0x2b66b5, mid: 0x7fb2e8, horizon: 0xd9e9f7, midPos: 0.42,
+    sun: 0xfff4d6, sunPos: [0.45, 0.62, 0.3], sunSize: 340,
+    fog: 0xcfe2f2, ambient: 0.85, sunI: 1.25, stars: 0, moon: 0, galaxy: 0,
+    clouds: 0.55, cloudTint: 0xffffff,
   },
   atardecer: {
-    top: 0x2b2a55, horizon: 0xff9a5c, sun: 0xffc07a, sunPos: [0.8, 0.12, 0.2],
-    fog: 0xd98a63, ambient: 0.55, sunI: 1.0, stars: 0.25, clouds: 0.45, cloudTint: 0xffd9b8,
+    // 3 paradas reales: azul profundo → magenta → banda naranja al horizonte
+    top: 0x141c46, mid: 0xb04a6e, horizon: 0xff9440, midPos: 0.26,
+    sun: 0xffb066, sunPos: [0.85, 0.07, 0.25], sunSize: 90,   // sol BAJO y grande
+    fog: 0xd98a63, ambient: 0.55, sunI: 1.0, stars: 0.18, moon: 0, galaxy: 0,
+    clouds: 0.5, cloudTint: 0xffc9a0,
   },
   noche: {
-    top: 0x05070d, horizon: 0x14202f, sun: 0xcfe2ff, sunPos: [-0.4, 0.5, -0.3],
-    fog: 0x0b1119, ambient: 0.34, sunI: 0.5, stars: 1, clouds: 0.22, cloudTint: 0x92a7c4,
+    top: 0x04060c, mid: 0x0a1322, horizon: 0x16222f, midPos: 0.3,
+    sun: 0x000000, sunPos: [0.8, 0.1, 0.2], sunSize: 340,
+    moonPos: [-0.5, 0.55, -0.35],
+    fog: 0x0b1119, ambient: 0.36, sunI: 0.5, stars: 1.15, moon: 1, galaxy: 0.85,
+    clouds: 0.2, cloudTint: 0x8fa5c2,
   },
 };
 
@@ -26,14 +34,19 @@ function cloudTexture() {
   const c = cv.getContext('2d');
   c.clearRect(0, 0, 256, 256);
   // manchas gaussianas superpuestas = cúmulo creíble a distancia
-  for (let i = 0; i < 46; i++) {
-    const x = Math.random() * 256, y = 96 + Math.random() * 64;
-    const r = 14 + Math.random() * 34;
-    const g = c.createRadialGradient(x, y, 1, x, y, r);
-    g.addColorStop(0, 'rgba(255,255,255,0.16)');
+  for (let i = 0; i < 70; i++) {
+    const x = Math.random() * 256, y = 88 + Math.random() * 80;
+    const r = 10 + Math.random() * 40;
+    const a = 0.08 + Math.random() * 0.14;
+    c.save();
+    c.translate(x, y); c.scale(1.9, 1);          // cúmulos estirados, no bolas
+    const g = c.createRadialGradient(0, 0, 1, 0, 0, r);
+    g.addColorStop(0, `rgba(255,255,255,${a})`);
+    g.addColorStop(0.6, `rgba(255,255,255,${a * 0.45})`);
     g.addColorStop(1, 'rgba(255,255,255,0)');
     c.fillStyle = g;
-    c.fillRect(0, 0, 256, 256);
+    c.fillRect(-r * 2, -r, r * 4, r * 2);
+    c.restore();
   }
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -43,9 +56,15 @@ function cloudTexture() {
 export function createSky(scene, { radius = 2600 } = {}) {
   const uni = {
     uTop: { value: new THREE.Color() },
+    uMid: { value: new THREE.Color() },
     uHorizon: { value: new THREE.Color() },
+    uMidPos: { value: 0.4 },
     uSunDir: { value: new THREE.Vector3(0, 1, 0) },
     uSunColor: { value: new THREE.Color() },
+    uSunSize: { value: 340 },
+    uMoonDir: { value: new THREE.Vector3(-0.5, 0.55, -0.35).normalize() },
+    uMoon: { value: 0 },
+    uGalaxy: { value: 0 },
     uStars: { value: 0 },
   };
   const dome = new THREE.Mesh(
@@ -56,16 +75,36 @@ export function createSky(scene, { radius = 2600 } = {}) {
       vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }`,
       fragmentShader: `varying vec3 vDir;
-        uniform vec3 uTop, uHorizon, uSunColor; uniform vec3 uSunDir; uniform float uStars;
+        uniform vec3 uTop, uMid, uHorizon, uSunColor; uniform vec3 uSunDir, uMoonDir;
+        uniform float uStars, uMidPos, uSunSize, uMoon, uGalaxy;
         float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
         void main(){
-          float h = clamp(vDir.y, 0., 1.);
-          vec3 col = mix(uHorizon, uTop, pow(h, 0.62));
-          float s = max(dot(normalize(vDir), normalize(uSunDir)), 0.);
-          col += uSunColor * (pow(s, 340.0) * 1.2 + pow(s, 18.0) * 0.18);   // disco + halo
-          if (uStars > 0.01 && vDir.y > 0.06) {
-            vec2 cell = floor(vDir.xz / vDir.y * 90.0);
-            float st = step(0.9975, hash(cell)) * uStars * smoothstep(0.06, 0.35, vDir.y);
+          vec3 d = normalize(vDir);
+          float h = clamp(d.y, 0., 1.);
+          // gradiente de 3 paradas (el atardecer deja de ser 'un filtro naranja')
+          vec3 col = mix(uHorizon, uMid, smoothstep(0.0, uMidPos, h));
+          col = mix(col, uTop, smoothstep(uMidPos, 1.0, h));
+          float s = max(dot(d, normalize(uSunDir)), 0.);
+          col += uSunColor * (pow(s, uSunSize) * 1.25 + pow(s, 14.0) * 0.22);
+          if (uMoon > 0.01) {
+            float m = max(dot(d, uMoonDir), 0.);
+            float disc = smoothstep(0.9994, 0.99965, m);
+            // 'mares' lunares: manchas oscuras por hash de la dirección
+            float mare = 0.78 + 0.22 * hash(floor(d.xz * 400.0) + floor(d.y * 400.0));
+            col += vec3(0.92, 0.95, 1.0) * disc * mare * uMoon;
+            col += vec3(0.45, 0.55, 0.75) * pow(m, 60.0) * 0.25 * uMoon;   // halo frío
+          }
+          if (uGalaxy > 0.01 && d.y > 0.02) {
+            // vía láctea: banda alrededor de un gran círculo inclinado
+            float band = exp(-pow(dot(d, normalize(vec3(0.5, 0.22, -0.82))) / 0.16, 2.0));
+            col += vec3(0.16, 0.18, 0.26) * band * uGalaxy;
+            vec2 gcell = floor(d.xz / max(d.y, 0.05) * 210.0);
+            col += vec3(step(0.994, hash(gcell)) * band * uGalaxy * 0.5);
+          }
+          if (uStars > 0.01 && d.y > 0.06) {
+            vec2 cell = floor(d.xz / d.y * 90.0);
+            float tw = 0.75 + 0.25 * hash(cell + 7.0);
+            float st = step(0.9973, hash(cell)) * uStars * tw * smoothstep(0.06, 0.35, d.y);
             col += vec3(st);
           }
           gl_FragColor = vec4(col, 1.);
@@ -78,7 +117,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
   // nubes: 2 planos altos con la misma textura a escalas distintas, deriva lenta
   const tex = cloudTexture();
   const clouds = [];
-  for (const [y, rep, op, sp] of [[430, 3, 0.5, 4.2], [560, 5, 0.34, 2.6]]) {
+  for (const [y, rep, op, sp] of [[430, 3, 0.5, 4.2], [560, 5, 0.34, 2.6], [700, 8, 0.18, 1.4]]) {
     const t = tex.clone(); t.needsUpdate = true; t.repeat.set(rep, rep);
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(radius * 1.7, radius * 1.7),
@@ -99,9 +138,15 @@ export function createSky(scene, { radius = 2600 } = {}) {
     const p = PRESETS[name] || PRESETS.dia;
     cur = name in PRESETS ? name : 'dia';
     uni.uTop.value.set(p.top);
+    uni.uMid.value.set(p.mid);
     uni.uHorizon.value.set(p.horizon);
+    uni.uMidPos.value = p.midPos;
     uni.uSunColor.value.set(p.sun);
     uni.uSunDir.value.set(...p.sunPos).normalize();
+    uni.uSunSize.value = p.sunSize;
+    uni.uMoon.value = p.moon;
+    if (p.moonPos) uni.uMoonDir.value.set(...p.moonPos).normalize();
+    uni.uGalaxy.value = p.galaxy;
     uni.uStars.value = p.stars;
     sun.color.set(p.sun); sun.intensity = p.sunI;
     sun.position.set(p.sunPos[0] * 600, p.sunPos[1] * 600, p.sunPos[2] * 600);
