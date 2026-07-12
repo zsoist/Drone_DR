@@ -68,7 +68,7 @@ scratchpad). Integrado y GATEADO (CDP, 0 errores, 73-78fps):
 Slice vertical FUNCIONAL: Mundo→Volar→Gate Rush→Result→Replay→Quick Record.
 Faltan del slice §42: Director (keyframes/timeline sobre el replay, P6) y
 export determinista 1080p (WebCodecs re-simulando el replay a paso fijo, P7b).
-Orden sugerido: migrar splatview.js (tresd/share) a Spark r180 y retirar GS3D del repo · P6 Director mínimo (sobre camera-controls ya vendorizado) (keyframes de cámara sobre replay.rec +
+Fase G nueva (ruido del splat): limpiar floaters por escena con tools/splat-transform '--filter-nan --filter-floaters 0.05,0.1,0.004' → salida .sog (Spark lee SOG nativo; ksplat no se puede re-escribir) → manifest prefiere .sog si existe. Orden sugerido: migrar splatview.js (tresd/share) a Spark r180 y retirar GS3D del repo · P6 Director mínimo (sobre camera-controls ya vendorizado) (keyframes de cámara sobre replay.rec +
 scrubber) → P7b export → P5 creator de desafíos (Dios coloca gates, JSON en
 vault vía handler nuevo) → P8 AI creator (plantilla /api/analyze + ai/router,
 drafts estructurados NUNCA código) → P9 showcase (patrón share.html + control

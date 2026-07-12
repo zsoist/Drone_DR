@@ -3557,3 +3557,34 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .wp-m b{ display:flex; align-items:center; gap:7px }
 .vl-gi{ font:700 10px var(--mono); color:var(--accent); letter-spacing:.1em;
   border:1px solid rgba(69,160,230,.35); border-radius:6px; padding:3px 6px; float:left; margin:2px 10px 0 0 }
+
+/* ── BLOQUE 30 · tipografía sans (adiós notepad), flash, presets, pins ── */
+.vl-chip,.vl-back,.vl-scene,.vl-mode,.vl-rig,.vl-ghost,.vl-rec,.vl-center-top,
+.vl-guide-rows,.w-filters button,.wp-m span,.fv-chip,.vl-grade label{
+  font-family:var(--font) !important; letter-spacing:.01em !important;
+  text-transform:none !important }
+.vl-metric span,.vl-fps,.vl-compass,.wp-data b,.vl-result-time{ font-family:var(--mono) !important }
+.vl-grade label{ font-size:11.5px !important; color:#9AA7B8 !important }
+.vl-presets{ display:flex; gap:6px; margin-bottom:4px }
+.vl-presets button{ flex:1; font:600 11px var(--font); padding:7px 4px; border-radius:8px;
+  border:1px solid var(--line); background:rgba(255,255,255,.04); color:var(--text-2); cursor:pointer }
+.vl-presets button:hover{ border-color:rgba(69,160,230,.5); color:var(--text) }
+.vl-flash{ position:absolute; inset:0; pointer-events:none; opacity:0; z-index:1;
+  background:radial-gradient(ellipse at center, rgba(82,199,154,.28), transparent 62%) }
+.vl-flash.hit{ animation:gateFlash .45s var(--ease) }
+@keyframes gateFlash{ 0%{ opacity:0 } 18%{ opacity:1 } 100%{ opacity:0 } }
+.fv-pin{ width:auto; height:auto; background:none; border:none; box-shadow:none;
+  display:flex; flex-direction:column; align-items:center; gap:4px }
+.fv-pin-img{ width:44px; height:44px; border-radius:50%; background-size:cover;
+  background-position:center; border:2.5px solid #E6EBF2;
+  box-shadow:0 4px 16px rgba(0,0,0,.65); transition:transform .2s var(--ease) }
+.fv-pin:hover .fv-pin-img{ transform:scale(1.15) }
+.fv-pin.splat .fv-pin-img{ border-color:var(--accent) }
+.fv-pin.splat .fv-pin-img{ animation:none }
+.fv-pin-lb{ font:600 10.5px var(--font); color:#fff; background:rgba(10,12,16,.75);
+  padding:3px 8px; border-radius:6px; white-space:nowrap;
+  -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px) }
+/* móvil: panel imagen = modal centrado (no pisa sticks) */
+@media (pointer:coarse){
+  .vl-grade{ left:50%; bottom:auto; top:50%; transform:translate(-50%,-50%) }
+}

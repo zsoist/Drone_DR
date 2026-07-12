@@ -64,15 +64,21 @@ function hud() {
     </div>
     <div class="vl-center-top" id="vl-challenge"></div>
     <div class="vl-compass" id="vl-compass"><span id="vl-heading">N 0°</span></div>
+    <div class="vl-flash" id="vl-flash"></div>
     <div class="vl-scrim top"></div><div class="vl-scrim bottom"></div>
     <canvas class="vl-minimap" id="vl-minimap" width="180" height="180"></canvas>
     <div class="vl-count" id="vl-count"></div>
     <div class="vl-result" id="vl-result"></div>
     <div class="vl-grade" id="vl-grade">
       <div class="vl-grade-k">IMAGEN</div>
-      <label>Brillo<input type="range" id="gr-b" min="-0.3" max="0.3" step="0.01" value="0"></label>
-      <label>Contraste<input type="range" id="gr-c" min="-0.3" max="0.4" step="0.01" value="0.06"></label>
-      <label>Saturación<input type="range" id="gr-s" min="-0.5" max="0.5" step="0.01" value="0.06"></label>
+      <div class="vl-presets">
+        <button data-pr="natural">Natural</button>
+        <button data-pr="vivo">Vivo</button>
+        <button data-pr="cine">Cine</button>
+      </div>
+      <label>Brillo<input type="range" id="gr-b" min="-0.15" max="0.15" step="0.01" value="0"></label>
+      <label>Contraste<input type="range" id="gr-c" min="0" max="0.3" step="0.01" value="0.06"></label>
+      <label>Saturación<input type="range" id="gr-s" min="-0.3" max="0.4" step="0.01" value="0.06"></label>
       <label>Bloom<input type="range" id="gr-g" min="0" max="1.2" step="0.02" value="0.32"></label>
       <label>Viñeta<input type="range" id="gr-v" min="0" max="0.9" step="0.02" value="0.42"></label>
       <button id="gr-reset">Restablecer</button>
@@ -366,6 +372,19 @@ async function main() {
     localStorage.setItem(GRADE_KEY, JSON.stringify(grade));
   });
   $('#gr-reset').addEventListener('click', () => { grade = { ...defGrade }; applyGrade(grade); localStorage.removeItem(GRADE_KEY); });
+  const PRESETS = {
+    natural: { b: 0, c: 0.04, s: 0.02, g: 0.2, v: 0.35 },
+    vivo:    { b: 0.03, c: 0.14, s: 0.22, g: 0.45, v: 0.4 },
+    cine:    { b: -0.03, c: 0.18, s: -0.06, g: 0.3, v: 0.62 },
+  };
+  document.querySelector('.vl-presets').addEventListener('click', e => {
+    const p = PRESETS[e.target.dataset.pr]; if (!p) return;
+    grade = { ...p }; applyGrade(grade);
+    localStorage.setItem(GRADE_KEY, JSON.stringify(grade));
+  });
+  // grade fuera de rango guardado (el bug del fondo blanco): sanear
+  grade.c = Math.max(0, grade.c); grade.b = Math.max(-0.15, Math.min(0.15, grade.b));
+  applyGrade(grade);
   $('#vl-guide-ok').addEventListener('click', () => {
     $('#vl-guide').classList.remove('show');
     localStorage.setItem('ab.fv.guided', '1');
@@ -560,7 +579,11 @@ async function main() {
         if (reto) {
           reto.update(dt, drone.pos, drone.vel, drone.yaw);
           const st = reto.state;
-          if (st.idx > sfx.idx) audio.gate();
+          if (st.idx > sfx.idx) {
+            audio.gate();
+            const fl = $('#vl-flash');
+            fl.classList.remove('hit'); void fl.offsetWidth; fl.classList.add('hit');
+          }
           if (st.phase === 'countdown') { const c = Math.ceil(st.countdown); if (c !== sfx.count) audio.tick(); sfx.count = c; }
           if (st.phase === 'running' && sfx.phase === 'countdown') audio.go();
           if (st.phase === 'finished' && sfx.phase !== 'finished') audio.finish();
@@ -581,6 +604,12 @@ async function main() {
     },
     render(alpha) {
       const o = drone.lerpPose(alpha, P);
+      // FOV kick con turbo: sensación de velocidad AAA (lerp suave, barato)
+      const wantFov = RIGS[rigIx].fov + (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') ? 9 : 0);
+      if (Math.abs(camera.fov - wantFov) > 0.1) {
+        camera.fov += (wantFov - camera.fov) * 0.08;
+        camera.updateProjectionMatrix();
+      }
       if (ghost?.on) ghost.marker.children[0].scale.setScalar(4 + Math.sin(simT * 3.2) * 0.8);
       const spin = (14 + drone.vel.length() * 3) * STEP;
       for (const pr of props) pr.g.rotation.y += spin * pr.dir;

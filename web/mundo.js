@@ -182,6 +182,7 @@ async function boot() {
         (sc.capabilities?.terrain ? `<a href="volar.html?m=${encodeURIComponent(sc.clip_id)}" style="display:inline-block;margin-top:6px;padding:6px 12px;border-radius:6px;background:#2b7fd4;color:#fff;text-decoration:none;font-weight:700">VOLAR</a>` : 'en preparación')+'</div>');
       const dot = document.createElement('div');
       dot.className = 'fv-pin' + (sc.capabilities?.splat ? ' splat' : '');
+      dot.innerHTML = `<span class="fv-pin-img" style="background-image:url('${esc(sc.assets?.poster||'')}')"></span><span class="fv-pin-lb">${esc(sc.name.split(' · ')[0])}</span>`;
       new maplibregl.Marker({ element: dot }).setLngLat(c).setPopup(pop).addTo(map);
       dot.addEventListener('click', () => map.flyTo({ center: c, zoom: 15.5, speed: 1.4 }));
     }
