@@ -170,3 +170,25 @@ modelo de 800 steps (esperable). ABIERTO: posible interleaving f_rest
 (canal-major vs otro) — tinte a adjudicar en paridad con LPIPS+ojo.
 Camino de paridad apples-to-apples COMPLETO: brush train → ply_bridge →
 render --keep-crs con NUESTRO GT-path y los MISMOS 8 test views.
+
+## M1-Brush PARIDAD — VEREDICTO PARTIDO (11-jul, celda 1: iters-similar)
+| | PSNR | SSIM | LPIPS↓ | peak | gauss | steps |
+|---|---|---|---|---|---|---|
+| OpenSplat medium (baseline) | 14.2 | 0.357 | **0.567** | 6992 | 58k | 2000 (su preset) |
+| Brush defaults @2000 | **17.38 (+3.2dB)** | **0.461** | 0.662 | **2438 (35%)** | 31k | 2000 = **6.7% de SU default (30000)** |
+Por la vara congelada (LPIPS decide): NO-paridad. PERO el veredicto es PARTIDO
+— PSNR/SSIM por paliza, LPIPS peor: la divergencia INVERTIDA (MCMC con ruido
+regularizador = fiel píxel-a-píxel, liso en alta frecuencia que LPIPS premia).
+OJO (mediana f_0061, PSNR 18.1): render honesto — geometría/encuadre ✓, liso,
+magenta solo en cobertura fina, SIN artefactos direccionales. Outlier f_0012
+(LPIPS 0.86) = vista de borde con cobertura pobre; LECCIÓN de ojo: muestrear
+la MEDIANA, no la primera vista (casi sentencio con la peor, n=1).
+**LA CELDA REVELÓ EL SESGO DEL BUDGET**: iters-similar castiga a un método
+diseñado para 30000 steps — exactamente el "evaluar al candidato por su
+capacidad de ser OpenSplat" pre-avisado. CELDA 2 (adición, no enmienda —
+ambas se reportan): budget TIEMPO-similar. Duración de referencia: medium
+95.8s. Pendiente: cronometrar Brush/step y correr la celda 2.
+DATOS YA FIRMES para M3: re-instrum. REAL = puente(existía) + ply_bridge(50
+líneas) + --keep-crs → ~½ sesión (vs 2-3 estimadas); peak 35% con presupuesto
+DURO (--max-splats) = perfil anti-OOM estructural; tinte f_rest pendiente de
+adjudicar (el liso del MCMC lo enmascara a 2000 steps).
