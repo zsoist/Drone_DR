@@ -3773,3 +3773,13 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   background:rgba(10,12,16,.6); color:#8A97A8; font-size:15px;
   transition:color .2s, border-color .2s }
 .vl-dockmin:hover{ color:#E6EBF2; border-color:rgba(69,160,230,.5) }
+
+/* BLOQUE 43 · botón fast-travel del autopiloto */
+.vl-goto{ position:absolute; top:calc(96px + env(safe-area-inset-top)); left:50%;
+  transform:translateX(-50%); display:none; pointer-events:auto; cursor:pointer;
+  font:650 12px var(--font); letter-spacing:.06em; color:#0d1117;
+  padding:9px 18px; border:none; border-radius:999px;
+  background:linear-gradient(135deg,#7dffc9,#45d6a0);
+  box-shadow:0 8px 26px -8px rgba(125,255,201,.5) }
+.vl-goto.show{ display:block; animation:wiIn .4s var(--ease) }
+.vl-goto:active{ transform:translateX(-50%) scale(.96) }

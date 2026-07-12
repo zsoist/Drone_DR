@@ -4,23 +4,23 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=78';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=78';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=78';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=78';
-import { createRecorder } from '/flightverse/recorder.js?v=78';
-import { createAudio } from '/flightverse/audio.js?v=78';
-import { createTouchSticks } from '/flightverse/touch.js?v=78';
-import { createSky } from '/flightverse/sky.js?v=78';
-import CameraControls from '/vendor/camera-controls.module.js?v=78';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=78';
+import * as THREE from '/flightverse/three.js?v=79';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=79';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=79';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=79';
+import { createRecorder } from '/flightverse/recorder.js?v=79';
+import { createAudio } from '/flightverse/audio.js?v=79';
+import { createTouchSticks } from '/flightverse/touch.js?v=79';
+import { createSky } from '/flightverse/sky.js?v=79';
+import CameraControls from '/vendor/camera-controls.module.js?v=79';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=79';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=78';
+} from '/vendor/postprocessing180.module.js?v=79';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -31,7 +31,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=78';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=79';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -117,6 +117,7 @@ function hud() {
       <label>Viñeta<input type="range" id="gr-v" min="0" max="0.9" step="0.02" value="0.42"></label>
       <button id="gr-reset">Restablecer</button>
     </div>
+    <button class="vl-goto" id="vl-goto">Ir al inicio de la ruta »</button>
     <div class="vl-cine" id="vl-cine">
       <label>Velocidad<input type="range" id="cine-v" min="0.03" max="0.5" step="0.01" value="0.14"></label>
       <label>Ángulo<input type="range" id="cine-a" min="0.12" max="0.6" step="0.01" value="0.24"></label>
@@ -361,9 +362,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=78', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=79', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=78');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=79');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -447,7 +448,10 @@ async function main() {
   const setMode = k => {
     modeKey = k; $('#vl-mode').textContent = `modo · ${MODES[k].label}`;
     $('#vl-cine').classList.toggle('show', k === 'cinematico');
+    $('#vl-goto').classList.toggle('show', !!MODES[k].autopilot && !!ghost);
+    if (MODES[k].autopilot && ghost) { initAuto(); goToStart(); }   // vuela al inicio, no teleport
   };
+  $('#vl-goto').addEventListener('click', () => goToStart());
   const setRig = ix => {
     rigIx = ((ix % RIGS.length) + RIGS.length) % RIGS.length;
     camera.fov = RIGS[rigIx].fov; camera.updateProjectionMatrix();
@@ -749,7 +753,33 @@ async function main() {
     c.restore();
   }
 
-  // estela del autopiloto Arcade (luces aditivas que siguen al dron)
+  // ── autopiloto Arcade v2: curva por longitud de arco (sin jitter 1Hz),
+  // transit grácil al inicio, Shift acelera, migas de luz adelante ──
+  const apilot = { u: 0, transit: null, curve: null };
+  const crumbs = [];
+  const initAuto = () => {
+    if (!ghost || apilot.curve) return;
+    apilot.curve = new THREE.CatmullRomCurve3(ghost.pts, false, 'catmullrom', 0.5);
+    apilot.len = apilot.curve.getLength();
+    const cTex = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 32;
+      const c = cv.getContext('2d'); const g = c.createRadialGradient(16,16,1,16,16,15);
+      g.addColorStop(0,'rgba(125,255,201,.9)'); g.addColorStop(1,'rgba(125,255,201,0)');
+      c.fillStyle = g; c.fillRect(0,0,32,32); return new THREE.CanvasTexture(cv); })();
+    for (let i = 0; i < 6; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cTex, transparent: true,
+        depthWrite: false, blending: THREE.AdditiveBlending }));
+      sp.scale.setScalar(1.6); sp.visible = false;
+      scene.add(sp); crumbs.push(sp);
+    }
+  };
+  const goToStart = () => {
+    if (!apilot.curve) return;
+    const start = apilot.curve.getPointAt(0);
+    const d = drone.pos.distanceTo(start);
+    apilot.transit = { from: drone.pos.clone(), to: start, t: 0,
+      dur: Math.min(4, Math.max(1, d / 26)) };
+    apilot.u = 0;
+  };
   const ghostAuto = { f: 0 };
   const trail = [];
   const trailGeo = new THREE.BufferGeometry();
@@ -817,25 +847,38 @@ async function main() {
         drone.pos.set(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f);
         drone.yaw = a[3] + (b[3] - a[3]) * f;
       } else if (MODES[modeKey]?.autopilot && ghost) {
-        // autopiloto del vuelo REAL: recorre el track suave con estela de luces
-        ghostAuto.f = (ghostAuto.f + dt * 1.35) % ghost.dur;
-        const i = ghost.T.findIndex(t2 => t2 > ghostAuto.f);
-        const a = Math.max(0, i - 1), b = Math.max(0, i);
-        const ta = ghost.T[a], tb = ghost.T[b] || ta + 1;
-        const f = tb > ta ? (ghostAuto.f - ta) / (tb - ta) : 0;
+        initAuto();
         drone.prev.pos.copy(drone.pos); drone.prev.yaw = drone.yaw;
-        drone.pos.lerpVectors(ghost.pts[a], ghost.pts[b] || ghost.pts[a], f);
-        const nx = ghost.pts[Math.min(b + 1, ghost.pts.length - 1)];
-        drone.yaw = Math.atan2(-(nx.x - drone.pos.x), -(nx.z - drone.pos.z));
-        drone.vel.set(0, 0, 0);
+        if (apilot.transit) {
+          // vuelo grácil al inicio (easeInOut + arco de altura), NO teleport
+          const tr = apilot.transit;
+          tr.t += dt;
+          const k = Math.min(1, tr.t / tr.dur), e = k * k * (3 - 2 * k);
+          drone.pos.lerpVectors(tr.from, tr.to, e);
+          drone.pos.y += Math.sin(e * Math.PI) * 6;      // arquito elegante
+          drone.yaw += (Math.atan2(-(tr.to.x - tr.from.x), -(tr.to.z - tr.from.z)) - drone.yaw) * 0.06;
+          if (k >= 1) apilot.transit = null;
+        } else if (apilot.curve) {
+          const boost = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
+          apilot.u = (apilot.u + dt * (14 * (boost ? 2.5 : 1)) / apilot.len) % 1;
+          const p2 = apilot.curve.getPointAt(apilot.u);
+          const tan = apilot.curve.getTangentAt(apilot.u);
+          drone.pos.copy(p2);
+          const wy = Math.atan2(-tan.x, -tan.z);
+          let dy = wy - drone.yaw;
+          while (dy > Math.PI) dy -= 2 * Math.PI;
+          while (dy < -Math.PI) dy += 2 * Math.PI;
+          drone.yaw += dy * 0.12;                        // giro suave en esquinas
+          drone.vel.copy(tan).multiplyScalar(14 * (boost ? 2.5 : 1));
+        }
         trail.push(drone.pos.clone());
-        if (trail.length > 160) trail.shift();
+        if (trail.length > 200) trail.shift();
         trailGeo.setFromPoints(trail);
       } else {
         let inp = input.sample();
         const ts = sticks?.sample();
         if (ts?.active) { inp.fwd = ts.fwd; inp.strafe = ts.strafe; inp.yaw = ts.yaw; inp.lift = ts.lift; }
-        if (auto && simT < auto.until) inp = { fwd: 1, strafe: 0, yaw: 0.15, lift: 0.1, boost: simT > 2, brake: false, mouseDX: 0, mouseDY: 0 };
+        if (auto && simT < apilot.until) inp = { fwd: 1, strafe: 0, yaw: 0.15, lift: 0.1, boost: simT > 2, brake: false, mouseDX: 0, mouseDY: 0 };
         drone.step(dt, inp, modeKey);
         if (autoReto) {
           // autotest del slice: teleporta por los gates — prueba detección,
@@ -893,6 +936,14 @@ async function main() {
       }
       if (ghost?.on) ghost.marker.children[0].scale.setScalar(4 + Math.sin(simT * 3.2) * 0.8);
       if (reto?.pulse) reto.pulse(simT);
+      const isAuto = MODES[modeKey]?.autopilot && apilot.curve && !apilot.transit;
+      crumbs.forEach((sp, i) => {
+        sp.visible = !!isAuto;
+        if (isAuto) {
+          sp.position.copy(apilot.curve.getPointAt((apilot.u + (i + 1) * 0.012) % 1));
+          sp.scale.setScalar(1.2 + Math.sin(simT * 4 - i * 0.9) * 0.5);
+        }
+      });
       // hélices con inercia (spin-up/down suave) + bob de hover premium
       propSpin += ((14 + drone.vel.length() * 3) - propSpin) * 0.06;
       for (const pr of props) pr.g.rotation.y += propSpin * STEP * pr.dir;
@@ -1037,7 +1088,7 @@ async function main() {
       report.moved = drone.distance > 20;
       report.ok = report.moved && report.fps >= 20 && Number.isFinite(drone.pos.y);
       report.done = true;
-    }, (auto.until + 1.5) * 1000);
+    }, (apilot.until + 1.5) * 1000);
   }
 }
 
