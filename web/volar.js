@@ -4,24 +4,24 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=64';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=64';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=64';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=64';
-import { createRecorder } from '/flightverse/recorder.js?v=64';
-import { createAudio } from '/flightverse/audio.js?v=64';
-import { createTouchSticks } from '/flightverse/touch.js?v=64';
-import { createSky } from '/flightverse/sky.js?v=64';
-import CameraControls from '/vendor/camera-controls.module.js?v=64';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=64';
+import * as THREE from '/flightverse/three.js?v=65';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=65';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=65';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=65';
+import { createRecorder } from '/flightverse/recorder.js?v=65';
+import { createAudio } from '/flightverse/audio.js?v=65';
+import { createTouchSticks } from '/flightverse/touch.js?v=65';
+import { createSky } from '/flightverse/sky.js?v=65';
+import CameraControls from '/vendor/camera-controls.module.js?v=65';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=65';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=64';
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=64';
+} from '/vendor/postprocessing180.module.js?v=65';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=65';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -46,8 +46,8 @@ function hud() {
       <div class="vl-scene" id="vl-scene"></div>
     </div>
     <div class="vl-corner tr">
-      <div class="vl-metric"><span id="vl-agl">—</span><label>ALT AGL</label></div>
-      <div class="vl-metric"><span id="vl-spd">—</span><label>VEL m/s</label></div>
+      <div class="vl-metric"><span id="vl-agl">—</span><label>ALT AGL</label><i class="vl-bar"><b id="vl-agl-b"></b></i></div>
+      <div class="vl-metric"><span id="vl-spd">—</span><label>VEL m/s</label><i class="vl-bar"><b id="vl-spd-b"></b></i></div>
     </div>
     <div class="vl-corner bl">
       <button class="vl-fab" id="vl-fab">&#9776;</button>
@@ -803,7 +803,10 @@ async function main() {
       drawMinimap();
       // HUD (barato: texto directo, sin re-layout)
       $('#vl-agl').textContent = drone.agl == null ? 'fuera' : `${drone.agl.toFixed(1)} m`;
-      $('#vl-spd').textContent = drone.vel.length().toFixed(1);
+      const spd = drone.vel.length();
+      $('#vl-spd').textContent = spd.toFixed(1);
+      $('#vl-spd-b').style.transform = `scaleX(${Math.min(1, spd / 40)})`;
+      $('#vl-agl-b').style.transform = `scaleX(${drone.agl == null ? 0 : Math.min(1, drone.agl / 160)})`;
       $('#vl-fps').textContent = `${Math.round(loop.fps() || 0)} fps`;
       if (recorder.recording) recBtn.textContent = `■ REC ${recorder.seconds.toFixed(0)}s`;
       audio.update(drone.vel.length(), drone.vel.y);
