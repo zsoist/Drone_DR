@@ -4,23 +4,24 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=63';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=63';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=63';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=63';
-import { createRecorder } from '/flightverse/recorder.js?v=63';
-import { createAudio } from '/flightverse/audio.js?v=63';
-import { createTouchSticks } from '/flightverse/touch.js?v=63';
-import CameraControls from '/vendor/camera-controls.module.js?v=63';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=63';
+import * as THREE from '/flightverse/three.js?v=64';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=64';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=64';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=64';
+import { createRecorder } from '/flightverse/recorder.js?v=64';
+import { createAudio } from '/flightverse/audio.js?v=64';
+import { createTouchSticks } from '/flightverse/touch.js?v=64';
+import { createSky } from '/flightverse/sky.js?v=64';
+import CameraControls from '/vendor/camera-controls.module.js?v=64';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=64';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=63';
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=63';
+} from '/vendor/postprocessing180.module.js?v=64';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=64';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -54,6 +55,7 @@ function hud() {
         <button class="vl-chip" id="vl-mode"></button>
         <button class="vl-chip" id="vl-rig"></button>
         <button class="vl-chip" id="vl-vista">vista · orto</button>
+        <button class="vl-chip" id="vl-cielo">cielo · día</button>
         <button class="vl-chip" id="vl-reto">Gate Rush</button>
         <button class="vl-chip" id="vl-sound">Sonido</button>
         <button class="vl-chip" id="vl-ajustes">Imagen</button>
@@ -142,13 +144,12 @@ async function main() {
   document.body.prepend(renderer.domElement);
   renderer.domElement.className = 'vl-canvas';
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0A0C10);
-  scene.fog = new THREE.Fog(0x0A0C10, 500, 1600);
-  const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.3, 4000);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.25);
-  sun.position.set(250, 420, 120);
-  scene.add(sun);
+  const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.3, 6000);
+  // cielo vivo: domo gradiente + sol/estrellas + nubes a la deriva; las luces
+  // y la niebla las gobierna el preset (dia/atardecer/noche)
+  const sky = createSky(scene);
+  const qCielo = Q.get('cielo');
+  if (qCielo) sky.setPreset(qCielo);
 
   // look premium: un solo EffectPass fusiona SMAA+Bloom+ACES+Vignette en un shader
   // NEUTRAL (no ACES): los colores del splat ya son display-referred — ACES
@@ -225,19 +226,19 @@ async function main() {
   // props que giran con la velocidad, gimbal frontal — solo primitivas three
   const drone = createDrone({ heightAt: terrain.heightAt, collide, spawn: man.spawn });
   const dmesh = new THREE.Group();
-  const matHull = new THREE.MeshLambertMaterial({ color: 0xE8EDF4 });
-  const matGrey = new THREE.MeshLambertMaterial({ color: 0x8f99a8 });
-  const matDark = new THREE.MeshLambertMaterial({ color: 0x23282f });
+  const matHull = new THREE.MeshPhongMaterial({ color: 0xdfe5ee, specular: 0x8899aa, shininess: 62, flatShading: true });
+  const matGrey = new THREE.MeshPhongMaterial({ color: 0x7e8898, specular: 0x556070, shininess: 40 });
+  const matDark = new THREE.MeshPhongMaterial({ color: 0x1e232b, specular: 0x334, shininess: 28 });
   const prof = [];
   for (let i = 0; i <= 12; i++) {
     const t = i / 12;
     prof.push(new THREE.Vector2(Math.sin(t * Math.PI) * 0.165 * (1 - t * 0.22) + 0.001, (t - 0.5) * 0.56));
   }
-  const hull = new THREE.Mesh(new THREE.LatheGeometry(prof, 26), matHull);
-  hull.rotation.x = Math.PI / 2;                       // gota tendida, nariz -z
+  const hull = new THREE.Mesh(new THREE.LatheGeometry(prof, 8), matHull);   // 8 caras = facetado Mavic
+  hull.rotation.x = Math.PI / 2; hull.rotation.y = Math.PI / 8;   // arista arriba, no cara plana
   hull.scale.set(1.05, 0.55, 1);
-  const shell = new THREE.Mesh(new THREE.LatheGeometry(prof, 26), matGrey);
-  shell.rotation.x = Math.PI / 2;
+  const shell = new THREE.Mesh(new THREE.LatheGeometry(prof, 8), matGrey);
+  shell.rotation.x = Math.PI / 2; shell.rotation.y = Math.PI / 8;
   shell.scale.set(0.86, 0.4, 0.84); shell.position.y = 0.052;
   for (const sx of [-0.09, 0.09]) {                    // patas de aterrizaje
     const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.05, 4, 6), matDark);
@@ -384,6 +385,11 @@ async function main() {
   };
   const cycleVista = () => { vista = (vista + 1) % 3; applyVista(); };
   $('#vl-vista').addEventListener('click', cycleVista);
+  const CIELO_LB = { dia: 'día', atardecer: 'atardecer', noche: 'noche' };
+  $('#vl-cielo').addEventListener('click', () => {
+    $('#vl-cielo').textContent = 'cielo · ' + CIELO_LB[sky.cycle()];
+  });
+  $('#vl-cielo').textContent = 'cielo · ' + (CIELO_LB[sky.preset] || 'día');
   $('#vl-mode').addEventListener('click', () => {
     const ks = Object.keys(MODES);
     setMode(ks[(ks.indexOf(modeKey) + 1) % ks.length]);
@@ -792,6 +798,7 @@ async function main() {
         const rig = RIGS[rigIx];
         rig.fn(P, o, camera, STEP, rig);
       }
+      sky.update(STEP, camera.position);
       composer.render();
       drawMinimap();
       // HUD (barato: texto directo, sin re-layout)
