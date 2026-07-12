@@ -4,24 +4,24 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=82';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=82';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=82';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=82';
-import { createRecorder } from '/flightverse/recorder.js?v=82';
-import { createAudio } from '/flightverse/audio.js?v=82';
-import { createTouchSticks } from '/flightverse/touch.js?v=82';
-import { createSky } from '/flightverse/sky.js?v=82';
-import { loadSceneObjects } from '/flightverse/objects.js?v=82';
-import CameraControls from '/vendor/camera-controls.module.js?v=82';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=82';
+import * as THREE from '/flightverse/three.js?v=83';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=83';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=83';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=83';
+import { createRecorder } from '/flightverse/recorder.js?v=83';
+import { createAudio } from '/flightverse/audio.js?v=83';
+import { createTouchSticks } from '/flightverse/touch.js?v=83';
+import { createSky } from '/flightverse/sky.js?v=83';
+import { loadSceneObjects } from '/flightverse/objects.js?v=83';
+import CameraControls from '/vendor/camera-controls.module.js?v=83';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=83';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=82';
+} from '/vendor/postprocessing180.module.js?v=83';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -32,7 +32,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=82';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=83';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -105,18 +105,20 @@ function hud() {
     <div class="vl-result" id="vl-result"></div>
     <input type="range" class="vl-gwheel" id="vl-gwheel" min="-72" max="22" value="-7" aria-label="gimbal">
     <div class="vl-grade" id="vl-grade">
-      <div class="vl-grade-k">IMAGEN</div>
+      <div class="vl-grade-head"><span class="vl-grade-k">IMAGEN</span>
+        <button class="vl-grade-x" id="gr-close" aria-label="cerrar">✕</button></div>
       <div class="vl-presets">
         <button data-pr="natural">Natural</button>
         <button data-pr="vivo">Vivo</button>
         <button data-pr="cine">Cine</button>
       </div>
-      <label>Brillo Gaussian<input type="range" id="gr-b" min="0.35" max="1.6" step="0.01" value="0.88"></label>
-      <label>Brillo 3D<input type="range" id="gr-t" min="0.3" max="2.2" step="0.01" value="1"></label>
-      <label>Contraste<input type="range" id="gr-c" min="-0.15" max="0.55" step="0.01" value="0.06"></label>
-      <label>Saturación<input type="range" id="gr-s" min="-1" max="1" step="0.01" value="0.06"></label>
-      <label>Bloom<input type="range" id="gr-g" min="0" max="2" step="0.02" value="0.25"></label>
-      <label>Viñeta<input type="range" id="gr-v" min="0" max="1" step="0.02" value="0.42"></label>
+      <label>Brillo Gaussian <output id="o-b">0.88</output><input type="range" id="gr-b" min="0.35" max="1.6" step="0.01" value="0.88"></label>
+      <label>Brillo 3D <output id="o-t">1.00</output><input type="range" id="gr-t" min="0.3" max="2.2" step="0.01" value="1"></label>
+      <label>Contraste <output id="o-c">0.06</output><input type="range" id="gr-c" min="-0.15" max="0.55" step="0.01" value="0.06"></label>
+      <label>Saturación <output id="o-s">0.06</output><input type="range" id="gr-s" min="-1" max="1" step="0.01" value="0.06"></label>
+      <label>Bloom <output id="o-g">0.25</output><input type="range" id="gr-g" min="0" max="2" step="0.02" value="0.25"></label>
+      <label>Viñeta <output id="o-v">0.42</output><input type="range" id="gr-v" min="0" max="1" step="0.02" value="0.42"></label>
+      <label>Tono <output id="o-h">0.00</output><input type="range" id="gr-h" min="-0.5" max="0.5" step="0.01" value="0"></label>
       <button id="gr-reset">Restablecer</button>
     </div>
     <button class="vl-goto" id="vl-goto">Ir al inicio de la ruta »</button>
@@ -373,9 +375,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=82', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=83', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=82');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=83');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -506,7 +508,16 @@ async function main() {
   $('#vl-rig').addEventListener('click', () => setRig(rigIx + 1));
   $('#vl-reto').addEventListener('click', () => startReto());   // arrow: startReto se declara abajo
   $('#vl-ayuda').addEventListener('click', () => $('#vl-guide').classList.add('show'));
-  $('#vl-ajustes').addEventListener('click', () => $('#vl-grade').classList.toggle('show'));
+  $('#vl-ajustes').addEventListener('click', e => {
+    e.stopPropagation();
+    $('#vl-grade').classList.toggle('show');
+  });
+  $('#gr-close').addEventListener('click', () => $('#vl-grade').classList.remove('show'));
+  document.addEventListener('pointerdown', e => {
+    const g = $('#vl-grade');
+    if (g.classList.contains('show') && !g.contains(e.target) && !e.target.closest('#vl-ajustes'))
+      g.classList.remove('show');
+  });
   $('#vl-fab').addEventListener('click', () => $('#vl-dock').classList.toggle('open'));
   $('#vl-dockmin').addEventListener('click', () => {
     const min = $('#vl-dock').classList.toggle('min');
@@ -519,18 +530,23 @@ async function main() {
   const GRADE_KEY = 'ab.fv.grade';
   const applyGrade = g => {
     fx.exp.uniforms.get('uExp').value = g.b;
+    fx.hs.hue = (g.h ?? 0) * Math.PI;
+    // bloom: con NEUTRAL casi nada supera lum 1.0 — el slider baja el UMBRAL
+    fx.bloom.luminanceMaterial.threshold = Math.max(0.55, 1.0 - (g.g ?? 0) * 0.28);
+    for (const [oid, k] of [['o-b','b'],['o-t','t'],['o-c','c'],['o-s','s'],['o-g','g'],['o-v','v'],['o-h','h']])
+      if ($('#'+oid)) $('#'+oid).textContent = (+(g[k] ?? 0)).toFixed(2);
     terrain.mesh.material.color.setScalar(g.t ?? 1);   // ganancia SOLO del 3D
     fx.bc.contrast = g.c;
     fx.hs.saturation = g.s;
     fx.bloom.intensity = g.g;
     fx.vig.darkness = g.v;
-    for (const [id, k] of [['gr-b','b'],['gr-t','t'],['gr-c','c'],['gr-s','s'],['gr-g','g'],['gr-v','v']]) if ($('#'+id)) $('#'+id).value = g[k] ?? 1;
+    for (const [id, k] of [['gr-b','b'],['gr-t','t'],['gr-c','c'],['gr-s','s'],['gr-g','g'],['gr-v','v'],['gr-h','h']]) if ($('#'+id)) $('#'+id).value = g[k] ?? 1;
   };
-  const defGrade = { b: 0.88, t: 1, c: 0.06, s: 0.06, g: 0.25, v: 0.42 };
+  const defGrade = { b: 0.88, t: 1, c: 0.06, s: 0.06, g: 0.25, v: 0.42, h: 0 };
   let grade = { ...defGrade, ...(JSON.parse(localStorage.getItem(GRADE_KEY) || '{}')) };
   applyGrade(grade);
   document.getElementById('vl-grade').addEventListener('input', e => {
-    const map = { 'gr-b':'b','gr-t':'t','gr-c':'c','gr-s':'s','gr-g':'g','gr-v':'v' };
+    const map = { 'gr-b':'b','gr-t':'t','gr-c':'c','gr-s':'s','gr-g':'g','gr-v':'v','gr-h':'h' };
     const k = map[e.target.id]; if (!k) return;
     grade[k] = parseFloat(e.target.value);
     applyGrade(grade);

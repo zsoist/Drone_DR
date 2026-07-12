@@ -3789,3 +3789,21 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   font:700 11px var(--mono); letter-spacing:.14em; color:#DFF6EC; white-space:nowrap;
   padding:5px 14px; border-radius:7px; background:rgba(8,12,16,.45);
   border:1px solid rgba(125,255,201,.2) }
+
+/* ── BLOQUE 45 · panel Imagen premium: header, outputs, sliders custom ── */
+.vl-grade{ animation:gradeIn .28s var(--ease) }
+@keyframes gradeIn{ from{ opacity:0; transform:translateY(46%) scale(.97) } }
+.vl-grade-head{ display:flex; align-items:center; justify-content:space-between }
+.vl-grade-x{ width:30px; height:30px; border-radius:8px; border:1px solid var(--line);
+  background:transparent; color:var(--text-2); cursor:pointer; font-size:13px }
+.vl-grade-x:hover{ color:#fff; border-color:rgba(217,106,106,.6) }
+.vl-grade label{ position:relative }
+.vl-grade output{ float:right; font:700 11px var(--mono); color:var(--accent) }
+.vl-grade input[type=range]{ -webkit-appearance:none; appearance:none; background:transparent }
+.vl-grade input[type=range]::-webkit-slider-runnable-track{ height:6px; border-radius:3px;
+  background:linear-gradient(90deg, rgba(69,160,230,.55), rgba(125,255,201,.4)) }
+.vl-grade input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:20px; height:20px;
+  border-radius:50%; margin-top:-7px; background:#EAF2FB;
+  border:2.5px solid #45A0E6; box-shadow:0 2px 10px rgba(69,160,230,.45);
+  transition:transform .12s var(--ease) }
+.vl-grade input[type=range]::-webkit-slider-thumb:hover{ transform:scale(1.15) }
