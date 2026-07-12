@@ -18,19 +18,20 @@ import urllib.parse
 from browser_gate import QA_DIR, launch_chrome, new_page
 
 
-def run(cid: str, base_url: str, timeout: int) -> dict:
+def run(cid: str, base_url: str, timeout: int, page: str = "spike_flightverse.html",
+        gvar: str = "__spike", extra: str = "") -> dict:
     proc, profile, port = launch_chrome()
     cdp = None
     try:
         cdp = new_page(port)
-        url = f"{base_url.rstrip('/')}/spike_flightverse.html?m={urllib.parse.quote(cid)}"
+        url = f"{base_url.rstrip('/')}/{page}?m={urllib.parse.quote(cid)}{extra}"
         cdp.send("Page.navigate", {"url": url})
         deadline = time.time() + timeout
         rep = None
         while time.time() < deadline:
             cdp.pump(1.0)
             try:
-                rep = cdp.eval("window.__spike && window.__spike.done ? window.__spike : null")
+                rep = cdp.eval(f"window.{gvar} && window.{gvar}.done ? window.{gvar} : null")
             except RuntimeError:
                 continue
             if rep:
@@ -39,7 +40,7 @@ def run(cid: str, base_url: str, timeout: int) -> dict:
             raise RuntimeError(f"spike no terminó en {timeout}s · console={cdp.errors[:4]}")
         QA_DIR.mkdir(parents=True, exist_ok=True)
         shot = cdp.send("Page.captureScreenshot", {"format": "png"})
-        out = QA_DIR / f"{cid}-flightverse-spike.png"
+        out = QA_DIR / f"{cid}-{page.split(chr(46))[0]}.png"
         out.write_bytes(base64.b64decode(shot["data"]))
         rep["screenshot"] = str(out)
         rep["console_errors"] = cdp.errors[:6]
@@ -62,8 +63,11 @@ def main():
     ap.add_argument("clip_id", nargs="?", default="DJI_20260704160358_0104_D")
     ap.add_argument("--base-url", default="http://127.0.0.1:8790")
     ap.add_argument("--timeout", type=int, default=180)
+    ap.add_argument("--page", default="spike_flightverse.html")
+    ap.add_argument("--global", dest="gvar", default="__spike")
+    ap.add_argument("--extra", default="")
     args = ap.parse_args()
-    rep = run(args.clip_id, args.base_url, args.timeout)
+    rep = run(args.clip_id, args.base_url, args.timeout, args.page, args.gvar, args.extra)
     print(json.dumps(rep, indent=1))
     raise SystemExit(0 if rep.get("ok") else 1)
 
