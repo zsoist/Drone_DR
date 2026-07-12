@@ -68,26 +68,38 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
   };
 }
 
-// Splat en la escena unificada. La alineación real splat<->terreno está
-// pendiente (transforms.splat.status === 'unaligned'): mientras tanto el
-// caller elige colocación explícita — nunca se finge registro.
+// Splat en la escena unificada. Si transforms.splat.status === 'aligned'
+// (splat_align.py: Umeyama cámaras-splat vs reconstrucción topocéntrica,
+// RMSE sub-métrico), la matriz 4x4 coloca el splat SOBRE el terreno en
+// metros reales. Sin alineación el caller decide colocación explícita —
+// nunca se finge registro.
 export async function attachSplat(man, scene, { position, scale, onProgress } = {}) {
   if (!man.capabilities?.splat) throw new Error('la escena no tiene splat');
   const GS = await import('/vendor/gaussian-splats-3d.module.min.js');
+  const tr = man.transforms?.splat;
+  const aligned = tr?.status === 'aligned' && Array.isArray(tr.matrix) && tr.matrix.length === 16;
   const dv = new GS.DropInViewer({
     sharedMemoryForWorkers: false, antialiased: true,
     halfPrecisionCovariancesOnGPU: true, showLoadingUI: false,
   });
   await dv.addSplatScene(man.assets.splat, {
-    rotation: man.transforms?.splat?.rotation || [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+    // alineado: la matriz subsume la rotación Z-up->Y-up; sin ella, quat legado
+    rotation: aligned ? undefined : (tr?.rotation || [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]),
     splatAlphaRemovalThreshold: 8, showLoadingUI: false, progressiveLoad: false,
     onProgress: p => onProgress?.(p),
   });
-  if (scale) dv.scale.setScalar(scale);
-  if (position) dv.position.set(...position);
+  if (aligned) {
+    const m = new THREE.Matrix4();
+    m.set(...tr.matrix);                      // Matrix4.set es row-major, como el JSON
+    m.decompose(dv.position, dv.quaternion, dv.scale);
+  } else {
+    if (scale) dv.scale.setScalar(scale);
+    if (position) dv.position.set(...position);
+  }
   scene.add(dv);
   return {
-    object: dv,
+    object: dv, aligned,
+    rmse: aligned ? tr.rmse_m : null,
     radius: dv.splatMesh?.maxSplatDistanceFromSceneCenter ?? null,
     dispose: async () => {
       scene.remove(dv);

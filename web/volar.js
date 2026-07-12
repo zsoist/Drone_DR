@@ -5,7 +5,7 @@
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
 import * as THREE from '/vendor/three.module.js';
-import { loadManifest, loadTerrain, loadTrack } from '/flightverse/scene.js';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js';
 import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js';
 import { createGateRush, bestTime } from '/flightverse/gaterush.js';
 import { createRecorder } from '/flightverse/recorder.js';
@@ -47,7 +47,7 @@ function hud() {
     <div class="vl-help" id="vl-help">
       <b>Controles</b><br>
       WASD mover · R/F subir/bajar · Q/E girar · mouse mirar (click captura)<br>
-      Shift turbo · Space freno · 1-5 modo · C cámara · G ghost · H ayuda
+      Shift turbo · Space freno · 1-5 modo · C cámara · G ghost · P foto-real · V grabar · H ayuda
     </div>
   </div>`);
 }
@@ -84,6 +84,22 @@ async function main() {
   const terrain = await loadTerrain(man, { anisotropy: 8 });
   scene.add(terrain.mesh);
   const W = terrain.world;
+
+  // splat héroe: solo si splat_align.py lo dejó 'aligned' (RMSE sub-métrico).
+  // Carga DESPUÉS del terreno (el juego ya es volable mientras llega el ksplat).
+  let splat = null;
+  if (man.capabilities?.splat && man.transforms?.splat?.status === 'aligned') {
+    attachSplat(man, scene, {
+      onProgress: p => { if (p < 100) $('#vl-scene').textContent = `${man.name} · splat ${Math.round(p)}%`; },
+    }).then(s => {
+      splat = s;
+      $('#vl-scene').textContent = `${man.name} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
+      report.splat = { aligned: s.aligned, rmse_m: s.rmse };
+    }).catch(e => {
+      report.errors.push('splat: ' + e.message);
+      $('#vl-scene').textContent = man.name;
+    });
+  }
 
   // dron visible (proxy honesto: cuerpo + 4 rotores, sin assets externos)
   const drone = createDrone({ heightAt: terrain.heightAt, spawn: man.spawn });
@@ -154,6 +170,7 @@ async function main() {
     if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
     if (e.code === 'KeyH') $('#vl-help').classList.toggle('show');
     if (e.code === 'KeyT') startReto();
+    if (e.code === 'KeyP' && splat) splat.object.visible = !splat.object.visible;
     if (e.code === 'Escape' && replay) { replay = null; if (resultShown) $('#vl-result').classList.add('show'); }
   });
   renderer.domElement.addEventListener('click', () => { if (modeKey === 'fpv') input.requestLock(); });
