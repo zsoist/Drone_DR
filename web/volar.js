@@ -7,6 +7,7 @@
 import * as THREE from '/vendor/three.module.js';
 import { loadManifest, loadTerrain, loadTrack } from '/flightverse/scene.js';
 import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js';
 
 const Q = new URLSearchParams(location.search);
 const CID = (Q.get('m') || '').replace(/[^\w-]/g, '');
@@ -37,6 +38,9 @@ function hud() {
       <div class="vl-ghost" id="vl-ghost"></div>
       <div class="vl-fps" id="vl-fps"></div>
     </div>
+    <div class="vl-center-top" id="vl-challenge"></div>
+    <div class="vl-count" id="vl-count"></div>
+    <div class="vl-result" id="vl-result"></div>
     <div class="vl-help" id="vl-help">
       <b>Controles</b><br>
       WASD mover · R/F subir/bajar · Q/E girar · mouse mirar (click captura)<br>
@@ -146,11 +150,54 @@ async function main() {
     if (e.code === 'KeyC') setRig(rigIx + 1);
     if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
     if (e.code === 'KeyH') $('#vl-help').classList.toggle('show');
+    if (e.code === 'KeyT') startReto();
+    if (e.code === 'Escape' && replay) { replay = null; if (resultShown) $('#vl-result').classList.add('show'); }
   });
   renderer.domElement.addEventListener('click', () => { if (modeKey === 'fpv') input.requestLock(); });
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+  });
+
+  // ── Gate Rush (desafío del slice) + replay ──
+  let reto = null, replay = null, resultShown = false;
+  const startReto = () => {
+    $('#vl-result').classList.remove('show'); $('#vl-result').innerHTML = '';
+    replay = null; resultShown = false;
+    if (reto) reto.dispose();
+    reto = createGateRush({ scene, trackPts: ghost?.pts, world: W, heightAt: terrain.heightAt });
+    reto.start();
+  };
+  const startReplay = () => {
+    if (!reto?.state.rec.length) return;
+    $('#vl-result').classList.remove('show');
+    replay = { rec: reto.state.rec, f: 0 };
+  };
+  const showResult = () => {
+    resultShown = true;
+    const t = reto.state.time;
+    const { best, isNew } = bestTime(CID, t);
+    $('#vl-result').innerHTML = `
+      <div class="vl-result-card">
+        <div class="vl-result-k">GATE RUSH · COMPLETADO</div>
+        <div class="vl-result-time">${t.toFixed(2)}<small>s</small></div>
+        <div class="vl-result-rows">
+          <span>${isNew ? '★ nuevo récord' : `récord ${best?.toFixed(2)}s`}</span>
+          <span>vel. máx ${reto.state.topSpeed.toFixed(1)} m/s</span>
+          <span>${reto.state.total} gates</span>
+        </div>
+        <div class="vl-result-btns">
+          <button data-act="retry">Reintentar</button>
+          <button data-act="replay">Ver replay</button>
+          <a href="mundo.html">Mundo</a>
+        </div>
+      </div>`;
+    $('#vl-result').classList.add('show');
+  };
+  $('#vl-result').addEventListener('click', e => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'retry') startReto();
+    if (act === 'replay') startReplay();
   });
 
   // cinemático: tour orbital sobre el centro de la escena
@@ -159,13 +206,50 @@ async function main() {
 
   let simT = 0;
   const auto = AUTOTEST ? { until: 5 } : null;
+  const autoReto = Q.get('autotest') === 'gaterush' ? { last: 0, replayed: false } : null;
   const P = new THREE.Vector3();
   const loop = createLoop({
     update(dt) {
       simT += dt;
-      let inp = input.sample();
-      if (auto && simT < auto.until) inp = { fwd: 1, strafe: 0, yaw: 0.15, lift: 0.1, boost: simT > 2, brake: false, mouseDX: 0, mouseDY: 0 };
-      drone.step(dt, inp, modeKey);
+      if (replay) {
+        // replay: la grabación (60Hz) manda; física apagada, interpolación intacta
+        replay.f += dt * 60;
+        const n = replay.rec.length;
+        if (replay.f >= n - 1) replay.f = 0;
+        const i = Math.floor(replay.f), f = replay.f - i;
+        const a = replay.rec[i], b = replay.rec[Math.min(i + 1, n - 1)];
+        drone.prev.pos.copy(drone.pos); drone.prev.yaw = drone.yaw;
+        drone.pos.set(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f);
+        drone.yaw = a[3] + (b[3] - a[3]) * f;
+      } else {
+        let inp = input.sample();
+        if (auto && simT < auto.until) inp = { fwd: 1, strafe: 0, yaw: 0.15, lift: 0.1, boost: simT > 2, brake: false, mouseDX: 0, mouseDY: 0 };
+        drone.step(dt, inp, modeKey);
+        if (autoReto) {
+          // autotest del slice: teleporta por los gates — prueba detección,
+          // resultado y replay reales sin fingir sus verificaciones
+          if (!reto && simT > 0.5) startReto();
+          else if (reto?.state.phase === 'running' && simT - autoReto.last > 0.4) {
+            autoReto.last = simT;
+            const g = reto.gates[reto.state.idx];
+            if (g) { drone.pos.copy(g.center); drone.prev.pos.copy(g.center); }
+          } else if (reto?.state.phase === 'finished' && !autoReto.replayed) {
+            autoReto.replayed = true;
+            startReplay();
+            setTimeout(() => {
+              report.reto = { time: reto.state.time, gates: reto.state.total, recFrames: reto.state.rec.length };
+              report.replayActive = !!replay;
+              report.ok = reto.state.total >= 4 && reto.state.time != null
+                && reto.state.rec.length > 30 && !!replay;
+              report.done = true;
+            }, 1200);
+          }
+        }
+        if (reto) {
+          reto.update(dt, drone.pos, drone.vel, drone.yaw);
+          if (reto.state.phase === 'finished' && !resultShown) showResult();
+        }
+      }
       if (ghost?.on) {
         ghost.t = (ghost.t + dt) % ghost.dur;
         const i = ghost.T.findIndex(t => t > ghost.t);
@@ -193,6 +277,20 @@ async function main() {
       $('#vl-agl').textContent = drone.agl == null ? 'fuera' : `${drone.agl.toFixed(1)} m`;
       $('#vl-spd').textContent = drone.vel.length().toFixed(1);
       $('#vl-fps').textContent = `${Math.round(loop.fps() || 0)} fps`;
+      const ch = $('#vl-challenge'), cnt = $('#vl-count');
+      if (replay) {
+        ch.textContent = 'REPLAY · ESC para salir'; cnt.classList.remove('show');
+      } else if (reto) {
+        const st = reto.state;
+        if (st.phase === 'countdown') {
+          cnt.textContent = String(Math.ceil(st.countdown)); cnt.classList.add('show');
+          ch.textContent = 'GATE RUSH';
+        } else cnt.classList.remove('show');
+        if (st.phase === 'running') ch.textContent = `⏱ ${st.t.toFixed(1)}s · gate ${Math.min(st.idx + 1, st.total)}/${st.total}`;
+        if (st.phase === 'finished') ch.textContent = `✔ GATE RUSH · ${st.time.toFixed(2)}s`;
+      } else {
+        ch.textContent = 'T · iniciar Gate Rush'; cnt.classList.remove('show');
+      }
     },
   });
   loop.start();

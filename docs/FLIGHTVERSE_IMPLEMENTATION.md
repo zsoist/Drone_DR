@@ -36,7 +36,7 @@
 | P1 renderer gate + SceneManifest V2 | HECHA | FLIGHTVERSE_RENDERER_DECISION.md — spike OK (92/100 incumbente, 5/5 preguntas, qa/*-flightverse-spike.png); dsm_lod.py (126MB→234KB) + spike_flightverse.{html,js} + flightverse_spike_gate.py |
 | P2 world shell (/mundo) | HECHA | mundo.html/js + NAV globe + BLOQUE 28; 6 escenas, verificado pane (desktop+390px, 0 errores, sin overflow) |
 | P3 vuelo jugable (loop fijo, modos, rigs) | HECHA (núcleo) | volar.{html,js} + flightverse/runtime.js — timestep fijo 120Hz, 5 modos, 6 rigs, ghost del track real, HUD 4-esquinas; gate CDP: 62fps, AGL real, 0 errores (qa/*-volar.png). Deudas: touch móvil, 4 rigs restantes, audio |
-| P4 Gate Rush (slice) | — | |
+| P4 Gate Rush (slice) | HECHA (núcleo) | flightverse/gaterush.js — circuito sobre el track REAL (8 gates), countdown/timer/result/récord localStorage, replay 60Hz; gate CDP autotest=gaterush ok (detección+resultado+replay verificados, 0 errores) |
 | P5 God/creator | — | |
 | P6 Director | — | |
 | P7 Video Studio | — | |
