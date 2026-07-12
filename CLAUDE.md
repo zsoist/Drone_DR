@@ -1,6 +1,8 @@
 # AeroBrain
 
 ## Pitfalls
+- **Versionado web**: TODO batch de edits en web/ termina con `python3 pipeline/bump_web_version.py` (sube ?v=N en html+js+vendor y regenera .gz). Editar módulos sin bump = navegador/edge mezcla módulos viejos y nuevos (incidente Safari 2026-07-12: terrain.splatMask undefined).
+
 - GATE POST-PARCHE DEL TRAINER (P0 11-jul): tras CUALQUIER rebuild/patch de
   OpenSplat, correr un cinematic conocido (proj_...133809_0101_D) ANTES de
   declarar el binario bueno. "Aditivo por intención del diff" no es evidencia —
