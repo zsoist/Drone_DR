@@ -73,10 +73,86 @@ export function createInput(el) {
 export const MODES = {
   cinematico: { label: 'Cinemático', vmax: 0, tour: true },
   asistido:   { label: 'Asistido', vmax: 14, vboost: 24, vy: 5, resp: 3.2, yawRate: 1.6, autoLevel: true },
-  fpv:        { label: 'FPV', vmax: 26, vboost: 38, vy: 9, resp: 1.4, yawRate: 3.4, autoLevel: false },
-  arcade:     { label: 'Arcade', vmax: 34, vboost: 55, vy: 14, resp: 5.5, yawRate: 2.6, autoLevel: true },
+  // FPV/Arcade: 6DOF real portado de ecctrl 2.0 (MIT, c) Erdong Chen) —
+  // thrust por rotor + PD de actitud + mixer; ver docs/FLIGHTVERSE ledger
+  fpv:        { label: 'FPV', six: true, twr: 3.2, tilt: Math.PI / 3.6, vmaxH: 26, vmaxV: 9, yawRate: 3.4 },
+  arcade:     { label: 'Arcade', six: true, twr: 5.0, tilt: Math.PI / 4, vmaxH: 34, vmaxV: 14, yawRate: 2.6 },
   dios:       { label: 'Dios', vmax: 60, vboost: 160, vy: 60, resp: 8, yawRate: 2.2, autoLevel: true, noclip: true },
 };
+
+// ── 6DOF (port ecctrl): constantes en unidades de nuestro dron (masa 1kg) ──
+const G6 = 9.81, MASS6 = 1, DRAG6 = 0.25, TORQUE_RATIO = 0.6;
+const TILT_P = 3.5, TILT_D = 0.6, YAW_P = 1.2, HORIZ_P = 1.0, VERT_P = 2.0;
+const I6 = 0.06;                               // inercia media (caja 0.85m, 1kg)
+const ROTORS6 = [                              // pares diagonales contra-rotantes
+  { p: [+0.33, 0, +0.34], s: -1 }, { p: [-0.33, 0, +0.34], s: +1 },
+  { p: [+0.33, 0, -0.34], s: +1 }, { p: [-0.33, 0, -0.34], s: -1 },
+];
+const _up = new THREE.Vector3(0, 1, 0);
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+const _v4 = new THREE.Vector3(), _q1 = new THREE.Quaternion();
+
+function step6(d, inp, m, dt) {
+  const MT = (m.twr * MASS6 * G6) / 4;         // empuje máx por rotor
+  const thr = Math.max(-1, Math.min(1, inp.lift));
+  const yaw = Math.max(-1, Math.min(1, inp.yaw - inp.mouseDX * 0.02));
+  const pit = Math.max(-1, Math.min(1, inp.fwd));
+  const rol = Math.max(-1, Math.min(1, inp.strafe));
+  const boost = inp.boost ? 1.4 : 1;
+
+  const by = _v1.set(0, 1, 0).applyQuaternion(d.quat);
+  const fwd = _v2.set(0, 0, -1).applyQuaternion(d.quat); fwd.y = 0; fwd.normalize();
+  const right = _v3.set(1, 0, 0).applyQuaternion(d.quat); right.y = 0; right.normalize();
+
+  // velocidad objetivo → error → aceleración pedida (clamp a g·tan(tilt))
+  const vT = _v4.copy(right).multiplyScalar(rol * m.vmaxH * boost)
+    .addScaledVector(fwd, pit * m.vmaxH * boost)
+    .addScaledVector(_up, thr * m.vmaxV * boost);
+  vT.sub(d.vel);                               // vErr
+  const aV = Math.max(-G6, Math.min(G6, vT.y * VERT_P));
+  const aH = vT.clone(); aH.y = 0; aH.multiplyScalar(HORIZ_P);
+  const aHmax = G6 * Math.tan(m.tilt);
+  if (aH.length() > aHmax) aH.setLength(aHmax);
+
+  // hover feed-forward (auto-compensa el tilt) + PD de actitud
+  const hover = Math.max(0, Math.min(1, (MASS6 * (G6 + aV)) / (4 * MT * Math.max(0.25, by.y))));
+  const targetUp = aH.clone().addScaledVector(_up, G6).normalize();
+  const tiltErr = new THREE.Vector3().crossVectors(by, targetUp);
+  const tau = tiltErr.multiplyScalar(TILT_P)
+    .addScaledVector(new THREE.Vector3(d.angVel.x, 0, d.angVel.z), -TILT_D)
+    .addScaledVector(_up, (yaw * m.yawRate - d.angVel.y) * YAW_P);
+  const tauBody = tau.applyQuaternion(_q1.copy(d.quat).invert());
+
+  // mixer normalizado + fuerzas (empuje = +Y local de cada rotor)
+  const maxMix = Math.min(1 - hover, hover) || 0.01;
+  const F = new THREE.Vector3(0, -G6 * MASS6, 0).addScaledVector(d.vel, -DRAG6);
+  const T = new THREE.Vector3();
+  for (const r of ROTORS6) {
+    const mix = tauBody.z * (r.p[0] > 0 ? -1 : 1) * 0.25
+              + tauBody.x * (r.p[2] > 0 ? 1 : -1) * 0.25
+              + tauBody.y * r.s * 0.25 / TORQUE_RATIO * 0.6;
+    const t = Math.max(0, Math.min(1, hover + Math.max(-maxMix, Math.min(maxMix, mix))));
+    const thrust = _v1.set(0, MT * t, 0).applyQuaternion(d.quat);
+    F.add(thrust);
+    const rw = _v2.set(...r.p).applyQuaternion(d.quat);
+    T.add(_v3.crossVectors(rw, thrust));
+    T.addScaledVector(by, r.s * TORQUE_RATIO * MT * t * 0.1);
+  }
+  if (inp.brake) d.vel.multiplyScalar(Math.exp(-dt * 4));
+  d.vel.addScaledVector(F, dt / MASS6);
+  d.pos.addScaledVector(d.vel, dt);
+  d.angVel.addScaledVector(T, dt / I6);
+  d.angVel.multiplyScalar(Math.exp(-dt * 1.2));           // damping aerodinámico
+  // integrar quaternion: dq = 0.5·ω·q·dt
+  const w = d.angVel;
+  _q1.set(w.x * dt / 2, w.y * dt / 2, w.z * dt / 2, 0).multiply(d.quat);
+  d.quat.x += _q1.x; d.quat.y += _q1.y; d.quat.z += _q1.z; d.quat.w += _q1.w;
+  d.quat.normalize();
+  // derivar yaw/pitch para rigs y HUD
+  const f2 = _v1.set(0, 0, -1).applyQuaternion(d.quat);
+  d.yaw = Math.atan2(-f2.x, -f2.z);
+  d.pitch = Math.asin(Math.max(-1, Math.min(1, f2.y)));
+}
 
 const MIN_AGL = 1.2;             // el dron nunca “entra” al terreno: piso duro honesto
 const DRONE_R = 1.2;             // radio de colisión contra el proxy de edificios
@@ -86,6 +162,7 @@ export function createDrone({ heightAt, collide, spawn }) {
   const d = {
     pos: new THREE.Vector3(...(spawn?.position_m || [0, 60, 0])),
     vel: new THREE.Vector3(),
+    quat: new THREE.Quaternion(), angVel: new THREE.Vector3(),
     yaw: 0, pitch: 0,
     prev: { pos: new THREE.Vector3(), yaw: 0, pitch: 0 },
     agl: null, crashedSoft: false, distance: 0,
@@ -96,6 +173,15 @@ export function createDrone({ heightAt, collide, spawn }) {
     const m = MODES[modeKey] || MODES.asistido;
     d.prev.pos.copy(d.pos); d.prev.yaw = d.yaw; d.prev.pitch = d.pitch;
     if (m.tour) return;                       // cinemático: la cámara vuela, no el dron
+
+    if (m.six) {                               // FPV/Arcade: rígido 6DOF real
+      step6(d, inp, m, dt);
+      d.distance += d.vel.length() * dt;
+      applyWorldConstraints(d, m);
+      return;
+    }
+    // sincronizar quat con el heading del modo asistido (cambio de modo suave)
+    d.quat.setFromAxisAngle(_up, d.yaw); d.angVel.set(0, 0, 0);
 
     d.yaw += inp.yaw * m.yawRate * dt - inp.mouseDX * 0.0022;   // teclas=tasa, mouse=directo
     d.pitch = THREE.MathUtils.clamp(d.pitch - inp.mouseDY * 0.0018, -1.2, 1.2);
@@ -115,7 +201,10 @@ export function createDrone({ heightAt, collide, spawn }) {
 
     d.distance += d.vel.length() * dt;
     d.pos.addScaledVector(d.vel, dt);
+    applyWorldConstraints(d, m);
+  };
 
+  function applyWorldConstraints(d, m) {
     const ground = heightAt(d.pos.x, d.pos.z);
     d.agl = ground == null ? null : d.pos.y - ground;
     if (!m.noclip && ground != null && d.pos.y < ground + MIN_AGL) {
@@ -140,7 +229,7 @@ export function createDrone({ heightAt, collide, spawn }) {
         d.crashedSoft = true;
       }
     }
-  };
+  }
 
   d.lerpPose = (alpha, outPos) => {
     outPos.lerpVectors(d.prev.pos, d.pos, alpha);
