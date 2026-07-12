@@ -261,3 +261,16 @@ mando real, minimapa MapLibre opcional.
 - HUD: mini-barra de munición bajo cada arma del selector (--ammo var CSS).
 - Gate: invasion=zombie,ufo,gigante,dragon → oleada 1, 8 vivos, 73fps, 0 err.
   OVNI visible en screenshot orbitando.
+
+## v115 (2026-07-12) — pipeline de enemigos GLB ultra-HD (motor listo)
+- SkeletonUtils vendorizado (three 0.180 oficial, import al shim) — clonado de
+  modelos con skinning.
+- invasion.js: si assets/enemies/<tipo>.glb existe (manifest.json), lo carga y
+  clona por spawn; AnimationMixer con clips 'walk'/'fly'/'attack'/'idle' —
+  attack se dispara en melee y al disparar proyectiles. Centro de impacto y
+  radio del bbox real. Fallback: procedural (carga progresiva honesta).
+- docs/ENEMY_MODEL_SPEC.md: contrato completo (ejes/origen/escala real/clips/
+  presupuesto 80k/6mats/2048²) + prompts copia-pega por los 7 tipos (diseños
+  ORIGINALES brand-free) + lista de archivos a entregar a ChatGPT + pasos de
+  instalación y gate de verificación.
+- Gate: invasión procedural intacta (71fps, 0 errores).

@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=114';
+import * as THREE from '/flightverse/three.js?v=115';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -128,6 +128,25 @@ const SPECS = {
   gigante: { build: bGigante,             hp: 1600, speed: 2.1, r2: 14, y: 8.8,  dmg: 22, melee: 7, slope: 6, foot: 5 },
 };
 
+// ── GLBs externos de enemigos (assets/enemies/<tipo>.glb + manifest.json) ──
+// Contrato en docs/ENEMY_MODEL_SPEC.md: metros reales, -Z al frente, origen en
+// los pies (terrestres) o centro (voladores), AnimationClips 'walk'/'fly'/
+// 'attack'/'idle'. Sin GLB: constructor procedural (fallback honesto).
+let GLTFLoader = null, SkelUtils = null, enemyManifest = null;
+const glbCache = {};
+async function preloadEnemyGlb(type, v) {
+  try {
+    if (!enemyManifest) {
+      enemyManifest = await (await fetch(`/assets/enemies/manifest.json?v=${v}`, { cache: 'no-store' })).json();
+    }
+    if (!enemyManifest[type] || glbCache[type]) return;
+    if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=115'));
+    if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=115');
+    const g = await new GLTFLoader().loadAsync(`/assets/enemies/${type}.glb`);
+    glbCache[type] = { scene: g.scene, clips: g.animations || [] };
+  } catch { /* GLB opcional: el procedural sigue siendo la verdad */ }
+}
+
 export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
   const group = new THREE.Group(); group.name = 'fv-invasion'; scene.add(group);
   const E = [], shots = [];
@@ -149,14 +168,34 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
         if (gy == null) continue;
         y = gy;
       }
-      const { g, anim } = spec.build();
+      let g, anim, mixer = null, act = null, y2 = spec.y, r2 = spec.r2;
+      const cached = glbCache[type];
+      if (cached) {
+        g = SkelUtils.clone(cached.scene);
+        anim = {};
+        if (cached.clips.length) {
+          mixer = new THREE.AnimationMixer(g);
+          const byName = n => THREE.AnimationClip.findByName(cached.clips, n);
+          const move = byName(spec.fly ? 'fly' : 'walk') || byName('idle') || cached.clips[0];
+          act = { move: mixer.clipAction(move), attack: null };
+          act.move.play();
+          const atk = byName('attack');
+          if (atk) { act.attack = mixer.clipAction(atk); act.attack.setLoop(THREE.LoopOnce); }
+        }
+        const bb = new THREE.Box3().setFromObject(g);
+        const sz = bb.getSize(new THREE.Vector3());
+        y2 = sz.y * 0.55;                       // centro de impacto al pecho
+        r2 = Math.max(spec.r2, (sz.length() * 0.42) ** 2);
+      } else {
+        ({ g, anim } = spec.build());
+      }
       g.position.set(x, y, z);
       g.traverse(o => { o.castShadow = true; });
       group.add(g);
-      E.push({ g, anim, type, spec, enemy: true, blood: ENEMIES[type].blood,
+      E.push({ g, anim, mixer, act, type, spec, enemy: true, blood: ENEMIES[type].blood,
         hp: spec.hp * (1 + S.wave * 0.12), phase: Math.random() * 6.283,
         speed: spec.speed * (1 + S.wave * 0.04), center: new THREE.Vector3(),
-        r2: spec.r2, cool: Math.random() * 3, passDir: null });
+        yOff: y2, r2, cool: Math.random() * 3, passDir: null });
       S.alive++;
       return true;
     }
@@ -192,6 +231,7 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
       S.on = !S.on;
       if (S.on) {
         if (types?.length) S.types = types;
+        for (const t of S.types) preloadEnemyGlb(t, 114);   // progresivo: cae al procedural mientras
         S.wave = 0; S.killed = 0; S.betweenWaves = 0.5; S.queue = [];
       } else {
         for (const e of E) group.remove(e.g);
@@ -233,6 +273,7 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
         const dx = dronePos.x - p.x, dz = dronePos.z - p.z;
         const dist = Math.hypot(dx, dz);
         e.phase += dt * (e.spec.fly ? 2 : e.speed * 3.2);
+        if (e.mixer) e.mixer.update(dt);
         if (e.spec.fly === 'orbit') {
           // OVNI: orbita cerrando círculos, bobbing
           const ang = Math.atan2(p.z - dronePos.z, p.x - dronePos.x) + dt * e.speed / Math.max(14, dist);
@@ -274,7 +315,7 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
             }
             e.g.rotation.y = Math.atan2(dx, dz);
           }
-          if (e.anim.lL) {
+          if (!e.mixer && e.anim.lL) {
             e.anim.lL.rotation.x = Math.sin(e.phase) * 0.6;
             e.anim.lR.rotation.x = -Math.sin(e.phase) * 0.6;
             e.anim.torso.rotation.z = Math.sin(e.phase * 0.5) * 0.06;
@@ -285,16 +326,18 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
             if (e._bite > 0.8) {
               e._bite = 0;
               onHit?.(e.spec.dmg);
-              if (e.anim.aR) e.anim.aR.rotation.x = 2.2;   // manotazo
+              if (e.act?.attack) e.act.attack.reset().play();          // clip real
+              else if (e.anim.aR) e.anim.aR.rotation.x = 2.2;          // manotazo
             }
           }
         }
-        e.center.set(p.x, p.y + e.spec.y, p.z);
+        e.center.set(p.x, p.y + (e.yOff ?? e.spec.y), p.z);
         // disparos enemigos
         if (e.spec.shoot) {
           e.cool -= dt;
           if (e.cool <= 0) {
             e.cool = e.spec.shoot.every * (0.8 + Math.random() * 0.4);
+            if (e.act?.attack) e.act.attack.reset().play();
             const n = e.spec.shoot.burst || 1;
             for (let b = 0; b < n; b++) setTimeout(() => !e.g.userData.dead && shootAt(e, dronePos), b * 120);
           }
