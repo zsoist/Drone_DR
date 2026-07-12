@@ -3614,3 +3614,32 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .vl-bar b{ display:block; height:100%; width:100%; border-radius:3px;
   background:linear-gradient(90deg,#45A0E6,#7dffc9); transform-origin:left;
   transform:scaleX(0); transition:transform .18s var(--ease) }
+
+/* ── BLOQUE 33 · Estudio 3D paso 1: UN solo scroll, acordeón, badges ── */
+.proc-groups{ max-height:none; overflow:visible }         /* mata el doble-scroll */
+.st-list{ max-height:min(58dvh, 560px) }                  /* el ÚNICO scroller */
+.proc-group.collapsed .pg-clips{ display:none }
+.pg-head{ cursor:pointer; user-select:none; padding:10px 12px }
+.pg-head:hover{ background:rgba(255,255,255,.025) }
+.pg-chev{ display:inline-flex; transition:transform .18s var(--ease); color:var(--text-3) }
+.proc-group:not(.collapsed) .pg-chev{ transform:rotate(90deg) }
+.pg-all{ margin-left:auto }
+.pc-clip{ padding:10px 12px; gap:12px }
+.pc-clip + .pc-clip{ border-top:1px solid rgba(255,255,255,.05) }
+.pc-thumb img{ width:84px; height:48px; border-radius:8px }
+.pc-meta b{ font-size:13px }
+.pc-sub{ color:var(--text-3); font-size:10.5px }
+.pc-alt{ font:600 10.5px var(--mono); padding:3px 8px; border-radius:999px; flex:none;
+  border:1px solid var(--line); color:var(--text-2) }
+.pc-alt.ground{ color:var(--amber); border-color:color-mix(in srgb, var(--amber) 40%, var(--line)) }
+.pc-alt.mid{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, var(--line)) }
+.pc-alt.high{ color:var(--mint); border-color:color-mix(in srgb, var(--mint) 40%, var(--line)) }
+.st-actions{ display:flex; align-items:center; gap:8px; padding:2px 0 8px }
+.st-count{ font-size:11px; color:var(--text-2) }
+.btn.sm{ padding:6px 12px; font-size:11.5px; min-height:30px }
+@media (pointer:coarse){
+  .pg-head{ padding:13px 12px } .pc-clip{ padding:12px; min-height:60px }
+  .btn.sm{ min-height:40px }
+}
+/* la causa raíz del recorte: cascada de flex-shrink aplastaba grupos a 70px */
+.proc-groups, .proc-group, .proc-photos{ flex-shrink:0 }

@@ -4,24 +4,24 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=65';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=65';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=65';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=65';
-import { createRecorder } from '/flightverse/recorder.js?v=65';
-import { createAudio } from '/flightverse/audio.js?v=65';
-import { createTouchSticks } from '/flightverse/touch.js?v=65';
-import { createSky } from '/flightverse/sky.js?v=65';
-import CameraControls from '/vendor/camera-controls.module.js?v=65';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=65';
+import * as THREE from '/flightverse/three.js?v=66';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=66';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=66';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=66';
+import { createRecorder } from '/flightverse/recorder.js?v=66';
+import { createAudio } from '/flightverse/audio.js?v=66';
+import { createTouchSticks } from '/flightverse/touch.js?v=66';
+import { createSky } from '/flightverse/sky.js?v=66';
+import CameraControls from '/vendor/camera-controls.module.js?v=66';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=66';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=65';
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=65';
+} from '/vendor/postprocessing180.module.js?v=66';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=66';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;

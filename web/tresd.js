@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js';
-  import { mountSplatViewer } from '/splatview.js';
+  import * as THREE from '/vendor/three180.module.js?v=66';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=66';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=66';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=66';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=66';
+  import { mountSplatViewer } from '/splatview.js?v=66';
 
   const SPLAT_EXT = /\.(ksplat|splat|ply)$/i;
   const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
@@ -504,6 +504,7 @@
                dates: dates.length === 1 ? fmt.date(dates[0]) : `${dates.length} fechas` };
     };
 
+    const altBand = a => a < 12 ? 'ground' : a < 40 ? 'mid' : 'high';
     const clipRow = f => `
       <label class="pc-clip${sel.has(f.clip_id) ? ' on' : ''}" data-cid="${esc(f.clip_id)}"
              data-alt="${altOf(f)}" data-date="${esc(f.date || '')}"
@@ -513,8 +514,9 @@
           <img src="data/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">${icon('play')}</span>
         <div class="pc-meta">
           <b>${esc(f.label) || fmt.date(f.date) + ' ' + f.time}</b>
-          <span class="mono">${fmt.dur(f.duration_s)} · ${altOf(f)} m · ${fmt.date(f.date)}</span>
+          <span class="pc-sub mono">${fmt.dur(f.duration_s)} · ${fmt.date(f.date)} ${esc(f.time || '')}</span>
         </div>
+        <span class="pc-alt ${altBand(altOf(f))}">${altOf(f)} m</span>
         <span class="pc-score" data-score="${esc(f.clip_id)}">·</span>
       </label>`;
 
@@ -535,17 +537,31 @@
               </select>
             </div>
             <div class="st-filters">
-              <span class="st-fl">Altura:</span>
+              <span class="st-fl">Altura</span>
               <button class="chip on" data-alt-band="all">Todas</button>
               <button class="chip" data-alt-band="ground">&lt;12 m</button>
               <button class="chip" data-alt-band="mid">12–40 m</button>
               <button class="chip" data-alt-band="high">40+ m</button>
             </div>
-            <div class="proc-groups" id="st-groups">${spots.map(([sk, fs]) => {
+            <div class="st-filters" id="st-dates">
+              <span class="st-fl">Fecha</span>
+              <button class="chip on" data-date-f="all">Todas</button>
+              ${[...new Set(candidates.map(f => f.date).filter(Boolean))].sort().reverse().slice(0, 6)
+                .map(d => `<button class="chip" data-date-f="${esc(d)}">${fmt.date(d)}</button>`).join('')}
+            </div>
+            <div class="st-actions">
+              <span class="st-count mono" id="st-count"></span>
+              <span class="spacer" style="flex:1"></span>
+              <button class="btn sm" id="st-expand">Expandir todo</button>
+              <button class="btn sm" id="st-collapse">Plegar</button>
+              <button class="btn sm" id="st-clear">Limpiar selección</button>
+            </div>
+            <div class="proc-groups" id="st-groups">${spots.map(([sk, fs], gi) => {
               const gm = groupMeta(fs);
               return `
-              <div class="proc-group" data-spot="${esc(sk)}">
-                <div class="pg-head">
+              <div class="proc-group${gi > 0 ? ' collapsed' : ''}" data-spot="${esc(sk)}">
+                <div class="pg-head" data-pg-toggle>
+                  <span class="pg-chev">${icon('chevR')}</span>
                   <span class="pg-place">${icon('pin')} ${esc(placeName(fs))}</span>
                   <span class="pg-chips mono">${fs.length} toma${fs.length === 1 ? '' : 's'} · ${gm.alts} · ${gm.dates}</span>
                   ${fs.length > 1 ? `<button class="pg-all" data-spot-all="${esc(sk)}">Combinar todo</button>` : ''}
@@ -717,7 +733,7 @@
     }
     ov.querySelector('#st-tray').addEventListener('click', e => {
       const c = e.target.closest('[data-untray]'); if (!c || sel.size <= 1) return;
-      sel.delete(c.dataset.untray); syncClip(c.dataset.untray); renderTray(); renderCombined();
+      sel.delete(c.dataset.untray); syncClip(c.dataset.untray); renderTray(); renderCombined(); applyFilters();
     });
     renderTray();
 
@@ -739,21 +755,59 @@
     const applyFilters = () => {
       const q = (ov.querySelector('#st-q').value || '').toLowerCase().trim();
       const band = ov.querySelector('[data-alt-band].on')?.dataset.altBand || 'all';
+      const df = ov.querySelector('[data-date-f].on')?.dataset.dateF || 'all';
       const inBand = a => band === 'all' || (band === 'ground' ? a < 12 : band === 'mid' ? a >= 12 && a < 40 : a >= 40);
+      let visTot = 0;
       ov.querySelectorAll('.pc-clip').forEach(el => {
-        const vis = (!q || el.dataset.q.includes(q)) && inBand(+el.dataset.alt);
+        const vis = (!q || el.dataset.q.includes(q)) && inBand(+el.dataset.alt)
+          && (df === 'all' || el.dataset.date === df);
         el.style.display = vis ? '' : 'none';
+        if (vis) visTot++;
       });
+      const filtering = q || band !== 'all' || df !== 'all';
       ov.querySelectorAll('.proc-group').forEach(g => {
-        g.style.display = [...g.querySelectorAll('.pc-clip')].some(c => c.style.display !== 'none') ? '' : 'none';
+        const hay = [...g.querySelectorAll('.pc-clip')].some(c => c.style.display !== 'none');
+        g.style.display = hay ? '' : 'none';
+        if (filtering && hay) g.classList.remove('collapsed');   // filtrar = mostrar resultados
       });
+      const ct = ov.querySelector('#st-count');
+      if (ct) ct.textContent = `${sel.size} seleccionada${sel.size === 1 ? '' : 's'} · ${visTot} visibles`;
     };
+    // headers con nombre real (barrio · ciudad) — mismo cache que los pins
+    ov.querySelectorAll('.proc-group').forEach(async g => {
+      const fs = groups[g.dataset.spot]; if (!fs) return;
+      const c = centroid(fs[0]); if (!c) return;
+      try {
+        const r = await (await fetch(`/api/geocode?lat=${c[1]}&lon=${c[0]}`)).json();
+        if (r.name) g.querySelector('.pg-place').innerHTML = `${icon('pin')} ${esc(r.name)}`;
+      } catch { /* coords como fallback ya visibles */ }
+    });
     ov.querySelector('#st-q').addEventListener('input', applyFilters);
     ov.querySelector('.st-filters').addEventListener('click', e => {
       const c = e.target.closest('[data-alt-band]'); if (!c) return;
       ov.querySelectorAll('[data-alt-band]').forEach(x => x.classList.toggle('on', x === c));
       applyFilters();
     });
+    ov.querySelector('#st-dates').addEventListener('click', e => {
+      const c = e.target.closest('[data-date-f]'); if (!c) return;
+      ov.querySelectorAll('[data-date-f]').forEach(x => x.classList.toggle('on', x === c));
+      applyFilters();
+    });
+    // acordeón: el head pliega/expande (los botones internos no)
+    ov.querySelector('#st-groups').addEventListener('click', e => {
+      if (e.target.closest('.pg-all') || e.target.closest('[data-preview]')) return;
+      const h = e.target.closest('[data-pg-toggle]');
+      if (h) h.closest('.proc-group').classList.toggle('collapsed');
+    });
+    ov.querySelector('#st-expand').addEventListener('click', () =>
+      ov.querySelectorAll('.proc-group').forEach(g => g.classList.remove('collapsed')));
+    ov.querySelector('#st-collapse').addEventListener('click', () =>
+      ov.querySelectorAll('.proc-group').forEach(g => g.classList.add('collapsed')));
+    ov.querySelector('#st-clear').addEventListener('click', () => {
+      [...sel].slice(1).forEach(c => { sel.delete(c); syncClip(c); });   // deja 1 (mínimo del flujo)
+      renderTray(); applyFilters();
+    });
+    applyFilters();
     ov.querySelector('#st-sort').addEventListener('change', e => {
       const mode = e.target.value;
       const key = { date: f => f.date + (f.time || ''), dur: f => f.duration_s || 0, alt: altOf }[mode];
