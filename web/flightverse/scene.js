@@ -7,7 +7,9 @@ import * as THREE from '/flightverse/three.js?v=60';
 
 export async function loadManifest(cid) {
   const id = String(cid || '').replace(/[^\w-]/g, '');
-  const r = await fetch(`data/models/${id}/scene.v2.json`);
+  // no-store: el edge de Cloudflare cacheaba manifiestos viejos (misma URL,
+  // contenido nuevo) → grid 512 vs bin 256 → malla NaN 'invisible' + ±NaNcm
+  const r = await fetch(`data/models/${id}/scene.v2.json`, { cache: 'no-store' });
   if (!r.ok) throw new Error(`escena ${id}: sin manifiesto (${r.status})`);
   const man = await r.json();
   if (man.version !== 2) throw new Error(`escena ${id}: versión ${man.version} no soportada`);
@@ -36,11 +38,12 @@ export function makeHeightSampler(hf, world) {
 export async function loadTerrain(man, { anisotropy = 4 } = {}) {
   if (!man.capabilities?.terrain) throw new Error('la escena no tiene terreno');
   const [lodMeta, buf] = await Promise.all([
-    fetch(man.assets.dsm_lod_meta).then(r => r.json()),
+    fetch(man.assets.dsm_lod_meta, { cache: 'no-store' }).then(r => r.json()),
     fetch(man.assets.dsm_lod_bin).then(r => r.arrayBuffer()),
   ]);
   const hf = new Float32Array(buf);
   const [rows, cols] = lodMeta.grid;
+  if (hf.length !== rows * cols) throw new Error(`terreno corrupto: bin ${hf.length} ≠ grid ${rows}×${cols} — recarga sin caché`);
   const [Wm, Hm] = lodMeta.size_m;
   const geo = new THREE.PlaneGeometry(Wm, Hm, cols - 1, rows - 1);
   geo.rotateX(-Math.PI / 2);

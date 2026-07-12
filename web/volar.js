@@ -51,6 +51,7 @@ function hud() {
         <button class="vl-chip" id="vl-vista">vista · orto</button>
         <button class="vl-chip" id="vl-reto">🏁 Gate Rush</button>
         <button class="vl-chip" id="vl-sound">🔊 sonido</button>
+        <button class="vl-chip" id="vl-ayuda">? guía</button>
         <button class="vl-rec" id="vl-rec">● Grabar</button>
       </div>
     </div>
@@ -64,6 +65,18 @@ function hud() {
     <canvas class="vl-minimap" id="vl-minimap" width="180" height="180"></canvas>
     <div class="vl-count" id="vl-count"></div>
     <div class="vl-result" id="vl-result"></div>
+    <div class="vl-guide" id="vl-guide">
+      <div class="vl-guide-card">
+        <div class="vl-guide-k">GUÍA DE VUELO</div>
+        <div class="vl-guide-rows">
+          <div><span class="vl-gi">🕹</span><b>Controles RC reales</b><br>Stick IZQ: subir/bajar y girar · Stick DER: avanzar y ladear.<br>Teclado: WASD mover · R/F altura · Q/E girar · Shift turbo.</div>
+          <div><span class="vl-gi">◎</span><b>Los aros (Gate Rush)</b><br>Pulsa 🏁 y cruza los aros: el AZUL brillante es el siguiente, verde = superado. Están sobre la ruta que tu dron voló de verdad.</div>
+          <div><span class="vl-gi">●</span><b>La bola verde (ghost)</b><br>Es tu vuelo REAL reproduciéndose — la estela es el GPS del dron. Persíguela o apágala con G.</div>
+          <div><span class="vl-gi">◆</span><b>Vista foto-real</b><br>Cambia entre orto, mixta y el splat foto-realista con el botón "vista".</div>
+        </div>
+        <button id="vl-guide-ok">¡A volar!</button>
+      </div>
+    </div>
     <div class="vl-help" id="vl-help">
       <b>Controles</b><br>
       WASD mover · R/F subir/bajar · Q/E girar · mouse mirar (click captura)<br>
@@ -145,7 +158,7 @@ async function main() {
   const collV = new THREE.Vector3();
   if (man.assets?.collision_bin && man.assets?.collision_meta) {
     Promise.all([
-      fetch(man.assets.collision_meta).then(r => r.json()),
+      fetch(man.assets.collision_meta, { cache: 'no-store' }).then(r => r.json()),
       fetch(man.assets.collision_bin).then(r => r.arrayBuffer()),
     ]).then(([cm, buf]) => {
       const g = new THREE.BufferGeometry();
@@ -169,9 +182,11 @@ async function main() {
   const matBody = new THREE.MeshLambertMaterial({ color: 0xBFC7D2 });
   const matDark = new THREE.MeshLambertMaterial({ color: 0x2A313B });
   const matLed = new THREE.MeshLambertMaterial({ color: 0x45A0E6, emissive: 0x2b6ea8 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.11, 0.62), matBody);
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.07, 0.44), matDark);
-  top.position.y = 0.08;
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.4, 6, 12), matBody);
+  body.rotation.x = Math.PI / 2;                       // cápsula tendida (nariz-cola)
+  body.scale.set(1.6, 0.62, 1);                        // ancho y bajo, perfil DJI
+  const top = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 8), matDark);
+  top.scale.set(1.2, 0.5, 1.6); top.position.set(0, 0.07, -0.06);
   const gimbal = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), matDark);
   gimbal.position.set(0, -0.05, -0.32);
   const led = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.03), matLed);
@@ -186,10 +201,14 @@ async function main() {
     motor.position.set(x * 0.34, 0.05, z * 0.4);
     const prop = new THREE.Group();
     for (const a of [0, Math.PI / 2]) {
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.008, 0.03), matBody);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.008, 0.028), matBody);
       blade.rotation.y = a;
       prop.add(blade);
     }
+    const blur = new THREE.Mesh(new THREE.CircleGeometry(0.16, 20),
+      new THREE.MeshBasicMaterial({ color: 0x9fb2c8, transparent: true, opacity: 0.14, side: THREE.DoubleSide }));
+    blur.rotation.x = -Math.PI / 2; blur.position.y = 0.002;
+    prop.add(blur);
     prop.position.set(x * 0.34, 0.085, z * 0.4);
     props.push({ g: prop, dir: x * z > 0 ? 1 : -1 });
     dmesh.add(arm, motor, prop);
@@ -262,6 +281,12 @@ async function main() {
   });
   $('#vl-rig').addEventListener('click', () => setRig(rigIx + 1));
   $('#vl-reto').addEventListener('click', () => startReto());   // arrow: startReto se declara abajo
+  $('#vl-ayuda').addEventListener('click', () => $('#vl-guide').classList.add('show'));
+  $('#vl-guide-ok').addEventListener('click', () => {
+    $('#vl-guide').classList.remove('show');
+    localStorage.setItem('ab.fv.guided', '1');
+  });
+  if (!localStorage.getItem('ab.fv.guided') && !AT) $('#vl-guide').classList.add('show');
   $('#vl-sound').addEventListener('click', () => {
     const m = audio.toggleMute();
     $('#vl-sound').textContent = m ? '🔇 sonido' : '🔊 sonido';

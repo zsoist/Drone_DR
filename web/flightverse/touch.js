@@ -37,9 +37,10 @@ export function createTouchSticks(host) {
   const L = mk('left'), Rs = mk('right');
   return {
     sample() {
+      // RC Mode 2 real: IZQ = throttle+yaw · DER = pitch+roll
       return {
-        fwd: -L.y, strafe: L.x,
-        yaw: -Rs.x, lift: -Rs.y,
+        lift: -L.y, yaw: -L.x,
+        fwd: -Rs.y, strafe: Rs.x,
         active: L.id != null || Rs.id != null,
       };
     },
