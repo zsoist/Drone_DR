@@ -4,24 +4,34 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=67';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=67';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=67';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=67';
-import { createRecorder } from '/flightverse/recorder.js?v=67';
-import { createAudio } from '/flightverse/audio.js?v=67';
-import { createTouchSticks } from '/flightverse/touch.js?v=67';
-import { createSky } from '/flightverse/sky.js?v=67';
-import CameraControls from '/vendor/camera-controls.module.js?v=67';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=67';
+import * as THREE from '/flightverse/three.js?v=68';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=68';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=68';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=68';
+import { createRecorder } from '/flightverse/recorder.js?v=68';
+import { createAudio } from '/flightverse/audio.js?v=68';
+import { createTouchSticks } from '/flightverse/touch.js?v=68';
+import { createSky } from '/flightverse/sky.js?v=68';
+import CameraControls from '/vendor/camera-controls.module.js?v=68';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=68';
 CameraControls.install({ THREE });
 import {
-  EffectComposer, RenderPass, EffectPass,
+  EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=67';
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=67';
+} from '/vendor/postprocessing180.module.js?v=68';
+
+// exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
+// empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
+class ExposureFx extends Effect {
+  constructor(exp = 1) {
+    super('ExposureFx',
+      'uniform float uExp; void mainImage(const in vec4 c, const in vec2 uv, out vec4 o){ o = vec4(c.rgb * uExp, c.a); }',
+      { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
+  }
+}
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=68';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -85,7 +95,7 @@ function hud() {
         <button data-pr="vivo">Vivo</button>
         <button data-pr="cine">Cine</button>
       </div>
-      <label>Brillo<input type="range" id="gr-b" min="-0.15" max="0.15" step="0.01" value="0"></label>
+      <label>Brillo<input type="range" id="gr-b" min="0.6" max="1.3" step="0.01" value="0.88"></label>
       <label>Contraste<input type="range" id="gr-c" min="0" max="0.3" step="0.01" value="0.06"></label>
       <label>Saturación<input type="range" id="gr-s" min="-0.3" max="0.4" step="0.01" value="0.06"></label>
       <label>Bloom<input type="range" id="gr-g" min="0" max="1.2" step="0.02" value="0.32"></label>
@@ -159,18 +169,19 @@ async function main() {
   // NEUTRAL (no ACES): los colores del splat ya son display-referred — ACES
   // los lavaba; bloom umbral 1.0 para que los blancos del splat no lo disparen
   const fx = {
+    exp: new ExposureFx(0.88),                 // doma el foto-real brillante por defecto
     bc: new BrightnessContrastEffect({ brightness: 0, contrast: 0.06 }),
     hs: new HueSaturationEffect({ saturation: 0.06 }),
-    bloom: new BloomEffect({ mipmapBlur: true, luminanceThreshold: 1.0, intensity: 0.32, radius: 0.6 }),
+    bloom: new BloomEffect({ mipmapBlur: true, luminanceThreshold: 1.0, intensity: 0.25, radius: 0.6 }),
     vig: new VignetteEffect({ offset: 0.3, darkness: 0.42 }),
   };
   const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType });
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new EffectPass(camera,
     new SMAAEffect({ preset: SMAAPreset.HIGH }),
-    fx.bloom, fx.bc, fx.hs,
+    fx.exp, fx.bloom, fx.hs,
     new ToneMappingEffect({ mode: ToneMappingMode.NEUTRAL }),
-    fx.vig,
+    fx.bc, fx.vig,
   ));
 
   const terrain = await loadTerrain(man, { anisotropy: 8 });
@@ -318,9 +329,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=67', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=68', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=67');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=68');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -426,13 +437,14 @@ async function main() {
   $('#vl-fab').addEventListener('click', () => $('#vl-dock').classList.toggle('open'));
   const GRADE_KEY = 'ab.fv.grade';
   const applyGrade = g => {
-    fx.bc.brightness = g.b; fx.bc.contrast = g.c;
+    fx.exp.uniforms.get('uExp').value = g.b;
+    fx.bc.contrast = g.c;
     fx.hs.saturation = g.s;
     fx.bloom.intensity = g.g;
     fx.vig.darkness = g.v;
     for (const [id, k] of [['gr-b','b'],['gr-c','c'],['gr-s','s'],['gr-g','g'],['gr-v','v']]) $('#'+id).value = g[k];
   };
-  const defGrade = { b: 0, c: 0.06, s: 0.06, g: 0.32, v: 0.42 };
+  const defGrade = { b: 0.88, c: 0.06, s: 0.06, g: 0.25, v: 0.42 };
   let grade = { ...defGrade, ...(JSON.parse(localStorage.getItem(GRADE_KEY) || '{}')) };
   applyGrade(grade);
   document.getElementById('vl-grade').addEventListener('input', e => {
@@ -444,9 +456,9 @@ async function main() {
   });
   $('#gr-reset').addEventListener('click', () => { grade = { ...defGrade }; applyGrade(grade); localStorage.removeItem(GRADE_KEY); });
   const PRESETS = {
-    natural: { b: 0, c: 0.04, s: 0.02, g: 0.2, v: 0.35 },
-    vivo:    { b: 0.03, c: 0.14, s: 0.22, g: 0.45, v: 0.4 },
-    cine:    { b: -0.03, c: 0.18, s: -0.06, g: 0.3, v: 0.62 },
+    natural: { b: 0.9, c: 0.04, s: 0.02, g: 0.18, v: 0.35 },
+    vivo:    { b: 1.0, c: 0.14, s: 0.22, g: 0.4, v: 0.4 },
+    cine:    { b: 0.82, c: 0.18, s: -0.06, g: 0.28, v: 0.62 },
   };
   document.querySelector('.vl-presets').addEventListener('click', e => {
     const p = PRESETS[e.target.dataset.pr]; if (!p) return;
@@ -454,7 +466,8 @@ async function main() {
     localStorage.setItem(GRADE_KEY, JSON.stringify(grade));
   });
   // grade fuera de rango guardado (el bug del fondo blanco): sanear
-  grade.c = Math.max(0, grade.c); grade.b = Math.max(-0.15, Math.min(0.15, grade.b));
+  grade.c = Math.max(0, grade.c);
+  if (!(grade.b >= 0.6 && grade.b <= 1.3)) grade.b = 0.88;   // migra el esquema aditivo viejo
   applyGrade(grade);
   $('#vl-guide-ok').addEventListener('click', () => {
     $('#vl-guide').classList.remove('show');

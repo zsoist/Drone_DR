@@ -41,6 +41,11 @@ def build(cid: str, target: int = 256) -> dict:
         raise SystemExit(f"DSM de {cid} sin celdas válidas")
     floor = float(np.percentile(valid, 5))
     sub = np.where(invalid, np.float32(floor), sub)
+    # mediana 3x3: las AGUJAS del DSM (px sueltos de reconstrucción) fundían
+    # los edificios en púas — la mediana las mata preservando bordes reales
+    st = np.stack([np.roll(np.roll(sub, dy, 0), dx, 1)
+                   for dy in (-1, 0, 1) for dx in (-1, 0, 1)])
+    sub = np.median(st, axis=0).astype(np.float32)
 
     lat_c = gt[3] + gt[5] * (h / 2.0)
     m_lon = M_PER_DEG_LAT * math.cos(math.radians(lat_c))
