@@ -9,6 +9,8 @@ import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/
 import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js';
 import { createGateRush, bestTime } from '/flightverse/gaterush.js';
 import { createRecorder } from '/flightverse/recorder.js';
+import { createAudio } from '/flightverse/audio.js';
+import { createTouchSticks } from '/flightverse/touch.js';
 import {
   EffectComposer, RenderPass, EffectPass,
   SMAAEffect, SMAAPreset, BloomEffect,
@@ -204,6 +206,9 @@ async function main() {
 
   // ── estado de juego ──
   const input = createInput(renderer.domElement);
+  const audio = createAudio();
+  const sticks = createTouchSticks($('#vl-hud'));
+  let sfx = { idx: 0, phase: '', crash: false, count: 0 };
   let modeKey = 'asistido', rigIx = 0;
   const setMode = k => { modeKey = k; $('#vl-mode').textContent = `modo · ${MODES[k].label}`; };
   const setRig = ix => {
@@ -220,6 +225,7 @@ async function main() {
     if (e.code === 'KeyH') $('#vl-help').classList.toggle('show');
     if (e.code === 'KeyT') startReto();
     if (e.code === 'KeyP' && splat) splat.object.visible = !splat.object.visible;
+    if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
     if (e.code === 'Escape' && replay) { replay = null; if (resultShown) $('#vl-result').classList.add('show'); }
   });
   renderer.domElement.addEventListener('click', () => { if (modeKey === 'fpv') input.requestLock(); });
@@ -326,7 +332,7 @@ async function main() {
       const blob = await recorder.stop();
       recBtn.classList.remove('on'); recBtn.textContent = '● Grabar';
       if (blob) recorder.download(blob, `volar_${CID}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.webm`);
-    } else if (recorder.start()) recBtn.classList.add('on');
+    } else if (recorder.start()) { recBtn.classList.add('on'); audio.rec(true); }
   };
   recBtn.addEventListener('click', toggleRec);
   addEventListener('keydown', e => { if (e.code === 'KeyV') toggleRec(); });
@@ -358,6 +364,8 @@ async function main() {
         drone.yaw = a[3] + (b[3] - a[3]) * f;
       } else {
         let inp = input.sample();
+        const ts = sticks?.sample();
+        if (ts?.active) { inp.fwd = ts.fwd; inp.strafe = ts.strafe; inp.yaw = ts.yaw; inp.lift = ts.lift; }
         if (auto && simT < auto.until) inp = { fwd: 1, strafe: 0, yaw: 0.15, lift: 0.1, boost: simT > 2, brake: false, mouseDX: 0, mouseDY: 0 };
         drone.step(dt, inp, modeKey);
         if (autoReto) {
@@ -382,8 +390,16 @@ async function main() {
         }
         if (reto) {
           reto.update(dt, drone.pos, drone.vel, drone.yaw);
-          if (reto.state.phase === 'finished' && !resultShown) showResult();
+          const st = reto.state;
+          if (st.idx > sfx.idx) audio.gate();
+          if (st.phase === 'countdown') { const c = Math.ceil(st.countdown); if (c !== sfx.count) audio.tick(); sfx.count = c; }
+          if (st.phase === 'running' && sfx.phase === 'countdown') audio.go();
+          if (st.phase === 'finished' && sfx.phase !== 'finished') audio.finish();
+          sfx.idx = st.idx; sfx.phase = st.phase;
+          if (st.phase === 'finished' && !resultShown) showResult();
         }
+        if (drone.crashedSoft && !sfx.crash) audio.crash();
+        sfx.crash = drone.crashedSoft;
       }
       if (ghost?.on) {
         ghost.t = (ghost.t + dt) % ghost.dur;
@@ -425,6 +441,7 @@ async function main() {
       $('#vl-spd').textContent = drone.vel.length().toFixed(1);
       $('#vl-fps').textContent = `${Math.round(loop.fps() || 0)} fps`;
       if (recorder.recording) recBtn.textContent = `■ REC ${recorder.seconds.toFixed(0)}s`;
+      audio.update(drone.vel.length(), drone.vel.y);
       const ch = $('#vl-challenge'), cnt = $('#vl-count');
       if (replay) {
         ch.textContent = 'REPLAY · ESC para salir'; cnt.classList.remove('show');
