@@ -3886,3 +3886,31 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 .vl-diff button[data-d=facil]:hover{ border-color:rgba(82,199,154,.5); background:rgba(82,199,154,.12) }
 .vl-diff button[data-d=media]:hover{ border-color:rgba(69,160,230,.5); background:rgba(69,160,230,.12) }
 .vl-diff button[data-d=dificil]:hover{ border-color:rgba(154,108,255,.5); background:rgba(154,108,255,.14) }
+
+/* ── BLOQUE 49: modal de resultado v2 — z-index sobre el OSD, grid, splits ── */
+.vl-result{ z-index:60 }
+.vl-result-card.v2{ min-width:380px; max-width:480px; padding:28px 32px;
+  border:1px solid rgba(69,160,230,.25);
+  background:linear-gradient(165deg, rgba(19,26,36,.96), rgba(9,11,15,.94));
+  box-shadow:0 30px 80px -30px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.06);
+  animation:gradeIn .35s var(--ease) }
+.vl-newrec{ display:inline-block; margin-left:8px; padding:2px 9px; border-radius:999px;
+  font:700 9.5px var(--mono); letter-spacing:.14em; font-style:normal; color:#0A0C10;
+  background:linear-gradient(90deg, #52C79A, #7dffc9);
+  animation:fireFlash .8s var(--ease) }
+.vl-result-sub{ font:500 12px var(--mono); color:#8A97A8; margin:2px 0 14px }
+.vl-result-sub .vl-delta{ color:#E0A458 }
+.vl-result-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin:0 0 12px }
+.vl-result-grid div{ padding:10px 6px; border-radius:10px; background:rgba(255,255,255,.045);
+  border:1px solid rgba(255,255,255,.07) }
+.vl-result-grid b{ display:block; font:700 17px var(--mono); color:#EAF2FB }
+.vl-result-grid span{ font:500 9px var(--mono); color:#68758A; letter-spacing:.08em; text-transform:uppercase }
+.vl-result-splits{ display:flex; flex-wrap:wrap; gap:5px; justify-content:center; margin:0 0 16px }
+.vl-split{ display:flex; align-items:center; gap:5px; padding:4px 9px; border-radius:8px;
+  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06);
+  font:600 10.5px var(--mono); color:#B7C2D0 }
+.vl-split i{ font-style:normal; color:#566274; font-size:9px }
+.vl-split.best{ border-color:rgba(82,199,154,.45); color:#7dffc9;
+  box-shadow:0 0 12px -4px rgba(82,199,154,.5) }
+@media (max-width:520px){ .vl-result-card.v2{ min-width:0; width:calc(100vw - 40px) }
+  .vl-result-grid{ grid-template-columns:repeat(2, 1fr) } }

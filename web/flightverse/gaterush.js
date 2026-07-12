@@ -3,7 +3,7 @@
 // splits por gate. Circuito HONESTO: gates sobre la ruta del vuelo REAL
 // (track GPS en frame local); sin track: anillo procedural documentado como
 // fallback. Detección por proximidad en timestep fijo (determinista → replay).
-import * as THREE from '/flightverse/three.js?v=107';
+import * as THREE from '/flightverse/three.js?v=109';
 
 export const DIFFS = {
   facil:   { label: 'Fácil',   n: 8,  r: 9,   pass: 1.25, color: 0x52C79A },
@@ -130,6 +130,8 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
   return {
     state: st,
     gates,
+    setVisible(v) { grp.visible = v; },       // replay/director: vuelo puro, sin velos
+
     // punto de aproximación: 16m antes del gate 0, en su eje de entrada
     approach() {
       const c0 = centers[0], c1 = centers[1] || c0.clone().add(new THREE.Vector3(1, 0, 0));

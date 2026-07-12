@@ -4,25 +4,25 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=107';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=107';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=107';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=107';
-import { createRecorder } from '/flightverse/recorder.js?v=107';
-import { createAudio } from '/flightverse/audio.js?v=107';
-import { createTouchSticks } from '/flightverse/touch.js?v=107';
-import { createSky } from '/flightverse/sky.js?v=107';
-import { loadSceneObjects } from '/flightverse/objects.js?v=107';
-import { createWeapons } from '/flightverse/weapons.js?v=107';
-import CameraControls from '/vendor/camera-controls.module.js?v=107';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=107';
+import * as THREE from '/flightverse/three.js?v=109';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=109';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=109';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=109';
+import { createRecorder } from '/flightverse/recorder.js?v=109';
+import { createAudio } from '/flightverse/audio.js?v=109';
+import { createTouchSticks } from '/flightverse/touch.js?v=109';
+import { createSky } from '/flightverse/sky.js?v=109';
+import { loadSceneObjects } from '/flightverse/objects.js?v=109';
+import { createWeapons } from '/flightverse/weapons.js?v=109';
+import CameraControls from '/vendor/camera-controls.module.js?v=109';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=109';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=107';
+} from '/vendor/postprocessing180.module.js?v=109';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -33,7 +33,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=107';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=109';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -407,9 +407,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=107', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=109', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=107');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=109');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -701,7 +701,7 @@ async function main() {
     if (e.code === 'KeyP') cycleVista();
     if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
     if (e.code === 'KeyX') doFire();
-    if (e.code === 'Escape' && replay) { replay = null; if (resultShown) $('#vl-result').classList.add('show'); }
+    if (e.code === 'Escape' && replay) { replay = null; reto?.setVisible(true); if (resultShown) $('#vl-result').classList.add('show'); }
   });
   renderer.domElement.addEventListener('click', () => { if (modeKey === 'fpv') input.requestLock(); });
   addEventListener('resize', () => {
@@ -736,22 +736,47 @@ async function main() {
     if (!reto?.state.rec.length) return;
     $('#vl-result').classList.remove('show');
     replay = { rec: reto.state.rec, f: 0 };
+    reto.setVisible(false);
   };
   const showResult = () => {
     resultShown = true;
-    const t = reto.state.time;
-    const { best, isNew } = bestTime(CID, t, reto.state.difficulty);
+    $('#vl-fpv').classList.remove('show');       // el OSD FPV no pisa el modal
+    const st = reto.state;
+    const t = st.time;
+    const { best, isNew } = bestTime(CID, t, st.difficulty);
+    const delta = !isNew && best != null ? t - best : 0;
+    // distancia real del recorrido (poses 60Hz) → velocidad media honesta
+    let dist = 0;
+    for (let i = 1; i < st.rec.length; i++) {
+      const a2 = st.rec[i - 1], b2 = st.rec[i];
+      dist += Math.hypot(b2[0] - a2[0], b2[1] - a2[1], b2[2] - a2[2]);
+    }
+    // splits por gate con el mejor tramo resaltado
+    const segs = st.splits.map((s2, i) => i ? s2 - st.splits[i - 1] : s2);
+    const bestSeg = Math.min(...segs);
+    const splitsHtml = segs.map((s2, i) => `
+      <div class="vl-split${s2 === bestSeg ? ' best' : ''}">
+        <i>${i + 1}</i><b>${s2.toFixed(2)}s</b>
+      </div>`).join('');
+    const DIFF_LB = { facil: 'FÁCIL', media: 'MEDIA', dificil: 'DIFÍCIL' };
     $('#vl-result').innerHTML = `
-      <div class="vl-result-card">
-        <div class="vl-result-k">GATE RUSH · COMPLETADO</div>
+      <div class="vl-result-card v2">
+        <div class="vl-result-k">GATE RUSH · ${DIFF_LB[st.difficulty] || ''}
+          ${isNew ? '<em class="vl-newrec">NUEVO RÉCORD</em>' : ''}</div>
         <div class="vl-result-time">${t.toFixed(2)}<small>s</small></div>
-        <div class="vl-result-rows">
-          <span>${isNew ? 'nuevo récord' : `récord ${best?.toFixed(2)}s`}</span>
-          <span>vel. máx ${reto.state.topSpeed.toFixed(1)} m/s</span>
-          <span>${reto.state.total} gates</span>
+        <div class="vl-result-sub">${isNew
+          ? (best != null ? 'primera marca de esta dificultad' : '')
+          : `récord ${best.toFixed(2)}s · <b class="vl-delta">+${delta.toFixed(2)}s</b>`}</div>
+        <div class="vl-result-grid">
+          <div><b>${st.total}</b><span>gates</span></div>
+          <div><b>${st.topSpeed.toFixed(1)}</b><span>vel máx m/s</span></div>
+          <div><b>${t > 0 ? (dist / t).toFixed(1) : '—'}</b><span>vel media m/s</span></div>
+          <div><b>${Math.round(dist)}</b><span>metros</span></div>
         </div>
+        <div class="vl-result-splits">${splitsHtml}</div>
         <div class="vl-result-btns">
           <button data-act="retry">Reintentar</button>
+          <button data-act="diff">Dificultad</button>
           <button data-act="replay">Ver replay</button>
           <button data-act="director">Director</button>
           <a href="mundo.html">Mundo</a>
@@ -761,7 +786,8 @@ async function main() {
   };
   $('#vl-result').addEventListener('click', e => {
     const act = e.target.closest('[data-act]')?.dataset.act;
-    if (act === 'retry') startReto();
+    if (act === 'retry') startReto(reto.state.difficulty);
+    if (act === 'diff') { $('#vl-result').classList.remove('show'); $('#vl-diff').classList.add('show'); }
     if (act === 'replay') startReplay();
     if (act === 'director') enterDirector();
   });
@@ -782,6 +808,7 @@ async function main() {
     if (!reto?.state.rec?.length) return;
     $('#vl-result').classList.remove('show');
     replay = null;
+    reto?.setVisible(false);
     director = { keys: [], playing: false, f: 0, len: reto.state.rec.length - 1 };
     cc.enabled = true;
     cc.setLookAt(drone.pos.x + 20, drone.pos.y + 12, drone.pos.z + 20,
@@ -791,7 +818,7 @@ async function main() {
     paintKeys();
   }
   function exitDirector() {
-    director = null; cc.enabled = false;
+    director = null; cc.enabled = false; reto?.setVisible(true);
     $('#vl-director').classList.remove('show');
     if (resultShown) $('#vl-result').classList.add('show');
   }

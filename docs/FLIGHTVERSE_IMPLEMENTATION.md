@@ -194,3 +194,14 @@ mando real, minimapa MapLibre opcional.
   + arquito, patrón del transit arcade), luego countdown — adiós teleport.
 - Autotest verde: reto {time 3.62, gates 10 (media), recFrames 217}, replay
   activo, 70fps, 0 errores.
+
+## v109 (2026-07-12) — modal de resultado v2 + replay limpio
+- Modal Gate Rush v2: badge NUEVO RÉCORD animado / delta vs récord, grid de 4
+  stats (gates, vel máx, vel MEDIA honesta = distancia real de poses/tiempo,
+  metros), TABLA DE SPLITS por gate con el mejor tramo resaltado, botón
+  Dificultad (reabre picker), Reintentar repite la misma dificultad.
+- Bug z-index: el OSD FPV (HOME/GIMBAL) se pintaba SOBRE los botones del modal
+  → vl-result z-60 + el FPV se oculta al mostrar resultado.
+- Replay/Director muestran el VUELO PURO: el circuito (aros/beams/migas/tubo,
+  aditivos) se ocultaba en velos gigantes al volar dentro — setVisible(false)
+  al entrar, restore al salir (ESC y exitDirector).
