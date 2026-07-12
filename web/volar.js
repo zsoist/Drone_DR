@@ -4,25 +4,25 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=96';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=96';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=96';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=96';
-import { createRecorder } from '/flightverse/recorder.js?v=96';
-import { createAudio } from '/flightverse/audio.js?v=96';
-import { createTouchSticks } from '/flightverse/touch.js?v=96';
-import { createSky } from '/flightverse/sky.js?v=96';
-import { loadSceneObjects } from '/flightverse/objects.js?v=96';
-import { createWeapons } from '/flightverse/weapons.js?v=96';
-import CameraControls from '/vendor/camera-controls.module.js?v=96';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=96';
+import * as THREE from '/flightverse/three.js?v=102';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=102';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=102';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=102';
+import { createRecorder } from '/flightverse/recorder.js?v=102';
+import { createAudio } from '/flightverse/audio.js?v=102';
+import { createTouchSticks } from '/flightverse/touch.js?v=102';
+import { createSky } from '/flightverse/sky.js?v=102';
+import { loadSceneObjects } from '/flightverse/objects.js?v=102';
+import { createWeapons } from '/flightverse/weapons.js?v=102';
+import CameraControls from '/vendor/camera-controls.module.js?v=102';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=102';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=96';
+} from '/vendor/postprocessing180.module.js?v=102';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -33,7 +33,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=96';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=102';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -82,6 +82,7 @@ function hud() {
       </div>
     </div>
     <div class="vl-corner br">
+      <div class="vl-kills" id="vl-kills"></div>
       <button class="vl-fire" id="vl-fire" title="X · disparar">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
           <circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>
@@ -400,9 +401,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=96', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=102', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=96');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=102');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -510,12 +511,24 @@ async function main() {
   const shake = { mag: 0 };
   let curYaw = 0;
   const weapons = createWeapons(scene, {
-    heightAt: terrain.heightAt, audio,
+    heightAt: terrain.heightAt, audio, crater: terrain.crater,
     onShake: (pos, big) => {
       const d = camera.position.distanceTo(pos);
       shake.mag = Math.max(shake.mag, Math.min(0.9, (9 * big) / (5 + d)));
     },
   });
+  // retícula de impacto: simula la balística y marca dónde caerá el misil
+  const aim = new THREE.Group();
+  {
+    const am = new THREE.MeshBasicMaterial({ color: 0xff8a5a, transparent: true, opacity: 0.85,
+      depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    const r1 = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.9, 28), am);
+    const r2 = new THREE.Mesh(new THREE.CircleGeometry(0.14, 12), am.clone());
+    r1.rotation.x = r2.rotation.x = -Math.PI / 2;
+    aim.add(r1, r2);
+  }
+  aim.visible = false;
+  scene.add(aim);
   const fireBtn = $('#vl-fire');
   const doFire = (pitch) => {
     if (!weapons.fire(P.clone(), curYaw, pitch ?? gimbalTilt * 0.55)) return;
@@ -527,6 +540,7 @@ async function main() {
   const sticks = createTouchSticks($('#vl-hud'));
   let sfx = { idx: 0, phase: '', crash: false, count: 0 };
   let modeKey = 'asistido', rigIx = 0;
+  if (Q.get('rig') != null) rigIx = Math.abs(+Q.get('rig')) % RIGS.length;   // QA: cámara por URL
   let gimbalTilt = -0.12;                      // tilt del gimbal (rad); rueda/slider lo mueven
   const setGimbal = r => {
     gimbalTilt = Math.max(-1.26, Math.min(0.38, r));
@@ -664,7 +678,7 @@ async function main() {
     } catch { /* usuario canceló */ }
   });
   const qModo = Q.get('modo');
-  setMode(qModo && MODES[qModo] ? qModo : 'asistido'); setRig(0); applyVista();
+  setMode(qModo && MODES[qModo] ? qModo : 'asistido'); setRig(rigIx); applyVista();
   if (Q.get('reto') === '1' && !AT) setTimeout(() => startReto(), 3800);   // tras el arrival
   const modeKeys = { Digit1: 'cinematico', Digit2: 'asistido', Digit3: 'arcade', Digit4: 'dios' };
   addEventListener('keydown', e => {
@@ -1110,11 +1124,37 @@ async function main() {
         const wdt = Math.min(0.05, (now - (weapons._lt || now)) / 1000);
         weapons._lt = now;
         weapons.update(wdt, sceneObjects?.hittables);
-        if (Q.get('fuego') && simT > 1 && !weapons.state.fired) doFire(-0.55);
+        if (Q.get('fuego') && simT > 1 && !weapons.state.fired) doFire(-1.25);
+        if (Q.get('boom') && simT > 5.2 && !weapons._boomed) {
+          weapons._boomed = true;             // QA: detonación a nivel de suelo bajo el dron
+          const bx = P.x - Math.sin(curYaw) * 6, bz = P.z - Math.cos(curYaw) * 6;
+          const bgy = terrain.heightAt(bx, bz) ?? (P.y - 60);
+          weapons.explodeAt(new THREE.Vector3(bx, bgy + 0.3, bz));
+        }
         const st = weapons.state;
         $('#vl-ammo').textContent = st.ammo;
         $('#vl-cool').style.transform = `scaleX(${1 - st.cool / 0.9})`;
         fireBtn.classList.toggle('empty', st.ammo === 0);
+        if (st.destroyed) { const k = $('#vl-kills'); k.textContent = `DERRIBOS ${st.destroyed}`; k.classList.add('show'); }
+        // retícula: 80 pasos de balística contra el heightfield
+        if (st.ammo > 0 && !director) {
+          const pitch = gimbalTilt * 0.55;
+          const simP = P.clone(); simP.y -= 0.3;
+          const sv = new THREE.Vector3(-Math.sin(curYaw) * Math.cos(pitch), Math.sin(pitch),
+            -Math.cos(curYaw) * Math.cos(pitch)).multiplyScalar(56);
+          let hitP = null;
+          for (let s2 = 0; s2 < 80; s2++) {
+            sv.y -= 2.2 * 0.045;
+            simP.addScaledVector(sv, 0.045);
+            const gy = terrain.heightAt(simP.x, simP.z);
+            if (gy != null && simP.y <= gy + 0.3) { simP.y = gy + 0.32; hitP = simP; break; }
+          }
+          if (hitP) {
+            aim.visible = true;
+            aim.position.copy(hitP);
+            aim.scale.setScalar((1 + Math.sin(simT * 6) * 0.1) * (1 + camera.position.distanceTo(hitP) * 0.015));
+          } else aim.visible = false;
+        } else aim.visible = false;
         if (shake.mag > 0.003) {                 // sacudida de impacto (decae)
           camera.position.x += (Math.random() - 0.5) * shake.mag;
           camera.position.y += (Math.random() - 0.5) * shake.mag * 0.6;

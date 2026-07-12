@@ -3863,3 +3863,9 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   100%{ box-shadow:0 0 0 26px rgba(255,140,90,0) } }
 .vl-fire.flash{ animation:fireFlash .45s var(--ease) }
 @media (pointer:coarse){ .vl-fire{ width:66px; height:66px } }
+
+/* BLOQUE 47b: contador de derribos junto al FIRE */
+.vl-kills{ display:none; font:700 10px var(--mono); color:#ffb36b; letter-spacing:.12em;
+  padding:5px 10px; border-radius:999px; border:1px solid rgba(224,164,88,.35);
+  background:rgba(20,12,8,.7); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px) }
+.vl-kills.show{ display:block; animation:vlDockIn .3s var(--ease) }

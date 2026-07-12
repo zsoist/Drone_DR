@@ -129,3 +129,23 @@ mando real, minimapa MapLibre opcional.
   Spec v2: 120k tris / 8 mats / 2048² / hardpoints / gimbal / prompts copia-pega.
 - Gate: &fuego=1 dispara a 1s con pitch -0.55 → report.weapons {fired, exploded}.
   Verificado: fired 1 / exploded 1 / 68fps / 0 errores.
+
+## v102 (2026-07-12) — armamento v2: cráteres reales + VFX nivel motor
+- Research: three.quarks (GPU instancing, stretched billboards, trails, Shuriken
+  parity) y three-nebula evaluados; técnicas portadas NATIVAS (cero deps, CSP
+  intacto): Points con textura suave (adiós chispas cuadradas), streaks
+  LineSegments estirados por velocidad, rampas color-sobre-vida en sprites
+  (blanco→naranja→rojo oscuro / humo aclara), rotación por partícula.
+- CRÁTERES REALES: terrain.crater(x,z,r,depth) deprime el heightfield hf +
+  geometría con falloff coseno; heightAt cierra sobre hf → colisión del dron y
+  anclaje de objetos ven el cráter. Normales recalculadas SOLO en el parche
+  (diferencias centrales del grid regular — sin computeVertexNormals global).
+- Escombros PERSISTEN: al asentarse (rebote + |v|<0.9) se congelan como rubble
+  estático (matrixAutoUpdate=false), tope 240 FIFO. 18 chunks, 30% carbonizados.
+- Fuegos residuales: 5.5s de llamas con rampa + humo + PointLight con flicker,
+  máx 3 concurrentes. Misil: roll, aletas, flicker de tobera, estela fina,
+  hardpoints alternos izq/der.
+- Retícula de impacto: balística simulada 80 pasos contra el heightfield cada
+  frame — anillo naranja pulsante donde caerá el misil. Chip DERRIBOS n.
+- QA params: &fuego=1 (dispara), &boom=1 (detona a suelo), &rig=N (cámara).
+  6 gates verdes consecutivos, 66-75fps, 0 errores.

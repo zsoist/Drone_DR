@@ -3,7 +3,7 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=96';
+import * as THREE from '/flightverse/three.js?v=102';
 
 export async function loadManifest(cid) {
   const id = String(cid || '').replace(/[^\w-]/g, '');
@@ -98,9 +98,42 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
 
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'fv-terrain';
+  // cráter REAL: deprime el heightfield (hf + geometría). heightAt cierra
+  // sobre hf, así que colisión del dron y anclaje de objetos ven el cráter.
+  // Normales recalculadas SOLO en el parche (diferencias centrales del grid).
+  function crater(cx, cz, r = 3.5, depth = 1.3) {
+    const [sx2, sz2] = lodMeta.spacing_m;
+    const W = sx2 * (cols - 1), H = sz2 * (rows - 1);
+    const fx = (cx + W / 2) / sx2, fz = (cz + H / 2) / sz2;
+    if (fx < 0 || fz < 0 || fx > cols - 1 || fz > rows - 1) return false;
+    const rx = Math.ceil(r / sx2), rz = Math.ceil(r / sz2);
+    const x0 = Math.max(0, Math.floor(fx - rx)), x1 = Math.min(cols - 1, Math.ceil(fx + rx));
+    const z0 = Math.max(0, Math.floor(fz - rz)), z1 = Math.min(rows - 1, Math.ceil(fz + rz));
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+      const d = Math.hypot((x - fx) * sx2, (z - fz) * sz2);
+      if (d > r) continue;
+      const k = Math.cos((d / r) * Math.PI * 0.5);
+      const i = z * cols + x;
+      hf[i] -= depth * k * k;
+      pos.setY(i, hf[i] - lodMeta.elev_min);
+    }
+    pos.needsUpdate = true;
+    const nor = geo.attributes.normal;
+    for (let z = Math.max(1, z0 - 1); z <= Math.min(rows - 2, z1 + 1); z++) {
+      for (let x = Math.max(1, x0 - 1); x <= Math.min(cols - 2, x1 + 1); x++) {
+        const i = z * cols + x;
+        const dhx = (hf[i + 1] - hf[i - 1]) / (2 * sx2);
+        const dhz = (hf[i + cols] - hf[i - cols]) / (2 * sz2);
+        const inv = 1 / Math.hypot(dhx, 1, dhz);
+        nor.setXYZ(i, -dhx * inv, inv, -dhz * inv);
+      }
+    }
+    nor.needsUpdate = true;
+    return true;
+  }
   return {
     splatMask,
-    mesh, hf,
+    mesh, hf, crater,
     heightAt: makeHeightSampler(hf, { ...lodMeta, elev_min: lodMeta.elev_min }),
     world: lodMeta,
     dispose: () => { geo.dispose(); material.map?.dispose(); material.dispose(); },
@@ -118,7 +151,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=96');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=102');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     scene.userData.fvSpark = sp;
