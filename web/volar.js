@@ -4,24 +4,24 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=80';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=80';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=80';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=80';
-import { createRecorder } from '/flightverse/recorder.js?v=80';
-import { createAudio } from '/flightverse/audio.js?v=80';
-import { createTouchSticks } from '/flightverse/touch.js?v=80';
-import { createSky } from '/flightverse/sky.js?v=80';
-import { loadSceneObjects } from '/flightverse/objects.js?v=80';
-import CameraControls from '/vendor/camera-controls.module.js?v=80';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=80';
+import * as THREE from '/flightverse/three.js?v=81';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=81';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=81';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=81';
+import { createRecorder } from '/flightverse/recorder.js?v=81';
+import { createAudio } from '/flightverse/audio.js?v=81';
+import { createTouchSticks } from '/flightverse/touch.js?v=81';
+import { createSky } from '/flightverse/sky.js?v=81';
+import { loadSceneObjects } from '/flightverse/objects.js?v=81';
+import CameraControls from '/vendor/camera-controls.module.js?v=81';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=81';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=80';
+} from '/vendor/postprocessing180.module.js?v=81';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -32,7 +32,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=80';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=81';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -180,6 +180,8 @@ async function main() {
     powerPreference: 'high-performance', antialias: false, stencil: false, depth: false,
   });
   renderer.toneMapping = THREE.NoToneMapping;   // el tone mapping va al FINAL del pipeline
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   document.body.prepend(renderer.domElement);
@@ -219,6 +221,7 @@ async function main() {
 
   const terrain = await loadTerrain(man, { anisotropy: 8 });
   terrain.mesh.matrixAutoUpdate = false; terrain.mesh.updateMatrix();   // estática
+  terrain.mesh.receiveShadow = true;
   scene.add(terrain.mesh);
   // objetos de escena (plataforma de juegos: docs/SCENE_OBJECTS.md)
   let sceneObjects = null;
@@ -364,13 +367,14 @@ async function main() {
     props.push({ g: prop, dir: x * z > 0 ? 1 : -1 });
     dmesh.add(arm, bellB, bellT, prop);
   }
+  dmesh.traverse(o => { o.castShadow = true; });
   scene.add(dmesh);
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=80', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=81', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=80');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=81');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -455,7 +459,15 @@ async function main() {
     modeKey = k; $('#vl-mode').textContent = `modo · ${MODES[k].label}`;
     $('#vl-cine').classList.toggle('show', k === 'cinematico');
     $('#vl-goto').classList.toggle('show', !!MODES[k].autopilot && !!ghost);
-    if (MODES[k].autopilot && ghost) { initAuto(); goToStart(); }   // vuela al inicio, no teleport
+    if (MODES[k].autopilot) {
+      if (ghost && ghost.pts.length > 3) { initAuto(); goToStart(); }
+      else {                                   // honesto: sin track no hay autopiloto
+        modeKey = 'asistido';
+        $('#vl-mode').textContent = 'modo · Normal';
+        $('#vl-challenge').textContent = 'esta escena no tiene ruta real — Arcade no disponible';
+        setTimeout(() => { $('#vl-challenge').textContent = ''; }, 2600);
+      }
+    }
   };
   $('#vl-goto').addEventListener('click', () => goToStart());
   const setRig = ix => {
@@ -986,7 +998,7 @@ async function main() {
         if (rig.hideDrone) camera.rotation.x += gimbalTilt;
         else camera.rotateX(gimbalTilt + 0.12);   // gimbal también en chase/orbita (offset neutro)
       }
-      sky.update(STEP, camera.position);
+      sky.update(STEP, camera.position, P);
       sceneObjects?.update(simT);
       composer.render();
       drawMinimap();

@@ -3,7 +3,7 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=80';
+import * as THREE from '/flightverse/three.js?v=81';
 
 const PRESETS = {
   dia: {
@@ -138,8 +138,44 @@ export function createSky(scene, { radius = 2600 } = {}) {
   }
 
   const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+  // sombras reales del sol/luna ('casi ray tracing'): frustum apretado que
+  // SIGUE al dron via update(focus) — nitidez sin gastar mapa en toda la escena
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -90; sun.shadow.camera.right = 90;
+  sun.shadow.camera.top = 90; sun.shadow.camera.bottom = -90;
+  sun.shadow.camera.near = 50; sun.shadow.camera.far = 900;
+  sun.shadow.bias = -0.0004;
   const ambient = new THREE.AmbientLight(0xffffff, 0.85);
-  scene.add(sun, ambient);
+  const hemi = new THREE.HemisphereLight(0x88aadd, 0x33291f, 0.5);   // rebote cielo/suelo
+  scene.add(sun, sun.target, ambient, hemi);
+  // FLARE del sol: sprite aditivo en la dirección del sol
+  const fcv = document.createElement('canvas'); fcv.width = fcv.height = 128;
+  const fc = fcv.getContext('2d');
+  const fg = fc.createRadialGradient(64, 64, 2, 64, 64, 62);
+  fg.addColorStop(0, 'rgba(255,250,235,.95)'); fg.addColorStop(0.25, 'rgba(255,235,190,.45)');
+  fg.addColorStop(1, 'rgba(255,220,160,0)');
+  fc.fillStyle = fg; fc.fillRect(0, 0, 128, 128);
+  const flare = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(fcv), transparent: true, depthWrite: false, depthTest: false,
+    blending: THREE.AdditiveBlending }));
+  flare.renderOrder = -8;
+  scene.add(flare);
+  // CÚMULOS billboard: 6 nubes gordas de sprites que derivan con parallax
+  const puffs = [];
+  for (let i = 0; i < 6; i++) {
+    const g = new THREE.Group();
+    for (let j = 0; j < 5; j++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true,
+        opacity: 0.5, depthWrite: false }));
+      sp.position.set((j - 2) * 26 + Math.sin(i * 3 + j) * 9, Math.sin(j * 2.1) * 8, Math.cos(i + j) * 12);
+      sp.scale.set(70, 34, 1);
+      g.add(sp);
+    }
+    g.position.set(Math.sin(i * 1.9) * 700, 170 + (i % 3) * 45, Math.cos(i * 2.4) * 700);
+    scene.add(g);
+    puffs.push(g);
+  }
 
   let cur = 'dia';
   function setPreset(name) {
@@ -167,6 +203,14 @@ export function createSky(scene, { radius = 2600 } = {}) {
       c.m.material.opacity = c.m.material.userData.base * (p.clouds / 0.5);
       c.m.material.color.set(p.cloudTint);
     }
+    hemi.color.set(p.top); hemi.groundColor.set(p.fog); hemi.intensity = p.moon > 0 ? 0.22 : 0.45;
+    flare.material.color.set(p.sun || 0xffffff);
+    flare.material.opacity = p.moon > 0 ? 0 : 1;
+    flare.scale.setScalar(p.sunSize < 200 ? 260 : 150);   // sol bajo = flare grande
+    for (const pg of puffs) pg.children.forEach(sp => {
+      sp.material.opacity = 0.5 * (p.clouds / 0.5);
+      sp.material.color.set(p.cloudTint);
+    });
     return cur;
   }
   setPreset('dia');
@@ -178,11 +222,18 @@ export function createSky(scene, { radius = 2600 } = {}) {
       const ks = Object.keys(PRESETS);
       return setPreset(ks[(ks.indexOf(cur) + 1) % ks.length]);
     },
-    update(dt, camPos) {
+    update(dt, camPos, focus) {
       dome.position.copy(camPos);                       // el domo sigue a la cámara
       for (const c of clouds) {
         c.t.offset.x += dt * c.sp / 1000;
         c.m.position.x = camPos.x; c.m.position.z = camPos.z;
+      }
+      flare.position.copy(camPos).addScaledVector(uni.uSunDir.value, 2200);
+      for (const pg of puffs) { pg.position.x += dt * 1.7; if (pg.position.x > 900) pg.position.x = -900; }
+      if (focus) {                                       // frustum de sombra sigue al dron
+        sun.target.position.copy(focus);
+        sun.position.copy(focus).addScaledVector(uni.uSunDir.value.clone().normalize(), 420);
+        sun.target.updateMatrixWorld();
       }
     },
     lights: { sun, ambient },

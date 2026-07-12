@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=80';
+import * as THREE from '/flightverse/three.js?v=81';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -252,6 +252,13 @@ export function createDrone({ heightAt, collide, spawn }) {
 // Rigs de cámara — cada rig es una función pura (drone interpolado → cámara).
 // Registro extensible; C cicla. (6 de los 10 del spec; el resto con Director.)
 export const RIGS = [
+  { key: 'muycerca', label: 'Muy cerca', fov: 66,
+    fn: (p, o, cam, dt) => {
+      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(2.3);
+      const want = p.clone().add(back).add(new THREE.Vector3(0, 0.9, 0));
+      cam.position.lerp(want, 1 - Math.exp(-dt * 7));
+      cam.lookAt(p);
+    } },
   { key: 'cerca', label: 'Cerca', fov: 62,
     fn: (p, o, cam, dt) => {
       const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(4.6);

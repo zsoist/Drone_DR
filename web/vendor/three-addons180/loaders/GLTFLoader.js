@@ -64,7 +64,7 @@ import {
 	VectorKeyframeTrack,
 	SRGBColorSpace,
 	InstancedBufferAttribute
-} from '/vendor/three180.module.js?v=80';
+} from '/vendor/three180.module.js?v=81';
 import { toTrianglesDrawMode } from '../utils/BufferGeometryUtils.js';
 
 /**
