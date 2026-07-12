@@ -4,24 +4,24 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=83';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=83';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=83';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=83';
-import { createRecorder } from '/flightverse/recorder.js?v=83';
-import { createAudio } from '/flightverse/audio.js?v=83';
-import { createTouchSticks } from '/flightverse/touch.js?v=83';
-import { createSky } from '/flightverse/sky.js?v=83';
-import { loadSceneObjects } from '/flightverse/objects.js?v=83';
-import CameraControls from '/vendor/camera-controls.module.js?v=83';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=83';
+import * as THREE from '/flightverse/three.js?v=84';
+import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=84';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=84';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=84';
+import { createRecorder } from '/flightverse/recorder.js?v=84';
+import { createAudio } from '/flightverse/audio.js?v=84';
+import { createTouchSticks } from '/flightverse/touch.js?v=84';
+import { createSky } from '/flightverse/sky.js?v=84';
+import { loadSceneObjects } from '/flightverse/objects.js?v=84';
+import CameraControls from '/vendor/camera-controls.module.js?v=84';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=84';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=83';
+} from '/vendor/postprocessing180.module.js?v=84';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -32,7 +32,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=83';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=84';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -334,6 +334,8 @@ async function main() {
   }
   dmesh.add(hull, shell, gimbal, navL, navR, stripe);
   const props = [];
+  const navLights = [];                       // LEDs: [strobe, rojo babor, verde estribor]
+  const propBlurs = [];                       // discos motion-blur bajo cada helice
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
     const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.019, 0.27, 4, 8), matGrey);
     arm.rotation.z = Math.PI / 2;
@@ -375,9 +377,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=83', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=84', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=83');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=84');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -387,7 +389,35 @@ async function main() {
     bb.setFromObject(m); bb.getCenter(m.position).multiplyScalar(-1);
     while (dmesh.children.length) dmesh.remove(dmesh.children[0]);   // fuera el procedural
     props.length = 0;
-    m.traverse(o => { if (/^prop/i.test(o.name)) props.push({ g: o, dir: props.length % 2 ? 1 : -1 }); });
+    m.traverse(o => {
+      o.castShadow = true;                    // el traverse del procedural corrio ANTES del swap
+      if (/^prop/i.test(o.name)) props.push({ g: o, dir: props.length % 2 ? 1 : -1 });
+    });
+    const mkGlow = (color, sc) => {
+      const cv = document.createElement('canvas'); cv.width = cv.height = 32;
+      const c = cv.getContext('2d');
+      const g2 = c.createRadialGradient(16, 16, 1, 16, 16, 15);
+      g2.addColorStop(0, color); g2.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = g2; c.fillRect(0, 0, 32, 32);
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending }));
+      sp.scale.setScalar(sc);
+      return sp;
+    };
+    for (const pr of props) {
+      const bl = new THREE.Mesh(new THREE.CircleGeometry(0.155, 24),
+        new THREE.MeshBasicMaterial({ color: 0x9fb2c8, transparent: true, opacity: 0.08,
+          side: THREE.DoubleSide, depthWrite: false }));
+      bl.rotation.x = -Math.PI / 2;
+      pr.g.getWorldPosition(bl.position); m.worldToLocal(bl.position); bl.position.y += 0.006;
+      m.add(bl); propBlurs.push(bl);
+    }
+    const ledR = mkGlow('rgba(255,64,48,.95)', 0.16), ledG = mkGlow('rgba(64,255,120,.95)', 0.16),
+      strobe = mkGlow('rgba(255,255,255,.95)', 0.2);
+    ledR.position.set(-0.23, 0.055, -0.155); ledG.position.set(0.23, 0.055, -0.155);
+    strobe.position.set(0, 0.07, 0.20);
+    m.add(ledR, ledG, strobe); navLights.push(strobe, ledR, ledG);
     dmesh.add(m);
     report.customDrone = true;
   }).catch(() => { /* GLB opcional */ });
@@ -982,6 +1012,13 @@ async function main() {
       // hélices con inercia (spin-up/down suave) + bob de hover premium
       propSpin += ((14 + drone.vel.length() * 3) - propSpin) * 0.06;
       for (const pr of props) pr.g.rotation.y += propSpin * STEP * pr.dir;
+      for (const bl of propBlurs) bl.material.opacity = Math.min(0.3, 0.04 + propSpin * 0.0038);
+      if (navLights.length) {
+        const tk = simT % 1.2;                 // doble flash de strobe estilo aeronave
+        navLights[0].material.opacity = (tk < 0.07 || (tk > 0.18 && tk < 0.25)) ? 1 : 0.04;
+        const nv = 0.75 + Math.sin(simT * 3.1) * 0.25;
+        navLights[1].material.opacity = nv; navLights[2].material.opacity = nv;
+      }
       const hover = Math.max(0, 1 - drone.vel.length() / 1.6);
       dmesh.position.y += Math.sin(simT * 2.1) * 0.05 * hover;
       dmesh.rotation.z += Math.sin(simT * 1.3) * 0.008 * hover;

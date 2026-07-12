@@ -28,7 +28,7 @@ import {
   UnsignedInt248Type,
   Vector2,
   WebGLRenderTarget as WebGLRenderTarget3
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 
 // src/passes/Pass.js
 import {
@@ -41,7 +41,7 @@ import {
   Scene,
   Texture,
   WebGLRenderTarget
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 var fullscreenGeometry = /* @__PURE__ */ (() => {
   const vertices = new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]);
   const uvs = new Float32Array([0, 0, 2, 0, 0, 2]);
@@ -285,10 +285,10 @@ var ClearMaskPass = class extends Pass {
 };
 
 // src/passes/CopyPass.js
-import { LinearFilter, SRGBColorSpace, UnsignedByteType, WebGLRenderTarget as WebGLRenderTarget2 } from "/vendor/three180.module.js?v=83";
+import { LinearFilter, SRGBColorSpace, UnsignedByteType, WebGLRenderTarget as WebGLRenderTarget2 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/CopyMaterial.js
-import { AlwaysDepth, NoBlending, ShaderMaterial, Uniform } from "/vendor/three180.module.js?v=83";
+import { AlwaysDepth, NoBlending, ShaderMaterial, Uniform } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/copy.frag
 var copy_default = `#ifdef COLOR_WRITE
@@ -593,7 +593,7 @@ var CopyPass = class extends Pass {
 };
 
 // src/passes/ClearPass.js
-import { Color } from "/vendor/three180.module.js?v=83";
+import { Color } from "/vendor/three180.module.js?v=84";
 var color = /* @__PURE__ */ new Color();
 var ClearPass = class extends Pass {
   /**
@@ -1357,7 +1357,7 @@ var EffectComposer = class {
 };
 
 // src/core/EffectShaderData.js
-import { LinearSRGBColorSpace } from "/vendor/three180.module.js?v=83";
+import { LinearSRGBColorSpace } from "/vendor/three180.module.js?v=84";
 
 // src/enums/EffectAttribute.js
 var EffectAttribute = {
@@ -1529,7 +1529,7 @@ var Initializable = class {
 };
 
 // src/core/OverrideMaterialManager.js
-import { BackSide, DoubleSide, FrontSide, ShaderMaterial as ShaderMaterial2 } from "/vendor/three180.module.js?v=83";
+import { BackSide, DoubleSide, FrontSide, ShaderMaterial as ShaderMaterial2 } from "/vendor/three180.module.js?v=84";
 var workaroundEnabled = false;
 var OverrideMaterialManager = class {
   /**
@@ -1751,7 +1751,7 @@ var Resizable = class {
 };
 
 // src/core/Resolution.js
-import { EventDispatcher, Vector2 as Vector22 } from "/vendor/three180.module.js?v=83";
+import { EventDispatcher, Vector2 as Vector22 } from "/vendor/three180.module.js?v=84";
 var AUTO_SIZE = -1;
 var Resolution = class extends EventDispatcher {
   /**
@@ -2271,7 +2271,7 @@ var Selection = class extends Set {
 };
 
 // src/effects/blending/BlendMode.js
-import { EventDispatcher as EventDispatcher2, Uniform as Uniform2 } from "/vendor/three180.module.js?v=83";
+import { EventDispatcher as EventDispatcher2, Uniform as Uniform2 } from "/vendor/three180.module.js?v=84";
 
 // src/enums/BlendFunction.js
 var BlendFunction = {
@@ -2513,10 +2513,10 @@ var BlendMode = class extends EventDispatcher2 {
 };
 
 // src/effects/ASCIIEffect.js
-import { Color as Color2, Uniform as Uniform3, Vector2 as Vector23, Vector4 } from "/vendor/three180.module.js?v=83";
+import { Color as Color2, Uniform as Uniform3, Vector2 as Vector23, Vector4 } from "/vendor/three180.module.js?v=84";
 
 // src/textures/ASCIITexture.js
-import { CanvasTexture, RepeatWrapping } from "/vendor/three180.module.js?v=83";
+import { CanvasTexture, RepeatWrapping } from "/vendor/three180.module.js?v=84";
 var ASCIITexture = class extends CanvasTexture {
   /**
    * Constructs a new ASCII texture.
@@ -2569,7 +2569,7 @@ import {
   NoColorSpace,
   Texture as Texture2,
   WebGLRenderTarget as WebGLRenderTarget4
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 var Effect = class extends EventDispatcher3 {
   /**
    * Constructs a new effect.
@@ -3002,7 +3002,7 @@ var ASCIIEffect = class extends Effect {
 };
 
 // src/effects/BloomEffect.js
-import { SRGBColorSpace as SRGBColorSpace5, Uniform as Uniform8, WebGLRenderTarget as WebGLRenderTarget8 } from "/vendor/three180.module.js?v=83";
+import { SRGBColorSpace as SRGBColorSpace5, Uniform as Uniform8, WebGLRenderTarget as WebGLRenderTarget8 } from "/vendor/three180.module.js?v=84";
 
 // src/enums/KernelSize.js
 var KernelSize = {
@@ -3015,10 +3015,10 @@ var KernelSize = {
 };
 
 // src/passes/KawaseBlurPass.js
-import { SRGBColorSpace as SRGBColorSpace3, UnsignedByteType as UnsignedByteType3, WebGLRenderTarget as WebGLRenderTarget5 } from "/vendor/three180.module.js?v=83";
+import { SRGBColorSpace as SRGBColorSpace3, UnsignedByteType as UnsignedByteType3, WebGLRenderTarget as WebGLRenderTarget5 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/KawaseBlurMaterial.js
-import { NoBlending as NoBlending2, ShaderMaterial as ShaderMaterial3, Uniform as Uniform4, Vector4 as Vector42 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending2, ShaderMaterial as ShaderMaterial3, Uniform as Uniform4, Vector4 as Vector42 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/convolution.kawase.frag
 var convolution_kawase_default = `#ifdef FRAMEBUFFER_PRECISION_HIGH
@@ -3436,10 +3436,10 @@ var KawaseBlurPass = class extends Pass {
 };
 
 // src/passes/LuminancePass.js
-import { UnsignedByteType as UnsignedByteType4, WebGLRenderTarget as WebGLRenderTarget6 } from "/vendor/three180.module.js?v=83";
+import { UnsignedByteType as UnsignedByteType4, WebGLRenderTarget as WebGLRenderTarget6 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/LuminanceMaterial.js
-import { NoBlending as NoBlending3, REVISION, ShaderMaterial as ShaderMaterial4, Uniform as Uniform5 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending3, REVISION, ShaderMaterial as ShaderMaterial4, Uniform as Uniform5 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/luminance.frag
 var luminance_default = `#include <common>
@@ -3777,10 +3777,10 @@ var LuminancePass = class extends Pass {
 };
 
 // src/passes/MipmapBlurPass.js
-import { SRGBColorSpace as SRGBColorSpace4, UnsignedByteType as UnsignedByteType5, Vector2 as Vector26, WebGLRenderTarget as WebGLRenderTarget7 } from "/vendor/three180.module.js?v=83";
+import { SRGBColorSpace as SRGBColorSpace4, UnsignedByteType as UnsignedByteType5, Vector2 as Vector26, WebGLRenderTarget as WebGLRenderTarget7 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/DownsamplingMaterial.js
-import { NoBlending as NoBlending4, ShaderMaterial as ShaderMaterial5, Uniform as Uniform6, Vector2 as Vector24 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending4, ShaderMaterial as ShaderMaterial5, Uniform as Uniform6, Vector2 as Vector24 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/convolution.downsampling.frag
 var convolution_downsampling_default = `#ifdef FRAMEBUFFER_PRECISION_HIGH
@@ -3837,7 +3837,7 @@ var DownsamplingMaterial = class extends ShaderMaterial5 {
 };
 
 // src/materials/UpsamplingMaterial.js
-import { NoBlending as NoBlending5, ShaderMaterial as ShaderMaterial6, Uniform as Uniform7, Vector2 as Vector25 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending5, ShaderMaterial as ShaderMaterial6, Uniform as Uniform7, Vector2 as Vector25 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/convolution.upsampling.frag
 var convolution_upsampling_default = `#ifdef FRAMEBUFFER_PRECISION_HIGH
@@ -4355,7 +4355,7 @@ var BloomEffect = class extends Effect {
 };
 
 // src/effects/BokehEffect.js
-import { Uniform as Uniform9 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform9 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/bokeh.frag
 var bokeh_default = `uniform float focus;uniform float dof;uniform float aperture;uniform float maxBlur;void mainImage(const in vec4 inputColor,const in vec2 uv,const in float depth,out vec4 outputColor){vec2 aspectCorrection=vec2(1.0,aspect);
@@ -4399,7 +4399,7 @@ var BokehEffect = class extends Effect {
 };
 
 // src/effects/BrightnessContrastEffect.js
-import { SRGBColorSpace as SRGBColorSpace6, Uniform as Uniform10 } from "/vendor/three180.module.js?v=83";
+import { SRGBColorSpace as SRGBColorSpace6, Uniform as Uniform10 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/brightness-contrast.frag
 var brightness_contrast_default = `uniform float brightness;uniform float contrast;void mainImage(const in vec4 inputColor,const in vec2 uv,out vec4 outputColor){vec3 color=inputColor.rgb+vec3(brightness-0.5);if(contrast>0.0){color/=vec3(1.0-contrast);}else{color*=vec3(1.0+contrast);}outputColor=vec4(color+vec3(0.5),inputColor.a);}`;
@@ -4500,7 +4500,7 @@ var ColorAverageEffect = class extends Effect {
 };
 
 // src/effects/ColorDepthEffect.js
-import { Uniform as Uniform11 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform11 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/color-depth.frag
 var color_depth_default = `uniform float factor;void mainImage(const in vec4 inputColor,const in vec2 uv,out vec4 outputColor){outputColor=vec4(floor(inputColor.rgb*factor+0.5)/factor,inputColor.a);}`;
@@ -4557,7 +4557,7 @@ var ColorDepthEffect = class extends Effect {
 };
 
 // src/effects/ChromaticAberrationEffect.js
-import { Uniform as Uniform12, Vector2 as Vector27 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform12, Vector2 as Vector27 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/chromatic-aberration.frag
 var chromatic_aberration_default = `#ifdef RADIAL_MODULATION
@@ -4723,7 +4723,7 @@ var DepthEffect = class extends Effect {
 };
 
 // src/effects/DepthOfFieldEffect.js
-import { BasicDepthPacking as BasicDepthPacking4, SRGBColorSpace as SRGBColorSpace7, Uniform as Uniform16, UnsignedByteType as UnsignedByteType8, Vector3, WebGLRenderTarget as WebGLRenderTarget9 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking4, SRGBColorSpace as SRGBColorSpace7, Uniform as Uniform16, UnsignedByteType as UnsignedByteType8, Vector3, WebGLRenderTarget as WebGLRenderTarget9 } from "/vendor/three180.module.js?v=84";
 
 // src/enums/ColorChannel.js
 var ColorChannel = {
@@ -4742,7 +4742,7 @@ var MaskFunction = {
 };
 
 // src/materials/BokehMaterial.js
-import { NoBlending as NoBlending6, ShaderMaterial as ShaderMaterial7, Uniform as Uniform13, Vector2 as Vector28 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending6, ShaderMaterial as ShaderMaterial7, Uniform as Uniform13, Vector2 as Vector28 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/convolution.bokeh.frag
 var convolution_bokeh_default = `#ifdef FRAMEBUFFER_PRECISION_HIGH
@@ -4918,7 +4918,7 @@ var BokehMaterial = class extends ShaderMaterial7 {
 };
 
 // src/materials/CircleOfConfusionMaterial.js
-import { BasicDepthPacking as BasicDepthPacking3, NoBlending as NoBlending7, PerspectiveCamera, ShaderMaterial as ShaderMaterial8, Uniform as Uniform14 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking3, NoBlending as NoBlending7, PerspectiveCamera, ShaderMaterial as ShaderMaterial8, Uniform as Uniform14 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/circle-of-confusion.frag
 var circle_of_confusion_default = `#include <common>
@@ -5138,7 +5138,7 @@ var CircleOfConfusionMaterial = class extends ShaderMaterial8 {
 };
 
 // src/materials/MaskMaterial.js
-import { NoBlending as NoBlending8, ShaderMaterial as ShaderMaterial9, Uniform as Uniform15, UnsignedByteType as UnsignedByteType6 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending8, ShaderMaterial as ShaderMaterial9, Uniform as Uniform15, UnsignedByteType as UnsignedByteType6 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/mask.frag
 var mask_default = `#ifdef FRAMEBUFFER_PRECISION_HIGH
@@ -5355,7 +5355,7 @@ var MaskMaterial = class extends ShaderMaterial9 {
 };
 
 // src/passes/ShaderPass.js
-import { UnsignedByteType as UnsignedByteType7 } from "/vendor/three180.module.js?v=83";
+import { UnsignedByteType as UnsignedByteType7 } from "/vendor/three180.module.js?v=84";
 var ShaderPass = class extends Pass {
   /**
    * Constructs a new shader pass.
@@ -5734,7 +5734,7 @@ var DepthOfFieldEffect = class extends Effect {
 };
 
 // src/effects/DotScreenEffect.js
-import { Uniform as Uniform17, Vector2 as Vector29 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform17, Vector2 as Vector29 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/dot-screen.frag
 var dot_screen_default = `uniform vec2 angle;uniform float scale;float pattern(const in vec2 uv){vec2 point=scale*vec2(dot(angle.yx,vec2(uv.x,-uv.y)),dot(angle,uv));return(sin(point.x)*sin(point.y))*4.0;}void mainImage(const in vec4 inputColor,const in vec2 uv,out vec4 outputColor){vec3 color=vec3(inputColor.rgb*10.0-5.0+pattern(uv*resolution));outputColor=vec4(color,inputColor.a);}`;
@@ -5880,7 +5880,7 @@ var FXAAEffect = class extends Effect {
 };
 
 // src/effects/GammaCorrectionEffect.js
-import { Uniform as Uniform18 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform18 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/gamma-correction.frag
 var gamma_correction_default = `uniform float gamma;void mainImage(const in vec4 inputColor,const in vec2 uv,out vec4 outputColor){outputColor=LinearToGamma(max(inputColor,0.0),gamma);}`;
@@ -5905,7 +5905,7 @@ var GammaCorrectionEffect = class extends Effect {
 };
 
 // src/effects/GlitchEffect.js
-import { NearestFilter, RepeatWrapping as RepeatWrapping2, RGBAFormat as RGBAFormat2, Uniform as Uniform19, Vector2 as Vector210 } from "/vendor/three180.module.js?v=83";
+import { NearestFilter, RepeatWrapping as RepeatWrapping2, RGBAFormat as RGBAFormat2, Uniform as Uniform19, Vector2 as Vector210 } from "/vendor/three180.module.js?v=84";
 
 // src/enums/GlitchMode.js
 var GlitchMode = {
@@ -5922,7 +5922,7 @@ import {
   RGFormat,
   RGBAFormat,
   UnsignedByteType as UnsignedByteType9
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 function getNoise(size, format, type) {
   const channels = /* @__PURE__ */ new Map([
     [RedFormat, 1],
@@ -6436,10 +6436,10 @@ import {
   Vector3 as Vector32,
   Vector4 as Vector43,
   WebGLRenderTarget as WebGLRenderTarget10
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 
 // src/materials/GodRaysMaterial.js
-import { NoBlending as NoBlending9, ShaderMaterial as ShaderMaterial10, Uniform as Uniform20 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending9, ShaderMaterial as ShaderMaterial10, Uniform as Uniform20 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/convolution.god-rays.frag
 var convolution_god_rays_default = `#include <common>
@@ -7246,7 +7246,7 @@ var GodRaysEffect = class extends Effect {
 };
 
 // src/effects/GridEffect.js
-import { Uniform as Uniform22, Vector2 as Vector212 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform22, Vector2 as Vector212 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/grid.frag
 var grid_default = `uniform vec2 scale;uniform float lineWidth;void mainImage(const in vec4 inputColor,const in vec2 uv,out vec4 outputColor){float grid=0.5-max(abs(mod(uv.x*scale.x,1.0)-0.5),abs(mod(uv.y*scale.y,1.0)-0.5));outputColor=vec4(vec3(smoothstep(0.0,lineWidth,grid)),inputColor.a);}`;
@@ -7351,7 +7351,7 @@ var GridEffect = class extends Effect {
 };
 
 // src/effects/HueSaturationEffect.js
-import { Uniform as Uniform23, Vector3 as Vector33 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform23, Vector3 as Vector33 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/hue-saturation.frag
 var hue_saturation_default = `uniform vec3 hue;uniform float saturation;void mainImage(const in vec4 inputColor,const in vec2 uv,out vec4 outputColor){vec3 color=vec3(dot(inputColor.rgb,hue.xyz),dot(inputColor.rgb,hue.zxy),dot(inputColor.rgb,hue.yzx));float average=(color.r+color.g+color.b)/3.0;vec3 diff=average-color;if(saturation>0.0){color+=diff*(1.0-1.0/(1.001-saturation));}else{color+=diff*-saturation;}outputColor=vec4(min(color,1.0),inputColor.a);}`;
@@ -7443,7 +7443,7 @@ var HueSaturationEffect = class extends Effect {
 };
 
 // src/effects/LensDistortionEffect.js
-import { Uniform as Uniform24, Vector2 as Vector213 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform24, Vector2 as Vector213 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/lens-distortion.frag
 var lens_distortion_default = `uniform vec2 distortion;uniform vec2 principalPoint;uniform vec2 focalLength;uniform float skew;float mask(const in vec2 uv){return float(uv.s>=0.0&&uv.s<=1.0&&uv.t>=0.0&&uv.t<=1.0);}void mainUv(inout vec2 uv){vec2 xn=2.0*(uv.st-0.5);vec3 xDistorted=vec3((1.0+distortion*dot(xn,xn))*xn,1.0);mat3 kk=mat3(vec3(focalLength.x,0.0,0.0),vec3(skew*focalLength.x,focalLength.y,0.0),vec3(principalPoint.x,principalPoint.y,1.0));uv=(kk*xDistorted).xy*0.5+0.5;}void mainImage(const in vec4 inputColor,const in vec2 uv,out vec4 outputColor){outputColor=mask(uv)*inputColor;}`;
@@ -7521,7 +7521,7 @@ var LensDistortionEffect = class extends Effect {
 };
 
 // src/effects/LUT1DEffect.js
-import { FloatType as FloatType2, HalfFloatType, Uniform as Uniform25 } from "/vendor/three180.module.js?v=83";
+import { FloatType as FloatType2, HalfFloatType, Uniform as Uniform25 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/lut-1d.frag
 var lut_1d_default = `#ifdef LUT_PRECISION_HIGH
@@ -7577,7 +7577,7 @@ import {
   SRGBColorSpace as SRGBColorSpace10,
   Uniform as Uniform26,
   Vector3 as Vector35
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 
 // src/textures/lut/LookupTexture.js
 import {
@@ -7592,7 +7592,7 @@ import {
   SRGBColorSpace as SRGBColorSpace9,
   UnsignedByteType as UnsignedByteType10,
   Vector3 as Vector34
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 
 // src/enums/LUTOperation.js
 var LUTOperation = {
@@ -8293,10 +8293,10 @@ var NoiseEffect = class extends Effect {
 };
 
 // src/effects/OutlineEffect.js
-import { Color as Color5, RepeatWrapping as RepeatWrapping3, Uniform as Uniform29, UnsignedByteType as UnsignedByteType11, WebGLRenderTarget as WebGLRenderTarget12 } from "/vendor/three180.module.js?v=83";
+import { Color as Color5, RepeatWrapping as RepeatWrapping3, Uniform as Uniform29, UnsignedByteType as UnsignedByteType11, WebGLRenderTarget as WebGLRenderTarget12 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/DepthComparisonMaterial.js
-import { NoBlending as NoBlending10, PerspectiveCamera as PerspectiveCamera2, RGBADepthPacking, ShaderMaterial as ShaderMaterial11, Uniform as Uniform27 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending10, PerspectiveCamera as PerspectiveCamera2, RGBADepthPacking, ShaderMaterial as ShaderMaterial11, Uniform as Uniform27 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/depth-comparison.frag
 var depth_comparison_default = `#include <packing>
@@ -8428,7 +8428,7 @@ var DepthComparisonMaterial = class extends ShaderMaterial11 {
 };
 
 // src/materials/OutlineMaterial.js
-import { NoBlending as NoBlending11, ShaderMaterial as ShaderMaterial12, Uniform as Uniform28, Vector2 as Vector214 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending11, ShaderMaterial as ShaderMaterial12, Uniform as Uniform28, Vector2 as Vector214 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/outline.frag
 var outline_default = `uniform lowp sampler2D inputBuffer;varying vec2 vUv0;varying vec2 vUv1;varying vec2 vUv2;varying vec2 vUv3;void main(){vec2 c0=texture2D(inputBuffer,vUv0).rg;vec2 c1=texture2D(inputBuffer,vUv1).rg;vec2 c2=texture2D(inputBuffer,vUv2).rg;vec2 c3=texture2D(inputBuffer,vUv3).rg;float d0=(c0.x-c1.x)*0.5;float d1=(c2.x-c3.x)*0.5;float d=length(vec2(d0,d1));float a0=min(c0.y,c1.y);float a1=min(c2.y,c3.y);float visibilityFactor=min(a0,a1);gl_FragColor.rg=(1.0-visibilityFactor>0.001)?vec2(d,0.0):vec2(0.0,d);}`;
@@ -8500,7 +8500,7 @@ var OutlineMaterial = class extends ShaderMaterial12 {
 };
 
 // src/passes/DepthPass.js
-import { Color as Color4, MeshDepthMaterial, NearestFilter as NearestFilter3, RGBADepthPacking as RGBADepthPacking2, WebGLRenderTarget as WebGLRenderTarget11 } from "/vendor/three180.module.js?v=83";
+import { Color as Color4, MeshDepthMaterial, NearestFilter as NearestFilter3, RGBADepthPacking as RGBADepthPacking2, WebGLRenderTarget as WebGLRenderTarget11 } from "/vendor/three180.module.js?v=84";
 var DepthPass = class extends Pass {
   /**
    * Constructs a new depth pass.
@@ -9146,7 +9146,7 @@ var OutlineEffect = class extends Effect {
 };
 
 // src/effects/PixelationEffect.js
-import { Uniform as Uniform30, Vector2 as Vector215, Vector4 as Vector44 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform30, Vector2 as Vector215, Vector4 as Vector44 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/pixelation.frag
 var pixelation_default = `uniform bool active;uniform vec4 d;void mainUv(inout vec2 uv){if(active){uv=d.xy*(floor(uv*d.zw)+0.5);}}`;
@@ -9223,7 +9223,7 @@ var PixelationEffect = class extends Effect {
 };
 
 // src/effects/RealisticBokehEffect.js
-import { Uniform as Uniform31, Vector4 as Vector45 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform31, Vector4 as Vector45 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/realistic-bokeh.frag
 var realistic_bokeh_default = `uniform float focus;uniform float focalLength;uniform float fStop;uniform float maxBlur;uniform float luminanceThreshold;uniform float luminanceGain;uniform float bias;uniform float fringe;
@@ -9403,7 +9403,7 @@ var RealisticBokehEffect = class extends Effect {
 };
 
 // src/effects/ScanlineEffect.js
-import { Uniform as Uniform32, Vector2 as Vector216 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform32, Vector2 as Vector216 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/scanlines.frag
 var scanlines_default = `uniform float count;
@@ -9500,7 +9500,7 @@ var ScanlineEffect = class extends Effect {
 };
 
 // src/effects/ShockWaveEffect.js
-import { Uniform as Uniform33, Vector2 as Vector217, Vector3 as Vector36 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform33, Vector2 as Vector217, Vector3 as Vector36 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/shock-wave.frag
 var shock_wave_default = `uniform bool active;uniform vec2 center;uniform float waveSize;uniform float radius;uniform float maxRadius;uniform float amplitude;varying float vSize;void mainUv(inout vec2 uv){if(active){vec2 aspectCorrection=vec2(aspect,1.0);vec2 difference=uv*aspectCorrection-center*aspectCorrection;float distance=sqrt(dot(difference,difference))*vSize;if(distance>radius){if(distance<radius+waveSize){float angle=(distance-radius)*PI2/waveSize;float cosSin=(1.0-cos(angle))*0.5;float extent=maxRadius+waveSize;float decay=max(extent-distance*distance,0.0)/extent;uv-=((cosSin*amplitude*difference)/distance)*decay;}}}}`;
@@ -9684,7 +9684,7 @@ import {
   RGBADepthPacking as RGBADepthPacking3,
   SRGBColorSpace as SRGBColorSpace11,
   WebGLRenderTarget as WebGLRenderTarget13
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 
 // src/materials/DepthMaskMaterial.js
 import {
@@ -9702,7 +9702,7 @@ import {
   ShaderMaterial as ShaderMaterial13,
   Uniform as Uniform34,
   Vector2 as Vector218
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/depth-mask.frag
 var depth_mask_default = `#include <common>
@@ -10174,7 +10174,7 @@ var SelectiveBloomEffect = class extends BloomEffect {
 };
 
 // src/effects/SepiaEffect.js
-import { Uniform as Uniform35, Vector3 as Vector37 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform35, Vector3 as Vector37 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/sepia.frag
 var sepia_default = `uniform vec3 weightsR;uniform vec3 weightsG;uniform vec3 weightsB;void mainImage(const in vec4 inputColor,const in vec2 uv,out vec4 outputColor){vec3 color=vec3(dot(inputColor.rgb,weightsR),dot(inputColor.rgb,weightsG),dot(inputColor.rgb,weightsB));outputColor=vec4(color,inputColor.a);}`;
@@ -10264,10 +10264,10 @@ import {
   Texture as Texture3,
   Uniform as Uniform38,
   WebGLRenderTarget as WebGLRenderTarget14
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 
 // src/materials/EdgeDetectionMaterial.js
-import { BasicDepthPacking as BasicDepthPacking8, NoBlending as NoBlending13, REVISION as REVISION2, ShaderMaterial as ShaderMaterial14, Uniform as Uniform36, Vector2 as Vector219 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking8, NoBlending as NoBlending13, REVISION as REVISION2, ShaderMaterial as ShaderMaterial14, Uniform as Uniform36, Vector2 as Vector219 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/edge-detection.frag
 var edge_detection_default = `varying vec2 vUv;varying vec2 vUv0;varying vec2 vUv1;
@@ -10652,7 +10652,7 @@ var EdgeDetectionMaterial = class extends ShaderMaterial14 {
 };
 
 // src/materials/SMAAWeightsMaterial.js
-import { NoBlending as NoBlending14, ShaderMaterial as ShaderMaterial15, Uniform as Uniform37, Vector2 as Vector220 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending14, ShaderMaterial as ShaderMaterial15, Uniform as Uniform37, Vector2 as Vector220 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/smaa-weights.frag
 var smaa_weights_default = `#define sampleLevelZeroOffset(t, coord, offset) texture2D(t, coord + offset * texelSize)
@@ -11234,10 +11234,10 @@ var SMAAEffect = class extends Effect {
 };
 
 // src/effects/SSAOEffect.js
-import { BasicDepthPacking as BasicDepthPacking13, Color as Color8, RepeatWrapping as RepeatWrapping4, RGBAFormat as RGBAFormat4, Uniform as Uniform41, WebGLRenderTarget as WebGLRenderTarget16 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking13, Color as Color8, RepeatWrapping as RepeatWrapping4, RGBAFormat as RGBAFormat4, Uniform as Uniform41, WebGLRenderTarget as WebGLRenderTarget16 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/SSAOMaterial.js
-import { BasicDepthPacking as BasicDepthPacking10, Matrix4 as Matrix42, NoBlending as NoBlending15, PerspectiveCamera as PerspectiveCamera4, ShaderMaterial as ShaderMaterial16, Uniform as Uniform39, Vector2 as Vector221 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking10, Matrix4 as Matrix42, NoBlending as NoBlending15, PerspectiveCamera as PerspectiveCamera4, ShaderMaterial as ShaderMaterial16, Uniform as Uniform39, Vector2 as Vector221 } from "/vendor/three180.module.js?v=84";
 
 // src/utils/orthographicDepthToViewZ.js
 function orthographicDepthToViewZ(depth, near, far) {
@@ -11903,10 +11903,10 @@ var SSAOMaterial = class extends ShaderMaterial16 {
 };
 
 // src/passes/DepthDownsamplingPass.js
-import { BasicDepthPacking as BasicDepthPacking12, FloatType as FloatType5, NearestFilter as NearestFilter5, WebGLRenderTarget as WebGLRenderTarget15 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking12, FloatType as FloatType5, NearestFilter as NearestFilter5, WebGLRenderTarget as WebGLRenderTarget15 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/DepthDownsamplingMaterial.js
-import { BasicDepthPacking as BasicDepthPacking11, NoBlending as NoBlending16, ShaderMaterial as ShaderMaterial17, Uniform as Uniform40, Vector2 as Vector222 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking11, NoBlending as NoBlending16, ShaderMaterial as ShaderMaterial17, Uniform as Uniform40, Vector2 as Vector222 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/depth-downsampling.frag
 var depth_downsampling_default = `#include <packing>
@@ -12572,7 +12572,7 @@ var SSAOEffect = class extends Effect {
 };
 
 // src/effects/TextureEffect.js
-import { Uniform as Uniform42, UnsignedByteType as UnsignedByteType12 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform42, UnsignedByteType as UnsignedByteType12 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/texture.frag
 var texture_default = `#ifdef TEXTURE_PRECISION_HIGH
@@ -12745,10 +12745,10 @@ var TextureEffect = class extends Effect {
 };
 
 // src/effects/TiltShiftEffect.js
-import { SRGBColorSpace as SRGBColorSpace12, Uniform as Uniform44, Vector2 as Vector224, WebGLRenderTarget as WebGLRenderTarget17 } from "/vendor/three180.module.js?v=83";
+import { SRGBColorSpace as SRGBColorSpace12, Uniform as Uniform44, Vector2 as Vector224, WebGLRenderTarget as WebGLRenderTarget17 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/TiltShiftBlurMaterial.js
-import { Uniform as Uniform43, Vector2 as Vector223, Vector4 as Vector46 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform43, Vector2 as Vector223, Vector4 as Vector46 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/convolution.tilt-shift.frag
 var convolution_tilt_shift_default = `#ifdef FRAMEBUFFER_PRECISION_HIGH
@@ -13081,13 +13081,13 @@ var TiltShiftEffect = class extends Effect {
 };
 
 // src/effects/ToneMappingEffect.js
-import { LinearMipmapLinearFilter, REVISION as REVISION3, Uniform as Uniform46, WebGLRenderTarget as WebGLRenderTarget19 } from "/vendor/three180.module.js?v=83";
+import { LinearMipmapLinearFilter, REVISION as REVISION3, Uniform as Uniform46, WebGLRenderTarget as WebGLRenderTarget19 } from "/vendor/three180.module.js?v=84";
 
 // src/passes/AdaptiveLuminancePass.js
-import { NearestFilter as NearestFilter6, WebGLRenderTarget as WebGLRenderTarget18 } from "/vendor/three180.module.js?v=83";
+import { NearestFilter as NearestFilter6, WebGLRenderTarget as WebGLRenderTarget18 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/AdaptiveLuminanceMaterial.js
-import { NoBlending as NoBlending17, ShaderMaterial as ShaderMaterial18, Uniform as Uniform45 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending17, ShaderMaterial as ShaderMaterial18, Uniform as Uniform45 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/adaptive-luminance.frag
 var adaptive_luminance_default = `#include <packing>
@@ -13657,7 +13657,7 @@ var ToneMappingEffect = class extends Effect {
 };
 
 // src/effects/VignetteEffect.js
-import { Uniform as Uniform47 } from "/vendor/three180.module.js?v=83";
+import { Uniform as Uniform47 } from "/vendor/three180.module.js?v=84";
 
 // src/effects/glsl/vignette.frag
 var vignette_default = `uniform float offset;uniform float darkness;void mainImage(const in vec4 inputColor,const in vec2 uv,out vec4 outputColor){const vec2 center=vec2(0.5);vec3 color=inputColor.rgb;
@@ -13809,7 +13809,7 @@ var VignetteEffect = class extends Effect {
 };
 
 // src/loaders/LUT3dlLoader.js
-import { FileLoader, Loader, LoadingManager as LoadingManager2 } from "/vendor/three180.module.js?v=83";
+import { FileLoader, Loader, LoadingManager as LoadingManager2 } from "/vendor/three180.module.js?v=84";
 var LUT3dlLoader = class extends Loader {
   /**
    * Loads a LUT.
@@ -13911,7 +13911,7 @@ var LUT3dlLoader = class extends Loader {
 };
 
 // src/loaders/LUTCubeLoader.js
-import { FileLoader as FileLoader2, Loader as Loader2, LoadingManager as LoadingManager3, Vector3 as Vector38 } from "/vendor/three180.module.js?v=83";
+import { FileLoader as FileLoader2, Loader as Loader2, LoadingManager as LoadingManager3, Vector3 as Vector38 } from "/vendor/three180.module.js?v=84";
 var LUTCubeLoader = class extends Loader2 {
   /**
    * Loads a LUT.
@@ -14013,7 +14013,7 @@ var LUTCubeLoader = class extends Loader2 {
 };
 
 // src/loaders/SMAAImageLoader.js
-import { Loader as Loader3, LoadingManager as LoadingManager4 } from "/vendor/three180.module.js?v=83";
+import { Loader as Loader3, LoadingManager as LoadingManager4 } from "/vendor/three180.module.js?v=84";
 var SMAAImageLoader = class extends Loader3 {
   /**
    * Loads the SMAA data images.
@@ -14075,7 +14075,7 @@ var SMAAImageLoader = class extends Loader3 {
 };
 
 // src/materials/BoxBlurMaterial.js
-import { NoBlending as NoBlending18, PerspectiveCamera as PerspectiveCamera5, ShaderMaterial as ShaderMaterial19, Uniform as Uniform48, Vector2 as Vector225 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending18, PerspectiveCamera as PerspectiveCamera5, ShaderMaterial as ShaderMaterial19, Uniform as Uniform48, Vector2 as Vector225 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/convolution.box.frag
 var convolution_box_default = `#ifdef FRAMEBUFFER_PRECISION_HIGH
@@ -14386,7 +14386,7 @@ var BoxBlurMaterial = class extends ShaderMaterial19 {
 };
 
 // src/materials/DepthCopyMaterial.js
-import { BasicDepthPacking as BasicDepthPacking14, NoBlending as NoBlending19, ShaderMaterial as ShaderMaterial20, Uniform as Uniform49, Vector2 as Vector226 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking14, NoBlending as NoBlending19, ShaderMaterial as ShaderMaterial20, Uniform as Uniform49, Vector2 as Vector226 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/depth-copy.frag
 var depth_copy_default = `#include <packing>
@@ -14615,7 +14615,7 @@ import {
   ShaderMaterial as ShaderMaterial21,
   Uniform as Uniform50,
   Vector2 as Vector227
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/effect.frag
 var effect_default = `#include <common>
@@ -14931,7 +14931,7 @@ var EffectMaterial = class extends ShaderMaterial21 {
 };
 
 // src/materials/GaussianBlurMaterial.js
-import { NoBlending as NoBlending21, ShaderMaterial as ShaderMaterial22, Uniform as Uniform51, Vector2 as Vector228 } from "/vendor/three180.module.js?v=83";
+import { NoBlending as NoBlending21, ShaderMaterial as ShaderMaterial22, Uniform as Uniform51, Vector2 as Vector228 } from "/vendor/three180.module.js?v=84";
 
 // src/materials/glsl/convolution.gaussian.frag
 var convolution_gaussian_default = `#ifdef FRAMEBUFFER_PRECISION_HIGH
@@ -15043,7 +15043,7 @@ var GaussianBlurMaterial = class extends ShaderMaterial22 {
 };
 
 // src/passes/BoxBlurPass.js
-import { BasicDepthPacking as BasicDepthPacking16, SRGBColorSpace as SRGBColorSpace13, UnsignedByteType as UnsignedByteType13, WebGLRenderTarget as WebGLRenderTarget20 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking16, SRGBColorSpace as SRGBColorSpace13, UnsignedByteType as UnsignedByteType13, WebGLRenderTarget as WebGLRenderTarget20 } from "/vendor/three180.module.js?v=84";
 var BoxBlurPass = class extends Pass {
   /**
    * Constructs a new box blur pass.
@@ -15157,7 +15157,7 @@ var BoxBlurPass = class extends Pass {
 };
 
 // src/passes/DepthPickingPass.js
-import { BasicDepthPacking as BasicDepthPacking18, FloatType as FloatType7, REVISION as REVISION5, RGBADepthPacking as RGBADepthPacking5 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking18, FloatType as FloatType7, REVISION as REVISION5, RGBADepthPacking as RGBADepthPacking5 } from "/vendor/three180.module.js?v=84";
 
 // src/passes/DepthCopyPass.js
 import {
@@ -15167,7 +15167,7 @@ import {
   RGBADepthPacking as RGBADepthPacking4,
   UnsignedByteType as UnsignedByteType14,
   WebGLRenderTarget as WebGLRenderTarget21
-} from "/vendor/three180.module.js?v=83";
+} from "/vendor/three180.module.js?v=84";
 var DepthCopyPass = class extends Pass {
   /**
    * Constructs a new depth save pass.
@@ -15368,7 +15368,7 @@ var DepthPickingPass = class extends DepthCopyPass {
 };
 
 // src/passes/EffectPass.js
-import { BasicDepthPacking as BasicDepthPacking19, NoColorSpace as NoColorSpace2, SRGBColorSpace as SRGBColorSpace14, UnsignedByteType as UnsignedByteType15 } from "/vendor/three180.module.js?v=83";
+import { BasicDepthPacking as BasicDepthPacking19, NoColorSpace as NoColorSpace2, SRGBColorSpace as SRGBColorSpace14, UnsignedByteType as UnsignedByteType15 } from "/vendor/three180.module.js?v=84";
 function prefixSubstrings(prefix, substrings, strings) {
   for (const substring of substrings) {
     const prefixed = "$1" + prefix + substring.charAt(0).toUpperCase() + substring.slice(1);
@@ -15708,7 +15708,7 @@ var EffectPass = class extends Pass {
 };
 
 // src/passes/GaussianBlurPass.js
-import { SRGBColorSpace as SRGBColorSpace15, UnsignedByteType as UnsignedByteType16, WebGLRenderTarget as WebGLRenderTarget22 } from "/vendor/three180.module.js?v=83";
+import { SRGBColorSpace as SRGBColorSpace15, UnsignedByteType as UnsignedByteType16, WebGLRenderTarget as WebGLRenderTarget22 } from "/vendor/three180.module.js?v=84";
 var GaussianBlurPass = class extends Pass {
   /**
    * Constructs a new Gaussian blur pass.
@@ -15836,7 +15836,7 @@ var LambdaPass = class extends Pass {
 };
 
 // src/passes/NormalPass.js
-import { Color as Color9, MeshNormalMaterial, NearestFilter as NearestFilter8, WebGLRenderTarget as WebGLRenderTarget23 } from "/vendor/three180.module.js?v=83";
+import { Color as Color9, MeshNormalMaterial, NearestFilter as NearestFilter8, WebGLRenderTarget as WebGLRenderTarget23 } from "/vendor/three180.module.js?v=84";
 var NormalPass = class extends Pass {
   /**
    * Constructs a new normal pass.
@@ -16636,7 +16636,7 @@ var SMAAAreaImageData = class {
 };
 
 // src/textures/smaa/SMAAImageGenerator.js
-import { LoadingManager as LoadingManager5 } from "/vendor/three180.module.js?v=83";
+import { LoadingManager as LoadingManager5 } from "/vendor/three180.module.js?v=84";
 
 // temp/smaa/worker.txt
 var worker_default2 = '(()=>{function q(t,a,s){let e=document.createElement("canvas"),n=e.getContext("2d");if(e.width=t,e.height=a,s instanceof Image)n.drawImage(s,0,0);else{let r=n.createImageData(t,a);r.data.set(s),n.putImageData(r,0,0)}return e}var F=class t{constructor(a=0,s=0,e=null){this.width=a,this.height=s,this.data=e}toCanvas(){return typeof document=="undefined"?null:q(this.width,this.height,this.data)}static from(a){let{width:s,height:e}=a,n;if(a instanceof Image){let r=q(s,e,a);r!==null&&(n=r.getContext("2d").getImageData(0,0,s,e).data)}else n=a.data;return new t(s,e,n)}};var M=[new Float32Array(2),new Float32Array(2)],D=16,W=20,I=30,j=32,v=new Float32Array([0,-.25,.25,-.125,.125,-.375,.375]),N=[new Float32Array([0,0]),new Float32Array([.25,-.25]),new Float32Array([-.25,.25]),new Float32Array([.125,-.125]),new Float32Array([-.125,.125])],z=[new Uint8Array([0,0]),new Uint8Array([3,0]),new Uint8Array([0,3]),new Uint8Array([3,3]),new Uint8Array([1,0]),new Uint8Array([4,0]),new Uint8Array([1,3]),new Uint8Array([4,3]),new Uint8Array([0,1]),new Uint8Array([3,1]),new Uint8Array([0,4]),new Uint8Array([3,4]),new Uint8Array([1,1]),new Uint8Array([4,1]),new Uint8Array([1,4]),new Uint8Array([4,4])],p=[new Uint8Array([0,0]),new Uint8Array([1,0]),new Uint8Array([0,2]),new Uint8Array([1,2]),new Uint8Array([2,0]),new Uint8Array([3,0]),new Uint8Array([2,2]),new Uint8Array([3,2]),new Uint8Array([0,1]),new Uint8Array([1,1]),new Uint8Array([0,3]),new Uint8Array([1,3]),new Uint8Array([2,1]),new Uint8Array([3,1]),new Uint8Array([2,3]),new Uint8Array([3,3])];function C(t,a,s){return t+(a-t)*s}function B(t){return Math.min(Math.max(t,0),1)}function _(t){let a=M[0],s=M[1],e=Math.sqrt(a[0]*2)*.5,n=Math.sqrt(a[1]*2)*.5,r=Math.sqrt(s[0]*2)*.5,o=Math.sqrt(s[1]*2)*.5,c=B(t/j);a[0]=C(e,a[0],c),a[1]=C(n,a[1],c),s[0]=C(r,s[0],c),s[1]=C(o,s[1],c)}function d(t,a,s,e,n,r){let o=s-t,c=e-a,h=n,i=n+1,w=a+c*(h-t)/o,b=a+c*(i-t)/o;if(h>=t&&h<s||i>t&&i<=s)if(Math.sign(w)===Math.sign(b)||Math.abs(w)<1e-4||Math.abs(b)<1e-4){let g=(w+b)/2;g<0?(r[0]=Math.abs(g),r[1]=0):(r[0]=0,r[1]=Math.abs(g))}else{let g=-a*o/c+t,k=Math.trunc(g),m=g>t?w*(g-k)/2:0,U=g<s?b*(1-(g-k))/2:0;(Math.abs(m)>Math.abs(U)?m:-U)<0?(r[0]=Math.abs(m),r[1]=Math.abs(U)):(r[0]=Math.abs(U),r[1]=Math.abs(m))}else r[0]=0,r[1]=0;return r}function J(t,a,s,e,n){let r=M[0],o=M[1],c=.5+e,h=.5+e-1,i=a+s+1;switch(t){case 0:{n[0]=0,n[1]=0;break}case 1:{a<=s?d(0,h,i/2,0,a,n):(n[0]=0,n[1]=0);break}case 2:{a>=s?d(i/2,0,i,h,a,n):(n[0]=0,n[1]=0);break}case 3:{d(0,h,i/2,0,a,r),d(i/2,0,i,h,a,o),_(i,M),n[0]=r[0]+o[0],n[1]=r[1]+o[1];break}case 4:{a<=s?d(0,c,i/2,0,a,n):(n[0]=0,n[1]=0);break}case 5:{n[0]=0,n[1]=0;break}case 6:{Math.abs(e)>0?(d(0,c,i,h,a,r),d(0,c,i/2,0,a,o),d(i/2,0,i,h,a,n),o[0]=o[0]+n[0],o[1]=o[1]+n[1],n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2):d(0,c,i,h,a,n);break}case 7:{d(0,c,i,h,a,n);break}case 8:{a>=s?d(i/2,0,i,c,a,n):(n[0]=0,n[1]=0);break}case 9:{Math.abs(e)>0?(d(0,h,i,c,a,r),d(0,h,i/2,0,a,o),d(i/2,0,i,c,a,n),o[0]=o[0]+n[0],o[1]=o[1]+n[1],n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2):d(0,h,i,c,a,n);break}case 10:{n[0]=0,n[1]=0;break}case 11:{d(0,h,i,c,a,n);break}case 12:{d(0,c,i/2,0,a,r),d(i/2,0,i,c,a,o),_(i,M),n[0]=r[0]+o[0],n[1]=r[1]+o[1];break}case 13:{d(0,h,i,c,a,n);break}case 14:{d(0,c,i,h,a,n);break}case 15:{n[0]=0,n[1]=0;break}}return n}function K(t,a,s,e,n,r){let o=t===s&&a===e;if(!o){let c=(t+s)/2,h=(a+e)/2,i=e-a,w=t-s;o=i*(n-c)+w*(r-h)>0}return o}function G(t,a,s,e,n,r){let o=0;for(let c=0;c<I;++c)for(let h=0;h<I;++h){let i=h/(I-1),w=c/(I-1);K(t,a,s,e,n+i,r+w)&&++o}return o/(I*I)}function A(t,a,s,e,n,r,o,c){let h=p[t],i=h[0],w=h[1];return i>0&&(a+=o[0],s+=o[1]),w>0&&(e+=o[0],n+=o[1]),c[0]=1-G(a,s,e,n,1+r,0+r),c[1]=G(a,s,e,n,1+r,1+r),c}function Q(t,a,s,e,n){let r=M[0],o=M[1],c=a+s+1;switch(t){case 0:{A(t,1,1,1+c,1+c,a,e,r),A(t,1,0,1+c,0+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 1:{A(t,1,0,0+c,0+c,a,e,r),A(t,1,0,1+c,0+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 2:{A(t,0,0,1+c,0+c,a,e,r),A(t,1,0,1+c,0+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 3:{A(t,1,0,1+c,0+c,a,e,n);break}case 4:{A(t,1,1,0+c,0+c,a,e,r),A(t,1,1,1+c,0+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 5:{A(t,1,1,0+c,0+c,a,e,r),A(t,1,0,1+c,0+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 6:{A(t,1,1,1+c,0+c,a,e,n);break}case 7:{A(t,1,1,1+c,0+c,a,e,r),A(t,1,0,1+c,0+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 8:{A(t,0,0,1+c,1+c,a,e,r),A(t,1,0,1+c,1+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 9:{A(t,1,0,1+c,1+c,a,e,n),A(t,1,0,1+c,1+c,a,e,n);break}case 10:{A(t,0,0,1+c,1+c,a,e,r),A(t,1,0,1+c,0+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 11:{A(t,1,0,1+c,1+c,a,e,r),A(t,1,0,1+c,0+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 12:{A(t,1,1,1+c,1+c,a,e,n);break}case 13:{A(t,1,1,1+c,1+c,a,e,r),A(t,1,0,1+c,1+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 14:{A(t,1,1,1+c,1+c,a,e,r),A(t,1,1,1+c,0+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}case 15:{A(t,1,1,1+c,1+c,a,e,r),A(t,1,0,1+c,0+c,a,e,o),n[0]=(r[0]+o[0])/2,n[1]=(r[1]+o[1])/2;break}}return n}function R(t,a,s){let e=new Float32Array(2);for(let n=0,r=t.length;n<r;++n){let o=t[n],c=o.data,h=o.width;for(let i=0;i<h;++i)for(let w=0;w<h;++w){s?J(n,w,i,a,e):Q(n,w,i,a,e);let b=(i*h+w)*2;c[b]=e[0]*255,c[b+1]=e[1]*255}}}function T(t,a,s,e,n,r,o){let c=o.data,h=o.width;for(let i=0,w=s.length;i<w;++i){let b=e[i],g=s[i],k=g.data,m=g.width;for(let U=0;U<n;++U)for(let x=0;x<n;++x){let Z=b[0]*n+t+x,O=((b[1]*n+a+U)*h+Z)*4,L=r?(U*U*m+x*x)*2:(U*m+x)*2;c[O]=k[L],c[O+1]=k[L+1],c[O+2]=0,c[O+3]=255}}}var S=class{static generate(){let a=10*D,s=v.length*5*D,e=new Uint8ClampedArray(a*s*4),n=new F(a,s,e),r=Math.pow(D-1,2)+1,o=W,c=[],h=[];for(let i=3,w=e.length;i<w;i+=4)e[i]=255;for(let i=0;i<16;++i)c.push(new F(r,r,new Uint8ClampedArray(r*r*2),2)),h.push(new F(o,o,new Uint8ClampedArray(o*o*2),2));for(let i=0,w=v.length;i<w;++i)R(c,v[i],!0),T(0,5*D*i,c,z,D,!0,n);for(let i=0,w=N.length;i<w;++i)R(h,N[i],!1),T(5*D,4*W*i,h,p,W,!1,n);return n}};var P=new Map([[y(0,0,0,0),new Float32Array([0,0,0,0])],[y(0,0,0,1),new Float32Array([0,0,0,1])],[y(0,0,1,0),new Float32Array([0,0,1,0])],[y(0,0,1,1),new Float32Array([0,0,1,1])],[y(0,1,0,0),new Float32Array([0,1,0,0])],[y(0,1,0,1),new Float32Array([0,1,0,1])],[y(0,1,1,0),new Float32Array([0,1,1,0])],[y(0,1,1,1),new Float32Array([0,1,1,1])],[y(1,0,0,0),new Float32Array([1,0,0,0])],[y(1,0,0,1),new Float32Array([1,0,0,1])],[y(1,0,1,0),new Float32Array([1,0,1,0])],[y(1,0,1,1),new Float32Array([1,0,1,1])],[y(1,1,0,0),new Float32Array([1,1,0,0])],[y(1,1,0,1),new Float32Array([1,1,0,1])],[y(1,1,1,0),new Float32Array([1,1,1,0])],[y(1,1,1,1),new Float32Array([1,1,1,1])]]);function H(t,a,s){return t+(a-t)*s}function y(t,a,s,e){let n=H(t,a,.75),r=H(s,e,1-.25);return H(n,r,1-.125)}function V(t,a){let s=0;return a[3]===1&&(s+=1),s===1&&a[2]===1&&t[1]!==1&&t[3]!==1&&(s+=1),s}function $(t,a){let s=0;return a[3]===1&&t[1]!==1&&t[3]!==1&&(s+=1),s===1&&a[2]===1&&t[0]!==1&&t[2]!==1&&(s+=1),s}var E=class{static generate(){let o=new Uint8ClampedArray(2178),c=new Uint8ClampedArray(1024*4);for(let h=0;h<33;++h)for(let i=0;i<66;++i){let w=.03125*i,b=.03125*h;if(P.has(w)&&P.has(b)){let g=P.get(w),k=P.get(b),m=h*66+i;o[m]=127*V(g,k),o[m+33]=127*$(g,k)}}for(let h=0,i=17;i<33;++i)for(let w=0;w<64;++w,h+=4)c[h]=o[i*66+w],c[h+3]=255;return new F(64,16,c)}};self.addEventListener("message",t=>{let a=S.generate(),s=E.generate();postMessage({areaImageData:a,searchImageData:s},[a.data.buffer,s.data.buffer]),close()});})();\n';
