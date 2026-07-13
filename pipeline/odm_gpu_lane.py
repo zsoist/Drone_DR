@@ -94,15 +94,17 @@ def remote_run_argv(name: str, container: str, preset_args: list[str],
 
 def fetch_outputs(proj: Path, name: str) -> list[str]:
     """Trae los outputs ODM al proj del Mac y devuelve la lista recuperada."""
-    tar_remote = f"{WSL_TRANSFER}/odm-{name}-out.tgz"
+    tar_remote = f"{WSL_TRANSFER}/odm-{name}-out.tar"
+    # tar SIN gzip: los outputs ODM ya vienen comprimidos (JPG/TIF/PLY) — gzip solo
+    # quemaba CPU (medido: 20GB a ~13MB/s ≈ 25 min, rozando el timeout); plano es I/O puro
     _wsl(f"""
 cd {REMOTE_ODM}/{name}
-tar czf {tar_remote} $(for d in {' '.join(OUTPUT_DIRS)}; do [ -e "$d" ] && echo "$d"; done)
+tar cf {tar_remote} $(for d in {' '.join(OUTPUT_DIRS)}; do [ -e "$d" ] && echo "$d"; done)
 echo TAR_OK $(stat -c%s {tar_remote})
-""", timeout=1800, label="empacar outputs")
+""", timeout=3600, label="empacar outputs")
     with tempfile.TemporaryDirectory(prefix="odm-cuda-") as td:
-        local_tar = Path(td) / "out.tgz"
-        _run(["scp", "-q", f"{SSH_HOST}:{NTFS_TRANSFER}/odm-{name}-out.tgz",
+        local_tar = Path(td) / "out.tar"
+        _run(["scp", "-q", f"{SSH_HOST}:{NTFS_TRANSFER}/odm-{name}-out.tar",
               str(local_tar)], 3600, "scp outputs")
         with tarfile.open(local_tar) as tf:
             tf.extractall(proj, filter="data")
@@ -117,7 +119,7 @@ def cleanup(name: str, container: str) -> None:
     try:
         _wsl(f"""
 docker rm -f {container} >/dev/null 2>&1 || true
-rm -rf {REMOTE_ODM}/{name} {WSL_TRANSFER}/odm-{name} {WSL_TRANSFER}/odm-{name}-out.tgz
+rm -rf {REMOTE_ODM}/{name} {WSL_TRANSFER}/odm-{name} {WSL_TRANSFER}/odm-{name}-out.t*
 echo CLEAN_OK
 """, timeout=120, label="cleanup")
     except (RuntimeError, subprocess.TimeoutExpired, OSError):
