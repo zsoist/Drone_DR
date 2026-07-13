@@ -851,7 +851,8 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
             "effective_preset": run.get("effective_preset") or run.get("preset"),
             "input_scale": run.get("input_scale"),
             "iterations": run.get("target_iters"),
-            "backend": run.get("backend"),
+            # el run publicado manda; mientras entrena, el backend vivo del job row
+            "backend": run.get("backend") or row.get("backend"),
             # 32 bytes por gaussiana en el formato .splat — conteo exacto, no estimado
             "gaussians": (run.get("bytes") // 32) if run.get("bytes") else None,
             "input_mb": _proj_input_mb(str(row.get("label") or "")),
