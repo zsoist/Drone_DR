@@ -641,6 +641,37 @@ def merge_label(n_sources: int, n_photos: int, dropped: list) -> str:
     return "PARTIAL" if dropped else "FULL"
 
 
+def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
+    """Corre la fotogrametria en el nodo CUDA (odm:gpu en el PC). Devuelve rc:
+    0 = outputs ya en proj, listos para el publish local; !=0 o excepcion = el
+    caller cae a la cadena local. El ssh es el proceso trackeado: log/progreso/
+    timeout/cancel son el aparato de siempre (matar el ssh tumba la VM WSL y el
+    contenedor con ella)."""
+    import odm_gpu_lane
+    odm_gpu_lane.probe()
+    name = j["id"].replace("_", "-")
+    container = f"odm-gpu-{name[:40]}"
+    jobstore.event(j["id"], "odm_cuda", "nodo CUDA verificado — fotogrametria remota",
+                   data={"image": "opendronemap/odm:gpu", "preset": preset_name})
+    try:
+        n = odm_gpu_lane.ship_images(proj, name)
+        jobstore.update(j["id"], detail=f"2/3 ODM {preset_name} en NVIDIA CUDA ({n} imagenes)",
+                        stage="odm", progress=0.15, container=container)
+        rc = jobstore.run_tracked(
+            j["id"], odm_gpu_lane.remote_run_argv(name, container, list(preset["args"])),
+            timeout=preset["timeout"])
+        if rc != 0:
+            return rc
+        jobstore.update(j["id"], detail="2/3 trayendo resultados del nodo CUDA",
+                        stage="odm", progress=0.5)
+        got = odm_gpu_lane.fetch_outputs(proj, name)
+        jobstore.update(j["id"], backend="NVIDIA CUDA")
+        jobstore.event(j["id"], "odm_cuda_done", f"outputs recuperados: {', '.join(got)}")
+        return 0
+    finally:
+        odm_gpu_lane.cleanup(name, container)
+
+
 def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str = "",
                     sources: list | None = None, photos: list | None = None) -> str:
     """Build ODM web assets for a clip and return the real preset used.
@@ -683,7 +714,20 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
     jobstore.update(j["id"], detail=f"2/3 fotogrametría ODM {preset_name} ({preset['eta']})",
                     stage="odm", progress=0.15)
     effective_dense_quality = _preset_arg(preset, "--pc-quality")
-    rc = run_odm_step(j["id"], container, proj, preset, preset_name)
+    rc = -1
+    if str(j["spec"].get("backend") or "").lower() == "cuda":
+        try:
+            rc = run_odm_cuda(j, proj, preset, preset_name)
+        except Exception as e:
+            jobstore.event(j["id"], "odm_cuda_fallback",
+                           f"nodo CUDA fallo -> ODM local: {str(e)[:260]}", level="warning")
+            rc = -1
+        if rc != 0 and not _cancelled(j["id"]):
+            jobstore.update(j["id"], status="running", finished=None, container=None,
+                            detail=f"2/3 fotogrametria ODM {preset_name} local (fallback)",
+                            stage="odm", progress=0.15)
+    if rc != 0:
+        rc = run_odm_step(j["id"], container, proj, preset, preset_name)
     # CADENA de fallback (no un solo nivel): un preset pesado puede reventar por OOM (137), por
     # "strange values" (134, malla demasiado densa) o AGOTAR EL TIEMPO (124 vía run_odm_step) →
     # baja escalón por escalón hasta uno probado (ultra→extra→alta→estandar). Antes: un solo

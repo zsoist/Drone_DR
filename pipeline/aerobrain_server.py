@@ -755,6 +755,7 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
         "source_count": len(spec.get("sources") or ([spec.get("clip_id")] if spec.get("clip_id") else [])),
         "photo_count": len(spec.get("photos") or []),
         "outcome": row.get("status"),
+        "backend": row.get("backend"),
         "fallback": False,
         "artifact_exists": bool(row.get("artifact") and (VAULT / str(row["artifact"])).exists()),
     })

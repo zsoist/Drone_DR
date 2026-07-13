@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=150';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=150';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=150';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=150';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=150';
-  import { mountSplatViewer } from '/splatview.js?v=150';
+  import * as THREE from '/vendor/three180.module.js?v=151';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=151';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=151';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=151';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=151';
+  import { mountSplatViewer } from '/splatview.js?v=151';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -695,8 +695,8 @@
         <div id="m-splatpreset" class="mpresets" style="display:none">${SQ.map(q => `
           <div class="mpreset${q.p === 'cinematic' ? ' on' : ''}" data-sp="${q.p}"><b>${q.n}</b><span class="mono">${q.t}</span></div>`).join('')}</div>
         <label class="proc-phase" id="m-cuda-row" style="display:none"><input type="checkbox" id="m-cuda">
-          <span>${icon('cpu')} <b>Entrenar en nodo CUDA</b> (PC RTX 4060 Ti · ~2× más rápido) —
-          si el nodo falla, cae solo a Metal/MPS local</span></label>
+          <span>${icon('cpu')} <b>Procesar en nodo CUDA</b> (PC RTX 4060 Ti) — fotogrametría
+          y splat en el PC; si el nodo falla, cada fase cae sola a local</span></label>
       </div>
 
       <div class="st-tray" id="st-tray"></div>
@@ -730,7 +730,7 @@
           el.classList.add('awake');
           tx.textContent = `nodo GPU · ${d.gpu || 'despierto'} · ${d.temp_c ?? '—'}°C`;
           const cr = ov.querySelector('#m-cuda-row');
-          if (cr) { cr.dataset.nodeOk = '1'; if (ov.querySelector('#m-splat')?.checked) cr.style.display = ''; }
+          if (cr) { cr.dataset.nodeOk = '1'; cr.style.display = ''; }
         } else tx.textContent = 'nodo GPU · dormido (WoL en Sistema)';
       } catch {}
     })();
@@ -839,8 +839,6 @@
     });
     splatChk.addEventListener('change', () => {
       splatPre.style.display = splatChk.checked ? '' : 'none';
-      const cr = ov.querySelector('#m-cuda-row');
-      if (cr) cr.style.display = (splatChk.checked && cr.dataset.nodeOk) ? '' : 'none';
       renderPreflight();
     });
     splatPre.addEventListener('click', e => {
@@ -1119,6 +1117,7 @@
           title: ov.querySelector('#m-title').value.trim(),
           then_splat: splatChk.checked,
           splat_preset: splatPre.querySelector('.mpreset.on')?.dataset.sp || 'cinematic',
+          backend: ov.querySelector('#m-cuda')?.checked ? 'cuda' : undefined,
           splat_backend: (splatChk.checked && ov.querySelector('#m-cuda')?.checked) ? 'cuda' : undefined,
           best_available: true,
         });
