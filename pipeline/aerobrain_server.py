@@ -2377,6 +2377,7 @@ class H(BaseHTTPRequestHandler):
             j = jobstore.enqueue("splat", cid, {"clip_id": cid, "preset": preset["key"], "iters": preset["iters"],
                                                 "auto_model": bool(spec.get("auto_model")),
                                                 "model_preset": model_preset,
+                                                "backend": "cuda" if spec.get("backend") == "cuda" else None,
                                                 "preflight": pfv,
                                                 "best_available": spec.get("best_available", True) is not False,
                                                 "title": str(spec.get("title", ""))[:80].strip()})

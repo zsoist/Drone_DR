@@ -161,6 +161,33 @@ echo PREP_OK
 """, timeout=600, label="prep dataset")
 
 
+def train_argv(name: str, iters: int, downscale: int, run_id: str) -> list[str]:
+    """argv para jobstore.run_tracked: el ssh ES el proceso trackeado — log de
+    ns-train en vivo (Steps con %), progreso real, cancel y timeout gratis.
+    Sin pipefail: en `yes | ns-train` el rc del pipeline es el de ns-train."""
+    inner = (f"cd /root/gpu-jobs && source splat-env/bin/activate && "
+             f"rm -rf {REMOTE_RUNS}/{name} && yes | ns-train splatfacto "
+             f"--data {REMOTE_DATA}/{name} --output-dir {REMOTE_RUNS} "
+             f"--experiment-name {name} --timestamp {run_id} "
+             f"--viewer.quit-on-train-completion True --max-num-iterations {iters} "
+             f"colmap --colmap-path sparse/0 --images-path images "
+             f"--downscale-factor {downscale} 2>&1")
+    return ["ssh", SSH_HOST, "wsl", "-d", "Ubuntu", "--", "bash", "-lc", f'"{inner}"']
+
+
+def finalize_train(name: str, run_id: str) -> dict:
+    """Post-entrenamiento: export a PLY 3DGS + staging NTFS. Devuelve bytes."""
+    out = _wsl(REMOTE_PRELUDE + f"""
+CFG={REMOTE_RUNS}/{name}/splatfacto/{run_id}/config.yml
+ns-export gaussian-splat --load-config "$CFG" --output-dir {REMOTE_RUNS}/{name}/export >/dev/null 2>&1
+mkdir -p {WSL_TRANSFER}
+cp {REMOTE_RUNS}/{name}/export/splat.ply {WSL_TRANSFER}/out-{name}.ply
+echo "BYTES=$(stat -c%s {REMOTE_RUNS}/{name}/export/splat.ply)"
+""", timeout=1200, label="export ply")
+    last = [ln for ln in out.splitlines() if ln.startswith("BYTES=")][-1]
+    return {"run_id": run_id, "ply_bytes": int(last.split("=")[1])}
+
+
 def train(name: str, iters: int, downscale: int, timeout_s: int) -> dict:
     """splatfacto + export .ply, todo en una sesion sostenida. Devuelve metricas."""
     run_id = f"gpu-{int(time.time())}"

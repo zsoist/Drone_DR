@@ -932,10 +932,21 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
     gpu_lane.ship_dataset(ds, name)
     gpu_lane.prep_dataset(name, downscale)
     jobstore.update(j["id"], detail=f"entrenando {iters} iters en NVIDIA CUDA (RTX 4060 Ti)",
-                    stage="train", progress=0.3)
-    m = gpu_lane.train(name, iters, downscale, timeout_s=2 * 3600)
-    jobstore.update(j["id"], detail="convirtiendo y publicando el splat CUDA",
+                    stage="train", progress=0.3, backend="NVIDIA CUDA")
+    # run_tracked sobre el ssh: los Steps de ns-train fluyen al log (ticker vivo),
+    # el % de su progreso mueve la barra de VERDAD, y cancel/timeout aplican
+    run_id = f"gpu-{int(time.time())}"
+    t0 = time.time()
+    rc = jobstore.run_tracked(
+        j["id"], gpu_lane.train_argv(name, iters, downscale, run_id),
+        timeout=4 * 3600, tail=40,
+        progress_re=r"\((\d+)(?:\.\d+)?%\)", progress_span=(0.3, 0.76))
+    if rc != 0:
+        raise RuntimeError(f"ns-train remoto salio con rc={rc}")
+    m = {"train_s": round(time.time() - t0, 1)}
+    jobstore.update(j["id"], detail="exportando y trayendo el splat CUDA",
                     stage="publish", progress=0.8)
+    m.update(gpu_lane.finalize_train(name, run_id))
     ply = gpu_lane.fetch(name, stage)
     conv = ply_to_splat(ply, tmp_out)
     ply.unlink()                                 # 100MB que ya no hacen falta

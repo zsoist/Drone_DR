@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=173';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=173';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=173';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=173';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=173';
-  import { mountSplatViewer } from '/splatview.js?v=173';
+  import * as THREE from '/vendor/three180.module.js?v=175';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=175';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=175';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=175';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=175';
+  import { mountSplatViewer } from '/splatview.js?v=175';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -2622,7 +2622,15 @@
       <div class="mpresets splat-presets">${Q.map(q => `
         <div class="mpreset${q.p === 'medium' ? ' on' : ''}" data-preset="${q.p}">
           <b>${q.n}</b><span class="mono">${q.t}</span><small>${q.d}</small></div>`).join('')}</div>
+      <label class="proc-phase" id="gs-cuda-row" style="display:none"><input type="checkbox" id="gs-cuda" checked>
+        <span>${icon('cpu')} <b>Entrenar en nodo CUDA</b> (RTX 4060 Ti · ~2× Metal, sin ocupar el Mac) —
+        las iteraciones pedidas corren COMPLETAS; si el nodo falla, cae solo a Metal/MPS</span></label>
       <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Entrenar splat</button>`);
+    // el toggle solo se ofrece con el nodo despierto de verdad — y ENCENDIDO por defecto:
+    // pedir Ultra esperando CUDA y recibir Metal degradado fue la sorpresa que no se repite
+    fetch('/api/gpu_node').then(r => r.json()).then(d => {
+      if (d.status === 'awake') ov.querySelector('#gs-cuda-row').style.display = '';
+    }).catch(() => {});
     const msScore = ov.querySelector('#ms-score');
     renderScanCard(msScore, (ov.querySelector('.mflight.on') || ov.querySelector('.mflight'))?.dataset.cid);
     ov.querySelector('.mflights').addEventListener('click', e => {
@@ -2646,6 +2654,8 @@
           auto_model: base?.dataset.autoModel === '1',
           model_preset: ov.querySelector('[data-model-preset].on')?.dataset.modelPreset || 'estandar',
           preset: ov.querySelector('.splat-presets .mpreset.on')?.dataset.preset || 'medium',
+          backend: ov.querySelector('#gs-cuda')?.checked &&
+            ov.querySelector('#gs-cuda-row')?.style.display !== 'none' ? 'cuda' : undefined,
           best_available: true,
         });
         if (r.error) return alert(r.error);
