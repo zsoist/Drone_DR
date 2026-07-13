@@ -7,7 +7,7 @@ import {
 	SkeletonHelper,
 	Vector3,
 	VectorKeyframeTrack
-} from '/vendor/three180.module.js?v=169';
+} from '/vendor/three180.module.js?v=170';
 
 /**
  * @module SkeletonUtils

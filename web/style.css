@@ -4701,3 +4701,44 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
 /* el stepper viejo recortaba los popovers con overflow-x:auto */
 .td-stepper.v2{ overflow:visible; flex-wrap:nowrap }
 .td-stepper.v2 .td-step{ min-width:0 }
+
+/* ── BLOQUE 68: pulido premium — popover sin recortes, filas glass, Ken Burns ── */
+/* popover consciente del borde: primer paso ancla a la izquierda, último a la derecha */
+.td-stepper.v2 .td-step:first-child .td-pop{ left:0; transform:translateX(0) translateY(-6px) }
+.td-stepper.v2 .td-step:first-child:hover .td-pop,
+.td-stepper.v2 .td-step:first-child.pop-open .td-pop{ transform:translateX(0) translateY(0) }
+.td-stepper.v2 .td-step:nth-last-child(1) .td-pop{ left:auto; right:0;
+  transform:translateX(0) translateY(-6px) }
+.td-stepper.v2 .td-step:nth-last-child(1):hover .td-pop,
+.td-stepper.v2 .td-step:nth-last-child(1).pop-open .td-pop{ transform:translateX(0) translateY(0) }
+
+/* filas de splats: glass real, sin wrapping feo, preview vivo */
+.splat-row{ background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  perspective:900px }
+.splat-row:hover{ border-color:rgba(69,160,230,.35);
+  box-shadow:0 16px 40px -20px rgba(69,160,230,.45) }
+.sr-hd{ flex-wrap:nowrap; min-width:0 }
+.sr-hd b{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+  flex:0 1 auto }
+.sr-hd .si-q, .sr-hd .sr-ver{ flex:none }
+/* Ken Burns + tilt: el render QA respira — transform puro, 60fps */
+.splat-row:hover .sr-thumb img{ transform:scale(1.14) translate(-2%, -2%) rotate(.4deg);
+  transition:transform 4s cubic-bezier(.2,.6,.3,1) }
+.sr-thumb{ transition:transform .25s var(--ease), box-shadow .25s var(--ease) }
+.splat-row:hover .sr-thumb{ transform:rotateY(-3deg) rotateX(2deg);
+  box-shadow:0 12px 30px -14px rgba(0,0,0,.9) }
+.sr-icons .btn{ width:38px; height:34px; display:grid; place-items:center;
+  transition:transform .15s var(--ease), border-color .18s var(--ease), color .18s var(--ease) }
+.sr-icons .btn:hover{ transform:translateY(-2px); border-color:rgba(69,160,230,.5) }
+.sr-icons .btn.danger:hover{ border-color:rgba(217,106,106,.6) }
+.sr-loss b{ text-shadow:0 0 14px rgba(82,199,154,.25) }
+.sr-loss-bar{ position:relative }
+.sr-loss-bar > div{ position:relative }
+.sr-loss-bar > div::after{ content:''; position:absolute; right:-2px; top:50%;
+  width:6px; height:6px; border-radius:50%; transform:translateY(-50%);
+  background:#fff; box-shadow:0 0 8px rgba(255,255,255,.8) }
+.sp-toolbar .chip{ transition:transform .14s var(--ease), border-color .18s var(--ease) }
+.sp-toolbar .chip:hover{ transform:translateY(-1px) }
+@media (prefers-reduced-motion: reduce){
+  .splat-row:hover .sr-thumb img, .splat-row:hover .sr-thumb{ transform:none } }
