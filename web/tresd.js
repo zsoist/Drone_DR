@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=168';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=168';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=168';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=168';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=168';
-  import { mountSplatViewer } from '/splatview.js?v=168';
+  import * as THREE from '/vendor/three180.module.js?v=169';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=169';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=169';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=169';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=169';
+  import { mountSplatViewer } from '/splatview.js?v=169';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -620,7 +620,7 @@
           'La curva al 100% durante fotogrametría es trabajo bien invertido.',
         extra: () => lastNode ? [['RAM', `${lastNode.pc_ram_used_gb ?? '—'} / ${lastNode.pc_ram_total_gb ?? '—'} GB`],
           ['cores', '8 (cap WSL)']] : [] },
-      nnet: { t: 'Red LAN Mac ↔ PC', co: '86,196,224', src: 'delta /proc/net/dev · 10s',
+      nnet: { t: 'Red LAN Mac ↔ PC', co: '86,196,224', src: 'delta netstat NIC Windows · ~20s',
         fmt: () => { const r = Math.max(lastNode?.net_rx_mbps || 0, lastNode?.net_tx_mbps || 0);
           return r >= 1000 ? (r / 1000).toFixed(2) + ' Gb/s' : r.toFixed(1) + ' Mb/s'; },
         data: () => pcHist.nnet,
