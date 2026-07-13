@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=145';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=145';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=145';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=145';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=145';
-  import { mountSplatViewer } from '/splatview.js?v=145';
+  import * as THREE from '/vendor/three180.module.js?v=146';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=146';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=146';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=146';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=146';
+  import { mountSplatViewer } from '/splatview.js?v=146';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -609,6 +609,7 @@
           <b>${esc(f.label) || fmt.date(f.date) + ' ' + f.time}</b>
           <span class="pc-sub mono">${fmt.dur(f.duration_s)} · ${fmt.date(f.date)} ${esc(f.time || '')}</span>
         </div>
+        <span class="pc-gps mono" title="Track GPS 1Hz del SRT — geotag real">${icon('pin')} GPS</span>
         <span class="pc-alt ${altBand(altOf(f))}">${altOf(f)} m</span>
         <span class="pc-score" data-score="${esc(f.clip_id)}">·</span>
       </label>`;
@@ -620,7 +621,8 @@
       <div class="st-pane" data-pane="1">
         <div class="st-grid">
           <div class="st-map-wrap"><div id="st-map"></div>
-            <div class="st-map-hint">${icon('pin')} Cada pin es un lugar — clic para ver sus tomas</div></div>
+            <div class="st-map-hint">${icon('pin')} Cada pin es un lugar — clic para ver sus tomas</div>
+            <button class="st-map-toggle" id="st-map-toggle" title="Ocultar/mostrar mapa">${icon('chevR')} <span>Ocultar mapa</span></button></div>
           <div class="st-list">
             <div class="st-toolbar">
               <div class="search td-search">${icon('search')}<input id="st-q" type="search" placeholder="Buscar por nombre, fecha, lugar…" autocomplete="off"></div>
@@ -673,6 +675,12 @@
 
       <div class="st-pane" data-pane="2" style="display:none">
         <div id="m-combined" class="proc-combined"></div>
+        <div class="st-node mono" id="st-node">
+          <span class="st-node-dot"></span>
+          <span id="st-node-txt">nodo GPU · consultando…</span>
+          <span class="spacer" style="flex:1"></span>
+          <span class="st-node-note">3D: ODM local · splat: Metal/MPS · CUDA remoto en integración</span>
+        </div>
         <div id="m-preflight"></div>
         <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
         <div class="st-namer"><input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — combinado">
@@ -694,6 +702,32 @@
         <button class="btn primary" id="st-next">Continuar ›</button>
         <button class="btn primary" id="m-go" style="display:none">${icon('cube')} Encolar procesamiento</button>
       </div>`, 'modal--studio');
+
+    // mapa ocultable (transform/opacity — 60fps) + preferencia persistida
+    const stGrid = ov.querySelector('.st-grid');
+    const mapToggle = ov.querySelector('#st-map-toggle');
+    const applyMapVis = hidden => {
+      stGrid.classList.toggle('map-hidden', hidden);
+      mapToggle.querySelector('span').textContent = hidden ? 'Mostrar mapa' : 'Ocultar mapa';
+      localStorage.setItem('ab.st.maphidden', hidden ? '1' : '0');
+      if (!hidden) setTimeout(() => { try { stMap?.resize(); } catch {} }, 260);
+    };
+    mapToggle?.addEventListener('click', () => applyMapVis(!stGrid.classList.contains('map-hidden')));
+    if (localStorage.getItem('ab.st.maphidden') === '1') applyMapVis(true);
+
+    // nodo GPU en vivo dentro del paso 2 (probe real /api/gpu_node)
+    (async () => {
+      try {
+        const d = await (await fetch('/api/gpu_node')).json();
+        const el = ov.querySelector('#st-node');
+        const tx = ov.querySelector('#st-node-txt');
+        if (!el || !tx) return;
+        if (d.status === 'awake') {
+          el.classList.add('awake');
+          tx.textContent = `nodo GPU · ${d.gpu || 'despierto'} · ${d.temp_c ?? '—'}°C`;
+        } else tx.textContent = 'nodo GPU · dormido (WoL en Sistema)';
+      } catch {}
+    })();
 
     const combinedBox = ov.querySelector('#m-combined');
     // renderCombined() invokes the hoisted renderPreflight(); initialize these controls

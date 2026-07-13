@@ -4363,3 +4363,37 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 .td-gpu-chip:hover{ color:var(--text-1); border-color:rgba(69,160,230,.45);
   box-shadow:0 4px 16px -8px rgba(69,160,230,.5) }
 .td-gpu-chip b.ok{ color:#7dffc9 } .td-gpu-chip b.dim{ color:var(--text-3) }
+
+/* ── BLOQUE 58: Estudio 3D overhaul — mapa ocultable, badges, nodo, premium ── */
+.st-grid{ transition:grid-template-columns .25s var(--ease) }
+.st-grid.map-hidden{ grid-template-columns:0fr 1fr }
+.st-grid.map-hidden .st-map-wrap{ opacity:0; pointer-events:none }
+.st-map-wrap{ position:relative; transition:opacity .22s var(--ease); min-width:0; overflow:hidden }
+.st-map-toggle{ position:absolute; top:10px; right:10px; z-index:5; display:flex; gap:5px;
+  align-items:center; padding:6px 12px; border-radius:999px; cursor:pointer;
+  font:600 10.5px var(--font); color:var(--text-2);
+  border:1px solid rgba(255,255,255,.14); background:rgba(10,12,16,.78);
+  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  transition:color .16s var(--ease), border-color .16s var(--ease) }
+.st-map-toggle:hover{ color:var(--text-1); border-color:rgba(69,160,230,.5) }
+.st-grid.map-hidden .st-map-toggle{ opacity:1; pointer-events:auto;
+  position:fixed; left:auto }
+.pc-gps{ font-size:9px; color:#7dffc9; letter-spacing:.06em; display:inline-flex;
+  gap:3px; align-items:center; padding:3px 8px; border-radius:7px;
+  background:rgba(82,199,154,.1); border:1px solid rgba(82,199,154,.28) }
+.pc-clip{ transition:transform .16s var(--ease), border-color .2s var(--ease),
+  background .2s var(--ease) }
+.pc-clip:hover{ transform:translateX(3px) }
+.st-node{ display:flex; gap:9px; align-items:center; margin:12px 0 4px; padding:10px 14px;
+  border-radius:12px; border:1px solid rgba(255,255,255,.09);
+  background:rgba(255,255,255,.035); font-size:10.5px; color:var(--text-2) }
+.st-node-dot{ width:8px; height:8px; border-radius:50%; background:var(--text-3); flex:none }
+.st-node.awake .st-node-dot{ background:#52C79A; box-shadow:0 0 9px rgba(82,199,154,.8) }
+.st-node-note{ font-size:9.5px; color:var(--text-3); letter-spacing:.03em }
+.st-steps .st-step{ transition:all .18s var(--ease) }
+.st-steps .st-step.on{ box-shadow:0 0 0 1px rgba(69,160,230,.4), 0 6px 20px -10px rgba(69,160,230,.6) }
+.mpreset{ transition:transform .16s var(--ease), border-color .2s var(--ease),
+  box-shadow .2s var(--ease) }
+.mpreset:hover{ transform:translateY(-2px) }
+.mpreset.on{ box-shadow:0 0 0 1px rgba(69,160,230,.45), 0 10px 28px -14px rgba(69,160,230,.55) }
+@media (max-width:860px){ .st-grid.map-hidden{ grid-template-columns:1fr } }
