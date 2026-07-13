@@ -4,8 +4,8 @@
 // La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
 // auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
 // contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
-import * as THREE from '/vendor/three180.module.js?v=171';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=171';
+import * as THREE from '/vendor/three180.module.js?v=172';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=172';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -24,7 +24,7 @@ const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
 
 export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } = {}) {
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=171');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=172');
   host.style.position = 'relative';
   const holder = document.createElement('div');
   holder.style.cssText = 'position:absolute;inset:0;touch-action:none';
@@ -41,6 +41,15 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   const spark = new SparkRenderer({ renderer });
   scene.add(spark);
   const ctrl = new OrbitControls(cam, renderer.domElement);
+  // MISMO esquema que nube/malla — tres visores, una sola memoria muscular:
+  // izquierdo = pan pegado al suelo (como un mapa), derecho = rotar, rueda = zoom
+  ctrl.enableDamping = true;
+  ctrl.dampingFactor = 0.07;
+  ctrl.rotateSpeed = 0.55;
+  ctrl.zoomSpeed = 1.35;
+  ctrl.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+  ctrl.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+  ctrl.screenSpacePanning = false;
 
   let rafId = 0, running = true;
   const loop = () => { rafId = requestAnimationFrame(loop); ctrl.update(); renderer.render(scene, cam); };

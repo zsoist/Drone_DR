@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=171';
+import * as THREE from '/flightverse/three.js?v=172';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -140,9 +140,9 @@ async function preloadEnemyGlb(type, v) {
       enemyManifest = await (await fetch(`/assets/enemies/manifest.json?v=${v}`, { cache: 'no-store' })).json();
     }
     if (!enemyManifest[type] || glbCache[type]) return;
-    if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=171'));
-    if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=171');
-    const g = await new GLTFLoader().loadAsync(`/assets/enemies/${type}.glb?v=171`);
+    if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=172'));
+    if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=172');
+    const g = await new GLTFLoader().loadAsync(`/assets/enemies/${type}.glb?v=172`);
     glbCache[type] = { scene: g.scene, clips: g.animations || [] };
   } catch { /* GLB opcional: el procedural sigue siendo la verdad */ }
 }
