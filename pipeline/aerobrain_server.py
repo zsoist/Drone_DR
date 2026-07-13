@@ -669,48 +669,83 @@ def splat_quality(out: Path, log: str, n_cams: int, iters: int) -> dict:
             "last_step": last_step, "steps_logged": len(step_rows), "target_iters": iters}
 
 
-def derive_odm_progress(log: str, current: float | None = None, cid: str = "") -> float | None:
-    """Best-effort progress for ODM jobs from log text.
+def derive_odm_progress(log: str, current: float | None = None, cid: str = "",
+                        started: float | None = None) -> float | None:
+    """Progreso best-effort de un job ODM a partir del log.
 
-    The worker cannot easily stream structured progress from ODM, but the log has
-    stable stage markers. Keep this monotonic and conservative: it drives UI/ETA
-    only, never success/failure decisions.
-    """
-    txt = (log or "").lower()
-    marks = [
-        (0.18, ("opensfm", "extract_metadata")),
-        (0.24, ("detect_features", "feature")),
-        (0.32, ("match_features", "matching")),
-        (0.42, ("reconstruct", "bundle")),
-        (0.50, ("finished opensfm stage", "export_openmvs")),
-        (0.58, ("depthmap resolution", "densifypointcloud")),
-        (0.66, ("filterpoints", "filter point cloud")),
-        (0.74, ("meshing", "poissonrecon", "dem2mesh")),
-        (0.82, ("texturing", "mvstex", "texture")),
-        (0.88, ("dsm", "dtm", "dem", "merged.vrt")),
-        (0.92, ("orthophoto", "odm_orthophoto")),
-        (0.96, ("browser gate", "publicando", "verificando model")),
-    ]
-    best = None
-    for pct, needles in marks:
-        if any(n in txt for n in needles):
-            best = pct
-    best = max(float(current or 0), float(best or 0))
+    Anclado a TRANSICIONES REALES ("running/finished <x> stage") y a los
+    porcentajes explícitos de OpenMVS — jamás a palabras sueltas: el volcado de
+    config que ODM imprime al arrancar contiene "orthophoto", "dem", "dsm"...
+    y el matcheo ingenuo saltaba la barra a 96% en el minuto uno (bug cazado en
+    el primer run CUDA). Los marcadores de filesystem solo cuentan si el archivo
+    es POSTERIOR al inicio del job: el proj_<cid> conserva outputs de corridas
+    anteriores del mismo clip. Monotónico y conservador: UI/ETA, nunca éxito."""
+    low = (log or "").lower()
+    best = 0.0
+    bands = {"dataset": (0.16, 0.20), "split": (0.20, 0.20), "merge": (0.20, 0.20),
+             "opensfm": (0.20, 0.55), "openmvs": (0.58, 0.72),
+             "odm_filterpoints": (0.72, 0.75), "odm_meshing": (0.75, 0.80),
+             "mvs_texturing": (0.80, 0.86), "odm_texturing": (0.80, 0.86),
+             "odm_georeferencing": (0.86, 0.88), "odm_dem": (0.88, 0.92),
+             "odm_orthophoto": (0.92, 0.95), "odm_report": (0.95, 0.96),
+             "odm_postprocess": (0.95, 0.96)}
+    stage = None
+    for m in re.finditer(r"(running|finished)\s+([a-z_]+)\s+stage", low):
+        verb, name = m.group(1), m.group(2)
+        if name in bands:
+            lo, hi = bands[name]
+            best = max(best, hi if verb == "finished" else lo)
+            stage = name if verb == "running" else stage
+    # el log del jobstore es cola rodante: la línea "running <x> stage" puede haber
+    # scrolleado fuera — inferir el stage por FIRMAS de trabajo que sí viven en el tail
+    if stage is None:
+        sig = [("openmvs", r"fused depth-maps|estimated depth-maps|point visibility|densifypointcloud|depthmap resolution"),
+               ("opensfm", r"undistorting image|resection inliers|matching f_|extracting root_"),
+               ("odm_meshing", r"poissonrecon|dem2mesh"),
+               ("mvs_texturing", r"mvstex|texturing"),
+               ("odm_dem", r"gapfill|merged\.vrt"),
+               ("odm_orthophoto", r"orthophoto area")]
+        for name, pat in sig:
+            if re.search(pat, low):
+                stage = name
+                best = max(best, bands[name][0])
+                break
+    # sub-progreso dentro del stage activo (marcadores de LÍNEAS de trabajo, no config)
+    if stage == "opensfm":
+        feats = low.count("extracting root_")
+        if feats:
+            best = max(best, 0.21 + min(0.13, feats * 0.13 / 250))
+        if "matching f_" in low:
+            best = max(best, 0.36)
+        if "resection inliers" in low or "incremental reconstruction" in low:
+            best = max(best, 0.42)
+        if "undistorting image" in low:
+            best = max(best, 0.50)
+    if stage == "openmvs":
+        pcts = re.findall(r"\((\d+(?:\.\d+)?)%[,)]", (log or "")[-8000:])
+        if pcts:
+            best = max(best, 0.58 + 0.14 * min(1.0, float(pcts[-1]) / 100))
+    if "browser gate" in low or "publicando assets" in low:
+        best = max(best, 0.96)
+    best = max(float(current or 0), best)
     if cid:
         safe_cid = re.sub(r"[^\w-]", "", cid)
         proj = VAULT / "odm" / f"proj_{safe_cid}"
         fs_marks = [
             (0.50, proj / "opensfm" / "reconstruction.json"),
-            (0.66, proj / "odm_filterpoints" / "point_cloud.ply"),
-            (0.74, proj / "odm_meshing"),
+            (0.72, proj / "odm_filterpoints" / "point_cloud.ply"),
+            (0.76, proj / "odm_meshing"),
             (0.82, proj / "odm_texturing"),
             (0.88, proj / "odm_dem"),
             (0.92, proj / "odm_orthophoto"),
             (0.96, VAULT / "models" / cid / "meta.json"),
         ]
         for pct, path in fs_marks:
-            if path.exists():
-                best = max(float(best or 0), pct)
+            try:
+                if path.exists() and (started is None or path.stat().st_mtime >= started):
+                    best = max(best, pct)
+            except OSError:
+                pass
     return best
 
 
@@ -1428,7 +1463,8 @@ class H(BaseHTTPRequestHandler):
                     if m:
                         j["progress"] = max(j.get("progress") or 0, 0.05 + 0.93 * int(m[-1]) / 100)
                 if j["kind"] == "3d" and j["status"] == "running":
-                    j["progress"] = derive_odm_progress(j.get("log") or "", j.get("progress"), j.get("label") or "")
+                    j["progress"] = derive_odm_progress(j.get("log") or "", j.get("progress"),
+                                                        j.get("label") or "", j.get("started"))
             latest_done = jobstore.latest_done_ids(("3d",))
             summaries = [normalize_job_summary(j, latest_done) for j in jobs]
             counts = {

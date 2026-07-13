@@ -167,20 +167,24 @@ const KIND_META = {
 // etapa humana a partir del log/detail de ODM
 function humanStage(j) {
   const src = cleanLog(j.log_tail) + ' ' + (j.detail || '');
+  // orden inverso al pipeline: la línea MÁS TARDÍA del tail decide la etapa
   const M = [
-    [/frames: \d+/, 'Extrayendo frames del video'],
+    [/Step \d+|entrenando/i, 'Entrenando el splat'],
+    [/publicando assets|browser gate|gdal_translate.*ortho/i, 'Publicando assets web'],
+    [/running odm_orthophoto|orthophoto area/i, 'Generando ortofoto'],
+    [/running odm_dem|gapfill|merged\.vrt/i, 'Calculando elevación (DSM)'],
+    [/running (mvs_|odm_)texturing|mvstex/i, 'Texturizando el modelo'],
+    [/running odm_meshing|PoissonRecon|dem2mesh/i, 'Generando malla 3D'],
+    [/running odm_filterpoints/i, 'Filtrando nube de puntos'],
+    [/Fused depth-maps/i, 'Fusionando depthmaps (GPU)'],
+    [/Point visibility/i, 'Verificando visibilidad de puntos'],
+    [/Estimated depth-maps|DensifyPointCloud|running openmvs/i, 'Calculando depthmaps'],
+    [/Undistorting image/i, 'Undistorsionando imágenes'],
+    [/resection inliers|incremental reconstruction/i, 'Reconstruyendo cámaras 3D'],
+    [/Matching f_|pairs matching/i, 'Emparejando imágenes'],
+    [/Extracting ROOT_|detect_features/i, 'Extrayendo características'],
     [/geotag|exiftool/i, 'Geoetiquetando con tu GPS'],
-    [/feature|opensfm.*extract/i, 'Detectando características'],
-    [/match/i, 'Emparejando imágenes'],
-    [/reconstruct|bundle/i, 'Reconstruyendo cámaras 3D'],
-    [/Densify|depthmap|openmvs/i, 'Densificando nube de puntos'],
-    [/filterpoints/i, 'Filtrando nube de puntos'],
-    [/meshing|PoissonRecon|dem2mesh/i, 'Generando malla 3D'],
-    [/texturing|mvstex|texture/i, 'Texturizando el modelo'],
-    [/dem|dsm|dtm|tiles\.tif|merged\.vrt/i, 'Calculando elevación (DSM)'],
-    [/orthophoto/i, 'Generando ortofoto'],
-    [/publicando|publish|gdal_translate.*ortho/i, 'Publicando assets web'],
-    [/entrenando|Step \d+/i, 'Entrenando el splat'],
+    [/frames: \d+/, 'Extrayendo frames del video'],
   ];
   for (const [re, label] of M) if (re.test(src)) return label;
   return j.detail || '';
@@ -237,19 +241,26 @@ function jobCard(j, flightsIdx, entering = true) {
     <div class="jc-head"><span class="jc-title">${esc(subject)}</span></div>
     ${quality.length ? `<div class="jc-quality">${quality.join('')}</div>` : ''}
     ${['running', 'queued'].includes(j.status) ? `
-      ${j.kind === '3d' ? (() => {
-        const steps = [['frames', 'Frames'], ['odm', 'Fotogrametr\u00eda'], ['publish', 'Publicar']];
-        const at = steps.findIndex(s => s[0] === j.stage);
-        return `<div class="jc-steps">${steps.map(([, lb], i) =>
-          `<span class="jc-step${i < at ? ' done' : i === at ? ' act' : ''}">${i < at ? '\u2713 ' : ''}${lb}</span>`).join('')}</div>`;
-      })() : ''}
-      <div class="jc-stage">${esc(humanStage(j))}</div>
-      ${pct != null ? `<div class="jc-bar" role="progressbar" aria-label="Progreso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div style="width:${pct}%"></div></div>` : ''}` : ''}
+      <div class="jc-run">
+        ${j.kind === '3d' ? (() => {
+          const steps = [['frames', 'Frames'], ['odm', 'Fotogrametr\u00eda'], ['publish', 'Publicar']];
+          const at = Math.max(0, steps.findIndex(s => s[0] === (j.stage || '').replace('-fallback', '')));
+          return `<div class="jc-steps">${steps.map(([, lb], i) =>
+            `<span class="jc-step${i < at ? ' done' : i === at ? ' act' : ''}"><i></i>${i < at ? '\u2713 ' : ''}${lb}</span>`).join('<span class="jc-step-link"></span>')}</div>`;
+        })() : ''}
+        <div class="jc-run-top">
+          <span class="jc-run-stage">${esc(humanStage(j) || 'procesando\u2026')}</span>
+          <b class="jc-run-pct mono">${pct != null ? pct + '%' : ''}</b>
+        </div>
+        ${j.detail && humanStage(j) !== j.detail ? `<div class="jc-run-detail">${esc(j.detail)}</div>` : ''}
+        ${pct != null ? `<div class="jc-bar" role="progressbar" aria-label="Progreso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div style="width:${pct}%"></div></div>` : ''}
+        ${lastLog && j.status === 'running' ? `<button class="jc-ticker mono" data-job-log="${esc(j.id)}" title="Abrir log completo"><span class="jc-tick-dot"></span>${esc(lastLog.slice(0, 160))}</button>` : ''}
+      </div>` : ''}
     ${facts.length ? `<div class="jc-facts">${facts.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
     <div class="jc-meta"><span>${esc(j.id)}</span><span>${jobDuration(j.elapsed_s)} transcurridos</span></div>
-    ${lastLog ? `<button class="jc-log" data-job-log="${esc(j.id)}" title="Abrir log completo">${esc(lastLog)}</button>` : ''}
+    ${lastLog && !['running', 'queued'].includes(j.status) ? `<button class="jc-log" data-job-log="${esc(j.id)}" title="Abrir log completo">${esc(lastLog)}</button>` : ''}
     ${j.status === 'queued' ? `<div class="jc-stage">Esperando turno — el worker procesa un trabajo pesado a la vez.</div>` : ''}
-    ${j.detail ? `<div class="jc-result ${j.status === 'error' ? 'error' : ''}">${esc(j.detail)}</div>` : ''}
+    ${j.detail && !['running', 'queued'].includes(j.status) ? `<div class="jc-result ${j.status === 'error' ? 'error' : ''}">${esc(j.detail)}</div>` : ''}
     <div class="jc-actions">
       <button class="btn" data-job-log="${esc(j.id)}">${icon('list')} Logs completos</button>
       ${j.status === 'done' && ['3d', 'splat'].includes(j.kind) ? `<a class="btn primary" href="tresd.html">${j.kind === '3d' ? 'Ver escena' : 'Ver splat'}</a>` : ''}

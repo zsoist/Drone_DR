@@ -4500,3 +4500,41 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
 .jtm-src{ font-size:9.5px; color:var(--text-3); letter-spacing:.05em }
 #jtm-spark{ border-radius:10px; background:rgba(255,255,255,.025);
   border:1px solid rgba(255,255,255,.06) }
+
+/* ── BLOQUE 63: card activa glass — etapa protagonista, timeline, ticker ── */
+.jc-run{ margin-top:12px; padding:14px 16px 12px; border-radius:14px;
+  border:1px solid rgba(69,160,230,.22);
+  background:linear-gradient(180deg, rgba(69,160,230,.07), rgba(69,160,230,.02));
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  animation:riseIn .3s var(--ease) backwards }
+.jc-run-top{ display:flex; align-items:baseline; justify-content:space-between;
+  gap:12px; margin:2px 0 4px }
+.jc-run-stage{ font-size:15px; font-weight:680; letter-spacing:-.01em; color:var(--text) }
+.jc-run-pct{ font-size:21px; font-weight:750; color:var(--accent);
+  font-variant-numeric:tabular-nums; letter-spacing:-.02em }
+.jc-run-detail{ font-size:11px; color:var(--text-2); margin-bottom:8px }
+.jc-run .jc-bar{ height:7px; margin-top:6px }
+.jc-ticker{ display:flex; align-items:center; gap:8px; width:100%; margin-top:10px;
+  padding:8px 11px; border-radius:9px; text-align:left; cursor:pointer;
+  font-size:10px; color:var(--text-3); background:rgba(6,8,12,.55);
+  border:1px solid rgba(255,255,255,.06);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  transition:color .16s var(--ease), border-color .16s var(--ease) }
+.jc-ticker:hover{ color:var(--text-2); border-color:rgba(69,160,230,.35) }
+.jc-tick-dot{ width:6px; height:6px; border-radius:50%; background:var(--accent);
+  flex:none; animation:jcPulse 1.3s ease-in-out infinite }
+.jc-steps{ display:flex; align-items:center; gap:0; margin-bottom:10px }
+.jc-step{ display:inline-flex; align-items:center; gap:6px; padding:4px 12px;
+  border-radius:999px; font-size:9.5px; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-3);
+  border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.03) }
+.jc-step i{ width:5px; height:5px; border-radius:50%; background:currentColor; opacity:.5 }
+.jc-step.done{ color:var(--mint); border-color:rgba(82,199,154,.35);
+  background:rgba(82,199,154,.08) }
+.jc-step.act{ color:var(--accent); border-color:rgba(69,160,230,.45);
+  background:rgba(69,160,230,.1);
+  box-shadow:0 0 14px -4px rgba(69,160,230,.5) }
+.jc-step.act i{ opacity:1; animation:jcPulse 1.3s ease-in-out infinite }
+.jc-step-link{ width:18px; height:1px; flex:none;
+  background:linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,.06)) }
+@media (prefers-reduced-motion: reduce){ .jc-tick-dot, .jc-step.act i{ animation:none } }
