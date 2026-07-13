@@ -4588,3 +4588,54 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
 @keyframes jcFlow{ from{background-position:0% 0} to{background-position:300% 0} }
 .jc-ph-time b{ color:var(--accent); font-weight:750 }
 @media (prefers-reduced-motion: reduce){ .jc-bar > div, .jc-ph-bar > div{ animation:none } }
+
+/* ── BLOQUE 66: lista de splats v2 — filas con preview real, toolbar, loss bar ── */
+.sp-toolbar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+  margin-bottom:14px; animation:riseIn .25s var(--ease) backwards }
+.sp-toolbar .search{ flex:1; min-width:220px }
+.sp-count{ font-size:10px; color:var(--text-3); letter-spacing:.06em }
+.splat-row{ display:grid; grid-template-columns:150px 1fr 130px auto; gap:16px;
+  align-items:center; padding:12px; margin-bottom:10px; border-radius:14px;
+  border:1px solid var(--line); background:var(--surface-2);
+  animation:riseIn .28s var(--ease) backwards;
+  transition:transform .16s var(--ease), border-color .2s var(--ease), box-shadow .2s var(--ease) }
+.splat-row:hover{ transform:translateY(-1px); border-color:rgba(255,255,255,.16);
+  box-shadow:0 10px 28px -18px rgba(0,0,0,.8) }
+.splat-row:nth-child(2){animation-delay:.03s}.splat-row:nth-child(3){animation-delay:.06s}
+.splat-row:nth-child(4){animation-delay:.09s}.splat-row:nth-child(5){animation-delay:.12s}
+.sr-thumb{ width:150px; height:94px; border-radius:10px; overflow:hidden;
+  background:radial-gradient(ellipse at 50% 40%, #1a2230, #0b0e13); display:grid;
+  place-items:center; border:1px solid rgba(255,255,255,.06) }
+.sr-thumb img{ width:100%; height:100%; object-fit:cover; display:block;
+  transition:transform .35s var(--ease) }
+.splat-row:hover .sr-thumb img{ transform:scale(1.06) }
+.sr-thumb.empty svg.ic{ width:26px; height:26px; color:var(--text-3); opacity:.5 }
+.sr-main{ min-width:0 }
+.sr-hd{ display:flex; align-items:center; gap:9px; flex-wrap:wrap }
+.sr-hd b{ font-size:14px; font-weight:680; letter-spacing:-.01em }
+.sr-ver{ font-size:8.5px; font-weight:750; letter-spacing:.13em; padding:2.5px 8px;
+  border-radius:6px; color:var(--text-3); border:1px solid var(--line) }
+.sr-ver.cur{ color:var(--accent); border-color:rgba(69,160,230,.4);
+  background:rgba(69,160,230,.08) }
+.sr-sub{ font-size:11px; color:var(--text-2); margin-top:3px }
+.sr-stats{ display:flex; gap:7px; flex-wrap:wrap; margin-top:8px }
+.sr-stats span{ display:inline-flex; align-items:center; gap:5px; font-size:10px;
+  color:var(--text-2); padding:3px 9px; border-radius:999px;
+  background:var(--surface); border:1px solid var(--line) }
+.sr-stats svg.ic{ width:11px; height:11px; color:var(--text-3) }
+.sr-be.cuda{ color:#9ADE2E; border-color:rgba(118,185,0,.35); background:rgba(118,185,0,.1) }
+.sr-be.metal{ color:#DDE4EE; border-color:rgba(200,214,235,.22) }
+.sr-loss{ display:flex; flex-direction:column; gap:4px }
+.sr-loss span{ font-size:8.5px; font-weight:750; letter-spacing:.13em; color:var(--text-3) }
+.sr-loss b{ font-size:15px; font-weight:700; font-variant-numeric:tabular-nums }
+.sr-loss-bar{ height:4px; border-radius:2px; background:rgba(255,255,255,.07); overflow:hidden }
+.sr-loss-bar > div{ height:100%; border-radius:2px;
+  background:linear-gradient(90deg, #D96A6A, #E0A458, #52C79A) }
+.sr-acts{ display:flex; flex-direction:column; gap:8px; align-items:stretch }
+.sr-acts .btn.primary{ padding:7px 22px; justify-content:center }
+.sr-icons{ display:flex; gap:6px }
+@media (max-width:900px){
+  .splat-row{ grid-template-columns:110px 1fr }
+  .sr-thumb{ width:110px; height:70px }
+  .sr-loss{ display:none }
+  .sr-acts{ grid-column:1 / -1; flex-direction:row; justify-content:flex-end } }

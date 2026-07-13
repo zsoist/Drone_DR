@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=162';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=162';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=162';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=162';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=162';
-  import { mountSplatViewer } from '/splatview.js?v=162';
+  import * as THREE from '/vendor/three180.module.js?v=163';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=163';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=163';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=163';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=163';
+  import { mountSplatViewer } from '/splatview.js?v=163';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -2399,47 +2399,111 @@
       : loss <= 0.09 ? { c: 'good', t: 'Buena' }
         : loss <= 0.15 ? { c: 'mid', t: 'Media' }
           : { c: 'low', t: 'Básica' };
+  const spState = { q: '', ver: 'all', qual: 'all', sort: 'reciente' };
   function renderSplatList() {                  // función (no bloque one-shot): el hook onDone la re-invoca
-  const splats = (sys.splats || []).filter(s => SPLAT_EXT.test(s.name));
-  document.getElementById('splats').innerHTML = splats.length ? splats.map(s => {
-    const scid = s.clip_id || s.name.replace(SPLAT_EXT, '');
-    const sf = flights.find(x => x.clip_id === scid);
-    const sm = models.find(x => x.clip_id === scid);
-    const sFmt = (s.format || s.name.split('.').pop()).toLowerCase();
-    const baseTitle = (sm && sm.title) || (sf && (sf.label || fmt.date(sf.date) + ' · ' + sf.time)) || scid.slice(-11);
-    const version = s.current ? 'Actual' : (s.archived_at || 'Historial');
-    const hasModel = models.some(m => m.clip_id === scid);
-    const q = qOf(s.loss);
-    // preset+iters NO van aquí: ya viven en la línea si-version (evita duplicar en cada tarjeta)
-    const stats = [
-      s.gaussians ? `<span title="Gaussianas">${icon('spark')}${gfmt(s.gaussians)}</span>` : '',
-      s.cameras ? `<span title="Fotos / cámaras usadas">${icon('film')}${s.cameras}</span>` : '',
-      s.backend ? `<span title="Backend de entrenamiento">${icon('cpu')}${esc(s.backend)}</span>` : '',
-      s.duration_s ? `<span title="Tiempo de entrenamiento">${icon('clock')}${fmtRun(s.duration_s)}</span>` : '',
-      s.loss != null ? `<span title="Loss final">loss ${s.loss}</span>` : '',
-      `<span title="Tamaño del archivo">${icon('db')}${(s.bytes / 1e6).toFixed(1)} MB</span>`,
-      `<span title="Formato">.${sFmt}</span>`,
-    ].filter(Boolean).join('');
-    return `
-    <div class="splat-item" data-cid="${esc(scid)}">
-      <div class="si-main">
-        <div class="si-hd"><b>${esc(baseTitle)}</b>${q ? `<span class="si-q q-${q.c}" title="loss ${s.loss}">${q.t}</span>` : ''}</div>
-        <div class="si-version">${esc(version)}${s.preset_label || s.preset ? ` · ${esc(s.preset_label || s.preset)}` : ''}${s.iters ? ` · ${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters} iters` : ''}</div>
-        <div class="si-stats mono">${stats}</div>
+    const all = (sys.splats || []).filter(s => SPLAT_EXT.test(s.name));
+    const box = document.getElementById('splats');
+    const rowOf = s => {
+      const scid = s.clip_id || s.name.replace(SPLAT_EXT, '');
+      const sf = flights.find(x => x.clip_id === scid);
+      const sm = models.find(x => x.clip_id === scid);
+      return { s, scid, sf, sm,
+        title: (sm && sm.title) || (sf && (sf.label || fmt.date(sf.date) + ' · ' + sf.time)) || scid.slice(-11),
+        q: qOf(s.loss) };
+    };
+    let rows = all.map(rowOf);
+    const t = spState.q.toLowerCase();
+    if (t) rows = rows.filter(r => `${r.title} ${r.scid} ${r.s.preset_label || ''} ${r.s.backend || ''} ${r.s.format || ''}`.toLowerCase().includes(t));
+    if (spState.ver !== 'all') rows = rows.filter(r => spState.ver === 'cur' ? r.s.current : !r.s.current);
+    if (spState.qual !== 'all') rows = rows.filter(r => r.q && r.q.c === spState.qual);
+    const SORTS = {
+      reciente: null,                                      // orden del vault (actual primero)
+      loss: (a, b) => (a.s.loss ?? 9) - (b.s.loss ?? 9),
+      gauss: (a, b) => (b.s.gaussians || 0) - (a.s.gaussians || 0),
+      peso: (a, b) => (b.s.bytes || 0) - (a.s.bytes || 0),
+    };
+    if (SORTS[spState.sort]) rows = [...rows].sort(SORTS[spState.sort]);
+
+    const toolbar = `
+    <div class="sp-toolbar">
+      <div class="search">${icon('search')}<input id="sp-search" type="search"
+        placeholder="Buscar por título, proyecto, preset, backend…" value="${esc(spState.q)}" autocomplete="off"></div>
+      <div class="td-jobbar" aria-label="Versión">
+        ${[['all', 'Todas'], ['cur', 'Actuales'], ['hist', 'Historial']].map(([v, lb]) =>
+          `<button class="chip${spState.ver === v ? ' on' : ''}" data-sp-ver="${v}">${lb}</button>`).join('')}
       </div>
-      <div class="si-acts">
-        <button class="btn primary" data-cid="${esc(scid)}" data-view="${esc(splatKey(s))}"${hasModel ? '' : ' disabled title="Sin proyecto 3D publicado"'} style="padding:5px 16px">Ver</button>
-        <a class="btn" href="${splatUrl(s)}" download title="Descargar .${sFmt}">${icon('dl')}</a>
-        <a class="btn" target="_blank" rel="noopener" title="Editar en SuperSplat (limpiar floaters, recortar, exportar)"
-           href="/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}">${icon('broom')}</a>
-        ${hasModel ? `<button class="btn" data-share="${esc(scid)}" data-splat="${esc(splatKey(s))}" title="Copiar link público de esta versión">${icon('ext')}</button>` : ''}
-        <button class="btn danger" data-del="${esc(scid)}" data-title="${esc(baseTitle)}" title="Borrar todos los splats de este proyecto (a la papelera)">${icon('trash')}</button>
+      <div class="td-jobbar" aria-label="Calidad">
+        ${[['all', 'Toda calidad'], ['exc', 'Excelente'], ['good', 'Buena'], ['mid', 'Media'], ['low', 'Básica']].map(([v, lb]) =>
+          `<button class="chip${spState.qual === v ? ' on' : ''}" data-sp-qual="${v}">${lb}</button>`).join('')}
       </div>
+      <select class="ctl" id="sp-sort" title="Ordenar">
+        ${[['reciente', 'Recientes primero'], ['loss', 'Mejor loss'], ['gauss', 'Más gaussianas'], ['peso', 'Más pesados']].map(([v, lb]) =>
+          `<option value="${v}"${spState.sort === v ? ' selected' : ''}>${lb}</option>`).join('')}
+      </select>
+      <span class="sp-count mono">${rows.length} / ${all.length}</span>
     </div>`;
-  }).join('') :
-    `<p class="footer-note">Sin splats aún — "Generar splat…" entrena uno sobre las poses
-    del proyecto que elijas. El resultado se ve aquí mismo.</p>`;
+
+    const rowHtml = ({ s, scid, sm, title, q }) => {
+      const sFmt = (s.format || s.name.split('.').pop()).toLowerCase();
+      const hasModel = !!sm;
+      const isCuda = /cuda|nvidia/i.test(s.backend || '');
+      // el thumb es el render QA REAL del splat publicado — solo aplica a la versión actual
+      const thumb = s.current
+        ? `<img src="data/qa/${esc(scid)}-splat.png" loading="lazy" width="150" height="94"
+             alt="Render verificado de ${esc(title)}" onerror="this.parentElement.classList.add('empty');this.remove()">`
+        : '';
+      return `
+      <div class="splat-row" data-cid="${esc(scid)}">
+        <div class="sr-thumb${thumb ? '' : ' empty'}">${thumb || icon('spark')}</div>
+        <div class="sr-main">
+          <div class="sr-hd">
+            <b>${esc(title)}</b>
+            ${q ? `<span class="si-q q-${q.c}" title="Calidad por loss final ${s.loss}">${q.t}</span>` : ''}
+            <span class="sr-ver${s.current ? ' cur' : ''}">${s.current ? 'ACTUAL' : 'HISTORIAL'}</span>
+          </div>
+          <div class="sr-sub">${s.archived_at ? esc(s.archived_at) + ' · ' : ''}${esc(s.preset_label || s.preset || '')}${s.iters ? ` · ${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters} iteraciones` : ''} · .${esc(sFmt)}</div>
+          <div class="sr-stats mono">
+            ${s.gaussians ? `<span title="Gaussianas del modelo">${icon('spark')}${gfmt(s.gaussians)} gaussianas</span>` : ''}
+            ${s.cameras ? `<span title="Cámaras de entrenamiento">${icon('film')}${s.cameras} cámaras</span>` : ''}
+            ${s.backend ? `<span class="sr-be ${isCuda ? 'cuda' : 'metal'}" title="Backend de entrenamiento">${icon('cpu')}${esc(s.backend)}</span>` : ''}
+            ${s.duration_s ? `<span title="Tiempo de entrenamiento">${icon('clock')}${fmtRun(s.duration_s)}</span>` : ''}
+            <span title="Tamaño del archivo">${icon('db')}${(s.bytes / 1e6).toFixed(1)} MB</span>
+          </div>
+        </div>
+        <div class="sr-loss">
+          ${s.loss != null ? `<span>LOSS FINAL</span><b class="mono">${s.loss}</b>
+          <div class="sr-loss-bar" title="0.03 excelente ← → 0.15 básica"><div style="width:${Math.round(100 * Math.max(0, Math.min(1, (0.15 - s.loss) / 0.12)))}%"></div></div>` : '<span>LOSS</span><b>—</b>'}
+        </div>
+        <div class="sr-acts">
+          <button class="btn primary" data-cid="${esc(scid)}" data-view="${esc(splatKey(s))}"${hasModel ? '' : ' disabled title="Sin proyecto 3D publicado"'}>Ver</button>
+          <div class="sr-icons">
+            <a class="btn" href="${splatUrl(s)}" download title="Descargar .${sFmt}">${icon('dl')}</a>
+            <a class="btn" target="_blank" rel="noopener" title="Editar en SuperSplat"
+               href="/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}">${icon('broom')}</a>
+            ${hasModel ? `<button class="btn" data-share="${esc(scid)}" data-splat="${esc(splatKey(s))}" title="Copiar link público">${icon('ext')}</button>` : ''}
+            <button class="btn danger" data-del="${esc(scid)}" data-title="${esc(title)}" title="Borrar splats del proyecto (papelera)">${icon('trash')}</button>
+          </div>
+        </div>
+      </div>`;
+    };
+
+    box.innerHTML = all.length
+      ? toolbar + (rows.length ? rows.map(rowHtml).join('')
+        : '<p class="footer-note jf-empty">Sin splats que coincidan con estos filtros.</p>')
+      : `<p class="footer-note">Sin splats aún — "Generar splat…" entrena uno sobre las poses
+      del proyecto que elijas. El resultado se ve aquí mismo.</p>`;
+
+    const inp = box.querySelector('#sp-search');
+    inp?.addEventListener('input', () => {
+      spState.q = inp.value; renderSplatList();
+      const el = box.querySelector('#sp-search');
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    });
+    box.querySelector('#sp-sort')?.addEventListener('change', e => { spState.sort = e.target.value; renderSplatList(); });
+    box.querySelectorAll('[data-sp-ver]').forEach(b => b.addEventListener('click', () => { spState.ver = b.dataset.spVer; renderSplatList(); }));
+    box.querySelectorAll('[data-sp-qual]').forEach(b => b.addEventListener('click', () => { spState.qual = b.dataset.spQual; renderSplatList(); }));
   }
+
   renderSplatList();
   document.getElementById('btn-splat').addEventListener('click', () => {
     if (!flights.length) return alert('No hay vuelos en el vault.');
