@@ -4,27 +4,27 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=139';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=139';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=139';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=139';
-import { createRecorder } from '/flightverse/recorder.js?v=139';
-import { createAudio } from '/flightverse/audio.js?v=139';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=139';
-import { createTouchSticks } from '/flightverse/touch.js?v=139';
-import { createSky } from '/flightverse/sky.js?v=139';
-import { loadSceneObjects } from '/flightverse/objects.js?v=139';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=139';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=139';
-import CameraControls from '/vendor/camera-controls.module.js?v=139';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=139';
+import * as THREE from '/flightverse/three.js?v=140';
+import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=140';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=140';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=140';
+import { createRecorder } from '/flightverse/recorder.js?v=140';
+import { createAudio } from '/flightverse/audio.js?v=140';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=140';
+import { createTouchSticks } from '/flightverse/touch.js?v=140';
+import { createSky } from '/flightverse/sky.js?v=140';
+import { loadSceneObjects } from '/flightverse/objects.js?v=140';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=140';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=140';
+import CameraControls from '/vendor/camera-controls.module.js?v=140';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=140';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=139';
+} from '/vendor/postprocessing180.module.js?v=140';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -35,7 +35,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=139';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=140';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -346,6 +346,7 @@ async function main() {
       onProgress: p => { if (p < 100) $('#vl-scene').textContent = `${man.name} · splat ${Math.round(p)}%`; },
     }).then(s => {
       splat = s;
+      syncVistaChip?.();                       // el splat llegó: chip de vista activo
       $('#vl-scene').textContent = `${man.name} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
       report.splat = { aligned: s.aligned, rmse_m: s.rmse };
       applyVista();               // default 3D siempre (pedido del operador)
@@ -481,9 +482,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=139', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=140', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=139');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=140');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -775,8 +776,20 @@ async function main() {
     terrain.mesh.material.color.setScalar((grade?.t ?? 1) * (vista === 0 ? 0.85 : 1));
     $('#vl-vista').textContent = 'vista · ' + (vista === 0 ? 'mixta' : vista === 1 ? 'foto-real' : '3D');
   };
-  const cycleVista = () => { vista = (vista + 1) % 3; applyVista(); };
+  const cycleVista = () => {
+    if (!splat) {
+      // honesto: sin splat alineado no hay foto-real ni mixta — decirlo, no callar
+      $('#vl-challenge').textContent = 'esta escena no tiene splat alineado — solo vista 3D';
+      setTimeout(() => { if ($('#vl-challenge').textContent.includes('splat alineado')) $('#vl-challenge').textContent = ''; }, 2600);
+      return;
+    }
+    vista = (vista + 1) % 3;
+    applyVista();
+  };
   $('#vl-vista').addEventListener('click', cycleVista);
+  // chip atenuado mientras no haya splat (attachSplat puede llegar después)
+  const syncVistaChip = () => { $('#vl-vista').style.opacity = splat ? 1 : 0.45; };
+  syncVistaChip();
   const CIELO_LB = { dia: 'día', atardecer: 'atardecer', noche: 'noche' };
   $('#vl-cielo').addEventListener('click', () => {
     $('#vl-cielo').textContent = 'cielo · ' + CIELO_LB[sky.cycle()];

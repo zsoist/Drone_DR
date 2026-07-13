@@ -402,3 +402,13 @@ mando real, minimapa MapLibre opcional.
   <45fps).
 - Verificación: cenital ultra sin vacíos (PIL 15.3% oscuro = sombras
   legítimas), gates 42/25fps según rig, 0 errores.
+
+## v140 (2026-07-13) — vista honesta cuando no hay splat alineado
+- Reporte 'no puedo cambiar de vista / drone viejo' en UPZs: el gate demostró
+  que la escena carga perfecta en fresco (drone GLB + malla + 59fps) — la
+  sesión del operador era una PESTAÑA VIVA de antes de v124 (headers ya son
+  no-store/no-cache; un reload la actualiza). NO era caché del server.
+- Lo que SÍ era bug (UX): UPZs tiene splat 'unaligned' → foto-real/mixta no
+  existen por honestidad, pero el botón vista callaba. Ahora: click sin splat
+  → aviso 'esta escena no tiene splat alineado — solo vista 3D' (patrón del
+  arcade), chip al 45% de opacidad, y se reactiva si el splat llega async.
