@@ -459,7 +459,7 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
           const r = b.getBoundingClientRect();
           return { x:r.left+r.width/2, y:r.top+r.height/2,
             before:window.__volar.weaponState.ammo.m,
-            fired:window.__volar.weaponState.fired };
+            fired:window.__volar.weapons.fired };
         """))
         cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": fire["x"], "y": fire["y"],
                   "button": "left", "buttons": 1, "clickCount": 1})
@@ -469,7 +469,7 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
         cdp.pump(0.2)
         shot = cdp.eval(js("""
           return { after:window.__volar.weaponState.ammo.m,
-            fired:window.__volar.weaponState.fired };
+            fired:window.__volar.weapons.fired };
         """))
         if not (shot["after"] < fire["before"] and shot["fired"] > fire["fired"]):
             raise RuntimeError(f"DISPARAR no consumió munición: before={fire} after={shot}")

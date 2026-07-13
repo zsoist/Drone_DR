@@ -16,6 +16,12 @@ const I = {
   trophy: SV('<path d="M6 3.5h8v4a4 4 0 01-8 0zM6 5H3.5a2.5 2.5 0 002.5 3M14 5h2.5A2.5 2.5 0 0114 8M10 11.5V15M7 16.5h6"/>', 11),
 };
 const main = renderShell('mundo.html');
+let cfg = { cielo: 'dia', calidad: 'auto', modo: 'asistido' };
+try { cfg = { ...cfg, ...JSON.parse(localStorage.getItem('ab.fv.launchcfg') || '{}') } } catch {}
+const cfgExtra = () =>
+  (cfg.cielo !== 'dia' ? `&cielo=${cfg.cielo}` : '')
+  + (cfg.calidad !== 'auto' ? `&calidad=${cfg.calidad}` : '')
+  + (cfg.modo !== 'asistido' ? `&modo=${cfg.modo}` : '');
 let filtro = 'todas';
 let scenes = [], sel = null;
 
@@ -27,11 +33,16 @@ function isla(sc, i) {
     <div class="wi-poster" style="background-image:url('${esc(sc.assets?.poster||'')}')"></div>
     <div class="wi-shine"></div>
     <div class="wi-shade"></div>
-    ${c.splat?'<span class="wi-badge">FOTO-REAL</span>':''}
+    ${c.splat?'<span class="wi-badge">FOTO-REAL</span>':c.mesh?'<span class="wi-badge mesh">MALLA 3D</span>':''}
     ${rec!=null?`<span class="wi-rec">${I.trophy} ${rec.toFixed(1)}s</span>`:''}
     <div class="wi-body">
       <div class="wi-name">${esc(sc.name)}</div>
       <div class="wi-meta">${fechaDe(sc.clip_id)||''}${st.track_duration_s?` · vuelo ${dur(st.track_duration_s)}`:''}</div>
+      <div class="wi-stats">
+        ${sc.world?.size_m?`<i>${(sc.world.size_m[0]*sc.world.size_m[1]/10000).toFixed(1)} ha</i>`:''}
+        ${st.gsd_cm_px?`<i>${st.gsd_cm_px} cm/px</i>`:''}
+        ${c.track?'<i>ruta GPS</i>':''}
+      </div>
     </div>
   </article>`;
 }
@@ -41,7 +52,7 @@ function pick(i) {
   document.querySelectorAll('.wi').forEach((el,j)=>el.classList.toggle('sel', j===i));
   const c = sel.capabilities||{}, st = sel.stats||{}, w = sel.world||{};
   const rec = best(sel.clip_id);
-  const go = (extra='') => `volar.html?m=${encodeURIComponent(sel.clip_id)}${extra}`;
+  const go = (extra='') => `volar.html?m=${encodeURIComponent(sel.clip_id)}${extra}${cfgExtra()}`;
   const p = document.getElementById('w-panel');
   p.innerHTML = c.terrain ? `
     <div class="wp-in">
@@ -60,6 +71,14 @@ function pick(i) {
           ${sel.quality?.splat_bytes?`<div><b>${(sel.quality.splat_bytes/1048576).toFixed(0)} MB</b><span>splat</span></div>`:''}
         </div>
       </div>
+      <div class="wp-cfg" id="wp-cfg">
+        <div class="wp-cfg-g" data-k="cielo"><span>Cielo</span>
+          <button data-v="dia">Día</button><button data-v="atardecer">Atardecer</button><button data-v="noche">Noche</button></div>
+        <div class="wp-cfg-g" data-k="calidad"><span>Calidad</span>
+          <button data-v="auto">Auto</button><button data-v="hd">HD</button><button data-v="extra">Extra</button></div>
+        <div class="wp-cfg-g" data-k="modo"><span>Modo</span>
+          <button data-v="asistido">Normal</button><button data-v="arcade">Arcade</button><button data-v="dios">Dios</button></div>
+      </div>
       <div class="wp-missions">
         <button class="wp-m" data-go="${go()}"><b>${I.plane} Vuelo libre</b><span>explora sin límites</span></button>
         <button class="wp-m hot" data-go="${go('&reto=1')}"><b>${I.flag} Gate Rush</b><span>${rec!=null?`bate tu ${rec.toFixed(1)}s`:'contra tu ruta real'}</span></button>
@@ -68,6 +87,10 @@ function pick(i) {
     </div>` : `<div class="wp-in"><div class="wp-name">${esc(sel.name)}</div>
       <a class="fv-cta ghost" href="tresd.html" style="max-width:280px">Procesar en Estudio 3D</a></div>`;
   p.classList.add('show');
+  p.querySelectorAll('.wp-cfg-g').forEach(g => {
+    const k = g.dataset.k;
+    g.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === cfg[k]));
+  });
 }
 
 function launch(url, poster) {
@@ -164,6 +187,14 @@ async function boot() {
     el.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
   });
   document.getElementById('w-panel').addEventListener('click', e => {
+    const cb = e.target.closest('.wp-cfg-g button[data-v]');
+    if (cb) {
+      const g = cb.closest('.wp-cfg-g');
+      cfg[g.dataset.k] = cb.dataset.v;
+      localStorage.setItem('ab.fv.launchcfg', JSON.stringify(cfg));
+      g.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === cb));
+      return;
+    }
     const b = e.target.closest('[data-go]'); if (!b) return;
     launch(b.dataset.go, sel?.assets?.poster || '');
   });

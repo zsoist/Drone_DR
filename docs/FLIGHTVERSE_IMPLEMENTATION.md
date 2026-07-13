@@ -412,3 +412,20 @@ mando real, minimapa MapLibre opcional.
   existen por honestidad, pero el botón vista callaba. Ahora: click sin splat
   → aviso 'esta escena no tiene splat alineado — solo vista 3D' (patrón del
   arcade), chip al 45% de opacidad, y se reactiva si el splat llega async.
+
+## v143 (2026-07-13) — Mundo overhaul: selección de mapa premium
+- Header compacto (padding hero -40%), cards con MINI-STATS (hectáreas, cm/px,
+  ruta GPS) + badge MALLA 3D + hover con lift/zoom de póster/glow.
+- CUSTOMIZACIÓN DE LANZAMIENTO en el panel de misión: Cielo (día/atardecer/
+  noche), Calidad (auto/HD/extra) y Modo (Normal/Arcade/Dios) — chips con
+  estado en gradiente, persistidos (ab.fv.launchcfg), inyectados al deep-link.
+- Mapa decluttered: labels de pin SOLO al hover (el enjambre de texto era
+  ilegible); glow azul al hover del póster-pin. Fix de paso: los pins usaban
+  fv-pin2 que Codex sí estilizó — el legacy .fv-pin quedó como deuda.
+- OVERLAY DE CARGA premium en volar: FLIGHTVERSE + nombre de escena + barra
+  indeterminada + pasos TERRENO/MALLA/SPLAT que se encienden al resolver;
+  fade-out a los 0.5s de sim (solo opacity — 60fps).
+- Sticks/FABs con la MISMA fórmula min(34vh,300px): en iPad portrait el FAB
+  capado quedaba DENTRO de la zona de stick sin capar (matrix lo cazó).
+- Matrix alineada a weaponState v132 (fired vive en report.weapons).
+- Matrix 6/6 verde: volar 71-75fps × 3 viewports, mundo 7 islas × 3.
