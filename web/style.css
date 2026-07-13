@@ -4742,3 +4742,17 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
 .sp-toolbar .chip:hover{ transform:translateY(-1px) }
 @media (prefers-reduced-motion: reduce){
   .splat-row:hover .sr-thumb img, .splat-row:hover .sr-thumb{ transform:none } }
+
+/* ── BLOQUE 69: pills premium en visores + badge de backend del modelo ── */
+#mesh-q, #sp-status{ display:inline-flex; align-items:center; gap:7px;
+  font-size:9.5px !important; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+  padding:3.5px 11px !important; border-radius:999px;
+  border:1px solid rgba(82,199,154,.3); background:rgba(82,199,154,.07); color:var(--mint) }
+#sp-status{ border-color:rgba(69,160,230,.3); background:rgba(69,160,230,.07);
+  color:var(--accent); text-transform:none; letter-spacing:.03em; font-weight:650 }
+.be-pill{ font-style:normal; font-size:8.5px; font-weight:750; letter-spacing:.1em;
+  padding:2px 8px; border-radius:6px }
+.be-pill.cuda{ color:#9ADE2E; background:rgba(118,185,0,.13); border:1px solid rgba(118,185,0,.35) }
+.be-pill.metal{ color:#DDE4EE; background:rgba(200,214,235,.09); border:1px solid rgba(200,214,235,.24) }
+#sp-select{ transition:border-color .18s var(--ease) }
+#sp-select:hover{ border-color:rgba(69,160,230,.5) !important }

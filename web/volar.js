@@ -4,27 +4,27 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=170';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=170';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=170';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=170';
-import { createRecorder } from '/flightverse/recorder.js?v=170';
-import { createAudio } from '/flightverse/audio.js?v=170';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=170';
-import { createTouchSticks } from '/flightverse/touch.js?v=170';
-import { createSky } from '/flightverse/sky.js?v=170';
-import { loadSceneObjects } from '/flightverse/objects.js?v=170';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=170';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=170';
-import CameraControls from '/vendor/camera-controls.module.js?v=170';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=170';
+import * as THREE from '/flightverse/three.js?v=171';
+import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=171';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=171';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=171';
+import { createRecorder } from '/flightverse/recorder.js?v=171';
+import { createAudio } from '/flightverse/audio.js?v=171';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=171';
+import { createTouchSticks } from '/flightverse/touch.js?v=171';
+import { createSky } from '/flightverse/sky.js?v=171';
+import { loadSceneObjects } from '/flightverse/objects.js?v=171';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=171';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=171';
+import CameraControls from '/vendor/camera-controls.module.js?v=171';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=171';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=170';
+} from '/vendor/postprocessing180.module.js?v=171';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -35,7 +35,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=170';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=171';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -491,9 +491,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=170', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=171', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=170');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=171');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);

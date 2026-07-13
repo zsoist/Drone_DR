@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=170';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=170';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=170';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=170';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=170';
-  import { mountSplatViewer } from '/splatview.js?v=170';
+  import * as THREE from '/vendor/three180.module.js?v=171';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=171';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=171';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=171';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=171';
+  import { mountSplatViewer } from '/splatview.js?v=171';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1840,8 +1840,10 @@
     // "no concluyente" ámbar + aviso en mesh-box y OCULTÓ el botón — pisarlo aquí dejaba un
     // botón Cargar visible que no hacía nada y el aviso jamás se veía
     if (meshOk) {
-      document.getElementById('mesh-q').textContent =
-        { rapido: 'calidad rápida', alta: 'calidad alta' }[cur.preset] || 'calidad estándar';
+      const beM = cur.reconstruction?.backend;
+      document.getElementById('mesh-q').innerHTML =
+        esc({ rapido: 'calidad rápida', alta: 'calidad alta' }[cur.preset] || 'calidad estándar') +
+        (beM ? ` <em class="be-pill ${/cuda/i.test(beM) ? 'cuda' : 'metal'}">${esc(beM)}</em>` : '');
       resetViewer('mesh-box', 'Modelo sólido con textura foto-real.', 'load-mesh');
     }
     // auto-carga la estrella — salvo nubes pesadas en móvil (datos + memoria)
@@ -2693,6 +2695,8 @@
     document.getElementById('sp-status').textContent = spMeta
       ? `${splatAssetsFor(cur.clip_id).length} ${splatAssetsFor(cur.clip_id).length === 1 ? 'versión' : 'versiones'} · ${(spMeta.bytes / 1e6).toFixed(1)} MB · ${fmtS}`
       : 'sin entrenar';
+    // cambiar de versión y quedar en negro esperando otro click se sentía ROTO — autocarga
+    document.getElementById('load-splat')?.click();
     box.innerHTML = `<p class="footer-note" style="margin:0">Versión seleccionada — pulsa Cargar para verla.</p>`;
   });
 

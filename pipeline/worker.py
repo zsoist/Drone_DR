@@ -816,6 +816,7 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         m["reconstruction"] = {
             "id": cid,
             "job_id": j["id"],
+            "backend": (jobstore.get(j["id"]) or {}).get("backend"),
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "sources": [{"clip_id": s, **reg["by_source"].get(s, {"merged": True})}
                         for s in src_list],
