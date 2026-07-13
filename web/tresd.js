@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=153';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=153';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=153';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=153';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=153';
-  import { mountSplatViewer } from '/splatview.js?v=153';
+  import * as THREE from '/vendor/three180.module.js?v=154';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=154';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=154';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=154';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=154';
+  import { mountSplatViewer } from '/splatview.js?v=154';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -139,42 +139,47 @@
         <span class="spacer" style="flex:1"></span>
         <span class="jt-thermal mono" id="jt-thermal"></span></div>
       <div class="pb">
-        <div class="jt-strip" id="jt-strip" aria-label="Telemetría en vivo">
-          ${[['cpu', 'CPU'], ['gpu', 'GPU'], ['ram', 'RAM']].map(([k, lb]) => `
-          <div class="jt-cell" data-k="${k}">
+        <div class="jt-strip" id="jt-strip" aria-label="Telemetría en vivo — clic en una tarjeta para el detalle">
+          ${[['cpu', 'CPU', '10 núcleos M4 · frames, ODM local y publish'],
+             ['gpu', 'GPU', 'Metal/MPS · splats locales y visor 3D'],
+             ['ram', 'RAM', '16 GB unificada · cap OpenSplat 11 GB']].map(([k, lb, sub]) => `
+          <button class="jt-cell" data-metric="${k}">
             <div class="jt-top"><span class="jt-lb"><em>MAC</em> ${lb}</span>
               <b class="jt-val mono" id="jt-${k}">—</b></div>
-            <canvas class="jt-spark" id="jt-spark-${k}" height="44"></canvas>
-          </div>`).join('')}
-          <div class="jt-cell">
+            <canvas class="jt-spark" id="jt-spark-${k}" height="40"></canvas>
+            <div class="jt-sub">${sub}</div>
+          </button>`).join('')}
+          <button class="jt-cell" data-metric="sys">
             <div class="jt-top"><span class="jt-lb"><em>MAC</em> SISTEMA</span>
               <b class="jt-val mono" id="jt-load">—</b></div>
             <div class="jt-facts mono" id="jt-mac-facts">—</div>
-          </div>
-          <div class="jt-cell jt-pc">
+            <div class="jt-sub">load, swap y disco del vault local</div>
+          </button>
+          <button class="jt-cell jt-pc" data-metric="ncuda">
             <div class="jt-top"><span class="jt-lb"><i class="st-node-dot" id="jt-node-dot"></i> <em>PC</em> CUDA</span>
               <b class="jt-val mono" id="jt-node-util">—</b></div>
-            <canvas class="jt-spark" id="jt-spark-ncuda" height="30"></canvas>
-            <div class="jt-facts mono" id="jt-node-body">consultando…</div>
-          </div>
-          <div class="jt-cell jt-pc">
+            <canvas class="jt-spark" id="jt-spark-ncuda" height="40"></canvas>
+            <div class="jt-sub" id="jt-node-body">RTX 4060 Ti · splats y depthmaps remotos</div>
+          </button>
+          <button class="jt-cell jt-pc" data-metric="nvram">
             <div class="jt-top"><span class="jt-lb"><em>PC</em> VRAM</span>
               <b class="jt-val mono" id="jt-vram-val">—</b></div>
             <div class="jt-vram"><div id="jt-vram-fill"></div></div>
             <div class="jt-facts mono" id="jt-vram-facts">—</div>
-          </div>
-          <div class="jt-cell jt-pc">
+            <div class="jt-sub">8 GB GDDR6 · el límite real de los entrenos</div>
+          </button>
+          <button class="jt-cell jt-pc" data-metric="ncpu">
             <div class="jt-top"><span class="jt-lb"><em>PC</em> CPU · RAM</span>
               <b class="jt-val mono" id="jt-ncpu">—</b></div>
-            <canvas class="jt-spark" id="jt-spark-ncpu" height="30"></canvas>
-            <div class="jt-facts mono" id="jt-ncpu-facts">—</div>
-          </div>
-          <div class="jt-cell jt-pc">
+            <canvas class="jt-spark" id="jt-spark-ncpu" height="40"></canvas>
+            <div class="jt-sub" id="jt-ncpu-facts">8 cores WSL · features y SfM del ODM remoto</div>
+          </button>
+          <button class="jt-cell jt-pc" data-metric="nnet">
             <div class="jt-top"><span class="jt-lb"><em>PC</em> RED LAN</span>
               <b class="jt-val mono" id="jt-net">—</b></div>
-            <canvas class="jt-spark" id="jt-spark-nnet" height="30"></canvas>
-            <div class="jt-facts mono" id="jt-net-facts">RX / TX — el pulso de los transfers</div>
-          </div>
+            <canvas class="jt-spark" id="jt-spark-nnet" height="40"></canvas>
+            <div class="jt-sub" id="jt-net-facts">gigabit · datasets de ida, artefactos de vuelta</div>
+          </button>
         </div>
         <div class="job-summary" id="job-summary" aria-label="Resumen de trabajos">
           <button data-summary-filter="all"><span>Todos</span><b data-job-count="all">0</b></button>
@@ -382,6 +387,7 @@
     async function poll() {
       try {
         const d = await (await fetch('/api/perf')).json();
+        lastPerf = d.now || null;
         const rows = [...(d.history || []).slice(-80), d.now].filter(Boolean);
         ramTotal = d.now?.ram_total_gb || 16;
         hist.cpu = rows.map(r => (r.cpu || 0) / 100);
@@ -400,10 +406,12 @@
       } catch {}
     }
     const pcHist = { ncuda: [], ncpu: [], nnet: [] };   // historiales del nodo (client-side)
+    let lastPerf = null, lastNode = null;
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     async function pollNode() {
       try {
         const d = await (await fetch('/api/gpu_node')).json();
+        lastNode = d;
         const awake = d.status === 'awake';
         document.getElementById('jt-node-dot')?.classList.toggle('awake', awake);
         if (!awake) {
@@ -502,7 +510,129 @@
         ctx.fill(); ctx.shadowBlur = 0;
       }
       drawPc();
+      drawModal();
       requestAnimationFrame(draw);
+    }
+    const METRICS = {
+      cpu: { t: 'CPU del Mac Mini M4', co: '69,160,230', src: '/api/perf · muestreo 2s',
+        fmt: v => Math.round(v * 100) + '%', data: () => [...hist.cpu, shown.cpu],
+        desc: '10 núcleos (4 performance + 6 efficiency). Aquí viven la extracción de ' +
+          'frames con geotag, la fotogrametría ODM local (contenedor docker), el publish ' +
+          'de assets web y los gates de navegador. Si el nodo CUDA procesa, esta curva baja: ' +
+          'ese es el objetivo del PC remoto.',
+        extra: () => lastPerf ? [['load 1m', lastPerf.load1?.toFixed(2)],
+          ['térmica', lastPerf.thermal?.throttling ? 'LIMITADA' : 'nominal'],
+          ['límite clock', (lastPerf.thermal?.speed_limit ?? 100) + '%']] : [] },
+      gpu: { t: 'GPU del Mac (Metal/MPS)', co: '82,199,154', src: '/api/perf · muestreo 2s',
+        fmt: v => Math.round(v * 100) + '%', data: () => [...hist.gpu, shown.gpu],
+        desc: 'La GPU integrada del M4 entrena los splats locales vía OpenSplat-MPS ' +
+          '(0.048 s/iter medidos) y renderiza el visor 3D/FLIGHTVERSE. El lane CUDA del PC ' +
+          'la releva a ~2.2× (0.022 s/iter) cuando el nodo está despierto.',
+        extra: () => [] },
+      ram: { t: 'Memoria unificada del Mac', co: '224,164,88', src: '/api/perf · muestreo 2s',
+        fmt: v => (v * ramTotal).toFixed(1) + ' GB', data: () => [...hist.ram, shown.ram],
+        desc: '16 GB compartidos entre CPU y GPU — por eso OpenSplat corre con cap de ' +
+          'memoria (taskpolicy 11 GB) y los presets tienen escalera de fallback por OOM. ' +
+          'El swap crece cuando ODM y splat coinciden: mover carga al PC lo alivia.',
+        extra: () => lastPerf ? [['swap', ((lastPerf.swap_used_mb || 0) / 1024).toFixed(1) + ' GB'],
+          ['disco vault', Math.round(lastPerf.disk_free_gb || 0) + ' GB libres']] : [] },
+      sys: { t: 'Sistema del Mac', co: '159,182,212', src: '/api/perf · muestreo 2s',
+        fmt: () => 'load ' + (lastPerf?.load1 ?? 0).toFixed(1), data: () => [],
+        desc: 'Presión global del control-plane: load average, swap residual (2-3 GB es ' +
+          'normal aquí) y espacio del vault en el SSD externo donde viven vuelos, modelos ' +
+          'y splats publicados.',
+        extra: () => lastPerf ? [['load 1m', lastPerf.load1?.toFixed(2)],
+          ['swap', ((lastPerf.swap_used_mb || 0) / 1024).toFixed(1) + ' GB'],
+          ['disco', Math.round(lastPerf.disk_free_gb || 0) + ' GB'],
+          ['cores', '10']] : [] },
+      ncuda: { t: 'GPU NVIDIA del nodo (CUDA)', co: '154,222,46', src: '/api/gpu_node · probe ssh 10s',
+        fmt: v => Math.round(v * 100) + '%', data: () => pcHist.ncuda,
+        desc: 'RTX 4060 Ti (Ada, 8 GB) en tu PC de la LAN, invocable por SSH+WoL. Entrena ' +
+          'splats con gsplat CUDA (kernels reales verificados) y acelera los depthmaps de la ' +
+          'fotogrametría remota. dspsift y SfM son CPU: ver esta curva en 0 durante esas ' +
+          'fases es lo esperado, no un fallo.',
+        extra: () => lastNode ? [['temp', (lastNode.temp_c ?? '—') + '°C'],
+          ['potencia', (lastNode.power_w ?? '—') + ' W'],
+          ['driver', lastNode.driver || '—']] : [] },
+      nvram: { t: 'VRAM del nodo', co: '154,222,46', src: '/api/gpu_node · probe ssh 10s',
+        fmt: () => lastNode?.vram_total_mb
+          ? `${(lastNode.vram_used_mb / 1024).toFixed(1)} / ${Math.round(lastNode.vram_total_mb / 1024)} GB` : '—',
+        data: () => [],
+        desc: '8 GB GDDR6 dedicados — el límite duro de los entrenos CUDA. El smoke de ' +
+          '4000 iters usó ~1.4 GB; escenas grandes o batch alto pueden acercarse al techo ' +
+          'y ahí el lane hace fallback honesto a Metal local.',
+        extra: () => lastNode?.vram_total_mb ? [
+          ['usada', (lastNode.vram_used_mb / 1024).toFixed(1) + ' GB'],
+          ['total', Math.round(lastNode.vram_total_mb / 1024) + ' GB'],
+          ['ocupación', Math.round(100 * lastNode.vram_used_mb / lastNode.vram_total_mb) + '%']] : [] },
+      ncpu: { t: 'CPU y RAM del nodo (WSL)', co: '199,146,234', src: '/api/gpu_node · probe ssh 10s',
+        fmt: v => Math.round(v * 100) + '%', data: () => pcHist.ncpu,
+        desc: 'Ubuntu bajo WSL2 con cap de 8 cores y 24 GB (.wslconfig). Corre la parte CPU ' +
+          'del ODM remoto (features dspsift, matching, SfM, malla) y el staging de datasets. ' +
+          'La curva al 100% durante fotogrametría es trabajo bien invertido.',
+        extra: () => lastNode ? [['RAM', `${lastNode.pc_ram_used_gb ?? '—'} / ${lastNode.pc_ram_total_gb ?? '—'} GB`],
+          ['cores', '8 (cap WSL)']] : [] },
+      nnet: { t: 'Red LAN Mac ↔ PC', co: '86,196,224', src: 'delta /proc/net/dev · 10s',
+        fmt: () => { const r = Math.max(lastNode?.net_rx_mbps || 0, lastNode?.net_tx_mbps || 0);
+          return r >= 1000 ? (r / 1000).toFixed(2) + ' Gb/s' : r.toFixed(1) + ' Mb/s'; },
+        data: () => pcHist.nnet,
+        desc: 'El pulso de los transfers: datasets de ida (238 fotos ≈ 340 MB) y artefactos ' +
+          'de vuelta (PLY ~100 MB, outputs ODM en GB). Tasas medidas por delta real de bytes ' +
+          'en eth0 del WSL — 0 en reposo es honesto, no un sensor muerto.',
+        extra: () => lastNode ? [['RX', (lastNode.net_rx_mbps ?? 0) + ' Mbit/s'],
+          ['TX', (lastNode.net_tx_mbps ?? 0) + ' Mbit/s']] : [] },
+    };
+    strip.addEventListener('click', e => {
+      const cell = e.target.closest('[data-metric]');
+      const M = cell && METRICS[cell.dataset.metric];
+      if (!M) return;
+      openModal(M.t, `
+        <div class="jtm-head"><b class="jtm-val mono" id="jtm-val">—</b>
+          <span class="jtm-src mono">${M.src} · sparkline 60fps</span></div>
+        <canvas id="jtm-spark" data-metric="${cell.dataset.metric}" height="120"
+          style="width:100%;height:120px;display:${M.data().length ? 'block' : 'none'}"></canvas>
+        <div class="gn-grid" id="jtm-stats" style="margin:14px 0"></div>
+        <p class="footer-note" style="line-height:1.55">${M.desc}</p>`);
+    });
+    function drawModal() {
+      const cv = document.getElementById('jtm-spark');
+      if (!cv) return;
+      const M = METRICS[cv.dataset.metric];
+      if (!M) return;
+      const pts = M.data();
+      const live = pts.length ? pts[pts.length - 1] : 0;
+      set('jtm-val', M.fmt(live));
+      const st = document.getElementById('jtm-stats');
+      if (st) {
+        const rows = [];
+        if (pts.length > 2) {
+          const pc = pts.map(v => v * 100);
+          rows.push(['MÍN', Math.round(Math.min(...pc)) + '%'],
+                    ['PROM', Math.round(pc.reduce((a, b) => a + b) / pc.length) + '%'],
+                    ['MÁX', Math.round(Math.max(...pc)) + '%']);
+        }
+        rows.push(...M.extra());
+        st.innerHTML = rows.map(([lb, v]) =>
+          `<div class="gn-cell"><span>${lb}</span><b>${v ?? '—'}</b></div>`).join('');
+      }
+      if (!pts.length) return;
+      const dpr = Math.min(devicePixelRatio || 1, 2);
+      const W = cv.clientWidth, H = cv.clientHeight;
+      if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+      const ctx = cv.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      const step = W / Math.max(1, pts.length - 1);
+      ctx.beginPath();
+      pts.forEach((v, i) => {
+        const x = i * step, y = H - 4 - v * (H - 12);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      ctx.strokeStyle = `rgba(${M.co},.95)`; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+      ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, `rgba(${M.co},.25)`); g.addColorStop(1, `rgba(${M.co},0)`);
+      ctx.fillStyle = g; ctx.fill();
     }
     poll(); pollNode();
     setInterval(poll, 2000); setInterval(pollNode, 10000);
