@@ -791,6 +791,8 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
         "photo_count": len(spec.get("photos") or []),
         "outcome": row.get("status"),
         "backend": row.get("backend"),
+        "stage_history": (jobstore.stage_history(row["id"])
+                          if row.get("kind") in ("3d", "splat") else []),
         "fallback": False,
         "artifact_exists": bool(row.get("artifact") and (VAULT / str(row["artifact"])).exists()),
     })
@@ -1223,16 +1225,27 @@ def gpu_node_status(force: bool = False) -> dict:
         q = subprocess.run(
             ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
              "nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used,"
-             "utilization.gpu,temperature.gpu,power.draw --format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=8)
-        if q.returncode == 0 and q.stdout.strip():
-            f = [x.strip() for x in q.stdout.strip().splitlines()[0].split(",")]
+             "utilization.gpu,temperature.gpu,power.draw --format=csv,noheader,nounits"
+             " & netstat -e"],
+            capture_output=True, timeout=10)
+        # bytes + decode tolerante: el netstat de Windows en español sale en cp850
+        # ("Estadísticas...") y text=True (utf-8 estricto) reventaba TODO el probe
+        q_out = (q.stdout or b"").decode("utf-8", "replace")
+        if q.returncode == 0 and q_out.strip():
+            f = [x.strip() for x in q_out.strip().splitlines()[0].split(",")]
             data.update({"gpu": f[0], "driver": f[1], "vram_total_mb": int(float(f[2])),
                          "vram_used_mb": int(float(f[3])), "util_pct": int(float(f[4])),
                          "temp_c": int(float(f[5])), "power_w": round(float(f[6]), 1)})
+            # netstat -e: primera línea "Bytes  <rx>  <tx>" = NIC física de Windows —
+            # el eth0 de WSL NO ve los scp del staging NTFS (medido: 340MB invisibles)
+            for ln in q_out.splitlines():
+                t = ln.split()
+                if len(t) == 3 and t[1].isdigit() and t[2].isdigit():
+                    data["_net_raw"] = {"rx": int(t[1]), "tx": int(t[2]), "t": now}
+                    break
         wsl = subprocess.run(
             ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
-             "wsl -d Ubuntu -- bash -lc \"head -1 /proc/stat; grep -E 'MemTotal|MemAvailable' /proc/meminfo; grep -E 'eth0' /proc/net/dev | head -1\""],
+             "wsl -d Ubuntu -- bash -lc \"head -1 /proc/stat; grep -E 'MemTotal|MemAvailable' /proc/meminfo\""],
             capture_output=True, text=True, timeout=12)
         raw = (wsl.stdout or "").replace("\x00", "")
         cpu_line = mem = {}
@@ -1248,12 +1261,6 @@ def gpu_node_status(force: bool = False) -> dict:
                 data["pc_ram_total_gb"] = round(int(t[1]) / 1048576, 1)
             elif t[0] == "MemAvailable:":
                 data["_ram_avail_kb"] = int(t[1])
-            elif t[0].startswith("eth0"):
-                # /proc/net/dev: iface rx_bytes ... (8 cols) tx_bytes ...
-                nums = t[1:] if t[0] != "eth0:" else t[1:]
-                if t[0].rstrip(":") == "eth0" or t[0].startswith("eth0:"):
-                    parts = ln.replace(":", " ").split()
-                    data["_net_raw"] = {"rx": int(parts[1]), "tx": int(parts[9]), "t": now}
         if data.get("pc_ram_total_gb") and data.get("_ram_avail_kb"):
             data["pc_ram_used_gb"] = round(data["pc_ram_total_gb"] - data.pop("_ram_avail_kb") / 1048576, 1)
         # tasas por delta contra la muestra anterior (mismo cache que el TTL)

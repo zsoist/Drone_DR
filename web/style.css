@@ -4538,3 +4538,34 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
 .jc-step-link{ width:18px; height:1px; flex:none;
   background:linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,.06)) }
 @media (prefers-reduced-motion: reduce){ .jc-tick-dot, .jc-step.act i{ animation:none } }
+
+/* ── BLOQUE 64: dashboard de fases + anti-jitter ── */
+.job-card.upd, .job-card.upd .jc-run{ animation:none }
+.jc-ph{ display:flex; flex-direction:column; gap:7px; margin-bottom:12px }
+.jc-ph-row{ display:grid; grid-template-columns:14px minmax(150px, 200px) 1fr 96px;
+  gap:10px; align-items:center }
+.jc-ph-dot{ width:8px; height:8px; border-radius:50%; justify-self:center;
+  background:rgba(255,255,255,.18); transition:background .3s var(--ease) }
+.jc-ph-row.done .jc-ph-dot{ background:var(--mint) }
+.jc-ph-row.act .jc-ph-dot{ background:var(--accent);
+  box-shadow:0 0 8px rgba(69,160,230,.8); animation:jcPulse 1.4s ease-in-out infinite }
+.jc-ph-main{ display:flex; flex-direction:column; gap:1px; min-width:0 }
+.jc-ph-main b{ font-size:11.5px; font-weight:680; color:var(--text-2) }
+.jc-ph-row.act .jc-ph-main b{ color:var(--text) }
+.jc-ph-main span{ font-size:9px; color:var(--text-3); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis }
+.jc-ph-bar{ height:5px; border-radius:3px; background:rgba(255,255,255,.06); overflow:hidden }
+.jc-ph-bar > div{ height:100%; border-radius:3px; background:var(--accent);
+  transition:width .8s var(--ease); position:relative; overflow:hidden }
+.jc-ph-row.done .jc-ph-bar > div{ background:var(--mint) }
+.jc-ph-row.act .jc-ph-bar > div::after{ content:''; position:absolute; inset:0;
+  background:linear-gradient(100deg, transparent 25%, rgba(255,255,255,.3) 50%, transparent 75%);
+  animation:jcShimmer 1.8s linear infinite }
+.jc-ph-time{ font-size:9.5px; color:var(--text-3); text-align:right;
+  font-variant-numeric:tabular-nums; white-space:nowrap }
+.jc-ph-row.done .jc-ph-time{ color:var(--mint) }
+.jc-ph-row.act .jc-ph-time{ color:var(--text-2) }
+@media (max-width:720px){ .jc-ph-row{ grid-template-columns:12px 1fr 72px }
+  .jc-ph-bar{ display:none } }
+@media (prefers-reduced-motion: reduce){ .jc-ph-row.act .jc-ph-dot,
+  .jc-ph-row.act .jc-ph-bar > div::after{ animation:none } }

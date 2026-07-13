@@ -207,6 +207,48 @@ function backendBadge(backend) {
   const chip = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6 4V1.5M10 4V1.5M6 14.5V12M10 14.5V12M4 6H1.5M4 10H1.5M14.5 6H12M14.5 10H12"/></svg>';
   return `<span class="jc-backend ${kind}" title="Backend de cómputo: ${esc(b)}">${chip}${label}</span>`;
 }
+const PHASES_3D = [
+  ['frames', 'Frames', 'extracción del video + geotag GPS', 0.05, 0.16],
+  ['odm', 'Fotogrametría', 'features → SfM → depthmaps → malla', 0.16, 0.96],
+  ['publish', 'Publicar', 'ortofoto, DSM y visor web', 0.96, 1.0],
+];
+function fmtDur(sec) {
+  if (sec == null || sec < 0) return '—';
+  if (sec >= 3600) return `${Math.floor(sec / 3600)}h ${Math.round(sec % 3600 / 60)}m`;
+  if (sec >= 60) return `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`;
+  return `${Math.round(sec)}s`;
+}
+function phaseDash(j, pct) {
+  if (j.kind !== '3d') return '';
+  const hist = j.stage_history || [];
+  const now = Date.now() / 1000;
+  const norm = st => (st || '').replace('-fallback', '').replace('odm', 'odm')
+    .replace(/^(train|model-base)$/, 'odm');
+  const starts = {};
+  hist.forEach(h => { const k = norm(h.stage); if (!(k in starts)) starts[k] = h.ts; });
+  if (j.started && !('frames' in starts)) starts.frames = j.started;
+  const activeKey = norm(j.stage);
+  // done/act por ORDEN de pipeline — los timestamps solo aportan duraciones:
+  // un job anterior al tracking de stages no debe mostrar fases pasadas como pendientes
+  const activeIdx = Math.max(0, PHASES_3D.findIndex(ph => ph[0] === activeKey));
+  const rows = PHASES_3D.map(([key, name, sub, lo, hi], i) => {
+    const st = starts[key];
+    const nextSt = PHASES_3D.slice(i + 1).map(ph => starts[ph[0]]).find(Boolean);
+    const done = j.status === 'done' || i < activeIdx;
+    const act = !done && i === activeIdx && ['running', 'queued'].includes(j.status);
+    const end = nextSt ?? (j.status === 'done' ? (j.finished || now) : null);
+    const dur = st != null ? ((done ? end : now) != null ? (done ? end : now) - st : null) : null;
+    const width = done ? 100 : act && pct != null
+      ? Math.round(100 * Math.min(1, Math.max(0, (pct / 100 - lo) / (hi - lo)))) : 0;
+    return `<div class="jc-ph-row ${done ? 'done' : act ? 'act' : 'pend'}">
+      <span class="jc-ph-dot"></span>
+      <div class="jc-ph-main"><b>${name}</b><span>${sub}</span></div>
+      <div class="jc-ph-bar"><div style="width:${width}%"></div></div>
+      <span class="jc-ph-time mono">${st == null ? '—' : done ? fmtDur(dur) : act ? 'en curso · ' + fmtDur(dur) : '—'}</span>
+    </div>`;
+  }).join('');
+  return `<div class="jc-ph">${rows}</div>`;
+}
 function jobCard(j, flightsIdx, entering = true) {
   const meta = KIND_META[j.kind] || { ic: 'activity', name: j.kind };
   const f = flightsIdx?.[j.label];
@@ -242,12 +284,7 @@ function jobCard(j, flightsIdx, entering = true) {
     ${quality.length ? `<div class="jc-quality">${quality.join('')}</div>` : ''}
     ${['running', 'queued'].includes(j.status) ? `
       <div class="jc-run">
-        ${j.kind === '3d' ? (() => {
-          const steps = [['frames', 'Frames'], ['odm', 'Fotogrametr\u00eda'], ['publish', 'Publicar']];
-          const at = Math.max(0, steps.findIndex(s => s[0] === (j.stage || '').replace('-fallback', '')));
-          return `<div class="jc-steps">${steps.map(([, lb], i) =>
-            `<span class="jc-step${i < at ? ' done' : i === at ? ' act' : ''}"><i></i>${i < at ? '\u2713 ' : ''}${lb}</span>`).join('<span class="jc-step-link"></span>')}</div>`;
-        })() : ''}
+        ${phaseDash(j, pct)}
         <div class="jc-run-top">
           <span class="jc-run-stage">${esc(humanStage(j) || 'procesando\u2026')}</span>
           <b class="jc-run-pct mono">${pct != null ? pct + '%' : ''}</b>
@@ -368,8 +405,43 @@ async function pollJobs(el, every = 2500, onDone = null) {
       const active = jobs.filter(j => ['running', 'queued'].includes(j.status));
       const history = jobs.filter(j => !['running', 'queued'].includes(j.status));
       const list = [...active, ...history];
-      const hash = j => [j.status, j.progress, j.elapsed_s, j.detail, j.stage,
-        j.requested_preset, j.effective_preset, j.outcome, (j.log_tail || '').slice(-80)].join('|');
+      // hash ESTRUCTURAL: solo lo que cambia la forma de la card. Los valores vivos
+      // (progreso, ticker, tiempos) se parchan in-place — reemplazar el nodo cada poll
+      // re-disparaba animaciones y producía el jitter de 1s en la card activa
+      const hash = j => [j.status, j.stage, j.detail, j.requested_preset,
+        j.effective_preset, j.outcome, j.backend,
+        (j.stage_history || []).length].join('|');
+      const patchLive = (node, j) => {
+        const pct = Number.isFinite(+j.progress) ? Math.round(+j.progress * 100) : null;
+        const setTxt = (sel, v) => { const n = node.querySelector(sel);
+          if (n && v != null && n.textContent !== String(v)) n.textContent = v; };
+        setTxt('.jc-run-pct', pct != null ? pct + '%' : '');
+        setTxt('.jc-status', (node.querySelector('.jc-status')?.textContent || '')
+          .replace(/\d+%$/, pct + '%'));
+        const bar = node.querySelector('.jc-bar > div');
+        if (bar && pct != null) bar.style.width = pct + '%';
+        const tick = node.querySelector('.jc-ticker');
+        const last = cleanLog((j.log_tail || '').split('\n').pop()).slice(0, 160);
+        if (tick && last && tick.dataset.t !== last) {
+          tick.dataset.t = last;
+          tick.lastChild.textContent = last;                 // el dot span queda intacto
+        }
+        setTxt('.jc-run-stage', humanStage(j) || 'procesando\u2026');
+        const meta = node.querySelectorAll('.jc-meta span')[1];
+        if (meta) meta.textContent = jobDuration(j.elapsed_s) + ' transcurridos';
+        // dashboard de fases: solo anchos y tiempos (misma estructura)
+        node.querySelectorAll('.jc-ph-row').forEach((row, i) => {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = phaseDash(j, pct);
+          const fresh = tmp.querySelectorAll('.jc-ph-row')[i];
+          if (!fresh) return;
+          if (row.className !== fresh.className) { row.replaceWith(fresh); return; }
+          const b1 = row.querySelector('.jc-ph-bar > div'), b2 = fresh.querySelector('.jc-ph-bar > div');
+          if (b1 && b2) b1.style.width = b2.style.width;
+          const t1 = row.querySelector('.jc-ph-time'), t2 = fresh.querySelector('.jc-ph-time');
+          if (t1 && t2 && t1.textContent !== t2.textContent) t1.textContent = t2.textContent;
+        });
+      };
       const ids = list.map(j => j.id).join(',');
       if (el.dataset.ids !== ids) {
         el.dataset.ids = ids;
@@ -378,7 +450,11 @@ async function pollJobs(el, every = 2500, onDone = null) {
       } else {
         list.forEach(j => {
           const node = el.querySelector(`[data-jid="${CSS.escape(j.id)}"]`);
-          if (!node || node.dataset.h === hash(j)) return;
+          if (!node) return;
+          if (node.dataset.h === hash(j)) {
+            if (['running', 'queued'].includes(j.status)) patchLive(node, j);
+            return;
+          }
           const tmp = document.createElement('div');
           tmp.innerHTML = jobCard(j, flightsIdx, false);
           const next = tmp.firstElementChild;

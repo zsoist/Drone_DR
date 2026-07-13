@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=157';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=157';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=157';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=157';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=157';
-  import { mountSplatViewer } from '/splatview.js?v=157';
+  import * as THREE from '/vendor/three180.module.js?v=160';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=160';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=160';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=160';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=160';
+  import { mountSplatViewer } from '/splatview.js?v=160';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -411,7 +411,8 @@
     async function pollNode() {
       try {
         const d = await (await fetch('/api/gpu_node')).json();
-        lastNode = d;
+        const fresh = d.ts !== lastNode?.ts;      // el server cachea 20s: sin esto cada
+        lastNode = d;                              // segundo poll duplicaba el punto
         const awake = d.status === 'awake';
         document.getElementById('jt-node-dot')?.classList.toggle('awake', awake);
         if (!awake) {
@@ -424,7 +425,7 @@
         const util = d.util_pct ?? 0;
         set('jt-node-util', util + '%');
         set('jt-node-body', `${(d.gpu || '').replace('NVIDIA GeForce ', '')} · ${d.temp_c ?? '—'}°C · ${d.power_w ?? '—'}W · drv ${d.driver || '—'}`);
-        pcHist.ncuda.push(util / 100); if (pcHist.ncuda.length > 60) pcHist.ncuda.shift();
+        if (fresh) { pcHist.ncuda.push(util / 100); if (pcHist.ncuda.length > 60) pcHist.ncuda.shift(); }
         if (d.vram_total_mb) {
           set('jt-vram-val', `${(d.vram_used_mb / 1024).toFixed(1)} / ${Math.round(d.vram_total_mb / 1024)} GB`);
           set('jt-vram-facts', `${Math.round(100 * d.vram_used_mb / d.vram_total_mb)}% ocupada · gsplat + odm:gpu listos`);
@@ -433,7 +434,7 @@
         }
         if (d.pc_cpu_pct != null) {
           set('jt-ncpu', d.pc_cpu_pct + '%');
-          pcHist.ncpu.push(d.pc_cpu_pct / 100); if (pcHist.ncpu.length > 60) pcHist.ncpu.shift();
+          if (fresh) { pcHist.ncpu.push(d.pc_cpu_pct / 100); if (pcHist.ncpu.length > 60) pcHist.ncpu.shift(); }
         }
         if (d.pc_ram_total_gb) set('jt-ncpu-facts',
           `RAM ${d.pc_ram_used_gb ?? '—'} / ${d.pc_ram_total_gb} GB · 8 cores WSL`);
@@ -441,7 +442,7 @@
           const peak = Math.max(d.net_rx_mbps, d.net_tx_mbps || 0);
           set('jt-net', peak >= 1000 ? (peak / 1000).toFixed(2) + ' Gb/s' : peak.toFixed(1) + ' Mb/s');
           set('jt-net-facts', `RX ${d.net_rx_mbps} · TX ${d.net_tx_mbps ?? 0} Mbit/s`);
-          pcHist.nnet.push(Math.min(1, peak / 1000)); if (pcHist.nnet.length > 60) pcHist.nnet.shift();
+          if (fresh) { pcHist.nnet.push(Math.min(1, peak / 1000)); if (pcHist.nnet.length > 60) pcHist.nnet.shift(); }
         }
       } catch {}
     }
@@ -577,8 +578,8 @@
           return r >= 1000 ? (r / 1000).toFixed(2) + ' Gb/s' : r.toFixed(1) + ' Mb/s'; },
         data: () => pcHist.nnet,
         desc: 'El pulso de los transfers: datasets de ida (238 fotos ≈ 340 MB) y artefactos ' +
-          'de vuelta (PLY ~100 MB, outputs ODM en GB). Tasas medidas por delta real de bytes ' +
-          'en eth0 del WSL — 0 en reposo es honesto, no un sensor muerto.',
+          'de vuelta (PLY ~100 MB, outputs ODM en GB). Tasas por delta de bytes de la NIC ' +
+          'física de Windows (netstat) — la única que ve los scp; 0 en reposo es honesto.',
         extra: () => lastNode ? [['RX', (lastNode.net_rx_mbps ?? 0) + ' Mbit/s'],
           ['TX', (lastNode.net_tx_mbps ?? 0) + ' Mbit/s']] : [] },
     };
@@ -606,10 +607,19 @@
       if (st) {
         const rows = [];
         if (pts.length > 2) {
-          const pc = pts.map(v => v * 100);
-          rows.push(['MÍN', Math.round(Math.min(...pc)) + '%'],
-                    ['PROM', Math.round(pc.reduce((a, b) => a + b) / pc.length) + '%'],
-                    ['MÁX', Math.round(Math.max(...pc)) + '%']);
+          // unidad correcta por métrica: % de uso, GB de RAM, Mb/s de red — no mentir
+          const unit = cv.dataset.metric === 'ram'
+            ? v => (v * ramTotal).toFixed(1) + ' GB'
+            : cv.dataset.metric === 'nnet'
+              ? v => Math.round(v * 1000) + ' Mb/s'
+              : v => Math.round(v * 100) + '%';
+          rows.push(['MÍN', unit(Math.min(...pts))],
+                    ['PROM', unit(pts.reduce((a, b) => a + b) / pts.length)],
+                    ['MÁX', unit(Math.max(...pts))]);
+          const span = cv.dataset.metric.startsWith('n')
+            ? Math.round(pts.length * 20 / 60)   // muestras reales del nodo ~20s (TTL server)
+            : Math.round(pts.length * 5 / 60);   // historial /api/perf ~5s
+          rows.push(['VENTANA', '~' + Math.max(1, span) + ' min']);
         }
         rows.push(...M.extra());
         st.innerHTML = rows.map(([lb, v]) =>

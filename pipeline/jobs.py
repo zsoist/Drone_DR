@@ -184,7 +184,23 @@ def add(kind: str, label: str, container: str = "") -> dict:
 def update(jid: str, **kw):
     sets = ", ".join(f"{k}=?" for k in kw)
     with _LOCK, _conn() as c:
+        # cronología de fases sin columna nueva: cada cambio real de stage queda como
+        # evento 'stage' — la UI deriva de ahí cuánto duró cada fase (dato, no estimación)
+        if kw.get("stage"):
+            row = c.execute("SELECT stage FROM jobs WHERE id=?", (jid,)).fetchone()
+            if row and row[0] != kw["stage"]:
+                c.execute("INSERT INTO job_events (job_id, ts, level, event, message, data) "
+                          "VALUES (?,?,?,?,?,?)",
+                          (jid, time.time(), "debug", "stage", str(kw["stage"])[:80], "{}"))
         c.execute(f"UPDATE jobs SET {sets} WHERE id=?", (*kw.values(), jid))
+
+
+def stage_history(jid: str) -> list:
+    """[{stage, ts}] de los eventos 'stage' — la cronología real de fases del job."""
+    with _LOCK, _conn() as c:
+        rows = c.execute("SELECT ts, message FROM job_events WHERE job_id=? AND event='stage' "
+                         "ORDER BY ts LIMIT 40", (jid,)).fetchall()
+    return [{"ts": r[0], "stage": r[1]} for r in rows]
 
 
 def event(jid: str, event: str, message: str = "", level: str = "info",
