@@ -4639,3 +4639,65 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
   .sr-thumb{ width:110px; height:70px }
   .sr-loss{ display:none }
   .sr-acts{ grid-column:1 / -1; flex-direction:row; justify-content:flex-end } }
+
+/* ── BLOQUE 67: pipeline v2 — pasos con popover, flujo animado, CTAs premium ── */
+.td-stepper.v2{ display:flex; align-items:stretch; gap:0; padding:4px 0 8px }
+.td-stepper.v2 .td-step{ position:relative; flex:1; display:flex; flex-direction:column;
+  align-items:center; gap:5px; padding:16px 10px 13px; border-radius:14px; cursor:default;
+  border:1px solid rgba(255,255,255,.07);
+  background:linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.012));
+  transition:transform .18s var(--ease), border-color .2s var(--ease), box-shadow .2s var(--ease);
+  animation:riseIn .3s var(--ease) backwards }
+.td-stepper.v2 .td-step:nth-child(3){animation-delay:.04s}
+.td-stepper.v2 .td-step:nth-child(5){animation-delay:.08s}
+.td-stepper.v2 .td-step:nth-child(7){animation-delay:.12s}
+.td-stepper.v2 .td-step:nth-child(9){animation-delay:.16s}
+.td-stepper.v2 .td-step:nth-child(11){animation-delay:.2s}
+.td-stepper.v2 .td-step:hover, .td-stepper.v2 .td-step:focus-visible{
+  transform:translateY(-3px); border-color:rgba(69,160,230,.4);
+  box-shadow:0 14px 34px -18px rgba(69,160,230,.5); outline:0; z-index:6 }
+.td-stepper.v2 .td-step i{ width:38px; height:38px; border-radius:12px; display:grid;
+  place-items:center; background:rgba(69,160,230,.09);
+  border:1px solid rgba(69,160,230,.22); transition:box-shadow .2s var(--ease) }
+.td-stepper.v2 .td-step:hover i{ box-shadow:0 0 18px -4px rgba(69,160,230,.6) }
+.td-stepper.v2 .td-step i svg.ic{ width:17px; height:17px; color:var(--accent) }
+.td-stepper.v2 .td-step b{ font-size:12.5px; font-weight:680; letter-spacing:-.01em }
+.td-stepper.v2 .td-step > span{ font-size:9.5px; color:var(--text-3); font-family:var(--mono);
+  letter-spacing:.04em; text-align:center }
+.td-live{ font-size:9px; color:var(--mint); letter-spacing:.06em; padding:2px 8px;
+  border-radius:999px; background:rgba(82,199,154,.08); border:1px solid rgba(82,199,154,.25) }
+.td-pop{ position:absolute; top:calc(100% + 10px); left:50%; width:250px; z-index:20;
+  transform:translateX(-50%) translateY(-6px); opacity:0; pointer-events:none;
+  padding:12px 14px; border-radius:12px; text-align:left;
+  border:1px solid rgba(69,160,230,.25); background:rgba(10,13,18,.96);
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+  box-shadow:0 18px 44px -16px rgba(0,0,0,.85);
+  transition:opacity .18s var(--ease), transform .18s var(--ease) }
+.td-step:hover .td-pop, .td-step:focus-visible .td-pop, .td-step.pop-open .td-pop{
+  opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0) }
+.td-pop b{ font-size:11px; color:var(--accent); letter-spacing:.02em }
+.td-pop p{ margin:5px 0 0; font-size:10.5px; line-height:1.55; color:var(--text-2) }
+.td-flowline{ width:26px; flex:none; display:grid; place-items:center; position:relative }
+.td-flowline i{ width:100%; height:1.5px; display:block;
+  background:linear-gradient(90deg, transparent, rgba(69,160,230,.6), transparent);
+  background-size:200% 100%; animation:jcShimmer 2.6s linear infinite }
+.td-cta{ position:relative; overflow:hidden }
+.td-cta-arrow{ font-style:normal; font-size:19px; color:var(--text-3); margin-left:auto;
+  transition:transform .18s var(--ease), color .18s var(--ease) }
+.td-cta:hover .td-cta-arrow{ transform:translateX(4px); color:var(--accent) }
+.td-jobs-badge{ min-width:20px; height:20px; padding:0 6px; border-radius:999px;
+  display:grid; place-items:center; margin-left:auto; font-size:10.5px; font-weight:750;
+  color:#0a0c10; background:var(--accent); animation:jcPulse 2s ease-in-out infinite }
+@media (max-width:1000px){
+  .td-stepper.v2{ flex-wrap:wrap; gap:8px }
+  .td-stepper.v2 .td-step{ flex:1 1 30% }
+  .td-flowline{ display:none }
+  .td-pop{ display:none } }
+@media (prefers-reduced-motion: reduce){ .td-flowline i, .td-jobs-badge{ animation:none } }
+
+/* ── BLOQUE 67b: neutralizar reglas heredadas que rompían el layout v2 ── */
+/* la lista v2 son FILAS auto-contenidas — el grid de tarjetas viejo las trituraba */
+.td-splats-wide{ display:block }
+/* el stepper viejo recortaba los popovers con overflow-x:auto */
+.td-stepper.v2{ overflow:visible; flex-wrap:nowrap }
+.td-stepper.v2 .td-step{ min-width:0 }

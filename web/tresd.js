@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=163';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=163';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=163';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=163';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=163';
-  import { mountSplatViewer } from '/splatview.js?v=163';
+  import * as THREE from '/vendor/three180.module.js?v=168';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=168';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=168';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=168';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=168';
+  import { mountSplatViewer } from '/splatview.js?v=168';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -109,18 +109,37 @@
         <button class="linklike" id="td-how">¿Cómo funciona?</button>
       </div>
       <div class="pb">
-        <div class="td-stepper">
-          ${[['film', 'Video', 'DJI + SRT'], ['pin', 'Frames + GPS', 'geotag'], ['map', 'ODM', 'SfM · DSM · orto'],
-             ['layers', 'Nube / Malla', 'visor'], ['spark', 'Splat', '<span id="td-splat-dev">Metal/MPS</span>'], ['ext', 'Publicar', 'share']]
-            .map(([ic, t, s], i, a) => `
-            <div class="td-step"><i>${icon(ic)}</i><b>${t}</b><span>${s}</span></div>
-            ${i < a.length - 1 ? '<div class="td-step-arrow">›</div>' : ''}`).join('')}
+        <div class="td-stepper v2">
+          ${[['film', 'Video', 'DJI + SRT', 'td-live-flights',
+              'MP4/MOV del dron con su .SRT al lado: el track GPS 1Hz viaja con el video y alimenta todo el geotag posterior.'],
+             ['pin', 'Frames + GPS', 'geotag exif', null,
+              'ffmpeg extrae frames con selección adaptativa (más densos donde la cámara gira) y exiftool escribe el GPS del SRT en cada JPG.'],
+             ['map', 'ODM', 'SfM · DSM · orto', 'td-live-models',
+              'OpenSfM reconstruye las cámaras (SfM), OpenMVS densifica con depthmaps, y salen malla texturizada, DSM de elevación y ortofoto georreferenciada.'],
+             ['layers', 'Nube / Malla', 'visores 3D', null,
+              'Nube de ~800k puntos con color real y malla texturizada — visor three.js con BVH, medición de distancias, áreas y volúmenes.'],
+             ['spark', 'Splat', '<span id="td-splat-dev">Metal/MPS</span>', 'td-live-splats',
+              'Gaussian splatting foto-realista: OpenSplat en la GPU Metal local, o gsplat CUDA en el nodo remoto — reflejos y vegetación que la malla no logra.'],
+             ['ext', 'Publicar', 'share + QA', null,
+              'Un gate de navegador real verifica que el asset renderiza (0 errores de consola) antes de publicar el link compartible.']]
+            .map(([ic, t, sub, liveId, pop], i, a) => `
+            <div class="td-step" tabindex="0">
+              <i>${icon(ic)}</i><b>${t}</b><span>${sub}</span>
+              ${liveId ? `<em class="td-live mono" id="${liveId}"></em>` : ''}
+              <div class="td-pop"><b>${t}</b><p>${pop}</p></div>
+            </div>
+            ${i < a.length - 1 ? '<div class="td-flowline"><i></i></div>' : ''}`).join('')}
         </div>
         <div class="td-actions">
           <button class="btn primary td-cta" id="btn-run3d" data-open-run3d>
-            ${icon('cube')}<span><b>Procesar un vuelo…</b><small>frames + geotag + fotogrametría · combina tomas del mismo lugar</small></span></button>
+            ${icon('cube')}<span><b>Procesar un vuelo…</b><small>frames + geotag + fotogrametría · combina tomas del mismo lugar</small></span>
+            <i class="td-cta-arrow">›</i></button>
           <button class="btn td-cta" id="btn-splat" data-open-splat>
-            ${icon('spark')}<span><b>Generar splat…</b><small>foto-realista sobre poses de un proyecto existente</small></span></button>
+            ${icon('spark')}<span><b>Generar splat…</b><small>foto-realista sobre poses de un proyecto existente · Metal o CUDA</small></span>
+            <i class="td-cta-arrow">›</i></button>
+          <button class="btn td-cta ghost" id="btn-jobs-status">
+            ${icon('activity')}<span><b>Estado de trabajos</b><small>cola, progreso y fases en vivo</small></span>
+            <em class="td-jobs-badge mono" id="td-jobs-badge" hidden></em></button>
         </div>
       </div>
     </div>
@@ -315,6 +334,34 @@
   });
   window.addEventListener('resize', () => setTimeout(moveTdInk, 30));
   setTimeout(moveTdInk, 30);
+
+  // popovers del stepper: hover en desktop (CSS) + tap/click en táctil — un solo abierto
+  document.querySelector('.td-stepper.v2')?.addEventListener('click', e => {
+    const step = e.target.closest('.td-step');
+    if (!step) return;
+    const was = step.classList.contains('pop-open');
+    document.querySelectorAll('.td-step.pop-open').forEach(x => x.classList.remove('pop-open'));
+    if (!was) step.classList.add('pop-open');
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.td-step'))
+      document.querySelectorAll('.td-step.pop-open').forEach(x => x.classList.remove('pop-open'));
+  }, { capture: true });
+
+  // badge de trabajos activos + botón de estado → tab Trabajos
+  (() => {
+    const badge = document.getElementById('td-jobs-badge');
+    const poll = async () => {
+      try {
+        const d = await (await fetch('/api/jobs')).json();
+        const n = (d.counts && (d.counts.active ?? d.counts.running)) ??
+          (d.jobs || []).filter(j => ['running', 'queued'].includes(j.status)).length;
+        if (badge) { badge.textContent = n; badge.hidden = !n; }
+      } catch {}
+    };
+    poll(); setInterval(poll, 30000);
+    document.getElementById('btn-jobs-status')?.addEventListener('click', () => showTdMod('jobs'));
+  })();
 
   // ── NODO GPU: chip vivo en la barra del pipeline + modal rico ──
   (() => {
@@ -718,6 +765,13 @@
   try { sys = await (await fetch('data/manifest/system.json')).json(); } catch { sysErr = true; }
   models = sys.models || [];
   const flights = await getFlights();
+  // contadores vivos del stepper — corren AQUÍ (flights/models/sys ya existen; arriba era TDZ)
+  (() => {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('td-live-flights', `${flights.filter(f => !f.archived).length} vuelos`);
+    set('td-live-models', `${models.length} modelos`);
+    set('td-live-splats', `${(sys.splats || []).filter(x => x.current).length} activos`);
+  })();
   function bboxFromCorners(corners) {
     if (!Array.isArray(corners) || !corners.length) return null;
     const lons = corners.map(p => Number(p?.[0])).filter(Number.isFinite);
