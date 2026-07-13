@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=148';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=148';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=148';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=148';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=148';
-  import { mountSplatViewer } from '/splatview.js?v=148';
+  import * as THREE from '/vendor/three180.module.js?v=149';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=149';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=149';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=149';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=149';
+  import { mountSplatViewer } from '/splatview.js?v=149';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -310,8 +310,9 @@
              ['DRIVER', d.driver || '—']]
             .map(([lb, v]) => `<div class="gn-cell"><span>${lb}</span><b>${v}</b></div>`).join('')}
         </div>
-        <p class="footer-note">Entrenos splat en CUDA: <b>lane en integración (F3)</b> — el nodo ya está
-        comisionado y verificado (gsplat 1.4.0, torch cu124). Gestión completa en la pestaña Sistema.</p>
+        <p class="footer-note">Lane CUDA <b>operativo y validado end-to-end</b> (gpu_lane.py):
+        dataset al PC por SSH, splatfacto 4000 iters en 138s, PLY de vuelta al Mac.
+        Integración al worker en curso — los trabajos CUDA lucirán su badge verde en Trabajos.</p>
         <div style="display:flex;gap:8px;margin-top:12px">
           ${awake ? '' : '<button class="btn" id="gnm-wake">Despertar (WoL)</button>'}
           <a class="btn ghost" href="system.html">Abrir Sistema</a>
@@ -679,7 +680,7 @@
           <span class="st-node-dot"></span>
           <span id="st-node-txt">nodo GPU · consultando…</span>
           <span class="spacer" style="flex:1"></span>
-          <span class="st-node-note">3D: ODM local · splat: Metal/MPS · CUDA remoto en integración</span>
+          <span class="st-node-note">3D: ODM local · splat: Metal/MPS · CUDA remoto validado (worker en curso)</span>
         </div>
         <div id="m-preflight"></div>
         <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
