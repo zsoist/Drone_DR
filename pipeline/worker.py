@@ -825,12 +825,74 @@ def run_3d(j: dict):
             try:
                 jobstore.enqueue("splat", cid, {"clip_id": cid,
                                  "preset": str(j["spec"].get("splat_preset") or "cinematic"),
+                                 "backend": j["spec"].get("splat_backend"),
                                  "best_available": j["spec"].get("best_available", True) is not False,
                                  "scene_id": j["spec"].get("scene_id"),
                                  "version_id": j["spec"].get("version_id") or cid})
                 print(f"  encolado gaussian splat para {cid} (phased)", flush=True)
             except Exception as e:
                 print(f"  no se pudo encolar el splat phased: {e}", flush=True)
+
+
+def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
+                   iters: int, downscale: int = 2) -> dict:
+    """Entrena el splat en el nodo CUDA (PC RTX 4060 Ti) vía gpu_lane y deja
+    tmp_out (.splat) listo para el publish normal. Lanza RuntimeError con la
+    causa real ante cualquier fallo — el caller decide el fallback a Metal.
+
+    Puente de poses: `opensfm export_colmap` dentro del contenedor ODM — gate
+    de precisión PASADO 11-jul (error de centros sub-GSD, media 3.6mm). El PLY
+    que vuelve se convierte a .splat con ply2splat (mismas transformaciones que
+    el export de OpenSplat), así crop/sog/align/viewer no notan la diferencia."""
+    import gpu_lane
+    from ply2splat import ply_to_splat
+
+    info = gpu_lane.probe()                      # nodo + kernels reales o excepción
+    jobstore.event(j["id"], "cuda_lane", f"nodo GPU verificado: torch {info['torch']} · "
+                   f"gsplat {info['gsplat']}", data=info)
+    # dataset COLMAP: export de poses + symlink de imágenes (scp resuelve symlinks)
+    ds = stage / "cuda-ds"
+    if ds.exists():
+        shutil.rmtree(ds)
+    ds.mkdir(parents=True)
+    (ds / "images").symlink_to(proj / "images")
+    r = subprocess.run([DOCKER, "run", "--rm", "-v", f"{proj}:/datasets/code",
+                        "--entrypoint", "/code/SuperBuild/install/bin/opensfm/bin/opensfm",
+                        "opendronemap/odm", "export_colmap", "/datasets/code/opensfm"],
+                       capture_output=True, text=True, timeout=900)
+    if r.returncode != 0:
+        raise RuntimeError(f"export_colmap falló: {(r.stderr or r.stdout)[-300:]}")
+    exported = next((d for d in [proj / "opensfm" / "colmap_export",
+                                 proj / "colmap_export"]
+                     if (d / "cameras.txt").exists()),
+                    None)
+    if exported is None:
+        hits = list(proj.rglob("cameras.txt"))
+        exported = hits[0].parent if hits else None
+    if exported is None:
+        raise RuntimeError("export_colmap no produjo cameras.txt en el proyecto")
+    sp = ds / "sparse" / "0"
+    sp.mkdir(parents=True)
+    for f in ("cameras.txt", "images.txt", "points3D.txt"):
+        shutil.copy2(exported / f, sp / f)
+
+    name = f"job-{j['id'].replace('_', '-')[:40]}"
+    jobstore.update(j["id"], detail=f"enviando dataset al nodo CUDA ({iters} iters)",
+                    stage="train", progress=0.15)
+    gpu_lane.ship_dataset(ds, name)
+    gpu_lane.prep_dataset(name, downscale)
+    jobstore.update(j["id"], detail=f"entrenando {iters} iters en NVIDIA CUDA (RTX 4060 Ti)",
+                    stage="train", progress=0.3)
+    m = gpu_lane.train(name, iters, downscale, timeout_s=2 * 3600)
+    jobstore.update(j["id"], detail="convirtiendo y publicando el splat CUDA",
+                    stage="publish", progress=0.8)
+    ply = gpu_lane.fetch(name, stage)
+    conv = ply_to_splat(ply, tmp_out)
+    ply.unlink()                                 # 100MB que ya no hacen falta
+    jobstore.event(j["id"], "cuda_trained",
+                   f"{iters} iters en {m['train_s']}s · {conv['gaussians']} gaussianas",
+                   data={**m, **conv})
+    return {**m, **conv}
 
 
 def run_splat(j: dict):
@@ -872,90 +934,121 @@ def run_splat(j: dict):
     effective = requested
     effective_d = 1
     backend = None
-    for attempt_no, policy in enumerate(attempt_plan, start=1):
-        effective = resolve_splat_spec({"preset": policy["preset"]})
-        effective_d = int(policy["d"])
-        iters = int(effective["iters"])
-        backend = choose_splat_backend(iters, force_cpu=bool(j["spec"].get("force_cpu")))
-        if not backend["bin"].exists():
-            raise RuntimeError(f"opensplat no está compilado: {backend['bin']}")
-        # tracker NUEVO por intento: el sidecar debe registrar el peak de la corrida
-        # que PUBLICÓ, no el máximo contaminado por los escalones OOM anteriores
-        peak = PeakTracker(adaptive_priority())
-        train_args = list(effective.get("train_args") or [])
-        if effective_d > 1:
-            train_args += ["-d", str(effective_d)]
-        if tmp_out.exists():
-            tmp_out.unlink()
-        label = (f"{effective['label']} · entrada {'-d ' + str(effective_d) if effective_d > 1 else 'completa'}"
-                 f" · intento {attempt_no}/{len(attempt_plan)}")
-        if attempt_no > 1:
-            jobstore.update(j["id"], status="running", finished=None,   # run_tracked ya marcó error
-                            detail=f"Sin memoria → {label} ({backend['device']})",
-                            stage="train", progress=0.1)
-            print(f"  OpenSplat OOM (-9) → {label}", flush=True)
-        else:
-            jobstore.update(j["id"], detail=f"{label} sobre {n_cams} cámaras ({backend['device']})",
-                            stage="train", progress=0.1)
-        jobstore.event(j["id"], "splat_attempt", label,
-                       level="warning" if attempt_no > 1 else "info",
-                       data={"attempt": attempt_no, "total_attempts": len(attempt_plan),
-                             "requested_preset": requested_key,
-                             "effective_preset": effective["key"], "d": effective_d,
-                             "reason": policy["reason"], "backend": backend["device"]})
-        attempt_start = time.time()
+    cuda_quality = None
+    if str(j["spec"].get("backend") or "").lower() == "cuda":
         try:
-            # --sh-degree-interval > iters: el salto de armónicos esféricos del step
-            # 1000 era lo que hacía divergir el loss a nan en CPU (3 corridas murieron
-            # justo después). El formato .splat ni siquiera exporta los coeficientes
-            # SH, así que entrenar solo el grado 0 no pierde nada y es estable.
-            rc = jobstore.run_tracked(j["id"],
-                opensplat_train_cmd(proj, tmp_out, iters, backend, train_args),
-                # tail=60 (default 12): OpenSplat termina con líneas de save/export — con tail
-                # corto el gate se quedaba SIN líneas 'Step' y saltaba los checks de convergencia
-                tail=60,
-                timeout=int(effective.get("timeout") or 4 * 3600), abort_re=r"Step \d+: nan",
-                progress_re=r"\((\d+)%\)",
-                env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)},
-                tick=peak)
-        except RuntimeError as e:
-            if "abortado" in str(e):
-                # una vez el loss es nan los pesos no se recuperan: seguir es quemar CPU
-                raise RuntimeError("el entrenamiento divergió (loss=nan) — se abortó para no quemar "
-                                   "horas de CPU. Reintenta: la inicialización aleatoria suele converger.")
-            raise
-        attempt_row = {"attempt": attempt_no, "preset": effective["key"], "d": effective_d,
-                       "reason": policy["reason"], "rc": rc,
-                       "duration_s": round(time.time() - attempt_start, 1),
-                       "peak_mib": peak.peak_mib, "peak_source": peak.peak_source}
-        attempts.append(attempt_row)
-        if rc == 0:
-            jobstore.event(j["id"], "splat_attempt_succeeded",
-                           f"{effective['label']} -d {effective_d} completó",
-                           data={**attempt_row, "requested_preset": requested_key,
-                                 "backend": backend["device"]})
-        else:
-            jobstore.event(j["id"], "splat_attempt_failed",
-                           f"{effective['label']} -d {effective_d} terminó con rc={rc}"
-                           + (" (OOM)" if rc == -9 else ""),
-                           level="warning" if rc == -9 and attempt_no < len(attempt_plan) else "error",
-                           data={**attempt_row, "requested_preset": requested_key,
-                                 "backend": backend["device"], "will_retry":
-                                 bool(rc == -9 and attempt_no < len(attempt_plan))})
-        if rc == -9 and attempt_no < len(attempt_plan) and not _cancelled(j["id"]):
-            perf.log_error("opensplat-oom", f"OOM en intento {attempt_no} ({effective['key']} -d{effective_d})",
-                           ctx={"cid": cid, "requested_preset": requested_key,
-                                "effective_preset": effective["key"], "attempt": attempt_no,
-                                "d": effective_d,
-                                "peak_mib": peak.peak_mib, "peak_source": peak.peak_source,
-                                "cap_mib": OPENSPLAT_MEMORY_MIB})
-            continue
-        break
+            iters = int(requested["iters"])
+            cm = run_splat_cuda(j, proj, cid, stage, tmp_out, iters)
+            rc, effective_d = 0, 2
+            backend = {"device": "NVIDIA CUDA",
+                       "note": f"{iters} iters en RTX 4060 Ti remota ({cm['train_s']}s)"}
+            attempts = [{"attempt": 1, "preset": requested_key, "d": 2,
+                         "reason": "cuda-lane", "rc": 0,
+                         "duration_s": cm["train_s"], "peak_mib": 0,
+                         "peak_source": "remote"}]
+            size = tmp_out.stat().st_size
+            reasons = []
+            if size < 200_000:
+                reasons.append(f"archivo muy pequeño ({size} bytes) — escena insuficiente")
+            if n_cams < 8:
+                reasons.append(f"solo {n_cams} cámaras — vuela una órbita con más solape (>=8)")
+            # rc=0 con quit-on-train-completion = TODAS las iteraciones corrieron;
+            # splatfacto no emite líneas Step parseables — loss final honesto: None
+            cuda_quality = {"passed": not reasons, "reason": " · ".join(reasons) or "ok",
+                            "bytes": size, "cameras": n_cams, "final_loss": None,
+                            "last_step": iters, "steps_logged": 0, "target_iters": iters}
+        except Exception as e:
+            jobstore.event(j["id"], "cuda_fallback",
+                           f"lane CUDA falló → Metal/MPS local: {str(e)[:260]}",
+                           level="warning")
+            jobstore.update(j["id"], detail="nodo CUDA no disponible → entrenando local (Metal/MPS)",
+                            stage="train", progress=0.1)
+            cuda_quality = None
+    if cuda_quality is None:
+      for attempt_no, policy in enumerate(attempt_plan, start=1):
+          effective = resolve_splat_spec({"preset": policy["preset"]})
+          effective_d = int(policy["d"])
+          iters = int(effective["iters"])
+          backend = choose_splat_backend(iters, force_cpu=bool(j["spec"].get("force_cpu")))
+          if not backend["bin"].exists():
+              raise RuntimeError(f"opensplat no está compilado: {backend['bin']}")
+          # tracker NUEVO por intento: el sidecar debe registrar el peak de la corrida
+          # que PUBLICÓ, no el máximo contaminado por los escalones OOM anteriores
+          peak = PeakTracker(adaptive_priority())
+          train_args = list(effective.get("train_args") or [])
+          if effective_d > 1:
+              train_args += ["-d", str(effective_d)]
+          if tmp_out.exists():
+              tmp_out.unlink()
+          label = (f"{effective['label']} · entrada {'-d ' + str(effective_d) if effective_d > 1 else 'completa'}"
+                   f" · intento {attempt_no}/{len(attempt_plan)}")
+          if attempt_no > 1:
+              jobstore.update(j["id"], status="running", finished=None,   # run_tracked ya marcó error
+                              detail=f"Sin memoria → {label} ({backend['device']})",
+                              stage="train", progress=0.1)
+              print(f"  OpenSplat OOM (-9) → {label}", flush=True)
+          else:
+              jobstore.update(j["id"], detail=f"{label} sobre {n_cams} cámaras ({backend['device']})",
+                              stage="train", progress=0.1)
+          jobstore.event(j["id"], "splat_attempt", label,
+                         level="warning" if attempt_no > 1 else "info",
+                         data={"attempt": attempt_no, "total_attempts": len(attempt_plan),
+                               "requested_preset": requested_key,
+                               "effective_preset": effective["key"], "d": effective_d,
+                               "reason": policy["reason"], "backend": backend["device"]})
+          attempt_start = time.time()
+          try:
+              # --sh-degree-interval > iters: el salto de armónicos esféricos del step
+              # 1000 era lo que hacía divergir el loss a nan en CPU (3 corridas murieron
+              # justo después). El formato .splat ni siquiera exporta los coeficientes
+              # SH, así que entrenar solo el grado 0 no pierde nada y es estable.
+              rc = jobstore.run_tracked(j["id"],
+                  opensplat_train_cmd(proj, tmp_out, iters, backend, train_args),
+                  # tail=60 (default 12): OpenSplat termina con líneas de save/export — con tail
+                  # corto el gate se quedaba SIN líneas 'Step' y saltaba los checks de convergencia
+                  tail=60,
+                  timeout=int(effective.get("timeout") or 4 * 3600), abort_re=r"Step \d+: nan",
+                  progress_re=r"\((\d+)%\)",
+                  env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)},
+                  tick=peak)
+          except RuntimeError as e:
+              if "abortado" in str(e):
+                  # una vez el loss es nan los pesos no se recuperan: seguir es quemar CPU
+                  raise RuntimeError("el entrenamiento divergió (loss=nan) — se abortó para no quemar "
+                                     "horas de CPU. Reintenta: la inicialización aleatoria suele converger.")
+              raise
+          attempt_row = {"attempt": attempt_no, "preset": effective["key"], "d": effective_d,
+                         "reason": policy["reason"], "rc": rc,
+                         "duration_s": round(time.time() - attempt_start, 1),
+                         "peak_mib": peak.peak_mib, "peak_source": peak.peak_source}
+          attempts.append(attempt_row)
+          if rc == 0:
+              jobstore.event(j["id"], "splat_attempt_succeeded",
+                             f"{effective['label']} -d {effective_d} completó",
+                             data={**attempt_row, "requested_preset": requested_key,
+                                   "backend": backend["device"]})
+          else:
+              jobstore.event(j["id"], "splat_attempt_failed",
+                             f"{effective['label']} -d {effective_d} terminó con rc={rc}"
+                             + (" (OOM)" if rc == -9 else ""),
+                             level="warning" if rc == -9 and attempt_no < len(attempt_plan) else "error",
+                             data={**attempt_row, "requested_preset": requested_key,
+                                   "backend": backend["device"], "will_retry":
+                                   bool(rc == -9 and attempt_no < len(attempt_plan))})
+          if rc == -9 and attempt_no < len(attempt_plan) and not _cancelled(j["id"]):
+              perf.log_error("opensplat-oom", f"OOM en intento {attempt_no} ({effective['key']} -d{effective_d})",
+                             ctx={"cid": cid, "requested_preset": requested_key,
+                                  "effective_preset": effective["key"], "attempt": attempt_no,
+                                  "d": effective_d,
+                                  "peak_mib": peak.peak_mib, "peak_source": peak.peak_source,
+                                  "cap_mib": OPENSPLAT_MEMORY_MIB})
+              continue
+          break
     if rc != 0:
         raise RuntimeError(f"opensplat salió con código {rc}"
                            + (" (sin memoria en todos los intentos permitidos)"
                               if rc == -9 else ""))
-    quality = splat_quality(tmp_out, (jobstore.get(j["id"]) or {}).get("log", ""),
+    quality = cuda_quality or splat_quality(tmp_out, (jobstore.get(j["id"]) or {}).get("log", ""),
                             n_cams, int(effective["iters"]))
     quality.update({
         "preset": effective["key"],
@@ -963,7 +1056,9 @@ def run_splat(j: dict):
         "requested_preset": requested_key,
         "effective_preset": effective["key"],
         "input_scale": effective_d,
-        "fallback": requested_key != effective["key"] or effective_d != 1,
+        # en el lane CUDA -d2 es la config de diseño, no la escalera OOM de Metal:
+        # solo cuenta como fallback lo que degradó respecto a lo pedido
+        "fallback": (requested_key != effective["key"] or effective_d != 1) if cuda_quality is None else False,
         "attempts": attempts,
         "backend": backend["device"],
         "backend_note": backend["note"],
