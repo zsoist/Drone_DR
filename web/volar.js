@@ -4,27 +4,27 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=132';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=132';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=132';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=132';
-import { createRecorder } from '/flightverse/recorder.js?v=132';
-import { createAudio } from '/flightverse/audio.js?v=132';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=132';
-import { createTouchSticks } from '/flightverse/touch.js?v=132';
-import { createSky } from '/flightverse/sky.js?v=132';
-import { loadSceneObjects } from '/flightverse/objects.js?v=132';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=132';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=132';
-import CameraControls from '/vendor/camera-controls.module.js?v=132';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=132';
+import * as THREE from '/flightverse/three.js?v=136';
+import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=136';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=136';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=136';
+import { createRecorder } from '/flightverse/recorder.js?v=136';
+import { createAudio } from '/flightverse/audio.js?v=136';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=136';
+import { createTouchSticks } from '/flightverse/touch.js?v=136';
+import { createSky } from '/flightverse/sky.js?v=136';
+import { loadSceneObjects } from '/flightverse/objects.js?v=136';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=136';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=136';
+import CameraControls from '/vendor/camera-controls.module.js?v=136';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=136';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=132';
+} from '/vendor/postprocessing180.module.js?v=136';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -35,7 +35,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=132';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=136';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -481,9 +481,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=132', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=136', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=132');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=136');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -638,8 +638,7 @@ async function main() {
       shake.fov = Math.max(shake.fov || 0, Math.min(7, (26 * big) / (4 + d)));
     },
   });
-  report.weaponState = { weapon: weapons.state.weapon, cool: +weapons.state.cool.toFixed(2),
-    ammo: Object.fromEntries(Object.entries(weapons.state.ammo).map(([k2, n2]) => [k2, Math.floor(n2)])) };   // NUNCA el estado entero: misiles/partículas llevan meshes (27MB, rompía la serialización CDP del gate)
+  // report.weaponState se escribe VIVO en el loop (aquí era snapshot de boot)
   // retícula de impacto: simula la balística y marca dónde caerá el misil
   const aim = new THREE.Group();
   {
@@ -720,8 +719,8 @@ async function main() {
     document.querySelectorAll('#vl-weps button').forEach(b =>
       b.classList.toggle('sel', b.dataset.w === k));
   };
-  $('#vl-weps').addEventListener('click', e => {
-    const b = e.target.closest('button[data-w]');
+  document.addEventListener('pointerdown', e => {
+    const b = e.target.closest('#vl-weps button[data-w]');
     if (b) setWeapon(b.dataset.w);
   });
   const sticks = createTouchSticks($('#vl-hud'));
@@ -844,6 +843,12 @@ async function main() {
     setMobileSheet('combat', !$('#vl-combat').classList.contains('open')));
   $('#vl-dock-close').addEventListener('click', () => setMobileSheet('menu', false));
   $('#vl-combat-close').addEventListener('click', () => setMobileSheet('combat', false));
+  // tap FUERA de un sheet abierto lo cierra (escape universal en táctil)
+  document.addEventListener('pointerdown', e => {
+    if (!document.body.classList.contains('vl-mobile-sheet-open')) return;
+    if (e.target.closest('.vl-dock, .vl-combat, .vl-fab, .vl-combat-fab')) return;
+    setMobileSheet('menu', false);
+  }, { capture: true });
   addEventListener('keydown', e => {
     if (e.key === 'Escape' && document.body.classList.contains('vl-mobile-sheet-open'))
       setMobileSheet('', false);
@@ -1432,6 +1437,8 @@ async function main() {
         invasion.update(wdt, P);
         report.invasion = { on: invasion.state.on, wave: invasion.state.wave, alive: invasion.state.alive, killed: invasion.state.killed };
         report.weapons = { fired: weapons.state.fired, exploded: weapons.state.exploded };
+        report.weaponState = { weapon: weapons.state.weapon, cool: +weapons.state.cool.toFixed(2),
+          ammo: Object.fromEntries(Object.entries(weapons.state.ammo).map(([k2, n2]) => [k2, Math.floor(n2)])) };
         if (invasion.state.on) {
           $('#vl-zwave').textContent = `OLEADA ${invasion.state.wave || 1}`;
           $('#vl-zkill').textContent = `${invasion.state.killed} abatidos · ${invasion.state.alive} activos`;

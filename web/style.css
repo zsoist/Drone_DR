@@ -4181,7 +4181,7 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   .vl-minimap{ left:50%; right:auto; bottom:calc(28px + env(safe-area-inset-bottom));
     transform:translateX(-50%); width:92px; height:92px }
   .vl-mobile-sheet-open .vl-fab,.vl-mobile-sheet-open .vl-combat-fab{
-    opacity:0; pointer-events:none; transform:translateY(8px) }
+    opacity:.92 }   /* siguen vivos: re-tap = cerrar (matarlos dejaba sheets sin salida) */
   .vl-mobile-sheet-open .vl-flight-status{ opacity:0 }
 }
 
@@ -4255,9 +4255,16 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   .vl-metric span{ font-size:21px }
   .vl-stick-base{ width:132px; height:132px }
   .vl-stick-nub{ width:58px; height:58px }
-  .vl-fire,.vl-weps button{ touch-action:none }
+  .vl-fire{ touch-action:none }   /* SOLO fire (pointerdown); en los demás mataba el click */
 }
 @media (pointer:coarse) and (min-width:900px){
   .vl-stick-base{ width:156px; height:156px }
   .vl-stick-nub{ width:66px; height:66px }
 }
+
+/* ── BLOQUE 54: los sheets y sus cierres SIEMPRE reciben input ──
+   El HUD es pointer-events:none y los paneles del refactor nunca optaron
+   de vuelta: se podía abrir (FAB fixed con auto) pero NADA dentro — ni
+   Cerrar — recibía taps. Una regla lo cura para todo el árbol del panel. */
+.vl-dock,.vl-combat,.vl-dock-head,.vl-dock-head button{ pointer-events:auto }
+.vl-dock-head button{ min-height:44px; min-width:64px; touch-action:manipulation }

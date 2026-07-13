@@ -364,3 +364,23 @@ mando real, minimapa MapLibre opcional.
 - Micro-fixes: chip ammo pintaba [object Object] desde doFire (el loop ya
   pinta por arma); report.weapons vivo en el loop (estaba congelado en el
   snapshot del autotest).
+
+## v136 (2026-07-13) — táctil: cierres desbloqueados + arsenal por tacto
+- 'NO PUEDO CERRAR NADA' (iPad/móvil), tres causas apiladas:
+  (1) al abrir un sheet, los FABs morían (opacity:0 + pointer-events:none del
+  refactor) Y el panel/Cerrar nunca optó de vuelta del pointer-events:none del
+  HUD → cero vías de cierre. Fix: BLOQUE 54 (.vl-dock/.vl-combat/head/botones
+  pointer-events:auto), FABs siempre vivos como toggle, y tap-fuera-cierra
+  universal (document pointerdown capture).
+  (2) touch-action:none en los botones de arma mataba el click sintetizado →
+  selector muerto. Fix: touch-action solo en FIRE; selector por pointerdown
+  con DELEGACIÓN a documento (sobrevive re-renders del panel).
+  (3) mi resumen v132 de report.weaponState quedó FUERA del loop (sitio
+  original del refactor = boot-time) → snapshot congelado: el arma siempre
+  leía 'm' y la munición llena — dos rondas de debugging perseguían un bug
+  del TERMÓMETRO, no del juego. Movido al loop (vivo).
+- Verificación táctil E2E (CDP touch): Cerrar ✓, FAB re-tap ✓, tap fuera ✓,
+  seleccionar L ✓, disparar L (3→2) ✓, 0 errores.
+- LECCIÓN: cuando el instrumento dice 'roto' pero la mecánica se ve sana,
+  verifica el instrumento — selApplied:true con weapon:'m' era imposible
+  salvo snapshot congelado.
