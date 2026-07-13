@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=136';
+import * as THREE from '/flightverse/three.js?v=139';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -208,9 +208,16 @@ export function createDrone({ heightAt, collide, spawn }) {
     // viento determinista (replay-safe): rachas suaves de ~1.2 m/s que
     // derivan el hover como un Flip real; el drag del modo lo compensa
     d._t += dt;
-    const wx = Math.sin(d._t * 0.13 + 1.7) + Math.sin(d._t * 0.041) * 0.6;
-    const wz = Math.cos(d._t * 0.09) + Math.sin(d._t * 0.023 + 0.8) * 0.5;
-    d.vel.x += wx * 0.5 * dt; d.vel.z += wz * 0.5 * dt;
+    // GPS-hold honesto: un dron real con sticks sueltos SE QUEDA (position
+    // hold); el viento solo se siente en movimiento. Sin esto, en iPad el
+    // hover derivaba a la izquierda sin tocar nada.
+    const flying = Math.abs(inp.fwd) + Math.abs(inp.strafe) + Math.abs(inp.lift) > 0.05
+      || d.vel.length() > 2;
+    if (flying) {
+      const wx = Math.sin(d._t * 0.13 + 1.7) + Math.sin(d._t * 0.041) * 0.6;
+      const wz = Math.cos(d._t * 0.09) + Math.sin(d._t * 0.023 + 0.8) * 0.5;
+      d.vel.x += wx * 0.5 * dt; d.vel.z += wz * 0.5 * dt;
+    }
 
     d.distance += d.vel.length() * dt;
     d.pos.addScaledVector(d.vel, dt);

@@ -4,27 +4,27 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=136';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=136';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=136';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=136';
-import { createRecorder } from '/flightverse/recorder.js?v=136';
-import { createAudio } from '/flightverse/audio.js?v=136';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=136';
-import { createTouchSticks } from '/flightverse/touch.js?v=136';
-import { createSky } from '/flightverse/sky.js?v=136';
-import { loadSceneObjects } from '/flightverse/objects.js?v=136';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=136';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=136';
-import CameraControls from '/vendor/camera-controls.module.js?v=136';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=136';
+import * as THREE from '/flightverse/three.js?v=139';
+import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=139';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=139';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=139';
+import { createRecorder } from '/flightverse/recorder.js?v=139';
+import { createAudio } from '/flightverse/audio.js?v=139';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=139';
+import { createTouchSticks } from '/flightverse/touch.js?v=139';
+import { createSky } from '/flightverse/sky.js?v=139';
+import { loadSceneObjects } from '/flightverse/objects.js?v=139';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=139';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=139';
+import CameraControls from '/vendor/camera-controls.module.js?v=139';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=139';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=136';
+} from '/vendor/postprocessing180.module.js?v=139';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -35,7 +35,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=136';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=139';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -481,9 +481,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=136', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=139', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=136');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=139');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -1500,7 +1500,9 @@ async function main() {
       $('#vl-spd').textContent = spd.toFixed(1);
       $('#vl-spd-b').style.transform = `scaleX(${Math.min(1, spd / 40)})`;
       $('#vl-agl-b').style.transform = `scaleX(${drone.agl == null ? 0 : Math.min(1, drone.agl / 160)})`;
-      $('#vl-fps').textContent = `${Math.round(loop.fps() || 0)} fps`;
+      const fpsNow = Math.round(loop.fps() || 0);
+      $('#vl-fps').textContent = `${fpsNow} fps`;
+      $('#vl-fps').classList.toggle('low', fpsNow > 0 && fpsNow < 45);
       if (recorder.recording) recBtn.textContent = `■ REC ${recorder.seconds.toFixed(0)}s`;
       {
         // oído en la cámara: distancia y paneo del dron relativo al rig activo
@@ -1584,16 +1586,11 @@ async function main() {
   // las texturas viewer de la malla son downscales: extra+ sube a los ATLAS
   // ORIGINALES del geo (~90MB, perezoso one-shot — mismo principio que
   // ortho_full: el supersampling no inventa textura)
-  let meshTexMax = false;
-  const upgradeMeshTex = k2 => {
-    if (meshTexMax || !visualMesh || !man.assets?.mesh_mtl_geo) return;
-    if (!['extra', '4k', 'ultra'].includes(k2)) return;
-    meshTexMax = true;
-    $('#vl-scene').textContent = `${man.name} · texturas máximas…`;
-    visualMesh.upgradeTextures(man.assets.mesh_mtl_geo)
-      .then(() => { $('#vl-scene').textContent = `${man.name} · malla fotogramétrica · máx`; report.meshTexMax = true; })
-      .catch(() => { $('#vl-scene').textContent = `${man.name} · malla fotogramétrica`; });
-  };
+  // tier geo RETIRADO con causa: 73 atlas de 4096² = 6.5GB de VRAM sin
+  // comprimir — con el framebuffer de 4K/ultra, Metal desaloja texturas y la
+  // malla se pinta NEGRA a parches. vtx (2048², 1.6GB) es el techo sano hasta
+  // tener KTX2/basis comprimido en GPU. upgradeMeshTex queda no-op.
+  const upgradeMeshTex = () => {};
   const setCalidad = k => {
     calidad = k;
     const c = CALIDADES[k];

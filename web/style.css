@@ -4268,3 +4268,23 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
    Cerrar — recibía taps. Una regla lo cura para todo el árbol del panel. */
 .vl-dock,.vl-combat,.vl-dock-head,.vl-dock-head button{ pointer-events:auto }
 .vl-dock-head button{ min-height:44px; min-width:64px; touch-action:manipulation }
+
+/* ── BLOQUE 55: combate sin overlap + chip FPS premium ── */
+.vl-fire{ width:auto; min-width:72px; height:64px; border-radius:20px; padding:0 16px;
+  flex-direction:row; gap:8px }
+.vl-fire svg{ flex:none }
+.vl-fire strong{ font:800 11px var(--mono); letter-spacing:.1em }
+.vl-fire #vl-ammo{ font:700 12px var(--mono); padding:2px 7px; border-radius:8px;
+  background:rgba(255,255,255,.08) }
+.vl-combat{ padding-right:4px }
+.vl-corner.br{ align-items:flex-end; gap:8px }
+.vl-combat{ margin-bottom:8px; order:9 }   /* combate al fondo: ghost/fps arriba, sin solaparse */
+.vl-fps{ font:700 11px var(--mono); color:#B7C2D0; letter-spacing:.06em;
+  font-variant-numeric:tabular-nums; padding:6px 12px; border-radius:10px;
+  border:1px solid rgba(255,255,255,.1); display:inline-flex; align-items:center; gap:7px;
+  background:linear-gradient(160deg, rgba(23,29,38,.8), rgba(10,12,16,.74));
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px) }
+.vl-fps::before{ content:''; width:7px; height:7px; border-radius:50%;
+  background:#52C79A; box-shadow:0 0 8px rgba(82,199,154,.8) }
+.vl-fps.low::before{ background:#E0A458; box-shadow:0 0 8px rgba(224,164,88,.8) }
+@media (pointer:coarse){ .vl-fire{ height:72px } }

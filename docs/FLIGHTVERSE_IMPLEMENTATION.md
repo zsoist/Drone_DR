@@ -384,3 +384,21 @@ mando real, minimapa MapLibre opcional.
 - LECCIÓN: cuando el instrumento dice 'roto' pero la mecánica se ve sana,
   verifica el instrumento — selApplied:true con weapon:'m' era imposible
   salvo snapshot congelado.
+
+## v139 (2026-07-13) — parches negros de 4K/ultra + drift iPad + pulido HUD
+- PARCHES NEGROS en 4K/ultra (y el baile de reloads): el tier geo eran 73
+  atlas de 4096² = 6.5GB de VRAM sin comprimir — con el framebuffer 4×,
+  Metal desalojaba texturas y la malla se pintaba negra a parches; el orden
+  de carga decidía cuáles sobrevivían (por eso 'a veces funcionaba').
+  Tier geo RETIRADO con causa; vtx 2048² (1.6GB) es el techo sano hasta
+  tener KTX2/basis. Calidades extra+ = supersampling + anisotropía (bordes),
+  no más texel — documentado.
+- DRIFT a la izquierda en iPad: era el viento determinista empujando en
+  hover. GPS-hold honesto: sin input y a baja velocidad, el dron SE QUEDA
+  (como un dron real con sticks sueltos); el viento vuelve al moverse.
+- DISPARAR: de círculo desbordado a píldora horizontal (icono + label +
+  badge de munición), order:9 en la columna (ghost/fps ya no lo pisan).
+- Chip FPS premium: glass, tabular nums, punto de estado (verde / ámbar
+  <45fps).
+- Verificación: cenital ultra sin vacíos (PIL 15.3% oscuro = sombras
+  legítimas), gates 42/25fps según rig, 0 errores.
