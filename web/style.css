@@ -4350,7 +4350,7 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   border:1px solid rgba(255,255,255,.08) }
 .gn-cell span{ display:block; font:600 9px var(--mono); color:var(--text-3);
   letter-spacing:.12em; margin-bottom:3px }
-.gn-cell b{ font:700 15px var(--mono); color:var(--text-1); font-variant-numeric:tabular-nums }
+.gn-cell b{ font:700 15px var(--mono); color:var(--text); font-variant-numeric:tabular-nums }
 .gn-bar{ display:block; height:3px; border-radius:99px; background:rgba(255,255,255,.08);
   margin-top:7px; overflow:hidden }
 .gn-bar b{ display:block; height:100%; border-radius:99px;
@@ -4360,7 +4360,7 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   font:600 11px var(--mono); color:var(--text-2); letter-spacing:.04em;
   border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04);
   transition:all .16s var(--ease) }
-.td-gpu-chip:hover{ color:var(--text-1); border-color:rgba(69,160,230,.45);
+.td-gpu-chip:hover{ color:var(--text); border-color:rgba(69,160,230,.45);
   box-shadow:0 4px 16px -8px rgba(69,160,230,.5) }
 .td-gpu-chip b.ok{ color:#7dffc9 } .td-gpu-chip b.dim{ color:var(--text-3) }
 
@@ -4375,7 +4375,7 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   border:1px solid rgba(255,255,255,.14); background:rgba(10,12,16,.78);
   -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
   transition:color .16s var(--ease), border-color .16s var(--ease) }
-.st-map-toggle:hover{ color:var(--text-1); border-color:rgba(69,160,230,.5) }
+.st-map-toggle:hover{ color:var(--text); border-color:rgba(69,160,230,.5) }
 .st-grid.map-hidden .st-map-toggle{ opacity:1; pointer-events:auto;
   position:fixed; left:auto }
 .pc-gps{ font-size:9px; color:#7dffc9; letter-spacing:.06em; display:inline-flex;
@@ -4397,3 +4397,48 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 .mpreset:hover{ transform:translateY(-2px) }
 .mpreset.on{ box-shadow:0 0 0 1px rgba(69,160,230,.45), 0 10px 28px -14px rgba(69,160,230,.55) }
 @media (max-width:860px){ .st-grid.map-hidden{ grid-template-columns:1fr } }
+
+/* ── BLOQUE 59: Trabajos premium — cejilla, backend badges, animaciones 60fps ── */
+.job-card{ animation:riseIn .28s var(--ease) backwards;
+  transition:transform .16s var(--ease), border-color .2s var(--ease), box-shadow .2s var(--ease) }
+.job-card:nth-child(1){animation-delay:.02s}.job-card:nth-child(2){animation-delay:.06s}
+.job-card:nth-child(3){animation-delay:.1s}.job-card:nth-child(4){animation-delay:.14s}
+.job-card:nth-child(5){animation-delay:.18s}
+.job-card:hover{ transform:translateY(-1px); border-color:rgba(255,255,255,.16);
+  box-shadow:0 10px 30px -18px rgba(0,0,0,.8) }
+.job-card[data-status="running"]{ border-color:rgba(69,160,230,.35);
+  box-shadow:0 0 0 1px rgba(69,160,230,.12), 0 8px 28px -18px rgba(69,160,230,.4) }
+.jc-eyebrow{ display:flex; align-items:center; gap:7px; margin-bottom:5px;
+  font-size:9.5px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-3) }
+.jc-eyebrow svg.ic{ width:13px; height:13px }
+.jc-eyebrow .spacer{ flex:1 }
+.job-card .jc-title{ font-size:14px; font-weight:680; letter-spacing:-.01em;
+  white-space:normal; line-height:1.35 }
+.jc-backend{ display:inline-flex; align-items:center; gap:5px; padding:3px 10px;
+  border-radius:999px; font-size:9.5px; font-weight:750; letter-spacing:.08em; flex:none }
+.jc-backend svg{ width:12px; height:12px }
+.jc-backend.cuda{ color:#9ADE2E; background:rgba(118,185,0,.13); border:1px solid rgba(118,185,0,.35) }
+.jc-backend.metal{ color:#DDE4EE; background:rgba(200,214,235,.09); border:1px solid rgba(200,214,235,.24) }
+.jc-backend.cpu{ color:var(--text-3); background:var(--surface); border:1px solid var(--line) }
+.jc-pulse{ width:6px; height:6px; border-radius:50%; background:currentColor;
+  display:inline-block; margin-right:6px; animation:jcPulse 1.4s ease-in-out infinite }
+@keyframes jcPulse{ 0%,100%{opacity:1; transform:scale(1)} 50%{opacity:.35; transform:scale(.72)} }
+.job-card .jc-bar{ position:relative }
+.job-card .jc-bar > div{ position:relative; overflow:hidden }
+.job-card .jc-bar > div::after{ content:''; position:absolute; inset:0;
+  background:linear-gradient(100deg, transparent 25%, rgba(255,255,255,.28) 50%, transparent 75%);
+  animation:jcShimmer 1.8s linear infinite }
+@keyframes jcShimmer{ from{transform:translateX(-100%)} to{transform:translateX(100%)} }
+.job-card .jc-facts{ display:flex; flex-wrap:wrap; gap:6px; margin-top:9px }
+.job-card .jc-facts span{ font-size:10.5px; color:var(--text-2); padding:3px 10px;
+  border-radius:999px; background:var(--surface); border:1px solid var(--line);
+  font-variant-numeric:tabular-nums }
+.job-card .jc-quality{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px }
+.job-card .jc-quality span{ font-size:10.5px; color:var(--text-2); padding:3px 10px;
+  border-radius:999px; background:color-mix(in srgb, var(--accent-dim) 55%, transparent);
+  border:1px solid rgba(69,160,230,.22) }
+.job-card .jc-quality b{ color:var(--text); font-weight:650 }
+.job-card .jc-log:hover{ color:var(--text-2); background:color-mix(in srgb, var(--surface) 80%, var(--accent-dim)) }
+@media (prefers-reduced-motion: reduce){
+  .job-card, .jc-pulse, .job-card .jc-bar > div::after{ animation:none } }

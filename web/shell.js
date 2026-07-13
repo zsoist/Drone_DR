@@ -195,6 +195,14 @@ function presetLabel(value) {
   return ({ rapido: 'Rápido', estandar: 'Estándar', alta: 'Alta', extra: 'Extra',
     ultra: 'Ultra', medium: 'Medium', cinematic: 'Cinemático', fast: 'Fast' })[value] || value || '—';
 }
+function backendBadge(backend) {
+  if (!backend) return '';
+  const b = String(backend);
+  const kind = /cuda|nvidia/i.test(b) ? 'cuda' : /metal|mps/i.test(b) ? 'metal' : 'cpu';
+  const label = { cuda: 'NVIDIA CUDA', metal: 'Apple Metal', cpu: 'CPU' }[kind];
+  const chip = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6 4V1.5M10 4V1.5M6 14.5V12M10 14.5V12M4 6H1.5M4 10H1.5M14.5 6H12M14.5 10H12"/></svg>';
+  return `<span class="jc-backend ${kind}" title="Backend de cómputo: ${esc(b)}">${chip}${label}</span>`;
+}
 function jobCard(j, flightsIdx, entering = true) {
   const meta = KIND_META[j.kind] || { ic: 'activity', name: j.kind };
   const f = flightsIdx?.[j.label];
@@ -217,14 +225,16 @@ function jobCard(j, flightsIdx, entering = true) {
     j.photo_count ? `${j.photo_count} foto${j.photo_count === 1 ? '' : 's'}` : '',
     j.product_mode ? String(j.product_mode).replaceAll('_', ' ') : '',
     j.iterations ? `${j.iterations >= 1000 && j.iterations % 1000 === 0 ? `${j.iterations / 1000}k` : j.iterations} iteraciones` : '',
-    j.backend || '',
     j.peak_mib ? `pico ${j.peak_mib} MiB${j.memory_cap_mib ? ` / ${j.memory_cap_mib}` : ''}` : '',
   ].filter(Boolean);
-  const search = `${titleText} ${j.kind} ${j.status} ${j.detail || ''} ${quality.join(' ')}`.toLowerCase();
+  const search = `${titleText} ${j.kind} ${j.status} ${j.backend || ''} ${j.detail || ''} ${quality.join(' ')}`.toLowerCase();
   return `
   <article class="job-card${entering ? '' : ' upd'}" data-jid="${esc(j.id)}" data-kind="${esc(j.kind)}" data-status="${esc(j.status)}" data-search="${esc(search)}">
-    <div class="jc-head">${icon(meta.ic)}<span class="jc-title">${title}</span>
-      <span class="jc-status ${esc(j.status)}${j.fallback ? ' fallback' : ''}">${esc(outcomeLabel)}${pct != null && j.status === 'running' ? ` ${pct}%` : ''}</span></div>
+    <div class="jc-eyebrow">${icon(meta.ic)}<span>${esc(meta.name)}</span>
+      <span class="spacer"></span>
+      ${backendBadge(j.backend)}
+      <span class="jc-status ${esc(j.status)}${j.fallback ? ' fallback' : ''}">${['running','queued'].includes(j.status) ? '<i class="jc-pulse"></i>' : ''}${esc(outcomeLabel)}${pct != null && j.status === 'running' ? ` ${pct}%` : ''}</span></div>
+    <div class="jc-head"><span class="jc-title">${esc(subject)}</span></div>
     ${quality.length ? `<div class="jc-quality">${quality.join('')}</div>` : ''}
     ${['running', 'queued'].includes(j.status) ? `
       ${j.kind === '3d' ? (() => {
