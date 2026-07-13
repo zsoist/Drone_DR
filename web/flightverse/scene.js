@@ -3,9 +3,9 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=125';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=125';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=125';
+import * as THREE from '/flightverse/three.js?v=129';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=129';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=129';
 
 export async function loadManifest(cid) {
   const id = String(cid || '').replace(/[^\w-]/g, '');
@@ -147,9 +147,12 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
 // escena real), no las 73 páginas 4K originales.
 export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}) {
   const objUrl = man.assets?.mesh_viewer;
-  // tier de texturas: móvil → low (3MB); desktop → viewer/vth (8MB, nítido)
+  // tier de texturas: móvil → low (3MB); desktop → extra/vtx (13MB, el más
+  // nítido de los viewer). Los atlas ORIGINALES (geo, ~90MB) llegan después
+  // vía upgradeTextures() cuando el jugador sube la calidad a extra+.
   const coarse = matchMedia?.('(pointer:coarse)').matches;
-  const mtlUrl = (coarse ? null : man.assets?.mesh_mtl) || man.assets?.mesh_mtl_low;
+  const mtlUrl = (coarse ? null : (man.assets?.mesh_mtl_extra || man.assets?.mesh_mtl))
+    || man.assets?.mesh_mtl_low;
   const offset = man.transforms?.mesh_offset;
   if (!objUrl || !mtlUrl || !Array.isArray(offset) || offset.length !== 3) return null;
   const split = url => {
@@ -172,10 +175,12 @@ export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}
         mat.map.anisotropy = maxAniso;
         mat.map.needsUpdate = true;
       }
-      return new THREE.MeshBasicMaterial({
+      const m2 = new THREE.MeshBasicMaterial({
         map: mat.map || null, color: mat.map ? 0xffffff : 0x8a97a8,
         side: THREE.DoubleSide,
       });
+      m2.name = mat.name;                     // ancla para upgradeTextures
+      return m2;
     });
     node.material = photo.length === 1 ? photo[0] : photo;
     node.castShadow = false;
@@ -190,9 +195,34 @@ export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}
   // huella XZ en mundo (la usa el caller para recortar el DSM debajo)
   const bb = new THREE.Box3().setFromObject(object);
   const c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
+  let upgraded = false;
   return {
     object,
     footprint: { x: c.x, z: c.z, r: (sz.x + sz.z) * 0.25 },
+    // sube los mapas al tier dado (p.ej. atlas geo full-res) intercambiando
+    // por NOMBRE de material — one-shot, perezoso, sin recrear geometría
+    async upgradeTextures(newMtlUrl) {
+      if (upgraded || !newMtlUrl) return false;
+      upgraded = true;
+      const [base2, file2] = split(newMtlUrl);
+      const mats = await new MTLLoader().setPath(base2).loadAsync(file2);
+      mats.preload();
+      object.traverse(node => {
+        if (!node.isMesh) return;
+        const list = Array.isArray(node.material) ? node.material : [node.material];
+        for (const m3 of list) {
+          const src2 = mats.materials[m3.name];
+          if (!src2?.map) continue;
+          src2.map.colorSpace = THREE.SRGBColorSpace;
+          src2.map.anisotropy = maxAniso;
+          src2.map.needsUpdate = true;
+          m3.map?.dispose();
+          m3.map = src2.map;
+          m3.needsUpdate = true;
+        }
+      });
+      return true;
+    },
     dispose: () => object.traverse(node => {
       if (!node.isMesh) return;
       node.geometry?.dispose();
@@ -213,7 +243,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=125');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=129');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     scene.userData.fvSpark = sp;

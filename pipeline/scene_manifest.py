@@ -115,6 +115,8 @@ def build(cid: str) -> dict:
                         if (mdir / "model" / "odm_textured_model_viewer.mtl").exists() else None,
             "mesh_mtl_extra": f"data/models/{cid}/model/odm_textured_model_viewer_extra.mtl"
                               if (mdir / "model" / "odm_textured_model_viewer_extra.mtl").exists() else None,
+            "mesh_mtl_geo": f"data/models/{cid}/model/odm_textured_model_geo.mtl"
+                            if (mdir / "model" / "odm_textured_model_geo.mtl").exists() else None,
             "collision_bin": f"data/models/{cid}/collision.bin" if (mdir / "collision.bin").exists() else None,
             "collision_meta": f"data/models/{cid}/collision.json" if (mdir / "collision.json").exists() else None,
             "objects": f"data/models/{cid}/objects.json" if (mdir / "objects.json").exists() else None,

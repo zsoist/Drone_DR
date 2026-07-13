@@ -4,27 +4,27 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=125';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=125';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=125';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=125';
-import { createRecorder } from '/flightverse/recorder.js?v=125';
-import { createAudio } from '/flightverse/audio.js?v=125';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=125';
-import { createTouchSticks } from '/flightverse/touch.js?v=125';
-import { createSky } from '/flightverse/sky.js?v=125';
-import { loadSceneObjects } from '/flightverse/objects.js?v=125';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=125';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=125';
-import CameraControls from '/vendor/camera-controls.module.js?v=125';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=125';
+import * as THREE from '/flightverse/three.js?v=129';
+import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=129';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=129';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=129';
+import { createRecorder } from '/flightverse/recorder.js?v=129';
+import { createAudio } from '/flightverse/audio.js?v=129';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=129';
+import { createTouchSticks } from '/flightverse/touch.js?v=129';
+import { createSky } from '/flightverse/sky.js?v=129';
+import { loadSceneObjects } from '/flightverse/objects.js?v=129';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=129';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=129';
+import CameraControls from '/vendor/camera-controls.module.js?v=129';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=129';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=125';
+} from '/vendor/postprocessing180.module.js?v=129';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -35,7 +35,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=125';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=129';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -324,7 +324,8 @@ async function main() {
       visualMesh = v;
       $('#vl-scene').textContent = `${man.name} · malla fotogramétrica`;
       report.visualMesh = true;
-      applyVista();                            // recorta el DSM bajo la malla
+      applyVista();
+      upgradeMeshTex(calidad);                 // la calidad pudo fijarse antes de llegar la malla
     }).catch(e => report.errors.push('malla visual: ' + e.message));
   }
   // objetos de escena (plataforma de juegos: docs/SCENE_OBJECTS.md)
@@ -479,9 +480,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=125', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=129', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=125');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=129');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -1517,7 +1518,7 @@ async function main() {
     '4k':  { label: '4K',    dpr: 3,    aniso: 16 },
     ultra: { label: 'ultra', dpr: 4,    aniso: 16 },
   };
-  let calidad = localStorage.getItem('ab.fv.calidad') || 'auto';
+  let calidad = Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto';   // QA: calidad por URL
   if (!CALIDADES[calidad]) calidad = 'auto';
   const applyDpr = d => {
     renderer.setPixelRatio(d);
@@ -1529,6 +1530,19 @@ async function main() {
   // WebGL declara un tamaño seguro; antes quedaba bloqueado siempre en 2000px.
   const preferFullOrtho = matchMedia('(pointer:coarse)').matches
     && renderer.capabilities.maxTextureSize >= 8192;
+  // las texturas viewer de la malla son downscales: extra+ sube a los ATLAS
+  // ORIGINALES del geo (~90MB, perezoso one-shot — mismo principio que
+  // ortho_full: el supersampling no inventa textura)
+  let meshTexMax = false;
+  const upgradeMeshTex = k2 => {
+    if (meshTexMax || !visualMesh || !man.assets?.mesh_mtl_geo) return;
+    if (!['extra', '4k', 'ultra'].includes(k2)) return;
+    meshTexMax = true;
+    $('#vl-scene').textContent = `${man.name} · texturas máximas…`;
+    visualMesh.upgradeTextures(man.assets.mesh_mtl_geo)
+      .then(() => { $('#vl-scene').textContent = `${man.name} · malla fotogramétrica · máx`; report.meshTexMax = true; })
+      .catch(() => { $('#vl-scene').textContent = `${man.name} · malla fotogramétrica`; });
+  };
   const setCalidad = k => {
     calidad = k;
     const c = CALIDADES[k];
@@ -1553,6 +1567,7 @@ async function main() {
     else { dprNow = Math.min(devicePixelRatio, 2); applyDpr(dprNow); }
     localStorage.setItem('ab.fv.calidad', k);
     report.calidad = { k, dpr: +dprNow.toFixed(2) };
+    upgradeMeshTex(k);
   };
   $('#vl-calidad').addEventListener('click', () => {
     const ks = Object.keys(CALIDADES);

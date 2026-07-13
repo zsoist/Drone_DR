@@ -324,3 +324,19 @@ mando real, minimapa MapLibre opcional.
   siempre. Máscara radial liberada de nuevo.
 - Gates 0117 + 0104 (ambas con malla): 71fps, 0 errores. Captura cenital: puro
   high-res.
+
+## v129 (2026-07-13) — escalera de texturas de la malla (el 'feo' era texel)
+- El 'primero se ve HD y luego queda el feo': el DSM+orto (27MP) cargaba
+  primero y la malla llegaba con texturas viewer downscaladas → el swap
+  BAJABA la nitidez percibida. Fix en escalera:
+  · desktop default: viewer_extra/vtx (12.8MB, el tier viewer más nítido)
+  · calidad extra/4K/ultra: upgradeTextures() sube a los ATLAS ORIGINALES
+    del geo (~90MB, 73 PNGs, swap por nombre de material, one-shot perezoso)
+    — mismo principio que ortho_full: el supersampling no inventa textura.
+  · móvil: low (3.4MB) como siempre.
+- manifest exporta mesh_mtl_geo; scene.js guarda material.name como ancla y
+  expone upgradeTextures(); volar dispara al subir calidad Y al resolver la
+  malla (la calidad puede fijarse antes de que llegue el OBJ — bug cazado en
+  el primer gate: meshTexMax null porque setCalidad corrió pre-malla).
+- QA param nuevo: &calidad=auto|hd|extra|4k|ultra.
+- Gate 0117 extra: meshTexMax true, 71fps, 0 errores; badge '· máx' visible.
