@@ -4343,3 +4343,23 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   padding:4px 10px; border-radius:8px; border:1px solid rgba(255,255,255,.08);
   letter-spacing:.1em; transition:all .3s var(--ease) }
 .vl-boot .vb-steps i.ok{ color:#7dffc9; border-color:rgba(82,199,154,.4) }
+
+/* ── BLOQUE 57: nodo GPU (Sistema + 3D) ── */
+.gn-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px }
+.gn-cell{ padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08) }
+.gn-cell span{ display:block; font:600 9px var(--mono); color:var(--text-3);
+  letter-spacing:.12em; margin-bottom:3px }
+.gn-cell b{ font:700 15px var(--mono); color:var(--text-1); font-variant-numeric:tabular-nums }
+.gn-bar{ display:block; height:3px; border-radius:99px; background:rgba(255,255,255,.08);
+  margin-top:7px; overflow:hidden }
+.gn-bar b{ display:block; height:100%; border-radius:99px;
+  background:linear-gradient(90deg, var(--accent), #7dffc9); transition:width .4s var(--ease) }
+.gn-actions{ display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap }
+.td-gpu-chip{ margin-top:10px; padding:7px 14px; border-radius:999px; cursor:pointer;
+  font:600 11px var(--mono); color:var(--text-2); letter-spacing:.04em;
+  border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04);
+  transition:all .16s var(--ease) }
+.td-gpu-chip:hover{ color:var(--text-1); border-color:rgba(69,160,230,.45);
+  box-shadow:0 4px 16px -8px rgba(69,160,230,.5) }
+.td-gpu-chip b.ok{ color:#7dffc9 } .td-gpu-chip b.dim{ color:var(--text-3) }

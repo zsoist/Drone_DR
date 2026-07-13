@@ -34,6 +34,22 @@ main.innerHTML = `
     </div>
   </div>
 
+  <div class="panel rise" style="margin-bottom:16px">
+    <div class="ph">${icon('chip')} Nodo GPU — PC remoto
+      <span class="count">RTX 4060 Ti · invocable por SSH · Wake-on-LAN</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="perf-chip mono" id="gn-status">consultando…</span>
+    </div>
+    <div class="pb">
+      <div class="gn-grid" id="gn-body"><div class="sk" style="height:56px"></div></div>
+      <div class="gn-actions">
+        <button class="btn" id="gn-wake">Despertar (WoL)</button>
+        <button class="btn ghost" id="gn-sleep">Dormir</button>
+        <span class="footer-note" style="margin:0" id="gn-note">el probe es SSH real — si duerme, se reporta dormido</span>
+      </div>
+    </div>
+  </div>
+
   <div class="fl-layout">
     <div>
       <div class="panel rise">
@@ -367,4 +383,47 @@ main.innerHTML = `
   document.addEventListener('visibilitychange', () => { if (!document.hidden && !unauth) poll(); });  // al volver al tab: dato fresco YA
   addEventListener('pagehide', () => { clearInterval(pollId); dead = true; }, { once: true });
   draw();
+})();
+
+// ═══════════ Nodo GPU (PC remoto) — poll 30s, acciones reales ═══════════
+(() => {
+  const $g = id => document.getElementById(id);
+  const paint = d => {
+    const st = $g('gn-status');
+    if (!st) return;
+    const awake = d.status === 'awake';
+    st.textContent = awake ? 'despierto' : d.status === 'asleep' ? 'dormido' : 'sin datos';
+    st.style.color = awake ? 'var(--ok, #52C79A)' : 'var(--text-3)';
+    $g('gn-sleep').disabled = !awake;
+    $g('gn-wake').disabled = awake;
+    if (!awake) {
+      $g('gn-body').innerHTML = `<div class="gn-cell"><b>—</b><span>el PC duerme · Despertar tarda ~30s</span></div>`;
+      return;
+    }
+    const vramPct = d.vram_total_mb ? Math.round((d.vram_used_mb / d.vram_total_mb) * 100) : 0;
+    $g('gn-body').innerHTML = [
+      ['GPU', d.gpu || '—', ''],
+      ['VRAM', d.vram_total_mb ? `${(d.vram_used_mb/1024).toFixed(1)} / ${(d.vram_total_mb/1024).toFixed(0)} GB` : '—', `<i class="gn-bar"><b style="width:${vramPct}%"></b></i>`],
+      ['USO GPU', d.util_pct != null ? `${d.util_pct}%` : '—', `<i class="gn-bar"><b style="width:${d.util_pct||0}%"></b></i>`],
+      ['TEMP', d.temp_c != null ? `${d.temp_c}°C` : '—', ''],
+      ['POTENCIA', d.power_w != null ? `${d.power_w} W` : '—', ''],
+      ['DRIVER', d.driver || '—', ''],
+    ].map(([lb, v, extra]) => `<div class="gn-cell"><span>${lb}</span><b>${v}</b>${extra}</div>`).join('');
+  };
+  const poll = async (force = false) => {
+    try { paint(await (await fetch('/api/gpu_node' + (force ? '?force=1' : ''))).json()); }
+    catch { const st = $g('gn-status'); if (st) st.textContent = 'error de probe'; }
+  };
+  $g('gn-wake')?.addEventListener('click', async () => {
+    $g('gn-note').textContent = 'magic packet enviado — despertando (~30s)…';
+    await fetch('/api/gpu_node/wake', { method: 'POST' });
+    setTimeout(() => poll(true), 25000);
+  });
+  $g('gn-sleep')?.addEventListener('click', async () => {
+    const r = await (await fetch('/api/gpu_node/sleep', { method: 'POST' })).json();
+    $g('gn-note').textContent = r.ok ? 'suspendido — Despertar lo revive' : `no se durmió: ${r.reason}`;
+    setTimeout(() => poll(true), 4000);
+  });
+  poll();
+  setInterval(poll, 30000);
 })();

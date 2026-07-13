@@ -1167,6 +1167,55 @@ def run_edit(spec: dict, j):
         shutil.rmtree(VAULT / "reels" / f".tmp-{j['id']}", ignore_errors=True)
 
 
+
+# ── NODO GPU (PC RTX 4060 Ti en LAN): probe SSH cacheado + WoL + sleep ──
+# Todo REAL: si el PC duerme se reporta dormido; nada se inventa.
+GPU_NODE = {"ts": 0.0, "data": {"status": "unknown"}}
+GPU_NODE_IP = "192.168.1.5"
+GPU_NODE_MAC = "BC:5F:F4:45:7E:B8"
+
+def gpu_node_status(force: bool = False) -> dict:
+    import shutil, socket, subprocess, time as _t
+    now = _t.time()
+    if not force and now - GPU_NODE["ts"] < 20:
+        return GPU_NODE["data"]
+    data = {"ip": GPU_NODE_IP, "status": "asleep", "ts": int(now)}
+    try:
+        sock = socket.create_connection((GPU_NODE_IP, 22), timeout=1.2)
+        sock.close()
+        data["status"] = "awake"
+        q = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
+             "nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used,"
+             "utilization.gpu,temperature.gpu,power.draw --format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=8)
+        if q.returncode == 0 and q.stdout.strip():
+            f = [x.strip() for x in q.stdout.strip().splitlines()[0].split(",")]
+            data.update({"gpu": f[0], "driver": f[1], "vram_total_mb": int(float(f[2])),
+                         "vram_used_mb": int(float(f[3])), "util_pct": int(float(f[4])),
+                         "temp_c": int(float(f[5])), "power_w": round(float(f[6]), 1)})
+        wsl = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
+             "wsl -d Ubuntu -- bash -lc \"source ~/gpu-jobs/splat-env/bin/activate 2>/dev/null && python3 -c 'import gsplat;print(gsplat.__version__)' 2>/dev/null || echo no\""],
+            capture_output=True, text=True, timeout=15)
+        v = (wsl.stdout or "").replace("\x00", "").strip().splitlines()
+        data["gsplat"] = v[-1] if v and v[-1] != "no" else None
+    except Exception:
+        pass
+    GPU_NODE.update(ts=now, data=data)
+    return data
+
+def gpu_node_wake() -> dict:
+    import socket
+    raw = bytes.fromhex(GPU_NODE_MAC.replace(":", ""))
+    pkt = b"\xff" * 6 + raw * 16
+    sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sk.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sk.sendto(pkt, ("192.168.1.255", 9))
+    sk.close()
+    return {"ok": True, "sent": GPU_NODE_MAC}
+
+
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -1245,6 +1294,11 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"ok": False}, 403)
             mark_viewer_activity()
             return self.send_json({"ok": True})
+        if self.path.startswith("/api/gpu_node"):
+            if not self.auth():
+                return
+            force = "force=1" in self.path
+            return self.send_json(gpu_node_status(force))
         if self.path.startswith("/api/perf"):
             # telemetría en vivo del Mac (CPU/GPU/RAM/swap/térmica/disk + uso por job).
             # El sampler solo corre mientras alguien consulta — idle = 0 costo.
@@ -2344,6 +2398,29 @@ class H(BaseHTTPRequestHandler):
                     job_end(j, "error", (e.stderr or str(e))[-250:])
             threading.Thread(target=_run, daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"]})
+        if u.path == "/api/gpu_node/wake":
+            if not self.auth():
+                return
+            return self.send_json(gpu_node_wake())
+        if u.path == "/api/gpu_node/sleep":
+            if not self.auth():
+                return
+            import subprocess
+            try:
+                # guardia de cortesía: pantalla desbloqueada = alguien usando el PC
+                chk = subprocess.run(["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
+                    'tasklist /FI "IMAGENAME eq LogonUI.exe" | find /C "LogonUI"'],
+                    capture_output=True, text=True, timeout=8)
+                locked = (chk.stdout or "").replace("\x00", "").strip().splitlines()
+                if locked and locked[-1].strip() == "0":
+                    return self.send_json({"ok": False, "reason": "sesion activa en el PC"}, 409)
+                subprocess.run(["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
+                    "rundll32.exe powrprof.dll,SetSuspendState 0,1,0"],
+                    capture_output=True, timeout=8)
+                GPU_NODE["ts"] = 0.0            # invalidar caché
+                return self.send_json({"ok": True})
+            except Exception as e:
+                return self.send_json({"ok": False, "reason": str(e)}, 500)
         if u.path == "/api/scene_objects":
             # objetos de escena del juego (FLIGHTVERSE): valida contra el
             # contrato de docs/SCENE_OBJECTS.md y escribe objects.json

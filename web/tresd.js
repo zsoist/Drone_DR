@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=143';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=143';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=143';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=143';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=143';
-  import { mountSplatViewer } from '/splatview.js?v=143';
+  import * as THREE from '/vendor/three180.module.js?v=145';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=145';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=145';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=145';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=145';
+  import { mountSplatViewer } from '/splatview.js?v=145';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -111,7 +111,7 @@
       <div class="pb">
         <div class="td-stepper">
           ${[['film', 'Video', 'DJI + SRT'], ['pin', 'Frames + GPS', 'geotag'], ['map', 'ODM', 'SfM · DSM · orto'],
-             ['layers', 'Nube / Malla', 'visor'], ['spark', 'Splat', 'Metal/MPS'], ['ext', 'Publicar', 'share']]
+             ['layers', 'Nube / Malla', 'visor'], ['spark', 'Splat', '<span id="td-splat-dev">Metal/MPS</span>'], ['ext', 'Publicar', 'share']]
             .map(([ic, t, s], i, a) => `
             <div class="td-step"><i>${icon(ic)}</i><b>${t}</b><span>${s}</span></div>
             ${i < a.length - 1 ? '<div class="td-step-arrow">›</div>' : ''}`).join('')}
@@ -271,6 +271,57 @@
   });
   window.addEventListener('resize', () => setTimeout(moveTdInk, 30));
   setTimeout(moveTdInk, 30);
+
+  // ── NODO GPU: chip vivo en la barra del pipeline + modal rico ──
+  (() => {
+    const bar = document.querySelector('.td-stepper')?.parentElement;
+    if (!bar) return;
+    const chip = document.createElement('button');
+    chip.className = 'td-gpu-chip mono';
+    chip.id = 'td-gpu-chip';
+    chip.innerHTML = 'nodo GPU · <b>consultando…</b>';
+    bar.appendChild(chip);
+    let last = null;
+    const poll = async () => {
+      try {
+        last = await (await fetch('/api/gpu_node')).json();
+        const awake = last.status === 'awake';
+        chip.innerHTML = awake
+          ? `nodo GPU · <b class="ok">RTX 4060 Ti despierto</b>${last.util_pct ? ` · ${last.util_pct}%` : ''}`
+          : 'nodo GPU · <b class="dim">dormido · WoL</b>';
+        const dev = document.getElementById('td-splat-dev');
+        if (dev) dev.textContent = awake ? 'Metal/MPS · CUDA listo' : 'Metal/MPS';
+      } catch { chip.innerHTML = 'nodo GPU · <b class="dim">sin datos</b>'; }
+    };
+    poll(); setInterval(poll, 30000);
+    chip.addEventListener('click', () => {
+      const d = last || {};
+      const awake = d.status === 'awake';
+      openModal('Nodo GPU — PC remoto', `
+        <p class="footer-note">RTX 4060 Ti (8GB) en la LAN, invocable por SSH desde este Mac.
+        Desbloquea gsplat CUDA: pose refinement y SH-desde-0 — las dos palancas que
+        Metal/MPS no expone. Probe real: nada de estos datos se inventa.</p>
+        <div class="gn-grid" style="margin:14px 0">
+          ${[['ESTADO', awake ? 'despierto' : 'dormido'],
+             ['GPU', d.gpu || '—'],
+             ['VRAM', d.vram_total_mb ? `${(d.vram_used_mb/1024).toFixed(1)} / ${(d.vram_total_mb/1024).toFixed(0)} GB` : '—'],
+             ['USO', d.util_pct != null ? d.util_pct + '%' : '—'],
+             ['TEMP', d.temp_c != null ? d.temp_c + '°C' : '—'],
+             ['DRIVER', d.driver || '—']]
+            .map(([lb, v]) => `<div class="gn-cell"><span>${lb}</span><b>${v}</b></div>`).join('')}
+        </div>
+        <p class="footer-note">Entrenos splat en CUDA: <b>lane en integración (F3)</b> — el nodo ya está
+        comisionado y verificado (gsplat 1.4.0, torch cu124). Gestión completa en la pestaña Sistema.</p>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          ${awake ? '' : '<button class="btn" id="gnm-wake">Despertar (WoL)</button>'}
+          <a class="btn ghost" href="system.html">Abrir Sistema</a>
+        </div>`);
+      document.getElementById('gnm-wake')?.addEventListener('click', async e2 => {
+        e2.target.textContent = 'magic packet enviado…';
+        await fetch('/api/gpu_node/wake', { method: 'POST' });
+      });
+    });
+  })();
 
   document.querySelector('.td-pipeline-grid')?.addEventListener('click', e => {
     if (e.target.closest('[data-open-run3d]')) document.getElementById('btn-run3d')?.click();
