@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=124';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=124';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=124';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=124';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=124';
-  import { mountSplatViewer } from '/splatview.js?v=124';
+  import * as THREE from '/vendor/three180.module.js?v=125';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=125';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=125';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=125';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=125';
+  import { mountSplatViewer } from '/splatview.js?v=125';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };

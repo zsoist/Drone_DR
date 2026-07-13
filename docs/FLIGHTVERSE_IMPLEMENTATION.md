@@ -315,3 +315,12 @@ mando real, minimapa MapLibre opcional.
 - applyVista() se re-aplica al resolver la malla (la máscara activa al llegar).
 - Gate 0117: visualMesh true, 69fps, 0 errores; captura confirma malla nítida
   sin dobles.
+
+## v125 (2026-07-13) — escenas con malla: SOLO la representación high-res
+- El anillo DSM derretido alrededor de la malla seguía leyéndose como 'roto'.
+  Regla nueva: si la escena tiene malla fotogramétrica, el DSM visual NO se
+  dibuja nunca (ni recorte, ni anillo) — solo la malla nítida. La física
+  (heightAt/colisión/cráteres) sigue en el heightfield. Sin malla: reglas de
+  siempre. Máscara radial liberada de nuevo.
+- Gates 0117 + 0104 (ambas con malla): 71fps, 0 errores. Captura cenital: puro
+  high-res.

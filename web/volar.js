@@ -4,27 +4,27 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=124';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=124';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=124';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=124';
-import { createRecorder } from '/flightverse/recorder.js?v=124';
-import { createAudio } from '/flightverse/audio.js?v=124';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=124';
-import { createTouchSticks } from '/flightverse/touch.js?v=124';
-import { createSky } from '/flightverse/sky.js?v=124';
-import { loadSceneObjects } from '/flightverse/objects.js?v=124';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=124';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=124';
-import CameraControls from '/vendor/camera-controls.module.js?v=124';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=124';
+import * as THREE from '/flightverse/three.js?v=125';
+import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=125';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=125';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=125';
+import { createRecorder } from '/flightverse/recorder.js?v=125';
+import { createAudio } from '/flightverse/audio.js?v=125';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=125';
+import { createTouchSticks } from '/flightverse/touch.js?v=125';
+import { createSky } from '/flightverse/sky.js?v=125';
+import { loadSceneObjects } from '/flightverse/objects.js?v=125';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=125';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=125';
+import CameraControls from '/vendor/camera-controls.module.js?v=125';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=125';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=124';
+} from '/vendor/postprocessing180.module.js?v=125';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -35,7 +35,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=124';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=125';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -479,9 +479,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=124', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=125', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=124');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=125');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -724,18 +724,12 @@ async function main() {
   let vista = 2;
   const applyVista = () => {
     if (!splat && vista !== 2) { vista = 2; }
-    terrain.mesh.visible = vista !== 1;
-    // mixta v4: '3D realzado con foto-realismo' — gap mínimo anti-zfight y
-    // el terreno cede protagonismo (85% de ganancia) para que el splat pinte
-    terrain.mesh.position.y = visualMesh ? -0.55 : vista === 0 ? -0.35 : 0;
+    // con malla fotogramétrica: SOLO la representación high-res (el DSM
+    // derretido no aparece nunca — ni de anillo). Sin malla: reglas de siempre.
+    terrain.mesh.visible = visualMesh ? false : vista !== 1;
+    terrain.mesh.position.y = vista === 0 ? -0.35 : 0;
     terrain.mesh.updateMatrix();
-    // la malla fotogramétrica es dueña de su huella: el DSM se descarta dentro
-    // (edificios dobles = DSM extruido cruzando la malla nítida)
-    if (visualMesh?.footprint && vista !== 1) {
-      mask.uMaskOn.value = 1;
-      mask.uMaskC.value.set(visualMesh.footprint.x, visualMesh.footprint.z);
-      mask.uMaskR.value = visualMesh.footprint.r;
-    } else mask.uMaskOn.value = 0;
+    mask.uMaskOn.value = 0;
     if (splat) splat.object.visible = vista !== 2;
     if (visualMesh) visualMesh.object.visible = vista !== 1;
     terrain.mesh.material.color.setScalar((grade?.t ?? 1) * (vista === 0 ? 0.85 : 1));

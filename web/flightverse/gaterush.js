@@ -3,7 +3,7 @@
 // splits por gate. Circuito HONESTO: gates sobre la ruta del vuelo REAL
 // (track GPS en frame local); sin track: anillo procedural documentado como
 // fallback. Detección por proximidad en timestep fijo (determinista → replay).
-import * as THREE from '/flightverse/three.js?v=124';
+import * as THREE from '/flightverse/three.js?v=125';
 
 export const DIFFS = {
   facil:   { label: 'Fácil',   n: 8,  r: 9,   pass: 1.25, color: 0x52C79A },
