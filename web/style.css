@@ -4569,3 +4569,22 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
   .jc-ph-bar{ display:none } }
 @media (prefers-reduced-motion: reduce){ .jc-ph-row.act .jc-ph-dot,
   .jc-ph-row.act .jc-ph-bar > div::after{ animation:none } }
+
+/* ── BLOQUE 65: card v5 — datos duros, barras con vida, % premium ── */
+.jc-data{ display:grid; grid-template-columns:repeat(auto-fit, minmax(118px, 1fr));
+  gap:8px; margin-top:12px }
+.jc-data-cell{ padding:8px 11px; border-radius:10px;
+  border:1px solid rgba(255,255,255,.07); background:rgba(255,255,255,.03);
+  display:flex; flex-direction:column; gap:2px }
+.jc-data-cell span{ font-size:8.5px; font-weight:750; letter-spacing:.13em;
+  color:var(--text-3) }
+.jc-data-cell b{ font-size:13.5px; font-weight:700; color:var(--text);
+  font-variant-numeric:tabular-nums }
+.jc-run-pct{ text-shadow:0 0 18px rgba(69,160,230,.45) }
+.jc-bar > div, .jc-ph-bar > div{
+  background:linear-gradient(90deg, #2e7fc4, #45A0E6, #52C79A, #45A0E6, #2e7fc4);
+  background-size:300% 100%; animation:jcFlow 4s linear infinite }
+.jc-ph-row.done .jc-ph-bar > div{ background:var(--mint); animation:none }
+@keyframes jcFlow{ from{background-position:0% 0} to{background-position:300% 0} }
+.jc-ph-time b{ color:var(--accent); font-weight:750 }
+@media (prefers-reduced-motion: reduce){ .jc-bar > div, .jc-ph-bar > div{ animation:none } }

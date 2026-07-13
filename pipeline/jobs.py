@@ -76,7 +76,7 @@ def init(orphan_kinds: tuple = ()):
         # migraciones aditivas (SQLite no soporta ADD COLUMN IF NOT EXISTS)
         have = {r[1] for r in c.execute("PRAGMA table_info(jobs)").fetchall()}
         for col, typ in (("log", "TEXT"), ("spec", "TEXT"), ("stage", "TEXT"),
-                         ("progress", "REAL")):
+                         ("progress", "REAL"), ("backend", "TEXT")):
             if col not in have:
                 c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
         if orphan_kinds:

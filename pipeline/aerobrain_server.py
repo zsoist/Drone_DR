@@ -766,6 +766,23 @@ def _job_model_meta(label: str) -> dict:
         return {}
 
 
+_PROJ_SIZE_CACHE: dict = {}
+
+def _proj_input_mb(cid: str) -> int | None:
+    """Peso real de las imágenes de entrada del proyecto (medido, cacheado por cid)."""
+    if not cid:
+        return None
+    if cid in _PROJ_SIZE_CACHE:
+        return _PROJ_SIZE_CACHE[cid]
+    d = VAULT / "odm" / f"proj_{re.sub(r'[^\w-]', '', cid)}" / "images"
+    try:
+        mb = round(sum(f.stat().st_size for f in d.iterdir() if f.is_file()) / 1048576)
+    except OSError:
+        mb = None
+    _PROJ_SIZE_CACHE[cid] = mb
+    return mb
+
+
 def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
     """Compact Jobs contract with requested/effective quality kept separate."""
     spec = _job_spec(row)
@@ -818,6 +835,10 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
             "cameras_registered": qa.get("cameras_reconstructed"),
             "cameras_total": qa.get("cameras_total"),
         })
+        m_img = re.search(r"\((\d+) imagenes\)", str(row.get("detail") or ""))
+        if m_img:
+            out["images_total"] = int(m_img.group(1))
+        out["input_mb"] = _proj_input_mb(str(row.get("label") or ""))
         out["fallback"] = bool(meta_matches_job and (meta.get("dense_fallback")
                                or (out["requested_preset"] and out["effective_preset"]
                                    and out["requested_preset"] != out["effective_preset"])
@@ -831,6 +852,9 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
             "input_scale": run.get("input_scale"),
             "iterations": run.get("target_iters"),
             "backend": run.get("backend"),
+            # 32 bytes por gaussiana en el formato .splat — conteo exacto, no estimado
+            "gaussians": (run.get("bytes") // 32) if run.get("bytes") else None,
+            "input_mb": _proj_input_mb(str(row.get("label") or "")),
             "peak_mib": run.get("peak_mib"),
             "memory_cap_mib": run.get("mem_cap_mib"),
             "attempts": run.get("attempts") or [],

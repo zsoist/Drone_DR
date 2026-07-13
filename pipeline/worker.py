@@ -656,7 +656,7 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     try:
         n = odm_gpu_lane.ship_images(proj, name)
         jobstore.update(j["id"], detail=f"2/3 ODM {preset_name} en NVIDIA CUDA ({n} imagenes)",
-                        stage="odm", progress=0.15, container=container)
+                        stage="odm", progress=0.15, container=container, backend="NVIDIA CUDA")
         rc = jobstore.run_tracked(
             j["id"], odm_gpu_lane.remote_run_argv(name, container, list(preset["args"])),
             timeout=preset["timeout"])
@@ -728,6 +728,7 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
                                f"ODM remoto salió con rc={rc} → ODM local", level="warning",
                                data={"rc": rc})
             jobstore.update(j["id"], status="running", finished=None, container=None,
+                            backend=None,
                             detail=f"2/3 fotogrametria ODM {preset_name} local (fallback)",
                             stage="odm", progress=0.15)
     if rc != 0:

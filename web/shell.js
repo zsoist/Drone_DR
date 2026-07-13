@@ -244,10 +244,35 @@ function phaseDash(j, pct) {
       <span class="jc-ph-dot"></span>
       <div class="jc-ph-main"><b>${name}</b><span>${sub}</span></div>
       <div class="jc-ph-bar"><div style="width:${width}%"></div></div>
-      <span class="jc-ph-time mono">${st == null ? '—' : done ? fmtDur(dur) : act ? 'en curso · ' + fmtDur(dur) : '—'}</span>
+      <span class="jc-ph-time mono">${done ? (st != null ? fmtDur(dur) : '✓')
+        : act ? `<b>${width}%</b>${st != null ? ' · ' + fmtDur(dur) : ''}` : '—'}</span>
     </div>`;
   }).join('');
   return `<div class="jc-ph">${rows}</div>`;
+}
+function jobDataGrid(j) {
+  const cells = [];
+  if (j.input_mb) cells.push(['PESO ENTRADA', j.input_mb >= 1024
+    ? (j.input_mb / 1024).toFixed(1) + ' GB' : j.input_mb + ' MB']);
+  // backend del row cuando existe; si no, el detail del worker es autoritativo
+  // ("...en NVIDIA CUDA") — jamás asumir Mac por defecto en un job remoto
+  const cudaJob = /cuda/i.test(j.backend || '') ||
+    (['running', 'queued'].includes(j.status) && /NVIDIA CUDA/i.test(j.detail || ''));
+  const hw = cudaJob ? 'RTX 4060 Ti · 8c WSL'
+    : j.backend ? 'Mac M4 · 10 cores'
+    : ['3d', 'splat'].includes(j.kind) && !['running', 'queued'].includes(j.status)
+      ? 'Mac M4 · 10 cores' : null;
+  if (hw) cells.push(['PROCESADOR', hw]);
+  if (j.images_total) cells.push(['IMÁGENES', j.images_total]);
+  else if (j.cameras_registered != null)
+    cells.push(['CÁMARAS', `${j.cameras_registered}/${j.cameras_total || '?'}`]);
+  if (j.iterations) cells.push(['ITERACIONES', j.iterations >= 1000
+    ? (j.iterations / 1000) + 'k' : j.iterations]);
+  if (j.gaussians) cells.push(['GAUSSIANAS', j.gaussians >= 1e6
+    ? (j.gaussians / 1e6).toFixed(2) + ' M' : Math.round(j.gaussians / 1000) + ' k']);
+  if (!cells.length) return '';
+  return `<div class="jc-data">${cells.map(([lb, v]) =>
+    `<div class="jc-data-cell"><span>${lb}</span><b class="mono">${v}</b></div>`).join('')}</div>`;
 }
 function jobCard(j, flightsIdx, entering = true) {
   const meta = KIND_META[j.kind] || { ic: 'activity', name: j.kind };
@@ -292,8 +317,10 @@ function jobCard(j, flightsIdx, entering = true) {
         ${j.detail && humanStage(j) !== j.detail ? `<div class="jc-run-detail">${esc(j.detail)}</div>` : ''}
         ${pct != null ? `<div class="jc-bar" role="progressbar" aria-label="Progreso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div style="width:${pct}%"></div></div>` : ''}
         ${lastLog && j.status === 'running' ? `<button class="jc-ticker mono" data-job-log="${esc(j.id)}" title="Abrir log completo"><span class="jc-tick-dot"></span>${esc(lastLog.slice(0, 160))}</button>` : ''}
+        ${jobDataGrid(j)}
       </div>` : ''}
     ${facts.length ? `<div class="jc-facts">${facts.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+    ${!['running', 'queued'].includes(j.status) ? jobDataGrid(j) : ''}
     <div class="jc-meta"><span>${esc(j.id)}</span><span>${jobDuration(j.elapsed_s)} transcurridos</span></div>
     ${lastLog && !['running', 'queued'].includes(j.status) ? `<button class="jc-log" data-job-log="${esc(j.id)}" title="Abrir log completo">${esc(lastLog)}</button>` : ''}
     ${j.status === 'queued' ? `<div class="jc-stage">Esperando turno — el worker procesa un trabajo pesado a la vez.</div>` : ''}
