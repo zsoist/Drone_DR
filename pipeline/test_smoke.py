@@ -373,8 +373,10 @@ _tex_dir2, _tex_mode2 = find_texture_dir(_md)
 check("qa: publisher acepta corrida sin malla texturizada",
       _tex_dir2 is None and _tex_mode2 == "no_mesh")
 _publish_src = Path("pipeline/tresd_publish.py").read_text()
-check("qa: publisher conserva preset/title en re-publicación manual",
-      "prior_meta" in _publish_src and 'for k in ("preset", "preset_requested", "title")' in _publish_src)
+check("qa: publisher conserva calidad/preset/title en re-publicación manual",
+      "prior_meta" in _publish_src
+      and all(k in _publish_src for k in ("dense_quality", "dense_quality_requested", "dense_fallback"))
+      and "if k in prior_meta and k not in meta" in _publish_src)
 
 # --- capture intelligence ---
 from capture_quality import sharpness, choose_frames, gps_metrics
@@ -434,10 +436,17 @@ _retry_cmd = worker.odm_cmd("odm-test", Path("/tmp/proj"), _retry_preset,
 check("presets: retry estable reinicia desde OpenMVS y desactiva geometric estimates",
       "--pc-skip-geometric" in _retry_cmd and "--rerun-from" in _retry_cmd
       and _retry_cmd[_retry_cmd.index("--rerun-from") + 1] == "openmvs")
+check("presets: retry estable no duplica flags ya presentes",
+      _retry_cmd.count("--pc-skip-geometric") == 1)
 check("presets: retry OpenMVS baja solo la presión dense sin degradar la salida alta",
       _retry_cmd[_retry_cmd.index("--pc-quality") + 1] == "medium"
       and _retry_cmd[_retry_cmd.index("--orthophoto-resolution") + 1] == "2"
       and _retry_cmd[_retry_cmd.index("--mesh-size") + 1] == "600000")
+_quality_provenance = worker.odm_quality_provenance("alta", "alta", "medium")
+check("presets: metadata distingue ortho alta de fallback dense medium",
+      _quality_provenance == {"effective_preset": "alta", "requested_preset": "alta",
+                              "dense_quality": "medium", "dense_quality_requested": "high",
+                              "dense_fallback": True})
 _old_vault = worker.VAULT
 _odm_root = Path(tempfile.mkdtemp()) / "odm"
 worker.VAULT = _odm_root.parent
@@ -529,8 +538,8 @@ import browser_matrix
 check("browser matrix: cubre mobile, iPad y desktop",
       set(browser_matrix.VIEWPORTS) == {"mobile", "ipad", "desktop"})
 _bm_src = Path("pipeline/browser_matrix.py").read_text()
-check("browser matrix: cubre share y workspace",
-      "def run_share" in _bm_src and "def run_workspace" in _bm_src)
+check("browser matrix: cubre share, workspace y consola de trabajos",
+      "def run_share" in _bm_src and "def run_workspace" in _bm_src and "def run_jobs" in _bm_src)
 check("browser matrix: falla si no hay macro zoom real u overflow limpio",
       "verify_macro_zoom" in _bm_src and "overflow horizontal" in _bm_src)
 check("browser matrix: exige default de mayor calidad en share y workspace",
@@ -753,20 +762,21 @@ finally:
     _perf.log_error = _orig_le
 _srv_src_pf = Path("pipeline/aerobrain_server.py").read_text()
 
-# --- U1.3 preflight: los cadáveres como gates (P1 ultra / escena2 / baseline) ---
+# --- U1.3 preflight: datos medidos vs riesgo no calibrado ---
 import preflight as _pf
-check("preflight: P1 ultra-denso → REJECTED (no quemar los 10 min de rungs)",
-      _pf.splat_preflight(22, 3072, "ultra")["verdict"] == "REJECTED")
+check("preflight: Ultra nunca extrapola un pico falso ni declara incapaz al Mac",
+      _pf.splat_preflight(22, 3072, "ultra")["verdict"] == "UNVERIFIED_HIGH_RISK"
+      and "projected_peak_mib" not in _pf.splat_preflight(22, 3072, "ultra"))
 check("preflight: escena2 full-res → LIKELY_OOM con rung sobreviviente (la verdad: -d2 pasó)",
       _pf.splat_preflight(214, 3072, "medium")["verdict"] == "LIKELY_OOM"
-      and _pf.splat_preflight(214, 3072, "medium")["surviving_rung"] == 1)
+      and _pf.splat_preflight(214, 3072, "medium")["recommended_d"] == 2)
 check("preflight: baseline medium escena1 → SAFE (obs 64%)",
       _pf.splat_preflight(22, 3072, "medium")["verdict"] == "SAFE")
 _e2 = _pf.splat_preflight(214, 3072, "medium", d=2)
 check("preflight: escena2 -d2 → ELEVATED conservador (proy 80% vs obs 76%)",
       _e2["verdict"] == "ELEVATED" and 76 <= _e2["pct"] <= 90)
-check("preflight: /api/splat lo consulta, REJECTED bloquea (salvo force), proyección viaja al job",
-      '"preflight": pfv' in _srv_src_pf and 'force_preflight' in _srv_src_pf
+check("preflight: /api/splat conserva decisión y sólo bloquea pisos/Medium fuera de sobre",
+      '"preflight": pfv' in _srv_src_pf and 'INPUT_FLOOR_EXCEEDS_CAP' in _srv_src_pf
       and 'splat_preflight(n_imgs, w' in _srv_src_pf)
 
 _srv_src_pf2 = Path("pipeline/aerobrain_server.py").read_text()
@@ -776,8 +786,8 @@ check("server: /api/preflight expone el motor U1.3 con validación de preset",
 _td_src = Path("web/tresd.js").read_text()
 check("modal v2: agrupa por CENTROIDE del bbox (U1.1 — spotKey del despegue refutado por test #1)",
       "(b[0] + b[2]) / 2" in _td_src and "0.0012" in _td_src)
-check("modal v2: preflight en UI etiquetado como proyección, jamás promesa",
-      "no una promesa" in _td_src and "/api/preflight" in _td_src)
+check("modal v2: Ultra se etiqueta no calibrado sin inventar pico",
+      "no se inventa un pico" in _td_src and "/api/preflight" in _td_src)
 
 
 check("server: geocode en do_GET con caché + urllib.request al TOP (import local envenena _post: UnboundLocalError en todo urllib.parse previo)",

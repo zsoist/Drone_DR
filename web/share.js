@@ -1,11 +1,11 @@
 // AeroBrain — visor público de un modelo 3D (link compartible, sin sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
-import * as THREE from '/vendor/three180.module.js?v=117';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=117';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=117';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=117';
-import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=117';
-import { mountSplatViewer } from '/splatview.js?v=117';
+import * as THREE from '/vendor/three180.module.js?v=124';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=124';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=124';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=124';
+import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=124';
+import { mountSplatViewer } from '/splatview.js?v=124';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -28,8 +28,8 @@ async function jfetch(url) {
   return r.json();
 }
 
-const SPLAT_EXT = /\.(ksplat|splat|ply)$/i;
-const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
+const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
+const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
 const wantedSplat = new URLSearchParams(location.search).get('s') || '';
 const splatKey = s => s.path || s.name;
 const splatUrl = s => 'data/splats/' + splatKey(s).split('/').map(encodeURIComponent).join('/');

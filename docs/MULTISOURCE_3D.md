@@ -1,4 +1,4 @@
-# Multi-fuente 3D — estado (2026-07-11)
+# Multi-fuente 3D y escenas incrementales — estado (2026-07-13)
 
 ## Validado empíricamente ✅
 - **Fusión funciona** con fuentes compatibles: test 0103+0104 (aéreo+aéreo, misma sesión, 31m,
@@ -23,15 +23,20 @@
 - UI: modal Estudio 3D (multi-select por lugar, fotos, preset, phased). Score predictivo ELIMINADO;
   avisos de compatibilidad reales (suelo+aéreo, cross-sesión, alturas dispares).
 - Fixture de regresión del path de geotag (el bug que me mordió).
+- Entidad `reconstruction` estable (`recon_<hash>` por fuentes+fotos) y entidad `scene_<hash>`
+  con manifiesto propio. Una escena conserva inventario, historial inmutable de versiones y una
+  versión activa promovida explícitamente.
+- “Mejorar esta escena” crea otra reconstrucción con capturas/fotos nuevas sin sobrescribir la
+  activa. Una versión `PARTIAL` o sin artefactos requeridos no puede promoverse. La cercanía GPS
+  es solo sugerencia; `FULL/PARTIAL` depende del registro real por fuente.
+- La primera versión válida (`FULL` o `SINGLE`) se promueve automáticamente. Las siguientes se
+  conservan como candidatas hasta promoción humana, con QA, calidad solicitada/efectiva y splat.
 
 ## Pendiente (honesto — NO validado / diferido)
 1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).
-2. **Entidad `reconstruction` de 1ª clase**: hoy el modelo combinado hereda el clip_id del primario.
-   Deuda: borrar el primario huérfana el combinado; re-correr single-source lo sobreescribe. Migrar
-   a recon_<hash> con read-alias desde clip_id para links viejos.
-3. **Presupuesto global de frames + dedup INTRA-fuente**: poda hoy es por-fuente. OJO (hallazgo del
+2. **Presupuesto global de frames + dedup INTRA-fuente**: poda hoy es por-fuente. OJO (hallazgo del
    review): NO deduplicar cross-source — esos near-duplicates son el pegamento del co-registro.
    Cap MAX_IMAGES + floor por-fuente (≥20).
-4. **Sugerencia por compatibilidad**: agrupar por altura+centroide (no solo home GPS). Hoy la UI
-   agrupa por home pero AVISA de incompatibilidad — mitigado, no resuelto.
-5. **Preflight de disco** antes de encolar multi-fuente pesada.
+3. **Sugerencia por compatibilidad**: calibrar la frontera con más pares. La UI ya ordena por
+   centro geográfico y muestra distancia/altura, pero no promete compatibilidad.
+4. **Preflight de disco** antes de encolar multi-fuente pesada.

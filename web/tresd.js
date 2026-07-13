@@ -1,12 +1,12 @@
-  import * as THREE from '/vendor/three180.module.js?v=117';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=117';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=117';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=117';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=117';
-  import { mountSplatViewer } from '/splatview.js?v=117';
+  import * as THREE from '/vendor/three180.module.js?v=124';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=124';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=124';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=124';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=124';
+  import { mountSplatViewer } from '/splatview.js?v=124';
 
-  const SPLAT_EXT = /\.(ksplat|splat|ply)$/i;
-  const SPLAT_RANK = { ksplat: 0, splat: 1, ply: 2 };
+  const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
+  const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
   const splatKey = s => s.path || s.name;
   const splatUrl = s => 'data/splats/' + splatKey(s).split('/').map(encodeURIComponent).join('/');
 
@@ -135,17 +135,32 @@
 
     <section class="td-mod" data-mod="jobs" style="display:none">
     <div class="panel" style="margin-top:16px">
-      <div class="ph">${icon('activity')} Cola de procesamiento</div>
+      <div class="ph">${icon('activity')} Trabajos y procesamiento</div>
       <div class="pb">
-        <div class="td-jobbar">
-          <button class="chip on" data-job-filter="all">Todos</button>
-          <button class="chip" data-job-filter="running">Activos</button>
-          <button class="chip" data-job-filter="done">Listos</button>
-          <button class="chip" data-job-filter="error">Errores</button>
+        <div class="job-summary" id="job-summary" aria-label="Resumen de trabajos">
+          <button data-summary-filter="all"><span>Todos</span><b data-job-count="all">0</b></button>
+          <button data-summary-filter="running"><span>Activos</span><b data-job-count="active">0</b></button>
+          <button data-summary-filter="done"><span>Completados</span><b data-job-count="done">0</b></button>
+          <button data-summary-filter="error"><span>Fallidos</span><b data-job-count="error">0</b></button>
         </div>
-        <p class="footer-note" style="margin:0 0 10px">El worker procesa un trabajo pesado a la
-        vez y sobrevive a que cierres la app o se reinicie el servidor — vuelve cuando quieras.</p>
-        <div id="jobs3d"></div>
+        <div class="job-toolbar">
+          <div class="search">${icon('search')}<input id="job-search" type="search" placeholder="Buscar proyecto, ID, calidad o error…" autocomplete="off"></div>
+          <div class="td-jobbar" aria-label="Estado">
+            <button class="chip on" data-job-filter="all">Todos</button>
+            <button class="chip" data-job-filter="running">Activos</button>
+            <button class="chip" data-job-filter="done">Listos</button>
+            <button class="chip" data-job-filter="error">Errores</button>
+          </div>
+          <div class="td-jobkinds" aria-label="Tipo">
+            <button class="chip on" data-job-kind="all">Todo tipo</button>
+            <button class="chip" data-job-kind="3d">ODM</button>
+            <button class="chip" data-job-kind="splat">Gaussian</button>
+            <button class="chip" data-job-kind="ingest">Importación</button>
+          </div>
+        </div>
+        <p class="footer-note job-note">Una tarea pesada a la vez. Solicitada y efectiva se muestran por separado;
+        cada retry, fallback y diagnóstico queda en el historial.</p>
+        <div id="jobs3d" class="job-console"></div>
       </div>
     </div>
     </section>
@@ -217,7 +232,10 @@
     </div>
 
     <div class="panel" style="margin-top:16px">
-      <div class="ph">${icon('gauge')} Reporte de calidad & descargas</div>
+      <div class="ph">${icon('gauge')} Reporte de calidad & descargas
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn primary" id="improve-scene">${icon('layers')} Mejorar esta escena</button>
+      </div>
       <div class="pb" id="dls"></div>
     </div>
     </div>`;
@@ -260,26 +278,50 @@
   });
 
   const jobsBox = document.getElementById('jobs3d');
+  const applyJobFilters = () => {
+    if (!jobsBox) return;
+    const status = document.querySelector('[data-job-filter].on')?.dataset.jobFilter || 'all';
+    const kind = document.querySelector('[data-job-kind].on')?.dataset.jobKind || 'all';
+    const q = (document.getElementById('job-search')?.value || '').trim().toLowerCase();
+    let visible = 0;
+    jobsBox.querySelectorAll('.job-card').forEach(card => {
+      const statusOk = status === 'all'
+        || (status === 'running' && ['running', 'queued'].includes(card.dataset.status))
+        || (status === 'done' && card.dataset.status === 'done')
+        || (status === 'error' && ['error', 'cancel_failed', 'cancelled'].includes(card.dataset.status));
+      const kindOk = kind === 'all' || card.dataset.kind === kind;
+      const searchOk = !q || (card.dataset.search || '').includes(q);
+      const show = statusOk && kindOk && searchOk;
+      card.hidden = !show;
+      if (show) visible++;
+    });
+    let note = jobsBox.parentElement.querySelector('.jf-empty');
+    if (!visible && jobsBox.children.length) {
+      if (!note) { note = document.createElement('p'); note.className = 'footer-note jf-empty'; jobsBox.after(note); }
+      note.textContent = 'No hay trabajos que coincidan con estos filtros.';
+    } else note?.remove();
+  };
   document.querySelector('.td-jobbar')?.addEventListener('click', e => {
     const b = e.target.closest('[data-job-filter]');
     if (!b || !jobsBox) return;
     document.querySelectorAll('[data-job-filter]').forEach(x => x.classList.toggle('on', x === b));
-    jobsBox.dataset.filter = b.dataset.jobFilter;
-    // el filtro oculta con CSS: con 0 coincidencias el panel quedaba como área EN BLANCO
-    requestAnimationFrame(() => {
-      const visible = [...jobsBox.querySelectorAll('.job-card')].some(c => c.offsetParent !== null);
-      let note = jobsBox.parentElement.querySelector('.jf-empty');
-      if (!visible && jobsBox.children.length) {
-        if (!note) {
-          note = document.createElement('p');
-          note.className = 'footer-note jf-empty';
-          note.style.margin = '4px 0 0';
-          jobsBox.after(note);
-        }
-        note.textContent = { running: 'Sin trabajos activos ahora.', done: 'Sin trabajos listos aún.',
-          error: 'Sin errores — todo en orden. 🎉' }[b.dataset.jobFilter] || 'Sin trabajos en este filtro.';
-      } else note?.remove();
-    });
+    applyJobFilters();
+  });
+  document.querySelector('.td-jobkinds')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-job-kind]'); if (!b) return;
+    document.querySelectorAll('[data-job-kind]').forEach(x => x.classList.toggle('on', x === b));
+    applyJobFilters();
+  });
+  document.getElementById('job-search')?.addEventListener('input', applyJobFilters);
+  document.getElementById('job-summary')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-summary-filter]'); if (!b) return;
+    document.querySelector(`[data-job-filter="${b.dataset.summaryFilter}"]`)?.click();
+  });
+  jobsBox?.addEventListener('jobs:paint', e => {
+    for (const [key, value] of Object.entries(e.detail.counts || {})) {
+      const out = document.querySelector(`[data-job-count="${key}"]`); if (out) out.textContent = value;
+    }
+    applyJobFilters();
   });
 
   // ---------- estado ----------
@@ -466,13 +508,13 @@
     const PRE = [
       { k: 'rapido', n: 'Rápido', t: '~25-40 min', d: 'Borrador · 8 cm/px' },
       { k: 'estandar', n: 'Estándar', t: '~45-75 min', d: '5 cm/px · DSM 10 cm' },
-      { k: 'alta', n: 'Alta', t: '~2-4 h', d: 'Nube densa · 3 cm/px' },
-      { k: 'extra', n: 'Extra', t: '~4-7 h', d: 'Malla 600k · octree 12 · 2 cm/px' },
+      { k: 'alta', n: 'Alta', t: '~15 min-4 h', d: 'Nube densa · 3 cm/px' },
+      { k: 'extra', n: 'Extra', t: '~4-7 h', d: 'Malla 600k · octree 11 · 2 cm/px' },
       { k: 'ultra', n: 'Ultra', t: '~8-14 h', d: 'pc-quality ultra · malla 800k · máx M4' },
     ];
     // presets del gaussian para el modo phased (subconjunto compacto)
     const SQ = [
-      { p: 'medium', n: 'Medium', t: '~10 min' },
+      { p: 'medium', n: 'Medium', t: '~2-4 min' },
       { p: 'cinematic', n: 'Cinemático', t: '~1 h' },
       { p: 'ultra', n: 'Ultra', t: '~2-4 h' },
     ];
@@ -603,6 +645,9 @@
       </div>`, 'modal--studio');
 
     const combinedBox = ov.querySelector('#m-combined');
+    // renderCombined() invokes the hoisted renderPreflight(); initialize these controls
+    // before the first render so renderPreflight never crosses a const TDZ.
+    const splatChk = ov.querySelector('#m-splat'), splatPre = ov.querySelector('#m-splatpreset');
     // chip de score POR CLIP (aptitud individual del escáner — sí está fundamentado). NO predice
     // la fusión: eso solo se sabe DESPUÉS de procesar (el modelo reporta qué fuentes co-registraron).
     async function scoreChip(cid) {
@@ -701,7 +746,6 @@
       const c = e.target.closest('.mpreset'); if (!c) return;
       c.parentElement.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
     });
-    const splatChk = ov.querySelector('#m-splat'), splatPre = ov.querySelector('#m-splatpreset');
     splatChk.addEventListener('change', () => { splatPre.style.display = splatChk.checked ? '' : 'none'; renderPreflight(); });
     splatPre.addEventListener('click', e => {
       const c = e.target.closest('.mpreset'); if (!c) return;
@@ -936,12 +980,18 @@
       try {
         const r = await api('/api/preflight', { n_images: nEst, width, preset: sp });
         if (r.error) { box.innerHTML = ''; return; }
-        const cls = { SAFE: 'ok', ELEVATED: 'mid', LIKELY_OOM: 'mid', REJECTED: 'bad' }[r.verdict] || 'mid';
+        const cls = { SAFE: 'ok', ELEVATED: 'mid', LIKELY_OOM: 'mid',
+          UNVERIFIED_HIGH_RISK: 'mid', INPUT_FLOOR_EXCEEDS_CAP: 'bad', REJECTED: 'bad' }[r.verdict] || 'mid';
+        const measured = r.confidence === 'calibrated'
+          ? `Pico proyectado Medium: ${r.projected_peak_mib} MiB (${r.pct}% del límite).`
+          : `Piso calculado de carga: ${r.input_floor_mib} MiB; a -d 2: ${r.d2_input_floor_mib} MiB.`;
+        const action = r.recommended_d > 1 ? ` El worker comenzará directamente en -d ${r.recommended_d}.` : '';
         box.innerHTML = `<div class="scan-mem ${cls}">${icon(r.verdict === 'SAFE' ? 'check' : 'warn')}
-          <span><b>Preflight de memoria (${esc(sp)})</b>: ${esc(r.verdict)} — proyección ${r.projected_peak_mib} MiB
-          (${r.pct}% del límite) sobre ~${nEst} imágenes estimadas.
-          ${r.verdict === 'REJECTED' ? 'Este preset NO cabe: elige uno menor.' : r.note ? esc(r.note) : ''}
-          <i class="st-proj-note">Proyección del modelo de memoria (±25%, conservador) — no una promesa.</i></span></div>`;
+          <span><b>Preflight de memoria (${esc(sp)})</b>: ${esc(r.verdict)} · ~${nEst} imágenes. ${measured}
+          ${esc(r.note || '')}${action}
+          <i class="st-proj-note">${r.confidence === 'calibrated'
+            ? 'Estimación Medium calibrada con ejecuciones medidas; conserva incertidumbre.'
+            : 'Cinematic/Ultra: riesgo no calibrado; no se inventa un pico ni se declara incapaz al Mac.'}</i></span></div>`;
       } catch { box.innerHTML = ''; }
     }
     ov.querySelector('.mpresets').addEventListener('click', () => renderPreflight());
@@ -973,6 +1023,7 @@
           title: ov.querySelector('#m-title').value.trim(),
           then_splat: splatChk.checked,
           splat_preset: splatPre.querySelector('.mpreset.on')?.dataset.sp || 'cinematic',
+          best_available: true,
         });
         if (r.error) return alert(r.error);
         close();
@@ -1002,6 +1053,147 @@
       }
     } catch { /* siguiente poll lo reintenta */ }
   });
+
+  const modelSourceIds = model => {
+    const rows = model?.reconstruction?.sources || model?.sources || [model?.clip_id];
+    return rows.map(x => typeof x === 'string' ? x : x?.clip_id).filter(Boolean);
+  };
+  const modelPhotoIds = model => model?.reconstruction?.photos || model?.source_photos || [];
+  const sceneForVersion = (sceneRows, versionId) => (sceneRows || []).find(scene =>
+    scene.active_version === versionId || (scene.versions || []).some(v => v.id === versionId));
+  const geoCenter = item => {
+    const box = item?.stats?.bbox || bboxFromCorners(item?.corners || item?.dsm_corners);
+    return box ? [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2] : null;
+  };
+  const geoDistance = (a, b) => {
+    if (!a || !b) return null;
+    const r = Math.PI / 180, y = (b[1] - a[1]) * 111320;
+    const x = (b[0] - a[0]) * 111320 * Math.cos((a[1] + b[1]) / 2 * r);
+    return Math.hypot(x, y);
+  };
+  const sceneVersionTruth = version => {
+    const metrics = version?.metrics || {};
+    const splat = metrics.splat || {};
+    const requested = version?.requested_preset || metrics.requested_preset;
+    const effective = version?.effective_preset || metrics.effective_preset;
+    const parts = [version?.status, version?.merge_label || 'pendiente',
+      `${(version?.sources || []).length} videos`];
+    if (requested) parts.push(`ODM solicitado ${requested}${effective ? ` → ${effective} efectivo` : ''}`);
+    if (metrics.dense_quality_requested || metrics.dense_quality) {
+      parts.push(`nube ${metrics.dense_quality_requested || '—'} → ${metrics.dense_quality || '—'}`);
+    }
+    if (metrics.pipeline_mode) parts.push(`producto ${metrics.pipeline_mode}`);
+    if (splat.requested_preset) {
+      parts.push(`Splat solicitado ${splat.requested_preset}${splat.effective_preset ? ` → ${splat.effective_preset} efectivo` : ''}${splat.input_scale ? ` · -d${splat.input_scale}` : ''}`);
+    }
+    return parts.filter(Boolean).join(' · ');
+  };
+  async function openImproveScene(model) {
+    if (!model) return;
+    let sceneRows = [];
+    try { sceneRows = (await (await fetch('/api/scenes')).json()).scenes || []; } catch {}
+    let scene = sceneForVersion(sceneRows, model.clip_id);
+    const currentSources = scene
+      ? ((scene.versions || []).find(v => v.id === (scene.active_version || model.clip_id))?.sources || modelSourceIds(model))
+      : modelSourceIds(model);
+    const currentPhotos = scene
+      ? ((scene.versions || []).find(v => v.id === (scene.active_version || model.clip_id))?.photos || modelPhotoIds(model))
+      : modelPhotoIds(model);
+    const origin = geoCenter(model);
+    const ranked = candidates.map(f => ({ f, distance: geoDistance(origin, geoCenter(f)) }))
+      .sort((a, b) => (a.distance ?? 1e12) - (b.distance ?? 1e12));
+    // Never hide an active source merely because 24 nearer flights exist. Losing a checked
+    // source here would silently turn an additive version into a replacement on submit.
+    const currentChoices = ranked.filter(({ f }) => currentSources.includes(f.clip_id));
+    const choices = currentChoices.concat(
+      ranked.filter(({ f }) => !currentSources.includes(f.clip_id)).slice(0, Math.max(0, 24 - currentChoices.length)));
+    const photoRows = [...(sys.photos || [])];
+    currentPhotos.forEach(name => {
+      if (!photoRows.some(p => p.name === name)) photoRows.unshift({ name });
+    });
+    const versions = scene?.versions || [];
+    const { ov, close } = openModal(`${icon('layers')} Mejorar esta escena`, `
+      <p class="footer-note" style="margin:0 0 12px">Cada mejora crea una versión nueva: combina todas las
+      capturas seleccionadas, verifica cada fuente y conserva intacta la versión activa.</p>
+      <div class="scene-version-head"><span>Versión activa</span><b>${esc(scene?.active_version || model.clip_id)}</b></div>
+      ${versions.length ? `<div class="scene-versions">${versions.map(v => `
+        <div><span><b>${esc(v.id)}</b><small>${esc(sceneVersionTruth(v))}</small></span>
+        ${v.id === scene.active_version ? '<i>Activa</i>' : v.status === 'ready' && ['FULL', 'SINGLE'].includes(v.merge_label)
+          ? `<button class="btn" data-scene-promote="${esc(v.id)}">Promover</button>` : ''}</div>`).join('')}</div>` : ''}
+      <p class="mlb">Videos de la nueva versión</p>
+      <div class="scene-sources">${choices.map(({ f, distance }) => {
+        const selected = currentSources.includes(f.clip_id);
+        const alt = Math.round(f.stats?.max_rel_alt_m || 0);
+        const dist = distance == null ? 'distancia sin medir' : distance < 1000 ? `${Math.round(distance)} m` : `${(distance / 1000).toFixed(1)} km`;
+        const risky = distance != null && distance > 500;
+        return `<label class="scene-source${selected ? ' on' : ''}${risky ? ' risky' : ''}">
+          <input type="checkbox" value="${esc(f.clip_id)}"${selected ? ' checked' : ''}>
+          <img src="data/thumbs/${encodeURIComponent(f.clip_id)}.jpg" alt="" loading="lazy">
+          <span><b>${esc(f.label || `${fmt.date(f.date)} · ${f.time}`)}</b><small>${esc(dist)} · ${alt || '—'} m${risky ? ' · revisar compatibilidad' : ''}</small></span></label>`;
+      }).join('')}</div>
+      <p class="footer-note scene-truth">La cercanía solo sugiere compatibilidad. El resultado FULL/PARTIAL se decide después con cámaras registradas por fuente.</p>
+      <p class="mlb">Fotos adicionales</p>
+      <div class="scene-photos">${photoRows.slice(0, Math.max(24, currentPhotos.length)).map(p => `<label>
+        <input type="checkbox" value="${esc(p.name)}"${currentPhotos.includes(p.name) ? ' checked' : ''}>
+        <span>${esc(p.name)}</span></label>`).join('') || '<span class="footer-note">Sin fotos sueltas en el vault.</span>'}</div>
+      <p class="mlb">ODM de la nueva versión</p>
+      <div class="mpresets scene-odm">
+        ${[['estandar', 'Estándar', 'poses + mapa estable'], ['alta', 'Alta', 'detalle preferido'], ['extra', 'Extra', 'malla más densa'], ['ultra', 'Ultra', 'máximo ODM local']]
+          .map(([k, n, d]) => `<div class="mpreset${k === 'alta' ? ' on' : ''}" data-scene-odm="${k}"><b>${n}</b><small>${d}</small></div>`).join('')}
+      </div>
+      <label class="proc-phase"><input type="checkbox" data-scene-splat checked>
+        <span>${icon('spark')} <b>Entrenar Gaussian al terminar</b> con fallback explícito</span></label>
+      <div class="mpresets scene-splat">
+        ${[['medium', 'Medium'], ['cinematic', 'Cinemático'], ['ultra', 'Ultra']]
+          .map(([k, n]) => `<div class="mpreset${k === 'cinematic' ? ' on' : ''}" data-scene-splat-preset="${k}"><b>${n}</b></div>`).join('')}
+      </div>
+      <button class="btn primary" data-scene-go style="width:100%;justify-content:center;margin-top:14px">Crear versión mejorada</button>`, 'scene-improve-modal');
+    ov.querySelectorAll('.mpresets').forEach(group => group.addEventListener('click', e => {
+      const pick = e.target.closest('.mpreset'); if (!pick) return;
+      group.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === pick));
+    }));
+    ov.querySelectorAll('.scene-source input').forEach(input => input.addEventListener('change', e =>
+      e.target.closest('.scene-source').classList.toggle('on', e.target.checked)));
+    ov.addEventListener('click', async e => {
+      const promote = e.target.closest('[data-scene-promote]');
+      if (promote && scene) {
+        const r = await api('/api/scene_promote', { scene_id: scene.id, version_id: promote.dataset.scenePromote });
+        if (r.error) return alert(r.error);
+        sys.scenes = (await (await fetch('/api/scenes')).json()).scenes || [];
+        return close();
+      }
+      const go = e.target.closest('[data-scene-go]'); if (!go) return;
+      const selectedSources = [...ov.querySelectorAll('.scene-source input:checked')].map(x => x.value);
+      const selectedPhotos = [...ov.querySelectorAll('.scene-photos input:checked')].map(x => x.value);
+      if (!selectedSources.length) return alert('Selecciona al menos un video con GPS.');
+      go.disabled = true;
+      try {
+        if (!scene) {
+          const anchor = origin ? { lon: origin[0], lat: origin[1] } : {};
+          const created = await api('/api/scene_create', { title: titleFor(model), anchor,
+            sources: currentSources, photos: currentPhotos, existing_version: model.clip_id });
+          if (created.error) return alert(created.error);
+          scene = created.scene;
+        }
+        const sameSources = [...selectedSources].sort().join('|') === [...currentSources].sort().join('|');
+        const samePhotos = [...selectedPhotos].sort().join('|') === [...currentPhotos].sort().join('|');
+        if (sameSources && samePhotos) {
+          alert('La escena quedó versionada. Agrega otra captura o foto para crear una mejora nueva.');
+          return close();
+        }
+        const r = await api('/api/scene_improve', {
+          scene_id: scene.id, sources: selectedSources, photos: selectedPhotos,
+          title: titleFor(model), preset: ov.querySelector('[data-scene-odm].on')?.dataset.sceneOdm || 'alta',
+          then_splat: ov.querySelector('[data-scene-splat]')?.checked,
+          splat_preset: ov.querySelector('[data-scene-splat-preset].on')?.dataset.sceneSplatPreset || 'cinematic',
+          best_available: true,
+        });
+        if (r.error) return alert(r.error);
+        close(); showTdMod('jobs'); document.querySelector('[data-job-filter="all"]')?.click();
+      } finally { go.disabled = false; }
+    });
+  }
+  document.getElementById('improve-scene')?.addEventListener('click', () => openImproveScene(cur));
 
   // ---------- ortofoto en MapLibre ----------
   let omap = null;
@@ -1901,6 +2093,7 @@
           auto_model: base?.dataset.autoModel === '1',
           model_preset: ov.querySelector('[data-model-preset].on')?.dataset.modelPreset || 'estandar',
           preset: ov.querySelector('.splat-presets .mpreset.on')?.dataset.preset || 'medium',
+          best_available: true,
         });
         if (r.error) return alert(r.error);
         close();

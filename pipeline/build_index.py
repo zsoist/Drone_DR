@@ -50,10 +50,23 @@ def load_models(models_dir: Path) -> list:
     return out
 
 
-# el mismo entrenamiento puede tener .ksplat (optimizado) y .splat (fuente): UNA entrada por
+def load_scenes(scenes_dir: Path) -> list:
+    """Load stable-place manifests without letting one corrupt scene hide all others."""
+    out = []
+    if not scenes_dir.exists():
+        return out
+    for path in scenes_dir.glob("scene_*.json"):
+        try:
+            out.append(json.loads(path.read_text()))
+        except (ValueError, OSError) as e:
+            print(f"  skip scene corrupta {path.name}: {e}", flush=True)
+    return sorted(out, key=lambda item: item.get("updated_at", ""), reverse=True)
+
+
+# el mismo entrenamiento puede tener SOG/ksplat (viewer) y .splat (fuente): UNA entrada por
 # VERSIÓN, no una por formato. Importante: un clip puede tener varias versiones de splat
 # (entrenos 2k/7k/15k, ediciones de SuperSplat, etc.) y la UI debe poder elegir entre todas.
-SPLAT_PRIORITY = {".ksplat": 0, ".splat": 1, ".ply": 2}
+SPLAT_PRIORITY = {".sog": 0, ".spz": 1, ".ksplat": 2, ".splat": 3, ".ply": 4}
 HIST_RE = re.compile(r"^(?P<cid>.+)-(?P<date>\d{8})-(?P<time>\d{6})$")
 SPLAT_PRESET_BY_ITERS = {
     1000: ("fast", "Fast"),
@@ -61,6 +74,13 @@ SPLAT_PRESET_BY_ITERS = {
     7000: ("cinematic", "Cinematic"),
     15000: ("ultra", "Ultra"),
 }
+
+
+def _logical_splat_key(path: str | Path) -> str:
+    """Collapse viewer/source encodings onto one immutable splat version."""
+    p = Path(path)
+    stem = p.stem[:-6] if p.stem.endswith(".clean") else p.stem
+    return f"{p.parent.as_posix()}/{stem}" if p.parent.as_posix() != "." else stem
 
 
 def _splat_stats(base: Path, stem: str) -> dict:
@@ -154,7 +174,7 @@ def _splat_job_facts(splat_dir: Path) -> dict:
         elif "CPU" in detail:
             fact["backend"] = "CPU"
         if fact:
-            out[rel] = fact
+            out[_logical_splat_key(rel)] = fact
     return out
 
 
@@ -171,7 +191,8 @@ def all_splats(splat_dir: Path) -> list:
             # cortada) se publicaría como splat FANTASMA e imborrable desde la UI.
             if p.name.startswith(".") or not (p.is_file() and p.suffix.lower() in SPLAT_PRIORITY):
                 continue
-            key = f"{prefix}{p.stem}"
+            logical_stem = p.stem[:-6] if p.stem.endswith(".clean") else p.stem
+            key = f"{prefix}{logical_stem}"
             cur = by_version.get(key)
             if cur is None or SPLAT_PRIORITY[p.suffix.lower()] < SPLAT_PRIORITY[cur.suffix.lower()]:
                 by_version[key] = p
@@ -179,9 +200,10 @@ def all_splats(splat_dir: Path) -> list:
     for key, p in by_version.items():
         base = p.parent
         rel = p.relative_to(splat_dir).as_posix()
-        info = _splat_version(p.stem)
-        stats = _splat_stats(base, p.stem)
-        for k, v in job_facts.get(rel, {}).items():
+        logical_stem = p.stem[:-6] if p.stem.endswith(".clean") else p.stem
+        info = _splat_version(logical_stem)
+        stats = _splat_stats(base, logical_stem)
+        for k, v in job_facts.get(_logical_splat_key(rel), {}).items():
             stats.setdefault(k, v)
         try:
             size = p.stat().st_size
@@ -263,6 +285,7 @@ def main():
         "last_ingest": {"files": last["file_count"], "bytes": last["total_bytes"],
                         "at": last["ingested_at"]} if last else None,
         "models": load_models(VAULT / "models"),   # tolera meta.json corrupto (no vacía la UI)
+        "scenes": load_scenes(VAULT / "manifest" / "scenes"),
     }
     write_atomic(VAULT / "manifest" / "system.json", json.dumps(system, separators=(",", ":")))
     print(f"flights.json: {len(flights)} vuelos · system.json: "

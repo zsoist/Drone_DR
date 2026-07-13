@@ -166,7 +166,7 @@ const KIND_META = {
 };
 // etapa humana a partir del log/detail de ODM
 function humanStage(j) {
-  const src = cleanLog(j.log) + ' ' + (j.detail || '');
+  const src = cleanLog(j.log_tail) + ' ' + (j.detail || '');
   const M = [
     [/frames: \d+/, 'Extrayendo frames del video'],
     [/geotag|exiftool/i, 'Geoetiquetando con tu GPS'],
@@ -185,21 +185,48 @@ function humanStage(j) {
   for (const [re, label] of M) if (re.test(src)) return label;
   return j.detail || '';
 }
+function jobDuration(seconds) {
+  seconds = Number(seconds || 0);
+  if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)} h`;
+  if (seconds >= 60) return `${Math.round(seconds / 60)} min`;
+  return seconds ? `${Math.round(seconds)} s` : '—';
+}
+function presetLabel(value) {
+  return ({ rapido: 'Rápido', estandar: 'Estándar', alta: 'Alta', extra: 'Extra',
+    ultra: 'Ultra', medium: 'Medium', cinematic: 'Cinemático', fast: 'Fast' })[value] || value || '—';
+}
 function jobCard(j, flightsIdx, entering = true) {
   const meta = KIND_META[j.kind] || { ic: 'activity', name: j.kind };
   const f = flightsIdx?.[j.label];
-  const title = `${meta.name} · ${f ? (esc(f.label) || fmt.date(f.date) + ' ' + f.time) : esc((j.label || '').length > 30 ? (j.label || '').slice(-14) : (j.label || 'trabajo'))}`;
+  const subject = j.title || (f ? (f.label || fmt.date(f.date) + ' ' + f.time) : j.label || 'trabajo');
+  const titleText = `${meta.name} · ${subject}`;
+  const title = esc(titleText);
   const stLabel = { running: 'procesando', queued: 'en cola', done: 'listo',
     error: 'falló', cancelled: 'cancelado', cancel_failed: 'cancel falló' }[j.status] || j.status;
-  const pct = j.progress ? Math.round(j.progress * 100) : null;
-  const eta = (j.status === 'running' && j.progress > 0.1 && j.mins > 0.5)
-    ? Math.max(1, Math.round(j.mins / j.progress * (1 - j.progress))) : null;
-  const lastLog = cleanLog((j.log || '').split('\n').pop());
+  const outcomeLabel = j.outcome === 'completed_with_fallback' ? 'listo con fallback' : stLabel;
+  const pct = Number.isFinite(+j.progress) ? Math.round(+j.progress * 100) : null;
+  const lastLog = cleanLog((j.log_tail || '').split('\n').pop());
+  const quality = [];
+  if (j.requested_preset) quality.push(`<span><b>${j.kind === 'splat' ? 'Splat' : 'ODM'}</b> · ${esc(presetLabel(j.requested_preset))} solicitada</span>`);
+  if (j.effective_preset) quality.push(`<span><b>Efectiva</b> · ${esc(presetLabel(j.effective_preset))}</span>`);
+  if (j.dense_quality) quality.push(`<span><b>Nube densa</b> · ${esc(presetLabel(j.dense_quality))}${j.dense_quality_requested && j.dense_quality_requested !== j.dense_quality ? ` (solicitada ${esc(j.dense_quality_requested)})` : ''}</span>`);
+  if (j.input_scale > 1) quality.push(`<span><b>Entrada</b> · -d ${esc(j.input_scale)}</span>`);
+  const facts = [
+    j.cameras_registered != null ? `${j.cameras_registered}/${j.cameras_total || j.cameras_registered} cámaras` : '',
+    j.source_count ? `${j.source_count} video${j.source_count === 1 ? '' : 's'}` : '',
+    j.photo_count ? `${j.photo_count} foto${j.photo_count === 1 ? '' : 's'}` : '',
+    j.product_mode ? String(j.product_mode).replaceAll('_', ' ') : '',
+    j.iterations ? `${j.iterations >= 1000 && j.iterations % 1000 === 0 ? `${j.iterations / 1000}k` : j.iterations} iteraciones` : '',
+    j.backend || '',
+    j.peak_mib ? `pico ${j.peak_mib} MiB${j.memory_cap_mib ? ` / ${j.memory_cap_mib}` : ''}` : '',
+  ].filter(Boolean);
+  const search = `${titleText} ${j.kind} ${j.status} ${j.detail || ''} ${quality.join(' ')}`.toLowerCase();
   return `
-  <div class="job-card${entering ? '' : ' upd'}" data-jid="${esc(j.id)}">
+  <article class="job-card${entering ? '' : ' upd'}" data-jid="${esc(j.id)}" data-kind="${esc(j.kind)}" data-status="${esc(j.status)}" data-search="${esc(search)}">
     <div class="jc-head">${icon(meta.ic)}<span class="jc-title">${title}</span>
-      <span class="jc-status ${esc(j.status)}">${esc(stLabel)}${pct != null && j.status === 'running' ? ` ${pct}%` : ''}</span></div>
-    ${j.status === 'running' ? `
+      <span class="jc-status ${esc(j.status)}${j.fallback ? ' fallback' : ''}">${esc(outcomeLabel)}${pct != null && j.status === 'running' ? ` ${pct}%` : ''}</span></div>
+    ${quality.length ? `<div class="jc-quality">${quality.join('')}</div>` : ''}
+    ${['running', 'queued'].includes(j.status) ? `
       ${j.kind === '3d' ? (() => {
         const steps = [['frames', 'Frames'], ['odm', 'Fotogrametr\u00eda'], ['publish', 'Publicar']];
         const at = steps.findIndex(s => s[0] === j.stage);
@@ -207,20 +234,91 @@ function jobCard(j, flightsIdx, entering = true) {
           `<span class="jc-step${i < at ? ' done' : i === at ? ' act' : ''}">${i < at ? '\u2713 ' : ''}${lb}</span>`).join('')}</div>`;
       })() : ''}
       <div class="jc-stage">${esc(humanStage(j))}</div>
-      ${pct != null ? `<div class="jc-bar"><div style="width:${pct}%"></div></div>` : ''}
-      <div class="jc-meta"><span>${j.mins ? j.mins + ' min transcurridos' : ''}</span>
-        <span>${eta ? '~' + eta + ' min restantes' : ''}</span></div>
-      ${lastLog ? `<div class="jc-log">${esc(lastLog)}</div>` : ''}` : ''}
+      ${pct != null ? `<div class="jc-bar" role="progressbar" aria-label="Progreso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div style="width:${pct}%"></div></div>` : ''}` : ''}
+    ${facts.length ? `<div class="jc-facts">${facts.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+    <div class="jc-meta"><span>${esc(j.id)}</span><span>${jobDuration(j.elapsed_s)} transcurridos</span></div>
+    ${lastLog ? `<button class="jc-log" data-job-log="${esc(j.id)}" title="Abrir log completo">${esc(lastLog)}</button>` : ''}
     ${j.status === 'queued' ? `<div class="jc-stage">Esperando turno — el worker procesa un trabajo pesado a la vez.</div>` : ''}
-    ${j.status === 'done' ? `<div class="jc-meta"><span>${esc(j.detail || '')}</span>
-      ${j.kind === '3d' ? '<a href="tresd.html" style="color:var(--accent)">Ver en 3D →</a>' :
-        j.kind === 'splat' ? '<a href="tresd.html" style="color:var(--accent)">Ver splat →</a>' :
-        (j.artifact && j.artifact_exists !== false) ? `<a href="data/${esc(j.artifact)}" target="_blank" style="color:var(--accent)">Abrir →</a>` : ''}</div>` : ''}
-    ${j.status === 'cancelled' || j.status === 'cancel_failed' ? `<div class="jc-meta"><span>${esc(j.detail || '')}</span></div>` : ''}
-    ${j.status === 'error' ? `<details class="jc-err"><summary>${esc((j.detail || 'error').slice(0, 90))} — ver log</summary><pre>${esc(cleanLog(j.log) || 'sin log')}</pre></details>` : ''}
-    ${['running', 'queued'].includes(j.status) && ['3d', 'splat'].includes(j.kind) ?
-      `<div class="jc-actions"><button class="btn" style="padding:4px 11px;font-size:11px" data-cancel="${esc(j.id)}">Cancelar</button></div>` : ''}
-  </div>`;
+    ${j.detail ? `<div class="jc-result ${j.status === 'error' ? 'error' : ''}">${esc(j.detail)}</div>` : ''}
+    <div class="jc-actions">
+      <button class="btn" data-job-log="${esc(j.id)}">${icon('list')} Logs completos</button>
+      ${j.status === 'done' && ['3d', 'splat'].includes(j.kind) ? `<a class="btn primary" href="tresd.html">${j.kind === '3d' ? 'Ver escena' : 'Ver splat'}</a>` : ''}
+      ${j.status === 'done' && !['3d', 'splat'].includes(j.kind) && j.artifact && j.artifact_exists ? `<a class="btn primary" href="data/${esc(j.artifact)}" target="_blank">Abrir</a>` : ''}
+      ${['running', 'queued'].includes(j.status) && ['3d', 'splat'].includes(j.kind) ? `<button class="btn danger" data-cancel="${esc(j.id)}">Cancelar</button>` : ''}
+    </div>
+  </article>`;
+}
+
+let jobLogState = null;
+function renderJobLog() {
+  const drawer = document.getElementById('job-log-drawer');
+  if (!drawer || !jobLogState) return;
+  const q = (drawer.querySelector('[data-log-search]')?.value || '').toLowerCase();
+  const level = drawer.querySelector('[data-log-level]')?.value || 'all';
+  const classify = line => /error|traceback|failed|falló|oom/i.test(line) ? 'error'
+    : /warn|warning|aviso|fallback|retry/i.test(line) ? 'warning' : 'info';
+  const visible = jobLogState.lines.filter(line => (!q || line.toLowerCase().includes(q))
+    && (level === 'all' || classify(line) === level));
+  const pre = drawer.querySelector('.jl-pre');
+  pre.textContent = visible.join('\n') || 'Sin líneas para este filtro.';
+  drawer.querySelector('.jl-count').textContent = `${visible.length}/${jobLogState.lines.length} líneas cargadas`;
+  if (jobLogState.autoscroll) pre.scrollTop = pre.scrollHeight;
+}
+async function fetchJobLogChunk() {
+  if (!jobLogState || jobLogState.loading || jobLogState.eof || jobLogState.paused) return;
+  jobLogState.loading = true;
+  try {
+    const r = await fetch(`/api/job_log?id=${encodeURIComponent(jobLogState.id)}&after=${jobLogState.cursor}&limit=500`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const chunk = await r.json();
+    jobLogState.lines.push(...(chunk.lines || []));
+    jobLogState.cursor = chunk.next || jobLogState.cursor;
+    jobLogState.eof = !!chunk.eof;
+    renderJobLog();
+  } finally { jobLogState.loading = false; }
+}
+async function openJobLog(jid) {
+  document.getElementById('job-log-drawer')?.remove();
+  const detail = await (await fetch(`/api/job?id=${encodeURIComponent(jid)}`)).json();
+  const job = detail.job || {};
+  jobLogState = { id: jid, cursor: 0, lines: [], eof: false, paused: false,
+    autoscroll: true, loading: false, timer: 0 };
+  const drawer = document.createElement('section');
+  drawer.id = 'job-log-drawer';
+  drawer.className = 'job-log-drawer';
+  drawer.setAttribute('role', 'dialog');
+  drawer.setAttribute('aria-modal', 'true');
+  drawer.setAttribute('aria-label', `Logs de ${jid}`);
+  const requested = presetLabel(job.requested_preset);
+  const effective = presetLabel(job.effective_preset);
+  drawer.innerHTML = `<div class="jl-head"><div><b>${esc(job.title || job.label || jid)}</b>
+      <span>${esc(job.kind || '')} · solicitada ${esc(requested)}${job.effective_preset ? ` · efectiva ${esc(effective)}` : ''}</span></div>
+      <button class="btn" data-log-close aria-label="Cerrar logs">Cerrar</button></div>
+    <div class="jl-events">${(job.events || []).map(e => `<span class="${esc(e.level)}"><b>${esc(e.event)}</b>${esc(e.message || '')}</span>`).join('')}</div>
+    <div class="jl-tools">
+      <div class="search">${icon('search')}<input type="search" data-log-search placeholder="Buscar en logs…" aria-label="Buscar en logs"></div>
+      <select class="ctl" data-log-level aria-label="Nivel del log"><option value="all">Todos</option><option value="info">Info</option><option value="warning">Avisos</option><option value="error">Errores</option></select>
+      <button class="btn" data-log-wrap>Ajustar líneas</button>
+      <button class="btn" data-log-pause>Pausar</button>
+      <button class="btn on" data-log-autoscroll>Autoscroll</button>
+      <button class="btn" data-log-copy>Copiar</button>
+      <button class="btn" data-log-download>Descargar</button>
+    </div>
+    <div class="jl-meta"><span class="jl-count">0 líneas</span><button class="linklike" data-log-more>Cargar más</button></div>
+    <pre class="jl-pre" tabindex="0"></pre>`;
+  document.body.appendChild(drawer);
+  drawer.querySelector('[data-log-close]').focus();
+  await fetchJobLogChunk();
+  if (!jobLogState.lines.length && job.log_tail) {
+    jobLogState.lines = ['[histórico] Este trabajo es anterior al log completo.', ...job.log_tail.split('\n')];
+    renderJobLog();
+  }
+  jobLogState.timer = setInterval(() => { if (!jobLogState?.paused) { jobLogState.eof = false; fetchJobLogChunk(); } }, 2500);
+}
+function closeJobLog() {
+  if (jobLogState?.timer) clearInterval(jobLogState.timer);
+  jobLogState = null;
+  document.getElementById('job-log-drawer')?.remove();
 }
 async function pollJobs(el, every = 2500, onDone = null) {
   let flightsIdx = null;
@@ -236,7 +334,7 @@ async function pollJobs(el, every = 2500, onDone = null) {
     try {
       const res = await fetch('/api/jobs');
       if (res.status === 403) { el.innerHTML = '<p class="footer-note">Inicia sesión para ver trabajos.</p>'; return; }
-      const { jobs = [] } = await res.json();             // respuesta sin jobs → [] (no crash) (#46)
+      const { jobs = [], counts = {} } = await res.json(); // respuesta sin jobs → [] (no crash) (#46)
       if (onDone) {
         for (const j of jobs) {
           if (j.status === 'done' && ['running', 'queued'].includes(prevStatus[j.id])) {
@@ -247,23 +345,17 @@ async function pollJobs(el, every = 2500, onDone = null) {
       }
       if (!jobs.length) { el.innerHTML = '<p class="footer-note">Sin trabajos aún.</p>'; return; }
       const active = jobs.filter(j => ['running', 'queued'].includes(j.status));
-      const doneRecent = jobs.filter(j => !['running', 'queued'].includes(j.status)).slice(0, 3);
-      const older = jobs.filter(j => !['running', 'queued'].includes(j.status)).slice(3);
-      const list = [...active, ...doneRecent];
-      const hash = j => [j.status, j.progress, j.mins, j.detail, j.stage, (j.log || '').slice(-80)].join('|');
-      const ids = list.map(j => j.id).join(',') + '§' + older.map(j => j.id).join(',');   // identidades, no sólo el conteo
+      const history = jobs.filter(j => !['running', 'queued'].includes(j.status));
+      const list = [...active, ...history];
+      const hash = j => [j.status, j.progress, j.elapsed_s, j.detail, j.stage,
+        j.requested_preset, j.effective_preset, j.outcome, (j.log_tail || '').slice(-80)].join('|');
+      const ids = list.map(j => j.id).join(',');
       if (el.dataset.ids !== ids) {
-        // cambio estructural (job nuevo / cambio de zona): rebuild completo
-        const wasOpen = el.querySelector('details.jobs-older')?.open;
         el.dataset.ids = ids;
-        el.innerHTML =
-          list.map(j => jobCard(j, flightsIdx)).join('') +
-          (older.length ? `<details class="jobs-older"${wasOpen ? ' open' : ''}><summary>${older.length} trabajos anteriores</summary>
-            ${older.map(j => jobCard(j, flightsIdx)).join('')}</details>` : '');
-        [...list, ...older].forEach(j => { el.querySelector(`[data-jid="${CSS.escape(j.id)}"]`)?.setAttribute('data-h', hash(j)); });
+        el.innerHTML = list.map(j => jobCard(j, flightsIdx)).join('');
+        list.forEach(j => { el.querySelector(`[data-jid="${CSS.escape(j.id)}"]`)?.setAttribute('data-h', hash(j)); });
       } else {
-        // mismos jobs: actualiza EN SITIO solo las tarjetas cuyo contenido cambió (incluye las 'older')
-        [...list, ...older].forEach(j => {
+        list.forEach(j => {
           const node = el.querySelector(`[data-jid="${CSS.escape(j.id)}"]`);
           if (!node || node.dataset.h === hash(j)) return;
           const tmp = document.createElement('div');
@@ -273,6 +365,7 @@ async function pollJobs(el, every = 2500, onDone = null) {
           node.replaceWith(next);
         });
       }
+      el.dispatchEvent(new CustomEvent('jobs:paint', { detail: { jobs, counts } }));
     } catch {} finally { busy = false; }
   };
   paint();
@@ -281,12 +374,38 @@ async function pollJobs(el, every = 2500, onDone = null) {
     el.addEventListener('click', e => {
       const c = e.target.closest('[data-cancel]');
       if (c) api('/api/job_cancel', { id: c.dataset.cancel }).catch(() => {});   // no unhandled rejection (#68)
+      const logs = e.target.closest('[data-job-log]');
+      if (logs) openJobLog(logs.dataset.jobLog).catch(err => alert(`No se pudo abrir el log: ${err.message}`));
     });
   }
   clearInterval(el._pollTimer);                           // no acumules intervalos si se re-llama (#47)
   el._pollTimer = setInterval(paint, every);
   return el._pollTimer;
 }
+
+document.addEventListener('click', async e => {
+  const drawer = e.target.closest('#job-log-drawer');
+  if (e.target.closest('[data-log-close]')) return closeJobLog();
+  if (!drawer || !jobLogState) return;
+  if (e.target.closest('[data-log-wrap]')) drawer.classList.toggle('wrap');
+  if (e.target.closest('[data-log-pause]')) {
+    jobLogState.paused = !jobLogState.paused;
+    e.target.closest('[data-log-pause]').textContent = jobLogState.paused ? 'Continuar' : 'Pausar';
+  }
+  if (e.target.closest('[data-log-autoscroll]')) {
+    jobLogState.autoscroll = !jobLogState.autoscroll;
+    e.target.closest('[data-log-autoscroll]').classList.toggle('on', jobLogState.autoscroll);
+  }
+  if (e.target.closest('[data-log-more]')) { jobLogState.eof = false; await fetchJobLogChunk(); }
+  if (e.target.closest('[data-log-copy]')) await navigator.clipboard.writeText(jobLogState.lines.join('\n'));
+  if (e.target.closest('[data-log-download]')) {
+    while (!jobLogState.eof) await fetchJobLogChunk();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([jobLogState.lines.join('\n')], { type: 'text/plain' }));
+    a.download = `${jobLogState.id}.log`; a.click(); URL.revokeObjectURL(a.href);
+  }
+});
+document.addEventListener('input', e => { if (e.target.matches('[data-log-search], [data-log-level]')) renderJobLog(); });
 
 // tema: aplicar ANTES de pintar para evitar flash
 document.documentElement.dataset.theme = localStorage.getItem('ab_theme') || 'dark';

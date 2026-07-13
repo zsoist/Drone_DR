@@ -1,76 +1,127 @@
-"""Preflight de memoria per-preset (U1.3): el veredicto ANTES de quemar cómputo.
+"""Evidence-based OpenSplat memory preflight.
 
-Nace del P1 (ultra quemaba 10 min en 3 rungs pre-condenados) y del P0 (un preset
-sobre-presupuesto operó días sin que nadie lo viera). Motor = el modelo de tres
-términos medido cadáver a cadáver el 11-jul (SPLAT_EXPERIMENTS.md), con sus
-cláusulas: pendientes config-dependientes, error conocido ~±25% (dirección
-histórica: conservadora — test nº7: −5%), calibrado a UNA clase de escena.
-
-peak ≈ base_imgs(n·px·12B/d²)  +  pendiente(preset)·steps  +  escalón(salto ¼→½)
-
-Toda proyección viaja al job (proyectado-vs-observado = telemetría permanente
-del modelo: cada job real lo re-testea).
+Only Medium has a controlled, instrumented calibration across the current
+30/81/214-camera workloads. Cinematic and Ultra have both successful and OOM
+runs, so extrapolating a failed-run slope through 7k/15k iterations creates
+false 50-120 GB numbers. For those presets we report the deterministic image
+load floor and an explicitly unverified risk instead.
 """
-from pathlib import Path
 
 import hwconfig
 
-# MiB/step durante densificación a ¼ de resolución interna, POR CLASE de preset —
-# calibradas de los runs instrumentados del 11-jul (ver SPLAT_EXPERIMENTS.md):
-#   bounded (thresh 0.0008/refine 300): serie medida 2.39
-#   aggressive (defaults fast/medium): (6992−1400_base−900_overhead)/1500 = 3.1 (escena 1)
-#   heavy (cinematic/ultra): muertes a ~10.5GB/~2200 steps ≈ 5.3
-SLOPE_MIB_STEP = {"fast": 3.1, "medium": 3.1, "cinematic": 5.3, "ultra": 5.3}
-WARMUP = 500                    # la densificación arranca aquí
-JUMP_STEP = 3000                # resolution-schedule default: ¼→½
-JUMP_MIB = 1336                 # escalón aditivo medido
-JUMP_SLOPE_MULT = 1.55          # multiplicador de pendiente medido
+
 PRESET_ITERS = {"fast": 1000, "medium": 2000, "cinematic": 7000, "ultra": 15000}
-BASE_OVERHEAD_MIB = 900         # runtime torch/MPS + nube inicial (observado en arranques)
+BASE_OVERHEAD_MIB = 900
+
+# Medium calibration from SPLAT_EXPERIMENTS.md. At 214 images, -d2 projected
+# 8800 MiB and observed 8354 MiB (76% of the 11 GiB operational cap).
+MEDIUM_SLOPE_MIB_STEP = 3.1
+MEDIUM_WARMUP = 500
 
 
 def _base_imgs_mib(n_images: int, width: int, d: int = 1) -> float:
-    h = width * 9 // 16
-    return n_images * (width * h * 3 * 4) / (d * d) / 2**20
+    height = width * 9 // 16
+    return n_images * (width * height * 3 * 4) / (d * d) / 2**20
 
 
-def _gauss_mib(preset: str, iters: int, d: int = 1) -> float:
-    slope = SLOPE_MIB_STEP.get(preset, 5.3)
-    steps = max(0, min(iters, JUMP_STEP) - WARMUP)
-    total = slope * steps
-    if iters > JUMP_STEP:
-        total += JUMP_MIB + slope * JUMP_SLOPE_MULT * (iters - JUMP_STEP)
-    return total
+def input_floor_mib(n_images: int, width: int, d: int = 1) -> int:
+    """Deterministic lower bound: decoded image tensors plus runtime overhead."""
+    return round(BASE_OVERHEAD_MIB + _base_imgs_mib(n_images, width, d))
 
 
 def project_peak_mib(n_images: int, width: int, preset: str, d: int = 1,
-                     iters: int | None = None) -> float:
-    iters = iters or PRESET_ITERS.get(preset, 2000)
-    return round(BASE_OVERHEAD_MIB + _base_imgs_mib(n_images, width, d)
-                 + _gauss_mib(preset, iters, d))
+                     iters: int | None = None) -> int:
+    """Return the calibrated Medium estimate; reject unsupported precision."""
+    if preset != "medium":
+        raise ValueError(f"preset {preset} has no calibrated numeric peak model")
+    steps = max(0, (iters or PRESET_ITERS["medium"]) - MEDIUM_WARMUP)
+    return round(input_floor_mib(n_images, width, d) + MEDIUM_SLOPE_MIB_STEP * steps)
 
 
 def splat_preflight(n_images: int, width: int, preset: str, d: int = 1) -> dict:
-    """Veredicto SAFE/ELEVATED/LIKELY_OOM/REJECTED contra el cap vigente.
+    """Classify risk without claiming that the Mac is categorically incapable.
 
-    LIKELY_OOM incluye qué rung de la escalera probablemente sobreviva;
-    REJECTED = ni el último rung cabe (el caso P1: no quemar los 10 minutos)."""
+    `recommended_d` is an execution hint. A value of 2 means the full-resolution
+    image load already consumes too much of the cap, so the worker should skip
+    the guaranteed-waste full-resolution attempt.
+    """
+    if preset not in PRESET_ITERS:
+        raise ValueError(f"unknown splat preset: {preset}")
+    if n_images < 1 or width < 1 or d < 1:
+        raise ValueError("n_images, width and d must be positive")
+
     cap = int(hwconfig.load()["caps"]["opensplat_mib"])
-    proj = project_peak_mib(n_images, width, preset, d)
-    pct = round(proj / cap * 100)
-    out = {"projected_peak_mib": proj, "cap_mib": cap, "pct": pct,
-           "basis": f"{n_images} imgs @{width}px /{d} · preset {preset} · modelo 3 términos (±25%, conservador)"}
+    floor = input_floor_mib(n_images, width, d)
+    d2 = max(2, d)
+    floor_d2 = input_floor_mib(n_images, width, d2)
+    recommended_d = d2 if floor / cap > 0.70 else d
+    common = {
+        "preset": preset,
+        "n_images": n_images,
+        "width": width,
+        "input_scale": d,
+        "cap_mib": cap,
+        "input_floor_mib": floor,
+        "d2_input_floor_mib": floor_d2,
+        "recommended_d": recommended_d,
+        "basis": (f"{n_images} imágenes @{width}px /{d}; piso de carga calculado "
+                  "con tensores RGB float32 + overhead observado"),
+    }
+
+    if preset != "medium":
+        if floor_d2 / cap > 0.90:
+            return {
+                **common,
+                "verdict": "INPUT_FLOOR_EXCEEDS_CAP",
+                "confidence": "deterministic_floor",
+                "note": ("Incluso la carga de imágenes a -d 2 rebasa el margen operativo; "
+                         "reduce imágenes o resolución antes de entrenar."),
+            }
+        note = ("Cinematic/Ultra no tiene un modelo de pico calibrado para esta escena. "
+                "El Mac ha completado estos presets y también ha tenido OOM; se usará "
+                "la escala de entrada más segura y se registrará cada fallback.")
+        if recommended_d == 2:
+            note = (f"La carga full-res por sí sola estima {floor} MiB; comenzar en -d 2 "
+                    f"reduce ese piso a {floor_d2} MiB. " + note)
+        return {
+            **common,
+            "verdict": "UNVERIFIED_HIGH_RISK",
+            "confidence": "unverified",
+            "note": note,
+        }
+
+    projected = project_peak_mib(n_images, width, "medium", d)
+    d2_projected = project_peak_mib(n_images, width, "medium", d2)
+    pct = round(projected / cap * 100)
+    d2_pct = round(d2_projected / cap * 100)
+    out = {
+        **common,
+        "confidence": "calibrated",
+        "projected_peak_mib": projected,
+        "d2_projected_peak_mib": d2_projected,
+        "pct": pct,
+        "d2_pct": d2_pct,
+        "basis": (common["basis"] + "; Medium calibrado contra picos medidos "
+                  "(incertidumbre histórica aproximada ±25%)"),
+    }
     if pct <= 70:
-        return {**out, "verdict": "SAFE"}
+        return {**out, "verdict": "SAFE", "recommended_d": d}
     if pct <= 90:
-        return {**out, "verdict": "ELEVATED"}
-    # ¿algún rung de la escalera cabe? (los rungs bajan -d, que solo ataca base_imgs —
-    # el P1 demostró que NO reducen el driver de conteo; el modelo lo refleja)
-    for rung, rd in ((1, d * 2), (2, d * 2)):
-        rproj = project_peak_mib(n_images, width, preset, rd)
-        if rproj / cap <= 0.9:
-            return {**out, "verdict": "LIKELY_OOM",
-                    "surviving_rung": rung, "rung_projected_mib": rproj,
-                    "note": f"full-res proyecta {pct}% — el rung {rung} (-d {rd}) proyecta {round(rproj/cap*100)}%"}
-    return {**out, "verdict": "REJECTED",
-            "note": "ni el último rung cabe — no encolar (el caso P1: evita quemar los rungs)"}
+        return {**out, "verdict": "ELEVATED", "recommended_d": d}
+    if d2_pct <= 90:
+        return {
+            **out,
+            "verdict": "LIKELY_OOM",
+            "recommended_d": d2,
+            "surviving_rung": 1,
+            "rung_projected_mib": d2_projected,
+            "note": (f"Full-res está fuera del sobre calibrado ({pct}%); -d {d2} "
+                     f"proyecta {d2_pct}% y debe ser el primer intento."),
+        }
+    return {
+        **out,
+        "verdict": "REJECTED",
+        "recommended_d": d2,
+        "note": ("Medium queda fuera del sobre calibrado incluso a -d 2; reduce el "
+                 "conjunto de imágenes o usa una resolución de entrada menor."),
+    }

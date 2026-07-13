@@ -3,7 +3,9 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=117';
+import * as THREE from '/flightverse/three.js?v=124';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=124';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=124';
 
 export async function loadManifest(cid) {
   const id = String(cid || '').replace(/[^\w-]/g, '');
@@ -140,6 +142,66 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
   };
 }
 
+// La física sigue usando el DSM pequeño y estable; esta capa solo dibuja la
+// malla fotogramétrica del visor. En móvil usa el tier 512px (~45 MB GPU en la
+// escena real), no las 73 páginas 4K originales.
+export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}) {
+  const objUrl = man.assets?.mesh_viewer;
+  // tier de texturas: móvil → low (3MB); desktop → viewer/vth (8MB, nítido)
+  const coarse = matchMedia?.('(pointer:coarse)').matches;
+  const mtlUrl = (coarse ? null : man.assets?.mesh_mtl) || man.assets?.mesh_mtl_low;
+  const offset = man.transforms?.mesh_offset;
+  if (!objUrl || !mtlUrl || !Array.isArray(offset) || offset.length !== 3) return null;
+  const split = url => {
+    const i = url.lastIndexOf('/');
+    return [url.slice(0, i + 1), url.slice(i + 1)];
+  };
+  const [mtlBase, mtlFile] = split(mtlUrl);
+  const [objBase, objFile] = split(objUrl);
+  const materials = await new MTLLoader().setPath(mtlBase).loadAsync(mtlFile);
+  materials.preload();
+  const object = await new OBJLoader().setMaterials(materials).setPath(objBase).loadAsync(
+    objFile, ev => onProgress?.(ev.total ? ev.loaded / ev.total : null));
+  const maxAniso = Math.min(8, renderer?.capabilities?.getMaxAnisotropy?.() || 4);
+  object.traverse(node => {
+    if (!node.isMesh) return;
+    const src = Array.isArray(node.material) ? node.material : [node.material];
+    const photo = src.map(mat => {
+      if (mat.map) {
+        mat.map.colorSpace = THREE.SRGBColorSpace;
+        mat.map.anisotropy = maxAniso;
+        mat.map.needsUpdate = true;
+      }
+      return new THREE.MeshBasicMaterial({
+        map: mat.map || null, color: mat.map ? 0xffffff : 0x8a97a8,
+        side: THREE.DoubleSide,
+      });
+    });
+    node.material = photo.length === 1 ? photo[0] : photo;
+    node.castShadow = false;
+    node.receiveShadow = false;
+  });
+  // viewer.obj está centrado por su media. Restituimos el frame ODM y rotamos
+  // norte (+Y OBJ) a norte (-Z mundo); Z OBJ vuelve a altura sobre elev_min.
+  object.rotation.x = -Math.PI / 2;
+  object.position.set(offset[0], offset[2] - man.world.elev_min, -offset[1]);
+  object.name = 'fv-photogrammetry-visual';
+  scene.add(object);
+  // huella XZ en mundo (la usa el caller para recortar el DSM debajo)
+  const bb = new THREE.Box3().setFromObject(object);
+  const c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
+  return {
+    object,
+    footprint: { x: c.x, z: c.z, r: (sz.x + sz.z) * 0.25 },
+    dispose: () => object.traverse(node => {
+      if (!node.isMesh) return;
+      node.geometry?.dispose();
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      mats.forEach(m => { m.map?.dispose(); m.dispose(); });
+    }),
+  };
+}
+
 // Splat en la escena unificada. Si transforms.splat.status === 'aligned'
 // (splat_align.py: Umeyama cámaras-splat vs reconstrucción topocéntrica,
 // RMSE sub-métrico), la matriz 4x4 coloca el splat SOBRE el terreno en
@@ -151,7 +213,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=117');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=124');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     scene.userData.fvSpark = sp;

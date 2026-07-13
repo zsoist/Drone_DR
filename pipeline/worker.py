@@ -19,12 +19,14 @@ from pathlib import Path
 
 import jobs as jobstore
 import perf
+import scenes as scenestore
 from splat_presets import resolve_splat_spec
 
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
 
 VAULT = Path("/Volumes/SSD/drone-vault")
 PIPE = Path(__file__).resolve().parent
+SPLAT_TRANSFORM = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
 SPLAT_ROOT = PIPE.parent / "splat" / "OpenSplat"
 SPLAT_CPU_BIN = SPLAT_ROOT / "build" / "opensplat"
 SPLAT_MPS_BIN = SPLAT_ROOT / "build-mps" / "opensplat"
@@ -121,16 +123,14 @@ def crop_floaters(splat_path: Path) -> bool:
         return False
 
 
-def export_ksplat(splat_path: Path) -> Path | None:
-    """Exporta <cid>.ksplat junto al .splat publicado (carga más rápida en el viewer).
-
-    No fatal: si node o la conversión fallan, el .splat sigue siendo el asset servible.
-    Escritura atómica (tmp + os.replace) para que el viewer nunca vea un .ksplat a medias.
-    """
-    out = splat_path.with_suffix(".ksplat")
-    tmp = splat_path.with_suffix(".ksplat.tmp")
+def export_viewer_sog(splat_path: Path) -> Path | None:
+    """Exporta SOG comprimido para Spark conservando el .splat fuente auditable."""
+    out = splat_path.with_name(f"{splat_path.stem}.clean.sog")
+    tmp = splat_path.with_name(f".{splat_path.stem}.clean.tmp.sog")
     try:
-        r = subprocess.run(["node", str(PIPE / "make_ksplat.mjs"), str(splat_path), str(tmp)],
+        if not SPLAT_TRANSFORM.is_file():
+            raise RuntimeError(f"splat-transform ausente: {SPLAT_TRANSFORM}")
+        r = subprocess.run(["node", str(SPLAT_TRANSFORM), str(splat_path), str(tmp), "--overwrite"],
                            capture_output=True, text=True, timeout=600)
         if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size < 1024:
             raise RuntimeError((r.stderr or r.stdout or "sin salida")[-200:])
@@ -138,7 +138,7 @@ def export_ksplat(splat_path: Path) -> Path | None:
         return out
     except Exception as e:
         tmp.unlink(missing_ok=True)
-        print(f"  ksplat export falló (no fatal): {e}", flush=True)
+        print(f"  SOG export falló (no fatal): {e}", flush=True)
         return None
 
 
@@ -188,7 +188,7 @@ PRESETS = {
     # vacíos y terminar con una malla inútil. --skip-3dmodel mantiene la ruta eficiente y
     # publicable para inspección/splats; vuelos oblicuos/orbita pueden usar extra/ultra si se
     # quiere forzar malla pesada.
-    "alta":     {"eta": "~2-4 h", "timeout": 6 * 3600, **ODM_HEAVY, "fallback": "estandar",
+    "alta":     {"eta": "~15 min-4 h", "timeout": 6 * 3600, **ODM_HEAVY, "fallback": "estandar",
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "3", "--dem-resolution", "5",
                           "--mesh-size", "300000", "--pc-skip-geometric", "--skip-3dmodel"]},
@@ -232,8 +232,9 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
     hist.mkdir(exist_ok=True)
     ts = time.strftime("%Y%m%d-%H%M%S")
     archived_splat = None
-    archived_ksplat = None
-    for old in (splat_dir / f"{cid}.splat", splat_dir / f"{cid}.ksplat", splat_dir / f"{cid}.ply",
+    archived_viewer = None
+    for old in (splat_dir / f"{cid}.clean.sog", splat_dir / f"{cid}.ksplat",
+                splat_dir / f"{cid}.splat", splat_dir / f"{cid}.ply",
                 splat_dir / f"{cid}.meta.json", splat_dir / f"{cid}.cameras.json"):
         if old.is_file():
             suffix = old.name[len(cid):]
@@ -241,10 +242,10 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
             os.replace(old, dst)
             if suffix == ".splat":
                 archived_splat = f"splats/history/{dst.name}"
-            elif suffix == ".ksplat":
-                archived_ksplat = f"splats/history/{dst.name}"
-    if archived_splat or archived_ksplat:
-        jobstore.retarget_splat_artifacts(cid, archived_splat, archived_ksplat)
+            elif suffix in (".clean.sog", ".ksplat"):
+                archived_viewer = f"splats/history/{dst.name}"
+    if archived_splat or archived_viewer:
+        jobstore.retarget_splat_artifacts(cid, archived_splat, archived_viewer)
     # poda de versiones también en la ruta de ENTRENAMIENTO (antes solo en /api/splat_upload):
     # iterar cinematic/ultra archivaba 20MB+ por corrida sin límite
     from aerobrain_server import prune_splat_history
@@ -375,9 +376,16 @@ def fmt_iters(n: int | None) -> str:
 
 
 def splat_done_detail(viewer_out: Path, quality: dict, n_cams: int) -> str:
+    requested = quality.get("requested_preset")
+    effective = quality.get("effective_preset") or quality.get("preset")
+    quality_label = quality.get("preset_label") or effective
+    if requested and effective and requested != effective:
+        quality_label = f"{requested.title()} solicitado → {quality_label} efectivo"
+    scale = int(quality.get("input_scale") or 1)
     parts = [
         viewer_out.name,
-        quality.get("preset_label") or quality.get("preset"),
+        quality_label,
+        f"entrada -d{scale}" if scale > 1 else "entrada completa",
         (fmt_iters(int(quality["target_iters"])) + " iters") if quality.get("target_iters") else "",
         quality.get("backend"),
         fmt_duration(quality.get("duration_s")),
@@ -385,6 +393,62 @@ def splat_done_detail(viewer_out: Path, quality: dict, n_cams: int) -> str:
         f"{n_cams} cámaras",
     ]
     return " · ".join(str(p) for p in parts if p)
+
+
+def splat_attempt_plan(spec: dict | None) -> list[dict]:
+    """Build a bounded, truthful OpenSplat fallback ladder.
+
+    The preflight can prove that full-resolution image loading is wasteful, so
+    those jobs start at -d2. Cross-preset fallback is opt-out (`best_available`
+    defaults true) and only executes after an OOM; callers must still record the
+    requested and effective presets separately.
+    """
+    spec = spec or {}
+    requested = resolve_splat_spec(spec)["key"]
+    recommended_d = int((spec.get("preflight") or {}).get("recommended_d") or 1)
+    recommended_d = 2 if recommended_d >= 2 else 1
+    best_available = spec.get("best_available", True) is not False
+
+    plan = [{
+        "preset": requested,
+        "d": recommended_d,
+        "reason": "preflight_input_floor" if recommended_d == 2 else "requested_quality",
+    }]
+    if recommended_d == 1:
+        plan.append({"preset": requested, "d": 2, "reason": "oom_resolution_fallback"})
+
+    if best_available and requested in ("ultra", "cinematic"):
+        ladder = ("ultra", "cinematic", "medium")
+        for lower in ladder[ladder.index(requested) + 1:]:
+            plan.append({"preset": lower, "d": 2, "reason": "oom_quality_fallback"})
+    return plan
+
+
+def record_scene_completion(j: dict, meta: dict) -> dict | None:
+    """Record a finished reconstruction version and promote only a valid first version."""
+    spec = j.get("spec") or {}
+    scene_id = spec.get("scene_id")
+    version_id = spec.get("version_id") or spec.get("clip_id")
+    if not scene_id or not version_id:
+        return None
+    recon = meta.get("reconstruction") or {}
+    qa = meta.get("qa") or {}
+    merge_label = recon.get("merge_label") or "SINGLE"
+    required_ok = bool((qa.get("cameras_reconstructed") or 0) > 0
+                       and (meta.get("pipeline_mode") or qa.get("status")))
+    status = "ready" if required_ok and merge_label in ("SINGLE", "FULL") else (
+        "partial" if merge_label == "PARTIAL" else "failed")
+    metrics = scenestore.model_metrics(meta)
+    version = scenestore.update_version(
+        scene_id, version_id, status=status, merge_label=merge_label,
+        required_artifacts_ok=required_ok, metrics=metrics,
+        artifact=f"models/{version_id}/meta.json", requested_preset=spec.get("preset"),
+        effective_preset=recon.get("effective_preset") or meta.get("preset"),
+        completed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"), job_id=j.get("id"))
+    scene = scenestore.get_scene(scene_id)
+    if status == "ready" and not scene.get("active_version"):
+        scenestore.promote(scene_id, version_id)
+    return version
 
 
 ODM_FRAME_PROFILE = {"rapido": "preview", "estandar": "balanced",
@@ -398,7 +462,7 @@ def odm_cmd(container: str, proj: Path, preset: dict, rerun_from: str | None = N
            "--project-path", "/datasets",
            "--max-concurrency", str(preset.get("concurrency", ODM_LIGHT["concurrency"])),
            "--dsm", "--dtm", "--skip-report", *preset["args"]]
-    if stable_dense:
+    if stable_dense and "--pc-skip-geometric" not in cmd:
         cmd.append("--pc-skip-geometric")
     if rerun_from:
         cmd += ["--rerun-from", rerun_from]
@@ -428,6 +492,28 @@ def openmvs_retry_preset(preset: dict) -> dict:
     retry["mem"] = ODM_HEAVY["mem"]
     retry["concurrency"] = ODM_HEAVY["concurrency"]
     return retry
+
+
+def _preset_arg(preset: dict | None, flag: str, default: str = "unknown") -> str:
+    args = (preset or {}).get("args") or []
+    try:
+        return str(args[args.index(flag) + 1])
+    except (ValueError, IndexError):
+        return default
+
+
+def odm_quality_provenance(requested_preset: str, effective_preset: str,
+                           dense_quality: str | None = None) -> dict:
+    """Describe requested output preset separately from effective dense quality."""
+    requested_dense = _preset_arg(PRESETS.get(requested_preset), "--pc-quality")
+    effective_dense = dense_quality or _preset_arg(PRESETS.get(effective_preset), "--pc-quality")
+    return {
+        "effective_preset": effective_preset,
+        "requested_preset": requested_preset,
+        "dense_quality": effective_dense,
+        "dense_quality_requested": requested_dense,
+        "dense_fallback": effective_dense != requested_dense,
+    }
 
 
 def run_odm_container(jid, container, proj, preset, preset_name, rerun_from: str | None = None,
@@ -465,6 +551,9 @@ def run_fast_ortho_fallback(jid: str, proj: Path, container: str) -> int:
     jobstore.update(jid, container=container,
                     detail="2/3 OpenMVS falló → fallback fast-orthophoto/25D",
                     stage="odm-fallback", progress=0.55)
+    jobstore.event(jid, "odm_product_fallback",
+                   "OpenMVS falló; generando ortofoto/DSM 25D",
+                   level="warning", data={"effective_product": "ortho_25d"})
     try:
         return jobstore.run_tracked(jid, fast_ortho_cmd(container, proj), timeout=2 * 3600,
                                     tick=adaptive_priority(container))
@@ -593,6 +682,7 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
 
     jobstore.update(j["id"], detail=f"2/3 fotogrametría ODM {preset_name} ({preset['eta']})",
                     stage="odm", progress=0.15)
+    effective_dense_quality = _preset_arg(preset, "--pc-quality")
     rc = run_odm_step(j["id"], container, proj, preset, preset_name)
     # CADENA de fallback (no un solo nivel): un preset pesado puede reventar por OOM (137), por
     # "strange values" (134, malla demasiado densa) o AGOTAR EL TIEMPO (124 vía run_odm_step) →
@@ -606,6 +696,11 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
             print(f"  ODM {preset_name} falló en OpenMVS (rc={rc}) → retry dense medio sin sub-scene recovery", flush=True)
             jobstore.update(j["id"], detail=f"2/3 ODM {preset_name}: retry OpenMVS estable",
                             stage="odm", progress=0.15)
+            jobstore.event(j["id"], "odm_dense_retry",
+                           f"{preset_name}: reintento OpenMVS con nube densa medium",
+                           level="warning", data={"requested_preset": requested_preset,
+                                                  "effective_dense_quality": "medium"})
+            effective_dense_quality = _preset_arg(retry_preset, "--pc-quality")
             rc = run_odm_step(j["id"], container, proj, retry_preset, preset_name,
                               rerun_from="openmvs", stable_dense=True)
             continue
@@ -615,7 +710,11 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         print(f"  ODM {preset_name} falló (rc={rc}) → fallback a {fb}", flush=True)
         jobstore.update(j["id"], detail=f"2/3 ODM {preset_name} no fue capaz → bajando a {fb}",
                         stage="odm", progress=0.15)
+        jobstore.event(j["id"], "odm_preset_fallback",
+                       f"{preset_name} falló; continúa con {fb}", level="warning",
+                       data={"from": preset_name, "to": fb, "requested_preset": requested_preset})
         preset_name, preset = fb, PRESETS[fb]
+        effective_dense_quality = _preset_arg(preset, "--pc-quality")
         rc = run_odm_step(j["id"], container, proj, preset, preset_name, rerun_from="openmvs")
     if rc != 0:
         fb_container = f"{container}-ortho"
@@ -623,6 +722,7 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         if rc2 != 0:
             raise RuntimeError("ODM falló (incluido fallback fast-orthophoto/25D)")
         preset_name = "ortho_25d_fallback"
+        effective_dense_quality = "sparse_25d"
 
     jobstore.update(j["id"], detail="3/3 publicando assets web", stage="publish", progress=0.9)
     # 2h, no 30min: dentro corren TRES pasos docker (ortho/nube/DSM, hasta 1800s c/u) +
@@ -640,6 +740,10 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         m["preset"] = preset_name                 # el REAL usado (puede ser el fallback)
         if preset_name != requested_preset:
             m["preset_requested"] = requested_preset
+        quality_provenance = odm_quality_provenance(
+            requested_preset, preset_name, effective_dense_quality)
+        for key in ("dense_quality", "dense_quality_requested", "dense_fallback"):
+            m[key] = quality_provenance[key]
         if title:
             m["title"] = title
         multi = (sources and len(sources) > 1) or photos
@@ -662,13 +766,13 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         # esto, nunca lo re-deriva. splat_runs los va llenando run_splat al publicar.
         m["reconstruction"] = {
             "id": cid,
+            "job_id": j["id"],
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "sources": [{"clip_id": s, **reg["by_source"].get(s, {"merged": True})}
                         for s in src_list],
             "photos": list(photos or []),
             "merge_label": merge_label(len(src_list), len(photos or []), reg["dropped_sources"]),
-            "effective_preset": preset_name,
-            "requested_preset": requested_preset,
+            **quality_provenance,
             "splat_runs": m.get("reconstruction", {}).get("splat_runs", []),
         }
         _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
@@ -690,6 +794,7 @@ def run_3d(j: dict):
         extra = f" (fusión de {len(sources)} videos" + (f" + {len(photos)} fotos" if photos else "") + ")"
     # ¿fusión parcial? (una fuente no co-registró) — el modelo NO es "mejor por combinar"
     partial = []
+    mm = {}
     try:
         mm = json.loads((VAULT / "models" / cid / "meta.json").read_text())
         partial = mm.get("partial_merge") or []
@@ -697,6 +802,19 @@ def run_3d(j: dict):
         pass
     if partial:
         extra = f" · ⚠ {len(partial)} fuente(s) no fusionaron (mira el reporte)"
+    if j["spec"].get("scene_id") and mm:
+        mm["scene_id"] = j["spec"]["scene_id"]
+        mm["scene_version"] = j["spec"].get("version_id") or cid
+        meta_path = VAULT / "models" / cid / "meta.json"
+        tmp_meta = meta_path.with_suffix(".json.tmp")
+        tmp_meta.write_text(json.dumps(mm, indent=1))
+        os.replace(tmp_meta, meta_path)
+        version = record_scene_completion(j, mm)
+        jobstore.event(j["id"], "scene_version_ready" if version and version.get("status") == "ready" else "scene_version_not_promoted",
+                       f"Versión {cid}: {version.get('status') if version else 'sin escena'}",
+                       level="warning" if partial else "info",
+                       data={"scene_id": j["spec"]["scene_id"], "version_id": cid,
+                             "merge_label": (mm.get("reconstruction") or {}).get("merge_label")})
     jobstore.end(j["id"], "done", f"modelo 3D de {cid} listo{extra} — míralo en el tab 3D",
                  artifact=f"models/{cid}/meta.json")
     # phased: gaussian al terminar — pero NO sobre una fusión parcial (§gate del review)
@@ -706,7 +824,10 @@ def run_3d(j: dict):
         else:
             try:
                 jobstore.enqueue("splat", cid, {"clip_id": cid,
-                                 "preset": str(j["spec"].get("splat_preset") or "cinematic")})
+                                 "preset": str(j["spec"].get("splat_preset") or "cinematic"),
+                                 "best_available": j["spec"].get("best_available", True) is not False,
+                                 "scene_id": j["spec"].get("scene_id"),
+                                 "version_id": j["spec"].get("version_id") or cid})
                 print(f"  encolado gaussian splat para {cid} (phased)", flush=True)
             except Exception as e:
                 print(f"  no se pudo encolar el splat phased: {e}", flush=True)
@@ -741,48 +862,59 @@ def run_splat(j: dict):
         shutil.rmtree(stage)
     stage.mkdir(parents=True, exist_ok=True)
     tmp_out = stage / f"{cid}.splat"
-    preset = resolve_splat_spec(j.get("spec") or {})
-    ITERS = int(preset["iters"])
-    backend = choose_splat_backend(ITERS, force_cpu=bool(j["spec"].get("force_cpu")))
-    if not backend["bin"].exists():
-        raise RuntimeError(f"opensplat no está compilado: {backend['bin']}")
-    jobstore.update(j["id"],
-                    detail=f"{preset['label']}: entrenando {ITERS} iters sobre {n_cams} cámaras ({backend['device']})",
-                    stage="train", progress=0.1)
+    requested = resolve_splat_spec(j.get("spec") or {})
+    requested_key = requested["key"]
+    attempt_plan = splat_attempt_plan(j.get("spec") or {})
     train_start = time.time()
-    # CADENA de fallback por MEMORIA (espejo de la de ODM): la densificación depende del
-    # CONTENIDO de la escena, no del nº de cámaras — un clip puede reventar el cap de 11GB
-    # (taskpolicy -m → SIGKILL -9) donde otro con 3× cámaras pasa. Reintento con -d 2
-    # (mitad de resolución de entrada ≈ 4× menos memoria de píxeles; mismos iters/preset).
-    # escalones: full → media resolución → media resolución + densificación acotada.
-    # El 3º existe porque un clip de 47 ha murió TAMBIÉN a media resolución: la memoria la
-    # domina el CONTEO de gaussianas (densificación ∝ área de escena), no los píxeles.
-    # densify-grad-thresh 3× el default = muchos menos splits ≈ mitad de gaussianas.
-    RUNGS = ([], ["-d", "2"], ["-d", "2", "--densify-grad-thresh", "0.0006"])
-    RUNG_LB = ("", "media resolución", "media resolución + densificación acotada")
     peak = None
-    for attempt, extra in enumerate(RUNGS):
+    rc = -1
+    attempts = []
+    effective = requested
+    effective_d = 1
+    backend = None
+    for attempt_no, policy in enumerate(attempt_plan, start=1):
+        effective = resolve_splat_spec({"preset": policy["preset"]})
+        effective_d = int(policy["d"])
+        iters = int(effective["iters"])
+        backend = choose_splat_backend(iters, force_cpu=bool(j["spec"].get("force_cpu")))
+        if not backend["bin"].exists():
+            raise RuntimeError(f"opensplat no está compilado: {backend['bin']}")
         # tracker NUEVO por intento: el sidecar debe registrar el peak de la corrida
         # que PUBLICÓ, no el máximo contaminado por los escalones OOM anteriores
         peak = PeakTracker(adaptive_priority())
-        train_args = list(preset.get("train_args") or []) + extra
-        if attempt:
+        train_args = list(effective.get("train_args") or [])
+        if effective_d > 1:
+            train_args += ["-d", str(effective_d)]
+        if tmp_out.exists():
+            tmp_out.unlink()
+        label = (f"{effective['label']} · entrada {'-d ' + str(effective_d) if effective_d > 1 else 'completa'}"
+                 f" · intento {attempt_no}/{len(attempt_plan)}")
+        if attempt_no > 1:
             jobstore.update(j["id"], status="running", finished=None,   # run_tracked ya marcó error
-                            detail=f"{preset['label']}: sin memoria → reintentando con "
-                                   f"{RUNG_LB[attempt]} ({backend['device']})",
+                            detail=f"Sin memoria → {label} ({backend['device']})",
                             stage="train", progress=0.1)
-            print(f"  opensplat OOM (-9) → reintento: {RUNG_LB[attempt]}", flush=True)
+            print(f"  OpenSplat OOM (-9) → {label}", flush=True)
+        else:
+            jobstore.update(j["id"], detail=f"{label} sobre {n_cams} cámaras ({backend['device']})",
+                            stage="train", progress=0.1)
+        jobstore.event(j["id"], "splat_attempt", label,
+                       level="warning" if attempt_no > 1 else "info",
+                       data={"attempt": attempt_no, "total_attempts": len(attempt_plan),
+                             "requested_preset": requested_key,
+                             "effective_preset": effective["key"], "d": effective_d,
+                             "reason": policy["reason"], "backend": backend["device"]})
+        attempt_start = time.time()
         try:
             # --sh-degree-interval > iters: el salto de armónicos esféricos del step
             # 1000 era lo que hacía divergir el loss a nan en CPU (3 corridas murieron
             # justo después). El formato .splat ni siquiera exporta los coeficientes
             # SH, así que entrenar solo el grado 0 no pierde nada y es estable.
             rc = jobstore.run_tracked(j["id"],
-                opensplat_train_cmd(proj, tmp_out, ITERS, backend, train_args),
+                opensplat_train_cmd(proj, tmp_out, iters, backend, train_args),
                 # tail=60 (default 12): OpenSplat termina con líneas de save/export — con tail
                 # corto el gate se quedaba SIN líneas 'Step' y saltaba los checks de convergencia
                 tail=60,
-                timeout=int(preset.get("timeout") or 4 * 3600), abort_re=r"Step \d+: nan",
+                timeout=int(effective.get("timeout") or 4 * 3600), abort_re=r"Step \d+: nan",
                 progress_re=r"\((\d+)%\)",
                 env={**os.environ, "DYLD_LIBRARY_PATH": str(LIBTORCH_LIB)},
                 tick=peak)
@@ -792,22 +924,47 @@ def run_splat(j: dict):
                 raise RuntimeError("el entrenamiento divergió (loss=nan) — se abortó para no quemar "
                                    "horas de CPU. Reintenta: la inicialización aleatoria suele converger.")
             raise
-        if rc == -9 and attempt < len(RUNGS) - 1 and not _cancelled(j["id"]):
-            # standing rule: todo OOM registra peak + escalón ANTES de reintentar más bajo
-            perf.log_error("opensplat-oom", f"OOM en escalón {attempt} ({RUNG_LB[attempt] or 'full'})",
-                           ctx={"cid": cid, "preset": preset["key"], "rung": attempt,
+        attempt_row = {"attempt": attempt_no, "preset": effective["key"], "d": effective_d,
+                       "reason": policy["reason"], "rc": rc,
+                       "duration_s": round(time.time() - attempt_start, 1),
+                       "peak_mib": peak.peak_mib, "peak_source": peak.peak_source}
+        attempts.append(attempt_row)
+        if rc == 0:
+            jobstore.event(j["id"], "splat_attempt_succeeded",
+                           f"{effective['label']} -d {effective_d} completó",
+                           data={**attempt_row, "requested_preset": requested_key,
+                                 "backend": backend["device"]})
+        else:
+            jobstore.event(j["id"], "splat_attempt_failed",
+                           f"{effective['label']} -d {effective_d} terminó con rc={rc}"
+                           + (" (OOM)" if rc == -9 else ""),
+                           level="warning" if rc == -9 and attempt_no < len(attempt_plan) else "error",
+                           data={**attempt_row, "requested_preset": requested_key,
+                                 "backend": backend["device"], "will_retry":
+                                 bool(rc == -9 and attempt_no < len(attempt_plan))})
+        if rc == -9 and attempt_no < len(attempt_plan) and not _cancelled(j["id"]):
+            perf.log_error("opensplat-oom", f"OOM en intento {attempt_no} ({effective['key']} -d{effective_d})",
+                           ctx={"cid": cid, "requested_preset": requested_key,
+                                "effective_preset": effective["key"], "attempt": attempt_no,
+                                "d": effective_d,
                                 "peak_mib": peak.peak_mib, "peak_source": peak.peak_source,
                                 "cap_mib": OPENSPLAT_MEMORY_MIB})
-            continue                               # OOM → siguiente escalón de la cadena
+            continue
         break
     if rc != 0:
         raise RuntimeError(f"opensplat salió con código {rc}"
-                           + (" (sin memoria en los 3 escalones — usa el preset Cinematic)"
+                           + (" (sin memoria en todos los intentos permitidos)"
                               if rc == -9 else ""))
-    quality = splat_quality(tmp_out, (jobstore.get(j["id"]) or {}).get("log", ""), n_cams, ITERS)
+    quality = splat_quality(tmp_out, (jobstore.get(j["id"]) or {}).get("log", ""),
+                            n_cams, int(effective["iters"]))
     quality.update({
-        "preset": preset["key"],
-        "preset_label": preset["label"],
+        "preset": effective["key"],
+        "preset_label": effective["label"],
+        "requested_preset": requested_key,
+        "effective_preset": effective["key"],
+        "input_scale": effective_d,
+        "fallback": requested_key != effective["key"] or effective_d != 1,
+        "attempts": attempts,
         "backend": backend["device"],
         "backend_note": backend["note"],
         "duration_s": round(time.time() - train_start, 1),
@@ -834,7 +991,8 @@ def run_splat(j: dict):
             runs = recon.setdefault("splat_runs", [])
             runs.append({"job_id": j["id"], "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                          **{k: quality.get(k) for k in
-                            ("preset", "target_iters", "last_step", "final_loss", "bytes",
+                            ("preset", "requested_preset", "effective_preset", "input_scale",
+                             "fallback", "attempts", "target_iters", "last_step", "final_loss", "bytes",
                              "duration_s", "peak_mib", "peak_source", "mem_cap_mib",
                              "caps_provisional", "backend")}})
             del runs[:-10]                            # historial acotado, como splats/history
@@ -842,11 +1000,26 @@ def run_splat(j: dict):
         except (ValueError, OSError) as e:
             print(f"  splat_runs no actualizado ({e}) — el sidecar sigue siendo la fuente", flush=True)
     jobstore.update(j["id"], detail="limpiando floaters de los bordes", progress=0.93)
-    crop_floaters(final_out)                    # de-halo antes de generar el ksplat
-    jobstore.update(j["id"], detail="exportando .ksplat optimizado para el viewer", progress=0.94)
-    viewer_out = export_ksplat(final_out) or final_out
+    crop_floaters(final_out)                    # de-halo antes de generar el SOG
+    jobstore.update(j["id"], detail="comprimiendo SOG para el viewer", progress=0.94)
+    viewer_out = export_viewer_sog(final_out) or final_out
     rebuild_index()
     browser_gate(j["id"], "splat", cid, timeout=90)
+    if j["spec"].get("scene_id"):
+        try:
+            scene = scenestore.get_scene(j["spec"]["scene_id"])
+            version_id = j["spec"].get("version_id") or cid
+            version = next(v for v in scene["versions"] if v["id"] == version_id)
+            metrics = dict(version.get("metrics") or {})
+            metrics["splat"] = {k: quality.get(k) for k in
+                                ("requested_preset", "effective_preset", "input_scale",
+                                 "target_iters", "final_loss", "peak_mib", "mem_cap_mib",
+                                 "backend", "fallback")}
+            scenestore.update_version(scene["id"], version_id, metrics=metrics)
+            # The first rebuild was needed for browser_gate; publish the new scene metrics too.
+            rebuild_index()
+        except (KeyError, ValueError, OSError, StopIteration) as e:
+            print(f"  scene splat metrics no actualizados: {e}", flush=True)
     jobstore.update(j["id"], progress=1.0)
     jobstore.end(j["id"], "done", splat_done_detail(viewer_out, quality, n_cams),
                  artifact=f"splats/{viewer_out.name}")
@@ -885,6 +1058,14 @@ def main():
         except Exception as e:
             if not _cancelled(j["id"]):
                 jobstore.end(j["id"], "error", str(e)[-250:])
+            if (j.get("spec") or {}).get("scene_id") and j["kind"] == "3d":
+                try:
+                    scenestore.update_version(j["spec"]["scene_id"],
+                                              j["spec"].get("version_id") or j["spec"].get("clip_id"),
+                                              status="failed", completed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                                              job_id=j["id"])
+                except (KeyError, ValueError, OSError):
+                    pass
             print(f"✗ {j['id']}: {e}", flush=True)
             # stage huérfano de un splat fallido: cientos de MB que antes vivían hasta el
             # próximo reinicio del worker (KeepAlive ≈ nunca)

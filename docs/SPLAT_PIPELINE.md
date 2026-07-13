@@ -1,4 +1,4 @@
-# SPLAT_PIPELINE — el trainer actual, documentado (audit 0.3)
+# SPLAT_PIPELINE — trainer y política estable (audit 2026-07-13)
 
 > Auditado contra `956558b` (2026-07-11). Cada afirmación viene de `--help` real,
 > `CMakeCache.txt` o file:line — nada de docs upstream.
@@ -35,8 +35,13 @@ Selección: `choose_splat_backend()` (worker.py) — MPS si `GPU_RUNTIME==MPS` y
   coeficientes SH, así que con exportación `.splat` no se pierde nada; si algún día
   se exporta `.ply`/`.spz` con SH, este workaround pasa de inocuo a limitante.
   → **Experimento 2.0 del plan frontier**: reproducir el NaN, causa, fix, medir.
-- OOM fallback (3 escalones): full → `-d 2` → `-d 2 --densify-grad-thresh 0.0006`.
-  Cada OOM registra `peak_rss_mib` + escalón en `ops/errors.jsonl`.
+- Política de intentos explícita:
+  - Medium calibrado: full; si el preflight medido lo requiere, empieza en `-d 2`.
+  - Cinematic/Ultra: “riesgo alto/no calibrado”; no se muestran proyecciones falsas de memoria.
+  - Ultra grande empieza directamente en `-d 2`, evitando un intento full destinado a OOM.
+  - `best_available=true`: solo después de OOM puede bajar Ultra→Cinematic→Medium, siempre en
+    `-d 2`. En modo estricto no cambia el preset solicitado.
+  - Cada intento guarda preset, escala de entrada, causa, rc, duración y pico observado.
 
 ## Presets (`pipeline/splat_presets.py`)
 
@@ -81,7 +86,8 @@ train → splats/.training/<job>/<cid>.splat
   → quality gate (splat_quality: convergencia + tamaño + cámaras)
   → publish_splat_stage: archiva versión anterior a splats/history/ (keep=6)
   → splats/<cid>.splat + <cid>.meta.json (sidecar)
-  → crop_floaters (de-halo) → export_ksplat → viewer carga ksplat > splat > ply
+  → crop_floaters (de-halo) → SOG comprimido con splat-transform
+  → Spark carga sog > spz > ksplat legado > splat fuente > ply
 ```
 
 **Retención**: el proyecto ODM (`images/` + `opensfm/`) SOBREVIVE al training —
@@ -94,14 +100,24 @@ con split.
 
 ```json
 {"passed", "reason", "bytes", "cameras", "final_loss", "last_step",
- "steps_logged", "target_iters", "preset", "preset_label", "backend",
+ "steps_logged", "target_iters", "preset", "requested_preset", "effective_preset",
+ "input_scale", "fallback", "attempts", "preset_label", "backend",
  "backend_note", "duration_s",
  "peak_mib",       // ← nuevo 2026-07-11: phys_footprint_peak del kernel — ps RSS
  "peak_source",    //   subestima ~20× los procesos MPS (RSS 489 MiB vs 10 GB reales)
  "mem_cap_mib"}    // ← cap vigente al entrenar (contexto del peak)
 ```
 
-Pendiente para la entity (Phase 0.2): `params_hash`, `eval:{psnr,ssim,lpips}`.
+El run también se añade a `reconstruction.splat_runs[]` y, si pertenece a una escena,
+a las métricas de esa versión. Pendiente: `params_hash`, `eval:{psnr,ssim,lpips}`.
+
+## Qué significa “el Mac es capaz”
+
+El M4 de 16 GB ha completado Medium, Cinematic y Ultra con Metal/MPS (por ejemplo Ultra
+15k/127 cámaras en ~2 h). Eso demuestra capacidad, no garantía universal: Cinematic/Ultra
+pueden agotar memoria según cámaras, resolución, geometría y presión concurrente. El preflight
+solo da número de pico para Medium, donde existe calibración; para los demás comunica el riesgo
+y aplica la escalera observable anterior.
 
 ## Config de hardware (`config/hardware.json`)
 

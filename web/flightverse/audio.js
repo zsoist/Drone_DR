@@ -16,6 +16,9 @@ export function createAudio() {
   function boot() {
     if (ctx || muted) return;
     try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+    // Safari puede crear el contexto todavía suspendido incluso dentro del primer
+    // gesto. Reanudar aquí conserva ese gesto y evita un motor silencioso.
+    ctx.resume?.().catch(() => {});
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 5;
     comp.attack.value = 0.004; comp.release.value = 0.18;
@@ -186,6 +189,14 @@ export function createAudio() {
       sub.connect(sg); sg.connect(master); sub.start(); sub.stop(t + 0.85);
     },
     toggleMute() {
+      // Si el control es el primer gesto, su intención es ACTIVAR sonido, no
+      // crear el contexto y apagarlo inmediatamente en el click posterior.
+      if (!ctx) {
+        muted = false;
+        boot();
+        ctx?.resume?.().catch(() => {});
+        return false;
+      }
       muted = !muted;
       if (ctx) (muted ? ctx.suspend() : ctx.resume());
       return muted;

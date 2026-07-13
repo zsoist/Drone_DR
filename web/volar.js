@@ -4,26 +4,27 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=117';
-import { loadManifest, loadTerrain, loadTrack, attachSplat } from '/flightverse/scene.js?v=117';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=117';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=117';
-import { createRecorder } from '/flightverse/recorder.js?v=117';
-import { createAudio } from '/flightverse/audio.js?v=117';
-import { createTouchSticks } from '/flightverse/touch.js?v=117';
-import { createSky } from '/flightverse/sky.js?v=117';
-import { loadSceneObjects } from '/flightverse/objects.js?v=117';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=117';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=117';
-import CameraControls from '/vendor/camera-controls.module.js?v=117';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=117';
+import * as THREE from '/flightverse/three.js?v=124';
+import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=124';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=124';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=124';
+import { createRecorder } from '/flightverse/recorder.js?v=124';
+import { createAudio } from '/flightverse/audio.js?v=124';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=124';
+import { createTouchSticks } from '/flightverse/touch.js?v=124';
+import { createSky } from '/flightverse/sky.js?v=124';
+import { loadSceneObjects } from '/flightverse/objects.js?v=124';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=124';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=124';
+import CameraControls from '/vendor/camera-controls.module.js?v=124';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=124';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=117';
+} from '/vendor/postprocessing180.module.js?v=124';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -34,7 +35,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=117';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=124';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -45,6 +46,26 @@ const AT = Q.get('autotest');
 const AUTOTEST = AT === '1' || AT === 'record';   // ambos vuelan input sintético
 const report = { ready: false, done: false, errors: [], cid: CID };
 window.__volar = report;
+
+// Safari puede restaurar desde bfcache un DOM/JS viejo y luego revalidar solo el
+// CSS, mezclando dos builds. Al volver a la pestaña comparamos el fingerprint del
+// módulo activo con el HTML no-cache; si cambió, una recarga atómica evita el HUD híbrido.
+const ACTIVE_BUILD = new URL(import.meta.url).searchParams.get('v');
+let buildCheckRunning = false;
+async function refreshStaleBuild() {
+  if (!ACTIVE_BUILD || buildCheckRunning) return;
+  buildCheckRunning = true;
+  try {
+    const html = await fetch(location.pathname + location.search, { cache: 'no-store' }).then(r => r.text());
+    const current = html.match(/\bvolar\.js\?v=(\d+)/)?.[1];
+    if (current && current !== ACTIVE_BUILD) location.reload();
+  } catch { /* offline: conservar la sesión actual */ }
+  finally { buildCheckRunning = false; }
+}
+addEventListener('pageshow', event => { if (event.persisted) refreshStaleBuild(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshStaleBuild();
+});
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -63,9 +84,11 @@ function hud() {
       <div class="vl-metric"><span id="vl-spd">—</span><label>VEL m/s</label><i class="vl-bar"><b id="vl-spd-b"></b></i></div>
     </div>
     <div class="vl-corner bl">
-      <button class="vl-fab" id="vl-fab">&#9776;</button>
+      <button class="vl-fab" id="vl-fab" aria-label="Abrir menú de vuelo"
+        aria-controls="vl-dock" aria-expanded="false">Menú</button>
       <button class="vl-dockmin vl-solo-fino" id="vl-dockmin" title="Ocultar panel">«</button>
-      <div class="vl-dock" id="vl-dock">
+      <div class="vl-dock" id="vl-dock" role="dialog" aria-modal="false" aria-labelledby="vl-dock-title">
+        <div class="vl-dock-head vl-panel-drag"><b id="vl-dock-title">MENÚ DE VUELO <small>ARRASTRAR</small></b><button id="vl-dock-close">Cerrar</button></div>
         <button class="vl-chip sec-nav" id="vl-mode"></button>
         <button class="vl-chip sec-nav" id="vl-rig"></button>
         <i class="vl-sep"></i>
@@ -84,20 +107,28 @@ function hud() {
       </div>
     </div>
     <div class="vl-corner br">
-      <div class="vl-kills" id="vl-kills"></div>
-      <div class="vl-weps" id="vl-weps">
-        <button data-w="mg">MG</button>
-        <button data-w="s">S</button>
-        <button data-w="m" class="sel">M</button>
-        <button data-w="l">L</button>
+      <button class="vl-combat-fab" id="vl-combat-fab" aria-label="Abrir controles de combate"
+        aria-controls="vl-combat" aria-expanded="false">Combate</button>
+      <div class="vl-combat" id="vl-combat" role="dialog" aria-modal="false" aria-labelledby="vl-combat-title">
+        <div class="vl-dock-head vl-panel-drag"><b id="vl-combat-title">COMBATE <small>ARRASTRAR</small></b><button id="vl-combat-close">Cerrar</button></div>
+        <div class="vl-kills" id="vl-kills"></div>
+        <div class="vl-weps" id="vl-weps">
+          <button data-w="mg">MG</button>
+          <button data-w="s">Misil S</button>
+          <button data-w="m" class="sel">Misil M</button>
+          <button data-w="l">Misil L</button>
+        </div>
+        <button class="vl-fire" id="vl-fire" title="X · disparar (Z cambia arma)" aria-label="Disparar">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>
+          </svg>
+          <strong>DISPARAR</strong>
+          <span id="vl-ammo">8</span>
+          <i id="vl-cool"></i>
+        </button>
       </div>
-      <button class="vl-fire" id="vl-fire" title="X · disparar (Z cambia arma)">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
-          <circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>
-        </svg>
-        <span id="vl-ammo">8</span>
-        <i id="vl-cool"></i>
-      </button>
+    </div>
+    <div class="vl-flight-status">
       <div class="vl-ghost" id="vl-ghost"></div>
       <div class="vl-fps" id="vl-fps"></div>
     </div>
@@ -145,7 +176,7 @@ function hud() {
     <div class="vl-result" id="vl-result"></div>
     <input type="range" class="vl-gwheel" id="vl-gwheel" min="-72" max="22" value="-7" aria-label="gimbal">
     <div class="vl-grade" id="vl-grade">
-      <div class="vl-grade-head"><span class="vl-grade-k">IMAGEN</span>
+      <div class="vl-grade-head vl-grade-drag"><span class="vl-grade-k">IMAGEN <small>ARRASTRAR</small></span>
         <button class="vl-grade-x" id="gr-close" aria-label="cerrar">✕</button></div>
       <div class="vl-presets">
         <button data-pr="natural">Natural</button>
@@ -281,6 +312,21 @@ async function main() {
   terrain.mesh.matrixAutoUpdate = false; terrain.mesh.updateMatrix();   // estática
   terrain.mesh.receiveShadow = true;
   scene.add(terrain.mesh);
+  let visualMesh = null;
+  if (man.capabilities?.mesh && man.assets?.mesh_mtl_low && man.transforms?.mesh_offset) {
+    attachVisualMesh(man, scene, {
+      renderer,
+      onProgress: f => {
+        if (f != null) $('#vl-scene').textContent = `${man.name} · malla ${Math.round(f * 100)}%`;
+      },
+    }).then(v => {
+      if (!v) return;
+      visualMesh = v;
+      $('#vl-scene').textContent = `${man.name} · malla fotogramétrica`;
+      report.visualMesh = true;
+      applyVista();                            // recorta el DSM bajo la malla
+    }).catch(e => report.errors.push('malla visual: ' + e.message));
+  }
   // objetos de escena (plataforma de juegos: docs/SCENE_OBJECTS.md)
   let sceneObjects = null;
   loadSceneObjects(man, scene, { heightAt: terrain.heightAt })
@@ -433,9 +479,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=117', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=124', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=117');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=124');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -551,6 +597,7 @@ async function main() {
       shake.fov = Math.max(shake.fov || 0, Math.min(7, (26 * big) / (4 + d)));
     },
   });
+  report.weaponState = weapons.state;
   // retícula de impacto: simula la balística y marca dónde caerá el misil
   const aim = new THREE.Group();
   {
@@ -612,8 +659,21 @@ async function main() {
     fireBtn.classList.add('flash');
   };
   let firing = false;
-  fireBtn.addEventListener('pointerdown', () => { firing = true; doFire(); });
-  addEventListener('pointerup', () => { firing = false; });
+  const stopFiring = e => {
+    if (e?.pointerId != null && fireBtn.hasPointerCapture?.(e.pointerId))
+      fireBtn.releasePointerCapture(e.pointerId);
+    firing = false;
+  };
+  fireBtn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    fireBtn.setPointerCapture(e.pointerId);
+    firing = true;
+    doFire();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+    fireBtn.addEventListener(type, stopFiring);
+  addEventListener('pointerup', stopFiring);
   const setWeapon = k => {
     weapons.setWeapon(k);
     document.querySelectorAll('#vl-weps button').forEach(b =>
@@ -658,6 +718,7 @@ async function main() {
     $('#vl-rig').textContent = `cámara · ${RIGS[rigIx].label}`;
     dmesh.visible = !RIGS[rigIx].hideDrone;
     $('#vl-fpv').classList.toggle('show', !!RIGS[rigIx].hideDrone);
+    $('#vl-hud').classList.toggle('fpv-active', !!RIGS[rigIx].hideDrone);
   };
   // vista: 0 mixta · 1 foto-real (solo splat) · 2 orto (solo terreno)
   let vista = 2;
@@ -666,10 +727,17 @@ async function main() {
     terrain.mesh.visible = vista !== 1;
     // mixta v4: '3D realzado con foto-realismo' — gap mínimo anti-zfight y
     // el terreno cede protagonismo (85% de ganancia) para que el splat pinte
-    terrain.mesh.position.y = vista === 0 ? -0.35 : 0;
+    terrain.mesh.position.y = visualMesh ? -0.55 : vista === 0 ? -0.35 : 0;
     terrain.mesh.updateMatrix();
-    mask.uMaskOn.value = 0;
+    // la malla fotogramétrica es dueña de su huella: el DSM se descarta dentro
+    // (edificios dobles = DSM extruido cruzando la malla nítida)
+    if (visualMesh?.footprint && vista !== 1) {
+      mask.uMaskOn.value = 1;
+      mask.uMaskC.value.set(visualMesh.footprint.x, visualMesh.footprint.z);
+      mask.uMaskR.value = visualMesh.footprint.r;
+    } else mask.uMaskOn.value = 0;
     if (splat) splat.object.visible = vista !== 2;
+    if (visualMesh) visualMesh.object.visible = vista !== 1;
     terrain.mesh.material.color.setScalar((grade?.t ?? 1) * (vista === 0 ? 0.85 : 1));
     $('#vl-vista').textContent = 'vista · ' + (vista === 0 ? 'mixta' : vista === 1 ? 'foto-real' : '3D');
   };
@@ -686,10 +754,18 @@ async function main() {
   });
   $('#vl-rig').addEventListener('click', () => setRig(rigIx + 1));
   $('#vl-reto').addEventListener('click', () => startReto());   // arrow: startReto se declara abajo
-  $('#vl-ayuda').addEventListener('click', () => $('#vl-guide').classList.add('show'));
+  $('#vl-ayuda').addEventListener('click', () => {
+    closeFlightOverlays('guide');
+    $('#vl-guide').classList.add('show');
+  });
   $('#vl-ajustes').addEventListener('click', e => {
     e.stopPropagation();
-    $('#vl-grade').classList.toggle('show');
+    const grade = $('#vl-grade');
+    const opening = !grade.classList.contains('show');
+    setMobileSheet('', false);
+    closeFlightOverlays(opening ? 'image' : '');
+    grade.classList.toggle('show', opening);
+    if (opening) movable.image.clamp();
   });
   $('#gr-close').addEventListener('click', () => $('#vl-grade').classList.remove('show'));
   document.addEventListener('pointerdown', e => {
@@ -697,7 +773,46 @@ async function main() {
     if (g.classList.contains('show') && !g.contains(e.target) && !e.target.closest('#vl-ajustes'))
       g.classList.remove('show');
   });
-  $('#vl-fab').addEventListener('click', () => $('#vl-dock').classList.toggle('open'));
+  const mobileSheets = {
+    menu: { panel: $('#vl-dock'), trigger: $('#vl-fab') },
+    combat: { panel: $('#vl-combat'), trigger: $('#vl-combat-fab') },
+  };
+  const movable = {
+    menu: makeDraggablePanel($('#vl-dock'), $('#vl-dock .vl-panel-drag'), 'ab.fv.panel.menu'),
+    combat: makeDraggablePanel($('#vl-combat'), $('#vl-combat .vl-panel-drag'), 'ab.fv.panel.combat'),
+    image: makeDraggablePanel($('#vl-grade'), $('#vl-grade .vl-grade-drag'), 'ab.fv.panel.image'),
+  };
+  const closeFlightOverlays = except => {
+    const overlays = {
+      image: $('#vl-grade'),
+      guide: $('#vl-guide'),
+      invasion: $('#vl-inv'),
+      difficulty: $('#vl-diff'),
+    };
+    for (const [key, panel] of Object.entries(overlays)) {
+      if (key !== except) panel?.classList.remove('show');
+    }
+  };
+  const setMobileSheet = (name, open) => {
+    if (open) closeFlightOverlays(name);
+    for (const [key, sheet] of Object.entries(mobileSheets)) {
+      const active = key === name && open;
+      sheet.panel.classList.toggle('open', active);
+      sheet.trigger.setAttribute('aria-expanded', String(active));
+    }
+    document.body.classList.toggle('vl-mobile-sheet-open', !!open);
+    if (open && movable[name]) movable[name].clamp();
+  };
+  $('#vl-fab').addEventListener('click', () =>
+    setMobileSheet('menu', !$('#vl-dock').classList.contains('open')));
+  $('#vl-combat-fab').addEventListener('click', () =>
+    setMobileSheet('combat', !$('#vl-combat').classList.contains('open')));
+  $('#vl-dock-close').addEventListener('click', () => setMobileSheet('menu', false));
+  $('#vl-combat-close').addEventListener('click', () => setMobileSheet('combat', false));
+  addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.body.classList.contains('vl-mobile-sheet-open'))
+      setMobileSheet('', false);
+  });
   $('#vl-dockmin').addEventListener('click', () => {
     const min = $('#vl-dock').classList.toggle('min');
     $('#vl-dockmin').textContent = min ? '»' : '«';
@@ -751,7 +866,8 @@ async function main() {
     localStorage.setItem('ab.fv.guided', '1');
   });
   if (!localStorage.getItem('ab.fv.guided') && !AT) $('#vl-guide').classList.add('show');
-  $('#vl-sound').addEventListener('click', () => {
+  $('#vl-sound').addEventListener('pointerdown', e => {
+    e.preventDefault();
     const m = audio.toggleMute();
     $('#vl-sound').textContent = m ? 'Sonido off' : 'Sonido';
     $('#vl-sound').classList.toggle('off', m);
@@ -1415,6 +1531,10 @@ async function main() {
     composer.setSize(innerWidth, innerHeight);
   };
   let fullTex = null;
+  // En móvil el selector fino está oculto. Auto usa la ortofoto 5K cuando
+  // WebGL declara un tamaño seguro; antes quedaba bloqueado siempre en 2000px.
+  const preferFullOrtho = matchMedia('(pointer:coarse)').matches
+    && renderer.capabilities.maxTextureSize >= 8192;
   const setCalidad = k => {
     calidad = k;
     const c = CALIDADES[k];
@@ -1424,7 +1544,7 @@ async function main() {
       terrain.mesh.material.map.needsUpdate = true;
     }
     // el supersampling no inventa textura: extra+ sube a la ORTO COMPLETA
-    if (c.aniso >= 16 && man.assets.ortho_full && !fullTex) {
+    if ((preferFullOrtho || c.aniso >= 16) && man.assets.ortho_full && !fullTex) {
       new THREE.TextureLoader().loadAsync(man.assets.ortho_full).then(t => {
         t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 16;
         fullTex = t;

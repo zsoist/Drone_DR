@@ -301,3 +301,17 @@ mando real, minimapa MapLibre opcional.
   brazos +Z, soldado rifle -Z) — estandarizado TODO al contrato -Z: partes del
   zombie/arquero volteadas, terrestres atan2+π universal. Una sola regla.
 - Gate 7/7 tipos con GLB: todos OK, 0 errores de consola, 70fps.
+
+## v124 (2026-07-13) — malla fotogramétrica: fix edificios dobles + texturas HD
+- BUG 'mapa roto' (escena 0117 orbital casa): el DSM-LOD se hundía -0.55m bajo
+  la malla ODM pero sus edificios EXTRUIDOS (3-10m) seguían cruzándola →
+  edificios dobles, mezcla nítido/derretido. FIX: la máscara radial del terreno
+  (libre desde mixta v4) recorta el DSM dentro de la HUELLA de la malla
+  (bbox → centro XZ + radio (w+d)/4, borde dithered). DSM = solo alrededores.
+- Texturas: el manifest solo exportaba mesh_mtl_low (vtl 3.4MB thumbnails) —
+  en desktop se veía low-res. scene_manifest.py exporta ahora mesh_mtl (vth
+  8.4MB) y mesh_mtl_extra (vtx 12.8MB); attachVisualMesh elige por dispositivo:
+  coarse→low, desktop→vth. Manifests regenerados.
+- applyVista() se re-aplica al resolver la malla (la máscara activa al llegar).
+- Gate 0117: visualMesh true, 69fps, 0 errores; captura confirma malla nítida
+  sin dobles.

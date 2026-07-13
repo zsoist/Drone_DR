@@ -31,6 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import jobs as jobstore
 import perf as perfmod
+import scenes as scenestore
 from splat_presets import resolve_splat_spec
 from pathlib import Path
 
@@ -39,7 +40,7 @@ os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bi
 WEB = Path("/Volumes/SSD/work/forge-projects/aerobrain/web")
 VAULT = Path("/Volumes/SSD/drone-vault")
 # binarios 3D grandes con URL estable: cachean con revalidación 304 (nunca stale, nunca re-bajar MBs)
-REVALIDATE_EXTS = (".ply", ".splat", ".ksplat", ".obj", ".mtl", ".laz", ".geojson", ".tif")
+REVALIDATE_EXTS = (".ply", ".splat", ".ksplat", ".sog", ".spz", ".obj", ".mtl", ".laz", ".geojson", ".tif")
 # editor SuperSplat auto-hosteado (post-procesado de splats: limpiar floaters, crop, export)
 SUPERSPLAT = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/supersplat/dist")
 PIPE = Path("/Volumes/SSD/work/forge-projects/aerobrain/pipeline")
@@ -124,13 +125,13 @@ def static_cache_policy(f: Path, request_path: str) -> tuple[bool, str]:
 
 def clip_history_files(hist_dir: Path, cid: str) -> list:
     """Archivos de historial que pertenecen EXACTAMENTE a este clip.
-    Formato de archivado: '{cid}-{YYYYMMDD}-{HHMMSS}.{splat|ksplat|ply}'. Un glob '{cid}-*'
+    Formato de archivado: '{cid}-{YYYYMMDD}-{HHMMSS}.{clean.sog|splat|ksplat|ply}'.
     cruzaría el guion y capturaría el historial de un clip VECINO '{cid}-<suf>' (p.ej. el clip
     'A' se comería el de 'A-2') — pérdida de datos entre clips. El regex ancla los 8+6 dígitos
     del timestamp, así 'A-2-...' nunca cae en el conjunto de 'A'."""
     if not hist_dir.is_dir():
         return []
-    pat = re.compile(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.(splat|ksplat|ply|meta\.json|cameras\.json)$", re.IGNORECASE)
+    pat = re.compile(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.(clean\.sog|spz|splat|ksplat|ply|meta\.json|cameras\.json)$", re.IGNORECASE)
     return [p for p in hist_dir.iterdir() if p.is_file() and pat.fullmatch(p.name)]
 
 
@@ -141,7 +142,7 @@ def prune_splat_history(hist_dir: Path, cid: str, keep: int = 6):
     breaks old versions into unusable partial sets.
     """
     groups = {}
-    pat = re.compile(rf"({re.escape(cid)}-\d{{8}}-\d{{6}})\.(splat|ksplat|ply|meta\.json|cameras\.json)$",
+    pat = re.compile(rf"({re.escape(cid)}-\d{{8}}-\d{{6}})\.(clean\.sog|spz|splat|ksplat|ply|meta\.json|cameras\.json)$",
                      re.IGNORECASE)
     for p in clip_history_files(hist_dir, cid):
         m = pat.fullmatch(p.name)
@@ -713,6 +714,128 @@ def derive_odm_progress(log: str, current: float | None = None, cid: str = "") -
     return best
 
 
+def _job_spec(row: dict) -> dict:
+    raw = row.get("spec")
+    if isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}
+
+
+def _job_model_meta(label: str) -> dict:
+    try:
+        return json.loads((VAULT / "models" / label / "meta.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
+    """Compact Jobs contract with requested/effective quality kept separate."""
+    spec = _job_spec(row)
+    now = time.time()
+    started = row.get("started")
+    finished = row.get("finished")
+    elapsed = ((finished or now) - started) if started else None
+    clean_tail = re.sub(r"\x1b\[[0-9;]*m", "", str(row.get("log") or "")).strip()
+    out = {key: row.get(key) for key in
+           ("id", "kind", "label", "status", "detail", "stage", "progress",
+            "started", "finished", "artifact")}
+    out.update({
+        "title": spec.get("title") or "",
+        "started_iso": (time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(started))
+                        if started else None),
+        "finished_iso": (time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(finished))
+                         if finished else None),
+        "elapsed_s": round(elapsed, 1) if elapsed is not None else None,
+        "log_tail": clean_tail,
+        "requested_preset": spec.get("preset"),
+        "effective_preset": None,
+        "source_count": len(spec.get("sources") or ([spec.get("clip_id")] if spec.get("clip_id") else [])),
+        "photo_count": len(spec.get("photos") or []),
+        "outcome": row.get("status"),
+        "fallback": False,
+        "artifact_exists": bool(row.get("artifact") and (VAULT / str(row["artifact"])).exists()),
+    })
+
+    meta = _job_model_meta(str(row.get("label") or ""))
+    recon = meta.get("reconstruction") or {}
+    if row.get("kind") == "3d":
+        if latest_done is None:
+            latest_done = jobstore.latest_done_ids(("3d",))
+        meta_job_id = recon.get("job_id") or meta.get("job_id")
+        meta_matches_job = (meta_job_id == row.get("id") if meta_job_id
+                            else latest_done.get(("3d", row.get("label"))) == row.get("id"))
+        qa = (meta.get("qa") or {}) if meta_matches_job else {}
+        out.update({
+            "requested_preset": ((recon.get("requested_preset") if meta_matches_job else None)
+                                 or spec.get("preset")),
+            "effective_preset": ((recon.get("effective_preset") or meta.get("preset"))
+                                 if meta_matches_job else None),
+            "dense_quality_requested": (meta.get("dense_quality_requested") if meta_matches_job else None),
+            "dense_quality": (meta.get("dense_quality") if meta_matches_job else None),
+            "product_mode": ((meta.get("pipeline_mode") or qa.get("status")) if meta_matches_job else None),
+            "merge_label": (recon.get("merge_label") if meta_matches_job else None),
+            "cameras_registered": qa.get("cameras_reconstructed"),
+            "cameras_total": qa.get("cameras_total"),
+        })
+        out["fallback"] = bool(meta_matches_job and (meta.get("dense_fallback")
+                               or (out["requested_preset"] and out["effective_preset"]
+                                   and out["requested_preset"] != out["effective_preset"])
+                               or out.get("product_mode") == "ortho_25d_fallback"))
+    elif row.get("kind") == "splat":
+        runs = recon.get("splat_runs") or []
+        run = next((item for item in reversed(runs) if item.get("job_id") == row.get("id")), {})
+        out.update({
+            "requested_preset": run.get("requested_preset") or spec.get("preset"),
+            "effective_preset": run.get("effective_preset") or run.get("preset"),
+            "input_scale": run.get("input_scale"),
+            "iterations": run.get("target_iters"),
+            "backend": run.get("backend"),
+            "peak_mib": run.get("peak_mib"),
+            "memory_cap_mib": run.get("mem_cap_mib"),
+            "attempts": run.get("attempts") or [],
+            "cameras_registered": run.get("cameras"),
+        })
+        out["fallback"] = bool(run.get("fallback"))
+    if row.get("status") == "done" and out["fallback"]:
+        out["outcome"] = "completed_with_fallback"
+    return out
+
+
+def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: str,
+                          title: str, then_splat: bool = False,
+                          splat_preset: str = "cinematic",
+                          best_available: bool = True) -> tuple[str, dict]:
+    """Create immutable scene-version membership and its 3D job specification."""
+    scene = scenestore.get_scene(scene_id)
+    sources = list(dict.fromkeys(str(x) for x in sources if str(x)))
+    photos = list(dict.fromkeys(Path(str(x)).name for x in photos if str(x)))
+    if not sources:
+        raise ValueError("a scene version needs at least one video")
+    if preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
+        preset = "estandar"
+    if splat_preset not in ("fast", "medium", "cinematic", "ultra"):
+        splat_preset = "cinematic"
+    reconstruction_id = jobstore.recon_id_for(sources, photos)
+    scenestore.add_version(scene_id, reconstruction_id, sources, photos, "processing")
+    spec = {
+        "clip_id": reconstruction_id,
+        "primary_cid": sources[0],
+        "scene_id": scene_id,
+        "version_id": reconstruction_id,
+        "preset": preset,
+        "title": str(title or scene.get("title") or "Escena")[:80].strip(),
+        "sources": sources,
+        "photos": photos,
+        "then_splat": bool(then_splat),
+        "splat_preset": splat_preset,
+        "best_available": best_available is not False,
+    }
+    return reconstruction_id, spec
+
+
 ASPECTS = {
     "16:9": "scale=-2:1080",
     "9:16": "crop=ih*9/16:ih,scale=1080:1920",
@@ -1128,8 +1251,27 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             return self.send_json(PERF.get())
+        if self.path.startswith("/api/error_report_content"):
+            # Authenticated reader: ops/ is intentionally denied by the public /data resolver.
+            if not self.auth():
+                return
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            name = (query.get("name") or [""])[0]
+            if not re.fullmatch(r"error-report-\d{8}-\d{4}\.md", name):
+                return self.send_json({"error": "reporte inválido"}, 400)
+            rdir = (VAULT / "ops" / "reports").resolve()
+            report = (rdir / name).resolve()
+            try:
+                report.relative_to(rdir)
+                if not report.is_file() or report.stat().st_size > 2_000_000:
+                    raise OSError("missing or oversized")
+                content = report.read_text(errors="replace")
+            except (OSError, ValueError):
+                return self.send_json({"error": "reporte no encontrado"}, 404)
+            return self.send_json({"name": name, "content": content,
+                                   "bytes": report.stat().st_size})
         if self.path.startswith("/api/error_reports"):
-            # lista de reportes AI generados (los .md se sirven por /data/ops/reports/…)
+            # Lista metadata only; report bodies stay private behind the authenticated reader.
             if not self.auth():
                 return
             rdir = VAULT / "ops" / "reports"
@@ -1152,7 +1294,45 @@ class H(BaseHTTPRequestHandler):
                 {"name": p.name, "bytes": p.stat().st_size,
                  "ts": time.strftime("%Y-%m-%d %H:%M", time.localtime(p.stat().st_mtime))}
                 for p in reps], "latest": latest, "recent_errors": recent})
-        if self.path.startswith("/api/jobs"):
+        if urllib.parse.urlparse(self.path).path == "/api/scenes":
+            if not self.auth():
+                return
+            return self.send_json({"scenes": scenestore.list_scenes()})
+        if urllib.parse.urlparse(self.path).path == "/api/scene":
+            if not self.auth():
+                return
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                return self.send_json({"scene": scenestore.get_scene(str((qs.get("id") or [""])[0]))})
+            except (KeyError, ValueError):
+                return self.send_json({"error": "escena no encontrada"}, 404)
+        api_url = urllib.parse.urlparse(self.path)
+        if api_url.path == "/api/job_log":
+            if not self.auth():
+                return
+            qs = urllib.parse.parse_qs(api_url.query)
+            jid = str((qs.get("id") or [""])[0])
+            if not jobstore.get(jid):
+                return self.send_json({"error": "trabajo no encontrado"}, 404)
+            try:
+                after = int((qs.get("after") or [0])[0])
+                limit = int((qs.get("limit") or [500])[0])
+                return self.send_json(jobstore.log_chunk(jid, after, limit))
+            except (TypeError, ValueError):
+                return self.send_json({"error": "cursor de log inválido"}, 400)
+        if api_url.path == "/api/job":
+            if not self.auth():
+                return
+            qs = urllib.parse.parse_qs(api_url.query)
+            jid = str((qs.get("id") or [""])[0])
+            row = jobstore.get(jid)
+            if not row:
+                return self.send_json({"error": "trabajo no encontrado"}, 404)
+            detail = normalize_job_summary(row)
+            detail["spec"] = _job_spec(row)
+            detail["events"] = jobstore.events(jid)
+            return self.send_json({"job": detail})
+        if api_url.path == "/api/jobs":
             if not self.auth():
                 return
             jobs = jobstore.recent()
@@ -1164,10 +1344,15 @@ class H(BaseHTTPRequestHandler):
                         j["progress"] = max(j.get("progress") or 0, 0.05 + 0.93 * int(m[-1]) / 100)
                 if j["kind"] == "3d" and j["status"] == "running":
                     j["progress"] = derive_odm_progress(j.get("log") or "", j.get("progress"), j.get("label") or "")
-                # los links de jobs viejos no deben apuntar a modelos borrados
-                if j["status"] == "done" and j.get("artifact"):
-                    j["artifact_exists"] = (VAULT / j["artifact"]).exists()
-            return self.send_json({"jobs": jobs})
+            latest_done = jobstore.latest_done_ids(("3d",))
+            summaries = [normalize_job_summary(j, latest_done) for j in jobs]
+            counts = {
+                "all": len(summaries),
+                "active": sum(j["status"] in ("running", "queued") for j in summaries),
+                "done": sum(j["status"] == "done" for j in summaries),
+                "error": sum(j["status"] in ("error", "cancel_failed") for j in summaries),
+            }
+            return self.send_json({"jobs": summaries, "counts": counts})
         if self.path.startswith("/api/geocode"):
             # nombres humanos (ciudad · barrio): proxy server-side a Nominatim con
             # caché persistente — el cliente jamás toca hosts externos nuevos.
@@ -1583,8 +1768,8 @@ class H(BaseHTTPRequestHandler):
             ext = Path(name).suffix.lower()
             if not cid:
                 return self.send_json({"error": "cid requerido"}, 400)
-            if ext not in (".ply", ".splat", ".ksplat"):
-                return self.send_json({"error": f"formato {ext or '?'} no soportado (.ply/.splat/.ksplat)"}, 400)
+            if ext not in (".ply", ".splat", ".ksplat", ".sog", ".spz"):
+                return self.send_json({"error": f"formato {ext or '?'} no soportado"}, 400)
             if jobstore.pending("splat", cid):     # no pisar un entrenamiento que escribe el mismo .splat
                 return self.send_json({"error": "hay un entrenamiento de splat activo para este clip — espera a que termine"}, 409)
             length = int(self.headers.get("Content-Length", 0))
@@ -1623,8 +1808,9 @@ class H(BaseHTTPRequestHandler):
                     old_meta = json.loads(meta_p.read_text())
                 except (ValueError, OSError):
                     old_meta = {}
-            archived_splat = archived_ksplat = None
-            for old in (sdir / f"{cid}.splat", sdir / f"{cid}.ksplat", sdir / f"{cid}.ply",
+            archived_splat = archived_viewer = None
+            for old in (sdir / f"{cid}.clean.sog", sdir / f"{cid}.spz",
+                        sdir / f"{cid}.splat", sdir / f"{cid}.ksplat", sdir / f"{cid}.ply",
                         meta_p, sdir / f"{cid}.cameras.json"):
                 if old.is_file():
                     suffix = old.name[len(cid):]
@@ -1633,13 +1819,13 @@ class H(BaseHTTPRequestHandler):
                     archived.append(old.name)
                     if suffix == ".splat":
                         archived_splat = f"splats/history/{dst.name}"
-                    elif suffix == ".ksplat":
-                        archived_ksplat = f"splats/history/{dst.name}"
+                    elif suffix in (".clean.sog", ".spz", ".ksplat"):
+                        archived_viewer = f"splats/history/{dst.name}"
             # los jobs 'done' del entrenamiento anterior deben seguir apuntando a SU versión
             # archivada, no al path mutable que ahora es el archivo editado (mismo contrato que
             # publish_splat_stage)
-            if archived_splat or archived_ksplat:
-                jobstore.retarget_splat_artifacts(cid, archived_splat, archived_ksplat)
+            if archived_splat or archived_viewer:
+                jobstore.retarget_splat_artifacts(cid, archived_splat, archived_viewer)
             prune_splat_history(hist, cid, keep=6)
             final = sdir / f"{cid}{ext}"
             os.replace(tmp, final)
@@ -1647,21 +1833,22 @@ class H(BaseHTTPRequestHandler):
                 new_meta = {k: v for k, v in old_meta.items() if k != "final_loss"}
                 new_meta["edited"] = True          # editado en SuperSplat: el loss ya no aplica
                 meta_p.write_text(json.dumps(new_meta, indent=1))
-            kname = None
-            if ext != ".ksplat":   # optimizado para el viewer (no fatal si node falla)
-                ktmp = sdir / f"{cid}.ksplat.tmp"
+            optimized = None
+            if ext not in (".sog", ".spz", ".ksplat"):
+                ktmp = sdir / f".{cid}.clean.tmp.sog"
                 try:
-                    r = subprocess.run(["node", str(PIPE / "make_ksplat.mjs"), str(final), str(ktmp)],
+                    tool = PIPE.parent / "tools/node_modules/@playcanvas/splat-transform/bin/cli.mjs"
+                    r = subprocess.run(["node", str(tool), str(final), str(ktmp), "--overwrite"],
                                        capture_output=True, text=True, timeout=600)
                     if r.returncode == 0 and ktmp.exists() and ktmp.stat().st_size > 1024:
-                        os.replace(ktmp, sdir / f"{cid}.ksplat")
-                        kname = f"{cid}.ksplat"
+                        os.replace(ktmp, sdir / f"{cid}.clean.sog")
+                        optimized = f"{cid}.clean.sog"
                     else:
                         ktmp.unlink(missing_ok=True)
                 except (OSError, subprocess.TimeoutExpired):
                     ktmp.unlink(missing_ok=True)
             rebuild_index()
-            return self.send_json({"ok": True, "published": final.name, "ksplat": kname,
+            return self.send_json({"ok": True, "published": final.name, "optimized": optimized,
                                    "archived": archived, "bytes": read})
         if u.path == "/api/edit":
             if not self.auth(q):
@@ -1735,6 +1922,89 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": str(e)}, 400)
             except Exception as e:
                 return self.send_json({"error": str(e)[-200:]}, 500)
+        if u.path == "/api/scene_create":
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            scene = scenestore.create_scene(str(spec.get("title") or "Escena"),
+                                             spec.get("anchor") if isinstance(spec.get("anchor"), dict) else {},
+                                             spec.get("sources") if isinstance(spec.get("sources"), list) else [],
+                                             spec.get("photos") if isinstance(spec.get("photos"), list) else [])
+            existing = re.sub(r"[^\w-]", "", str(spec.get("existing_version") or ""))
+            if existing and (VAULT / "models" / existing / "meta.json").exists():
+                sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [existing]
+                photos = spec.get("photos") if isinstance(spec.get("photos"), list) else []
+                try:
+                    meta = json.loads((VAULT / "models" / existing / "meta.json").read_text())
+                    recon = meta.get("reconstruction") or {}
+                    qa = meta.get("qa") or {}
+                    version = scenestore.add_version(
+                        scene["id"], existing, sources, photos, "ready",
+                        merge_label=recon.get("merge_label") or "SINGLE",
+                        required_artifacts_ok=bool(qa.get("cameras_reconstructed")),
+                        metrics=scenestore.model_metrics(meta))
+                    if version.get("required_artifacts_ok") and version.get("merge_label") in ("SINGLE", "FULL"):
+                        scene = scenestore.promote(scene["id"], existing)
+                except (ValueError, OSError):
+                    pass
+            return self.send_json({"ok": True, "scene": scene})
+        if u.path == "/api/scene_improve":
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            scene_id = re.sub(r"[^\w-]", "", str(spec.get("scene_id", "")))
+            try:
+                scene = scenestore.get_scene(scene_id)
+            except (KeyError, ValueError):
+                return self.send_json({"error": "escena no encontrada"}, 404)
+            active = next((v for v in scene.get("versions", [])
+                           if v.get("id") == scene.get("active_version")), None) or {}
+            if isinstance(spec.get("sources"), list):
+                requested_sources = spec["sources"]
+            else:
+                requested_sources = [*active.get("sources", []), *(spec.get("new_sources") or [])]
+            sources = []
+            for value in requested_sources:
+                cid = re.sub(r"[^\w-]", "", str(value))
+                if (cid and cid not in sources
+                        and (VAULT / "manifest" / f"{cid}.json").exists()
+                        and (VAULT / "tracks" / f"{cid}.flight.json").exists()):
+                    sources.append(cid)
+            if not sources:
+                return self.send_json({"error": "elige al menos un video con GPS"}, 400)
+            if len(sources) > 8:
+                return self.send_json({"error": "máximo 8 videos por versión de escena"}, 400)
+            requested_photos = spec.get("photos") if isinstance(spec.get("photos"), list) else [
+                *active.get("photos", []), *(spec.get("new_photos") or [])]
+            photos = [Path(str(p)).name for p in requested_photos
+                      if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][:80]
+            reconstruction_id = jobstore.recon_id_for(sources, photos)
+            if jobstore.pending("3d", reconstruction_id):
+                return self.send_json({"error": "esa versión ya está en cola o procesándose"}, 409)
+            try:
+                reconstruction_id, job_spec = prepare_scene_version(
+                    scene_id, sources, photos, str(spec.get("preset") or "alta"),
+                    str(spec.get("title") or scene.get("title") or "Escena"),
+                    bool(spec.get("then_splat")), str(spec.get("splat_preset") or "cinematic"),
+                    spec.get("best_available", True) is not False)
+            except ValueError as e:
+                return self.send_json({"error": str(e)}, 400)
+            job = jobstore.enqueue("3d", reconstruction_id, job_spec)
+            scenestore.update_version(scene_id, reconstruction_id, job_id=job["id"])
+            return self.send_json({"ok": True, "job": job["id"], "scene_id": scene_id,
+                                   "reconstruction": reconstruction_id,
+                                   "sources": len(sources), "photos": len(photos)})
+        if u.path == "/api/scene_promote":
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            try:
+                scene = scenestore.promote(str(spec.get("scene_id") or ""),
+                                           str(spec.get("version_id") or ""))
+                rebuild_index()
+                return self.send_json({"ok": True, "scene": scene})
+            except (KeyError, ValueError) as e:
+                return self.send_json({"error": str(e)}, 409)
         if u.path == "/api/odm":
             if not self.auth(q):
                 return
@@ -1775,6 +2045,7 @@ class H(BaseHTTPRequestHandler):
                 job_spec["then_splat"] = True
                 sp = str(spec.get("splat_preset") or "cinematic")
                 job_spec["splat_preset"] = sp if sp in ("medium", "cinematic", "ultra", "fast") else "cinematic"
+                job_spec["best_available"] = spec.get("best_available", True) is not False
             j = jobstore.enqueue("3d", ident, job_spec)
             return self.send_json({"ok": True, "job": j["id"], "queued": True,
                                    "reconstruction": ident,
@@ -1948,13 +2219,14 @@ class H(BaseHTTPRequestHandler):
                 except Exception:
                     w = 3072
                 pfv = _pf.splat_preflight(n_imgs, w, preset["key"])
-                if pfv["verdict"] == "REJECTED" and not spec.get("force_preflight"):
-                    return self.send_json({"error": "preflight: ningún escalón de memoria cabe — "
+                if pfv["verdict"] in ("REJECTED", "INPUT_FLOOR_EXCEEDS_CAP") and not spec.get("force_preflight"):
+                    return self.send_json({"error": "preflight: la carga de entrada queda fuera del sobre seguro — "
                                            + pfv.get("note", ""), "preflight": pfv}, 409)
             j = jobstore.enqueue("splat", cid, {"clip_id": cid, "preset": preset["key"], "iters": preset["iters"],
                                                 "auto_model": bool(spec.get("auto_model")),
                                                 "model_preset": model_preset,
                                                 "preflight": pfv,
+                                                "best_available": spec.get("best_available", True) is not False,
                                                 "title": str(spec.get("title", ""))[:80].strip()})
             return self.send_json({"ok": True, "job": j["id"], "queued": True,
                                    "preset": preset["key"], "iters": preset["iters"],
@@ -2021,12 +2293,15 @@ class H(BaseHTTPRequestHandler):
 
             def _run_report():
                 try:
-                    r = subprocess.run(["python3", str(PIPE / "error_report.py"), "--days", "7"],
-                                       capture_output=True, text=True, timeout=300)
-                    if r.returncode == 0:
-                        job_end(j, "done", r.stdout.strip()[-200:])
+                    rc = jobstore.run_tracked(j["id"],
+                                              ["python3", str(PIPE / "error_report.py"),
+                                               "--days", "7"], timeout=300)
+                    tail = (jobstore.get(j["id"]) or {}).get("log") or ""
+                    if rc == 0:
+                        job_end(j, "done", tail.strip().splitlines()[-1][-200:] if tail.strip()
+                                else "reporte generado")
                     else:
-                        job_end(j, "error", (r.stderr or "error_report falló")[-200:])
+                        job_end(j, "error", tail.strip()[-200:] or "error_report falló")
                 except (subprocess.TimeoutExpired, OSError) as e:
                     job_end(j, "error", str(e)[-200:])
             threading.Thread(target=_run_report, daemon=True).start()

@@ -34,6 +34,21 @@ def _geocode_name(lat: float, lon: float) -> str | None:
     return (hit or {}).get("name")
 
 
+def _obj_center(path: Path) -> list[float] | None:
+    """Media XYZ que publish resta al viewer.obj; fallback para modelos previos."""
+    if not path.exists():
+        return None
+    n = 0
+    sx = sy = sz = 0.0
+    with path.open(errors="ignore") as f:
+        for line in f:
+            if not line.startswith("v "):
+                continue
+            p = line.split()
+            sx += float(p[1]); sy += float(p[2]); sz += float(p[3]); n += 1
+    return [round(sx / n, 4), round(sy / n, 4), round(sz / n, 4)] if n else None
+
+
 def build(cid: str) -> dict:
     mdir = VAULT / "models" / cid
     meta = _load(mdir / "meta.json")
@@ -54,6 +69,9 @@ def build(cid: str) -> dict:
     track_p = VAULT / "tracks" / f"{cid}.flight.json"
     track = _load(track_p) or {}
     viewer_obj = meta.get("model_viewer")
+    mesh_offset = meta.get("mesh_offset")
+    if viewer_obj and not mesh_offset:
+        mesh_offset = _obj_center(mdir / "model" / "odm_textured_model_geo.obj")
 
     caps = {
         "terrain": bool(lod),
@@ -91,6 +109,12 @@ def build(cid: str) -> dict:
             "splat_cameras": f"data/splats/{cid}.cameras.json" if cameras_json.exists() else None,
             "track": f"data/tracks/{cid}.flight.json" if track_p.exists() else None,
             "mesh_viewer": f"data/models/{cid}/{viewer_obj}" if viewer_obj else None,
+            "mesh_mtl_low": f"data/models/{cid}/model/odm_textured_model_viewer_low.mtl"
+                            if (mdir / "model" / "odm_textured_model_viewer_low.mtl").exists() else None,
+            "mesh_mtl": f"data/models/{cid}/model/odm_textured_model_viewer.mtl"
+                        if (mdir / "model" / "odm_textured_model_viewer.mtl").exists() else None,
+            "mesh_mtl_extra": f"data/models/{cid}/model/odm_textured_model_viewer_extra.mtl"
+                              if (mdir / "model" / "odm_textured_model_viewer_extra.mtl").exists() else None,
             "collision_bin": f"data/models/{cid}/collision.bin" if (mdir / "collision.bin").exists() else None,
             "collision_meta": f"data/models/{cid}/collision.json" if (mdir / "collision.json").exists() else None,
             "objects": f"data/models/{cid}/objects.json" if (mdir / "objects.json").exists() else None,
@@ -101,7 +125,7 @@ def build(cid: str) -> dict:
         "transforms": {
             "splat": {"rotation": [-0.7071067811865476, 0, 0, 0.7071067811865476],
                       "status": "unaligned"},
-            "mesh_offset": None,   # cx,cy,cz cuando publish lo exporte
+            "mesh_offset": mesh_offset,
         },
         "spawn": {
             "position_m": [0, round(((lod or {}).get("elev_max", 0) or 0)

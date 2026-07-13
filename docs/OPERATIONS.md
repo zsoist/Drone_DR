@@ -156,6 +156,19 @@ Térmica:
 
 ## Operación
 
+La pestaña **3D → Trabajos** es la consola operativa. El polling usa resúmenes acotados; el detalle
+se obtiene bajo demanda. Cada job nuevo escribe un log completo append-only en
+`vault/ops/job_logs/<job-id>.log`, mientras SQLite conserva solo la cola, el resumen y eventos
+estructurados (fallbacks, diagnósticos, resolución y finalización). La vista de logs pagina, busca,
+filtra niveles, pausa autoscroll, copia y descarga. Jobs históricos anteriores a esta política solo
+pueden mostrar su cola SQLite truncada y se etiquetan como tales.
+
+Los reportes DeepSeek son triage, no autoridad. `error_report.py` separa intentos de tuning de
+workloads por escena+calidad solicitada, incorpora cámaras/producto/fallback, no suma eventos OOM
+solapados y mantiene error histórico separado de su resolución. Medium es la baseline medida;
+Cinematic/Ultra nunca se recomiendan como mitigación de memoria. Los cuerpos Markdown viven en
+`ops/reports` (privado) y se leen mediante el endpoint autenticado, no por `/data` público.
+
 ```bash
 python3 pipeline/ops_status.py
 python3 pipeline/external_probe.py

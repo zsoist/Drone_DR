@@ -27,6 +27,7 @@ main.innerHTML = `
             <span class="footer-note" style="margin:0">DeepSeek solo redacta el triage — lo valida Codex/Claude después.</span>
           </div>
           <div id="pf-reports"></div>
+          <pre class="job-log-output" id="pf-report-body" hidden></pre>
           <div id="pf-errors"></div>
         </div>
       </details>
@@ -321,14 +322,33 @@ main.innerHTML = `
       const d = await r.json();
       $('pf-errcount').textContent = d.recent_errors?.length ? `${d.recent_errors.length} recientes` : 'sin errores recientes';
       $('pf-reports').innerHTML = (d.reports || []).slice(0, 5).map(rep => `
-        <a class="pf-report" href="data/ops/reports/${encodeURIComponent(rep.name)}" target="_blank" rel="noopener">
-          ${icon('list')} ${esc(rep.name)} <span class="count">${esc(rep.ts)}</span></a>`).join('')
+        <button class="pf-report" type="button" data-report="${esc(rep.name)}">
+          ${icon('list')} ${esc(rep.name)} <span class="count">${esc(rep.ts)}</span></button>`).join('')
         || '<p class="footer-note" style="margin:0 0 8px">Aún no hay reportes — genera el primero.</p>';
       $('pf-errors').innerHTML = (d.recent_errors || []).map(e2 => `
         <div class="pf-err mono"><span class="count">${esc((e2.ts || '').slice(5, 16))}</span>
         <b>[${esc(e2.source || '?')}]</b> ${esc((e2.msg || '').slice(0, 110))}</div>`).join('');
     } catch { /* silencioso */ }
   }
+
+  async function loadReport(name) {
+    const body = $('pf-report-body');
+    if (!body) return;
+    body.hidden = false;
+    body.textContent = 'Cargando reporte…';
+    try {
+      const r = await fetch(`/api/error_report_content?name=${encodeURIComponent(name)}`);
+      const d = await r.json();
+      body.textContent = r.ok ? d.content : (d.error || 'No se pudo abrir el reporte');
+    } catch (err) {
+      body.textContent = `No se pudo abrir el reporte: ${err.message}`;
+    }
+  }
+
+  $('pf-reports')?.addEventListener('click', ev => {
+    const button = ev.target.closest('[data-report]');
+    if (button) loadReport(button.dataset.report);
+  });
 
   $('pf-genreport')?.addEventListener('click', async e => {
     e.target.closest('button').disabled = true;

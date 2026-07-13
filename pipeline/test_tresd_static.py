@@ -1,0 +1,74 @@
+import unittest
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import worker
+
+
+class TresdInitializationTests(unittest.TestCase):
+    def test_splat_controls_exist_before_first_combined_render(self):
+        source = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
+        self.assertLess(source.index("const splatChk"), source.index("renderCombined();"))
+
+    def test_operator_quality_estimates_match_measured_presets(self):
+        source = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
+        self.assertEqual("~15 min-4 h", worker.PRESETS["alta"]["eta"])
+        self.assertIn("t: '~15 min-4 h'", source)
+        self.assertIn("d: 'Malla 600k · octree 11 · 2 cm/px'", source)
+        self.assertIn("p: 'medium', n: 'Medium', t: '~2-4 min'", source)
+
+    def test_jobs_console_has_summary_search_and_type_filters(self):
+        source = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
+        self.assertIn('id="job-summary"', source)
+        self.assertIn('id="job-search"', source)
+        self.assertIn('data-job-kind="3d"', source)
+        self.assertIn('data-job-kind="splat"', source)
+        self.assertIn('data-job-kind="ingest"', source)
+
+    def test_jobs_rows_expose_truth_and_accessible_progress(self):
+        source = (Path(__file__).resolve().parent.parent / "web" / "shell.js").read_text()
+        self.assertIn("requested_preset", source)
+        self.assertIn("effective_preset", source)
+        self.assertIn('role="progressbar"', source)
+        self.assertIn('aria-valuenow="${pct}"', source)
+        self.assertNotIn("min restantes", source)
+
+    def test_full_log_mode_has_operational_controls(self):
+        source = (Path(__file__).resolve().parent.parent / "web" / "shell.js").read_text()
+        for contract in ("/api/job_log", "job-log-drawer", "data-log-search",
+                         "data-log-wrap", "data-log-pause", "data-log-copy",
+                         "data-log-download"):
+            self.assertIn(contract, source)
+
+    def test_scene_can_be_improved_without_overwriting_active_version(self):
+        source = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
+        self.assertIn("Mejorar esta escena", source)
+        self.assertIn("/api/scene_create", source)
+        self.assertIn("/api/scene_improve", source)
+        self.assertIn("/api/scene_promote", source)
+        self.assertIn("Versión activa", source)
+        self.assertIn("currentChoices.concat", source)
+        self.assertIn("Splat solicitado", source)
+        self.assertIn("dense_quality_requested", source)
+
+    def test_deepseek_reports_use_authenticated_reader_not_private_static_path(self):
+        web = (Path(__file__).resolve().parent.parent / "web" / "system.js").read_text()
+        server = (Path(__file__).resolve().parent / "aerobrain_server.py").read_text()
+        self.assertIn("/api/error_report_content", web)
+        self.assertIn("/api/error_report_content", server)
+        self.assertNotIn('href="data/ops/reports/', web)
+        self.assertIn('id="pf-report-body"', web)
+
+    def test_modern_sog_viewer_asset_is_generated_and_visible_everywhere(self):
+        root = Path(__file__).resolve().parent.parent
+        tresd = (root / "web" / "tresd.js").read_text()
+        share = (root / "web" / "share.js").read_text()
+        self.assertIn("sog|spz|ksplat|splat|ply", tresd)
+        self.assertIn("sog|spz|ksplat|splat|ply", share)
+        self.assertIn("export_viewer_sog", (root / "pipeline" / "worker.py").read_text())
+        self.assertTrue(worker.SPLAT_TRANSFORM.is_file())
+
+
+if __name__ == "__main__":
+    unittest.main()

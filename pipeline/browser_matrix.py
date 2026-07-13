@@ -39,11 +39,11 @@ def expected_splat_path(cid: str) -> str:
     sys = json.loads((VAULT / "manifest" / "system.json").read_text())
     rows = [
         s for s in (sys.get("splats") or [])
-        if s.get("clip_id") == cid and str(s.get("format") or "").lower() in {"ksplat", "splat", "ply"}
+        if s.get("clip_id") == cid and str(s.get("format") or "").lower() in {"sog", "spz", "ksplat", "splat", "ply"}
     ]
     if not rows:
         raise RuntimeError(f"no splats in manifest for {cid}")
-    rank = {"ksplat": 0, "splat": 1, "ply": 2}
+    rank = {"sog": 0, "spz": 1, "ksplat": 2, "splat": 3, "ply": 4}
     rows.sort(key=lambda s: (
         -(s.get("iters") or 0),
         -(1 if s.get("current") else 0),
@@ -211,11 +211,86 @@ def run_workspace(cdp, base_url: str, cid: str, viewport: str, expected_path: st
     return {"surface": "workspace", "viewport": viewport, "state": state, "macro": macro, "selected": meta}
 
 
-def run_matrix(cid: str, base_url: str, viewports: list[str]) -> list[dict]:
+def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -> dict:
+    """Operational console: truthful quality, responsive layout and real full-log drawer."""
+    cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/tresd.html"})
+    wait_for(cdp, "document.body && /Proyectos 3D/i.test(document.body.innerText)",
+             timeout=45, label="3D jobs shell")
+    clicked = cdp.eval(js("""
+      const tab = document.querySelector('[data-tab="jobs"]');
+      if (!tab) return false;
+      tab.click(); return true;
+    """))
+    if not clicked:
+        raise RuntimeError("tab Trabajos ausente")
+    state = wait_for(cdp, js(f"""
+      const cards = [...document.querySelectorAll('#jobs3d .job-card')];
+      const splat = cards.find(x => x.dataset.kind === 'splat' && x.innerText.includes({cid!r}));
+      if (!splat) return null;
+      const consoleRect = document.querySelector('#jobs3d').getBoundingClientRect();
+      const cardRect = splat.getBoundingClientRect();
+      const statusRect = splat.querySelector('.jc-status')?.getBoundingClientRect();
+      const overflow = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth || 0) - window.innerWidth;
+      return {{
+        cards: cards.length,
+        summaries: document.querySelectorAll('#job-summary button').length,
+        typeFilters: document.querySelectorAll('[data-job-kind]').length,
+        text: splat.innerText,
+        jid: splat.dataset.jid,
+        consoleWidth: consoleRect.width,
+        cardWidth: cardRect.width,
+        statusVisible: !!statusRect && statusRect.left >= cardRect.left - 1 && statusRect.right <= cardRect.right + 1,
+        cardInternalOverflow: splat.scrollWidth - splat.clientWidth,
+        overflow,
+      }};
+    """), timeout=45, label="jobs console cards")
+    if state["summaries"] < 4 or state["typeFilters"] < 4 or state["cards"] < 1:
+        raise RuntimeError(f"consola de trabajos incompleta: {state}")
+    for truth in ("Ultra", "Medium", "238 cámaras", "Listo con fallback"):
+        if truth.lower() not in state["text"].lower():
+            raise RuntimeError(f"trabajo splat no muestra {truth!r}: {state['text'][:500]}")
+    if state["overflow"] > 3:
+        raise RuntimeError(f"overflow horizontal {state['overflow']}px en jobs/{viewport}")
+    if state["cardWidth"] < state["consoleWidth"] - 3:
+        raise RuntimeError(f"tarjeta no ocupa la consola en jobs/{viewport}: {state}")
+    if not state["statusVisible"] or state["cardInternalOverflow"] > 3:
+        raise RuntimeError(f"tarjeta recorta estado/contenido en jobs/{viewport}: {state}")
+    cdp.pump(0.6)  # let the tab transition finish before composited screenshot capture
+    screenshot(cdp, QA_DIR / f"{cid}-jobs-{viewport}.png")
+    opened = cdp.eval(js(f"""
+      const card = document.querySelector('[data-jid="{state['jid']}"]');
+      const button = card && card.querySelector('[data-job-log]');
+      if (!button) return false;
+      button.click(); return true;
+    """))
+    if not opened:
+        raise RuntimeError("botón Logs completos ausente")
+    drawer = wait_for(cdp, js("""
+      const d = document.querySelector('#job-log-drawer');
+      if (!d || !d.querySelector('.jl-pre')) return null;
+      const r = d.getBoundingClientRect();
+      return { text: d.innerText, width: r.width, right: r.right,
+        viewport: window.innerWidth, overflow: document.documentElement.scrollWidth - window.innerWidth };
+    """), timeout=30, label="full log drawer")
+    for contract in ("splat_attempt_failed", "Ultra -d 2", "Cinematic -d 2", "Medium -d 2"):
+        if contract.lower() not in drawer["text"].lower():
+            raise RuntimeError(f"drawer no muestra historial {contract!r}")
+    if drawer["right"] > drawer["viewport"] + 3 or drawer["width"] > drawer["viewport"] + 3 or drawer["overflow"] > 3:
+        raise RuntimeError(f"drawer fuera de viewport en {viewport}: {drawer}")
+    cdp.pump(0.3)
+    screenshot(cdp, QA_DIR / f"{cid}-jobs-log-{viewport}.png")
+    return {"surface": "jobs", "viewport": viewport, "state": state,
+            "drawer": {"width": drawer["width"], "viewport": drawer["viewport"]},
+            "selected": {"count": 1}, "macro": {"before": 0.0, "after": 0.0}}
+
+
+def run_matrix(cid: str, base_url: str, viewports: list[str], surfaces: list[str] | None = None) -> list[dict]:
     results = []
     expected_path = expected_splat_path(cid)
+    runners = {"share": run_share, "workspace": run_workspace, "jobs": run_jobs}
     for vp in viewports:
-        for surface, runner in (("share", run_share), ("workspace", run_workspace)):
+        for surface in surfaces or ["share", "workspace", "jobs"]:
+            runner = runners[surface]
             proc, profile, port = launch_chrome()
             cdp = None
             try:
@@ -258,8 +333,8 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
 
 
 def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
-    """FLIGHTVERSE juego: autotest de vuelo verde + HUD presente + sin overflow."""
-    cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/volar.html?m={cid}&autotest=1"})
+    """FLIGHTVERSE: flight test plus measured touch-HUD collision checks."""
+    cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/volar.html?m={cid}&autotest=1&rig=3"})
     rep = wait_for(cdp, js("""
       const r = window.__volar;
       if (!r || !r.done) return null;
@@ -267,6 +342,14 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
     """), timeout=120, label="volar autotest")
     if not rep.get("ok"):
         raise RuntimeError(f"volar autotest rojo: {rep}")
+    visual = wait_for(cdp, js("""
+      const r = window.__volar;
+      if (!r) return null;
+      if (r.errors?.some(e => e.startsWith('malla visual:'))) return { error:r.errors };
+      return r.visualMesh ? { loaded:true, orthoFull:!!r.orthoFull } : null;
+    """), timeout=75, label="malla fotogramétrica visual")
+    if not visual.get("loaded"):
+        raise RuntimeError(f"malla visual ausente: {visual}")
     hud = cdp.eval(js("""
       return {
         dock: !!document.querySelector('.vl-dock'),
@@ -278,8 +361,160 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
         raise RuntimeError(f"HUD incompleto: {hud}")
     if hud["overflow"] > 3:
         raise RuntimeError(f"overflow {hud['overflow']}px en volar/{viewport}")
+    if VIEWPORTS[viewport]["mobile"]:
+        layout = cdp.eval(js("""
+          const visible = el => !!el && getComputedStyle(el).display !== 'none' && el.getClientRects().length;
+          const rect = el => {
+            const r = el.getBoundingClientRect();
+            return { left:r.left, top:r.top, right:r.right, bottom:r.bottom,
+                     width:r.width, height:r.height };
+          };
+          const hit = (a,b) => a.left < b.right - 1 && a.right > b.left + 1 &&
+                               a.top < b.bottom - 1 && a.bottom > b.top + 1;
+          const left = document.querySelector('.vl-stick.left');
+          const right = document.querySelector('.vl-stick.right');
+          const radar = document.querySelector('#vl-minimap');
+          const menuFab = document.querySelector('#vl-fab');
+          const combatFab = document.querySelector('#vl-combat-fab');
+          const fpv = document.querySelector('#vl-fpv');
+          const fpvHiddenGeneral = ['.vl-corner.tl','.vl-corner.tr','.vl-center-top',
+            '.vl-compass','.vl-flight-status','#vl-goto']
+            .every(s => !visible(document.querySelector(s)));
+          if (![left,right,radar,menuFab,combatFab].every(visible)) {
+            return { error:'faltan controles táctiles agrupados' };
+          }
+          const fixed = [radar,menuFab,combatFab].map(el => [el.id, rect(el)]);
+          const sticks = [['stick-left',rect(left)],['stick-right',rect(right)]];
+          const closedCollisions = [];
+          for (const [an,a] of fixed) for (const [bn,b] of sticks)
+            if (hit(a,b)) closedCollisions.push(`${an}:${bn}`);
+
+          menuFab.click();
+          const menu = document.querySelector('#vl-dock');
+          const menuRect = visible(menu) ? rect(menu) : null;
+          const menuButtons = menu ? [...menu.querySelectorAll('button')].filter(visible) : [];
+          const smallMenuTargets = menuButtons.filter(b => {
+            const r = rect(b); return r.width < 44 || r.height < 44;
+          }).map(b => b.id || b.textContent.trim());
+          const menuHorizontalOverflow = menu ? menu.scrollWidth - menu.clientWidth : 999;
+          const menuStickCollisions = menuRect
+            ? sticks.filter(([,s]) => hit(menuRect,s)).map(([n]) => n) : ['menu-ausente'];
+          document.querySelector('#vl-mode')?.click();
+          const menuPersistent = visible(menu);
+          document.querySelector('#vl-dock-close')?.click();
+
+          combatFab.click();
+          const combat = document.querySelector('#vl-combat');
+          const combatRect = visible(combat) ? rect(combat) : null;
+          const combatButtons = combat ? [...combat.querySelectorAll('button')].filter(visible) : [];
+          const smallCombatTargets = combatButtons.filter(b => {
+            const r = rect(b); return r.width < 44 || r.height < 44;
+          }).map(b => b.id || b.textContent.trim());
+          const combatStickCollisions = combatRect
+            ? sticks.filter(([,s]) => hit(combatRect,s)).map(([n]) => n) : ['combate-ausente'];
+          document.querySelector('#vl-combat-close')?.click();
+          menuFab.click();
+          document.querySelector('#vl-ajustes')?.click();
+          const grade = document.querySelector('#vl-grade');
+          const imageOnly = visible(grade) && !visible(menu) && !visible(combat);
+          menuFab.click();
+          const menuOnly = visible(menu) && !visible(grade) && !visible(combat);
+          combatFab.click();
+          const combatOnly = visible(combat) && !visible(grade) && !visible(menu);
+          document.querySelector('#vl-combat-close')?.click();
+          return { closedCollisions, menuStickCollisions, combatStickCollisions,
+                   smallMenuTargets, smallCombatTargets, menuHorizontalOverflow,
+                   menuActions:menuButtons.length, combatActions:combatButtons.length,
+                   exclusivePanels:imageOnly && menuOnly && combatOnly,
+                   menuPersistent,
+                   fpvActive:visible(fpv) && document.querySelector('#vl-hud').classList.contains('fpv-active'),
+                   fpvHiddenGeneral };
+        """))
+        failures = []
+        for key in ("closedCollisions", "menuStickCollisions", "combatStickCollisions",
+                    "smallMenuTargets", "smallCombatTargets"):
+            if layout.get(key):
+                failures.append(f"{key}={layout[key]}")
+        if layout.get("error"):
+            failures.append(layout["error"])
+        if layout.get("menuHorizontalOverflow", 999) > 2:
+            failures.append(f"menuOverflow={layout.get('menuHorizontalOverflow', 'ausente')}")
+        if layout.get("menuActions", 0) < 10 or layout.get("combatActions", 0) < 6:
+            failures.append(f"acciones incompletas={layout}")
+        if not layout.get("exclusivePanels"):
+            failures.append(f"paneles simultáneos={layout}")
+        if not layout.get("menuPersistent"):
+            failures.append("el menú se cerró al cambiar un ajuste")
+        if not layout.get("fpvActive") or not layout.get("fpvHiddenGeneral"):
+            failures.append(f"HUD FPV duplicado={layout}")
+        if failures:
+            raise RuntimeError("HUD táctil inválido: " + "; ".join(failures))
+
+        # Combate real: un pointer de navegador debe reducir munición, no basta
+        # con que el botón exista o cambie de color.
+        fire = cdp.eval(js("""
+          document.querySelector('#vl-combat-fab')?.click();
+          document.querySelector('#vl-weps [data-w="m"]')?.click();
+          const b = document.querySelector('#vl-fire');
+          const r = b.getBoundingClientRect();
+          return { x:r.left+r.width/2, y:r.top+r.height/2,
+            before:window.__volar.weaponState.ammo.m,
+            fired:window.__volar.weaponState.fired };
+        """))
+        cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": fire["x"], "y": fire["y"],
+                  "button": "left", "buttons": 1, "clickCount": 1})
+        cdp.pump(0.08)
+        cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": fire["x"], "y": fire["y"],
+                  "button": "left", "buttons": 0, "clickCount": 1})
+        cdp.pump(0.2)
+        shot = cdp.eval(js("""
+          return { after:window.__volar.weaponState.ammo.m,
+            fired:window.__volar.weaponState.fired };
+        """))
+        if not (shot["after"] < fire["before"] and shot["fired"] > fire["fired"]):
+            raise RuntimeError(f"DISPARAR no consumió munición: before={fire} after={shot}")
+        cdp.eval("document.querySelector('#vl-combat-close')?.click()")
+
+        # El inspector debe dejar la escena visible y poder moverse dentro del
+        # visual viewport con un gesto real.
+        cdp.eval(js("""
+          document.querySelector('#vl-fab')?.click();
+          document.querySelector('#vl-ajustes')?.click();
+          return true;
+        """))
+        cdp.pump(0.2)
+        drag = cdp.eval(js("""
+          const p=document.querySelector('#vl-grade'), h=p.querySelector('.vl-grade-drag');
+          const pr=p.getBoundingClientRect(), hr=h.getBoundingClientRect();
+          return { x:hr.left+hr.width*.35, y:hr.top+hr.height/2,
+            left:pr.left, top:pr.top, height:pr.height, viewport:innerHeight };
+        """))
+        cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": drag["x"], "y": drag["y"],
+                  "button": "left", "buttons": 1, "clickCount": 1})
+        cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": drag["x"] + 42,
+                  "y": drag["y"] - 54, "button": "left", "buttons": 1})
+        cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": drag["x"] + 42,
+                  "y": drag["y"] - 54, "button": "left", "buttons": 0, "clickCount": 1})
+        cdp.pump(0.15)
+        moved = cdp.eval(js("""
+          const p=document.querySelector('#vl-grade'), r=p.getBoundingClientRect();
+          return { left:r.left,top:r.top,right:r.right,bottom:r.bottom,
+            vl:visualViewport?.offsetLeft||0,vt:visualViewport?.offsetTop||0,
+            vw:visualViewport?.width||innerWidth,vh:visualViewport?.height||innerHeight,
+            visible:getComputedStyle(p).display!=='none' };
+        """))
+        if drag["height"] > drag["viewport"] * 0.48:
+            raise RuntimeError(f"Imagen tapa la vista previa: {drag}")
+        if abs(moved["left"] - drag["left"]) < 15 and abs(moved["top"] - drag["top"]) < 15:
+            raise RuntimeError(f"Imagen no se movió: before={drag} after={moved}")
+        if not moved["visible"] or moved["left"] < moved["vl"] - 2 or moved["top"] < moved["vt"] - 2 or moved["right"] > moved["vl"] + moved["vw"] + 2 or moved["bottom"] > moved["vt"] + moved["vh"] + 2:
+            raise RuntimeError(f"Imagen salió del viewport: before={drag} after={moved}")
+        layout["weaponShot"] = {"before": fire["before"], "after": shot["after"]}
+        layout["imageDrag"] = moved
+        hud["touchLayout"] = layout
     screenshot(cdp, QA_DIR / f"matrix-volar-{viewport}.png")
-    return {"surface": "volar", "viewport": viewport, "fps": rep.get("fps"), **hud}
+    return {"surface": "volar", "viewport": viewport, "fps": rep.get("fps"),
+            "visual": visual, **hud}
 
 
 def main():
@@ -288,6 +523,8 @@ def main():
     ap.add_argument("--base-url", default=DEFAULT_BASE_URL)
     ap.add_argument("--viewport", action="append", choices=sorted(VIEWPORTS),
                     help="Repeat to limit the matrix. Default: mobile, iPad, desktop.")
+    ap.add_argument("--surface", action="append", choices=("share", "workspace", "jobs"),
+                    help="Repeat to limit surfaces. Default: share, workspace, jobs.")
     ap.add_argument("--flightverse", action="store_true",
                     help="Matriz FLIGHTVERSE (mundo + volar) en vez de share/workspace.")
     args = ap.parse_args()
@@ -317,8 +554,11 @@ def main():
         for r in results:
             print(f"{r['surface']}/{r['viewport']}: ok" + (f" · {r['fps']}fps" if r.get('fps') else f" · {r['islas']} islas"))
         return
-    results = run_matrix(args.clip_id, args.base_url, viewports)
+    results = run_matrix(args.clip_id, args.base_url, viewports, args.surface)
     for r in results:
+        if r["surface"] == "jobs":
+            print(f"jobs/{r['viewport']}: ok · {r['state']['cards']} cards · drawer {r['drawer']['width']:.0f}px")
+            continue
         macro = r["macro"]
         sel = r["selected"]
         print(f"{r['surface']}/{r['viewport']}: ok · macro {macro['before']:.4f}->{macro['after']:.4f} · versions {sel.get('count')}")

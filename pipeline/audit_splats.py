@@ -76,7 +76,7 @@ def audit() -> tuple[list[str], list[str], dict]:
         if not path or not full.exists():
             failures.append(f"missing asset: {s.get('clip_id')} path={path}")
             continue
-        if s.get("format") != "ksplat":
+        if s.get("format") not in ("sog", "spz", "ksplat"):
             warnings.append(f"non-optimized visible format: {path} format={s.get('format')}")
         missing = [k for k in ("clip_id", "path", "format", "preset", "iters", "loss", "cameras", "duration_s")
                    if s.get(k) in (None, "")]

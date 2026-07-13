@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 DB = Path("/Volumes/SSD/drone-vault/manifest/jobs.db")
+JOB_LOG_DIR = Path("/Volumes/SSD/drone-vault/ops/job_logs")
 _LOCK = threading.Lock()
 
 
@@ -67,6 +68,11 @@ def init(orphan_kinds: tuple = ()):
             id TEXT PRIMARY KEY, kind TEXT, label TEXT, status TEXT, detail TEXT,
             started REAL, finished REAL, pid INTEGER, container TEXT, artifact TEXT, log TEXT)""")
         c.execute("""CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, expiry REAL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS job_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL, ts REAL NOT NULL, level TEXT NOT NULL,
+            event TEXT NOT NULL, message TEXT, data TEXT)""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_job_events_job_ts ON job_events(job_id, ts, id)")
         # migraciones aditivas (SQLite no soporta ADD COLUMN IF NOT EXISTS)
         have = {r[1] for r in c.execute("PRAGMA table_info(jobs)").fetchall()}
         for col, typ in (("log", "TEXT"), ("spec", "TEXT"), ("stage", "TEXT"),
@@ -132,6 +138,7 @@ def enqueue(kind: str, label: str, spec: dict | None = None) -> dict:
                   "VALUES (?,?,?,?,?,?,?)",
                   (j["id"], kind, label, "queued", "en cola", time.time(),
                    json.dumps(spec or {})))
+    event(j["id"], "queued", "Trabajo en cola", data={"kind": kind, "spec": spec or {}})
     return j
 
 
@@ -170,6 +177,7 @@ def add(kind: str, label: str, container: str = "") -> dict:
         c.execute("INSERT INTO jobs (id, kind, label, status, detail, started, container) "
                   "VALUES (?,?,?,?,?,?,?)",
                   (j["id"], kind, label, "running", "", time.time(), container))
+    event(j["id"], "started", "Trabajo iniciado", data={"kind": kind})
     return j
 
 
@@ -179,10 +187,71 @@ def update(jid: str, **kw):
         c.execute(f"UPDATE jobs SET {sets} WHERE id=?", (*kw.values(), jid))
 
 
+def event(jid: str, event: str, message: str = "", level: str = "info",
+          data: dict | None = None):
+    """Append an immutable structured transition or diagnosis to a job."""
+    if not re.fullmatch(r"[\w.-]+", str(jid)):
+        raise ValueError("invalid job id")
+    level = level if level in ("debug", "info", "warning", "error") else "info"
+    with _LOCK, _conn() as c:
+        c.execute("INSERT INTO job_events (job_id, ts, level, event, message, data) "
+                  "VALUES (?,?,?,?,?,?)",
+                  (jid, time.time(), level, str(event)[:80], str(message)[:1000],
+                   json.dumps(data or {}, ensure_ascii=False, default=str)))
+
+
+def events(jid: str, limit: int = 500) -> list[dict]:
+    if not re.fullmatch(r"[\w.-]+", str(jid)):
+        raise ValueError("invalid job id")
+    limit = max(1, min(1000, int(limit)))
+    with _LOCK, _conn() as c:
+        rows = c.execute("SELECT ts, level, event, message, data FROM job_events "
+                         "WHERE job_id=? ORDER BY ts, id LIMIT ?", (jid, limit)).fetchall()
+    out = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["data"] = json.loads(item.get("data") or "{}")
+        except ValueError:
+            item["data"] = {}
+        out.append(item)
+    return out
+
+
+def log_path(jid: str) -> Path:
+    """Return the confined append-only log path for a valid job id."""
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", str(jid)):
+        raise ValueError("invalid job id")
+    JOB_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    return JOB_LOG_DIR / f"{jid}.log"
+
+
+def log_chunk(jid: str, after: int = 0, limit: int = 500) -> dict:
+    """Read a bounded line range without loading an unbounded log into the API."""
+    after = max(0, int(after))
+    limit = max(1, min(1000, int(limit)))
+    path = log_path(jid)
+    if not path.exists():
+        return {"lines": [], "next": after, "eof": True}
+    rows = []
+    with path.open(errors="replace") as fh:
+        for index, line in enumerate(fh):
+            if index < after:
+                continue
+            rows.append(line.rstrip("\n"))
+            if len(rows) > limit:
+                break
+    visible = rows[:limit]
+    return {"lines": visible, "next": after + len(visible), "eof": len(rows) <= limit}
+
+
 def end(jid: str, status: str, detail: str = "", artifact: str = ""):
     # un job terminado nunca conserva pid (evita pids fantasma en la tabla)
     update(jid, status=status, detail=detail[:400], artifact=artifact,
            finished=time.time(), pid=None)
+    event(jid, "completed" if status == "done" else status, detail,
+          level="error" if status == "error" else "warning" if status.startswith("cancel") else "info",
+          data={"artifact": artifact} if artifact else {})
     if status == "error":
         # registro central de errores (ops/errors.jsonl) — lo consume error_report.py/DeepSeek
         try:
@@ -203,18 +272,19 @@ def clear_artifacts(cid: str):
 
 
 def retarget_splat_artifacts(cid: str, archived_splat: str | None,
-                             archived_ksplat: str | None = None):
+                             archived_viewer: str | None = None):
     """When a newer splat becomes current, previous done jobs must keep pointing to
-    their archived version instead of the mutable splats/<cid>.{splat,ksplat} path.
-    Ambos paths mutables retargetean al MEJOR archivado (ksplat > splat, carga mas rapida).
-    Los jobs nuevos terminan con artifact .ksplat: si solo se matchea .splat, la tarjeta
+    their archived version instead of the mutable viewer path.
+    Los paths mutables apuntan al mejor archivado (SOG/ksplat > splat).
+    Los jobs nuevos terminan con artifact optimizado: si solo se matchea .splat, la tarjeta
     del job viejo abriria silenciosamente el modelo NUEVO (regresion de 221903f)."""
-    target = archived_ksplat or archived_splat
+    target = archived_viewer or archived_splat
     if not target:
         return
     tname = Path(target).name
     with _LOCK, _conn() as c:
-        for mutable in (f"splats/{cid}.splat", f"splats/{cid}.ksplat"):
+        for mutable in (f"splats/{cid}.splat", f"splats/{cid}.ksplat",
+                        f"splats/{cid}.clean.sog"):
             c.execute("UPDATE jobs SET artifact=?, detail=replace(detail, ?, ?) "
                       "WHERE kind='splat' AND label=? "
                       "AND status='done' AND artifact=?",
@@ -239,6 +309,20 @@ def recent(n: int = 30) -> list[dict]:
         elif d.get("finished") and d.get("started"):
             d["mins"] = round((d["finished"] - d["started"]) / 60, 1)
         out.append(d)
+    return out
+
+
+def latest_done_ids(kinds: tuple = ("3d",)) -> dict[tuple[str, str], str]:
+    """Latest immutable producer for each mutable label/artifact namespace."""
+    if not kinds:
+        return {}
+    ph = ",".join("?" * len(kinds))
+    with _LOCK, _conn() as c:
+        rows = c.execute(f"SELECT id,kind,label FROM jobs WHERE status='done' "
+                         f"AND kind IN ({ph}) ORDER BY finished DESC", kinds).fetchall()
+    out = {}
+    for row in rows:
+        out.setdefault((row["kind"], row["label"]), row["id"])
     return out
 
 
@@ -349,6 +433,10 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
 
     lines: list[str] = []
     abort_hit = threading.Event()
+    reader_done = threading.Event()
+    full_log = log_path(jid)
+    event(jid, "process_started", Path(str(cmd[0])).name,
+          data={"program": Path(str(cmd[0])).name})
 
     def reader():  # espeja el log; abort/progreso se detectan aqui, el control vive afuera
         # throttle: ODM/OpenSplat escupen miles de líneas — un UPDATE por línea es
@@ -356,26 +444,33 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
         # Escribimos si el % cambió o pasaron >=0.5s desde la última escritura.
         last_pct = -1
         last_write = 0.0
-        for line in proc.stdout:
-            lines.append(line.rstrip())
-            del lines[:-200]
-            fields = {}
-            if progress_re:
-                m = re.search(progress_re, line)
-                if m and int(m.group(1)) != last_pct:
-                    last_pct = int(m.group(1))
-                    lo, hi = progress_span
-                    fields["progress"] = round(lo + (hi - lo) * last_pct / 100, 3)
-            now = time.time()
-            if fields or now - last_write >= 0.5:
-                last_write = now
-                fields["log"] = "\n".join(lines[-tail:])
-                update(jid, **fields)
-            if abort_re and re.search(abort_re, line):
-                abort_hit.set()
-        # flush final: que el tail del log quede completo al cerrar stdout
-        update(jid, log="\n".join(lines[-tail:]))
-    threading.Thread(target=reader, daemon=True).start()
+        try:
+            with full_log.open("a", encoding="utf-8", buffering=1) as durable:
+                for line in proc.stdout:
+                    raw = line.rstrip("\n")
+                    stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    durable.write(f"[{stamp}] {raw}\n")
+                    lines.append(raw)
+                    del lines[:-200]
+                    fields = {}
+                    if progress_re:
+                        m = re.search(progress_re, line)
+                        if m and int(m.group(1)) != last_pct:
+                            last_pct = int(m.group(1))
+                            lo, hi = progress_span
+                            fields["progress"] = round(lo + (hi - lo) * last_pct / 100, 3)
+                    now = time.time()
+                    if fields or now - last_write >= 0.5:
+                        last_write = now
+                        fields["log"] = "\n".join(lines[-tail:])
+                        update(jid, **fields)
+                    if abort_re and re.search(abort_re, line):
+                        abort_hit.set()
+            update(jid, log="\n".join(lines[-tail:]))
+        finally:
+            reader_done.set()
+    reader_thread = threading.Thread(target=reader, daemon=True)
+    reader_thread.start()
 
     deadline = time.time() + timeout
     reason = None
@@ -418,6 +513,9 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                     pass
             break
 
+    reader_done.wait(5)
+    if proc.stdout:
+        proc.stdout.close()
     update(jid, pid=None)
     if reason == "timeout":
         # primitiva auto-consistente: deja el row en 'error' antes de lanzar

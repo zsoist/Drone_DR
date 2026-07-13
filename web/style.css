@@ -675,6 +675,130 @@ details.explain b { color: var(--text); font-weight: 600; }
 #jobs3d > details.jobs-older { grid-column: 1 / -1; }
 @media (max-width: 700px) { #jobs3d { grid-template-columns: 1fr; } }
 
+/* ---------- Trabajos: consola operativa v3 ---------- */
+.job-summary {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px;
+  margin-bottom: 12px;
+}
+.job-summary button {
+  min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface-2); color: var(--text-2); text-align: left;
+}
+.job-summary button:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.job-summary span { font-size: 11px; letter-spacing: .5px; text-transform: uppercase; }
+.job-summary b { font: 700 20px/1 var(--mono); color: var(--text); }
+.job-toolbar { display: grid; grid-template-columns: minmax(260px, 1fr) auto; gap: 9px 14px; align-items: center; }
+.job-toolbar > .search { min-width: 0; }
+.job-toolbar .td-jobbar { margin: 0; justify-content: flex-end; }
+.td-jobkinds { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
+.job-note { margin: 11px 0; }
+#jobs3d.job-console { display: flex; flex-direction: column; align-items: stretch; gap: 9px; }
+#jobs3d.job-console .job-card { margin: 0; padding: 14px 16px; border-radius: 12px; }
+.job-card .jc-head { align-items: flex-start; }
+.job-card .jc-head > svg.ic { margin-top: 2px; color: var(--accent); }
+.job-card .jc-title { white-space: normal; line-height: 1.35; font-size: 13.5px; }
+.jc-status.fallback { color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, transparent); }
+.jc-quality, .jc-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.jc-quality span, .jc-facts span {
+  padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--text-2); font-size: 10.5px; line-height: 1.2;
+}
+.jc-quality span b { color: var(--text); font-weight: 650; }
+.jc-facts span { font-family: var(--mono); color: var(--text-3); }
+.job-card .jc-result { margin-top: 9px; color: var(--text-2); font-size: 11.5px; line-height: 1.45; }
+.job-card .jc-result.error { color: var(--red); }
+.job-card button.jc-log {
+  display: block; width: 100%; border: 0; text-align: left; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.job-card button.jc-log:hover { color: var(--text-2); }
+.job-card .jc-actions { justify-content: flex-end; align-items: center; }
+.job-card .jc-actions .btn { min-height: 32px; padding: 5px 10px; font-size: 11px; }
+.job-card .jc-actions .danger { color: var(--red); }
+
+.job-log-drawer {
+  position: fixed; z-index: 410; inset: 0 0 0 auto; width: min(920px, 78vw);
+  display: flex; flex-direction: column; gap: 10px; padding: 16px;
+  background: color-mix(in srgb, var(--bg) 96%, transparent); border-left: 1px solid var(--line);
+  box-shadow: -24px 0 70px rgba(0, 0, 0, .48); backdrop-filter: blur(18px);
+  animation: jobDrawerIn 180ms var(--ease);
+}
+@keyframes jobDrawerIn { from { transform: translateX(24px); opacity: 0; } }
+.jl-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.jl-head > div { min-width: 0; }
+.jl-head b { display: block; color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
+.jl-head span { display: block; margin-top: 3px; color: var(--text-3); font-size: 11px; }
+.jl-events { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.jl-events span { flex: none; max-width: 340px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 10px; color: var(--text-2); }
+.jl-events span b { margin-right: 5px; text-transform: uppercase; font-size: 9px; color: var(--text-3); }
+.jl-events .warning { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); }
+.jl-events .error { border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
+.jl-tools { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+.jl-tools .search { min-width: 220px; flex: 1; }
+.jl-tools .btn, .jl-tools .ctl { min-height: 34px; font-size: 10.5px; }
+.jl-tools .btn.on { color: var(--accent); border-color: var(--accent); }
+.jl-meta { display: flex; justify-content: space-between; align-items: center; color: var(--text-3); font: 10px var(--mono); }
+.jl-pre {
+  flex: 1; min-height: 0; margin: 0; padding: 13px; overflow: auto;
+  border: 1px solid var(--line); border-radius: 10px; background: #080b0f;
+  color: #bac7d6; font: 11px/1.55 var(--mono); white-space: pre;
+  tab-size: 2; overscroll-behavior: contain;
+}
+.job-log-drawer.wrap .jl-pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .job-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .job-toolbar { grid-template-columns: 1fr; }
+  .job-toolbar .td-jobbar { justify-content: flex-start; }
+  .job-card .jc-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .job-log-drawer { inset: 54px 0 0; width: 100%; padding: 11px; border-left: 0; border-top: 1px solid var(--line); }
+  .jl-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .jl-tools .search { min-width: 0; grid-column: 1 / -1; }
+  .jl-tools .ctl { width: 100%; }
+  .jl-pre { font-size: 10px; }
+}
+
+/* ---------- mejora incremental de una escena ---------- */
+.scene-improve-modal { width: min(880px, calc(100vw - 28px)); }
+.scene-version-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
+}
+.scene-version-head span { color: var(--text-3); font-size: 10px; text-transform: uppercase; letter-spacing: .6px; }
+.scene-version-head b { font: 11px var(--mono); overflow-wrap: anywhere; }
+.scene-versions { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.scene-versions > div {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 9px;
+}
+.scene-versions span { min-width: 0; flex: 1; }
+.scene-versions b, .scene-versions small { display: block; overflow-wrap: anywhere; }
+.scene-versions b { font: 10.5px var(--mono); }
+.scene-versions small { margin-top: 2px; color: var(--text-3); font-size: 9.5px; }
+.scene-versions i { color: var(--mint); font-size: 10px; font-style: normal; text-transform: uppercase; }
+.scene-sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; max-height: 330px; overflow: auto; }
+.scene-source {
+  display: grid; grid-template-columns: auto 62px minmax(0, 1fr); align-items: center; gap: 8px;
+  min-width: 0; padding: 7px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-2); cursor: pointer;
+}
+.scene-source.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.scene-source.risky:not(.on) { border-color: color-mix(in srgb, var(--amber) 38%, var(--line)); }
+.scene-source img { width: 62px; height: 42px; object-fit: cover; border-radius: 7px; background: #05070a; }
+.scene-source span { min-width: 0; }
+.scene-source b, .scene-source small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-source b { font-size: 10.5px; }
+.scene-source small { margin-top: 3px; color: var(--text-3); font-size: 9.5px; }
+.scene-truth { margin: 7px 0 0; color: var(--amber); }
+.scene-photos { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; }
+.scene-photos label { flex: none; max-width: 190px; display: flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; font: 9.5px var(--mono); }
+.scene-photos span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 700px) {
+  .scene-sources { grid-template-columns: 1fr; max-height: 42dvh; }
+  #improve-scene { padding-inline: 8px; font-size: 10px; }
+}
+
 /* ---------- exports con icono ---------- */
 .exp { flex-direction: row; align-items: center; gap: 12px; }
 .exp svg.ic { width: 17px; height: 17px; color: var(--accent); flex: none; }
@@ -2933,7 +3057,9 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .pf-bar { width: 90px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
 .pf-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .6s; }
 .perf-errs summary { cursor: pointer; font-size: 12.5px; color: var(--text-2); padding: 6px 0 2px; display: flex; align-items: center; gap: 7px; }
-.pf-report { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--accent); padding: 3px 0; }
+.pf-report { display: flex; width: 100%; align-items: center; gap: 7px; font: inherit; font-size: 12px; text-align: left; color: var(--accent); padding: 5px 0; background: none; border: 0; cursor: pointer; }
+.pf-report .count { margin-left: auto; }
+#pf-report-body { max-height: min(54vh, 620px); margin: 10px 0; white-space: pre-wrap; overflow: auto; }
 .pf-err { font-size: 11px; color: var(--text-2); padding: 3px 0; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: baseline; }
 
 /* móvil: la vista Lista con thumb de 200px dejaba ~160px para título+métricas (recortadas) */
@@ -3399,7 +3525,7 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   background:rgba(10,12,16,.62); border:1px solid rgba(255,255,255,.07) }
 .vl-minimap{ border:1px solid rgba(255,255,255,.14); border-radius:14px;
   box-shadow:0 12px 36px -14px rgba(0,0,0,.85) }
-/* móvil VERTICAL: métricas compactas, dock horizontal scrolleable sobre sticks */
+/* móvil VERTICAL: métricas compactas; los paneles agrupados viven sobre los sticks */
 @media (pointer:coarse) and (orientation:portrait){
   .vl-corner.tr{ flex-direction:column; gap:6px }
   .vl-metric{ min-width:64px; padding:6px 10px } .vl-metric span{ font-size:14px }
@@ -3645,7 +3771,7 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .proc-groups, .proc-group, .proc-photos{ flex-shrink:0 }
 
 /* BLOQUE 34 · HUD FPV: crosshair + horizonte artificial */
-.vl-fpv{ position:absolute; inset:0; display:none; pointer-events:none; z-index:1 }
+.vl-fpv{ position:absolute; inset:0; display:none; pointer-events:none; z-index:3 }
 .vl-fpv.show{ display:block }
 .vl-fpv-cross{ position:absolute; left:50%; top:50%; width:26px; height:26px;
   transform:translate(-50%,-50%) }
@@ -3788,7 +3914,8 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 .vl-fpv-head{ position:absolute; top:calc(8% - 26px); left:50%; transform:translateX(-50%);
   font:700 11px var(--mono); letter-spacing:.14em; color:#DFF6EC; white-space:nowrap;
   padding:5px 14px; border-radius:7px; background:rgba(8,12,16,.45);
-  border:1px solid rgba(125,255,201,.2) }
+  border:1px solid rgba(125,255,201,.2); max-width:calc(100vw - 20px);
+  box-sizing:border-box; overflow:hidden; text-overflow:ellipsis }
 
 /* ── BLOQUE 45 · panel Imagen premium: header, outputs, sliders custom ── */
 .vl-grade{ animation:gradeIn .28s var(--ease) }
@@ -3971,3 +4098,136 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   width:var(--ammo, 100%); background:linear-gradient(90deg, #E85A5A, #ffb36b);
   transition:width .2s linear }
 @media (max-width:520px){ .vl-inv-grid{ grid-template-columns:repeat(2, 1fr) } }
+
+/* ── BLOQUE 53: HUD táctil agrupado, accesible y sin colisiones ─────────── */
+.vl-dock-head{ display:none }
+.vl-combat-fab{ display:none }
+.vl-combat{ display:flex; flex-direction:column; align-items:flex-end; gap:6px }
+.vl-flight-status{ position:absolute; right:86px;
+  bottom:calc(14px + env(safe-area-inset-bottom)); z-index:2;
+  display:flex; flex-direction:column; align-items:flex-end; gap:5px }
+
+@media (pointer:coarse){
+  /* Compatibilidad con una pestaña restaurada por Safari: el DOM anterior
+     dejaba combate/estado como hijos directos de .br. El CSS nuevo nunca debe
+     volver a colocarlos sobre el joystick derecho. */
+  .vl-corner.br > .vl-kills,
+  .vl-corner.br > .vl-weps,
+  .vl-corner.br > .vl-fire,
+  .vl-corner.br > .vl-ghost,
+  .vl-corner.br > .vl-fps{ display:none !important }
+  .vl-corner.bl,.vl-corner.br{ position:static; max-width:none }
+  .vl-fab,.vl-combat-fab{ display:flex; position:fixed; z-index:36;
+    align-items:center; justify-content:center; width:auto; min-width:76px; height:52px;
+    padding:0 16px; border-radius:16px; border:1px solid rgba(69,160,230,.3);
+    color:#EAF2FB; font:700 12px var(--font); letter-spacing:.04em; cursor:pointer;
+    background:linear-gradient(160deg, rgba(28,37,49,.94), rgba(10,12,16,.9));
+    -webkit-backdrop-filter:blur(16px) saturate(1.25); backdrop-filter:blur(16px) saturate(1.25);
+    box-shadow:0 14px 36px -14px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.08) }
+  .vl-fab{ left:calc(14px + env(safe-area-inset-left));
+    bottom:calc(34vh + 36px + env(safe-area-inset-bottom)) }
+  .vl-combat-fab{ right:calc(14px + env(safe-area-inset-right));
+    bottom:calc(34vh + 36px + env(safe-area-inset-bottom));
+    border-color:rgba(232,120,70,.38); color:#ffc09a }
+  .vl-fab[aria-expanded=true],.vl-combat-fab[aria-expanded=true]{
+    border-color:rgba(125,255,201,.58); box-shadow:0 14px 38px -12px rgba(69,160,230,.45) }
+
+  .vl-dock,.vl-combat{ display:none; position:fixed; z-index:35; overflow-y:auto;
+    max-height:min(50dvh,420px); padding:12px; border-radius:18px;
+    border:1px solid rgba(69,160,230,.3);
+    background:linear-gradient(160deg, rgba(25,33,44,.97), rgba(9,12,17,.95));
+    -webkit-backdrop-filter:blur(18px) saturate(1.35); backdrop-filter:blur(18px) saturate(1.35);
+    box-shadow:0 24px 60px -20px rgba(0,0,0,.95), inset 0 1px 0 rgba(255,255,255,.08) }
+  .vl-dock{ left:calc(12px + env(safe-area-inset-left));
+    right:calc(12px + env(safe-area-inset-right));
+    bottom:calc(34vh + 24px + env(safe-area-inset-bottom));
+    grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; max-width:none }
+  .vl-dock.open{ display:grid; animation:dockIn .22s var(--ease) }
+  .vl-combat{ right:calc(12px + env(safe-area-inset-right));
+    bottom:calc(34vh + 24px + env(safe-area-inset-bottom));
+    width:min(264px,calc(100vw - 24px));
+    grid-template-columns:minmax(0,1fr) 76px; gap:10px; align-items:center }
+  .vl-combat.open{ display:grid; animation:dockIn .22s var(--ease) }
+
+  .vl-dock-head{ display:flex; grid-column:1/-1; min-height:44px;
+    align-items:center; justify-content:space-between; gap:12px;
+    padding:0 2px 8px; border-bottom:1px solid rgba(255,255,255,.09) }
+  .vl-dock-head b{ color:#8FA5BD; font:750 10px var(--mono); letter-spacing:.2em }
+  .vl-dock-head b small,.vl-grade-k small{ display:block; margin-top:4px;
+    color:#65788d; font:650 8px var(--mono); letter-spacing:.14em }
+  .vl-dock-head button{ min-width:64px; min-height:44px; padding:0 12px;
+    border-radius:11px; border:1px solid rgba(255,255,255,.13);
+    background:rgba(255,255,255,.055); color:#D9E3EE;
+    font:650 12px var(--font); cursor:pointer }
+  .vl-dock .vl-chip,.vl-dock .vl-rec{ min-width:0; min-height:44px; width:100%;
+    padding:10px 12px; white-space:normal; line-height:1.25; overflow-wrap:anywhere }
+  .vl-dock .vl-sep{ display:none }
+
+  .vl-combat .vl-weps{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:7px; width:100% }
+  .vl-combat .vl-weps button{ width:100%; min-height:44px; padding:8px 4px;
+    border-radius:11px; font-size:11px }
+  .vl-combat .vl-fire{ width:84px; height:76px; justify-self:end; flex-direction:column; gap:2px;
+    touch-action:none; user-select:none; -webkit-user-select:none }
+  .vl-combat .vl-fire strong{ font:750 8px var(--mono); letter-spacing:.08em }
+  .vl-combat .vl-kills{ grid-column:1/-1; justify-self:start }
+
+  .vl-flight-status{ left:50%; right:auto; transform:translateX(-50%);
+    bottom:calc(34vh + 15px + env(safe-area-inset-bottom));
+    width:min(42vw,164px); align-items:center; text-align:center }
+  .vl-flight-status .vl-ghost,.vl-flight-status .vl-fps{ max-width:100%;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .vl-minimap{ left:50%; right:auto; bottom:calc(28px + env(safe-area-inset-bottom));
+    transform:translateX(-50%); width:92px; height:92px }
+  .vl-mobile-sheet-open .vl-fab,.vl-mobile-sheet-open .vl-combat-fab{
+    opacity:0; pointer-events:none; transform:translateY(8px) }
+  .vl-mobile-sheet-open .vl-flight-status{ opacity:0 }
+}
+
+@media (pointer:coarse) and (orientation:portrait){
+  .vl-grade{ position:fixed; z-index:40; left:calc(12px + env(safe-area-inset-left));
+    right:calc(12px + env(safe-area-inset-right)); top:auto;
+    bottom:calc(14px + env(safe-area-inset-bottom)); width:auto;
+    max-height:min(46dvh,430px); transform:none; overflow-y:auto;
+    overscroll-behavior:contain; padding:14px 16px }
+  .vl-grade-head{ position:sticky; top:-14px; z-index:2; margin:-14px -16px 2px;
+    padding:12px 16px 9px; background:rgba(17,23,31,.97);
+    border-bottom:1px solid rgba(255,255,255,.08) }
+  .vl-grade-x{ min-width:44px; min-height:44px }
+  .vl-grade input[type=range]{ height:32px }
+}
+
+.vl-panel-drag,.vl-grade-drag{ cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none }
+.vl-panel-drag:active,.vl-grade-drag:active,.vl-panel-dragging{ cursor:grabbing }
+.vl-panel-drag button,.vl-grade-drag button{ cursor:pointer }
+.vl-panel-positioned{ margin:0 !important; animation:none !important }
+.vl-panel-dragging{ transition:none !important; animation:none !important;
+  box-shadow:0 28px 70px -22px rgba(0,0,0,.98),0 0 0 1px rgba(125,255,201,.28) }
+
+@keyframes dockIn{ from{ opacity:0; transform:translateY(-8px) } }
+
+@media (pointer:coarse) and (max-width:480px){
+  .vl-minimap{ width:72px; height:72px }
+}
+
+@media (pointer:coarse) and (orientation:landscape){
+  .vl-fab,.vl-combat-fab{ bottom:calc(52vh + 14px + env(safe-area-inset-bottom)) }
+  .vl-dock,.vl-combat{ bottom:calc(52vh + 12px + env(safe-area-inset-bottom)); max-height:42dvh }
+  .vl-flight-status{ bottom:calc(52vh + 8px + env(safe-area-inset-bottom)) }
+}
+
+/* FPV ya trae su propio OSD (velocidad, altura, rumbo, enlace y home). En
+   táctil ocultamos el HUD general duplicado: era la causa de los solapes de
+   las capturas en iPhone/iPad, no una falta de espacio del dispositivo. */
+@media (pointer:coarse){
+  .vl-hud.fpv-active .vl-corner.tl,
+  .vl-hud.fpv-active .vl-corner.tr,
+  .vl-hud.fpv-active .vl-center-top,
+  .vl-hud.fpv-active .vl-compass,
+  .vl-hud.fpv-active .vl-flight-status,
+  .vl-hud.fpv-active .vl-goto{ display:none !important }
+}
+
+@media (prefers-reduced-motion:reduce){
+  .vl-dock.open,.vl-combat.open{ animation:none }
+}

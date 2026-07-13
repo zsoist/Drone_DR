@@ -65,7 +65,7 @@ def make_viewer_mesh(geo, dst):
                 sx += float(p[1]); sy += float(p[2]); sz += float(p[3])
                 n += 1
     if not n:
-        return
+        return None
     cx, cy, cz = sx / n, sy / n, sz / n
     with open(geo) as f, open(dst, "w") as o:
         for line in f:
@@ -75,6 +75,7 @@ def make_viewer_mesh(geo, dst):
                 o.write(f"v {float(p[1]) - cx:.3f} {float(p[2]) - cy:.3f} {float(p[3]) - cz:.3f}{rest}\n")
             else:
                 o.write(line)
+    return [round(cx, 4), round(cy, 4), round(cz, 4)]
 
 
 def obj_stats(path: Path) -> dict:
@@ -394,8 +395,9 @@ EOF""")
     # coordenadas UTM (~cientos de miles) y three.js parsea a float32 → artefactos
     # de precision. GIS/descarga usan el geo; el visor usa este.
     geo_obj = out / "model" / "odm_textured_model_geo.obj"
+    mesh_offset = None
     if geo_obj.exists():
-        make_viewer_mesh(geo_obj, out / "model" / "odm_textured_model_viewer.obj")
+        mesh_offset = make_viewer_mesh(geo_obj, out / "model" / "odm_textured_model_viewer.obj")
     make_viewer_textures(out / "model")
     mesh_stats = obj_stats(geo_obj)
     mesh_ok = mesh_stats["vertices"] >= 100 and mesh_stats["faces"] >= 50
@@ -490,6 +492,7 @@ EOF""")
         "model_viewer": "model/odm_textured_model_viewer.obj"
                         if mesh_ok and (out / "model" / "odm_textured_model_viewer.obj").exists()
                         else None,
+        "mesh_offset": mesh_offset,
         "textures": len([*(out / "model").glob("*.jpg"), *(out / "model").glob("*.png")]),
         **dsm_meta,
         "has_dsm": (out / "dsm_4326.tif").exists(),
@@ -497,8 +500,9 @@ EOF""")
     # Preserve operator-facing metadata across manual re-publish. The worker writes
     # these after publish, but agents often run tresd_publish.py directly while fixing
     # overlays/QA. Dropping the preset makes the UI/docs lie about which route built it.
-    for k in ("preset", "preset_requested", "title"):
-        if prior_meta.get(k) and not meta.get(k):
+    for k in ("preset", "preset_requested", "title", "dense_quality",
+              "dense_quality_requested", "dense_fallback"):
+        if k in prior_meta and k not in meta:
             meta[k] = prior_meta[k]
     # limpieza: temporales y basura de macOS no se publican
     for junk in [*out.rglob(".DS_Store"), *out.glob(".*.tif"), *out.glob("*.aux.xml")]:

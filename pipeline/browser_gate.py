@@ -135,7 +135,10 @@ class CDP:
             args = params.get("args") or []
             self.errors.append("console.error: " + " ".join(str(a.get("value", a.get("description", ""))) for a in args))
         elif method == "Log.entryAdded" and (params.get("entry") or {}).get("level") == "error":
-            self.errors.append((params["entry"].get("text") or "")[:300])
+            entry = params["entry"]
+            where = entry.get("url") or entry.get("source") or ""
+            message = entry.get("text") or ""
+            self.errors.append((f"{message} · {where}" if where else message)[:500])
 
     def pump(self, seconds: float):
         end = time.time() + seconds
