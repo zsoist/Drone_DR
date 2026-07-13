@@ -4467,3 +4467,16 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   color:var(--text-3) }
 .jt-thermal.hot{ color:var(--red); animation:jcPulse 1.2s ease-in-out infinite }
 @media (max-width:900px){ .jt-strip{ grid-template-columns:repeat(2, 1fr) } }
+
+/* ── BLOQUE 61: strip v2 — fila MAC + fila PC ── */
+.jt-lb em{ font-style:normal; color:rgba(154,222,46,.85); font-size:8px;
+  padding:1.5px 5px; border-radius:5px; background:rgba(118,185,0,.12);
+  border:1px solid rgba(118,185,0,.25); letter-spacing:.1em }
+.jt-cell:not(.jt-pc) .jt-lb em{ color:#9fb6d4; background:rgba(120,160,220,.1);
+  border-color:rgba(120,160,220,.25) }
+.jt-facts{ font-size:9px; color:var(--text-3); margin-top:6px; letter-spacing:.03em;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.jt-pc{ border-color:rgba(118,185,0,.14) }
+.jt-pc:hover{ border-color:rgba(118,185,0,.35) }
+.jt-cell .jt-spark[height="30"]{ height:30px }
+@media (max-width:1100px){ .jt-strip{ grid-template-columns:repeat(2, 1fr) } }

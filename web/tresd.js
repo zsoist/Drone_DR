@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=152';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=152';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=152';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=152';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=152';
-  import { mountSplatViewer } from '/splatview.js?v=152';
+  import * as THREE from '/vendor/three180.module.js?v=153';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=153';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=153';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=153';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=153';
+  import { mountSplatViewer } from '/splatview.js?v=153';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -140,17 +140,40 @@
         <span class="jt-thermal mono" id="jt-thermal"></span></div>
       <div class="pb">
         <div class="jt-strip" id="jt-strip" aria-label="Telemetría en vivo">
-          ${['cpu', 'gpu', 'ram'].map(k => `
+          ${[['cpu', 'CPU'], ['gpu', 'GPU'], ['ram', 'RAM']].map(([k, lb]) => `
           <div class="jt-cell" data-k="${k}">
-            <div class="jt-top"><span class="jt-lb">${k === 'ram' ? 'RAM MAC' : k.toUpperCase() + ' MAC'}</span>
+            <div class="jt-top"><span class="jt-lb"><em>MAC</em> ${lb}</span>
               <b class="jt-val mono" id="jt-${k}">—</b></div>
             <canvas class="jt-spark" id="jt-spark-${k}" height="44"></canvas>
           </div>`).join('')}
-          <div class="jt-cell jt-node" id="jt-node-cell">
-            <div class="jt-top"><span class="jt-lb"><i class="st-node-dot" id="jt-node-dot"></i> NODO CUDA</span>
+          <div class="jt-cell">
+            <div class="jt-top"><span class="jt-lb"><em>MAC</em> SISTEMA</span>
+              <b class="jt-val mono" id="jt-load">—</b></div>
+            <div class="jt-facts mono" id="jt-mac-facts">—</div>
+          </div>
+          <div class="jt-cell jt-pc">
+            <div class="jt-top"><span class="jt-lb"><i class="st-node-dot" id="jt-node-dot"></i> <em>PC</em> CUDA</span>
               <b class="jt-val mono" id="jt-node-util">—</b></div>
-            <div class="jt-node-body mono" id="jt-node-body">consultando…</div>
+            <canvas class="jt-spark" id="jt-spark-ncuda" height="30"></canvas>
+            <div class="jt-facts mono" id="jt-node-body">consultando…</div>
+          </div>
+          <div class="jt-cell jt-pc">
+            <div class="jt-top"><span class="jt-lb"><em>PC</em> VRAM</span>
+              <b class="jt-val mono" id="jt-vram-val">—</b></div>
             <div class="jt-vram"><div id="jt-vram-fill"></div></div>
+            <div class="jt-facts mono" id="jt-vram-facts">—</div>
+          </div>
+          <div class="jt-cell jt-pc">
+            <div class="jt-top"><span class="jt-lb"><em>PC</em> CPU · RAM</span>
+              <b class="jt-val mono" id="jt-ncpu">—</b></div>
+            <canvas class="jt-spark" id="jt-spark-ncpu" height="30"></canvas>
+            <div class="jt-facts mono" id="jt-ncpu-facts">—</div>
+          </div>
+          <div class="jt-cell jt-pc">
+            <div class="jt-top"><span class="jt-lb"><em>PC</em> RED LAN</span>
+              <b class="jt-val mono" id="jt-net">—</b></div>
+            <canvas class="jt-spark" id="jt-spark-nnet" height="30"></canvas>
+            <div class="jt-facts mono" id="jt-net-facts">RX / TX — el pulso de los transfers</div>
           </div>
         </div>
         <div class="job-summary" id="job-summary" aria-label="Resumen de trabajos">
@@ -371,27 +394,73 @@
         if (th && d.now?.thermal) th.textContent = d.now.thermal.throttling
           ? 'TÉRMICA LIMITADA' : 'térmica nominal';
         th?.classList.toggle('hot', !!d.now?.thermal?.throttling);
+        set('jt-load', 'load ' + (d.now?.load1 ?? 0).toFixed(1));
+        set('jt-mac-facts', `swap ${((d.now?.swap_used_mb || 0) / 1024).toFixed(1)} GB · ` +
+          `disco ${Math.round(d.now?.disk_free_gb || 0)} GB libres · 10 cores`);
       } catch {}
     }
+    const pcHist = { ncuda: [], ncpu: [], nnet: [] };   // historiales del nodo (client-side)
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     async function pollNode() {
       try {
         const d = await (await fetch('/api/gpu_node')).json();
         const awake = d.status === 'awake';
         document.getElementById('jt-node-dot')?.classList.toggle('awake', awake);
-        const u = document.getElementById('jt-node-util');
-        const b = document.getElementById('jt-node-body');
-        const f = document.getElementById('jt-vram-fill');
-        if (awake) {
-          if (u) u.textContent = (d.util_pct ?? 0) + '%';
-          if (b) b.textContent = `${(d.gpu || 'GPU').replace('NVIDIA GeForce ', '')} · ${d.temp_c ?? '—'}°C · ${d.power_w ?? '—'}W`;
-          if (f && d.vram_total_mb) f.style.transform =
-            `scaleX(${Math.min(1, (d.vram_used_mb || 0) / d.vram_total_mb)})`;
-        } else {
-          if (u) u.textContent = '—';
-          if (b) b.textContent = 'dormido · WoL en Sistema';
+        if (!awake) {
+          set('jt-node-util', '—'); set('jt-node-body', 'dormido · WoL en Sistema');
+          set('jt-vram-val', '—'); set('jt-ncpu', '—'); set('jt-net', '—');
+          const f = document.getElementById('jt-vram-fill');
           if (f) f.style.transform = 'scaleX(0)';
+          return;
+        }
+        const util = d.util_pct ?? 0;
+        set('jt-node-util', util + '%');
+        set('jt-node-body', `${(d.gpu || '').replace('NVIDIA GeForce ', '')} · ${d.temp_c ?? '—'}°C · ${d.power_w ?? '—'}W · drv ${d.driver || '—'}`);
+        pcHist.ncuda.push(util / 100); if (pcHist.ncuda.length > 60) pcHist.ncuda.shift();
+        if (d.vram_total_mb) {
+          set('jt-vram-val', `${(d.vram_used_mb / 1024).toFixed(1)} / ${Math.round(d.vram_total_mb / 1024)} GB`);
+          set('jt-vram-facts', `${Math.round(100 * d.vram_used_mb / d.vram_total_mb)}% ocupada · gsplat + odm:gpu listos`);
+          const f = document.getElementById('jt-vram-fill');
+          if (f) f.style.transform = `scaleX(${Math.min(1, d.vram_used_mb / d.vram_total_mb)})`;
+        }
+        if (d.pc_cpu_pct != null) {
+          set('jt-ncpu', d.pc_cpu_pct + '%');
+          pcHist.ncpu.push(d.pc_cpu_pct / 100); if (pcHist.ncpu.length > 60) pcHist.ncpu.shift();
+        }
+        if (d.pc_ram_total_gb) set('jt-ncpu-facts',
+          `RAM ${d.pc_ram_used_gb ?? '—'} / ${d.pc_ram_total_gb} GB · 8 cores WSL`);
+        if (d.net_rx_mbps != null) {
+          const peak = Math.max(d.net_rx_mbps, d.net_tx_mbps || 0);
+          set('jt-net', peak >= 1000 ? (peak / 1000).toFixed(2) + ' Gb/s' : peak.toFixed(1) + ' Mb/s');
+          set('jt-net-facts', `RX ${d.net_rx_mbps} · TX ${d.net_tx_mbps ?? 0} Mbit/s`);
+          pcHist.nnet.push(Math.min(1, peak / 1000)); if (pcHist.nnet.length > 60) pcHist.nnet.shift();
         }
       } catch {}
+    }
+    function drawPc() {
+      const CO2 = { ncuda: '154,222,46', ncpu: '199,146,234', nnet: '86,196,224' };
+      for (const k of Object.keys(pcHist)) {
+        const cv = document.getElementById('jt-spark-' + k);
+        const pts = pcHist[k];
+        if (!cv || pts.length < 2) continue;
+        const dpr = Math.min(devicePixelRatio || 1, 2);
+        const W = cv.clientWidth, H = cv.clientHeight;
+        if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+        const ctx = cv.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+        const step = W / (pts.length - 1);
+        ctx.beginPath();
+        pts.forEach((v, i) => {
+          const x = i * step, y = H - 2 - v * (H - 6);
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        });
+        ctx.strokeStyle = `rgba(${CO2[k]},.9)`; ctx.lineWidth = 1.4; ctx.stroke();
+        ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+        const g = ctx.createLinearGradient(0, 0, 0, H);
+        g.addColorStop(0, `rgba(${CO2[k]},.2)`); g.addColorStop(1, `rgba(${CO2[k]},0)`);
+        ctx.fillStyle = g; ctx.fill();
+      }
     }
     function draw() {
       const mod = strip.closest('.td-mod');
@@ -432,10 +501,11 @@
         ctx.shadowColor = `rgba(${CO[k]},.9)`; ctx.shadowBlur = 6;
         ctx.fill(); ctx.shadowBlur = 0;
       }
+      drawPc();
       requestAnimationFrame(draw);
     }
     poll(); pollNode();
-    setInterval(poll, 2000); setInterval(pollNode, 30000);
+    setInterval(poll, 2000); setInterval(pollNode, 10000);
     requestAnimationFrame(draw);
   })();
 

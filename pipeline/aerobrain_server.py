@@ -1197,10 +1197,40 @@ def gpu_node_status(force: bool = False) -> dict:
                          "temp_c": int(float(f[5])), "power_w": round(float(f[6]), 1)})
         wsl = subprocess.run(
             ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
-             "wsl -d Ubuntu -- bash -lc \"source ~/gpu-jobs/splat-env/bin/activate 2>/dev/null && python3 -c 'import gsplat;print(gsplat.__version__)' 2>/dev/null || echo no\""],
-            capture_output=True, text=True, timeout=15)
-        v = (wsl.stdout or "").replace("\x00", "").strip().splitlines()
-        data["gsplat"] = v[-1] if v and v[-1] != "no" else None
+             "wsl -d Ubuntu -- bash -lc \"head -1 /proc/stat; grep -E 'MemTotal|MemAvailable' /proc/meminfo; grep -E 'eth0' /proc/net/dev | head -1\""],
+            capture_output=True, text=True, timeout=12)
+        raw = (wsl.stdout or "").replace("\x00", "")
+        cpu_line = mem = {}
+        for ln in raw.splitlines():
+            t = ln.split()
+            if not t:
+                continue
+            if t[0] == "cpu" and len(t) >= 8:
+                # jiffies: user nice system idle iowait irq softirq
+                vals = [int(x) for x in t[1:8]]
+                data["_cpu_raw"] = {"busy": sum(vals) - vals[3] - vals[4], "total": sum(vals)}
+            elif t[0] == "MemTotal:":
+                data["pc_ram_total_gb"] = round(int(t[1]) / 1048576, 1)
+            elif t[0] == "MemAvailable:":
+                data["_ram_avail_kb"] = int(t[1])
+            elif t[0].startswith("eth0"):
+                # /proc/net/dev: iface rx_bytes ... (8 cols) tx_bytes ...
+                nums = t[1:] if t[0] != "eth0:" else t[1:]
+                if t[0].rstrip(":") == "eth0" or t[0].startswith("eth0:"):
+                    parts = ln.replace(":", " ").split()
+                    data["_net_raw"] = {"rx": int(parts[1]), "tx": int(parts[9]), "t": now}
+        if data.get("pc_ram_total_gb") and data.get("_ram_avail_kb"):
+            data["pc_ram_used_gb"] = round(data["pc_ram_total_gb"] - data.pop("_ram_avail_kb") / 1048576, 1)
+        # tasas por delta contra la muestra anterior (mismo cache que el TTL)
+        prev = (GPU_NODE.get("data") or {})
+        pc, pp = data.get("_cpu_raw"), prev.get("_cpu_raw")
+        if pc and pp and pc["total"] > pp["total"]:
+            data["pc_cpu_pct"] = round(100 * (pc["busy"] - pp["busy"]) / (pc["total"] - pp["total"]))
+        nc, np_ = data.get("_net_raw"), prev.get("_net_raw")
+        if nc and np_ and nc["t"] > np_["t"]:
+            dt = nc["t"] - np_["t"]
+            data["net_rx_mbps"] = round((nc["rx"] - np_["rx"]) / dt / 131072, 1)  # Mbit/s
+            data["net_tx_mbps"] = round((nc["tx"] - np_["tx"]) / dt / 131072, 1)
     except Exception:
         pass
     GPU_NODE.update(ts=now, data=data)
