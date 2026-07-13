@@ -236,7 +236,7 @@ def feather_png(path, px=FEATHER):
     a = arr[..., 3]
     if not (a < 255).any():                      # PNG sin nodata: alpha desde negro puro
         a = (~np.all(arr[..., :3] == 0, axis=-1)).astype(np.uint8) * 255
-    valid = ndimage.binary_erosion(a > 128, iterations=3, border_value=0)
+    valid = ndimage.binary_erosion(a > 128, iterations=9, border_value=0)
     dist = ndimage.distance_transform_edt(valid)
     arr[..., 3] = np.minimum(a, np.clip(dist / px, 0, 1) * 255).astype(np.uint8)
     Image.fromarray(arr).save(path)
@@ -263,6 +263,27 @@ feather_png('/d/.web_ortho.png')
 print(json.dumps({"corners": corners, "size": [w, h], "feather_px": FEATHER}))
 EOF""")
     ometa = json.loads(info.strip().splitlines()[-1])
+
+    # 1b) tiles XYZ a resolución NATIVA (el overlay 2000px es solo la vista lejana):
+    # gdal2tiles webmercator; maplibre los funde por zoom. Best-effort: sin tiles
+    # el mapa sigue con el overlay — jamás tumbar un publish por la capa de lujo.
+    print("tiles ortho…")
+    tiles_meta = {}
+    try:
+        sh_in_odm(proj, "rm -rf /d/.web_tiles && python3 -m osgeo_utils.gdal2tiles "
+                        "--xyz -w none --processes 8 -r bilinear "
+                        "/d/odm_orthophoto/odm_orthophoto.tif /d/.web_tiles >/dev/null 2>&1 "
+                        "&& ls /d/.web_tiles")
+        zooms = sorted(int(z.name) for z in (proj / ".web_tiles").iterdir()
+                       if z.name.isdigit())
+        if zooms:
+            dest = out / "tiles"
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.move(str(proj / ".web_tiles"), dest)
+            tiles_meta = {"tiles": True, "tiles_minzoom": zooms[0], "tiles_maxzoom": zooms[-1]}
+    except (RuntimeError, OSError) as e:
+        print(f"  tiles omitidos: {str(e)[:120]}")
 
     # 2) nube de puntos → PLY submuestreado para el browser (pdal vive en SuperBuild)
     print("nube de puntos…")
@@ -305,7 +326,7 @@ def feather_png(path, px=FEATHER):
     im = Image.open(path).convert('RGBA')
     arr = np.array(im)
     a = arr[..., 3]
-    valid = ndimage.binary_erosion(a > 128, iterations=3, border_value=0)
+    valid = ndimage.binary_erosion(a > 128, iterations=9, border_value=0)
     dist = ndimage.distance_transform_edt(valid)
     arr[..., 3] = np.minimum(a, np.clip(dist / px, 0, 1) * 255).astype(np.uint8)
     Image.fromarray(arr).save(path)
@@ -479,6 +500,7 @@ EOF""")
         "dsm_asset": "dsm_color.webp" if (out / "dsm_color.webp").exists() else "dsm_color.png",
         "hills_asset": "hillshade.webp" if (out / "hillshade.webp").exists() else "hillshade.png",
         "ortho_feather_px": ometa.get("feather_px", 0),
+        **tiles_meta,
         "ortho_bytes": (out / "ortho.webp").stat().st_size if (out / "ortho.webp").exists() else 0,
         "qa": qa,
         "pipeline_mode": pipeline_mode,

@@ -4,7 +4,7 @@
 // (ring/beacon/box) con anclaje al suelo real (heightAt), animaciones
 // spin/bob y materiales emisivos. Optimizado: matrices estáticas quietas,
 // un solo update() barato para los animados.
-import * as THREE from '/flightverse/three.js?v=172';
+import * as THREE from '/flightverse/three.js?v=173';
 
 const PRIMS = {
   ring: ({ color }) => new THREE.Mesh(
@@ -44,7 +44,7 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
     let node = null;
     if ((o.type === 'glb' || o.type === 'kit') && o.file) {
       try {
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=172'));
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=173'));
         const base = o.type === 'kit' ? '/assets/destruction/models/' : '/assets/props/';
         const g = await new GLTFLoader().loadAsync(base + encodeURIComponent(o.file));
         node = g.scene;
