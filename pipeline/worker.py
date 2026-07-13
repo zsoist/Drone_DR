@@ -723,6 +723,10 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
                            f"nodo CUDA fallo -> ODM local: {str(e)[:260]}", level="warning")
             rc = -1
         if rc != 0 and not _cancelled(j["id"]):
+            if rc > 0:                       # el contenedor remoto corrió y murió con rc real
+                jobstore.event(j["id"], "odm_cuda_fallback",
+                               f"ODM remoto salió con rc={rc} → ODM local", level="warning",
+                               data={"rc": rc})
             jobstore.update(j["id"], status="running", finished=None, container=None,
                             detail=f"2/3 fotogrametria ODM {preset_name} local (fallback)",
                             stage="odm", progress=0.15)

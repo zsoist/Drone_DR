@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=151';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=151';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=151';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=151';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=151';
-  import { mountSplatViewer } from '/splatview.js?v=151';
+  import * as THREE from '/vendor/three180.module.js?v=152';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=152';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=152';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=152';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=152';
+  import { mountSplatViewer } from '/splatview.js?v=152';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -135,8 +135,24 @@
 
     <section class="td-mod" data-mod="jobs" style="display:none">
     <div class="panel" style="margin-top:16px">
-      <div class="ph">${icon('activity')} Trabajos y procesamiento</div>
+      <div class="ph">${icon('activity')} Trabajos y procesamiento
+        <span class="spacer" style="flex:1"></span>
+        <span class="jt-thermal mono" id="jt-thermal"></span></div>
       <div class="pb">
+        <div class="jt-strip" id="jt-strip" aria-label="Telemetría en vivo">
+          ${['cpu', 'gpu', 'ram'].map(k => `
+          <div class="jt-cell" data-k="${k}">
+            <div class="jt-top"><span class="jt-lb">${k === 'ram' ? 'RAM MAC' : k.toUpperCase() + ' MAC'}</span>
+              <b class="jt-val mono" id="jt-${k}">—</b></div>
+            <canvas class="jt-spark" id="jt-spark-${k}" height="44"></canvas>
+          </div>`).join('')}
+          <div class="jt-cell jt-node" id="jt-node-cell">
+            <div class="jt-top"><span class="jt-lb"><i class="st-node-dot" id="jt-node-dot"></i> NODO CUDA</span>
+              <b class="jt-val mono" id="jt-node-util">—</b></div>
+            <div class="jt-node-body mono" id="jt-node-body">consultando…</div>
+            <div class="jt-vram"><div id="jt-vram-fill"></div></div>
+          </div>
+        </div>
         <div class="job-summary" id="job-summary" aria-label="Resumen de trabajos">
           <button data-summary-filter="all"><span>Todos</span><b data-job-count="all">0</b></button>
           <button data-summary-filter="running"><span>Activos</span><b data-job-count="active">0</b></button>
@@ -328,6 +344,100 @@
     if (e.target.closest('[data-open-run3d]')) document.getElementById('btn-run3d')?.click();
     if (e.target.closest('[data-open-splat]')) document.getElementById('btn-splat')?.click();
   });
+
+  // telemetría en vivo del módulo Trabajos — datos reales de /api/perf y /api/gpu_node
+  (() => {
+    const strip = document.getElementById('jt-strip');
+    if (!strip) return;
+    const KEYS = ['cpu', 'gpu', 'ram'];
+    const hist = { cpu: [], gpu: [], ram: [] };     // últimos ~90 puntos (0..1)
+    const shown = { cpu: 0, gpu: 0, ram: 0 };        // valor animado (lerp hacia el real)
+    const target = { cpu: 0, gpu: 0, ram: 0 };
+    let ramTotal = 16;
+    const CO = { cpu: '69,160,230', gpu: '82,199,154', ram: '224,164,88' };
+
+    async function poll() {
+      try {
+        const d = await (await fetch('/api/perf')).json();
+        const rows = [...(d.history || []).slice(-80), d.now].filter(Boolean);
+        ramTotal = d.now?.ram_total_gb || 16;
+        hist.cpu = rows.map(r => (r.cpu || 0) / 100);
+        hist.gpu = rows.map(r => (r.gpu || 0) / 100);
+        hist.ram = rows.map(r => (r.ram_used_gb || 0) / ramTotal);
+        target.cpu = (d.now?.cpu || 0) / 100;
+        target.gpu = (d.now?.gpu || 0) / 100;
+        target.ram = (d.now?.ram_used_gb || 0) / ramTotal;
+        const th = document.getElementById('jt-thermal');
+        if (th && d.now?.thermal) th.textContent = d.now.thermal.throttling
+          ? 'TÉRMICA LIMITADA' : 'térmica nominal';
+        th?.classList.toggle('hot', !!d.now?.thermal?.throttling);
+      } catch {}
+    }
+    async function pollNode() {
+      try {
+        const d = await (await fetch('/api/gpu_node')).json();
+        const awake = d.status === 'awake';
+        document.getElementById('jt-node-dot')?.classList.toggle('awake', awake);
+        const u = document.getElementById('jt-node-util');
+        const b = document.getElementById('jt-node-body');
+        const f = document.getElementById('jt-vram-fill');
+        if (awake) {
+          if (u) u.textContent = (d.util_pct ?? 0) + '%';
+          if (b) b.textContent = `${(d.gpu || 'GPU').replace('NVIDIA GeForce ', '')} · ${d.temp_c ?? '—'}°C · ${d.power_w ?? '—'}W`;
+          if (f && d.vram_total_mb) f.style.transform =
+            `scaleX(${Math.min(1, (d.vram_used_mb || 0) / d.vram_total_mb)})`;
+        } else {
+          if (u) u.textContent = '—';
+          if (b) b.textContent = 'dormido · WoL en Sistema';
+          if (f) f.style.transform = 'scaleX(0)';
+        }
+      } catch {}
+    }
+    function draw() {
+      const mod = strip.closest('.td-mod');
+      if (!mod || mod.style.display === 'none' || document.hidden) {
+        requestAnimationFrame(draw); return;      // sin trabajo cuando no se ve
+      }
+      for (const k of KEYS) {
+        shown[k] += (target[k] - shown[k]) * 0.08;               // lerp suave
+        const el = document.getElementById('jt-' + k);
+        if (el) el.textContent = k === 'ram'
+          ? (shown[k] * ramTotal).toFixed(1) + ' GB'
+          : Math.round(shown[k] * 100) + '%';
+        const cv = document.getElementById('jt-spark-' + k);
+        if (!cv) continue;
+        const dpr = Math.min(devicePixelRatio || 1, 2);
+        const W = cv.clientWidth, H = cv.clientHeight;
+        if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+        const ctx = cv.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+        const pts = [...hist[k], shown[k]];
+        if (pts.length < 2) continue;
+        const step = W / (pts.length - 1);
+        ctx.beginPath();
+        pts.forEach((v, i) => {
+          const x = i * step, y = H - 3 - v * (H - 8);
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        });
+        ctx.strokeStyle = `rgba(${CO[k]},.95)`;
+        ctx.lineWidth = 1.6; ctx.lineJoin = 'round'; ctx.stroke();
+        ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+        const g = ctx.createLinearGradient(0, 0, 0, H);
+        g.addColorStop(0, `rgba(${CO[k]},.22)`); g.addColorStop(1, `rgba(${CO[k]},0)`);
+        ctx.fillStyle = g; ctx.fill();
+        const ty = H - 3 - shown[k] * (H - 8);                    // punto vivo con glow
+        ctx.beginPath(); ctx.arc(W - 2, ty, 2.4, 0, 7);
+        ctx.fillStyle = `rgba(${CO[k]},1)`;
+        ctx.shadowColor = `rgba(${CO[k]},.9)`; ctx.shadowBlur = 6;
+        ctx.fill(); ctx.shadowBlur = 0;
+      }
+      requestAnimationFrame(draw);
+    }
+    poll(); pollNode();
+    setInterval(poll, 2000); setInterval(pollNode, 30000);
+    requestAnimationFrame(draw);
+  })();
 
   const jobsBox = document.getElementById('jobs3d');
   const applyJobFilters = () => {

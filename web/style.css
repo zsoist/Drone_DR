@@ -4442,3 +4442,28 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 .job-card .jc-log:hover{ color:var(--text-2); background:color-mix(in srgb, var(--surface) 80%, var(--accent-dim)) }
 @media (prefers-reduced-motion: reduce){
   .job-card, .jc-pulse, .job-card .jc-bar > div::after{ animation:none } }
+
+/* ── BLOQUE 60: telemetría en vivo en Trabajos — sparklines rAF, nodo CUDA ── */
+.jt-strip{ display:grid; grid-template-columns:repeat(4, 1fr); gap:10px;
+  margin-bottom:14px; animation:riseIn .3s var(--ease) backwards }
+.jt-cell{ position:relative; padding:11px 13px 8px; border-radius:14px;
+  border:1px solid rgba(255,255,255,.08);
+  background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
+  overflow:hidden; transition:border-color .2s var(--ease) }
+.jt-cell:hover{ border-color:rgba(255,255,255,.16) }
+.jt-top{ display:flex; align-items:baseline; justify-content:space-between; gap:8px }
+.jt-lb{ font-size:9px; font-weight:750; letter-spacing:.14em; color:var(--text-3);
+  display:inline-flex; align-items:center; gap:6px }
+.jt-val{ font-size:16.5px; font-weight:700; color:var(--text);
+  font-variant-numeric:tabular-nums; letter-spacing:-.01em }
+.jt-spark{ display:block; width:100%; height:44px; margin-top:4px }
+.jt-node .jt-node-body{ font-size:10px; color:var(--text-2); margin:10px 0 8px;
+  letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.jt-vram{ height:4px; border-radius:2px; background:rgba(255,255,255,.07); overflow:hidden }
+.jt-vram > div{ height:100%; width:100%; transform:scaleX(0); transform-origin:left;
+  border-radius:2px; background:linear-gradient(90deg, #52C79A, #9ADE2E);
+  transition:transform .6s var(--ease) }
+.jt-thermal{ font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--text-3) }
+.jt-thermal.hot{ color:var(--red); animation:jcPulse 1.2s ease-in-out infinite }
+@media (max-width:900px){ .jt-strip{ grid-template-columns:repeat(2, 1fr) } }

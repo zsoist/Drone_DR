@@ -71,10 +71,13 @@ echo IMAGES_OK $(ls {REMOTE_ODM}/{name}/images | wc -l)
 
 def remote_run_argv(name: str, container: str, preset_args: list[str],
                     rerun_from: str | None = None, stable_dense: bool = False) -> list[str]:
-    """argv para run_tracked: ssh -> wsl -> docker run --gpus all odm:gpu.
+    """argv para run_tracked: ssh -> wsl -> bash -c 'docker run ...'.
 
-    -t fuerza tty: sin el, algunos hops ssh->wsl bufferean el stdout de docker
-    y el progreso del job se congela aunque ODM avance."""
+    El docker corre DENTRO de un bash de WSL, jamas via argv de wsl.exe: el hop
+    por cmd.exe de Windows es la unica diferencia entre el run de produccion que
+    segfaulteo (139 en detect_features a los 2s) y el repro identico que paso —
+    la ruta probada es esta. Sin -t: el tty no hace falta (run_tracked lee el
+    stdout por hilo) y ssh solo emitia el warning de pseudo-terminal."""
     cmd = ["docker", "run", "--rm", "--name", container, "--gpus", "all",
            "-m", "20g", "-v", f"{REMOTE_ODM}/{name}:/datasets/code",
            "opendronemap/odm:gpu", "--project-path", "/datasets",
@@ -84,7 +87,9 @@ def remote_run_argv(name: str, container: str, preset_args: list[str],
         cmd.append("--pc-skip-geometric")
     if rerun_from:
         cmd += ["--rerun-from", rerun_from]
-    return ["ssh", "-t", SSH_HOST, "wsl", "-d", "Ubuntu", "--", *cmd]
+    inner = " ".join(cmd)                        # args controlados: sin espacios internos
+    return ["ssh", SSH_HOST, "wsl", "-d", "Ubuntu", "--", "bash", "-lc",
+            f'"{inner} 2>&1"']
 
 
 def fetch_outputs(proj: Path, name: str) -> list[str]:
