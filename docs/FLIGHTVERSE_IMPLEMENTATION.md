@@ -340,3 +340,27 @@ mando real, minimapa MapLibre opcional.
   el primer gate: meshTexMax null porque setCalidad corrió pre-malla).
 - QA param nuevo: &calidad=auto|hd|extra|4k|ultra.
 - Gate 0117 extra: meshTexMax true, 71fps, 0 errores; badge '· máx' visible.
+
+## v132 (2026-07-13) — pase iPad completo + bug fantasma del gate
+- COMBATE MUERTO en iPad: los sticks landscape medían 52vh — la zona derecha
+  invisible tapaba el FAB y capturaba el pointer. Fix: sticks 40vh landscape,
+  z-index:1 explícito, FABs/sheets z-44/43 con touch-action:manipulation.
+  Verificado con CDP + emulación táctil real: tap abre panel, DISPARAR baja
+  munición 8→7.
+- iPad = textura de desktop: tier low SOLO si pantalla <700px (un iPad M puede
+  con vtx 13MB); chip calidad visible en touch (extra+ = atlas geo también en
+  iPad).
+- HUD táctil premium: brújula de CINTA canvas (ticks 5°, cardinales, línea de
+  fe — reemplaza el pill "N 0°"), telemetría con VS m/s (barra bipolar
+  mint/ámbar), cards de métricas rediseñadas (glass, tabular nums), chip ghost
+  fuera en táctil, sticks más grandes (base 132/156px, nub 58/66).
+- BUG FANTASMA del gate (bisect + 4 probes): report.weaponState = weapons.state
+  (del refactor codex) exponía misiles/partículas con meshes THREE — 27MB y
+  'Object reference chain is too long' en CDP returnByValue, PERO solo tras
+  disparar → los gates fuego colgaban con consola limpia. Fix doble: resumen
+  escalar en el reporte + el gate ahora serializa EN PÁGINA (JSON.stringify)
+  — inmune a grafos profundos para siempre. REGLA: window.__volar solo lleva
+  datos planos.
+- Micro-fixes: chip ammo pintaba [object Object] desde doFire (el loop ya
+  pinta por arma); report.weapons vivo en el loop (estaba congelado en el
+  snapshot del autotest).

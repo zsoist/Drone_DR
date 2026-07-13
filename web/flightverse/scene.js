@@ -3,9 +3,9 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=129';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=129';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=129';
+import * as THREE from '/flightverse/three.js?v=132';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=132';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=132';
 
 export async function loadManifest(cid) {
   const id = String(cid || '').replace(/[^\w-]/g, '');
@@ -150,8 +150,10 @@ export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}
   // tier de texturas: móvil → low (3MB); desktop → extra/vtx (13MB, el más
   // nítido de los viewer). Los atlas ORIGINALES (geo, ~90MB) llegan después
   // vía upgradeTextures() cuando el jugador sube la calidad a extra+.
-  const coarse = matchMedia?.('(pointer:coarse)').matches;
-  const mtlUrl = (coarse ? null : (man.assets?.mesh_mtl_extra || man.assets?.mesh_mtl))
+  // low SOLO para pantallas chicas: un iPad M-series puede con vtx (13MB)
+  const small = matchMedia?.('(pointer:coarse)').matches
+    && Math.min(screen.width, screen.height) < 700;
+  const mtlUrl = (small ? null : (man.assets?.mesh_mtl_extra || man.assets?.mesh_mtl))
     || man.assets?.mesh_mtl_low;
   const offset = man.transforms?.mesh_offset;
   if (!objUrl || !mtlUrl || !Array.isArray(offset) || offset.length !== 3) return null;
@@ -243,7 +245,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=129');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=132');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     scene.userData.fvSpark = sp;

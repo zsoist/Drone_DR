@@ -31,7 +31,9 @@ def run(cid: str, base_url: str, timeout: int, page: str = "spike_flightverse.ht
         while time.time() < deadline:
             cdp.pump(1.0)
             try:
-                rep = cdp.eval(f"window.{gvar} && window.{gvar}.done ? window.{gvar} : null")
+                raw = cdp.eval(
+                    f"window.{gvar} && window.{gvar}.done ? JSON.stringify(window.{gvar}) : null")
+                rep = json.loads(raw) if raw else None
             except RuntimeError:
                 continue
             if rep:

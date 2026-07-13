@@ -4,27 +4,27 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=129';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=129';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=129';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=129';
-import { createRecorder } from '/flightverse/recorder.js?v=129';
-import { createAudio } from '/flightverse/audio.js?v=129';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=129';
-import { createTouchSticks } from '/flightverse/touch.js?v=129';
-import { createSky } from '/flightverse/sky.js?v=129';
-import { loadSceneObjects } from '/flightverse/objects.js?v=129';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=129';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=129';
-import CameraControls from '/vendor/camera-controls.module.js?v=129';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=129';
+import * as THREE from '/flightverse/three.js?v=132';
+import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=132';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=132';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=132';
+import { createRecorder } from '/flightverse/recorder.js?v=132';
+import { createAudio } from '/flightverse/audio.js?v=132';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=132';
+import { createTouchSticks } from '/flightverse/touch.js?v=132';
+import { createSky } from '/flightverse/sky.js?v=132';
+import { loadSceneObjects } from '/flightverse/objects.js?v=132';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=132';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=132';
+import CameraControls from '/vendor/camera-controls.module.js?v=132';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=132';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=129';
+} from '/vendor/postprocessing180.module.js?v=132';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -35,7 +35,7 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=129';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=132';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -82,6 +82,7 @@ function hud() {
     <div class="vl-corner tr">
       <div class="vl-metric"><span id="vl-agl">—</span><label>ALT AGL</label><i class="vl-bar"><b id="vl-agl-b"></b></i></div>
       <div class="vl-metric"><span id="vl-spd">—</span><label>VEL m/s</label><i class="vl-bar"><b id="vl-spd-b"></b></i></div>
+      <div class="vl-metric"><span id="vl-vs">—</span><label>VS m/s</label><i class="vl-bar vs"><b id="vl-vs-b"></b></i></div>
     </div>
     <div class="vl-corner bl">
       <button class="vl-fab" id="vl-fab" aria-label="Abrir menú de vuelo"
@@ -94,7 +95,7 @@ function hud() {
         <i class="vl-sep"></i>
         <button class="vl-chip sec-mundo" id="vl-vista">vista · 3D</button>
         <button class="vl-chip sec-mundo" id="vl-cielo">cielo · día</button>
-        <button class="vl-chip sec-mundo vl-solo-fino" id="vl-calidad">calidad · auto</button>
+        <button class="vl-chip sec-mundo" id="vl-calidad">calidad · auto</button>
         <i class="vl-sep"></i>
         <button class="vl-chip sec-juego" id="vl-reto">Gate Rush</button>
         <button class="vl-chip sec-juego" id="vl-zombies">Modo Invasión</button>
@@ -156,7 +157,7 @@ function hud() {
       <button data-d="media">Media<span>10 aros · 6.5m</span></button>
       <button data-d="dificil">Difícil<span>13 aros · 4.2m</span></button>
     </div>
-    <div class="vl-compass" id="vl-compass"><span id="vl-heading">N 0°</span></div>
+    <div class="vl-compass tape" id="vl-compass"><canvas id="vl-tape" width="560" height="68"></canvas></div>
     <div class="vl-fpv" id="vl-fpv">
       <div class="vl-fpv-cross"></div>
       <div class="vl-fpv-horizon" id="vl-horizon"><i></i></div>
@@ -480,9 +481,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=129', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=132', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=129');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=132');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -584,6 +585,45 @@ async function main() {
     $('#vl-ghost').textContent = 'sin track';
   }
 
+  // brújula de CINTA (heading tape estilo aeronave): ticks cada 5°, cardinales,
+  // línea de fe central y lectura numérica — canvas 2D, un draw por frame
+  const tapeCv = $('#vl-tape');
+  const tapeCtx = tapeCv?.getContext('2d');
+  const CARD8 = ['N','NE','E','SE','S','SO','O','NO'];
+  const drawTape = hdg => {
+    if (!tapeCtx) return;
+    const w = tapeCv.width, h = tapeCv.height, mid = w / 2, PPD = w / 90; // ±45° visibles
+    tapeCtx.clearRect(0, 0, w, h);
+    tapeCtx.font = '700 20px ui-monospace, monospace';
+    tapeCtx.textAlign = 'center';
+    for (let d = Math.floor((hdg - 46) / 5) * 5; d <= hdg + 46; d += 5) {
+      const x = mid + (d - hdg) * PPD;
+      const dd = ((d % 360) + 360) % 360;
+      const major = dd % 15 === 0, cardinal = dd % 45 === 0;
+      tapeCtx.strokeStyle = cardinal ? 'rgba(234,242,251,.95)' : 'rgba(183,194,208,.5)';
+      tapeCtx.lineWidth = cardinal ? 3 : 2;
+      tapeCtx.beginPath();
+      tapeCtx.moveTo(x, h - 6);
+      tapeCtx.lineTo(x, h - (cardinal ? 26 : major ? 18 : 12));
+      tapeCtx.stroke();
+      if (cardinal) {
+        tapeCtx.fillStyle = 'rgba(234,242,251,.95)';
+        tapeCtx.fillText(CARD8[dd / 45], x, 26);
+      } else if (major) {
+        tapeCtx.fillStyle = 'rgba(138,151,168,.8)';
+        tapeCtx.font = '600 15px ui-monospace, monospace';
+        tapeCtx.fillText(String(dd), x, 24);
+        tapeCtx.font = '700 20px ui-monospace, monospace';
+      }
+    }
+    // línea de fe + lectura
+    tapeCtx.fillStyle = '#7dffc9';
+    tapeCtx.beginPath();
+    tapeCtx.moveTo(mid, h - 4); tapeCtx.lineTo(mid - 7, h); tapeCtx.lineTo(mid + 7, h);
+    tapeCtx.fill();
+    tapeCtx.fillRect(mid - 1.5, 30, 3, h - 36);
+  };
+
   // ── estado de juego ──
   const input = createInput(renderer.domElement);
   const audio = createAudio();
@@ -598,7 +638,8 @@ async function main() {
       shake.fov = Math.max(shake.fov || 0, Math.min(7, (26 * big) / (4 + d)));
     },
   });
-  report.weaponState = weapons.state;
+  report.weaponState = { weapon: weapons.state.weapon, cool: +weapons.state.cool.toFixed(2),
+    ammo: Object.fromEntries(Object.entries(weapons.state.ammo).map(([k2, n2]) => [k2, Math.floor(n2)])) };   // NUNCA el estado entero: misiles/partículas llevan meshes (27MB, rompía la serialización CDP del gate)
   // retícula de impacto: simula la balística y marca dónde caerá el misil
   const aim = new THREE.Group();
   {
@@ -655,7 +696,6 @@ async function main() {
       ? hardpoints[weapons.state.fired % hardpoints.length].getWorldPosition(new THREE.Vector3())
       : P.clone();
     if (!weapons.fire(hp, curYaw, pitch ?? gimbalTilt * 0.55)) return;
-    $('#vl-ammo').textContent = weapons.state.ammo;
     fireBtn.classList.remove('flash'); void fireBtn.offsetWidth;   // reinicia anim
     fireBtn.classList.add('flash');
   };
@@ -1391,6 +1431,7 @@ async function main() {
         }
         invasion.update(wdt, P);
         report.invasion = { on: invasion.state.on, wave: invasion.state.wave, alive: invasion.state.alive, killed: invasion.state.killed };
+        report.weapons = { fired: weapons.state.fired, exploded: weapons.state.exploded };
         if (invasion.state.on) {
           $('#vl-zwave').textContent = `OLEADA ${invasion.state.wave || 1}`;
           $('#vl-zkill').textContent = `${invasion.state.killed} abatidos · ${invasion.state.alive} activos`;
@@ -1479,8 +1520,11 @@ async function main() {
           `FLT ${String(mm2).padStart(2,'0')}:${String(ss2).padStart(2,'0')} · HS ${hs.toFixed(1)} · VS ${vs >= 0 ? '+' : ''}${vs.toFixed(1)} · DIST ${Math.hypot(drone.pos.x, drone.pos.z).toFixed(0)} m · LNK ${'●'.repeat(+($('#fpv-sig').dataset.n || 3))}`;
       }
       const hdg = ((-o.yaw * 180 / Math.PI) % 360 + 360) % 360;
-      const card = ['N','NE','E','SE','S','SO','O','NO'][Math.round(hdg / 45) % 8];
-      $('#vl-heading').textContent = `${card} ${Math.round(hdg)}°`;
+      drawTape(hdg);
+      $('#vl-vs').textContent = (drone.vel.y >= 0 ? '+' : '') + drone.vel.y.toFixed(1);
+      const vsb = $('#vl-vs-b');
+      vsb.style.transform = `scaleX(${Math.min(1, Math.abs(drone.vel.y) / 10)})`;
+      vsb.classList.toggle('down', drone.vel.y < -0.2);
       const ch = $('#vl-challenge'), cnt = $('#vl-count');
       if (director) {
         ch.textContent = director.playing ? 'DIRECTOR · reproduciendo' : 'DIRECTOR · edición';

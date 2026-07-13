@@ -3438,7 +3438,7 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 @media (max-width:640px){ .vl-minimap{ width:104px; height:104px; bottom:12px } }
 
 /* BLOQUE 29e · dual-stick táctil */
-.vl-stick{ position:absolute; bottom:24px; width:38vw; height:34vh; max-width:220px;
+.vl-stick{ position:absolute; bottom:24px; width:38vw; height:34vh; max-width:260px; z-index:1;
   pointer-events:auto; touch-action:none; display:none }
 .vl-stick.left{ left:8px } .vl-stick.right{ right:8px }
 .vl-stick-base{ position:absolute; bottom:26px; left:50%; transform:translateX(-50%);
@@ -3541,7 +3541,7 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 @media (pointer:coarse) and (orientation:landscape){
   .vl-corner.bl{ bottom:calc(12px + env(safe-area-inset-bottom)); left:calc(12px + env(safe-area-inset-left)) }
   .vl-dock{ flex-direction:column }
-  .vl-stick{ width:30vw; height:52vh }
+  .vl-stick{ width:32vw; height:40vh; max-width:300px }
   .vl-minimap{ width:110px; height:110px }
   .vl-help{ display:none }
 }
@@ -3817,7 +3817,7 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   .vl-grade input[type=range]{ height:38px } }
 
 /* BLOQUE 38 · selector de calidad solo con puntero fino */
-@media (pointer:coarse){ .vl-solo-fino{ display:none } }
+@media (pointer:coarse){ .vl-solo-fino{ display:none } .vl-ghost{ display:none } }
 
 /* ── BLOQUE 39 · dock seccionado por color + keycaps + zap ── */
 .vl-sep{ height:1px; margin:3px 6px; background:rgba(255,255,255,.09) }
@@ -4117,7 +4117,8 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   .vl-corner.br > .vl-ghost,
   .vl-corner.br > .vl-fps{ display:none !important }
   .vl-corner.bl,.vl-corner.br{ position:static; max-width:none }
-  .vl-fab,.vl-combat-fab{ display:flex; position:fixed; z-index:36;
+  .vl-fab,.vl-combat-fab{ display:flex; position:fixed; z-index:44; pointer-events:auto;
+    touch-action:manipulation;
     align-items:center; justify-content:center; width:auto; min-width:76px; height:52px;
     padding:0 16px; border-radius:16px; border:1px solid rgba(69,160,230,.3);
     color:#EAF2FB; font:700 12px var(--font); letter-spacing:.04em; cursor:pointer;
@@ -4125,14 +4126,14 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     -webkit-backdrop-filter:blur(16px) saturate(1.25); backdrop-filter:blur(16px) saturate(1.25);
     box-shadow:0 14px 36px -14px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.08) }
   .vl-fab{ left:calc(14px + env(safe-area-inset-left));
-    bottom:calc(34vh + 36px + env(safe-area-inset-bottom)) }
+    bottom:calc(min(34vh, 300px) + 36px + env(safe-area-inset-bottom)) }
   .vl-combat-fab{ right:calc(14px + env(safe-area-inset-right));
-    bottom:calc(34vh + 36px + env(safe-area-inset-bottom));
+    bottom:calc(min(34vh, 300px) + 36px + env(safe-area-inset-bottom));
     border-color:rgba(232,120,70,.38); color:#ffc09a }
   .vl-fab[aria-expanded=true],.vl-combat-fab[aria-expanded=true]{
     border-color:rgba(125,255,201,.58); box-shadow:0 14px 38px -12px rgba(69,160,230,.45) }
 
-  .vl-dock,.vl-combat{ display:none; position:fixed; z-index:35; overflow-y:auto;
+  .vl-dock,.vl-combat{ display:none; position:fixed; z-index:43; overflow-y:auto;
     max-height:min(50dvh,420px); padding:12px; border-radius:18px;
     border:1px solid rgba(69,160,230,.3);
     background:linear-gradient(160deg, rgba(25,33,44,.97), rgba(9,12,17,.95));
@@ -4230,4 +4231,33 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 
 @media (prefers-reduced-motion:reduce){
   .vl-dock.open,.vl-combat.open{ animation:none }
+}
+
+/* ── BLOQUE 53: HUD táctil premium — telemetría, cinta de rumbo, sticks ── */
+.vl-metric{ min-width:96px; padding:9px 14px; border-radius:14px; text-align:right;
+  border:1px solid rgba(255,255,255,.1);
+  background:linear-gradient(160deg, rgba(23,29,38,.82), rgba(10,12,16,.76));
+  -webkit-backdrop-filter:blur(14px) saturate(1.25); backdrop-filter:blur(14px) saturate(1.25);
+  box-shadow:0 10px 30px -14px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06) }
+.vl-metric span{ font:800 19px/1.15 var(--mono); color:#EAF2FB; font-variant-numeric:tabular-nums }
+.vl-metric label{ font:600 8.5px var(--mono); color:#68758A; letter-spacing:.14em }
+.vl-bar.vs b{ background:linear-gradient(90deg, #7dffc9, #52C79A); transform-origin:left }
+.vl-bar.vs b.down{ background:linear-gradient(90deg, #E0A458, #E85A5A) }
+.vl-compass.tape{ padding:0; width:min(300px, 44vw); height:36px; overflow:hidden;
+  border-radius:12px; border:1px solid rgba(255,255,255,.12);
+  background:linear-gradient(160deg, rgba(14,18,24,.78), rgba(8,10,14,.72));
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
+  -webkit-mask-image:linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image:linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent) }
+.vl-compass.tape canvas{ width:100%; height:100%; display:block }
+@media (pointer:coarse){
+  .vl-metric{ min-width:104px; padding:10px 15px }
+  .vl-metric span{ font-size:21px }
+  .vl-stick-base{ width:132px; height:132px }
+  .vl-stick-nub{ width:58px; height:58px }
+  .vl-fire,.vl-weps button{ touch-action:none }
+}
+@media (pointer:coarse) and (min-width:900px){
+  .vl-stick-base{ width:156px; height:156px }
+  .vl-stick-nub{ width:66px; height:66px }
 }
