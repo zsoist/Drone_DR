@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=116';
+import * as THREE from '/flightverse/three.js?v=117';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -36,15 +36,15 @@ function bZombie(archer) {
   const g = new THREE.Group();
   const skin = M(0x5a6e4a), cloth = M(archer ? 0x3a2f24 : 0x2a2f38);
   const torso = cap(0.28, 0.5, cloth); torso.position.y = 1.15; torso.rotation.x = 0.24;
-  const head = sph(0.2, skin); head.position.set(0.04, 1.62, 0.08);
-  const aL = cap(0.075, 0.44, skin); aL.position.set(-0.34, 1.24, 0.22); aL.rotation.set(1.1, 0, 0.18);
-  const aR = cap(0.075, 0.44, skin); aR.position.set(0.34, 1.24, 0.28); aR.rotation.set(1.35, 0, -0.12);
+  const head = sph(0.2, skin); head.position.set(0.04, 1.62, -0.08);
+  const aL = cap(0.075, 0.44, skin); aL.position.set(-0.34, 1.24, -0.22); aL.rotation.set(-1.1, 0, 0.18);
+  const aR = cap(0.075, 0.44, skin); aR.position.set(0.34, 1.24, -0.28); aR.rotation.set(-1.35, 0, -0.12);
   const lL = cap(0.1, 0.5, cloth); lL.position.set(-0.14, 0.5, 0);
   const lR = cap(0.1, 0.5, cloth); lR.position.set(0.14, 0.5, 0);
   g.add(torso, head, aL, aR, lL, lR);
   if (archer) {                              // arco: arco de torus
     const bow = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.025, 6, 14, Math.PI), M(0x6b4a2a));
-    bow.position.set(0.42, 1.3, 0.42); bow.rotation.y = Math.PI / 2;
+    bow.position.set(0.42, 1.3, -0.42); bow.rotation.y = Math.PI / 2;
     g.add(bow);
   }
   return { g, anim: { aL, aR, lL, lR, torso } };
@@ -56,8 +56,8 @@ function bSoldado() {
   const head = sph(0.18, skin); head.position.y = 1.68;
   const casco = sph(0.2, uni); casco.position.y = 1.73; casco.scale.y = 0.7;
   const rifle = box(0.07, 0.09, 0.85, dark); rifle.position.set(0.18, 1.32, -0.3);
-  const aL = cap(0.07, 0.4, uni); aL.position.set(-0.32, 1.28, -0.05); aL.rotation.x = 0.9;
-  const aR = cap(0.07, 0.4, uni); aR.position.set(0.3, 1.28, -0.15); aR.rotation.x = 1.1;
+  const aL = cap(0.07, 0.4, uni); aL.position.set(-0.32, 1.28, -0.05); aL.rotation.x = -0.9;
+  const aR = cap(0.07, 0.4, uni); aR.position.set(0.3, 1.28, -0.15); aR.rotation.x = -1.1;
   const lL = cap(0.09, 0.52, dark); lL.position.set(-0.13, 0.5, 0);
   const lR = cap(0.09, 0.52, dark); lR.position.set(0.13, 0.5, 0);
   g.add(torso, head, casco, rifle, aL, aR, lL, lR);
@@ -140,9 +140,9 @@ async function preloadEnemyGlb(type, v) {
       enemyManifest = await (await fetch(`/assets/enemies/manifest.json?v=${v}`, { cache: 'no-store' })).json();
     }
     if (!enemyManifest[type] || glbCache[type]) return;
-    if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=116'));
-    if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=116');
-    const g = await new GLTFLoader().loadAsync(`/assets/enemies/${type}.glb`);
+    if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=117'));
+    if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=117');
+    const g = await new GLTFLoader().loadAsync(`/assets/enemies/${type}.glb?v=117`);
     glbCache[type] = { scene: g.scene, clips: g.animations || [] };
   } catch { /* GLB opcional: el procedural sigue siendo la verdad */ }
 }
@@ -184,7 +184,7 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
         }
         const bb = new THREE.Box3().setFromObject(g);
         const sz = bb.getSize(new THREE.Vector3());
-        y2 = sz.y * 0.55;                       // centro de impacto al pecho
+        y2 = spec.fly ? 0 : sz.y * 0.55;        // voladores: origen = centro (contrato)
         r2 = Math.max(spec.r2, (sz.length() * 0.42) ** 2);
       } else {
         ({ g, anim } = spec.build());
@@ -265,8 +265,23 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
       for (let i = E.length - 1; i >= 0; i--) {
         const e = E[i];
         if (e.g.userData.dead) {
-          if (!e.blood) fx?.explode?.(e.center.clone(), e.type === 'dragon' ? 1.6 : 0.9);
-          group.remove(e.g); E.splice(i, 1); S.alive--; S.killed++;
+          if (!e._deathStarted) {
+            e._deathStarted = true;
+            const dc = e.mixer && THREE.AnimationClip.findByName(glbCache[e.type]?.clips || [], 'death');
+            if (dc) {
+              e._deathT = Math.max(0.25, dc.duration);
+              e.act?.move?.stop();
+              const da = e.mixer.clipAction(dc);
+              da.setLoop(THREE.LoopOnce, 1); da.clampWhenFinished = true;
+              da.reset().play();
+            } else e._deathT = 0;
+          }
+          if (e.mixer) e.mixer.update(dt);
+          e._deathT -= dt;
+          if (e._deathT <= 0) {
+            if (!e.blood) fx?.explode?.(e.center.clone(), e.type === 'dragon' ? 1.6 : 0.9);
+            group.remove(e.g); E.splice(i, 1); S.alive--; S.killed++;
+          }
           continue;
         }
         const p = e.g.position;
@@ -281,12 +296,13 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
           p.x = dronePos.x + Math.cos(ang) * r;
           p.z = dronePos.z + Math.sin(ang) * r;
           p.y += ((dronePos.y + 6 + Math.sin(e.phase) * 3) - p.y) * dt;
-          e.anim.ring.rotation.z += dt * 3;
+          if (!e.mixer && e.anim.ring) e.anim.ring.rotation.z += dt * 3;
         } else if (e.spec.fly === 'pass') {
           // avión: pasadas rectas, re-entra al alejarse
           if (!e.passDir || dist > 220) {
             e.passDir = dronePos.clone().sub(p).setY(0).normalize();
             e.g.lookAt(p.clone().add(e.passDir));
+            e.g.rotateY(Math.PI);                  // frente -Z (lookAt apunta +Z)
           }
           p.addScaledVector(e.passDir, e.speed * dt);
           p.y += ((dronePos.y + 12) - p.y) * dt * 0.5;
@@ -300,9 +316,12 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
           p.x += Math.sin(e.phase * 1.7) * dt * 6;
           p.y += Math.cos(e.phase * 1.3) * dt * 3;
           e.g.lookAt(dronePos);
-          e.anim.wL.rotation.z = 0.5 + Math.sin(e.phase * 3) * 0.5;
-          e.anim.wR.rotation.z = -0.5 - Math.sin(e.phase * 3) * 0.5;
-          e.anim.segs.forEach((s2, j) => { s2.position.y = Math.sin(e.phase * 1.6 - j * 0.7) * 0.25; });
+          e.g.rotateY(Math.PI);                    // frente -Z (lookAt apunta +Z)
+          if (!e.mixer && e.anim.wL) {
+            e.anim.wL.rotation.z = 0.5 + Math.sin(e.phase * 3) * 0.5;
+            e.anim.wR.rotation.z = -0.5 - Math.sin(e.phase * 3) * 0.5;
+            e.anim.segs.forEach((s2, j) => { s2.position.y = Math.sin(e.phase * 1.6 - j * 0.7) * 0.25; });
+          }
         } else {
           // terrestres: caminar hacia el dron por suelo caminable SUAVIZADO
           if (dist > (e.spec.melee || 2)) {
@@ -313,7 +332,7 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
               p.x = nx; p.z = nz;
               p.y += (gy - p.y) * Math.min(1, dt * 8);   // sin escalones
             }
-            e.g.rotation.y = Math.atan2(dx, dz);
+            e.g.rotation.y = Math.atan2(dx, dz) + Math.PI;   // frente -Z al objetivo
           }
           if (!e.mixer && e.anim.lL) {
             e.anim.lL.rotation.x = Math.sin(e.phase) * 0.6;

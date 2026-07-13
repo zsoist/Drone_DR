@@ -1,1 +1,9 @@
-{}
+{
+  "zombie": true,
+  "arquero": true,
+  "soldado": true,
+  "ufo": true,
+  "avion": true,
+  "dragon": true,
+  "gigante": true
+}

@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "release": "flightverse_enemy_ultra_v1.1",
+  "frontAxis": "-Z",
+  "upAxis": "+Y",
+  "units": "meters",
+  "models": {
+    "zombie": {
+      "file": "zombie.glb",
+      "lod1": "zombie_lod1.glb",
+      "lod2": "zombie_lod2.glb",
+      "triangles": 33420,
+      "materials": 4,
+      "clips": [
+        "walk",
+        "attack",
+        "idle",
+        "death"
+      ],
+      "extentsXYZm": [
+        0.738718,
+        1.8,
+        0.403861
+      ],
+      "origin": "feet_ground",
+      "embeddedTextureResolution": 2048,
+      "sourceTextureResolution": 4096
+    },
+    "arquero": {
+      "file": "arquero.glb",
+      "lod1": "arquero_lod1.glb",
+      "lod2": "arquero_lod2.glb",
+      "triangles": 34164,
+      "materials": 5,
+      "clips": [
+        "walk",
+        "attack",
+        "idle",
+        "death"
+      ],
+      "extentsXYZm": [
+        0.75819,
+        1.8,
+        0.517891
+      ],
+      "origin": "feet_ground",
+      "embeddedTextureResolution": 2048,
+      "sourceTextureResolution": 4096
+    },
+    "soldado": {
+      "file": "soldado.glb",
+      "lod1": "soldado_lod1.glb",
+      "lod2": "soldado_lod2.glb",
+      "triangles": 49380,
+      "materials": 5,
+      "clips": [
+        "walk",
+        "attack",
+        "idle",
+        "death"
+      ],
+      "extentsXYZm": [
+        0.753357,
+        1.8,
+        0.47724
+      ],
+      "origin": "feet_ground",
+      "embeddedTextureResolution": 2048,
+      "sourceTextureResolution": 4096
+    },
+    "ufo": {
+      "file": "ufo.glb",
+      "lod1": "ufo_lod1.glb",
+      "lod2": "ufo_lod2.glb",
+      "triangles": 73760,
+      "materials": 4,
+      "clips": [
+        "fly",
+        "attack",
+        "idle",
+        "death"
+      ],
+      "extentsXYZm": [
+        4.0,
+        1.598505,
+        4.0
+      ],
+      "origin": "geometric_center",
+      "embeddedTextureResolution": 2048,
+      "sourceTextureResolution": 4096
+    },
+    "avion": {
+      "file": "avion.glb",
+      "lod1": "avion_lod1.glb",
+      "lod2": "avion_lod2.glb",
+      "triangles": 16896,
+      "materials": 4,
+      "clips": [
+        "fly",
+        "attack",
+        "idle",
+        "death"
+      ],
+      "extentsXYZm": [
+        6.0,
+        1.420895,
+        6.494737
+      ],
+      "origin": "geometric_center",
+      "embeddedTextureResolution": 2048,
+      "sourceTextureResolution": 4096
+    },
+    "dragon": {
+      "file": "dragon.glb",
+      "lod1": "dragon_lod1.glb",
+      "lod2": "dragon_lod2.glb",
+      "triangles": 77488,
+      "materials": 5,
+      "clips": [
+        "fly",
+        "attack",
+        "idle",
+        "death"
+      ],
+      "extentsXYZm": [
+        4.800612,
+        1.616451,
+        8.0
+      ],
+      "origin": "geometric_center",
+      "embeddedTextureResolution": 2048,
+      "sourceTextureResolution": 4096
+    },
+    "gigante": {
+      "file": "gigante.glb",
+      "lod1": "gigante_lod1.glb",
+      "lod2": "gigante_lod2.glb",
+      "triangles": 37584,
+      "materials": 5,
+      "clips": [
+        "walk",
+        "attack",
+        "idle",
+        "death"
+      ],
+      "extentsXYZm": [
+        6.872552,
+        12.0,
+        2.978834
+      ],
+      "origin": "feet_ground",
+      "embeddedTextureResolution": 2048,
+      "sourceTextureResolution": 4096
+    }
+  }
+}

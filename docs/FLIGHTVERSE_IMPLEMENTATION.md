@@ -286,3 +286,18 @@ mando real, minimapa MapLibre opcional.
 - impact_crater.glb añadido a assets/destruction/models (disponible como
   prop type:'kit' para vestir escenas con cráteres persistentes).
 - Gate: fuego=1 verde, 77fps, 0 errores.
+
+## v117 (2026-07-12) — ENEMIGOS GLB ULTRA instalados (pack externo v1.1)
+- 7 GLBs finales (13.8MB, 16.9k-77.5k tris, PBR 2K embebido, clips walk/fly/
+  attack/idle/death) + LOD1/LOD2 disponibles + manifest 7/7 + enemy_catalog.
+  Pack validado por su emisor: 56 GLBs × validador oficial 0 errores, carga+
+  clonado+clips verificados en three.
+- Parche externo REVISADO (no aplicado a ciegas — nuestro archivo evolucionó):
+  tomado cache-bust ?v=N (el bumper lo refresca), voladores y2=0 (origen centro,
+  contrato), clip DEATH antes de retirar (mixer sigue en rama dead), guards
+  !e.mixer en anims procedurales (ring/alas), flip π tras lookAt (apunta +Z,
+  frente -Z) en avión/dragón.
+- HALLAZGO propio en la revisión: facings procedurales inconsistentes (zombie
+  brazos +Z, soldado rifle -Z) — estandarizado TODO al contrato -Z: partes del
+  zombie/arquero volteadas, terrestres atan2+π universal. Una sola regla.
+- Gate 7/7 tipos con GLB: todos OK, 0 errores de consola, 70fps.
