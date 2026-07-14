@@ -926,9 +926,15 @@ def refresh_running_job(row: dict) -> dict:
         spec = _job_spec(row)
         backend = (row.get("backend") or
                    ("NVIDIA CUDA" if spec.get("backend") == "cuda" else "local"))
+        exact_detail = str(row.get("detail") or "")
+        detail = (f"2/3 ODM {spec.get('preset') or 'estandar'} en "
+                  f"{backend} · {live['label']}")
+        if (live["stage"] == row.get("stage")
+                and live["label"] in exact_detail
+                and re.search(r"\b\d+/\d+\b", exact_detail)):
+            detail = exact_detail
         row.update(progress=live["progress"], stage=live["stage"],
-                   detail=f"2/3 ODM {spec.get('preset') or 'estandar'} en "
-                          f"{backend} · {live['label']}")
+                   detail=detail)
     return row
 
 

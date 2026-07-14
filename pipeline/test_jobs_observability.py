@@ -109,6 +109,26 @@ class JobObservabilityStoreTests(unittest.TestCase):
 
         self.assertEqual(0.63, phase["progress"])
 
+    def test_live_phase_preserves_exact_worker_feature_count(self):
+        row = {
+            "id": "3d-feature-count", "kind": "3d", "label": "recon_live",
+            "status": "running", "stage": "odm-features", "progress": 0.2276,
+            "backend": "NVIDIA CUDA",
+            "detail": "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 95/1019",
+            "started": time.time() - 300,
+            "spec": json.dumps({"clip_id": "recon_live", "preset": "ultra",
+                                "backend": "cuda"}),
+            "log": "Found 10000 points in 11.2s",
+        }
+
+        live = server.refresh_running_job(row)
+
+        self.assertEqual("odm-features", live["stage"])
+        self.assertEqual(
+            "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 95/1019",
+            live["detail"],
+        )
+
     def test_depthmap_path_does_not_regress_live_label_to_undistort(self):
         phase = server.odm_live_phase(
             'Finished opensfm stage\nRunning openmvs stage\n'
