@@ -534,6 +534,27 @@ check("splat backend: arranca full power; prioridad adaptativa vive fuera del co
       == ["/usr/sbin/taskpolicy", "-m", "11000"]
       and "utility" not in worker.opensplat_train_cmd(
           Path("/p"), Path("/o.splat"), 7000, _cpu_backend))
+import gpu_lane as _gpu_lane
+_cuda_plan = worker.splat_attempt_plan({"preset": "frontier", "backend": "cuda",
+                                        "backend_policy": "strict", "resolution": "auto",
+                                        "requested_downscale": 1, "best_available": False})
+check("splat CUDA: auto permite sólo Frontier d1 → Frontier d2",
+      [(row["preset"], row["d"]) for row in _cuda_plan]
+      == [("frontier", 1), ("frontier", 2)])
+_cuda_cmd = " ".join(_gpu_lane.train_argv(
+    "frontier-smoke", 30000, 1, "gpu-smoke",
+    train_args=["--pipeline.model.sh-degree", "0",
+                "--pipeline.model.stop-split-at", "15000"]))
+check("splat CUDA: comando 30k conserva SH0, densificación 15k, d1 y telemetría",
+      "--max-num-iterations 30000" in _cuda_cmd
+      and "--pipeline.model.sh-degree 0" in _cuda_cmd
+      and "--pipeline.model.stop-split-at 15000" in _cuda_cmd
+      and "--downscale-factor 1" in _cuda_cmd
+      and "nvidia-smi" in _cuda_cmd)
+check("splat CUDA: sólo OOM clasificado reintenta auto d1→d2",
+      _gpu_lane.should_retry_cuda("oom", "auto", 1)
+      and not _gpu_lane.should_retry_cuda("connectivity", "auto", 1)
+      and not _gpu_lane.should_retry_cuda("oom", "full", 1))
 _done_detail = worker.splat_done_detail(Path("DJI_QA.ksplat"), {
     "preset_label": "Ultra", "target_iters": 15000, "backend": "Metal/MPS",
     "duration_s": 7308.3, "final_loss": 0.0432,

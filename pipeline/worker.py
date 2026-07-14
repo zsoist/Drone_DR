@@ -20,7 +20,7 @@ from pathlib import Path
 import jobs as jobstore
 import perf
 import scenes as scenestore
-from splat_presets import resolve_splat_spec
+from splat_presets import normalize_splat_request, resolve_splat_spec
 
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
 
@@ -404,7 +404,18 @@ def splat_attempt_plan(spec: dict | None) -> list[dict]:
     requested and effective presets separately.
     """
     spec = spec or {}
+    normalized = normalize_splat_request(spec)
     requested = resolve_splat_spec(spec)["key"]
+    if normalized["backend"] == "cuda":
+        resolution = normalized["resolution"]
+        downscales = {"auto": (1, 2), "full": (1,), "half": (2,)}[resolution]
+        return [{
+            "preset": requested,
+            "d": d,
+            "reason": ("cuda_requested_full" if d == 1 else
+                       "cuda_oom_resolution_retry" if resolution == "auto" else
+                       "cuda_requested_half"),
+        } for d in downscales]
     recommended_d = int((spec.get("preflight") or {}).get("recommended_d") or 1)
     recommended_d = 2 if recommended_d >= 2 else 1
     best_available = spec.get("best_available", True) is not False
@@ -899,75 +910,103 @@ def run_3d(j: dict):
 
 
 def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
-                   iters: int, downscale: int = 2) -> dict:
-    """Entrena el splat en el nodo CUDA (PC RTX 4060 Ti) vía gpu_lane y deja
-    tmp_out (.splat) listo para el publish normal. Lanza RuntimeError con la
-    causa real ante cualquier fallo — el caller decide el fallback a Metal.
-
-    Puente de poses: `opensfm export_colmap` dentro del contenedor ODM — gate
-    de precisión PASADO 11-jul (error de centros sub-GSD, media 3.6mm). El PLY
-    que vuelve se convierte a .splat con ply2splat (mismas transformaciones que
-    el export de OpenSplat), así crop/sog/align/viewer no notan la diferencia."""
+                   iters: int, downscale: int = 1, *, train_args: list | None = None,
+                   reuse_dataset: bool = False, timeout_s: int = 4 * 3600) -> dict:
+    """Run one strict CUDA resolution attempt and return measured evidence."""
     import gpu_lane
     from ply2splat import ply_to_splat
 
-    info = gpu_lane.probe()                      # nodo + kernels reales o excepción
-    jobstore.event(j["id"], "cuda_lane", f"nodo GPU verificado: torch {info['torch']} · "
-                   f"gsplat {info['gsplat']}", data=info)
-    # dataset COLMAP: export de poses + symlink de imágenes (scp resuelve symlinks)
-    ds = stage / "cuda-ds"
-    if ds.exists():
-        shutil.rmtree(ds)
-    ds.mkdir(parents=True)
-    (ds / "images").symlink_to(proj / "images")
-    r = subprocess.run([DOCKER, "run", "--rm", "-v", f"{proj}:/datasets/code",
-                        "--entrypoint", "/code/SuperBuild/install/bin/opensfm/bin/opensfm",
-                        "opendronemap/odm", "export_colmap", "/datasets/code/opensfm"],
-                       capture_output=True, text=True, timeout=900)
-    if r.returncode != 0:
-        raise RuntimeError(f"export_colmap falló: {(r.stderr or r.stdout)[-300:]}")
-    exported = next((d for d in [proj / "opensfm" / "colmap_export",
-                                 proj / "colmap_export"]
-                     if (d / "cameras.txt").exists()),
-                    None)
-    if exported is None:
-        hits = list(proj.rglob("cameras.txt"))
-        exported = hits[0].parent if hits else None
-    if exported is None:
-        raise RuntimeError("export_colmap no produjo cameras.txt en el proyecto")
-    sp = ds / "sparse" / "0"
-    sp.mkdir(parents=True)
-    for f in ("cameras.txt", "images.txt", "points3D.txt"):
-        shutil.copy2(exported / f, sp / f)
-
     name = f"job-{j['id'].replace('_', '-')[:40]}"
-    jobstore.update(j["id"], detail=f"enviando dataset al nodo CUDA ({iters} iters)",
-                    stage="train", progress=0.15)
-    gpu_lane.ship_dataset(ds, name)
-    gpu_lane.prep_dataset(name, downscale)
-    jobstore.update(j["id"], detail=f"entrenando {iters} iters en NVIDIA CUDA (RTX 4060 Ti)",
-                    stage="train", progress=0.3, backend="NVIDIA CUDA")
-    # run_tracked sobre el ssh: los Steps de ns-train fluyen al log (ticker vivo),
-    # el % de su progreso mueve la barra de VERDAD, y cancel/timeout aplican
-    run_id = f"gpu-{int(time.time())}"
-    t0 = time.time()
-    rc = jobstore.run_tracked(
-        j["id"], gpu_lane.train_argv(name, iters, downscale, run_id),
-        timeout=4 * 3600, tail=40,
-        progress_re=r"\((\d+)(?:\.\d+)?%\)", progress_span=(0.3, 0.76))
-    if rc != 0:
-        raise RuntimeError(f"ns-train remoto salio con rc={rc}")
-    m = {"train_s": round(time.time() - t0, 1)}
-    jobstore.update(j["id"], detail="exportando y trayendo el splat CUDA",
-                    stage="publish", progress=0.8)
-    m.update(gpu_lane.finalize_train(name, run_id))
-    ply = gpu_lane.fetch(name, stage)
-    conv = ply_to_splat(ply, tmp_out)
-    ply.unlink()                                 # 100MB que ya no hacen falta
-    jobstore.event(j["id"], "cuda_trained",
-                   f"{iters} iters en {m['train_s']}s · {conv['gaussians']} gaussianas",
-                   data={**m, **conv})
-    return {**m, **conv}
+    info = {}
+    try:
+        info = gpu_lane.probe()
+        jobstore.event(j["id"], "cuda_lane", f"nodo GPU verificado: torch {info['torch']} · "
+                       f"gsplat {info['gsplat']}", data=info)
+        if not reuse_dataset:
+            # Puente de poses: export OpenSfM→COLMAP medido con error sub-GSD.
+            ds = stage / "cuda-ds"
+            if ds.exists():
+                shutil.rmtree(ds)
+            ds.mkdir(parents=True)
+            (ds / "images").symlink_to(proj / "images")
+            r = subprocess.run([DOCKER, "run", "--rm", "-v", f"{proj}:/datasets/code",
+                                "--entrypoint", "/code/SuperBuild/install/bin/opensfm/bin/opensfm",
+                                "opendronemap/odm", "export_colmap", "/datasets/code/opensfm"],
+                               capture_output=True, text=True, timeout=900)
+            if r.returncode != 0:
+                raise RuntimeError(f"export_colmap falló: {(r.stderr or r.stdout)[-300:]}")
+            exported = next((d for d in [proj / "opensfm" / "colmap_export",
+                                         proj / "colmap_export"]
+                             if (d / "cameras.txt").exists()), None)
+            if exported is None:
+                hits = list(proj.rglob("cameras.txt"))
+                exported = hits[0].parent if hits else None
+            if exported is None:
+                raise RuntimeError("export_colmap no produjo cameras.txt en el proyecto")
+            sp = ds / "sparse" / "0"
+            sp.mkdir(parents=True)
+            for filename in ("cameras.txt", "images.txt", "points3D.txt"):
+                shutil.copy2(exported / filename, sp / filename)
+            jobstore.update(j["id"], detail=f"enviando dataset al nodo CUDA ({iters} iters)",
+                            stage="transfer", progress=0.15)
+            gpu_lane.ship_dataset(ds, name)
+
+        gpu_lane.prep_dataset(name, downscale)
+        jobstore.update(j["id"],
+                        detail=f"entrenando {iters} iteraciones en NVIDIA CUDA · entrada d{downscale}",
+                        stage="train", progress=0.3, backend="NVIDIA CUDA")
+        run_id = f"gpu-{int(time.time())}"
+        t0 = time.time()
+        rc = jobstore.run_tracked(
+            j["id"], gpu_lane.train_argv(name, iters, downscale, run_id,
+                                          train_args=train_args),
+            timeout=timeout_s, tail=80,
+            progress_re=r"\((\d+)(?:\.\d+)?%\)", progress_span=(0.3, 0.76))
+        if rc != 0:
+            log = (jobstore.get(j["id"]) or {}).get("log", "")
+            if _cancelled(j["id"]):
+                log += "\ncancelled by user"
+            kind = gpu_lane.classify_cuda_failure(rc, log)
+            raise gpu_lane.CudaLaneError(kind, f"ns-train CUDA falló ({kind}, rc={rc})", rc=rc)
+
+        m = {"train_s": round(time.time() - t0, 1)}
+        jobstore.update(j["id"], detail="exportando y trayendo el splat CUDA",
+                        stage="publish", progress=0.8)
+        m.update(gpu_lane.finalize_train(name, run_id))
+        ply = gpu_lane.fetch(name, stage)
+        conv = ply_to_splat(ply, tmp_out)
+        ply.unlink()
+        gpu_lane.cleanup(name, success=True)
+        measured = {
+            **m, **conv,
+            "effective_downscale": downscale,
+            "remote_gpu": info.get("gpu"),
+            "remote_driver": info.get("driver"),
+            "torch": info.get("torch"),
+            "cuda_runtime": info.get("cuda_runtime"),
+            "gsplat": info.get("gsplat"),
+            "wsl_free_bytes": info.get("wsl_free_bytes"),
+            "bridge_free_bytes": info.get("bridge_free_bytes"),
+        }
+        jobstore.event(j["id"], "cuda_trained",
+                       f"{iters} iters d{downscale} en {m['train_s']}s · "
+                       f"{conv['gaussians']} gaussianas · pico {m.get('remote_peak_vram_mib', 0)} MiB",
+                       data=measured)
+        return measured
+    except gpu_lane.CudaLaneError:
+        try:
+            gpu_lane.cleanup(name, success=False)
+        except Exception:
+            pass
+        raise
+    except Exception as exc:
+        try:
+            gpu_lane.cleanup(name, success=False)
+        except Exception:
+            pass
+        kind = gpu_lane.classify_cuda_failure(getattr(exc, "returncode", None), str(exc))
+        raise gpu_lane.CudaLaneError(kind, str(exc),
+                                    rc=getattr(exc, "returncode", None)) from exc
 
 
 def run_splat(j: dict):
@@ -1010,36 +1049,80 @@ def run_splat(j: dict):
     effective_d = 1
     backend = None
     cuda_quality = None
-    if str(j["spec"].get("backend") or "").lower() == "cuda":
-        try:
-            iters = int(requested["iters"])
-            cm = run_splat_cuda(j, proj, cid, stage, tmp_out, iters)
-            rc, effective_d = 0, 2
-            backend = {"device": "NVIDIA CUDA",
-                       "note": f"{iters} iters en RTX 4060 Ti remota ({cm['train_s']}s)"}
-            attempts = [{"attempt": 1, "preset": requested_key, "d": 2,
-                         "reason": "cuda-lane", "rc": 0,
-                         "duration_s": cm["train_s"], "peak_mib": 0,
-                         "peak_source": "remote"}]
+    is_cuda = str(j["spec"].get("backend") or "").lower() == "cuda"
+    cuda_metrics = {}
+    if is_cuda:
+        import gpu_lane
+        iters = int(requested["iters"])
+        cuda_args = list((requested.get("cuda") or {}).get("train_args") or [])
+        resolution = normalize_splat_request(j.get("spec") or {})["resolution"]
+        for attempt_no, policy in enumerate(attempt_plan, start=1):
+            effective_d = int(policy["d"])
+            label = (f"{requested['label']} · NVIDIA CUDA · entrada "
+                     f"{'completa' if effective_d == 1 else 'media'} · "
+                     f"intento {attempt_no}/{len(attempt_plan)}")
+            if attempt_no > 1:
+                jobstore.update(j["id"], status="running", finished=None, pid=None,
+                                detail=label, stage="train", progress=0.15)
+            jobstore.event(j["id"], "cuda_attempt", label,
+                           level="warning" if attempt_no > 1 else "info",
+                           data={"attempt": attempt_no, "preset": requested_key,
+                                 "iters": iters, "d": effective_d,
+                                 "resolution": resolution, "backend_policy": "strict"})
+            attempt_start = time.time()
+            try:
+                cm = run_splat_cuda(
+                    j, proj, cid, stage, tmp_out, iters, effective_d,
+                    train_args=cuda_args, reuse_dataset=attempt_no > 1,
+                    timeout_s=int(requested.get("timeout") or 4 * 3600),
+                )
+            except gpu_lane.CudaLaneError as exc:
+                attempt_row = {
+                    "attempt": attempt_no, "preset": requested_key, "d": effective_d,
+                    "reason": policy["reason"], "rc": exc.rc,
+                    "failure": exc.kind, "duration_s": round(time.time() - attempt_start, 1),
+                    "backend": "NVIDIA CUDA", "will_retry":
+                    bool(attempt_no < len(attempt_plan)
+                         and gpu_lane.should_retry_cuda(exc.kind, resolution, effective_d)),
+                }
+                attempts.append(attempt_row)
+                jobstore.event(j["id"], "cuda_attempt_failed",
+                               f"{label} falló: {exc.kind}",
+                               level="warning" if attempt_row["will_retry"] else "error",
+                               data=attempt_row)
+                if attempt_row["will_retry"] and not _cancelled(j["id"]):
+                    continue
+                raise RuntimeError(
+                    f"CUDA estricto falló ({exc.kind}) en {requested['label']} d{effective_d}: {exc}"
+                ) from exc
+            rc = 0
+            cuda_metrics = cm
+            attempt_row = {
+                "attempt": attempt_no, "preset": requested_key, "d": effective_d,
+                "reason": policy["reason"], "rc": 0,
+                "duration_s": cm.get("train_s"),
+                "peak_mib": cm.get("remote_peak_vram_mib"),
+                "peak_source": "nvidia-smi", "backend": "NVIDIA CUDA",
+            }
+            attempts.append(attempt_row)
+            jobstore.event(j["id"], "cuda_attempt_succeeded", label, data=attempt_row)
+            backend = {
+                "device": "NVIDIA CUDA",
+                "note": f"{iters} iters en {cm.get('remote_gpu') or 'GPU remota'} ({cm['train_s']}s)",
+            }
             size = tmp_out.stat().st_size
             reasons = []
             if size < 200_000:
                 reasons.append(f"archivo muy pequeño ({size} bytes) — escena insuficiente")
             if n_cams < 8:
                 reasons.append(f"solo {n_cams} cámaras — vuela una órbita con más solape (>=8)")
-            # rc=0 con quit-on-train-completion = TODAS las iteraciones corrieron;
-            # splatfacto no emite líneas Step parseables — loss final honesto: None
-            cuda_quality = {"passed": not reasons, "reason": " · ".join(reasons) or "ok",
-                            "bytes": size, "cameras": n_cams, "final_loss": None,
-                            "last_step": iters, "steps_logged": 0, "target_iters": iters}
-        except Exception as e:
-            jobstore.event(j["id"], "cuda_fallback",
-                           f"lane CUDA falló → Metal/MPS local: {str(e)[:260]}",
-                           level="warning")
-            jobstore.update(j["id"], detail="nodo CUDA no disponible → entrenando local (Metal/MPS)",
-                            stage="train", progress=0.1)
-            cuda_quality = None
-    if cuda_quality is None:
+            cuda_quality = {
+                "passed": not reasons, "reason": " · ".join(reasons) or "ok",
+                "bytes": size, "cameras": n_cams, "final_loss": None,
+                "last_step": iters, "steps_logged": 0, "target_iters": iters,
+            }
+            break
+    if not is_cuda:
       for attempt_no, policy in enumerate(attempt_plan, start=1):
           effective = resolve_splat_spec({"preset": policy["preset"]})
           effective_d = int(policy["d"])
@@ -1133,19 +1216,34 @@ def run_splat(j: dict):
         "input_scale": effective_d,
         # en el lane CUDA -d2 es la config de diseño, no la escalera OOM de Metal:
         # solo cuenta como fallback lo que degradó respecto a lo pedido
-        "fallback": (requested_key != effective["key"] or effective_d != 1) if cuda_quality is None else False,
+        "fallback": (requested_key != effective["key"] or effective_d != 1),
         "attempts": attempts,
         "backend": backend["device"],
         "backend_note": backend["note"],
         "duration_s": round(time.time() - train_start, 1),
         # peak de la corrida publicada — el eje X del sweep de densificación (Phase 2.5)
         # y el campo peak_memory del futuro splat_runs[] naciendo en el schema semilla
-        "peak_mib": peak.peak_mib if peak else 0,
-        "peak_source": peak.peak_source if peak else None,
+        "peak_mib": (cuda_metrics.get("remote_peak_vram_mib") if is_cuda
+                     else peak.peak_mib if peak else 0),
+        "peak_source": "nvidia-smi" if is_cuda else peak.peak_source if peak else None,
         "mem_cap_mib": OPENSPLAT_MEMORY_MIB,
         # sin esto, un run con caps heurísticos (mismatch de RAM) sería indistinguible
         # de uno calibrado — contaminación que la baseline de Phase 1 no puede permitirse
         "caps_provisional": bool(_HWCFG.get("provisional")),
+        "requested_iterations": int(requested["iters"]),
+        "requested_backend": "cuda" if is_cuda else j["spec"].get("backend"),
+        "effective_backend": backend["device"],
+        "backend_policy": j["spec"].get("backend_policy") or ("strict" if is_cuda else "best_available"),
+        "resolution": j["spec"].get("resolution"),
+        "requested_downscale": j["spec"].get("requested_downscale"),
+        "effective_downscale": effective_d,
+        "effective_resolution": "full" if effective_d == 1 else "half",
+        "remote_gpu": cuda_metrics.get("remote_gpu"),
+        "remote_driver": cuda_metrics.get("remote_driver"),
+        "cuda_runtime": cuda_metrics.get("cuda_runtime"),
+        "torch": cuda_metrics.get("torch"),
+        "gsplat": cuda_metrics.get("gsplat"),
+        "telemetry_samples": cuda_metrics.get("telemetry_samples"),
     })
     if not quality["passed"]:
         raise RuntimeError(quality["reason"])

@@ -1377,6 +1377,22 @@ def gpu_node_status(force: bool = False) -> dict:
     GPU_NODE.update(ts=now, data=data)
     return data
 
+
+def gpu_cuda_preflight_status(force: bool = False) -> dict:
+    """Combine the fast UI node status with the pinned WSL CUDA environment probe."""
+    node = dict(gpu_node_status(force))
+    if node.get("status") != "awake":
+        return node
+    try:
+        import gpu_lane
+        node.update(gpu_lane.probe())
+        node["status"] = "awake"
+    except Exception as exc:
+        node["environment_verified"] = False
+        node["environment_error"] = str(exc)[-300:]
+    GPU_NODE.update(ts=time.time(), data=node)
+    return node
+
 def gpu_node_wake() -> dict:
     import socket
     raw = bytes.fromhex(GPU_NODE_MAC.replace(":", ""))
@@ -2464,7 +2480,7 @@ class H(BaseHTTPRequestHandler):
                                     if p.is_file()) if (proj / "images").is_dir() else 0
                 pfv = _pf.splat_preflight_for_backend(
                     n_imgs, w, job_spec["preset"], job_spec["backend"],
-                    node=(gpu_node_status() if job_spec["backend"] == "cuda" else None),
+                    node=(gpu_cuda_preflight_status() if job_spec["backend"] == "cuda" else None),
                     project_bytes=project_bytes)
                 blocked = ("REJECTED", "INPUT_FLOOR_EXCEEDS_CAP", "NODE_UNAVAILABLE",
                            "ENVIRONMENT_INVALID", "INSUFFICIENT_DISK")
@@ -2493,7 +2509,7 @@ class H(BaseHTTPRequestHandler):
                                                    "backend": spec.get("backend")})["backend"]
             except (TypeError, ValueError):
                 return self.send_json({"error": "parámetros inválidos"}, 400)
-            node = gpu_node_status(bool(spec.get("force"))) if backend == "cuda" else None
+            node = gpu_cuda_preflight_status(bool(spec.get("force"))) if backend == "cuda" else None
             return self.send_json(_pf.splat_preflight_for_backend(
                 n, w, p, backend, node=node,
                 project_bytes=max(0, int(spec.get("project_bytes") or 0)),
