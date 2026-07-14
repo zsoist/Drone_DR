@@ -47,6 +47,11 @@ class SplatFrontierUiContractTests(unittest.TestCase):
                       "iterations_per_second", "eta_remaining_s", "ETA TRAINER"):
             self.assertIn(token, self.shell)
 
+    def test_job_cards_distinguish_counted_phase_eta_from_trainer_eta(self):
+        for token in ("phase_items_per_minute", "counted_phase_live", "ETA FASE",
+                      "elementos/min"):
+            self.assertIn(token, self.shell)
+
     def test_3d_phase_rail_groups_all_odm_substages_under_photogrammetry(self):
         match = re.search(
             r"function phaseKey\(stage\)\s*\{.*?\n\}", self.shell, re.DOTALL)

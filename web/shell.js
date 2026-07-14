@@ -280,8 +280,11 @@ function jobDataGrid(j) {
     cells.push(['PASO EN VIVO', `${Number(j.current_iteration).toLocaleString()} / ${Number(j.target_iterations).toLocaleString()}`, 'iteration']);
   if (j.iterations_per_second)
     cells.push(['RITMO MEDIDO', `${Number(j.iterations_per_second).toFixed(1)} iter/s`, 'rate']);
+  if (j.phase_items_per_minute)
+    cells.push(['RITMO FASE', `${Number(j.phase_items_per_minute).toFixed(1)} elementos/min`, 'phase-rate']);
   if (j.eta_remaining_s != null)
-    cells.push(['ETA TRAINER', fmtDur(j.eta_remaining_s), 'eta']);
+    cells.push([j.eta_source === 'trainer_live' ? 'ETA TRAINER' : 'ETA FASE',
+      fmtDur(j.eta_remaining_s), 'eta']);
   if (j.image_cache_device) {
     const cacheMiB = Number(j.decoded_image_cache_mib || 0);
     const cacheSize = cacheMiB >= 1024 ? `${(cacheMiB / 1024).toFixed(1)} GB`
@@ -479,6 +482,7 @@ async function pollJobs(el, every = 2500, onDone = null) {
         j.effective_preset, j.outcome, j.backend,
         j.resume_available ? j.checkpoint_step : '', j.resumed_from_step || '',
         j.current_iteration != null ? 'live-iterations' : '',
+        j.phase_items_per_minute != null ? 'counted_phase_live' : '',
         (j.stage_history || []).length].join('|');
       const patchLive = (node, j) => {
         const pct = Number.isFinite(+j.progress) ? Math.round(+j.progress * 100) : null;
@@ -501,6 +505,8 @@ async function pollJobs(el, every = 2500, onDone = null) {
           ? `${Number(j.current_iteration).toLocaleString()} / ${Number(j.target_iterations).toLocaleString()}` : null);
         setTxt('[data-live-field="rate"] b', j.iterations_per_second
           ? `${Number(j.iterations_per_second).toFixed(1)} iter/s` : null);
+        setTxt('[data-live-field="phase-rate"] b', j.phase_items_per_minute
+          ? `${Number(j.phase_items_per_minute).toFixed(1)} elementos/min` : null);
         setTxt('[data-live-field="eta"] b', j.eta_remaining_s != null
           ? fmtDur(j.eta_remaining_s) : null);
         const meta = node.querySelectorAll('.jc-meta span')[1];

@@ -130,6 +130,42 @@ class JobObservabilityStoreTests(unittest.TestCase):
             live["detail"],
         )
 
+    def test_counted_odm_phase_exposes_measured_rate_and_remaining_time(self):
+        telemetry = server.counted_phase_telemetry(
+            "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 300/600",
+            "odm-features",
+            [{"ts": 400.0, "stage": "odm-features"}],
+            now=1000.0,
+        )
+
+        self.assertEqual(300, telemetry["phase_completed"])
+        self.assertEqual(600, telemetry["phase_total"])
+        self.assertEqual(30.0, telemetry["phase_items_per_minute"])
+        self.assertEqual(600, telemetry["eta_remaining_s"])
+        self.assertEqual("counted_phase_live", telemetry["eta_source"])
+
+    def test_running_odm_summary_exposes_counted_phase_eta(self):
+        jid = "3d-live-feature-eta"
+        started = time.time() - 1200
+        spec = {"clip_id": "recon_live", "preset": "ultra", "backend": "cuda"}
+        with jobs._LOCK, jobs._conn() as conn:
+            conn.execute("INSERT INTO jobs (id,kind,label,status,detail,stage,progress,started,spec,log) "
+                         "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (jid, "3d", "recon_live", "running",
+                          "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 300/600",
+                          "odm-features", 0.2825, started, json.dumps(spec),
+                          "Found 10000 points in 11.2s"))
+            conn.execute("INSERT INTO job_events (job_id,ts,level,event,message,data) "
+                         "VALUES (?,?,?,?,?,?)",
+                         (jid, time.time() - 600, "debug", "stage", "odm-features", "{}"))
+
+        summary = server.normalize_job_summary(
+            server.refresh_running_job(jobs.get(jid)))
+
+        self.assertAlmostEqual(30.0, summary["phase_items_per_minute"], delta=0.2)
+        self.assertAlmostEqual(600, summary["eta_remaining_s"], delta=5)
+        self.assertEqual("counted_phase_live", summary["eta_source"])
+
     def test_depthmap_path_does_not_regress_live_label_to_undistort(self):
         phase = server.odm_live_phase(
             'Finished opensfm stage\nRunning openmvs stage\n'

@@ -797,6 +797,43 @@ def splat_live_telemetry(log: str, target_iterations: int | None) -> dict | None
     return out
 
 
+def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
+                            now: float | None = None) -> dict | None:
+    """Derive a measured phase rate/ETA from an exact N/T worker counter.
+
+    The final ratio is intentional: ODM detail starts with ``2/3`` before the
+    authoritative feature count. This projection is phase-local and never used
+    as proof that a job or artifact completed.
+    """
+    counts = re.findall(r"\b(\d+)/(\d+)\b", str(detail or ""))
+    if not counts:
+        return None
+    completed, total = map(int, counts[-1])
+    completed = min(completed, total)
+    if completed <= 0 or total <= 0 or completed >= total:
+        return None
+    starts = [float(item["ts"]) for item in (stage_history or [])
+              if item.get("stage") == stage and item.get("ts") is not None]
+    if not starts:
+        return None
+    elapsed = max(0.0, float(now if now is not None else time.time()) - min(starts))
+    if elapsed < 10:
+        return None
+    rate = completed / elapsed
+    if rate <= 0:
+        return None
+    low = str(detail or "").lower()
+    unit = "features" if "feature" in low else "images" if "imágenes" in low else "items"
+    return {
+        "phase_completed": completed,
+        "phase_total": total,
+        "phase_unit": unit,
+        "phase_items_per_minute": round(rate * 60, 1),
+        "eta_remaining_s": max(0, round((total - completed) / rate)),
+        "eta_source": "counted_phase_live",
+    }
+
+
 def derive_odm_progress(log: str, current: float | None = None, cid: str = "",
                         started: float | None = None) -> float | None:
     """Progreso best-effort de un job ODM a partir del log.
@@ -1045,9 +1082,16 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
         "checkpoint_step": checkpoint_data.get("step"),
         "checkpoint_bytes": checkpoint_data.get("bytes"),
     })
+    if row.get("kind") == "3d" and row.get("status") == "running":
+        counted = counted_phase_telemetry(
+            str(out.get("detail") or ""), str(out.get("stage") or ""),
+            out.get("stage_history") or [], now=now)
+        if counted:
+            out.update(counted)
     for key in ("current_iteration", "target_iterations", "iteration_pct",
                 "iteration_time_ms", "iterations_per_second", "eta_remaining_s",
-                "eta_source"):
+                "eta_source", "phase_completed", "phase_total", "phase_unit",
+                "phase_items_per_minute"):
         if row.get(key) is not None:
             out[key] = row[key]
 
