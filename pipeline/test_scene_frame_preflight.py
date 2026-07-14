@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -11,6 +12,13 @@ import worker
 
 
 class SceneFramePreflightTests(unittest.TestCase):
+    @staticmethod
+    def _cuda_job():
+        return {"id": "3d-policy-fixture", "spec": {
+            "clip_id": "fixture", "preset": "ultra", "backend": "cuda",
+            "sources": ["fixture"],
+        }}
+
     def test_exact_post_selection_counts_split_viable_and_sparse_sources(self):
         with tempfile.TemporaryDirectory() as td:
             project = Path(td)
@@ -66,6 +74,82 @@ class SceneFramePreflightTests(unittest.TestCase):
         self.assertEqual(expected_id, recovery["splat"]["clip_id"])
         self.assertEqual(expected_id, recovery["splat"]["version_id"])
         self.assertEqual("frontier", recovery["splat"]["preset"])
+
+    def test_large_cuda_ultra_scene_preflights_to_memory_safe_dense_quality(self):
+        preflight = {"total_frames": 423}
+
+        selected, evidence = worker.odm_cuda_dense_preflight(
+            "ultra", worker.PRESETS["ultra"], preflight)
+
+        args = selected["args"]
+        self.assertEqual("medium", args[args.index("--pc-quality") + 1])
+        self.assertEqual("ultra", args[args.index("--feature-quality") + 1])
+        self.assertEqual("2", args[args.index("--orthophoto-resolution") + 1])
+        self.assertEqual("800000", args[args.index("--mesh-size") + 1])
+        self.assertTrue(evidence["adjusted"])
+        self.assertEqual("ultra", evidence["requested_dense_quality"])
+        self.assertEqual("medium", evidence["effective_dense_quality"])
+
+    def test_small_cuda_ultra_scene_keeps_full_dense_quality(self):
+        selected, evidence = worker.odm_cuda_dense_preflight(
+            "ultra", worker.PRESETS["ultra"], {"total_frames": 238})
+
+        args = selected["args"]
+        self.assertEqual("ultra", args[args.index("--pc-quality") + 1])
+        self.assertFalse(evidence["adjusted"])
+
+    def test_high_cuda_odm_is_strict_remote_while_light_tiers_can_fallback(self):
+        self.assertTrue(worker.odm_cuda_is_strict({"backend": "cuda"}, "ultra"))
+        self.assertTrue(worker.odm_cuda_is_strict(
+            {"backend": "cuda", "backend_policy": "strict"}, "estandar"))
+        self.assertFalse(worker.odm_cuda_is_strict({"backend": "cuda"}, "estandar"))
+        self.assertFalse(worker.odm_cuda_is_strict({"backend": "local"}, "ultra"))
+
+    def test_cancelled_cuda_odm_never_starts_local_or_25d_fallback(self):
+        with (
+                tempfile.TemporaryDirectory() as td,
+                mock.patch.object(worker, "VAULT", Path(td)),
+                mock.patch.object(worker.jobstore, "run_tracked", return_value=0),
+                mock.patch.object(worker.jobstore, "update"),
+                mock.patch.object(worker.jobstore, "event"),
+                mock.patch.object(worker, "odm_frame_preflight",
+                                  return_value={"total_frames": 238, "by_source": {},
+                                                "viable_sources": ["fixture"],
+                                                "sparse_sources": []}),
+                mock.patch.object(worker, "clean_odm_outputs", return_value=[]),
+                mock.patch.object(worker, "run_odm_cuda", return_value=137),
+                mock.patch.object(worker, "_cancelled", return_value=True),
+                mock.patch.object(worker, "run_odm_step") as local,
+                mock.patch.object(worker, "run_fast_ortho_fallback") as ortho,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "cancelado"):
+                worker.build_3d_assets(self._cuda_job(), "fixture", "ultra")
+
+        local.assert_not_called()
+        ortho.assert_not_called()
+
+    def test_strict_cuda_odm_failure_never_starts_local_fallback(self):
+        with (
+                tempfile.TemporaryDirectory() as td,
+                mock.patch.object(worker, "VAULT", Path(td)),
+                mock.patch.object(worker.jobstore, "run_tracked", return_value=0),
+                mock.patch.object(worker.jobstore, "update"),
+                mock.patch.object(worker.jobstore, "event"),
+                mock.patch.object(worker, "odm_frame_preflight",
+                                  return_value={"total_frames": 238, "by_source": {},
+                                                "viable_sources": ["fixture"],
+                                                "sparse_sources": []}),
+                mock.patch.object(worker, "clean_odm_outputs", return_value=[]),
+                mock.patch.object(worker, "run_odm_cuda", return_value=137),
+                mock.patch.object(worker, "_cancelled", return_value=False),
+                mock.patch.object(worker, "run_odm_step") as local,
+                mock.patch.object(worker, "run_fast_ortho_fallback") as ortho,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "CUDA estricto"):
+                worker.build_3d_assets(self._cuda_job(), "fixture", "ultra")
+
+        local.assert_not_called()
+        ortho.assert_not_called()
 
 
 if __name__ == "__main__":

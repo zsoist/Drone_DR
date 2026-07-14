@@ -30,6 +30,8 @@ class SplatFrontierUiContractTests(unittest.TestCase):
         self.assertNotIn("worker en curso", self.tresd)
         self.assertNotIn("cae solo a Metal/MPS", self.tresd)
         self.assertNotIn("si el nodo falla, cada fase cae sola a local", self.tresd)
+        self.assertNotIn("puede continuar local en el Mac", self.tresd)
+        self.assertIn("Alta/Extra/Ultra: CUDA estricto", self.tresd)
 
     def test_job_cards_show_requested_and_effective_resolution(self):
         self.assertIn("requested_resolution", self.shell)

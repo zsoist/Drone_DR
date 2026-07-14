@@ -1308,6 +1308,8 @@ def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: st
         "photos": photos,
         "then_splat": bool(then_splat),
         "backend": "cuda" if str(odm_backend).lower() == "cuda" else None,
+        "backend_policy": ("strict" if str(odm_backend).lower() == "cuda"
+                           and preset in ("alta", "extra", "ultra") else "best_available"),
     }
     if then_splat:
         followup = build_followup_splat_spec(reconstruction_id, {
@@ -2670,6 +2672,8 @@ class H(BaseHTTPRequestHandler):
                         "sources": sources, "photos": photos}
             if str(spec.get("backend") or "").lower() == "cuda":
                 job_spec["backend"] = "cuda"
+                job_spec["backend_policy"] = (
+                    "strict" if preset in ("alta", "extra", "ultra") else "best_available")
             if spec.get("then_splat"):                   # phased: gaussian tras el 3D
                 try:
                     followup = build_followup_splat_spec(ident, spec)

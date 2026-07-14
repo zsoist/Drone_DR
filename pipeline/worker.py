@@ -568,6 +568,49 @@ def openmvs_retry_preset(preset: dict) -> dict:
     return retry
 
 
+CUDA_DENSE_SAFE_FRAME_CAP = 320
+
+
+def odm_cuda_dense_preflight(preset_name: str, preset: dict,
+                             frame_preflight: dict) -> tuple[dict, dict]:
+    """Choose the strongest calibrated dense rung before a large remote solve.
+
+    The RTX run with 426 registered Ultra views completed depth estimation but
+    exceeded the 20 GiB container ceiling while fusing those maps. Above the
+    calibrated frame cap we retain Ultra features, mesh, DSM and orthophoto
+    settings, while lowering only pc-quality to the proven memory-safe rung.
+    """
+    selected = dict(preset)
+    selected["args"] = list(preset.get("args") or [])
+    total = int(frame_preflight.get("total_frames") or sum(
+        int(row.get("submitted") or 0)
+        for row in (frame_preflight.get("by_source") or {}).values()))
+    requested = _preset_arg(preset, "--pc-quality")
+    adjusted = (preset_name in ("alta", "extra", "ultra")
+                and total >= CUDA_DENSE_SAFE_FRAME_CAP
+                and requested != "medium")
+    if adjusted:
+        selected = openmvs_retry_preset(selected)
+    effective = _preset_arg(selected, "--pc-quality")
+    return selected, {
+        "adjusted": adjusted,
+        "frames": total,
+        "frame_cap": CUDA_DENSE_SAFE_FRAME_CAP,
+        "requested_dense_quality": requested,
+        "effective_dense_quality": effective,
+        "reason": ("large_scene_fusion_memory_preflight" if adjusted
+                   else "requested_dense_quality_safe"),
+    }
+
+
+def odm_cuda_is_strict(spec: dict, preset_name: str) -> bool:
+    """High-quality CUDA ODM never spills onto the Mac after a node failure."""
+    if str((spec or {}).get("backend") or "").lower() != "cuda":
+        return False
+    return (str((spec or {}).get("backend_policy") or "").lower() == "strict"
+            or preset_name in ("alta", "extra", "ultra"))
+
+
 def _preset_arg(preset: dict | None, flag: str, default: str = "unknown") -> str:
     args = (preset or {}).get("args") or []
     try:
@@ -746,6 +789,7 @@ def odm_frame_preflight(proj: Path, sources: list, minimum_frames: int = 5) -> d
         (viable_sources if viable else sparse_sources).append(source)
     return {
         "minimum_frames": minimum,
+        "total_frames": sum(row["submitted"] for row in by_source.values()),
         "by_source": by_source,
         "viable_sources": viable_sources,
         "sparse_sources": sparse_sources,
@@ -856,6 +900,7 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     odm_gpu_lane.probe()
     name = j["id"].replace("_", "-")
     container = f"odm-gpu-{name[:40]}"
+    completed = False
     jobstore.event(j["id"], "odm_cuda", "nodo CUDA verificado — fotogrametria remota",
                    data={"image": "opendronemap/odm:gpu", "preset": preset_name})
     try:
@@ -872,9 +917,16 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
         got = odm_gpu_lane.fetch_outputs(proj, name)
         jobstore.update(j["id"], backend="NVIDIA CUDA")
         jobstore.event(j["id"], "odm_cuda_done", f"outputs recuperados: {', '.join(got)}")
+        completed = True
         return 0
     finally:
-        odm_gpu_lane.cleanup(name, container)
+        if completed:
+            odm_gpu_lane.cleanup(name, container)
+        else:
+            jobstore.event(
+                j["id"], "odm_cuda_evidence_retained",
+                f"evidencia remota preservada en /root/gpu-jobs/odm/{name}",
+                level="warning", data={"remote_dir": f"/root/gpu-jobs/odm/{name}"})
 
 
 def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str = "",
@@ -928,13 +980,40 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
                     stage="odm", progress=0.15)
     effective_dense_quality = _preset_arg(preset, "--pc-quality")
     rc = -1
-    if str(j["spec"].get("backend") or "").lower() == "cuda":
+    cuda_requested = str(j["spec"].get("backend") or "").lower() == "cuda"
+    cuda_strict = odm_cuda_is_strict(j["spec"], preset_name)
+    if cuda_requested:
+        cuda_preset, dense_preflight = odm_cuda_dense_preflight(
+            preset_name, preset, frame_preflight)
+        effective_dense_quality = dense_preflight["effective_dense_quality"]
+        if dense_preflight["adjusted"]:
+            jobstore.event(
+                j["id"], "odm_cuda_dense_preflight",
+                f"{dense_preflight['frames']} frames: dense "
+                f"{dense_preflight['requested_dense_quality']} → "
+                f"{dense_preflight['effective_dense_quality']} para fusión estable",
+                level="warning", data=dense_preflight)
+            jobstore.update(
+                j["id"],
+                detail=f"2/3 ODM {preset_name} CUDA · fusión densa "
+                       f"{dense_preflight['effective_dense_quality']} preflight",
+                stage="odm", progress=0.15)
         try:
-            rc = run_odm_cuda(j, proj, preset, preset_name)
+            rc = run_odm_cuda(j, proj, cuda_preset, preset_name)
         except Exception as e:
-            jobstore.event(j["id"], "odm_cuda_fallback",
-                           f"nodo CUDA fallo -> ODM local: {str(e)[:260]}", level="warning")
+            jobstore.event(j["id"], "odm_cuda_failure",
+                           f"nodo CUDA falló: {str(e)[:260]}", level="warning")
             rc = -1
+        if _cancelled(j["id"]):
+            raise RuntimeError("ODM cancelado; no se inicia ningún fallback")
+        if rc != 0 and cuda_strict:
+            jobstore.event(
+                j["id"], "odm_cuda_strict_stop",
+                f"ODM CUDA terminó con rc={rc}; Alta/Extra/Ultra no cae al Mac",
+                level="error", data={"rc": rc, "preset": preset_name,
+                                     "backend_policy": "strict"})
+            raise RuntimeError(
+                f"ODM CUDA estricto falló (rc={rc}); solicitud preservada sin fallback local")
         if rc != 0 and not _cancelled(j["id"]):
             if rc > 0:                       # el contenedor remoto corrió y murió con rc real
                 jobstore.event(j["id"], "odm_cuda_fallback",
@@ -944,6 +1023,8 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
                             backend=None,
                             detail=f"2/3 fotogrametria ODM {preset_name} local (fallback)",
                             stage="odm", progress=0.15)
+    if _cancelled(j["id"]):
+        raise RuntimeError("ODM cancelado; no se inicia ningún fallback")
     if rc != 0:
         rc = run_odm_step(j["id"], container, proj, preset, preset_name)
     # CADENA de fallback (no un solo nivel): un preset pesado puede reventar por OOM (137), por
@@ -978,6 +1059,8 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         preset_name, preset = fb, PRESETS[fb]
         effective_dense_quality = _preset_arg(preset, "--pc-quality")
         rc = run_odm_step(j["id"], container, proj, preset, preset_name, rerun_from="openmvs")
+    if _cancelled(j["id"]):
+        raise RuntimeError("ODM cancelado; no se inicia fallback 25D")
     if rc != 0:
         fb_container = f"{container}-ortho"
         rc2 = run_fast_ortho_fallback(j["id"], proj, fb_container)

@@ -14,9 +14,11 @@ Division del trabajo con worker.py:
                        aplican sin codigo nuevo; matar el ssh tumba la VM WSL
                        (muere ~15s tras la ultima sesion) y con ella el contenedor
   - fetch_outputs()    odm_*/opensfm de vuelta al proj del Mac (tar -> NTFS -> scp)
-  - cleanup()          mata contenedor remoto huerfano + borra el workdir
+  - cleanup()          mata contenedor remoto huerfano + borra el workdir exitoso
 
-El caller (build_3d_assets) decide el fallback local si cualquier paso falla.
+El caller aplica preflight de memoria y mantiene Alta/Extra/Ultra estrictamente
+remoto. Un fallo conserva el workdir como evidencia; solo una corrida completa
+se limpia automaticamente.
 """
 from __future__ import annotations
 

@@ -157,6 +157,7 @@ class SceneStoreTests(unittest.TestCase):
         self.assertEqual(jobs.recon_id_for(["A", "B", "C"], ["p.jpg"]), reconstruction_id)
         self.assertEqual(scene["id"], spec["scene_id"])
         self.assertTrue(spec["then_splat"])
+        self.assertEqual("strict", spec["backend_policy"])
         self.assertEqual("ultra", spec["splat_preset"])
         self.assertEqual("recon_v1", scenes.get_scene(scene["id"])["active_version"])
         self.assertEqual("processing", scenes.get_scene(scene["id"])["versions"][-1]["status"])

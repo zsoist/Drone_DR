@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=184';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=184';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=184';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=184';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=184';
-  import { mountSplatViewer } from '/splatview.js?v=184';
+  import * as THREE from '/vendor/three180.module.js?v=185';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=185';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=185';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=185';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=185';
+  import { mountSplatViewer } from '/splatview.js?v=185';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1230,7 +1230,7 @@
           <div class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
             <b>${p.n}</b><span class="mono">${p.t}</span><small>${p.d}</small></div>`).join('')}</div>
         <label class="proc-phase compute-choice" id="m-odm-compute"><input type="checkbox" id="m-odm-cuda" checked>
-          <span>${icon('cpu')} <b>Fotogrametría en PC CUDA</b><small>ODM usa la RTX para depthmaps; si el nodo no responde, esta fase sí puede continuar local en el Mac.</small></span></label>
+          <span>${icon('cpu')} <b>Fotogrametría en PC CUDA</b><small>Alta/Extra/Ultra: CUDA estricto, con fusión densa preflight; nunca cae al Mac. Rápido/Estándar sí admiten fallback local.</small></span></label>
         <label class="proc-phase"><input type="checkbox" id="m-splat">
           <span>${icon('spark')} <b>También entrenar gaussian splat</b> al terminar el 3D (foto-realista)</span></label>
         <div id="m-splatpreset" class="splat-config" style="display:none">
@@ -1825,11 +1825,11 @@
         <span>${esc(p.name)}</span></label>`).join('') || '<span class="footer-note">Sin fotos sueltas en el vault.</span>'}</div>
       <p class="mlb">ODM de la nueva versión</p>
       <div class="mpresets scene-odm">
-        ${[['estandar', 'Estándar', 'poses + mapa estable'], ['alta', 'Alta', 'detalle preferido'], ['extra', 'Extra', 'malla más densa'], ['ultra', 'Ultra', 'máximo ODM local']]
+        ${[['estandar', 'Estándar', 'poses + mapa estable'], ['alta', 'Alta', 'detalle preferido'], ['extra', 'Extra', 'malla más densa'], ['ultra', 'Ultra', 'máximo detalle ODM']]
           .map(([k, n, d]) => `<div class="mpreset${k === 'alta' ? ' on' : ''}" data-scene-odm="${k}"><b>${n}</b><small>${d}</small></div>`).join('')}
       </div>
       <label class="proc-phase compute-choice"><input type="checkbox" data-scene-odm-cuda checked>
-        <span>${icon('cpu')} <b>ODM en PC NVIDIA CUDA</b><small>Depthmaps en la RTX; si el nodo falla, solo ODM puede continuar local en el Mac.</small></span></label>
+        <span>${icon('cpu')} <b>ODM en PC NVIDIA CUDA</b><small>Alta/Extra/Ultra: CUDA estricto, con fusión densa preflight y evidencia remota preservada; sin fallback local.</small></span></label>
       <label class="proc-phase"><input type="checkbox" data-scene-splat checked>
         <span>${icon('spark')} <b>Entrenar Gaussian al terminar</b><small>30K por defecto; 7K–40K conservan la solicitud y nunca caen al Mac.</small></span></label>
       <div class="splat-config scene-splat" data-scene-splat-config>
