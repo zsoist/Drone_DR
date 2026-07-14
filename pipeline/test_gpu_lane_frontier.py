@@ -538,6 +538,39 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertEqual(0.74, resume_update["progress"])
         self.assertIn("37,473,907 puntos", resume_update["detail"])
 
+    def test_cuda_odm_fetch_stage_never_regresses_completed_product_progress(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td)
+            (proj / "images").mkdir()
+            (proj / "images" / "one.jpg").write_bytes(b"fixture")
+            job = {"id": "3d-fetch-progress", "spec": {"sources": ["a"]}}
+            with (
+                mock.patch.object(odm_gpu_lane, "probe"),
+                mock.patch.object(odm_gpu_lane, "ship_images"),
+                mock.patch.object(odm_gpu_lane, "remote_run_argv",
+                                  return_value=["remote"]),
+                mock.patch.object(odm_gpu_lane, "fetch_outputs",
+                                  return_value=["opensfm", "odm_orthophoto"]),
+                mock.patch.object(odm_gpu_lane, "cleanup"),
+                mock.patch.object(worker.jobstore, "event"),
+                mock.patch.object(worker.jobstore, "get",
+                                  return_value={"progress": 0.91}),
+                mock.patch.object(worker.jobstore, "update") as update,
+                mock.patch.object(worker.jobstore, "run_tracked", return_value=0),
+            ):
+                rc = worker.run_odm_cuda(
+                    job, proj, {"args": ["--pc-quality", "medium"], "timeout": 60},
+                    "ultra",
+                )
+
+        self.assertEqual(0, rc)
+        fetch_update = next(
+            call.kwargs for call in update.call_args_list
+            if "trayendo resultados" in call.kwargs.get("detail", "")
+        )
+        self.assertEqual("odm-fetch", fetch_update["stage"])
+        self.assertGreaterEqual(fetch_update["progress"], 0.91)
+
     def test_prepare_opensfm_resume_preserves_only_invalid_reconstruction(self):
         with mock.patch.object(odm_gpu_lane, "_wsl", return_value="RESUME_READY\n") as run:
             odm_gpu_lane.prepare_opensfm_resume("3d-preserved-safe")

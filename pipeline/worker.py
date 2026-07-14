@@ -1348,8 +1348,9 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
             tick=artifact_progress, tick_interval=15.0)
         if rc != 0:
             return rc
+        current_progress = float((jobstore.get(j["id"]) or {}).get("progress") or 0.0)
         jobstore.update(j["id"], detail="2/3 trayendo resultados del nodo CUDA",
-                        stage="odm", progress=0.5)
+                        stage="odm-fetch", progress=max(0.95, current_progress))
         got = odm_gpu_lane.fetch_outputs(proj, name)
         jobstore.update(j["id"], backend="NVIDIA CUDA")
         jobstore.event(j["id"], "odm_cuda_done", f"outputs recuperados: {', '.join(got)}")
