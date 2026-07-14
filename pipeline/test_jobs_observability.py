@@ -89,6 +89,10 @@ class JobObservabilityStoreTests(unittest.TestCase):
         reconstruct = server.odm_live_phase(
             'Good tracks: 503571\n'
             'running "opensfm" reconstruct "/datasets/code/opensfm"', 0.35)
+        reconstruct_after_tail_rotation = server.odm_live_phase(
+            'Reconstruction 0: 424 images, 430976 points\n'
+            'Attempting merge\nMerging reconstruction 1\n'
+            'running opensfm export_geocoords --reconstruction', 0.35)
 
         self.assertEqual("odm-tracks", tracks["stage"])
         self.assertEqual("construyendo tracks", tracks["label"])
@@ -96,6 +100,9 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual("odm-reconstruct", reconstruct["stage"])
         self.assertEqual("reconstruyendo cámaras", reconstruct["label"])
         self.assertGreater(reconstruct["progress"], tracks["progress"])
+        self.assertEqual("odm-reconstruct", reconstruct_after_tail_rotation["stage"])
+        self.assertEqual("reconstruyendo cámaras",
+                         reconstruct_after_tail_rotation["label"])
 
     def test_remote_odm_live_phase_never_regresses_progress(self):
         phase = server.odm_live_phase("Matching s0_f_0001.jpg and s0_f_0002.jpg", 0.63)
