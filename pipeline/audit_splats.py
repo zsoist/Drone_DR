@@ -25,12 +25,14 @@ import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from splat_presets import SPLAT_PRESETS
+
 
 VAULT = Path("/Volumes/SSD/drone-vault")
 SYSTEM = VAULT / "manifest" / "system.json"
 JOBS = VAULT / "manifest" / "jobs.db"
-REQUIRED_PRESETS = {"medium", "cinematic", "ultra"}
-PRESET_BY_ITERS = {1000: "fast", 2000: "medium", 7000: "cinematic", 15000: "ultra"}
+REQUIRED_PRESETS = {"medium", "cinematic", "ultra", "ultra20", "frontier", "grandmaster"}
+PRESET_BY_ITERS = {profile["iters"]: key for key, profile in SPLAT_PRESETS.items()}
 
 
 def load_system() -> dict:
@@ -78,12 +80,18 @@ def audit() -> tuple[list[str], list[str], dict]:
             continue
         if s.get("format") not in ("sog", "spz", "ksplat"):
             warnings.append(f"non-optimized visible format: {path} format={s.get('format')}")
-        missing = [k for k in ("clip_id", "path", "format", "preset", "iters", "loss", "cameras", "duration_s")
+        missing = [k for k in ("clip_id", "path", "format", "preset", "iters", "cameras", "duration_s")
                    if s.get(k) in (None, "")]
         if missing:
             failures.append(f"metadata missing {missing}: {path}")
         if not s.get("backend"):
             warnings.append(f"legacy backend missing: {path}")
+        if s.get("preset") in ("ultra20", "frontier", "grandmaster"):
+            provenance = ("requested_backend", "effective_backend", "requested_downscale",
+                          "effective_downscale", "trainer", "params_hash")
+            missing_provenance = [key for key in provenance if s.get(key) in (None, "")]
+            if missing_provenance:
+                failures.append(f"CUDA provenance missing {missing_provenance}: {path}")
         if s.get("bytes", 0) < 100_000:
             failures.append(f"splat asset suspiciously small: {path} bytes={s.get('bytes')}")
         if s.get("loss") is not None and float(s["loss"]) > 0.2:

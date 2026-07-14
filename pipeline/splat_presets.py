@@ -9,11 +9,30 @@ SUPPORTED_SPLAT_BACKENDS = ("metal", "cpu", "cuda")
 SPLAT_RESOLUTIONS = ("auto", "full", "half")
 
 
+def _cuda_config():
+    return {
+        "resolution": "auto",
+        "strict": True,
+        "train_args": [
+            "--pipeline.model.sh-degree", "0",
+            "--pipeline.model.stop-split-at", "15000",
+        ],
+    }
+
+
 def _local_profile(*, default_backend="metal"):
     return {
         "supported_backends": SUPPORTED_SPLAT_BACKENDS,
         "default_backend": default_backend,
-        "cuda": {"resolution": "auto", "strict": True, "train_args": []},
+        "cuda": _cuda_config(),
+    }
+
+
+def _cuda_only_profile():
+    return {
+        "supported_backends": ("cuda",),
+        "default_backend": "cuda",
+        "cuda": _cuda_config(),
     }
 
 
@@ -41,8 +60,8 @@ SPLAT_PRESETS = {
     "cinematic": {
         "iters": 7000,
         "label": "Cinematic 7K",
-        "eta_mps": "~45-75 min",
-        "eta_cpu": "~2-3 h",
+        "eta_mps": "CUDA only",
+        "eta_cpu": "CUDA only",
         "description": "Shareable photoreal quality with strong convergence.",
         "timeout": 6 * 3600,
         # Aerial scenes can balloon close to 1M gaussians by ~50%, making 7k
@@ -56,15 +75,15 @@ SPLAT_PRESETS = {
             "--densify-grad-thresh", "0.00035",
             "--stop-screen-size-at", "3000",
         ],
-        **_local_profile(),
+        **_cuda_only_profile(),
     },
     "ultra": {
         "iters": 15000,
         "label": "Ultra 15K",
         "eta_cuda": "~14-22 min",
-        "eta_mps": "~2-4 h",
-        "eta_cpu": "~5-8 h",
-        "description": "Best local quality for overnight/premium runs.",
+        "eta_mps": "CUDA only",
+        "eta_cpu": "CUDA only",
+        "description": "Premium CUDA quality through the end of Gaussian growth.",
         "timeout": 10 * 3600,
         # On a 16GB M4, OpenSplat defaults can exceed 1M gaussians before 25%
         # on aerial video. That makes late iterations crawl and creates mobile-
@@ -77,15 +96,7 @@ SPLAT_PRESETS = {
             "--densify-grad-thresh", "0.0005",
             "--stop-screen-size-at", "2500",
         ],
-        **_local_profile(),
-        "cuda": {
-            "resolution": "auto",
-            "strict": True,
-            "train_args": [
-                "--pipeline.model.sh-degree", "0",
-                "--pipeline.model.stop-split-at", "15000",
-            ],
-        },
+        **_cuda_only_profile(),
     },
     "ultra20": {
         "iters": 20000,
@@ -127,6 +138,26 @@ SPLAT_PRESETS = {
             ],
         },
     },
+    "grandmaster": {
+        "iters": 40000,
+        "label": "Grandmaster 40K",
+        "eta_mps": "CUDA only",
+        "eta_cpu": "CUDA only",
+        "eta_cuda": "Primera medición en esta GPU",
+        "description": "Extended CUDA refinement for the highest long-running quality tier.",
+        "timeout": 20 * 3600,
+        "train_args": [],
+        "supported_backends": ("cuda",),
+        "default_backend": "cuda",
+        "cuda": {
+            "resolution": "auto",
+            "strict": True,
+            "train_args": [
+                "--pipeline.model.sh-degree", "0",
+                "--pipeline.model.stop-split-at", "15000",
+            ],
+        },
+    },
 }
 
 _ALIASES = {
@@ -146,6 +177,11 @@ _ALIASES = {
     "frontier30": "frontier",
     "frontier30k": "frontier",
     "30k": "frontier",
+    "frontier40": "grandmaster",
+    "frontier40k": "grandmaster",
+    "grandmaster40": "grandmaster",
+    "grandmaster40k": "grandmaster",
+    "40k": "grandmaster",
 }
 
 _BACKEND_ALIASES = {
@@ -185,8 +221,8 @@ def resolve_splat_spec(spec: dict | None) -> dict:
         key = by_iters[iters]
         return {"key": key, **SPLAT_PRESETS[key]}
 
-    if not 500 <= iters <= 30000:
-        raise ValueError("iteraciones de splat fuera de rango (500-30000)")
+    if not 500 <= iters <= 40000:
+        raise ValueError("iteraciones de splat fuera de rango (500-40000)")
     return {
         "key": "custom",
         "iters": iters,

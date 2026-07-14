@@ -10,6 +10,7 @@ Cancel sigue funcionando: /api/job_cancel marca el status y mata pid/container;
 run_tracked (compartido) detecta el cambio y corta la secuencia.
 """
 import json
+import hashlib
 import os
 import re
 import shutil
@@ -393,6 +394,42 @@ def splat_done_detail(viewer_out: Path, quality: dict, n_cams: int) -> str:
         f"{n_cams} cámaras",
     ]
     return " · ".join(str(p) for p in parts if p)
+
+
+def job_stage_timings(jid: str, *, now: float | None = None) -> dict:
+    """Aggregate observed stage durations from immutable stage events."""
+    history = jobstore.stage_history(jid)
+    if not history:
+        return {}
+    end = float(now if now is not None else time.time())
+    totals = {}
+    for index, row in enumerate(history):
+        start = float(row["ts"])
+        stop = float(history[index + 1]["ts"]) if index + 1 < len(history) else end
+        stage = str(row.get("stage") or "unknown")
+        totals[stage] = round(totals.get(stage, 0.0) + max(0.0, stop - start), 1)
+    return totals
+
+
+_SPLAT_RUN_FIELDS = (
+    "preset", "preset_label", "requested_preset", "effective_preset",
+    "requested_iterations", "target_iters", "last_step", "final_loss", "bytes",
+    "cameras", "duration_s", "requested_backend", "effective_backend", "backend",
+    "backend_policy", "resolution", "requested_downscale", "effective_downscale",
+    "effective_resolution", "input_scale", "fallback", "attempts", "peak_mib",
+    "remote_peak_vram_mib", "peak_source", "mem_cap_mib", "caps_provisional",
+    "remote_gpu", "remote_driver", "cuda_runtime", "torch", "gsplat",
+    "telemetry_samples", "trainer", "trainer_args", "params_hash", "stage_timings",
+)
+
+
+def splat_run_record(jid: str, quality: dict) -> dict:
+    """Build one complete, bounded reconstruction.splat_runs[] record."""
+    return {
+        "job_id": jid,
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        **{key: quality.get(key) for key in _SPLAT_RUN_FIELDS if key in quality},
+    }
 
 
 def splat_attempt_plan(spec: dict | None) -> list[dict]:
@@ -1051,10 +1088,12 @@ def run_splat(j: dict):
     cuda_quality = None
     is_cuda = str(j["spec"].get("backend") or "").lower() == "cuda"
     cuda_metrics = {}
+    effective_train_args = []
     if is_cuda:
         import gpu_lane
         iters = int(requested["iters"])
         cuda_args = list((requested.get("cuda") or {}).get("train_args") or [])
+        effective_train_args = list(cuda_args)
         resolution = normalize_splat_request(j.get("spec") or {})["resolution"]
         for attempt_no, policy in enumerate(attempt_plan, start=1):
             effective_d = int(policy["d"])
@@ -1136,6 +1175,7 @@ def run_splat(j: dict):
           train_args = list(effective.get("train_args") or [])
           if effective_d > 1:
               train_args += ["-d", str(effective_d)]
+          effective_train_args = list(train_args)
           if tmp_out.exists():
               tmp_out.unlink()
           label = (f"{effective['label']} · entrada {'-d ' + str(effective_d) if effective_d > 1 else 'completa'}"
@@ -1244,7 +1284,18 @@ def run_splat(j: dict):
         "torch": cuda_metrics.get("torch"),
         "gsplat": cuda_metrics.get("gsplat"),
         "telemetry_samples": cuda_metrics.get("telemetry_samples"),
+        "remote_peak_vram_mib": cuda_metrics.get("remote_peak_vram_mib"),
     })
+    quality["trainer"] = "nerfstudio-splatfacto" if is_cuda else "opensplat"
+    quality["trainer_args"] = effective_train_args
+    params = {
+        "trainer": quality["trainer"], "preset": effective["key"],
+        "iters": int(effective["iters"]), "downscale": effective_d,
+        "args": effective_train_args,
+    }
+    quality["params_hash"] = hashlib.sha256(
+        json.dumps(params, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    quality["stage_timings"] = job_stage_timings(j["id"])
     if not quality["passed"]:
         raise RuntimeError(quality["reason"])
     final_out = publish_splat_stage(stage, cid, quality, splat_dir)
@@ -1257,12 +1308,7 @@ def run_splat(j: dict):
             m = json.loads(mf.read_text())
             recon = m.setdefault("reconstruction", {"id": cid, "splat_runs": []})
             runs = recon.setdefault("splat_runs", [])
-            runs.append({"job_id": j["id"], "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                         **{k: quality.get(k) for k in
-                            ("preset", "requested_preset", "effective_preset", "input_scale",
-                             "fallback", "attempts", "target_iters", "last_step", "final_loss", "bytes",
-                             "duration_s", "peak_mib", "peak_source", "mem_cap_mib",
-                             "caps_provisional", "backend")}})
+            runs.append(splat_run_record(j["id"], quality))
             del runs[:-10]                            # historial acotado, como splats/history
             _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
         except (ValueError, OSError) as e:
@@ -1280,9 +1326,12 @@ def run_splat(j: dict):
             version = next(v for v in scene["versions"] if v["id"] == version_id)
             metrics = dict(version.get("metrics") or {})
             metrics["splat"] = {k: quality.get(k) for k in
-                                ("requested_preset", "effective_preset", "input_scale",
-                                 "target_iters", "final_loss", "peak_mib", "mem_cap_mib",
-                                 "backend", "fallback")}
+                                ("requested_preset", "effective_preset", "requested_iterations",
+                                 "target_iters", "requested_backend", "effective_backend",
+                                 "backend_policy", "resolution", "requested_downscale",
+                                 "effective_downscale", "effective_resolution", "input_scale",
+                                 "final_loss", "peak_mib", "remote_peak_vram_mib", "mem_cap_mib",
+                                 "remote_gpu", "trainer", "params_hash", "backend", "fallback")}
             scenestore.update_version(scene["id"], version_id, metrics=metrics)
             # The first rebuild was needed for browser_gate; publish the new scene metrics too.
             rebuild_index()

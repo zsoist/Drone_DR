@@ -830,6 +830,14 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
     finished = row.get("finished")
     elapsed = ((finished or now) - started) if started else None
     clean_tail = re.sub(r"\x1b\[[0-9;]*m", "", str(row.get("log") or "")).strip()
+    structured_events = (jobstore.events(row["id"])
+                         if row.get("id") and row.get("kind") in ("3d", "splat") else [])
+    terminal = structured_events[-1] if structured_events else {}
+    recovered = any(event.get("event") in ("browser_qa_recovered", "recovered")
+                    for event in structured_events)
+    if (row.get("status") == "done" and terminal.get("event") in
+            ("completed", "browser_qa_recovered", "recovered")):
+        clean_tail = str(terminal.get("message") or row.get("detail") or clean_tail).strip()
     out = {key: row.get(key) for key in
            ("id", "kind", "label", "status", "detail", "stage", "progress",
             "started", "finished", "artifact")}
@@ -841,6 +849,8 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
                          if finished else None),
         "elapsed_s": round(elapsed, 1) if elapsed is not None else None,
         "log_tail": clean_tail,
+        "last_event": terminal.get("event"),
+        "recovered": recovered,
         "requested_preset": spec.get("preset"),
         "effective_preset": None,
         "requested_iterations": spec.get("iters"),

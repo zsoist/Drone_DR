@@ -7,6 +7,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from splat_presets import SPLAT_PRESETS
+
 VAULT = Path("/Volumes/SSD/drone-vault")
 
 
@@ -69,10 +71,8 @@ def load_scenes(scenes_dir: Path) -> list:
 SPLAT_PRIORITY = {".sog": 0, ".spz": 1, ".ksplat": 2, ".splat": 3, ".ply": 4}
 HIST_RE = re.compile(r"^(?P<cid>.+)-(?P<date>\d{8})-(?P<time>\d{6})$")
 SPLAT_PRESET_BY_ITERS = {
-    1000: ("fast", "Fast"),
-    2000: ("medium", "Medium"),
-    7000: ("cinematic", "Cinematic"),
-    15000: ("ultra", "Ultra"),
+    profile["iters"]: (key, profile["label"])
+    for key, profile in SPLAT_PRESETS.items()
 }
 
 
@@ -105,6 +105,14 @@ def _splat_stats(base: Path, stem: str) -> dict:
                 out["preset_label"] = m["preset_label"]
             if isinstance(m.get("backend"), str):
                 out["backend"] = m["backend"]
+            for key in ("requested_preset", "effective_preset", "requested_iterations",
+                        "requested_backend", "effective_backend", "backend_policy",
+                        "resolution", "requested_downscale", "effective_downscale",
+                        "effective_resolution", "remote_peak_vram_mib", "remote_gpu",
+                        "remote_driver", "trainer", "params_hash", "attempts", "stage_timings"):
+                value = m.get(key)
+                if value not in (None, "", [], {}):
+                    out[key] = value
             dur = m.get("duration_s")
             if isinstance(dur, (int, float)) and math.isfinite(dur):
                 out["duration_s"] = round(float(dur), 1)
@@ -171,6 +179,8 @@ def _splat_job_facts(splat_dir: Path) -> dict:
         detail = r["detail"] or ""
         if "Metal/MPS" in detail:
             fact["backend"] = "Metal/MPS"
+        elif "NVIDIA CUDA" in detail:
+            fact["backend"] = "NVIDIA CUDA"
         elif "CPU" in detail:
             fact["backend"] = "CPU"
         if fact:

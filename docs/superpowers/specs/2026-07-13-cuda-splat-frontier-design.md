@@ -6,17 +6,18 @@
 
 ## 1. Outcome
 
-AeroBrain will expose three explicit premium Gaussian splat tiers:
+AeroBrain will expose four explicit premium Gaussian splat tiers:
 
 | Key | Label | Iterations | Backend policy | Resolution policy |
 |---|---|---:|---|---|
-| `ultra` | Ultra 15K | 15,000 | Metal when explicitly local; strict CUDA when CUDA selected | CUDA defaults to full-first |
+| `ultra` | Ultra 15K | 15,000 | CUDA only | full-first |
 | `ultra20` | Ultra+ 20K | 20,000 | CUDA only | full-first |
 | `frontier` | Frontier 30K | 30,000 | CUDA only | full-first |
+| `grandmaster` | Grandmaster 40K | 40,000 | CUDA only | full-first |
 
 “Full” means `downscale=1` over the native images already registered by ODM. Current premium projects use 3072-pixel frames. A CUDA job may retry the same tier at `downscale=2` only after an observed CUDA memory failure. That retry is a resolution fallback, never a quality-tier or backend fallback.
 
-The existing Fast 1K, Medium 2K, Cinematic 7K, and Ultra 15K Metal/OpenSplat behavior remains compatible. Historical `ultra` metadata continues to mean 15K.
+Fast 1K and Medium 2K remain the only Mac-local Metal/CPU fallback tiers. Cinematic 7K and Ultra 15K/20K/30K/40K are CUDA-only. Historical `ultra` metadata continues to mean 15K. Grandmaster extends refinement beyond Nerfstudio's native 30K schedule without reopening densification after 15K.
 
 ## 2. Non-negotiable invariants
 
@@ -38,6 +39,7 @@ The installed Nerfstudio Splatfacto configuration and the upstream source use a 
 - Ultra 15K reaches the end of Gaussian growth.
 - Ultra+ 20K adds five thousand refinement steps with a stable Gaussian count.
 - Frontier 30K completes the native optimizer schedule.
+- Grandmaster 40K adds an explicit long-running refinement tier for highest-resolution campaigns; it is measured separately and never presented as a guaranteed visual gain.
 
 The public AeroBrain path converts Nerfstudio PLY into the 32-byte `.splat` representation and then SOG. That conversion retains only degree-zero color and discards higher spherical-harmonic coefficients. CUDA production profiles will therefore train `sh_degree=0`; spending GPU memory and optimizer work on SH1–SH3 would optimize data the published viewer cannot consume. This invariant must change if the viewer format later preserves SH.
 
@@ -271,3 +273,11 @@ Documentation must distinguish measured production evidence from estimates and m
 7. Enable the full Frontier reprocessing campaign after the canary passes.
 
 No rollout step publishes over a known-good splat until the replacement passes its complete gate chain.
+
+## 14. Progressive site models and altitude products
+
+Every eligible video is retained as source evidence and assigned to a stable site/scene identity. New captures create immutable reconstruction versions; they never overwrite source membership or silently discard older observations. The system groups captures into altitude bands at 100, 200, 400, 600, and 1,000 metres using measured flight altitude and records coverage, overlap, date, registration contribution, and dropped-source reasons.
+
+The active site model is promoted only after registration, artifact, quality, and browser gates pass. Estudio 3D and Mundo consume the same active-version and LOD contract: close ranges prefer the most detailed validated splat/mesh, while wider world views use progressively lighter ODM/point-cloud/splat products. This is a versioned refinement system, not online weight accumulation: each improvement is reproducible from its complete source set, and no video is considered integrated unless its frames actually register into the reconstruction.
+
+The campaign planner reports videos as `integrated`, `eligible`, `duplicate`, `insufficient overlap`, or `registration failed`; “no video wasted” means every capture remains traceable and retryable, not that incompatible footage is falsely merged.

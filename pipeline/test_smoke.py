@@ -472,13 +472,15 @@ import odm_prep
 check("prep: premium extrae más ancho que balanced sin llegar a 4K completo",
       odm_prep.PROFILE_WIDTH["premium"] > odm_prep.PROFILE_WIDTH["balanced"]
       and odm_prep.PROFILE_WIDTH["premium"] < 3840)
-from splat_presets import normalize_splat_request, public_splat_profiles, resolve_splat_spec
+from splat_presets import (normalize_splat_request, public_splat_profiles,
+                           resolve_splat_spec, validate_splat_backend)
 check("splat presets: medium/cinematic/ultra tienen contrato explícito",
       [resolve_splat_spec({"preset": p})["iters"] for p in ("medium", "cinematic", "ultra")]
       == [2000, 7000, 15000])
-check("splat presets: CUDA premium fija 15k/20k/30k sin ambigüedad",
+check("splat presets: CUDA premium fija 15k/20k/30k/40k sin ambigüedad",
       [resolve_splat_spec({"preset": p})["iters"]
-       for p in ("ultra", "ultra20", "frontier")] == [15000, 20000, 30000])
+       for p in ("ultra", "ultra20", "frontier", "grandmaster")]
+      == [15000, 20000, 30000, 40000])
 _frontier_request = normalize_splat_request({"preset": "frontier", "backend": "cuda"})
 check("splat presets: Frontier es CUDA estricto y full-first",
       _frontier_request["backend"] == "cuda"
@@ -489,6 +491,17 @@ _public_splats = {p["key"]: p for p in public_splat_profiles()}
 check("splat presets: contrato UI serializa perfiles CUDA-only",
       _public_splats["ultra20"]["supported_backends"] == ["cuda"]
       and _public_splats["frontier"]["iters"] == 30000)
+_mac_premium_rejected = False
+try:
+    validate_splat_backend("ultra", "metal")
+except ValueError:
+    _mac_premium_rejected = True
+check("splat presets: Mac local queda limitado a Fast/Medium",
+      _public_splats["fast"]["supported_backends"] == ["metal", "cpu", "cuda"]
+      and _public_splats["medium"]["supported_backends"] == ["metal", "cpu", "cuda"]
+      and _public_splats["cinematic"]["supported_backends"] == ["cuda"]
+      and _public_splats["ultra"]["supported_backends"] == ["cuda"]
+      and _mac_premium_rejected)
 check("splat presets: legacy iters 7000 se identifica como cinematic",
       resolve_splat_spec({"iters": 7000})["key"] == "cinematic")
 try:
@@ -702,7 +715,7 @@ try:
           _sys["splats"][0].get("duration_s") == 150.5 and _sys["splats"][0].get("backend") == "Metal/MPS")
     check("system: preset se infiere de sidecars legacy sin preset explícito",
           _sys["splats"][1].get("preset") == "cinematic"
-          and _sys["splats"][1].get("preset_label") == "Cinematic")
+          and _sys["splats"][1].get("preset_label") == "Cinematic 7K")
 finally:
     _bi.VAULT = _old_bi_vault
 

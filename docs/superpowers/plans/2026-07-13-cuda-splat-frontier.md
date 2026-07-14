@@ -2,7 +2,7 @@
 
 > **For Codex:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Apply superpowers:test-driven-development for every behavior change and superpowers:verification-before-completion before declaring success.
 
-**Goal:** Make Mac-orchestrated RTX Gaussian splat jobs reliable and truthful across every entry point, add strict CUDA Ultra 15K / Ultra+ 20K / Frontier 30K tiers, expose accurate backend-specific estimates and execution details in a premium UI, and validate the full path on the real RTX 4060 Ti.
+**Goal:** Make Mac-orchestrated RTX Gaussian splat jobs reliable and truthful across every entry point, add strict CUDA Ultra 15K / Ultra+ 20K / Frontier 30K / Grandmaster 40K tiers, expose accurate backend-specific estimates and execution details in a premium UI, build progressive multi-video site models with 100/200/400/600/1,000 m altitude products for Estudio 3D and Mundo, and validate the full path on the real RTX 4060 Ti.
 
 **Architecture:** Keep the Mac as API, queue, artifact, and publication authority. Centralize splat profile/backend/resolution rules in `pipeline/splat_presets.py`, normalize every API route into the same immutable job schema, and make `pipeline/worker.py` execute a strict CUDA attempt plan through `pipeline/gpu_lane.py`. The PC remains a disposable accelerator; produced assets return to the Mac and are published only after quality and browser gates pass.
 
@@ -25,6 +25,7 @@ Add focused tests asserting:
 - `ultra` resolves to exactly 15,000 iterations and supports `metal` and `cuda`.
 - `ultra20` resolves to exactly 20,000 iterations and supports only `cuda`.
 - `frontier` resolves to exactly 30,000 iterations and supports only `cuda`.
+- `grandmaster` resolves to exactly 40,000 iterations and supports only `cuda`.
 - CUDA profiles serialize labels, backend compatibility, strict policy, and full-first resolution defaults.
 - aliases and legacy exact-iteration inference remain deterministic.
 - invalid backend/profile pairs raise an explicit validation error.
@@ -369,6 +370,7 @@ Sequentially enqueue and monitor:
 1. Ultra 15K, CUDA strict, full-first.
 2. Ultra+ 20K, CUDA strict, full-first.
 3. Frontier 30K, CUDA strict, full-first.
+4. Grandmaster 40K, CUDA strict, full-first.
 
 For each, verify exact iterations, effective downscale, CUDA backend, peak VRAM, sidecar, index, artifact checksum, browser gate, viewer canvas, and no console errors. If d1 produces a classified OOM, verify only the same tier retries at d2 and UI/history report it honestly.
 
@@ -395,3 +397,5 @@ Update measured docs with actual 15K/20K/30K timings and results, rerun the comp
 - Remote storage cleanup is measured and safe.
 - Desktop/iPad/mobile browser gates pass.
 - Real RTX 15K/20K/30K runs and a small batch canary pass before all-project Frontier processing is enabled.
+- Real RTX 40K evidence is recorded separately before Grandmaster becomes the default highest-resolution campaign.
+- Stable site identities expose immutable source/version history, altitude bands at 100/200/400/600/1,000 m, contribution status per video, and validated LOD assets shared by Estudio 3D and Mundo.

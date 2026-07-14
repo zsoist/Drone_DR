@@ -13,6 +13,8 @@ from splat_presets import (  # noqa: E402
     validate_splat_backend,
 )
 import aerobrain_server as server  # noqa: E402
+import audit_splats  # noqa: E402
+import build_index  # noqa: E402
 import jobs  # noqa: E402
 import preflight  # noqa: E402
 import scenes  # noqa: E402
@@ -25,6 +27,7 @@ class SplatFrontierContractTests(unittest.TestCase):
             "ultra": (15_000, "Ultra 15K"),
             "ultra20": (20_000, "Ultra+ 20K"),
             "frontier": (30_000, "Frontier 30K"),
+            "grandmaster": (40_000, "Grandmaster 40K"),
         }
 
         for key, (iters, label) in expected.items():
@@ -35,9 +38,14 @@ class SplatFrontierContractTests(unittest.TestCase):
 
     def test_backend_compatibility_is_explicit(self):
         self.assertEqual(("metal", "cpu", "cuda"),
-                         SPLAT_PRESETS["ultra"]["supported_backends"])
+                         SPLAT_PRESETS["fast"]["supported_backends"])
+        self.assertEqual(("metal", "cpu", "cuda"),
+                         SPLAT_PRESETS["medium"]["supported_backends"])
+        self.assertEqual(("cuda",), SPLAT_PRESETS["cinematic"]["supported_backends"])
+        self.assertEqual(("cuda",), SPLAT_PRESETS["ultra"]["supported_backends"])
         self.assertEqual(("cuda",), SPLAT_PRESETS["ultra20"]["supported_backends"])
         self.assertEqual(("cuda",), SPLAT_PRESETS["frontier"]["supported_backends"])
+        self.assertEqual(("cuda",), SPLAT_PRESETS["grandmaster"]["supported_backends"])
 
         self.assertEqual("cuda", validate_splat_backend("frontier", "cuda"))
         with self.assertRaisesRegex(ValueError, "requiere NVIDIA CUDA"):
@@ -75,7 +83,9 @@ class SplatFrontierContractTests(unittest.TestCase):
         profiles = public_splat_profiles()
         by_key = {profile["key"]: profile for profile in profiles}
 
-        self.assertEqual(["metal", "cpu", "cuda"], by_key["ultra"]["supported_backends"])
+        self.assertEqual(["metal", "cpu", "cuda"], by_key["medium"]["supported_backends"])
+        self.assertEqual(["cuda"], by_key["cinematic"]["supported_backends"])
+        self.assertEqual(["cuda"], by_key["ultra"]["supported_backends"])
         self.assertEqual(["cuda"], by_key["ultra20"]["supported_backends"])
         self.assertTrue(by_key["frontier"]["cuda"]["strict"])
         self.assertEqual("auto", by_key["frontier"]["cuda"]["resolution"])
@@ -87,6 +97,8 @@ class SplatFrontierContractTests(unittest.TestCase):
         self.assertEqual("frontier", resolve_splat_spec({"iters": 30_000})["key"])
         self.assertEqual("ultra20", resolve_splat_spec({"preset": "ultra+"})["key"])
         self.assertEqual("frontier", resolve_splat_spec({"preset": "30k"})["key"])
+        self.assertEqual("grandmaster", resolve_splat_spec({"iters": 40_000})["key"])
+        self.assertEqual("grandmaster", resolve_splat_spec({"preset": "40k"})["key"])
 
 
 class SplatFrontierApiContractTests(unittest.TestCase):
@@ -178,6 +190,44 @@ class SplatFrontierApiContractTests(unittest.TestCase):
 
         self.assertEqual(200, len(ids))
         self.assertTrue(all(value.startswith("splat-") for value in ids))
+
+    def test_published_run_record_keeps_complete_cuda_provenance(self):
+        quality = {
+            "preset": "frontier", "requested_preset": "frontier",
+            "effective_preset": "frontier", "requested_iterations": 30000,
+            "target_iters": 30000, "requested_backend": "cuda",
+            "effective_backend": "NVIDIA CUDA", "backend": "NVIDIA CUDA",
+            "backend_policy": "strict", "resolution": "auto",
+            "requested_downscale": 1, "effective_downscale": 2,
+            "effective_resolution": "half", "attempts": [{"d": 1}, {"d": 2}],
+            "remote_peak_vram_mib": 7900, "peak_mib": 7900,
+            "remote_gpu": "RTX 4060 Ti", "remote_driver": "610.74",
+            "trainer": "nerfstudio-splatfacto", "trainer_args": ["--sh-degree", "0"],
+            "params_hash": "abc123", "stage_timings": {"train": 900.0},
+            "bytes": 32000000, "cameras": 238, "duration_s": 1000.0,
+        }
+
+        record = worker.splat_run_record("splat-frontier-fixture", quality)
+
+        for key in ("requested_preset", "effective_preset", "requested_iterations",
+                    "target_iters", "requested_backend", "effective_backend",
+                    "backend_policy", "resolution", "requested_downscale",
+                    "effective_downscale", "effective_resolution", "attempts",
+                    "remote_peak_vram_mib", "remote_gpu", "remote_driver", "trainer",
+                    "trainer_args", "params_hash", "stage_timings"):
+            with self.subTest(key=key):
+                self.assertEqual(quality[key], record[key])
+
+    def test_index_and_audit_recognize_ultra_plus_and_frontier(self):
+        self.assertEqual(("ultra20", "Ultra+ 20K"),
+                         build_index.SPLAT_PRESET_BY_ITERS[20000])
+        self.assertEqual(("frontier", "Frontier 30K"),
+                         build_index.SPLAT_PRESET_BY_ITERS[30000])
+        self.assertTrue({"ultra", "ultra20", "frontier", "grandmaster"}
+                        <= audit_splats.REQUIRED_PRESETS)
+        self.assertEqual("ultra20", audit_splats.PRESET_BY_ITERS[20000])
+        self.assertEqual("frontier", audit_splats.PRESET_BY_ITERS[30000])
+        self.assertEqual("grandmaster", audit_splats.PRESET_BY_ITERS[40000])
 
 
 if __name__ == "__main__":

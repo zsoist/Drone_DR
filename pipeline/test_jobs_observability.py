@@ -164,6 +164,24 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual("half", summary["effective_resolution"])
         self.assertEqual(2, summary["effective_downscale"])
 
+    def test_recovered_done_job_ends_with_recovery_not_historical_traceback(self):
+        jid = "splat-recovered-fixture"
+        with jobs._LOCK, jobs._conn() as conn:
+            conn.execute("INSERT INTO jobs (id,kind,label,status,detail,started,finished,spec,log) "
+                         "VALUES (?,?,?,?,?,?,?,?,?)",
+                         (jid, "splat", "recon_recovered", "done", "asset listo", 1, 2,
+                          json.dumps({"clip_id": "recon_recovered", "preset": "ultra"}),
+                          "Traceback: browser gate failed"))
+        jobs.event(jid, "error", "browser gate failed", level="error")
+        jobs.event(jid, "browser_qa_recovered", "Gate reparado y revalidado")
+        jobs.event(jid, "completed", "Ultra 15K CUDA listo", data={"recovered": True})
+
+        summary = server.normalize_job_summary(jobs.get(jid))
+
+        self.assertEqual("Ultra 15K CUDA listo", summary["log_tail"])
+        self.assertEqual("completed", summary["last_event"])
+        self.assertTrue(summary["recovered"])
+
 
 if __name__ == "__main__":
     unittest.main()
