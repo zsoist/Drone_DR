@@ -892,8 +892,8 @@ def odm_cuda_feature_progress(total_images: int):
 
 def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     """Corre la fotogrametria en el nodo CUDA (odm:gpu en el PC). Devuelve rc:
-    0 = outputs ya en proj, listos para el publish local; !=0 o excepcion = el
-    caller cae a la cadena local. El ssh es el proceso trackeado: log/progreso/
+    0 = outputs ya en proj, listos para el publish local; !=0 o excepcion deja
+    que el caller aplique la politica remota/local del preset. El ssh es el proceso trackeado: log/progreso/
     timeout/cancel son el aparato de siempre (matar el ssh tumba la VM WSL y el
     contenedor con ella)."""
     import odm_gpu_lane
@@ -905,8 +905,10 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
                    data={"image": "opendronemap/odm:gpu", "preset": preset_name})
     try:
         n = odm_gpu_lane.ship_images(proj, name)
-        jobstore.update(j["id"], detail=f"2/3 ODM {preset_name} en NVIDIA CUDA ({n} imagenes)",
-                        stage="odm", progress=0.15, container=container, backend="NVIDIA CUDA")
+        jobstore.update(j["id"],
+                        detail=f"2/3 ODM {preset_name} en NVIDIA CUDA · extrayendo features 0/{n}",
+                        stage="odm-features", progress=0.20,
+                        container=container, backend="NVIDIA CUDA")
         rc = jobstore.run_tracked(
             j["id"], odm_gpu_lane.remote_run_argv(name, container, list(preset["args"])),
             timeout=preset["timeout"], line_progress=odm_cuda_feature_progress(n))

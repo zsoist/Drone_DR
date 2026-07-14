@@ -69,6 +69,7 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
     def test_remote_odm_wires_exact_feature_progress_into_tracked_process(self):
         source = inspect.getsource(worker.run_odm_cuda)
         self.assertIn("line_progress=odm_cuda_feature_progress(n)", source)
+        self.assertIn('stage="odm-features", progress=0.20', source)
 
     def test_command_preserves_exact_frontier_schedule_and_scale(self):
         argv = gpu_lane.train_argv(
