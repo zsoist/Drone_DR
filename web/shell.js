@@ -278,6 +278,8 @@ function jobDataGrid(j) {
     ? (iterations / 1000) + 'k' : iterations]);
   if (j.current_iteration != null && j.target_iterations)
     cells.push(['PASO EN VIVO', `${Number(j.current_iteration).toLocaleString()} / ${Number(j.target_iterations).toLocaleString()}`, 'iteration']);
+  if (j.phase_completed != null && j.phase_total)
+    cells.push(['FASE EN VIVO', `${Number(j.phase_completed).toLocaleString()} / ${Number(j.phase_total).toLocaleString()}`, 'phase-count']);
   if (j.iterations_per_second)
     cells.push(['RITMO MEDIDO', `${Number(j.iterations_per_second).toFixed(1)} iter/s`, 'rate']);
   if (j.phase_items_per_minute)
@@ -513,6 +515,8 @@ async function pollJobs(el, every = 2500, onDone = null) {
         setTxt('.jc-run-detail', j.detail || '');
         setTxt('[data-live-field="iteration"] b', j.current_iteration != null && j.target_iterations
           ? `${Number(j.current_iteration).toLocaleString()} / ${Number(j.target_iterations).toLocaleString()}` : null);
+        setTxt('[data-live-field="phase-count"] b', j.phase_completed != null && j.phase_total
+          ? `${Number(j.phase_completed).toLocaleString()} / ${Number(j.phase_total).toLocaleString()}` : null);
         setTxt('[data-live-field="rate"] b', j.iterations_per_second
           ? `${Number(j.iterations_per_second).toFixed(1)} iter/s` : null);
         setTxt('[data-live-field="phase-rate"] b', j.phase_items_per_minute

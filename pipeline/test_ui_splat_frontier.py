@@ -48,7 +48,8 @@ class SplatFrontierUiContractTests(unittest.TestCase):
             self.assertIn(token, self.shell)
 
     def test_job_cards_distinguish_counted_phase_eta_from_trainer_eta(self):
-        for token in ("phase_items_per_minute", "counted_phase_live", "ETA FASE",
+        for token in ("phase_completed", "phase_total", "phase_items_per_minute",
+                      "counted_phase_live", "FASE EN VIVO", "ETA FASE",
                       "elementos/min"):
             self.assertIn(token, self.shell)
 
