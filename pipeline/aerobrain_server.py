@@ -819,8 +819,13 @@ def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
     authoritative feature count. This projection is phase-local and never used
     as proof that a job or artifact completed.
     """
-    phase_text = str(detail or "").rsplit("·", 1)[-1]
-    counts = re.findall(r"\b(\d+)/(\d+)\b", phase_text)
+    detail_text = str(detail or "")
+    camera_count = (re.search(r"\b(\d+)/(\d+)\s+cámaras registradas\b",
+                              detail_text, re.I)
+                    if stage == "odm-reconstruct" else None)
+    phase_text = detail_text.rsplit("·", 1)[-1]
+    counts = ([camera_count.groups()] if camera_count else
+              re.findall(r"\b(\d+)/(\d+)\b", phase_text))
     if not counts:
         return None
     completed, total = map(int, counts[-1])
@@ -837,8 +842,9 @@ def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
     rate = completed / elapsed
     if rate <= 0:
         return None
-    low = str(detail or "").lower()
-    unit = "features" if "feature" in low else "images" if "imágenes" in low else "items"
+    low = detail_text.lower()
+    unit = ("cameras" if camera_count else "features" if "feature" in low else
+            "images" if "imágenes" in low else "items")
     return {
         "phase_completed": completed,
         "phase_total": total,

@@ -181,6 +181,21 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual(600, telemetry["eta_remaining_s"])
         self.assertEqual("counted_phase_live", telemetry["eta_source"])
 
+    def test_reconstruction_eta_uses_camera_counter_not_active_sources(self):
+        telemetry = server.counted_phase_telemetry(
+            "2/3 ODM ultra en NVIDIA CUDA · reconstruyendo cámaras · "
+            "841/1019 cámaras registradas · 9/10 fuentes activas",
+            "odm-reconstruct",
+            [{"ts": 400.0, "stage": "odm-reconstruct"}],
+            now=1000.0,
+        )
+
+        self.assertEqual(841, telemetry["phase_completed"])
+        self.assertEqual(1019, telemetry["phase_total"])
+        self.assertEqual("cameras", telemetry["phase_unit"])
+        self.assertEqual(84.1, telemetry["phase_items_per_minute"])
+        self.assertEqual(127, telemetry["eta_remaining_s"])
+
     def test_counted_phase_ignores_pipeline_fraction_without_work_counter(self):
         self.assertIsNone(server.counted_phase_telemetry(
             "2/3 ODM ultra en NVIDIA CUDA · comparando imágenes",
