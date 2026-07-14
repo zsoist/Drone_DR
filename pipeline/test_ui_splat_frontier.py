@@ -23,7 +23,8 @@ class SplatFrontierUiContractTests(unittest.TestCase):
 
     def test_ui_exposes_strict_cuda_resolution_and_truthful_eta_sources(self):
         for token in ("data-splat-resolution", "projected_from_measured",
-                      "Primera medición", "CUDA estricto", "Sin fallback local"):
+                      "Primera medición", "CUDA estricto", "Sin fallback local",
+                      "iterations_per_second", "iteration_time_ms"):
             self.assertIn(token, self.tresd)
 
     def test_stale_silent_fallback_copy_is_gone(self):
@@ -37,6 +38,15 @@ class SplatFrontierUiContractTests(unittest.TestCase):
         self.assertIn("requested_resolution", self.shell)
         self.assertIn("effective_resolution", self.shell)
         self.assertIn("attempts", self.shell)
+
+    def test_job_cards_show_live_iteration_rate_and_trainer_eta(self):
+        for token in ("current_iteration", "target_iterations",
+                      "iterations_per_second", "eta_remaining_s", "ETA TRAINER"):
+            self.assertIn(token, self.shell)
+
+    def test_cuda_only_copy_never_promises_a_mac_fallback(self):
+        self.assertNotIn("lane hace fallback honesto a Metal local", self.tresd)
+        self.assertIn("7K–40K permanece CUDA estricto", self.tresd)
 
     def test_scene_improvement_uses_the_same_seven_profile_contract(self):
         self.assertIn("renderSplatProfiles(splatProfiles, 'frontier')", self.tresd)

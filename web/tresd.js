@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=185';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=185';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=185';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=185';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=185';
-  import { mountSplatViewer } from '/splatview.js?v=185';
+  import * as THREE from '/vendor/three180.module.js?v=188';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=188';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=188';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=188';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=188';
+  import { mountSplatViewer } from '/splatview.js?v=188';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -38,21 +38,24 @@
   };
   function splatEta(profile) {
     const eta = profile.eta;
+    const rate = eta?.iterations_per_second
+      ? `${Number(eta.iterations_per_second).toFixed(1)} iter/s · ${Number(eta.iteration_time_ms).toFixed(1)} ms/iter`
+      : '';
     const localCapable = profile.supported_backends?.includes('metal');
     if (localCapable && eta?.source === 'projected_from_measured') {
       return { main: `CUDA ~${fmtEta(eta.seconds)} · Mac ${profile.eta_mps}`,
-        sub: `CUDA proyectado desde ${eta.baseline_iterations / 1000}K medido · Mac estimado`,
+        sub: `${rate ? `CUDA ${rate} · ` : ''}proyectado desde ${eta.baseline_iterations / 1000}K · Mac estimado`,
         cls: 'projected' };
     }
     if (eta?.source === 'measured') {
-      const context = [eta.sample_count === 1 ? '1 corrida real' : `${eta.sample_count} corridas reales`,
+      const context = [rate, eta.sample_count === 1 ? '1 corrida real' : `${eta.sample_count} corridas reales`,
         eta.cameras ? `${eta.cameras} cámaras` : '', eta.resolution === 'half' ? '½ resolución' : 'resolución completa']
         .filter(Boolean).join(' · ');
       return { main: `${fmtEta(eta.seconds)} medidos`, sub: context, cls: 'measured' };
     }
     if (eta?.source === 'projected_from_measured') {
       return { main: `~${fmtEta(eta.seconds)} proyectados`,
-        sub: `${fmtEta(eta.range_low_s)}–${fmtEta(eta.range_high_s)} · desde ${eta.baseline_iterations / 1000}K medido`,
+        sub: `${fmtEta(eta.range_low_s)}–${fmtEta(eta.range_high_s)} · ${rate || 'ritmo sin medir'} · desde ${eta.baseline_iterations / 1000}K`,
         cls: 'projected' };
     }
     if (profile.supported_backends?.length === 1) {
@@ -683,9 +686,9 @@
           ['límite clock', (lastPerf.thermal?.speed_limit ?? 100) + '%']] : [] },
       gpu: { t: 'GPU del Mac (Metal/MPS)', co: '82,199,154', src: '/api/perf · muestreo 2s',
         fmt: v => Math.round(v * 100) + '%', data: () => [...hist.gpu, shown.gpu],
-        desc: 'La GPU integrada del M4 entrena los splats locales vía OpenSplat-MPS ' +
-          '(0.048 s/iter medidos) y renderiza el visor 3D/FLIGHTVERSE. El lane CUDA del PC ' +
-          'la releva a ~2.2× (0.022 s/iter) cuando el nodo está despierto.',
+        desc: 'La GPU integrada del M4 entrena únicamente Fast 1K y Medium 2K vía ' +
+          'OpenSplat-MPS y renderiza el visor 3D/FLIGHTVERSE. Cinematic 7K, Ultra 15K, ' +
+          'Ultra+ 20K, Frontier 30K y Grandmaster 40K permanecen CUDA estricto.',
         extra: () => [] },
       ram: { t: 'Memoria unificada del Mac', co: '224,164,88', src: '/api/perf · muestreo 2s',
         fmt: v => (v * ramTotal).toFixed(1) + ' GB', data: () => [...hist.ram, shown.ram],
@@ -716,16 +719,16 @@
         fmt: () => lastNode?.vram_total_mb
           ? `${(lastNode.vram_used_mb / 1024).toFixed(1)} / ${Math.round(lastNode.vram_total_mb / 1024)} GB` : '—',
         data: () => [],
-        desc: '8 GB GDDR6 dedicados — el límite duro de los entrenos CUDA. El smoke de ' +
-          '4000 iters usó ~1.4 GB; escenas grandes o batch alto pueden acercarse al techo ' +
-          'y ahí el lane hace fallback honesto a Metal local.',
+        desc: '8 GB GDDR6 dedicados — el límite duro de los entrenos CUDA. Auto intenta ' +
+          'la entrada completa y solo reintenta a media resolución ante un OOM CUDA ' +
+          'clasificado; 7K–40K permanece CUDA estricto y nunca cae al Mac.',
         extra: () => lastNode?.vram_total_mb ? [
           ['usada', (lastNode.vram_used_mb / 1024).toFixed(1) + ' GB'],
           ['total', Math.round(lastNode.vram_total_mb / 1024) + ' GB'],
           ['ocupación', Math.round(100 * lastNode.vram_used_mb / lastNode.vram_total_mb) + '%']] : [] },
       ncpu: { t: 'CPU y RAM del nodo (WSL)', co: '199,146,234', src: '/api/gpu_node · probe ssh 10s',
         fmt: v => Math.round(v * 100) + '%', data: () => pcHist.ncpu,
-        desc: 'Ubuntu bajo WSL2 con cap de 8 cores y 24 GB (.wslconfig). Corre la parte CPU ' +
+        desc: 'Ubuntu bajo WSL2 con cap de 8 cores y 20 GiB. Corre la parte CPU ' +
           'del ODM remoto (features dspsift, matching, SfM, malla) y el staging de datasets. ' +
           'La curva al 100% durante fotogrametría es trabajo bien invertido.',
         extra: () => lastNode ? [['RAM', `${lastNode.pc_ram_used_gb ?? '—'} / ${lastNode.pc_ram_total_gb ?? '—'} GB`],

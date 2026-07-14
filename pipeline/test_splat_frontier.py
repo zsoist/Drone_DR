@@ -112,6 +112,7 @@ class SplatFrontierApiContractTests(unittest.TestCase):
                 "reconstruction": {"splat_runs": [
                     {"requested_preset": "ultra", "effective_preset": "ultra",
                      "target_iters": 15000, "duration_s": 900, "cameras": 240,
+                     "attempts": [{"rc": 0, "preset": "ultra", "duration_s": 750}],
                      "effective_resolution": "half", "effective_backend": "NVIDIA CUDA",
                      "remote_gpu": "RTX 4060 Ti", "fallback": False},
                     {"requested_preset": "ultra", "effective_preset": "medium",
@@ -130,8 +131,14 @@ class SplatFrontierApiContractTests(unittest.TestCase):
         self.assertEqual(240, measured["cameras"])
         self.assertEqual("half", measured["resolution"])
         self.assertEqual("RTX 4060 Ti", measured["gpu"])
+        self.assertEqual(750, measured["training_seconds"])
+        self.assertEqual(20.0, measured["iterations_per_second"])
+        self.assertEqual(50.0, measured["iteration_time_ms"])
         self.assertEqual("projected_from_measured", projected["source"])
-        self.assertEqual(1800, projected["seconds"])
+        self.assertEqual(1650, projected["seconds"])
+        self.assertEqual(1500, projected["training_seconds"])
+        self.assertEqual(150, projected["fixed_overhead_s"])
+        self.assertEqual(20.0, projected["iterations_per_second"])
         self.assertEqual("ultra", projected["baseline_profile"])
 
     def test_direct_job_spec_preserves_immutable_cuda_request(self):

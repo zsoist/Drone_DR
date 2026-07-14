@@ -271,11 +271,17 @@ function jobDataGrid(j) {
   const iterations = j.iterations || j.requested_iterations;
   if (iterations) cells.push(['ITERACIONES', iterations >= 1000
     ? (iterations / 1000) + 'k' : iterations]);
+  if (j.current_iteration != null && j.target_iterations)
+    cells.push(['PASO EN VIVO', `${Number(j.current_iteration).toLocaleString()} / ${Number(j.target_iterations).toLocaleString()}`, 'iteration']);
+  if (j.iterations_per_second)
+    cells.push(['RITMO MEDIDO', `${Number(j.iterations_per_second).toFixed(1)} iter/s`, 'rate']);
+  if (j.eta_remaining_s != null)
+    cells.push(['ETA TRAINER', fmtDur(j.eta_remaining_s), 'eta']);
   if (j.gaussians) cells.push(['GAUSSIANAS', j.gaussians >= 1e6
     ? (j.gaussians / 1e6).toFixed(2) + ' M' : Math.round(j.gaussians / 1000) + ' k']);
   if (!cells.length) return '';
-  return `<div class="jc-data">${cells.map(([lb, v]) =>
-    `<div class="jc-data-cell"><span>${lb}</span><b class="mono">${v}</b></div>`).join('')}</div>`;
+  return `<div class="jc-data">${cells.map(([lb, v, field]) =>
+    `<div class="jc-data-cell"${field ? ` data-live-field="${field}"` : ''}><span>${lb}</span><b class="mono">${v}</b></div>`).join('')}</div>`;
 }
 function jobCard(j, flightsIdx, entering = true) {
   const meta = KIND_META[j.kind] || { ic: 'activity', name: j.kind };
@@ -448,8 +454,9 @@ async function pollJobs(el, every = 2500, onDone = null) {
       // hash ESTRUCTURAL: solo lo que cambia la forma de la card. Los valores vivos
       // (progreso, ticker, tiempos) se parchan in-place — reemplazar el nodo cada poll
       // re-disparaba animaciones y producía el jitter de 1s en la card activa
-      const hash = j => [j.status, j.stage, j.detail, j.requested_preset,
+      const hash = j => [j.status, j.stage, j.requested_preset,
         j.effective_preset, j.outcome, j.backend,
+        j.current_iteration != null ? 'live-iterations' : '',
         (j.stage_history || []).length].join('|');
       const patchLive = (node, j) => {
         const pct = Number.isFinite(+j.progress) ? Math.round(+j.progress * 100) : null;
@@ -467,6 +474,13 @@ async function pollJobs(el, every = 2500, onDone = null) {
           tick.lastChild.textContent = last;                 // el dot span queda intacto
         }
         setTxt('.jc-run-stage', humanStage(j) || 'procesando\u2026');
+        setTxt('.jc-run-detail', j.detail || '');
+        setTxt('[data-live-field="iteration"] b', j.current_iteration != null && j.target_iterations
+          ? `${Number(j.current_iteration).toLocaleString()} / ${Number(j.target_iterations).toLocaleString()}` : null);
+        setTxt('[data-live-field="rate"] b', j.iterations_per_second
+          ? `${Number(j.iterations_per_second).toFixed(1)} iter/s` : null);
+        setTxt('[data-live-field="eta"] b', j.eta_remaining_s != null
+          ? fmtDur(j.eta_remaining_s) : null);
         const meta = node.querySelectorAll('.jc-meta span')[1];
         if (meta) meta.textContent = jobDuration(j.elapsed_s) + ' transcurridos';
         // dashboard de fases: solo anchos y tiempos (misma estructura)

@@ -746,6 +746,57 @@ def odm_live_phase(log: str, current: float | None = None) -> dict | None:
             "progress": max(float(current or 0), latest[3])}
 
 
+def _trainer_duration_seconds(value: str) -> float | None:
+    """Parse Nerfstudio's compact duration columns without treating ms as minutes."""
+    units = {"d": 86400.0, "h": 3600.0, "m": 60.0, "s": 1.0, "ms": .001}
+    parts = re.findall(r"(\d+(?:\.\d+)?)\s*(ms|d|h|m|s)\b", str(value or ""), re.I)
+    if not parts:
+        return None
+    return sum(float(number) * units[unit.lower()] for number, unit in parts)
+
+
+def splat_live_telemetry(log: str, target_iterations: int | None) -> dict | None:
+    """Extract the latest exact Nerfstudio step, instantaneous rate and trainer ETA.
+
+    Rich redraws its last rows repeatedly. Selecting the greatest step makes that
+    output deterministic while each retry remains isolated by ``run_tracked``.
+    """
+    target = int(target_iterations or 0)
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", str(log or ""))
+    rows = []
+    for index, line in enumerate(clean.splitlines()):
+        line = re.sub(r"^\[[^\]]+\]\s*", "", line).strip()
+        columns = re.split(r"\s{2,}", line)
+        if len(columns) < 3:
+            continue
+        head = re.fullmatch(r"([\d,]+)\s+\(([\d.]+)%\)", columns[0])
+        if not head:
+            continue
+        step = int(head.group(1).replace(",", ""))
+        iteration_s = _trainer_duration_seconds(columns[1])
+        eta_s = _trainer_duration_seconds(columns[2])
+        rows.append((step, index, float(head.group(2)), iteration_s, eta_s))
+    if not rows:
+        return None
+    step, _, pct, iteration_s, eta_s = max(rows, key=lambda item: (item[0], item[1]))
+    if target <= 0 and pct > 0:
+        target = max(step, round(step * 100 / pct))
+    out = {
+        "current_iteration": step,
+        "target_iterations": target or None,
+        "iteration_pct": round(100 * step / target, 2) if target else round(pct, 2),
+        "eta_source": "trainer_live",
+    }
+    if iteration_s is not None and iteration_s > 0:
+        out["iteration_time_ms"] = round(iteration_s * 1000, 3)
+        out["iterations_per_second"] = round(1 / iteration_s, 2)
+    if eta_s is not None:
+        out["eta_remaining_s"] = max(0, round(eta_s))
+    elif target and iteration_s is not None:
+        out["eta_remaining_s"] = max(0, round((target - step) * iteration_s))
+    return out
+
+
 def derive_odm_progress(log: str, current: float | None = None, cid: str = "",
                         started: float | None = None) -> float | None:
     """Progreso best-effort de un job ODM a partir del log.
@@ -841,6 +892,26 @@ def refresh_running_job(row: dict) -> dict:
     if row.get("status") != "running":
         return row
     if row.get("kind") == "splat":
+        spec = _job_spec(row)
+        live = splat_live_telemetry(row.get("log") or "", spec.get("iters"))
+        if live:
+            row.update(live)
+            pct = float(live.get("iteration_pct") or 0)
+            lo, hi = ((0.30, 0.76) if str(spec.get("backend") or "").lower() == "cuda"
+                      else (0.05, 0.98))
+            row["progress"] = max(float(row.get("progress") or 0),
+                                  lo + (hi - lo) * pct / 100)
+            step = int(live["current_iteration"])
+            target = int(live.get("target_iterations") or spec.get("iters") or 0)
+            rate = live.get("iterations_per_second")
+            eta = live.get("eta_remaining_s")
+            detail = f"entrenando {step:,}/{target:,} iteraciones"
+            if rate:
+                detail += f" · {rate:g} iter/s"
+            if eta is not None:
+                detail += f" · {round(eta)} s restantes"
+            row["detail"] = detail
+            return row
         matches = re.findall(r"\((\d+)%\)", row.get("log") or "")
         if matches:
             row["progress"] = max(row.get("progress") or 0,
@@ -956,6 +1027,11 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
         "fallback": False,
         "artifact_exists": bool(row.get("artifact") and (VAULT / str(row["artifact"])).exists()),
     })
+    for key in ("current_iteration", "target_iterations", "iteration_pct",
+                "iteration_time_ms", "iterations_per_second", "eta_remaining_s",
+                "eta_source"):
+        if row.get(key) is not None:
+            out[key] = row[key]
 
     meta = _job_model_meta(str(row.get("label") or ""))
     recon = meta.get("reconstruction") or {}
@@ -1054,8 +1130,23 @@ def splat_profiles_with_history(vault: Path | None = None) -> list[dict]:
                 continue
             if duration <= 0 or iters <= 0:
                 continue
+            successful_duration = None
+            for attempt in reversed(run.get("attempts") or []):
+                try:
+                    attempt_duration = float(attempt.get("duration_s") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if attempt.get("rc") in (0, None) and attempt_duration > 0:
+                    successful_duration = attempt_duration
+                    break
+            training_seconds = successful_duration or duration
+            fixed_overhead = max(0.0, duration - training_seconds)
             samples.append({
                 "preset": preset, "seconds": duration, "iters": iters,
+                "training_seconds": training_seconds,
+                "fixed_overhead_s": fixed_overhead,
+                "iteration_time_ms": training_seconds * 1000 / iters,
+                "iterations_per_second": iters / training_seconds,
                 "cameras": run.get("cameras") or qa.get("cameras_reconstructed"),
                 "resolution": run.get("effective_resolution") or
                               ("half" if int(run.get("effective_downscale") or
@@ -1072,6 +1163,10 @@ def splat_profiles_with_history(vault: Path | None = None) -> list[dict]:
             mid = ordered[len(ordered) // 2]
             profile["eta"] = {
                 "source": "measured", "seconds": round(mid["seconds"]),
+                "training_seconds": round(mid["training_seconds"]),
+                "fixed_overhead_s": round(mid["fixed_overhead_s"]),
+                "iteration_time_ms": round(mid["iteration_time_ms"], 2),
+                "iterations_per_second": round(mid["iterations_per_second"], 2),
                 "sample_count": len(exact), "cameras": mid.get("cameras"),
                 "resolution": mid["resolution"], "gpu": mid["gpu"],
             }
@@ -1080,9 +1175,14 @@ def splat_profiles_with_history(vault: Path | None = None) -> list[dict]:
             continue
         target = int(profile["iters"])
         baseline = min(samples, key=lambda item: abs(item["iters"] - target))
-        seconds = baseline["seconds"] * target / baseline["iters"]
+        training_seconds = baseline["training_seconds"] * target / baseline["iters"]
+        seconds = training_seconds + baseline["fixed_overhead_s"]
         profile["eta"] = {
             "source": "projected_from_measured", "seconds": round(seconds),
+            "training_seconds": round(training_seconds),
+            "fixed_overhead_s": round(baseline["fixed_overhead_s"]),
+            "iteration_time_ms": round(baseline["iteration_time_ms"], 2),
+            "iterations_per_second": round(baseline["iterations_per_second"], 2),
             "range_low_s": round(seconds * .85), "range_high_s": round(seconds * 1.25),
             "baseline_profile": baseline["preset"],
             "baseline_iterations": baseline["iters"],
@@ -1934,6 +2034,7 @@ class H(BaseHTTPRequestHandler):
             row = jobstore.get(jid)
             if not row:
                 return self.send_json({"error": "trabajo no encontrado"}, 404)
+            refresh_running_job(row)
             detail = normalize_job_summary(row)
             detail["spec"] = _job_spec(row)
             detail["events"] = jobstore.events(jid)

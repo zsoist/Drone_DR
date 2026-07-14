@@ -120,6 +120,40 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual("odm-depthmaps", phase["stage"])
         self.assertEqual("calculando profundidad CUDA", phase["label"])
 
+    def test_splat_live_iteration_telemetry_uses_trainer_columns(self):
+        live = server.splat_live_telemetry(
+            "Step (% Done)       Train Iter (time)    ETA (time)\n"
+            "0 (0.00%)           14 s, 338.214 ms     2 d, 11 h, 44 m, 33 s\n"
+            "12340 (41.13%)      52.000 ms            15 m, 18 s", 30000)
+
+        self.assertEqual(12340, live["current_iteration"])
+        self.assertEqual(30000, live["target_iterations"])
+        self.assertAlmostEqual(41.13, live["iteration_pct"], places=2)
+        self.assertAlmostEqual(52.0, live["iteration_time_ms"], places=2)
+        self.assertAlmostEqual(19.23, live["iterations_per_second"], places=2)
+        self.assertEqual(918, live["eta_remaining_s"])
+        self.assertEqual("trainer_live", live["eta_source"])
+
+    def test_running_splat_summary_exposes_exact_step_rate_and_eta(self):
+        jid = "splat-live-frontier"
+        spec = {"clip_id": "recon_live", "preset": "frontier", "iters": 30000,
+                "backend": "cuda", "backend_policy": "strict"}
+        with jobs._LOCK, jobs._conn() as conn:
+            conn.execute("INSERT INTO jobs (id,kind,label,status,detail,stage,progress,started,spec,log) "
+                         "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (jid, "splat", "recon_live", "running", "entrenando", "train",
+                          0.3, time.time() - 60, json.dumps(spec),
+                          "12340 (41.13%)      52.000 ms            15 m, 18 s"))
+
+        row = server.refresh_running_job(jobs.get(jid))
+        summary = server.normalize_job_summary(row)
+
+        self.assertEqual(12340, summary["current_iteration"])
+        self.assertEqual(30000, summary["target_iterations"])
+        self.assertAlmostEqual(19.23, summary["iterations_per_second"], places=2)
+        self.assertEqual(918, summary["eta_remaining_s"])
+        self.assertIn("12,340/30,000", summary["detail"])
+
     def test_perf_now_uses_same_live_odm_phase_as_jobs_api(self):
         jid = "3d-live-perf-fixture"
         spec = {"clip_id": "recon_live", "preset": "ultra", "backend": "cuda"}
