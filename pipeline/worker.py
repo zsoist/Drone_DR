@@ -715,6 +715,21 @@ def merge_label(n_sources: int, n_photos: int, dropped: list) -> str:
     return "PARTIAL" if dropped else "FULL"
 
 
+def odm_cuda_feature_progress(total_images: int):
+    """Return a per-line observer for exact remote feature-extraction progress."""
+    total = max(1, int(total_images or 0))
+    completed = 0
+
+    def observe(line: str) -> float | None:
+        nonlocal completed
+        if not re.search(r"Found\s+\d+\s+points\s+in\s+", line or "", re.I):
+            return None
+        completed = min(total, completed + 1)
+        return round(0.20 + 0.15 * completed / total, 4)
+
+    return observe
+
+
 def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     """Corre la fotogrametria en el nodo CUDA (odm:gpu en el PC). Devuelve rc:
     0 = outputs ya en proj, listos para el publish local; !=0 o excepcion = el
@@ -733,7 +748,7 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
                         stage="odm", progress=0.15, container=container, backend="NVIDIA CUDA")
         rc = jobstore.run_tracked(
             j["id"], odm_gpu_lane.remote_run_argv(name, container, list(preset["args"])),
-            timeout=preset["timeout"])
+            timeout=preset["timeout"], line_progress=odm_cuda_feature_progress(n))
         if rc != 0:
             return rc
         jobstore.update(j["id"], detail="2/3 trayendo resultados del nodo CUDA",

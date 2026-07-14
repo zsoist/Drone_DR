@@ -1,4 +1,5 @@
 import sys
+import inspect
 import unittest
 from pathlib import Path
 
@@ -52,6 +53,23 @@ class CudaAttemptPolicyTests(unittest.TestCase):
 
 
 class CudaCommandAndLifecycleTests(unittest.TestCase):
+    def test_worker_exposes_exact_cuda_odm_feature_progress_observer(self):
+        self.assertTrue(hasattr(worker, "odm_cuda_feature_progress"))
+
+    def test_cuda_odm_feature_progress_uses_completed_images_not_log_tail_size(self):
+        observe = worker.odm_cuda_feature_progress(4)
+
+        self.assertIsNone(observe("Extracting ROOT_DSPSIFT features for image a.jpg"))
+        self.assertEqual(0.2375, observe("Found 10000 points in 11.2s"))
+        self.assertEqual(0.2750, observe("Found 9876 points in 12.1s"))
+        self.assertEqual(0.3125, observe("Found 10000 points in 11.9s"))
+        self.assertEqual(0.3500, observe("Found 10000 points in 10.8s"))
+        self.assertEqual(0.3500, observe("Found 10000 points in 10.7s"))
+
+    def test_remote_odm_wires_exact_feature_progress_into_tracked_process(self):
+        source = inspect.getsource(worker.run_odm_cuda)
+        self.assertIn("line_progress=odm_cuda_feature_progress(n)", source)
+
     def test_command_preserves_exact_frontier_schedule_and_scale(self):
         argv = gpu_lane.train_argv(
             "frontier-fixture", 30_000, 1, "run-fixture",

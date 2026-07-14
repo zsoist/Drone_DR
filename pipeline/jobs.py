@@ -445,6 +445,7 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                 tail: int = 12, abort_re: str | None = None,
                 progress_re: str | None = None,
                 progress_span: tuple = (0.05, 0.98),
+                line_progress=None,
                 tick=None, tick_interval: float = 5.0) -> int:
     """Popen con PID registrado. El control (timeout Y cancelación) se hace con
     proc.wait(timeout=1) en un bucle — INDEPENDIENTE del stdout, así un proceso
@@ -482,6 +483,17 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                             last_pct = int(m.group(1))
                             lo, hi = progress_span
                             fields["progress"] = round(lo + (hi - lo) * last_pct / 100, 3)
+                    if line_progress:
+                        try:
+                            observed = line_progress(raw)
+                        except Exception as e:
+                            print(f"line progress warning: {type(e).__name__}: {e}", flush=True)
+                        else:
+                            if observed is not None:
+                                fields["progress"] = max(
+                                    float(fields.get("progress") or 0),
+                                    max(0.0, min(1.0, float(observed))),
+                                )
                     now = time.time()
                     if fields or now - last_write >= 0.5:
                         last_write = now

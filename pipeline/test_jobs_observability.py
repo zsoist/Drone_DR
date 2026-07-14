@@ -1,4 +1,5 @@
 import json
+import inspect
 import sys
 import tempfile
 import unittest
@@ -65,6 +66,20 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertIn("line-0", full)
         self.assertIn("line-19", full)
         self.assertGreaterEqual(len(full.splitlines()), 20)
+
+    def test_run_tracked_accepts_a_line_progress_observer(self):
+        self.assertIn("line_progress", inspect.signature(jobs.run_tracked).parameters)
+
+    def test_run_tracked_persists_progress_reported_by_line_observer(self):
+        cmd = [sys.executable, "-c", "print('FEATURE_DONE')"]
+
+        rc = jobs.run_tracked(
+            self.job["id"], cmd, timeout=10,
+            line_progress=lambda line: 0.42 if line == "FEATURE_DONE" else None,
+        )
+
+        self.assertEqual(0, rc)
+        self.assertEqual(0.42, jobs.get(self.job["id"])["progress"])
 
     def test_job_summary_exposes_requested_and_effective_without_raw_spec(self):
         jid = "3d-truth-fixture"
