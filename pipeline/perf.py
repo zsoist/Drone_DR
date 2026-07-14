@@ -115,7 +115,7 @@ def job_usage(jobs: list, proc_rows: list, docker_cache: dict) -> list:
         out.append({"id": j.get("id"), "kind": j.get("kind"), "label": j.get("label"),
                     "stage": j.get("stage"), "progress": j.get("progress"),
                     "detail": (j.get("detail") or "")[:90],
-                    "elapsed_s": round(time.time() - started),
+                    "elapsed_s": round(max(0.0, time.time() - started)),
                     "cpu_pct": round(cpu, 1), "rss_mb": round(rss_mb)})
     return out
 

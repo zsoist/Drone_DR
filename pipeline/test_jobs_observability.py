@@ -2,6 +2,7 @@ import json
 import inspect
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -100,6 +101,18 @@ class JobObservabilityStoreTests(unittest.TestCase):
         phase = server.odm_live_phase("Matching s0_f_0001.jpg and s0_f_0002.jpg", 0.63)
 
         self.assertEqual(0.63, phase["progress"])
+
+    def test_future_queue_priority_timestamp_never_reports_negative_elapsed(self):
+        jid = "queued-future-fixture"
+        with jobs._LOCK, jobs._conn() as conn:
+            conn.execute("INSERT INTO jobs (id,kind,label,status,detail,started,spec) "
+                         "VALUES (?,?,?,?,?,?,?)",
+                         (jid, "splat", "future", "queued", "en cola",
+                          time.time() + 86400, json.dumps({"clip_id": "future"})))
+
+        summary = server.normalize_job_summary(jobs.get(jid))
+
+        self.assertEqual(0.0, summary["elapsed_s"])
 
     def test_job_summary_exposes_requested_and_effective_without_raw_spec(self):
         jid = "3d-truth-fixture"
