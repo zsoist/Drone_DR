@@ -441,6 +441,20 @@ def cancel(jid: str) -> bool:
 CANCEL_STATES = ("cancelled", "cancel_failed")
 
 
+def line_progress_fields(observed, current_progress: float = 0.0) -> dict:
+    """Normalize a line observer result into bounded, monotonic job fields."""
+    if isinstance(observed, dict):
+        fields = {}
+        if observed.get("progress") is not None:
+            value = max(0.0, min(1.0, float(observed["progress"])))
+            fields["progress"] = max(float(current_progress or 0.0), value)
+        if observed.get("detail") is not None:
+            fields["detail"] = str(observed["detail"])[:400]
+        return fields
+    value = max(0.0, min(1.0, float(observed)))
+    return {"progress": max(float(current_progress or 0.0), value)}
+
+
 def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                 tail: int = 12, abort_re: str | None = None,
                 progress_re: str | None = None,
@@ -461,8 +475,10 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
     full_log = log_path(jid)
     event(jid, "process_started", Path(str(cmd[0])).name,
           data={"program": Path(str(cmd[0])).name})
+    last_observed_progress = float((get(jid) or {}).get("progress") or 0.0)
 
     def reader():  # espeja el log; abort/progreso se detectan aqui, el control vive afuera
+        nonlocal last_observed_progress
         # throttle: ODM/OpenSplat escupen miles de líneas — un UPDATE por línea es
         # churn de disco + contención del lock con el server leyendo /api/jobs.
         # Escribimos si el % cambió o pasaron >=0.5s desde la última escritura.
@@ -490,10 +506,16 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                             print(f"line progress warning: {type(e).__name__}: {e}", flush=True)
                         else:
                             if observed is not None:
-                                fields["progress"] = max(
-                                    float(fields.get("progress") or 0),
-                                    max(0.0, min(1.0, float(observed))),
+                                observed_fields = line_progress_fields(
+                                    observed,
+                                    current_progress=max(
+                                        last_observed_progress,
+                                        float(fields.get("progress") or 0.0),
+                                    ),
                                 )
+                                fields.update(observed_fields)
+                                last_observed_progress = float(
+                                    fields.get("progress") or last_observed_progress)
                     now = time.time()
                     if fields or now - last_write >= 0.5:
                         last_write = now

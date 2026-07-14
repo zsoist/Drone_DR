@@ -877,17 +877,32 @@ def merge_label(n_sources: int, n_photos: int, dropped: list) -> str:
     return "PARTIAL" if dropped else "FULL"
 
 
-def odm_cuda_feature_progress(total_images: int):
-    """Return a per-line observer for exact remote feature-extraction progress."""
+def odm_cuda_feature_progress(total_images: int, preset_name: str):
+    """Report image loading separately from completed feature extraction."""
     total = max(1, int(total_images or 0))
+    preset = str(preset_name or "").strip() or "CUDA"
+    loaded = 0
     completed = 0
 
-    def observe(line: str) -> float | None:
-        nonlocal completed
-        if not re.search(r"Found\s+\d+\s+points\s+in\s+", line or "", re.I):
-            return None
-        completed = min(total, completed + 1)
-        return round(0.20 + 0.15 * completed / total, 4)
+    def observe(line: str) -> dict | None:
+        nonlocal loaded, completed
+        text = line or ""
+        reading = re.search(r"Reading data for image .+\(queue-size=(\d+)\)", text, re.I)
+        if reading:
+            loaded = min(total, max(loaded, int(reading.group(1))))
+            return {
+                "progress": round(0.20 + 0.015 * loaded / total, 4),
+                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                           f"cargando imágenes {loaded}/{total}"),
+            }
+        if re.search(r"Found\s+\d+\s+points\s+in\s+", text, re.I):
+            completed = min(total, completed + 1)
+            return {
+                "progress": round(0.215 + 0.135 * completed / total, 4),
+                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                           f"extrayendo features {completed}/{total}"),
+            }
+        return None
 
     return observe
 
@@ -908,12 +923,12 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     try:
         n = odm_gpu_lane.ship_images(proj, name)
         jobstore.update(j["id"],
-                        detail=f"2/3 ODM {preset_name} en NVIDIA CUDA · extrayendo features 0/{n}",
+                        detail=f"2/3 ODM {preset_name} en NVIDIA CUDA · cargando imágenes 0/{n}",
                         stage="odm-features", progress=0.20,
                         container=container, backend="NVIDIA CUDA")
         rc = jobstore.run_tracked(
             j["id"], odm_gpu_lane.remote_run_argv(name, container, list(preset["args"])),
-            timeout=preset["timeout"], line_progress=odm_cuda_feature_progress(n))
+            timeout=preset["timeout"], line_progress=odm_cuda_feature_progress(n, preset_name))
         if rc != 0:
             return rc
         jobstore.update(j["id"], detail="2/3 trayendo resultados del nodo CUDA",

@@ -10,6 +10,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gpu_lane  # noqa: E402
+import jobs as jobstore  # noqa: E402
 import worker  # noqa: E402
 
 
@@ -60,19 +61,43 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
     def test_worker_exposes_exact_cuda_odm_feature_progress_observer(self):
         self.assertTrue(hasattr(worker, "odm_cuda_feature_progress"))
 
-    def test_cuda_odm_feature_progress_uses_completed_images_not_log_tail_size(self):
-        observe = worker.odm_cuda_feature_progress(4)
+    def test_cuda_odm_feature_progress_separates_loading_from_completed_images(self):
+        observe = worker.odm_cuda_feature_progress(4, "ultra")
 
-        self.assertIsNone(observe("Extracting ROOT_DSPSIFT features for image a.jpg"))
-        self.assertEqual(0.2375, observe("Found 10000 points in 11.2s"))
-        self.assertEqual(0.2750, observe("Found 9876 points in 12.1s"))
-        self.assertEqual(0.3125, observe("Found 10000 points in 11.9s"))
-        self.assertEqual(0.3500, observe("Found 10000 points in 10.8s"))
-        self.assertEqual(0.3500, observe("Found 10000 points in 10.7s"))
+        self.assertEqual(
+            {"progress": 0.2038, "detail": "2/3 ODM ultra en NVIDIA CUDA · cargando imágenes 1/4"},
+            observe("Reading data for image a.jpg (queue-size=1)"),
+        )
+        self.assertEqual(
+            {"progress": 0.215, "detail": "2/3 ODM ultra en NVIDIA CUDA · cargando imágenes 4/4"},
+            observe("Reading data for image d.jpg (queue-size=4)"),
+        )
+        self.assertEqual(
+            {"progress": 0.2487, "detail": "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 1/4"},
+            observe("Found 10000 points in 11.2s"),
+        )
+        observe("Found 9876 points in 12.1s")
+        observe("Found 10001 points in 10.8s")
+        self.assertEqual(
+            {"progress": 0.35, "detail": "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 4/4"},
+            observe("Found 10002 points in 10.7s"),
+        )
+
+    def test_tracked_progress_fields_accepts_detail_without_regressing_progress(self):
+        observed = {"progress": 0.21, "detail": "cargando imágenes 10/100"}
+
+        self.assertEqual(
+            {"progress": 0.3, "detail": "cargando imágenes 10/100"},
+            jobstore.line_progress_fields(observed, current_progress=0.3),
+        )
+        self.assertEqual(
+            {"progress": 0.4},
+            jobstore.line_progress_fields(0.4, current_progress=0.3),
+        )
 
     def test_remote_odm_wires_exact_feature_progress_into_tracked_process(self):
         source = inspect.getsource(worker.run_odm_cuda)
-        self.assertIn("line_progress=odm_cuda_feature_progress(n)", source)
+        self.assertIn("line_progress=odm_cuda_feature_progress(n, preset_name)", source)
         self.assertIn('stage="odm-features", progress=0.20', source)
 
     def test_command_preserves_exact_frontier_schedule_and_scale(self):
