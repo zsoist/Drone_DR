@@ -845,14 +845,23 @@ def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
     low = detail_text.lower()
     unit = ("cameras" if camera_count else "features" if "feature" in low else
             "images" if "imágenes" in low else "items")
-    return {
+    out = {
         "phase_completed": completed,
         "phase_total": total,
         "phase_unit": unit,
         "phase_items_per_minute": round(rate * 60, 1),
-        "eta_remaining_s": max(0, round((total - completed) / rate)),
-        "eta_source": "counted_phase_live",
     }
+    # OpenSfM may validly finish with fewer registered cameras than submitted.
+    # The counter remains useful as measured throughput, but treating the
+    # submitted total as a required terminal target fabricates an ETA.
+    if stage == "odm-reconstruct":
+        out["eta_source"] = "counted_phase_rate"
+    else:
+        out.update(
+            eta_remaining_s=max(0, round((total - completed) / rate)),
+            eta_source="counted_phase_live",
+        )
+    return out
 
 
 def odm_registration_live_telemetry(detail: str) -> dict:

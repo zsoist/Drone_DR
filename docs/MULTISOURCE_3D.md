@@ -43,24 +43,23 @@
   trazables pero no aparecen como lugares duplicados. Volar aplica el límite métrico solicitado.
 
 ## Pendiente (honesto — NO validado / diferido)
-0. **Validación viva, todavía no final:** `recon_60b23208db` completó OpenSfM con 1.011/1.019
-   cámaras en tres componentes. El componente compartido principal tiene 987 cámaras, 10/10
-   prefijos activos y 920.264 puntos; los dos fragmentos restantes son 16 y 8 cámaras de `s9`.
-   ODM intentó fusionarlos, encontró IDs repetidos y terminó con `rc=139` sin OOM, truncando el
-   `reconstruction.json` final. La evidencia reanudable preservada mide exactamente 1.019
-   imágenes, 1.019 features, 1.019 matches y 282.878.995 bytes de tracks. La recuperación
-   archiva sólo el JSON truncado y usa `--sfm-no-partial`, sin `--rerun-from opensfm` porque
-   ese switch borraría los caches. No autoriza splat hasta auditar el JSON final con la lógica
-   actual. Después, y sólo si pasa, sigue Frontier 30K y un Grandmaster 40K sobre la misma
-   versión. Último snapshot inmutable de recuperación (`3d-1784034358954095000-b1152f`, eventos
-   `odm_all_sources_threshold` y `odm_981_bundle_healthy`): 981/1.019 cámaras dentro del único
-   componente observado y 10/10 fuentes sobre el gate ≥5 cámaras/≥60%. Conteo exacto observado:
-   `s0=238/238`, `s1=21/28`, `s2=29/29`, `s3=127/127`, `s4=108/108`, `s5=41/41`,
-   `s6=116/116`, `s7=211/214`, `s8=26/30`, `s9=64/88`. El pico cgroup medido era
-   14,303/20 GiB, con 5,697 GiB de margen y cero eventos `high`, `max` u OOM. Es evidencia
-   intermedia, no un pass; `/api/job` y el historial de eventos son autoritativos mientras corre,
-   y el JSON persistido decide el resultado final. La ETA de `odm-reconstruct` se calcula con el
-   contador de cámaras registradas; fuentes activas se exponen aparte y nunca sustituyen ese contador.
+0. **Recuperación OpenSfM aprobada; productos densos todavía corriendo:** el intento original de
+   `recon_60b23208db` terminó `rc=139` sin OOM al intentar fusionar tres componentes con IDs
+   repetidos. La recuperación `3d-1784034358954095000-b1152f` preservó exactamente 1.019 imágenes,
+   1.019 features, 1.019 matches y 282.878.995 bytes de tracks, archivó sólo el JSON truncado y
+   reconstruyó con `--sfm-no-partial` sin borrar caches. El JSON persistido nuevo (322.283.220 bytes,
+   SHA-256 `0f89170ee32399e6689aa8486ed5fe4736ca9e2c70e3f775b8f5d605d68b9f44`) pasó la lógica
+   `worker.odm_registration`: 2 componentes, componente seleccionado 0 con 996/1.019 cámaras,
+   951.994 puntos y 10/10 fuentes fusionadas; componente 1 con 16 cámaras/13.562 puntos sólo de
+   `s9`; 1.012 cámaras únicas totales y cero IDs repetidos entre componentes. Evidencia por fuente
+   del seleccionado: `s0=238/238`, `s1=21/28`, `s2=29/29`, `s3=127/127`, `s4=108/108`,
+   `s5=41/41`, `s6=116/116`, `s7=214/214`, `s8=30/30`, `s9=72/88`; resultado `FULL`.
+   El evento inmutable `odm_final_shared_component_audited` y la copia bajo
+   `ops/evidence/3d-1784034358954095000-b1152f/opensfm/` conservan la prueba. El gate compartido
+   pasó, pero el splat sigue cerrado hasta que ODM termine, publique y valide sus productos densos.
+   Después siguen exactamente Frontier 30K y un Grandmaster 40K sobre la misma versión.
+   `odm-reconstruct` muestra conteo y ritmo medido en cámaras/min, pero no inventa una ETA a 1.019:
+   OpenSfM puede terminar válidamente con menos cámaras registradas que enviadas.
 1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).
 2. **Presupuesto global de frames + dedup INTRA-fuente**: poda hoy es por-fuente. OJO (hallazgo del
    review): NO deduplicar cross-source — esos near-duplicates son el pegamento del co-registro.

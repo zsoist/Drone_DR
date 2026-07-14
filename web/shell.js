@@ -262,6 +262,11 @@ function phaseDash(j, pct) {
   }).join('');
   return `<div class="jc-ph">${rows}</div>`;
 }
+function phaseRateText(j) {
+  const units = { cameras: 'cámaras', features: 'features', images: 'imágenes' };
+  const unit = units[j.phase_unit] || 'elementos';
+  return `${Number(j.phase_items_per_minute).toFixed(1)} ${unit}/min`;
+}
 function jobDataGrid(j) {
   const cells = [];
   if (j.input_mb) cells.push(['PESO ENTRADA', j.input_mb >= 1024
@@ -292,7 +297,7 @@ function jobDataGrid(j) {
   if (j.iterations_per_second)
     cells.push(['RITMO MEDIDO', `${Number(j.iterations_per_second).toFixed(1)} iter/s`, 'rate']);
   if (j.phase_items_per_minute)
-    cells.push(['RITMO FASE', `${Number(j.phase_items_per_minute).toFixed(1)} elementos/min`, 'phase-rate']);
+    cells.push(['RITMO FASE', phaseRateText(j), 'phase-rate']);
   if (j.eta_remaining_s != null)
     cells.push([j.eta_source === 'trainer_live' ? 'ETA TRAINER' : 'ETA FASE',
       fmtDur(j.eta_remaining_s), 'eta']);
@@ -533,7 +538,7 @@ async function pollJobs(el, every = 2500, onDone = null) {
         setTxt('[data-live-field="rate"] b', j.iterations_per_second
           ? `${Number(j.iterations_per_second).toFixed(1)} iter/s` : null);
         setTxt('[data-live-field="phase-rate"] b', j.phase_items_per_minute
-          ? `${Number(j.phase_items_per_minute).toFixed(1)} elementos/min` : null);
+          ? phaseRateText(j) : null);
         setTxt('[data-live-field="registered-cameras"] b', j.cameras_registered != null
           ? `${Number(j.cameras_registered).toLocaleString()} / ${Number(j.cameras_total).toLocaleString()}` : null);
         setTxt('[data-live-field="active-sources"] b', j.active_sources != null

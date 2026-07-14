@@ -50,8 +50,34 @@ class SplatFrontierUiContractTests(unittest.TestCase):
     def test_job_cards_distinguish_counted_phase_eta_from_trainer_eta(self):
         for token in ("phase_completed", "phase_total", "phase_items_per_minute",
                       "counted_phase_live", "FASE EN VIVO", "ETA FASE",
-                      "elementos/min"):
+                      "phase_unit"):
             self.assertIn(token, self.shell)
+
+    def test_job_cards_label_measured_phase_rate_with_the_real_unit(self):
+        match = re.search(
+            r"function phaseRateText\(j\)\s*\{.*?\n\}",
+            self.shell, re.DOTALL)
+        self.assertIsNotNone(
+            match, "shell.js must expose a testable unit-aware phase rate")
+        rows = [
+            {"phase_items_per_minute": 10.2, "phase_unit": "cameras"},
+            {"phase_items_per_minute": 30, "phase_unit": "features"},
+            {"phase_items_per_minute": 4.5, "phase_unit": "images"},
+            {"phase_items_per_minute": 2, "phase_unit": "items"},
+        ]
+        script = (match.group(0) + "\nconsole.log(JSON.stringify(" +
+                  json.dumps(rows) + ".map(phaseRateText)));\n")
+        result = subprocess.run(["node", "-e", script], capture_output=True,
+                                text=True, check=True)
+        self.assertEqual(
+            ["10.2 cámaras/min", "30.0 features/min", "4.5 imágenes/min",
+             "2.0 elementos/min"],
+            json.loads(result.stdout),
+        )
+        self.assertGreaterEqual(
+            self.shell.count("phaseRateText(j)"), 3,
+            "initial render and live polling must use the same unit-aware text",
+        )
 
     def test_job_cards_show_live_camera_source_and_track_evidence(self):
         for token in ("active_sources", "total_sources", "good_tracks",

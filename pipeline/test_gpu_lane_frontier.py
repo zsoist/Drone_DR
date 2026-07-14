@@ -191,6 +191,13 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
                         "3/3 fuentes activas · 1,181,512 tracks robustos")},
             observe("Reconstruction 0: 3 images, 42000 points"),
         )
+        self.assertEqual(
+            {"stage": "odm-reconstruct", "progress": 0.4825,
+             "detail": ("2/3 ODM ultra en NVIDIA CUDA · 2 componentes · "
+                        "mejor componente 3/4 cámaras · 3/3 fuentes activas · "
+                        "1,181,512 tracks robustos")},
+            observe("Reconstruction 1: 1 images, 100 points"),
+        )
 
     def test_odm_registration_never_calls_disconnected_components_full(self):
         with tempfile.TemporaryDirectory() as td:

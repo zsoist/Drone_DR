@@ -917,6 +917,8 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
     saved_match_artifacts = 0
     good_tracks = 0
     registered_cameras = 0
+    reported_components = 0
+    best_component_cameras = 0
     registered_camera_ids: set[str] = set()
     source_total = max(0, int(total_sources or 0))
     active_source_ids: set[str] = set()
@@ -943,6 +945,7 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
     def observe(line: str) -> dict | None:
         nonlocal loaded, logged_completed, matching_total, matching_completed
         nonlocal good_tracks, registered_cameras
+        nonlocal reported_components, best_component_cameras
         text = line or ""
         tracks = re.search(r"Good tracks:\s*(\d+)", text, re.I)
         if tracks:
@@ -979,8 +982,15 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
         if reconstruction:
             index, cameras = map(int, reconstruction.groups())
             registered_cameras = min(total, max(registered_cameras, cameras))
-            detail = (f"2/3 ODM {preset} en NVIDIA CUDA · reconstrucción {index} · "
-                      f"{cameras}/{total} cámaras{source_evidence()}")
+            reported_components = max(reported_components, index + 1)
+            best_component_cameras = max(best_component_cameras, cameras)
+            if reported_components > 1:
+                detail = (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                          f"{reported_components} componentes · mejor componente "
+                          f"{best_component_cameras}/{total} cámaras{source_evidence()}")
+            else:
+                detail = (f"2/3 ODM {preset} en NVIDIA CUDA · reconstrucción {index} · "
+                          f"{cameras}/{total} cámaras{source_evidence()}")
             if good_tracks:
                 detail += f" · {good_tracks:,} tracks robustos"
             return {
