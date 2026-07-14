@@ -25,6 +25,7 @@ import urllib.request
 from pathlib import Path
 
 from browser_gate import DEFAULT_BASE_URL, QA_DIR, launch_chrome, new_page
+from splat_presets import SPLAT_PRESETS
 
 
 VAULT = Path("/Volumes/SSD/drone-vault")
@@ -67,6 +68,22 @@ def select_job_target(rows: list[dict], cid: str) -> dict:
     if target is None:
         raise RuntimeError(f"no splat jobs in API for {cid}")
     return target
+
+
+def log_contracts_for_job(job: dict) -> list[str]:
+    """Return retry evidence that belongs to this job, never to an unrelated card."""
+    attempts = job.get("attempts") or []
+    if not any(int(attempt.get("rc") or 0) != 0 for attempt in attempts):
+        return []
+    contracts = ["splat_attempt_failed"]
+    successful = next(
+        (attempt for attempt in reversed(attempts) if int(attempt.get("rc") or 0) == 0),
+        None,
+    )
+    if successful and successful.get("d"):
+        preset = SPLAT_PRESETS.get(str(job.get("requested_preset") or ""), {})
+        contracts.append(f"{preset.get('label') or job.get('requested_preset')} -d {successful['d']}")
+    return contracts
 
 
 def js(s: str) -> str:
@@ -247,7 +264,6 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
       const splats = cards.filter(x => x.dataset.kind === 'splat');
       const splat = cards.find(x => x.dataset.jid === {json.dumps(target_id)});
       if (!splat) return null;
-      const fallback = splats.find(x => /listo con fallback/i.test(x.innerText));
       const consoleRect = document.querySelector('#jobs3d').getBoundingClientRect();
       const cardRect = splat.getBoundingClientRect();
       const statusRect = splat.querySelector('.jc-status')?.getBoundingClientRect();
@@ -260,8 +276,7 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
         status: splat.dataset.status,
         historyText: splats.map(x => x.innerText).join('\\n---\\n'),
         jid: splat.dataset.jid,
-        logJid: (fallback || splat).dataset.jid,
-        fallbackJid: fallback?.dataset.jid || '',
+        logJid: splat.dataset.jid,
         consoleWidth: consoleRect.width,
         cardWidth: cardRect.width,
         statusVisible: !!statusRect && statusRect.left >= cardRect.left - 1 && statusRect.right <= cardRect.right + 1,
@@ -305,10 +320,9 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
       return { text: d.innerText, width: r.width, right: r.right,
         viewport: window.innerWidth, overflow: document.documentElement.scrollWidth - window.innerWidth };
     """), timeout=30, label="full log drawer")
-    if state["fallbackJid"]:
-        for contract in ("splat_attempt_failed", "Ultra -d 2", "Cinematic -d 2", "Medium -d 2"):
-            if contract.lower() not in drawer["text"].lower():
-                raise RuntimeError(f"drawer no muestra historial {contract!r}")
+    for contract in log_contracts_for_job(target):
+        if contract.lower() not in drawer["text"].lower():
+            raise RuntimeError(f"drawer no muestra historial {contract!r}")
     if drawer["right"] > drawer["viewport"] + 3 or drawer["width"] > drawer["viewport"] + 3 or drawer["overflow"] > 3:
         raise RuntimeError(f"drawer fuera de viewport en {viewport}: {drawer}")
     cdp.pump(0.3)

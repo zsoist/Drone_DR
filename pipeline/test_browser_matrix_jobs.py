@@ -27,6 +27,28 @@ class JobsMatrixRoutingTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "no splat jobs"):
             browser_matrix.select_job_target(rows, "recon_full")
 
+    def test_clean_job_does_not_inherit_retry_contracts_from_other_cards(self):
+        clean = {
+            "requested_preset": "grandmaster",
+            "attempts": [{"attempt": 1, "d": 1, "rc": 0}],
+        }
+
+        self.assertEqual([], browser_matrix.log_contracts_for_job(clean))
+
+    def test_retried_job_requires_its_own_failed_attempt_and_effective_scale(self):
+        retried = {
+            "requested_preset": "ultra20",
+            "attempts": [
+                {"attempt": 1, "d": 1, "rc": 1, "failure": "oom"},
+                {"attempt": 2, "d": 2, "rc": 0},
+            ],
+        }
+
+        self.assertEqual(
+            ["splat_attempt_failed", "Ultra+ 20K -d 2"],
+            browser_matrix.log_contracts_for_job(retried),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
