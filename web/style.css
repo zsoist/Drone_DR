@@ -790,6 +790,10 @@ details.explain b { color: var(--text); font-weight: 600; }
 }
 .scene-source.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .scene-source.risky:not(.on) { border-color: color-mix(in srgb, var(--amber) 38%, var(--line)); }
+.scene-source.same-site:not(.on) { border-color: color-mix(in srgb, var(--mint) 24%, var(--line)); }
+.scene-source.cross-site { opacity: .58; cursor: not-allowed; }
+.scene-source.cross-site input { cursor: not-allowed; }
+.scene-source.cross-site small:first-of-type { color: var(--amber); }
 .scene-source img { width: 62px; height: 42px; object-fit: cover; border-radius: 7px; background: #05070a; }
 .scene-source span { min-width: 0; }
 .scene-source b, .scene-source small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

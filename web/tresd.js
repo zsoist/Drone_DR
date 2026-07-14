@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=183';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=183';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=183';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=183';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=183';
-  import { mountSplatViewer } from '/splatview.js?v=183';
+  import * as THREE from '/vendor/three180.module.js?v=184';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=184';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=184';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=184';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=184';
+  import { mountSplatViewer } from '/splatview.js?v=184';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1773,6 +1773,8 @@
     const currentChoices = ranked.filter(({ f }) => currentSources.includes(f.clip_id));
     const choices = currentChoices.concat(
       ranked.filter(({ f }) => !currentSources.includes(f.clip_id)));
+    const compatibleCount = choices.filter(({ f, distance }) =>
+      currentSources.includes(f.clip_id) || distance != null && distance <= 500).length;
     const photoRows = [...(sys.photos || [])];
     currentPhotos.forEach(name => {
       if (!photoRows.some(p => p.name === name)) photoRows.unshift({ name });
@@ -1795,7 +1797,7 @@
         <div><span><b>${esc(v.id)}</b><small>${esc(sceneVersionTruth(v))}</small></span>
         ${v.id === scene.active_version ? '<i>Activa</i>' : v.status === 'ready' && ['FULL', 'SINGLE'].includes(v.merge_label)
           ? `<button class="btn" data-scene-promote="${esc(v.id)}">Promover</button>` : ''}</div>`).join('')}</div>` : ''}
-      <div class="scene-source-heading"><p class="mlb">Videos de la nueva versión · ${choices.length} evaluables</p>
+      <div class="scene-source-heading"><p class="mlb">Videos de la nueva versión · ${compatibleCount} del sitio · ${choices.length} visibles</p>
         <div><button class="btn" data-scene-compatible>Seleccionar candidatos ≤500 m</button>
         <button class="btn" data-scene-current>Solo versión activa</button><span class="scene-source-count" data-scene-source-count>${currentSources.length}/24 seleccionados</span></div></div>
       <div class="scene-sources">${choices.map(({ f, distance }) => {
@@ -1806,14 +1808,17 @@
         const altitudeBand = evidence?.altitude_band_m || ([100, 200, 400, 600, 1000]
           .reduce((best, d) => Math.abs(d - alt) < Math.abs(best - alt) ? d : best, 100));
         const dist = distance == null ? 'distancia sin medir' : distance < 1000 ? `${Math.round(distance)} m` : `${(distance / 1000).toFixed(1)} km`;
-        const risky = distance != null && distance > 500;
-        return `<label class="scene-source${selected ? ' on' : ''}${risky ? ' risky' : ''}" data-distance="${distance == null ? '' : distance}">
-          <input type="checkbox" value="${esc(f.clip_id)}"${selected ? ' checked' : ''}>
+        const sameSite = selected || distance != null && distance <= 500;
+        const crossSite = !selected && distance != null && distance > 500;
+        const unavailable = !selected && (crossSite || distance == null);
+        const spatialState = selected ? 'sitio activo' : sameSite ? 'mismo sitio' : crossSite ? 'otro sitio' : 'cobertura sin medir';
+        return `<label class="scene-source${selected ? ' on' : ''}${sameSite ? ' same-site' : ''}${unavailable ? ' cross-site' : ''}" data-distance="${distance == null ? '' : distance}">
+          <input type="checkbox" value="${esc(f.clip_id)}"${selected ? ' checked' : ''}${unavailable ? ' disabled' : ''}>
           <img src="data/thumbs/${encodeURIComponent(f.clip_id)}.jpg" alt="" loading="lazy">
-          <span><b>${esc(f.label || `${fmt.date(f.date)} · ${f.time}`)}</b><small>${esc(dist)} · ${alt || '—'} m · banda ${altitudeBand} m</small>
+          <span><b>${esc(f.label || `${fmt.date(f.date)} · ${f.time}`)}</b><small>${esc(spatialState)} · ${esc(dist)} · ${alt || '—'} m · banda ${altitudeBand} m</small>
           <small class="scene-evidence ${esc(evidence?.status || 'new')}">${esc(evidenceState)}${evidence?.reason ? ` · ${esc(evidence.reason)}` : ''}</small></span></label>`;
       }).join('')}</div>
-      <p class="footer-note scene-truth">La cercanía solo sugiere compatibilidad. El resultado FULL/PARTIAL se decide después con cámaras registradas por fuente.</p>
+      <p class="footer-note scene-truth">El navegador y el servidor bloquean zonas fuera de 500 m. Dentro del sitio, FULL/PARTIAL se decide con cámaras registradas por fuente.</p>
       <p class="mlb">Fotos adicionales</p>
       <div class="scene-photos">${photoRows.slice(0, Math.max(24, currentPhotos.length)).map(p => `<label>
         <input type="checkbox" value="${esc(p.name)}"${currentPhotos.includes(p.name) ? ' checked' : ''}>
@@ -1854,7 +1859,7 @@
     const setSceneSourceSelection = predicate => ov.querySelectorAll('.scene-source').forEach(row => {
       const input = row.querySelector('input');
       const distance = row.dataset.distance === '' ? NaN : Number(row.dataset.distance);
-      input.checked = predicate(input.value, distance);
+      input.checked = !input.disabled && predicate(input.value, distance);
       row.classList.toggle('on', input.checked);
     });
     ov.querySelector('[data-scene-compatible]')?.addEventListener('click', () =>

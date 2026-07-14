@@ -55,6 +55,17 @@ class TresdInitializationTests(unittest.TestCase):
         self.assertIn("Splat solicitado", source)
         self.assertIn("dense_quality_requested", source)
 
+    def test_scene_similarity_is_visible_and_cross_site_sources_are_disabled(self):
+        root = Path(__file__).resolve().parent.parent
+        source = (root / "web" / "tresd.js").read_text()
+        css = (root / "web" / "style.css").read_text()
+        self.assertIn("const sameSite =", source)
+        self.assertIn("same-site", source)
+        self.assertIn("cross-site", source)
+        self.assertIn("otro sitio", source)
+        self.assertIn("input.disabled", source)
+        self.assertIn(".scene-source.cross-site", css)
+
     def test_deepseek_reports_use_authenticated_reader_not_private_static_path(self):
         web = (Path(__file__).resolve().parent.parent / "web" / "system.js").read_text()
         server = (Path(__file__).resolve().parent / "aerobrain_server.py").read_text()
