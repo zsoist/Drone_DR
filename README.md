@@ -72,12 +72,14 @@ Evidencia viva 2026-07-14 (`DJI_20260712135736_0117_D`, RTX 4060 Ti):
 - Ultra+ 20K CUDA: 1,215.4 s end-to-end; `d1` OOM clasificado → `d2` exitoso,
   649,314 gaussianas, pico 1,698 MiB VRAM y `params_hash` persistido.
 - Frontier 30K y Grandmaster 40K siguen sin una corrida de aceptación publicada sobre esta
-  escena; la UI los marca como primera medición y no inventa ETA.
+  versión acumulativa; la UI los marca como primera medición y no inventa ETA.
 - La versión acumulativa `recon_60b23208db` (1.019 entradas, 10 fuentes) ya pasó el gate OpenSfM:
   componente compartido de 996 cámaras, 951.994 puntos y aporte válido de 10/10 fuentes. OpenMVS
   produjo 46.731.480 puntos densos; un `rc=139` post-write sin OOM fue recuperado validando
-  37.473.907 puntos filtrados y reanudando desde `odm_filterpoints`. Frontier sigue bloqueado
-  hasta publicación y browser QA de todos los productos ODM.
+  37.473.907 puntos filtrados y reanudando desde `odm_filterpoints`. El paquete final cerró con
+  37.386.157 puntos densos filtrados, ortofoto/DSM/DTM de 30.539×33.664, nube publicada de
+  795.450 puntos y malla de 744.416 vértices. Los assets requeridos pasaron publicación atómica y
+  browser QA; la versión fue promovida explícitamente y el gate de splat quedó abierto.
 
 ## Sitios que mejoran con el tiempo
 

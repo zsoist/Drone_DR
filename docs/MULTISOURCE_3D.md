@@ -42,8 +42,9 @@
 - Mundo carga una sola isla por `scene_id` (la versión activa); versiones antiguas siguen
   trazables pero no aparecen como lugares duplicados. Volar aplica el límite métrico solicitado.
 
-## Pendiente (honesto — NO validado / diferido)
-0. **Recuperación OpenSfM aprobada; publicación densa sigue siendo el gate:** el intento original de
+## Hito acumulativo cerrado (2026-07-14)
+
+0. **Recuperación OpenSfM, publicación densa y browser QA aprobados:** el intento original de
    `recon_60b23208db` terminó `rc=139` sin OOM al intentar fusionar tres componentes con IDs
    repetidos. La recuperación `3d-1784034358954095000-b1152f` preservó exactamente 1.019 imágenes,
    1.019 features, 1.019 matches y 282.878.995 bytes de tracks, archivó sólo el JSON truncado y
@@ -62,11 +63,14 @@
    `scene_dense_dense_filtered.mvs` (2.423.785.757 bytes; magic `MVSI`). El evento inmutable
    `odm_filter_postwrite_segfault_classified` distingue ese crash de un OOM.
 
-   La recuperación estricta `3d-1784044407571700000-efa0fa` valida tamaño/conteo del PLY y magic
-   del MVS antes de reanudar desde `odm_filterpoints`. Su filtro estadístico ya cerró con
-   37.386.157 puntos en 124,7 s; los productos posteriores siguen obligados a publicar y pasar QA.
-   El splat permanece cerrado hasta entonces. Después siguen exactamente Frontier 30K desde cero
-   y un Grandmaster 40K sobre la misma versión, ambos CUDA FULL; nunca fallback al Mac.
+   La recuperación estricta `3d-1784044407571700000-efa0fa` validó tamaño/conteo del PLY y magic
+   del MVS antes de reanudar desde `odm_filterpoints`. Su filtro estadístico cerró con 37.386.157
+   puntos en 124,7 s. El paquete final publicó ortofoto/DSM/DTM de 30.539×33.664, nube de 795.450
+   puntos y malla de 744.416 vértices; todos los assets requeridos y el navegador pasaron QA.
+   `recon_60b23208db` fue promovida explícitamente en `scene_64f22e89f2` y el evento inmutable
+   `odm_publish_browser_qa_completed` abrió el gate de splat. Las únicas aceptaciones siguientes
+   son Frontier 30K desde cero y un Grandmaster 40K sobre la misma versión, ambos CUDA FULL;
+   nunca fallback al Mac.
 
    Este documento registra sólo hitos cerrados. La etapa en ejecución, memoria y progreso medido
    viven en **3D → Trabajos** y en los eventos append-only, para no congelar telemetría efímera en
@@ -77,6 +81,9 @@
    archivos `.dmap`, porque cada subfase vuelve a escribir variantes y ese total sobrecontaría vistas.
    El filtro posterior conserva el total denso real y muestra `Point visibility checks` en puntos,
    con la ETA nativa, como subfase distinta.
+
+## Pendiente (honesto — NO validado / diferido)
+
 1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).
 2. **Presupuesto global de frames + dedup INTRA-fuente**: poda hoy es por-fuente. OJO (hallazgo del
    review): NO deduplicar cross-source — esos near-duplicates son el pegamento del co-registro.

@@ -36,8 +36,9 @@
 - [x] 7K, 15K y 20K reales sobre 238 cámaras; 20K verificó retry CUDA `d1→d2` por OOM.
 - [x] Gate OpenSfM de la reconstrucción acumulativa: 996/1.019 cámaras en el componente compartido,
   10/10 fuentes, merge `FULL`; recuperación densa post-write clasificada sin OOM.
-- [ ] Publicar y verificar el paquete ODM completo de esa versión; hasta entonces no se encola splat.
-- [ ] Frontier 30K CUDA FULL desde cero sobre la reconstrucción acumulativa, después del gate final ODM.
+- [x] Paquete ODM acumulativo publicado y verificado: ortho/DSM/DTM 30.539×33.664, nube, malla,
+  manifest de escena y browser QA; `recon_60b23208db` promovida explícitamente.
+- [ ] Frontier 30K CUDA FULL desde cero sobre la reconstrucción acumulativa validada.
 - [ ] Un Grandmaster 40K sobre esa misma versión validada, después de publicar y verificar 30K.
 
 ## V4 — Travel mode
