@@ -264,6 +264,20 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         regressed = observe.reconcile_mesh_artifacts(200)
         self.assertEqual(0.7813, regressed["progress"])
         self.assertIn("344/647", regressed["detail"])
+        self.assertEqual(
+            {
+                "stage": "odm-meshing",
+                "progress": 0.799,
+                "detail": ("2/3 ODM ultra en NVIDIA CUDA · "
+                           "ensamblando malla 2.5D final"),
+            },
+            observe("Reading /datasets/code/odm_meshing/"
+                    "odm_25dmesh.dirty.ply.24-14.bin"),
+        )
+        self.assertIn(
+            "ensamblando malla 2.5D final",
+            observe.reconcile_mesh_artifacts(0)["detail"],
+        )
 
     def test_cuda_odm_mesh_artifact_count_uses_remote_materialized_bins(self):
         with mock.patch.object(odm_gpu_lane, "_wsl", return_value="455\n") as run:

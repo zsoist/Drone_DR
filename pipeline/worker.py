@@ -924,6 +924,7 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
     mesh_scan_max_y = -1
     mesh_total = 0
     mesh_artifacts = 0
+    mesh_merging = False
     registered_camera_ids: set[str] = set()
     source_total = max(0, int(total_sources or 0))
     active_source_ids: set[str] = set()
@@ -948,6 +949,13 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
         }
 
     def mesh_fields() -> dict:
+        if mesh_merging:
+            return {
+                "stage": "odm-meshing",
+                "progress": 0.799,
+                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                           "ensamblando malla 2.5D final"),
+            }
         completed = min(mesh_total, mesh_artifacts) if mesh_total else mesh_artifacts
         progress = 0.76
         if mesh_total:
@@ -964,8 +972,11 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
         nonlocal loaded, logged_completed, matching_total, matching_completed
         nonlocal good_tracks, registered_cameras
         nonlocal reported_components, best_component_cameras, dense_points
-        nonlocal mesh_scan_max_x, mesh_scan_max_y, mesh_total
+        nonlocal mesh_scan_max_x, mesh_scan_max_y, mesh_total, mesh_merging
         text = line or ""
+        if re.search(r"Reading\s+\S*odm_25dmesh\.dirty\.ply\.\d+-\d+\.bin", text, re.I):
+            mesh_merging = True
+            return mesh_fields()
         scanning_block = re.search(r"Scanning block\s*\((\d+),(\d+)\)", text, re.I)
         if scanning_block:
             x, y = map(int, scanning_block.groups())
