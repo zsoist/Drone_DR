@@ -4,8 +4,13 @@
 > **RESUELTO**; no son incidentes activos. Los pendientes reales son sólo los ítems no
 > cerrados/reclasificados y los gates CUDA/escena enlazados desde [README.md](../README.md).
 
-## P0 — regresión ambiental de memoria MPS (2026-07-11, descubierta por la baseline)
-- [P0][producto] **El pipeline de HOY no puede reproducir el artefacto que shippeó el 7-jul.**
+## Historial cerrado — P0 memoria MPS (2026-07-11)
+
+> **RESUELTO / no operativo.** Esta investigación pertenece al trainer OpenSplat/MPS anterior.
+> El producto actual limita el Mac a Fast 1K/Medium 2K y ejecuta 7K–40K en CUDA estricto.
+> Se conserva el texto original como evidencia de cómo se aisló el cap introducido el 9-jul.
+
+- [P0][histórico] **El pipeline MPS de esa fecha no podía reproducir el artefacto que shippeó el 7-jul.**
   Cinematic sobre proj_...133809_0101_D: 7-jul pasó (3502s, 7000 steps, ~950k gaussianas,
   bajo el cap 11000). Hoy: OOM ×7 intentos (eval 22cám ×3 rungs, verbatim ×3, discriminador
   30cám full = réplica EXACTA de producción, peak 10715 MiB muerto ~step 2200 con solo
@@ -26,8 +31,12 @@
   {20260711-*-ultra/FAILED.json, discriminator-30cam/}, eval/logs/*.log.
   BLOQUEA: baseline Phase 1 (cinematic/ultra), splats nuevos de producción >fast.
 
-## P1 — descubierto por la baseline de eval (2026-07-11)
-- [P1][producto] **La escalera de escalones OOM no reduce el driver real de memoria.**
+## Historial cerrado — P1 escalera OOM MPS (2026-07-11)
+
+> **SUPERADO POR ARQUITECTURA.** Estos rungs locales ya no existen para tiers premium. La política
+> vigente conserva el tier CUDA y sólo permite `d1→d2` después de un OOM clasificado.
+
+- [P1][histórico] **La escalera MPS de esa fecha no reducía el driver real de memoria.**
   Evidencia: ultra OOM'eó los 3 rungs en ~200s c/u sobre la escena easy (22 cám,
   `eval/DJI_20260706133809_0101_D/20260711-085950-ultra/FAILED.json`). Los rungs
   bajan resolución (`-d 2`) pero el peak lo domina el CONTEO de gaussianas de la
@@ -43,8 +52,9 @@
   Implicación Phase 2.5: el sweep barre parámetros de densificación, no resolución
   — demostrado empíricamente antes de diseñarlo.
 
-Del bug hunt masivo de 8 tabs (72 confirmados): los HIGH + crashes + XSS + UX de impacto YA arreglados.
-Quedan 32 de menor severidad (polish: caret jumps, undo gaps, teardown en SPA, NaN de borde ya mitigados por los guards de fmt).
+La instantánea del bug hunt masivo contó 72 hallazgos. Los HIGH, crashes, XSS y defectos UX de
+impacto quedaron cerrados. Las listas fechadas siguientes conservan su propia marca
+`VERIFICADO/CERRADO`; sólo las secciones llamadas **pendientes** representan trabajo abierto.
 
 ## dron
 ✅ VERIFICADO 2026-07-10 (hunt Inicio+Vuelos+Dron): los 8 findings de abajo YA ESTABAN arreglados
