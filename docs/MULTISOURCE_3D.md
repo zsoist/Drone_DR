@@ -43,7 +43,7 @@
   trazables pero no aparecen como lugares duplicados. Volar aplica el límite métrico solicitado.
 
 ## Pendiente (honesto — NO validado / diferido)
-0. **Recuperación OpenSfM aprobada; productos densos todavía corriendo:** el intento original de
+0. **Recuperación OpenSfM aprobada; publicación densa sigue siendo el gate:** el intento original de
    `recon_60b23208db` terminó `rc=139` sin OOM al intentar fusionar tres componentes con IDs
    repetidos. La recuperación `3d-1784034358954095000-b1152f` preservó exactamente 1.019 imágenes,
    1.019 features, 1.019 matches y 282.878.995 bytes de tracks, archivó sólo el JSON truncado y
@@ -56,8 +56,21 @@
    `s5=41/41`, `s6=116/116`, `s7=214/214`, `s8=30/30`, `s9=72/88`; resultado `FULL`.
    El evento inmutable `odm_final_shared_component_audited` y la copia bajo
    `ops/evidence/3d-1784034358954095000-b1152f/opensfm/` conservan la prueba. El gate compartido
-   pasó, pero el splat sigue cerrado hasta que ODM termine, publique y valide sus productos densos.
-   Después siguen exactamente Frontier 30K y un Grandmaster 40K sobre la misma versión.
+   pasó. OpenMVS fusionó 993 depthmaps y produjo 46.731.480 puntos densos. El filtro de visibilidad
+   escribió artefactos válidos antes de un `rc=139` post-write sin OOM:
+   `scene_dense_dense_filtered.ply` (37.473.907 vértices; 1.049.269.665 bytes) y
+   `scene_dense_dense_filtered.mvs` (2.423.785.757 bytes; magic `MVSI`). El evento inmutable
+   `odm_filter_postwrite_segfault_classified` distingue ese crash de un OOM.
+
+   La recuperación estricta `3d-1784044407571700000-efa0fa` valida tamaño/conteo del PLY y magic
+   del MVS antes de reanudar desde `odm_filterpoints`. Su filtro estadístico ya cerró con
+   37.386.157 puntos en 124,7 s; los productos posteriores siguen obligados a publicar y pasar QA.
+   El splat permanece cerrado hasta entonces. Después siguen exactamente Frontier 30K desde cero
+   y un Grandmaster 40K sobre la misma versión, ambos CUDA FULL; nunca fallback al Mac.
+
+   Este documento registra sólo hitos cerrados. La etapa en ejecución, memoria y progreso medido
+   viven en **3D → Trabajos** y en los eventos append-only, para no congelar telemetría efímera en
+   documentación contractual.
    `odm-reconstruct` muestra conteo y ritmo medido en cámaras/min, pero no inventa una ETA a 1.019:
    OpenSfM puede terminar válidamente con menos cámaras registradas que enviadas. En profundidad,
    la UI separa `Estimated`/`Filtered`/`Fused depth-maps` y usa la ETA nativa de OpenMVS; no cuenta

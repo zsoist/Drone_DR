@@ -73,6 +73,11 @@ Evidencia viva 2026-07-14 (`DJI_20260712135736_0117_D`, RTX 4060 Ti):
   649,314 gaussianas, pico 1,698 MiB VRAM y `params_hash` persistido.
 - Frontier 30K y Grandmaster 40K siguen sin una corrida de aceptación publicada sobre esta
   escena; la UI los marca como primera medición y no inventa ETA.
+- La versión acumulativa `recon_60b23208db` (1.019 entradas, 10 fuentes) ya pasó el gate OpenSfM:
+  componente compartido de 996 cámaras, 951.994 puntos y aporte válido de 10/10 fuentes. OpenMVS
+  produjo 46.731.480 puntos densos; un `rc=139` post-write sin OOM fue recuperado validando
+  37.473.907 puntos filtrados y reanudando desde `odm_filterpoints`. Frontier sigue bloqueado
+  hasta publicación y browser QA de todos los productos ODM.
 
 ## Sitios que mejoran con el tiempo
 

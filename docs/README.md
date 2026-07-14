@@ -84,3 +84,5 @@ Design specs:
    current shared-component logic.
 5. Historical documents remain immutable except for supersession/freshness notices.
 6. Every `web/` documentation or code edit is followed by `pipeline/bump_web_version.py`.
+7. Live job stage, memory and progress belong to the jobs UI/SQLite/event log. Current Markdown
+   records only closed milestones and durable gates, never an unqualified “currently running”.

@@ -213,6 +213,19 @@ La recuperación archiva únicamente el `reconstruction.json` truncado y arranca
 workdir ante otro fallo y sigue obligada a pasar el gate post-ODM; por sí sola nunca autoriza
 ni encola un splat.
 
+OpenMVS también puede terminar con `rc=139` después de haber escrito por completo el cloud
+filtrado. Eso no se clasifica como OOM sin `memory.events`/`oom_kill` positivos. La única
+recuperación aceptable valida primero el PLY (header, conteo y tamaño), valida el magic `MVSI`
+del MVS y persiste el diagnóstico inmutable; sólo entonces puede reanudar ODM desde
+`odm_filterpoints`. En la evidencia de `recon_60b23208db`, el artefacto post-write contiene
+37.473.907 puntos y la recuperación produjo 37.386.157 puntos tras el filtro estadístico.
+Un archivo parcial, un magic incorrecto o una discrepancia de conteo obliga a reconstruir la
+fase; nunca se publica ni abre la compuerta de splat.
+
+La documentación no es el monitor de un job vivo. Para etapa, memoria, progreso y fallos manda
+**3D → Trabajos**, `jobs.db`, `job_events` y `ops/job_logs/`. Los Markdown actuales conservan
+sólo contratos y hitos cerrados con fecha/evidencia, evitando estados “corriendo” que envejecen.
+
 Prioridad de implementación/mantenimiento:
 
 1. Mantener power settings, LaunchAgents, OrbStack login y Tunnel sanos.
