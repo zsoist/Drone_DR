@@ -60,6 +60,20 @@ class SceneStoreTests(unittest.TestCase):
         self.assertEqual("registration_failed", by_id["B"]["status"])
         self.assertEqual("no shared component", by_id["B"]["reason"])
 
+    def test_preflight_rejection_is_distinct_from_registration_failure(self):
+        evidence = [{"clip_id": "A", "status": "eligible"}]
+        scene = scenes.create_scene("Casa", {}, ["A"], [], source_evidence=evidence)
+        scenes.add_version(scene["id"], "recon_sparse", ["A"], [],
+                           source_evidence=evidence)
+
+        scenes.record_contributions(scene["id"], "recon_sparse", [{
+            "clip_id": "A", "submitted": 4, "registered": 0, "merged": False,
+            "reason": "selección adaptativa dejó 4/5 frames mínimos",
+        }])
+
+        stored = scenes.get_scene(scene["id"])
+        self.assertEqual("insufficient_views", stored["source_evidence"][0]["status"])
+
     def test_server_builds_evidence_from_measured_track_metadata(self):
         with tempfile.TemporaryDirectory() as td:
             vault = Path(td)

@@ -76,6 +76,9 @@ class SplatFrontierUiContractTests(unittest.TestCase):
             self.assertIn(str(diameter), self.mundo)
         self.assertIn("row.ready", self.mundo)
 
+    def test_scene_ui_distinguishes_preflight_view_shortage(self):
+        self.assertIn("insufficient_views: 'pocas vistas'", self.tresd)
+
     def test_volar_enforces_explicit_circle_or_square_coverage(self):
         self.assertIn("COVERAGE_REQUEST", self.volar)
         self.assertIn("COVERAGE_SHAPE", self.volar)

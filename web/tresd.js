@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=191';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=191';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=191';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=191';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=191';
-  import { mountSplatViewer } from '/splatview.js?v=191';
+  import * as THREE from '/vendor/three180.module.js?v=192';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=192';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=192';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=192';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=192';
+  import { mountSplatViewer } from '/splatview.js?v=192';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1786,7 +1786,8 @@
     const evidenceById = Object.fromEntries((scene?.source_evidence || []).map(row => [row.clip_id, row]));
     const evidenceLabels = {
       integrated: 'integrado', eligible: 'elegible', duplicate: 'duplicado',
-      insufficient_overlap: 'sin solape', registration_failed: 'no registró',
+      insufficient_overlap: 'sin solape', insufficient_views: 'pocas vistas',
+      registration_failed: 'no registró',
     };
     const { ov, close } = openModal(`${icon('layers')} Mejorar esta escena`, `
       <p class="footer-note" style="margin:0 0 12px">Cada mejora crea una versión nueva: combina todas las

@@ -14,7 +14,7 @@ _LOCK = threading.RLock()
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 ALTITUDE_BANDS_M = (100, 200, 400, 600, 1000)
 SOURCE_STATUSES = {"integrated", "eligible", "duplicate", "insufficient_overlap",
-                   "registration_failed"}
+                   "insufficient_views", "registration_failed"}
 
 
 def _now() -> str:
@@ -75,7 +75,8 @@ def _merge_evidence(existing, incoming) -> list[dict]:
         previous = rows.get(clip_id, {})
         # A later measured record may enrich an old inventory row. Registration
         # status only changes through record_contributions(), not mere discovery.
-        if previous.get("status") in ("integrated", "registration_failed"):
+        if previous.get("status") in ("integrated", "insufficient_views",
+                                      "registration_failed"):
             row["status"] = previous["status"]
             if previous.get("reason") and not row.get("reason"):
                 row["reason"] = previous["reason"]
@@ -290,7 +291,10 @@ def record_contributions(scene_id: str, reconstruction_id: str, contributions) -
             row = evidence_by_id.get(clip_id, _evidence({"clip_id": clip_id}))
             attempt = {"version_id": reconstruction_id, "at": _now(), **contribution}
             row["attempts"] = [*(row.get("attempts") or []), attempt][-12:]
-            row.update({"status": "integrated" if merged else "registration_failed",
+            status = ("integrated" if merged else
+                      "insufficient_views" if registered == 0 and 0 < submitted < 5 else
+                      "registration_failed")
+            row.update({"status": status,
                         "reason": reason, "last_version": reconstruction_id,
                         "submitted": submitted, "registered": registered})
             if submitted:
