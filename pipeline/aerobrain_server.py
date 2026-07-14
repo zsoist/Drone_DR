@@ -1080,7 +1080,10 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
                          if row.get("id") and row.get("kind") in ("3d", "splat") else [])
     terminal = structured_events[-1] if structured_events else {}
     checkpoint_event = next((event for event in reversed(structured_events)
-                             if event.get("event") == "cuda_checkpoint"), None)
+                             if event.get("event") in (
+                                 "cuda_checkpoint",
+                                 "recovery_checkpoint_reverified",
+                             )), None)
     checkpoint_data = (checkpoint_event or {}).get("data") or {}
     recovered = any(event.get("event") in ("browser_qa_recovered", "recovered")
                     for event in structured_events)

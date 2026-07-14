@@ -458,6 +458,37 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertNotIn("checkpoint_path", summary)
         self.assertNotIn("/root/", json.dumps(summary))
 
+    def test_queued_splat_summary_exposes_reverified_recovery_checkpoint(self):
+        jid = "splat-checkpoint-reverified-fixture"
+        with jobs._LOCK, jobs._conn() as conn:
+            conn.execute("INSERT INTO jobs (id,kind,label,status,detail,started,spec) "
+                         "VALUES (?,?,?,?,?,?,?)",
+                         (jid, "splat", "recon_checkpoint", "queued", "en cola", 1,
+                          json.dumps({
+                              "clip_id": "recon_checkpoint",
+                              "preset": "frontier",
+                              "resume_step": 4000,
+                              "resume_checkpoint":
+                                  "/root/gpu-jobs/checkpoints/private/step-000004000.ckpt",
+                          })))
+        jobs.event(jid, "recovery_checkpoint_reverified",
+                   "checkpoint 4,000 íntegro antes del claim CUDA", data={
+                       "step": 4000,
+                       "bytes": 156211090,
+                       "sha256": "abc123",
+                       "resolution": "full",
+                       "downscale": 1,
+                   })
+
+        summary = server.normalize_job_summary(jobs.get(jid))
+
+        self.assertTrue(summary["resume_available"])
+        self.assertEqual(4000, summary["checkpoint_step"])
+        self.assertEqual(156211090, summary["checkpoint_bytes"])
+        self.assertEqual(4000, summary["resumed_from_step"])
+        self.assertNotIn("checkpoint_path", summary)
+        self.assertNotIn("/root/", json.dumps(summary))
+
     def test_recovered_done_job_ends_with_recovery_not_historical_traceback(self):
         jid = "splat-recovered-fixture"
         with jobs._LOCK, jobs._conn() as conn:
