@@ -32,6 +32,7 @@ from gpu_lane import SSH_HOST, NTFS_TRANSFER, ensure_awake, _run, _wsl
 
 REMOTE_ODM = "/root/gpu-jobs/odm"
 WSL_TRANSFER = "/mnt/c/Users/reyes/gpu-transfer"
+LOCAL_TRANSFER_TMP = Path("/Volumes/SSD/drone-vault/ops/transfer")
 # dirs que el publish del Mac consume — images/ NO viaja de vuelta (ya vive alla)
 OUTPUT_DIRS = ("opensfm", "odm_report", "odm_georeferencing", "odm_filterpoints",
                "odm_meshing", "odm_texturing", "odm_texturing_25d", "odm_dem",
@@ -222,7 +223,10 @@ cd {REMOTE_ODM}/{name}
 tar cf {tar_remote} $(for d in {' '.join(OUTPUT_DIRS)}; do [ -e "$d" ] && echo "$d"; done)
 echo TAR_OK $(stat -c%s {tar_remote})
 """, timeout=3600, label="empacar outputs")
-    with tempfile.TemporaryDirectory(prefix="odm-cuda-") as td:
+    # ODM ultra can exceed the Mac system volume's free space (34+ GiB measured).
+    # Stage the remote tar on the vault SSD, beside its final destination.
+    LOCAL_TRANSFER_TMP.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="odm-cuda-", dir=LOCAL_TRANSFER_TMP) as td:
         local_tar = Path(td) / "out.tar"
         _run(["scp", "-q", f"{SSH_HOST}:{NTFS_TRANSFER}/odm-{name}-out.tar",
               str(local_tar)], 3600, "scp outputs")

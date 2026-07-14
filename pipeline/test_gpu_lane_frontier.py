@@ -441,6 +441,31 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertIn("scene_dense_dense_filtered.ply", command)
         self.assertIn("scene_dense_dense_filtered.mvs", command)
 
+    def test_cuda_odm_fetch_stages_large_tar_on_vault_volume(self):
+        with tempfile.TemporaryDirectory() as td:
+            transfer_root = Path(td) / "ssd-transfer"
+            temp_context = mock.MagicMock()
+            temp_context.__enter__.return_value = str(transfer_root / "odm-cuda-test")
+            members = [mock.Mock(name="member") for _ in range(2)]
+            members[0].name = "opensfm/reconstruction.json"
+            members[1].name = "odm_orthophoto/odm_orthophoto.tif"
+            archive = mock.MagicMock()
+            archive.__enter__.return_value.getmembers.return_value = members
+            with (
+                mock.patch.object(odm_gpu_lane, "LOCAL_TRANSFER_TMP", transfer_root,
+                                  create=True),
+                mock.patch.object(odm_gpu_lane, "_wsl", return_value="TAR_OK 34336083751"),
+                mock.patch.object(odm_gpu_lane, "_run"),
+                mock.patch.object(odm_gpu_lane.tempfile, "TemporaryDirectory",
+                                  return_value=temp_context) as temporary_directory,
+                mock.patch.object(odm_gpu_lane.tarfile, "open", return_value=archive),
+            ):
+                got = odm_gpu_lane.fetch_outputs(Path(td), "3d-large-safe")
+
+        self.assertEqual(["odm_orthophoto", "opensfm"], got)
+        temporary_directory.assert_called_once_with(
+            prefix="odm-cuda-", dir=transfer_root)
+
     def test_odm_resume_skips_transfer_and_reruns_from_opensfm(self):
         with tempfile.TemporaryDirectory() as td:
             proj = Path(td)
