@@ -957,6 +957,16 @@ details.explain b { color: var(--text); font-weight: 600; }
   .job-card .jc-head { flex-wrap: wrap; row-gap: 5px; }
   .job-card .jc-title { font-size: 12.5px; flex: 1 1 60%; }
   .job-card .jc-status { font-size: 9.5px; padding: 2px 8px; letter-spacing: 0.5px; }
+  .job-card .jc-eyebrow { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 7px; }
+  .job-card .jc-eyebrow > .spacer { display: none; }
+  .job-card .jc-eyebrow > .jc-backend,
+  .job-card .jc-eyebrow > .jc-status { grid-row: 2; width: max-content; max-width: 100%; }
+  .job-card .jc-eyebrow > .jc-backend { grid-column: 1; }
+  .job-card .jc-eyebrow > .jc-status { grid-column: 2; justify-self: end; white-space: nowrap; }
+  .job-card .jc-meta { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .job-card .jc-meta span { min-width: 0; overflow-wrap: anywhere; }
+  .job-card .jc-run-detail,
+  .job-card .jc-quality span { overflow-wrap: anywhere; }
   .jc-steps { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .jc-steps::-webkit-scrollbar { display: none; }
   .job-card .jc-meta { font-size: 10.5px; }

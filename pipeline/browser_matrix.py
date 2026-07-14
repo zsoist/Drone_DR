@@ -21,6 +21,7 @@ import base64
 import json
 import time
 import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from browser_gate import DEFAULT_BASE_URL, QA_DIR, launch_chrome, new_page
@@ -51,6 +52,21 @@ def expected_splat_path(cid: str) -> str:
         str(s.get("archived_at") or ""),
     ))
     return rows[0].get("path") or rows[0].get("name")
+
+
+def requires_splat_asset(surfaces: list[str] | None) -> bool:
+    """Share/workspace render assets; the operational jobs console does not."""
+    selected = surfaces or ["share", "workspace", "jobs"]
+    return any(surface in ("share", "workspace") for surface in selected)
+
+
+def select_job_target(rows: list[dict], cid: str) -> dict:
+    """Pick the newest API job by immutable label, not by user-facing card copy."""
+    target = next((row for row in rows
+                   if row.get("kind") == "splat" and row.get("label") == cid), None)
+    if target is None:
+        raise RuntimeError(f"no splat jobs in API for {cid}")
+    return target
 
 
 def js(s: str) -> str:
@@ -213,6 +229,9 @@ def run_workspace(cdp, base_url: str, cid: str, viewport: str, expected_path: st
 
 def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -> dict:
     """Operational console: truthful quality, responsive layout and real full-log drawer."""
+    with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/jobs", timeout=15) as response:
+        target = select_job_target(json.loads(response.read()).get("jobs") or [], cid)
+    target_id = str(target["id"])
     cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/tresd.html"})
     wait_for(cdp, "document.body && /Proyectos 3D/i.test(document.body.innerText)",
              timeout=45, label="3D jobs shell")
@@ -225,8 +244,8 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
         raise RuntimeError("tab Trabajos ausente")
     state = wait_for(cdp, js(f"""
       const cards = [...document.querySelectorAll('#jobs3d .job-card')];
-      const splats = cards.filter(x => x.dataset.kind === 'splat' && x.innerText.includes({cid!r}));
-      const splat = splats[0];
+      const splats = cards.filter(x => x.dataset.kind === 'splat');
+      const splat = cards.find(x => x.dataset.jid === {json.dumps(target_id)});
       if (!splat) return null;
       const fallback = splats.find(x => /listo con fallback/i.test(x.innerText));
       const consoleRect = document.querySelector('#jobs3d').getBoundingClientRect();
@@ -238,7 +257,8 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
         summaries: document.querySelectorAll('#job-summary button').length,
         typeFilters: document.querySelectorAll('[data-job-kind]').length,
         text: splat.innerText,
-        historyText: splats.map(x => x.innerText).join('\n---\n'),
+        status: splat.dataset.status,
+        historyText: splats.map(x => x.innerText).join('\\n---\\n'),
         jid: splat.dataset.jid,
         logJid: (fallback || splat).dataset.jid,
         fallbackJid: fallback?.dataset.jid || '',
@@ -251,12 +271,17 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
     """), timeout=45, label="jobs console cards")
     if state["summaries"] < 4 or state["typeFilters"] < 4 or state["cards"] < 1:
         raise RuntimeError(f"consola de trabajos incompleta: {state}")
-    for truth in ("Ultra", "15k iteraciones", "NVIDIA CUDA", "Listo", "238 cámaras"):
-        if truth.lower() not in state["text"].lower():
-            raise RuntimeError(f"último trabajo splat no muestra {truth!r}: {state['text'][:500]}")
-    for truth in ("Medium", "Listo con fallback"):
-        if truth.lower() not in state["historyText"].lower():
-            raise RuntimeError(f"historial splat no muestra {truth!r}: {state['historyText'][:700]}")
+    if state["status"] != target.get("status"):
+        raise RuntimeError(f"estado UI/API divergente: ui={state['status']} api={target.get('status')}")
+    requested_iters = int(target.get("requested_iterations") or 0)
+    if requested_iters:
+        iter_label = f"{requested_iters // 1000}k" if requested_iters % 1000 == 0 else str(requested_iters)
+        if iter_label.lower() not in state["text"].lower():
+            raise RuntimeError(f"trabajo no muestra iteraciones solicitadas {iter_label}: {state['text'][:500]}")
+    if target.get("requested_backend") == "cuda" and "cuda" not in state["text"].lower():
+        raise RuntimeError(f"trabajo CUDA perdió la política/backend visible: {state['text'][:500]}")
+    if target.get("current_iteration") is not None and "iter/s" not in state["text"].lower():
+        raise RuntimeError(f"trabajo vivo no muestra ritmo medido: {state['text'][:700]}")
     if state["overflow"] > 3:
         raise RuntimeError(f"overflow horizontal {state['overflow']}px en jobs/{viewport}")
     if state["cardWidth"] < state["consoleWidth"] - 3:
@@ -295,7 +320,7 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
 
 def run_matrix(cid: str, base_url: str, viewports: list[str], surfaces: list[str] | None = None) -> list[dict]:
     results = []
-    expected_path = expected_splat_path(cid)
+    expected_path = expected_splat_path(cid) if requires_splat_asset(surfaces) else ""
     runners = {"share": run_share, "workspace": run_workspace, "jobs": run_jobs}
     for vp in viewports:
         for surface in surfaces or ["share", "workspace", "jobs"]:
