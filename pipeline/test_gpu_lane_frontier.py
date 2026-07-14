@@ -286,6 +286,31 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertIn("odm_25dmesh.dirty.ply.*.bin", command)
 
+    def test_cuda_odm_late_stage_markers_keep_ui_on_the_real_product_phase(self):
+        observe = worker.odm_cuda_feature_progress(1019, "ultra", total_sources=10)
+
+        cases = (
+            ("Running mvs_texturing stage", "odm-texturing", 0.80,
+             "texturizando malla 3D"),
+            ("Finished mvs_texturing stage", "odm-texturing", 0.86,
+             "texturas 3D completadas"),
+            ("Running odm_georeferencing stage", "odm-georeferencing", 0.86,
+             "georreferenciando productos"),
+            ("Running odm_dem stage", "odm-dem", 0.88,
+             "generando DSM/DTM"),
+            ("Running odm_orthophoto stage", "odm-orthophoto", 0.92,
+             "generando ortofoto"),
+            ("Running odm_postprocess stage", "odm-postprocess", 0.95,
+             "cerrando productos ODM"),
+        )
+        for line, stage, progress, detail in cases:
+            with self.subTest(line=line):
+                self.assertEqual(
+                    {"stage": stage, "progress": progress,
+                     "detail": f"2/3 ODM ultra en NVIDIA CUDA · {detail}"},
+                    observe(line),
+                )
+
     def test_odm_registration_never_calls_disconnected_components_full(self):
         with tempfile.TemporaryDirectory() as td:
             proj = Path(td)

@@ -974,6 +974,37 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
         nonlocal reported_components, best_component_cameras, dense_points
         nonlocal mesh_scan_max_x, mesh_scan_max_y, mesh_total, mesh_merging
         text = line or ""
+        late_stage = re.search(
+            r"(Running|Finished)\s+(mvs_texturing|odm_texturing|"
+            r"odm_georeferencing|odm_dem|odm_orthophoto|odm_report|"
+            r"odm_postprocess)\s+stage",
+            text, re.I)
+        if late_stage:
+            verb, name = (part.lower() for part in late_stage.groups())
+            stages = {
+                "mvs_texturing": ("odm-texturing", 0.80, 0.86,
+                                  "texturizando malla 3D", "texturas 3D completadas"),
+                "odm_texturing": ("odm-texturing", 0.80, 0.86,
+                                  "texturizando malla 3D", "texturas 3D completadas"),
+                "odm_georeferencing": ("odm-georeferencing", 0.86, 0.88,
+                                       "georreferenciando productos",
+                                       "georreferenciación completada"),
+                "odm_dem": ("odm-dem", 0.88, 0.92,
+                            "generando DSM/DTM", "DSM/DTM completados"),
+                "odm_orthophoto": ("odm-orthophoto", 0.92, 0.95,
+                                   "generando ortofoto", "ortofoto completada"),
+                "odm_report": ("odm-postprocess", 0.95, 0.96,
+                               "cerrando productos ODM", "productos ODM cerrados"),
+                "odm_postprocess": ("odm-postprocess", 0.95, 0.96,
+                                    "cerrando productos ODM", "productos ODM cerrados"),
+            }
+            stage, lo, hi, active, finished = stages[name]
+            return {
+                "stage": stage,
+                "progress": hi if verb == "finished" else lo,
+                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                           f"{finished if verb == 'finished' else active}"),
+            }
         if re.search(r"Reading\s+\S*odm_25dmesh\.dirty\.ply\.\d+-\d+\.bin", text, re.I):
             mesh_merging = True
             return mesh_fields()
