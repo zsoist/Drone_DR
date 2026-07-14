@@ -283,6 +283,10 @@ function jobDataGrid(j) {
       : cacheMiB ? `${Math.round(cacheMiB)} MiB` : '';
     cells.push(['CACHE IMÁGENES', `${String(j.image_cache_device).toUpperCase()}${cacheSize ? ` · ${cacheSize}` : ''}`]);
   }
+  if (j.resumed_from_step)
+    cells.push(['REANUDADO DESDE', `Paso ${Number(j.resumed_from_step).toLocaleString()}`]);
+  else if (j.resume_available && j.checkpoint_step)
+    cells.push(['CHECKPOINT SEGURO', `Paso ${Number(j.checkpoint_step).toLocaleString()}`]);
   if (j.gaussians) cells.push(['GAUSSIANAS', j.gaussians >= 1e6
     ? (j.gaussians / 1e6).toFixed(2) + ' M' : Math.round(j.gaussians / 1000) + ' k']);
   if (!cells.length) return '';
@@ -313,6 +317,10 @@ function jobCard(j, flightsIdx, entering = true) {
     quality.push('<span><b>Política</b> · CUDA estricto</span>');
   if (j.kind === 'splat' && j.image_cache_device)
     quality.push(`<span title="La resolución de entrada no cambia"><b>Cache</b> · ${String(j.image_cache_device).toUpperCase()}${j.image_cache_device === 'cpu' ? ' · VRAM libre para gaussianas' : ' · acceso rápido en GPU'}</span>`);
+  if (j.kind === 'splat' && j.resume_available && j.checkpoint_step)
+    quality.push(`<span><b>Recuperación</b> · checkpoint ${Number(j.checkpoint_step).toLocaleString()} verificado</span>`);
+  if (j.kind === 'splat' && j.resumed_from_step)
+    quality.push(`<span><b>Continuidad</b> · reanudado desde ${Number(j.resumed_from_step).toLocaleString()}</span>`);
   const attempts = Array.isArray(j.attempts) ? j.attempts : [];
   const attemptScales = [...new Set(attempts.map(a => Number(a.d)).filter(Boolean))];
   const facts = [
@@ -464,6 +472,7 @@ async function pollJobs(el, every = 2500, onDone = null) {
       // re-disparaba animaciones y producía el jitter de 1s en la card activa
       const hash = j => [j.status, j.stage, j.requested_preset,
         j.effective_preset, j.outcome, j.backend,
+        j.resume_available ? j.checkpoint_step : '', j.resumed_from_step || '',
         j.current_iteration != null ? 'live-iterations' : '',
         (j.stage_history || []).length].join('|');
       const patchLive = (node, j) => {

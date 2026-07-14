@@ -90,6 +90,32 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertIn("nvidia-smi", command)
         self.assertIn("telemetry-frontier-fixture.csv", command)
 
+    def test_resume_command_loads_exact_checkpoint_without_resetting_target(self):
+        command = gpu_lane.train_script(
+            "frontier-recovery", 30_000, 1, "resume-run",
+            resume_checkpoint=(
+                "/root/gpu-jobs/checkpoints/splat-safe/step-000004000.ckpt"),
+        )
+
+        self.assertIn("--load-checkpoint /root/gpu-jobs/checkpoints/splat-safe/step-000004000.ckpt", command)
+        self.assertIn("--max-num-iterations 30000", command)
+        self.assertIn("--downscale-factor 1", command)
+
+    def test_resume_checkpoint_is_confined_to_checkpoint_vault(self):
+        valid = "/root/gpu-jobs/checkpoints/splat-safe/step-000004000.ckpt"
+        self.assertEqual(valid, gpu_lane.validate_resume_checkpoint(valid))
+        for invalid in ("/tmp/model.ckpt", "../../model.ckpt",
+                        "/root/gpu-jobs/checkpoints/a/../escape.ckpt"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                gpu_lane.validate_resume_checkpoint(invalid)
+
+    def test_failed_cuda_attempt_archives_latest_checkpoint_before_cleanup(self):
+        source = inspect.getsource(worker.run_splat_cuda)
+
+        self.assertIn("archive_latest_checkpoint", source)
+        self.assertIn('"cuda_checkpoint"', source)
+        self.assertIn("checkpoint=checkpoint", source)
+
     def test_cuda_environment_is_activated_before_telemetry_is_backgrounded(self):
         command = gpu_lane.train_script(
             "frontier-fixture", 30_000, 1, "run-fixture")
@@ -172,6 +198,7 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertIn('"image_cache"', source)
         self.assertIn('"image_cache_device"', inspect.getsource(worker.run_splat))
         self.assertIn("image_cache_device", worker._SPLAT_RUN_FIELDS)
+        self.assertIn("resumed_from_step", worker._SPLAT_RUN_FIELDS)
 
     def test_cleanup_is_bounded_and_refuses_active_names(self):
         with self.assertRaisesRegex(ValueError, "activo"):

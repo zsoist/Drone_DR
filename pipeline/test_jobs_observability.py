@@ -295,6 +295,26 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual(6409.1, summary["decoded_image_cache_mib"])
         self.assertEqual(818.8, summary["gpu_cache_budget_mib"])
 
+    def test_splat_summary_exposes_recovery_checkpoint_without_remote_path(self):
+        jid = "splat-checkpoint-fixture"
+        with jobs._LOCK, jobs._conn() as conn:
+            conn.execute("INSERT INTO jobs (id,kind,label,status,detail,started,spec) "
+                         "VALUES (?,?,?,?,?,?,?)",
+                         (jid, "splat", "recon_checkpoint", "running", "entrenando", 1,
+                          json.dumps({"clip_id": "recon_checkpoint", "preset": "frontier"})))
+        jobs.event(jid, "cuda_checkpoint", "checkpoint 4000 preservado", data={
+            "path": "/root/gpu-jobs/checkpoints/private/step-000004000.ckpt",
+            "step": 4000, "bytes": 156211090, "sha256": "abc123",
+        })
+
+        summary = server.normalize_job_summary(jobs.get(jid))
+
+        self.assertTrue(summary["resume_available"])
+        self.assertEqual(4000, summary["checkpoint_step"])
+        self.assertEqual(156211090, summary["checkpoint_bytes"])
+        self.assertNotIn("checkpoint_path", summary)
+        self.assertNotIn("/root/", json.dumps(summary))
+
     def test_recovered_done_job_ends_with_recovery_not_historical_traceback(self):
         jid = "splat-recovered-fixture"
         with jobs._LOCK, jobs._conn() as conn:

@@ -431,7 +431,8 @@ _SPLAT_RUN_FIELDS = (
     "remote_peak_vram_mib", "peak_source", "mem_cap_mib", "caps_provisional",
     "remote_gpu", "remote_driver", "cuda_runtime", "torch", "gsplat",
     "telemetry_samples", "image_cache_device", "decoded_image_cache_mib",
-    "gpu_cache_budget_mib", "trainer", "trainer_args", "params_hash", "stage_timings",
+    "gpu_cache_budget_mib", "resumed_from_step", "trainer", "trainer_args",
+    "params_hash", "stage_timings",
 )
 
 
@@ -1205,7 +1206,9 @@ def run_3d(j: dict):
 
 def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
                    iters: int, downscale: int = 1, *, train_args: list | None = None,
-                   reuse_dataset: bool = False, timeout_s: int = 4 * 3600) -> dict:
+                   reuse_dataset: bool = False, timeout_s: int = 4 * 3600,
+                   resume_checkpoint: str | None = None,
+                   resume_step: int | None = None) -> dict:
     """Run one strict CUDA resolution attempt and return measured evidence."""
     import gpu_lane
     from ply2splat import ply_to_splat
@@ -1258,8 +1261,14 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
                         detail=f"entrenando {iters} iteraciones en NVIDIA CUDA · entrada d{downscale}",
                         stage="train", progress=0.3, backend="NVIDIA CUDA")
         run_id = f"gpu-{int(time.time())}"
+        resume_checkpoint = gpu_lane.validate_resume_checkpoint(resume_checkpoint)
+        if resume_checkpoint:
+            jobstore.event(j["id"], "cuda_resumed",
+                           f"reanudando checkpoint exacto desde paso {int(resume_step or 0):,}",
+                           data={"step": int(resume_step or 0), "downscale": downscale})
         gpu_lane.install_train_script(name, iters, downscale, run_id,
-                                      train_args=effective_train_args)
+                                      train_args=effective_train_args,
+                                      resume_checkpoint=resume_checkpoint)
         t0 = time.time()
         rc = jobstore.run_tracked(
             j["id"], gpu_lane.train_argv(name, iters, downscale, run_id,
@@ -1271,7 +1280,13 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
             if _cancelled(j["id"]):
                 log += "\ncancelled by user"
             kind = gpu_lane.classify_cuda_failure(rc, log)
-            raise gpu_lane.CudaLaneError(kind, f"ns-train CUDA falló ({kind}, rc={rc})", rc=rc)
+            checkpoint = gpu_lane.archive_latest_checkpoint(name, j["id"])
+            if checkpoint:
+                jobstore.event(j["id"], "cuda_checkpoint",
+                               f"checkpoint {checkpoint['step']:,} preservado para recuperación",
+                               level="warning", data=checkpoint)
+            raise gpu_lane.CudaLaneError(kind, f"ns-train CUDA falló ({kind}, rc={rc})",
+                                         rc=rc, checkpoint=checkpoint)
 
         m = {"train_s": round(time.time() - t0, 1)}
         jobstore.update(j["id"], detail="exportando y trayendo el splat CUDA",
@@ -1293,6 +1308,7 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
             "bridge_free_bytes": info.get("bridge_free_bytes"),
             "image_cache": image_cache,
             "trainer_args": effective_train_args,
+            "resumed_from_step": int(resume_step or 0) if resume_checkpoint else None,
         }
         jobstore.event(j["id"], "cuda_trained",
                        f"{iters} iters d{downscale} en {m['train_s']}s · "
@@ -1364,6 +1380,9 @@ def run_splat(j: dict):
         cuda_args = list((requested.get("cuda") or {}).get("train_args") or [])
         effective_train_args = list(cuda_args)
         resolution = normalize_splat_request(j.get("spec") or {})["resolution"]
+        resume_checkpoint = j["spec"].get("resume_checkpoint")
+        resume_step = int(j["spec"].get("resume_step") or 0)
+        resume_downscale = int(j["spec"].get("resume_downscale") or 1)
         for attempt_no, policy in enumerate(attempt_plan, start=1):
             effective_d = int(policy["d"])
             label = (f"{requested['label']} · NVIDIA CUDA · entrada "
@@ -1383,6 +1402,10 @@ def run_splat(j: dict):
                     j, proj, cid, stage, tmp_out, iters, effective_d,
                     train_args=cuda_args, reuse_dataset=attempt_no > 1,
                     timeout_s=int(requested.get("timeout") or 4 * 3600),
+                    resume_checkpoint=(resume_checkpoint if attempt_no == 1
+                                       and effective_d == resume_downscale else None),
+                    resume_step=(resume_step if attempt_no == 1
+                                 and effective_d == resume_downscale else None),
                 )
             except gpu_lane.CudaLaneError as exc:
                 attempt_row = {
@@ -1393,6 +1416,9 @@ def run_splat(j: dict):
                     bool(attempt_no < len(attempt_plan)
                          and gpu_lane.should_retry_cuda(exc.kind, resolution, effective_d)),
                 }
+                if exc.checkpoint:
+                    attempt_row["checkpoint_step"] = exc.checkpoint.get("step")
+                    attempt_row["resume_available"] = True
                 attempts.append(attempt_row)
                 jobstore.event(j["id"], "cuda_attempt_failed",
                                f"{label} falló: {exc.kind}",
@@ -1558,6 +1584,7 @@ def run_splat(j: dict):
         "image_cache_device": (cuda_metrics.get("image_cache") or {}).get("device"),
         "decoded_image_cache_mib": (cuda_metrics.get("image_cache") or {}).get("decoded_mib"),
         "gpu_cache_budget_mib": (cuda_metrics.get("image_cache") or {}).get("gpu_cache_budget_mib"),
+        "resumed_from_step": cuda_metrics.get("resumed_from_step"),
     })
     quality["trainer"] = "nerfstudio-splatfacto" if is_cuda else "opensplat"
     quality["trainer_args"] = effective_train_args
@@ -1606,7 +1633,8 @@ def run_splat(j: dict):
                                  "effective_downscale", "effective_resolution", "input_scale",
                                  "final_loss", "peak_mib", "remote_peak_vram_mib", "mem_cap_mib",
                                  "remote_gpu", "image_cache_device", "decoded_image_cache_mib",
-                                 "gpu_cache_budget_mib", "trainer", "params_hash", "backend", "fallback")}
+                                 "gpu_cache_budget_mib", "resumed_from_step", "trainer",
+                                 "params_hash", "backend", "fallback")}
             scenestore.update_version(scene["id"], version_id, metrics=metrics)
             # The first rebuild was needed for browser_gate; publish the new scene metrics too.
             rebuild_index()

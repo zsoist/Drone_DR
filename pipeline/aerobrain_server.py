@@ -990,6 +990,9 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
     structured_events = (jobstore.events(row["id"])
                          if row.get("id") and row.get("kind") in ("3d", "splat") else [])
     terminal = structured_events[-1] if structured_events else {}
+    checkpoint_event = next((event for event in reversed(structured_events)
+                             if event.get("event") == "cuda_checkpoint"), None)
+    checkpoint_data = (checkpoint_event or {}).get("data") or {}
     recovered = any(event.get("event") in ("browser_qa_recovered", "recovered")
                     for event in structured_events)
     if (row.get("status") == "done" and terminal.get("event") in
@@ -1026,6 +1029,9 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
                           if row.get("kind") in ("3d", "splat") else []),
         "fallback": False,
         "artifact_exists": bool(row.get("artifact") and (VAULT / str(row["artifact"])).exists()),
+        "resume_available": bool(checkpoint_event),
+        "checkpoint_step": checkpoint_data.get("step"),
+        "checkpoint_bytes": checkpoint_data.get("bytes"),
     })
     for key in ("current_iteration", "target_iterations", "iteration_pct",
                 "iteration_time_ms", "iterations_per_second", "eta_remaining_s",
@@ -1091,6 +1097,7 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
             "image_cache_device": run.get("image_cache_device"),
             "decoded_image_cache_mib": run.get("decoded_image_cache_mib"),
             "gpu_cache_budget_mib": run.get("gpu_cache_budget_mib"),
+            "resumed_from_step": run.get("resumed_from_step") or spec.get("resume_step"),
             "attempts": run.get("attempts") or [],
             "cameras_registered": run.get("cameras"),
         })

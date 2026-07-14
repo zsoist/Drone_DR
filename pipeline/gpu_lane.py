@@ -42,6 +42,7 @@ PC_WAKE = Path.home() / ".local/scripts/pc-wake"
 REMOTE_JOBS = "/root/gpu-jobs"
 REMOTE_DATA = f"{REMOTE_JOBS}/data"
 REMOTE_RUNS = f"{REMOTE_JOBS}/runs"
+REMOTE_CHECKPOINTS = f"{REMOTE_JOBS}/checkpoints"
 NTFS_TRANSFER = "C:/Users/reyes/gpu-transfer"    # puente binario-seguro WSL->Mac
 WSL_TRANSFER = "/mnt/c/Users/reyes/gpu-transfer"
 
@@ -54,10 +55,12 @@ _SAFE_NAME = re.compile(r"[A-Za-z0-9._-]+")
 
 
 class CudaLaneError(RuntimeError):
-    def __init__(self, kind: str, message: str, *, rc: int | None = None):
+    def __init__(self, kind: str, message: str, *, rc: int | None = None,
+                 checkpoint: dict | None = None):
         super().__init__(message)
         self.kind = kind
         self.rc = rc
+        self.checkpoint = checkpoint
 
 
 def classify_cuda_failure(returncode: int | None, output: str) -> str:
@@ -272,13 +275,51 @@ def with_image_cache_policy(train_args: list[str] | tuple[str, ...] | None,
     return [*args, flag, device]
 
 
+def validate_resume_checkpoint(path: str | None) -> str | None:
+    """Confine trainer resume input to immutable checkpoint evidence on the PC."""
+    if path is None:
+        return None
+    value = str(path)
+    pattern = rf"{re.escape(REMOTE_CHECKPOINTS)}/[A-Za-z0-9._-]+/step-\d{{9}}\.ckpt"
+    if not re.fullmatch(pattern, value):
+        raise ValueError(f"checkpoint CUDA fuera del vault permitido: {value}")
+    return value
+
+
+def archive_latest_checkpoint(name: str, job_id: str) -> dict | None:
+    """Copy the latest trainer checkpoint outside the disposable run directory."""
+    name = _safe_name(name)
+    job_id = _safe_name(job_id)
+    out = _wsl(REMOTE_PRELUDE + f"""
+SRC=$(find {REMOTE_RUNS}/{name} -type f -name 'step-*.ckpt' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+if [ -z "$SRC" ]; then echo NO_CHECKPOINT; exit 0; fi
+BASE=$(basename "$SRC")
+case "$BASE" in step-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].ckpt) ;; *) exit 3 ;; esac
+DST={REMOTE_CHECKPOINTS}/{job_id}/$BASE
+mkdir -p {REMOTE_CHECKPOINTS}/{job_id}
+cp --reflink=auto "$SRC" "$DST"
+SHA=$(sha256sum "$DST" | cut -d' ' -f1)
+BYTES=$(stat -c%s "$DST")
+STEP=${{BASE#step-}}; STEP=${{STEP%.ckpt}}; STEP=$((10#$STEP))
+echo "CHECKPOINT step=$STEP bytes=$BYTES sha256=$SHA path=$DST"
+""", timeout=300, label="preservar checkpoint CUDA")
+    rows = [line for line in out.splitlines() if line.startswith("CHECKPOINT ")]
+    if not rows:
+        return None
+    fields = dict(token.split("=", 1) for token in rows[-1].split()[1:])
+    path = validate_resume_checkpoint(fields["path"])
+    return {"step": int(fields["step"]), "bytes": int(fields["bytes"]),
+            "sha256": fields["sha256"], "path": path}
+
+
 def train_script_path(name: str) -> str:
     name = _safe_name(name)
     return f"{REMOTE_RUNS}/.scripts/train-{name}.sh"
 
 
 def train_script(name: str, iters: int, downscale: int, run_id: str,
-                 train_args: list[str] | tuple[str, ...] | None = None) -> str:
+                 train_args: list[str] | tuple[str, ...] | None = None,
+                 resume_checkpoint: str | None = None) -> str:
     """Script Bash ejecutado *dentro* de WSL para una corrida CUDA.
 
     No se incrusta en el argv de OpenSSH: Windows OpenSSH recompone el comando
@@ -292,6 +333,8 @@ def train_script(name: str, iters: int, downscale: int, run_id: str,
     if int(iters) < 1 or int(downscale) not in (1, 2):
         raise ValueError("iters/downscale CUDA inválidos")
     extra = " ".join(shlex.quote(str(value)) for value in (train_args or ()))
+    checkpoint = validate_resume_checkpoint(resume_checkpoint)
+    resume = f"--load-checkpoint {shlex.quote(checkpoint)}" if checkpoint else ""
     telemetry = f"{REMOTE_RUNS}/telemetry-{name}.csv"
     return f"""#!/usr/bin/env bash
 set -e
@@ -319,6 +362,7 @@ yes | "$VIRTUAL_ENV/bin/ns-train" splatfacto \
   --data {REMOTE_DATA}/{name} --output-dir {REMOTE_RUNS} \
   --experiment-name {name} --timestamp {run_id} \
   --viewer.quit-on-train-completion True --max-num-iterations {iters} \
+  {resume} \
   {extra} \
   colmap --colmap-path sparse/0 --images-path images \
   --downscale-factor {downscale} 2>&1
@@ -329,12 +373,14 @@ exit "$RC"
 
 
 def install_train_script(name: str, iters: int, downscale: int, run_id: str,
-                         train_args: list[str] | tuple[str, ...] | None = None) -> str:
+                         train_args: list[str] | tuple[str, ...] | None = None,
+                         resume_checkpoint: str | None = None) -> str:
     """Instala el script por stdin (sin shell intermedia de Windows)."""
     name = _safe_name(name)
     path = train_script_path(name)
     encoded = base64.b64encode(
-        train_script(name, iters, downscale, run_id, train_args).encode()
+        train_script(name, iters, downscale, run_id, train_args,
+                     resume_checkpoint=resume_checkpoint).encode()
     ).decode()
     _wsl(
         f"mkdir -p {REMOTE_RUNS}/.scripts\n"
