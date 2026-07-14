@@ -52,6 +52,30 @@ class SplatFrontierUiContractTests(unittest.TestCase):
                       "elementos/min"):
             self.assertIn(token, self.shell)
 
+    def test_job_console_keeps_running_first_then_true_queue_order(self):
+        match = re.search(
+            r"function orderJobsForDisplay\(jobs\)\s*\{.*?\n\}",
+            self.shell, re.DOTALL)
+        self.assertIsNotNone(
+            match, "shell.js must expose a testable job display ordering helper")
+        jobs = [
+            {"id": "queued-later", "status": "queued", "started": 9000},
+            {"id": "history-new", "status": "done", "started": 8000},
+            {"id": "running-now", "status": "running", "started": 100},
+            {"id": "queued-next", "status": "queued", "started": 200},
+            {"id": "history-old", "status": "error", "started": 7000},
+        ]
+        script = (match.group(0) + "\nconsole.log(JSON.stringify(" +
+                  "orderJobsForDisplay(" + json.dumps(jobs) + ")" +
+                  ".map(j => j.id)));\n")
+        result = subprocess.run(["node", "-e", script], capture_output=True,
+                                text=True, check=True)
+        self.assertEqual(
+            ["running-now", "queued-next", "queued-later",
+             "history-new", "history-old"],
+            json.loads(result.stdout),
+        )
+
     def test_3d_phase_rail_groups_all_odm_substages_under_photogrammetry(self):
         match = re.search(
             r"function phaseKey\(stage\)\s*\{.*?\n\}", self.shell, re.DOTALL)

@@ -448,6 +448,15 @@ function closeJobLog() {
   jobLogState = null;
   document.getElementById('job-log-drawer')?.remove();
 }
+function orderJobsForDisplay(jobs) {
+  const rows = Array.isArray(jobs) ? jobs : [];
+  const running = rows.filter(j => j.status === 'running')
+    .sort((a, b) => Number(b.started || 0) - Number(a.started || 0));
+  const queued = rows.filter(j => j.status === 'queued')
+    .sort((a, b) => Number(a.started || 0) - Number(b.started || 0));
+  const history = rows.filter(j => !['running', 'queued'].includes(j.status));
+  return [...running, ...queued, ...history];
+}
 async function pollJobs(el, every = 2500, onDone = null) {
   let flightsIdx = null;
   try {
@@ -472,9 +481,10 @@ async function pollJobs(el, every = 2500, onDone = null) {
         }
       }
       if (!jobs.length) { el.innerHTML = '<p class="footer-note">Sin trabajos aún.</p>'; return; }
-      const active = jobs.filter(j => ['running', 'queued'].includes(j.status));
-      const history = jobs.filter(j => !['running', 'queued'].includes(j.status));
-      const list = [...active, ...history];
+      // El operador necesita ver primero lo que realmente consume el worker. Las campañas
+      // pueden llevar timestamps futuros para preservar su orden de claim; el orden crudo
+      // DESC del API las pondría delante del job en ejecución y además invertiría la cola.
+      const list = orderJobsForDisplay(jobs);
       // hash ESTRUCTURAL: solo lo que cambia la forma de la card. Los valores vivos
       // (progreso, ticker, tiempos) se parchan in-place — reemplazar el nodo cada poll
       // re-disparaba animaciones y producía el jitter de 1s en la card activa
