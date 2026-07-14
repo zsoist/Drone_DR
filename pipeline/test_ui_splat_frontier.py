@@ -127,7 +127,8 @@ class SplatFrontierUiContractTests(unittest.TestCase):
 
     def test_job_cards_show_checkpoint_recovery_and_resumed_step(self):
         for token in ("resume_available", "checkpoint_step", "resumed_from_step",
-                      "CHECKPOINT SEGURO", "REANUDADO DESDE"):
+                      "CHECKPOINT SEGURO", "REANUDADO DESDE", "REANUDARÁ DESDE",
+                      "preparado para reanudar desde"):
             self.assertIn(token, self.shell)
 
     def test_cuda_only_copy_never_promises_a_mac_fallback(self):

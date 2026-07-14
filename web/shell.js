@@ -303,7 +303,8 @@ function jobDataGrid(j) {
     cells.push(['CACHE IMÁGENES', `${String(j.image_cache_device).toUpperCase()}${cacheSize ? ` · ${cacheSize}` : ''}`]);
   }
   if (j.resumed_from_step)
-    cells.push(['REANUDADO DESDE', `Paso ${Number(j.resumed_from_step).toLocaleString()}`]);
+    cells.push([j.status === 'queued' ? 'REANUDARÁ DESDE' : 'REANUDADO DESDE',
+      `Paso ${Number(j.resumed_from_step).toLocaleString()}`]);
   else if (j.resume_available && j.checkpoint_step)
     cells.push(['CHECKPOINT SEGURO', `Paso ${Number(j.checkpoint_step).toLocaleString()}`]);
   if (j.gaussians) cells.push(['GAUSSIANAS', j.gaussians >= 1e6
@@ -339,7 +340,7 @@ function jobCard(j, flightsIdx, entering = true) {
   if (j.kind === 'splat' && j.resume_available && j.checkpoint_step)
     quality.push(`<span><b>Recuperación</b> · checkpoint ${Number(j.checkpoint_step).toLocaleString()} verificado</span>`);
   if (j.kind === 'splat' && j.resumed_from_step)
-    quality.push(`<span><b>Continuidad</b> · reanudado desde ${Number(j.resumed_from_step).toLocaleString()}</span>`);
+    quality.push(`<span><b>Continuidad</b> · ${j.status === 'queued' ? 'preparado para reanudar desde' : 'reanudado desde'} ${Number(j.resumed_from_step).toLocaleString()}</span>`);
   const attempts = Array.isArray(j.attempts) ? j.attempts : [];
   const attemptScales = [...new Set(attempts.map(a => Number(a.d)).filter(Boolean))];
   const facts = [
