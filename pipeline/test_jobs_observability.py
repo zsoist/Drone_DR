@@ -125,6 +125,45 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual("alta", new["effective_preset"])
         self.assertEqual(200, new["cameras_registered"])
 
+    def test_splat_summary_keeps_requested_and_effective_cuda_truth_separate(self):
+        jid = "splat-frontier-fixture"
+        spec = {
+            "clip_id": "recon_frontier", "preset": "frontier", "iters": 30000,
+            "backend": "cuda", "backend_policy": "strict",
+            "resolution": "auto", "requested_downscale": 1,
+        }
+        with jobs._LOCK, jobs._conn() as conn:
+            conn.execute("INSERT INTO jobs (id,kind,label,status,detail,started,finished,spec,backend) "
+                         "VALUES (?,?,?,?,?,?,?,?,?)",
+                         (jid, "splat", "recon_frontier", "done", "listo", 1, 2,
+                          json.dumps(spec), "NVIDIA CUDA"))
+        model = server.VAULT / "models" / "recon_frontier"
+        model.mkdir(parents=True)
+        (model / "meta.json").write_text(json.dumps({
+            "reconstruction": {"splat_runs": [{
+                "job_id": jid,
+                "requested_preset": "frontier", "effective_preset": "frontier",
+                "requested_iterations": 30000, "target_iters": 30000,
+                "requested_backend": "cuda", "effective_backend": "NVIDIA CUDA",
+                "backend_policy": "strict", "resolution": "auto",
+                "requested_downscale": 1, "effective_downscale": 2,
+                "effective_resolution": "half", "peak_mib": 7900,
+            }]},
+        }))
+
+        summary = server.normalize_job_summary(jobs.get(jid))
+
+        self.assertEqual("frontier", summary["requested_preset"])
+        self.assertEqual("frontier", summary["effective_preset"])
+        self.assertEqual(30000, summary["requested_iterations"])
+        self.assertEqual(30000, summary["iterations"])
+        self.assertEqual("cuda", summary["requested_backend"])
+        self.assertEqual("NVIDIA CUDA", summary["effective_backend"])
+        self.assertEqual("auto", summary["requested_resolution"])
+        self.assertEqual(1, summary["requested_downscale"])
+        self.assertEqual("half", summary["effective_resolution"])
+        self.assertEqual(2, summary["effective_downscale"])
+
 
 if __name__ == "__main__":
     unittest.main()

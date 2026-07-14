@@ -831,6 +831,25 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
     return preset_name
 
 
+def phased_splat_job_spec(parent_spec: dict, cid: str) -> dict:
+    """Return the immutable follow-up request, with legacy queue compatibility."""
+    followup = dict(parent_spec.get("splat") or {})
+    if not followup:
+        followup = {
+            "clip_id": cid,
+            "preset": str(parent_spec.get("splat_preset") or "cinematic"),
+            "backend": parent_spec.get("splat_backend"),
+            "resolution": parent_spec.get("splat_resolution"),
+            "best_available": parent_spec.get("best_available", True) is not False,
+        }
+    followup.update({
+        "clip_id": cid,
+        "scene_id": parent_spec.get("scene_id"),
+        "version_id": parent_spec.get("version_id") or cid,
+    })
+    return followup
+
+
 def run_3d(j: dict):
     cid = j["spec"]["clip_id"]
     sources = j["spec"].get("sources") or [cid]
@@ -873,12 +892,7 @@ def run_3d(j: dict):
             print(f"  splat phased OMITIDO: fusión parcial ({partial}) — reprocesa con otras fuentes", flush=True)
         else:
             try:
-                jobstore.enqueue("splat", cid, {"clip_id": cid,
-                                 "preset": str(j["spec"].get("splat_preset") or "cinematic"),
-                                 "backend": j["spec"].get("splat_backend"),
-                                 "best_available": j["spec"].get("best_available", True) is not False,
-                                 "scene_id": j["spec"].get("scene_id"),
-                                 "version_id": j["spec"].get("version_id") or cid})
+                jobstore.enqueue("splat", cid, phased_splat_job_spec(j["spec"], cid))
                 print(f"  encolado gaussian splat para {cid} (phased)", flush=True)
             except Exception as e:
                 print(f"  no se pudo encolar el splat phased: {e}", flush=True)

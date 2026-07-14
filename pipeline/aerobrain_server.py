@@ -32,7 +32,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import jobs as jobstore
 import perf as perfmod
 import scenes as scenestore
-from splat_presets import resolve_splat_spec
+from splat_presets import (normalize_splat_request, public_splat_profiles,
+                           resolve_splat_spec)
 from pathlib import Path
 
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
@@ -250,6 +251,44 @@ SPLAT_MPS_BIN = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/OpenSplat
 def any_opensplat_bin_exists() -> bool:
     """The worker can train with either CPU or Metal/MPS OpenSplat builds."""
     return SPLAT_BIN.exists() or SPLAT_MPS_BIN.exists()
+
+
+def requires_local_splat_binary(backend: str) -> bool:
+    return str(backend or "metal").lower() != "cuda"
+
+
+def build_splat_job_spec(cid: str, raw: dict | None,
+                         preflight_result: dict | None = None) -> dict:
+    """Build the one immutable splat request used by every enqueue path."""
+    raw = raw or {}
+    request = normalize_splat_request(raw)
+    model_preset = str(raw.get("model_preset") or "estandar")
+    if model_preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
+        model_preset = "estandar"
+    return {
+        "clip_id": cid,
+        **request,
+        "auto_model": bool(raw.get("auto_model")),
+        "model_preset": model_preset,
+        "preflight": preflight_result,
+        "title": str(raw.get("title") or "")[:80].strip(),
+        **({"scene_id": raw.get("scene_id")} if raw.get("scene_id") else {}),
+        **({"version_id": raw.get("version_id")} if raw.get("version_id") else {}),
+    }
+
+
+def build_followup_splat_spec(cid: str, raw: dict) -> dict:
+    """Normalize phased ODM/scene fields through the direct-job contract."""
+    return build_splat_job_spec(cid, {
+        "preset": raw.get("splat_preset") or "cinematic",
+        "backend": raw.get("splat_backend") or raw.get("backend") or "metal",
+        "resolution": raw.get("splat_resolution") or raw.get("resolution"),
+        "requested_downscale": raw.get("splat_requested_downscale"),
+        "best_available": raw.get("best_available", True),
+        "scene_id": raw.get("scene_id"),
+        "version_id": raw.get("version_id") or cid,
+        "title": raw.get("title"),
+    })
 
 
 def _sb_keys():
@@ -804,6 +843,14 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
         "log_tail": clean_tail,
         "requested_preset": spec.get("preset"),
         "effective_preset": None,
+        "requested_iterations": spec.get("iters"),
+        "requested_backend": spec.get("backend"),
+        "effective_backend": None,
+        "backend_policy": spec.get("backend_policy"),
+        "requested_resolution": spec.get("resolution"),
+        "requested_downscale": spec.get("requested_downscale"),
+        "effective_resolution": None,
+        "effective_downscale": None,
         "source_count": len(spec.get("sources") or ([spec.get("clip_id")] if spec.get("clip_id") else [])),
         "photo_count": len(spec.get("photos") or []),
         "outcome": row.get("status"),
@@ -849,10 +896,21 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
         out.update({
             "requested_preset": run.get("requested_preset") or spec.get("preset"),
             "effective_preset": run.get("effective_preset") or run.get("preset"),
-            "input_scale": run.get("input_scale"),
+            "requested_iterations": run.get("requested_iterations") or spec.get("iters"),
+            "requested_backend": run.get("requested_backend") or spec.get("backend"),
+            "effective_backend": (run.get("effective_backend") or run.get("backend")
+                                  or row.get("backend")),
+            "backend_policy": run.get("backend_policy") or spec.get("backend_policy"),
+            "requested_resolution": run.get("resolution") or spec.get("resolution"),
+            "requested_downscale": (run.get("requested_downscale")
+                                    or spec.get("requested_downscale")),
+            "effective_resolution": run.get("effective_resolution"),
+            "effective_downscale": run.get("effective_downscale") or run.get("input_scale"),
+            "input_scale": run.get("effective_downscale") or run.get("input_scale"),
             "iterations": run.get("target_iters"),
             # el run publicado manda; mientras entrena, el backend vivo del job row
-            "backend": run.get("backend") or row.get("backend"),
+            "backend": (run.get("effective_backend") or run.get("backend")
+                        or row.get("backend")),
             # 32 bytes por gaussiana en el formato .splat — conteo exacto, no estimado
             "gaussians": (run.get("bytes") // 32) if run.get("bytes") else None,
             "input_mb": _proj_input_mb(str(row.get("label") or "")),
@@ -870,7 +928,9 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
 def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: str,
                           title: str, then_splat: bool = False,
                           splat_preset: str = "cinematic",
-                          best_available: bool = True) -> tuple[str, dict]:
+                          best_available: bool = True,
+                          splat_backend: str = "metal",
+                          splat_resolution: str | None = None) -> tuple[str, dict]:
     """Create immutable scene-version membership and its 3D job specification."""
     scene = scenestore.get_scene(scene_id)
     sources = list(dict.fromkeys(str(x) for x in sources if str(x)))
@@ -879,8 +939,6 @@ def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: st
         raise ValueError("a scene version needs at least one video")
     if preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
         preset = "estandar"
-    if splat_preset not in ("fast", "medium", "cinematic", "ultra"):
-        splat_preset = "cinematic"
     reconstruction_id = jobstore.recon_id_for(sources, photos)
     scenestore.add_version(scene_id, reconstruction_id, sources, photos, "processing")
     spec = {
@@ -893,9 +951,25 @@ def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: st
         "sources": sources,
         "photos": photos,
         "then_splat": bool(then_splat),
-        "splat_preset": splat_preset,
-        "best_available": best_available is not False,
     }
+    if then_splat:
+        followup = build_followup_splat_spec(reconstruction_id, {
+            "splat_preset": splat_preset,
+            "splat_backend": splat_backend,
+            "splat_resolution": splat_resolution,
+            "best_available": best_available,
+            "scene_id": scene_id,
+            "version_id": reconstruction_id,
+            "title": title,
+        })
+        spec.update({
+            "splat": followup,
+            # Compatibility fields for workers deployed before the nested contract.
+            "splat_preset": followup["preset"],
+            "splat_backend": followup["backend"],
+            "splat_resolution": followup["resolution"],
+            "best_available": followup["best_available"],
+        })
     return reconstruction_id, spec
 
 
@@ -1397,6 +1471,11 @@ class H(BaseHTTPRequestHandler):
                 return
             force = "force=1" in self.path
             return self.send_json(gpu_node_status(force))
+        if urllib.parse.urlparse(self.path).path == "/api/splat_profiles":
+            if not self.auth():
+                return
+            return self.send_json({"profiles": public_splat_profiles(),
+                                   "resolution_options": ["auto", "full", "half"]})
         if self.path.startswith("/api/perf"):
             # telemetría en vivo del Mac (CPU/GPU/RAM/swap/térmica/disk + uso por job).
             # El sampler solo corre mientras alguien consulta — idle = 0 costo.
@@ -2139,7 +2218,9 @@ class H(BaseHTTPRequestHandler):
                     scene_id, sources, photos, str(spec.get("preset") or "alta"),
                     str(spec.get("title") or scene.get("title") or "Escena"),
                     bool(spec.get("then_splat")), str(spec.get("splat_preset") or "cinematic"),
-                    spec.get("best_available", True) is not False)
+                    spec.get("best_available", True) is not False,
+                    str(spec.get("splat_backend") or spec.get("backend") or "metal"),
+                    spec.get("splat_resolution") or spec.get("resolution"))
             except ValueError as e:
                 return self.send_json({"error": str(e)}, 400)
             job = jobstore.enqueue("3d", reconstruction_id, job_spec)
@@ -2194,11 +2275,21 @@ class H(BaseHTTPRequestHandler):
             job_spec = {"clip_id": ident, "primary_cid": cid, "preset": preset,
                         "title": str(spec.get("title", ""))[:80].strip(),
                         "sources": sources, "photos": photos}
+            if str(spec.get("backend") or "").lower() == "cuda":
+                job_spec["backend"] = "cuda"
             if spec.get("then_splat"):                   # phased: gaussian tras el 3D
-                job_spec["then_splat"] = True
-                sp = str(spec.get("splat_preset") or "cinematic")
-                job_spec["splat_preset"] = sp if sp in ("medium", "cinematic", "ultra", "fast") else "cinematic"
-                job_spec["best_available"] = spec.get("best_available", True) is not False
+                try:
+                    followup = build_followup_splat_spec(ident, spec)
+                except ValueError as e:
+                    return self.send_json({"error": str(e)}, 400)
+                job_spec.update({
+                    "then_splat": True,
+                    "splat": followup,
+                    "splat_preset": followup["preset"],
+                    "splat_backend": followup["backend"],
+                    "splat_resolution": followup["resolution"],
+                    "best_available": followup["best_available"],
+                })
             j = jobstore.enqueue("3d", ident, job_spec)
             return self.send_json({"ok": True, "job": j["id"], "queued": True,
                                    "reconstruction": ident,
@@ -2346,16 +2437,14 @@ class H(BaseHTTPRequestHandler):
             if not has_model and not (VAULT / "manifest" / f"{cid}.json").exists():
                 return self.send_json({"error": "clip no encontrado en el vault"}, 404)
             try:
-                preset = resolve_splat_spec(spec)
+                job_spec = build_splat_job_spec(cid, spec)
             except ValueError as e:
                 return self.send_json({"error": str(e)}, 400)
-            if not any_opensplat_bin_exists():
+            if (requires_local_splat_binary(job_spec["backend"])
+                    and not any_opensplat_bin_exists()):
                 return self.send_json({"error": "opensplat no está compilado"}, 500)
             if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
                 return self.send_json({"error": "ese vuelo ya tiene un modelo/splat en cola o entrenando"}, 409)
-            model_preset = str(spec.get("model_preset") or "estandar")
-            if model_preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
-                model_preset = "estandar"
             # PREFLIGHT (U1.3): veredicto ANTES de encolar — el P1 hecho producto.
             # Con proyecto existente el conteo es EXACTO (image_list); REJECTED no
             # encola (salvo force_preflight: escape consciente). La proyección viaja
@@ -2371,19 +2460,23 @@ class H(BaseHTTPRequestHandler):
                     w = _Img.open(first.replace("/datasets/code", str(proj))).width
                 except Exception:
                     w = 3072
-                pfv = _pf.splat_preflight(n_imgs, w, preset["key"])
-                if pfv["verdict"] in ("REJECTED", "INPUT_FLOOR_EXCEEDS_CAP") and not spec.get("force_preflight"):
+                project_bytes = sum(p.stat().st_size for p in (proj / "images").iterdir()
+                                    if p.is_file()) if (proj / "images").is_dir() else 0
+                pfv = _pf.splat_preflight_for_backend(
+                    n_imgs, w, job_spec["preset"], job_spec["backend"],
+                    node=(gpu_node_status() if job_spec["backend"] == "cuda" else None),
+                    project_bytes=project_bytes)
+                blocked = ("REJECTED", "INPUT_FLOOR_EXCEEDS_CAP", "NODE_UNAVAILABLE",
+                           "ENVIRONMENT_INVALID", "INSUFFICIENT_DISK")
+                if pfv["verdict"] in blocked and not spec.get("force_preflight"):
                     return self.send_json({"error": "preflight: la carga de entrada queda fuera del sobre seguro — "
                                            + pfv.get("note", ""), "preflight": pfv}, 409)
-            j = jobstore.enqueue("splat", cid, {"clip_id": cid, "preset": preset["key"], "iters": preset["iters"],
-                                                "auto_model": bool(spec.get("auto_model")),
-                                                "model_preset": model_preset,
-                                                "backend": "cuda" if spec.get("backend") == "cuda" else None,
-                                                "preflight": pfv,
-                                                "best_available": spec.get("best_available", True) is not False,
-                                                "title": str(spec.get("title", ""))[:80].strip()})
+            job_spec["preflight"] = pfv
+            j = jobstore.enqueue("splat", cid, job_spec)
             return self.send_json({"ok": True, "job": j["id"], "queued": True,
-                                   "preset": preset["key"], "iters": preset["iters"],
+                                   "preset": job_spec["preset"], "iters": job_spec["iters"],
+                                   "backend": job_spec["backend"],
+                                   "resolution": job_spec["resolution"],
                                    "preflight": pfv})
         if u.path == "/api/preflight":
             # U1.3 en el modal: proyección de memoria per-preset ANTES de encolar.
@@ -2395,12 +2488,17 @@ class H(BaseHTTPRequestHandler):
             try:
                 n = max(1, min(5000, int(spec.get("n_images", 0))))
                 w = max(640, min(8192, int(spec.get("width", 2688))))
-                p = str(spec.get("preset", "medium"))
-                if p not in _pf.PRESET_ITERS:
-                    return self.send_json({"error": "preset desconocido"}, 400)
+                p = resolve_splat_spec({"preset": str(spec.get("preset", "medium"))})["key"]
+                backend = normalize_splat_request({"preset": p,
+                                                   "backend": spec.get("backend")})["backend"]
             except (TypeError, ValueError):
                 return self.send_json({"error": "parámetros inválidos"}, 400)
-            return self.send_json(_pf.splat_preflight(n, w, p))
+            node = gpu_node_status(bool(spec.get("force"))) if backend == "cuda" else None
+            return self.send_json(_pf.splat_preflight_for_backend(
+                n, w, p, backend, node=node,
+                project_bytes=max(0, int(spec.get("project_bytes") or 0)),
+                wsl_free_bytes=node.get("wsl_free_bytes") if node else None,
+                bridge_free_bytes=node.get("bridge_free_bytes") if node else None))
         if u.path == "/api/suggest_name":
             # DeepSeek (lane de texto): nombre de proyecto corto y humano desde lugar+fecha+tomas
             if not self.auth(q):

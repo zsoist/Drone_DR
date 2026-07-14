@@ -9,6 +9,7 @@ import os
 import signal
 import sqlite3
 import re
+import secrets
 import subprocess
 import threading
 import time
@@ -36,6 +37,12 @@ def _conn():
 
 HEAVY_KINDS = ("3d", "splat")          # los ejecuta el worker desacoplado
 LIGHT_KINDS = ("upload", "edit", "analyze", "foto4k", "ingest", "error_report")  # threads del server web
+
+
+def new_job_id(kind: str) -> str:
+    """Readable, collision-safe id for rapid/bulk enqueue operations."""
+    safe_kind = re.sub(r"[^\w.-]", "", str(kind)) or "job"
+    return f"{safe_kind}-{time.time_ns()}-{secrets.token_hex(3)}"
 
 
 def recon_id_for(sources: list, photos: list | None = None) -> str:
@@ -131,7 +138,7 @@ def session_delete(sid: str):
 
 def enqueue(kind: str, label: str, spec: dict | None = None) -> dict:
     """Encola un job pesado; el worker lo reclama. NO arranca nada aquí."""
-    j = {"id": f"{kind}-{int(time.time() * 1000)}", "kind": kind, "label": label,
+    j = {"id": new_job_id(kind), "kind": kind, "label": label,
          "status": "queued"}
     with _LOCK, _conn() as c:
         c.execute("INSERT INTO jobs (id, kind, label, status, detail, started, spec) "
@@ -171,7 +178,7 @@ def pending(kind: str, label: str) -> bool:
 
 
 def add(kind: str, label: str, container: str = "") -> dict:
-    j = {"id": f"{kind}-{int(time.time() * 1000)}", "kind": kind, "label": label,
+    j = {"id": new_job_id(kind), "kind": kind, "label": label,
          "status": "running", "detail": "", "container": container}
     with _LOCK, _conn() as c:
         c.execute("INSERT INTO jobs (id, kind, label, status, detail, started, container) "

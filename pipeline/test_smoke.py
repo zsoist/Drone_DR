@@ -798,14 +798,19 @@ check("preflight: baseline medium escena1 → SAFE (obs 64%)",
 _e2 = _pf.splat_preflight(214, 3072, "medium", d=2)
 check("preflight: escena2 -d2 → ELEVATED conservador (proy 80% vs obs 76%)",
       _e2["verdict"] == "ELEVATED" and 76 <= _e2["pct"] <= 90)
-check("preflight: /api/splat conserva decisión y sólo bloquea pisos/Medium fuera de sobre",
-      '"preflight": pfv' in _srv_src_pf and 'INPUT_FLOOR_EXCEEDS_CAP' in _srv_src_pf
-      and 'splat_preflight(n_imgs, w' in _srv_src_pf)
+check("preflight: /api/splat conserva decisión y separa Mac de CUDA",
+      'job_spec["preflight"] = pfv' in _srv_src_pf
+      and 'INPUT_FLOOR_EXCEEDS_CAP' in _srv_src_pf
+      and 'splat_preflight_for_backend(' in _srv_src_pf
+      and 'requires_local_splat_binary(job_spec["backend"])' in _srv_src_pf)
 
 _srv_src_pf2 = Path("pipeline/aerobrain_server.py").read_text()
 
-check("server: /api/preflight expone el motor U1.3 con validación de preset",
-      '"/api/preflight"' in _srv_src_pf2 and "preset desconocido" in _srv_src_pf2)
+check("server: /api/preflight y perfiles exponen el contrato central",
+      '"/api/preflight"' in _srv_src_pf2
+      and '"/api/splat_profiles"' in _srv_src_pf2
+      and "normalize_splat_request" in _srv_src_pf2
+      and "public_splat_profiles" in _srv_src_pf2)
 _td_src = Path("web/tresd.js").read_text()
 check("modal v2: agrupa por CENTROIDE del bbox (U1.1 — spotKey del despegue refutado por test #1)",
       "(b[0] + b[2]) / 2" in _td_src and "0.0012" in _td_src)

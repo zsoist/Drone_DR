@@ -8,9 +8,10 @@ load floor and an explicitly unverified risk instead.
 """
 
 import hwconfig
+from splat_presets import SPLAT_PRESETS, validate_splat_backend
 
 
-PRESET_ITERS = {"fast": 1000, "medium": 2000, "cinematic": 7000, "ultra": 15000}
+PRESET_ITERS = {key: value["iters"] for key, value in SPLAT_PRESETS.items()}
 BASE_OVERHEAD_MIB = 900
 
 # Medium calibration from SPLAT_EXPERIMENTS.md. At 214 images, -d2 projected
@@ -125,3 +126,57 @@ def splat_preflight(n_images: int, width: int, preset: str, d: int = 1) -> dict:
         "note": ("Medium queda fuera del sobre calibrado incluso a -d 2; reduce el "
                  "conjunto de imágenes o usa una resolución de entrada menor."),
     }
+
+
+def splat_preflight_for_backend(n_images: int, width: int, preset: str,
+                                backend: str = "metal", *, node: dict | None = None,
+                                project_bytes: int = 0,
+                                wsl_free_bytes: int | None = None,
+                                bridge_free_bytes: int | None = None) -> dict:
+    """Route preflight to the owning machine without mixing memory models."""
+    backend = validate_splat_backend(preset, backend)
+    if backend != "cuda":
+        return {**splat_preflight(n_images, width, preset), "backend": backend,
+                "machine": "mac"}
+
+    node = dict(node or {})
+    status = str(node.get("status") or "unknown")
+    required_wsl = max(2 * 1024**3, int(project_bytes) * 4)
+    required_bridge = max(1024**3, int(project_bytes) * 2)
+    common = {
+        "preset": preset,
+        "backend": "cuda",
+        "machine": "pc",
+        "n_images": n_images,
+        "width": width,
+        "node_status": status,
+        "gpu": node.get("gpu"),
+        "driver": node.get("driver"),
+        "vram_total_mb": node.get("vram_total_mb"),
+        "environment_verified": bool(node.get("environment_verified")),
+        "project_bytes": int(project_bytes),
+        "required_wsl_bytes": required_wsl,
+        "required_bridge_bytes": required_bridge,
+        "wsl_free_bytes": wsl_free_bytes,
+        "bridge_free_bytes": bridge_free_bytes,
+        "confidence": "unverified_full_resolution",
+        "recommended_d": 1,
+    }
+    if status not in ("awake", "asleep"):
+        return {**common, "verdict": "NODE_UNAVAILABLE",
+                "note": "El nodo CUDA no responde; verifica red, SSH o Wake-on-LAN."}
+    if status == "awake" and node.get("environment_verified") is False:
+        return {**common, "verdict": "ENVIRONMENT_INVALID",
+                "note": "El nodo responde pero CUDA/gsplat todavía no está verificado."}
+    if wsl_free_bytes is not None and wsl_free_bytes < required_wsl:
+        return {**common, "verdict": "INSUFFICIENT_DISK",
+                "disk": "wsl", "note": "Espacio insuficiente en WSL ext4."}
+    if bridge_free_bytes is not None and bridge_free_bytes < required_bridge:
+        return {**common, "verdict": "INSUFFICIENT_DISK",
+                "disk": "bridge", "note": "Espacio insuficiente en el puente NTFS."}
+    if status == "asleep":
+        return {**common, "verdict": "NODE_ASLEEP",
+                "note": "El PC está dormido y se despertará al iniciar el trabajo."}
+    return {**common, "verdict": "UNVERIFIED_FULL_RES",
+            "note": ("CUDA intentará la entrada completa primero. El pico de VRAM se "
+                     "medirá; sólo un OOM clasificado permite reintentar a media resolución.")}
