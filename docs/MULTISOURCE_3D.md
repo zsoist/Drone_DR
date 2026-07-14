@@ -52,14 +52,15 @@
    archiva sólo el JSON truncado y usa `--sfm-no-partial`, sin `--rerun-from opensfm` porque
    ese switch borraría los caches. No autoriza splat hasta auditar el JSON final con la lógica
    actual. Después, y sólo si pasa, sigue Frontier 30K y un Grandmaster 40K sobre la misma
-   versión. Snapshot inmutable de recuperación (`3d-1784034358954095000-b1152f`, evento
-   `odm_nine_sources_joined`): 770/1.019 cámaras dentro del único componente observado,
-   9/10 prefijos activos y 8/10 fuentes sobre el gate ≥5 cámaras/≥60%; s7 acababa de entrar
-   con 26/214 y s8 seguía pendiente. El pico cgroup medido era 12,502/20 GiB, con cero eventos
-   `high`, `max` u OOM. Es evidencia intermedia, no un pass; `/api/job` y el historial de eventos
-   son autoritativos mientras corre, y el JSON persistido decide el resultado final. La ETA de
-   `odm-reconstruct` se calcula con el contador de cámaras registradas; fuentes activas se exponen
-   aparte y nunca sustituyen ese contador.
+   versión. Último snapshot inmutable de recuperación (`3d-1784034358954095000-b1152f`, eventos
+   `odm_all_sources_threshold` y `odm_981_bundle_healthy`): 981/1.019 cámaras dentro del único
+   componente observado y 10/10 fuentes sobre el gate ≥5 cámaras/≥60%. Conteo exacto observado:
+   `s0=238/238`, `s1=21/28`, `s2=29/29`, `s3=127/127`, `s4=108/108`, `s5=41/41`,
+   `s6=116/116`, `s7=211/214`, `s8=26/30`, `s9=64/88`. El pico cgroup medido era
+   14,303/20 GiB, con 5,697 GiB de margen y cero eventos `high`, `max` u OOM. Es evidencia
+   intermedia, no un pass; `/api/job` y el historial de eventos son autoritativos mientras corre,
+   y el JSON persistido decide el resultado final. La ETA de `odm-reconstruct` se calcula con el
+   contador de cámaras registradas; fuentes activas se exponen aparte y nunca sustituyen ese contador.
 1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).
 2. **Presupuesto global de frames + dedup INTRA-fuente**: poda hoy es por-fuente. OJO (hallazgo del
    review): NO deduplicar cross-source — esos near-duplicates son el pegamento del co-registro.
