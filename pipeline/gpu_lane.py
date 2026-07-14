@@ -217,6 +217,61 @@ echo PREP_OK
 """, timeout=600, label="prep dataset")
 
 
+def image_cache_policy(project: Path, downscale: int, vram_total_mb: int | float) -> dict:
+    """Choose where Nerfstudio keeps decoded source images.
+
+    Splatfacto defaults to ``cache_images: gpu``. On the 8 GB lane a 422-frame
+    full-resolution scene consumed roughly 6 GB merely holding uint8 images,
+    leaving almost no room for Gaussian growth. Keeping a large cache on CPU
+    preserves the requested input resolution; small datasets retain the faster
+    GPU-cache path. This changes storage only, never pixels or optimizer steps.
+    """
+    from PIL import Image
+
+    d = int(downscale)
+    if d not in (1, 2):
+        raise ValueError("downscale CUDA inválido para cache")
+    total_bytes = 0
+    count = 0
+    image_dir = Path(project) / "images"
+    for path in sorted(image_dir.iterdir()) if image_dir.is_dir() else ():
+        if not path.is_file():
+            continue
+        try:
+            with Image.open(path) as image:
+                width, height = image.size
+            total_bytes += max(1, width // d) * max(1, height // d) * 3
+            count += 1
+        except (OSError, ValueError):
+            continue
+    decoded_mib = total_bytes / 1048576
+    # Reserve most of VRAM for rasterization, gradients and Adam state. The
+    # floor keeps tiny smoke fixtures meaningful; the 1 GiB ceiling prevents a
+    # large GPU from turning image storage into an unbounded hidden consumer.
+    budget_mib = max(64.0, min(1024.0, float(vram_total_mb or 0) * 0.10))
+    return {
+        "device": "cpu" if decoded_mib > budget_mib else "gpu",
+        "decoded_mib": round(decoded_mib, 1),
+        "gpu_cache_budget_mib": round(budget_mib, 1),
+        "images": count,
+        "downscale": d,
+    }
+
+
+def with_image_cache_policy(train_args: list[str] | tuple[str, ...] | None,
+                            policy: dict) -> list[str]:
+    """Return trainer args with one explicit, auditable cache destination."""
+    args = list(train_args or ())
+    flag = "--pipeline.datamanager.cache-images"
+    while flag in args:
+        index = args.index(flag)
+        del args[index:index + 2]
+    device = str((policy or {}).get("device") or "gpu").lower()
+    if device not in ("cpu", "gpu"):
+        raise ValueError(f"cache Nerfstudio inválido: {device}")
+    return [*args, flag, device]
+
+
 def train_script_path(name: str) -> str:
     name = _safe_name(name)
     return f"{REMOTE_RUNS}/.scripts/train-{name}.sh"

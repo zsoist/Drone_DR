@@ -430,7 +430,8 @@ _SPLAT_RUN_FIELDS = (
     "effective_resolution", "input_scale", "fallback", "attempts", "peak_mib",
     "remote_peak_vram_mib", "peak_source", "mem_cap_mib", "caps_provisional",
     "remote_gpu", "remote_driver", "cuda_runtime", "torch", "gsplat",
-    "telemetry_samples", "trainer", "trainer_args", "params_hash", "stage_timings",
+    "telemetry_samples", "image_cache_device", "decoded_image_cache_mib",
+    "gpu_cache_budget_mib", "trainer", "trainer_args", "params_hash", "stage_timings",
 )
 
 
@@ -1215,6 +1216,14 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
         info = gpu_lane.probe()
         jobstore.event(j["id"], "cuda_lane", f"nodo GPU verificado: torch {info['torch']} · "
                        f"gsplat {info['gsplat']}", data=info)
+        image_cache = gpu_lane.image_cache_policy(
+            proj, downscale, info.get("vram_total_mb") or 0)
+        effective_train_args = gpu_lane.with_image_cache_policy(train_args, image_cache)
+        jobstore.event(
+            j["id"], "cuda_image_cache",
+            f"cache de {image_cache['images']} imágenes en {image_cache['device'].upper()} · "
+            f"{image_cache['decoded_mib']} MiB decodificados · entrada d{downscale}",
+            data=image_cache)
         if not reuse_dataset:
             # Puente de poses: export OpenSfM→COLMAP medido con error sub-GSD.
             ds = stage / "cuda-ds"
@@ -1250,11 +1259,11 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
                         stage="train", progress=0.3, backend="NVIDIA CUDA")
         run_id = f"gpu-{int(time.time())}"
         gpu_lane.install_train_script(name, iters, downscale, run_id,
-                                      train_args=train_args)
+                                      train_args=effective_train_args)
         t0 = time.time()
         rc = jobstore.run_tracked(
             j["id"], gpu_lane.train_argv(name, iters, downscale, run_id,
-                                          train_args=train_args),
+                                          train_args=effective_train_args),
             timeout=timeout_s, tail=80,
             progress_re=r"\((\d+)(?:\.\d+)?%\)", progress_span=(0.3, 0.76))
         if rc != 0:
@@ -1282,6 +1291,8 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
             "gsplat": info.get("gsplat"),
             "wsl_free_bytes": info.get("wsl_free_bytes"),
             "bridge_free_bytes": info.get("bridge_free_bytes"),
+            "image_cache": image_cache,
+            "trainer_args": effective_train_args,
         }
         jobstore.event(j["id"], "cuda_trained",
                        f"{iters} iters d{downscale} en {m['train_s']}s · "
@@ -1394,6 +1405,7 @@ def run_splat(j: dict):
                 ) from exc
             rc = 0
             cuda_metrics = cm
+            effective_train_args = list(cm.get("trainer_args") or cuda_args)
             attempt_row = {
                 "attempt": attempt_no, "preset": requested_key, "d": effective_d,
                 "reason": policy["reason"], "rc": 0,
@@ -1543,6 +1555,9 @@ def run_splat(j: dict):
         "gsplat": cuda_metrics.get("gsplat"),
         "telemetry_samples": cuda_metrics.get("telemetry_samples"),
         "remote_peak_vram_mib": cuda_metrics.get("remote_peak_vram_mib"),
+        "image_cache_device": (cuda_metrics.get("image_cache") or {}).get("device"),
+        "decoded_image_cache_mib": (cuda_metrics.get("image_cache") or {}).get("decoded_mib"),
+        "gpu_cache_budget_mib": (cuda_metrics.get("image_cache") or {}).get("gpu_cache_budget_mib"),
     })
     quality["trainer"] = "nerfstudio-splatfacto" if is_cuda else "opensplat"
     quality["trainer_args"] = effective_train_args
@@ -1590,7 +1605,8 @@ def run_splat(j: dict):
                                  "backend_policy", "resolution", "requested_downscale",
                                  "effective_downscale", "effective_resolution", "input_scale",
                                  "final_loss", "peak_mib", "remote_peak_vram_mib", "mem_cap_mib",
-                                 "remote_gpu", "trainer", "params_hash", "backend", "fallback")}
+                                 "remote_gpu", "image_cache_device", "decoded_image_cache_mib",
+                                 "gpu_cache_budget_mib", "trainer", "params_hash", "backend", "fallback")}
             scenestore.update_version(scene["id"], version_id, metrics=metrics)
             # The first rebuild was needed for browser_gate; publish the new scene metrics too.
             rebuild_index()

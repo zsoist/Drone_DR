@@ -277,6 +277,12 @@ function jobDataGrid(j) {
     cells.push(['RITMO MEDIDO', `${Number(j.iterations_per_second).toFixed(1)} iter/s`, 'rate']);
   if (j.eta_remaining_s != null)
     cells.push(['ETA TRAINER', fmtDur(j.eta_remaining_s), 'eta']);
+  if (j.image_cache_device) {
+    const cacheMiB = Number(j.decoded_image_cache_mib || 0);
+    const cacheSize = cacheMiB >= 1024 ? `${(cacheMiB / 1024).toFixed(1)} GB`
+      : cacheMiB ? `${Math.round(cacheMiB)} MiB` : '';
+    cells.push(['CACHE IMÁGENES', `${String(j.image_cache_device).toUpperCase()}${cacheSize ? ` · ${cacheSize}` : ''}`]);
+  }
   if (j.gaussians) cells.push(['GAUSSIANAS', j.gaussians >= 1e6
     ? (j.gaussians / 1e6).toFixed(2) + ' M' : Math.round(j.gaussians / 1000) + ' k']);
   if (!cells.length) return '';
@@ -305,6 +311,8 @@ function jobCard(j, flightsIdx, entering = true) {
     quality.push(`<span><b>Resolución efectiva</b> · ${esc(j.effective_resolution === 'half' ? '½ resolución' : 'Completa')}</span>`);
   if (j.kind === 'splat' && /cuda/i.test(j.requested_backend || ''))
     quality.push('<span><b>Política</b> · CUDA estricto</span>');
+  if (j.kind === 'splat' && j.image_cache_device)
+    quality.push(`<span title="La resolución de entrada no cambia"><b>Cache</b> · ${String(j.image_cache_device).toUpperCase()}${j.image_cache_device === 'cpu' ? ' · VRAM libre para gaussianas' : ' · acceso rápido en GPU'}</span>`);
   const attempts = Array.isArray(j.attempts) ? j.attempts : [];
   const attemptScales = [...new Set(attempts.map(a => Number(a.d)).filter(Boolean))];
   const facts = [

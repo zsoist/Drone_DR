@@ -1,7 +1,10 @@
 import sys
 import inspect
+import tempfile
 import unittest
 from pathlib import Path
+
+from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -125,6 +128,50 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertEqual("instalar script CUDA", calls[0][2])
         self.assertIn("base64 -d", calls[0][0])
         self.assertIn("chmod 700", calls[0][0])
+
+    def test_large_decoded_image_cache_stays_on_cpu_to_preserve_vram(self):
+        with tempfile.TemporaryDirectory() as td:
+            images = Path(td) / "images"
+            images.mkdir()
+            for index in range(4):
+                Image.new("RGB", (4000, 3000)).save(images / f"{index}.jpg")
+
+            policy = gpu_lane.image_cache_policy(Path(td), downscale=1,
+                                                  vram_total_mb=160)
+
+        self.assertEqual("cpu", policy["device"])
+        self.assertGreater(policy["decoded_mib"], policy["gpu_cache_budget_mib"])
+
+    def test_small_or_downscaled_cache_uses_gpu_fast_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            images = Path(td) / "images"
+            images.mkdir()
+            Image.new("RGB", (1600, 900)).save(images / "one.jpg")
+
+            policy = gpu_lane.image_cache_policy(Path(td), downscale=2,
+                                                  vram_total_mb=8192)
+
+        self.assertEqual("gpu", policy["device"])
+        self.assertLess(policy["decoded_mib"], policy["gpu_cache_budget_mib"])
+
+    def test_cpu_cache_flag_is_added_once_without_changing_resolution(self):
+        args = gpu_lane.with_image_cache_policy(
+            ["--pipeline.model.sh-degree", "0"], {"device": "cpu"})
+        args = gpu_lane.with_image_cache_policy(args, {"device": "cpu"})
+
+        self.assertEqual(1, args.count("--pipeline.datamanager.cache-images"))
+        self.assertEqual("cpu", args[args.index("--pipeline.datamanager.cache-images") + 1])
+        self.assertNotIn("--downscale-factor", args)
+
+    def test_worker_applies_and_records_measured_cuda_cache_policy(self):
+        source = inspect.getsource(worker.run_splat_cuda)
+
+        self.assertIn("gpu_lane.image_cache_policy", source)
+        self.assertIn("gpu_lane.with_image_cache_policy", source)
+        self.assertIn('"cuda_image_cache"', source)
+        self.assertIn('"image_cache"', source)
+        self.assertIn('"image_cache_device"', inspect.getsource(worker.run_splat))
+        self.assertIn("image_cache_device", worker._SPLAT_RUN_FIELDS)
 
     def test_cleanup_is_bounded_and_refuses_active_names(self):
         with self.assertRaisesRegex(ValueError, "activo"):

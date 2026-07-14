@@ -1088,6 +1088,9 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
             "input_mb": _proj_input_mb(str(row.get("label") or "")),
             "peak_mib": run.get("peak_mib"),
             "memory_cap_mib": run.get("mem_cap_mib"),
+            "image_cache_device": run.get("image_cache_device"),
+            "decoded_image_cache_mib": run.get("decoded_image_cache_mib"),
+            "gpu_cache_budget_mib": run.get("gpu_cache_budget_mib"),
             "attempts": run.get("attempts") or [],
             "cameras_registered": run.get("cameras"),
         })

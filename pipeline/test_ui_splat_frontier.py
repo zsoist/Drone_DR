@@ -44,6 +44,11 @@ class SplatFrontierUiContractTests(unittest.TestCase):
                       "iterations_per_second", "eta_remaining_s", "ETA TRAINER"):
             self.assertIn(token, self.shell)
 
+    def test_job_cards_explain_image_cache_without_implying_downscale(self):
+        for token in ("image_cache_device", "decoded_image_cache_mib",
+                      "CACHE IMÁGENES", "VRAM libre para gaussianas"):
+            self.assertIn(token, self.shell)
+
     def test_cuda_only_copy_never_promises_a_mac_fallback(self):
         self.assertNotIn("lane hace fallback honesto a Metal local", self.tresd)
         self.assertIn("7K–40K permanece CUDA estricto", self.tresd)

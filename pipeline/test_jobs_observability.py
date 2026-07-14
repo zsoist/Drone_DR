@@ -274,6 +274,8 @@ class JobObservabilityStoreTests(unittest.TestCase):
                 "backend_policy": "strict", "resolution": "auto",
                 "requested_downscale": 1, "effective_downscale": 2,
                 "effective_resolution": "half", "peak_mib": 7900,
+                "image_cache_device": "cpu", "decoded_image_cache_mib": 6409.1,
+                "gpu_cache_budget_mib": 818.8,
             }]},
         }))
 
@@ -289,6 +291,9 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual(1, summary["requested_downscale"])
         self.assertEqual("half", summary["effective_resolution"])
         self.assertEqual(2, summary["effective_downscale"])
+        self.assertEqual("cpu", summary["image_cache_device"])
+        self.assertEqual(6409.1, summary["decoded_image_cache_mib"])
+        self.assertEqual(818.8, summary["gpu_cache_budget_mib"])
 
     def test_recovered_done_job_ends_with_recovery_not_historical_traceback(self):
         jid = "splat-recovered-fixture"
