@@ -920,6 +920,10 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
     reported_components = 0
     best_component_cameras = 0
     dense_points = 0
+    mesh_scan_max_x = -1
+    mesh_scan_max_y = -1
+    mesh_total = 0
+    mesh_artifacts = 0
     registered_camera_ids: set[str] = set()
     source_total = max(0, int(total_sources or 0))
     active_source_ids: set[str] = set()
@@ -943,11 +947,40 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
                        f"extrayendo features {completed}/{total}"),
         }
 
+    def mesh_fields() -> dict:
+        completed = min(mesh_total, mesh_artifacts) if mesh_total else mesh_artifacts
+        progress = 0.76
+        if mesh_total:
+            progress += 0.04 * completed / mesh_total
+        total_text = str(mesh_total) if mesh_total else "?"
+        return {
+            "stage": "odm-meshing",
+            "progress": round(progress, 4),
+            "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · malla 2.5D · "
+                       f"{completed}/{total_text} fragmentos materializados"),
+        }
+
     def observe(line: str) -> dict | None:
         nonlocal loaded, logged_completed, matching_total, matching_completed
         nonlocal good_tracks, registered_cameras
         nonlocal reported_components, best_component_cameras, dense_points
+        nonlocal mesh_scan_max_x, mesh_scan_max_y, mesh_total
         text = line or ""
+        scanning_block = re.search(r"Scanning block\s*\((\d+),(\d+)\)", text, re.I)
+        if scanning_block:
+            x, y = map(int, scanning_block.groups())
+            mesh_scan_max_x = max(mesh_scan_max_x, x)
+            mesh_scan_max_y = max(mesh_scan_max_y, y)
+            return {
+                "stage": "odm-meshing", "progress": 0.75,
+                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                           "analizando cuadrícula de malla 2.5D"),
+            }
+        empty_blocks = re.search(r"Empty blocks:\s*(\d+)", text, re.I)
+        if empty_blocks and mesh_scan_max_x >= 0 and mesh_scan_max_y >= 0:
+            grid_total = (mesh_scan_max_x + 1) * (mesh_scan_max_y + 1)
+            mesh_total = max(0, grid_total - int(empty_blocks.group(1)))
+            return mesh_fields()
         tracks = re.search(r"Good tracks:\s*(\d+)", text, re.I)
         if tracks:
             good_tracks = max(good_tracks, int(tracks.group(1)))
@@ -1129,8 +1162,14 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
                        f"guardando coincidencias {saved_match_artifacts}/{total}"),
         }
 
+    def reconcile_mesh_artifacts(count: int) -> dict:
+        nonlocal mesh_artifacts
+        mesh_artifacts = max(mesh_artifacts, int(count or 0))
+        return mesh_fields()
+
     observe.reconcile_completed = reconcile_completed
     observe.reconcile_match_artifacts = reconcile_match_artifacts
+    observe.reconcile_mesh_artifacts = reconcile_mesh_artifacts
 
     return observe
 
@@ -1249,6 +1288,11 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
                 if completed_matches <= 0:
                     return
                 observed = progress_observer.reconcile_match_artifacts(completed_matches)
+            elif stage == "odm-meshing":
+                completed_mesh = odm_gpu_lane.mesh_artifact_count(name)
+                if completed_mesh <= 0:
+                    return
+                observed = progress_observer.reconcile_mesh_artifacts(completed_mesh)
             else:
                 return
             fields = jobstore.line_progress_fields(

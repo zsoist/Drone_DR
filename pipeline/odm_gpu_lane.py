@@ -123,6 +123,16 @@ def match_artifact_count(name: str) -> int:
     return max(0, int((out or "0").strip() or 0))
 
 
+def mesh_artifact_count(name: str) -> int:
+    """Count durable dem2mesh fragments instead of duplicate progress lines."""
+    name = validate_remote_name(name)
+    out = _wsl(
+        f"find {REMOTE_ODM}/{name}/odm_meshing -maxdepth 1 -type f "
+        "-name 'odm_25dmesh.dirty.ply.*.bin' 2>/dev/null | wc -l",
+        timeout=30, label="contar fragmentos de malla ODM")
+    return max(0, int((out or "0").strip() or 0))
+
+
 def resume_artifacts(name: str) -> dict[str, int]:
     """Measure the immutable inputs required to resume at OpenSfM."""
     name = validate_remote_name(name)

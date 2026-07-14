@@ -234,6 +234,44 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
             observe("Point visibility checks 3174885 (6.79%, 1m25s, ETA 19m)..."),
         )
 
+    def test_cuda_odm_meshing_progress_uses_materialized_fragments_not_duplicate_logs(self):
+        observe = worker.odm_cuda_feature_progress(1019, "ultra", total_sources=10)
+
+        observe("Scanning block (0,0)")
+        observe("Scanning block (31,31)")
+        self.assertEqual(
+            {
+                "stage": "odm-meshing",
+                "progress": 0.76,
+                "detail": ("2/3 ODM ultra en NVIDIA CUDA · malla 2.5D · "
+                           "0/647 fragmentos materializados"),
+            },
+            observe("Empty blocks: 377"),
+        )
+        # dem2mesh logs Processing block more than once. Durable .bin artifacts
+        # are the measured completed unit and must stay monotonic.
+        observe("Processing block (0,0)")
+        observe("Processing block (0,0)")
+        self.assertEqual(
+            {
+                "stage": "odm-meshing",
+                "progress": 0.7813,
+                "detail": ("2/3 ODM ultra en NVIDIA CUDA · malla 2.5D · "
+                           "344/647 fragmentos materializados"),
+            },
+            observe.reconcile_mesh_artifacts(344),
+        )
+        regressed = observe.reconcile_mesh_artifacts(200)
+        self.assertEqual(0.7813, regressed["progress"])
+        self.assertIn("344/647", regressed["detail"])
+
+    def test_cuda_odm_mesh_artifact_count_uses_remote_materialized_bins(self):
+        with mock.patch.object(odm_gpu_lane, "_wsl", return_value="455\n") as run:
+            self.assertEqual(455, odm_gpu_lane.mesh_artifact_count("safe-job"))
+
+        command = run.call_args.args[0]
+        self.assertIn("odm_25dmesh.dirty.ply.*.bin", command)
+
     def test_odm_registration_never_calls_disconnected_components_full(self):
         with tempfile.TemporaryDirectory() as td:
             proj = Path(td)
