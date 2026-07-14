@@ -1181,6 +1181,7 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
                    data={"image": "opendronemap/odm:gpu", "preset": preset_name})
     try:
         local_images = len([p for p in (proj / "images").iterdir() if p.is_file()])
+        filtered: dict = {}
         if plan["resume"]:
             evidence = odm_gpu_lane.resume_artifacts(name)
             expected = int(j.get("spec", {}).get("odm_remote_resume_images") or local_images)
@@ -1213,10 +1214,23 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
                 odm_gpu_lane.prepare_opensfm_resume(name)
         else:
             n = odm_gpu_lane.ship_images(proj, name)
-        jobstore.update(j["id"],
-                        detail=f"2/3 ODM {preset_name} en NVIDIA CUDA · cargando imágenes 0/{n}",
-                        stage="odm-features", progress=0.20,
-                        container=container, backend="NVIDIA CUDA")
+        if plan["resume_kind"] == "filtered_cloud":
+            points = int(filtered.get("filtered_points") or 0)
+            initial = {
+                "detail": (f"2/3 ODM {preset_name} en NVIDIA CUDA · "
+                           f"filtrando nube validada de {points:,} puntos"),
+                "stage": "odm-filterpoints",
+                "progress": 0.74,
+            }
+        else:
+            initial = {
+                "detail": (f"2/3 ODM {preset_name} en NVIDIA CUDA · "
+                           f"cargando imágenes 0/{n}"),
+                "stage": "odm-features",
+                "progress": 0.20,
+            }
+        jobstore.update(j["id"], **initial, container=container,
+                        backend="NVIDIA CUDA")
         spec_sources = j.get("spec", {}).get("sources")
         source_total = len(spec_sources) if isinstance(spec_sources, list) else 1
         progress_observer = odm_cuda_feature_progress(

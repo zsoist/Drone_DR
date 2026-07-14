@@ -391,7 +391,7 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
                                   return_value=["opensfm", "odm_orthophoto"]),
                 mock.patch.object(odm_gpu_lane, "cleanup"),
                 mock.patch.object(worker.jobstore, "event"),
-                mock.patch.object(worker.jobstore, "update"),
+                mock.patch.object(worker.jobstore, "update") as update,
                 mock.patch.object(worker.jobstore, "run_tracked", return_value=0),
             ):
                 rc = worker.run_odm_cuda(
@@ -441,7 +441,7 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
                                   return_value=["opensfm", "odm_orthophoto"]),
                 mock.patch.object(odm_gpu_lane, "cleanup"),
                 mock.patch.object(worker.jobstore, "event"),
-                mock.patch.object(worker.jobstore, "update"),
+                mock.patch.object(worker.jobstore, "update") as update,
                 mock.patch.object(worker.jobstore, "run_tracked", return_value=0),
             ):
                 rc = worker.run_odm_cuda(
@@ -453,6 +453,13 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         ship.assert_not_called()
         prepare.assert_not_called()
         self.assertEqual("odm_filterpoints", remote.call_args.kwargs["rerun_from"])
+        resume_update = next(
+            call.kwargs for call in update.call_args_list
+            if call.kwargs.get("container") == "odm-gpu-3d-preserved-safe"
+        )
+        self.assertEqual("odm-filterpoints", resume_update["stage"])
+        self.assertEqual(0.74, resume_update["progress"])
+        self.assertIn("37,473,907 puntos", resume_update["detail"])
 
     def test_prepare_opensfm_resume_preserves_only_invalid_reconstruction(self):
         with mock.patch.object(odm_gpu_lane, "_wsl", return_value="RESUME_READY\n") as run:
@@ -495,7 +502,8 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertIn("match_artifact_count", source)
         self.assertIn("reconcile_match_artifacts", source)
         self.assertIn("tick=artifact_progress", source)
-        self.assertIn('stage="odm-features", progress=0.20', source)
+        self.assertIn('"stage": "odm-features"', source)
+        self.assertIn('"progress": 0.20', source)
 
     def test_command_preserves_exact_frontier_schedule_and_scale(self):
         command = gpu_lane.train_script(
