@@ -19,6 +19,12 @@ from pathlib import Path
 DB = Path("/Volumes/SSD/drone-vault/manifest/jobs.db")
 JOB_LOG_DIR = Path("/Volumes/SSD/drone-vault/ops/job_logs")
 _LOCK = threading.Lock()
+_TERMINAL_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def strip_terminal_controls(value: str) -> str:
+    """Remove ANSI CSI presentation controls while preserving readable log text."""
+    return _TERMINAL_CSI_RE.sub("", str(value or ""))
 
 
 @contextmanager
@@ -261,7 +267,7 @@ def log_chunk(jid: str, after: int = 0, limit: int = 500) -> dict:
         for index, line in enumerate(fh):
             if index < after:
                 continue
-            rows.append(line.rstrip("\n"))
+            rows.append(strip_terminal_controls(line.rstrip("\n")))
             if len(rows) > limit:
                 break
     visible = rows[:limit]

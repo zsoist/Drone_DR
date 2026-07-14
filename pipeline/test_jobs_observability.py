@@ -52,6 +52,15 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual(2, chunk["next"])
         self.assertFalse(chunk["eof"])
 
+    def test_log_chunk_removes_terminal_cursor_controls(self):
+        path = jobs.log_path(self.job["id"])
+        path.write_text("\x1b[14A\x1b[1KStep 18470\n\x1b[31merror\x1b[0m\n")
+
+        chunk = jobs.log_chunk(self.job["id"])
+
+        self.assertEqual(["Step 18470", "error"], chunk["lines"])
+        self.assertNotIn("\x1b", json.dumps(chunk))
+
     def test_log_path_rejects_traversal(self):
         with self.assertRaises(ValueError):
             jobs.log_path("../../manifest/jobs.db")
@@ -343,6 +352,22 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertAlmostEqual(19.23, summary["iterations_per_second"], places=2)
         self.assertEqual(918, summary["eta_remaining_s"])
         self.assertIn("12,340/30,000", summary["detail"])
+
+    def test_job_summary_removes_all_terminal_csi_controls(self):
+        row = {
+            "id": "splat-ansi", "kind": "splat", "label": "recon_live",
+            "status": "running", "stage": "train", "progress": 0.4,
+            "started": time.time() - 60,
+            "spec": json.dumps({"clip_id": "recon_live", "preset": "grandmaster",
+                                "iters": 40000, "backend": "cuda"}),
+            "log": "\x1b[14A\x1b[1K18470 (46.17%) 196.406 ms 1 h, 10 m, 28 s\n"
+                   "\x1b[31mViewer running\x1b[0m",
+        }
+
+        summary = server.normalize_job_summary(row)
+
+        self.assertIn("18470 (46.17%)", summary["log_tail"])
+        self.assertNotIn("\x1b", summary["log_tail"])
 
     def test_stale_training_log_cannot_override_active_splat_publish_stage(self):
         row = {

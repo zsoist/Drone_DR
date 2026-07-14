@@ -1109,7 +1109,7 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
     started = row.get("started")
     finished = row.get("finished")
     elapsed = max(0.0, (finished or now) - started) if started else None
-    clean_tail = re.sub(r"\x1b\[[0-9;]*m", "", str(row.get("log") or "")).strip()
+    clean_tail = jobstore.strip_terminal_controls(row.get("log") or "").strip()
     structured_events = (jobstore.events(row["id"])
                          if row.get("id") and row.get("kind") in ("3d", "splat") else [])
     terminal = structured_events[-1] if structured_events else {}
