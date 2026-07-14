@@ -991,6 +991,11 @@ def refresh_running_job(row: dict) -> dict:
     if row.get("status") != "running":
         return row
     if row.get("kind") == "splat":
+        # El tail conserva las últimas líneas del trainer durante export/publish/QA.
+        # Sólo la fase train puede convertirlas en telemetría viva; en fases
+        # posteriores manda el estado exacto persistido por el worker.
+        if row.get("stage") != "train":
+            return row
         spec = _job_spec(row)
         live = splat_live_telemetry(row.get("log") or "", spec.get("iters"))
         if live:

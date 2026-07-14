@@ -344,6 +344,25 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual(918, summary["eta_remaining_s"])
         self.assertIn("12,340/30,000", summary["detail"])
 
+    def test_stale_training_log_cannot_override_active_splat_publish_stage(self):
+        row = {
+            "id": "splat-publish-frontier", "kind": "splat",
+            "label": "recon_live", "status": "running", "stage": "publish",
+            "progress": 0.8, "backend": "NVIDIA CUDA",
+            "detail": "exportando y trayendo el splat CUDA",
+            "spec": json.dumps({"clip_id": "recon_live", "preset": "frontier",
+                                "iters": 30000, "backend": "cuda"}),
+            "log": "29990 (99.97%)      199.200 ms           2 s",
+        }
+
+        live = server.refresh_running_job(row)
+
+        self.assertEqual("publish", live["stage"])
+        self.assertEqual("exportando y trayendo el splat CUDA", live["detail"])
+        self.assertEqual(0.8, live["progress"])
+        self.assertNotIn("current_iteration", live)
+        self.assertNotIn("eta_remaining_s", live)
+
     def test_perf_now_uses_same_live_odm_phase_as_jobs_api(self):
         jid = "3d-live-perf-fixture"
         spec = {"clip_id": "recon_live", "preset": "ultra", "backend": "cuda"}
