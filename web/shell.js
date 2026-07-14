@@ -220,16 +220,21 @@ function fmtDur(sec) {
   if (sec >= 60) return `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`;
   return `${Math.round(sec)}s`;
 }
+function phaseKey(stage) {
+  const value = String(stage || '').trim().toLowerCase();
+  if (value === 'frames') return 'frames';
+  if (value === 'publish' || value === 'browser-qa') return 'publish';
+  if (value === 'odm' || value.startsWith('odm-')) return 'odm';
+  return value;
+}
 function phaseDash(j, pct) {
   if (j.kind !== '3d') return '';
   const hist = j.stage_history || [];
   const now = Date.now() / 1000;
-  const norm = st => (st || '').replace('-fallback', '').replace('odm', 'odm')
-    .replace(/^(train|model-base)$/, 'odm');
   const starts = {};
-  hist.forEach(h => { const k = norm(h.stage); if (!(k in starts)) starts[k] = h.ts; });
+  hist.forEach(h => { const k = phaseKey(h.stage); if (!(k in starts)) starts[k] = h.ts; });
   if (j.started && !('frames' in starts)) starts.frames = j.started;
-  const activeKey = norm(j.stage);
+  const activeKey = phaseKey(j.stage);
   // done/act por ORDEN de pipeline — los timestamps solo aportan duraciones:
   // un job anterior al tracking de stages no debe mostrar fases pasadas como pendientes
   const activeIdx = Math.max(0, PHASES_3D.findIndex(ph => ph[0] === activeKey));

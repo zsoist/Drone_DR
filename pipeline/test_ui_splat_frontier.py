@@ -1,4 +1,7 @@
 import unittest
+import json
+import re
+import subprocess
 from pathlib import Path
 
 
@@ -43,6 +46,23 @@ class SplatFrontierUiContractTests(unittest.TestCase):
         for token in ("current_iteration", "target_iterations",
                       "iterations_per_second", "eta_remaining_s", "ETA TRAINER"):
             self.assertIn(token, self.shell)
+
+    def test_3d_phase_rail_groups_all_odm_substages_under_photogrammetry(self):
+        match = re.search(
+            r"function phaseKey\(stage\)\s*\{.*?\n\}", self.shell, re.DOTALL)
+        self.assertIsNotNone(match, "shell.js must expose a testable phaseKey mapper")
+        stages = ["frames", "odm", "odm-features", "odm-matching", "odm-tracks",
+                  "odm-reconstruct", "odm-depthmaps", "odm-products", "publish",
+                  "browser-qa"]
+        script = (match.group(0) + "\nconsole.log(JSON.stringify(" +
+                  json.dumps(stages) + ".map(phaseKey)));\n")
+        result = subprocess.run(["node", "-e", script], capture_output=True,
+                                text=True, check=True)
+        self.assertEqual(
+            ["frames", "odm", "odm", "odm", "odm", "odm", "odm", "odm",
+             "publish", "publish"],
+            json.loads(result.stdout),
+        )
 
     def test_job_cards_explain_image_cache_without_implying_downscale(self):
         for token in ("image_cache_device", "decoded_image_cache_mib",
