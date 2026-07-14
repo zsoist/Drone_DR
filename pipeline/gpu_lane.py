@@ -47,6 +47,10 @@ NERFSTUDIO_FULL_IMAGE_MANAGER = (
     f"{REMOTE_JOBS}/splat-env/lib/python3.10/site-packages/nerfstudio/"
     "data/datamanagers/full_images_datamanager.py"
 )
+NERFSTUDIO_SPLATFACTO_MODEL = (
+    f"{REMOTE_JOBS}/splat-env/lib/python3.10/site-packages/nerfstudio/"
+    "models/splatfacto.py"
+)
 NTFS_TRANSFER = "C:/Users/reyes/gpu-transfer"    # puente binario-seguro WSL->Mac
 WSL_TRANSFER = "/mnt/c/Users/reyes/gpu-transfer"
 
@@ -316,6 +320,36 @@ PY
 """
 
 
+def stable_splat_resume_guard(source_path: str | Path = NERFSTUDIO_SPLATFACTO_MODEL) -> str:
+    """Keep optimizer parameter references valid when a checkpoint resizes GSs.
+
+    Nerfstudio's Splatfacto loader replaced each ``Parameter`` object while the
+    optimizers still referenced the pre-checkpoint object. Normal iterations
+    appeared to resume, but gsplat's first growth callback indexed the smaller
+    stale parameter and triggered a device-side assertion. Resizing ``.data``
+    preserves object identity so checkpoint optimizer state and model tensors
+    remain attached to the same parameter.
+    """
+    source = shlex.quote(str(source_path))
+    return f"""python - {source} <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = "AeroBrain: preserve optimizer parameter identity"
+old = "self.gauss_params[name] = torch.nn.Parameter(torch.zeros(new_shape, device=self.device))"
+new = "param.data = torch.zeros(new_shape, device=self.device)  # " + marker
+if old in text:
+    text = text.replace(old, new)
+    path.write_text(text)
+elif new not in text:
+    raise SystemExit("unsupported Nerfstudio Splatfacto checkpoint loader")
+print(marker)
+PY
+"""
+
+
 def validate_resume_checkpoint(path: str | None) -> str | None:
     """Confine trainer resume input to immutable checkpoint evidence on the PC."""
     if path is None:
@@ -383,6 +417,7 @@ cd /root/gpu-jobs
 source splat-env/bin/activate
 test -x "$VIRTUAL_ENV/bin/ns-train"
 {pageable_cpu_cache_guard()}
+{stable_splat_resume_guard()}
 rm -rf {REMOTE_RUNS}/{name}
 rm -f {telemetry}
 (

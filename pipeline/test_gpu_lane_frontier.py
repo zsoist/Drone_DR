@@ -224,6 +224,41 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertLess(command.index("AeroBrain: keep full-resolution CPU cache pageable"),
                         command.index('yes | "$VIRTUAL_ENV/bin/ns-train"'))
 
+    def test_resume_guard_preserves_optimizer_parameter_identity(self):
+        upstream = '''        for name, param in self.gauss_params.items():
+            old_shape = param.shape
+            new_shape = (newp,) + old_shape[1:]
+            self.gauss_params[name] = torch.nn.Parameter(torch.zeros(new_shape, device=self.device))
+'''
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / "splatfacto.py"
+            source.write_text(upstream)
+            guard = gpu_lane.stable_splat_resume_guard(source)
+
+            first = subprocess.run(["bash", "-s"], input=guard, text=True,
+                                   capture_output=True)
+            second = subprocess.run(["bash", "-s"], input=guard, text=True,
+                                    capture_output=True)
+
+            self.assertEqual(0, first.returncode, first.stderr)
+            self.assertEqual(0, second.returncode, second.stderr)
+            patched = source.read_text()
+            self.assertNotIn('self.gauss_params[name] = torch.nn.Parameter', patched)
+            self.assertIn("param.data = torch.zeros", patched)
+            self.assertIn("preserve optimizer parameter identity", patched)
+
+    def test_train_applies_optimizer_identity_guard_before_checkpoint_load(self):
+        command = gpu_lane.train_script(
+            "frontier-recovery", 30_000, 1, "resume-run",
+            resume_checkpoint=(
+                "/root/gpu-jobs/checkpoints/splat-safe/step-000004000.ckpt"),
+        )
+
+        marker = "AeroBrain: preserve optimizer parameter identity"
+        self.assertIn(marker, command)
+        self.assertLess(command.index(marker),
+                        command.index('yes | "$VIRTUAL_ENV/bin/ns-train"'))
+
     def test_worker_applies_and_records_measured_cuda_cache_policy(self):
         source = inspect.getsource(worker.run_splat_cuda)
 
