@@ -1,5 +1,6 @@
 import sys
 import inspect
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -188,6 +189,40 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertEqual(1, args.count("--pipeline.datamanager.cache-images"))
         self.assertEqual("cpu", args[args.index("--pipeline.datamanager.cache-images") + 1])
         self.assertNotIn("--downscale-factor", args)
+
+    def test_cpu_cache_guard_keeps_large_images_pageable_and_is_idempotent(self):
+        upstream = '''        elif cache_images_device == "cpu":
+            for cache in undistorted_images:
+                cache["image"] = cache["image"].pin_memory()
+                if "mask" in cache:
+                    cache["mask"] = cache["mask"].pin_memory()
+'''
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / "full_images_datamanager.py"
+            source.write_text(upstream)
+            guard = gpu_lane.pageable_cpu_cache_guard(source)
+
+            first = subprocess.run(["bash", "-s"], input=guard, text=True,
+                                   capture_output=True)
+            second = subprocess.run(["bash", "-s"], input=guard, text=True,
+                                    capture_output=True)
+
+            self.assertEqual(0, first.returncode, first.stderr)
+            self.assertEqual(0, second.returncode, second.stderr)
+            patched = source.read_text()
+            self.assertNotIn("pin_memory()", patched)
+            self.assertIn("AeroBrain: keep full-resolution CPU cache pageable", patched)
+
+    def test_train_applies_pageable_cache_guard_before_loading_checkpoint(self):
+        command = gpu_lane.train_script(
+            "frontier-recovery", 30_000, 1, "resume-run",
+            resume_checkpoint=(
+                "/root/gpu-jobs/checkpoints/splat-safe/step-000004000.ckpt"),
+        )
+
+        self.assertIn("AeroBrain: keep full-resolution CPU cache pageable", command)
+        self.assertLess(command.index("AeroBrain: keep full-resolution CPU cache pageable"),
+                        command.index('yes | "$VIRTUAL_ENV/bin/ns-train"'))
 
     def test_worker_applies_and_records_measured_cuda_cache_policy(self):
         source = inspect.getsource(worker.run_splat_cuda)

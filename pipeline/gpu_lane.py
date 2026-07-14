@@ -43,6 +43,10 @@ REMOTE_JOBS = "/root/gpu-jobs"
 REMOTE_DATA = f"{REMOTE_JOBS}/data"
 REMOTE_RUNS = f"{REMOTE_JOBS}/runs"
 REMOTE_CHECKPOINTS = f"{REMOTE_JOBS}/checkpoints"
+NERFSTUDIO_FULL_IMAGE_MANAGER = (
+    f"{REMOTE_JOBS}/splat-env/lib/python3.10/site-packages/nerfstudio/"
+    "data/datamanagers/full_images_datamanager.py"
+)
 NTFS_TRANSFER = "C:/Users/reyes/gpu-transfer"    # puente binario-seguro WSL->Mac
 WSL_TRANSFER = "/mnt/c/Users/reyes/gpu-transfer"
 
@@ -275,6 +279,43 @@ def with_image_cache_policy(train_args: list[str] | tuple[str, ...] | None,
     return [*args, flag, device]
 
 
+def pageable_cpu_cache_guard(source_path: str | Path = NERFSTUDIO_FULL_IMAGE_MANAGER) -> str:
+    """Return an idempotent remote guard for Nerfstudio's CPU image cache.
+
+    Nerfstudio page-locks every cached CPU image through CUDA. A dense resumed
+    checkpoint can already occupy nearly all VRAM before that lazy cache is
+    materialized, making ``pin_memory`` fail even though the PC has ample RAM.
+    Pageable tensors still transfer correctly through ``Tensor.to(device)``;
+    they only trade asynchronous-copy speed for reliable full-resolution runs.
+    """
+    source = shlex.quote(str(source_path))
+    return f"""python - {source} <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = "AeroBrain: keep full-resolution CPU cache pageable"
+replacements = (
+    ('cache["image"] = cache["image"].pin_memory()',
+     'cache["image"] = cache["image"].contiguous()  # ' + marker),
+    ('cache["mask"] = cache["mask"].pin_memory()',
+     'cache["mask"] = cache["mask"].contiguous()  # ' + marker),
+)
+changed = False
+for old, new in replacements:
+    if old in text:
+        text = text.replace(old, new)
+        changed = True
+    elif new not in text:
+        raise SystemExit(f"unsupported Nerfstudio CPU cache source: missing {{old}}")
+if changed:
+    path.write_text(text)
+print(marker)
+PY
+"""
+
+
 def validate_resume_checkpoint(path: str | None) -> str | None:
     """Confine trainer resume input to immutable checkpoint evidence on the PC."""
     if path is None:
@@ -341,6 +382,7 @@ set -e
 cd /root/gpu-jobs
 source splat-env/bin/activate
 test -x "$VIRTUAL_ENV/bin/ns-train"
+{pageable_cpu_cache_guard()}
 rm -rf {REMOTE_RUNS}/{name}
 rm -f {telemetry}
 (
