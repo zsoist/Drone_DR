@@ -708,6 +708,41 @@ def splat_quality(out: Path, log: str, n_cams: int, iters: int) -> dict:
             "last_step": last_step, "steps_logged": len(step_rows), "target_iters": iters}
 
 
+def odm_live_phase(log: str, current: float | None = None) -> dict | None:
+    """Return the latest measured ODM sub-stage visible in a rolling log tail."""
+    low = re.sub(r"\x1b\[[0-9;]*m", "", str(log or "")).lower()
+    phases = [
+        ("odm-features", "extrayendo features", 0.20,
+         (r"opensfm[^\n]*detect_features", r"found\s+\d+\s+points\s+in")),
+        ("odm-matching", "comparando imágenes", 0.35,
+         (r"opensfm[^\n]*match_features", r"matching\s+s?\d*_?f_", r"matched\s+\d+\s+pairs")),
+        ("odm-tracks", "construyendo tracks", 0.40,
+         (r"opensfm[^\n]*create_tracks", r"good tracks:\s*\d+")),
+        ("odm-reconstruct", "reconstruyendo cámaras", 0.43,
+         (r"opensfm[^\n]*\sreconstruct\s", r"incremental reconstruction", r"resection inliers")),
+        ("odm-undistort", "corrigiendo lentes", 0.50,
+         (r"opensfm[^\n]*undistort", r"undistorting image")),
+        ("odm-depthmaps", "calculando profundidad CUDA", 0.58,
+         (r"depthmap resolution", r"estimated depth-maps", r"fused depth-maps")),
+        ("odm-mesh", "construyendo malla", 0.75,
+         (r"poissonrecon", r"running\s+odm_meshing\s+stage")),
+        ("odm-texture", "texturizando modelo", 0.82,
+         (r"mvstex", r"running\s+(?:mvs_|odm_)texturing\s+stage")),
+        ("odm-map", "generando DSM y ortofoto", 0.88,
+         (r"running\s+odm_dem\s+stage", r"running\s+odm_orthophoto\s+stage")),
+    ]
+    latest = None
+    for stage, label, progress, patterns in phases:
+        for pattern in patterns:
+            matches = list(re.finditer(pattern, low))
+            if matches and (latest is None or matches[-1].end() > latest[0]):
+                latest = (matches[-1].end(), stage, label, progress)
+    if latest is None:
+        return None
+    return {"stage": latest[1], "label": latest[2],
+            "progress": max(float(current or 0), latest[3])}
+
+
 def derive_odm_progress(log: str, current: float | None = None, cid: str = "",
                         started: float | None = None) -> float | None:
     """Progreso best-effort de un job ODM a partir del log.
@@ -1140,6 +1175,55 @@ def source_evidence(clip_id: str, vault: Path | None = None) -> dict:
         "status": "eligible",
     }
     return {key: value for key, value in row.items() if value is not None}
+
+
+def scene_source_compatibility(scene: dict, sources: list, *, evidence_fn=source_evidence,
+                               max_distance_m: float = 500.0) -> dict:
+    """Enforce a measured same-place boundary before building a scene version."""
+    limit = max(1.0, float(max_distance_m or 500.0))
+    measured = {}
+    for source in sources:
+        try:
+            row = evidence_fn(str(source)) or {}
+        except (KeyError, OSError, ValueError, TypeError):
+            row = {}
+        bbox = row.get("coverage_bbox")
+        center = None
+        if (isinstance(bbox, (list, tuple)) and len(bbox) == 4
+                and all(isinstance(value, (int, float)) for value in bbox)):
+            center = ((float(bbox[0]) + float(bbox[2])) / 2,
+                      (float(bbox[1]) + float(bbox[3])) / 2)
+        measured[str(source)] = {"evidence": row, "center": center}
+
+    anchor = (scene or {}).get("anchor") or {}
+    try:
+        anchor_center = (float(anchor["lon"]), float(anchor["lat"]))
+        anchor_source = "scene"
+    except (KeyError, TypeError, ValueError):
+        first = next(((source, row["center"]) for source, row in measured.items()
+                      if row["center"] is not None), None)
+        anchor_center = first[1] if first else None
+        anchor_source = f"source:{first[0]}" if first else None
+
+    accepted = []
+    rejected = []
+    for source in map(str, sources):
+        center = measured.get(source, {}).get("center")
+        if center is None or anchor_center is None:
+            rejected.append({"clip_id": source, "reason": "coverage_unknown",
+                             "distance_m": None})
+            continue
+        mean_lat = math.radians((anchor_center[1] + center[1]) / 2)
+        dx = (center[0] - anchor_center[0]) * 111320 * math.cos(mean_lat)
+        dy = (center[1] - anchor_center[1]) * 111320
+        distance = round(math.hypot(dx, dy), 1)
+        if distance <= limit:
+            accepted.append(source)
+        else:
+            rejected.append({"clip_id": source, "reason": "outside_site_radius",
+                             "distance_m": distance, "max_distance_m": limit})
+    return {"accepted": accepted, "rejected": rejected,
+            "max_distance_m": limit, "anchor_source": anchor_source}
 
 
 def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: str,
@@ -1814,6 +1898,14 @@ class H(BaseHTTPRequestHandler):
                 if j["kind"] == "3d" and j["status"] == "running":
                     j["progress"] = derive_odm_progress(j.get("log") or "", j.get("progress"),
                                                         j.get("label") or "", j.get("started"))
+                    live = odm_live_phase(j.get("log") or "", j.get("progress"))
+                    if live and j.get("stage") == "odm":
+                        spec = _job_spec(j)
+                        backend = (j.get("backend") or
+                                   ("NVIDIA CUDA" if spec.get("backend") == "cuda" else "local"))
+                        j.update(progress=live["progress"], stage=live["stage"],
+                                 detail=f"2/3 ODM {spec.get('preset') or 'estandar'} en "
+                                        f"{backend} · {live['label']}")
             latest_done = jobstore.latest_done_ids(("3d",))
             summaries = [normalize_job_summary(j, latest_done) for j in jobs]
             counts = {
@@ -2447,6 +2539,23 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "elige al menos un video con GPS"}, 400)
             if len(sources) > 24:
                 return self.send_json({"error": "máximo 24 videos por versión de escena"}, 400)
+            compatibility = scene_source_compatibility(scene, sources)
+            if compatibility["rejected"]:
+                far = [row for row in compatibility["rejected"]
+                       if row["reason"] == "outside_site_radius"]
+                unknown = [row for row in compatibility["rejected"]
+                           if row["reason"] == "coverage_unknown"]
+                parts = []
+                if far:
+                    parts.append(f"{len(far)} fuera del radio de sitio de 500 m")
+                if unknown:
+                    parts.append(f"{len(unknown)} sin cobertura GPS medible")
+                return self.send_json({
+                    "error": "no se mezclaron zonas distintas: " + "; ".join(parts),
+                    "code": "SCENE_SOURCE_INCOMPATIBLE",
+                    "rejected_sources": compatibility["rejected"],
+                    "max_distance_m": compatibility["max_distance_m"],
+                }, 400)
             requested_photos = spec.get("photos") if isinstance(spec.get("photos"), list) else [
                 *active.get("photos", []), *(spec.get("new_photos") or [])]
             photos = [Path(str(p)).name for p in requested_photos

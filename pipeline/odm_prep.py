@@ -101,7 +101,7 @@ def _photo_parent(name: str):
     return None, 0.0
 
 
-def _extract_source(tmp_dir: Path, images: Path, src_cid: str, prefix: str, profile, fps: float, width: int) -> list:
+def _extract_source(tmp_dir: Path, images: Path, src_cid: str, prefix: str, profile, fps: float, width: int) -> tuple[list, int]:
     """Extrae + poda de UN video fuente hacia tmp_dir con `prefix`. Devuelve los args de geotag
     apuntando a la ruta FINAL en images/ (exiftool corre DESPUÉS del swap, no sobre tmp_dir)."""
     raw = find_raw(src_cid)
@@ -129,14 +129,15 @@ def _extract_source(tmp_dir: Path, images: Path, src_cid: str, prefix: str, prof
         prune_frames(stmp, pts, fps, profile, manifest_path=None)
     # mueve los supervivientes a tmp_dir con prefijo por-fuente + arma su geotag
     args = []
-    for f in sorted(stmp.glob("f_*.jpg")):
+    survivors = sorted(stmp.glob("f_*.jpg"))
+    for f in survivors:
         num = int(f.stem.split("_")[1])            # el número del ARCHIVO fija el tiempo (no el índice tras poda)
         sec = min(int((num - 0.5) / fps), len(pts) - 1)
         name = f"{prefix}{f.name}" if prefix else f.name   # 's0_f_0042.jpg' o 'f_0042.jpg'
         os.replace(f, tmp_dir / name)
         args += _geotag(images / name, pts[sec])   # ruta FINAL: el geotag corre tras el swap
     shutil.rmtree(stmp, ignore_errors=True)
-    return args
+    return args, len(survivors)
 
 
 def main():
@@ -172,8 +173,11 @@ def main():
     multi = len(sources) > 1 or bool(photos)
     for idx, src in enumerate(sources):
         prefix = f"s{idx}_" if multi else ""        # 1 sola fuente sin fotos → nombres f_XXXX intactos (compat)
-        geotag_args += _extract_source(tmp_dir, images, src, prefix, profile, fps, width)
-        per_source.append({"cid": src, "prefix": prefix or None})
+        source_args, source_frames = _extract_source(
+            tmp_dir, images, src, prefix, profile, fps, width)
+        geotag_args += source_args
+        per_source.append({"cid": src, "prefix": prefix or None,
+                           "frames": source_frames})
 
     # fotos: se copian y geotaggean desde el track del clip padre en su instante
     n_photos = 0

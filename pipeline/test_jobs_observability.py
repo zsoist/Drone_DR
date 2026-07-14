@@ -81,6 +81,26 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual(0, rc)
         self.assertEqual(0.42, jobs.get(self.job["id"])["progress"])
 
+    def test_remote_odm_live_phase_reports_tracks_and_reconstruction_truthfully(self):
+        tracks = server.odm_live_phase(
+            'running "opensfm" create_tracks "/datasets/code/opensfm"\n'
+            'Good tracks: 503571', 0.35)
+        reconstruct = server.odm_live_phase(
+            'Good tracks: 503571\n'
+            'running "opensfm" reconstruct "/datasets/code/opensfm"', 0.35)
+
+        self.assertEqual("odm-tracks", tracks["stage"])
+        self.assertEqual("construyendo tracks", tracks["label"])
+        self.assertGreaterEqual(tracks["progress"], 0.40)
+        self.assertEqual("odm-reconstruct", reconstruct["stage"])
+        self.assertEqual("reconstruyendo cámaras", reconstruct["label"])
+        self.assertGreater(reconstruct["progress"], tracks["progress"])
+
+    def test_remote_odm_live_phase_never_regresses_progress(self):
+        phase = server.odm_live_phase("Matching s0_f_0001.jpg and s0_f_0002.jpg", 0.63)
+
+        self.assertEqual(0.63, phase["progress"])
+
     def test_job_summary_exposes_requested_and_effective_without_raw_spec(self):
         jid = "3d-truth-fixture"
         spec = {"clip_id": "recon_fixture", "preset": "alta",

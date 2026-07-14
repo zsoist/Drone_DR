@@ -706,6 +706,122 @@ def odm_registration(proj: Path, sources: list) -> dict:
     return out
 
 
+def odm_frame_preflight(proj: Path, sources: list, minimum_frames: int = 5) -> dict:
+    """Gate a multi-source solve using exact frames left after adaptive selection.
+
+    Registration requires at least five images from every source.  Running feature
+    matching when a source submitted fewer than five can never produce a FULL merge,
+    so this check runs after local extraction and before any remote GPU work.
+    """
+    minimum = max(1, int(minimum_frames or 5))
+    try:
+        manifest = json.loads((proj / "frames_manifest.json").read_text())
+    except (OSError, ValueError, TypeError):
+        manifest = {}
+    manifest_rows = {str(row.get("cid")): row for row in manifest.get("sources") or []
+                     if isinstance(row, dict) and row.get("cid")}
+    multi = len(sources) > 1 or bool(manifest.get("photos"))
+    by_source = {}
+    viable_sources = []
+    sparse_sources = []
+    for index, source in enumerate(sources):
+        source = str(source)
+        row = manifest_rows.get(source, {})
+        prefix = row.get("prefix")
+        if prefix is None:
+            prefix = f"s{index}_" if multi else ""
+        pattern = f"{prefix}f_*.jpg" if prefix else "f_*.jpg"
+        submitted = sum(1 for _ in (proj / "images").glob(pattern))
+        viable = submitted >= minimum
+        reason = (f"selección adaptativa dejó {submitted}/{minimum} frames mínimos"
+                  if not viable else f"{submitted} frames listos para registro")
+        by_source[source] = {
+            "clip_id": source,
+            "prefix": prefix or None,
+            "submitted": submitted,
+            "minimum": minimum,
+            "viable": viable,
+            "reason": reason,
+        }
+        (viable_sources if viable else sparse_sources).append(source)
+    return {
+        "minimum_frames": minimum,
+        "by_source": by_source,
+        "viable_sources": viable_sources,
+        "sparse_sources": sparse_sources,
+    }
+
+
+def frame_viable_recovery_spec(parent_spec: dict, viable_sources: list) -> dict:
+    """Retarget an immutable scene job and its phased splat to a viable subset."""
+    viable = list(dict.fromkeys(str(source) for source in viable_sources if str(source)))
+    if not viable:
+        raise ValueError("frame recovery needs at least one viable source")
+    spec = json.loads(json.dumps(parent_spec or {}))
+    photos = list(spec.get("photos") or [])
+    recovery_id = jobstore.recon_id_for(viable, photos)
+    spec.update({
+        "clip_id": recovery_id,
+        "version_id": recovery_id,
+        "primary_cid": viable[0],
+        "sources": viable,
+    })
+    if isinstance(spec.get("splat"), dict):
+        spec["splat"].update({"clip_id": recovery_id, "version_id": recovery_id})
+    return spec
+
+
+def queue_frame_viable_recovery(j: dict, preflight: dict) -> str | None:
+    """Persist an impossible attempt and enqueue its exact viable scene subset."""
+    spec = j.get("spec") or {}
+    scene_id = spec.get("scene_id")
+    version_id = spec.get("version_id") or spec.get("clip_id")
+    requested = list(spec.get("sources") or [])
+    viable = list(preflight.get("viable_sources") or [])
+    sparse = list(preflight.get("sparse_sources") or [])
+    if not scene_id or not version_id or not sparse or not viable or viable == requested:
+        return None
+
+    contributions = []
+    for source in sparse:
+        row = (preflight.get("by_source") or {}).get(source) or {}
+        contributions.append({
+            "clip_id": source,
+            "submitted": int(row.get("submitted") or 0),
+            "registered": 0,
+            "merged": False,
+            "reason": row.get("reason") or "insufficient frames for registration",
+        })
+    scenestore.record_contributions(scene_id, version_id, contributions)
+    scenestore.update_version(
+        scene_id, version_id, status="failed", merge_label="PARTIAL",
+        required_artifacts_ok=False,
+        metrics={"frame_preflight": preflight},
+        completed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"), job_id=j.get("id"))
+
+    recovery = frame_viable_recovery_spec(spec, viable)
+    recovery_id = recovery["clip_id"]
+    scene = scenestore.get_scene(scene_id)
+    evidence = [row for row in scene.get("source_evidence") or []
+                if row.get("clip_id") in set(viable)]
+    scenestore.add_version(scene_id, recovery_id, viable, recovery.get("photos") or [],
+                           "processing", source_evidence=evidence)
+    if jobstore.pending("3d", recovery_id):
+        pending = next((row for row in jobstore.recent(200)
+                        if row.get("kind") == "3d" and row.get("label") == recovery_id
+                        and row.get("status") in ("queued", "running")), None)
+        return pending.get("id") if pending else recovery_id
+    queued = jobstore.enqueue("3d", recovery_id, recovery)
+    scenestore.update_version(scene_id, recovery_id, job_id=queued["id"])
+    jobstore.event(
+        j["id"], "scene_frame_preflight_recovery",
+        f"{len(sparse)} fuente(s) bajo {preflight.get('minimum_frames', 5)} frames; "
+        f"recovery {recovery_id} con {len(viable)} fuente(s)", level="warning",
+        data={"sparse_sources": sparse, "viable_sources": viable,
+              "recovery_job": queued["id"], "recovery_version": recovery_id})
+    return queued["id"]
+
+
 def merge_label(n_sources: int, n_photos: int, dropped: list) -> str:
     """Label de fusión de la entity (U0): la composición al frente, jamás escondida.
     SINGLE = una fuente sin fotos; PARTIAL = alguna fuente no co-registró;
@@ -796,6 +912,14 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         prep_cmd += ["--photos", ",".join(photos)]
     if jobstore.run_tracked(j["id"], prep_cmd, timeout=1800 + 1200 * (len(src_list) - 1)) != 0:
         raise RuntimeError("odm_prep falló")
+    frame_preflight = odm_frame_preflight(proj, src_list)
+    if len(src_list) > 1 and frame_preflight["sparse_sources"]:
+        recovery_job = queue_frame_viable_recovery(j, frame_preflight)
+        if recovery_job:
+            sparse = ", ".join(frame_preflight["sparse_sources"])
+            raise RuntimeError(
+                f"preflight de registro: {sparse} bajo el mínimo de 5 frames; "
+                f"recovery viable encolado ({recovery_job})")
     removed = clean_odm_outputs(proj)
     if removed:
         print(f"  ODM fresh start: limpiados {len(removed)} outputs previos", flush=True)
