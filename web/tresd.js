@@ -1,14 +1,121 @@
-  import * as THREE from '/vendor/three180.module.js?v=176';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=176';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=176';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=176';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=176';
-  import { mountSplatViewer } from '/splatview.js?v=176';
+  import * as THREE from '/vendor/three180.module.js?v=178';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=178';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=178';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=178';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=178';
+  import { mountSplatViewer } from '/splatview.js?v=178';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
   const splatKey = s => s.path || s.name;
   const splatUrl = s => 'data/splats/' + splatKey(s).split('/').map(encodeURIComponent).join('/');
+  const SPLAT_PROFILE_KEYS = ['fast', 'medium', 'cinematic', 'ultra', 'ultra20', 'frontier', 'grandmaster'];
+  const SPLAT_COPY = {
+    fast: 'Vista previa para validar poses y cobertura.',
+    medium: 'Fallback local de inspección estable.',
+    cinematic: 'Calidad foto-realista lista para compartir.',
+    ultra: 'Detalle premium con crecimiento completo.',
+    ultra20: 'Refinamiento CUDA después de estabilizar gaussianas.',
+    frontier: 'Ruta 30K completa para máxima convergencia.',
+    grandmaster: 'Refinamiento extendido 40K de máxima calidad.',
+  };
+  const _profileFallback = SPLAT_PROFILE_KEYS.map((key, i) => ({
+    key, label: ['Fast 1K', 'Medium 2K', 'Cinematic 7K', 'Ultra 15K',
+      'Ultra+ 20K', 'Frontier 30K', 'Grandmaster 40K'][i],
+    iters: [1000, 2000, 7000, 15000, 20000, 30000, 40000][i],
+    supported_backends: i < 2 ? ['metal', 'cpu', 'cuda'] : ['cuda'],
+    eta_mps: i === 0 ? '~8-18 min' : i === 1 ? '~4-12 min' : 'CUDA only',
+  }));
+  const splatProfilesPromise = fetch('/api/splat_profiles')
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(`profiles ${r.status}`)))
+    .then(d => d.profiles?.length ? d.profiles : _profileFallback)
+    .catch(() => _profileFallback);
+  const fmtEta = seconds => {
+    seconds = Math.max(0, Number(seconds || 0));
+    if (seconds >= 3600) return `${(seconds / 3600).toFixed(seconds >= 10800 ? 1 : 2)} h`;
+    if (seconds >= 60) return `${Math.max(1, Math.round(seconds / 60))} min`;
+    return `${Math.round(seconds)} s`;
+  };
+  function splatEta(profile) {
+    const eta = profile.eta;
+    const localCapable = profile.supported_backends?.includes('metal');
+    if (localCapable && eta?.source === 'projected_from_measured') {
+      return { main: `CUDA ~${fmtEta(eta.seconds)} · Mac ${profile.eta_mps}`,
+        sub: `CUDA proyectado desde ${eta.baseline_iterations / 1000}K medido · Mac estimado`,
+        cls: 'projected' };
+    }
+    if (eta?.source === 'measured') {
+      const context = [eta.sample_count === 1 ? '1 corrida real' : `${eta.sample_count} corridas reales`,
+        eta.cameras ? `${eta.cameras} cámaras` : '', eta.resolution === 'half' ? '½ resolución' : 'resolución completa']
+        .filter(Boolean).join(' · ');
+      return { main: `${fmtEta(eta.seconds)} medidos`, sub: context, cls: 'measured' };
+    }
+    if (eta?.source === 'projected_from_measured') {
+      return { main: `~${fmtEta(eta.seconds)} proyectados`,
+        sub: `${fmtEta(eta.range_low_s)}–${fmtEta(eta.range_high_s)} · desde ${eta.baseline_iterations / 1000}K medido`,
+        cls: 'projected' };
+    }
+    if (profile.supported_backends?.length === 1) {
+      return { main: 'Primera medición', sub: 'Se calibrará con esta RTX al completar', cls: 'first' };
+    }
+    return { main: profile.eta_mps || 'Tiempo variable', sub: 'Estimación local Apple Metal', cls: 'local' };
+  }
+  function renderSplatProfiles(profiles, selected = 'frontier') {
+    return profiles.map(profile => {
+      const onlyCuda = profile.supported_backends?.length === 1 && profile.supported_backends[0] === 'cuda';
+      const eta = splatEta(profile);
+      return `<button type="button" class="mpreset splat-profile${profile.key === selected ? ' on' : ''}${onlyCuda ? ' cuda-only' : ' local-ok'}${profile.key === 'frontier' ? ' featured' : ''}"
+        data-splat-profile="${esc(profile.key)}" data-iters="${esc(profile.iters)}" data-cuda-only="${onlyCuda ? '1' : '0'}">
+        <span class="sp-profile-top"><b>${esc(profile.label)}</b><em>${onlyCuda ? 'NVIDIA CUDA' : 'MAC / CUDA'}</em></span>
+        <span class="sp-eta ${eta.cls}">${esc(eta.main)}</span>
+        <small>${esc(eta.sub)}</small><small class="sp-desc">${esc(SPLAT_COPY[profile.key] || profile.description)}</small>
+      </button>`;
+    }).join('');
+  }
+  const splatResolutionControls = () => `<div class="splat-resolution" data-resolution-box>
+    <div><b>Resolución de entrada CUDA</b><span>Auto intenta completa; solo baja a ½ si CUDA confirma falta de VRAM.</span></div>
+    <div class="seg"><button type="button" class="on" data-splat-resolution="auto">Auto</button>
+      <button type="button" data-splat-resolution="full">Completa</button>
+      <button type="button" data-splat-resolution="half">½ resolución</button></div>
+  </div>`;
+  function selectedSplatRequest(root) {
+    const card = root.querySelector('[data-splat-profile].on');
+    const cudaToggle = root.querySelector('[data-cuda-toggle]');
+    const cudaOnly = card?.dataset.cudaOnly === '1';
+    return {
+      preset: card?.dataset.splatProfile || 'frontier',
+      backend: cudaOnly || cudaToggle?.checked ? 'cuda' : 'metal',
+      resolution: root.querySelector('[data-splat-resolution].on')?.dataset.splatResolution || 'auto',
+      cudaOnly,
+    };
+  }
+  function wireSplatCompute(root, { onChange } = {}) {
+    const sync = () => {
+      const request = selectedSplatRequest(root);
+      const toggle = root.querySelector('[data-cuda-toggle]');
+      const policy = root.querySelector('[data-splat-policy]');
+      if (toggle) {
+        if (request.cudaOnly) toggle.checked = true;
+        toggle.disabled = request.cudaOnly;
+      }
+      root.querySelector('[data-resolution-box]')?.classList.toggle('muted', request.backend !== 'cuda');
+      if (policy) policy.innerHTML = request.backend === 'cuda'
+        ? `<b>CUDA estricto</b> · ${request.cudaOnly ? 'Requerido por este perfil. ' : ''}Sin fallback local; si el PC no está disponible, el job conserva la solicitud y reporta el error.`
+        : '<b>Apple Metal local</b> · disponible únicamente para Fast 1K y Medium 2K.';
+      onChange?.(request);
+    };
+    root.querySelectorAll('[data-splat-profile]').forEach(card => card.addEventListener('click', () => {
+      root.querySelectorAll('[data-splat-profile]').forEach(item => item.classList.toggle('on', item === card));
+      sync();
+    }));
+    root.querySelector('[data-cuda-toggle]')?.addEventListener('change', sync);
+    root.querySelectorAll('[data-splat-resolution]').forEach(button => button.addEventListener('click', () => {
+      root.querySelectorAll('[data-splat-resolution]').forEach(item => item.classList.toggle('on', item === button));
+      sync();
+    }));
+    sync();
+    return sync;
+  }
 
   // ═══ ESCÁNER DE CAPTURA (tarjeta premium compartida por los modales 3D y splat) ═══
   // Analiza el video ANTES de quemar horas: aptitud por producto (barras), riesgo de
@@ -119,7 +226,7 @@
              ['layers', 'Nube / Malla', 'visores 3D', null,
               'Nube de ~800k puntos con color real y malla texturizada — visor three.js con BVH, medición de distancias, áreas y volúmenes.'],
              ['spark', 'Splat', '<span id="td-splat-dev">Metal/MPS</span>', 'td-live-splats',
-              'Gaussian splatting foto-realista: OpenSplat en la GPU Metal local, o gsplat CUDA en el nodo remoto — reflejos y vegetación que la malla no logra.'],
+              'Gaussian splatting foto-realista: Fast/Medium en Apple Metal; Cinematic 7K hasta Grandmaster 40K en NVIDIA CUDA estricto.'],
              ['ext', 'Publicar', 'share + QA', null,
               'Un gate de navegador real verifica que el asset renderiza (0 errores de consola) antes de publicar el link compartible.']]
             .map(([ic, t, sub, liveId, pop], i, a) => `
@@ -135,7 +242,7 @@
             ${icon('cube')}<span><b>Procesar un vuelo…</b><small>frames + geotag + fotogrametría · combina tomas del mismo lugar</small></span>
             <i class="td-cta-arrow">›</i></button>
           <button class="btn td-cta" id="btn-splat" data-open-splat>
-            ${icon('spark')}<span><b>Generar splat…</b><small>foto-realista sobre poses de un proyecto existente · Metal o CUDA</small></span>
+            ${icon('spark')}<span><b>Generar splat…</b><small>Mac 1K/2K · NVIDIA CUDA 7K/15K/20K/30K/40K</small></span>
             <i class="td-cta-arrow">›</i></button>
           <button class="btn td-cta ghost" id="btn-jobs-status">
             ${icon('activity')}<span><b>Estado de trabajos</b><small>cola, progreso y fases en vivo</small></span>
@@ -381,7 +488,7 @@
           ? `nodo GPU · <b class="ok">RTX 4060 Ti despierto</b>${last.util_pct ? ` · ${last.util_pct}%` : ''}`
           : 'nodo GPU · <b class="dim">dormido · WoL</b>';
         const dev = document.getElementById('td-splat-dev');
-        if (dev) dev.textContent = awake ? 'Metal/MPS · CUDA listo' : 'Metal/MPS';
+        if (dev) dev.textContent = awake ? 'Mac 1K/2K · CUDA 7K–40K listo' : 'Mac 1K/2K · CUDA dormido';
       } catch { chip.innerHTML = 'nodo GPU · <b class="dim">sin datos</b>'; }
     };
     poll(); setInterval(poll, 30000);
@@ -401,9 +508,9 @@
              ['DRIVER', d.driver || '—']]
             .map(([lb, v]) => `<div class="gn-cell"><span>${lb}</span><b>${v}</b></div>`).join('')}
         </div>
-        <p class="footer-note">Lane CUDA <b>operativo y validado end-to-end</b> (gpu_lane.py):
-        dataset al PC por SSH, splatfacto 4000 iters en 138s, PLY de vuelta al Mac.
-        Integración al worker en curso — los trabajos CUDA lucirán su badge verde en Trabajos.</p>
+        <p class="footer-note">Lane CUDA <b>operativo y validado end-to-end</b>: dataset al PC,
+        perfiles exactos 7K/15K/20K/30K/40K, entrenamiento splatfacto, exportación y gate de
+        navegador de vuelta al Mac. Auto intenta resolución completa y solo reintenta a ½ ante OOM CUDA.</p>
         <div style="display:flex;gap:8px;margin-top:12px">
           ${awake ? '' : '<button class="btn" id="gnm-wake">Despertar (WoL)</button>'}
           <a class="btn ghost" href="system.html">Abrir Sistema</a>
@@ -929,20 +1036,15 @@
 
   // ---------- asistente: procesar un vuelo ----------
   const candidates = flights.filter(f => f.has_srt && f.stats?.bbox && !f.archived);
-  document.getElementById('btn-run3d').addEventListener('click', () => {
+  document.getElementById('btn-run3d').addEventListener('click', async () => {
     if (!candidates.length) return alert('Sin vuelos con GPS listos para 3D — sube un video con telemetría.');
+    const splatProfiles = await splatProfilesPromise;
     const PRE = [
       { k: 'rapido', n: 'Rápido', t: '~25-40 min', d: 'Borrador · 8 cm/px' },
       { k: 'estandar', n: 'Estándar', t: '~45-75 min', d: '5 cm/px · DSM 10 cm' },
       { k: 'alta', n: 'Alta', t: '~15 min-4 h', d: 'Nube densa · 3 cm/px' },
       { k: 'extra', n: 'Extra', t: '~4-7 h', d: 'Malla 600k · octree 11 · 2 cm/px' },
       { k: 'ultra', n: 'Ultra', t: '~8-14 h', d: 'pc-quality ultra · malla 800k · máx M4' },
-    ];
-    // presets del gaussian para el modo phased (subconjunto compacto)
-    const SQ = [
-      { p: 'medium', n: 'Medium', t: '~2-4 min' },
-      { p: 'cinematic', n: 'Cinemático', t: '~1 h' },
-      { p: 'ultra', n: 'Ultra', t: '~2-4 h' },
     ];
     // U1.1: agrupar por CENTROIDE del track (~130 m) — el test #1 refutó "mismo despegue
     // = mismo sujeto" (clip a 1m + vuelo a 90m compartían home y 0 features). El centro
@@ -1054,7 +1156,7 @@
           <span class="st-node-dot"></span>
           <span id="st-node-txt">nodo GPU · consultando…</span>
           <span class="spacer" style="flex:1"></span>
-          <span class="st-node-note">3D: ODM local · splat: Metal/MPS · CUDA remoto validado (worker en curso)</span>
+          <span class="st-node-note" id="st-node-note">CUDA remoto · verificando RTX, VRAM y carga</span>
         </div>
         <div id="m-preflight"></div>
         <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
@@ -1064,13 +1166,19 @@
         <div class="mpresets">${PRE.map(p => `
           <div class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
             <b>${p.n}</b><span class="mono">${p.t}</span><small>${p.d}</small></div>`).join('')}</div>
+        <label class="proc-phase compute-choice" id="m-odm-compute"><input type="checkbox" id="m-odm-cuda" checked>
+          <span>${icon('cpu')} <b>Fotogrametría en PC CUDA</b><small>ODM usa la RTX para depthmaps; si el nodo no responde, esta fase sí puede continuar local en el Mac.</small></span></label>
         <label class="proc-phase"><input type="checkbox" id="m-splat">
           <span>${icon('spark')} <b>También entrenar gaussian splat</b> al terminar el 3D (foto-realista)</span></label>
-        <div id="m-splatpreset" class="mpresets" style="display:none">${SQ.map(q => `
-          <div class="mpreset${q.p === 'cinematic' ? ' on' : ''}" data-sp="${q.p}"><b>${q.n}</b><span class="mono">${q.t}</span></div>`).join('')}</div>
-        <label class="proc-phase" id="m-cuda-row" style="display:none"><input type="checkbox" id="m-cuda">
-          <span>${icon('cpu')} <b>Procesar en nodo CUDA</b> (PC RTX 4060 Ti) — fotogrametría
-          y splat en el PC; si el nodo falla, cada fase cae sola a local</span></label>
+        <div id="m-splatpreset" class="splat-config" style="display:none">
+          <div class="splat-contract-head"><span><b>Calidad gaussian</b><small>Fast/Medium pueden correr en el Mac. 7K–40K son CUDA-only.</small></span>
+            <span class="splat-contract-badge">30K READY</span></div>
+          <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles, 'frontier')}</div>
+          <label class="proc-phase compute-choice" id="m-cuda-row"><input type="checkbox" id="m-cuda" data-cuda-toggle checked>
+            <span>${icon('cpu')} <b>Usar PC NVIDIA CUDA</b><small>RTX 4060 Ti · entrenamiento remoto sin ocupar la GPU del Mac</small></span></label>
+          ${splatResolutionControls()}
+          <div class="splat-policy" data-splat-policy></div>
+        </div>
       </div>
 
       <div class="st-tray" id="st-tray"></div>
@@ -1093,26 +1201,40 @@
     mapToggle?.addEventListener('click', () => applyMapVis(!stGrid.classList.contains('map-hidden')));
     if (localStorage.getItem('ab.st.maphidden') === '1') applyMapVis(true);
 
-    // nodo GPU en vivo dentro del paso 2 (probe real /api/gpu_node)
+    // nodo GPU siempre visible: despierto/ocupado/dormido/error con telemetría real.
+    const paintStudioNode = d => {
+      const el = ov.querySelector('#st-node');
+      const tx = ov.querySelector('#st-node-txt');
+      const note = ov.querySelector('#st-node-note');
+      if (!el || !tx || !note) return;
+      el.classList.toggle('awake', d.status === 'awake');
+      el.classList.toggle('busy', d.status === 'awake' && Number(d.util_pct || 0) > 10);
+      if (d.status === 'awake') {
+        const busy = Number(d.util_pct || 0) > 10;
+        tx.textContent = `nodo GPU · ${busy ? 'ocupado' : 'listo'} · ${d.gpu || 'NVIDIA'} · ${d.temp_c ?? '—'}°C`;
+        note.textContent = `${d.vram_used_mb ?? '—'} / ${d.vram_total_mb ?? '—'} MiB VRAM · driver ${d.driver || '—'}`;
+      } else {
+        tx.textContent = d.status === 'asleep' ? 'nodo GPU · dormido' : 'nodo GPU · no disponible';
+        note.innerHTML = `<button type="button" class="linklike" data-wake-cuda>Despertar PC por red</button>`;
+        note.querySelector('[data-wake-cuda]')?.addEventListener('click', async buttonEvent => {
+          const button = buttonEvent.currentTarget; button.disabled = true; button.textContent = 'Enviando…';
+          await api('/api/gpu_node/wake', {});
+          tx.textContent = 'nodo GPU · despertando…'; note.textContent = 'Puede tardar 30–60 s; la solicitud CUDA seguirá siendo estricta.';
+        });
+      }
+    };
     (async () => {
       try {
         const d = await (await fetch('/api/gpu_node')).json();
-        const el = ov.querySelector('#st-node');
-        const tx = ov.querySelector('#st-node-txt');
-        if (!el || !tx) return;
-        if (d.status === 'awake') {
-          el.classList.add('awake');
-          tx.textContent = `nodo GPU · ${d.gpu || 'despierto'} · ${d.temp_c ?? '—'}°C`;
-          const cr = ov.querySelector('#m-cuda-row');
-          if (cr) { cr.dataset.nodeOk = '1'; cr.style.display = ''; }
-        } else tx.textContent = 'nodo GPU · dormido (WoL en Sistema)';
-      } catch {}
+        paintStudioNode(d);
+      } catch { paintStudioNode({ status: 'unavailable' }); }
     })();
 
     const combinedBox = ov.querySelector('#m-combined');
     // renderCombined() invokes the hoisted renderPreflight(); initialize these controls
     // before the first render so renderPreflight never crosses a const TDZ.
     const splatChk = ov.querySelector('#m-splat'), splatPre = ov.querySelector('#m-splatpreset');
+    wireSplatCompute(splatPre, { onChange: () => renderPreflight() });
     // chip de score POR CLIP (aptitud individual del escáner — sí está fundamentado). NO predice
     // la fusión: eso solo se sabe DESPUÉS de procesar (el modelo reporta qué fuentes co-registraron).
     async function scoreChip(cid) {
@@ -1444,12 +1566,23 @@
       const fps = { rapido: 0.33, estandar: 0.5, alta: 1.0, extra: 1.0, ultra: 1.0 }[odmK] || 0.5;
       const width = { rapido: 2048, estandar: 2688, alta: 3072, extra: 3072, ultra: 3072 }[odmK] || 2688;
       const nEst = Math.max(8, Math.round(fs.reduce((a, f) => a + (f.duration_s || 0) * fps, 0) * 0.72) + photoSel.size);
-      const sp = splatPre.querySelector('.mpreset.on')?.dataset.sp || 'cinematic';
+      const request = selectedSplatRequest(splatPre);
+      const sp = request.preset;
       try {
-        const r = await api('/api/preflight', { n_images: nEst, width, preset: sp });
+        const r = await api('/api/preflight', { n_images: nEst, width, preset: sp,
+          backend: request.backend });
         if (r.error) { box.innerHTML = ''; return; }
         const cls = { SAFE: 'ok', ELEVATED: 'mid', LIKELY_OOM: 'mid',
-          UNVERIFIED_HIGH_RISK: 'mid', INPUT_FLOOR_EXCEEDS_CAP: 'bad', REJECTED: 'bad' }[r.verdict] || 'mid';
+          UNVERIFIED_HIGH_RISK: 'mid', UNVERIFIED_FULL_RES: 'mid', NODE_UNAVAILABLE: 'bad',
+          ENVIRONMENT_INVALID: 'bad', INSUFFICIENT_DISK: 'bad',
+          INPUT_FLOOR_EXCEEDS_CAP: 'bad', REJECTED: 'bad' }[r.verdict] || 'mid';
+        if (r.backend === 'cuda') {
+          const nodeFacts = [r.gpu, r.driver ? `driver ${r.driver}` : '', `${nEst} imágenes`].filter(Boolean).join(' · ');
+          box.innerHTML = `<div class="scan-mem ${cls}">${icon(cls === 'bad' ? 'warn' : 'check')}
+            <span><b>Preflight CUDA · ${esc(r.verdict)}</b> · ${esc(nodeFacts)}. ${esc(r.note || '')}
+            <i class="st-proj-note">Auto comienza a resolución completa y solo reintenta a ½ ante OOM CUDA clasificado. Sin fallback local.</i></span></div>`;
+          return;
+        }
         const measured = r.confidence === 'calibrated'
           ? `Pico proyectado Medium: ${r.projected_peak_mib} MiB (${r.pct}% del límite).`
           : `Piso calculado de carga: ${r.input_floor_mib} MiB; a -d 2: ${r.d2_input_floor_mib} MiB.`;
@@ -1457,9 +1590,7 @@
         box.innerHTML = `<div class="scan-mem ${cls}">${icon(r.verdict === 'SAFE' ? 'check' : 'warn')}
           <span><b>Preflight de memoria (${esc(sp)})</b>: ${esc(r.verdict)} · ~${nEst} imágenes. ${measured}
           ${esc(r.note || '')}${action}
-          <i class="st-proj-note">${r.confidence === 'calibrated'
-            ? 'Estimación Medium calibrada con ejecuciones medidas; conserva incertidumbre.'
-            : 'Cinematic/Ultra: riesgo no calibrado; no se inventa un pico ni se declara incapaz al Mac.'}</i></span></div>`;
+          <i class="st-proj-note">Estimación local Apple Metal; conserva incertidumbre y solo aplica a Fast/Medium.</i></span></div>`;
       } catch { box.innerHTML = ''; }
     }
     ov.querySelector('.mpresets').addEventListener('click', () => renderPreflight());
@@ -1490,10 +1621,11 @@
           preset: ov.querySelector('.mpresets .mpreset.on')?.dataset.k || 'estandar',
           title: ov.querySelector('#m-title').value.trim(),
           then_splat: splatChk.checked,
-          splat_preset: splatPre.querySelector('.mpreset.on')?.dataset.sp || 'cinematic',
-          backend: ov.querySelector('#m-cuda')?.checked ? 'cuda' : undefined,
-          splat_backend: (splatChk.checked && ov.querySelector('#m-cuda')?.checked) ? 'cuda' : undefined,
-          best_available: true,
+          splat_preset: selectedSplatRequest(splatPre).preset,
+          backend: ov.querySelector('#m-odm-cuda')?.checked ? 'cuda' : undefined,
+          splat_backend: splatChk.checked ? selectedSplatRequest(splatPre).backend : undefined,
+          splat_resolution: splatChk.checked ? selectedSplatRequest(splatPre).resolution : undefined,
+          best_available: !splatChk.checked || selectedSplatRequest(splatPre).backend !== 'cuda',
         });
         if (r.error) return alert(r.error);
         close();
@@ -2578,8 +2710,9 @@
   }
 
   renderSplatList();
-  document.getElementById('btn-splat').addEventListener('click', () => {
+  document.getElementById('btn-splat').addEventListener('click', async () => {
     if (!flights.length) return alert('No hay vuelos en el vault.');
+    const splatProfiles = await splatProfilesPromise;
     const modelIds = new Set(models.map(m => m.clip_id));
     const modelChoices = models.map((m, i) => ({ kind: 'model', m, f: flights.find(x => x.clip_id === m.clip_id), i }));
     const videoChoices = flights
@@ -2590,15 +2723,13 @@
       .reverse()
       .map((f, i) => ({ kind: 'video', f, i }));
     const choices = modelChoices.concat(videoChoices);
-    const Q = [
-      { p: 'medium', n: 'Medium', t: '~4-12 min MPS', d: 'Default estable para inspección fina' },
-      { p: 'cinematic', n: 'Cinemático', t: '~45-75 min MPS', d: 'Nítido, para compartir' },
-      { p: 'ultra', n: 'Ultra', t: '~2-4 h MPS', d: 'Máximo detalle local' },
-    ];
     const { ov, close } = openModal(`${icon('spark')} Generar gaussian splat`, `
       <p class="footer-note" style="margin:0 0 12px">Entrena un archivo <b>.splat</b> nuevo con las
       fotos y poses del proyecto elegido — <b>no modifica</b> la nube ni la malla. Al terminar
       aparece en la lista, en el visor y en la página pública.</p>
+      <div class="st-node mono" id="gs-node"><span class="st-node-dot"></span>
+        <span id="gs-node-text">nodo CUDA · consultando…</span><span class="spacer"></span>
+        <span class="st-node-note" id="gs-node-note">RTX, VRAM y carga reales</span></div>
       <p class="mlb">Base de captura</p>
       <div class="mflights">${choices.map((c, i) => {
         const m = c.m, f = c.f;
@@ -2618,19 +2749,37 @@
         <div class="mpreset" data-model-preset="alta"><b>Alta</b><span class="mono">más detalle</span><small>Mejor base, tarda más</small></div>
       </div>
       <div id="ms-score"></div>
-      <p class="mlb">Calidad del entrenamiento</p>
-      <div class="mpresets splat-presets">${Q.map(q => `
-        <div class="mpreset${q.p === 'medium' ? ' on' : ''}" data-preset="${q.p}">
-          <b>${q.n}</b><span class="mono">${q.t}</span><small>${q.d}</small></div>`).join('')}</div>
-      <label class="proc-phase" id="gs-cuda-row" style="display:none"><input type="checkbox" id="gs-cuda" checked>
-        <span>${icon('cpu')} <b>Entrenar en nodo CUDA</b> (RTX 4060 Ti · ~2× Metal, sin ocupar el Mac) —
-        las iteraciones pedidas corren COMPLETAS; si el nodo falla, cae solo a Metal/MPS</span></label>
-      <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Entrenar splat</button>`);
-    // el toggle solo se ofrece con el nodo despierto de verdad — y ENCENDIDO por defecto:
-    // pedir Ultra esperando CUDA y recibir Metal degradado fue la sorpresa que no se repite
+      <div class="splat-contract-head"><span><b>Calidad del entrenamiento</b><small>Tiempo medido cuando existe; proyección identificada cuando todavía no.</small></span>
+        <span class="splat-contract-badge">CUDA 30K / 40K</span></div>
+      <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles, 'frontier')}</div>
+      <label class="proc-phase compute-choice" id="gs-cuda-row"><input type="checkbox" id="gs-cuda" data-cuda-toggle checked>
+        <span>${icon('cpu')} <b>Entrenar en nodo NVIDIA CUDA</b><small>Fast/Medium pueden usar Apple Metal; 7K–40K bloquean CUDA por calidad.</small></span></label>
+      ${splatResolutionControls()}
+      <div class="splat-policy" data-splat-policy></div>
+      <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Entrenar splat</button>`, 'modal--splat-train');
+    wireSplatCompute(ov);
+    // Estado visible incluso dormido: ocultarlo confundía "no disponible" con "Mac".
     fetch('/api/gpu_node').then(r => r.json()).then(d => {
-      if (d.status === 'awake') ov.querySelector('#gs-cuda-row').style.display = '';
-    }).catch(() => {});
+      const row = ov.querySelector('#gs-node'), text = ov.querySelector('#gs-node-text');
+      const note = ov.querySelector('#gs-node-note');
+      row.classList.toggle('awake', d.status === 'awake');
+      row.classList.toggle('busy', d.status === 'awake' && Number(d.util_pct || 0) > 10);
+      if (d.status === 'awake') {
+        text.textContent = `nodo CUDA · ${Number(d.util_pct || 0) > 10 ? 'ocupado' : 'listo'} · ${d.gpu || 'NVIDIA'} · ${d.temp_c ?? '—'}°C`;
+        note.textContent = `${d.vram_used_mb ?? '—'} / ${d.vram_total_mb ?? '—'} MiB VRAM · ${d.util_pct ?? 0}% GPU`;
+      } else {
+        text.textContent = 'nodo CUDA · dormido';
+        note.innerHTML = '<button type="button" class="linklike" data-wake-cuda>Despertar PC por red</button>';
+        note.querySelector('[data-wake-cuda]')?.addEventListener('click', async e => {
+          e.currentTarget.disabled = true; e.currentTarget.textContent = 'Enviando…';
+          await api('/api/gpu_node/wake', {}); text.textContent = 'nodo CUDA · despertando…';
+          note.textContent = 'La solicitud seguirá estricta; no cambiará a Metal.';
+        });
+      }
+    }).catch(() => {
+      ov.querySelector('#gs-node-text').textContent = 'nodo CUDA · no disponible';
+      ov.querySelector('#gs-node-note').textContent = 'La solicitud seguirá estricta y reportará conectividad.';
+    });
     const msScore = ov.querySelector('#ms-score');
     renderScanCard(msScore, (ov.querySelector('.mflight.on') || ov.querySelector('.mflight'))?.dataset.cid);
     ov.querySelector('.mflights').addEventListener('click', e => {
@@ -2639,7 +2788,7 @@
       ov.querySelectorAll('.mflight').forEach(x => x.classList.toggle('on', x === c));
       renderScanCard(msScore, c.dataset.cid);      // el escáner sigue a la selección
     });
-    ov.querySelectorAll('.mpresets').forEach(group => group.addEventListener('click', e => {
+    ov.querySelectorAll('.mpresets:not(.splat-presets)').forEach(group => group.addEventListener('click', e => {
       const c = e.target.closest('.mpreset');
       if (!c) return;
       group.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
@@ -2649,14 +2798,15 @@
       btn.disabled = true;
       try {
         const base = ov.querySelector('.mflight.on');
+        const request = selectedSplatRequest(ov);
         const r = await api('/api/splat', {
           clip_id: base?.dataset.cid,
           auto_model: base?.dataset.autoModel === '1',
           model_preset: ov.querySelector('[data-model-preset].on')?.dataset.modelPreset || 'estandar',
-          preset: ov.querySelector('.splat-presets .mpreset.on')?.dataset.preset || 'medium',
-          backend: ov.querySelector('#gs-cuda')?.checked &&
-            ov.querySelector('#gs-cuda-row')?.style.display !== 'none' ? 'cuda' : undefined,
-          best_available: true,
+          preset: request.preset,
+          backend: request.backend,
+          resolution: request.resolution,
+          best_available: request.backend !== 'cuda',
         });
         if (r.error) return alert(r.error);
         close();

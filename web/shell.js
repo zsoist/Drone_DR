@@ -197,7 +197,9 @@ function jobDuration(seconds) {
 }
 function presetLabel(value) {
   return ({ rapido: 'Rápido', estandar: 'Estándar', alta: 'Alta', extra: 'Extra',
-    ultra: 'Ultra', medium: 'Medium', cinematic: 'Cinemático', fast: 'Fast' })[value] || value || '—';
+    ultra: 'Ultra 15K', ultra20: 'Ultra+ 20K', frontier: 'Frontier 30K',
+    grandmaster: 'Grandmaster 40K', medium: 'Medium 2K', cinematic: 'Cinematic 7K',
+    fast: 'Fast 1K' })[value] || value || '—';
 }
 function backendBadge(backend) {
   if (!backend) return '';
@@ -256,7 +258,7 @@ function jobDataGrid(j) {
     ? (j.input_mb / 1024).toFixed(1) + ' GB' : j.input_mb + ' MB']);
   // backend del row cuando existe; si no, el detail del worker es autoritativo
   // ("...en NVIDIA CUDA") — jamás asumir Mac por defecto en un job remoto
-  const cudaJob = /cuda/i.test(j.backend || '') ||
+  const cudaJob = /cuda|nvidia/i.test(j.effective_backend || j.backend || j.requested_backend || '') ||
     (['running', 'queued'].includes(j.status) && /NVIDIA CUDA/i.test(j.detail || ''));
   const hw = cudaJob ? 'RTX 4060 Ti · 8c WSL'
     : j.backend ? 'Mac M4 · 10 cores'
@@ -266,8 +268,9 @@ function jobDataGrid(j) {
   if (j.images_total) cells.push(['IMÁGENES', j.images_total]);
   else if (j.cameras_registered != null)
     cells.push(['CÁMARAS', `${j.cameras_registered}/${j.cameras_total || '?'}`]);
-  if (j.iterations) cells.push(['ITERACIONES', j.iterations >= 1000
-    ? (j.iterations / 1000) + 'k' : j.iterations]);
+  const iterations = j.iterations || j.requested_iterations;
+  if (iterations) cells.push(['ITERACIONES', iterations >= 1000
+    ? (iterations / 1000) + 'k' : iterations]);
   if (j.gaussians) cells.push(['GAUSSIANAS', j.gaussians >= 1e6
     ? (j.gaussians / 1e6).toFixed(2) + ' M' : Math.round(j.gaussians / 1000) + ' k']);
   if (!cells.length) return '';
@@ -290,6 +293,14 @@ function jobCard(j, flightsIdx, entering = true) {
   if (j.effective_preset) quality.push(`<span><b>Efectiva</b> · ${esc(presetLabel(j.effective_preset))}</span>`);
   if (j.dense_quality) quality.push(`<span><b>Nube densa</b> · ${esc(presetLabel(j.dense_quality))}${j.dense_quality_requested && j.dense_quality_requested !== j.dense_quality ? ` (solicitada ${esc(j.dense_quality_requested)})` : ''}</span>`);
   if (j.input_scale > 1) quality.push(`<span><b>Entrada</b> · -d ${esc(j.input_scale)}</span>`);
+  if (j.kind === 'splat' && j.requested_resolution)
+    quality.push(`<span><b>Resolución solicitada</b> · ${esc({ auto: 'Auto · completa primero', full: 'Completa', half: '½ resolución' }[j.requested_resolution] || j.requested_resolution)}</span>`);
+  if (j.kind === 'splat' && j.effective_resolution)
+    quality.push(`<span><b>Resolución efectiva</b> · ${esc(j.effective_resolution === 'half' ? '½ resolución' : 'Completa')}</span>`);
+  if (j.kind === 'splat' && /cuda/i.test(j.requested_backend || ''))
+    quality.push('<span><b>Política</b> · CUDA estricto</span>');
+  const attempts = Array.isArray(j.attempts) ? j.attempts : [];
+  const attemptScales = [...new Set(attempts.map(a => Number(a.d)).filter(Boolean))];
   const facts = [
     j.cameras_registered != null ? `${j.cameras_registered}/${j.cameras_total || j.cameras_registered} cámaras` : '',
     j.source_count ? `${j.source_count} video${j.source_count === 1 ? '' : 's'}` : '',
@@ -297,13 +308,15 @@ function jobCard(j, flightsIdx, entering = true) {
     j.product_mode ? String(j.product_mode).replaceAll('_', ' ') : '',
     j.iterations ? `${j.iterations >= 1000 && j.iterations % 1000 === 0 ? `${j.iterations / 1000}k` : j.iterations} iteraciones` : '',
     j.peak_mib ? `pico ${j.peak_mib} MiB${j.memory_cap_mib ? ` / ${j.memory_cap_mib}` : ''}` : '',
+    attemptScales.length > 1 ? 'OOM CUDA: completa → ½ resolución' :
+      attempts.length ? `${attempts.length} intento${attempts.length === 1 ? '' : 's'} CUDA` : '',
   ].filter(Boolean);
   const search = `${titleText} ${j.kind} ${j.status} ${j.backend || ''} ${j.detail || ''} ${quality.join(' ')}`.toLowerCase();
   return `
   <article class="job-card${entering ? '' : ' upd'}" data-jid="${esc(j.id)}" data-kind="${esc(j.kind)}" data-status="${esc(j.status)}" data-search="${esc(search)}">
     <div class="jc-eyebrow">${icon(meta.ic)}<span>${esc(meta.name)}</span>
       <span class="spacer"></span>
-      ${backendBadge(j.backend)}
+      ${backendBadge(j.effective_backend || j.backend || j.requested_backend)}
       <span class="jc-status ${esc(j.status)}${j.fallback ? ' fallback' : ''}">${['running','queued'].includes(j.status) ? '<i class="jc-pulse"></i>' : ''}${esc(outcomeLabel)}${pct != null && j.status === 'running' ? ` ${pct}%` : ''}</span></div>
     <div class="jc-head"><span class="jc-title">${esc(subject)}</span></div>
     ${quality.length ? `<div class="jc-quality">${quality.join('')}</div>` : ''}

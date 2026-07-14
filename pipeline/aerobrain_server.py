@@ -935,6 +935,77 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
     return out
 
 
+def splat_profiles_with_history(vault: Path | None = None) -> list[dict]:
+    """Public profile contract enriched with honest, machine-local CUDA timing.
+
+    A measured value is the median end-to-end duration of successful runs for
+    that exact profile. Unmeasured CUDA tiers are explicitly projected from the
+    nearest measured CUDA tier on the same GPU by iteration count; the UI must
+    keep that distinction visible instead of presenting a projection as a fact.
+    """
+    root = Path(vault or VAULT)
+    samples: list[dict] = []
+    for meta_path in (root / "models").glob("*/meta.json"):
+        try:
+            meta = json.loads(meta_path.read_text())
+        except (OSError, ValueError, TypeError):
+            continue
+        recon = meta.get("reconstruction") or {}
+        qa = meta.get("qa") or recon.get("qa") or {}
+        runs = recon.get("splat_runs") or meta.get("splat_runs") or []
+        for run in runs:
+            backend = str(run.get("effective_backend") or run.get("backend") or "")
+            preset = str(run.get("effective_preset") or run.get("preset") or "")
+            duration = run.get("duration_s")
+            iters = run.get("target_iters") or run.get("requested_iterations")
+            if ("cuda" not in backend.lower() or run.get("fallback") or
+                    preset not in {p["key"] for p in public_splat_profiles()}):
+                continue
+            try:
+                duration = float(duration)
+                iters = int(iters)
+            except (TypeError, ValueError):
+                continue
+            if duration <= 0 or iters <= 0:
+                continue
+            samples.append({
+                "preset": preset, "seconds": duration, "iters": iters,
+                "cameras": run.get("cameras") or qa.get("cameras_reconstructed"),
+                "resolution": run.get("effective_resolution") or
+                              ("half" if int(run.get("effective_downscale") or
+                                             run.get("input_scale") or 1) == 2 else "full"),
+                "gpu": run.get("remote_gpu") or "NVIDIA CUDA",
+            })
+
+    profiles = public_splat_profiles()
+    by_key = {profile["key"]: profile for profile in profiles}
+    for key, profile in by_key.items():
+        exact = [sample for sample in samples if sample["preset"] == key]
+        if exact:
+            ordered = sorted(exact, key=lambda item: item["seconds"])
+            mid = ordered[len(ordered) // 2]
+            profile["eta"] = {
+                "source": "measured", "seconds": round(mid["seconds"]),
+                "sample_count": len(exact), "cameras": mid.get("cameras"),
+                "resolution": mid["resolution"], "gpu": mid["gpu"],
+            }
+            continue
+        if "cuda" not in profile["supported_backends"] or not samples:
+            continue
+        target = int(profile["iters"])
+        baseline = min(samples, key=lambda item: abs(item["iters"] - target))
+        seconds = baseline["seconds"] * target / baseline["iters"]
+        profile["eta"] = {
+            "source": "projected_from_measured", "seconds": round(seconds),
+            "range_low_s": round(seconds * .85), "range_high_s": round(seconds * 1.25),
+            "baseline_profile": baseline["preset"],
+            "baseline_iterations": baseline["iters"],
+            "cameras": baseline.get("cameras"), "resolution": baseline["resolution"],
+            "gpu": baseline["gpu"],
+        }
+    return profiles
+
+
 def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: str,
                           title: str, then_splat: bool = False,
                           splat_preset: str = "cinematic",
@@ -1500,7 +1571,7 @@ class H(BaseHTTPRequestHandler):
         if urllib.parse.urlparse(self.path).path == "/api/splat_profiles":
             if not self.auth():
                 return
-            return self.send_json({"profiles": public_splat_profiles(),
+            return self.send_json({"profiles": splat_profiles_with_history(),
                                    "resolution_options": ["auto", "full", "half"]})
         if self.path.startswith("/api/perf"):
             # telemetría en vivo del Mac (CPU/GPU/RAM/swap/térmica/disk + uso por job).

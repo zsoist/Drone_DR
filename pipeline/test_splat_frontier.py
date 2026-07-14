@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -102,6 +103,37 @@ class SplatFrontierContractTests(unittest.TestCase):
 
 
 class SplatFrontierApiContractTests(unittest.TestCase):
+    def test_profile_etas_use_measured_cuda_history_and_label_projections(self):
+        with tempfile.TemporaryDirectory() as td:
+            vault = Path(td)
+            model = vault / "models" / "fixture"
+            model.mkdir(parents=True)
+            (model / "meta.json").write_text(json.dumps({
+                "reconstruction": {"splat_runs": [
+                    {"requested_preset": "ultra", "effective_preset": "ultra",
+                     "target_iters": 15000, "duration_s": 900, "cameras": 240,
+                     "effective_resolution": "half", "effective_backend": "NVIDIA CUDA",
+                     "remote_gpu": "RTX 4060 Ti", "fallback": False},
+                    {"requested_preset": "ultra", "effective_preset": "medium",
+                     "target_iters": 2000, "duration_s": 100, "backend": "Metal/MPS",
+                     "fallback": True},
+                ]},
+            }))
+
+            profiles = server.splat_profiles_with_history(vault)
+
+        by_key = {item["key"]: item for item in profiles}
+        measured = by_key["ultra"]["eta"]
+        projected = by_key["frontier"]["eta"]
+        self.assertEqual("measured", measured["source"])
+        self.assertEqual(900, measured["seconds"])
+        self.assertEqual(240, measured["cameras"])
+        self.assertEqual("half", measured["resolution"])
+        self.assertEqual("RTX 4060 Ti", measured["gpu"])
+        self.assertEqual("projected_from_measured", projected["source"])
+        self.assertEqual(1800, projected["seconds"])
+        self.assertEqual("ultra", projected["baseline_profile"])
+
     def test_direct_job_spec_preserves_immutable_cuda_request(self):
         spec = server.build_splat_job_spec("recon_fixture", {
             "preset": "frontier",
