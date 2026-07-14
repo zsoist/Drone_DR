@@ -7,8 +7,8 @@ Implementation: `web/tresd.js`, `web/shell.js`, `web/style.css`
 > Visual acceptance snapshot. Backend evidence advanced on 2026-07-14: Ultra+ 20K is now a
 > measured CUDA run (`d1` OOM → `d2` success), and the gated 1,019-input ODM scene is published
 > with browser QA. Frontier 30K is now measured at CUDA FULL `d1` with 3,236,419 Gaussians and
-> browser QA. Grandmaster 40K remains explicitly unmeasured until its artifact completes the same
-> publication and browser gate.
+> browser QA. Grandmaster 40K also completed at CUDA FULL `d1` in one attempt, with 3,067,353
+> source Gaussians, a 34,903,178-byte SOG and browser QA. Neither 30K nor 40K fell back to the Mac.
 
 ## Visual comparison
 
@@ -51,6 +51,8 @@ an extension of those components rather than a separate visual system.
   sends the same preset/backend/resolution vocabulary as the direct flow.
 - Live node states cover ready, busy, asleep, and unavailable; asleep exposes Wake-on-LAN.
 - Desktop visual pass completed in the in-app browser using real vault data and RTX telemetry.
+- Grandmaster acceptance reran the full share/workspace/jobs matrix in mobile, iPad and desktop;
+  all nine surfaces passed with the current 40K SOG and selected-run log history.
 - Progressive-site modal: 40 evaluated videos, 1/24 selected, stable-site identity and all seven
   Gaussian tiers present; Frontier 30K selected and CUDA locked.
 - CUDA campaign: 900 px dialog, no DOM horizontal overflow, seven eligible targets, RTX 4060 Ti

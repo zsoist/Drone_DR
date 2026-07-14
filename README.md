@@ -73,7 +73,11 @@ Evidencia viva 2026-07-14 (`DJI_20260712135736_0117_D`, RTX 4060 Ti):
   649,314 gaussianas, pico 1,698 MiB VRAM y `params_hash` persistido.
 - Frontier 30K CUDA FULL sobre la versión acumulativa: 5.339,4 s de entrenamiento y 5.714,6 s
   end-to-end, 3.236.419 gaussianas, pico 7.755 MiB VRAM, SOG 37,1 MB, publicación atómica y
-  browser QA. Grandmaster 40K conserva estado de primera medición hasta cerrar su propio gate.
+  browser QA.
+- Grandmaster 40K CUDA FULL sobre la misma versión: 7.500,3 s de entrenamiento y 7.877,2 s
+  end-to-end, 3.067.353 gaussianas a la salida del trainer y 2.881.394 tras de-halo, pico 7.730 MiB
+  VRAM, SOG 34.903.178 bytes, publicación atómica y browser QA. Completó en un único intento `d1`,
+  sin OOM, retry ni fallback.
 - La versión acumulativa `recon_60b23208db` (1.019 entradas, 10 fuentes) ya pasó el gate OpenSfM:
   componente compartido de 996 cámaras, 951.994 puntos y aporte válido de 10/10 fuentes. OpenMVS
   produjo 46.731.480 puntos densos; un `rc=139` post-write sin OOM fue recuperado validando

@@ -40,7 +40,9 @@
   manifest de escena y browser QA; `recon_60b23208db` promovida explícitamente.
 - [x] Frontier 30K CUDA FULL desde cero: 3.236.419 gaussianas, pico 7.755 MiB, SOG 37,1 MB,
   publicación y browser QA sobre `recon_60b23208db`.
-- [ ] Un Grandmaster 40K sobre esa misma versión validada, después de publicar y verificar 30K.
+- [x] Grandmaster 40K CUDA FULL sobre la misma versión: un intento `d1`, 3.067.353 gaussianas
+  fuente, 2.881.394 publicadas tras de-halo, pico 7.730 MiB, SOG 34.903.178 bytes, publicación
+  atómica y browser QA; sin OOM ni fallback.
 
 ## V4 — Travel mode
 - [ ] Diario de viaje AI por lugar/fecha

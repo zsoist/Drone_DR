@@ -139,8 +139,11 @@ Cinematic 7K, Ultra 15K y Ultra+ 20K con 238 cámaras a `d2`. El 20K completó e
 1,215.4 s end-to-end tras OOM clasificado en `d1`, con 649,314 gaussianas y pico remoto
 1,698 MiB. Frontier 30K completó sobre `recon_60b23208db` (1.019 cámaras) a CUDA FULL `d1`:
 5.339,4 s de entrenamiento, 5.714,6 s end-to-end, 3.236.419 gaussianas, pico 7.755 MiB,
-SOG de 37.083.215 bytes y browser QA. Grandmaster 40K sigue sin aceptación publicada y se
-muestra como primera medición, no como ETA prometida.
+SOG de 37.083.215 bytes y browser QA. Grandmaster 40K completó sobre la misma versión a CUDA
+FULL `d1` en un solo intento: 7.500,3 s de entrenamiento, 7.877,2 s end-to-end, 3.067.353
+gaussianas a la salida del trainer y 2.881.394 en el `.splat` publicado tras de-halo, pico
+7.730 MiB, SOG de 34.903.178 bytes y browser QA. No hubo OOM, retry ni fallback. El run conserva
+`params_hash=38db2479b3b89e748b3dac09c7789d7cb94e8c58b5d4e0d00de6c96103eca129`.
 
 ## Config de hardware (`config/hardware.json`)
 
