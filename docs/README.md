@@ -77,7 +77,8 @@ Design specs:
 ## Freshness rules
 
 1. Measured facts include date, scene/version and backend; estimates are labeled as estimates.
-2. 7K–40K are NVIDIA CUDA-only. Mac fallback is limited to Fast 1K and Medium 2K.
+2. 7K–40K are NVIDIA CUDA-only. Mac fallback is limited to Fast 1K, Medium 2K and legacy
+   custom requests within the same 500–2,000-iteration envelope; custom work above 2K is CUDA-only.
 3. Strict CUDA preserves tier/backend and retries only `d1→d2` after classified OOM.
 4. A multi-source splat waits for final persisted `reconstruction.json` validation against the
    current shared-component logic.

@@ -13,7 +13,7 @@
 
 ---
 
-## Task 1: Centralize the 15K/20K/30K profile contract
+## Task 1: Centralize the 15K/20K/30K/40K profile contract
 
 **Files:**
 
@@ -25,7 +25,7 @@
 
 Add focused tests asserting:
 
-- `ultra` resolves to exactly 15,000 iterations and supports `metal` and `cuda`.
+- `ultra` resolves to exactly 15,000 iterations and supports only `cuda`.
 - `ultra20` resolves to exactly 20,000 iterations and supports only `cuda`.
 - `frontier` resolves to exactly 30,000 iterations and supports only `cuda`.
 - `grandmaster` resolves to exactly 40,000 iterations and supports only `cuda`.
@@ -62,7 +62,7 @@ Extend `SPLAT_PRESETS` with explicit fields:
 }
 ```
 
-Add small validated helpers for keys, labels, backend compatibility, resolution normalization, iteration inference, public serialization, and a normalized immutable request. Keep legacy custom iteration support bounded to 30K.
+Add small validated helpers for keys, labels, backend compatibility, resolution normalization, iteration inference, public serialization, and a normalized immutable request. Keep legacy custom iteration support bounded to 40K; custom requests above the 2K local envelope are CUDA-only.
 
 **Step 3: Run focused and smoke tests**
 
@@ -98,7 +98,7 @@ Cover:
 - direct `/api/splat` preserves tier, exact iterations, strict CUDA backend, resolution, and requested downscale;
 - `/api/odm` and `prepare_scene_version` preserve the identical follow-up splat contract;
 - CUDA bypasses Mac memory preflight and local OpenSplat binary checks;
-- 20K/30K reject local execution;
+- every named 7K–40K tier and every custom request above 2K reject local execution;
 - `/api/splat_profiles` returns the central serialized contract;
 - CUDA preflight reports node/environment/disk/registration facts without a fabricated VRAM prediction;
 - rapid batch enqueue produces collision-safe unique job IDs;
@@ -210,7 +210,7 @@ Never infer requested values from the final attempt. Preserve `d1→d2` history 
 
 **Step 3: Extend index inference and audits**
 
-Recognize 20K and 30K without breaking legacy 1K/2K/7K/15K assets. Audit required profile evidence, exact iterations, artifact existence, browser QA, and backend/resolution provenance.
+Recognize 20K, 30K and 40K without breaking legacy 1K/2K/7K/15K assets. Audit required profile evidence, exact iterations, artifact existence, browser QA, and backend/resolution provenance.
 
 **Step 4: Repair recovery presentation**
 
@@ -235,10 +235,10 @@ Run focused tests, smoke, rebuild the index atomically, audit the vault and spla
 
 Verify:
 
-- all direct and phased modals render Ultra 15K, Ultra+ 20K, Frontier 30K from API data;
+- all direct and phased modals render Ultra 15K, Ultra+ 20K, Frontier 30K and Grandmaster 40K from API data;
 - the CUDA row remains visible while ready, sleeping, busy, or unavailable;
 - sleeping copy says it will wake instead of hiding the option;
-- 20K/30K force CUDA strict;
+- every 7K–40K named tier forces CUDA strict;
 - confirmation renders exact backend, iterations, resolution policy, estimated transfer bytes, and ODM prerequisite;
 - payloads from direct, ODM, and scene flows are identical;
 - job cards render requested→effective backend/profile/resolution, exact completed iterations, Gaussians, peak VRAM, and measured elapsed time;
@@ -327,7 +327,7 @@ Document node probe/Wake-on-LAN, safe restart, CUDA preflight, cleanup report/sw
 
 **Step 3: Separate measurements from estimates**
 
-Record the recovered 15K result as measured evidence. Mark 20K/30K timings as unverified until acceptance runs complete, then replace estimates with observed results.
+Record the recovered 15K result as measured evidence. Mark 20K/30K/40K timings as unverified until acceptance runs complete, then replace estimates with observed results.
 
 **Step 4: Close wiring bugs with evidence and commit**
 
@@ -387,12 +387,12 @@ If all acceptance evidence is green, expose/enable the all-project Frontier camp
 
 **Step 8: Final verification commit**
 
-Update measured docs with actual 15K/20K/30K timings and results, rerun the complete gate set, inspect `git diff --check` and `git status`, then commit the acceptance evidence.
+Update measured docs with actual 15K/20K/30K/40K timings and results, rerun the complete gate set, inspect `git diff --check` and `git status`, then commit the acceptance evidence.
 
 ## Completion criteria
 
 - Every splat entry point persists one identical normalized CUDA request.
-- Ultra 15K, Ultra+ 20K, and Frontier 30K execute exact iterations on the RTX path.
+- Ultra 15K, Ultra+ 20K, Frontier 30K and Grandmaster 40K execute exact iterations on the RTX path.
 - Strict CUDA never silently switches backend or tier.
 - d1→d2 is the only automatic fallback and only follows classified CUDA OOM.
 - UI estimates and live timing are backend/resolution-aware and distinguish measured from unverified.

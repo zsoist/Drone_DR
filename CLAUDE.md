@@ -55,7 +55,8 @@
   Apple Metal/CPU/CUDA; Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K and Grandmaster
   40K require NVIDIA CUDA. Strict CUDA never changes tier/backend. `resolution=auto` tries
   `d1`, then the same tier at `d2` only after classified CUDA OOM. SH remains degree 0 because
-  the public `.splat`→SOG path cannot retain higher coefficients. Publish is atomic.
+  the public `.splat`→SOG path cannot retain higher coefficients. Legacy custom requests
+  above 2K are also CUDA-only; 500–2K stays inside the local envelope. Publish is atomic.
 - CUDA is a disposable accelerator; the Mac owns SQLite, vault, immutable request,
   provenance, publish, browser gate and current/history swap. Never publish directly from PC.
 - Stable scenes are versioned retraining, not online model mutation. A video is integrated

@@ -6,7 +6,7 @@
 
 **Date:** 2026-07-13
 **Status:** Approved
-**Scope:** Mac Mini M4 orchestration, Windows/WSL RTX 4060 Ti execution, 15K/20K/30K Gaussian splat tiers, UI, observability, lifecycle, bulk reprocessing, tests, and operations documentation.
+**Scope:** Mac Mini M4 orchestration, Windows/WSL RTX 4060 Ti execution, 15K/20K/30K/40K Gaussian splat tiers, UI, observability, lifecycle, bulk reprocessing, tests, and operations documentation.
 
 ## 1. Outcome
 
@@ -95,7 +95,10 @@ All splat entry points normalize into one job specification:
 - `full`: CUDA tries only `d1` and reports failure honestly.
 - `half`: CUDA starts at `d2`.
 
-For strict CUDA, `best_available` is false because the worker may not change tiers or backends. A separate explicit UI control may allow local fallback for legacy 15K jobs, but it is off by default and unavailable for Ultra+/Frontier.
+For strict CUDA, `best_available` is false because the worker may not change tiers or backends.
+The final implementation does not expose local fallback for legacy 15K jobs: every named tier
+from Cinematic 7K through Grandmaster 40K is CUDA-only. Historical Metal runs remain readable
+as provenance, never as an enqueuable route.
 
 The run sidecar and `reconstruction.splat_runs[]` add:
 
@@ -181,6 +184,7 @@ All direct and phased flows show the same profile cards and node contract:
 - Ultra 15K
 - Ultra+ 20K
 - Frontier 30K
+- Grandmaster 40K
 
 The CUDA node row is always visible. States are `Listo`, `Dormido · se despertará`, `Ocupado`, or `No disponible`; the option is not hidden merely because the PC sleeps.
 
@@ -220,7 +224,7 @@ The default campaign profile is Frontier 30K, CUDA strict, full-first. The user 
 
 ### Automated
 
-1. Preset resolution and aliases map 15K/20K/30K exactly.
+1. Preset resolution and aliases map 15K/20K/30K/40K exactly.
 2. Unsupported backend/tier combinations are rejected.
 3. Direct, phased ODM, and scene-version routes preserve the identical CUDA spec.
 4. CUDA requests bypass Mac preflight and local-binary requirements.
@@ -248,10 +252,11 @@ Before production-ready status:
 1. Run Ultra 15K at `d1` on a representative registered project.
 2. Run Ultra+ 20K at `d1` on the same project.
 3. Run Frontier 30K at `d1` on the same project.
-4. If `d1` OOMs, verify automatic same-tier `d2` recovery and truthful UI history.
-5. For every successful tier, verify exact iterations, CUDA backend, artifact metadata, browser gate, and viewer canvas.
-6. Verify remote transient storage returns to its baseline after completion.
-7. Run one small multi-project batch campaign before exposing “all projects” as production-safe.
+4. Run Grandmaster 40K only after Frontier publishes and passes browser QA.
+5. If `d1` OOMs, verify automatic same-tier `d2` recovery and truthful UI history.
+6. For every successful tier, verify exact iterations, CUDA backend, artifact metadata, browser gate, and viewer canvas.
+7. Verify remote transient storage returns to its baseline after completion.
+8. Run one small multi-project batch campaign before exposing “all projects” as production-safe.
 
 ## 12. Documentation
 
@@ -272,7 +277,7 @@ Documentation must distinguish measured production evidence from estimates and m
 2. Harden the remote lane, full-resolution retry, telemetry, and cleanup.
 3. Wire all UI surfaces and observability.
 4. Update manifests, audits, and docs.
-5. Run the real 15K/20K/30K acceptance sequence.
+5. Run the real 15K/20K/30K/40K acceptance sequence.
 6. Run a small batch canary.
 7. Enable the full Frontier reprocessing campaign after the canary passes.
 

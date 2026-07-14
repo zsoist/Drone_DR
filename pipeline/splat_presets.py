@@ -223,6 +223,9 @@ def resolve_splat_spec(spec: dict | None) -> dict:
 
     if not 500 <= iters <= 40000:
         raise ValueError("iteraciones de splat fuera de rango (500-40000)")
+    backend_profile = (_local_profile()
+                       if iters <= SPLAT_PRESETS["medium"]["iters"]
+                       else _cuda_only_profile())
     return {
         "key": "custom",
         "iters": iters,
@@ -232,7 +235,7 @@ def resolve_splat_spec(spec: dict | None) -> dict:
         "description": "Custom iteration count",
         "timeout": max(2 * 3600, min(14 * 3600, int(iters * 2.5))),
         "train_args": [],
-        **_local_profile(),
+        **backend_profile,
     }
 
 

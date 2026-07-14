@@ -45,9 +45,9 @@ Scene manifests live at `VAULT/manifest/scenes/<scene_id>.json` and contain titl
 ### Best-available processing policy
 
 - ODM starts at the requested preset. OpenMVS instability gets one same-preset stable-dense retry, then the existing lower-preset chain, then the 25D product fallback. The effective output is recorded precisely.
-- Splat preflight calculates the deterministic image-load floor for all presets. Medium additionally uses the calibrated peak model. Cinematic/Ultra are labeled `unverified_high_risk` unless a matching measured envelope exists.
-- When full-resolution image loading cannot fit, the worker begins at `-d 2` instead of wasting a guaranteed full-resolution OOM.
-- `best_available=true` permits Ultra -> Cinematic -> Medium fallback. Each tier receives only the safest justified rung. The resulting artifact is labeled with requested preset, effective preset, input scale, iterations completed, backend, peak footprint, and fallback history.
+- Local Fast/Medium preflight calculates the deterministic image-load floor and may use the calibrated M4 peak model. Named 7K–40K bypass that Mac model and use CUDA node/environment/disk/registration preflight; missing full-resolution evidence is reported as unverified, never as a fabricated VRAM prediction.
+- CUDA `auto` always attempts full-resolution `d1` first and may move to `d2` only after a classified CUDA OOM. It never starts at `d2` from a Mac-side estimate; explicit `full` and `half` remain one-attempt policies.
+- Historical MPS policy (superseded) allowed `best_available=true` to descend Ultra → Cinematic → Medium. The current product permits no cross-tier fallback: named 7K–40K and custom work above 2K are CUDA-only, while an automatic retry may only keep the same CUDA tier and move `d1→d2` after classified OOM. Old artifacts retain their original fallback provenance.
 - A source merge that becomes PARTIAL never auto-trains the splat; the operator sees which source failed and can remove or replace it.
 
 ### Job observability

@@ -54,6 +54,20 @@ class SplatFrontierContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "backend de splat inválido"):
             validate_splat_backend("ultra", "tpu")
 
+    def test_custom_work_above_medium_is_cuda_only(self):
+        profile = resolve_splat_spec({"preset": "custom", "iters": 5_000})
+
+        self.assertEqual(("cuda",), profile["supported_backends"])
+        self.assertEqual("cuda", profile["default_backend"])
+        with self.assertRaisesRegex(ValueError, "requiere NVIDIA CUDA"):
+            validate_splat_backend({"preset": "custom", "iters": 5_000}, "metal")
+
+    def test_custom_work_inside_medium_envelope_remains_local_capable(self):
+        profile = resolve_splat_spec({"preset": "custom", "iters": 1_500})
+
+        self.assertEqual(("metal", "cpu", "cuda"), profile["supported_backends"])
+        self.assertEqual("metal", profile["default_backend"])
+
     def test_cuda_request_is_strict_and_full_first_by_default(self):
         request = normalize_splat_request({"preset": "frontier", "backend": "cuda"})
 

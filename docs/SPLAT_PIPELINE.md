@@ -60,6 +60,10 @@ Fast/Medium aceptan Metal, CPU o CUDA. Los otros cinco sólo aceptan CUDA. En CU
 Ultra→Medium ni CUDA→Mac implícito. El sidecar conserva solicitado/efectivo, resolución,
 intentos, GPU/driver, duración, gaussianas, parámetros y hash.
 
+Los requests legacy `custom` conservan Metal/CPU sólo entre 500 y 2.000 iteraciones, dentro
+del sobre local Fast/Medium. Cualquier custom por encima de 2.000 es CUDA estricto; omitir el
+backend selecciona CUDA y pedir Metal/CPU se rechaza antes de encolar.
+
 ## Mac ↔ PC
 
 `UI → API Mac → SQLite → worker Mac → SSH/WSL → RTX → PLY → Mac → .splat/SOG → gate`.

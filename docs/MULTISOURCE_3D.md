@@ -52,7 +52,10 @@
    archiva sólo el JSON truncado y usa `--sfm-no-partial`, sin `--rerun-from opensfm` porque
    ese switch borraría los caches. No autoriza splat hasta auditar el JSON final con la lógica
    actual. Después, y sólo si pasa, sigue Frontier 30K y un Grandmaster 40K sobre la misma
-   versión.
+   versión. Snapshot inmutable de recuperación (`3d-1784034358954095000-b1152f`, 08:46
+   America/Bogota): 354/1.019 cámaras dentro del componente observado, con s6=116, s0=187,
+   s9=48 y s5=3; 8,237/20 GiB, sin OOM. Es evidencia intermedia, no un pass: s5 aún está bajo
+   el mínimo y el estado autoritativo sigue siendo la telemetría del job hasta persistir el JSON.
 1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).
 2. **Presupuesto global de frames + dedup INTRA-fuente**: poda hoy es por-fuente. OJO (hallazgo del
    review): NO deduplicar cross-source — esos near-duplicates son el pegamento del co-registro.
