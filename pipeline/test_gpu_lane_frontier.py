@@ -87,6 +87,16 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertIn("nvidia-smi", command)
         self.assertIn("telemetry-frontier-fixture.csv", command)
 
+    def test_cuda_environment_is_activated_before_telemetry_is_backgrounded(self):
+        command = " ".join(gpu_lane.train_argv(
+            "frontier-fixture", 30_000, 1, "run-fixture"))
+
+        self.assertIn("source splat-env/bin/activate;", command)
+        self.assertIn("$VIRTUAL_ENV/bin/ns-train", command)
+        self.assertNotIn("source splat-env/bin/activate &&", command)
+        self.assertLess(command.index("source splat-env/bin/activate;"),
+                        command.index("(while true;"))
+
     def test_cleanup_is_bounded_and_refuses_active_names(self):
         with self.assertRaisesRegex(ValueError, "activo"):
             gpu_lane.cleanup_script("job-active", success=True,

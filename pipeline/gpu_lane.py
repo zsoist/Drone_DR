@@ -227,18 +227,20 @@ def train_argv(name: str, iters: int, downscale: int, run_id: str,
         raise ValueError("iters/downscale CUDA inválidos")
     extra = " ".join(shlex.quote(str(value)) for value in (train_args or ()))
     telemetry = f"{REMOTE_RUNS}/telemetry-{name}.csv"
-    inner = (f"cd /root/gpu-jobs && source splat-env/bin/activate && "
-             f"rm -rf {REMOTE_RUNS}/{name} && rm -f {telemetry} && "
+    inner = (f"set -e; cd /root/gpu-jobs; source splat-env/bin/activate; "
+             f"test -x \"$VIRTUAL_ENV/bin/ns-train\"; "
+             f"rm -rf {REMOTE_RUNS}/{name}; rm -f {telemetry}; "
              f"(while true; do printf '%s,' \"$(date +%s)\" >> {telemetry}; "
              f"nvidia-smi --query-gpu=memory.used,utilization.gpu,temperature.gpu "
              f"--format=csv,noheader,nounits >> {telemetry}; sleep 2; done) & MON=$!; "
-             f"trap 'kill $MON 2>/dev/null || true' EXIT; yes | ns-train splatfacto "
+             f"trap 'kill $MON 2>/dev/null || true' EXIT; set +e; "
+             f"yes | \"$VIRTUAL_ENV/bin/ns-train\" splatfacto "
              f"--data {REMOTE_DATA}/{name} --output-dir {REMOTE_RUNS} "
              f"--experiment-name {name} --timestamp {run_id} "
              f"--viewer.quit-on-train-completion True --max-num-iterations {iters} "
              f"{extra} "
              f"colmap --colmap-path sparse/0 --images-path images "
-             f"--downscale-factor {downscale} 2>&1; RC=${{PIPESTATUS[1]}}; "
+             f"--downscale-factor {downscale} 2>&1; RC=${{PIPESTATUS[1]}}; set -e; "
              f"kill $MON 2>/dev/null || true; wait $MON 2>/dev/null || true; exit $RC")
     return ["ssh", SSH_HOST, "wsl", "-d", "Ubuntu", "--", "bash", "-lc", f'"{inner}"']
 
