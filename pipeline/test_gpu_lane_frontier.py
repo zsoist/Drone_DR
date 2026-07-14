@@ -571,6 +571,14 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertEqual("odm-fetch", fetch_update["stage"])
         self.assertGreaterEqual(fetch_update["progress"], 0.91)
 
+    def test_late_odm_stage_progress_is_monotonic_across_fetch_and_publish(self):
+        progress_for = getattr(worker, "monotonic_job_progress",
+                               lambda _jid, requested: requested)
+        with mock.patch.object(worker.jobstore, "get",
+                               return_value={"progress": 0.95}):
+            self.assertEqual(0.95, progress_for("3d-late-stage", 0.90))
+            self.assertEqual(0.97, progress_for("3d-late-stage", 0.97))
+
     def test_prepare_opensfm_resume_preserves_only_invalid_reconstruction(self):
         with mock.patch.object(odm_gpu_lane, "_wsl", return_value="RESUME_READY\n") as run:
             odm_gpu_lane.prepare_opensfm_resume("3d-preserved-safe")

@@ -1246,6 +1246,12 @@ def odm_cuda_execution_plan(j: dict, preset_args: list[str]) -> dict:
     }
 
 
+def monotonic_job_progress(jid: str, requested: float) -> float:
+    """Keep late-stage UI progress from moving backwards between subprocesses."""
+    current = float((jobstore.get(jid) or {}).get("progress") or 0.0)
+    return max(float(requested), current)
+
+
 def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     """Corre la fotogrametria en el nodo CUDA (odm:gpu en el PC). Devuelve rc:
     0 = outputs ya en proj, listos para el publish local; !=0 o excepcion deja
@@ -1348,9 +1354,9 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
             tick=artifact_progress, tick_interval=15.0)
         if rc != 0:
             return rc
-        current_progress = float((jobstore.get(j["id"]) or {}).get("progress") or 0.0)
         jobstore.update(j["id"], detail="2/3 trayendo resultados del nodo CUDA",
-                        stage="odm-fetch", progress=max(0.95, current_progress))
+                        stage="odm-fetch",
+                        progress=monotonic_job_progress(j["id"], 0.95))
         got = odm_gpu_lane.fetch_outputs(proj, name)
         jobstore.update(j["id"], backend="NVIDIA CUDA")
         jobstore.event(j["id"], "odm_cuda_done", f"outputs recuperados: {', '.join(got)}")
@@ -1506,7 +1512,8 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         preset_name = "ortho_25d_fallback"
         effective_dense_quality = "sparse_25d"
 
-    jobstore.update(j["id"], detail="3/3 publicando assets web", stage="publish", progress=0.9)
+    jobstore.update(j["id"], detail="3/3 publicando assets web", stage="publish",
+                    progress=monotonic_job_progress(j["id"], 0.97))
     # 2h, no 30min: dentro corren TRES pasos docker (ortho/nube/DSM, hasta 1800s c/u) +
     # texturas PIL + gzip del OBJ. En extra/ultra el kill a 1800s caía a MITAD de la
     # publicación con model/ ya wipeado → visor roto con meta viejo.
