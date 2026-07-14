@@ -1006,12 +1006,149 @@ def splat_profiles_with_history(vault: Path | None = None) -> list[dict]:
     return profiles
 
 
+def splat_campaign_inventory(vault: Path | None, preset: str,
+                              scope: str = "active_sites", pending_fn=None) -> dict:
+    """Find reproducible CUDA campaign targets without mutating the queue."""
+    root = Path(vault or VAULT)
+    profile = resolve_splat_spec({"preset": preset})
+    target_iters = int(profile["iters"])
+    pending_fn = pending_fn or jobstore.pending
+    active_versions, versioned, scene_by_active, improving_active = set(), set(), {}, set()
+    scenes_dir = root / "manifest" / "scenes"
+    for path in scenes_dir.glob("scene_*.json") if scenes_dir.exists() else []:
+        try:
+            scene = json.loads(path.read_text())
+        except (OSError, ValueError, TypeError):
+            continue
+        if scene.get("active_version"):
+            active_versions.add(scene["active_version"])
+            scene_by_active[scene["active_version"]] = scene.get("id")
+            if any(v.get("status") in ("processing", "queued")
+                   for v in scene.get("versions") or []
+                   if v.get("id") != scene.get("active_version")):
+                improving_active.add(scene["active_version"])
+        versioned.update(v.get("id") for v in scene.get("versions") or [] if v.get("id"))
+    eligible, skipped = [], []
+    for meta_path in sorted((root / "models").glob("*/meta.json")):
+        cid = meta_path.parent.name
+        reason = None
+        try:
+            meta = json.loads(meta_path.read_text())
+        except (OSError, ValueError, TypeError):
+            skipped.append({"clip_id": cid, "reason": "invalid_model_metadata"})
+            continue
+        if cid in improving_active:
+            reason = "scene_improvement_in_progress"
+        elif scope == "active_sites" and cid in versioned and cid not in active_versions:
+            reason = "inactive_site_version"
+        qa = meta.get("qa") or {}
+        if not reason and int(qa.get("cameras_reconstructed") or 0) <= 0:
+            reason = "no_registered_cameras"
+        project = root / "odm" / f"proj_{cid}"
+        if not reason and not (project / "opensfm" / "reconstruction.json").exists():
+            reason = "missing_odm_poses"
+        if not reason and (pending_fn("splat", cid) or pending_fn("3d", cid)):
+            reason = "already_queued_or_running"
+        runs = (meta.get("reconstruction") or {}).get("splat_runs") or []
+        achieved_iters = max((int(run.get("target_iters") or run.get("requested_iterations") or 0)
+                              for run in runs
+                              if "cuda" in str(run.get("effective_backend") or run.get("backend") or "").lower()
+                              and not run.get("fallback")), default=0)
+        if not reason and achieved_iters >= target_iters:
+            reason = "already_at_or_above_target"
+        if reason:
+            skipped.append({"clip_id": cid, "reason": reason,
+                            "achieved_iterations": achieved_iters})
+            continue
+        image_dir = project / "images"
+        input_bytes = sum(path.stat().st_size for path in image_dir.iterdir()
+                          if path.is_file()) if image_dir.exists() else 0
+        try:
+            cameras = sum(1 for line in (project / "opensfm" / "image_list.txt").read_text().splitlines()
+                          if line.strip())
+        except OSError:
+            cameras = int(qa.get("cameras_reconstructed") or 0)
+        eligible.append({
+            "clip_id": cid,
+            "title": meta.get("title") or cid,
+            "cameras": cameras,
+            "input_bytes": input_bytes,
+            "achieved_iterations": achieved_iters,
+            **({"scene_id": scene_by_active[cid]} if scene_by_active.get(cid) else {}),
+        })
+    return {
+        "preset": profile["key"], "label": profile["label"], "iterations": target_iters,
+        "backend": "cuda", "backend_policy": "strict", "scope": scope,
+        "eligible": eligible, "skipped": skipped,
+        "total_input_bytes": sum(row["input_bytes"] for row in eligible),
+    }
+
+
+def splat_project_preflight(cid: str, job_spec: dict, vault: Path | None = None,
+                             node: dict | None = None) -> dict | None:
+    """Run the same measured project preflight for direct and batch CUDA jobs."""
+    root = Path(vault or VAULT)
+    project = root / "odm" / f"proj_{cid}"
+    image_list = project / "opensfm" / "image_list.txt"
+    if not image_list.exists():
+        return None
+    import preflight as _pf
+    from PIL import Image as _Img
+    lines = [line.strip() for line in image_list.read_text().splitlines() if line.strip()]
+    try:
+        first = lines[0].replace("/datasets/code", str(project))
+        width = _Img.open(first).width
+    except (IndexError, OSError, ValueError):
+        width = 3072
+    image_dir = project / "images"
+    project_bytes = sum(path.stat().st_size for path in image_dir.iterdir()
+                        if path.is_file()) if image_dir.exists() else 0
+    return _pf.splat_preflight_for_backend(
+        max(1, len(lines)), width, job_spec["preset"], job_spec["backend"],
+        node=node, project_bytes=project_bytes,
+        wsl_free_bytes=(node or {}).get("wsl_free_bytes"),
+        bridge_free_bytes=(node or {}).get("bridge_free_bytes"))
+
+
+def source_evidence(clip_id: str, vault: Path | None = None) -> dict:
+    """Measured, reproducible capture evidence used by scene and altitude products."""
+    root = Path(vault or VAULT)
+    clip_id = re.sub(r"[^\w-]", "", str(clip_id))
+    payload = {}
+    for path in (root / "tracks" / f"{clip_id}.flight.json",
+                 root / "manifest" / f"{clip_id}.json"):
+        try:
+            data = json.loads(path.read_text())
+            payload = {**data, **payload}
+        except (OSError, ValueError, TypeError):
+            continue
+    stats = payload.get("stats") or {}
+    try:
+        altitude = round(float(stats.get("max_rel_alt_m") or 0), 1)
+    except (TypeError, ValueError):
+        altitude = 0.0
+    bbox = stats.get("bbox")
+    if not (isinstance(bbox, list) and len(bbox) == 4):
+        bbox = None
+    row = {
+        "clip_id": clip_id,
+        "altitude_m": altitude,
+        "altitude_band_m": scenestore.altitude_band(altitude),
+        "capture_at": stats.get("start"),
+        "coverage_bbox": bbox,
+        "distance_m": stats.get("distance_m"),
+        "status": "eligible",
+    }
+    return {key: value for key, value in row.items() if value is not None}
+
+
 def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: str,
                           title: str, then_splat: bool = False,
                           splat_preset: str = "cinematic",
                           best_available: bool = True,
-                          splat_backend: str = "metal",
-                          splat_resolution: str | None = None) -> tuple[str, dict]:
+                          splat_backend: str = "cuda",
+                          splat_resolution: str | None = None,
+                          odm_backend: str = "cuda") -> tuple[str, dict]:
     """Create immutable scene-version membership and its 3D job specification."""
     scene = scenestore.get_scene(scene_id)
     sources = list(dict.fromkeys(str(x) for x in sources if str(x)))
@@ -1021,7 +1158,10 @@ def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: st
     if preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
         preset = "estandar"
     reconstruction_id = jobstore.recon_id_for(sources, photos)
-    scenestore.add_version(scene_id, reconstruction_id, sources, photos, "processing")
+    evidence = [source_evidence(source) for source in sources]
+    scenestore.update_source_evidence(scene_id, evidence)
+    scenestore.add_version(scene_id, reconstruction_id, sources, photos, "processing",
+                           source_evidence=evidence)
     spec = {
         "clip_id": reconstruction_id,
         "primary_cid": sources[0],
@@ -1032,6 +1172,7 @@ def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: st
         "sources": sources,
         "photos": photos,
         "then_splat": bool(then_splat),
+        "backend": "cuda" if str(odm_backend).lower() == "cuda" else None,
     }
     if then_splat:
         followup = build_followup_splat_spec(reconstruction_id, {
@@ -2258,7 +2399,9 @@ class H(BaseHTTPRequestHandler):
             scene = scenestore.create_scene(str(spec.get("title") or "Escena"),
                                              spec.get("anchor") if isinstance(spec.get("anchor"), dict) else {},
                                              spec.get("sources") if isinstance(spec.get("sources"), list) else [],
-                                             spec.get("photos") if isinstance(spec.get("photos"), list) else [])
+                                             spec.get("photos") if isinstance(spec.get("photos"), list) else [],
+                                             source_evidence=[source_evidence(cid) for cid in
+                                               (spec.get("sources") if isinstance(spec.get("sources"), list) else [])])
             existing = re.sub(r"[^\w-]", "", str(spec.get("existing_version") or ""))
             if existing and (VAULT / "models" / existing / "meta.json").exists():
                 sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [existing]
@@ -2271,7 +2414,8 @@ class H(BaseHTTPRequestHandler):
                         scene["id"], existing, sources, photos, "ready",
                         merge_label=recon.get("merge_label") or "SINGLE",
                         required_artifacts_ok=bool(qa.get("cameras_reconstructed")),
-                        metrics=scenestore.model_metrics(meta))
+                        metrics=scenestore.model_metrics(meta),
+                        source_evidence=[source_evidence(cid) for cid in sources])
                     if version.get("required_artifacts_ok") and version.get("merge_label") in ("SINGLE", "FULL"):
                         scene = scenestore.promote(scene["id"], existing)
                 except (ValueError, OSError):
@@ -2301,8 +2445,8 @@ class H(BaseHTTPRequestHandler):
                     sources.append(cid)
             if not sources:
                 return self.send_json({"error": "elige al menos un video con GPS"}, 400)
-            if len(sources) > 8:
-                return self.send_json({"error": "máximo 8 videos por versión de escena"}, 400)
+            if len(sources) > 24:
+                return self.send_json({"error": "máximo 24 videos por versión de escena"}, 400)
             requested_photos = spec.get("photos") if isinstance(spec.get("photos"), list) else [
                 *active.get("photos", []), *(spec.get("new_photos") or [])]
             photos = [Path(str(p)).name for p in requested_photos
@@ -2316,8 +2460,9 @@ class H(BaseHTTPRequestHandler):
                     str(spec.get("title") or scene.get("title") or "Escena"),
                     bool(spec.get("then_splat")), str(spec.get("splat_preset") or "cinematic"),
                     spec.get("best_available", True) is not False,
-                    str(spec.get("splat_backend") or spec.get("backend") or "metal"),
-                    spec.get("splat_resolution") or spec.get("resolution"))
+                    str(spec.get("splat_backend") or "cuda"),
+                    spec.get("splat_resolution") or spec.get("resolution"),
+                    str(spec.get("backend") or "cuda"))
             except ValueError as e:
                 return self.send_json({"error": str(e)}, 400)
             job = jobstore.enqueue("3d", reconstruction_id, job_spec)
@@ -2332,6 +2477,11 @@ class H(BaseHTTPRequestHandler):
             try:
                 scene = scenestore.promote(str(spec.get("scene_id") or ""),
                                            str(spec.get("version_id") or ""))
+                version_ids = {v.get("id") for v in scene.get("versions") or [] if v.get("id")}
+                for version_id in version_ids:
+                    if (VAULT / "models" / version_id / "meta.json").exists():
+                        subprocess.run(["python3", str(PIPE / "scene_manifest.py"), version_id],
+                                       check=False, timeout=180)
                 rebuild_index()
                 return self.send_json({"ok": True, "scene": scene})
             except (KeyError, ValueError) as e:
@@ -2522,6 +2672,57 @@ class H(BaseHTTPRequestHandler):
             shutil.copy2(src, dst)
             rebuild_index()
             return self.send_json({"ok": True, "name": dst.name})
+        if u.path == "/api/splat_campaign":
+            if not self.auth(q):
+                return
+            request = self.read_json()
+            preset = str(request.get("preset") or "frontier")
+            if preset not in ("ultra", "ultra20", "frontier", "grandmaster"):
+                return self.send_json({"error": "campaña admite 15K, 20K, 30K o 40K"}, 400)
+            scope = "all_models" if request.get("scope") == "all_models" else "active_sites"
+            resolution = str(request.get("resolution") or "auto")
+            if resolution not in ("auto", "full", "half"):
+                return self.send_json({"error": "resolución inválida"}, 400)
+            plan = splat_campaign_inventory(VAULT, preset, scope=scope)
+            node = gpu_cuda_preflight_status()
+            blocked_verdicts = {"REJECTED", "INPUT_FLOOR_EXCEEDS_CAP", "NODE_UNAVAILABLE",
+                                "ENVIRONMENT_INVALID", "INSUFFICIENT_DISK"}
+            specs, blocked = [], []
+            for row in plan["eligible"]:
+                raw = {"preset": preset, "backend": "cuda", "resolution": resolution,
+                       "best_available": False, "scene_id": row.get("scene_id"),
+                       "version_id": row["clip_id"] if row.get("scene_id") else None,
+                       "title": row.get("title")}
+                spec = build_splat_job_spec(row["clip_id"], raw)
+                pfv = splat_project_preflight(row["clip_id"], spec, node=node)
+                spec["preflight"] = pfv
+                row["preflight"] = pfv
+                if pfv and pfv.get("verdict") in blocked_verdicts:
+                    blocked.append({"clip_id": row["clip_id"], "verdict": pfv.get("verdict"),
+                                    "note": pfv.get("note")})
+                specs.append(spec)
+            plan.update({"resolution": resolution, "node": node, "blocked": blocked,
+                         "ready_to_enqueue": bool(specs) and not blocked})
+            if not request.get("confirm"):
+                return self.send_json({"ok": True, "dry_run": True, "plan": plan})
+            if blocked:
+                return self.send_json({"error": "campaña bloqueada por preflight; no se encoló ningún job",
+                                       "plan": plan}, 409)
+            if not specs:
+                return self.send_json({"error": "no hay modelos elegibles", "plan": plan}, 409)
+            if any(jobstore.pending("splat", spec["clip_id"]) or
+                   jobstore.pending("3d", spec["clip_id"]) for spec in specs):
+                return self.send_json({"error": "la cola cambió; vuelve a ejecutar el dry-run"}, 409)
+            campaign_id = f"cuda-{preset}-{int(time.time())}"
+            jobs = []
+            for position, spec in enumerate(specs, 1):
+                spec["campaign"] = {"id": campaign_id, "position": position,
+                                    "total": len(specs)}
+                job = jobstore.enqueue("splat", spec["clip_id"], spec)
+                jobs.append({"id": job["id"], "clip_id": spec["clip_id"],
+                             "position": position})
+            return self.send_json({"ok": True, "campaign_id": campaign_id,
+                                   "queued": jobs, "plan": plan})
         if u.path == "/api/splat":
             if not self.auth(q):
                 return
@@ -2546,23 +2747,10 @@ class H(BaseHTTPRequestHandler):
             # Con proyecto existente el conteo es EXACTO (image_list); REJECTED no
             # encola (salvo force_preflight: escape consciente). La proyección viaja
             # al job = telemetría proyectado-vs-observado permanente del modelo.
-            pfv = None
-            il = proj / "opensfm" / "image_list.txt"
-            if il.exists():
-                import preflight as _pf
-                from PIL import Image as _Img
-                n_imgs = sum(1 for ln in il.read_text().splitlines() if ln.strip())
-                try:
-                    first = next(iter([l.strip() for l in il.read_text().splitlines() if l.strip()]))
-                    w = _Img.open(first.replace("/datasets/code", str(proj))).width
-                except Exception:
-                    w = 3072
-                project_bytes = sum(p.stat().st_size for p in (proj / "images").iterdir()
-                                    if p.is_file()) if (proj / "images").is_dir() else 0
-                pfv = _pf.splat_preflight_for_backend(
-                    n_imgs, w, job_spec["preset"], job_spec["backend"],
-                    node=(gpu_cuda_preflight_status() if job_spec["backend"] == "cuda" else None),
-                    project_bytes=project_bytes)
+            pfv = splat_project_preflight(
+                cid, job_spec,
+                node=(gpu_cuda_preflight_status() if job_spec["backend"] == "cuda" else None))
+            if pfv:
                 blocked = ("REJECTED", "INPUT_FLOOR_EXCEEDS_CAP", "NODE_UNAVAILABLE",
                            "ENVIRONMENT_INVALID", "INSUFFICIENT_DISK")
                 if pfv["verdict"] in blocked and not spec.get("force_preflight"):

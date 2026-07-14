@@ -6,6 +6,9 @@
 - `scene.js` — SceneManifestV2 → terreno (heightfield+orto, máscara nodata
   border-only, shader-injection única), splat Spark alineado (matriz Umeyama
   ±cm), track. heightAt = sampler bilineal O(1).
+- `site.lod.json` — identidad estable, versión activa y coberturas verificadas de
+  100/200/400/600/1000 m. Mundo nunca duplica versiones del mismo sitio; Volar selecciona
+  círculo/cuadrado y bloquea una extensión pendiente en vez de inventar terreno.
 - `runtime.js` — loop timestep FIJO 1/120 (determinismo de replays), input,
   física por modo (Normal velocidad-objetivo · Dios noclip · 6DOF ecctrl
   disponible), colisión BVH slide+escape, rigs de cámara puros.

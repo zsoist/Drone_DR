@@ -21,6 +21,7 @@ from pathlib import Path
 import jobs as jobstore
 import perf
 import scenes as scenestore
+import scene_manifest
 from splat_presets import normalize_splat_request, resolve_splat_spec
 
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
@@ -51,6 +52,15 @@ ODM_HEAVY = _CAPS["odm_heavy"]     # alta/extra/ultra + retry OpenMVS
 
 def rebuild_index():
     subprocess.run(["python3", str(PIPE / "build_index.py")], check=True)
+
+
+def rebuild_scene_manifest(cid: str) -> dict | None:
+    """Refresh the game/site contract whenever ODM or splat assets change."""
+    try:
+        return scene_manifest.build(cid)
+    except (OSError, ValueError, SystemExit) as exc:
+        print(f"  scene.v2 refresh skipped for {cid}: {exc}", flush=True)
+        return None
 
 
 def viewer_active(now: float | None = None) -> bool:
@@ -390,7 +400,8 @@ def splat_done_detail(viewer_out: Path, quality: dict, n_cams: int) -> str:
         (fmt_iters(int(quality["target_iters"])) + " iters") if quality.get("target_iters") else "",
         quality.get("backend"),
         fmt_duration(quality.get("duration_s")),
-        f"loss {quality.get('final_loss')}" if quality.get("final_loss") is not None else "",
+        (f"loss {quality.get('final_loss')}" if quality.get("final_loss") is not None
+         else "loss n/d"),
         f"{n_cams} cámaras",
     ]
     return " · ".join(str(p) for p in parts if p)
@@ -487,6 +498,21 @@ def record_scene_completion(j: dict, meta: dict) -> dict | None:
     status = "ready" if required_ok and merge_label in ("SINGLE", "FULL") else (
         "partial" if merge_label == "PARTIAL" else "failed")
     metrics = scenestore.model_metrics(meta)
+    contributions = []
+    for row in recon.get("sources") or []:
+        if not isinstance(row, dict) or not row.get("clip_id"):
+            continue
+        merged = row.get("merged") is not False
+        contributions.append({
+            "clip_id": row["clip_id"],
+            "submitted": row.get("submitted") or 0,
+            "registered": row.get("registered") or 0,
+            "merged": merged,
+            "reason": row.get("reason") or (
+                "registered in shared component" if merged else "no shared registration component"),
+        })
+    if contributions:
+        scenestore.record_contributions(scene_id, version_id, contributions)
     version = scenestore.update_version(
         scene_id, version_id, status=status, merge_label=merge_label,
         required_artifacts_ok=required_ok, metrics=metrics,
@@ -927,6 +953,12 @@ def run_3d(j: dict):
         tmp_meta.write_text(json.dumps(mm, indent=1))
         os.replace(tmp_meta, meta_path)
         version = record_scene_completion(j, mm)
+        site_manifest = rebuild_scene_manifest(cid)
+        if version and site_manifest and site_manifest.get("coverage"):
+            version = scenestore.update_version(
+                j["spec"]["scene_id"], cid,
+                coverage_products=site_manifest["coverage"]["shapes"]["circle"])
+        rebuild_index()
         jobstore.event(j["id"], "scene_version_ready" if version and version.get("status") == "ready" else "scene_version_not_promoted",
                        f"Versión {cid}: {version.get('status') if version else 'sin escena'}",
                        level="warning" if partial else "info",
@@ -1317,6 +1349,7 @@ def run_splat(j: dict):
     crop_floaters(final_out)                    # de-halo antes de generar el SOG
     jobstore.update(j["id"], detail="comprimiendo SOG para el viewer", progress=0.94)
     viewer_out = export_viewer_sog(final_out) or final_out
+    rebuild_scene_manifest(cid)
     rebuild_index()
     browser_gate(j["id"], "splat", cid, timeout=90)
     if j["spec"].get("scene_id"):

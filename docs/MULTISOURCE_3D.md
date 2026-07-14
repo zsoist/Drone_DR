@@ -31,6 +31,14 @@
   es solo sugerencia; `FULL/PARTIAL` depende del registro real por fuente.
 - La primera versión válida (`FULL` o `SINGLE`) se promueve automáticamente. Las siguientes se
   conservan como candidatas hasta promoción humana, con QA, calidad solicitada/efectiva y splat.
+- Schema 2 conserva `source_evidence` por video: altitud medida, bbox/fecha, intentos,
+  submitted/registered/ratio y estado `integrated|eligible|duplicate|insufficient_overlap|registration_failed`.
+  Un fallo no borra la fuente y una nueva medición no pisa el veredicto de registro.
+- `scene.v2.json` + `site.lod.json` publican cinco diámetros de cobertura (100/200/400/600/1000 m)
+  en círculo y cuadrado. Son extensiones del producto, no bandas de altitud. `ready` exige que
+  el DSM real cubra el diámetro; el sitio 0117 verifica hoy 100/200/400 m y marca 600/1000 pendientes.
+- Mundo carga una sola isla por `scene_id` (la versión activa); versiones antiguas siguen
+  trazables pero no aparecen como lugares duplicados. Volar aplica el límite métrico solicitado.
 
 ## Pendiente (honesto — NO validado / diferido)
 1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).

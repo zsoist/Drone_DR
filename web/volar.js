@@ -4,27 +4,27 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=178';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=178';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=178';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=178';
-import { createRecorder } from '/flightverse/recorder.js?v=178';
-import { createAudio } from '/flightverse/audio.js?v=178';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=178';
-import { createTouchSticks } from '/flightverse/touch.js?v=178';
-import { createSky } from '/flightverse/sky.js?v=178';
-import { loadSceneObjects } from '/flightverse/objects.js?v=178';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=178';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=178';
-import CameraControls from '/vendor/camera-controls.module.js?v=178';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=178';
+import * as THREE from '/flightverse/three.js?v=183';
+import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=183';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=183';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=183';
+import { createRecorder } from '/flightverse/recorder.js?v=183';
+import { createAudio } from '/flightverse/audio.js?v=183';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=183';
+import { createTouchSticks } from '/flightverse/touch.js?v=183';
+import { createSky } from '/flightverse/sky.js?v=183';
+import { loadSceneObjects } from '/flightverse/objects.js?v=183';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=183';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=183';
+import CameraControls from '/vendor/camera-controls.module.js?v=183';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=183';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=178';
+} from '/vendor/postprocessing180.module.js?v=183';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -35,13 +35,16 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=178';
+import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=183';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 
 const Q = new URLSearchParams(location.search);
 const CID = (Q.get('m') || '').replace(/[^\w-]/g, '');
+const COVERAGE_DIAMETERS = new Set(['100', '200', '400', '600', '1000']);
+const COVERAGE_REQUEST = COVERAGE_DIAMETERS.has(Q.get('diametro')) ? +Q.get('diametro') : null;
+const COVERAGE_SHAPE = Q.get('forma') === 'square' ? 'square' : 'circle';
 const AT = Q.get('autotest');
 const AUTOTEST = AT === '1' || AT === 'record';   // ambos vuelan input sintético
 const report = { ready: false, done: false, errors: [], cid: CID };
@@ -250,9 +253,29 @@ async function main() {
   say('Cargando escena…');
 
   const man = await loadManifest(CID);
+  const coverageRows = man.coverage?.shapes?.[COVERAGE_SHAPE] || [];
+  const requestedCoverage = COVERAGE_REQUEST
+    ? coverageRows.find(row => row.diameter_m === COVERAGE_REQUEST) : null;
+  if (COVERAGE_REQUEST && (!requestedCoverage || !requestedCoverage.ready)) {
+    const available = coverageRows.filter(row => row.ready).map(row => row.diameter_m);
+    throw new Error(`cobertura ${COVERAGE_REQUEST} m pendiente${available.length ? `; listas: ${available.join(', ')} m` : ''}`);
+  }
+  const coverageProduct = requestedCoverage || coverageRows.filter(row => row.ready).at(-1) || null;
+  const coverageArea = coverageProduct?.area_m2
+    ? `${Math.round(coverageProduct.area_m2).toLocaleString('es-CO')} m²` : null;
+  const coverageLabel = coverageProduct
+    ? `${coverageProduct.diameter_m} m · ${COVERAGE_SHAPE === 'square' ? 'cuadrado' : 'círculo'} · ${coverageArea}`
+    : 'extensión nativa';
+  report.coverage = {
+    requested_diameter_m: COVERAGE_REQUEST,
+    effective_diameter_m: coverageProduct?.diameter_m || null,
+    shape: COVERAGE_SHAPE,
+    renderer: coverageProduct?.preferred_renderer || 'terrain',
+    status: coverageProduct?.status || 'native',
+  };
   $('#vb-name').textContent = man.name || 'Cargando escena…';
   if (!man.capabilities?.terrain) throw new Error('escena sin terreno volable');
-  $('#vl-scene').textContent = man.name;
+  $('#vl-scene').textContent = `${man.name} · ${coverageLabel}`;
 
 
   // ── escena three (flags según README de postprocessing: AA lo hace SMAA,
@@ -325,12 +348,12 @@ async function main() {
     attachVisualMesh(man, scene, {
       renderer,
       onProgress: f => {
-        if (f != null) $('#vl-scene').textContent = `${man.name} · malla ${Math.round(f * 100)}%`;
+        if (f != null) $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla ${Math.round(f * 100)}%`;
       },
     }).then(v => {
       if (!v) return;
       visualMesh = v;
-      $('#vl-scene').textContent = `${man.name} · malla fotogramétrica`;
+      $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla fotogramétrica`;
       report.visualMesh = true;
       $('#vb-malla').classList.add('ok');
       applyVista();
@@ -351,17 +374,18 @@ async function main() {
   if (man.capabilities?.splat && man.transforms?.splat?.status === 'aligned') {
     attachSplat(man, scene, {
       renderer,
-      onProgress: p => { if (p < 100) $('#vl-scene').textContent = `${man.name} · splat ${Math.round(p)}%`; },
+      onProgress: p => { if (p < 100) $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · splat ${Math.round(p)}%`; },
     }).then(s => {
       splat = s;
+      if (coverageProduct?.preferred_renderer === 'splat') vista = 1;
       syncVistaChip?.();                       // el splat llegó: chip de vista activo
-      $('#vl-scene').textContent = `${man.name} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
+      $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
       report.splat = { aligned: s.aligned, rmse_m: s.rmse };
       $('#vb-splat').classList.add('ok');
       applyVista();               // default 3D siempre (pedido del operador)
     }).catch(e => {
       report.errors.push('splat: ' + e.message);
-      $('#vl-scene').textContent = man.name;
+      $('#vl-scene').textContent = `${man.name} · ${coverageLabel}`;
     });
   }
 
@@ -491,9 +515,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=178', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=183', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=178');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=183');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -771,7 +795,7 @@ async function main() {
     $('#vl-hud').classList.toggle('fpv-active', !!RIGS[rigIx].hideDrone);
   };
   // vista: 0 mixta · 1 foto-real (solo splat) · 2 orto (solo terreno)
-  let vista = 2;
+  let vista = coverageProduct?.preferred_renderer === 'splat' ? 1 : 2;
   const applyVista = () => {
     if (!splat && vista !== 2) { vista = 2; }
     // con malla fotogramétrica: SOLO la representación high-res (el DSM
@@ -1368,6 +1392,28 @@ async function main() {
           hx.classList.remove('go'); void hx.offsetWidth; hx.classList.add('go');
         }
         sfx.crash = drone.crashedSoft;
+      }
+      // Una cobertura elegida es un producto medible, no una etiqueta: el vuelo
+      // queda dentro de su círculo/cuadrado exacto. Auto conserva toda la escena.
+      if (COVERAGE_REQUEST) {
+        const half = COVERAGE_REQUEST / 2;
+        let clipped = false;
+        if (COVERAGE_SHAPE === 'circle') {
+          const distance = Math.hypot(drone.pos.x, drone.pos.z);
+          if (distance > half) {
+            const scale = half / distance;
+            drone.pos.x *= scale; drone.pos.z *= scale; clipped = true;
+          }
+        } else {
+          const x = THREE.MathUtils.clamp(drone.pos.x, -half, half);
+          const z = THREE.MathUtils.clamp(drone.pos.z, -half, half);
+          clipped = x !== drone.pos.x || z !== drone.pos.z;
+          drone.pos.x = x; drone.pos.z = z;
+        }
+        if (clipped) {
+          drone.vel.x *= -0.18; drone.vel.z *= -0.18;
+          report.coverage.boundary_hits = (report.coverage.boundary_hits || 0) + 1;
+        }
       }
       if (ghost?.on) {
         ghost.t = (ghost.t + dt) % ghost.dur;

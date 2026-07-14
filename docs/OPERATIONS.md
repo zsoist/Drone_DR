@@ -56,7 +56,8 @@ Todos usan `RunAtLoad`; web, worker y tunnel usan `KeepAlive`. OrbStack tiene
 ## Política de recursos
 
 Hardware actual: Mac Mini M4, 10 cores (4P+6E), 16 GB RAM. OrbStack: 10 cores,
-10 GB RAM. OpenSplat MPS está compilado y es el backend preferido.
+10 GB RAM. El PC RTX 4060 Ti/WSL2 es el acelerador remoto: Metal local queda
+restringido a Fast 1K y Medium 2K; 7K–40K usan CUDA estricto.
 
 | Estado | ODM | OpenSplat | Web/stream |
 |---|---|---|---|
@@ -75,6 +76,8 @@ Contención de memoria:
   falla contenido antes de llevar al host de 16 GB a presión extrema.
 - Cola única SQLite con claim atómico: nunca corren dos ODM/splats a la vez.
 - Cancelación mata grupo de procesos y contenedor; timeouts terminan y registran error.
+- El Mac conserva request, vault y publicación. El PC sólo recibe staging, entrena y devuelve PLY;
+  ningún asset remoto reemplaza `current` sin conversión, QA y browser gate en el Mac.
 
 `pipeline/ops_status.py` falla si ve OpenSplat/ODM/ffmpeg sin job activo. En idle,
 web+worker+tunnel deben quedar <15% CPU agregado y <500 MB RSS; normalmente son
@@ -165,8 +168,8 @@ pueden mostrar su cola SQLite truncada y se etiquetan como tales.
 
 Los reportes DeepSeek son triage, no autoridad. `error_report.py` separa intentos de tuning de
 workloads por escena+calidad solicitada, incorpora cámaras/producto/fallback, no suma eventos OOM
-solapados y mantiene error histórico separado de su resolución. Medium es la baseline medida;
-Cinematic/Ultra nunca se recomiendan como mitigación de memoria. Los cuerpos Markdown viven en
+solapados y mantiene error histórico separado de su resolución. Medium es la baseline local medida;
+ningún tier CUDA 7K–40K se recomienda como mitigación de memoria de otro. Los cuerpos Markdown viven en
 `ops/reports` (privado) y se leen mediante el endpoint autenticado, no por `/data` público.
 
 ```bash
@@ -187,6 +190,11 @@ pipeline/safe_restart.sh tunnel
 pipeline/safe_restart.sh worker  # se niega si hay 3d/splat activo
 pipeline/safe_restart.sh both
 ```
+
+Campaña CUDA: usar **3D → Procesamiento → Campaña CUDA**. El dry-run enumera sitios
+activos/modelos sueltos, cámaras, bytes, tier actual, nodo, entorno CUDA y disco. La confirmación
+es todo-o-nada y encola jobs strict sequentiales; `auto` conserva tier y sólo pasa `d1→d2` por
+OOM CUDA clasificado. Nunca reiniciar worker mientras exista un job `queued|running`.
 
 Prioridad de implementación/mantenimiento:
 

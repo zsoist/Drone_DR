@@ -16,17 +16,22 @@ const I = {
   trophy: SV('<path d="M6 3.5h8v4a4 4 0 01-8 0zM6 5H3.5a2.5 2.5 0 002.5 3M14 5h2.5A2.5 2.5 0 0114 8M10 11.5V15M7 16.5h6"/>', 11),
 };
 const main = renderShell('mundo.html');
-let cfg = { cielo: 'dia', calidad: 'auto', modo: 'asistido' };
+let cfg = { cielo: 'dia', calidad: 'auto', modo: 'asistido', cobertura: 'auto', forma: 'circle' };
 try { cfg = { ...cfg, ...JSON.parse(localStorage.getItem('ab.fv.launchcfg') || '{}') } } catch {}
+cfg.cobertura = ['auto','100','200','400','600','1000'].includes(String(cfg.cobertura)) ? String(cfg.cobertura) : 'auto';
+cfg.forma = cfg.forma === 'square' ? 'square' : 'circle';
 const cfgExtra = () =>
   (cfg.cielo !== 'dia' ? `&cielo=${cfg.cielo}` : '')
   + (cfg.calidad !== 'auto' ? `&calidad=${cfg.calidad}` : '')
-  + (cfg.modo !== 'asistido' ? `&modo=${cfg.modo}` : '');
+  + (cfg.modo !== 'asistido' ? `&modo=${cfg.modo}` : '')
+  + (cfg.cobertura !== 'auto' ? `&diametro=${cfg.cobertura}` : '')
+  + (cfg.forma !== 'circle' ? `&forma=${cfg.forma}` : '');
 let filtro = 'todas';
 let scenes = [], sel = null;
 
 function isla(sc, i) {
   const c = sc.capabilities||{}, st = sc.stats||{};
+  const site = sc.site || {};
   const rec = best(sc.clip_id);
   return `
   <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms">
@@ -39,6 +44,8 @@ function isla(sc, i) {
       <div class="wi-name">${esc(sc.name)}</div>
       <div class="wi-meta">${fechaDe(sc.clip_id)||''}${st.track_duration_s?` · vuelo ${dur(st.track_duration_s)}`:''}</div>
       <div class="wi-stats">
+        ${site.scene_id?`<i>sitio · v${site.version_count||1}</i>`:''}
+        ${site.source_count?`<i>${site.source_count} ${site.source_count===1?'video':'videos'}</i>`:''}
         ${sc.world?.size_m?`<i>${(sc.world.size_m[0]*sc.world.size_m[1]/10000).toFixed(1)} ha</i>`:''}
         ${st.gsd_cm_px?`<i>${st.gsd_cm_px} cm/px</i>`:''}
         ${c.track?'<i>ruta GPS</i>':''}
@@ -51,6 +58,9 @@ function pick(i) {
   sel = scenes[i];
   document.querySelectorAll('.wi').forEach((el,j)=>el.classList.toggle('sel', j===i));
   const c = sel.capabilities||{}, st = sel.stats||{}, w = sel.world||{};
+  const site = sel.site || {}, coverage = sel.coverage?.shapes?.circle || [];
+  const integrated = site.source_status?.integrated || site.effective_sources?.length || 0;
+  const readyCoverage = coverage.filter(row => row.ready).map(row => row.diameter_m);
   const rec = best(sel.clip_id);
   const go = (extra='') => `volar.html?m=${encodeURIComponent(sel.clip_id)}${extra}${cfgExtra()}`;
   const p = document.getElementById('w-panel');
@@ -59,6 +69,9 @@ function pick(i) {
       <div>
         <div class="wp-name">${esc(sel.name)}</div>
         <div class="wp-chips">
+          ${site.scene_id?`<span class="fv-chip on">sitio estable · ${site.version_count||1} versiones</span>`:''}
+          ${site.source_count?`<span class="fv-chip">${integrated}/${site.source_count} videos integrados</span>`:''}
+          ${coverage.length?`<span class="fv-chip">cobertura lista ${readyCoverage.length?readyCoverage.join(' / ')+' m':'pendiente'}</span>`:''}
           ${c.splat?`<span class="fv-chip on">splat ${st.splat_cameras||''} cams</span>`:''}
           ${rec!=null?`<span class="fv-chip on">récord ${rec.toFixed(2)}s</span>`:''}
         </div>
@@ -78,6 +91,10 @@ function pick(i) {
           <button data-v="auto">Auto</button><button data-v="hd">HD</button><button data-v="extra">Extra</button></div>
         <div class="wp-cfg-g" data-k="modo"><span>Modo</span>
           <button data-v="asistido">Normal</button><button data-v="arcade">Arcade</button><button data-v="dios">Dios</button></div>
+        ${coverage.length?`<div class="wp-cfg-g coverage" data-k="cobertura"><span>Cobertura</span>
+          <button data-v="auto">Auto</button>${coverage.map(row => `<button data-v="${row.diameter_m}" title="${row.ready?`${Math.round(row.area_m2).toLocaleString('es-CO')} m²`:`Cobertura pendiente: disponible ${row.available_diameter_m||'—'} m`}"${row.ready?'':' disabled'}>${row.diameter_m} m${row.ready?'':' · pendiente'}</button>`).join('')}</div>
+        <div class="wp-cfg-g" data-k="forma"><span>Forma</span>
+          <button data-v="circle">Círculo</button><button data-v="square">Cuadrado</button></div>`:''}
       </div>
       <div class="wp-missions">
         <button class="wp-m" data-go="${go()}"><b>${I.plane} Vuelo libre</b><span>explora sin límites</span></button>
@@ -143,9 +160,37 @@ async function boot() {
   let sys;
   try { sys = await (await fetch('data/manifest/system.json')).json(); }
   catch { document.getElementById('w-rail').innerHTML = '<div class="fv-loading">Sin manifiesto.</div>'; return; }
-  const settled = await Promise.allSettled((sys.models||[]).map(m =>
-    fetch(`data/models/${m.clip_id}/scene.v2.json`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null)));
-  scenes = settled.map(s => s.status==='fulfilled'?s.value:null).filter(Boolean);
+  // Una isla por sitio estable: solo la versión activa entra al Mundo. Los modelos
+  // todavía no asociados a un sitio permanecen visibles como escenas independientes.
+  const stableSites = (sys.scenes || []).filter(site => site.active_version);
+  const versioned = new Set((sys.scenes || []).flatMap(site => (site.versions || []).map(v => v.id)));
+  const targets = stableSites.map(site => ({ clip_id: site.active_version, site }));
+  const seen = new Set(targets.map(row => row.clip_id));
+  for (const model of sys.models || []) {
+    if (!model.clip_id || versioned.has(model.clip_id) || seen.has(model.clip_id)) continue;
+    targets.push({ clip_id: model.clip_id, site: null }); seen.add(model.clip_id);
+  }
+  const settled = await Promise.allSettled(targets.map(target =>
+    fetch(`data/models/${target.clip_id}/scene.v2.json`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null).then(man => ({ man, target }))));
+  scenes = settled.map(s => {
+    if (s.status !== 'fulfilled' || !s.value.man) return null;
+    const { man, target } = s.value;
+    if (target.site) {
+      const active = (target.site.versions || []).find(v => v.id === target.site.active_version) || {};
+      const evidence = target.site.source_evidence || [];
+      const status = Object.fromEntries(['integrated','eligible','duplicate','insufficient_overlap','registration_failed']
+        .map(key => [key, evidence.filter(row => row.status === key).length]));
+      man.site = { ...(man.site || {}), scene_id: target.site.id, title: target.site.title,
+        active_version: target.site.active_version, is_active_version: true,
+        version_count: (target.site.versions || []).length,
+        source_count: target.site.source_inventory?.videos?.length || 0,
+        source_status: status, effective_sources: active.effective_sources || [],
+        dropped_sources: active.dropped_sources || [] };
+      man.name = target.site.title || man.name;
+    }
+    return man;
+  }).filter(Boolean);
   scenes.sort((a,b) => ((b.capabilities?.terrain|0)-(a.capabilities?.terrain|0))
     || ((b.capabilities?.splat|0)-(a.capabilities?.splat|0))
     || String(b.clip_id).localeCompare(String(a.clip_id)));
@@ -192,7 +237,7 @@ async function boot() {
       const g = cb.closest('.wp-cfg-g');
       cfg[g.dataset.k] = cb.dataset.v;
       localStorage.setItem('ab.fv.launchcfg', JSON.stringify(cfg));
-      g.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === cb));
+      pick(scenes.indexOf(sel));
       return;
     }
     const b = e.target.closest('[data-go]'); if (!b) return;
@@ -253,7 +298,7 @@ async function boot() {
   }
   const missionPopup = sc => {
     const rec = best(sc.clip_id), st = sc.stats || {};
-    const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}`;
+    const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}${cfgExtra()}`;
     return `<div class="fv-pop">
       <div class="fv-pop-poster" style="background-image:url('${esc(sc.assets?.poster||'')}')"></div>
       <b>${esc(sc.name)}</b>

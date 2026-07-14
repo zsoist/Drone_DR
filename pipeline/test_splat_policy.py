@@ -9,22 +9,21 @@ import worker
 
 
 class SplatAttemptPolicyTests(unittest.TestCase):
-    def test_ultra_large_scene_skips_guaranteed_full_resolution_attempt(self):
+    def test_ultra_cuda_ignores_mac_preflight_and_preserves_tier(self):
         plan = worker.splat_attempt_plan({
             "preset": "ultra",
-            "best_available": True,
+            "backend": "cuda",
+            "resolution": "auto",
             "preflight": {"recommended_d": 2},
         })
 
-        self.assertEqual("ultra", plan[0]["preset"])
-        self.assertEqual(2, plan[0]["d"])
-        self.assertNotIn(1, [item["d"] for item in plan])
-        self.assertIn("cinematic", {item["preset"] for item in plan})
-        self.assertIn("medium", {item["preset"] for item in plan})
+        self.assertEqual({"ultra"}, {item["preset"] for item in plan})
+        self.assertEqual([1, 2], [item["d"] for item in plan])
 
     def test_strict_mode_never_changes_preset(self):
         plan = worker.splat_attempt_plan({
             "preset": "ultra",
+            "backend": "cuda",
             "best_available": False,
             "preflight": {"recommended_d": 1},
         })
@@ -35,6 +34,7 @@ class SplatAttemptPolicyTests(unittest.TestCase):
     def test_medium_never_falls_below_medium(self):
         plan = worker.splat_attempt_plan({
             "preset": "medium",
+            "backend": "metal",
             "best_available": True,
             "preflight": {"recommended_d": 2},
         })

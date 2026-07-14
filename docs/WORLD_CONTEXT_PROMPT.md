@@ -41,6 +41,9 @@ suggestion you make must fit it.
 ### World data model (per scene, `models/<cid>/`)
 - `scene.v2.json` — manifest: capabilities (only-if-exists), asset paths,
   splat↔terrain alignment matrix (Umeyama, RMSE ~cm), datum.
+- `site.lod.json` — stable `scene_id`, active version, source-registration truth and
+  verified circle/square coverage products at 100/200/400/600/1000 m. Coverage is
+  an output diameter, never inferred from capture altitude. Pending extent is disabled.
 - `dsm_lod.bin/json` — 512² Float32 heightfield (meters, row 0 = north,
   +x = east, +z = south, heights relative to elev_min) + nodata mask.
   `makeHeightSampler` gives `heightAt(x, z) -> meters | null`. The terrain

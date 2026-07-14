@@ -5,12 +5,13 @@
 
 ## Identidad
 
-**OpenSplat 1.1.5 (git 9fb62fd)**, binario C++ compilado localmente. Dos builds:
+El contrato de producción tiene dos familias de trainer:
 
 | Build | Runtime (CMakeCache) | Uso |
 |---|---|---|
 | `splat/OpenSplat/build-mps/opensplat` | **MPS** (Metal) | Default en este M4 |
 | `splat/OpenSplat/build/opensplat` | CPU | Fallback (`--cpu`) |
+| PC WSL2 `nerfstudio-splatfacto` + gsplat 1.4 | CUDA 12.4 / RTX 4060 Ti | Único camino 7K–40K |
 
 Selección: `choose_splat_backend()` (worker.py) — MPS si `GPU_RUNTIME==MPS` y
 `xcrun --find metal` responde; si no, CPU. Corre **nativo**, no Docker
@@ -36,21 +37,36 @@ Selección: `choose_splat_backend()` (worker.py) — MPS si `GPU_RUNTIME==MPS` y
   se exporta `.ply`/`.spz` con SH, este workaround pasa de inocuo a limitante.
   → **Experimento 2.0 del plan frontier**: reproducir el NaN, causa, fix, medir.
 - Política de intentos explícita:
-  - Medium calibrado: full; si el preflight medido lo requiere, empieza en `-d 2`.
-  - Cinematic/Ultra: “riesgo alto/no calibrado”; no se muestran proyecciones falsas de memoria.
-  - Ultra grande empieza directamente en `-d 2`, evitando un intento full destinado a OOM.
-  - `best_available=true`: solo después de OOM puede bajar Ultra→Cinematic→Medium, siempre en
-    `-d 2`. En modo estricto no cambia el preset solicitado.
+  - Fast/Medium local usan el preflight de memoria M4 y pueden recomendar `-d2`.
+  - Los runs Metal antiguos de Cinematic/Ultra conservan su escalera histórica en metadata,
+    pero ya no son una ruta encolable desde producto.
+  - CUDA 7K–40K mantiene tier/backend: `auto` hace `d1→d2` sólo por OOM clasificado.
   - Cada intento guarda preset, escala de entrada, causa, rc, duración y pico observado.
 
-## Presets (`pipeline/splat_presets.py`)
+## Presets (`pipeline/splat_presets.py`, única fuente de verdad)
 
 | Preset | iters | train_args |
 |---|---|---|
 | fast | 1000 | — |
 | medium | 2000 | — |
-| cinematic | 7000 | `--save-every 1000 --refine-every 150 --densify-grad-thresh 0.00035 --stop-screen-size-at 3000` |
-| ultra | 15000 | `--save-every 1000 --refine-every 200 --densify-grad-thresh 0.0005 --stop-screen-size-at 2500` |
+| cinematic | 7000 | CUDA estricto · foto-real compartible |
+| ultra | 15000 | CUDA estricto · crecimiento completo |
+| ultra20 | 20000 | CUDA estricto · refinamiento post-densificación |
+| frontier | 30000 | CUDA estricto · schedule completo (default interactivo) |
+| grandmaster | 40000 | CUDA estricto · campaña máxima |
+
+Fast/Medium aceptan Metal, CPU o CUDA. Los otros cinco sólo aceptan CUDA. En CUDA,
+`auto = d1 → d2 únicamente por OOM clasificado`; `full = d1`; `half = d2`. Nunca existe
+Ultra→Medium ni CUDA→Mac implícito. El sidecar conserva solicitado/efectivo, resolución,
+intentos, GPU/driver, duración, gaussianas, parámetros y hash.
+
+## Mac ↔ PC
+
+`UI → API Mac → SQLite → worker Mac → SSH/WSL → RTX → PLY → Mac → .splat/SOG → gate`.
+El dataset se copia primero a ext4 WSL; NTFS es sólo puente. Tras recuperar/verificar el PLY,
+los staging remotos se limpian. El Mac conserva poses ODM, request, metadatos, current/history
+y es el único que puede publicar. La campaña `/api/splat_campaign` hace dry-run sobre sitios
+activos/modelos sueltos, verifica entorno/disco, estima cola y encola todo o nada.
 
 Sin cap absoluto de gaussianas — el presupuesto de densificación se acota
 indirectamente (`--densify-grad-thresh`, `--refine-every`, `--stop-screen-size-at`).
@@ -113,11 +129,9 @@ a las métricas de esa versión. Pendiente: `params_hash`, `eval:{psnr,ssim,lpip
 
 ## Qué significa “el Mac es capaz”
 
-El M4 de 16 GB ha completado Medium, Cinematic y Ultra con Metal/MPS (por ejemplo Ultra
-15k/127 cámaras en ~2 h). Eso demuestra capacidad, no garantía universal: Cinematic/Ultra
-pueden agotar memoria según cámaras, resolución, geometría y presión concurrente. El preflight
-solo da número de pico para Medium, donde existe calibración; para los demás comunica el riesgo
-y aplica la escalera observable anterior.
+El M4 de 16 GB es fallback local sólo para Fast 1K y Medium 2K. La RTX 4060 Ti ha completado
+Cinematic 7K y Ultra 15K con 238 cámaras a `d2`; 20K/30K/40K se proyectan desde la medición
+hasta tener muestras propias. Una proyección siempre se etiqueta y jamás sustituye telemetría.
 
 ## Config de hardware (`config/hardware.json`)
 

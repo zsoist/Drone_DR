@@ -9,10 +9,14 @@ de escenas, y reels de viaje auto-editados.
 ## Arquitectura ($0/mes — decisión deliberada)
 
 ```
-SD card ──ingest──▶ drone-vault (SSD 1TB)          Mac Mini M4
+SD card ──ingest──▶ drone-vault (SSD 1TB)          Mac Mini M4 · control plane
                       raw/ proxies/ frames/         · ffmpeg + VideoToolbox (HW)
                       tracks/ thumbs/ ai/           · Gemini vision + DeepSeek
-                            │                       · python http.server :8790
+                            │                       · web/API/SQLite/publish/gates
+                            │
+                            ├── LAN/SSH ──▶ PC RTX 4060 Ti · WSL2
+                            │              · ODM depthmaps CUDA
+                            │              · gsplat 7K/15K/20K/30K/40K
                             ▼
               Cloudflare Tunnel (metislab)  ←── $0: sin R2, sin VPS, sin egress
                             │
@@ -36,7 +40,9 @@ como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9G
 | `ai/router.py` | Lanes multi-LLM: Gemini (vision) · DeepSeek (texto) · OpenAI (fallback) |
 | `ai/analyze.py` | Keyframes → resumen, tags, highlights, travel_score (~$0.002/clip) |
 | `ai/reel.py` | Auto-editor: top highlights → reel 1080p o 9:16 vertical |
-| `pipeline/worker.py` | Cola heavy única: ODM/OpenSplat MPS, límites de memoria y prioridad adaptativa al streaming |
+| `pipeline/worker.py` | Cola heavy única: ODM, Metal local 1K/2K, CUDA remoto 7K–40K, publicación y gates |
+| `pipeline/scenes.py` | Sitios estables, versiones inmutables y aporte registrado por video |
+| `pipeline/scene_manifest.py` | Contrato Mundo/Flightverse con cobertura verificada 100/200/400/600/1000 m |
 | `pipeline/external_probe.py` | SLO público: health + home + video Range desde GitHub Actions cada 15 min |
 | `pipeline/browser_gate.py` | QA real en Chrome headless (CDP stdlib) antes de dar un job 3D por done |
 | `pipeline/browser_matrix.py` | QA multi-viewport de splats: share + workspace en mobile/iPad/desktop, macro zoom, overflow y screenshots |
@@ -53,16 +59,26 @@ El camino premium de video DJI ahora es local y gratis:
 2. Worker encola ODM en SQLite y corre Docker separado del server web. Reiniciar la web no mata jobs.
 3. Preset `alta` usa 3072px, `pc-quality high`, `feature-quality high`, DSM/DTM/ortho, nube densa y `--skip-3dmodel`. Para vuelos nadir, la malla full 3D es secundaria; nube, DSM, ortho y splat son el producto principal.
 4. `tresd_publish.py` publica ortho/DSM/hillshade WebP con feather alpha, DSM binario para mediciones, nube PLY gzip, malla viewer re-centrada si existe, QA y `system.json` atómico.
-5. OpenSplat entrena sobre poses ODM. Medium = 2k, Cinematic = 7k, Ultra = 15k bounded en Metal/MPS.
-6. Publicación de splats es atómica: current se archiva en `splats/history/`, se genera `.ksplat`, se reconstruye índice y Chrome gate debe pasar antes de marcar `done`.
+5. El contrato único de splat define Fast 1K y Medium 2K para Apple Metal/CUDA. Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K y Grandmaster 40K son NVIDIA CUDA estrictos: no bajan de tier ni caen al Mac. `auto` prueba resolución completa y sólo reintenta `-d2` tras OOM CUDA clasificado.
+6. Publicación de splats es atómica: current se archiva en `splats/history/`, se genera SOG, se reconstruye el índice y el gate de navegador debe pasar antes de marcar `done`.
 7. El viewer se verifica con matriz real: `share.html` y `tresd.html` en mobile, iPad y desktop deben renderizar canvas, exponer versiones, no desbordar horizontalmente y permitir macro zoom medible.
 
-Evidencia viva 2026-07-07 (`DJI_20260706133809_0101_D`):
+Evidencia viva 2026-07-13 (`DJI_20260712135736_0117_D`, RTX 4060 Ti):
 
-- ODM `alta`: 30/30 cámaras, DSM/DTM/ortho/nube, browser gate OK, 12.6 min.
-- Medium splat: 2k, Metal/MPS, loss 0.0649658, 2.5 min.
-- Cinematic splat: 7k, Metal/MPS, loss 0.0461415, archivado.
-- Ultra splat: 15k bounded, Metal/MPS, 480,737 gaussianas, loss 0.0493478, `.ksplat` current, browser gate OK, matrix gate OK.
+- ODM `alta`: 238/238 cámaras, DSM/DTM/ortho/nube/malla, browser gate OK.
+- Cinematic 7K CUDA: 435.5 s end-to-end, 238 cámaras, `-d2`.
+- Ultra 15K CUDA: 928.4 s end-to-end, 704,495 gaussianas fuente, SOG 8.3 MB, browser gate OK.
+- 20K/30K/40K muestran proyecciones explícitas desde esa medición hasta reunir corridas reales; nunca se presentan como tiempos medidos.
+
+## Sitios que mejoran con el tiempo
+
+`scene_<id>` identifica un lugar real. Cada mejora crea un `recon_<hash>` reproducible con
+la lista completa de videos/fotos; la versión activa no se sobrescribe. OpenSfM registra el
+aporte por fuente (`submitted`, `registered`, ratio, motivo) y una fusión `PARTIAL` no se
+promueve ni auto-entrena. Fallar registro conserva la evidencia y el motivo: no equivale a
+integrarla. `scene.v2.json` y `site.lod.json` exponen productos circulares/cuadrados de
+100/200/400/600/1000 m, marcando `ready` sólo cuando la extensión real del ODM alcanza el
+diámetro. Estudio 3D y Mundo consumen la misma versión activa y el mismo contrato.
 
 ## Operación
 
@@ -88,8 +104,8 @@ V1 ✅ pipeline + Flight Deck live · V3 ✅ SHIPPED: fotogrametría ODM complet
 (worker desacoplado + cola SQLite, presets rápido/estándar/alta, DSM + curvas +
 mediciones de volumen/perfil/comparación multi-fecha, ortos feathered WebP,
 malla re-centrada para viewer, página pública /share.html, gzip sidecars) +
-gaussian splats ✅ (OpenSplat Metal/MPS, Medium/Cinematic/Ultra bounded, publish atómico,
-.ksplat export, historial versionado, browser-gate en Chrome antes de marcar done,
+gaussian splats ✅ (Metal 1K/2K + RTX CUDA estricto 7K–40K, SOG, historial versionado,
+campañas CUDA con dry-run, preflight y publish atómico, browser-gate antes de `done`,
 browser-matrix mobile/iPad/desktop para share + workspace) ·
 V2 detección YOLO/open-vocab pendiente ·
 V4 travel mode + diarios AI · V5 watcher autónomo (SD in → todo solo).

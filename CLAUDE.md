@@ -51,13 +51,18 @@
 - GaussianSplats3D vendoreado importa "/vendor/three.module.js" (URL de navegador): para
   usarlo en Node (make_ksplat.mjs) reescribe ese import a file:// en una copia temporal y
   shimea window/self/document/navigator ANTES del import. Sin npm.
-- Splat presets are explicit and versioned:
-  - Medium: 2k iters, interactive QA.
-  - Cinematic: 7k iters, shareable photoreal. Can be better loss than Ultra on some scenes.
-  - Ultra: 15k iters, Metal/MPS, bounded densification (`--refine-every 200`,
-    `--densify-grad-thresh 0.0005`, `--stop-screen-size-at 2500`, future runs checkpoint with
-    `--save-every 1000`). This prevents 1M+ gaussian runaway on M4/16GB and keeps mobile assets
-    sane. Publish is atomic and previous splats move to `splats/history/`.
+- Splat profiles come only from `pipeline/splat_presets.py`: Fast 1K and Medium 2K may use
+  Apple Metal/CPU/CUDA; Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K and Grandmaster
+  40K require NVIDIA CUDA. Strict CUDA never changes tier/backend. `resolution=auto` tries
+  `d1`, then the same tier at `d2` only after classified CUDA OOM. SH remains degree 0 because
+  the public `.splat`→SOG path cannot retain higher coefficients. Publish is atomic.
+- CUDA is a disposable accelerator; the Mac owns SQLite, vault, immutable request,
+  provenance, publish, browser gate and current/history swap. Never publish directly from PC.
+- Stable scenes are versioned retraining, not online model mutation. A video is integrated
+  only when per-source SfM registration says so. Preserve failed attempts/reasons in
+  `source_evidence`; do not erase a source or call it integrated because the global ratio passes.
+- Coverage diameters (100/200/400/600/1000 m) are output extents, not capture altitudes.
+  `ready` requires real world dimensions; altitude bands are separate capture evidence.
 - var(--x) NO resuelve en ATRIBUTOS de presentación SVG en WebKit (fill="var(--x)" cae a
   negro en iPhone/iPad). Colores temeables de SVG inline SIEMPRE por clase CSS.
 - xcodebuild -downloadComponent MetalToolchain corre como usuario normal (sin sudo);

@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 import dsm_lod
+import scenes
 
 VAULT = Path("/Volumes/SSD/drone-vault")
+COVERAGE_DIAMETERS_M = (100, 200, 400, 600, 1000)
 
 
 def _load(p: Path):
@@ -47,6 +50,77 @@ def _obj_center(path: Path) -> list[float] | None:
             p = line.split()
             sx += float(p[1]); sy += float(p[2]); sz += float(p[3]); n += 1
     return [round(sx / n, 4), round(sy / n, 4), round(sz / n, 4)] if n else None
+
+
+def coverage_products(scene: dict | None, manifest: dict, shape: str = "circle") -> list[dict]:
+    """Describe honest site products at the five shared coverage diameters.
+
+    These rows are a renderer contract, not five invented reconstructions: every
+    row references only assets that really exist in the published scene. The
+    runtime can select the best representation for near detail versus wide-area
+    context while preserving one stable site identity.
+    """
+    if shape not in ("circle", "square"):
+        raise ValueError("coverage shape must be circle or square")
+    scene = scene if isinstance(scene, dict) else {}
+    assets = manifest.get("assets") or {}
+    evidence = scene.get("source_evidence") or []
+    world_size = (manifest.get("world") or {}).get("size_m") or []
+    try:
+        verified_diameter = min(float(world_size[0]), float(world_size[1]))
+    except (IndexError, TypeError, ValueError):
+        verified_diameter = None
+    products = {
+        "splat": assets.get("splat"),
+        "mesh": assets.get("mesh_viewer"),
+        "odm_terrain": assets.get("dsm_lod_bin"),
+        "ortho": assets.get("ortho"),
+    }
+    rows = []
+    for diameter in COVERAGE_DIAMETERS_M:
+        radius = diameter / 2
+        area = diameter * diameter if shape == "square" else math.pi * radius * radius
+        if diameter <= 200 and products["splat"]:
+            renderer = "splat"
+        elif diameter <= 400 and products["mesh"]:
+            renderer = "mesh"
+        else:
+            renderer = "terrain"
+        if renderer == "terrain" and not products["odm_terrain"]:
+            renderer = "mesh" if products["mesh"] else "splat" if products["splat"] else "none"
+        integrated = sum(1 for row in evidence if isinstance(row, dict)
+                         and row.get("status") == "integrated")
+        capture_band_sources = sum(1 for row in evidence if isinstance(row, dict)
+                                   and row.get("status") == "integrated"
+                                   and int(row.get("altitude_band_m") or 0) == diameter)
+        asset_ready = renderer != "none"
+        extent_verified = bool(verified_diameter is not None and verified_diameter >= diameter)
+        rows.append({
+            "diameter_m": diameter,
+            "radius_m": radius,
+            "shape": shape,
+            "area_m2": round(area, 1),
+            "preferred_renderer": renderer,
+            "ready": asset_ready and extent_verified,
+            "asset_ready": asset_ready,
+            "extent_verified": extent_verified,
+            "available_diameter_m": round(verified_diameter, 1) if verified_diameter is not None else None,
+            "status": "ready" if asset_ready and extent_verified else (
+                "coverage_pending" if asset_ready else "assets_missing"),
+            "integrated_sources": integrated,
+            "capture_band_sources": capture_band_sources,
+            "products": products.copy(),
+        })
+    return rows
+
+
+def _site_for_version(cid: str) -> dict | None:
+    for scene in scenes.list_scenes():
+        if scene.get("active_version") == cid:
+            return scene
+        if any(version.get("id") == cid for version in scene.get("versions") or []):
+            return scene
+    return None
 
 
 def build(cid: str) -> dict:
@@ -149,6 +223,41 @@ def build(cid: str) -> dict:
             "ortho_bytes": meta.get("ortho_bytes"),
         }.items() if v},
     }
+    site_scene = _site_for_version(cid)
+    if site_scene:
+        active_version = next((version for version in site_scene.get("versions") or []
+                               if version.get("id") == site_scene.get("active_version")), {})
+        evidence = site_scene.get("source_evidence") or []
+        counts = {status: sum(1 for row in evidence if row.get("status") == status)
+                  for status in scenes.SOURCE_STATUSES}
+        site_summary = {
+            "scene_id": site_scene.get("id"),
+            "title": site_scene.get("title"),
+            "active_version": site_scene.get("active_version"),
+            "is_active_version": site_scene.get("active_version") == cid,
+            "version_count": len(site_scene.get("versions") or []),
+            "source_count": len((site_scene.get("source_inventory") or {}).get("videos") or []),
+            "source_status": counts,
+            "effective_sources": active_version.get("effective_sources") or [],
+            "dropped_sources": active_version.get("dropped_sources") or [],
+            "altitude_bands_m": sorted({int(row.get("altitude_band_m")) for row in evidence
+                                         if row.get("altitude_band_m")}),
+        }
+        coverage = {
+            "diameters_m": list(COVERAGE_DIAMETERS_M),
+            "default_shape": "circle",
+            "shapes": {
+                "circle": coverage_products(site_scene, man, "circle"),
+                "square": coverage_products(site_scene, man, "square"),
+            },
+        }
+        site_lod = {"version": 1, "clip_id": cid, "site": site_summary,
+                    "coverage": coverage}
+        (mdir / "site.lod.json").write_text(json.dumps(site_lod, ensure_ascii=False, indent=1))
+        man["name"] = site_scene.get("title") or man["name"]
+        man["site"] = site_summary
+        man["coverage"] = coverage
+        man["assets"]["site_lod"] = f"data/models/{cid}/site.lod.json"
     (mdir / "scene.v2.json").write_text(json.dumps(man, ensure_ascii=False, indent=1))
     return man
 

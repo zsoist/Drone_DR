@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=178';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=178';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=178';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=178';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=178';
-  import { mountSplatViewer } from '/splatview.js?v=178';
+  import * as THREE from '/vendor/three180.module.js?v=183';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=183';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=183';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=183';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=183';
+  import { mountSplatViewer } from '/splatview.js?v=183';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -243,6 +243,9 @@
             <i class="td-cta-arrow">›</i></button>
           <button class="btn td-cta" id="btn-splat" data-open-splat>
             ${icon('spark')}<span><b>Generar splat…</b><small>Mac 1K/2K · NVIDIA CUDA 7K/15K/20K/30K/40K</small></span>
+            <i class="td-cta-arrow">›</i></button>
+          <button class="btn td-cta" id="btn-cuda-campaign">
+            ${icon('cpu')}<span><b>Campaña CUDA…</b><small>reprocesar sitios activos · 15K/20K/30K/40K estricto</small></span>
             <i class="td-cta-arrow">›</i></button>
           <button class="btn td-cta ghost" id="btn-jobs-status">
             ${icon('activity')}<span><b>Estado de trabajos</b><small>cola, progreso y fases en vivo</small></span>
@@ -1034,6 +1037,66 @@
     return { ov, close };
   }
 
+  document.getElementById('btn-cuda-campaign')?.addEventListener('click', async () => {
+    const profiles = (await splatProfilesPromise).filter(p => ['ultra','ultra20','frontier','grandmaster'].includes(p.key));
+    const { ov, close } = openModal(`${icon('cpu')} Campaña NVIDIA CUDA`, `
+      <p class="footer-note" style="margin:0 0 12px">Reentrena cada sitio activo y cada modelo suelto elegible sin reemplazar el asset actual hasta que publicación y gate de navegador terminen.</p>
+      <div class="campaign-controls">
+        <label><span>Calidad</span><select class="ctl" data-campaign-preset>${profiles.map(p => `<option value="${p.key}"${p.key==='grandmaster'?' selected':''}>${esc(p.label)} · ${p.iters/1000}K</option>`).join('')}</select></label>
+        <label><span>Alcance</span><select class="ctl" data-campaign-scope><option value="active_sites">Sitios activos + modelos sueltos</option><option value="all_models">Todos los modelos, incluidas versiones antiguas</option></select></label>
+        <label><span>Entrada</span><select class="ctl" data-campaign-resolution><option value="auto">Completa → ½ solo por OOM CUDA</option><option value="full">Solo completa</option><option value="half">½ desde el inicio</option></select></label>
+      </div>
+      <div class="campaign-plan" data-campaign-plan><div class="fv-loading">Midiendo proyectos y nodo RTX…</div></div>
+      <button class="btn primary" data-campaign-go disabled style="width:100%;justify-content:center">Encolar campaña verificada</button>`, 'cuda-campaign-modal');
+    const planBox = ov.querySelector('[data-campaign-plan]');
+    const go = ov.querySelector('[data-campaign-go]');
+    let currentPlan = null;
+    const renderPlan = plan => {
+      currentPlan = plan;
+      const eligible = plan.eligible || [], blocked = plan.blocked || [], skipped = plan.skipped || [];
+      const profile = profiles.find(p => p.key === plan.preset);
+      const eta = profile?.eta?.seconds ? profile.eta.seconds * eligible.length : null;
+      const verdictLabel = verdict => ({ UNVERIFIED_FULL_RES: 'FULL → OOM → ½',
+        NODE_ASLEEP: 'DESPERTARÁ', READY: 'LISTO' }[verdict] || verdict || 'SIN PREFLIGHT');
+      const nodeReady = plan.node?.status === 'awake' && plan.node?.environment_verified !== false;
+      const nodeState = nodeReady ? `RTX lista${plan.node.gpu ? ` · ${plan.node.gpu}` : ''}` : `RTX no lista · ${plan.node?.environment_error || plan.node?.error || plan.node?.status || 'sin diagnóstico'}`;
+      planBox.innerHTML = `<div class="campaign-summary">
+        <div><span>Elegibles</span><b>${eligible.length}</b><small>${(plan.total_input_bytes/1073741824).toFixed(1)} GB de imágenes</small></div>
+        <div><span>Solicitud</span><b>${esc(plan.label)}</b><small>CUDA estricto · ${esc(plan.resolution)}</small></div>
+        <div class="${blocked.length?'bad':'good'}"><span>Nodo</span><b>${blocked.length?'Bloqueado':'Verificado'}</b><small>${esc(nodeState)}</small></div>
+        <div><span>Tiempo cola</span><b>${eta?fmtEta(eta):'por medir'}</b><small>secuencial · 1 tarea pesada</small></div>
+      </div>
+      <div class="campaign-list">${eligible.map((row,i) => `<div><b>${i+1}. ${esc(row.title)}</b><span>${row.cameras} cámaras · ${(row.input_bytes/1048576).toFixed(0)} MB · ${row.achieved_iterations?`${row.achieved_iterations/1000}K actual`:'sin CUDA previo'}</span><em>${esc(verdictLabel(row.preflight?.verdict))}</em></div>`).join('') || '<p class="footer-note">No hay modelos pendientes para este tier.</p>'}</div>
+      ${blocked.length?`<div class="campaign-blocked"><b>No se encolará nada todavía</b>${blocked.map(row=>`<span>${esc(row.clip_id)} · ${esc(row.verdict)} · ${esc(row.note||'')}</span>`).join('')}</div>`:''}
+      ${skipped.length?`<details class="campaign-skipped"><summary>${skipped.length} omitidos con razón</summary>${skipped.map(row=>`<span>${esc(row.clip_id)} · ${esc(row.reason)}</span>`).join('')}</details>`:''}`;
+      go.disabled = !plan.ready_to_enqueue;
+      go.textContent = plan.ready_to_enqueue ? `Encolar ${eligible.length} trabajos ${plan.label}` : 'Campaña aún no verificable';
+    };
+    const refresh = async () => {
+      go.disabled = true; planBox.innerHTML = '<div class="fv-loading">Midiendo proyectos y nodo RTX…</div>';
+      const result = await api('/api/splat_campaign', {
+        preset: ov.querySelector('[data-campaign-preset]').value,
+        scope: ov.querySelector('[data-campaign-scope]').value,
+        resolution: ov.querySelector('[data-campaign-resolution]').value,
+        confirm: false,
+      });
+      if (result.error) { planBox.innerHTML = `<div class="campaign-blocked">${esc(result.error)}</div>`; return; }
+      renderPlan(result.plan);
+    };
+    ov.querySelectorAll('.campaign-controls select').forEach(select => select.addEventListener('change', refresh));
+    go.addEventListener('click', async () => {
+      if (!currentPlan?.ready_to_enqueue) return;
+      go.disabled = true; go.textContent = 'Encolando…';
+      const result = await api('/api/splat_campaign', {
+        preset: currentPlan.preset, scope: currentPlan.scope,
+        resolution: currentPlan.resolution, confirm: true,
+      });
+      if (result.error) { alert(result.error); return refresh(); }
+      close(); showTdMod('jobs'); document.querySelector('[data-job-filter="all"]')?.click();
+    });
+    refresh();
+  });
+
   // ---------- asistente: procesar un vuelo ----------
   const candidates = flights.filter(f => f.has_srt && f.stats?.bbox && !f.archived);
   document.getElementById('btn-run3d').addEventListener('click', async () => {
@@ -1692,6 +1755,7 @@
   };
   async function openImproveScene(model) {
     if (!model) return;
+    const splatProfiles = await splatProfilesPromise;
     let sceneRows = [];
     try { sceneRows = (await (await fetch('/api/scenes')).json()).scenes || []; } catch {}
     let scene = sceneForVersion(sceneRows, model.clip_id);
@@ -1708,30 +1772,46 @@
     // source here would silently turn an additive version into a replacement on submit.
     const currentChoices = ranked.filter(({ f }) => currentSources.includes(f.clip_id));
     const choices = currentChoices.concat(
-      ranked.filter(({ f }) => !currentSources.includes(f.clip_id)).slice(0, Math.max(0, 24 - currentChoices.length)));
+      ranked.filter(({ f }) => !currentSources.includes(f.clip_id)));
     const photoRows = [...(sys.photos || [])];
     currentPhotos.forEach(name => {
       if (!photoRows.some(p => p.name === name)) photoRows.unshift({ name });
     });
     const versions = scene?.versions || [];
+    const evidenceById = Object.fromEntries((scene?.source_evidence || []).map(row => [row.clip_id, row]));
+    const evidenceLabels = {
+      integrated: 'integrado', eligible: 'elegible', duplicate: 'duplicado',
+      insufficient_overlap: 'sin solape', registration_failed: 'no registró',
+    };
     const { ov, close } = openModal(`${icon('layers')} Mejorar esta escena`, `
       <p class="footer-note" style="margin:0 0 12px">Cada mejora crea una versión nueva: combina todas las
       capturas seleccionadas, verifica cada fuente y conserva intacta la versión activa.</p>
-      <div class="scene-version-head"><span>Versión activa</span><b>${esc(scene?.active_version || model.clip_id)}</b></div>
+      <div class="scene-version-head"><span>Sitio estable · ${esc(scene?.title || titleFor(model))}</span><b>${esc(scene?.active_version || model.clip_id)}</b></div>
+      <div class="scene-coverage-contract">
+        <span><b>5 coberturas del sitio</b><small>Una identidad; versiones acumulativas y renderer honesto por distancia.</small></span>
+        <div>${[100, 200, 400, 600, 1000].map(d => `<i>${d} m</i>`).join('')}<em>círculo / cuadrado</em></div>
+      </div>
       ${versions.length ? `<div class="scene-versions">${versions.map(v => `
         <div><span><b>${esc(v.id)}</b><small>${esc(sceneVersionTruth(v))}</small></span>
         ${v.id === scene.active_version ? '<i>Activa</i>' : v.status === 'ready' && ['FULL', 'SINGLE'].includes(v.merge_label)
           ? `<button class="btn" data-scene-promote="${esc(v.id)}">Promover</button>` : ''}</div>`).join('')}</div>` : ''}
-      <p class="mlb">Videos de la nueva versión</p>
+      <div class="scene-source-heading"><p class="mlb">Videos de la nueva versión · ${choices.length} evaluables</p>
+        <div><button class="btn" data-scene-compatible>Seleccionar candidatos ≤500 m</button>
+        <button class="btn" data-scene-current>Solo versión activa</button><span class="scene-source-count" data-scene-source-count>${currentSources.length}/24 seleccionados</span></div></div>
       <div class="scene-sources">${choices.map(({ f, distance }) => {
         const selected = currentSources.includes(f.clip_id);
         const alt = Math.round(f.stats?.max_rel_alt_m || 0);
+        const evidence = evidenceById[f.clip_id];
+        const evidenceState = evidenceLabels[evidence?.status] || (selected ? 'por verificar' : 'nuevo');
+        const altitudeBand = evidence?.altitude_band_m || ([100, 200, 400, 600, 1000]
+          .reduce((best, d) => Math.abs(d - alt) < Math.abs(best - alt) ? d : best, 100));
         const dist = distance == null ? 'distancia sin medir' : distance < 1000 ? `${Math.round(distance)} m` : `${(distance / 1000).toFixed(1)} km`;
         const risky = distance != null && distance > 500;
-        return `<label class="scene-source${selected ? ' on' : ''}${risky ? ' risky' : ''}">
+        return `<label class="scene-source${selected ? ' on' : ''}${risky ? ' risky' : ''}" data-distance="${distance == null ? '' : distance}">
           <input type="checkbox" value="${esc(f.clip_id)}"${selected ? ' checked' : ''}>
           <img src="data/thumbs/${encodeURIComponent(f.clip_id)}.jpg" alt="" loading="lazy">
-          <span><b>${esc(f.label || `${fmt.date(f.date)} · ${f.time}`)}</b><small>${esc(dist)} · ${alt || '—'} m${risky ? ' · revisar compatibilidad' : ''}</small></span></label>`;
+          <span><b>${esc(f.label || `${fmt.date(f.date)} · ${f.time}`)}</b><small>${esc(dist)} · ${alt || '—'} m · banda ${altitudeBand} m</small>
+          <small class="scene-evidence ${esc(evidence?.status || 'new')}">${esc(evidenceState)}${evidence?.reason ? ` · ${esc(evidence.reason)}` : ''}</small></span></label>`;
       }).join('')}</div>
       <p class="footer-note scene-truth">La cercanía solo sugiere compatibilidad. El resultado FULL/PARTIAL se decide después con cámaras registradas por fuente.</p>
       <p class="mlb">Fotos adicionales</p>
@@ -1743,19 +1823,44 @@
         ${[['estandar', 'Estándar', 'poses + mapa estable'], ['alta', 'Alta', 'detalle preferido'], ['extra', 'Extra', 'malla más densa'], ['ultra', 'Ultra', 'máximo ODM local']]
           .map(([k, n, d]) => `<div class="mpreset${k === 'alta' ? ' on' : ''}" data-scene-odm="${k}"><b>${n}</b><small>${d}</small></div>`).join('')}
       </div>
+      <label class="proc-phase compute-choice"><input type="checkbox" data-scene-odm-cuda checked>
+        <span>${icon('cpu')} <b>ODM en PC NVIDIA CUDA</b><small>Depthmaps en la RTX; si el nodo falla, solo ODM puede continuar local en el Mac.</small></span></label>
       <label class="proc-phase"><input type="checkbox" data-scene-splat checked>
-        <span>${icon('spark')} <b>Entrenar Gaussian al terminar</b> con fallback explícito</span></label>
-      <div class="mpresets scene-splat">
-        ${[['medium', 'Medium'], ['cinematic', 'Cinemático'], ['ultra', 'Ultra']]
-          .map(([k, n]) => `<div class="mpreset${k === 'cinematic' ? ' on' : ''}" data-scene-splat-preset="${k}"><b>${n}</b></div>`).join('')}
+        <span>${icon('spark')} <b>Entrenar Gaussian al terminar</b><small>30K por defecto; 7K–40K conservan la solicitud y nunca caen al Mac.</small></span></label>
+      <div class="splat-config scene-splat" data-scene-splat-config>
+        <div class="splat-contract-head"><span><b>Calidad Gaussian</b><small>Fast/Medium: Mac o CUDA · 7K–40K: CUDA estricto.</small></span>
+          <span class="splat-contract-badge">30K READY</span></div>
+        <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles, 'frontier')}</div>
+        <label class="proc-phase compute-choice"><input type="checkbox" data-cuda-toggle checked>
+          <span>${icon('cpu')} <b>Usar PC NVIDIA CUDA</b><small>RTX 4060 Ti · sin degradación silenciosa de calidad.</small></span></label>
+        ${splatResolutionControls()}
+        <div class="splat-policy" data-splat-policy></div>
       </div>
       <button class="btn primary" data-scene-go style="width:100%;justify-content:center;margin-top:14px">Crear versión mejorada</button>`, 'scene-improve-modal');
     ov.querySelectorAll('.mpresets').forEach(group => group.addEventListener('click', e => {
       const pick = e.target.closest('.mpreset'); if (!pick) return;
       group.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === pick));
     }));
-    ov.querySelectorAll('.scene-source input').forEach(input => input.addEventListener('change', e =>
-      e.target.closest('.scene-source').classList.toggle('on', e.target.checked)));
+    const sceneSplatConfig = ov.querySelector('[data-scene-splat-config]');
+    wireSplatCompute(sceneSplatConfig);
+    const syncSceneSourceCount = () => {
+      const count = ov.querySelectorAll('.scene-source input:checked').length;
+      const badge = ov.querySelector('[data-scene-source-count]');
+      badge.textContent = `${count}/24 seleccionados`; badge.classList.toggle('bad', count > 24);
+    };
+    ov.querySelectorAll('.scene-source input').forEach(input => input.addEventListener('change', e => {
+      e.target.closest('.scene-source').classList.toggle('on', e.target.checked); syncSceneSourceCount();
+    }));
+    const setSceneSourceSelection = predicate => ov.querySelectorAll('.scene-source').forEach(row => {
+      const input = row.querySelector('input');
+      const distance = row.dataset.distance === '' ? NaN : Number(row.dataset.distance);
+      input.checked = predicate(input.value, distance);
+      row.classList.toggle('on', input.checked);
+    });
+    ov.querySelector('[data-scene-compatible]')?.addEventListener('click', () =>
+      { setSceneSourceSelection((cid, distance) => currentSources.includes(cid) || Number.isFinite(distance) && distance <= 500); syncSceneSourceCount(); });
+    ov.querySelector('[data-scene-current]')?.addEventListener('click', () =>
+      { setSceneSourceSelection(cid => currentSources.includes(cid)); syncSceneSourceCount(); });
     ov.addEventListener('click', async e => {
       const promote = e.target.closest('[data-scene-promote]');
       if (promote && scene) {
@@ -1768,6 +1873,7 @@
       const selectedSources = [...ov.querySelectorAll('.scene-source input:checked')].map(x => x.value);
       const selectedPhotos = [...ov.querySelectorAll('.scene-photos input:checked')].map(x => x.value);
       if (!selectedSources.length) return alert('Selecciona al menos un video con GPS.');
+      if (selectedSources.length > 24) return alert('Esta versión admite máximo 24 videos. Divide la mejora en una versión compatible más pequeña.');
       go.disabled = true;
       try {
         if (!scene) {
@@ -1786,9 +1892,12 @@
         const r = await api('/api/scene_improve', {
           scene_id: scene.id, sources: selectedSources, photos: selectedPhotos,
           title: titleFor(model), preset: ov.querySelector('[data-scene-odm].on')?.dataset.sceneOdm || 'alta',
+          backend: ov.querySelector('[data-scene-odm-cuda]')?.checked ? 'cuda' : undefined,
           then_splat: ov.querySelector('[data-scene-splat]')?.checked,
-          splat_preset: ov.querySelector('[data-scene-splat-preset].on')?.dataset.sceneSplatPreset || 'cinematic',
-          best_available: true,
+          splat_preset: selectedSplatRequest(sceneSplatConfig).preset,
+          splat_backend: selectedSplatRequest(sceneSplatConfig).backend,
+          splat_resolution: selectedSplatRequest(sceneSplatConfig).resolution,
+          best_available: selectedSplatRequest(sceneSplatConfig).backend !== 'cuda',
         });
         if (r.error) return alert(r.error);
         close(); showTdMod('jobs'); document.querySelector('[data-job-filter="all"]')?.click();

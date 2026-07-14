@@ -276,7 +276,7 @@ No rollout step publishes over a known-good splat until the replacement passes i
 
 ## 14. Progressive site models and altitude products
 
-Every eligible video is retained as source evidence and assigned to a stable site/scene identity. New captures create immutable reconstruction versions; they never overwrite source membership or silently discard older observations. The system groups captures into altitude bands at 100, 200, 400, 600, and 1,000 metres using measured flight altitude and records coverage, overlap, date, registration contribution, and dropped-source reasons.
+Every eligible video is retained as source evidence and assigned to a stable site/scene identity. New captures create immutable reconstruction versions; they never overwrite source membership or silently discard older observations. Measured capture altitude is recorded separately from output coverage. Site products target verified 100, 200, 400, 600, and 1,000 metre diameters (circle or square) and retain overlap, date, registration contribution, and dropped-source reasons.
 
 The active site model is promoted only after registration, artifact, quality, and browser gates pass. Estudio 3D and Mundo consume the same active-version and LOD contract: close ranges prefer the most detailed validated splat/mesh, while wider world views use progressively lighter ODM/point-cloud/splat products. This is a versioned refinement system, not online weight accumulation: each improvement is reproducible from its complete source set, and no video is considered integrated unless its frames actually register into the reconstruction.
 

@@ -576,6 +576,13 @@ check("splat jobs: detalle done incluye preset, backend, runtime, loss y cámara
       "Ultra" in _done_detail and "15k iters" in _done_detail
       and "Metal/MPS" in _done_detail and "2.0h" in _done_detail
       and "loss 0.0432" in _done_detail and "127 cámaras" in _done_detail)
+_cuda_done_detail = worker.splat_done_detail(Path("DJI_CUDA.sog"), {
+    "preset_label": "Frontier 30K", "target_iters": 30000,
+    "backend": "NVIDIA CUDA", "duration_s": 1860, "final_loss": None,
+}, 238)
+check("splat jobs: CUDA declara loss no disponible en vez de omitir contexto",
+      "Frontier 30K" in _cuda_done_detail and "loss n/d" in _cuda_done_detail
+      and "238 cámaras" in _cuda_done_detail)
 import browser_gate
 check("browser gate: default usa 127.0.0.1 para evitar localhost IPv6 ajeno",
       browser_gate.DEFAULT_BASE_URL == "http://127.0.0.1:8790"

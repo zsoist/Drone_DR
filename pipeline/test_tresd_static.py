@@ -16,7 +16,10 @@ class TresdInitializationTests(unittest.TestCase):
         self.assertEqual("~15 min-4 h", worker.PRESETS["alta"]["eta"])
         self.assertIn("t: '~15 min-4 h'", source)
         self.assertIn("d: 'Malla 600k · octree 11 · 2 cm/px'", source)
-        self.assertIn("p: 'medium', n: 'Medium', t: '~2-4 min'", source)
+        self.assertIn("/api/splat_profiles", source)
+        self.assertIn("Medium 2K", source)
+        self.assertIn("~4-12 min", source)
+        self.assertIn("projected_from_measured", source)
 
     def test_jobs_console_has_summary_search_and_type_filters(self):
         source = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
@@ -47,7 +50,7 @@ class TresdInitializationTests(unittest.TestCase):
         self.assertIn("/api/scene_create", source)
         self.assertIn("/api/scene_improve", source)
         self.assertIn("/api/scene_promote", source)
-        self.assertIn("Versión activa", source)
+        self.assertIn("Sitio estable", source)
         self.assertIn("currentChoices.concat", source)
         self.assertIn("Splat solicitado", source)
         self.assertIn("dense_quality_requested", source)

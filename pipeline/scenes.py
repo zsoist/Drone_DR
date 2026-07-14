@@ -12,6 +12,9 @@ from pathlib import Path
 SCENES_DIR = Path("/Volumes/SSD/drone-vault/manifest/scenes")
 _LOCK = threading.RLock()
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+ALTITUDE_BANDS_M = (100, 200, 400, 600, 1000)
+SOURCE_STATUSES = {"integrated", "eligible", "duplicate", "insufficient_overlap",
+                   "registration_failed"}
 
 
 def _now() -> str:
@@ -25,6 +28,59 @@ def _unique(values) -> list[str]:
         if value and value not in out:
             out.append(value)
     return out
+
+
+def altitude_band(altitude_m) -> int:
+    """Bucket measured capture altitude without treating it as map coverage."""
+    try:
+        altitude = max(0.0, float(altitude_m or 0))
+    except (TypeError, ValueError):
+        altitude = 0.0
+    return min(ALTITUDE_BANDS_M, key=lambda target: (abs(target - altitude), target))
+
+
+def _evidence(row: dict) -> dict:
+    row = row if isinstance(row, dict) else {}
+    clip_id = _validate_id(row.get("clip_id"), "source")
+    try:
+        altitude = round(float(row.get("altitude_m") or 0), 1)
+    except (TypeError, ValueError):
+        altitude = 0.0
+    status = str(row.get("status") or "eligible")
+    if status not in SOURCE_STATUSES:
+        status = "eligible"
+    out = {
+        "clip_id": clip_id,
+        "altitude_m": altitude,
+        "altitude_band_m": altitude_band(altitude),
+        "status": status,
+    }
+    for key in ("capture_at", "coverage_bbox", "distance_m", "reason", "last_version",
+                "submitted", "registered", "registration_ratio", "attempts"):
+        if row.get(key) is not None:
+            out[key] = row[key]
+    return out
+
+
+def _merge_evidence(existing, incoming) -> list[dict]:
+    rows = {row.get("clip_id"): dict(row) for row in existing or []
+            if isinstance(row, dict) and row.get("clip_id")}
+    order = [row.get("clip_id") for row in existing or []
+             if isinstance(row, dict) and row.get("clip_id")]
+    for raw in incoming or []:
+        row = _evidence(raw)
+        clip_id = row["clip_id"]
+        if clip_id not in order:
+            order.append(clip_id)
+        previous = rows.get(clip_id, {})
+        # A later measured record may enrich an old inventory row. Registration
+        # status only changes through record_contributions(), not mere discovery.
+        if previous.get("status") in ("integrated", "registration_failed"):
+            row["status"] = previous["status"]
+            if previous.get("reason") and not row.get("reason"):
+                row["reason"] = previous["reason"]
+        rows[clip_id] = {**previous, **row}
+    return [rows[clip_id] for clip_id in order if clip_id in rows]
 
 
 def _validate_id(value: str, kind: str) -> str:
@@ -96,7 +152,8 @@ def model_metrics(meta: dict) -> dict:
     return {key: value for key, value in metrics.items() if value is not None}
 
 
-def create_scene(title: str, anchor: dict | None, sources=None, photos=None) -> dict:
+def create_scene(title: str, anchor: dict | None, sources=None, photos=None,
+                 source_evidence=None) -> dict:
     title = str(title or "Escena").strip()[:80] or "Escena"
     anchor = anchor if isinstance(anchor, dict) else {}
     try:
@@ -110,15 +167,17 @@ def create_scene(title: str, anchor: dict | None, sources=None, photos=None) -> 
         path = _path(scene_id)
         if path.exists():
             scene = get_scene(scene_id)
+            scene["schema"] = max(2, int(scene.get("schema") or 1))
             inv = scene.setdefault("source_inventory", {"videos": [], "photos": []})
             inv["videos"] = _unique([*inv.get("videos", []), *_unique(sources)])
             inv["photos"] = _unique([*inv.get("photos", []), *_unique(photos)])
+            scene["source_evidence"] = _merge_evidence(scene.get("source_evidence"), source_evidence)
             scene["updated_at"] = _now()
             _write(scene)
             return scene
         now = _now()
         scene = {
-            "schema": 1,
+            "schema": 2,
             "id": scene_id,
             "title": title,
             "anchor": {"lat": lat, "lon": lon} if lat is not None and lon is not None else {},
@@ -126,6 +185,7 @@ def create_scene(title: str, anchor: dict | None, sources=None, photos=None) -> 
             "updated_at": now,
             "active_version": None,
             "source_inventory": {"videos": _unique(sources), "photos": _unique(photos)},
+            "source_evidence": _merge_evidence([], source_evidence),
             "versions": [],
         }
         _write(scene)
@@ -134,7 +194,8 @@ def create_scene(title: str, anchor: dict | None, sources=None, photos=None) -> 
 
 def add_version(scene_id: str, reconstruction_id: str, sources, photos,
                 status: str = "processing", *, merge_label: str | None = None,
-                required_artifacts_ok: bool = False, metrics: dict | None = None) -> dict:
+                required_artifacts_ok: bool = False, metrics: dict | None = None,
+                source_evidence=None) -> dict:
     reconstruction_id = _validate_id(reconstruction_id, "reconstruction")
     sources = _unique(sources)
     photos = _unique(photos)
@@ -155,10 +216,17 @@ def add_version(scene_id: str, reconstruction_id: str, sources, photos,
             "required_artifacts_ok": bool(required_artifacts_ok),
             "metrics": metrics or {},
         }
+        evidence = _merge_evidence(scene.get("source_evidence"), source_evidence)
+        version["source_evidence"] = [dict(row) for row in evidence
+                                      if row.get("clip_id") in sources]
+        version["altitude_bands_m"] = sorted({row["altitude_band_m"]
+                                               for row in version["source_evidence"]})
         scene["versions"].append(version)
         inv = scene.setdefault("source_inventory", {"videos": [], "photos": []})
         inv["videos"] = _unique([*inv.get("videos", []), *sources])
         inv["photos"] = _unique([*inv.get("photos", []), *photos])
+        scene["schema"] = max(2, int(scene.get("schema") or 1))
+        scene["source_evidence"] = evidence
         scene["updated_at"] = _now()
         _write(scene)
         return version
@@ -166,7 +234,9 @@ def add_version(scene_id: str, reconstruction_id: str, sources, photos,
 
 def update_version(scene_id: str, reconstruction_id: str, **fields) -> dict:
     allowed = {"status", "merge_label", "required_artifacts_ok", "metrics", "artifact",
-               "requested_preset", "effective_preset", "completed_at", "job_id"}
+               "requested_preset", "effective_preset", "completed_at", "job_id",
+               "contributions", "effective_sources", "dropped_sources", "altitude_products",
+               "coverage_products"}
     unknown = set(fields) - allowed
     if unknown:
         raise ValueError(f"unknown version fields: {sorted(unknown)}")
@@ -176,6 +246,62 @@ def update_version(scene_id: str, reconstruction_id: str, **fields) -> dict:
         if not version:
             raise KeyError(f"version not found: {reconstruction_id}")
         version.update(fields)
+        scene["updated_at"] = _now()
+        _write(scene)
+        return version
+
+
+def update_source_evidence(scene_id: str, rows) -> dict:
+    with _LOCK:
+        scene = get_scene(scene_id)
+        scene["schema"] = max(2, int(scene.get("schema") or 1))
+        scene["source_evidence"] = _merge_evidence(scene.get("source_evidence"), rows)
+        scene["updated_at"] = _now()
+        _write(scene)
+        return scene
+
+
+def record_contributions(scene_id: str, reconstruction_id: str, contributions) -> dict:
+    """Persist actual per-video registration without rewriting requested membership."""
+    with _LOCK:
+        scene = get_scene(scene_id)
+        version = next((v for v in scene["versions"] if v["id"] == reconstruction_id), None)
+        if not version:
+            raise KeyError(f"version not found: {reconstruction_id}")
+        membership_order = list(version.get("sources") or [])
+        membership = set(membership_order)
+        normalized = []
+        evidence_by_id = {row.get("clip_id"): dict(row)
+                          for row in scene.get("source_evidence") or []}
+        for raw in contributions or []:
+            clip_id = _validate_id(raw.get("clip_id"), "source")
+            if clip_id not in membership:
+                raise ValueError("contribution is outside immutable version membership")
+            submitted = max(0, int(raw.get("submitted") or 0))
+            registered = max(0, int(raw.get("registered") or 0))
+            merged = bool(raw.get("merged"))
+            reason = str(raw.get("reason") or ("registered in shared component" if merged
+                                                else "no shared registration component"))
+            contribution = {"clip_id": clip_id, "submitted": submitted,
+                            "registered": registered, "merged": merged, "reason": reason}
+            if submitted:
+                contribution["registration_ratio"] = round(registered / submitted, 4)
+            normalized.append(contribution)
+            row = evidence_by_id.get(clip_id, _evidence({"clip_id": clip_id}))
+            attempt = {"version_id": reconstruction_id, "at": _now(), **contribution}
+            row["attempts"] = [*(row.get("attempts") or []), attempt][-12:]
+            row.update({"status": "integrated" if merged else "registration_failed",
+                        "reason": reason, "last_version": reconstruction_id,
+                        "submitted": submitted, "registered": registered})
+            if submitted:
+                row["registration_ratio"] = contribution["registration_ratio"]
+            evidence_by_id[clip_id] = row
+        order = [row.get("clip_id") for row in scene.get("source_evidence") or []]
+        order.extend(cid for cid in membership_order if cid not in order)
+        scene["source_evidence"] = [evidence_by_id[cid] for cid in order if cid in evidence_by_id]
+        version["contributions"] = normalized
+        version["effective_sources"] = [row["clip_id"] for row in normalized if row["merged"]]
+        version["dropped_sources"] = [row["clip_id"] for row in normalized if not row["merged"]]
         scene["updated_at"] = _now()
         _write(scene)
         return version

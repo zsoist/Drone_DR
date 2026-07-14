@@ -10,6 +10,9 @@ class SplatFrontierUiContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.tresd = (ROOT / "web" / "tresd.js").read_text()
         cls.shell = (ROOT / "web" / "shell.js").read_text()
+        cls.mundo = (ROOT / "web" / "mundo.js").read_text()
+        cls.volar = (ROOT / "web" / "volar.js").read_text()
+        cls.server = (ROOT / "pipeline" / "aerobrain_server.py").read_text()
 
     def test_ui_loads_canonical_profiles_instead_of_a_three_tier_copy(self):
         self.assertIn("/api/splat_profiles", self.tresd)
@@ -32,6 +35,30 @@ class SplatFrontierUiContractTests(unittest.TestCase):
         self.assertIn("requested_resolution", self.shell)
         self.assertIn("effective_resolution", self.shell)
         self.assertIn("attempts", self.shell)
+
+    def test_scene_improvement_uses_the_same_seven_profile_contract(self):
+        self.assertIn("renderSplatProfiles(splatProfiles, 'frontier')", self.tresd)
+        self.assertIn("selectedSplatRequest(sceneSplatConfig)", self.tresd)
+        self.assertNotIn("data-scene-splat-preset", self.tresd)
+
+    def test_cuda_campaign_has_dry_run_and_all_or_nothing_confirm(self):
+        self.assertIn("/api/splat_campaign", self.tresd)
+        self.assertIn('u.path == "/api/splat_campaign"', self.server)
+        self.assertIn("ready_to_enqueue", self.server)
+        self.assertIn("campaña bloqueada por preflight; no se encoló ningún job", self.server)
+
+    def test_mundo_uses_active_site_versions_and_five_verified_diameters(self):
+        self.assertIn("stableSites", self.mundo)
+        self.assertIn("site.active_version", self.mundo)
+        for diameter in (100, 200, 400, 600, 1000):
+            self.assertIn(str(diameter), self.mundo)
+        self.assertIn("row.ready", self.mundo)
+
+    def test_volar_enforces_explicit_circle_or_square_coverage(self):
+        self.assertIn("COVERAGE_REQUEST", self.volar)
+        self.assertIn("COVERAGE_SHAPE", self.volar)
+        self.assertIn("coverageProduct.area_m2", self.volar)
+        self.assertIn("boundary_hits", self.volar)
 
 
 if __name__ == "__main__":
