@@ -33,6 +33,10 @@ SYSTEM = VAULT / "manifest" / "system.json"
 JOBS = VAULT / "manifest" / "jobs.db"
 REQUIRED_PRESETS = {"medium", "cinematic", "ultra", "ultra20", "frontier", "grandmaster"}
 PRESET_BY_ITERS = {profile["iters"]: key for key, profile in SPLAT_PRESETS.items()}
+DETAIL_PRESET_MARKERS = tuple(dict.fromkeys(
+    [profile["label"] for profile in SPLAT_PRESETS.values()]
+    + ["Fast", "Medium", "Cinematic", "Ultra", "custom"]
+))
 
 
 def load_system() -> dict:
@@ -129,7 +133,7 @@ def audit() -> tuple[list[str], list[str], dict]:
         required_text = ("loss", "cámaras")
         if any(t not in detail for t in required_text):
             failures.append(f"done job detail lacks quality context: {j['id']} detail={detail!r}")
-        if not any(p in detail for p in ("Medium", "Cinematic", "Ultra", "Fast", "custom")):
+        if not any(marker in detail for marker in DETAIL_PRESET_MARKERS):
             failures.append(f"done job detail lacks preset: {j['id']} detail={detail!r}")
         if j["stage"] != "browser-qa" or float(j["progress"] or 0) < 0.99:
             failures.append(f"done job lacks browser QA completion: {j['id']} stage={j['stage']} progress={j['progress']}")

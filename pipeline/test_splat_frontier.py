@@ -282,6 +282,49 @@ class SplatFrontierApiContractTests(unittest.TestCase):
         self.assertEqual("frontier", audit_splats.PRESET_BY_ITERS[30000])
         self.assertEqual("grandmaster", audit_splats.PRESET_BY_ITERS[40000])
 
+    def test_audit_accepts_frontier_label_in_done_job_detail(self):
+        with tempfile.TemporaryDirectory() as td:
+            vault = Path(td)
+            artifact = vault / "splats" / "frontier.sog"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_bytes(b"x" * 100_001)
+            system = {"splats": [{
+                "clip_id": "recon_fixture", "path": "frontier.sog",
+                "format": "sog", "preset": "frontier", "iters": 30000,
+                "cameras": 1019, "duration_s": 5714.6, "bytes": 100_001,
+                "backend": "NVIDIA CUDA", "current": True,
+                "requested_backend": "cuda", "effective_backend": "NVIDIA CUDA",
+                "requested_downscale": 1, "effective_downscale": 1,
+                "trainer": "nerfstudio-splatfacto", "params_hash": "fixture",
+            }]}
+            done = [{
+                "id": "splat-frontier-done", "status": "done",
+                "artifact": "splats/frontier.sog", "stage": "browser-qa",
+                "progress": 1.0,
+                "detail": ("frontier.sog · Frontier 30K · 30k iters · "
+                           "NVIDIA CUDA · loss n/d · 1019 cámaras"),
+                "spec": json.dumps({"preset": "frontier", "iters": 30000}),
+            }]
+            old_vault = audit_splats.VAULT
+            old_system = audit_splats.load_system
+            old_jobs = audit_splats.load_jobs
+            audit_splats.VAULT = vault
+            audit_splats.load_system = lambda: system
+            audit_splats.load_jobs = lambda: done
+            try:
+                failures, _, _ = audit_splats.audit()
+            finally:
+                audit_splats.VAULT = old_vault
+                audit_splats.load_system = old_system
+                audit_splats.load_jobs = old_jobs
+
+        self.assertFalse(any("done job detail lacks preset" in item
+                             for item in failures), failures)
+
+    def test_audit_keeps_legacy_done_job_preset_markers(self):
+        self.assertTrue({"Fast", "Medium", "Cinematic", "Ultra", "custom"}
+                        <= set(audit_splats.DETAIL_PRESET_MARKERS))
+
 
 if __name__ == "__main__":
     unittest.main()
