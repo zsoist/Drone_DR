@@ -919,6 +919,7 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
     registered_cameras = 0
     reported_components = 0
     best_component_cameras = 0
+    dense_points = 0
     registered_camera_ids: set[str] = set()
     source_total = max(0, int(total_sources or 0))
     active_source_ids: set[str] = set()
@@ -945,7 +946,7 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
     def observe(line: str) -> dict | None:
         nonlocal loaded, logged_completed, matching_total, matching_completed
         nonlocal good_tracks, registered_cameras
-        nonlocal reported_components, best_component_cameras
+        nonlocal reported_components, best_component_cameras, dense_points
         text = line or ""
         tracks = re.search(r"Good tracks:\s*(\d+)", text, re.I)
         if tracks:
@@ -1028,6 +1029,40 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
             return {
                 "stage": "odm-depthmaps",
                 "progress": round(phase[1] + phase[2] * pct / 100, 4),
+                "detail": detail,
+            }
+        dense = re.search(
+            r"Densifying point-cloud completed:\s*(\d+)\s+points", text, re.I)
+        if dense:
+            dense_points = max(dense_points, int(dense.group(1)))
+            return {
+                "stage": "odm-depthmaps", "progress": 0.72,
+                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                           f"profundidad completada · {dense_points:,} puntos"),
+            }
+        visibility = re.search(
+            r"Point visibility checks\s+(\d+)\s+\(([\d.]+)%", text, re.I)
+        if visibility:
+            completed_points = int(visibility.group(1))
+            pct = max(0.0, min(100.0, float(visibility.group(2))))
+            expected_points = max(
+                1, dense_points or
+                (round(completed_points * 100 / pct) if pct > 0 else completed_points))
+            eta = re.search(r"ETA\s+([^,)]+)", text, re.I)
+            eta_s = 0.0
+            if eta:
+                units = {"d": 86400.0, "h": 3600.0, "m": 60.0,
+                         "s": 1.0, "ms": 0.001}
+                eta_s = sum(float(number) * units[unit.lower()]
+                            for number, unit in re.findall(
+                                r"(\d+(?:\.\d+)?)\s*(ms|d|h|m|s)", eta.group(1), re.I))
+            detail = (f"2/3 ODM {preset} en NVIDIA CUDA · verificando visibilidad "
+                      f"{completed_points:,}/{expected_points:,} puntos")
+            if eta:
+                detail += f" · ETA OpenMVS {round(eta_s)} s"
+            return {
+                "stage": "odm-filterpoints",
+                "progress": round(0.72 + 0.02 * pct / 100, 4),
                 "detail": detail,
             }
         if re.search(r"Depthmap resolution set to:", text, re.I):

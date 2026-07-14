@@ -62,6 +62,8 @@
    OpenSfM puede terminar válidamente con menos cámaras registradas que enviadas. En profundidad,
    la UI separa `Estimated`/`Filtered`/`Fused depth-maps` y usa la ETA nativa de OpenMVS; no cuenta
    archivos `.dmap`, porque cada subfase vuelve a escribir variantes y ese total sobrecontaría vistas.
+   El filtro posterior conserva el total denso real y muestra `Point visibility checks` en puntos,
+   con la ETA nativa, como subfase distinta.
 1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).
 2. **Presupuesto global de frames + dedup INTRA-fuente**: poda hoy es por-fuente. OJO (hallazgo del
    review): NO deduplicar cross-source — esos near-duplicates son el pegamento del co-registro.

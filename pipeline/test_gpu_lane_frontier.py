@@ -221,6 +221,18 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
                         "2/3 cámaras · ETA OpenMVS 1 s")},
             observe("Fused depth-maps 2 (66.67%, 2s, ETA 1s)..."),
         )
+        self.assertEqual(
+            {"stage": "odm-depthmaps", "progress": 0.72,
+             "detail": ("2/3 ODM ultra en NVIDIA CUDA · profundidad completada · "
+                        "46,731,480 puntos")},
+            observe("Densifying point-cloud completed: 46731480 points (9m15s109ms)"),
+        )
+        self.assertEqual(
+            {"stage": "odm-filterpoints", "progress": 0.7214,
+             "detail": ("2/3 ODM ultra en NVIDIA CUDA · verificando visibilidad "
+                        "3,174,885/46,731,480 puntos · ETA OpenMVS 1140 s")},
+            observe("Point visibility checks 3174885 (6.79%, 1m25s, ETA 19m)..."),
+        )
 
     def test_odm_registration_never_calls_disconnected_components_full(self):
         with tempfile.TemporaryDirectory() as td:

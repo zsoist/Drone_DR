@@ -221,6 +221,21 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual("openmvs_live", telemetry["eta_source"])
         self.assertNotIn("phase_items_per_minute", telemetry)
 
+    def test_openmvs_point_visibility_exposes_exact_points_and_native_eta(self):
+        telemetry = server.counted_phase_telemetry(
+            "2/3 ODM ultra en NVIDIA CUDA · verificando visibilidad "
+            "3,174,885/46,731,480 puntos · ETA OpenMVS 1140 s",
+            "odm-filterpoints",
+            [{"ts": 400.0, "stage": "odm-filterpoints"}],
+            now=1000.0,
+        )
+
+        self.assertEqual(3174885, telemetry["phase_completed"])
+        self.assertEqual(46731480, telemetry["phase_total"])
+        self.assertEqual("points", telemetry["phase_unit"])
+        self.assertEqual(1140, telemetry["eta_remaining_s"])
+        self.assertEqual("openmvs_live", telemetry["eta_source"])
+
     def test_matching_phase_preserves_exact_pair_counter(self):
         row = {
             "id": "3d-match-count", "kind": "3d", "label": "recon_live",

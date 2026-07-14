@@ -727,6 +727,8 @@ def odm_live_phase(log: str, current: float | None = None) -> dict | None:
          (r"opensfm[^\n]*\bundistort\b", r"undistorting image")),
         ("odm-depthmaps", "calculando profundidad CUDA", 0.58,
          (r"depthmap resolution", r"estimated depth-maps", r"fused depth-maps")),
+        ("odm-filterpoints", "filtrando nube densa", 0.72,
+         (r"point visibility checks", r"filter-point-cloud")),
         ("odm-mesh", "construyendo malla", 0.75,
          (r"poissonrecon", r"running\s+odm_meshing\s+stage")),
         ("odm-texture", "texturizando modelo", 0.82,
@@ -748,7 +750,7 @@ def odm_live_phase(log: str, current: float | None = None) -> dict | None:
 
 ODM_STAGE_ORDER = (
     "odm-features", "odm-matching", "odm-match-save", "odm-tracks",
-    "odm-reconstruct", "odm-undistort", "odm-depthmaps", "odm-mesh",
+    "odm-reconstruct", "odm-undistort", "odm-depthmaps", "odm-filterpoints", "odm-mesh",
     "odm-texture", "odm-map", "odm-products",
 )
 
@@ -826,12 +828,15 @@ def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
                       if stage == "odm-depthmaps" else None)
     camera_count = (re.search(camera_pattern, detail_text, re.I)
                     if camera_pattern else None)
+    point_count = (re.search(r"\b([\d,]+)/([\d,]+)\s+puntos\b", detail_text, re.I)
+                   if stage == "odm-filterpoints" else None)
     phase_text = detail_text.rsplit("·", 1)[-1]
     counts = ([camera_count.groups()] if camera_count else
+              [point_count.groups()] if point_count else
               re.findall(r"\b(\d+)/(\d+)\b", phase_text))
     if not counts:
         return None
-    completed, total = map(int, counts[-1])
+    completed, total = (int(value.replace(",", "")) for value in counts[-1])
     completed = min(completed, total)
     if completed <= 0 or total <= 0 or completed >= total:
         return None
@@ -843,7 +848,8 @@ def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
     if elapsed < 10:
         return None
     low = detail_text.lower()
-    unit = ("cameras" if camera_count else "features" if "feature" in low else
+    unit = ("cameras" if camera_count else "points" if point_count else
+            "features" if "feature" in low else
             "images" if "imágenes" in low else "items")
     out = {
         "phase_completed": completed,
@@ -1028,7 +1034,7 @@ def refresh_running_job(row: dict) -> dict:
                   f"{backend} · {live['label']}")
         exact_phase = exact_detail.rsplit("·", 1)[-1]
         preserves_measured_evidence = bool(re.search(
-            r"\b\d+/\d+\b|tracks robustos|reconstrucción\s+\d+",
+            r"\b[\d,]+/[\d,]+\b|tracks robustos|reconstrucción\s+\d+",
             exact_detail, re.I))
         if (live["stage"] == row.get("stage")
                 and preserves_measured_evidence):

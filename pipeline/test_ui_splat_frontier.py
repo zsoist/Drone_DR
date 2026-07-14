@@ -63,6 +63,7 @@ class SplatFrontierUiContractTests(unittest.TestCase):
             {"phase_items_per_minute": 10.2, "phase_unit": "cameras"},
             {"phase_items_per_minute": 30, "phase_unit": "features"},
             {"phase_items_per_minute": 4.5, "phase_unit": "images"},
+            {"phase_items_per_minute": 12.3, "phase_unit": "points"},
             {"phase_items_per_minute": 2, "phase_unit": "items"},
         ]
         script = (match.group(0) + "\nconsole.log(JSON.stringify(" +
@@ -71,6 +72,7 @@ class SplatFrontierUiContractTests(unittest.TestCase):
                                 text=True, check=True)
         self.assertEqual(
             ["10.2 cámaras/min", "30.0 features/min", "4.5 imágenes/min",
+             "12.3 puntos/min",
              "2.0 elementos/min"],
             json.loads(result.stdout),
         )

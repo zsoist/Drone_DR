@@ -263,7 +263,7 @@ function phaseDash(j, pct) {
   return `<div class="jc-ph">${rows}</div>`;
 }
 function phaseRateText(j) {
-  const units = { cameras: 'cámaras', features: 'features', images: 'imágenes' };
+  const units = { cameras: 'cámaras', features: 'features', images: 'imágenes', points: 'puntos' };
   const unit = units[j.phase_unit] || 'elementos';
   return `${Number(j.phase_items_per_minute).toFixed(1)} ${unit}/min`;
 }
