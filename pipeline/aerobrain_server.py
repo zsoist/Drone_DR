@@ -724,7 +724,7 @@ def odm_live_phase(log: str, current: float | None = None) -> dict | None:
           r"attempting merge", r"merging reconstruction",
           r"export_geocoords[^\n]*--reconstruction")),
         ("odm-undistort", "corrigiendo lentes", 0.50,
-         (r"opensfm[^\n]*undistort", r"undistorting image")),
+         (r"opensfm[^\n]*\bundistort\b", r"undistorting image")),
         ("odm-depthmaps", "calculando profundidad CUDA", 0.58,
          (r"depthmap resolution", r"estimated depth-maps", r"fused depth-maps")),
         ("odm-mesh", "construyendo malla", 0.75,

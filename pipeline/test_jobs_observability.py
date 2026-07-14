@@ -109,6 +109,17 @@ class JobObservabilityStoreTests(unittest.TestCase):
 
         self.assertEqual(0.63, phase["progress"])
 
+    def test_depthmap_path_does_not_regress_live_label_to_undistort(self):
+        phase = server.odm_live_phase(
+            'Finished opensfm stage\nRunning openmvs stage\n'
+            'Depthmap resolution set to: 3072px\n'
+            'running DensifyPointCloud '
+            '/datasets/code/opensfm/undistorted/openmvs/scene.mvs '
+            '--cuda-device -1', 0.58)
+
+        self.assertEqual("odm-depthmaps", phase["stage"])
+        self.assertEqual("calculando profundidad CUDA", phase["label"])
+
     def test_perf_now_uses_same_live_odm_phase_as_jobs_api(self):
         jid = "3d-live-perf-fixture"
         spec = {"clip_id": "recon_live", "preset": "ultra", "backend": "cuda"}
