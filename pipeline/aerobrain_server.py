@@ -833,6 +833,54 @@ def _job_spec(row: dict) -> dict:
         return {}
 
 
+def refresh_running_job(row: dict) -> dict:
+    """Overlay measured progress from the rolling log without persisting guesses."""
+    if row.get("status") != "running":
+        return row
+    if row.get("kind") == "splat":
+        matches = re.findall(r"\((\d+)%\)", row.get("log") or "")
+        if matches:
+            row["progress"] = max(row.get("progress") or 0,
+                                  0.05 + 0.93 * int(matches[-1]) / 100)
+        return row
+    if row.get("kind") != "3d":
+        return row
+    row["progress"] = derive_odm_progress(row.get("log") or "", row.get("progress"),
+                                          row.get("label") or "", row.get("started"))
+    live = odm_live_phase(row.get("log") or "", row.get("progress"))
+    if live and str(row.get("stage") or "").startswith("odm"):
+        spec = _job_spec(row)
+        backend = (row.get("backend") or
+                   ("NVIDIA CUDA" if spec.get("backend") == "cuda" else "local"))
+        row.update(progress=live["progress"], stage=live["stage"],
+                   detail=f"2/3 ODM {spec.get('preset') or 'estandar'} en "
+                          f"{backend} · {live['label']}")
+    return row
+
+
+def live_perf_payload(payload: dict) -> dict:
+    """Make the live System job table agree with the Jobs API's measured stage.
+
+    Historical samples remain immutable; only the current telemetry row receives
+    the fresh log-derived phase. CPU and memory measurements stay owned by perf.py.
+    """
+    out = dict(payload or {})
+    now = dict(out.get("now") or {})
+    sampled = [dict(item) for item in (now.get("jobs") or [])]
+    if sampled:
+        active = {row.get("id"): refresh_running_job(row)
+                  for row in jobstore.recent(12)
+                  if row.get("status") in ("running", "queued")}
+        for item in sampled:
+            current = active.get(item.get("id"))
+            if current:
+                item.update({key: current.get(key)
+                             for key in ("stage", "progress", "detail")})
+    now["jobs"] = sampled
+    out["now"] = now
+    return out
+
+
 def _job_model_meta(label: str) -> dict:
     try:
         return json.loads((VAULT / "models" / label / "meta.json").read_text())
@@ -1803,7 +1851,7 @@ class H(BaseHTTPRequestHandler):
             # El sampler solo corre mientras alguien consulta — idle = 0 costo.
             if not self.auth():
                 return
-            return self.send_json(PERF.get())
+            return self.send_json(live_perf_payload(PERF.get()))
         if self.path.startswith("/api/error_report_content"):
             # Authenticated reader: ops/ is intentionally denied by the public /data resolver.
             if not self.auth():
@@ -1891,21 +1939,7 @@ class H(BaseHTTPRequestHandler):
             jobs = jobstore.recent()
             for j in jobs:
                 # progreso derivado del log si el worker corre codigo viejo (stale DB)
-                if j["kind"] == "splat" and j["status"] == "running":
-                    m = re.findall(r"\((\d+)%\)", j.get("log") or "")
-                    if m:
-                        j["progress"] = max(j.get("progress") or 0, 0.05 + 0.93 * int(m[-1]) / 100)
-                if j["kind"] == "3d" and j["status"] == "running":
-                    j["progress"] = derive_odm_progress(j.get("log") or "", j.get("progress"),
-                                                        j.get("label") or "", j.get("started"))
-                    live = odm_live_phase(j.get("log") or "", j.get("progress"))
-                    if live and j.get("stage") == "odm":
-                        spec = _job_spec(j)
-                        backend = (j.get("backend") or
-                                   ("NVIDIA CUDA" if spec.get("backend") == "cuda" else "local"))
-                        j.update(progress=live["progress"], stage=live["stage"],
-                                 detail=f"2/3 ODM {spec.get('preset') or 'estandar'} en "
-                                        f"{backend} · {live['label']}")
+                refresh_running_job(j)
             latest_done = jobstore.latest_done_ids(("3d",))
             summaries = [normalize_job_summary(j, latest_done) for j in jobs]
             counts = {

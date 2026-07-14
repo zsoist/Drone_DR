@@ -102,6 +102,32 @@ class JobObservabilityStoreTests(unittest.TestCase):
 
         self.assertEqual(0.63, phase["progress"])
 
+    def test_perf_now_uses_same_live_odm_phase_as_jobs_api(self):
+        jid = "3d-live-perf-fixture"
+        spec = {"clip_id": "recon_live", "preset": "ultra", "backend": "cuda"}
+        with jobs._LOCK, jobs._conn() as conn:
+            conn.execute("INSERT INTO jobs (id,kind,label,status,detail,stage,progress,started,spec,log) "
+                         "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (jid, "3d", "recon_live", "running",
+                          "2/3 ODM ultra en NVIDIA CUDA · comparando imágenes",
+                          "odm", 0.35, time.time() - 60, json.dumps(spec),
+                          'Good tracks: 503571\n'
+                          'running "opensfm" reconstruct "/datasets/code/opensfm"'))
+        payload = {
+            "now": {"jobs": [{"id": jid, "stage": "odm", "progress": 0.35,
+                                "detail": "comparando imágenes", "cpu_pct": 12.0}]},
+            "history": [{"jobs": [{"id": jid, "stage": "odm-matching"}]}],
+        }
+
+        live = server.live_perf_payload(payload)
+
+        row = live["now"]["jobs"][0]
+        self.assertEqual("odm-reconstruct", row["stage"])
+        self.assertEqual(0.43, row["progress"])
+        self.assertIn("reconstruyendo cámaras", row["detail"])
+        self.assertEqual(12.0, row["cpu_pct"])
+        self.assertEqual("odm-matching", live["history"][0]["jobs"][0]["stage"])
+
     def test_future_queue_priority_timestamp_never_reports_negative_elapsed(self):
         jid = "queued-future-fixture"
         with jobs._LOCK, jobs._conn() as conn:
