@@ -112,7 +112,7 @@ class JobObservabilityStoreTests(unittest.TestCase):
     def test_live_phase_preserves_exact_worker_feature_count(self):
         row = {
             "id": "3d-feature-count", "kind": "3d", "label": "recon_live",
-            "status": "running", "stage": "odm-features", "progress": 0.2276,
+            "status": "running", "stage": "odm-features", "progress": 0.20,
             "backend": "NVIDIA CUDA",
             "detail": "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 95/1019",
             "started": time.time() - 300,
@@ -124,6 +124,7 @@ class JobObservabilityStoreTests(unittest.TestCase):
         live = server.refresh_running_job(row)
 
         self.assertEqual("odm-features", live["stage"])
+        self.assertEqual(0.2276, live["progress"])
         self.assertEqual(
             "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 95/1019",
             live["detail"],

@@ -933,6 +933,12 @@ def refresh_running_job(row: dict) -> dict:
                 and live["label"] in exact_detail
                 and re.search(r"\b\d+/\d+\b", exact_detail)):
             detail = exact_detail
+            counts = re.findall(r"\b(\d+)/(\d+)\b", exact_detail)
+            count = counts[-1] if counts else None
+            if count and int(count[1]) > 0:
+                completed = min(int(count[0]), int(count[1]))
+                measured = round(0.215 + 0.135 * completed / int(count[1]), 4)
+                live["progress"] = max(float(live["progress"]), measured)
         row.update(progress=live["progress"], stage=live["stage"],
                    detail=detail)
     return row
