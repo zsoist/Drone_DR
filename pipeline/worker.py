@@ -1249,6 +1249,8 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
                         detail=f"entrenando {iters} iteraciones en NVIDIA CUDA · entrada d{downscale}",
                         stage="train", progress=0.3, backend="NVIDIA CUDA")
         run_id = f"gpu-{int(time.time())}"
+        gpu_lane.install_train_script(name, iters, downscale, run_id,
+                                      train_args=train_args)
         t0 = time.time()
         rc = jobstore.run_tracked(
             j["id"], gpu_lane.train_argv(name, iters, downscale, run_id,

@@ -554,10 +554,10 @@ _cuda_plan = worker.splat_attempt_plan({"preset": "frontier", "backend": "cuda",
 check("splat CUDA: auto permite sólo Frontier d1 → Frontier d2",
       [(row["preset"], row["d"]) for row in _cuda_plan]
       == [("frontier", 1), ("frontier", 2)])
-_cuda_cmd = " ".join(_gpu_lane.train_argv(
+_cuda_cmd = _gpu_lane.train_script(
     "frontier-smoke", 30000, 1, "gpu-smoke",
     train_args=["--pipeline.model.sh-degree", "0",
-                "--pipeline.model.stop-split-at", "15000"]))
+                "--pipeline.model.stop-split-at", "15000"])
 check("splat CUDA: comando 30k conserva SH0, densificación 15k, d1 y telemetría",
       "--max-num-iterations 30000" in _cuda_cmd
       and "--pipeline.model.sh-degree 0" in _cuda_cmd

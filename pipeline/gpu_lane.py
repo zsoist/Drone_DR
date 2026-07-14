@@ -28,6 +28,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import shlex
@@ -216,33 +217,88 @@ echo PREP_OK
 """, timeout=600, label="prep dataset")
 
 
-def train_argv(name: str, iters: int, downscale: int, run_id: str,
-               train_args: list[str] | tuple[str, ...] | None = None) -> list[str]:
-    """argv para jobstore.run_tracked: el ssh ES el proceso trackeado — log de
-    ns-train en vivo (Steps con %), progreso real, cancel y timeout gratis.
-    Sin pipefail: en `yes | ns-train` el rc del pipeline es el de ns-train."""
+def train_script_path(name: str) -> str:
+    name = _safe_name(name)
+    return f"{REMOTE_RUNS}/.scripts/train-{name}.sh"
+
+
+def train_script(name: str, iters: int, downscale: int, run_id: str,
+                 train_args: list[str] | tuple[str, ...] | None = None) -> str:
+    """Script Bash ejecutado *dentro* de WSL para una corrida CUDA.
+
+    No se incrusta en el argv de OpenSSH: Windows OpenSSH recompone el comando
+    remoto con otra capa de shell y expandía ``$!``, ``$(date)`` y
+    ``PIPESTATUS`` antes de que Bash recibiera el script. El resultado era un
+    monitor huérfano y un falso ``ns-train: command not found``. El archivo
+    remoto mantiene una frontera de quoting real y además queda auditable.
+    """
     name = _safe_name(name)
     run_id = _safe_name(run_id)
     if int(iters) < 1 or int(downscale) not in (1, 2):
         raise ValueError("iters/downscale CUDA inválidos")
     extra = " ".join(shlex.quote(str(value)) for value in (train_args or ()))
     telemetry = f"{REMOTE_RUNS}/telemetry-{name}.csv"
-    inner = (f"set -e; cd /root/gpu-jobs; source splat-env/bin/activate; "
-             f"test -x \"$VIRTUAL_ENV/bin/ns-train\"; "
-             f"rm -rf {REMOTE_RUNS}/{name}; rm -f {telemetry}; "
-             f"(while true; do printf '%s,' \"$(date +%s)\" >> {telemetry}; "
-             f"nvidia-smi --query-gpu=memory.used,utilization.gpu,temperature.gpu "
-             f"--format=csv,noheader,nounits >> {telemetry}; sleep 2; done) & MON=$!; "
-             f"trap 'kill $MON 2>/dev/null || true' EXIT; set +e; "
-             f"yes | \"$VIRTUAL_ENV/bin/ns-train\" splatfacto "
-             f"--data {REMOTE_DATA}/{name} --output-dir {REMOTE_RUNS} "
-             f"--experiment-name {name} --timestamp {run_id} "
-             f"--viewer.quit-on-train-completion True --max-num-iterations {iters} "
-             f"{extra} "
-             f"colmap --colmap-path sparse/0 --images-path images "
-             f"--downscale-factor {downscale} 2>&1; RC=${{PIPESTATUS[1]}}; set -e; "
-             f"kill $MON 2>/dev/null || true; wait $MON 2>/dev/null || true; exit $RC")
-    return ["ssh", SSH_HOST, "wsl", "-d", "Ubuntu", "--", "bash", "-lc", f'"{inner}"']
+    return f"""#!/usr/bin/env bash
+set -e
+cd /root/gpu-jobs
+source splat-env/bin/activate
+test -x "$VIRTUAL_ENV/bin/ns-train"
+rm -rf {REMOTE_RUNS}/{name}
+rm -f {telemetry}
+(
+  while true; do
+    printf '%s,' "$(date +%s)" >> {telemetry}
+    nvidia-smi --query-gpu=memory.used,utilization.gpu,temperature.gpu \
+      --format=csv,noheader,nounits >> {telemetry}
+    sleep 2
+  done
+) &
+MON=$!
+cleanup_monitor() {{
+  kill "$MON" 2>/dev/null || true
+  wait "$MON" 2>/dev/null || true
+}}
+trap cleanup_monitor EXIT
+set +e
+yes | "$VIRTUAL_ENV/bin/ns-train" splatfacto \
+  --data {REMOTE_DATA}/{name} --output-dir {REMOTE_RUNS} \
+  --experiment-name {name} --timestamp {run_id} \
+  --viewer.quit-on-train-completion True --max-num-iterations {iters} \
+  {extra} \
+  colmap --colmap-path sparse/0 --images-path images \
+  --downscale-factor {downscale} 2>&1
+RC=${{PIPESTATUS[1]}}
+set -e
+exit "$RC"
+"""
+
+
+def install_train_script(name: str, iters: int, downscale: int, run_id: str,
+                         train_args: list[str] | tuple[str, ...] | None = None) -> str:
+    """Instala el script por stdin (sin shell intermedia de Windows)."""
+    name = _safe_name(name)
+    path = train_script_path(name)
+    encoded = base64.b64encode(
+        train_script(name, iters, downscale, run_id, train_args).encode()
+    ).decode()
+    _wsl(
+        f"mkdir -p {REMOTE_RUNS}/.scripts\n"
+        f"printf %s {shlex.quote(encoded)} | base64 -d > {path}\n"
+        f"chmod 700 {path}\n",
+        timeout=60, label="instalar script CUDA",
+    )
+    return path
+
+
+def train_argv(name: str, iters: int, downscale: int, run_id: str,
+               train_args: list[str] | tuple[str, ...] | None = None) -> list[str]:
+    """argv estable para run_tracked; todo el estado Bash vive en el script."""
+    name = _safe_name(name)
+    _safe_name(run_id)
+    if int(iters) < 1 or int(downscale) not in (1, 2):
+        raise ValueError("iters/downscale CUDA inválidos")
+    return ["ssh", SSH_HOST, "wsl", "-d", "Ubuntu", "--", "bash",
+            train_script_path(name)]
 
 
 def cleanup_script(name: str, *, success: bool, active_names: set[str] | None = None,
@@ -256,7 +312,7 @@ def cleanup_script(name: str, *, success: bool, active_names: set[str] | None = 
     if success:
         return (f"rm -rf {REMOTE_DATA}/{name} {REMOTE_RUNS}/{name} {bridge_in} "
                 f"{bridge_out}.ply {bridge_out}.yml {bridge_out}.csv; "
-                f"rm -f {REMOTE_RUNS}/telemetry-{name}.csv")
+                f"rm -f {REMOTE_RUNS}/telemetry-{name}.csv {train_script_path(name)}")
     retain_until = int(now if now is not None else time.time()) + 24 * 3600
     return (f"rm -rf {bridge_in}; rm -f {bridge_out}.ply {bridge_out}.yml {bridge_out}.csv; "
             f"for d in {REMOTE_DATA}/{name} {REMOTE_RUNS}/{name}; do "

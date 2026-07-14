@@ -72,14 +72,13 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertIn('stage="odm-features", progress=0.20', source)
 
     def test_command_preserves_exact_frontier_schedule_and_scale(self):
-        argv = gpu_lane.train_argv(
+        command = gpu_lane.train_script(
             "frontier-fixture", 30_000, 1, "run-fixture",
             train_args=[
                 "--pipeline.model.sh-degree", "0",
                 "--pipeline.model.stop-split-at", "15000",
             ],
         )
-        command = " ".join(argv)
 
         self.assertIn("--max-num-iterations 30000", command)
         self.assertIn("--pipeline.model.sh-degree 0", command)
@@ -89,14 +88,43 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertIn("telemetry-frontier-fixture.csv", command)
 
     def test_cuda_environment_is_activated_before_telemetry_is_backgrounded(self):
+        command = gpu_lane.train_script(
+            "frontier-fixture", 30_000, 1, "run-fixture")
+
+        self.assertIn("source splat-env/bin/activate\n", command)
+        self.assertIn("$VIRTUAL_ENV/bin/ns-train", command)
+        self.assertNotIn("source splat-env/bin/activate &&", command)
+        self.assertLess(command.index("source splat-env/bin/activate\n"),
+                        command.index("while true;"))
+
+    def test_tracked_argv_contains_no_windows_expandable_shell_state(self):
         command = " ".join(gpu_lane.train_argv(
             "frontier-fixture", 30_000, 1, "run-fixture"))
 
-        self.assertIn("source splat-env/bin/activate;", command)
-        self.assertIn("$VIRTUAL_ENV/bin/ns-train", command)
-        self.assertNotIn("source splat-env/bin/activate &&", command)
-        self.assertLess(command.index("source splat-env/bin/activate;"),
-                        command.index("(while true;"))
+        self.assertEqual(
+            "ssh pc wsl -d Ubuntu -- bash "
+            "/root/gpu-jobs/runs/.scripts/train-frontier-fixture.sh",
+            command,
+        )
+        self.assertNotIn("$", command)
+        self.assertNotIn("PIPESTATUS", command)
+
+    def test_install_train_script_uses_stdin_boundary_and_returns_exact_path(self):
+        calls = []
+        original = gpu_lane._wsl
+        gpu_lane._wsl = lambda script, timeout, label: calls.append(
+            (script, timeout, label)) or ""
+        try:
+            path = gpu_lane.install_train_script(
+                "frontier-fixture", 30_000, 1, "run-fixture")
+        finally:
+            gpu_lane._wsl = original
+
+        self.assertEqual(
+            "/root/gpu-jobs/runs/.scripts/train-frontier-fixture.sh", path)
+        self.assertEqual("instalar script CUDA", calls[0][2])
+        self.assertIn("base64 -d", calls[0][0])
+        self.assertIn("chmod 700", calls[0][0])
 
     def test_cleanup_is_bounded_and_refuses_active_names(self):
         with self.assertRaisesRegex(ValueError, "activo"):
