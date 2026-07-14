@@ -225,8 +225,10 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
         raise RuntimeError("tab Trabajos ausente")
     state = wait_for(cdp, js(f"""
       const cards = [...document.querySelectorAll('#jobs3d .job-card')];
-      const splat = cards.find(x => x.dataset.kind === 'splat' && x.innerText.includes({cid!r}));
+      const splats = cards.filter(x => x.dataset.kind === 'splat' && x.innerText.includes({cid!r}));
+      const splat = splats[0];
       if (!splat) return null;
+      const fallback = splats.find(x => /listo con fallback/i.test(x.innerText));
       const consoleRect = document.querySelector('#jobs3d').getBoundingClientRect();
       const cardRect = splat.getBoundingClientRect();
       const statusRect = splat.querySelector('.jc-status')?.getBoundingClientRect();
@@ -236,7 +238,10 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
         summaries: document.querySelectorAll('#job-summary button').length,
         typeFilters: document.querySelectorAll('[data-job-kind]').length,
         text: splat.innerText,
+        historyText: splats.map(x => x.innerText).join('\n---\n'),
         jid: splat.dataset.jid,
+        logJid: (fallback || splat).dataset.jid,
+        fallbackJid: fallback?.dataset.jid || '',
         consoleWidth: consoleRect.width,
         cardWidth: cardRect.width,
         statusVisible: !!statusRect && statusRect.left >= cardRect.left - 1 && statusRect.right <= cardRect.right + 1,
@@ -246,9 +251,12 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
     """), timeout=45, label="jobs console cards")
     if state["summaries"] < 4 or state["typeFilters"] < 4 or state["cards"] < 1:
         raise RuntimeError(f"consola de trabajos incompleta: {state}")
-    for truth in ("Ultra", "Medium", "238 cámaras", "Listo con fallback"):
+    for truth in ("Ultra", "15k iteraciones", "NVIDIA CUDA", "Listo", "238 cámaras"):
         if truth.lower() not in state["text"].lower():
-            raise RuntimeError(f"trabajo splat no muestra {truth!r}: {state['text'][:500]}")
+            raise RuntimeError(f"último trabajo splat no muestra {truth!r}: {state['text'][:500]}")
+    for truth in ("Medium", "Listo con fallback"):
+        if truth.lower() not in state["historyText"].lower():
+            raise RuntimeError(f"historial splat no muestra {truth!r}: {state['historyText'][:700]}")
     if state["overflow"] > 3:
         raise RuntimeError(f"overflow horizontal {state['overflow']}px en jobs/{viewport}")
     if state["cardWidth"] < state["consoleWidth"] - 3:
@@ -258,7 +266,7 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
     cdp.pump(0.6)  # let the tab transition finish before composited screenshot capture
     screenshot(cdp, QA_DIR / f"{cid}-jobs-{viewport}.png")
     opened = cdp.eval(js(f"""
-      const card = document.querySelector('[data-jid="{state['jid']}"]');
+      const card = document.querySelector('[data-jid="{state['logJid']}"]');
       const button = card && card.querySelector('[data-job-log]');
       if (!button) return false;
       button.click(); return true;
@@ -272,9 +280,10 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
       return { text: d.innerText, width: r.width, right: r.right,
         viewport: window.innerWidth, overflow: document.documentElement.scrollWidth - window.innerWidth };
     """), timeout=30, label="full log drawer")
-    for contract in ("splat_attempt_failed", "Ultra -d 2", "Cinematic -d 2", "Medium -d 2"):
-        if contract.lower() not in drawer["text"].lower():
-            raise RuntimeError(f"drawer no muestra historial {contract!r}")
+    if state["fallbackJid"]:
+        for contract in ("splat_attempt_failed", "Ultra -d 2", "Cinematic -d 2", "Medium -d 2"):
+            if contract.lower() not in drawer["text"].lower():
+                raise RuntimeError(f"drawer no muestra historial {contract!r}")
     if drawer["right"] > drawer["viewport"] + 3 or drawer["width"] > drawer["viewport"] + 3 or drawer["overflow"] > 3:
         raise RuntimeError(f"drawer fuera de viewport en {viewport}: {drawer}")
     cdp.pump(0.3)

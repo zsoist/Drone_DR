@@ -534,6 +534,16 @@ check("browser gate: default usa 127.0.0.1 para evitar localhost IPv6 ajeno",
       browser_gate.DEFAULT_BASE_URL == "http://127.0.0.1:8790"
       and browser_gate.CHROME.name == "Google Chrome"
       and browser_gate.QA_DIR.name == "qa")
+_share_module_parse = subprocess.run([
+    "node", "--experimental-vm-modules", "-e",
+    "const fs=require('fs'),vm=require('vm');"
+    "for(const p of process.argv.slice(1))"
+    "new vm.SourceTextModule(fs.readFileSync(p,'utf8'),{identifier:p});",
+    "web/share.js", "web/splatview.js",
+], capture_output=True, text=True)
+check("browser gate: módulos ESM del share compilan antes de publicar",
+      _share_module_parse.returncode == 0,
+      (_share_module_parse.stderr or _share_module_parse.stdout)[-300:])
 import browser_matrix
 check("browser matrix: cubre mobile, iPad y desktop",
       set(browser_matrix.VIEWPORTS) == {"mobile", "ipad", "desktop"})

@@ -4,8 +4,8 @@
 // La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
 // auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
 // contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
-import * as THREE from '/vendor/three180.module.js?v=175';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=175';
+import * as THREE from '/vendor/three180.module.js?v=176';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=176';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -24,7 +24,7 @@ const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
 
 export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } = {}) {
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=175');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=176');
   host.style.position = 'relative';
   const holder = document.createElement('div');
   holder.style.cssText = 'position:absolute;inset:0;touch-action:none';
@@ -61,7 +61,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
 
   function teardownCore() {
     cancelAnimationFrame(rafId);
-    try { cancelAnimationFrame(fAnim); } catch {}
+    try { cancelAnimationFrame(anim); } catch {}
     document.removeEventListener('visibilitychange', onVis);
     try { ctrl.dispose(); } catch {}
     try { mesh?.dispose?.(); } catch {}
@@ -119,42 +119,6 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   }
   frame();
   loop();
-
-  // doble-click / doble-toque = ENFOCAR ese punto (paridad exacta con nube/malla):
-  // rayo al plano del suelo → target ahí + acercar ~la mitad, animado suave
-  let fAnim = 0;
-  const focusAt = (cx, cy) => {
-    const r = renderer.domElement.getBoundingClientRect();
-    const ndc = new THREE.Vector2((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
-    cam.updateMatrixWorld();
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(ndc, cam);
-    const pt = new THREE.Vector3();
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -ctrl.target.y);
-    if (!ray.ray.intersectPlane(plane, pt)) return;
-    if (pt.distanceTo(ctrl.target) > (ctrl.maxDistance || 1e9)) return;
-    const d = cam.position.distanceTo(pt);
-    const toPos = pt.clone().addScaledVector(cam.position.clone().sub(pt).normalize(),
-      Math.max(d * 0.45, (ctrl.minDistance || 0.003) * 3));
-    const t0 = performance.now(), dur = 420;
-    const sT = ctrl.target.clone(), sP = cam.position.clone();
-    cancelAnimationFrame(fAnim);
-    (function step() {
-      const k = Math.min(1, (performance.now() - t0) / dur), e = 1 - (1 - k) ** 3;
-      ctrl.target.lerpVectors(sT, pt, e);
-      cam.position.lerpVectors(sP, toPos, e);
-      ctrl.update();
-      if (k < 1) fAnim = requestAnimationFrame(step);
-    })();
-  };
-  renderer.domElement.addEventListener('dblclick', e => { e.preventDefault(); focusAt(e.clientX, e.clientY); });
-  let lastTap = 0, lastTX = 0, lastTY = 0;
-  renderer.domElement.addEventListener('pointerup', e => {
-    if (e.pointerType === 'mouse') return;
-    if (e.timeStamp - lastTap < 320 && Math.abs(e.clientX - lastTX) < 32 && Math.abs(e.clientY - lastTY) < 32) {
-      lastTap = 0; focusAt(e.clientX, e.clientY);
-    } else { lastTap = e.timeStamp; lastTX = e.clientX; lastTY = e.clientY; }
-  });
 
   // resize: el host puede cambiar (fullscreen, layout) — GS lo hacía interno
   const ro = new ResizeObserver(() => {
