@@ -121,6 +121,26 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
             observe.reconcile_completed(4),
         )
 
+    def test_cuda_odm_progress_counts_declared_matching_pairs(self):
+        observe = worker.odm_cuda_feature_progress(4, "ultra")
+
+        self.assertEqual(
+            {"stage": "odm-matching", "progress": 0.35,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · comparando pares 0/4"},
+            observe("Matching 4 image pairs"),
+        )
+        self.assertEqual(
+            {"stage": "odm-matching", "progress": 0.3625,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · comparando pares 1/4"},
+            observe("Matching a.jpg and b.jpg. Matcher: FLANN Matches: FAILED"),
+        )
+        observe("Matching a.jpg and c.jpg. Matcher: FLANN Success: True")
+        self.assertEqual(
+            {"stage": "odm-matching", "progress": 0.3875,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · comparando pares 3/4"},
+            observe("Matching b.jpg and c.jpg. Matcher: FLANN Success: True"),
+        )
+
     def test_remote_odm_feature_artifact_count_reads_completed_npz_files(self):
         with mock.patch.object(odm_gpu_lane, "_wsl", return_value="428\n") as run:
             self.assertEqual(428, odm_gpu_lane.feature_artifact_count("safe-job"))
@@ -139,6 +159,17 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertEqual(
             {"progress": 0.4},
             jobstore.line_progress_fields(0.4, current_progress=0.3),
+        )
+
+    def test_tracked_progress_fields_accepts_measured_stage(self):
+        self.assertEqual(
+            {"stage": "odm-matching", "progress": 0.35,
+             "detail": "comparando pares 0/4"},
+            jobstore.line_progress_fields(
+                {"stage": "odm-matching", "progress": 0.35,
+                 "detail": "comparando pares 0/4"},
+                current_progress=0.3,
+            ),
         )
 
     def test_remote_odm_wires_exact_feature_progress_into_tracked_process(self):

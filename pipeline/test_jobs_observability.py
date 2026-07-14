@@ -144,6 +144,34 @@ class JobObservabilityStoreTests(unittest.TestCase):
         self.assertEqual(600, telemetry["eta_remaining_s"])
         self.assertEqual("counted_phase_live", telemetry["eta_source"])
 
+    def test_counted_phase_ignores_pipeline_fraction_without_work_counter(self):
+        self.assertIsNone(server.counted_phase_telemetry(
+            "2/3 ODM ultra en NVIDIA CUDA · comparando imágenes",
+            "odm-matching",
+            [{"ts": 400.0, "stage": "odm-matching"}],
+            now=1000.0,
+        ))
+
+    def test_matching_phase_preserves_exact_pair_counter(self):
+        row = {
+            "id": "3d-match-count", "kind": "3d", "label": "recon_live",
+            "status": "running", "stage": "odm-matching", "progress": 0.35,
+            "backend": "NVIDIA CUDA",
+            "detail": "2/3 ODM ultra en NVIDIA CUDA · comparando pares 1777/16402",
+            "started": time.time() - 300,
+            "spec": json.dumps({"clip_id": "recon_live", "preset": "ultra",
+                                "backend": "cuda"}),
+            "log": "Matching s0_f_0001.jpg and s1_f_0002.jpg. Matcher: FLANN Success: True",
+        }
+
+        live = server.refresh_running_job(row)
+
+        self.assertEqual("odm-matching", live["stage"])
+        self.assertEqual(
+            "2/3 ODM ultra en NVIDIA CUDA · comparando pares 1777/16402",
+            live["detail"],
+        )
+
     def test_running_odm_summary_exposes_counted_phase_eta(self):
         jid = "3d-live-feature-eta"
         started = time.time() - 1200

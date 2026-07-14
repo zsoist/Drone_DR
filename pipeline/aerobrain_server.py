@@ -805,7 +805,8 @@ def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
     authoritative feature count. This projection is phase-local and never used
     as proof that a job or artifact completed.
     """
-    counts = re.findall(r"\b(\d+)/(\d+)\b", str(detail or ""))
+    phase_text = str(detail or "").rsplit("·", 1)[-1]
+    counts = re.findall(r"\b(\d+)/(\d+)\b", phase_text)
     if not counts:
         return None
     completed, total = map(int, counts[-1])
@@ -966,9 +967,9 @@ def refresh_running_job(row: dict) -> dict:
         exact_detail = str(row.get("detail") or "")
         detail = (f"2/3 ODM {spec.get('preset') or 'estandar'} en "
                   f"{backend} · {live['label']}")
+        exact_phase = exact_detail.rsplit("·", 1)[-1]
         if (live["stage"] == row.get("stage")
-                and live["label"] in exact_detail
-                and re.search(r"\b\d+/\d+\b", exact_detail)):
+                and re.search(r"\b\d+/\d+\b", exact_phase)):
             detail = exact_detail
             counts = re.findall(r"\b(\d+)/(\d+)\b", exact_detail)
             count = counts[-1] if counts else None

@@ -445,6 +445,10 @@ def line_progress_fields(observed, current_progress: float = 0.0) -> dict:
     """Normalize a line observer result into bounded, monotonic job fields."""
     if isinstance(observed, dict):
         fields = {}
+        if observed.get("stage") is not None:
+            stage = str(observed["stage"])[:80]
+            if re.fullmatch(r"[\w.-]+", stage):
+                fields["stage"] = stage
         if observed.get("progress") is not None:
             value = max(0.0, min(1.0, float(observed["progress"])))
             fields["progress"] = max(float(current_progress or 0.0), value)

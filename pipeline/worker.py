@@ -884,6 +884,8 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
     loaded = 0
     logged_completed = 0
     artifact_completed = 0
+    matching_total = 0
+    matching_completed = 0
 
     def feature_fields() -> dict:
         completed = min(total, max(logged_completed, artifact_completed))
@@ -894,8 +896,26 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
         }
 
     def observe(line: str) -> dict | None:
-        nonlocal loaded, logged_completed
+        nonlocal loaded, logged_completed, matching_total, matching_completed
         text = line or ""
+        declared_pairs = re.search(r"Matching\s+(\d+)\s+image pairs", text, re.I)
+        if declared_pairs:
+            matching_total = max(1, int(declared_pairs.group(1)))
+            matching_completed = 0
+            return {
+                "stage": "odm-matching", "progress": 0.35,
+                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                           f"comparando pares 0/{matching_total}"),
+            }
+        if (matching_total and
+                re.search(r"Matching\s+\S+\s+and\s+\S+", text, re.I)):
+            matching_completed = min(matching_total, matching_completed + 1)
+            return {
+                "stage": "odm-matching",
+                "progress": round(0.35 + 0.05 * matching_completed / matching_total, 4),
+                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                           f"comparando pares {matching_completed}/{matching_total}"),
+            }
         reading = re.search(r"Reading data for image .+\(queue-size=\d+\)", text, re.I)
         if reading:
             loaded = min(total, loaded + 1)
