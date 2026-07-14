@@ -712,7 +712,8 @@ def odm_registration(proj: Path, sources: list) -> dict:
     en silencio (SfM no la co-registra) y aún así verse OK (test real: 0106 aportó 0/7 frames).
     Devuelve componentes, ratio global y por-fuente + qué fuentes NO fusionaron."""
     rj = proj / "opensfm" / "reconstruction.json"
-    out = {"components": 0, "registered": 0, "total": 0, "by_source": {}, "dropped_sources": []}
+    out = {"components": 0, "registered": 0, "registered_all_components": 0,
+           "total": 0, "by_source": {}, "dropped_sources": []}
     try:
         recs = json.loads(rj.read_text())
     except (ValueError, OSError):
@@ -729,11 +730,29 @@ def odm_registration(proj: Path, sources: list) -> dict:
     except OSError:
         pass
     total = sum(submitted.values())
-    reg_by_prefix = {}
-    for r in recs:
-        for shot in r.get("shots", {}):
-            reg_by_prefix[_pref(shot)] = reg_by_prefix.get(_pref(shot), 0) + 1
-    registered = sum(reg_by_prefix.values())
+    component_rows = []
+    for index, reconstruction in enumerate(recs):
+        counts = {}
+        for shot in reconstruction.get("shots", {}):
+            counts[_pref(shot)] = counts.get(_pref(shot), 0) + 1
+        merged_count = 0
+        for source_index, _source in enumerate(sources):
+            prefix = f"s{source_index}_" if len(sources) > 1 else "s0_"
+            registered = counts.get(prefix, 0)
+            source_total = submitted.get(prefix, 0) or 1
+            if registered >= 5 and registered / source_total >= 0.6:
+                merged_count += 1
+        component_rows.append({"index": index, "counts": counts,
+                               "registered": sum(counts.values()),
+                               "merged_sources": merged_count})
+    selected = max(
+        component_rows,
+        key=lambda row: (row["merged_sources"], row["registered"], -row["index"]),
+        default={"index": None, "counts": {}, "registered": 0,
+                 "merged_sources": 0})
+    reg_by_prefix = selected["counts"]
+    registered = selected["registered"]
+    registered_all_components = sum(row["registered"] for row in component_rows)
     # una fuente FUSIONÓ si registró ≥5 imágenes Y ≥60% de las que aportó (regla del review §5;
     # NO hard-fail: el modelo sobrevive, solo cambia el label y el auto-splat)
     by_source = {}
@@ -746,8 +765,15 @@ def odm_registration(proj: Path, sources: list) -> dict:
                           "ratio": round(reg / sub, 2), "merged": merged}
         if len(sources) > 1 and not merged:
             out["dropped_sources"].append(src)
-    out.update(components=len(recs), registered=registered, total=total, by_source=by_source,
-               merged_sources=len(sources) - len(out["dropped_sources"]))
+    out.update(components=len(recs), selected_component=selected["index"],
+               registered=registered,
+               registered_all_components=registered_all_components,
+               total=total, by_source=by_source,
+               merged_sources=len(sources) - len(out["dropped_sources"]),
+               component_stats=[{"index": row["index"],
+                                 "registered": row["registered"],
+                                 "merged_sources": row["merged_sources"]}
+                                for row in component_rows])
     return out
 
 
@@ -877,7 +903,8 @@ def merge_label(n_sources: int, n_photos: int, dropped: list) -> str:
     return "PARTIAL" if dropped else "FULL"
 
 
-def odm_cuda_feature_progress(total_images: int, preset_name: str):
+def odm_cuda_feature_progress(total_images: int, preset_name: str,
+                              total_sources: int = 0):
     """Report loading and reconcile buffered logs with feature artifacts."""
     total = max(1, int(total_images or 0))
     preset = str(preset_name or "").strip() or "CUDA"
@@ -891,6 +918,19 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
     good_tracks = 0
     registered_cameras = 0
     registered_camera_ids: set[str] = set()
+    source_total = max(0, int(total_sources or 0))
+    active_source_ids: set[str] = set()
+
+    def register_camera(camera: str) -> None:
+        registered_camera_ids.add(camera)
+        source = re.match(r"(s\d+)_", camera, re.I)
+        if source:
+            active_source_ids.add(source.group(1).lower())
+
+    def source_evidence() -> str:
+        if source_total > 1 and active_source_ids:
+            return f" · {len(active_source_ids)}/{source_total} fuentes activas"
+        return ""
 
     def feature_fields() -> dict:
         completed = min(total, max(logged_completed, artifact_completed))
@@ -918,13 +958,15 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
             r"Adding\s+(\S+)\s+to the reconstruction", text, re.I)
         if reconstruction_seed or reconstruction_add:
             if reconstruction_seed:
-                registered_camera_ids.update(reconstruction_seed.groups())
+                for camera in reconstruction_seed.groups():
+                    register_camera(camera)
             else:
-                registered_camera_ids.add(reconstruction_add.group(1))
+                register_camera(reconstruction_add.group(1))
             registered_cameras = min(
                 total, max(registered_cameras, len(registered_camera_ids)))
             detail = (f"2/3 ODM {preset} en NVIDIA CUDA · reconstruyendo cámaras · "
-                      f"{registered_cameras}/{total} cámaras registradas")
+                      f"{registered_cameras}/{total} cámaras registradas"
+                      f"{source_evidence()}")
             if good_tracks:
                 detail += f" · {good_tracks:,} tracks robustos"
             return {
@@ -938,7 +980,7 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
             index, cameras = map(int, reconstruction.groups())
             registered_cameras = min(total, max(registered_cameras, cameras))
             detail = (f"2/3 ODM {preset} en NVIDIA CUDA · reconstrucción {index} · "
-                      f"{cameras}/{total} cámaras")
+                      f"{cameras}/{total} cámaras{source_evidence()}")
             if good_tracks:
                 detail += f" · {good_tracks:,} tracks robustos"
             return {
@@ -1029,7 +1071,10 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
                         detail=f"2/3 ODM {preset_name} en NVIDIA CUDA · cargando imágenes 0/{n}",
                         stage="odm-features", progress=0.20,
                         container=container, backend="NVIDIA CUDA")
-        progress_observer = odm_cuda_feature_progress(n, preset_name)
+        spec_sources = j.get("spec", {}).get("sources")
+        source_total = len(spec_sources) if isinstance(spec_sources, list) else 1
+        progress_observer = odm_cuda_feature_progress(
+            n, preset_name, total_sources=max(1, source_total))
 
         def artifact_progress(_pid: int) -> None:
             current = jobstore.get(j["id"]) or {}

@@ -1,5 +1,6 @@
 import sys
 import inspect
+import json
 import subprocess
 import tempfile
 import unittest
@@ -157,7 +158,7 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         )
 
     def test_cuda_odm_progress_persists_tracks_and_camera_reconstruction(self):
-        observe = worker.odm_cuda_feature_progress(4, "ultra")
+        observe = worker.odm_cuda_feature_progress(4, "ultra", total_sources=3)
 
         self.assertEqual(
             {"stage": "odm-tracks", "progress": 0.42,
@@ -173,21 +174,44 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertEqual(
             {"stage": "odm-reconstruct", "progress": 0.465,
              "detail": ("2/3 ODM ultra en NVIDIA CUDA · reconstruyendo cámaras · "
-                        "2/4 cámaras registradas · 1,181,512 tracks robustos")},
+                        "2/4 cámaras registradas · 2/3 fuentes activas · "
+                        "1,181,512 tracks robustos")},
             observe("Starting reconstruction with s0_f_0001.jpg and s1_f_0001.jpg"),
         )
         self.assertEqual(
             {"stage": "odm-reconstruct", "progress": 0.4825,
              "detail": ("2/3 ODM ultra en NVIDIA CUDA · reconstruyendo cámaras · "
-                        "3/4 cámaras registradas · 1,181,512 tracks robustos")},
+                        "3/4 cámaras registradas · 3/3 fuentes activas · "
+                        "1,181,512 tracks robustos")},
             observe("Adding s2_f_0001.jpg to the reconstruction"),
         )
         self.assertEqual(
             {"stage": "odm-reconstruct", "progress": 0.4825,
              "detail": ("2/3 ODM ultra en NVIDIA CUDA · reconstrucción 0 · 3/4 cámaras · "
-                        "1,181,512 tracks robustos")},
+                        "3/3 fuentes activas · 1,181,512 tracks robustos")},
             observe("Reconstruction 0: 3 images, 42000 points"),
         )
+
+    def test_odm_registration_never_calls_disconnected_components_full(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td)
+            opensfm = proj / "opensfm"
+            opensfm.mkdir()
+            images = [*(f"s0_f_{i:04}.jpg" for i in range(6)),
+                      *(f"s1_f_{i:04}.jpg" for i in range(6))]
+            (opensfm / "image_list.txt").write_text("\n".join(images))
+            (opensfm / "reconstruction.json").write_text(json.dumps([
+                {"shots": {name: {} for name in images[:6]}},
+                {"shots": {name: {} for name in images[6:]}},
+            ]))
+
+            registration = worker.odm_registration(proj, ["source-a", "source-b"])
+
+        self.assertEqual(2, registration["components"])
+        self.assertEqual(6, registration["registered"])
+        self.assertEqual(12, registration["registered_all_components"])
+        self.assertEqual(1, registration["merged_sources"])
+        self.assertEqual(1, len(registration["dropped_sources"]))
 
     def test_remote_odm_match_artifact_count_reads_completed_match_files(self):
         with mock.patch.object(odm_gpu_lane, "_wsl", return_value="1019\n") as run:
@@ -230,7 +254,8 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
 
     def test_remote_odm_wires_exact_feature_progress_into_tracked_process(self):
         source = inspect.getsource(worker.run_odm_cuda)
-        self.assertIn("progress_observer = odm_cuda_feature_progress(n, preset_name)", source)
+        self.assertIn("spec_sources", source)
+        self.assertIn("total_sources=max(1, source_total)", source)
         self.assertIn("line_progress=progress_observer", source)
         self.assertIn("feature_artifact_count", source)
         self.assertIn("match_artifact_count", source)
