@@ -172,6 +172,27 @@ class JobObservabilityStoreTests(unittest.TestCase):
             live["detail"],
         )
 
+    def test_buffered_matching_log_cannot_regress_measured_save_substage(self):
+        row = {
+            "id": "3d-match-save", "kind": "3d", "label": "recon_live",
+            "status": "running", "stage": "odm-match-save", "progress": 0.405,
+            "backend": "NVIDIA CUDA",
+            "detail": "2/3 ODM ultra en NVIDIA CUDA · guardando coincidencias 300/600",
+            "started": time.time() - 300,
+            "spec": json.dumps({"clip_id": "recon_live", "preset": "ultra",
+                                "backend": "cuda"}),
+            "log": "Matching s0_f_0001.jpg and s1_f_0002.jpg. Matcher: FLANN Success: True",
+        }
+
+        live = server.refresh_running_job(row)
+
+        self.assertEqual("odm-match-save", live["stage"])
+        self.assertEqual(0.405, live["progress"])
+        self.assertEqual(
+            "2/3 ODM ultra en NVIDIA CUDA · guardando coincidencias 300/600",
+            live["detail"],
+        )
+
     def test_running_odm_summary_exposes_counted_phase_eta(self):
         jid = "3d-live-feature-eta"
         started = time.time() - 1200

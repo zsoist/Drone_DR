@@ -886,6 +886,8 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
     artifact_completed = 0
     matching_total = 0
     matching_completed = 0
+    saving_matches = False
+    saved_match_artifacts = 0
 
     def feature_fields() -> dict:
         completed = min(total, max(logged_completed, artifact_completed))
@@ -909,6 +911,8 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
             }
         if (matching_total and
                 re.search(r"Matching\s+\S+\s+and\s+\S+", text, re.I)):
+            if saving_matches:
+                return None
             matching_completed = min(matching_total, matching_completed + 1)
             return {
                 "stage": "odm-matching",
@@ -936,7 +940,20 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
         artifact_completed = min(total, max(artifact_completed, int(count or 0)))
         return feature_fields()
 
+    def reconcile_match_artifacts(count: int) -> dict:
+        nonlocal saving_matches, saved_match_artifacts
+        saving_matches = True
+        saved_match_artifacts = min(
+            total, max(saved_match_artifacts, int(count or 0)))
+        return {
+            "stage": "odm-match-save",
+            "progress": round(0.4 + 0.01 * saved_match_artifacts / total, 4),
+            "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                       f"guardando coincidencias {saved_match_artifacts}/{total}"),
+        }
+
     observe.reconcile_completed = reconcile_completed
+    observe.reconcile_match_artifacts = reconcile_match_artifacts
 
     return observe
 
@@ -964,12 +981,19 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
 
         def artifact_progress(_pid: int) -> None:
             current = jobstore.get(j["id"]) or {}
-            if current.get("stage") != "odm-features":
+            stage = current.get("stage")
+            if stage == "odm-features":
+                completed_features = odm_gpu_lane.feature_artifact_count(name)
+                if completed_features <= 0:
+                    return
+                observed = progress_observer.reconcile_completed(completed_features)
+            elif stage in ("odm-matching", "odm-match-save"):
+                completed_matches = odm_gpu_lane.match_artifact_count(name)
+                if completed_matches <= 0:
+                    return
+                observed = progress_observer.reconcile_match_artifacts(completed_matches)
+            else:
                 return
-            completed_features = odm_gpu_lane.feature_artifact_count(name)
-            if completed_features <= 0:
-                return
-            observed = progress_observer.reconcile_completed(completed_features)
             fields = jobstore.line_progress_fields(
                 observed, current_progress=float(current.get("progress") or 0.0))
             jobstore.update(j["id"], **fields)

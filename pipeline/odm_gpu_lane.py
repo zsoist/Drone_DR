@@ -106,6 +106,17 @@ def feature_artifact_count(name: str) -> int:
     return max(0, int((out or "0").strip() or 0))
 
 
+def match_artifact_count(name: str) -> int:
+    """Count per-image OpenSfM match files during the serialization tail."""
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", str(name or "")):
+        raise ValueError(f"nombre ODM remoto inválido: {name!r}")
+    out = _wsl(
+        f"find {REMOTE_ODM}/{name}/opensfm/matches -type f "
+        "-name '*_matches.pkl.gz' 2>/dev/null | wc -l",
+        timeout=30, label="contar coincidencias ODM")
+    return max(0, int((out or "0").strip() or 0))
+
+
 def fetch_outputs(proj: Path, name: str) -> list[str]:
     """Trae los outputs ODM al proj del Mac y devuelve la lista recuperada."""
     tar_remote = f"{WSL_TRANSFER}/odm-{name}-out.tar"

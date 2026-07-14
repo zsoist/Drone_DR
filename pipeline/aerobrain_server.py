@@ -746,6 +746,20 @@ def odm_live_phase(log: str, current: float | None = None) -> dict | None:
             "progress": max(float(current or 0), latest[3])}
 
 
+ODM_STAGE_ORDER = (
+    "odm-features", "odm-matching", "odm-match-save", "odm-tracks",
+    "odm-reconstruct", "odm-undistort", "odm-depthmaps", "odm-mesh",
+    "odm-texture", "odm-map", "odm-products",
+)
+
+
+def odm_stage_rank(stage: str | None) -> int:
+    try:
+        return ODM_STAGE_ORDER.index(str(stage or ""))
+    except ValueError:
+        return -1
+
+
 def _trainer_duration_seconds(value: str) -> float | None:
     """Parse Nerfstudio's compact duration columns without treating ms as minutes."""
     units = {"d": 86400.0, "h": 3600.0, "m": 60.0, "s": 1.0, "ms": .001}
@@ -961,6 +975,10 @@ def refresh_running_job(row: dict) -> dict:
                                           row.get("label") or "", row.get("started"))
     live = odm_live_phase(row.get("log") or "", row.get("progress"))
     if live and str(row.get("stage") or "").startswith("odm"):
+        # stdout del SSH puede ir detrás de los artefactos medidos por el tick del
+        # worker. Un tail aún lleno de pares no puede devolver save/tracks a matching.
+        if odm_stage_rank(row.get("stage")) > odm_stage_rank(live.get("stage")):
+            return row
         spec = _job_spec(row)
         backend = (row.get("backend") or
                    ("NVIDIA CUDA" if spec.get("backend") == "cuda" else "local"))

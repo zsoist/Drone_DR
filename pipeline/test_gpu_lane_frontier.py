@@ -141,6 +141,29 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
             observe("Matching b.jpg and c.jpg. Matcher: FLANN Success: True"),
         )
 
+    def test_cuda_odm_progress_reconciles_match_artifact_finalization(self):
+        observe = worker.odm_cuda_feature_progress(4, "ultra")
+        observe("Matching 8 image pairs")
+        observe("Matching a.jpg and b.jpg. Matcher: FLANN Success: True")
+
+        self.assertEqual(
+            {"stage": "odm-match-save", "progress": 0.405,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · guardando coincidencias 2/4"},
+            observe.reconcile_match_artifacts(2),
+        )
+        self.assertIsNone(
+            observe("Matching a.jpg and c.jpg. Matcher: FLANN Success: True"),
+            "buffered pair logs must not regress the measured save substage",
+        )
+
+    def test_remote_odm_match_artifact_count_reads_completed_match_files(self):
+        with mock.patch.object(odm_gpu_lane, "_wsl", return_value="1019\n") as run:
+            self.assertEqual(1019, odm_gpu_lane.match_artifact_count("safe-job"))
+
+        command = run.call_args.args[0]
+        self.assertIn("safe-job/opensfm/matches", command)
+        self.assertIn("*_matches.pkl.gz", command)
+
     def test_remote_odm_feature_artifact_count_reads_completed_npz_files(self):
         with mock.patch.object(odm_gpu_lane, "_wsl", return_value="428\n") as run:
             self.assertEqual(428, odm_gpu_lane.feature_artifact_count("safe-job"))
@@ -177,6 +200,8 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertIn("progress_observer = odm_cuda_feature_progress(n, preset_name)", source)
         self.assertIn("line_progress=progress_observer", source)
         self.assertIn("feature_artifact_count", source)
+        self.assertIn("match_artifact_count", source)
+        self.assertIn("reconcile_match_artifacts", source)
         self.assertIn("tick=artifact_progress", source)
         self.assertIn('stage="odm-features", progress=0.20', source)
 
