@@ -986,8 +986,11 @@ def refresh_running_job(row: dict) -> dict:
         detail = (f"2/3 ODM {spec.get('preset') or 'estandar'} en "
                   f"{backend} · {live['label']}")
         exact_phase = exact_detail.rsplit("·", 1)[-1]
+        preserves_measured_evidence = bool(re.search(
+            r"\b\d+/\d+\b|tracks robustos|reconstrucción\s+\d+",
+            exact_detail, re.I))
         if (live["stage"] == row.get("stage")
-                and re.search(r"\b\d+/\d+\b", exact_phase)):
+                and preserves_measured_evidence):
             detail = exact_detail
             counts = re.findall(r"\b(\d+)/(\d+)\b", exact_detail)
             count = counts[-1] if counts else None

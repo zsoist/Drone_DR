@@ -890,6 +890,7 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
     saved_match_artifacts = 0
     good_tracks = 0
     registered_cameras = 0
+    registered_camera_ids: set[str] = set()
 
     def feature_fields() -> dict:
         completed = min(total, max(logged_completed, artifact_completed))
@@ -910,6 +911,26 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
                 "stage": "odm-tracks", "progress": 0.42,
                 "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
                            f"{good_tracks:,} tracks robustos"),
+            }
+        reconstruction_seed = re.search(
+            r"Starting reconstruction with\s+(\S+)\s+and\s+(\S+)", text, re.I)
+        reconstruction_add = re.search(
+            r"Adding\s+(\S+)\s+to the reconstruction", text, re.I)
+        if reconstruction_seed or reconstruction_add:
+            if reconstruction_seed:
+                registered_camera_ids.update(reconstruction_seed.groups())
+            else:
+                registered_camera_ids.add(reconstruction_add.group(1))
+            registered_cameras = min(
+                total, max(registered_cameras, len(registered_camera_ids)))
+            detail = (f"2/3 ODM {preset} en NVIDIA CUDA · reconstruyendo cámaras · "
+                      f"{registered_cameras}/{total} cámaras registradas")
+            if good_tracks:
+                detail += f" · {good_tracks:,} tracks robustos"
+            return {
+                "stage": "odm-reconstruct",
+                "progress": round(0.43 + 0.07 * registered_cameras / total, 4),
+                "detail": detail,
             }
         reconstruction = re.search(
             r"Reconstruction\s+(\d+):\s*(\d+)\s+images", text, re.I)

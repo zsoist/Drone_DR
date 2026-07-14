@@ -195,6 +195,11 @@ function jobDuration(seconds) {
   if (seconds >= 60) return `${Math.round(seconds / 60)} min`;
   return seconds ? `${Math.round(seconds)} s` : '—';
 }
+function jobTimingLabel(j) {
+  if (j?.status === 'queued') return 'esperando turno';
+  const duration = jobDuration(j?.elapsed_s);
+  return j?.status === 'running' ? `${duration} transcurridos` : `${duration} total`;
+}
 function presetLabel(value) {
   return ({ rapido: 'Rápido', estandar: 'Estándar', alta: 'Alta', extra: 'Extra',
     ultra: 'Ultra 15K', ultra20: 'Ultra+ 20K', frontier: 'Frontier 30K',
@@ -366,7 +371,7 @@ function jobCard(j, flightsIdx, entering = true) {
       </div>` : ''}
     ${facts.length ? `<div class="jc-facts">${facts.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
     ${!['running', 'queued'].includes(j.status) ? jobDataGrid(j) : ''}
-    <div class="jc-meta"><span>${esc(j.id)}</span><span>${jobDuration(j.elapsed_s)} transcurridos</span></div>
+    <div class="jc-meta"><span>${esc(j.id)}</span><span>${jobTimingLabel(j)}</span></div>
     ${lastLog && !['running', 'queued'].includes(j.status) ? `<button class="jc-log" data-job-log="${esc(j.id)}" title="Abrir log completo">${esc(lastLog)}</button>` : ''}
     ${j.status === 'queued' ? `<div class="jc-stage">Esperando turno — el worker procesa un trabajo pesado a la vez.</div>` : ''}
     ${j.detail && !['running', 'queued'].includes(j.status) ? `<div class="jc-result ${j.status === 'error' ? 'error' : ''}">${esc(j.detail)}</div>` : ''}
@@ -524,7 +529,7 @@ async function pollJobs(el, every = 2500, onDone = null) {
         setTxt('[data-live-field="eta"] b', j.eta_remaining_s != null
           ? fmtDur(j.eta_remaining_s) : null);
         const meta = node.querySelectorAll('.jc-meta span')[1];
-        if (meta) meta.textContent = jobDuration(j.elapsed_s) + ' transcurridos';
+        if (meta) meta.textContent = jobTimingLabel(j);
         // dashboard de fases: solo anchos y tiempos (misma estructura)
         node.querySelectorAll('.jc-ph-row').forEach((row, i) => {
           const tmp = document.createElement('div');

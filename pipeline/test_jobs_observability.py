@@ -130,6 +130,29 @@ class JobObservabilityStoreTests(unittest.TestCase):
             live["detail"],
         )
 
+    def test_live_phase_preserves_exact_reconstruction_evidence(self):
+        row = {
+            "id": "3d-reconstruction-evidence", "kind": "3d",
+            "label": "recon_live", "status": "running",
+            "stage": "odm-reconstruct", "progress": 0.43,
+            "backend": "NVIDIA CUDA",
+            "detail": ("2/3 ODM ultra en NVIDIA CUDA · reconstruyendo cámaras · "
+                       "1,181,512 tracks robustos"),
+            "started": time.time() - 300,
+            "spec": json.dumps({"clip_id": "recon_live", "preset": "ultra",
+                                "backend": "cuda"}),
+            "log": 'running "opensfm" reconstruct "/datasets/code/opensfm"',
+        }
+
+        live = server.refresh_running_job(row)
+
+        self.assertEqual("odm-reconstruct", live["stage"])
+        self.assertEqual(
+            "2/3 ODM ultra en NVIDIA CUDA · reconstruyendo cámaras · "
+            "1,181,512 tracks robustos",
+            live["detail"],
+        )
+
     def test_counted_odm_phase_exposes_measured_rate_and_remaining_time(self):
         telemetry = server.counted_phase_telemetry(
             "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 300/600",

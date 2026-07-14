@@ -171,6 +171,18 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
             observe('running "opensfm" reconstruct "/datasets/code/opensfm"'),
         )
         self.assertEqual(
+            {"stage": "odm-reconstruct", "progress": 0.465,
+             "detail": ("2/3 ODM ultra en NVIDIA CUDA · reconstruyendo cámaras · "
+                        "2/4 cámaras registradas · 1,181,512 tracks robustos")},
+            observe("Starting reconstruction with s0_f_0001.jpg and s1_f_0001.jpg"),
+        )
+        self.assertEqual(
+            {"stage": "odm-reconstruct", "progress": 0.4825,
+             "detail": ("2/3 ODM ultra en NVIDIA CUDA · reconstruyendo cámaras · "
+                        "3/4 cámaras registradas · 1,181,512 tracks robustos")},
+            observe("Adding s2_f_0001.jpg to the reconstruction"),
+        )
+        self.assertEqual(
             {"stage": "odm-reconstruct", "progress": 0.4825,
              "detail": ("2/3 ODM ultra en NVIDIA CUDA · reconstrucción 0 · 3/4 cámaras · "
                         "1,181,512 tracks robustos")},

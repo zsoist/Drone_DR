@@ -77,6 +77,27 @@ class SplatFrontierUiContractTests(unittest.TestCase):
             json.loads(result.stdout),
         )
 
+    def test_job_cards_never_label_queue_wait_as_processing_time(self):
+        match = re.search(
+            r"function jobDuration\(seconds\)\s*\{.*?\n\}"
+            r"\s*function jobTimingLabel\(j\)\s*\{.*?\n\}",
+            self.shell, re.DOTALL)
+        self.assertIsNotNone(
+            match, "shell.js must expose truthful queued/running/finished timing")
+        jobs = [
+            {"status": "queued", "elapsed_s": 6120},
+            {"status": "running", "elapsed_s": 720},
+            {"status": "done", "elapsed_s": 720},
+        ]
+        script = (match.group(0) + "\nconsole.log(JSON.stringify(" +
+                  json.dumps(jobs) + ".map(jobTimingLabel)));\n")
+        result = subprocess.run(["node", "-e", script], capture_output=True,
+                                text=True, check=True)
+        self.assertEqual(
+            ["esperando turno", "12 min transcurridos", "12 min total"],
+            json.loads(result.stdout),
+        )
+
     def test_3d_phase_rail_groups_all_odm_substages_under_photogrammetry(self):
         match = re.search(
             r"function phaseKey\(stage\)\s*\{.*?\n\}", self.shell, re.DOTALL)
