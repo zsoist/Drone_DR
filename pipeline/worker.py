@@ -888,6 +888,8 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
     matching_completed = 0
     saving_matches = False
     saved_match_artifacts = 0
+    good_tracks = 0
+    registered_cameras = 0
 
     def feature_fields() -> dict:
         completed = min(total, max(logged_completed, artifact_completed))
@@ -899,7 +901,36 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str):
 
     def observe(line: str) -> dict | None:
         nonlocal loaded, logged_completed, matching_total, matching_completed
+        nonlocal good_tracks, registered_cameras
         text = line or ""
+        tracks = re.search(r"Good tracks:\s*(\d+)", text, re.I)
+        if tracks:
+            good_tracks = max(good_tracks, int(tracks.group(1)))
+            return {
+                "stage": "odm-tracks", "progress": 0.42,
+                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                           f"{good_tracks:,} tracks robustos"),
+            }
+        reconstruction = re.search(
+            r"Reconstruction\s+(\d+):\s*(\d+)\s+images", text, re.I)
+        if reconstruction:
+            index, cameras = map(int, reconstruction.groups())
+            registered_cameras = min(total, max(registered_cameras, cameras))
+            detail = (f"2/3 ODM {preset} en NVIDIA CUDA · reconstrucción {index} · "
+                      f"{cameras}/{total} cámaras")
+            if good_tracks:
+                detail += f" · {good_tracks:,} tracks robustos"
+            return {
+                "stage": "odm-reconstruct",
+                "progress": round(0.43 + 0.07 * registered_cameras / total, 4),
+                "detail": detail,
+            }
+        if re.search(r"opensfm[^\n]*\breconstruct\b", text, re.I):
+            detail = f"2/3 ODM {preset} en NVIDIA CUDA · reconstruyendo cámaras"
+            if good_tracks:
+                detail += f" · {good_tracks:,} tracks robustos"
+            return {"stage": "odm-reconstruct", "progress": 0.43,
+                    "detail": detail}
         declared_pairs = re.search(r"Matching\s+(\d+)\s+image pairs", text, re.I)
         if declared_pairs:
             matching_total = max(1, int(declared_pairs.group(1)))

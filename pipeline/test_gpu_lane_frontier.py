@@ -156,6 +156,27 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
             "buffered pair logs must not regress the measured save substage",
         )
 
+    def test_cuda_odm_progress_persists_tracks_and_camera_reconstruction(self):
+        observe = worker.odm_cuda_feature_progress(4, "ultra")
+
+        self.assertEqual(
+            {"stage": "odm-tracks", "progress": 0.42,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · 1,181,512 tracks robustos"},
+            observe("Good tracks: 1181512"),
+        )
+        self.assertEqual(
+            {"stage": "odm-reconstruct", "progress": 0.43,
+             "detail": ("2/3 ODM ultra en NVIDIA CUDA · reconstruyendo cámaras · "
+                        "1,181,512 tracks robustos")},
+            observe('running "opensfm" reconstruct "/datasets/code/opensfm"'),
+        )
+        self.assertEqual(
+            {"stage": "odm-reconstruct", "progress": 0.4825,
+             "detail": ("2/3 ODM ultra en NVIDIA CUDA · reconstrucción 0 · 3/4 cámaras · "
+                        "1,181,512 tracks robustos")},
+            observe("Reconstruction 0: 3 images, 42000 points"),
+        )
+
     def test_remote_odm_match_artifact_count_reads_completed_match_files(self):
         with mock.patch.object(odm_gpu_lane, "_wsl", return_value="1019\n") as run:
             self.assertEqual(1019, odm_gpu_lane.match_artifact_count("safe-job"))
