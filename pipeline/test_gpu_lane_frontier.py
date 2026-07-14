@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from PIL import Image
 
@@ -11,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gpu_lane  # noqa: E402
 import jobs as jobstore  # noqa: E402
+import odm_gpu_lane  # noqa: E402
 import worker  # noqa: E402
 
 
@@ -68,6 +70,8 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
             {"progress": 0.2038, "detail": "2/3 ODM ultra en NVIDIA CUDA · cargando imágenes 1/4"},
             observe("Reading data for image a.jpg (queue-size=1)"),
         )
+        observe("Reading data for image b.jpg (queue-size=200)")
+        observe("Reading data for image c.jpg (queue-size=200)")
         self.assertEqual(
             {"progress": 0.215, "detail": "2/3 ODM ultra en NVIDIA CUDA · cargando imágenes 4/4"},
             observe("Reading data for image d.jpg (queue-size=4)"),
@@ -83,6 +87,48 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
             observe("Found 10002 points in 10.7s"),
         )
 
+    def test_cuda_odm_loading_counts_events_not_preload_queue_depth(self):
+        observe = worker.odm_cuda_feature_progress(4, "ultra")
+
+        self.assertEqual(
+            {"progress": 0.2038,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · cargando imágenes 1/4"},
+            observe("Reading data for image a.jpg (queue-size=200)"),
+        )
+        self.assertEqual(
+            {"progress": 0.2075,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · cargando imágenes 2/4"},
+            observe("Reading data for image b.jpg (queue-size=200)"),
+        )
+
+    def test_cuda_odm_feature_progress_reconciles_buffered_logs_with_artifacts(self):
+        observe = worker.odm_cuda_feature_progress(4, "ultra")
+
+        observe("Found 10000 points in 11.2s")
+        self.assertEqual(
+            {"progress": 0.3163,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 3/4"},
+            observe.reconcile_completed(3),
+        )
+        self.assertEqual(
+            {"progress": 0.3163,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 3/4"},
+            observe("Found 10000 points in 10.9s"),
+        )
+        self.assertEqual(
+            {"progress": 0.35,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 4/4"},
+            observe.reconcile_completed(4),
+        )
+
+    def test_remote_odm_feature_artifact_count_reads_completed_npz_files(self):
+        with mock.patch.object(odm_gpu_lane, "_wsl", return_value="428\n") as run:
+            self.assertEqual(428, odm_gpu_lane.feature_artifact_count("safe-job"))
+
+        command = run.call_args.args[0]
+        self.assertIn("safe-job/opensfm/features", command)
+        self.assertIn("*.features.npz", command)
+
     def test_tracked_progress_fields_accepts_detail_without_regressing_progress(self):
         observed = {"progress": 0.21, "detail": "cargando imágenes 10/100"}
 
@@ -97,7 +143,10 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
 
     def test_remote_odm_wires_exact_feature_progress_into_tracked_process(self):
         source = inspect.getsource(worker.run_odm_cuda)
-        self.assertIn("line_progress=odm_cuda_feature_progress(n, preset_name)", source)
+        self.assertIn("progress_observer = odm_cuda_feature_progress(n, preset_name)", source)
+        self.assertIn("line_progress=progress_observer", source)
+        self.assertIn("feature_artifact_count", source)
+        self.assertIn("tick=artifact_progress", source)
         self.assertIn('stage="odm-features", progress=0.20', source)
 
     def test_command_preserves_exact_frontier_schedule_and_scale(self):

@@ -25,6 +25,7 @@ from __future__ import annotations
 import subprocess
 import tarfile
 import tempfile
+import re
 from pathlib import Path
 
 from gpu_lane import SSH_HOST, NTFS_TRANSFER, ensure_awake, _run, _wsl
@@ -92,6 +93,17 @@ def remote_run_argv(name: str, container: str, preset_args: list[str],
     inner = " ".join(cmd)                        # args controlados: sin espacios internos
     return ["ssh", SSH_HOST, "wsl", "-d", "Ubuntu", "--", "bash", "-lc",
             f'"{inner} 2>&1"']
+
+
+def feature_artifact_count(name: str) -> int:
+    """Count completed OpenSfM feature files independently of buffered stdout."""
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", str(name or "")):
+        raise ValueError(f"nombre ODM remoto inválido: {name!r}")
+    out = _wsl(
+        f"find {REMOTE_ODM}/{name}/opensfm/features -type f "
+        "-name '*.features.npz' 2>/dev/null | wc -l",
+        timeout=30, label="contar features ODM")
+    return max(0, int((out or "0").strip() or 0))
 
 
 def fetch_outputs(proj: Path, name: str) -> list[str]:

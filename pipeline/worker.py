@@ -878,31 +878,45 @@ def merge_label(n_sources: int, n_photos: int, dropped: list) -> str:
 
 
 def odm_cuda_feature_progress(total_images: int, preset_name: str):
-    """Report image loading separately from completed feature extraction."""
+    """Report loading and reconcile buffered logs with feature artifacts."""
     total = max(1, int(total_images or 0))
     preset = str(preset_name or "").strip() or "CUDA"
     loaded = 0
-    completed = 0
+    logged_completed = 0
+    artifact_completed = 0
+
+    def feature_fields() -> dict:
+        completed = min(total, max(logged_completed, artifact_completed))
+        return {
+            "progress": round(0.215 + 0.135 * completed / total, 4),
+            "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                       f"extrayendo features {completed}/{total}"),
+        }
 
     def observe(line: str) -> dict | None:
-        nonlocal loaded, completed
+        nonlocal loaded, logged_completed
         text = line or ""
-        reading = re.search(r"Reading data for image .+\(queue-size=(\d+)\)", text, re.I)
+        reading = re.search(r"Reading data for image .+\(queue-size=\d+\)", text, re.I)
         if reading:
-            loaded = min(total, max(loaded, int(reading.group(1))))
+            loaded = min(total, loaded + 1)
+            if max(logged_completed, artifact_completed) > 0:
+                return None
             return {
                 "progress": round(0.20 + 0.015 * loaded / total, 4),
                 "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
                            f"cargando imágenes {loaded}/{total}"),
             }
         if re.search(r"Found\s+\d+\s+points\s+in\s+", text, re.I):
-            completed = min(total, completed + 1)
-            return {
-                "progress": round(0.215 + 0.135 * completed / total, 4),
-                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
-                           f"extrayendo features {completed}/{total}"),
-            }
+            logged_completed = min(total, logged_completed + 1)
+            return feature_fields()
         return None
+
+    def reconcile_completed(count: int) -> dict:
+        nonlocal artifact_completed
+        artifact_completed = min(total, max(artifact_completed, int(count or 0)))
+        return feature_fields()
+
+    observe.reconcile_completed = reconcile_completed
 
     return observe
 
@@ -926,9 +940,24 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
                         detail=f"2/3 ODM {preset_name} en NVIDIA CUDA · cargando imágenes 0/{n}",
                         stage="odm-features", progress=0.20,
                         container=container, backend="NVIDIA CUDA")
+        progress_observer = odm_cuda_feature_progress(n, preset_name)
+
+        def artifact_progress(_pid: int) -> None:
+            current = jobstore.get(j["id"]) or {}
+            if current.get("stage") != "odm-features":
+                return
+            completed_features = odm_gpu_lane.feature_artifact_count(name)
+            if completed_features <= 0:
+                return
+            observed = progress_observer.reconcile_completed(completed_features)
+            fields = jobstore.line_progress_fields(
+                observed, current_progress=float(current.get("progress") or 0.0))
+            jobstore.update(j["id"], **fields)
+
         rc = jobstore.run_tracked(
             j["id"], odm_gpu_lane.remote_run_argv(name, container, list(preset["args"])),
-            timeout=preset["timeout"], line_progress=odm_cuda_feature_progress(n, preset_name))
+            timeout=preset["timeout"], line_progress=progress_observer,
+            tick=artifact_progress, tick_interval=15.0)
         if rc != 0:
             return rc
         jobstore.update(j["id"], detail="2/3 trayendo resultados del nodo CUDA",
