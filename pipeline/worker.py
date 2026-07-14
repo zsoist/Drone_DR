@@ -1139,9 +1139,14 @@ def odm_cuda_execution_plan(j: dict, preset_args: list[str]) -> dict:
     """Resolve a fresh or evidence-backed remote ODM execution."""
     spec = j.get("spec") if isinstance(j.get("spec"), dict) else {}
     resume_name = str(spec.get("odm_remote_resume") or "").strip()
+    resume_stage = str(spec.get("odm_remote_resume_stage") or "").strip()
     name = resume_name or str(j["id"]).replace("_", "-")
     if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
         raise ValueError(f"nombre ODM remoto inválido: {name!r}")
+    if resume_stage not in ("", "odm_filterpoints"):
+        raise ValueError(f"fase ODM remota no autorizada: {resume_stage!r}")
+    if resume_stage and not resume_name:
+        raise ValueError("una fase ODM de recuperación requiere workdir remoto")
     args = list(preset_args)
     sources = spec.get("sources")
     multi_source = isinstance(sources, list) and len(sources) > 1
@@ -1154,7 +1159,8 @@ def odm_cuda_execution_plan(j: dict, preset_args: list[str]) -> dict:
         "resume": bool(resume_name),
         # ODM --rerun-from opensfm deletes features/matches/tracks. Recovery
         # archives only reconstruction.json and lets normal cache detection run.
-        "rerun_from": None,
+        "rerun_from": resume_stage or None,
+        "resume_kind": "filtered_cloud" if resume_stage else "opensfm",
         "args": args,
     }
 
@@ -1190,7 +1196,21 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
                 j["id"], "odm_cuda_resume_verified",
                 f"reanudación OpenSfM verificada: {n} imágenes con features/matches/tracks",
                 data={"remote_dir": f"/root/gpu-jobs/odm/{name}", **evidence})
-            odm_gpu_lane.prepare_opensfm_resume(name)
+            if plan["resume_kind"] == "filtered_cloud":
+                filtered = odm_gpu_lane.filtered_cloud_artifacts(name)
+                points = int(filtered.get("filtered_points") or 0)
+                ply_bytes = int(filtered.get("filtered_ply_bytes") or 0)
+                mvs_bytes = int(filtered.get("filtered_mvs_bytes") or 0)
+                if (points <= 0 or ply_bytes < points * 28 or mvs_bytes < 64
+                        or filtered.get("mvs_magic") != "MVSI"):
+                    raise RuntimeError(
+                        f"nube OpenMVS filtrada no es reanudable: {filtered}")
+                jobstore.event(
+                    j["id"], "odm_filtered_cloud_resume_verified",
+                    f"nube filtrada verificada: {points:,} puntos; continúa desde odm_filterpoints",
+                    data={"remote_dir": f"/root/gpu-jobs/odm/{name}", **filtered})
+            else:
+                odm_gpu_lane.prepare_opensfm_resume(name)
         else:
             n = odm_gpu_lane.ship_images(proj, name)
         jobstore.update(j["id"],

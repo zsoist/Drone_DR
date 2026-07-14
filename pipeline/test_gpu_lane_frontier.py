@@ -299,6 +299,35 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertIsNone(plan["rerun_from"])
         self.assertIn("--sfm-no-partial", plan["args"])
 
+    def test_odm_execution_can_resume_valid_filtered_cloud_downstream(self):
+        plan = worker.odm_cuda_execution_plan(
+            {
+                "id": "3d-filter-recovery",
+                "spec": {
+                    "sources": ["a", "b"],
+                    "odm_remote_resume": "3d-preserved-safe",
+                    "odm_remote_resume_stage": "odm_filterpoints",
+                },
+            },
+            ["--pc-quality", "medium"],
+        )
+
+        self.assertEqual("odm_filterpoints", plan["rerun_from"])
+        self.assertEqual("filtered_cloud", plan["resume_kind"])
+
+    def test_odm_execution_rejects_unapproved_remote_resume_stage(self):
+        with self.assertRaises(ValueError):
+            worker.odm_cuda_execution_plan(
+                {
+                    "id": "3d-filter-recovery",
+                    "spec": {
+                        "odm_remote_resume": "3d-preserved-safe",
+                        "odm_remote_resume_stage": "opensfm; rm -rf /",
+                    },
+                },
+                [],
+            )
+
     def test_odm_execution_rejects_unsafe_remote_resume_name(self):
         with self.assertRaises(ValueError):
             worker.odm_cuda_execution_plan(
@@ -320,6 +349,20 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertEqual(282000000, evidence["tracks_bytes"])
         command = run.call_args.args[0]
         self.assertIn("3d-preserved-safe/opensfm/tracks.csv", command)
+
+    def test_remote_filtered_cloud_evidence_requires_ply_points_and_mvs_magic(self):
+        output = ("filtered_ply_bytes=1049269665\n"
+                  "filtered_mvs_bytes=2423785757\n"
+                  "filtered_points=37473907\n"
+                  "mvs_magic=MVSI\n")
+        with mock.patch.object(odm_gpu_lane, "_wsl", return_value=output) as run:
+            evidence = odm_gpu_lane.filtered_cloud_artifacts("3d-preserved-safe")
+
+        self.assertEqual(37473907, evidence["filtered_points"])
+        self.assertEqual("MVSI", evidence["mvs_magic"])
+        command = run.call_args.args[0]
+        self.assertIn("scene_dense_dense_filtered.ply", command)
+        self.assertIn("scene_dense_dense_filtered.mvs", command)
 
     def test_odm_resume_skips_transfer_and_reruns_from_opensfm(self):
         with tempfile.TemporaryDirectory() as td:
@@ -361,6 +404,55 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         prepare.assert_called_once_with("3d-preserved-safe")
         self.assertIsNone(remote.call_args.kwargs["rerun_from"])
         self.assertIn("--sfm-no-partial", remote.call_args.args[2])
+
+    def test_odm_filtered_cloud_resume_skips_opensfm_and_starts_filterpoints(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td)
+            (proj / "images").mkdir()
+            (proj / "images" / "one.jpg").write_bytes(b"fixture")
+            job = {
+                "id": "3d-filter-recovery",
+                "spec": {
+                    "sources": ["a", "b"],
+                    "odm_remote_resume": "3d-preserved-safe",
+                    "odm_remote_resume_images": 1,
+                    "odm_remote_resume_stage": "odm_filterpoints",
+                },
+            }
+            resume_evidence = {"images": 1, "features": 1, "matches": 1,
+                               "tracks_bytes": 42}
+            filtered_evidence = {
+                "filtered_ply_bytes": 1049269665,
+                "filtered_mvs_bytes": 2423785757,
+                "filtered_points": 37473907,
+                "mvs_magic": "MVSI",
+            }
+            with (
+                mock.patch.object(odm_gpu_lane, "probe"),
+                mock.patch.object(odm_gpu_lane, "resume_artifacts",
+                                  return_value=resume_evidence),
+                mock.patch.object(odm_gpu_lane, "filtered_cloud_artifacts",
+                                  return_value=filtered_evidence),
+                mock.patch.object(odm_gpu_lane, "prepare_opensfm_resume") as prepare,
+                mock.patch.object(odm_gpu_lane, "ship_images") as ship,
+                mock.patch.object(odm_gpu_lane, "remote_run_argv",
+                                  return_value=["remote"]) as remote,
+                mock.patch.object(odm_gpu_lane, "fetch_outputs",
+                                  return_value=["opensfm", "odm_orthophoto"]),
+                mock.patch.object(odm_gpu_lane, "cleanup"),
+                mock.patch.object(worker.jobstore, "event"),
+                mock.patch.object(worker.jobstore, "update"),
+                mock.patch.object(worker.jobstore, "run_tracked", return_value=0),
+            ):
+                rc = worker.run_odm_cuda(
+                    job, proj, {"args": ["--pc-quality", "medium"], "timeout": 60},
+                    "ultra",
+                )
+
+        self.assertEqual(0, rc)
+        ship.assert_not_called()
+        prepare.assert_not_called()
+        self.assertEqual("odm_filterpoints", remote.call_args.kwargs["rerun_from"])
 
     def test_prepare_opensfm_resume_preserves_only_invalid_reconstruction(self):
         with mock.patch.object(odm_gpu_lane, "_wsl", return_value="RESUME_READY\n") as run:

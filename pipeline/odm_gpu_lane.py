@@ -141,6 +141,41 @@ echo tracks_bytes=$(stat -c%s {base}/opensfm/tracks.csv 2>/dev/null || echo 0)
     return evidence
 
 
+def filtered_cloud_artifacts(name: str) -> dict[str, int | str]:
+    """Measure the completed OpenMVS filter output before a downstream resume.
+
+    OpenMVS can write both final files and then segfault while destructing its
+    large visibility graph.  A recovery may skip that expensive phase only
+    when the binary PLY has a non-empty vertex declaration and the MVS archive
+    carries its native magic header.
+    """
+    name = validate_remote_name(name)
+    base = f"{REMOTE_ODM}/{name}/opensfm/undistorted/openmvs"
+    out = _wsl(f"""
+ply={base}/scene_dense_dense_filtered.ply
+mvs={base}/scene_dense_dense_filtered.mvs
+echo filtered_ply_bytes=$(stat -c%s "$ply" 2>/dev/null || echo 0)
+echo filtered_mvs_bytes=$(stat -c%s "$mvs" 2>/dev/null || echo 0)
+echo filtered_points=$(awk '/^element vertex [0-9]+$/ {{print $3; exit}}' "$ply" 2>/dev/null || true)
+echo mvs_magic=$(LC_ALL=C head -c4 "$mvs" 2>/dev/null || true)
+""", timeout=60, label="auditar nube OpenMVS filtrada")
+    evidence: dict[str, int | str] = {
+        "filtered_ply_bytes": 0,
+        "filtered_mvs_bytes": 0,
+        "filtered_points": 0,
+        "mvs_magic": "",
+    }
+    for line in (out or "").splitlines():
+        key, sep, value = line.strip().partition("=")
+        if not sep or key not in evidence:
+            continue
+        if key == "mvs_magic":
+            evidence[key] = value
+        else:
+            evidence[key] = max(0, int(value or 0))
+    return evidence
+
+
 def prepare_opensfm_resume(name: str) -> None:
     """Archive only the failed reconstruction so OpenSfM can rebuild it.
 
