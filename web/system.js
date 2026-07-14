@@ -111,6 +111,17 @@ main.innerHTML = `
     <div style="overflow-x:auto"><table class="dtable" id="db-table"></table></div>
   </div>`;
 
+function jobRelativeTime(job, now) {
+  if (job?.status === 'queued') return 'en cola';
+  const terminal = ['done', 'error', 'cancelled', 'cancel_failed'].includes(job?.status);
+  const seconds = Number(terminal ? (job?.finished || job?.started) : job?.started);
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  const minutes = Math.max(0, (Number(now) - seconds * 1000) / 60000);
+  return minutes < 60 ? `hace ${Math.max(1, Math.round(minutes))} min`
+    : minutes < 1440 ? `hace ${Math.round(minutes / 60)} h`
+      : `hace ${Math.round(minutes / 1440)} d`;
+}
+
 (async () => {
   let sys = {}, jobs = [];
   try { sys = await (await fetch(`${DATA}/manifest/system.json`)).json(); } catch {}
@@ -175,12 +186,7 @@ main.innerHTML = `
       </div>`).join('') || '<p class="footer-note">Aún no hay trabajos completados.</p>'}`;
 
   // ---------- feed de trabajos recientes ----------
-  const rel = ms => {
-    const m = (Date.now() - ms) / 60000;
-    return m < 60 ? `hace ${Math.max(1, Math.round(m))} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`;
-  };
-  document.getElementById('feed').innerHTML = jobs.slice(0, 9).map(j => {
-    const ts = +((j.id || '').split('-').pop() || NaN);   // job sin id no rompe el feed (mismo blast radius que label)
+  document.getElementById('feed').innerHTML = orderJobsForDisplay(jobs).slice(0, 9).map(j => {
     const stc = { done: 'var(--mint)', running: 'var(--accent)', queued: 'var(--text-3)',
                   error: 'var(--red)', cancelled: 'var(--amber)', cancel_failed: 'var(--red)' }[j.status] || 'var(--text-3)';
     return `<div class="act-row">
@@ -189,7 +195,7 @@ main.innerHTML = `
       <span class="act-l mono">${esc((j.label || j.id || "job").length > 26 ? (j.label || "").slice(-16) : (j.label || j.id || "job"))}</span>
       <span class="spacer" style="flex:1"></span>
       ${j.mins ? `<span class="mono" style="color:var(--text-3);font-size:11px">${j.mins} min</span>` : ''}
-      <span class="mono" style="color:var(--text-3);font-size:11px">${Number.isFinite(ts) ? rel(ts) : ''}</span>
+      <span class="mono" style="color:var(--text-3);font-size:11px">${jobRelativeTime(j, Date.now())}</span>
     </div>`;
   }).join('') || '<p class="footer-note">Sin actividad todavía.</p>';
 
