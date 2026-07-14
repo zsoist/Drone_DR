@@ -229,6 +229,106 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertIn("safe-job/opensfm/features", command)
         self.assertIn("*.features.npz", command)
 
+    def test_multisource_odm_execution_disables_unsafe_partial_merge(self):
+        plan = worker.odm_cuda_execution_plan(
+            {"id": "3d-new", "spec": {"sources": ["a", "b"]}},
+            ["--pc-quality", "high"],
+        )
+
+        self.assertEqual("3d-new", plan["name"])
+        self.assertFalse(plan["resume"])
+        self.assertIsNone(plan["rerun_from"])
+        self.assertIn("--sfm-no-partial", plan["args"])
+
+    def test_odm_execution_can_resume_preserved_opensfm_without_retransfer(self):
+        plan = worker.odm_cuda_execution_plan(
+            {
+                "id": "3d-recovery",
+                "spec": {
+                    "sources": ["a", "b"],
+                    "odm_remote_resume": "3d-preserved-safe",
+                },
+            },
+            ["--pc-quality", "high"],
+        )
+
+        self.assertEqual("3d-preserved-safe", plan["name"])
+        self.assertTrue(plan["resume"])
+        self.assertIsNone(plan["rerun_from"])
+        self.assertIn("--sfm-no-partial", plan["args"])
+
+    def test_odm_execution_rejects_unsafe_remote_resume_name(self):
+        with self.assertRaises(ValueError):
+            worker.odm_cuda_execution_plan(
+                {
+                    "id": "3d-recovery",
+                    "spec": {"odm_remote_resume": "../escape"},
+                },
+                [],
+            )
+
+    def test_remote_odm_resume_evidence_requires_complete_reusable_inputs(self):
+        output = "images=1019\nfeatures=1019\nmatches=1019\ntracks_bytes=282000000\n"
+        with mock.patch.object(odm_gpu_lane, "_wsl", return_value=output) as run:
+            evidence = odm_gpu_lane.resume_artifacts("3d-preserved-safe")
+
+        self.assertEqual(1019, evidence["images"])
+        self.assertEqual(1019, evidence["features"])
+        self.assertEqual(1019, evidence["matches"])
+        self.assertEqual(282000000, evidence["tracks_bytes"])
+        command = run.call_args.args[0]
+        self.assertIn("3d-preserved-safe/opensfm/tracks.csv", command)
+
+    def test_odm_resume_skips_transfer_and_reruns_from_opensfm(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td)
+            (proj / "images").mkdir()
+            (proj / "images" / "one.jpg").write_bytes(b"fixture")
+            job = {
+                "id": "3d-recovery",
+                "spec": {
+                    "sources": ["a", "b"],
+                    "odm_remote_resume": "3d-preserved-safe",
+                    "odm_remote_resume_images": 1,
+                },
+            }
+            evidence = {"images": 1, "features": 1, "matches": 1,
+                        "tracks_bytes": 42}
+            with (
+                mock.patch.object(odm_gpu_lane, "probe"),
+                mock.patch.object(odm_gpu_lane, "resume_artifacts",
+                                  return_value=evidence),
+                mock.patch.object(odm_gpu_lane, "prepare_opensfm_resume") as prepare,
+                mock.patch.object(odm_gpu_lane, "ship_images") as ship,
+                mock.patch.object(odm_gpu_lane, "remote_run_argv",
+                                  return_value=["remote"]) as remote,
+                mock.patch.object(odm_gpu_lane, "fetch_outputs",
+                                  return_value=["opensfm", "odm_orthophoto"]),
+                mock.patch.object(odm_gpu_lane, "cleanup"),
+                mock.patch.object(worker.jobstore, "event"),
+                mock.patch.object(worker.jobstore, "update"),
+                mock.patch.object(worker.jobstore, "run_tracked", return_value=0),
+            ):
+                rc = worker.run_odm_cuda(
+                    job, proj, {"args": ["--pc-quality", "high"], "timeout": 60},
+                    "ultra",
+                )
+
+        self.assertEqual(0, rc)
+        ship.assert_not_called()
+        prepare.assert_called_once_with("3d-preserved-safe")
+        self.assertIsNone(remote.call_args.kwargs["rerun_from"])
+        self.assertIn("--sfm-no-partial", remote.call_args.args[2])
+
+    def test_prepare_opensfm_resume_preserves_only_invalid_reconstruction(self):
+        with mock.patch.object(odm_gpu_lane, "_wsl", return_value="RESUME_READY\n") as run:
+            odm_gpu_lane.prepare_opensfm_resume("3d-preserved-safe")
+
+        command = run.call_args.args[0]
+        self.assertIn("reconstruction.json", command)
+        self.assertIn("recovery_evidence", command)
+        self.assertNotIn("rm -rf", command)
+
     def test_tracked_progress_fields_accepts_detail_without_regressing_progress(self):
         observed = {"progress": 0.21, "detail": "cargando imágenes 10/100"}
 

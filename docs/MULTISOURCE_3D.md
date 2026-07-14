@@ -43,12 +43,16 @@
   trazables pero no aparecen como lugares duplicados. Volar aplica el límite métrico solicitado.
 
 ## Pendiente (honesto — NO validado / diferido)
-0. **Validación viva, todavía no final:** `recon_60b23208db` procesa 1.019 entradas de
-   10 fuentes en ODM CUDA. Snapshot 2026-07-14 12:00 COT: 979/1.019 cámaras, 10/10
-   prefijos activos y 1.181.512 tracks robustos. Esto prueba que todas las fuentes entraron
-   al componente observado, pero no autoriza splat: falta auditar el `reconstruction.json`
-   final persistido con la lógica actual. Después, y sólo si pasa, sigue Frontier 30K y un
-   Grandmaster 40K sobre la misma versión.
+0. **Validación viva, todavía no final:** `recon_60b23208db` completó OpenSfM con 1.011/1.019
+   cámaras en tres componentes. El componente compartido principal tiene 987 cámaras, 10/10
+   prefijos activos y 920.264 puntos; los dos fragmentos restantes son 16 y 8 cámaras de `s9`.
+   ODM intentó fusionarlos, encontró IDs repetidos y terminó con `rc=139` sin OOM, truncando el
+   `reconstruction.json` final. La evidencia reanudable preservada mide exactamente 1.019
+   imágenes, 1.019 features, 1.019 matches y 282.878.995 bytes de tracks. La recuperación
+   archiva sólo el JSON truncado y usa `--sfm-no-partial`, sin `--rerun-from opensfm` porque
+   ese switch borraría los caches. No autoriza splat hasta auditar el JSON final con la lógica
+   actual. Después, y sólo si pasa, sigue Frontier 30K y un Grandmaster 40K sobre la misma
+   versión.
 1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).
 2. **Presupuesto global de frames + dedup INTRA-fuente**: poda hoy es por-fuente. OJO (hallazgo del
    review): NO deduplicar cross-source — esos near-duplicates son el pegamento del co-registro.

@@ -39,6 +39,14 @@ OUTPUT_DIRS = ("opensfm", "odm_report", "odm_georeferencing", "odm_filterpoints"
                "benchmark.txt")
 
 
+def validate_remote_name(name: str) -> str:
+    """Confine every retained/resumed dataset to one direct ODM workdir."""
+    value = str(name or "")
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", value):
+        raise ValueError(f"nombre ODM remoto inválido: {name!r}")
+    return value
+
+
 def probe() -> None:
     """Nodo despierto + imagen odm:gpu presente + GPU visible para docker."""
     ensure_awake()
@@ -97,8 +105,7 @@ def remote_run_argv(name: str, container: str, preset_args: list[str],
 
 def feature_artifact_count(name: str) -> int:
     """Count completed OpenSfM feature files independently of buffered stdout."""
-    if not re.fullmatch(r"[A-Za-z0-9._-]+", str(name or "")):
-        raise ValueError(f"nombre ODM remoto inválido: {name!r}")
+    name = validate_remote_name(name)
     out = _wsl(
         f"find {REMOTE_ODM}/{name}/opensfm/features -type f "
         "-name '*.features.npz' 2>/dev/null | wc -l",
@@ -108,13 +115,56 @@ def feature_artifact_count(name: str) -> int:
 
 def match_artifact_count(name: str) -> int:
     """Count per-image OpenSfM match files during the serialization tail."""
-    if not re.fullmatch(r"[A-Za-z0-9._-]+", str(name or "")):
-        raise ValueError(f"nombre ODM remoto inválido: {name!r}")
+    name = validate_remote_name(name)
     out = _wsl(
         f"find {REMOTE_ODM}/{name}/opensfm/matches -type f "
         "-name '*_matches.pkl.gz' 2>/dev/null | wc -l",
         timeout=30, label="contar coincidencias ODM")
     return max(0, int((out or "0").strip() or 0))
+
+
+def resume_artifacts(name: str) -> dict[str, int]:
+    """Measure the immutable inputs required to resume at OpenSfM."""
+    name = validate_remote_name(name)
+    base = f"{REMOTE_ODM}/{name}"
+    out = _wsl(f"""
+echo images=$(find {base}/images -maxdepth 1 -type f 2>/dev/null | wc -l)
+echo features=$(find {base}/opensfm/features -type f -name '*.features.npz' 2>/dev/null | wc -l)
+echo matches=$(find {base}/opensfm/matches -type f -name '*_matches.pkl.gz' 2>/dev/null | wc -l)
+echo tracks_bytes=$(stat -c%s {base}/opensfm/tracks.csv 2>/dev/null || echo 0)
+""", timeout=60, label="auditar evidencia ODM reanudable")
+    evidence = {"images": 0, "features": 0, "matches": 0, "tracks_bytes": 0}
+    for line in (out or "").splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and key in evidence:
+            evidence[key] = max(0, int(value or 0))
+    return evidence
+
+
+def prepare_opensfm_resume(name: str) -> None:
+    """Archive only the failed reconstruction so OpenSfM can rebuild it.
+
+    Do not use ODM ``--rerun-from opensfm`` here: ODM implements that switch by
+    deleting the entire OpenSfM directory, including the verified feature,
+    match and track caches this recovery exists to preserve.
+    """
+    name = validate_remote_name(name)
+    base = f"{REMOTE_ODM}/{name}/opensfm"
+    out = _wsl(f"""
+set -eu
+test -s {base}/tracks.csv
+test -d {base}/features
+test -d {base}/matches
+mkdir -p {base}/recovery_evidence
+if [ -e {base}/reconstruction.json ]; then
+  stamp=$(date +%s%N)
+  mv {base}/reconstruction.json {base}/recovery_evidence/reconstruction.pre-resume-$stamp.json
+fi
+test ! -e {base}/reconstruction.json
+echo RESUME_READY
+""", timeout=60, label="preparar reanudación OpenSfM")
+    if "RESUME_READY" not in out:
+        raise RuntimeError("el nodo CUDA no confirmó la preparación OpenSfM")
 
 
 def fetch_outputs(proj: Path, name: str) -> list[str]:

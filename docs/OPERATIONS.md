@@ -204,6 +204,15 @@ evidencia generada por un worker anterior al gate detienen el handoff; nunca se 
 fallback al Mac. En el caso de OOM de splat estricto, el único retry automático permitido es
 CUDA `d1→d2` conservando tier, iteraciones y `params_hash`.
 
+ODM CUDA multi-fuente siempre usa `--sfm-no-partial`: el merge interno de reconstrucciones
+parciales puede colisionar IDs de shots/landmarks y terminar con `rc=139`. Si OpenSfM ya dejó
+features, matches y `tracks.csv`, una recuperación desde `opensfm` sólo es válida cuando el
+conteo remoto de los tres artefactos coincide exactamente con las imágenes recién preparadas.
+La recuperación archiva únicamente el `reconstruction.json` truncado y arranca ODM sin
+`--rerun-from opensfm` (esa opción borraría también los caches verificados). Conserva el
+workdir ante otro fallo y sigue obligada a pasar el gate post-ODM; por sí sola nunca autoriza
+ni encola un splat.
+
 Prioridad de implementación/mantenimiento:
 
 1. Mantener power settings, LaunchAgents, OrbStack login y Tunnel sanos.

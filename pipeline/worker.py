@@ -1052,6 +1052,30 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
     return observe
 
 
+def odm_cuda_execution_plan(j: dict, preset_args: list[str]) -> dict:
+    """Resolve a fresh or evidence-backed remote ODM execution."""
+    spec = j.get("spec") if isinstance(j.get("spec"), dict) else {}
+    resume_name = str(spec.get("odm_remote_resume") or "").strip()
+    name = resume_name or str(j["id"]).replace("_", "-")
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+        raise ValueError(f"nombre ODM remoto inválido: {name!r}")
+    args = list(preset_args)
+    sources = spec.get("sources")
+    multi_source = isinstance(sources, list) and len(sources) > 1
+    # ODM's merger can segfault on duplicate landmark/shot IDs. Preserve the
+    # components and let odm_registration audit/select the shared component.
+    if (multi_source or resume_name) and "--sfm-no-partial" not in args:
+        args.append("--sfm-no-partial")
+    return {
+        "name": name,
+        "resume": bool(resume_name),
+        # ODM --rerun-from opensfm deletes features/matches/tracks. Recovery
+        # archives only reconstruction.json and lets normal cache detection run.
+        "rerun_from": None,
+        "args": args,
+    }
+
+
 def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     """Corre la fotogrametria en el nodo CUDA (odm:gpu en el PC). Devuelve rc:
     0 = outputs ya en proj, listos para el publish local; !=0 o excepcion deja
@@ -1060,13 +1084,32 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     contenedor con ella)."""
     import odm_gpu_lane
     odm_gpu_lane.probe()
-    name = j["id"].replace("_", "-")
+    plan = odm_cuda_execution_plan(j, list(preset["args"]))
+    name = plan["name"]
     container = f"odm-gpu-{name[:40]}"
     completed = False
     jobstore.event(j["id"], "odm_cuda", "nodo CUDA verificado — fotogrametria remota",
                    data={"image": "opendronemap/odm:gpu", "preset": preset_name})
     try:
-        n = odm_gpu_lane.ship_images(proj, name)
+        local_images = len([p for p in (proj / "images").iterdir() if p.is_file()])
+        if plan["resume"]:
+            evidence = odm_gpu_lane.resume_artifacts(name)
+            expected = int(j.get("spec", {}).get("odm_remote_resume_images") or local_images)
+            if (local_images != expected or evidence["images"] != expected
+                    or evidence["features"] != expected
+                    or evidence["matches"] != expected
+                    or evidence["tracks_bytes"] <= 0):
+                raise RuntimeError(
+                    "evidencia ODM no coincide con la escena preparada: "
+                    f"local={local_images}, expected={expected}, remote={evidence}")
+            n = expected
+            jobstore.event(
+                j["id"], "odm_cuda_resume_verified",
+                f"reanudación OpenSfM verificada: {n} imágenes con features/matches/tracks",
+                data={"remote_dir": f"/root/gpu-jobs/odm/{name}", **evidence})
+            odm_gpu_lane.prepare_opensfm_resume(name)
+        else:
+            n = odm_gpu_lane.ship_images(proj, name)
         jobstore.update(j["id"],
                         detail=f"2/3 ODM {preset_name} en NVIDIA CUDA · cargando imágenes 0/{n}",
                         stage="odm-features", progress=0.20,
@@ -1096,7 +1139,8 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
             jobstore.update(j["id"], **fields)
 
         rc = jobstore.run_tracked(
-            j["id"], odm_gpu_lane.remote_run_argv(name, container, list(preset["args"])),
+            j["id"], odm_gpu_lane.remote_run_argv(
+                name, container, plan["args"], rerun_from=plan["rerun_from"]),
             timeout=preset["timeout"], line_progress=progress_observer,
             tick=artifact_progress, tick_interval=15.0)
         if rc != 0:
