@@ -205,6 +205,22 @@ class JobObservabilityStoreTests(unittest.TestCase):
             now=1000.0,
         ))
 
+    def test_openmvs_counter_uses_native_eta_without_inventing_cross_subphase_rate(self):
+        telemetry = server.counted_phase_telemetry(
+            "2/3 ODM ultra en NVIDIA CUDA · filtrando profundidad CUDA "
+            "576/996 cámaras · ETA OpenMVS 60 s",
+            "odm-depthmaps",
+            [{"ts": 400.0, "stage": "odm-depthmaps"}],
+            now=1000.0,
+        )
+
+        self.assertEqual(576, telemetry["phase_completed"])
+        self.assertEqual(996, telemetry["phase_total"])
+        self.assertEqual("cameras", telemetry["phase_unit"])
+        self.assertEqual(60, telemetry["eta_remaining_s"])
+        self.assertEqual("openmvs_live", telemetry["eta_source"])
+        self.assertNotIn("phase_items_per_minute", telemetry)
+
     def test_matching_phase_preserves_exact_pair_counter(self):
         row = {
             "id": "3d-match-count", "kind": "3d", "label": "recon_live",

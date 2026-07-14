@@ -820,9 +820,12 @@ def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
     as proof that a job or artifact completed.
     """
     detail_text = str(detail or "")
-    camera_count = (re.search(r"\b(\d+)/(\d+)\s+cámaras registradas\b",
-                              detail_text, re.I)
-                    if stage == "odm-reconstruct" else None)
+    camera_pattern = (r"\b(\d+)/(\d+)\s+cámaras registradas\b"
+                      if stage == "odm-reconstruct" else
+                      r"\b(\d+)/(\d+)\s+cámaras\b"
+                      if stage == "odm-depthmaps" else None)
+    camera_count = (re.search(camera_pattern, detail_text, re.I)
+                    if camera_pattern else None)
     phase_text = detail_text.rsplit("·", 1)[-1]
     counts = ([camera_count.groups()] if camera_count else
               re.findall(r"\b(\d+)/(\d+)\b", phase_text))
@@ -839,9 +842,6 @@ def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
     elapsed = max(0.0, float(now if now is not None else time.time()) - min(starts))
     if elapsed < 10:
         return None
-    rate = completed / elapsed
-    if rate <= 0:
-        return None
     low = detail_text.lower()
     unit = ("cameras" if camera_count else "features" if "feature" in low else
             "images" if "imágenes" in low else "items")
@@ -849,8 +849,16 @@ def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
         "phase_completed": completed,
         "phase_total": total,
         "phase_unit": unit,
-        "phase_items_per_minute": round(rate * 60, 1),
     }
+    native_eta = re.search(r"ETA OpenMVS\s+(\d+)\s+s\b", detail_text, re.I)
+    if native_eta:
+        out.update(eta_remaining_s=int(native_eta.group(1)),
+                   eta_source="openmvs_live")
+        return out
+    rate = completed / elapsed
+    if rate <= 0:
+        return None
+    out["phase_items_per_minute"] = round(rate * 60, 1)
     # OpenSfM may validly finish with fewer registered cameras than submitted.
     # The counter remains useful as measured throughput, but treating the
     # submitted total as a required terminal target fabricates an ETA.

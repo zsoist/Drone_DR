@@ -998,6 +998,44 @@ def odm_cuda_feature_progress(total_images: int, preset_name: str,
                 "progress": round(0.43 + 0.07 * registered_cameras / total, 4),
                 "detail": detail,
             }
+        depthmap = re.search(
+            r"(Estimated|Filtered|Fused) depth-maps\s+(\d+)\s+\(([\d.]+)%",
+            text, re.I)
+        if depthmap:
+            kind, completed_text, pct_text = depthmap.groups()
+            completed_depthmaps = int(completed_text)
+            pct = max(0.0, min(100.0, float(pct_text)))
+            expected_depthmaps = max(
+                1, round(completed_depthmaps * 100 / pct) if pct > 0
+                else best_component_cameras or registered_cameras or total)
+            phase = {
+                "estimated": ("estimando", 0.58, 0.08),
+                "filtered": ("filtrando", 0.66, 0.04),
+                "fused": ("fusionando", 0.70, 0.02),
+            }[kind.lower()]
+            eta = re.search(r"ETA\s+([^,)]+)", text, re.I)
+            eta_s = 0.0
+            if eta:
+                units = {"d": 86400.0, "h": 3600.0, "m": 60.0,
+                         "s": 1.0, "ms": 0.001}
+                eta_s = sum(float(number) * units[unit.lower()]
+                            for number, unit in re.findall(
+                                r"(\d+(?:\.\d+)?)\s*(ms|d|h|m|s)", eta.group(1), re.I))
+            detail = (f"2/3 ODM {preset} en NVIDIA CUDA · {phase[0]} profundidad CUDA "
+                      f"{completed_depthmaps}/{expected_depthmaps} cámaras")
+            if eta and eta_s >= 0:
+                detail += f" · ETA OpenMVS {round(eta_s)} s"
+            return {
+                "stage": "odm-depthmaps",
+                "progress": round(phase[1] + phase[2] * pct / 100, 4),
+                "detail": detail,
+            }
+        if re.search(r"Depthmap resolution set to:", text, re.I):
+            return {
+                "stage": "odm-depthmaps", "progress": 0.58,
+                "detail": (f"2/3 ODM {preset} en NVIDIA CUDA · "
+                           "preparando profundidad CUDA"),
+            }
         if re.search(r"opensfm[^\n]*\breconstruct\b", text, re.I):
             detail = f"2/3 ODM {preset} en NVIDIA CUDA · reconstruyendo cámaras"
             if good_tracks:

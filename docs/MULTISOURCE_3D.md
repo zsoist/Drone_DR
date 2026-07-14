@@ -59,7 +59,9 @@
    pasó, pero el splat sigue cerrado hasta que ODM termine, publique y valide sus productos densos.
    Después siguen exactamente Frontier 30K y un Grandmaster 40K sobre la misma versión.
    `odm-reconstruct` muestra conteo y ritmo medido en cámaras/min, pero no inventa una ETA a 1.019:
-   OpenSfM puede terminar válidamente con menos cámaras registradas que enviadas.
+   OpenSfM puede terminar válidamente con menos cámaras registradas que enviadas. En profundidad,
+   la UI separa `Estimated`/`Filtered`/`Fused depth-maps` y usa la ETA nativa de OpenMVS; no cuenta
+   archivos `.dmap`, porque cada subfase vuelve a escribir variantes y ese total sobrecontaría vistas.
 1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).
 2. **Presupuesto global de frames + dedup INTRA-fuente**: poda hoy es por-fuente. OJO (hallazgo del
    review): NO deduplicar cross-source — esos near-duplicates son el pegamento del co-registro.

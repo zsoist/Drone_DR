@@ -198,6 +198,29 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
                         "1,181,512 tracks robustos")},
             observe("Reconstruction 1: 1 images, 100 points"),
         )
+        self.assertEqual(
+            {"stage": "odm-depthmaps", "progress": 0.58,
+             "detail": "2/3 ODM ultra en NVIDIA CUDA · preparando profundidad CUDA"},
+            observe("Depthmap resolution set to: 768px"),
+        )
+        self.assertEqual(
+            {"stage": "odm-depthmaps", "progress": 0.6333,
+             "detail": ("2/3 ODM ultra en NVIDIA CUDA · estimando profundidad CUDA "
+                        "2/3 cámaras · ETA OpenMVS 5 s")},
+            observe("Estimated depth-maps 2 (66.67%, 10s, ETA 5s)..."),
+        )
+        self.assertEqual(
+            {"stage": "odm-depthmaps", "progress": 0.6733,
+             "detail": ("2/3 ODM ultra en NVIDIA CUDA · filtrando profundidad CUDA "
+                        "1/3 cámaras · ETA OpenMVS 4 s")},
+            observe("Filtered depth-maps 1 (33.33%, 2s, ETA 4s)..."),
+        )
+        self.assertEqual(
+            {"stage": "odm-depthmaps", "progress": 0.7133,
+             "detail": ("2/3 ODM ultra en NVIDIA CUDA · fusionando profundidad CUDA "
+                        "2/3 cámaras · ETA OpenMVS 1 s")},
+            observe("Fused depth-maps 2 (66.67%, 2s, ETA 1s)..."),
+        )
 
     def test_odm_registration_never_calls_disconnected_components_full(self):
         with tempfile.TemporaryDirectory() as td:
