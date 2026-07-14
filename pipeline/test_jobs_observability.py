@@ -153,6 +153,20 @@ class JobObservabilityStoreTests(unittest.TestCase):
             live["detail"],
         )
 
+    def test_reconstruction_detail_exposes_camera_source_and_track_evidence(self):
+        evidence = server.odm_registration_live_telemetry(
+            "2/3 ODM ultra en NVIDIA CUDA · reconstruyendo cámaras · "
+            "285/1019 cámaras registradas · 2/10 fuentes activas · "
+            "1,181,512 tracks robustos")
+
+        self.assertEqual({
+            "cameras_registered": 285,
+            "cameras_total": 1019,
+            "active_sources": 2,
+            "total_sources": 10,
+            "good_tracks": 1181512,
+        }, evidence)
+
     def test_counted_odm_phase_exposes_measured_rate_and_remaining_time(self):
         telemetry = server.counted_phase_telemetry(
             "2/3 ODM ultra en NVIDIA CUDA · extrayendo features 300/600",

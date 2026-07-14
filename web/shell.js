@@ -277,7 +277,11 @@ function jobDataGrid(j) {
   if (hw) cells.push(['PROCESADOR', hw]);
   if (j.images_total) cells.push(['IMÁGENES', j.images_total]);
   else if (j.cameras_registered != null)
-    cells.push(['CÁMARAS', `${j.cameras_registered}/${j.cameras_total || '?'}`]);
+    cells.push(['CÁMARAS', `${j.cameras_registered}/${j.cameras_total || '?'}`, 'registered-cameras']);
+  if (j.active_sources != null && j.total_sources)
+    cells.push(['FUENTES ACTIVAS', `${j.active_sources}/${j.total_sources}`, 'active-sources']);
+  if (j.good_tracks)
+    cells.push(['TRACKS ROBUSTOS', Number(j.good_tracks).toLocaleString(), 'good-tracks']);
   const iterations = j.iterations || j.requested_iterations;
   if (iterations) cells.push(['ITERACIONES', iterations >= 1000
     ? (iterations / 1000) + 'k' : iterations]);
@@ -500,6 +504,9 @@ async function pollJobs(el, every = 2500, onDone = null) {
         j.resume_available ? j.checkpoint_step : '', j.resumed_from_step || '',
         j.current_iteration != null ? 'live-iterations' : '',
         j.phase_items_per_minute != null ? 'counted_phase_live' : '',
+        j.cameras_registered != null ? 'registered-cameras' : '',
+        j.active_sources != null ? 'active-sources' : '',
+        j.good_tracks != null ? 'good-tracks' : '',
         (j.stage_history || []).length].join('|');
       const patchLive = (node, j) => {
         const pct = Number.isFinite(+j.progress) ? Math.round(+j.progress * 100) : null;
@@ -526,6 +533,12 @@ async function pollJobs(el, every = 2500, onDone = null) {
           ? `${Number(j.iterations_per_second).toFixed(1)} iter/s` : null);
         setTxt('[data-live-field="phase-rate"] b', j.phase_items_per_minute
           ? `${Number(j.phase_items_per_minute).toFixed(1)} elementos/min` : null);
+        setTxt('[data-live-field="registered-cameras"] b', j.cameras_registered != null
+          ? `${Number(j.cameras_registered).toLocaleString()} / ${Number(j.cameras_total).toLocaleString()}` : null);
+        setTxt('[data-live-field="active-sources"] b', j.active_sources != null
+          ? `${Number(j.active_sources).toLocaleString()} / ${Number(j.total_sources).toLocaleString()}` : null);
+        setTxt('[data-live-field="good-tracks"] b', j.good_tracks != null
+          ? Number(j.good_tracks).toLocaleString() : null);
         setTxt('[data-live-field="eta"] b', j.eta_remaining_s != null
           ? fmtDur(j.eta_remaining_s) : null);
         const meta = node.querySelectorAll('.jc-meta span')[1];

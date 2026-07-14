@@ -849,6 +849,24 @@ def counted_phase_telemetry(detail: str, stage: str, stage_history: list,
     }
 
 
+def odm_registration_live_telemetry(detail: str) -> dict:
+    """Parse only explicit OpenSfM evidence persisted by the CUDA observer."""
+    text = str(detail or "")
+    out = {}
+    cameras = re.search(r"\b([\d,]+)/([\d,]+)\s+cámaras registradas\b", text, re.I)
+    if cameras:
+        out.update(cameras_registered=int(cameras.group(1).replace(",", "")),
+                   cameras_total=int(cameras.group(2).replace(",", "")))
+    sources = re.search(r"\b([\d,]+)/([\d,]+)\s+fuentes activas\b", text, re.I)
+    if sources:
+        out.update(active_sources=int(sources.group(1).replace(",", "")),
+                   total_sources=int(sources.group(2).replace(",", "")))
+    tracks = re.search(r"\b([\d,]+)\s+tracks robustos\b", text, re.I)
+    if tracks:
+        out["good_tracks"] = int(tracks.group(1).replace(",", ""))
+    return out
+
+
 def derive_odm_progress(log: str, current: float | None = None, cid: str = "",
                         started: float | None = None) -> float | None:
     """Progreso best-effort de un job ODM a partir del log.
@@ -1141,6 +1159,8 @@ def normalize_job_summary(row: dict, latest_done: dict | None = None) -> dict:
         m_img = re.search(r"\((\d+) imagenes\)", str(row.get("detail") or ""))
         if m_img:
             out["images_total"] = int(m_img.group(1))
+        if row.get("status") == "running":
+            out.update(odm_registration_live_telemetry(str(out.get("detail") or "")))
         out["input_mb"] = _proj_input_mb(str(row.get("label") or ""))
         out["fallback"] = bool(meta_matches_job and (meta.get("dense_fallback")
                                or (out["requested_preset"] and out["effective_preset"]

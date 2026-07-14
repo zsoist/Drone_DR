@@ -53,6 +53,11 @@ class SplatFrontierUiContractTests(unittest.TestCase):
                       "elementos/min"):
             self.assertIn(token, self.shell)
 
+    def test_job_cards_show_live_camera_source_and_track_evidence(self):
+        for token in ("active_sources", "total_sources", "good_tracks",
+                      "FUENTES ACTIVAS", "TRACKS ROBUSTOS", "registered-cameras"):
+            self.assertIn(token, self.shell)
+
     def test_job_console_keeps_running_first_then_true_queue_order(self):
         match = re.search(
             r"function orderJobsForDisplay\(jobs\)\s*\{.*?\n\}",
