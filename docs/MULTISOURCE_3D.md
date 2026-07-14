@@ -68,9 +68,10 @@
    puntos en 124,7 s. El paquete final publicó ortofoto/DSM/DTM de 30.539×33.664, nube de 795.450
    puntos y malla de 744.416 vértices; todos los assets requeridos y el navegador pasaron QA.
    `recon_60b23208db` fue promovida explícitamente en `scene_64f22e89f2` y el evento inmutable
-   `odm_publish_browser_qa_completed` abrió el gate de splat. Las únicas aceptaciones siguientes
-   son Frontier 30K desde cero y un Grandmaster 40K sobre la misma versión, ambos CUDA FULL;
-   nunca fallback al Mac.
+   `odm_publish_browser_qa_completed` abrió el gate de splat. Frontier 30K cerró después sobre esa
+   misma versión a CUDA FULL `d1`: 3.236.419 gaussianas, pico 7.755 MiB, SOG de 37.083.215 bytes,
+   publicación y browser QA. La única aceptación posterior pendiente es un Grandmaster 40K sobre
+   la misma versión, también CUDA FULL y nunca con fallback al Mac.
 
    Este documento registra sólo hitos cerrados. La etapa en ejecución, memoria y progreso medido
    viven en **3D → Trabajos** y en los eventos append-only, para no congelar telemetría efímera en

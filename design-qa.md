@@ -6,8 +6,9 @@ Implementation: `web/tresd.js`, `web/shell.js`, `web/style.css`
 
 > Visual acceptance snapshot. Backend evidence advanced on 2026-07-14: Ultra+ 20K is now a
 > measured CUDA run (`d1` OOM → `d2` success), and the gated 1,019-input ODM scene is published
-> with browser QA. Frontier 30K and Grandmaster 40K remain explicitly unmeasured until each
-> CUDA artifact completes its own publication and browser gate.
+> with browser QA. Frontier 30K is now measured at CUDA FULL `d1` with 3,236,419 Gaussians and
+> browser QA. Grandmaster 40K remains explicitly unmeasured until its artifact completes the same
+> publication and browser gate.
 
 ## Visual comparison
 

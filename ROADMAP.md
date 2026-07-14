@@ -38,7 +38,8 @@
   10/10 fuentes, merge `FULL`; recuperación densa post-write clasificada sin OOM.
 - [x] Paquete ODM acumulativo publicado y verificado: ortho/DSM/DTM 30.539×33.664, nube, malla,
   manifest de escena y browser QA; `recon_60b23208db` promovida explícitamente.
-- [ ] Frontier 30K CUDA FULL desde cero sobre la reconstrucción acumulativa validada.
+- [x] Frontier 30K CUDA FULL desde cero: 3.236.419 gaussianas, pico 7.755 MiB, SOG 37,1 MB,
+  publicación y browser QA sobre `recon_60b23208db`.
 - [ ] Un Grandmaster 40K sobre esa misma versión validada, después de publicar y verificar 30K.
 
 ## V4 — Travel mode

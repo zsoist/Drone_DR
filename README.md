@@ -71,8 +71,9 @@ Evidencia viva 2026-07-14 (`DJI_20260712135736_0117_D`, RTX 4060 Ti):
 - Ultra 15K CUDA: 928.4 s end-to-end, 649,150 gaussianas fuente, SOG 8.3 MB, browser gate OK.
 - Ultra+ 20K CUDA: 1,215.4 s end-to-end; `d1` OOM clasificado → `d2` exitoso,
   649,314 gaussianas, pico 1,698 MiB VRAM y `params_hash` persistido.
-- Frontier 30K y Grandmaster 40K siguen sin una corrida de aceptación publicada sobre esta
-  versión acumulativa; la UI los marca como primera medición y no inventa ETA.
+- Frontier 30K CUDA FULL sobre la versión acumulativa: 5.339,4 s de entrenamiento y 5.714,6 s
+  end-to-end, 3.236.419 gaussianas, pico 7.755 MiB VRAM, SOG 37,1 MB, publicación atómica y
+  browser QA. Grandmaster 40K conserva estado de primera medición hasta cerrar su propio gate.
 - La versión acumulativa `recon_60b23208db` (1.019 entradas, 10 fuentes) ya pasó el gate OpenSfM:
   componente compartido de 996 cámaras, 951.994 puntos y aporte válido de 10/10 fuentes. OpenMVS
   produjo 46.731.480 puntos densos; un `rc=139` post-write sin OOM fue recuperado validando

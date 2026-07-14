@@ -137,7 +137,10 @@ telemetría CUDA ya se persisten. Sigue opcional/no universal: `eval:{psnr,ssim,
 El M4 de 16 GB es fallback local sólo para Fast 1K y Medium 2K. La RTX 4060 Ti ha completado
 Cinematic 7K, Ultra 15K y Ultra+ 20K con 238 cámaras a `d2`. El 20K completó en
 1,215.4 s end-to-end tras OOM clasificado en `d1`, con 649,314 gaussianas y pico remoto
-1,698 MiB. 30K/40K siguen sin aceptación publicada: se muestran como primera medición, no ETA.
+1,698 MiB. Frontier 30K completó sobre `recon_60b23208db` (1.019 cámaras) a CUDA FULL `d1`:
+5.339,4 s de entrenamiento, 5.714,6 s end-to-end, 3.236.419 gaussianas, pico 7.755 MiB,
+SOG de 37.083.215 bytes y browser QA. Grandmaster 40K sigue sin aceptación publicada y se
+muestra como primera medición, no como ETA prometida.
 
 ## Config de hardware (`config/hardware.json`)
 
