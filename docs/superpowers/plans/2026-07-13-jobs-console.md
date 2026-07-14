@@ -1,5 +1,7 @@
 # Jobs Operational Console Implementation Plan
 
+> **Completed dated plan.** Current operation and recovery rules are in [../../OPERATIONS.md](../../OPERATIONS.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the stale Jobs cards with a truthful operational console backed by structured events and complete durable logs.
@@ -115,4 +117,3 @@ Open a drawer from each row. Fetch cursor chunks, preserve keyboard focus, suppo
 
 Run: `node --check web/shell.js web/tresd.js && python3 pipeline/test_tresd_static.py`  
 Expected: PASS. Then inspect at 390x844 and desktop through the approved local browser workflow.
-

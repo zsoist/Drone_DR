@@ -1,5 +1,8 @@
 # FLIGHTVERSE Mobile HUD Implementation Plan
 
+> **Completed dated plan.** Retained for implementation provenance; current behavior is documented
+> in [../../FLIGHTVERSE_IMPLEMENTATION.md](../../FLIGHTVERSE_IMPLEMENTATION.md).
+
 > **For Codex:** Execute with test-driven development and verify the rendered touch layout before completion.
 
 **Goal:** Remove mobile HUD collisions and make flight and combat controls readable, reachable, and premium on portrait phones.

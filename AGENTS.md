@@ -17,7 +17,8 @@ curl http://localhost:8790/api/whoami                      # -> {"ok":true,"loca
 curl http://localhost:8790/api/jobs                        # job list
 curl -X POST http://localhost:8790/api/search -d '{"q":"selva verde"}'   # semantic search
 curl -X POST http://localhost:8790/api/odm    -d '{"clip_id":"...","preset":"alta"}'    # premium ODM video route
-curl -X POST http://localhost:8790/api/splat  -d '{"clip_id":"...","preset":"ultra"}'   # Metal/MPS Ultra splat
+curl -X POST http://localhost:8790/api/splat  -d '{"clip_id":"...","preset":"medium","backend":"metal"}'
+curl -X POST http://localhost:8790/api/splat  -d '{"clip_id":"recon_...","preset":"frontier","backend":"cuda","backend_policy":"strict","resolution":"auto"}'
 ```
 
 The **preview browser pointed at `http://localhost:8790`** is also trusted — pages
@@ -72,9 +73,9 @@ python3 pipeline/ops_status.py        # one-shot 24/7 ops audit
 python3 pipeline/external_probe.py    # public health + HTML + video Range
 ```
 HTML is no-store. The server replaces each placeholder `?v=` with the asset's
-exact `st_mtime_ns`; matching JS/CSS URLs are immutable. Agents do not need to
-bump versions manually. Unversioned/mismatched code revalidates; vendored
-libraries cache for 24h.
+exact `st_mtime_ns`; matching JS/CSS URLs are immutable. Even so, every batch that
+edits `web/` must run `python3 pipeline/bump_web_version.py`: it refreshes explicit
+asset references and regenerates gzip sidecars. Vendored libraries cache for 24h.
 
 ## 3D acceptance checks for agents
 

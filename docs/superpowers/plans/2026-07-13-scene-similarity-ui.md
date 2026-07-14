@@ -1,5 +1,7 @@
 # Scene Similarity UI Implementation Plan
 
+> **Completed dated plan.** Retained for design/implementation provenance; server gates remain authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make measured same-site compatibility visible and prevent cross-zone flights from being selected in the existing scene-improvement modal.

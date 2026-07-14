@@ -23,12 +23,19 @@
 - [x] ✅ Worker desacoplado + cola SQLite + progreso vivo + cancel + abort-on-nan
 - [x] ✅ Visores nube/malla/splat + mediciones (distancia/área/volumen/perfil/comparar)
 - [x] ✅ Página pública compartible + exports (GeoTIFF, GeoJSON, PLY, OBJ, SPLAT)
-- [x] ✅ OpenSplat Metal/MPS productivo: Medium 2k, Cinematic 7k, Ultra 15k bounded + quality gate + browser gate
+- [x] ✅ Fast 1K/Medium 2K local en Metal/CPU; Cinematic 7K, Ultra 15K, Ultra+ 20K,
+  Frontier 30K y Grandmaster 40K en RTX CUDA estricto, con quality/browser gates
 - [x] ✅ .ksplat export + historial versionado: current y history seleccionables en 3D/share/Splat Lab
 - [x] Browser gate: jobs 3d/splat no se marcan done sin QA real en Chrome headless ✅ 2026-07-05
 - [x] ✅ Alta ODM optimizado para video nadir: 3072px, dense estable, DSM/ortho/nube/splat como producto principal, sin malla full cara por defecto
 - [ ] WebODM ortomosaico (fotos JPG/DNG) — opcional, ODM directo ya cubre video DJI
 - [ ] Captura orbital/oblicua dedicada para splats de fachada y malla full 3D premium
+
+### Validación CUDA vigente (2026-07-14)
+
+- [x] 7K, 15K y 20K reales sobre 238 cámaras; 20K verificó retry CUDA `d1→d2` por OOM.
+- [ ] Frontier 30K desde cero sobre la reconstrucción acumulativa de 1.019 entradas, sólo después del gate final ODM.
+- [ ] Un Grandmaster 40K sobre esa misma versión validada, después de publicar y verificar 30K.
 
 ## V4 — Travel mode
 - [ ] Diario de viaje AI por lugar/fecha

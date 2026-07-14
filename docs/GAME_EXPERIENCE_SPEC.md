@@ -1,5 +1,9 @@
 # AeroBrain: Experiencia de Juego v1 — "Vuela tus propios mapas"
 
+> **Spec histórico/superseded.** La tesis DSM=terreno se conserva, pero FLIGHTVERSE ya
+> implementó el slice y migró a three r180 + Spark 2.1. Ver
+> [FLIGHTVERSE_IMPLEMENTATION.md](FLIGHTVERSE_IMPLEMENTATION.md) y [GAME_ENGINE.md](GAME_ENGINE.md).
+
 > PLAN (no build). Congelado 2026-07-11. Tab nuevo: **Hangar**.
 > Prime directive heredada: la experiencia solo promete lo que el backend
 > demuestra — los "mapas cargados" son TUS modelos procesados, no assets ajenos.

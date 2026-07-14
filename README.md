@@ -24,7 +24,8 @@ SD card ──ingest──▶ drone-vault (SSD 1TB)          Mac Mini M4 · cont
                 https://vuelos.metislab.work
 ```
 
-**Por qué no R2/VPS:** el M4 ya es un server 24/7 con 759GB libres. Cloudflare
+**Por qué no R2/VPS:** el M4 ya es un server 24/7 con ~598 GiB libres
+(medido 2026-07-14). Cloudflare
 Tunnel sirve el vault directo — storage $0, egress $0, sin tarjeta. R2 queda
 como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9GB free tier).
 
@@ -53,22 +54,25 @@ como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9G
 
 ## 3D pipeline actual
 
-El camino premium de video DJI ahora es local y gratis:
+El control, el vault y la publicación son locales; el cómputo premium usa el PC RTX de la LAN:
 
 1. `odm_prep.py` extrae frames con VideoToolbox, filtra blur/duplicados y escribe GPS EXIF desde SRT.
 2. Worker encola ODM en SQLite y corre Docker separado del server web. Reiniciar la web no mata jobs.
-3. Preset `alta` usa 3072px, `pc-quality high`, `feature-quality high`, DSM/DTM/ortho, nube densa y `--skip-3dmodel`. Para vuelos nadir, la malla full 3D es secundaria; nube, DSM, ortho y splat son el producto principal.
+3. Preset `alta` usa 3072px, `pc-quality high`, `feature-quality high`, DSM/DTM/ortho y nube densa. La ruta remota CUDA puede producir malla completa para capturas orbitales/oblicuas; para nadir, DSM, ortho, nube y splat siguen siendo el producto principal.
 4. `tresd_publish.py` publica ortho/DSM/hillshade WebP con feather alpha, DSM binario para mediciones, nube PLY gzip, malla viewer re-centrada si existe, QA y `system.json` atómico.
 5. El contrato único de splat define Fast 1K y Medium 2K para Apple Metal/CUDA. Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K y Grandmaster 40K son NVIDIA CUDA estrictos: no bajan de tier ni caen al Mac. `auto` prueba resolución completa y sólo reintenta `-d2` tras OOM CUDA clasificado.
 6. Publicación de splats es atómica: current se archiva en `splats/history/`, se genera SOG, se reconstruye el índice y el gate de navegador debe pasar antes de marcar `done`.
 7. El viewer se verifica con matriz real: `share.html` y `tresd.html` en mobile, iPad y desktop deben renderizar canvas, exponer versiones, no desbordar horizontalmente y permitir macro zoom medible.
 
-Evidencia viva 2026-07-13 (`DJI_20260712135736_0117_D`, RTX 4060 Ti):
+Evidencia viva 2026-07-14 (`DJI_20260712135736_0117_D`, RTX 4060 Ti):
 
 - ODM `alta`: 238/238 cámaras, DSM/DTM/ortho/nube/malla, browser gate OK.
 - Cinematic 7K CUDA: 435.5 s end-to-end, 238 cámaras, `-d2`.
-- Ultra 15K CUDA: 928.4 s end-to-end, 704,495 gaussianas fuente, SOG 8.3 MB, browser gate OK.
-- 20K/30K/40K muestran proyecciones explícitas desde esa medición hasta reunir corridas reales; nunca se presentan como tiempos medidos.
+- Ultra 15K CUDA: 928.4 s end-to-end, 649,150 gaussianas fuente, SOG 8.3 MB, browser gate OK.
+- Ultra+ 20K CUDA: 1,215.4 s end-to-end; `d1` OOM clasificado → `d2` exitoso,
+  649,314 gaussianas, pico 1,698 MiB VRAM y `params_hash` persistido.
+- Frontier 30K y Grandmaster 40K siguen sin una corrida de aceptación publicada sobre esta
+  escena; la UI los marca como primera medición y no inventa ETA.
 
 ## Sitios que mejoran con el tiempo
 
@@ -98,6 +102,12 @@ Servicios launchd: `com.aerobrain.web` (:8790) · `com.aerobrain.worker`
 10 cores/MPS; durante reproducción ODM baja a 7 cores y OpenSplat a background,
 restaurándose tras 45 s. Runbook:
 [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+## Documentación
+
+El índice [docs/README.md](docs/README.md) clasifica cada documento como contrato actual,
+evidencia medida, runbook o snapshot histórico. Empieza por `SPEC.md` para producto,
+`docs/SPLAT_PIPELINE.md` para el trainer y `docs/MULTISOURCE_3D.md` para escenas acumulativas.
 
 ## Roadmap
 V1 ✅ pipeline + Flight Deck live · V3 ✅ SHIPPED: fotogrametría ODM completa

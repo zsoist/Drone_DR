@@ -1,5 +1,7 @@
 # Incremental Scene Versions Implementation Plan
 
+> **Completed dated plan.** The current scene contract is [../../MULTISOURCE_3D.md](../../MULTISOURCE_3D.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let one real-world place improve over time by combining compatible videos/photos into immutable reconstruction versions and promoting the best valid version.
@@ -119,4 +121,3 @@ Allow opening old/new project artifacts and promoting a ready FULL version. A PA
 
 Run: `node --check web/tresd.js && python3 pipeline/test_tresd_static.py && python3 pipeline/browser_matrix.py <validated_reconstruction_id>`  
 Expected: syntax/static PASS and browser matrix PASS at mobile, tablet, and desktop.
-

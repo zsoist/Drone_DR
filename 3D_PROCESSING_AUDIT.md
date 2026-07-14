@@ -1,7 +1,7 @@
 # AeroBrain 3D Processing Audit
 
 > **[2026-07-05 · SUPERSEDED]** Auditoría histórica (point-in-time). El estado vivo está en
-> [3D_FRONTIER_AUDIT.md](3D_FRONTIER_AUDIT.md). De los hallazgos de aquí ya se resolvieron:
+> [docs/SPLAT_PIPELINE.md](docs/SPLAT_PIPELINE.md). De los hallazgos de aquí ya se resolvieron:
 > P1 splat-not-premium (publish atómico + quality gate + ksplat; Metal/MPS productivo), P1 QA vacío
 > (fallback área/GSD + browser gate), P2 stale dirs (limpieza .training + odm huérfanos),
 > P2 HEAD miente tamaño (espejado), P2 storage frontier (COPC en preset alta), P2 docs stale

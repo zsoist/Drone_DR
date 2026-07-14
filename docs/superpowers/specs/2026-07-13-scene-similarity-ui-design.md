@@ -1,5 +1,7 @@
 # Scene Similarity UI Design
 
+> **Implemented dated design.** Retained as acceptance provenance; backend distance gates remain authoritative.
+
 ## Outcome
 
 The existing “Mejorar esta escena” modal will make the same-site boundary visible before a user submits work. Flights with measured centers within 500 m of the stable site anchor remain selectable and read as `mismo sitio`. Flights outside that radius remain visible for traceability, read as `otro sitio`, and cannot be selected into this version.

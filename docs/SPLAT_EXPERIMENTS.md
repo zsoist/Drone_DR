@@ -1,5 +1,9 @@
 # SPLAT_EXPERIMENTS — resultados medidos (held-out)
 
+> **Dataset experimental congelado (MPS/OpenSplat, 2026-07-11).** Sigue siendo evidencia
+> válida para esas corridas, pero no prescribe el backend premium actual. CUDA de producción y
+> sus tiers viven en [SPLAT_PIPELINE.md](SPLAT_PIPELINE.md).
+
 > Regla: ningún cambio de calidad shippea sin número antes/después de este
 > harness. Los negativos se registran, nunca se borran. Cada fila tiene su
 > `run.json` con `params_hash` en `vault/eval/<cid>/<run_id>/`.

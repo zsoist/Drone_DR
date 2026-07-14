@@ -1,5 +1,8 @@
 # Truthful Scene Operations — Approved Design
 
+> **Implemented dated design.** Current operational and trainer contracts are
+> [../../OPERATIONS.md](../../OPERATIONS.md) and [../../SPLAT_PIPELINE.md](../../SPLAT_PIPELINE.md).
+
 **Date:** 2026-07-13  
 **Status:** Approved  
 **Product objective:** Build the most accurate stable representation this Mac can produce from several videos and photos of the same place, while preserving provenance and allowing the place to improve through versioned reprocessing over time.
@@ -76,4 +79,3 @@ Automated analysis may create a structured `diagnosis` event with cause, confide
 - Claims that Cinematic/Ultra always fit 16 GB.
 - Automatic merging based only on geographic proximity.
 - Replacing OpenSplat in this delivery; the measured pose/appearance limitations remain documented inputs to a future trainer decision.
-

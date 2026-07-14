@@ -1,5 +1,9 @@
 # FLIGHTVERSE — UI Audit (Fase 0)
 
+> **Baseline histórica previa al overhaul.** Las referencias a r160/GS3D y los gaps de UI
+> no describen el producto actual. El estado implementado vive en
+> [FLIGHTVERSE_IMPLEMENTATION.md](FLIGHTVERSE_IMPLEMENTATION.md) y [GAME_ENGINE.md](GAME_ENGINE.md).
+
 > Baseline previa a construir /mundo. Cada hallazgo: severidad, causa raíz
 > (selector), fix previsto, test de regresión. Screenshots vía pane con sesión.
 

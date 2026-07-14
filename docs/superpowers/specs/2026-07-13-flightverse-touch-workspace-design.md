@@ -1,5 +1,7 @@
 # FLIGHTVERSE Touch Workspace Design
 
+> **Implemented dated design.** Retained as acceptance provenance.
+
 ## Problem
 
 On touch devices, the flight menu closes after every action, the combat panel does not prove that a shot was accepted, and the image editor covers the scene it edits. The panels are fixed sheets, so the operator cannot move them away from the subject.

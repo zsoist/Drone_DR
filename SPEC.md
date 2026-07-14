@@ -4,14 +4,25 @@
 en inteligencia: mapas, detección de objetos, escenas 3D y diarios de viaje.
 
 ## Arquitectura
-- **Mac Mini M4** = compute: ingesta SD, ffmpeg/VideoToolbox, ODM Docker, OpenSplat Metal/MPS, YOLO (MPS)
+- **Mac Mini M4** = control plane y cómputo local: ingesta SD, ffmpeg/VideoToolbox,
+  API/SQLite/vault/publicación/gates, ODM local cuando corresponde, OpenSplat Fast 1K/Medium 2K
+  en Metal/CPU y YOLO (MPS)
+- **PC RTX 4060 Ti + WSL2** = acelerador desechable: ODM CUDA y Nerfstudio/gsplat estricto para
+  Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K y Grandmaster 40K. Nunca es autoridad de publicación.
 - **Cloudflare** = SOLO túnel + dominio (vuelos.metislab.work → localhost:8790). Sin Pages ni R2: el media se sirve del SSD local con HTTP Range + gzip sidecars — $0/mes real. (Actualizado 2026-07-05; ver 3D_PROCESSING_AUDIT.md)
 - **drone-vault** (`/Volumes/SSD/drone-vault/`) = datos, fuera del repo
 
 ## 3D contract
-- ODM runs locally from video frames, not WebODM SaaS: SRT → EXIF GPS → OpenSfM/OpenMVS → DSM/DTM/ortho/cloud.
-- Preset `alta` is the default premium video route: stable dense products and `--skip-3dmodel`; full mesh belongs to oblique/orbit captures, not short nadir video.
-- Gaussian splats are first-class outputs: OpenSplat Medium/Cinematic/Ultra, Metal/MPS backend, atomic publish, `.ksplat`, history versions, Chrome browser gate.
+- ODM runs from video frames, not WebODM SaaS: SRT → EXIF GPS → OpenSfM/OpenMVS →
+  DSM/DTM/ortho/cloud/mesh. El worker elige Mac/OrbStack o el nodo CUDA según el contrato del job.
+- Preset `alta` is the stable local video route and may use `--skip-3dmodel` for nadir.
+  Remote CUDA Ultra is the full-product route for large orbital/oblique scene versions.
+- Gaussian splats are first-class outputs. Fast 1K/Medium 2K pueden correr localmente;
+  7K–40K son CUDA estrictos, con `d1→d2` sólo tras OOM clasificado y sin fallback al Mac.
+  Publicación atómica, SOG/legacy formats, history versions, checksums y Chrome browser gate.
+- Una escena estable conserva versiones `recon_<hash>` inmutables. Una fuente sólo cuenta como
+  integrada si pertenece al componente compartido elegido y supera el gate por-fuente; no se
+  auto-entrena ningún splat antes de auditar el `reconstruction.json` final.
 - Done jobs must have real artifacts and QA. No empty QA, no stale artifact links, no current/history path confusion.
 
 ## Principios

@@ -1,5 +1,9 @@
 # Spec de migración de trainer — investigación con criterio PRE-declarado
 
+> **Investigación histórica centrada en MPS.** Su descarte de splatfacto aplicaba al Mac,
+> no al nodo NVIDIA. El producto vigente usa Nerfstudio/gsplat en RTX CUDA para 7K–40K y
+> conserva OpenSplat local sólo para Fast/Medium. Ver [SPLAT_PIPELINE.md](SPLAT_PIPELINE.md).
+
 > Congelado 2026-07-11, ANTES de mirar candidatos (después ya no es pre-declarado).
 > Motivos con evidencia: 2.1 pose cross-source (firma de ojo escena 3, n=1 +
 > corroboración indirecta — peso honesto) y SH-desde-step-0 (el 2.0 demostró que

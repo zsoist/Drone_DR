@@ -1,5 +1,9 @@
 # Bug Hunt Backlog — per-tab (findings verificados NO críticos pendientes)
 
+> Estado revisado 2026-07-14. Las secciones P0/MPS son el rastro forense que termina en
+> **RESUELTO**; no son incidentes activos. Los pendientes reales son sólo los ítems no
+> cerrados/reclasificados y los gates CUDA/escena enlazados desde [README.md](../README.md).
+
 ## P0 — regresión ambiental de memoria MPS (2026-07-11, descubierta por la baseline)
 - [P0][producto] **El pipeline de HOY no puede reproducir el artefacto que shippeó el 7-jul.**
   Cinematic sobre proj_...133809_0101_D: 7-jul pasó (3502s, 7000 steps, ~950k gaussianas,

@@ -40,7 +40,8 @@ static/video Range            SQLite jobs.db
                               |
                      worker único launchd
                        |             |
-                  ODM/OrbStack   OpenSplat MPS
+              Mac/OrbStack      SSH/WSL2 PC RTX
+              ODM + 1K/2K       ODM CUDA + gsplat 7K–40K
 ```
 
 | Servicio | LaunchAgent | Función |
@@ -195,6 +196,13 @@ Campaña CUDA: usar **3D → Procesamiento → Campaña CUDA**. El dry-run enume
 activos/modelos sueltos, cámaras, bytes, tier actual, nodo, entorno CUDA y disco. La confirmación
 es todo-o-nada y encola jobs strict sequentiales; `auto` conserva tier y sólo pasa `d1→d2` por
 OOM CUDA clasificado. Nunca reiniciar worker mientras exista un job `queued|running`.
+
+Gate post-ODM para escenas multi-fuente: antes de encolar un splat, auditar el
+`opensfm/reconstruction.json` persistido con la lógica actual de componente compartido.
+Exigir componente elegido, cámaras exactas y aporte por prefijo. `PARTIAL`, archivo ausente o
+evidencia generada por un worker anterior al gate detienen el handoff; nunca se compensan con
+fallback al Mac. En el caso de OOM de splat estricto, el único retry automático permitido es
+CUDA `d1→d2` conservando tier, iteraciones y `params_hash`.
 
 Prioridad de implementación/mantenimiento:
 

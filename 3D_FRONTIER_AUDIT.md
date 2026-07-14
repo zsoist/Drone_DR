@@ -1,5 +1,10 @@
 # AeroBrain 3D Frontier Audit
 
+> **Snapshot histórico (2026-07-05–07).** Conserva evidencia de la era OpenSplat/MPS.
+> No es el contrato operativo actual. Para estado vigente usa
+> [README.md](README.md), [docs/SPLAT_PIPELINE.md](docs/SPLAT_PIPELINE.md) y
+> [docs/MULTISOURCE_3D.md](docs/MULTISOURCE_3D.md).
+
 Date: 2026-07-05 (última pasada: noche, post-Codex + hardening Claude)
 
 Scope: ODM 3D modeling, DSM/point-cloud publishing, Gaussian splatting, Mac Mini M4 efficiency, vault integrity, browser delivery.

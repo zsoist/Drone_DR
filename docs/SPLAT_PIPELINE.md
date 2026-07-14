@@ -1,7 +1,7 @@
-# SPLAT_PIPELINE — trainer y política estable (audit 2026-07-13)
+# SPLAT_PIPELINE — trainer y política estable (audit 2026-07-14)
 
-> Auditado contra `956558b` (2026-07-11). Cada afirmación viene de `--help` real,
-> `CMakeCache.txt` o file:line — nada de docs upstream.
+> Contrato vigente auditado contra `4dbfb2a2` y el manifest vivo del 2026-07-14.
+> Las secciones OpenSplat describen el fallback local; el producto premium usa CUDA.
 
 ## Identidad
 
@@ -9,7 +9,7 @@ El contrato de producción tiene dos familias de trainer:
 
 | Build | Runtime (CMakeCache) | Uso |
 |---|---|---|
-| `splat/OpenSplat/build-mps/opensplat` | **MPS** (Metal) | Default en este M4 |
+| `splat/OpenSplat/build-mps/opensplat` | **MPS** (Metal) | Fast 1K/Medium 2K local |
 | `splat/OpenSplat/build/opensplat` | CPU | Fallback (`--cpu`) |
 | PC WSL2 `nerfstudio-splatfacto` + gsplat 1.4 | CUDA 12.4 / RTX 4060 Ti | Único camino 7K–40K |
 
@@ -125,13 +125,15 @@ con split.
 ```
 
 El run también se añade a `reconstruction.splat_runs[]` y, si pertenece a una escena,
-a las métricas de esa versión. Pendiente: `params_hash`, `eval:{psnr,ssim,lpips}`.
+a las métricas de esa versión. `params_hash`, `trainer`, `stage_timings`, intentos y
+telemetría CUDA ya se persisten. Sigue opcional/no universal: `eval:{psnr,ssim,lpips}`.
 
 ## Qué significa “el Mac es capaz”
 
 El M4 de 16 GB es fallback local sólo para Fast 1K y Medium 2K. La RTX 4060 Ti ha completado
-Cinematic 7K y Ultra 15K con 238 cámaras a `d2`; 20K/30K/40K se proyectan desde la medición
-hasta tener muestras propias. Una proyección siempre se etiqueta y jamás sustituye telemetría.
+Cinematic 7K, Ultra 15K y Ultra+ 20K con 238 cámaras a `d2`. El 20K completó en
+1,215.4 s end-to-end tras OOM clasificado en `d1`, con 649,314 gaussianas y pico remoto
+1,698 MiB. 30K/40K siguen sin aceptación publicada: se muestran como primera medición, no ETA.
 
 ## Config de hardware (`config/hardware.json`)
 

@@ -1,5 +1,8 @@
 # FLIGHTVERSE Touch Workspace Implementation Plan
 
+> **Completed dated plan.** Retained for implementation provenance; current behavior is documented
+> in [../../FLIGHTVERSE_IMPLEMENTATION.md](../../FLIGHTVERSE_IMPLEMENTATION.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make mobile flight panels persistent, draggable and preview-friendly, with verified working weapons.

@@ -4,6 +4,10 @@ Date: 2026-07-13
 Reference: user-provided Estudio 3D configuration screenshot  
 Implementation: `web/tresd.js`, `web/shell.js`, `web/style.css`
 
+> Visual acceptance snapshot. Backend evidence advanced on 2026-07-14: Ultra+ 20K is now a
+> measured CUDA run (`d1` OOM → `d2` success); Frontier 30K and Grandmaster 40K remain
+> explicitly unmeasured until the gated 1,019-input scene finishes ODM.
+
 ## Visual comparison
 
 ![Reference and implemented CUDA quality UI](docs/qa/2026-07-13-cuda-studio-comparison.png)

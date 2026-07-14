@@ -1,5 +1,9 @@
 # FLIGHTVERSE — Decisión de renderer (P1)
 
+> **Snapshot del gate inicial.** La decisión r160 + GaussianSplats3D 0.4.7 fue
+> superada por la implementación unificada three r180 + Spark 2.1. Consulta
+> [GAME_ENGINE.md](GAME_ENGINE.md) para el contrato actual; la tabla se conserva como evidencia.
+
 > Gate corrido 2026-07-11 sobre la escena 1 real (DJI_20260704160358_0104_D,
 > Niza · Bogotá: DSM+orto+splat+track completos). Evidencia:
 > `qa/DJI_20260704160358_0104_D-flightverse-spike.png` + reporte del gate CDP

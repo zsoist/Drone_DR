@@ -1,5 +1,9 @@
 # CUDA Splat Frontier Design
 
+> **Approved dated design.** Current measured acceptance status lives in
+> [../../../ROADMAP.md](../../../ROADMAP.md); the stable trainer contract is
+> [../../SPLAT_PIPELINE.md](../../SPLAT_PIPELINE.md).
+
 **Date:** 2026-07-13
 **Status:** Approved
 **Scope:** Mac Mini M4 orchestration, Windows/WSL RTX 4060 Ti execution, 15K/20K/30K Gaussian splat tiers, UI, observability, lifecycle, bulk reprocessing, tests, and operations documentation.

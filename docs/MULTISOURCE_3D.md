@@ -1,4 +1,4 @@
-# Multi-fuente 3D y escenas incrementales — estado (2026-07-13)
+# Multi-fuente 3D y escenas incrementales — estado (2026-07-14)
 
 ## Validado empíricamente ✅
 - **Fusión funciona** con fuentes compatibles: test 0103+0104 (aéreo+aéreo, misma sesión, 31m,
@@ -18,7 +18,9 @@
 
 ## Enviado
 - odm_prep multi-fuente (--sources/--photos, prefijo por fuente, geotag por track, swap atómico).
-- worker.odm_registration: merge report honesto (submitted/registered/ratio, fusionó=≥5 img Y ≥0.6).
+- `worker.odm_registration`: evalúa todos los componentes, elige el mejor componente
+  compartido y reporta `submitted/registered/ratio` por prefijo. Una fuente cuenta sólo si
+  tiene ≥5 cámaras y ratio ≥0.6 dentro de ese mismo componente.
 - Gate: partial_merge → no auto-encolar splat phased. Modelo siempre sobrevive (label, no hard-fail).
 - UI: modal Estudio 3D (multi-select por lugar, fotos, preset, phased). Score predictivo ELIMINADO;
   avisos de compatibilidad reales (suelo+aéreo, cross-sesión, alturas dispares).
@@ -41,6 +43,12 @@
   trazables pero no aparecen como lugares duplicados. Volar aplica el límite métrico solicitado.
 
 ## Pendiente (honesto — NO validado / diferido)
+0. **Validación viva, todavía no final:** `recon_60b23208db` procesa 1.019 entradas de
+   10 fuentes en ODM CUDA. Snapshot 2026-07-14 12:00 COT: 979/1.019 cámaras, 10/10
+   prefijos activos y 1.181.512 tracks robustos. Esto prueba que todas las fuentes entraron
+   al componente observado, pero no autoriza splat: falta auditar el `reconstruction.json`
+   final persistido con la lógica actual. Después, y sólo si pasa, sigue Frontier 30K y un
+   Grandmaster 40K sobre la misma versión.
 1. ~~video+foto e2e~~ ✅ HECHO (test #3, 3/3 fotos, 24k matches). Falta: fotos de celular (otra cámara).
 2. **Presupuesto global de frames + dedup INTRA-fuente**: poda hoy es por-fuente. OJO (hallazgo del
    review): NO deduplicar cross-source — esos near-duplicates son el pegamento del co-registro.

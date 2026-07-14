@@ -1,5 +1,8 @@
 # Truthful Stability Implementation Plan
 
+> **Completed dated plan for the MPS era.** Current CUDA and fallback contracts are in
+> [../../SPLAT_PIPELINE.md](../../SPLAT_PIPELINE.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace false preflight certainty with evidence-based decisions and make ODM Alta plus Gaussian Cinematic/Ultra deliver the best available artifact with explicit provenance.
@@ -136,4 +139,3 @@ Keep the selected phased fields through enqueue and worker completion. Build com
 
 Run: `python3 pipeline/test_smoke.py && node --check web/tresd.js`  
 Expected: PASS.
-

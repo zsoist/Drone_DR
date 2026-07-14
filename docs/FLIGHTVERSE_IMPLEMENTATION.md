@@ -1,5 +1,8 @@
 # FLIGHTVERSE — Ledger de implementación
 
+> **Ledger acumulativo.** Las decisiones tempranas quedan como historial; cuando una entrada
+> contradiga otra, manda la versión más nueva y el contrato actual de [GAME_ENGINE.md](GAME_ENGINE.md).
+
 > Rama: `feat/flightverse-v2` (desde main limpio, commit 64 de main).
 > Spec completo: en el prompt del assignment (47 secciones). Este ledger es la
 > memoria de ejecución entre sesiones: estado real, decisiones con razón, y el

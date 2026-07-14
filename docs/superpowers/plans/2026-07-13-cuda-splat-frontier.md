@@ -1,5 +1,8 @@
 # CUDA Splat Frontier Implementation Plan
 
+> **Dated execution plan (2026-07-13).** Most implementation tasks are shipped; unchecked prose
+> is not live status. Current acceptance status is in [../../../ROADMAP.md](../../../ROADMAP.md).
+
 > **For Codex:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Apply superpowers:test-driven-development for every behavior change and superpowers:verification-before-completion before declaring success.
 
 **Goal:** Make Mac-orchestrated RTX Gaussian splat jobs reliable and truthful across every entry point, add strict CUDA Ultra 15K / Ultra+ 20K / Frontier 30K / Grandmaster 40K tiers, expose accurate backend-specific estimates and execution details in a premium UI, build progressive multi-video site models with 100/200/400/600/1,000 m altitude products for Estudio 3D and Mundo, and validate the full path on the real RTX 4060 Ti.

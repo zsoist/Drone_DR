@@ -1,5 +1,7 @@
 # FLIGHTVERSE Mobile HUD — Design Specification
 
+> **Implemented dated design.** Retained as acceptance provenance.
+
 **Date:** 2026-07-13  
 **Status:** Approved
 

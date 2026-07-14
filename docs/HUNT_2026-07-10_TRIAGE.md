@@ -1,5 +1,8 @@
 # Hunt masivo 2026-07-10 — triage (workflow wf_e898a340-82c, cortado por token limit)
 
+> **Snapshot histórico.** Los números de línea y estados pertenecen a ese corte. Para
+> pendientes vigentes usa [BUGHUNT_BACKLOG.md](BUGHUNT_BACKLOG.md) y los tests actuales.
+
 56 findings de finders (verificación adversarial parcial — triar antes de aplicar).
 RESUME del hunt: Workflow({scriptPath: ".../aerobrain-massive-hunt-wf_e898a340-82c.js", resumeFromRunId: "wf_e898a340-82c"})
 
