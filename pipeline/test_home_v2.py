@@ -72,5 +72,38 @@ class HomeDataTests(unittest.TestCase):
         self.assertEqual("DJI_NEW", vm["latest"]["clip_id"])
 
 
+class HomeMarkupTests(unittest.TestCase):
+    def test_home_loads_data_before_renderer(self):
+        html = (ROOT / "web/home.html").read_text()
+        self.assertLess(html.index("home-data.js"), html.index("home.js"))
+
+    def test_renderer_exposes_seven_full_card_links(self):
+        source = (ROOT / "web/home.js").read_text()
+        self.assertIn('class="hv2-card', source)
+        self.assertIn('class="hv2-go"', source)
+        self.assertIn("HomeData.buildHomeViewModel", source)
+
+    def test_home_v2_has_keyboard_focus_and_responsive_mobile_rules(self):
+        css = (ROOT / "web/style.css").read_text()
+        self.assertIn(".hv2-card:focus-visible", css)
+        self.assertIn("@media (max-width: 680px)", css)
+        self.assertIn(".hv2-telemetry", css)
+
+    def test_void_effect_is_bounded_by_viewport_and_motion_preference(self):
+        self.assertEqual(0, run_commonjs("web/home-effects.js", "particleBudget", [1440, True]))
+        self.assertEqual(100, run_commonjs("web/home-effects.js", "particleBudget", [390, False]))
+        self.assertEqual(160, run_commonjs("web/home-effects.js", "particleBudget", [820, False]))
+        self.assertEqual(260, run_commonjs("web/home-effects.js", "particleBudget", [1440, False]))
+        self.assertEqual(420, run_commonjs("web/home-effects.js", "particleBudget", [2200, False]))
+        self.assertLessEqual(run_commonjs("web/home-effects.js", "navigationDelay", [False]), 620)
+
+    def test_drone_module_uses_real_model_and_visibility_guards(self):
+        source = (ROOT / "web/home-drone.js").read_text()
+        self.assertIn("assets/drone.glb", source)
+        self.assertIn("IntersectionObserver", source)
+        self.assertIn("visibilitychange", source)
+        self.assertIn("GLTFLoader", source)
+
+
 if __name__ == "__main__":
     unittest.main()

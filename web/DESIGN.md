@@ -10,6 +10,16 @@ Referencia visual: paneles de instrumentos de aviación + software pro de edici�
 4. **Motion contenido:** 160ms ease-out, solo transform/opacity. Nada rebota.
 5. **Densidad pro:** la información no se esconde detrás de clicks; se organiza.
 
+## Home V2: excepción cinematográfica aprobada
+
+El Home es la única superficie que amplía deliberadamente este lenguaje hacia una entrada
+cinematográfica. Conserva tipografía, iconos, tokens y telemetría Instrument Graphite, pero permite
+profundidad, blur ambiental y motion más largo en el hero, las tarjetas y la transición de ruta.
+La excepción tiene límites de producto: el contenido aparece antes del GLB, cada tarjeta completa
+es un enlace, el efecto de estrellas usa un solo canvas con presupuesto 100/160/260/420, la
+navegación nunca espera más de 620 ms y `prefers-reduced-motion` elimina el espectáculo. El resto
+de la aplicación mantiene motion de 160 ms y elevación por superficie.
+
 ## Tokens
 | Token | Valor | Uso |
 |---|---|---|
@@ -35,3 +45,5 @@ Referencia visual: paneles de instrumentos de aviación + software pro de edici�
 - **Charts:** SVG inline, línea 1.5px accent, área con gradient 8% opacity, crosshair on hover.
 - **Chips de tags:** surface-2, 12px, clickables → búsqueda.
 - **Estados:** skeleton shimmer para loading; empty states con icono + una línea, sin ilustraciones cursis.
+- **Home V2:** hero con asset `hero-pixel.webp`, `drone.glb` progresivo con fallback
+  `ovi-drone.png`, cinco métricas veraces y siete tarjetas siempre presentes.
