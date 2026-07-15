@@ -31,7 +31,10 @@ The iPhone capture verifies the hero, both primary controls, complete five-cell 
 
 1. Initial production pass found stale immutable gzip responses and an oversized right-cropped GLB at 1280 px.
 2. Regenerated sidecars, advanced immutable asset versions, reduced the model normalization scale, shifted the rig toward its visual center, and reduced desktop hero height for better information density.
-3. Post-fix production evidence shows seven cards, five telemetry cells, the GLB canvas active, no broken images, no console errors/warnings, and zero horizontal overflow at 1280, 820, and 390 px.
+3. Post-fix production evidence shows seven cards, five telemetry cells, the GLB canvas active,
+   no broken images, no application console errors, and zero horizontal overflow at 1280, 820,
+   and 390 px. The in-app browser harness emits its isolated Three.js v205 duplicate-instance
+   warning; AeroBrain's production module graph and GLB loader both resolve the single v209 graph.
 
 ## Primary interactions tested
 
