@@ -465,7 +465,9 @@ def run_sd_import(spec: dict, j):
             return
         copied = []
         for i, rel in enumerate(rels):
-            src = _sd_resolve(volume, rel)
+            # videos Y FOTOS: el default solo-video dejaba los JPG/DNG del dron en la
+            # SD para siempre (bug cazado: 0 fotos de julio en raw/ con 32 en la tarjeta)
+            src = _sd_resolve(volume, rel, SD_VIDEO_EXT + SD_PHOTO_EXT)
             dest = VAULT / "raw" / drone / src.parent.name / src.name
             dest.parent.mkdir(parents=True, exist_ok=True)
             jobstore.update(j["id"], detail=f"copiando {i + 1}/{len(rels)} · {src.name}",
@@ -478,9 +480,10 @@ def run_sd_import(spec: dict, j):
             if dest.stat().st_size != src.stat().st_size:
                 raise RuntimeError(f"copia no verificada: {src.name}")
             copied.append((src, dest))
-        for i, (src, dest) in enumerate(copied):
-            jobstore.update(j["id"], detail=f"procesando {i + 1}/{len(copied)} · proxy + GPS + thumbs",
-                            stage="process", progress=0.5 + 0.4 * i / max(1, len(copied)))
+        vids_copied = [(s2, d2) for s2, d2 in copied if d2.suffix in SD_VIDEO_EXT]
+        for i, (src, dest) in enumerate(vids_copied):
+            jobstore.update(j["id"], detail=f"procesando {i + 1}/{len(vids_copied)} · proxy + GPS + thumbs",
+                            stage="process", progress=0.5 + 0.4 * i / max(1, len(vids_copied)))
             subprocess.run(["python3", str(PIPE / "process.py"), str(dest)],
                            check=True, cwd=PIPE, capture_output=True, text=True)
         cleaned = 0
@@ -494,7 +497,8 @@ def run_sd_import(spec: dict, j):
                     cleaned += 1
         rebuild_index()
         jobstore.update(j["id"], progress=1.0)
-        job_end(j, "done", f"{len(copied)} videos importados a raw/{drone}"
+        n_fotos = len(copied) - len(vids_copied)
+        job_end(j, "done", f"{len(vids_copied)} videos + {n_fotos} fotos importados a raw/{drone}"
                            + (f" · {cleaned} borrados de la SD" if clean else ""))
     except Exception as e:
         job_end(j, "error", str(e)[-250:])
@@ -2795,7 +2799,7 @@ class H(BaseHTTPRequestHandler):
             if any(x.get("kind") == "ingest" and x.get("status") in ("running", "queued")
                    for x in jobstore.recent(10)):
                 return self.send_json({"error": "ya hay una importación corriendo — espera a que termine"}, 409)
-            _exts = SD_VIDEO_EXT + (SD_PHOTO_EXT if spec.get("clean_only") else ())
+            _exts = SD_VIDEO_EXT + SD_PHOTO_EXT   # importar también acepta fotos (no solo clean)
             try:
                 for rel in list(spec.get("files", []))[:500]:
                     _sd_resolve(str(spec.get("volume", "")), str(rel), _exts)
