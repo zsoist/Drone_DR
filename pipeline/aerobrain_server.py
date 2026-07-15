@@ -1912,6 +1912,10 @@ def run_edit(spec: dict, j):
 # ── NODO GPU (PC RTX 4060 Ti en LAN): probe SSH cacheado + WoL + sleep ──
 # Todo REAL: si el PC duerme se reporta dormido; nada se inventa.
 GPU_NODE = {"ts": 0.0, "data": {"status": "unknown"}}
+_DRONE_PHOTOS = {"ts": 0.0, "items": []}
+# generación de thumbs SERIALIZADA (3 a la vez): 30 tiles perezosos concurrentes ×
+# pipes de sips/qlmanage agotaron los 256 fds del servicio (errno 24, medido en vivo)
+_THUMB_SEM = threading.Semaphore(3)
 GPU_NODE_IP = "192.168.1.5"
 GPU_NODE_MAC = "BC:5F:F4:45:7E:B8"
 
@@ -2255,6 +2259,85 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             return self.send_json({"volumes": sd_volumes()})
+        if self.path.startswith("/api/drone_photos"):
+            if not self.auth():
+                return
+            now = time.time()
+            if now - _DRONE_PHOTOS["ts"] > 60:
+                items = []
+                raw = VAULT / "raw"
+                for f in sorted(raw.rglob("*")):
+                    if (f.suffix.lower() not in (".jpg", ".jpeg", ".dng")
+                            or not f.is_file() or f.name.startswith(".") or f.is_symlink()):
+                        continue
+                    st = f.stat()
+                    m = re.match(r"DJI_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})", f.name)
+                    items.append({
+                        "name": f.name,
+                        "rel": str(f.relative_to(raw)),
+                        "bytes": st.st_size, "mtime": st.st_mtime,
+                        "kind": "DNG" if f.suffix.lower() == ".dng" else "JPG",
+                        "date": f"{m[1]}-{m[2]}-{m[3]} {m[4]}:{m[5]}" if m else None,
+                    })
+                items.sort(key=lambda x: x["mtime"], reverse=True)
+                _DRONE_PHOTOS.update(ts=now, items=items)
+            return self.send_json({"photos": _DRONE_PHOTOS["items"]})
+
+        if self.path.startswith("/api/photo_thumb"):
+            if not self.auth():
+                return
+            import subprocess as _sp, shutil as _sh
+            q2 = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            rel = (q2.get("rel") or [""])[0]
+            w = int((q2.get("w") or ["512"])[0])
+            src = (VAULT / "raw" / rel).resolve()
+            try:
+                src.relative_to((VAULT / "raw").resolve())   # contención estricta
+            except ValueError:
+                return self.send_json({"error": "ruta inválida"}, 400)
+            if not src.is_file():
+                return self.send_json({"error": "no existe"}, 404)
+            if w <= 0:                                       # original (descarga)
+                data = src.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/x-adobe-dng"
+                                 if src.suffix.lower() == ".dng" else "image/jpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Content-Disposition", f'attachment; filename="{src.name}"')
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            w = 2048 if w > 1024 else 512                    # dos tiers de cache, no infinitos
+            cache = VAULT / "ops" / "photo-thumbs" / str(w)
+            cache.mkdir(parents=True, exist_ok=True)
+            thumb = cache / (rel.replace("/", "__") + ".jpg")
+            if not thumb.exists() or thumb.stat().st_mtime < src.stat().st_mtime:
+              with _THUMB_SEM:
+                # sips lee JPG nativo; los DNG comprimidos de DJI solo los renderiza Quick Look
+                if src.suffix.lower() == ".dng":
+                    import tempfile as _tf
+                    with _tf.TemporaryDirectory() as td:
+                        _sp.run(["qlmanage", "-t", "-s", str(w), "-o", td, str(src)],
+                                capture_output=True, timeout=60)
+                        png = Path(td) / (src.name + ".png")
+                        if not png.exists():
+                            return self.send_json({"error": "preview DNG no disponible"}, 415)
+                        _sp.run(["sips", "-s", "format", "jpeg", str(png), "--out", str(thumb)],
+                                capture_output=True, timeout=60)
+                else:
+                    _sp.run(["sips", "-Z", str(w), str(src), "--out", str(thumb)],
+                            capture_output=True, timeout=60)
+                if not thumb.exists():
+                    return self.send_json({"error": "thumb falló"}, 500)
+            data = thumb.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=604800")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
         if self.path.startswith("/api/studio_media"):
             if not self.auth():
                 return

@@ -375,6 +375,10 @@ main.innerHTML = `
   </section>
 
   <section class="st-mod" data-mod="fotos" style="display:none">
+    <div class="td-jobbar" id="fotos-sub" style="margin-bottom:10px" aria-label="Origen de fotos">
+      <button class="chip on" data-fsub="fotos">Capturas</button>
+      <button class="chip" data-fsub="dron">Del dron <span class="mono" id="dron-count"></span></button>
+    </div>
     <div class="media-toolbar">
       <input class="ctl" id="q-fotos" type="search" placeholder="Buscar foto…" style="flex:1;min-width:150px">
       <select class="ctl" id="s-fotos">
@@ -384,6 +388,7 @@ main.innerHTML = `
       </select>
     </div>
     <div class="media-grid" id="grid-fotos"><div class="sk" style="height:150px"></div><div class="sk" style="height:150px"></div></div>
+    <div class="media-grid" id="grid-dron" style="display:none"><div class="sk" style="height:150px"></div><div class="sk" style="height:150px"></div></div>
   </section>
 
   <section class="st-mod" data-mod="jobs" style="display:none">
@@ -428,7 +433,22 @@ stTabs.addEventListener('click', e => {
 
 // ---- motor de medios: biblioteca de reels y fotos ----
 let media = null;   // {reels:[{name,bytes,mtime}], photos:[...]}
-const mstate = { reels: { q: '', sort: 'recientes' }, fotos: { q: '', sort: 'recientes' } };
+const mstate = { reels: { q: '', sort: 'recientes' }, fotos: { q: '', sort: 'recientes' },
+                 dron: { q: '', sort: 'recientes' } };
+let dronePhotos = null;      // fotos NATIVAS de la cámara del dron (raw/, JPG+DNG)
+let fotosSub = 'fotos';      // sub-tab activo dentro de Fotos
+
+async function loadDronePhotos() {
+  if (dronePhotos) return;
+  try {
+    const r = await fetch('/api/drone_photos');
+    if (r.status !== 200) throw 0;
+    dronePhotos = (await r.json()).photos || [];
+  } catch { dronePhotos = []; }
+  const c = document.getElementById('dron-count');
+  if (c) c.textContent = dronePhotos.length;
+  renderGrid('dron');
+}
 
 function mdate(mtime) {
   const d = new Date(mtime * 1000);
@@ -459,8 +479,35 @@ main.addEventListener('click', async e => {
   if (e.target.closest('[data-login]') && await ensureAuth()) loadMedia();
 });
 
+// sub-tabs de Fotos: Capturas (biblioteca) vs Del dron (nativas raw/)
+document.getElementById('fotos-sub')?.addEventListener('click', e => {
+  const b = e.target.closest('[data-fsub]');
+  if (!b) return;
+  fotosSub = b.dataset.fsub;
+  document.querySelectorAll('#fotos-sub .chip').forEach(x => x.classList.toggle('on', x === b));
+  document.getElementById('grid-fotos').style.display = fotosSub === 'fotos' ? '' : 'none';
+  document.getElementById('grid-dron').style.display = fotosSub === 'dron' ? '' : 'none';
+  if (fotosSub === 'dron') loadDronePhotos();
+});
+document.getElementById('grid-dron')?.addEventListener('click', e => {
+  const card = e.target.closest('.m-card');
+  if (!card) return;
+  const rel = encodeURIComponent(card.dataset.rel);
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'dl') {
+    const a = document.createElement('a');
+    a.href = `/api/photo_thumb?rel=${rel}&w=0`;      // w=0 = original (JPG o DNG)
+    a.download = card.dataset.name; a.click();
+    return;
+  }
+  // tap o botón editor → photoeditor con preview 2048 (el DNG no abre nativo en browser)
+  if (act === 'edit' || e.target.closest('.m-prevbox'))
+    openPhotoEditor({ url: `/api/photo_thumb?rel=${rel}&w=2048`, name: card.dataset.name });
+});
+
 function viewOf(kind) {
-  const list = ((kind === 'reels' ? media.reels : media.photos) || []).slice();
+  const list = (kind === 'dron' ? (dronePhotos || [])
+    : (kind === 'reels' ? media.reels : media.photos) || []).slice();
   const st = mstate[kind], q = st.q.trim().toLowerCase();
   const out = q ? list.filter(x => x.name.toLowerCase().includes(q)) : list;
   if (st.sort === 'tamano') out.sort((a, b) => b.bytes - a.bytes);
@@ -472,6 +519,21 @@ function viewOf(kind) {
 function cardHTML(kind, it) {
   const enc = encodeURIComponent(it.name);
   const base = it.name.replace(/\.[^.]+$/, '');
+  if (kind === 'dron') {
+    const rel = encodeURIComponent(it.rel);
+    return `<div class="m-card" data-name="${esc(it.name)}" data-rel="${esc(it.rel)}" data-kind="${esc(it.kind)}">
+      <div class="m-prevbox">
+        <img loading="lazy" src="/api/photo_thumb?rel=${rel}&w=512" alt="${esc(base)}" style="cursor:pointer">
+        <span class="m-fmt ${it.kind === 'DNG' ? 'dng' : ''}">${esc(it.kind)}</span>
+      </div>
+      <div class="m-name">${esc(base)}</div>
+      <div class="m-meta mono">${fmt.gb(it.bytes)} · ${it.date ? esc(it.date) : mdate(it.mtime)}</div>
+      <div class="m-actions">
+        <button data-act="dl" data-tip="Descargar original ${esc(it.kind)}">${icon('dl')}</button>
+        <button data-act="edit" data-tip="Abrir en el editor">${icon('iso')}</button>
+      </div>
+    </div>`;
+  }
   const prev = kind === 'reels'
     ? `<video src="/data/reels/${enc}#t=0.5" preload="metadata" muted playsinline loop></video>
        <span class="gchip m-dur" style="display:none"></span>`
@@ -563,13 +625,15 @@ async function onCardClick(kind, e) {
 }
 
 for (const kind of ['reels', 'fotos']) {
+  // la barra de Fotos gobierna el SUB-TAB activo (biblioteca o dron)
+  const target = () => kind === 'fotos' && fotosSub === 'dron' ? 'dron' : kind;
   document.getElementById(`q-${kind}`).addEventListener('input', e => {
-    mstate[kind].q = e.target.value;
-    if (media) renderGrid(kind);
+    mstate[target()].q = e.target.value;
+    if (media || target() === 'dron') renderGrid(target());
   });
   document.getElementById(`s-${kind}`).addEventListener('change', e => {
-    mstate[kind].sort = e.target.value;
-    if (media) renderGrid(kind);
+    mstate[target()].sort = e.target.value;
+    if (media || target() === 'dron') renderGrid(target());
   });
   document.getElementById(`grid-${kind}`).addEventListener('click', e => onCardClick(kind, e));
 }
