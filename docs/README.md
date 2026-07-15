@@ -1,6 +1,6 @@
 # AeroBrain documentation index
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-15.
 
 This index is the discoverability and freshness contract for first-party documentation. A document
 marked **current** describes live behavior; **evidence** records measured results; **historical** is
@@ -28,6 +28,7 @@ preserved for provenance and must not override a current contract.
 - [Enemy model specification](ENEMY_MODEL_SPEC.md)
 - [Flightverse implementation ledger](FLIGHTVERSE_IMPLEMENTATION.md)
 - [Design system](../web/DESIGN.md)
+- [Home V2 design QA](../design-qa.md)
 - [Asset pipeline notes](../web/assets/README.md)
 - [Props asset notes](../web/assets/props/README.md)
 - [Destruction third-party notices](../web/assets/destruction/THIRD_PARTY.md)
@@ -35,7 +36,7 @@ preserved for provenance and must not override a current contract.
 ## Evidence and active backlogs
 
 - [Bug Hunt backlog](BUGHUNT_BACKLOG.md) — active items plus explicitly closed forensic history.
-- [Design QA](../design-qa.md) — acceptance evidence for the current 3D UI.
+- [Design QA](../design-qa.md) — production acceptance evidence for Home V2 across desktop, tablet and iPhone.
 - [Case study baseline v1](CASE_STUDY_BASELINE_V1.md) — frozen held-out baseline.
 - [Splat experiments](SPLAT_EXPERIMENTS.md) — frozen MPS/OpenSplat experiment dataset.
 
@@ -65,6 +66,7 @@ Plans:
 - [Jobs console](superpowers/plans/2026-07-13-jobs-console.md)
 - [Scene similarity UI](superpowers/plans/2026-07-13-scene-similarity-ui.md)
 - [Truthful stability](superpowers/plans/2026-07-13-truthful-stability.md)
+- [Cinematic Home V2](superpowers/plans/2026-07-15-home-v2-cinematic-dashboard.md)
 
 Design specs:
 
@@ -73,6 +75,7 @@ Design specs:
 - [Flightverse touch workspace design](superpowers/specs/2026-07-13-flightverse-touch-workspace-design.md)
 - [Scene similarity UI design](superpowers/specs/2026-07-13-scene-similarity-ui-design.md)
 - [Truthful scene operations](superpowers/specs/2026-07-13-truthful-scene-operations-design.md)
+- [Cinematic Home V2 design](superpowers/specs/2026-07-15-home-v2-cinematic-dashboard-design.md)
 
 ## Freshness rules
 

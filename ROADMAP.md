@@ -12,6 +12,8 @@
 - [x] Web app: mapa MapLibre + player sincronizado con ruta GPS ✅ 2026-07-05
 - [x] LIVE: vuelos.metislab.work via Tunnel ($0, sin R2) ✅ 2026-07-05
 - [x] Galería de vuelos con filtros por lugar/fecha ✅ 2026-07-05
+- [x] Home V2 cinematográfico: datos veraces, siete módulos, GLB progresivo, transición estelar
+  acotada y QA desktop/tablet/iPhone ✅ 2026-07-15
 
 ## V2 — Detección
 - [ ] YOLO/RF-DETR sobre keyframes (MPS)

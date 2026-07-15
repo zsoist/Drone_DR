@@ -1,75 +1,47 @@
-# Design QA — CUDA splat frontier UI
+# Home V2 — Design QA
 
-Date: 2026-07-13  
-Reference: user-provided Estudio 3D configuration screenshot  
-Implementation: `web/tresd.js`, `web/shell.js`, `web/style.css`
+- Source visual truth: `/var/folders/fd/r0q1r2614bq9tvzckhxdrzl00000gn/T/TemporaryItems/NSIRD_screencaptureui_Kv2Ky2/Screenshot 2026-07-15 at 11.31.28 AM.png`
+- Rendered implementation: `artifacts/home-v2-default-revised2.png`
+- Combined comparison: `artifacts/home-v2-comparison.png`
+- Responsive evidence: `artifacts/home-v2-iphone.png`, `artifacts/home-v2-tablet.png`
+- Transition evidence: `artifacts/home-v2-void.png`
+- Production URL: `https://vuelos.metislab.work/home.html`
+- Viewports: 1280×720 desktop, 820×1180 tablet, 390×844 iPhone
+- State: dark theme, live production data, public jobs response, real GLB drone loaded
 
-> Visual acceptance snapshot. Backend evidence advanced on 2026-07-14: Ultra+ 20K is now a
-> measured CUDA run (`d1` OOM → `d2` success), and the gated 1,019-input ODM scene is published
-> with browser QA. Frontier 30K is now measured at CUDA FULL `d1` with 3,236,419 Gaussians and
-> browser QA. Grandmaster 40K also completed at CUDA FULL `d1` in one attempt, with 3,067,353
-> source Gaussians, a 34,903,178-byte SOG and browser QA. Neither 30K nor 40K fell back to the Mac.
+## Full-view comparison evidence
 
-## Visual comparison
+The combined comparison preserves the source's Instrument Graphite shell, cosmic Flight Deck identity, data-backed module imagery, blue/mint hierarchy, and complete navigation model. Home V2 intentionally promotes the approved cinematic hero above the module grid; all seven modules remain present immediately after the hero and are reachable from full-card anchors.
 
-![Reference and implemented CUDA quality UI](docs/qa/2026-07-13-cuda-studio-comparison.png)
+## Focused comparison evidence
 
-![Reference and progressive-site implementation](docs/qa/2026-07-13-site-source-vs-v183.png)
+The iPhone capture verifies the hero, both primary controls, complete five-cell telemetry, real drone model, bottom navigation, safe-area spacing, and absence of horizontal overflow. The tablet run verifies a two-column 388 px module grid. The void capture verifies the single-canvas star transition rather than DOM particle accumulation.
 
-The implementation preserves the existing product language: dark modal shell, blue active
-step, compact uppercase labels, restrained borders, monospace telemetry, the established
-quality-card interaction, and the same primary action hierarchy. The new profile surface is
-an extension of those components rather than a separate visual system.
+## Findings
 
-## Deliberate product changes
+- No actionable P0, P1, or P2 findings remain.
+- Typography: the existing SF/Inter stack, display scale, monospace telemetry, wrapping, and optical hierarchy remain coherent at all tested widths.
+- Spacing and layout: 1280, 820, and 390 px runs report `scrollWidth === clientWidth`; card grids resolve to four/two/one columns as designed; mobile CTAs remain 44 px high.
+- Colors and tokens: existing graphite, accent blue, mint, amber, and semantic data states are retained. Gradients and bloom stay subordinate to content contrast.
+- Image quality: the existing pixel hero, live flight thumbs, icon library, `ovi-drone.png` fallback, and real `drone.glb` are used. No placeholder or handcrafted replacement art was introduced.
+- Copy and content: seven existing product routes are preserved; telemetry comes from live manifests and unavailable values show `Sin datos` instead of invented zeros.
+- Accessibility: semantic links/regions, alt text, visible focus rules, reduced-motion fallbacks, safe touch targets, and bounded navigation delay are present.
 
-- Replaced the stale “worker integration in progress” and silent Metal fallback promise with
-  the live NVIDIA node state, VRAM, temperature, utilization, and strict failure policy.
-- Added the complete canonical quality ladder: Fast 1K, Medium 2K, Cinematic 7K, Ultra 15K,
-  Ultra+ 20K, Frontier 30K, and Grandmaster 40K.
-- Kept local Apple Metal only for Fast/Medium. CUDA-only cards visibly lock the compute choice.
-- Added measured-versus-projected timing language. Measured values include sample count,
-  cameras, and effective resolution; projections identify their measured baseline and range.
-- Added Auto/Complete/Half resolution controls with full-first behavior explained in place.
-- Split ODM fallback behavior from splat behavior: ODM may continue locally; strict CUDA splats
-  do not silently change backend or quality.
-- Reframed reconstruction around a stable site instead of disposable jobs. The active version,
-  immutable prior versions, all 40 evaluated videos, per-source altitude/evidence, and the 24-source
-  processing cap are visible before submission.
-- Added honest coverage products at 100/200/400/600/1000 m. A diameter is selectable only when the
-  measured footprint can support it; circle and square modes report their exact area.
-- Added a verified batch surface for Grandmaster 40K with per-target camera/input facts, node health,
-  full-first/OOM-half policy, and a sequential queue estimate.
+## Comparison history
 
-## Interaction QA
+1. Initial production pass found stale immutable gzip responses and an oversized right-cropped GLB at 1280 px.
+2. Regenerated sidecars, advanced immutable asset versions, reduced the model normalization scale, shifted the rig toward its visual center, and reduced desktop hero height for better information density.
+3. Post-fix production evidence shows seven cards, five telemetry cells, the GLB canvas active, no broken images, no console errors/warnings, and zero horizontal overflow at 1280, 820, and 390 px.
 
-- Direct splat flow: all seven tiers render; Frontier 30K is selected; CUDA is locked; Auto is
-  selected; strict policy is visible.
-- Local fallback: selecting Fast 1K enables the compute toggle; disabling CUDA updates the
-  policy to Apple Metal and disables CUDA resolution controls.
-- Studio phased flow: enabling gaussian training reveals the same seven-tier contract and
-  sends the same preset/backend/resolution vocabulary as the direct flow.
-- Live node states cover ready, busy, asleep, and unavailable; asleep exposes Wake-on-LAN.
-- Desktop visual pass completed in the in-app browser using real vault data and RTX telemetry.
-- Grandmaster acceptance reran the full share/workspace/jobs matrix in mobile, iPad and desktop;
-  all nine surfaces passed with the current 40K SOG and selected-run log history.
-- Progressive-site modal: 40 evaluated videos, 1/24 selected, stable-site identity and all seven
-  Gaussian tiers present; Frontier 30K selected and CUDA locked.
-- CUDA campaign: 900 px dialog, no DOM horizontal overflow, seven eligible targets, RTX 4060 Ti
-  verified, and a 4.8 h sequential estimate.
-- Mundo: seven islands with the stable site rendered once; 100/200/400 m enabled and 600/1000 m
-  disabled as pending; carousel arrows do not overlap the site title.
-- Volar: 100 m square enforces a 10,000 m² product boundary at 60 fps with no console errors.
+## Primary interactions tested
 
-## Current captures
+- Full-card `Viajes` navigation completed through the cinematic transition.
+- `3D` navigation created exactly one `canvas.hv2-void` and completed within the 620 ms ceiling.
+- All seven module hrefs were reconciled against the existing routes.
+- Desktop, tablet, and iPhone production loads returned seven cards and five telemetry cells.
 
-- [CUDA campaign](docs/qa/2026-07-13-cuda-campaign-v183.png)
-- [Progressive site](docs/qa/2026-07-13-progressive-site-v183.png)
-- [Mundo site products](docs/qa/2026-07-13-mundo-sites-v183.png)
-- [100 m square flight](docs/qa/2026-07-13-volar-100m-square-v183.png)
+## Follow-up polish
 
-## Result
+- P3: the immersive hero intentionally places the first module card below the 720 px desktop fold. This is the approved cinematic-hybrid tradeoff; the sidebar and hero CTAs preserve immediate task access.
 
-PASS. No blocking hierarchy, spacing, contrast, overflow, console, or interaction defects remain
-in the tested desktop DOM. Responsive rules collapse the profile grid to two columns below 900 px
-and one column below 580 px.
+final result: passed

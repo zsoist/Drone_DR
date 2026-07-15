@@ -79,15 +79,10 @@ anti doble-submit importar/optimizar + dedupe server de ingest, drop captura fil
   · scan() line 185 (const pct = Math.round((v.total - v.free) / v.total * 100)); same divide-by-v.total
 
 ## home
-✅ VERIFICADO 2026-07-10: los 3 findings de abajo YA ESTABAN arreglados. Nuevos fixes de hoy:
-velo del smash ya no queda pegado al ocultar el tab, saludo con fecha LOCAL (no UTC), dc-cloud
-re-fit en rotación.
-- [low] Point-cloud rAF loop (.dc-cloud) is orphaned but keeps rendering after the fit() sizing is stale; on re-render a fresh loop starts while the old canvas element is detached
-  · IIFE, lines 295-322: document.querySelectorAll('.dc-cloud').forEach(cv => { ... (function frame(){ i
-- [low] No cleanup/teardown contract at all: the module leaves two independent rAF families (drone frame + N point-cloud frames) and a global document listener with lifetimes tied only to isConnected checks that fire late
-  · IIFE overall — flyRaf loop (line 280) and per-canvas loops (line 320) plus document listener (line 2
-- [low] Last-flight duration renders 'NaN:NaN' when duration_s is missing/null
-  · home.js, `${last ? ... }` block, line 159: `${fmt.dur(last.duration_s)}`
+✅ CERRADO 2026-07-15: Home V2 reemplazó el renderer que originó estos findings. Ya no existen
+`.dc-cloud`, las familias de rAF separadas ni el smash DOM. El GLB usa un solo loop con teardown,
+`IntersectionObserver` y pausa por visibilidad; el vacío usa un canvas acotado. `home-data.js`
+normaliza duración y estados parciales, con tests que impiden `NaN:NaN` y ceros inventados.
 
 ## shell
 ✅ CERRADO 2026-07-09:

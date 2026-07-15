@@ -50,7 +50,8 @@ como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9G
 | `pipeline/audit_splats.py` | Auditor de salud de splats: assets, current/history, metadata, jobs, warnings legacy |
 | `pipeline/make_ksplat.mjs` | .splat/.ply → .ksplat con la lib vendoreada del viewer (sin npm) |
 | `/supersplat/` | Editor SuperSplat (MIT) self-hosted — post-pro de splats: floaters, crop, export |
-| `web/` | Flight Deck: galería + mapa MapLibre/Esri sincronizado al video |
+| `web/` | Flight Deck V2: Home cinematográfico, galería, mapa MapLibre/Esri y telemetría sincronizada |
+| `web/home-data.js` | Vista veraz del Home: vuelos, jobs, bóveda y siete módulos con fallos independientes |
 
 ## 3D pipeline actual
 
@@ -114,6 +115,11 @@ Servicios launchd: `com.aerobrain.web` (:8790) · `com.aerobrain.worker`
 10 cores/MPS; durante reproducción ODM baja a 7 cores y OpenSplat a background,
 restaurándose tras 45 s. Runbook:
 [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+El Home de producción usa un renderer híbrido: carga contenido y métricas antes del GLB, conserva
+un fallback estático si WebGL o el modelo fallan, pausa animación fuera de pantalla y limita el
+efecto de navegación a un canvas con presupuesto por viewport. En datos parciales muestra
+`Sin datos`; nunca convierte un fetch fallido en un cero inventado.
 
 ## Documentación
 
