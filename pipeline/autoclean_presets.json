@@ -1,0 +1,55 @@
+{
+  "_doc": "Auto-Clean presets para gaussian splats (formato .splat, escalas LINEALES post-activaci\u00f3n). Umbrales relativos a la mediana/bbox del modelo = adaptativos por escena. Ver docs/SPLATLAB_V2_PLAN.md \u00a72.",
+  "aerial": {
+    "label": "A\u00e9reo (drone) \u2014 floater-safe",
+    "opacity_min": 0.035,
+    "scale_k": 6.0,
+    "bbox_frac": 0.1,
+    "aniso_max": 15.0,
+    "voxel": [
+      0.05,
+      0.1,
+      0.004
+    ],
+    "sor": null,
+    "cluster_keep": false,
+    "radial_pct": 0.995,
+    "radial_factor": 1.02
+  },
+  "aerial_aggressive": {
+    "label": "A\u00e9reo agresivo",
+    "opacity_min": 0.06,
+    "scale_k": 4.0,
+    "bbox_frac": 0.08,
+    "aniso_max": 10.0,
+    "voxel": [
+      0.05,
+      0.15,
+      0.006
+    ],
+    "sor": [
+      25,
+      2.5
+    ],
+    "cluster_keep": false,
+    "radial_pct": 0.985,
+    "radial_factor": 1.0
+  },
+  "object": {
+    "label": "Objeto / interior \u2014 agresivo",
+    "opacity_min": 0.1,
+    "scale_k": 4.0,
+    "bbox_frac": 0.1,
+    "aniso_max": 12.0,
+    "voxel": [
+      0.05,
+      0.1,
+      0.004
+    ],
+    "sor": [
+      20,
+      1.5
+    ],
+    "cluster_keep": false
+  }
+}

@@ -115,6 +115,26 @@ def browser_gate(jid: str, kind: str, cid: str, timeout: int = 75):
         raise RuntimeError(f"browser gate falló para {kind} {cid}")
 
 
+def run_autoclean(splat_path: Path, preset: str = "aerial") -> bool:
+    """Auto-Clean v2 (docs/SPLATLAB_V2_PLAN.md): opacidad+escala+bbox+anisotropía+radial+voxel,
+    adaptativo por escena, reversible (no muta hasta escribir la salida). Reemplaza al viejo
+    crop_floaters (caja posicional) que no tocaba spikes/haze/agujas. Fail-open interno."""
+    tmp = splat_path.with_suffix(".ac.tmp")
+    try:
+        r = subprocess.run(["node", str(PIPE / "autoclean.mjs"), str(splat_path), str(tmp),
+                            "--preset", preset],
+                           capture_output=True, text=True, timeout=600)
+        if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size < splat_path.stat().st_size * 0.4:
+            raise RuntimeError((r.stderr or r.stdout or "sin salida")[-200:])
+        print(f"  {r.stdout.strip()}", flush=True)
+        os.replace(tmp, splat_path)
+        return True
+    except Exception as e:
+        tmp.unlink(missing_ok=True)
+        print(f"  auto-clean falló (no fatal, publica sin limpiar): {e}", flush=True)
+        return False
+
+
 def crop_floaters(splat_path: Path) -> bool:
     """Quita los floaters outlier del .splat (halo de baja confianza en los bordes de splats
     aéreos; el alpha-removal del viewer NO los toca). Caja por-eje (P2..P98 × 1.06) = corta el
@@ -2053,8 +2073,16 @@ def run_splat(j: dict):
             _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
         except (ValueError, OSError) as e:
             print(f"  splat_runs no actualizado ({e}) — el sidecar sigue siendo la fuente", flush=True)
-    jobstore.update(j["id"], detail="limpiando floaters de los bordes", progress=0.93)
-    crop_floaters(final_out)                    # de-halo antes de generar el SOG
+    # REVERSIBLE: archiva el crudo pre-clean como versión propia ANTES de limpiar (antes
+    # crop_floaters mutaba in-place y el crudo se perdía). El .raw.splat vive junto al .splat.
+    try:
+        raw_keep = final_out.with_suffix(".raw.splat")
+        if not raw_keep.exists():
+            shutil.copy2(final_out, raw_keep)
+    except OSError as e:
+        print(f"  no se pudo archivar el crudo pre-clean ({e})", flush=True)
+    jobstore.update(j["id"], detail="auto-clean: floaters, haze y agujas", progress=0.93)
+    run_autoclean(final_out, preset="aerial")   # motor v2 (reversible, adaptativo)
     jobstore.update(j["id"], detail="comprimiendo SOG para el viewer", progress=0.94)
     viewer_out = export_viewer_sog(final_out) or final_out
     rebuild_scene_manifest(cid)
