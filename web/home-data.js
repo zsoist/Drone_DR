@@ -10,8 +10,12 @@
       description: 'Reproduce, filtra y abre el mapa, el análisis o el 3D de cada vuelo.' },
     { href: 'trips.html', icon: 'pin', title: 'Viajes', accent: '#42d69c',
       description: 'Recorre tus vuelos por lugar y fecha, con postales listas para compartir.' },
+    { href: 'mundo.html', icon: 'globe', title: 'Mundo', accent: '#2fd3b6',
+      description: 'Explora todos tus vuelos sobre un mapa mundial interactivo.' },
     { href: 'tresd.html', icon: 'cube', title: '3D', accent: '#ff9f43',
       description: 'Explora ortomosaicos, nubes, mallas y gaussian splats medibles.' },
+    { href: 'splatlab.html', icon: 'spark', title: 'Splat Lab', accent: '#e15bd6',
+      description: 'Limpia y afina tus gaussian splats: quita floaters, recorta y exporta.' },
     { href: 'drone.html', icon: 'drone', title: 'Dron', accent: '#38d9e5',
       description: 'Importa desde la micro SD, verifica archivos y libera espacio con seguridad.' },
     { href: 'studio.html', icon: 'film', title: 'Studio', accent: '#b78cff',
@@ -77,7 +81,9 @@
     const cardChips = {
       Vuelos: safeFlights.length ? [String(safeFlights.length), String(durationSeconds), String(distanceMeters), String(streaming)] : ['Sin datos'],
       Viajes: days ? [String(days), first?.date || '', latest?.date || ''] : ['Sin datos'],
+      Mundo: safeFlights.length ? [`${safeFlights.length} vuelos`, 'Vista mundial'] : ['Mapa mundial'],
       '3D': modelsKnown || splatsKnown ? [String(modelCount ?? 0), String(splatCount ?? 0)] : ['Sin datos'],
+      'Splat Lab': splatsKnown ? [`${splatCount ?? 0} splats`, 'Limpiar · afinar'] : ['Laboratorio splat'],
       Dron: safeSystem.last_ingest ? [String(finite(safeSystem.last_ingest.files)), 'DJI Flip · Neo 2'] : ['SD lista'],
       Studio: hasArray(safeSystem, 'reels') || hasArray(safeSystem, 'photos')
         ? [String((safeSystem.reels || []).length), String((safeSystem.photos || []).length)] : ['Sin datos'],

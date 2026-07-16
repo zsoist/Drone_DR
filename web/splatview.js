@@ -4,8 +4,8 @@
 // La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
 // auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
 // contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
-import * as THREE from '/vendor/three180.module.js?v=209';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=209';
+import * as THREE from '/vendor/three180.module.js?v=210';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=210';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -24,7 +24,7 @@ const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
 
 export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } = {}) {
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=209');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=210');
   host.style.position = 'relative';
   const holder = document.createElement('div');
   holder.style.cssText = 'position:absolute;inset:0;touch-action:none';
@@ -46,16 +46,28 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   ctrl.enableDamping = true;
   ctrl.dampingFactor = 0.07;
   ctrl.rotateSpeed = 0.55;
-  ctrl.zoomSpeed = 1.35;
+  ctrl.zoomSpeed = 1.35;                            // === a makeScene() de tresd.js (nube+malla)
   ctrl.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
   ctrl.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
   ctrl.screenSpacePanning = false;
+  ctrl.maxPolarAngle = Math.PI * 0.495;            // splat: no cruzar bajo el horizonte
+  if ('zoomToCursor' in ctrl) ctrl.zoomToCursor = true;
+  try { ctrl.listenToKeyEvents(window); } catch {}
 
   let rafId = 0, running = true;
-  const loop = () => { rafId = requestAnimationFrame(loop); ctrl.update(); renderer.render(scene, cam); };
+  // render ON-DEMAND (idéntico a makeScene de tresd.js): ~90 frames tras cada cambio, luego DUERME.
+  // Sin esto Spark re-ordena ~2M gaussianas por profundidad CADA frame en reposo = el "lento".
+  let renderFrames = 90;
+  const wake = () => { renderFrames = 90; };
+  const loop = () => {
+    rafId = requestAnimationFrame(loop);
+    if (ctrl.update()) renderFrames = Math.max(renderFrames, 2);
+    if (renderFrames > 0) { renderer.render(scene, cam); renderFrames--; }
+  };
+  ctrl.addEventListener('change', wake);
   const onVis = () => {
     if (document.hidden) { running = false; cancelAnimationFrame(rafId); }
-    else if (!running) { running = true; loop(); }
+    else if (!running) { running = true; wake(); loop(); }
   };
   document.addEventListener('visibilitychange', onVis);
 
@@ -126,18 +138,10 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     if (!w || !h) return;
     renderer.setSize(w, h);
     cam.aspect = w / h; cam.updateProjectionMatrix();
+    wake();
   });
   ro.observe(holder);
 
-  // navegación premium — esquema GOOGLE MAPS/EARTH (idéntico al visor anterior)
-  ctrl.enableDamping = true; ctrl.dampingFactor = 0.06;
-  ctrl.rotateSpeed = 0.6; ctrl.zoomSpeed = 2.15; ctrl.panSpeed = 0.95;
-  ctrl.maxPolarAngle = Math.PI * 0.495;
-  ctrl.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
-  ctrl.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
-  ctrl.screenSpacePanning = false;
-  if ('zoomToCursor' in ctrl) ctrl.zoomToCursor = true;
-  try { ctrl.listenToKeyEvents(window); } catch {}
 
   // ---- FOCUS por doble-click: rayo al plano del suelo -> target ahí ----
   let anim = 0;
@@ -149,7 +153,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
       const k = Math.min(1, (performance.now() - t0) / dur), e = 1 - (1 - k) ** 3;
       ctrl.target.lerpVectors(sT, toTarget, e);
       cam.position.lerpVectors(sP, toPos, e);
-      ctrl.update();
+      ctrl.update(); wake();
       if (k < 1) anim = requestAnimationFrame(step);
       else if (toMin != null) ctrl.minDistance = toMin;
     })();
@@ -177,7 +181,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     if (!Number.isFinite(d) || d <= 0) return;
     const nd = Math.max(ctrl.minDistance || inspectMin, Math.min(ctrl.maxDistance || radius * 20, d * mult));
     cam.position.copy(ctrl.target).addScaledVector(dir.normalize(), nd);
-    ctrl.update();
+    ctrl.update(); wake();
   }
   const inViewer = e => holder.contains(e.target) || e.target === holder;
   const onDbl = e => { if (!inViewer(e)) return; e.preventDefault(); e.stopPropagation(); focusAt(e.clientX, e.clientY); };
@@ -232,9 +236,10 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     else if (k === 'rot') { ctrl.autoRotate = !ctrl.autoRotate; ctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', ctrl.autoRotate); }
     else if (k === 'shot') screenshot();
     else if (k === 'full') toggleFull();
+    wake();
   });
   hud.addEventListener('input', e => {
-    if (e.target.dataset.sv === 'fov') { cam.fov = +e.target.value; cam.updateProjectionMatrix(); }
+    if (e.target.dataset.sv === 'fov') { cam.fov = +e.target.value; cam.updateProjectionMatrix(); wake(); }
   });
 
   function screenshot() {

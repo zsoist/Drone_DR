@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=209';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=209';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=209';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=209';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=209';
-  import { mountSplatViewer } from '/splatview.js?v=209';
+  import * as THREE from '/vendor/three180.module.js?v=210';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=210';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=210';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=210';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=210';
+  import { mountSplatViewer } from '/splatview.js?v=210';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -2000,21 +2000,22 @@
     });
     omap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     omap.on('load', () => {
+      // rampa por zoom anclada al arranque de tiles: el overlay 2000px (colocado por 4 esquinas,
+      // se DESALINEA al acercar por el warp UTM→Mercator) se disuelve mientras entran los tiles
+      // nativos georreferenciados que SÍ calzan con el satélite — mata el fantasma/doble borde
+      const orthoZ0 = cur.tiles_minzoom || 15;
+      const orthoFade = (lo, hi) => ['interpolate', ['linear'], ['zoom'], orthoZ0 + 1, lo, orthoZ0 + 2.2, hi];
       omap.addSource('ortho', { type: 'image', url: `${base}/${cur.ortho_asset || 'ortho.png'}`, coordinates: cur.corners });
       omap.addLayer({ id: 'ortho', type: 'raster', source: 'ortho',
-                      paint: { 'raster-opacity': 0.82, 'raster-fade-duration': 0 } });
-      // tiles XYZ a resolución NATIVA (187Mpx vs overlay 2000px): entran fundiéndose
-      // al acercar — de lejos manda el overlay con su borde feathered, de cerca la nitidez real
+                      paint: { 'raster-opacity': cur.tiles ? orthoFade(0.82, 0) : 0.82, 'raster-fade-duration': 0 } });
       if (cur.tiles) {
         omap.addSource('ortho-hd', { type: 'raster', tiles: [`${base}/tiles/{z}/{x}/{y}.png`],
-          tileSize: 256, minzoom: cur.tiles_minzoom || 15, maxzoom: cur.tiles_maxzoom || 21,
+          tileSize: 256, minzoom: orthoZ0, maxzoom: cur.tiles_maxzoom || 21,
           bounds: cur.corners ? [
             Math.min(...cur.corners.map(c => c[0])), Math.min(...cur.corners.map(c => c[1])),
             Math.max(...cur.corners.map(c => c[0])), Math.max(...cur.corners.map(c => c[1]))] : undefined });
         omap.addLayer({ id: 'ortho-hd', type: 'raster', source: 'ortho-hd',
-          paint: { 'raster-opacity': ['interpolate', ['linear'], ['zoom'],
-            (cur.tiles_minzoom || 15) + 1, 0, (cur.tiles_minzoom || 15) + 2.2, 0.82],
-            'raster-fade-duration': 120 } });
+          paint: { 'raster-opacity': orthoFade(0, 0.82), 'raster-fade-duration': 120 } });
       }
       if (cur.dsm_corners) {
         omap.addSource('dsm', { type: 'image', url: `${base}/${cur.dsm_asset || 'dsm_color.png'}`, coordinates: cur.dsm_corners });
@@ -2047,10 +2048,12 @@
     document.getElementById('omap').appendChild(rc);
     document.getElementById('op').oninput = e => {
       const v = +e.target.value / 100;
-      omap.getLayer('ortho') && omap.setPaintProperty('ortho', 'raster-opacity', v);
-      if (omap.getLayer('ortho-hd')) omap.setPaintProperty('ortho-hd', 'raster-opacity',
-        ['interpolate', ['linear'], ['zoom'],
-         (cur.tiles_minzoom || 15) + 1, 0, (cur.tiles_minzoom || 15) + 2.2, v]);
+      const z0 = cur.tiles_minzoom || 15;
+      const fade = (lo, hi) => ['interpolate', ['linear'], ['zoom'], z0 + 1, lo, z0 + 2.2, hi];
+      if (omap.getLayer('ortho'))
+        omap.setPaintProperty('ortho', 'raster-opacity', cur.tiles ? fade(v, 0) : v);
+      if (omap.getLayer('ortho-hd'))
+        omap.setPaintProperty('ortho-hd', 'raster-opacity', fade(0, v));
     };
     const spList = splatAssetsFor(cid);
     const spSel = document.getElementById('sp-select');

@@ -1,5 +1,5 @@
-import * as THREE from '/flightverse/three.js?v=209';
-import { GLTFLoader } from '/vendor/three-addons180/loaders/GLTFLoader.js?v=209';
+import * as THREE from '/flightverse/three.js?v=210';
+import { GLTFLoader } from '/vendor/three-addons180/loaders/GLTFLoader.js?v=210';
 
 export async function mountHomeDrone(selector = '#home-drone-stage') {
   const stage = typeof selector === 'string' ? document.querySelector(selector) : selector;
@@ -27,7 +27,7 @@ export async function mountHomeDrone(selector = '#home-drone-stage') {
 
   let model;
   try {
-    const gltf = await new GLTFLoader().loadAsync('/assets/drone.glb?v=209');
+    const gltf = await new GLTFLoader().loadAsync('/assets/drone.glb?v=210');
     model = gltf.scene;
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
@@ -36,7 +36,8 @@ export async function mountHomeDrone(selector = '#home-drone-stage') {
     box.setFromObject(model);
     const center = box.getCenter(new THREE.Vector3());
     model.position.sub(center);
-    model.rotation.x = .13;
+    model.rotation.y = Math.PI;   // encara la cámara (+Z): el GLB trae el morro en -Z local
+  model.rotation.x = .13;       // ligero morro-abajo una vez que apunta a +Z
     model.traverse(node => {
       if (!node.isMesh) return;
       node.castShadow = false;

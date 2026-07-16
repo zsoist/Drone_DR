@@ -52,7 +52,7 @@ function renderSkeleton() {
       <div class="hv2-sk hv2-sk-copy"></div><div class="hv2-sk hv2-sk-actions"></div>
     </section>
     <div class="hv2-telemetry hv2-skeleton">${Array.from({ length: 5 }, () => '<span class="hv2-sk"></span>').join('')}</div>
-    <div class="hv2-grid hv2-skeleton">${Array.from({ length: 7 }, () => '<span class="hv2-sk"></span>').join('')}</div>`;
+    <div class="hv2-grid hv2-skeleton">${Array.from({ length: 9 }, () => '<span class="hv2-sk"></span>').join('')}</div>`;
 }
 
 function renderHome(vm, states) {
@@ -118,7 +118,7 @@ function renderHome(vm, states) {
   if (window.HomeEffects) HomeEffects.attachVoidNavigation(main);
   requestAnimationFrame(() => main.classList.add('is-ready'));
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    setTimeout(() => import('./home-drone.js?v=209').then(mod => mod.mountHomeDrone?.('#home-drone-stage')).catch(() => {}), 260);
+    setTimeout(() => import('./home-drone.js?v=210').then(mod => mod.mountHomeDrone?.('#home-drone-stage')).catch(() => {}), 260);
   }
 }
 
