@@ -2692,6 +2692,59 @@ class H(BaseHTTPRequestHandler):
             j = job_add("upload", name)
             threading.Thread(target=process_upload, args=(path, j), daemon=True).start()
             return self.send_json({"ok": True, "clip_id": cid, "bytes": read, "job": j["id"]})
+        if u.path == "/api/splat_revert":
+            # Reversibilidad del Auto-Clean (v2): restaura el crudo pre-clean (.raw.splat) como
+            # versión actual; la versión limpia se archiva en history/ = nada se pierde, es un
+            # toggle. También acepta to=<archivo de history> para revertir a cualquier versión.
+            if not self.auth(q):
+                return
+            cid = re.sub(r"[^\w-]", "", q.get("cid", [""])[0])
+            to = q.get("to", ["raw"])[0]
+            if not cid:
+                return self.send_json({"error": "cid requerido"}, 400)
+            if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
+                return self.send_json({"error": "hay un trabajo activo para este clip — espera a que termine"}, 409)
+            sdir = VAULT / "splats"
+            hist = sdir / "history"; hist.mkdir(parents=True, exist_ok=True)
+            cur_splat = sdir / f"{cid}.splat"
+            src_splat = (sdir / f"{cid}.raw.splat") if to == "raw" else (hist / Path(re.sub(r"[^\w.\-]", "_", to)).name)
+            try:
+                src_splat.resolve().relative_to(sdir.resolve())   # contención
+            except ValueError:
+                return self.send_json({"error": "ruta inválida"}, 400)
+            if not src_splat.is_file():
+                return self.send_json({"error": ("no hay versión cruda pre-clean" if to == "raw"
+                                                 else "versión no encontrada")}, 404)
+            try:
+                ts = time.strftime("%Y%m%d-%H%M%S")
+                # archiva la actual (limpia) antes de pisarla — reversible en ambos sentidos
+                if cur_splat.exists():
+                    shutil.copy2(cur_splat, hist / f"{cid}-{ts}.splat")
+                    cur_sog = sdir / f"{cid}.clean.sog"
+                    if cur_sog.exists():
+                        shutil.copy2(cur_sog, hist / f"{cid}-{ts}.clean.sog")
+                shutil.copy2(src_splat, cur_splat)
+                # re-exporta SOG desde el splat restaurado
+                import subprocess as _sp
+                st = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
+                sog = sdir / f"{cid}.clean.sog"
+                r = _sp.run(["node", str(st), str(cur_splat), str(sog), "--overwrite", "--no-tty", "-q"],
+                                   capture_output=True, text=True, timeout=600)
+                if r.returncode != 0:
+                    raise RuntimeError((r.stderr or r.stdout or "SOG falló")[-160:])
+                mf = sdir / f"{cid}.meta.json"
+                if mf.exists():
+                    m = json.loads(mf.read_text())
+                    m["bytes"] = sog.stat().st_size
+                    m["clean_params"] = None if to == "raw" else m.get("clean_params")
+                    m["reverted_to"] = to
+                    mf.write_text(json.dumps(m, indent=1))
+                prune_splat_history(hist, cid)
+                rebuild_index()
+                return self.send_json({"ok": True, "cid": cid, "to": to, "sog_bytes": sog.stat().st_size})
+            except Exception as e:
+                return self.send_json({"error": f"revert falló: {str(e)[-160:]}"}, 500)
+
         if u.path == "/api/splat_upload":
             # round-trip de Splat Lab: sube el splat EDITADO (SuperSplat export) y publícalo
             # versionado — los formatos anteriores del clip van a splats/history/ (nada se pierde)
