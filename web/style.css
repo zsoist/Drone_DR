@@ -5040,3 +5040,20 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
 .lab-clean-lb{ font-size:9px; font-weight:750; letter-spacing:.14em; color:var(--accent) }
 .lab-clean .btn.primary{ box-shadow:0 0 16px -6px rgba(69,160,230,.6) }
 #lab-clean-status{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+
+/* ── BLOQUE 72: Splat Lab ajustes finos + hint de gestos ── */
+.lab-tune-panel{ flex-basis:100%; display:flex; gap:18px; flex-wrap:wrap; padding:10px 4px 2px }
+.lab-tune-panel label{ display:flex; align-items:center; gap:9px; font-size:9.5px;
+  font-weight:700; letter-spacing:.1em; color:var(--text-3) }
+.lab-tune-panel input[type=range]{ width:130px; accent-color:var(--accent) }
+.lab-tune-panel b{ font-size:11px; color:var(--text); min-width:42px }
+.lab-gestures{ position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
+  z-index:30; display:flex; align-items:center; gap:12px; max-width:92%;
+  padding:11px 16px; border-radius:12px; font-size:12px; color:var(--text-2);
+  border:1px solid rgba(69,160,230,.35); background:rgba(8,11,16,.92);
+  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  animation:riseIn .4s var(--ease) backwards }
+.lab-gestures b{ color:var(--text) }
+.lab-gestures button{ flex:none; padding:6px 14px; border-radius:8px; cursor:pointer;
+  border:1px solid rgba(69,160,230,.5); background:rgba(69,160,230,.15); color:#8ec7ff;
+  font:600 12px var(--font); min-height:36px }

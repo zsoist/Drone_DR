@@ -90,14 +90,36 @@ main.classList.add('lab-main');
       <button class="btn" id="lab-undo" title="Deshace el último paso dentro del editor (el Auto-Clean es UN solo paso)" aria-label="Deshacer en el editor">${icon('undo')}</button>
       <button class="btn" id="lab-redo" title="Rehace el paso deshecho dentro del editor" aria-label="Rehacer en el editor" style="transform:scaleX(-1)">${icon('undo')}</button>
       <button class="btn" id="lab-ab" title="Alterna el editor entre el crudo y la versión actual para comparar antes/después" aria-pressed="${abRaw}">${abRaw ? 'Viendo: crudo' : 'A/B crudo'}</button>
-      <span class="footer-note mono" id="lab-clean-status" role="status" aria-live="polite"></span>`;
+      <button class="btn" id="lab-tune" title="Ajustes finos del Auto-Clean: umbral de haze, factor de spikes y agujas — se aplican al próximo Limpiar" aria-expanded="false">${icon('gauge')} Ajustes</button>
+      <span class="footer-note mono" id="lab-clean-status" role="status" aria-live="polite"></span>
+      <div class="lab-tune-panel" id="lab-tune-panel" hidden>
+        <label title="Gaussianas con opacidad menor a este umbral se consideran niebla/haze">HAZE (opacidad mín) <input type="range" id="tn-op" min="0" max="20" value="3.5" step="0.5"> <b class="mono" id="tn-op-v">3.5%</b></label>
+        <label title="Multiplicador sobre la mediana de escala — más bajo = más agresivo con los spikes">SPIKES (K × mediana) <input type="range" id="tn-k" min="2" max="10" value="6" step="0.5"> <b class="mono" id="tn-k-v">6.0×</b></label>
+        <label title="Relación máx/intermedio de los ejes — más bajo = más agujas fuera">AGUJAS (anisotropía) <input type="range" id="tn-an" min="5" max="25" value="15" step="1"> <b class="mono" id="tn-an-v">15</b></label>
+      </div>`;
     const cst = t => { const el = document.getElementById('lab-clean-status'); if (el) el.textContent = t; };
     // limpieza IN-EDITOR: postMessage al iframe (fork src/aerobrain) — undo nativo de SuperSplat
+    const tuneOverrides = () => {
+      const panel = document.getElementById('lab-tune-panel');
+      if (!panel || panel.hidden) return undefined;          // solo si el usuario abrió Ajustes
+      return { opacityMin: +document.getElementById('tn-op').value / 100,
+               scaleK: +document.getElementById('tn-k').value,
+               anisoMax: +document.getElementById('tn-an').value };
+    };
     document.getElementById('lab-ac-ed').addEventListener('click', () => {
       const preset = document.getElementById('lab-preset').value;
       cst('limpiando en el editor…');
-      try { frame.contentWindow.postMessage({ type: 'aerobrain:autoclean', preset }, '*'); }
+      try { frame.contentWindow.postMessage({ type: 'aerobrain:autoclean', preset, overrides: tuneOverrides() }, '*'); }
       catch { cst('✗ el editor no respondió'); }
+    });
+    document.getElementById('lab-tune').addEventListener('click', e2 => {
+      const panel = document.getElementById('lab-tune-panel');
+      panel.hidden = !panel.hidden;
+      e2.currentTarget.setAttribute('aria-expanded', String(!panel.hidden));
+    });
+    [['tn-op', v => v + '%'], ['tn-k', v => (+v).toFixed(1) + '×'], ['tn-an', v => v]].forEach(([id, f]) => {
+      document.getElementById(id).addEventListener('input', e2 =>
+        document.getElementById(id + '-v').textContent = f(e2.target.value));
     });
     document.getElementById('lab-ac').addEventListener('click', async e2 => {
       const btn = e2.currentTarget; btn.disabled = true;
@@ -228,6 +250,17 @@ main.classList.add('lab-main');
     } catch { /* cross-origin imposible aquí (mismo host), pero por si acaso */ }
   });
 
+  // primera vez en táctil: hint de gestos (el modelo mental Google Earth)
+  if (matchMedia('(pointer: coarse)').matches && !localStorage.getItem('ab.lab.gestures')) {
+    const g = document.createElement('div');
+    g.className = 'lab-gestures';
+    g.innerHTML = '<b>1 dedo</b> orbitar · <b>pellizco</b> zoom · <b>2 dedos</b> mover · <b>⚡ Auto-Clean</b> limpia con un tap<button aria-label="Entendido">Entendido</button>';
+    document.querySelector('.lab-frame-wrap')?.appendChild(g);
+    g.querySelector('button').addEventListener('click', () => {
+      localStorage.setItem('ab.lab.gestures', '1'); g.remove();
+    });
+  }
+
   window.addEventListener('message', e => {
     const d = e.data;
     if (!d || d.type !== 'aerobrain:autoclean:done') return;
@@ -237,7 +270,7 @@ main.classList.add('lab-main');
     if (r.error) { el.textContent = `✗ ${r.error}`; return; }
     const rm = r.removed || {};
     el.textContent = r.note ? `✓ ${r.note}` :
-      `✓ ${(r.selected || 0).toLocaleString()} gaussianas borradas (undo ×2 deshace) · haze ${rm.opacity || 0} · spikes ${rm.scale || 0} · agujas ${rm.aniso || 0} · borde ${rm.radial || 0} — File→Export y súbelo para publicar`;
+      `✓ ${(r.selected || 0).toLocaleString()} gaussianas borradas (un undo lo deshace) · haze ${rm.opacity || 0} · spikes ${rm.scale || 0} · agujas ${rm.aniso || 0} · borde ${rm.radial || 0} — File→Export y súbelo para publicar`;
   });
 
   renderPicker(); renderActions();
