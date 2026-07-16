@@ -5057,3 +5057,13 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
 .lab-gestures button{ flex:none; padding:6px 14px; border-radius:8px; cursor:pointer;
   border:1px solid rgba(69,160,230,.5); background:rgba(69,160,230,.15); color:#8ec7ff;
   font:600 12px var(--font); min-height:36px }
+
+/* ── BLOQUE 73: wizard por etapas del Auto-Clean ── */
+.tn-stage{ display:flex; align-items:center; gap:8px; padding:4px 8px; border-radius:9px;
+  background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06) }
+.tn-stage:has(input[type=checkbox]:not(:checked)){ opacity:.45 }
+.tn-stage input[type=checkbox]{ accent-color:var(--accent); width:15px; height:15px }
+.tn-lb{ font-size:9px; font-weight:750; letter-spacing:.12em; color:var(--text-3); min-width:46px }
+.tn-stage input[type=range]{ width:110px; accent-color:var(--accent) }
+.tn-stage b{ font-size:10.5px; color:var(--text); min-width:40px }
+.tn-count{ font-size:10px; color:#E0A458; min-width:52px; text-align:right }

@@ -93,18 +93,35 @@ main.classList.add('lab-main');
       <button class="btn" id="lab-tune" title="Ajustes finos del Auto-Clean: umbral de haze, factor de spikes y agujas — se aplican al próximo Limpiar" aria-expanded="false">${icon('gauge')} Ajustes</button>
       <span class="footer-note mono" id="lab-clean-status" role="status" aria-live="polite"></span>
       <div class="lab-tune-panel" id="lab-tune-panel" hidden>
-        <label title="Gaussianas con opacidad menor a este umbral se consideran niebla/haze">HAZE (opacidad mín) <input type="range" id="tn-op" min="0" max="20" value="3.5" step="0.5"> <b class="mono" id="tn-op-v">3.5%</b></label>
-        <label title="Multiplicador sobre la mediana de escala — más bajo = más agresivo con los spikes">SPIKES (K × mediana) <input type="range" id="tn-k" min="2" max="10" value="6" step="0.5"> <b class="mono" id="tn-k-v">6.0×</b></label>
-        <label title="Relación máx/intermedio de los ejes — más bajo = más agujas fuera">AGUJAS (anisotropía) <input type="range" id="tn-an" min="5" max="25" value="15" step="1"> <b class="mono" id="tn-an-v">15</b></label>
+        <div class="tn-stage" title="Gaussianas casi transparentes = niebla/haze. Desmarca para conservarlas">
+          <input type="checkbox" id="tn-op-on" checked><span class="tn-lb">HAZE</span>
+          <input type="range" id="tn-op" min="0.5" max="20" value="3.5" step="0.5"><b class="mono" id="tn-op-v">3.5%</b>
+          <em class="mono tn-count" id="tn-op-c"></em></div>
+        <div class="tn-stage" title="Gaussianas gigantes vs la mediana = spikes/blobs. Más bajo = más agresivo">
+          <input type="checkbox" id="tn-k-on" checked><span class="tn-lb">SPIKES</span>
+          <input type="range" id="tn-k" min="2" max="10" value="6" step="0.5"><b class="mono" id="tn-k-v">6.0×</b>
+          <em class="mono tn-count" id="tn-k-c"></em></div>
+        <div class="tn-stage" title="Agujas: eje máximo >> eje intermedio (no toca discos-superficie). Más bajo = más agujas fuera">
+          <input type="checkbox" id="tn-an-on" checked><span class="tn-lb">AGUJAS</span>
+          <input type="range" id="tn-an" min="5" max="25" value="15" step="1"><b class="mono" id="tn-an-v">15</b>
+          <em class="mono tn-count" id="tn-an-c"></em></div>
+        <div class="tn-stage" title="Spray radial más allá del footprint de vuelo. Desmarca si tu escena es alargada">
+          <input type="checkbox" id="tn-rad-on" checked><span class="tn-lb">BORDE</span>
+          <input type="range" id="tn-rad" min="95" max="99.9" value="99.5" step="0.1"><b class="mono" id="tn-rad-v">P99.5</b>
+          <em class="mono tn-count" id="tn-rad-c"></em></div>
+        <p class="footer-note" style="flex-basis:100%;margin:2px 0 0">Cada limpieza es UN paso de undo — prueba, mira los contadores por etapa, deshaz y ajusta.</p>
       </div>`;
     const cst = t => { const el = document.getElementById('lab-clean-status'); if (el) el.textContent = t; };
     // limpieza IN-EDITOR: postMessage al iframe (fork src/aerobrain) — undo nativo de SuperSplat
     const tuneOverrides = () => {
       const panel = document.getElementById('lab-tune-panel');
       if (!panel || panel.hidden) return undefined;          // solo si el usuario abrió Ajustes
-      return { opacityMin: +document.getElementById('tn-op').value / 100,
-               scaleK: +document.getElementById('tn-k').value,
-               anisoMax: +document.getElementById('tn-an').value };
+      const on = id => document.getElementById(id).checked;
+      const v = id => +document.getElementById(id).value;
+      return { opacityMin: on('tn-op-on') ? v('tn-op') / 100 : 0,
+               scaleK: on('tn-k-on') ? v('tn-k') : 0,
+               anisoMax: on('tn-an-on') ? v('tn-an') : 0,
+               radialPct: on('tn-rad-on') ? v('tn-rad') / 100 : 0 };
     };
     document.getElementById('lab-ac-ed').addEventListener('click', () => {
       const preset = document.getElementById('lab-preset').value;
@@ -117,7 +134,8 @@ main.classList.add('lab-main');
       panel.hidden = !panel.hidden;
       e2.currentTarget.setAttribute('aria-expanded', String(!panel.hidden));
     });
-    [['tn-op', v => v + '%'], ['tn-k', v => (+v).toFixed(1) + '×'], ['tn-an', v => v]].forEach(([id, f]) => {
+    [['tn-op', v => v + '%'], ['tn-k', v => (+v).toFixed(1) + '×'], ['tn-an', v => v],
+     ['tn-rad', v => 'P' + v]].forEach(([id, f]) => {
       document.getElementById(id).addEventListener('input', e2 =>
         document.getElementById(id + '-v').textContent = f(e2.target.value));
     });
@@ -271,6 +289,12 @@ main.classList.add('lab-main');
     const rm = r.removed || {};
     el.textContent = r.note ? `✓ ${r.note}` :
       `✓ ${(r.selected || 0).toLocaleString()} gaussianas borradas (un undo lo deshace) · haze ${rm.opacity || 0} · spikes ${rm.scale || 0} · agujas ${rm.aniso || 0} · borde ${rm.radial || 0} — File→Export y súbelo para publicar`;
+    // contadores vivos por etapa en el wizard
+    [['tn-op-c', rm.opacity], ['tn-k-c', (rm.scale || 0) + (rm.bbox || 0)],
+     ['tn-an-c', rm.aniso], ['tn-rad-c', rm.radial]].forEach(([id, n]) => {
+      const c = document.getElementById(id);
+      if (c) c.textContent = n ? `−${(+n).toLocaleString()}` : '';
+    });
   });
 
   renderPicker(); renderActions();
