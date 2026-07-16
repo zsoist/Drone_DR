@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=216';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=216';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=216';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=216';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=216';
-  import { mountSplatViewer } from '/splatview.js?v=216';
+  import * as THREE from '/vendor/three180.module.js?v=218';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=218';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=218';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=218';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=218';
+  import { mountSplatViewer } from '/splatview.js?v=218';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -3017,7 +3017,10 @@
     let handle;
     try {
       handle = await mountSplatViewer(box, splatUrl(asset),
-        { bytes: asset.bytes, onStatus: t => { if (st) st.textContent = t; } });
+        { bytes: asset.bytes, onStatus: t => { if (st) st.textContent = t; },
+          // medición honesta: Metal/MPS entrena topocéntrico (= metros); el lane CUDA
+          // normaliza poses (nerfstudio) → unidades relativas hasta tener scene_to_meters
+          unitsMeters: asset.backend ? !/cuda|nvidia/i.test(asset.backend) : null });
     } catch (err) {
       if (box._loadToken === myToken) {
         box._loading = false;

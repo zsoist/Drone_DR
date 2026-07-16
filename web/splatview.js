@@ -4,8 +4,8 @@
 // La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
 // auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
 // contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
-import * as THREE from '/vendor/three180.module.js?v=216';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=216';
+import * as THREE from '/vendor/three180.module.js?v=218';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=218';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -19,12 +19,13 @@ const I = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   target: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
+  rule: '<path d="M3 17 17 3l4 4L7 21z"/><path d="m8.5 12.5 1.5 1.5M11.5 9.5l1.5 1.5M14.5 6.5 16 8"/>',
 };
 const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
 
-export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } = {}) {
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=216');
+export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, unitsMeters = null } = {}) {
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=218');
   host.style.position = 'relative';
   const holder = document.createElement('div');
   holder.style.cssText = 'position:absolute;inset:0;touch-action:none';
@@ -72,6 +73,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
   document.addEventListener('visibilitychange', onVis);
 
   function teardownCore() {
+    try { clearMeasure(); } catch {}
     cancelAnimationFrame(rafId);
     try { cancelAnimationFrame(anim); } catch {}
     document.removeEventListener('visibilitychange', onVis);
@@ -183,11 +185,72 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     cam.position.copy(ctrl.target).addScaledVector(dir.normalize(), nd);
     ctrl.update(); wake();
   }
+  // ---- MEDIR: nuestros splats vienen de COLMAP topocéntrico → 1 unidad ≈ 1 metro.
+  //      2 clics (sin arrastre) al plano del suelo; el 3º inicia una medición nueva ----
+  let measuring = false;
+  const mPts = [];
+  let mLine = null, mMarkers = [], mChip = null;
+  const groundHit = (clientX, clientY) => {
+    const rect = holder.getBoundingClientRect();
+    cam.updateMatrixWorld();
+    const ndc = new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1,
+                                  -((clientY - rect.top) / rect.height) * 2 + 1);
+    groundRay.setFromCamera(ndc, cam);
+    const p = new THREE.Vector3();
+    if (!groundRay.ray.intersectPlane(groundPlane, p)) return null;
+    if (p.distanceTo(center) > radius * 2) return null;      // rayo rasante
+    return p;
+  };
+  const clearMeasure = () => {
+    if (mLine) { scene.remove(mLine); mLine.geometry.dispose(); mLine.material.dispose(); mLine = null; }
+    mMarkers.forEach(m => { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    mMarkers = []; mPts.length = 0;
+    mChip?.remove(); mChip = null;
+    wake();
+  };
+  const addMarker = p => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(Math.max(radius * 0.004, 0.004), 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0x45A0E6, depthTest: false }));
+    m.position.copy(p); m.renderOrder = 99;
+    scene.add(m); mMarkers.push(m);
+  };
+  const measureClick = (clientX, clientY) => {
+    const p = groundHit(clientX, clientY);
+    if (!p) return;
+    if (mPts.length >= 2) clearMeasure();                    // 3er clic = medición nueva
+    mPts.push(p); addMarker(p);
+    if (mPts.length === 2) {
+      const g = new THREE.BufferGeometry().setFromPoints(mPts);
+      mLine = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x45A0E6, depthTest: false }));
+      mLine.renderOrder = 98;
+      scene.add(mLine);
+      const d = mPts[0].distanceTo(mPts[1]);
+      mChip = document.createElement('div');
+      mChip.className = 'sv-measure-chip';
+      // honestidad de unidades: OpenSplat local entrena en topocéntrico (= metros);
+      // los splats del lane CUDA vienen NORMALIZADOS por nerfstudio → solo lectura relativa
+      const unit = unitsMeters === false ? 'u' : 'm';
+      mChip.title = unitsMeters === false
+        ? 'Unidades de escena RELATIVAS — este splat se entrenó normalizado (lane CUDA); la distancia real requiere scene_to_meters (próxima fase)'
+        : 'Distancia sobre el plano del suelo en metros (poses topocéntricas del modelo)';
+      mChip.textContent = d >= 100 ? `${d.toFixed(0)} ${unit}` : `${d.toFixed(2)} ${unit}`;
+      host.appendChild(mChip);
+    }
+    wake();
+  };
+  // clic sin arrastre (≤5px) — no interfiere con el pan/rotate de OrbitControls
+  let mDownX = 0, mDownY = 0;
+  host.addEventListener('pointerdown', e => { mDownX = e.clientX; mDownY = e.clientY; }, true);
   const inViewer = e => holder.contains(e.target) || e.target === holder;
   const onDbl = e => { if (!inViewer(e)) return; e.preventDefault(); e.stopPropagation(); focusAt(e.clientX, e.clientY); };
   host.addEventListener('dblclick', onDbl, true);
   let lastTap = 0, lastTX = 0, lastTY = 0;
   const onPtrUp = e => {
+    if (measuring && inViewer(e)
+        && Math.abs(e.clientX - mDownX) <= 5 && Math.abs(e.clientY - mDownY) <= 5) {
+      measureClick(e.clientX, e.clientY);
+      return;
+    }
     if (e.pointerType === 'mouse' || !inViewer(e)) return;
     if (e.timeStamp - lastTap < 320 && Math.abs(e.clientX - lastTX) < 32 && Math.abs(e.clientY - lastTY) < 32) {
       lastTap = 0; focusAt(e.clientX, e.clientY);
@@ -204,6 +267,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     btn('zin', 'Acercar', I.plus) +
     btn('zout', 'Alejar', I.minus) +
     btn('rot', 'Auto-rotar', I.rot) +
+    btn('measure', 'Medir distancia — 2 clics sobre el suelo (≈ metros); el 3º inicia otra medición', I.rule) +
     `<span class="sv-sep"></span>` +
     `<label class="sv-slider" title="Campo de visión">${svg(I.fov)}<input type="range" data-sv="fov" min="30" max="80" value="${Math.round(cam.fov)}"></label>` +
     `<span class="sv-sep"></span>` +
@@ -234,6 +298,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus } =
     else if (k === 'zin') { ctrl.minDistance = inspectMin; dolly(0.25); }
     else if (k === 'zout') dolly(1.55);
     else if (k === 'rot') { ctrl.autoRotate = !ctrl.autoRotate; ctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', ctrl.autoRotate); }
+    else if (k === 'measure') { measuring = !measuring; b.classList.toggle('on', measuring); if (!measuring) clearMeasure(); }
     else if (k === 'shot') screenshot();
     else if (k === 'full') toggleFull();
     wake();

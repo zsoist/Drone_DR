@@ -5067,3 +5067,10 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
 .tn-stage input[type=range]{ width:110px; accent-color:var(--accent) }
 .tn-stage b{ font-size:10.5px; color:var(--text); min-width:40px }
 .tn-count{ font-size:10px; color:#E0A458; min-width:52px; text-align:right }
+
+/* ── BLOQUE 74: measure tool del visor splat ── */
+.sv-measure-chip{ position:absolute; top:12px; left:12px; z-index:12; padding:7px 14px;
+  border-radius:10px; font:700 14px var(--mono); color:#8ec7ff; letter-spacing:.02em;
+  border:1px solid rgba(69,160,230,.45); background:rgba(8,11,16,.88);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  animation:riseIn .25s var(--ease) backwards }
