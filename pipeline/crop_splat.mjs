@@ -51,6 +51,33 @@ function band(arr) {
 }
 const [xl, xh] = band(xs), [yl, yh] = band(ys), [zl, zh] = band(zs);
 
+// ── filtro de SPIKES por escala (los "pinchos" de gsplat 30K): la caja posicional NO los
+// toca porque viven DENTRO del footprint. Cada gaussiana .splat trae scale xyz (f32) en los
+// bytes 12-23. El pincho es una gaussiana MUY estirada en un eje → su max-scale es un outlier
+// extremo. Umbral robusto por percentil (P998 × SCALE_K): mata los poquísimos pinchos sin
+// tocar geometría normal. Desactivable con SCALE_K<=0.
+const SCALE_K = Math.max(0, Number(process.env.CROP_SCALE_K ?? 3.0));
+let scaleHi = Infinity;
+if (SCALE_K > 0) {
+  const maxScales = [];
+  for (let i = 0; i < n; i++) {
+    if (!finite[i]) continue;
+    const o = i * 8;
+    const sx = Math.abs(f32[o + 3]), sy = Math.abs(f32[o + 4]), sz = Math.abs(f32[o + 5]);
+    const m = Math.max(sx, sy, sz);
+    if (Number.isFinite(m)) maxScales.push(m);
+  }
+  if (maxScales.length) {
+    const ss = Float64Array.from(maxScales).sort();
+    const p998 = ss[Math.floor(0.998 * (ss.length - 1))];
+    scaleHi = p998 * SCALE_K;                    // corta lo que excede P99.8 × K
+  }
+}
+// ── filtro de HAZE por opacidad: gaussianas casi transparentes solo añaden niebla/ruido.
+// alpha en byte 27 (rgba u8). Umbral bajo (default 6/255 ≈ 2.4%) — solo las casi-invisibles.
+const ALPHA_MIN = Math.max(0, Math.min(255, Number(process.env.CROP_ALPHA_MIN ?? 6)));
+const u8 = new Uint8Array(ab);
+
 // escribe solo los splats dentro de la caja (los no-finitos siempre se descartan)
 const out = Buffer.allocUnsafe(buf.length);
 let kept = 0;
@@ -58,10 +85,12 @@ for (let i = 0; i < n; i++) {
   if (!finite[i]) continue;
   const o = i * 8;
   const x = f32[o], y = f32[o + 1], z = f32[o + 2];
-  if (x >= xl && x <= xh && y >= yl && y <= yh && z >= zl && z <= zh) {
-    buf.copy(out, kept * STRIDE, i * STRIDE, i * STRIDE + STRIDE);
-    kept++;
-  }
+  if (x < xl || x > xh || y < yl || y > yh || z < zl || z > zh) continue;
+  const smax = Math.max(Math.abs(f32[o + 3]), Math.abs(f32[o + 4]), Math.abs(f32[o + 5]));
+  if (smax > scaleHi) continue;                  // pincho estirado
+  if (u8[i * STRIDE + 27] < ALPHA_MIN) continue; // niebla casi transparente
+  buf.copy(out, kept * STRIDE, i * STRIDE, i * STRIDE + STRIDE);
+  kept++;
 }
 if (kept < n * 0.4) {   // salvaguarda: nunca borres >60% (algo salió mal → no escribas basura)
   console.error(`ABORTA: conservaría solo ${(kept / n * 100).toFixed(1)}% — sospechoso, no escribo`);
@@ -69,4 +98,4 @@ if (kept < n * 0.4) {   // salvaguarda: nunca borres >60% (algo salió mal → n
 }
 fs.writeFileSync(outFile, out.subarray(0, kept * STRIDE));
 console.log(`crop: ${n} -> ${kept} splats (${(kept / n * 100).toFixed(1)}% conservado) · `
-  + `caja x[${xl.toFixed(2)},${xh.toFixed(2)}] y[${yl.toFixed(2)},${yh.toFixed(2)}] z[${zl.toFixed(2)},${zh.toFixed(2)}]`);
+  + `caja + scaleHi=${scaleHi === Infinity ? 'off' : scaleHi.toFixed(3)} (K=${SCALE_K}) · alphaMin=${ALPHA_MIN}`);
