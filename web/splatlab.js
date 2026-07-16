@@ -33,6 +33,7 @@ main.classList.add('lab-main');
       <button class="btn" id="lab-full" title="Editor a pantalla completa (Esc para salir)" aria-label="Editor a pantalla completa">${icon('fit')} Completo</button>
     </div>
     <div class="lab-actions" id="lab-actions" role="toolbar" aria-label="Acciones del splat"></div>
+    <div class="lab-clean" id="lab-clean" role="toolbar" aria-label="Auto-Clean del splat"></div>
     <div class="lab-frame-wrap" id="lab-drop">
       <iframe id="lab-frame" class="lab-frame" allow="fullscreen" title="Editor SuperSplat"></iframe>
       <button class="btn lab-exit" id="lab-exit" hidden aria-label="Salir de pantalla completa">✕ Salir</button>
@@ -62,18 +63,70 @@ main.classList.add('lab-main');
     const s = splats[cur];
     if (!s) { actions.innerHTML = ''; return; }
     actions.innerHTML = `
-      <a class="btn" href="${splatUrl(s)}" download aria-label="Descargar splat original">${icon('dl')} Original</a>
-      <button class="btn" id="lab-upload" aria-label="Subir splat editado">${icon('save')} Subir editado</button>
-      <a class="btn" href="share.html?m=${encodeURIComponent(s.clip_id)}" target="_blank" aria-label="Página pública para compartir">${icon('ext')} Compartir</a>
-      <a class="btn" href="tresd.html" aria-label="Ver en el tab 3D">${icon('cube')} Ver en 3D</a>
+      <a class="btn" href="${splatUrl(s)}" download title="Descarga el .splat actual tal cual está publicado" aria-label="Descargar splat actual">${icon('dl')} Descargar</a>
+      <button class="btn" id="lab-upload" title="Sube un splat editado (.ply/.splat/.ksplat) — la versión anterior se archiva en history/" aria-label="Subir splat editado">${icon('save')} Subir editado</button>
+      <a class="btn" href="share.html?m=${encodeURIComponent(s.clip_id)}" target="_blank" title="Abre la página pública compartible de este modelo" aria-label="Página pública para compartir">${icon('ext')} Compartir</a>
+      <a class="btn" href="tresd.html" title="Abre el proyecto en el tab 3D (mapa, malla, nube)" aria-label="Ver en el tab 3D">${icon('cube')} Ver en 3D</a>
       <span class="footer-note mono" id="lab-status" role="status" aria-live="polite"></span>`;
     document.getElementById('lab-upload').addEventListener('click', () => fileIn.click());
+    renderClean();
   };
+  const rawUrl = s => 'data/splats/' + encodeURIComponent(`${s.clip_id}.raw.splat`);
+  let abRaw = false;                       // A/B: viendo el crudo pre-clean en el editor
+  function renderClean() {
+    const s = splats[cur];
+    const box = document.getElementById('lab-clean');
+    if (!s || !box) { if (box) box.innerHTML = ''; return; }
+    box.innerHTML = `
+      <span class="lab-clean-lb mono">AUTO-CLEAN</span>
+      <select class="ctl" id="lab-preset" title="Preset de limpieza — aéreo conserva estructuras dispersas legítimas; agresivo quita más spray de borde">
+        <option value="aerial">Aéreo (seguro)</option>
+        <option value="aerial_aggressive">Aéreo agresivo</option>
+        <option value="object">Objeto / interior</option>
+      </select>
+      <button class="btn primary" id="lab-ac" title="Quita floaters, haze y agujas con el motor estadístico adaptativo — reversible con Revertir">${icon('spark')} Limpiar</button>
+      <button class="btn" id="lab-revert" title="Restaura el crudo pre-clean como versión actual (la limpia queda en history/) — nada se pierde">${icon('undo')} Revertir</button>
+      <button class="btn" id="lab-ab" title="Alterna el editor entre el crudo y la versión actual para comparar antes/después" aria-pressed="${abRaw}">${abRaw ? 'Viendo: crudo' : 'A/B crudo'}</button>
+      <span class="footer-note mono" id="lab-clean-status" role="status" aria-live="polite"></span>`;
+    const cst = t => { const el = document.getElementById('lab-clean-status'); if (el) el.textContent = t; };
+    document.getElementById('lab-ac').addEventListener('click', async e2 => {
+      const btn = e2.currentTarget; btn.disabled = true;
+      const preset = document.getElementById('lab-preset').value;
+      cst('limpiando…');
+      try {
+        const r = await fetch(`/api/splat_autoclean?cid=${encodeURIComponent(s.clip_id)}&preset=${preset}`, { method: 'POST' });
+        const out = await r.json();
+        if (!r.ok || out.error) throw new Error(out.error || r.status);
+        const rep = out.report, rm = rep.removed;
+        cst(`✓ ${rep.input.toLocaleString()} → ${rep.output.toLocaleString()} (${rep.kept_pct}%) · haze ${rm.opacity} · spikes ${rm.scale} · agujas ${rm.aniso} · voxel ${rm.voxel}`);
+        await load_sys(); abRaw = false; load(cur);
+      } catch (err) { cst(`✗ ${String(err.message || err).slice(0, 90)}`); }
+      finally { btn.disabled = false; }
+    });
+    document.getElementById('lab-revert').addEventListener('click', async () => {
+      cst('revirtiendo al crudo…');
+      try {
+        const r = await fetch(`/api/splat_revert?cid=${encodeURIComponent(s.clip_id)}&to=raw`, { method: 'POST' });
+        const out = await r.json();
+        if (!r.ok || out.error) throw new Error(out.error || r.status);
+        cst('✓ crudo restaurado como actual · la limpia quedó en history/');
+        await load_sys(); abRaw = false; load(cur);
+      } catch (err) { cst(`✗ ${String(err.message || err).slice(0, 90)}`); }
+    });
+    document.getElementById('lab-ab').addEventListener('click', () => {
+      abRaw = !abRaw;
+      const src = abRaw
+        ? `/supersplat/?load=${encodeURIComponent('/' + rawUrl(s))}&filename=${encodeURIComponent(s.clip_id + '.raw.splat')}`
+        : editorUrl(s);
+      frame.src = src;
+      renderClean();
+    });
+  }
   const load = i => {
     if (!splats[i]) return;
     cur = i;
     frame.src = editorUrl(splats[i]);
-    renderPicker(); renderActions();
+    renderPicker(); renderActions(); renderClean();
   };
 
   picker.addEventListener('click', e => {

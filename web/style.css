@@ -5031,3 +5031,12 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
   color:#DDE4EE; background:rgba(10,13,18,.75); border:1px solid rgba(255,255,255,.18);
   -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px) }
 .m-fmt.dng{ color:#E0A458; border-color:rgba(224,164,88,.45); background:rgba(224,164,88,.12) }
+
+/* ── BLOQUE 71: Splat Lab v2 — barra Auto-Clean ── */
+.lab-clean{ display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+  margin:10px 0 12px; padding:10px 14px; border-radius:12px;
+  border:1px solid rgba(69,160,230,.22);
+  background:linear-gradient(180deg, rgba(69,160,230,.06), rgba(69,160,230,.02)) }
+.lab-clean-lb{ font-size:9px; font-weight:750; letter-spacing:.14em; color:var(--accent) }
+.lab-clean .btn.primary{ box-shadow:0 0 16px -6px rgba(69,160,230,.6) }
+#lab-clean-status{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }

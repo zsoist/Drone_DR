@@ -2692,6 +2692,54 @@ class H(BaseHTTPRequestHandler):
             j = job_add("upload", name)
             threading.Thread(target=process_upload, args=(path, j), daemon=True).start()
             return self.send_json({"ok": True, "clip_id": cid, "bytes": read, "job": j["id"]})
+        if u.path == "/api/splat_autoclean":
+            # Auto-Clean bajo demanda (Splat Lab v2): archiva el crudo si no existe, corre el
+            # motor (autoclean.mjs) sobre el .splat actual, re-exporta SOG y actualiza meta.
+            # Reversible: /api/splat_revert deshace. pending-lock igual que upload/revert.
+            if not self.auth(q):
+                return
+            cid = re.sub(r"[^\w-]", "", q.get("cid", [""])[0])
+            preset = re.sub(r"[^\w-]", "", q.get("preset", ["aerial"])[0]) or "aerial"
+            if not cid:
+                return self.send_json({"error": "cid requerido"}, 400)
+            if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
+                return self.send_json({"error": "hay un trabajo activo para este clip — espera a que termine"}, 409)
+            sdir = VAULT / "splats"
+            cur_splat = sdir / f"{cid}.splat"
+            if not cur_splat.is_file():
+                return self.send_json({"error": "este clip no tiene .splat master"}, 404)
+            import subprocess as _sp
+            try:
+                raw_keep = sdir / f"{cid}.raw.splat"
+                if not raw_keep.exists():
+                    shutil.copy2(cur_splat, raw_keep)      # reversibilidad garantizada
+                tmp = sdir / f".{cid}.ac.tmp.splat"
+                r = _sp.run(["node", str(PIPE / "autoclean.mjs"), str(cur_splat), str(tmp),
+                             "--preset", preset, "--json"],
+                            capture_output=True, text=True, timeout=600)
+                if r.returncode != 0 or not tmp.exists():
+                    raise RuntimeError((r.stderr or r.stdout or "autoclean falló")[-200:])
+                report = json.loads(r.stdout.strip().splitlines()[-1])
+                os.replace(tmp, cur_splat)
+                st = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
+                sog = sdir / f"{cid}.clean.sog"
+                r2 = _sp.run(["node", str(st), str(cur_splat), str(sog), "--overwrite", "--no-tty", "-q"],
+                             capture_output=True, text=True, timeout=600)
+                if r2.returncode != 0:
+                    raise RuntimeError((r2.stderr or r2.stdout or "SOG falló")[-160:])
+                mf = sdir / f"{cid}.meta.json"
+                if mf.exists():
+                    m = json.loads(mf.read_text())
+                    m["bytes"] = sog.stat().st_size
+                    m["clean_params"] = {"preset": preset, "engine": "autoclean.mjs"}
+                    m["reverted_to"] = None
+                    mf.write_text(json.dumps(m, indent=1))
+                rebuild_index()
+                return self.send_json({"ok": True, "cid": cid, "report": report})
+            except Exception as e:
+                (sdir / f".{cid}.ac.tmp.splat").unlink(missing_ok=True)
+                return self.send_json({"error": f"auto-clean falló: {str(e)[-160:]}"}, 500)
+
         if u.path == "/api/splat_revert":
             # Reversibilidad del Auto-Clean (v2): restaura el crudo pre-clean (.raw.splat) como
             # versión actual; la versión limpia se archiva en history/ = nada se pierde, es un
