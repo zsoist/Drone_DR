@@ -84,11 +84,21 @@ main.classList.add('lab-main');
         <option value="aerial_aggressive">Aéreo agresivo</option>
         <option value="object">Objeto / interior</option>
       </select>
-      <button class="btn primary" id="lab-ac" title="Quita floaters, haze y agujas con el motor estadístico adaptativo — reversible con Revertir">${icon('spark')} Limpiar</button>
+      <button class="btn primary" id="lab-ac-ed" title="Limpia DENTRO del editor: selecciona floaters/haze/agujas y los borra como pasos de undo (Ctrl+Z ×2 deshace; Edit→Reset restaura todo). Luego File→Export para publicar">${icon('spark')} Limpiar en editor</button>
+      <button class="btn" id="lab-ac" title="Limpia el archivo PUBLICADO en el servidor (mismo motor) — reversible con Revertir">${icon('save')} Limpiar publicado</button>
       <button class="btn" id="lab-revert" title="Restaura el crudo pre-clean como versión actual (la limpia queda en history/) — nada se pierde">${icon('undo')} Revertir</button>
+      <button class="btn" id="lab-undo" title="Deshace el último paso dentro del editor (el Auto-Clean es UN solo paso)" aria-label="Deshacer en el editor">${icon('undo')}</button>
+      <button class="btn" id="lab-redo" title="Rehace el paso deshecho dentro del editor" aria-label="Rehacer en el editor" style="transform:scaleX(-1)">${icon('undo')}</button>
       <button class="btn" id="lab-ab" title="Alterna el editor entre el crudo y la versión actual para comparar antes/después" aria-pressed="${abRaw}">${abRaw ? 'Viendo: crudo' : 'A/B crudo'}</button>
       <span class="footer-note mono" id="lab-clean-status" role="status" aria-live="polite"></span>`;
     const cst = t => { const el = document.getElementById('lab-clean-status'); if (el) el.textContent = t; };
+    // limpieza IN-EDITOR: postMessage al iframe (fork src/aerobrain) — undo nativo de SuperSplat
+    document.getElementById('lab-ac-ed').addEventListener('click', () => {
+      const preset = document.getElementById('lab-preset').value;
+      cst('limpiando en el editor…');
+      try { frame.contentWindow.postMessage({ type: 'aerobrain:autoclean', preset }, '*'); }
+      catch { cst('✗ el editor no respondió'); }
+    });
     document.getElementById('lab-ac').addEventListener('click', async e2 => {
       const btn = e2.currentTarget; btn.disabled = true;
       const preset = document.getElementById('lab-preset').value;
@@ -103,6 +113,10 @@ main.classList.add('lab-main');
       } catch (err) { cst(`✗ ${String(err.message || err).slice(0, 90)}`); }
       finally { btn.disabled = false; }
     });
+    document.getElementById('lab-undo').addEventListener('click', () =>
+      frame.contentWindow?.postMessage({ type: 'aerobrain:undo' }, '*'));
+    document.getElementById('lab-redo').addEventListener('click', () =>
+      frame.contentWindow?.postMessage({ type: 'aerobrain:redo' }, '*'));
     document.getElementById('lab-revert').addEventListener('click', async () => {
       cst('revirtiendo al crudo…');
       try {
@@ -212,6 +226,18 @@ main.classList.add('lab-main');
       // nota: el drawer del panel izquierdo NO se duplica — SuperSplat ya trae su
       // colapso responsive nativo (body.collapsed + botón ">")
     } catch { /* cross-origin imposible aquí (mismo host), pero por si acaso */ }
+  });
+
+  window.addEventListener('message', e => {
+    const d = e.data;
+    if (!d || d.type !== 'aerobrain:autoclean:done') return;
+    const el = document.getElementById('lab-clean-status');
+    if (!el) return;
+    const r = d.result || {};
+    if (r.error) { el.textContent = `✗ ${r.error}`; return; }
+    const rm = r.removed || {};
+    el.textContent = r.note ? `✓ ${r.note}` :
+      `✓ ${(r.selected || 0).toLocaleString()} gaussianas borradas (undo ×2 deshace) · haze ${rm.opacity || 0} · spikes ${rm.scale || 0} · agujas ${rm.aniso || 0} · borde ${rm.radial || 0} — File→Export y súbelo para publicar`;
   });
 
   renderPicker(); renderActions();

@@ -118,7 +118,7 @@ function renderHome(vm, states) {
   if (window.HomeEffects) HomeEffects.attachVoidNavigation(main);
   requestAnimationFrame(() => main.classList.add('is-ready'));
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    setTimeout(() => import('./home-drone.js?v=211').then(mod => mod.mountHomeDrone?.('#home-drone-stage')).catch(() => {}), 260);
+    setTimeout(() => import('./home-drone.js?v=213').then(mod => mod.mountHomeDrone?.('#home-drone-stage')).catch(() => {}), 260);
   }
 }
 
