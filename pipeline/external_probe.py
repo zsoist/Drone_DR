@@ -1,69 +1,100 @@
 #!/usr/bin/env python3
-"""External, unauthenticated AeroBrain SLO probe.
+"""External, unauthenticated AeroBrain availability and auth-boundary probe.
 
-Checks the same user-visible path an external monitor sees: public health,
-homepage HTML, manifest discovery, and one-byte HTTP Range video streaming.
-Uses only the standard library so GitHub Actions can run it without setup.
+The public monitor must see health/login surfaces and must *not* see manifests
+or media. Uses only the standard library so GitHub Actions can run it.
 """
 import argparse
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
 
+def edge_worker_present(headers) -> bool:
+    return headers.get("X-AeroBrain-Edge", "") == "private-data-v1"
+
+
+def private_boundary_headers(headers) -> bool:
+    """Require browser-private data plus an explicit shared-CDN storage ban."""
+    browser = {
+        part.strip().split("=", 1)[0].lower()
+        for part in headers.get("Cache-Control", "").split(",")
+        if part.strip()
+    }
+    cdn = {
+        part.strip().split("=", 1)[0].lower()
+        for part in headers.get("Cloudflare-CDN-Cache-Control", "").split(",")
+        if part.strip()
+    }
+    return (bool({"private", "no-store"} & browser)
+            and "no-store" in cdn
+            and edge_worker_present(headers))
+
+
 def request(url: str, *, headers: dict | None = None, limit: int = 2_000_000,
-            timeout: int = 15) -> tuple[int, bytes, object, int]:
+            timeout: int = 15) -> tuple[int, bytes, object, int, str]:
     req = urllib.request.Request(url, headers={
         "User-Agent": "AeroBrainExternalProbe/1",
         **(headers or {}),
     })
     started = time.monotonic()
-    with urllib.request.urlopen(req, timeout=timeout) as response:
+    try:
+        response = urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as error:
+        response = error
+    with response:
         body = response.read(limit + 1)
         if len(body) > limit:
             raise RuntimeError(f"response too large: {url}")
         elapsed_ms = round((time.monotonic() - started) * 1000)
-        return response.status, body, response.headers, elapsed_ms
+        return response.status, body, response.headers, elapsed_ms, response.geturl()
 
 
 def probe(base: str) -> dict:
     base = base.rstrip("/")
-    status, body, _, health_ms = request(f"{base}/api/healthz", limit=4096)
+    status, body, headers, health_ms, _ = request(f"{base}/api/healthz", limit=4096)
     health = json.loads(body)
-    if status != 200 or health.get("ok") is not True:
+    if status != 200 or health.get("ok") is not True or not edge_worker_present(headers):
         raise RuntimeError(f"health failed: status={status} body={health}")
 
-    status, body, _, home_ms = request(f"{base}/", limit=1_000_000)
-    if status != 200 or b"AeroBrain" not in body:
-        raise RuntimeError(f"home failed: status={status}")
+    status, body, headers, login_ms, final_url = request(f"{base}/", limit=1_000_000)
+    if (status != 200
+            or urllib.parse.urlsplit(final_url).path != "/login.html"
+            or b"AeroBrain" not in body
+            or not edge_worker_present(headers)):
+        raise RuntimeError(f"login gate failed: status={status} final={final_url}")
 
-    status, body, _, manifest_ms = request(
-        f"{base}/data/manifest/flights.json", limit=2_000_000)
-    flights = json.loads(body).get("flights", [])
-    clip_id = next((f.get("clip_id") for f in flights
-                    if f.get("clip_id") and f.get("has_proxy")), None)
-    if status != 200 or not clip_id:
-        raise RuntimeError("manifest has no streamable proxy")
+    status, body, headers, whoami_ms, _ = request(f"{base}/api/whoami", limit=4096)
+    whoami = json.loads(body)
+    if status != 401 or whoami != {"ok": False} or not edge_worker_present(headers):
+        raise RuntimeError(f"whoami boundary failed: status={status} body={whoami}")
 
-    video = f"{base}/data/proxies/{urllib.parse.quote(clip_id)}.mp4"
-    status, body, headers, stream_ms = request(
-        video, headers={"Range": "bytes=0-0"}, limit=1)
-    content_range = headers.get("Content-Range", "")
-    if status != 206 or len(body) != 1 or not content_range.startswith("bytes 0-0/"):
-        raise RuntimeError(
-            f"stream failed: status={status} bytes={len(body)} range={content_range}")
+    status, _, headers, manifest_ms, _ = request(
+        f"{base}/data/manifest/flights.json", limit=4096)
+    if status != 401 or not private_boundary_headers(headers):
+        raise RuntimeError(f"manifest leaked: status={status}")
+
+    # The gate runs before path resolution, so a stable sentinel proves that
+    # Range/media routes are private without publishing a real clip identifier.
+    status, _, headers, media_ms, _ = request(
+        f"{base}/data/proxies/__auth_probe__.mp4",
+        headers={"Range": "bytes=0-0"}, limit=4096)
+    if status != 401 or not private_boundary_headers(headers):
+        raise RuntimeError(f"media leaked: status={status}")
 
     return {
         "ok": True,
         "base": base,
-        "clip_id": clip_id,
-        "content_range": content_range,
+        "login_gate": True,
+        "protected_status": 401,
         "latency_ms": {
             "health": health_ms,
-            "home": home_ms,
+            "login": login_ms,
+            "whoami": whoami_ms,
             "manifest": manifest_ms,
-            "stream": stream_ms,
+            "media_gate": media_ms,
         },
     }
 
