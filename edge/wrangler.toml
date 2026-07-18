@@ -1,0 +1,9 @@
+name = "aerobrain-private-data-edge"
+main = "private_data_worker.mjs"
+compatibility_date = "2026-07-17"
+workers_dev = false
+preview_urls = false
+
+routes = [
+  { pattern = "vuelos.metislab.work/*", zone_name = "metislab.work" }
+]
