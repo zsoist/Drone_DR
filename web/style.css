@@ -1789,6 +1789,24 @@ button.exp { text-align: left; cursor: pointer; }
 .mus-check em { color: var(--text-3); font-style: normal; }
 .tl-tool.on { color: var(--accent); }
 
+/* ---------- biblioteca de reels premium (I8) ---------- */
+.m-reel .m-prevbox { position: relative; }
+.m-reel .m-prevbox video { transition: transform 320ms var(--ease); }
+.m-reel:hover .m-prevbox video { transform: scale(1.04); }
+.m-time {
+  position: absolute; right: 7px; bottom: 7px; padding: 2px 7px; border-radius: 999px;
+  font-size: 10px; color: #fff; background: rgba(6,9,14,.74);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.m-mute { position: absolute; left: 7px; bottom: 7px; font-size: 11px; opacity: .85; }
+.m-badges { display: flex; gap: 5px; flex-wrap: wrap; margin: 5px 0 0; }
+.m-badge {
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line);
+  font-size: 9.5px; color: var(--text-3); white-space: nowrap;
+}
+.m-badge.vert { color: var(--accent); border-color: rgba(69,160,230,.42); }
+.m-badge.wide { color: var(--text-2); }
+
 /* ---------- REELS MAKER (I1) ---------- */
 .rm-cta {
   display: flex; align-items: center; gap: 14px; width: 100%; margin-bottom: 14px;

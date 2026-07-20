@@ -589,10 +589,21 @@ function cardHTML(kind, it) {
               poster="/data/reel-posters/${encodeURIComponent(it.name.replace(/\.[^.]+$/, ''))}.jpg"></video>
        <span class="gchip m-dur" style="display:none"></span>`
     : `<img loading="lazy" src="/data/photos/${enc}" alt="${esc(base)}" style="cursor:pointer">`;
-  return `<div class="m-card" data-name="${esc(it.name)}">
-    <div class="m-prevbox">${prev}</div>
+  // I8 · badge de formato: dice para qué red sirve el reel, no solo sus píxeles
+  const ar = it.w && it.h ? it.w / it.h : 0;
+  const fmtBadge = !ar ? '' :
+    ar < 0.65 ? `<span class="m-badge vert">9:16 · Reels/TikTok</span>` :
+    ar < 0.9 ? `<span class="m-badge">4:5 · Feed</span>` :
+    ar < 1.1 ? `<span class="m-badge">1:1 · Cuadrado</span>` :
+    `<span class="m-badge wide">16:9 · YouTube</span>`;
+  return `<div class="m-card${kind === 'reels' ? ' m-reel' : ''}" data-name="${esc(it.name)}">
+    <div class="m-prevbox">${prev}
+      ${kind === 'reels' && it.duration_s ? `<span class="m-time mono">${fmt.dur(it.duration_s)}</span>` : ''}
+      ${kind === 'reels' && it.has_audio === false ? '<span class="m-mute" data-tip="Sin audio">🔇</span>' : ''}
+    </div>
     <div class="m-name">${esc(base)}</div>
-    <div class="m-meta mono">${fmt.gb(it.bytes)} · ${mdate(it.mtime)}</div>
+    <div class="m-meta mono">${fmt.gb(it.bytes)} · ${mdate(it.mtime)}${it.h ? ` · ${it.h}p` : ''}</div>
+    ${fmtBadge ? `<div class="m-badges">${fmtBadge}</div>` : ''}
     <div class="m-actions">
       <button data-act="share" data-tip="${IS_IOS ? 'Compartir · guardar en Fotos' : 'Compartir'}">${icon('ext')}</button>
       <button data-act="dl" data-tip="${window.showSaveFilePicker ? 'Guardar como…' : 'Descargar a Archivos'}">${icon('dl')}</button>

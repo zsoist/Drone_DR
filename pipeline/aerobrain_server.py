@@ -2243,6 +2243,33 @@ def _reel_poster(reel: Path) -> Path | None:
         return None
 
 
+def _reel_meta(reel: Path) -> dict:
+    """Duración + dimensiones del reel para la biblioteca (I8), cacheadas por mtime."""
+    mdir = VAULT / "reel-posters"
+    mdir.mkdir(parents=True, exist_ok=True)
+    cache = mdir / f"{reel.stem}.meta.json"
+    st = reel.stat()
+    if cache.exists():
+        try:
+            m = json.loads(cache.read_text())
+            if m.get("mtime") == int(st.st_mtime):
+                return {k: m[k] for k in ("duration_s", "w", "h", "has_audio") if k in m}
+        except (ValueError, OSError):
+            pass
+    try:
+        p = subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-show_format",
+                            "-of", "json", str(reel)], capture_output=True, text=True, timeout=30)
+        d = json.loads(p.stdout)
+        v = next((s for s in d["streams"] if s["codec_type"] == "video"), {})
+        m = {"duration_s": round(float(d["format"].get("duration") or 0), 1),
+             "w": v.get("width", 0), "h": v.get("height", 0),
+             "has_audio": any(s["codec_type"] == "audio" for s in d["streams"])}
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        return {}
+    cache.write_text(json.dumps({**m, "mtime": int(st.st_mtime)}))
+    return m
+
+
 def run_edit(spec: dict, j):
     try:
         fps = int(spec.get("fps") or 0)
@@ -3069,7 +3096,10 @@ class H(BaseHTTPRequestHandler):
                         if f.name.startswith(".") or f.is_symlink() or not f.is_file() or f.suffix.lower() != ext:
                             continue
                         st = f.stat()
-                        items.append({"name": f.name, "bytes": st.st_size, "mtime": st.st_mtime})
+                        it = {"name": f.name, "bytes": st.st_size, "mtime": st.st_mtime}
+                        if key == "reels":
+                            it.update(_reel_meta(f))   # duración + formato reales (cacheado)
+                        items.append(it)
                 items.sort(key=lambda x: x["mtime"], reverse=True)
                 out[key] = items
             return self.send_json(out)
