@@ -773,6 +773,14 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   }
 
   // 1,2,10,11 · track con clips end-to-end + tira de miniaturas + manijas
+  // catálogo de transiciones = exactamente lo que el export ffmpeg (XFADE_MAP) renderiza
+  const TX_LABELS = {
+    none: 'Corte', fade: 'Fundido', dissolve: 'Disolver', fadeblack: 'A negro',
+    fadewhite: 'A blanco', wipeleft: 'Cortina ←', wiperight: 'Cortina →',
+    slideup: 'Deslizar ↑', slidedown: 'Deslizar ↓', circleopen: 'Círculo abre',
+    circleclose: 'Círculo cierra', radial: 'Radial', smoothleft: 'Suave ←', pixelize: 'Pixel',
+    crossfade: 'Fundido',
+  };
   function renderTrack() {
     track.innerHTML = tl.map((s, i) => {
       const f = byId[s.clip_id];
@@ -796,8 +804,12 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         (s.grade && !isNeutralGrade(s.grade)) ? `<span class="tl-badge grade" data-tip="Color ajustado">${icon('sun')}</span>` : '',
         s.title ? `<span class="tl-badge title">${icon('tag')}</span>` : '',
       ].join('');
-      const trans = (i > 0 && s.transition && s.transition !== 'none')
-        ? `<span class="tl-trans" data-tip="${esc(s.transition)}">${s.transition === 'crossfade' || s.transition === 'dissolve' ? '⋈' : '⧗'}</span>` : '';
+      // nodo de UNIÓN clicable entre clips: cómo pasa una toma a la otra (antes: glifo
+      // minúsculo no interactivo + select enterrado en el inspector que nadie encontraba)
+      const txSet = s.transition && s.transition !== 'none';
+      const trans = i > 0
+        ? `<button class="tl-junction${txSet ? ' set' : ''}" data-j="${i}"
+             data-tip="${txSet ? esc((TX_LABELS[s.transition] || s.transition) + ' · ' + (s.transDur || 0.4) + 's — click para cambiar') : 'Corte seco — click para elegir transición'}">${txSet ? '⋈' : '+'}</button>` : '';
       const lb = esc(f?.label) || fmt.date(f?.date || 0);
       return `${trans}<div class="tl-clip${i === sel ? ' sel' : ''}" data-i="${i}" data-cid="${s.clip_id}"
                 style="width:${w}px" draggable="false">
@@ -1181,7 +1193,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
 
   // 8 · click en la regla mueve el playhead (con snap a bordes de clip)
   scroll.addEventListener('pointerdown', e => {
-    if (e.target.closest('.tl-clip') || e.target.closest('.tl-handle')) return;
+    if (e.target.closest('.tl-clip') || e.target.closest('.tl-handle') || e.target.closest('.tl-junction')) return;
     if (!e.target.closest('.tl-ruler') && !e.target.closest('.tl-track') && e.target !== scroll) return;
     const r = track.getBoundingClientRect();
     let gt = (e.clientX - r.left + scroll.scrollLeft) / pps;
@@ -1413,7 +1425,67 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   });
 
   // botón + del track: lleva a la biblioteca y la resalta
+  // ---- picker de transiciones (popover en la unión) ----
+  function openTxPicker(j, anchor) {
+    document.querySelector('.tx-pop')?.remove();
+    const pop = document.createElement('div');
+    pop.className = 'tx-pop';
+    const cur = () => tl[j]?.transition || 'none';
+    const curDur = () => tl[j]?.transDur || 0.4;
+    const OPTS = ['none', 'fade', 'dissolve', 'fadeblack', 'fadewhite', 'wipeleft', 'wiperight',
+                  'slideup', 'slidedown', 'circleopen', 'circleclose', 'radial', 'smoothleft', 'pixelize'];
+    pop.innerHTML = `
+      <div class="tx-pop-h"><b>Transición entre toma ${j} y ${j + 1}</b><button class="modal-x">✕</button></div>
+      <div class="tx-grid">${OPTS.map(t => `
+        <button class="tx-opt${cur() === t || (t === 'fade' && cur() === 'crossfade') ? ' on' : ''}" data-tx="${t}">
+          <span class="tx-demo tx-${t}"><i></i></span><b>${TX_LABELS[t]}</b>
+        </button>`).join('')}</div>
+      <div class="tx-dur">
+        <label>Duración</label>
+        <input type="range" min="0.2" max="1.5" step="0.1" value="${curDur()}">
+        <span class="mono">${curDur().toFixed(1)}s</span>
+      </div>
+      <button class="btn tx-all">${icon('layers')} Aplicar a todas las uniones</button>`;
+    document.body.appendChild(pop);
+    // posicionar junto al nodo, contenido en el viewport
+    const r = anchor.getBoundingClientRect();
+    const pw = pop.offsetWidth, phh = pop.offsetHeight;
+    pop.style.left = Math.max(8, Math.min(innerWidth - pw - 8, r.left + r.width / 2 - pw / 2)) + 'px';
+    pop.style.top = (r.top - phh - 10 > 8 ? r.top - phh - 10 : r.bottom + 10) + 'px';
+    const paint = () => {
+      pop.querySelectorAll('.tx-opt').forEach(b =>
+        b.classList.toggle('on', b.dataset.tx === cur() || (b.dataset.tx === 'fade' && cur() === 'crossfade')));
+      pop.querySelector('.tx-dur .mono').textContent = curDur().toFixed(1) + 's';
+    };
+    pop.addEventListener('click', e => {
+      if (e.target.closest('.modal-x')) { pop.remove(); return; }
+      const o = e.target.closest('.tx-opt');
+      if (o) {
+        pushUndo(); tl[j].transition = o.dataset.tx; if (!tl[j].transDur) tl[j].transDur = 0.4;
+        renderTrack(); paint();
+        if (sel === j) renderInspector();
+        // preview inmediato: salta al último medio segundo del clip anterior
+        seekPaused(Math.max(0, offset(j) - 0.6));
+        return;
+      }
+      if (e.target.closest('.tx-all')) {
+        pushUndo();
+        for (let i = 1; i < tl.length; i++) { tl[i].transition = cur(); tl[i].transDur = curDur(); }
+        renderTrack();
+        pop.querySelector('.tx-all').textContent = '✓ Aplicada a todas';
+        setTimeout(() => pop.remove(), 700);
+      }
+    });
+    pop.querySelector('.tx-dur input').addEventListener('input', e => {
+      tl[j].transDur = +e.target.value; paint();
+    });
+    const away = e => { if (!pop.contains(e.target) && !e.target.closest('.tl-junction')) { pop.remove(); removeEventListener('pointerdown', away, true); } };
+    addEventListener('pointerdown', away, true);
+  }
+
   track.addEventListener('click', e => {
+    const jn = e.target.closest('.tl-junction');
+    if (jn) { e.stopPropagation(); openTxPicker(+jn.dataset.j, jn); return; }
     const x = e.target.closest('.tl-x');
     if (x) { e.stopPropagation(); delClip(+x.dataset.x); return; }
     if (!e.target.closest('.tl-add')) return;
