@@ -1714,6 +1714,17 @@ button.exp { text-align: left; cursor: pointer; }
 }
 .tl-clip + .tl-clip { margin-left: 2px; }
 .tl-clip:active { cursor: grabbing; }
+/* clip en reproducción: filo superior acentuado (sigue al playhead) */
+.tl-clip.now::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--accent); border-radius: 2px; }
+/* quitar del timeline directo desde el clip (hover / siempre visible en touch) */
+.tl-x {
+  position: absolute; top: 4px; right: 4px; z-index: 3; width: 20px; height: 20px;
+  border-radius: 6px; border: 1px solid rgba(226,99,95,.5); background: rgba(6,9,14,.78);
+  color: #e2635f; font-size: 11px; line-height: 1; cursor: pointer; opacity: 0;
+  transition: opacity 140ms var(--ease);
+}
+.tl-clip:hover .tl-x, .tl-clip.sel .tl-x { opacity: 1; }
+@media (pointer: coarse) { .tl-x { opacity: .85; } }
 .tl-clip:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .tl-clip.sel {
   border: 2px solid var(--accent);

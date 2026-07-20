@@ -3588,8 +3588,19 @@ class H(BaseHTTPRequestHandler):
             if cid not in sources:                       # el primario manda la identidad
                 sources.insert(0, cid)
             sources = [cid] + [s for s in sources if s != cid]
-            if len(sources) > 6:
-                return self.send_json({"error": "máximo 6 videos por modelo combinado"}, 400)
+            # límite por lo que DE VERDAD cuesta (frames ≈ duración), no por conteo de archivos:
+            # 11 clips de 17s pesan menos que 3 de 5 min. Tope de conteo alto como sanidad.
+            if len(sources) > 16:
+                return self.send_json({"error": "máximo 16 videos por modelo combinado"}, 400)
+            total_s = 0.0
+            for s in sources:
+                try:
+                    total_s += float(json.loads((VAULT / "manifest" / f"{s}.json").read_text())
+                                     .get("duration_s") or 0)
+                except (ValueError, OSError):
+                    pass
+            if total_s > 1200:
+                return self.send_json({"error": f"máximo 20 min de video combinado (llevas {total_s/60:.0f} min) — los frames extraídos no caben en RAM del Mac"}, 400)
             photos = [Path(str(p)).name for p in (spec.get("photos") or [])
                       if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][:40]
             # entity U0: los combinados nuevos nacen con identidad PROPIA (recon_<hash>,

@@ -441,7 +441,7 @@ let fotosSub = 'fotos';      // sub-tab activo dentro de Fotos
 async function loadDronePhotos() {
   if (dronePhotos) return;
   try {
-    const r = await fetch('/api/drone_photos');
+    const r = await authFetch('/api/drone_photos');
     if (r.status !== 200) throw 0;
     dronePhotos = (await r.json()).photos || [];
   } catch { dronePhotos = []; }
@@ -458,26 +458,17 @@ function mdate(mtime) {
 
 async function loadMedia() {
   let r = null;
-  try { r = await fetch('/api/studio_media'); } catch {}   // cookie de sesión viaja sola
-  if (!r || r.status !== 200) { authGate(); return; }
+  try { r = await authFetch('/api/studio_media'); } catch { return; }
+  if (!r.ok) {
+    document.getElementById('st-count').textContent = 'No se pudo cargar la biblioteca';
+    return;
+  }
   media = await r.json();
   document.getElementById('st-count').textContent =
     `${(media.reels || []).length} reels · ${(media.photos || []).length} fotos`;
   renderGrid('reels');
   renderGrid('fotos');
 }
-
-function authGate() {
-  const html = `<div class="empty" style="grid-column:1/-1">
-    <p>Inicia sesión para gestionar medios</p>
-    <button class="btn primary" data-login style="margin-top:12px">Iniciar sesión</button></div>`;
-  document.getElementById('grid-reels').innerHTML = html;
-  document.getElementById('grid-fotos').innerHTML = html;
-  document.getElementById('st-count').textContent = 'sesión requerida';
-}
-main.addEventListener('click', async e => {
-  if (e.target.closest('[data-login]') && await ensureAuth()) loadMedia();
-});
 
 // sub-tabs de Fotos: Capturas (biblioteca) vs Del dron (nativas raw/)
 document.getElementById('fotos-sub')?.addEventListener('click', e => {
@@ -813,6 +804,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
           <div class="tl-thumbs">${thumbs}</div>
           <span class="tl-clip-lb">${lb} · ${(s.b - s.a).toFixed(1)}s</span>
           <span class="tl-badges">${badges}</span>
+          <button class="tl-x" data-x="${i}" data-tip="Quitar del timeline">✕</button>
           <div class="tl-handle l" data-i="${i}"></div>
           <div class="tl-handle r" data-i="${i}"></div>
         </div>`;
@@ -875,7 +867,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       if (b) b.toggleAttribute('disabled', !on);
     };
     set('razor', canRazor);
-    set('dup', hasSel); set('del', hasSel); set('left', hasSel && sel > 0); set('right', hasSel && sel < tl.length - 1);
+    const eff = hasSel ? sel : (at ? at.idx : -1);   // sin selección → clip bajo el playhead
+    set('dup', eff >= 0); set('del', eff >= 0); set('left', eff > 0); set('right', eff >= 0 && eff < tl.length - 1);
     set('clear', has); set('fit', has);
     set('undo', undoStack.length > 0); set('redo', redoStack.length > 0);
     document.querySelector('.tl-tool[data-tp="mute"]').innerHTML = (muted ? icon('volumeOff') : icon('volume')) + '<span class="tl-lb">Audio</span>';
@@ -897,7 +890,16 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     if (x < scroll.scrollLeft + 40) scroll.scrollLeft = Math.max(0, x - 40);
     else if (x > scroll.scrollLeft + vw - 40) scroll.scrollLeft = x - vw + 40;
     timeEl.textContent = `${fmt.dur(playhead)} / ${fmt.dur(total())}`;
+    // marca visual del clip EN REPRODUCCIÓN (solo togglea al cambiar de clip)
+    const nowAt = clipAt(playhead);
+    const ni = nowAt ? nowAt.idx : -1;
+    if (ni !== _nowIdx) {
+      _nowIdx = ni;
+      track.querySelectorAll('.tl-clip.now').forEach(c => c.classList.remove('now'));
+      if (ni >= 0) track.querySelector(`.tl-clip[data-i="${ni}"]`)?.classList.add('now');
+    }
   }
+  let _nowIdx = -1;
 
   // ---- COMPOSITOR: seek/play a través de los clips ----
   let curCid = null;
@@ -1058,12 +1060,15 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   }
 
   // ---- edición de clips ----
-  function delClip(i = sel) { if (i < 0) return; pushUndo(); tl.splice(i, 1); if (sel >= tl.length) sel = tl.length - 1; renderAll(); curCid = null; seek(playhead); }
+  // sin selección explícita, las herramientas actúan sobre el clip BAJO EL PLAYHEAD
+  // ("no puedo borrar": Eliminar exigía seleccionar primero y nadie lo descubría)
+  const effSel = () => sel >= 0 ? sel : (clipAt(playhead)?.idx ?? -1);
+  function delClip(i = effSel()) { if (i < 0) return; pushUndo(); tl.splice(i, 1); if (sel >= tl.length) sel = tl.length - 1; renderAll(); curCid = null; seek(playhead); }
   // clona un seg copiando en profundidad grade/titleStyle (objetos mutables)
   const cloneSeg = s => ({ ...s, id: uid(), grade: { ...(s.grade || GRADE_NEUTRAL) }, titleStyle: { ...(s.titleStyle || TITLE_DEFAULT) } });
-  function dupClip(i = sel) { if (i < 0) return; pushUndo(); const c = cloneSeg(tl[i]); tl.splice(i + 1, 0, c); sel = i + 1; renderAll(); }
+  function dupClip(i = effSel()) { if (i < 0) return; pushUndo(); const c = cloneSeg(tl[i]); tl.splice(i + 1, 0, c); sel = i + 1; renderAll(); }
   function moveClip(dir) {
-    const i = sel, j = i + dir;
+    const i = effSel(), j = i + dir;
     if (i < 0 || j < 0 || j >= tl.length) return;
     pushUndo(); [tl[i], tl[j]] = [tl[j], tl[i]]; sel = j; renderAll(); seek(offset(sel));
   }
@@ -1127,6 +1132,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   // selección + drag para recorte de bordes / reordenar
   let action = null;   // {type:'trim-l'|'trim-r'|'reorder', i, startX, ...}
   track.addEventListener('pointerdown', e => {
+    if (e.target.closest('.tl-x')) return;   // la ⨯ no inicia drag/selección
     const handle = e.target.closest('.tl-handle');
     const clip = e.target.closest('.tl-clip');
     if (!clip) return;
@@ -1186,7 +1192,18 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     }
     seekPaused(gt);
   });
-  function seekPaused(gt) { pause(); seek(gt); syncTools(); }
+  function seekPaused(gt) {
+    pause(); seek(gt);
+    // la selección SIGUE al playhead: el inspector y las herramientas siempre
+    // apuntan al clip que estás viendo (antes: seleccionar era un paso aparte oculto)
+    const at = clipAt(playhead);
+    if (at && at.idx !== sel) {
+      sel = at.idx;
+      renderInspector();
+      track.querySelectorAll('.tl-clip').forEach(c => c.classList.toggle('sel', +c.dataset.i === sel));
+    }
+    syncTools();
+  }
 
   // 4 · playhead arrastrable
   phEl.addEventListener('pointerdown', e => {
@@ -1234,6 +1251,22 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     else if (t === 'undo') undo();
     else if (t === 'redo') redo();
   });
+  // rueda sobre el timeline: scroll vertical → desplazamiento horizontal (natural en
+  // timelines); ⌘/Ctrl+rueda = zoom anclado al cursor. "la barra es difícil de navegar".
+  scroll.addEventListener('wheel', e => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const r = track.getBoundingClientRect();
+      const tAtCursor = (e.clientX - r.left + scroll.scrollLeft) / pps;
+      pps = Math.max(8, Math.min(240, pps * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+      renderAll();
+      scroll.scrollLeft = Math.max(0, tAtCursor * pps - (e.clientX - scroll.getBoundingClientRect().left));
+    } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      e.preventDefault();
+      scroll.scrollLeft += e.deltaY;
+    }
+  }, { passive: false });
+
   // pinch con dos dedos = zoom del timeline (móvil)
   let pinch = null;
   const pdist = e => Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
@@ -1381,6 +1414,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
 
   // botón + del track: lleva a la biblioteca y la resalta
   track.addEventListener('click', e => {
+    const x = e.target.closest('.tl-x');
+    if (x) { e.stopPropagation(); delClip(+x.dataset.x); return; }
     if (!e.target.closest('.tl-add')) return;
     const lib = document.querySelector('.tl-lib');
     lib.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1433,7 +1468,6 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     setTimeout(() => e2.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250));  // el teclado iOS tapaba el input (sheet fija)
   document.getElementById('ed-export').addEventListener('click', async e => {
     if (!tl.length) return;
-    if (!getToken()) return;   // gate
     const exBtn = e.currentTarget;
     if (exBtn.disabled) return;
     exBtn.disabled = true;     // doble tap móvil = 2 exports concurrentes que se pisaban
