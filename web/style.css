@@ -1720,6 +1720,54 @@ button.exp { text-align: left; cursor: pointer; }
 }
 .tl-clip + .tl-clip { margin-left: 2px; }
 .tl-clip:active { cursor: grabbing; }
+/* ---------- MÚSICA (I2) ---------- */
+.mus-modal { max-width: 660px; }
+.mus-drop {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 20px 16px;
+  border: 1.5px dashed var(--line); border-radius: 13px; cursor: pointer; text-align: center;
+  transition: border-color 160ms var(--ease), background 160ms var(--ease);
+}
+.mus-drop:hover, .mus-drop.hot { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.mus-drop.busy { opacity: .6; pointer-events: none; }
+.mus-drop b { font-size: 13px; display: inline-flex; align-items: center; gap: 7px; }
+.mus-drop small { font-size: 11px; color: var(--text-3); }
+.mus-note { margin: 10px 0 2px; line-height: 1.5; display: flex; gap: 7px; align-items: flex-start; }
+.mus-note svg.ic { width: 13px; height: 13px; flex: none; margin-top: 2px; color: #e8b34c; }
+.mus-list { display: flex; flex-direction: column; gap: 6px; max-height: 30dvh; overflow: auto; }
+.mus-item {
+  display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); cursor: pointer;
+  transition: border-color 150ms var(--ease);
+}
+.mus-item:hover { border-color: rgba(69,160,230,.45); }
+.mus-item.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.mus-play {
+  width: 28px; height: 28px; flex: none; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--surface); color: var(--text-2); display: grid; place-items: center; cursor: pointer;
+}
+.mus-play:hover { border-color: var(--accent); color: var(--accent); }
+.mus-play svg.ic { width: 12px; height: 12px; }
+.mus-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mus-t b { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mus-wave { width: 100%; height: 20px; display: block; }
+.mus-wave path { fill: color-mix(in srgb, var(--accent) 45%, transparent); }
+.mus-item.on .mus-wave path { fill: var(--accent); }
+.mus-d { font-size: 10.5px; color: var(--text-3); flex: none; }
+.mus-del {
+  flex: none; padding: 3px 7px; border-radius: 6px; border: 1px solid transparent;
+  background: none; color: var(--text-3); font-size: 11px; cursor: pointer;
+}
+.mus-del:hover { color: var(--red); border-color: rgba(226,99,95,.45); }
+.mus-ctl { display: flex; flex-direction: column; gap: 9px; }
+.mus-ctl label { display: flex; align-items: center; gap: 11px; font-size: 11.5px; }
+.mus-ctl label > span { width: 128px; flex: none; color: var(--text-2); }
+.mus-ctl input[type=range] { flex: 1; accent-color: var(--accent); }
+.mus-ctl label > b { width: 44px; text-align: right; font-size: 11px; color: var(--text-3); }
+.mus-check { align-items: flex-start; }
+.mus-check span { font-size: 11.5px; color: var(--text-2); }
+.mus-check em { color: var(--text-3); font-style: normal; }
+.tl-tool.on { color: var(--accent); }
+
 /* ---------- REELS MAKER (I1) ---------- */
 .rm-cta {
   display: flex; align-items: center; gap: 14px; width: 100%; margin-bottom: 14px;

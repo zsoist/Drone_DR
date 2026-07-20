@@ -86,6 +86,7 @@ main.innerHTML = `
             <div class="tl-group">
               <div class="tl-group-btns">
                 <button class="tl-tool ai" data-tool="magic" id="btn-magic" data-tip="Autoarmar el reel con los mejores momentos">${icon('spark')}<span class="tl-lb">Momentos</span></button>
+              <button class="tl-tool" data-tool="music" id="btn-music" data-tip="Ponle música al reel (tu biblioteca)">${icon('volume')}<span class="tl-lb">Música</span></button>
               </div>
               <span class="tl-group-lb">IA</span>
             </div>
@@ -963,6 +964,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     gt = Math.max(0, Math.min(total(), gt));
     playhead = gt;
     paintPlayhead();
+    musicSync(gt, !!andPlay);      // la música sigue al playhead como una pista más
     if (!tl.length) return;
     const at = clipAt(gt);                       // una sola pasada por el timeline
     const clip = at.clip, idx = at.idx;
@@ -1047,6 +1049,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     playing = false; setPlayIcon();
     if (rafId) cancelAnimationFrame(rafId), rafId = null;
     video.pause();
+    try { musicEl.pause(); } catch {}
   }
   function togglePlay() { playing ? pause() : play(); }
   function setPlayIcon() {
@@ -1125,6 +1128,208 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       return s;
     });
     sel = 0; playhead = 0; curCid = null; renderAll(); seek(0);
+  }
+
+  // ================= MÚSICA (I2) =================
+  // La pista se OYE mientras editas (mismo elemento <audio> alineado al playhead) y viaja
+  // al export en spec.music, donde ffmpeg la mezcla con ducking, fades y loudnorm.
+  // NOTA HONESTA: no hay integración con Spotify — su catálogo está bajo DRM y su ToS
+  // prohíbe extraer audio para mezclarlo en un video. Aquí suena TU biblioteca.
+  let music = null;      // {name, duration_s, peaks, volume, duck, fadeIn, fadeOut, startAt, originalVolume}
+  const musicEl = new Audio();
+  musicEl.preload = 'auto';
+  const MUSIC_DEFAULTS = { volume: 0.65, duck: true, fadeIn: 0.8, fadeOut: 1.2, startAt: 0, originalVolume: 0.35 };
+
+  function musicSync(t = playhead, andPlay = false) {
+    if (!music) { try { musicEl.pause(); } catch {} return; }
+    const want = (music.startAt || 0) + Math.max(0, t);
+    // la pista se repite si el reel dura más que la canción (igual que en el export)
+    const d = music.duration_s || 1;
+    const at = d > 0 ? want % d : want;
+    if (Math.abs(musicEl.currentTime - at) > 0.25) { try { musicEl.currentTime = at; } catch {} }
+    musicEl.volume = Math.max(0, Math.min(1, music.volume ?? 0.65));
+    if (andPlay) musicEl.play().catch(() => {});
+  }
+
+  function musicChip() {
+    const b = document.getElementById('btn-music');
+    if (!b) return;
+    b.classList.toggle('on', !!music);
+    b.dataset.tip = music ? `Música: ${music.name} · ${Math.round((music.volume ?? .65) * 100)}%`
+      : 'Ponle música al reel (tu biblioteca)';
+  }
+
+  const wavePath = (peaks, w = 560, h = 42) => {
+    if (!peaks || !peaks.length) return '';
+    const n = peaks.length, mid = h / 2;
+    let up = `M0,${mid}`, dn = '';
+    peaks.forEach((p, i) => {
+      const x = (i / (n - 1)) * w, y = Math.max(0.6, p * mid);
+      up += `L${x.toFixed(1)},${(mid - y).toFixed(1)}`;
+    });
+    for (let i = n - 1; i >= 0; i--) {
+      const x = (i / (n - 1)) * w, y = Math.max(0.6, peaks[i] * mid);
+      dn += `L${x.toFixed(1)},${(mid + y).toFixed(1)}`;
+    }
+    return up + dn + 'Z';
+  };
+
+  async function openMusic() {
+    const ovr = document.createElement('div');
+    ovr.className = 'modal-ov';
+    let tracks = [];
+    let busy = false;
+    const load = async () => {
+      try { tracks = (await (await authFetch('/api/audio_list')).json()).tracks || []; }
+      catch { tracks = []; }
+    };
+    const render = () => {
+      const m = music || {};
+      ovr.innerHTML = `<div class="modal mus-modal">
+        <div class="modal-h"><b>${icon('volume')} Música del reel</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+        <div class="modal-b">
+          <div class="mus-drop" id="mus-drop">
+            <b>${icon('dl')} Sube tu pista</b>
+            <small>MP3, M4A, WAV, FLAC u OGG — arrastra aquí o toca para elegir</small>
+            <input type="file" id="mus-file" accept="audio/*" hidden>
+          </div>
+          <p class="footer-note mus-note">${icon('warn')} Spotify y Apple Music no permiten extraer audio (DRM + condiciones de uso).
+            Usa pistas tuyas o libres de derechos. Si vas a publicar en Instagram/TikTok, lo más seguro
+            es exportar sin música y ponerla desde la app: así usas su catálogo con licencia.</p>
+          <div class="mlb">Biblioteca ${tracks.length ? `<span class="mono">(${tracks.length})</span>` : ''}</div>
+          <div class="mus-list">${tracks.map(t => `
+            <div class="mus-item${music?.name === t.name ? ' on' : ''}" data-track="${esc(t.name)}">
+              <button class="mus-play" data-prev="${esc(t.name)}" data-tip="Escuchar">${icon('play')}</button>
+              <div class="mus-t">
+                <b>${esc(t.name.replace(/\.[^.]+$/, ''))}</b>
+                <svg class="mus-wave" viewBox="0 0 560 42" preserveAspectRatio="none"><path d="${wavePath(t.peaks)}"/></svg>
+              </div>
+              <span class="mono mus-d">${fmt.dur(t.duration_s)}</span>
+              <button class="mus-del" data-del="${esc(t.name)}" data-tip="Quitar de la biblioteca">✕</button>
+            </div>`).join('') || '<p class="footer-note">Todavía no hay pistas — sube una arriba.</p>'}
+          </div>
+          ${music ? `
+          <div class="mlb">Ajustes de "${esc(music.name.replace(/\.[^.]+$/, ''))}"</div>
+          <div class="mus-ctl">
+            <label><span>Volumen música</span>
+              <input type="range" id="mu-vol" min="0" max="1" step="0.05" value="${m.volume ?? .65}">
+              <b class="mono">${Math.round((m.volume ?? .65) * 100)}%</b></label>
+            <label><span>Audio del dron</span>
+              <input type="range" id="mu-orig" min="0" max="1" step="0.05" value="${m.originalVolume ?? .35}">
+              <b class="mono">${Math.round((m.originalVolume ?? .35) * 100)}%</b></label>
+            <label><span>Entrada</span>
+              <input type="range" id="mu-fi" min="0" max="5" step="0.1" value="${m.fadeIn ?? .8}">
+              <b class="mono">${(m.fadeIn ?? .8).toFixed(1)}s</b></label>
+            <label><span>Salida</span>
+              <input type="range" id="mu-fo" min="0" max="5" step="0.1" value="${m.fadeOut ?? 1.2}">
+              <b class="mono">${(m.fadeOut ?? 1.2).toFixed(1)}s</b></label>
+            <label><span>Empezar en</span>
+              <input type="range" id="mu-st" min="0" max="${Math.max(1, Math.floor((music.duration_s || 30) - 1))}" step="0.5" value="${m.startAt ?? 0}">
+              <b class="mono">${fmt.dur(m.startAt ?? 0)}</b></label>
+            <label class="mus-check"><input type="checkbox" id="mu-duck" ${m.duck !== false ? 'checked' : ''}>
+              <span>Bajar la música cuando hay sonido del dron <em>(ducking)</em></span></label>
+          </div>` : ''}
+        </div>
+        <div class="rm-foot">
+          <span class="rm-count mono">${music ? `${esc(music.name)} · se mezcla al exportar` : 'Sin música — el reel usará solo el audio original'}</span>
+          <span class="spacer" style="flex:1"></span>
+          ${music ? '<button class="btn" id="mu-clear">Quitar música</button>' : ''}
+          <button class="btn primary" id="mu-ok">Listo</button>
+        </div>
+      </div>`;
+    };
+    await load();
+    render();
+    document.body.appendChild(ovr);
+
+    const upload = async file => {
+      if (!file || busy) return;
+      busy = true;
+      const drop = ovr.querySelector('#mus-drop');
+      drop.classList.add('busy');
+      drop.querySelector('b').textContent = `Subiendo ${file.name}…`;
+      try {
+        const r = await authFetch(`/api/audio_upload?name=${encodeURIComponent(file.name)}`,
+          { method: 'POST', body: file });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        await load();
+        music = { ...MUSIC_DEFAULTS, ...d.track };
+        musicEl.src = `${DATA}/audio/${encodeURIComponent(d.track.name)}`;
+        musicChip();
+        render();
+      } catch (e) {
+        drop.classList.remove('busy');
+        drop.querySelector('b').textContent = `✕ ${String(e.message || e).slice(0, 60)}`;
+      }
+      busy = false;
+    };
+
+    ovr.addEventListener('change', e => {
+      if (e.target.id === 'mus-file') upload(e.target.files?.[0]);
+      if (e.target.id === 'mu-duck' && music) { music.duck = e.target.checked; }
+    });
+    ovr.addEventListener('input', e => {
+      if (!music) return;
+      const map = { 'mu-vol': 'volume', 'mu-orig': 'originalVolume', 'mu-fi': 'fadeIn', 'mu-fo': 'fadeOut', 'mu-st': 'startAt' };
+      const key = map[e.target.id];
+      if (!key) return;
+      music[key] = +e.target.value;
+      const out = e.target.parentElement.querySelector('b');
+      if (out) out.textContent = key === 'volume' || key === 'originalVolume'
+        ? `${Math.round(music[key] * 100)}%`
+        : key === 'startAt' ? fmt.dur(music[key]) : `${music[key].toFixed(1)}s`;
+      if (key === 'volume') musicEl.volume = music.volume;
+      if (key === 'startAt') musicSync(playhead);
+      musicChip();
+    });
+    ovr.addEventListener('click', async e => {
+      if (e.target === ovr || e.target.closest('.modal-x') || e.target.closest('#mu-ok')) {
+        try { musicEl.pause(); } catch {}
+        ovr.remove(); return;
+      }
+      if (e.target.closest('#mus-drop')) { ovr.querySelector('#mus-file').click(); return; }
+      const pv = e.target.closest('[data-prev]');
+      if (pv) {
+        e.stopPropagation();
+        const src = `${DATA}/audio/${encodeURIComponent(pv.dataset.prev)}`;
+        if (musicEl.src.endsWith(encodeURIComponent(pv.dataset.prev)) && !musicEl.paused) { musicEl.pause(); return; }
+        musicEl.src = src; musicEl.currentTime = 0; musicEl.volume = 0.8;
+        musicEl.play().catch(() => {});
+        return;
+      }
+      const del = e.target.closest('[data-del]');
+      if (del) {
+        e.stopPropagation();
+        const name = del.dataset.del;
+        if (del.dataset.armed !== '1') { del.dataset.armed = '1'; del.textContent = '¿seguro?'; return; }
+        await api('/api/audio_op', { op: 'delete', name });
+        if (music?.name === name) { music = null; musicChip(); }
+        await load(); render();
+        return;
+      }
+      const it = e.target.closest('[data-track]');
+      if (it) {
+        const t = tracks.find(x => x.name === it.dataset.track);
+        if (!t) return;
+        music = { ...MUSIC_DEFAULTS, ...(music?.name === t.name ? music : {}), ...t };
+        musicEl.src = `${DATA}/audio/${encodeURIComponent(t.name)}`;
+        musicSync(playhead);
+        musicChip(); render();
+        return;
+      }
+      if (e.target.closest('#mu-clear')) {
+        music = null;
+        try { musicEl.pause(); musicEl.removeAttribute('src'); } catch {}
+        musicChip(); render();
+      }
+    });
+    const drop = ovr.querySelector('#mus-drop');
+    ['dragover', 'dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+      e.preventDefault();
+      drop.classList.toggle('hot', ev === 'dragover');
+      if (ev === 'drop') upload(e.dataTransfer?.files?.[0]);
+    }));
   }
 
   // ================= REELS MAKER (I1) =================
@@ -1473,6 +1678,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     else if (t === 'right') moveClip(1);
     else if (t === 'clear') clearTL();
     else if (t === 'magic') magic();
+    else if (t === 'music') openMusic();
     else if (t === 'zoomin') { pps = Math.min(240, pps * 1.4); renderAll(); }
     else if (t === 'zoomout') { pps = Math.max(8, pps / 1.4); renderAll(); }
     else if (t === 'fit') fit();
@@ -1773,6 +1979,9 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     });
     const r = await api('/api/edit', {
       segments,
+      music: music ? { name: music.name, volume: music.volume, duck: music.duck,
+                       fadeIn: music.fadeIn, fadeOut: music.fadeOut, startAt: music.startAt,
+                       originalVolume: music.originalVolume } : undefined,
       aspect: document.getElementById('ed-aspect').value,
       resolution: document.getElementById('ed-res').value,
       filter: document.getElementById('ed-lut').value,

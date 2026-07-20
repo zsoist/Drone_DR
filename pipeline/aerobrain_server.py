@@ -2008,6 +2008,95 @@ def _ff(cmd: list):
         raise RuntimeError((r.stderr or "ffmpeg falló sin stderr").strip()[-300:])
 
 
+AUDIO_DIR = VAULT / "audio"
+AUDIO_EXT = (".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus")
+
+
+def _audio_peaks(path: Path, buckets: int = 240) -> list:
+    """Silueta de onda para la UI: decodifica a PCM mono 8kHz y saca picos por bucket.
+    Sin dependencias (array de stdlib); 8kHz basta para dibujar y es ~1s de CPU por pista."""
+    try:
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "s16le",
+                              "-ac", "1", "-ar", "8000", "-"],
+                             capture_output=True, timeout=120).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    n = len(raw) // 2
+    if n < buckets:
+        return []
+    import array as _arr
+    pcm = _arr.array("h")
+    pcm.frombytes(raw[: n * 2])
+    step = n // buckets
+    out = []
+    for i in range(buckets):
+        chunk = pcm[i * step:(i + 1) * step]
+        out.append(round(max(abs(min(chunk)), abs(max(chunk))) / 32768, 3) if chunk else 0.0)
+    return out
+
+
+def _audio_meta(path: Path, rebuild: bool = False) -> dict:
+    """Metadata cacheada por pista (duración + picos). El cache vive en audio/.meta/."""
+    mdir = AUDIO_DIR / ".meta"
+    mdir.mkdir(parents=True, exist_ok=True)
+    cache = mdir / f"{path.name}.json"
+    if cache.exists() and not rebuild:
+        try:
+            m = json.loads(cache.read_text())
+            if m.get("mtime") == int(path.stat().st_mtime):
+                return m
+        except (ValueError, OSError):
+            pass
+    m = {"name": path.name, "bytes": path.stat().st_size,
+         "mtime": int(path.stat().st_mtime),
+         "duration_s": round(_probe_dur(path), 2), "peaks": _audio_peaks(path)}
+    cache.write_text(json.dumps(m))
+    return m
+
+
+def _mix_music(video: Path, music: Path, opts: dict, has_audio: bool, dur: float) -> Path:
+    """Mezcla la pista sobre el reel YA compuesto sin re-encodear el video (-c:v copy).
+
+    - volume: 0..1 de la música
+    - duck: baja la música cuando suena el audio original (sidechaincompress)
+    - fadeIn/fadeOut y recorte/loop para calzar con la duración exacta del video
+    - loudnorm final: los reels quedan al nivel que esperan las redes (-14 LUFS)
+    """
+    vol = _clampf(opts.get("volume", 0.65), 0, 1, 0.65)
+    fi = _clampf(opts.get("fadeIn", 0.8), 0, 5, 0.8)
+    fo = _clampf(opts.get("fadeOut", 1.2), 0, 5, 1.2)
+    start = _clampf(opts.get("startAt", 0), 0, 3600, 0)
+    duck = bool(opts.get("duck", True)) and has_audio
+    orig_vol = _clampf(opts.get("originalVolume", 0.35 if duck else 1.0), 0, 1, 0.35)
+    fo_st = max(0.0, dur - fo)
+    # la pista se recorta desde startAt y, si queda corta, se repite hasta cubrir el video
+    m = (f"[1:a]atrim=start={start:.2f},asetpts=PTS-STARTPTS,aloop=loop=-1:size=2e9,"
+         f"atrim=0:{dur:.3f},asetpts=PTS-STARTPTS,volume={vol:.3f},"
+         f"afade=t=in:st=0:d={fi:.2f},afade=t=out:st={fo_st:.3f}:d={fo:.2f}")
+    fc = []
+    if has_audio:
+        fc.append(f"[0:a]volume={orig_vol:.3f}[orig]")
+        fc.append(f"{m}[mus]")
+        if duck:
+            # el audio original (voz/viento) empuja la música hacia abajo
+            fc.append("[mus][orig]sidechaincompress=threshold=0.03:ratio=6:attack=20:release=350[musd]")
+            fc.append("[orig][musd]amix=inputs=2:duration=first:dropout_transition=0,"
+                      "loudnorm=I=-14:TP=-1.0:LRA=11[aout]")
+        else:
+            fc.append("[orig][mus]amix=inputs=2:duration=first:dropout_transition=0,"
+                      "loudnorm=I=-14:TP=-1.0:LRA=11[aout]")
+    else:
+        fc.append(f"{m},loudnorm=I=-14:TP=-1.0:LRA=11[aout]")
+    out = video.with_name(video.stem + ".mus.mp4")
+    _ff(["ffmpeg", "-v", "error", "-y", "-i", str(video), "-i", str(music),
+         "-filter_complex", ";".join(fc), "-map", "0:v", "-map", "[aout]",
+         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+         "-movflags", "+faststart", "-shortest", str(out)])
+    video.unlink(missing_ok=True)
+    out.rename(video)
+    return video
+
+
 def run_edit(spec: dict, j):
     try:
         fps = int(spec.get("fps") or 0)
@@ -2173,6 +2262,18 @@ def run_edit(spec: dict, j):
             _ff(cmd)
         for s in segs:
             s.unlink()
+        # ---- música (I2): se mezcla al final, sobre el reel ya compuesto ----
+        music = spec.get("music") if isinstance(spec.get("music"), dict) else None
+        mname = re.sub(r"[^\w.\- ]", "", str(music.get("name", ""))) if music else ""
+        if mname:
+            mpath = (AUDIO_DIR / mname).resolve()
+            try:
+                mpath.relative_to(AUDIO_DIR.resolve())   # contención: nunca fuera de audio/
+            except ValueError:
+                mpath = None
+            if mpath and mpath.is_file():
+                jobstore.update(j["id"], detail="mezclando música", progress=0.96)
+                _mix_music(out, mpath, music, keep_audio, _probe_dur(out))
         rebuild_index()
         job_end(j, "done", out.name)
     except Exception as e:
@@ -2660,6 +2761,18 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             return self.send_json({"volumes": sd_volumes()})
+        if self.path.startswith("/api/audio_list"):
+            if not self.auth():
+                return
+            AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+            tracks = []
+            for p in sorted(AUDIO_DIR.iterdir(), key=lambda x: -x.stat().st_mtime if x.is_file() else 0):
+                if p.is_file() and p.suffix.lower() in AUDIO_EXT:
+                    try:
+                        tracks.append(_audio_meta(p))
+                    except OSError:
+                        continue
+            return self.send_json({"tracks": tracks[:200]})
         if self.path.startswith("/api/drone_photos"):
             if not self.auth():
                 return
@@ -3189,6 +3302,69 @@ class H(BaseHTTPRequestHandler):
             j = job_add("upload", name)
             threading.Thread(target=process_upload, args=(path, j), daemon=True).start()
             return self.send_json({"ok": True, "clip_id": cid, "bytes": read, "job": j["id"]})
+        if u.path == "/api/audio_upload":
+            # pista de música del usuario (su propia biblioteca). Mismo patrón que /upload:
+            # body crudo + ?name=. NUNCA descargamos audio de servicios con DRM.
+            if not self.auth(q):
+                return
+            name = re.sub(r"[^\w.\- ]", "_", Path(q.get("name", ["pista.mp3"])[0]).name).strip()
+            ext = Path(name).suffix.lower()
+            if ext not in AUDIO_EXT:
+                return self.send_json({"error": f"formato {ext or '?'} no soportado — usa mp3, m4a, wav, flac u ogg"}, 400)
+            length = int(self.headers.get("Content-Length", 0))
+            if not length:
+                return self.send_json({"error": "body vacío"}, 400)
+            if length > 120 * 1024**2:
+                return self.send_json({"error": "la pista pesa más de 120MB"}, 413)
+            AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+            path = AUDIO_DIR / name
+            if path.exists():
+                path = AUDIO_DIR / f"{Path(name).stem} {time.strftime('%H%M%S')}{ext}"
+            read = 0
+            with open(path, "wb") as f:
+                while read < length:
+                    chunk = self.rfile.read(min(1024 * 256, length - read))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    read += len(chunk)
+            if read != length:
+                path.unlink(missing_ok=True)
+                return self.send_json({"error": f"subida incompleta ({read}/{length})"}, 400)
+            if _probe_dur(path) <= 0:      # no es audio real (o está corrupto): no ensuciar la biblioteca
+                path.unlink(missing_ok=True)
+                return self.send_json({"error": "no pude leer ese archivo como audio"}, 400)
+            return self.send_json({"ok": True, "track": _audio_meta(path)})
+        if u.path == "/api/audio_op":
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            op = str(spec.get("op", ""))
+            name = re.sub(r"[^\w.\- ]", "", str(spec.get("name", "")))
+            src = (AUDIO_DIR / name).resolve() if name else None
+            try:
+                src.relative_to(AUDIO_DIR.resolve())
+            except (ValueError, AttributeError):
+                return self.send_json({"error": "nombre inválido"}, 400)
+            if not src.is_file():
+                return self.send_json({"error": "pista no encontrada"}, 404)
+            if op == "delete":
+                tdir = VAULT / "trash" / "audio"
+                tdir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src), str(tdir / src.name))
+                (AUDIO_DIR / ".meta" / f"{src.name}.json").unlink(missing_ok=True)
+                return self.send_json({"ok": True})
+            if op == "rename":
+                new = re.sub(r"[^\w.\- ]", "", str(spec.get("new_name", ""))).strip()
+                if not new:
+                    return self.send_json({"error": "nombre nuevo inválido"}, 400)
+                dst = AUDIO_DIR / (new + src.suffix if not new.lower().endswith(src.suffix) else new)
+                if dst.exists():
+                    return self.send_json({"error": "ya existe una pista con ese nombre"}, 400)
+                src.rename(dst)
+                (AUDIO_DIR / ".meta" / f"{src.name}.json").unlink(missing_ok=True)
+                return self.send_json({"ok": True, "name": dst.name})
+            return self.send_json({"error": "op inválida"}, 400)
         if u.path == "/api/splat_autoclean":
             # Auto-Clean bajo demanda (Splat Lab v2): archiva el crudo si no existe, corre el
             # motor (autoclean.mjs) sobre el .splat actual, re-exporta SOG y actualiza meta.
