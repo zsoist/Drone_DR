@@ -439,6 +439,36 @@ stTabs.addEventListener('click', e => {
   if (b) showMod(b.dataset.tab);
 });
 
+// ---- I7 · compartir sin perder el gesto del usuario ----
+// El archivo se descarga a un File cacheado en cuanto el dedo TOCA el botón; para cuando
+// llega el 'click', navigator.share() puede llamarse de inmediato (iOS exige que share()
+// ocurra dentro de la activación del usuario, y un await previo la invalida).
+const shareCache = new Map();
+const SHARE_MAX = 180 * 1024 * 1024;    // guardia anti-OOM en móvil
+// iPadOS se declara 'MacIntel': hay que mirar también los puntos táctiles
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.platform)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function primeShare(url, name, mime) {
+  const hit = shareCache.get(url);
+  if (hit) return hit;
+  const p = fetch(url)
+    .then(r => {
+      const len = +r.headers.get('Content-Length') || 0;
+      if (len > SHARE_MAX) throw new Error('demasiado grande para compartir');
+      return r.blob();
+    })
+    .then(b => {
+      const f = new File([b], name, { type: b.type || mime });
+      p._file = f;              // marca de "ya está listo" para el click síncrono
+      return f;
+    });
+  shareCache.set(url, p);
+  setTimeout(() => shareCache.delete(url), 120000);   // no retener blobs eternamente
+  return p;
+}
+// liberar memoria al salir de la pestaña (iOS mata la página si acumulas blobs)
+addEventListener('visibilitychange', () => { if (document.hidden) shareCache.clear(); });
+
 // ---- motor de medios: biblioteca de reels y fotos ----
 let media = null;   // {reels:[{name,bytes,mtime}], photos:[...]}
 const mstate = { reels: { q: '', sort: 'recientes' }, fotos: { q: '', sort: 'recientes' },
@@ -545,8 +575,8 @@ function cardHTML(kind, it) {
     <div class="m-name">${esc(base)}</div>
     <div class="m-meta mono">${fmt.gb(it.bytes)} · ${mdate(it.mtime)}</div>
     <div class="m-actions">
-      <button data-act="share" data-tip="Compartir">${icon('ext')}</button>
-      <button data-act="dl" data-tip="Descargar">${icon('dl')}</button>
+      <button data-act="share" data-tip="${IS_IOS ? 'Compartir · guardar en Fotos' : 'Compartir'}">${icon('ext')}</button>
+      <button data-act="dl" data-tip="${window.showSaveFilePicker ? 'Guardar como…' : 'Descargar a Archivos'}">${icon('dl')}</button>
       <button data-act="dup" data-tip="Duplicar">${icon('copy')}</button>
       <button data-act="ren" data-tip="Renombrar">${icon('tag')}</button>
       <button class="danger" data-act="del" data-tip="Eliminar">${icon('warn')}</button>
@@ -580,6 +610,7 @@ async function onCardClick(kind, e) {
   const type = kind === 'reels' ? 'reel' : 'photo';
   const url = `/data/${kind === 'reels' ? 'reels' : 'photos'}/${encodeURIComponent(name)}`;
   const btn = e.target.closest('[data-act]');
+  if (btn?.dataset.act === 'share') primeShare(url, name, kind === 'reels' ? 'video/mp4' : 'image/jpeg').catch(() => {});
 
   if (!btn) {
     // fotos: tap en la imagen abre el editor premium (photoeditor.js)
@@ -589,19 +620,48 @@ async function onCardClick(kind, e) {
   const act = btn.dataset.act;
 
   if (act === 'dl') {
+    // desktop moderno: diálogo "Guardar como" real con streaming a disco (sin blob en RAM)
+    if (window.showSaveFilePicker) {
+      try {
+        const h = await showSaveFilePicker({ suggestedName: name });
+        const res = await fetch(url);
+        await res.body.pipeTo(await h.createWritable());
+        toast('Guardado en tu disco');
+        return;
+      } catch (err) {
+        if (err?.name === 'AbortError') return;    // el usuario canceló: no es error
+        /* sin permisos / no soportado → cae a la descarga clásica */
+      }
+    }
     const a = document.createElement('a');
     a.href = url; a.download = name; a.click();
     return;
   }
   if (act === 'share') {
-    let file = null;
-    try {
-      const blob = await (await fetch(url)).blob();
-      file = new File([blob], name, { type: blob.type || (kind === 'reels' ? 'video/mp4' : 'image/jpeg') });
-    } catch {}
-    if (file && navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file] }); } catch {}   // cancelar no es error
+    // El fetch ANTES de share() consumía la activación del usuario: en iPhone eso lanza
+    // NotAllowedError con archivos grandes y el catch mudo lo escondía. Ahora el archivo
+    // se va cebando desde el pointerdown y share() es la PRIMERA sentencia si ya está listo.
+    const primed = shareCache.get(url);
+    const ready = primed?._file;
+    if (ready && navigator.canShare?.({ files: [ready] })) {
+      try { await navigator.share({ files: [ready] }); }
+      catch (err) {
+        if (err?.name !== 'AbortError') toast('No se pudo abrir el menú de compartir — usa Descargar');
+      }
       return;
+    }
+    let file = null;
+    try { file = await primeShare(url, name, kind === 'reels' ? 'video/mp4' : 'image/jpeg'); }
+    catch {}
+    if (file && navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; }
+      catch (err) {
+        if (err?.name === 'AbortError') return;
+        // iOS invalidó el gesto mientras se preparaba: el archivo YA está en caché,
+        // así que un segundo toque sí abre la hoja de compartir.
+        toast('Toca Compartir otra vez — el video ya está listo');
+        return;
+      }
     }
     const a = document.createElement('a');   // fallback sin Web Share: descarga
     a.href = url; a.download = name; a.click();
@@ -637,7 +697,17 @@ for (const kind of ['reels', 'fotos']) {
     mstate[target()].sort = e.target.value;
     if (media || target() === 'dron') renderGrid(target());
   });
-  document.getElementById(`grid-${kind}`).addEventListener('click', e => onCardClick(kind, e));
+  const g = document.getElementById(`grid-${kind}`);
+  g.addEventListener('click', e => onCardClick(kind, e));
+  // ceba la descarga en cuanto el dedo toca Compartir (ver primeShare)
+  g.addEventListener('pointerdown', e => {
+    const b = e.target.closest('[data-act="share"]');
+    const card = e.target.closest('.m-card');
+    if (!b || !card) return;
+    const n = card.dataset.name;
+    primeShare(`/data/${kind === 'reels' ? 'reels' : 'photos'}/${encodeURIComponent(n)}`,
+               n, kind === 'reels' ? 'video/mp4' : 'image/jpeg').catch(() => {});
+  }, { passive: true });
 }
 loadMedia();
 
