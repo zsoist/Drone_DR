@@ -411,6 +411,16 @@ main.innerHTML = `
     <div class="media-grid" id="grid-reels"><div class="sk" style="height:150px"></div><div class="sk" style="height:150px"></div></div>
   </section>
 
+  <div class="up-zone" id="up-zone">
+    <button class="up-cta" id="up-pick">
+      <span class="up-ic">${icon('dl')}</span>
+      <span class="up-t"><b>Subir desde tu teléfono</b><small>videos y fotos del carrete — se procesan solos al llegar</small></span>
+      <span class="up-go">${icon('chevR')}</span>
+    </button>
+    <input type="file" id="up-file" accept="video/*,image/*" multiple hidden>
+    <div class="up-list" id="up-list" hidden></div>
+  </div>
+
   <section class="st-mod" data-mod="fotos" style="display:none">
     <div class="td-jobbar" id="fotos-sub" style="margin-bottom:10px" aria-label="Origen de fotos">
       <button class="chip on" data-fsub="fotos">Capturas</button>
@@ -509,6 +519,97 @@ function toast(msg) {
   requestAnimationFrame(() => t.classList.add('on'));
   setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 350); }, 3600);
 }
+
+// ================= SUBIDA DESDE EL TELÉFONO =================
+// Un input file con accept="video/*,image/*" abre el CARRETE en iOS. Se sube archivo a
+// archivo (no en paralelo): el túnel y el iPhone rinden mejor así, y el progreso es honesto.
+(() => {
+  const zone = document.getElementById('up-zone');
+  if (!zone) return;
+  const input = document.getElementById('up-file');
+  const list = document.getElementById('up-list');
+  const VID = /\.(mp4|mov|m4v|mkv|avi|mts|webm)$/i;
+  const IMG = /\.(jpe?g|png|heic|heif|webp|dng)$/i;
+
+  const row = f => {
+    const el = document.createElement('div');
+    el.className = 'up-row';
+    el.innerHTML = `<span class="up-n">${esc(f.name)}</span>
+      <span class="up-sz mono">${fmt.gb(f.size)}</span>
+      <span class="up-bar"><i></i></span>
+      <span class="up-st mono">en cola</span>`;
+    list.appendChild(el);
+    return el;
+  };
+
+  async function send(file, el) {
+    const isVid = VID.test(file.name);
+    const isImg = IMG.test(file.name);
+    if (!isVid && !isImg) {
+      el.querySelector('.up-st').textContent = 'formato no soportado';
+      el.classList.add('bad');
+      return null;
+    }
+    const url = isVid ? `/upload?name=${encodeURIComponent(file.name)}`
+      : `/api/photo_upload?name=${encodeURIComponent(file.name)}`;
+    // XHR (no fetch): es la única forma de tener progreso REAL de subida
+    return new Promise(resolve => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      xhr.withCredentials = true;
+      xhr.upload.addEventListener('progress', e => {
+        if (!e.lengthComputable) return;
+        const p = e.loaded / e.total;
+        el.querySelector('.up-bar i').style.width = `${p * 100}%`;
+        el.querySelector('.up-st').textContent = `${Math.round(p * 100)}%`;
+      });
+      xhr.addEventListener('load', () => {
+        let d = {};
+        try { d = JSON.parse(xhr.responseText); } catch {}
+        if (xhr.status >= 400 || d.error) {
+          el.classList.add('bad');
+          el.querySelector('.up-st').textContent = (d.error || `error ${xhr.status}`).slice(0, 40);
+        } else {
+          el.classList.add('ok');
+          el.querySelector('.up-bar i').style.width = '100%';
+          el.querySelector('.up-st').textContent = isVid ? 'procesando…' : 'listo';
+        }
+        resolve(d);
+      });
+      xhr.addEventListener('error', () => {
+        el.classList.add('bad');
+        el.querySelector('.up-st').textContent = 'falló la red';
+        resolve(null);
+      });
+      xhr.send(file);
+    });
+  }
+
+  async function handle(files) {
+    const arr = [...files];
+    if (!arr.length) return;
+    list.hidden = false;
+    let vids = 0, imgs = 0;
+    for (const f of arr) {
+      const el = row(f);
+      const r = await send(f, el);          // secuencial a propósito
+      if (r && !r.error) { VID.test(f.name) ? vids++ : imgs++; }
+    }
+    await loadMedia();
+    toast(`Subida lista: ${vids} video${vids === 1 ? '' : 's'} y ${imgs} foto${imgs === 1 ? '' : 's'}`
+      + (vids ? ' — los videos se están procesando, míralos en Trabajos' : ''));
+    setTimeout(() => { list.innerHTML = ''; list.hidden = true; }, 9000);
+  }
+
+  document.getElementById('up-pick').addEventListener('click', () => input.click());
+  input.addEventListener('change', e => { handle(e.target.files); e.target.value = ''; });
+  ['dragover', 'dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, e => {
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    e.preventDefault();
+    zone.classList.toggle('hot', ev === 'dragover');
+    if (ev === 'drop') handle(e.dataTransfer.files);
+  }));
+})();
 
 // ================= VISOR DE REELS (R2) =================
 // Pantalla dedicada para ver un reel terminado: reproductor grande sobre el póster

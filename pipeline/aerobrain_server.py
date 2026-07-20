@@ -3534,6 +3534,48 @@ class H(BaseHTTPRequestHandler):
             j = job_add("upload", name)
             threading.Thread(target=process_upload, args=(path, j), daemon=True).start()
             return self.send_json({"ok": True, "clip_id": cid, "bytes": read, "job": j["id"]})
+        if u.path == "/api/photo_upload":
+            # foto desde el iPhone (carrete) — mismo patrón de body crudo que /upload.
+            # Las fotos NO pasan por process.py: van directas a la biblioteca de Fotos.
+            if not self.auth(q):
+                return
+            raw_name = Path(q.get("name", ["foto.jpg"])[0]).name
+            ext = Path(raw_name).suffix.lower()
+            if ext not in (".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".dng"):
+                return self.send_json({"error": f"formato {ext or '?'} no soportado"}, 400)
+            length = int(self.headers.get("Content-Length", 0))
+            if not length:
+                return self.send_json({"error": "body vacío"}, 400)
+            if length > 200 * 1024**2:
+                return self.send_json({"error": "la foto pesa más de 200MB"}, 413)
+            pdir = VAULT / "photos"
+            pdir.mkdir(parents=True, exist_ok=True)
+            safe = re.sub(r"[^\w.\- ]", "_", raw_name)
+            dst = pdir / safe
+            if dst.exists():
+                dst = pdir / f"{Path(safe).stem}-{time.strftime('%H%M%S')}{ext}"
+            read = 0
+            with open(dst, "wb") as f:
+                while read < length:
+                    chunk = self.rfile.read(min(1024 * 256, length - read))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    read += len(chunk)
+            if read != length:
+                dst.unlink(missing_ok=True)
+                return self.send_json({"error": f"subida incompleta ({read}/{length})"}, 400)
+            # HEIC del iPhone: el navegador no lo pinta — se convierte a JPG con sips
+            if ext in (".heic", ".heif"):
+                jpg = dst.with_suffix(".jpg")
+                try:
+                    subprocess.run(["sips", "-s", "format", "jpeg", str(dst), "--out", str(jpg)],
+                                   check=True, capture_output=True, timeout=120)
+                    dst.unlink(missing_ok=True)
+                    dst = jpg
+                except (OSError, subprocess.SubprocessError):
+                    pass          # se queda el HEIC: descargable aunque no se previsualice
+            return self.send_json({"ok": True, "name": dst.name, "bytes": read})
         if u.path == "/api/reel_edit":
             # R4 · retoques sobre un reel YA exportado, sin re-montar el proyecto.
             # Nunca sobrescribe el original salvo 'poster' (que solo toca la miniatura).
