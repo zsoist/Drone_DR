@@ -1592,6 +1592,33 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     return segs.length;
   }
 
+  // vistazo rápido a una toma dentro del Reels Maker (sin salir del wizard)
+  function openClipPeek(cid) {
+    const f = byId[cid];
+    if (!f) return;
+    const pk = document.createElement('div');
+    pk.className = 'rm-peek';
+    pk.innerHTML = `<div class="rm-peek-card">
+      <video src="${DATA}/proxies/${encodeURIComponent(cid)}.mp4" controls autoplay muted playsinline
+             poster="${DATA}/thumbs/${encodeURIComponent(cid)}.jpg"></video>
+      <div class="rm-peek-f">
+        <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
+        <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m</span>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn sm" data-peek-close>Cerrar</button>
+      </div>
+    </div>`;
+    document.body.appendChild(pk);
+    const close = () => { pk.querySelector('video')?.pause(); pk.remove(); };
+    pk.addEventListener('click', ev => {
+      if (ev.target === pk || ev.target.closest('[data-peek-close]')) close();
+    });
+    addEventListener('keydown', function esc2(ev) {
+      if (!document.body.contains(pk)) { removeEventListener('keydown', esc2); return; }
+      if (ev.key === 'Escape') { close(); removeEventListener('keydown', esc2); }
+    });
+  }
+
   function openReelMaker() {
     const ovr = document.createElement('div');
     ovr.className = 'modal-ov';
@@ -1631,12 +1658,18 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
           </div>
           <div class="rm-grid">${vis.map(f => {
             const sc = ai[f.clip_id]?.travel_score;
-            return `<button class="rm-clip${pick.has(f.clip_id) ? ' on' : ''}" data-pick="${esc(f.clip_id)}">
-              <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">
-              <span class="rm-check">${pick.has(f.clip_id) ? '✓' : ''}</span>
-              ${sc ? `<span class="rm-sc ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}">✨${sc}</span>` : ''}
-              <span class="rm-lb">${esc((f.label || fmt.date(f.date)).slice(0, 22))}<em>${fmt.dur(f.duration_s)}</em></span>
-            </button>`;
+            // OJO: la caja con proporción NO puede ser el <button> — Safari no aplica
+            // aspect-ratio a los botones y las tarjetas colapsaban unas sobre otras.
+            return `<div class="rm-clip${pick.has(f.clip_id) ? ' on' : ''}" data-pick="${esc(f.clip_id)}"
+                         role="button" tabindex="0" aria-pressed="${pick.has(f.clip_id)}">
+              <div class="rm-thumb">
+                <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="" width="320" height="180">
+                <span class="rm-check">${pick.has(f.clip_id) ? '✓' : ''}</span>
+                ${sc ? `<span class="rm-sc ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}">✨${sc}</span>` : ''}
+                <button class="rm-eye" data-eye="${esc(f.clip_id)}" aria-label="Ver toma">${icon('play')}</button>
+              </div>
+              <div class="rm-lb"><b>${esc((f.label || fmt.date(f.date)).slice(0, 24))}</b><em>${fmt.dur(f.duration_s)}</em></div>
+            </div>`;
           }).join('') || '<p class="footer-note">Nada coincide con esa búsqueda.</p>'}</div>` : `
           <div class="mlb">Duración objetivo</div>
           <div class="rm-opts">${[15, 30, 60].map(t => `
@@ -1663,6 +1696,12 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     document.body.appendChild(ovr);
     ovr.addEventListener('click', e => {
       if (e.target === ovr || e.target.closest('.modal-x')) { ovr.remove(); return; }
+      const eye = e.target.closest('[data-eye]');
+      if (eye) {   // ver la toma sin seleccionarla
+        e.stopPropagation();
+        openClipPeek(eye.dataset.eye);
+        return;
+      }
       const p = e.target.closest('[data-pick]');
       if (p) {
         // patch EN SITIO: re-renderizar el grid entero por cada click recargaba 113 <img>,

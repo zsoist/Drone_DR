@@ -1840,34 +1840,66 @@ button.exp { text-align: left; cursor: pointer; }
   max-height: 46dvh; overflow: auto; padding: 2px;
 }
 .rm-clip {
-  position: relative; border-radius: 11px; overflow: hidden; cursor: pointer; padding: 0;
-  border: 1px solid var(--line); background: var(--surface-2); aspect-ratio: 16/10;
-  transition: border-color 150ms var(--ease), transform 150ms var(--ease);
+  display: flex; flex-direction: column; border-radius: 12px; overflow: hidden; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2); padding: 0; text-align: left;
+  transition: border-color 150ms var(--ease), transform 150ms var(--ease), box-shadow 150ms var(--ease);
 }
-.rm-clip img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 300ms var(--ease); }
-.rm-clip:hover { border-color: rgba(69,160,230,.5); transform: translateY(-1px); }
-.rm-clip:hover img { transform: scale(1.06); }
+/* caja de proporción por padding-%: aspect-ratio sobre <button> NO funciona en Safari y
+   las tarjetas se colapsaban unas sobre otras. Este truco funciona en todos los motores. */
+.rm-thumb { position: relative; width: 100%; padding-top: 62.5%; overflow: hidden; background: #0c1016; }
+.rm-thumb img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform 320ms var(--ease);
+}
+.rm-clip:hover { border-color: rgba(69,160,230,.5); transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,.32); }
+.rm-clip:hover .rm-thumb img { transform: scale(1.07); }
+.rm-clip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .rm-clip.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-.rm-clip.on img { filter: brightness(1.06); }
 .rm-check {
-  position: absolute; top: 6px; left: 6px; width: 20px; height: 20px; border-radius: 6px;
-  border: 1.5px solid rgba(255,255,255,.55); background: rgba(6,9,14,.55);
+  position: absolute; top: 7px; left: 7px; z-index: 2; width: 21px; height: 21px; border-radius: 7px;
+  border: 1.5px solid rgba(255,255,255,.6); background: rgba(6,9,14,.6);
   display: grid; place-items: center; font-size: 12px; color: #fff; font-weight: 700;
-  transition: background 150ms var(--ease), border-color 150ms var(--ease);
+  transition: background 150ms var(--ease), border-color 150ms var(--ease), transform 150ms var(--ease);
 }
-.rm-clip.on .rm-check { background: var(--accent); border-color: var(--accent); }
+.rm-clip.on .rm-check { background: var(--accent); border-color: var(--accent); transform: scale(1.08); }
 .rm-sc {
-  position: absolute; top: 6px; right: 6px; padding: 2px 6px; border-radius: 999px;
+  position: absolute; top: 7px; right: 7px; z-index: 2; padding: 2px 7px; border-radius: 999px;
   font-family: var(--mono); font-size: 9.5px; font-weight: 700;
-  background: rgba(6,9,14,.7); border: 1px solid var(--line);
+  background: rgba(6,9,14,.72); border: 1px solid var(--line); backdrop-filter: blur(4px);
 }
 .rm-sc.ok { color: var(--mint); } .rm-sc.mid { color: #e8b34c; } .rm-sc.bad { color: var(--red); }
-.rm-lb {
-  position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 8px 6px;
-  display: flex; align-items: baseline; gap: 6px; font-size: 10.5px; color: #fff;
-  background: linear-gradient(to top, rgba(6,9,14,.88), transparent);
+/* ojo de preview: aparece al hover, no compite con el click de selección */
+.rm-eye {
+  position: absolute; right: 7px; bottom: 7px; z-index: 3; width: 26px; height: 26px;
+  border-radius: 50%; border: 1px solid rgba(255,255,255,.35); background: rgba(6,9,14,.66);
+  color: #fff; display: grid; place-items: center; cursor: pointer; opacity: 0;
+  transition: opacity 150ms var(--ease), background 150ms var(--ease);
 }
-.rm-lb em { font-style: normal; margin-left: auto; font-family: var(--mono); font-size: 9.5px; opacity: .8; }
+.rm-eye svg.ic { width: 12px; height: 12px; }
+.rm-clip:hover .rm-eye { opacity: 1; }
+.rm-eye:hover { background: var(--accent); border-color: var(--accent); }
+@media (pointer: coarse) { .rm-eye { opacity: .9; } }
+.rm-lb {
+  display: flex; align-items: baseline; gap: 8px; padding: 8px 10px 9px;
+  font-size: 11px; color: var(--text-2); min-width: 0;
+}
+.rm-lb b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rm-lb em { font-style: normal; margin-left: auto; font-family: var(--mono); font-size: 9.5px; color: var(--text-3); flex: none; }
+/* vistazo a una toma desde el wizard */
+.rm-peek {
+  position: fixed; inset: 0; z-index: 340; display: grid; place-items: center; padding: 20px;
+  background: rgba(4,8,16,.8); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  animation: ovIn 160ms var(--ease);
+}
+.rm-peek-card {
+  width: min(560px, 92vw); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; padding: 10px; box-shadow: 0 24px 60px rgba(0,0,0,.5);
+  animation: mIn 200ms var(--ease);
+}
+.rm-peek-card video { width: 100%; max-height: 66vh; border-radius: 10px; display: block; background: #000; }
+.rm-peek-f { display: flex; align-items: center; gap: 10px; padding: 10px 4px 2px; font-size: 12px; }
+.rm-peek-f .mono { font-size: 10.5px; color: var(--text-3); }
+
 .rm-opts { display: flex; flex-wrap: wrap; gap: 8px; }
 .rm-opt {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 14px;
@@ -1934,8 +1966,9 @@ button.exp { text-align: left; cursor: pointer; }
 .tx-dur .mono { font-size: 11px; width: 34px; text-align: right; }
 .tx-all { width: 100%; justify-content: center; font-size: 11.5px; }
 /* demo animado: capa A (verde-azul) → capa B (ámbar) según el tipo, loop 1.8s */
+/* misma trampa que .rm-thumb: proporción por padding-%, no aspect-ratio (Safari) */
 .tx-demo {
-  position: relative; width: 100%; aspect-ratio: 16/9; border-radius: 6px; overflow: hidden;
+  position: relative; width: 100%; padding-top: 56.25%; border-radius: 6px; overflow: hidden;
   background: linear-gradient(120deg, #274, #17405e);
 }
 .tx-demo i {
