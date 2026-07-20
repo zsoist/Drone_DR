@@ -2178,6 +2178,25 @@ def _mix_music(video: Path, music: Path, opts: dict, has_audio: bool, dur: float
     return video
 
 
+def _reel_poster(reel: Path) -> Path | None:
+    """Póster JPEG del reel (I6). Sin él, cada tile de la pestaña Reels descargaba el MP4
+    entero solo para pintar un fotograma: con 20 reels eso son cientos de MB por visita."""
+    # OJO: NO usar un nombre con punto (.posters) — la denylist del vault bloquea todo
+    # segmento que empiece por '.', así que el póster nunca se serviría.
+    pdir = VAULT / "reel-posters"
+    pdir.mkdir(parents=True, exist_ok=True)
+    dst = pdir / f"{reel.stem}.jpg"
+    if dst.exists() and dst.stat().st_mtime >= reel.stat().st_mtime:
+        return dst
+    try:
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "0.5", "-i", str(reel),
+                        "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", str(dst)],
+                       check=True, capture_output=True, timeout=60)
+        return dst
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def run_edit(spec: dict, j):
     try:
         fps = int(spec.get("fps") or 0)
@@ -2391,6 +2410,7 @@ def run_edit(spec: dict, j):
             if mpath and mpath.is_file():
                 jobstore.update(j["id"], detail="mezclando música", progress=0.96)
                 _mix_music(out, mpath, music, keep_audio, _probe_dur(out))
+        _reel_poster(out)     # miniatura para el grid: el tile ya no descarga el MP4
         # BUG (auditoría jul-20): rebuild_index() corría DENTRO del try y ANTES de job_end.
         # Si build_index.py fallaba, un reel exportado CON ÉXITO se reportaba como 'error'
         # y el usuario creía haberlo perdido. El índice es cosmético para el export.

@@ -534,7 +534,10 @@ function cardHTML(kind, it) {
     </div>`;
   }
   const prev = kind === 'reels'
-    ? `<video src="/data/reels/${enc}#t=0.5" preload="metadata" muted playsinline loop></video>
+    // preload="none" + póster server-side: el tile pinta con ~20KB en vez de bajar el MP4.
+    // El <video> solo carga cuando el hover/tap lo pide (ver onMediaHover).
+    ? `<video src="/data/reels/${enc}#t=0.5" preload="none" muted playsinline loop
+              poster="/data/reel-posters/${encodeURIComponent(it.name.replace(/\.[^.]+$/, ''))}.jpg"></video>
        <span class="gchip m-dur" style="display:none"></span>`
     : `<img loading="lazy" src="/data/photos/${enc}" alt="${esc(base)}" style="cursor:pointer">`;
   return `<div class="m-card" data-name="${esc(it.name)}">
