@@ -1851,7 +1851,11 @@ def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: st
 
 
 ASPECTS = {
-    "16:9": "scale=-2:1080",
+    # 16:9 con destino FIJO 1920x1080 (antes scale=-2:1080 dejaba el ancho a merced del
+    # aspecto de la fuente; el demuxer concat con -c copy exige dimensiones idénticas
+    # entre segmentos, así que una fuente no-16:9 producía un MP4 roto).
+    "16:9": "scale=1920:1080:force_original_aspect_ratio=decrease,"
+            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black",
     "9:16": "crop=ih*9/16:ih,scale=1080:1920",
     "1:1": "crop=ih:ih,scale=1080:1080",
     "4:5": "crop=ih*4/5:ih,scale=1080:1350",
@@ -1869,12 +1873,15 @@ _ASPECT_H = {
 def aspect_vf(aspect, resolution="1080"):
     # devuelve el filtro de crop/scale para el aspecto en la resolución pedida.
     # 1080 = comportamiento actual (default); 2160 duplica el destino.
+    # setsar=1: sin píxeles cuadrados explícitos, algunas redes reinterpretan el aspecto
+    # y el vertical sube deformado o acostado.
     res = "2160" if str(resolution) == "2160" else "1080"
     if res == "1080":
-        return ASPECTS.get(aspect, ASPECTS["16:9"])
+        return ASPECTS.get(aspect, ASPECTS["16:9"]) + ",setsar=1"
     # 2160 (4K): mismo recorte, destino duplicado
     if aspect == "16:9":
-        return "scale=-2:2160"
+        return ("scale=3840:2160:force_original_aspect_ratio=decrease,"
+                "pad=3840:2160:(ow-iw)/2:(oh-ih)/2:black,setsar=1")
     if aspect == "9:16":
         return "crop=ih*9/16:ih,scale=2160:3840"
     if aspect == "1:1":
@@ -2200,7 +2207,18 @@ def run_edit(spec: dict, j):
         wants_xfade_pre = len(raw_segs) > 1 and any(
             XFADE_MAP.get(str((s if isinstance(s, dict) else {}).get("transition", "none")))
             for s in raw_segs[1:] if isinstance(s, dict))
+        def _xname_pre(rs, idx):
+            """¿El corte idx entra con transición de librería? (define dónde va el fundido)"""
+            if idx <= 0 or idx >= len(rs):
+                return None
+            s0 = rs[idx] if isinstance(rs[idx], dict) else {}
+            return XFADE_MAP.get(str(s0.get("transition", "none")))
         if wants_xfade_pre and not fps:
+            rate = ["-r", "30"]
+        # BUG (auditoría jul-20): sin transiciones se concatenaba con -c copy. Con clips de
+        # fps distintos (30 y 60 mezclados) eso produce un MP4 desincronizado o roto. Si el
+        # timeline es multi-clip y el usuario dejó fps='Fuente', normalizamos a 30 igual.
+        elif not fps and len({(s0.get("clip_id") if isinstance(s0, dict) else None) for s0 in raw_segs}) > 1:
             rate = ["-r", "30"]
         for i, s in enumerate(raw_segs):
             if not isinstance(s, dict):
@@ -2214,7 +2232,12 @@ def run_edit(spec: dict, j):
             src = VAULT / "proxies" / f"{cid}.mp4"
             if not src.exists():
                 raise FileNotFoundError(f"{cid} sin proxy")
-            seg_lut = LUTS.get(s.get("filter", spec.get("filter", "none")), lut)
+            # BUG (auditoría jul-20): el 'Look global' estaba MUERTO. La UI manda
+            # filter:'none' explícito en cada corte y 'none' SÍ existe en LUTS (= ""),
+            # así que el look global nunca ganaba. Ahora el global aplica salvo que el
+            # corte pida uno propio DISTINTO de 'none'.
+            seg_filter = str(s.get("filter") or "none")
+            seg_lut = LUTS.get(seg_filter, "") if seg_filter != "none" else lut
             seg_title = str(s.get("title", ""))[:60].replace("\\", "").replace("'", "").replace("%", "").replace(":", r"\:")
             title_style = s.get("titleStyle") if isinstance(s.get("titleStyle"), dict) else {}
             grade_vf = _grade_vf(s.get("grade"))
@@ -2240,11 +2263,28 @@ def run_edit(spec: dict, j):
                     vf.append("reverse")
                 if speed != 1:
                     vf.append(f"setpts=PTS/{speed}")
+            # BUG (auditoría jul-20): DOBLE oscurecimiento. Se fundía a negro CADA corte y
+            # además el xfade cruzaba bordes ya fundidos → parpadeo oscuro en cada unión.
+            # Con transiciones, el fundido solo va en el borde EXTERIOR del reel.
             if fade:
-                vf.append(f"fade=t=in:st=0:d=0.25,fade=t=out:st={max(out_dur - 0.25, 0):.2f}:d=0.25")
+                f_in = i == 0 or not _xname_pre(raw_segs, i)
+                f_out = i == len(raw_segs) - 1 or not _xname_pre(raw_segs, i + 1)
+                parts = []
+                if f_in:
+                    parts.append("fade=t=in:st=0:d=0.25")
+                if f_out:
+                    parts.append(f"fade=t=out:st={max(out_dur - 0.25, 0):.2f}:d=0.25")
+                if parts:
+                    vf.append(",".join(parts))
             if (seg_title or (title and i == 0)) and HAS_DRAWTEXT:
-                txt = seg_title or title
-                vf.append(_title_drawtext(txt, title_style if seg_title else {}))
+                # BUG: el título global se perdía si el primer corte tenía el suyo, y NUNCA
+                # heredaba estilo. Ahora se dibujan AMBOS cuando existen, y el global respeta
+                # el titleStyle del reel.
+                if seg_title:
+                    vf.append(_title_drawtext(seg_title, title_style))
+                if title and i == 0 and title != seg_title:
+                    vf.append(_title_drawtext(title, spec.get("titleStyle")
+                                              if isinstance(spec.get("titleStyle"), dict) else {}))
             seg = tmp / f"e{i}.mp4"
             # -t de ENTRADA (antes de -i): sin él, 'reverse' bufferea desde 'a' hasta el FIN
             # del archivo y el -t de salida se queda con los ÚLTIMOS out_dur seg invertidos
@@ -2291,8 +2331,10 @@ def run_edit(spec: dict, j):
             # ruta concat actual (rápida, probada) — cortes duros; 'fade' ya aplicado por segmento
             lst = tmp / "l.txt"
             lst.write_text("".join(f"file '{s}'\n" for s in segs))
+            # +faststart: el moov al principio = el reel empieza a verse al instante en
+            # web/iOS en vez de esperar a descargar el archivo entero.
             _ff(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
-                 "-i", str(lst), "-c", "copy", str(out)])
+                 "-i", str(lst), "-c", "copy", "-movflags", "+faststart", str(out)])
             lst.unlink()
         else:
             # pase final con xfade encadenado en cada corte que pida transición de librería;
@@ -2328,7 +2370,8 @@ def run_edit(spec: dict, j):
             if keep_audio:
                 maps += ["-map", aprev]
             cmd += ["-filter_complex", ";".join(fc), *maps,
-                    "-c:v", "h264_videotoolbox", "-b:v", br]
+                    "-c:v", "h264_videotoolbox", "-b:v", br,
+                    "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
             if keep_audio:
                 cmd += ["-c:a", "aac", "-ar", "48000", "-ac", "2"]
             cmd.append(str(out))
@@ -2348,8 +2391,14 @@ def run_edit(spec: dict, j):
             if mpath and mpath.is_file():
                 jobstore.update(j["id"], detail="mezclando música", progress=0.96)
                 _mix_music(out, mpath, music, keep_audio, _probe_dur(out))
-        rebuild_index()
+        # BUG (auditoría jul-20): rebuild_index() corría DENTRO del try y ANTES de job_end.
+        # Si build_index.py fallaba, un reel exportado CON ÉXITO se reportaba como 'error'
+        # y el usuario creía haberlo perdido. El índice es cosmético para el export.
         job_end(j, "done", out.name)
+        try:
+            rebuild_index()
+        except Exception as e:                      # noqa: BLE001 — el reel ya está en disco
+            print(f"reel {out.name} ok, pero rebuild_index falló: {e}", flush=True)
     except Exception as e:
         job_end(j, "error", str(e)[-300:])
     finally:

@@ -1720,6 +1720,19 @@ button.exp { text-align: left; cursor: pointer; }
 }
 .tl-clip + .tl-clip { margin-left: 2px; }
 .tl-clip:active { cursor: grabbing; }
+/* zonas seguras de cada red sobre el preview (I4) */
+.tl-safe { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.tl-safe .ts-box {
+  position: absolute; display: block;
+  border: 1px dashed rgba(255,255,255,.55); border-radius: 2px;
+  box-shadow: 0 0 0 4000px rgba(6,9,14,.34);
+}
+.tl-safe .ts-lb {
+  position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 9px; letter-spacing: .6px; color: rgba(255,255,255,.8);
+  background: rgba(6,9,14,.6); padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+}
+
 /* pulso de la música sobre la regla (I3) */
 .tl-beat {
   position: absolute; bottom: 0; width: 1px; height: 7px;

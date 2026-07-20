@@ -265,11 +265,13 @@ main.innerHTML = `
               <label class="eb-field"><span>Preset</span>
               <select class="ctl" id="ed-preset">
                 <option value="">Manual…</option>
-                <option value="yt4k">YouTube 4K</option>
-                <option value="yt1080">YouTube 1080</option>
-                <option value="reels">Reels/TikTok</option>
-                <option value="square">Cuadrado</option>
+                <option value="tiktok">TikTok</option>
+                <option value="reels">Instagram Reels</option>
+                <option value="shorts">YouTube Shorts</option>
                 <option value="feed45">Feed 4:5</option>
+                <option value="square">Cuadrado</option>
+                <option value="yt1080">YouTube 1080</option>
+                <option value="yt4k">YouTube 4K</option>
               </select></label>
               <label class="eb-field"><span>Aspecto</span>
               <select class="ctl" id="ed-aspect">
@@ -1870,19 +1872,62 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
 
   // ================= presets de export (v7) =================
   // cada preset fija aspect + resolution; el usuario puede sobreescribir manual
+  // Presets con los números REALES de cada plataforma (2026). Notas de la investigación:
+  // ninguna sirve vertical por encima de 1080x1920, y subir de ~10 Mbps no mejora nada
+  // porque la plataforma recomprime igual. maxDur = límite práctico, no el máximo absoluto.
   const PRESETS = {
-    yt4k:   { aspect: '16:9', res: '2160' },
-    yt1080: { aspect: '16:9', res: '1080' },
-    reels:  { aspect: '9:16', res: '1080' },
-    square: { aspect: '1:1',  res: '1080' },
-    feed45: { aspect: '4:5',  res: '1080' },
+    tiktok:  { aspect: '9:16', res: '1080', fps: '30', bitrate: 12, maxDur: 60,  safe: 'tiktok', lb: 'TikTok' },
+    reels:   { aspect: '9:16', res: '1080', fps: '30', bitrate: 9,  maxDur: 90,  safe: 'reels',  lb: 'Instagram Reels' },
+    shorts:  { aspect: '9:16', res: '1080', fps: '',   bitrate: 10, maxDur: 180, safe: 'shorts', lb: 'YouTube Shorts' },
+    yt1080:  { aspect: '16:9', res: '1080', fps: '',   bitrate: 12, maxDur: 0,   safe: '',       lb: 'YouTube 1080' },
+    yt4k:    { aspect: '16:9', res: '2160', fps: '',   bitrate: 40, maxDur: 0,   safe: '',       lb: 'YouTube 4K' },
+    square:  { aspect: '1:1',  res: '1080', fps: '30', bitrate: 9,  maxDur: 60,  safe: '',       lb: 'Cuadrado' },
+    feed45:  { aspect: '4:5',  res: '1080', fps: '30', bitrate: 9,  maxDur: 60,  safe: 'reels',  lb: 'Feed 4:5' },
+  };
+  // zonas seguras en % sobre 1080x1920 (dónde tapa la UI de cada app). Fuente: guías de Meta
+  // (14% arriba / 35% abajo / 6% lados) y valores de consenso para TikTok y Shorts.
+  const SAFE = {
+    tiktok: { top: 6.8, bottom: 25.2, left: 4.1, right: 13.0 },
+    reels:  { top: 14.0, bottom: 35.0, left: 6.0, right: 6.0 },
+    shorts: { top: 7.5, bottom: 18.0, left: 5.5, right: 11.0 },
   };
   document.getElementById('ed-preset').addEventListener('change', e => {
-    const p = PRESETS[e.target.value]; if (!p) return;
+    const p = PRESETS[e.target.value];
+    safeMode = p?.safe || '';
+    applySafe();
+    if (!p) return;
     document.getElementById('ed-aspect').value = p.aspect;
     document.getElementById('ed-res').value = p.res;
+    // el preset ahora también fija fps y bitrate reales de la plataforma
+    edFps = p.fps || '';
+    syncFpsChips();
+    const br = document.getElementById('ed-bitrate');
+    if (br) { br.value = p.bitrate; document.getElementById('ed-bitrate-v').textContent = `${p.bitrate} Mbps`; }
     applyAspect();
+    if (typeof updateExportUI === 'function') try { updateExportUI(); } catch {}
+    // aviso honesto si el reel se pasa del largo que la plataforma premia
+    if (p.maxDur && total() > p.maxDur) {
+      toast(`Ojo: ${p.lb} rinde mejor hasta ${p.maxDur}s y tu reel dura ${fmt.dur(total())}`);
+    }
   });
+  // ---- overlay de zonas seguras (I4): dónde tapa la UI de cada app ----
+  let safeMode = '';
+  function applySafe() {
+    const st = document.getElementById('tl-stage');
+    let el = document.getElementById('tl-safe');
+    if (!safeMode || !SAFE[safeMode]) { el?.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'tl-safe';
+      el.className = 'tl-safe';
+      el.innerHTML = '<i class="ts-box"></i><span class="ts-lb"></span>';
+      st.appendChild(el);
+    }
+    const s = SAFE[safeMode];
+    const box = el.querySelector('.ts-box');
+    box.style.inset = `${s.top}% ${s.right}% ${s.bottom}% ${s.left}%`;
+    el.querySelector('.ts-lb').textContent = `zona segura · ${PRESETS[document.getElementById('ed-preset').value]?.lb || safeMode}`;
+  }
 
   // ================= atajos de teclado (36-40) =================
   function editorVisible() { return document.querySelector('.st-mod[data-mod="editor"]')?.style.display !== 'none'; }
