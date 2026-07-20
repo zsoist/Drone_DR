@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=231';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=231';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=231';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=231';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=231';
-  import { mountSplatViewer } from '/splatview.js?v=231';
+  import * as THREE from '/vendor/three180.module.js?v=234';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=234';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=234';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=234';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=234';
+  import { mountSplatViewer } from '/splatview.js?v=234';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1239,7 +1239,10 @@
     const spots = Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
     const placeName = fs => fs[0].place || fs[0].stats?.place
       || (centroid(fs[0]) ? `${centroid(fs[0])[1].toFixed(3)}, ${centroid(fs[0])[0].toFixed(3)}` : 'Sin GPS');
-    const sel = new Set([candidates[0].clip_id]);   // primer clip pre-seleccionado
+    // arranque VACÍO: preseleccionar "el más reciente" imponía un clip que el usuario no
+    // eligió (y con el viejo candado de mínimo-1, no se podía quitar). Continuar se
+    // desactiva solo mientras no haya selección.
+    const sel = new Set();
     const photoSel = new Set();
     const availPhotos = (sys.photos || []).map(p => p.name);
     const byCid = Object.fromEntries(candidates.map(f => [f.clip_id, f]));
@@ -1548,9 +1551,12 @@
         ? `<span class="st-tray-l">${icon('layers')} ${fs.length} video${fs.length === 1 ? '' : 's'}${photoSel.size ? ` + ${photoSel.size} fotos` : ''} · ${fmt.dur(durTot)}</span>`
           + fs.map(f => `<span class="st-chip" data-untray="${esc(f.clip_id)}">${esc((f.label || fmt.date(f.date) + ' ' + f.time).slice(0, 22))} ✕</span>`).join('')
         : '<span class="st-tray-l">Selecciona al menos un video</span>';
+      // sin selección no hay paso 2 — el gate vive AQUÍ, no en candados de deselección
+      const next = ov.querySelector('#st-next');
+      if (next) next.toggleAttribute('disabled', !fs.length);
     }
     ov.querySelector('#st-tray').addEventListener('click', e => {
-      const c = e.target.closest('[data-untray]'); if (!c || sel.size <= 1) return;
+      const c = e.target.closest('[data-untray]'); if (!c) return;
       sel.delete(c.dataset.untray); syncClip(c.dataset.untray); renderTray(); renderCombined(); applyFilters();
     });
     renderTray();
@@ -1712,8 +1718,8 @@
     ov.querySelector('#st-collapse').addEventListener('click', () =>
       ov.querySelectorAll('.proc-group').forEach(g => g.classList.add('collapsed')));
     ov.querySelector('#st-clear').addEventListener('click', () => {
-      [...sel].slice(1).forEach(c => { sel.delete(c); syncClip(c); });   // deja 1 (mínimo del flujo)
-      renderTray(); applyFilters();
+      [...sel].forEach(c => { sel.delete(c); syncClip(c); });   // limpiar = CERO (Continuar se desactiva solo)
+      renderTray(); renderCombined(); applyFilters();
     });
     applyFilters();
     ov.querySelector('#st-sort').addEventListener('change', e => {
