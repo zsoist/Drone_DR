@@ -1789,14 +1789,35 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const ovr = document.createElement('div');
     ovr.className = 'modal-ov';
     const pick = new Set();
-    const st = { step: 1, q: '', target: 30, rhythm: 'medio', look: 'cine', aspect: '9:16' };
+    const st = { step: 1, q: '', only: '', target: 30, rhythm: 'medio', look: 'cine', aspect: '9:16' };
     const pool = () => editable.slice().sort((a, b) =>
       (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
     const visible = () => pool().filter(f => {
+      const a = ai[f.clip_id];
+      if (st.only === 'top' && !(a?.travel_score >= 7)) return false;
+      if (st.only === 'ai' && !a?.travel_score) return false;
+      if (st.only === 'long' && (f.duration_s || 0) < 10) return false;
       if (!st.q) return true;
-      const hay = `${f.label || ''} ${f.date} ${fmt.date(f.date)} ${f.time || ''} ${(ai[f.clip_id]?.tags || []).join(' ')}`.toLowerCase();
+      const hay = `${f.label || ''} ${f.date} ${fmt.date(f.date)} ${f.time || ''} ${(a?.tags || []).join(' ')}`.toLowerCase();
       return hay.includes(st.q.toLowerCase());
     });
+    // agrupar por día: 113 tarjetas planas no se navegan; por fecha sí
+    const groupsOf = list => {
+      const m = new Map();
+      list.forEach(f => { const d = f.date || '—'; (m.get(d) || m.set(d, []).get(d)).push(f); });
+      return [...m.entries()];
+    };
+    // el número del check refleja el ORDEN del montaje, y cambia al quitar tomas del medio
+    const syncChecks = () => {
+      const order = [...pick];
+      ovr.querySelectorAll('.rm-clip').forEach(c => {
+        const i = order.indexOf(c.dataset.pick);
+        c.classList.toggle('on', i >= 0);
+        c.setAttribute('aria-pressed', i >= 0);
+        const chk = c.querySelector('.rm-check');
+        if (chk) chk.textContent = i >= 0 ? i + 1 : '';
+      });
+    };
     const estimate = () => {
       const R = RM_RHYTHM[st.rhythm];
       const n = Math.max(pick.size, Math.min(24, Math.round(st.target / R.seg)));
@@ -1822,21 +1843,37 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
             <button class="btn sm" id="rm-all">Todas (${vis.length})</button>
             <button class="btn sm" id="rm-none">Ninguna</button>
           </div>
-          <div class="rm-grid">${vis.map(f => {
+          <div class="rm-filters">
+            <button class="chip${st.only === 'top' ? ' on' : ''}" data-only="top">✨ Score 7+</button>
+            <button class="chip${st.only === 'ai' ? ' on' : ''}" data-only="ai">Con análisis AI</button>
+            <button class="chip${st.only === 'long' ? ' on' : ''}" data-only="long">Más de 10s</button>
+            <span class="spacer" style="flex:1"></span>
+            <span class="rm-hint mono">${vis.length} de ${pool().length} tomas</span>
+          </div>
+          ${groupsOf(vis).map(([day, fs]) => `
+          <div class="rm-day">
+            <div class="rm-day-h">
+              <b>${fmt.date(day)}</b>
+              <span class="mono">${fs.length} toma${fs.length === 1 ? '' : 's'} · ${fmt.dur(fs.reduce((a, x) => a + (x.duration_s || 0), 0))}</span>
+              <button class="rm-day-all" data-day="${esc(day)}">Elegir el día</button>
+            </div>
+            <div class="rm-grid">${fs.map(f => {
             const sc = ai[f.clip_id]?.travel_score;
+            const ord = [...pick].indexOf(f.clip_id) + 1;
             // OJO: la caja con proporción NO puede ser el <button> — Safari no aplica
             // aspect-ratio a los botones y las tarjetas colapsaban unas sobre otras.
             return `<div class="rm-clip${pick.has(f.clip_id) ? ' on' : ''}" data-pick="${esc(f.clip_id)}"
                          role="button" tabindex="0" aria-pressed="${pick.has(f.clip_id)}">
-              <div class="rm-thumb">
+              <div class="rm-thumb" data-hover="${esc(f.clip_id)}">
                 <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="" width="320" height="180">
-                <span class="rm-check">${pick.has(f.clip_id) ? '✓' : ''}</span>
+                <span class="rm-check">${ord > 0 ? ord : ''}</span>
                 ${sc ? `<span class="rm-sc ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}">✨${sc}</span>` : ''}
                 <button class="rm-eye" data-eye="${esc(f.clip_id)}" aria-label="Ver toma">${icon('play')}</button>
               </div>
-              <div class="rm-lb"><b>${esc((f.label || fmt.date(f.date)).slice(0, 24))}</b><em>${fmt.dur(f.duration_s)}</em></div>
+              <div class="rm-lb"><b>${esc((f.label || f.time || fmt.date(f.date)).slice(0, 24))}</b><em>${fmt.dur(f.duration_s)}</em></div>
             </div>`;
-          }).join('') || '<p class="footer-note">Nada coincide con esa búsqueda.</p>'}</div>` : `
+          }).join('')}</div>
+          </div>`).join('') || '<p class="footer-note">Nada coincide con esos filtros.</p>'}` : `
           <div class="mlb">Duración objetivo</div>
           <div class="rm-opts">${[15, 30, 60].map(t => `
             <button class="rm-opt${st.target === t ? ' on' : ''}" data-target="${t}"><b>${t}s</b><small>${t === 15 ? 'gancho rápido' : t === 30 ? 'el punto dulce' : 'historia completa'}</small></button>`).join('')}</div>
@@ -1848,7 +1885,19 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
             <button class="rm-opt${st.aspect === k ? ' on' : ''}" data-aspect="${k}"><span class="rm-ar ar${k.replace(':', '')}"></span><b>${v.lb}</b><small>${v.sub}</small></button>`).join('')}</div>
           <div class="mlb">Look</div>
           <div class="rm-opts look">${[['none', 'Sin look'], ['cine', 'Cine'], ['vivid', 'Vivid'], ['warm', 'Cálido'], ['moody', 'Moody'], ['bw', 'B&N']].map(([k, lb]) => `
-            <button class="rm-opt sm${st.look === k ? ' on' : ''}" data-look="${k}"><b>${lb}</b></button>`).join('')}</div>`}
+            <button class="rm-opt sm${st.look === k ? ' on' : ''}" data-look="${k}"><b>${lb}</b></button>`).join('')}</div>
+          <div class="rm-plan">
+            <b>${icon('spark')} Lo que va a pasar</b>
+            <p>${(() => {
+              const R = RM_RHYTHM[st.rhythm];
+              const n = Math.max(pick.size, Math.min(24, Math.round(st.target / R.seg)));
+              const per = (st.target / n).toFixed(1);
+              return `Se arman <b>${n} cortes</b> de ~<b>${per}s</b> repartidos entre tus
+                <b>${pick.size} toma${pick.size === 1 ? '' : 's'}</b>, dando más espacio a las de mejor score AI
+                pero sin dejar ninguna fuera. Unión: <b>${TX_LABELS[R.trans] || R.trans}</b>.
+                Al terminar se abre en el Editor para que lo retoques.`;
+            })()}</p>
+          </div>`}
         </div>
         <div class="rm-foot">
           <span class="rm-count mono">${pick.size ? `${pick.size} toma${pick.size === 1 ? '' : 's'} · ${estimate()}` : 'Elige al menos una toma'}</span>
@@ -1874,10 +1923,18 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         // perdía el scroll y parpadeaba (misma lección que las tarjetas de Trabajos)
         const cid = p.dataset.pick;
         pick.has(cid) ? pick.delete(cid) : pick.add(cid);
-        p.classList.toggle('on', pick.has(cid));
-        const chk = p.querySelector('.rm-check');
-        if (chk) chk.textContent = pick.has(cid) ? '✓' : '';
+        syncChecks();
         syncFoot();
+        return;
+      }
+      const only = e.target.closest('[data-only]');
+      if (only) { st.only = st.only === only.dataset.only ? '' : only.dataset.only; render(); return; }
+      const day = e.target.closest('[data-day]');
+      if (day) {
+        const fs = visible().filter(f => f.date === day.dataset.day);
+        const allIn = fs.every(f => pick.has(f.clip_id));
+        fs.forEach(f => allIn ? pick.delete(f.clip_id) : pick.add(f.clip_id));
+        syncChecks(); syncFoot();
         return;
       }
       if (e.target.closest('#rm-all')) { visible().forEach(f => pick.add(f.clip_id)); render(); return; }
@@ -1902,6 +1959,26 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
           scrollTo({ top: 0, behavior: 'smooth' });
           toast(`Reel armado: ${n} cortes de ${pick.size} toma${pick.size === 1 ? '' : 's'} — ahora edítalo`);
         }
+      }
+    });
+    // preview al pasar el cursor: un solo <video> vivo a la vez (113 serían inviables)
+    let hoverV = null;
+    ovr.addEventListener('pointerover', e => {
+      const th = e.target.closest('[data-hover]');
+      if (!th || th === hoverV?.parentElement) return;
+      if (hoverV) { hoverV.pause(); hoverV.remove(); hoverV = null; }
+      if (matchMedia('(pointer: coarse)').matches) return;   // en táctil manda el ojo, no el hover
+      const v = document.createElement('video');
+      v.src = `${DATA}/proxies/${encodeURIComponent(th.dataset.hover)}.mp4`;
+      v.muted = true; v.loop = true; v.playsInline = true; v.className = 'rm-hovervid';
+      th.appendChild(v);
+      v.play().catch(() => {});
+      hoverV = v;
+    });
+    ovr.addEventListener('pointerout', e => {
+      const th = e.target.closest('[data-hover]');
+      if (th && hoverV && th.contains(hoverV) && !th.contains(e.relatedTarget)) {
+        hoverV.pause(); hoverV.remove(); hoverV = null;
       }
     });
     ovr.addEventListener('input', e => {
