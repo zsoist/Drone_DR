@@ -3534,6 +3534,61 @@ class H(BaseHTTPRequestHandler):
             j = job_add("upload", name)
             threading.Thread(target=process_upload, args=(path, j), daemon=True).start()
             return self.send_json({"ok": True, "clip_id": cid, "bytes": read, "job": j["id"]})
+        if u.path == "/api/reel_edit":
+            # R4 · retoques sobre un reel YA exportado, sin re-montar el proyecto.
+            # Nunca sobrescribe el original salvo 'poster' (que solo toca la miniatura).
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            op = str(spec.get("op", ""))
+            name = re.sub(r"[^\w.\- ]", "", str(spec.get("name", "")))
+            base = (VAULT / "reels").resolve()
+            src = (base / name).resolve() if name else None
+            try:
+                src.relative_to(base)
+            except (ValueError, AttributeError):
+                return self.send_json({"error": "nombre inválido"}, 400)
+            if not src or not src.is_file():
+                return self.send_json({"error": "reel no encontrado"}, 404)
+            dur = _probe_dur(src)
+            stem = src.stem
+            if op == "poster":
+                t = _clampf(spec.get("t", 0.5), 0, max(dur - 0.05, 0.05), 0.5)
+                pdir = VAULT / "reel-posters"
+                pdir.mkdir(parents=True, exist_ok=True)
+                try:
+                    _ff(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", str(src),
+                         "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4",
+                         str(pdir / f"{stem}.jpg")])
+                except Exception as e:                      # noqa: BLE001
+                    return self.send_json({"error": str(e)[-200:]}, 500)
+                return self.send_json({"ok": True, "t": round(t, 2)})
+            if op in ("trim", "reframe", "duplicate"):
+                out = base / f"{stem}-{'corte' if op == 'trim' else 'formato' if op == 'reframe' else 'copia'}"\
+                             f"-{time.strftime('%H%M%S')}.mp4"
+                try:
+                    if op == "trim":
+                        a = _clampf(spec.get("a", 0), 0, max(dur - 0.3, 0), 0)
+                        b = _clampf(spec.get("b", dur), a + 0.3, dur, dur)
+                        # -c copy corta en keyframes: rapidísimo y sin pérdida de calidad
+                        _ff(["ffmpeg", "-v", "error", "-y", "-ss", f"{a:.2f}", "-to", f"{b:.2f}",
+                             "-i", str(src), "-c", "copy", "-movflags", "+faststart", str(out)])
+                    elif op == "reframe":
+                        asp = str(spec.get("aspect", "9:16"))
+                        if asp not in ASPECTS:
+                            return self.send_json({"error": "aspecto inválido"}, 400)
+                        _ff(["ffmpeg", "-v", "error", "-y", "-i", str(src),
+                             "-vf", aspect_vf(asp, "1080"), "-c:v", "h264_videotoolbox",
+                             "-b:v", "9M", "-pix_fmt", "yuv420p", "-c:a", "copy",
+                             "-movflags", "+faststart", str(out)])
+                    else:
+                        shutil.copy2(src, out)
+                except Exception as e:                      # noqa: BLE001
+                    out.unlink(missing_ok=True)
+                    return self.send_json({"error": str(e)[-200:]}, 500)
+                _reel_poster(out)
+                return self.send_json({"ok": True, "name": out.name})
+            return self.send_json({"error": "op inválida"}, 400)
         if u.path == "/api/audio_upload":
             # pista de música del usuario (su propia biblioteca). Mismo patrón que /upload:
             # body crudo + ?name=. NUNCA descargamos audio de servicios con DRM.

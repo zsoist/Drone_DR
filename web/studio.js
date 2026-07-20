@@ -488,6 +488,18 @@ function primeShare(url, name, mime) {
 // liberar memoria al salir de la pestaña (iOS mata la página si acumulas blobs)
 addEventListener('visibilitychange', () => { if (document.hidden) shareCache.clear(); });
 
+// Aviso no-bloqueante a NIVEL DE MÓDULO: el editor tenía su propio toast() dentro de su
+// IIFE, así que el visor (que vive fuera) lanzaba ReferenceError dentro de un handler
+// async — o sea, un fallo mudo: el recorte funcionaba en el server y la UI no decía nada.
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'ed-toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('on'));
+  setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 350); }, 3600);
+}
+
 // ================= VISOR DE REELS (R2) =================
 // Pantalla dedicada para ver un reel terminado: reproductor grande sobre el póster
 // difuminado, ficha con datos reales, navegación entre reels y acciones sin salir.
@@ -507,6 +519,8 @@ function openReelViewer(name) {
   ov.className = 'rv-ov';
   document.body.appendChild(ov);
   let armedDelete = false;
+  let edit = false;                       // panel de edición desplegado
+  let trim = { a: 0, b: null };           // recorte en curso
 
   const render = () => {
     const it = list[idx];
@@ -538,8 +552,30 @@ function openReelViewer(name) {
           ${it.has_audio !== undefined ? `<span><i>${icon('volume')}</i><b>${it.has_audio ? 'Sí' : 'No'}</b><em>audio</em></span>` : ''}
           ${reelFormatLabel(it) ? `<span class="wide"><i>${icon('layers')}</i><b>${reelFormatLabel(it)}</b><em>formato</em></span>` : ''}
         </div>
+        <div class="rv-edit" id="rv-edit" ${edit ? '' : 'hidden'}>
+          <div class="rv-edit-row">
+            <span class="rv-elb">${icon('scissors')} Recortar</span>
+            <input type="range" id="rv-a" min="0" max="${(it.duration_s || 1).toFixed(1)}" step="0.1" value="${trim.a}">
+            <input type="range" id="rv-b" min="0" max="${(it.duration_s || 1).toFixed(1)}" step="0.1" value="${trim.b ?? it.duration_s ?? 1}">
+            <span class="mono" id="rv-trimlb">${fmt.dur(trim.a)} → ${fmt.dur(trim.b ?? it.duration_s ?? 1)}</span>
+            <button class="btn sm" data-rv="trim">Crear recorte</button>
+          </div>
+          <div class="rv-edit-row">
+            <span class="rv-elb">${icon('layers')} Reencuadrar</span>
+            ${['9:16', '1:1', '4:5', '16:9'].map(a => `<button class="chip" data-reframe="${a}">${a}</button>`).join('')}
+            <span class="rm-hint">crea una copia en ese formato</span>
+          </div>
+          <div class="rv-edit-row">
+            <span class="rv-elb">${icon('iso')} Portada</span>
+            <button class="btn sm" data-rv="poster">Usar el fotograma actual</button>
+            <span class="rm-hint">toma el segundo donde tengas pausado el video</span>
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn sm" data-rv="dup">${icon('copy')} Duplicar</button>
+          </div>
+        </div>
         <div class="rv-actions">
           <button class="btn primary" data-rv="share">${icon('ext')} Compartir</button>
+          <button class="btn${edit ? ' on' : ''}" data-rv="edit">${icon('scissors')} Editar</button>
           <button class="btn" data-rv="dl">${icon('dl')} ${window.showSaveFilePicker ? 'Guardar como…' : 'Descargar'}</button>
           <button class="btn" data-rv="ren">${icon('tag')} Renombrar</button>
           <button class="btn" data-rv="copy">${icon('link') || icon('ext')} Copiar link</button>
@@ -574,7 +610,28 @@ function openReelViewer(name) {
   };
   addEventListener('keydown', onKey);
 
+  ov.addEventListener('input', ev => {
+    if (ev.target.id !== 'rv-a' && ev.target.id !== 'rv-b') return;
+    const A = +ov.querySelector('#rv-a').value, B = +ov.querySelector('#rv-b').value;
+    trim = { a: Math.min(A, B - 0.3), b: Math.max(B, A + 0.3) };
+    ov.querySelector('#rv-trimlb').textContent = `${fmt.dur(trim.a)} → ${fmt.dur(trim.b)}`;
+    const v = ov.querySelector('video');
+    if (v) v.currentTime = ev.target.id === 'rv-a' ? trim.a : trim.b;   // scrub en vivo
+  });
   ov.addEventListener('click', async ev => {
+    const rf = ev.target.closest('[data-reframe]');
+    if (rf) {
+      const it0 = list[idx];
+      rf.disabled = true;
+      const r = await api('/api/reel_edit', { op: 'reframe', name: it0.name, aspect: rf.dataset.reframe });
+      rf.disabled = false;
+      if (r?.error) { toast(r.error); return; }
+      await loadMedia();
+      const fresh = (media?.reels || []).find(x => x.name === r.name);
+      toast(`Copia en ${rf.dataset.reframe} lista`);
+      if (fresh) { list.splice(idx + 1, 0, fresh); idx += 1; edit = false; render(); }
+      return;
+    }
     const b = ev.target.closest('[data-rv]');
     if (!b) { if (ev.target === ov || ev.target.classList.contains('rv-bg')) close(); return; }
     const a = b.dataset.rv, it = list[idx];
@@ -582,6 +639,23 @@ function openReelViewer(name) {
     if (a === 'close') return close();
     if (a === 'prev') return go(-1);
     if (a === 'next') return go(1);
+    if (a === 'edit') { edit = !edit; trim = { a: 0, b: it.duration_s || null }; render(); return; }
+    if (a === 'trim' || a === 'poster' || a === 'dup') {
+      const label = b.textContent;
+      b.disabled = true; b.textContent = 'Procesando…';
+      const body = a === 'trim' ? { op: 'trim', name: it.name, a: trim.a, b: trim.b }
+        : a === 'poster' ? { op: 'poster', name: it.name, t: ov.querySelector('video')?.currentTime || 0.5 }
+          : { op: 'duplicate', name: it.name };
+      const r = await api('/api/reel_edit', body);
+      b.disabled = false; b.textContent = label;
+      if (r?.error) { toast(r.error); return; }
+      await loadMedia();
+      if (a === 'poster') { toast('Portada actualizada'); render(); return; }
+      const fresh = (media?.reels || []).find(x => x.name === r.name);
+      toast(a === 'trim' ? `Recorte creado: ${r.name}` : `Copia creada: ${r.name}`);
+      if (fresh) { list.splice(idx + 1, 0, fresh); idx += 1; edit = false; render(); }
+      return;
+    }
     if (a === 'share') {
       const ready = shareCache.get(url)?._file;
       if (ready && navigator.canShare?.({ files: [ready] })) {

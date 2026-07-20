@@ -1848,6 +1848,26 @@ button.exp { text-align: left; cursor: pointer; }
   font-style: normal; font-size: 9px; letter-spacing: .7px; text-transform: uppercase; color: var(--text-3);
 }
 .rv-facts .wide { grid-column: span 2; }
+/* panel de edición del reel exportado (R4) */
+.rv-edit {
+  display: flex; flex-direction: column; gap: 9px; padding: 12px 14px;
+  border: 1px solid rgba(69,160,230,.26); border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  animation: pvIn 200ms var(--ease);
+}
+.rv-edit[hidden] { display: none; }
+.rv-edit-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.rv-elb {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2);
+  width: 118px; flex: none;
+}
+.rv-elb svg.ic { width: 13px; height: 13px; color: var(--accent); }
+.rv-edit input[type=range] { flex: 1; min-width: 90px; accent-color: var(--accent); }
+.rv-edit .mono { font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
+.rv-edit .chip { font-size: 11px; }
+.rv-actions .btn.on { border-color: var(--accent); color: var(--accent); }
+@media (max-width: 720px) { .rv-elb { width: 100%; } }
+
 .rv-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rv-actions .btn { font-size: 12px; }
 .rv-del:hover, .rv-del.armed { color: var(--red); border-color: rgba(226,99,95,.55); }
