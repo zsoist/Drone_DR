@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=218';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=218';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=218';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=218';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=218';
-  import { mountSplatViewer } from '/splatview.js?v=218';
+  import * as THREE from '/vendor/three180.module.js?v=227';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=227';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=227';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=227';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=227';
+  import { mountSplatViewer } from '/splatview.js?v=227';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -26,7 +26,7 @@
     supported_backends: i < 2 ? ['metal', 'cpu', 'cuda'] : ['cuda'],
     eta_mps: i === 0 ? '~8-18 min' : i === 1 ? '~4-12 min' : 'CUDA only',
   }));
-  const splatProfilesPromise = fetch('/api/splat_profiles')
+  const splatProfilesPromise = authFetch('/api/splat_profiles')
     .then(r => r.ok ? r.json() : Promise.reject(new Error(`profiles ${r.status}`)))
     .then(d => d.profiles?.length ? d.profiles : _profileFallback)
     .catch(() => _profileFallback);
@@ -131,7 +131,7 @@
     let rep = _scanCache[cid];
     try {
       if (!rep) {
-        rep = await (await fetch(`/api/capture_report?clip_id=${encodeURIComponent(cid)}`)).json();
+        rep = await (await authFetch(`/api/capture_report?clip_id=${encodeURIComponent(cid)}`)).json();
         if (!rep.error) _scanCache[cid] = rep;
       }
     } catch { rep = { error: 'red' }; }
@@ -195,11 +195,20 @@
       <div class="pb">
         <div class="td-browserbar">
           <div class="search td-search">${icon('search')}<input id="proj-q" type="search" placeholder="Buscar proyecto, fecha, ubicación…" autocomplete="off"></div>
-          <select class="ctl" id="proj-filter" aria-label="Filtrar proyectos">
+          <select class="ctl" id="proj-filter" aria-label="Filtrar proyectos" data-tip="Filtra por lo que tiene cada proyecto">
             <option value="all">Todos</option>
             <option value="dsm">Con DSM</option>
             <option value="splat">Con splat</option>
+            <option value="cuda">Splat NVIDIA</option>
+            <option value="exc">Calidad excelente</option>
             <option value="weak">Malla débil</option>
+          </select>
+          <select class="ctl" id="proj-sort" aria-label="Ordenar proyectos" data-tip="Orden dentro de cada lugar">
+            <option value="recent">Recientes</option>
+            <option value="area">Más área</option>
+            <option value="quality">Mejor gaussian</option>
+            <option value="cameras">Más cámaras</option>
+            <option value="size">Más pesados</option>
           </select>
           <div class="seg td-viewseg" aria-label="Modo de vista">
             <button class="on" data-proj-mode="cards">${icon('grid')} Tarjetas</button>
@@ -466,7 +475,7 @@
     const badge = document.getElementById('td-jobs-badge');
     const poll = async () => {
       try {
-        const d = await (await fetch('/api/jobs')).json();
+        const d = await (await authFetch('/api/jobs')).json();
         const n = (d.counts && (d.counts.active ?? d.counts.running)) ??
           (d.jobs || []).filter(j => ['running', 'queued'].includes(j.status)).length;
         if (badge) { badge.textContent = n; badge.hidden = !n; }
@@ -488,7 +497,7 @@
     let last = null;
     const poll = async () => {
       try {
-        last = await (await fetch('/api/gpu_node')).json();
+        last = await (await authFetch('/api/gpu_node')).json();
         const awake = last.status === 'awake';
         chip.innerHTML = awake
           ? `nodo GPU · <b class="ok">RTX 4060 Ti despierto</b>${last.util_pct ? ` · ${last.util_pct}%` : ''}`
@@ -523,7 +532,7 @@
         </div>`);
       document.getElementById('gnm-wake')?.addEventListener('click', async e2 => {
         e2.target.textContent = 'magic packet enviado…';
-        await fetch('/api/gpu_node/wake', { method: 'POST' });
+        await authFetch('/api/gpu_node/wake', { method: 'POST' });
       });
     });
   })();
@@ -546,7 +555,7 @@
 
     async function poll() {
       try {
-        const d = await (await fetch('/api/perf')).json();
+        const d = await (await authFetch('/api/perf')).json();
         lastPerf = d.now || null;
         const rows = [...(d.history || []).slice(-80), d.now].filter(Boolean);
         ramTotal = d.now?.ram_total_gb || 16;
@@ -570,7 +579,7 @@
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     async function pollNode() {
       try {
-        const d = await (await fetch('/api/gpu_node')).json();
+        const d = await (await authFetch('/api/gpu_node')).json();
         const fresh = d.ts !== lastNode?.ts;      // el server cachea 20s: sin esto cada
         lastNode = d;                              // segundo poll duplicaba el punto
         const awake = d.status === 'awake';
@@ -878,6 +887,12 @@
   try { sys = await (await fetch('data/manifest/system.json')).json(); } catch { sysErr = true; }
   models = sys.models || [];
   const flights = await getFlights();
+  // nombres de lugar server-side (compartidos con Viajes) — key "lat,lon" a 2 decimales
+  let tripsMeta = {};
+  try {
+    const r = await fetch('data/manifest/trips_meta.json');
+    if (r.ok) tripsMeta = await r.json();
+  } catch {}
   // contadores vivos del stepper — corren AQUÍ (flights/models/sys ya existen; arriba era TDZ)
   (() => {
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -900,13 +915,56 @@
   const PROJ_KEY = 'ab.proj3d';
   let projQ = '';
   let projFilter = 'all';
+  let projSort = localStorage.getItem('ab.3d.projectSort') || 'recent';
   let projMode = localStorage.getItem('ab.3d.projectMode') || 'cards';
-  const titleFor = m => {
-    const f = flights.find(x => x.clip_id === m.clip_id);
-    return m.title || (f ? (f.label || fmt.date(f.date) + ' ' + f.time) : m.clip_id);
-  };
   const flightFor = m => flights.find(x => x.clip_id === m.clip_id);
-  const splatQualityLabel = loss => loss == null ? 'calidad pendiente'
+  // ---- lugar del proyecto (espejo del clustering de Viajes; misma tabla y key) ----
+  const TD_CITIES = [
+    ['Bogotá', 4.711, -74.072], ['Medellín', 6.244, -75.581], ['Cali', 3.452, -76.532],
+    ['La Mesa', 4.631, -74.463], ['Girardot', 4.303, -74.804], ['Melgar', 4.204, -74.641],
+    ['Villeta', 5.013, -74.472], ['Anapoima', 4.548, -74.536], ['Fusagasugá', 4.337, -74.364],
+    ['Tunja', 5.535, -73.368], ['Villavicencio', 4.142, -73.627], ['La Vega', 4.999, -74.339],
+  ];
+  const R0 = Math.PI / 180;
+  const havKm = (a, b, c, d) => 12742 * Math.asin(Math.sqrt(
+    Math.sin((c - a) * R0 / 2) ** 2 + Math.cos(a * R0) * Math.cos(c * R0) * Math.sin((d - b) * R0 / 2) ** 2));
+  function placeFor(m) {
+    const f = flightFor(m);
+    let lat, lon;
+    const h = f?.stats?.home;
+    if (Array.isArray(h) && h.length >= 2) { lon = h[0]; lat = h[1]; }
+    else {
+      const bb = footprintFor(m);
+      if (bb) { lon = (bb[0] + bb[2]) / 2; lat = (bb[1] + bb[3]) / 2; }
+    }
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return { key: 'sin-gps', name: 'Sin ubicación' };
+    const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+    // nombre manual de Viajes (server): puede estar guardado con una key vecina (<30 km)
+    const saved = tripsMeta[key]?.name
+      || Object.entries(tripsMeta).find(([k, v]) => {
+        const [la, lo] = k.split(',').map(Number);
+        return v.name && havKm(lat, lon, la, lo) < 30;
+      })?.[1]?.name;
+    const near = TD_CITIES.map(([n, la, lo]) => [n, havKm(lat, lon, la, lo)]).sort((a, b) => a[1] - b[1])[0];
+    return { key, name: saved || (near && near[1] < 30 ? near[0] : `Zona ${key}`) };
+  }
+  const dateKeyFor = m => {
+    const f = flightFor(m);
+    if (f?.date) return `${f.date} ${f.time || ''}`;
+    // solo timestamps DJI reales (14 dígitos) — los merges/UP_* no llevan fecha en el id
+    const ts = (m.clip_id || '').split('_')[1] || '';
+    return /^\d{14}$/.test(ts)
+      ? `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)} ${ts.slice(8, 10)}:${ts.slice(10, 12)}` : '';
+  };
+  const titleFor = m => {
+    const f = flightFor(m);
+    if (m.title) return m.title;
+    if (f?.label) return f.label;
+    const p = placeFor(m);
+    return p.key !== 'sin-gps' ? `${p.name} · ${fmt.date(f?.date || dateKeyFor(m).slice(0, 10))}`
+      : (f ? fmt.date(f.date) + ' ' + f.time : m.clip_id);
+  };
+  const splatQualityLabel = loss => loss == null ? 'pendiente'
     : loss <= 0.05 ? 'excelente'
       : loss <= 0.09 ? 'buena'
         : loss <= 0.15 ? 'media'
@@ -914,52 +972,95 @@
   function projectVisible(m) {
     const f = flightFor(m);
     const splats = splatAssetsFor(m.clip_id);
+    const sp = splatAssetFor(m.clip_id);
     if (projFilter === 'dsm' && !m.has_dsm) return false;
     if (projFilter === 'splat' && !splats.length) return false;
+    if (projFilter === 'cuda' && !splats.some(s => /cuda|nvidia/i.test(s.backend || ''))) return false;
+    if (projFilter === 'exc' && !(sp && sp.loss != null && sp.loss <= 0.05)) return false;
     if (projFilter === 'weak' && m.mesh_ok !== false) return false;
     const hay = [
-      m.clip_id, titleFor(m), f?.label, f?.date, f?.time,
+      m.clip_id, titleFor(m), placeFor(m).name, f?.label, f?.date, f?.time,
       m.has_dsm ? 'dsm elevacion curvas' : '',
       splats.length ? 'splat gaussian' : '',
+      splats.some(s => /cuda|nvidia/i.test(s.backend || '')) ? 'cuda nvidia' : '',
     ].filter(Boolean).join(' ').toLowerCase();
     return !projQ || hay.includes(projQ.toLowerCase().trim());
   }
+  const SORTS = {
+    recent: (a, b) => dateKeyFor(b).localeCompare(dateKeyFor(a)),
+    area: (a, b) => (b.qa?.area_m2 || 0) - (a.qa?.area_m2 || 0),
+    quality: (a, b) => (splatAssetFor(a.clip_id)?.loss ?? 9) - (splatAssetFor(b.clip_id)?.loss ?? 9),
+    cameras: (a, b) => (b.qa?.cameras_reconstructed || 0) - (a.qa?.cameras_reconstructed || 0),
+    size: (a, b) => (b.cloud_bytes || 0) - (a.cloud_bytes || 0),
+  };
+  function projCard(m) {
+    const f = flightFor(m);
+    const q = m.qa || {};
+    const splats = splatAssetsFor(m.clip_id);
+    const sp = splatAssetFor(m.clip_id);
+    const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(1) + ' ha' : Math.round(q.area_m2 || 0) + ' m²';
+    const cuda = splats.some(s => /cuda|nvidia/i.test(s.backend || ''));
+    const qCls = sp?.loss == null ? '' : sp.loss <= 0.05 ? ' q-exc' : sp.loss <= 0.09 ? ' q-good' : sp.loss <= 0.15 ? ' q-mid' : ' q-basic';
+    const bestIters = splats.reduce((a, s) => Math.max(a, s.iters || 0), 0);
+    const status = [
+      ['', m.has_dsm ? 'DSM' : null, 'Modelo de elevación disponible'],
+      ['', m.mesh_ok === false ? 'malla débil' : 'malla', m.mesh_ok === false ? 'La malla reconstruyó con huecos' : 'Malla texturizada OK'],
+      ['', splats.length ? `${splats.length} splat${splats.length === 1 ? '' : 's'}` : null, 'Versiones gaussian splat'],
+      [cuda ? ' b-nv' : '', splats.length ? (cuda ? 'NVIDIA' : 'Metal') : null,
+       cuda ? 'Entrenado en la RTX 4060 Ti (CUDA)' : 'Entrenado en el Mac (Metal/MPS)'],
+    ];
+    return `<div class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
+      <div class="pc-cover">
+        <img src="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="" width="320" height="180">
+        ${(f?.date || dateKeyFor(m)) ? `<span class="pc-date mono">${esc(f ? `${fmt.date(f.date)} · ${f.time || ''}` : dateKeyFor(m))}</span>` : ''}
+      </div>
+      <div class="pc-body">
+        <div class="pc-top"><p class="pc-title" title="${esc(m.clip_id)}">${esc(titleFor(m))}</p></div>
+        <p class="pc-meta mono">${f?.duration_s ? fmt.dur(f.duration_s) + ' vuelo · ' : ''}${q.gsd_cm_px ? q.gsd_cm_px + ' cm/px · ' : ''}${q.area_m2 ? ha : ''}${bestIters ? ` · ${bestIters >= 1000 ? bestIters / 1000 + 'K' : bestIters} iters` : ''}</p>
+        <div class="pc-badges">${status.filter(([, s]) => s).map(([cls, s, tip]) => `<span class="${cls.trim()}" data-tip="${esc(tip)}">${esc(s)}</span>`).join('')}</div>
+        <div class="pc-kpis">
+          <span data-tip="Cámaras reconstruidas por SfM"><b>${q.cameras_reconstructed ?? '—'}</b><small>cámaras</small></span>
+          <span class="${qCls.trim()}" data-tip="${sp?.loss != null ? 'Loss ' + sp.loss + ' del splat activo' : 'Aún sin splat'}"><b>${sp ? splatQualityLabel(sp.loss) : '—'}</b><small>gaussian</small></span>
+          <span data-tip="Tamaño de la nube de puntos"><b>${m.cloud_bytes ? (m.cloud_bytes / 1e6).toFixed(0) + 'MB' : '—'}</b><small>nube</small></span>
+        </div>
+        <div class="pc-actions">
+          <button class="btn primary" data-act="open">Abrir</button>
+          <button class="btn" data-act="rename" data-tip="Cambiar el nombre del proyecto">Renombrar</button>
+          <button class="btn" data-act="share" data-tip="Copiar link público del modelo">Compartir</button>
+          <button class="btn pc-del" data-act="del" data-tip="Borra modelo y splats; el video no se toca">Borrar</button>
+        </div>
+      </div>
+    </div>`;
+  }
   function renderCards() {
     const grid = document.getElementById('proj-grid');
-    const shown = models.filter(projectVisible);
+    const shown = models.filter(projectVisible).sort(SORTS[projSort] || SORTS.recent);
     document.getElementById('proj-count').textContent = models.length ? `(${shown.length}/${models.length})` : '';
     grid.classList.toggle('proj-list', projMode === 'list');
     document.querySelectorAll('[data-proj-mode]').forEach(b => b.classList.toggle('on', b.dataset.projMode === projMode));
-    grid.innerHTML = shown.length ? shown.map(m => {
-      const f = flightFor(m);
-      const q = m.qa || {};
-      const splats = splatAssetsFor(m.clip_id);
-      const sp = splatAssetFor(m.clip_id);
-      const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(1) + ' ha' : Math.round(q.area_m2 || 0) + ' m²';
-      const status = [
-        m.has_dsm ? 'DSM' : 'sin DSM',
-        m.mesh_ok === false ? 'malla débil' : 'malla',
-        splats.length ? `${splats.length} splat${splats.length === 1 ? '' : 's'}` : 'sin splat',
-      ];
-      return `<div class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
-        <img src="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="" width="320" height="180">
-        <div class="pc-body">
-          <div class="pc-top"><p class="pc-title">${esc(titleFor(m))}</p><span class="pc-date mono">${esc(f ? `${fmt.date(f.date)} ${f.time || ''}` : m.clip_id.slice(-8))}</span></div>
-          <p class="pc-meta mono">${f?.duration_s ? fmt.dur(f.duration_s) + ' · ' : ''}${q.gsd_cm_px ? q.gsd_cm_px + ' cm/px · ' : ''}${q.area_m2 ? ha : ''}</p>
-          <div class="pc-badges">${status.map(s => `<span>${esc(s)}</span>`).join('')}</div>
-          <div class="pc-kpis">
-            <span><b>${q.cameras_reconstructed ?? '—'}</b><small>cámaras</small></span>
-            <span><b>${sp ? splatQualityLabel(sp.loss) : '—'}</b><small>gaussian</small></span>
-            <span><b>${m.cloud_bytes ? (m.cloud_bytes / 1e6).toFixed(0) + 'MB' : '—'}</b><small>nube</small></span>
-          </div>
-          <div class="pc-actions">
-            <button class="btn primary" data-act="open">Abrir</button>
-            <button class="btn" data-act="rename">Renombrar</button>
-            <button class="btn" data-act="share">Compartir</button>
-            <button class="btn pc-del" data-act="del">Borrar</button>
-          </div>
-        </div>
-      </div>`;
+    // agrupar por LUGAR con clustering real <30 km (celdas de 0.01° vecinas = mismo grupo;
+    // sin esto, tres cuadrantes de Bogotá salían como tres secciones "Bogotá")
+    const groups = [];
+    shown.forEach(m => {
+      const p = placeFor(m);
+      const [la, lo] = p.key.split(',').map(Number);
+      let g = Number.isFinite(la)
+        ? groups.find(x => Number.isFinite(x.lat) && havKm(x.lat, x.lon, la, lo) < 30)
+        : groups.find(x => x.name === p.name);
+      if (!g) groups.push(g = { name: p.name, lat: la, lon: lo, items: [] });
+      g.items.push(m);
+    });
+    const gDate = g => g.items.reduce((a, m) => { const d = dateKeyFor(m); return d > a ? d : a; }, '');
+    const ordered = groups.sort((A, B) => gDate(B).localeCompare(gDate(A)));
+    grid.innerHTML = shown.length ? ordered.map(g => {
+      const area = g.items.reduce((a, m) => a + (m.qa?.area_m2 || 0), 0);
+      const nSplats = g.items.reduce((a, m) => a + splatAssetsFor(m.clip_id).length, 0);
+      return `
+      <div class="proj-group-h">
+        <b>${icon('pin')} ${esc(g.name)}</b>
+        <span class="mono">${g.items.length} proyecto${g.items.length === 1 ? '' : 's'}${area ? ` · ${area >= 10000 ? (area / 10000).toFixed(1) + ' ha' : Math.round(area) + ' m²'}` : ''}${nSplats ? ` · ${nSplats} splats` : ''}</span>
+      </div>
+      <div class="proj-group">${g.items.map(projCard).join('')}</div>`;
     }).join('') : `<p class="footer-note" style="margin:0">${sysErr
       ? 'No se pudo cargar el índice de proyectos — revisa la conexión y <a href="#" onclick="location.reload();return false" style="color:var(--accent)">recarga</a>.'
       : models.length ? 'No hay proyectos que coincidan con ese filtro.'
@@ -967,6 +1068,16 @@
   }
   document.getElementById('proj-q')?.addEventListener('input', e => { projQ = e.target.value; renderCards(); });
   document.getElementById('proj-filter')?.addEventListener('change', e => { projFilter = e.target.value; renderCards(); });
+  const sortSel = document.getElementById('proj-sort');
+  if (sortSel) {
+    sortSel.value = projSort;
+    if (sortSel.value !== projSort) { projSort = 'recent'; sortSel.value = 'recent'; }  // valor guardado obsoleto
+    sortSel.addEventListener('change', e => {
+      projSort = e.target.value;
+      localStorage.setItem('ab.3d.projectSort', projSort);
+      renderCards();
+    });
+  }
   document.querySelector('.td-viewseg')?.addEventListener('click', e => {
     const b = e.target.closest('[data-proj-mode]');
     if (!b) return;
@@ -1291,7 +1402,7 @@
     };
     (async () => {
       try {
-        const d = await (await fetch('/api/gpu_node')).json();
+        const d = await (await authFetch('/api/gpu_node')).json();
         paintStudioNode(d);
       } catch { paintStudioNode({ status: 'unavailable' }); }
     })();
@@ -1306,7 +1417,7 @@
     async function scoreChip(cid) {
       if (_scanCache[cid]) return paintChip(cid, _scanCache[cid]);
       try {
-        const rep = await (await fetch(`/api/capture_report?clip_id=${encodeURIComponent(cid)}`)).json();
+        const rep = await (await authFetch(`/api/capture_report?clip_id=${encodeURIComponent(cid)}`)).json();
         if (!rep.error) _scanCache[cid] = rep;
         return paintChip(cid, rep);
       } catch { return null; }
@@ -1478,7 +1589,7 @@
       const fs = groups[g.dataset.spot]; if (!fs) return;
       const c = centroid(fs[0]); if (!c) return;
       try {
-        const r = await (await fetch(`/api/geocode?lat=${c[1]}&lon=${c[0]}`)).json();
+        const r = await (await authFetch(`/api/geocode?lat=${c[1]}&lon=${c[0]}`)).json();
         if (r.name) g.querySelector('.pg-place').innerHTML = `${icon('pin')} ${esc(r.name)}`;
       } catch { /* coords como fallback ya visibles */ }
     });
@@ -1613,7 +1724,7 @@
     spots.forEach(async ([sk, fs]) => {
       const c = centroid(fs[0]); if (!c) return;
       try {
-        const g = await (await fetch(`/api/geocode?lat=${c[1].toFixed(3)}&lon=${c[0].toFixed(3)}`)).json();
+        const g = await (await authFetch(`/api/geocode?lat=${c[1].toFixed(3)}&lon=${c[0].toFixed(3)}`)).json();
         if (g.name) {
           const el = ov.querySelector(`.proc-group[data-spot="${CSS.escape(sk)}"] .pg-place`);
           if (el) { el.setAttribute('title', el.textContent.trim()); el.innerHTML = `${icon('pin')} ${esc(g.name)}`; }
@@ -1760,7 +1871,7 @@
     if (!model) return;
     const splatProfiles = await splatProfilesPromise;
     let sceneRows = [];
-    try { sceneRows = (await (await fetch('/api/scenes')).json()).scenes || []; } catch {}
+    try { sceneRows = (await (await authFetch('/api/scenes')).json()).scenes || []; } catch {}
     let scene = sceneForVersion(sceneRows, model.clip_id);
     const currentSources = scene
       ? ((scene.versions || []).find(v => v.id === (scene.active_version || model.clip_id))?.sources || modelSourceIds(model))
@@ -1875,7 +1986,7 @@
       if (promote && scene) {
         const r = await api('/api/scene_promote', { scene_id: scene.id, version_id: promote.dataset.scenePromote });
         if (r.error) return alert(r.error);
-        sys.scenes = (await (await fetch('/api/scenes')).json()).scenes || [];
+        sys.scenes = (await (await authFetch('/api/scenes')).json()).scenes || [];
         return close();
       }
       const go = e.target.closest('[data-scene-go]'); if (!go) return;
@@ -1989,7 +2100,7 @@
         ${cur.cloud_copc_asset ? `<a class="exp" href="${base}/${cur.cloud_copc_asset}" download>${icon('db')}<div><b>Nube optimizada</b><span>COPC · ${(cur.cloud_copc_bytes / 1e6).toFixed(0)} MB · GIS</span></div></a>` : ''}
         ${meshOk ? `<a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></div></a>` : ''}
         ${sp ? `<a class="exp" href="${splatUrl(sp)}" download>${icon('spark')}<div><b>Gaussian splat</b><span>${spFmt} · SuperSplat</span></div></a>` : ''}
-        <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Página pública</b><span>LINK · compartir</span></div></a>
+        <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Visor privado</b><span>LINK · requiere sesión</span></div></a>
       </div>`;
     if (omap) omap.remove();
     const b = new maplibregl.LngLatBounds();
@@ -2069,7 +2180,7 @@
       : 'sin entrenar';
     document.getElementById('load-splat').style.display = spMeta ? '' : 'none';
     // estado PARCIAL visible: con un splat de ESTE clip en cola/entrenando, decía 'sin entrenar'
-    fetch('/api/jobs').then(r => r.ok ? r.json() : null).then(d => {
+    authFetch('/api/jobs').then(r => r.ok ? r.json() : null).then(d => {
       if (!d || !cur || cur.clip_id !== cid) return;   // cambió el proyecto mientras respondía
       const act = (d.jobs || []).find(x => x.kind === 'splat' && x.label === cid
         && ['running', 'queued'].includes(x.status));
@@ -2847,7 +2958,7 @@
     const { ov, close } = openModal(`${icon('spark')} Generar gaussian splat`, `
       <p class="footer-note" style="margin:0 0 12px">Entrena un archivo <b>.splat</b> nuevo con las
       fotos y poses del proyecto elegido — <b>no modifica</b> la nube ni la malla. Al terminar
-      aparece en la lista, en el visor y en la página pública.</p>
+      aparece en la lista, en el visor y en el enlace privado.</p>
       <div class="st-node mono" id="gs-node"><span class="st-node-dot"></span>
         <span id="gs-node-text">nodo CUDA · consultando…</span><span class="spacer"></span>
         <span class="st-node-note" id="gs-node-note">RTX, VRAM y carga reales</span></div>
@@ -2880,7 +2991,7 @@
       <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Entrenar splat</button>`, 'modal--splat-train');
     wireSplatCompute(ov);
     // Estado visible incluso dormido: ocultarlo confundía "no disponible" con "Mac".
-    fetch('/api/gpu_node').then(r => r.json()).then(d => {
+    authFetch('/api/gpu_node').then(r => r.json()).then(d => {
       const row = ov.querySelector('#gs-node'), text = ov.querySelector('#gs-node-text');
       const note = ov.querySelector('#gs-node-note');
       row.classList.toggle('awake', d.status === 'awake');
