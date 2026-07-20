@@ -363,6 +363,11 @@ main.innerHTML = `
   </section>
 
   <section class="st-mod" data-mod="reels" style="display:none">
+    <button class="rm-cta" id="rm-open">
+      <span class="rm-cta-ic">${icon('spark')}</span>
+      <span class="rm-cta-t"><b>Crear reel</b><small>Elige tus tomas y AeroBrain arma el montaje — luego lo editas</small></span>
+      <span class="rm-cta-go">${icon('chevR')}</span>
+    </button>
     <div class="media-toolbar">
       <input class="ctl" id="q-reels" type="search" placeholder="Buscar reel…" style="flex:1;min-width:150px">
       <select class="ctl" id="s-reels">
@@ -1121,6 +1126,217 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     });
     sel = 0; playhead = 0; curCid = null; renderAll(); seek(0);
   }
+
+  // ================= REELS MAKER (I1) =================
+  // "de una toma a un reel": el usuario elige tomas + una receta, y esto arma el montaje.
+  // Reparto de tiempo PONDERADO por score AI (las mejores tomas salen más) pero garantizando
+  // que TODA toma elegida aparezca al menos una vez — si no, la selección mentiría.
+  const RM_RHYTHM = {
+    rapido: { seg: 1.3, trans: 'none', dur: 0.25, lb: 'Rápido', sub: 'cortes secos, energía' },
+    medio: { seg: 2.2, trans: 'crossfade', dur: 0.35, lb: 'Medio', sub: 'equilibrado, versátil' },
+    cine: { seg: 3.6, trans: 'dissolve', dur: 0.6, lb: 'Cine', sub: 'planos largos, respirado' },
+  };
+  const RM_FORMATS = {
+    '9:16': { lb: 'Vertical', sub: 'Reels · TikTok · Shorts', res: '1080' },
+    '1:1': { lb: 'Cuadrado', sub: 'Feed clásico', res: '1080' },
+    '4:5': { lb: 'Retrato', sub: 'Feed alto', res: '1080' },
+    '16:9': { lb: 'Horizontal', sub: 'YouTube · web', res: '1080' },
+  };
+
+  // momentos de un clip: usa los highlights de la AI si existen; si no, reparte uniforme
+  // evitando los bordes (los primeros/últimos frames del dron suelen ser despegue/aterrizaje)
+  function rmMoments(cid, n) {
+    const f = byId[cid];
+    const dur = f?.duration_s || 0;
+    if (!dur || n <= 0) return [];
+    const hl = (ai[cid]?.highlights || [])
+      .map(h => +h.t).filter(t => Number.isFinite(t) && t >= 0 && t <= dur)
+      .sort((a, b) => a - b);
+    if (hl.length >= n) {
+      const step = hl.length / n;                       // reparte a lo largo del clip
+      return Array.from({ length: n }, (_, k) => hl[Math.floor(k * step)]);
+    }
+    const pts = [...hl];
+    const need = n - pts.length;
+    const lo = Math.min(0.4, dur * 0.05), hi = Math.max(dur - 0.4, dur * 0.95);
+    for (let k = 0; k < need; k++) pts.push(lo + ((hi - lo) * (k + 0.5)) / need);
+    return pts.sort((a, b) => a - b);
+  }
+
+  function rmBuild(cids, opts) {
+    const R = RM_RHYTHM[opts.rhythm] || RM_RHYTHM.medio;
+    const clips = cids.map(c => byId[c]).filter(Boolean);
+    if (!clips.length) return 0;
+    const target = +opts.target || 30;
+    // cuántos cortes caben: el tope duro del servidor son 24
+    let nSeg = Math.max(clips.length, Math.min(24, Math.round(target / R.seg)));
+    const scoreOf = c => Math.max(1, ai[c.clip_id]?.travel_score || 5);
+    const totScore = clips.reduce((a, c) => a + scoreOf(c), 0);
+    // cuota por clip: proporcional al score, mínimo 1, y nunca más cortes que segundos útiles
+    const quota = clips.map(c => Math.max(1,
+      Math.min(Math.round((nSeg * scoreOf(c)) / totScore), Math.floor((c.duration_s || 1) / 0.7) || 1)));
+    let over = quota.reduce((a, b) => a + b, 0) - 24;   // recorta si el redondeo se pasó del tope
+    for (let i = quota.length - 1; i >= 0 && over > 0; i--) {
+      const cut = Math.min(over, quota[i] - 1);
+      quota[i] -= cut; over -= cut;
+    }
+    const segs = [];
+    clips.forEach((c, ci) => {
+      const dur = c.duration_s || 0;
+      // el corte no puede pasar de lo que el clip da de sí (ni del tope de 120s del server)
+      const segDur = Math.min(R.seg, Math.max(0.7, dur / quota[ci]), 120);
+      rmMoments(c.clip_id, quota[ci]).forEach(t => {
+        let a = t - segDur / 2;
+        a = Math.max(0, Math.min(a, Math.max(0, dur - segDur)));
+        const b = Math.min(dur, a + segDur);
+        if (b - a < 0.35) return;
+        segs.push(makeSeg(c.clip_id, a, b, {
+          filter: opts.look || 'none',
+          transition: segs.length === 0 ? 'none' : R.trans,
+          transDur: R.dur,
+        }));
+      });
+    });
+    if (!segs.length) return 0;
+    // ajuste fino a la duración objetivo: escala uniforme respetando el mínimo por corte
+    const total = () => segs.reduce((a, s) => a + (s.b - s.a), 0);
+    const k = target / total();
+    if (k < 1) segs.forEach(s => {
+      const nd = Math.max(0.6, (s.b - s.a) * k);
+      s.b = +(s.a + nd).toFixed(2);
+    });
+    pushUndo();
+    tl = segs;
+    sel = 0; playhead = 0; curCid = null;
+    const fmtSel = RM_FORMATS[opts.aspect] || RM_FORMATS['9:16'];
+    const asp = document.getElementById('ed-aspect');
+    const res = document.getElementById('ed-res');
+    if (asp) { asp.value = opts.aspect; applyAspect(); }
+    if (res) res.value = fmtSel.res;
+    const lut = document.getElementById('ed-lut');
+    if (lut && opts.look) lut.value = opts.look;
+    renderAll(); seek(0);
+    return segs.length;
+  }
+
+  function openReelMaker() {
+    const ovr = document.createElement('div');
+    ovr.className = 'modal-ov';
+    const pick = new Set();
+    const st = { step: 1, q: '', target: 30, rhythm: 'medio', look: 'cine', aspect: '9:16' };
+    const pool = () => editable.slice().sort((a, b) =>
+      (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
+    const visible = () => pool().filter(f => {
+      if (!st.q) return true;
+      const hay = `${f.label || ''} ${f.date} ${fmt.date(f.date)} ${f.time || ''} ${(ai[f.clip_id]?.tags || []).join(' ')}`.toLowerCase();
+      return hay.includes(st.q.toLowerCase());
+    });
+    const estimate = () => {
+      const R = RM_RHYTHM[st.rhythm];
+      const n = Math.max(pick.size, Math.min(24, Math.round(st.target / R.seg)));
+      return `~${n} cortes · ${st.target}s`;
+    };
+    // pie (contador + estado del botón) — lo único que cambia al marcar/desmarcar una toma
+    const syncFoot = () => {
+      const c = ovr.querySelector('.rm-count');
+      if (c) c.textContent = pick.size
+        ? `${pick.size} toma${pick.size === 1 ? '' : 's'} · ${estimate()}` : 'Elige al menos una toma';
+      ovr.querySelector('#rm-go')?.toggleAttribute('disabled', !pick.size);
+    };
+    const render = () => {
+      const vis = visible();
+      ovr.innerHTML = `<div class="modal rm-modal">
+        <div class="modal-h"><b>${icon('spark')} Crear reel</b>
+          <span class="rm-steps"><i class="${st.step === 1 ? 'on' : ''}">1 · Tomas</i><i class="${st.step === 2 ? 'on' : ''}">2 · Receta</i></span>
+          <button class="modal-x" aria-label="Cerrar">✕</button></div>
+        <div class="modal-b">
+        ${st.step === 1 ? `
+          <div class="rm-bar">
+            <label class="search" style="flex:1"><input id="rm-q" placeholder="Buscar toma, fecha o tag AI…" value="${esc(st.q)}"></label>
+            <button class="btn sm" id="rm-all">Todas (${vis.length})</button>
+            <button class="btn sm" id="rm-none">Ninguna</button>
+          </div>
+          <div class="rm-grid">${vis.map(f => {
+            const sc = ai[f.clip_id]?.travel_score;
+            return `<button class="rm-clip${pick.has(f.clip_id) ? ' on' : ''}" data-pick="${esc(f.clip_id)}">
+              <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">
+              <span class="rm-check">${pick.has(f.clip_id) ? '✓' : ''}</span>
+              ${sc ? `<span class="rm-sc ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}">✨${sc}</span>` : ''}
+              <span class="rm-lb">${esc((f.label || fmt.date(f.date)).slice(0, 22))}<em>${fmt.dur(f.duration_s)}</em></span>
+            </button>`;
+          }).join('') || '<p class="footer-note">Nada coincide con esa búsqueda.</p>'}</div>` : `
+          <div class="mlb">Duración objetivo</div>
+          <div class="rm-opts">${[15, 30, 60].map(t => `
+            <button class="rm-opt${st.target === t ? ' on' : ''}" data-target="${t}"><b>${t}s</b><small>${t === 15 ? 'gancho rápido' : t === 30 ? 'el punto dulce' : 'historia completa'}</small></button>`).join('')}</div>
+          <div class="mlb">Ritmo</div>
+          <div class="rm-opts">${Object.entries(RM_RHYTHM).map(([k, v]) => `
+            <button class="rm-opt${st.rhythm === k ? ' on' : ''}" data-rhythm="${k}"><b>${v.lb}</b><small>${v.sub}</small></button>`).join('')}</div>
+          <div class="mlb">Formato</div>
+          <div class="rm-opts">${Object.entries(RM_FORMATS).map(([k, v]) => `
+            <button class="rm-opt${st.aspect === k ? ' on' : ''}" data-aspect="${k}"><span class="rm-ar ar${k.replace(':', '')}"></span><b>${v.lb}</b><small>${v.sub}</small></button>`).join('')}</div>
+          <div class="mlb">Look</div>
+          <div class="rm-opts look">${[['none', 'Sin look'], ['cine', 'Cine'], ['vivid', 'Vivid'], ['warm', 'Cálido'], ['moody', 'Moody'], ['bw', 'B&N']].map(([k, lb]) => `
+            <button class="rm-opt sm${st.look === k ? ' on' : ''}" data-look="${k}"><b>${lb}</b></button>`).join('')}</div>`}
+        </div>
+        <div class="rm-foot">
+          <span class="rm-count mono">${pick.size ? `${pick.size} toma${pick.size === 1 ? '' : 's'} · ${estimate()}` : 'Elige al menos una toma'}</span>
+          <span class="spacer" style="flex:1"></span>
+          ${st.step === 2 ? '<button class="btn" id="rm-back">‹ Tomas</button>' : ''}
+          <button class="btn primary" id="rm-go" ${pick.size ? '' : 'disabled'}>${st.step === 1 ? 'Continuar ›' : `${icon('spark')} Crear reel`}</button>
+        </div>
+      </div>`;
+    };
+    render();
+    document.body.appendChild(ovr);
+    ovr.addEventListener('click', e => {
+      if (e.target === ovr || e.target.closest('.modal-x')) { ovr.remove(); return; }
+      const p = e.target.closest('[data-pick]');
+      if (p) {
+        // patch EN SITIO: re-renderizar el grid entero por cada click recargaba 113 <img>,
+        // perdía el scroll y parpadeaba (misma lección que las tarjetas de Trabajos)
+        const cid = p.dataset.pick;
+        pick.has(cid) ? pick.delete(cid) : pick.add(cid);
+        p.classList.toggle('on', pick.has(cid));
+        const chk = p.querySelector('.rm-check');
+        if (chk) chk.textContent = pick.has(cid) ? '✓' : '';
+        syncFoot();
+        return;
+      }
+      if (e.target.closest('#rm-all')) { visible().forEach(f => pick.add(f.clip_id)); render(); return; }
+      if (e.target.closest('#rm-none')) { pick.clear(); render(); return; }
+      const o = e.target.closest('[data-target],[data-rhythm],[data-aspect],[data-look]');
+      if (o) {
+        const d = o.dataset;
+        if (d.target) st.target = +d.target;
+        if (d.rhythm) st.rhythm = d.rhythm;
+        if (d.aspect) st.aspect = d.aspect;
+        if (d.look) st.look = d.look;
+        render(); return;
+      }
+      if (e.target.closest('#rm-back')) { st.step = 1; render(); return; }
+      if (e.target.closest('#rm-go')) {
+        if (!pick.size) return;
+        if (st.step === 1) { st.step = 2; render(); return; }
+        const n = rmBuild([...pick], st);
+        ovr.remove();
+        if (n) {
+          showMod('editor');
+          scrollTo({ top: 0, behavior: 'smooth' });
+          toast(`Reel armado: ${n} cortes de ${pick.size} toma${pick.size === 1 ? '' : 's'} — ahora edítalo`);
+        }
+      }
+    });
+    ovr.addEventListener('input', e => {
+      if (e.target.id === 'rm-q') {
+        st.q = e.target.value;
+        const car = e.target.selectionStart;
+        render();
+        const nx = ovr.querySelector('#rm-q');
+        if (nx) { nx.focus(); try { nx.setSelectionRange(car, car); } catch {} }
+      }
+    });
+  }
+  document.getElementById('rm-open')?.addEventListener('click', openReelMaker);
 
   // ================= carrusel de clips fuente (24-27) =================
   const rail = document.getElementById('rail');
