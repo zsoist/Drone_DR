@@ -1902,8 +1902,31 @@ button.exp { text-align: left; cursor: pointer; }
 .m-badge.wide { color: var(--text-2); }
 
 /* ---------- REELS MAKER (I1) ---------- */
+.rm-ctas { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; margin-bottom: 14px; }
+@media (max-width: 820px) { .rm-ctas { grid-template-columns: 1fr; } }
+.rm-auto {
+  display: flex; flex-direction: column; gap: 9px; padding: 14px 16px; border-radius: 16px;
+  border: 1px solid rgba(232,179,76,.3);
+  background: linear-gradient(118deg, rgba(232,179,76,.13) 0%, var(--surface) 62%);
+}
+.rm-auto-h b { font-size: 14px; display: block; }
+.rm-auto-h small { font-size: 11px; color: var(--text-3); }
+.rm-auto-b { display: flex; gap: 8px; }
+.rm-autobtn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 9px 6px; border-radius: 11px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2);
+  transition: border-color 150ms var(--ease), transform 150ms var(--ease), background 150ms var(--ease);
+}
+.rm-autobtn b { font-size: 14px; }
+.rm-autobtn span { font-size: 9.5px; color: var(--text-3); }
+.rm-autobtn:hover { border-color: #e8b34c; transform: translateY(-2px); }
+.rm-autobtn.primary { border-color: rgba(232,179,76,.55); background: rgba(232,179,76,.12); }
+.rm-autobtn.primary b { color: #e8b34c; }
+.rm-autobtn.busy { opacity: .55; transform: scale(.97); }
+
 .rm-cta {
-  display: flex; align-items: center; gap: 14px; width: 100%; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 14px; width: 100%; margin-bottom: 0;
   padding: 16px 18px; border-radius: 16px; cursor: pointer; text-align: left;
   border: 1px solid rgba(69,160,230,.32);
   background: linear-gradient(118deg, color-mix(in srgb, var(--accent) 15%, var(--surface)) 0%, var(--surface) 62%);
@@ -2047,6 +2070,16 @@ button.exp { text-align: left; cursor: pointer; }
   .rm-opt { min-width: 96px; padding: 9px 11px; }
   .rm-steps { display: none; }
 }
+
+/* arrastrar tomas de la biblioteca al timeline */
+.cr-item[draggable="true"] { cursor: grab; }
+.cr-item.dragging { opacity: .45; transform: scale(.96); }
+.tl-dropmark {
+  position: absolute; top: 0; bottom: 0; width: 3px; z-index: 7; border-radius: 2px;
+  background: var(--accent); box-shadow: 0 0 12px rgba(69,160,230,.85);
+  pointer-events: none; animation: dropPulse 900ms ease-in-out infinite;
+}
+@keyframes dropPulse { 50% { opacity: .55; } }
 
 /* arrastrar en el timeline seleccionaba texto de los toolbars (labels azules) */
 .tl-transport, .tl-toolbar, .tl-ruler, .tl-track, .tl-projbar, .tl-group-lb {

@@ -385,11 +385,21 @@ main.innerHTML = `
   </section>
 
   <section class="st-mod" data-mod="reels" style="display:none">
-    <button class="rm-cta" id="rm-open">
-      <span class="rm-cta-ic">${icon('spark')}</span>
-      <span class="rm-cta-t"><b>Crear reel</b><small>Elige tus tomas y AeroBrain arma el montaje — luego lo editas</small></span>
-      <span class="rm-cta-go">${icon('chevR')}</span>
-    </button>
+    <div class="rm-ctas">
+      <button class="rm-cta" id="rm-open">
+        <span class="rm-cta-ic">${icon('spark')}</span>
+        <span class="rm-cta-t"><b>Crear reel</b><small>Elige tus tomas y AeroBrain arma el montaje — luego lo editas</small></span>
+        <span class="rm-cta-go">${icon('chevR')}</span>
+      </button>
+      <div class="rm-auto">
+        <div class="rm-auto-h"><b>⚡ Reel automático</b><small>un toque y listo — elige el mejor día y las mejores tomas</small></div>
+        <div class="rm-auto-b">
+          <button class="rm-autobtn" data-auto="15"><b>15s</b><span>gancho</span></button>
+          <button class="rm-autobtn primary" data-auto="30"><b>30s</b><span>el punto dulce</span></button>
+          <button class="rm-autobtn" data-auto="60"><b>60s</b><span>historia</span></button>
+        </div>
+      </div>
+    </div>
     <div class="media-toolbar">
       <input class="ctl" id="q-reels" type="search" placeholder="Buscar reel…" style="flex:1;min-width:150px">
       <select class="ctl" id="s-reels">
@@ -2067,10 +2077,43 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   }
   document.getElementById('rm-open')?.addEventListener('click', openReelMaker);
 
+  // ⚡ REEL AUTOMÁTICO: sin wizard. Elige el mejor DÍA (el que suma más score AI), toma
+  // sus mejores clips y arma el montaje. Un toque = reel editable en el Editor.
+  function autoReel(target) {
+    const byDay = new Map();
+    editable.forEach(f => {
+      const d = f.date || '—';
+      if (!byDay.has(d)) byDay.set(d, []);
+      byDay.get(d).push(f);
+    });
+    if (!byDay.size) return toast('No hay tomas con video disponible todavía');
+    const dayScore = fs => fs.reduce((a, f) => a + (ai[f.clip_id]?.travel_score || 4), 0);
+    // mejor día = más "sustancia" (score acumulado), con desempate por recencia
+    const [bestDay, pool] = [...byDay.entries()]
+      .sort((A, B) => dayScore(B[1]) - dayScore(A[1]) || B[0].localeCompare(A[0]))[0];
+    const ranked = pool.slice().sort((a, b) =>
+      (ai[b.clip_id]?.travel_score || 4) - (ai[a.clip_id]?.travel_score || 4));
+    // más tomas para reels largos, pero nunca tantas que cada corte quede en un parpadeo
+    const want = Math.max(2, Math.min(ranked.length, Math.round(target / 4)));
+    const picks = ranked.slice(0, want).map(f => f.clip_id);
+    const n = rmBuild(picks, { target, rhythm: target <= 15 ? 'rapido' : target >= 60 ? 'cine' : 'medio',
+                               look: 'cine', aspect: '9:16' });
+    if (!n) return toast('No pude armar el reel con esas tomas');
+    showMod('editor');
+    scrollTo({ top: 0, behavior: 'smooth' });
+    toast(`Reel de ${target}s listo: ${n} cortes de las ${picks.length} mejores tomas del ${fmt.date(bestDay)}`);
+  }
+  document.querySelector('.rm-auto-b')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-auto]');
+    if (!b) return;
+    b.classList.add('busy');
+    setTimeout(() => { autoReel(+b.dataset.auto); b.classList.remove('busy'); }, 40);
+  });
+
   // ================= carrusel de clips fuente (24-27) =================
   const rail = document.getElementById('rail');
   rail.innerHTML = editable.map(f => `
-    <div class="cr-item" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
+    <div class="cr-item" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
       <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="">
       <span class="scrub-line"></span>
       <span class="cr-lb">${esc(f.label) || fmt.date(f.date)} · ${fmt.dur(f.duration_s)}</span>
@@ -2083,6 +2126,62 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     if (ins) { addClip(ins.dataset.ins, true); return; }
     const it = e.target.closest('.cr-item');
     if (it) addClip(it.dataset.cid, false);   // 25 · tap = añadir al final
+  });
+
+  // ---- arrastrar una toma de la biblioteca AL TIMELINE (drop en la posición exacta) ----
+  let dropIdx = -1;
+  rail.addEventListener('dragstart', e => {
+    const it = e.target.closest('.cr-item');
+    if (!it) return;
+    e.dataTransfer.setData('text/ab-clip', it.dataset.cid);
+    e.dataTransfer.effectAllowed = 'copy';
+    it.classList.add('dragging');
+  });
+  rail.addEventListener('dragend', e => e.target.closest('.cr-item')?.classList.remove('dragging'));
+
+  // índice de inserción según dónde suelte el cursor (mitad izquierda = antes de ese corte)
+  const dropIndexAt = clientX => {
+    const rect = track.getBoundingClientRect();
+    const x = clientX - rect.left + scroll.scrollLeft;
+    let acc = 0;
+    for (let i = 0; i < tl.length; i++) {
+      const w = segDur(tl[i]) * pps;
+      if (x < acc + w / 2) return i;
+      acc += w;
+    }
+    return tl.length;
+  };
+  const paintDropMark = i => {
+    track.querySelectorAll('.tl-dropmark').forEach(m => m.remove());
+    if (i < 0) return;
+    const m = document.createElement('span');
+    m.className = 'tl-dropmark';
+    m.style.left = `${offset(i) * pps}px`;
+    track.appendChild(m);
+  };
+  ['dragover', 'dragenter'].forEach(ev => scroll.addEventListener(ev, e => {
+    if (!e.dataTransfer?.types?.includes('text/ab-clip')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    dropIdx = dropIndexAt(e.clientX);
+    paintDropMark(dropIdx);
+  }));
+  scroll.addEventListener('dragleave', e => {
+    if (!scroll.contains(e.relatedTarget)) { dropIdx = -1; paintDropMark(-1); }
+  });
+  scroll.addEventListener('drop', e => {
+    const cid = e.dataTransfer?.getData('text/ab-clip');
+    if (!cid || !byId[cid]) return;
+    e.preventDefault();
+    const at = dropIdx < 0 ? tl.length : dropIdx;
+    dropIdx = -1; paintDropMark(-1);
+    pushUndo();
+    const f = byId[cid];
+    tl.splice(at, 0, makeSeg(cid, 0, Math.min(5, f.duration_s)));
+    sel = at;
+    renderAll();
+    seek(offset(at));
+    toast(`Toma insertada en el corte ${at + 1}`);
   });
 
   // ================= interacción del track =================
