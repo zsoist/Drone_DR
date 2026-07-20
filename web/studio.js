@@ -488,6 +488,170 @@ function primeShare(url, name, mime) {
 // liberar memoria al salir de la pestaña (iOS mata la página si acumulas blobs)
 addEventListener('visibilitychange', () => { if (document.hidden) shareCache.clear(); });
 
+// ================= VISOR DE REELS (R2) =================
+// Pantalla dedicada para ver un reel terminado: reproductor grande sobre el póster
+// difuminado, ficha con datos reales, navegación entre reels y acciones sin salir.
+function reelFormatLabel(it) {
+  const ar = it?.w && it?.h ? it.w / it.h : 0;
+  if (!ar) return '';
+  return ar < 0.65 ? '9:16 · Reels · TikTok · Shorts'
+    : ar < 0.9 ? '4:5 · Feed'
+      : ar < 1.1 ? '1:1 · Cuadrado'
+        : '16:9 · YouTube · web';
+}
+function openReelViewer(name) {
+  const list = (media?.reels || []);
+  let idx = list.findIndex(r => r.name === name);
+  if (idx < 0) return;
+  const ov = document.createElement('div');
+  ov.className = 'rv-ov';
+  document.body.appendChild(ov);
+  let armedDelete = false;
+
+  const render = () => {
+    const it = list[idx];
+    if (!it) { ov.remove(); return; }
+    const base = it.name.replace(/\.[^.]+$/, '');
+    const url = `/data/reels/${encodeURIComponent(it.name)}`;
+    const poster = `/data/reel-posters/${encodeURIComponent(base)}.jpg`;
+    const vert = it.w && it.h && it.w / it.h < 0.9;
+    ov.innerHTML = `
+      <div class="rv-bg" style="background-image:url('${poster}')"></div>
+      <div class="rv-shell">
+        <div class="rv-head">
+          <div class="rv-title">
+            <b id="rv-name">${esc(base)}</b>
+            <span class="mono">${list.length > 1 ? `${idx + 1} / ${list.length} · ` : ''}${mdate(it.mtime)}</span>
+          </div>
+          <span class="spacer" style="flex:1"></span>
+          <button class="rv-x" data-rv="close" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="rv-stage${vert ? ' vert' : ''}">
+          ${list.length > 1 ? `<button class="rv-nav prev" data-rv="prev" aria-label="Anterior">${icon('chevL')}</button>` : ''}
+          <video src="${url}" poster="${poster}" controls autoplay playsinline preload="metadata"></video>
+          ${list.length > 1 ? `<button class="rv-nav next" data-rv="next" aria-label="Siguiente">${icon('chevR')}</button>` : ''}
+        </div>
+        <div class="rv-facts">
+          ${it.duration_s ? `<span><i>${icon('clock')}</i><b>${fmt.dur(it.duration_s)}</b><em>duración</em></span>` : ''}
+          ${it.h ? `<span><i>${icon('film')}</i><b>${it.w}×${it.h}</b><em>resolución</em></span>` : ''}
+          <span><i>${icon('db')}</i><b>${fmt.gb(it.bytes)}</b><em>peso</em></span>
+          ${it.has_audio !== undefined ? `<span><i>${icon('volume')}</i><b>${it.has_audio ? 'Sí' : 'No'}</b><em>audio</em></span>` : ''}
+          ${reelFormatLabel(it) ? `<span class="wide"><i>${icon('layers')}</i><b>${reelFormatLabel(it)}</b><em>formato</em></span>` : ''}
+        </div>
+        <div class="rv-actions">
+          <button class="btn primary" data-rv="share">${icon('ext')} Compartir</button>
+          <button class="btn" data-rv="dl">${icon('dl')} ${window.showSaveFilePicker ? 'Guardar como…' : 'Descargar'}</button>
+          <button class="btn" data-rv="ren">${icon('tag')} Renombrar</button>
+          <button class="btn" data-rv="copy">${icon('link') || icon('ext')} Copiar link</button>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn rv-del" data-rv="del">${icon('trash')} Borrar</button>
+        </div>
+        <div class="rv-kbd mono">← → cambiar reel · espacio pausa · esc cerrar</div>
+      </div>`;
+    // cebar el compartir en cuanto se abre: el gesto del click no se pierde
+    primeShare(url, it.name, 'video/mp4').catch(() => {});
+  };
+  render();
+
+  const go = d => {
+    ov.querySelector('video')?.pause();
+    idx = (idx + d + list.length) % list.length;
+    armedDelete = false;
+    render();
+  };
+  const close = () => { ov.querySelector('video')?.pause(); ov.remove(); removeEventListener('keydown', onKey); };
+  const onKey = ev => {
+    if (!document.body.contains(ov)) { removeEventListener('keydown', onKey); return; }
+    if (ev.target.tagName === 'INPUT') return;
+    if (ev.key === 'Escape') close();
+    else if (ev.key === 'ArrowRight' && list.length > 1) go(1);
+    else if (ev.key === 'ArrowLeft' && list.length > 1) go(-1);
+    else if (ev.key === ' ') {
+      ev.preventDefault();
+      const v = ov.querySelector('video');
+      if (v) v.paused ? v.play().catch(() => {}) : v.pause();
+    }
+  };
+  addEventListener('keydown', onKey);
+
+  ov.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-rv]');
+    if (!b) { if (ev.target === ov || ev.target.classList.contains('rv-bg')) close(); return; }
+    const a = b.dataset.rv, it = list[idx];
+    const url = `/data/reels/${encodeURIComponent(it.name)}`;
+    if (a === 'close') return close();
+    if (a === 'prev') return go(-1);
+    if (a === 'next') return go(1);
+    if (a === 'share') {
+      const ready = shareCache.get(url)?._file;
+      if (ready && navigator.canShare?.({ files: [ready] })) {
+        try { await navigator.share({ files: [ready] }); }
+        catch (err) { if (err?.name !== 'AbortError') toast('No se pudo compartir — usa Descargar'); }
+        return;
+      }
+      try {
+        const f = await primeShare(url, it.name, 'video/mp4');
+        if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f] }); return; }
+      } catch (err) { if (err?.name === 'AbortError') return; }
+      toast('Toca Compartir otra vez — el video ya está listo');
+      return;
+    }
+    if (a === 'dl') {
+      if (window.showSaveFilePicker) {
+        try {
+          const h = await showSaveFilePicker({ suggestedName: it.name });
+          await (await fetch(url)).body.pipeTo(await h.createWritable());
+          toast('Guardado en tu disco'); return;
+        } catch (err) { if (err?.name === 'AbortError') return; }
+      }
+      const el = document.createElement('a'); el.href = url; el.download = it.name; el.click();
+      return;
+    }
+    if (a === 'copy') {
+      const full = location.origin + url;
+      try { await navigator.clipboard.writeText(full); b.textContent = '✓ Copiado'; setTimeout(render, 1400); }
+      catch { prompt('Copia el link:', full); }
+      return;
+    }
+    if (a === 'ren') {
+      const host = ov.querySelector('#rv-name');
+      const old = it.name.replace(/\.[^.]+$/, '');
+      host.innerHTML = `<input class="m-ipt rv-ipt" value="${esc(old)}" maxlength="60">`;
+      const inp = host.querySelector('input');
+      inp.focus(); inp.select();
+      const save = async () => {
+        const nn = inp.value.trim();
+        if (!nn || nn === old) return render();
+        const r = await api('/api/media_op', { op: 'rename', type: 'reel', name: it.name, new_name: nn });
+        if (r?.error) { toast(r.error); return render(); }
+        it.name = r.name || it.name;
+        await loadMedia();
+        render();
+      };
+      inp.addEventListener('keydown', k => { if (k.key === 'Enter') inp.blur(); if (k.key === 'Escape') render(); });
+      inp.addEventListener('blur', save);
+      return;
+    }
+    if (a === 'del') {
+      if (!armedDelete) {          // confirmación en dos pasos, sin confirm() nativo
+        armedDelete = true;
+        b.innerHTML = `${icon('warn')} ¿Seguro? Toca otra vez`;
+        b.classList.add('armed');
+        return;
+      }
+      const r = await api('/api/media_op', { op: 'delete', type: 'reel', name: it.name });
+      if (r?.error) { toast(r.error); return; }
+      toast('Reel movido a la papelera');
+      list.splice(idx, 1);
+      await loadMedia();
+      if (!list.length) return close();
+      idx = Math.min(idx, list.length - 1);
+      armedDelete = false;
+      render();
+    }
+  });
+}
+
 // ---- motor de medios: biblioteca de reels y fotos ----
 let media = null;   // {reels:[{name,bytes,mtime}], photos:[...]}
 const mstate = { reels: { q: '', sort: 'recientes' }, fotos: { q: '', sort: 'recientes' },
@@ -645,6 +809,8 @@ async function onCardClick(kind, e) {
   if (!btn) {
     // fotos: tap en la imagen abre el editor premium (photoeditor.js)
     if (kind === 'fotos' && e.target.closest('.m-prevbox')) openPhotoEditor({ url, name });
+    // reels: tap en la tarjeta abre el VISOR dedicado (R2)
+    if (kind === 'reels' && e.target.closest('.m-prevbox')) openReelViewer(name);
     return;
   }
   const act = btn.dataset.act;
