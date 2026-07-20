@@ -1887,6 +1887,21 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     return pts.sort((a, b) => a - b);
   }
 
+  // ---- gramática de planos: la ALTURA de vuelo es el tamaño de plano en aéreo ----
+  // >45m ves el lugar entero (situación), 20-45 el conjunto, 10-20 medio, <10 detalle.
+  const shotScale = f => {
+    const a = f?.stats?.max_rel_alt_m || 0;
+    return a >= 45 ? 0 : a >= 20 ? 1 : a >= 10 ? 2 : 3;   // 0 = más abierto
+  };
+  const SCALE_LB = ['situación', 'general', 'medio', 'detalle'];
+  // rumbo medio de la toma: dos planos con el mismo rumbo Y la misma escala seguidos
+  // se ven como el mismo plano repetido — el clásico "collage" amateur.
+  const headOf = f => {
+    const b = f?.stats?.bbox;
+    if (!Array.isArray(b) || b.length < 4) return 0;
+    return Math.round((Math.atan2(b[2] - b[0], b[3] - b[1]) * 180 / Math.PI + 360) % 360);
+  };
+
   function rmBuild(cids, opts) {
     const R = RM_RHYTHM[opts.rhythm] || RM_RHYTHM.medio;
     const clips = cids.map(c => byId[c]).filter(Boolean);
@@ -1922,13 +1937,71 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       });
     });
     if (!segs.length) return 0;
-    // ajuste fino a la duración objetivo: escala uniforme respetando el mínimo por corte
-    const total = () => segs.reduce((a, s) => a + (s.b - s.a), 0);
-    const k = target / total();
-    if (k < 1) segs.forEach(s => {
-      const nd = Math.max(0.6, (s.b - s.a) * k);
-      s.b = +(s.a + nd).toFixed(2);
+
+    // ================= MONTAJE CINEMATOGRÁFICO =================
+    // 1) ORDEN: abre con el plano más abierto (el espectador necesita saber DÓNDE está),
+    //    luego alterna escalas y evita dos planos parecidos seguidos, y CIERRA abriendo
+    //    otra vez (sensación de final, no de "se acabó la cinta").
+    const meta = s => { const f = byId[s.clip_id]; return { sc: shotScale(f), hd: headOf(f), f }; };
+    const pool2 = segs.slice();
+    const opened = pool2.splice(pool2.reduce((best, s, i, arr) =>
+      meta(s).sc < meta(arr[best]).sc ? i : best, 0), 1)[0];         // el más abierto abre
+    let closer = null;
+    if (pool2.length > 2) {                                          // y otro abierto cierra
+      const ci = pool2.reduce((best, s, i, arr) => meta(s).sc < meta(arr[best]).sc ? i : best, 0);
+      closer = pool2.splice(ci, 1)[0];
+    }
+    const ordered = [opened];
+    while (pool2.length) {
+      const prev = meta(ordered[ordered.length - 1]);
+      // penaliza repetir escala y repetir rumbo: eso es lo que hace que parezca un collage
+      let bi = 0, bs = -1e9;
+      pool2.forEach((s, i) => {
+        const m = meta(s);
+        const dScale = Math.abs(m.sc - prev.sc);
+        const dHead = Math.min(Math.abs(m.hd - prev.hd), 360 - Math.abs(m.hd - prev.hd));
+        const score = (dScale === 0 ? -6 : dScale === 1 ? 3 : 1.5) + Math.min(dHead, 90) / 30
+          + (ai[s.clip_id]?.travel_score || 4) * 0.35;
+        if (score > bs) { bs = score; bi = i; }
+      });
+      ordered.push(pool2.splice(bi, 1)[0]);
+    }
+    if (closer) ordered.push(closer);
+
+    // 2) RITMO: nada de duración constante (eso es lo "robótico"). El primer plano
+    //    respira, el centro acelera y el último vuelve a respirar para cerrar.
+    const n = ordered.length;
+    const curve = i => {
+      const t = n === 1 ? 0.5 : i / (n - 1);
+      const bell = 1 - Math.pow(Math.abs(t - 0.5) * 2, 1.6);   // 0 en los bordes, 1 al centro
+      return 1.45 - 0.6 * bell;                                // extremos largos, centro corto
+    };
+    // los planos abiertos necesitan MÁS tiempo para leerse que un detalle
+    const scaleTime = [1.25, 1.1, 0.95, 0.85];
+    const weights = ordered.map((s, i) => curve(i) * scaleTime[meta(s).sc]);
+    const wSum = weights.reduce((a, b) => a + b, 0);
+    ordered.forEach((s, i) => {
+      const want = target * (weights[i] / wSum);
+      const src = byId[s.clip_id];
+      const maxOut = src ? src.duration_s - s.a : want;
+      const d = Math.max(0.55, Math.min(want, maxOut, 120));
+      s.b = +Math.min(src ? src.duration_s : s.b, s.a + d * (s.speed || 1)).toFixed(2);
     });
+
+    // 3) TRANSICIONES: corte seco por defecto (un crossfade en CADA unión es justo lo que
+    //    abarata un montaje). Solo se funde cuando el salto de escala es grande, y el
+    //    último corte entra con un fundido más largo para cerrar.
+    const R2 = RM_RHYTHM[opts.rhythm] || RM_RHYTHM.medio;
+    ordered.forEach((s, i) => {
+      if (i === 0) { s.transition = 'none'; return; }
+      const jump = Math.abs(meta(s).sc - meta(ordered[i - 1]).sc);
+      const last = i === n - 1;
+      s.transition = last ? 'dissolve' : jump >= 2 ? R2.trans : 'none';
+      s.transDur = last ? Math.min(0.9, R2.dur + 0.35) : R2.dur;
+    });
+    segs.length = 0;
+    segs.push(...ordered);
+
     pushUndo();
     tl = segs;
     sel = 0; playhead = 0; curCid = null;
