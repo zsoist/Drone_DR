@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=234';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=234';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=234';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=234';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=234';
-  import { mountSplatViewer } from '/splatview.js?v=234';
+  import * as THREE from '/vendor/three180.module.js?v=237';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=237';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=237';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=237';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=237';
+  import { mountSplatViewer } from '/splatview.js?v=237';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1258,7 +1258,8 @@
     const clipRow = f => `
       <label class="pc-clip${sel.has(f.clip_id) ? ' on' : ''}" data-cid="${esc(f.clip_id)}"
              data-alt="${altOf(f)}" data-date="${esc(f.date || '')}"
-             data-q="${esc(((f.label || '') + ' ' + (f.date || '') + ' ' + fmt.date(f.date) + ' ' + (f.time || '') + ' ' + (f.place || '')).toLowerCase())}">
+             data-q="${esc(((f.label || '') + ' ' + (f.date || '') + ' ' + fmt.date(f.date) + ' ' + (f.time || '') + ' ' + (f.place || '')
+               + ' ' + (f.ai?.tags || []).join(' ') + ' ' + (f.ai?.scene_type || '')).toLowerCase())}">
         <input type="checkbox" ${sel.has(f.clip_id) ? 'checked' : ''}>
         <span class="pc-thumb" data-preview="${esc(f.clip_id)}" title="Ver preview">
           <img src="data/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">${icon('play')}</span>
@@ -1589,6 +1590,7 @@
             chip.className = `pc-ai tip-r ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : sc ? 'bad' : 'idle'}`;
             chip.dataset.tip = sc ? `AI vision ${sc}/10 — ${(ai.summary || '').slice(0, 140)}` : 'El análisis no devolvió score';
             delete chip.dataset.busy;
+            dispatchEvent(new CustomEvent('ab:ai-ready', { detail: cid }));   // preview abierto se refresca
           } catch { /* siguiente tick */ }
         }, 3000);
       } catch (err) {
@@ -1603,30 +1605,75 @@
       return [...ov.querySelectorAll('.pc-clip')].filter(el => el.style.display !== 'none')
         .map(el => el.dataset.cid);
     }
+    // anillo SVG del score AI: número grande + arco coloreado — legible de un vistazo
+    // (el chip "✨8" críptico con tooltip flotante confundía; aquí la info va inline)
+    const aiRing = sc => {
+      const col = sc >= 7 ? 'var(--mint)' : sc >= 4 ? '#e8b34c' : 'var(--red)';
+      const C = 2 * Math.PI * 17;
+      return `<div class="pv-ring-wrap" data-tip="Score de calidad visual del análisis AI (1-10)">
+        <div class="pv-ring" style="--ring:${col}">
+          <svg viewBox="0 0 44 44"><circle class="bg" cx="22" cy="22" r="17"/>
+            <circle class="fg" cx="22" cy="22" r="17" stroke-dasharray="${C}"
+                    stroke-dashoffset="${C * (1 - sc / 10)}"/></svg>
+          <b>${sc}</b>
+        </div>
+        <small>AI VISION</small>
+      </div>`;
+    };
     function openPreviewAt(cid) {
       const pv = document.createElement('div');
       pv.className = 'st-preview-ov';
       document.body.appendChild(pv);
-      const render = () => {
+      const auto = { on: localStorage.getItem('ab.pv.auto') === '1' };
+      const render = (slideDir = 0) => {
         const f = byCid[cid] || {};
-        const sc = f.ai?.travel_score;
+        const ai = f.ai || {};
+        const sc = ai.travel_score;
+        const list = visibleCids();
+        const pos = list.indexOf(cid);
+        const scan = _scanCache[cid];
+        const scanBest = scan?.suitability
+          ? Math.max(scan.suitability.ortho_dsm || 0, scan.suitability.mesh || 0, scan.suitability.splat || 0) : null;
         pv.innerHTML = `<div class="st-preview">
+          <div class="pv-progress"><i style="width:${list.length ? ((pos + 1) / list.length) * 100 : 0}%"></i></div>
           <div class="st-pv-h">
-            <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
-            <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m</span>
-            ${sc ? `<span class="pc-ai ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}" data-tip="${esc(f.ai.summary || '')}">✨${sc}</span>` : ''}
+            <div class="pv-title">
+              <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
+              <div class="pv-meta">
+                <span data-tip="Duración">${icon('clock')} ${fmt.dur(f.duration_s)}</span>
+                <span data-tip="Altura máxima">${icon('mountain')} ${Math.round(f.stats?.max_rel_alt_m || 0)} m</span>
+                ${f.has_srt ? `<span data-tip="Track GPS 1Hz">${icon('pin')} GPS</span>` : ''}
+                ${scanBest != null ? `<span data-tip="Aptitud de escaneo 3D">${icon('cube')} 3D ${scanBest.toFixed(0)}/10</span>` : ''}
+                <span class="pv-pos mono">${pos + 1} / ${list.length}</span>
+              </div>
+            </div>
             <span class="spacer" style="flex:1"></span>
-            <button class="modal-x">✕</button>
+            ${sc ? aiRing(sc) : `<button class="btn sm" data-pv="analyze">✨ Analizar</button>`}
+            <button class="modal-x" aria-label="Cerrar">✕</button>
           </div>
-          <video src="data/proxies/${encodeURIComponent(cid)}.mp4" controls autoplay muted playsinline
-                 poster="data/thumbs/${encodeURIComponent(cid)}.jpg"></video>
-          ${f.ai?.summary ? `<p class="st-pv-sum">${esc(f.ai.summary)}</p>` : ''}
+          <div class="pv-body${slideDir ? (slideDir > 0 ? ' slide-l' : ' slide-r') : ''}">
+            <video src="data/proxies/${encodeURIComponent(cid)}.mp4" controls autoplay muted playsinline
+                   poster="data/thumbs/${encodeURIComponent(cid)}.jpg"></video>
+            ${ai.summary ? `<p class="st-pv-sum">${esc(ai.summary)}</p>` : ''}
+            ${(ai.tags || []).length ? `<div class="pv-tags">${(ai.tags || []).slice(0, 8).map(t =>
+              `<button class="pv-tag" data-tag="${esc(t)}" data-tip="Filtrar la lista por este tag">${esc(t)}</button>`).join('')}
+              ${ai.scene_type ? `<span class="pv-tag scene">${esc(ai.scene_type)}</span>` : ''}</div>` : ''}
+          </div>
           <div class="st-pv-f">
-            <button class="btn" data-pv="prev">‹ Anterior</button>
-            <button class="btn ${sel.has(cid) ? '' : 'primary'}" data-pv="toggle">${sel.has(cid) ? '✓ Quitar de la selección' : '+ Seleccionar para procesar'}</button>
-            <button class="btn" data-pv="next">Siguiente ›</button>
+            <button class="btn" data-pv="prev" data-tip="Toma anterior (←)">‹ Anterior</button>
+            <div class="pv-center">
+              <button class="btn ${sel.has(cid) ? 'pv-on' : 'primary'}" data-pv="toggle">${sel.has(cid) ? '✓ En la selección — quitar' : '+ Seleccionar para procesar'}</button>
+              <span class="pv-selcount mono">${sel.size} seleccionada${sel.size === 1 ? '' : 's'}</span>
+            </div>
+            <div class="pv-right">
+              <button class="pv-auto${auto.on ? ' on' : ''}" data-pv="auto" data-tip="Al terminar el video, pasa solo a la siguiente toma">▶▶ auto</button>
+              <button class="btn" data-pv="next" data-tip="Siguiente toma (→)">Siguiente ›</button>
+            </div>
           </div>
+          <div class="pv-kbd mono">␣ pausa · ⏎ seleccionar · ← → navegar · esc cerrar</div>
         </div>`;
+        const v = pv.querySelector('video');
+        v.addEventListener('ended', () => { if (auto.on) step(1); });
       };
       render();
       const step = dir => {
@@ -1635,15 +1682,36 @@
         if (i < 0 || !list.length) return;
         pv.querySelector('video')?.pause();
         cid = list[(i + dir + list.length) % list.length];
+        render(dir);
+      };
+      const toggleSel = () => {
+        sel.has(cid) ? sel.delete(cid) : sel.add(cid);
+        syncClip(cid); renderCombined(); applyFilters();
         render();
+        pv.querySelector('[data-pv="toggle"]')?.animate(
+          [{ transform: 'scale(0.94)' }, { transform: 'scale(1.04)' }, { transform: 'scale(1)' }],
+          { duration: 260, easing: 'ease-out' });
       };
       pv.addEventListener('click', ev => {
+        const tag = ev.target.closest('[data-tag]');
+        if (tag) {   // tag → filtra la lista de fondo (y el ciclo ‹ › del preview)
+          const q = ov.querySelector('#st-q');
+          q.value = tag.dataset.tag;
+          q.dispatchEvent(new Event('input', { bubbles: true }));
+          render();
+          return;
+        }
         const b = ev.target.closest('[data-pv]');
         if (b) {
-          if (b.dataset.pv === 'toggle') {
-            sel.has(cid) ? sel.delete(cid) : sel.add(cid);
-            syncClip(cid); renderCombined(); applyFilters();
-            render();
+          if (b.dataset.pv === 'toggle') toggleSel();
+          else if (b.dataset.pv === 'auto') {
+            auto.on = !auto.on;
+            localStorage.setItem('ab.pv.auto', auto.on ? '1' : '0');
+            b.classList.toggle('on', auto.on);
+          } else if (b.dataset.pv === 'analyze') {
+            // reusa el flujo del chip de la fila (poll + pintado); el preview se refresca al volver
+            const chip = ov.querySelector(`[data-ai="${CSS.escape(cid)}"]`);
+            if (chip) { chip.click(); b.textContent = '✨ Analizando…'; b.disabled = true; }
           } else step(b.dataset.pv === 'next' ? 1 : -1);
           return;
         }
@@ -1652,10 +1720,21 @@
       const onKey = ev => {
         if (!document.body.contains(pv)) { removeEventListener('keydown', onKey); return; }
         if (ev.key === 'Escape') { pv.querySelector('video')?.pause(); pv.remove(); }
-        if (ev.key === 'ArrowRight') step(1);
-        if (ev.key === 'ArrowLeft') step(-1);
+        else if (ev.key === 'ArrowRight') step(1);
+        else if (ev.key === 'ArrowLeft') step(-1);
+        else if (ev.key === 'Enter') { ev.preventDefault(); toggleSel(); }
+        else if (ev.key === ' ' && !ev.target.closest('input,select')) {
+          ev.preventDefault();
+          const v = pv.querySelector('video');
+          if (v) v.paused ? v.play().catch(() => {}) : v.pause();
+        }
       };
       addEventListener('keydown', onKey);
+      const onAI = e => {
+        if (!document.body.contains(pv)) { removeEventListener('ab:ai-ready', onAI); return; }
+        if (e.detail === cid) render();
+      };
+      addEventListener('ab:ai-ready', onAI);
     }
     // clic en el thumb (no togglea el checkbox)
     ov.querySelector('#st-groups').addEventListener('click', e => {
