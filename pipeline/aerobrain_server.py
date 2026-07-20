@@ -2,16 +2,22 @@
 
 Endpoints:
   GET  /...                     estáticos de web/ y /data/ (vault) con 206 Range
-  POST /upload?name=f.mp4       sube video (auth por cookie o X-Token) → procesa solo
+  POST /upload?name=f.mp4       sube video (sesión Daniel o dev local) → procesa solo
   POST /api/edit                {clip_id, segments:[...]} → ffmpeg
   POST /api/odm                 encola fotogrametría ODM en el worker
   POST /api/splat               encola entrenamiento OpenSplat en el worker
   GET  /api/jobs                estado de cola/trabajos
   POST /api/rescan              regenera índices
 
-Auth externa: cookie HttpOnly o header X-Token. Los agentes locales en 127.0.0.1
-son trusted por diseño; tokens en querystring no se aceptan.
+Auth pública: sólo la sesión HttpOnly de Daniel. Todo HTML/data/media está
+protegido. Codex/Claude conservan dev mode sólo en loopback estricto; secretos
+maestros externos y tokens en querystring no se aceptan.
 """
+import base64
+import binascii
+import hashlib
+import hmac
+import ipaddress
 import json
 import math
 import mimetypes
@@ -20,14 +26,19 @@ import re
 import secrets
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
+from contextlib import closing
+from datetime import datetime
 from email.utils import formatdate, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from zoneinfo import ZoneInfo
 
 import jobs as jobstore
 import perf as perfmod
@@ -50,6 +61,34 @@ if not TOKEN_FILE.exists():
     TOKEN_FILE.write_text(secrets.token_urlsafe(24))
     TOKEN_FILE.chmod(0o600)
 TOKEN = TOKEN_FILE.read_text().strip()
+OPERATOR_ID = "daniel"
+OPERATOR_NAME = "Daniel"
+SESSION_COOKIE = "__Host-ab_session"
+LEGACY_SESSION_COOKIE = "ab_s"
+SESSION_TTL_SECONDS = 24 * 60 * 60
+COLOMBIA_TZ = ZoneInfo("America/Bogota")
+OPERATOR_AUTH_FILE = VAULT / ".operator-auth.json"
+EDGE_AUTH_KEY_FILE = VAULT / ".edge-auth-key"
+AUTH_EVENT_LOG = VAULT / "ops" / "auth-events.jsonl"
+PUBLIC_ORIGINS = {"https://vuelos.metislab.work"}
+LOCAL_DEV_HOSTS = {"127.0.0.1:8790", "localhost:8790", "[::1]:8790"}
+PUBLIC_RESOURCES = {
+    "/login.html", "/login.js", "/login.css", "/icons.js", "/robots.txt",
+    "/api/healthz", "/api/whoami",
+}
+LOGIN_CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self'; "
+    "img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
+    "form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+)
+APP_CSP = (
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
+    "connect-src 'self' data: blob: https://server.arcgisonline.com "
+    "https://basemaps.cartocdn.com; worker-src 'self' blob:; "
+    "media-src 'self' blob:; frame-src 'self'; base-uri 'self'; "
+    "form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+)
 VIEWER_ACTIVITY = Path("/tmp/aerobrain-viewer-active")
 VIEWER_ACTIVE_S = 45
 
@@ -59,6 +98,94 @@ VIEWER_ACTIVE_S = 45
 JLOCK = threading.Lock()         # compat: secciones que actualizan detail
 PERF = perfmod.PerfSampler(jobstore)   # panel de performance en vivo (hilo 1Hz solo si alguien mira)
 _CLIENT_ERR_BUDGET = {"n": 0, "reset": 0.0}   # rate-limit global de /api/client_error
+_AUTH_FILE_LOCK = threading.Lock()
+_AUTH_EVENT_LOCK = threading.Lock()
+AUTH_KDF_CONCURRENCY = 2
+AUTH_KDF_SLOTS = threading.BoundedSemaphore(AUTH_KDF_CONCURRENCY)
+EDGE_AUTH_MAX_SKEW_SECONDS = 30
+
+
+def _load_edge_auth_key() -> bytes:
+    """Load the Worker-to-origin HMAC key from an owner-only regular file."""
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(EDGE_AUTH_KEY_FILE, flags)
+        with os.fdopen(fd, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(metadata.st_mode)
+                    or metadata.st_uid != os.getuid()
+                    or metadata.st_mode & 0o077
+                    or not 32 <= metadata.st_size <= 129):
+                return b""
+            value = handle.read(130).strip()
+        return value if 32 <= len(value) <= 128 else b""
+    except OSError:
+        return b""
+
+
+EDGE_AUTH_KEY = _load_edge_auth_key()
+
+
+def safe_next_path(value: str | None) -> str:
+    """Return only a same-origin absolute path suitable for a post-login redirect."""
+    raw = str(value or "")[:2048]
+    if not raw.startswith("/") or raw.startswith("//") or "\r" in raw or "\n" in raw:
+        return "/home.html"
+    parsed = urllib.parse.urlsplit(raw)
+    if parsed.scheme or parsed.netloc or parsed.path == "/login.html":
+        return "/home.html"
+    return urllib.parse.urlunsplit(("", "", parsed.path or "/home.html", parsed.query, parsed.fragment))
+
+
+class LoginRateLimiter:
+    """Small in-memory gate for the one-account login endpoint."""
+
+    def __init__(self, window_seconds=15 * 60, per_ip_limit=5, global_limit=100):
+        self.window_seconds = window_seconds
+        self.per_ip_limit = per_ip_limit
+        self.global_limit = global_limit
+        self._lock = threading.Lock()
+        self._by_ip = {}
+        self._global = []
+
+    def _prune(self, values, now):
+        cutoff = now - self.window_seconds
+        return [stamp for stamp in values if stamp > cutoff]
+
+    def retry_after(self, ip, now=None):
+        now = time.time() if now is None else now
+        with self._lock:
+            active = {}
+            for client_ip, values in self._by_ip.items():
+                attempts = self._prune(values, now)
+                if attempts:
+                    active[client_ip] = attempts
+            self._by_ip = active
+            self._global = self._prune(self._global, now)
+            attempts = self._by_ip.get(ip, [])
+            if len(attempts) >= self.per_ip_limit:
+                return max(1, math.ceil(attempts[0] + self.window_seconds - now))
+            if len(self._global) >= self.global_limit:
+                return max(1, math.ceil(self._global[0] + self.window_seconds - now))
+        return 0
+
+    def failure(self, ip, now=None):
+        now = time.time() if now is None else now
+        with self._lock:
+            self._by_ip.setdefault(ip, []).append(now)
+            self._global.append(now)
+
+    def success(self, ip):
+        with self._lock:
+            self._by_ip.pop(ip, None)
+
+    def reset(self):
+        with self._lock:
+            self._by_ip.clear()
+            self._global.clear()
+
+
+LOGIN_LIMITER = LoginRateLimiter()
 
 
 def mark_viewer_activity():
@@ -195,7 +322,7 @@ def health_status() -> tuple[dict, int]:
             checks[name] = False
 
     try:
-        with sqlite3.connect(jobstore.DB, timeout=2) as c:
+        with closing(sqlite3.connect(jobstore.DB, timeout=2)) as c:
             c.execute("SELECT 1").fetchone()
             active = c.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0]
         checks["jobs_db"] = True
@@ -300,14 +427,158 @@ def _sb_keys():
     return k
 
 
+_SCRYPT_DEFAULTS = {"n": 2 ** 15, "r": 8, "p": 3}
+_OPERATOR_AUTH_MAX_BYTES = 4096
+
+
+def _password_bytes(password) -> bytes | None:
+    value = unicodedata.normalize("NFC", str(password))
+    encoded = value.encode("utf-8")
+    return encoded if 1 <= len(encoded) <= 1024 else None
+
+
+def _derive_scrypt(password: bytes, salt: bytes, *, n: int, r: int, p: int) -> bytes:
+    return hashlib.scrypt(password, salt=salt, n=n, r=r, p=p,
+                          maxmem=64 * 1024 * 1024, dklen=32)
+
+
+def _write_operator_verifier(password: bytes) -> dict:
+    salt = secrets.token_bytes(16)
+    params = dict(_SCRYPT_DEFAULTS)
+    digest = _derive_scrypt(password, salt, **params)
+    record = {
+        "version": 1,
+        "algorithm": "scrypt",
+        **params,
+        "salt": base64.urlsafe_b64encode(salt).decode(),
+        "digest": base64.urlsafe_b64encode(digest).decode(),
+        "created_at": datetime.now(COLOMBIA_TZ).isoformat(timespec="seconds"),
+    }
+    OPERATOR_AUTH_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = OPERATOR_AUTH_FILE.with_name(f".{OPERATOR_AUTH_FILE.name}.{secrets.token_hex(6)}.tmp")
+    data = (json.dumps(record, sort_keys=True) + "\n").encode()
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, OPERATOR_AUTH_FILE)
+        OPERATOR_AUTH_FILE.chmod(0o600)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return record
+
+
+def _decode_verifier_field(value, expected_length: int) -> bytes:
+    if not isinstance(value, str):
+        raise ValueError("campo base64 inválido")
+    try:
+        decoded = base64.b64decode(value, altchars=b"-_", validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("campo base64 inválido") from exc
+    if len(decoded) != expected_length:
+        raise ValueError("longitud criptográfica inválida")
+    return decoded
+
+
+def _read_operator_verifier() -> dict | None:
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(OPERATOR_AUTH_FILE, flags)
+        except FileNotFoundError:
+            if OPERATOR_AUTH_FILE.is_symlink():
+                raise ValueError("verificador enlazado")
+            return None
+        with os.fdopen(fd, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(metadata.st_mode)
+                    or metadata.st_uid != os.getuid()
+                    or metadata.st_mode & 0o077
+                    or metadata.st_size > _OPERATOR_AUTH_MAX_BYTES):
+                raise ValueError("verificador fuera de límites")
+            payload = handle.read(_OPERATOR_AUTH_MAX_BYTES + 1)
+        if len(payload) > _OPERATOR_AUTH_MAX_BYTES:
+            raise ValueError("verificador fuera de límites")
+        record = json.loads(payload)
+        if (not isinstance(record, dict)
+                or type(record.get("version")) is not int
+                or record.get("version") != 1
+                or record.get("algorithm") != "scrypt"
+                or any(type(record.get(name)) is not int
+                       or record.get(name) != expected
+                       for name, expected in _SCRYPT_DEFAULTS.items())):
+            raise ValueError("verificador fuera de política")
+        _decode_verifier_field(record.get("salt"), 16)
+        _decode_verifier_field(record.get("digest"), 32)
+        return record
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {"invalid": True}
+
+
+def _dummy_password_work(password: bytes):
+    _derive_scrypt(password or b"invalid", b"AeroBrain-dummy!", **_SCRYPT_DEFAULTS)
+
+
+def verify_operator_password(password) -> bool:
+    """Verify Daniel's password and migrate the legacy SHA-256 record once."""
+    candidate = _password_bytes(password)
+    if candidate is None:
+        _dummy_password_work(b"invalid")
+        return False
+    with _AUTH_FILE_LOCK:
+        record = _read_operator_verifier()
+        if record and record.get("invalid"):
+            _dummy_password_work(candidate)
+            return False  # fail closed; never fall back around a corrupt verifier
+        if record:
+            try:
+                salt = _decode_verifier_field(record["salt"], 16)
+                expected = _decode_verifier_field(record["digest"], 32)
+                actual = _derive_scrypt(candidate, salt, n=int(record["n"]),
+                                        r=int(record["r"]), p=int(record["p"]))
+                return hmac.compare_digest(actual, expected)
+            except (KeyError, ValueError, TypeError):
+                _dummy_password_work(candidate)
+                return False
+
+        legacy = str(_sb_keys().get("AEROBRAIN_PASS_SHA256", ""))
+        actual_legacy = hashlib.sha256(candidate).hexdigest()
+        if legacy and hmac.compare_digest(actual_legacy, legacy):
+            _write_operator_verifier(candidate)
+            return True
+        _dummy_password_work(candidate)
+        return False
+
+
+def _auth_event(event: str, client_ip: str, **detail):
+    """Append a bounded security event without credentials, tokens, or raw IPs."""
+    try:
+        ip_tag = hmac.new(TOKEN.encode(), str(client_ip).encode(), hashlib.sha256).hexdigest()[:16]
+        row = {"ts": datetime.now(COLOMBIA_TZ).isoformat(timespec="seconds"),
+               "event": event, "client": ip_tag}
+        row.update({k: str(v)[:120] for k, v in detail.items()})
+        with _AUTH_EVENT_LOCK:
+            AUTH_EVENT_LOG.parent.mkdir(parents=True, exist_ok=True)
+            if AUTH_EVENT_LOG.is_file() and AUTH_EVENT_LOG.stat().st_size > 2_000_000:
+                os.replace(AUTH_EVENT_LOG, AUTH_EVENT_LOG.with_suffix(".jsonl.1"))
+            fd = os.open(AUTH_EVENT_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a") as handle:
+                handle.write(json.dumps(row, ensure_ascii=True) + "\n")
+    except OSError:
+        pass
+
+
 def semantic_search(q: str, k: int = 12) -> dict:
     """Embeds la consulta (OpenAI, server-side) y pide a Supabase los vuelos más
     parecidos vía el RPC match_flights. La OpenAI key NUNCA toca el frontend."""
     keys = _sb_keys()
     url = keys.get("SUPABASE_DRONE_URL", "").rstrip("/")
-    pub = keys.get("SUPABASE_DRONE_PUBLISHABLE_KEY", "")
+    secret = (keys.get("SUPABASE_DRONE_SECRET_KEY", "")
+              or keys.get("SUPABASE_DRONE_SERVICE_KEY", ""))
     oa = keys.get("OPENAI_API_KEY", "")
-    if not (url and pub and oa):
+    if not (url and secret and oa):
         return {"error": "Supabase/OpenAI no configurados", "results": []}
     er = urllib.request.Request("https://api.openai.com/v1/embeddings",
         data=json.dumps({"model": "text-embedding-3-small", "input": q[:400]}).encode(),
@@ -315,7 +586,8 @@ def semantic_search(q: str, k: int = 12) -> dict:
     vec = json.loads(urllib.request.urlopen(er, timeout=30).read())["data"][0]["embedding"]
     rr = urllib.request.Request(f"{url}/rest/v1/rpc/match_flights",
         data=json.dumps({"query": vec, "k": k}).encode(),
-        headers={"apikey": pub, "Authorization": f"Bearer {pub}", "Content-Type": "application/json"})
+        headers={"apikey": secret, "Authorization": f"Bearer {secret}",
+                 "Content-Type": "application/json"})
     return {"results": json.loads(urllib.request.urlopen(rr, timeout=30).read())}
 
 
@@ -2018,14 +2290,124 @@ def gpu_node_wake() -> dict:
 
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    server_version = "AeroBrain"
+    sys_version = ""
 
     def log_message(self, *a):
         pass
 
     def end_headers(self):
         if self.headers.get("CF-Connecting-IP") or self.headers.get("CF-Ray"):
-            self.send_header("Strict-Transport-Security", "max-age=31536000")
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("X-Robots-Tag", "noindex, nofollow, noarchive")
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.send_header("Permissions-Policy",
+                         "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()")
         super().end_headers()
+
+    def _request_path(self) -> str:
+        return urllib.parse.urlparse(self.path).path
+
+    def _client_ip(self) -> str:
+        candidate = self.headers.get("CF-Connecting-IP") or self.client_address[0]
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            return "invalid"
+
+    def _is_public_resource(self) -> bool:
+        return self._request_path() in PUBLIC_RESOURCES
+
+    def _auth_context(self) -> dict | None:
+        context = None
+        if self._is_local():
+            context = {"kind": "dev", "user_id": OPERATOR_ID}
+        else:
+            session_token = self._presented_session_token()
+            info = jobstore.session_info(session_token)
+            if info and info.get("user_id") == OPERATOR_ID:
+                context = {"kind": "session", "session_token": session_token, **info}
+        return context
+
+    def _session_payload(self, context: dict) -> dict:
+        expiry = context.get("expiry")
+        expires_in = (max(0, min(SESSION_TTL_SECONDS, math.ceil(expiry - time.time())))
+                      if expiry else None)
+        return {
+            "ok": True,
+            "user": {"id": OPERATOR_ID, "name": OPERATOR_NAME},
+            "dev_mode": context.get("kind") == "dev",
+            "expires_at": (datetime.fromtimestamp(expiry, COLOMBIA_TZ).isoformat(timespec="seconds")
+                           if expiry else None),
+            "expires_in_seconds": expires_in,
+            "timezone": "America/Bogota",
+        }
+
+    def _csrf_ok(self) -> bool:
+        site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+        if site and site != "same-origin":
+            return False
+        origin = (self.headers.get("Origin") or "").rstrip("/")
+        if origin and origin not in PUBLIC_ORIGINS:
+            return False
+        if site == "same-origin" or origin in PUBLIC_ORIGINS:
+            return True
+        return hmac.compare_digest(self.headers.get("X-AeroBrain-CSRF", ""), "1")
+
+    def _document_request(self) -> bool:
+        path = self._request_path()
+        return (path == "/" or path.endswith(".html")
+                or self.headers.get("Sec-Fetch-Dest", "").lower() == "document")
+
+    def _redirect_to_login(self):
+        next_path = safe_next_path(self.path)
+        location = "/login.html?" + urllib.parse.urlencode({"next": next_path})
+        self.send_response(303)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
+        self.end_headers()
+
+    def _send_unauthorized(self):
+        self.send_json({"error": "autenticación requerida"}, 401)
+
+    def _require_read_access(self) -> bool:
+        if self._is_public_resource():
+            return True
+        if self._auth_context():
+            return True
+        if self._document_request():
+            self._redirect_to_login()
+        else:
+            self._send_unauthorized()
+        return False
+
+    def enforce_external_host(self) -> bool:
+        """Keep the browser session on one trusted host and reject Host confusion."""
+        if not (self.headers.get("CF-Connecting-IP") or self.headers.get("CF-Ray")):
+            return False
+        host = (self.headers.get("Host") or "").split(":", 1)[0].lower().rstrip(".")
+        if host == "www.metislab.work":
+            self.send_response(308)
+            self.send_header("Location", f"https://vuelos.metislab.work{self.path}")
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
+            self.end_headers()
+            return True
+        if host != "vuelos.metislab.work":
+            self.send_response(421)
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
+            self.end_headers()
+            return True
+        return False
 
     def redirect_external_http(self) -> bool:
         if not (self.headers.get("CF-Connecting-IP") or self.headers.get("CF-Ray")):
@@ -2040,7 +2422,8 @@ class H(BaseHTTPRequestHandler):
         self.send_response(308)
         self.send_header("Location", f"https://{host}{self.path}")
         self.send_header("Content-Length", "0")
-        self.send_header("Cache-Control", "public, max-age=3600")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
         self.end_headers()
         return True
 
@@ -2050,6 +2433,15 @@ class H(BaseHTTPRequestHandler):
         p = urllib.parse.unquote(p)
         if p == "/":
             p = "/home.html"
+        if p == "/api/raw_video":
+            # 4K original bajo sesión: /data/raw/ sigue vetado (denylist), pero el
+            # original SÍ se puede ver autenticado — mismo pipeline Range de abajo.
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            cid = (q.get("clip") or [""])[0]
+            if not re.fullmatch(r"[A-Za-z0-9_\-]{4,64}", cid):
+                return None
+            raw = find_raw(cid)
+            return raw if raw and raw.is_file() else None
         if p.startswith("/supersplat"):
             # editor SuperSplat (MIT, build local en splat/supersplat/dist) — post-pro de splats
             base = SUPERSPLAT.resolve()
@@ -2074,24 +2466,32 @@ class H(BaseHTTPRequestHandler):
         return f if f.is_file() else None
 
     def do_GET(self):
+        if self.enforce_external_host():
+            return
         if self.redirect_external_http():
             return
-        if self.path.startswith("/api/healthz"):
+        path = self._request_path()
+        if path == "/api/healthz":
             body, code = health_status()
-            if not (self._is_local() or self.headers.get("X-Token", "") == TOKEN or self.session_ok()):
+            if not self._auth_context():
                 body = {"ok": body["ok"], "ts": body["ts"]}
             return self.send_json(body, code)
-        if self.path.startswith("/api/whoami"):
-            if self._is_local() or self.headers.get("X-Token", "") == TOKEN or self.session_ok():
-                return self.send_json({"ok": True, "local": self._is_local()})
-            return self.send_json({"ok": False}, 403)
+        if path == "/api/whoami":
+            context = self._auth_context()
+            return (self.send_json(self._session_payload(context)) if context
+                    else self.send_json({"ok": False}, 401))
+        if path == "/login.html" and self._auth_context():
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            target = safe_next_path((query.get("next") or [""])[0])
+            self.send_response(303)
+            self.send_header("Location", target)
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
+        if not self._require_read_access():
+            return
         if self.path.startswith("/api/viewer_ping"):
-            # Sec-Fetch-Site OBLIGATORIA y del propio sitio: todos los navegadores la mandan
-            # en fetch(); antes un `site` vacío (curl remoto) pasaba y cualquiera podía mantener
-            # ODM en 7 cores y OpenSplat en background 24/7 pingueando gratis. Local exento (tests).
-            site = (self.headers.get("Sec-Fetch-Site") or "").lower()
-            if not (self._is_local() or site in ("same-origin", "same-site")):
-                return self.send_json({"ok": False}, 403)
             mark_viewer_activity()
             return self.send_json({"ok": True})
         if self.path.startswith("/api/gpu_node"):
@@ -2308,6 +2708,8 @@ class H(BaseHTTPRequestHandler):
                                  if src.suffix.lower() == ".dng" else "image/jpeg")
                 self.send_header("Content-Length", str(len(data)))
                 self.send_header("Content-Disposition", f'attachment; filename="{src.name}"')
+                self.send_header("Cache-Control", "private, no-store")
+                self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(data)
                 return
@@ -2337,7 +2739,8 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "public, max-age=604800")
+            self.send_header("Cache-Control", "private, no-cache")
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
             return
@@ -2370,13 +2773,12 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(payload)))
-            self.send_header("Cache-Control", "no-store, must-revalidate")
-            self.send_header("Content-Security-Policy",
-                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "
-                "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
-                "connect-src 'self' data: blob: https://server.arcgisonline.com https://basemaps.cartocdn.com; "
-                "worker-src 'self' blob:; media-src 'self' blob:; frame-src 'self'; frame-ancestors 'none'")
-            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cache-Control", "private, no-store")
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
+            if f.name == "login.html":
+                self.send_header("Content-Security-Policy", LOGIN_CSP)
+            else:
+                self.send_header("Content-Security-Policy", APP_CSP)
             self.end_headers()
             try:
                 self.wfile.write(payload)
@@ -2397,7 +2799,10 @@ class H(BaseHTTPRequestHandler):
         # serviría stale; no-store re-bajaría MBs en cada visita. 304 = lo mejor de ambos.
         # los bundles de SuperSplat (23MB dist) solo cambian al rebuildear: 304 también.
         # imágenes bajo models/ (vt*/ortho/dsm) cambian en re-procesado → revalidan, no 24h stale
+        public_asset = self._is_public_resource()
         revalidate, cache_header = static_cache_policy(f, self.path)
+        if not public_asset:
+            revalidate, cache_header = True, "private, no-cache"
         mtime = int(f.stat().st_mtime)
         if revalidate and not rng:
             ims = self.headers.get("If-Modified-Since")
@@ -2409,7 +2814,9 @@ class H(BaseHTTPRequestHandler):
                 if mtime <= since:
                     self.send_response(304)
                     self.send_header("Last-Modified", formatdate(mtime, usegmt=True))
-                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Cache-Control", cache_header)
+                    if not public_asset:
+                        self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
                     self.end_headers()
                     return
         # sidecar .gz pre-comprimido (nube/malla): Content-Encoding gzip transparente.
@@ -2423,6 +2830,8 @@ class H(BaseHTTPRequestHandler):
             if revalidate:
                 self.send_header("Last-Modified", formatdate(mtime, usegmt=True))
             self.send_header("Cache-Control", cache_header)
+            if not public_asset:
+                self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
             self.end_headers()
             with open(gz, "rb") as fh:
                 while chunk := fh.read(1 << 19):
@@ -2462,6 +2871,8 @@ class H(BaseHTTPRequestHandler):
         if revalidate:
             self.send_header("Last-Modified", formatdate(mtime, usegmt=True))
         self.send_header("Cache-Control", cache_header)
+        if not public_asset:
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
         if f.suffix == ".html":
             # SuperSplat vive embebido en un iframe de splatlab.html (mismo origen)
             anc = "'self'" if str(f).startswith(str(SUPERSPLAT)) else "'none'"
@@ -2491,11 +2902,13 @@ class H(BaseHTTPRequestHandler):
             return
 
     def do_HEAD(self):
+        if self.enforce_external_host():
+            return
         if self.redirect_external_http():
             return
-        if self.path.startswith("/api/healthz"):
+        if self._request_path() == "/api/healthz":
             body, code = health_status()
-            if not (self._is_local() or self.headers.get("X-Token", "") == TOKEN or self.session_ok()):
+            if not self._auth_context():
                 body = {"ok": body["ok"], "ts": body["ts"]}
             payload = json.dumps(body).encode()
             self.send_response(code)
@@ -2503,6 +2916,8 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(payload)))
             self.send_header("Cache-Control", "no-store, must-revalidate")
             self.end_headers()
+            return
+        if not self._require_read_access():
             return
         f = self.resolve()
         if not f:
@@ -2512,18 +2927,25 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(payload)))
-            self.send_header("Cache-Control", "no-store, must-revalidate")
-            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cache-Control", "private, no-store")
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
+            self.send_header("Content-Security-Policy",
+                             LOGIN_CSP if f.name == "login.html" else APP_CSP)
             self.end_headers()
             return
         gz = Path(str(f) + ".gz")
+        public_asset = self._is_public_resource()
         revalidate, cache_header = static_cache_policy(f, self.path)
+        if not public_asset:
+            revalidate, cache_header = True, "private, no-cache"
         self.send_response(200)
         self.send_header("Accept-Ranges", "bytes")
         # espejo del GET: binarios 3D anuncian validador para el caché condicional
         if revalidate:
             self.send_header("Last-Modified", formatdate(int(f.stat().st_mtime), usegmt=True))
         self.send_header("Cache-Control", cache_header)
+        if not public_asset:
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
         if gz.is_file() and "gzip" in self.headers.get("Accept-Encoding", ""):
             # espejo exacto de lo que GET va a servir (audit: HEAD mentia el tamano)
             self.send_header("Content-Encoding", "gzip")
@@ -2541,36 +2963,58 @@ class H(BaseHTTPRequestHandler):
                 return v
         return ""
 
+    def _edge_session_token(self) -> str:
+        if (not EDGE_AUTH_KEY
+                or not (self.headers.get("CF-Connecting-IP") or self.headers.get("CF-Ray"))):
+            return ""
+        session_token = self.headers.get("X-AeroBrain-Edge-Session", "")
+        timestamp_text = self.headers.get("X-AeroBrain-Edge-Time", "")
+        signature = self.headers.get("X-AeroBrain-Edge-Signature", "")
+        if (not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", session_token)
+                or not re.fullmatch(r"\d{10}", timestamp_text)
+                or not re.fullmatch(r"[0-9a-f]{64}", signature)):
+            return ""
+        timestamp = int(timestamp_text)
+        if abs(time.time() - timestamp) > EDGE_AUTH_MAX_SKEW_SECONDS:
+            return ""
+        message = (f"{timestamp_text}\n{self.command.upper()}\n"
+                   f"{self._request_path()}\n{session_token}").encode()
+        expected = hmac.new(EDGE_AUTH_KEY, message, hashlib.sha256).hexdigest()
+        return session_token if hmac.compare_digest(signature, expected) else ""
+
+    def _presented_session_token(self) -> str:
+        return self._cookie(SESSION_COOKIE) or self._edge_session_token()
+
     def _is_local(self) -> bool:
-        # El server bindea 127.0.0.1 y sólo se expone al mundo por Cloudflare
-        # Tunnel, que estampa CF-Connecting-IP/CF-Ray en requests externos.
-        # Además bloqueamos browser-CSRF desde páginas externas hacia localhost:
-        # agentes/curl no mandan Sec-Fetch-Site; la UI local manda same-origin.
+        # Dev mode is a loopback capability, not "absence of a Cloudflare header".
+        # Host/origin/fetch checks close DNS-rebinding and browser-to-localhost paths.
         if self.headers.get("CF-Connecting-IP") or self.headers.get("CF-Ray"):
             return False
-        host, _ = self.client_address
-        if host not in ("127.0.0.1", "::1"):
+        try:
+            if not ipaddress.ip_address(self.client_address[0]).is_loopback:
+                return False
+        except ValueError:
+            return False
+        if (self.headers.get("Host") or "").lower() not in LOCAL_DEV_HOSTS:
+            return False
+        if any(self.headers.get(name) for name in
+               ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "Via")):
             return False
         site = (self.headers.get("Sec-Fetch-Site") or "").lower()
-        if site and site not in ("same-origin", "same-site", "none"):
+        if site and site not in ("same-origin", "none"):
             return False
-        origin = self.headers.get("Origin") or ""
-        if origin and not (origin.startswith("http://127.0.0.1:8790") or
-                           origin.startswith("http://localhost:8790")):
+        origin = (self.headers.get("Origin") or "").rstrip("/")
+        if origin and origin not in ("http://127.0.0.1:8790", "http://localhost:8790"):
             return False
         return True
 
     def session_ok(self) -> bool:
-        return jobstore.session_valid(self._cookie("ab_s"))
+        return jobstore.session_valid(self._cookie(SESSION_COOKIE))
 
     def auth(self, q=None):
-        # agentes locales (mismo Mac): acceso sin fricción para test/automatización
-        if self._is_local():
+        if self._auth_context():
             return True
-        # externos (vía túnel): header X-Token o cookie de sesión; query tokens NO
-        if self.headers.get("X-Token", "") == TOKEN or self.session_ok():
-            return True
-        self.send_json({"error": "auth requerida (header X-Token o sesión)"}, 403)
+        self._send_unauthorized()
         return False
 
     def read_json(self, max_bytes=1_000_000):
@@ -2579,21 +3023,45 @@ class H(BaseHTTPRequestHandler):
             raise ValueError(f"body inválido ({n} bytes)")
         return json.loads(self.rfile.read(n))
 
-    def send_json(self, obj, code=200):
+    def discard_body(self, max_bytes=4096):
+        """Consume an optional bounded body before keeping HTTP/1.1 alive."""
+        n = int(self.headers.get("Content-Length", 0))
+        if n < 0 or n > max_bytes:
+            raise ValueError(f"body inválido ({n} bytes)")
+        if n:
+            self.rfile.read(n)
+
+    def send_json(self, obj, code=200, extra_headers=None):
         body = json.dumps(obj).encode()
         try:
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store, must-revalidate")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
+            for name, value in (extra_headers or {}).items():
+                self.send_header(name, value)
             self.end_headers()
-            self.wfile.write(body)
+            if self.command != "HEAD":
+                self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
             pass  # cliente se fue; nada que enviar
 
     def do_POST(self):
+        if self.enforce_external_host():
+            return
         if self.redirect_external_http():
             return
+        path = self._request_path()
+        if path == "/api/login":
+            if not self._csrf_ok():
+                return self.send_json({"error": "solicitud no permitida"}, 403)
+        else:
+            context = self._auth_context()
+            if not context:
+                return self._send_unauthorized()
+            if context.get("kind") == "session" and not self._csrf_ok():
+                return self.send_json({"error": "solicitud no permitida"}, 403)
         try:
             self._post()
         except (ValueError, json.JSONDecodeError):
@@ -2625,36 +3093,68 @@ class H(BaseHTTPRequestHandler):
                 body = self.read_json(4096)
             except Exception:
                 return self.send_json({"error": "body inválido"}, 400)
-            ok = False
-            if body.get("token"):
-                ok = str(body["token"]) == TOKEN
-            elif body.get("user") and body.get("password") is not None:
-                import hashlib
-                env = _sb_keys()
-                u_ok = str(body["user"]).strip().lower() == env.get("AEROBRAIN_USER", "").strip().lower()
-                p_ok = (hashlib.sha256(str(body["password"]).encode()).hexdigest()
-                        == env.get("AEROBRAIN_PASS_SHA256", ""))
-                ok = u_ok and p_ok
+            if not isinstance(body, dict):
+                return self.send_json({"error": "body inválido"}, 400)
+            client_ip = self._client_ip()
+            retry_after = LOGIN_LIMITER.retry_after(client_ip)
+            if retry_after:
+                _auth_event("login_throttled", client_ip, retry_after=retry_after)
+                return self.send_json({"error": "inicio de sesión temporalmente limitado"}, 429,
+                                      {"Retry-After": str(retry_after)})
+            user = str(body.get("user", "")).strip().lower()
+            if not AUTH_KDF_SLOTS.acquire(blocking=False):
+                _auth_event("login_capacity_limited", client_ip)
+                return self.send_json({"error": "inicio de sesión temporalmente limitado"}, 429,
+                                      {"Retry-After": "2"})
+            try:
+                password_ok = verify_operator_password(body.get("password", ""))
+            finally:
+                AUTH_KDF_SLOTS.release()
+            user_ok = hmac.compare_digest(user, OPERATOR_ID)
+            ok = user_ok and password_ok
             if not ok:
-                time.sleep(1)  # frena fuerza bruta
-                return self.send_json({"error": "credenciales inválidas"}, 403)
-            jobstore.session_delete(self._cookie("ab_s"))  # rota el id viejo
-            sid = jobstore.session_create(30)
-            body_out = json.dumps({"ok": True}).encode()
+                LOGIN_LIMITER.failure(client_ip)
+                _auth_event("login_failed", client_ip)
+                return self.send_json({"error": "credenciales inválidas"}, 401)
+            LOGIN_LIMITER.success(client_ip)
+            jobstore.session_delete(self._presented_session_token())
+            jobstore.session_delete(self._cookie(LEGACY_SESSION_COOKIE))
+            sid = jobstore.session_create()
+            info = jobstore.session_info(sid)
+            payload = self._session_payload({"kind": "session", **info})
+            body_out = json.dumps(payload).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
             self.send_header("Set-Cookie",
-                             f"ab_s={sid}; Path=/; Max-Age={30*86400}; HttpOnly; SameSite=Strict; Secure")
+                             f"{LEGACY_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
+            self.send_header("Set-Cookie",
+                             f"{SESSION_COOKIE}={sid}; Path=/; Max-Age={SESSION_TTL_SECONDS}; "
+                             f"Expires={formatdate(info['expiry'], usegmt=True)}; "
+                             "HttpOnly; SameSite=Strict; Secure; Priority=High")
             self.send_header("Content-Length", str(len(body_out)))
             self.end_headers()
             self.wfile.write(body_out)
+            _auth_event("login_succeeded", client_ip)
             return
         if u.path == "/api/logout":
-            jobstore.session_delete(self._cookie("ab_s"))
+            self.discard_body(4096)
+            client_ip = self._client_ip()
+            context = self._auth_context() or {}
+            jobstore.session_delete(context.get("session_token") or self._presented_session_token())
+            jobstore.session_delete(self._cookie(LEGACY_SESSION_COOKIE))
             self.send_response(200)
-            self.send_header("Set-Cookie", "ab_s=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
+            self.send_header("Set-Cookie",
+                             f"{LEGACY_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
+            self.send_header("Set-Cookie",
+                             f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
+            self.send_header("Clear-Site-Data", '"cache", "cookies", "storage"')
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
             self.send_header("Content-Length", "0")
             self.end_headers()
+            _auth_event("logout", client_ip)
             return
         if u.path == "/api/job_cancel":
             if not self.auth(q):
@@ -3386,9 +3886,9 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self.send_json({"error": f"DeepSeek no disponible: {e}"}, 502)
         if u.path == "/api/client_error":
-            # errores JS del frontend → registro central. Sin auth (los reporta también la
-            # página pública), pero: mismo-origen obligatorio + presupuesto global 60/h
-            # (un abusador no puede inflar el log ni gastar disco).
+            # errores JS del frontend → registro central. El gate POST central ya exige
+            # sesión/token/dev; además validamos mismo-origen y un presupuesto global 60/h
+            # para que una pestaña rota no infle el log ni gaste disco.
             site = (self.headers.get("Sec-Fetch-Site") or "").lower()
             if not (self._is_local() or site in ("same-origin", "same-site")):
                 return self.send_json({"ok": False}, 403)
@@ -3562,6 +4062,29 @@ class H(BaseHTTPRequestHandler):
             if not mf.exists():
                 return self.send_json({"error": "clip no existe"}, 404)
             m = read_json_file(mf)
+            if spec.get("delete") is True:
+                # borrado REVERSIBLE: todos los artefactos del clip van a trash/clips/<cid>/
+                # (raw+SRT incluidos) — nada se destruye; restaurar = mover de vuelta + rescan
+                tdir = VAULT / "trash" / "clips" / cid
+                tdir.mkdir(parents=True, exist_ok=True)
+                moved = []
+                artifacts = [mf,
+                             VAULT / "thumbs" / f"{cid}.jpg",
+                             VAULT / "proxies" / f"{cid}.mp4",
+                             VAULT / "proxies720" / f"{cid}.mp4",
+                             VAULT / "tracks" / f"{cid}.flight.json",
+                             VAULT / "ai" / f"{cid}.json",
+                             *(VAULT / "raw").rglob(f"{cid}.*")]
+                for a in artifacts:
+                    if a.is_file():
+                        shutil.move(str(a), str(tdir / a.name))
+                        moved.append(a.name)
+                fdir = VAULT / "frames" / cid
+                if fdir.is_dir():
+                    shutil.move(str(fdir), str(tdir / "frames"))
+                    moved.append("frames/")
+                rebuild_index()
+                return self.send_json({"ok": True, "moved": moved})
             if "label" in spec:
                 m["label"] = str(spec["label"])[:80]     # sin cap, un body de 1MB entraba al flights.json público
             if "archived" in spec:
@@ -3569,6 +4092,38 @@ class H(BaseHTTPRequestHandler):
             mf.write_text(json.dumps(m, indent=1))
             rebuild_index()
             return self.send_json({"ok": True})
+        if u.path == "/api/trip_meta":
+            # nombre + carátula por lugar (key = "lat,lon" a 2 decimales) — server-side
+            # para que sincronice entre dispositivos (antes: localStorage, solo un browser)
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            key = str(spec.get("key", ""))
+            if not re.fullmatch(r"-?\d{1,3}\.\d{2},-?\d{1,3}\.\d{2}", key):
+                return self.send_json({"error": "key inválida"}, 400)
+            tm_file = VAULT / "manifest" / "trips_meta.json"
+            try:
+                tm = json.loads(tm_file.read_text()) if tm_file.exists() else {}
+            except ValueError:
+                tm = {}
+            entry = tm.get(key, {})
+            if "name" in spec:
+                name = str(spec["name"]).strip()[:60]
+                if name:
+                    entry["name"] = name
+                else:
+                    entry.pop("name", None)     # vacío = volver al nombre automático
+            if "cover" in spec:
+                cover = re.sub(r"[^\w-]", "", str(spec["cover"]))
+                if cover:
+                    entry["cover"] = cover
+                else:
+                    entry.pop("cover", None)    # vacío = volver a la mejor por score AI
+            tm[key] = entry
+            if not entry:
+                tm.pop(key, None)
+            tm_file.write_text(json.dumps(tm, indent=1))
+            return self.send_json({"ok": True, "meta": tm.get(key, {})})
         if u.path == "/api/rescan":
             if not self.auth(q):
                 return

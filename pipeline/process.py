@@ -92,18 +92,20 @@ def process_clip(mp4: Path) -> dict:
     run_ffmpeg(["-ss", str(duration * 0.25), "-i", str(mp4),
                 "-frames:v", "1", "-vf", "scale=-2:540", "-q:v", "7", str(thumb)])   # 540p q7 ≈ 85KB (720p q3 eran 300KB+ por tarjeta: 14MB el grid en celular)
 
-    if tier == "full":
-        proxy = VAULT / "proxies" / f"{cid}.mp4"
-        make_proxy(mp4, proxy, has_audio)
-        meta["proxy_bytes"] = proxy.stat().st_size
-        (VAULT / "proxies720").mkdir(exist_ok=True)
-        p720 = VAULT / "proxies720" / f"{cid}.mp4"
-        make_proxy_720(proxy, p720, has_audio)   # desde el 1080 ya decodificado: rapido
-        meta["proxy720_bytes"] = p720.stat().st_size
+    # Proxies para TODOS los tiers: el tier limitaba proxies por la cuota R2 de 10GB,
+    # pero hoy el video se sirve local desde el vault — sin proxy el player queda negro
+    # (el raw es HEVC Main10, no universal, y /data/raw está vetado por seguridad).
+    proxy = VAULT / "proxies" / f"{cid}.mp4"
+    make_proxy(mp4, proxy, has_audio)
+    meta["proxy_bytes"] = proxy.stat().st_size
+    (VAULT / "proxies720").mkdir(exist_ok=True)
+    p720 = VAULT / "proxies720" / f"{cid}.mp4"
+    make_proxy_720(proxy, p720, has_audio)   # desde el 1080 ya decodificado: rapido
+    meta["proxy720_bytes"] = p720.stat().st_size
 
     if tier in ("full", "standard"):
-        # decode the 1080p proxy when it exists — 4K60 HEVC decode is the bottleneck
-        src = VAULT / "proxies" / f"{cid}.mp4" if tier == "full" else mp4
+        # decode the 1080p proxy — 4K60 HEVC decode is the bottleneck
+        src = proxy
         fdir = VAULT / "frames" / cid
         fdir.mkdir(parents=True, exist_ok=True)
         run_ffmpeg(["-i", str(src), "-vf", "fps=1/2,scale=960:-2",

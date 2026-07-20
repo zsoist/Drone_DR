@@ -31,6 +31,12 @@ main.innerHTML = `
     const r = await fetch(`${DATA}/ai/trips.json`);
     if (r.ok) diaries = await r.json();
   } catch {}
+  // meta por lugar (nombre + carátula) — server-side: sincroniza entre dispositivos
+  let tripsMeta = {};
+  try {
+    const r = await fetch(`${DATA}/manifest/trips_meta.json`);
+    if (r.ok) tripsMeta = await r.json();
+  } catch {}
 
   // ---------- clusters de ciudad (~30 km) ----------
   const clusters = [];
@@ -45,15 +51,20 @@ main.innerHTML = `
     c.flights.push(f);
   });
   clusters.forEach(c => {
-    const saved = localStorage.getItem(`ab.city.${c.lat.toFixed(2)},${c.lon.toFixed(2)}`);
-    const near = CITIES.map(([n, la, lo]) => [n, havKm(c.lat, c.lon, la, lo)]).sort((a, b) => a[1] - b[1])[0];
     c.key = `${c.lat.toFixed(2)},${c.lon.toFixed(2)}`;
-    c.name = saved || (near && near[1] < 30 ? near[0] : `Zona ${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}`);
+    const srv = tripsMeta[c.key] || {};
+    const saved = localStorage.getItem(`ab.city.${c.key}`);
+    const near = CITIES.map(([n, la, lo]) => [n, havKm(c.lat, c.lon, la, lo)]).sort((a, b) => a[1] - b[1])[0];
+    // prioridad: server > localStorage (legado; se migra al server al abrir) > ciudad conocida > Zona
+    c.name = srv.name || saved || (near && near[1] < 30 ? near[0] : `Zona ${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}`);
+    if (!srv.name && saved) api('/api/trip_meta', { key: c.key, name: saved }).catch(() => {});
     c.dates = [...new Set(c.flights.map(f => f.date))].sort();
     c.dist = c.flights.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
     c.dur = c.flights.reduce((a, f) => a + (f.duration_s || 0), 0);   // duration_s ausente → 0, no NaN
     c.alt = Math.max(0, ...c.flights.map(f => f.stats.max_rel_alt_m || 0));
     c.best = [...c.flights].sort((a, b) => (ai[b.clip_id]?.travel_score || 0) - (ai[a.clip_id]?.travel_score || 0))[0];
+    // carátula: elección manual (si el clip sigue en el cluster) gana sobre la mejor por AI
+    c.cover = c.flights.find(f => f.clip_id === srv.cover) || c.best;
     c.score = ai[c.best?.clip_id]?.travel_score || 0;
   });
   clusters.sort((a, b) => b.flights.length - a.flights.length);
@@ -82,7 +93,7 @@ main.innerHTML = `
     el.innerHTML = clusters.map((c, i) => `
       <div class="city-card" data-city="${esc(c.key)}" style="animation-delay:${i * 70}ms">
         <div class="cc-cover">
-          <img src="${DATA}/thumbs/${esc(c.best?.clip_id || '')}.jpg" loading="lazy" alt="">
+          <img src="${DATA}/thumbs/${esc(c.cover?.clip_id || '')}.jpg" loading="lazy" alt="">
           <img class="cc-tile" src="${tileURL(c)}" loading="lazy" alt="" data-tip="Vista satelital de la zona">
           <div class="cc-shade"></div>
           <h2>${esc(c.name)}</h2>
@@ -97,6 +108,7 @@ main.innerHTML = `
           <span data-tip="Altura máxima alcanzada">${icon('mountain')} ${Math.round(c.alt)} m</span>
           <span class="spacer" style="flex:1"></span>
           <button class="btn" data-postal="${esc(c.key)}" data-tip="Genera una postal PNG del lugar">${icon('dl')}</button>
+          <button class="btn" data-cover-city="${esc(c.key)}" data-tip="Elegir la foto de portada">${icon('iso')}</button>
           <button class="btn" data-rename-city="${esc(c.key)}" data-tip="Renombrar este lugar">${icon('tag')}</button>
         </div>
       </div>`).join('') ||
@@ -225,7 +237,7 @@ main.innerHTML = `
     btn.innerHTML = '…';
     try {
       const img = new Image();
-      await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = `${DATA}/thumbs/${c.best.clip_id}.jpg`; });
+      await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = `${DATA}/thumbs/${(c.cover || c.best).clip_id}.jpg`; });
       const cv = document.createElement('canvas');
       cv.width = 1080;
       cv.height = 1350;                                       // 4:5 para redes
@@ -260,6 +272,67 @@ main.innerHTML = `
     btn.innerHTML = orig; btn._busy = false;
   }
 
+  // ---------- renombrar lugar (server-side, sincroniza entre dispositivos) ----------
+  function renameCity(c) {
+    const ov = document.createElement('div');
+    ov.className = 'modal-ov';
+    ov.innerHTML = `<div class="modal" style="max-width:420px">
+      <div class="modal-h"><b>${icon('tag')} Renombrar lugar</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+      <div class="modal-b">
+        <div class="tool-row">
+          <input class="m-ipt" id="tm-name" style="flex:1" maxlength="60" value="${esc(c.name)}">
+          <button class="btn primary" id="tm-save">Guardar</button>
+        </div>
+        <p class="footer-note" style="margin-top:8px">El nombre se guarda en el servidor: lo verás igual en el iPhone, iPad y desktop.</p>
+      </div></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) ov.remove(); });
+    const save = async () => {
+      const name = ov.querySelector('#tm-name').value.trim();
+      if (!name) return;
+      await api('/api/trip_meta', { key: c.key, name });
+      localStorage.setItem(`ab.city.${c.key}`, name);   // cache local por si el fetch server falla
+      c.name = name;
+      ov.remove();
+      renderCities();
+    };
+    ov.querySelector('#tm-save').addEventListener('click', save);
+    ov.querySelector('#tm-name').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+    setTimeout(() => { const i = ov.querySelector('#tm-name'); i.focus(); i.select(); }, 60);
+  }
+
+  // ---------- elegir carátula (grid de thumbs del lugar) ----------
+  function pickCover(c) {
+    const ov = document.createElement('div');
+    ov.className = 'modal-ov';
+    const sorted = [...c.flights].sort((a, b) =>
+      (ai[b.clip_id]?.travel_score || 0) - (ai[a.clip_id]?.travel_score || 0));
+    ov.innerHTML = `<div class="modal" style="max-width:560px">
+      <div class="modal-h"><b>${icon('iso')} Portada de ${esc(c.name)}</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+      <div class="modal-b">
+        <div class="mflights" style="max-height:340px">
+          ${sorted.map(f => `
+            <div class="mflight ${f.clip_id === c.cover?.clip_id ? 'on' : ''}" data-pick="${esc(f.clip_id)}">
+              <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">
+              <div class="mf-t"><b>${esc(f.label || `${fmt.date(f.date)} · ${f.time || ''}`)}</b>
+                <span>${fmt.dur(f.duration_s)}${ai[f.clip_id]?.travel_score ? ` · ${ai[f.clip_id].travel_score}/10 AI` : ''}</span></div>
+            </div>`).join('')}
+        </div>
+        <p class="footer-note" style="margin-top:10px">Se guarda en el servidor. La estrella AI seguirá eligiendo si borras la elección manual.</p>
+      </div></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', async e => {
+      if (e.target === ov || e.target.closest('.modal-x')) { ov.remove(); return; }
+      const row = e.target.closest('[data-pick]');
+      if (!row) return;
+      const cid2 = row.dataset.pick;
+      await api('/api/trip_meta', { key: c.key, cover: cid2 });
+      c.cover = c.flights.find(f => f.clip_id === cid2) || c.cover;
+      ov.remove();
+      renderCities();
+    });
+  }
+
   // ---------- interacciones ----------
   main.addEventListener('click', e => {
     const pb = e.target.closest('[data-postal]');
@@ -267,13 +340,13 @@ main.innerHTML = `
     const rb = e.target.closest('[data-rename-city]');
     if (rb) {
       e.stopPropagation();
-      const c = clusters.find(x => x.key === rb.dataset.renameCity);
-      const name = prompt('Nombre de este lugar:', c.name);
-      if (name?.trim()) {
-        localStorage.setItem(`ab.city.${c.key}`, name.trim());
-        c.name = name.trim();
-        renderCities();
-      }
+      renameCity(clusters.find(x => x.key === rb.dataset.renameCity));
+      return;
+    }
+    const cv = e.target.closest('[data-cover-city]');
+    if (cv) {
+      e.stopPropagation();
+      pickCover(clusters.find(x => x.key === cv.dataset.coverCity));
       return;
     }
     const cc = e.target.closest('[data-city]');

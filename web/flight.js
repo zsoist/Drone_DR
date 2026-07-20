@@ -23,6 +23,11 @@ const cid = new URLSearchParams(location.search).get('id');
     has3D = (sy.models || []).some(m => m.clip_id === cid);
   } catch {}
 
+  // HEVC Main10 (los raw DJI): solo ofrecer 4K si este navegador lo decodifica
+  // (Safari y Chrome/Apple Silicon sí; Firefox/Android no → se quedan en proxies H.264)
+  const hevcOK = !!document.createElement('video')
+    .canPlayType('video/mp4; codecs="hvc1.2.4.L153.B0"');
+
   main.innerHTML = `
     <div class="hero glass rise">
       <a class="btn hero-back" href="index.html" data-tip="Volver a la galería">${icon('chevL')}</a>
@@ -31,7 +36,7 @@ const cid = new URLSearchParams(location.search).get('id');
         <div class="hero-sub mono">${meta.label ? fmt.date(meta.date) + ' ' + meta.time + ' · ' : ''}${cid}</div>
       </div>
       <div class="hero-chips">
-        <span class="gchip ${meta.tier}" data-tip="${meta.tier === 'full' ? 'Tier full: video web + AI + GPS' : meta.tier === 'standard' ? 'Tier standard: AI y GPS, sin proxy' : 'Tier skim: solo telemetría'}">${esc(meta.tier)}</span>
+        <span class="gchip ${meta.tier}" data-tip="${meta.tier === 'full' ? 'Tier full: video + AI + GPS + frames' : meta.tier === 'standard' ? 'Tier standard: video + AI + GPS' : 'Tier skim: video + telemetría'}">${esc(meta.tier)}</span>
         <span class="gchip" data-tip="Resolución y cuadros por segundo del original">${meta.resolution === '3840x2160' ? '4K' : esc(meta.resolution)}${Math.round(meta.fps) >= 50 ? '60' : ''}</span>
         <span class="gchip" data-tip="Duración del clip">${fmt.dur(meta.duration_s)}</span>
         ${meta.has_srt ? `<span class="gchip" data-tip="Telemetría GPS de 1 Hz disponible">${icon('route')} GPS</span>` : ''}
@@ -51,7 +56,7 @@ const cid = new URLSearchParams(location.search).get('id');
           <div id="video-slot"></div>
           <div class="toolbar" style="padding:10px 12px;margin:0;border-top:1px solid var(--line)">
             <button class="btn primary" id="btn-photo">${icon('iso')} Foto 4K</button>
-            <div class="seg" id="q-seg"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd">1080p</button>' : ''}${meta.raw_rel ? '<button data-q="4k">4K</button>' : ''}</div>
+            <div class="seg" id="q-seg"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720" data-tip="720p · ligero, ideal en LTE">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd" data-tip="1080p · balance calidad/datos">1080p</button>' : ''}${meta.raw_rel && hevcOK ? '<button data-q="4k" data-tip="Original 4K HEVC · pesado, mejor en WiFi">4K</button>' : ''}</div>
             <span class="spacer"></span>
           </div>
           <div class="hud" id="hud"></div>
@@ -181,7 +186,9 @@ const cid = new URLSearchParams(location.search).get('id');
   const SRC = {
     '720': meta.has_proxy720 ? `${DATA}/proxies720/${cid}.mp4` : null,
     hd: meta.has_proxy ? `${DATA}/proxies/${cid}.mp4` : null,
-    '4k': meta.raw_rel ? `${DATA}/raw/${meta.raw_rel}` : null,
+    // /data/raw está vetado (denylist de seguridad del vault) — el 4K original
+    // se sirve autenticado vía API, y solo si el navegador decodifica HEVC
+    '4k': meta.raw_rel && hevcOK ? `/api/raw_video?clip=${encodeURIComponent(cid)}` : null,
   };
   // Auto: red lenta o pantalla chica → 720; si no, 1080
   function autoPick() {
@@ -196,10 +203,22 @@ const cid = new URLSearchParams(location.search).get('id');
     slot.innerHTML = `<video src="${SRC[resolved()]}" controls playsinline webkit-playsinline preload="metadata" poster="${DATA}/thumbs/${cid}.jpg"></video>`;
     video = slot.querySelector('video');
   } else {
-    slot.innerHTML = `<img src="${DATA}/thumbs/${cid}.jpg" style="width:100%;display:block" alt="">`;
+    // sin fuente reproducible: estado honesto — el thumb + qué falta y por qué
+    slot.innerHTML = `
+      <div style="position:relative">
+        <img src="${DATA}/thumbs/${cid}.jpg" style="width:100%;display:block;opacity:.55" alt="">
+        <div style="position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px">
+          <div class="glass" style="padding:14px 20px;border-radius:12px;max-width:420px">
+            <b style="font-size:13px">${icon('film')} Proxy de video en proceso</b>
+            <p class="footer-note" style="margin:6px 0 0">${meta.raw_rel && !hevcOK
+              ? 'El original es 4K HEVC y este navegador no lo decodifica. El proxy H.264 se está generando — recarga en unos minutos.'
+              : 'El video web de este clip se está generando en el Mac. Recarga en unos minutos.'}</p>
+          </div>
+        </div>
+      </div>`;
   }
   let viewerPingTimer = null;
-  const pingViewer = () => fetch('/api/viewer_ping', { cache: 'no-store', keepalive: true }).catch(() => {});
+  const pingViewer = () => authFetch('/api/viewer_ping', { cache: 'no-store', keepalive: true }).catch(() => {});
   const startViewerPing = () => {
     pingViewer();
     if (!viewerPingTimer) viewerPingTimer = setInterval(pingViewer, 15_000);
@@ -287,7 +306,7 @@ const cid = new URLSearchParams(location.search).get('id');
     e.currentTarget.textContent = 'Analizando… (~30s)';
     await api('/api/analyze', { clip_id: cid });
     const poll = setInterval(async () => {
-      const { jobs } = await (await fetch('/api/jobs')).json();
+      const { jobs } = await (await authFetch('/api/jobs')).json();
       const j = jobs.find(x => x.kind === 'analyze' && x.label.includes(cid));
       if (j && j.status !== 'running') { clearInterval(poll); location.reload(); }
     }, 3000);
@@ -304,13 +323,52 @@ const cid = new URLSearchParams(location.search).get('id');
     location.reload();
   });
 
-  document.getElementById('btn-label').addEventListener('click', async () => {
-    const token = getToken();
-    if (!token) return;
-    const label = prompt('Nombre para este vuelo:', meta.label || '');
-    if (label == null) return;
-    await api('/api/clip', { clip_id: cid, label });
-    location.reload();
+  document.getElementById('btn-label').addEventListener('click', () => {
+    const ov = document.createElement('div');
+    ov.className = 'modal-ov';
+    ov.innerHTML = `<div class="modal" style="max-width:480px">
+      <div class="modal-h"><b>${icon('tag')} Editar vuelo</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+      <div class="modal-b">
+        <div class="mlb">Nombre</div>
+        <div class="tool-row">
+          <input id="m-label" class="m-ipt" style="flex:1" maxlength="80" placeholder="${esc(fmt.date(meta.date))} · ${esc(meta.time)}" value="${esc(meta.label || '')}">
+          <button class="btn primary" id="m-save">Guardar</button>
+        </div>
+        <div class="mlb">Galería</div>
+        <button class="btn" id="m-arch" data-tip="${meta.archived ? 'Vuelve a aparecer en la galería' : 'Se oculta de la galería; nada se borra'}">${icon('db')} ${meta.archived ? 'Desarchivar' : 'Archivar'}</button>
+        <div class="mlb" style="color:#e2635f">Zona de peligro</div>
+        <button class="btn" id="m-del" style="border-color:rgba(226,99,95,.45);color:#e2635f">${icon('warn')} Borrar este vuelo</button>
+        <p class="footer-note" style="margin-top:8px">Borrar mueve el original 4K, proxies y telemetría a la papelera del vault — reversible desde el Mac, no destructivo.</p>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) close(); });
+    ov.querySelector('#m-save').addEventListener('click', async () => {
+      await api('/api/clip', { clip_id: cid, label: ov.querySelector('#m-label').value.trim() });
+      location.reload();
+    });
+    ov.querySelector('#m-label').addEventListener('keydown', e => {
+      if (e.key === 'Enter') ov.querySelector('#m-save').click();
+    });
+    ov.querySelector('#m-arch').addEventListener('click', async () => {
+      await api('/api/clip', { clip_id: cid, archived: !meta.archived });
+      location.href = 'index.html';
+    });
+    ov.querySelector('#m-del').addEventListener('click', async e => {
+      const b = e.currentTarget;
+      if (!b.dataset.armed) {           // confirmación en dos pasos, sin confirm() nativo
+        b.dataset.armed = '1';
+        b.innerHTML = `${icon('warn')} ¿Seguro? Click otra vez para borrar`;
+        b.style.background = 'rgba(226,99,95,.15)';
+        return;
+      }
+      b.disabled = true;
+      b.innerHTML = 'Borrando…';
+      const r = await api('/api/clip', { clip_id: cid, delete: true });
+      if (r?.ok) location.href = 'index.html';
+      else { b.disabled = false; b.innerHTML = `${icon('warn')} Error: ${esc(r?.error || 'no se pudo')}`; }
+    });
+    setTimeout(() => ov.querySelector('#m-label').focus(), 60);
   });
   document.getElementById('btn-arch').addEventListener('click', async () => {
     const token = getToken();
