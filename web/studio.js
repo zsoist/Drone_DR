@@ -2095,7 +2095,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     if (!clip) return;
     const i = +clip.dataset.i;
     sel = i; renderInspector(); preloadNextOf(i); track.querySelectorAll('.tl-clip').forEach(c => c.classList.toggle('sel', +c.dataset.i === i));
-    track.setPointerCapture(e.pointerId);
+    // un toque cancelado (o un pointer ya liberado) hace que esto lance y mate el drag
+    try { track.setPointerCapture(e.pointerId); } catch {}
     if (handle) {
       action = { type: handle.classList.contains('l') ? 'trim-l' : 'trim-r', i, startX: e.clientX, orig: { ...tl[i] } };
       pushUndo();

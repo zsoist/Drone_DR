@@ -2054,15 +2054,21 @@ button.exp { text-align: left; cursor: pointer; }
 }
 
 /* ---------- transiciones v2: nodo de unión + picker ---------- */
+/* nodo de unión: vive EN la costura, no encima de los fotogramas. Ancla arriba (como
+   CapCut) para no tapar la imagen, y el track le reserva su propio hueco. */
 .tl-junction {
-  align-self: center; flex: none; width: 22px; height: 22px; margin: 0 -1px; z-index: 4;
-  border-radius: 50%; border: 1px solid var(--line); background: var(--surface);
-  color: var(--text-3); font-size: 12px; line-height: 1; cursor: pointer;
+  align-self: flex-start; flex: none; width: 18px; height: 18px; margin: 3px -9px 0; z-index: 5;
+  border-radius: 50%; border: 1px solid var(--line);
+  background: color-mix(in srgb, #05070b 82%, transparent);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  color: var(--text-3); font-size: 10px; line-height: 1; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
   transition: border-color 140ms var(--ease), color 140ms var(--ease), transform 140ms var(--ease);
 }
-.tl-junction:hover { border-color: var(--accent); color: var(--accent); transform: scale(1.18); }
-.tl-junction.set { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
+.tl-junction:hover { border-color: var(--accent); color: var(--accent); transform: scale(1.25); }
+.tl-junction.set { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 28%, #05070b); }
+/* separación real entre cortes: sin esto la unión se comía los bordes de ambos clips */
+.tl-clip + .tl-junction, .tl-junction + .tl-clip { margin-left: 0; }
 .tx-pop {
   position: fixed; z-index: 320; width: 340px; padding: 12px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
@@ -2124,8 +2130,9 @@ button.exp { text-align: left; cursor: pointer; }
 /* clip en reproducción: filo superior acentuado (sigue al playhead) */
 .tl-clip.now::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--accent); border-radius: 2px; }
 /* quitar del timeline directo desde el clip (hover / siempre visible en touch) */
+/* borrar arriba a la IZQUIERDA: la derecha es de los badges de estado */
 .tl-x {
-  position: absolute; top: 4px; right: 4px; z-index: 3; width: 20px; height: 20px;
+  position: absolute; top: 4px; left: 4px; z-index: 4; width: 20px; height: 20px;
   border-radius: 6px; border: 1px solid rgba(226,99,95,.5); background: rgba(6,9,14,.78);
   color: #e2635f; font-size: 11px; line-height: 1; cursor: pointer; opacity: 0;
   transition: opacity 140ms var(--ease);
@@ -2153,18 +2160,23 @@ button.exp { text-align: left; cursor: pointer; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* mini-chips de estado (velocidad / filtro / título) */
-.tl-badge {
+/* mini-chips de estado: contenedor flex arriba a la DERECHA. Antes cada badge se
+   posicionaba absoluto en el mismo punto que la ⨯ de borrar y se pisaban ("ci✕"). */
+.tl-badges {
   position: absolute; top: 4px; right: 4px; z-index: 3;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+  max-width: calc(100% - 34px); pointer-events: none;
+}
+.tl-badge {
+  position: static; flex: none;
   font-family: var(--mono); font-size: 9.5px; font-weight: 600; line-height: 1;
   padding: 2px 6px; border-radius: 7px; letter-spacing: 0.2px;
   background: color-mix(in srgb, #05070b 62%, transparent);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   border: 1px solid rgba(255,255,255,0.14); color: #fff;
-  display: inline-flex; align-items: center; gap: 3px;
+  display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;
 }
 .tl-badge svg.ic { width: 9px; height: 9px; }
-.tl-badge + .tl-badge { top: 20px; }
 .tl-badge.speed  { color: var(--accent); border-color: rgba(69,160,230,0.5); }
 .tl-badge.filter { color: var(--mint);   border-color: rgba(82,199,154,0.5); }
 .tl-badge.title  { color: var(--amber);  border-color: rgba(224,164,88,0.5); }
