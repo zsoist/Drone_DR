@@ -2054,6 +2054,80 @@ def _audio_meta(path: Path, rebuild: bool = False) -> dict:
     return m
 
 
+def _audio_beats(path: Path) -> dict:
+    """Detección de beats sin dependencias (I3): envolvente de energía → flujo positivo →
+    picos sobre umbral adaptativo, y BPM por autocorrelación de ese flujo.
+
+    No es aubio/librosa, pero para música con percusión clara acierta el pulso, que es lo
+    que necesita el corte al ritmo. Cacheado junto a los picos de la waveform.
+    """
+    mdir = AUDIO_DIR / ".meta"
+    mdir.mkdir(parents=True, exist_ok=True)
+    cache = mdir / f"{path.name}.beats.json"
+    if cache.exists():
+        try:
+            c = json.loads(cache.read_text())
+            if c.get("mtime") == int(path.stat().st_mtime):
+                return c
+        except (ValueError, OSError):
+            pass
+    SR, FRAME, HOP = 11025, 512, 256
+    try:
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "s16le",
+                              "-ac", "1", "-ar", str(SR), "-"],
+                             capture_output=True, timeout=180).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {"beats": [], "bpm": 0}
+    import array as _arr
+    pcm = _arr.array("h")
+    pcm.frombytes(raw[: len(raw) // 2 * 2])
+    n = len(pcm)
+    if n < SR:
+        return {"beats": [], "bpm": 0}
+    # envolvente RMS por frame
+    env = []
+    for i in range(0, n - FRAME, HOP):
+        acc = 0
+        for k in range(i, i + FRAME, 4):        # submuestreo x4: 4× más rápido, mismo pulso
+            v = pcm[k]
+            acc += v * v
+        env.append(math.sqrt(acc / (FRAME / 4)))
+    if len(env) < 8:
+        return {"beats": [], "bpm": 0}
+    # flujo positivo (solo subidas de energía = ataques)
+    flux = [max(0.0, env[i] - env[i - 1]) for i in range(1, len(env))]
+    mx = max(flux) or 1.0
+    flux = [f / mx for f in flux]
+    fps_env = SR / HOP
+    # umbral adaptativo: media local ± ventana de ~0.7s
+    win = max(3, int(fps_env * 0.35))
+    beats = []
+    last = -1e9
+    for i, f in enumerate(flux):
+        lo, hi = max(0, i - win), min(len(flux), i + win + 1)
+        local = flux[lo:hi]
+        thr = (sum(local) / len(local)) * 1.6 + 0.06
+        t = i / fps_env
+        # separación mínima 0.22s (≈270 BPM) para no contar el mismo golpe dos veces
+        if f > thr and f == max(local) and t - last > 0.22:
+            beats.append(round(t, 3))
+            last = t
+    # BPM por autocorrelación del flujo en el rango 60–190 BPM
+    bpm = 0.0
+    if len(flux) > int(fps_env * 4):
+        best, bestlag = 0.0, 0
+        for lag in range(int(fps_env * 60 / 190), int(fps_env * 60 / 60)):
+            s = sum(flux[i] * flux[i + lag] for i in range(0, len(flux) - lag, 3))
+            if s > best:
+                best, bestlag = s, lag
+        if bestlag:
+            bpm = round(60.0 * fps_env / bestlag, 1)
+    out = {"beats": beats[:600], "bpm": bpm, "mtime": int(path.stat().st_mtime),
+           "duration_s": round(len(pcm) / SR, 2)}
+    cache.write_text(json.dumps(out))
+    return out
+
+
 def _mix_music(video: Path, music: Path, opts: dict, has_audio: bool, dur: float) -> Path:
     """Mezcla la pista sobre el reel YA compuesto sin re-encodear el video (-c:v copy).
 
@@ -2761,6 +2835,19 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             return self.send_json({"volumes": sd_volumes()})
+        if self.path.startswith("/api/audio_beats"):
+            if not self.auth():
+                return
+            qq = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            name = re.sub(r"[^\w.\- ]", "", (qq.get("name") or [""])[0])
+            p = (AUDIO_DIR / name).resolve() if name else None
+            try:
+                p.relative_to(AUDIO_DIR.resolve())
+            except (ValueError, AttributeError):
+                return self.send_json({"error": "nombre inválido"}, 400)
+            if not p.is_file():
+                return self.send_json({"error": "pista no encontrada"}, 404)
+            return self.send_json(_audio_beats(p))
         if self.path.startswith("/api/audio_list"):
             if not self.auth():
                 return

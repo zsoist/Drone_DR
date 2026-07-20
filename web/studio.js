@@ -775,6 +775,14 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     tl.forEach((s, i) => {
       if (s._mark) html += `<span class="tl-tick mark" style="left:${offset(i) * pps}px" data-tip="Highlight AI">${icon('marker')}</span>`;
     });
+    // I3 · pulso de la música sobre la regla (solo si el zoom lo hace legible)
+    if (music?.beats?.length && pps >= 14) {
+      const off = music.startAt || 0;
+      music.beats.forEach(b => {
+        const t = b - off;
+        if (t >= 0 && t <= T) html += `<span class="tl-beat" style="left:${Math.round(t * pps)}px"></span>`;
+      });
+    }
     ruler.innerHTML = html;
   }
 
@@ -1151,6 +1159,33 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     if (andPlay) musicEl.play().catch(() => {});
   }
 
+  // I3 · re-cronometra el timeline para que CADA corte caiga en un golpe de la música.
+  // Mantiene el punto de entrada (a) de cada toma y ajusta la salida (b) — el montaje no
+  // cambia, cambia su respiración. Si una toma no da para el hueco, usa lo que tenga.
+  function beatSync(every = 2) {
+    if (!music?.beats?.length || !tl.length) return 0;
+    const off = music.startAt || 0;
+    const rel = music.beats.map(b => b - off).filter(b => b > 0.15);
+    if (rel.length < 2) return 0;
+    const grid = rel.filter((_, i) => i % every === every - 1);   // cada N golpes
+    if (grid.length < 1) return 0;
+    pushUndo();
+    let t = 0, hit = 0;
+    tl.forEach((s, i) => {
+      const target = grid.find(g => g > t + 0.3);
+      if (target === undefined) return;
+      const want = target - t;                       // duración de salida deseada
+      const src = byId[s.clip_id];
+      const maxOut = src ? (src.duration_s - s.a) / (s.speed || 1) : want;
+      const out = Math.max(0.35, Math.min(want, maxOut, 120));
+      s.b = +Math.min(src ? src.duration_s : s.b, s.a + out * (s.speed || 1)).toFixed(2);
+      if (Math.abs(out - want) < 0.08) hit++;        // cortes que sí calzaron en el golpe
+      t += segDur(s);
+    });
+    renderAll(); seek(0);
+    return hit;
+  }
+
   function musicChip() {
     const b = document.getElementById('btn-music');
     if (!b) return;
@@ -1228,6 +1263,18 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
               <b class="mono">${fmt.dur(m.startAt ?? 0)}</b></label>
             <label class="mus-check"><input type="checkbox" id="mu-duck" ${m.duck !== false ? 'checked' : ''}>
               <span>Bajar la música cuando hay sonido del dron <em>(ducking)</em></span></label>
+          </div>
+          <div class="mlb">Cortar al ritmo ${music.bpm ? `<span class="mono">${music.bpm} BPM · ${(music.beats || []).length} golpes</span>` : ''}</div>
+          <div class="mus-beat">
+            ${music.beats?.length ? `
+              <div class="rm-opts">
+                <button class="rm-opt sm" data-beat="1"><b>Cada golpe</b><small>frenético</small></button>
+                <button class="rm-opt sm" data-beat="2"><b>Cada 2</b><small>enérgico</small></button>
+                <button class="rm-opt sm" data-beat="4"><b>Cada compás</b><small>respirado</small></button>
+                <button class="rm-opt sm" data-beat="8"><b>Cada 2 compases</b><small>cinemático</small></button>
+              </div>
+              <p class="footer-note">Ajusta la duración de cada toma para que el corte caiga en el golpe. Se puede deshacer (Ctrl+Z).</p>`
+              : '<p class="footer-note">Analizando el pulso de la pista…</p>'}
           </div>` : ''}
         </div>
         <div class="rm-foot">
@@ -1308,6 +1355,12 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         await load(); render();
         return;
       }
+      const bt = e.target.closest('[data-beat]');
+      if (bt) {
+        const n = beatSync(+bt.dataset.beat);
+        toast(n ? `${n} cortes alineados al ritmo — Ctrl+Z si no te gusta` : 'No pude alinear: la pista no tiene golpes claros ahí');
+        return;
+      }
       const it = e.target.closest('[data-track]');
       if (it) {
         const t = tracks.find(x => x.name === it.dataset.track);
@@ -1316,6 +1369,14 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         musicEl.src = `${DATA}/audio/${encodeURIComponent(t.name)}`;
         musicSync(playhead);
         musicChip(); render();
+        // el pulso se analiza en el server (cacheado); al llegar, repinta regla y opciones
+        authFetch(`/api/audio_beats?name=${encodeURIComponent(t.name)}`)
+          .then(r => r.json())
+          .then(d => {
+            if (!music || music.name !== t.name || d.error) return;
+            music.beats = d.beats || []; music.bpm = d.bpm || 0;
+            renderRuler(); render();
+          }).catch(() => {});
         return;
       }
       if (e.target.closest('#mu-clear')) {
