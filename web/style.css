@@ -3454,9 +3454,21 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   cursor:pointer;color:var(--text-2);background:var(--bg-2)}
 .st-chip:hover{border-color:var(--bad);color:var(--bad)}
 .st-footer{flex:none;display:flex;gap:8px;align-items:center;padding:10px 0 12px;border-top:1px solid var(--line)}
-.st-preview-ov{position:fixed;inset:0;z-index:300;background:rgba(4,8,16,.82);display:flex;align-items:center;justify-content:center}
-.st-preview{position:relative;width:min(880px,92vw)}
-.st-preview video{width:100%;border-radius:12px;display:block;background:#000}
+.st-preview-ov{position:fixed;inset:0;z-index:300;background:rgba(4,8,16,.82);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+.st-preview{position:relative;width:min(880px,92vw);background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.st-preview video{width:100%;max-height:62vh;border-radius:10px;display:block;background:#000}
+.st-pv-h{display:flex;align-items:center;gap:10px;padding:2px 4px 10px}
+.st-pv-h b{font-size:13px}
+.st-pv-h .mono{font-size:11px;color:var(--text-3)}
+.st-pv-sum{margin:8px 4px 0;font-size:11.5px;color:var(--text-2);line-height:1.45}
+.st-pv-f{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:10px 4px 2px}
+.st-pv-f .btn{font-size:11.5px}
+/* chip AI vision por fila (score on-demand) */
+.pc-ai{font-family:var(--mono);font-size:11px;font-weight:700;flex:none;padding:3px 7px;border-radius:999px;border:1px solid var(--line);cursor:pointer;color:var(--text-3);transition:border-color 140ms var(--ease),color 140ms var(--ease)}
+.pc-ai.idle:hover{color:var(--accent);border-color:rgba(69,160,230,.5)}
+.pc-ai.ok{color:var(--mint);border-color:rgba(53,208,165,.4)}
+.pc-ai.mid{color:#e8b34c;border-color:rgba(232,179,76,.4)}
+.pc-ai.bad{color:var(--red);border-color:rgba(226,99,95,.4)}
 .st-preview .modal-x{position:absolute;top:-14px;right:-14px}
 .st-proj-note{display:block;margin-top:3px;font-size:10px;color:var(--text-3);font-style:normal}
 @media(max-width:860px){.st-grid{grid-template-columns:1fr}.st-map-wrap{min-height:220px}}

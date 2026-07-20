@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=227';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=227';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=227';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=227';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=227';
-  import { mountSplatViewer } from '/splatview.js?v=227';
+  import * as THREE from '/vendor/three180.module.js?v=229';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=229';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=229';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=229';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=229';
+  import { mountSplatViewer } from '/splatview.js?v=229';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1265,7 +1265,13 @@
         </div>
         <span class="pc-gps mono" title="Track GPS 1Hz del SRT — geotag real">${icon('pin')} GPS</span>
         <span class="pc-alt ${altBand(altOf(f))}">${altOf(f)} m</span>
-        <span class="pc-score" data-score="${esc(f.clip_id)}">·</span>
+        <span class="pc-ai ${f.ai?.travel_score ? (f.ai.travel_score >= 7 ? 'ok' : f.ai.travel_score >= 4 ? 'mid' : 'bad') : 'idle'}"
+              data-ai="${esc(f.clip_id)}"
+              data-tip="${f.ai?.travel_score
+                ? esc(`AI vision ${f.ai.travel_score}/10 — ${f.ai.summary || 'sin resumen'}`)
+                : 'Sin análisis AI aún — click para analizar este video (~30s)'}">${
+                  f.ai?.travel_score ? `✨${f.ai.travel_score}` : '✨?'}</span>
+        <span class="pc-score" data-score="${esc(f.clip_id)}" data-tip="Aptitud de escaneo 3D (cobertura/altura/GPS)">·</span>
       </label>`;
 
     const { ov, close } = openModal(`${icon('cube')} Estudio 3D`, `
@@ -1283,6 +1289,7 @@
               <select class="ctl" id="st-sort" aria-label="Ordenar">
                 <option value="spot">Por lugar</option><option value="date">Más recientes</option>
                 <option value="dur">Más largos</option><option value="alt">Más altos</option>
+                <option value="ai">Mejor AI ✨</option>
               </select>
             </div>
             <div class="st-filters">
@@ -1548,18 +1555,108 @@
     });
     renderTray();
 
-    // preview del proxy en overlay liviano (clic en el thumb, no togglea el checkbox)
+    // análisis AI on-demand por fila (✨? → encola analyze deep, pollea y pinta el score)
+    ov.querySelector('#st-groups').addEventListener('click', async e => {
+      const chip = e.target.closest('[data-ai]');
+      if (!chip) return;
+      e.preventDefault(); e.stopPropagation();
+      const cid = chip.dataset.ai;
+      const f = byCid[cid];
+      if (f?.ai?.travel_score) { openPreviewAt(cid); return; }   // ya analizado → ver el video con su resumen
+      if (chip.dataset.busy) return;
+      chip.dataset.busy = '1';
+      chip.textContent = '✨…';
+      chip.dataset.tip = 'Analizando con AI vision (~30s) — 16 frames, prompt de director de fotografía';
+      try {
+        const r = await api('/api/analyze', { clip_id: cid });
+        if (r?.error && !/corriendo/.test(r.error)) throw new Error(r.error);
+        const poll = setInterval(async () => {
+          try {
+            const { jobs } = await (await authFetch('/api/jobs')).json();
+            const j = jobs.find(x => x.kind === 'analyze' && (x.label || '').startsWith(cid));
+            if (j && j.status === 'running') return;
+            clearInterval(poll);
+            const ai = await (await fetch(`data/ai/${encodeURIComponent(cid)}.json?t=${Date.now()}`)).json();
+            if (f) f.ai = ai;
+            const sc = ai.travel_score;
+            chip.textContent = sc ? `✨${sc}` : '✨—';
+            chip.className = `pc-ai ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : sc ? 'bad' : 'idle'}`;
+            chip.dataset.tip = sc ? `AI vision ${sc}/10 — ${ai.summary || ''}` : 'El análisis no devolvió score';
+            delete chip.dataset.busy;
+          } catch { /* siguiente tick */ }
+        }, 3000);
+      } catch (err) {
+        chip.textContent = '✨!';
+        chip.dataset.tip = `Error: ${err.message || err}`;
+        delete chip.dataset.busy;
+      }
+    }, true);
+
+    // preview v2: overlay con ficha del clip, score AI, seleccionar sin cerrar y ‹ › entre tomas
+    function visibleCids() {
+      return [...ov.querySelectorAll('.pc-clip')].filter(el => el.style.display !== 'none')
+        .map(el => el.dataset.cid);
+    }
+    function openPreviewAt(cid) {
+      const pv = document.createElement('div');
+      pv.className = 'st-preview-ov';
+      document.body.appendChild(pv);
+      const render = () => {
+        const f = byCid[cid] || {};
+        const sc = f.ai?.travel_score;
+        pv.innerHTML = `<div class="st-preview">
+          <div class="st-pv-h">
+            <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
+            <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m</span>
+            ${sc ? `<span class="pc-ai ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}" data-tip="${esc(f.ai.summary || '')}">✨${sc}</span>` : ''}
+            <span class="spacer" style="flex:1"></span>
+            <button class="modal-x">✕</button>
+          </div>
+          <video src="data/proxies/${encodeURIComponent(cid)}.mp4" controls autoplay muted playsinline
+                 poster="data/thumbs/${encodeURIComponent(cid)}.jpg"></video>
+          ${f.ai?.summary ? `<p class="st-pv-sum">${esc(f.ai.summary)}</p>` : ''}
+          <div class="st-pv-f">
+            <button class="btn" data-pv="prev">‹ Anterior</button>
+            <button class="btn ${sel.has(cid) ? '' : 'primary'}" data-pv="toggle">${sel.has(cid) ? '✓ Quitar de la selección' : '+ Seleccionar para procesar'}</button>
+            <button class="btn" data-pv="next">Siguiente ›</button>
+          </div>
+        </div>`;
+      };
+      render();
+      const step = dir => {
+        const list = visibleCids();
+        const i = list.indexOf(cid);
+        if (i < 0 || !list.length) return;
+        pv.querySelector('video')?.pause();
+        cid = list[(i + dir + list.length) % list.length];
+        render();
+      };
+      pv.addEventListener('click', ev => {
+        const b = ev.target.closest('[data-pv]');
+        if (b) {
+          if (b.dataset.pv === 'toggle') {
+            sel.has(cid) ? sel.delete(cid) : sel.add(cid);
+            syncClip(cid); renderCombined(); applyFilters();
+            render();
+          } else step(b.dataset.pv === 'next' ? 1 : -1);
+          return;
+        }
+        if (ev.target === pv || ev.target.closest('.modal-x')) { pv.querySelector('video')?.pause(); pv.remove(); }
+      });
+      const onKey = ev => {
+        if (!document.body.contains(pv)) { removeEventListener('keydown', onKey); return; }
+        if (ev.key === 'Escape') { pv.querySelector('video')?.pause(); pv.remove(); }
+        if (ev.key === 'ArrowRight') step(1);
+        if (ev.key === 'ArrowLeft') step(-1);
+      };
+      addEventListener('keydown', onKey);
+    }
+    // clic en el thumb (no togglea el checkbox)
     ov.querySelector('#st-groups').addEventListener('click', e => {
       const th = e.target.closest('[data-preview]');
       if (!th) return;
       e.preventDefault(); e.stopPropagation();
-      const cid = th.dataset.preview;
-      const pv = document.createElement('div');
-      pv.className = 'st-preview-ov';
-      pv.innerHTML = `<div class="st-preview"><video src="data/proxies/${encodeURIComponent(cid)}.mp4" controls autoplay muted playsinline></video>
-        <button class="modal-x">✕</button></div>`;
-      pv.addEventListener('click', ev => { if (ev.target === pv || ev.target.closest('.modal-x')) { pv.querySelector('video').pause(); pv.remove(); } });
-      document.body.appendChild(pv);
+      openPreviewAt(th.dataset.preview);
     }, true);
 
     // filtros: búsqueda + banda de altura + orden (re-ordena DENTRO de cada grupo; 'spot' = original)
@@ -1606,7 +1703,7 @@
     });
     // acordeón: el head pliega/expande (los botones internos no)
     ov.querySelector('#st-groups').addEventListener('click', e => {
-      if (e.target.closest('.pg-all') || e.target.closest('[data-preview]')) return;
+      if (e.target.closest('.pg-all') || e.target.closest('[data-preview]') || e.target.closest('[data-ai]')) return;
       const h = e.target.closest('[data-pg-toggle]');
       if (h) h.closest('.proc-group').classList.toggle('collapsed');
     });
@@ -1621,7 +1718,8 @@
     applyFilters();
     ov.querySelector('#st-sort').addEventListener('change', e => {
       const mode = e.target.value;
-      const key = { date: f => f.date + (f.time || ''), dur: f => f.duration_s || 0, alt: altOf }[mode];
+      const key = { date: f => f.date + (f.time || ''), dur: f => f.duration_s || 0, alt: altOf,
+                    ai: f => f.ai?.travel_score || 0 }[mode];
       ov.querySelectorAll('.proc-group').forEach(g => {
         const rows = [...g.querySelectorAll('.pc-clip')];
         if (mode === 'spot') return;

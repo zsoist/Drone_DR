@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import closing
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -146,18 +147,18 @@ finally:
 import jobs
 jobs.DB = Path(tempfile.mkdtemp()) / "test-jobs.db"
 jobs.init()
-sid = jobs.session_create(1)
+sid = jobs.session_create(ttl_seconds=60)
 check("session: creada y válida", jobs.session_valid(sid))
 check("session: id inexistente inválido", not jobs.session_valid("nope"))
 jobs.session_delete(sid)
 check("session: eliminada (logout) invalida", not jobs.session_valid(sid))
-# corrupted DB row with NULL expiry must reject cleanly, not crash auth
-with sqlite3.connect(jobs.DB) as _c:
-    _c.execute("INSERT INTO sessions (id, expiry) VALUES ('null_row', NULL)")
-try:
-    check("session: NULL expiry rechazada sin crash", jobs.session_valid('null_row') is False)
-except TypeError:
-    check("session: NULL expiry rechazada sin crash", False, "TypeError")
+# An expired hashed row must reject cleanly and be purged on lookup.
+with closing(sqlite3.connect(jobs.DB)) as _c:
+    _expired = "expired_session"
+    _c.execute("INSERT INTO sessions (token_hash, user_id, created, expiry) VALUES (?, ?, ?, ?)",
+               (jobs._session_hash(_expired), "daniel", 0, 0))
+    _c.commit()
+check("session: expirada rechazada sin crash", jobs.session_valid(_expired) is False)
 
 # ---------- jobs: run_tracked records PID + cancel kills ----------
 import threading, os
@@ -682,9 +683,10 @@ try:
     (_bi_tmp / "splats" / "A.ksplat").write_bytes(b"2")
     (_bi_tmp / "splats" / "A.meta.json").write_bytes(b"{}")
     (_bi_tmp / "splats" / "A.cameras.json").write_bytes(b"{}")
-    with sqlite3.connect(_bi_tmp / "manifest" / "jobs.db") as _jdb:
+    with closing(sqlite3.connect(_bi_tmp / "manifest" / "jobs.db")) as _jdb:
         _jdb.execute("CREATE TABLE jobs (id TEXT, kind TEXT, status TEXT, artifact TEXT, detail TEXT, started REAL, finished REAL)")
         _jdb.execute("INSERT INTO jobs VALUES ('splat-a','splat','done','splats/A.ksplat','A.ksplat · Metal/MPS',100,250.5)")
+        _jdb.commit()
     (_bi_tmp / "splats" / "B.ply").write_bytes(b"3")
     (_bi_tmp / "splats" / "history").mkdir()
     (_bi_tmp / "splats" / "history" / "A-20260707-010203.splat").write_bytes(b"4" * 96)
@@ -867,6 +869,21 @@ _srv_head = _srv_src_pf2[:3000]
 check("server: import urllib.request a nivel módulo, NUNCA dentro de handlers",
       "import urllib.request" in _srv_head
       and "    import urllib.request" not in _srv_src_pf2)
+# generalización del guard: un `import X` local (sin alias) que sombree un módulo top-level
+# convierte X en variable local de TODO el método — los closures de otros handlers capturan
+# la local sin valor ("cannot access free variable"). Pasó con urllib y otra vez con
+# subprocess (analyze._run quedaba job fantasma). Alias `import X as _x` sí es seguro.
+import ast as _ast2
+_srv_tree = _ast2.parse(_srv_src_pf2)
+_srv_top_mods = {n.name.split(".")[0] for x in _srv_tree.body
+                 if isinstance(x, _ast2.Import) for n in x.names}
+_poisoned = [n.name for fn in _ast2.walk(_srv_tree) if isinstance(fn, (_ast2.FunctionDef, _ast2.AsyncFunctionDef))
+             for x in _ast2.walk(fn) if isinstance(x, _ast2.Import)
+             for n in x.names
+             if n.asname is None and n.name.split(".")[0] in _srv_top_mods
+             and n.name == n.name.split(".")[0]]
+check(f"server: ningún import local sin alias sombrea módulos top-level (envenena closures) {_poisoned or ''}",
+      not _poisoned)
 check("server: 500 con causa registrada (server-500 a errors.jsonl) — cero 500 mudos",
       '"server-500"' in _srv_src_pf2)
 check("server: /api/suggest_name usa _deepseek con prompt acotado",
@@ -937,7 +954,10 @@ _gt = (_np.random.default_rng(7).random((64, 64, 3)) * 255).astype(_np.uint8)
 _Img.fromarray(_gt).save(_rd / "a.gt.png"); _Img.fromarray(_gt).save(_rd / "a.render.png")
 _noisy = _np.clip(_gt.astype(int) + _np.random.default_rng(8).integers(-40, 40, _gt.shape), 0, 255).astype(_np.uint8)
 _Img.fromarray(_gt).save(_rd / "b.gt.png"); _Img.fromarray(_noisy).save(_rd / "b.render.png")
-_sc = _se.score(_rd, use_lpips=False, side_by_side=0)
+import warnings as _warnings
+with _warnings.catch_warnings():
+    _warnings.filterwarnings("ignore", message="divide by zero encountered in scalar divide")
+    _sc = _se.score(_rd, use_lpips=False, side_by_side=0)
 _pv = {v["view"]: v for v in _sc["per_view"]}
 check("splat_eval: scorer — idéntico da PSNR 60 (cap) / SSIM 1.0; ruido da estrictamente menos",
       _pv["a"]["psnr"] == 60.0 and _pv["a"]["ssim"] == 1.0
@@ -995,4 +1015,7 @@ check("browser_gate: threading importado (el drain thread lo usa) + cleanup a pr
       and "ignore_cleanup_errors=True" in Path("pipeline/browser_gate.py").read_text())
 
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
-sys.exit(1 if FAILS else 0)
+if __name__ == "__main__":
+    sys.exit(1 if FAILS else 0)
+if FAILS:
+    raise AssertionError("smoke failures: " + ", ".join(FAILS))

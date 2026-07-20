@@ -14,6 +14,7 @@ Usage:
 """
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -52,11 +53,27 @@ Analiza a fondo y responde SOLO JSON válido (sin markdown) con este shape exact
 }}"""
 
 
+def extract_frames_from_proxy(cid: str, fdir) -> list:
+    """Los clips skim no traían frames (el tier solo los extraía para full/standard).
+    Hoy TODOS tienen proxy 1080p — extraemos el mismo formato que process.py
+    (1 frame cada 2s, 960px) para habilitar análisis on-demand y filmstrip."""
+    proxy = VAULT / "proxies" / f"{cid}.mp4"
+    if not proxy.exists():
+        return []
+    fdir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(proxy),
+                    "-vf", "fps=1/2,scale=960:-2", "-q:v", "4", str(fdir / "f_%04d.jpg")],
+                   check=False, capture_output=True, timeout=300)
+    return sorted(fdir.glob("f_*.jpg"))
+
+
 def analyze_clip(cid: str, keys: dict, deep: bool = False) -> dict | None:
     fdir = VAULT / "frames" / cid
     frames = sorted(fdir.glob("f_*.jpg"))
     if not frames:
-        print(f"— {cid}: sin frames (tier skim), skip")
+        frames = extract_frames_from_proxy(cid, fdir)
+    if not frames:
+        print(f"— {cid}: sin frames ni proxy, skip")
         return None
     n_sample = 16 if deep else 8
     step = max(1, len(frames) // n_sample)

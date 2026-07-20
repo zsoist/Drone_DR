@@ -804,7 +804,6 @@ def capture_frame(spec: dict, j):
 
 def check_polygon(pts, step_m=0.5, max_cells=20_000_000):
     """Rechaza polígonos absurdos antes de asignar una malla enorme en memoria."""
-    import math
     if not isinstance(pts, list) or len(pts) < 3:
         raise ValueError("polígono necesita >=3 vértices")
     if len(pts) > 500:
@@ -830,7 +829,6 @@ def _load_dsm(mdir: Path):
 
 def _poly_grid(pts, step_m=0.5):
     """Malla regular lon/lat dentro del bbox del polígono + máscara ray-casting."""
-    import math
     import numpy as np
     lons = [p[0] for p in pts]; lats = [p[1] for p in pts]
     lat0 = sum(lats) / len(lats)
@@ -913,7 +911,6 @@ def compare_dsm(mdir_a: Path, mdir_b: Path, pts: list) -> dict:
 
 def measure_dsm(mdir: Path, spec: dict) -> dict:
     """Mediciones survey en el host: numpy sobre el DSM binario (sin docker)."""
-    import math
     import numpy as np
     arr, gt, h, w, nod = _load_dsm(mdir)
     pts = spec.get("points", [])
@@ -2196,7 +2193,7 @@ GPU_NODE_IP = "192.168.1.5"
 GPU_NODE_MAC = "BC:5F:F4:45:7E:B8"
 
 def gpu_node_status(force: bool = False) -> dict:
-    import shutil, socket, subprocess, time as _t
+    import socket, time as _t   # shutil/subprocess: SOLO módulo (local sombrea y envenena closures)
     now = _t.time()
     if not force and now - GPU_NODE["ts"] < 20:
         return GPU_NODE["data"]
@@ -3956,13 +3953,17 @@ class H(BaseHTTPRequestHandler):
 
             def _run():
                 try:
-                    subprocess.run(["python3", str(PIPE.parent / "ai" / "analyze.py"),
-                                    cid, "--deep"], check=True, capture_output=True, text=True,
-                                   cwd=PIPE.parent / "ai")
+                    r = subprocess.run(["python3", str(PIPE.parent / "ai" / "analyze.py"),
+                                        cid, "--deep"], check=True, capture_output=True, text=True,
+                                       cwd=PIPE.parent / "ai", timeout=600)
+                    if not (VAULT / "ai" / f"{cid}.json").exists():
+                        # exit 0 pero sin resultado (p.ej. clip sin frames ni proxy) ≠ éxito
+                        return job_end(j, "error", (r.stdout or "análisis sin resultado")[-250:])
                     rebuild_index()
                     job_end(j, "done", cid)
-                except subprocess.CalledProcessError as e:
-                    job_end(j, "error", (e.stderr or str(e))[-250:])
+                except Exception as e:   # CUALQUIER fallo — un raise no atrapado dejaba el job "running" fantasma
+                    err = getattr(e, "stderr", "") or str(e)
+                    job_end(j, "error", err[-250:])
             threading.Thread(target=_run, daemon=True).start()
             return self.send_json({"ok": True, "job": j["id"]})
         if u.path == "/api/gpu_node/wake":
@@ -3972,7 +3973,9 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/gpu_node/sleep":
             if not self.auth():
                 return
-            import subprocess
+            # OJO: jamás `import subprocess` local aquí — convierte 'subprocess' en variable
+            # local de TODO do_POST y los closures de otros handlers (analyze._run) capturan
+            # la local sin valor: "cannot access free variable". Ya pasó con urllib (#fixture).
             try:
                 # guardia de cortesía: pantalla desbloqueada = alguien usando el PC
                 chk = subprocess.run(["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
