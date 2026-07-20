@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=229';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=229';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=229';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=229';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=229';
-  import { mountSplatViewer } from '/splatview.js?v=229';
+  import * as THREE from '/vendor/three180.module.js?v=231';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=231';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=231';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=231';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=231';
+  import { mountSplatViewer } from '/splatview.js?v=231';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1265,13 +1265,13 @@
         </div>
         <span class="pc-gps mono" title="Track GPS 1Hz del SRT — geotag real">${icon('pin')} GPS</span>
         <span class="pc-alt ${altBand(altOf(f))}">${altOf(f)} m</span>
-        <span class="pc-ai ${f.ai?.travel_score ? (f.ai.travel_score >= 7 ? 'ok' : f.ai.travel_score >= 4 ? 'mid' : 'bad') : 'idle'}"
+        <span class="pc-ai tip-r ${f.ai?.travel_score ? (f.ai.travel_score >= 7 ? 'ok' : f.ai.travel_score >= 4 ? 'mid' : 'bad') : 'idle'}"
               data-ai="${esc(f.clip_id)}"
               data-tip="${f.ai?.travel_score
-                ? esc(`AI vision ${f.ai.travel_score}/10 — ${f.ai.summary || 'sin resumen'}`)
+                ? esc(`AI vision ${f.ai.travel_score}/10 — ${(f.ai.summary || 'sin resumen').slice(0, 140)}${(f.ai.summary || '').length > 140 ? '…' : ''}`)
                 : 'Sin análisis AI aún — click para analizar este video (~30s)'}">${
                   f.ai?.travel_score ? `✨${f.ai.travel_score}` : '✨?'}</span>
-        <span class="pc-score" data-score="${esc(f.clip_id)}" data-tip="Aptitud de escaneo 3D (cobertura/altura/GPS)">·</span>
+        <span class="pc-score tip-r" data-score="${esc(f.clip_id)}" data-tip="Aptitud de escaneo 3D (cobertura/altura/GPS)">·</span>
       </label>`;
 
     const { ov, close } = openModal(`${icon('cube')} Estudio 3D`, `
@@ -1580,8 +1580,8 @@
             if (f) f.ai = ai;
             const sc = ai.travel_score;
             chip.textContent = sc ? `✨${sc}` : '✨—';
-            chip.className = `pc-ai ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : sc ? 'bad' : 'idle'}`;
-            chip.dataset.tip = sc ? `AI vision ${sc}/10 — ${ai.summary || ''}` : 'El análisis no devolvió score';
+            chip.className = `pc-ai tip-r ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : sc ? 'bad' : 'idle'}`;
+            chip.dataset.tip = sc ? `AI vision ${sc}/10 — ${(ai.summary || '').slice(0, 140)}` : 'El análisis no devolvió score';
             delete chip.dataset.busy;
           } catch { /* siguiente tick */ }
         }, 3000);

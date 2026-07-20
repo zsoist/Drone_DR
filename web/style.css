@@ -1341,12 +1341,18 @@ button.exp { text-align: left; cursor: pointer; }
   border: 1px solid var(--line); border-radius: 8px;
   padding: 6px 11px; font-size: 11px; font-weight: 400; line-height: 1.4;
   color: var(--text); letter-spacing: 0; text-transform: none;
-  white-space: nowrap; max-width: 260px; z-index: 80;
+  /* nowrap rompía tips largos (resumen AI): una sola línea gigante recortada por
+     el contenedor con scroll. max-content = tips cortos en 1 línea, largos envuelven. */
+  white-space: normal; width: max-content; max-width: 260px; z-index: 80;
   box-shadow: 0 6px 20px rgba(0,0,0,0.35);
   animation: tipIn 140ms var(--ease);
   pointer-events: none;
 }
 @keyframes tipIn { from { opacity: 0; transform: translateX(-50%) translateY(3px); } }
+/* chips pegados al borde derecho de un contenedor con scroll: tooltip alineado a la
+   derecha del chip en vez de centrado (el centrado se salía del modal y se recortaba) */
+[data-tip].tip-r:hover::after { left: auto; right: 0; transform: none; animation: tipInR 140ms var(--ease); }
+@keyframes tipInR { from { opacity: 0; transform: translateY(3px); } }
 @media (hover: none) { [data-tip]:hover::after { display: none; } }
 
 /* ---------- charts v2 ---------- */
