@@ -1287,6 +1287,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
           <span class="tl-clip-lb">${lb} · ${(s.b - s.a).toFixed(1)}s</span>
           <span class="tl-badges">${badges}</span>
           <button class="tl-x" data-x="${i}" data-tip="Quitar del timeline">✕</button>
+          <button class="tl-expand" data-expand="${i}" data-tip="Abrir en grande y elegir el tramo (doble click)">⤢</button>
           <div class="tl-handle l" data-i="${i}"></div>
           <div class="tl-handle r" data-i="${i}"></div>
         </div>`;
@@ -1907,18 +1908,29 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const clips = cids.map(c => byId[c]).filter(Boolean);
     if (!clips.length) return 0;
     const target = +opts.target || 30;
-    // cuántos cortes caben: el tope duro del servidor son 24
-    let nSeg = Math.max(clips.length, Math.min(24, Math.round(target / R.seg)));
+    // DURACIÓN MEDIA DE PLANO del cine, no "los cortes que quepan". Investigación: 3.0s
+    // para 15s, 3.3s para 30s, 4.0s para 60s. Antes metía 16 cortes en 30s (1.9s cada uno)
+    // — eso es exactamente lo que se siente picado y barato.
+    const ASL = target <= 15 ? 3.0 : target <= 30 ? 3.3 : 4.0;
+    const nSeg = Math.max(3, Math.min(18, Math.round(target / ASL)));
+    // selección ELIMINATORIA: se descarta material, no se rellena cuota por clip. Un clip
+    // aporta 2 planos como mucho (3 si es largo) para que no domine el montaje.
     const scoreOf = c => Math.max(1, ai[c.clip_id]?.travel_score || 5);
-    const totScore = clips.reduce((a, c) => a + scoreOf(c), 0);
-    // cuota por clip: proporcional al score, mínimo 1, y nunca más cortes que segundos útiles
-    const quota = clips.map(c => Math.max(1,
-      Math.min(Math.round((nSeg * scoreOf(c)) / totScore), Math.floor((c.duration_s || 1) / 0.7) || 1)));
-    let over = quota.reduce((a, b) => a + b, 0) - 24;   // recorta si el redondeo se pasó del tope
-    for (let i = quota.length - 1; i >= 0 && over > 0; i--) {
-      const cut = Math.min(over, quota[i] - 1);
-      quota[i] -= cut; over -= cut;
+    const ranked = clips.slice().sort((x, y) => scoreOf(y) - scoreOf(x));
+    const quotaMap = new Map();
+    let left = nSeg;
+    for (let pass = 0; left > 0 && pass < 3; pass++) {
+      for (const c of ranked) {
+        if (left <= 0) break;
+        const cap = Math.min((c.duration_s || 0) > 120 ? 3 : 2,
+                             Math.max(1, Math.floor((c.duration_s || 1) / 1.2)));
+        const cur = quotaMap.get(c.clip_id) || 0;
+        if (cur >= cap) continue;
+        quotaMap.set(c.clip_id, cur + 1);
+        left--;
+      }
     }
+    const quota = clips.map(c => quotaMap.get(c.clip_id) || 0);
     const segs = [];
     clips.forEach((c, ci) => {
       const dur = c.duration_s || 0;
@@ -1968,25 +1980,49 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     }
     if (closer) ordered.push(closer);
 
-    // 2) RITMO: nada de duración constante (eso es lo "robótico"). El primer plano
-    //    respira, el centro acelera y el último vuelve a respirar para cerrar.
+    // 2) RITMO EN TRES ACTOS (no una campana simétrica): acto 1 respira (1.30×), el cuerpo
+    //    ACELERA de 1.00× a 0.68×, y el cierre rompe la serie con un hold largo (1.6-2.2×).
+    //    La tensión la crea el CONTRASTE, no la velocidad sostenida.
     const n = ordered.length;
-    const curve = i => {
-      const t = n === 1 ? 0.5 : i / (n - 1);
-      const bell = 1 - Math.pow(Math.abs(t - 0.5) * 2, 1.6);   // 0 en los bordes, 1 al centro
-      return 1.45 - 0.6 * bell;                                // extremos largos, centro corto
+    const actWeight = t =>
+      t < 0.25 ? 1.30
+        : t < 0.80 ? 1.00 - 0.32 * ((t - 0.25) / 0.55)
+          : 1.6 + 0.6 * ((t - 0.80) / 0.20);
+    // un plano abierto necesita más tiempo para leerse que un detalle
+    const scaleTime = [1.35, 1.12, 0.95, 0.85];
+    // mínimos por tipo de movimiento: una órbita de 1.5s no se lee como órbita
+    const minFor = s => {
+      const f2 = byId[s.clip_id];
+      const mo = (ai[s.clip_id]?.camera_motion || '').toLowerCase();
+      if (/órbita|orbita|orbit/.test(mo)) return 2.5;
+      if (/avance|dolly|forward|seguimiento/.test(mo)) return 2.0;
+      if ((f2?.stats?.distance_m || 0) < 6) return 1.2;      // casi estático
+      return 1.6;
     };
-    // los planos abiertos necesitan MÁS tiempo para leerse que un detalle
-    const scaleTime = [1.25, 1.1, 0.95, 0.85];
-    const weights = ordered.map((s, i) => curve(i) * scaleTime[meta(s).sc]);
+    const weights = ordered.map((s, i) => actWeight(n === 1 ? 0.5 : i / (n - 1)) * scaleTime[meta(s).sc]);
     const wSum = weights.reduce((a, b) => a + b, 0);
     ordered.forEach((s, i) => {
       const want = target * (weights[i] / wSum);
       const src = byId[s.clip_id];
       const maxOut = src ? src.duration_s - s.a : want;
-      const d = Math.max(0.55, Math.min(want, maxOut, 120));
+      const d = Math.max(minFor(s), Math.min(want, maxOut, 120));
       s.b = +Math.min(src ? src.duration_s : s.b, s.a + d * (s.speed || 1)).toFixed(2);
     });
+    // GATE ANTI-METRÓNOMO: si la variación de duraciones es baja, el montaje suena a
+    // metrónomo por mucho que las tomas sean buenas. CV = desviación/media debe ser ≥0.25.
+    const durs = ordered.map(s => (s.b - s.a) / (s.speed || 1));
+    const mean = durs.reduce((a, b) => a + b, 0) / durs.length;
+    const cv = Math.sqrt(durs.reduce((a, d) => a + (d - mean) ** 2, 0) / durs.length) / (mean || 1);
+    if (cv < 0.25 && n > 3) {
+      // exagera el contraste: alarga los extremos y acorta el pico
+      ordered.forEach((s, i) => {
+        const t = i / (n - 1);
+        const k = t < 0.2 || t > 0.82 ? 1.35 : 0.82;
+        const src = byId[s.clip_id];
+        const d = Math.max(minFor(s), Math.min(((s.b - s.a) * k), src ? src.duration_s - s.a : 99));
+        s.b = +Math.min(src ? src.duration_s : s.b, s.a + d).toFixed(2);
+      });
+    }
 
     // 3) TRANSICIONES: corte seco por defecto (un crossfade en CADA unión es justo lo que
     //    abarata un montaje). Solo se funde cuando el salto de escala es grande, y el
@@ -1999,8 +2035,22 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       s.transition = last ? 'dissolve' : jump >= 2 ? R2.trans : 'none';
       s.transDur = last ? Math.min(0.9, R2.dur + 0.35) : R2.dur;
     });
+    // un plano por debajo de ~1s no se lee: se percibe como un parpadeo/glitch. Si la
+    // fuente no da para el mínimo, el plano SOBRA — mejor 8 cortes buenos que 9 con uno roto.
+    const clean = ordered.filter((s, i) => (s.b - s.a) / (s.speed || 1) >= 1.0 || i === 0);
+    if (clean.length >= 3 && clean.length < ordered.length) {
+      const falta = target - clean.reduce((a, s) => a + (s.b - s.a) / (s.speed || 1), 0);
+      if (falta > 0.2) {          // reparte lo que sobraba entre los planos de cierre
+        const tail = clean.slice(-2);
+        tail.forEach(s => {
+          const src = byId[s.clip_id];
+          const d = (s.b - s.a) + falta / tail.length;
+          s.b = +Math.min(src ? src.duration_s : s.b, s.a + d).toFixed(2);
+        });
+      }
+    }
     segs.length = 0;
-    segs.push(...ordered);
+    segs.push(...(clean.length >= 3 ? clean : ordered));
 
     pushUndo();
     tl = segs;
@@ -2748,7 +2798,139 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     addEventListener('pointerdown', away, true);
   }
 
+  // ---- E1 · inspector expandible: doble click en un corte lo abre en grande ----
+  // El panel de abajo obliga a editar el in/out con sliders diminutos sobre un preview
+  // de 100px. Aquí ves el clip ENTERO y eliges el tramo mirándolo.
+  function openClipEditor(i) {
+    const s = tl[i];
+    const f = byId[s?.clip_id];
+    if (!s || !f) return;
+    const a0 = s.a, b0 = s.b;                       // por si cancela
+    const ov = document.createElement('div');
+    ov.className = 'ce-ov';
+    const A = ai[s.clip_id] || {};
+    ov.innerHTML = `<div class="ce-card">
+      <div class="ce-h">
+        <div class="ce-t">
+          <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
+          <span class="mono">corte ${i + 1} de ${tl.length} · fuente ${fmt.dur(f.duration_s)}</span>
+        </div>
+        <span class="spacer" style="flex:1"></span>
+        <button class="rv-x" data-ce="close" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="ce-stage">
+        <video src="${DATA}/proxies/${encodeURIComponent(s.clip_id)}.mp4" playsinline preload="auto" muted></video>
+        <div class="ce-mask" data-aspect="${document.getElementById('ed-aspect')?.value || '16:9'}"></div>
+      </div>
+      <div class="ce-scrub" id="ce-scrub">
+        <div class="ce-sel" id="ce-sel"></div>
+        <span class="ce-h1" data-ce="ha"></span>
+        <span class="ce-h2" data-ce="hb"></span>
+        <span class="ce-ph" id="ce-ph"></span>
+      </div>
+      <div class="ce-times mono">
+        <span>In <b id="ce-a">${fmt.dur(s.a)}</b></span>
+        <span class="ce-dur">dura <b id="ce-d">${(s.b - s.a).toFixed(1)}s</b></span>
+        <span>Out <b id="ce-b">${fmt.dur(s.b)}</b></span>
+      </div>
+      <div class="ce-facts">
+        <span><i>${icon('mountain')}</i><b>${Math.round(f.stats?.max_rel_alt_m || 0)} m</b><em>altura</em></span>
+        <span><i>${icon('route')}</i><b>${fmt.km(f.stats?.distance_m || 0)}</b><em>recorrido</em></span>
+        <span><i>${icon('clock')}</i><b>${esc(f.time || '—')}</b><em>hora</em></span>
+        ${A.travel_score ? `<span><i>${icon('spark')}</i><b>${A.travel_score}/10</b><em>AI vision</em></span>` : ''}
+        <span><i>${icon('layers')}</i><b>${SCALE_LB[shotScale(f)]}</b><em>tipo de plano</em></span>
+      </div>
+      ${A.summary ? `<p class="ce-sum">${esc(A.summary)}</p>` : ''}
+      ${(A.highlights || []).length ? `<div class="ce-hl">
+        <span class="ce-hl-lb">Momentos que la AI marcó:</span>
+        ${(A.highlights || []).slice(0, 5).map(h =>
+          `<button class="chip" data-jump="${(+h.t || 0).toFixed(1)}" data-tip="${esc(h.reason || '')}">${fmt.dur(+h.t || 0)} · ${esc(h.type || 'momento')}</button>`).join('')}
+      </div>` : ''}
+      <div class="ce-f">
+        <button class="btn" data-ce="prev" ${i === 0 ? 'disabled' : ''}>‹ Corte anterior</button>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn" data-ce="cancel">Cancelar</button>
+        <button class="btn primary" data-ce="ok">Aplicar</button>
+        <button class="btn" data-ce="next" ${i === tl.length - 1 ? 'disabled' : ''}>Siguiente corte ›</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    const v = ov.querySelector('video');
+    const scrub = ov.querySelector('#ce-scrub');
+    const D = f.duration_s || 1;
+    const paint = () => {
+      const L = (s.a / D) * 100, W = ((s.b - s.a) / D) * 100;
+      ov.querySelector('#ce-sel').style.cssText = `left:${L}%;width:${W}%`;
+      ov.querySelector('[data-ce="ha"]').style.left = `${L}%`;
+      ov.querySelector('[data-ce="hb"]').style.left = `${L + W}%`;
+      ov.querySelector('#ce-a').textContent = fmt.dur(s.a);
+      ov.querySelector('#ce-b').textContent = fmt.dur(s.b);
+      ov.querySelector('#ce-d').textContent = `${(s.b - s.a).toFixed(1)}s`;
+    };
+    paint();
+    v.addEventListener('loadedmetadata', () => { v.currentTime = s.a; }, { once: true });
+    // reproduce SOLO el tramo elegido, en bucle: así juzgas el corte, no el clip
+    v.addEventListener('timeupdate', () => {
+      if (v.currentTime >= s.b - 0.02 || v.currentTime < s.a - 0.3) v.currentTime = s.a;
+      ov.querySelector('#ce-ph').style.left = `${(v.currentTime / D) * 100}%`;
+    });
+    v.play().catch(() => {});
+    let drag = null;
+    const tAt = clientX => {
+      const r = scrub.getBoundingClientRect();
+      return Math.max(0, Math.min(D, ((clientX - r.left) / r.width) * D));
+    };
+    scrub.addEventListener('pointerdown', e => {
+      const h = e.target.closest('[data-ce="ha"],[data-ce="hb"]');
+      drag = h ? h.dataset.ce : 'seek';
+      try { scrub.setPointerCapture(e.pointerId); } catch {}
+      if (drag === 'seek') { v.currentTime = tAt(e.clientX); return; }
+    });
+    scrub.addEventListener('pointermove', e => {
+      if (!drag || drag === 'seek') return;
+      const t = tAt(e.clientX);
+      if (drag === 'ha') s.a = +Math.min(t, s.b - 0.4).toFixed(2);
+      else s.b = +Math.max(t, s.a + 0.4).toFixed(2);
+      v.currentTime = drag === 'ha' ? s.a : Math.max(s.a, s.b - 0.4);
+      paint();
+    });
+    scrub.addEventListener('pointerup', () => { drag = null; });
+    ov.addEventListener('click', e => {
+      const j = e.target.closest('[data-jump]');
+      if (j) {                       // centrar el tramo en el momento que marcó la AI
+        const t = +j.dataset.jump, half = Math.max(0.6, (s.b - s.a) / 2);
+        s.a = +Math.max(0, Math.min(t - half, D - 0.8)).toFixed(2);
+        s.b = +Math.min(D, s.a + half * 2).toFixed(2);
+        v.currentTime = s.a; paint();
+        return;
+      }
+      const b = e.target.closest('[data-ce]');
+      if (!b) { if (e.target === ov) { s.a = a0; s.b = b0; ov.remove(); } return; }
+      const act = b.dataset.ce;
+      if (act === 'close' || act === 'cancel') { s.a = a0; s.b = b0; ov.remove(); renderAll(); return; }
+      if (act === 'ok') { pushUndo(); ov.remove(); renderAll(); seek(offset(i)); toast('Corte actualizado'); return; }
+      if (act === 'prev' || act === 'next') {
+        pushUndo();
+        const ni = i + (act === 'next' ? 1 : -1);
+        ov.remove(); renderAll();
+        if (tl[ni]) openClipEditor(ni);
+      }
+    });
+    addEventListener('keydown', function ck(ev) {
+      if (!document.body.contains(ov)) { removeEventListener('keydown', ck); return; }
+      if (ev.key === 'Escape') { s.a = a0; s.b = b0; ov.remove(); renderAll(); }
+      if (ev.key === 'Enter') { pushUndo(); ov.remove(); renderAll(); }
+    });
+  }
+
+  track.addEventListener('dblclick', e => {
+    const c = e.target.closest('.tl-clip');
+    if (c) { e.preventDefault(); openClipEditor(+c.dataset.i); }
+  });
+
   track.addEventListener('click', e => {
+    const exp = e.target.closest('.tl-expand');
+    if (exp) { e.stopPropagation(); openClipEditor(+exp.dataset.expand); return; }
     const jn = e.target.closest('.tl-junction');
     if (jn) { e.stopPropagation(); openTxPicker(+jn.dataset.j, jn); return; }
     const x = e.target.closest('.tl-x');
