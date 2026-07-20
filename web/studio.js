@@ -190,6 +190,25 @@ main.innerHTML = `
                 <input class="ctl" id="tli-title" placeholder="Título de este corte…" maxlength="60" style="flex:1">
               </div>
               <div class="tl-inspect-row">
+                <label>Estilo</label>
+                <select class="ctl" id="tli-title-style" data-tip="Cada estilo trae su propia animación de entrada">
+                  <option value="clean">Limpio</option>
+                  <option value="bold">Bold · mayúsculas</option>
+                  <option value="kinetic">Kinético · sube</option>
+                  <option value="lower">Lower third · entra</option>
+                  <option value="minimal">Minimal</option>
+                </select>
+                <label>Fuente</label>
+                <select class="ctl" id="tli-title-font" data-tip="Fuentes del sistema, se renderizan en el Mac">
+                  <option value="sans">Helvetica Neue</option>
+                  <option value="condensed">Avenir Condensed</option>
+                  <option value="avenir">Avenir Next</option>
+                  <option value="optima">Optima</option>
+                  <option value="serif">Georgia</option>
+                  <option value="mono">Menlo</option>
+                </select>
+              </div>
+              <div class="tl-inspect-row">
                 <label>Posición</label>
                 <select class="ctl" id="tli-title-pos">
                   <option value="top">Arriba</option><option value="mid">Centro</option><option value="bottom">Abajo</option>
@@ -733,7 +752,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   // v7 · defaults de color/título (neutro) — un {} vacío en export = sin grade
   const GRADE_NEUTRAL = { bright: 100, contrast: 100, sat: 100, temp: 0 };
   const isNeutralGrade = g => !g || (g.bright === 100 && g.contrast === 100 && g.sat === 100 && g.temp === 0);
-  const TITLE_DEFAULT = { pos: 'bottom', size: 40, color: 'ffffff', box: false };
+  const TITLE_DEFAULT = { pos: 'bottom', size: 40, color: 'ffffff', box: false, style: 'clean', font: 'sans' };
 
   // combina LUT + grade → filtro CSS para el preview del compositor.
   // temp: -100(frío)→+100(cálido) se aproxima con sepia + hue-rotate.
@@ -944,6 +963,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     // título + estilo
     g('tli-title').value = s.title || '';
     g('tli-title-pos').value = s.titleStyle.pos;
+    g('tli-title-style').value = s.titleStyle.style || 'clean';
+    g('tli-title-font').value = s.titleStyle.font || 'sans';
     g('tli-title-size').value = s.titleStyle.size;
     g('tli-title-color').value = '#' + (s.titleStyle.color || 'ffffff');
     g('tli-title-box').checked = !!s.titleStyle.box;
@@ -1913,6 +1934,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   // --- título + estilo ---
   $('tli-title').addEventListener('input', e => { const s = selSeg(); if (!s) return; commitEdit(); s.title = e.target.value; renderTrack(); });
   $('tli-title-pos').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.pos = e.target.value; } });
+  $('tli-title-style').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.style = e.target.value; renderTrack(); } });
+  $('tli-title-font').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.font = e.target.value; } });
   $('tli-title-size').addEventListener('input', e => { const s = selSeg(); if (!s) return; commitEdit(); s.titleStyle.size = +e.target.value; });
   $('tli-title-color').addEventListener('input', e => { const s = selSeg(); if (!s) return; commitEdit(); s.titleStyle.color = e.target.value.replace('#', ''); });
   $('tli-title-box').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.box = e.target.checked; } });

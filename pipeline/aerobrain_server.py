@@ -1954,22 +1954,68 @@ def _valid_hex6(c):
     return "ffffff"
 
 
-def _title_drawtext(txt, style):
-    # construye el filtro drawtext respetando titleStyle{pos,size,color,box}.
-    # mantiene sombra + fade de alpha. txt ya viene sanitizado por el caller.
+# I5 · fuentes premium del sistema (el render corre en el Mac, así que están garantizadas).
+# Cada entrada apunta a una familia .ttc con su índice de cara para pedir la variante Bold.
+TITLE_FONTS = {
+    "sans":      ("/System/Library/Fonts/HelveticaNeue.ttc", 2),          # neutra, moderna
+    "condensed": ("/System/Library/Fonts/Avenir Next Condensed.ttc", 1),  # titulares altos
+    "avenir":    ("/System/Library/Fonts/Avenir Next.ttc", 1),            # geométrica cálida
+    "optima":    ("/System/Library/Fonts/Optima.ttc", 1),                 # editorial elegante
+    "serif":     ("/System/Library/Fonts/Supplemental/Georgia Bold.ttf", 0),
+    "mono":      ("/System/Library/Fonts/Menlo.ttc", 1),                  # técnica / datos
+}
+# Estilos = combinación de tamaño, caja, sombra y ANIMACIÓN (drawtext acepta expresiones
+# con 't', así que se anima sin ASS: alpha para fundidos, y para deslizamientos).
+TITLE_STYLES = {
+    "clean":   {"div_bias": 0, "box": False, "anim": "fade"},
+    "bold":    {"div_bias": -6, "box": False, "anim": "pop", "upper": True},
+    "kinetic": {"div_bias": -4, "box": False, "anim": "slide", "upper": True},
+    "lower":   {"div_bias": 4, "box": True, "anim": "slideL"},
+    "minimal": {"div_bias": 5, "box": False, "anim": "fade"},
+}
+
+
+def _title_drawtext(txt, style, dur: float = 0.0):
+    """Título quemado con estilo Y animación reales.
+
+    drawtext admite expresiones dependientes de 't' en alpha/x/y — eso permite fundidos,
+    entradas deslizadas y un 'pop' de escala sin salir de ffmpeg ni depender de ASS.
+    """
     style = style if isinstance(style, dict) else {}
     pos = style.get("pos", "bottom")
-    y = {"top": "h*0.08", "mid": "(h-th)/2", "bottom": "h*0.82"}.get(pos, "h*0.82")
-    # size 1..100 → divisor ~28 (pequeño) .. 8 (grande); mayor size = divisor menor
+    preset = TITLE_STYLES.get(str(style.get("style", "clean")), TITLE_STYLES["clean"])
+    if preset.get("upper"):
+        txt = txt.upper()
+    # y base por posición; 'bottom' se mantiene dentro de la zona segura de las redes
+    y_base = {"top": "h*0.10", "mid": "(h-th)/2", "bottom": "h*0.78"}.get(pos, "h*0.78")
     size = _clampf(style.get("size", 42), 1, 100, 42)
-    div = 28 - (size - 1) / 99.0 * 20  # 1→28 , 100→8
+    div = max(5.0, 28 - (size - 1) / 99.0 * 20 + preset["div_bias"])
     color = _valid_hex6(style.get("color", "ffffff"))
-    box = ""
-    if style.get("box"):
-        box = ":box=1:boxcolor=black@0.45:boxborderw=12"
-    return (f"drawtext=fontfile={FONT}:text='{txt}':fontcolor=0x{color}"
+    fkey = str(style.get("font", "sans"))
+    fpath, fidx = TITLE_FONTS.get(fkey, TITLE_FONTS["sans"])
+    if not Path(fpath).exists():
+        fpath, fidx = FONT, 0
+    box = ":box=1:boxcolor=black@0.45:boxborderw=14" if (style.get("box") or preset["box"]) else ""
+    # animación: IN en los primeros 0.45s y OUT en los últimos 0.35s si sabemos la duración
+    anim = preset["anim"]
+    # las expresiones van DENTRO de una cadena -vf unida por comas: hay que escapar las
+    # comas (y los dos puntos) o el parser de filtros las lee como separadores.
+    esc = lambda e: e.replace("\\", "").replace(",", r"\,").replace(":", r"\:")
+    fade_out = (f"*if(gt(t,{max(dur - 0.35, 0):.2f}),max(0,({dur:.2f}-t)/0.35),1)"
+                if dur > 1.0 else "")
+    alpha_in = "0.18" if anim == "pop" else "0.45"
+    alpha = esc(f"min(1,t/{alpha_in}){fade_out}")
+    x, y = "(w-text_w)/2", y_base
+    if anim == "slide":            # sube mientras aparece
+        y = esc(f"{y_base}+40*max(0,1-t/0.45)")
+    elif anim == "slideL":         # entra desde la izquierda (lower third)
+        x = esc("if(lt(t,0.45),(w-text_w)/2-120*(1-t/0.45),(w-text_w)/2)")
+    else:
+        y = esc(y_base)
+    return (f"drawtext=fontfile='{fpath}':text='{txt}':fontcolor=0x{color}"
             f":fontsize=h/{div:.2f}{box}"
-            f":shadowx=2:shadowy=2:x=(w-text_w)/2:y={y}:alpha='min(1,t)'")
+            f":borderw=2:bordercolor=black@0.55:shadowx=2:shadowy=2:shadowcolor=black@0.5"
+            f":x={x}:y={y}:alpha={alpha}")
 
 
 def _atempo_chain(speed):
@@ -2300,10 +2346,10 @@ def run_edit(spec: dict, j):
                 # heredaba estilo. Ahora se dibujan AMBOS cuando existen, y el global respeta
                 # el titleStyle del reel.
                 if seg_title:
-                    vf.append(_title_drawtext(seg_title, title_style))
+                    vf.append(_title_drawtext(seg_title, title_style, out_dur))
                 if title and i == 0 and title != seg_title:
                     vf.append(_title_drawtext(title, spec.get("titleStyle")
-                                              if isinstance(spec.get("titleStyle"), dict) else {}))
+                                              if isinstance(spec.get("titleStyle"), dict) else {}, out_dur))
             seg = tmp / f"e{i}.mp4"
             # -t de ENTRADA (antes de -i): sin él, 'reverse' bufferea desde 'a' hasta el FIN
             # del archivo y el -t de salida se queda con los ÚLTIMOS out_dur seg invertidos
