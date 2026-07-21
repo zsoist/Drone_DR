@@ -2366,20 +2366,45 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
 
   // ⚡ REEL AUTOMÁTICO: sin wizard. Elige el mejor DÍA (el que suma más score AI), toma
   // sus mejores clips y arma el montaje. Un toque = reel editable en el Editor.
+  // ---- filtro de usabilidad: un clip nocturno es NEGRO, no "un plano oscuro" ----
+  // El reel automático elegía tomas de las 22:54 con brillo 17/255 (tramos enteros a 0-3)
+  // porque, sin análisis AI, recibían la puntuación neutra por defecto. Se mide el brillo
+  // de la miniatura — una imagen diminuta por clip, y se cachea.
+  // El brillo se mide SOBRE EL VIDEO ENTERO en el servidor (backfill_luma.py) y viaja en
+  // el manifiesto. Medirlo sobre la miniatura no servía: se desvía hasta ±25 porque la
+  // miniatura sale del 25% de la duración y puede caer en el único momento iluminado.
+  const LUMA_MIN = 45;      // por debajo, el material no se ve por mucho grading que le eches
+  const DARK_MAX = 0.35;    // y si más de un tercio de las muestras son negro puro, sobra
+  const usableClip = f => f.avg_luma === undefined
+    || (f.avg_luma >= LUMA_MIN && (f.dark_frac ?? 0) <= DARK_MAX);
+
   function autoReel(target) {
+    // descartar lo inservible ANTES de puntuar: sin esto una toma nocturna gana un hueco
+    const usable = editable.filter(usableClip);
+    const descartadas = editable.length - usable.length;
+    const pool0 = usable.length >= 3 ? usable : editable;   // si casi todo es oscuro, no bloqueamos
     const byDay = new Map();
-    editable.forEach(f => {
+    pool0.forEach(f => {
       const d = f.date || '—';
       if (!byDay.has(d)) byDay.set(d, []);
       byDay.get(d).push(f);
     });
     if (!byDay.size) return toast('No hay tomas con video disponible todavía');
-    const dayScore = fs => fs.reduce((a, f) => a + (ai[f.clip_id]?.travel_score || 4), 0);
-    // mejor día = más "sustancia" (score acumulado), con desempate por recencia
+    // Mejor día = CALIDAD MEDIA × LUZ, no volumen. Sumar puntuaciones hacía ganar al día
+    // con más tomas aunque fueran mediocres — por eso salía siempre la sesión del
+    // atardecer, que tenía muchos clips a 50 de luma en vez de los buenos a 110.
+    const dayScore = fs => {
+      const q = fs.reduce((a, f) => a + (ai[f.clip_id]?.travel_score || 5), 0) / fs.length;
+      const lum = fs.reduce((a, f) => a + (f.avg_luma ?? 90), 0) / fs.length;
+      const luz = Math.min(1, lum / 95);                 // 95+ = luz plena; 50 = penaliza fuerte
+      const cuerpo = Math.min(1, fs.length / 6);         // un día de 1 toma no da para un reel
+      return q * luz * (0.65 + 0.35 * cuerpo);
+    };
     const [bestDay, pool] = [...byDay.entries()]
       .sort((A, B) => dayScore(B[1]) - dayScore(A[1]) || B[0].localeCompare(A[0]))[0];
-    const ranked = pool.slice().sort((a, b) =>
-      (ai[b.clip_id]?.travel_score || 4) - (ai[a.clip_id]?.travel_score || 4));
+    // dentro del día, la luz también manda: un plano bien expuesto vale más que uno turbio
+    const clipScore = f => (ai[f.clip_id]?.travel_score || 5) * Math.min(1.15, (f.avg_luma ?? 90) / 95);
+    const ranked = pool.slice().sort((a, b) => clipScore(b) - clipScore(a));
     // más tomas para reels largos, pero nunca tantas que cada corte quede en un parpadeo
     const want = Math.max(2, Math.min(ranked.length, Math.round(target / 4)));
     const picks = ranked.slice(0, want).map(f => f.clip_id);
@@ -2388,7 +2413,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     if (!n) return toast('No pude armar el reel con esas tomas');
     showMod('editor');
     scrollTo({ top: 0, behavior: 'smooth' });
-    toast(`Reel de ${target}s listo: ${n} cortes de las ${picks.length} mejores tomas del ${fmt.date(bestDay)}`);
+    toast(`Reel de ${target}s listo: ${n} cortes de las ${picks.length} mejores tomas del ${fmt.date(bestDay)}`
+      + (descartadas ? ` · ${descartadas} toma${descartadas === 1 ? '' : 's'} descartada${descartadas === 1 ? '' : 's'} por estar demasiado oscura${descartadas === 1 ? '' : 's'}` : ''));
   }
   document.querySelector('.rm-auto-b')?.addEventListener('click', e => {
     const b = e.target.closest('[data-auto]');

@@ -112,6 +112,20 @@ def process_clip(mp4: Path) -> dict:
                     "-q:v", "4", str(fdir / "f_%04d.jpg")])
         meta["frame_count"] = len(list(fdir.glob("f_*.jpg")))
 
+    # brillo real del clip: el montaje automático lo usa para no elegir tomas nocturnas
+    # (medirlo sobre la miniatura se desvía hasta ±25 — hay que muestrear el video entero)
+    try:
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(proxy),
+                              "-vf", "fps=1/4,scale=32:18,format=gray", "-f", "rawvideo", "-"],
+                             capture_output=True, timeout=180).stdout
+        n = 32 * 18
+        fr = [sum(raw[i * n:(i + 1) * n]) / n for i in range(len(raw) // n)]
+        if fr:
+            meta["avg_luma"] = round(sum(fr) / len(fr), 1)
+            meta["dark_frac"] = round(sum(1 for f in fr if f < 24) / len(fr), 3)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
     (VAULT / "manifest" / f"{cid}.json").write_text(json.dumps(meta, indent=1))
     print(f"✅ {cid} [{tier}] {meta['duration_s']}s "
           f"proxy={'%.0fMB' % (meta.get('proxy_bytes', 0) / 1e6) if 'proxy_bytes' in meta else '—'} "
