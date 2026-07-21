@@ -88,6 +88,7 @@ main.innerHTML = `
               <div class="tl-group-btns">
                 <button class="tl-tool ai" data-tool="magic" id="btn-magic" data-tip="Autoarmar el reel con los mejores momentos">${icon('spark')}<span class="tl-lb">Momentos</span></button>
               <button class="tl-tool" data-tool="music" id="btn-music" data-tip="Ponle música al reel (tu biblioteca)">${icon('volume')}<span class="tl-lb">Música</span></button>
+              <button class="tl-tool" data-tool="text" id="btn-text" data-tip="Añadir texto en el punto del playhead (T)">${icon('tag')}<span class="tl-lb">Texto</span></button>
               </div>
               <span class="tl-group-lb">IA</span>
             </div>
@@ -113,6 +114,7 @@ main.innerHTML = `
           <div class="tl-scroll" id="tl-scroll">
             <div class="tl-ruler" id="tl-ruler"></div>
             <div class="tl-track" id="tl-track"></div>
+            <div class="tl-textlane" id="tl-textlane" data-tip="Pista de texto — los bloques van donde tú los pongas, no atados a los cortes"></div>
             <div class="tl-playhead" id="tl-playhead"></div>
           </div>
 
@@ -1276,6 +1278,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   function renderAll() {
     renderRuler();
     renderTrack();
+    renderTextLane();
     renderInspector();
     updateStat();
     syncTools();
@@ -1454,6 +1457,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     if (x < scroll.scrollLeft + 40) scroll.scrollLeft = Math.max(0, x - 40);
     else if (x > scroll.scrollLeft + vw - 40) scroll.scrollLeft = x - vw + 40;
     timeEl.textContent = `${fmt.dur(playhead)} / ${fmt.dur(total())}`;
+    paintTextOverlay();     // el texto aparece/desaparece siguiendo al playhead
     // marca visual del clip EN REPRODUCCIÓN (solo togglea al cambiar de clip)
     const nowAt = clipAt(playhead);
     const ni = nowAt ? nowAt.idx : -1;
@@ -1679,6 +1683,184 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     });
     sel = 0; playhead = 0; curCid = null; renderAll(); seek(0);
   }
+
+  // ================= PISTA DE TEXTO =================
+  // Los títulos viven PEGADOS a un corte: si mueves el corte, el título se va con él y no
+  // puedes escribir a caballo entre dos planos. Esta pista es independiente: cada bloque
+  // ocupa el tramo del reel que tú decidas, y así se quema en el export (enable=between).
+  let texts = [];      // [{id, text, start, end, style}]
+  let textSel = -1;
+  const TEXT_DEF = { pos: 'bottom', size: 46, color: 'ffffff', box: false, style: 'clean', font: 'sans' };
+
+  function addText() {
+    if (!tl.length) return toast('Primero añade tomas al timeline');
+    const start = Math.min(playhead, Math.max(0, total() - 1));
+    const t = { id: uid(), text: 'Tu texto', start: +start.toFixed(2),
+                end: +Math.min(total(), start + 3).toFixed(2), style: { ...TEXT_DEF } };
+    texts.push(t);
+    textSel = texts.length - 1;
+    renderTextLane();
+    openTextEditor(textSel);
+  }
+
+  function renderTextLane() {
+    const lane = document.getElementById('tl-textlane');
+    if (!lane) return;
+    const T = total();
+    lane.style.width = `${Math.max(T * pps, scroll?.clientWidth || 320)}px`;
+    lane.innerHTML = texts.map((t, i) => {
+      const L = t.start * pps, W = Math.max(24, (t.end - t.start) * pps);
+      return `<div class="tl-txt${i === textSel ? ' on' : ''}" data-txt="${i}"
+                   style="left:${L}px;width:${W}px" data-tip="${esc(t.text)} · ${fmt.dur(t.start)}–${fmt.dur(t.end)}">
+        <span class="tl-txt-h l" data-txth="l"></span>
+        <b>${esc(t.text.slice(0, 26))}</b>
+        <button class="tl-txt-x" data-txtx="${i}" aria-label="Quitar">✕</button>
+        <span class="tl-txt-h r" data-txth="r"></span>
+      </div>`;
+    }).join('');
+    lane.classList.toggle('empty', !texts.length);
+    paintTextOverlay();
+  }
+
+  // lo que se ve encima del video mientras editas — misma tipografía y posición que el export
+  function paintTextOverlay() {
+    let ov = document.getElementById('tl-txtov');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'tl-txtov';
+      ov.className = 'tl-txtov';
+      document.getElementById('tl-stage')?.appendChild(ov);
+    }
+    const vis = texts.filter(t => playhead >= t.start && playhead <= t.end);
+    const FONTS = { sans: '"Helvetica Neue",system-ui,sans-serif', condensed: '"Avenir Next Condensed",system-ui,sans-serif',
+                    avenir: '"Avenir Next",system-ui,sans-serif', optima: 'Optima,Georgia,serif',
+                    serif: 'Georgia,serif', mono: 'Menlo,monospace' };
+    ov.innerHTML = vis.map(t => {
+      const s = { ...TEXT_DEF, ...(t.style || {}) };
+      const top = s.pos === 'top' ? '10%' : s.pos === 'mid' ? '50%' : '78%';
+      const up = s.style === 'bold' || s.style === 'kinetic';
+      return `<span style="top:${top};font-family:${FONTS[s.font] || FONTS.sans};
+        font-size:${(s.size / 100 * 9).toFixed(1)}cqh;color:#${esc(s.color)};
+        ${up ? 'text-transform:uppercase;letter-spacing:.02em;' : ''}
+        ${s.box ? 'background:rgba(0,0,0,.45);padding:.25em .6em;border-radius:.2em;' : ''}
+        ">${esc(t.text)}</span>`;
+    }).join('');
+  }
+
+  function openTextEditor(i) {
+    const t = texts[i];
+    if (!t) return;
+    const ov = document.createElement('div');
+    ov.className = 'modal-ov';
+    const S = { ...TEXT_DEF, ...(t.style || {}) };
+    ov.innerHTML = `<div class="modal" style="max-width:520px">
+      <div class="modal-h"><b>${icon('tag')} Texto</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+      <div class="modal-b">
+        <input class="m-ipt" id="tx-t" style="width:100%;font-size:15px" maxlength="120" value="${esc(t.text)}">
+        <div class="mlb">Cuándo aparece</div>
+        <div class="tx-row"><span>Entra</span>
+          <input type="range" id="tx-a" min="0" max="${total().toFixed(1)}" step="0.1" value="${t.start}">
+          <b class="mono" id="tx-av">${fmt.dur(t.start)}</b></div>
+        <div class="tx-row"><span>Sale</span>
+          <input type="range" id="tx-b" min="0" max="${total().toFixed(1)}" step="0.1" value="${t.end}">
+          <b class="mono" id="tx-bv">${fmt.dur(t.end)}</b></div>
+        <div class="mlb">Estilo</div>
+        <div class="tx-row"><span>Animación</span>
+          <select class="ctl" id="tx-style" style="flex:1">
+            ${[['clean', 'Limpio'], ['bold', 'Bold · mayúsculas'], ['kinetic', 'Kinético · sube'],
+               ['lower', 'Lower third'], ['minimal', 'Minimal']].map(([k, l]) =>
+              `<option value="${k}"${S.style === k ? ' selected' : ''}>${l}</option>`).join('')}
+          </select></div>
+        <div class="tx-row"><span>Fuente</span>
+          <select class="ctl" id="tx-font" style="flex:1">
+            ${[['sans', 'Helvetica Neue'], ['condensed', 'Avenir Condensed'], ['avenir', 'Avenir Next'],
+               ['optima', 'Optima'], ['serif', 'Georgia'], ['mono', 'Menlo']].map(([k, l]) =>
+              `<option value="${k}"${S.font === k ? ' selected' : ''}>${l}</option>`).join('')}
+          </select></div>
+        <div class="tx-row"><span>Posición</span>
+          <select class="ctl" id="tx-pos" style="flex:1">
+            <option value="top"${S.pos === 'top' ? ' selected' : ''}>Arriba</option>
+            <option value="mid"${S.pos === 'mid' ? ' selected' : ''}>Centro</option>
+            <option value="bottom"${S.pos === 'bottom' ? ' selected' : ''}>Abajo</option>
+          </select>
+          <span>Tamaño</span>
+          <input type="range" id="tx-size" min="10" max="100" step="1" value="${S.size}" style="flex:1">
+        </div>
+        <div class="tx-row"><span>Color</span>
+          <input type="color" class="ctl" id="tx-color" value="#${esc(S.color)}" style="width:52px;padding:2px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11.5px">
+            <input type="checkbox" id="tx-box"${S.box ? ' checked' : ''}> Fondo</label>
+        </div>
+      </div>
+      <div class="rm-foot">
+        <span class="rm-count mono">se quema en el video al exportar</span>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn rv-del" data-tx="del">${icon('trash')} Quitar</button>
+        <button class="btn primary" data-tx="ok">Listo</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const apply = () => {
+      t.text = ov.querySelector('#tx-t').value || 'Texto';
+      const A = +ov.querySelector('#tx-a').value, B = +ov.querySelector('#tx-b').value;
+      t.start = +Math.min(A, B - 0.3).toFixed(2);
+      t.end = +Math.max(B, A + 0.3).toFixed(2);
+      t.style = { pos: ov.querySelector('#tx-pos').value, size: +ov.querySelector('#tx-size').value,
+                  color: ov.querySelector('#tx-color').value.replace('#', ''),
+                  box: ov.querySelector('#tx-box').checked,
+                  style: ov.querySelector('#tx-style').value, font: ov.querySelector('#tx-font').value };
+      ov.querySelector('#tx-av').textContent = fmt.dur(t.start);
+      ov.querySelector('#tx-bv').textContent = fmt.dur(t.end);
+      renderTextLane();
+    };
+    ov.addEventListener('input', apply);
+    ov.addEventListener('change', apply);
+    ov.addEventListener('click', e => {
+      if (e.target.closest('[data-tx="del"]')) { texts.splice(i, 1); textSel = -1; ov.remove(); renderTextLane(); return; }
+      if (e.target === ov || e.target.closest('.modal-x') || e.target.closest('[data-tx="ok"]')) { apply(); ov.remove(); }
+    });
+    setTimeout(() => { const el = ov.querySelector('#tx-t'); el.focus(); el.select(); }, 60);
+  }
+
+  // arrastrar el bloque y sus bordes sobre la pista
+  (() => {
+    const lane = document.getElementById('tl-textlane');
+    if (!lane) return;
+    let drag = null;
+    lane.addEventListener('pointerdown', e => {
+      const blk = e.target.closest('[data-txt]');
+      if (!blk) return;
+      if (e.target.closest('[data-txtx]')) return;
+      const i = +blk.dataset.txt;
+      textSel = i;
+      const h = e.target.closest('[data-txth]');
+      drag = { i, mode: h ? h.dataset.txth : 'move', x0: e.clientX, a0: texts[i].start, b0: texts[i].end };
+      try { lane.setPointerCapture(e.pointerId); } catch {}
+      renderTextLane();
+    });
+    lane.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const d = (e.clientX - drag.x0) / pps;
+      const t = texts[drag.i];
+      const T = total();
+      if (drag.mode === 'move') {
+        const w = drag.b0 - drag.a0;
+        t.start = +Math.max(0, Math.min(T - w, drag.a0 + d)).toFixed(2);
+        t.end = +(t.start + w).toFixed(2);
+      } else if (drag.mode === 'l') {
+        t.start = +Math.max(0, Math.min(drag.b0 - 0.3, drag.a0 + d)).toFixed(2);
+      } else {
+        t.end = +Math.min(T, Math.max(drag.a0 + 0.3, drag.b0 + d)).toFixed(2);
+      }
+      renderTextLane();
+    });
+    lane.addEventListener('pointerup', () => { drag = null; });
+    lane.addEventListener('click', e => {
+      const x = e.target.closest('[data-txtx]');
+      if (x) { texts.splice(+x.dataset.txtx, 1); textSel = -1; renderTextLane(); return; }
+      const blk = e.target.closest('[data-txt]');
+      if (blk && !drag) openTextEditor(+blk.dataset.txt);
+    });
+  })();
 
   // ================= MÚSICA (I2) =================
   // La pista se OYE mientras editas (mismo elemento <audio> alineado al playhead) y viaja
@@ -2639,6 +2821,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     else if (t === 'clear') clearTL();
     else if (t === 'magic') magic();
     else if (t === 'music') openMusic();
+    else if (t === 'text') addText();
     else if (t === 'zoomin') { pps = Math.min(240, pps * 1.4); renderAll(); }
     else if (t === 'zoomout') { pps = Math.max(8, pps / 1.4); renderAll(); }
     else if (t === 'fit') fit();
@@ -3153,6 +3336,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       segments,
       vfit: edVfit,
       framing: +document.getElementById('ed-framing').value,
+      texts: texts.length ? texts.map(t => ({ text: t.text, start: t.start, end: t.end, style: t.style })) : undefined,
       music: music ? { name: music.name, volume: music.volume, duck: music.duck,
                        fadeIn: music.fadeIn, fadeOut: music.fadeOut, startAt: music.startAt,
                        originalVolume: music.originalVolume } : undefined,

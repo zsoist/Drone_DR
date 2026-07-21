@@ -2277,6 +2277,41 @@ def _audio_beats(path: Path) -> dict:
     return out
 
 
+def _burn_texts(video: Path, texts: list, bitrate: str) -> Path:
+    """PISTA DE TEXTO (independiente de los cortes): cada bloque aparece entre start y end
+    del reel completo, no atado a un clip. Se quema en una sola pasada con drawtext y
+    enable=between(t,...), así 10 textos cuestan lo mismo que uno."""
+    dur = _probe_dur(video)
+    chain = []
+    for t in texts[:24]:
+        if not isinstance(t, dict):
+            continue
+        txt = str(t.get("text", ""))[:120].replace("\\", "").replace("'", "").replace("%", "").replace(":", r"\:")
+        if not txt:
+            continue
+        a = _clampf(t.get("start", 0), 0, max(dur - 0.1, 0), 0)
+        b = _clampf(t.get("end", a + 3), a + 0.2, max(dur, a + 0.2), a + 3)
+        style = t.get("style") if isinstance(t.get("style"), dict) else {}
+        # el texto se dibuja con el mismo motor que los títulos (fuentes, estilos, animación)
+        # pero con su propia ventana temporal y su duración para el fundido de salida
+        dt = _title_drawtext(txt, style, b - a)
+        # el fundido usa 't' absoluto del reel: hay que rebasarlo al inicio del bloque
+        dt = dt.replace("alpha=", f"enable='between(t,{a:.2f},{b:.2f})':alpha=")
+        dt = re.sub(r"\bt/0\.(\d+)", lambda m: f"(t-{a:.2f})/0.{m.group(1)}", dt)
+        dt = re.sub(r"gt\(t,([\d.]+)\)", lambda m: f"gt(t-{a:.2f},{m.group(1)})", dt)
+        dt = re.sub(r"\(([\d.]+)-t\)", lambda m: f"({m.group(1)}-(t-{a:.2f}))", dt)
+        chain.append(dt)
+    if not chain:
+        return video
+    out = video.with_name(video.stem + ".txt.mp4")
+    _ff(["ffmpeg", "-v", "error", "-y", "-i", str(video), "-vf", ",".join(chain),
+         "-c:v", "h264_videotoolbox", "-b:v", bitrate, "-pix_fmt", "yuv420p",
+         "-c:a", "copy", "-movflags", "+faststart", str(out)])
+    video.unlink(missing_ok=True)
+    out.rename(video)
+    return video
+
+
 def _mix_music(video: Path, music: Path, opts: dict, has_audio: bool, dur: float) -> Path:
     """Mezcla la pista sobre el reel YA compuesto sin re-encodear el video (-c:v copy).
 
@@ -2577,6 +2612,11 @@ def run_edit(spec: dict, j):
             _ff(cmd)
         for s in segs:
             s.unlink()
+        # ---- pista de TEXTO: se quema sobre el reel compuesto, antes de la música ----
+        texts = spec.get("texts") if isinstance(spec.get("texts"), list) else []
+        if texts and HAS_DRAWTEXT:
+            jobstore.update(j["id"], detail=f"escribiendo {len(texts)} texto(s)", progress=0.94)
+            _burn_texts(out, texts, br)
         # ---- música (I2): se mezcla al final, sobre el reel ya compuesto ----
         music = spec.get("music") if isinstance(spec.get("music"), dict) else None
         mname = re.sub(r"[^\w.\- ]", "", str(music.get("name", ""))) if music else ""
