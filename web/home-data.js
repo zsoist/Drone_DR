@@ -31,7 +31,6 @@
   const stamp = flight => `${flight?.date || ''} ${flight?.time || ''}`;
 
   function classifyJobsResponse(status, payload) {
-    if (+status === 403) return { state: 'public', jobs: [] };
     if (+status < 200 || +status >= 300) return { state: 'error', jobs: [] };
     return { state: 'ready', jobs: Array.isArray(payload?.jobs) ? payload.jobs : [] };
   }
@@ -108,12 +107,11 @@
   }
 
   async function loadHomeData(getFlightsFn, fetchFn) {
-    const readJson = async (url, quiet403 = false) => {
+    const readJson = async (url, classifyJobs = false) => {
       const response = await fetchFn(url);
-      if (quiet403 && response.status === 403) return classifyJobsResponse(403, null);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
-      return quiet403 ? classifyJobsResponse(response.status, payload) : payload;
+      return classifyJobs ? classifyJobsResponse(response.status, payload) : payload;
     };
     const [flightsResult, systemResult, jobsResult] = await Promise.allSettled([
       getFlightsFn(),

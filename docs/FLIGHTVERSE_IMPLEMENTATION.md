@@ -82,8 +82,8 @@ spec original (por valor):
   handler nuevo (patrón /api/property).
 - P8 AI creator: plantilla /api/analyze + ai/router — drafts estructurados,
   NUNCA código ejecutable (regla del spec).
-- P9 showcase: patrón share.html + control de privacidad de ubicación
-  (no exponer center_wgs84 en replays públicos sin opt-in).
+- P9 showcase: patrón `share.html` dentro de la sesión privada; si en el futuro vuelve
+  a existir acceso externo, exigir opt-in explícito antes de exponer `center_wgs84`.
 - P10 restos: progressiveLoad/streaming del SOG, COOP/COEP si algún día
   WebCodecs multithread, gamepad.
 - P11: checklist formal de los 43 criterios de aceptación.

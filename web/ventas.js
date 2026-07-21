@@ -68,8 +68,7 @@ document.addEventListener('click', e => {
     (sys.reels || []).map(r => `<option value="${r.name}">Reel: ${r.name}</option>`).join('');
 
   async function loadList() {
-    const res = await fetch('/api/properties');
-    if (res.status === 403) { document.getElementById('plist').innerHTML = '<p class="footer-note">Inicia sesión para ver propiedades.</p>'; return; }
+    const res = await authFetch('/api/properties');
     const { properties } = await res.json();
     document.getElementById('plist').innerHTML = properties.length ? properties.map(p => `
       <div class="hl-item">

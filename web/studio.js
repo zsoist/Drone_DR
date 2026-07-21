@@ -390,6 +390,11 @@ main.innerHTML = `
               <input class="ctl" id="ed-title" placeholder="Escríbelo aquí…" maxlength="60"></label>
               <label class="ex-check"><input type="checkbox" id="ed-fade" checked> Fades de entrada/salida</label>
             </div>
+            <div class="ex-row" id="ed-replace-row" style="display:none">
+              <label class="ex-check" data-tip="El reel original se sustituye por esta versión al exportar">
+                <input type="checkbox" id="ed-replace" checked>
+                Reemplazar <b id="ed-replace-name" class="mono"></b></label>
+            </div>
             <div class="ex-est mono" id="ex-est">—</div>
           </div>
           <div class="ex-foot">
@@ -450,6 +455,7 @@ main.innerHTML = `
         <option value="tamano">Tamaño</option>
         <option value="nombre">Nombre</option>
       </select>
+      <button class="btn" id="btn-ord" data-tip="Reordena los reels con las flechas y guarda">⇅ Ordenar</button>
     </div>
     <div class="media-grid" id="grid-reels"><div class="sk" style="height:150px"></div><div class="sk" style="height:150px"></div></div>
   </section>
@@ -730,6 +736,8 @@ function openReelViewer(name) {
         <div class="rv-actions">
           <button class="btn primary" data-rv="share">${icon('ext')} Compartir</button>
           <button class="btn${edit ? ' on' : ''}" data-rv="edit">${icon('scissors')} Editar</button>
+          ${it.has_recipe ? `<button class="btn" data-rv="studio" data-tip="Reabre este reel en el editor con sus tomas, textos y música">${icon('film')} Estudio</button>` : ''}
+          <button class="btn" data-rv="txts" data-tip="Añade textos sobre este reel sin re-montarlo">${icon('tag')} Textos</button>
           <button class="btn" data-rv="dl">${icon('dl')} ${window.showSaveFilePicker ? 'Guardar como…' : 'Descargar'}</button>
           <button class="btn" data-rv="ren">${icon('tag')} Renombrar</button>
           <button class="btn" data-rv="copy">${icon('link') || icon('ext')} Copiar link</button>
@@ -794,6 +802,22 @@ function openReelViewer(name) {
     if (a === 'prev') return go(-1);
     if (a === 'next') return go(1);
     if (a === 'edit') { edit = !edit; trim = { a: 0, b: it.duration_s || null }; render(); return; }
+    if (a === 'studio') {
+      // T2 · reabrir la receta en el editor (timeline + textos + música vivos)
+      b.disabled = true;
+      let r = null;
+      try { r = await (await authFetch(`/api/reel_recipe?name=${encodeURIComponent(it.name)}`)).json(); }
+      catch { /* cae al toast de abajo */ }
+      b.disabled = false;
+      if (!r?.recipe) { toast(r?.error || 'Este reel no tiene receta guardada'); return; }
+      const ok = await window.__abLoadRecipe?.(r.recipe, it.name);
+      if (ok) {
+        close();
+        document.querySelector('#st-tabs [data-tab="editor"]')?.click();
+      }
+      return;
+    }
+    if (a === 'txts') { openBurnTexts(it, () => { close(); }); return; }
     if (a === 'trim' || a === 'poster' || a === 'dup') {
       const label = b.textContent;
       b.disabled = true; b.textContent = 'Procesando…';
@@ -882,6 +906,7 @@ function openReelViewer(name) {
 
 // ---- motor de medios: biblioteca de reels y fotos ----
 let media = null;   // {reels:[{name,bytes,mtime}], photos:[...]}
+let orderMode = false;   // T4 · modo reordenar la librería de reels (flechas en las tarjetas)
 const mstate = { reels: { q: '', sort: 'recientes' }, fotos: { q: '', sort: 'recientes' },
                  dron: { q: '', sort: 'recientes' } };
 let dronePhotos = null;      // fotos NATIVAS de la cámara del dron (raw/, JPG+DNG)
@@ -897,6 +922,107 @@ async function loadDronePhotos() {
   const c = document.getElementById('dron-count');
   if (c) c.textContent = dronePhotos.length;
   renderGrid('dron');
+}
+
+// ================= TEXTOS SOBRE UN REEL YA EXPORTADO (T3) =================
+// Para reels sin receta (los viejos) o retoques rápidos: compone bloques de texto y los
+// quema server-side sobre el MP4 existente (op=texts) — sin re-montar el proyecto.
+function openBurnTexts(it, onDone) {
+  const dur = +it.duration_s || 10;
+  const items = [{ text: '', start: +(dur * 0.06).toFixed(1), end: +Math.min(dur, dur * 0.06 + 3.2).toFixed(1),
+                   style: { pos: 'bottom', size: 46, color: 'ffffff', box: true, style: 'clean', font: 'din' } }];
+  const ov = document.createElement('div');
+  ov.className = 'modal-ov';
+  document.body.appendChild(ov);
+  const STYLES = [['clean', 'Limpio'], ['bold', 'Bold · MAYÚS'], ['kinetic', 'Kinético · cine'],
+                  ['lower', 'Lower third'], ['minimal', 'Minimal']];
+  const FONTS = [['din', 'DIN · cine'], ['sansbold', 'Arial Bold'], ['black', 'Arial Black'],
+                 ['sans', 'Helvetica'], ['condensed', 'Avenir Cond.'], ['avenir', 'Avenir'],
+                 ['optima', 'Optima'], ['serif', 'Georgia'], ['mono', 'Menlo']];
+  const render = () => {
+    ov.innerHTML = `<div class="modal" style="max-width:560px">
+      <div class="modal-h"><b>${icon('tag')} Textos sobre «${esc(it.name.replace(/\.[^.]+$/, ''))}»</b>
+        <button class="modal-x" aria-label="Cerrar">✕</button></div>
+      <div class="modal-b">
+        ${items.map((t, i) => `<div class="bt-item" data-bt="${i}">
+          <div class="tx-row">
+            <input class="m-ipt" data-f="text" style="flex:1;font-size:14px" maxlength="120"
+                   placeholder="Texto ${i + 1}…" value="${esc(t.text)}">
+            ${items.length > 1 ? `<button class="btn rv-del" data-btx="${i}" style="padding:6px 9px">✕</button>` : ''}
+          </div>
+          <div class="tx-row"><span>Aparece</span>
+            <input type="number" class="ctl" data-f="start" min="0" max="${dur}" step="0.1" value="${t.start}" style="width:76px">
+            <span style="width:auto">→</span>
+            <input type="number" class="ctl" data-f="end" min="0.3" max="${dur}" step="0.1" value="${t.end}" style="width:76px">
+            <span style="width:auto">s</span>
+            <select class="ctl" data-f="pos" style="flex:1">
+              <option value="top"${t.style.pos === 'top' ? ' selected' : ''}>Arriba</option>
+              <option value="mid"${t.style.pos === 'mid' ? ' selected' : ''}>Centro</option>
+              <option value="bottom"${t.style.pos === 'bottom' ? ' selected' : ''}>Abajo</option>
+            </select></div>
+          <div class="tx-row">
+            <select class="ctl" data-f="style" style="flex:1">
+              ${STYLES.map(([k, l]) => `<option value="${k}"${t.style.style === k ? ' selected' : ''}>${l}</option>`).join('')}
+            </select>
+            <select class="ctl" data-f="font" style="flex:1">
+              ${FONTS.map(([k, l]) => `<option value="${k}"${t.style.font === k ? ' selected' : ''}>${l}</option>`).join('')}
+            </select>
+            <input type="range" data-f="size" min="10" max="100" value="${t.style.size}" style="flex:1">
+            <label style="display:flex;align-items:center;gap:5px;font-size:11.5px">
+              <input type="checkbox" data-f="box"${t.style.box ? ' checked' : ''}> Fondo</label>
+          </div>
+        </div>`).join('')}
+        <button class="btn" id="bt-add" style="width:100%">+ Otro texto</button>
+      </div>
+      <div class="rm-foot">
+        <label class="ex-check" data-tip="Sin copia: el reel original queda con los textos">
+          <input type="checkbox" id="bt-replace"> Reemplazar original</label>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn primary" id="bt-burn">${icon('check')} Quemar textos</button>
+      </div></div>`;
+  };
+  render();
+  const collect = () => {
+    ov.querySelectorAll('.bt-item').forEach(el => {
+      const t = items[+el.dataset.bt];
+      const F = f => el.querySelector(`[data-f="${f}"]`);
+      t.text = F('text').value;
+      t.start = Math.max(0, Math.min(+F('start').value || 0, dur - 0.3));
+      t.end = Math.max(t.start + 0.3, Math.min(+F('end').value || t.start + 3, dur));
+      t.style = { ...t.style, pos: F('pos').value, style: F('style').value,
+                  font: F('font').value, size: +F('size').value, box: F('box').checked };
+    });
+  };
+  ov.addEventListener('click', async e => {
+    if (e.target === ov || e.target.closest('.modal-x')) { ov.remove(); return; }
+    const del = e.target.closest('[data-btx]');
+    if (del) { collect(); items.splice(+del.dataset.btx, 1); render(); return; }
+    if (e.target.closest('#bt-add')) {
+      collect();
+      const last = items[items.length - 1];
+      items.push({ text: '', start: +Math.min(dur - 3.5, last.end + 0.5).toFixed(1),
+                   end: +Math.min(dur, last.end + 3.7).toFixed(1), style: { ...last.style } });
+      render(); return;
+    }
+    const burn = e.target.closest('#bt-burn');
+    if (burn) {
+      collect();
+      const valid = items.filter(t => t.text.trim());
+      if (!valid.length) { toast('Escribe al menos un texto'); return; }
+      burn.disabled = true;
+      burn.textContent = 'Quemando… (según la duración, hasta 1 min)';
+      const r = await api('/api/reel_edit', {
+        op: 'texts', name: it.name, replace: ov.querySelector('#bt-replace').checked,
+        texts: valid.map(t => ({ text: t.text, start: t.start, end: t.end, style: t.style })),
+      }).catch(() => ({ error: 'falló la conexión (el reel puede seguir procesándose)' }));
+      if (r?.error) { burn.disabled = false; burn.textContent = 'Quemar textos'; toast(r.error); return; }
+      await loadMedia();
+      toast(`Textos quemados: ${r.name}`);
+      ov.remove();
+      onDone?.(r.name);
+    }
+  });
+  setTimeout(() => ov.querySelector('[data-f="text"]')?.focus(), 60);
 }
 
 function mdate(mtime) {
@@ -952,7 +1078,9 @@ function viewOf(kind) {
   const out = q ? list.filter(x => x.name.toLowerCase().includes(q)) : list;
   if (st.sort === 'tamano') out.sort((a, b) => b.bytes - a.bytes);
   else if (st.sort === 'nombre') out.sort((a, b) => a.name.localeCompare(b.name));
-  else out.sort((a, b) => b.mtime - a.mtime);
+  // reels en "Recientes": respetar el orden del SERVER (nuevos primero + orden manual
+  // de .order.json). Re-ordenar por mtime aquí pisaba el "⇅ Ordenar" del usuario.
+  else if (kind !== 'reels') out.sort((a, b) => b.mtime - a.mtime);
   return out;
 }
 
@@ -992,6 +1120,10 @@ function cardHTML(kind, it) {
     <div class="m-prevbox">${prev}
       ${kind === 'reels' && it.duration_s ? `<span class="m-time mono">${fmt.dur(it.duration_s)}</span>` : ''}
       ${kind === 'reels' && it.has_audio === false ? '<span class="m-mute" data-tip="Sin audio">🔇</span>' : ''}
+      ${kind === 'reels' && orderMode ? `<div class="m-ordbtns">
+        <button data-ord="-1" aria-label="Mover antes">◀</button>
+        <button data-ord="1" aria-label="Mover después">▶</button>
+      </div>` : ''}
     </div>
     <div class="m-name">${esc(base)}</div>
     <div class="m-meta mono">${fmt.gb(it.bytes)} · ${mdate(it.mtime)}${it.h ? ` · ${it.h}p` : ''}</div>
@@ -1029,6 +1161,19 @@ async function onCardClick(kind, e) {
   const card = e.target.closest('.m-card');
   if (!card) return;
   const name = card.dataset.name;
+  if (kind === 'reels' && orderMode) {
+    const ordBtn = e.target.closest('[data-ord]');
+    if (ordBtn) {
+      const list = media?.reels || [];
+      const i = list.findIndex(x => x.name === name);
+      const j = i + (+ordBtn.dataset.ord);
+      if (i >= 0 && j >= 0 && j < list.length) {
+        [list[i], list[j]] = [list[j], list[i]];
+        renderGrid('reels');
+      }
+    }
+    return;   // en modo ordenar no se abre el visor ni corren otras acciones
+  }
   const type = kind === 'reels' ? 'reel' : 'photo';
   const url = `/data/${kind === 'reels' ? 'reels' : 'photos'}/${encodeURIComponent(name)}`;
   const btn = e.target.closest('[data-act]');
@@ -1109,6 +1254,33 @@ async function onCardClick(kind, e) {
   if (r.error) { alert(r.error); return; }
   await loadMedia();
 }
+
+// T4 · ⇅ Ordenar: primer tap entra al modo (flechas ◀ ▶ en cada tarjeta), segundo tap
+// guarda el orden completo en el server (.order.json) y sale. Flechas > drag: cero
+// conflicto con el scroll táctil del iPhone.
+document.getElementById('btn-ord')?.addEventListener('click', async e => {
+  const b = e.currentTarget;
+  if (!orderMode) {
+    orderMode = true;
+    mstate.reels.q = ''; mstate.reels.sort = 'recientes';
+    document.getElementById('q-reels').value = '';
+    document.getElementById('s-reels').value = 'recientes';
+    b.textContent = '✓ Guardar orden';
+    b.classList.add('primary');
+    renderGrid('reels');
+    toast('Mueve los reels con ◀ ▶ y toca Guardar');
+    return;
+  }
+  b.disabled = true;
+  const r = await api('/api/reel_order', { names: (media?.reels || []).map(x => x.name) });
+  b.disabled = false;
+  orderMode = false;
+  b.textContent = '⇅ Ordenar';
+  b.classList.remove('primary');
+  if (r?.error) toast(r.error);
+  else toast(`Orden guardado (${r.count} reels)`);
+  renderGrid('reels');
+});
 
 for (const kind of ['reels', 'fotos']) {
   // la barra de Fotos gobierna el SUB-TAB activo (biblioteca o dron)
@@ -1737,17 +1909,28 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       document.getElementById('tl-stage')?.appendChild(ov);
     }
     const vis = texts.filter(t => playhead >= t.start && playhead <= t.end);
-    const FONTS = { sans: '"Helvetica Neue",system-ui,sans-serif', condensed: '"Avenir Next Condensed",system-ui,sans-serif',
+    const FONTS = { sans: '"Helvetica Neue",system-ui,sans-serif',
+                    sansbold: 'Arial,system-ui,sans-serif', black: '"Arial Black",Arial,sans-serif',
+                    din: '"DIN Condensed","Avenir Next Condensed",sans-serif',
+                    condensed: '"Avenir Next Condensed",system-ui,sans-serif',
                     avenir: '"Avenir Next",system-ui,sans-serif', optima: 'Optima,Georgia,serif',
                     serif: 'Georgia,serif', mono: 'Menlo,monospace' };
+    // PARIDAD con el motor px del server: wrap real (max-width), anclaje al borde
+    // inferior en 'bottom' (el bloque crece hacia arriba), tracking en kinetic corto
     ov.innerHTML = vis.map(t => {
       const s = { ...TEXT_DEF, ...(t.style || {}) };
-      const top = s.pos === 'top' ? '10%' : s.pos === 'mid' ? '50%' : '78%';
       const up = s.style === 'bold' || s.style === 'kinetic';
-      return `<span style="top:${top};font-family:${FONTS[s.font] || FONTS.sans};
-        font-size:${(s.size / 100 * 9).toFixed(1)}cqh;color:#${esc(s.color)};
-        ${up ? 'text-transform:uppercase;letter-spacing:.02em;' : ''}
-        ${s.box ? 'background:rgba(0,0,0,.45);padding:.25em .6em;border-radius:.2em;' : ''}
+      const track = s.style === 'kinetic' && t.text.length <= 14;
+      const dy = (+s.dy || 0);
+      const anchor = s.pos === 'top' ? `top:${8 + dy}%;transform:translateX(-50%);`
+        : s.pos === 'mid' ? `top:${50 + dy}%;transform:translate(-50%,-50%);`
+          : `bottom:${10 - dy}%;transform:translateX(-50%);`;
+      return `<span style="${anchor}font-family:${FONTS[s.font] || FONTS.sans};
+        font-size:${(s.size / 100 * 8).toFixed(1)}cqh;color:#${esc(s.color)};
+        max-width:88%;white-space:normal;text-align:center;line-height:1.26;
+        ${s.font === 'sansbold' || s.font === 'black' ? 'font-weight:800;' : ''}
+        ${up ? 'text-transform:uppercase;' : ''}${track ? 'letter-spacing:.30em;margin-right:-.30em;' : ''}
+        ${s.box ? `background:rgba(0,0,0,${(+s.boxAlpha || 0.45).toFixed(2)});padding:.3em .65em;border-radius:.18em;` : ''}
         ">${esc(t.text)}</span>`;
     }).join('');
   }
@@ -1770,15 +1953,22 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
           <input type="range" id="tx-b" min="0" max="${total().toFixed(1)}" step="0.1" value="${t.end}">
           <b class="mono" id="tx-bv">${fmt.dur(t.end)}</b></div>
         <div class="mlb">Estilo</div>
-        <div class="tx-row"><span>Animación</span>
+        <div class="tx-row"><span>Estilo</span>
           <select class="ctl" id="tx-style" style="flex:1">
-            ${[['clean', 'Limpio'], ['bold', 'Bold · mayúsculas'], ['kinetic', 'Kinético · sube'],
+            ${[['clean', 'Limpio'], ['bold', 'Bold · mayúsculas'], ['kinetic', 'Kinético · cine'],
                ['lower', 'Lower third'], ['minimal', 'Minimal']].map(([k, l]) =>
               `<option value="${k}"${S.style === k ? ' selected' : ''}>${l}</option>`).join('')}
+          </select>
+          <select class="ctl" id="tx-anim" style="flex:1" data-tip="Cómo entra el texto">
+            ${[['', 'Anim · auto'], ['fade', 'Fundido'], ['pop', 'Pop'], ['slide', 'Sube'],
+               ['slideL', 'Desliza ←'], ['none', 'Sin animación']].map(([k, l]) =>
+              `<option value="${k}"${(S.anim || '') === k ? ' selected' : ''}>${l}</option>`).join('')}
           </select></div>
         <div class="tx-row"><span>Fuente</span>
           <select class="ctl" id="tx-font" style="flex:1">
-            ${[['sans', 'Helvetica Neue'], ['condensed', 'Avenir Condensed'], ['avenir', 'Avenir Next'],
+            ${[['din', 'DIN Condensed · cine'], ['sansbold', 'Arial Bold · impacto'],
+               ['black', 'Arial Black · máximo'], ['sans', 'Helvetica Neue'],
+               ['condensed', 'Avenir Condensed'], ['avenir', 'Avenir Next'],
                ['optima', 'Optima'], ['serif', 'Georgia'], ['mono', 'Menlo']].map(([k, l]) =>
               `<option value="${k}"${S.font === k ? ' selected' : ''}>${l}</option>`).join('')}
           </select></div>
@@ -1791,10 +1981,16 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
           <span>Tamaño</span>
           <input type="range" id="tx-size" min="10" max="100" step="1" value="${S.size}" style="flex:1">
         </div>
+        <div class="tx-row"><span>Ajuste ↕</span>
+          <input type="range" id="tx-dy" min="-20" max="20" step="1" value="${+S.dy || 0}"
+                 data-tip="Sube o baja el texto en pasos del 1% de la pantalla">
+          <b class="mono" id="tx-dyv">${(+S.dy || 0)}%</b></div>
         <div class="tx-row"><span>Color</span>
           <input type="color" class="ctl" id="tx-color" value="#${esc(S.color)}" style="width:52px;padding:2px">
           <label style="display:flex;align-items:center;gap:6px;font-size:11.5px">
             <input type="checkbox" id="tx-box"${S.box ? ' checked' : ''}> Fondo</label>
+          <input type="range" id="tx-boxa" min="0.1" max="0.85" step="0.05" value="${+S.boxAlpha || 0.45}"
+                 style="flex:1${S.box ? '' : ';opacity:.35'}" data-tip="Opacidad del fondo">
         </div>
       </div>
       <div class="rm-foot">
@@ -1812,9 +2008,14 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       t.style = { pos: ov.querySelector('#tx-pos').value, size: +ov.querySelector('#tx-size').value,
                   color: ov.querySelector('#tx-color').value.replace('#', ''),
                   box: ov.querySelector('#tx-box').checked,
-                  style: ov.querySelector('#tx-style').value, font: ov.querySelector('#tx-font').value };
+                  style: ov.querySelector('#tx-style').value, font: ov.querySelector('#tx-font').value,
+                  anim: ov.querySelector('#tx-anim').value || undefined,
+                  dy: +ov.querySelector('#tx-dy').value || undefined,
+                  boxAlpha: +ov.querySelector('#tx-boxa').value };
       ov.querySelector('#tx-av').textContent = fmt.dur(t.start);
       ov.querySelector('#tx-bv').textContent = fmt.dur(t.end);
+      ov.querySelector('#tx-dyv').textContent = `${+ov.querySelector('#tx-dy').value}%`;
+      ov.querySelector('#tx-boxa').style.opacity = ov.querySelector('#tx-box').checked ? '' : '.35';
       renderTextLane();
     };
     ov.addEventListener('input', apply);
@@ -1866,6 +2067,65 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       if (blk && !drag) openTextEditor(+blk.dataset.txt);
     });
   })();
+
+  // ================= REABRIR RECETA (T2) =================
+  // Cada export guarda su spec junto al reel. Esto lo trae de vuelta VIVO al editor:
+  // timeline, textos, música y ajustes — editas y re-exportas (o reemplazas el original).
+  let replaceTarget = null;
+  async function loadRecipeIntoEditor(recipe, reelName) {
+    const segs = (recipe.segments || []).filter(s => byId[s.clip_id]);
+    if (!segs.length) { toast('Los clips de este reel ya no están en la biblioteca'); return false; }
+    if (segs.length < (recipe.segments || []).length)
+      toast(`${(recipe.segments || []).length - segs.length} toma(s) ya no existen — se omiten`);
+    pushUndo();
+    tl = segs.map(s => ({
+      id: uid(), clip_id: s.clip_id, a: +s.a, b: +s.b, speed: +s.speed || 1,
+      filter: s.filter || 'none', title: s.title || '', transition: s.transition || 'none',
+      transDur: +(s.transDur ?? 0.4), reverse: !!s.reverse, freeze: +(s.freeze || 0),
+      titleStyle: { ...TITLE_DEFAULT, ...(s.titleStyle || {}) },
+      grade: s.grade && Object.keys(s.grade).length ? s.grade : undefined,
+    }));
+    texts = (recipe.texts || []).map(t => ({
+      id: uid(), text: String(t.text || ''), start: +t.start || 0, end: +t.end || 3,
+      style: { ...TEXT_DEF, ...(t.style || {}) },
+    }));
+    textSel = -1;
+    sel = 0; playhead = 0; curCid = null;
+    const G = id => document.getElementById(id);
+    if (recipe.aspect && G('ed-aspect').querySelector(`option[value="${recipe.aspect}"]`)) {
+      G('ed-aspect').value = recipe.aspect;
+      G('ed-aspect').dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (recipe.resolution) G('ed-res').value = recipe.resolution;
+    if (recipe.filter) G('ed-lut').value = recipe.filter;
+    G('ed-title').value = recipe.title || '';
+    G('ed-fade').checked = recipe.fade !== false;
+    if (recipe.audio) G('ed-audio').value = recipe.audio;
+    if (recipe.bitrate) G('ed-bitrate').value = recipe.bitrate;
+    if (recipe.framing != null && G('ed-framing')) G('ed-framing').value = recipe.framing;
+    if (recipe.vfit) document.querySelector(`[data-vfit="${recipe.vfit}"]`)?.click();
+    music = null;
+    if (recipe.music?.name) {
+      try {
+        const tr = ((await (await authFetch('/api/audio_list')).json()).tracks || [])
+          .find(x => x.name === recipe.music.name);
+        if (tr) music = { ...MUSIC_DEFAULTS, ...recipe.music,
+                          duration_s: tr.duration_s, peaks: tr.peaks || [] };
+        else toast(`La pista "${recipe.music.name}" ya no está en tu biblioteca`);
+      } catch { /* sin música: el resto de la receta sigue siendo válido */ }
+    }
+    replaceTarget = reelName || null;
+    const row = G('ed-replace-row');
+    if (row) {
+      row.style.display = replaceTarget ? '' : 'none';
+      if (replaceTarget) G('ed-replace-name').textContent = replaceTarget;
+    }
+    renderAll();
+    toast(`Reel reabierto: ${tl.length} tomas · ${texts.length} texto(s)`);
+    return true;
+  }
+  // el visor vive fuera de este closure: puente explícito
+  window.__abLoadRecipe = loadRecipeIntoEditor;
 
   // ================= MÚSICA (I2) =================
   // La pista se OYE mientras editas (mismo elemento <audio> alineado al playhead) y viaja
@@ -2333,6 +2593,9 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     // acumulaban (3, 6, 9…) y se exportaban duplicados encima de los del siguiente
     texts = [];
     textSel = -1;
+    replaceTarget = null;      // un montaje nuevo nunca debe pisar un reel reabierto
+    const _rr = document.getElementById('ed-replace-row');
+    if (_rr) _rr.style.display = 'none';
     sel = 0; playhead = 0; curCid = null;
     const fmtSel = RM_FORMATS[opts.aspect] || RM_FORMATS['9:16'];
     const asp = document.getElementById('ed-aspect');
@@ -3371,6 +3634,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     });
     const r = await api('/api/edit', {
       segments,
+      replace: (replaceTarget && document.getElementById('ed-replace')?.checked)
+        ? replaceTarget : undefined,
       vfit: edVfit,
       framing: +document.getElementById('ed-framing').value,
       texts: texts.length ? texts.map(t => ({ text: t.text, start: t.start, end: t.end, style: t.style })) : undefined,

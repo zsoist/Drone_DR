@@ -18,6 +18,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import ops_watchdog
+
 VAULT = Path("/Volumes/SSD/drone-vault")
 REPO = Path("/Volumes/SSD/work/forge-projects/aerobrain")
 TUNNEL_CONFIG = Path("/Users/daniel_serverm4/.cloudflared/metislab-work.yml")
@@ -99,7 +101,7 @@ def fetch_text(url: str, timeout: int) -> tuple[bool, str]:
         return False, type(e).__name__
 
 
-def latest_proxy_url() -> str | None:
+def latest_proxy_urls() -> tuple[str, str] | tuple[None, None]:
     try:
         flights = json.loads((VAULT / "manifest" / "flights.json").read_text()).get("flights", [])
     except Exception:
@@ -107,8 +109,9 @@ def latest_proxy_url() -> str | None:
     for f in flights:
         cid = f.get("clip_id")
         if cid and f.get("has_proxy") and (VAULT / "proxies" / f"{cid}.mp4").is_file():
-            return "https://vuelos.metislab.work/data/proxies/" + urllib.parse.quote(f"{cid}.mp4")
-    return None
+            path = "/data/proxies/" + urllib.parse.quote(f"{cid}.mp4")
+            return "http://127.0.0.1:8790" + path, "https://vuelos.metislab.work" + path
+    return None, None
 
 
 def range_probe(url: str | None) -> dict:
@@ -128,6 +131,43 @@ def range_probe(url: str | None) -> dict:
                     "file": url.rsplit("/", 1)[-1]}
     except Exception as e:
         return {"ok": False, "detail": type(e).__name__, "file": url.rsplit("/", 1)[-1]}
+
+
+def auth_boundary_probe(url: str | None) -> dict:
+    if not url:
+        return {"ok": False, "detail": "no proxy video found"}
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "AeroBrainOpsStatus/1",
+        "Range": "bytes=0-0",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            response.read(1)
+            return {
+                "ok": False,
+                "status": response.status,
+                "detail": "protected media leaked",
+                "cache": response.headers.get("CF-Cache-Status", ""),
+            }
+    except urllib.error.HTTPError as error:
+        status = error.code
+        cache = error.headers.get("CF-Cache-Status", "")
+        edge = error.headers.get("X-AeroBrain-Edge", "")
+        try:
+            error.read(4096)
+        finally:
+            error.close()
+        edge_ok = edge == "private-data-v1"
+        return {
+            "ok": status == 401 and edge_ok,
+            "status": status,
+            "cache": cache,
+            "edge": edge,
+            **({"detail": "private data edge worker missing"}
+               if status == 401 and not edge_ok else {}),
+        }
+    except Exception as error:
+        return {"ok": False, "detail": type(error).__name__}
 
 
 def jobs_status() -> dict:
@@ -216,7 +256,8 @@ def logs_status() -> dict:
 
 
 def latency_status() -> dict:
-    buckets = {"local_probe": [], "public_probe": [], "public_www_probe": [], "stream_probe": []}
+    buckets = {"local_probe": [], "public_probe": [], "public_www_probe": [],
+               "stream_probe": [], "auth_bridge_probe": []}
     try:
         lines = WATCHDOG_LOG.read_text(errors="replace").splitlines()[-500:]
     except OSError:
@@ -232,7 +273,8 @@ def latency_status() -> dict:
             buckets[event].append(float(ms))
     summary = {}
     ok = True
-    limits = {"local_probe": 1000, "public_probe": 3000, "public_www_probe": 3000, "stream_probe": 5000}
+    limits = {"local_probe": 1000, "public_probe": 3000, "public_www_probe": 3000,
+              "stream_probe": 5000, "auth_bridge_probe": 3000}
     for event, vals in buckets.items():
         if not vals:
             summary[event] = {"samples": 0}
@@ -359,6 +401,9 @@ def main() -> int:
     www_ok, www = fetch_text("https://www.metislab.work/", 15)
     jobs = jobs_status()
     running_jobs = sum(j.get("status") == "running" for j in jobs.get("active", []))
+    local_proxy_url, public_proxy_url = latest_proxy_urls()
+    bridge_ok, bridge_detail, bridge_ms = ops_watchdog.auth_bridge_probe(
+        ops_watchdog.PUBLIC_WHOAMI_URL, 15)
     report = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "services": {label: launch_state(label) for label in LABELS},
@@ -367,7 +412,9 @@ def main() -> int:
             "public": {"ok": public_ok, "detail": public},
             "www": {"ok": www_ok, "detail": www},
         },
-        "stream": range_probe(latest_proxy_url()),
+        "stream": range_probe(local_proxy_url),
+        "auth_boundary": auth_boundary_probe(public_proxy_url),
+        "auth_bridge": {"ok": bridge_ok, "detail": bridge_detail, "ms": bridge_ms},
         "jobs": jobs,
         "resources": resource_status(running_jobs),
         "logs": logs_status(),
@@ -379,7 +426,9 @@ def main() -> int:
     }
     checks = []
     checks.extend(v.get("ok", False) for v in report["services"].values())
-    checks.extend((local_ok, public_ok, www_ok, report["stream"]["ok"], report["jobs"]["ok"],
+    checks.extend((local_ok, public_ok, www_ok, report["stream"]["ok"],
+                   report["auth_boundary"]["ok"], report["auth_bridge"]["ok"],
+                   report["jobs"]["ok"],
                    report["resources"]["ok"], report["logs"]["ok"],
                    report["latency"]["ok"], report["reliability"]["ok"],
                    report["power"]["ok"],
@@ -391,7 +440,13 @@ def main() -> int:
     else:
         print(f"AeroBrain ops: {'PASS' if report['ok'] else 'FAIL'} · {report['ts']}")
         print(f"  health: local={local_ok} public={public_ok} www={www_ok}")
-        print(f"  stream: ok={report['stream']['ok']} {report['stream'].get('content_range', report['stream'].get('detail', ''))} cache={report['stream'].get('cache', '')}")
+        print(f"  stream(local): ok={report['stream']['ok']} "
+              f"{report['stream'].get('content_range', report['stream'].get('detail', ''))}")
+        print(f"  auth boundary(public): ok={report['auth_boundary']['ok']} "
+              f"status={report['auth_boundary'].get('status', 'n/a')} "
+              f"cache={report['auth_boundary'].get('cache', '')}")
+        print(f"  auth bridge(public): ok={report['auth_bridge']['ok']} "
+              f"{report['auth_bridge'].get('detail', '')}")
         print(f"  resources: mode={report['resources'].get('mode')} "
               f"cpu={report['resources'].get('total_cpu')}% "
               f"rss={report['resources'].get('total_rss_mb')}MB "
@@ -399,7 +454,8 @@ def main() -> int:
         lat = report.get("latency", {})
         print("  latency: " + " ".join(
             f"{k}=p95:{v.get('p95_ms', 'n/a')}ms"
-            for k, v in lat.items() if isinstance(v, dict) and k.endswith("_probe")))
+            for k, v in lat.items()
+            if isinstance(v, dict) and k.endswith("_probe") and "p95_ms" in v))
         rel = report["reliability"]
         print(f"  reliability: {rel.get('coverage_hours', 0)}h "
               f"failures={rel.get('failed_probes', 0)} max_gap={rel.get('max_gap_s', 0)}s")

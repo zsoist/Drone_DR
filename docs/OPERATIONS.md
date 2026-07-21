@@ -6,12 +6,19 @@ ODM/OpenSplat usan toda la máquina cuando no hay reproducción activa.
 
 ## SLO y definición de "up"
 
-Una muestra cuenta como disponible sólo si pasan las tres pruebas públicas:
+Una muestra externa cuenta como disponible sólo si pasan estas pruebas sin
+credenciales:
 
 1. `GET /api/healthz` devuelve 200 y `{"ok": true}`.
-2. `GET /` devuelve 200 y contiene `AeroBrain`.
-3. Un proxy descubierto desde `flights.json` responde a `Range: bytes=0-0` con
-   `206 Partial Content`, un byte y `Content-Range` válido.
+2. `GET /` termina en `login.html` y contiene `AeroBrain`.
+3. `GET /api/whoami` devuelve 401 y no revela estado privado.
+4. El manifest y una ruta media protegida devuelven 401 con cache privado y CDN
+   `no-store`.
+
+El watchdog del Mac complementa esa prueba: el último proxy real debe responder
+`206 Partial Content` por loopback confiable, y el mismo URL debe responder 401
+por el origen público. Un `206 HIT` público es una fuga de cache y pone
+`ops_status.py` en FAIL.
 
 Objetivo mensual: >=99%. En 30 días esto permite como máximo 7 h 18 min de caída.
 El workflow `.github/workflows/uptime.yml` prueba desde infraestructura externa
@@ -30,7 +37,9 @@ dashboard local, pero no cuenta como monitor externo porque cae junto con el Mac
 ```text
 Browser/iPhone
     |
-Cloudflare edge: TLS, HTTP/2+HTTP/3, Brotli, cache, Range
+Cloudflare edge: TLS, HTTP/2+HTTP/3, Brotli
+    |
+Worker /*: puente HMAC de sesión + bypass de cache
     |
 cloudflared (QUIC preferido, fallback HTTP/2)
     |
@@ -49,7 +58,10 @@ static/video Range            SQLite jobs.db
 | Web origin | `com.aerobrain.web` | Sirve `/web`, `/data`, APIs y video Range |
 | Worker | `com.aerobrain.worker` | Reclama un solo job `3d`/`splat` de SQLite |
 | Tunnel | `com.metislab.tunnel` | Publica el origin por Cloudflare Tunnel |
-| Watchdog | `com.aerobrain.watchdog` | Local 60 s, público 5 min, video 15 min |
+| Watchdog | `com.aerobrain.watchdog` | Local 60 s, público 5 min, stream+auth 15 min |
+
+`aerobrain-private-data-edge` no es un LaunchAgent: es el Worker de Cloudflare
+versionado en `edge/`, limitado a `vuelos.metislab.work/*`.
 
 Todos usan `RunAtLoad`; web, worker y tunnel usan `KeepAlive`. OrbStack tiene
 `app.start_at_login=true` para volver después de iniciar sesión.
@@ -114,23 +126,40 @@ Dashboard Cloudflare recomendado:
 - Network: HTTP/2, HTTP/3 y Brotli habilitados.
 - No activar 0-RTT: existen POST autenticados y no necesitamos riesgo de replay.
 - WAF/rate limit sólo para `/api/login`, uploads y mutaciones; no desafiar
-  `/data/*`, `/api/healthz` ni video Range.
+  `/api/healthz` ni video Range después del gate de sesión.
 - Cache key conserva query string. El origin reescribe los placeholders `?v=`
   del HTML con `st_mtime_ns`; sólo el fingerprint exacto recibe `immutable`.
+- No retirar la ruta Worker `vuelos.metislab.work/*`. Cloudflare elimina `Cookie`
+  después del Worker; éste la convierte en un sobre HMAC de 30 s que el origin
+  valida. Limitarlo otra vez a `/data/*` rompe el login aunque el formulario parezca
+  funcionar.
+- La clave compartida existe sólo como Worker secret `AEROBRAIN_EDGE_AUTH_KEY` y
+  `/Volumes/SSD/drone-vault/.edge-auth-key` (`0600`). Un cliente nunca puede aportar
+  headers de puente: el Worker los elimina y vuelve a firmar desde la cookie.
+
+Deploy y comprobación del Worker:
+
+```bash
+node --test edge/test_private_data_worker.mjs
+npx wrangler deploy --config edge/wrangler.toml
+curl -I -H 'Range: bytes=0-0' \
+  https://vuelos.metislab.work/data/proxies/DJI_20260709145011_0101_D.mp4
+# anónimo: 401, CF-Cache-Status DYNAMIC, X-AeroBrain-Edge private-data-v1
+```
 
 Política emitida por el origin:
 
 | Asset | Cache-Control |
 |---|---|
-| HTML | `no-store, must-revalidate` |
-| JS/CSS con fingerprint exacto | `public, max-age=31536000, immutable` |
-| Vendor local | `public, max-age=86400, stale-while-revalidate=604800` |
-| MP4, thumbs, fotos | `public, max-age=86400` |
-| Modelos 3D mutables | `no-cache` + `Last-Modified` (304) |
-| Manifests/API | `no-store` |
+| Login HTML | `private, no-store` + CDN `no-store` |
+| Login JS/CSS/iconos | `private, no-cache` en el Worker |
+| HTML/API autenticado | `private, no-store` + CDN `no-store` |
+| MP4, fotos, mapas, splats y modelos autenticados | `private, no-cache` + CDN `no-store` |
+| Respuesta 401 | `private, no-cache` + CDN `no-store` |
 
-Cloudflare comprime JS/CSS con Brotli. MP4 no se recomprime y conserva Range.
-El primer request puede ser `MISS`; los siguientes deben tender a `HIT`.
+Cloudflare puede comprimir los assets públicos del login. Los assets privados
+conservan Range y revalidación en el navegador de Daniel, pero nunca deben ser
+un `HIT` compartido en el edge.
 
 ## Recovery y estabilidad
 

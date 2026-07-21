@@ -24,7 +24,7 @@
 - [x] ✅ ODM ortomosaico desde video (frames geotagged con SRT) + DSM/DTM + presets
 - [x] ✅ Worker desacoplado + cola SQLite + progreso vivo + cancel + abort-on-nan
 - [x] ✅ Visores nube/malla/splat + mediciones (distancia/área/volumen/perfil/comparar)
-- [x] ✅ Página pública compartible + exports (GeoTIFF, GeoJSON, PLY, OBJ, SPLAT)
+- [x] ✅ Visor por enlace dentro de la sesión privada + exports (GeoTIFF, GeoJSON, PLY, OBJ, SPLAT)
 - [x] ✅ Fast 1K/Medium 2K local en Metal/CPU; Cinematic 7K, Ultra 15K, Ultra+ 20K,
   Frontier 30K y Grandmaster 40K en RTX CUDA estricto, con quality/browser gates
 - [x] ✅ .ksplat export + historial versionado: current y history seleccionables en 3D/share/Splat Lab

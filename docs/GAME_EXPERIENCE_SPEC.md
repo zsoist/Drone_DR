@@ -54,8 +54,8 @@ textura orto (ambos YA en vault por modelo; el visor DSM actual ya lee el .bin).
 
 ### G3 — DEBRIEF (post-vuelo)
 Stats del vuelo virtual vs el real (distancia, tiempo, altitud máx —
-comparados contra el track), foto-momentos capturados, botón compartir
-(share.html ya existe). Cero puntajes inventados: solo métricas medibles.
+comparados contra el track), foto-momentos capturados, botón abrir visor privado
+(`share.html` ya existe y exige sesión). Cero puntajes inventados: solo métricas medibles.
 
 ## Stress-test pre-escrito (los 4 riesgos que matan esto)
 1. **PERF móvil**: DSM 5221×4755 no entra como displacement directo — G2 exige

@@ -1,7 +1,9 @@
 import datetime
+import io
 import json
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -71,6 +73,43 @@ class OpsStatusTests(unittest.TestCase):
         self.assertTrue(report["ok"])
         self.assertEqual(report["failed_probes"], 0)
         self.assertEqual(report["max_gap_s"], 60)
+
+    def test_auth_boundary_accepts_unauthorized_media(self):
+        error = urllib.error.HTTPError(
+            "https://vuelos.metislab.work/data/proxies/test.mp4",
+            401,
+            "Unauthorized",
+            {"CF-Cache-Status": "DYNAMIC", "X-AeroBrain-Edge": "private-data-v1"},
+            io.BytesIO(b'{"error":"authentication required"}'),
+        )
+        with mock.patch.object(ops_status.urllib.request, "urlopen", side_effect=error):
+            report = ops_status.auth_boundary_probe(error.url)
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["status"], 401)
+
+    def test_auth_boundary_rejects_401_without_private_data_worker(self):
+        error = urllib.error.HTTPError(
+            "https://vuelos.metislab.work/data/proxies/test.mp4",
+            401,
+            "Unauthorized",
+            {"CF-Cache-Status": "DYNAMIC"},
+            io.BytesIO(b'{}'),
+        )
+        with mock.patch.object(ops_status.urllib.request, "urlopen", side_effect=error):
+            report = ops_status.auth_boundary_probe(error.url)
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["detail"], "private data edge worker missing")
+
+    def test_auth_boundary_rejects_cached_media_hit(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.status = 206
+        response.headers = {"CF-Cache-Status": "HIT"}
+        with mock.patch.object(ops_status.urllib.request, "urlopen", return_value=response):
+            report = ops_status.auth_boundary_probe(
+                "https://vuelos.metislab.work/data/proxies/test.mp4")
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["detail"], "protected media leaked")
 
 
 if __name__ == "__main__":

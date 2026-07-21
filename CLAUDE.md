@@ -1,6 +1,20 @@
 # AeroBrain
 
 ## Pitfalls
+- **Auth obligatorio**: producción entrega sólo `login.html`, sus assets locales,
+  `whoami` y el health mínimo sin sesión. Todo HTML/data/media/share exige la cookie
+  de Daniel; `X-Token` y query tokens están retirados. El bypass dev existe sólo en
+  loopback con Host exacto y sin headers de proxy. Nunca amplíes `PUBLIC_RESOURCES`
+  para arreglar un 401.
+- **Sesiones**: 24 h absolutas, cookie `__Host-ab_session`; SQLite guarda digest,
+  no bearer token. Toda mutación de navegador pasa el gate CSRF central. La
+  automatización aprobada usa únicamente el loopback estricto del Mac.
+- **Borde privado**: `edge/wrangler.toml` mantiene el Worker sólo en
+  `vuelos.metislab.work/*`, sin preview/`workers.dev`. La ruta completa es obligatoria:
+  Cloudflare quita `Cookie` después del Worker y el origin recibe una sesión firmada
+  HMAC con ventana de 30 s. Nunca reenvíes headers aportados por el cliente ni guardes
+  `AEROBRAIN_EDGE_AUTH_KEY` en el repo. Tras cambios corre
+  `node --test edge/test_private_data_worker.mjs` y despliega con Wrangler.
 - **Versionado web**: TODO batch de edits en web/ termina con `python3 pipeline/bump_web_version.py` (sube ?v=N en html+js+vendor y regenera .gz). Editar módulos sin bump = navegador/edge mezcla módulos viejos y nuevos (incidente Safari 2026-07-12: terrain.splatMask undefined).
 
 - GATE POST-PARCHE DEL TRAINER (P0 11-jul): tras CUALQUIER rebuild/patch de

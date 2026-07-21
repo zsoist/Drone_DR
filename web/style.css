@@ -1842,9 +1842,29 @@ button.exp { text-align: left; cursor: pointer; }
 /* superposición en el preview: refleja fuente, posición y tamaño del export */
 .tl-txtov { position: absolute; inset: 0; z-index: 5; pointer-events: none; container-type: size; }
 .tl-txtov span {
-  position: absolute; left: 50%; transform: translate(-50%, -50%); white-space: nowrap;
+  /* el anclaje (top/bottom + transform) lo pone paintTextOverlay inline, en paridad con
+     el motor px del server: wrap real, bloque que crece hacia arriba en 'bottom' */
+  position: absolute; left: 50%;
   font-weight: 650; text-shadow: 0 2px 6px rgba(0,0,0,.75), 0 0 2px rgba(0,0,0,.9);
   animation: pvIn 200ms var(--ease);
+}
+
+/* T4 · modo ordenar reels: flechas grandes y táctiles sobre la tarjeta */
+.m-ordbtns {
+  position: absolute; inset: 0; z-index: 6; display: flex; align-items: center;
+  justify-content: space-between; padding: 0 6px; background: rgba(6,9,14,.35);
+}
+.m-ordbtns button {
+  width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35);
+  background: rgba(6,9,14,.78); color: #fff; font-size: 16px; cursor: pointer;
+  transition: background 130ms var(--ease), transform 130ms var(--ease);
+}
+.m-ordbtns button:active { background: var(--accent); transform: scale(1.12); }
+
+/* T3 · modal de textos sobre reel exportado */
+.bt-item {
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 4px;
+  margin-bottom: 10px; background: rgba(255,255,255,.025);
 }
 .tx-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
 .tx-row > span { font-size: 11.5px; color: var(--text-2); width: 62px; flex: none; }

@@ -118,11 +118,11 @@ function renderHome(vm, states) {
   if (window.HomeEffects) HomeEffects.attachVoidNavigation(main);
   requestAnimationFrame(() => main.classList.add('is-ready'));
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    setTimeout(() => import('./home-drone.js?v=218').then(mod => mod.mountHomeDrone?.('#home-drone-stage')).catch(() => {}), 260);
+    setTimeout(() => import('./home-drone.js?v=280').then(mod => mod.mountHomeDrone?.('#home-drone-stage')).catch(() => {}), 260);
   }
 }
 
 renderSkeleton();
-HomeData.loadHomeData(getFlights, fetch)
+HomeData.loadHomeData(getFlights, authFetch)
   .then(data => renderHome(HomeData.buildHomeViewModel(data.flights, data.system, data.jobs), data.states))
   .catch(() => renderHome(HomeData.buildHomeViewModel([], {}, []), { flights: 'error', system: 'error', jobs: 'error' }));

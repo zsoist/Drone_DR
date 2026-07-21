@@ -29,6 +29,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import unicodedata
@@ -2051,61 +2052,142 @@ def _valid_hex6(c):
 
 
 # I5 · fuentes premium del sistema (el render corre en el Mac, así que están garantizadas).
-# Cada entrada apunta a una familia .ttc con su índice de cara para pedir la variante Bold.
+# SOLO rutas explícitas a caras sueltas: drawtext no tiene fontindex y el matching por
+# nombre de fontconfig (font=) cae a una genérica — verificado jul-20 con 4 familias.
 TITLE_FONTS = {
-    "sans":      ("/System/Library/Fonts/HelveticaNeue.ttc", 2),          # neutra, moderna
-    "condensed": ("/System/Library/Fonts/Avenir Next Condensed.ttc", 1),  # titulares altos
-    "avenir":    ("/System/Library/Fonts/Avenir Next.ttc", 1),            # geométrica cálida
-    "optima":    ("/System/Library/Fonts/Optima.ttc", 1),                 # editorial elegante
-    "serif":     ("/System/Library/Fonts/Supplemental/Georgia Bold.ttf", 0),
-    "mono":      ("/System/Library/Fonts/Menlo.ttc", 1),                  # técnica / datos
+    "sans":      "/System/Library/Fonts/HelveticaNeue.ttc",                   # neutra, moderna
+    "sansbold":  "/System/Library/Fonts/Supplemental/Arial Bold.ttf",         # impacto limpio
+    "black":     "/System/Library/Fonts/Supplemental/Arial Black.ttf",        # peso máximo
+    "din":       "/System/Library/Fonts/Supplemental/DIN Condensed Bold.ttf",  # cine / póster
+    "condensed": "/System/Library/Fonts/Avenir Next Condensed.ttc",           # titulares altos
+    "avenir":    "/System/Library/Fonts/Avenir Next.ttc",                     # geométrica cálida
+    "optima":    "/System/Library/Fonts/Optima.ttc",                          # editorial elegante
+    "serif":     "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+    "mono":      "/System/Library/Fonts/Menlo.ttc",                           # técnica / datos
 }
+# factor de ancho medio por fuente (em por carácter, calibrado a ojo sobre renders reales)
+_FONT_SQUEEZE = {"din": 0.62, "condensed": 0.80, "black": 1.10, "sansbold": 1.02, "mono": 1.08}
 # Estilos = combinación de tamaño, caja, sombra y ANIMACIÓN (drawtext acepta expresiones
 # con 't', así que se anima sin ASS: alpha para fundidos, y para deslizamientos).
 TITLE_STYLES = {
     "clean":   {"div_bias": 0, "box": False, "anim": "fade"},
     "bold":    {"div_bias": -6, "box": False, "anim": "pop", "upper": True},
-    "kinetic": {"div_bias": -4, "box": False, "anim": "slide", "upper": True},
+    "kinetic": {"div_bias": -4, "box": False, "anim": "slide", "upper": True, "track": True},
     "lower":   {"div_bias": 4, "box": True, "anim": "slideL"},
     "minimal": {"div_bias": 5, "box": False, "anim": "fade"},
 }
 
 
-def _title_drawtext(txt, style, dur: float = 0.0, h_over_w: float = 0.0):
+def _txt_em(txt: str, fkey: str) -> float:
+    """Ancho estimado del texto en em (1 em = fontsize px). Modelo por carácter: tratar
+    todo como 0.55 em encogía de más las frases con 'i', espacios y puntuación."""
+    narrow = set("iljI1!.,:;'’·|íì  ")
+    wide = set("mwMW@")
+    w = 0.0
+    for ch in txt:
+        if ch == " ":
+            w += 0.18
+        elif ch in narrow:
+            w += 0.30
+        elif ch in wide:
+            w += 0.82
+        elif ch.isupper() or ch.isdigit():
+            w += 0.68
+        else:
+            w += 0.52
+    return w * _FONT_SQUEEZE.get(fkey, 1.0)
+
+
+def _wrap_lines(txt: str, fkey: str, max_em: float) -> list:
+    """Parte el texto en líneas por palabras para que quepa en max_em; máx. 3 líneas
+    (más que eso en un reel es un párrafo, no un título)."""
+    words = txt.split()
+    lines, cur = [], ""
+    for wd in words:
+        cand = f"{cur} {wd}".strip()
+        if cur and _txt_em(cand, fkey) > max_em:
+            lines.append(cur)
+            cur = wd
+        else:
+            cur = cand
+    if cur:
+        lines.append(cur)
+    if len(lines) > 3:      # re-reparte en 3 líneas equilibradas en vez de truncar
+        lines = _wrap_lines(txt, fkey, _txt_em(txt, fkey) / 3 + 2)[:3]
+    return lines
+
+
+def _title_drawtext(txt, style, dur: float = 0.0, h_over_w: float = 0.0,
+                    w: int = 0, h: int = 0, tmpdir=None):
     """Título quemado con estilo Y animación reales.
 
-    drawtext admite expresiones dependientes de 't' en alpha/x/y — eso permite fundidos,
-    entradas deslizadas y un 'pop' de escala sin salir de ffmpeg ni depender de ASS.
+    Dos modos:
+    - PX (w+h+tmpdir): el de la pista de texto. Word-wrap real multilínea vía textfile
+      (cero escapado), text_align=center, tracking premium y anclaje numérico dentro de
+      las zonas seguras — el texto NUNCA se corta ni pisa la UI de las redes.
+    - Legacy (expresiones h/…): títulos por segmento, dimensiones desconocidas al armar
+      la cadena -vf. Encoge la fuente si no cabe (clamp jul-20).
     """
     style = style if isinstance(style, dict) else {}
     pos = style.get("pos", "bottom")
     preset = TITLE_STYLES.get(str(style.get("style", "clean")), TITLE_STYLES["clean"])
     if preset.get("upper"):
         txt = txt.upper()
-    # y base por posición; 'bottom' se mantiene dentro de la zona segura de las redes
-    y_base = {"top": "h*0.10", "mid": "(h-th)/2", "bottom": "h*0.78"}.get(pos, "h*0.78")
     size = _clampf(style.get("size", 42), 1, 100, 42)
     div = max(5.0, 28 - (size - 1) / 99.0 * 20 + preset["div_bias"])
-    # CLAMP AL ANCHO (jul-20): "LLAMAR 311 281 9842" en bold/52 sobre 9:16 salía cortado
-    # por ambos lados — drawtext centra pero no encoge. fontsize=h/div y el ancho del texto
-    # ≈ 0.55·fontsize·len, así que se exige 0.55·(h/div)·len ≤ 0.92·w → div ≥ len·0.55·(h/w)/0.92.
-    if h_over_w and txt:
-        div = max(div, len(txt) * 0.55 * h_over_w / 0.92)
     color = _valid_hex6(style.get("color", "ffffff"))
     fkey = str(style.get("font", "sans"))
-    fpath, fidx = TITLE_FONTS.get(fkey, TITLE_FONTS["sans"])
+    fpath = TITLE_FONTS.get(fkey, TITLE_FONTS["sans"])
     if not Path(fpath).exists():
-        fpath, fidx = FONT, 0
-    box = ":box=1:boxcolor=black@0.45:boxborderw=14" if (style.get("box") or preset["box"]) else ""
-    # animación: IN en los primeros 0.45s y OUT en los últimos 0.35s si sabemos la duración
-    anim = preset["anim"]
+        fpath = FONT
+    anim = str(style.get("anim") or preset["anim"])       # override por texto (T4)
+    box_on = bool(style.get("box") or preset["box"])
+    box_a = _clampf(style.get("boxAlpha", 0.45), 0.05, 0.85, 0.45)
     # las expresiones van DENTRO de una cadena -vf unida por comas: hay que escapar las
     # comas (y los dos puntos) o el parser de filtros las lee como separadores.
     esc = lambda e: e.replace("\\", "").replace(",", r"\,").replace(":", r"\:")
     fade_out = (f"*if(gt(t,{max(dur - 0.35, 0):.2f}),max(0,({dur:.2f}-t)/0.35),1)"
                 if dur > 1.0 else "")
     alpha_in = "0.18" if anim == "pop" else "0.45"
-    alpha = esc(f"min(1,t/{alpha_in}){fade_out}")
+    alpha = esc(f"min(1,t/{alpha_in}){fade_out}") if anim != "none" else "1"
+
+    if w and h and tmpdir is not None:
+        # ---- modo PX: wrap + tracking + anclaje seguro ----
+        fs = max(18, round(h / div))
+        max_em_px = 0.88 * w
+        if preset.get("track") and len(txt) <= 14 and _txt_em(" ".join(txt), fkey) * fs <= max_em_px:
+            txt = " ".join(txt)          # espaciado fino entre letras: póster de cine
+        lines = ([txt] if _txt_em(txt, fkey) * fs <= max_em_px
+                 else _wrap_lines(txt, fkey, max_em_px / fs))
+        widest = max(_txt_em(ln, fkey) for ln in lines)
+        if widest * fs > max_em_px:           # tras 3 líneas aún no cabe → sí toca encoger
+            fs = max(16, int(max_em_px / widest))
+        lsp = round(fs * 0.26)
+        block = len(lines) * fs + (len(lines) - 1) * lsp
+        pad = round(fs * 0.42) if box_on else 0
+        y0 = {"top": round(h * 0.08) + pad,
+              "mid": round((h - block) / 2),
+              "bottom": round(h * 0.90) - block - pad}.get(pos, round(h * 0.90) - block - pad)
+        y0 += round(_clampf(style.get("dy", 0), -20, 20, 0) / 100.0 * h)   # ajuste fino (T4)
+        y0 = max(round(h * 0.03) + pad, min(y0, h - block - pad - round(h * 0.03)))
+        tf = Path(tmpdir) / f"tx{abs(hash(txt)) % 99999}.txt"
+        tf.write_text("\n".join(lines), encoding="utf-8")
+        box = f":box=1:boxcolor=black@{box_a:.2f}:boxborderw={pad}" if box_on else ""
+        x, y = "(w-text_w)/2", str(y0)
+        if anim == "slide":
+            y = esc(f"{y0}+40*max(0,1-t/0.45)")
+        elif anim == "slideL":
+            x = esc(f"if(lt(t,0.45),(w-text_w)/2-120*(1-t/0.45),(w-text_w)/2)")
+        return (f"drawtext=fontfile='{fpath}':textfile='{tf}':fontcolor=0x{color}"
+                f":fontsize={fs}:line_spacing={lsp}:text_align=center{box}"
+                f":borderw=2:bordercolor=black@0.55:shadowx=2:shadowy=2:shadowcolor=black@0.5"
+                f":x={x}:y={y}:alpha={alpha}")
+
+    # ---- modo legacy (títulos por segmento): una línea, encoge si no cabe ----
+    if h_over_w and txt:
+        div = max(div, _txt_em(txt, fkey) * h_over_w / 0.92)
+    y_base = {"top": "h*0.10", "mid": "(h-th)/2", "bottom": "h*0.78"}.get(pos, "h*0.78")
+    box = f":box=1:boxcolor=black@{box_a:.2f}:boxborderw=14" if box_on else ""
     x, y = "(w-text_w)/2", y_base
     if anim == "slide":            # sube mientras aparece
         y = esc(f"{y_base}+40*max(0,1-t/0.45)")
@@ -2287,6 +2369,7 @@ def _burn_texts(video: Path, texts: list, bitrate: str) -> Path:
     del reel completo, no atado a un clip. Se quema en una sola pasada con drawtext y
     enable=between(t,...), así 10 textos cuestan lo mismo que uno."""
     dur = _probe_dur(video)
+    _w = _h = 0
     try:
         wh = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
                              "-show_entries", "stream=width,height", "-of", "csv=p=0",
@@ -2294,32 +2377,39 @@ def _burn_texts(video: Path, texts: list, bitrate: str) -> Path:
         _w, _h = (int(x) for x in wh.split(",")[:2])
         h_over_w = _h / _w if _w else 0.0
     except (ValueError, OSError, subprocess.SubprocessError):
+        _w = _h = 0
         h_over_w = 0.0
     chain = []
-    for t in texts[:24]:
-        if not isinstance(t, dict):
-            continue
-        txt = str(t.get("text", ""))[:120].replace("\\", "").replace("'", "").replace("%", "").replace(":", r"\:")
-        if not txt:
-            continue
-        a = _clampf(t.get("start", 0), 0, max(dur - 0.1, 0), 0)
-        b = _clampf(t.get("end", a + 3), a + 0.2, max(dur, a + 0.2), a + 3)
-        style = t.get("style") if isinstance(t.get("style"), dict) else {}
-        # el texto se dibuja con el mismo motor que los títulos (fuentes, estilos, animación)
-        # pero con su propia ventana temporal y su duración para el fundido de salida
-        dt = _title_drawtext(txt, style, b - a, h_over_w)
-        # el fundido usa 't' absoluto del reel: hay que rebasarlo al inicio del bloque
-        dt = dt.replace("alpha=", f"enable='between(t,{a:.2f},{b:.2f})':alpha=")
-        dt = re.sub(r"\bt/0\.(\d+)", lambda m: f"(t-{a:.2f})/0.{m.group(1)}", dt)
-        dt = re.sub(r"gt\(t,([\d.]+)\)", lambda m: f"gt(t-{a:.2f},{m.group(1)})", dt)
-        dt = re.sub(r"\(([\d.]+)-t\)", lambda m: f"({m.group(1)}-(t-{a:.2f}))", dt)
-        chain.append(dt)
-    if not chain:
-        return video
-    out = video.with_name(video.stem + ".txt.mp4")
-    _ff(["ffmpeg", "-v", "error", "-y", "-i", str(video), "-vf", ",".join(chain),
-         "-c:v", "h264_videotoolbox", "-b:v", bitrate, "-pix_fmt", "yuv420p",
-         "-c:a", "copy", "-movflags", "+faststart", str(out)])
+    with tempfile.TemporaryDirectory(prefix="abtxt-") as tmpdir:
+        for t in texts[:24]:
+            if not isinstance(t, dict):
+                continue
+            # el texto viaja por textfile= (modo PX), así que ' % : son seguros; solo se
+            # quitan backslashes y saltos de línea (el wrap lo decide el motor, no el input)
+            txt = " ".join(str(t.get("text", ""))[:120].replace("\\", "").split())
+            if not txt:
+                continue
+            a = _clampf(t.get("start", 0), 0, max(dur - 0.1, 0), 0)
+            b = _clampf(t.get("end", a + 3), a + 0.2, max(dur, a + 0.2), a + 3)
+            style = t.get("style") if isinstance(t.get("style"), dict) else {}
+            # el texto se dibuja con el mismo motor que los títulos (fuentes, estilos,
+            # animación) pero con wrap real y anclaje numérico al conocer w×h del reel
+            dt = _title_drawtext(txt, style, b - a, h_over_w, w=_w, h=_h, tmpdir=tmpdir)
+            # el fundido usa 't' absoluto del reel: hay que rebasarlo al inicio del bloque
+            dt = dt.replace("alpha=", f"enable='between(t,{a:.2f},{b:.2f})':alpha=")
+            # OJO: las expresiones ya pasaron por esc() → las comas están escapadas
+            # (gt(t\,X)). Los patrones aceptan ambas formas y la reponen escapada.
+            dt = re.sub(r"\bt/0\.(\d+)", lambda m: f"(t-{a:.2f})/0.{m.group(1)}", dt)
+            dt = re.sub(r"gt\(t\\?,([\d.]+)\)", lambda m: rf"gt(t-{a:.2f}\,{m.group(1)})", dt)
+            dt = re.sub(r"lt\(t\\?,([\d.]+)\)", lambda m: rf"lt(t-{a:.2f}\,{m.group(1)})", dt)
+            dt = re.sub(r"\(([\d.]+)-t\)", lambda m: f"({m.group(1)}-(t-{a:.2f}))", dt)
+            chain.append(dt)
+        if not chain:
+            return video
+        out = video.with_name(video.stem + ".txt.mp4")
+        _ff(["ffmpeg", "-v", "error", "-y", "-i", str(video), "-vf", ",".join(chain),
+             "-c:v", "h264_videotoolbox", "-b:v", bitrate, "-pix_fmt", "yuv420p",
+             "-c:a", "copy", "-movflags", "+faststart", str(out)])
     video.unlink(missing_ok=True)
     out.rename(video)
     return video
@@ -2642,7 +2732,29 @@ def run_edit(spec: dict, j):
             if mpath and mpath.is_file():
                 jobstore.update(j["id"], detail="mezclando música", progress=0.96)
                 _mix_music(out, mpath, music, keep_audio, _probe_dur(out))
+        # ---- reemplazo (T2): si la edición nació de un reel existente y el usuario pidió
+        # sustituirlo, el export exitoso toma su nombre (links, orden y posters se heredan)
+        rep = re.sub(r"[^\w.\- ]", "", str(spec.get("replace", "")))
+        if rep and rep.endswith(".mp4"):
+            tgt = (VAULT / "reels" / rep).resolve()
+            try:
+                tgt.relative_to((VAULT / "reels").resolve())
+                out.replace(tgt)
+                out = tgt
+                # el póster viejo es de otro contenido: fuera para que se regenere
+                (VAULT / "reel-posters" / f"{tgt.stem}.jpg").unlink(missing_ok=True)
+            except (ValueError, OSError):
+                pass          # nombre raro o fs: el reel queda con su nombre nuevo
         _reel_poster(out)     # miniatura para el grid: el tile ya no descarga el MP4
+        # ---- receta (T2): el spec completo viaja junto al reel — es lo que permite
+        # "Reabrir en Estudio" un reel ya exportado con timeline, textos y música vivos
+        try:
+            rdir = VAULT / "reel-posters"
+            rdir.mkdir(parents=True, exist_ok=True)
+            (rdir / f"{out.stem}.recipe.json").write_text(
+                json.dumps(spec, ensure_ascii=False))
+        except OSError:
+            pass
         # BUG (auditoría jul-20): rebuild_index() corría DENTRO del try y ANTES de job_end.
         # Si build_index.py fallaba, un reel exportado CON ÉXITO se reportaba como 'error'
         # y el usuario creía haberlo perdido. El índice es cosmético para el export.
@@ -3258,10 +3370,34 @@ class H(BaseHTTPRequestHandler):
                         it = {"name": f.name, "bytes": st.st_size, "mtime": st.st_mtime}
                         if key == "reels":
                             it.update(_reel_meta(f))   # duración + formato reales (cacheado)
+                            it["has_recipe"] = (VAULT / "reel-posters" / f"{f.stem}.recipe.json").is_file()
                         items.append(it)
-                items.sort(key=lambda x: x["mtime"], reverse=True)
+                if key == "reels":
+                    # orden manual (T4): los reordenados respetan su posición; los nuevos
+                    # (sin entrada en .order.json) van SIEMPRE primero, del más reciente
+                    try:
+                        omap = json.loads((base / ".order.json").read_text())
+                    except (OSError, ValueError):
+                        omap = {}
+                    items.sort(key=lambda x: (0, -x["mtime"]) if x["name"] not in omap
+                               else (1, omap[x["name"]]))
+                else:
+                    items.sort(key=lambda x: x["mtime"], reverse=True)
                 out[key] = items
             return self.send_json(out)
+        if self.path.startswith("/api/reel_recipe"):
+            # T2 · receta de un reel exportado: el spec exacto con el que se montó
+            if not self.auth():
+                return
+            q2 = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            name = re.sub(r"[^\w.\- ]", "", str(q2.get("name", [""])[0]))
+            rf = VAULT / "reel-posters" / f"{Path(name).stem}.recipe.json"
+            if not name or not rf.is_file():
+                return self.send_json({"error": "sin receta"}, 404)
+            try:
+                return self.send_json({"ok": True, "recipe": json.loads(rf.read_text())})
+            except (OSError, ValueError):
+                return self.send_json({"error": "receta corrupta"}, 500)
         if self.path.startswith("/api/properties"):
             if not self.auth():
                 return
@@ -3735,6 +3871,19 @@ class H(BaseHTTPRequestHandler):
                 except (OSError, subprocess.SubprocessError):
                     pass          # se queda el HEIC: descargable aunque no se previsualice
             return self.send_json({"ok": True, "name": dst.name, "bytes": read})
+        if u.path == "/api/reel_order":
+            # T4 · orden manual de la librería de reels (drag / flechas en el grid)
+            if not self.auth(q):
+                return
+            spec = self.read_json()
+            names = spec.get("names") if isinstance(spec.get("names"), list) else []
+            omap = {re.sub(r"[^\w.\- ]", "", str(n)): i
+                    for i, n in enumerate(names[:500]) if str(n).endswith(".mp4")}
+            try:
+                (VAULT / "reels" / ".order.json").write_text(json.dumps(omap))
+            except OSError as e:
+                return self.send_json({"error": str(e)[-200:]}, 500)
+            return self.send_json({"ok": True, "count": len(omap)})
         if u.path == "/api/reel_edit":
             # R4 · retoques sobre un reel YA exportado, sin re-montar el proyecto.
             # Nunca sobrescribe el original salvo 'poster' (que solo toca la miniatura).
@@ -3789,6 +3938,29 @@ class H(BaseHTTPRequestHandler):
                     return self.send_json({"error": str(e)[-200:]}, 500)
                 _reel_poster(out)
                 return self.send_json({"ok": True, "name": out.name})
+            if op == "texts":
+                # T3 · quemar textos sobre un reel YA exportado (los viejos no tienen
+                # receta: esta es su vía para llevar títulos sin re-montar nada)
+                texts = spec.get("texts") if isinstance(spec.get("texts"), list) else []
+                if not texts:
+                    return self.send_json({"error": "sin textos"}, 400)
+                replace = bool(spec.get("replace"))
+                work = base / f"{stem}-textos-{time.strftime('%H%M%S')}.mp4"
+                try:
+                    shutil.copy2(src, work)
+                    # bitrate del fuente para no degradar (mínimo 6M, techo 20M)
+                    br = f"{max(6, min(20, round(src.stat().st_size * 8 / max(dur, 0.5) / 1e6)))}M"
+                    _burn_texts(work, texts, br)
+                    if replace:
+                        work.replace(src)
+                        work = src
+                        (VAULT / "reel-posters" / f"{stem}.jpg").unlink(missing_ok=True)
+                except Exception as e:                  # noqa: BLE001
+                    if work != src:
+                        work.unlink(missing_ok=True)
+                    return self.send_json({"error": str(e)[-200:]}, 500)
+                _reel_poster(work)
+                return self.send_json({"ok": True, "name": work.name})
             return self.send_json({"error": "op inválida"}, 400)
         if u.path == "/api/audio_upload":
             # pista de música del usuario (su propia biblioteca). Mismo patrón que /upload:

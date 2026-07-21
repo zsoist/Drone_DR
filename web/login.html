@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#090B0F">
+  <title>AeroBrain - Acceso</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="login.css?v=280">
+  <script src="icons.js?v=280" defer></script>
+  <script src="login.js?v=280" defer></script>
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-panel" aria-labelledby="login-title">
+      <header class="login-heading">
+        <span class="login-mark" data-icon="drone" aria-hidden="true"></span>
+        <div>
+          <p class="login-product">AeroBrain</p>
+          <p class="login-context">Flight Intelligence</p>
+        </div>
+      </header>
+
+      <div class="login-copy">
+        <p class="login-eyebrow">Acceso privado</p>
+        <h1 id="login-title">Bienvenido, Daniel</h1>
+      </div>
+
+      <form id="login-form" novalidate>
+        <input type="text" name="username" value="daniel" autocomplete="username" readonly hidden>
+        <label class="login-label" for="login-password">Contraseña</label>
+        <div class="login-field">
+          <input id="login-password" name="password" type="password"
+                 autocomplete="current-password" maxlength="1024" required autofocus>
+          <button class="login-reveal" type="button" aria-label="Mostrar contraseña"
+                  title="Mostrar contraseña" data-reveal></button>
+        </div>
+        <p class="login-error" id="login-error" role="alert" aria-live="polite"></p>
+        <button class="login-submit" type="submit" id="login-submit">
+          <span>Entrar</span><span data-icon="chevR" aria-hidden="true"></span>
+        </button>
+      </form>
+
+      <footer class="login-meta">
+        <span class="login-status" aria-hidden="true"></span>
+        Sesión privada de 24 horas · Colombia
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

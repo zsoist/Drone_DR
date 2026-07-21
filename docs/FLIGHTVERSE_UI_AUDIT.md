@@ -3,6 +3,8 @@
 > **Baseline histórica previa al overhaul.** Las referencias a r160/GS3D y los gaps de UI
 > no describen el producto actual. El estado implementado vive en
 > [FLIGHTVERSE_IMPLEMENTATION.md](FLIGHTVERSE_IMPLEMENTATION.md) y [GAME_ENGINE.md](GAME_ENGINE.md).
+> Toda referencia a `X-Token` quedó reemplazada el 2026-07-17 por la sesión exclusiva
+> de Daniel; el contrato vigente está en [AUTH_SECURITY.md](AUTH_SECURITY.md).
 
 > Baseline previa a construir /mundo. Cada hallazgo: severidad, causa raíz
 > (selector), fix previsto, test de regresión. Screenshots vía pane con sesión.
@@ -57,10 +59,10 @@ Se anexa al aterrizar.
   proyecto abierto (tresd.js:945-947); _loadToken invalida cargas en vuelo.
 
 ## Consolidación AGENT E (showcase/AI/persistencia/Studio)
-- **Público sin auth YA existe**: share.html (?m=cid) y p.html (?id=slug) —
-  denylist del static server (server.py:1097-1102) deja público todo el vault
-  salvo dotfiles/.db/.token/.env/.jsonl/.log y ops/trash/odm/raw. CSP
-  frame-ancestors 'none' + sin CORS → FLIGHTVERSE vive same-origin.
+- **Acceso privado obligatorio (actualizado 2026-07-17)**: `share.html`, `p.html`,
+  FLIGHTVERSE, manifests y assets del vault exigen la sesión de Daniel o `X-Token`.
+  El denylist del resolver sigue siendo defensa en profundidad; CSP `frame-ancestors`
+  y ausencia de CORS mantienen FLIGHTVERSE same-origin.
 - **Persistencia**: localStorage (proyectos Studio 'ab.studio.projects'),
   jobs.db (jobs+sessions, NO store genérico), JSON-en-vault por recurso
   (ai/{cid}.json = highlights/POIs; properties/{slug}.json). NO hay store de

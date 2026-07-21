@@ -18,6 +18,8 @@ SD card ──ingest──▶ drone-vault (SSD 1TB)          Mac Mini M4 · cont
                             │              · ODM depthmaps CUDA
                             │              · gsplat 7K/15K/20K/30K/40K
                             ▼
+              Cloudflare Worker /*          ←── sesión HMAC + bypass de cache privado
+                            │
               Cloudflare Tunnel (metislab)  ←── $0: sin R2, sin VPS, sin egress
                             │
                             ▼
@@ -28,6 +30,24 @@ SD card ──ingest──▶ drone-vault (SSD 1TB)          Mac Mini M4 · cont
 (medido 2026-07-14). Cloudflare
 Tunnel sirve el vault directo — storage $0, egress $0, sin tarjeta. R2 queda
 como opción futura para viajes ([sync_r2.py](pipeline/sync_r2.py) listo, cap 9GB free tier).
+
+## Acceso privado
+
+AeroBrain tiene una sola cuenta, `daniel`. El servidor exige autenticación antes
+de entregar cualquier página, API, video, foto, mapa, modelo, splat o enlace de
+share. La sesión es absoluta de 24 horas, se muestra en hora de Colombia y usa una
+cookie `__Host-` Secure/HttpOnly/SameSite=Strict. El password se verifica con
+scrypt; SQLite guarda sólo el hash de cada token de sesión. Codex y Claude Code
+conservan acceso de desarrollo únicamente por loopback estricto en
+`http://127.0.0.1:8790`. Supabase funciona como índice sólo de servidor:
+`anon`/`authenticated` no tienen acceso al esquema, tablas ni RPCs, y el Mac usa
+exclusivamente su secret key. Detalles y verificación:
+[docs/AUTH_SECURITY.md](docs/AUTH_SECURITY.md).
+
+El Worker versionado en `edge/` protege todo el host antes del cache de Cloudflare.
+Convierte la cookie de Daniel en un sobre HMAC efímero para el origin, elimina
+headers falsificables y conserva streaming Range. Una entrada CDN antigua no puede
+saltarse el gate ni una regla de transformación puede romper la sesión.
 
 ## Módulos
 
@@ -131,7 +151,7 @@ evidencia medida, runbook o snapshot histórico. Empieza por `SPEC.md` para prod
 V1 ✅ pipeline + Flight Deck live · V3 ✅ SHIPPED: fotogrametría ODM completa
 (worker desacoplado + cola SQLite, presets rápido/estándar/alta, DSM + curvas +
 mediciones de volumen/perfil/comparación multi-fecha, ortos feathered WebP,
-malla re-centrada para viewer, página pública /share.html, gzip sidecars) +
+malla re-centrada para viewer, share autenticado, gzip sidecars) +
 gaussian splats ✅ (Metal 1K/2K + RTX CUDA estricto 7K–40K, SOG, historial versionado,
 campañas CUDA con dry-run, preflight y publish atómico, browser-gate antes de `done`,
 browser-matrix mobile/iPad/desktop para share + workspace) ·

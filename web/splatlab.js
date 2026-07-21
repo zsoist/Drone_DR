@@ -65,7 +65,7 @@ main.classList.add('lab-main');
     actions.innerHTML = `
       <a class="btn" href="${splatUrl(s)}" download title="Descarga el .splat actual tal cual está publicado" aria-label="Descargar splat actual">${icon('dl')} Descargar</a>
       <button class="btn" id="lab-upload" title="Sube un splat editado (.ply/.splat/.ksplat) — la versión anterior se archiva en history/" aria-label="Subir splat editado">${icon('save')} Subir editado</button>
-      <a class="btn" href="share.html?m=${encodeURIComponent(s.clip_id)}" target="_blank" title="Abre la página pública compartible de este modelo" aria-label="Página pública para compartir">${icon('ext')} Compartir</a>
+      <a class="btn" href="share.html?m=${encodeURIComponent(s.clip_id)}" target="_blank" title="Abre el visor privado de este modelo" aria-label="Abrir visor privado">${icon('ext')} Abrir visor</a>
       <a class="btn" href="tresd.html" title="Abre el proyecto en el tab 3D (mapa, malla, nube)" aria-label="Ver en el tab 3D">${icon('cube')} Ver en 3D</a>
       <span class="footer-note mono" id="lab-status" role="status" aria-live="polite"></span>`;
     document.getElementById('lab-upload').addEventListener('click', () => fileIn.click());
@@ -144,7 +144,7 @@ main.classList.add('lab-main');
       const preset = document.getElementById('lab-preset').value;
       cst('limpiando…');
       try {
-        const r = await fetch(`/api/splat_autoclean?cid=${encodeURIComponent(s.clip_id)}&preset=${preset}`, { method: 'POST' });
+        const r = await authFetch(`/api/splat_autoclean?cid=${encodeURIComponent(s.clip_id)}&preset=${preset}`, { method: 'POST' });
         const out = await r.json();
         if (!r.ok || out.error) throw new Error(out.error || r.status);
         const rep = out.report, rm = rep.removed;
@@ -160,7 +160,7 @@ main.classList.add('lab-main');
     document.getElementById('lab-revert').addEventListener('click', async () => {
       cst('revirtiendo al crudo…');
       try {
-        const r = await fetch(`/api/splat_revert?cid=${encodeURIComponent(s.clip_id)}&to=raw`, { method: 'POST' });
+        const r = await authFetch(`/api/splat_revert?cid=${encodeURIComponent(s.clip_id)}&to=raw`, { method: 'POST' });
         const out = await r.json();
         if (!r.ok || out.error) throw new Error(out.error || r.status);
         cst('✓ crudo restaurado como actual · la limpia quedó en history/');
@@ -198,7 +198,7 @@ main.classList.add('lab-main');
     if (!/\.(ply|splat|ksplat)$/i.test(file.name)) { setStatus('formato no soportado (.ply/.splat/.ksplat)'); return; }
     setStatus(`Subiendo ${file.name} (${(file.size / 1e6).toFixed(1)}MB)…`);
     try {
-      const r = await fetch(`/api/splat_upload?cid=${encodeURIComponent(s.clip_id)}&name=${encodeURIComponent(file.name)}`,
+      const r = await authFetch(`/api/splat_upload?cid=${encodeURIComponent(s.clip_id)}&name=${encodeURIComponent(file.name)}`,
         { method: 'POST', body: file });
       const out = await r.json();
       if (!r.ok || out.error) throw new Error(out.error || r.status);

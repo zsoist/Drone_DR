@@ -1,4 +1,10 @@
 .forge/
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
 web/data
 splat/OpenSplat/
 splat/libtorch/

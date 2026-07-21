@@ -1,7 +1,7 @@
 // Editor de fotos premium compartido (flight + studio). Requiere shell.js e icons.js.
 function openPhotoEditor({ url, name }) {
   const ov = document.createElement('div');
-  ov.className = 'login-ov';
+  ov.className = 'photo-editor-ov';
   const SLIDERS = {
     luz: [
       ['bright', 'Brillo', 60, 140, 100], ['contrast', 'Contraste', 60, 140, 100],

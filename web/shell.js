@@ -79,78 +79,59 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-// sesión de operador: cookie HttpOnly (credenciales NUNCA se guardan en el navegador).
-// Varios api() pueden recibir 403 a la vez (al cargar la página se disparan varios POST):
-// deben COMPARTIR un único login en vuelo. Hoy el 2º+ ve el overlay #login-ov ya presente,
-// loginModal() resuelve false por su guard singleton, y api() lanza 'sin sesión' en falso.
-let authInFlight = null;   // promesa del login en curso, compartida entre llamadas concurrentes
-async function ensureAuth() {
-  if ((await fetch('/api/whoami')).ok) return true;
-  // single-flight: el primer 403 abre el modal; los demás esperan ESA misma promesa en vez de
-  // ver el overlay ya presente y resolver false ('sin sesión' en falso para sus POST)
-  if (!authInFlight) {
-    authInFlight = loginModal().finally(() => { authInFlight = null; });
+// The server gates every document and data asset before this code runs. These
+// checks cover session expiry while a tab is already open or restored by bfcache.
+function loginLocation() {
+  const next = location.pathname + location.search + location.hash;
+  return `/login.html?next=${encodeURIComponent(next)}`;
+}
+function redirectToLogin() {
+  location.replace(loginLocation());
+}
+let sessionExpiryTimer = 0;
+function armSessionExpiry(session) {
+  clearTimeout(sessionExpiryTimer);
+  const ttl = Number(session?.expires_in_seconds);
+  if (session?.dev_mode || !Number.isFinite(ttl)) return;
+  const delay = Math.max(1000, Math.min((ttl + 1) * 1000, 24 * 60 * 60 * 1000 + 2000));
+  sessionExpiryTimer = setTimeout(requireSession, delay);
+}
+async function requireSession() {
+  try {
+    const response = await fetch('/api/whoami', { cache: 'no-store' });
+    if (!response.ok) { redirectToLogin(); return null; }
+    const session = await response.json();
+    armSessionExpiry(session);
+    return session;
+  } catch {
+    clearTimeout(sessionExpiryTimer);
+    sessionExpiryTimer = setTimeout(requireSession, 30 * 1000);
+    return null;
   }
-  return authInFlight;
 }
-function loginModal() {
-  return new Promise(resolve => {
-    if (document.getElementById('login-ov')) { resolve(false); return; }
-    const ov = document.createElement('div');
-    ov.id = 'login-ov';
-    ov.className = 'login-ov';
-    ov.innerHTML = `
-      <form class="login-card" id="login-form">
-        <div class="login-brand"><span class="mark">${icon('drone')}</span>
-          <div><b>AeroBrain</b><span>Iniciar sesión</span></div></div>
-        <label>Correo<input type="email" id="lg-user" autocomplete="username" value="reyesusma@hotmail.com" required></label>
-        <label>Contraseña<input type="password" id="lg-pass" autocomplete="current-password" required autofocus></label>
-        <div class="login-err" id="lg-err"></div>
-        <button class="btn primary big" type="submit" id="lg-go">Entrar</button>
-        <button class="btn" type="button" id="lg-cancel">Cancelar</button>
-      </form>`;
-    document.body.appendChild(ov);
-    const done = ok => { ov.remove(); resolve(ok); };
-    ov.querySelector('#lg-cancel').onclick = () => done(false);
-    ov.addEventListener('click', e => { if (e.target === ov) done(false); });
-    ov.querySelector('#login-form').onsubmit = async e => {
-      e.preventDefault();
-      const go = ov.querySelector('#lg-go'); go.textContent = 'Entrando…'; go.disabled = true;
-      let r;
-      try {
-        r = await fetch('/api/login', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user: ov.querySelector('#lg-user').value.trim(),
-            password: ov.querySelector('#lg-pass').value }) });
-      } catch {
-        ov.querySelector('#lg-err').textContent = 'Sin conexión — revisa la red e intenta de nuevo.';
-        go.textContent = 'Entrar'; go.disabled = false;
-        return;
-      }
-      if (r.ok) return done(true);
-      ov.querySelector('#lg-err').textContent = 'Correo o contraseña incorrectos.';
-      go.textContent = 'Entrar'; go.disabled = false;
-      ov.querySelector('#lg-pass').select();
-    };
-    setTimeout(() => ov.querySelector('#lg-pass').focus(), 50);
-  });
+async function authFetch(path, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const headers = new Headers(options.headers || {});
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) headers.set('X-AeroBrain-CSRF', '1');
+  const response = await fetch(path, { ...options, headers, credentials: 'same-origin' });
+  if (response.status === 401) {
+    redirectToLogin();
+    throw new Error('sesión expirada');
+  }
+  return response;
 }
-// POST autenticado vía cookie de sesión; pide login solo si hace falta
+
 async function api(path, body) {
-  let r = await fetch(path, { method: 'POST',
+  const r = await authFetch(path, { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
-  if (r.status === 403) {
-    if (!await ensureAuth()) throw new Error('sin sesión');
-    r = await fetch(path, { method: 'POST',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
-  }
   return r.json();
 }
-// compat: código viejo llama getToken() como gate — ahora solo asegura sesión
+// compat: código viejo llama getToken() como gate; auth vive en la cookie HttpOnly
 function getToken() { return 'session'; }
 // migración: borra el token que versiones anteriores dejaron en localStorage
 localStorage.removeItem('ab_token');
+addEventListener('pageshow', event => { if (event.persisted) requireSession(); });
+setInterval(requireSession, 5 * 60 * 1000);
 // limpia códigos ANSI/escape que ODM mete en el log
 function cleanLog(t) {
   return String(t || '').replace(/\u001b\[[0-9;]*m/g, '').replace(/\^?\[\[[0-9;]*m/g, '').trim();
@@ -413,7 +394,7 @@ async function fetchJobLogChunk() {
   if (!jobLogState || jobLogState.loading || jobLogState.eof || jobLogState.paused) return;
   jobLogState.loading = true;
   try {
-    const r = await fetch(`/api/job_log?id=${encodeURIComponent(jobLogState.id)}&after=${jobLogState.cursor}&limit=500`);
+    const r = await authFetch(`/api/job_log?id=${encodeURIComponent(jobLogState.id)}&after=${jobLogState.cursor}&limit=500`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const chunk = await r.json();
     jobLogState.lines.push(...(chunk.lines || []));
@@ -424,7 +405,7 @@ async function fetchJobLogChunk() {
 }
 async function openJobLog(jid) {
   document.getElementById('job-log-drawer')?.remove();
-  const detail = await (await fetch(`/api/job?id=${encodeURIComponent(jid)}`)).json();
+  const detail = await (await authFetch(`/api/job?id=${encodeURIComponent(jid)}`)).json();
   const job = detail.job || {};
   jobLogState = { id: jid, cursor: 0, lines: [], eof: false, paused: false,
     autoscroll: true, loading: false, timer: 0 };
@@ -486,8 +467,8 @@ async function pollJobs(el, every = 2500, onDone = null) {
     if (busy) return;                                     // guard de overlap: polls lentos no se pisan (#44)
     busy = true;
     try {
-      const res = await fetch('/api/jobs');
-      if (res.status === 403) { el.innerHTML = '<p class="footer-note">Inicia sesión para ver trabajos.</p>'; return; }
+      const res = await authFetch('/api/jobs');
+      if (res.status === 401) { redirectToLogin(); return; }
       const { jobs = [], counts = {} } = await res.json(); // respuesta sin jobs → [] (no crash) (#46)
       if (onDone) {
         for (const j of jobs) {
@@ -637,8 +618,13 @@ document.addEventListener('click', async e => {
   if (e.target.closest('[data-theme-toggle]')) toggleTheme();
   if (e.target.closest('#auth-link')) {
     e.preventDefault();
-    if ((await fetch('/api/whoami')).ok) { await fetch('/api/logout', { method: 'POST' }); alert('Sesión cerrada.'); }
-    else await loginModal();
+    const session = await requireSession();
+    if (!session || session.dev_mode) return;
+    try {
+      await authFetch('/api/logout', { method: 'POST', body: '{}' });
+    } finally {
+      location.replace('/login.html');
+    }
   }
 });
 function renderShell(active) {
@@ -659,7 +645,7 @@ function renderShell(active) {
           <span class="foot-status"><span class="dot"></span>Mac Mini M4 · vault local</span>
           <div class="foot-btns">
             <a class="fbtn" href="guia.html">${icon('list')} Guía</a>
-            <a class="fbtn" href="#" id="auth-link">${icon('iso')} Sesión</a>
+            <a class="fbtn" href="#" id="auth-link">${icon('logOut')} Salir</a>
           </div>
         </div>
       </aside>
@@ -672,6 +658,20 @@ function renderShell(active) {
   if (bar && act && bar.scrollWidth > bar.clientWidth + 1) {
     bar.scrollLeft = act.offsetLeft - (bar.clientWidth - act.offsetWidth) / 2;
   }
+  requireSession().then(session => {
+    const control = document.getElementById('auth-link');
+    if (!control || !session) return;
+    if (session.dev_mode) {
+      control.innerHTML = `${icon('cpu')} Dev local`;
+      control.title = 'Acceso local para Codex y Claude Code';
+      control.setAttribute('aria-disabled', 'true');
+    } else if (session.expires_at) {
+      const expiresInColombia = new Date(session.expires_at).toLocaleString('es-CO', {
+        timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'short',
+      });
+      control.title = `Sesión de Daniel hasta ${expiresInColombia}`;
+    }
+  });
   return document.getElementById('main');
 }
 

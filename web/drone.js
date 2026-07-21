@@ -59,13 +59,6 @@ main.innerHTML = `
 
   <section class="dr-mod" data-mod="up" style="display:none">
     <div class="up-wrap">
-      <div class="up-gate" id="up-gate" style="display:none">
-        ${icon('warn')}
-        <div><b>Inicia sesión para subir</b>
-          <p>Solo el operador puede añadir videos a la bóveda.</p></div>
-        <button class="btn primary" id="up-login">Iniciar sesión</button>
-      </div>
-
       <div class="up-zone rise" id="drop" data-tip="También puedes soltar varios a la vez — van en cola">
         <span class="up-ring"></span>
         ${icon('dl')}
@@ -173,12 +166,7 @@ function gauge(pct) {
 
 async function scan() {
   try {
-    const r = await fetch('/api/sd_scan');
-    if (r.status === 403) {
-      document.getElementById('sd-list').innerHTML = '<p class="footer-note">Inicia sesión para escanear.</p>';
-      volumes = []; paintStats();            // sin esto los 5 stats quedaban como skeletons brillando
-      return;
-    }
+    const r = await authFetch('/api/sd_scan');
     volumes = (await r.json()).volumes || [];
   } catch { volumes = []; }
   paintStats();
@@ -461,33 +449,16 @@ function openOptimize(v) {
 const drop = document.getElementById('drop');
 const fileIn = document.getElementById('file');
 const upQueue = document.getElementById('queue');
-let upLogged = false;
+document.getElementById('up-session').innerHTML =
+  `${icon('check')} sesión privada activa — listo para importar y subir`;
+document.getElementById('up-session').classList.add('mint');
 
-async function upCheckSession() {
-  try { upLogged = (await fetch('/api/whoami')).ok; } catch { upLogged = false; }
-  const chip = document.getElementById('up-session');
-  chip.innerHTML = upLogged
-    ? `${icon('check')} sesión activa — listo para importar y subir`
-    : `${icon('warn')} sin sesión — solo lectura`;
-  chip.classList.toggle('mint', upLogged);
-  document.getElementById('up-gate').style.display = upLogged ? 'none' : 'flex';
-  drop.classList.toggle('locked', !upLogged);
-}
-upCheckSession();
-document.getElementById('up-login').addEventListener('click', async () => {
-  if (await ensureAuth()) upCheckSession();
-});
-
-drop.addEventListener('click', async () => {
-  if (!upLogged) { if (await ensureAuth()) await upCheckSession(); else return; }
-  if (upLogged) fileIn.click();
-});
+drop.addEventListener('click', () => fileIn.click());
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', async e => {
   e.preventDefault(); drop.classList.remove('over');
   const files = [...e.dataTransfer.files];   // ANTES del await: el drag data store se vacía al retornar
-  if (!upLogged) { if (await ensureAuth()) await upCheckSession(); else return; }
   files.forEach(upEnqueue);
 });
 fileIn.addEventListener('change', () => { [...fileIn.files].forEach(upEnqueue); fileIn.value = ''; });
@@ -511,6 +482,7 @@ function upStart(item) {
   item.status = 'subiendo';
   const xhr = item.xhr = new XMLHttpRequest();
   xhr.open('POST', `/upload?name=${encodeURIComponent(item.file.name)}`);
+  xhr.setRequestHeader('X-AeroBrain-CSRF', '1');
   let lastT = performance.now(), lastL = 0;
   xhr.upload.onprogress = e => {
     const now = performance.now(), dt = (now - lastT) / 1000;
@@ -527,7 +499,7 @@ function upStart(item) {
   const finish = st => { item.status = st; item.xhr = null; upActive = null; upRender(); upPump(); };
   xhr.onload = () => {
     if (xhr.status === 200) finish('procesando');
-    else if (xhr.status === 403) { item.err = 'sesión expirada'; finish('error'); upCheckSession(); }
+    else if (xhr.status === 401) { item.err = 'sesión expirada'; finish('error'); redirectToLogin(); }
     else { item.err = (JSON.parse(xhr.responseText || '{}').error) || `error ${xhr.status}`; finish('error'); }
   };
   xhr.onerror = () => { item.err = 'error de red — reintenta'; finish('error'); };

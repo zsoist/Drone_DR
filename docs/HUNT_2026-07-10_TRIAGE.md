@@ -2,6 +2,8 @@
 
 > **Snapshot histórico.** Los números de línea y estados pertenecen a ese corte. Para
 > pendientes vigentes usa [BUGHUNT_BACKLOG.md](BUGHUNT_BACKLOG.md) y los tests actuales.
+> Toda referencia a `X-Token` quedó reemplazada el 2026-07-17 por la sesión exclusiva
+> de Daniel; el contrato vigente está en [AUTH_SECURITY.md](AUTH_SECURITY.md).
 
 56 findings de finders (verificación adversarial parcial — triar antes de aplicar).
 RESUME del hunt: Workflow({scriptPath: ".../aerobrain-massive-hunt-wf_e898a340-82c.js", resumeFromRunId: "wf_e898a340-82c"})
@@ -51,8 +53,9 @@ RESUME del hunt: Workflow({scriptPath: ".../aerobrain-massive-hunt-wf_e898a340-8
   · fix: Clavar el ledger en (size, mtime) o un hash de contenido, y reconciliar borrados contra el listado de R2.
 - [x] **[media]** `capture_quality.py:153` — blur_frac se mide relativo a la mediana del propio clip (s < sharp_med*0.5), así que un vuelo uniformemente desenfocado da blur_frac≈0 y se califica como nítido.
   · fix: Añadir un umbral ABSOLUTO de nitidez (p. ej. sharp_median por debajo de un piso) que penalice suitability y dispare warning, además del blur_frac relativo.
-- [ ] **[media]** `share.js:66` — share.html (visor publico sin sesion) descarga data/manifest/system.json, que el server sirve sin auth (aerobrain_server.py:1204, tras el branch autenticado /api/properties), exponiendo el catalogo completo.
-  · fix: Poner la lista de splats del modelo dentro de data/models/<cid>/meta.json y dejar de leer system.json en paginas publicas (o gatear system.json tras auth).
+- [x] **[media]** `share.js:66` — Hallazgo histórico: `share.html` descargaba `system.json`
+  sin sesión. Resuelto por el gate obligatorio global: share, properties, manifests y todos
+  los assets del vault requieren la sesión de Daniel o `X-Token`; no existe modo anónimo.
 - [x] **[media]** `p.js:12` — El lightbox de la galeria usa window.open(g.dataset.full), sacando al comprador de la pagina de venta hacia el JPG crudo.
   · fix: Reemplazar window.open por un overlay/lightbox in-page con boton de cierre.
 - [x] **[media]** `p.js:10` — Los nombres de frame de la galeria se adivinan (f_(i*3+2), hasta gallery_n) y gallery_n NUNCA lo escribe el server (siempre =8), sin acotar por el frame_count real del clip.

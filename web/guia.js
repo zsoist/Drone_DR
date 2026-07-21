@@ -19,7 +19,7 @@
             <div class="pb"><table class="kv">
               <tr><td>1. Ve a Subir</td><td>desde cualquier dispositivo</td></tr>
               <tr><td>2. Arrastra el video</td><td>MP4, MOV, MKV, AVI, MTS, WEBM</td></tr>
-              <tr><td>3. Inicia sesión</td><td>una vez con tu correo + contraseña (sesión de 30 días)</td></tr>
+              <tr><td>3. Inicia sesión</td><td>como Daniel con tu contraseña (sesión absoluta de 24 horas)</td></tr>
               <tr><td>4. Espera</td><td>el M4 hace proxy + AI solo</td></tr>
             </table></div>
           </div>
@@ -30,8 +30,8 @@
               <tr><td>3. Edita</td><td>Studio → marca los mejores cortes → Exportar</td></tr>
               <tr><td>4. Comparte</td><td>el link del vuelo o descarga el reel</td></tr>
             </table>
-            <p class="footer-note">El link de un vuelo (flight.html?id=…) es compartible tal cual:
-            video + mapa + datos. Ideal para mostrar la ubicación real de la propiedad.</p></div>
+            <p class="footer-note">El link de un vuelo (flight.html?id=…) conserva video, mapa y datos,
+            pero sólo abre dentro de tu sesión privada de AeroBrain.</p></div>
           </div>
         </div>
         <div>

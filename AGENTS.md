@@ -2,18 +2,17 @@
 
 For automated agents (Claude Code, Codex) testing the app without auth friction.
 
-## TL;DR — testing on the Mac needs NO auth
+## TL;DR — local agent testing uses constrained dev mode
 
-The server binds `127.0.0.1:8790` and is only exposed to the internet through the
-Cloudflare tunnel, which stamps every external request with `CF-Connecting-IP`.
-A request **without** that header and from loopback can only come from a process
-on the Mac itself (loopback isn't reachable from the LAN) — so `auth()` trusts it.
-Browser cross-site requests to localhost are rejected via `Sec-Fetch-Site`/`Origin`
-checks, so a random website cannot silently trigger write actions.
+The server binds only `127.0.0.1:8790`. Codex and Claude Code may use full dev
+access on that origin without a browser login. The check requires all of these:
+loopback client IP, exact `127.0.0.1:8790` or `localhost:8790` Host, no Cloudflare
+or forwarded headers, and same-origin/none browser fetch metadata. This prevents
+DNS rebinding and cross-site browser requests from being mistaken for an agent.
 
 ```bash
 # any agent ON the Mac — full read+write, no token, no login:
-curl http://localhost:8790/api/whoami                      # -> {"ok":true,"local":true}
+curl http://localhost:8790/api/whoami                      # -> dev_mode:true, user:daniel
 curl http://localhost:8790/api/jobs                        # job list
 curl -X POST http://localhost:8790/api/search -d '{"q":"selva verde"}'   # semantic search
 curl -X POST http://localhost:8790/api/odm    -d '{"clip_id":"...","preset":"alta"}'    # premium ODM video route
@@ -21,46 +20,43 @@ curl -X POST http://localhost:8790/api/splat  -d '{"clip_id":"...","preset":"med
 curl -X POST http://localhost:8790/api/splat  -d '{"clip_id":"recon_...","preset":"frontier","backend":"cuda","backend_policy":"strict","resolution":"auto"}'
 ```
 
-The **preview browser pointed at `http://localhost:8790`** is also trusted — pages
-skip the login modal automatically (whoami returns ok), so UI flows test cleanly.
+The preview browser pointed at `http://127.0.0.1:8790` is also in dev mode. Do not
+proxy that URL or replace its Host header; either change disables the exception.
 
-## Testing against the PUBLIC url (vuelos.metislab.work)
+## Testing against the public URL
 
-External requests carry `CF-Connecting-IP`, so they need auth. Two ways:
+External requests require auth before HTML, APIs, videos, maps, models, splats,
+share pages, or vault data are returned. The only remote path is Daniel's 24-hour
+browser session. Header/query master tokens are deliberately rejected. Agents must
+use loopback dev mode; do not put Daniel's password in a command or test fixture.
 
-```bash
-# 1) operator token via header (read it from the vault):
-TOKEN=$(cat /Volumes/SSD/drone-vault/.token)
-curl https://vuelos.metislab.work/api/jobs -H "X-Token: $TOKEN"
-
-# 2) sign in for a 30-day session cookie:
-curl -c jar.txt -X POST https://vuelos.metislab.work/api/login \
-  -H "Content-Type: application/json" \
-  -d '{"user":"reyesusma@hotmail.com","password":"<in .api-keys.env, hashed>"}'
-curl -b jar.txt https://vuelos.metislab.work/api/jobs
-```
-
-Note: the browser session cookie is `Secure`, so it only works over HTTPS — that's
-why local UI testing must use `http://localhost:8790` (trusted, no cookie needed)
-rather than trying to log in over http.
+The browser session cookie is `Secure`, so it only works over HTTPS. Local UI
+testing uses `http://localhost:8790` (trusted, no cookie needed).
 
 ## Why this is safe (not a backdoor)
 
 - `127.0.0.1` loopback is only reachable from the Mac; nothing on the LAN or the
   internet can hit it except through the tunnel (which adds CF headers → gated).
-- Browser CSRF from a third-party site to localhost is rejected (`cross-site`
-  fetch metadata or non-local Origin), while curl/agents and same-origin local UI
-  still work with no auth.
+- Local dev mode rejects unexpected Host, proxy, Origin and fetch-metadata values.
 - A local process already has full filesystem access to the vault, so trusting
   localhost doesn't widen the attack surface.
-- The public surface (the only thing the world can reach) is unchanged: gated by
-  token/session, query-string tokens rejected, strict CSP, RLS on Supabase.
+- The public surface has no localhost fallback: it is gated only by Daniel's
+  session. Header and query-string master tokens are rejected.
 
-## Operator sign-in (manual UI testing)
+## Operator sign-in
 
-- User: `reyesusma@hotmail.com` · password stored **only as a SHA-256 hash** in
-  `/Volumes/SSD/_system/claude/.api-keys.env` (`AEROBRAIN_PASS_SHA256`) — never in
-  this repo. Rotate by re-hashing a new password into that file.
+- Canonical user: `daniel`; there is no registration or second account.
+- The session cookie is `__Host-ab_session`, `Secure`, `HttpOnly`,
+  `SameSite=Strict`, and expires absolutely after 24 hours.
+- On the first successful login, the legacy SHA-256 verifier is migrated to a
+  salted memory-hard scrypt record at `/Volumes/SSD/drone-vault/.operator-auth.json`
+  with mode `0600`. Passwords and session tokens are never stored in plaintext.
+- See `docs/AUTH_SECURITY.md` for the threat model, rotation procedure, and tests.
+- Every public AeroBrain path crosses the versioned Cloudflare Worker in `edge/`.
+  It replaces the browser cookie with a 30-second HMAC envelope, strips spoofable
+  bridge headers, bypasses shared cache, and preserves Range/Set-Cookie. Test it
+  with `node --test edge/test_private_data_worker.mjs`; never narrow the route,
+  expose the signing key, or add a `workers.dev`/preview route.
 
 ## Restart the server after backend edits
 

@@ -14,12 +14,15 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import jobs as jobstore
+
 WEB_LABEL = "com.aerobrain.web"
 WORKER_LABEL = "com.aerobrain.worker"
 TUNNEL_LABEL = "com.metislab.tunnel"
 LOCAL_URL = "http://127.0.0.1:8790/api/healthz"
 PUBLIC_URL = "https://vuelos.metislab.work/api/healthz"
 PUBLIC_WWW_URL = "https://www.metislab.work/"
+PUBLIC_WHOAMI_URL = "https://vuelos.metislab.work/api/whoami"
 STATE = Path("/tmp/aerobrain-watchdog-state.json")
 LOG = Path("/tmp/aerobrain-watchdog.log")
 VAULT = Path("/Volumes/SSD/drone-vault")
@@ -121,7 +124,7 @@ def probe(url: str, timeout: int) -> tuple[bool, str, int]:
         return False, type(e).__name__, round((time.monotonic() - t0) * 1000)
 
 
-def latest_proxy_url() -> str | None:
+def latest_proxy_urls() -> tuple[str, str] | tuple[None, None]:
     try:
         flights = json.loads((VAULT / "manifest" / "flights.json").read_text()).get("flights", [])
     except (OSError, ValueError):
@@ -129,8 +132,9 @@ def latest_proxy_url() -> str | None:
     for f in flights:
         cid = f.get("clip_id")
         if cid and f.get("has_proxy") and (VAULT / "proxies" / f"{cid}.mp4").is_file():
-            return "https://vuelos.metislab.work/data/proxies/" + urllib.parse.quote(f"{cid}.mp4")
-    return None
+            path = "/data/proxies/" + urllib.parse.quote(f"{cid}.mp4")
+            return "http://127.0.0.1:8790" + path, "https://vuelos.metislab.work" + path
+    return None, None
 
 
 def range_probe(url: str, timeout: int) -> tuple[bool, str, int]:
@@ -148,6 +152,60 @@ def range_probe(url: str, timeout: int) -> tuple[bool, str, int]:
         return False, f"{e.code} {e.headers.get('Content-Range', '')}", round((time.monotonic() - t0) * 1000)
     except Exception as e:
         return False, type(e).__name__, round((time.monotonic() - t0) * 1000)
+
+
+def auth_boundary_probe(url: str, timeout: int) -> tuple[bool, str, int]:
+    """The exact real media URL must be rejected outside Daniel's session."""
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "AeroBrainWatchdog/1",
+        "Range": "bytes=0-0",
+    })
+    t0 = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            response.read(1)
+            cache = response.headers.get("CF-Cache-Status", "")
+            return False, f"LEAK {response.status} cache={cache}", round((time.monotonic() - t0) * 1000)
+    except urllib.error.HTTPError as error:
+        cache = error.headers.get("CF-Cache-Status", "")
+        edge = error.headers.get("X-AeroBrain-Edge", "") or "missing"
+        try:
+            error.read(4096)
+        finally:
+            error.close()
+        ok = error.code == 401 and edge == "private-data-v1"
+        return ok, f"{error.code} cache={cache} edge={edge}", round((time.monotonic() - t0) * 1000)
+    except Exception as error:
+        return False, type(error).__name__, round((time.monotonic() - t0) * 1000)
+
+
+def auth_bridge_probe(url: str, timeout: int) -> tuple[bool, str, int]:
+    """Prove the Worker-to-origin HMAC bridge with a revocable 60-second session."""
+    t0 = time.monotonic()
+    sid = jobstore.session_create(ttl_seconds=60)
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "AeroBrainWatchdog/1",
+            "Cookie": f"__Host-ab_session={sid}",
+        })
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            body = json.loads(response.read(4096))
+            edge = response.headers.get("X-AeroBrain-Edge", "") or "missing"
+            user = (body.get("user") or {}).get("id")
+            ok = (response.status == 200 and body.get("ok") is True
+                  and user == "daniel" and body.get("dev_mode") is False
+                  and edge == "private-data-v1")
+            return ok, f"{response.status} user={user} edge={edge}", round((time.monotonic() - t0) * 1000)
+    except urllib.error.HTTPError as error:
+        try:
+            error.read(4096)
+        finally:
+            error.close()
+        return False, f"{error.code} edge={error.headers.get('X-AeroBrain-Edge', '') or 'missing'}", round((time.monotonic() - t0) * 1000)
+    except Exception as error:
+        return False, type(error).__name__, round((time.monotonic() - t0) * 1000)
+    finally:
+        jobstore.session_delete(sid)
 
 
 def probe_and_heal(event: str, label: str, probe_fn, why: str,
@@ -202,14 +260,21 @@ def main():
 
     if now - float(state.get("last_stream_probe", 0)) >= STREAM_INTERVAL_S:
         state["last_stream_probe"] = now
-        video_url = latest_proxy_url()
-        if not video_url:
+        local_video_url, public_video_url = latest_proxy_urls()
+        if not local_video_url:
             log("stream_probe", ok=False, detail="no proxy video found")
         else:
-            probe_and_heal("stream_probe", TUNNEL_LABEL,
-                           lambda: range_probe(video_url, 15),
-                           "stream range probe",
-                           url=video_url.rsplit("/", 1)[-1])
+            probe_and_heal("stream_probe", WEB_LABEL,
+                           lambda: range_probe(local_video_url, 15),
+                           "local stream range probe",
+                           url=local_video_url.rsplit("/", 1)[-1])
+            # A boundary failure is a security alert. Restarting the tunnel
+            # cannot clear a stale edge object, so record it without restart.
+            ok, detail, ms = auth_boundary_probe(public_video_url, 15)
+            log("auth_boundary_probe", ok=ok, detail=detail, ms=ms,
+                url=public_video_url.rsplit("/", 1)[-1])
+            ok, detail, ms = auth_bridge_probe(PUBLIC_WHOAMI_URL, 15)
+            log("auth_bridge_probe", ok=ok, detail=detail, ms=ms)
 
     save_state(state)
 

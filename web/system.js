@@ -125,7 +125,7 @@ function jobRelativeTime(job, now) {
 (async () => {
   let sys = {}, jobs = [];
   try { sys = await (await fetch(`${DATA}/manifest/system.json`)).json(); } catch {}
-  try { jobs = (await (await fetch('/api/jobs')).json()).jobs || []; } catch {}
+  try { jobs = (await (await authFetch('/api/jobs')).json()).jobs || []; } catch {}
   let flights = [];
   try { flights = await getFlights(); } catch {}   // fallo de flights.json NO debe congelar el tab entero
   const st = sys.storage || {};
@@ -267,13 +267,12 @@ function jobRelativeTime(job, now) {
     gpu: { cv: $('pfc-gpu'), color: '#3ddc97', max: 100, get: s => s.gpu, lb: v => v.toFixed(0) + '%' },
     ram: { cv: $('pfc-ram'), color: '#e0b64a', max: 16, get: s => s.ram_used_gb, lb: v => v.toFixed(1) + ' GB' },
   };
-  let hist = [], now = null, dead = false, unauth = false;
+  let hist = [], now = null, dead = false;
 
   async function poll() {
     if (document.hidden) return;
     try {
-      const r = await fetch('/api/perf');
-      if (r.status === 403) { unauth = true; return; }   // sin sesión: panel queda estático, sin modal
+      const r = await authFetch('/api/perf');
       if (!r.ok) return;
       const d = await r.json();
       hist = d.history || []; now = d.now;
@@ -339,7 +338,7 @@ function jobRelativeTime(job, now) {
 
   async function loadErrors() {
     try {
-      const r = await fetch('/api/error_reports');
+      const r = await authFetch('/api/error_reports');
       if (!r.ok) return;
       const d = await r.json();
       $('pf-errcount').textContent = d.recent_errors?.length ? `${d.recent_errors.length} recientes` : 'sin errores recientes';
@@ -359,7 +358,7 @@ function jobRelativeTime(job, now) {
     body.hidden = false;
     body.textContent = 'Cargando reporte…';
     try {
-      const r = await fetch(`/api/error_report_content?name=${encodeURIComponent(name)}`);
+      const r = await authFetch(`/api/error_report_content?name=${encodeURIComponent(name)}`);
       const d = await r.json();
       body.textContent = r.ok ? d.content : (d.error || 'No se pudo abrir el reporte');
     } catch (err) {
@@ -385,8 +384,8 @@ function jobRelativeTime(job, now) {
   $('pf-errwrap')?.addEventListener('toggle', ev => { if (ev.target.open) loadErrors(); });
 
   poll();
-  const pollId = setInterval(() => { if (!unauth) poll(); }, 1000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !unauth) poll(); });  // al volver al tab: dato fresco YA
+  const pollId = setInterval(poll, 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });  // al volver al tab: dato fresco YA
   addEventListener('pagehide', () => { clearInterval(pollId); dead = true; }, { once: true });
   draw();
 })();
@@ -417,16 +416,16 @@ function jobRelativeTime(job, now) {
     ].map(([lb, v, extra]) => `<div class="gn-cell"><span>${lb}</span><b>${v}</b>${extra}</div>`).join('');
   };
   const poll = async (force = false) => {
-    try { paint(await (await fetch('/api/gpu_node' + (force ? '?force=1' : ''))).json()); }
+    try { paint(await (await authFetch('/api/gpu_node' + (force ? '?force=1' : ''))).json()); }
     catch { const st = $g('gn-status'); if (st) st.textContent = 'error de probe'; }
   };
   $g('gn-wake')?.addEventListener('click', async () => {
     $g('gn-note').textContent = 'magic packet enviado — despertando (~30s)…';
-    await fetch('/api/gpu_node/wake', { method: 'POST' });
+    await authFetch('/api/gpu_node/wake', { method: 'POST' });
     setTimeout(() => poll(true), 25000);
   });
   $g('gn-sleep')?.addEventListener('click', async () => {
-    const r = await (await fetch('/api/gpu_node/sleep', { method: 'POST' })).json();
+    const r = await (await authFetch('/api/gpu_node/sleep', { method: 'POST' })).json();
     $g('gn-note').textContent = r.ok ? 'suspendido — Despertar lo revive' : `no se durmió: ${r.reason}`;
     setTimeout(() => poll(true), 4000);
   });

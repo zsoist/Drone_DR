@@ -40,7 +40,7 @@ class HomeDataTests(unittest.TestCase):
             "buildHomeViewModel",
             [[self.sample_flight()], {}, [], "2026-07-15T10:00:00-05:00"],
         )
-        self.assertEqual(7, len(vm["cards"]))
+        self.assertEqual(9, len(vm["cards"]))
         self.assertEqual("Sin datos", vm["telemetry"][3]["value"])
 
     def test_empty_flights_do_not_invent_zero_distance(self):
@@ -53,9 +53,9 @@ class HomeDataTests(unittest.TestCase):
         self.assertEqual("Sin datos", vm["telemetry"][2]["value"])
         self.assertIsNone(vm["latest"])
 
-    def test_jobs_403_is_a_quiet_public_state(self):
+    def test_jobs_403_is_not_treated_as_a_public_app_state(self):
         data = run_commonjs("web/home-data.js", "classifyJobsResponse", [403, None])
-        self.assertEqual({"state": "public", "jobs": []}, data)
+        self.assertEqual({"state": "error", "jobs": []}, data)
 
     def test_manifest_url_uses_explicit_data_root(self):
         data = run_commonjs("web/home-data.js", "manifestUrl", ["/vault/data/"])
@@ -77,7 +77,7 @@ class HomeMarkupTests(unittest.TestCase):
         html = (ROOT / "web/home.html").read_text()
         self.assertLess(html.index("home-data.js"), html.index("home.js"))
 
-    def test_renderer_exposes_seven_full_card_links(self):
+    def test_renderer_exposes_full_card_links(self):
         source = (ROOT / "web/home.js").read_text()
         self.assertIn('class="hv2-card', source)
         self.assertIn('class="hv2-go"', source)
