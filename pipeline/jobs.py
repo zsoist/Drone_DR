@@ -2,9 +2,11 @@
 
 Tabla jobs: id, kind, label, status(running|done|error|cancelled), detail,
 started, finished, pid, container, artifact, log.
-Tabla sessions: id, expiry — cookies HttpOnly que persisten reinicios.
+Tabla sessions: digest del token, usuario y expiración absoluta — cookies HttpOnly
+que persisten reinicios sin guardar bearer credentials reutilizables.
 """
 import json
+import hashlib
 import os
 import signal
 import sqlite3
@@ -20,6 +22,8 @@ DB = Path("/Volumes/SSD/drone-vault/manifest/jobs.db")
 JOB_LOG_DIR = Path("/Volumes/SSD/drone-vault/ops/job_logs")
 _LOCK = threading.Lock()
 _TERMINAL_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+SESSION_TTL_SECONDS = 24 * 60 * 60
+SESSION_USER_ID = "daniel"
 
 
 def strip_terminal_controls(value: str) -> str:
@@ -80,7 +84,19 @@ def init(orphan_kinds: tuple = ()):
         c.execute("""CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY, kind TEXT, label TEXT, status TEXT, detail TEXT,
             started REAL, finished REAL, pid INTEGER, container TEXT, artifact TEXT, log TEXT)""")
-        c.execute("""CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, expiry REAL)""")
+        # Session tokens are bearer credentials. Store only a one-way digest so a
+        # jobs.db copy cannot be used to impersonate the operator. The v1 table
+        # stored raw IDs; replacing it intentionally revokes those old sessions.
+        session_cols = {r[1] for r in c.execute("PRAGMA table_info(sessions)").fetchall()}
+        required_session_cols = {"token_hash", "user_id", "created", "expiry"}
+        if session_cols and not required_session_cols.issubset(session_cols):
+            c.execute("DROP TABLE sessions")
+        c.execute("""CREATE TABLE IF NOT EXISTS sessions (
+            token_hash TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created REAL NOT NULL,
+            expiry REAL NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expiry)")
         c.execute("""CREATE TABLE IF NOT EXISTS job_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             job_id TEXT NOT NULL, ts REAL NOT NULL, level TEXT NOT NULL,
@@ -116,30 +132,51 @@ def init(orphan_kinds: tuple = ()):
                       (time.time(), *orphan_kinds))
         c.execute("UPDATE jobs SET pid=NULL WHERE status != 'running' AND pid IS NOT NULL")
         c.execute("DELETE FROM sessions WHERE expiry < ?", (time.time(),))
+    DB.chmod(0o600)
 
 
 # ---------------- sessions (cookies HttpOnly, persistentes) ----------------
-def session_create(days: int = 30) -> str:
-    import secrets
-    sid = secrets.token_urlsafe(24)
+def _session_hash(sid: str) -> str:
+    return hashlib.sha256(str(sid).encode()).hexdigest()
+
+
+def session_create(ttl_seconds: int = SESSION_TTL_SECONDS,
+                   user_id: str = SESSION_USER_ID) -> str:
+    """Create an absolute, non-sliding server-side session."""
+    ttl = int(ttl_seconds)
+    if ttl <= 0 or ttl > SESSION_TTL_SECONDS:
+        raise ValueError("session TTL fuera de política")
+    sid = secrets.token_urlsafe(32)  # 256 random bits before URL-safe encoding
+    now = time.time()
     with _LOCK, _conn() as c:
-        c.execute("INSERT INTO sessions (id, expiry) VALUES (?, ?)",
-                  (sid, time.time() + days * 86400))
-        c.execute("DELETE FROM sessions WHERE expiry < ?", (time.time(),))
+        c.execute("INSERT INTO sessions (token_hash, user_id, created, expiry) VALUES (?, ?, ?, ?)",
+                  (_session_hash(sid), user_id, now, now + ttl))
+        c.execute("DELETE FROM sessions WHERE expiry < ?", (now,))
     return sid
 
 
-def session_valid(sid: str) -> bool:
+def session_info(sid: str) -> dict | None:
     if not sid:
-        return False
+        return None
+    now = time.time()
     with _LOCK, _conn() as c:
-        r = c.execute("SELECT expiry FROM sessions WHERE id=?", (sid,)).fetchone()
-    return bool(r and r["expiry"] is not None and r["expiry"] > time.time())
+        r = c.execute("SELECT user_id, created, expiry FROM sessions WHERE token_hash=?",
+                      (_session_hash(sid),)).fetchone()
+        if r and (r["expiry"] is None or r["expiry"] <= now):
+            c.execute("DELETE FROM sessions WHERE token_hash=?", (_session_hash(sid),))
+            r = None
+    return dict(r) if r else None
+
+
+def session_valid(sid: str) -> bool:
+    return session_info(sid) is not None
 
 
 def session_delete(sid: str):
+    if not sid:
+        return
     with _LOCK, _conn() as c:
-        c.execute("DELETE FROM sessions WHERE id=?", (sid,))
+        c.execute("DELETE FROM sessions WHERE token_hash=?", (_session_hash(sid),))
 
 
 def enqueue(kind: str, label: str, spec: dict | None = None) -> dict:
@@ -428,14 +465,24 @@ def cancel(jid: str) -> bool:
             time.sleep(0.5)
         notes.append("pid vivo" if not _proc_gone(pid) else "pid terminado")
     # 2) matar el contenedor docker si lo hay (los procesos python-cli no lo tumban)
+    #
+    # BUG (jul-20): esto SIEMPRE mataba en el Mac local. Los trabajos CUDA corren dentro de
+    # WSL2 en el PC, así que cancelar dejaba el contenedor VIVO ocupando la RTX durante
+    # horas mientras la UI decía 'cancelado'. El contenedor remoto se llama odm-gpu-*.
     if j["container"]:
+        remoto = str(j["container"]).startswith("odm-gpu-") or \
+            "CUDA" in str(j.get("backend") or "").upper()
+        cmd = (["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", "pc",
+                f'wsl -d Ubuntu -- bash -lc "docker kill {j["container"]}"']
+               if remoto else
+               ["/usr/local/bin/docker", "kill", j["container"]])
+        donde = "PC/WSL" if remoto else "local"
         try:
-            r = subprocess.run(["/usr/local/bin/docker", "kill", j["container"]],
-                               capture_output=True, text=True, timeout=30)
-            notes.append("docker killed" if r.returncode == 0 else
-                         f"docker kill falló: {(r.stderr or '').strip()[:60]}")
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
+            notes.append(f"docker killed ({donde})" if r.returncode == 0 else
+                         f"docker kill {donde} falló: {(r.stderr or '').strip()[:60]}")
         except (subprocess.TimeoutExpired, OSError) as e:
-            notes.append(f"docker kill error: {type(e).__name__}")
+            notes.append(f"docker kill {donde} error: {type(e).__name__}")
     # marca 'cancelled' para que el watcher de run_tracked corte la secuencia
     confirmed = (not pid or _proc_gone(pid))
     # estado honesto: 'cancelled' sólo si el kill se confirmó; si no, 'cancel_failed'

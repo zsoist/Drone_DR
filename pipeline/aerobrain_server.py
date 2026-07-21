@@ -4082,7 +4082,11 @@ class H(BaseHTTPRequestHandler):
             if not (mdir / "dsm.bin").exists():
                 return self.send_json({"error": "este proyecto no tiene DSM aún"}, 404)
             try:
-                if spec.get("type") == "volume":
+                # BUG (jul-20): el guard solo corría con type EXACTAMENTE "volume". Cualquier
+                # otro valor ("vol", vacío) que measure_dsm tratara como área/volumen
+                # rasterizaba el DSM entero sin límite → un polígono grande podía pedir
+                # decenas de GB en una máquina de 16. El guard es barato: va siempre.
+                if spec.get("points"):
                     check_polygon(spec.get("points", []))
                 return self.send_json(measure_dsm(mdir, spec))
             except ValueError as e:
@@ -4158,8 +4162,20 @@ class H(BaseHTTPRequestHandler):
                     sources.append(cid)
             if not sources:
                 return self.send_json({"error": "elige al menos un video con GPS"}, 400)
-            if len(sources) > 24:
-                return self.send_json({"error": "máximo 24 videos por versión de escena"}, 400)
+            if len(sources) > 16:
+                return self.send_json({"error": "máximo 16 videos por versión de escena"}, 400)
+            # el camino gemelo (/api/odm) limita por DURACIÓN combinada, que es lo que de
+            # verdad cuesta; aquí faltaba, así que 24 clips de 5 min entraban sin freno.
+            _tot = 0.0
+            for _s in sources:
+                try:
+                    _tot += float(json.loads((VAULT / "manifest" / f"{_s}.json").read_text())
+                                  .get("duration_s") or 0)
+                except (ValueError, OSError):
+                    pass
+            if _tot > 1200:
+                return self.send_json({"error": f"máximo 20 min de video por versión de escena "
+                                               f"(llevas {_tot / 60:.0f} min)"}, 400)
             compatibility = scene_source_compatibility(scene, sources)
             if compatibility["rejected"]:
                 far = [row for row in compatibility["rejected"]

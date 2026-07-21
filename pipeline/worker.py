@@ -2077,8 +2077,11 @@ def run_splat(j: dict):
     # crop_floaters mutaba in-place y el crudo se perdía). El .raw.splat vive junto al .splat.
     try:
         raw_keep = final_out.with_suffix(".raw.splat")
-        if not raw_keep.exists():
-            shutil.copy2(final_out, raw_keep)
+        # BUG (jul-20): el guard 'if not exists' nunca refrescaba el crudo. Tras re-entrenar
+        # (medium → frontier 30K), 'Revertir al crudo' devolvía el crudo del entrenamiento
+        # VIEJO — o sea, un modelo peor, presentado como el original. Aquí final_out ACABA
+        # de salir del entrenador y aún no se ha limpiado: es el crudo correcto SIEMPRE.
+        shutil.copy2(final_out, raw_keep)
     except OSError as e:
         print(f"  no se pudo archivar el crudo pre-clean ({e})", flush=True)
     jobstore.update(j["id"], detail="auto-clean: floaters, haze y agujas", progress=0.93)
