@@ -184,8 +184,10 @@ main.innerHTML = `
                     <option value="malick">Malick — luz natural, suave</option>
                     <option value="fincher">Fincher — frío, digital limpio</option>
                     <option value="kodak">Kodak 2383 — copia de película + grano</option>
+                    <option value="goldenhour">Golden Hour — atardecer cálido</option>
                   </optgroup>
                   <optgroup label="Comercial">
+                    <option value="tealorange">Teal &amp; Orange — trailer</option>
                     <option value="cine">Cine</option><option value="vivid">Vivid</option>
                     <option value="warm">Cálido</option><option value="moody">Moody</option>
                     <option value="bw">B&amp;N</option>
@@ -349,9 +351,12 @@ main.innerHTML = `
                   <option value="malick">Malick</option>
                   <option value="fincher">Fincher</option>
                   <option value="kodak">Kodak 2383</option>
+                  <option value="goldenhour">Golden Hour</option>
                 </optgroup>
                 <optgroup label="Comercial">
-                  <option value="cine">Cine</option><option value="vivid">Vivid</option>
+                  <option value="tealorange">Teal &amp; Orange</option>
+                  <option value="cine">Cine</option><option value="vivid">Vivid</option></optgroup>
+                <optgroup label="Más">
                   <option value="warm">Cálido</option><option value="moody">Moody</option>
                   <option value="bw">B&amp;N</option>
                 </optgroup>
