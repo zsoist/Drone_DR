@@ -39,6 +39,7 @@ main.innerHTML = `
           <!-- 28-35 · escenario del compositor -->
           <div class="tl-stage" id="tl-stage">
             <video class="tl-video" id="tl-video" playsinline webkit-playsinline preload="auto" muted></video>
+            <canvas class="tl-hold" id="tl-hold" aria-hidden="true"></canvas>
             <div class="tl-aspect-mask" id="tl-mask" data-aspect="16:9"></div>
             <div class="tl-empty" id="tl-empty">
               ${icon('film')}
@@ -1158,6 +1159,28 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
 
   // refs
   const video   = document.getElementById('tl-video');
+  // ---- E3 · continuidad visual al cambiar de clip fuente ----
+  // Cambiar video.src deja el elemento en NEGRO hasta que hay fotograma: eso es el
+  // parpadeo entre cortes. Pintamos el último fotograma en un canvas encima y lo
+  // soltamos cuando el clip nuevo ya está colocado — el ojo no ve el hueco.
+  const hold = document.getElementById('tl-hold');
+  let holdT = null;
+  function holdFrame() {
+    if (!hold || !video.videoWidth) return;
+    try {
+      hold.width = video.videoWidth;
+      hold.height = video.videoHeight;
+      hold.getContext('2d').drawImage(video, 0, 0);
+      hold.style.filter = getComputedStyle(video).filter;   // conserva el look aplicado
+      hold.classList.add('on');
+      clearTimeout(holdT);
+      holdT = setTimeout(releaseFrame, 1600);               // nunca dejarlo pegado
+    } catch { /* canvas sucio o clip sin datos: seguimos sin congelar */ }
+  }
+  function releaseFrame() {
+    clearTimeout(holdT);
+    hold?.classList.remove('on');
+  }
   const stage   = document.getElementById('tl-stage');
   const mask    = document.getElementById('tl-mask');
   const emptyEl = document.getElementById('tl-empty');
@@ -1456,6 +1479,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     // playhead dentro del corte) solo reposiciona currentTime → sin stalls ni flash.
     if (curCid !== clip.clip_id) {
       cancelSeek();   // cancela el ciclo anterior
+      holdFrame();    // congela el último fotograma: sin esto el <video> parpadea en negro
       curCid = clip.clip_id;
       pendingTarget = target; pendingPlay = !!andPlay;
       video.src = srcFor(clip.clip_id);
@@ -1471,9 +1495,12 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       const start = () => {
         if (done) return; done = true; cleanup();
         // el timeline pudo vaciarse/cambiar de clip durante la carga (pause/clearTL/delClip)
-        if (!tl.length || curCid !== clip.clip_id) return;
+        if (!tl.length || curCid !== clip.clip_id) { releaseFrame(); return; }
         if (video.readyState >= 1) { try { video.currentTime = pendingTarget; } catch {} }
         if (pendingPlay && playing) video.play().catch(() => {});   // no reanudar si el usuario pausó
+        // suelta el fotograma congelado cuando el nuevo clip YA está posicionado
+        if (video.readyState >= 2) requestAnimationFrame(releaseFrame);
+        else video.addEventListener('seeked', () => requestAnimationFrame(releaseFrame), { once: true });
       };
       const onData = () => {   // fallback: fija el tiempo aunque aún no haya canplay
         if (done) return;

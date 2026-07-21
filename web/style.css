@@ -1789,6 +1789,13 @@ button.exp { text-align: left; cursor: pointer; }
 .mus-check em { color: var(--text-3); font-style: normal; }
 .tl-tool.on { color: var(--accent); }
 
+/* ---------- E3 · fotograma congelado durante el cambio de clip ---------- */
+.tl-hold {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  z-index: 3; pointer-events: none; opacity: 0; transition: opacity 130ms var(--ease);
+}
+.tl-hold.on { opacity: 1; }
+
 /* ---------- E2 · modo de relleno vertical + punto focal ---------- */
 .ex-frame { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
 .ex-frame > span { font-size: 11px; color: var(--text-2); width: 78px; flex: none; }
