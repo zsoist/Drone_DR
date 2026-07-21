@@ -2542,11 +2542,18 @@ def run_edit(spec: dict, j):
                 td = trans_durs[i]              # transDur ya clamp 0.2..1.5
                 # transición no puede durar más que el clip más corto del par
                 td = min(td, max(min(durs[i - 1], durs[i]) - 0.05, 0.05))
-                d = td if xname else 0.0
+                # BUG CRÍTICO (jul-20): los cortes SECOS dentro de la cadena xfade usaban
+                # duration=0.001 — MENOS DE UN FOTOGRAMA (0.03 frames a 30fps). xfade
+                # entonces descarta todo lo acumulado y el reel salía con la duración del
+                # ÚLTIMO corte: 30s de timeline → 6.6s de archivo. Reproducido en aislado:
+                # duration 0.001 → 4.0s · 0.034 (1 frame) → 8.9s · 0.100 → 8.8s (de 9s).
+                # Un fundido de un fotograma es indistinguible de un corte seco.
+                hard_cut = max(1.2 / (fps or 30), 0.034)
+                d = td if xname else hard_cut
                 vout = f"[v{i}]"
                 offset = acc - d  # inicio del solape sobre la línea de tiempo actual
                 fc.append(f"{vprev}[{i}:v]xfade=transition={xname or 'fade'}"
-                          f":duration={d if xname else 0.001:.3f}"
+                          f":duration={d:.3f}"
                           f":offset={max(offset, 0):.3f}{vout}")
                 if keep_audio:
                     aout = f"[a{i}]"
