@@ -1870,7 +1870,39 @@ _ASPECT_H = {
 }
 
 
-def aspect_vf(aspect, resolution="1080"):
+def vertical_vf(aspect: str, resolution: str, fit: str, framing: float) -> str:
+    """Conversión a formatos más altos que la fuente, con TRES modos reales.
+
+    'crop' tira todo lo que no cabe (en 16:9→9:16 eso es el 72% del cuadro) y por eso el
+    sujeto se corta; 'blur' conserva el encuadre completo sobre un fondo difuminado — es
+    lo que hace que un clip apaisado se lea como un reel de verdad; 'bars' deja barras.
+    framing -1..1 desplaza el recorte (izquierda ↔ derecha) para no cortar al sujeto.
+    """
+    W, H = {"9:16": (1080, 1920), "1:1": (1080, 1080), "4:5": (1080, 1350)}.get(aspect, (1080, 1920))
+    if str(resolution) == "2160":
+        W, H = W * 2, H * 2
+    if fit == "blur":
+        return (f"split=2[bg][fg];"
+                f"[bg]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                f"gblur=sigma={max(12, W // 42)},eq=brightness=-0.06:saturation=0.7[bgb];"
+                f"[fg]scale={W}:-2[fgs];"
+                f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1")
+    if fit == "bars":
+        return f"scale={W}:-2,pad={W}:{H}:0:(oh-ih)/2:black,setsar=1"
+    # recorte con punto focal: 0 = centro, -1 = pegado a la izquierda, 1 = a la derecha
+    fr = max(-1.0, min(1.0, float(framing or 0)))
+    ratio = {"9:16": "9/16", "1:1": "1", "4:5": "4/5"}.get(aspect, "9/16")
+    off = f"(iw-ih*{ratio})/2" if abs(fr) < 0.01 else f"(iw-ih*{ratio})/2+(iw-ih*{ratio})/2*{fr:.3f}"
+    return f"crop=ih*{ratio}:ih:{off}:0,scale={W}:{H},setsar=1"
+
+
+def aspect_vf(aspect, resolution="1080", fit="crop", framing=0.0):
+    if aspect in ("9:16", "1:1", "4:5"):
+        return vertical_vf(aspect, resolution, fit, framing)
+    return _aspect_vf_wide(aspect, resolution)
+
+
+def _aspect_vf_wide(aspect, resolution="1080"):
     # devuelve el filtro de crop/scale para el aspecto en la resolución pedida.
     # 1080 = comportamiento actual (default); 2160 duplica el destino.
     # setsar=1: sin píxeles cuadrados explícitos, algunas redes reinterpretan el aspecto
@@ -2279,7 +2311,10 @@ def run_edit(spec: dict, j):
         default_cid = re.sub(r"[^\w-]", "", spec.get("clip_id", ""))
         aspect = spec.get("aspect") or ("9:16" if spec.get("vertical") else "16:9")
         resolution = "2160" if str(spec.get("resolution", "1080")) == "2160" else "1080"
-        base_vf = aspect_vf(aspect, resolution)
+        vfit = str(spec.get("vfit", "crop"))
+        if vfit not in ("crop", "blur", "bars"):
+            vfit = "crop"
+        base_vf = aspect_vf(aspect, resolution, vfit, _clampf(spec.get("framing", 0), -1, 1, 0))
         lut = LUTS.get(spec.get("filter", "none"), "")
         fade = spec.get("fade", True)
         keep_audio = spec.get("audio") == "original"  # NUEVO: conservar audio del fuente

@@ -302,6 +302,19 @@ main.innerHTML = `
                 <option value="1080">1080p</option><option value="2160">2160p (4K)</option>
               </select></label>
             </div>
+            <div class="ex-sec" id="ex-vfit-sec">
+              <span class="ex-lb">Cómo llenar el vertical <b class="mono" id="ed-vfit-v">recorte</b></span>
+              <div class="tl-chips" id="ed-vfit">
+                <button class="chip on" data-vfit="crop" data-tip="Recorta a lo alto: se pierde lo que no cabe, pero llena la pantalla">Recorte</button>
+                <button class="chip" data-vfit="blur" data-tip="Conserva el encuadre completo sobre un fondo difuminado — el look de los reels">Fondo difuminado</button>
+                <button class="chip" data-vfit="bars" data-tip="Barras negras arriba y abajo, sin perder nada">Barras</button>
+              </div>
+              <div class="ex-frame" id="ex-frame-row">
+                <span>Punto focal</span>
+                <input class="tl-range" id="ed-framing" type="range" min="-1" max="1" step="0.05" value="0">
+                <b class="mono" id="ed-framing-v">centro</b>
+              </div>
+            </div>
             <div class="ex-sec">
               <span class="ex-lb">Cuadros por segundo</span>
               <div class="tl-chips" id="ed-fps">
@@ -2697,6 +2710,41 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       toast(`Ojo: ${p.lb} rinde mejor hasta ${p.maxDur}s y tu reel dura ${fmt.dur(total())}`);
     }
   });
+  // ---- modo de relleno vertical + punto focal (E2) ----
+  let edVfit = localStorage.getItem('ab.ed.vfit') || 'crop';
+  const VFIT_LB = { crop: 'recorte', blur: 'fondo difuminado', bars: 'barras' };
+  function syncVfit() {
+    document.querySelectorAll('#ed-vfit .chip').forEach(c =>
+      c.classList.toggle('on', c.dataset.vfit === edVfit));
+    const v = document.getElementById('ed-vfit-v');
+    if (v) v.textContent = VFIT_LB[edVfit] || edVfit;
+    // el punto focal SOLO tiene sentido recortando: con fondo o barras no se pierde nada
+    const row = document.getElementById('ex-frame-row');
+    if (row) row.style.display = edVfit === 'crop' ? '' : 'none';
+    // el preview muestra el modo elegido, no siempre un recorte
+    const mask = document.getElementById('tl-mask');
+    if (mask) mask.dataset.fit = edVfit;
+    const sec = document.getElementById('ex-vfit-sec');
+    const vertical = ['9:16', '1:1', '4:5'].includes(document.getElementById('ed-aspect')?.value);
+    if (sec) sec.style.display = vertical ? '' : 'none';   // en 16:9 no hay nada que rellenar
+  }
+  document.getElementById('ed-vfit')?.addEventListener('click', e => {
+    const c = e.target.closest('[data-vfit]');
+    if (!c) return;
+    edVfit = c.dataset.vfit;
+    localStorage.setItem('ab.ed.vfit', edVfit);
+    syncVfit();
+  });
+  document.getElementById('ed-framing')?.addEventListener('input', e => {
+    const f = +e.target.value;
+    document.getElementById('ed-framing-v').textContent =
+      Math.abs(f) < 0.06 ? 'centro' : f < 0 ? `izquierda ${Math.round(-f * 100)}%` : `derecha ${Math.round(f * 100)}%`;
+    const mask = document.getElementById('tl-mask');
+    if (mask) mask.style.setProperty('--frame-x', `${f * 50}%`);
+  });
+  document.getElementById('ed-aspect')?.addEventListener('change', syncVfit);
+  syncVfit();
+
   // ---- overlay de zonas seguras (I4): dónde tapa la UI de cada app ----
   let safeMode = '';
   function applySafe() {
@@ -3004,6 +3052,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     });
     const r = await api('/api/edit', {
       segments,
+      vfit: edVfit,
+      framing: +document.getElementById('ed-framing').value,
       music: music ? { name: music.name, volume: music.volume, duck: music.duck,
                        fadeIn: music.fadeIn, fadeOut: music.fadeOut, startAt: music.startAt,
                        originalVolume: music.originalVolume } : undefined,
