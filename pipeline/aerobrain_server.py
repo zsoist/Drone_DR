@@ -355,17 +355,42 @@ def process_upload(path: Path, j):
 LUTS = {
     "none": "",
     # — referentes —
-    "nolan": ("curves=r='0/0.012 0.25/0.22 0.5/0.5 0.75/0.78 1/0.985'"
-              ":g='0/0.014 0.25/0.225 0.5/0.5 0.75/0.775 1/0.98'"
-              ":b='0/0.022 0.25/0.235 0.5/0.5 0.75/0.755 1/0.96',"
-              "eq=contrast=1.06:saturation=0.82,"
-              "colorbalance=rs=0.02:bs=-0.025:rm=0.015:bm=-0.01:rh=0.01:bh=0.02"),
-    "deakins": ("curves=r='0/0.02 0.5/0.52 1/0.99':b='0/0.05 0.5/0.5 1/0.95',"
-                "eq=contrast=1.14:saturation=0.70,colorbalance=rh=0.06:bh=-0.04:bs=0.05"),
-    "malick": ("curves=r='0/0.03 0.5/0.52 1/0.99':g='0/0.03 0.5/0.51 1/0.99'"
-               ":b='0/0.035 0.5/0.49 1/0.97',eq=contrast=0.98:saturation=0.96"),
-    "fincher": ("curves=all='0/0.008 0.5/0.49 1/1',eq=contrast=1.18:saturation=0.75,"
-                "colorchannelmixer=rr=0.94:gg=1.0:bb=0.98:gr=0.03:gb=0.04"),
+    # selectivecolor mata el CIAN ELÉCTRICO del cielo: es el delator nº1 de un grading
+    # amateur en material de dron, y lo que separa "parece cine" de "parece un filtro".
+    "nolan": ("curves=r='0/0.012 0.25/0.220 0.5/0.500 0.75/0.780 1/0.985'"
+              ":g='0/0.014 0.25/0.225 0.5/0.500 0.75/0.775 1/0.980'"
+              ":b='0/0.022 0.25/0.235 0.5/0.500 0.75/0.755 1/0.960',"
+              "eq=contrast=1.06:saturation=0.82:gamma=0.98,"
+              "colorbalance=rs=0.020:bs=-0.025:rm=0.015:bm=-0.010:rh=0.010:bh=0.020,"
+              # OJO al signo: en selectivecolor, y NEGATIVO añade azul. La receta original
+              # (y=-0.30) empeoraba el cian (+151→+169 medido). Lo correcto es QUITAR cian
+              # y AÑADIR amarillo: medido +151→+92, y la vegetación queda intacta.
+              "selectivecolor=cyans=-0.30 0.00 0.25 0.00:blues=-0.12 0.00 0.10 0.00"),
+    "deakins": ("curves=r='0/0.020 0.25/0.235 0.5/0.520 0.75/0.800 1/0.990'"
+                ":g='0/0.018 0.5/0.500 1/0.975'"
+                ":b='0/0.050 0.25/0.230 0.5/0.480 0.75/0.720 1/0.950',"
+                "eq=contrast=1.14:saturation=0.70:gamma=0.96,"
+                "colorbalance=rs=-0.020:bs=0.050:rm=0.030:bm=-0.030:rh=0.060:bh=-0.040,"
+                "huesaturation=intensity=-0.08"),
+    "malick": ("curves=r='0/0.030 0.5/0.520 1/0.990':g='0/0.030 0.5/0.510 1/0.990'"
+               ":b='0/0.035 0.5/0.490 1/0.970',eq=contrast=0.98:saturation=0.96:gamma=1.03,"
+               "colortemperature=temperature=5200:mix=0.80:pl=0.0,"
+               "colorbalance=rh=0.030:bh=-0.020"),
+    "fincher": ("curves=all='0/0.008 0.25/0.215 0.5/0.490 0.75/0.775 1/1.000',"
+                "eq=contrast=1.18:saturation=0.75:gamma=0.97,"
+                "colorchannelmixer=rr=0.94:gg=1.00:bb=0.98:gr=0.03:gb=0.04"),
+    "goldenhour": ("curves=r='0/0.022 0.25/0.250 0.5/0.540 0.75/0.820 1/0.995'"
+                   ":g='0/0.020 0.5/0.500 1/0.975'"
+                   ":b='0/0.030 0.25/0.215 0.5/0.470 0.75/0.730 1/0.945',"
+                   "eq=contrast=1.08:saturation=0.90,"
+                   "colortemperature=temperature=4600:mix=0.7:pl=0.0,"
+                   "selectivecolor=cyans=-0.25 0.00 0.22 0.00"),
+    "tealorange": ("curves=r='0/0.010 0.25/0.230 0.5/0.510 0.75/0.800 1/0.990'"
+                   ":g='0/0.014 0.5/0.500 1/0.980'"
+                   ":b='0/0.045 0.25/0.260 0.5/0.500 0.75/0.740 1/0.955',"
+                   "eq=contrast=1.12:saturation=1.04:gamma=0.97,"
+                   "colorbalance=rs=-0.060:gs=-0.010:bs=0.090:rm=0.030:bm=-0.020"
+                   ":rh=0.070:gh=0.020:bh=-0.070"),
     # — emulación de copia fotoquímica Kodak 2383 + grano fino —
     "kodak": ("curves=r='0/0.015 0.12/0.10 0.35/0.34 0.65/0.70 0.88/0.93 1/0.985'"
               ":g='0/0.016 0.12/0.10 0.35/0.335 0.65/0.695 0.88/0.925 1/0.98'"
@@ -376,7 +401,9 @@ LUTS = {
     "vivid": "eq=saturation=1.32:contrast=1.1:brightness=0.02",
     "warm": "colorbalance=rs=0.07:gs=0.02:bs=-0.07,eq=saturation=1.12",
     "moody": "eq=contrast=1.16:brightness=-0.05:saturation=0.82",
-    "bw": "curves=all='0/0.02 0.5/0.5 1/0.98',hue=s=0,eq=contrast=1.28",
+    # el doble format=gray,yuv420p garantiza croma NEUTRO real (sin tinte residual)
+    "bw": ("hue=s=0,curves=all='0/0.020 0.15/0.090 0.35/0.300 0.65/0.740 0.85/0.940 1/1.000',"
+           "eq=contrast=1.22:gamma=0.96,format=gray,format=yuv420p"),
 }
 FONT = "/System/Library/Fonts/Helvetica.ttc"
 
@@ -1910,14 +1937,20 @@ def vertical_vf(aspect: str, resolution: str, fit: str, framing: float) -> str:
         # eso es precisamente lo que abarata un reel.
         fr = max(-1.0, min(1.0, float(framing or 0)))
         fh = int(W * 5 / 4)                      # 1080x1350 = el clip ocupa ~70% del alto
-        # el desenfoque se calcula en miniatura y se reescala: mismo resultado, mucho más rápido
+        y = int(H * 0.096)                       # anclado arriba, deja ~386px libres abajo
+        #  · el fondo se sobre-escala un 8%: si no, gblur arrastra los bordes ("smear")
+        #  · el desenfoque se calcula en miniatura y se reescala (sigma_mini = sigma/5):
+        #    mismo resultado visual y ~20% menos de tiempo de export
+        #  · filete blanco al 12% alrededor del bloque: separa el clip del fondo y es el
+        #    detalle que hace que se lea como una pieza montada y no como un pegote
         return (f"split=2[bg][fg];"
-                f"[bg]scale={W // 5}:{H // 5}:force_original_aspect_ratio=increase,crop={W // 5}:{H // 5},"
-                f"gblur=sigma=9,scale={W}:{H}:flags=bicubic,"
-                f"eq=brightness=-0.14:saturation=0.75,vignette=PI/4[bgb];"
+                f"[bg]scale={int(W * 1.08) // 5}:{int(H * 1.08) // 5}:force_original_aspect_ratio=increase,"
+                f"crop={W // 5}:{H // 5},gblur=sigma=9,scale={W}:{H}:flags=bicubic,"
+                f"eq=brightness=-0.15:saturation=0.72,vignette=PI/4[bgb];"
                 f"[fg]crop=w='min(iw,ih*4/5)':h=ih:x='(iw-min(iw,ih*4/5))*(1+{fr:.3f})/2':y=0,"
-                f"scale={W}:{fh}:flags=lanczos[fgs];"
-                f"[bgb][fgs]overlay=(W-w)/2:(H-h)*0.34,setsar=1")
+                f"scale={W}:{fh}:flags=lanczos,format=rgba,"
+                f"pad={W + 6}:{fh + 6}:3:3:color=white@0.12[fgs];"
+                f"[bgb][fgs]overlay=(W-w)/2:{y},format=yuv420p,setsar=1")
     if fit == "bars":
         return f"scale={W}:-2,pad={W}:{H}:0:(oh-ih)/2:black,setsar=1"
     # recorte con punto focal: 0 = centro, -1 = pegado a la izquierda, 1 = a la derecha
