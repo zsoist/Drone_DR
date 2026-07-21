@@ -177,9 +177,19 @@ main.innerHTML = `
               <div class="tl-seclabel">${icon('layers')} Look</div>
               <div class="tl-inspect-row">
                 <select class="ctl" id="tli-filter" style="flex:1">
-                  <option value="none">Sin look</option><option value="cine">Cine</option>
-                  <option value="vivid">Vivid</option><option value="warm">Cálido</option>
-                  <option value="moody">Moody</option><option value="bw">B&amp;N</option>
+                  <option value="none">Sin look</option>
+                  <optgroup label="Cine">
+                    <option value="nolan">Nolan — naturalista, sombras densas</option>
+                    <option value="deakins">Deakins — desaturado, alto contraste</option>
+                    <option value="malick">Malick — luz natural, suave</option>
+                    <option value="fincher">Fincher — frío, digital limpio</option>
+                    <option value="kodak">Kodak 2383 — copia de película + grano</option>
+                  </optgroup>
+                  <optgroup label="Comercial">
+                    <option value="cine">Cine</option><option value="vivid">Vivid</option>
+                    <option value="warm">Cálido</option><option value="moody">Moody</option>
+                    <option value="bw">B&amp;N</option>
+                  </optgroup>
                 </select>
               </div>
             </div>
@@ -332,9 +342,19 @@ main.innerHTML = `
             <div class="ex-row">
               <label class="eb-field"><span>Look global</span>
               <select class="ctl" id="ed-lut">
-                <option value="none">Sin look</option><option value="cine">Cine</option>
-                <option value="vivid">Vivid</option><option value="warm">Cálido</option>
-                <option value="moody">Moody</option><option value="bw">B&amp;N</option>
+                <option value="none">Sin look</option>
+                <optgroup label="Cine">
+                  <option value="nolan">Nolan</option>
+                  <option value="deakins">Deakins</option>
+                  <option value="malick">Malick</option>
+                  <option value="fincher">Fincher</option>
+                  <option value="kodak">Kodak 2383</option>
+                </optgroup>
+                <optgroup label="Comercial">
+                  <option value="cine">Cine</option><option value="vivid">Vivid</option>
+                  <option value="warm">Cálido</option><option value="moody">Moody</option>
+                  <option value="bw">B&amp;N</option>
+                </optgroup>
               </select></label>
               <label class="eb-field"><span>Transición por defecto</span>
               <select class="ctl" id="ed-trans">
@@ -2098,7 +2118,9 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const fmtSel = RM_FORMATS[opts.aspect] || RM_FORMATS['9:16'];
     const asp = document.getElementById('ed-aspect');
     const res = document.getElementById('ed-res');
-    if (asp) { asp.value = opts.aspect; applyAspect(); }
+    // asignar .value por código NO dispara 'change': hay que avisar a quien escucha
+    // (por eso la sección de relleno vertical quedaba oculta en un reel 9:16)
+    if (asp) { asp.value = opts.aspect; applyAspect(); asp.dispatchEvent(new Event('change', { bubbles: true })); }
     if (res) res.value = fmtSel.res;
     const lut = document.getElementById('ed-lut');
     if (lut && opts.look) lut.value = opts.look;
@@ -2137,7 +2159,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const ovr = document.createElement('div');
     ovr.className = 'modal-ov';
     const pick = new Set();
-    const st = { step: 1, q: '', only: '', target: 30, rhythm: 'medio', look: 'cine', aspect: '9:16' };
+    const st = { step: 1, q: '', only: '', target: 30, rhythm: 'medio', look: 'nolan', aspect: '9:16' };
     const pool = () => editable.slice().sort((a, b) =>
       (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
     const visible = () => pool().filter(f => {
@@ -2232,7 +2254,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
           <div class="rm-opts">${Object.entries(RM_FORMATS).map(([k, v]) => `
             <button class="rm-opt${st.aspect === k ? ' on' : ''}" data-aspect="${k}"><span class="rm-ar ar${k.replace(':', '')}"></span><b>${v.lb}</b><small>${v.sub}</small></button>`).join('')}</div>
           <div class="mlb">Look</div>
-          <div class="rm-opts look">${[['none', 'Sin look'], ['cine', 'Cine'], ['vivid', 'Vivid'], ['warm', 'Cálido'], ['moody', 'Moody'], ['bw', 'B&N']].map(([k, lb]) => `
+          <div class="rm-opts look">${[['nolan', 'Nolan'], ['deakins', 'Deakins'], ['malick', 'Malick'],
+            ['kodak', 'Kodak'], ['cine', 'Cine'], ['warm', 'Cálido'], ['bw', 'B&N'], ['none', 'Sin look']].map(([k, lb]) => `
             <button class="rm-opt sm${st.look === k ? ' on' : ''}" data-look="${k}"><b>${lb}</b></button>`).join('')}</div>
           <div class="rm-plan">
             <b>${icon('spark')} Lo que va a pasar</b>
@@ -2361,7 +2384,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const want = Math.max(2, Math.min(ranked.length, Math.round(target / 4)));
     const picks = ranked.slice(0, want).map(f => f.clip_id);
     const n = rmBuild(picks, { target, rhythm: target <= 15 ? 'rapido' : target >= 60 ? 'cine' : 'medio',
-                               look: 'cine', aspect: '9:16' });
+                               look: 'nolan', aspect: '9:16' });
     if (!n) return toast('No pude armar el reel con esas tomas');
     showMod('editor');
     scrollTo({ top: 0, behavior: 'smooth' });

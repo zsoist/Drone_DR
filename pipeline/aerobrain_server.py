@@ -348,13 +348,35 @@ def process_upload(path: Path, j):
 
 
 # LUT presets — investigados de los grandes (DaVinci/LightCut), intensidad ~50%
+# Looks de cine. Los antiguos eran curvas ligeras; estos vienen de la investigación del
+# grading real de cada director. Nota clave: la paleta de Nolan NO es "teal & orange" —
+# es naturalista y desaturada, con las sombras LEVANTADAS (el negro nunca llega a 0) y el
+# cielo neutro, nunca cian. Ese detalle es lo que separa un grading de cine de uno amateur.
 LUTS = {
     "none": "",
+    # — referentes —
+    "nolan": ("curves=r='0/0.012 0.25/0.22 0.5/0.5 0.75/0.78 1/0.985'"
+              ":g='0/0.014 0.25/0.225 0.5/0.5 0.75/0.775 1/0.98'"
+              ":b='0/0.022 0.25/0.235 0.5/0.5 0.75/0.755 1/0.96',"
+              "eq=contrast=1.06:saturation=0.82,"
+              "colorbalance=rs=0.02:bs=-0.025:rm=0.015:bm=-0.01:rh=0.01:bh=0.02"),
+    "deakins": ("curves=r='0/0.02 0.5/0.52 1/0.99':b='0/0.05 0.5/0.5 1/0.95',"
+                "eq=contrast=1.14:saturation=0.70,colorbalance=rh=0.06:bh=-0.04:bs=0.05"),
+    "malick": ("curves=r='0/0.03 0.5/0.52 1/0.99':g='0/0.03 0.5/0.51 1/0.99'"
+               ":b='0/0.035 0.5/0.49 1/0.97',eq=contrast=0.98:saturation=0.96"),
+    "fincher": ("curves=all='0/0.008 0.5/0.49 1/1',eq=contrast=1.18:saturation=0.75,"
+                "colorchannelmixer=rr=0.94:gg=1.0:bb=0.98:gr=0.03:gb=0.04"),
+    # — emulación de copia fotoquímica Kodak 2383 + grano fino —
+    "kodak": ("curves=r='0/0.015 0.12/0.10 0.35/0.34 0.65/0.70 0.88/0.93 1/0.985'"
+              ":g='0/0.016 0.12/0.10 0.35/0.335 0.65/0.695 0.88/0.925 1/0.98'"
+              ":b='0/0.024 0.12/0.11 0.35/0.33 0.65/0.68 0.88/0.91 1/0.965',"
+              "eq=saturation=0.9,noise=c0s=5:c0f=t+u"),
+    # — comerciales —
     "cine": "curves=blue='0/0.04 0.5/0.47 1/0.96':red='0/0.02 0.5/0.53 1/1',eq=contrast=1.07:saturation=1.1",
     "vivid": "eq=saturation=1.32:contrast=1.1:brightness=0.02",
     "warm": "colorbalance=rs=0.07:gs=0.02:bs=-0.07,eq=saturation=1.12",
     "moody": "eq=contrast=1.16:brightness=-0.05:saturation=0.82",
-    "bw": "hue=s=0,eq=contrast=1.22",
+    "bw": "curves=all='0/0.02 0.5/0.5 1/0.98',hue=s=0,eq=contrast=1.28",
 }
 FONT = "/System/Library/Fonts/Helvetica.ttc"
 
@@ -1882,11 +1904,20 @@ def vertical_vf(aspect: str, resolution: str, fit: str, framing: float) -> str:
     if str(resolution) == "2160":
         W, H = W * 2, H * 2
     if fit == "blur":
+        # HÍBRIDO (no "blur fill" a ancho completo): recorta a 4:5 con punto focal y usa el
+        # difuminado SOLO para las bandas de arriba y abajo. Con el blur fill clásico el
+        # clip ocupaba el 31% de la altura y el 68% de la pantalla era papilla borrosa —
+        # eso es precisamente lo que abarata un reel.
+        fr = max(-1.0, min(1.0, float(framing or 0)))
+        fh = int(W * 5 / 4)                      # 1080x1350 = el clip ocupa ~70% del alto
+        # el desenfoque se calcula en miniatura y se reescala: mismo resultado, mucho más rápido
         return (f"split=2[bg][fg];"
-                f"[bg]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-                f"gblur=sigma={max(12, W // 42)},eq=brightness=-0.06:saturation=0.7[bgb];"
-                f"[fg]scale={W}:-2[fgs];"
-                f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1")
+                f"[bg]scale={W // 5}:{H // 5}:force_original_aspect_ratio=increase,crop={W // 5}:{H // 5},"
+                f"gblur=sigma=9,scale={W}:{H}:flags=bicubic,"
+                f"eq=brightness=-0.14:saturation=0.75,vignette=PI/4[bgb];"
+                f"[fg]crop=w='min(iw,ih*4/5)':h=ih:x='(iw-min(iw,ih*4/5))*(1+{fr:.3f})/2':y=0,"
+                f"scale={W}:{fh}:flags=lanczos[fgs];"
+                f"[bgb][fgs]overlay=(W-w)/2:(H-h)*0.34,setsar=1")
     if fit == "bars":
         return f"scale={W}:-2,pad={W}:{H}:0:(oh-ih)/2:black,setsar=1"
     # recorte con punto focal: 0 = centro, -1 = pegado a la izquierda, 1 = a la derecha
