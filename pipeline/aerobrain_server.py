@@ -2071,7 +2071,7 @@ TITLE_STYLES = {
 }
 
 
-def _title_drawtext(txt, style, dur: float = 0.0):
+def _title_drawtext(txt, style, dur: float = 0.0, h_over_w: float = 0.0):
     """Título quemado con estilo Y animación reales.
 
     drawtext admite expresiones dependientes de 't' en alpha/x/y — eso permite fundidos,
@@ -2086,6 +2086,11 @@ def _title_drawtext(txt, style, dur: float = 0.0):
     y_base = {"top": "h*0.10", "mid": "(h-th)/2", "bottom": "h*0.78"}.get(pos, "h*0.78")
     size = _clampf(style.get("size", 42), 1, 100, 42)
     div = max(5.0, 28 - (size - 1) / 99.0 * 20 + preset["div_bias"])
+    # CLAMP AL ANCHO (jul-20): "LLAMAR 311 281 9842" en bold/52 sobre 9:16 salía cortado
+    # por ambos lados — drawtext centra pero no encoge. fontsize=h/div y el ancho del texto
+    # ≈ 0.55·fontsize·len, así que se exige 0.55·(h/div)·len ≤ 0.92·w → div ≥ len·0.55·(h/w)/0.92.
+    if h_over_w and txt:
+        div = max(div, len(txt) * 0.55 * h_over_w / 0.92)
     color = _valid_hex6(style.get("color", "ffffff"))
     fkey = str(style.get("font", "sans"))
     fpath, fidx = TITLE_FONTS.get(fkey, TITLE_FONTS["sans"])
@@ -2282,6 +2287,14 @@ def _burn_texts(video: Path, texts: list, bitrate: str) -> Path:
     del reel completo, no atado a un clip. Se quema en una sola pasada con drawtext y
     enable=between(t,...), así 10 textos cuestan lo mismo que uno."""
     dur = _probe_dur(video)
+    try:
+        wh = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                             "-show_entries", "stream=width,height", "-of", "csv=p=0",
+                             str(video)], capture_output=True, text=True, timeout=30).stdout.strip()
+        _w, _h = (int(x) for x in wh.split(",")[:2])
+        h_over_w = _h / _w if _w else 0.0
+    except (ValueError, OSError, subprocess.SubprocessError):
+        h_over_w = 0.0
     chain = []
     for t in texts[:24]:
         if not isinstance(t, dict):
@@ -2294,7 +2307,7 @@ def _burn_texts(video: Path, texts: list, bitrate: str) -> Path:
         style = t.get("style") if isinstance(t.get("style"), dict) else {}
         # el texto se dibuja con el mismo motor que los títulos (fuentes, estilos, animación)
         # pero con su propia ventana temporal y su duración para el fundido de salida
-        dt = _title_drawtext(txt, style, b - a)
+        dt = _title_drawtext(txt, style, b - a, h_over_w)
         # el fundido usa 't' absoluto del reel: hay que rebasarlo al inicio del bloque
         dt = dt.replace("alpha=", f"enable='between(t,{a:.2f},{b:.2f})':alpha=")
         dt = re.sub(r"\bt/0\.(\d+)", lambda m: f"(t-{a:.2f})/0.{m.group(1)}", dt)

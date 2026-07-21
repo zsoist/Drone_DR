@@ -433,7 +433,9 @@ main.innerHTML = `
         <span class="rm-cta-go">${icon('chevR')}</span>
       </button>
       <div class="rm-auto">
-        <div class="rm-auto-h"><b>⚡ Reel automático</b><small>un toque y listo — elige el mejor día y las mejores tomas</small></div>
+        <div class="rm-auto-h"><b>⚡ Reel automático</b><small>un toque y listo — elige la sesión y la duración</small></div>
+        <label class="rm-daypick"><span>Sesión</span>
+          <select class="ctl" id="rm-day"><option value="">Mejor día automático</option></select></label>
         <div class="rm-auto-b">
           <button class="rm-autobtn" data-auto="15"><b>15s</b><span>gancho</span></button>
           <button class="rm-autobtn primary" data-auto="30"><b>30s</b><span>el punto dulce</span></button>
@@ -2327,6 +2329,10 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
 
     pushUndo();
     tl = segs;
+    // montaje NUEVO = pista de texto nueva: sin esto los textos del reel anterior se
+    // acumulaban (3, 6, 9…) y se exportaban duplicados encima de los del siguiente
+    texts = [];
+    textSel = -1;
     sel = 0; playhead = 0; curCid = null;
     const fmtSel = RM_FORMATS[opts.aspect] || RM_FORMATS['9:16'];
     const asp = document.getElementById('ed-aspect');
@@ -2613,7 +2619,11 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       const cuerpo = Math.min(1, fs.length / 6);         // un día de 1 toma no da para un reel
       return q * luz * (0.65 + 0.35 * cuerpo);
     };
-    const [bestDay, pool] = [...byDay.entries()]
+    // el usuario puede FIJAR la sesión: antes el automático siempre ganaba el mismo día y
+    // las salidas de otros viajes (La Mesa, marzo…) eran inalcanzables desde aquí
+    const forz = document.getElementById('rm-day')?.value || '';
+    const elegido = forz && byDay.has(forz) ? [forz, byDay.get(forz)] : null;
+    const [bestDay, pool] = elegido || [...byDay.entries()]
       .sort((A, B) => dayScore(B[1]) - dayScore(A[1]) || B[0].localeCompare(A[0]))[0];
     // dentro del día, la luz también manda: un plano bien expuesto vale más que uno turbio
     const clipScore = f => (ai[f.clip_id]?.travel_score || 5) * Math.min(1.15, (f.avg_luma ?? 90) / 95);
@@ -2629,6 +2639,25 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     toast(`Reel de ${target}s listo: ${n} cortes de las ${picks.length} mejores tomas del ${fmt.date(bestDay)}`
       + (descartadas ? ` · ${descartadas} toma${descartadas === 1 ? '' : 's'} descartada${descartadas === 1 ? '' : 's'} por estar demasiado oscura${descartadas === 1 ? '' : 's'}` : ''));
   }
+  // llena el selector de sesión con TODOS los días que tienen material usable
+  (() => {
+    const sel2 = document.getElementById('rm-day');
+    if (!sel2) return;
+    const byDay = new Map();
+    editable.filter(usableClip).forEach(f => {
+      const d = f.date || '—';
+      if (!byDay.has(d)) byDay.set(d, []);
+      byDay.get(d).push(f);
+    });
+    [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0])).forEach(([d, fs]) => {
+      const min = Math.round(fs.reduce((a, f) => a + (f.duration_s || 0), 0) / 60);
+      const o = document.createElement('option');
+      o.value = d;
+      o.textContent = `${fmt.date(d)} · ${fs.length} toma${fs.length === 1 ? '' : 's'}${min ? ` · ${min} min` : ''}`;
+      sel2.appendChild(o);
+    });
+  })();
+
   document.querySelector('.rm-auto-b')?.addEventListener('click', e => {
     const b = e.target.closest('[data-auto]');
     if (!b) return;
