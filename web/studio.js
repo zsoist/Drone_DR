@@ -1145,9 +1145,27 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   const byId = Object.fromEntries(editable.map(f => [f.clip_id, f]));
 
   // filtros CSS por LUT (idénticos al backend/export)
-  const CSS_LUTS = { none: '', cine: 'contrast(1.07) saturate(1.1) hue-rotate(-6deg)',
-    vivid: 'saturate(1.35) contrast(1.1)', warm: 'sepia(0.18) saturate(1.2)',
-    moody: 'contrast(1.16) brightness(0.94) saturate(0.82)', bw: 'grayscale(1) contrast(1.2)' };
+  // Aproximación CSS de cada look para el PREVIEW. Sin esto, elegir "Nolan" mostraba el
+  // material crudo y el look solo aparecía al exportar — editabas a ciegas.
+  // Los valores replican la firma medida de cada cadena ffmpeg (saturación/contraste).
+  const CSS_LUTS = {
+    none: '',
+    // saturate() calibrado contra la salida REAL de ffmpeg, no contra el valor nominal
+    // del grading: las curvas por canal separan más los colores de lo que sugiere el
+    // eq=saturation, así que un "0.82 desaturado" mide como 14.6 y el CSS debe igualarlo.
+    nolan: 'contrast(1.06) saturate(0.74) brightness(0.98) sepia(0.06) hue-rotate(-4deg)',
+    deakins: 'contrast(1.14) saturate(1.00) brightness(0.96) sepia(0.10) hue-rotate(-6deg)',
+    malick: 'contrast(0.98) saturate(1.20) brightness(1.00) sepia(0.08) hue-rotate(-5deg)',
+    fincher: 'contrast(1.18) saturate(1.10) brightness(0.94) hue-rotate(6deg)',
+    kodak: 'contrast(1.04) saturate(1.16) sepia(0.06)',
+    goldenhour: 'contrast(1.08) saturate(1.40) sepia(0.12) hue-rotate(-8deg) brightness(0.88)',
+    tealorange: 'contrast(1.12) saturate(1.35) sepia(0.06) hue-rotate(-3deg)',
+    cine: 'contrast(1.07) saturate(1.1) hue-rotate(-6deg)',
+    vivid: 'saturate(1.35) contrast(1.1)',
+    warm: 'sepia(0.18) saturate(1.2)',
+    moody: 'contrast(1.16) brightness(0.94) saturate(0.82)',
+    bw: 'grayscale(1) contrast(1.22) brightness(0.96)',
+  };
   const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
 
   // v7 · defaults de color/título (neutro) — un {} vacío en export = sin grade
