@@ -1283,6 +1283,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     updateStat();
     syncTools();
     exportbar.style.display = tl.length ? 'flex' : 'none';
+    if (typeof autosave === 'function') autosave();   // cada cambio queda a salvo de un F5
     emptyEl.style.display = tl.length ? 'none' : 'flex';
     playhead = Math.min(playhead, total());
     phEl.style.display = tl.length ? '' : 'none';
@@ -1720,6 +1721,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     }).join('');
     lane.classList.toggle('empty', !texts.length);
     paintTextOverlay();
+    // el texto se edita SIN pasar por renderAll, así que hay que guardar aquí también
+    if (typeof autosave === 'function') autosave();
   }
 
   // lo que se ve encima del video mientras editas — misma tipografía y posición que el export
@@ -2148,7 +2151,12 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     }
     const pts = [...hl];
     const need = n - pts.length;
-    const lo = Math.min(0.4, dur * 0.05), hi = Math.max(dur - 0.4, dur * 0.95);
+    // Los bordes de una toma de dron son despegue, estabilización del gimbal y aterrizaje:
+    // ahí es donde salían los "momentos malos". Se descarta el 12% de cada extremo
+    // (entre 0.5s y 2s) y se reparte por el cuerpo útil del clip.
+    const margen = Math.max(0.5, Math.min(2.0, dur * 0.12));
+    const lo = Math.min(margen, dur * 0.35);
+    const hi = Math.max(dur - margen, dur * 0.65);
     for (let k = 0; k < need; k++) pts.push(lo + ((hi - lo) * (k + 0.5)) / need);
     return pts.sort((a, b) => a - b);
   }
@@ -3366,13 +3374,29 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const G = id => document.getElementById(id);
     return {
       tl: JSON.parse(JSON.stringify(tl)),
+      texts: JSON.parse(JSON.stringify(texts || [])),
+      music: music ? { ...music } : null,
       globals: {
         aspect: G('ed-aspect').value, resolution: G('ed-res').value, preset: G('ed-preset').value,
         lut: G('ed-lut').value, trans: G('ed-trans').value, audio: G('ed-audio').value,
-        fps: edFps, bitrate: G('ed-bitrate').value,
+        fps: edFps, bitrate: G('ed-bitrate').value, vfit: edVfit,
+        framing: G('ed-framing')?.value,
         title: G('ed-title').value, fade: G('ed-fade').checked,
       },
     };
+  }
+  // ---- AUTOGUARDADO: el timeline se perdía entero al recargar la pestaña ----
+  // Guardar era manual, así que un F5 (o el bump de versión de la app) borraba el montaje.
+  const AUTO_KEY = 'ab.studio.autosave';
+  let autoT = null;
+  function autosave() {
+    clearTimeout(autoT);
+    autoT = setTimeout(() => {
+      try {
+        if (!tl.length && !(texts || []).length) { localStorage.removeItem(AUTO_KEY); return; }
+        localStorage.setItem(AUTO_KEY, JSON.stringify({ ...projectPayload(), ts: Date.now() }));
+      } catch { /* almacenamiento lleno: el guardado manual sigue disponible */ }
+    }, 700);
   }
   function restoreProject(p) {
     // descarta segmentos cuyo clip_id ya no existe (proyecto viejo / clip archivado / manipulado):
@@ -3384,6 +3408,16 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     set('ed-lut', g.lut); set('ed-trans', g.trans); set('ed-audio', g.audio);
     set('ed-title', g.title); set('ed-fade', g.fade, true);
     set('ed-bitrate', g.bitrate); if (g.fps != null) edFps = g.fps;
+    set('ed-framing', g.framing);
+    if (g.vfit) { edVfit = g.vfit; try { syncVfit(); } catch {} }
+    // texto y música también forman parte del proyecto
+    texts = Array.isArray(p.texts) ? p.texts.map(t => ({ ...t, id: uid() })) : [];
+    textSel = -1;
+    if (p.music && p.music.name) {
+      music = { ...p.music };
+      try { musicEl.src = `${DATA}/audio/${encodeURIComponent(music.name)}`; } catch {}
+      try { musicChip(); } catch {}
+    }
     syncFpsChips();   // alinea el chip de fps con edFps restaurado
     sel = tl.length ? 0 : -1; playhead = 0; curCid = null;
     applyAspect(); undoStack = []; redoStack = [];
@@ -3454,6 +3488,22 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   }
 
   // pintado inicial (setTimeout: rAF no dispara con el tab oculto, patrón del repo)
-  setTimeout(() => { renderAll(); fit(); }, 30);
+  setTimeout(() => {
+    // recupera el montaje si la pestaña se recargó (F5, cambio de versión de la app…)
+    try {
+      const raw = localStorage.getItem(AUTO_KEY);
+      if (raw && !tl.length) {
+        const p = JSON.parse(raw);
+        const n = (p.tl || []).length;
+        if (n) {
+          restoreProject(p);
+          const min = Math.round((Date.now() - (p.ts || Date.now())) / 60000);
+          toast(`Recuperado tu montaje de hace ${min < 1 ? 'un momento' : min + ' min'}: `
+            + `${n} corte${n === 1 ? '' : 's'}`);
+        }
+      }
+    } catch { /* autosave corrupto: se ignora y se empieza limpio */ }
+    renderAll(); fit();
+  }, 30);
 
 })();
