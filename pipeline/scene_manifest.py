@@ -17,7 +17,9 @@ import json
 import math
 from pathlib import Path
 
+import collision_bake
 import dsm_lod
+import mesh_coverage
 import scenes
 
 VAULT = Path("/Volumes/SSD/drone-vault")
@@ -147,12 +149,45 @@ def build(cid: str) -> dict:
     if viewer_obj and not mesh_offset:
         mesh_offset = _obj_center(mdir / "model" / "odm_textured_model_geo.obj")
 
+    collision_ready = bool(lod and not viewer_obj)
+    collision_info = {
+        "status": "ready" if collision_ready else "unavailable",
+        "source": "terrain_only" if collision_ready else "none",
+    }
+    if lod and viewer_obj:
+        try:
+            try:
+                collision_meta = collision_bake.validate(cid, vault=VAULT)
+                coverage_meta = mesh_coverage.validate(cid, vault=VAULT)
+            except ValueError:
+                collision_bake.build(cid, vault=VAULT)
+                mesh_coverage.build(cid, vault=VAULT)
+                collision_meta = collision_bake.validate(cid, vault=VAULT)
+                coverage_meta = mesh_coverage.validate(cid, vault=VAULT)
+            collision_ready = True
+            collision_info = {
+                "status": "ready",
+                "source": "structural_mesh",
+                "version": collision_meta["version"],
+                "source_fingerprint": collision_meta["source_fingerprint"],
+                "tris": collision_meta["tris"],
+                "coverage_pct": coverage_meta["covered_pct"],
+            }
+        except (OSError, KeyError, TypeError, ValueError) as error:
+            collision_ready = False
+            collision_info = {
+                "status": "build_failed",
+                "source": "structural_mesh",
+                "error": str(error),
+            }
+
     caps = {
         "terrain": bool(lod),
         "ortho": bool(meta.get("ortho_asset")),
         "splat": bool(splat_bin),
         "track": track_p.exists(),
         "mesh": bool(viewer_obj),
+        "collision": collision_ready,
     }
     center = (lod or {}).get("center_wgs84")
     name = None
@@ -165,6 +200,7 @@ def build(cid: str) -> dict:
         "name": name or meta.get("title") or cid,
         "recon_id": (meta.get("reconstruction") or {}).get("recon_id"),
         "capabilities": caps,
+        "collision": collision_info,
         "world": {
             "grid": (lod or {}).get("grid"),
             "spacing_m": (lod or {}).get("spacing_m"),
@@ -191,8 +227,14 @@ def build(cid: str) -> dict:
                               if (mdir / "model" / "odm_textured_model_viewer_extra.mtl").exists() else None,
             "mesh_mtl_geo": f"data/models/{cid}/model/odm_textured_model_geo.mtl"
                             if (mdir / "model" / "odm_textured_model_geo.mtl").exists() else None,
-            "collision_bin": f"data/models/{cid}/collision.bin" if (mdir / "collision.bin").exists() else None,
-            "collision_meta": f"data/models/{cid}/collision.json" if (mdir / "collision.json").exists() else None,
+            "collision_bin": f"data/models/{cid}/collision.bin"
+                             if collision_ready and viewer_obj else None,
+            "collision_meta": f"data/models/{cid}/collision.json"
+                              if collision_ready and viewer_obj else None,
+            "mesh_coverage": f"data/models/{cid}/mesh_coverage.bin"
+                             if collision_ready and viewer_obj else None,
+            "mesh_coverage_meta": f"data/models/{cid}/mesh_coverage.json"
+                                  if collision_ready and viewer_obj else None,
             "objects": f"data/models/{cid}/objects.json" if (mdir / "objects.json").exists() else None,
             "poster": f"data/models/{cid}/{meta['ortho_asset']}" if meta.get("ortho_asset") else f"data/thumbs/{cid}.jpg",
         }.items() if v},

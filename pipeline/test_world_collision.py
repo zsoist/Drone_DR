@@ -12,11 +12,17 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import collision_bake
+import scene_manifest
 
 try:
     import mesh_coverage
 except ImportError:
     mesh_coverage = None
+
+try:
+    import audit_world
+except ImportError:
+    audit_world = None
 
 
 def write_glb(path: Path, positions, indices):
@@ -193,6 +199,138 @@ class WorldCollisionBuilderTests(unittest.TestCase):
         self.assertEqual(
             collision_bake.validate(self.cid, vault=self.vault)["source_fingerprint"],
             meta["source_fingerprint"],
+        )
+
+    def test_manifest_automatically_builds_collision_for_a_flyable_mesh(self):
+        with (
+            mock.patch.object(scene_manifest, "VAULT", self.vault),
+            mock.patch.object(scene_manifest, "_site_for_version", return_value=None),
+        ):
+            manifest = scene_manifest.build(self.cid)
+
+        self.assertTrue(manifest["capabilities"]["collision"])
+        self.assertEqual(
+            f"data/models/{self.cid}/collision.bin",
+            manifest["assets"]["collision_bin"],
+        )
+        self.assertEqual(
+            f"data/models/{self.cid}/mesh_coverage.bin",
+            manifest["assets"]["mesh_coverage"],
+        )
+        self.assertEqual("structural_mesh", manifest["collision"]["source"])
+        collision_bake.validate(self.cid, vault=self.vault)
+        mesh_coverage.validate(self.cid, vault=self.vault)
+
+    def test_manifest_never_advertises_stale_collision_when_rebuild_fails(self):
+        (self.model_dir / "collision.bin").write_bytes(b"stale")
+        (self.model_dir / "collision.json").write_text("{}")
+        with (
+            mock.patch.object(scene_manifest, "VAULT", self.vault),
+            mock.patch.object(scene_manifest, "_site_for_version", return_value=None),
+            mock.patch.object(
+                scene_manifest.collision_bake,
+                "validate",
+                side_effect=ValueError("fingerprint stale"),
+            ),
+            mock.patch.object(
+                scene_manifest.collision_bake,
+                "build",
+                side_effect=ValueError("source corrupt"),
+            ),
+        ):
+            manifest = scene_manifest.build(self.cid)
+
+        self.assertFalse(manifest["capabilities"]["collision"])
+        self.assertNotIn("collision_bin", manifest["assets"])
+        self.assertEqual("build_failed", manifest["collision"]["status"])
+        self.assertIn("source corrupt", manifest["collision"]["error"])
+
+    def test_terrain_only_manifest_remains_collision_ready(self):
+        cid = "fixture_terrain"
+        mdir = self.vault / "models" / cid
+        mdir.mkdir(parents=True)
+        lod = {
+            "bin": "dsm.bin",
+            "grid": [2, 2],
+            "spacing_m": [1.0, 1.0],
+            "size_m": [1.0, 1.0],
+            "elev_min": 10.0,
+            "elev_max": 11.0,
+        }
+        (mdir / "dsm_lod.json").write_text(json.dumps(lod))
+        np.full((2, 2), 10.0, dtype="<f4").tofile(mdir / "dsm.bin")
+        (mdir / "meta.json").write_text(json.dumps({
+            "clip_id": cid,
+            "has_dsm": True,
+        }))
+        with (
+            mock.patch.object(scene_manifest, "VAULT", self.vault),
+            mock.patch.object(scene_manifest, "_site_for_version", return_value=None),
+        ):
+            manifest = scene_manifest.build(cid)
+
+        self.assertTrue(manifest["capabilities"]["terrain"])
+        self.assertTrue(manifest["capabilities"]["collision"])
+        self.assertEqual("terrain_only", manifest["collision"]["source"])
+        self.assertNotIn("collision_bin", manifest["assets"])
+
+    def test_active_mesh_world_without_current_assets_fails_audit_by_clip_id(self):
+        self.assertIsNotNone(audit_world)
+        manifest_dir = self.vault / "manifest"
+        manifest_dir.mkdir()
+        (manifest_dir / "system.json").write_text(json.dumps({
+            "models": [{"clip_id": self.cid}],
+            "scenes": [{
+                "id": "scene_fixture",
+                "active_version": self.cid,
+                "versions": [{"id": self.cid}],
+            }],
+        }))
+        (self.model_dir / "scene.v2.json").write_text(json.dumps({
+            "clip_id": self.cid,
+            "capabilities": {"terrain": True, "mesh": True, "collision": False},
+            "assets": {},
+        }))
+
+        result = audit_world.audit(vault=self.vault)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.cid, result["failures"][0]["clip_id"])
+        self.assertEqual("collision_not_published", result["failures"][0]["reason"])
+
+    def test_audit_matches_mundo_deduplication_for_active_and_standalone_worlds(self):
+        manifest_dir = self.vault / "manifest"
+        manifest_dir.mkdir()
+        (manifest_dir / "system.json").write_text(json.dumps({
+            "models": [
+                {"clip_id": "active"},
+                {"clip_id": "inactive"},
+                {"clip_id": "standalone"},
+                {"clip_id": "standalone"},
+            ],
+            "scenes": [{
+                "active_version": "active",
+                "versions": [{"id": "active"}, {"id": "inactive"}],
+            }],
+        }))
+        for cid in ("active", "inactive", "standalone"):
+            mdir = self.vault / "models" / cid
+            mdir.mkdir(parents=True)
+            (mdir / "scene.v2.json").write_text(json.dumps({
+                "clip_id": cid,
+                "capabilities": {
+                    "terrain": True,
+                    "mesh": False,
+                    "collision": True,
+                },
+            }))
+
+        result = audit_world.audit(vault=self.vault)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            ["active", "standalone"],
+            [world["clip_id"] for world in result["worlds"]],
         )
 
 

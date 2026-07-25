@@ -1001,6 +1001,22 @@ check("entity: camino PARTIAL con los datos del test #1 — 0106 0/7 dropped, la
       and _reg["dropped_sources"] == ["C0106"]
       and _wk.merge_label(2, 0, _reg["dropped_sources"]) == "PARTIAL")
 
+# FLIGHTVERSE world publication must use the same active-version dedupe as
+# Mundo and must never advertise a mesh collider from file existence alone.
+import audit_world as _audit_world
+_world_targets = _audit_world._targets({
+    "models": [{"clip_id": "ACTIVE"}, {"clip_id": "OLD"},
+               {"clip_id": "SOLO"}, {"clip_id": "SOLO"}],
+    "scenes": [{"active_version": "ACTIVE",
+                "versions": [{"id": "ACTIVE"}, {"id": "OLD"}]}],
+}, True)
+check("world audit: dedupe activo + standalone coincide con Mundo",
+      _world_targets == ["ACTIVE", "SOLO"])
+_scene_manifest_src = Path("pipeline/scene_manifest.py").read_text()
+check("world manifest: collider y cobertura se validan antes de publicar capability",
+      'collision_bake.validate(cid, vault=VAULT)' in _scene_manifest_src
+      and 'mesh_coverage.validate(cid, vault=VAULT)' in _scene_manifest_src
+      and '"collision": collision_ready' in _scene_manifest_src)
 
 # browser_gate: el import fantasma de threading (11-jul) — el NameError en launch_chrome
 # se ENMASCARABA como OSError del rmtree del TemporaryDirectory (error secundario del
