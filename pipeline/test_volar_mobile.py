@@ -72,7 +72,7 @@ class VolarMobileHudContractTests(unittest.TestCase):
         scene = (ROOT / "web" / "flightverse" / "scene.js").read_text()
         self.assertIn("export async function attachVisualMesh", scene)
         self.assertIn("mesh_mtl_low", scene)
-        self.assertIn("attachVisualMesh(man, scene", self.source)
+        self.assertIn("attachVisualMesh(man, worldGroup", self.source)
         self.assertIn("terrain.heightAt", self.source)
 
     def test_mobile_menu_actions_do_not_auto_close_the_sheet(self):
@@ -96,6 +96,31 @@ class VolarMobileHudContractTests(unittest.TestCase):
         self.assertIn("max-height:min(46dvh,430px)", self.styles)
         self.assertIn(".vl-grade-drag", self.styles)
         self.assertNotIn("bottom:calc(12px + env(safe-area-inset-bottom)); width:auto; max-height:none", self.styles)
+
+    def test_world_representation_is_exclusive_and_respects_preference(self):
+        self.assertIn("const representation =", self.source)
+        self.assertIn("preferredRenderer", self.source)
+        self.assertIn("active: 'terrain'", self.source)
+        self.assertIn("visualMesh.object.visible = active === 'mesh'", self.source)
+        self.assertIn("splat.object.visible = active === 'splat'", self.source)
+        self.assertNotIn("terrain.mesh.visible = visualMesh ? false", self.source)
+        self.assertIn("visibleStructuralLayers", self.source)
+
+    def test_mesh_mode_uses_grid_coverage_fallback_instead_of_a_circle(self):
+        scene = (ROOT / "web" / "flightverse" / "scene.js").read_text()
+        self.assertIn("man.assets.mesh_coverage", scene)
+        self.assertIn("uMeshOn", scene)
+        self.assertIn("uMeshCoverage", scene)
+        self.assertIn("terrain.meshMask", self.source)
+        self.assertNotIn("footprint: { x: c.x, z: c.z, r:", self.source)
+
+    def test_scene_generation_disposes_stale_async_layers(self):
+        scene = (ROOT / "web" / "flightverse" / "scene.js").read_text()
+        self.assertIn("export function createSceneGeneration", scene)
+        self.assertIn("generation.isCurrent()", self.source)
+        self.assertIn("disposedStaleLoads", self.source)
+        self.assertIn("generation.invalidate()", self.source)
+        self.assertIn("'pagehide'", self.source)
 
 
 if __name__ == "__main__":

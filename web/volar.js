@@ -4,28 +4,30 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=283';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=283';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=283';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=283';
-import { createRecorder } from '/flightverse/recorder.js?v=283';
-import { createAudio } from '/flightverse/audio.js?v=283';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=283';
-import { createTouchSticks } from '/flightverse/touch.js?v=283';
-import { createSky } from '/flightverse/sky.js?v=283';
-import { loadSceneObjects } from '/flightverse/objects.js?v=283';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=283';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=283';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=283';
-import CameraControls from '/vendor/camera-controls.module.js?v=283';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=283';
+import * as THREE from '/flightverse/three.js?v=284';
+import {
+  loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
+} from '/flightverse/scene.js?v=284';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=284';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=284';
+import { createRecorder } from '/flightverse/recorder.js?v=284';
+import { createAudio } from '/flightverse/audio.js?v=284';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=284';
+import { createTouchSticks } from '/flightverse/touch.js?v=284';
+import { createSky } from '/flightverse/sky.js?v=284';
+import { loadSceneObjects } from '/flightverse/objects.js?v=284';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=284';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=284';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=284';
+import CameraControls from '/vendor/camera-controls.module.js?v=284';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=284';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=283';
+} from '/vendor/postprocessing180.module.js?v=284';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -287,6 +289,15 @@ async function main() {
   document.body.prepend(renderer.domElement);
   renderer.domElement.className = 'vl-canvas';
   const scene = new THREE.Scene();
+  const generation = createSceneGeneration();
+  const worldGroup = new THREE.Group();
+  worldGroup.name = 'fv-world';
+  scene.add(worldGroup);
+  report.lifecycle = {
+    generation: generation.token,
+    groups: scene.children.filter(node => node.name === 'fv-world').length,
+    disposedStaleLoads: 0,
+  };
   {
     // environment map procedural: reflejos PBR reales en GLBs metálicos
     // (sin esto, metallic>0.5 se ve negro — el look 'Unreal' necesita entorno)
@@ -337,32 +348,9 @@ async function main() {
   const terrain = await loadTerrain(man, { anisotropy: 8 });
   terrain.mesh.matrixAutoUpdate = false; terrain.mesh.updateMatrix();   // estática
   terrain.mesh.receiveShadow = true;
-  scene.add(terrain.mesh);
+  worldGroup.add(terrain.mesh);
   $('#vb-terreno').classList.add('ok');
-  let visualMesh = null;
-  if (man.capabilities?.mesh && man.assets?.mesh_mtl_low && man.transforms?.mesh_offset) {
-    attachVisualMesh(man, scene, {
-      renderer,
-      onProgress: f => {
-        if (f != null) $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla ${Math.round(f * 100)}%`;
-      },
-    }).then(v => {
-      if (!v) return;
-      visualMesh = v;
-      $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla fotogramétrica`;
-      report.visualMesh = true;
-      $('#vb-malla').classList.add('ok');
-      applyVista();
-      upgradeMeshTex(calidad);                 // la calidad pudo fijarse antes de llegar la malla
-    }).catch(e => report.errors.push('malla visual: ' + e.message));
-  }
-  // objetos de escena (plataforma de juegos: docs/SCENE_OBJECTS.md)
-  let sceneObjects = null;
-  loadSceneObjects(man, scene, { heightAt: terrain.heightAt })
-    .then(so => { sceneObjects = so; if (so) report.objects = so.count; })
-    .catch(e => report.errors.push('objects: ' + e.message));
   const W = terrain.world;
-  const mask = { uMaskOn: terrain.splatMask.uSplatOn, uMaskC: terrain.splatMask.uSplatC, uMaskR: terrain.splatMask.uSplatR };
   if (man.capabilities?.mesh && !man.capabilities?.collision) {
     throw new Error('mundo bloqueado: malla sin collider estructural vigente');
   }
@@ -387,21 +375,109 @@ async function main() {
   };
   $('#vl-ghost').textContent += ' · colisión ✓';
 
+  let visualMesh = null;
+  let splat = null;
+  const preferredRenderer = coverageProduct?.preferred_renderer || 'terrain';
+  const representation = {
+    preferred: preferredRenderer,
+    active: 'terrain',
+    fallbackReason: null,
+    visibleStructuralLayers: ['terrain'],
+  };
+  report.representation = representation;
+  let requestedRenderer = preferredRenderer;
+  const applyVista = () => {
+    let active = requestedRenderer;
+    let fallbackReason = null;
+    if (!['terrain', 'mesh', 'splat'].includes(active)) {
+      active = 'terrain';
+      fallbackReason = `renderer desconocido: ${requestedRenderer}`;
+    }
+    if (active === 'mesh' && (!visualMesh || !terrain.meshMask.available)) {
+      active = 'terrain';
+      fallbackReason = visualMesh ? 'malla sin máscara de cobertura' : 'malla aún no disponible';
+    }
+    if (active === 'splat' && (!splat || !splat.aligned)) {
+      active = visualMesh && terrain.meshMask.available ? 'mesh' : 'terrain';
+      fallbackReason = 'splat alineado no disponible';
+    }
+    terrain.mesh.visible = true;
+    terrain.mesh.position.y = 0;
+    terrain.mesh.updateMatrix();
+    terrain.meshMask.uMeshOn.value = active === 'mesh' ? 1 : 0;
+    terrain.splatMask.uSplatOn.value = active === 'splat' ? 1 : 0;
+    terrain.splatMask.uSplatC.value.set(0, 0);
+    terrain.splatMask.uSplatR.value = playableHalfExtent;
+    if (visualMesh) visualMesh.object.visible = active === 'mesh';
+    if (splat) splat.object.visible = active === 'splat';
+    representation.active = active;
+    representation.fallbackReason = fallbackReason;
+    representation.visibleStructuralLayers = active === 'terrain'
+      ? ['terrain']
+      : [active, 'terrain-fallback'];
+    const labels = { terrain: 'terreno', mesh: 'malla 3D', splat: 'foto-real' };
+    $('#vl-vista').textContent = `vista · ${labels[active]}`;
+    $('#vl-vista').style.opacity = active === requestedRenderer ? 1 : 0.7;
+  };
+  const cycleVista = () => {
+    const renderers = ['terrain', 'mesh', 'splat'];
+    requestedRenderer = renderers[(renderers.indexOf(requestedRenderer) + 1) % renderers.length];
+    applyVista();
+  };
+  $('#vl-vista').addEventListener('click', cycleVista);
+  applyVista();
+
+  if (man.capabilities?.mesh && man.assets?.mesh_mtl_low && man.transforms?.mesh_offset) {
+    attachVisualMesh(man, worldGroup, {
+      renderer,
+      onProgress: f => {
+        if (f != null) $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla ${Math.round(f * 100)}%`;
+      },
+    }).then(v => {
+      if (!v) return;
+      if (!generation.isCurrent()) {
+        v.dispose();
+        report.lifecycle.disposedStaleLoads++;
+        return;
+      }
+      visualMesh = v;
+      $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla fotogramétrica`;
+      report.visualMesh = true;
+      $('#vb-malla').classList.add('ok');
+      applyVista();
+    }).catch(e => report.errors.push('malla visual: ' + e.message));
+  }
+  // objetos de escena (plataforma de juegos: docs/SCENE_OBJECTS.md)
+  let sceneObjects = null;
+  loadSceneObjects(man, worldGroup, { heightAt: terrain.heightAt })
+    .then(so => {
+      if (!generation.isCurrent()) {
+        so?.dispose();
+        report.lifecycle.disposedStaleLoads++;
+        return;
+      }
+      sceneObjects = so;
+      if (so) report.objects = so.count;
+    })
+    .catch(e => report.errors.push('objects: ' + e.message));
+
   // splat héroe: solo si splat_align.py lo dejó 'aligned' (RMSE sub-métrico).
   // Carga DESPUÉS del terreno (el juego ya es volable mientras llega el ksplat).
-  let splat = null;
   if (man.capabilities?.splat && man.transforms?.splat?.status === 'aligned') {
-    attachSplat(man, scene, {
+    attachSplat(man, worldGroup, {
       renderer,
       onProgress: p => { if (p < 100) $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · splat ${Math.round(p)}%`; },
     }).then(s => {
+      if (!generation.isCurrent()) {
+        s?.dispose();
+        report.lifecycle.disposedStaleLoads++;
+        return;
+      }
       splat = s;
-      if (coverageProduct?.preferred_renderer === 'splat') vista = 1;
-      syncVistaChip?.();                       // el splat llegó: chip de vista activo
       $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
       report.splat = { aligned: s.aligned, rmse_m: s.rmse };
       $('#vb-splat').classList.add('ok');
-      applyVista();               // default 3D siempre (pedido del operador)
+      applyVista();
     }).catch(e => {
       report.errors.push('splat: ' + e.message);
       $('#vl-scene').textContent = `${man.name} · ${coverageLabel}`;
@@ -504,9 +580,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=283', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=284', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=283');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=284');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -783,35 +859,6 @@ async function main() {
     $('#vl-fpv').classList.toggle('show', !!RIGS[rigIx].hideDrone);
     $('#vl-hud').classList.toggle('fpv-active', !!RIGS[rigIx].hideDrone);
   };
-  // vista: 0 mixta · 1 foto-real (solo splat) · 2 orto (solo terreno)
-  let vista = coverageProduct?.preferred_renderer === 'splat' ? 1 : 2;
-  const applyVista = () => {
-    if (!splat && vista !== 2) { vista = 2; }
-    // con malla fotogramétrica: SOLO la representación high-res (el DSM
-    // derretido no aparece nunca — ni de anillo). Sin malla: reglas de siempre.
-    terrain.mesh.visible = visualMesh ? false : vista !== 1;
-    terrain.mesh.position.y = vista === 0 ? -0.35 : 0;
-    terrain.mesh.updateMatrix();
-    mask.uMaskOn.value = 0;
-    if (splat) splat.object.visible = vista !== 2;
-    if (visualMesh) visualMesh.object.visible = vista !== 1;
-    terrain.mesh.material.color.setScalar((grade?.t ?? 1) * (vista === 0 ? 0.85 : 1));
-    $('#vl-vista').textContent = 'vista · ' + (vista === 0 ? 'mixta' : vista === 1 ? 'foto-real' : '3D');
-  };
-  const cycleVista = () => {
-    if (!splat) {
-      // honesto: sin splat alineado no hay foto-real ni mixta — decirlo, no callar
-      $('#vl-challenge').textContent = 'esta escena no tiene splat alineado — solo vista 3D';
-      setTimeout(() => { if ($('#vl-challenge').textContent.includes('splat alineado')) $('#vl-challenge').textContent = ''; }, 2600);
-      return;
-    }
-    vista = (vista + 1) % 3;
-    applyVista();
-  };
-  $('#vl-vista').addEventListener('click', cycleVista);
-  // chip atenuado mientras no haya splat (attachSplat puede llegar después)
-  const syncVistaChip = () => { $('#vl-vista').style.opacity = splat ? 1 : 0.45; };
-  syncVistaChip();
   const CIELO_LB = { dia: 'día', atardecer: 'atardecer', noche: 'noche' };
   $('#vl-cielo').addEventListener('click', () => {
     $('#vl-cielo').textContent = 'cielo · ' + CIELO_LB[sky.cycle()];
@@ -1687,6 +1734,21 @@ async function main() {
   }, 2000);
 
   renderer.compile(scene, camera);             // warmup: sin hitch del primer frame
+  addEventListener('pagehide', () => {
+    generation.invalidate();
+    loop.stop();
+    input.dispose();
+    world.dispose();
+    sceneObjects?.dispose();
+    visualMesh?.dispose();
+    splat?.dispose();
+    terrain.dispose();
+    weapons.dispose();
+    invasion.dispose();
+    worldGroup.removeFromParent();
+    composer.dispose?.();
+    renderer.dispose();
+  }, { once: true });
   loop.start();
   report.ready = true;
 
@@ -1700,7 +1762,12 @@ async function main() {
       report.distance = Math.round(drone.distance);
       report.ghost = !!ghost;
       report.moved = drone.distance > 20;
-      report.ok = report.moved && report.fps >= 20 && Number.isFinite(drone.pos.y);
+      report.ok = report.moved
+        && report.fps >= 50
+        && report.collision.ready
+        && report.lifecycle.groups === 1
+        && report.lifecycle.disposedStaleLoads === 0
+        && Number.isFinite(drone.pos.y);
       report.done = true;
     }, (auto.until + 1.5) * 1000);
   }

@@ -386,18 +386,42 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
     rep = wait_for(cdp, js("""
       const r = window.__volar;
       if (!r || !r.done) return null;
-      return { ok: r.ok, fps: r.fps };
+      return {
+        ok: r.ok, fps: r.fps,
+        collision: r.collision,
+        representation: r.representation,
+        lifecycle: r.lifecycle,
+      };
     """), timeout=120, label="volar autotest")
     if not rep.get("ok"):
         raise RuntimeError(f"volar autotest rojo: {rep}")
+    if rep.get("fps", 0) < 50:
+        raise RuntimeError(f"volar bajo presupuesto premium de 50 FPS: {rep}")
     visual = wait_for(cdp, js("""
       const r = window.__volar;
       if (!r) return null;
       if (r.errors?.some(e => e.startsWith('malla visual:'))) return { error:r.errors };
-      return r.visualMesh ? { loaded:true, orthoFull:!!r.orthoFull } : null;
+      return r.visualMesh ? {
+        loaded:true,
+        orthoFull:!!r.orthoFull,
+        representation:r.representation,
+        lifecycle:r.lifecycle,
+        collision:r.collision,
+      } : null;
     """), timeout=75, label="malla fotogramétrica visual")
     if not visual.get("loaded"):
         raise RuntimeError(f"malla visual ausente: {visual}")
+    representation = visual.get("representation") or {}
+    visible_layers = representation.get("visibleStructuralLayers") or []
+    if "mesh" in visible_layers and "splat" in visible_layers:
+        raise RuntimeError(f"representaciones estructurales duplicadas: {visual}")
+    if representation.get("preferred") == "terrain" and representation.get("active") != "terrain":
+        raise RuntimeError(f"preferencia de terreno ignorada: {visual}")
+    lifecycle = visual.get("lifecycle") or {}
+    if lifecycle.get("groups") != 1 or lifecycle.get("disposedStaleLoads") != 0:
+        raise RuntimeError(f"lifecycle de escena inestable: {visual}")
+    if not (visual.get("collision") or {}).get("ready"):
+        raise RuntimeError(f"colisión de mundo no disponible: {visual}")
     hud = cdp.eval(js("""
       return {
         dock: !!document.querySelector('.vl-dock'),
