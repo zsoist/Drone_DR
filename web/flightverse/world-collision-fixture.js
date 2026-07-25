@@ -1,7 +1,7 @@
-import * as THREE from '/flightverse/three.js?v=284';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=284';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=284';
-import { createWeapons } from '/flightverse/weapons.js?v=284';
+import * as THREE from '/flightverse/three.js?v=286';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=286';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=286';
+import { createWeapons } from '/flightverse/weapons.js?v=286';
 
 const report = {
   done: false,

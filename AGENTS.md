@@ -83,6 +83,8 @@ python3 pipeline/test_smoke.py
 node --check web/icons.js web/tresd.js web/share.js web/splatview.js web/splatlab.js
 python3 pipeline/audit_vault.py
 python3 pipeline/audit_splats.py
+python3 pipeline/audit_world.py
+python3 pipeline/flightverse_collision_gate.py <clip_id> --stress 100
 python3 pipeline/browser_gate.py model <clip_id>
 python3 pipeline/browser_gate.py splat <clip_id>
 python3 pipeline/browser_matrix.py <clip_id>          # share + 3D workspace, mobile/iPad/desktop

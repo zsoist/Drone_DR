@@ -88,6 +88,13 @@ def _splat_stats(base: Path, stem: str) -> dict:
     conteo de gaussianas derivado del .splat fuente (32 bytes/gaussiana exactos)."""
     out = {}
     meta_p = base / f"{stem}.meta.json"
+    inherited = False
+    match = HIST_RE.match(stem)
+    if not meta_p.exists() and match:
+        candidate = base.parent / f"{match.group('cid')}.meta.json"
+        if candidate.exists():
+            meta_p = candidate
+            inherited = True
     if meta_p.exists():
         try:
             m = json.loads(meta_p.read_text())
@@ -118,6 +125,8 @@ def _splat_stats(base: Path, stem: str) -> dict:
                 out["duration_s"] = round(float(dur), 1)
         except (ValueError, OSError):
             pass
+    if inherited and out:
+        out["metadata_inherited"] = True
     if out.get("iters") in SPLAT_PRESET_BY_ITERS:
         key, label = SPLAT_PRESET_BY_ITERS[out["iters"]]
         out.setdefault("preset", key)
@@ -200,6 +209,8 @@ def all_splats(splat_dir: Path) -> list:
             # glob('*') SÍ incluye dotfiles: un '.upload-<cid>-<hex>.splat' huérfano (subida
             # cortada) se publicaría como splat FANTASMA e imborrable desde la UI.
             if p.name.startswith(".") or not (p.is_file() and p.suffix.lower() in SPLAT_PRIORITY):
+                continue
+            if p.name.endswith(".raw.splat"):
                 continue
             logical_stem = p.stem[:-6] if p.stem.endswith(".clean") else p.stem
             key = f"{prefix}{logical_stem}"

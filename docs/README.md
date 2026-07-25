@@ -23,6 +23,7 @@ preserved for provenance and must not override a current contract.
 - [Engineering pitfalls](../CLAUDE.md)
 - [Scene objects](SCENE_OBJECTS.md)
 - [Game engine](GAME_ENGINE.md)
+- [World collision/stability design](superpowers/specs/2026-07-25-flightverse-world-collision-stability-design.md)
 - [World context prompt](WORLD_CONTEXT_PROMPT.md)
 - [Drone model specification](DRONE_MODEL_SPEC.md)
 - [Enemy model specification](ENEMY_MODEL_SPEC.md)

@@ -3,9 +3,9 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=284';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=284';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=284';
+import * as THREE from '/flightverse/three.js?v=286';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=286';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=286';
 
 let sceneGenerationId = 0;
 export function createSceneGeneration() {
@@ -85,6 +85,8 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
     if (mbuf && mbuf.byteLength === rows * cols) {
       maskTex = new THREE.DataTexture(new Uint8Array(mbuf), cols, rows, THREE.RedFormat, THREE.UnsignedByteType);
       maskTex.flipY = true;                 // fila 0 = norte = v alto del plano
+      maskTex.minFilter = THREE.NearestFilter;
+      maskTex.magFilter = THREE.NearestFilter;
       maskTex.needsUpdate = true;
     }
   }
@@ -96,6 +98,8 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
       meshCoverageTex = new THREE.DataTexture(
         new Uint8Array(cbuf), cols, rows, THREE.RedFormat, THREE.UnsignedByteType);
       meshCoverageTex.flipY = true;
+      meshCoverageTex.minFilter = THREE.NearestFilter;
+      meshCoverageTex.magFilter = THREE.NearestFilter;
       meshCoverageTex.needsUpdate = true;
     }
   }
@@ -283,7 +287,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=284');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=286');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     sp.userData.fvRefs = 0;

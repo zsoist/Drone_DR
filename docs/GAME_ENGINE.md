@@ -3,9 +3,12 @@
 ## Módulos (web/flightverse/)
 - `three.js` — SHIM: todo el juego importa three de aquí (r180). Nunca
   importar three180 directo desde módulos del juego.
-- `scene.js` — SceneManifestV2 → terreno (heightfield+orto, máscara nodata
-  border-only, shader-injection única), splat Spark alineado (matriz Umeyama
-  ±cm), track. heightAt = sampler bilineal O(1).
+- `scene.js` — SceneManifestV2 → terreno (heightfield+orto, máscara nodata y
+  cobertura rasterizada de triángulos), malla estructural visual, splat Spark
+  alineado (matriz Umeyama ±cm), track. Una generación posee un solo grupo
+  `fv-world` y libera cargas asíncronas obsoletas.
+- `world-collision.js` — consulta única BVH+DSM+borde para dron, MG y misiles:
+  sweeps continuos, slide de hasta dos contactos, proximidad con línea de visión.
 - `site.lod.json` — identidad estable, versión activa y coberturas verificadas de
   100/200/400/600/1000 m. Mundo nunca duplica versiones del mismo sitio; Volar selecciona
   círculo/cuadrado y bloquea una extensión pendiente en vez de inventar terreno.
@@ -24,8 +27,10 @@
 1. Assets pesados NUNCA al cliente sin LOD/preparación (dsm_lod, clean.sog,
    collision_bake con banda [suelo-2, +32]).
 2. Todo batch de edits web termina con `pipeline/bump_web_version.py`.
-3. Nada se declara hecho sin gate CDP verde
-   (`flightverse_spike_gate.py`, `browser_matrix.py --flightverse`).
+3. Nada se declara hecho sin audit y gate CDP verdes
+   (`audit_world.py`, `flightverse_collision_gate.py <cid> --stress 100`,
+   `browser_matrix.py --flightverse`). El gate exige ≥50 FPS, un grupo de mundo,
+   cero capas estructurales duplicadas y cero crecimiento GPU.
 4. Estáticos: matrixAutoUpdate=false. Post: un solo EffectPass.
    Governor DPR en 'auto'; presets manuales HD→ultra.
 5. Renames: regex \b, jamás substring (v80 se aprendió con sangre).

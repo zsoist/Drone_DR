@@ -4,30 +4,30 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=284';
+import * as THREE from '/flightverse/three.js?v=286';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=284';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=284';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=284';
-import { createRecorder } from '/flightverse/recorder.js?v=284';
-import { createAudio } from '/flightverse/audio.js?v=284';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=284';
-import { createTouchSticks } from '/flightverse/touch.js?v=284';
-import { createSky } from '/flightverse/sky.js?v=284';
-import { loadSceneObjects } from '/flightverse/objects.js?v=284';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=284';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=284';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=284';
-import CameraControls from '/vendor/camera-controls.module.js?v=284';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=284';
+} from '/flightverse/scene.js?v=286';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=286';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=286';
+import { createRecorder } from '/flightverse/recorder.js?v=286';
+import { createAudio } from '/flightverse/audio.js?v=286';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=286';
+import { createTouchSticks } from '/flightverse/touch.js?v=286';
+import { createSky } from '/flightverse/sky.js?v=286';
+import { loadSceneObjects } from '/flightverse/objects.js?v=286';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=286';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=286';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=286';
+import CameraControls from '/vendor/camera-controls.module.js?v=286';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=286';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=284';
+} from '/vendor/postprocessing180.module.js?v=286';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -580,9 +580,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=284', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=286', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=284');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=286');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -1540,6 +1540,7 @@ async function main() {
           target_hits: weapons.state.targetHits,
           proximity_triggers: weapons.state.proximityTriggers,
           occluded_fuses: weapons.state.occludedFuses,
+          projectiles: weapons.state.missiles.length + weapons.state.bullets.length,
         };
         report.weaponState = { weapon: weapons.state.weapon, cool: +weapons.state.cool.toFixed(2),
           ammo: Object.fromEntries(Object.entries(weapons.state.ammo).map(([k2, n2]) => [k2, Math.floor(n2)])) };
@@ -1757,11 +1758,17 @@ async function main() {
       report.fps = Math.round(loop.fps() || 0);
       report.audioArmed = audio.armed;
       report.weapons = { fired: weapons.state.fired, exploded: weapons.state.exploded };
+      report.weapons.projectiles = weapons.state.missiles.length + weapons.state.bullets.length;
       report.pos = { x: +drone.pos.x.toFixed(1), y: +drone.pos.y.toFixed(1), z: +drone.pos.z.toFixed(1) };
       report.agl = drone.agl == null ? null : +drone.agl.toFixed(1);
       report.distance = Math.round(drone.distance);
       report.ghost = !!ghost;
       report.moved = drone.distance > 20;
+      report.lifecycle.groups = scene.children.filter(node => node.name === 'fv-world').length;
+      report.rendererMemory = {
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+      };
       report.ok = report.moved
         && report.fps >= 50
         && report.collision.ready

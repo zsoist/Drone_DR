@@ -325,6 +325,31 @@ class SplatFrontierApiContractTests(unittest.TestCase):
         self.assertTrue({"Fast", "Medium", "Cinematic", "Ultra", "custom"}
                         <= set(audit_splats.DETAIL_PRESET_MARKERS))
 
+    def test_audit_reports_unknown_legacy_preset_without_crashing_summary(self):
+        with tempfile.TemporaryDirectory() as td:
+            vault = Path(td)
+            artifact = vault / "splats" / "legacy.sog"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_bytes(b"x" * 100_001)
+            old_vault = audit_splats.VAULT
+            old_system = audit_splats.load_system
+            old_jobs = audit_splats.load_jobs
+            audit_splats.VAULT = vault
+            audit_splats.load_system = lambda: {"splats": [{
+                "clip_id": "legacy", "path": "legacy.sog", "format": "sog",
+                "preset": None, "iters": 0, "cameras": 8, "duration_s": 1,
+                "bytes": 100_001, "backend": "legacy", "current": True,
+            }]}
+            audit_splats.load_jobs = lambda: []
+            try:
+                _, _, summary = audit_splats.audit()
+            finally:
+                audit_splats.VAULT = old_vault
+                audit_splats.load_system = old_system
+                audit_splats.load_jobs = old_jobs
+
+        self.assertEqual(1, summary["presets"]["unknown"])
+
 
 if __name__ == "__main__":
     unittest.main()
