@@ -2,6 +2,7 @@
 # Reinicia servicios de AeroBrain sin matar trabajos pesados.
 # uso: safe_restart.sh [web|server|worker|tunnel|both]
 T="${1:-web}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # sidecars gzip frescos antes de servir (barato; solo re-comprime lo cambiado)
 "$(dirname "$0")/gzip_assets.sh" >/dev/null 2>&1 || true
 [[ "$T" == "server" ]] && T="web"
@@ -34,6 +35,47 @@ PY
 fi
 if [[ "$T" == "web" || "$T" == "both" ]]; then
   launchctl kickstart -k gui/501/com.aerobrain.web && echo "web reiniciado"
+  if [[ -z "$AEROBRAIN_SKIP_WORLD_GATE" ]]; then
+    for _ in {1..20}; do
+      curl -fsS http://127.0.0.1:8790/api/health >/dev/null 2>&1 && break
+      sleep 0.25
+    done
+    python3 "$ROOT/pipeline/audit_world.py" >/tmp/aerobrain-world-audit-deploy.json || {
+      echo "ABORTADO: audit_world rojo tras reinicio" >&2
+      tail -20 /tmp/aerobrain-world-audit-deploy.json >&2
+      exit 1
+    }
+    ACTIVE_WORLD=$(python3 - <<'PY'
+import json
+from pathlib import Path
+vault = Path("/Volumes/SSD/drone-vault")
+system = json.loads((vault / "manifest/system.json").read_text())
+for scene in system.get("scenes") or []:
+    cid = scene.get("active_version")
+    path = vault / "models" / str(cid or "") / "scene.v2.json"
+    if not path.exists():
+        continue
+    manifest = json.loads(path.read_text())
+    caps = manifest.get("capabilities") or {}
+    if caps.get("terrain") and caps.get("collision"):
+        print(cid)
+        break
+PY
+)
+    if [[ -z "$ACTIVE_WORLD" ]]; then
+      echo "ABORTADO: no hay mundo activo collision-ready" >&2
+      exit 1
+    fi
+    python3 "$ROOT/pipeline/flightverse_collision_gate.py" "$ACTIVE_WORLD" --stress 100 \
+      >/tmp/aerobrain-world-stress-deploy.json || {
+      echo "ABORTADO: gate FLIGHTVERSE 100x rojo ($ACTIVE_WORLD)" >&2
+      tail -30 /tmp/aerobrain-world-stress-deploy.json >&2
+      exit 1
+    }
+    echo "world gate: $ACTIVE_WORLD · 100/100 verde"
+  else
+    echo "⚠️ world gate SALTADO por AEROBRAIN_SKIP_WORLD_GATE=1" >&2
+  fi
 fi
 if [[ "$T" == "tunnel" ]]; then
   launchctl kickstart -k gui/501/com.metislab.tunnel && echo "tunnel reiniciado"

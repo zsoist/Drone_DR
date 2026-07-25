@@ -68,6 +68,9 @@ tail -20 /tmp/aerobrain-watchdog.log
 python3 pipeline/ops_status.py        # one-shot 24/7 ops audit
 python3 pipeline/external_probe.py    # public health + HTML + video Range
 ```
+`safe_restart.sh web/server/both` ejecuta automáticamente `audit_world.py` y
+el gate FLIGHTVERSE 100× sobre el mundo activo. El escape de recuperación
+`AEROBRAIN_SKIP_WORLD_GATE=1` es explícito y debe ir seguido por el gate manual.
 HTML is no-store. The server replaces each placeholder `?v=` with the asset's
 exact `st_mtime_ns`; matching JS/CSS URLs are immutable. Even so, every batch that
 edits `web/` must run `python3 pipeline/bump_web_version.py`: it refreshes explicit
