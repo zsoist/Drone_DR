@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=282';
+import * as THREE from '/flightverse/three.js?v=283';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -119,13 +119,13 @@ function bGigante() {
 }
 
 const SPECS = {
-  zombie:  { build: () => bZombie(false), hp: 100, speed: 1.6, r2: 1.7, y: 1.15, dmg: 8,  melee: 2.2 },
-  arquero: { build: () => bZombie(true),  hp: 90,  speed: 1.2, r2: 1.7, y: 1.15, shoot: { every: 3.2, speed: 26, dmg: 6, grav: 9, range: 90 } },
-  soldado: { build: bSoldado,             hp: 120, speed: 3.2, r2: 1.7, y: 1.2,  shoot: { every: 2.4, speed: 46, dmg: 3, grav: 0, range: 110, burst: 3 } },
-  ufo:     { build: bUfo,                 hp: 240, speed: 7,   r2: 4.5, y: 0,    fly: 'orbit', shoot: { every: 4, speed: 20, dmg: 10, grav: 0, range: 140, plasma: true } },
-  avion:   { build: bAvion,               hp: 140, speed: 34,  r2: 6,   y: 0,    fly: 'pass' },
-  dragon:  { build: bDragon,              hp: 700, speed: 9,   r2: 6,   y: 0,    fly: 'serp', shoot: { every: 4.5, speed: 17, dmg: 15, grav: 2, range: 150, fire: true } },
-  gigante: { build: bGigante,             hp: 1600, speed: 2.1, r2: 14, y: 8.8,  dmg: 22, melee: 7, slope: 6, foot: 5 },
+  zombie:  { build: () => bZombie(false), hp: 100, speed: 1.6, radius: 1.7, y: 1.15, dmg: 8,  melee: 2.2 },
+  arquero: { build: () => bZombie(true),  hp: 90,  speed: 1.2, radius: 1.7, y: 1.15, shoot: { every: 3.2, speed: 26, dmg: 6, grav: 9, range: 90 } },
+  soldado: { build: bSoldado,             hp: 120, speed: 3.2, radius: 1.7, y: 1.2,  shoot: { every: 2.4, speed: 46, dmg: 3, grav: 0, range: 110, burst: 3 } },
+  ufo:     { build: bUfo,                 hp: 240, speed: 7,   radius: 4.5, y: 0,    fly: 'orbit', shoot: { every: 4, speed: 20, dmg: 10, grav: 0, range: 140, plasma: true } },
+  avion:   { build: bAvion,               hp: 140, speed: 34,  radius: 6,   y: 0,    fly: 'pass' },
+  dragon:  { build: bDragon,              hp: 700, speed: 9,   radius: 6,   y: 0,    fly: 'serp', shoot: { every: 4.5, speed: 17, dmg: 15, grav: 2, range: 150, fire: true } },
+  gigante: { build: bGigante,             hp: 1600, speed: 2.1, radius: 14, y: 8.8,  dmg: 22, melee: 7, slope: 6, foot: 5 },
 };
 
 // ── GLBs externos de enemigos (assets/enemies/<tipo>.glb + manifest.json) ──
@@ -140,9 +140,9 @@ async function preloadEnemyGlb(type, v) {
       enemyManifest = await (await fetch(`/assets/enemies/manifest.json?v=${v}`, { cache: 'no-store' })).json();
     }
     if (!enemyManifest[type] || glbCache[type]) return;
-    if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=282'));
-    if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=282');
-    const g = await new GLTFLoader().loadAsync(`/assets/enemies/${type}.glb?v=282`);
+    if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=283'));
+    if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=283');
+    const g = await new GLTFLoader().loadAsync(`/assets/enemies/${type}.glb?v=283`);
     glbCache[type] = { scene: g.scene, clips: g.animations || [] };
   } catch { /* GLB opcional: el procedural sigue siendo la verdad */ }
 }
@@ -168,7 +168,7 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
         if (gy == null) continue;
         y = gy;
       }
-      let g, anim, mixer = null, act = null, y2 = spec.y, r2 = spec.r2;
+      let g, anim, mixer = null, act = null, y2 = spec.y, radius = spec.radius;
       const cached = glbCache[type];
       if (cached) {
         g = SkelUtils.clone(cached.scene);
@@ -185,7 +185,7 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
         const bb = new THREE.Box3().setFromObject(g);
         const sz = bb.getSize(new THREE.Vector3());
         y2 = spec.fly ? 0 : sz.y * 0.55;        // voladores: origen = centro (contrato)
-        r2 = Math.max(spec.r2, (sz.length() * 0.42) ** 2);
+        radius = Math.max(spec.radius, sz.length() * 0.42);
       } else {
         ({ g, anim } = spec.build());
       }
@@ -195,7 +195,8 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
       E.push({ g, anim, mixer, act, type, spec, enemy: true, blood: ENEMIES[type].blood,
         hp: spec.hp * (1 + S.wave * 0.12), phase: Math.random() * 6.283,
         speed: spec.speed * (1 + S.wave * 0.04), center: new THREE.Vector3(),
-        yOff: y2, r2, cool: Math.random() * 3, passDir: null });
+        yOff: y2, radius, radiusSq: radius * radius,
+        cool: Math.random() * 3, passDir: null });
       S.alive++;
       return true;
     }

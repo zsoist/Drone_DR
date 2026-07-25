@@ -4,7 +4,7 @@
 // (ring/beacon/box) con anclaje al suelo real (heightAt), animaciones
 // spin/bob y materiales emisivos. Optimizado: matrices estáticas quietas,
 // un solo update() barato para los animados.
-import * as THREE from '/flightverse/three.js?v=282';
+import * as THREE from '/flightverse/three.js?v=283';
 
 const PRIMS = {
   ring: ({ color }) => new THREE.Mesh(
@@ -44,7 +44,7 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
     let node = null;
     if ((o.type === 'glb' || o.type === 'kit') && o.file) {
       try {
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=282'));
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=283'));
         const base = o.type === 'kit' ? '/assets/destruction/models/' : '/assets/props/';
         const g = await new GLTFLoader().loadAsync(base + encodeURIComponent(o.file));
         node = g.scene;
@@ -75,7 +75,13 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
     if (o.destructible) {
       const bb = new THREE.Box3().setFromObject(node);
       const r = bb.getSize(new THREE.Vector3()).length() * 0.55;
-      hittables.push({ node, center: bb.getCenter(new THREE.Vector3()), r2: r * r, color: o.color });
+      hittables.push({
+        node,
+        center: bb.getCenter(new THREE.Vector3()),
+        radius: r,
+        radiusSq: r * r,
+        color: o.color,
+      });
     }
     if (o.spin || o.bob) {
       animated.push({ node, spin: !!o.spin, bob: !!o.bob, y0: node.position.y, ph: Math.random() * 6 });

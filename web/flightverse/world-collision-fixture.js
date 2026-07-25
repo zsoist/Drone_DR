@@ -1,5 +1,7 @@
-import * as THREE from '/flightverse/three.js?v=282';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=282';
+import * as THREE from '/flightverse/three.js?v=283';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=283';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=283';
+import { createWeapons } from '/flightverse/weapons.js?v=283';
 
 const report = {
   done: false,
@@ -26,16 +28,23 @@ function colliderUrls() {
     4, 5, -5,
     4, 5, 5,
     4, -5, 5,
+    -5, -5, 4,
+    5, -5, 4,
+    5, 5, 4,
+    -5, 5, 4,
   ]);
-  const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
+  const indices = new Uint32Array([
+    0, 1, 2, 0, 2, 3,
+    4, 5, 6, 4, 6, 7,
+  ]);
   const bytesPos = positions.byteLength;
   const binary = new Uint8Array(bytesPos + indices.byteLength);
   binary.set(new Uint8Array(positions.buffer), 0);
   binary.set(new Uint8Array(indices.buffer), bytesPos);
   const meta = {
     version: 2,
-    verts: 4,
-    tris: 2,
+    verts: 8,
+    tris: 4,
     bytes_pos: bytesPos,
     bytes_idx: indices.byteLength,
   };
@@ -158,6 +167,173 @@ async function run() {
     malformedRejected = /inconsistente/.test(error.message);
   }
   check('malformed collider bytes fail closed', malformedRejected);
+
+  const neutralInput = {
+    fwd: 0,
+    strafe: 0,
+    yaw: 0,
+    lift: 0,
+    boost: false,
+    brake: false,
+    mouseDX: 0,
+    mouseDY: 0,
+  };
+  const boosted = createDrone({
+    world,
+    heightAt: () => 0,
+    spawn: { position_m: [0, 2, -2] },
+  });
+  boosted.vel.set(80, 0, 18);
+  for (let index = 0; index < 30; index += 1) {
+    boosted.step(STEP, neutralInput, 'asistido');
+  }
+  check(
+    'boosted drone cannot tunnel through wall and keeps tangential slide',
+    boosted.pos.x <= 2.82 && boosted.pos.z > -1.5,
+    JSON.stringify({
+      position: boosted.pos.toArray(),
+      collisionHits: boosted.collisionHits,
+    }),
+  );
+
+  const corner = createDrone({
+    world,
+    heightAt: () => 0,
+    spawn: { position_m: [0, 2, 0] },
+  });
+  corner.vel.set(70, 0, 70);
+  for (let index = 0; index < 40; index += 1) {
+    corner.step(STEP, neutralInput, 'asistido');
+  }
+  check(
+    'drone resolves two-contact corner without escaping',
+    corner.pos.x <= 2.82 && corner.pos.z <= 2.82,
+    JSON.stringify({ position: corner.pos.toArray() }),
+  );
+
+  const penetrating = createDrone({
+    world,
+    heightAt: () => 0,
+    spawn: { position_m: [4, 2, 0] },
+  });
+  penetrating.step(STEP, neutralInput, 'asistido');
+  check(
+    'spawn penetration depenetrates deterministically',
+    Math.abs(penetrating.pos.x - 4) >= 1.18,
+    JSON.stringify({ position: penetrating.pos.toArray() }),
+  );
+
+  const makeWeapons = (weaponWorld, heightAt = () => 0) => createWeapons(
+    new THREE.Scene(),
+    { world: weaponWorld, heightAt },
+  );
+  const runWeapon = (weapons, steps, hittables = []) => {
+    for (let index = 0; index < steps; index += 1) {
+      weapons.update(STEP, hittables);
+    }
+  };
+  const mg = makeWeapons(world);
+  mg.setWeapon('mg');
+  mg.fire(new THREE.Vector3(0, 2, 0), -Math.PI / 2, 0);
+  runWeapon(mg, 8);
+  check(
+    'MG swept segment impacts thin structure',
+    mg.state.structureHits === 1 && mg.state.bullets.length === 0,
+    JSON.stringify({
+      structureHits: mg.state.structureHits,
+      bullets: mg.state.bullets.length,
+    }),
+  );
+  mg.dispose();
+
+  for (const type of ['s', 'm', 'l']) {
+    const missiles = makeWeapons(world);
+    missiles.setWeapon(type);
+    missiles.fire(new THREE.Vector3(0, 2, 0), -Math.PI / 2, 0);
+    runWeapon(missiles, 240);
+    check(
+      `missile ${type} impacts structure continuously`,
+      missiles.state.structureHits === 1 && missiles.state.exploded === 1,
+      JSON.stringify({
+        structureHits: missiles.state.structureHits,
+        exploded: missiles.state.exploded,
+      }),
+    );
+    missiles.dispose();
+  }
+
+  const groundWeapons = makeWeapons(terrainWorld, () => 0);
+  groundWeapons.setWeapon('mg');
+  groundWeapons.fire(new THREE.Vector3(0, 0.7, 0), 0, -Math.PI / 2);
+  runWeapon(groundWeapons, 2);
+  check(
+    'projectile detects ground crossing between endpoints',
+    groundWeapons.state.terrainHits === 1,
+    JSON.stringify({ terrainHits: groundWeapons.state.terrainHits }),
+  );
+  groundWeapons.dispose();
+
+  const visibleWeapons = makeWeapons(boundaryWorld);
+  visibleWeapons.setWeapon('s');
+  const visibleGroup = new THREE.Group();
+  const visibleTarget = {
+    enemy: true,
+    g: visibleGroup,
+    center: new THREE.Vector3(3.5, 2, 0),
+    radius: 0.45,
+    radiusSq: 0.45 ** 2,
+    hp: 1000,
+    blood: false,
+  };
+  visibleWeapons.fire(new THREE.Vector3(0, 2, 0), -Math.PI / 2, 0);
+  runWeapon(visibleWeapons, 120, [visibleTarget]);
+  check(
+    'visible target triggers missile proximity fuse',
+    visibleWeapons.state.proximityTriggers === 1,
+    JSON.stringify({
+      proximityTriggers: visibleWeapons.state.proximityTriggers,
+      targetHits: visibleWeapons.state.targetHits,
+    }),
+  );
+  visibleWeapons.dispose();
+
+  const occludedWeapons = makeWeapons(world);
+  occludedWeapons.setWeapon('s');
+  const occludedGroup = new THREE.Group();
+  const occludedTarget = {
+    enemy: true,
+    g: occludedGroup,
+    center: new THREE.Vector3(5, 2, 0),
+    radius: 0.5,
+    radiusSq: 0.25,
+    hp: 1000,
+    blood: false,
+  };
+  occludedWeapons.fire(new THREE.Vector3(0, 2, 0), -Math.PI / 2, 0);
+  runWeapon(occludedWeapons, 160, [occludedTarget]);
+  check(
+    'occluded target cannot trigger proximity through structure',
+    occludedWeapons.state.proximityTriggers === 0
+      && occludedWeapons.state.occludedFuses > 0
+      && occludedWeapons.state.structureHits === 1,
+    JSON.stringify({
+      proximityTriggers: occludedWeapons.state.proximityTriggers,
+      occludedFuses: occludedWeapons.state.occludedFuses,
+      structureHits: occludedWeapons.state.structureHits,
+    }),
+  );
+  occludedWeapons.dispose();
+
+  const edgeWeapons = makeWeapons(boundaryWorld, () => null);
+  edgeWeapons.setWeapon('mg');
+  edgeWeapons.fire(new THREE.Vector3(0, 2, 0), -Math.PI / 2, 0);
+  runWeapon(edgeWeapons, 8);
+  check(
+    'projectile detonates at playable boundary',
+    edgeWeapons.state.boundaryHits === 1,
+    JSON.stringify({ boundaryHits: edgeWeapons.state.boundaryHits }),
+  );
+  edgeWeapons.dispose();
 
   const started = performance.now();
   for (let index = 0; index < 10_000; index += 1) {

@@ -6,7 +6,12 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=282';
+import * as THREE from '/flightverse/three.js?v=283';
+import {
+  earliestHit,
+  normalizeTargetRadius,
+  segmentSphereHit,
+} from '/flightverse/collision-math.js?v=283';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -41,9 +46,9 @@ function puffTex(size = 192) {
 
 export const ARSENAL = {
   mg: { label: 'MG',  auto: true,  rate: 0.085, max: 120, regen: 12,   speed: 150, dmg: 14 },
-  s:  { label: 'M·S', cd: 0.4,     max: 12,     regen: 0.55, speed: 74, big: 0.75 },
-  m:  { label: 'M·M', cd: 0.9,     max: 8,      regen: 0.4,  speed: 56, big: 1.25 },
-  l:  { label: 'M·L', cd: 2.2,     max: 3,      regen: 0.12, speed: 42, big: 2.2 },
+  s:  { label: 'M·S', cd: 0.4,     max: 12,     regen: 0.55, speed: 74, big: 0.75, radius: 0.1, proximity: 1.2 },
+  m:  { label: 'M·M', cd: 0.9,     max: 8,      regen: 0.4,  speed: 56, big: 1.25, radius: 0.16, proximity: 1.8 },
+  l:  { label: 'M·L', cd: 2.2,     max: 3,      regen: 0.12, speed: 42, big: 2.2, radius: 0.25, proximity: 3.0 },
 };
 
 // eyecta con FRAGMENTOS REALES del destruction kit (debris_pack.glb: 16
@@ -52,7 +57,7 @@ export const ARSENAL = {
 let debrisFrags = null;
 (async () => {
   try {
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=282');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=283');
     const g = await new GLTFLoader().loadAsync('/assets/destruction/models/debris_pack.glb');
     const frags = [];
     g.scene.traverse(n => { if (n.isMesh && n.userData.role === 'fragment') frags.push(n); });
@@ -60,7 +65,13 @@ let debrisFrags = null;
   } catch { /* opcional */ }
 })();
 
-export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) {
+export function createWeapons(scene, {
+  world,
+  heightAt,
+  audio,
+  onShake,
+  crater,
+} = {}) {
   const TEX = {
     fire: glowTex([[0, 'rgba(255,244,200,1)'], [0.25, 'rgba(255,150,40,.9)'], [0.6, 'rgba(200,60,10,.45)'], [1, 'rgba(120,20,0,0)']], 128),
     smoke: glowTex([[0, 'rgba(72,68,64,.5)'], [0.5, 'rgba(58,55,52,.28)'], [1, 'rgba(44,42,40,0)']]),
@@ -73,6 +84,8 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
   };
   const S = { missiles: [], bullets: [], parts: [], decals: [], frags: [], rubble: [], fires: [], booms: [],
     weapon: 'm', cool: 0, fired: 0, exploded: 0, destroyed: 0,
+    structureHits: 0, terrainHits: 0, boundaryHits: 0, targetHits: 0,
+    proximityTriggers: 0, occludedFuses: 0,
     ammo: { mg: 120, s: 12, m: 8, l: 3 } };
   const group = new THREE.Group(); group.name = 'fv-weapons'; scene.add(group);
 
@@ -126,6 +139,99 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
       h.g.userData.dead = true;
       if (h.blood) bloodBurst(pos, 2.2);
       S.destroyed++;
+    }
+  }
+
+  const _from = new THREE.Vector3();
+  const _to = new THREE.Vector3();
+
+  function activeTarget(target) {
+    if (!target?.center || normalizeTargetRadius(target) <= 0) return false;
+    if (target.enemy) return !target.g?.userData?.dead;
+    return !target.node?.userData?.dead;
+  }
+
+  function targetHit(start, end, target, fuseRadius = 0) {
+    const radius = normalizeTargetRadius(target);
+    const direct = segmentSphereHit(start, end, target.center, radius);
+    let proximity = null;
+    if (fuseRadius > 0) {
+      const expanded = segmentSphereHit(
+        start,
+        end,
+        target.center,
+        radius + fuseRadius,
+      );
+      if (expanded && (!direct || expanded.fraction < direct.fraction)) {
+        const fusePoint = new THREE.Vector3(
+          expanded.point.x,
+          expanded.point.y,
+          expanded.point.z,
+        );
+        const occluder = world?.castSegment?.(fusePoint, target.center, 0);
+        if (occluder && occluder.fraction < 0.999) {
+          S.occludedFuses += 1;
+        } else {
+          proximity = {
+            ...expanded,
+            kind: 'target',
+            target,
+            proximity: true,
+          };
+        }
+      }
+    }
+    const chosen = earliestHit([
+      direct && { ...direct, kind: 'target', target, proximity: false },
+      proximity,
+    ]);
+    if (!chosen) return null;
+    chosen.point = new THREE.Vector3(
+      chosen.point.x,
+      chosen.point.y,
+      chosen.point.z,
+    );
+    chosen.normal = new THREE.Vector3(
+      chosen.normal.x,
+      chosen.normal.y,
+      chosen.normal.z,
+    );
+    return chosen;
+  }
+
+  function projectileHit(start, end, radius, hittables, fuseRadius = 0) {
+    const hits = [world?.castSegment?.(start, end, radius) || null];
+    for (const target of hittables || []) {
+      if (!activeTarget(target)) continue;
+      hits.push(targetHit(start, end, target, fuseRadius));
+    }
+    return earliestHit(hits);
+  }
+
+  function recordImpact(hit) {
+    if (!hit) return;
+    if (hit.kind === 'structure') S.structureHits += 1;
+    else if (hit.kind === 'terrain') S.terrainHits += 1;
+    else if (hit.kind === 'boundary') S.boundaryHits += 1;
+    else if (hit.kind === 'target') {
+      S.targetHits += 1;
+      if (hit.proximity) S.proximityTriggers += 1;
+    }
+  }
+
+  function damageTarget(target, damage, point, missile = false) {
+    if (target.enemy) {
+      hitEnemy(target, damage, point);
+      return;
+    }
+    target.hp = (
+      target.hp
+      ?? target.node.userData.kit?.health
+      ?? 60
+    ) - damage;
+    if (missile || target.hp <= 0) {
+      smash(target.node, target.color, point);
+      if (!missile) explode(point.clone(), 0.7);
     }
   }
 
@@ -351,7 +457,8 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
       emit(TEX.puff3d, body.position.clone(), new THREE.Vector3(0, -0.5, 0), 0.5, 1.6, 0.7,
         THREE.NormalBlending, { smoke: true, tint0: 0xcfc9c2, tint1: 0xb0aaa4 });
       S.missiles.push({ body, glow, dir: dir.clone(), full: W2.speed,
-        vel: dir.clone().multiplyScalar(W2.speed * 0.25), t: 0, trail: 0, big: W2.big });
+        vel: dir.clone().multiplyScalar(W2.speed * 0.25), t: 0, trail: 0, big: W2.big,
+        radius: W2.radius, proximity: W2.proximity });
       audio?.launch?.();
       return true;
     },
@@ -370,28 +477,19 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
       for (let i = S.bullets.length - 1; i >= 0; i--) {
         const B = S.bullets[i];
         B.t += dt;
+        _from.copy(B.m.position);
         B.vel.y -= 4 * dt;
-        B.m.position.addScaledVector(B.vel, dt);
+        _to.copy(_from).addScaledVector(B.vel, dt);
+        const collision = projectileHit(_from, _to, 0, hittables);
+        B.m.position.copy(collision?.point || _to);
         B.m.lookAt(B.m.position.clone().add(B.vel));
         const bp = B.m.position;
         let dead = B.t > 2.2;
-        const bgy = heightAt ? heightAt(bp.x, bp.z) : null;
-        let impact = null;
-        if (bgy != null && bp.y <= bgy + 0.15) impact = new THREE.Vector3(bp.x, bgy + 0.15, bp.z);
-        if (!impact && hittables) {
-          for (const h of hittables) {
-            if (h.enemy) {
-              if (h.g.userData.dead) continue;
-              if (bp.distanceToSquared(h.center) < h.r2 * h.r2) { hitEnemy(h, ARSENAL.mg.dmg, bp.clone()); impact = bp.clone(); break; }
-              continue;
-            }
-            if (h.node.userData.dead) continue;
-            if (bp.distanceToSquared(h.center) < h.r2) {
-              h.hp = (h.hp ?? (h.node.userData.kit?.health || 60)) - ARSENAL.mg.dmg;
-              if (h.hp <= 0) { smash(h.node, h.color, bp.clone()); explode(bp.clone(), 0.7); }
-              impact = bp.clone();
-              break;
-            }
+        const impact = collision ? bp.clone() : null;
+        if (collision) {
+          recordImpact(collision);
+          if (collision.kind === 'target') {
+            damageTarget(collision.target, ARSENAL.mg.dmg, impact);
           }
         }
         if (impact) {
@@ -406,9 +504,18 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
       for (let i = S.missiles.length - 1; i >= 0; i--) {
         const M = S.missiles[i];
         M.t += dt;
+        _from.copy(M.body.position);
         if (M.t < 0.6) M.vel.copy(M.dir).multiplyScalar(M.full * (0.25 + (M.t / 0.6) * 0.75));
         M.vel.y -= 2.2 * dt;
-        M.body.position.addScaledVector(M.vel, dt);
+        _to.copy(_from).addScaledVector(M.vel, dt);
+        const collision = projectileHit(
+          _from,
+          _to,
+          M.radius,
+          hittables,
+          M.proximity,
+        );
+        M.body.position.copy(collision?.point || _to);
         M.body.lookAt(M.body.position.clone().add(M.vel));
         M.body.rotateZ(M.t * 9);               // roll del misil
         M.glow.scale.setScalar(0.45 + Math.random() * 0.25);   // flicker de tobera
@@ -420,16 +527,11 @@ export function createWeapons(scene, { heightAt, audio, onShake, crater } = {}) 
         }
         const p = M.body.position;
         let hit = M.t > 6;
-        const gy = heightAt ? heightAt(p.x, p.z) : null;
-        if (gy != null && p.y <= gy + 0.3) { hit = true; p.y = gy + 0.3; }
-        if (!hit && hittables) {
-          for (const h of hittables) {
-            if (h.enemy) {
-              if (!h.g.userData.dead && p.distanceToSquared(h.center) < h.r2 * h.r2 * 4) { hit = true; hitEnemy(h, 900, p.clone()); break; }
-              continue;
-            }
-            if (h.node.userData.dead) continue;
-            if (p.distanceToSquared(h.center) < h.r2) { hit = true; smash(h.node, h.color, p.clone()); break; }
+        if (collision) {
+          hit = true;
+          recordImpact(collision);
+          if (collision.kind === 'target') {
+            damageTarget(collision.target, 900, p.clone(), true);
           }
         }
         if (hit) {

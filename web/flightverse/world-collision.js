@@ -1,14 +1,14 @@
 // Unified FLIGHTVERSE structural, terrain, and playable-boundary queries.
-import * as THREE from '/flightverse/three.js?v=282';
+import * as THREE from '/flightverse/three.js?v=283';
 import {
   MeshBVH,
   getTriangleHitPointInfo,
-} from '/vendor/three-mesh-bvh180.module.js?v=282';
+} from '/vendor/three-mesh-bvh180.module.js?v=283';
 import {
   earliestHit,
   segmentCircleBoundaryHit,
   segmentSquareBoundaryHit,
-} from '/flightverse/collision-math.js?v=282';
+} from '/flightverse/collision-math.js?v=283';
 
 const EPSILON = 1e-7;
 const ZERO = new THREE.Vector3();
@@ -84,9 +84,36 @@ function boundaryHit(start, end, boundary, radius = 0) {
   let hit = null;
   if (boundary.shape === 'square') {
     const extent = Number(boundary.halfExtent) - radius;
+    if (
+      Math.abs(start.x) > extent + EPSILON
+      || Math.abs(start.z) > extent + EPSILON
+    ) {
+      const point = new THREE.Vector3(
+        THREE.MathUtils.clamp(start.x, -extent, extent),
+        start.y,
+        THREE.MathUtils.clamp(start.z, -extent, extent),
+      );
+      const normal = point.clone().sub(start).setY(0).normalize();
+      return {
+        kind: 'boundary',
+        fraction: 0,
+        point,
+        normal: normal.lengthSq() > EPSILON ? normal : new THREE.Vector3(1, 0, 0),
+      };
+    }
     hit = segmentSquareBoundaryHit(plain(start), plain(end), extent);
   } else {
     const extent = Number(boundary.radius) - radius;
+    const planarDistance = Math.hypot(start.x, start.z);
+    if (planarDistance > extent + EPSILON) {
+      const scale = extent / planarDistance;
+      return {
+        kind: 'boundary',
+        fraction: 0,
+        point: new THREE.Vector3(start.x * scale, start.y, start.z * scale),
+        normal: new THREE.Vector3(-start.x, 0, -start.z).normalize(),
+      };
+    }
     hit = segmentCircleBoundaryHit(plain(start), plain(end), extent);
   }
   if (!hit) return null;
@@ -206,6 +233,7 @@ export async function createWorldCollision(
         ...first,
         fraction: 0,
         point: start.clone(),
+        surfacePoint: first.point.clone(),
       };
     }
     if (distance <= EPSILON) return null;
@@ -241,6 +269,7 @@ export async function createWorldCollision(
         ...contact,
         fraction: high,
         point: center,
+        surfacePoint: contact.point.clone(),
       };
     }
     return null;
@@ -397,6 +426,9 @@ export async function createWorldCollision(
     castSegment,
     sweepSphere,
     closest,
+    groundHeight: (x, z) => (
+      typeof heightAt === 'function' ? heightAt(x, z) : null
+    ),
     dispose,
     qa,
   };

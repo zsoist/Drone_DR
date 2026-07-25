@@ -4,27 +4,28 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=282';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=282';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=282';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=282';
-import { createRecorder } from '/flightverse/recorder.js?v=282';
-import { createAudio } from '/flightverse/audio.js?v=282';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=282';
-import { createTouchSticks } from '/flightverse/touch.js?v=282';
-import { createSky } from '/flightverse/sky.js?v=282';
-import { loadSceneObjects } from '/flightverse/objects.js?v=282';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=282';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=282';
-import CameraControls from '/vendor/camera-controls.module.js?v=282';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=282';
+import * as THREE from '/flightverse/three.js?v=283';
+import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=283';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=283';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=283';
+import { createRecorder } from '/flightverse/recorder.js?v=283';
+import { createAudio } from '/flightverse/audio.js?v=283';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=283';
+import { createTouchSticks } from '/flightverse/touch.js?v=283';
+import { createSky } from '/flightverse/sky.js?v=283';
+import { loadSceneObjects } from '/flightverse/objects.js?v=283';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=283';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=283';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=283';
+import CameraControls from '/vendor/camera-controls.module.js?v=283';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=283';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=282';
+} from '/vendor/postprocessing180.module.js?v=283';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -35,11 +36,6 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=282';
-
-THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
-
 const Q = new URLSearchParams(location.search);
 const CID = (Q.get('m') || '').replace(/[^\w-]/g, '');
 const COVERAGE_DIAMETERS = new Set(['100', '200', '400', '600', '1000']);
@@ -367,6 +363,29 @@ async function main() {
     .catch(e => report.errors.push('objects: ' + e.message));
   const W = terrain.world;
   const mask = { uMaskOn: terrain.splatMask.uSplatOn, uMaskC: terrain.splatMask.uSplatC, uMaskR: terrain.splatMask.uSplatR };
+  if (man.capabilities?.mesh && !man.capabilities?.collision) {
+    throw new Error('mundo bloqueado: malla sin collider estructural vigente');
+  }
+  const nativeHalfExtent = Math.min(...W.size_m) / 2;
+  const playableHalfExtent = COVERAGE_REQUEST
+    ? COVERAGE_REQUEST / 2
+    : nativeHalfExtent;
+  const boundary = COVERAGE_SHAPE === 'square'
+    ? { shape: 'square', halfExtent: playableHalfExtent }
+    : { shape: 'circle', radius: playableHalfExtent };
+  report.coverage.effective_diameter_m = playableHalfExtent * 2;
+  report.coverage.boundary_source = COVERAGE_REQUEST ? 'requested' : 'native';
+  const world = await createWorldCollision(man, {
+    heightAt: terrain.heightAt,
+    boundary,
+    report,
+  });
+  report.collision = {
+    ready: world.qa.ready,
+    structure: world.qa.structure,
+    tris: world.qa.tris || 0,
+  };
+  $('#vl-ghost').textContent += ' · colisión ✓';
 
   // splat héroe: solo si splat_align.py lo dejó 'aligned' (RMSE sub-métrico).
   // Carga DESPUÉS del terreno (el juego ya es volable mientras llega el ksplat).
@@ -389,39 +408,9 @@ async function main() {
     });
   }
 
-  // colisión precisa contra EDIFICIOS: proxy voxel del splat (splat-transform)
-  // horneado al frame del juego (collision_bake.py) + BVH. Lazy: el vuelo ya
-  // funciona con el heightfield mientras llega; queries closestPointToPoint
-  // ~17µs — cabe de sobra en el paso de 120Hz.
-  let coll = null;
-  const collV = new THREE.Vector3();
-  if (man.assets?.collision_bin && man.assets?.collision_meta) {
-    Promise.all([
-      fetch(man.assets.collision_meta, { cache: 'no-store' }).then(r => r.json()),
-      fetch(man.assets.collision_bin).then(r => r.arrayBuffer()),
-    ]).then(([cm, buf]) => {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(buf, 0, cm.verts * 3), 3));
-      g.setIndex(new THREE.BufferAttribute(new Uint32Array(buf, cm.bytes_pos, cm.tris * 3), 1));
-      g.computeBoundsTree();
-      g.computeBoundingBox();
-      const bb = g.boundingBox;
-      mask.uMaskC.value.set((bb.min.x + bb.max.x) / 2, (bb.min.z + bb.max.z) / 2);
-      mask.uMaskR.value = Math.min(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.42;
-      applyVista();                       // re-evalúa mixta ahora que hay huella
-      coll = g.boundsTree;
-      report.collision = { tris: cm.tris };
-      $('#vl-ghost').textContent += ' · colisión ✓';
-    }).catch(e => report.errors.push('colisión: ' + e.message));
-  }
-  const collide = (p, r) => {
-    if (!coll) return null;
-    return coll.closestPointToPoint(collV.copy(p), {}, 0, r);
-  };
-
   // dron rediseñado: proporciones DJI (~0.85m), cuerpo bajo, brazos finos,
   // props que giran con la velocidad, gimbal frontal — solo primitivas three
-  const drone = createDrone({ heightAt: terrain.heightAt, collide, spawn: man.spawn });
+  const drone = createDrone({ world, spawn: man.spawn });
   const dmesh = new THREE.Group();
   const matHull = new THREE.MeshPhongMaterial({ color: 0xdfe5ee, specular: 0x8899aa, shininess: 62, flatShading: true });
   const matGrey = new THREE.MeshPhongMaterial({ color: 0x7e8898, specular: 0x556070, shininess: 40 });
@@ -515,9 +504,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=282', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=283', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=282');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=283');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -665,7 +654,7 @@ async function main() {
   const shake = { mag: 0 };
   let curYaw = 0;
   const weapons = createWeapons(scene, {
-    heightAt: terrain.heightAt, audio, crater: terrain.crater,
+    world, heightAt: terrain.heightAt, audio, crater: terrain.crater,
     onShake: (pos, big) => {
       const d = camera.position.distanceTo(pos);
       shake.mag = Math.max(shake.mag, Math.min(0.9, (9 * big) / (5 + d)));
@@ -1393,28 +1382,31 @@ async function main() {
         }
         sfx.crash = drone.crashedSoft;
       }
-      // Una cobertura elegida es un producto medible, no una etiqueta: el vuelo
-      // queda dentro de su círculo/cuadrado exacto. Auto conserva toda la escena.
-      if (COVERAGE_REQUEST) {
-        const half = COVERAGE_REQUEST / 2;
-        let clipped = false;
-        if (COVERAGE_SHAPE === 'circle') {
-          const distance = Math.hypot(drone.pos.x, drone.pos.z);
-          if (distance > half) {
-            const scale = half / distance;
-            drone.pos.x *= scale; drone.pos.z *= scale; clipped = true;
-          }
-        } else {
-          const x = THREE.MathUtils.clamp(drone.pos.x, -half, half);
-          const z = THREE.MathUtils.clamp(drone.pos.z, -half, half);
-          clipped = x !== drone.pos.x || z !== drone.pos.z;
-          drone.pos.x = x; drone.pos.z = z;
-        }
-        if (clipped) {
-          drone.vel.x *= -0.18; drone.vel.z *= -0.18;
-          report.coverage.boundary_hits = (report.coverage.boundary_hits || 0) + 1;
-        }
+      const allHit = invasion.state.on
+        ? [...(sceneObjects?.hittables || []), ...invasion.hittables]
+        : sceneObjects?.hittables;
+      weapons.update(dt, allHit);
+      if (Q.get('invasion') && !invasion.state.on && simT > 0.5) {
+        invasion.toggle(drone.pos, Q.get('invasion').split(',').filter(k => ENEMIES[k]));
+        zBtn.classList.add('on'); $('#vl-zhud').classList.add('show');
       }
+      invasion.update(dt, drone.pos);
+      if (Q.get('fuego') === 'mg' && simT > 1 && simT < 2.6) {
+        if (!weapons._mg) { weapons._mg = true; weapons.setWeapon('mg'); }
+        doFire(-0.5);
+      } else if (Q.get('fuego') && simT > 1 && !weapons.state.fired) {
+        doFire(-1.25);
+      }
+      if (Q.get('boom') && simT > 5.2 && !weapons._boomed) {
+        weapons._boomed = true;
+        const bx = drone.pos.x - Math.sin(drone.yaw) * 6;
+        const bz = drone.pos.z - Math.cos(drone.yaw) * 6;
+        const bgy = terrain.heightAt(bx, bz) ?? (drone.pos.y - 60);
+        weapons.explodeAt(new THREE.Vector3(bx, bgy + 0.3, bz));
+      }
+      const fixedWeapon = ARSENAL[weapons.state.weapon];
+      if (firing && fixedWeapon.auto) doFire();
+      report.coverage.boundary_hits = world.qa.boundaryHits;
       if (ghost?.on) {
         ghost.t = (ghost.t + dt) % ghost.dur;
         const i = ghost.T.findIndex(t => t > ghost.t);
@@ -1491,20 +1483,17 @@ async function main() {
       sky.update(STEP, camera.position, P);
       sceneObjects?.update(simT);
       {
-        const now = performance.now();
-        const wdt = Math.min(0.05, (now - (weapons._lt || now)) / 1000);
-        weapons._lt = now;
-        const allHit = invasion.state.on
-          ? [...(sceneObjects?.hittables || []), ...invasion.hittables]
-          : sceneObjects?.hittables;
-        weapons.update(wdt, allHit);
-        if (Q.get('invasion') && !invasion.state.on && simT > 0.5) {
-          invasion.toggle(P, Q.get('invasion').split(',').filter(k => ENEMIES[k]));
-          zBtn.classList.add('on'); $('#vl-zhud').classList.add('show');
-        }
-        invasion.update(wdt, P);
         report.invasion = { on: invasion.state.on, wave: invasion.state.wave, alive: invasion.state.alive, killed: invasion.state.killed };
-        report.weapons = { fired: weapons.state.fired, exploded: weapons.state.exploded };
+        report.weapons = {
+          fired: weapons.state.fired,
+          exploded: weapons.state.exploded,
+          structure_hits: weapons.state.structureHits,
+          terrain_hits: weapons.state.terrainHits,
+          boundary_hits: weapons.state.boundaryHits,
+          target_hits: weapons.state.targetHits,
+          proximity_triggers: weapons.state.proximityTriggers,
+          occluded_fuses: weapons.state.occludedFuses,
+        };
         report.weaponState = { weapon: weapons.state.weapon, cool: +weapons.state.cool.toFixed(2),
           ammo: Object.fromEntries(Object.entries(weapons.state.ammo).map(([k2, n2]) => [k2, Math.floor(n2)])) };
         if (invasion.state.on) {
@@ -1517,19 +1506,8 @@ async function main() {
           const k = b.dataset.w;
           b.style.setProperty('--ammo', `${(weapons.state.ammo[k] / ARSENAL[k].max) * 100}%`);
         });
-        if (Q.get('fuego') === 'mg' && simT > 1 && simT < 2.6) {
-          if (!weapons._mg) { weapons._mg = true; weapons.setWeapon('mg'); }
-          doFire(-0.5);                        // ráfaga sostenida de QA
-        } else if (Q.get('fuego') && simT > 1 && !weapons.state.fired) doFire(-1.25);
-        if (Q.get('boom') && simT > 5.2 && !weapons._boomed) {
-          weapons._boomed = true;             // QA: detonación a nivel de suelo bajo el dron
-          const bx = P.x - Math.sin(curYaw) * 6, bz = P.z - Math.cos(curYaw) * 6;
-          const bgy = terrain.heightAt(bx, bz) ?? (P.y - 60);
-          weapons.explodeAt(new THREE.Vector3(bx, bgy + 0.3, bz));
-        }
         const st = weapons.state;
         const WA = ARSENAL[st.weapon];
-        if (firing && WA.auto) doFire();               // MG sostenida
         $('#vl-ammo').textContent = Math.floor(st.ammo[st.weapon]);
         $('#vl-cool').style.transform = `scaleX(${1 - st.cool / (WA.cd || WA.rate)})`;
         fireBtn.classList.toggle('empty', st.ammo[st.weapon] < 1);
@@ -1557,7 +1535,7 @@ async function main() {
           camera.position.x += (Math.random() - 0.5) * shake.mag;
           camera.position.y += (Math.random() - 0.5) * shake.mag * 0.6;
           camera.rotation.z += (Math.random() - 0.5) * shake.mag * 0.02;
-          shake.mag *= Math.pow(0.02, wdt);      // ~decadencia 98%/s
+          shake.mag *= Math.pow(0.02, STEP * 2); // ~decadencia 98%/s
         } else shake.mag = 0;
       }
       composer.render();

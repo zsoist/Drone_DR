@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=282';
+import * as THREE from '/flightverse/three.js?v=283';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -161,8 +161,11 @@ function step6(d, inp, m, dt) {
 const MIN_AGL = 1.2;             // el dron nunca “entra” al terreno: piso duro honesto
 const DRONE_R = 1.2;             // radio de colisión contra el proxy de edificios
 const _n = new THREE.Vector3();  // scratch de la respuesta de colisión
+const _start = new THREE.Vector3(), _desired = new THREE.Vector3();
+const _current = new THREE.Vector3(), _remaining = new THREE.Vector3();
+const _next = new THREE.Vector3();
 
-export function createDrone({ heightAt, collide, spawn }) {
+export function createDrone({ world, spawn }) {
   const d = {
     pos: new THREE.Vector3(...(spawn?.position_m || [0, 60, 0])),
     vel: new THREE.Vector3(),
@@ -170,19 +173,20 @@ export function createDrone({ heightAt, collide, spawn }) {
     yaw: 0, pitch: 0,
     prev: { pos: new THREE.Vector3(), yaw: 0, pitch: 0 },
     agl: null, crashedSoft: false, distance: 0,
-    _stuck: 0, _noColl: 0, _t: 0,
+    collisionHits: 0, collisionFailures: 0, _t: 0,
   };
   d.prev.pos.copy(d.pos);
 
   d.step = (dt, inp, modeKey) => {
     const m = MODES[modeKey] || MODES.asistido;
     d.prev.pos.copy(d.pos); d.prev.yaw = d.yaw; d.prev.pitch = d.pitch;
+    _start.copy(d.pos);
     if (m.tour) return;                       // cinemático: la cámara vuela, no el dron
 
     if (m.six) {                               // FPV/Arcade: rígido 6DOF real
       step6(d, inp, m, dt);
-      d.distance += d.vel.length() * dt;
-      applyWorldConstraints(d, m);
+      applyWorldConstraints(d, m, _start);
+      d.distance += _start.distanceTo(d.pos);
       return;
     }
     // sincronizar quat con el heading del modo asistido (cambio de modo suave)
@@ -219,40 +223,91 @@ export function createDrone({ heightAt, collide, spawn }) {
       d.vel.x += wx * 0.5 * dt; d.vel.z += wz * 0.5 * dt;
     }
 
-    d.distance += d.vel.length() * dt;
     d.pos.addScaledVector(d.vel, dt);
-    applyWorldConstraints(d, m);
+    applyWorldConstraints(d, m, _start);
+    d.distance += _start.distanceTo(d.pos);
   };
 
-  function applyWorldConstraints(d, m) {
-    const ground = heightAt(d.pos.x, d.pos.z);
+  function applyWorldConstraints(d, m, safeStart) {
+    const ground = world?.groundHeight?.(d.pos.x, d.pos.z);
     d.agl = ground == null ? null : d.pos.y - ground;
-    if (!m.noclip && ground != null && d.pos.y < ground + MIN_AGL) {
-      d.pos.y = ground + MIN_AGL;             // clamp suave: tocar, no atravesar
-      d.crashedSoft = d.vel.y < -6;
-      if (d.vel.y < 0) d.vel.y = 0;
-      d.vel.x *= 0.7; d.vel.z *= 0.7;         // fricción de “raspar” el suelo
-    } else d.crashedSoft = false;
+    d.crashedSoft = false;
+    if (m.noclip || !world?.sweepSphere) return;
 
-    // colisión v2: DESLIZAR (proyección tangencial), corrección suave, y
-    // escape honesto: si llevas ~0.7s clavado contra 'nada' (floater del
-    // proxy), la colisión se suspende 0.8s para soltarte — determinista.
-    if (!m.noclip && collide && d._noColl <= 0) {
-      const hit = collide(d.pos, DRONE_R + 0.3);
-      if (hit && hit.distance < DRONE_R) {
-        _n.subVectors(d.pos, hit.point);
-        const len = _n.length() || 1e-6;
-        _n.multiplyScalar(1 / len);
-        const pen = DRONE_R - len;
-        d.pos.addScaledVector(_n, pen * 0.5);             // salida SUAVE, no teleport
-        const vn = d.vel.dot(_n);
-        if (vn < 0) d.vel.addScaledVector(_n, -vn);       // slide: mata solo la normal
-        d.crashedSoft = vn < -6;
-        d._stuck = d.vel.length() < 0.7 ? d._stuck + 1 : 0;
-        if (d._stuck > 84) { d._noColl = 0.8; d._stuck = 0; }
-      } else d._stuck = 0;
+    try {
+      _desired.copy(d.pos);
+      _current.copy(safeStart);
+
+      // Deterministic spawn/stale-pose recovery. Terrain hits carry the exact
+      // legal center; mesh hits carry closest distance + outward normal.
+      const embedded = world.sweepSphere(_current, _current, DRONE_R);
+      if (embedded?.fraction === 0) {
+        _n.copy(embedded.normal).normalize();
+        if (embedded.kind === 'terrain' || embedded.kind === 'boundary') {
+          _current.copy(embedded.point).addScaledVector(_n, 0.003);
+        } else {
+          const penetration = Math.max(
+            0.003,
+            DRONE_R - (Number(embedded.distance) || 0) + 0.003,
+          );
+          _current.addScaledVector(_n, penetration);
+        }
+        d.collisionHits += 1;
+      }
+
+      _remaining.subVectors(_desired, safeStart);
+      for (let contact = 0; contact < 2; contact += 1) {
+        if (_remaining.lengthSq() <= 1e-10) break;
+        _next.copy(_current).add(_remaining);
+        const hit = world.sweepSphere(_current, _next, DRONE_R);
+        if (!hit) {
+          _current.copy(_next);
+          _remaining.set(0, 0, 0);
+          break;
+        }
+        _n.copy(hit.normal).normalize();
+        const travel = Math.max(0, hit.fraction - 1e-4);
+        _current.addScaledVector(_remaining, travel).addScaledVector(_n, 0.003);
+        _remaining.multiplyScalar(Math.max(0, 1 - hit.fraction));
+        const remainingNormal = _remaining.dot(_n);
+        if (remainingNormal < 0) {
+          _remaining.addScaledVector(_n, -remainingNormal);
+        }
+        const velocityNormal = d.vel.dot(_n);
+        if (velocityNormal < 0) d.vel.addScaledVector(_n, -velocityNormal);
+        d.crashedSoft ||= velocityNormal < -6;
+        d.collisionHits += 1;
+      }
+
+      if (_remaining.lengthSq() > 1e-10) {
+        _next.copy(_current).add(_remaining);
+        if (!world.sweepSphere(_current, _next, DRONE_R)) {
+          _current.copy(_next);
+        }
+      }
+      if (
+        Number.isFinite(_current.x)
+        && Number.isFinite(_current.y)
+        && Number.isFinite(_current.z)
+      ) {
+        d.pos.copy(_current);
+      } else {
+        d.pos.copy(safeStart);
+        d.vel.set(0, 0, 0);
+        d.collisionFailures += 1;
+      }
+    } catch {
+      d.pos.copy(safeStart);
+      d.vel.set(0, 0, 0);
+      d.collisionFailures += 1;
     }
-    if (d._noColl > 0) d._noColl -= dt;
+    const resolvedGround = world.groundHeight?.(d.pos.x, d.pos.z);
+    d.agl = resolvedGround == null ? null : d.pos.y - resolvedGround;
+    if (d.agl != null && d.agl < MIN_AGL - 0.01) {
+      d.pos.copy(safeStart);
+      d.vel.set(0, 0, 0);
+      d.collisionFailures += 1;
+    }
   }
 
   d.lerpPose = (alpha, outPos) => {
