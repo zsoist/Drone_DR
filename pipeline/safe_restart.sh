@@ -45,6 +45,13 @@ if [[ "$T" == "web" || "$T" == "both" ]]; then
       tail -20 /tmp/aerobrain-world-audit-deploy.json >&2
       exit 1
     }
+    python3 "$ROOT/pipeline/world_runtime_sweep.py" \
+      >/tmp/aerobrain-world-runtime-deploy.json || {
+      echo "ABORTADO: sweep runtime multi-mapa rojo tras reinicio" >&2
+      tail -40 /tmp/aerobrain-world-runtime-deploy.json >&2
+      exit 1
+    }
+    echo "world runtime sweep: todos los mapas activos verdes"
     ACTIVE_WORLD=$(python3 - <<'PY'
 import json
 from pathlib import Path
