@@ -72,11 +72,13 @@ class VolarMobileHudContractTests(unittest.TestCase):
         for contract in (
             "releaseFiring()",
             "input.setEnabled(!active)",
-            "if (e.defaultPrevented || overlayCoordinator.active()) return",
+            "const globalHotkeyAllowed = event =>",
+            "if (!globalHotkeyAllowed(e)) return",
             "overlayCoordinator?.active()",
             "lastFlightInput",
         ):
             self.assertIn(contract, self.source)
+        self.assertEqual(self.source.count("addEventListener('keydown'"), 1)
         auto_input = self.source.index("if (auto && simT < auto.until)")
         overlay_neutral = self.source.index("if (overlayCoordinator?.active())", auto_input)
         sampled_input = self.source.index("lastFlightInput = { ...inp }", overlay_neutral)
@@ -90,6 +92,9 @@ class VolarMobileHudContractTests(unittest.TestCase):
             "firedStable",
             "flightInputNeutral",
             "hotkeysBlocked",
+            "recordHotkeyBlocked",
+            "focusTrapped",
+            "recordHotkeyResumed",
             "repressWorked",
         ):
             self.assertIn(contract, matrix)

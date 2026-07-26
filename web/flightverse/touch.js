@@ -153,6 +153,17 @@ export function createOverlayCoordinator({
   let current = null;
   let disposed = false;
   let restoreFocus = null;
+  const focusableSelector = [
+    '[autofocus]',
+    'button:not([disabled])',
+    '[href]',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(',');
+  const focusableWithin = panel => [...(panel?.querySelectorAll?.(focusableSelector) || [])]
+    .filter(node => !node.inert && node.getAttribute?.('aria-hidden') !== 'true');
 
   const apply = name => {
     const previous = current;
@@ -185,9 +196,7 @@ export function createOverlayCoordinator({
       const focusTarget = typeof overlay.initialFocus === 'string'
         ? overlay.panel?.querySelector?.(overlay.initialFocus)
         : overlay.initialFocus
-          || overlay.panel?.querySelector?.(
-            '[autofocus],button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled])',
-          )
+          || focusableWithin(overlay.panel)[0]
           || overlay.panel;
       if (focusTarget === overlay.panel && !focusTarget?.getAttribute?.('tabindex')) {
         focusTarget?.setAttribute?.('tabindex', '-1');
@@ -205,7 +214,32 @@ export function createOverlayCoordinator({
     apply(null);
   };
   const onKeydown = event => {
-    if (event.key === 'Escape' && current) dismiss(event);
+    if (!current) return;
+    if (event.key === 'Escape') {
+      dismiss(event);
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const panel = overlays[current]?.panel;
+    const focusable = focusableWithin(panel);
+    if (!focusable.length) {
+      event.preventDefault();
+      panel?.focus?.({ preventScroll: true });
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    const active = eventRoot?.activeElement;
+    if (!panel?.contains?.(active)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus?.({ preventScroll: true });
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus?.({ preventScroll: true });
+    } else if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus?.({ preventScroll: true });
+    }
   };
   scrim?.addEventListener('pointerdown', dismiss);
   eventRoot?.addEventListener('keydown', onKeydown);

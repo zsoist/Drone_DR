@@ -4,36 +4,36 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=303';
+import * as THREE from '/flightverse/three.js?v=304';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=303';
+} from '/flightverse/scene.js?v=304';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=303';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=303';
-import { createRecorder } from '/flightverse/recorder.js?v=303';
-import { createAudio } from '/flightverse/audio.js?v=303';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=303';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=303';
-import { createSky } from '/flightverse/sky.js?v=303';
-import { loadSceneObjects } from '/flightverse/objects.js?v=303';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=303';
-import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=303';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=303';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=303';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=303';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=303';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=303';
-import CameraControls from '/vendor/camera-controls.module.js?v=303';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=303';
+} from '/flightverse/runtime.js?v=304';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=304';
+import { createRecorder } from '/flightverse/recorder.js?v=304';
+import { createAudio } from '/flightverse/audio.js?v=304';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=304';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=304';
+import { createSky } from '/flightverse/sky.js?v=304';
+import { loadSceneObjects } from '/flightverse/objects.js?v=304';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=304';
+import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=304';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=304';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=304';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=304';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=304';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=304';
+import CameraControls from '/vendor/camera-controls.module.js?v=304';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=304';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=303';
+} from '/vendor/postprocessing180.module.js?v=304';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -653,9 +653,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=303', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=304', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=303');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=304');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -1157,26 +1157,7 @@ async function main() {
   setMode(qModo && MODES[qModo] ? qModo : 'asistido'); setRig(rigIx); applyVista();
   if (Q.get('reto') === '1' && !AT) setTimeout(() => startReto(Q.get('dif') || 'media'), 3800);   // tras el arrival
   const modeKeys = { Digit1: 'cinematico', Digit2: 'asistido', Digit3: 'arcade', Digit4: 'dios' };
-  addEventListener('keydown', e => {
-    if (e.defaultPrevented || overlayCoordinator.active()) return;
-    if (modeKeys[e.code]) setMode(modeKeys[e.code]);
-    if (e.code === 'KeyC') cycleRig();
-    if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
-    if (e.code === 'KeyH') overlayCoordinator.toggle('guide');
-    if (e.code === 'KeyT') startReto(localStorage.getItem('ab.fv.gr.diff') || 'media');
-    if (e.code === 'KeyP') cycleVista();
-    if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
-    if (e.code === 'KeyX' && !e.repeat) beginFiring('keyboard');
-    if (e.code === 'KeyZ') {
-      const ks = Object.keys(ARSENAL);
-      setWeapon(ks[(ks.indexOf(weapons.state.weapon) + 1) % ks.length]);
-    }
-    if (e.code === 'Escape' && replay) {
-      replay = null;
-      reto?.setVisible(true);
-      if (resultShown) overlayCoordinator.open('result');
-    }
-  });
+  const globalHotkeyAllowed = event => !event.defaultPrevented && !overlayCoordinator?.active();
   renderer.domElement.addEventListener('click', () => { if (modeKey === 'fpv') input.requestLock(); });
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
@@ -1459,7 +1440,27 @@ async function main() {
     } else if (recorder.start()) { recBtn.classList.add('on'); audio.rec(true); }
   };
   recBtn.addEventListener('click', toggleRec);
-  addEventListener('keydown', e => { if (e.code === 'KeyV') toggleRec(); });
+  addEventListener('keydown', e => {
+    if (!globalHotkeyAllowed(e)) return;
+    if (modeKeys[e.code]) setMode(modeKeys[e.code]);
+    if (e.code === 'KeyC') cycleRig();
+    if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
+    if (e.code === 'KeyH') overlayCoordinator.toggle('guide');
+    if (e.code === 'KeyT') startReto(localStorage.getItem('ab.fv.gr.diff') || 'media');
+    if (e.code === 'KeyP') cycleVista();
+    if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
+    if (e.code === 'KeyX' && !e.repeat) beginFiring('keyboard');
+    if (e.code === 'KeyZ') {
+      const ks = Object.keys(ARSENAL);
+      setWeapon(ks[(ks.indexOf(weapons.state.weapon) + 1) % ks.length]);
+    }
+    if (e.code === 'KeyV') toggleRec();
+    if (e.code === 'Escape' && replay) {
+      replay = null;
+      reto?.setVisible(true);
+      if (resultShown) overlayCoordinator.open('result');
+    }
+  });
   addEventListener('keyup', e => { if (e.code === 'KeyX') releaseFiring('keyboard'); });
   if (AT === 'record') {
     setTimeout(() => {

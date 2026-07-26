@@ -812,6 +812,8 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
             fired:window.__volar.weapons.fired,
             rig:window.__volar.camera.rig,
             weapon:window.__volar.weaponState.weapon,
+            recText:document.querySelector('#vl-rec').textContent,
+            recOn:document.querySelector('#vl-rec').classList.contains('on'),
           };
           menuFab.click();
           const menu = document.querySelector('#vl-dock');
@@ -824,11 +826,50 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
             combatInert:document.querySelector('#vl-combat-live').inert,
           };
         """))
+        focus_edges = cdp.eval(js("""
+          const menu = document.querySelector('#vl-dock');
+          const focusable = [...menu.querySelectorAll(
+            'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled])'
+          )].filter(node => !node.inert && node.getAttribute('aria-hidden') !== 'true');
+          focusable.at(-1).focus();
+          return { first:focusable[0].id, last:focusable.at(-1).id };
+        """))
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "rawKeyDown", "code": "Tab", "key": "Tab", "windowsVirtualKeyCode": 9,
+        })
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "keyUp", "code": "Tab", "key": "Tab", "windowsVirtualKeyCode": 9,
+        })
+        tab_forward = cdp.eval(js("return document.activeElement.id"))
+        cdp.eval(js(f"document.querySelector('#{focus_edges['first']}').focus(); return true"))
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "rawKeyDown", "code": "Tab", "key": "Tab",
+            "windowsVirtualKeyCode": 9, "modifiers": 8,
+        })
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "keyUp", "code": "Tab", "key": "Tab",
+            "windowsVirtualKeyCode": 9, "modifiers": 8,
+        })
+        tab_backward = cdp.eval(js("return document.activeElement.id"))
+        cdp.eval(js("document.querySelector('#vl-share').focus(); return true"))
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "rawKeyDown", "code": "Tab", "key": "Tab", "windowsVirtualKeyCode": 9,
+        })
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "keyUp", "code": "Tab", "key": "Tab", "windowsVirtualKeyCode": 9,
+        })
+        tab_reentry = cdp.eval(js("return document.activeElement.id"))
         for code, key in (("KeyW", "w"), ("KeyX", "x"), ("KeyZ", "z"), ("KeyC", "c")):
             cdp.send("Input.dispatchKeyEvent", {
                 "type": "rawKeyDown", "code": code, "key": key,
                 "windowsVirtualKeyCode": ord(key.upper()),
             })
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "rawKeyDown", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
+        })
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "keyUp", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
+        })
         cdp.pump(0.55)
         overlay_blocked = cdp.eval(js("""
           const controls = window.__volar.controls || {};
@@ -841,6 +882,8 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
             trigger:window.__volar.weaponState.trigger,
             rig:window.__volar.camera.rig,
             weapon:window.__volar.weaponState.weapon,
+            recText:document.querySelector('#vl-rec').textContent,
+            recOn:document.querySelector('#vl-rec').classList.contains('on'),
             controls,
             neutral,
           };
@@ -857,6 +900,25 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
             overlay:window.__volar.controls?.overlay,
           };
         """))
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "rawKeyDown", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
+        })
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "keyUp", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
+        })
+        cdp.pump(0.12)
+        rec_resumed = cdp.eval(js("""
+          const button = document.querySelector('#vl-rec');
+          return { text:button.textContent, on:button.classList.contains('on') };
+        """))
+        if rec_resumed["on"]:
+            cdp.send("Input.dispatchKeyEvent", {
+                "type": "rawKeyDown", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
+            })
+            cdp.send("Input.dispatchKeyEvent", {
+                "type": "keyUp", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
+            })
+            cdp.pump(0.12)
         release_trigger()
         cdp.pump(0.25)
         repress_before = cdp.eval(js("return window.__volar.weapons.fired"))
@@ -879,12 +941,28 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
                 overlay_blocked["rig"] == overlay_opened["rig"]
                 and overlay_blocked["weapon"] == overlay_opened["weapon"]
             ),
+            "recordHotkeyBlocked": (
+                overlay_blocked["recOn"] == overlay_opened["recOn"]
+                and overlay_blocked["recText"] == overlay_opened["recText"]
+            ),
+            "focusTrapped": (
+                tab_forward == focus_edges["first"]
+                and tab_backward == focus_edges["last"]
+                and tab_reentry == focus_edges["first"]
+            ),
+            "recordHotkeyResumed": (
+                rec_resumed["on"] != overlay_opened["recOn"]
+                or rec_resumed["text"] != overlay_opened["recText"]
+            ),
             "repressWorked": repress_after > repress_before,
         }
         if not all((
             overlayInputGate["firedStable"],
             overlayInputGate["flightInputNeutral"],
             overlayInputGate["hotkeysBlocked"],
+            overlayInputGate["recordHotkeyBlocked"],
+            overlayInputGate["focusTrapped"],
+            overlayInputGate["recordHotkeyResumed"],
             overlayInputGate["repressWorked"],
             not overlay_blocked["trigger"].get("held"),
             overlay_opened.get("focusInside"),
@@ -1043,6 +1121,9 @@ def main():
                       f" stable={gate['firedStable']}"
                       f" neutral={gate['flightInputNeutral']}"
                       f" hotkeys={gate['hotkeysBlocked']}"
+                      f" record={gate['recordHotkeyBlocked']}"
+                      f" focus={gate['focusTrapped']}"
+                      f" record-resume={gate['recordHotkeyResumed']}"
                       f" repress={gate['repressWorked']}")
         return
     results = run_matrix(args.clip_id, args.base_url, viewports, args.surface)

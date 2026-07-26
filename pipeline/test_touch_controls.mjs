@@ -40,6 +40,10 @@ class FakeElement extends EventTarget {
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   querySelector() { return this.children[0] || null; }
+  querySelectorAll() { return this.children; }
+  contains(target) {
+    return target === this || this.children.some(child => child.contains?.(target));
+  }
   focus() {
     this.focused = true;
     if (this.ownerDocument) this.ownerDocument.activeElement = this;
@@ -260,4 +264,51 @@ test('modal focus, role, inert background, and focus restoration follow ownershi
   assert.equal(panel.inert, true);
   assert.equal(background.inert, false);
   assert.equal(eventRoot.activeElement, trigger);
+});
+
+test('Tab and Shift+Tab cannot escape the active dialog', () => {
+  const eventRoot = new EventTarget();
+  const panel = new FakeElement();
+  const first = panel.appendChild(new FakeElement());
+  const last = panel.appendChild(new FakeElement());
+  const trigger = new FakeElement();
+  for (const element of [panel, first, last, trigger]) element.ownerDocument = eventRoot;
+  eventRoot.activeElement = trigger;
+  const coordinator = createOverlayCoordinator({
+    eventRoot,
+    overlays: { menu: { panel, trigger, openClass: 'open' } },
+  });
+  coordinator.open('menu');
+
+  last.focus();
+  const tab = new Event('keydown', { cancelable: true });
+  Object.defineProperties(tab, {
+    key: { value: 'Tab' },
+    shiftKey: { value: false },
+  });
+  eventRoot.dispatchEvent(tab);
+  assert.equal(tab.defaultPrevented, true);
+  assert.equal(eventRoot.activeElement, first);
+
+  first.focus();
+  const shiftTab = new Event('keydown', { cancelable: true });
+  Object.defineProperties(shiftTab, {
+    key: { value: 'Tab' },
+    shiftKey: { value: true },
+  });
+  eventRoot.dispatchEvent(shiftTab);
+  assert.equal(shiftTab.defaultPrevented, true);
+  assert.equal(eventRoot.activeElement, last);
+
+  trigger.focus();
+  const outsideShiftTab = new Event('keydown', { cancelable: true });
+  Object.defineProperties(outsideShiftTab, {
+    key: { value: 'Tab' },
+    shiftKey: { value: true },
+  });
+  eventRoot.dispatchEvent(outsideShiftTab);
+  assert.equal(outsideShiftTab.defaultPrevented, true);
+  assert.equal(eventRoot.activeElement, last);
+
+  coordinator.dispose();
 });
