@@ -135,7 +135,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             try:
                 ready = cdp.eval(
                     "(() => { const r=window.__volar;"
-                    " return r?.done && r?.visualMesh && r?.customDrone"
+                    " return r?.done && r?.customDrone"
                     " && r?.collision?.radius_source === 'glb' ? r : null; })()"
                 )
             except RuntimeError:

@@ -406,6 +406,34 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
             raise RuntimeError(f"telemetría de render inválida: {key}={value!r} · {render}")
     if render["p95Ms"] <= 0 or render["dpr"] < 1:
         raise RuntimeError(f"telemetría de render inválida: {render}")
+    initial_visual = cdp.eval(js("""
+      const r = window.__volar;
+      return {
+        loaded:!!r?.visualMesh,
+        state:r?.visualMeshState,
+        representation:r?.representation,
+        meshRequests:performance.getEntriesByType('resource')
+          .filter(e => /odm_textured_model_viewer\\.obj(?:\\?|$)/.test(e.name)).length,
+      };
+    """))
+    initial_representation = initial_visual.get("representation") or {}
+    if initial_representation.get("preferred") != "mesh":
+        if (initial_visual.get("loaded") or initial_visual.get("state") != "deferred"
+                or initial_visual.get("meshRequests") != 0):
+            raise RuntimeError(f"malla inactiva cargada antes de solicitarse: {initial_visual}")
+    if (initial_representation.get("preferred") == "terrain" \
+            and initial_representation.get("active") != "terrain"):
+        raise RuntimeError(f"preferencia de terreno ignorada: {initial_visual}")
+    requested = cdp.eval(js("""
+      const button = document.querySelector('#vl-vista');
+      for (let attempt = 0; attempt < 3
+           && window.__volar?.representation?.requested !== 'mesh'; attempt += 1) {
+        button?.click();
+      }
+      return window.__volar?.representation?.requested;
+    """))
+    if requested != "mesh":
+        raise RuntimeError(f"no se pudo solicitar la malla visual: {requested!r}")
     visual = wait_for(cdp, js("""
       const r = window.__volar;
       if (!r) return null;
@@ -424,8 +452,8 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
     visible_layers = representation.get("visibleStructuralLayers") or []
     if "mesh" in visible_layers and "splat" in visible_layers:
         raise RuntimeError(f"representaciones estructurales duplicadas: {visual}")
-    if representation.get("preferred") == "terrain" and representation.get("active") != "terrain":
-        raise RuntimeError(f"preferencia de terreno ignorada: {visual}")
+    if representation.get("requested") != "mesh" or representation.get("active") != "mesh":
+        raise RuntimeError(f"malla solicitada no quedó activa: {visual}")
     lifecycle = visual.get("lifecycle") or {}
     if lifecycle.get("groups") != 1 or lifecycle.get("disposedStaleLoads") != 0:
         raise RuntimeError(f"lifecycle de escena inestable: {visual}")

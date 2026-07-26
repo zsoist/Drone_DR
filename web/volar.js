@@ -23,6 +23,7 @@ import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=291';
 import { createWorldCollision } from '/flightverse/world-collision.js?v=291';
 import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=291';
 import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=291';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=291';
 import CameraControls from '/vendor/camera-controls.module.js?v=291';
 import { canExport, exportDeterministic } from '/flightverse/export.js?v=291';
 CameraControls.install({ THREE });
@@ -368,7 +369,7 @@ async function main() {
   terrain.mesh.matrixAutoUpdate = false; terrain.mesh.updateMatrix();   // estática
   terrain.mesh.receiveShadow = true;
   worldGroup.add(terrain.mesh);
-  $('#vb-terreno').classList.add('ok');
+  markLoadStep(document, 'vb-terreno');
   const W = terrain.world;
   if (man.capabilities?.mesh && !man.capabilities?.collision) {
     throw new Error('mundo bloqueado: malla sin collider estructural vigente');
@@ -399,6 +400,7 @@ async function main() {
   const preferredRenderer = coverageProduct?.preferred_renderer || 'terrain';
   const representation = {
     preferred: preferredRenderer,
+    requested: preferredRenderer,
     active: 'terrain',
     fallbackReason: null,
     visibleStructuralLayers: ['terrain'],
@@ -406,6 +408,7 @@ async function main() {
   report.representation = representation;
   let requestedRenderer = preferredRenderer;
   const applyVista = () => {
+    representation.requested = requestedRenderer;
     let active = requestedRenderer;
     let fallbackReason = null;
     if (!['terrain', 'mesh', 'splat'].includes(active)) {
@@ -442,30 +445,51 @@ async function main() {
     const renderers = ['terrain', 'mesh', 'splat'];
     requestedRenderer = renderers[(renderers.indexOf(requestedRenderer) + 1) % renderers.length];
     applyVista();
+    if (requestedRenderer === 'mesh') void ensureVisualMesh();
   };
   $('#vl-vista').addEventListener('click', cycleVista);
   applyVista();
 
-  if (man.capabilities?.mesh && man.assets?.mesh_mtl_low && man.transforms?.mesh_offset) {
-    attachVisualMesh(man, worldGroup, {
+  const canLoadVisualMesh = Boolean(
+    man.capabilities?.mesh && man.assets?.mesh_mtl_low && man.transforms?.mesh_offset,
+  );
+  const visualMeshLoader = canLoadVisualMesh
+    ? createLazyLayerLoader(() => attachVisualMesh(man, worldGroup, {
       renderer,
       onProgress: f => {
         if (f != null) $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla ${Math.round(f * 100)}%`;
       },
-    }).then(v => {
+    }))
+    : null;
+  report.visualMesh = false;
+  report.visualMeshState = visualMeshLoader ? visualMeshLoader.state : 'unavailable';
+  let visualMeshReady = null;
+  const ensureVisualMesh = () => {
+    if (!visualMeshLoader) return Promise.resolve(null);
+    if (visualMeshReady) return visualMeshReady;
+    report.visualMeshState = 'loading';
+    visualMeshReady = visualMeshLoader.ensure().then(v => {
       if (!v) return;
       if (!generation.isCurrent()) {
         v.dispose();
         report.lifecycle.disposedStaleLoads++;
-        return;
+        return null;
       }
       visualMesh = v;
       $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla fotogramétrica`;
       report.visualMesh = true;
-      $('#vb-malla').classList.add('ok');
+      report.visualMeshState = 'ready';
+      markLoadStep(document, 'vb-malla');
       applyVista();
-    }).catch(e => report.errors.push('malla visual: ' + e.message));
-  }
+      return v;
+    }).catch(e => {
+      report.visualMeshState = 'error';
+      report.errors.push('malla visual: ' + e.message);
+      return null;
+    });
+    return visualMeshReady;
+  };
+  if (requestedRenderer === 'mesh') void ensureVisualMesh();
   // objetos de escena (plataforma de juegos: docs/SCENE_OBJECTS.md)
   let sceneObjects = null;
   loadSceneObjects(man, worldGroup, { heightAt: terrain.heightAt })
@@ -495,7 +519,7 @@ async function main() {
       splat = s;
       $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
       report.splat = { aligned: s.aligned, rmse_m: s.rmse };
-      $('#vb-splat').classList.add('ok');
+      markLoadStep(document, 'vb-splat');
       applyVista();
     }).catch(e => {
       report.errors.push('splat: ' + e.message);
