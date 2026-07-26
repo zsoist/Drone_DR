@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=302';
+import * as THREE from '/flightverse/three.js?v=303';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -49,23 +49,42 @@ export function createLoop({ update, render, onPause, onResume }) {
 // sample() devuelve ejes normalizados [-1..1] — el modo decide qué significan.
 export function createInput(el) {
   const keys = new Set();
-  let mouseDX = 0, mouseDY = 0, locked = false;
-  const kd = e => { if (!e.repeat) keys.add(e.code); };
+  let mouseDX = 0, mouseDY = 0, locked = false, enabled = true;
+  const kd = e => { if (enabled && !e.repeat) keys.add(e.code); };
   const ku = e => keys.delete(e.code);
-  const mm = e => { if (locked) { mouseDX += e.movementX; mouseDY += e.movementY; } };
+  const mm = e => { if (enabled && locked) { mouseDX += e.movementX; mouseDY += e.movementY; } };
   const lc = () => { locked = document.pointerLockElement === el; };
   let wheelAcc = 0;
-  const wh = e => { wheelAcc += e.deltaY; e.preventDefault(); };
+  const wh = e => { if (enabled) wheelAcc += e.deltaY; e.preventDefault(); };
   addEventListener('keydown', kd); addEventListener('keyup', ku);
   addEventListener('mousemove', mm); document.addEventListener('pointerlockchange', lc);
   el.addEventListener('wheel', wh, { passive: false });
   const ax = (neg, pos) => (keys.has(pos) ? 1 : 0) - (keys.has(neg) ? 1 : 0);
+  const reset = () => {
+    keys.clear();
+    mouseDX = 0;
+    mouseDY = 0;
+    wheelAcc = 0;
+    if (locked) document.exitPointerLock?.();
+  };
   return {
     keys,
-    requestLock: () => el.requestPointerLock?.(),
+    requestLock: () => { if (enabled) el.requestPointerLock?.(); },
     releaseLock: () => document.exitPointerLock?.(),
+    reset,
+    setEnabled(active) {
+      enabled = !!active;
+      if (!enabled) reset();
+    },
+    get enabled() { return enabled; },
     get locked() { return locked; },
     sample() {
+      if (!enabled) {
+        return {
+          fwd: 0, strafe: 0, yaw: 0, lift: 0,
+          boost: false, brake: false, mouseDX: 0, mouseDY: 0,
+        };
+      }
       const s = {
         fwd: ax('KeyS', 'KeyW'), strafe: ax('KeyA', 'KeyD'),
         yaw: ax('KeyE', 'KeyQ'), lift: ax('KeyF', 'KeyR'),
@@ -76,7 +95,10 @@ export function createInput(el) {
       mouseDX = 0; mouseDY = 0;
       return s;
     },
-    takeWheel() { const w = wheelAcc; wheelAcc = 0; return w; },
+    takeWheel() {
+      if (!enabled) return 0;
+      const w = wheelAcc; wheelAcc = 0; return w;
+    },
     dispose() {
       el.removeEventListener('wheel', wh);
       removeEventListener('keydown', kd); removeEventListener('keyup', ku);

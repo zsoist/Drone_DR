@@ -147,23 +147,56 @@ export function createOverlayCoordinator({
   eventRoot = document,
   scrim,
   overlays = {},
+  inertTargets = [],
   onChange = null,
 } = {}) {
   let current = null;
   let disposed = false;
+  let restoreFocus = null;
 
   const apply = name => {
-    current = name && overlays[name] ? name : null;
+    const previous = current;
+    const next = name && overlays[name] ? name : null;
+    if (!previous && next) {
+      restoreFocus = eventRoot?.activeElement || overlays[next]?.trigger || null;
+    }
+    current = next;
     for (const [key, overlay] of Object.entries(overlays)) {
       const active = key === current;
       overlay.panel?.classList.toggle(overlay.openClass || 'show', active);
+      if (overlay.panel && !overlay.panel.getAttribute?.('role')) {
+        overlay.panel.setAttribute('role', 'dialog');
+      }
       overlay.panel?.setAttribute('aria-hidden', String(!active));
       overlay.panel?.setAttribute('aria-modal', String(active));
+      if (overlay.panel) overlay.panel.inert = !active;
       overlay.trigger?.setAttribute('aria-expanded', String(active));
+    }
+    for (const target of inertTargets) {
+      if (!target) continue;
+      target.inert = !!current;
+      target.setAttribute?.('aria-hidden', String(!!current));
     }
     scrim?.classList.toggle('open', !!current);
     scrim?.setAttribute('aria-hidden', String(!current));
     onChange?.(current);
+    if (current) {
+      const overlay = overlays[current];
+      const focusTarget = typeof overlay.initialFocus === 'string'
+        ? overlay.panel?.querySelector?.(overlay.initialFocus)
+        : overlay.initialFocus
+          || overlay.panel?.querySelector?.(
+            '[autofocus],button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled])',
+          )
+          || overlay.panel;
+      if (focusTarget === overlay.panel && !focusTarget?.getAttribute?.('tabindex')) {
+        focusTarget?.setAttribute?.('tabindex', '-1');
+      }
+      focusTarget?.focus?.({ preventScroll: true });
+    } else if (previous && restoreFocus) {
+      restoreFocus.focus?.({ preventScroll: true });
+      restoreFocus = null;
+    }
     return current;
   };
   const dismiss = event => {

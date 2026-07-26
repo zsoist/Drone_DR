@@ -800,6 +800,102 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
             cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": trigger["x"], "y": trigger["y"],
                       "button": "left", "buttons": 0, "clickCount": 1})
 
+        # Ownership real de input: abrir Menú en medio de un hold MG, SIN
+        # pointerup, debe cancelar el gesto y neutralizar teclado/hotkeys.
+        select_weapon("mg")
+        press_trigger()
+        cdp.pump(0.22)
+        overlay_opened = cdp.eval(js("""
+          const menuFab = document.querySelector('#vl-fab');
+          menuFab.focus();
+          const before = {
+            fired:window.__volar.weapons.fired,
+            rig:window.__volar.camera.rig,
+            weapon:window.__volar.weaponState.weapon,
+          };
+          menuFab.click();
+          const menu = document.querySelector('#vl-dock');
+          return {
+            ...before,
+            focusInside:menu.contains(document.activeElement),
+            role:menu.getAttribute('role'),
+            modal:menu.getAttribute('aria-modal'),
+            canvasInert:document.querySelector('.vl-canvas').inert,
+            combatInert:document.querySelector('#vl-combat-live').inert,
+          };
+        """))
+        for code, key in (("KeyW", "w"), ("KeyX", "x"), ("KeyZ", "z"), ("KeyC", "c")):
+            cdp.send("Input.dispatchKeyEvent", {
+                "type": "rawKeyDown", "code": code, "key": key,
+                "windowsVirtualKeyCode": ord(key.upper()),
+            })
+        cdp.pump(0.55)
+        overlay_blocked = cdp.eval(js("""
+          const controls = window.__volar.controls || {};
+          const sample = controls.lastInput || {};
+          const neutral = ['fwd','strafe','yaw','lift','mouseDX','mouseDY']
+            .every(key => sample[key] === 0)
+            && !sample.boost && !sample.brake;
+          return {
+            fired:window.__volar.weapons.fired,
+            trigger:window.__volar.weaponState.trigger,
+            rig:window.__volar.camera.rig,
+            weapon:window.__volar.weaponState.weapon,
+            controls,
+            neutral,
+          };
+        """))
+        for code, key in (("KeyW", "w"), ("KeyX", "x"), ("KeyZ", "z"), ("KeyC", "c")):
+            cdp.send("Input.dispatchKeyEvent", {
+                "type": "keyUp", "code": code, "key": key,
+                "windowsVirtualKeyCode": ord(key.upper()),
+            })
+        overlay_closed = cdp.eval(js("""
+          document.querySelector('#vl-dock-close').click();
+          return {
+            focusRestored:document.activeElement === document.querySelector('#vl-fab'),
+            overlay:window.__volar.controls?.overlay,
+          };
+        """))
+        release_trigger()
+        cdp.pump(0.25)
+        repress_before = cdp.eval(js("return window.__volar.weapons.fired"))
+        press_trigger()
+        cdp.pump(0.18)
+        release_trigger()
+        cdp.pump(0.12)
+        repress_after = cdp.eval(js("return window.__volar.weapons.fired"))
+        overlayInputGate = {
+            "opened": overlay_opened,
+            "blocked": overlay_blocked,
+            "closed": overlay_closed,
+            "firedStable": overlay_blocked["fired"] == overlay_opened["fired"],
+            "flightInputNeutral": (
+                overlay_blocked.get("neutral")
+                and overlay_blocked.get("controls", {}).get("keyboardKeys") == 0
+                and not overlay_blocked.get("controls", {}).get("inputEnabled", True)
+            ),
+            "hotkeysBlocked": (
+                overlay_blocked["rig"] == overlay_opened["rig"]
+                and overlay_blocked["weapon"] == overlay_opened["weapon"]
+            ),
+            "repressWorked": repress_after > repress_before,
+        }
+        if not all((
+            overlayInputGate["firedStable"],
+            overlayInputGate["flightInputNeutral"],
+            overlayInputGate["hotkeysBlocked"],
+            overlayInputGate["repressWorked"],
+            not overlay_blocked["trigger"].get("held"),
+            overlay_opened.get("focusInside"),
+            overlay_opened.get("role") == "dialog",
+            overlay_opened.get("modal") == "true",
+            overlay_opened.get("canvasInert"),
+            overlay_opened.get("combatInert"),
+            overlay_closed.get("focusRestored"),
+        )):
+            raise RuntimeError(f"overlay no tomó ownership total de input: {overlayInputGate}")
+
         select_weapon("mg")
         mg_before = cdp.eval(js("return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger }"))
         press_trigger()
@@ -884,7 +980,8 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
         if not moved["visible"] or moved["left"] < moved["vl"] - 2 or moved["top"] < moved["vt"] - 2 or moved["right"] > moved["vl"] + moved["vw"] + 2 or moved["bottom"] > moved["vt"] + moved["vh"] + 2:
             raise RuntimeError(f"Imagen salió del viewport: before={drag} after={moved}")
         layout["weaponShot"] = {"before": fire["before"], "after": shot["after"],
-                                "mgHold": mg_held, "missileHolds": missile_holds}
+                                "mgHold": mg_held, "missileHolds": missile_holds,
+                                "overlayInputGate": overlayInputGate}
         layout["imageDrag"] = moved
         hud["touchLayout"] = layout
     screenshot(cdp, QA_DIR / f"matrix-volar-{viewport}.png")
@@ -938,6 +1035,15 @@ def main():
                     profile.cleanup()
         for r in results:
             print(f"{r['surface']}/{r['viewport']}: ok" + (f" · {r['fps']}fps" if r.get('fps') else f" · {r['islas']} islas"))
+            gate = (((r.get("touchLayout") or {}).get("weaponShot") or {})
+                    .get("overlayInputGate"))
+            if gate:
+                print("  overlay-input:"
+                      f" fired {gate['opened']['fired']}→{gate['blocked']['fired']}"
+                      f" stable={gate['firedStable']}"
+                      f" neutral={gate['flightInputNeutral']}"
+                      f" hotkeys={gate['hotkeysBlocked']}"
+                      f" repress={gate['repressWorked']}")
         return
     results = run_matrix(args.clip_id, args.base_url, viewports, args.surface)
     for r in results:

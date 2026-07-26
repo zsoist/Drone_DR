@@ -29,6 +29,8 @@ class FakeElement extends EventTarget {
     this.attributes = new Map();
     this.classList = new FakeClassList();
     this.captures = new Set();
+    this.inert = false;
+    this.focused = false;
   }
   appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
   remove() {
@@ -37,6 +39,11 @@ class FakeElement extends EventTarget {
   }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name) ?? null; }
+  querySelector() { return this.children[0] || null; }
+  focus() {
+    this.focused = true;
+    if (this.ownerDocument) this.ownerDocument.activeElement = this;
+  }
   setPointerCapture(id) { this.captures.add(id); }
   hasPointerCapture(id) { return this.captures.has(id); }
   releasePointerCapture(id) { this.captures.delete(id); }
@@ -225,4 +232,32 @@ test('a non-dismissible overlay ignores scrim and Escape until explicitly closed
   assert.equal(coordinator.active(), 'director');
   coordinator.close('director');
   assert.equal(coordinator.active(), null);
+});
+
+test('modal focus, role, inert background, and focus restoration follow ownership', () => {
+  const eventRoot = new EventTarget();
+  const scrim = new FakeElement();
+  const panel = new FakeElement();
+  const closeButton = panel.appendChild(new FakeElement());
+  const trigger = new FakeElement();
+  const background = new FakeElement();
+  for (const element of [panel, closeButton, trigger]) element.ownerDocument = eventRoot;
+  eventRoot.activeElement = trigger;
+  const coordinator = createOverlayCoordinator({
+    eventRoot,
+    scrim,
+    inertTargets: [background],
+    overlays: { menu: { panel, trigger, openClass: 'open' } },
+  });
+  coordinator.open('menu');
+
+  assert.equal(panel.getAttribute('role'), 'dialog');
+  assert.equal(panel.inert, false);
+  assert.equal(background.inert, true);
+  assert.equal(eventRoot.activeElement, closeButton);
+
+  coordinator.close('menu');
+  assert.equal(panel.inert, true);
+  assert.equal(background.inert, false);
+  assert.equal(eventRoot.activeElement, trigger);
 });

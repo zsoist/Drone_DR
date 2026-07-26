@@ -4,36 +4,36 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=302';
+import * as THREE from '/flightverse/three.js?v=303';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=302';
+} from '/flightverse/scene.js?v=303';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=302';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=302';
-import { createRecorder } from '/flightverse/recorder.js?v=302';
-import { createAudio } from '/flightverse/audio.js?v=302';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=302';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=302';
-import { createSky } from '/flightverse/sky.js?v=302';
-import { loadSceneObjects } from '/flightverse/objects.js?v=302';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=302';
-import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=302';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=302';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=302';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=302';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=302';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=302';
-import CameraControls from '/vendor/camera-controls.module.js?v=302';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=302';
+} from '/flightverse/runtime.js?v=303';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=303';
+import { createRecorder } from '/flightverse/recorder.js?v=303';
+import { createAudio } from '/flightverse/audio.js?v=303';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=303';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=303';
+import { createSky } from '/flightverse/sky.js?v=303';
+import { loadSceneObjects } from '/flightverse/objects.js?v=303';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=303';
+import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=303';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=303';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=303';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=303';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=303';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=303';
+import CameraControls from '/vendor/camera-controls.module.js?v=303';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=303';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=302';
+} from '/vendor/postprocessing180.module.js?v=303';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -653,9 +653,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=302', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=303', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=302');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=303');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -880,7 +880,8 @@ async function main() {
   const fireBtn = $('#vl-fire');
   const triggerBtn = $('#vl-trigger');
   const triggerState = {
-    held: false, locked: false, source: null, presses: 0, releases: 0, accepted: 0, mode: 'single',
+    held: false, locked: false, source: null, pointerId: null,
+    presses: 0, releases: 0, accepted: 0, mode: 'single',
   };
   const triggerLabel = () => triggerState.locked
     ? 'LIBERA PARA REARMAR'
@@ -901,6 +902,7 @@ async function main() {
     return resolveAimRay({ position: camera.position, direction: aimDirection, far: 1200 }, world, hittables);
   };
   const doFire = () => {
+    if (overlayCoordinator?.active()) return false;
     // si el GLB trae hardpoints, el misil sale del siguiente en turno
     const hp = hardpoints.length
       ? hardpoints[weapons.state.fired % hardpoints.length].getWorldPosition(new THREE.Vector3())
@@ -915,24 +917,27 @@ async function main() {
   };
   let firing = false;
   const releaseFiring = (source, e) => {
+    const captureId = e?.pointerId ?? triggerState.pointerId;
     for (const button of [fireBtn, triggerBtn]) {
-      if (e?.pointerId != null && button.hasPointerCapture?.(e.pointerId)) button.releasePointerCapture(e.pointerId);
+      if (captureId != null && button.hasPointerCapture?.(captureId)) button.releasePointerCapture(captureId);
     }
     if (!triggerState.held || (source && triggerState.source !== source)) return;
     firing = false;
     triggerState.held = false;
     triggerState.locked = false;
     triggerState.source = null;
+    triggerState.pointerId = null;
     triggerState.releases += 1;
     updateTriggerUi();
   };
   const beginFiring = (source, button = null, pointerId = null) => {
-    if (triggerState.held) return;
+    if (triggerState.held || overlayCoordinator?.active()) return;
     const auto = isContinuousWeapon(weapons.state.weapon);
     firing = true;
     triggerState.held = true;
     triggerState.locked = !auto;
     triggerState.source = source;
+    triggerState.pointerId = pointerId;
     triggerState.mode = auto ? 'auto' : 'single';
     triggerState.presses += 1;
     if (button && pointerId != null) button.setPointerCapture(pointerId);
@@ -957,10 +962,16 @@ async function main() {
     updateTriggerUi();
   };
   document.addEventListener('pointerdown', e => {
+    const activeOverlay = overlayCoordinator?.active();
     const b = e.target.closest('#vl-weps button[data-w], #vl-weapon-carousel button[data-w]');
+    if (activeOverlay && (activeOverlay !== 'combat' || !b?.closest('#vl-combat'))) return;
     if (b) setWeapon(b.dataset.w);
   });
   const sticks = createTouchSticks($('#vl-hud'));
+  let lastFlightInput = {
+    fwd: 0, strafe: 0, yaw: 0, lift: 0,
+    boost: false, brake: false, mouseDX: 0, mouseDY: 0,
+  };
   let sfx = { idx: 0, phase: '', crash: false, count: 0 };
   let modeKey = 'asistido', rigIx = Math.max(0, RIGS.findIndex(rig => rig.key === 'fpv'));
   if (Q.get('rig') != null) rigIx = Math.abs(+Q.get('rig')) % RIGS.length;   // QA: cámara por URL
@@ -1047,6 +1058,7 @@ async function main() {
   overlayCoordinator = createOverlayCoordinator({
     eventRoot: document,
     scrim: touchUi ? $('#vl-overlay-scrim') : null,
+    inertTargets: [renderer.domElement, $('#vl-combat-live')],
     overlays: {
       ...(touchUi ? {
         menu: { ...mobileSheets.menu, openClass: 'open' },
@@ -1060,6 +1072,8 @@ async function main() {
       director: { panel: $('#vl-director'), openClass: 'show', dismissible: false },
     },
     onChange: active => {
+      if (active) releaseFiring();
+      input.setEnabled(!active);
       document.body.classList.toggle('vl-overlay-open', !!active);
       document.body.classList.toggle('vl-mobile-sheet-open', active === 'menu' || active === 'combat');
       sticks?.setEnabled(!active);
@@ -1144,6 +1158,7 @@ async function main() {
   if (Q.get('reto') === '1' && !AT) setTimeout(() => startReto(Q.get('dif') || 'media'), 3800);   // tras el arrival
   const modeKeys = { Digit1: 'cinematico', Digit2: 'asistido', Digit3: 'arcade', Digit4: 'dios' };
   addEventListener('keydown', e => {
+    if (e.defaultPrevented || overlayCoordinator.active()) return;
     if (modeKeys[e.code]) setMode(modeKeys[e.code]);
     if (e.code === 'KeyC') cycleRig();
     if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
@@ -1536,6 +1551,13 @@ async function main() {
         const ts = sticks?.sample();
         if (ts?.active) { inp.fwd = ts.fwd; inp.strafe = ts.strafe; inp.yaw = ts.yaw; inp.lift = ts.lift; }
         if (auto && simT < auto.until) inp = { fwd: 1, strafe: 0, yaw: 0.15, lift: 0.1, boost: simT > 2, brake: false, mouseDX: 0, mouseDY: 0 };
+        if (overlayCoordinator?.active()) {
+          inp = {
+            fwd: 0, strafe: 0, yaw: 0, lift: 0,
+            boost: false, brake: false, mouseDX: 0, mouseDY: 0,
+          };
+        }
+        lastFlightInput = { ...inp };
         drone.step(dt, inp, modeKey);
         if (autoReto) {
           // autotest del slice: teleporta por los gates — prueba detección,
@@ -1723,6 +1745,12 @@ async function main() {
         report.weaponState = { weapon: weapons.state.weapon, cool: +weapons.state.cool.toFixed(2),
           ammo: Object.fromEntries(Object.entries(weapons.state.ammo).map(([k2, n2]) => [k2, Math.floor(n2)])),
           trigger: { ...triggerState } };
+        report.controls = {
+          overlay: overlayCoordinator?.active() || null,
+          inputEnabled: input.enabled,
+          keyboardKeys: input.keys.size,
+          lastInput: { ...lastFlightInput },
+        };
         if (invasion.state.on) {
           const inv = invasion.state;
           $('#vl-zwave').textContent = inv.phase === 'loading'

@@ -68,6 +68,32 @@ class VolarMobileHudContractTests(unittest.TestCase):
         ):
             self.assertIn(contract, self.styles)
 
+    def test_overlay_ownership_cancels_and_gates_every_flight_input(self):
+        for contract in (
+            "releaseFiring()",
+            "input.setEnabled(!active)",
+            "if (e.defaultPrevented || overlayCoordinator.active()) return",
+            "overlayCoordinator?.active()",
+            "lastFlightInput",
+        ):
+            self.assertIn(contract, self.source)
+        auto_input = self.source.index("if (auto && simT < auto.until)")
+        overlay_neutral = self.source.index("if (overlayCoordinator?.active())", auto_input)
+        sampled_input = self.source.index("lastFlightInput = { ...inp }", overlay_neutral)
+        drone_step = self.source.index("drone.step(dt, inp, modeKey)", sampled_input)
+        self.assertLess(auto_input, overlay_neutral)
+        self.assertLess(overlay_neutral, sampled_input)
+        self.assertLess(sampled_input, drone_step)
+        matrix = (ROOT / "pipeline" / "browser_matrix.py").read_text()
+        for contract in (
+            "overlayInputGate",
+            "firedStable",
+            "flightInputNeutral",
+            "hotkeysBlocked",
+            "repressWorked",
+        ):
+            self.assertIn(contract, matrix)
+
     def test_legacy_touch_dom_cannot_restore_overlapping_combat_controls(self):
         self.assertIn(".vl-corner.br > .vl-weps", self.styles)
         self.assertIn(".vl-corner.br > .vl-fire", self.styles)
