@@ -467,4 +467,3 @@ PATH=/Volumes/SSD/_system/venv/bin:$PATH git commit -m "test: gate Flightverse w
 - Current-world backfill is separated from source-code behavior and runs only after builders pass fixture tests.
 - Deployment remains excluded; local production is restarted only after all source and asset gates pass.
 - No task contains a placeholder, deferred behavior, or unspecified error handling.
-

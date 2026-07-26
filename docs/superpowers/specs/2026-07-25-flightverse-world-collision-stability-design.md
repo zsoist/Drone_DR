@@ -1,7 +1,8 @@
 # FLIGHTVERSE World Collision and Stability Design
 
-**Date:** 2026-07-25  
-**Status:** Approved by the operator  
+**Date:** 2026-07-25
+
+**Status:** Approved by the operator
 **Scope:** `web/flightverse/`, `web/volar.js`, world publication, collision assets, and deployment gates
 
 ## Problem
@@ -255,4 +256,3 @@ The work is approved only when:
 10. the full project suite, syntax checks, smoke gate, flightverse browser gate, and three-viewport matrix pass with no unexplained errors;
 11. fresh screenshots are visually inspected;
 12. no deployment occurs until all previous items are evidenced.
-

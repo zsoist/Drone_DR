@@ -165,4 +165,3 @@ governor fixture so the transition behavior is deterministic.
    pass.
 8. Every `web/` edit batch bumps the web version and regenerated gzip assets are
    current.
-

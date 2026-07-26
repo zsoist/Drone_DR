@@ -9,7 +9,7 @@
 | **PR** | [#1](https://github.com/zsoist/Drone_DR/pull/1) |
 | **Tier** | Exhaustive |
 | **Scope** | Mundo and Volar, phone/iPad portrait+landscape and desktop |
-| **Status** | Local release gates passed; production canary recorded separately |
+| **Status** | v305 deployed; local and public canary passed |
 | **Browser profiles** | 5 |
 | **Pages exercised** | 10 matrix surfaces, 9 runtime worlds, Invasion and collision fixture |
 | **Fresh screenshots** | 11 |
@@ -86,6 +86,7 @@ It is produced by capture and is excluded from product console health.
 
 ## Ship readiness
 
-Local release verification is green. No actionable product issue was found in
-the v305 candidate. Production health and login-boundary evidence live in
+Release verification is green. No actionable product issue was found in v305,
+and the deployed candidate passed the fail-closed restart plus post-deploy
+loopback/public checks. Production health and login-boundary evidence live in
 `.gstack/canary-reports/world-v305.md`.

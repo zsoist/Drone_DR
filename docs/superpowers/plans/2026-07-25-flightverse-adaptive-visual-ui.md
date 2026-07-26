@@ -233,4 +233,3 @@ frontier is subtle rather than opaque, and no representation duplicates.
 Document thresholds and diagnostics in `docs/GAME_ENGINE.md`, commit all
 generated assets as `ops: gate adaptive world presentation`, and push the
 branch.
-

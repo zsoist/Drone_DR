@@ -101,4 +101,3 @@ fixture records the exact near-wall center and verifies camera pull-in coordinat
 5. Collision fixture, focused unit tests, browser matrix, 100-run live collision
    stress, smoke suite, and world audit pass with no console errors or resource growth.
 6. The active world maintains at least 50 FPS in the deployment gates.
-
