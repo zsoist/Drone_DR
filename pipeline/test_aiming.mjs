@@ -116,12 +116,14 @@ test('fire policy permits continuous firing only for MG', async () => {
 test('EffectPool evicts the oldest active effect and exposes bounded counters', async () => {
   const { EffectPool } = await loadAiming();
   const pool = new EffectPool(2);
-  const first = { id: 'first' };
+  let cleanups = 0;
+  const first = { id: 'first', onEvict: () => { cleanups += 1; } };
   pool.add(first);
   pool.add({ id: 'second' });
   pool.add({ id: 'third' });
 
   assert.equal(first.evicted, true);
+  assert.equal(cleanups, 1, 'eviction invokes its owned cleanup exactly once');
   assert.deepEqual(pool.entries.map(entry => entry.id), ['second', 'third']);
   assert.deepEqual(pool.counters, { limit: 2, active: 2, added: 3, evicted: 1 });
 });

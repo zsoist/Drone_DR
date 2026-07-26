@@ -1,7 +1,7 @@
-import * as THREE from '/flightverse/three.js?v=299';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=299';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=299';
-import { createWeapons } from '/flightverse/weapons.js?v=299';
+import * as THREE from '/flightverse/three.js?v=300';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=300';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=300';
+import { createWeapons } from '/flightverse/weapons.js?v=300';
 
 const report = {
   done: false,
@@ -60,8 +60,134 @@ function colliderUrls() {
   };
 }
 
+function memorySample(renderer) {
+  return {
+    geometries: renderer.info.memory.geometries,
+    textures: renderer.info.memory.textures,
+  };
+}
+
+function copyEffectCounters(weapons) {
+  return Object.fromEntries(Object.entries(weapons.state.effectCounters).map(([kind, counters]) => [
+    kind,
+    { ...counters },
+  ]));
+}
+
+// Exercise the actual renderer rather than inferring GPU cleanup from the pool
+// counters. Decals/rubble are deliberately persistent game state, so their
+// settled allocation becomes the comparison baseline for a subsequent burst.
+function runRenderedEffectMemoryPressure(terrainWorld) {
+  const scene = new THREE.Scene();
+  const renderer = new THREE.WebGLRenderer({ antialias: false });
+  renderer.setSize(32, 32, false);
+  renderer.domElement.setAttribute('aria-hidden', 'true');
+  renderer.domElement.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;';
+  document.body.append(renderer.domElement);
+
+  // Keep every persistent fragment inside the warming render; otherwise Three
+  // uploads an off-screen fragment only in a later burst and mimics a leak.
+  const camera = new THREE.OrthographicCamera(-256, 256, 256, -256, 0.1, 500);
+  camera.position.set(0, 200, 0);
+  camera.lookAt(0, 0, 0);
+  const fixtureAnchor = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.5, 0.5),
+    new THREE.MeshBasicMaterial({ color: 0x223344 }),
+  );
+  scene.add(fixtureAnchor);
+
+  const render = () => {
+    renderer.render(scene, camera);
+    return memorySample(renderer);
+  };
+  const hitAt = index => ({
+    kind: 'terrain',
+    point: new THREE.Vector3((index % 7) - 3, 0, ((index * 3) % 7) - 3),
+    normal: new THREE.Vector3(0, 1, 0),
+  });
+  const relevantPools = ['fire', 'smoke', 'dust', 'spark', 'fragment', 'decal', 'rubble'];
+  let weapons = null;
+
+  try {
+    // Three lazily creates one shared Sprite geometry. Warm it before the
+    // teardown baseline so this renderer-internal allocation is not mistaken
+    // for an effect leak.
+    const rendererWarmup = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x223344 }));
+    scene.add(rendererWarmup);
+    render();
+    scene.remove(rendererWarmup);
+    rendererWarmup.material.dispose();
+    const baseline = render();
+    weapons = createWeapons(scene, { world: terrainWorld, heightAt: () => 0 });
+    const burst = (count, start) => {
+      for (let index = 0; index < count; index += 1) {
+        weapons.explodeAt(hitAt(start + index), 1);
+        // Removing evicted entries on every tick keeps the burst bounded while
+        // still forcing each pool's FIFO eviction path.
+        weapons.update(STEP);
+      }
+    };
+    const settle = () => {
+      for (let index = 0; index < 1440; index += 1) weapons.update(STEP);
+    };
+
+    // The first two bursts fill persistent decal/rubble capacity and upload
+    // the shared VFX textures. That fully warmed state is the allowed baseline
+    // for the independently measured eviction burst below.
+    burst(50, 0);
+    settle();
+    burst(50, 50);
+    render();
+    settle();
+    const persistent = render();
+    const persistentPools = copyEffectCounters(weapons);
+    const beforeBurstDisposals = weapons.state.resources.disposed;
+
+    // The measured burst exceeds every effect pool that an explosion owns.
+    burst(50, 100);
+    const peak = render();
+    const peakPools = copyEffectCounters(weapons);
+    const disposalsAtPeak = weapons.state.resources.disposed;
+    settle();
+    const settled = render();
+    const settledPools = copyEffectCounters(weapons);
+    const poolEvictions = Object.fromEntries(relevantPools.map(kind => [
+      kind,
+      weapons.state.effectCounters[kind].evicted > 0,
+    ]));
+
+    const beforeTeardown = weapons.state.resources.disposed;
+    weapons.dispose();
+    const teardown = render();
+    const afterTeardown = weapons.state.resources.disposed;
+
+    return {
+      baseline,
+      persistent,
+      peak,
+      settled,
+      teardown,
+      relevantPools,
+      poolEvictions,
+      persistentPools,
+      peakPools,
+      settledPools,
+      disposedOnEviction: disposalsAtPeak - beforeBurstDisposals,
+      disposedOnTeardown: afterTeardown - beforeTeardown,
+    };
+  } finally {
+    weapons?.dispose();
+    scene.remove(fixtureAnchor);
+    fixtureAnchor.geometry.dispose();
+    fixtureAnchor.material.dispose();
+    renderer.render(scene, camera);
+    renderer.dispose();
+    renderer.domElement.remove();
+  }
+}
+
 async function run() {
-  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=299');
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=300');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
@@ -287,7 +413,7 @@ async function run() {
     }),
   );
 
-  const { resolveAimRay } = await import('/flightverse/aiming.js?v=299');
+  const { resolveAimRay } = await import('/flightverse/aiming.js?v=300');
   const reticleAim = resolveAimRay(
     { position: new THREE.Vector3(0, 2, 0), direction: new THREE.Vector3(1, 0, 0), far: 100 },
     world,
@@ -368,6 +494,20 @@ async function run() {
     'expired weapon effects release owned GPU resources while pool limits remain bounded',
     convergedWeapons.state.resources?.disposed > 0 && poolsBounded,
     JSON.stringify({ resources: convergedWeapons.state.resources, pools: convergedWeapons.state.effectCounters }),
+  );
+  report.effectMemory = runRenderedEffectMemoryPressure(terrainWorld);
+  check(
+    'rendered eviction burst returns VFX GPU memory to its persistent baseline and teardown baseline',
+    Object.values(report.effectMemory?.poolEvictions || {}).every(Boolean)
+      && report.effectMemory?.disposedOnEviction > 0
+      && report.effectMemory?.disposedOnTeardown > 0
+      && report.effectMemory?.peak?.geometries > report.effectMemory?.persistent?.geometries
+      && report.effectMemory?.peak?.textures >= report.effectMemory?.persistent?.textures
+      && report.effectMemory?.settled?.geometries <= report.effectMemory?.persistent?.geometries
+      && report.effectMemory?.settled?.textures <= report.effectMemory?.persistent?.textures
+      && report.effectMemory?.teardown?.geometries <= report.effectMemory?.baseline?.geometries
+      && report.effectMemory?.teardown?.textures <= report.effectMemory?.baseline?.textures,
+    JSON.stringify(report.effectMemory),
   );
   convergedWeapons.dispose();
 
