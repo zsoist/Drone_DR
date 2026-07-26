@@ -1,7 +1,7 @@
-import * as THREE from '/flightverse/three.js?v=300';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=300';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=300';
-import { createWeapons } from '/flightverse/weapons.js?v=300';
+import * as THREE from '/flightverse/three.js?v=301';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=301';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=301';
+import { createWeapons } from '/flightverse/weapons.js?v=301';
 
 const report = {
   done: false,
@@ -105,7 +105,10 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
     point: new THREE.Vector3((index % 7) - 3, 0, ((index * 3) % 7) - 3),
     normal: new THREE.Vector3(0, 1, 0),
   });
-  const relevantPools = ['fire', 'smoke', 'dust', 'spark', 'fragment', 'decal', 'rubble'];
+  const relevantPools = [
+    'muzzle', 'tracer', 'exhaust',
+    'fire', 'smoke', 'dust', 'spark', 'fragment', 'decal', 'rubble',
+  ];
   let weapons = null;
 
   try {
@@ -119,6 +122,20 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
     rendererWarmup.material.dispose();
     const baseline = render();
     weapons = createWeapons(scene, { world: terrainWorld, heightAt: () => 0 });
+    const projectileOrigin = new THREE.Vector3(0, 20, 0);
+    const projectileAim = { aimPoint: new THREE.Vector3(0, 20, -240) };
+    const forceFire = (kind, count) => {
+      let shots = 0;
+      weapons.setWeapon(kind);
+      for (let index = 0; index < count; index += 1) {
+        // This is a pool-pressure fixture, so bypass gameplay cooldown/ammo
+        // after each real fire() call without changing production behavior.
+        weapons.state.cool = 0;
+        weapons.state.ammo[kind] = Math.max(1, weapons.state.ammo[kind]);
+        if (weapons.fire(projectileOrigin, projectileAim)) shots += 1;
+      }
+      return shots;
+    };
     const burst = (count, start) => {
       for (let index = 0; index < count; index += 1) {
         weapons.explodeAt(hitAt(start + index), 1);
@@ -130,6 +147,13 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
     const settle = () => {
       for (let index = 0; index < 1440; index += 1) weapons.update(STEP);
     };
+
+    // Upload weapon-level shared geometries/materials before sampling the
+    // persistent baseline. Later projectile pressure must return to this state.
+    forceFire('mg', 1);
+    forceFire('s', 1);
+    render();
+    settle();
 
     // The first two bursts fill persistent decal/rubble capacity and upload
     // the shared VFX textures. That fully warmed state is the allowed baseline
@@ -143,8 +167,12 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
     const persistentPools = copyEffectCounters(weapons);
     const beforeBurstDisposals = weapons.state.resources.disposed;
 
-    // The measured burst exceeds every effect pool that an explosion owns.
+    // The measured burst exceeds every explosion and projectile effect pool.
     burst(50, 100);
+    const projectileBurst = {
+      mgShots: forceFire('mg', 80),
+      missileShots: forceFire('s', 49),
+    };
     const peak = render();
     const peakPools = copyEffectCounters(weapons);
     const disposalsAtPeak = weapons.state.resources.disposed;
@@ -169,6 +197,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
       teardown,
       relevantPools,
       poolEvictions,
+      projectileBurst,
       persistentPools,
       peakPools,
       settledPools,
@@ -187,7 +216,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
 }
 
 async function run() {
-  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=300');
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=301');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
@@ -413,7 +442,7 @@ async function run() {
     }),
   );
 
-  const { resolveAimRay } = await import('/flightverse/aiming.js?v=300');
+  const { resolveAimRay } = await import('/flightverse/aiming.js?v=301');
   const reticleAim = resolveAimRay(
     { position: new THREE.Vector3(0, 2, 0), direction: new THREE.Vector3(1, 0, 0), far: 100 },
     world,
@@ -499,6 +528,8 @@ async function run() {
   check(
     'rendered eviction burst returns VFX GPU memory to its persistent baseline and teardown baseline',
     Object.values(report.effectMemory?.poolEvictions || {}).every(Boolean)
+      && report.effectMemory?.projectileBurst?.mgShots >= 80
+      && report.effectMemory?.projectileBurst?.missileShots >= 49
       && report.effectMemory?.disposedOnEviction > 0
       && report.effectMemory?.disposedOnTeardown > 0
       && report.effectMemory?.peak?.geometries > report.effectMemory?.persistent?.geometries
