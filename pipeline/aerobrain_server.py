@@ -256,7 +256,11 @@ def fresh_gzip_sidecar(source: Path) -> Path | None:
     """Use precompressed bytes only when they represent the current source."""
     sidecar = Path(str(source) + ".gz")
     try:
-        if sidecar.is_file() and sidecar.stat().st_mtime_ns >= source.stat().st_mtime_ns:
+        source_mtime = source.stat().st_mtime_ns
+        sidecar_stat = sidecar.stat()
+        if sidecar.is_file() and (
+                sidecar_stat.st_mtime_ns >= source_mtime
+                or sidecar_stat.st_ctime_ns >= source_mtime):
             return sidecar
     except OSError:
         pass
