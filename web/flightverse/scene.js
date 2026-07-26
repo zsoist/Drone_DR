@@ -3,9 +3,9 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=288';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=288';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=288';
+import * as THREE from '/flightverse/three.js?v=289';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=289';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=289';
 
 let sceneGenerationId = 0;
 export function createSceneGeneration() {
@@ -299,7 +299,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=288');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=289');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     sp.userData.fvRefs = 0;

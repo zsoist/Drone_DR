@@ -4,10 +4,46 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 import urllib.parse
 
 from browser_gate import DEFAULT_BASE_URL, launch_chrome, new_page
+
+
+def _finite_number(value) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
+
+
+def validate_live_sample(sample: dict) -> list[dict]:
+    failures = []
+    run = sample.get("run")
+    layers = (sample.get("representation") or {}).get(
+        "visibleStructuralLayers"
+    ) or []
+    if not sample.get("ok") or sample.get("fps", 0) < 50:
+        failures.append({"run": run, "reason": "fps_or_autotest"})
+    if not sample.get("collisionReady") or not sample.get("classification"):
+        failures.append({"run": run, "reason": "collision_missing"})
+    if sample.get("groups") != 1 or sample.get("disposedStaleLoads") != 0:
+        failures.append({"run": run, "reason": "scene_lifecycle"})
+    if sample.get("errors"):
+        failures.append({"run": run, "reason": "runtime_errors"})
+    if "mesh" in layers and "splat" in layers:
+        failures.append({"run": run, "reason": "duplicate_layers"})
+    if sample.get("projectiles") is None:
+        failures.append({"run": run, "reason": "projectile_count_missing"})
+    radius = sample.get("collisionRadius")
+    if not _finite_number(radius) or not 0.42 <= radius <= 0.70:
+        failures.append({"run": run, "reason": "collision_envelope"})
+    camera_hits = sample.get("cameraCollisionHits")
+    if not _finite_number(camera_hits) or camera_hits < 0:
+        failures.append({"run": run, "reason": "camera_telemetry"})
+    return failures
 
 
 def fixture_gate(base_url: str, timeout: int = 30) -> dict:
@@ -94,6 +130,8 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
                 "ok:r?.ok, fps:r?.fps, errors:[...(r?.errors||[])],"
                 "classification:r?.collision?.structure,"
                 "collisionReady:r?.collision?.ready,"
+                "collisionRadius:r?.collision?.radius_m,"
+                "cameraCollisionHits:r?.camera?.collision_hits,"
                 "hitCoordinates:r?.pos,"
                 "groups:r?.lifecycle?.groups,"
                 "disposedStaleLoads:r?.lifecycle?.disposedStaleLoads,"
@@ -108,21 +146,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
 
         failures = []
         for sample in samples:
-            layers = (sample.get("representation") or {}).get(
-                "visibleStructuralLayers"
-            ) or []
-            if not sample.get("ok") or sample.get("fps", 0) < 50:
-                failures.append({"run": sample["run"], "reason": "fps_or_autotest"})
-            if not sample.get("collisionReady") or not sample.get("classification"):
-                failures.append({"run": sample["run"], "reason": "collision_missing"})
-            if sample.get("groups") != 1 or sample.get("disposedStaleLoads") != 0:
-                failures.append({"run": sample["run"], "reason": "scene_lifecycle"})
-            if sample.get("errors"):
-                failures.append({"run": sample["run"], "reason": "runtime_errors"})
-            if "mesh" in layers and "splat" in layers:
-                failures.append({"run": sample["run"], "reason": "duplicate_layers"})
-            if sample.get("projectiles") is None:
-                failures.append({"run": sample["run"], "reason": "projectile_count_missing"})
+            failures.extend(validate_live_sample(sample))
 
         memories = [row.get("memory") or {} for row in samples]
         for key in ("geometries", "textures"):

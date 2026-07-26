@@ -3,7 +3,7 @@ import {
 	Float32BufferAttribute,
 	OrthographicCamera,
 	Mesh
-} from '/vendor/three180.module.js?v=288';
+} from '/vendor/three180.module.js?v=289';
 
 /**
  * Abstract base class for all post processing passes.

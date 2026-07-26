@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=288';
+import * as THREE from '/flightverse/three.js?v=289';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -171,11 +171,33 @@ function step6(d, inp, m, dt) {
 }
 
 const MIN_AGL = 1.2;             // el dron nunca “entra” al terreno: piso duro honesto
-const DRONE_R = 1.2;             // radio de colisión contra el proxy de edificios
+const DEFAULT_DRONE_COLLISION_RADIUS = 0.59;
+const MIN_DRONE_COLLISION_RADIUS = 0.42;
+const MAX_DRONE_COLLISION_RADIUS = 0.70;
 const _n = new THREE.Vector3();  // scratch de la respuesta de colisión
 const _start = new THREE.Vector3(), _desired = new THREE.Vector3();
 const _current = new THREE.Vector3(), _remaining = new THREE.Vector3();
 const _next = new THREE.Vector3();
+const _cameraBoom = new THREE.Vector3();
+
+export function resolveCameraCollision(world, focus, desired, clearance = 0.18) {
+  if (!world?.castSegment || !focus?.isVector3 || !desired?.isVector3) return null;
+  const boomLength = _cameraBoom.subVectors(desired, focus).length();
+  if (!Number.isFinite(boomLength) || boomLength <= 1e-7) return null;
+  try {
+    const hit = world.castSegment(focus, desired, 0);
+    if (!hit || !Number.isFinite(hit.fraction)) return null;
+    const margin = Number.isFinite(clearance) ? Math.max(0, clearance) : 0.18;
+    const safeDistance = Math.max(
+      0.05,
+      THREE.MathUtils.clamp(hit.fraction, 0, 1) * boomLength - margin,
+    );
+    desired.copy(focus).addScaledVector(_cameraBoom, safeDistance / boomLength);
+    return hit;
+  } catch {
+    return null;
+  }
+}
 
 export function createDrone({ world, spawn }) {
   const d = {
@@ -186,8 +208,19 @@ export function createDrone({ world, spawn }) {
     prev: { pos: new THREE.Vector3(), yaw: 0, pitch: 0 },
     agl: null, crashedSoft: false, distance: 0,
     collisionHits: 0, collisionFailures: 0, _t: 0,
+    collisionRadius: DEFAULT_DRONE_COLLISION_RADIUS,
   };
   d.prev.pos.copy(d.pos);
+  d.setCollisionRadius = (value) => {
+    const radius = Number(value);
+    if (!Number.isFinite(radius)) return d.collisionRadius;
+    d.collisionRadius = THREE.MathUtils.clamp(
+      radius,
+      MIN_DRONE_COLLISION_RADIUS,
+      MAX_DRONE_COLLISION_RADIUS,
+    );
+    return d.collisionRadius;
+  };
 
   d.step = (dt, inp, modeKey) => {
     const m = MODES[modeKey] || MODES.asistido;
@@ -252,7 +285,7 @@ export function createDrone({ world, spawn }) {
 
       // Deterministic spawn/stale-pose recovery. Terrain hits carry the exact
       // legal center; mesh hits carry closest distance + outward normal.
-      const embedded = world.sweepSphere(_current, _current, DRONE_R);
+      const embedded = world.sweepSphere(_current, _current, d.collisionRadius);
       if (embedded?.fraction === 0) {
         _n.copy(embedded.normal).normalize();
         if (embedded.kind === 'terrain' || embedded.kind === 'boundary') {
@@ -260,7 +293,7 @@ export function createDrone({ world, spawn }) {
         } else {
           const penetration = Math.max(
             0.003,
-            DRONE_R - (Number(embedded.distance) || 0) + 0.003,
+            d.collisionRadius - (Number(embedded.distance) || 0) + 0.003,
           );
           _current.addScaledVector(_n, penetration);
         }
@@ -271,7 +304,7 @@ export function createDrone({ world, spawn }) {
       for (let contact = 0; contact < 2; contact += 1) {
         if (_remaining.lengthSq() <= 1e-10) break;
         _next.copy(_current).add(_remaining);
-        const hit = world.sweepSphere(_current, _next, DRONE_R);
+        const hit = world.sweepSphere(_current, _next, d.collisionRadius);
         if (!hit) {
           _current.copy(_next);
           _remaining.set(0, 0, 0);
@@ -293,7 +326,7 @@ export function createDrone({ world, spawn }) {
 
       if (_remaining.lengthSq() > 1e-10) {
         _next.copy(_current).add(_remaining);
-        if (!world.sweepSphere(_current, _next, DRONE_R)) {
+        if (!world.sweepSphere(_current, _next, d.collisionRadius)) {
           _current.copy(_next);
         }
       }

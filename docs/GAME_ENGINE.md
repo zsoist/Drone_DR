@@ -14,8 +14,11 @@
   círculo/cuadrado y bloquea una extensión pendiente en vez de inventar terreno.
 - `runtime.js` — loop timestep FIJO 1/120 (determinismo de replays), input,
   física por modo (Normal velocidad-objetivo · Dios noclip · 6DOF ecctrl
-  disponible), colisión BVH slide+escape, rigs de cámara puros. Pausa el render
-  al ocultar la pestaña y vuelve con reloj limpio, sin cobrar deuda física.
+  disponible), colisión BVH continua con envolvente derivada del GLB,
+  slide+escape y cámara chase que se acorta ante el primer contacto real.
+  La protección de terreno conserva AGL 1,20 m independiente del radio
+  estructural. Pausa el render al ocultar la pestaña y vuelve con reloj limpio,
+  sin cobrar deuda física.
 - `render-quality.js` — governor puro de resolución Auto. Usa ventanas de frame
   time, dos ventanas lentas para bajar, tres estables para recuperar y cooldown
   entre cambios. Ignora spikes aislados y queda limitado a DPR 1–2.
@@ -45,6 +48,11 @@
    estructural. `?diagnostic=1` conserva píxeles de diagnóstico exactos.
 7. En touch, Imagen abre compacta: presets inmediatos y ajustes avanzados bajo
    demanda, con techo de 44dvh y scroll interno.
+8. El dron normalizado a 0,85 m publica su radio estructural activo en
+   `window.__volar.collision.radius_m` (rango seguro 0,42–0,70 m). Director,
+   llegada, tour y FPV no reciben corrección de cámara; los rigs chase publican
+   contactos en `window.__volar.camera.collision_hits`. El gate de deploy rechaza
+   radio inválido, telemetría no finita o pérdida de la respuesta continua.
 
 ## Extender (nuevo juego/modo en ~1 módulo)
 Crea `flightverse/<modo>.js` exportando `create<Modo>({scene, terrain,

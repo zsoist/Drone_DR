@@ -1,7 +1,7 @@
-import * as THREE from '/flightverse/three.js?v=288';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=288';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=288';
-import { createWeapons } from '/flightverse/weapons.js?v=288';
+import * as THREE from '/flightverse/three.js?v=289';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=289';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=289';
+import { createWeapons } from '/flightverse/weapons.js?v=289';
 
 const report = {
   done: false,
@@ -61,6 +61,7 @@ function colliderUrls() {
 }
 
 async function run() {
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=289');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
@@ -110,6 +111,39 @@ async function run() {
     'closest returns structural distance',
     nearest?.kind === 'structure' && approx(nearest.distance, 2),
     JSON.stringify({ kind: nearest?.kind, distance: nearest?.distance }),
+  );
+
+  const cameraPosition = new THREE.Vector3(6, 2, 0);
+  const cameraHit = resolveCameraCollision?.(
+    world,
+    new THREE.Vector3(0, 2, 0),
+    cameraPosition,
+  );
+  check(
+    'camera boom stays on the drone side of real structure',
+    cameraHit?.kind === 'structure'
+      && cameraPosition.x >= 3.80
+      && cameraPosition.x <= 3.82,
+    JSON.stringify({
+      kind: cameraHit?.kind,
+      position: cameraPosition.toArray(),
+    }),
+  );
+
+  const clearCameraPosition = new THREE.Vector3(0, 3, -6);
+  const clearCameraBefore = clearCameraPosition.clone();
+  const clearCameraHit = resolveCameraCollision?.(
+    world,
+    new THREE.Vector3(0, 2, 0),
+    clearCameraPosition,
+  );
+  check(
+    'clear camera boom remains unchanged',
+    clearCameraHit == null && clearCameraPosition.equals(clearCameraBefore),
+    JSON.stringify({
+      hit: clearCameraHit?.kind,
+      position: clearCameraPosition.toArray(),
+    }),
   );
 
   const terrainWorld = await createWorldCollision({
@@ -188,9 +222,14 @@ async function run() {
     boosted.step(STEP, neutralInput, 'asistido');
   }
   check(
-    'boosted drone cannot tunnel through wall and keeps tangential slide',
-    boosted.pos.x <= 2.82 && boosted.pos.z > -1.5,
+    'drone structural envelope matches the visible 0.85m aircraft',
+    boosted.collisionRadius >= 0.57
+      && boosted.collisionRadius <= 0.60
+      && boosted.pos.x >= 3.38
+      && boosted.pos.x <= 3.43
+      && boosted.pos.z > -1.5,
     JSON.stringify({
+      radius: boosted.collisionRadius,
       position: boosted.pos.toArray(),
       collisionHits: boosted.collisionHits,
     }),
@@ -207,7 +246,7 @@ async function run() {
   }
   check(
     'drone resolves two-contact corner without escaping',
-    corner.pos.x <= 2.82 && corner.pos.z <= 2.82,
+    corner.pos.x <= 3.43 && corner.pos.z <= 3.43,
     JSON.stringify({ position: corner.pos.toArray() }),
   );
 
@@ -218,9 +257,16 @@ async function run() {
   });
   penetrating.step(STEP, neutralInput, 'asistido');
   check(
-    'spawn penetration depenetrates deterministically',
-    Math.abs(penetrating.pos.x - 4) >= 1.18,
-    JSON.stringify({ position: penetrating.pos.toArray() }),
+    'spawn penetration uses the active drone envelope',
+    approx(
+      Math.abs(penetrating.pos.x - 4),
+      penetrating.collisionRadius + 0.003,
+      0.01,
+    ),
+    JSON.stringify({
+      radius: penetrating.collisionRadius,
+      position: penetrating.pos.toArray(),
+    }),
   );
 
   const makeWeapons = (weaponWorld, heightAt = () => 0) => createWeapons(
