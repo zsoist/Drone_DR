@@ -74,11 +74,43 @@ the scrim/outside area. Opening a sheet suspends stick input so a menu tap canno
 move the drone. Layout rules cover phone portrait, phone landscape, and iPad
 portrait/landscape; minimum interactive target size is 44 CSS pixels.
 
+## FPV, weapons, impact and scenery damage
+
+FPV is the default camera for new flight sessions. The selected rig persists only
+after an intentional user change, and a one-tap camera control remains visible in
+every device layout. The center reticle is the aiming source of truth. A ray from
+the rendered camera selects the first enemy, structural collider, terrain, or
+playable-boundary point; the projectile then travels from the current weapon
+hardpoint toward that point. This removes disagreement between gimbal pitch,
+camera framing, and missile direction.
+
+Weapon selection and firing are independent controls. Desktop keeps shortcuts;
+touch gets a thumb-reachable weapon carousel with icon, name, ammo, reload/cooldown,
+and one separate trigger that never sits inside a flight-stick zone. Holding fire
+is allowed only for the machine gun. Missiles require discrete presses and show
+lock/proximity state. The selected weapon is visible without opening a menu.
+
+Weapons use authored high-detail geometry with distance LODs and physically
+plausible proportions. Muzzle flash, tracer, motor smoke, exhaust, impact sparks,
+dust, fire, and explosion smoke use pooled particles and device budgets. Smoke
+inherits projectile velocity, impacts orient to the hit normal, and effects scale
+by weapon energy and material class.
+
+Scenery damage is localized to the exact hit point. Structural hits produce a
+normal-aligned decal, bounded chips/fragments, and a shallow deformation mark only
+when that representation supports it. A roof hit cannot create a decal on an
+unrelated top surface, and a wall hit cannot use terrain height for placement.
+Damage is visual and locally persistent for the session; the original collision
+BVH remains authoritative unless a destructible object explicitly owns a
+replacement collider. Pools cap decals, fragments, fires, smoke, and rubble and
+dispose oldest entries deterministically.
+
 ## Performance budgets
 
 - World remains at or above 50 fps in browser gates; target is 60 fps.
 - Enemy count and projectile count are capped per device tier.
 - Full-resolution enemy GLBs are distance- and budget-limited.
+- Weapon, projectile, and effect assets use LOD and fixed pools per device tier.
 - Inactive World visual representations do not load.
 - No duplicate structural layers, scene groups, pointer handlers, or model
   instances survive a restart or page lifecycle transition.
@@ -87,8 +119,8 @@ portrait/landscape; minimum interactive target size is 44 CSS pixels.
 
 Unit tests cover glTF transforms/instancing, tall-wall filtering, gzip freshness,
 terrain-only contracts, preferred mesh activation, AI transitions, LOD selection,
-touch normalization, sheet exclusivity, and cleanup. Browser tests run every
+touch normalization, sheet exclusivity, camera-to-reticle aim, muzzle trajectory,
+impact-normal placement, effect-pool bounds, and cleanup. Browser tests run every
 active map on phone, iPad, and desktop profiles; the live gate fires weapons and
 reloads. Production verification checks authenticated loopback World, public
 health, the login boundary, console errors, transfer size, and screenshots.
-

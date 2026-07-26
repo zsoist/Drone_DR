@@ -102,7 +102,34 @@
 - [ ] Run Python/Node tests and all device profiles.
 - [ ] Commit mobile UX.
 
-### Task 5: Release verification
+### Task 5: FPV, weapon aim, effects and localized damage
+
+**Files:**
+- Create: `web/flightverse/aiming.js`
+- Create: `pipeline/test_aiming.mjs`
+- Modify: `web/flightverse/weapons.js`
+- Modify: `web/volar.js`
+- Modify: `web/style.css`
+- Modify: `web/flightverse/world-collision-fixture.js`
+- Modify: `pipeline/test_collision_math.mjs`
+- Modify: `pipeline/browser_matrix.py`
+
+**Interfaces:**
+- Produces: `resolveAimRay(camera, collisionWorld, hittables, boundary)`.
+- Produces: `projectileDirection(muzzle, aimPoint)`.
+- Produces: bounded `EffectPool` counters and normal-aligned hit evidence.
+
+- [ ] Write failing tests for camera-reticle aim, muzzle convergence, nearest-hit ordering, impact normal/decal transform, continuous-vs-discrete fire, and pool eviction.
+- [ ] Make FPV the default camera while preserving explicit user rig selection and a visible camera switch.
+- [ ] Add a persistent weapon carousel/status and a separate trigger outside touch-stick zones.
+- [ ] Replace gimbal-derived projectile direction with camera raycast aim and hardpoint-to-hit convergence.
+- [ ] Upgrade weapon/missile geometry with near/far LOD and bounded pooled muzzle, tracer, exhaust, smoke, spark, dust, fire, fragment, decal, crater, and rubble effects.
+- [ ] Place every structural/terrain effect from the collision point and surface normal; keep the authoritative BVH unchanged except for explicitly destructible scene objects.
+- [ ] Add deterministic fixture and browser assertions for aim, impact position/normal, scenery damage, pools, FPV default, and mobile control separation.
+- [ ] Run Node tests, syntax checks, fixture, live stress, and device browser matrix.
+- [ ] Commit FPV and combat.
+
+### Task 6: Release verification
 
 **Files:**
 - Modify: generated web version references and gzip sidecars.
@@ -119,4 +146,3 @@
 - [ ] Commit generated assets, push the branch, and update the draft PR evidence.
 - [ ] Deploy with `pipeline/safe_restart.sh server`.
 - [ ] Verify public health/login boundary and authenticated loopback World, then update QA, benchmark, and canary reports.
-
