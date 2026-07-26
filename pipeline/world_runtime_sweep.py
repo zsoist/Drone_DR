@@ -57,6 +57,8 @@ def validate_world_runtime(cid: str, report: dict, resources: dict) -> list[dict
             state=report.get("visualMeshState"),
             requests=resources.get("mesh_obj_requests", 0),
         ))
+    if report.get("visualMesh") and not report.get("visualMeshCoverageClipped"):
+        failures.append(_failure(cid, "visual_mesh_unclipped"))
     return failures
 
 
@@ -72,6 +74,7 @@ def _runtime_snapshot(cdp, timeout: int) -> tuple[dict, dict]:
                 ok:r.ok, fps:r.fps, errors:[...(r.errors || [])],
                 customDrone:r.customDrone, visualMesh:r.visualMesh,
                 visualMeshState:r.visualMeshState,
+                visualMeshCoverageClipped:r.visualMeshCoverageClipped,
                 collision:r.collision, lifecycle:r.lifecycle,
                 representation:r.representation,
               };

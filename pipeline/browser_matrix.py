@@ -491,6 +491,7 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
       if (r.errors?.some(e => e.startsWith('malla visual:'))) return { error:r.errors };
       return r.visualMesh ? {
         loaded:true,
+        coverageClipped:!!r.visualMeshCoverageClipped,
         orthoFull:!!r.orthoFull,
         representation:r.representation,
         lifecycle:r.lifecycle,
@@ -499,6 +500,8 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
     """), timeout=75, label="malla fotogramétrica visual")
     if not visual.get("loaded"):
         raise RuntimeError(f"malla visual ausente: {visual}")
+    if not visual.get("coverageClipped"):
+        raise RuntimeError(f"malla visual sin recorte de cobertura: {visual}")
     representation = visual.get("representation") or {}
     visible_layers = representation.get("visibleStructuralLayers") or []
     if "mesh" in visible_layers and "splat" in visible_layers:

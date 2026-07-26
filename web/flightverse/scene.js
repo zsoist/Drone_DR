@@ -3,9 +3,10 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=291';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=291';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=291';
+import * as THREE from '/flightverse/three.js?v=292';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=292';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=292';
+import { applyVisualCoverageMask } from '/flightverse/visual-coverage.js?v=292';
 
 let sceneGenerationId = 0;
 export function createSceneGeneration() {
@@ -107,6 +108,9 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
   const meshMask = {
     available: !!meshCoverageTex,
     uMeshOn: { value: 0 },
+    texture: meshCoverageTex,
+    worldSize: new THREE.Vector2(Wm, Hm),
+    texel: new THREE.Vector2(1 / cols, 1 / rows),
   };
   const frontier = {
     uFrontierOn: { value: 1 },
@@ -197,7 +201,15 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
 // La física sigue usando el DSM pequeño y estable; esta capa solo dibuja la
 // malla fotogramétrica del visor. En móvil usa el tier 512px (~45 MB GPU en la
 // escena real), no las 73 páginas 4K originales.
-export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}) {
+export async function attachVisualMesh(
+  man,
+  scene,
+  {
+    renderer,
+    onProgress,
+    coverageMask = null,
+  } = {},
+) {
   const objUrl = man.assets?.mesh_viewer;
   // tier de texturas: móvil → low (3MB); desktop → extra/vtx (13MB, el más
   // nítido de los viewer). Los atlas ORIGINALES (geo, ~90MB) llegan después
@@ -220,6 +232,7 @@ export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}
   const object = await new OBJLoader().setMaterials(materials).setPath(objBase).loadAsync(
     objFile, ev => onProgress?.(ev.total ? ev.loaded / ev.total : null));
   const maxAniso = Math.min(8, renderer?.capabilities?.getMaxAnisotropy?.() || 4);
+  let coverageClipped = false;
   object.traverse(node => {
     if (!node.isMesh) return;
     const src = Array.isArray(node.material) ? node.material : [node.material];
@@ -234,6 +247,11 @@ export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}
         side: THREE.DoubleSide,
       });
       m2.name = mat.name;                     // ancla para upgradeTextures
+      coverageClipped = applyVisualCoverageMask(m2, {
+        texture: coverageMask?.texture,
+        worldSize: coverageMask?.worldSize,
+        texel: coverageMask?.texel,
+      }) || coverageClipped;
       return m2;
     });
     node.material = photo.length === 1 ? photo[0] : photo;
@@ -250,6 +268,7 @@ export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}
   let disposed = false;
   return {
     object,
+    coverageClipped,
     // sube los mapas al tier dado (p.ej. atlas geo full-res) intercambiando
     // por NOMBRE de material — one-shot, perezoso, sin recrear geometría
     async upgradeTextures(newMtlUrl) {
@@ -299,7 +318,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=291');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=292');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     sp.userData.fvRefs = 0;

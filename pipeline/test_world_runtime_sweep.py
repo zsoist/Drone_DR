@@ -59,7 +59,11 @@ class WorldRuntimeSweepTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            {"inactive_mesh_loaded", "duplicate_structural_layers"},
+            {
+                "inactive_mesh_loaded",
+                "duplicate_structural_layers",
+                "visual_mesh_unclipped",
+            },
             reasons,
         )
 

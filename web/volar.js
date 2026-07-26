@@ -4,35 +4,35 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=291';
+import * as THREE from '/flightverse/three.js?v=292';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=291';
+} from '/flightverse/scene.js?v=292';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=291';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=291';
-import { createRecorder } from '/flightverse/recorder.js?v=291';
-import { createAudio } from '/flightverse/audio.js?v=291';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=291';
-import { createTouchSticks } from '/flightverse/touch.js?v=291';
-import { createSky } from '/flightverse/sky.js?v=291';
-import { loadSceneObjects } from '/flightverse/objects.js?v=291';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=291';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=291';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=291';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=291';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=291';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=291';
-import CameraControls from '/vendor/camera-controls.module.js?v=291';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=291';
+} from '/flightverse/runtime.js?v=292';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=292';
+import { createRecorder } from '/flightverse/recorder.js?v=292';
+import { createAudio } from '/flightverse/audio.js?v=292';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=292';
+import { createTouchSticks } from '/flightverse/touch.js?v=292';
+import { createSky } from '/flightverse/sky.js?v=292';
+import { loadSceneObjects } from '/flightverse/objects.js?v=292';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=292';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=292';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=292';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=292';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=292';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=292';
+import CameraControls from '/vendor/camera-controls.module.js?v=292';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=292';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=291';
+} from '/vendor/postprocessing180.module.js?v=292';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -456,6 +456,7 @@ async function main() {
   const visualMeshLoader = canLoadVisualMesh
     ? createLazyLayerLoader(() => attachVisualMesh(man, worldGroup, {
       renderer,
+      coverageMask: terrain.meshMask,
       onProgress: f => {
         if (f != null) $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla ${Math.round(f * 100)}%`;
       },
@@ -479,6 +480,7 @@ async function main() {
       $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla fotogramétrica`;
       report.visualMesh = true;
       report.visualMeshState = 'ready';
+      report.visualMeshCoverageClipped = Boolean(v.coverageClipped);
       markLoadStep(document, 'vb-malla');
       applyVista();
       return v;
@@ -629,9 +631,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=291', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=292', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=291');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=292');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
