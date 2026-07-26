@@ -1,7 +1,7 @@
-import * as THREE from '/flightverse/three.js?v=293';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=293';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=293';
-import { createWeapons } from '/flightverse/weapons.js?v=293';
+import * as THREE from '/flightverse/three.js?v=294';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=294';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=294';
+import { createWeapons } from '/flightverse/weapons.js?v=294';
 
 const report = {
   done: false,
@@ -61,7 +61,7 @@ function colliderUrls() {
 }
 
 async function run() {
-  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=293');
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=294');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
