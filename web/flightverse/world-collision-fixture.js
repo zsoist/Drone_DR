@@ -1,7 +1,7 @@
-import * as THREE from '/flightverse/three.js?v=297';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=297';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=297';
-import { createWeapons } from '/flightverse/weapons.js?v=297';
+import * as THREE from '/flightverse/three.js?v=298';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=298';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=298';
+import { createWeapons } from '/flightverse/weapons.js?v=298';
 
 const report = {
   done: false,
@@ -61,7 +61,7 @@ function colliderUrls() {
 }
 
 async function run() {
-  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=297');
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=298');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
@@ -287,6 +287,18 @@ async function run() {
     }),
   );
 
+  const { resolveAimRay } = await import('/flightverse/aiming.js?v=298');
+  const reticleAim = resolveAimRay(
+    { position: new THREE.Vector3(0, 2, 0), direction: new THREE.Vector3(1, 0, 0), far: 100 },
+    world,
+    [{ enemy: true, center: new THREE.Vector3(2.4, 2, 0), radius: 0.4 }],
+  );
+  check(
+    'camera reticle selects the nearest dynamic target before the BVH wall',
+    reticleAim.kind === 'target' && approx(reticleAim.point.x, 2),
+    JSON.stringify(reticleAim),
+  );
+
   const makeWeapons = (weaponWorld, heightAt = () => 0) => createWeapons(
     new THREE.Scene(),
     { world: weaponWorld, heightAt },
@@ -326,6 +338,34 @@ async function run() {
     missiles.dispose();
   }
 
+  const convergedWeapons = makeWeapons(world);
+  convergedWeapons.setWeapon('m');
+  convergedWeapons.fire(
+    new THREE.Vector3(0, 2, 0),
+    { aimPoint: new THREE.Vector3(6, 4, 0) },
+  );
+  const convergence = convergedWeapons.state.missiles[0]?.dir;
+  check(
+    'missile leaves its hardpoint converged on the camera reticle point',
+    convergence && approx(convergence.x, 3 / Math.sqrt(10), 0.002)
+      && approx(convergence.y, 1 / Math.sqrt(10), 0.002),
+    JSON.stringify(convergence),
+  );
+  runWeapon(convergedWeapons, 240);
+  const poolsBounded = Object.values(convergedWeapons.state.effectCounters)
+    .every(pool => pool.active <= pool.limit);
+  const normalImpact = convergedWeapons.state.impactEvidence;
+  check(
+    'structural impact evidence keeps BVH point and wall normal for effects',
+    normalImpact?.kind === 'structure'
+      && normalImpact.normal.x < -0.99
+      && normalImpact.point.x > 3.7
+      && normalImpact.point.x < 4.1
+      && poolsBounded,
+    JSON.stringify({ normalImpact, pools: convergedWeapons.state.effectCounters }),
+  );
+  convergedWeapons.dispose();
+
   const groundWeapons = makeWeapons(terrainWorld, () => 0);
   groundWeapons.setWeapon('mg');
   groundWeapons.fire(new THREE.Vector3(0, 0.7, 0), 0, -Math.PI / 2);
@@ -336,6 +376,20 @@ async function run() {
     JSON.stringify({ terrainHits: groundWeapons.state.terrainHits }),
   );
   groundWeapons.dispose();
+
+  const airburstCraters = [];
+  const airburstWeapons = createWeapons(new THREE.Scene(), {
+    world: boundaryWorld,
+    heightAt: () => 0,
+    crater: (...args) => airburstCraters.push(args),
+  });
+  airburstWeapons.explodeAt(new THREE.Vector3(1, 20, 1), 1);
+  check(
+    'raw airburst never deforms terrain without a terrain collision normal',
+    airburstCraters.length === 0 && airburstWeapons.state.impactEvidence?.kind === 'air',
+    JSON.stringify({ craters: airburstCraters.length, impact: airburstWeapons.state.impactEvidence }),
+  );
+  airburstWeapons.dispose();
 
   const visibleWeapons = makeWeapons(boundaryWorld);
   visibleWeapons.setWeapon('s');

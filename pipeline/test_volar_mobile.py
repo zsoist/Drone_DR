@@ -122,7 +122,9 @@ class VolarMobileHudContractTests(unittest.TestCase):
 
     def test_fire_control_owns_pointer_gesture_and_is_clearly_named(self):
         self.assertIn('<strong>DISPARAR</strong>', self.source)
-        self.assertIn("fireBtn.setPointerCapture", self.source)
+        self.assertIn("const triggerBtn = $('#vl-trigger')", self.source)
+        self.assertIn("for (const button of [fireBtn, triggerBtn])", self.source)
+        self.assertIn("button.setPointerCapture(e.pointerId)", self.source)
         self.assertIn("e.preventDefault()", self.source)
         self.assertIn("'pointercancel'", self.source)
 

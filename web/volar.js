@@ -4,35 +4,36 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=297';
+import * as THREE from '/flightverse/three.js?v=298';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=297';
+} from '/flightverse/scene.js?v=298';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=297';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=297';
-import { createRecorder } from '/flightverse/recorder.js?v=297';
-import { createAudio } from '/flightverse/audio.js?v=297';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=297';
-import { createTouchSticks } from '/flightverse/touch.js?v=297';
-import { createSky } from '/flightverse/sky.js?v=297';
-import { loadSceneObjects } from '/flightverse/objects.js?v=297';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=297';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=297';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=297';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=297';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=297';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=297';
-import CameraControls from '/vendor/camera-controls.module.js?v=297';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=297';
+} from '/flightverse/runtime.js?v=298';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=298';
+import { createRecorder } from '/flightverse/recorder.js?v=298';
+import { createAudio } from '/flightverse/audio.js?v=298';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=298';
+import { createTouchSticks } from '/flightverse/touch.js?v=298';
+import { createSky } from '/flightverse/sky.js?v=298';
+import { loadSceneObjects } from '/flightverse/objects.js?v=298';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=298';
+import { resolveAimRay } from '/flightverse/aiming.js?v=298';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=298';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=298';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=298';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=298';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=298';
+import CameraControls from '/vendor/camera-controls.module.js?v=298';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=298';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=297';
+} from '/vendor/postprocessing180.module.js?v=298';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -134,6 +135,18 @@ function hud() {
           <i id="vl-cool"></i>
         </button>
       </div>
+    </div>
+    <div class="vl-combat-live" id="vl-combat-live" aria-label="Armamento">
+      <div class="vl-weapon-carousel" id="vl-weapon-carousel" role="group" aria-label="Seleccionar arma">
+        <button data-w="mg" aria-label="Ametralladora">MG</button>
+        <button data-w="s" aria-label="Misil pequeño">M·S</button>
+        <button data-w="m" class="sel" aria-label="Misil medio">M·M</button>
+        <button data-w="l" aria-label="Misil grande">M·L</button>
+        <output id="vl-weapon-status">M·M · 8</output>
+      </div>
+      <button class="vl-trigger" id="vl-trigger" title="X · disparar" aria-label="Disparar arma seleccionada">
+        <span>◎</span><strong>FUEGO</strong>
+      </button>
     </div>
     <div class="vl-flight-status">
       <div class="vl-ghost" id="vl-ghost"></div>
@@ -637,9 +650,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=297', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=298', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=297');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=298');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -794,6 +807,7 @@ async function main() {
   let curYaw = 0;
   const weapons = createWeapons(scene, {
     world, heightAt: terrain.heightAt, audio, crater: terrain.crater,
+    getCameraPosition: () => camera.position,
     onShake: (pos, big) => {
       const d = camera.position.distanceTo(pos);
       shake.mag = Math.max(shake.mag, Math.min(0.9, (9 * big) / (5 + d)));
@@ -808,7 +822,6 @@ async function main() {
       depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
     const r1 = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.9, 28), am);
     const r2 = new THREE.Mesh(new THREE.CircleGeometry(0.14, 12), am.clone());
-    r1.rotation.x = r2.rotation.x = -Math.PI / 2;
     aim.add(r1, r2);
   }
   aim.visible = false;
@@ -861,43 +874,57 @@ async function main() {
     }
   });
   const fireBtn = $('#vl-fire');
-  const doFire = (pitch) => {
+  const triggerBtn = $('#vl-trigger');
+  const aimDirection = new THREE.Vector3();
+  const resolveCombatAim = () => {
+    camera.getWorldDirection(aimDirection);
+    const hittables = invasion.state.on
+      ? [...(sceneObjects?.hittables || []), ...invasion.hittables]
+      : sceneObjects?.hittables || [];
+    return resolveAimRay({ position: camera.position, direction: aimDirection, far: 1200 }, world, hittables);
+  };
+  const doFire = () => {
     // si el GLB trae hardpoints, el misil sale del siguiente en turno
     const hp = hardpoints.length
       ? hardpoints[weapons.state.fired % hardpoints.length].getWorldPosition(new THREE.Vector3())
       : P.clone();
-    if (!weapons.fire(hp, curYaw, pitch ?? gimbalTilt * 0.55)) return;
+    const target = resolveCombatAim();
+    if (!weapons.fire(hp, { aimPoint: target.point })) return;
     fireBtn.classList.remove('flash'); void fireBtn.offsetWidth;   // reinicia anim
     fireBtn.classList.add('flash');
+    triggerBtn.classList.remove('flash'); void triggerBtn.offsetWidth;
+    triggerBtn.classList.add('flash');
   };
   let firing = false;
   const stopFiring = e => {
-    if (e?.pointerId != null && fireBtn.hasPointerCapture?.(e.pointerId))
-      fireBtn.releasePointerCapture(e.pointerId);
+    for (const button of [fireBtn, triggerBtn]) {
+      if (e?.pointerId != null && button.hasPointerCapture?.(e.pointerId)) button.releasePointerCapture(e.pointerId);
+    }
     firing = false;
   };
-  fireBtn.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    fireBtn.setPointerCapture(e.pointerId);
-    firing = true;
-    doFire();
-  });
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
-    fireBtn.addEventListener(type, stopFiring);
+  for (const button of [fireBtn, triggerBtn]) {
+    button.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      button.setPointerCapture(e.pointerId);
+      firing = true;
+      doFire();
+    });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(type, stopFiring);
+  }
   addEventListener('pointerup', stopFiring);
   const setWeapon = k => {
     weapons.setWeapon(k);
-    document.querySelectorAll('#vl-weps button').forEach(b =>
+    document.querySelectorAll('#vl-weps button, #vl-weapon-carousel button').forEach(b =>
       b.classList.toggle('sel', b.dataset.w === k));
   };
   document.addEventListener('pointerdown', e => {
-    const b = e.target.closest('#vl-weps button[data-w]');
+    const b = e.target.closest('#vl-weps button[data-w], #vl-weapon-carousel button[data-w]');
     if (b) setWeapon(b.dataset.w);
   });
   const sticks = createTouchSticks($('#vl-hud'));
   let sfx = { idx: 0, phase: '', crash: false, count: 0 };
-  let modeKey = 'asistido', rigIx = 0;
+  let modeKey = 'asistido', rigIx = Math.max(0, RIGS.findIndex(rig => rig.key === 'fpv'));
   if (Q.get('rig') != null) rigIx = Math.abs(+Q.get('rig')) % RIGS.length;   // QA: cámara por URL
   let gimbalTilt = -0.12;                      // tilt del gimbal (rad); rueda/slider lo mueven
   const setGimbal = r => {
@@ -1535,9 +1562,9 @@ async function main() {
       invasion.update(dt, drone.pos, drone.vel);
       if (Q.get('fuego') === 'mg' && simT > 1 && simT < 2.6) {
         if (!weapons._mg) { weapons._mg = true; weapons.setWeapon('mg'); }
-        doFire(-0.5);
+        doFire();
       } else if (Q.get('fuego') && simT > 1 && !weapons.state.fired) {
-        doFire(-1.25);
+        doFire();
       }
       if (Q.get('boom') && simT > 5.2 && !weapons._boomed) {
         weapons._boomed = true;
@@ -1657,6 +1684,9 @@ async function main() {
           proximity_triggers: weapons.state.proximityTriggers,
           occluded_fuses: weapons.state.occludedFuses,
           projectiles: weapons.state.missiles.length + weapons.state.bullets.length,
+          pools: weapons.state.effectCounters,
+          impact: weapons.state.impactEvidence,
+          lod: { ...weapons.state.lod },
         };
         report.weaponState = { weapon: weapons.state.weapon, cool: +weapons.state.cool.toFixed(2),
           ammo: Object.fromEntries(Object.entries(weapons.state.ammo).map(([k2, n2]) => [k2, Math.floor(n2)])) };
@@ -1674,35 +1704,38 @@ async function main() {
           $('#vl-zhp').style.transform = `scaleX(${health.hp / 100})`;
         }
         // mini-barras de munición por arma (HUD de vida de armas)
-        document.querySelectorAll('#vl-weps button').forEach(b => {
+        document.querySelectorAll('#vl-weps button, #vl-weapon-carousel button').forEach(b => {
           const k = b.dataset.w;
           b.style.setProperty('--ammo', `${(weapons.state.ammo[k] / ARSENAL[k].max) * 100}%`);
         });
         const st = weapons.state;
         const WA = ARSENAL[st.weapon];
         $('#vl-ammo').textContent = Math.floor(st.ammo[st.weapon]);
+        $('#vl-weapon-status').textContent = `${ARSENAL[st.weapon].label} · ${Math.floor(st.ammo[st.weapon])}`;
         $('#vl-cool').style.transform = `scaleX(${1 - st.cool / (WA.cd || WA.rate)})`;
         fireBtn.classList.toggle('empty', st.ammo[st.weapon] < 1);
         if (st.destroyed) { const k = $('#vl-kills'); k.textContent = `DERRIBOS ${st.destroyed}`; k.classList.add('show'); }
-        // retícula: 80 pasos de balística contra el heightfield
-        if (st.ammo > 0 && !director) {
-          const pitch = gimbalTilt * 0.55;
-          const simP = P.clone(); simP.y -= 0.3;
-          const sv = new THREE.Vector3(-Math.sin(curYaw) * Math.cos(pitch), Math.sin(pitch),
-            -Math.cos(curYaw) * Math.cos(pitch)).multiplyScalar(56);
-          let hitP = null;
-          for (let s2 = 0; s2 < 80; s2++) {
-            sv.y -= 2.2 * 0.045;
-            simP.addScaledVector(sv, 0.045);
-            const gy = terrain.heightAt(simP.x, simP.z);
-            if (gy != null && simP.y <= gy + 0.3) { simP.y = gy + 0.32; hitP = simP; break; }
-          }
-          if (hitP) {
-            aim.visible = true;
-            aim.position.copy(hitP);
-            aim.scale.setScalar((1 + Math.sin(simT * 6) * 0.1) * (1 + camera.position.distanceTo(hitP) * 0.015));
-          } else aim.visible = false;
-        } else aim.visible = false;
+        // Reticle and launch direction share the same camera-center ray. This
+        // avoids gimbal-yaw drift and keeps the hardpoint converged on the hit.
+        const reticleHit = !director ? resolveCombatAim() : null;
+        if (reticleHit?.kind !== 'none') {
+          const hitP = new THREE.Vector3(reticleHit.point.x, reticleHit.point.y, reticleHit.point.z);
+          aim.visible = true;
+          aim.position.copy(hitP);
+          aim.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(
+            reticleHit.normal.x, reticleHit.normal.y, reticleHit.normal.z,
+          ));
+          aim.scale.setScalar((1 + Math.sin(simT * 6) * 0.1) * (1 + camera.position.distanceTo(hitP) * 0.015));
+          report.aim = {
+            kind: reticleHit.kind,
+            point: { ...reticleHit.point },
+            normal: { ...reticleHit.normal },
+            distance: +reticleHit.distance.toFixed(2),
+          };
+        } else {
+          aim.visible = false;
+          report.aim = reticleHit ? { kind: 'none', distance: +reticleHit.distance.toFixed(2) } : null;
+        }
         if (shake.mag > 0.003) {                 // sacudida de impacto (decae)
           camera.position.x += (Math.random() - 0.5) * shake.mag;
           camera.position.y += (Math.random() - 0.5) * shake.mag * 0.6;

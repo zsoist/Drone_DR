@@ -5228,6 +5228,40 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 .vl-fps.low::before{ background:#E0A458; box-shadow:0 0 8px rgba(224,164,88,.8) }
 @media (pointer:coarse){ .vl-fire{ height:72px } }
 
+/* ── BLOQUE 55b: combate FPV directo ──
+   The live carousel and trigger deliberately live above the right stick's
+   rectangle. They remain available while the optional combat sheet is closed. */
+.vl-combat-live{ display:none }
+@media (pointer:coarse){
+  .vl-combat-live{ position:fixed; z-index:45; right:calc(12px + env(safe-area-inset-right));
+    bottom:calc(min(34vh, 300px) + 36px + env(safe-area-inset-bottom));
+    display:flex; flex-direction:column; align-items:flex-end; gap:7px; pointer-events:auto }
+  .vl-weapon-carousel{ display:flex; align-items:center; gap:4px; min-height:46px;
+    padding:4px; border-radius:14px; border:1px solid rgba(232,120,70,.28);
+    background:linear-gradient(160deg,rgba(28,20,20,.94),rgba(10,12,16,.9));
+    -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); box-shadow:0 10px 28px -14px rgba(0,0,0,.88) }
+  .vl-weapon-carousel button{ width:44px; min-width:44px; height:44px; border-radius:10px;
+    border:1px solid transparent; background:transparent; color:#9daabb; font:800 10px var(--mono);
+    letter-spacing:.04em; cursor:pointer; touch-action:manipulation }
+  .vl-weapon-carousel button.sel{ color:#ffd0ae; background:rgba(232,120,70,.22);
+    border-color:rgba(232,120,70,.48); box-shadow:inset 0 1px rgba(255,255,255,.08) }
+  .vl-weapon-carousel output{ min-width:64px; padding:0 7px; color:#ffd0ae; font:750 9px var(--mono);
+    letter-spacing:.04em; white-space:nowrap; font-variant-numeric:tabular-nums }
+  .vl-trigger{ pointer-events:auto; width:108px; min-height:52px; border:1px solid rgba(255,150,100,.58);
+    border-radius:17px; color:#ffe5d6; background:linear-gradient(145deg,rgba(160,55,30,.96),rgba(73,25,21,.94));
+    box-shadow:0 12px 30px -13px rgba(0,0,0,.9),0 0 22px -10px rgba(255,90,55,.75);
+    display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; touch-action:none;
+    font:800 10px var(--mono); letter-spacing:.12em; -webkit-user-select:none; user-select:none }
+  .vl-trigger span{ font:900 24px/1 var(--mono); color:#fff1e7 }
+  .vl-trigger:active{ transform:scale(.94) }
+  .vl-trigger.flash{ animation:fireFlash .45s var(--ease) }
+  .vl-combat-fab{ bottom:calc(min(34vh, 300px) + 142px + env(safe-area-inset-bottom)) }
+}
+@media (pointer:coarse) and (orientation:landscape){
+  .vl-combat-live{ bottom:calc(52vh + 12px + env(safe-area-inset-bottom)) }
+  .vl-combat-fab{ bottom:calc(52vh + 136px + env(safe-area-inset-bottom)) }
+}
+
 /* ── BLOQUE 56: Mundo overhaul — compacto, cards ricas, cfg de lanzamiento,
       mapa decluttered, overlay de carga ── */
 .fv-hero{ padding:26px 0 10px }

@@ -459,7 +459,7 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
 
 def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
     """FLIGHTVERSE: flight test plus measured touch-HUD collision checks."""
-    cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/volar.html?m={cid}&autotest=1&rig=3"})
+    cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/volar.html?m={cid}&autotest=1"})
     rep = wait_for(cdp, js("""
       const r = window.__volar;
       if (!r || !r.done) return null;
@@ -469,12 +469,25 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
         representation: r.representation,
         lifecycle: r.lifecycle,
         render: r.render,
+        camera: r.camera,
+        weapons: r.weapons,
+        aim: r.aim,
       };
     """), timeout=120, label="volar autotest")
     if not rep.get("ok"):
         raise RuntimeError(f"volar autotest rojo: {rep}")
     if rep.get("fps", 0) < 50:
         raise RuntimeError(f"volar bajo presupuesto premium de 50 FPS: {rep}")
+    if (rep.get("camera") or {}).get("rig") != "fpv":
+        raise RuntimeError(f"FPV no fue la cámara inicial: {rep.get('camera')}")
+    aim = rep.get("aim") or {}
+    if aim.get("kind") == "none" or not all(
+            isinstance((aim.get("point") or {}).get(axis), (int, float))
+            for axis in ("x", "y", "z")):
+        raise RuntimeError(f"retícula no expuso un impacto de cámara válido: {aim}")
+    for kind, pool in ((rep.get("weapons") or {}).get("pools") or {}).items():
+        if pool.get("active", 0) > pool.get("limit", 0):
+            raise RuntimeError(f"pool de efectos excedió su tope {kind}: {pool}")
     render = rep.get("render") or {}
     for key in ("p95Ms", "calls", "triangles", "dpr"):
         value = render.get(key)
@@ -564,18 +577,23 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
           const radar = document.querySelector('#vl-minimap');
           const menuFab = document.querySelector('#vl-fab');
           const combatFab = document.querySelector('#vl-combat-fab');
+          const carousel = document.querySelector('#vl-weapon-carousel');
+          const trigger = document.querySelector('#vl-trigger');
           const fpv = document.querySelector('#vl-fpv');
           const fpvHiddenGeneral = ['.vl-corner.tl','.vl-corner.tr','.vl-center-top',
             '.vl-compass','.vl-flight-status','#vl-goto']
             .every(s => !visible(document.querySelector(s)));
-          if (![left,right,radar,menuFab,combatFab].every(visible)) {
+          if (![left,right,radar,menuFab,combatFab,carousel,trigger].every(visible)) {
             return { error:'faltan controles táctiles agrupados' };
           }
-          const fixed = [radar,menuFab,combatFab].map(el => [el.id, rect(el)]);
+          const fixed = [radar,menuFab,combatFab,carousel,trigger].map(el => [el.id, rect(el)]);
           const sticks = [['stick-left',rect(left)],['stick-right',rect(right)]];
           const closedCollisions = [];
           for (const [an,a] of fixed) for (const [bn,b] of sticks)
             if (hit(a,b)) closedCollisions.push(`${an}:${bn}`);
+          const smallCarouselTargets = [...carousel.querySelectorAll('button')].filter(visible).filter(b => {
+            const r = rect(b); return r.width < 44 || r.height < 44;
+          }).map(b => b.dataset.weapon || b.textContent.trim());
 
           menuFab.click();
           const menu = document.querySelector('#vl-dock');
@@ -611,16 +629,17 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
           const combatOnly = visible(combat) && !visible(grade) && !visible(menu);
           document.querySelector('#vl-combat-close')?.click();
           return { closedCollisions, menuStickCollisions, combatStickCollisions,
-                   smallMenuTargets, smallCombatTargets, menuHorizontalOverflow,
+                   smallCarouselTargets, smallMenuTargets, smallCombatTargets, menuHorizontalOverflow,
                    menuActions:menuButtons.length, combatActions:combatButtons.length,
                    exclusivePanels:imageOnly && menuOnly && combatOnly,
                    menuPersistent,
                    fpvActive:visible(fpv) && document.querySelector('#vl-hud').classList.contains('fpv-active'),
-                   fpvHiddenGeneral };
+                   fpvHiddenGeneral,
+                   carousel:rect(carousel), trigger:rect(trigger) };
         """))
         failures = []
         for key in ("closedCollisions", "menuStickCollisions", "combatStickCollisions",
-                    "smallMenuTargets", "smallCombatTargets"):
+                    "smallCarouselTargets", "smallMenuTargets", "smallCombatTargets"):
             if layout.get(key):
                 failures.append(f"{key}={layout[key]}")
         if layout.get("error"):
@@ -684,13 +703,14 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
         """))
         if chase_hud.get("collisions") or chase_hud.get("outOfBounds"):
             raise RuntimeError(f"HUD general táctil solapado: {chase_hud}")
+        if chase_hud.get("rig") == "fpv":
+            raise RuntimeError(f"selector de cámara no salió de FPV: {chase_hud}")
 
         # Combate real: un pointer de navegador debe reducir munición, no basta
         # con que el botón exista o cambie de color.
         fire = cdp.eval(js("""
-          document.querySelector('#vl-combat-fab')?.click();
-          document.querySelector('#vl-weps [data-w="m"]')?.click();
-          const b = document.querySelector('#vl-fire');
+          document.querySelector('#vl-weapon-carousel [data-w="m"]')?.click();
+          const b = document.querySelector('#vl-trigger');
           const r = b.getBoundingClientRect();
           return { x:r.left+r.width/2, y:r.top+r.height/2,
             before:window.__volar.weaponState.ammo.m,
@@ -708,7 +728,6 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
         """))
         if not (shot["after"] < fire["before"] and shot["fired"] > fire["fired"]):
             raise RuntimeError(f"DISPARAR no consumió munición: before={fire} after={shot}")
-        cdp.eval("document.querySelector('#vl-combat-close')?.click()")
 
         # El inspector debe dejar la escena visible y poder moverse dentro del
         # visual viewport con un gesto real.
