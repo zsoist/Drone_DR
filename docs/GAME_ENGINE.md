@@ -14,7 +14,11 @@
   círculo/cuadrado y bloquea una extensión pendiente en vez de inventar terreno.
 - `runtime.js` — loop timestep FIJO 1/120 (determinismo de replays), input,
   física por modo (Normal velocidad-objetivo · Dios noclip · 6DOF ecctrl
-  disponible), colisión BVH slide+escape, rigs de cámara puros.
+  disponible), colisión BVH slide+escape, rigs de cámara puros. Pausa el render
+  al ocultar la pestaña y vuelve con reloj limpio, sin cobrar deuda física.
+- `render-quality.js` — governor puro de resolución Auto. Usa ventanas de frame
+  time, dos ventanas lentas para bajar, tres estables para recuperar y cooldown
+  entre cambios. Ignora spikes aislados y queda limitado a DPR 1–2.
 - `objects.js` — objetos de escena (SCENE_OBJECTS.md): GLB/primitivas,
   ancla a suelo, spin/bob; estáticos con matrices congeladas.
 - `gaterush.js` — desafío: curso sobre el track real, camino Mario-Galaxy,
@@ -32,8 +36,15 @@
    `browser_matrix.py --flightverse`). El gate exige ≥50 FPS, un grupo de mundo,
    cero capas estructurales duplicadas y cero crecimiento GPU.
 4. Estáticos: matrixAutoUpdate=false. Post: un solo EffectPass.
-   Governor DPR en 'auto'; presets manuales HD→ultra.
+   Governor DPR en 'auto'; presets manuales HD→ultra. `window.__volar.render`
+   publica DPR, media/p95 de frame, draw calls, triángulos, geometrías, texturas
+   y pausas/reanudaciones; la matriz rechaza contadores no finitos.
 5. Renames: regex \b, jamás substring (v80 se aprendió con sangre).
+6. La frontera nativa se mezcla con el color atmosférico del cielo desde el
+   shader del terreno. Nunca descarta geometría adicional ni crea otra capa
+   estructural. `?diagnostic=1` conserva píxeles de diagnóstico exactos.
+7. En touch, Imagen abre compacta: presets inmediatos y ajustes avanzados bajo
+   demanda, con techo de 44dvh y scroll interno.
 
 ## Extender (nuevo juego/modo en ~1 módulo)
 Crea `flightverse/<modo>.js` exportando `create<Modo>({scene, terrain,

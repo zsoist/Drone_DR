@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import math
 import time
 import urllib.parse
 import urllib.request
@@ -391,12 +392,20 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
         collision: r.collision,
         representation: r.representation,
         lifecycle: r.lifecycle,
+        render: r.render,
       };
     """), timeout=120, label="volar autotest")
     if not rep.get("ok"):
         raise RuntimeError(f"volar autotest rojo: {rep}")
     if rep.get("fps", 0) < 50:
         raise RuntimeError(f"volar bajo presupuesto premium de 50 FPS: {rep}")
+    render = rep.get("render") or {}
+    for key in ("p95Ms", "calls", "triangles", "dpr"):
+        value = render.get(key)
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise RuntimeError(f"telemetría de render inválida: {key}={value!r} · {render}")
+    if render["p95Ms"] <= 0 or render["dpr"] < 1:
+        raise RuntimeError(f"telemetría de render inválida: {render}")
     visual = wait_for(cdp, js("""
       const r = window.__volar;
       if (!r) return null;

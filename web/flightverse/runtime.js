@@ -3,12 +3,12 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=286';
+import * as THREE from '/flightverse/three.js?v=288';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
 
-export function createLoop({ update, render }) {
+export function createLoop({ update, render, onPause, onResume }) {
   let acc = 0, last = 0, raf = 0, running = false;
   let frames = 0, fpsT = 0, fps = 0;
   const tick = (tms) => {
@@ -21,14 +21,26 @@ export function createLoop({ update, render }) {
     let n = 0;
     while (acc >= STEP && n < MAX_STEPS) { update(STEP); acc -= STEP; n++; }
     if (n === MAX_STEPS) acc = 0;         // descartar deuda: mejor saltar que congelar
-    render(acc / STEP);
+    render(acc / STEP, dt * 1000);
     frames++; fpsT += dt;
     if (fpsT >= 1) { fps = frames / fpsT; frames = 0; fpsT = 0; }
   };
   const onVis = () => { if (document.hidden) pause(); else resume(); };
   function start() { running = true; last = 0; document.addEventListener('visibilitychange', onVis); raf = requestAnimationFrame(tick); }
-  function pause() { running = false; cancelAnimationFrame(raf); }
-  function resume() { if (!running) { running = true; last = 0; raf = requestAnimationFrame(tick); } }
+  function pause() {
+    if (!running) return;
+    running = false;
+    cancelAnimationFrame(raf);
+    onPause?.();
+  }
+  function resume() {
+    if (!running) {
+      running = true;
+      last = 0;
+      onResume?.();
+      raf = requestAnimationFrame(tick);
+    }
+  }
   function stop() { pause(); document.removeEventListener('visibilitychange', onVis); }
   return { start, stop, pause, resume, fps: () => fps };
 }

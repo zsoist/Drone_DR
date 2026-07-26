@@ -68,6 +68,40 @@ class VolarMobileHudContractTests(unittest.TestCase):
         self.assertIn("const preferFullOrtho", self.source)
         self.assertIn("man.assets.ortho_full", self.source)
 
+    def test_auto_quality_uses_frame_time_governor_and_scalar_renderer_metrics(self):
+        runtime = (ROOT / "web" / "flightverse" / "runtime.js").read_text()
+        for contract in (
+            "createRenderQualityGovernor",
+            "qualityGovernor.sample(frameMs",
+            "qualityGovernor.reset()",
+            "renderer.info.render.calls",
+            "renderer.info.render.triangles",
+            "report.render",
+        ):
+            self.assertIn(contract, self.source)
+        self.assertIn("render(acc / STEP, dt * 1000)", runtime)
+        self.assertNotIn("setInterval(() => {\n    if (calidad !== 'auto')", self.source)
+
+    def test_loop_visibility_callbacks_reset_quality_without_physics_catchup(self):
+        runtime = (ROOT / "web" / "flightverse" / "runtime.js").read_text()
+        self.assertIn("export function createLoop({ update, render, onPause, onResume })", runtime)
+        self.assertIn("onPause?.()", runtime)
+        self.assertIn("onResume?.()", runtime)
+        self.assertIn("last = 0", runtime)
+        self.assertIn("pauses:", self.source)
+        self.assertIn("resumes:", self.source)
+
+    def test_browser_matrix_gates_real_render_budget_counters(self):
+        matrix = (ROOT / "pipeline" / "browser_matrix.py").read_text()
+        for contract in (
+            "render: r.render",
+            '"p95Ms"',
+            '"calls"',
+            '"triangles"',
+            "telemetría de render inválida",
+        ):
+            self.assertIn(contract, matrix)
+
     def test_flight_uses_detailed_mesh_as_visual_layer_only(self):
         scene = (ROOT / "web" / "flightverse" / "scene.js").read_text()
         self.assertIn("export async function attachVisualMesh", scene)
@@ -93,8 +127,21 @@ class VolarMobileHudContractTests(unittest.TestCase):
         self.assertIn("'pointercancel'", self.source)
 
     def test_image_editor_is_a_compact_live_inspector_on_touch(self):
-        self.assertIn("max-height:min(46dvh,430px)", self.styles)
+        for contract in (
+            'id="gr-expand"',
+            'aria-expanded="false"',
+            'class="vl-grade-body"',
+            "matchMedia('(pointer:coarse)').matches",
+            "gradePanel.classList.add('compact')",
+        ):
+            self.assertIn(contract, self.source)
+        self.assertIn("max-height:min(44dvh,410px)", self.styles)
+        self.assertIn(".vl-grade.compact .vl-grade-body", self.styles)
+        self.assertIn("overflow-y:auto", self.styles)
+        self.assertIn("min-height:44px", self.styles)
         self.assertIn(".vl-grade-drag", self.styles)
+        self.assertIn("const gradePanel = $('#vl-grade')", self.source)
+        self.assertNotIn("const grade = $('#vl-grade')", self.source)
         self.assertNotIn("bottom:calc(12px + env(safe-area-inset-bottom)); width:auto; max-height:none", self.styles)
 
     def test_world_representation_is_exclusive_and_respects_preference(self):
@@ -113,6 +160,21 @@ class VolarMobileHudContractTests(unittest.TestCase):
         self.assertIn("uMeshCoverage", scene)
         self.assertIn("terrain.meshMask", self.source)
         self.assertNotIn("footprint: { x: c.x, z: c.z, r:", self.source)
+
+    def test_terrain_frontier_is_atmospheric_and_never_discards_more_geometry(self):
+        scene = (ROOT / "web" / "flightverse" / "scene.js").read_text()
+        for contract in (
+            "uFrontierOn",
+            "uFrontierWidth",
+            "uFrontierColor",
+            "float fvEdge",
+            "smoothstep(0.0, uFrontierWidth",
+            "diffuseColor.rgb = mix(uFrontierColor",
+            "frontier:",
+        ):
+            self.assertIn(contract, scene)
+        self.assertIn("Q.get('diagnostic') !== '1'", self.source)
+        self.assertNotIn("if (fvEdge", scene)
 
     def test_scene_generation_disposes_stale_async_layers(self):
         scene = (ROOT / "web" / "flightverse" / "scene.js").read_text()

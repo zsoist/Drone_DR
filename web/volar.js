@@ -4,30 +4,31 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=286';
+import * as THREE from '/flightverse/three.js?v=288';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=286';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=286';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=286';
-import { createRecorder } from '/flightverse/recorder.js?v=286';
-import { createAudio } from '/flightverse/audio.js?v=286';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=286';
-import { createTouchSticks } from '/flightverse/touch.js?v=286';
-import { createSky } from '/flightverse/sky.js?v=286';
-import { loadSceneObjects } from '/flightverse/objects.js?v=286';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=286';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=286';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=286';
-import CameraControls from '/vendor/camera-controls.module.js?v=286';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=286';
+} from '/flightverse/scene.js?v=288';
+import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=288';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=288';
+import { createRecorder } from '/flightverse/recorder.js?v=288';
+import { createAudio } from '/flightverse/audio.js?v=288';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=288';
+import { createTouchSticks } from '/flightverse/touch.js?v=288';
+import { createSky } from '/flightverse/sky.js?v=288';
+import { loadSceneObjects } from '/flightverse/objects.js?v=288';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=288';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=288';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=288';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=288';
+import CameraControls from '/vendor/camera-controls.module.js?v=288';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=288';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=286';
+} from '/vendor/postprocessing180.module.js?v=288';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -184,20 +185,27 @@ function hud() {
     <input type="range" class="vl-gwheel" id="vl-gwheel" min="-72" max="22" value="-7" aria-label="gimbal">
     <div class="vl-grade" id="vl-grade">
       <div class="vl-grade-head vl-grade-drag"><span class="vl-grade-k">IMAGEN <small>ARRASTRAR</small></span>
-        <button class="vl-grade-x" id="gr-close" aria-label="cerrar">✕</button></div>
+        <div class="vl-grade-actions">
+          <button class="vl-grade-expand" id="gr-expand" aria-expanded="false"
+            aria-controls="vl-grade-body">Ajustes</button>
+          <button class="vl-grade-x" id="gr-close" aria-label="cerrar">✕</button>
+        </div>
+      </div>
       <div class="vl-presets">
         <button data-pr="natural">Natural</button>
         <button data-pr="vivo">Vivo</button>
         <button data-pr="cine">Cine</button>
       </div>
-      <label>Brillo Gaussian <output id="o-b">0.88</output><input type="range" id="gr-b" min="0.35" max="1.6" step="0.01" value="0.88"></label>
-      <label>Brillo 3D <output id="o-t">1.00</output><input type="range" id="gr-t" min="0.3" max="2.2" step="0.01" value="1"></label>
-      <label>Contraste <output id="o-c">0.06</output><input type="range" id="gr-c" min="-0.15" max="0.55" step="0.01" value="0.06"></label>
-      <label>Saturación <output id="o-s">0.06</output><input type="range" id="gr-s" min="-1" max="1" step="0.01" value="0.06"></label>
-      <label>Bloom <output id="o-g">0.25</output><input type="range" id="gr-g" min="0" max="2" step="0.02" value="0.25"></label>
-      <label>Viñeta <output id="o-v">0.42</output><input type="range" id="gr-v" min="0" max="1" step="0.02" value="0.42"></label>
-      <label>Tono <output id="o-h">0.00</output><input type="range" id="gr-h" min="-0.5" max="0.5" step="0.01" value="0"></label>
-      <button id="gr-reset">Restablecer</button>
+      <div class="vl-grade-body" id="vl-grade-body">
+        <label>Brillo Gaussian <output id="o-b">0.88</output><input type="range" id="gr-b" min="0.35" max="1.6" step="0.01" value="0.88"></label>
+        <label>Brillo 3D <output id="o-t">1.00</output><input type="range" id="gr-t" min="0.3" max="2.2" step="0.01" value="1"></label>
+        <label>Contraste <output id="o-c">0.06</output><input type="range" id="gr-c" min="-0.15" max="0.55" step="0.01" value="0.06"></label>
+        <label>Saturación <output id="o-s">0.06</output><input type="range" id="gr-s" min="-1" max="1" step="0.01" value="0.06"></label>
+        <label>Bloom <output id="o-g">0.25</output><input type="range" id="gr-g" min="0" max="2" step="0.02" value="0.25"></label>
+        <label>Viñeta <output id="o-v">0.42</output><input type="range" id="gr-v" min="0" max="1" step="0.02" value="0.42"></label>
+        <label>Tono <output id="o-h">0.00</output><input type="range" id="gr-h" min="-0.5" max="0.5" step="0.01" value="0"></label>
+        <button id="gr-reset">Restablecer</button>
+      </div>
     </div>
     <button class="vl-goto" id="vl-goto">Ir al inicio de la ruta »</button>
     <div class="vl-cine" id="vl-cine">
@@ -247,6 +255,11 @@ async function main() {
   if (!CID) { location.replace('mundo.html'); return; }
   document.title = 'AeroBrain — Volar';
   hud();
+  const coarsePointer = matchMedia('(pointer:coarse)').matches;
+  const gradePanel = $('#vl-grade');
+  if (coarsePointer && localStorage.getItem('ab.fv.grade.expanded') !== '1') {
+    gradePanel.classList.add('compact');
+  }
   const say = m => { $('#vl-scene').textContent = m; };
   say('Cargando escena…');
 
@@ -346,6 +359,9 @@ async function main() {
   ));
 
   const terrain = await loadTerrain(man, { anisotropy: 8 });
+  const FRONTIER_COLORS = { dia: 0xcfe2f2, atardecer: 0xc08066, noche: 0x0c1420 };
+  terrain.frontier.uFrontierOn.value = Q.get('diagnostic') !== '1' ? 1 : 0;
+  terrain.frontier.uFrontierColor.value.set(FRONTIER_COLORS[sky.preset] || FRONTIER_COLORS.dia);
   terrain.mesh.matrixAutoUpdate = false; terrain.mesh.updateMatrix();   // estática
   terrain.mesh.receiveShadow = true;
   worldGroup.add(terrain.mesh);
@@ -580,9 +596,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=286', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=288', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=286');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=288');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -861,7 +877,9 @@ async function main() {
   };
   const CIELO_LB = { dia: 'día', atardecer: 'atardecer', noche: 'noche' };
   $('#vl-cielo').addEventListener('click', () => {
-    $('#vl-cielo').textContent = 'cielo · ' + CIELO_LB[sky.cycle()];
+    const preset = sky.cycle();
+    terrain.frontier.uFrontierColor.value.set(FRONTIER_COLORS[preset] || FRONTIER_COLORS.dia);
+    $('#vl-cielo').textContent = 'cielo · ' + CIELO_LB[preset];
   });
   $('#vl-cielo').textContent = 'cielo · ' + (CIELO_LB[sky.preset] || 'día');
   $('#vl-mode').addEventListener('click', () => {
@@ -876,14 +894,20 @@ async function main() {
   });
   $('#vl-ajustes').addEventListener('click', e => {
     e.stopPropagation();
-    const grade = $('#vl-grade');
-    const opening = !grade.classList.contains('show');
+    const opening = !gradePanel.classList.contains('show');
     setMobileSheet('', false);
     closeFlightOverlays(opening ? 'image' : '');
-    grade.classList.toggle('show', opening);
+    gradePanel.classList.toggle('show', opening);
     if (opening) movable.image.clamp();
   });
   $('#gr-close').addEventListener('click', () => $('#vl-grade').classList.remove('show'));
+  $('#gr-expand').addEventListener('click', e => {
+    e.stopPropagation();
+    const compact = gradePanel.classList.toggle('compact');
+    $('#gr-expand').setAttribute('aria-expanded', String(!compact));
+    localStorage.setItem('ab.fv.grade.expanded', compact ? '0' : '1');
+    if (!compact) movable.image.clamp();
+  });
   document.addEventListener('pointerdown', e => {
     const g = $('#vl-grade');
     if (g.classList.contains('show') && !g.contains(e.target) && !e.target.closest('#vl-ajustes'))
@@ -1319,7 +1343,16 @@ async function main() {
     }, 1000);
   }
   const P = new THREE.Vector3();
+  let qualityGovernor = null;
+  let dprNow = Math.min(devicePixelRatio, 2);
+  let renderReportFrame = 0;
+  const renderLifecycle = { pauses: 0, resumes: 0 };
   const loop = createLoop({
+    onPause: () => { renderLifecycle.pauses += 1; },
+    onResume: () => {
+      renderLifecycle.resumes += 1;
+      if (qualityGovernor) qualityGovernor.reset();
+    },
     update(dt) {
       simT += dt;
       if (director) {
@@ -1463,7 +1496,7 @@ async function main() {
         ghost.marker.position.lerpVectors(ghost.pts[a], ghost.pts[b] || ghost.pts[a], f);
       }
     },
-    render(alpha) {
+    render(alpha, frameMs) {
       const o = drone.lerpPose(alpha, P);
       curYaw = o.yaw;
       // FOV kick con turbo: sensación de velocidad AAA (lerp suave, barato)
@@ -1587,6 +1620,34 @@ async function main() {
         } else shake.mag = 0;
       }
       composer.render();
+      if (calidad === 'auto' && qualityGovernor) {
+        const decision = qualityGovernor.sample(frameMs, performance.now());
+        if (decision.changed) {
+          dprNow = decision.dpr;
+          applyDpr(dprNow);
+        }
+      }
+      renderReportFrame += 1;
+      if (renderReportFrame % 30 === 0) {
+        const measured = qualityGovernor?.snapshot() || {
+          tier: -1, changes: 0, reason: 'manual', avgMs: frameMs, p95Ms: frameMs, samples: 1,
+        };
+        report.render = {
+          dpr: +dprNow.toFixed(2),
+          tier: measured.tier,
+          changes: measured.changes,
+          reason: calidad === 'auto' ? measured.reason : 'manual',
+          avgMs: +measured.avgMs.toFixed(2),
+          p95Ms: +measured.p95Ms.toFixed(2),
+          samples: measured.samples,
+          calls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+          geometries: renderer.info.memory.geometries,
+          textures: renderer.info.memory.textures,
+          pauses: renderLifecycle.pauses,
+          resumes: renderLifecycle.resumes,
+        };
+      }
       drawMinimap();
       // HUD (barato: texto directo, sin re-layout)
       $('#vl-agl').textContent = drone.agl == null ? 'fuera' : `${drone.agl.toFixed(1)} m`;
@@ -1674,6 +1735,7 @@ async function main() {
   let calidad = Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto';   // QA: calidad por URL
   if (!CALIDADES[calidad]) calidad = 'auto';
   const applyDpr = d => {
+    if (Math.abs(renderer.getPixelRatio() - d) < 0.001) return;
     renderer.setPixelRatio(d);
     renderer.setSize(innerWidth, innerHeight);
     composer.setSize(innerWidth, innerHeight);
@@ -1711,8 +1773,17 @@ async function main() {
     } else if (fullTex) {
       terrain.mesh.material.map = fullTex;   // ya cargada: persiste
     }
-    if (c.dpr) { dprNow = c.dpr; applyDpr(c.dpr); }
-    else { dprNow = Math.min(devicePixelRatio, 2); applyDpr(dprNow); }
+    if (c.dpr) {
+      dprNow = c.dpr;
+      applyDpr(c.dpr);
+    } else {
+      qualityGovernor = createRenderQualityGovernor({
+        deviceDpr: Math.min(devicePixelRatio, 2),
+        initialDpr: Math.min(dprNow, devicePixelRatio, 2),
+      });
+      dprNow = qualityGovernor.snapshot().dpr;
+      applyDpr(dprNow);
+    }
     localStorage.setItem('ab.fv.calidad', k);
     report.calidad = { k, dpr: +dprNow.toFixed(2) };
     upgradeMeshTex(k);
@@ -1722,17 +1793,7 @@ async function main() {
     setCalidad(ks[(ks.indexOf(calidad) + 1) % ks.length]);
   });
 
-  let dprNow = Math.min(devicePixelRatio, 2);
   setCalidad(calidad);
-  setInterval(() => {
-    if (calidad !== 'auto') return;              // manual manda; el governor descansa
-    const f = loop.fps() || 60;
-    const maxDpr = Math.min(devicePixelRatio, 2);
-    let want = dprNow;
-    if (f < 52) want = Math.max(1, dprNow - 0.25);
-    else if (f > 58 && dprNow < maxDpr) want = Math.min(maxDpr, dprNow + 0.25);
-    if (want !== dprNow) { dprNow = want; applyDpr(want); }
-  }, 2000);
 
   renderer.compile(scene, camera);             // warmup: sin hitch del primer frame
   addEventListener('pagehide', () => {
@@ -1768,6 +1829,16 @@ async function main() {
       report.rendererMemory = {
         geometries: renderer.info.memory.geometries,
         textures: renderer.info.memory.textures,
+      };
+      report.render = {
+        ...(report.render || {}),
+        dpr: +dprNow.toFixed(2),
+        calls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        pauses: renderLifecycle.pauses,
+        resumes: renderLifecycle.resumes,
       };
       report.ok = report.moved
         && report.fps >= 50

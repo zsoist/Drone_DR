@@ -3,9 +3,9 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=286';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=286';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=286';
+import * as THREE from '/flightverse/three.js?v=288';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=288';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=288';
 
 let sceneGenerationId = 0;
 export function createSceneGeneration() {
@@ -108,8 +108,13 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
     available: !!meshCoverageTex,
     uMeshOn: { value: 0 },
   };
+  const frontier = {
+    uFrontierOn: { value: 1 },
+    uFrontierWidth: { value: 0.055 },
+    uFrontierColor: { value: new THREE.Color(0xcfe2f2) },
+  };
   material.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, splatMask, { uMeshOn: meshMask.uMeshOn });
+    Object.assign(sh.uniforms, splatMask, frontier, { uMeshOn: meshMask.uMeshOn });
     if (maskTex) sh.uniforms.uValid = { value: maskTex };
     if (meshCoverageTex) sh.uniforms.uMeshCoverage = { value: meshCoverageTex };
     sh.vertexShader = sh.vertexShader
@@ -119,6 +124,7 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFvW;\nvarying vec2 vFvUv;\nuniform float uSplatOn;uniform vec2 uSplatC;uniform float uSplatR;'
         + '\nuniform float uMeshOn;'
+        + '\nuniform float uFrontierOn;uniform float uFrontierWidth;uniform vec3 uFrontierColor;'
         + (maskTex ? '\nuniform sampler2D uValid;' : '')
         + (meshCoverageTex ? '\nuniform sampler2D uMeshCoverage;' : ''))
       .replace('#include <map_fragment>',
@@ -130,6 +136,12 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
              float nfv = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
              if (ffv < nfv) discard;
            }\n#include <map_fragment>`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>',
+      `#include <color_fragment>
+       float fvEdge = min(min(vFvUv.x, vFvUv.y), min(1.0 - vFvUv.x, 1.0 - vFvUv.y));
+       fvEdge = smoothstep(0.0, uFrontierWidth, fvEdge);
+       float fvKeep = mix(1.0, fvEdge, uFrontierOn);
+       diffuseColor.rgb = mix(uFrontierColor, diffuseColor.rgb, fvKeep);`);
   };
 
   const mesh = new THREE.Mesh(geo, material);
@@ -168,7 +180,7 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
     return true;
   }
   return {
-    splatMask, meshMask,
+    splatMask, meshMask, frontier: frontier,
     mesh, hf, crater,
     heightAt: makeHeightSampler(hf, { ...lodMeta, elev_min: lodMeta.elev_min }),
     world: lodMeta,
@@ -287,7 +299,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=286');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=288');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     sp.userData.fvRefs = 0;
