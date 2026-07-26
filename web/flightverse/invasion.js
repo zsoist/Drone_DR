@@ -4,7 +4,16 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=294';
+import * as THREE from '/flightverse/three.js?v=296';
+import {
+  capWaveQueue,
+  createBurstSchedule,
+  getDeviceBudget,
+  nextEnemyState,
+  predictiveAim,
+  selectEnemyLod,
+  steerGroundEnemy,
+} from '/flightverse/invasion-policy.js?v=296';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -120,41 +129,234 @@ function bGigante() {
 
 const SPECS = {
   zombie:  { build: () => bZombie(false), hp: 100, speed: 1.6, radius: 1.7, y: 1.15, dmg: 8,  melee: 2.2 },
-  arquero: { build: () => bZombie(true),  hp: 90,  speed: 1.2, radius: 1.7, y: 1.15, shoot: { every: 3.2, speed: 26, dmg: 6, grav: 9, range: 90 } },
-  soldado: { build: bSoldado,             hp: 120, speed: 3.2, radius: 1.7, y: 1.2,  shoot: { every: 2.4, speed: 46, dmg: 3, grav: 0, range: 110, burst: 3 } },
-  ufo:     { build: bUfo,                 hp: 240, speed: 7,   radius: 4.5, y: 0,    fly: 'orbit', shoot: { every: 4, speed: 20, dmg: 10, grav: 0, range: 140, plasma: true } },
-  avion:   { build: bAvion,               hp: 140, speed: 34,  radius: 6,   y: 0,    fly: 'pass' },
-  dragon:  { build: bDragon,              hp: 700, speed: 9,   radius: 6,   y: 0,    fly: 'serp', shoot: { every: 4.5, speed: 17, dmg: 15, grav: 2, range: 150, fire: true } },
+  arquero: { build: () => bZombie(true),  hp: 90,  speed: 1.2, radius: 1.7, y: 1.15, shoot: { every: 3.2, speed: 26, dmg: 6, grav: 9, range: 90, band: { min: 24, max: 80 } } },
+  soldado: { build: bSoldado,             hp: 120, speed: 3.2, radius: 1.7, y: 1.2,  shoot: { every: 2.4, speed: 46, dmg: 3, grav: 0, range: 110, burst: 3, band: { min: 20, max: 95 } } },
+  ufo:     { build: bUfo,                 hp: 240, speed: 7,   radius: 4.5, y: 0,    fly: 'orbit', shoot: { every: 4, speed: 20, dmg: 10, grav: 0, range: 140, plasma: true, band: { min: 28, max: 115 } } },
+  avion:   { build: bAvion,               hp: 140, speed: 34,  radius: 6,   y: 0,    fly: 'pass', attackDistance: 120 },
+  dragon:  { build: bDragon,              hp: 700, speed: 9,   radius: 6,   y: 0,    fly: 'serp', shoot: { every: 4.5, speed: 17, dmg: 15, grav: 2, range: 150, fire: true, band: { min: 32, max: 125 } } },
   gigante: { build: bGigante,             hp: 1600, speed: 2.1, radius: 14, y: 8.8,  dmg: 22, melee: 7, slope: 6, foot: 5 },
 };
 
-// ── GLBs externos de enemigos (assets/enemies/<tipo>.glb + manifest.json) ──
-// Contrato en docs/ENEMY_MODEL_SPEC.md: metros reales, -Z al frente, origen en
-// los pies (terrestres) o centro (voladores), AnimationClips 'walk'/'fly'/
-// 'attack'/'idle'. Sin GLB: constructor procedural (fallback honesto).
-let GLTFLoader = null, SkelUtils = null, enemyManifest = null;
-const glbCache = {};
-async function preloadEnemyGlb(type, v) {
-  try {
-    if (!enemyManifest) {
-      enemyManifest = await (await fetch(`/assets/enemies/manifest.json?v=${v}`, { cache: 'no-store' })).json();
-    }
-    if (!enemyManifest[type] || glbCache[type]) return;
-    if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=294'));
-    if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=294');
-    const g = await new GLTFLoader().loadAsync(`/assets/enemies/${type}.glb?v=294`);
-    glbCache[type] = { scene: g.scene, clips: g.animations || [] };
-  } catch { /* GLB opcional: el procedural sigue siendo la verdad */ }
-}
+const DIFFICULTY = {
+  facil: { hp: 0.8, cadence: 1.25, accuracy: 0.72 },
+  media: { hp: 1, cadence: 1, accuracy: 0.86 },
+  dificil: { hp: 1.25, cadence: 0.78, accuracy: 0.95 },
+};
+const AI_STATES = ['spawn', 'pursue', 'strafe', 'orbit', 'attack', 'evade', 'recover', 'dead'];
 
-export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
+export function createInvasion(scene, {
+  heightAt,
+  audio,
+  onHit,
+  fx,
+  deviceTier = 'medium',
+} = {}) {
   const group = new THREE.Group(); group.name = 'fv-invasion'; scene.add(group);
-  const E = [], shots = [];
-  const S = { on: false, wave: 0, alive: 0, killed: 0, spawnAcc: 0, betweenWaves: 0,
-    queue: [], types: ['zombie'] };
+  const E = [], shots = [], bursts = [];
+  const budget = getDeviceBudget(deviceTier);
+  const modelCache = new Map();
+  let catalog = null;
+  let catalogPromise = null;
+  let GLTFLoader = null;
+  let SkelUtils = null;
+  let session = 0;
+  let disposed = false;
+  let simTime = 0;
+  const S = {
+    on: false,
+    phase: 'idle',
+    wave: 0,
+    alive: 0,
+    killed: 0,
+    score: 0,
+    combo: 0,
+    countdown: 0,
+    spawnAcc: 0,
+    queue: [],
+    types: ['zombie'],
+    difficulty: 'media',
+    tier: deviceTier,
+    budget,
+    telemetry: {
+      tier: deviceTier,
+      modelSource: { glb: 0, procedural: 0 },
+      lod: { full: 0, lod1: 0, lod2: 0 },
+      ai: Object.fromEntries(AI_STATES.map(state => [state, 0])),
+      spawnFailures: 0,
+      fallbackTotal: 0,
+      fallbackByType: {},
+      projectiles: 0,
+      scheduledShots: 0,
+      preload: { requested: 0, ready: 0, failed: 0 },
+    },
+  };
+
+  function disposeTree(root) {
+    root?.traverse?.(object => {
+      object.geometry?.dispose?.();
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        if (!material) continue;
+        for (const value of Object.values(material)) {
+          if (value?.isTexture) value.dispose();
+        }
+        material.dispose?.();
+      }
+    });
+  }
+
+  async function loadCatalog() {
+    if (!catalogPromise) {
+      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=296', { cache: 'no-store' })
+        .then(response => {
+          if (!response.ok) throw new Error(`enemy catalog ${response.status}`);
+          return response.json();
+        })
+        .then(value => {
+          catalog = value?.models || {};
+          return catalog;
+        });
+    }
+    return catalogPromise;
+  }
+
+  function modelFile(type, lod) {
+    const entry = catalog?.[type];
+    if (!entry) return null;
+    return lod === 'full' ? entry.file : entry[lod];
+  }
+
+  async function loadModel(type, lod) {
+    const key = `${type}:${lod}`;
+    if (modelCache.has(key)) return modelCache.get(key);
+    S.telemetry.preload.requested++;
+    const loadSession = session;
+    const promise = (async () => {
+      try {
+        await loadCatalog();
+        const file = modelFile(type, lod);
+        if (!file) throw new Error(`catalog missing ${key}`);
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=296'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=296');
+        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=296`);
+        const loaded = { scene: gltf.scene, clips: gltf.animations || [], type, lod };
+        if (disposed || loadSession !== session) {
+          disposeTree(loaded.scene);
+          modelCache.delete(key);
+          return null;
+        }
+        modelCache.set(key, loaded);
+        S.telemetry.preload.ready++;
+        return loaded;
+      } catch {
+        modelCache.delete(key);
+        S.telemetry.preload.failed++;
+        return null;
+      }
+    })();
+    modelCache.set(key, promise);
+    return promise;
+  }
+
+  function cachedModel(type, lod) {
+    const value = modelCache.get(`${type}:${lod}`);
+    return value?.scene ? value : null;
+  }
+
+  function makeActions(root, clips, spec) {
+    if (!clips.length) return { mixer: null, act: null };
+    const mixer = new THREE.AnimationMixer(root);
+    const byName = name => THREE.AnimationClip.findByName(clips, name);
+    const move = byName(spec.fly ? 'fly' : 'walk') || byName('idle') || clips[0];
+    const act = {
+      move: mixer.clipAction(move),
+      attack: null,
+      death: null,
+    };
+    act.move.play();
+    const attack = byName('attack');
+    if (attack) {
+      act.attack = mixer.clipAction(attack);
+      act.attack.setLoop(THREE.LoopOnce, 1);
+      act.attack.clampWhenFinished = false;
+    }
+    const death = byName('death');
+    if (death) {
+      act.death = mixer.clipAction(death);
+      act.death.setLoop(THREE.LoopOnce, 1);
+      act.death.clampWhenFinished = true;
+    }
+    return { mixer, act };
+  }
+
+  function makeVisual(type, lod, spec) {
+    const cached = cachedModel(type, lod);
+    if (cached && SkelUtils) {
+      const root = SkelUtils.clone(cached.scene);
+      root.traverse(object => { object.castShadow = true; });
+      const { mixer, act } = makeActions(root, cached.clips, spec);
+      const size = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
+      return {
+        root,
+        anim: {},
+        mixer,
+        act,
+        source: 'glb',
+        lod,
+        yOff: spec.fly ? 0 : size.y * 0.55,
+        radius: Math.max(spec.radius, size.length() * 0.42),
+      };
+    }
+    const built = spec.build();
+    built.g.traverse(object => { object.castShadow = true; });
+    return {
+      root: built.g,
+      anim: built.anim,
+      mixer: null,
+      act: null,
+      source: 'procedural',
+      lod: null,
+      yOff: spec.y,
+      radius: spec.radius,
+    };
+  }
+
+  function releaseVisual(e, final = false) {
+    if (!e.visual) return;
+    e.mixer?.stopAllAction();
+    e.mixer?.uncacheRoot?.(e.visual);
+    e.visual.traverse?.(object => object.skeleton?.dispose?.());
+    e.g.remove(e.visual);
+    if (e.modelSource === 'procedural' || final) disposeTree(e.visual);
+    e.visual = null;
+    e.mixer = null;
+    e.act = null;
+  }
+
+  function swapVisual(e, lod) {
+    if (e.modelSource === 'glb' && e.lod === lod) return false;
+    if (!cachedModel(e.type, lod)) {
+      loadModel(e.type, lod);
+      return false;
+    }
+    releaseVisual(e);
+    const visual = makeVisual(e.type, lod, e.spec);
+    e.visual = visual.root;
+    e.anim = visual.anim;
+    e.mixer = visual.mixer;
+    e.act = visual.act;
+    e.modelSource = visual.source;
+    e.lod = visual.lod;
+    e.yOff = visual.yOff;
+    e.radius = visual.radius;
+    e.radiusSq = visual.radius * visual.radius;
+    e.g.add(visual.root);
+    return true;
+  }
 
   function spawnOne(type, around) {
     const spec = SPECS[type];
+    if (!spec || E.length >= budget.maxEnemies) return false;
     for (let tries = 0; tries < 12; tries++) {
       const a = Math.random() * 6.283;
       const r = spec.fly ? 60 + Math.random() * 60 : 14 + Math.random() * 30;
@@ -168,49 +370,79 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
         if (gy == null) continue;
         y = gy;
       }
-      let g, anim, mixer = null, act = null, y2 = spec.y, radius = spec.radius;
-      const cached = glbCache[type];
-      if (cached) {
-        g = SkelUtils.clone(cached.scene);
-        anim = {};
-        if (cached.clips.length) {
-          mixer = new THREE.AnimationMixer(g);
-          const byName = n => THREE.AnimationClip.findByName(cached.clips, n);
-          const move = byName(spec.fly ? 'fly' : 'walk') || byName('idle') || cached.clips[0];
-          act = { move: mixer.clipAction(move), attack: null };
-          act.move.play();
-          const atk = byName('attack');
-          if (atk) { act.attack = mixer.clipAction(atk); act.attack.setLoop(THREE.LoopOnce); }
-        }
-        const bb = new THREE.Box3().setFromObject(g);
-        const sz = bb.getSize(new THREE.Vector3());
-        y2 = spec.fly ? 0 : sz.y * 0.55;        // voladores: origen = centro (contrato)
-        radius = Math.max(spec.radius, sz.length() * 0.42);
-      } else {
-        ({ g, anim } = spec.build());
-      }
+      const lod = selectEnemyLod(type, r, deviceTier, { nearUsed: budget.nearDetail });
+      const visual = makeVisual(type, lod, spec);
+      const g = new THREE.Group();
+      g.add(visual.root);
       g.position.set(x, y, z);
-      g.traverse(o => { o.castShadow = true; });
       group.add(g);
-      E.push({ g, anim, mixer, act, type, spec, enemy: true, blood: ENEMIES[type].blood,
-        hp: spec.hp * (1 + S.wave * 0.12), phase: Math.random() * 6.283,
-        speed: spec.speed * (1 + S.wave * 0.04), center: new THREE.Vector3(),
-        yOff: y2, radius, radiusSq: radius * radius,
-        cool: Math.random() * 3, passDir: null });
+      const diff = DIFFICULTY[S.difficulty];
+      const waveScale = Math.min(10, S.wave);
+      const e = {
+        g,
+        visual: visual.root,
+        anim: visual.anim,
+        mixer: visual.mixer,
+        act: visual.act,
+        modelSource: visual.source,
+        lod: visual.lod,
+        type,
+        spec,
+        enemy: true,
+        blood: ENEMIES[type].blood,
+        hp: spec.hp * diff.hp * (1 + waveScale * 0.1),
+        phase: Math.random() * 6.283,
+        speed: spec.speed * (1 + waveScale * 0.025),
+        center: new THREE.Vector3(),
+        yOff: visual.yOff,
+        radius: visual.radius,
+        radiusSq: visual.radius * visual.radius,
+        cool: Math.random() * spec.shoot?.every || 0,
+        state: 'spawn',
+        stateTime: 0,
+        blocked: false,
+        passDir: null,
+        seed: ((S.wave * 73856093) ^ (E.length * 19349663) ^ (type.length * 83492791)) >>> 0,
+      };
+      if (visual.source === 'procedural') {
+        S.telemetry.fallbackTotal++;
+        S.telemetry.fallbackByType[type] = (S.telemetry.fallbackByType[type] || 0) + 1;
+      }
+      E.push(e);
       S.alive++;
       return true;
     }
     return false;
   }
 
-  function shootAt(e, dronePos) {
+  function removeShot(index) {
+    const shot = shots[index];
+    if (!shot) return;
+    group.remove(shot.m);
+    disposeTree(shot.m);
+    shots.splice(index, 1);
+  }
+
+  function shootAt(e, dronePos, droneVelocity) {
     const sh = e.spec.shoot;
+    if (!sh || shots.length >= budget.maxProjectiles || e.g.userData.dead) return false;
     const from = e.center.clone();
-    const dir = dronePos.clone().sub(from);
-    const d = dir.length();
-    if (d > sh.range) return;
-    dir.normalize();
-    if (sh.grav) dir.y += (d / sh.speed) * sh.grav * 0.5 / sh.speed;   // compensa arco
+    const d = from.distanceTo(dronePos);
+    if (d > sh.range) return false;
+    const aim = predictiveAim({
+      origin: from,
+      target: dronePos,
+      targetVelocity: droneVelocity || { x: 0, y: 0, z: 0 },
+      projectileSpeed: sh.speed,
+      gravity: sh.grav || 0,
+    });
+    const diff = DIFFICULTY[S.difficulty];
+    const miss = (1 - diff.accuracy) * 0.16;
+    const dir = new THREE.Vector3(aim.velocity.x, aim.velocity.y, aim.velocity.z);
+    dir.x += (Math.random() - 0.5) * sh.speed * miss;
+    dir.y += (Math.random() - 0.5) * sh.speed * miss * 0.5;
+    dir.z += (Math.random() - 0.5) * sh.speed * miss;
+    dir.normalize().multiplyScalar(sh.speed);
     let m;
     if (sh.fire || sh.plasma) {
       m = new THREE.Mesh(new THREE.SphereGeometry(sh.fire ? 0.5 : 0.35, 10, 8),
@@ -221,154 +453,319 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
     }
     m.position.copy(from);
     group.add(m);
-    shots.push({ m, vel: dir.multiplyScalar(sh.speed), t: 0, dmg: sh.dmg, grav: sh.grav || 0, glow: sh.fire || sh.plasma });
+    shots.push({ m, vel: dir, t: 0, dmg: sh.dmg, grav: sh.grav || 0, glow: sh.fire || sh.plasma });
+    return true;
+  }
+
+  function scheduleAttack(e) {
+    const schedule = createBurstSchedule({
+      requestedShots: e.spec.shoot?.burst || 1,
+      intervalMs: 120,
+      maxShots: 4,
+      maxDurationMs: 420,
+    });
+    const cap = budget.maxEnemies * 4;
+    for (const delay of schedule) {
+      if (bursts.length >= cap) break;
+      bursts.push({ e, due: simTime + delay / 1000 });
+    }
+  }
+
+  function removeEnemy(index) {
+    const e = E[index];
+    if (!e) return;
+    bursts.splice(0, bursts.length, ...bursts.filter(job => job.e !== e));
+    releaseVisual(e);
+    group.remove(e.g);
+    E.splice(index, 1);
+    S.alive = Math.max(0, S.alive - 1);
+  }
+
+  function clearRuntime() {
+    bursts.length = 0;
+    for (let index = shots.length - 1; index >= 0; index--) removeShot(index);
+    for (let index = E.length - 1; index >= 0; index--) removeEnemy(index);
+    S.queue.length = 0;
+    S.alive = 0;
+    S.spawnAcc = 0;
+    refreshTelemetry();
+  }
+
+  function clearModelCache() {
+    for (const cached of modelCache.values()) {
+      if (cached?.scene) disposeTree(cached.scene);
+    }
+    modelCache.clear();
+  }
+
+  function startPreload() {
+    const token = session;
+    S.phase = 'loading';
+    S.countdown = 2;
+    const selectedLods = S.types.flatMap(type => ['lod1', 'lod2'].map(lod => loadModel(type, lod)));
+    Promise.allSettled(selectedLods).then(() => {
+      if (!S.on || disposed || token !== session || S.phase !== 'loading') return;
+      S.phase = 'countdown';
+      S.countdown = 3;
+    });
+  }
+
+  function refreshTelemetry() {
+    const source = { glb: 0, procedural: 0 };
+    const lod = { full: 0, lod1: 0, lod2: 0 };
+    const ai = Object.fromEntries(AI_STATES.map(state => [state, 0]));
+    for (const e of E) {
+      source[e.modelSource]++;
+      if (e.lod) lod[e.lod]++;
+      ai[e.state] = (ai[e.state] || 0) + 1;
+    }
+    S.telemetry.modelSource = source;
+    S.telemetry.lod = lod;
+    S.telemetry.ai = ai;
+    S.telemetry.projectiles = shots.length;
+    S.telemetry.scheduledShots = bursts.length;
   }
 
   return {
     state: S,
     hittables: E,
     setTypes(list) { if (list.length) S.types = list; },
-    toggle(dronePos, types) {
+    toggle(dronePos, types, difficulty = 'media') {
       S.on = !S.on;
+      session++;
       if (S.on) {
-        if (types?.length) S.types = types;
-        for (const t of S.types) preloadEnemyGlb(t, 114);   // progresivo: cae al procedural mientras
-        S.wave = 0; S.killed = 0; S.betweenWaves = 0.5; S.queue = [];
+        if (types?.length) S.types = types.filter(type => ENEMIES[type]);
+        if (!S.types.length) S.types = ['zombie'];
+        S.difficulty = DIFFICULTY[difficulty] ? difficulty : 'media';
+        S.wave = 0;
+        S.killed = 0;
+        S.score = 0;
+        S.combo = 0;
+        S.queue = [];
+        S.spawnAcc = 0;
+        S.telemetry.spawnFailures = 0;
+        S.telemetry.fallbackTotal = 0;
+        S.telemetry.fallbackByType = {};
+        S.telemetry.preload = { requested: 0, ready: 0, failed: 0 };
+        startPreload();
       } else {
-        for (const e of E) group.remove(e.g);
-        for (const s2 of shots) group.remove(s2.m);
-        E.length = 0; shots.length = 0; S.alive = 0;
+        S.phase = 'idle';
+        S.countdown = 0;
+        clearRuntime();
+        clearModelCache();
       }
       return S.on;
     },
-    update(dt, dronePos) {
+    update(dt, dronePos, droneVelocity) {
       if (!S.on) return;
-      // oleadas: mezcla de los tipos elegidos
-      if (S.alive === 0 && S.queue.length === 0) {
-        S.betweenWaves -= dt;
-        if (S.betweenWaves <= 0) {
-          S.wave++;
-          for (const t of S.types) {
-            const n = t === 'gigante' ? Math.ceil(S.wave / 2)
-              : t === 'dragon' ? 1
-              : t === 'ufo' || t === 'avion' ? 1 + Math.floor(S.wave / 2)
-              : 3 + S.wave * 2;
-            for (let i = 0; i < n; i++) S.queue.push(t);
-          }
-          S.betweenWaves = 3;
+      const step = Math.min(0.05, Math.max(0, dt));
+      simTime += step;
+      if (S.combo && simTime - (S.lastKillAt || 0) > 4) S.combo = 0;
+      if (S.phase === 'loading') {
+        S.countdown -= step;
+        if (S.countdown <= 0) {
+          S.phase = 'countdown';
+          S.countdown = 3;
         }
+      } else if (S.phase === 'countdown') {
+        S.countdown -= step;
+        if (S.countdown <= 0) {
+          S.wave++;
+          S.queue = capWaveQueue({
+            types: S.types,
+            wave: S.wave,
+            tier: deviceTier,
+            difficulty: S.difficulty,
+            seed: session * 1009 + S.wave * 9176,
+          });
+          S.phase = 'running';
+          S.countdown = 0;
+        }
+      } else if (S.phase === 'running' && S.alive === 0 && S.queue.length === 0 && bursts.length === 0) {
+        S.phase = 'countdown';
+        S.countdown = 3;
       }
       if (S.queue.length) {
-        S.spawnAcc += dt;
-        if (S.spawnAcc > 0.4) { S.spawnAcc = 0; if (spawnOne(S.queue[0], dronePos)) S.queue.shift(); }
+        S.spawnAcc += step;
+        if (S.spawnAcc > 0.35) {
+          S.spawnAcc = 0;
+          const spawned = spawnOne(S.queue[0], dronePos);
+          S.queue.shift();
+          if (!spawned) S.telemetry.spawnFailures++;
+        }
       }
-      // ── enemigos ──
+      S._lodAcc = (S._lodAcc || 0) + step;
+      if (S._lodAcc >= 0.5) {
+        S._lodAcc = 0;
+        let nearUsed = 0;
+        const ranked = E.filter(e => !e.g.userData.dead)
+          .sort((a, b) => a.g.position.distanceToSquared(dronePos) - b.g.position.distanceToSquared(dronePos));
+        for (const e of ranked) {
+          const distance = e.g.position.distanceTo(dronePos);
+          const lod = selectEnemyLod(e.type, distance, deviceTier, { nearUsed });
+          if (lod === 'full') nearUsed++;
+          swapVisual(e, lod);
+        }
+      }
+
+      // Mixers advance exactly once per frame, including death playback.
       for (let i = E.length - 1; i >= 0; i--) {
         const e = E[i];
+        const p = e.g.position;
+        e.stateTime += step;
+        e.phase += step * (e.spec.fly ? 2 : e.speed * 3.2);
+        e.mixer?.update(step);
+        e.center.set(p.x, p.y + (e.yOff ?? e.spec.y), p.z);
+
         if (e.g.userData.dead) {
-          if (!e._deathStarted) {
-            e._deathStarted = true;
-            const dc = e.mixer && THREE.AnimationClip.findByName(glbCache[e.type]?.clips || [], 'death');
-            if (dc) {
-              e._deathT = Math.max(0.25, dc.duration);
-              e.act?.move?.stop();
-              const da = e.mixer.clipAction(dc);
-              da.setLoop(THREE.LoopOnce, 1); da.clampWhenFinished = true;
-              da.reset().play();
-            } else e._deathT = 0;
+          if (e.state !== 'dead') {
+            e.state = 'dead';
+            e.stateTime = 0;
+            e.act?.move?.stop();
+            if (e.act?.death) {
+              e._deathT = Math.max(0.25, e.act.death.getClip().duration);
+              e.act.death.reset().play();
+            } else {
+              e._deathT = 0.15;
+            }
           }
-          if (e.mixer) e.mixer.update(dt);
-          e._deathT -= dt;
+          e._deathT -= step;
           if (e._deathT <= 0) {
             if (!e.blood) fx?.explode?.(e.center.clone(), e.type === 'dragon' ? 1.6 : 0.9);
-            group.remove(e.g); E.splice(i, 1); S.alive--; S.killed++;
+            const chained = S.lastKillAt != null && simTime - S.lastKillAt <= 4;
+            S.combo = chained ? Math.min(12, S.combo + 1) : 1;
+            S.lastKillAt = simTime;
+            S.score += 100 * S.combo;
+            S.killed++;
+            removeEnemy(i);
           }
           continue;
         }
-        const p = e.g.position;
-        const dx = dronePos.x - p.x, dz = dronePos.z - p.z;
+
+        const dx = dronePos.x - p.x;
+        const dz = dronePos.z - p.z;
         const dist = Math.hypot(dx, dz);
-        e.phase += dt * (e.spec.fly ? 2 : e.speed * 3.2);
-        if (e.mixer) e.mixer.update(dt);
-        if (e.spec.fly === 'orbit') {
-          // OVNI: orbita cerrando círculos, bobbing
-          const ang = Math.atan2(p.z - dronePos.z, p.x - dronePos.x) + dt * e.speed / Math.max(14, dist);
-          const r = Math.max(16, dist - dt * 2.5);
-          p.x = dronePos.x + Math.cos(ang) * r;
-          p.z = dronePos.z + Math.sin(ang) * r;
-          p.y += ((dronePos.y + 6 + Math.sin(e.phase) * 3) - p.y) * dt;
-          if (!e.mixer && e.anim.ring) e.anim.ring.rotation.z += dt * 3;
-        } else if (e.spec.fly === 'pass') {
-          // avión: pasadas rectas, re-entra al alejarse
-          if (!e.passDir || dist > 220) {
-            e.passDir = dronePos.clone().sub(p).setY(0).normalize();
-            e.g.lookAt(p.clone().add(e.passDir));
-            e.g.rotateY(Math.PI);                  // frente -Z (lookAt apunta +Z)
+        e.cool = Math.max(0, e.cool - step);
+        const previous = e.state;
+        const next = nextEnemyState({
+          state: previous,
+          timeInState: e.stateTime,
+          distance: dist,
+          dead: false,
+          air: !!e.spec.fly,
+          ranged: !!e.spec.shoot,
+          blocked: e.blocked,
+          attackReady: e.cool <= 0,
+          band: e.spec.shoot?.band,
+          attackDistance: e.spec.attackDistance || e.spec.melee || 80,
+          spawnDuration: 0.5,
+          windup: e.spec.fly ? (e.spec.fly === 'pass' ? 1.8 : 0.55) : 0.45,
+          maxAttackDuration: e.spec.fly === 'pass' ? 1.8 : 0.55,
+          disengageDistance: e.spec.fly === 'pass' ? 145 : 120,
+          recoverDuration: 0.75,
+          evadeDuration: 0.6,
+        });
+        if (next !== previous) {
+          e.state = next;
+          e.stateTime = 0;
+          if (next === 'attack') {
+            e.act?.attack?.reset().play();
+            if (!e.act?.attack && e.anim.aR) e.anim.aR.rotation.x = 2.2;
+            if (e.spec.fly === 'pass') e.passDir = dronePos.clone().sub(p).setY(0).normalize();
           }
-          p.addScaledVector(e.passDir, e.speed * dt);
-          p.y += ((dronePos.y + 12) - p.y) * dt * 0.5;
-          e.g.rotation.z = Math.sin(e.phase * 0.7) * 0.12;
-        } else if (e.spec.fly === 'serp') {
-          // dragón: persigue serpenteando, alas baten
-          const dir = dronePos.clone().sub(p);
-          dir.y += 4;
-          dir.normalize();
-          p.addScaledVector(dir, e.speed * dt);
-          p.x += Math.sin(e.phase * 1.7) * dt * 6;
-          p.y += Math.cos(e.phase * 1.3) * dt * 3;
-          e.g.lookAt(dronePos);
-          e.g.rotateY(Math.PI);                    // frente -Z (lookAt apunta +Z)
+          if (previous === 'attack') {
+            const cadence = DIFFICULTY[S.difficulty].cadence;
+            if (e.spec.shoot) scheduleAttack(e);
+            if (e.spec.melee && dist <= e.spec.melee
+                && Math.abs(dronePos.y - p.y - e.spec.y) < e.spec.melee * 1.4) {
+              onHit?.(e.spec.dmg);
+            }
+            e.cool = (e.spec.shoot?.every || 0.8) * cadence * (0.9 + Math.random() * 0.2);
+          }
+        }
+
+        if (e.spec.fly) {
+          const toward = dronePos.clone().sub(p);
+          const away = p.clone().sub(dronePos).normalize();
+          if (e.state === 'pursue') {
+            p.addScaledVector(toward.normalize(), e.speed * step);
+          } else if (e.state === 'orbit' || e.state === 'strafe') {
+            const tangent = new THREE.Vector3(-dz, 0, dx).normalize();
+            p.addScaledVector(tangent, e.speed * step);
+            p.addScaledVector(toward.normalize(), Math.sign(dist - 62) * e.speed * step * 0.35);
+          } else if (e.state === 'attack') {
+            const attackDir = e.passDir || toward.normalize();
+            p.addScaledVector(attackDir, e.speed * step);
+          } else if (e.state === 'evade' || e.state === 'recover') {
+            p.addScaledVector(away, e.speed * step * (e.state === 'evade' ? 1.15 : 0.65));
+          }
+          p.y += ((dronePos.y + (e.spec.fly === 'pass' ? 12 : 7)
+            + Math.sin(e.phase) * 2) - p.y) * step * 0.7;
+          if (toward.lengthSq() > 0.001) {
+            e.g.lookAt(dronePos);
+            e.g.rotateY(Math.PI);
+          }
+          if (e.spec.fly === 'pass') e.g.rotation.z = Math.sin(e.phase * 0.7) * 0.12;
+          if (!e.mixer && e.anim.ring) e.anim.ring.rotation.z += step * 3;
           if (!e.mixer && e.anim.wL) {
             e.anim.wL.rotation.z = 0.5 + Math.sin(e.phase * 3) * 0.5;
             e.anim.wR.rotation.z = -0.5 - Math.sin(e.phase * 3) * 0.5;
-            e.anim.segs.forEach((s2, j) => { s2.position.y = Math.sin(e.phase * 1.6 - j * 0.7) * 0.25; });
+            e.anim.segs.forEach((segment, index) => {
+              segment.position.y = Math.sin(e.phase * 1.6 - index * 0.7) * 0.25;
+            });
           }
-        } else {
-          // terrestres: caminar hacia el dron por suelo caminable SUAVIZADO
-          if (dist > (e.spec.melee || 2)) {
-            const nx = p.x + (dx / dist) * e.speed * dt;
-            const nz = p.z + (dz / dist) * e.speed * dt;
-            const gy = walkable(heightAt, nx, nz, e.spec.slope || 4.5, e.spec.foot || 2.2);
-            if (gy != null) {
-              p.x = nx; p.z = nz;
-              p.y += (gy - p.y) * Math.min(1, dt * 8);   // sin escalones
-            }
-            e.g.rotation.y = Math.atan2(dx, dz) + Math.PI;   // frente -Z al objetivo
+        } else if (!['spawn', 'attack', 'recover'].includes(e.state)) {
+          let target = { x: dronePos.x, z: dronePos.z };
+          if (e.state === 'evade') target = { x: p.x - dx, z: p.z - dz };
+          if (e.state === 'strafe') {
+            const side = e.seed % 2 ? 1 : -1;
+            target = { x: dronePos.x - dz * side, z: dronePos.z + dx * side };
+          }
+          const neighbors = E.filter(other => other !== e && !other.spec.fly && !other.g.userData.dead)
+            .map(other => ({ x: other.g.position.x, z: other.g.position.z }));
+          const steering = steerGroundEnemy({
+            position: { x: p.x, z: p.z },
+            target,
+            speed: e.speed,
+            dt: step,
+            seed: e.seed + Math.floor(simTime * 4),
+            neighbors,
+            separationRadius: Math.max(3, e.spec.foot || 2.2),
+            isWalkable: (x, z) => walkable(
+              heightAt, x, z, e.spec.slope || 4.5, e.spec.foot || 2.2,
+            ) != null,
+          });
+          e.blocked = steering.blocked;
+          if (steering.moved) {
+            p.x = steering.position.x;
+            p.z = steering.position.z;
+            const groundY = walkable(
+              heightAt, p.x, p.z, e.spec.slope || 4.5, e.spec.foot || 2.2,
+            );
+            if (groundY != null) p.y += (groundY - p.y) * Math.min(1, step * 8);
+            e.g.rotation.y = steering.heading + Math.PI;
           }
           if (!e.mixer && e.anim.lL) {
             e.anim.lL.rotation.x = Math.sin(e.phase) * 0.6;
             e.anim.lR.rotation.x = -Math.sin(e.phase) * 0.6;
             e.anim.torso.rotation.z = Math.sin(e.phase * 0.5) * 0.06;
           }
-          // melee
-          if (e.spec.melee && dist < e.spec.melee && Math.abs(dronePos.y - p.y - e.spec.y) < e.spec.melee * 1.4) {
-            e._bite = (e._bite || 0) + dt;
-            if (e._bite > 0.8) {
-              e._bite = 0;
-              onHit?.(e.spec.dmg);
-              if (e.act?.attack) e.act.attack.reset().play();          // clip real
-              else if (e.anim.aR) e.anim.aR.rotation.x = 2.2;          // manotazo
-            }
-          }
         }
         e.center.set(p.x, p.y + (e.yOff ?? e.spec.y), p.z);
-        // disparos enemigos
-        if (e.spec.shoot) {
-          e.cool -= dt;
-          if (e.cool <= 0) {
-            e.cool = e.spec.shoot.every * (0.8 + Math.random() * 0.4);
-            if (e.act?.attack) e.act.attack.reset().play();
-            const n = e.spec.shoot.burst || 1;
-            for (let b = 0; b < n; b++) setTimeout(() => !e.g.userData.dead && shootAt(e, dronePos), b * 120);
-          }
-        }
+      }
+
+      for (let index = bursts.length - 1; index >= 0; index--) {
+        const job = bursts[index];
+        if (job.due > simTime) continue;
+        bursts.splice(index, 1);
+        if (!job.e.g.userData.dead) shootAt(job.e, dronePos, droneVelocity);
       }
       // ── proyectiles enemigos ──
       for (let i = shots.length - 1; i >= 0; i--) {
         const s2 = shots[i];
-        s2.t += dt;
-        s2.vel.y -= s2.grav * dt;
-        s2.m.position.addScaledVector(s2.vel, dt);
+        s2.t += step;
+        s2.vel.y -= s2.grav * step;
+        s2.m.position.addScaledVector(s2.vel, step);
         if (!s2.glow) s2.m.lookAt(s2.m.position.clone().add(s2.vel));
         let dead = s2.t > 7;
         if (s2.m.position.distanceTo(dronePos) < 1.8) {
@@ -380,9 +777,19 @@ export function createInvasion(scene, { heightAt, audio, onHit, fx } = {}) {
           if (s2.glow) fx?.impact?.(s2.m.position.clone());
           dead = true;
         }
-        if (dead) { group.remove(s2.m); shots.splice(i, 1); }
+        if (dead) removeShot(i);
       }
+      refreshTelemetry();
     },
-    dispose() { scene.remove(group); },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      session++;
+      S.on = false;
+      S.phase = 'idle';
+      clearRuntime();
+      clearModelCache();
+      scene.remove(group);
+    },
   };
 }

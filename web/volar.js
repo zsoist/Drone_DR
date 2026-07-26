@@ -4,35 +4,35 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=294';
+import * as THREE from '/flightverse/three.js?v=296';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=294';
+} from '/flightverse/scene.js?v=296';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=294';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=294';
-import { createRecorder } from '/flightverse/recorder.js?v=294';
-import { createAudio } from '/flightverse/audio.js?v=294';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=294';
-import { createTouchSticks } from '/flightverse/touch.js?v=294';
-import { createSky } from '/flightverse/sky.js?v=294';
-import { loadSceneObjects } from '/flightverse/objects.js?v=294';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=294';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=294';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=294';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=294';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=294';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=294';
-import CameraControls from '/vendor/camera-controls.module.js?v=294';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=294';
+} from '/flightverse/runtime.js?v=296';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=296';
+import { createRecorder } from '/flightverse/recorder.js?v=296';
+import { createAudio } from '/flightverse/audio.js?v=296';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=296';
+import { createTouchSticks } from '/flightverse/touch.js?v=296';
+import { createSky } from '/flightverse/sky.js?v=296';
+import { loadSceneObjects } from '/flightverse/objects.js?v=296';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=296';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=296';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=296';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=296';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=296';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=296';
+import CameraControls from '/vendor/camera-controls.module.js?v=296';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=296';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=294';
+} from '/vendor/postprocessing180.module.js?v=296';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -156,10 +156,16 @@ function hud() {
         <button data-e="dragon">Dragón</button>
         <button data-e="gigante">Gigantes</button>
       </div>
+      <div class="vl-inv-diff" role="group" aria-label="Dificultad de invasión">
+        <button data-inv-d="facil">FÁCIL</button>
+        <button data-inv-d="media" class="sel">MEDIA</button>
+        <button data-inv-d="dificil">DIFÍCIL</button>
+      </div>
       <button id="vl-inv-go">INICIAR INVASIÓN</button>
     </div>
     <div class="vl-zhud" id="vl-zhud">
       <div class="vl-zwave"><span id="vl-zwave">OLEADA 1</span><small id="vl-zkill">0 abatidos</small></div>
+      <div class="vl-zscore"><b id="vl-zscore">0 PTS</b><span id="vl-zcombo">COMBO ×1</span></div>
       <div class="vl-zhp"><i id="vl-zhp"></i></div>
     </div>
     <div class="vl-center-top" id="vl-challenge"></div>
@@ -631,9 +637,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=294', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=296', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=294');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=296');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -812,8 +818,12 @@ async function main() {
   const hitFlash = () => {
     const hx = $('#vl-hitfx'); hx.classList.remove('go'); void hx.offsetWidth; hx.classList.add('go');
   };
+  const invasionTier = coarsePointer || (navigator.deviceMemory || 4) <= 4
+    ? 'low'
+    : (navigator.deviceMemory || 8) >= 8 && (navigator.hardwareConcurrency || 4) >= 8
+      ? 'high' : 'medium';
   const invasion = createInvasion(scene, {
-    heightAt: terrain.heightAt, audio,
+    heightAt: terrain.heightAt, audio, deviceTier: invasionTier,
     onHit: dmg => { health.hp = Math.max(0, health.hp - dmg); hitFlash(); audio.crash?.(); },
     fx: {
       impact: pos => weapons.explodeAt(pos, 0.5),
@@ -835,10 +845,16 @@ async function main() {
   invModal.addEventListener('click', e => {
     const chip = e.target.closest('button[data-e]');
     if (chip) { chip.classList.toggle('sel'); return; }
+    const difficulty = e.target.closest('button[data-inv-d]');
+    if (difficulty) {
+      invModal.querySelectorAll('button[data-inv-d]').forEach(button => button.classList.toggle('sel', button === difficulty));
+      return;
+    }
     if (e.target.closest('#vl-inv-go')) {
       const sel = [...invModal.querySelectorAll('button[data-e].sel')].map(b => b.dataset.e);
+      const diff = invModal.querySelector('button[data-inv-d].sel')?.dataset.invD || 'media';
       invModal.classList.remove('show');
-      invasion.toggle(P, sel.length ? sel : ['zombie']);
+      invasion.toggle(P, sel.length ? sel : ['zombie'], diff);
       zBtn.classList.add('on');
       health.hp = 100;
       $('#vl-zhud').classList.add('show');
@@ -1509,10 +1525,14 @@ async function main() {
         : sceneObjects?.hittables;
       weapons.update(dt, allHit);
       if (Q.get('invasion') && !invasion.state.on && simT > 0.5) {
-        invasion.toggle(drone.pos, Q.get('invasion').split(',').filter(k => ENEMIES[k]));
+        invasion.toggle(
+          drone.pos,
+          Q.get('invasion').split(',').filter(k => ENEMIES[k]),
+          Q.get('invDifficulty') || 'media',
+        );
         zBtn.classList.add('on'); $('#vl-zhud').classList.add('show');
       }
-      invasion.update(dt, drone.pos);
+      invasion.update(dt, drone.pos, drone.vel);
       if (Q.get('fuego') === 'mg' && simT > 1 && simT < 2.6) {
         if (!weapons._mg) { weapons._mg = true; weapons.setWeapon('mg'); }
         doFire(-0.5);
@@ -1613,7 +1633,19 @@ async function main() {
       sky.update(STEP, camera.position, P);
       sceneObjects?.update(simT);
       {
-        report.invasion = { on: invasion.state.on, wave: invasion.state.wave, alive: invasion.state.alive, killed: invasion.state.killed };
+        report.invasion = {
+          on: invasion.state.on,
+          phase: invasion.state.phase,
+          wave: invasion.state.wave,
+          alive: invasion.state.alive,
+          queued: invasion.state.queue.length,
+          killed: invasion.state.killed,
+          score: invasion.state.score,
+          combo: invasion.state.combo,
+          countdown: +invasion.state.countdown.toFixed(2),
+          difficulty: invasion.state.difficulty,
+          telemetry: invasion.state.telemetry,
+        };
         report.weapons = {
           fired: weapons.state.fired,
           exploded: weapons.state.exploded,
@@ -1628,8 +1660,16 @@ async function main() {
         report.weaponState = { weapon: weapons.state.weapon, cool: +weapons.state.cool.toFixed(2),
           ammo: Object.fromEntries(Object.entries(weapons.state.ammo).map(([k2, n2]) => [k2, Math.floor(n2)])) };
         if (invasion.state.on) {
-          $('#vl-zwave').textContent = `OLEADA ${invasion.state.wave || 1}`;
-          $('#vl-zkill').textContent = `${invasion.state.killed} abatidos · ${invasion.state.alive} activos`;
+          const inv = invasion.state;
+          $('#vl-zwave').textContent = inv.phase === 'loading'
+            ? 'PREPARANDO INVASIÓN'
+            : inv.phase === 'countdown'
+              ? `OLEADA ${inv.wave + 1} · ${Math.max(1, Math.ceil(inv.countdown))}`
+              : `OLEADA ${inv.wave || 1}`;
+          $('#vl-zkill').textContent = `${inv.killed} abatidos · ${inv.alive + inv.queue.length} restantes`;
+          $('#vl-zscore').textContent = `${inv.score} PTS`;
+          $('#vl-zcombo').textContent = `COMBO ×${Math.max(1, inv.combo)}`;
+          $('#vl-zcombo').classList.toggle('hot', inv.combo > 1);
           $('#vl-zhp').style.transform = `scaleX(${health.hp / 100})`;
         }
         // mini-barras de munición por arma (HUD de vida de armas)
