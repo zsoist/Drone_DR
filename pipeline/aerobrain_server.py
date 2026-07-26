@@ -252,6 +252,17 @@ def static_cache_policy(f: Path, request_path: str) -> tuple[bool, str]:
     return revalidate, "no-store, must-revalidate"
 
 
+def fresh_gzip_sidecar(source: Path) -> Path | None:
+    """Use precompressed bytes only when they represent the current source."""
+    sidecar = Path(str(source) + ".gz")
+    try:
+        if sidecar.is_file() and sidecar.stat().st_mtime_ns >= source.stat().st_mtime_ns:
+            return sidecar
+    except OSError:
+        pass
+    return None
+
+
 def clip_history_files(hist_dir: Path, cid: str) -> list:
     """Archivos de historial que pertenecen EXACTAMENTE a este clip.
     Formato de archivado: '{cid}-{YYYYMMDD}-{HHMMSS}.{clean.sog|splat|ksplat|ply}'.
@@ -3458,8 +3469,8 @@ class H(BaseHTTPRequestHandler):
                     return
         # sidecar .gz pre-comprimido (nube/malla): Content-Encoding gzip transparente.
         # Solo sin Range — gzip + rangos parciales no se mezclan.
-        gz = Path(str(f) + ".gz")
-        if not rng and gz.is_file() and "gzip" in self.headers.get("Accept-Encoding", ""):
+        gz = fresh_gzip_sidecar(f)
+        if not rng and gz and "gzip" in self.headers.get("Accept-Encoding", ""):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Encoding", "gzip")
@@ -3570,7 +3581,7 @@ class H(BaseHTTPRequestHandler):
                              LOGIN_CSP if f.name == "login.html" else APP_CSP)
             self.end_headers()
             return
-        gz = Path(str(f) + ".gz")
+        gz = fresh_gzip_sidecar(f)
         public_asset = self._is_public_resource()
         revalidate, cache_header = static_cache_policy(f, self.path)
         if not public_asset:
@@ -3583,7 +3594,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", cache_header)
         if not public_asset:
             self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
-        if gz.is_file() and "gzip" in self.headers.get("Accept-Encoding", ""):
+        if gz and "gzip" in self.headers.get("Accept-Encoding", ""):
             # espejo exacto de lo que GET va a servir (audit: HEAD mentia el tamano)
             self.send_header("Content-Encoding", "gzip")
             self.send_header("Content-Length", str(gz.stat().st_size))
