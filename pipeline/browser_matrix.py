@@ -427,6 +427,31 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
     """))
     if not all(preview_selected.values()):
         raise RuntimeError(f"preview seleccionada no se hidrató: {preview_selected}")
+    map_initial = cdp.eval(js("""
+      return performance.getEntriesByType('resource')
+        .filter(entry => /maplibre-gl\\.(?:js|css)(?:\\?|$)/.test(entry.name)).length;
+    """))
+    if map_initial:
+        raise RuntimeError(f"MapLibre cargó antes de abrir Mapa: {map_initial} recursos")
+    cdp.eval("document.querySelector('[data-fvv=\"map\"]')?.click()")
+    map_state = wait_for(cdp, js("""
+      const wrap = document.querySelector('#fv-mapwrap');
+      const canvas = document.querySelector('#fv-map .maplibregl-canvas');
+      const resources = performance.getEntriesByType('resource')
+        .filter(entry => /maplibre-gl\\.(?:js|css)(?:\\?|$)/.test(entry.name)).length;
+      return canvas && !wrap.hidden && resources >= 2
+        ? { canvas:true, resources, cardsHidden:document.querySelector('#w-cards').hidden }
+        : null;
+    """), timeout=20, label="mapa Mundo perezoso")
+    if not map_state.get("cardsHidden"):
+        raise RuntimeError(f"Mapa no aisló la vista de tarjetas: {map_state}")
+    cdp.eval("document.querySelector('[data-fvv=\"cards\"]')?.click()")
+    cards_restored = cdp.eval(js("""
+      return !document.querySelector('#w-cards').hidden
+        && document.querySelector('#fv-mapwrap').hidden;
+    """))
+    if not cards_restored:
+        raise RuntimeError("Mundo no regresó de Mapa a Islas")
     screenshot(cdp, QA_DIR / f"matrix-mundo-{viewport}.png")
     return {"surface": "mundo", "viewport": viewport, **state,
             "keyboard": keyboard, "previewInitial": preview_initial}

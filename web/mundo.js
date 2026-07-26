@@ -36,6 +36,42 @@ const cfgExtra = () =>
   + (cfg.forma !== 'circle' ? `&forma=${cfg.forma}` : '');
 let filtro = 'todas';
 let scenes = [], sel = null;
+let mapLibrePromise = null;
+
+function loadMapLibre() {
+  if (window.maplibregl) return Promise.resolve(window.maplibregl);
+  if (mapLibrePromise) return mapLibrePromise;
+  mapLibrePromise = Promise.all([
+    new Promise((resolve, reject) => {
+      const existing = document.getElementById('fv-maplibre-css');
+      if (existing) { resolve(); return; }
+      const link = document.createElement('link');
+      link.id = 'fv-maplibre-css';
+      link.rel = 'stylesheet';
+      link.href = 'vendor/maplibre-gl.css';
+      link.addEventListener('load', resolve, { once: true });
+      link.addEventListener('error', () => reject(new Error('MapLibre CSS no cargó')), { once: true });
+      document.head.append(link);
+    }),
+    new Promise((resolve, reject) => {
+      const existing = document.getElementById('fv-maplibre-js');
+      if (existing) { existing.addEventListener('load', resolve, { once: true }); return; }
+      const script = document.createElement('script');
+      script.id = 'fv-maplibre-js';
+      script.src = 'vendor/maplibre-gl.js';
+      script.addEventListener('load', resolve, { once: true });
+      script.addEventListener('error', () => reject(new Error('MapLibre JS no cargó')), { once: true });
+      document.head.append(script);
+    }),
+  ]).then(() => {
+    if (!window.maplibregl) throw new Error('MapLibre no quedó disponible');
+    return window.maplibregl;
+  }).catch(error => {
+    mapLibrePromise = null;
+    throw error;
+  });
+  return mapLibrePromise;
+}
 
 function isla(sc, i) {
   const c = sc.capabilities||{}, st = sc.stats||{};
@@ -300,7 +336,7 @@ async function boot() {
     dark: RASTER('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'),
     plano: RASTER('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'),
   };
-  const mapBounds = new maplibregl.LngLatBounds();
+  let mapBounds = null;
   const MLAT = 111320;
   const footprints = { type:'FeatureCollection', features: scenes.flatMap(sc => {
     const c = sc.world?.center_wgs84, s = sc.world?.size_m; if (!c || !s) return [];
@@ -352,10 +388,18 @@ async function boot() {
       </div>` : '<em>en preparación</em>'}
     </div>`;
   };
-  function showMap() {
+  async function showMap() {
     document.getElementById('fv-mapwrap').hidden = false;
-    document.getElementById('w-cards').style.display = 'none';
+    document.getElementById('w-cards').hidden = true;
     if (map) { map.resize(); return; }
+    try {
+      await loadMapLibre();
+    } catch (error) {
+      document.getElementById('fv-mapwrap').hidden = true;
+      document.getElementById('w-cards').hidden = false;
+      throw error;
+    }
+    mapBounds = new maplibregl.LngLatBounds();
     map = new maplibregl.Map({ container: document.getElementById('fv-map'), style: LAYERS.sat,
       center: [-74.06, 4.75], zoom: 11, attributionControl: false });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
@@ -394,8 +438,14 @@ async function boot() {
   document.querySelector('.fv-viewtoggle').addEventListener('click', e => {
     const b = e.target.closest('[data-fvv]'); if (!b) return;
     document.querySelectorAll('.fv-viewtoggle button').forEach(x => x.classList.toggle('on', x===b));
-    if (b.dataset.fvv === 'map') showMap();
-    else { document.getElementById('fv-mapwrap').hidden = true; document.getElementById('w-cards').style.display = ''; }
+    if (b.dataset.fvv === 'map') {
+      void showMap().catch(error => {
+        main.insertAdjacentHTML('beforeend', `<div class="fv-loading">Mapa: ${esc(error.message)}</div>`);
+      });
+    } else {
+      document.getElementById('fv-mapwrap').hidden = true;
+      document.getElementById('w-cards').hidden = false;
+    }
   });
 }
 boot().catch(e => main.insertAdjacentHTML('beforeend', `<div class="fv-loading">Error: ${esc(e.message)}</div>`));
