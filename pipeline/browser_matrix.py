@@ -747,6 +747,13 @@ def main():
                     cdp = new_page(port)
                     set_viewport(cdp, vp)
                     results.append(runner(cdp, args.base_url))
+                    deprecated_bvh = [
+                        warning for warning in cdp.warnings
+                        if "maxLeafTris" in warning or "maxLeafSize" in warning
+                    ]
+                    if deprecated_bvh:
+                        raise RuntimeError(
+                            f"API BVH obsoleta en {vp}: {' | '.join(deprecated_bvh[:4])}")
                     if cdp.errors:
                         raise RuntimeError(f"errores de consola en {vp}: {' | '.join(cdp.errors[:4])}")
                 finally:

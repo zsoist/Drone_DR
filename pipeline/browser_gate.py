@@ -112,6 +112,7 @@ class CDP:
         self.ws = WS(ws_url)
         self.next_id = 1
         self.errors: list[str] = []
+        self.warnings: list[str] = []
 
     def send(self, method: str, params: dict | None = None) -> dict:
         mid = self.next_id
@@ -134,11 +135,20 @@ class CDP:
         elif method == "Runtime.consoleAPICalled" and params.get("type") == "error":
             args = params.get("args") or []
             self.errors.append("console.error: " + " ".join(str(a.get("value", a.get("description", ""))) for a in args))
+        elif method == "Runtime.consoleAPICalled" and params.get("type") == "warning":
+            args = params.get("args") or []
+            self.warnings.append("console.warning: " + " ".join(
+                str(a.get("value", a.get("description", ""))) for a in args))
         elif method == "Log.entryAdded" and (params.get("entry") or {}).get("level") == "error":
             entry = params["entry"]
             where = entry.get("url") or entry.get("source") or ""
             message = entry.get("text") or ""
             self.errors.append((f"{message} · {where}" if where else message)[:500])
+        elif method == "Log.entryAdded" and (params.get("entry") or {}).get("level") == "warning":
+            entry = params["entry"]
+            where = entry.get("url") or entry.get("source") or ""
+            message = entry.get("text") or ""
+            self.warnings.append((f"{message} · {where}" if where else message)[:500])
 
     def pump(self, seconds: float):
         end = time.time() + seconds

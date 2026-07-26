@@ -74,7 +74,7 @@ function buildCollider(meta, buffer) {
   }
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-  const bvh = new MeshBVH(geometry, { maxLeafTris: 12 });
+  const bvh = new MeshBVH(geometry, { targetLeafSize: 12 });
   geometry.boundsTree = bvh;
   return { geometry, bvh };
 }
