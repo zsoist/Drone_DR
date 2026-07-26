@@ -16,7 +16,13 @@ def _failure(cid: str, reason: str, **detail) -> dict:
     return {"clip_id": cid, "reason": reason, **detail}
 
 
-def validate_world_runtime(cid: str, report: dict, resources: dict) -> list[dict]:
+def validate_world_runtime(
+    cid: str,
+    report: dict,
+    resources: dict,
+    *,
+    requires_structural_collision: bool = True,
+) -> list[dict]:
     failures = []
     if not report.get("ok"):
         failures.append(_failure(cid, "autotest_failed"))
@@ -29,7 +35,8 @@ def validate_world_runtime(cid: str, report: dict, resources: dict) -> list[dict
         failures.append(_failure(cid, "custom_drone_missing"))
 
     collision = report.get("collision") or {}
-    if not collision.get("ready") or not collision.get("structure"):
+    if not collision.get("ready") or (
+            requires_structural_collision and not collision.get("structure")):
         failures.append(_failure(cid, "world_collision_not_ready", collision=collision))
     if collision.get("radius_source") != "glb":
         failures.append(_failure(
@@ -43,26 +50,47 @@ def validate_world_runtime(cid: str, report: dict, resources: dict) -> list[dict
             cid, "stale_load_disposal", count=lifecycle.get("disposedStaleLoads")))
 
     representation = report.get("representation") or {}
+    preferred = representation.get("preferred")
+    active = representation.get("active")
     layers = set(representation.get("visibleStructuralLayers") or [])
     if "mesh" in layers and "splat" in layers:
         failures.append(_failure(
             cid, "duplicate_structural_layers", layers=sorted(layers)))
-    if representation.get("preferred") != "mesh" and (
+    if preferred != "mesh" and (
             report.get("visualMesh")
-            or report.get("visualMeshState") != "deferred"
+            or report.get("visualMeshState") not in {"deferred", "unavailable"}
             or resources.get("mesh_obj_requests", 0) != 0):
         failures.append(_failure(
             cid,
             "inactive_mesh_loaded",
             state=report.get("visualMeshState"),
-            requests=resources.get("mesh_obj_requests", 0),
+                requests=resources.get("mesh_obj_requests", 0),
+        ))
+    if preferred == "terrain" and active != "terrain":
+        failures.append(_failure(
+            cid, "terrain_preference_not_active", active=active))
+    if preferred == "mesh" and (
+            active != "mesh"
+            or not report.get("visualMesh")
+            or not report.get("visualMeshCoverageClipped")):
+        failures.append(_failure(
+            cid,
+            "preferred_mesh_inactive",
+            active=active,
+            visual_mesh=report.get("visualMesh"),
+            coverage_clipped=report.get("visualMeshCoverageClipped"),
         ))
     if report.get("visualMesh") and not report.get("visualMeshCoverageClipped"):
         failures.append(_failure(cid, "visual_mesh_unclipped"))
     return failures
 
 
-def _runtime_snapshot(cdp, timeout: int) -> tuple[dict, dict]:
+def _runtime_snapshot(
+    cdp,
+    timeout: int,
+    *,
+    require_mesh: bool = False,
+) -> tuple[dict, dict]:
     deadline = time.time() + timeout
     while time.time() < deadline:
         cdp.pump(0.25)
@@ -70,6 +98,9 @@ def _runtime_snapshot(cdp, timeout: int) -> tuple[dict, dict]:
             value = cdp.eval("""(() => {
               const r = window.__volar;
               if (!r?.done) return null;
+              if (""" + ("true" if require_mesh else "false") + """
+                  && !(r.visualMesh && r.visualMeshCoverageClipped
+                       && r.representation?.active === 'mesh')) return null;
               return {
                 ok:r.ok, fps:r.fps, errors:[...(r.errors || [])],
                 customDrone:r.customDrone, visualMesh:r.visualMesh,
@@ -90,6 +121,21 @@ def _runtime_snapshot(cdp, timeout: int) -> tuple[dict, dict]:
     raise RuntimeError(f"World no terminó en {timeout}s")
 
 
+def _activate_preferred_mesh(cdp, timeout: int) -> tuple[dict, dict]:
+    requested = cdp.eval("""(() => {
+      const r = window.__volar;
+      const button = document.querySelector('#vl-vista');
+      for (let attempt = 0; attempt < 3
+           && r?.representation?.requested !== 'mesh'; attempt += 1) {
+        button?.click();
+      }
+      return r?.representation?.requested;
+    })()""")
+    if requested != "mesh":
+        raise RuntimeError(f"no se pudo solicitar la malla preferida: {requested!r}")
+    return _runtime_snapshot(cdp, timeout, require_mesh=True)
+
+
 def run_sweep(
     *,
     base_url: str = DEFAULT_BASE_URL,
@@ -105,13 +151,13 @@ def run_sweep(
             "disk_audit": disk_audit,
         }
     candidates = [
-        row["clip_id"] for row in disk_audit["worlds"]
+        row for row in disk_audit["worlds"]
         if row.get("terrain") and row.get("collision")
     ]
     if only:
         requested = set(only)
-        candidates = [cid for cid in candidates if cid in requested]
-        missing = sorted(requested - set(candidates))
+        candidates = [row for row in candidates if row["clip_id"] in requested]
+        missing = sorted(requested - {row["clip_id"] for row in candidates})
         if missing:
             return {
                 "ok": False,
@@ -128,7 +174,8 @@ def run_sweep(
     failures = []
     try:
         cdp = new_page(port)
-        for cid in candidates:
+        for candidate in candidates:
+            cid = candidate["clip_id"]
             cdp.errors.clear()
             cdp.warnings.clear()
             url = (
@@ -138,10 +185,18 @@ def run_sweep(
             cdp.send("Page.navigate", {"url": url})
             try:
                 report, resources = _runtime_snapshot(cdp, timeout_per_world)
+                if (report.get("representation") or {}).get("preferred") == "mesh":
+                    report, resources = _activate_preferred_mesh(
+                        cdp, timeout_per_world)
             except RuntimeError as error:
                 failures.append(_failure(cid, "runtime_timeout", error=str(error)))
                 continue
-            row_failures = validate_world_runtime(cid, report, resources)
+            row_failures = validate_world_runtime(
+                cid,
+                report,
+                resources,
+                requires_structural_collision=bool(candidate.get("mesh")),
+            )
             if cdp.errors:
                 row_failures.append(_failure(
                     cid, "browser_console_errors", errors=cdp.errors[:8]))

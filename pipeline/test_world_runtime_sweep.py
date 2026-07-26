@@ -32,6 +32,54 @@ class WorldRuntimeSweepTests(unittest.TestCase):
                 "map-a", report, {"mesh_obj_requests": 0}),
         )
 
+    def test_terrain_only_world_does_not_require_structural_collision(self):
+        report = {
+            "ok": True,
+            "fps": 60,
+            "errors": [],
+            "customDrone": True,
+            "visualMesh": False,
+            "visualMeshState": "unavailable",
+            "collision": {"ready": True, "structure": False, "radius_source": "glb"},
+            "lifecycle": {"groups": 1, "disposedStaleLoads": 0},
+            "representation": {
+                "preferred": "terrain",
+                "active": "terrain",
+                "visibleStructuralLayers": ["terrain"],
+            },
+        }
+
+        self.assertEqual(
+            [],
+            world_runtime_sweep.validate_world_runtime(
+                "terrain-only", report, {"mesh_obj_requests": 0},
+                requires_structural_collision=False),
+        )
+
+    def test_preferred_mesh_must_be_active_and_coverage_clipped(self):
+        report = {
+            "ok": True,
+            "fps": 60,
+            "errors": [],
+            "customDrone": True,
+            "visualMesh": False,
+            "visualMeshState": "deferred",
+            "collision": {"ready": True, "structure": True, "radius_source": "glb"},
+            "lifecycle": {"groups": 1, "disposedStaleLoads": 0},
+            "representation": {
+                "preferred": "mesh",
+                "active": "terrain",
+                "visibleStructuralLayers": ["terrain"],
+            },
+        }
+
+        reasons = {
+            row["reason"] for row in world_runtime_sweep.validate_world_runtime(
+                "mesh-preferred", report, {"mesh_obj_requests": 0})
+        }
+
+        self.assertIn("preferred_mesh_inactive", reasons)
+
     def test_eager_or_duplicate_visual_layers_fail_the_sweep(self):
         report = {
             "ok": True,

@@ -258,9 +258,7 @@ def fresh_gzip_sidecar(source: Path) -> Path | None:
     try:
         source_mtime = source.stat().st_mtime_ns
         sidecar_stat = sidecar.stat()
-        if sidecar.is_file() and (
-                sidecar_stat.st_mtime_ns >= source_mtime
-                or sidecar_stat.st_ctime_ns >= source_mtime):
+        if sidecar.is_file() and sidecar_stat.st_mtime_ns >= source_mtime:
             return sidecar
     except OSError:
         pass

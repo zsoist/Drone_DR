@@ -7,8 +7,12 @@ import json
 import math
 import time
 import urllib.parse
+from pathlib import Path
 
 from browser_gate import DEFAULT_BASE_URL, launch_chrome, new_page
+
+
+VAULT = Path("/Volumes/SSD/drone-vault")
 
 
 def _finite_number(value) -> bool:
@@ -19,7 +23,11 @@ def _finite_number(value) -> bool:
     )
 
 
-def validate_live_sample(sample: dict) -> list[dict]:
+def validate_live_sample(
+    sample: dict,
+    *,
+    requires_structural_collision: bool = True,
+) -> list[dict]:
     failures = []
     run = sample.get("run")
     layers = (sample.get("representation") or {}).get(
@@ -27,7 +35,8 @@ def validate_live_sample(sample: dict) -> list[dict]:
     ) or []
     if not sample.get("ok") or sample.get("fps", 0) < 50:
         failures.append({"run": run, "reason": "fps_or_autotest"})
-    if not sample.get("collisionReady") or not sample.get("classification"):
+    if not sample.get("collisionReady") or (
+            requires_structural_collision and not sample.get("classification")):
         failures.append({"run": run, "reason": "collision_missing"})
     if sample.get("groups") != 1 or sample.get("disposedStaleLoads") != 0:
         failures.append({"run": run, "reason": "scene_lifecycle"})
@@ -68,6 +77,105 @@ def validate_fpv_camera(sample: dict) -> list[dict]:
     ):
         return []
     return [{"run": sample.get("run"), "reason": "fpv_camera_isolation"}]
+
+
+def validate_stress_actions(actions: dict) -> list[dict]:
+    failures = []
+    if actions.get("attempts", 0) < 1 or actions.get("fired_delta", 0) < 1:
+        failures.append({"reason": "fire_not_observed", **actions})
+    if actions.get("exploded_delta", 0) < 1:
+        failures.append({"reason": "explosion_not_observed", **actions})
+    if actions.get("reloads", 0) < 1:
+        failures.append({"reason": "reload_not_observed", **actions})
+    return failures
+
+
+def cdp_click(cdp, selector: str) -> bool:
+    """Click a visible element through CDP input, rather than synthetic counters."""
+    box = cdp.eval(
+        "(() => { const e=document.querySelector("
+        f"{json.dumps(selector)}"
+        "); if (!e) return null; const r=e.getBoundingClientRect();"
+        " return r.width > 0 && r.height > 0 ? {x:r.left+r.width/2,y:r.top+r.height/2} : null; })()"
+    )
+    if not box:
+        return False
+    for event_type in ("mousePressed", "mouseReleased"):
+        cdp.send("Input.dispatchMouseEvent", {
+            "type": event_type,
+            "x": box["x"],
+            "y": box["y"],
+            "button": "left",
+            "clickCount": 1,
+        })
+    return True
+
+
+def aim_fire_control_at_ground(cdp) -> bool:
+    """Use the real gimbal control so each CDP fire click can reach terrain."""
+    return bool(cdp.eval("""(() => {
+      const control = document.querySelector('#vl-gwheel');
+      if (!control) return false;
+      control.value = control.min;
+      control.dispatchEvent(new Event('input', {bubbles:true}));
+      return control.value === control.min;
+    })()"""))
+
+
+def _wait_for_world_ready(cdp, timeout: int) -> dict | None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        cdp.pump(0.25)
+        try:
+            ready = cdp.eval(
+                "(() => { const r=window.__volar;"
+                " return r?.done && r?.customDrone"
+                " && r?.collision?.radius_source === 'glb' ? r : null; })()"
+            )
+        except RuntimeError:
+            continue
+        if ready:
+            return ready
+    return None
+
+
+def _weapon_counts(cdp) -> dict:
+    return cdp.eval(
+        "(() => { const w=window.__volar?.weapons || {}; return {"
+        "fired:w.fired || 0, exploded:w.exploded || 0}; })()"
+    ) or {"fired": 0, "exploded": 0}
+
+
+def _live_sample(cdp) -> dict:
+    return cdp.eval(
+        "(() => { const r=window.__volar; return {"
+        "ok:r?.ok, fps:r?.fps, errors:[...(r?.errors||[])],"
+        "classification:r?.collision?.structure,"
+        "collisionReady:r?.collision?.ready,"
+        "collisionRadius:r?.collision?.radius_m,"
+        "collisionRadiusSource:r?.collision?.radius_source,"
+        "customDrone:r?.customDrone,"
+        "cameraRig:r?.camera?.rig,"
+        "cameraCollisionChecks:r?.camera?.collision_checks,"
+        "cameraCollisionHits:r?.camera?.collision_hits,"
+        "hitCoordinates:r?.pos,"
+        "groups:r?.lifecycle?.groups,"
+        "disposedStaleLoads:r?.lifecycle?.disposedStaleLoads,"
+        "representation:r?.representation,"
+        "projectiles:r?.weapons?.projectiles,"
+        "fired:r?.weapons?.fired, exploded:r?.weapons?.exploded,"
+        "memory:r?.rendererMemory"
+        "}; })()"
+    )
+
+
+def requires_structural_collision(cid: str) -> bool:
+    path = VAULT / "models" / cid / "scene.v2.json"
+    try:
+        manifest = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f"manifest de mundo inválido para {cid}: {error}") from error
+    return bool((manifest.get("capabilities") or {}).get("mesh"))
 
 
 def fixture_gate(base_url: str, timeout: int = 30) -> dict:
@@ -128,88 +236,99 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             f"?m={urllib.parse.quote(cid)}&autotest=1&rig=0"
         )
         cdp.send("Page.navigate", {"url": url})
-        deadline = time.time() + timeout
-        ready = None
-        while time.time() < deadline:
-            cdp.pump(0.25)
-            try:
-                ready = cdp.eval(
-                    "(() => { const r=window.__volar;"
-                    " return r?.done && r?.customDrone"
-                    " && r?.collision?.radius_source === 'glb' ? r : null; })()"
-                )
-            except RuntimeError:
-                continue
-            if ready:
-                break
+        ready = _wait_for_world_ready(cdp, timeout)
         if not ready:
             raise RuntimeError(
                 f"mundo vivo no terminó en {timeout}s · console={cdp.errors[:6]}"
             )
+        needs_structure = requires_structural_collision(cid)
+        if not aim_fire_control_at_ground(cdp):
+            raise RuntimeError("control de gimbal no disponible para stress de fuego")
 
         samples = []
+        actions = {"attempts": 0, "fired_delta": 0, "exploded_delta": 0, "reloads": 0}
+        generation = 1
+        previous_weapon_counts = _weapon_counts(cdp)
+        reload_every = max(1, stress // 4)
         for index in range(stress):
-            cdp.pump(0.025)
-            sample = cdp.eval(
-                "(() => { const r=window.__volar; return {"
-                "ok:r?.ok, fps:r?.fps, errors:[...(r?.errors||[])],"
-                "classification:r?.collision?.structure,"
-                "collisionReady:r?.collision?.ready,"
-                "collisionRadius:r?.collision?.radius_m,"
-                "collisionRadiusSource:r?.collision?.radius_source,"
-                "customDrone:r?.customDrone,"
-                "cameraRig:r?.camera?.rig,"
-                "cameraCollisionChecks:r?.camera?.collision_checks,"
-                "cameraCollisionHits:r?.camera?.collision_hits,"
-                "hitCoordinates:r?.pos,"
-                "groups:r?.lifecycle?.groups,"
-                "disposedStaleLoads:r?.lifecycle?.disposedStaleLoads,"
-                "representation:r?.representation,"
-                "projectiles:r?.weapons?.projectiles,"
-                "fired:r?.weapons?.fired, exploded:r?.weapons?.exploded,"
-                "memory:r?.rendererMemory"
-                "}; })()"
-            )
+            if not cdp_click(cdp, "#vl-fire"):
+                failures = [{"run": index + 1, "reason": "fire_control_missing"}]
+                break
+            actions["attempts"] += 1
+            cdp.pump(0.15)
+            sample = _live_sample(cdp)
             sample["run"] = index + 1
+            sample["generation"] = generation
             samples.append(sample)
+            weapon_counts = {
+                "fired": sample.get("fired") or 0,
+                "exploded": sample.get("exploded") or 0,
+            }
+            actions["fired_delta"] += max(
+                0, weapon_counts["fired"] - previous_weapon_counts["fired"])
+            actions["exploded_delta"] += max(
+                0, weapon_counts["exploded"] - previous_weapon_counts["exploded"])
+            previous_weapon_counts = weapon_counts
+            if (index + 1) % reload_every == 0:
+                cdp.pump(3)
+                settled = _weapon_counts(cdp)
+                actions["fired_delta"] += max(
+                    0, settled["fired"] - previous_weapon_counts["fired"])
+                actions["exploded_delta"] += max(
+                    0, settled["exploded"] - previous_weapon_counts["exploded"])
+                cdp.send("Page.reload")
+                if not _wait_for_world_ready(cdp, timeout):
+                    failures = [{"run": index + 1, "reason": "reload_timeout"}]
+                    break
+                actions["reloads"] += 1
+                generation += 1
+                if not aim_fire_control_at_ground(cdp):
+                    failures = [{"run": index + 1, "reason": "gimbal_control_missing"}]
+                    break
+                for phase, delay in (("reload", 0), ("settled", 0.5)):
+                    cdp.pump(delay)
+                    post_reload = _live_sample(cdp)
+                    post_reload["run"] = f"{index + 1}:{phase}"
+                    post_reload["generation"] = generation
+                    samples.append(post_reload)
+                previous_weapon_counts = _weapon_counts(cdp)
 
-        failures = []
+        else:
+            failures = []
         for sample in samples:
-            failures.extend(validate_live_sample(sample))
+            failures.extend(validate_live_sample(
+                sample, requires_structural_collision=needs_structure))
+        failures.extend(validate_stress_actions(actions))
 
-        memories = [row.get("memory") or {} for row in samples]
-        for key in ("geometries", "textures"):
-            values = [int(row.get(key, 0)) for row in memories]
-            if values and values[-1] > values[0]:
-                failures.append({
-                    "run": stress,
-                    "reason": f"renderer_{key}_growth",
-                    "first": values[0],
-                    "last": values[-1],
-                })
+        for current_generation in range(1, generation + 1):
+            memories = [
+                row.get("memory") or {} for row in samples
+                if row.get("generation") == current_generation
+            ]
+            for key in ("geometries", "textures"):
+                values = [int(row.get(key, 0)) for row in memories]
+                if values and values[-1] > values[0]:
+                    failures.append({
+                        "run": stress,
+                        "generation": current_generation,
+                        "reason": f"renderer_{key}_growth",
+                        "first": values[0],
+                        "last": values[-1],
+                    })
 
         fpv_url = (
             f"{base_url.rstrip('/')}/volar.html"
             f"?m={urllib.parse.quote(cid)}&autotest=1&rig=3"
         )
         cdp.send("Page.navigate", {"url": fpv_url})
-        fpv_deadline = time.time() + timeout
+        ready = _wait_for_world_ready(cdp, timeout)
         fpv_camera = None
-        while time.time() < fpv_deadline:
-            cdp.pump(0.25)
-            try:
-                fpv_camera = cdp.eval(
-                    "(() => { const r=window.__volar;"
-                    " if (!(r?.done && r?.customDrone"
-                    " && r?.collision?.radius_source === 'glb')) return null;"
-                    " return {cameraRig:r.camera?.rig,"
-                    " cameraCollisionChecks:r.camera?.collision_checks,"
-                    " cameraCollisionHits:r.camera?.collision_hits}; })()"
-                )
-            except RuntimeError:
-                continue
-            if fpv_camera:
-                break
+        if ready:
+            fpv_camera = cdp.eval(
+                "(() => { const r=window.__volar; return {cameraRig:r.camera?.rig,"
+                " cameraCollisionChecks:r.camera?.collision_checks,"
+                " cameraCollisionHits:r.camera?.collision_hits}; })()"
+            )
         if not fpv_camera:
             failures.append({"run": stress, "reason": "fpv_camera_timeout"})
             fpv_camera = {}
@@ -222,6 +341,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             "clip_id": cid,
             "stress_runs": stress,
             "failures": failures,
+            "actions": actions,
             "samples": samples,
             "fpv_camera": fpv_camera,
             "console_errors": cdp.errors[:6],
