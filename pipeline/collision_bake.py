@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 VAULT = Path("/Volumes/SSD/drone-vault")
-VERSION = 2
+VERSION = 3
 GROUND_MIN_M = -2.0
 GROUND_MAX_M = 32.0
 

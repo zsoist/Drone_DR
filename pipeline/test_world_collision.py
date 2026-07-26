@@ -223,6 +223,20 @@ class WorldCollisionBuilderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fingerprint"):
             collision_bake.validate(self.cid, vault=self.vault)
 
+    def test_validate_rejects_v2_collider_until_current_revision_rebuilds_it(self):
+        meta = collision_bake.build(self.cid, vault=self.vault)
+        meta["version"] = 2
+        (self.model_dir / "collision.json").write_text(json.dumps(meta))
+
+        with self.assertRaisesRegex(ValueError, "versión"):
+            collision_bake.validate(self.cid, vault=self.vault)
+
+        rebuilt = collision_bake.build(self.cid, vault=self.vault)
+
+        self.assertEqual(collision_bake.VERSION, rebuilt["version"])
+        self.assertGreater(rebuilt["version"], 2)
+        self.assertEqual(rebuilt, collision_bake.validate(self.cid, vault=self.vault))
+
     def test_aligned_glb_remains_a_supported_collision_source(self):
         cid = "fixture_glb"
         mdir = self.vault / "models" / cid
