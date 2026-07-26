@@ -40,10 +40,34 @@ def validate_live_sample(sample: dict) -> list[dict]:
     radius = sample.get("collisionRadius")
     if not _finite_number(radius) or not 0.42 <= radius <= 0.70:
         failures.append({"run": run, "reason": "collision_envelope"})
+    if (
+        sample.get("collisionRadiusSource") != "glb"
+        or sample.get("customDrone") is not True
+    ):
+        failures.append({"run": run, "reason": "collision_envelope_source"})
+    camera_checks = sample.get("cameraCollisionChecks")
     camera_hits = sample.get("cameraCollisionHits")
     if not _finite_number(camera_hits) or camera_hits < 0:
         failures.append({"run": run, "reason": "camera_telemetry"})
+    if (
+        sample.get("cameraRig") != "muycerca"
+        or not _finite_number(camera_checks)
+        or camera_checks <= 0
+        or not _finite_number(camera_hits)
+        or camera_hits <= 0
+    ):
+        failures.append({"run": run, "reason": "camera_integration"})
     return failures
+
+
+def validate_fpv_camera(sample: dict) -> list[dict]:
+    if (
+        sample.get("cameraRig") == "fpv"
+        and sample.get("cameraCollisionChecks") == 0
+        and sample.get("cameraCollisionHits") == 0
+    ):
+        return []
+    return [{"run": sample.get("run"), "reason": "fpv_camera_isolation"}]
 
 
 def fixture_gate(base_url: str, timeout: int = 30) -> dict:
@@ -101,7 +125,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
         cdp = new_page(port)
         url = (
             f"{base_url.rstrip('/')}/volar.html"
-            f"?m={urllib.parse.quote(cid)}&autotest=1&rig=3"
+            f"?m={urllib.parse.quote(cid)}&autotest=1&rig=0"
         )
         cdp.send("Page.navigate", {"url": url})
         deadline = time.time() + timeout
@@ -111,7 +135,8 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             try:
                 ready = cdp.eval(
                     "(() => { const r=window.__volar;"
-                    " return r?.done && r?.visualMesh ? r : null; })()"
+                    " return r?.done && r?.visualMesh && r?.customDrone"
+                    " && r?.collision?.radius_source === 'glb' ? r : null; })()"
                 )
             except RuntimeError:
                 continue
@@ -131,6 +156,10 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
                 "classification:r?.collision?.structure,"
                 "collisionReady:r?.collision?.ready,"
                 "collisionRadius:r?.collision?.radius_m,"
+                "collisionRadiusSource:r?.collision?.radius_source,"
+                "customDrone:r?.customDrone,"
+                "cameraRig:r?.camera?.rig,"
+                "cameraCollisionChecks:r?.camera?.collision_checks,"
                 "cameraCollisionHits:r?.camera?.collision_hits,"
                 "hitCoordinates:r?.pos,"
                 "groups:r?.lifecycle?.groups,"
@@ -158,6 +187,34 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
                     "first": values[0],
                     "last": values[-1],
                 })
+
+        fpv_url = (
+            f"{base_url.rstrip('/')}/volar.html"
+            f"?m={urllib.parse.quote(cid)}&autotest=1&rig=3"
+        )
+        cdp.send("Page.navigate", {"url": fpv_url})
+        fpv_deadline = time.time() + timeout
+        fpv_camera = None
+        while time.time() < fpv_deadline:
+            cdp.pump(0.25)
+            try:
+                fpv_camera = cdp.eval(
+                    "(() => { const r=window.__volar;"
+                    " if (!(r?.done && r?.customDrone"
+                    " && r?.collision?.radius_source === 'glb')) return null;"
+                    " return {cameraRig:r.camera?.rig,"
+                    " cameraCollisionChecks:r.camera?.collision_checks,"
+                    " cameraCollisionHits:r.camera?.collision_hits}; })()"
+                )
+            except RuntimeError:
+                continue
+            if fpv_camera:
+                break
+        if not fpv_camera:
+            failures.append({"run": stress, "reason": "fpv_camera_timeout"})
+            fpv_camera = {}
+        else:
+            failures.extend(validate_fpv_camera(fpv_camera))
         if cdp.errors:
             failures.append({"run": stress, "reason": "console", "errors": cdp.errors[:6]})
         report = {
@@ -166,6 +223,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             "stress_runs": stress,
             "failures": failures,
             "samples": samples,
+            "fpv_camera": fpv_camera,
             "console_errors": cdp.errors[:6],
         }
         if failures:

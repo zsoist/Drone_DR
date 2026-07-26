@@ -1,14 +1,14 @@
 // Unified FLIGHTVERSE structural, terrain, and playable-boundary queries.
-import * as THREE from '/flightverse/three.js?v=289';
+import * as THREE from '/flightverse/three.js?v=291';
 import {
   MeshBVH,
   getTriangleHitPointInfo,
-} from '/vendor/three-mesh-bvh180.module.js?v=289';
+} from '/vendor/three-mesh-bvh180.module.js?v=291';
 import {
   earliestHit,
   segmentCircleBoundaryHit,
   segmentSquareBoundaryHit,
-} from '/flightverse/collision-math.js?v=289';
+} from '/flightverse/collision-math.js?v=291';
 
 const EPSILON = 1e-7;
 const ZERO = new THREE.Vector3();
@@ -123,6 +123,24 @@ function boundaryHit(start, end, boundary, radius = 0) {
     point: vector(hit.point),
     normal: vector(hit.normal),
   };
+}
+
+function sweepRadii(value) {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error('sweepSphere requiere radius positivo');
+    }
+    return { structure: value, terrain: value, boundary: value };
+  }
+  const result = {
+    structure: Number(value?.structure),
+    terrain: Number(value?.terrain),
+    boundary: Number(value?.boundary),
+  };
+  if (!Object.values(result).every(radius => Number.isFinite(radius) && radius > 0)) {
+    throw new Error('sweepSphere requiere radios positivos');
+  }
+  return result;
 }
 
 export async function createWorldCollision(
@@ -370,16 +388,14 @@ export async function createWorldCollision(
 
   function sweepSphere(startValue, endValue, radius) {
     ensureActive();
-    if (!Number.isFinite(radius) || radius <= 0) {
-      throw new Error('sweepSphere requiere radius positivo');
-    }
+    const radii = sweepRadii(radius);
     qa.sweeps += 1;
     const start = vector(startValue);
     const end = vector(endValue);
     return recordHit(earliestHit([
-      sweepStructure(start, end, radius),
-      terrainHit(start, end, radius),
-      boundaryHit(start, end, boundary, radius),
+      sweepStructure(start, end, radii.structure),
+      terrainHit(start, end, radii.terrain),
+      boundaryHit(start, end, boundary, radii.boundary),
     ]));
   }
 

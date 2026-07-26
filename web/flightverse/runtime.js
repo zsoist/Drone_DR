@@ -3,7 +3,7 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=289';
+import * as THREE from '/flightverse/three.js?v=291';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -211,6 +211,11 @@ export function createDrone({ world, spawn }) {
     collisionRadius: DEFAULT_DRONE_COLLISION_RADIUS,
   };
   d.prev.pos.copy(d.pos);
+  const collisionRadii = {
+    structure: d.collisionRadius,
+    terrain: MIN_AGL,
+    boundary: d.collisionRadius,
+  };
   d.setCollisionRadius = (value) => {
     const radius = Number(value);
     if (!Number.isFinite(radius)) return d.collisionRadius;
@@ -219,6 +224,8 @@ export function createDrone({ world, spawn }) {
       MIN_DRONE_COLLISION_RADIUS,
       MAX_DRONE_COLLISION_RADIUS,
     );
+    collisionRadii.structure = d.collisionRadius;
+    collisionRadii.boundary = d.collisionRadius;
     return d.collisionRadius;
   };
 
@@ -285,7 +292,7 @@ export function createDrone({ world, spawn }) {
 
       // Deterministic spawn/stale-pose recovery. Terrain hits carry the exact
       // legal center; mesh hits carry closest distance + outward normal.
-      const embedded = world.sweepSphere(_current, _current, d.collisionRadius);
+      const embedded = world.sweepSphere(_current, _current, collisionRadii);
       if (embedded?.fraction === 0) {
         _n.copy(embedded.normal).normalize();
         if (embedded.kind === 'terrain' || embedded.kind === 'boundary') {
@@ -304,7 +311,7 @@ export function createDrone({ world, spawn }) {
       for (let contact = 0; contact < 2; contact += 1) {
         if (_remaining.lengthSq() <= 1e-10) break;
         _next.copy(_current).add(_remaining);
-        const hit = world.sweepSphere(_current, _next, d.collisionRadius);
+        const hit = world.sweepSphere(_current, _next, collisionRadii);
         if (!hit) {
           _current.copy(_next);
           _remaining.set(0, 0, 0);
@@ -326,7 +333,7 @@ export function createDrone({ world, spawn }) {
 
       if (_remaining.lengthSq() > 1e-10) {
         _next.copy(_current).add(_remaining);
-        if (!world.sweepSphere(_current, _next, d.collisionRadius)) {
+        if (!world.sweepSphere(_current, _next, collisionRadii)) {
           _current.copy(_next);
         }
       }

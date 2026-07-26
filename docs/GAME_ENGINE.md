@@ -49,10 +49,12 @@
 7. En touch, Imagen abre compacta: presets inmediatos y ajustes avanzados bajo
    demanda, con techo de 44dvh y scroll interno.
 8. El dron normalizado a 0,85 m publica su radio estructural activo en
-   `window.__volar.collision.radius_m` (rango seguro 0,42–0,70 m). Director,
-   llegada, tour y FPV no reciben corrección de cámara; los rigs chase publican
-   contactos en `window.__volar.camera.collision_hits`. El gate de deploy rechaza
-   radio inválido, telemetría no finita o pérdida de la respuesta continua.
+   `window.__volar.collision.radius_m` (rango seguro 0,42–0,70 m) y su procedencia
+   en `radius_source`; producción exige `glb`, no un fallback aceptado por clamp.
+   Director, llegada, tour y FPV no reciben corrección de cámara; los rigs chase
+   publican consultas/contactos en `window.__volar.camera.collision_checks` y
+   `collision_hits`. El gate de deploy prueba persecución con consultas y al menos
+   un contacto real, y prueba FPV por separado exigiendo cero trabajo anti-clipping.
 
 ## Extender (nuevo juego/modo en ~1 módulo)
 Crea `flightverse/<modo>.js` exportando `create<Modo>({scene, terrain,

@@ -1,7 +1,7 @@
-import * as THREE from '/flightverse/three.js?v=289';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=289';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=289';
-import { createWeapons } from '/flightverse/weapons.js?v=289';
+import * as THREE from '/flightverse/three.js?v=291';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=291';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=291';
+import { createWeapons } from '/flightverse/weapons.js?v=291';
 
 const report = {
   done: false,
@@ -61,7 +61,7 @@ function colliderUrls() {
 }
 
 async function run() {
-  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=289');
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=291');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
@@ -212,6 +212,24 @@ async function run() {
     mouseDX: 0,
     mouseDY: 0,
   };
+  const landing = createDrone({
+    world: terrainWorld,
+    spawn: { position_m: [0, 1.21, 0] },
+  });
+  landing.vel.set(0, -20, 0);
+  landing.step(STEP, neutralInput, 'asistido');
+  check(
+    'terrain keeps independent 1.20m AGL without rollback failure',
+    landing.agl >= 1.20
+      && landing.agl <= 1.22
+      && landing.collisionFailures === 0,
+    JSON.stringify({
+      agl: landing.agl,
+      collisionFailures: landing.collisionFailures,
+      position: landing.pos.toArray(),
+    }),
+  );
+
   const boosted = createDrone({
     world,
     heightAt: () => 0,

@@ -4,33 +4,34 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=289';
+import * as THREE from '/flightverse/three.js?v=291';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=289';
+} from '/flightverse/scene.js?v=291';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=289';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=289';
-import { createRecorder } from '/flightverse/recorder.js?v=289';
-import { createAudio } from '/flightverse/audio.js?v=289';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=289';
-import { createTouchSticks } from '/flightverse/touch.js?v=289';
-import { createSky } from '/flightverse/sky.js?v=289';
-import { loadSceneObjects } from '/flightverse/objects.js?v=289';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=289';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=289';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=289';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=289';
-import CameraControls from '/vendor/camera-controls.module.js?v=289';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=289';
+} from '/flightverse/runtime.js?v=291';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=291';
+import { createRecorder } from '/flightverse/recorder.js?v=291';
+import { createAudio } from '/flightverse/audio.js?v=291';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=291';
+import { createTouchSticks } from '/flightverse/touch.js?v=291';
+import { createSky } from '/flightverse/sky.js?v=291';
+import { loadSceneObjects } from '/flightverse/objects.js?v=291';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=291';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=291';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=291';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=291';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=291';
+import CameraControls from '/vendor/camera-controls.module.js?v=291';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=291';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=289';
+} from '/vendor/postprocessing180.module.js?v=291';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -506,8 +507,11 @@ async function main() {
   // props que giran con la velocidad, gimbal frontal — solo primitivas three
   const drone = createDrone({ world, spawn: man.spawn });
   report.collision.radius_m = +drone.collisionRadius.toFixed(3);
+  report.collision.radius_source = 'fallback';
+  report.customDrone = false;
   let cameraCollisionHits = 0;
-  report.camera = { collision_hits: 0 };
+  let cameraCollisionChecks = 0;
+  report.camera = { collision_checks: 0, collision_hits: 0, rig: null };
   const dmesh = new THREE.Group();
   const matHull = new THREE.MeshPhongMaterial({ color: 0xdfe5ee, specular: 0x8899aa, shininess: 62, flatShading: true });
   const matGrey = new THREE.MeshPhongMaterial({ color: 0x7e8898, specular: 0x556070, shininess: 40 });
@@ -601,19 +605,22 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=289', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=291', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=289');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=291');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
-    const size = bb.getSize(new THREE.Vector3());
-    const s = 0.85 / Math.max(size.x, size.z || 0.001);
-    m.scale.setScalar(s);
+    const envelope = deriveDroneEnvelope(bb);
+    if (envelope.source !== 'glb') {
+      report.collision.radius_reason = envelope.reason;
+      return;
+    }
+    m.scale.setScalar(envelope.scale);
     bb.setFromObject(m); bb.getCenter(m.position).multiplyScalar(-1);
-    const visualSphere = bb.getBoundingSphere(new THREE.Sphere());
-    drone.setCollisionRadius(visualSphere.radius + 0.02);
+    drone.setCollisionRadius(envelope.radius);
     report.collision.radius_m = +drone.collisionRadius.toFixed(3);
+    report.collision.radius_source = envelope.source;
     while (dmesh.children.length) dmesh.remove(dmesh.children[0]);   // fuera el procedural
     props.length = 0;
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -877,6 +884,7 @@ async function main() {
   $('#vl-goto').addEventListener('click', () => goToStart());
   const setRig = ix => {
     rigIx = ((ix % RIGS.length) + RIGS.length) % RIGS.length;
+    report.camera.rig = RIGS[rigIx].key;
     camera.fov = RIGS[rigIx].fov; camera.updateProjectionMatrix();
     $('#vl-rig').textContent = `cámara · ${RIGS[rigIx].label}`;
     dmesh.visible = !RIGS[rigIx].hideDrone;
@@ -1563,9 +1571,13 @@ async function main() {
       } else {
         const rig = RIGS[rigIx];
         rig.fn(P, o, camera, STEP, rig);
-        if (!rig.hideDrone && resolveCameraCollision(world, P, camera.position)) {
-          cameraCollisionHits += 1;
-          report.camera.collision_hits = cameraCollisionHits;
+        if (!rig.hideDrone) {
+          cameraCollisionChecks += 1;
+          report.camera.collision_checks = cameraCollisionChecks;
+          if (resolveCameraCollision(world, P, camera.position)) {
+            cameraCollisionHits += 1;
+            report.camera.collision_hits = cameraCollisionHits;
+          }
         }
         const dw = input.takeWheel();
         if (dw) setGimbal(gimbalTilt - dw * 0.0011);
@@ -1835,7 +1847,9 @@ async function main() {
       report.pos = { x: +drone.pos.x.toFixed(1), y: +drone.pos.y.toFixed(1), z: +drone.pos.z.toFixed(1) };
       report.agl = drone.agl == null ? null : +drone.agl.toFixed(1);
       report.collision.radius_m = +drone.collisionRadius.toFixed(3);
+      report.camera.collision_checks = cameraCollisionChecks;
       report.camera.collision_hits = cameraCollisionHits;
+      report.camera.rig = RIGS[rigIx].key;
       report.distance = Math.round(drone.distance);
       report.ghost = !!ghost;
       report.moved = drone.distance > 20;
