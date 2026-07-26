@@ -2,6 +2,7 @@
 // the reticle and projectile contracts can be tested with deterministic fixtures.
 
 const EPSILON = 1e-8;
+const disposedOwnedObjects = new WeakSet();
 
 const finiteZero = value => Object.is(value, -0) ? 0 : value;
 const copy = vector => ({ x: finiteZero(vector.x), y: finiteZero(vector.y), z: finiteZero(vector.z) });
@@ -183,6 +184,22 @@ export function impactTransform(hit, offset = 0.012) {
 
 export function isContinuousWeapon(weapon) {
   return weapon === 'mg';
+}
+
+/**
+ * Dispose a render object allocated by an effect without touching shared
+ * textures. Callers opt out of geometry/material disposal for shared assets.
+ */
+export function disposeOwnedRenderObject(object, { geometry = true, material = true } = {}) {
+  if (!object || typeof object !== 'object' || disposedOwnedObjects.has(object)) return false;
+  disposedOwnedObjects.add(object);
+  object.parent?.remove?.(object);
+  if (geometry) object.geometry?.dispose?.();
+  if (material) {
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const item of materials) item?.dispose?.();
+  }
+  return true;
 }
 
 /** A small generic FIFO pool whose counters are safe to expose as telemetry. */

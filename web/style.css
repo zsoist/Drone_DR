@@ -5232,6 +5232,7 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
    The live carousel and trigger deliberately live above the right stick's
    rectangle. They remain available while the optional combat sheet is closed. */
 .vl-combat-live{ display:none }
+.vl-fpv-camera{ display:none }
 @media (pointer:coarse){
   .vl-combat-live{ position:fixed; z-index:45; right:calc(12px + env(safe-area-inset-right));
     bottom:calc(min(34vh, 300px) + 36px + env(safe-area-inset-bottom));
@@ -5245,8 +5246,13 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     letter-spacing:.04em; cursor:pointer; touch-action:manipulation }
   .vl-weapon-carousel button.sel{ color:#ffd0ae; background:rgba(232,120,70,.22);
     border-color:rgba(232,120,70,.48); box-shadow:inset 0 1px rgba(255,255,255,.08) }
-  .vl-weapon-carousel output{ min-width:64px; padding:0 7px; color:#ffd0ae; font:750 9px var(--mono);
+  .vl-weapon-carousel output{ min-width:92px; padding:0 7px; color:#ffd0ae; font:750 9px var(--mono);
     letter-spacing:.04em; white-space:nowrap; font-variant-numeric:tabular-nums }
+  .vl-fpv-camera{ display:none; width:108px; min-height:44px; border-radius:12px;
+    border:1px solid rgba(110,183,255,.52); color:#d7ecff; background:rgba(22,49,76,.94);
+    box-shadow:0 9px 22px -13px rgba(0,0,0,.9); align-items:center; justify-content:center;
+    cursor:pointer; touch-action:manipulation; font:800 9px var(--mono); letter-spacing:.09em }
+  .vl-hud.fpv-active .vl-fpv-camera{ display:flex }
   .vl-trigger{ pointer-events:auto; width:108px; min-height:52px; border:1px solid rgba(255,150,100,.58);
     border-radius:17px; color:#ffe5d6; background:linear-gradient(145deg,rgba(160,55,30,.96),rgba(73,25,21,.94));
     box-shadow:0 12px 30px -13px rgba(0,0,0,.9),0 0 22px -10px rgba(255,90,55,.75);
@@ -5254,6 +5260,7 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     font:800 10px var(--mono); letter-spacing:.12em; -webkit-user-select:none; user-select:none }
   .vl-trigger span{ font:900 24px/1 var(--mono); color:#fff1e7 }
   .vl-trigger:active{ transform:scale(.94) }
+  .vl-trigger.locked{ border-color:#ffd36d; box-shadow:0 0 0 2px rgba(255,211,109,.22),0 12px 30px -13px rgba(0,0,0,.9) }
   .vl-trigger.flash{ animation:fireFlash .45s var(--ease) }
   .vl-combat-fab{ bottom:calc(min(34vh, 300px) + 142px + env(safe-area-inset-bottom)) }
 }

@@ -58,6 +58,16 @@ class VolarMobileHudContractTests(unittest.TestCase):
         self.assertIn(".vl-hud.fpv-active .vl-corner.tr", self.styles)
         self.assertIn(".vl-hud.fpv-active .vl-flight-status", self.styles)
 
+    def test_fpv_camera_cycle_stays_reachable_without_opening_the_dock(self):
+        for contract in (
+            'id="vl-fpv-camera"',
+            'aria-label="Cambiar cámara FPV"',
+            "const fpvCameraBtn = $('#vl-fpv-camera')",
+            "fpvCameraBtn.addEventListener('click', cycleRig)",
+            ".vl-hud.fpv-active .vl-fpv-camera",
+        ):
+            self.assertIn(contract, self.source if contract.startswith(("id=", "aria-", "const", "fpv")) else self.styles)
+
     def test_sound_control_arms_on_pointerdown_without_immediate_remute(self):
         self.assertIn("#vl-sound').addEventListener('pointerdown'", self.source)
         audio = (ROOT / "web" / "flightverse" / "audio.js").read_text()
@@ -124,9 +134,19 @@ class VolarMobileHudContractTests(unittest.TestCase):
         self.assertIn('<strong>DISPARAR</strong>', self.source)
         self.assertIn("const triggerBtn = $('#vl-trigger')", self.source)
         self.assertIn("for (const button of [fireBtn, triggerBtn])", self.source)
-        self.assertIn("button.setPointerCapture(e.pointerId)", self.source)
+        self.assertIn("button.setPointerCapture(pointerId)", self.source)
         self.assertIn("e.preventDefault()", self.source)
         self.assertIn("'pointercancel'", self.source)
+
+    def test_trigger_exposes_hold_lock_and_release_telemetry(self):
+        for contract in (
+            "locked: false",
+            "beginFiring",
+            "releaseFiring",
+            "trigger: { ...triggerState }",
+            "LIBERA PARA REARMAR",
+        ):
+            self.assertIn(contract, self.source)
 
     def test_image_editor_is_a_compact_live_inspector_on_touch(self):
         for contract in (

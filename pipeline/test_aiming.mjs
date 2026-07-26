@@ -125,3 +125,21 @@ test('EffectPool evicts the oldest active effect and exposes bounded counters', 
   assert.deepEqual(pool.entries.map(entry => entry.id), ['second', 'third']);
   assert.deepEqual(pool.counters, { limit: 2, active: 2, added: 3, evicted: 1 });
 });
+
+test('disposeOwnedRenderObject frees only owned geometry and materials', async () => {
+  const { disposeOwnedRenderObject } = await loadAiming();
+  const calls = { removed: 0, geometry: 0, firstMaterial: 0, secondMaterial: 0, texture: 0 };
+  const object = {
+    parent: { remove: () => { calls.removed += 1; } },
+    geometry: { dispose: () => { calls.geometry += 1; } },
+    material: [
+      { dispose: () => { calls.firstMaterial += 1; }, map: { dispose: () => { calls.texture += 1; } } },
+      { dispose: () => { calls.secondMaterial += 1; } },
+    ],
+  };
+
+  assert.equal(disposeOwnedRenderObject(object), true);
+  assert.deepEqual(calls, { removed: 1, geometry: 1, firstMaterial: 1, secondMaterial: 1, texture: 0 });
+  assert.equal(disposeOwnedRenderObject(object), false, 'cleanup is idempotent');
+  assert.deepEqual(calls, { removed: 1, geometry: 1, firstMaterial: 1, secondMaterial: 1, texture: 0 });
+});
