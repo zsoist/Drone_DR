@@ -25,7 +25,7 @@ except ImportError:
     audit_world = None
 
 
-def write_glb(path: Path, positions, indices):
+def write_glb(path: Path, positions, indices, *, nodes=None, scenes=None, scene=None):
     pos = np.asarray(positions, dtype="<f4")
     idx = np.asarray(indices, dtype="<u4")
     binary = pos.tobytes() + idx.tobytes()
@@ -45,6 +45,12 @@ def write_glb(path: Path, positions, indices):
             "indices": 1,
         }]}],
     }
+    if nodes is not None:
+        gltf["nodes"] = nodes
+    if scenes is not None:
+        gltf["scenes"] = scenes
+    if scene is not None:
+        gltf["scene"] = scene
     json_chunk = json.dumps(gltf, separators=(",", ":")).encode()
     json_chunk += b" " * (-len(json_chunk) % 4)
     binary += b"\x00" * (-len(binary) % 4)
@@ -56,6 +62,79 @@ def write_glb(path: Path, positions, indices):
         + struct.pack("<I4s", len(binary), b"BIN\x00")
         + binary
     )
+
+
+class GlbSceneTransformTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / "instances.glb"
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_parse_glb_applies_active_scene_parent_trs_and_repeated_mesh_instances(self):
+        write_glb(
+            self.path,
+            [[0, 0, 0], [1, 0, 0], [0, 0, 1]],
+            [0, 1, 2],
+            nodes=[
+                {"translation": [5, 10, 7], "children": [1, 2]},
+                {
+                    "mesh": 0,
+                    "translation": [10, 2, 3],
+                    "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
+                    "scale": [2, 3, 4],
+                },
+                {"mesh": 0, "translation": [-2, 0, 1]},
+                {"mesh": 0, "translation": [999, 999, 999]},
+            ],
+            scenes=[{"nodes": [3]}, {"nodes": [0]}],
+            scene=1,
+        )
+
+        positions, indices = collision_bake.parse_glb(self.path)
+
+        np.testing.assert_allclose(
+            positions,
+            [
+                [15, 12, 10], [15, 12, 8], [19, 12, 10],
+                [3, 10, 8], [4, 10, 8], [3, 10, 9],
+            ],
+        )
+        self.assertEqual([0, 1, 2, 3, 4, 5], indices.tolist())
+
+
+class StructuralFilterTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.model_dir = Path(self.temp.name)
+        np.zeros((3, 3), dtype="<f4").tofile(self.model_dir / "dsm.bin")
+        self.lod = {
+            "bin": "dsm.bin",
+            "grid": [3, 3],
+            "spacing_m": [1.0, 1.0],
+            "elev_min": 0.0,
+        }
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_filter_keeps_tall_wall_that_intersects_the_ground_band(self):
+        positions = np.asarray([
+            [-0.25, -10, 0],
+            [0.25, 100, 0],
+            [-0.25, 100, 0],
+        ], dtype=np.float32)
+
+        filtered_positions, filtered_indices = collision_bake._filtered_geometry(
+            positions,
+            np.asarray([0, 1, 2], dtype=np.uint32),
+            self.model_dir,
+            self.lod,
+        )
+
+        np.testing.assert_array_equal(positions, filtered_positions)
+        self.assertEqual([0, 1, 2], filtered_indices.tolist())
 
 
 class WorldCollisionBuilderTests(unittest.TestCase):

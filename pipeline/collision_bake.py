@@ -93,10 +93,16 @@ def parse_glb(path: Path) -> tuple[np.ndarray, np.ndarray]:
     if not gltf or not binary:
         raise ValueError(f"{path.name}: faltan chunks JSON/BIN")
 
-    positions = []
-    triangles = []
+    positions: list[np.ndarray] = []
+    triangles: list[np.ndarray] = []
     vertex_base = 0
-    for mesh in gltf.get("meshes") or []:
+
+    def append_mesh(mesh_index: int, matrix: np.ndarray) -> None:
+        nonlocal vertex_base
+        meshes = gltf.get("meshes") or []
+        if mesh_index < 0 or mesh_index >= len(meshes):
+            raise ValueError(f"{path.name}: nodo referencia mesh inexistente")
+        mesh = meshes[mesh_index]
         for primitive in mesh.get("primitives") or []:
             if primitive.get("mode", 4) != 4:
                 continue
@@ -113,12 +119,71 @@ def parse_glb(path: Path) -> tuple[np.ndarray, np.ndarray]:
             index = np.asarray(index, dtype=np.uint32).reshape(-1)
             if len(index) % 3:
                 raise ValueError(f"{path.name}: índices no triangulados")
-            positions.append(current)
+            positions.append(_transform(current, matrix))
             triangles.append(index + vertex_base)
             vertex_base += len(current)
+
+    scenes = gltf.get("scenes") or []
+    nodes = gltf.get("nodes") or []
+    if scenes:
+        scene_index = int(gltf.get("scene", 0))
+        if scene_index < 0 or scene_index >= len(scenes):
+            raise ValueError(f"{path.name}: escena GLTF inexistente")
+        roots = scenes[scene_index].get("nodes") or []
+
+        def visit(node_index: int, parent: np.ndarray, ancestors: set[int]) -> None:
+            if node_index < 0 or node_index >= len(nodes):
+                raise ValueError(f"{path.name}: escena referencia nodo inexistente")
+            if node_index in ancestors:
+                raise ValueError(f"{path.name}: ciclo en nodos GLTF")
+            node = nodes[node_index]
+            matrix = parent @ _node_matrix(node, path)
+            if "mesh" in node:
+                append_mesh(int(node["mesh"]), matrix)
+            child_ancestors = ancestors | {node_index}
+            for child_index in node.get("children") or []:
+                visit(int(child_index), matrix, child_ancestors)
+
+        identity = np.identity(4, dtype=np.float64)
+        for root in roots:
+            visit(int(root), identity, set())
+    else:
+        # Legacy collision GLBs may omit a scene graph; preserve their one-mesh
+        # interpretation while scene-backed files use node instances above.
+        identity = np.identity(4, dtype=np.float64)
+        for mesh_index, _mesh in enumerate(gltf.get("meshes") or []):
+            append_mesh(mesh_index, identity)
     if not positions or not triangles:
         raise ValueError(f"{path.name}: no contiene triángulos")
     return np.vstack(positions), np.concatenate(triangles)
+
+
+def _node_matrix(node: dict, path: Path) -> np.ndarray:
+    if "matrix" in node:
+        matrix = np.asarray(node["matrix"], dtype=np.float64)
+        if matrix.size != 16 or not np.isfinite(matrix).all():
+            raise ValueError(f"{path.name}: matriz de nodo GLTF inválida")
+        return matrix.reshape(4, 4).T
+
+    def vector(key: str, default: tuple[float, ...]) -> np.ndarray:
+        value = np.asarray(node.get(key, default), dtype=np.float64)
+        if value.shape != (len(default),) or not np.isfinite(value).all():
+            raise ValueError(f"{path.name}: {key} de nodo GLTF inválido")
+        return value
+
+    translation = vector("translation", (0.0, 0.0, 0.0))
+    rotation = vector("rotation", (0.0, 0.0, 0.0, 1.0))
+    scale = vector("scale", (1.0, 1.0, 1.0))
+    x, y, z, w = rotation
+    rotation_matrix = np.asarray([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ], dtype=np.float64)
+    matrix = np.identity(4, dtype=np.float64)
+    matrix[:3, :3] = rotation_matrix * scale
+    matrix[:3, 3] = translation
+    return matrix
 
 
 def parse_obj(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -228,6 +293,8 @@ def _filtered_geometry(
     )
     valid = np.einsum("ij,ij->i", cross, cross) > 1e-12
     centers = triangle_positions.mean(axis=1)
+    minimum_y = triangle_positions[:, :, 1].min(axis=1)
+    maximum_y = triangle_positions[:, :, 1].max(axis=1)
 
     rows, cols = (int(value) for value in lod["grid"])
     spacing_x, spacing_z = (float(value) for value in lod["spacing_m"])
@@ -249,8 +316,8 @@ def _filtered_geometry(
     ground = heightfield[safe_z, safe_x] - elevation_min
     valid &= inside & np.isfinite(ground)
     valid &= (
-        (centers[:, 1] > ground + GROUND_MIN_M)
-        & (centers[:, 1] < ground + GROUND_MAX_M)
+        (minimum_y <= ground + GROUND_MAX_M)
+        & (maximum_y >= ground + GROUND_MIN_M)
     )
     triangles = triangles[valid]
     if len(triangles) == 0:
