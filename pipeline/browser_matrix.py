@@ -31,6 +31,11 @@ from splat_presets import SPLAT_PRESETS
 
 VAULT = Path("/Volumes/SSD/drone-vault")
 VIEWPORTS = {
+    "mobile_portrait": {"width": 390, "height": 844, "deviceScaleFactor": 3, "mobile": True},
+    "mobile_landscape": {"width": 844, "height": 390, "deviceScaleFactor": 3, "mobile": True},
+    "ipad_portrait": {"width": 820, "height": 1180, "deviceScaleFactor": 2, "mobile": True},
+    "ipad_landscape": {"width": 1180, "height": 820, "deviceScaleFactor": 2, "mobile": True},
+    # Aliases kept for focused operator runs.
     "mobile": {"width": 390, "height": 844, "deviceScaleFactor": 3, "mobile": True},
     "ipad": {"width": 820, "height": 1180, "deviceScaleFactor": 2, "mobile": True},
     "desktop": {"width": 1440, "height": 960, "deviceScaleFactor": 1, "mobile": False},
@@ -580,6 +585,7 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
           const carousel = document.querySelector('#vl-weapon-carousel');
           const trigger = document.querySelector('#vl-trigger');
           const fpvCamera = document.querySelector('#vl-fpv-camera');
+          const sheetScrim = document.querySelector('#vl-overlay-scrim');
           const fpv = document.querySelector('#vl-fpv');
           const fpvHiddenGeneral = ['.vl-corner.tl','.vl-corner.tr','.vl-center-top',
             '.vl-compass','.vl-flight-status','#vl-goto']
@@ -607,11 +613,25 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
             const r = rect(b); return r.width < 44 || r.height < 44;
           }).map(b => b.id || b.textContent.trim());
           const menuHorizontalOverflow = menu ? menu.scrollWidth - menu.clientWidth : 999;
-          const menuStickCollisions = menuRect
-            ? sticks.filter(([,s]) => hit(menuRect,s)).map(([n]) => n) : ['menu-ausente'];
+          const menuSticksDisabled = [left,right].every(stick =>
+            stick.classList.contains('disabled') && stick.getAttribute('aria-hidden') === 'true');
+          const safeArea = menuRect ? {
+            bottomGap: Math.abs(innerHeight - menuRect.bottom),
+            paddingBottom: parseFloat(getComputedStyle(menu).paddingBottom),
+            inBounds: menuRect.left >= -1 && menuRect.right <= innerWidth + 1
+              && menuRect.top >= -1 && menuRect.bottom <= innerHeight + 1,
+          } : null;
+          const sheetScrimVisible = visible(sheetScrim)
+            && sheetScrim.classList.contains('open')
+            && sheetScrim.getAttribute('aria-hidden') === 'false';
           document.querySelector('#vl-mode')?.click();
           const menuPersistent = visible(menu);
-          document.querySelector('#vl-dock-close')?.click();
+          sheetScrim?.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles:true, pointerId:91, clientX:innerWidth/2, clientY:8,
+          }));
+          const outsideDismissed = !visible(menu)
+            && sheetScrim?.getAttribute('aria-hidden') === 'true'
+            && [left,right].every(stick => !stick.classList.contains('disabled'));
 
           combatFab.click();
           const combat = document.querySelector('#vl-combat');
@@ -620,8 +640,8 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
           const smallCombatTargets = combatButtons.filter(b => {
             const r = rect(b); return r.width < 44 || r.height < 44;
           }).map(b => b.id || b.textContent.trim());
-          const combatStickCollisions = combatRect
-            ? sticks.filter(([,s]) => hit(combatRect,s)).map(([n]) => n) : ['combate-ausente'];
+          const combatSticksDisabled = [left,right].every(stick =>
+            stick.classList.contains('disabled') && stick.getAttribute('aria-hidden') === 'true');
           document.querySelector('#vl-combat-close')?.click();
           menuFab.click();
           document.querySelector('#vl-ajustes')?.click();
@@ -635,18 +655,19 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
           const fpvCameraBefore = window.__volar?.camera?.rig;
           fpvCamera.click();
           const fpvCameraAfter = window.__volar?.camera?.rig;
-          return { closedCollisions, menuStickCollisions, combatStickCollisions,
+          return { closedCollisions, menuSticksDisabled, combatSticksDisabled,
                    smallCarouselTargets, smallFpvCameraTarget, smallMenuTargets, smallCombatTargets, menuHorizontalOverflow,
                    menuActions:menuButtons.length, combatActions:combatButtons.length,
                    exclusivePanels:imageOnly && menuOnly && combatOnly,
-                   menuPersistent,
+                   menuPersistent, outsideDismissed, safeArea, sheetScrim:sheetScrimVisible,
+                   orientation:innerWidth > innerHeight ? 'landscape' : 'portrait',
                    fpvActive,
                    fpvHiddenGeneral,
                    fpvCameraCycle:{ before:fpvCameraBefore, after:fpvCameraAfter },
                    carousel:rect(carousel), trigger:rect(trigger), fpvCamera:fpvCameraRect };
         """))
         failures = []
-        for key in ("closedCollisions", "menuStickCollisions", "combatStickCollisions",
+        for key in ("closedCollisions",
                     "smallCarouselTargets", "smallFpvCameraTarget", "smallMenuTargets", "smallCombatTargets"):
             if layout.get(key):
                 failures.append(f"{key}={layout[key]}")
@@ -660,6 +681,18 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
             failures.append(f"paneles simultáneos={layout}")
         if not layout.get("menuPersistent"):
             failures.append("el menú se cerró al cambiar un ajuste")
+        if not layout.get("menuSticksDisabled") or not layout.get("combatSticksDisabled"):
+            failures.append(f"sticks activos bajo sheet={layout}")
+        if not layout.get("sheetScrim") or not layout.get("outsideDismissed"):
+            failures.append(f"scrim/cierre exterior inválido={layout}")
+        safe_area = layout.get("safeArea") or {}
+        if (safe_area.get("bottomGap", 999) > 2
+                or safe_area.get("paddingBottom", 0) < 12
+                or not safe_area.get("inBounds")):
+            failures.append(f"safe-area de bottom sheet inválida={safe_area}")
+        expected_orientation = "landscape" if VIEWPORTS[viewport]["width"] > VIEWPORTS[viewport]["height"] else "portrait"
+        if layout.get("orientation") != expected_orientation:
+            failures.append(f"orientación divergente={layout.get('orientation')} != {expected_orientation}")
         if not layout.get("fpvActive") or not layout.get("fpvHiddenGeneral"):
             failures.append(f"HUD FPV duplicado={layout}")
         fpv_camera_cycle = layout.get("fpvCameraCycle") or {}
@@ -870,7 +903,10 @@ def main():
     ap.add_argument("--flightverse", action="store_true",
                     help="Matriz FLIGHTVERSE (mundo + volar) en vez de share/workspace.")
     args = ap.parse_args()
-    viewports = args.viewport or ["mobile", "ipad", "desktop"]
+    viewports = args.viewport or [
+        "mobile_portrait", "mobile_landscape",
+        "ipad_portrait", "ipad_landscape", "desktop",
+    ]
     if args.flightverse:
         results = []
         for vp in viewports:

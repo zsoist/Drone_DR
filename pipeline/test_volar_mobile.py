@@ -27,7 +27,7 @@ class VolarMobileHudContractTests(unittest.TestCase):
     def test_combat_controls_are_grouped_and_status_is_separate(self):
         self.assertIn('class="vl-combat" id="vl-combat"', self.source)
         self.assertIn('class="vl-flight-status"', self.source)
-        self.assertIn("const setMobileSheet", self.source)
+        self.assertIn("overlayCoordinator = createOverlayCoordinator", self.source)
         self.assertIn("'vl-mobile-sheet-open'", self.source)
 
     def test_touch_layout_uses_grid_sheets_and_minimum_targets(self):
@@ -38,9 +38,35 @@ class VolarMobileHudContractTests(unittest.TestCase):
         self.assertNotIn("dock horizontal scrolleable", self.styles)
 
     def test_mobile_panels_are_mutually_exclusive(self):
-        self.assertIn("const closeFlightOverlays", self.source)
-        self.assertIn("closeFlightOverlays(name)", self.source)
-        self.assertIn("setMobileSheet('', false)", self.source)
+        self.assertIn("createOverlayCoordinator", self.source)
+        self.assertEqual(self.source.count("createOverlayCoordinator({"), 1)
+        self.assertIn('id="vl-overlay-scrim"', self.source)
+        for name in ("menu", "combat", "image", "guide", "invasion", "difficulty", "result"):
+            self.assertIn(f"{name}:", self.source)
+        self.assertIn("overlayCoordinator.toggle('menu')", self.source)
+        self.assertIn("overlayCoordinator.toggle('combat')", self.source)
+
+    def test_touch_controller_is_lifecycle_owned_by_the_flight_scene(self):
+        touch = (ROOT / "web" / "flightverse" / "touch.js").read_text()
+        for contract in (
+            "sample()",
+            "setEnabled(active)",
+            "dispose()",
+            "pointercancel",
+            "lostpointercapture",
+            "getBoundingClientRect()",
+        ):
+            self.assertIn(contract, touch)
+        self.assertIn("sticks?.dispose()", self.source)
+
+    def test_mobile_sheets_share_one_safe_area_scrim(self):
+        for contract in (
+            ".vl-overlay-scrim",
+            ".vl-overlay-scrim.open",
+            "env(safe-area-inset-bottom)",
+            "border-radius:22px 22px 0 0",
+        ):
+            self.assertIn(contract, self.styles)
 
     def test_legacy_touch_dom_cannot_restore_overlapping_combat_controls(self):
         self.assertIn(".vl-corner.br > .vl-weps", self.styles)
@@ -110,6 +136,13 @@ class VolarMobileHudContractTests(unittest.TestCase):
             '"triangles"',
             "telemetría de render inválida",
         ):
+            self.assertIn(contract, matrix)
+
+    def test_browser_matrix_covers_phone_and_ipad_in_both_orientations(self):
+        matrix = (ROOT / "pipeline" / "browser_matrix.py").read_text()
+        for profile in ("mobile_portrait", "mobile_landscape", "ipad_portrait", "ipad_landscape"):
+            self.assertIn(f'"{profile}"', matrix)
+        for contract in ("safeArea", "sheetScrim", "outsideDismissed", "orientation"):
             self.assertIn(contract, matrix)
 
     def test_flight_uses_detailed_mesh_as_visual_layer_only(self):

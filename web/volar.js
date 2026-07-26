@@ -4,36 +4,36 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=301';
+import * as THREE from '/flightverse/three.js?v=302';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=301';
+} from '/flightverse/scene.js?v=302';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=301';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=301';
-import { createRecorder } from '/flightverse/recorder.js?v=301';
-import { createAudio } from '/flightverse/audio.js?v=301';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=301';
-import { createTouchSticks } from '/flightverse/touch.js?v=301';
-import { createSky } from '/flightverse/sky.js?v=301';
-import { loadSceneObjects } from '/flightverse/objects.js?v=301';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=301';
-import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=301';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=301';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=301';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=301';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=301';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=301';
-import CameraControls from '/vendor/camera-controls.module.js?v=301';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=301';
+} from '/flightverse/runtime.js?v=302';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=302';
+import { createRecorder } from '/flightverse/recorder.js?v=302';
+import { createAudio } from '/flightverse/audio.js?v=302';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=302';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=302';
+import { createSky } from '/flightverse/sky.js?v=302';
+import { loadSceneObjects } from '/flightverse/objects.js?v=302';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=302';
+import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=302';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=302';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=302';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=302';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=302';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=302';
+import CameraControls from '/vendor/camera-controls.module.js?v=302';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=302';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=301';
+} from '/vendor/postprocessing180.module.js?v=302';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -150,6 +150,7 @@ function hud() {
         <span>◎</span><strong>FUEGO</strong>
       </button>
     </div>
+    <div class="vl-overlay-scrim" id="vl-overlay-scrim" aria-hidden="true"></div>
     <div class="vl-flight-status">
       <div class="vl-ghost" id="vl-ghost"></div>
       <div class="vl-fps" id="vl-fps"></div>
@@ -652,9 +653,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=301', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=302', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=301');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=302');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -846,6 +847,7 @@ async function main() {
     },
   });
   weapons.state._enemies = invasion.hittables;     // splash de explosión a la horda
+  let overlayCoordinator = null;
   const zBtn = $('#vl-zombies');
   const invModal = $('#vl-inv');
   zBtn.addEventListener('click', () => {
@@ -855,7 +857,7 @@ async function main() {
       $('#vl-zhud').classList.remove('show');
       return;
     }
-    invModal.classList.toggle('show');             // elegir enemigos
+    overlayCoordinator?.toggle('invasion');       // elegir enemigos
   });
   invModal.addEventListener('click', e => {
     const chip = e.target.closest('button[data-e]');
@@ -868,7 +870,7 @@ async function main() {
     if (e.target.closest('#vl-inv-go')) {
       const sel = [...invModal.querySelectorAll('button[data-e].sel')].map(b => b.dataset.e);
       const diff = invModal.querySelector('button[data-inv-d].sel')?.dataset.invD || 'media';
-      invModal.classList.remove('show');
+      overlayCoordinator?.close('invasion');
       invasion.toggle(P, sel.length ? sel : ['zombie'], diff);
       zBtn.classList.add('on');
       health.hp = 100;
@@ -1016,29 +1018,21 @@ async function main() {
   fpvCameraBtn.addEventListener('click', cycleRig);
   $('#vl-reto').addEventListener('click', () => startReto());   // arrow: startReto se declara abajo
   $('#vl-ayuda').addEventListener('click', () => {
-    closeFlightOverlays('guide');
-    $('#vl-guide').classList.add('show');
+    overlayCoordinator.open('guide');
   });
   $('#vl-ajustes').addEventListener('click', e => {
     e.stopPropagation();
-    const opening = !gradePanel.classList.contains('show');
-    setMobileSheet('', false);
-    closeFlightOverlays(opening ? 'image' : '');
-    gradePanel.classList.toggle('show', opening);
+    const opening = overlayCoordinator.active() !== 'image';
+    overlayCoordinator.toggle('image');
     if (opening) movable.image.clamp();
   });
-  $('#gr-close').addEventListener('click', () => $('#vl-grade').classList.remove('show'));
+  $('#gr-close').addEventListener('click', () => overlayCoordinator.close('image'));
   $('#gr-expand').addEventListener('click', e => {
     e.stopPropagation();
     const compact = gradePanel.classList.toggle('compact');
     $('#gr-expand').setAttribute('aria-expanded', String(!compact));
     localStorage.setItem('ab.fv.grade.expanded', compact ? '0' : '1');
     if (!compact) movable.image.clamp();
-  });
-  document.addEventListener('pointerdown', e => {
-    const g = $('#vl-grade');
-    if (g.classList.contains('show') && !g.contains(e.target) && !e.target.closest('#vl-ajustes'))
-      g.classList.remove('show');
   });
   const mobileSheets = {
     menu: { panel: $('#vl-dock'), trigger: $('#vl-fab') },
@@ -1049,43 +1043,36 @@ async function main() {
     combat: makeDraggablePanel($('#vl-combat'), $('#vl-combat .vl-panel-drag'), 'ab.fv.panel.combat'),
     image: makeDraggablePanel($('#vl-grade'), $('#vl-grade .vl-grade-drag'), 'ab.fv.panel.image'),
   };
-  const closeFlightOverlays = except => {
-    const overlays = {
-      image: $('#vl-grade'),
-      guide: $('#vl-guide'),
-      invasion: $('#vl-inv'),
-      difficulty: $('#vl-diff'),
-    };
-    for (const [key, panel] of Object.entries(overlays)) {
-      if (key !== except) panel?.classList.remove('show');
-    }
-  };
-  const setMobileSheet = (name, open) => {
-    if (open) closeFlightOverlays(name);
-    for (const [key, sheet] of Object.entries(mobileSheets)) {
-      const active = key === name && open;
-      sheet.panel.classList.toggle('open', active);
-      sheet.trigger.setAttribute('aria-expanded', String(active));
-    }
-    document.body.classList.toggle('vl-mobile-sheet-open', !!open);
-    if (open && movable[name]) movable[name].clamp();
-  };
-  $('#vl-fab').addEventListener('click', () =>
-    setMobileSheet('menu', !$('#vl-dock').classList.contains('open')));
-  $('#vl-combat-fab').addEventListener('click', () =>
-    setMobileSheet('combat', !$('#vl-combat').classList.contains('open')));
-  $('#vl-dock-close').addEventListener('click', () => setMobileSheet('menu', false));
-  $('#vl-combat-close').addEventListener('click', () => setMobileSheet('combat', false));
-  // tap FUERA de un sheet abierto lo cierra (escape universal en táctil)
-  document.addEventListener('pointerdown', e => {
-    if (!document.body.classList.contains('vl-mobile-sheet-open')) return;
-    if (e.target.closest('.vl-dock, .vl-combat, .vl-fab, .vl-combat-fab')) return;
-    setMobileSheet('menu', false);
-  }, { capture: true });
-  addEventListener('keydown', e => {
-    if (e.key === 'Escape' && document.body.classList.contains('vl-mobile-sheet-open'))
-      setMobileSheet('', false);
+  const touchUi = matchMedia('(pointer:coarse)').matches;
+  overlayCoordinator = createOverlayCoordinator({
+    eventRoot: document,
+    scrim: touchUi ? $('#vl-overlay-scrim') : null,
+    overlays: {
+      ...(touchUi ? {
+        menu: { ...mobileSheets.menu, openClass: 'open' },
+        combat: { ...mobileSheets.combat, openClass: 'open' },
+      } : {}),
+      image: { panel: gradePanel, trigger: $('#vl-ajustes'), openClass: 'show' },
+      guide: { panel: $('#vl-guide'), trigger: $('#vl-ayuda'), openClass: 'show' },
+      invasion: { panel: invModal, trigger: zBtn, openClass: 'show' },
+      difficulty: { panel: $('#vl-diff'), trigger: $('#vl-reto'), openClass: 'show' },
+      result: { panel: $('#vl-result'), openClass: 'show' },
+      director: { panel: $('#vl-director'), openClass: 'show', dismissible: false },
+    },
+    onChange: active => {
+      document.body.classList.toggle('vl-overlay-open', !!active);
+      document.body.classList.toggle('vl-mobile-sheet-open', active === 'menu' || active === 'combat');
+      sticks?.setEnabled(!active);
+      if (active && (active === 'image' || !touchUi) && movable[active]) movable[active].clamp();
+    },
   });
+  if (!touchUi) {
+    for (const sheet of Object.values(mobileSheets)) sheet.panel.setAttribute('aria-hidden', 'false');
+  }
+  $('#vl-fab').addEventListener('click', () => overlayCoordinator.toggle('menu'));
+  $('#vl-combat-fab').addEventListener('click', () => overlayCoordinator.toggle('combat'));
+  $('#vl-dock-close').addEventListener('click', () => overlayCoordinator.close('menu'));
+  $('#vl-combat-close').addEventListener('click', () => overlayCoordinator.close('combat'));
   $('#vl-dockmin').addEventListener('click', () => {
     const min = $('#vl-dock').classList.toggle('min');
     $('#vl-dockmin').textContent = min ? '»' : '«';
@@ -1135,10 +1122,10 @@ async function main() {
   if (!(grade.b >= 0.35 && grade.b <= 1.6)) grade.b = 0.88;  // migra esquemas viejos (y el 1.3 quemado)
   applyGrade(grade);
   $('#vl-guide-ok').addEventListener('click', () => {
-    $('#vl-guide').classList.remove('show');
+    overlayCoordinator.close('guide');
     localStorage.setItem('ab.fv.guided', '1');
   });
-  if (!localStorage.getItem('ab.fv.guided') && !AT) $('#vl-guide').classList.add('show');
+  if (!localStorage.getItem('ab.fv.guided') && !AT) overlayCoordinator.open('guide');
   $('#vl-sound').addEventListener('pointerdown', e => {
     e.preventDefault();
     const m = audio.toggleMute();
@@ -1160,7 +1147,7 @@ async function main() {
     if (modeKeys[e.code]) setMode(modeKeys[e.code]);
     if (e.code === 'KeyC') cycleRig();
     if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
-    if (e.code === 'KeyH') $('#vl-guide').classList.toggle('show');
+    if (e.code === 'KeyH') overlayCoordinator.toggle('guide');
     if (e.code === 'KeyT') startReto(localStorage.getItem('ab.fv.gr.diff') || 'media');
     if (e.code === 'KeyP') cycleVista();
     if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
@@ -1169,7 +1156,11 @@ async function main() {
       const ks = Object.keys(ARSENAL);
       setWeapon(ks[(ks.indexOf(weapons.state.weapon) + 1) % ks.length]);
     }
-    if (e.code === 'Escape' && replay) { replay = null; reto?.setVisible(true); if (resultShown) $('#vl-result').classList.add('show'); }
+    if (e.code === 'Escape' && replay) {
+      replay = null;
+      reto?.setVisible(true);
+      if (resultShown) overlayCoordinator.open('result');
+    }
   });
   renderer.domElement.addEventListener('click', () => { if (modeKey === 'fpv') input.requestLock(); });
   addEventListener('resize', () => {
@@ -1181,11 +1172,10 @@ async function main() {
   // ── Gate Rush (desafío del slice) + replay ──
   let reto = null, replay = null, resultShown = false, retoFly = null;
   const startReto = (diff) => {
-    const dp = $('#vl-diff');
-    if (!diff) { dp.classList.toggle('show'); return; }   // sin dif → picker
-    dp.classList.remove('show');
+    if (!diff) { overlayCoordinator.toggle('difficulty'); return; }   // sin dif → picker
+    overlayCoordinator.close();
     localStorage.setItem('ab.fv.gr.diff', diff);
-    $('#vl-result').classList.remove('show'); $('#vl-result').innerHTML = '';
+    $('#vl-result').innerHTML = '';
     replay = null; resultShown = false;
     if (reto) reto.dispose();
     reto = createGateRush({ scene, trackPts: ghost?.pts, world: W, heightAt: terrain.heightAt, difficulty: diff });
@@ -1202,7 +1192,7 @@ async function main() {
   });
   const startReplay = () => {
     if (!reto?.state.rec.length) return;
-    $('#vl-result').classList.remove('show');
+    overlayCoordinator.close('result');
     replay = { rec: reto.state.rec, f: 0 };
     reto.setVisible(false);
   };
@@ -1250,12 +1240,12 @@ async function main() {
           <a href="mundo.html">Mundo</a>
         </div>
       </div>`;
-    $('#vl-result').classList.add('show');
+    overlayCoordinator.open('result');
   };
   $('#vl-result').addEventListener('click', e => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'retry') startReto(reto.state.difficulty);
-    if (act === 'diff') { $('#vl-result').classList.remove('show'); $('#vl-diff').classList.add('show'); }
+    if (act === 'diff') overlayCoordinator.open('difficulty');
     if (act === 'replay') startReplay();
     if (act === 'director') enterDirector();
   });
@@ -1274,21 +1264,20 @@ async function main() {
   };
   function enterDirector() {
     if (!reto?.state.rec?.length) return;
-    $('#vl-result').classList.remove('show');
+    overlayCoordinator.open('director');
     replay = null;
     reto?.setVisible(false);
     director = { keys: [], playing: false, f: 0, len: reto.state.rec.length - 1 };
     cc.enabled = true;
     cc.setLookAt(drone.pos.x + 20, drone.pos.y + 12, drone.pos.z + 20,
       drone.pos.x, drone.pos.y, drone.pos.z, false);
-    $('#vl-director').classList.add('show');
     $('#dir-scrub').max = String(director.len);
     paintKeys();
   }
   function exitDirector() {
     director = null; cc.enabled = false; reto?.setVisible(true);
-    $('#vl-director').classList.remove('show');
-    if (resultShown) $('#vl-result').classList.add('show');
+    overlayCoordinator.close('director');
+    if (resultShown) overlayCoordinator.open('result');
   }
   function paintKeys() {
     $('#dir-keys').innerHTML = director.keys.map((k, i) =>
@@ -1967,6 +1956,8 @@ async function main() {
   addEventListener('pagehide', () => {
     generation.invalidate();
     loop.stop();
+    overlayCoordinator?.dispose();
+    sticks?.dispose();
     input.dispose();
     world.dispose();
     sceneObjects?.dispose();

@@ -5269,6 +5269,56 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   .vl-combat-fab{ bottom:calc(52vh + 136px + env(safe-area-inset-bottom)) }
 }
 
+/* ── BLOQUE 55c: un solo plano modal + bottom sheets adaptativos ────────── */
+.vl-overlay-scrim{ display:none }
+@media (pointer:coarse){
+  .vl-overlay-scrim{ display:block; position:fixed; inset:0; z-index:42;
+    pointer-events:none; opacity:0; background:rgba(3,7,12,.58);
+    -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px);
+    transition:opacity .18s var(--ease) }
+  .vl-overlay-scrim.open{ pointer-events:auto; opacity:1 }
+  .vl-grade,.vl-guide,.vl-inv,.vl-diff,.vl-result,.vl-director{ z-index:43 }
+
+  /* En táctil Menú y Combate son sheets reales: nacen del borde inferior,
+     respetan el home indicator y no heredan posiciones arrastradas de desktop. */
+  .vl-dock.open,.vl-combat.open{
+    position:fixed !important; z-index:43;
+    left:0 !important; right:0 !important; top:auto !important; bottom:0 !important;
+    width:auto !important; max-width:none; max-height:min(56dvh,520px);
+    margin:0 !important; padding:14px
+      calc(16px + env(safe-area-inset-right))
+      calc(14px + env(safe-area-inset-bottom))
+      calc(16px + env(safe-area-inset-left));
+    border-radius:22px 22px 0 0; transform:none !important;
+    overscroll-behavior:contain }
+  .vl-dock.open{ grid-template-columns:repeat(2,minmax(0,1fr)) }
+  .vl-combat.open{ grid-template-columns:minmax(0,1fr) 88px }
+  .vl-dock.open .vl-panel-drag,.vl-combat.open .vl-panel-drag{
+    cursor:default; touch-action:manipulation }
+
+  .vl-stick.disabled{ opacity:0; pointer-events:none }
+  .vl-stick{ transition:opacity .14s var(--ease) }
+  .vl-overlay-open .vl-combat-live{ opacity:0; pointer-events:none }
+}
+@media (pointer:coarse) and (orientation:landscape){
+  .vl-dock.open,.vl-combat.open{
+    left:50% !important; transform:translateX(-50%) !important;
+    width:min(720px,calc(100vw - 2 * max(14px,env(safe-area-inset-left)))) !important;
+    max-height:min(66dvh,420px) }
+  .vl-corner.tl{ flex-direction:row; align-items:flex-start; max-width:46vw }
+  .vl-corner.tl .vl-scene{ display:none }
+  .vl-compass{ top:calc(98px + env(safe-area-inset-top)) }
+  .vl-center-top{ top:calc(140px + env(safe-area-inset-top)) }
+  .vl-grade{ position:fixed; left:calc(12px + env(safe-area-inset-left));
+    right:auto; top:auto; bottom:calc(12px + env(safe-area-inset-bottom));
+    width:min(360px,48vw); max-height:min(44dvh,320px);
+    transform:none; overflow:hidden }
+  .vl-grade-body{ min-height:0; overflow-y:auto; overscroll-behavior:contain }
+}
+@media (prefers-reduced-motion:reduce){
+  .vl-overlay-scrim,.vl-stick{ transition:none }
+}
+
 /* ── BLOQUE 56: Mundo overhaul — compacto, cards ricas, cfg de lanzamiento,
       mapa decluttered, overlay de carga ── */
 .fv-hero{ padding:26px 0 10px }

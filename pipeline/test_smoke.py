@@ -600,8 +600,11 @@ check("browser gate: módulos ESM del share compilan antes de publicar",
       _share_module_parse.returncode == 0,
       (_share_module_parse.stderr or _share_module_parse.stdout)[-300:])
 import browser_matrix
-check("browser matrix: cubre mobile, iPad y desktop",
-      set(browser_matrix.VIEWPORTS) == {"mobile", "ipad", "desktop"})
+check("browser matrix: cubre phone/iPad portrait+landscape y desktop",
+      set(browser_matrix.VIEWPORTS) == {
+          "mobile", "ipad", "mobile_portrait", "mobile_landscape",
+          "ipad_portrait", "ipad_landscape", "desktop",
+      })
 _bm_src = Path("pipeline/browser_matrix.py").read_text()
 check("browser matrix: cubre share, workspace y consola de trabajos",
       "def run_share" in _bm_src and "def run_workspace" in _bm_src and "def run_jobs" in _bm_src)
