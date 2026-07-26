@@ -81,28 +81,7 @@
 - [ ] Run Node tests, syntax checks, and Invasion browser QA.
 - [ ] Commit Invasion.
 
-### Task 4: Adaptive mobile controls and sheets
-
-**Files:**
-- Modify: `web/flightverse/touch.js`
-- Create: `pipeline/test_touch_controls.mjs`
-- Modify: `web/volar.js`
-- Modify: `web/style.css`
-- Modify: `pipeline/test_volar_mobile.py`
-- Modify: `pipeline/browser_matrix.py`
-
-**Interfaces:**
-- Produces: touch controller with `sample()`, `setEnabled(bool)`, and `dispose()`.
-- Produces: one exclusive overlay coordinator and scrim.
-
-- [ ] Write failing tests for dynamic stick origins, clamping, cancellation, disable/reset, disposal, sheet exclusivity, outside dismissal, and accessibility state.
-- [ ] Implement the controller and overlay coordinator.
-- [ ] Replace fixed mobile panels with safe-area bottom sheets and preserve desktop draggable panels.
-- [ ] Add phone/iPad portrait and landscape overlap assertions plus screenshots to the browser matrix.
-- [ ] Run Python/Node tests and all device profiles.
-- [ ] Commit mobile UX.
-
-### Task 5: FPV, weapon aim, effects and localized damage
+### Task 4: FPV, weapon aim, effects and localized damage
 
 **Files:**
 - Create: `web/flightverse/aiming.js`
@@ -128,6 +107,28 @@
 - [ ] Add deterministic fixture and browser assertions for aim, impact position/normal, scenery damage, pools, FPV default, and mobile control separation.
 - [ ] Run Node tests, syntax checks, fixture, live stress, and device browser matrix.
 - [ ] Commit FPV and combat.
+
+### Task 5: Adaptive mobile controls and sheets
+
+**Files:**
+- Modify: `web/flightverse/touch.js`
+- Create: `pipeline/test_touch_controls.mjs`
+- Modify: `web/volar.js`
+- Modify: `web/style.css`
+- Modify: `pipeline/test_volar_mobile.py`
+- Modify: `pipeline/browser_matrix.py`
+
+**Interfaces:**
+- Produces: touch controller with `sample()`, `setEnabled(bool)`, and `dispose()`.
+- Produces: one exclusive overlay coordinator and scrim.
+
+- [ ] Write failing tests for dynamic stick origins, clamping, cancellation, disable/reset, disposal, sheet exclusivity, outside dismissal, and accessibility state.
+- [ ] Implement the controller and overlay coordinator.
+- [ ] Replace fixed mobile panels with safe-area bottom sheets and preserve desktop draggable panels.
+- [ ] Integrate the Task 4 weapon carousel and trigger without covering either stick.
+- [ ] Add phone/iPad portrait and landscape overlap assertions plus screenshots to the browser matrix.
+- [ ] Run Python/Node tests and all device profiles.
+- [ ] Commit mobile UX.
 
 ### Task 6: Release verification
 
