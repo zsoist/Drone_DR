@@ -7,6 +7,14 @@ const fechaDe = cid => { const m = /(\d{4})(\d{2})(\d{2})/.exec(cid||''); return
 const dur = s => { s = Math.round(s||0); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
 const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const best = cid => { const t = parseFloat(localStorage.getItem(`ab.fv.best.${cid}.gaterush`)); return Number.isFinite(t) ? t : null; };
+const hydratePreview = card => {
+  const poster = card?.querySelector('.wi-poster');
+  if (!poster || poster.dataset.previewLoaded === 'true') return false;
+  const url = poster.dataset.preview || '';
+  poster.dataset.previewLoaded = 'true';
+  if (url) poster.style.backgroundImage = `url(${JSON.stringify(url)})`;
+  return true;
+};
 
 const SV = (d, s=13) => `<svg width="${s}" height="${s}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const I = {
@@ -37,7 +45,7 @@ function isla(sc, i) {
   <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms"
     role="button" tabindex="0" aria-selected="false"
     aria-label="Seleccionar ${esc(sc.name)}">
-    <div class="wi-poster" style="background-image:url('${esc(sc.assets?.poster||'')}')"></div>
+    <div class="wi-poster" data-preview="${esc(sc.assets?.poster||'')}"></div>
     <div class="wi-shine"></div>
     <div class="wi-shade"></div>
     ${c.splat?'<span class="wi-badge">FOTO-REAL</span>':c.mesh?'<span class="wi-badge mesh">MALLA 3D</span>':''}
@@ -62,6 +70,7 @@ function pick(i) {
     const selected = +el.dataset.i === i;
     el.classList.toggle('sel', selected);
     el.setAttribute('aria-selected', String(selected));
+    if (selected) hydratePreview(el);
   });
   const c = sel.capabilities||{}, st = sel.stats||{}, w = sel.world||{};
   const site = sel.site || {}, coverage = sel.coverage?.shapes?.circle || [];
@@ -209,6 +218,23 @@ async function boot() {
     (secs?`<span><b>${dur(secs)}</b> de vuelo real</span>`:'');
 
   const rail = document.getElementById('w-rail');
+  let previewObserver = null;
+  const observePreviews = () => {
+    previewObserver?.disconnect();
+    const cards = [...rail.querySelectorAll('.wi')];
+    if (!('IntersectionObserver' in window)) {
+      cards.slice(0, 2).forEach(hydratePreview);
+      return;
+    }
+    previewObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        hydratePreview(entry.target);
+        previewObserver?.unobserve(entry.target);
+      });
+    }, { root: rail, rootMargin: '0px 280px', threshold: 0.01 });
+    cards.forEach(card => previewObserver.observe(card));
+  };
   const applyFiltro = () => {
     const f = filtro;
     const list = scenes.map((sc, i) => ({ sc, i })).filter(({ sc }) =>
@@ -219,6 +245,7 @@ async function boot() {
     rail.innerHTML = list.length
       ? list.map(({ sc, i }) => isla(sc, i)).join('')
       : '<div class="fv-loading">Nada con ese filtro.</div>';
+    observePreviews();
     const first = list[0];
     if (first) pick(first.i);
   };

@@ -399,8 +399,37 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
             or not keyboard.get("focused") or not keyboard.get("selected") \
             or keyboard.get("selectedCount") != 1):
         raise RuntimeError(f"islas no navegables por teclado: {keyboard}")
+    preview_initial = cdp.eval(js("""
+      const cards = [...document.querySelectorAll('.wi')];
+      const hydrated = cards.filter(card =>
+        card.querySelector('.wi-poster')?.dataset.previewLoaded === 'true').length;
+      const resources = new Set(performance.getEntriesByType('resource')
+        .filter(entry => /\\/ortho\\.webp(?:\\?|$)/.test(entry.name))
+        .map(entry => entry.name)).size;
+      return { cards:cards.length, hydrated, resources };
+    """))
+    if preview_initial["cards"] > 2 and (
+            preview_initial["hydrated"] >= preview_initial["cards"]
+            or preview_initial["resources"] >= preview_initial["cards"]):
+        raise RuntimeError(f"previews de Mundo cargadas de forma ansiosa: {preview_initial}")
+    preview_selected = cdp.eval(js("""
+      const card = [...document.querySelectorAll('.wi')].at(-1);
+      card?.focus();
+      card?.dispatchEvent(new KeyboardEvent('keydown', {
+        key:'Enter', code:'Enter', bubbles:true, cancelable:true,
+      }));
+      const poster = card?.querySelector('.wi-poster');
+      return {
+        selected:card?.getAttribute('aria-selected') === 'true',
+        hydrated:poster?.dataset.previewLoaded === 'true',
+        hasImage:/url\\(/.test(poster?.style.backgroundImage || ''),
+      };
+    """))
+    if not all(preview_selected.values()):
+        raise RuntimeError(f"preview seleccionada no se hidrató: {preview_selected}")
     screenshot(cdp, QA_DIR / f"matrix-mundo-{viewport}.png")
-    return {"surface": "mundo", "viewport": viewport, **state, "keyboard": keyboard}
+    return {"surface": "mundo", "viewport": viewport, **state,
+            "keyboard": keyboard, "previewInitial": preview_initial}
 
 
 def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
