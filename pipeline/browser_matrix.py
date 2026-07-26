@@ -377,8 +377,30 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
         raise RuntimeError(f"mundo incompleto: {state}")
     if state["overflow"] > 3:
         raise RuntimeError(f"overflow horizontal {state['overflow']}px en mundo/{viewport}")
+    keyboard = cdp.eval(js("""
+      const cards = [...document.querySelectorAll('.wi')];
+      const target = cards[1] || cards[0];
+      if (!target) return { error:'sin islas' };
+      const semantic = cards.every(card => card.getAttribute('role') === 'button'
+        && card.tabIndex === 0 && ['true','false'].includes(card.getAttribute('aria-selected')));
+      target.focus();
+      target.dispatchEvent(new KeyboardEvent('keydown', {
+        key:'Enter', code:'Enter', bubbles:true, cancelable:true,
+      }));
+      return {
+        semantic,
+        focused:document.activeElement === target,
+        selected:target.getAttribute('aria-selected') === 'true'
+          && target.classList.contains('sel'),
+        selectedCount:cards.filter(card => card.getAttribute('aria-selected') === 'true').length,
+      };
+    """))
+    if (keyboard.get("error") or not keyboard.get("semantic") \
+            or not keyboard.get("focused") or not keyboard.get("selected") \
+            or keyboard.get("selectedCount") != 1):
+        raise RuntimeError(f"islas no navegables por teclado: {keyboard}")
     screenshot(cdp, QA_DIR / f"matrix-mundo-{viewport}.png")
-    return {"surface": "mundo", "viewport": viewport, **state}
+    return {"surface": "mundo", "viewport": viewport, **state, "keyboard": keyboard}
 
 
 def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:

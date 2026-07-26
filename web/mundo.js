@@ -34,7 +34,9 @@ function isla(sc, i) {
   const site = sc.site || {};
   const rec = best(sc.clip_id);
   return `
-  <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms">
+  <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms"
+    role="button" tabindex="0" aria-selected="false"
+    aria-label="Seleccionar ${esc(sc.name)}">
     <div class="wi-poster" style="background-image:url('${esc(sc.assets?.poster||'')}')"></div>
     <div class="wi-shine"></div>
     <div class="wi-shade"></div>
@@ -56,7 +58,11 @@ function isla(sc, i) {
 
 function pick(i) {
   sel = scenes[i];
-  document.querySelectorAll('.wi').forEach((el,j)=>el.classList.toggle('sel', j===i));
+  document.querySelectorAll('.wi').forEach(el => {
+    const selected = +el.dataset.i === i;
+    el.classList.toggle('sel', selected);
+    el.setAttribute('aria-selected', String(selected));
+  });
   const c = sel.capabilities||{}, st = sel.stats||{}, w = sel.world||{};
   const site = sel.site || {}, coverage = sel.coverage?.shapes?.circle || [];
   const integrated = site.source_status?.integrated || site.effective_sources?.length || 0;
@@ -226,10 +232,19 @@ async function boot() {
   document.getElementById('w-prev').addEventListener('click', () => rail.scrollBy({ left: -step(), behavior: 'smooth' }));
   document.getElementById('w-next').addEventListener('click', () => rail.scrollBy({ left: step(), behavior: 'smooth' }));
   applyFiltro();
-  rail.addEventListener('click', e => {
-    const el = e.target.closest('.wi'); if (!el) return;
+  const activateCard = el => {
     pick(+el.dataset.i);
     el.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+  };
+  rail.addEventListener('click', e => {
+    const el = e.target.closest('.wi'); if (!el) return;
+    activateCard(el);
+  });
+  rail.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target.closest('.wi'); if (!el) return;
+    e.preventDefault();
+    activateCard(el);
   });
   document.getElementById('w-panel').addEventListener('click', e => {
     const cb = e.target.closest('.wp-cfg-g button[data-v]');
