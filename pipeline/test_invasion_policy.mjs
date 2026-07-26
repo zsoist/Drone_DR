@@ -7,6 +7,8 @@ import {
   DEVICE_BUDGETS,
   engagementState,
   getDeviceBudget,
+  getInvasionRuntimeCaps,
+  modelLoadDecision,
   nextEnemyState,
   predictiveAim,
   selectEnemyLod,
@@ -162,4 +164,26 @@ test('burst schedules and projectile admission stay bounded', () => {
     maxShots: 5,
     maxDurationMs: 600,
   }), [0, 250, 500]);
+});
+
+test('failed model loads remain a terminal sentinel for the active session', () => {
+  assert.equal(modelLoadDecision(null), 'load');
+  assert.equal(modelLoadDecision({ status: 'loading' }), 'skip');
+  assert.equal(modelLoadDecision({ status: 'ready' }), 'skip');
+  assert.equal(modelLoadDecision({ status: 'failed' }), 'skip');
+});
+
+test('runtime caps bound enemies, shots, burst jobs, and model-cache entries', () => {
+  assert.deepEqual(getInvasionRuntimeCaps('low', 7), {
+    enemies: 12,
+    shots: 18,
+    bursts: 48,
+    modelCache: 21,
+  });
+  assert.deepEqual(getInvasionRuntimeCaps('high', 3), {
+    enemies: 30,
+    shots: 48,
+    bursts: 120,
+    modelCache: 9,
+  });
 });

@@ -45,6 +45,21 @@ export function getDeviceBudget(tier = 'medium') {
   return { ...DEVICE_BUDGETS[tierName(tier)] };
 }
 
+export function getInvasionRuntimeCaps(tier = 'medium', selectedTypeCount = 1) {
+  const budget = DEVICE_BUDGETS[tierName(tier)];
+  const types = Math.max(1, Math.min(7, Math.floor(finite(selectedTypeCount, 1))));
+  return {
+    enemies: budget.maxEnemies,
+    shots: budget.maxProjectiles,
+    bursts: budget.maxEnemies * 4,
+    modelCache: types * 3,
+  };
+}
+
+export function modelLoadDecision(cacheEntry) {
+  return cacheEntry == null ? 'load' : 'skip';
+}
+
 export function selectEnemyLod(_type, distance, tier = 'medium', budget = {}) {
   const limits = DEVICE_BUDGETS[tierName(tier)];
   const d = Math.max(0, finite(distance, Number.POSITIVE_INFINITY));

@@ -4,16 +4,18 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=296';
+import * as THREE from '/flightverse/three.js?v=297';
 import {
   capWaveQueue,
   createBurstSchedule,
   getDeviceBudget,
+  getInvasionRuntimeCaps,
+  modelLoadDecision,
   nextEnemyState,
   predictiveAim,
   selectEnemyLod,
   steerGroundEnemy,
-} from '/flightverse/invasion-policy.js?v=296';
+} from '/flightverse/invasion-policy.js?v=297';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -154,6 +156,7 @@ export function createInvasion(scene, {
   const group = new THREE.Group(); group.name = 'fv-invasion'; scene.add(group);
   const E = [], shots = [], bursts = [];
   const budget = getDeviceBudget(deviceTier);
+  let runtimeCaps = getInvasionRuntimeCaps(deviceTier, 1);
   const modelCache = new Map();
   let catalog = null;
   let catalogPromise = null;
@@ -182,12 +185,17 @@ export function createInvasion(scene, {
       modelSource: { glb: 0, procedural: 0 },
       lod: { full: 0, lod1: 0, lod2: 0 },
       ai: Object.fromEntries(AI_STATES.map(state => [state, 0])),
+      activeByType: {},
       spawnFailures: 0,
       fallbackTotal: 0,
       fallbackByType: {},
       projectiles: 0,
       scheduledShots: 0,
+      loadRejected: 0,
       preload: { requested: 0, ready: 0, failed: 0 },
+      caps: runtimeCaps,
+      runtimeCounts: { enemies: 0, shots: 0, bursts: 0, modelCache: 0 },
+      withinCaps: true,
     },
   };
 
@@ -207,7 +215,7 @@ export function createInvasion(scene, {
 
   async function loadCatalog() {
     if (!catalogPromise) {
-      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=296', { cache: 'no-store' })
+      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=297', { cache: 'no-store' })
         .then(response => {
           if (!response.ok) throw new Error(`enemy catalog ${response.status}`);
           return response.json();
@@ -228,39 +236,54 @@ export function createInvasion(scene, {
 
   async function loadModel(type, lod) {
     const key = `${type}:${lod}`;
-    if (modelCache.has(key)) return modelCache.get(key);
+    const existing = modelCache.get(key);
+    if (modelLoadDecision(existing) === 'skip') {
+      if (existing.status === 'ready') return existing.value;
+      if (existing.status === 'loading') return existing.promise;
+      return null;
+    }
+    if (modelCache.size >= runtimeCaps.modelCache) {
+      S.telemetry.loadRejected++;
+      return null;
+    }
     S.telemetry.preload.requested++;
     const loadSession = session;
+    let loadingEntry;
     const promise = (async () => {
       try {
         await loadCatalog();
         const file = modelFile(type, lod);
         if (!file) throw new Error(`catalog missing ${key}`);
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=296'));
-        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=296');
-        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=296`);
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=297'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=297');
+        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=297`);
         const loaded = { scene: gltf.scene, clips: gltf.animations || [], type, lod };
         if (disposed || loadSession !== session) {
           disposeTree(loaded.scene);
-          modelCache.delete(key);
+          if (modelCache.get(key) === loadingEntry) modelCache.delete(key);
           return null;
         }
-        modelCache.set(key, loaded);
+        modelCache.set(key, { status: 'ready', value: loaded });
         S.telemetry.preload.ready++;
         return loaded;
       } catch {
-        modelCache.delete(key);
+        if (disposed || loadSession !== session) {
+          if (modelCache.get(key) === loadingEntry) modelCache.delete(key);
+          return null;
+        }
+        modelCache.set(key, { status: 'failed' });
         S.telemetry.preload.failed++;
         return null;
       }
     })();
-    modelCache.set(key, promise);
+    loadingEntry = { status: 'loading', promise };
+    modelCache.set(key, loadingEntry);
     return promise;
   }
 
   function cachedModel(type, lod) {
-    const value = modelCache.get(`${type}:${lod}`);
-    return value?.scene ? value : null;
+    const entry = modelCache.get(`${type}:${lod}`);
+    return entry?.status === 'ready' ? entry.value : null;
   }
 
   function makeActions(root, clips, spec) {
@@ -356,7 +379,7 @@ export function createInvasion(scene, {
 
   function spawnOne(type, around) {
     const spec = SPECS[type];
-    if (!spec || E.length >= budget.maxEnemies) return false;
+    if (!spec || E.length >= runtimeCaps.enemies) return false;
     for (let tries = 0; tries < 12; tries++) {
       const a = Math.random() * 6.283;
       const r = spec.fly ? 60 + Math.random() * 60 : 14 + Math.random() * 30;
@@ -425,7 +448,7 @@ export function createInvasion(scene, {
 
   function shootAt(e, dronePos, droneVelocity) {
     const sh = e.spec.shoot;
-    if (!sh || shots.length >= budget.maxProjectiles || e.g.userData.dead) return false;
+    if (!sh || shots.length >= runtimeCaps.shots || e.g.userData.dead) return false;
     const from = e.center.clone();
     const d = from.distanceTo(dronePos);
     if (d > sh.range) return false;
@@ -464,7 +487,7 @@ export function createInvasion(scene, {
       maxShots: 4,
       maxDurationMs: 420,
     });
-    const cap = budget.maxEnemies * 4;
+    const cap = runtimeCaps.bursts;
     for (const delay of schedule) {
       if (bursts.length >= cap) break;
       bursts.push({ e, due: simTime + delay / 1000 });
@@ -492,8 +515,8 @@ export function createInvasion(scene, {
   }
 
   function clearModelCache() {
-    for (const cached of modelCache.values()) {
-      if (cached?.scene) disposeTree(cached.scene);
+    for (const entry of modelCache.values()) {
+      if (entry?.status === 'ready') disposeTree(entry.value.scene);
     }
     modelCache.clear();
   }
@@ -514,16 +537,28 @@ export function createInvasion(scene, {
     const source = { glb: 0, procedural: 0 };
     const lod = { full: 0, lod1: 0, lod2: 0 };
     const ai = Object.fromEntries(AI_STATES.map(state => [state, 0]));
+    const activeByType = {};
     for (const e of E) {
       source[e.modelSource]++;
       if (e.lod) lod[e.lod]++;
       ai[e.state] = (ai[e.state] || 0) + 1;
+      activeByType[e.type] = (activeByType[e.type] || 0) + 1;
     }
     S.telemetry.modelSource = source;
     S.telemetry.lod = lod;
     S.telemetry.ai = ai;
+    S.telemetry.activeByType = activeByType;
     S.telemetry.projectiles = shots.length;
     S.telemetry.scheduledShots = bursts.length;
+    S.telemetry.caps = runtimeCaps;
+    S.telemetry.runtimeCounts = {
+      enemies: E.length,
+      shots: shots.length,
+      bursts: bursts.length,
+      modelCache: modelCache.size,
+    };
+    S.telemetry.withinCaps = Object.entries(S.telemetry.runtimeCounts)
+      .every(([key, value]) => value <= runtimeCaps[key]);
   }
 
   return {
@@ -536,6 +571,7 @@ export function createInvasion(scene, {
       if (S.on) {
         if (types?.length) S.types = types.filter(type => ENEMIES[type]);
         if (!S.types.length) S.types = ['zombie'];
+        runtimeCaps = getInvasionRuntimeCaps(deviceTier, S.types.length);
         S.difficulty = DIFFICULTY[difficulty] ? difficulty : 'media';
         S.wave = 0;
         S.killed = 0;
@@ -546,6 +582,7 @@ export function createInvasion(scene, {
         S.telemetry.spawnFailures = 0;
         S.telemetry.fallbackTotal = 0;
         S.telemetry.fallbackByType = {};
+        S.telemetry.loadRejected = 0;
         S.telemetry.preload = { requested: 0, ready: 0, failed: 0 };
         startPreload();
       } else {
