@@ -5805,3 +5805,18 @@ button.jt-cell:active{ transform:translateY(0) scale(.995) }
 .rm-daypick { display: flex; align-items: center; gap: 9px; }
 .rm-daypick > span { font-size: 11px; color: var(--text-3); flex: none; }
 .rm-daypick .ctl { flex: 1; min-width: 0; font-size: 11.5px; }
+
+/* ── BLOQUE 75: HUD de vuelo estrecho — tres métricas en una sola fila ──
+   Debe vivir al final: los bloques premium posteriores anulaban el layout
+   móvil anterior y apilaban 213px de telemetría sobre Mundo y la brújula. */
+@media (pointer:coarse) and (orientation:portrait) and (max-width:480px){
+  .vl-corner.tr{ flex-direction:row; align-items:flex-start; gap:4px }
+  .vl-corner.tr .vl-metric{
+    flex:0 0 68px; width:68px; min-width:68px; padding:6px;
+    border-radius:11px
+  }
+  .vl-corner.tr .vl-metric span{ font-size:14px }
+  .vl-corner.tr .vl-metric label{ font-size:7.5px; letter-spacing:.08em }
+  .vl-compass{ top:calc(148px + env(safe-area-inset-top)); width:min(230px,58vw) }
+  .vl-center-top{ top:calc(194px + env(safe-area-inset-top)) }
+}

@@ -559,6 +559,53 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
         if failures:
             raise RuntimeError("HUD táctil inválido: " + "; ".join(failures))
 
+        # Salimos de FPV sin recargar para validar también el HUD general. El
+        # gate anterior solo veía el OSD FPV y por eso no detectaba que Mundo,
+        # Compartir, telemetría y brújula se montaban en iPhone.
+        chase_hud = cdp.eval(js("""
+          const rig = document.querySelector('#vl-rig');
+          for (let attempt = 0; attempt < 7
+               && document.querySelector('#vl-hud')?.classList.contains('fpv-active');
+               attempt += 1) rig?.click();
+          const visible = el => !!el && getComputedStyle(el).display !== 'none'
+            && getComputedStyle(el).visibility !== 'hidden' && el.getClientRects().length;
+          const rect = el => {
+            const r = el.getBoundingClientRect();
+            return { left:r.left, top:r.top, right:r.right, bottom:r.bottom,
+                     width:r.width, height:r.height };
+          };
+          const hit = (a,b) => a.left < b.right - 1 && a.right > b.left + 1
+            && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+          const nodes = [
+            ['top-left', document.querySelector('.vl-corner.tl')],
+            ['telemetry', document.querySelector('.vl-corner.tr')],
+            ['compass', document.querySelector('.vl-compass')],
+            ['challenge', document.querySelector('#vl-challenge')],
+            ['goto', document.querySelector('#vl-goto')],
+          ].filter(([,el]) => visible(el)
+            && (el.matches('canvas,.vl-compass') || el.textContent.trim()));
+          const collisions = [];
+          for (let i = 0; i < nodes.length; i += 1) {
+            for (let j = i + 1; j < nodes.length; j += 1) {
+              if (hit(rect(nodes[i][1]), rect(nodes[j][1])))
+                collisions.push(`${nodes[i][0]}:${nodes[j][0]}`);
+            }
+          }
+          const outOfBounds = nodes.filter(([,el]) => {
+            const r = rect(el);
+            return r.left < -1 || r.top < -1 || r.right > innerWidth + 1
+              || r.bottom > innerHeight + 1;
+          }).map(([name]) => name);
+          return {
+            rig:window.__volar?.camera?.rig,
+            collisions,
+            outOfBounds,
+            rects:Object.fromEntries(nodes.map(([name,el]) => [name, rect(el)])),
+          };
+        """))
+        if chase_hud.get("collisions") or chase_hud.get("outOfBounds"):
+            raise RuntimeError(f"HUD general táctil solapado: {chase_hud}")
+
         # Combate real: un pointer de navegador debe reducir munición, no basta
         # con que el botón exista o cambie de color.
         fire = cdp.eval(js("""
