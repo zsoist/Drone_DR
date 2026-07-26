@@ -1,5 +1,5 @@
-import * as THREE from '/flightverse/three.js?v=304';
-import { GLTFLoader } from '/vendor/three-addons180/loaders/GLTFLoader.js?v=304';
+import * as THREE from '/flightverse/three.js?v=305';
+import { GLTFLoader } from '/vendor/three-addons180/loaders/GLTFLoader.js?v=305';
 
 export async function mountHomeDrone(selector = '#home-drone-stage') {
   const stage = typeof selector === 'string' ? document.querySelector(selector) : selector;
@@ -27,7 +27,7 @@ export async function mountHomeDrone(selector = '#home-drone-stage') {
 
   let model;
   try {
-    const gltf = await new GLTFLoader().loadAsync('/assets/drone.glb?v=304');
+    const gltf = await new GLTFLoader().loadAsync('/assets/drone.glb?v=305');
     model = gltf.scene;
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
