@@ -14,12 +14,21 @@ class FakeElement extends EventTarget {
     super();
     this.allowSelector = allowSelector;
     this.captures = new Set();
+    this.attributes = new Map();
+    this.dataset = {};
+    this.disabled = false;
+    this.hidden = false;
+    this.focusCount = 0;
     this.listenerAdds = [];
     this.listenerRemovals = [];
   }
   closest(selector) {
     return selector.split(',').includes(this.allowSelector) ? this : null;
   }
+  contains(node) { return node === this; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  focus() { this.focusCount += 1; }
   addEventListener(type, handler, options) {
     this.listenerAdds.push({ type, handler });
     super.addEventListener(type, handler, options);
@@ -208,4 +217,108 @@ test('scoped gesture guards block Flightverse gestures but leave form controls u
   const afterDispose = cancelableEvent('contextmenu', textNode);
   root.dispatchEvent(afterDispose);
   assert.equal(afterDispose.defaultPrevented, false);
+});
+
+async function pickerHarness() {
+  const { createWeaponPicker } = await loadMobileCommand();
+  const trigger = new FakeElement();
+  const panel = new FakeElement();
+  const eventRoot = new FakeElement();
+  eventRoot.defaultView = new FakeElement();
+  const items = ['mg', 's', 'm', 'l'].map(key => {
+    const item = new FakeElement();
+    item.dataset.w = key;
+    return item;
+  });
+  const selected = [];
+  const picker = createWeaponPicker({
+    trigger,
+    panel,
+    items,
+    eventRoot,
+    onSelect: key => selected.push(key),
+  });
+  return { trigger, panel, items, eventRoot, selected, picker };
+}
+
+test('weapon picker selects one enabled weapon and restores focus after closing', async () => {
+  const { trigger, panel, items, selected, picker } = await pickerHarness();
+  trigger.dispatchEvent(new Event('click'));
+  assert.equal(picker.active(), true);
+  assert.equal(panel.hidden, false);
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+
+  items[1].dispatchEvent(new Event('click'));
+  assert.deepEqual(selected, ['s']);
+  assert.equal(picker.active(), false);
+  assert.equal(panel.hidden, true);
+  assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(trigger.focusCount, 1);
+});
+
+test('weapon picker closes on outside pointer, Escape, and orientation change', async () => {
+  const { trigger, eventRoot, picker } = await pickerHarness();
+  const outside = new FakeElement();
+
+  picker.open();
+  eventRoot.dispatchEvent(cancelableEvent('pointerdown', outside));
+  assert.equal(picker.active(), false);
+
+  picker.open();
+  const escape = new Event('keydown', { cancelable: true });
+  Object.defineProperty(escape, 'key', { value: 'Escape' });
+  eventRoot.dispatchEvent(escape);
+  assert.equal(escape.defaultPrevented, true);
+  assert.equal(picker.active(), false);
+
+  picker.open();
+  eventRoot.defaultView.dispatchEvent(new Event('orientationchange'));
+  assert.equal(picker.active(), false);
+  assert.equal(trigger.focusCount, 3);
+});
+
+test('weapon picker ignores disabled choices and keeps its selection surface open', async () => {
+  const { items, selected, picker } = await pickerHarness();
+  items[0].disabled = true;
+  items[1].setAttribute('aria-disabled', 'true');
+  picker.open();
+
+  items[0].dispatchEvent(new Event('click'));
+  items[1].dispatchEvent(new Event('click'));
+  assert.deepEqual(selected, []);
+  assert.equal(picker.active(), true);
+});
+
+test('weapon picker dispose closes once and permanently removes every listener', async () => {
+  const { trigger, panel, items, eventRoot, selected, picker } = await pickerHarness();
+  picker.open();
+  picker.dispose();
+  picker.dispose();
+  assert.equal(picker.active(), false);
+  assert.equal(panel.hidden, true);
+
+  trigger.dispatchEvent(new Event('click'));
+  items[2].dispatchEvent(new Event('click'));
+  eventRoot.defaultView.dispatchEvent(new Event('orientationchange'));
+  assert.equal(picker.active(), false);
+  assert.deepEqual(selected, []);
+
+  const listenerEvents = property => [
+    ['trigger', trigger],
+    ['event root', eventRoot],
+    ['orientation root', eventRoot.defaultView],
+    ...items.map((item, index) => [`item ${index}`, item]),
+  ].flatMap(([name, target]) => target[property].map(({ type }) => `${name}:${type}`));
+  const expectedListeners = [
+    'trigger:click',
+    'event root:pointerdown',
+    'event root:keydown',
+    'orientation root:orientationchange',
+    'item 0:click',
+    'item 1:click',
+    'item 2:click',
+    'item 3:click',
+  ];
+  assert.deepEqual(listenerEvents('listenerAdds'), expectedListeners);
+  assert.deepEqual(listenerEvents('listenerRemovals'), expectedListeners);
 });

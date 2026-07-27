@@ -69,6 +69,78 @@ export function createFirePointerController({
   };
 }
 
+export function createWeaponPicker({
+  trigger,
+  panel,
+  items,
+  eventRoot = document,
+  onSelect,
+}) {
+  let opened = false;
+  let disposed = false;
+  const orientationRoot = eventRoot.defaultView;
+
+  const close = (reason = 'close') => {
+    if (!opened) return false;
+    opened = false;
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    if (reason !== 'overlay') trigger.focus?.();
+    return true;
+  };
+  const open = () => {
+    if (disposed || opened) return opened;
+    opened = true;
+    panel.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    return true;
+  };
+  const toggle = () => opened ? close('toggle') : open();
+  const outside = event => {
+    if (opened && !panel.contains(event.target) && !trigger.contains(event.target)) {
+      close('outside');
+    }
+  };
+  const keydown = event => {
+    if (opened && event.key === 'Escape') {
+      event.preventDefault();
+      close('escape');
+    }
+  };
+  const orientation = () => close('orientation');
+  const choose = event => {
+    const item = event.currentTarget;
+    if (item.disabled || item.getAttribute('aria-disabled') === 'true') return;
+    onSelect?.(item.dataset.w);
+    close('selection');
+  };
+
+  panel.hidden = true;
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.addEventListener('click', toggle);
+  eventRoot.addEventListener('pointerdown', outside);
+  eventRoot.addEventListener('keydown', keydown);
+  orientationRoot?.addEventListener('orientationchange', orientation);
+  for (const item of items) item.addEventListener('click', choose);
+
+  return {
+    active: () => opened,
+    open,
+    close,
+    toggle,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      close('dispose');
+      trigger.removeEventListener('click', toggle);
+      eventRoot.removeEventListener('pointerdown', outside);
+      eventRoot.removeEventListener('keydown', keydown);
+      orientationRoot?.removeEventListener('orientationchange', orientation);
+      for (const item of items) item.removeEventListener('click', choose);
+    },
+  };
+}
+
 const ALLOW = 'input[type="range"],input,textarea,select,[contenteditable="true"]';
 
 export function installFlightSurfaceGuards(root) {

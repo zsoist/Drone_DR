@@ -4,36 +4,39 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=306';
+import * as THREE from '/flightverse/three.js?v=307';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=306';
+} from '/flightverse/scene.js?v=307';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=306';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=306';
-import { createRecorder } from '/flightverse/recorder.js?v=306';
-import { createAudio } from '/flightverse/audio.js?v=306';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=306';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=306';
-import { createSky } from '/flightverse/sky.js?v=306';
-import { loadSceneObjects } from '/flightverse/objects.js?v=306';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=306';
-import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=306';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=306';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=306';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=306';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=306';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=306';
-import CameraControls from '/vendor/camera-controls.module.js?v=306';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=306';
+} from '/flightverse/runtime.js?v=307';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=307';
+import { createRecorder } from '/flightverse/recorder.js?v=307';
+import { createAudio } from '/flightverse/audio.js?v=307';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=307';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=307';
+import {
+  createFirePointerController, createWeaponPicker, installFlightSurfaceGuards,
+} from '/flightverse/mobile-command.js?v=307';
+import { createSky } from '/flightverse/sky.js?v=307';
+import { loadSceneObjects } from '/flightverse/objects.js?v=307';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=307';
+import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=307';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=307';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=307';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=307';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=307';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=307';
+import CameraControls from '/vendor/camera-controls.module.js?v=307';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=307';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=306';
+} from '/vendor/postprocessing180.module.js?v=307';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -98,7 +101,9 @@ function hud() {
       <div class="vl-dock" id="vl-dock" role="dialog" aria-modal="false" aria-labelledby="vl-dock-title">
         <div class="vl-dock-head vl-panel-drag"><b id="vl-dock-title">MENÚ DE VUELO <small>ARRASTRAR</small></b><button id="vl-dock-close">Cerrar</button></div>
         <button class="vl-chip sec-nav" id="vl-mode"></button>
-        <button class="vl-chip sec-nav" id="vl-rig"></button>
+        <button class="vl-chip sec-nav" id="vl-rig" aria-label="Cambiar cámara"></button>
+        <button class="vl-chip sec-juego vl-mobile-action" id="vl-armamento"
+          aria-controls="vl-combat">Armamento</button>
         <i class="vl-sep"></i>
         <button class="vl-chip sec-mundo" id="vl-vista">vista · 3D</button>
         <button class="vl-chip sec-mundo" id="vl-cielo">cielo · día</button>
@@ -115,8 +120,6 @@ function hud() {
       </div>
     </div>
     <div class="vl-corner br">
-      <button class="vl-combat-fab" id="vl-combat-fab" aria-label="Abrir controles de combate"
-        aria-controls="vl-combat" aria-expanded="false">Combate</button>
       <div class="vl-combat" id="vl-combat" role="dialog" aria-modal="false" aria-labelledby="vl-combat-title">
         <div class="vl-dock-head vl-panel-drag"><b id="vl-combat-title">COMBATE <small>ARRASTRAR</small></b><button id="vl-combat-close">Cerrar</button></div>
         <div class="vl-kills" id="vl-kills"></div>
@@ -136,16 +139,19 @@ function hud() {
         </button>
       </div>
     </div>
-    <div class="vl-combat-live" id="vl-combat-live" aria-label="Armamento">
-      <div class="vl-weapon-carousel" id="vl-weapon-carousel" role="group" aria-label="Seleccionar arma">
-        <button data-w="mg" aria-label="Ametralladora">MG</button>
-        <button data-w="s" aria-label="Misil pequeño">M·S</button>
-        <button data-w="m" class="sel" aria-label="Misil medio">M·M</button>
-        <button data-w="l" aria-label="Misil grande">M·L</button>
-        <output id="vl-weapon-status">M·M · 8</output>
+    <div class="vl-command-hud" id="vl-command-hud" aria-label="Controles de combate">
+      <button class="vl-weapon-toggle" id="vl-weapon-toggle"
+        aria-controls="vl-weapon-picker" aria-haspopup="listbox" aria-expanded="false">
+        <span id="vl-weapon-code">M·M</span>
+        <output id="vl-weapon-status">8</output>
+      </button>
+      <div class="vl-weapon-picker" id="vl-weapon-picker"
+        role="listbox" aria-label="Seleccionar arma" hidden>
+        <button role="option" data-w="mg" aria-selected="false">MG</button>
+        <button role="option" data-w="s" aria-selected="false">Misil S</button>
+        <button role="option" data-w="m" aria-selected="true">Misil M</button>
+        <button role="option" data-w="l" aria-selected="false">Misil L</button>
       </div>
-      <button class="vl-fpv-camera" id="vl-fpv-camera" title="Cambiar cámara"
-        aria-label="Cambiar cámara FPV">CAM · SALIR FPV</button>
       <button class="vl-trigger" id="vl-trigger" title="X · disparar" aria-label="Disparar arma seleccionada">
         <span>◎</span><strong>FUEGO</strong>
       </button>
@@ -281,6 +287,7 @@ async function main() {
   if (!CID) { location.replace('mundo.html'); return; }
   document.title = 'AeroBrain — Volar';
   hud();
+  const surfaceGuards = installFlightSurfaceGuards(document.body);
   const coarsePointer = matchMedia('(pointer:coarse)').matches;
   const gradePanel = $('#vl-grade');
   if (coarsePointer && localStorage.getItem('ab.fv.grade.expanded') !== '1') {
@@ -653,9 +660,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=306', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=307', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=306');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=307');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -879,6 +886,9 @@ async function main() {
   });
   const fireBtn = $('#vl-fire');
   const triggerBtn = $('#vl-trigger');
+  const weaponToggle = $('#vl-weapon-toggle');
+  const weaponItems = [...document.querySelectorAll('#vl-weapon-picker button[data-w]')];
+  const WEAPON_CODES = { mg: 'MG', s: 'M·S', m: 'M·M', l: 'M·L' };
   const triggerState = {
     held: false, locked: false, source: null, pointerId: null,
     presses: 0, releases: 0, accepted: 0, mode: 'single',
@@ -889,9 +899,16 @@ async function main() {
       : 'LISTO';
   const updateTriggerUi = () => {
     const weapon = ARSENAL[weapons.state.weapon];
-    $('#vl-weapon-status').textContent = `${weapon.label} · ${Math.floor(weapons.state.ammo[weapons.state.weapon])} · ${triggerLabel()}`;
+    const ammo = Math.floor(weapons.state.ammo[weapons.state.weapon]);
+    $('#vl-weapon-code').textContent = WEAPON_CODES[weapons.state.weapon];
+    $('#vl-weapon-status').textContent = ammo;
+    weaponToggle.setAttribute('aria-label', `${weapon.label}, ${ammo} municiones`);
+    for (const item of weaponItems) {
+      item.setAttribute('aria-selected', String(item.dataset.w === weapons.state.weapon));
+    }
     triggerBtn.classList.toggle('locked', triggerState.locked);
     triggerBtn.setAttribute('aria-pressed', String(triggerState.held));
+    triggerBtn.setAttribute('aria-label', `Disparar ${weapon.label}. ${triggerLabel()}`);
   };
   const aimDirection = new THREE.Vector3();
   const resolveCombatAim = () => {
@@ -931,7 +948,7 @@ async function main() {
     updateTriggerUi();
   };
   const beginFiring = (source, button = null, pointerId = null) => {
-    if (triggerState.held || overlayCoordinator?.active()) return;
+    if (triggerState.held || overlayCoordinator?.active()) return false;
     const auto = isContinuousWeapon(weapons.state.weapon);
     firing = true;
     triggerState.held = true;
@@ -943,27 +960,43 @@ async function main() {
     if (button && pointerId != null) button.setPointerCapture(pointerId);
     if (doFire()) triggerState.accepted += 1;
     updateTriggerUi();
+    return true;
   };
-  for (const button of [fireBtn, triggerBtn]) {
-    button.addEventListener('pointerdown', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      beginFiring('pointer', button, e.pointerId);
-    });
-    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-      button.addEventListener(type, e => releaseFiring('pointer', e));
-    }
+  fireBtn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    beginFiring('pointer', fireBtn, e.pointerId);
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    fireBtn.addEventListener(type, e => releaseFiring('pointer', e));
   }
   addEventListener('pointerup', e => releaseFiring('pointer', e));
+  const firePointer = createFirePointerController({
+    element: triggerBtn,
+    onPress: pointerId => beginFiring('pointer', null, pointerId),
+    onRelease: (reason, event, accepted) => {
+      if (accepted) releaseFiring('pointer', event);
+    },
+    isEnabled: () => !overlayCoordinator?.active(),
+  });
   const setWeapon = k => {
     weapons.setWeapon(k);
-    document.querySelectorAll('#vl-weps button, #vl-weapon-carousel button').forEach(b =>
+    document.querySelectorAll('#vl-weps button, #vl-weapon-picker button').forEach(b =>
       b.classList.toggle('sel', b.dataset.w === k));
     updateTriggerUi();
   };
+  const weaponPicker = createWeaponPicker({
+    trigger: weaponToggle,
+    panel: $('#vl-weapon-picker'),
+    items: weaponItems,
+    eventRoot: document,
+    onSelect: setWeapon,
+  });
+  const cancelCommandOnOrientation = () => firePointer.cancel('orientation');
+  addEventListener('orientationchange', cancelCommandOnOrientation);
   document.addEventListener('pointerdown', e => {
     const activeOverlay = overlayCoordinator?.active();
-    const b = e.target.closest('#vl-weps button[data-w], #vl-weapon-carousel button[data-w]');
+    const b = e.target.closest('#vl-weps button[data-w]');
     if (activeOverlay && (activeOverlay !== 'combat' || !b?.closest('#vl-combat'))) return;
     if (b) setWeapon(b.dataset.w);
   });
@@ -1000,7 +1033,6 @@ async function main() {
     }
   };
   $('#vl-goto').addEventListener('click', () => goToStart());
-  const fpvCameraBtn = $('#vl-fpv-camera');
   const setRig = ix => {
     rigIx = ((ix % RIGS.length) + RIGS.length) % RIGS.length;
     report.camera.rig = RIGS[rigIx].key;
@@ -1009,9 +1041,6 @@ async function main() {
     dmesh.visible = !RIGS[rigIx].hideDrone;
     $('#vl-fpv').classList.toggle('show', !!RIGS[rigIx].hideDrone);
     $('#vl-hud').classList.toggle('fpv-active', !!RIGS[rigIx].hideDrone);
-    fpvCameraBtn.textContent = RIGS[rigIx].hideDrone
-      ? 'CAM · SALIR FPV'
-      : `CAM · ${RIGS[(rigIx + 1) % RIGS.length].label}`;
   };
   const cycleRig = () => setRig(rigIx + 1);
   const CIELO_LB = { dia: 'día', atardecer: 'atardecer', noche: 'noche' };
@@ -1026,7 +1055,6 @@ async function main() {
     setMode(ks[(ks.indexOf(modeKey) + 1) % ks.length]);
   });
   $('#vl-rig').addEventListener('click', cycleRig);
-  fpvCameraBtn.addEventListener('click', cycleRig);
   $('#vl-reto').addEventListener('click', () => startReto());   // arrow: startReto se declara abajo
   $('#vl-ayuda').addEventListener('click', () => {
     overlayCoordinator.open('guide');
@@ -1047,7 +1075,7 @@ async function main() {
   });
   const mobileSheets = {
     menu: { panel: $('#vl-dock'), trigger: $('#vl-fab') },
-    combat: { panel: $('#vl-combat'), trigger: $('#vl-combat-fab') },
+    combat: { panel: $('#vl-combat'), trigger: $('#vl-armamento') },
   };
   const movable = {
     menu: makeDraggablePanel($('#vl-dock'), $('#vl-dock .vl-panel-drag'), 'ab.fv.panel.menu'),
@@ -1058,7 +1086,7 @@ async function main() {
   overlayCoordinator = createOverlayCoordinator({
     eventRoot: document,
     scrim: touchUi ? $('#vl-overlay-scrim') : null,
-    inertTargets: [renderer.domElement, $('#vl-combat-live')],
+    inertTargets: [renderer.domElement, $('#vl-command-hud')],
     overlays: {
       ...(touchUi ? {
         menu: { ...mobileSheets.menu, openClass: 'open' },
@@ -1072,7 +1100,11 @@ async function main() {
       director: { panel: $('#vl-director'), openClass: 'show', dismissible: false },
     },
     onChange: active => {
-      if (active) releaseFiring();
+      if (active) {
+        weaponPicker.close('overlay');
+        firePointer.cancel('overlay');
+        releaseFiring();
+      }
       input.setEnabled(!active);
       document.body.classList.toggle('vl-overlay-open', !!active);
       document.body.classList.toggle('vl-mobile-sheet-open', active === 'menu' || active === 'combat');
@@ -1084,7 +1116,9 @@ async function main() {
     for (const sheet of Object.values(mobileSheets)) sheet.panel.setAttribute('aria-hidden', 'false');
   }
   $('#vl-fab').addEventListener('click', () => overlayCoordinator.toggle('menu'));
-  $('#vl-combat-fab').addEventListener('click', () => overlayCoordinator.toggle('combat'));
+  $('#vl-armamento').addEventListener('click', () => {
+    if (touchUi) overlayCoordinator.toggle('combat');
+  });
   $('#vl-dock-close').addEventListener('click', () => overlayCoordinator.close('menu'));
   $('#vl-combat-close').addEventListener('click', () => overlayCoordinator.close('combat'));
   $('#vl-dockmin').addEventListener('click', () => {
@@ -1766,7 +1800,7 @@ async function main() {
           $('#vl-zhp').style.transform = `scaleX(${health.hp / 100})`;
         }
         // mini-barras de munición por arma (HUD de vida de armas)
-        document.querySelectorAll('#vl-weps button, #vl-weapon-carousel button').forEach(b => {
+        document.querySelectorAll('#vl-weps button, #vl-weapon-picker button').forEach(b => {
           const k = b.dataset.w;
           b.style.setProperty('--ammo', `${(weapons.state.ammo[k] / ARSENAL[k].max) * 100}%`);
         });
@@ -1985,6 +2019,10 @@ async function main() {
   addEventListener('pagehide', () => {
     generation.invalidate();
     loop.stop();
+    removeEventListener('orientationchange', cancelCommandOnOrientation);
+    weaponPicker.dispose();
+    firePointer.dispose();
+    surfaceGuards.dispose();
     overlayCoordinator?.dispose();
     sticks?.dispose();
     input.dispose();

@@ -16,13 +16,19 @@ class VolarMobileHudContractTests(unittest.TestCase):
             'id="vl-fab"',
             'aria-controls="vl-dock"',
             'aria-expanded="false"',
-            'id="vl-combat-fab"',
-            'aria-controls="vl-combat"',
+            'id="vl-armamento"',
             'id="vl-dock-close"',
             'id="vl-combat-close"',
             'role="dialog"',
         ):
             self.assertIn(contract, self.source)
+        self.assertNotIn('id="vl-combat-fab"', self.source)
+        dock = self.source[
+            self.source.index('id="vl-dock"'):
+            self.source.index('<div class="vl-corner br">')
+        ]
+        self.assertIn('id="vl-rig"', dock)
+        self.assertIn('id="vl-armamento"', dock)
 
     def test_combat_controls_are_grouped_and_status_is_separate(self):
         self.assertIn('class="vl-combat" id="vl-combat"', self.source)
@@ -115,15 +121,14 @@ class VolarMobileHudContractTests(unittest.TestCase):
         self.assertIn(".vl-hud.fpv-active .vl-corner.tr", self.styles)
         self.assertIn(".vl-hud.fpv-active .vl-flight-status", self.styles)
 
-    def test_fpv_camera_cycle_stays_reachable_without_opening_the_dock(self):
+    def test_camera_cycle_moves_into_the_single_mobile_menu(self):
         for contract in (
-            'id="vl-fpv-camera"',
-            'aria-label="Cambiar cámara FPV"',
-            "const fpvCameraBtn = $('#vl-fpv-camera')",
-            "fpvCameraBtn.addEventListener('click', cycleRig)",
-            ".vl-hud.fpv-active .vl-fpv-camera",
+            'id="vl-rig"',
+            'aria-label="Cambiar cámara"',
+            "$('#vl-rig').addEventListener('click', cycleRig)",
         ):
-            self.assertIn(contract, self.source if contract.startswith(("id=", "aria-", "const", "fpv")) else self.styles)
+            self.assertIn(contract, self.source)
+        self.assertNotIn('id="vl-fpv-camera"', self.source)
 
     def test_sound_control_arms_on_pointerdown_without_immediate_remute(self):
         self.assertIn("#vl-sound').addEventListener('pointerdown'", self.source)
@@ -197,10 +202,45 @@ class VolarMobileHudContractTests(unittest.TestCase):
     def test_fire_control_owns_pointer_gesture_and_is_clearly_named(self):
         self.assertIn('<strong>DISPARAR</strong>', self.source)
         self.assertIn("const triggerBtn = $('#vl-trigger')", self.source)
-        self.assertIn("for (const button of [fireBtn, triggerBtn])", self.source)
-        self.assertIn("button.setPointerCapture(pointerId)", self.source)
-        self.assertIn("e.preventDefault()", self.source)
-        self.assertIn("'pointercancel'", self.source)
+        self.assertIn("createFirePointerController", self.source)
+        self.assertIn("const firePointer = createFirePointerController({", self.source)
+        self.assertIn("firePointer.cancel('overlay')", self.source)
+        self.assertIn("firePointer.dispose()", self.source)
+
+    def test_compact_command_hud_replaces_the_live_weapon_carousel(self):
+        for contract in (
+            'id="vl-command-hud"',
+            'id="vl-weapon-toggle"',
+            'id="vl-weapon-picker"',
+            'id="vl-weapon-code"',
+            'id="vl-weapon-status"',
+            'id="vl-trigger"',
+            'role="listbox"',
+            'role="option"',
+            "createWeaponPicker",
+        ):
+            self.assertIn(contract, self.source)
+        self.assertNotIn('id="vl-weapon-carousel"', self.source)
+
+    def test_touch_command_geometry_and_gesture_hardening_are_mobile_only(self):
+        coarse = self.styles[self.styles.index("@media (pointer:coarse)"):]
+        for contract in (
+            "-webkit-tap-highlight-color:transparent",
+            "-webkit-touch-callout:none",
+            "-webkit-user-select:none",
+            "user-select:none",
+            "overscroll-behavior:none",
+            ".vl-command-hud",
+            "width:72px",
+            "height:72px",
+            "width:56px",
+            "height:56px",
+            "min-height:48px",
+            "touch-action:none",
+        ):
+            self.assertIn(contract, coarse)
+        before_coarse = self.styles[:self.styles.index("@media (pointer:coarse)")]
+        self.assertNotIn("-webkit-tap-highlight-color:transparent", before_coarse)
 
     def test_trigger_exposes_hold_lock_and_release_telemetry(self):
         for contract in (
