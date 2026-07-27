@@ -1,8 +1,12 @@
+import sys
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "pipeline"))
+
+import browser_matrix
 
 
 class VolarMobileHudContractTests(unittest.TestCase):
@@ -178,8 +182,77 @@ class VolarMobileHudContractTests(unittest.TestCase):
         matrix = (ROOT / "pipeline" / "browser_matrix.py").read_text()
         for profile in ("mobile_portrait", "mobile_landscape", "ipad_portrait", "ipad_landscape"):
             self.assertIn(f'"{profile}"', matrix)
-        for contract in ("safeArea", "sheetScrim", "outsideDismissed", "orientation"):
+        for contract in ("safeArea", "sheetScrim", "orientation", "touchCommandHud"):
             self.assertIn(contract, matrix)
+
+    def test_cdp_touch_helpers_dispatch_the_complete_active_touch_set(self):
+        class FakeCdp:
+            def __init__(self):
+                self.calls = []
+
+            def send(self, method, params):
+                self.calls.append((method, params))
+
+        cdp = FakeCdp()
+        points = [
+            browser_matrix.touch_point(11, 24.5, 81.25),
+            browser_matrix.touch_point(12, 340, 690),
+            browser_matrix.touch_point(13, 300, 512),
+        ]
+        browser_matrix.dispatch_touches(cdp, "touchMove", points)
+
+        self.assertEqual(
+            cdp.calls,
+            [(
+                "Input.dispatchTouchEvent",
+                {"type": "touchMove", "touchPoints": points},
+            )],
+        )
+        self.assertEqual(
+            points[0],
+            {
+                "id": 11,
+                "x": 24.5,
+                "y": 81.25,
+                "radiusX": 8,
+                "radiusY": 8,
+                "force": 1,
+            },
+        )
+        self.assertEqual([point["id"] for point in points], [11, 12, 13])
+
+    def test_browser_matrix_gates_real_touch_command_hud_evidence(self):
+        matrix = (ROOT / "pipeline" / "browser_matrix.py").read_text()
+        for contract in (
+            "Input.dispatchTouchEvent",
+            "Input.synthesizeTapGesture",
+            "selectstart",
+            "visualViewport.scale",
+            "touchCommandHud",
+            "threePointer",
+            "rapidDoubleTap",
+            "secondaryReleaseProtected",
+            "selectionText",
+            "tapHighlight",
+            "closedGeometry",
+            "pickerGeometry",
+            "menuGeometry",
+        ):
+            self.assertIn(contract, matrix)
+
+    def test_command_hud_screenshot_names_cover_all_touch_states(self):
+        for viewport in (
+            "mobile_portrait",
+            "mobile_landscape",
+            "ipad_portrait",
+            "ipad_landscape",
+        ):
+            for state in ("closed", "weapons", "menu"):
+                path = browser_matrix.command_hud_screenshot_path(viewport, state)
+                self.assertEqual(
+                    path.name,
+                    f"matrix-volar-{viewport}-{state}.png",
+                )
 
     def test_flight_uses_detailed_mesh_as_visual_layer_only(self):
         scene = (ROOT / "web" / "flightverse" / "scene.js").read_text()

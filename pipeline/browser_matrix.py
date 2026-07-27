@@ -122,6 +122,63 @@ def set_viewport(cdp, name: str):
     cdp.send("Emulation.setTouchEmulationEnabled", touch)
 
 
+def touch_point(pointer_id: int, x: float, y: float) -> dict:
+    """Build one CDP touch point. Callers retain and resend every active point."""
+    return {
+        "id": pointer_id,
+        "x": x,
+        "y": y,
+        "radiusX": 8,
+        "radiusY": 8,
+        "force": 1,
+    }
+
+
+def dispatch_touches(cdp, event_type: str, points: list[dict]):
+    """Dispatch a touch transition with the complete post-transition active set."""
+    cdp.send("Input.dispatchTouchEvent", {
+        "type": event_type,
+        "touchPoints": points,
+    })
+
+
+def synthesize_tap(cdp, x: float, y: float, *, tap_count: int = 1,
+                   duration_ms: int = 45):
+    cdp.send("Input.synthesizeTapGesture", {
+        "x": x,
+        "y": y,
+        "duration": duration_ms,
+        "tapCount": tap_count,
+        "gestureSourceType": "touch",
+    })
+
+
+def command_hud_screenshot_path(viewport: str, state: str) -> Path:
+    if state not in {"closed", "weapons", "menu"}:
+        raise ValueError(f"estado de captura táctil inválido: {state}")
+    return QA_DIR / f"matrix-volar-{viewport}-{state}.png"
+
+
+def element_center(cdp, selector: str) -> dict:
+    center = cdp.eval(js(f"""
+      const el = document.querySelector({selector!r});
+      if (!el || getComputedStyle(el).display === 'none' || !el.getClientRects().length) return null;
+      const r = el.getBoundingClientRect();
+      return {{ x:r.left+r.width/2, y:r.top+r.height/2, width:r.width, height:r.height }};
+    """))
+    if not center:
+        raise RuntimeError(f"control táctil ausente o invisible: {selector}")
+    return center
+
+
+def touch_tap(cdp, pointer_id: int, point: dict, settle: float = 0.12):
+    active = [touch_point(pointer_id, point["x"], point["y"])]
+    dispatch_touches(cdp, "touchStart", active)
+    cdp.pump(0.04)
+    dispatch_touches(cdp, "touchEnd", [])
+    cdp.pump(settle)
+
+
 def common_surface_checks(cdp, selector: str) -> dict:
     state = cdp.eval(js(f"""
       const root = document.querySelector({selector!r});
@@ -462,6 +519,627 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
             "keyboard": keyboard, "previewInitial": preview_initial}
 
 
+def touch_command_geometry(cdp, state: str) -> dict:
+    """Measure the command surface in one of its three user-visible states."""
+    return cdp.eval(js(f"""
+      const state = {state!r};
+      const visible = el => {{
+        if (!el || !el.getClientRects().length
+            || el.closest('[hidden],[inert],[aria-hidden="true"]')) return false;
+        for (let node=el; node && node.nodeType === 1; node=node.parentElement) {{
+          const style=getComputedStyle(node);
+          if (style.display === 'none' || style.visibility === 'hidden'
+              || parseFloat(style.opacity || '1') <= 0.05) return false;
+        }}
+        return true;
+      }};
+      const rect = el => {{
+        const r = el.getBoundingClientRect();
+        return {{ left:r.left, top:r.top, right:r.right, bottom:r.bottom,
+          width:r.width, height:r.height }};
+      }};
+      const hit = (a, b) => a.left < b.right - 1 && a.right > b.left + 1
+        && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+      const vv = window.visualViewport;
+      const viewport = {{
+        left:vv?.offsetLeft || 0,
+        top:vv?.offsetTop || 0,
+        right:(vv?.offsetLeft || 0) + (vv?.width || innerWidth),
+        bottom:(vv?.offsetTop || 0) + (vv?.height || innerHeight),
+        width:vv?.width || innerWidth,
+        height:vv?.height || innerHeight,
+      }};
+      const elements = {{
+        leftZone:document.querySelector('.vl-stick.left'),
+        rightZone:document.querySelector('.vl-stick.right'),
+        leftBase:document.querySelector('.vl-stick.left .vl-stick-base'),
+        rightBase:document.querySelector('.vl-stick.right .vl-stick-base'),
+        fire:document.querySelector('#vl-trigger'),
+        weapon:document.querySelector('#vl-weapon-toggle'),
+        picker:document.querySelector('#vl-weapon-picker'),
+        menu:document.querySelector('#vl-fab'),
+        sheetScrim:document.querySelector('#vl-dock-scrim'),
+        sheet:document.querySelector('#vl-dock'),
+      }};
+      const boxes = Object.fromEntries(Object.entries(elements)
+        .filter(([,el]) => visible(el)).map(([name,el]) => [name,rect(el)]));
+      const pairs = [
+        ['leftZone','rightZone'],
+        ['leftZone','fire'], ['leftZone','weapon'], ['leftZone','picker'], ['leftZone','menu'],
+        ['rightZone','fire'], ['rightZone','weapon'], ['rightZone','picker'], ['rightZone','menu'],
+        ['leftBase','rightBase'],
+        ['leftBase','fire'], ['leftBase','weapon'], ['leftBase','picker'], ['leftBase','menu'],
+        ['rightBase','fire'], ['rightBase','weapon'], ['rightBase','picker'], ['rightBase','menu'],
+        ['fire','weapon'], ['fire','picker'], ['fire','menu'],
+        ['weapon','picker'], ['weapon','menu'], ['picker','menu'],
+      ];
+      const collisions = pairs
+        .filter(([a,b]) => boxes[a] && boxes[b] && hit(boxes[a], boxes[b]))
+        .map(([a,b]) => `${{a}}:${{b}}`);
+      const outOfBounds = Object.entries(boxes)
+        .filter(([name,r]) => name !== 'sheet' && (
+          r.left < viewport.left - 1 || r.top < viewport.top - 1
+          || r.right > viewport.right + 1 || r.bottom > viewport.bottom + 1))
+        .map(([name]) => name);
+      const smallTargets = [
+        ['fire',elements.fire,72,72],
+        ['weapon',elements.weapon,56,56],
+        ['menu',elements.menu,52,52],
+        ...[...elements.picker?.querySelectorAll('button') || []]
+          .map((el,index) => [`picker-${{index}}`,el,44,48]),
+      ].filter(([,el]) => visible(el)).filter(([,el,w,h]) => {{
+        const r = rect(el); return r.width < w - 1 || r.height < h - 1;
+      }}).map(([name]) => name);
+      const commandHidden = !visible(elements.fire) && !visible(elements.weapon)
+        && !visible(elements.menu) && !visible(elements.leftZone) && !visible(elements.rightZone);
+      const focusInside = !!elements.sheet?.contains(document.activeElement);
+      const sheetInBounds = !boxes.sheet || (
+        boxes.sheet.left >= viewport.left - 1 && boxes.sheet.top >= viewport.top - 1
+        && boxes.sheet.right <= viewport.right + 1
+        && boxes.sheet.bottom <= viewport.bottom + 1);
+      return {{
+        state, boxes, collisions, outOfBounds, smallTargets, viewport,
+        orientation:viewport.width >= viewport.height ? 'landscape' : 'portrait',
+        pickerVisible:visible(elements.picker),
+        sheetVisible:visible(elements.sheet),
+        commandHidden, focusInside, sheetInBounds,
+        safeArea:{{
+          leftGap:Math.min(...Object.values(boxes).map(r => r.left - viewport.left)),
+          rightGap:Math.min(...Object.values(boxes).map(r => viewport.right - r.right)),
+          topGap:Math.min(...Object.values(boxes).map(r => r.top - viewport.top)),
+          bottomGap:Math.min(...Object.values(boxes).map(r => viewport.bottom - r.bottom)),
+        }},
+      }};
+    """))
+
+
+def geometry_failures(geometry: dict) -> list[str]:
+    state = geometry.get("state", "unknown")
+    failures = []
+    if geometry.get("collisions"):
+        failures.append(
+            f"{state} collisions={geometry['collisions']} boxes={geometry.get('boxes')}"
+        )
+    if geometry.get("outOfBounds"):
+        failures.append(f"{state} outOfBounds={geometry['outOfBounds']}")
+    if geometry.get("smallTargets"):
+        failures.append(f"{state} smallTargets={geometry['smallTargets']}")
+    if not geometry.get("sheetInBounds"):
+        failures.append(f"{state} sheet fuera del visual viewport")
+    if state == "closed" and geometry.get("pickerVisible"):
+        failures.append("closed picker visible")
+    if state == "weapons" and not geometry.get("pickerVisible"):
+        failures.append("weapons picker oculto")
+    if state == "menu" and not all((
+            geometry.get("sheetVisible"),
+            geometry.get("commandHidden"),
+            geometry.get("focusInside"),
+    )):
+        failures.append(
+            "menu no ocultó command HUD/sticks o no tomó foco="
+            f"{geometry.get('sheetVisible')}/"
+            f"{geometry.get('commandHidden')}/"
+            f"{geometry.get('focusInside')}"
+        )
+    return failures
+
+
+def wait_weapon_ready(cdp, timeout: int = 5):
+    return wait_for(
+        cdp,
+        js("""
+          const w = window.__volar?.weaponState;
+          return w && w.cool <= 0.01 ? w : null;
+        """),
+        timeout=timeout,
+        label="cooldown de arma",
+    )
+
+
+def select_weapon_touch(cdp, key: str, pointer_id: int):
+    toggle = element_center(cdp, "#vl-weapon-toggle")
+    synthesize_tap(cdp, toggle["x"], toggle["y"])
+    wait_for(
+        cdp,
+        js("""
+          const picker=document.querySelector('#vl-weapon-picker');
+          return picker && !picker.hidden && picker.getClientRects().length;
+        """),
+        timeout=4,
+        label="selector de armas",
+    )
+    choice = element_center(cdp, f'#vl-weapon-picker [data-w="{key}"]')
+    touch_tap(cdp, pointer_id, choice)
+    selected = wait_for(
+        cdp,
+        js(f"return window.__volar?.weaponState?.weapon === {key!r}"),
+        timeout=4,
+        label=f"selección táctil {key}",
+    )
+    return bool(selected)
+
+
+def run_touch_command_hud(cdp, viewport: str) -> dict:
+    """Exercise Task 3's authoritative real-touch and geometry contracts."""
+    cdp.eval(js("""
+      window.__touchCommandGate = { selectstartCount:0 };
+      document.addEventListener('selectstart', () => {
+        window.__touchCommandGate.selectstartCount += 1;
+      });
+      getSelection()?.removeAllRanges();
+      return true;
+    """))
+    gesture_target = element_center(cdp, "#vl-weapon-toggle")
+    gesture_before = cdp.eval(js("""
+      return {
+        scale:window.visualViewport ? visualViewport.scale : 1,
+        selectstartCount:window.__touchCommandGate.selectstartCount,
+        selectionText:getSelection()?.toString() || '',
+      };
+    """))
+    synthesize_tap(
+        cdp,
+        gesture_target["x"],
+        gesture_target["y"],
+        tap_count=2,
+        duration_ms=55,
+    )
+    cdp.pump(0.25)
+    long_press = [touch_point(801, gesture_target["x"], gesture_target["y"])]
+    dispatch_touches(cdp, "touchStart", long_press)
+    cdp.pump(0.65)
+    dispatch_touches(cdp, "touchEnd", [])
+    cdp.pump(0.2)
+    gesture_after = cdp.eval(js("""
+      const button=document.querySelector('#vl-weapon-toggle');
+      const picker=document.querySelector('#vl-weapon-picker');
+      if (picker && !picker.hidden) button.click();
+      return {
+        scale:window.visualViewport ? visualViewport.scale : 1,
+        selectstartCount:window.__touchCommandGate.selectstartCount,
+        selectionText:getSelection()?.toString() || '',
+        tapHighlight:getComputedStyle(button).webkitTapHighlightColor,
+      };
+    """))
+    gesture = {
+        "scaleBefore": gesture_before["scale"],
+        "scaleAfter": gesture_after["scale"],
+        "selectstartCount": gesture_after["selectstartCount"],
+        "selectionText": gesture_after["selectionText"],
+        "tapHighlight": gesture_after["tapHighlight"],
+    }
+    if not (
+        gesture["scaleBefore"] == 1
+        and gesture["scaleAfter"] == 1
+        and gesture["selectstartCount"] == 0
+        and gesture["selectionText"] == ""
+        and gesture["tapHighlight"] in ("rgba(0, 0, 0, 0)", "transparent")
+    ):
+        raise RuntimeError(f"zoom/selección/highlight táctil inválido: {gesture}")
+
+    geometry_errors = []
+    closed_geometry = touch_command_geometry(cdp, "closed")
+    geometry_errors.extend(geometry_failures(closed_geometry))
+    screenshot(cdp, command_hud_screenshot_path(viewport, "closed"))
+
+    synthesize_tap(cdp, gesture_target["x"], gesture_target["y"])
+    wait_for(
+        cdp,
+        js("return !document.querySelector('#vl-weapon-picker').hidden"),
+        timeout=4,
+        label="picker abierto para captura",
+    )
+    picker_geometry = touch_command_geometry(cdp, "weapons")
+    geometry_errors.extend(geometry_failures(picker_geometry))
+    screenshot(cdp, command_hud_screenshot_path(viewport, "weapons"))
+    option_m = element_center(cdp, '#vl-weapon-picker [data-w="m"]')
+    touch_tap(cdp, 802, option_m)
+    wait_weapon_ready(cdp)
+
+    trigger = element_center(cdp, "#vl-trigger")
+    single_before = cdp.eval(js("""
+      return {
+        ammo:window.__volar.weaponState.ammo.m,
+        fired:window.__volar.weapons.fired,
+        trigger:window.__volar.weaponState.trigger,
+      };
+    """))
+    touch_tap(cdp, 810, trigger)
+    single_after = cdp.eval(js("""
+      return {
+        ammo:window.__volar.weaponState.ammo.m,
+        fired:window.__volar.weapons.fired,
+        trigger:window.__volar.weaponState.trigger,
+      };
+    """))
+    single_shot = {
+        "before": single_before,
+        "after": single_after,
+        "exactlyOnce": (
+            single_after["ammo"] == single_before["ammo"] - 1
+            and single_after["fired"] == single_before["fired"] + 1
+            and single_after["trigger"]["presses"] == single_before["trigger"]["presses"] + 1
+            and single_after["trigger"]["accepted"] == single_before["trigger"]["accepted"] + 1
+            and not single_after["trigger"]["held"]
+        ),
+    }
+    if not single_shot["exactlyOnce"]:
+        raise RuntimeError(f"touch simple no disparó exactamente una vez: {single_shot}")
+
+    wait_weapon_ready(cdp)
+    select_weapon_touch(cdp, "mg", 811)
+    wait_weapon_ready(cdp)
+    mg_before = cdp.eval(js("return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger }"))
+    mg_point = touch_point(812, trigger["x"], trigger["y"])
+    dispatch_touches(cdp, "touchStart", [mg_point])
+    cdp.pump(0.45)
+    mg_held = cdp.eval(js("""
+      return { fired:window.__volar.weapons.fired,
+        trigger:window.__volar.weaponState.trigger };
+    """))
+    dispatch_touches(cdp, "touchEnd", [])
+    cdp.pump(0.15)
+    mg_released = cdp.eval(js("return { trigger:window.__volar.weaponState.trigger }"))
+    mg_hold = {
+        "before": mg_before,
+        "held": mg_held,
+        "released": mg_released,
+        "repeated": (
+            mg_held["fired"] >= mg_before["fired"] + 3
+            and mg_held["trigger"]["held"]
+            and mg_held["trigger"]["mode"] == "auto"
+            and not mg_released["trigger"]["held"]
+        ),
+    }
+    if not mg_hold["repeated"]:
+        raise RuntimeError(f"MG touch hold no repitió: {mg_hold}")
+
+    wait_weapon_ready(cdp)
+    cancel_before = cdp.eval(js("return window.__volar.weaponState.trigger"))
+    cancel_point = touch_point(813, trigger["x"], trigger["y"])
+    dispatch_touches(cdp, "touchStart", [cancel_point])
+    cdp.pump(0.1)
+    dispatch_touches(cdp, "touchCancel", [])
+    cdp.pump(0.12)
+    cancel_after = cdp.eval(js("return window.__volar.weaponState.trigger"))
+    cancellation = {
+        "before": cancel_before,
+        "after": cancel_after,
+        "released": not cancel_after["held"],
+    }
+    if not cancellation["released"]:
+        raise RuntimeError(f"touchCancel dejó Fire sostenido: {cancellation}")
+
+    wait_weapon_ready(cdp)
+    cdp.eval(js("""
+      window.__touchOwnerLog = [];
+      for (const type of ['pointerdown','pointerup','pointercancel','lostpointercapture']) {
+        document.addEventListener(type, event => {
+          if (event.target?.closest?.('#vl-trigger')) {
+            window.__touchOwnerLog.push({
+              type, pointerId:event.pointerId, isPrimary:event.isPrimary,
+              buttons:event.buttons,
+            });
+          }
+        }, true);
+      }
+      return true;
+    """))
+    owner = touch_point(814, trigger["x"], trigger["y"])
+    secondary = touch_point(815, trigger["x"] - 4, trigger["y"] - 4)
+    dispatch_touches(cdp, "touchStart", [owner])
+    cdp.pump(0.06)
+    dispatch_touches(cdp, "touchStart", [owner, secondary])
+    cdp.pump(0.06)
+    # CDP touchEnd must be empty. Omitting the secondary point from a
+    # touchMove releases only that point while preserving the full active set.
+    dispatch_touches(cdp, "touchMove", [owner])
+    cdp.pump(0.12)
+    secondary_state = cdp.eval(js("return window.__volar.weaponState.trigger"))
+    dispatch_touches(cdp, "touchEnd", [])
+    cdp.pump(0.12)
+    owner_released = cdp.eval(js("""
+      return {
+        trigger:window.__volar.weaponState.trigger,
+        events:window.__touchOwnerLog,
+      };
+    """))
+    secondary_release_protected = (
+        secondary_state["held"] and not owner_released["trigger"]["held"]
+    )
+    if not secondary_release_protected:
+        raise RuntimeError(
+            "segundo pointer liberó owner de Fire: "
+            f"secondary={secondary_state} ownerReleased={owner_released}"
+        )
+
+    wait_weapon_ready(cdp)
+    rapid_before = cdp.eval(js("return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger }"))
+    for pointer_id in (816, 817):
+        dispatch_touches(
+            cdp,
+            "touchStart",
+            [touch_point(pointer_id, trigger["x"], trigger["y"])],
+        )
+        dispatch_touches(cdp, "touchEnd", [])
+        cdp.pump(0.1)
+    cdp.pump(0.3)
+    rapid_after = cdp.eval(js("return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger }"))
+    rapid_double_tap = {
+        "before": rapid_before,
+        "after": rapid_after,
+        "exactlyTwo": (
+            rapid_after["fired"] == rapid_before["fired"] + 2
+            and rapid_after["trigger"]["presses"] == rapid_before["trigger"]["presses"] + 2
+            and rapid_after["trigger"]["accepted"] == rapid_before["trigger"]["accepted"] + 2
+            and not rapid_after["trigger"]["held"]
+        ),
+    }
+    if not rapid_double_tap["exactlyTwo"]:
+        raise RuntimeError(f"double tap produjo pérdida/ghost shot: {rapid_double_tap}")
+
+    missile_holds = {}
+    touch_id = 820
+    for weapon, hold_s, rearm_s in (
+        ("s", 0.7, 0.45),
+        ("m", 1.2, 0.95),
+        ("l", 2.5, 2.25),
+    ):
+        wait_weapon_ready(cdp)
+        select_weapon_touch(cdp, weapon, touch_id)
+        touch_id += 1
+        wait_weapon_ready(cdp)
+        before = cdp.eval(js("return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger }"))
+        point = touch_point(touch_id, trigger["x"], trigger["y"])
+        touch_id += 1
+        dispatch_touches(cdp, "touchStart", [point])
+        cdp.pump(hold_s)
+        held = cdp.eval(js("return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger }"))
+        dispatch_touches(cdp, "touchEnd", [])
+        cdp.pump(rearm_s)
+        released = cdp.eval(js("return { trigger:window.__volar.weaponState.trigger }"))
+        point = touch_point(touch_id, trigger["x"], trigger["y"])
+        touch_id += 1
+        dispatch_touches(cdp, "touchStart", [point])
+        cdp.pump(0.1)
+        dispatch_touches(cdp, "touchEnd", [])
+        cdp.pump(0.12)
+        after = cdp.eval(js("return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger }"))
+        missile_holds[weapon] = {
+            "before": before,
+            "held": held,
+            "released": released,
+            "after": after,
+        }
+        if not (
+            held["fired"] == before["fired"] + 1
+            and held["trigger"]["held"]
+            and held["trigger"]["locked"]
+            and not released["trigger"]["held"]
+            and not released["trigger"]["locked"]
+            and after["fired"] == before["fired"] + 2
+            and not after["trigger"]["held"]
+        ):
+            raise RuntimeError(
+                f"misil {weapon} no respetó hold/release/repress touch: "
+                f"{missile_holds[weapon]}"
+            )
+
+    wait_weapon_ready(cdp)
+    select_weapon_touch(cdp, "mg", touch_id)
+    touch_id += 1
+    wait_weapon_ready(cdp)
+    zones = cdp.eval(js("""
+      const center = selector => {
+        const r=document.querySelector(selector).getBoundingClientRect();
+        return { x:r.left+r.width/2, y:r.top+r.height/2 };
+      };
+      return {
+        left:center('.vl-stick.left'),
+        right:center('.vl-stick.right'),
+        fire:center('#vl-trigger'),
+      };
+    """))
+    left_origin = touch_point(901, zones["left"]["x"], zones["left"]["y"])
+    left_move = touch_point(901, zones["left"]["x"], zones["left"]["y"] - 46)
+    right_origin = touch_point(902, zones["right"]["x"], zones["right"]["y"])
+    right_move = touch_point(902, zones["right"]["x"], zones["right"]["y"] - 46)
+    fire_point = touch_point(903, zones["fire"]["x"], zones["fire"]["y"])
+    dispatch_touches(cdp, "touchStart", [left_origin])
+    dispatch_touches(cdp, "touchMove", [left_move])
+    dispatch_touches(cdp, "touchStart", [left_move, right_origin])
+    dispatch_touches(cdp, "touchMove", [left_move, right_move])
+    cdp.pump(0.12)
+    three_before = cdp.eval(js("return window.__volar.weapons.fired"))
+    dispatch_touches(cdp, "touchStart", [left_move, right_move, fire_point])
+    cdp.pump(0.16)
+    three_held = cdp.eval(js("""
+      const raw=window.__volar.controls.lastInput;
+      const sample={...raw,active:['lift','yaw','fwd','strafe'].some(axis => raw[axis] !== 0)};
+      return {
+        fired:window.__volar.weapons.fired,
+        sample,
+        trigger:window.__volar.weaponState.trigger,
+      };
+    """))
+    # CDP requires touchEnd to carry an empty set, so it cannot lift only Fire.
+    # End the device set and immediately restore the two logical stick contacts
+    # before pumping another frame; the next sampled input must stay active.
+    dispatch_touches(cdp, "touchEnd", [])
+    dispatch_touches(cdp, "touchStart", [left_origin, right_origin])
+    dispatch_touches(cdp, "touchMove", [left_move, right_move])
+    cdp.pump(0.12)
+    flight_after_fire = cdp.eval(js("""
+      const raw=window.__volar.controls.lastInput;
+      const sample={...raw,active:['lift','yaw','fwd','strafe'].some(axis => raw[axis] !== 0)};
+      return {
+        sample,
+        trigger:window.__volar.weaponState.trigger,
+      };
+    """))
+    dispatch_touches(cdp, "touchEnd", [])
+    cdp.pump(0.15)
+    all_released = cdp.eval(js("""
+      const raw=window.__volar.controls.lastInput;
+      const sample={...raw,active:['lift','yaw','fwd','strafe'].some(axis => raw[axis] !== 0)};
+      return {
+        sample,
+        trigger:window.__volar.weaponState.trigger,
+      };
+    """))
+    axes = ("lift", "yaw", "fwd", "strafe")
+    three_pointer = {
+        "ids": [901, 902, 903],
+        "cdpRestartedRemaining": True,
+        "beforeFired": three_before,
+        "held": three_held,
+        "flightAfterFireRelease": flight_after_fire,
+        "allReleased": all_released,
+        "passed": (
+            three_held["sample"]["active"]
+            and abs(three_held["sample"]["lift"]) + abs(three_held["sample"]["fwd"]) > 0
+            and three_held["fired"] > three_before
+            and three_held["trigger"]["held"]
+            and flight_after_fire["sample"]["active"]
+            and not flight_after_fire["trigger"]["held"]
+            and not all_released["sample"]["active"]
+            and all(all_released["sample"][axis] == 0 for axis in axes)
+            and not all_released["trigger"]["held"]
+        ),
+    }
+    if not three_pointer["passed"]:
+        raise RuntimeError(f"vuelo + Fire de tres pointers inválido: {three_pointer}")
+
+    menu = element_center(cdp, "#vl-fab")
+    synthesize_tap(cdp, menu["x"], menu["y"])
+    wait_for(
+        cdp,
+        js("""
+          const menu=document.querySelector('#vl-dock');
+          return menu.classList.contains('open') && menu.contains(document.activeElement);
+        """),
+        timeout=4,
+        label="sheet Menú con foco",
+    )
+    wait_for(
+        cdp,
+        js("""
+          const hidden = selector => {
+            const el=document.querySelector(selector);
+            if (!el || !el.getClientRects().length
+                || el.closest('[hidden],[inert],[aria-hidden="true"]')) return true;
+            for (let node=el; node && node.nodeType === 1; node=node.parentElement) {
+              const style=getComputedStyle(node);
+              if (style.display === 'none' || style.visibility === 'hidden'
+                  || parseFloat(style.opacity || '1') <= 0.05) return true;
+            }
+            return false;
+          };
+          return ['#vl-trigger','#vl-weapon-toggle','#vl-fab',
+            '.vl-stick.left','.vl-stick.right'].every(hidden);
+        """),
+        timeout=4,
+        label="command HUD oculto bajo Menú",
+    )
+    menu_geometry = touch_command_geometry(cdp, "menu")
+    geometry_errors.extend(geometry_failures(menu_geometry))
+    screenshot(cdp, command_hud_screenshot_path(viewport, "menu"))
+    close = element_center(cdp, "#vl-dock-close")
+    touch_tap(cdp, touch_id, close)
+    menu_closed = cdp.eval(js("""
+      return {
+        hidden:!document.querySelector('#vl-dock').classList.contains('open'),
+        focusRestored:document.activeElement === document.querySelector('#vl-fab'),
+      };
+    """))
+    if not all(menu_closed.values()):
+        raise RuntimeError(f"Menú touch no cerró/restauró foco: {menu_closed}")
+
+    touch_command_hud = {
+        "realTouch": True,
+        "singleShot": single_shot,
+        "mgHold": mg_hold,
+        "missileHolds": missile_holds,
+        "rapidDoubleTap": rapid_double_tap,
+        "cancellation": cancellation,
+        "secondaryReleaseProtected": secondary_release_protected,
+        "threePointer": three_pointer,
+        "gestureGuard": gesture,
+        "selection": {
+            "weapon": "mg",
+            "sticksAvailable": not closed_geometry.get("commandHidden"),
+        },
+        "closedGeometry": closed_geometry,
+        "pickerGeometry": picker_geometry,
+        "menuGeometry": menu_geometry,
+        "geometryFailures": geometry_errors,
+        "screenshots": {
+            state: str(command_hud_screenshot_path(viewport, state))
+            for state in ("closed", "weapons", "menu")
+        },
+    }
+    if geometry_errors:
+        raise RuntimeError(
+            "geometría Task 2 bloquea aceptación Task 3: "
+            + "; ".join(geometry_errors)
+        )
+    return touch_command_hud
+
+
+def run_desktop_fire_gate(cdp) -> dict:
+    """Keep the pre-existing desktop mouse combat contract alongside touch."""
+    wait_weapon_ready(cdp)
+    fire = element_center(cdp, "#vl-fire")
+    before = cdp.eval(js("return window.__volar.weapons.fired"))
+    cdp.send("Input.dispatchMouseEvent", {
+        "type": "mousePressed",
+        "x": fire["x"],
+        "y": fire["y"],
+        "button": "left",
+        "buttons": 1,
+        "clickCount": 1,
+    })
+    cdp.pump(0.06)
+    cdp.send("Input.dispatchMouseEvent", {
+        "type": "mouseReleased",
+        "x": fire["x"],
+        "y": fire["y"],
+        "button": "left",
+        "buttons": 0,
+        "clickCount": 1,
+    })
+    cdp.pump(0.15)
+    after = cdp.eval(js("""
+      return {
+        fired:window.__volar.weapons.fired,
+        held:window.__volar.weaponState.trigger.held,
+      };
+    """))
+    if after["fired"] != before + 1 or after["held"]:
+        raise RuntimeError(f"mouse Fire desktop inválido: {before} -> {after}")
+    return {"mode": "mouse", "singleShot": True, "before": before, "after": after}
+
+
 def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
     """FLIGHTVERSE: flight test plus measured touch-HUD collision checks."""
     cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/volar.html?m={cid}&autotest=1"})
@@ -568,500 +1246,14 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
     if hud["overflow"] > 3:
         raise RuntimeError(f"overflow {hud['overflow']}px en volar/{viewport}")
     if VIEWPORTS[viewport]["mobile"]:
-        layout = cdp.eval(js("""
-          const visible = el => !!el && getComputedStyle(el).display !== 'none' && el.getClientRects().length;
-          const rect = el => {
-            const r = el.getBoundingClientRect();
-            return { left:r.left, top:r.top, right:r.right, bottom:r.bottom,
-                     width:r.width, height:r.height };
-          };
-          const hit = (a,b) => a.left < b.right - 1 && a.right > b.left + 1 &&
-                               a.top < b.bottom - 1 && a.bottom > b.top + 1;
-          const left = document.querySelector('.vl-stick.left');
-          const right = document.querySelector('.vl-stick.right');
-          const radar = document.querySelector('#vl-minimap');
-          const menuFab = document.querySelector('#vl-fab');
-          const combatFab = document.querySelector('#vl-combat-fab');
-          const carousel = document.querySelector('#vl-weapon-carousel');
-          const trigger = document.querySelector('#vl-trigger');
-          const fpvCamera = document.querySelector('#vl-fpv-camera');
-          const sheetScrim = document.querySelector('#vl-overlay-scrim');
-          const fpv = document.querySelector('#vl-fpv');
-          const fpvHiddenGeneral = ['.vl-corner.tl','.vl-corner.tr','.vl-center-top',
-            '.vl-compass','.vl-flight-status','#vl-goto']
-            .every(s => !visible(document.querySelector(s)));
-          const fpvActive = visible(fpv) && document.querySelector('#vl-hud').classList.contains('fpv-active');
-          if (![left,right,radar,menuFab,combatFab,carousel,trigger,fpvCamera].every(visible)) {
-            return { error:'faltan controles táctiles agrupados' };
-          }
-          const fixed = [radar,menuFab,combatFab,carousel,trigger,fpvCamera].map(el => [el.id, rect(el)]);
-          const sticks = [['stick-left',rect(left)],['stick-right',rect(right)]];
-          const closedCollisions = [];
-          for (const [an,a] of fixed) for (const [bn,b] of sticks)
-            if (hit(a,b)) closedCollisions.push(`${an}:${bn}`);
-          const smallCarouselTargets = [...carousel.querySelectorAll('button')].filter(visible).filter(b => {
-            const r = rect(b); return r.width < 44 || r.height < 44;
-          }).map(b => b.dataset.weapon || b.textContent.trim());
-          const fpvCameraRect = rect(fpvCamera);
-          const smallFpvCameraTarget = fpvCameraRect.width < 44 || fpvCameraRect.height < 44;
+        touch_command_hud = run_touch_command_hud(cdp, viewport)
+        hud["touchCommandHud"] = touch_command_hud
+        hud["touchLayout"] = touch_command_hud
+        screenshot(cdp, QA_DIR / f"matrix-volar-{viewport}.png")
+        return {"surface": "volar", "viewport": viewport, "fps": rep.get("fps"),
+                "visual": visual, **hud}
 
-          menuFab.click();
-          const menu = document.querySelector('#vl-dock');
-          const menuRect = visible(menu) ? rect(menu) : null;
-          const menuButtons = menu ? [...menu.querySelectorAll('button')].filter(visible) : [];
-          const smallMenuTargets = menuButtons.filter(b => {
-            const r = rect(b); return r.width < 44 || r.height < 44;
-          }).map(b => b.id || b.textContent.trim());
-          const menuHorizontalOverflow = menu ? menu.scrollWidth - menu.clientWidth : 999;
-          const menuSticksDisabled = [left,right].every(stick =>
-            stick.classList.contains('disabled') && stick.getAttribute('aria-hidden') === 'true');
-          const safeArea = menuRect ? {
-            bottomGap: Math.abs(innerHeight - menuRect.bottom),
-            paddingBottom: parseFloat(getComputedStyle(menu).paddingBottom),
-            inBounds: menuRect.left >= -1 && menuRect.right <= innerWidth + 1
-              && menuRect.top >= -1 && menuRect.bottom <= innerHeight + 1,
-          } : null;
-          const sheetScrimVisible = visible(sheetScrim)
-            && sheetScrim.classList.contains('open')
-            && sheetScrim.getAttribute('aria-hidden') === 'false';
-          document.querySelector('#vl-mode')?.click();
-          const menuPersistent = visible(menu);
-          sheetScrim?.dispatchEvent(new PointerEvent('pointerdown', {
-            bubbles:true, pointerId:91, clientX:innerWidth/2, clientY:8,
-          }));
-          const outsideDismissed = !visible(menu)
-            && sheetScrim?.getAttribute('aria-hidden') === 'true'
-            && [left,right].every(stick => !stick.classList.contains('disabled'));
-
-          combatFab.click();
-          const combat = document.querySelector('#vl-combat');
-          const combatRect = visible(combat) ? rect(combat) : null;
-          const combatButtons = combat ? [...combat.querySelectorAll('button')].filter(visible) : [];
-          const smallCombatTargets = combatButtons.filter(b => {
-            const r = rect(b); return r.width < 44 || r.height < 44;
-          }).map(b => b.id || b.textContent.trim());
-          const combatSticksDisabled = [left,right].every(stick =>
-            stick.classList.contains('disabled') && stick.getAttribute('aria-hidden') === 'true');
-          document.querySelector('#vl-combat-close')?.click();
-          menuFab.click();
-          document.querySelector('#vl-ajustes')?.click();
-          const grade = document.querySelector('#vl-grade');
-          const imageOnly = visible(grade) && !visible(menu) && !visible(combat);
-          menuFab.click();
-          const menuOnly = visible(menu) && !visible(grade) && !visible(combat);
-          combatFab.click();
-          const combatOnly = visible(combat) && !visible(grade) && !visible(menu);
-          document.querySelector('#vl-combat-close')?.click();
-          const fpvCameraBefore = window.__volar?.camera?.rig;
-          fpvCamera.click();
-          const fpvCameraAfter = window.__volar?.camera?.rig;
-          return { closedCollisions, menuSticksDisabled, combatSticksDisabled,
-                   smallCarouselTargets, smallFpvCameraTarget, smallMenuTargets, smallCombatTargets, menuHorizontalOverflow,
-                   menuActions:menuButtons.length, combatActions:combatButtons.length,
-                   exclusivePanels:imageOnly && menuOnly && combatOnly,
-                   menuPersistent, outsideDismissed, safeArea, sheetScrim:sheetScrimVisible,
-                   orientation:innerWidth > innerHeight ? 'landscape' : 'portrait',
-                   fpvActive,
-                   fpvHiddenGeneral,
-                   fpvCameraCycle:{ before:fpvCameraBefore, after:fpvCameraAfter },
-                   carousel:rect(carousel), trigger:rect(trigger), fpvCamera:fpvCameraRect };
-        """))
-        failures = []
-        for key in ("closedCollisions",
-                    "smallCarouselTargets", "smallFpvCameraTarget", "smallMenuTargets", "smallCombatTargets"):
-            if layout.get(key):
-                failures.append(f"{key}={layout[key]}")
-        if layout.get("error"):
-            failures.append(layout["error"])
-        if layout.get("menuHorizontalOverflow", 999) > 2:
-            failures.append(f"menuOverflow={layout.get('menuHorizontalOverflow', 'ausente')}")
-        if layout.get("menuActions", 0) < 10 or layout.get("combatActions", 0) < 6:
-            failures.append(f"acciones incompletas={layout}")
-        if not layout.get("exclusivePanels"):
-            failures.append(f"paneles simultáneos={layout}")
-        if not layout.get("menuPersistent"):
-            failures.append("el menú se cerró al cambiar un ajuste")
-        if not layout.get("menuSticksDisabled") or not layout.get("combatSticksDisabled"):
-            failures.append(f"sticks activos bajo sheet={layout}")
-        if not layout.get("sheetScrim") or not layout.get("outsideDismissed"):
-            failures.append(f"scrim/cierre exterior inválido={layout}")
-        safe_area = layout.get("safeArea") or {}
-        if (safe_area.get("bottomGap", 999) > 2
-                or safe_area.get("paddingBottom", 0) < 12
-                or not safe_area.get("inBounds")):
-            failures.append(f"safe-area de bottom sheet inválida={safe_area}")
-        expected_orientation = "landscape" if VIEWPORTS[viewport]["width"] > VIEWPORTS[viewport]["height"] else "portrait"
-        if layout.get("orientation") != expected_orientation:
-            failures.append(f"orientación divergente={layout.get('orientation')} != {expected_orientation}")
-        if not layout.get("fpvActive") or not layout.get("fpvHiddenGeneral"):
-            failures.append(f"HUD FPV duplicado={layout}")
-        fpv_camera_cycle = layout.get("fpvCameraCycle") or {}
-        if fpv_camera_cycle.get("before") != "fpv" or fpv_camera_cycle.get("after") == "fpv":
-            failures.append(f"cámara FPV persistente no cambió rig={fpv_camera_cycle}")
-        if failures:
-            raise RuntimeError("HUD táctil inválido: " + "; ".join(failures))
-
-        # Salimos de FPV sin recargar para validar también el HUD general. El
-        # gate anterior solo veía el OSD FPV y por eso no detectaba que Mundo,
-        # Compartir, telemetría y brújula se montaban en iPhone.
-        chase_hud = cdp.eval(js("""
-          const rig = document.querySelector('#vl-rig');
-          for (let attempt = 0; attempt < 7
-               && document.querySelector('#vl-hud')?.classList.contains('fpv-active');
-               attempt += 1) rig?.click();
-          const visible = el => !!el && getComputedStyle(el).display !== 'none'
-            && getComputedStyle(el).visibility !== 'hidden' && el.getClientRects().length;
-          const rect = el => {
-            const r = el.getBoundingClientRect();
-            return { left:r.left, top:r.top, right:r.right, bottom:r.bottom,
-                     width:r.width, height:r.height };
-          };
-          const hit = (a,b) => a.left < b.right - 1 && a.right > b.left + 1
-            && a.top < b.bottom - 1 && a.bottom > b.top + 1;
-          const nodes = [
-            ['top-left', document.querySelector('.vl-corner.tl')],
-            ['telemetry', document.querySelector('.vl-corner.tr')],
-            ['compass', document.querySelector('.vl-compass')],
-            ['challenge', document.querySelector('#vl-challenge')],
-            ['goto', document.querySelector('#vl-goto')],
-          ].filter(([,el]) => visible(el)
-            && (el.matches('canvas,.vl-compass') || el.textContent.trim()));
-          const collisions = [];
-          for (let i = 0; i < nodes.length; i += 1) {
-            for (let j = i + 1; j < nodes.length; j += 1) {
-              if (hit(rect(nodes[i][1]), rect(nodes[j][1])))
-                collisions.push(`${nodes[i][0]}:${nodes[j][0]}`);
-            }
-          }
-          const outOfBounds = nodes.filter(([,el]) => {
-            const r = rect(el);
-            return r.left < -1 || r.top < -1 || r.right > innerWidth + 1
-              || r.bottom > innerHeight + 1;
-          }).map(([name]) => name);
-          return {
-            rig:window.__volar?.camera?.rig,
-            collisions,
-            outOfBounds,
-            rects:Object.fromEntries(nodes.map(([name,el]) => [name, rect(el)])),
-          };
-        """))
-        if chase_hud.get("collisions") or chase_hud.get("outOfBounds"):
-            raise RuntimeError(f"HUD general táctil solapado: {chase_hud}")
-        if chase_hud.get("rig") == "fpv":
-            raise RuntimeError(f"selector de cámara no salió de FPV: {chase_hud}")
-
-        # Combate real: un pointer de navegador debe reducir munición, no basta
-        # con que el botón exista o cambie de color.
-        fire = cdp.eval(js("""
-          document.querySelector('#vl-weapon-carousel [data-w="m"]')?.click();
-          const b = document.querySelector('#vl-trigger');
-          const r = b.getBoundingClientRect();
-          return { x:r.left+r.width/2, y:r.top+r.height/2,
-            before:window.__volar.weaponState.ammo.m,
-            fired:window.__volar.weapons.fired };
-        """))
-        cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": fire["x"], "y": fire["y"],
-                  "button": "left", "buttons": 1, "clickCount": 1})
-        cdp.pump(0.08)
-        cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": fire["x"], "y": fire["y"],
-                  "button": "left", "buttons": 0, "clickCount": 1})
-        cdp.pump(0.2)
-        shot = cdp.eval(js("""
-          return { after:window.__volar.weaponState.ammo.m,
-            fired:window.__volar.weapons.fired };
-        """))
-        if not (shot["after"] < fire["before"] and shot["fired"] > fire["fired"]):
-            raise RuntimeError(f"DISPARAR no consumió munición: before={fire} after={shot}")
-
-        # Mantener MG debe repetir a su cadencia; mantener cada misil debe
-        # bloquear el disparo después del primero hasta soltar y volver a pulsar.
-        cdp.pump(1.0)  # el disparo M anterior comparte cooldown global con la siguiente prueba
-        def select_weapon(key: str):
-            choice = cdp.eval(js(f"""
-              const b = document.querySelector('#vl-weapon-carousel [data-w="{key}"]');
-              const r = b.getBoundingClientRect();
-              return {{ x:r.left+r.width/2, y:r.top+r.height/2 }};
-            """))
-            cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": choice["x"], "y": choice["y"],
-                      "button": "left", "buttons": 1, "clickCount": 1})
-            cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": choice["x"], "y": choice["y"],
-                      "button": "left", "buttons": 0, "clickCount": 1})
-            cdp.pump(0.12)
-
-        trigger = cdp.eval(js("""
-          const b = document.querySelector('#vl-trigger'), r = b.getBoundingClientRect();
-          return { x:r.left+r.width/2, y:r.top+r.height/2 };
-        """))
-        def press_trigger():
-            cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": trigger["x"], "y": trigger["y"],
-                      "button": "left", "buttons": 1, "clickCount": 1})
-
-        def release_trigger():
-            cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": trigger["x"], "y": trigger["y"],
-                      "button": "left", "buttons": 0, "clickCount": 1})
-
-        # Ownership real de input: abrir Menú en medio de un hold MG, SIN
-        # pointerup, debe cancelar el gesto y neutralizar teclado/hotkeys.
-        select_weapon("mg")
-        press_trigger()
-        cdp.pump(0.22)
-        overlay_opened = cdp.eval(js("""
-          const menuFab = document.querySelector('#vl-fab');
-          menuFab.focus();
-          const before = {
-            fired:window.__volar.weapons.fired,
-            rig:window.__volar.camera.rig,
-            weapon:window.__volar.weaponState.weapon,
-            recText:document.querySelector('#vl-rec').textContent,
-            recOn:document.querySelector('#vl-rec').classList.contains('on'),
-          };
-          menuFab.click();
-          const menu = document.querySelector('#vl-dock');
-          return {
-            ...before,
-            focusInside:menu.contains(document.activeElement),
-            role:menu.getAttribute('role'),
-            modal:menu.getAttribute('aria-modal'),
-            canvasInert:document.querySelector('.vl-canvas').inert,
-            combatInert:document.querySelector('#vl-combat-live').inert,
-          };
-        """))
-        focus_edges = cdp.eval(js("""
-          const menu = document.querySelector('#vl-dock');
-          const focusable = [...menu.querySelectorAll(
-            'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled])'
-          )].filter(node => !node.inert && node.getAttribute('aria-hidden') !== 'true');
-          focusable.at(-1).focus();
-          return { first:focusable[0].id, last:focusable.at(-1).id };
-        """))
-        cdp.send("Input.dispatchKeyEvent", {
-            "type": "rawKeyDown", "code": "Tab", "key": "Tab", "windowsVirtualKeyCode": 9,
-        })
-        cdp.send("Input.dispatchKeyEvent", {
-            "type": "keyUp", "code": "Tab", "key": "Tab", "windowsVirtualKeyCode": 9,
-        })
-        tab_forward = cdp.eval(js("return document.activeElement.id"))
-        cdp.eval(js(f"document.querySelector('#{focus_edges['first']}').focus(); return true"))
-        cdp.send("Input.dispatchKeyEvent", {
-            "type": "rawKeyDown", "code": "Tab", "key": "Tab",
-            "windowsVirtualKeyCode": 9, "modifiers": 8,
-        })
-        cdp.send("Input.dispatchKeyEvent", {
-            "type": "keyUp", "code": "Tab", "key": "Tab",
-            "windowsVirtualKeyCode": 9, "modifiers": 8,
-        })
-        tab_backward = cdp.eval(js("return document.activeElement.id"))
-        cdp.eval(js("document.querySelector('#vl-share').focus(); return true"))
-        cdp.send("Input.dispatchKeyEvent", {
-            "type": "rawKeyDown", "code": "Tab", "key": "Tab", "windowsVirtualKeyCode": 9,
-        })
-        cdp.send("Input.dispatchKeyEvent", {
-            "type": "keyUp", "code": "Tab", "key": "Tab", "windowsVirtualKeyCode": 9,
-        })
-        tab_reentry = cdp.eval(js("return document.activeElement.id"))
-        for code, key in (("KeyW", "w"), ("KeyX", "x"), ("KeyZ", "z"), ("KeyC", "c")):
-            cdp.send("Input.dispatchKeyEvent", {
-                "type": "rawKeyDown", "code": code, "key": key,
-                "windowsVirtualKeyCode": ord(key.upper()),
-            })
-        cdp.send("Input.dispatchKeyEvent", {
-            "type": "rawKeyDown", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
-        })
-        cdp.send("Input.dispatchKeyEvent", {
-            "type": "keyUp", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
-        })
-        cdp.pump(0.55)
-        overlay_blocked = cdp.eval(js("""
-          const controls = window.__volar.controls || {};
-          const sample = controls.lastInput || {};
-          const neutral = ['fwd','strafe','yaw','lift','mouseDX','mouseDY']
-            .every(key => sample[key] === 0)
-            && !sample.boost && !sample.brake;
-          return {
-            fired:window.__volar.weapons.fired,
-            trigger:window.__volar.weaponState.trigger,
-            rig:window.__volar.camera.rig,
-            weapon:window.__volar.weaponState.weapon,
-            recText:document.querySelector('#vl-rec').textContent,
-            recOn:document.querySelector('#vl-rec').classList.contains('on'),
-            controls,
-            neutral,
-          };
-        """))
-        for code, key in (("KeyW", "w"), ("KeyX", "x"), ("KeyZ", "z"), ("KeyC", "c")):
-            cdp.send("Input.dispatchKeyEvent", {
-                "type": "keyUp", "code": code, "key": key,
-                "windowsVirtualKeyCode": ord(key.upper()),
-            })
-        overlay_closed = cdp.eval(js("""
-          document.querySelector('#vl-dock-close').click();
-          return {
-            focusRestored:document.activeElement === document.querySelector('#vl-fab'),
-            overlay:window.__volar.controls?.overlay,
-          };
-        """))
-        cdp.send("Input.dispatchKeyEvent", {
-            "type": "rawKeyDown", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
-        })
-        cdp.send("Input.dispatchKeyEvent", {
-            "type": "keyUp", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
-        })
-        cdp.pump(0.12)
-        rec_resumed = cdp.eval(js("""
-          const button = document.querySelector('#vl-rec');
-          return { text:button.textContent, on:button.classList.contains('on') };
-        """))
-        if rec_resumed["on"]:
-            cdp.send("Input.dispatchKeyEvent", {
-                "type": "rawKeyDown", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
-            })
-            cdp.send("Input.dispatchKeyEvent", {
-                "type": "keyUp", "code": "KeyV", "key": "v", "windowsVirtualKeyCode": 86,
-            })
-            cdp.pump(0.12)
-        release_trigger()
-        cdp.pump(0.25)
-        repress_before = cdp.eval(js("return window.__volar.weapons.fired"))
-        press_trigger()
-        cdp.pump(0.18)
-        release_trigger()
-        cdp.pump(0.12)
-        repress_after = cdp.eval(js("return window.__volar.weapons.fired"))
-        overlayInputGate = {
-            "opened": overlay_opened,
-            "blocked": overlay_blocked,
-            "closed": overlay_closed,
-            "firedStable": overlay_blocked["fired"] == overlay_opened["fired"],
-            "flightInputNeutral": (
-                overlay_blocked.get("neutral")
-                and overlay_blocked.get("controls", {}).get("keyboardKeys") == 0
-                and not overlay_blocked.get("controls", {}).get("inputEnabled", True)
-            ),
-            "hotkeysBlocked": (
-                overlay_blocked["rig"] == overlay_opened["rig"]
-                and overlay_blocked["weapon"] == overlay_opened["weapon"]
-            ),
-            "recordHotkeyBlocked": (
-                overlay_blocked["recOn"] == overlay_opened["recOn"]
-                and overlay_blocked["recText"] == overlay_opened["recText"]
-            ),
-            "focusTrapped": (
-                tab_forward == focus_edges["first"]
-                and tab_backward == focus_edges["last"]
-                and tab_reentry == focus_edges["first"]
-            ),
-            "recordHotkeyResumed": (
-                rec_resumed["on"] != overlay_opened["recOn"]
-                or rec_resumed["text"] != overlay_opened["recText"]
-            ),
-            "repressWorked": repress_after > repress_before,
-        }
-        if not all((
-            overlayInputGate["firedStable"],
-            overlayInputGate["flightInputNeutral"],
-            overlayInputGate["hotkeysBlocked"],
-            overlayInputGate["recordHotkeyBlocked"],
-            overlayInputGate["focusTrapped"],
-            overlayInputGate["recordHotkeyResumed"],
-            overlayInputGate["repressWorked"],
-            not overlay_blocked["trigger"].get("held"),
-            overlay_opened.get("focusInside"),
-            overlay_opened.get("role") == "dialog",
-            overlay_opened.get("modal") == "true",
-            overlay_opened.get("canvasInert"),
-            overlay_opened.get("combatInert"),
-            overlay_closed.get("focusRestored"),
-        )):
-            raise RuntimeError(f"overlay no tomó ownership total de input: {overlayInputGate}")
-
-        select_weapon("mg")
-        mg_before = cdp.eval(js("return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger }"))
-        press_trigger()
-        cdp.pump(0.45)
-        mg_held = cdp.eval(js("""
-          return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger,
-            status:document.querySelector('#vl-weapon-status').textContent };
-        """))
-        release_trigger()
-        cdp.pump(0.16)
-        mg_released = cdp.eval(js("return { trigger:window.__volar.weaponState.trigger }"))
-        if not (mg_held["fired"] >= mg_before["fired"] + 3
-                and mg_held["trigger"].get("held")
-                and mg_held["trigger"].get("mode") == "auto"
-                and not mg_released["trigger"].get("held")):
-            raise RuntimeError(f"MG no sostuvo fuego real: before={mg_before} held={mg_held} released={mg_released}")
-
-        missile_holds = {}
-        for weapon, hold_s, rearm_s in (("s", 0.7, 0.55), ("m", 1.2, 1.05), ("l", 2.5, 2.35)):
-            select_weapon(weapon)
-            before = cdp.eval(js("return { fired:window.__volar.weapons.fired }"))
-            press_trigger()
-            cdp.pump(hold_s)
-            held = cdp.eval(js("""
-              return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger,
-                status:document.querySelector('#vl-weapon-status').textContent };
-            """))
-            release_trigger()
-            cdp.pump(rearm_s)
-            released = cdp.eval(js("""
-              return { trigger:window.__volar.weaponState.trigger,
-                status:document.querySelector('#vl-weapon-status').textContent };
-            """))
-            press_trigger()
-            cdp.pump(0.16)
-            release_trigger()
-            cdp.pump(0.12)
-            after = cdp.eval(js("return { fired:window.__volar.weapons.fired, trigger:window.__volar.weaponState.trigger }"))
-            missile_holds[weapon] = {"before": before, "held": held, "released": released, "after": after}
-            if not (held["fired"] == before["fired"] + 1
-                    and held["trigger"].get("locked")
-                    and "LIBERA PARA REARMAR" in held["status"]
-                    and not released["trigger"].get("held")
-                    and not released["trigger"].get("locked")
-                    and "LISTO" in released["status"]
-                    and after["fired"] == before["fired"] + 2):
-                raise RuntimeError(f"misil {weapon} no respetó lock/release: {missile_holds[weapon]}")
-            cdp.pump(rearm_s)  # el siguiente misil no hereda el cooldown del re-disparo actual
-
-        # El inspector debe dejar la escena visible y poder moverse dentro del
-        # visual viewport con un gesto real.
-        cdp.eval(js("""
-          document.querySelector('#vl-fab')?.click();
-          document.querySelector('#vl-ajustes')?.click();
-          return true;
-        """))
-        cdp.pump(0.2)
-        drag = cdp.eval(js("""
-          const p=document.querySelector('#vl-grade'), h=p.querySelector('.vl-grade-drag');
-          const pr=p.getBoundingClientRect(), hr=h.getBoundingClientRect();
-          return { x:hr.left+hr.width*.35, y:hr.top+hr.height/2,
-            left:pr.left, top:pr.top, height:pr.height, viewport:innerHeight };
-        """))
-        cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": drag["x"], "y": drag["y"],
-                  "button": "left", "buttons": 1, "clickCount": 1})
-        cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": drag["x"] + 42,
-                  "y": drag["y"] - 54, "button": "left", "buttons": 1})
-        cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": drag["x"] + 42,
-                  "y": drag["y"] - 54, "button": "left", "buttons": 0, "clickCount": 1})
-        cdp.pump(0.15)
-        moved = cdp.eval(js("""
-          const p=document.querySelector('#vl-grade'), r=p.getBoundingClientRect();
-          return { left:r.left,top:r.top,right:r.right,bottom:r.bottom,
-            vl:visualViewport?.offsetLeft||0,vt:visualViewport?.offsetTop||0,
-            vw:visualViewport?.width||innerWidth,vh:visualViewport?.height||innerHeight,
-            visible:getComputedStyle(p).display!=='none' };
-        """))
-        if drag["height"] > drag["viewport"] * 0.48:
-            raise RuntimeError(f"Imagen tapa la vista previa: {drag}")
-        if abs(moved["left"] - drag["left"]) < 15 and abs(moved["top"] - drag["top"]) < 15:
-            raise RuntimeError(f"Imagen no se movió: before={drag} after={moved}")
-        if not moved["visible"] or moved["left"] < moved["vl"] - 2 or moved["top"] < moved["vt"] - 2 or moved["right"] > moved["vl"] + moved["vw"] + 2 or moved["bottom"] > moved["vt"] + moved["vh"] + 2:
-            raise RuntimeError(f"Imagen salió del viewport: before={drag} after={moved}")
-        layout["weaponShot"] = {"before": fire["before"], "after": shot["after"],
-                                "mgHold": mg_held, "missileHolds": missile_holds,
-                                "overlayInputGate": overlayInputGate}
-        layout["imageDrag"] = moved
-        hud["touchLayout"] = layout
+    hud["touchCommandHud"] = run_desktop_fire_gate(cdp)
     screenshot(cdp, QA_DIR / f"matrix-volar-{viewport}.png")
     return {"surface": "volar", "viewport": viewport, "fps": rep.get("fps"),
             "visual": visual, **hud}
