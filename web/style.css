@@ -5347,7 +5347,7 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   .vl-command-hud{
     position:fixed;
     right:calc(14px + env(safe-area-inset-right));
-    bottom:calc(min(34vh,300px) + 18px + env(safe-area-inset-bottom));
+    bottom:calc(min(34vh,300px) + 36px + env(safe-area-inset-bottom));
     display:grid;
     justify-items:end;
     gap:10px;
