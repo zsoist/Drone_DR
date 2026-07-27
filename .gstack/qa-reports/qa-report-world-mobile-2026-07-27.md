@@ -12,7 +12,40 @@ Test target:
 
 - Loopback: `http://127.0.0.1:8790`
 - Clip: `recon_c97cd120a1`
-- Flightverse web build: v311
+- Flightverse web build: v313
+
+## Release and production canary
+
+Candidate `0b0d798582a9bbb5d44367d3cfeb9c5f08d6f0d8` passed the complete
+fail-closed release suite on v313:
+
+- Python compilation, 51/51 focused Node tests, and the full smoke suite.
+- World audit and runtime sweep: 9/9 active worlds at 60 fps, with a clean
+  disk audit.
+- Invasion runtime: 60 fps, GLB preload 6/6, caps respected, and no fallback,
+  spawn failure, or console error.
+- Collision stress: 100/100 at 60 fps, 20 shots, 20 explosions, four reloads,
+  and no failures or console errors.
+- Default Flightverse browser matrix: Mundo returned nine islands and Volar
+  held 60 fps in phone portrait/landscape, iPad portrait/landscape, and
+  desktop. Every mobile profile reported real touch.
+- Branch diff check: clean.
+
+`pipeline/safe_restart.sh server` completed every-world preflight, collision
+stress 100, restart, and mandatory post-health without a bypass. The deployed
+canary then passed:
+
+- loopback health 200 with every check true and loopback identity
+  `daniel`/`dev_mode:true`;
+- public health 200 with the private/no-store edge policy, unauthenticated
+  Mundo exact 303 login redirect, and unauthenticated whoami 401;
+- authenticated public `/manifest.json` 200 through `private-data-v1`;
+- production phone portrait at 60 fps with real touch and production desktop
+  at 60 fps, both with nine Mundo islands and no console errors;
+- authoritative deletion of the ephemeral production session.
+
+Repository integrity after deployment is 225 v313 asset references, zero stale
+v300-v312 references, and 92 exact, complete, non-stale gzip pairs.
 
 ## Automated evidence
 
@@ -88,8 +121,8 @@ mundo/desktop: ok · 9 islas
 volar/desktop: ok · 60fps
 ```
 
-The focused phone landscape run also passed independently on v311. The default
-matrix revalidated phone portrait on v311.
+The focused phone landscape run also passed independently on the earlier v311
+candidate. The final default matrix revalidated phone portrait on v313.
 
 ## Protocol note
 
