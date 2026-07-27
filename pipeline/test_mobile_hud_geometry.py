@@ -17,6 +17,7 @@ TOUCH_PROFILES = {
     "ipad_portrait": (820, 1180),
     "ipad_landscape": (1180, 820),
 }
+SAFE_INSETS = {"top": 17, "right": 13, "bottom": 23, "left": 11}
 
 
 @dataclass(frozen=True)
@@ -63,14 +64,10 @@ class MobileHudGeometryContractTests(unittest.TestCase):
             r"\.vl-fab\{ left:[^}]*bottom:calc\("
             r"min\(34vh, 300px\) \+ (\d+(?:\.\d+)?)px"
         )
-        landscape_command_vh = number(
+        landscape_command_top = number(
             r"orientation:landscape\)\{\s*\.vl-command-hud\{"
-            r"[^}]*bottom:calc\((\d+(?:\.\d+)?)vh",
-            COMMAND_STYLES,
-        )
-        landscape_command_px = number(
-            r"orientation:landscape\)\{\s*\.vl-command-hud\{"
-            r"[^}]*bottom:calc\([^+]+\+ (\d+(?:\.\d+)?)px",
+            r"[^}]*top:calc\((\d+(?:\.\d+)?)px "
+            r"\+ env\(safe-area-inset-top\)\);[^}]*bottom:auto",
             COMMAND_STYLES,
         )
         landscape_picker_top = number(
@@ -113,10 +110,10 @@ class MobileHudGeometryContractTests(unittest.TestCase):
 
         for profile, (width, height) in TOUCH_PROFILES.items():
             landscape = width > height
-            safe_top = 0
-            safe_bottom = 0
-            safe_left = 0
-            safe_right = 0
+            safe_top = SAFE_INSETS["top"]
+            safe_bottom = SAFE_INSETS["bottom"]
+            safe_left = SAFE_INSETS["left"]
+            safe_right = SAFE_INSETS["right"]
             stick_height = (
                 0.40 * height if landscape else min(0.34 * height, 300)
             )
@@ -148,30 +145,47 @@ class MobileHudGeometryContractTests(unittest.TestCase):
             }
 
             if landscape:
-                command_bottom = (
-                    landscape_command_vh / 100 * height + landscape_command_px
-                )
                 menu_bottom = (
                     landscape_menu_vh / 100 * height + landscape_menu_px
+                    + safe_bottom
                 )
             else:
-                command_bottom = stick_height + portrait_command_clearance
-                menu_bottom = stick_height + portrait_menu_clearance
+                command_bottom = (
+                    stick_height + portrait_command_clearance + safe_bottom
+                )
+                menu_bottom = stick_height + portrait_menu_clearance + safe_bottom
 
-            fire_bottom = height - command_bottom
-            fire = Rect(
-                width - 14 - fire_width,
-                fire_bottom - fire_height,
-                width - 14,
-                fire_bottom,
-            )
-            weapon_bottom = fire.top - 10
-            weapon = Rect(
-                width - 14 - weapon_width,
-                weapon_bottom - weapon_height,
-                width - 14,
-                weapon_bottom,
-            )
+            command_right = width - 14 - safe_right
+            if landscape:
+                weapon_top = safe_top + landscape_command_top
+                weapon = Rect(
+                    command_right - weapon_width,
+                    weapon_top,
+                    command_right,
+                    weapon_top + weapon_height,
+                )
+                fire_top = weapon.bottom + 10
+                fire = Rect(
+                    command_right - fire_width,
+                    fire_top,
+                    command_right,
+                    fire_top + fire_height,
+                )
+            else:
+                fire_bottom = height - command_bottom
+                fire = Rect(
+                    command_right - fire_width,
+                    fire_bottom - fire_height,
+                    command_right,
+                    fire_bottom,
+                )
+                weapon_bottom = fire.top - 10
+                weapon = Rect(
+                    command_right - weapon_width,
+                    weapon_bottom - weapon_height,
+                    command_right,
+                    weapon_bottom,
+                )
             picker_bottom = weapon.top - 10
             picker_height = 2 + 2 * 6 + 4 * 48 + 3 * 4
             if landscape:
@@ -184,13 +198,19 @@ class MobileHudGeometryContractTests(unittest.TestCase):
                 )
             else:
                 picker = Rect(
-                    width - 14 - 132,
+                    command_right - 132,
                     picker_bottom - picker_height,
-                    width - 14,
+                    command_right,
                     picker_bottom,
                 )
             menu_bottom_y = height - menu_bottom
-            menu = Rect(14, menu_bottom_y - 52, 66, menu_bottom_y)
+            menu_left = 14 + safe_left
+            menu = Rect(
+                menu_left,
+                menu_bottom_y - 52,
+                menu_left + 52,
+                menu_bottom_y,
+            )
             controls = {
                 "fire": fire,
                 "weapon": weapon,

@@ -5433,7 +5433,8 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 }
 @media (pointer:coarse) and (orientation:landscape){
   .vl-command-hud{
-    bottom:calc(52vh + 12px + env(safe-area-inset-bottom));
+    top:calc(12px + env(safe-area-inset-top));
+    bottom:auto;
   }
   .vl-weapon-picker{
     position:fixed;

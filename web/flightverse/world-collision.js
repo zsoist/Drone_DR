@@ -1,14 +1,14 @@
 // Unified FLIGHTVERSE structural, terrain, and playable-boundary queries.
-import * as THREE from '/flightverse/three.js?v=310';
+import * as THREE from '/flightverse/three.js?v=311';
 import {
   MeshBVH,
   getTriangleHitPointInfo,
-} from '/vendor/three-mesh-bvh180.module.js?v=310';
+} from '/vendor/three-mesh-bvh180.module.js?v=311';
 import {
   earliestHit,
   segmentCircleBoundaryHit,
   segmentSquareBoundaryHit,
-} from '/flightverse/collision-math.js?v=310';
+} from '/flightverse/collision-math.js?v=311';
 
 const EPSILON = 1e-7;
 const ZERO = new THREE.Vector3();
