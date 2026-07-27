@@ -110,12 +110,35 @@ def wait_for(cdp, expr: str, timeout: int = 45, label: str = "condition"):
     raise RuntimeError(f"timeout esperando {label}: {last!r}")
 
 
+def device_metrics_for(name: str, *, rotated: bool = False) -> dict:
+    vp = VIEWPORTS[name]
+    width, height = vp["width"], vp["height"]
+    if rotated:
+        width, height = height, width
+    landscape = width >= height
+    return {
+        **vp,
+        "width": width,
+        "height": height,
+        "screenWidth": width,
+        "screenHeight": height,
+        "screenOrientation": {
+            "type": "landscapePrimary" if landscape else "portraitPrimary",
+            "angle": 90 if landscape else 0,
+        },
+    }
+
+
+def apply_device_metrics(cdp, name: str, *, rotated: bool = False):
+    cdp.send(
+        "Emulation.setDeviceMetricsOverride",
+        device_metrics_for(name, rotated=rotated),
+    )
+
+
 def set_viewport(cdp, name: str):
     vp = VIEWPORTS[name]
-    cdp.send("Emulation.setDeviceMetricsOverride", vp | {
-        "screenWidth": vp["width"],
-        "screenHeight": vp["height"],
-    })
+    apply_device_metrics(cdp, name)
     touch = {"enabled": bool(vp["mobile"])}
     if vp["mobile"]:
         touch["maxTouchPoints"] = 5
@@ -149,6 +172,15 @@ def dispatch_touches(cdp, event_type: str, points: list[dict]):
 def release_touches(cdp, points: list[dict]):
     """Lift exactly these CDP contacts while preserving omitted contacts."""
     dispatch_touches(cdp, "touchEnd", points)
+
+
+def cancel_touches_if_active(cdp):
+    """Cancel a CDP touch sequence, accepting that rotation may end it first."""
+    try:
+        dispatch_touches(cdp, "touchCancel", [])
+    except RuntimeError as exc:
+        if "Must send a TouchStart first" not in str(exc):
+            raise
 
 
 def synthesize_tap(cdp, x: float, y: float, *, tap_count: int = 1,
@@ -811,6 +843,166 @@ def select_weapon_touch(cdp, key: str, pointer_id: int):
     return bool(selected)
 
 
+def run_orientation_cleanup_gate(cdp, viewport: str) -> dict:
+    """Rotate held command input, then rotate an open picker back to the profile."""
+    axes = ("lift", "yaw", "fwd", "strafe")
+    cdp.eval(js("""
+      window.__commandOrientationEvents = 0;
+      addEventListener('orientationchange', () => {
+        window.__commandOrientationEvents += 1;
+      });
+      return true;
+    """))
+    wait_weapon_ready(cdp)
+    select_weapon_touch(cdp, "mg", 970)
+    wait_weapon_ready(cdp)
+    zones = cdp.eval(js("""
+      const center = selector => {
+        const r=document.querySelector(selector).getBoundingClientRect();
+        return { x:r.left+r.width/2, y:r.top+r.height/2 };
+      };
+      return {
+        left:center('.vl-stick.left'),
+        right:center('.vl-stick.right'),
+        fire:center('#vl-trigger'),
+      };
+    """))
+    left = touch_point(971, zones["left"]["x"], zones["left"]["y"] - 42)
+    right = touch_point(972, zones["right"]["x"], zones["right"]["y"] - 42)
+    fire = touch_point(973, zones["fire"]["x"], zones["fire"]["y"])
+    original_metrics = device_metrics_for(viewport)
+    rotated_metrics = device_metrics_for(viewport, rotated=True)
+    evidence = {}
+    try:
+        dispatch_touches(cdp, "touchStart", [
+            touch_point(971, zones["left"]["x"], zones["left"]["y"]),
+        ])
+        dispatch_touches(cdp, "touchMove", [left])
+        dispatch_touches(cdp, "touchStart", [
+            left,
+            touch_point(972, zones["right"]["x"], zones["right"]["y"]),
+        ])
+        dispatch_touches(cdp, "touchMove", [left, right])
+        dispatch_touches(cdp, "touchStart", [left, right, fire])
+        cdp.pump(0.18)
+        held = cdp.eval(js("""
+          const sample=window.__volar.controls.lastInput;
+          return {
+            sample,
+            trigger:window.__volar.weaponState.trigger,
+            events:window.__commandOrientationEvents,
+          };
+        """))
+        if not (
+            held["trigger"]["held"]
+            and any(abs(held["sample"][axis]) > 0 for axis in axes)
+        ):
+            raise RuntimeError(f"rotación no inició con sticks+Fire activos: {held}")
+
+        apply_device_metrics(cdp, viewport, rotated=True)
+        wait_for(
+            cdp,
+            js(f"""
+              return innerWidth === {rotated_metrics['width']}
+                && innerHeight === {rotated_metrics['height']}
+                && window.__commandOrientationEvents >= 1;
+            """),
+            timeout=5,
+            label="rotación CDP con orientationchange",
+        )
+        cdp.pump(0.18)
+        phase_a = cdp.eval(js("""
+          const sample=window.__volar.controls.lastInput;
+          return {
+            sample,
+            trigger:window.__volar.weaponState.trigger,
+            pickerClosed:document.querySelector('#vl-weapon-picker').hidden,
+            events:window.__commandOrientationEvents,
+            viewport:{ width:innerWidth, height:innerHeight },
+            orientation:{
+              type:screen.orientation?.type || '',
+              angle:screen.orientation?.angle ?? null,
+            },
+          };
+        """))
+        phase_a["passed"] = (
+            not phase_a["trigger"]["held"]
+            and all(phase_a["sample"][axis] == 0 for axis in axes)
+            and phase_a["events"] >= 1
+            and phase_a["viewport"] == {
+                "width": rotated_metrics["width"],
+                "height": rotated_metrics["height"],
+            }
+        )
+        if not phase_a["passed"]:
+            raise RuntimeError(
+                "rotación dejó ownership de vuelo/Fire activo: "
+                f"{phase_a}"
+            )
+        cancel_touches_if_active(cdp)
+        cdp.pump(0.12)
+
+        toggle = element_center(cdp, "#vl-weapon-toggle")
+        synthesize_tap(cdp, toggle["x"], toggle["y"])
+        wait_for(
+            cdp,
+            js("return !document.querySelector('#vl-weapon-picker').hidden"),
+            timeout=4,
+            label="picker abierto antes de restaurar orientación",
+        )
+        phase_b_open = cdp.eval(js("""
+          return {
+            pickerOpen:!document.querySelector('#vl-weapon-picker').hidden,
+            events:window.__commandOrientationEvents,
+          };
+        """))
+        apply_device_metrics(cdp, viewport)
+        wait_for(
+            cdp,
+            js(f"""
+              return innerWidth === {original_metrics['width']}
+                && innerHeight === {original_metrics['height']}
+                && window.__commandOrientationEvents > {phase_b_open['events']}
+                && document.querySelector('#vl-weapon-picker').hidden;
+            """),
+            timeout=5,
+            label="restauración CDP cierra picker",
+        )
+        phase_b = cdp.eval(js("""
+          return {
+            pickerClosed:document.querySelector('#vl-weapon-picker').hidden,
+            events:window.__commandOrientationEvents,
+            viewport:{ width:innerWidth, height:innerHeight },
+            orientation:{
+              type:screen.orientation?.type || '',
+              angle:screen.orientation?.angle ?? null,
+            },
+          };
+        """))
+        phase_b["passed"] = (
+            phase_b_open["pickerOpen"]
+            and phase_b["pickerClosed"]
+            and phase_b["viewport"] == {
+                "width": original_metrics["width"],
+                "height": original_metrics["height"],
+            }
+        )
+        if not phase_b["passed"]:
+            raise RuntimeError(f"rotación no cerró/restauró picker: {phase_b}")
+        evidence = {
+            "heldBeforeRotation": held,
+            "phaseA": phase_a,
+            "phaseBOpen": phase_b_open,
+            "phaseB": phase_b,
+            "restored": True,
+        }
+    finally:
+        cancel_touches_if_active(cdp)
+        apply_device_metrics(cdp, viewport)
+        cdp.pump(0.18)
+    return evidence
+
+
 def run_mobile_base_acceptance(cdp, viewport: str) -> dict:
     """Retain the established mobile overlay, hotkey, sheet, and chase gates."""
     def key_event(code: str, key: str, down: bool, modifiers: int = 0):
@@ -1386,8 +1578,50 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     picker_geometry = touch_command_geometry(cdp, "weapons")
     geometry_errors.extend(geometry_failures(picker_geometry))
     screenshot(cdp, command_hud_screenshot_path(viewport, "weapons"))
+    wait_weapon_ready(cdp)
+    picker_fire_before = cdp.eval(js("""
+      return {
+        fired:window.__volar.weapons.fired,
+        trigger:window.__volar.weaponState.trigger,
+      };
+    """))
+    picker_fire_target = element_center(cdp, "#vl-trigger")
+    touch_tap(cdp, 802, picker_fire_target)
+    picker_fire_after = cdp.eval(js("""
+      return {
+        pickerClosed:document.querySelector('#vl-weapon-picker').hidden,
+        fired:window.__volar.weapons.fired,
+        trigger:window.__volar.weaponState.trigger,
+      };
+    """))
+    picker_fire = {
+        "before": picker_fire_before,
+        "after": picker_fire_after,
+        "passed": (
+            picker_fire_after["pickerClosed"]
+            and picker_fire_after["fired"] == picker_fire_before["fired"] + 1
+            and picker_fire_after["trigger"]["presses"]
+                == picker_fire_before["trigger"]["presses"] + 1
+            and picker_fire_after["trigger"]["accepted"]
+                == picker_fire_before["trigger"]["accepted"] + 1
+            and not picker_fire_after["trigger"]["held"]
+        ),
+    }
+    if not picker_fire["passed"]:
+        raise RuntimeError(
+            "Fire touch no cerró picker/disparó exactamente una vez: "
+            f"{picker_fire}"
+        )
+    wait_weapon_ready(cdp)
+    synthesize_tap(cdp, gesture_target["x"], gesture_target["y"])
+    wait_for(
+        cdp,
+        js("return !document.querySelector('#vl-weapon-picker').hidden"),
+        timeout=4,
+        label="picker reabierto tras Fire",
+    )
     option_m = element_center(cdp, '#vl-weapon-picker [data-w="m"]')
-    touch_tap(cdp, 802, option_m)
+    touch_tap(cdp, 803, option_m)
     wait_weapon_ready(cdp)
 
     trigger = element_center(cdp, "#vl-trigger")
@@ -1779,8 +2013,17 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     if not three_pointer["passed"]:
         raise RuntimeError(f"vuelo + Fire de tres pointers inválido: {three_pointer}")
 
+    orientation_cleanup = run_orientation_cleanup_gate(cdp, viewport)
+    synthesize_tap(cdp, element_center(cdp, "#vl-weapon-toggle")["x"],
+                   element_center(cdp, "#vl-weapon-toggle")["y"])
+    wait_for(
+        cdp,
+        js("return !document.querySelector('#vl-weapon-picker').hidden"),
+        timeout=4,
+        label="picker abierto antes de Menú",
+    )
     menu = element_center(cdp, "#vl-fab")
-    synthesize_tap(cdp, menu["x"], menu["y"])
+    touch_tap(cdp, 980, menu)
     wait_for(
         cdp,
         js("""
@@ -1819,6 +2062,7 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
       return {
         hidden:!document.querySelector('#vl-dock').classList.contains('open'),
         focusRestored:document.activeElement === document.querySelector('#vl-fab'),
+        pickerClosed:document.querySelector('#vl-weapon-picker').hidden,
       };
     """))
     if not all(menu_closed.values()):
@@ -1850,6 +2094,9 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
         "secondaryReleaseProtected": secondary_release_protected,
         "ownership": ownership,
         "threePointer": three_pointer,
+        "pickerFire": picker_fire,
+        "orientationCleanup": orientation_cleanup,
+        "pickerMenuFocus": menu_closed,
         "gestureGuard": gesture,
         "safeAreaOverride": safe_area,
         "baseAcceptance": base_acceptance,

@@ -114,13 +114,15 @@ export function createWeaponPicker({
   let opened = false;
   let disposed = false;
   const orientationRoot = eventRoot.defaultView;
+  const outsideListenerOptions = { capture: true };
+  const noFocusRestore = new Set(['outside', 'overlay', 'orientation', 'dispose']);
 
   const close = (reason = 'close') => {
     if (!opened) return false;
     opened = false;
     panel.hidden = true;
     trigger.setAttribute('aria-expanded', 'false');
-    if (reason !== 'overlay') trigger.focus?.();
+    if (!noFocusRestore.has(reason)) trigger.focus?.();
     return true;
   };
   const open = () => {
@@ -153,7 +155,7 @@ export function createWeaponPicker({
   panel.hidden = true;
   trigger.setAttribute('aria-expanded', 'false');
   trigger.addEventListener('click', toggle);
-  eventRoot.addEventListener('pointerdown', outside);
+  eventRoot.addEventListener('pointerdown', outside, outsideListenerOptions);
   eventRoot.addEventListener('keydown', keydown);
   orientationRoot?.addEventListener('orientationchange', orientation);
   for (const item of items) item.addEventListener('click', choose);
@@ -168,7 +170,7 @@ export function createWeaponPicker({
       disposed = true;
       close('dispose');
       trigger.removeEventListener('click', toggle);
-      eventRoot.removeEventListener('pointerdown', outside);
+      eventRoot.removeEventListener('pointerdown', outside, outsideListenerOptions);
       eventRoot.removeEventListener('keydown', keydown);
       orientationRoot?.removeEventListener('orientationchange', orientation);
       for (const item of items) item.removeEventListener('click', choose);

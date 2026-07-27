@@ -113,6 +113,23 @@ test('pointer cancellation resets axes and releases activity', () => {
   });
 });
 
+test('explicit reset releases both active sticks without browser pointer cancellation', () => {
+  const { left, right, controller } = touchHarness();
+  left.dispatchEvent(pointer('pointerdown', { id: 41, x: 100, y: 100 }));
+  left.dispatchEvent(pointer('pointermove', { id: 41, x: 100, y: 50 }));
+  right.dispatchEvent(pointer('pointerdown', { id: 42, x: 100, y: 100 }));
+  right.dispatchEvent(pointer('pointermove', { id: 42, x: 150, y: 100 }));
+  assert.equal(controller.sample().active, true);
+
+  controller.reset();
+
+  assert.deepEqual(controller.sample(), {
+    lift: 0, yaw: 0, fwd: 0, strafe: 0, active: false,
+  });
+  assert.equal(left.captures.size, 0);
+  assert.equal(right.captures.size, 0);
+});
+
 test('disable resets both sticks and ignores input until re-enabled', () => {
   const { left, controller } = touchHarness();
   left.dispatchEvent(pointer('pointerdown', { id: 5, x: 100, y: 100 }));

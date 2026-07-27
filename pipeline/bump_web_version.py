@@ -8,6 +8,7 @@ Uso:  python3 bump_web_version.py [N]   (sin N: max encontrado + 1)
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -22,7 +23,13 @@ def main():
              and ".gz" not in p.name and "node_modules" not in str(p)]
     # el barrido de gz stale cubre TAMBIÉN css (aprendido: style.css.gz llevaba
     # 12h viejo porque el sweep solo miraba html/js — los fixes no llegaban)
-    gz_sweep = files + [p for p in WEB.rglob("*.css") if ".gz" not in p.name]
+    gz_sweep = [
+        p for p in WEB.rglob("*")
+        if p.is_file()
+        and p.suffix in (".css", ".html", ".js", ".json", ".svg")
+        and ".gz" not in p.name
+        and "node_modules" not in p.parts
+    ]
     current = max((int(m) for p in files for m in PAT.findall(p.read_text(errors="ignore"))), default=0)
     new = int(sys.argv[1]) if len(sys.argv) > 1 else current + 1
     touched = []
@@ -41,6 +48,11 @@ def main():
             regz.add(p)
     for p in regz:
         subprocess.run(["gzip", "-kf9", str(p)], check=True)
+        source_stat = p.stat()
+        os.utime(
+            p.with_name(p.name + ".gz"),
+            ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns),
+        )
     print(f"v{current} -> v{new} en {len(touched)} archivos · {len(regz)} gz regenerados")
 
 

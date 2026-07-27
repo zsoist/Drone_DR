@@ -232,6 +232,24 @@ class VolarMobileHudContractTests(unittest.TestCase):
         )
         self.assertEqual([point["id"] for point in points], [11, 12, 13])
 
+    def test_rotation_metrics_swap_orientation_and_can_restore_the_exact_profile(self):
+        portrait = browser_matrix.device_metrics_for("mobile_portrait")
+        rotated = browser_matrix.device_metrics_for("mobile_portrait", rotated=True)
+
+        self.assertEqual(
+            (portrait["width"], portrait["height"], portrait["screenOrientation"]),
+            (390, 844, {"type": "portraitPrimary", "angle": 0}),
+        )
+        self.assertEqual(
+            (rotated["width"], rotated["height"], rotated["screenOrientation"]),
+            (844, 390, {"type": "landscapePrimary", "angle": 90}),
+        )
+        self.assertEqual(
+            browser_matrix.device_metrics_for("mobile_portrait"),
+            portrait,
+            "reapplying the original profile must be an exact restoration",
+        )
+
     def test_partial_touch_release_dispatches_only_the_lifted_contact(self):
         class FakeCdp:
             def __init__(self):

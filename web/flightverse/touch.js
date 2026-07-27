@@ -125,6 +125,11 @@ export function createTouchSticks(host, options = {}) {
         active,
       };
     },
+    reset() {
+      if (disposed) return;
+      left.reset();
+      right.reset();
+    },
     setEnabled(active) {
       if (disposed) return;
       enabled = !!active;

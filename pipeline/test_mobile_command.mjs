@@ -30,11 +30,11 @@ class FakeElement extends EventTarget {
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   focus() { this.focusCount += 1; }
   addEventListener(type, handler, options) {
-    this.listenerAdds.push({ type, handler });
+    this.listenerAdds.push({ type, handler, options });
     super.addEventListener(type, handler, options);
   }
   removeEventListener(type, handler, options) {
-    this.listenerRemovals.push({ type, handler });
+    this.listenerRemovals.push({ type, handler, options });
     super.removeEventListener(type, handler, options);
   }
   setPointerCapture(pointerId) { this.captures.add(pointerId); }
@@ -307,6 +307,7 @@ test('weapon picker closes on outside pointer, Escape, and orientation change', 
   picker.open();
   eventRoot.dispatchEvent(cancelableEvent('pointerdown', outside));
   assert.equal(picker.active(), false);
+  assert.equal(trigger.focusCount, 0, 'pointer dismissal must let the tapped control take focus');
 
   picker.open();
   const escape = new Event('keydown', { cancelable: true });
@@ -314,11 +315,30 @@ test('weapon picker closes on outside pointer, Escape, and orientation change', 
   eventRoot.dispatchEvent(escape);
   assert.equal(escape.defaultPrevented, true);
   assert.equal(picker.active(), false);
+  assert.equal(trigger.focusCount, 1, 'Escape restores focus to the picker trigger');
 
   picker.open();
   eventRoot.defaultView.dispatchEvent(new Event('orientationchange'));
   assert.equal(picker.active(), false);
-  assert.equal(trigger.focusCount, 3);
+  assert.equal(trigger.focusCount, 1, 'rotation does not move focus to an obsolete screen position');
+});
+
+test('weapon picker observes outside pointerdown in capture before Fire can stop bubbling', async () => {
+  const { trigger, eventRoot, picker } = await pickerHarness();
+  const outsideRegistration = eventRoot.listenerAdds.find(({ type }) => type === 'pointerdown');
+  assert.equal(outsideRegistration.options?.capture, true);
+
+  picker.open();
+  eventRoot.dispatchEvent(cancelableEvent('pointerdown', new FakeElement()));
+  assert.equal(picker.active(), false);
+
+  picker.dispose();
+  const outsideRemoval = eventRoot.listenerRemovals.find(({ type }) => type === 'pointerdown');
+  assert.equal(
+    outsideRemoval.options,
+    outsideRegistration.options,
+    'capture listener must be removed with the identical option object',
+  );
 });
 
 test('weapon picker ignores disabled choices and keeps its selection surface open', async () => {
