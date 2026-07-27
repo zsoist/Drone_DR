@@ -10,6 +10,10 @@ import aerobrain_server
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
 COMPRESSIBLE_SUFFIXES = {".css", ".html", ".js", ".json", ".svg"}
+MANIFEST_LINK = (
+    '<link rel="manifest" href="/manifest.json" '
+    'crossorigin="use-credentials">'
+)
 
 
 def gzip_pair_issues(web_root: Path) -> list[str]:
@@ -93,6 +97,32 @@ class StaticGzipFreshnessTests(unittest.TestCase):
 
     def test_repository_sidecars_are_complete_identical_and_not_older(self):
         self.assertEqual(gzip_pair_issues(WEB), [])
+
+    def test_every_manifest_link_includes_session_credentials_and_fresh_gzip(self):
+        pages = []
+        for page in sorted(WEB.rglob("*.html")):
+            links = [
+                line.strip()
+                for line in page.read_text().splitlines()
+                if 'rel="manifest"' in line
+            ]
+            if not links:
+                continue
+            pages.append(page.relative_to(WEB))
+            self.assertEqual(
+                links,
+                [MANIFEST_LINK],
+                f"{page.relative_to(WEB)} must send the secure session cookie",
+            )
+            sidecar = page.with_name(page.name + ".gz")
+            self.assertTrue(sidecar.is_file(), f"missing {sidecar.relative_to(WEB)}")
+            self.assertEqual(gzip.decompress(sidecar.read_bytes()), page.read_bytes())
+            self.assertGreaterEqual(
+                sidecar.stat().st_mtime_ns,
+                page.stat().st_mtime_ns,
+                f"stale {sidecar.relative_to(WEB)}",
+            )
+        self.assertTrue(pages, "repository must contain Web App Manifest links")
 
     def test_pair_audit_fails_closed_for_missing_orphan_stale_and_mismatched_sidecars(self):
         with tempfile.TemporaryDirectory() as folder:
