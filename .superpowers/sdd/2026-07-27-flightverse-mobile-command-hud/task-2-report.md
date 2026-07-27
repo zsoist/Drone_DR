@@ -8,6 +8,9 @@ Implemented Task 2 on `codex/scene-ops-stability` from base
 Implementation commit:
 `bf722fad` (`feat: compact Flightverse mobile HUD`).
 
+Review correction commit:
+`075e78e8` (`fix: preserve Flightverse fire pointer ownership`).
+
 The coarse-pointer Flightverse surface now has:
 
 - a compact `#vl-command-hud`;
@@ -74,6 +77,54 @@ Result:
 - diff check: clean;
 - pre-commit smoke hook: green.
 
+## Review correction — multitouch fire ownership
+
+Review found that `volar.js` still registered a window-level pointer-up handler.
+While Fire pointer A was held, a stick/secondary pointer B could bubble its
+release to that handler and clear the active fire state.
+
+The correction replaced the global release path with
+`createFirePointerBindings()`, the binding used directly by `volar.js` for both
+the desktop `#vl-fire` button and mobile `#vl-trigger`. Each binding releases
+only its own captured pointer. `releaseFiring()` also rejects a pointer event
+whose ID differs from `triggerState.pointerId`. Keyboard ownership remains a
+separate source and was not changed.
+
+Review RED:
+
+```text
+node --test pipeline/test_mobile_command.mjs
+python3 -m unittest \
+  pipeline.test_volar_mobile.VolarMobileHudContractTests.test_fire_control_owns_pointer_gesture_and_is_clearly_named -v
+```
+
+Observed expected failures:
+
+- `TypeError: createFirePointerBindings is not a function`;
+- the volar wiring contract found the old global unowned pointer-up path.
+
+Review GREEN after the single v307→v308 bump:
+
+```text
+node --test pipeline/test_mobile_command.mjs pipeline/test_touch_controls.mjs
+python3 -m unittest pipeline.test_volar_mobile -v
+node --check web/volar.js web/flightverse/mobile-command.js
+PYTHONPATH=/tmp/aerobrain-testdeps python3 pipeline/test_smoke.py
+PYTHONPATH=pipeline:/tmp/aerobrain-testdeps \
+  python3 -m unittest pipeline.test_static_gzip_freshness -v
+git diff --check
+```
+
+Result:
+
+- 28 Node tests passed, including
+  `Flightverse fire wiring keeps Fire A held when stick B releases`;
+- 29 Python mobile HUD contracts passed;
+- JavaScript syntax checks passed;
+- full smoke reported `TODOS LOS TESTS PASAN`;
+- gzip freshness passed 4/4;
+- diff check and pre-commit smoke passed.
+
 ## Files
 
 Behavior and tests:
@@ -86,7 +137,8 @@ Behavior and tests:
 
 Release mechanics:
 
-- web fingerprint bumped exactly once from v306 to v307;
+- initial implementation fingerprint bumped exactly once from v306 to v307;
+- review correction fingerprint bumped exactly once from v307 to v308;
 - all fingerprint-bearing files under `web/` were updated mechanically;
 - gzip sidecars were regenerated, including
   `web/flightverse/mobile-command.js.gz`, `web/volar.js.gz`, and
