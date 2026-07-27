@@ -135,11 +135,20 @@ def touch_point(pointer_id: int, x: float, y: float) -> dict:
 
 
 def dispatch_touches(cdp, event_type: str, points: list[dict]):
-    """Dispatch a touch transition with the complete post-transition active set."""
+    """Dispatch a CDP touch transition.
+
+    touchStart/touchMove carry the active points. touchEnd carries the points
+    being lifted; Chrome keeps all omitted contacts active.
+    """
     cdp.send("Input.dispatchTouchEvent", {
         "type": event_type,
         "touchPoints": points,
     })
+
+
+def release_touches(cdp, points: list[dict]):
+    """Lift exactly these CDP contacts while preserving omitted contacts."""
+    dispatch_touches(cdp, "touchEnd", points)
 
 
 def synthesize_tap(cdp, x: float, y: float, *, tap_count: int = 1,
@@ -157,6 +166,50 @@ def command_hud_screenshot_path(viewport: str, state: str) -> Path:
     if state not in {"closed", "weapons", "menu"}:
         raise ValueError(f"estado de captura táctil inválido: {state}")
     return QA_DIR / f"matrix-volar-{viewport}-{state}.png"
+
+
+def apply_safe_area_override(cdp) -> dict:
+    """Apply and resolve a real non-zero CDP safe-area emulation."""
+    requested = {"top": 17, "right": 13, "bottom": 23, "left": 11}
+    try:
+        cdp.send("Emulation.setSafeAreaInsetsOverride", {"insets": requested})
+    except Exception as exc:
+        return {
+            "supported": False,
+            "requested": requested,
+            "resolved": {},
+            "violations": [],
+            "error": repr(exc),
+        }
+    cdp.pump(0.1)
+    resolved = cdp.eval(js("""
+      let probe=document.querySelector('#task3-safe-area-probe');
+      if (!probe) {
+        probe=document.createElement('div');
+        probe.id='task3-safe-area-probe';
+        probe.style.cssText=[
+          'position:fixed','visibility:hidden','pointer-events:none',
+          'padding-top:env(safe-area-inset-top)',
+          'padding-right:env(safe-area-inset-right)',
+          'padding-bottom:env(safe-area-inset-bottom)',
+          'padding-left:env(safe-area-inset-left)',
+        ].join(';');
+        document.body.append(probe);
+      }
+      const style=getComputedStyle(probe);
+      return {
+        top:parseFloat(style.paddingTop) || 0,
+        right:parseFloat(style.paddingRight) || 0,
+        bottom:parseFloat(style.paddingBottom) || 0,
+        left:parseFloat(style.paddingLeft) || 0,
+      };
+    """))
+    return {
+        "supported": True,
+        "requested": requested,
+        "resolved": resolved,
+        "violations": [],
+    }
 
 
 def element_center(cdp, selector: str) -> dict:
@@ -558,7 +611,7 @@ def touch_command_geometry(cdp, state: str) -> dict:
         weapon:document.querySelector('#vl-weapon-toggle'),
         picker:document.querySelector('#vl-weapon-picker'),
         menu:document.querySelector('#vl-fab'),
-        sheetScrim:document.querySelector('#vl-dock-scrim'),
+        sheetScrim:document.querySelector('#vl-overlay-scrim'),
         sheet:document.querySelector('#vl-dock'),
       }};
       const boxes = Object.fromEntries(Object.entries(elements)
@@ -597,6 +650,39 @@ def touch_command_geometry(cdp, state: str) -> dict:
         boxes.sheet.left >= viewport.left - 1 && boxes.sheet.top >= viewport.top - 1
         && boxes.sheet.right <= viewport.right + 1
         && boxes.sheet.bottom <= viewport.bottom + 1);
+      const probe=document.querySelector('#task3-safe-area-probe');
+      const probeStyle=probe ? getComputedStyle(probe) : null;
+      const resolvedSafeArea={{
+        top:parseFloat(probeStyle?.paddingTop) || 0,
+        right:parseFloat(probeStyle?.paddingRight) || 0,
+        bottom:parseFloat(probeStyle?.paddingBottom) || 0,
+        left:parseFloat(probeStyle?.paddingLeft) || 0,
+      }};
+      const safeNames=['leftBase','rightBase','fire','weapon','picker','menu'];
+      const safeViolations=safeNames.filter(name => {{
+        const r=boxes[name];
+        return r && (
+          r.left < viewport.left + resolvedSafeArea.left - 1
+          || r.top < viewport.top + resolvedSafeArea.top - 1
+          || r.right > viewport.right - resolvedSafeArea.right + 1
+          || r.bottom > viewport.bottom - resolvedSafeArea.bottom + 1
+        );
+      }});
+      if (boxes.sheet) {{
+        const style=getComputedStyle(elements.sheet);
+        const padding={{
+          top:parseFloat(style.paddingTop) || 0,
+          right:parseFloat(style.paddingRight) || 0,
+          bottom:parseFloat(style.paddingBottom) || 0,
+          left:parseFloat(style.paddingLeft) || 0,
+        }};
+        if (boxes.sheet.top < viewport.top + resolvedSafeArea.top - 1
+            || padding.right < resolvedSafeArea.right
+            || padding.bottom < resolvedSafeArea.bottom
+            || padding.left < resolvedSafeArea.left) {{
+          safeViolations.push('sheet');
+        }}
+      }}
       return {{
         state, boxes, collisions, outOfBounds, smallTargets, viewport,
         orientation:viewport.width >= viewport.height ? 'landscape' : 'portrait',
@@ -604,6 +690,8 @@ def touch_command_geometry(cdp, state: str) -> dict:
         sheetVisible:visible(elements.sheet),
         commandHidden, focusInside, sheetInBounds,
         safeArea:{{
+          resolved:resolvedSafeArea,
+          violations:safeViolations,
           leftGap:Math.min(...Object.values(boxes).map(r => r.left - viewport.left)),
           rightGap:Math.min(...Object.values(boxes).map(r => viewport.right - r.right)),
           topGap:Math.min(...Object.values(boxes).map(r => r.top - viewport.top)),
@@ -644,6 +732,50 @@ def geometry_failures(geometry: dict) -> list[str]:
     return failures
 
 
+def safe_area_failures(evidence: dict) -> list[str]:
+    if not evidence.get("supported"):
+        return [f"CDP safe-area override no soportado: {evidence.get('error', 'sin detalle')}"]
+    resolved = evidence.get("resolved") or {}
+    if not all((resolved.get(edge) or 0) > 0 for edge in ("top", "right", "bottom", "left")):
+        return ["safe-area env no resolvió insets no-cero"]
+    if evidence.get("violations"):
+        return [f"controles/sheet invaden safe-area: {evidence['violations']}"]
+    return []
+
+
+def base_acceptance_failures(evidence: dict) -> list[str]:
+    failures = []
+    focus = evidence.get("focusTrap") or {}
+    if not all(focus.get(edge) for edge in ("forward", "backward", "reentry")):
+        failures.append("focus trap incompleto")
+    inert = evidence.get("inert") or {}
+    if not inert.get("canvas") or not inert.get("combat"):
+        failures.append("canvas/combate no quedaron inert")
+    if not evidence.get("heldMgCancelled"):
+        failures.append("held MG no fue cancelado al abrir Menú")
+    if not evidence.get("neutralWhileOpen"):
+        failures.append("input de vuelo no quedó neutral bajo overlay")
+    hotkeys = evidence.get("hotkeys") or {}
+    if not hotkeys.get("blocked") or not hotkeys.get("restored"):
+        failures.append("hotkeys no se bloquearon/restauraron")
+    if not evidence.get("repressWorked"):
+        failures.append("Fire no aceptó repress tras cerrar Menú")
+    scrim = evidence.get("scrim") or {}
+    if not scrim.get("visible") or not scrim.get("outsideDismissed"):
+        failures.append("scrim/cierre exterior inválido")
+    sheets = evidence.get("sheets") or {}
+    if not sheets.get("actionsComplete") or not sheets.get("targetsLarge"):
+        failures.append("acciones/tap targets de sheets incompletos")
+    if not evidence.get("exclusiveOverlays"):
+        failures.append("overlays no fueron exclusivos")
+    if not evidence.get("cameraCycle"):
+        failures.append("ciclo de cámara móvil inválido")
+    chase = evidence.get("chaseHud") or {}
+    if chase.get("collisions") or chase.get("outOfBounds"):
+        failures.append("HUD chase solapado/fuera de bounds")
+    return failures
+
+
 def wait_weapon_ready(cdp, timeout: int = 5):
     return wait_for(
         cdp,
@@ -679,8 +811,510 @@ def select_weapon_touch(cdp, key: str, pointer_id: int):
     return bool(selected)
 
 
+def run_mobile_base_acceptance(cdp, viewport: str) -> dict:
+    """Retain the established mobile overlay, hotkey, sheet, and chase gates."""
+    def key_event(code: str, key: str, down: bool, modifiers: int = 0):
+        cdp.send("Input.dispatchKeyEvent", {
+            "type": "rawKeyDown" if down else "keyUp",
+            "code": code,
+            "key": key,
+            "windowsVirtualKeyCode": ord(key.upper()) if len(key) == 1 else 9,
+            "modifiers": modifiers,
+        })
+
+    wait_weapon_ready(cdp)
+    select_weapon_touch(cdp, "mg", 950)
+    wait_weapon_ready(cdp)
+    trigger = element_center(cdp, "#vl-trigger")
+    held_point = touch_point(951, trigger["x"], trigger["y"])
+    dispatch_touches(cdp, "touchStart", [held_point])
+    cdp.pump(0.22)
+    held_before_menu = cdp.eval(js("""
+      return {
+        fired:window.__volar.weapons.fired,
+        trigger:window.__volar.weaponState.trigger,
+      };
+    """))
+    opened = cdp.eval(js("""
+      const menuFab=document.querySelector('#vl-fab');
+      menuFab.focus();
+      menuFab.click();
+      const menu=document.querySelector('#vl-dock');
+      const sample=window.__volar.controls?.lastInput || {};
+      return {
+        fired:window.__volar.weapons.fired,
+        trigger:window.__volar.weaponState.trigger,
+        rig:window.__volar.camera.rig,
+        weapon:window.__volar.weaponState.weapon,
+        recText:document.querySelector('#vl-rec').textContent,
+        recOn:document.querySelector('#vl-rec').classList.contains('on'),
+        overlay:window.__volar.controls?.overlay,
+        focusInside:menu.contains(document.activeElement),
+        role:menu.getAttribute('role'),
+        modal:menu.getAttribute('aria-modal'),
+        canvasInert:document.querySelector('.vl-canvas').inert,
+        combatInert:document.querySelector('#vl-command-hud').inert,
+        neutral:['fwd','strafe','yaw','lift','mouseDX','mouseDY']
+          .every(key => (sample[key] || 0) === 0)
+          && !sample.boost && !sample.brake,
+      };
+    """))
+    # The overlay already cancelled runtime ownership. Cancel the physical CDP
+    # set: touchEnd is retargeted to the newly focused close button and Chrome
+    # synthesizes an unwanted click, while touchCancel cannot activate it.
+    dispatch_touches(cdp, "touchCancel", [])
+    cdp.pump(0.45)
+
+    focus_edges = cdp.eval(js("""
+      const menu=document.querySelector('#vl-dock');
+      const focusable=[...menu.querySelectorAll(
+        'button:not([disabled]),[href],input:not([disabled]),'
+        + 'select:not([disabled]),textarea:not([disabled])'
+      )].filter(node => !node.inert && node.getAttribute('aria-hidden') !== 'true');
+      focusable.at(-1).focus();
+      return { first:focusable[0].id, last:focusable.at(-1).id };
+    """))
+    key_event("Tab", "Tab", True)
+    key_event("Tab", "Tab", False)
+    tab_forward = cdp.eval(js("return document.activeElement.id"))
+    cdp.eval(js(
+        f"document.querySelector('#{focus_edges['first']}').focus(); return true"
+    ))
+    key_event("Tab", "Tab", True, modifiers=8)
+    key_event("Tab", "Tab", False, modifiers=8)
+    tab_backward = cdp.eval(js("return document.activeElement.id"))
+    cdp.eval(js("document.querySelector('#vl-share').focus(); return true"))
+    key_event("Tab", "Tab", True)
+    key_event("Tab", "Tab", False)
+    tab_reentry = cdp.eval(js("return document.activeElement.id"))
+
+    blocked_codes = (
+        ("KeyW", "w"), ("KeyX", "x"), ("KeyZ", "z"), ("KeyC", "c")
+    )
+    for code, key in blocked_codes:
+        key_event(code, key, True)
+    key_event("KeyV", "v", True)
+    key_event("KeyV", "v", False)
+    cdp.pump(0.55)
+    blocked = cdp.eval(js("""
+      const controls=window.__volar.controls || {};
+      const sample=controls.lastInput || {};
+      return {
+        fired:window.__volar.weapons.fired,
+        trigger:window.__volar.weaponState.trigger,
+        rig:window.__volar.camera.rig,
+        weapon:window.__volar.weaponState.weapon,
+        recText:document.querySelector('#vl-rec').textContent,
+        recOn:document.querySelector('#vl-rec').classList.contains('on'),
+        controls,
+        neutral:['fwd','strafe','yaw','lift','mouseDX','mouseDY']
+          .every(key => (sample[key] || 0) === 0)
+          && !sample.boost && !sample.brake,
+      };
+    """))
+    for code, key in blocked_codes:
+        key_event(code, key, False)
+
+    menu_sheet = cdp.eval(js("""
+      const visible=el => {
+        if (!el || !el.getClientRects().length
+            || el.closest('[hidden],[inert],[aria-hidden="true"]')) return false;
+        for (let node=el; node && node.nodeType === 1; node=node.parentElement) {
+          const style=getComputedStyle(node);
+          if (style.display === 'none' || style.visibility === 'hidden'
+              || parseFloat(style.opacity || '1') <= .05) return false;
+        }
+        return true;
+      };
+      const targetData=panel => {
+        const buttons=[...panel.querySelectorAll('button')].filter(visible);
+        return {
+          count:buttons.length,
+          small:buttons.filter(button => {
+            const r=button.getBoundingClientRect();
+            return r.width < 44 || r.height < 44;
+          }).map(button => button.id || button.textContent.trim()),
+          overflow:panel.scrollWidth - panel.clientWidth,
+        };
+      };
+      const menu=document.querySelector('#vl-dock');
+      const scrim=document.querySelector('#vl-overlay-scrim');
+      const menuTargets=targetData(menu);
+      const scrimVisible=visible(scrim) && scrim.classList.contains('open')
+        && scrim.getAttribute('aria-hidden') === 'false';
+      document.querySelector('#vl-mode').click();
+      const menuPersistent=visible(menu);
+      const cameraBefore=window.__volar.camera.rig;
+      document.querySelector('#vl-rig').click();
+      const cameraAfter=window.__volar.camera.rig;
+      const menuOnly=visible(menu)
+        && !visible(document.querySelector('#vl-combat'))
+        && !visible(document.querySelector('#vl-grade'));
+      document.querySelector('#vl-armamento').click();
+      return {
+        menuTargets,scrimVisible,menuPersistent,
+        cameraBefore,cameraAfter,menuOnly,
+      };
+    """))
+    wait_for(
+        cdp,
+        js("""
+          const panel=document.querySelector('#vl-combat');
+          return panel.classList.contains('open')
+            && parseFloat(getComputedStyle(panel).opacity || '1') > .05;
+        """),
+        timeout=4,
+        label="sheet Combate estable",
+    )
+    combat_sheet = cdp.eval(js("""
+      const visible=el => {
+        if (!el || !el.getClientRects().length
+            || el.closest('[hidden],[inert],[aria-hidden="true"]')) return false;
+        for (let node=el; node && node.nodeType === 1; node=node.parentElement) {
+          const style=getComputedStyle(node);
+          if (style.display === 'none' || style.visibility === 'hidden'
+              || parseFloat(style.opacity || '1') <= .05) return false;
+        }
+        return true;
+      };
+      const combat=document.querySelector('#vl-combat');
+      const menu=document.querySelector('#vl-dock');
+      const grade=document.querySelector('#vl-grade');
+      const buttons=[...combat.querySelectorAll('button')].filter(visible);
+      const combatTargets={
+        count:buttons.length,
+        small:buttons.filter(button => {
+          const r=button.getBoundingClientRect();
+          return r.width < 44 || r.height < 44;
+        }).map(button => button.id || button.textContent.trim()),
+        overflow:combat.scrollWidth - combat.clientWidth,
+      };
+      const combatOnly=visible(combat) && !visible(menu) && !visible(grade);
+      const combatSemantics={
+        role:combat.getAttribute('role'),
+        modal:combat.getAttribute('aria-modal'),
+        canvasInert:document.querySelector('.vl-canvas').inert,
+        commandInert:document.querySelector('#vl-command-hud').inert,
+      };
+      return {combatTargets,combatOnly,combatSemantics};
+    """))
+    cdp.eval(js("""
+      document.querySelector('#vl-combat-close').click();
+      document.querySelector('#vl-fab').click();
+      return true;
+    """))
+    wait_for(
+        cdp,
+        js("""
+          const panel=document.querySelector('#vl-dock');
+          return panel.classList.contains('open')
+            && parseFloat(getComputedStyle(panel).opacity || '1') > .05;
+        """),
+        timeout=4,
+        label="Menú reabierto",
+    )
+    image_transition = cdp.eval(js("""
+      const visible=el => !!el && el.getClientRects().length
+        && getComputedStyle(el).display !== 'none'
+        && getComputedStyle(el).visibility !== 'hidden'
+        && parseFloat(getComputedStyle(el).opacity || '1') > .05;
+      const menu=document.querySelector('#vl-dock');
+      const combat=document.querySelector('#vl-combat');
+      const grade=document.querySelector('#vl-grade');
+      const menuOnlyAgain=visible(menu) && !visible(combat) && !visible(grade);
+      document.querySelector('#vl-ajustes').click();
+      return {menuOnlyAgain};
+    """))
+    wait_for(
+        cdp,
+        js("""
+          const panel=document.querySelector('#vl-grade');
+          return panel.classList.contains('show')
+            && parseFloat(getComputedStyle(panel).opacity || '1') > .05;
+        """),
+        timeout=4,
+        label="overlay Imagen estable",
+    )
+    image_only = cdp.eval(js("""
+      const visible=el => !!el && el.getClientRects().length
+        && getComputedStyle(el).display !== 'none'
+        && getComputedStyle(el).visibility !== 'hidden'
+        && parseFloat(getComputedStyle(el).opacity || '1') > .05;
+      return visible(document.querySelector('#vl-grade'))
+        && !visible(document.querySelector('#vl-dock'))
+        && !visible(document.querySelector('#vl-combat'));
+    """))
+    sheets = {
+        **menu_sheet,
+        **combat_sheet,
+        **image_transition,
+        "imageOnly": image_only,
+    }
+
+    drag = cdp.eval(js("""
+      const panel=document.querySelector('#vl-grade');
+      const handle=panel.querySelector('.vl-grade-drag');
+      const p=panel.getBoundingClientRect(), h=handle.getBoundingClientRect();
+      return {
+        x:h.left+h.width*.35,y:h.top+h.height/2,
+        left:p.left,top:p.top,height:p.height,viewport:innerHeight,
+      };
+    """))
+    drag_start = touch_point(952, drag["x"], drag["y"])
+    drag_end = touch_point(952, drag["x"] + 42, drag["y"] - 54)
+    dispatch_touches(cdp, "touchStart", [drag_start])
+    dispatch_touches(cdp, "touchMove", [drag_end])
+    release_touches(cdp, [drag_end])
+    cdp.pump(0.15)
+    image_drag = cdp.eval(js("""
+      const panel=document.querySelector('#vl-grade');
+      const r=panel.getBoundingClientRect(), vv=visualViewport;
+      return {
+        left:r.left,top:r.top,right:r.right,bottom:r.bottom,
+        vl:vv?.offsetLeft||0,vt:vv?.offsetTop||0,
+        vw:vv?.width||innerWidth,vh:vv?.height||innerHeight,
+        visible:getComputedStyle(panel).display !== 'none',
+      };
+    """))
+    image_drag["moved"] = (
+        abs(image_drag["left"] - drag["left"]) >= 15
+        or abs(image_drag["top"] - drag["top"]) >= 15
+    )
+    image_drag["compact"] = drag["height"] <= drag["viewport"] * 0.48
+    image_drag["inBounds"] = (
+        image_drag["visible"]
+        and image_drag["left"] >= image_drag["vl"] - 2
+        and image_drag["top"] >= image_drag["vt"] - 2
+        and image_drag["right"] <= image_drag["vl"] + image_drag["vw"] + 2
+        and image_drag["bottom"] <= image_drag["vt"] + image_drag["vh"] + 2
+    )
+    if not all((image_drag["moved"], image_drag["compact"], image_drag["inBounds"])):
+        raise RuntimeError(
+            f"Imagen no conservó drag compacto/bounded: before={drag} after={image_drag}"
+        )
+    cdp.eval(js("""
+      document.querySelector('#gr-close').click();
+      document.querySelector('#vl-fab').focus();
+      document.querySelector('#vl-fab').click();
+      return true;
+    """))
+    cdp.pump(0.08)
+    outside_before = cdp.eval(js("""
+      const scrim=document.querySelector('#vl-overlay-scrim');
+      return {
+        visible:scrim.classList.contains('open')
+          && scrim.getAttribute('aria-hidden') === 'false',
+        menuOpen:document.querySelector('#vl-dock').classList.contains('open'),
+      };
+    """))
+    touch_tap(cdp, 953, {"x": 3, "y": 3})
+    outside_after = cdp.eval(js("""
+      return {
+        dismissed:!document.querySelector('#vl-dock').classList.contains('open')
+          && document.querySelector('#vl-overlay-scrim')
+            .getAttribute('aria-hidden') === 'true',
+        focusRestored:document.activeElement === document.querySelector('#vl-fab'),
+      };
+    """))
+
+    restored_before = cdp.eval(js("""
+      return {
+        rig:window.__volar.camera.rig,
+        weapon:window.__volar.weaponState.weapon,
+        recText:document.querySelector('#vl-rec').textContent,
+        recOn:document.querySelector('#vl-rec').classList.contains('on'),
+      };
+    """))
+    key_event("KeyW", "w", True)
+    for code, key in (("KeyZ", "z"), ("KeyC", "c"), ("KeyV", "v")):
+        key_event(code, key, True)
+        key_event(code, key, False)
+    cdp.pump(0.2)
+    restored_after = cdp.eval(js("""
+      const sample=window.__volar.controls?.lastInput || {};
+      return {
+        rig:window.__volar.camera.rig,
+        weapon:window.__volar.weaponState.weapon,
+        recText:document.querySelector('#vl-rec').textContent,
+        recOn:document.querySelector('#vl-rec').classList.contains('on'),
+        flightActive:Math.abs(sample.fwd || 0) > 0,
+      };
+    """))
+    key_event("KeyW", "w", False)
+    if restored_after["recOn"]:
+        key_event("KeyV", "v", True)
+        key_event("KeyV", "v", False)
+        cdp.pump(0.12)
+
+    wait_weapon_ready(cdp)
+    select_weapon_touch(cdp, "mg", 954)
+    wait_weapon_ready(cdp)
+    repress_before = cdp.eval(js("return window.__volar.weapons.fired"))
+    touch_tap(cdp, 955, trigger)
+    repress_after = cdp.eval(js("""
+      return {
+        fired:window.__volar.weapons.fired,
+        held:window.__volar.weaponState.trigger.held,
+      };
+    """))
+
+    chase_hud = cdp.eval(js("""
+      const visible=el => !!el && getComputedStyle(el).display !== 'none'
+        && getComputedStyle(el).visibility !== 'hidden' && el.getClientRects().length;
+      const rect=el => {
+        const r=el.getBoundingClientRect();
+        return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,
+          width:r.width,height:r.height};
+      };
+      const hit=(a,b) => a.left < b.right - 1 && a.right > b.left + 1
+        && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+      const nodes=[
+        ['back',document.querySelector('.vl-corner.tl .vl-back')],
+        ['share',document.querySelector('#vl-share')],
+        ['scene',document.querySelector('#vl-scene')],
+        ['telemetry',document.querySelector('.vl-corner.tr')],
+        ['compass',document.querySelector('.vl-compass')],
+        ['challenge',document.querySelector('#vl-challenge')],
+        ['goto',document.querySelector('#vl-goto')],
+      ].filter(([,el]) => visible(el)
+        && (el.matches('canvas,.vl-compass') || el.textContent.trim()));
+      const collisions=[];
+      for (let i=0;i<nodes.length;i+=1) for (let j=i+1;j<nodes.length;j+=1) {
+        if (hit(rect(nodes[i][1]),rect(nodes[j][1])))
+          collisions.push(`${nodes[i][0]}:${nodes[j][0]}`);
+      }
+      const outOfBounds=nodes.filter(([,el]) => {
+        const r=rect(el), vv=visualViewport;
+        const left=vv?.offsetLeft||0, top=vv?.offsetTop||0;
+        const right=left+(vv?.width||innerWidth);
+        const bottom=top+(vv?.height||innerHeight);
+        return r.left < left-1 || r.top < top-1 || r.right > right+1
+          || r.bottom > bottom+1;
+      }).map(([name]) => name);
+      return {
+        rig:window.__volar.camera.rig,collisions,outOfBounds,
+        rects:Object.fromEntries(nodes.map(([name,el]) => [name,rect(el)])),
+      };
+    """))
+
+    focus_trap = {
+        "forward": tab_forward == focus_edges["first"],
+        "backward": tab_backward == focus_edges["last"],
+        "reentry": tab_reentry == focus_edges["first"],
+        "first": focus_edges["first"],
+        "last": focus_edges["last"],
+    }
+    hotkeys_blocked = (
+        blocked["rig"] == opened["rig"]
+        and blocked["weapon"] == opened["weapon"]
+        and blocked["recOn"] == opened["recOn"]
+        and blocked["recText"] == opened["recText"]
+        and blocked["fired"] == opened["fired"]
+    )
+    hotkeys_restored = (
+        restored_after["rig"] != restored_before["rig"]
+        and restored_after["weapon"] != restored_before["weapon"]
+        and (
+            restored_after["recOn"] != restored_before["recOn"]
+            or restored_after["recText"] != restored_before["recText"]
+        )
+        and restored_after["flightActive"]
+    )
+    evidence = {
+        "focusTrap": focus_trap,
+        "inert": {
+            "canvas": opened["canvasInert"],
+            "combat": opened["combatInert"],
+        },
+        "heldMgCancelled": (
+            held_before_menu["trigger"]["held"]
+            and not blocked["trigger"]["held"]
+            and blocked["fired"] == opened["fired"]
+        ),
+        "neutralWhileOpen": (
+            opened["neutral"]
+            and blocked["neutral"]
+            and blocked.get("controls", {}).get("keyboardKeys") == 0
+            and not blocked.get("controls", {}).get("inputEnabled", True)
+        ),
+        "hotkeys": {
+            "blocked": hotkeys_blocked,
+            "restored": hotkeys_restored,
+            "opened": opened,
+            "blockedState": blocked,
+            "restoredBefore": restored_before,
+            "restoredAfter": restored_after,
+        },
+        "repressWorked": (
+            repress_after["fired"] > repress_before
+            and not repress_after["held"]
+        ),
+        "repress": {
+            "before": repress_before,
+            "after": repress_after,
+        },
+        "scrim": {
+            "visible": sheets["scrimVisible"] and outside_before["visible"],
+            "outsideDismissed": (
+                outside_before["menuOpen"]
+                and outside_after["dismissed"]
+                and outside_after["focusRestored"]
+            ),
+        },
+        "sheets": {
+            "menu": sheets["menuTargets"],
+            "combat": sheets["combatTargets"],
+            "menuPersistent": sheets["menuPersistent"],
+            "actionsComplete": (
+                sheets["menuTargets"]["count"] >= 10
+                and sheets["combatTargets"]["count"] >= 6
+                and sheets["menuTargets"]["overflow"] <= 2
+                and sheets["combatTargets"]["overflow"] <= 2
+                and sheets["menuPersistent"]
+            ),
+            "targetsLarge": (
+                not sheets["menuTargets"]["small"]
+                and not sheets["combatTargets"]["small"]
+            ),
+        },
+        "exclusiveOverlays": all((
+            sheets["menuOnly"],
+            sheets["combatOnly"],
+            sheets["menuOnlyAgain"],
+            sheets["imageOnly"],
+        )),
+        "combatSemantics": sheets["combatSemantics"],
+        "cameraCycle": (
+            sheets["cameraBefore"] == "fpv"
+            and sheets["cameraAfter"] != sheets["cameraBefore"]
+        ),
+        "imageDrag": image_drag,
+        "chaseHud": chase_hud,
+        "viewport": viewport,
+    }
+    failures = base_acceptance_failures(evidence)
+    if not all((
+        opened["focusInside"],
+        opened["role"] == "dialog",
+        opened["modal"] == "true",
+        sheets["combatSemantics"]["role"] == "dialog",
+        sheets["combatSemantics"]["modal"] == "true",
+        sheets["combatSemantics"]["canvasInert"],
+        sheets["combatSemantics"]["commandInert"],
+    )):
+        failures.append("semántica modal/inert incompleta")
+    if failures:
+        raise RuntimeError("aceptación móvil base inválida: " + "; ".join(failures)
+                           + f" evidence={evidence}")
+    return evidence
+
+
 def run_touch_command_hud(cdp, viewport: str) -> dict:
     """Exercise Task 3's authoritative real-touch and geometry contracts."""
+    safe_area = apply_safe_area_override(cdp)
+    initial_safe_failures = safe_area_failures(safe_area)
+    if initial_safe_failures:
+        raise RuntimeError("; ".join(initial_safe_failures))
     cdp.eval(js("""
       window.__touchCommandGate = { selectstartCount:0 };
       document.addEventListener('selectstart', () => {
@@ -833,7 +1467,10 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     wait_weapon_ready(cdp)
     cdp.eval(js("""
       window.__touchOwnerLog = [];
-      for (const type of ['pointerdown','pointerup','pointercancel','lostpointercapture']) {
+      for (const type of [
+        'pointerdown','gotpointercapture','pointerup',
+        'pointercancel','lostpointercapture'
+      ]) {
         document.addEventListener(type, event => {
           if (event.target?.closest?.('#vl-trigger')) {
             window.__touchOwnerLog.push({
@@ -849,14 +1486,29 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     secondary = touch_point(815, trigger["x"] - 4, trigger["y"] - 4)
     dispatch_touches(cdp, "touchStart", [owner])
     cdp.pump(0.06)
+    owner_state = cdp.eval(js("""
+      return {
+        trigger:window.__volar.weaponState.trigger,
+        events:window.__touchOwnerLog.slice(),
+      };
+    """))
     dispatch_touches(cdp, "touchStart", [owner, secondary])
     cdp.pump(0.06)
-    # CDP touchEnd must be empty. Omitting the secondary point from a
-    # touchMove releases only that point while preserving the full active set.
-    dispatch_touches(cdp, "touchMove", [owner])
+    secondary_down = cdp.eval(js("""
+      return {
+        trigger:window.__volar.weaponState.trigger,
+        events:window.__touchOwnerLog.slice(),
+      };
+    """))
+    release_touches(cdp, [secondary])
     cdp.pump(0.12)
-    secondary_state = cdp.eval(js("return window.__volar.weaponState.trigger"))
-    dispatch_touches(cdp, "touchEnd", [])
+    secondary_released = cdp.eval(js("""
+      return {
+        trigger:window.__volar.weaponState.trigger,
+        events:window.__touchOwnerLog.slice(),
+      };
+    """))
+    release_touches(cdp, [owner])
     cdp.pump(0.12)
     owner_released = cdp.eval(js("""
       return {
@@ -864,13 +1516,64 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
         events:window.__touchOwnerLog,
       };
     """))
-    secondary_release_protected = (
-        secondary_state["held"] and not owner_released["trigger"]["held"]
+    pointer_downs = [
+        event for event in secondary_down["events"]
+        if event["type"] == "pointerdown"
+    ]
+    owner_pointer_id = owner_state["trigger"].get("pointerId")
+    secondary_pointer_id = (
+        pointer_downs[1]["pointerId"] if len(pointer_downs) > 1 else None
     )
-    if not secondary_release_protected:
+    secondary_events = secondary_released["events"]
+    owner_up_before_release = any(
+        event["type"] in ("pointerup", "pointercancel")
+        and event["pointerId"] == owner_pointer_id
+        for event in secondary_events
+    )
+    secondary_up = any(
+        event["type"] == "pointerup"
+        and event["pointerId"] == secondary_pointer_id
+        for event in secondary_events
+    )
+    final_events = owner_released["events"]
+    owner_up_index = next((
+        index for index, event in enumerate(final_events)
+        if event["type"] == "pointerup" and event["pointerId"] == owner_pointer_id
+    ), -1)
+    secondary_up_index = next((
+        index for index, event in enumerate(final_events)
+        if event["type"] == "pointerup" and event["pointerId"] == secondary_pointer_id
+    ), -1)
+    ownership = {
+        "ownerPointerId": owner_pointer_id,
+        "secondaryPointerId": secondary_pointer_id,
+        "owner": owner_state,
+        "secondaryDown": secondary_down,
+        "secondaryReleased": secondary_released,
+        "ownerReleased": owner_released,
+        "events": final_events,
+        "passed": (
+            owner_pointer_id is not None
+            and secondary_pointer_id is not None
+            and secondary_pointer_id != owner_pointer_id
+            and secondary_released["trigger"]["held"]
+            and secondary_released["trigger"]["pointerId"] == owner_pointer_id
+            and secondary_released["trigger"]["presses"]
+                == owner_state["trigger"]["presses"]
+            and secondary_released["trigger"]["accepted"]
+                == owner_state["trigger"]["accepted"]
+            and not owner_up_before_release
+            and secondary_up
+            and not owner_released["trigger"]["held"]
+            and secondary_up_index >= 0
+            and owner_up_index > secondary_up_index
+        ),
+    }
+    secondary_release_protected = ownership["passed"]
+    if not ownership["passed"]:
         raise RuntimeError(
             "segundo pointer liberó owner de Fire: "
-            f"secondary={secondary_state} ownerReleased={owner_released}"
+            f"{ownership}"
         )
 
     wait_weapon_ready(cdp)
@@ -982,12 +1685,36 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
         trigger:window.__volar.weaponState.trigger,
       };
     """))
-    # CDP requires touchEnd to carry an empty set, so it cannot lift only Fire.
-    # End the device set and immediately restore the two logical stick contacts
-    # before pumping another frame; the next sampled input must stay active.
-    dispatch_touches(cdp, "touchEnd", [])
-    dispatch_touches(cdp, "touchStart", [left_origin, right_origin])
-    dispatch_touches(cdp, "touchMove", [left_move, right_move])
+    cdp.eval(js("""
+      window.__threeTouchLog=[];
+      for (const type of [
+        'pointerdown','pointermove','pointerup','pointercancel',
+        'touchstart','touchmove','touchend','touchcancel'
+      ]) {
+        document.addEventListener(type, event => {
+          window.__threeTouchLog.push({
+            type,
+            pointerId:event.pointerId ?? null,
+            target:event.target?.id || event.target?.className || event.target?.tagName,
+            touches:event.touches
+              ? [...event.touches].map(touch => touch.identifier) : null,
+            changed:event.changedTouches
+              ? [...event.changedTouches].map(touch => touch.identifier) : null,
+          });
+        }, true);
+      }
+      return true;
+    """))
+    # For touchEnd CDP expects the contacts being lifted, not the survivors.
+    # Lift only Fire; the omitted stick IDs remain active in Chrome.
+    release_touches(cdp, [fire_point])
+    continued_left = touch_point(
+        901, left_move["x"] + 2, left_move["y"] - 2
+    )
+    continued_right = touch_point(
+        902, right_move["x"] - 2, right_move["y"] - 2
+    )
+    dispatch_touches(cdp, "touchMove", [continued_left, continued_right])
     cdp.pump(0.12)
     flight_after_fire = cdp.eval(js("""
       const raw=window.__volar.controls.lastInput;
@@ -995,9 +1722,10 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
       return {
         sample,
         trigger:window.__volar.weaponState.trigger,
+        events:window.__threeTouchLog.slice(),
       };
     """))
-    dispatch_touches(cdp, "touchEnd", [])
+    release_touches(cdp, [continued_left, continued_right])
     cdp.pump(0.15)
     all_released = cdp.eval(js("""
       const raw=window.__volar.controls.lastInput;
@@ -1010,11 +1738,21 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     axes = ("lift", "yaw", "fwd", "strafe")
     three_pointer = {
         "ids": [901, 902, 903],
-        "cdpRestartedRemaining": True,
+        "cdpRestartedRemaining": False,
         "beforeFired": three_before,
         "held": three_held,
         "flightAfterFireRelease": flight_after_fire,
         "allReleased": all_released,
+        "originalStickIdsPreserved": any(
+            event.get("type") == "touchend"
+            and event.get("changed") == [903]
+            and event.get("touches") == [901, 902]
+            for event in flight_after_fire["events"]
+        ) and any(
+            event.get("type") == "touchmove"
+            and event.get("touches") == [901, 902]
+            for event in flight_after_fire["events"]
+        ),
         "passed": (
             three_held["sample"]["active"]
             and abs(three_held["sample"]["lift"]) + abs(three_held["sample"]["fwd"]) > 0
@@ -1022,6 +1760,17 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
             and three_held["trigger"]["held"]
             and flight_after_fire["sample"]["active"]
             and not flight_after_fire["trigger"]["held"]
+            and any(
+                event.get("type") == "touchend"
+                and event.get("changed") == [903]
+                and event.get("touches") == [901, 902]
+                for event in flight_after_fire["events"]
+            )
+            and any(
+                event.get("type") == "touchmove"
+                and event.get("touches") == [901, 902]
+                for event in flight_after_fire["events"]
+            )
             and not all_released["sample"]["active"]
             and all(all_released["sample"][axis] == 0 for axis in axes)
             and not all_released["trigger"]["held"]
@@ -1075,6 +1824,22 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     if not all(menu_closed.values()):
         raise RuntimeError(f"Menú touch no cerró/restauró foco: {menu_closed}")
 
+    for geometry in (closed_geometry, picker_geometry, menu_geometry):
+        for violation in (geometry.get("safeArea") or {}).get("violations") or []:
+            safe_area["violations"].append(
+                f"{geometry.get('state')}:{violation}"
+            )
+    resolved_states = {
+        tuple(sorted(((geometry.get("safeArea") or {}).get("resolved") or {}).items()))
+        for geometry in (closed_geometry, picker_geometry, menu_geometry)
+    }
+    if len(resolved_states) != 1:
+        safe_area["violations"].append("resolved-insets-cambiaron-entre-estados")
+    final_safe_failures = safe_area_failures(safe_area)
+    if final_safe_failures:
+        raise RuntimeError("; ".join(final_safe_failures))
+    base_acceptance = run_mobile_base_acceptance(cdp, viewport)
+
     touch_command_hud = {
         "realTouch": True,
         "singleShot": single_shot,
@@ -1083,8 +1848,11 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
         "rapidDoubleTap": rapid_double_tap,
         "cancellation": cancellation,
         "secondaryReleaseProtected": secondary_release_protected,
+        "ownership": ownership,
         "threePointer": three_pointer,
         "gestureGuard": gesture,
+        "safeAreaOverride": safe_area,
+        "baseAcceptance": base_acceptance,
         "selection": {
             "weapon": "mg",
             "sticksAvailable": not closed_geometry.get("commandHidden"),
@@ -1259,6 +2027,17 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
             "visual": visual, **hud}
 
 
+def format_flightverse_result(result: dict) -> str:
+    detail = (
+        f"{result['fps']}fps"
+        if result.get("fps")
+        else f"{result['islas']} islas"
+    )
+    touch = result.get("touchCommandHud") or {}
+    suffix = " · touch=real" if touch.get("realTouch") else ""
+    return f"{result['surface']}/{result['viewport']}: ok · {detail}{suffix}"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("clip_id")
@@ -1304,19 +2083,7 @@ def main():
                         proc.kill()
                     profile.cleanup()
         for r in results:
-            print(f"{r['surface']}/{r['viewport']}: ok" + (f" · {r['fps']}fps" if r.get('fps') else f" · {r['islas']} islas"))
-            gate = (((r.get("touchLayout") or {}).get("weaponShot") or {})
-                    .get("overlayInputGate"))
-            if gate:
-                print("  overlay-input:"
-                      f" fired {gate['opened']['fired']}→{gate['blocked']['fired']}"
-                      f" stable={gate['firedStable']}"
-                      f" neutral={gate['flightInputNeutral']}"
-                      f" hotkeys={gate['hotkeysBlocked']}"
-                      f" record={gate['recordHotkeyBlocked']}"
-                      f" focus={gate['focusTrapped']}"
-                      f" record-resume={gate['recordHotkeyResumed']}"
-                      f" repress={gate['repressWorked']}")
+            print(format_flightverse_result(r))
         return
     results = run_matrix(args.clip_id, args.base_url, viewports, args.surface)
     for r in results:

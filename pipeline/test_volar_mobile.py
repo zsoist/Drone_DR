@@ -96,18 +96,29 @@ class VolarMobileHudContractTests(unittest.TestCase):
         self.assertLess(auto_input, overlay_neutral)
         self.assertLess(overlay_neutral, sampled_input)
         self.assertLess(sampled_input, drone_step)
-        matrix = (ROOT / "pipeline" / "browser_matrix.py").read_text()
-        for contract in (
-            "overlayInputGate",
-            "firedStable",
-            "flightInputNeutral",
-            "hotkeysBlocked",
-            "recordHotkeyBlocked",
-            "focusTrapped",
-            "recordHotkeyResumed",
-            "repressWorked",
-        ):
-            self.assertIn(contract, matrix)
+        self.assertTrue(callable(browser_matrix.run_mobile_base_acceptance))
+        self.assertEqual(
+            browser_matrix.base_acceptance_failures({
+                "focusTrap": {},
+                "inert": {},
+                "hotkeys": {},
+                "scrim": {},
+                "sheets": {},
+                "chaseHud": {},
+            }),
+            [
+                "focus trap incompleto",
+                "canvas/combate no quedaron inert",
+                "held MG no fue cancelado al abrir Menú",
+                "input de vuelo no quedó neutral bajo overlay",
+                "hotkeys no se bloquearon/restauraron",
+                "Fire no aceptó repress tras cerrar Menú",
+                "scrim/cierre exterior inválido",
+                "acciones/tap targets de sheets incompletos",
+                "overlays no fueron exclusivos",
+                "ciclo de cámara móvil inválido",
+            ],
+        )
 
     def test_legacy_touch_dom_cannot_restore_overlapping_combat_controls(self):
         self.assertIn(".vl-corner.br > .vl-weps", self.styles)
@@ -221,24 +232,71 @@ class VolarMobileHudContractTests(unittest.TestCase):
         )
         self.assertEqual([point["id"] for point in points], [11, 12, 13])
 
-    def test_browser_matrix_gates_real_touch_command_hud_evidence(self):
-        matrix = (ROOT / "pipeline" / "browser_matrix.py").read_text()
-        for contract in (
-            "Input.dispatchTouchEvent",
-            "Input.synthesizeTapGesture",
-            "selectstart",
-            "visualViewport.scale",
-            "touchCommandHud",
-            "threePointer",
-            "rapidDoubleTap",
-            "secondaryReleaseProtected",
-            "selectionText",
-            "tapHighlight",
-            "closedGeometry",
-            "pickerGeometry",
-            "menuGeometry",
-        ):
-            self.assertIn(contract, matrix)
+    def test_partial_touch_release_dispatches_only_the_lifted_contact(self):
+        class FakeCdp:
+            def __init__(self):
+                self.calls = []
+
+            def send(self, method, params):
+                self.calls.append((method, params))
+
+        cdp = FakeCdp()
+        fire = browser_matrix.touch_point(13, 300, 512)
+        browser_matrix.release_touches(cdp, [fire])
+
+        self.assertEqual(
+            cdp.calls,
+            [(
+                "Input.dispatchTouchEvent",
+                {"type": "touchEnd", "touchPoints": [fire]},
+            )],
+        )
+
+    def test_task3_validators_reject_missing_runtime_acceptance(self):
+        valid_base = {
+            "focusTrap": {"forward": True, "backward": True, "reentry": True},
+            "inert": {"canvas": True, "combat": True},
+            "heldMgCancelled": True,
+            "neutralWhileOpen": True,
+            "hotkeys": {"blocked": True, "restored": True},
+            "repressWorked": True,
+            "scrim": {"visible": True, "outsideDismissed": True},
+            "sheets": {"actionsComplete": True, "targetsLarge": True},
+            "exclusiveOverlays": True,
+            "cameraCycle": True,
+            "chaseHud": {"collisions": [], "outOfBounds": []},
+        }
+        self.assertEqual(browser_matrix.base_acceptance_failures(valid_base), [])
+
+        broken = {**valid_base, "heldMgCancelled": False}
+        self.assertEqual(
+            browser_matrix.base_acceptance_failures(broken),
+            ["held MG no fue cancelado al abrir Menú"],
+        )
+
+    def test_safe_area_validator_requires_resolved_nonzero_insets(self):
+        valid = {
+            "supported": True,
+            "resolved": {"top": 17, "right": 13, "bottom": 23, "left": 11},
+            "violations": [],
+        }
+        self.assertEqual(browser_matrix.safe_area_failures(valid), [])
+        self.assertEqual(
+            browser_matrix.safe_area_failures({**valid, "resolved": {}}),
+            ["safe-area env no resolvió insets no-cero"],
+        )
+
+    def test_flightverse_result_summary_has_no_legacy_overlay_lookup(self):
+        summary = browser_matrix.format_flightverse_result({
+            "surface": "volar",
+            "viewport": "mobile_portrait",
+            "fps": 60,
+            "touchCommandHud": {"realTouch": True},
+        })
+        self.assertEqual(
+            summary,
+            "volar/mobile_portrait: ok · 60fps · touch=real",
+        )
 
     def test_command_hud_screenshot_names_cover_all_touch_states(self):
         for viewport in (
