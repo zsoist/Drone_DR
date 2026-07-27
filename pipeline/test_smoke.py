@@ -599,6 +599,11 @@ _share_module_parse = subprocess.run([
 check("browser gate: módulos ESM del share compilan antes de publicar",
       _share_module_parse.returncode == 0,
       (_share_module_parse.stderr or _share_module_parse.stdout)[-300:])
+_mobile_command_tests = subprocess.run(
+    ["node", "--test", "pipeline/test_mobile_command.mjs"], capture_output=True, text=True)
+check("flightverse mobile command: ownership and scoped gesture suite passes",
+      _mobile_command_tests.returncode == 0,
+      (_mobile_command_tests.stderr or _mobile_command_tests.stdout)[-500:])
 import browser_matrix
 check("browser matrix: cubre phone/iPad portrait+landscape y desktop",
       set(browser_matrix.VIEWPORTS) == {
