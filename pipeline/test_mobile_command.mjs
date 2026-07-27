@@ -10,13 +10,23 @@ async function loadMobileCommand() {
 }
 
 class FakeElement extends EventTarget {
-  constructor({ allowed = false } = {}) {
+  constructor({ allowSelector } = {}) {
     super();
-    this.allowed = allowed;
+    this.allowSelector = allowSelector;
     this.captures = new Set();
+    this.listenerAdds = [];
+    this.listenerRemovals = [];
   }
   closest(selector) {
-    return this.allowed && selector.includes('input[type="range"]') ? this : null;
+    return selector.split(',').includes(this.allowSelector) ? this : null;
+  }
+  addEventListener(type, handler, options) {
+    this.listenerAdds.push({ type, handler });
+    super.addEventListener(type, handler, options);
+  }
+  removeEventListener(type, handler, options) {
+    this.listenerRemovals.push({ type, handler });
+    super.removeEventListener(type, handler, options);
   }
   setPointerCapture(pointerId) { this.captures.add(pointerId); }
   hasPointerCapture(pointerId) { return this.captures.has(pointerId); }
@@ -38,8 +48,8 @@ const cancelableEvent = (type, target) => {
 async function controllerHarness(options = {}) {
   const { createFirePointerController } = await loadMobileCommand();
   const trigger = new FakeElement();
-  const eventRoot = new EventTarget();
-  const visibilityRoot = new EventTarget();
+  const eventRoot = new FakeElement();
+  const visibilityRoot = new FakeElement();
   visibilityRoot.hidden = false;
   const presses = [];
   const releases = [];
@@ -100,13 +110,60 @@ test('fire pointer releases on hidden visibility and disabling', async () => {
 });
 
 test('fire pointer disposal releases ownership and permanently removes input listeners', async () => {
-  const { trigger, releases, controller } = await controllerHarness();
+  const { trigger, eventRoot, visibilityRoot, releases, controller } = await controllerHarness();
   trigger.dispatchEvent(pointer('pointerdown', 3));
   controller.dispose();
   controller.dispose();
   trigger.dispatchEvent(pointer('pointerdown', 4));
   assert.deepEqual(releases, ['dispose']);
   assert.deepEqual(controller.state(), { enabled: true, held: false, pointerId: null, accepted: false });
+  const listenerEvents = (property) => [
+    ['trigger', trigger],
+    ['event root', eventRoot],
+    ['visibility root', visibilityRoot],
+  ].flatMap(([name, target]) => target[property].map(({ type }) => `${name}:${type}`));
+  const expectedListeners = [
+    'trigger:pointerdown',
+    'trigger:pointerup',
+    'trigger:pointercancel',
+    'trigger:lostpointercapture',
+    'event root:blur',
+    'event root:pagehide',
+    'visibility root:visibilitychange',
+  ];
+  assert.deepEqual(
+    listenerEvents('listenerAdds'),
+    expectedListeners,
+    'controller registers the seven ownership listeners',
+  );
+  assert.deepEqual(
+    listenerEvents('listenerRemovals'),
+    expectedListeners,
+    'dispose removes every registered listener exactly once',
+  );
+});
+
+test('fire pointer rejects dynamic disabled state before capture or press', async () => {
+  const { trigger, presses, controller } = await controllerHarness({ isEnabled: () => false });
+  trigger.dispatchEvent(pointer('pointerdown', 12));
+
+  assert.deepEqual(presses, []);
+  assert.equal(trigger.captures.size, 0);
+  assert.deepEqual(controller.state(), { enabled: true, held: false, pointerId: null, accepted: false });
+});
+
+test('fire pointer reports a rejected press exactly once on release', async () => {
+  const releases = [];
+  const { trigger, controller } = await controllerHarness({
+    onPress: () => false,
+    onRelease: (reason, event, accepted) => releases.push({ reason, accepted }),
+  });
+  trigger.dispatchEvent(pointer('pointerdown', 13));
+  assert.equal(controller.state().accepted, false);
+  trigger.dispatchEvent(pointer('pointerup', 13));
+  trigger.dispatchEvent(pointer('pointercancel', 13));
+
+  assert.deepEqual(releases, [{ reason: 'pointerup', accepted: false }]);
 });
 
 test('secondary pointer release does not steal an owned press and a fresh press works after release', async () => {
@@ -121,11 +178,10 @@ test('secondary pointer release does not steal an owned press and a fresh press 
   assert.equal(controller.state().pointerId, 10);
 });
 
-test('scoped gesture guards block Flightverse gestures but leave marked controls usable', async () => {
+test('scoped gesture guards block Flightverse gestures but leave form controls usable', async () => {
   const { installFlightSurfaceGuards } = await loadMobileCommand();
   const root = new EventTarget();
   const textNode = new FakeElement();
-  const rangeInput = new FakeElement({ allowed: true });
   const guards = installFlightSurfaceGuards(root);
 
   for (const type of ['selectstart', 'dragstart', 'contextmenu']) {
@@ -133,9 +189,20 @@ test('scoped gesture guards block Flightverse gestures but leave marked controls
     root.dispatchEvent(blocked);
     assert.equal(blocked.defaultPrevented, true, `${type} should be blocked on the flight surface`);
   }
-  const rangeSelection = cancelableEvent('selectstart', rangeInput);
-  root.dispatchEvent(rangeSelection);
-  assert.equal(rangeSelection.defaultPrevented, false);
+  for (const [label, allowSelector] of [
+    ['range input', 'input[type="range"]'],
+    ['input', 'input'],
+    ['textarea', 'textarea'],
+    ['select', 'select'],
+    ['contenteditable', '[contenteditable="true"]'],
+  ]) {
+    const control = new FakeElement({ allowSelector });
+    for (const type of ['selectstart', 'dragstart', 'contextmenu']) {
+      const event = cancelableEvent(type, control);
+      root.dispatchEvent(event);
+      assert.equal(event.defaultPrevented, false, `${label} should allow ${type}`);
+    }
+  }
   guards.dispose();
 
   const afterDispose = cancelableEvent('contextmenu', textNode);
