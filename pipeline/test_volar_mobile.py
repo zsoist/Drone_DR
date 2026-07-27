@@ -202,10 +202,15 @@ class VolarMobileHudContractTests(unittest.TestCase):
     def test_fire_control_owns_pointer_gesture_and_is_clearly_named(self):
         self.assertIn('<strong>DISPARAR</strong>', self.source)
         self.assertIn("const triggerBtn = $('#vl-trigger')", self.source)
-        self.assertIn("createFirePointerController", self.source)
-        self.assertIn("const firePointer = createFirePointerController({", self.source)
-        self.assertIn("firePointer.cancel('overlay')", self.source)
-        self.assertIn("firePointer.dispose()", self.source)
+        self.assertIn("createFirePointerBindings", self.source)
+        self.assertIn("const firePointers = createFirePointerBindings({", self.source)
+        self.assertIn("elements: [fireBtn, triggerBtn]", self.source)
+        self.assertIn("firePointers.cancel('overlay')", self.source)
+        self.assertIn("firePointers.dispose()", self.source)
+        self.assertNotIn(
+            "addEventListener('pointerup', e => releaseFiring('pointer', e))",
+            self.source,
+        )
 
     def test_compact_command_hud_replaces_the_live_weapon_carousel(self):
         for contract in (

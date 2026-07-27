@@ -4,39 +4,39 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=307';
+import * as THREE from '/flightverse/three.js?v=308';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=307';
+} from '/flightverse/scene.js?v=308';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=307';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=307';
-import { createRecorder } from '/flightverse/recorder.js?v=307';
-import { createAudio } from '/flightverse/audio.js?v=307';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=307';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=307';
+} from '/flightverse/runtime.js?v=308';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=308';
+import { createRecorder } from '/flightverse/recorder.js?v=308';
+import { createAudio } from '/flightverse/audio.js?v=308';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=308';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=308';
 import {
-  createFirePointerController, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=307';
-import { createSky } from '/flightverse/sky.js?v=307';
-import { loadSceneObjects } from '/flightverse/objects.js?v=307';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=307';
-import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=307';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=307';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=307';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=307';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=307';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=307';
-import CameraControls from '/vendor/camera-controls.module.js?v=307';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=307';
+  createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
+} from '/flightverse/mobile-command.js?v=308';
+import { createSky } from '/flightverse/sky.js?v=308';
+import { loadSceneObjects } from '/flightverse/objects.js?v=308';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=308';
+import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=308';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=308';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=308';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=308';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=308';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=308';
+import CameraControls from '/vendor/camera-controls.module.js?v=308';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=308';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=307';
+} from '/vendor/postprocessing180.module.js?v=308';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -660,9 +660,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=307', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=308', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=307');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=308');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -934,6 +934,8 @@ async function main() {
   };
   let firing = false;
   const releaseFiring = (source, e) => {
+    if (source === 'pointer' && e?.pointerId != null
+        && e.pointerId !== triggerState.pointerId) return;
     const captureId = e?.pointerId ?? triggerState.pointerId;
     for (const button of [fireBtn, triggerBtn]) {
       if (captureId != null && button.hasPointerCapture?.(captureId)) button.releasePointerCapture(captureId);
@@ -962,17 +964,8 @@ async function main() {
     updateTriggerUi();
     return true;
   };
-  fireBtn.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    beginFiring('pointer', fireBtn, e.pointerId);
-  });
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    fireBtn.addEventListener(type, e => releaseFiring('pointer', e));
-  }
-  addEventListener('pointerup', e => releaseFiring('pointer', e));
-  const firePointer = createFirePointerController({
-    element: triggerBtn,
+  const firePointers = createFirePointerBindings({
+    elements: [fireBtn, triggerBtn],
     onPress: pointerId => beginFiring('pointer', null, pointerId),
     onRelease: (reason, event, accepted) => {
       if (accepted) releaseFiring('pointer', event);
@@ -992,7 +985,7 @@ async function main() {
     eventRoot: document,
     onSelect: setWeapon,
   });
-  const cancelCommandOnOrientation = () => firePointer.cancel('orientation');
+  const cancelCommandOnOrientation = () => firePointers.cancel('orientation');
   addEventListener('orientationchange', cancelCommandOnOrientation);
   document.addEventListener('pointerdown', e => {
     const activeOverlay = overlayCoordinator?.active();
@@ -1102,7 +1095,7 @@ async function main() {
     onChange: active => {
       if (active) {
         weaponPicker.close('overlay');
-        firePointer.cancel('overlay');
+        firePointers.cancel('overlay');
         releaseFiring();
       }
       input.setEnabled(!active);
@@ -2021,7 +2014,7 @@ async function main() {
     loop.stop();
     removeEventListener('orientationchange', cancelCommandOnOrientation);
     weaponPicker.dispose();
-    firePointer.dispose();
+    firePointers.dispose();
     surfaceGuards.dispose();
     overlayCoordinator?.dispose();
     sticks?.dispose();

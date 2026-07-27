@@ -69,6 +69,41 @@ export function createFirePointerController({
   };
 }
 
+export function createFirePointerBindings({
+  elements,
+  eventRoot = window,
+  visibilityRoot = document,
+  onPress,
+  onRelease,
+  isEnabled = () => true,
+}) {
+  const controllers = [...elements].map(element => createFirePointerController({
+    element,
+    eventRoot,
+    visibilityRoot,
+    onPress: (pointerId, event) => onPress?.(pointerId, event, element),
+    onRelease: (reason, event, accepted) => onRelease?.(reason, event, accepted, element),
+    isEnabled,
+  }));
+
+  return {
+    state: () => controllers.map(controller => controller.state()),
+    cancel(reason = 'cancel', event = null) {
+      let cancelled = false;
+      for (const controller of controllers) {
+        cancelled = controller.cancel(reason, event) || cancelled;
+      }
+      return cancelled;
+    },
+    setEnabled(value) {
+      for (const controller of controllers) controller.setEnabled(value);
+    },
+    dispose() {
+      for (const controller of controllers) controller.dispose();
+    },
+  };
+}
+
 export function createWeaponPicker({
   trigger,
   panel,

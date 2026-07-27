@@ -187,6 +187,50 @@ test('secondary pointer release does not steal an owned press and a fresh press 
   assert.equal(controller.state().pointerId, 10);
 });
 
+test('Flightverse fire wiring keeps Fire A held when stick B releases', async () => {
+  const { createFirePointerBindings } = await loadMobileCommand();
+  const desktopFire = new FakeElement();
+  const mobileFire = new FakeElement();
+  const eventRoot = new FakeElement();
+  const visibilityRoot = new FakeElement();
+  visibilityRoot.hidden = false;
+  let owner = null;
+  const presses = [];
+  const releases = [];
+  const bindings = createFirePointerBindings({
+    elements: [desktopFire, mobileFire],
+    eventRoot,
+    visibilityRoot,
+    onPress(pointerId, event, element) {
+      if (owner != null) return false;
+      owner = pointerId;
+      presses.push({ pointerId, element });
+      return true;
+    },
+    onRelease(reason, event, accepted, element) {
+      if (!accepted) return;
+      releases.push({ reason, pointerId: event?.pointerId, element });
+      owner = null;
+    },
+  });
+
+  mobileFire.dispatchEvent(pointer('pointerdown', 41));
+  eventRoot.dispatchEvent(pointer('pointerup', 72)); // stick B bubbles to window
+  assert.equal(owner, 41);
+  assert.deepEqual(releases, []);
+  assert.equal(bindings.state()[1].pointerId, 41);
+
+  mobileFire.dispatchEvent(pointer('pointerup', 41));
+  assert.equal(owner, null);
+  assert.deepEqual(releases.map(release => release.pointerId), [41]);
+
+  desktopFire.dispatchEvent(pointer('pointerdown', 51));
+  desktopFire.dispatchEvent(pointer('pointerup', 51));
+  assert.deepEqual(presses.map(press => press.pointerId), [41, 51]);
+  assert.deepEqual(releases.map(release => release.pointerId), [41, 51]);
+  bindings.dispose();
+});
+
 test('scoped gesture guards block Flightverse gestures but leave form controls usable', async () => {
   const { installFlightSurfaceGuards } = await loadMobileCommand();
   const root = new EventTarget();
