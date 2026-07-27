@@ -5435,6 +5435,14 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   .vl-command-hud{
     bottom:calc(52vh + 12px + env(safe-area-inset-bottom));
   }
+  .vl-weapon-picker{
+    position:fixed;
+    top:calc(12px + env(safe-area-inset-top));
+    left:50%;
+    right:auto;
+    bottom:auto;
+    transform:translateX(-50%);
+  }
 }
 @media (prefers-reduced-motion:reduce){
   .vl-command-hud *{ transition:none !important; animation:none !important }

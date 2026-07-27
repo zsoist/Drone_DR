@@ -73,6 +73,14 @@ class MobileHudGeometryContractTests(unittest.TestCase):
             r"[^}]*bottom:calc\([^+]+\+ (\d+(?:\.\d+)?)px",
             COMMAND_STYLES,
         )
+        landscape_picker_top = number(
+            r"orientation:landscape\)\{\s*\.vl-command-hud\{[^}]*\}\s*"
+            r"\.vl-weapon-picker\{[^}]*position:fixed;[^}]*"
+            r"top:calc\((\d+(?:\.\d+)?)px \+ env\(safe-area-inset-top\)\);"
+            r"[^}]*left:50%;[^}]*right:auto;[^}]*bottom:auto;"
+            r"[^}]*transform:translateX\(-50%\)",
+            COMMAND_STYLES,
+        )
         landscape_menu_vh = number(
             r"orientation:landscape\)\{[^}]*"
             r"\.vl-fab,\.vl-combat-fab\{ bottom:calc\("
@@ -105,6 +113,10 @@ class MobileHudGeometryContractTests(unittest.TestCase):
 
         for profile, (width, height) in TOUCH_PROFILES.items():
             landscape = width > height
+            safe_top = 0
+            safe_bottom = 0
+            safe_left = 0
+            safe_right = 0
             stick_height = (
                 0.40 * height if landscape else min(0.34 * height, 300)
             )
@@ -162,12 +174,21 @@ class MobileHudGeometryContractTests(unittest.TestCase):
             )
             picker_bottom = weapon.top - 10
             picker_height = 2 + 2 * 6 + 4 * 48 + 3 * 4
-            picker = Rect(
-                width - 14 - 132,
-                picker_bottom - picker_height,
-                width - 14,
-                picker_bottom,
-            )
+            if landscape:
+                picker_left = width / 2 - 132 / 2
+                picker = Rect(
+                    picker_left,
+                    safe_top + landscape_picker_top,
+                    picker_left + 132,
+                    safe_top + landscape_picker_top + picker_height,
+                )
+            else:
+                picker = Rect(
+                    width - 14 - 132,
+                    picker_bottom - picker_height,
+                    width - 14,
+                    picker_bottom,
+                )
             menu_bottom_y = height - menu_bottom
             menu = Rect(14, menu_bottom_y - 52, 66, menu_bottom_y)
             controls = {
@@ -179,6 +200,26 @@ class MobileHudGeometryContractTests(unittest.TestCase):
 
             with self.subTest(profile=profile):
                 for control_name, control in controls.items():
+                    self.assertGreaterEqual(
+                        control.left,
+                        safe_left,
+                        f"{profile}: {control_name} escapes left of the safe area",
+                    )
+                    self.assertLessEqual(
+                        control.right,
+                        width - safe_right,
+                        f"{profile}: {control_name} escapes right of the safe area",
+                    )
+                    self.assertGreaterEqual(
+                        control.top,
+                        safe_top,
+                        f"{profile}: {control_name} escapes above the safe area",
+                    )
+                    self.assertLessEqual(
+                        control.bottom,
+                        height - safe_bottom,
+                        f"{profile}: {control_name} escapes below the safe area",
+                    )
                     for zone_name, zone in zones.items():
                         self.assertFalse(
                             overlaps(control, zone),
