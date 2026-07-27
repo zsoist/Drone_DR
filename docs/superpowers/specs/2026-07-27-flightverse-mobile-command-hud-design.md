@@ -1,7 +1,7 @@
 # Flightverse mobile command HUD
 
-**Date:** 2026-07-27  
-**Status:** Approved  
+**Date:** 2026-07-27
+**Status:** Approved
 **Scope:** Mobile and coarse-pointer Flightverse UI only
 
 ## Problem

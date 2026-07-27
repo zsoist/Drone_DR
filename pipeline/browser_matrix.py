@@ -820,6 +820,36 @@ def wait_weapon_ready(cdp, timeout: int = 5):
     )
 
 
+def wait_weapon_fully_regenerated(cdp, key: str, max_ammo: int,
+                                  timeout: int = 6):
+    """Wait for exact full ammo as represented by the floored public telemetry."""
+    return wait_for(
+        cdp,
+        js(f"""
+          const w=window.__volar?.weaponState;
+          return w && w.weapon === {key!r}
+            && w.cool <= 0.01
+            && w.ammo?.[{key!r}] === {max_ammo}
+            ? w : null;
+        """),
+        timeout=timeout,
+        label=f"{key} regenerada a {max_ammo}",
+    )
+
+
+def single_shot_exactly_once(before: dict, after: dict, *,
+                             max_ammo: int) -> bool:
+    """Require an unambiguous full→minus-one ammo edge and one lifecycle."""
+    return (
+        before["ammo"] == max_ammo
+        and after["ammo"] == max_ammo - 1
+        and after["fired"] == before["fired"] + 1
+        and after["trigger"]["presses"] == before["trigger"]["presses"] + 1
+        and after["trigger"]["accepted"] == before["trigger"]["accepted"] + 1
+        and not after["trigger"]["held"]
+    )
+
+
 def select_weapon_touch(cdp, key: str, pointer_id: int):
     toggle = element_center(cdp, "#vl-weapon-toggle")
     synthesize_tap(cdp, toggle["x"], toggle["y"])
@@ -1622,7 +1652,7 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     )
     option_m = element_center(cdp, '#vl-weapon-picker [data-w="m"]')
     touch_tap(cdp, 803, option_m)
-    wait_weapon_ready(cdp)
+    wait_weapon_fully_regenerated(cdp, "m", 8)
 
     trigger = element_center(cdp, "#vl-trigger")
     single_before = cdp.eval(js("""
@@ -1643,12 +1673,9 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     single_shot = {
         "before": single_before,
         "after": single_after,
-        "exactlyOnce": (
-            single_after["ammo"] == single_before["ammo"] - 1
-            and single_after["fired"] == single_before["fired"] + 1
-            and single_after["trigger"]["presses"] == single_before["trigger"]["presses"] + 1
-            and single_after["trigger"]["accepted"] == single_before["trigger"]["accepted"] + 1
-            and not single_after["trigger"]["held"]
+        "stabilizedMax": 8,
+        "exactlyOnce": single_shot_exactly_once(
+            single_before, single_after, max_ammo=8
         ),
     }
     if not single_shot["exactlyOnce"]:

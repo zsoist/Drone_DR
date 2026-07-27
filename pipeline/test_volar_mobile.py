@@ -292,6 +292,35 @@ class VolarMobileHudContractTests(unittest.TestCase):
             ["held MG no fue cancelado al abrir Menú"],
         )
 
+    def test_single_shot_validator_rejects_ambiguous_floored_ammo_boundary(self):
+        stabilized_before = {
+            "ammo": 8,
+            "fired": 1,
+            "trigger": {"presses": 1, "accepted": 1},
+        }
+        valid_after = {
+            "ammo": 7,
+            "fired": 2,
+            "trigger": {"presses": 2, "accepted": 2, "held": False},
+        }
+        ambiguous_before = {
+            "ammo": 7,
+            "fired": 1,
+            "trigger": {"presses": 1, "accepted": 1},
+        }
+
+        self.assertTrue(
+            browser_matrix.single_shot_exactly_once(
+                stabilized_before, valid_after, max_ammo=8
+            )
+        )
+        self.assertFalse(
+            browser_matrix.single_shot_exactly_once(
+                ambiguous_before, valid_after, max_ammo=8
+            ),
+            "7→7 floored ammo cannot prove the missile decrement",
+        )
+
     def test_safe_area_validator_requires_resolved_nonzero_insets(self):
         valid = {
             "supported": True,
