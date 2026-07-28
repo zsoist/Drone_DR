@@ -184,7 +184,10 @@ export function installFlightSurfaceGuards(root) {
   const block = event => {
     if (!event.target?.closest?.(ALLOW)) event.preventDefault();
   };
-  const types = ['selectstart', 'dragstart', 'contextmenu'];
+  const types = [
+    'selectstart', 'dragstart', 'contextmenu',
+    'gesturestart', 'gesturechange', 'gestureend',
+  ];
   for (const type of types) root.addEventListener(type, block);
   return {
     dispose() {

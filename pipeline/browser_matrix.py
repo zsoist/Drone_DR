@@ -195,7 +195,7 @@ def synthesize_tap(cdp, x: float, y: float, *, tap_count: int = 1,
 
 
 def command_hud_screenshot_path(viewport: str, state: str) -> Path:
-    if state not in {"closed", "weapons", "menu"}:
+    if state not in {"closed", "camera", "gimbal", "weapons", "menu"}:
         raise ValueError(f"estado de captura táctil inválido: {state}")
     return QA_DIR / f"matrix-volar-{viewport}-{state}.png"
 
@@ -642,6 +642,11 @@ def touch_command_geometry(cdp, state: str) -> dict:
         fire:document.querySelector('#vl-trigger'),
         weapon:document.querySelector('#vl-weapon-toggle'),
         picker:document.querySelector('#vl-weapon-picker'),
+        camera:document.querySelector('#vl-camera-toggle'),
+        cameraList:document.querySelector('#vl-camera-picker-toggle'),
+        cameraPicker:document.querySelector('#vl-camera-picker'),
+        gimbal:document.querySelector('#vl-gimbal-toggle'),
+        gimbalTray:document.querySelector('#vl-gimbal-tray'),
         menu:document.querySelector('#vl-fab'),
         sheetScrim:document.querySelector('#vl-overlay-scrim'),
         sheet:document.querySelector('#vl-dock'),
@@ -651,12 +656,31 @@ def touch_command_geometry(cdp, state: str) -> dict:
       const pairs = [
         ['leftZone','rightZone'],
         ['leftZone','fire'], ['leftZone','weapon'], ['leftZone','picker'], ['leftZone','menu'],
+        ['leftZone','camera'], ['leftZone','cameraList'], ['leftZone','cameraPicker'],
+        ['leftZone','gimbal'], ['leftZone','gimbalTray'],
         ['rightZone','fire'], ['rightZone','weapon'], ['rightZone','picker'], ['rightZone','menu'],
+        ['rightZone','camera'], ['rightZone','cameraList'], ['rightZone','cameraPicker'],
+        ['rightZone','gimbal'], ['rightZone','gimbalTray'],
         ['leftBase','rightBase'],
         ['leftBase','fire'], ['leftBase','weapon'], ['leftBase','picker'], ['leftBase','menu'],
+        ['leftBase','camera'], ['leftBase','cameraList'], ['leftBase','cameraPicker'],
+        ['leftBase','gimbal'], ['leftBase','gimbalTray'],
         ['rightBase','fire'], ['rightBase','weapon'], ['rightBase','picker'], ['rightBase','menu'],
+        ['rightBase','camera'], ['rightBase','cameraList'], ['rightBase','cameraPicker'],
+        ['rightBase','gimbal'], ['rightBase','gimbalTray'],
         ['fire','weapon'], ['fire','picker'], ['fire','menu'],
         ['weapon','picker'], ['weapon','menu'], ['picker','menu'],
+        ['fire','camera'], ['fire','cameraList'], ['fire','cameraPicker'],
+        ['fire','gimbal'], ['fire','gimbalTray'],
+        ['weapon','camera'], ['weapon','cameraList'], ['weapon','cameraPicker'],
+        ['weapon','gimbal'], ['weapon','gimbalTray'],
+        ['picker','camera'], ['picker','cameraList'], ['picker','cameraPicker'],
+        ['picker','gimbal'], ['picker','gimbalTray'], ['picker','menu'],
+        ['cameraPicker','fire'], ['cameraPicker','weapon'], ['cameraPicker','gimbal'],
+        ['cameraPicker','gimbalTray'], ['cameraPicker','menu'],
+        ['gimbalTray','fire'], ['gimbalTray','weapon'],
+        ['camera','gimbal'], ['cameraList','gimbal'], ['menu','gimbal'],
+        ['camera','gimbalTray'], ['cameraList','gimbalTray'], ['menu','gimbalTray'],
       ];
       const collisions = pairs
         .filter(([a,b]) => boxes[a] && boxes[b] && hit(boxes[a], boxes[b]))
@@ -669,14 +693,23 @@ def touch_command_geometry(cdp, state: str) -> dict:
       const smallTargets = [
         ['fire',elements.fire,72,72],
         ['weapon',elements.weapon,56,56],
+        ['camera',elements.camera,56,56],
+        ['cameraList',elements.cameraList,44,44],
+        ['gimbal',elements.gimbal,96,44],
         ['menu',elements.menu,52,52],
         ...[...elements.picker?.querySelectorAll('button') || []]
           .map((el,index) => [`picker-${{index}}`,el,44,48]),
+        ...[...elements.cameraPicker?.querySelectorAll('button') || []]
+          .map((el,index) => [`camera-picker-${{index}}`,el,44,48]),
+        ...[...elements.gimbalTray?.querySelectorAll('button') || []]
+          .map((el,index) => [`gimbal-${{index}}`,el,44,44]),
       ].filter(([,el]) => visible(el)).filter(([,el,w,h]) => {{
         const r = rect(el); return r.width < w - 1 || r.height < h - 1;
       }}).map(([name]) => name);
       const commandHidden = !visible(elements.fire) && !visible(elements.weapon)
-        && !visible(elements.menu) && !visible(elements.leftZone) && !visible(elements.rightZone);
+        && !visible(elements.camera) && !visible(elements.cameraList)
+        && !visible(elements.gimbal) && !visible(elements.menu)
+        && !visible(elements.leftZone) && !visible(elements.rightZone);
       const focusInside = !!elements.sheet?.contains(document.activeElement);
       const sheetInBounds = !boxes.sheet || (
         boxes.sheet.left >= viewport.left - 1 && boxes.sheet.top >= viewport.top - 1
@@ -690,7 +723,10 @@ def touch_command_geometry(cdp, state: str) -> dict:
         bottom:parseFloat(probeStyle?.paddingBottom) || 0,
         left:parseFloat(probeStyle?.paddingLeft) || 0,
       }};
-      const safeNames=['leftBase','rightBase','fire','weapon','picker','menu'];
+      const safeNames=[
+        'leftBase','rightBase','fire','weapon','picker','camera','cameraList',
+        'cameraPicker','gimbal','gimbalTray','menu',
+      ];
       const safeViolations=safeNames.filter(name => {{
         const r=boxes[name];
         return r && (
@@ -719,6 +755,8 @@ def touch_command_geometry(cdp, state: str) -> dict:
         state, boxes, collisions, outOfBounds, smallTargets, viewport,
         orientation:viewport.width >= viewport.height ? 'landscape' : 'portrait',
         pickerVisible:visible(elements.picker),
+        cameraPickerVisible:visible(elements.cameraPicker),
+        gimbalTrayVisible:visible(elements.gimbalTray),
         sheetVisible:visible(elements.sheet),
         commandHidden, focusInside, sheetInBounds,
         safeArea:{{
@@ -750,6 +788,10 @@ def geometry_failures(geometry: dict) -> list[str]:
         failures.append("closed picker visible")
     if state == "weapons" and not geometry.get("pickerVisible"):
         failures.append("weapons picker oculto")
+    if state == "camera" and not geometry.get("cameraPickerVisible"):
+        failures.append("camera picker oculto")
+    if state == "gimbal" and not geometry.get("gimbalTrayVisible"):
+        failures.append("gimbal tray oculto")
     if state == "menu" and not all((
             geometry.get("sheetVisible"),
             geometry.get("commandHidden"),
@@ -1598,6 +1640,70 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     geometry_errors.extend(geometry_failures(closed_geometry))
     screenshot(cdp, command_hud_screenshot_path(viewport, "closed"))
 
+    camera_picker_toggle = element_center(cdp, "#vl-camera-picker-toggle")
+    touch_tap(cdp, 790, camera_picker_toggle)
+    wait_for(
+        cdp,
+        js("return !document.querySelector('#vl-camera-picker').hidden"),
+        timeout=4,
+        label="selector de cámara abierto",
+    )
+    camera_geometry = touch_command_geometry(cdp, "camera")
+    geometry_errors.extend(geometry_failures(camera_geometry))
+    screenshot(cdp, command_hud_screenshot_path(viewport, "camera"))
+    touch_tap(cdp, 791, camera_picker_toggle)
+    wait_for(
+        cdp,
+        js("return document.querySelector('#vl-camera-picker').hidden"),
+        timeout=4,
+        label="selector de cámara cerrado",
+    )
+
+    gimbal_toggle = element_center(cdp, "#vl-gimbal-toggle")
+    touch_tap(cdp, 792, gimbal_toggle)
+    wait_for(
+        cdp,
+        js("return !document.querySelector('#vl-gimbal-tray').hidden"),
+        timeout=4,
+        label="bandeja de gimbal abierta",
+    )
+    gimbal_geometry = touch_command_geometry(cdp, "gimbal")
+    geometry_errors.extend(geometry_failures(gimbal_geometry))
+    screenshot(cdp, command_hud_screenshot_path(viewport, "gimbal"))
+    gimbal_before = cdp.eval(js("""
+      return {
+        value:document.querySelector('#vl-gimbal-range').value,
+        output:document.querySelector('#vl-gimbal-value').textContent,
+      };
+    """))
+    touch_tap(
+        cdp,
+        793,
+        element_center(cdp, '#vl-gimbal-tray [data-gimbal="-5"]'),
+    )
+    gimbal_after = cdp.eval(js("""
+      return {
+        value:document.querySelector('#vl-gimbal-range').value,
+        output:document.querySelector('#vl-gimbal-value').textContent,
+        osd:document.querySelector('#osd-gimbal').textContent,
+      };
+    """))
+    if not (
+        int(gimbal_after["value"]) == int(gimbal_before["value"]) - 5
+        and gimbal_after["output"] == f"{gimbal_after['value']}°"
+        and gimbal_after["osd"].endswith(f"{gimbal_after['value']}°")
+    ):
+        raise RuntimeError(
+            f"paso táctil de gimbal inválido: {gimbal_before} -> {gimbal_after}"
+        )
+    touch_tap(cdp, 794, gimbal_toggle)
+    wait_for(
+        cdp,
+        js("return document.querySelector('#vl-gimbal-tray').hidden"),
+        timeout=4,
+        label="bandeja de gimbal cerrada",
+    )
+
     synthesize_tap(cdp, gesture_target["x"], gesture_target["y"])
     wait_for(
         cdp,
@@ -2095,14 +2201,20 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     if not all(menu_closed.values()):
         raise RuntimeError(f"Menú touch no cerró/restauró foco: {menu_closed}")
 
-    for geometry in (closed_geometry, picker_geometry, menu_geometry):
+    for geometry in (
+        closed_geometry, camera_geometry, gimbal_geometry,
+        picker_geometry, menu_geometry,
+    ):
         for violation in (geometry.get("safeArea") or {}).get("violations") or []:
             safe_area["violations"].append(
                 f"{geometry.get('state')}:{violation}"
             )
     resolved_states = {
         tuple(sorted(((geometry.get("safeArea") or {}).get("resolved") or {}).items()))
-        for geometry in (closed_geometry, picker_geometry, menu_geometry)
+        for geometry in (
+            closed_geometry, camera_geometry, gimbal_geometry,
+            picker_geometry, menu_geometry,
+        )
     }
     if len(resolved_states) != 1:
         safe_area["violations"].append("resolved-insets-cambiaron-entre-estados")
@@ -2132,12 +2244,14 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
             "sticksAvailable": not closed_geometry.get("commandHidden"),
         },
         "closedGeometry": closed_geometry,
+        "cameraGeometry": camera_geometry,
+        "gimbalGeometry": gimbal_geometry,
         "pickerGeometry": picker_geometry,
         "menuGeometry": menu_geometry,
         "geometryFailures": geometry_errors,
         "screenshots": {
             state: str(command_hud_screenshot_path(viewport, state))
-            for state in ("closed", "weapons", "menu")
+            for state in ("closed", "camera", "gimbal", "weapons", "menu")
         },
     }
     if geometry_errors:

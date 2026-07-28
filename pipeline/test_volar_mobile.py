@@ -145,6 +145,41 @@ class VolarMobileHudContractTests(unittest.TestCase):
             self.assertIn(contract, self.source)
         self.assertNotIn('id="vl-fpv-camera"', self.source)
 
+    def test_premium_flight_tools_have_one_owned_non_overlapping_dom(self):
+        for contract in (
+            'id="vl-flight-tools-left"',
+            'id="vl-camera-toggle"',
+            'id="vl-camera-picker-toggle"',
+            'id="vl-camera-picker"',
+            'id="vl-gimbal-toggle"',
+            'id="vl-gimbal-tray"',
+            'id="vl-gimbal-range"',
+            "createFlightTools",
+        ):
+            self.assertIn(contract, self.source)
+        for retired in (
+            'class="vl-gwheel"',
+            'class="vl-combat-live"',
+            'class="vl-fpv-camera"',
+        ):
+            self.assertNotIn(retired, self.source)
+        self.assertNotIn(".vl-combat-live", self.styles)
+        self.assertNotIn(".vl-fpv-camera", self.styles)
+
+    def test_ios_gesture_guards_cover_zoom_selection_and_callout(self):
+        html = (ROOT / "web" / "volar.html").read_text()
+        guards = (ROOT / "web" / "flightverse" / "mobile-command.js").read_text()
+        self.assertIn("maximum-scale=1.0", html)
+        self.assertIn("user-scalable=no", html)
+        for contract in (
+            "'gesturestart'",
+            "'gesturechange'",
+            "'gestureend'",
+            "'selectstart'",
+            "'contextmenu'",
+        ):
+            self.assertIn(contract, guards)
+
     def test_sound_control_arms_on_pointerdown_without_immediate_remute(self):
         self.assertIn("#vl-sound').addEventListener('pointerdown'", self.source)
         audio = (ROOT / "web" / "flightverse" / "audio.js").read_text()
@@ -352,12 +387,23 @@ class VolarMobileHudContractTests(unittest.TestCase):
             "ipad_portrait",
             "ipad_landscape",
         ):
-            for state in ("closed", "weapons", "menu"):
+            for state in ("closed", "camera", "gimbal", "weapons", "menu"):
                 path = browser_matrix.command_hud_screenshot_path(viewport, state)
                 self.assertEqual(
                     path.name,
                     f"matrix-volar-{viewport}-{state}.png",
                 )
+
+    def test_browser_matrix_measures_camera_and_gimbal_transient_surfaces(self):
+        matrix = (ROOT / "pipeline" / "browser_matrix.py").read_text()
+        for contract in (
+            "cameraPicker:document.querySelector('#vl-camera-picker')",
+            "gimbalTray:document.querySelector('#vl-gimbal-tray')",
+            '"cameraGeometry": camera_geometry',
+            '"gimbalGeometry": gimbal_geometry',
+            'for state in ("closed", "camera", "gimbal", "weapons", "menu")',
+        ):
+            self.assertIn(contract, matrix)
 
     def test_flight_uses_detailed_mesh_as_visual_layer_only(self):
         scene = (ROOT / "web" / "flightverse" / "scene.js").read_text()

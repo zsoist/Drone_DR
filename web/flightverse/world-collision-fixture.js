@@ -1,7 +1,7 @@
-import * as THREE from '/flightverse/three.js?v=314';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=314';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=314';
-import { createWeapons } from '/flightverse/weapons.js?v=314';
+import * as THREE from '/flightverse/three.js?v=315';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=315';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=315';
+import { createWeapons } from '/flightverse/weapons.js?v=315';
 
 const report = {
   done: false,
@@ -216,7 +216,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
 }
 
 async function run() {
-  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=314');
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=315');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
@@ -442,7 +442,7 @@ async function run() {
     }),
   );
 
-  const { resolveAimRay } = await import('/flightverse/aiming.js?v=314');
+  const { resolveAimRay } = await import('/flightverse/aiming.js?v=315');
   const reticleAim = resolveAimRay(
     { position: new THREE.Vector3(0, 2, 0), direction: new THREE.Vector3(1, 0, 0), far: 100 },
     world,

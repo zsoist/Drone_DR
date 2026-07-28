@@ -51,45 +51,25 @@ def vertical_clearance(control: Rect, zone: Rect) -> float:
 
 
 class MobileHudGeometryContractTests(unittest.TestCase):
-    def test_persistent_controls_clear_stick_zones_and_bases(self):
+    def test_premium_flight_tools_clear_safe_areas_sticks_and_each_other(self):
         stick_bottom = number(
             r"\.vl-stick\{[^}]*bottom:(\d+(?:\.\d+)?)px"
         )
-        portrait_command_clearance = number(
-            r"\.vl-command-hud\{[^}]*bottom:calc\("
+        portrait_clearance = number(
+            r"\.vl-command-hud,\.vl-flight-tools-left,\.vl-gimbal-tools\{"
+            r"[^}]*bottom:calc\("
             r"min\(34vh,300px\) \+ (\d+(?:\.\d+)?)px",
             COMMAND_STYLES,
         )
-        portrait_menu_clearance = number(
-            r"\.vl-fab\{ left:[^}]*bottom:calc\("
-            r"min\(34vh, 300px\) \+ (\d+(?:\.\d+)?)px"
-        )
-        landscape_command_top = number(
-            r"orientation:landscape\)\{\s*\.vl-command-hud\{"
+        landscape_tools_top = number(
+            r"orientation:landscape\)\{\s*"
+            r"\.vl-command-hud,\.vl-flight-tools-left,\.vl-gimbal-tools\{"
             r"[^}]*top:calc\((\d+(?:\.\d+)?)px "
             r"\+ env\(safe-area-inset-top\)\);[^}]*bottom:auto",
             COMMAND_STYLES,
         )
-        landscape_picker_top = number(
-            r"orientation:landscape\)\{\s*\.vl-command-hud\{[^}]*\}\s*"
-            r"\.vl-weapon-picker\{[^}]*position:fixed;[^}]*"
-            r"top:calc\((\d+(?:\.\d+)?)px \+ env\(safe-area-inset-top\)\);"
-            r"[^}]*left:50%;[^}]*right:auto;[^}]*bottom:auto;"
-            r"[^}]*transform:translateX\(-50%\)",
-            COMMAND_STYLES,
-        )
-        landscape_menu_vh = number(
-            r"orientation:landscape\)\{[^}]*"
-            r"\.vl-fab,\.vl-combat-fab\{ bottom:calc\("
-            r"(\d+(?:\.\d+)?)vh"
-        )
-        landscape_menu_px = number(
-            r"orientation:landscape\)\{[^}]*"
-            r"\.vl-fab,\.vl-combat-fab\{ bottom:calc\("
-            r"[^+]+\+ (\d+(?:\.\d+)?)px"
-        )
         fire_width = number(
-            r"\.vl-trigger\{\s*width:(\d+(?:\.\d+)?)px",
+            r"\.vl-trigger\{[^}]*width:(\d+(?:\.\d+)?)px",
             COMMAND_STYLES,
         )
         fire_height = number(
@@ -104,9 +84,35 @@ class MobileHudGeometryContractTests(unittest.TestCase):
             r"\.vl-weapon-toggle\{[^}]*height:(\d+(?:\.\d+)?)px",
             COMMAND_STYLES,
         )
+        camera_size = number(
+            r"\.vl-camera-toggle\{\s*width:(\d+(?:\.\d+)?)px",
+            COMMAND_STYLES,
+        )
+        camera_picker_toggle_size = number(
+            r"\.vl-camera-picker-toggle\{\s*width:(\d+(?:\.\d+)?)px",
+            COMMAND_STYLES,
+        )
+        menu_size = number(
+            r"\.vl-flight-tools-left \.vl-fab\{[^}]*width:"
+            r"(\d+(?:\.\d+)?)px",
+            COMMAND_STYLES,
+        )
+        gimbal_width = number(
+            r"\.vl-gimbal-toggle\{\s*width:(\d+(?:\.\d+)?)px",
+            COMMAND_STYLES,
+        )
+        gimbal_height = number(
+            r"\.vl-gimbal-toggle\{[^}]*height:(\d+(?:\.\d+)?)px",
+            COMMAND_STYLES,
+        )
 
         self.assertGreaterEqual(fire_width, 72)
         self.assertGreaterEqual(fire_height, 72)
+        self.assertGreaterEqual(camera_size, 56)
+        self.assertGreaterEqual(camera_picker_toggle_size, 44)
+        self.assertGreaterEqual(menu_size, 52)
+        self.assertGreaterEqual(gimbal_width, 96)
+        self.assertGreaterEqual(gimbal_height, 44)
 
         for profile, (width, height) in TOUCH_PROFILES.items():
             landscape = width > height
@@ -144,20 +150,11 @@ class MobileHudGeometryContractTests(unittest.TestCase):
                 for side, zone in zones.items()
             }
 
-            if landscape:
-                menu_bottom = (
-                    landscape_menu_vh / 100 * height + landscape_menu_px
-                    + safe_bottom
-                )
-            else:
-                command_bottom = (
-                    stick_height + portrait_command_clearance + safe_bottom
-                )
-                menu_bottom = stick_height + portrait_menu_clearance + safe_bottom
-
             command_right = width - 14 - safe_right
+            left = 14 + safe_left
             if landscape:
-                weapon_top = safe_top + landscape_command_top
+                tools_top = safe_top + landscape_tools_top
+                weapon_top = tools_top
                 weapon = Rect(
                     command_right - weapon_width,
                     weapon_top,
@@ -172,6 +169,9 @@ class MobileHudGeometryContractTests(unittest.TestCase):
                     fire_top + fire_height,
                 )
             else:
+                command_bottom = (
+                    stick_height + portrait_clearance + safe_bottom
+                )
                 fire_bottom = height - command_bottom
                 fire = Rect(
                     command_right - fire_width,
@@ -186,36 +186,61 @@ class MobileHudGeometryContractTests(unittest.TestCase):
                     command_right,
                     weapon_bottom,
                 )
-            picker_bottom = weapon.top - 10
-            picker_height = 2 + 2 * 6 + 4 * 48 + 3 * 4
+
             if landscape:
-                picker_left = width / 2 - 132 / 2
-                picker = Rect(
-                    picker_left,
-                    safe_top + landscape_picker_top,
-                    picker_left + 132,
-                    safe_top + landscape_picker_top + picker_height,
+                camera = Rect(left, tools_top, left + camera_size, tools_top + camera_size)
+                camera_list = Rect(
+                    camera.right + 8,
+                    tools_top,
+                    camera.right + 8 + camera_picker_toggle_size,
+                    tools_top + camera_picker_toggle_size,
+                )
+                menu = Rect(
+                    left,
+                    camera.bottom + 8,
+                    left + menu_size,
+                    camera.bottom + 8 + menu_size,
+                )
+                gimbal = Rect(
+                    width / 2 - gimbal_width / 2,
+                    tools_top,
+                    width / 2 + gimbal_width / 2,
+                    tools_top + gimbal_height,
                 )
             else:
-                picker = Rect(
-                    command_right - 132,
-                    picker_bottom - picker_height,
-                    command_right,
-                    picker_bottom,
+                tools_bottom = height - command_bottom
+                menu = Rect(
+                    left,
+                    tools_bottom - menu_size,
+                    left + menu_size,
+                    tools_bottom,
                 )
-            menu_bottom_y = height - menu_bottom
-            menu_left = 14 + safe_left
-            menu = Rect(
-                menu_left,
-                menu_bottom_y - 52,
-                menu_left + 52,
-                menu_bottom_y,
-            )
+                camera = Rect(
+                    left,
+                    menu.top - 8 - camera_size,
+                    left + camera_size,
+                    menu.top - 8,
+                )
+                camera_list = Rect(
+                    camera.right + 8,
+                    camera.top,
+                    camera.right + 8 + camera_picker_toggle_size,
+                    camera.top + camera_picker_toggle_size,
+                )
+                gimbal = Rect(
+                    width / 2 - gimbal_width / 2,
+                    tools_bottom - gimbal_height,
+                    width / 2 + gimbal_width / 2,
+                    tools_bottom,
+                )
+
             controls = {
                 "fire": fire,
                 "weapon": weapon,
-                "picker": picker,
+                "camera": camera,
+                "camera-list": camera_list,
                 "menu": menu,
+                "gimbal": gimbal,
             }
 
             with self.subTest(profile=profile):
@@ -258,6 +283,17 @@ class MobileHudGeometryContractTests(unittest.TestCase):
                             overlaps(control, base),
                             f"{profile}: {control_name} overlaps {base_name} base",
                         )
+                for left_name in ("camera", "camera-list", "menu"):
+                    for right_name in ("weapon", "fire"):
+                        self.assertFalse(
+                            overlaps(controls[left_name], controls[right_name]),
+                            f"{profile}: {left_name} overlaps {right_name}",
+                        )
+                for side_name in ("camera", "camera-list", "menu", "weapon", "fire"):
+                    self.assertFalse(
+                        overlaps(controls["gimbal"], controls[side_name]),
+                        f"{profile}: gimbal overlaps {side_name}",
+                    )
 
 
 if __name__ == "__main__":

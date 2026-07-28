@@ -4720,12 +4720,7 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   padding:4px 10px; border-radius:999px; background:rgba(10,12,16,.5) }
 @media (max-width:760px){ .vl-osd.tape-l{ left:8px } .vl-osd.tape-r{ right:8px } }
 
-/* BLOQUE 36 · rueda de gimbal (slider vertical, táctil en FPV) */
-.vl-gwheel{ position:absolute; right:calc(10px + env(safe-area-inset-right)); top:50%;
-  width:150px; height:34px; transform:translateY(-50%) rotate(-90deg);
-  transform-origin:center; display:none; pointer-events:auto; accent-color:#7dffc9;
-  opacity:.85; z-index:4 }
-@media (pointer:coarse){ .vl-fpv.show ~ .vl-gwheel, .vl-hud:has(.vl-fpv.show) .vl-gwheel{ display:block } }
+/* BLOQUE 36 · lectura del gimbal; el control táctil vive en BLOQUE 55d */
 .vl-osd-gimbal{ position:absolute; left:50%; top:calc(50% + 78px); transform:translateX(-50%);
   font:700 9.5px var(--mono); letter-spacing:.2em; color:#7dffc9; opacity:.8 }
 
@@ -5228,47 +5223,6 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 .vl-fps.low::before{ background:#E0A458; box-shadow:0 0 8px rgba(224,164,88,.8) }
 @media (pointer:coarse){ .vl-fire{ height:72px } }
 
-/* ── BLOQUE 55b: combate FPV directo ──
-   The live carousel and trigger deliberately live above the right stick's
-   rectangle. They remain available while the optional combat sheet is closed. */
-.vl-combat-live{ display:none }
-.vl-fpv-camera{ display:none }
-@media (pointer:coarse){
-  .vl-combat-live{ position:fixed; z-index:45; right:calc(12px + env(safe-area-inset-right));
-    bottom:calc(min(34vh, 300px) + 36px + env(safe-area-inset-bottom));
-    display:flex; flex-direction:column; align-items:flex-end; gap:7px; pointer-events:auto }
-  .vl-weapon-carousel{ display:flex; align-items:center; gap:4px; min-height:46px;
-    padding:4px; border-radius:14px; border:1px solid rgba(232,120,70,.28);
-    background:linear-gradient(160deg,rgba(28,20,20,.94),rgba(10,12,16,.9));
-    -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); box-shadow:0 10px 28px -14px rgba(0,0,0,.88) }
-  .vl-weapon-carousel button{ width:44px; min-width:44px; height:44px; border-radius:10px;
-    border:1px solid transparent; background:transparent; color:#9daabb; font:800 10px var(--mono);
-    letter-spacing:.04em; cursor:pointer; touch-action:manipulation }
-  .vl-weapon-carousel button.sel{ color:#ffd0ae; background:rgba(232,120,70,.22);
-    border-color:rgba(232,120,70,.48); box-shadow:inset 0 1px rgba(255,255,255,.08) }
-  .vl-weapon-carousel output{ min-width:92px; padding:0 7px; color:#ffd0ae; font:750 9px var(--mono);
-    letter-spacing:.04em; white-space:nowrap; font-variant-numeric:tabular-nums }
-  .vl-fpv-camera{ display:none; width:108px; min-height:44px; border-radius:12px;
-    border:1px solid rgba(110,183,255,.52); color:#d7ecff; background:rgba(22,49,76,.94);
-    box-shadow:0 9px 22px -13px rgba(0,0,0,.9); align-items:center; justify-content:center;
-    cursor:pointer; touch-action:manipulation; font:800 9px var(--mono); letter-spacing:.09em }
-  .vl-hud.fpv-active .vl-fpv-camera{ display:flex }
-  .vl-trigger{ pointer-events:auto; width:108px; min-height:52px; border:1px solid rgba(255,150,100,.58);
-    border-radius:17px; color:#ffe5d6; background:linear-gradient(145deg,rgba(160,55,30,.96),rgba(73,25,21,.94));
-    box-shadow:0 12px 30px -13px rgba(0,0,0,.9),0 0 22px -10px rgba(255,90,55,.75);
-    display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; touch-action:none;
-    font:800 10px var(--mono); letter-spacing:.12em; -webkit-user-select:none; user-select:none }
-  .vl-trigger span{ font:900 24px/1 var(--mono); color:#fff1e7 }
-  .vl-trigger:active{ transform:scale(.94) }
-  .vl-trigger.locked{ border-color:#ffd36d; box-shadow:0 0 0 2px rgba(255,211,109,.22),0 12px 30px -13px rgba(0,0,0,.9) }
-  .vl-trigger.flash{ animation:fireFlash .45s var(--ease) }
-  .vl-combat-fab{ bottom:calc(min(34vh, 300px) + 142px + env(safe-area-inset-bottom)) }
-}
-@media (pointer:coarse) and (orientation:landscape){
-  .vl-combat-live{ bottom:calc(52vh + 12px + env(safe-area-inset-bottom)) }
-  .vl-combat-fab{ bottom:calc(52vh + 136px + env(safe-area-inset-bottom)) }
-}
-
 /* ── BLOQUE 55c: un solo plano modal + bottom sheets adaptativos ────────── */
 .vl-overlay-scrim{ display:none }
 @media (pointer:coarse){
@@ -5298,7 +5252,6 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
 
   .vl-stick.disabled{ opacity:0; pointer-events:none }
   .vl-stick{ transition:opacity .14s var(--ease) }
-  .vl-overlay-open .vl-combat-live{ opacity:0; pointer-events:none }
 }
 @media (pointer:coarse) and (orientation:landscape){
   .vl-dock.open,.vl-combat.open{
@@ -5319,8 +5272,8 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   .vl-overlay-scrim,.vl-stick{ transition:none }
 }
 
-/* ── BLOQUE 55d: command HUD móvil compacto ───────────────────────────── */
-.vl-command-hud,.vl-mobile-action{ display:none }
+/* ── BLOQUE 55d: HUD móvil premium, tres carriles sin solapamientos ────── */
+.vl-command-hud,.vl-flight-tools-left,.vl-gimbal-tools,.vl-mobile-action{ display:none }
 @media (pointer:coarse){
   .vl-body,.vl-hud,.vl-hud *{
     -webkit-user-select:none;
@@ -5328,31 +5281,112 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     -webkit-touch-callout:none;
     -webkit-tap-highlight-color:transparent;
   }
-  .vl-body{ overscroll-behavior:none }
-  .vl-body .vl-canvas,.vl-stick,.vl-trigger,.vl-weapon-toggle,.vl-weapon-picker{
+  .vl-body{ overscroll-behavior:none; touch-action:none }
+  .vl-body .vl-canvas,.vl-stick,.vl-trigger,.vl-weapon-toggle,.vl-weapon-picker,
+  .vl-camera-toggle,.vl-camera-picker-toggle,.vl-camera-picker,.vl-gimbal-tools{
     touch-action:none;
   }
-  .vl-hud button,.vl-dock,.vl-combat,.vl-grade,.vl-guide{
-    touch-action:manipulation;
-  }
-  .vl-trigger,.vl-weapon-toggle,.vl-weapon-picker,.vl-weapon-picker button{
-    touch-action:none;
-  }
+  .vl-hud button,.vl-dock,.vl-combat,.vl-grade,.vl-guide{ touch-action:manipulation }
+  .vl-trigger,.vl-weapon-toggle,.vl-weapon-picker,.vl-weapon-picker button,
+  .vl-gimbal-tray input{ touch-action:none }
 
   .vl-mobile-action{ display:block }
-  .vl-fab{
+  /* DIST ya vive en la cabecera FPV y el valor de gimbal en su botón:
+     ocultar estas dos copias evita texto fantasma detrás de los controles. */
+  .vl-osd-home,.vl-osd-gimbal{ display:none }
+  .vl-command-hud,.vl-flight-tools-left,.vl-gimbal-tools{
+    position:fixed;
+    bottom:calc(min(34vh,300px) + 36px + env(safe-area-inset-bottom));
+    z-index:45;
+    pointer-events:auto;
+  }
+  .vl-flight-tools-left{
+    left:calc(14px + env(safe-area-inset-left));
+    display:grid;
+    grid-template-columns:56px 44px;
+    grid-template-rows:56px 52px;
+    gap:8px;
+    align-items:start;
+  }
+  .vl-flight-tools-left .vl-fab{
+    position:static !important;
+    left:auto; right:auto; top:auto; bottom:auto;
+    grid-column:1;
+    grid-row:2;
     width:52px; min-width:52px; height:52px; padding:0;
     font:700 11px var(--font); letter-spacing:0;
   }
+  .vl-camera-toggle{
+    width:56px;
+    height:56px;
+    padding:5px;
+    display:grid;
+    place-items:center;
+    align-content:center;
+    gap:3px;
+    border-radius:17px;
+    border:1px solid rgba(79,174,236,.56);
+    color:#a9dcff;
+    background:linear-gradient(155deg,rgba(24,48,67,.97),rgba(10,15,20,.95));
+    box-shadow:0 12px 30px -14px rgba(0,0,0,.9),inset 0 1px rgba(255,255,255,.1);
+    cursor:pointer;
+  }
+  .vl-camera-toggle span{ font:800 8px/1 var(--mono); letter-spacing:.13em }
+  .vl-camera-toggle output{ color:#f0f7ff; font:800 12px/1 var(--mono) }
+  .vl-camera-picker-toggle{
+    width:44px;
+    height:44px;
+    padding:0;
+    border-radius:14px;
+    border:1px solid rgba(79,174,236,.38);
+    color:#cceaff;
+    background:linear-gradient(155deg,rgba(24,42,57,.96),rgba(10,14,19,.94));
+    font:800 18px/1 var(--mono);
+    cursor:pointer;
+  }
+  .vl-camera-picker-toggle[aria-expanded=true],.vl-camera-toggle:active{
+    border-color:#79caff;
+    box-shadow:0 0 0 2px rgba(79,174,236,.18),0 12px 30px -14px rgba(0,0,0,.9);
+  }
+  .vl-camera-picker{
+    position:absolute;
+    left:0;
+    bottom:calc(100% + 10px);
+    width:224px;
+    padding:6px;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:4px;
+    border-radius:16px;
+    border:1px solid rgba(79,174,236,.4);
+    background:linear-gradient(160deg,rgba(22,34,45,.99),rgba(8,12,17,.98));
+    -webkit-backdrop-filter:blur(16px) saturate(1.2);
+    backdrop-filter:blur(16px) saturate(1.2);
+    box-shadow:0 18px 42px -16px rgba(0,0,0,.95);
+  }
+  .vl-camera-picker[hidden]{ display:none }
+  .vl-camera-picker button{
+    min-height:48px;
+    padding:0 10px;
+    border-radius:11px;
+    border:1px solid transparent;
+    background:transparent;
+    color:#c6d5e2;
+    text-align:left;
+    font:650 12px var(--font);
+    cursor:pointer;
+  }
+  .vl-camera-picker button[aria-selected=true]{
+    color:#bce5ff;
+    border-color:rgba(79,174,236,.42);
+    background:rgba(79,174,236,.14);
+  }
+
   .vl-command-hud{
-    position:fixed;
     right:calc(14px + env(safe-area-inset-right));
-    bottom:calc(min(34vh,300px) + 36px + env(safe-area-inset-bottom));
     display:grid;
     justify-items:end;
     gap:10px;
-    z-index:45;
-    pointer-events:auto;
   }
   .vl-weapon-toggle{
     width:56px;
@@ -5381,14 +5415,14 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     position:absolute;
     right:0;
     bottom:calc(100% + 10px);
-    min-width:132px;
+    min-width:160px;
     padding:6px;
     display:flex;
     flex-direction:column;
     gap:4px;
     border-radius:16px;
     border:1px solid rgba(224,164,88,.38);
-    background:linear-gradient(160deg,rgba(32,31,30,.98),rgba(10,12,16,.97));
+    background:linear-gradient(160deg,rgba(32,31,30,.99),rgba(10,12,16,.98));
     -webkit-backdrop-filter:blur(16px) saturate(1.2);
     backdrop-filter:blur(16px) saturate(1.2);
     box-shadow:0 18px 42px -16px rgba(0,0,0,.95);
@@ -5411,42 +5445,140 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     background:rgba(224,164,88,.13);
   }
   .vl-trigger{
+    pointer-events:auto;
     width:72px;
     height:72px;
     min-height:72px;
     padding:0;
+    border:1px solid rgba(255,150,100,.62);
+    border-radius:23px;
+    color:#ffe5d6;
+    background:linear-gradient(145deg,rgba(169,58,31,.97),rgba(73,25,21,.96));
+    box-shadow:0 12px 30px -13px rgba(0,0,0,.9),0 0 22px -10px rgba(255,90,55,.75);
+    display:flex;
+    align-items:center;
+    justify-content:center;
     flex-direction:column;
     gap:3px;
-    border-radius:23px;
+    cursor:pointer;
     font-family:var(--font);
   }
+  .vl-trigger span{ font:900 24px/1 var(--mono); color:#fff1e7 }
   .vl-trigger strong{ font:750 9px/1 var(--font); letter-spacing:.03em }
   .vl-trigger:active{ transform:scale(.97) }
+  .vl-trigger.locked{
+    border-color:#ffd36d;
+    box-shadow:0 0 0 2px rgba(255,211,109,.22),0 12px 30px -13px rgba(0,0,0,.9);
+  }
+  .vl-trigger.flash{ animation:fireFlash .45s var(--ease) }
 
-  .vl-overlay-open .vl-fab,.vl-overlay-open .vl-command-hud{
+  .vl-gimbal-tools{
+    left:50%;
+    transform:translateX(-50%);
+    display:block;
+  }
+  .vl-gimbal-toggle{
+    width:96px;
+    height:44px;
+    padding:0 11px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    border-radius:15px;
+    border:1px solid rgba(74,213,174,.45);
+    color:#8ce9cb;
+    background:linear-gradient(155deg,rgba(20,48,43,.96),rgba(9,16,17,.95));
+    box-shadow:0 12px 30px -14px rgba(0,0,0,.9),inset 0 1px rgba(255,255,255,.08);
+    cursor:pointer;
+  }
+  .vl-gimbal-toggle span{ font:800 8px/1 var(--mono); letter-spacing:.08em }
+  .vl-gimbal-toggle output{ color:#e8fff7; font:800 11px/1 var(--mono) }
+  .vl-gimbal-toggle[aria-expanded=true]{
+    border-color:#6de4bf;
+    box-shadow:0 0 0 2px rgba(74,213,174,.17),0 12px 30px -14px rgba(0,0,0,.9);
+  }
+  .vl-gimbal-toggle:disabled{ display:none }
+  .vl-gimbal-tray{
+    position:absolute;
+    left:calc(50% + 16px);
+    bottom:calc(100% + 10px);
+    width:148px;
+    padding:6px;
+    transform:translateX(-50%);
+    border-radius:17px;
+    border:1px solid rgba(74,213,174,.42);
+    background:linear-gradient(160deg,rgba(20,37,35,.99),rgba(8,13,15,.98));
+    -webkit-backdrop-filter:blur(16px) saturate(1.2);
+    backdrop-filter:blur(16px) saturate(1.2);
+    box-shadow:0 18px 42px -16px rgba(0,0,0,.95);
+  }
+  .vl-gimbal-tray[hidden]{ display:none }
+  .vl-gimbal-tray label{
+    display:flex;
+    justify-content:space-between;
+    color:#8ba7a0;
+    font:750 8px var(--mono);
+    letter-spacing:.08em;
+  }
+  .vl-gimbal-tray label output{ color:#dffff5; font-size:10px }
+  .vl-gimbal-tray input{ width:100%; min-height:38px; accent-color:#52c79a }
+  .vl-gimbal-tray > div{ display:grid; grid-template-columns:repeat(3,1fr); gap:2px }
+  .vl-gimbal-tray button{
+    min-width:44px;
+    min-height:44px;
+    padding:0;
+    border-radius:11px;
+    border:1px solid rgba(74,213,174,.2);
+    background:rgba(74,213,174,.08);
+    color:#c7f8e8;
+    font:750 11px var(--mono);
+  }
+
+  .vl-overlay-open .vl-fab,.vl-overlay-open .vl-command-hud,
+  .vl-overlay-open .vl-flight-tools-left,.vl-overlay-open .vl-gimbal-tools{
     opacity:0;
     pointer-events:none;
   }
+}
+@media (pointer:coarse) and (min-width:601px){
+  .vl-gimbal-tray{ left:50%; width:220px; padding:10px }
 }
 @media (pointer:coarse) and (max-width:600px){
   .vl-stick-base{ width:112px; height:112px; opacity:.54 }
 }
 @media (pointer:coarse) and (orientation:landscape){
-  .vl-command-hud{
+  .vl-command-hud,.vl-flight-tools-left,.vl-gimbal-tools{
     top:calc(12px + env(safe-area-inset-top));
     bottom:auto;
   }
-  .vl-weapon-picker{
+  .vl-camera-picker,.vl-weapon-picker{
     position:fixed;
-    top:calc(12px + env(safe-area-inset-top));
+    top:calc(70px + env(safe-area-inset-top));
     left:50%;
     right:auto;
     bottom:auto;
     transform:translateX(-50%);
   }
+  .vl-camera-picker{
+    width:min(520px,62vw);
+    grid-template-columns:repeat(4,minmax(0,1fr));
+  }
+  .vl-weapon-picker{
+    width:min(620px,74vw);
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+  }
+  .vl-gimbal-tray{
+    top:calc(100% + 10px);
+    bottom:auto;
+  }
 }
 @media (prefers-reduced-motion:reduce){
-  .vl-command-hud *{ transition:none !important; animation:none !important }
+  .vl-command-hud *,.vl-flight-tools-left *,.vl-gimbal-tools *{
+    transition:none !important;
+    animation:none !important;
+  }
 }
 
 /* ── BLOQUE 56: Mundo overhaul — compacto, cards ricas, cfg de lanzamiento,

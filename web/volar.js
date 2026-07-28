@@ -4,40 +4,41 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=314';
+import * as THREE from '/flightverse/three.js?v=315';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=314';
+} from '/flightverse/scene.js?v=315';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=314';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=314';
-import { createRecorder } from '/flightverse/recorder.js?v=314';
-import { createAudio } from '/flightverse/audio.js?v=314';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=314';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=314';
+} from '/flightverse/runtime.js?v=315';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=315';
+import { createRecorder } from '/flightverse/recorder.js?v=315';
+import { createAudio } from '/flightverse/audio.js?v=315';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=315';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=315';
 import {
   createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=314';
-import { createSky } from '/flightverse/sky.js?v=314';
-import { loadSceneObjects } from '/flightverse/objects.js?v=314';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=314';
-import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=314';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=314';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=314';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=314';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=314';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=314';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=314';
-import CameraControls from '/vendor/camera-controls.module.js?v=314';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=314';
+} from '/flightverse/mobile-command.js?v=315';
+import { createSky } from '/flightverse/sky.js?v=315';
+import { loadSceneObjects } from '/flightverse/objects.js?v=315';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=315';
+import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=315';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=315';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=315';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=315';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=315';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=315';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=315';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=315';
+import CameraControls from '/vendor/camera-controls.module.js?v=315';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=315';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=314';
+} from '/vendor/postprocessing180.module.js?v=315';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -96,8 +97,6 @@ function hud() {
       <div class="vl-metric"><span id="vl-vs">—</span><label>VS m/s</label><i class="vl-bar vs"><b id="vl-vs-b"></b></i></div>
     </div>
     <div class="vl-corner bl">
-      <button class="vl-fab" id="vl-fab" aria-label="Abrir menú de vuelo"
-        aria-controls="vl-dock" aria-expanded="false">Menú</button>
       <button class="vl-dockmin vl-solo-fino" id="vl-dockmin" title="Ocultar panel">«</button>
       <div class="vl-dock" id="vl-dock" role="dialog" aria-modal="false" aria-labelledby="vl-dock-title">
         <div class="vl-dock-head vl-panel-drag"><b id="vl-dock-title">MENÚ DE VUELO <small>ARRASTRAR</small></b><button id="vl-dock-close">Cerrar</button></div>
@@ -140,6 +139,27 @@ function hud() {
         </button>
       </div>
     </div>
+    <div class="vl-flight-tools-left" id="vl-flight-tools-left" aria-label="Herramientas de vuelo">
+      <button class="vl-camera-toggle" id="vl-camera-toggle"
+        aria-label="Cambiar cámara" aria-controls="vl-camera-picker">
+        <span>CAM</span><output>FPV</output>
+      </button>
+      <button class="vl-camera-picker-toggle" id="vl-camera-picker-toggle"
+        aria-label="Elegir cámara" aria-controls="vl-camera-picker"
+        aria-haspopup="listbox" aria-expanded="false">⌄</button>
+      <div class="vl-camera-picker" id="vl-camera-picker"
+        role="listbox" aria-label="Seleccionar cámara" hidden>
+        <button role="option" data-camera="muycerca">Muy cerca</button>
+        <button role="option" data-camera="cerca">Cerca</button>
+        <button role="option" data-camera="lejos">Lejos</button>
+        <button role="option" data-camera="fpv">FPV</button>
+        <button role="option" data-camera="top">Cenital</button>
+        <button role="option" data-camera="orbit">Órbita</button>
+        <button role="option" data-camera="lado">Lateral</button>
+      </div>
+      <button class="vl-fab" id="vl-fab" aria-label="Abrir menú de vuelo"
+        aria-controls="vl-dock" aria-expanded="false">Menú</button>
+    </div>
     <div class="vl-command-hud" id="vl-command-hud" aria-label="Controles de combate">
       <button class="vl-weapon-toggle" id="vl-weapon-toggle"
         aria-controls="vl-weapon-picker" aria-haspopup="listbox" aria-expanded="false">
@@ -156,6 +176,22 @@ function hud() {
       <button class="vl-trigger" id="vl-trigger" title="X · disparar" aria-label="Disparar arma seleccionada">
         <span>◎</span><strong>FUEGO</strong>
       </button>
+    </div>
+    <div class="vl-gimbal-tools" id="vl-gimbal-tools">
+      <button class="vl-gimbal-toggle" id="vl-gimbal-toggle"
+        aria-controls="vl-gimbal-tray" aria-expanded="false">
+        <span>GIMBAL</span><output>-7°</output>
+      </button>
+      <div class="vl-gimbal-tray" id="vl-gimbal-tray" role="group"
+        aria-label="Ajustar inclinación del gimbal" hidden>
+        <label for="vl-gimbal-range">INCLINACIÓN <output id="vl-gimbal-value">-7°</output></label>
+        <input type="range" id="vl-gimbal-range" min="-90" max="25" step="1" value="-7">
+        <div>
+          <button data-gimbal="-5" aria-label="Bajar gimbal cinco grados">−5°</button>
+          <button data-gimbal-reset aria-label="Restablecer gimbal">0°</button>
+          <button data-gimbal="5" aria-label="Subir gimbal cinco grados">+5°</button>
+        </div>
+      </div>
     </div>
     <div class="vl-overlay-scrim" id="vl-overlay-scrim" aria-hidden="true"></div>
     <div class="vl-flight-status">
@@ -215,7 +251,6 @@ function hud() {
     <canvas class="vl-minimap" id="vl-minimap" width="180" height="180"></canvas>
     <div class="vl-count" id="vl-count"></div>
     <div class="vl-result" id="vl-result"></div>
-    <input type="range" class="vl-gwheel" id="vl-gwheel" min="-72" max="22" value="-7" aria-label="gimbal">
     <div class="vl-grade" id="vl-grade">
       <div class="vl-grade-head vl-grade-drag"><span class="vl-grade-k">IMAGEN <small>ARRASTRAR</small></span>
         <div class="vl-grade-actions">
@@ -661,9 +696,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=314', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=315', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=314');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=315');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -986,6 +1021,7 @@ async function main() {
     eventRoot: document,
     onSelect: setWeapon,
   });
+  let flightTools = null;
   document.addEventListener('pointerdown', e => {
     const activeOverlay = overlayCoordinator?.active();
     const b = e.target.closest('#vl-weps button[data-w]');
@@ -995,6 +1031,7 @@ async function main() {
   const sticks = createTouchSticks($('#vl-hud'));
   const resetCommandOnOrientation = () => {
     weaponPicker.close('orientation');
+    flightTools?.closeAll('orientation');
     firePointers.cancel('orientation');
     releaseFiring();
     sticks?.reset();
@@ -1016,10 +1053,9 @@ async function main() {
   let gimbalTilt = cameraController.snapshot().gimbalRadians;
   const setGimbal = r => {
     gimbalTilt = cameraController.setGimbalRadians(r);
-    $('#vl-gwheel').value = Math.round(gimbalTilt * 180 / Math.PI);
     $('#osd-gimbal').textContent = `GIMBAL ${Math.round(gimbalTilt * 180 / Math.PI)}°`;
+    flightTools?.syncGimbalRadians(gimbalTilt);
   };
-  $('#vl-gwheel').addEventListener('input', e => setGimbal(+e.target.value * Math.PI / 180));
   const cine = { v: 0.14, a: 0.24 };
   $('#cine-v').addEventListener('input', e => { cine.v = +e.target.value; });
   $('#cine-a').addEventListener('input', e => { cine.a = +e.target.value; });
@@ -1047,8 +1083,32 @@ async function main() {
     dmesh.visible = !RIGS[rigIx].hideDrone;
     $('#vl-fpv').classList.toggle('show', !!RIGS[rigIx].hideDrone);
     $('#vl-hud').classList.toggle('fpv-active', !!RIGS[rigIx].hideDrone);
+    $('#vl-gimbal-toggle').disabled = !RIGS[rigIx].hideDrone;
+    if (!RIGS[rigIx].hideDrone) flightTools?.closeGimbal('camera');
+    flightTools?.syncCamera(RIGS[rigIx]);
   };
   const cycleRig = () => setRig(rigIx + 1);
+  const cameraItems = [...document.querySelectorAll('#vl-camera-picker button[data-camera]')];
+  flightTools = createFlightTools({
+    cameraTrigger: $('#vl-camera-toggle'),
+    cameraPickerTrigger: $('#vl-camera-picker-toggle'),
+    cameraPanel: $('#vl-camera-picker'),
+    cameraItems,
+    gimbalTrigger: $('#vl-gimbal-toggle'),
+    gimbalTray: $('#vl-gimbal-tray'),
+    gimbalRange: $('#vl-gimbal-range'),
+    gimbalValue: $('#vl-gimbal-value'),
+    gimbalButtons: [...document.querySelectorAll('#vl-gimbal-tray button')],
+    eventRoot: document,
+    visibilityRoot: document,
+    onCycleCamera: direction => setRig(rigIx + direction),
+    onSelectCamera: key => {
+      const next = RIGS.findIndex(rig => rig.key === key);
+      if (next >= 0) setRig(next);
+    },
+    onGimbal: setGimbal,
+  });
+  flightTools.syncGimbalRadians(gimbalTilt);
   const CIELO_LB = { dia: 'día', atardecer: 'atardecer', noche: 'noche' };
   $('#vl-cielo').addEventListener('click', () => {
     const preset = sky.cycle();
@@ -1092,7 +1152,12 @@ async function main() {
   overlayCoordinator = createOverlayCoordinator({
     eventRoot: document,
     scrim: touchUi ? $('#vl-overlay-scrim') : null,
-    inertTargets: [renderer.domElement, $('#vl-command-hud')],
+    inertTargets: [
+      renderer.domElement,
+      $('#vl-command-hud'),
+      $('#vl-flight-tools-left'),
+      $('#vl-gimbal-tools'),
+    ],
     overlays: {
       ...(touchUi ? {
         menu: { ...mobileSheets.menu, openClass: 'open' },
@@ -1108,6 +1173,7 @@ async function main() {
     onChange: active => {
       if (active) {
         weaponPicker.close('overlay');
+        flightTools.closeAll('overlay');
         firePointers.cancel('overlay');
         releaseFiring();
       }
@@ -1800,6 +1866,7 @@ async function main() {
           trigger: { ...triggerState } };
         report.controls = {
           overlay: overlayCoordinator?.active() || null,
+          flightTool: flightTools?.active() || null,
           inputEnabled: input.enabled,
           keyboardKeys: input.keys.size,
           lastInput: { ...lastFlightInput },
@@ -2039,6 +2106,7 @@ async function main() {
     loop.stop();
     removeEventListener('orientationchange', resetCommandOnOrientation);
     weaponPicker.dispose();
+    flightTools.dispose();
     firePointers.dispose();
     surfaceGuards.dispose();
     overlayCoordinator?.dispose();
