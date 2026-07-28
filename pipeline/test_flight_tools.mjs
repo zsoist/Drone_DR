@@ -96,10 +96,12 @@ test('Camera cycles once, exposes current rig, and picker selection closes clean
 
   h.cameraPickerTrigger.dispatchEvent(new Event('click'));
   assert.equal(h.cameraPanel.hidden, false);
+  assert.equal(h.gimbalTrigger.hidden, true);
   assert.equal(h.cameraPickerTrigger.getAttribute('aria-expanded'), 'true');
   h.cameraItems[1].dispatchEvent(new Event('click'));
   assert.deepEqual(h.selected, ['top']);
   assert.equal(h.cameraPanel.hidden, true);
+  assert.equal(h.gimbalTrigger.hidden, false);
   assert.equal(h.cameraPickerTrigger.getAttribute('aria-expanded'), 'false');
   assert.equal(h.cameraPickerTrigger.focusCount, 1);
 });

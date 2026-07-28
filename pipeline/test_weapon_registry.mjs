@@ -153,6 +153,12 @@ test('model library loads only selected tier, clones named nodes, and disposes o
   assert.equal(loads[0], '/assets/weapons/runtime/ac30_cannon.glb');
   assert.equal(mountPoint.children.length, 1);
   assert.equal((await library.cloneProjectile('ac')).name, 'projectile');
+  assert.deepEqual(library.snapshot().nodes.ac, {
+    mount: true,
+    projectile: true,
+    muzzle: true,
+    collision_proxy: true,
+  });
   library.dispose();
   library.dispose();
   assert.deepEqual(disposed, { geometry: 1, material: 1, texture: 1 });

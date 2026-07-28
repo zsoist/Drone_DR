@@ -61,6 +61,11 @@ class MobileHudGeometryContractTests(unittest.TestCase):
             r"min\(34vh,300px\) \+ (\d+(?:\.\d+)?)px",
             COMMAND_STYLES,
         )
+        gimbal_portrait_clearance = number(
+            r"\n\s*\.vl-gimbal-tools\{\s*bottom:calc\("
+            r"min\(34vh,300px\) \+ (\d+(?:\.\d+)?)px",
+            COMMAND_STYLES,
+        )
         landscape_tools_top = number(
             r"orientation:landscape\)\{\s*"
             r"\.vl-command-hud,\.vl-flight-tools-left,\.vl-gimbal-tools\{"
@@ -227,11 +232,14 @@ class MobileHudGeometryContractTests(unittest.TestCase):
                     camera.right + 8 + camera_picker_toggle_size,
                     camera.top + camera_picker_toggle_size,
                 )
+                gimbal_bottom = height - (
+                    stick_height + gimbal_portrait_clearance + safe_bottom
+                )
                 gimbal = Rect(
                     width / 2 - gimbal_width / 2,
-                    tools_bottom - gimbal_height,
+                    gimbal_bottom - gimbal_height,
                     width / 2 + gimbal_width / 2,
-                    tools_bottom,
+                    gimbal_bottom,
                 )
 
             controls = {
@@ -294,6 +302,18 @@ class MobileHudGeometryContractTests(unittest.TestCase):
                         overlaps(controls["gimbal"], controls[side_name]),
                         f"{profile}: gimbal overlaps {side_name}",
                     )
+                reticle_y = height / 2
+                aim_clearance = (
+                    reticle_y - controls["gimbal"].bottom
+                    if controls["gimbal"].bottom <= reticle_y
+                    else controls["gimbal"].top - reticle_y
+                )
+                self.assertGreaterEqual(
+                    aim_clearance,
+                    20,
+                    f"{profile}: gimbal leaves only {aim_clearance:.2f}px "
+                    "around the aiming reticle",
+                )
 
 
 if __name__ == "__main__":

@@ -1,140 +1,94 @@
-# Flightverse mobile command HUD QA — 2026-07-27
+# Flightverse world + mobile premium QA — 2026-07-27
 
-Status: PASS
+Status: LOCAL CANDIDATE PASS
+Candidate web build: v331
+Target: `recon_c97cd120a1` on `http://127.0.0.1:8790`
 
-## Scope
+## Outcome
 
-Task 3 validates the Flightverse command HUD with real Chrome DevTools Protocol
-touch events. The gate covers phone and iPad portrait/landscape layouts, while
-retaining a desktop mouse Fire check.
+The final five-profile matrix passes at 60 fps with no console errors:
 
-Test target:
+| Profile | Mundo | Volar | Input |
+| --- | ---: | ---: | --- |
+| Phone portrait | 9 islands | 60 fps | real touch |
+| Phone landscape | 9 islands | 60 fps | real touch |
+| iPad portrait | 9 islands | 60 fps | real touch |
+| iPad landscape | 9 islands | 60 fps | real touch |
+| Desktop | 9 islands | 60 fps | mouse |
 
-- Loopback: `http://127.0.0.1:8790`
-- Clip: `recon_c97cd120a1`
-- Flightverse web build: v313
+The four touch profiles capture and validate eight premium states each:
+`fpv`, `camera`, `gimbal`, `weapons9`, `top`, `orbit`, `nova-impact`, and
+`rail-impact`. The 32 original-resolution artifacts live under
+`/Volumes/SSD/drone-vault/qa/matrix-volar-<profile>-<state>.png`.
 
-## Release and production canary
+## Mobile and camera acceptance
 
-Candidate `0b0d798582a9bbb5d44367d3cfeb9c5f08d6f0d8` passed the complete
-fail-closed release suite on v313:
+- Camera, camera picker, Menu, weapon, Fire, gimbal, sticks, FPV status,
+  chase HUD, compass, challenge, and go-to controls have zero measured
+  intersections and remain inside the visual viewport with emulated safe
+  insets 17/13/23/11 px.
+- Fire is at least 72×72, weapon/camera 56×56, Menu 52×52, collapsed gimbal
+  96×44, and picker rows meet the 44 px touch floor.
+- Expanded landscape gimbal is a horizontal lane and stays at least 8 px from
+  both stick zones/bases. It no longer covers the FPV status strip.
+- The nine-weapon landscape picker occupies the top band and mutually closes
+  camera, gimbal, and Menu surfaces.
+- `gesturestart/change/end`, selection, context menu, callout, tap highlight,
+  and page zoom are blocked on the flight surface without disabling form
+  controls.
+- Real CDP touch proves one-shot, MG hold/release, three simultaneous
+  contacts, owner isolation, partial Fire release while both sticks remain
+  active, cancellation, rotation cleanup, focus restoration, and no ghost
+  shot.
+- FPV alone owns the gimbal. A real range drag reaches approximately −83°.
+  Cenital has a finite normalized quaternion and roll below 0.5°. Orbit uses
+  FOV 48° and a close-action 5.5–16 m radius with resettable finite phase.
 
-- Python compilation, 51/51 focused Node tests, and the full smoke suite.
-- World audit and runtime sweep: 9/9 active worlds at 60 fps, with a clean
-  disk audit.
-- Invasion runtime: 60 fps, GLB preload 6/6, caps respected, and no fallback,
-  spawn failure, or console error.
-- Collision stress: 100/100 at 60 fps, 20 shots, 20 explosions, four reloads,
-  and no failures or console errors.
-- Default Flightverse browser matrix: Mundo returned nine islands and Volar
-  held 60 fps in phone portrait/landscape, iPad portrait/landscape, and
-  desktop. Every mobile profile reported real touch.
-- Branch diff check: clean.
+## World, collision, weapons, and effects
 
-`pipeline/safe_restart.sh server` completed every-world preflight, collision
-stress 100, restart, and mandatory post-health without a bypass. The deployed
-canary then passed:
+- `audit_world.py`: 9/9 active worlds expose valid mesh, terrain, and current
+  collision metadata.
+- `world_runtime_sweep.py`: 9/9 worlds pass at 60 fps; each owns one active
+  structural representation and no duplicated mesh/splat layer.
+- Composite collision records drone sweeps, camera casts, and weapon casts
+  against scene items and the real structure. This map has zero authored
+  destructible items, so acceptance correctly requires both world contact and
+  weapon structure contact instead of inventing an item hit.
+- Collision stress: 100/100 passes at 60 fps, 17 shots, 17 explosions, four
+  reloads, no stale scene generation, and no console error.
+- The arsenal is exactly `mg,s,m,l,ac,sw,vx,rg,tb`. AC-30, SWARM-8, VIPER-X,
+  RAIL, and NOVA each select through the visible picker, load the runtime GLB,
+  expose the four named nodes, consume exact ammo, fire, and impact.
+- Effects use five draw batches with soft alpha. Active budgets are
+  phone 520, tablet 850, desktop 1400; heavy emission is 96/150/240 and the
+  shockwave diameter cap is 35% of the viewport.
+- Original-resolution review confirms localized sparks/debris for NOVA and a
+  soft smoke trail for RAIL. The former giant full-screen explosion ring is
+  absent.
 
-- loopback health 200 with every check true and loopback identity
-  `daniel`/`dev_mode:true`;
-- public health 200 with the private/no-store edge policy, unauthenticated
-  Mundo exact 303 login redirect, and unauthenticated whoami 401;
-- authenticated public `/manifest.json` 200 through `private-data-v1`;
-- production phone portrait at 60 fps with real touch and production desktop
-  at 60 fps, both with nine Mundo islands and no console errors;
-- authoritative deletion of the ephemeral production session.
+## Weapon asset integrity
 
-Repository integrity after deployment is 225 v313 asset references, zero stale
-v300-v312 references, and 92 exact, complete, non-stale gzip pairs.
+The five original assets each have embedded base-color, normal, and ORM maps:
+4096² in ultra and 1024² in runtime. Ultra files are 5.18–5.58 MB (limit
+15 MB); runtime files are 0.86–1.10 MB (limit 3 MB).
 
-## Automated evidence
+The generator now canonicalizes embedded PNG streams and aligns/rebuilds GLB
+buffer views. Opposite module-import orders produce identical bytes, and the
+seed rebuild gate passes for all ten GLBs.
 
-The four touch profiles passed at 60 FPS with nine Mundo islands:
-
-| Viewport | Closed HUD | Weapon picker | Menu sheet | Combat input |
-| --- | --- | --- | --- | --- |
-| Phone portrait | PASS | PASS | PASS | PASS · real touch |
-| Phone landscape | PASS | PASS | PASS | PASS · real touch |
-| iPad portrait | PASS | PASS | PASS | PASS · real touch |
-| iPad landscape | PASS | PASS | PASS | PASS · real touch |
-| Desktop | n/a | n/a | n/a | PASS · mouse |
-
-Each Volar result includes `touchCommandHud` evidence for:
-
-- exact one-shot Fire behavior;
-- machine-gun hold/repeat and release;
-- short/medium/long missile hold lock, release, and repress;
-- `touchCancel` cleanup;
-- owner-pointer isolation;
-- rapid double tap without a held or ghost shot;
-- simultaneous left stick, right stick, and Fire input;
-- original stick-contact continuity after releasing only Fire;
-- viewport zoom, text-selection, and tap-highlight guards;
-- closed, weapon-picker, and Menu geometry;
-- the established Menu/overlay acceptance: forward, backward, and re-entry
-  focus trap; canvas/command inertness; held-MG cancellation; neutral flight
-  input; blocked/restored flight, camera, weapon, and record hotkeys; Fire
-  repress; scrim dismissal; sheet actions/targets; overlay exclusivity; image
-  drag; camera cycle; and chase-HUD collision/bounds.
-
-The geometry gate checks collision-free visible controls, visual-viewport
-bounds, minimum targets (Fire 72×72, weapon 56×56, Menu 52×52, picker rows
-44×48), picker visibility, Menu focus, hidden flight controls, safe-area gaps,
-and bounded sheets. CDP emulated non-zero safe insets and the CSS probe
-resolved them exactly as top 17 px, right 13 px, bottom 23 px, and left 11 px.
-Phone portrait retained 12 px clearance between Fire and the right-stick zone.
-In phone landscape the command HUD now starts below the emulated top inset;
-the picker stayed within x=356..488 and y=29..247.
-
-## Screenshot review
-
-The following 12 artifacts were reviewed at original resolution under
-`/Volumes/SSD/drone-vault/qa/`:
-
-- `matrix-volar-mobile_portrait-{closed,weapons,menu}.png`
-- `matrix-volar-mobile_landscape-{closed,weapons,menu}.png`
-- `matrix-volar-ipad_portrait-{closed,weapons,menu}.png`
-- `matrix-volar-ipad_landscape-{closed,weapons,menu}.png`
-
-Visual review passed for interactive-control separation, hierarchy,
-typography, tap-target clarity, and clipping. Closed controls are separated;
-picker rows are readable and bounded; Menu sheets retain clear focus and
-dismiss targets while hiding flight controls. The open picker visibly covers
-part of the telemetry/world imagery in phone landscape, iPad landscape, and
-iPad portrait. This is a minor, noninteractive occlusion rather than a control
-collision; enough world context remains visible.
-
-## Commands and results
+## Local release evidence
 
 ```text
-python3 pipeline/browser_matrix.py recon_c97cd120a1 --flightverse
-
-mundo/mobile_portrait: ok · 9 islas
-volar/mobile_portrait: ok · 60fps · touch=real
-mundo/mobile_landscape: ok · 9 islas
-volar/mobile_landscape: ok · 60fps · touch=real
-mundo/ipad_portrait: ok · 9 islas
-volar/ipad_portrait: ok · 60fps · touch=real
-mundo/ipad_landscape: ok · 9 islas
-volar/ipad_landscape: ok · 60fps · touch=real
-mundo/desktop: ok · 9 islas
-volar/desktop: ok · 60fps
+Python compilation                                      PASS
+Focused Node suites                                     78/78 PASS
+Focused Python suites                                   75/75 PASS
+Full smoke suite                                        PASS
+World audit                                             9/9 PASS
+World runtime sweep                                     9/9 at 60 fps
+Invasion runtime                                        60 fps, preload 6/6
+Collision stress                                        100/100 PASS
+Flightverse browser matrix v331                         10/10 PASS
 ```
 
-The focused phone landscape run also passed independently on the earlier v311
-candidate. The final default matrix revalidated phone portrait on v313.
-
-## Protocol note
-
-Empirical Chrome 150/CDP evidence corrected the initial protocol assumption.
-`touchMove([left,right])` does not release an omitted Fire contact. A
-`touchEnd([fire])` dispatch lifts exactly Fire: Chrome emitted `pointerup` for
-the Fire owner and `touchend` with `changed=[903]`, while `touches=[901,902]`
-remained active. A following `touchMove` retained those original stick IDs and
-continued non-zero flight input without restarting either contact. The gate
-stores this event/state log and asserts the ordering.
-
-When Menú opens during a physical MG hold, the overlay cancels runtime
-ownership. The remaining device contact is cleared with `touchCancel`; using
-`touchEnd` after focus moves into the sheet makes Chrome retarget and synthesize
-a click on the focused close button.
+Production deploy and public/authenticated canary evidence are recorded
+separately after the candidate commit is pushed and restarted.

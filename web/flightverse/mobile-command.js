@@ -110,6 +110,7 @@ export function createWeaponPicker({
   items,
   eventRoot = document,
   onSelect,
+  onActiveChange,
 }) {
   let opened = false;
   let disposed = false;
@@ -122,6 +123,7 @@ export function createWeaponPicker({
     opened = false;
     panel.hidden = true;
     trigger.setAttribute('aria-expanded', 'false');
+    onActiveChange?.(false);
     if (!noFocusRestore.has(reason)) trigger.focus?.();
     return true;
   };
@@ -130,6 +132,7 @@ export function createWeaponPicker({
     opened = true;
     panel.hidden = false;
     trigger.setAttribute('aria-expanded', 'true');
+    onActiveChange?.(true);
     return true;
   };
   const toggle = () => opened ? close('toggle') : open();

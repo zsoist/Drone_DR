@@ -49,6 +49,7 @@ export function createFlightTools({
     if (!cameraOpen) return false;
     cameraOpen = false;
     cameraPanel.hidden = true;
+    gimbalTrigger.hidden = false;
     cameraPickerTrigger.setAttribute('aria-expanded', 'false');
     if (!['outside', 'overlay', 'orientation', 'visibilitychange', 'pagehide', 'dispose', 'peer'].includes(reason)) {
       cameraPickerTrigger.focus?.();
@@ -72,6 +73,7 @@ export function createFlightTools({
     closeGimbal('peer');
     cameraOpen = true;
     cameraPanel.hidden = false;
+    gimbalTrigger.hidden = true;
     cameraPickerTrigger.setAttribute('aria-expanded', 'true');
     return true;
   };

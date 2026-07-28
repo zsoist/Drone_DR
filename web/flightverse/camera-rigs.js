@@ -93,7 +93,7 @@ export const CAMERA_RIGS = Object.freeze([
   Object.freeze({ key: 'lejos', label: 'Lejos', code: 'L', fov: 57 }),
   Object.freeze({ key: 'fpv', label: 'FPV', code: 'FPV', fov: 78, hideDrone: true }),
   Object.freeze({ key: 'top', label: 'Cenital', code: 'TOP', fov: 55 }),
-  Object.freeze({ key: 'orbit', label: 'Órbita', code: 'ORB', fov: 58 }),
+  Object.freeze({ key: 'orbit', label: 'Órbita', code: 'ORB', fov: 48 }),
   Object.freeze({ key: 'lado', label: 'Lateral', code: 'LAT', fov: 50 }),
 ]);
 
@@ -111,6 +111,7 @@ export function createCameraRigController({
     phase,
     radius: null,
     gimbalRadians,
+    gimbalOwner: 'fpv',
     position: [0, 0, 0],
     quaternion: [0, 0, 0, 1],
     forward: [0, 0, -1],
@@ -131,6 +132,7 @@ export function createCameraRigController({
       key,
       phase,
       radius: key === 'orbit' ? null : state.radius,
+      gimbalOwner: key === 'fpv' ? 'fpv' : 'none',
       fov: RIG_BY_KEY.get(key).fov,
       hideDrone: Boolean(RIG_BY_KEY.get(key).hideDrone),
     };
@@ -182,9 +184,9 @@ export function createCameraRigController({
         : [0, 0, -1];
       pose = poseFromForward(add(p, [0, altitude, 0]), [0, -1, 0], screenUp);
     } else if (key === 'orbit') {
-      radius = clamp(12 + speed * 0.55, 12, 28);
-      const height = clamp(4.5 + speed * 0.16, 4.5, 10);
-      phase += Math.max(0, Number(dt) || 0) * (0.22 + Math.min(speed, 30) * 0.006);
+      radius = clamp(5.5 + speed * 0.25, 5.5, 16);
+      const height = clamp(2 + speed * 0.08, 2, 6);
+      phase += Math.max(0, Number(dt) || 0) * (0.28 + Math.min(speed, 30) * 0.007);
       const leadScale = Math.min(4, speed * 0.12) / Math.max(speed, 1e-6);
       const target = add(p, scale(v, leadScale));
       const position = add(target, [
@@ -217,6 +219,7 @@ export function createCameraRigController({
       phase,
       radius,
       gimbalRadians,
+      gimbalOwner: key === 'fpv' ? 'fpv' : 'none',
       position: pose.position,
       quaternion: pose.quaternion,
       forward: pose.forward,
@@ -250,4 +253,3 @@ export function createCameraRigController({
     dispose,
   };
 }
-

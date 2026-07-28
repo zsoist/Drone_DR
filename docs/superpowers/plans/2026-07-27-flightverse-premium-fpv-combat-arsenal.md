@@ -15,7 +15,8 @@
 - Touch sizes: Camera 56×56, Menu at least 52×52, Weapon 56×56, Fire 72×72, collapsed Gimbal at least 96×44 CSS px.
 - Gimbal range is `-90°..+25°`, defaults to `-7°`, and affects FPV only.
 - Cenital roll is below 0.5° and camera matrices/quaternions remain finite.
-- Orbit radius remains in 12–28 m and owns resettable per-controller phase.
+- Orbit uses a close-action 5.5–16 m radius, FOV 48°, and owns resettable
+  per-controller phase so the drone remains visually legible.
 - Ultra weapon GLBs contain embedded 4096×4096 base-color, normal, and ORM textures; runtime GLBs contain embedded 1024×1024 equivalents.
 - Ultra GLBs remain below 15 MB and 120k triangles; runtime GLBs remain below 3 MB and 30k triangles.
 - Particle budgets are phone 520, tablet 850, desktop 1400; heavy-impact emission is 96/150/240 respectively.
@@ -73,12 +74,12 @@ test('Cenital keeps a finite orthonormal basis and less than half-degree roll', 
   }
 });
 
-test('Orbit resets local phase and scales radius with speed inside 12..28m', () => {
+test('Orbit resets local phase and keeps a premium close-action radius inside 5.5..16m', () => {
   const ctl = createHarness('orbit');
   ctl.update(frame({ speed: 0, dt: 1 }));
-  assert.equal(ctl.snapshot().radius, 12);
+  assert.equal(ctl.snapshot().radius, 5.5);
   ctl.update(frame({ speed: 60, dt: 1 }));
-  assert.equal(ctl.snapshot().radius, 28);
+  assert.equal(ctl.snapshot().radius, 16);
   ctl.select('fpv', frame());
   ctl.select('orbit', frame());
   assert.equal(ctl.snapshot().phase, 0);
@@ -102,9 +103,9 @@ quaternion from an explicit right/up/forward basis, never vertical `lookAt()`.
 Use this orbit profile:
 
 ```js
-const radius = clamp(12 + speed * 0.55, 12, 28);
-const height = clamp(4.5 + speed * 0.16, 4.5, 10);
-state.phase += dt * (0.22 + Math.min(speed, 30) * 0.006);
+const radius = clamp(5.5 + speed * 0.25, 5.5, 16);
+const height = clamp(2 + speed * 0.08, 2, 6);
+state.phase += dt * (0.28 + Math.min(speed, 30) * 0.007);
 const lead = velocity.clone().multiplyScalar(
   Math.min(4, velocity.length() * 0.12) / Math.max(velocity.length(), 1e-6),
 );

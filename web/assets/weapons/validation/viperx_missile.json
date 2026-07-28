@@ -11,8 +11,8 @@
   "tiers": {
     "ultra": {
       "path": "ultra/viperx_missile.glb",
-      "sha256": "f038ad7606d64c3d70c33a74186d648fd96475c0bc00f6b572fccf3fed0ccad2",
-      "bytes": 2423524,
+      "sha256": "410bfafcc61ad617b779b532d8e88578f8121b0f130f9f1b5aa2bc3eda57d088",
+      "bytes": 5363948,
       "triangles": 620,
       "texture_dimensions": [
         [
@@ -36,8 +36,8 @@
     },
     "runtime": {
       "path": "runtime/viperx_missile.glb",
-      "sha256": "f44ca38ca35c532fbda3c435d7a4eb51adb0775461f52fe0094ad44ec59f8b83",
-      "bytes": 424752,
+      "sha256": "304e25ab372a2a2bbb756a041a0a7996b8596ddeb37d870577bf65c5353cb4ca",
+      "bytes": 857684,
       "triangles": 620,
       "texture_dimensions": [
         [

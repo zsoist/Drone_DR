@@ -40,6 +40,10 @@ VIEWPORTS = {
     "ipad": {"width": 820, "height": 1180, "deviceScaleFactor": 2, "mobile": True},
     "desktop": {"width": 1440, "height": 960, "deviceScaleFactor": 1, "mobile": False},
 }
+PREMIUM_FLIGHTVERSE_STATES = (
+    "fpv", "camera", "gimbal", "weapons9",
+    "top", "orbit", "nova-impact", "rail-impact",
+)
 
 
 def expected_splat_path(cid: str) -> str:
@@ -195,7 +199,7 @@ def synthesize_tap(cdp, x: float, y: float, *, tap_count: int = 1,
 
 
 def command_hud_screenshot_path(viewport: str, state: str) -> Path:
-    if state not in {"closed", "camera", "gimbal", "weapons", "menu"}:
+    if state not in PREMIUM_FLIGHTVERSE_STATES:
         raise ValueError(f"estado de captura táctil inválido: {state}")
     return QA_DIR / f"matrix-volar-{viewport}-{state}.png"
 
@@ -648,6 +652,12 @@ def touch_command_geometry(cdp, state: str) -> dict:
         gimbal:document.querySelector('#vl-gimbal-toggle'),
         gimbalTray:document.querySelector('#vl-gimbal-tray'),
         menu:document.querySelector('#vl-fab'),
+        chaseLeft:document.querySelector('.vl-corner.tl'),
+        chaseRight:document.querySelector('.vl-corner.tr'),
+        chaseCompass:document.querySelector('.vl-compass'),
+        chaseChallenge:document.querySelector('#vl-challenge'),
+        chaseGoto:document.querySelector('#vl-goto'),
+        fpvStatus:document.querySelector('#fpv-head'),
         sheetScrim:document.querySelector('#vl-overlay-scrim'),
         sheet:document.querySelector('#vl-dock'),
       }};
@@ -681,10 +691,38 @@ def touch_command_geometry(cdp, state: str) -> dict:
         ['gimbalTray','fire'], ['gimbalTray','weapon'],
         ['camera','gimbal'], ['cameraList','gimbal'], ['menu','gimbal'],
         ['camera','gimbalTray'], ['cameraList','gimbalTray'], ['menu','gimbalTray'],
+        ['chaseLeft','camera'], ['chaseLeft','cameraList'], ['chaseLeft','menu'],
+        ['chaseLeft','weapon'], ['chaseLeft','fire'], ['chaseLeft','gimbal'],
+        ['chaseRight','camera'], ['chaseRight','cameraList'], ['chaseRight','menu'],
+        ['chaseRight','weapon'], ['chaseRight','fire'], ['chaseRight','gimbal'],
+        ['chaseCompass','camera'], ['chaseCompass','cameraList'],
+        ['chaseCompass','menu'], ['chaseCompass','weapon'], ['chaseCompass','fire'],
+        ['chaseChallenge','camera'], ['chaseChallenge','cameraList'],
+        ['chaseChallenge','menu'], ['chaseChallenge','weapon'], ['chaseChallenge','fire'],
+        ['chaseGoto','camera'], ['chaseGoto','cameraList'], ['chaseGoto','menu'],
+        ['chaseGoto','weapon'], ['chaseGoto','fire'],
+        ['fpvStatus','camera'], ['fpvStatus','cameraList'], ['fpvStatus','menu'],
+        ['fpvStatus','weapon'], ['fpvStatus','fire'], ['fpvStatus','gimbal'],
+        ['fpvStatus','gimbalTray'],
       ];
       const collisions = pairs
         .filter(([a,b]) => boxes[a] && boxes[b] && hit(boxes[a], boxes[b]))
         .map(([a,b]) => `${{a}}:${{b}}`);
+      const axisGap = (a, b) => {{
+        const xOverlap = a.left < b.right && a.right > b.left;
+        const yOverlap = a.top < b.bottom && a.bottom > b.top;
+        if (xOverlap) return Math.max(b.top - a.bottom, a.top - b.bottom);
+        if (yOverlap) return Math.max(b.left - a.right, a.left - b.right);
+        return Infinity;
+      }};
+      const clearancePairs = [
+        ['gimbalTray','leftZone'], ['gimbalTray','rightZone'],
+        ['gimbalTray','leftBase'], ['gimbalTray','rightBase'],
+      ];
+      const tightClearances = clearancePairs
+        .filter(([a,b]) => boxes[a] && boxes[b] && !hit(boxes[a], boxes[b])
+          && axisGap(boxes[a], boxes[b]) < 8)
+        .map(([a,b]) => `${{a}}:${{b}}=${{axisGap(boxes[a], boxes[b]).toFixed(1)}}px`);
       const outOfBounds = Object.entries(boxes)
         .filter(([name,r]) => name !== 'sheet' && (
           r.left < viewport.left - 1 || r.top < viewport.top - 1
@@ -752,7 +790,7 @@ def touch_command_geometry(cdp, state: str) -> dict:
         }}
       }}
       return {{
-        state, boxes, collisions, outOfBounds, smallTargets, viewport,
+        state, boxes, collisions, tightClearances, outOfBounds, smallTargets, viewport,
         orientation:viewport.width >= viewport.height ? 'landscape' : 'portrait',
         pickerVisible:visible(elements.picker),
         cameraPickerVisible:visible(elements.cameraPicker),
@@ -777,6 +815,10 @@ def geometry_failures(geometry: dict) -> list[str]:
     if geometry.get("collisions"):
         failures.append(
             f"{state} collisions={geometry['collisions']} boxes={geometry.get('boxes')}"
+        )
+    if geometry.get("tightClearances"):
+        failures.append(
+            f"{state} tightClearances={geometry['tightClearances']}"
         )
     if geometry.get("outOfBounds"):
         failures.append(f"{state} outOfBounds={geometry['outOfBounds']}")
@@ -913,6 +955,398 @@ def select_weapon_touch(cdp, key: str, pointer_id: int):
         label=f"selección táctil {key}",
     )
     return bool(selected)
+
+
+def select_camera_touch(cdp, key: str, pointer_id: int) -> dict:
+    """Select one dedicated camera through the visible mobile surface."""
+    toggle = element_center(cdp, "#vl-camera-picker-toggle")
+    touch_tap(cdp, pointer_id, toggle)
+    wait_for(
+        cdp,
+        js("""
+          const picker=document.querySelector('#vl-camera-picker');
+          return picker && !picker.hidden && picker.getClientRects().length;
+        """),
+        timeout=4,
+        label="selector dedicado de cámara",
+    )
+    choice = element_center(cdp, f'#vl-camera-picker [data-camera="{key}"]')
+    touch_tap(cdp, pointer_id + 1, choice)
+    return wait_for(
+        cdp,
+        js(f"""
+          const camera=window.__volar?.camera;
+          const picker=document.querySelector('#vl-camera-picker');
+          return camera?.rig === {key!r} && picker?.hidden ? camera : null;
+        """),
+        timeout=5,
+        label=f"cámara dedicada {key}",
+    )
+
+
+def premium_camera_snapshot(cdp) -> dict:
+    return cdp.eval(js("""
+      const camera=window.__volar?.camera || {};
+      const gimbal=document.querySelector('#vl-gimbal-toggle');
+      return {
+        camera,
+        owner:camera.gimbalOwner,
+        gimbalRadians:camera.gimbalRadians,
+        quaternion:camera.quaternion,
+        gimbalDisabled:!!gimbal?.disabled,
+        cameraKey:document.querySelector('#vl-camera-toggle')?.dataset.camera,
+      };
+    """))
+
+
+def validate_premium_camera(snapshot: dict, expected: str):
+    camera = snapshot.get("camera") or {}
+    quaternion = camera.get("quaternion") or []
+    finite_quaternion = (
+        len(quaternion) == 4
+        and all(isinstance(value, (int, float)) and math.isfinite(value)
+                for value in quaternion)
+    )
+    q_length = math.hypot(*quaternion) if finite_quaternion else 0
+    expected_owner = "fpv" if expected == "fpv" else "none"
+    failures = []
+    if camera.get("key") != expected or snapshot.get("cameraKey") != expected:
+        failures.append(f"key={camera.get('key')}/{snapshot.get('cameraKey')}")
+    if not camera.get("finite") or not finite_quaternion or abs(q_length - 1) >= 1e-5:
+        failures.append(f"quaternion={quaternion} finite={camera.get('finite')}")
+    if snapshot.get("owner") != expected_owner:
+        failures.append(f"owner={snapshot.get('owner')} expected={expected_owner}")
+    if not isinstance(snapshot.get("gimbalRadians"), (int, float)):
+        failures.append(f"gimbalRadians={snapshot.get('gimbalRadians')!r}")
+    if expected == "top":
+        if abs(camera.get("rollDegrees", math.inf)) >= 0.5:
+            failures.append(f"rollDegrees={camera.get('rollDegrees')}")
+        if not snapshot.get("gimbalDisabled"):
+            failures.append("gimbal enabled in top")
+    if expected == "orbit":
+        radius = camera.get("radius")
+        phase = camera.get("phase")
+        if not isinstance(radius, (int, float)) or not 5.5 <= radius <= 16:
+            failures.append(f"radius={radius}")
+        if not isinstance(camera.get("fov"), (int, float)) or camera["fov"] > 50:
+            failures.append(f"fov={camera.get('fov')}")
+        if not isinstance(phase, (int, float)) or not math.isfinite(phase) or phase <= 0:
+            failures.append(f"phase={phase}")
+        if not snapshot.get("gimbalDisabled"):
+            failures.append("gimbal enabled in orbit")
+    if failures:
+        raise RuntimeError(
+            f"telemetría de cámara premium inválida ({expected}): "
+            + "; ".join(failures)
+        )
+
+
+def set_gimbal_touch(cdp, degrees: int, pointer_id: int) -> dict:
+    """Drag the native gimbal range with a real touch pointer."""
+    toggle = element_center(cdp, "#vl-gimbal-toggle")
+    touch_tap(cdp, pointer_id, toggle)
+    wait_for(
+        cdp,
+        js("return !document.querySelector('#vl-gimbal-tray').hidden"),
+        timeout=4,
+        label="gimbal abierto para drag",
+    )
+    geometry = cdp.eval(js("""
+      const input=document.querySelector('#vl-gimbal-range');
+      window.__gimbalDragLog=[];
+      for (const type of ['pointerdown','pointermove','pointerup','input']) {
+        input.addEventListener(type,event => {
+          window.__gimbalDragLog.push({
+            type,pointerId:event.pointerId ?? null,
+            pointerType:event.pointerType ?? null,
+            isPrimary:event.isPrimary ?? null,
+            clientX:event.clientX ?? null,
+            value:Number(input.value),
+          });
+        }, { once:false });
+      }
+      const r=input.getBoundingClientRect();
+      return {
+        left:r.left,top:r.top,width:r.width,height:r.height,
+        min:Number(input.min),max:Number(input.max),value:Number(input.value),
+      };
+    """))
+    span = geometry["max"] - geometry["min"]
+    current_fraction = (geometry["value"] - geometry["min"]) / span
+    target_fraction = (degrees - geometry["min"]) / span
+    y = geometry["top"] + geometry["height"] / 2
+    start = touch_point(
+        pointer_id + 1,
+        geometry["left"] + geometry["width"] * current_fraction,
+        y,
+    )
+    target = touch_point(
+        pointer_id + 1,
+        geometry["left"] + geometry["width"] * target_fraction,
+        y,
+    )
+    dispatch_touches(cdp, "touchStart", [start])
+    cdp.pump(0.05)
+    dispatch_touches(cdp, "touchMove", [target])
+    cdp.pump(0.12)
+    release_touches(cdp, [target])
+    cdp.pump(0.35)
+    diagnostic = cdp.eval(js("""
+      return {
+        value:Number(document.querySelector('#vl-gimbal-range').value),
+        camera:window.__volar?.camera,
+        log:window.__gimbalDragLog,
+      };
+    """))
+    actual = cdp.eval(
+        js(f"""
+          const value=Number(document.querySelector('#vl-gimbal-range').value);
+          const camera=window.__volar?.camera;
+          return value <= -60 && Math.abs(value - {degrees}) <= 8
+            && Math.abs(camera.gimbalRadians * 180 / Math.PI - value) <= 0.6
+            ? {{ value,gimbalRadians:camera.gimbalRadians,
+                owner:camera.gimbalOwner }} : null;
+        """)
+    )
+    if not actual:
+        raise RuntimeError(
+            f"drag táctil de gimbal no llegó a {degrees}°: {diagnostic}"
+        )
+    touch_tap(cdp, pointer_id + 2, toggle)
+    wait_for(
+        cdp,
+        js("return document.querySelector('#vl-gimbal-tray').hidden"),
+        timeout=4,
+        label="gimbal cerrado tras drag",
+    )
+    return actual
+
+
+def weapon_acceptance_snapshot(cdp, key: str) -> dict:
+    return cdp.eval(js(f"""
+      const report=window.__volar || {{}};
+      const weapons=report.weapons || {{}};
+      const weaponState=report.weaponState || {{}};
+      return {{
+        key:{key!r},
+        selected:weaponState.weapon,
+        ammo:weaponState.ammo?.[{key!r}],
+        fired:weapons.fired,
+        fired_projectiles:weapons.fired_projectiles?.[{key!r}] || 0,
+        exploded:weapons.exploded || 0,
+        rail_hits:weapons.rail_hits || 0,
+        item_hits:weapons.item_hits || 0,
+        impact:weapons.impact || null,
+        models:weapons.models || null,
+        effects:weapons.effects || null,
+        resources:weapons.resources || null,
+        render:report.render || null,
+        fps:report.fps || 0,
+      }};
+    """))
+
+
+def item_contact_ready(evidence: dict) -> bool:
+    """Require real composite contact without pretending absent authored items exist."""
+    if evidence.get("casts", 0) <= 0 or evidence.get("sweeps", 0) <= 0:
+        return False
+    if evidence.get("loadedItems", 0) > 0:
+        return (
+            evidence.get("item_hits", 0) > 0
+            or evidence.get("weaponItemHits", 0) > 0
+        )
+    return (
+        evidence.get("world_hits", 0) > 0
+        and evidence.get("weaponStructureHits", 0) > 0
+    )
+
+
+def run_premium_combat_acceptance(cdp, viewport: str) -> dict:
+    """Fail-closed live evidence for cameras, five assets, impacts and budgets."""
+    select_camera_touch(cdp, "fpv", 1100)
+    cdp.pump(0.35)
+    fpv = premium_camera_snapshot(cdp)
+    validate_premium_camera(fpv, "fpv")
+
+    select_camera_touch(cdp, "top", 1110)
+    cdp.pump(0.35)
+    top = premium_camera_snapshot(cdp)
+    validate_premium_camera(top, "top")
+    top_geometry = touch_command_geometry(cdp, "top")
+    top_geometry_failures = geometry_failures(top_geometry)
+    if top_geometry_failures:
+        raise RuntimeError(
+            "geometría cenital inválida: " + "; ".join(top_geometry_failures)
+        )
+    screenshot(cdp, command_hud_screenshot_path(viewport, "top"))
+
+    select_camera_touch(cdp, "orbit", 1120)
+    cdp.pump(0.8)
+    orbit = premium_camera_snapshot(cdp)
+    validate_premium_camera(orbit, "orbit")
+    orbit_geometry = touch_command_geometry(cdp, "orbit")
+    orbit_geometry_failures = geometry_failures(orbit_geometry)
+    if orbit_geometry_failures:
+        raise RuntimeError(
+            "geometría orbital inválida: " + "; ".join(orbit_geometry_failures)
+        )
+    screenshot(cdp, command_hud_screenshot_path(viewport, "orbit"))
+
+    select_camera_touch(cdp, "fpv", 1130)
+    cdp.pump(0.25)
+    fpv_restored = premium_camera_snapshot(cdp)
+    validate_premium_camera(fpv_restored, "fpv")
+    combat_gimbal = set_gimbal_touch(cdp, -80, 1134)
+
+    maxima = {"ac": 48, "sw": 4, "vx": 4, "rg": 10, "tb": 2}
+    weapon_evidence = {}
+    pointer_id = 1140
+    first_effects = (
+        weapon_acceptance_snapshot(cdp, "ac").get("effects") or {}
+    )
+    for key in ("ac", "sw", "vx", "tb", "rg"):
+        wait_weapon_ready(cdp, timeout=7)
+        select_weapon_touch(cdp, key, pointer_id)
+        pointer_id += 2
+        wait_weapon_fully_regenerated(cdp, key, maxima[key], timeout=24)
+        wait_for(
+            cdp,
+            js(f"""
+              const models=window.__volar?.weapons?.models;
+              const nodes=models?.nodes?.[{key!r}] || {{}};
+              return models?.tier === 'runtime'
+                && models.ready?.includes({key!r})
+                && ['mount','projectile','muzzle','collision_proxy']
+                  .every(name => nodes[name] === true)
+                ? models : null;
+            """),
+            timeout=12,
+            label=f"GLB runtime/nodos {key}",
+        )
+        before = weapon_acceptance_snapshot(cdp, key)
+        trigger = element_center(cdp, "#vl-trigger")
+        touch_tap(
+            cdp,
+            pointer_id,
+            trigger,
+            settle=0.03 if key == "rg" else 0.13,
+        )
+        pointer_id += 1
+        after = weapon_acceptance_snapshot(cdp, key)
+        if not (
+            after["selected"] == key
+            and before["ammo"] == maxima[key]
+            and after["ammo"] == maxima[key] - 1
+            and after["fired"] == before["fired"] + 1
+            and after["fired_projectiles"] > before["fired_projectiles"]
+        ):
+            raise RuntimeError(
+                f"arma premium {key} no produjo delta exacto: "
+                f"{before} -> {after}"
+            )
+        weapon_evidence[key] = {"before": before, "after": after}
+
+        if key == "tb":
+            nova = wait_for(
+                cdp,
+                js(f"""
+                  const w=window.__volar?.weapons;
+                  const fx=w?.effects;
+                  return w?.exploded > {before['exploded']}
+                    && fx?.active > 0 && fx?.emitted > {before['effects']['emitted']}
+                    ? {{ impact:w.impact,effects:fx }} : null;
+                """),
+                timeout=10,
+                label="impacto pesado NOVA",
+            )
+            screenshot(cdp, command_hud_screenshot_path(viewport, "nova-impact"))
+            weapon_evidence[key]["impact"] = nova
+        elif key == "rg":
+            rail = {
+                "impact": after["impact"],
+                "effects": after["effects"],
+            }
+            if not (
+                after["rail_hits"] > before["rail_hits"]
+                and after["effects"]["active"] > 0
+                and after["effects"]["emitted"] > before["effects"]["emitted"]
+            ):
+                raise RuntimeError(f"impacto inmediato RAIL inválido: {before} -> {after}")
+            screenshot(cdp, command_hud_screenshot_path(viewport, "rail-impact"))
+            weapon_evidence[key]["impact"] = rail
+
+    final = weapon_acceptance_snapshot(cdp, "rg")
+    effects = final.get("effects") or {}
+    budget = effects.get("budget") or {}
+    render = final.get("render") or {}
+    collision = cdp.eval(js("""
+      const c=window.__volar?.collision || {};
+      const w=window.__volar?.weapons || {};
+      return {
+        loadedItems:c.items || 0,
+        casts:c.casts || 0,
+        sweeps:c.sweeps || 0,
+        world_hits:c.world_hits || 0,
+        item_hits:c.item_hits || 0,
+        weaponItemHits:w.item_hits || 0,
+        weaponStructureHits:w.structure_hits || 0,
+      };
+    """))
+    item_contact = {
+        **collision,
+        "source": "item" if collision["loadedItems"] > 0 else "world-structure",
+        "ready": item_contact_ready(collision),
+    }
+    if not item_contact["ready"]:
+        raise RuntimeError(f"telemetría de contacto con items inválida: {item_contact}")
+    if not (
+        effects.get("drawBatches") == 5
+        and effects.get("emitted", 0) > first_effects.get("emitted", 0)
+        and 0 < effects.get("peak", 0) <= budget.get("active", 0)
+        and effects.get("softAlpha") is True
+        and effects.get("shockwaveViewportCap") == 0.35
+    ):
+        raise RuntimeError(f"presupuesto VFX inválido: {effects}")
+    if not (
+        final.get("fps", 0) >= 50
+        and isinstance(render.get("p95Ms"), (int, float))
+        and render["p95Ms"] > 0
+        and all(isinstance(render.get(key), (int, float)) and render[key] >= 0
+                for key in ("calls", "triangles", "geometries", "textures"))
+        and not cdp.errors
+    ):
+        raise RuntimeError(
+            f"recursos/FPS/consola inválidos: fps={final.get('fps')} "
+            f"render={render} console={cdp.errors[:4]}"
+        )
+    return {
+        "camera": {
+            "fpv": fpv,
+            "top": top,
+            "orbit": orbit,
+            "restored": fpv_restored,
+            "topGeometry": top_geometry,
+            "orbitGeometry": orbit_geometry,
+        },
+        "gimbal": {
+            "gimbalRadians": fpv["gimbalRadians"],
+            "owner": fpv["owner"],
+            "combatAim": combat_gimbal,
+        },
+        "weapons": weapon_evidence,
+        "itemContact": item_contact,
+        "effects": effects,
+        "resources": {
+            "weapon": final.get("resources"),
+            "render": render,
+        },
+        "fps": final.get("fps"),
+        "consoleErrors": list(cdp.errors),
+        "screenshots": {
+            state: str(command_hud_screenshot_path(viewport, state))
+            for state in PREMIUM_FLIGHTVERSE_STATES
+        },
+    }
 
 
 def run_orientation_cleanup_gate(cdp, viewport: str) -> dict:
@@ -1638,7 +2072,7 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     geometry_errors = []
     closed_geometry = touch_command_geometry(cdp, "closed")
     geometry_errors.extend(geometry_failures(closed_geometry))
-    screenshot(cdp, command_hud_screenshot_path(viewport, "closed"))
+    screenshot(cdp, command_hud_screenshot_path(viewport, "fpv"))
 
     camera_picker_toggle = element_center(cdp, "#vl-camera-picker-toggle")
     touch_tap(cdp, 790, camera_picker_toggle)
@@ -1713,7 +2147,7 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     )
     picker_geometry = touch_command_geometry(cdp, "weapons")
     geometry_errors.extend(geometry_failures(picker_geometry))
-    screenshot(cdp, command_hud_screenshot_path(viewport, "weapons"))
+    screenshot(cdp, command_hud_screenshot_path(viewport, "weapons9"))
     wait_weapon_ready(cdp)
     picker_fire_before = cdp.eval(js("""
       return {
@@ -2188,7 +2622,6 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     )
     menu_geometry = touch_command_geometry(cdp, "menu")
     geometry_errors.extend(geometry_failures(menu_geometry))
-    screenshot(cdp, command_hud_screenshot_path(viewport, "menu"))
     close = element_center(cdp, "#vl-dock-close")
     touch_tap(cdp, touch_id, close)
     menu_closed = cdp.eval(js("""
@@ -2222,6 +2655,7 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
     if final_safe_failures:
         raise RuntimeError("; ".join(final_safe_failures))
     base_acceptance = run_mobile_base_acceptance(cdp, viewport)
+    premium_acceptance = run_premium_combat_acceptance(cdp, viewport)
 
     touch_command_hud = {
         "realTouch": True,
@@ -2239,6 +2673,7 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
         "gestureGuard": gesture,
         "safeAreaOverride": safe_area,
         "baseAcceptance": base_acceptance,
+        "premiumAcceptance": premium_acceptance,
         "selection": {
             "weapon": "mg",
             "sticksAvailable": not closed_geometry.get("commandHidden"),
@@ -2249,10 +2684,7 @@ def run_touch_command_hud(cdp, viewport: str) -> dict:
         "pickerGeometry": picker_geometry,
         "menuGeometry": menu_geometry,
         "geometryFailures": geometry_errors,
-        "screenshots": {
-            state: str(command_hud_screenshot_path(viewport, state))
-            for state in ("closed", "camera", "gimbal", "weapons", "menu")
-        },
+        "screenshots": premium_acceptance["screenshots"],
     }
     if geometry_errors:
         raise RuntimeError(

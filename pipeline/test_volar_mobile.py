@@ -165,6 +165,26 @@ class VolarMobileHudContractTests(unittest.TestCase):
             self.assertNotIn(retired, self.source)
         self.assertNotIn(".vl-combat-live", self.styles)
         self.assertNotIn(".vl-fpv-camera", self.styles)
+        landscape = self.styles[
+            self.styles.index("@media (pointer:coarse) and (orientation:landscape)"):]
+        self.assertIn(
+            ".vl-hud:not(.fpv-active) .vl-flight-tools-left",
+            landscape,
+        )
+        self.assertIn(
+            ".vl-hud:not(.fpv-active) .vl-command-hud",
+            landscape,
+        )
+        self.assertIn("grid-template-columns:56px 44px 52px", landscape)
+        self.assertIn("grid-template-columns:56px 72px", landscape)
+        self.assertIn(
+            ".vl-gimbal-tools{\n    top:calc(50px + env(safe-area-inset-top));",
+            landscape,
+        )
+        self.assertIn(
+            "grid-template-columns:auto minmax(116px,1fr) auto",
+            landscape,
+        )
 
     def test_ios_gesture_guards_cover_zoom_selection_and_callout(self):
         html = (ROOT / "web" / "volar.html").read_text()
@@ -381,13 +401,17 @@ class VolarMobileHudContractTests(unittest.TestCase):
         )
 
     def test_command_hud_screenshot_names_cover_all_touch_states(self):
+        states = (
+            "fpv", "camera", "gimbal", "weapons9",
+            "top", "orbit", "nova-impact", "rail-impact",
+        )
         for viewport in (
             "mobile_portrait",
             "mobile_landscape",
             "ipad_portrait",
             "ipad_landscape",
         ):
-            for state in ("closed", "camera", "gimbal", "weapons", "menu"):
+            for state in states:
                 path = browser_matrix.command_hud_screenshot_path(viewport, state)
                 self.assertEqual(
                     path.name,
@@ -401,9 +425,74 @@ class VolarMobileHudContractTests(unittest.TestCase):
             "gimbalTray:document.querySelector('#vl-gimbal-tray')",
             '"cameraGeometry": camera_geometry',
             '"gimbalGeometry": gimbal_geometry',
-            'for state in ("closed", "camera", "gimbal", "weapons", "menu")',
+            '"premiumAcceptance": premium_acceptance',
+            '"topGeometry": top_geometry',
+            '"orbitGeometry": orbit_geometry',
+            "chaseLeft:document.querySelector('.vl-corner.tl')",
+            "chaseRight:document.querySelector('.vl-corner.tr')",
+            "fpvStatus:document.querySelector('#fpv-head')",
+            "tightClearances",
+            "not 5.5 <= radius <= 16",
         ):
             self.assertIn(contract, matrix)
+
+    def test_browser_matrix_requires_all_premium_camera_weapon_effect_evidence(self):
+        matrix = (ROOT / "pipeline" / "browser_matrix.py").read_text()
+        for contract in (
+            "run_premium_combat_acceptance",
+            "set_gimbal_touch",
+            "set_gimbal_touch(cdp, -80",
+            'settle=0.03 if key == "rg" else 0.13',
+            '"touchMove"',
+            '"gimbalRadians"',
+            '"owner"',
+            '"quaternion"',
+            '"rollDegrees"',
+            '"radius"',
+            '"phase"',
+            '"item_hits"',
+            '"fired_projectiles"',
+            "models?.tier",
+            '"ready"',
+            '"drawBatches"',
+            '"emitted"',
+            '"peak"',
+            '"resources"',
+            '"p95Ms"',
+            "cdp.errors",
+        ):
+            self.assertIn(contract, matrix)
+
+    def test_item_contact_gate_requires_authored_item_or_real_structural_fallback(self):
+        authored = {
+            "loadedItems": 3, "casts": 10, "sweeps": 4,
+            "item_hits": 1, "weaponItemHits": 1,
+            "world_hits": 0, "weaponStructureHits": 0,
+        }
+        structural = {
+            "loadedItems": 0, "casts": 10, "sweeps": 4,
+            "item_hits": 0, "weaponItemHits": 0,
+            "world_hits": 8, "weaponStructureHits": 2,
+        }
+        self.assertTrue(browser_matrix.item_contact_ready(authored))
+        self.assertTrue(browser_matrix.item_contact_ready(structural))
+        self.assertFalse(browser_matrix.item_contact_ready({
+            **structural, "world_hits": 0, "weaponStructureHits": 0,
+        }))
+
+    def test_mobile_command_hud_hides_duplicate_osd_tapes_behind_controls(self):
+        coarse = self.styles[self.styles.index("BLOQUE 55d"):]
+        self.assertRegex(
+            coarse,
+            r"\.vl-osd(?:,\s*\.vl-osd-home,\s*\.vl-osd-gimbal)?\s*\{\s*display:none",
+        )
+        self.assertIn(".vl-gimbal-toggle[hidden]{ display:none !important }", coarse)
+        self.assertIn("@keyframes triggerFlash", coarse)
+        self.assertIn("0 0 0 10px rgba(255,140,90,0)", coarse)
+        self.assertIn(
+            ".vl-trigger.flash{ animation:triggerFlash .28s var(--ease) }",
+            coarse,
+        )
 
     def test_flight_uses_detailed_mesh_as_visual_layer_only(self):
         scene = (ROOT / "web" / "flightverse" / "scene.js").read_text()
@@ -447,6 +536,7 @@ class VolarMobileHudContractTests(unittest.TestCase):
             'role="listbox"',
             'role="option"',
             "createWeaponPicker",
+            "onActiveChange",
         ):
             self.assertIn(contract, self.source)
         self.assertNotIn('id="vl-weapon-carousel"', self.source)
@@ -457,6 +547,11 @@ class VolarMobileHudContractTests(unittest.TestCase):
         self.assertIn("createWeaponModelLibrary", self.source)
         coarse = self.styles[self.styles.index("@media (pointer:coarse)"):]
         self.assertIn("grid-template-columns:repeat(3,minmax(0,1fr))", coarse)
+        landscape = coarse[coarse.index("@media (pointer:coarse) and (orientation:landscape)"):]
+        self.assertIn(
+            ".vl-weapon-picker{\n    top:calc(12px + env(safe-area-inset-top));",
+            landscape,
+        )
 
     def test_touch_command_geometry_and_gesture_hardening_are_mobile_only(self):
         coarse = self.styles[self.styles.index("@media (pointer:coarse)"):]

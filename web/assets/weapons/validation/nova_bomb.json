@@ -11,8 +11,8 @@
   "tiers": {
     "ultra": {
       "path": "ultra/nova_bomb.glb",
-      "sha256": "23b0bd34872f5b0290f8becd3ec043a8693cce44d356bacea1540863c0e652d6",
-      "bytes": 2468944,
+      "sha256": "a6f517e898a5e1daf1877698f20ad8e6625a8af4c4d8fc99ae764f54c62abe0e",
+      "bytes": 5181696,
       "triangles": 2052,
       "texture_dimensions": [
         [
@@ -36,8 +36,8 @@
     },
     "runtime": {
       "path": "runtime/nova_bomb.glb",
-      "sha256": "2ec8b17714f603af348e4f6efb99b4e48869dfaa78e7a24603bde83e2266329f",
-      "bytes": 528260,
+      "sha256": "45e23f12d6b94eb7617004bca02910901ec04f218cdf14e46d129040b6f30cc2",
+      "bytes": 936088,
       "triangles": 2052,
       "texture_dimensions": [
         [

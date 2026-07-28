@@ -32,6 +32,7 @@ test('camera metadata is immutable and contains every gameplay rig', () => {
 
 test('gimbal changes FPV pitch but cannot rotate Cenital or Orbit', () => {
   const controller = createCameraRigController({ initialKey: 'fpv' });
+  assert.equal(controller.snapshot().gimbalOwner, 'fpv');
   controller.setGimbalRadians(-Math.PI / 3);
   controller.update(frame());
   const fpv = controller.snapshot();
@@ -39,6 +40,7 @@ test('gimbal changes FPV pitch but cannot rotate Cenital or Orbit', () => {
   controller.select('top');
   controller.update(frame());
   const topBefore = controller.snapshot();
+  assert.equal(topBefore.gimbalOwner, 'none');
   controller.setGimbalRadians(Math.PI / 8);
   controller.update(frame());
   const topAfter = controller.snapshot();
@@ -47,6 +49,7 @@ test('gimbal changes FPV pitch but cannot rotate Cenital or Orbit', () => {
   controller.select('orbit');
   controller.update(frame());
   const orbitBefore = controller.snapshot();
+  assert.equal(orbitBefore.gimbalOwner, 'none');
   controller.setGimbalRadians(-Math.PI / 2);
   controller.update(frame({ dt: 0 }));
   assert.deepEqual(controller.snapshot().quaternion, orbitBefore.quaternion);
@@ -70,12 +73,12 @@ test('Cenital keeps a finite orthonormal basis and less than half-degree roll', 
   }
 });
 
-test('Orbit resets local phase and scales radius with speed inside 12..28m', () => {
+test('Orbit resets local phase and keeps a premium close-action radius inside 5.5..16m', () => {
   const controller = createCameraRigController({ initialKey: 'orbit' });
   controller.update(frame({ speed: 0, dt: 0 }));
-  assert.equal(controller.snapshot().radius, 12);
+  assert.equal(controller.snapshot().radius, 5.5);
   controller.update(frame({ speed: 60, dt: 1 }));
-  assert.equal(controller.snapshot().radius, 28);
+  assert.equal(controller.snapshot().radius, 16);
   assert.ok(controller.snapshot().phase > 0);
 
   controller.select('fpv');
@@ -83,7 +86,7 @@ test('Orbit resets local phase and scales radius with speed inside 12..28m', () 
   controller.select('orbit');
   assert.equal(controller.snapshot().phase, 0);
   controller.update(frame({ speed: 8, dt: 0 }));
-  assert.equal(controller.snapshot().radius, 16.4);
+  assert.equal(controller.snapshot().radius, 7.5);
 });
 
 test('invalid rig and gimbal values fail closed to FPV and -7 degrees', () => {
@@ -98,4 +101,3 @@ test('invalid rig and gimbal values fail closed to FPV and -7 degrees', () => {
   controller.setGimbalRadians(Math.PI);
   assert.equal(controller.snapshot().gimbalRadians, 25 * Math.PI / 180);
 });
-

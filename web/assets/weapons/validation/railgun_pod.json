@@ -11,8 +11,8 @@
   "tiers": {
     "ultra": {
       "path": "ultra/railgun_pod.glb",
-      "sha256": "c9830021f388d83a38f7964cfb07da1194ac36e4fbf35eeceabb697c6364e197",
-      "bytes": 2669092,
+      "sha256": "a2b6f0baa5ad383916195ce089905b6be6d042777afef4403ef78ad64e6d543f",
+      "bytes": 5580228,
       "triangles": 3696,
       "texture_dimensions": [
         [
@@ -36,8 +36,8 @@
     },
     "runtime": {
       "path": "runtime/railgun_pod.glb",
-      "sha256": "8ccae5687c06479a0e5c1ea6334845d221007e54ab3214d84133200d27345c84",
-      "bytes": 676972,
+      "sha256": "4495ee911afff2f11cbf7937d56864ddb7f306314d275d39beec3eb67036feff",
+      "bytes": 1099308,
       "triangles": 3696,
       "texture_dimensions": [
         [

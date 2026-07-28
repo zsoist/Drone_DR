@@ -14,6 +14,7 @@ import io
 import json
 import math
 import struct
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -461,6 +462,73 @@ def _rebuild_glb(gltf: dict[str, Any], binary: bytes) -> bytes:
     return struct.pack("<4sII", b"glTF", 2, 12 + len(body)) + body
 
 
+def _png_chunk(kind: bytes, payload: bytes) -> bytes:
+    checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
+    return (
+        struct.pack(">I", len(payload))
+        + kind
+        + payload
+        + struct.pack(">I", checksum)
+    )
+
+
+def _canonical_png(image: Image.Image) -> bytes:
+    """Encode RGB PNG bytes without Pillow's process-global filter heuristics."""
+    bitmap = image.convert("RGB")
+    width, height = bitmap.size
+    pixels = bitmap.tobytes()
+    stride = width * 3
+    scanlines = b"".join(
+        b"\0" + pixels[row * stride:(row + 1) * stride]
+        for row in range(height)
+    )
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", header)
+        + _png_chunk(b"IDAT", zlib.compress(scanlines, level=9))
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+def _canonicalize_embedded_pngs(
+    gltf: dict[str, Any],
+    binary: bytes,
+) -> bytes:
+    """Repack buffer views with deterministic PNG payloads and 4-byte alignment."""
+    views = gltf.get("bufferViews") or []
+    replacements: dict[int, bytes] = {}
+    for image in gltf.get("images") or []:
+        if image.get("mimeType") != "image/png":
+            continue
+        view_index = image.get("bufferView")
+        if not isinstance(view_index, int) or not 0 <= view_index < len(views):
+            raise ValueError("embedded PNG bufferView missing")
+        view = views[view_index]
+        start = int(view.get("byteOffset", 0))
+        end = start + int(view["byteLength"])
+        with Image.open(io.BytesIO(binary[start:end])) as bitmap:
+            replacements[view_index] = _canonical_png(bitmap)
+
+    rebuilt = bytearray()
+    previous_end = 0
+    for view_index, view in sorted(
+        enumerate(views),
+        key=lambda entry: int(entry[1].get("byteOffset", 0)),
+    ):
+        start = int(view.get("byteOffset", 0))
+        end = start + int(view["byteLength"])
+        if start < previous_end or end > len(binary):
+            raise ValueError("overlapping or out-of-bounds generated bufferView")
+        rebuilt.extend(b"\0" * ((4 - len(rebuilt) % 4) % 4))
+        payload = replacements.get(view_index, binary[start:end])
+        view["byteOffset"] = len(rebuilt)
+        view["byteLength"] = len(payload)
+        rebuilt.extend(payload)
+        previous_end = end
+    return bytes(rebuilt)
+
+
 def export_glb(
     builder: SceneBuilder,
     path: Path,
@@ -485,6 +553,7 @@ def export_glb(
     gltf.setdefault("asset", {})["generator"] = "MetisLab Flightverse arsenal"
     gltf["asset"]["extras"] = metadata
     gltf.setdefault("extras", {}).update(metadata)
+    binary = _canonicalize_embedded_pngs(gltf, binary)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(_rebuild_glb(gltf, binary))
 

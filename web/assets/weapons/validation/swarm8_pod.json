@@ -11,8 +11,8 @@
   "tiers": {
     "ultra": {
       "path": "ultra/swarm8_pod.glb",
-      "sha256": "d88deeff4bf6a22f0aef9f56d8baf84be8bd6c62d41f776765e748758aa20fab",
-      "bytes": 2530912,
+      "sha256": "6828970f234439f9da53ae85e278fa7d286aa95db9124b4ddc17fa6d4e64409f",
+      "bytes": 5382868,
       "triangles": 2764,
       "texture_dimensions": [
         [
@@ -36,8 +36,8 @@
     },
     "runtime": {
       "path": "runtime/swarm8_pod.glb",
-      "sha256": "e3072a1bb7ecdb99f1a75789dfe7d16f0f4c0ecd784c0c100afe0f5b871ae8fc",
-      "bytes": 561676,
+      "sha256": "b57d29a0839d06e174cb7f812379c3c5ea4486b5929af68ad34894e6e0d4ca0e",
+      "bytes": 972556,
       "triangles": 2764,
       "texture_dimensions": [
         [

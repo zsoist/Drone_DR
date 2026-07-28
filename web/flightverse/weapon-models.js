@@ -1,7 +1,7 @@
 import {
   WEAPON_PROFILES,
   weaponAssetTier,
-} from './weapon-registry.js?v=318';
+} from './weapon-registry.js?v=331';
 
 const textureSlots = [
   'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap',
@@ -96,6 +96,7 @@ export function createWeaponModelLibrary({
       return scene?.getObjectByName('projectile')?.clone(true) || null;
     },
     snapshot() {
+      const requiredNodes = ['mount', 'projectile', 'muzzle', 'collision_proxy'];
       return {
         tier,
         selected: active.length,
@@ -103,6 +104,17 @@ export function createWeaponModelLibrary({
         ready: [...cache.entries()]
           .filter(([, record]) => record.scene)
           .map(([key]) => key),
+        nodes: Object.fromEntries(
+          [...cache.entries()]
+            .filter(([, record]) => record.scene)
+            .map(([key, record]) => [
+              key,
+              Object.fromEntries(requiredNodes.map(name => [
+                name,
+                Boolean(record.scene.getObjectByName(name)),
+              ])),
+            ]),
+        ),
         disposed,
       };
     },

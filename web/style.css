@@ -5293,12 +5293,17 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   .vl-mobile-action{ display:block }
   /* DIST ya vive en la cabecera FPV y el valor de gimbal en su botón:
      ocultar estas dos copias evita texto fantasma detrás de los controles. */
-  .vl-osd-home,.vl-osd-gimbal{ display:none }
+  .vl-osd,.vl-osd-home,.vl-osd-gimbal{ display:none }
   .vl-command-hud,.vl-flight-tools-left,.vl-gimbal-tools{
     position:fixed;
     bottom:calc(min(34vh,300px) + 36px + env(safe-area-inset-bottom));
     z-index:45;
     pointer-events:auto;
+  }
+  /* El centro de la retícula queda libre: Gimbal vive en un carril superior
+     propio y los pickers siguen siendo mutuamente exclusivos. */
+  .vl-gimbal-tools{
+    bottom:calc(min(34vh,300px) + 136px + env(safe-area-inset-bottom));
   }
   .vl-flight-tools-left{
     left:calc(14px + env(safe-area-inset-left));
@@ -5473,7 +5478,11 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     border-color:#ffd36d;
     box-shadow:0 0 0 2px rgba(255,211,109,.22),0 12px 30px -13px rgba(0,0,0,.9);
   }
-  .vl-trigger.flash{ animation:fireFlash .45s var(--ease) }
+  @keyframes triggerFlash{
+    0%{ box-shadow:0 0 0 0 rgba(255,140,90,.72),0 12px 30px -13px rgba(0,0,0,.9) }
+    100%{ box-shadow:0 0 0 10px rgba(255,140,90,0),0 12px 30px -13px rgba(0,0,0,.9) }
+  }
+  .vl-trigger.flash{ animation:triggerFlash .28s var(--ease) }
 
   .vl-gimbal-tools{
     left:50%;
@@ -5495,6 +5504,7 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     box-shadow:0 12px 30px -14px rgba(0,0,0,.9),inset 0 1px rgba(255,255,255,.08);
     cursor:pointer;
   }
+  .vl-gimbal-toggle[hidden]{ display:none !important }
   .vl-gimbal-toggle span{ font:800 8px/1 var(--mono); letter-spacing:.08em }
   .vl-gimbal-toggle output{ color:#e8fff7; font:800 11px/1 var(--mono) }
   .vl-gimbal-toggle[aria-expanded=true]{
@@ -5555,6 +5565,31 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     top:calc(12px + env(safe-area-inset-top));
     bottom:auto;
   }
+  .vl-gimbal-tools{
+    top:calc(50px + env(safe-area-inset-top));
+  }
+  /* Chase/cenital/orbital muestran el HUD general del mundo. Reagrupamos los
+     mandos persistentes en dos filas horizontales bajo sus esquinas para que
+     nunca tapen Mundo/Compartir ni ALT/VEL/VS, sin reducir los tap targets. */
+  .vl-hud:not(.fpv-active) .vl-flight-tools-left,
+  .vl-hud:not(.fpv-active) .vl-command-hud{
+    top:calc(89px + env(safe-area-inset-top));
+  }
+  .vl-hud:not(.fpv-active) .vl-flight-tools-left{
+    grid-template-columns:56px 44px 52px;
+    grid-template-rows:56px;
+  }
+  .vl-hud:not(.fpv-active) .vl-flight-tools-left .vl-fab{
+    grid-column:3;
+    grid-row:1;
+  }
+  .vl-hud:not(.fpv-active) .vl-command-hud{
+    grid-template-columns:56px 72px;
+    grid-template-rows:72px;
+    align-items:start;
+  }
+  .vl-hud:not(.fpv-active) .vl-weapon-toggle{ grid-column:1; grid-row:1 }
+  .vl-hud:not(.fpv-active) .vl-trigger{ grid-column:2; grid-row:1 }
   .vl-camera-picker,.vl-weapon-picker{
     position:fixed;
     top:calc(70px + env(safe-area-inset-top));
@@ -5568,6 +5603,7 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     grid-template-columns:repeat(4,minmax(0,1fr));
   }
   .vl-weapon-picker{
+    top:calc(12px + env(safe-area-inset-top));
     width:min(480px,74vw);
     display:grid;
     grid-template-columns:repeat(3,minmax(0,1fr));
@@ -5575,6 +5611,19 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   .vl-gimbal-tray{
     top:calc(100% + 10px);
     bottom:auto;
+    left:50%;
+    width:min(520px,72vw);
+    padding:4px 6px;
+    display:grid;
+    grid-template-columns:auto minmax(116px,1fr) auto;
+    align-items:center;
+    gap:8px;
+  }
+  .vl-gimbal-tray label{ min-width:92px; gap:8px }
+  .vl-gimbal-tray input{ min-height:44px }
+  .vl-gimbal-tray > div{
+    grid-template-columns:repeat(3,44px);
+    gap:3px;
   }
 }
 @media (prefers-reduced-motion:reduce){

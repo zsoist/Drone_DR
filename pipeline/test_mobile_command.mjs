@@ -275,15 +275,26 @@ async function pickerHarness() {
     return item;
   });
   const selected = [];
+  const activeChanges = [];
   const picker = createWeaponPicker({
     trigger,
     panel,
     items,
     eventRoot,
     onSelect: key => selected.push(key),
+    onActiveChange: active => activeChanges.push(active),
   });
-  return { trigger, panel, items, eventRoot, selected, picker };
+  return { trigger, panel, items, eventRoot, selected, activeChanges, picker };
 }
+
+test('weapon picker reports its visible state exactly once per transition', async () => {
+  const { activeChanges, picker } = await pickerHarness();
+  picker.open();
+  picker.open();
+  picker.close();
+  picker.close();
+  assert.deepEqual(activeChanges, [true, false]);
+});
 
 test('weapon picker selects one enabled weapon and restores focus after closing', async () => {
   const { trigger, panel, items, selected, picker } = await pickerHarness();
