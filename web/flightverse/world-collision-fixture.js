@@ -1,7 +1,11 @@
-import * as THREE from '/flightverse/three.js?v=315';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=315';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=315';
-import { createWeapons } from '/flightverse/weapons.js?v=315';
+import * as THREE from '/flightverse/three.js?v=316';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=316';
+import {
+  composeCollisionWorld,
+  createSceneObjectCollision,
+} from '/flightverse/scene-object-collision.js?v=316';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=316';
+import { createWeapons } from '/flightverse/weapons.js?v=316';
 
 const report = {
   done: false,
@@ -216,7 +220,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
 }
 
 async function run() {
-  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=315');
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=316');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
@@ -298,6 +302,77 @@ async function run() {
     JSON.stringify({
       hit: clearCameraHit?.kind,
       position: clearCameraPosition.toArray(),
+    }),
+  );
+
+  const itemNode = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 10, 2),
+    new THREE.MeshBasicMaterial({ color: 0x6d7b89 }),
+  );
+  itemNode.position.set(2, 0, 0);
+  itemNode.updateWorldMatrix(true, true);
+  const itemBounds = new THREE.Box3().setFromObject(itemNode);
+  const itemSphere = new THREE.Sphere();
+  itemBounds.getBoundingSphere(itemSphere);
+  const itemCollision = createSceneObjectCollision([{
+    node: itemNode,
+    bounds: itemBounds,
+    broadSphere: itemSphere,
+    materialClass: 'metal',
+  }]);
+  const compositeWorld = composeCollisionWorld(world, itemCollision);
+  const itemHit = compositeWorld.castSegment(
+    new THREE.Vector3(0, 2, 0),
+    new THREE.Vector3(10, 2, 0),
+  );
+  check(
+    'real scene item wins before the static world wall',
+    itemHit?.source === 'item'
+      && itemHit?.node === itemNode
+      && approx(itemHit.fraction, 0.15),
+    JSON.stringify({
+      source: itemHit?.source,
+      fraction: itemHit?.fraction,
+      materialClass: itemHit?.materialClass,
+    }),
+  );
+
+  const itemCameraPosition = new THREE.Vector3(6, 2, 0);
+  const itemCameraHit = resolveCameraCollision?.(
+    compositeWorld,
+    new THREE.Vector3(0, 2, 0),
+    itemCameraPosition,
+  );
+  check(
+    'camera boom cannot enter a real scene item',
+    itemCameraHit?.source === 'item'
+      && itemCameraPosition.x >= 1.31
+      && itemCameraPosition.x <= 1.33,
+    JSON.stringify({
+      source: itemCameraHit?.source,
+      position: itemCameraPosition.toArray(),
+    }),
+  );
+
+  const itemBlockedDrone = createDrone({
+    world: compositeWorld,
+    spawn: { position_m: [0, 2, 0] },
+  });
+  itemBlockedDrone.vel.set(80, 0, 0);
+  for (let index = 0; index < 30; index += 1) {
+    itemBlockedDrone.step(STEP, {
+      fwd: 0, strafe: 0, yaw: 0, lift: 0,
+      boost: false, brake: false, mouseDX: 0, mouseDY: 0,
+    }, 'asistido');
+  }
+  check(
+    'drone envelope stops before a real scene item',
+    itemBlockedDrone.pos.x >= 0.88
+      && itemBlockedDrone.pos.x <= 0.92
+      && itemBlockedDrone.collisionHits > 0,
+    JSON.stringify({
+      position: itemBlockedDrone.pos.toArray(),
+      collisionHits: itemBlockedDrone.collisionHits,
     }),
   );
 
@@ -442,7 +517,7 @@ async function run() {
     }),
   );
 
-  const { resolveAimRay } = await import('/flightverse/aiming.js?v=315');
+  const { resolveAimRay } = await import('/flightverse/aiming.js?v=316');
   const reticleAim = resolveAimRay(
     { position: new THREE.Vector3(0, 2, 0), direction: new THREE.Vector3(1, 0, 0), far: 100 },
     world,
@@ -454,9 +529,9 @@ async function run() {
     JSON.stringify(reticleAim),
   );
 
-  const makeWeapons = (weaponWorld, heightAt = () => 0) => createWeapons(
+  const makeWeapons = (weaponWorld, heightAt = () => 0, options = {}) => createWeapons(
     new THREE.Scene(),
-    { world: weaponWorld, heightAt },
+    { world: weaponWorld, heightAt, ...options },
   );
   const runWeapon = (weapons, steps, hittables = []) => {
     for (let index = 0; index < steps; index += 1) {
@@ -476,6 +551,43 @@ async function run() {
     }),
   );
   mg.dispose();
+
+  const destructibleItem = {
+    node: itemNode,
+    center: new THREE.Vector3(2, 2, 0),
+    radius: 0.4,
+    radiusSq: 0.16,
+    hp: 1,
+    blood: false,
+    materialClass: 'metal',
+  };
+  const itemWeapons = makeWeapons(compositeWorld, () => 0, {
+    onDestroy: node => itemCollision.remove(node),
+  });
+  itemWeapons.setWeapon('mg');
+  itemWeapons.fire(new THREE.Vector3(0, 2, 0), -Math.PI / 2, 0);
+  runWeapon(itemWeapons, 8, [destructibleItem]);
+  const revealedStaticWall = compositeWorld.castSegment(
+    new THREE.Vector3(0, 2, 0),
+    new THREE.Vector3(10, 2, 0),
+  );
+  check(
+    'weapon destroys item collider synchronously and reveals static wall',
+    itemWeapons.state.itemHits === 1
+      && itemWeapons.state.targetHits === 1
+      && itemWeapons.state.destroyed === 1
+      && revealedStaticWall?.source === 'world'
+      && revealedStaticWall?.kind === 'structure'
+      && approx(revealedStaticWall.fraction, 0.4),
+    JSON.stringify({
+      itemHits: itemWeapons.state.itemHits,
+      targetHits: itemWeapons.state.targetHits,
+      destroyed: itemWeapons.state.destroyed,
+      nextSource: revealedStaticWall?.source,
+      nextFraction: revealedStaticWall?.fraction,
+    }),
+  );
+  itemWeapons.dispose();
 
   for (const type of ['s', 'm', 'l']) {
     const missiles = makeWeapons(world);
@@ -641,8 +753,11 @@ async function run() {
 
   world.dispose();
   world.dispose();
+  compositeWorld.dispose();
   terrainWorld.dispose();
   boundaryWorld.dispose();
+  itemNode.geometry.dispose();
+  itemNode.material.dispose();
   check('dispose is idempotent', world.qa.disposed === true);
 
   for (const url of [urls.meta, urls.bin, badMeta, badBin]) {

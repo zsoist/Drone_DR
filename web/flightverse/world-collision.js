@@ -1,14 +1,14 @@
 // Unified FLIGHTVERSE structural, terrain, and playable-boundary queries.
-import * as THREE from '/flightverse/three.js?v=315';
+import * as THREE from '/flightverse/three.js?v=316';
 import {
   MeshBVH,
   getTriangleHitPointInfo,
-} from '/vendor/three-mesh-bvh180.module.js?v=315';
+} from '/vendor/three-mesh-bvh180.module.js?v=316';
 import {
   earliestHit,
   segmentCircleBoundaryHit,
   segmentSquareBoundaryHit,
-} from '/flightverse/collision-math.js?v=315';
+} from '/flightverse/collision-math.js?v=316';
 
 const EPSILON = 1e-7;
 const ZERO = new THREE.Vector3();
@@ -159,6 +159,7 @@ export async function createWorldCollision(
     structure: false,
     casts: 0,
     sweeps: 0,
+    recoveries: 0,
     closest: 0,
     boundaryHits: 0,
     terrainHits: 0,
@@ -424,6 +425,55 @@ export async function createWorldCollision(
     );
   }
 
+  function recoverSphere(pointValue, radiusValue) {
+    ensureActive();
+    qa.recoveries += 1;
+    const point = vector(pointValue);
+    const radii = sweepRadii(radiusValue);
+    const candidates = [];
+    const structure = closestStructure(point, radii.structure);
+    if (structure && structure.distance <= radii.structure + EPSILON) {
+      const amount = Math.max(0, radii.structure - structure.distance);
+      candidates.push({
+        ...structure,
+        source: 'world',
+        fraction: 0,
+        point: point.clone().addScaledVector(structure.normal, amount),
+        translation: structure.normal.clone().multiplyScalar(amount),
+      });
+    }
+    if (typeof heightAt === 'function') {
+      const height = heightAt(point.x, point.z);
+      const legalY = Number(height) + radii.terrain;
+      if (Number.isFinite(legalY) && point.y < legalY) {
+        candidates.push({
+          kind: 'terrain',
+          source: 'world',
+          fraction: 0,
+          point: new THREE.Vector3(point.x, legalY, point.z),
+          translation: new THREE.Vector3(0, legalY - point.y, 0),
+          normal: new THREE.Vector3(0, 1, 0),
+        });
+      }
+    }
+    const boundaryContact = boundaryHit(
+      point,
+      point,
+      boundary,
+      radii.boundary,
+    );
+    if (boundaryContact?.fraction === 0) {
+      candidates.push({
+        ...boundaryContact,
+        source: 'world',
+        translation: boundaryContact.point.clone().sub(point),
+      });
+    }
+    return candidates.sort(
+      (a, b) => a.translation.lengthSq() - b.translation.lengthSq(),
+    )[0] || null;
+  }
+
   function dispose() {
     if (disposed) return;
     disposed = true;
@@ -441,6 +491,7 @@ export async function createWorldCollision(
   return {
     castSegment,
     sweepSphere,
+    recoverSphere,
     closest,
     groundHeight: (x, z) => (
       typeof heightAt === 'function' ? heightAt(x, z) : null

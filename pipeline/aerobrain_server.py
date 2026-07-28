@@ -4885,7 +4885,7 @@ class H(BaseHTTPRequestHandler):
                 if not isinstance(o, dict):
                     return self.send_json({"error": "objeto no es dict"}, 400)
                 typ = str(o.get("type", ""))
-                if typ not in ("glb", "ring", "beacon", "box"):
+                if typ not in ("glb", "kit", "ring", "beacon", "box"):
                     return self.send_json({"error": f"type inválido: {typ}"}, 400)
                 try:
                     pos = [float(v) for v in o.get("pos", [])]
@@ -4896,14 +4896,25 @@ class H(BaseHTTPRequestHandler):
                         "yaw": float(o.get("yaw", 0)),
                         "scale": max(0.05, min(50.0, float(o.get("scale", 1)))),
                         "ground": bool(o.get("ground", True))}
-                if typ == "glb":
+                if typ in ("glb", "kit"):
                     f = re.sub(r"[^\w.-]", "", str(o.get("file", "")))
                     if not f.endswith(".glb"):
-                        return self.send_json({"error": "glb requiere file *.glb"}, 400)
+                        return self.send_json(
+                            {"error": f"{typ} requiere file *.glb"}, 400
+                        )
                     item["file"] = f
                 for k in ("spin", "bob", "color"):
                     if k in o:
                         item[k] = o[k] if k == "color" else bool(o[k])
+                for k in ("destructible", "collidable"):
+                    if k in o:
+                        item[k] = bool(o[k])
+                if "materialClass" in o:
+                    material_class = re.sub(
+                        r"[^\w-]", "", str(o["materialClass"])
+                    )[:32]
+                    if material_class:
+                        item["materialClass"] = material_class
                 clean.append(item)
             (mdir / "objects.json").write_text(json.dumps({"version": 1, "objects": clean}, ensure_ascii=False))
             return self.send_json({"ok": True, "count": len(clean)})

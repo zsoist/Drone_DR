@@ -9,15 +9,25 @@ juego instancia ANCLADOS al terreno real (heightAt del DSM). Runtime:
 {"version":1,"objects":[
  {"type":"beacon","pos":[-40,0,30],"scale":1.6,"color":"#7dffc9","ground":true},
  {"type":"ring","pos":[10,18,10],"scale":2.2,"spin":true,"bob":true},
- {"type":"glb","file":"arbol.glb","pos":[5,0,-12],"yaw":1.2,"scale":3}
+ {"type":"glb","file":"arbol.glb","pos":[5,0,-12],"yaw":1.2,"scale":3},
+ {"type":"kit","file":"brick_wall.glb","pos":[8,0,-4],"destructible":true,
+  "collidable":true,"materialClass":"brick"}
 ]}
 ```
-- `type`: `glb` (de `web/assets/props/`) · `ring` · `beacon` · `box`.
+- `type`: `glb` (de `web/assets/props/`) · `kit` (de
+  `web/assets/destruction/models/`) · `ring` · `beacon` · `box`.
 - `pos` [x,y,z] en METROS del frame de la escena (origen=centro del DSM,
   +x este, +z sur). Con `ground:true` (default) la Y es ALTURA SOBRE EL
   SUELO real en ese punto; con `false`, Y absoluta del mundo.
 - `yaw` rad · `scale` 0.05–50 · `spin`/`bob` animan (los estáticos congelan
   matrices = gratis en render) · `color` para primitivas.
+- `collidable` es `true` por defecto para todo salvo `ring`; usa `false` sólo
+  para decoración atravesable. Dron, cámara, retícula y armamento consultan el
+  mismo collider.
+- `destructible:true` lo registra como blanco del armamento. Su collider se
+  invalida en el mismo paso fijo en que el objeto se rompe.
+- `materialClass` (`metal`, `wood`, `brick`, `concrete`, `crate`, etc.) conserva
+  la clase de superficie para impactos y efectos.
 
 ## Escribirlos
 - A mano en el vault, o vía API (auth):

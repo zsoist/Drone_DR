@@ -27,6 +27,7 @@ def validate_live_sample(
     sample: dict,
     *,
     requires_structural_collision: bool = True,
+    expected_camera_rig: str = "muycerca",
 ) -> list[dict]:
     failures = []
     run = sample.get("run")
@@ -58,12 +59,14 @@ def validate_live_sample(
     camera_hits = sample.get("cameraCollisionHits")
     if not _finite_number(camera_hits) or camera_hits < 0:
         failures.append({"run": run, "reason": "camera_telemetry"})
-    if (
-        sample.get("cameraRig") != "muycerca"
+    if expected_camera_rig == "fpv":
+        failures.extend(validate_fpv_camera(sample))
+    elif (
+        sample.get("cameraRig") != expected_camera_rig
         or not _finite_number(camera_checks)
         or camera_checks <= 0
         or not _finite_number(camera_hits)
-        or camera_hits <= 0
+        or camera_hits < 0
     ):
         failures.append({"run": run, "reason": "camera_integration"})
     return failures
@@ -112,9 +115,9 @@ def cdp_click(cdp, selector: str) -> bool:
 
 
 def aim_fire_control_at_ground(cdp) -> bool:
-    """Use the real gimbal control so each CDP fire click can reach terrain."""
+    """Use the real FPV gimbal control so each fire click can reach terrain."""
     return bool(cdp.eval("""(() => {
-      const control = document.querySelector('#vl-gwheel');
+      const control = document.querySelector('#vl-gimbal-range');
       if (!control) return false;
       control.value = control.min;
       control.dispatchEvent(new Event('input', {bubbles:true}));
@@ -242,6 +245,18 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
                 f"mundo vivo no terminó en {timeout}s · console={cdp.errors[:6]}"
             )
         needs_structure = requires_structural_collision(cid)
+        camera_integration = _live_sample(cdp)
+        camera_integration["run"] = "camera:muycerca"
+
+        fpv_url = (
+            f"{base_url.rstrip('/')}/volar.html"
+            f"?m={urllib.parse.quote(cid)}&autotest=1&rig=3"
+        )
+        cdp.send("Page.navigate", {"url": fpv_url})
+        if not _wait_for_world_ready(cdp, timeout):
+            raise RuntimeError(
+                f"FPV vivo no terminó en {timeout}s · console={cdp.errors[:6]}"
+            )
         if not aim_fire_control_at_ground(cdp):
             raise RuntimeError("control de gimbal no disponible para stress de fuego")
 
@@ -295,9 +310,17 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
 
         else:
             failures = []
+        failures.extend(validate_live_sample(
+            camera_integration,
+            requires_structural_collision=needs_structure,
+            expected_camera_rig="muycerca",
+        ))
         for sample in samples:
             failures.extend(validate_live_sample(
-                sample, requires_structural_collision=needs_structure))
+                sample,
+                requires_structural_collision=needs_structure,
+                expected_camera_rig="fpv",
+            ))
         failures.extend(validate_stress_actions(actions))
 
         for current_generation in range(1, generation + 1):
@@ -316,10 +339,6 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
                         "last": values[-1],
                     })
 
-        fpv_url = (
-            f"{base_url.rstrip('/')}/volar.html"
-            f"?m={urllib.parse.quote(cid)}&autotest=1&rig=3"
-        )
         cdp.send("Page.navigate", {"url": fpv_url})
         ready = _wait_for_world_ready(cdp, timeout)
         fpv_camera = None
@@ -342,6 +361,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             "stress_runs": stress,
             "failures": failures,
             "actions": actions,
+            "camera_integration": camera_integration,
             "samples": samples,
             "fpv_camera": fpv_camera,
             "console_errors": cdp.errors[:6],

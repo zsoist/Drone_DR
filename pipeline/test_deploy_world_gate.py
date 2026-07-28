@@ -292,6 +292,31 @@ echo world-a
             flightverse_collision_gate.validate_live_sample(sample),
         )
 
+    def test_clear_chase_camera_still_runs_collision_checks_without_forced_hit(self):
+        sample = {
+            "run": 1,
+            "ok": True,
+            "fps": 60,
+            "errors": [],
+            "classification": True,
+            "collisionReady": True,
+            "groups": 1,
+            "disposedStaleLoads": 0,
+            "representation": {"visibleStructuralLayers": ["mesh", "terrain-fallback"]},
+            "projectiles": 0,
+            "collisionRadius": 0.59,
+            "collisionRadiusSource": "glb",
+            "customDrone": True,
+            "cameraRig": "muycerca",
+            "cameraCollisionChecks": 120,
+            "cameraCollisionHits": 0,
+        }
+
+        self.assertEqual(
+            [],
+            flightverse_collision_gate.validate_live_sample(sample),
+        )
+
     def test_live_gate_requires_observed_fire_explosion_and_reload_evidence(self):
         failures = flightverse_collision_gate.validate_stress_actions({
             "attempts": 5,

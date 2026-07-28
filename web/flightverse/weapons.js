@@ -6,19 +6,19 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=315';
+import * as THREE from '/flightverse/three.js?v=316';
 import {
   earliestHit,
   normalizeTargetRadius,
   segmentSphereHit,
-} from '/flightverse/collision-math.js?v=315';
+} from '/flightverse/collision-math.js?v=316';
 import {
   EffectPool,
   disposeOwnedRenderObject,
   impactTransform,
   isContinuousWeapon,
   projectileDirection,
-} from '/flightverse/aiming.js?v=315';
+} from '/flightverse/aiming.js?v=316';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -64,7 +64,7 @@ export const ARSENAL = {
 let debrisFrags = null;
 (async () => {
   try {
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=315');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=316');
     const g = await new GLTFLoader().loadAsync('/assets/destruction/models/debris_pack.glb');
     const frags = [];
     g.scene.traverse(n => { if (n.isMesh && n.userData.role === 'fragment') frags.push(n); });
@@ -79,6 +79,7 @@ export function createWeapons(scene, {
   onShake,
   crater,
   getCameraPosition,
+  onDestroy,
 } = {}) {
   const TEX = {
     fire: glowTex([[0, 'rgba(255,244,200,1)'], [0.25, 'rgba(255,150,40,.9)'], [0.6, 'rgba(200,60,10,.45)'], [1, 'rgba(120,20,0,0)']], 128),
@@ -92,7 +93,7 @@ export function createWeapons(scene, {
   };
   const S = { missiles: [], bullets: [], parts: [], decals: [], frags: [], rubble: [], fires: [], booms: [],
     weapon: 'm', cool: 0, fired: 0, exploded: 0, destroyed: 0,
-    structureHits: 0, terrainHits: 0, boundaryHits: 0, targetHits: 0,
+    structureHits: 0, terrainHits: 0, boundaryHits: 0, itemHits: 0, targetHits: 0,
     proximityTriggers: 0, occludedFuses: 0,
     impactEvidence: null,
     lod: { near: 0, far: 0 },
@@ -255,7 +256,22 @@ export function createWeapons(scene, {
   }
 
   function projectileHit(start, end, radius, hittables, fuseRadius = 0) {
-    const hits = [world?.castSegment?.(start, end, radius) || null];
+    let worldHit = world?.castSegment?.(start, end, radius) || null;
+    const exactTarget = worldHit?.source === 'item'
+      ? (hittables || []).find(target => (
+        activeTarget(target) && target.node === worldHit.node
+      ))
+      : null;
+    if (exactTarget) {
+      worldHit = {
+        ...worldHit,
+        kind: 'target',
+        collisionKind: 'item',
+        target: exactTarget,
+        proximity: false,
+      };
+    }
+    const hits = [worldHit];
     for (const target of hittables || []) {
       if (!activeTarget(target)) continue;
       hits.push(targetHit(start, end, target, fuseRadius));
@@ -272,6 +288,7 @@ export function createWeapons(scene, {
       S.targetHits += 1;
       if (hit.proximity) S.proximityTriggers += 1;
     }
+    if (hit.source === 'item') S.itemHits += 1;
   }
 
   function damageTarget(target, damage, point, missile = false, hit = null) {
@@ -447,6 +464,7 @@ export function createWeapons(scene, {
   // el punto de impacto; barriles explosivos encadenan detonación. Fallback:
   // shatter procedural de cajas.
   function smash(node, color, blastP, impactNormal = null) {
+    onDestroy?.(node);
     S.destroyed++;
     const kit = node.userData.kit;
     if (kit) {

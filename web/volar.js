@@ -4,41 +4,42 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=315';
+import * as THREE from '/flightverse/three.js?v=316';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=315';
+} from '/flightverse/scene.js?v=316';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=315';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=315';
-import { createRecorder } from '/flightverse/recorder.js?v=315';
-import { createAudio } from '/flightverse/audio.js?v=315';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=315';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=315';
+} from '/flightverse/runtime.js?v=316';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=316';
+import { createRecorder } from '/flightverse/recorder.js?v=316';
+import { createAudio } from '/flightverse/audio.js?v=316';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=316';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=316';
 import {
   createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=315';
-import { createSky } from '/flightverse/sky.js?v=315';
-import { loadSceneObjects } from '/flightverse/objects.js?v=315';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=315';
-import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=315';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=315';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=315';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=315';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=315';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=315';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=315';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=315';
-import CameraControls from '/vendor/camera-controls.module.js?v=315';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=315';
+} from '/flightverse/mobile-command.js?v=316';
+import { createSky } from '/flightverse/sky.js?v=316';
+import { loadSceneObjects } from '/flightverse/objects.js?v=316';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=316';
+import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=316';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=316';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=316';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=316';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=316';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=316';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=316';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=316';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=316';
+import CameraControls from '/vendor/camera-controls.module.js?v=316';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=316';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=315';
+} from '/vendor/postprocessing180.module.js?v=316';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -453,6 +454,7 @@ async function main() {
     boundary,
     report,
   });
+  const collision = createMutableCollisionWorld(world);
   report.collision = {
     ready: world.qa.ready,
     structure: world.qa.structure,
@@ -567,7 +569,11 @@ async function main() {
         return;
       }
       sceneObjects = so;
-      if (so) report.objects = so.count;
+      if (so) {
+        collision.setItems(sceneObjects.collision);
+        report.objects = so.count;
+        report.collision.items = collision.qa.itemCount;
+      }
     })
     .catch(e => report.errors.push('objects: ' + e.message));
 
@@ -596,7 +602,7 @@ async function main() {
 
   // dron rediseñado: proporciones DJI (~0.85m), cuerpo bajo, brazos finos,
   // props que giran con la velocidad, gimbal frontal — solo primitivas three
-  const drone = createDrone({ world, spawn: man.spawn });
+  const drone = createDrone({ world: collision, spawn: man.spawn });
   report.collision.radius_m = +drone.collisionRadius.toFixed(3);
   report.collision.radius_source = 'fallback';
   report.customDrone = false;
@@ -696,9 +702,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=315', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=316', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=315');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=316');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -852,8 +858,9 @@ async function main() {
   const shake = { mag: 0 };
   let curYaw = 0;
   const weapons = createWeapons(scene, {
-    world, heightAt: terrain.heightAt, audio, crater: terrain.crater,
+    world: collision, heightAt: terrain.heightAt, audio, crater: terrain.crater,
     getCameraPosition: () => camera.position,
+    onDestroy: node => sceneObjects?.markDestroyed(node),
     onShake: (pos, big) => {
       const d = camera.position.distanceTo(pos);
       shake.mag = Math.max(shake.mag, Math.min(0.9, (9 * big) / (5 + d)));
@@ -952,7 +959,11 @@ async function main() {
     const hittables = invasion.state.on
       ? [...(sceneObjects?.hittables || []), ...invasion.hittables]
       : sceneObjects?.hittables || [];
-    return resolveAimRay({ position: camera.position, direction: aimDirection, far: 1200 }, world, hittables);
+    return resolveAimRay({
+      position: camera.position,
+      direction: aimDirection,
+      far: 1200,
+    }, collision, hittables);
   };
   const doFire = () => {
     if (overlayCoordinator?.active()) return false;
@@ -1816,7 +1827,7 @@ async function main() {
         if (!cameraPose.hideDrone) {
           cameraCollisionChecks += 1;
           report.camera.collision_checks = cameraCollisionChecks;
-          if (resolveCameraCollision(world, P, camera.position)) {
+          if (resolveCameraCollision(collision, P, camera.position)) {
             cameraCollisionHits += 1;
             report.camera.collision_hits = cameraCollisionHits;
           }
@@ -1852,6 +1863,7 @@ async function main() {
           structure_hits: weapons.state.structureHits,
           terrain_hits: weapons.state.terrainHits,
           boundary_hits: weapons.state.boundaryHits,
+          item_hits: weapons.state.itemHits,
           target_hits: weapons.state.targetHits,
           proximity_triggers: weapons.state.proximityTriggers,
           occluded_fuses: weapons.state.occludedFuses,
@@ -2113,6 +2125,7 @@ async function main() {
     sticks?.dispose();
     input.dispose();
     cameraController.dispose();
+    collision.dispose();
     world.dispose();
     sceneObjects?.dispose();
     visualMesh?.dispose();

@@ -427,5 +427,57 @@ class WorldCollisionBuilderTests(unittest.TestCase):
         )
 
 
+class SceneObjectCollisionRuntimeWiringTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.root = Path(__file__).resolve().parent.parent
+        cls.volar = (cls.root / "web" / "volar.js").read_text()
+        cls.objects = (cls.root / "web" / "flightverse" / "objects.js").read_text()
+        cls.runtime = (cls.root / "web" / "flightverse" / "runtime.js").read_text()
+        cls.weapons = (cls.root / "web" / "flightverse" / "weapons.js").read_text()
+        cls.server = (cls.root / "pipeline" / "aerobrain_server.py").read_text()
+
+    def test_drone_camera_aim_and_weapons_share_one_mutable_collision_service(self):
+        for contract in (
+            "createMutableCollisionWorld",
+            "const collision = createMutableCollisionWorld(world)",
+            "createDrone({ world: collision",
+            "resolveCameraCollision(collision",
+            "resolveAimRay({",
+            "}, collision, hittables)",
+            "world: collision",
+            "collision.setItems(sceneObjects.collision)",
+        ):
+            self.assertIn(contract, self.volar)
+
+    def test_scene_objects_publish_bounds_material_and_synchronous_removal(self):
+        for contract in (
+            "collisionItems",
+            "broadSphere",
+            "bounds:",
+            "materialClass",
+            "markDestroyed(node)",
+            "collision.remove(node)",
+        ):
+            self.assertIn(contract, self.objects)
+
+    def test_destroying_a_target_invalidates_collision_before_fragments_spawn(self):
+        self.assertIn("onDestroy", self.weapons)
+        on_destroy = self.weapons.index("onDestroy?.(node)")
+        dead_flag = self.weapons.index("node.userData.dead = true", on_destroy)
+        self.assertLess(on_destroy, dead_flag)
+
+    def test_embedded_item_recovery_is_owned_by_the_shared_world(self):
+        self.assertIn("world.recoverSphere", self.runtime)
+
+    def test_scene_object_api_preserves_collision_and_destruction_contract(self):
+        for contract in (
+            '"kit", "ring", "beacon", "box"',
+            'for k in ("destructible", "collidable")',
+            'item["materialClass"]',
+        ):
+            self.assertIn(contract, self.server)
+
+
 if __name__ == "__main__":
     unittest.main()
