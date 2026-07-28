@@ -1,0 +1,67 @@
+{
+  "weapon": "railgun_pod",
+  "key": "rg",
+  "seed": 20260727,
+  "nodes": [
+    "collision_proxy",
+    "mount",
+    "muzzle",
+    "projectile"
+  ],
+  "tiers": {
+    "ultra": {
+      "path": "ultra/railgun_pod.glb",
+      "sha256": "c9830021f388d83a38f7964cfb07da1194ac36e4fbf35eeceabb697c6364e197",
+      "bytes": 2669092,
+      "triangles": 3696,
+      "texture_dimensions": [
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          4096
+        ]
+      ],
+      "bounds": [
+        1.18,
+        0.825453,
+        2.62
+      ]
+    },
+    "runtime": {
+      "path": "runtime/railgun_pod.glb",
+      "sha256": "8ccae5687c06479a0e5c1ea6334845d221007e54ab3214d84133200d27345c84",
+      "bytes": 676972,
+      "triangles": 3696,
+      "texture_dimensions": [
+        [
+          1024,
+          1024
+        ],
+        [
+          1024,
+          1024
+        ],
+        [
+          1024,
+          1024
+        ]
+      ],
+      "bounds": [
+        1.18,
+        0.825453,
+        2.62
+      ]
+    }
+  },
+  "preview": {
+    "path": "previews/railgun_pod.png",
+    "sha256": "126c9c198ce91ca028b6d02015a7f84555c6ee9eb13e5b7e3804c1383b246389"
+  }
+}
