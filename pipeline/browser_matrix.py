@@ -603,9 +603,89 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
     """))
     if not cards_restored:
         raise RuntimeError("Mundo no regresó de Mapa a Islas")
+    coverage_fallback = None
+    if viewport == "desktop":
+        # A remembered 100 m choice must not poison legacy/native worlds that
+        # have no ready 100 m coverage product. This is the exact browser
+        # regression: Mundo used to append &diametro=100 to every island.
+        cdp.eval(js("""
+          localStorage.setItem('ab.fv.launchcfg', JSON.stringify({
+            cielo:'dia', calidad:'auto', modo:'asistido',
+            cobertura:'100', forma:'circle',
+          }));
+          location.reload();
+          return true;
+        """))
+        wait_for(cdp, js("""
+          return document.querySelectorAll('.wi').length > 1
+            && document.querySelectorAll('.w-panel .wp-m').length >= 2;
+        """), timeout=30, label="Mundo con cobertura 100 m recordada")
+        coverage_fallback = cdp.eval(js("""
+          const cards=[...document.querySelectorAll('.wi')];
+          for (const card of cards) {
+            card.click();
+            if (!document.querySelector('.wp-cfg-g.coverage')) {
+              const launch=document.querySelector('.w-panel [data-go]')?.dataset.go || '';
+              return {
+                foundNativeWorld:true,
+                launch,
+                selectedAuto:document.querySelector(
+                  '.wp-cfg-g[data-k="cobertura"] button.on'
+                )?.dataset.v || 'auto',
+              };
+            }
+          }
+          return { foundNativeWorld:false, launch:'' };
+        """))
+        if not coverage_fallback.get("foundNativeWorld"):
+            raise RuntimeError("Mundo no expuso una escena nativa/legacy para el gate")
+        cdp.eval("localStorage.removeItem('ab.fv.launchcfg')")
+        stale_launch = coverage_fallback.get("launch", "")
+        if "diametro=100" not in stale_launch:
+            stale_launch += "&diametro=100"
+        stale_launch += "&autotest=1"
+        cdp.send("Page.navigate", {
+            "url": urllib.parse.urljoin(
+                f"{base_url.rstrip('/')}/mundo.html",
+                stale_launch,
+            ),
+        })
+        stale_runtime = wait_for(cdp, js("""
+          const report=window.__volar;
+          return report?.done ? {
+            ok:report.ok,
+            errors:report.errors,
+            coverage:report.coverage,
+          } : null;
+        """), timeout=30, label="fallback nativo desde URL 100 m antigua")
+        coverage_fallback["runtime"] = stale_runtime
+        runtime_coverage = stale_runtime.get("coverage") or {}
+        if (
+            not stale_runtime.get("ok")
+            or stale_runtime.get("errors")
+            or runtime_coverage.get("status") != "native-fallback"
+            or runtime_coverage.get("boundary_source") != "native-fallback"
+            or runtime_coverage.get("requested_honored") is not False
+            or runtime_coverage.get("effective_diameter_m") == 100
+        ):
+            raise RuntimeError(
+                "URL antigua de 100 m bloquea fallback nativo: "
+                f"{coverage_fallback}"
+            )
+        if "diametro=100" in coverage_fallback.get("launch", ""):
+            raise RuntimeError(
+                "cobertura 100 m recordada bloquea mundo nativo: "
+                f"{coverage_fallback}"
+            )
+        cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/mundo.html"})
+        wait_for(cdp, js("""
+          return document.querySelectorAll('.wi').length > 1
+            && document.querySelectorAll('.w-panel .wp-m').length >= 2;
+        """), timeout=30, label="Mundo restaurado tras fallback nativo")
     screenshot(cdp, QA_DIR / f"matrix-mundo-{viewport}.png")
     return {"surface": "mundo", "viewport": viewport, **state,
-            "keyboard": keyboard, "previewInitial": preview_initial}
+            "keyboard": keyboard, "previewInitial": preview_initial,
+            "coverageFallback": coverage_fallback}
 
 
 def touch_command_geometry(cdp, state: str) -> dict:

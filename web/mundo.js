@@ -28,11 +28,20 @@ let cfg = { cielo: 'dia', calidad: 'auto', modo: 'asistido', cobertura: 'auto', 
 try { cfg = { ...cfg, ...JSON.parse(localStorage.getItem('ab.fv.launchcfg') || '{}') } } catch {}
 cfg.cobertura = ['auto','100','200','400','600','1000'].includes(String(cfg.cobertura)) ? String(cfg.cobertura) : 'auto';
 cfg.forma = cfg.forma === 'square' ? 'square' : 'circle';
-const cfgExtra = () =>
+const effectiveCoverageChoice = scene => {
+  if (cfg.cobertura === 'auto') return 'auto';
+  const rows = scene?.coverage?.shapes?.[cfg.forma] || [];
+  return rows.some(row => row.ready && String(row.diameter_m) === cfg.cobertura)
+    ? cfg.cobertura
+    : 'auto';
+};
+const cfgExtra = (scene=sel) =>
   (cfg.cielo !== 'dia' ? `&cielo=${cfg.cielo}` : '')
   + (cfg.calidad !== 'auto' ? `&calidad=${cfg.calidad}` : '')
   + (cfg.modo !== 'asistido' ? `&modo=${cfg.modo}` : '')
-  + (cfg.cobertura !== 'auto' ? `&diametro=${cfg.cobertura}` : '')
+  + (effectiveCoverageChoice(scene) !== 'auto'
+    ? `&diametro=${effectiveCoverageChoice(scene)}`
+    : '')
   + (cfg.forma !== 'circle' ? `&forma=${cfg.forma}` : '');
 let filtro = 'todas';
 let scenes = [], sel = null;
@@ -157,7 +166,8 @@ function pick(i) {
   p.classList.add('show');
   p.querySelectorAll('.wp-cfg-g').forEach(g => {
     const k = g.dataset.k;
-    g.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === cfg[k]));
+    const selected = k === 'cobertura' ? effectiveCoverageChoice(sel) : cfg[k];
+    g.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === selected));
   });
 }
 
@@ -376,7 +386,7 @@ async function boot() {
   }
   const missionPopup = sc => {
     const rec = best(sc.clip_id), st = sc.stats || {};
-    const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}${cfgExtra()}`;
+    const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}${cfgExtra(sc)}`;
     return `<div class="fv-pop">
       <div class="fv-pop-poster" style="background-image:url('${esc(sc.assets?.poster||'')}')"></div>
       <b>${esc(sc.name)}</b>
