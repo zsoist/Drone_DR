@@ -16,7 +16,7 @@ VAULT = Path("/Volumes/SSD/drone-vault")
 NEW_WEAPON_KEYS = ("ac", "sw", "vx", "rg", "tb")
 WEAPON_SETTLE_SECONDS = {
     "ac": 1.5,
-    "sw": 3.4,
+    "sw": 6.5,
     "vx": 3.0,
     "rg": 1.9,
     "tb": 5.0,
@@ -77,6 +77,7 @@ def validate_live_sample(
         or camera_hits < 0
     ):
         failures.append({"run": run, "reason": "camera_integration"})
+    failures.extend(validate_effect_snapshot(sample))
     return failures
 
 
@@ -88,6 +89,28 @@ def validate_fpv_camera(sample: dict) -> list[dict]:
     ):
         return []
     return [{"run": sample.get("run"), "reason": "fpv_camera_isolation"}]
+
+
+def validate_effect_snapshot(sample: dict) -> list[dict]:
+    effects = sample.get("effects") or {}
+    budget = effects.get("budget") or {}
+    active = effects.get("active")
+    peak = effects.get("peak")
+    active_budget = budget.get("active")
+    if (
+        not _finite_number(active_budget)
+        or not _finite_number(active)
+        or not _finite_number(peak)
+        or active < 0
+        or peak < 0
+        or active > active_budget
+        or peak > active_budget
+        or effects.get("drawBatches") != 5
+        or effects.get("softAlpha") is not True
+        or effects.get("shockwaveViewportCap") != 0.35
+    ):
+        return [{"run": sample.get("run"), "reason": "weapon_effect_budget"}]
+    return []
 
 
 def validate_stress_actions(actions: dict) -> list[dict]:
@@ -128,6 +151,14 @@ def validate_arsenal_actions(rows: list[dict]) -> list[dict]:
             "structure", "terrain", "boundary", "target",
         }:
             failures.append({"weapon": key, "reason": "weapon_impact_not_observed"})
+        if row.get("projectiles") != 0:
+            failures.append({"weapon": key, "reason": "projectile_cleanup"})
+        if (
+            row.get("effect_emitted_delta", 0) < 1
+            or row.get("effect_draw_batches") != 5
+            or row.get("effect_peak", 0) > row.get("effect_budget", -1)
+        ):
+            failures.append({"weapon": key, "reason": "weapon_effect_not_observed"})
     return failures
 
 
@@ -196,13 +227,17 @@ def _arsenal_sample(cdp, key: str) -> dict:
         " const state=r.weaponState || {};"
         " const fired=w.fired_projectiles || {};"
         " const models=w.models || {};"
+        " const effects=w.effects || {};"
         " const impacts=(w.structure_hits||0)+(w.terrain_hits||0)"
         " +(w.boundary_hits||0)+(w.item_hits||0)+(w.target_hits||0);"
         " return {selected:state.weapon||null, ammo:state.ammo?.[key],"
         " fired:fired[key]||0, impacts,"
         " impactKind:w.impact?.kind||null,"
         " modelReady:(models.ready||[]).includes(key),"
-        " modelTier:models.tier||null, projectiles:w.projectiles||0};"
+        " modelTier:models.tier||null, projectiles:w.projectiles||0,"
+        " effectEmitted:effects.emitted||0, effectPeak:effects.peak||0,"
+        " effectBudget:effects.budget?.active||0,"
+        " effectDrawBatches:effects.drawBatches||0};"
         " })()"
     ) or {}
 
@@ -259,6 +294,13 @@ def exercise_weapon_arsenal(cdp, timeout: int = 20) -> list[dict]:
             "model_ready": after.get("modelReady", False),
             "model_tier": after.get("modelTier"),
             "projectiles": after.get("projectiles"),
+            "effect_emitted_delta": (
+                (after.get("effectEmitted") or 0)
+                - (before.get("effectEmitted") or 0)
+            ),
+            "effect_peak": after.get("effectPeak"),
+            "effect_budget": after.get("effectBudget"),
+            "effect_draw_batches": after.get("effectDrawBatches"),
         })
     return rows
 
@@ -280,6 +322,7 @@ def _live_sample(cdp) -> dict:
         "disposedStaleLoads:r?.lifecycle?.disposedStaleLoads,"
         "representation:r?.representation,"
         "projectiles:r?.weapons?.projectiles,"
+        "effects:r?.weapons?.effects,"
         "fired:r?.weapons?.fired, exploded:r?.weapons?.exploded,"
         "memory:r?.rendererMemory"
         "}; })()"

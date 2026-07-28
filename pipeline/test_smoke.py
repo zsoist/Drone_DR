@@ -607,6 +607,7 @@ _mobile_command_tests = subprocess.run(
         "pipeline/test_flight_tools.mjs",
         "pipeline/test_scene_object_collision.mjs",
         "pipeline/test_weapon_registry.mjs",
+        "pipeline/test_weapon_effects.mjs",
     ],
     capture_output=True, text=True)
 check("flightverse mobile tools, camera rigs, collisions and weapon registry: deterministic suites pass",

@@ -14,6 +14,15 @@ import flightverse_collision_gate  # noqa: E402
 
 
 class DeployWorldGateTests(unittest.TestCase):
+    VALID_EFFECTS = {
+        "budget": {"active": 1400, "heavy": 240},
+        "active": 0,
+        "peak": 0,
+        "drawBatches": 5,
+        "softAlpha": True,
+        "shockwaveViewportCap": 0.35,
+    }
+
     def _run_web_restart(
         self,
         *,
@@ -285,6 +294,7 @@ echo world-a
             "cameraRig": "muycerca",
             "cameraCollisionChecks": 120,
             "cameraCollisionHits": 4,
+            "effects": self.VALID_EFFECTS,
         }
 
         self.assertEqual(
@@ -310,6 +320,7 @@ echo world-a
             "cameraRig": "muycerca",
             "cameraCollisionChecks": 120,
             "cameraCollisionHits": 0,
+            "effects": self.VALID_EFFECTS,
         }
 
         self.assertEqual(
@@ -340,6 +351,11 @@ echo world-a
             "impact_delta": 1,
             "impact_kind": "structure",
             "model_ready": True,
+            "projectiles": 0,
+            "effect_emitted_delta": 12,
+            "effect_peak": 96,
+            "effect_budget": 520,
+            "effect_draw_batches": 5,
         } for key in flightverse_collision_gate.NEW_WEAPON_KEYS]
         self.assertEqual(
             [],
@@ -365,6 +381,26 @@ echo world-a
             "weapon_impact_not_observed",
         }, reasons)
 
+    def test_effect_gate_rejects_unbounded_or_unbatched_particles(self):
+        valid = {"run": 1, "effects": self.VALID_EFFECTS}
+        self.assertEqual(
+            [],
+            flightverse_collision_gate.validate_effect_snapshot(valid),
+        )
+        invalid = {
+            **valid,
+            "effects": {
+                **self.VALID_EFFECTS,
+                "active": 1401,
+                "drawBatches": 1401,
+                "softAlpha": False,
+            },
+        }
+        self.assertEqual(
+            "weapon_effect_budget",
+            flightverse_collision_gate.validate_effect_snapshot(invalid)[0]["reason"],
+        )
+
     def test_terrain_only_live_sample_does_not_require_structural_collision(self):
         sample = {
             "run": 1,
@@ -383,6 +419,7 @@ echo world-a
             "cameraRig": "muycerca",
             "cameraCollisionChecks": 120,
             "cameraCollisionHits": 4,
+            "effects": self.VALID_EFFECTS,
         }
 
         self.assertEqual(

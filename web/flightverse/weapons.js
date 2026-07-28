@@ -6,25 +6,29 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=317';
+import * as THREE from '/flightverse/three.js?v=318';
 import {
   earliestHit,
   normalizeTargetRadius,
   segmentSphereHit,
-} from '/flightverse/collision-math.js?v=317';
+} from '/flightverse/collision-math.js?v=318';
 import {
   EffectPool,
   disposeOwnedRenderObject,
   impactTransform,
   projectileDirection,
-} from '/flightverse/aiming.js?v=317';
+} from '/flightverse/aiming.js?v=318';
 import {
   WEAPON_PROFILES,
   advanceLaunchSchedules,
   createLaunchSchedule,
   isGuidanceTargetVisible,
   steerVector,
-} from '/flightverse/weapon-registry.js?v=317';
+} from '/flightverse/weapon-registry.js?v=318';
+import {
+  createWeaponEffects,
+  radialDamage,
+} from '/flightverse/weapon-effects.js?v=318';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -65,7 +69,7 @@ export const ARSENAL = WEAPON_PROFILES;
 let debrisFrags = null;
 (async () => {
   try {
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=317');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=318');
     const g = await new GLTFLoader().loadAsync('/assets/destruction/models/debris_pack.glb');
     const frags = [];
     g.scene.traverse(n => { if (n.isMesh && n.userData.role === 'fragment') frags.push(n); });
@@ -83,6 +87,7 @@ export function createWeapons(scene, {
   onDestroy,
   cloneProjectile,
   useDebrisModels = true,
+  effectTier = 'desktop',
 } = {}) {
   const TEX = {
     fire: glowTex([[0, 'rgba(255,244,200,1)'], [0.25, 'rgba(255,150,40,.9)'], [0.6, 'rgba(200,60,10,.45)'], [1, 'rgba(120,20,0,0)']], 128),
@@ -111,6 +116,12 @@ export function createWeapons(scene, {
       Object.entries(WEAPON_PROFILES).map(([key, profile]) => [key, profile.max]),
     ) };
   const group = new THREE.Group(); group.name = 'fv-weapons'; scene.add(group);
+  const effects = createWeaponEffects(group, {
+    tier: effectTier,
+    textures: TEX,
+    heightAt,
+    THREE,
+  });
 
   const effectPools = Object.fromEntries([
     ['muzzle', 18], ['tracer', 72], ['exhaust', 48], ['smoke', 96],
@@ -316,7 +327,7 @@ export function createWeapons(scene, {
     }
   }
 
-  function explode(hitOrPoint, big = 1) {
+  function explode(hitOrPoint, big = 1, profile = null) {
     S.exploded++;
     const hit = hitOrPoint?.point
       ? hitOrPoint
@@ -337,47 +348,24 @@ export function createWeapons(scene, {
       crater(p.x, p.z, 3.4 * big, 1.15 * big);
       poolEffect('crater', { point: p.clone(), t: 0, life: 18 }, null);
     }
-    // flash + luz
-    emit(TEX.flash, p, normal.clone().multiplyScalar(0.35), 9 * big, 24 * big, 0.16, THREE.AdditiveBlending,
-      { effect: 'fire' });
+    effects.emitImpact({
+      profile: profile || {
+        effect: big >= 2 ? 'heavy' : 'missile-medium',
+        big,
+      },
+      hit,
+      inheritedVelocity: { x: 0, y: 0, z: 0 },
+      scale: big,
+    });
+    // One short-lived light preserves local illumination. All visible smoke,
+    // fire, sparks, streaks and flying debris live in five fixed GPU batches.
     const light = new THREE.PointLight(0xffb066, 150 * big, 85 * big, 1.8);
     light.position.copy(p).addScaledVector(normal, 1.5);
     group.add(light);
     S.parts.push(poolEffect('fire', { light, t: 0, life: 0.22 }, () => removeObject(light)));
-    // núcleo blanco-caliente (el 'punch' del estallido)
-    for (let i = 0; i < 7; i++) {
-      const v = normal.clone().multiplyScalar(3 + Math.random() * 5)
-        .add(new THREE.Vector3((Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3));
-      emit(TEX.flash, p, v, 1.4 * big, (2.8 + Math.random()) * big, 0.22 + Math.random() * 0.1,
-        THREE.AdditiveBlending, { tint0: 0xffffff, tint1: 0xffc060, spin: 4, tall: 1.25, effect: 'fire' });
-    }
-    // bola de fuego: llamas ALTAS (no bolas) con rampa blanco→naranja→rojo
-    for (let i = 0; i < 14; i++) {
-      const v = normal.clone().multiplyScalar(3 + Math.random() * 8)
-        .add(new THREE.Vector3((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6));
-      emit(TEX.fire, p, v, (1.1 + Math.random() * 1.8) * big, (3.8 + Math.random() * 3) * big,
-        0.42 + Math.random() * 0.34, THREE.AdditiveBlending,
-        { tint0: 0xfff4d8, tint1: 0x8a2508, spin: 3.2, tall: 1.5 + Math.random() * 0.5, rise: 3, effect: 'fire' });
-    }
-    // humo: columna que SUBE, oscura → gris, dura y crece mucho
-    for (let i = 0; i < 12; i++) {
-      const v = normal.clone().multiplyScalar(2 + Math.random() * 3.4)
-        .add(new THREE.Vector3((Math.random() - 0.5) * 2.2, Math.random() * 1.5, (Math.random() - 0.5) * 2.2));
-      emit(TEX.puff3d, p.clone().addScaledVector(normal, i * 0.12), v,
-        (1.8 + Math.random() * 2.2) * big, (11 + Math.random() * 7) * big,
-        3.2 + Math.random() * 2.2, THREE.NormalBlending,
-        { tint0: 0xb56a34, tint1: 0x8f8b86, spin: 0.8, rise: 1.9, drag: 1.2, smoke: true, effect: 'smoke' });
-    }
-    // anillo de POLVO rasante (tierra levantada, corre por el suelo)
-    for (let i = 0; terrainImpact && i < 10; i++) {
-      const a2 = (i / 14) * 6.283 + Math.random() * 0.3;
-      const v = new THREE.Vector3(Math.cos(a2) * (9 + Math.random() * 6), 0.7, Math.sin(a2) * (9 + Math.random() * 6));
-      emit(TEX.puff3d, p.clone().addScaledVector(normal, 0.6), v,
-        1.4 * big, (6 + Math.random() * 3) * big, 1.5 + Math.random() * 0.6,
-        THREE.NormalBlending, { tint0: 0x8a7256, tint1: 0x9a8a72, spin: 1, drag: 2.2, smoke: true, effect: 'dust' });
-    }
-    // EYECTA: pedazos del suelo/edificio que vuelan y QUEDAN como escombro
-    for (let i = 0; i < 12; i++) {
+    // A handful of bounded persistent chunks settle into world rubble. The
+    // visible blowout itself is instanced in weapon-effects.
+    for (let i = 0; i < 4; i++) {
       const sz3 = 0.1 + Math.random() * 0.26;
       let m2;
       const sharedDebris = useDebrisModels && debrisFrags;
@@ -404,54 +392,6 @@ export function createWeapons(scene, {
         else removeObject(m2);
       }));
     }
-    // brasas: Points con textura suave (adiós cuadrados) + gravedad
-    {
-      const n = 44, pos = new Float32Array(n * 3), vel = [];
-      for (let i = 0; i < n; i++) {
-        pos.set([p.x, p.y + 0.3, p.z], i * 3);
-        const a = Math.random() * 6.283, e = Math.random() * 1.3, s2 = 9 + Math.random() * 16;
-        vel.push(new THREE.Vector3(Math.cos(a) * Math.cos(e) * s2, Math.sin(e) * s2, Math.sin(a) * Math.cos(e) * s2));
-      }
-      const gg = new THREE.BufferGeometry();
-      gg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const pts = new THREE.Points(gg, new THREE.PointsMaterial({
-        map: TEX.dot, color: 0xffc37a, size: 0.42 * big, transparent: true,
-        depthWrite: false, blending: THREE.AdditiveBlending }));
-      group.add(pts);
-      S.parts.push(poolEffect('spark', { pts, vel, t: 0, life: 0.9, grav: 34 }, () => disposeObject(pts)));
-    }
-    // streaks: chispas estiradas por velocidad (LineSegments, técnica quarks)
-    {
-      const n = 24, pos = new Float32Array(n * 6), vel = [];
-      for (let i = 0; i < n; i++) {
-        const a = Math.random() * 6.283, e = 0.15 + Math.random() * 1.2, s2 = 24 + Math.random() * 30;
-        const v = new THREE.Vector3(Math.cos(a) * Math.cos(e) * s2, Math.sin(e) * s2, Math.sin(a) * Math.cos(e) * s2);
-        vel.push(v);
-        pos.set([p.x, p.y + 0.3, p.z, p.x - v.x * 0.02, p.y + 0.3 - v.y * 0.02, p.z - v.z * 0.02], i * 6);
-      }
-      const gg = new THREE.BufferGeometry();
-      gg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const ln = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({
-        color: 0xffd9a0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-      group.add(ln);
-      S.parts.push(poolEffect('spark', { ln, vel, t: 0, life: 0.8, grav: 30 }, () => disposeObject(ln)));
-    }
-    // onda expansiva a ras de suelo
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.0, 64),
-      new THREE.MeshBasicMaterial({ color: 0xffe6c0, transparent: true, opacity: 0.9,
-        side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
-    ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-    ring.position.copy(p).addScaledVector(normal, 0.04);
-    group.add(ring);
-    S.parts.push(poolEffect('fire', { ring, t: 0, life: 0.5, big }, () => disposeObject(ring)));
-    // banda de compresión: anillo oscuro sutil detrás del frente (lente de aire)
-    const ring2 = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.95, 64),
-      new THREE.MeshBasicMaterial({ color: 0x1a1611, transparent: true, opacity: 0.28,
-        side: THREE.DoubleSide, depthWrite: false }));
-    ring2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-    ring2.position.copy(p).addScaledVector(normal, 0.035);
-    group.add(ring2);
-    S.parts.push(poolEffect('fire', { ring: ring2, t: 0, life: 0.62, big: big * 0.92 }, () => disposeObject(ring2)));
     // scorch persistente
     const sc = new THREE.Mesh(new THREE.CircleGeometry(3.2 * big, 24),
       new THREE.MeshBasicMaterial({ map: TEX.scorch, transparent: true, opacity: 0.8, depthWrite: false }));
@@ -461,8 +401,15 @@ export function createWeapons(scene, {
     const decal = poolEffect('decal', { m: sc }, () => disposeObject(sc));
     S.decals.push(decal);
     S.decals = S.decals.filter(entry => !entry.evicted);
-    if (S._enemies) for (const h of S._enemies) {   // splash a la horda
-      if (!h.g.userData.dead && p.distanceToSquared(h.center) < (7 * big) ** 2) hitEnemy(h, 220 * big, h.center.clone());
+    if (S._enemies) {
+      radialDamage({
+        origin: p,
+        radius: 7 * big,
+        maxDamage: 220 * big,
+        targets: S._enemies.filter(enemy => !enemy.g.userData.dead),
+        castSegment: (start, end, radius) => world?.castSegment?.(start, end, radius),
+        applyDamage: (enemy, damage) => hitEnemy(enemy, damage, enemy.center.clone()),
+      });
     }
     if (terrainImpact) fireAftermath(p.clone());
     audio?.boom?.(big);
@@ -565,6 +512,7 @@ export function createWeapons(scene, {
       material.dispose();
       S.resources.disposed += 1;
     }
+    effects.dispose();
     for (const texture of Object.values(TEX)) texture.dispose();
     scene.remove(group);
     syncEffectCounters();
@@ -598,8 +546,12 @@ export function createWeapons(scene, {
           : key === 'tb' ? 1.55
             : 1;
     body.scale.setScalar(visualScale);
-    emit(TEX.puff3d, body.position.clone(), dir.clone().multiplyScalar(-0.7), 0.5, 1.6, 0.7,
-      THREE.NormalBlending, { smoke: true, tint0: 0xcfc9c2, tint1: 0xb0aaa4, effect: 'exhaust' });
+    effects.emitTrail({
+      profile,
+      position: body.position,
+      velocity: dir.clone().multiplyScalar(profile.speed),
+      dt: 1 / 60,
+    });
     const missile = {
       body, glow, dir: dir.clone(), full: profile.speed,
       vel: dir.clone().multiplyScalar(
@@ -670,10 +622,12 @@ export function createWeapons(scene, {
         point: surface.position,
         normal: surface.normal,
       };
-      emit(TEX.dot, point, new THREE.Vector3(
-        collision.normal.x, collision.normal.y, collision.normal.z,
-      ).multiplyScalar(3), 0.35, 1.2, 0.3, THREE.AdditiveBlending,
-      { effect: 'spark', tint0: 0xc8f5ff, tint1: 0x4fb4ff });
+      effects.emitImpact({
+        profile,
+        hit: collision,
+        inheritedVelocity: direction.clone().multiplyScalar(profile.speed),
+        scale: 0.35,
+      });
     }
     S.firedProjectiles.rg += 1;
     audio?.mg?.();
@@ -802,10 +756,12 @@ export function createWeapons(scene, {
           const normal = new THREE.Vector3(collision.normal.x, collision.normal.y, collision.normal.z);
           const surface = impactTransform(collision, 0.018);
           S.impactEvidence = { kind: collision.kind, point: surface.position, normal: surface.normal };
-          emit(TEX.dot, impact, normal.multiplyScalar(1.5), 0.3, 0.9, 0.22, THREE.AdditiveBlending,
-            { effect: 'spark' });
-          emit(TEX.puff3d, impact, new THREE.Vector3(collision.normal.x, collision.normal.y, collision.normal.z).multiplyScalar(0.8), 0.3, 1.3, 0.6,
-            THREE.NormalBlending, { smoke: true, tint0: 0x9a8a72, tint1: 0xb0a48e, effect: 'smoke' });
+          effects.emitImpact({
+            profile: ARSENAL[B.key],
+            hit: collision,
+            inheritedVelocity: B.vel,
+            scale: B.key === 'ac' ? 0.42 : 0.24,
+          });
         }
         if (dead) { releaseEffect(B); S.bullets.splice(i, 1); }
       }
@@ -860,8 +816,12 @@ export function createWeapons(scene, {
         M.trail += dt;
         if (M.kind !== 'bomb' && M.trail > 0.018) { // estela FINA (no cono)
           M.trail = 0;
-          emit(TEX.puff3d, M.body.position.clone(), M.dir.clone().multiplyScalar(-0.65),
-            0.18, 0.9, 0.75, THREE.NormalBlending, { spin: 0.6, drag: 0.4, smoke: true, tint0: 0xcfc9c2, tint1: 0xb9b3ac, effect: 'exhaust' });
+          effects.emitTrail({
+            profile: M.profile,
+            position: M.body.position,
+            velocity: M.vel,
+            dt,
+          });
         }
         const p = M.body.position;
         let hit = M.t > 6;
@@ -875,7 +835,7 @@ export function createWeapons(scene, {
         if (hit) {
           disposeMissile(M);
           S.missiles.splice(i, 1);
-          explode(collision || p.clone(), M.big || 1.25);
+          explode(collision || p.clone(), M.big || 1.25, M.profile);
         }
       }
       // ── partículas ──
@@ -941,13 +901,12 @@ export function createWeapons(scene, {
         if (F.t < F.life && F.acc > 0.09) {
           F.acc = 0;
           const j = new THREE.Vector3((Math.random() - 0.5) * 1.4, 0.2, (Math.random() - 0.5) * 1.4);
-          emit(TEX.fire, F.p.clone().add(j), new THREE.Vector3(0, 2.2 + Math.random() * 1.4, 0),
-            0.6, 2.1, 0.5, THREE.AdditiveBlending,
-            { tint0: 0xffe8b0, tint1: 0xa03008, spin: 2.4, drag: 0.3, tall: 2.1, rise: 2.5 });
-          if (Math.random() < 0.4) {
-            emit(TEX.puff3d, F.p.clone().add(j).add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, 1.8, 0),
-              0.8, 3.2, 2.6, THREE.NormalBlending, { tint0: 0x6a5344, tint1: 0x8a8681, spin: 0.6, drag: 0.3, smoke: true });
-          }
+          effects.emitTrail({
+            profile: { effect: 'residual' },
+            position: F.p.clone().add(j),
+            velocity: { x: 0, y: 1.8, z: 0 },
+            dt: 0.1,
+          });
         }
         if (F.t > F.life + 1.5) {
           releaseEffect(F);
@@ -982,7 +941,9 @@ export function createWeapons(scene, {
           S.frags.splice(i, 1);
         }
       }
+      effects.update(dt, getCameraPosition?.() || null);
     },
+    effects,
     dispose: disposeWeapons,
   };
 }

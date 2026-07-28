@@ -1,13 +1,14 @@
-import * as THREE from '/flightverse/three.js?v=317';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=317';
+import * as THREE from '/flightverse/three.js?v=318';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=318';
 import {
   composeCollisionWorld,
   createSceneObjectCollision,
-} from '/flightverse/scene-object-collision.js?v=317';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=317';
-import { createWeapons } from '/flightverse/weapons.js?v=317';
-import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=317';
-import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=317';
+} from '/flightverse/scene-object-collision.js?v=318';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=318';
+import { createWeapons } from '/flightverse/weapons.js?v=318';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=318';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=318';
+import { radialDamage } from '/flightverse/weapon-effects.js?v=318';
 
 const report = {
   done: false,
@@ -112,8 +113,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
     normal: new THREE.Vector3(0, 1, 0),
   });
   const relevantPools = [
-    'muzzle', 'tracer', 'exhaust',
-    'fire', 'smoke', 'dust', 'spark', 'fragment', 'decal', 'rubble',
+    'muzzle', 'tracer', 'fire', 'fragment', 'decal', 'rubble',
   ];
   let weapons = null;
 
@@ -150,7 +150,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
     };
     const burst = (count, start) => {
       for (let index = 0; index < count; index += 1) {
-        weapons.explodeAt(hitAt(start + index), 1);
+        weapons.explodeAt(hitAt(start + index), 2.8, WEAPON_PROFILES.tb);
         // Removing evicted entries on every tick keeps the burst bounded while
         // still forcing each pool's FIFO eviction path.
         weapons.update(STEP);
@@ -176,6 +176,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
     render();
     settle();
     const persistent = render();
+    const persistentEffects = weapons.effects.snapshot();
     const persistentPools = copyEffectCounters(weapons);
     const beforeBurstDisposals = weapons.state.resources.disposed;
 
@@ -186,10 +187,12 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
       missileShots: forceFire('s', 49),
     };
     const peak = render();
+    const peakEffects = weapons.effects.snapshot();
     const peakPools = copyEffectCounters(weapons);
     const disposalsAtPeak = weapons.state.resources.disposed;
     settle();
     const settled = render();
+    const settledEffects = weapons.effects.snapshot();
     const settledPools = copyEffectCounters(weapons);
     const poolEvictions = Object.fromEntries(relevantPools.map(kind => [
       kind,
@@ -198,6 +201,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
 
     const beforeTeardown = weapons.state.resources.disposed;
     weapons.dispose();
+    const teardownEffects = weapons.effects.snapshot();
     const teardown = render();
     const afterTeardown = weapons.state.resources.disposed;
 
@@ -207,6 +211,10 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
       peak,
       settled,
       teardown,
+      persistentEffects,
+      peakEffects,
+      settledEffects,
+      teardownEffects,
       relevantPools,
       poolEvictions,
       projectileBurst,
@@ -228,7 +236,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
 }
 
 async function run() {
-  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=317');
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=318');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
@@ -417,6 +425,31 @@ async function run() {
     JSON.stringify({ kind: edge?.kind, fraction: edge?.fraction }),
   );
 
+  const blastTargets = {
+    visible: { center: new THREE.Vector3(2, 0, 0), node: new THREE.Group() },
+    occluded: { center: new THREE.Vector3(4, 0, 0), node: new THREE.Group() },
+  };
+  const blast = radialDamage({
+    origin: new THREE.Vector3(0, 0, 0),
+    radius: 8,
+    maxDamage: 100,
+    targets: blastTargets,
+    castSegment: (_origin, target) => target.x > 3
+      ? { kind: 'structure', fraction: 0.5, node: new THREE.Group() }
+      : null,
+  });
+  check(
+    'radial falloff damages visible target and rejects target behind structure',
+    blast.visible.damage > 0
+      && blast.visible.damage < 100
+      && blast.occluded.damage === 0
+      && blast.occluded.occluded === true,
+    JSON.stringify({
+      visible: blast.visible.damage,
+      occluded: blast.occluded.damage,
+    }),
+  );
+
   const badMeta = URL.createObjectURL(new Blob([
     JSON.stringify({
       version: 2,
@@ -525,7 +558,7 @@ async function run() {
     }),
   );
 
-  const { resolveAimRay } = await import('/flightverse/aiming.js?v=317');
+  const { resolveAimRay } = await import('/flightverse/aiming.js?v=318');
   const reticleAim = resolveAimRay(
     { position: new THREE.Vector3(0, 2, 0), direction: new THREE.Vector3(1, 0, 0), far: 100 },
     world,
@@ -724,7 +757,7 @@ async function run() {
   nova.dispose();
 
   const { GLTFLoader } = await import(
-    '/vendor/three-addons180/loaders/GLTFLoader.js?v=317'
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=318'
   );
   const modelLibrary = createWeaponModelLibrary({
     quality: 'auto',
@@ -778,6 +811,15 @@ async function run() {
   check(
     'rendered eviction burst returns VFX GPU memory to its persistent baseline and teardown baseline',
     Object.values(report.effectMemory?.poolEvictions || {}).every(Boolean)
+      && report.effectMemory?.peakEffects?.budget?.active === 1400
+      && report.effectMemory?.peakEffects?.drawBatches === 5
+      && report.effectMemory?.peakEffects?.softAlpha === true
+      && report.effectMemory?.peakEffects?.emitted >= 150 * 240
+      && report.effectMemory?.peakEffects?.active <= 1400
+      && report.effectMemory?.peakEffects?.peak <= 1400
+      && report.effectMemory?.settledEffects?.active === 0
+      && report.effectMemory?.teardownEffects?.disposed === true
+      && report.effectMemory?.teardownEffects?.disposeCalls === 1
       && report.effectMemory?.projectileBurst?.mgShots >= 80
       && report.effectMemory?.projectileBurst?.missileShots >= 49
       && report.effectMemory?.disposedOnEviction > 0
