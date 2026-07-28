@@ -6,19 +6,25 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=316';
+import * as THREE from '/flightverse/three.js?v=317';
 import {
   earliestHit,
   normalizeTargetRadius,
   segmentSphereHit,
-} from '/flightverse/collision-math.js?v=316';
+} from '/flightverse/collision-math.js?v=317';
 import {
   EffectPool,
   disposeOwnedRenderObject,
   impactTransform,
-  isContinuousWeapon,
   projectileDirection,
-} from '/flightverse/aiming.js?v=316';
+} from '/flightverse/aiming.js?v=317';
+import {
+  WEAPON_PROFILES,
+  advanceLaunchSchedules,
+  createLaunchSchedule,
+  isGuidanceTargetVisible,
+  steerVector,
+} from '/flightverse/weapon-registry.js?v=317';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -51,12 +57,7 @@ function puffTex(size = 192) {
   return new THREE.CanvasTexture(cv);
 }
 
-export const ARSENAL = {
-  mg: { label: 'MG',  auto: true,  rate: 0.085, max: 120, regen: 12,   speed: 150, dmg: 14 },
-  s:  { label: 'M·S', cd: 0.4,     max: 12,     regen: 0.55, speed: 74, big: 0.75, radius: 0.1, proximity: 1.2 },
-  m:  { label: 'M·M', cd: 0.9,     max: 8,      regen: 0.4,  speed: 56, big: 1.25, radius: 0.16, proximity: 1.8 },
-  l:  { label: 'M·L', cd: 2.2,     max: 3,      regen: 0.12, speed: 42, big: 2.2, radius: 0.25, proximity: 3.0 },
-};
+export const ARSENAL = WEAPON_PROFILES;
 
 // eyecta con FRAGMENTOS REALES del destruction kit (debris_pack.glb: 16
 // chunks PBR de concreto/ladrillo). Clonar comparte geometría/material —
@@ -64,7 +65,7 @@ export const ARSENAL = {
 let debrisFrags = null;
 (async () => {
   try {
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=316');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=317');
     const g = await new GLTFLoader().loadAsync('/assets/destruction/models/debris_pack.glb');
     const frags = [];
     g.scene.traverse(n => { if (n.isMesh && n.userData.role === 'fragment') frags.push(n); });
@@ -80,6 +81,8 @@ export function createWeapons(scene, {
   crater,
   getCameraPosition,
   onDestroy,
+  cloneProjectile,
+  useDebrisModels = true,
 } = {}) {
   const TEX = {
     fire: glowTex([[0, 'rgba(255,244,200,1)'], [0.25, 'rgba(255,150,40,.9)'], [0.6, 'rgba(200,60,10,.45)'], [1, 'rgba(120,20,0,0)']], 128),
@@ -91,16 +94,22 @@ export function createWeapons(scene, {
     scorch: glowTex([[0, 'rgba(8,6,4,.85)'], [0.55, 'rgba(12,10,8,.5)'], [1, 'rgba(14,12,10,0)']], 96),
     blood: glowTex([[0, 'rgba(150,20,24,.95)'], [0.5, 'rgba(110,10,14,.6)'], [1, 'rgba(80,6,10,0)']], 48),
   };
-  const S = { missiles: [], bullets: [], parts: [], decals: [], frags: [], rubble: [], fires: [], booms: [],
+  const S = { missiles: [], bullets: [], schedules: [], parts: [], decals: [], frags: [], rubble: [], fires: [], booms: [],
     weapon: 'm', cool: 0, fired: 0, exploded: 0, destroyed: 0,
     structureHits: 0, terrainHits: 0, boundaryHits: 0, itemHits: 0, targetHits: 0,
+    railHits: 0,
     proximityTriggers: 0, occludedFuses: 0,
+    firedProjectiles: Object.fromEntries(
+      Object.keys(WEAPON_PROFILES).map(key => [key, 0]),
+    ),
     impactEvidence: null,
     lod: { near: 0, far: 0 },
     effectCounters: {},
     resources: { disposed: 0 },
     disposed: false,
-    ammo: { mg: 120, s: 12, m: 8, l: 3 } };
+    ammo: Object.fromEntries(
+      Object.entries(WEAPON_PROFILES).map(([key, profile]) => [key, profile.max]),
+    ) };
   const group = new THREE.Group(); group.name = 'fv-weapons'; scene.add(group);
 
   const effectPools = Object.fromEntries([
@@ -371,10 +380,11 @@ export function createWeapons(scene, {
     for (let i = 0; i < 12; i++) {
       const sz3 = 0.1 + Math.random() * 0.26;
       let m2;
-      const ownsResources = !debrisFrags;
-      if (debrisFrags) {
+      const sharedDebris = useDebrisModels && debrisFrags;
+      const ownsResources = !sharedDebris;
+      if (sharedDebris) {
         // fragmento PBR real del kit (geometría/material compartidos)
-        m2 = debrisFrags[(Math.random() * debrisFrags.length) | 0].clone();
+        m2 = sharedDebris[(Math.random() * sharedDebris.length) | 0].clone();
         m2.scale.setScalar(0.5 + Math.random() * 0.9);
       } else {
         m2 = new THREE.Mesh(new THREE.BoxGeometry(sz3, sz3 * (0.5 + Math.random()), sz3),
@@ -536,6 +546,7 @@ export function createWeapons(scene, {
     S.disposed = true;
     for (const missile of S.missiles) disposeMissile(missile);
     S.missiles.length = 0;
+    S.schedules.length = 0;
     for (const pool of Object.values(effectPools)) {
       for (const entry of [...pool.entries]) disposeEffect(entry);
       pool.entries.length = 0;
@@ -559,6 +570,116 @@ export function createWeapons(scene, {
     syncEffectCounters();
   };
 
+  const spawnMissile = (key, source, direction, aim = null) => {
+    const profile = ARSENAL[key];
+    if (!profile) return null;
+    const dir = direction.clone().normalize();
+    const body = new THREE.Group();
+    const farLod = new THREE.Group();
+    const farBody = new THREE.Mesh(missileGeo, missileMat);
+    farLod.add(farBody);
+    const nearLod = new THREE.Group();
+    const mm = new THREE.Mesh(missileNearGeo, missileMat);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.16, 12), tipMat);
+    tip.rotation.x = -Math.PI / 2; tip.position.z = -0.38;
+    const f1 = new THREE.Mesh(finGeo, missileMat); f1.position.z = 0.27;
+    const f2 = f1.clone(); f2.rotation.z = Math.PI / 2;
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.009, 6, 12), tipMat);
+    band.rotation.x = Math.PI / 2; band.position.z = 0.04;
+    nearLod.add(mm, tip, f1, f2, band);
+    const glow = sprite(TEX.fire); glow.scale.setScalar(0.55); glow.position.z = 0.44;
+    body.add(farLod, nearLod, glow);
+    body.position.copy(source);
+    body.lookAt(source.clone().add(dir));
+    group.add(body);
+    const visualScale = key === 'l' ? 1.5
+      : key === 's' ? 0.75
+        : key === 'sw' ? 0.58
+          : key === 'tb' ? 1.55
+            : 1;
+    body.scale.setScalar(visualScale);
+    emit(TEX.puff3d, body.position.clone(), dir.clone().multiplyScalar(-0.7), 0.5, 1.6, 0.7,
+      THREE.NormalBlending, { smoke: true, tint0: 0xcfc9c2, tint1: 0xb0aaa4, effect: 'exhaust' });
+    const missile = {
+      body, glow, dir: dir.clone(), full: profile.speed,
+      vel: dir.clone().multiplyScalar(
+        profile.kind === 'bomb' ? profile.speed : profile.speed * 0.25
+      ),
+      t: 0, trail: 0, big: profile.big,
+      radius: profile.radius || 0, proximity: profile.proximity || 0,
+      damage: profile.dmg || 900,
+      key, kind: profile.kind, profile,
+      guidanceTarget: aim?.target || null,
+      guidancePoint: aim?.aimPoint?.clone?.() || null,
+      nearLod, farLod,
+      ownedGeometries: [tip.geometry, band.geometry],
+    };
+    S.missiles.push(missile);
+    S.firedProjectiles[key] += 1;
+    const model = cloneProjectile?.(key);
+    if (model) {
+      Promise.resolve(model).then(node => {
+        if (!node || missile.disposed || S.disposed) return;
+        node.scale?.setScalar?.(key === 'tb' ? 0.32 : 0.24);
+        body.add(node);
+        nearLod.visible = false;
+        missile.model = node;
+      }).catch(() => {});
+    }
+    audio?.launch?.();
+    return missile;
+  };
+
+  const fireRail = (source, direction, profile, aim) => {
+    const end = source.clone().addScaledVector(direction, 1200);
+    const collision = projectileHit(
+      source,
+      end,
+      // A rail slug is an analytic ray, not a sampled sphere sweep. Keeping
+      // this at zero prevents a long 1.2 km shot from stepping over a thin
+      // facade between bounded sphere-sweep samples.
+      0,
+      aim?.target ? [aim.target] : [],
+    );
+    const point = collision?.point
+      ? new THREE.Vector3(collision.point.x, collision.point.y, collision.point.z)
+      : end;
+    const geometry = new THREE.BufferGeometry().setFromPoints([source, point]);
+    const material = new THREE.LineBasicMaterial({
+      color: 0xaeeeff,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const beam = new THREE.Line(geometry, material);
+    group.add(beam);
+    S.parts.push(poolEffect('tracer', {
+      beam, t: 0, life: 0.12,
+    }, () => disposeObject(beam)));
+    if (collision) {
+      recordImpact(collision);
+      S.railHits += 1;
+      if (collision.kind === 'target') {
+        damageTarget(collision.target, profile.dmg, point.clone(), false, collision);
+      }
+      const surface = impactTransform(collision, 0.018);
+      S.impactEvidence = {
+        kind: collision.kind,
+        effect: profile.effect,
+        point: surface.position,
+        normal: surface.normal,
+      };
+      emit(TEX.dot, point, new THREE.Vector3(
+        collision.normal.x, collision.normal.y, collision.normal.z,
+      ).multiplyScalar(3), 0.35, 1.2, 0.3, THREE.AdditiveBlending,
+      { effect: 'spark', tint0: 0xc8f5ff, tint1: 0x4fb4ff });
+    }
+    S.firedProjectiles.rg += 1;
+    audio?.mg?.();
+    return true;
+  };
+
   return {
     state: S,
     setWeapon(k) { if (ARSENAL[k]) S.weapon = k; return S.weapon; },
@@ -579,11 +700,30 @@ export function createWeapons(scene, {
         ? legacyDirection
         : new THREE.Vector3(aimVector.x, aimVector.y, aimVector.z);
       if (!legacyAim && aim?.direction) direction.set(aim.direction.x, aim.direction.y, aim.direction.z).normalize();
-      if (isContinuousWeapon(S.weapon)) {
+      if (W2.kind === 'swarm') {
+        if (!createLaunchSchedule(
+          S.schedules,
+          S.weapon,
+          source.clone(),
+          {
+            aimPoint: aim?.aimPoint?.clone?.() || source.clone().add(direction),
+            target: aim?.target || null,
+          },
+        )) return false;
+        S.ammo[S.weapon]--; S.cool = W2.cd; S.fired++;
+        return true;
+      }
+      if (W2.kind === 'rail') {
+        S.ammo[S.weapon]--; S.cool = W2.cd; S.fired++;
+        return fireRail(source, direction.normalize(), W2, aim);
+      }
+      if (W2.kind === 'bullet') {
         // ametralladora: tracer balístico con dispersión leve
-        S.ammo.mg--; S.cool = W2.rate; S.fired++;
+        S.ammo[S.weapon]--; S.cool = W2.rate; S.fired++;
         const dir = direction.clone().add(new THREE.Vector3(
-          (Math.random() - 0.5) * 0.012, (Math.random() - 0.5) * 0.012, (Math.random() - 0.5) * 0.012,
+          (Math.random() - 0.5) * (S.weapon === 'ac' ? 0.006 : 0.012),
+          (Math.random() - 0.5) * (S.weapon === 'ac' ? 0.006 : 0.012),
+          (Math.random() - 0.5) * (S.weapon === 'ac' ? 0.006 : 0.012),
         )).normalize();
         const b = new THREE.Group();
         const near = new THREE.Mesh(tracerGeo, tracerMat);
@@ -593,43 +733,20 @@ export function createWeapons(scene, {
         // fogonazo de boca: flash corto en el origen
         emit(TEX.flash, source, dir.clone().multiplyScalar(-0.2), 0.5, 1.3, 0.07, THREE.AdditiveBlending,
           { effect: 'muzzle' });
-        const bullet = { m: b, near, far, vel: dir.multiplyScalar(W2.speed), t: 0 };
+        const bullet = {
+          m: b, near, far, vel: dir.multiplyScalar(W2.speed), t: 0,
+          key: S.weapon, damage: W2.dmg,
+        };
         S.bullets.push(poolEffect('tracer', bullet, () => {
           removeObject(b);
           disposeObject(far, { geometry: false });
         }));
+        S.firedProjectiles[S.weapon] += 1;
         audio?.mg?.();
         return true;
       }
       S.ammo[S.weapon]--; S.cool = W2.cd; S.fired++;
-      const dir = direction.normalize();
-      const body = new THREE.Group();
-      const farLod = new THREE.Group();
-      const farBody = new THREE.Mesh(missileGeo, missileMat);
-      farLod.add(farBody);
-      const nearLod = new THREE.Group();
-      const mm = new THREE.Mesh(missileNearGeo, missileMat);
-      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.16, 12), tipMat);
-      tip.rotation.x = -Math.PI / 2; tip.position.z = -0.38;
-      const f1 = new THREE.Mesh(finGeo, missileMat); f1.position.z = 0.27;
-      const f2 = f1.clone(); f2.rotation.z = Math.PI / 2;
-      const band = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.009, 6, 12), tipMat);
-      band.rotation.x = Math.PI / 2; band.position.z = 0.04;
-      nearLod.add(mm, tip, f1, f2, band);
-      const glow = sprite(TEX.fire); glow.scale.setScalar(0.55); glow.position.z = 0.44;
-      body.add(farLod, nearLod, glow);
-      // `source` is already the selected GLB hardpoint. Do not re-offset it.
-      body.position.copy(source);
-      body.lookAt(source.clone().add(dir));
-      group.add(body);
-      body.scale.setScalar(S.weapon === 'l' ? 1.5 : S.weapon === 's' ? 0.75 : 1);
-      emit(TEX.puff3d, body.position.clone(), dir.clone().multiplyScalar(-0.7), 0.5, 1.6, 0.7,
-        THREE.NormalBlending, { smoke: true, tint0: 0xcfc9c2, tint1: 0xb0aaa4, effect: 'exhaust' });
-      S.missiles.push({ body, glow, dir: dir.clone(), full: W2.speed,
-        vel: dir.clone().multiplyScalar(W2.speed * 0.25), t: 0, trail: 0, big: W2.big,
-        radius: W2.radius, proximity: W2.proximity, nearLod, farLod,
-        ownedGeometries: [tip.geometry, band.geometry] });
-      audio?.launch?.();
+      spawnMissile(S.weapon, source, direction.normalize(), aim);
       return true;
     },
     smash,
@@ -645,6 +762,17 @@ export function createWeapons(scene, {
       for (const k of Object.keys(ARSENAL)) {           // recarga por arma
         if (S.ammo[k] < ARSENAL[k].max) S.ammo[k] = Math.min(ARSENAL[k].max, S.ammo[k] + ARSENAL[k].regen * dt);
       }
+      advanceLaunchSchedules(S.schedules, dt, event => {
+        const origin = event.origin.clone();
+        const column = event.index % 4;
+        const row = Math.floor(event.index / 4);
+        origin.x += (column - 1.5) * 0.08;
+        origin.y += (row - 0.5) * 0.09;
+        const direction = event.aim.aimPoint.clone().sub(origin).normalize();
+        direction.x += (column - 1.5) * 0.006;
+        direction.y += (row - 0.5) * 0.005;
+        spawnMissile(event.key, origin, direction.normalize(), event.aim);
+      });
       // ── balas MG: tracer balístico + impacto con daño acumulativo ──
       for (let i = S.bullets.length - 1; i >= 0; i--) {
         const B = S.bullets[i];
@@ -666,7 +794,7 @@ export function createWeapons(scene, {
         if (collision) {
           recordImpact(collision);
           if (collision.kind === 'target') {
-            damageTarget(collision.target, ARSENAL.mg.dmg, impact, false, collision);
+            damageTarget(collision.target, B.damage, impact, false, collision);
           }
         }
         if (impact) {
@@ -686,8 +814,32 @@ export function createWeapons(scene, {
         const M = S.missiles[i];
         M.t += dt;
         _from.copy(M.body.position);
-        if (M.t < 0.6) M.vel.copy(M.dir).multiplyScalar(M.full * (0.25 + (M.t / 0.6) * 0.75));
-        M.vel.y -= 2.2 * dt;
+        if (M.kind === 'guided' && activeTarget(M.guidanceTarget)) {
+          const targetPoint = M.guidanceTarget.center;
+          if (isGuidanceTargetVisible(
+            _from,
+            targetPoint,
+            (start, end, radius) => world?.castSegment?.(start, end, radius),
+            M.guidanceTarget.node || M.guidanceTarget.g,
+          )) {
+            const desired = new THREE.Vector3(
+              targetPoint.x - _from.x,
+              targetPoint.y - _from.y,
+              targetPoint.z - _from.z,
+            ).normalize();
+            const steered = steerVector(M.dir, desired, M.profile.turnRate, dt);
+            M.dir.set(steered.x, steered.y, steered.z);
+          }
+        }
+        if (M.kind === 'bomb') {
+          M.vel.y -= M.profile.gravity * dt;
+        } else {
+          const acceleration = M.t < 0.6
+            ? M.full * (0.25 + (M.t / 0.6) * 0.75)
+            : M.full;
+          M.vel.copy(M.dir).multiplyScalar(acceleration);
+          M.vel.y -= 2.2 * dt;
+        }
         _to.copy(_from).addScaledVector(M.vel, dt);
         const collision = projectileHit(
           _from,
@@ -698,14 +850,15 @@ export function createWeapons(scene, {
         );
         M.body.position.copy(collision?.point || _to);
         M.body.lookAt(M.body.position.clone().add(M.vel));
-        M.body.rotateZ(M.t * 9);               // roll del misil
+        M.body.rotateZ(M.kind === 'bomb' ? M.t * 2 : M.t * 9);
         const missileNear = (getCameraPosition?.() || M.body.position).distanceTo(M.body.position) < 110;
         M.nearLod.visible = missileNear;
         M.farLod.visible = !missileNear;
         S.lod[missileNear ? 'near' : 'far'] += 1;
+        M.glow.visible = M.kind !== 'bomb';
         M.glow.scale.setScalar(0.45 + Math.random() * 0.25);   // flicker de tobera
         M.trail += dt;
-        if (M.trail > 0.018) {                 // estela FINA (no cono)
+        if (M.kind !== 'bomb' && M.trail > 0.018) { // estela FINA (no cono)
           M.trail = 0;
           emit(TEX.puff3d, M.body.position.clone(), M.dir.clone().multiplyScalar(-0.65),
             0.18, 0.9, 0.75, THREE.NormalBlending, { spin: 0.6, drag: 0.4, smoke: true, tint0: 0xcfc9c2, tint1: 0xb9b3ac, effect: 'exhaust' });
@@ -716,7 +869,7 @@ export function createWeapons(scene, {
           hit = true;
           recordImpact(collision);
           if (collision.kind === 'target') {
-            damageTarget(collision.target, 900, p.clone(), true, collision);
+            damageTarget(collision.target, M.damage, p.clone(), true, collision);
           }
         }
         if (hit) {
@@ -749,6 +902,7 @@ export function createWeapons(scene, {
           P.sp.material.rotation += P.rot * dt;
           if (P.tint0 && P.tint1) P.sp.material.color.lerpColors(P.tint0, P.tint1, Math.min(1, k * 1.4));
         }
+        if (P.beam) P.beam.material.opacity = 0.95 * (1 - k);
         if (P.light) P.light.intensity = 90 * (1 - k);
         if (P.pts) {
           const a = P.pts.geometry.attributes.position;

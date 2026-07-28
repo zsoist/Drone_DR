@@ -13,6 +13,14 @@ from browser_gate import DEFAULT_BASE_URL, launch_chrome, new_page
 
 
 VAULT = Path("/Volumes/SSD/drone-vault")
+NEW_WEAPON_KEYS = ("ac", "sw", "vx", "rg", "tb")
+WEAPON_SETTLE_SECONDS = {
+    "ac": 1.5,
+    "sw": 3.4,
+    "vx": 3.0,
+    "rg": 1.9,
+    "tb": 5.0,
+}
 
 
 def _finite_number(value) -> bool:
@@ -93,6 +101,36 @@ def validate_stress_actions(actions: dict) -> list[dict]:
     return failures
 
 
+def validate_arsenal_actions(rows: list[dict]) -> list[dict]:
+    failures = []
+    by_key = {row.get("key"): row for row in rows}
+    for key in NEW_WEAPON_KEYS:
+        row = by_key.get(key)
+        if not row:
+            failures.append({"weapon": key, "reason": "weapon_not_exercised"})
+            continue
+        if row.get("selected") != key:
+            failures.append({"weapon": key, "reason": "weapon_not_selected"})
+        before = row.get("ammo_before")
+        after = row.get("ammo_after")
+        if (
+            not _finite_number(before)
+            or not _finite_number(after)
+            or after >= before
+        ):
+            failures.append({"weapon": key, "reason": "ammo_not_consumed"})
+        expected = 8 if key == "sw" else 1
+        if row.get("fired_delta", 0) < expected:
+            failures.append({"weapon": key, "reason": "projectile_not_observed"})
+        if not row.get("model_ready"):
+            failures.append({"weapon": key, "reason": "weapon_model_not_ready"})
+        if row.get("impact_delta", 0) < 1 or row.get("impact_kind") not in {
+            "structure", "terrain", "boundary", "target",
+        }:
+            failures.append({"weapon": key, "reason": "weapon_impact_not_observed"})
+    return failures
+
+
 def cdp_click(cdp, selector: str) -> bool:
     """Click a visible element through CDP input, rather than synthetic counters."""
     box = cdp.eval(
@@ -147,6 +185,82 @@ def _weapon_counts(cdp) -> dict:
         "(() => { const w=window.__volar?.weapons || {}; return {"
         "fired:w.fired || 0, exploded:w.exploded || 0}; })()"
     ) or {"fired": 0, "exploded": 0}
+
+
+def _arsenal_sample(cdp, key: str) -> dict:
+    return cdp.eval(
+        "(() => {"
+        f" const key={json.dumps(key)};"
+        " const r=window.__volar || {};"
+        " const w=r.weapons || {};"
+        " const state=r.weaponState || {};"
+        " const fired=w.fired_projectiles || {};"
+        " const models=w.models || {};"
+        " const impacts=(w.structure_hits||0)+(w.terrain_hits||0)"
+        " +(w.boundary_hits||0)+(w.item_hits||0)+(w.target_hits||0);"
+        " return {selected:state.weapon||null, ammo:state.ammo?.[key],"
+        " fired:fired[key]||0, impacts,"
+        " impactKind:w.impact?.kind||null,"
+        " modelReady:(models.ready||[]).includes(key),"
+        " modelTier:models.tier||null, projectiles:w.projectiles||0};"
+        " })()"
+    ) or {}
+
+
+def exercise_weapon_arsenal(cdp, timeout: int = 20) -> list[dict]:
+    """Select and fire all new weapons through the real HUD controls."""
+    rows = []
+    for key in NEW_WEAPON_KEYS:
+        # Desktop exposes the combat-panel grid. Coarse layouts expose the
+        # compact picker. Always drive whichever real control is visible.
+        selected = cdp_click(cdp, f'#vl-weps button[data-w="{key}"]')
+        if not selected:
+            if cdp_click(cdp, "#vl-weapon-toggle"):
+                selected = cdp_click(
+                    cdp, f'#vl-weapon-picker button[data-w="{key}"]')
+        if not selected:
+            rows.append({"key": key, "error": "weapon_option_missing"})
+            continue
+        deadline = time.time() + timeout
+        before = {}
+        while time.time() < deadline:
+            cdp.pump(0.1)
+            before = _arsenal_sample(cdp, key)
+            if before.get("selected") == key and before.get("modelReady"):
+                break
+        if before.get("selected") != key or not before.get("modelReady"):
+            rows.append({
+                "key": key,
+                "selected": before.get("selected"),
+                "model_ready": before.get("modelReady", False),
+                "error": "weapon_selection_timeout",
+            })
+            continue
+        fired = cdp_click(cdp, "#vl-trigger")
+        if not fired:
+            fired = cdp_click(cdp, "#vl-fire")
+        if not fired:
+            rows.append({"key": key, "error": "weapon_trigger_missing"})
+            continue
+        cdp.pump(0.08)
+        immediate = _arsenal_sample(cdp, key)
+        cdp.pump(WEAPON_SETTLE_SECONDS[key])
+        after = _arsenal_sample(cdp, key)
+        rows.append({
+            "key": key,
+            "selected": after.get("selected"),
+            "ammo_before": before.get("ammo"),
+            "ammo_after": immediate.get("ammo"),
+            "fired_delta": (after.get("fired") or 0) - (before.get("fired") or 0),
+            "impact_delta": (
+                (after.get("impacts") or 0) - (before.get("impacts") or 0)
+            ),
+            "impact_kind": after.get("impactKind"),
+            "model_ready": after.get("modelReady", False),
+            "model_tier": after.get("modelTier"),
+            "projectiles": after.get("projectiles"),
+        })
+    return rows
 
 
 def _live_sample(cdp) -> dict:
@@ -342,7 +456,10 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
         cdp.send("Page.navigate", {"url": fpv_url})
         ready = _wait_for_world_ready(cdp, timeout)
         fpv_camera = None
+        arsenal = []
         if ready:
+            arsenal = exercise_weapon_arsenal(cdp)
+            failures.extend(validate_arsenal_actions(arsenal))
             fpv_camera = cdp.eval(
                 "(() => { const r=window.__volar; return {cameraRig:r.camera?.rig,"
                 " cameraCollisionChecks:r.camera?.collision_checks,"
@@ -364,6 +481,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             "camera_integration": camera_integration,
             "samples": samples,
             "fpv_camera": fpv_camera,
+            "arsenal": arsenal,
             "console_errors": cdp.errors[:6],
         }
         if failures:

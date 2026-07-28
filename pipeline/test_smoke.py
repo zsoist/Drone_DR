@@ -606,9 +606,10 @@ _mobile_command_tests = subprocess.run(
         "pipeline/test_camera_rigs.mjs",
         "pipeline/test_flight_tools.mjs",
         "pipeline/test_scene_object_collision.mjs",
+        "pipeline/test_weapon_registry.mjs",
     ],
     capture_output=True, text=True)
-check("flightverse mobile tools, camera rigs and scene collisions: deterministic suites pass",
+check("flightverse mobile tools, camera rigs, collisions and weapon registry: deterministic suites pass",
       _mobile_command_tests.returncode == 0,
       (_mobile_command_tests.stderr or _mobile_command_tests.stdout)[-500:])
 _weapon_asset_env = os.environ.copy()

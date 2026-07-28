@@ -330,6 +330,41 @@ echo world-a
             {row["reason"] for row in failures},
         )
 
+    def test_arsenal_gate_requires_selection_ammo_model_projectile_and_impact(self):
+        valid = [{
+            "key": key,
+            "selected": key,
+            "ammo_before": 4,
+            "ammo_after": 3,
+            "fired_delta": 8 if key == "sw" else 1,
+            "impact_delta": 1,
+            "impact_kind": "structure",
+            "model_ready": True,
+        } for key in flightverse_collision_gate.NEW_WEAPON_KEYS]
+        self.assertEqual(
+            [],
+            flightverse_collision_gate.validate_arsenal_actions(valid),
+        )
+
+        invalid = [dict(row) for row in valid]
+        invalid[0].update({
+            "ammo_after": 4,
+            "fired_delta": 0,
+            "impact_delta": 0,
+            "model_ready": False,
+        })
+        reasons = {
+            row["reason"]
+            for row in flightverse_collision_gate.validate_arsenal_actions(invalid)
+            if row.get("weapon") == "ac"
+        }
+        self.assertEqual({
+            "ammo_not_consumed",
+            "projectile_not_observed",
+            "weapon_model_not_ready",
+            "weapon_impact_not_observed",
+        }, reasons)
+
     def test_terrain_only_live_sample_does_not_require_structural_collision(self):
         sample = {
             "run": 1,

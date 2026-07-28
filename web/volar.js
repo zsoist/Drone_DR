@@ -4,42 +4,47 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=316';
+import * as THREE from '/flightverse/three.js?v=317';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=316';
+} from '/flightverse/scene.js?v=317';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=316';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=316';
-import { createRecorder } from '/flightverse/recorder.js?v=316';
-import { createAudio } from '/flightverse/audio.js?v=316';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=316';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=316';
+} from '/flightverse/runtime.js?v=317';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=317';
+import { createRecorder } from '/flightverse/recorder.js?v=317';
+import { createAudio } from '/flightverse/audio.js?v=317';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=317';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=317';
 import {
   createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=316';
-import { createSky } from '/flightverse/sky.js?v=316';
-import { loadSceneObjects } from '/flightverse/objects.js?v=316';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=316';
-import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=316';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=316';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=316';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=316';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=316';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=316';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=316';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=316';
-import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=316';
-import CameraControls from '/vendor/camera-controls.module.js?v=316';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=316';
+} from '/flightverse/mobile-command.js?v=317';
+import { createSky } from '/flightverse/sky.js?v=317';
+import { loadSceneObjects } from '/flightverse/objects.js?v=317';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=317';
+import { resolveAimRay } from '/flightverse/aiming.js?v=317';
+import {
+  WEAPON_PROFILES,
+  isContinuousWeaponKey,
+} from '/flightverse/weapon-registry.js?v=317';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=317';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=317';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=317';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=317';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=317';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=317';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=317';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=317';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=317';
+import CameraControls from '/vendor/camera-controls.module.js?v=317';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=317';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=316';
+} from '/vendor/postprocessing180.module.js?v=317';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -124,12 +129,7 @@ function hud() {
       <div class="vl-combat" id="vl-combat" role="dialog" aria-modal="false" aria-labelledby="vl-combat-title">
         <div class="vl-dock-head vl-panel-drag"><b id="vl-combat-title">COMBATE <small>ARRASTRAR</small></b><button id="vl-combat-close">Cerrar</button></div>
         <div class="vl-kills" id="vl-kills"></div>
-        <div class="vl-weps" id="vl-weps">
-          <button data-w="mg">MG</button>
-          <button data-w="s">Misil S</button>
-          <button data-w="m" class="sel">Misil M</button>
-          <button data-w="l">Misil L</button>
-        </div>
+        <div class="vl-weps" id="vl-weps"></div>
         <button class="vl-fire" id="vl-fire" title="X · disparar (Z cambia arma)" aria-label="Disparar">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
             <circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>
@@ -168,12 +168,7 @@ function hud() {
         <output id="vl-weapon-status">8</output>
       </button>
       <div class="vl-weapon-picker" id="vl-weapon-picker"
-        role="listbox" aria-label="Seleccionar arma" hidden>
-        <button role="option" data-w="mg" aria-selected="false">MG</button>
-        <button role="option" data-w="s" aria-selected="false">Misil S</button>
-        <button role="option" data-w="m" aria-selected="true">Misil M</button>
-        <button role="option" data-w="l" aria-selected="false">Misil L</button>
-      </div>
+        role="listbox" aria-label="Seleccionar arma" hidden></div>
       <button class="vl-trigger" id="vl-trigger" title="X · disparar" aria-label="Disparar arma seleccionada">
         <span>◎</span><strong>FUEGO</strong>
       </button>
@@ -660,6 +655,10 @@ async function main() {
   const props = [];
   const navLights = [];                       // LEDs: [strobe, rojo babor, verde estribor]
   const hardpoints = [];                      // nodos hardpoint_N del GLB (anclaje de misiles)
+  let weaponModels = null;
+  let selectedWeaponKey = 'm';
+  const weaponModelErrors = new Set();
+  let selectWeaponModel = () => Promise.resolve(null);
   const propBlurs = [];                       // discos motion-blur bajo cada helice
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
     const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.019, 0.27, 4, 8), matGrey);
@@ -702,9 +701,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=316', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=317', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=316');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=317');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -759,6 +758,7 @@ async function main() {
     strobe.position.set(0, 0.07, 0.20);
     m.add(ledR, ledG, strobe); navLights.push(strobe, ledR, ledG);
     dmesh.add(m);
+    void selectWeaponModel(selectedWeaponKey);
     report.customDrone = true;
   }).catch(() => { /* GLB opcional */ });
 
@@ -857,9 +857,27 @@ async function main() {
   // ── armamento: misiles + explosiones + destrucción (X o botón FIRE) ──
   const shake = { mag: 0 };
   let curYaw = 0;
+  const { GLTFLoader: ArsenalGLTFLoader } = await import(
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=317'
+  );
+  weaponModels = createWeaponModelLibrary({
+    quality: Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto',
+    coarse: matchMedia('(pointer:coarse)').matches,
+    loader: new ArsenalGLTFLoader(),
+    root: '/assets/weapons',
+  });
+  selectWeaponModel = key => weaponModels.select(key, hardpoints).catch(error => {
+    const message = `arma 3D ${key}: ${error?.message || error}`;
+    if (!weaponModelErrors.has(message)) {
+      weaponModelErrors.add(message);
+      report.errors.push(message);
+    }
+    return null;
+  });
   const weapons = createWeapons(scene, {
     world: collision, heightAt: terrain.heightAt, audio, crater: terrain.crater,
     getCameraPosition: () => camera.position,
+    cloneProjectile: key => weaponModels?.cloneProjectile(key),
     onDestroy: node => sceneObjects?.markDestroyed(node),
     onShake: (pos, big) => {
       const d = camera.position.distanceTo(pos);
@@ -930,8 +948,15 @@ async function main() {
   const fireBtn = $('#vl-fire');
   const triggerBtn = $('#vl-trigger');
   const weaponToggle = $('#vl-weapon-toggle');
+  const weaponOptionMarkup = Object.entries(WEAPON_PROFILES).map(([key, profile]) => (
+    `<button role="option" data-w="${key}" aria-selected="${key === 'm'}">${profile.label}</button>`
+  )).join('');
+  $('#vl-weps').innerHTML = weaponOptionMarkup;
+  $('#vl-weapon-picker').innerHTML = weaponOptionMarkup;
   const weaponItems = [...document.querySelectorAll('#vl-weapon-picker button[data-w]')];
-  const WEAPON_CODES = { mg: 'MG', s: 'M·S', m: 'M·M', l: 'M·L' };
+  const WEAPON_CODES = Object.fromEntries(
+    Object.entries(WEAPON_PROFILES).map(([key, profile]) => [key, profile.code]),
+  );
   const triggerState = {
     held: false, locked: false, source: null, pointerId: null,
     presses: 0, releases: 0, accepted: 0, mode: 'single',
@@ -972,7 +997,7 @@ async function main() {
       ? hardpoints[weapons.state.fired % hardpoints.length].getWorldPosition(new THREE.Vector3())
       : P.clone();
     const target = resolveCombatAim();
-    if (!weapons.fire(hp, { aimPoint: target.point })) return false;
+    if (!weapons.fire(hp, { aimPoint: target.point, target: target.target || null })) return false;
     fireBtn.classList.remove('flash'); void fireBtn.offsetWidth;   // reinicia anim
     fireBtn.classList.add('flash');
     triggerBtn.classList.remove('flash'); void triggerBtn.offsetWidth;
@@ -998,7 +1023,7 @@ async function main() {
   };
   const beginFiring = (source, button = null, pointerId = null) => {
     if (triggerState.held || overlayCoordinator?.active()) return false;
-    const auto = isContinuousWeapon(weapons.state.weapon);
+    const auto = isContinuousWeaponKey(weapons.state.weapon);
     firing = true;
     triggerState.held = true;
     triggerState.locked = !auto;
@@ -1021,6 +1046,8 @@ async function main() {
   });
   const setWeapon = k => {
     weapons.setWeapon(k);
+    selectedWeaponKey = weapons.state.weapon;
+    void selectWeaponModel(selectedWeaponKey);
     document.querySelectorAll('#vl-weps button, #vl-weapon-picker button').forEach(b =>
       b.classList.toggle('sel', b.dataset.w === k));
     updateTriggerUi();
@@ -1032,6 +1059,7 @@ async function main() {
     eventRoot: document,
     onSelect: setWeapon,
   });
+  void selectWeaponModel(weapons.state.weapon);
   let flightTools = null;
   document.addEventListener('pointerdown', e => {
     const activeOverlay = overlayCoordinator?.active();
@@ -1867,7 +1895,12 @@ async function main() {
           target_hits: weapons.state.targetHits,
           proximity_triggers: weapons.state.proximityTriggers,
           occluded_fuses: weapons.state.occludedFuses,
-          projectiles: weapons.state.missiles.length + weapons.state.bullets.length,
+          rail_hits: weapons.state.railHits,
+          projectiles: weapons.state.missiles.length
+            + weapons.state.bullets.length
+            + weapons.state.schedules.length,
+          fired_projectiles: { ...weapons.state.firedProjectiles },
+          models: weaponModels.snapshot(),
           pools: weapons.state.effectCounters,
           resources: { ...weapons.state.resources },
           impact: weapons.state.impactEvidence,
@@ -2132,6 +2165,7 @@ async function main() {
     splat?.dispose();
     terrain.dispose();
     weapons.dispose();
+    weaponModels.dispose();
     invasion.dispose();
     worldGroup.removeFromParent();
     composer.dispose?.();
@@ -2144,8 +2178,14 @@ async function main() {
     setTimeout(() => {
       report.fps = Math.round(loop.fps() || 0);
       report.audioArmed = audio.armed;
-      report.weapons = { fired: weapons.state.fired, exploded: weapons.state.exploded };
-      report.weapons.projectiles = weapons.state.missiles.length + weapons.state.bullets.length;
+      report.weapons = {
+        ...(report.weapons || {}),
+        fired: weapons.state.fired,
+        exploded: weapons.state.exploded,
+        projectiles: weapons.state.missiles.length
+          + weapons.state.bullets.length
+          + weapons.state.schedules.length,
+      };
       report.pos = { x: +drone.pos.x.toFixed(1), y: +drone.pos.y.toFixed(1), z: +drone.pos.z.toFixed(1) };
       report.agl = drone.agl == null ? null : +drone.agl.toFixed(1);
       report.collision.radius_m = +drone.collisionRadius.toFixed(3);

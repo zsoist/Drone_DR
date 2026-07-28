@@ -451,6 +451,13 @@ class VolarMobileHudContractTests(unittest.TestCase):
             self.assertIn(contract, self.source)
         self.assertNotIn('id="vl-weapon-carousel"', self.source)
 
+    def test_nine_weapon_picker_is_registry_driven_and_uses_safe_three_column_grid(self):
+        self.assertIn("WEAPON_PROFILES", self.source)
+        self.assertIn("Object.entries(WEAPON_PROFILES)", self.source)
+        self.assertIn("createWeaponModelLibrary", self.source)
+        coarse = self.styles[self.styles.index("@media (pointer:coarse)"):]
+        self.assertIn("grid-template-columns:repeat(3,minmax(0,1fr))", coarse)
+
     def test_touch_command_geometry_and_gesture_hardening_are_mobile_only(self):
         coarse = self.styles[self.styles.index("@media (pointer:coarse)"):]
         for contract in (

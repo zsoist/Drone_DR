@@ -44,7 +44,7 @@ def main():
     # este agujero sirvió un tresd.js de ayer tras la migración de fase E
     for p in gz_sweep:
         gz = p.with_name(p.name + ".gz")
-        if gz.exists() and gz.stat().st_mtime < p.stat().st_mtime:
+        if not gz.exists() or gz.stat().st_mtime < p.stat().st_mtime:
             regz.add(p)
     for p in regz:
         subprocess.run(["gzip", "-kf9", str(p)], check=True)

@@ -1,11 +1,13 @@
-import * as THREE from '/flightverse/three.js?v=316';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=316';
+import * as THREE from '/flightverse/three.js?v=317';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=317';
 import {
   composeCollisionWorld,
   createSceneObjectCollision,
-} from '/flightverse/scene-object-collision.js?v=316';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=316';
-import { createWeapons } from '/flightverse/weapons.js?v=316';
+} from '/flightverse/scene-object-collision.js?v=317';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=317';
+import { createWeapons } from '/flightverse/weapons.js?v=317';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=317';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=317';
 
 const report = {
   done: false,
@@ -125,7 +127,13 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
     scene.remove(rendererWarmup);
     rendererWarmup.material.dispose();
     const baseline = render();
-    weapons = createWeapons(scene, { world: terrainWorld, heightAt: () => 0 });
+    weapons = createWeapons(scene, {
+      world: terrainWorld,
+      heightAt: () => 0,
+      // This gate measures resources owned by createWeapons. Optional debris
+      // GLBs are shared loader assets and intentionally outlive an instance.
+      useDebrisModels: false,
+    });
     const projectileOrigin = new THREE.Vector3(0, 20, 0);
     const projectileAim = { aimPoint: new THREE.Vector3(0, 20, -240) };
     const forceFire = (kind, count) => {
@@ -220,7 +228,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
 }
 
 async function run() {
-  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=316');
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=317');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
@@ -517,7 +525,7 @@ async function run() {
     }),
   );
 
-  const { resolveAimRay } = await import('/flightverse/aiming.js?v=316');
+  const { resolveAimRay } = await import('/flightverse/aiming.js?v=317');
   const reticleAim = resolveAimRay(
     { position: new THREE.Vector3(0, 2, 0), direction: new THREE.Vector3(1, 0, 0), far: 100 },
     world,
@@ -604,6 +612,136 @@ async function run() {
     );
     missiles.dispose();
   }
+
+  const ac30 = makeWeapons(world);
+  ac30.setWeapon('ac');
+  ac30.fire(new THREE.Vector3(0, 2, 0), -Math.PI / 2, 0);
+  runWeapon(ac30, 8);
+  check(
+    'AC-30 continuous shell uses swept composite collision',
+    ac30.state.structureHits === 1
+      && ac30.state.firedProjectiles.ac === 1
+      && ac30.state.bullets.length === 0,
+    JSON.stringify({
+      structureHits: ac30.state.structureHits,
+      firedProjectiles: ac30.state.firedProjectiles.ac,
+      bullets: ac30.state.bullets.length,
+    }),
+  );
+  ac30.dispose();
+
+  const swarm = makeWeapons(world);
+  swarm.setWeapon('sw');
+  swarm.fire(
+    new THREE.Vector3(0, 2, 0),
+    { aimPoint: new THREE.Vector3(8, 2, 0) },
+  );
+  runWeapon(swarm, 240);
+  check(
+    'SWARM-8 emits exactly eight bounded micro-rockets and clears schedule',
+    swarm.state.firedProjectiles.sw === 8
+      && swarm.state.schedules.length === 0
+      && swarm.state.structureHits === 8
+      && swarm.state.exploded === 8,
+    JSON.stringify({
+      firedProjectiles: swarm.state.firedProjectiles.sw,
+      schedules: swarm.state.schedules.length,
+      structureHits: swarm.state.structureHits,
+      exploded: swarm.state.exploded,
+    }),
+  );
+  swarm.dispose();
+
+  const guided = makeWeapons(boundaryWorld);
+  const guidedGroup = new THREE.Group();
+  const guidedTarget = {
+    enemy: true,
+    g: guidedGroup,
+    center: new THREE.Vector3(5, 4, 0),
+    radius: 0.45,
+    radiusSq: 0.45 ** 2,
+    hp: 2000,
+    blood: false,
+  };
+  guided.setWeapon('vx');
+  guided.fire(new THREE.Vector3(0, 2, 0), {
+    aimPoint: new THREE.Vector3(8, 2, 0),
+    target: guidedTarget,
+  });
+  runWeapon(guided, 180, [guidedTarget]);
+  check(
+    'VIPER-X turns to a visible target and triggers only after clear guidance',
+    guided.state.firedProjectiles.vx === 1
+      && guided.state.targetHits === 1
+      && guided.state.proximityTriggers === 1,
+    JSON.stringify({
+      firedProjectiles: guided.state.firedProjectiles.vx,
+      targetHits: guided.state.targetHits,
+      proximityTriggers: guided.state.proximityTriggers,
+    }),
+  );
+  guided.dispose();
+
+  const rail = makeWeapons(world);
+  rail.setWeapon('rg');
+  rail.fire(new THREE.Vector3(0, 2, 0), -Math.PI / 2, 0);
+  check(
+    'RAIL resolves a 460m/s continuous wall hit without fireball projectile',
+    WEAPON_PROFILES.rg.speed === 460
+      && rail.state.railHits === 1
+      && rail.state.structureHits === 1
+      && rail.state.exploded === 0
+      && rail.state.missiles.length === 0,
+    JSON.stringify({
+      railHits: rail.state.railHits,
+      structureHits: rail.state.structureHits,
+      terrainHits: rail.state.terrainHits,
+      boundaryHits: rail.state.boundaryHits,
+      impact: rail.state.impactEvidence,
+      exploded: rail.state.exploded,
+    }),
+  );
+  rail.dispose();
+
+  const nova = makeWeapons(terrainWorld, () => 0);
+  nova.setWeapon('tb');
+  nova.fire(new THREE.Vector3(0, 12, 0), {
+    aimPoint: new THREE.Vector3(0, 0, -2),
+  });
+  runWeapon(nova, 240);
+  check(
+    'NOVA follows gravity and explodes on first terrain contact',
+    nova.state.firedProjectiles.tb === 1
+      && nova.state.terrainHits === 1
+      && nova.state.exploded === 1
+      && nova.state.missiles.length === 0,
+    JSON.stringify({
+      firedProjectiles: nova.state.firedProjectiles.tb,
+      terrainHits: nova.state.terrainHits,
+      exploded: nova.state.exploded,
+    }),
+  );
+  nova.dispose();
+
+  const { GLTFLoader } = await import(
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=317'
+  );
+  const modelLibrary = createWeaponModelLibrary({
+    quality: 'auto',
+    coarse: true,
+    loader: new GLTFLoader(),
+    root: '/assets/weapons',
+  });
+  await Promise.all(['ac', 'sw', 'vx', 'rg', 'tb'].map(key => modelLibrary.preload(key)));
+  const modelSnapshot = modelLibrary.snapshot();
+  check(
+    'all five runtime weapon GLBs load with named model contract',
+    modelSnapshot.tier === 'runtime'
+      && modelSnapshot.ready.length === 5
+      && modelSnapshot.ready.every(key => ['ac', 'sw', 'vx', 'rg', 'tb'].includes(key)),
+    JSON.stringify(modelSnapshot),
+  );
+  modelLibrary.dispose();
 
   const convergedWeapons = makeWeapons(world);
   convergedWeapons.setWeapon('m');

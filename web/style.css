@@ -5415,10 +5415,13 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     position:absolute;
     right:0;
     bottom:calc(100% + 10px);
-    min-width:160px;
+    width:240px;
+    max-height:min(54dvh,260px);
+    overflow-y:auto;
+    overscroll-behavior:contain;
     padding:6px;
-    display:flex;
-    flex-direction:column;
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
     gap:4px;
     border-radius:16px;
     border:1px solid rgba(224,164,88,.38);
@@ -5430,13 +5433,13 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
   .vl-weapon-picker[hidden]{ display:none }
   .vl-weapon-picker button{
     min-height:48px;
-    padding:0 13px;
+    padding:0 7px;
     border-radius:11px;
     border:1px solid transparent;
     background:transparent;
     color:#c6ced8;
-    text-align:left;
-    font:650 13px var(--font);
+    text-align:center;
+    font:650 11px var(--font);
     cursor:pointer;
   }
   .vl-weapon-picker button[aria-selected=true]{
@@ -5565,9 +5568,9 @@ kbd, .vl-guide kbd{ display:inline-block; font:700 10.5px var(--mono); color:#EA
     grid-template-columns:repeat(4,minmax(0,1fr));
   }
   .vl-weapon-picker{
-    width:min(620px,74vw);
+    width:min(480px,74vw);
     display:grid;
-    grid-template-columns:repeat(5,minmax(0,1fr));
+    grid-template-columns:repeat(3,minmax(0,1fr));
   }
   .vl-gimbal-tray{
     top:calc(100% + 10px);
