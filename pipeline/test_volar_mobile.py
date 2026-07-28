@@ -468,16 +468,29 @@ class VolarMobileHudContractTests(unittest.TestCase):
             "loadedItems": 3, "casts": 10, "sweeps": 4,
             "item_hits": 1, "weaponItemHits": 1,
             "world_hits": 0, "weaponStructureHits": 0,
+            "weaponTerrainHits": 0,
         }
         structural = {
             "loadedItems": 0, "casts": 10, "sweeps": 4,
             "item_hits": 0, "weaponItemHits": 0,
             "world_hits": 8, "weaponStructureHits": 2,
+            "weaponTerrainHits": 0,
+        }
+        terrain = {
+            **structural,
+            "weaponStructureHits": 0,
+            "weaponTerrainHits": 2,
         }
         self.assertTrue(browser_matrix.item_contact_ready(authored))
         self.assertTrue(browser_matrix.item_contact_ready(structural))
+        self.assertTrue(browser_matrix.item_contact_ready(terrain))
         self.assertFalse(browser_matrix.item_contact_ready({
-            **structural, "world_hits": 0, "weaponStructureHits": 0,
+            **structural, "world_hits": 0,
+            "weaponStructureHits": 0, "weaponTerrainHits": 0,
+        }))
+        self.assertFalse(browser_matrix.item_contact_ready({
+            **structural,
+            "weaponStructureHits": 0, "weaponTerrainHits": 0,
         }))
 
     def test_mobile_command_hud_hides_duplicate_osd_tapes_behind_controls(self):

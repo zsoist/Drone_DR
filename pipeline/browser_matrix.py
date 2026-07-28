@@ -1147,7 +1147,12 @@ def weapon_acceptance_snapshot(cdp, key: str) -> dict:
 
 
 def item_contact_ready(evidence: dict) -> bool:
-    """Require real composite contact without pretending absent authored items exist."""
+    """Require real composite contact without pretending absent authored items exist.
+
+    Worlds without an authored ``objects.json`` legitimately expose zero item
+    colliders. Their fail-closed fallback is a weapon impact against either
+    half of the real world collider: photogrammetric structure or DSM terrain.
+    """
     if evidence.get("casts", 0) <= 0 or evidence.get("sweeps", 0) <= 0:
         return False
     if evidence.get("loadedItems", 0) > 0:
@@ -1157,7 +1162,10 @@ def item_contact_ready(evidence: dict) -> bool:
         )
     return (
         evidence.get("world_hits", 0) > 0
-        and evidence.get("weaponStructureHits", 0) > 0
+        and (
+            evidence.get("weaponStructureHits", 0) > 0
+            or evidence.get("weaponTerrainHits", 0) > 0
+        )
     )
 
 
@@ -1290,11 +1298,12 @@ def run_premium_combat_acceptance(cdp, viewport: str) -> dict:
         item_hits:c.item_hits || 0,
         weaponItemHits:w.item_hits || 0,
         weaponStructureHits:w.structure_hits || 0,
+        weaponTerrainHits:w.terrain_hits || 0,
       };
     """))
     item_contact = {
         **collision,
-        "source": "item" if collision["loadedItems"] > 0 else "world-structure",
+        "source": "item" if collision["loadedItems"] > 0 else "world-collider",
         "ready": item_contact_ready(collision),
     }
     if not item_contact["ready"]:

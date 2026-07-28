@@ -1,6 +1,6 @@
 # Flightverse world + mobile premium QA — 2026-07-27
 
-Status: LOCAL CANDIDATE PASS
+Status: PRODUCTION PASS
 Candidate web build: v331
 Target: `recon_c97cd120a1` on `http://127.0.0.1:8790`
 
@@ -51,9 +51,10 @@ The four touch profiles capture and validate eight premium states each:
 - `world_runtime_sweep.py`: 9/9 worlds pass at 60 fps; each owns one active
   structural representation and no duplicated mesh/splat layer.
 - Composite collision records drone sweeps, camera casts, and weapon casts
-  against scene items and the real structure. This map has zero authored
-  destructible items, so acceptance correctly requires both world contact and
-  weapon structure contact instead of inventing an item hit.
+  against scene items and the real world collider. This map has zero authored
+  destructible items, so acceptance correctly requires world contact plus a
+  weapon hit against either photogrammetric structure or DSM terrain instead
+  of inventing an item hit.
 - Collision stress: 100/100 passes at 60 fps, 17 shots, 17 explosions, four
   reloads, no stale scene generation, and no console error.
 - The arsenal is exactly `mg,s,m,l,ac,sw,vx,rg,tb`. AC-30, SWARM-8, VIPER-X,
@@ -90,5 +91,25 @@ Collision stress                                        100/100 PASS
 Flightverse browser matrix v331                         10/10 PASS
 ```
 
-Production deploy and public/authenticated canary evidence are recorded
-separately after the candidate commit is pushed and restarted.
+## Production release evidence
+
+- Candidate `b6e2623122bc78e963bfe346e284ae176f414687` was pushed to
+  draft PR #1 and deployed with `pipeline/safe_restart.sh server`; no world
+  gate bypass was used.
+- Public health and login boundary passed twice. `/mundo.html` returned the
+  exact unauthenticated 303 login redirect and `/api/whoami` returned 401 with
+  private/no-store edge policy.
+- A revocable production session proved `/manifest.json`, the weapon manifest,
+  and all five runtime GLBs return authenticated 200 with private/no-store
+  edge policy.
+- The production matrix passed Mundo + Volar on phone portrait/landscape,
+  iPad portrait/landscape, and desktop. Every flight profile settled at
+  60 fps; all four mobile profiles used real CDP touch.
+- The live contact diagnostic measured 5,102 world-collider contacts and
+  12 weapon terrain impacts with zero console errors. This exposed and fixed
+  a canary classification bug that had only counted `structure`, not the
+  equally real DSM `terrain` half of the collider.
+- Every temporary production session was deleted in `finally` and then
+  verified invalid.
+
+Detailed canary: `.gstack/canary-reports/2026-07-28-canary.md`.

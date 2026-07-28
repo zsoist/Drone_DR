@@ -10,7 +10,11 @@ if [[ -n "$SKIP_SMOKE" ]]; then
 fi
 cd "$(git rev-parse --show-toplevel)" || exit 1
 echo "pre-commit: smoke suite…" >&2
-python3 pipeline/test_smoke.py > /tmp/aerobrain-smoke-precommit.log 2>&1
+SMOKE_PYTHON="${AEROBRAIN_PYTHON:-/Volumes/SSD/_system/venv/bin/python3}"
+if [[ ! -x "$SMOKE_PYTHON" ]]; then
+  SMOKE_PYTHON="$(command -v python3)"
+fi
+"$SMOKE_PYTHON" pipeline/test_smoke.py > /tmp/aerobrain-smoke-precommit.log 2>&1
 rc=$?
 if [[ $rc -ne 0 ]]; then
   echo "❌ pre-commit: smoke FALLÓ (exit $rc) — commit bloqueado" >&2
