@@ -3,7 +3,8 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=313';
+import * as THREE from '/flightverse/three.js?v=314';
+import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=314';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -392,53 +393,6 @@ export function createDrone({ world, spawn }) {
   return d;
 }
 
-// Rigs de cámara — cada rig es una función pura (drone interpolado → cámara).
-// Registro extensible; C cicla. (6 de los 10 del spec; el resto con Director.)
-export const RIGS = [
-  { key: 'muycerca', label: 'Muy cerca', fov: 66,
-    fn: (p, o, cam, dt) => {
-      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(2.3);
-      const want = p.clone().add(back).add(new THREE.Vector3(0, 0.9, 0));
-      cam.position.lerp(want, 1 - Math.exp(-dt * 7));
-      cam.lookAt(p);
-    } },
-  { key: 'cerca', label: 'Cerca', fov: 62,
-    fn: (p, o, cam, dt) => {
-      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(4.6);
-      const want = p.clone().add(back).add(new THREE.Vector3(0, 1.9, 0));
-      cam.position.lerp(want, 1 - Math.exp(-dt * 6));
-      cam.lookAt(p);
-    } },
-  { key: 'lejos', label: 'Lejos', fov: 57,
-    fn: (p, o, cam, dt) => {
-      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(12);
-      const want = p.clone().add(back).add(new THREE.Vector3(0, 4.6, 0));
-      cam.position.lerp(want, 1 - Math.exp(-dt * 4));
-      cam.lookAt(p);
-    } },
-  { key: 'fpv', label: 'FPV', fov: 78, hideDrone: true,
-    fn: (p, o, cam) => {
-      // cámara EN el gimbal (nariz -Z del cuerpo), mirando al frente del dron
-      cam.position.set(
-        p.x - Math.sin(o.yaw) * 0.28, p.y - 0.02, p.z - Math.cos(o.yaw) * 0.28);
-      cam.rotation.set(o.pitch * 0.7, o.yaw, 0, 'YXZ');
-    } },
-  { key: 'top', label: 'Cenital', fov: 55,
-    fn: (p, o, cam, dt) => {
-      cam.position.lerp(p.clone().add(new THREE.Vector3(0, 55, 0.01)), 1 - Math.exp(-dt * 4));
-      cam.lookAt(p);
-    } },
-  { key: 'orbit', label: 'Órbita', fov: 58, t: 0,
-    fn: (p, o, cam, dt, rig) => {
-      rig.t = (rig.t || 0) + dt * 0.25;
-      cam.position.lerp(p.clone().add(new THREE.Vector3(
-        Math.cos(rig.t) * 12, 5.5, Math.sin(rig.t) * 12)), 1 - Math.exp(-dt * 6));
-      cam.lookAt(p);
-    } },
-  { key: 'lado', label: 'Lateral', fov: 50,
-    fn: (p, o, cam, dt) => {
-      const side = new THREE.Vector3(Math.cos(o.yaw), 0, -Math.sin(o.yaw)).multiplyScalar(10);
-      cam.position.lerp(p.clone().add(side).add(new THREE.Vector3(0, 2.4, 0)), 1 - Math.exp(-dt * 4));
-      cam.lookAt(p);
-    } },
-];
+// Immutable camera metadata. Per-session phase, gimbal ownership and pose math
+// live in camera-rigs.js; exported here only for existing menu labels/contracts.
+export const RIGS = CAMERA_RIGS;

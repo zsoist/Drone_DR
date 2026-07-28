@@ -600,8 +600,9 @@ check("browser gate: módulos ESM del share compilan antes de publicar",
       _share_module_parse.returncode == 0,
       (_share_module_parse.stderr or _share_module_parse.stdout)[-300:])
 _mobile_command_tests = subprocess.run(
-    ["node", "--test", "pipeline/test_mobile_command.mjs"], capture_output=True, text=True)
-check("flightverse mobile command: ownership and scoped gesture suite passes",
+    ["node", "--test", "pipeline/test_mobile_command.mjs", "pipeline/test_camera_rigs.mjs"],
+    capture_output=True, text=True)
+check("flightverse mobile command and camera rigs: deterministic suites pass",
       _mobile_command_tests.returncode == 0,
       (_mobile_command_tests.stderr or _mobile_command_tests.stdout)[-500:])
 import browser_matrix

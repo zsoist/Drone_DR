@@ -4,39 +4,40 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=313';
+import * as THREE from '/flightverse/three.js?v=314';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=313';
+} from '/flightverse/scene.js?v=314';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=313';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=313';
-import { createRecorder } from '/flightverse/recorder.js?v=313';
-import { createAudio } from '/flightverse/audio.js?v=313';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=313';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=313';
+} from '/flightverse/runtime.js?v=314';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=314';
+import { createRecorder } from '/flightverse/recorder.js?v=314';
+import { createAudio } from '/flightverse/audio.js?v=314';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=314';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=314';
 import {
   createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=313';
-import { createSky } from '/flightverse/sky.js?v=313';
-import { loadSceneObjects } from '/flightverse/objects.js?v=313';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=313';
-import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=313';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=313';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=313';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=313';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=313';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=313';
-import CameraControls from '/vendor/camera-controls.module.js?v=313';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=313';
+} from '/flightverse/mobile-command.js?v=314';
+import { createSky } from '/flightverse/sky.js?v=314';
+import { loadSceneObjects } from '/flightverse/objects.js?v=314';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=314';
+import { isContinuousWeapon, resolveAimRay } from '/flightverse/aiming.js?v=314';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=314';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=314';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=314';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=314';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=314';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=314';
+import CameraControls from '/vendor/camera-controls.module.js?v=314';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=314';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=313';
+} from '/vendor/postprocessing180.module.js?v=314';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -660,9 +661,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=313', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=314', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=313');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=314');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -1004,11 +1005,17 @@ async function main() {
     boost: false, brake: false, mouseDX: 0, mouseDY: 0,
   };
   let sfx = { idx: 0, phase: '', crash: false, count: 0 };
-  let modeKey = 'asistido', rigIx = Math.max(0, RIGS.findIndex(rig => rig.key === 'fpv'));
-  if (Q.get('rig') != null) rigIx = Math.abs(+Q.get('rig')) % RIGS.length;   // QA: cámara por URL
-  let gimbalTilt = -0.12;                      // tilt del gimbal (rad); rueda/slider lo mueven
+  let modeKey = 'asistido';
+  const requestedRig = Q.get('rig');
+  let rigIx = Math.max(0, RIGS.findIndex(rig => rig.key === 'fpv'));
+  if (requestedRig != null) {
+    const byKey = RIGS.findIndex(rig => rig.key === requestedRig);
+    rigIx = byKey >= 0 ? byKey : Math.abs(+requestedRig || 0) % RIGS.length;
+  }
+  const cameraController = createCameraRigController({ initialKey: RIGS[rigIx].key });
+  let gimbalTilt = cameraController.snapshot().gimbalRadians;
   const setGimbal = r => {
-    gimbalTilt = Math.max(-1.26, Math.min(0.38, r));
+    gimbalTilt = cameraController.setGimbalRadians(r);
     $('#vl-gwheel').value = Math.round(gimbalTilt * 180 / Math.PI);
     $('#osd-gimbal').textContent = `GIMBAL ${Math.round(gimbalTilt * 180 / Math.PI)}°`;
   };
@@ -1033,7 +1040,8 @@ async function main() {
   $('#vl-goto').addEventListener('click', () => goToStart());
   const setRig = ix => {
     rigIx = ((ix % RIGS.length) + RIGS.length) % RIGS.length;
-    report.camera.rig = RIGS[rigIx].key;
+    cameraController.select(RIGS[rigIx].key);
+    report.camera.rig = cameraController.snapshot().key;
     camera.fov = RIGS[rigIx].fov; camera.updateProjectionMatrix();
     $('#vl-rig').textContent = `cámara · ${RIGS[rigIx].label}`;
     dmesh.visible = !RIGS[rigIx].hideDrone;
@@ -1676,7 +1684,8 @@ async function main() {
       curYaw = o.yaw;
       // FOV kick con turbo: sensación de velocidad AAA (lerp suave, barato)
       if (shake.fov > 0.05) shake.fov *= Math.pow(0.006, STEP * 2);   // decae ~rápido
-      const wantFov = RIGS[rigIx].fov + (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') ? 9 : 0)
+      const activeCamera = cameraController.snapshot();
+      const wantFov = activeCamera.fov + (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') ? 9 : 0)
         + (shake.fov || 0);
       if (Math.abs(camera.fov - wantFov) > 0.1) {
         camera.fov += (wantFov - camera.fov) * 0.08;
@@ -1728,9 +1737,17 @@ async function main() {
         camera.position.set(Math.cos(tourT) * r, diag * cine.a, Math.sin(tourT) * r);
         camera.lookAt(0, (W.elev_max - W.elev_min) * 0.4, 0);
       } else {
-        const rig = RIGS[rigIx];
-        rig.fn(P, o, camera, STEP, rig);
-        if (!rig.hideDrone) {
+        const dw = input.takeWheel();
+        if (dw) setGimbal(gimbalTilt - dw * 0.0011);
+        const cameraPose = cameraController.update({
+          dronePosition: P,
+          dronePose: o,
+          velocity: drone.vel,
+          dt: STEP,
+        });
+        camera.position.set(...cameraPose.position);
+        camera.quaternion.set(...cameraPose.quaternion);
+        if (!cameraPose.hideDrone) {
           cameraCollisionChecks += 1;
           report.camera.collision_checks = cameraCollisionChecks;
           if (resolveCameraCollision(world, P, camera.position)) {
@@ -1738,10 +1755,13 @@ async function main() {
             report.camera.collision_hits = cameraCollisionHits;
           }
         }
-        const dw = input.takeWheel();
-        if (dw) setGimbal(gimbalTilt - dw * 0.0011);
-        if (rig.hideDrone) camera.rotation.x += gimbalTilt;
-        else camera.rotateX(gimbalTilt + 0.12);   // gimbal también en chase/orbita (offset neutro)
+        report.camera = {
+          ...report.camera,
+          ...cameraPose,
+          rig: cameraPose.key,
+          collision_checks: cameraCollisionChecks,
+          collision_hits: cameraCollisionHits,
+        };
       }
       sky.update(STEP, camera.position, P);
       sceneObjects?.update(simT);
@@ -1890,7 +1910,7 @@ async function main() {
         audio.update(propSpin, spd, drone.vel.y, camDist,
           lpv.x / Math.max(camDist, 0.001));
       }
-      if (RIGS[rigIx].hideDrone) {
+      if (cameraController.snapshot().hideDrone) {
         const rollV = new THREE.Vector3(1, 0, 0).applyQuaternion(drone.quat).y;
         $('#vl-horizon').style.transform =
           `translateY(${(-o.pitch * 260).toFixed(1)}px) rotate(${(-rollV * 40).toFixed(1)}deg)`;
@@ -2024,6 +2044,7 @@ async function main() {
     overlayCoordinator?.dispose();
     sticks?.dispose();
     input.dispose();
+    cameraController.dispose();
     world.dispose();
     sceneObjects?.dispose();
     visualMesh?.dispose();
@@ -2049,7 +2070,7 @@ async function main() {
       report.collision.radius_m = +drone.collisionRadius.toFixed(3);
       report.camera.collision_checks = cameraCollisionChecks;
       report.camera.collision_hits = cameraCollisionHits;
-      report.camera.rig = RIGS[rigIx].key;
+      report.camera.rig = cameraController.snapshot().key;
       report.distance = Math.round(drone.distance);
       report.ghost = !!ghost;
       report.moved = drone.distance > 20;
