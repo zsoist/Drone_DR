@@ -81,13 +81,13 @@
   Expected: PASS with 430 px maximum wide rows, 100% final-row coverage,
   16.43:1 lower-panel title contrast, and zero browser errors.
 
-- [ ] **Step 2: Run Home and repository regression suites**
+- [x] **Step 2: Run Home and repository regression suites**
 
   Run: `python3 pipeline/browser_home_drone.py && python3 pipeline/test_smoke.py`
 
   Expected: all commands exit zero.
 
-- [ ] **Step 3: Commit, push, deploy, and canary**
+- [x] **Step 3: Commit, push, deploy, and canary**
 
   Commit only the light-theme contract, updated web bundle, and documentation;
   push the existing branch, restart the web service safely, and verify public
