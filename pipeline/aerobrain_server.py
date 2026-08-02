@@ -92,6 +92,12 @@ APP_CSP = (
 )
 VIEWER_ACTIVITY = Path("/tmp/aerobrain-viewer-active")
 VIEWER_ACTIVE_S = 45
+SCENE_LIMITS = {
+    "max_sources": 16,
+    "max_duration_s": 1200,
+    "max_distance_m": 500,
+    "max_photos": 80,
+}
 
 # OJO: jobstore.init(orphan_kinds=...) NO va aquí a nivel de módulo. El worker importa este
 # módulo (splat_quality/prune) y un init con LIGHT_KINDS desde el proceso worker MATARÍA los
@@ -1810,9 +1816,9 @@ def source_evidence(clip_id: str, vault: Path | None = None) -> dict:
 
 
 def scene_source_compatibility(scene: dict, sources: list, *, evidence_fn=source_evidence,
-                               max_distance_m: float = 500.0) -> dict:
+                               max_distance_m: float | None = None) -> dict:
     """Enforce a measured same-place boundary before building a scene version."""
-    limit = max(1.0, float(max_distance_m or 500.0))
+    limit = max(1.0, float(max_distance_m or SCENE_LIMITS["max_distance_m"]))
     measured = {}
     for source in sources:
         try:
@@ -3154,7 +3160,8 @@ class H(BaseHTTPRequestHandler):
         if urllib.parse.urlparse(self.path).path == "/api/scenes":
             if not self.auth():
                 return
-            return self.send_json({"scenes": scenestore.list_scenes()})
+            return self.send_json({"scenes": scenestore.list_scenes(),
+                                   "limits": dict(SCENE_LIMITS)})
         if urllib.parse.urlparse(self.path).path == "/api/scene":
             if not self.auth():
                 return
@@ -4360,8 +4367,10 @@ class H(BaseHTTPRequestHandler):
                     sources.append(cid)
             if not sources:
                 return self.send_json({"error": "elige al menos un video con GPS"}, 400)
-            if len(sources) > 16:
-                return self.send_json({"error": "máximo 16 videos por versión de escena"}, 400)
+            if len(sources) > SCENE_LIMITS["max_sources"]:
+                return self.send_json({
+                    "error": f"máximo {SCENE_LIMITS['max_sources']} videos por versión de escena"
+                }, 400)
             # el camino gemelo (/api/odm) limita por DURACIÓN combinada, que es lo que de
             # verdad cuesta; aquí faltaba, así que 24 clips de 5 min entraban sin freno.
             _tot = 0.0
@@ -4371,8 +4380,9 @@ class H(BaseHTTPRequestHandler):
                                   .get("duration_s") or 0)
                 except (ValueError, OSError):
                     pass
-            if _tot > 1200:
-                return self.send_json({"error": f"máximo 20 min de video por versión de escena "
+            if _tot > SCENE_LIMITS["max_duration_s"]:
+                return self.send_json({"error": f"máximo {SCENE_LIMITS['max_duration_s'] // 60} min "
+                                               f"de video por versión de escena "
                                                f"(llevas {_tot / 60:.0f} min)"}, 400)
             compatibility = scene_source_compatibility(scene, sources)
             if compatibility["rejected"]:
@@ -4382,7 +4392,8 @@ class H(BaseHTTPRequestHandler):
                            if row["reason"] == "coverage_unknown"]
                 parts = []
                 if far:
-                    parts.append(f"{len(far)} fuera del radio de sitio de 500 m")
+                    parts.append(f"{len(far)} fuera del radio de sitio de "
+                                 f"{SCENE_LIMITS['max_distance_m']} m")
                 if unknown:
                     parts.append(f"{len(unknown)} sin cobertura GPS medible")
                 return self.send_json({
@@ -4394,7 +4405,8 @@ class H(BaseHTTPRequestHandler):
             requested_photos = spec.get("photos") if isinstance(spec.get("photos"), list) else [
                 *active.get("photos", []), *(spec.get("new_photos") or [])]
             photos = [Path(str(p)).name for p in requested_photos
-                      if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][:80]
+                      if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][
+                          :SCENE_LIMITS["max_photos"]]
             reconstruction_id = jobstore.recon_id_for(sources, photos)
             if jobstore.pending("3d", reconstruction_id):
                 return self.send_json({"error": "esa versión ya está en cola o procesándose"}, 409)

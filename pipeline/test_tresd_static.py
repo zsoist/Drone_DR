@@ -10,6 +10,24 @@ import worker
 
 
 class TresdInitializationTests(unittest.TestCase):
+    def test_scene_improvement_workspace_is_dedicated_semantic_and_budget_visible(self):
+        root = Path(__file__).resolve().parent.parent
+        html = (root / "web" / "scene-improve.html").read_text()
+        source = (root / "web" / "scene-improve.js").read_text()
+        tresd = (root / "web" / "tresd.js").read_text()
+
+        self.assertIn('<main id="scene-improve-root"', html)
+        self.assertIn('aria-live="polite"', html)
+        self.assertIn('scene-improve-policy.js', html)
+        self.assertIn('class="si-review"', source)
+        self.assertIn('<details class="si-advanced"', source)
+        self.assertIn('Versión actual protegida', source)
+        self.assertIn('max_duration_s', source)
+        self.assertIn('<option value="grandmaster">Grandmaster 40K</option>', source)
+        self.assertIn('/api/scene_create', source)
+        self.assertIn('/api/scene_improve', source)
+        self.assertIn('scene-improve.html?id=', tresd)
+
     def test_splat_controls_exist_before_first_combined_render(self):
         source = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
         self.assertLess(source.index("const splatChk"), source.index("renderCombined();"))
@@ -31,6 +49,7 @@ class TresdInitializationTests(unittest.TestCase):
         self.assertIn('data-job-kind="3d"', source)
         self.assertIn('data-job-kind="splat"', source)
         self.assertIn('data-job-kind="ingest"', source)
+        self.assertIn("new URLSearchParams(location.search).get('tab')", source)
 
     def test_jobs_rows_expose_truth_and_accessible_progress(self):
         source = (Path(__file__).resolve().parent.parent / "web" / "shell.js").read_text()

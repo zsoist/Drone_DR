@@ -2,6 +2,8 @@ import sys
 import tempfile
 import unittest
 import json
+import http.client
+import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -175,6 +177,32 @@ class SceneStoreTests(unittest.TestCase):
         self.assertEqual("ultra", spec["splat_preset"])
         self.assertEqual("recon_v1", scenes.get_scene(scene["id"])["active_version"])
         self.assertEqual("processing", scenes.get_scene(scene["id"])["versions"][-1]["status"])
+
+    def test_scene_index_publishes_authoritative_improvement_limits(self):
+        httpd = server.QuietThreadingHTTPServer(("127.0.0.1", 0), server.H)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
+            connection.request("GET", "/api/scenes", headers={
+                "Host": "127.0.0.1:8790",
+                "Sec-Fetch-Site": "same-origin",
+            })
+            response = connection.getresponse()
+            payload = json.loads(response.read())
+            connection.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=2)
+
+        self.assertEqual(200, response.status)
+        self.assertEqual({
+            "max_sources": 16,
+            "max_duration_s": 1200,
+            "max_distance_m": 500,
+            "max_photos": 80,
+        }, payload["limits"])
 
     def test_first_valid_completion_auto_promotes_but_partial_does_not(self):
         scene = scenes.create_scene("Casa", {"lat": 4.75, "lon": -74.06}, ["A", "B"], [])

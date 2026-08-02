@@ -1,9 +1,9 @@
-  import * as THREE from '/vendor/three180.module.js?v=334';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=334';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=334';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=334';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=334';
-  import { mountSplatViewer } from '/splatview.js?v=334';
+  import * as THREE from '/vendor/three180.module.js?v=339';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=339';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=339';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=339';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=339';
+  import { mountSplatViewer } from '/splatview.js?v=339';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -419,7 +419,7 @@
     <div class="panel" style="margin-top:16px">
       <div class="ph">${icon('gauge')} Reporte de calidad & descargas
         <span class="spacer" style="flex:1"></span>
-        <button class="btn primary" id="improve-scene">${icon('layers')} Mejorar esta escena</button>
+        <button class="btn primary" id="improve-scene">${icon('layers')} Mejorar con nuevas capturas</button>
       </div>
       <div class="pb" id="dls"></div>
     </div>
@@ -1025,6 +1025,7 @@
         </div>
         <div class="pc-actions">
           <button class="btn primary" data-act="open">Abrir</button>
+          <button class="btn pc-improve" data-act="improve">${icon('layers')} Mejorar</button>
           <button class="btn" data-act="rename" data-tip="Cambiar el nombre del proyecto">Renombrar</button>
           <button class="btn" data-act="share" data-tip="Copiar link público del modelo">Compartir</button>
           <button class="btn pc-del" data-act="del" data-tip="Borra modelo y splats; el video no se toca">Borrar</button>
@@ -1099,6 +1100,7 @@
     };
     if (!btn) { smashOpen(); return; }                      // tap en la tarjeta = abrir
     if (btn.dataset.act === 'open') smashOpen();
+    if (btn.dataset.act === 'improve') location.href = `scene-improve.html?id=${encodeURIComponent(cid)}`;
     if (btn.dataset.act === 'rename') {
       const tEl = card.querySelector('.pc-title');
       tEl.innerHTML = `<input class="ctl" style="width:100%;font-size:12.5px" value="${esc(titleFor(m))}" maxlength="80">`;
@@ -2207,7 +2209,9 @@
       } finally { go.disabled = false; }
     });
   }
-  document.getElementById('improve-scene')?.addEventListener('click', () => openImproveScene(cur));
+  document.getElementById('improve-scene')?.addEventListener('click', () => {
+    if (cur?.clip_id) location.href = `scene-improve.html?id=${encodeURIComponent(cur.clip_id)}`;
+  });
 
   // ---------- ortofoto en MapLibre ----------
   let omap = null;
@@ -3336,3 +3340,5 @@
   renderCards();
   const saved = localStorage.getItem(PROJ_KEY);
   if (saved && models.some(m => m.clip_id === saved)) setProject(saved);
+  const requestedTab = new URLSearchParams(location.search).get('tab');
+  if (['projects', 'process', 'jobs'].includes(requestedTab)) showTdMod(requestedTab);
