@@ -45,7 +45,7 @@
 .hv2-actions .primary { background: linear-gradient(135deg, #238ee7, #1d76c3); box-shadow: 0 9px 30px rgba(32,139,229,.28); }
 .hv2-drone-stage { position: relative; z-index: 4; height: min(32vw, 420px); min-height: 300px; display: grid; place-items: center; cursor: grab; touch-action: pan-y; }
 .hv2-drone-stage:active { cursor: grabbing; }
-.hv2-drone-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; filter: drop-shadow(0 28px 32px rgba(0,0,0,.48)); }
+.hv2-drone-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .hv2-drone-fallback { width: min(86%, 390px); max-height: 90%; object-fit: contain; opacity: 0; transform: translateY(6px) rotate(-2deg); filter: drop-shadow(0 28px 28px rgba(0,0,0,.6)) drop-shadow(0 0 22px rgba(65,182,255,.2)); transition: opacity .4s ease; animation: hv2-drone-float 4.8s ease-in-out infinite; }
 .hv2-drone-fallback.is-visible { opacity: .98; }
 .hv2-drone-stage.is-3d .hv2-drone-fallback { opacity: 0; }
@@ -123,7 +123,7 @@
   .hv2-hero-copy { z-index: 5; }
   .hv2-hero h1 { font-size: clamp(57px, 15vw, 88px); }
   .hv2-lede { max-width: 480px; }
-  .hv2-drone-stage { position: absolute; z-index: 4; width: 64%; height: 310px; min-height: 0; right: -5%; bottom: -3%; }
+  .hv2-drone-stage { position: absolute; z-index: 4; width: 64%; height: 310px; min-height: 0; left: 0; right: 0; bottom: -3%; margin-inline: auto; }
   .hv2-orbit { width: 58%; right: -4%; top: auto; bottom: -1%; }
   .hv2-telemetry { grid-template-columns: repeat(3, 1fr); margin: -28px 12px 44px; }
   .hv2-telemetry > div { padding: 16px; }
@@ -139,7 +139,7 @@
   .hv2-lede { margin-top: 20px; font-size: 14px; max-width: 92%; }
   .hv2-actions { margin-top: 21px; }
   .hv2-actions .btn { min-height: 44px; width: 100%; justify-content: center; }
-  .hv2-drone-stage { width: 79%; height: 255px; right: -15%; bottom: -2%; }
+  .hv2-drone-stage { width: 79%; height: 255px; right: 0; bottom: -2%; }
   .hv2-drone-hint { display: none; }
   .hv2-telemetry { grid-template-columns: repeat(2, 1fr); margin-inline: 9px; }
   .hv2-telemetry > div:nth-child(3n+1), .hv2-telemetry > div:not(:nth-child(3n+1)) { border-left: 0; }

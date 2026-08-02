@@ -1,0 +1,25 @@
+{
+  "date": "2026-08-02",
+  "url": "http://127.0.0.1:8790/home.html",
+  "healthScore": 100,
+  "previousHealthScore": 93,
+  "issues": [
+    {
+      "id": "ISSUE-001",
+      "title": "Home drone fragmented, static and off-center",
+      "severity": "high",
+      "category": "visual-functional",
+      "status": "verified"
+    }
+  ],
+  "categoryScores": {
+    "console": 100,
+    "links": 100,
+    "visual": 100,
+    "functional": 100,
+    "ux": 100,
+    "performance": 100,
+    "content": 100,
+    "accessibility": 100
+  }
+}
