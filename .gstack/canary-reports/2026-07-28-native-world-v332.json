@@ -1,0 +1,46 @@
+{
+  "status": "HEALTHY",
+  "url": "https://vuelos.metislab.work",
+  "candidate": "bcbc3d46a44e8542bedf08ccc539d01937274271",
+  "branch": "codex/scene-ops-stability",
+  "web_build": 332,
+  "web_tree": "b0facf2a4b1b28eb862b81f41c2f58a30599d330",
+  "alerts": 0,
+  "production": {
+    "mobile_portrait": {
+      "islands": 9,
+      "fps": 60,
+      "touch": "real",
+      "overflow": 0
+    },
+    "desktop": {
+      "islands": 9,
+      "fps": 60,
+      "overflow": 0
+    },
+    "coverage_fallback": {
+      "world": "recon_d77ef7af86",
+      "generated_launch": "volar.html?m=recon_d77ef7af86",
+      "old_url_booted": true,
+      "requested_diameter_m": 100,
+      "requested_honored": false,
+      "effective_diameter_m": 397.47,
+      "status": "native-fallback",
+      "fallback_reason": "requested-coverage-unavailable",
+      "boundary_source": "native-fallback",
+      "boundary_hits": 402,
+      "errors": []
+    },
+    "session_revoked": true,
+    "login_console_errors": 0,
+    "login_total_ms": 426
+  },
+  "local": {
+    "smoke": "pass",
+    "python_tests": "70/70",
+    "javascript_tests": "29/29",
+    "gzip_tests": "7/7",
+    "world_audit": "9/9",
+    "world_runtime_sweep": "9/9 at 60 fps"
+  }
+}

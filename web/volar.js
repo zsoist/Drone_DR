@@ -4,27 +4,47 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=280';
-import { loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh } from '/flightverse/scene.js?v=280';
-import { createLoop, createInput, createDrone, MODES, RIGS, STEP } from '/flightverse/runtime.js?v=280';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=280';
-import { createRecorder } from '/flightverse/recorder.js?v=280';
-import { createAudio } from '/flightverse/audio.js?v=280';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=280';
-import { createTouchSticks } from '/flightverse/touch.js?v=280';
-import { createSky } from '/flightverse/sky.js?v=280';
-import { loadSceneObjects } from '/flightverse/objects.js?v=280';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=280';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=280';
-import CameraControls from '/vendor/camera-controls.module.js?v=280';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=280';
+import * as THREE from '/flightverse/three.js?v=343';
+import {
+  loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
+} from '/flightverse/scene.js?v=343';
+import {
+  createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
+} from '/flightverse/runtime.js?v=343';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=343';
+import { createRecorder } from '/flightverse/recorder.js?v=343';
+import { createAudio } from '/flightverse/audio.js?v=343';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=343';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=343';
+import {
+  createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
+} from '/flightverse/mobile-command.js?v=343';
+import { createSky } from '/flightverse/sky.js?v=343';
+import { loadSceneObjects } from '/flightverse/objects.js?v=343';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=343';
+import { resolveAimRay } from '/flightverse/aiming.js?v=343';
+import {
+  WEAPON_PROFILES,
+  isContinuousWeaponKey,
+} from '/flightverse/weapon-registry.js?v=343';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=343';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=343';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=343';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=343';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=343';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=343';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=343';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=343';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=343';
+import CameraControls from '/vendor/camera-controls.module.js?v=343';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=343';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=280';
+} from '/vendor/postprocessing180.module.js?v=343';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -35,11 +55,6 @@ class ExposureFx extends Effect {
       { uniforms: new Map([['uExp', new THREE.Uniform(exp)]]) });
   }
 }
-import { computeBoundsTree, disposeBoundsTree } from '/vendor/three-mesh-bvh180.module.js?v=280';
-
-THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
-
 const Q = new URLSearchParams(location.search);
 const CID = (Q.get('m') || '').replace(/[^\w-]/g, '');
 const COVERAGE_DIAMETERS = new Set(['100', '200', '400', '600', '1000']);
@@ -88,13 +103,13 @@ function hud() {
       <div class="vl-metric"><span id="vl-vs">—</span><label>VS m/s</label><i class="vl-bar vs"><b id="vl-vs-b"></b></i></div>
     </div>
     <div class="vl-corner bl">
-      <button class="vl-fab" id="vl-fab" aria-label="Abrir menú de vuelo"
-        aria-controls="vl-dock" aria-expanded="false">Menú</button>
       <button class="vl-dockmin vl-solo-fino" id="vl-dockmin" title="Ocultar panel">«</button>
       <div class="vl-dock" id="vl-dock" role="dialog" aria-modal="false" aria-labelledby="vl-dock-title">
         <div class="vl-dock-head vl-panel-drag"><b id="vl-dock-title">MENÚ DE VUELO <small>ARRASTRAR</small></b><button id="vl-dock-close">Cerrar</button></div>
         <button class="vl-chip sec-nav" id="vl-mode"></button>
-        <button class="vl-chip sec-nav" id="vl-rig"></button>
+        <button class="vl-chip sec-nav" id="vl-rig" aria-label="Cambiar cámara"></button>
+        <button class="vl-chip sec-juego vl-mobile-action" id="vl-armamento"
+          aria-controls="vl-combat">Armamento</button>
         <i class="vl-sep"></i>
         <button class="vl-chip sec-mundo" id="vl-vista">vista · 3D</button>
         <button class="vl-chip sec-mundo" id="vl-cielo">cielo · día</button>
@@ -111,17 +126,10 @@ function hud() {
       </div>
     </div>
     <div class="vl-corner br">
-      <button class="vl-combat-fab" id="vl-combat-fab" aria-label="Abrir controles de combate"
-        aria-controls="vl-combat" aria-expanded="false">Combate</button>
       <div class="vl-combat" id="vl-combat" role="dialog" aria-modal="false" aria-labelledby="vl-combat-title">
         <div class="vl-dock-head vl-panel-drag"><b id="vl-combat-title">COMBATE <small>ARRASTRAR</small></b><button id="vl-combat-close">Cerrar</button></div>
         <div class="vl-kills" id="vl-kills"></div>
-        <div class="vl-weps" id="vl-weps">
-          <button data-w="mg">MG</button>
-          <button data-w="s">Misil S</button>
-          <button data-w="m" class="sel">Misil M</button>
-          <button data-w="l">Misil L</button>
-        </div>
+        <div class="vl-weps" id="vl-weps"></div>
         <button class="vl-fire" id="vl-fire" title="X · disparar (Z cambia arma)" aria-label="Disparar">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
             <circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>
@@ -132,6 +140,56 @@ function hud() {
         </button>
       </div>
     </div>
+    <div class="vl-flight-tools-left" id="vl-flight-tools-left" aria-label="Herramientas de vuelo">
+      <button class="vl-camera-toggle" id="vl-camera-toggle"
+        aria-label="Cambiar cámara" aria-controls="vl-camera-picker">
+        <span>CAM</span><output>FPV</output>
+      </button>
+      <button class="vl-camera-picker-toggle" id="vl-camera-picker-toggle"
+        aria-label="Elegir cámara" aria-controls="vl-camera-picker"
+        aria-haspopup="listbox" aria-expanded="false">⌄</button>
+      <div class="vl-camera-picker" id="vl-camera-picker"
+        role="listbox" aria-label="Seleccionar cámara" hidden>
+        <button role="option" data-camera="muycerca">Muy cerca</button>
+        <button role="option" data-camera="cerca">Cerca</button>
+        <button role="option" data-camera="lejos">Lejos</button>
+        <button role="option" data-camera="fpv">FPV</button>
+        <button role="option" data-camera="top">Cenital</button>
+        <button role="option" data-camera="orbit">Órbita</button>
+        <button role="option" data-camera="lado">Lateral</button>
+      </div>
+      <button class="vl-fab" id="vl-fab" aria-label="Abrir menú de vuelo"
+        aria-controls="vl-dock" aria-expanded="false">Menú</button>
+    </div>
+    <div class="vl-command-hud" id="vl-command-hud" aria-label="Controles de combate">
+      <button class="vl-weapon-toggle" id="vl-weapon-toggle"
+        aria-controls="vl-weapon-picker" aria-haspopup="listbox" aria-expanded="false">
+        <span id="vl-weapon-code">M·M</span>
+        <output id="vl-weapon-status">8</output>
+      </button>
+      <div class="vl-weapon-picker" id="vl-weapon-picker"
+        role="listbox" aria-label="Seleccionar arma" hidden></div>
+      <button class="vl-trigger" id="vl-trigger" title="X · disparar" aria-label="Disparar arma seleccionada">
+        <span>◎</span><strong>FUEGO</strong>
+      </button>
+    </div>
+    <div class="vl-gimbal-tools" id="vl-gimbal-tools">
+      <button class="vl-gimbal-toggle" id="vl-gimbal-toggle"
+        aria-controls="vl-gimbal-tray" aria-expanded="false">
+        <span>GIMBAL</span><output>-7°</output>
+      </button>
+      <div class="vl-gimbal-tray" id="vl-gimbal-tray" role="group"
+        aria-label="Ajustar inclinación del gimbal" hidden>
+        <label for="vl-gimbal-range">INCLINACIÓN <output id="vl-gimbal-value">-7°</output></label>
+        <input type="range" id="vl-gimbal-range" min="-90" max="25" step="1" value="-7">
+        <div>
+          <button data-gimbal="-5" aria-label="Bajar gimbal cinco grados">−5°</button>
+          <button data-gimbal-reset aria-label="Restablecer gimbal">0°</button>
+          <button data-gimbal="5" aria-label="Subir gimbal cinco grados">+5°</button>
+        </div>
+      </div>
+    </div>
+    <div class="vl-overlay-scrim" id="vl-overlay-scrim" aria-hidden="true"></div>
     <div class="vl-flight-status">
       <div class="vl-ghost" id="vl-ghost"></div>
       <div class="vl-fps" id="vl-fps"></div>
@@ -153,10 +211,16 @@ function hud() {
         <button data-e="dragon">Dragón</button>
         <button data-e="gigante">Gigantes</button>
       </div>
+      <div class="vl-inv-diff" role="group" aria-label="Dificultad de invasión">
+        <button data-inv-d="facil">FÁCIL</button>
+        <button data-inv-d="media" class="sel">MEDIA</button>
+        <button data-inv-d="dificil">DIFÍCIL</button>
+      </div>
       <button id="vl-inv-go">INICIAR INVASIÓN</button>
     </div>
     <div class="vl-zhud" id="vl-zhud">
       <div class="vl-zwave"><span id="vl-zwave">OLEADA 1</span><small id="vl-zkill">0 abatidos</small></div>
+      <div class="vl-zscore"><b id="vl-zscore">0 PTS</b><span id="vl-zcombo">COMBO ×1</span></div>
       <div class="vl-zhp"><i id="vl-zhp"></i></div>
     </div>
     <div class="vl-center-top" id="vl-challenge"></div>
@@ -183,23 +247,29 @@ function hud() {
     <canvas class="vl-minimap" id="vl-minimap" width="180" height="180"></canvas>
     <div class="vl-count" id="vl-count"></div>
     <div class="vl-result" id="vl-result"></div>
-    <input type="range" class="vl-gwheel" id="vl-gwheel" min="-72" max="22" value="-7" aria-label="gimbal">
     <div class="vl-grade" id="vl-grade">
       <div class="vl-grade-head vl-grade-drag"><span class="vl-grade-k">IMAGEN <small>ARRASTRAR</small></span>
-        <button class="vl-grade-x" id="gr-close" aria-label="cerrar">✕</button></div>
+        <div class="vl-grade-actions">
+          <button class="vl-grade-expand" id="gr-expand" aria-expanded="false"
+            aria-controls="vl-grade-body">Ajustes</button>
+          <button class="vl-grade-x" id="gr-close" aria-label="cerrar">✕</button>
+        </div>
+      </div>
       <div class="vl-presets">
         <button data-pr="natural">Natural</button>
         <button data-pr="vivo">Vivo</button>
         <button data-pr="cine">Cine</button>
       </div>
-      <label>Brillo Gaussian <output id="o-b">0.88</output><input type="range" id="gr-b" min="0.35" max="1.6" step="0.01" value="0.88"></label>
-      <label>Brillo 3D <output id="o-t">1.00</output><input type="range" id="gr-t" min="0.3" max="2.2" step="0.01" value="1"></label>
-      <label>Contraste <output id="o-c">0.06</output><input type="range" id="gr-c" min="-0.15" max="0.55" step="0.01" value="0.06"></label>
-      <label>Saturación <output id="o-s">0.06</output><input type="range" id="gr-s" min="-1" max="1" step="0.01" value="0.06"></label>
-      <label>Bloom <output id="o-g">0.25</output><input type="range" id="gr-g" min="0" max="2" step="0.02" value="0.25"></label>
-      <label>Viñeta <output id="o-v">0.42</output><input type="range" id="gr-v" min="0" max="1" step="0.02" value="0.42"></label>
-      <label>Tono <output id="o-h">0.00</output><input type="range" id="gr-h" min="-0.5" max="0.5" step="0.01" value="0"></label>
-      <button id="gr-reset">Restablecer</button>
+      <div class="vl-grade-body" id="vl-grade-body">
+        <label>Brillo Gaussian <output id="o-b">0.88</output><input type="range" id="gr-b" min="0.35" max="1.6" step="0.01" value="0.88"></label>
+        <label>Brillo 3D <output id="o-t">1.00</output><input type="range" id="gr-t" min="0.3" max="2.2" step="0.01" value="1"></label>
+        <label>Contraste <output id="o-c">0.06</output><input type="range" id="gr-c" min="-0.15" max="0.55" step="0.01" value="0.06"></label>
+        <label>Saturación <output id="o-s">0.06</output><input type="range" id="gr-s" min="-1" max="1" step="0.01" value="0.06"></label>
+        <label>Bloom <output id="o-g">0.25</output><input type="range" id="gr-g" min="0" max="2" step="0.02" value="0.25"></label>
+        <label>Viñeta <output id="o-v">0.42</output><input type="range" id="gr-v" min="0" max="1" step="0.02" value="0.42"></label>
+        <label>Tono <output id="o-h">0.00</output><input type="range" id="gr-h" min="-0.5" max="0.5" step="0.01" value="0"></label>
+        <button id="gr-reset">Restablecer</button>
+      </div>
     </div>
     <button class="vl-goto" id="vl-goto">Ir al inicio de la ruta »</button>
     <div class="vl-cine" id="vl-cine">
@@ -249,17 +319,23 @@ async function main() {
   if (!CID) { location.replace('mundo.html'); return; }
   document.title = 'AeroBrain — Volar';
   hud();
+  const surfaceGuards = installFlightSurfaceGuards(document.body);
+  const coarsePointer = matchMedia('(pointer:coarse)').matches;
+  const gradePanel = $('#vl-grade');
+  if (coarsePointer && localStorage.getItem('ab.fv.grade.expanded') !== '1') {
+    gradePanel.classList.add('compact');
+  }
   const say = m => { $('#vl-scene').textContent = m; };
   say('Cargando escena…');
 
   const man = await loadManifest(CID);
   const coverageRows = man.coverage?.shapes?.[COVERAGE_SHAPE] || [];
   const requestedCoverage = COVERAGE_REQUEST
-    ? coverageRows.find(row => row.diameter_m === COVERAGE_REQUEST) : null;
-  if (COVERAGE_REQUEST && (!requestedCoverage || !requestedCoverage.ready)) {
-    const available = coverageRows.filter(row => row.ready).map(row => row.diameter_m);
-    throw new Error(`cobertura ${COVERAGE_REQUEST} m pendiente${available.length ? `; listas: ${available.join(', ')} m` : ''}`);
-  }
+    ? coverageRows.find(row =>
+      row.diameter_m === COVERAGE_REQUEST && row.ready) : null;
+  const requestedCoverageUnavailable = Boolean(
+    COVERAGE_REQUEST && !requestedCoverage,
+  );
   const coverageProduct = requestedCoverage || coverageRows.filter(row => row.ready).at(-1) || null;
   const coverageArea = coverageProduct?.area_m2
     ? `${Math.round(coverageProduct.area_m2).toLocaleString('es-CO')} m²` : null;
@@ -268,10 +344,16 @@ async function main() {
     : 'extensión nativa';
   report.coverage = {
     requested_diameter_m: COVERAGE_REQUEST,
+    requested_honored: !requestedCoverageUnavailable,
     effective_diameter_m: coverageProduct?.diameter_m || null,
     shape: COVERAGE_SHAPE,
     renderer: coverageProduct?.preferred_renderer || 'terrain',
-    status: coverageProduct?.status || 'native',
+    status: requestedCoverageUnavailable
+      ? 'native-fallback'
+      : coverageProduct?.status || 'native',
+    fallback_reason: requestedCoverageUnavailable
+      ? 'requested-coverage-unavailable'
+      : null,
   };
   $('#vb-name').textContent = man.name || 'Cargando escena…';
   if (!man.capabilities?.terrain) throw new Error('escena sin terreno volable');
@@ -291,6 +373,15 @@ async function main() {
   document.body.prepend(renderer.domElement);
   renderer.domElement.className = 'vl-canvas';
   const scene = new THREE.Scene();
+  const generation = createSceneGeneration();
+  const worldGroup = new THREE.Group();
+  worldGroup.name = 'fv-world';
+  scene.add(worldGroup);
+  report.lifecycle = {
+    generation: generation.token,
+    groups: scene.children.filter(node => node.name === 'fv-world').length,
+    disposedStaleLoads: 0,
+  };
   {
     // environment map procedural: reflejos PBR reales en GLBs metálicos
     // (sin esto, metallic>0.5 se ve negro — el look 'Unreal' necesita entorno)
@@ -339,89 +430,188 @@ async function main() {
   ));
 
   const terrain = await loadTerrain(man, { anisotropy: 8 });
+  const FRONTIER_COLORS = { dia: 0xcfe2f2, atardecer: 0xc08066, noche: 0x0c1420 };
+  terrain.frontier.uFrontierOn.value = Q.get('diagnostic') !== '1' ? 1 : 0;
+  terrain.frontier.uFrontierColor.value.set(FRONTIER_COLORS[sky.preset] || FRONTIER_COLORS.dia);
   terrain.mesh.matrixAutoUpdate = false; terrain.mesh.updateMatrix();   // estática
   terrain.mesh.receiveShadow = true;
-  scene.add(terrain.mesh);
-  $('#vb-terreno').classList.add('ok');
+  worldGroup.add(terrain.mesh);
+  markLoadStep(document, 'vb-terreno');
+  const W = terrain.world;
+  if (man.capabilities?.mesh && !man.capabilities?.collision) {
+    throw new Error('mundo bloqueado: malla sin collider estructural vigente');
+  }
+  const nativeHalfExtent = Math.min(...W.size_m) / 2;
+  const playableHalfExtent = requestedCoverage
+    ? requestedCoverage.diameter_m / 2
+    : nativeHalfExtent;
+  const boundary = COVERAGE_SHAPE === 'square'
+    ? { shape: 'square', halfExtent: playableHalfExtent }
+    : { shape: 'circle', radius: playableHalfExtent };
+  report.coverage.effective_diameter_m = playableHalfExtent * 2;
+  report.coverage.boundary_source = requestedCoverage
+    ? 'requested'
+    : requestedCoverageUnavailable ? 'native-fallback' : 'native';
+  const world = await createWorldCollision(man, {
+    heightAt: terrain.heightAt,
+    boundary,
+    report,
+  });
+  const collision = createMutableCollisionWorld(world);
+  report.collision = {
+    ready: world.qa.ready,
+    structure: world.qa.structure,
+    tris: world.qa.tris || 0,
+  };
+  $('#vl-ghost').textContent += ' · colisión ✓';
+
   let visualMesh = null;
-  if (man.capabilities?.mesh && man.assets?.mesh_mtl_low && man.transforms?.mesh_offset) {
-    attachVisualMesh(man, scene, {
+  let splat = null;
+  const preferredRenderer = coverageProduct?.preferred_renderer || 'terrain';
+  const representation = {
+    preferred: preferredRenderer,
+    requested: preferredRenderer,
+    active: 'terrain',
+    fallbackReason: null,
+    visibleStructuralLayers: ['terrain'],
+  };
+  report.representation = representation;
+  let requestedRenderer = preferredRenderer;
+  const applyVista = () => {
+    representation.requested = requestedRenderer;
+    let active = requestedRenderer;
+    let fallbackReason = null;
+    if (!['terrain', 'mesh', 'splat'].includes(active)) {
+      active = 'terrain';
+      fallbackReason = `renderer desconocido: ${requestedRenderer}`;
+    }
+    if (active === 'mesh' && (!visualMesh || !terrain.meshMask.available)) {
+      active = 'terrain';
+      fallbackReason = visualMesh ? 'malla sin máscara de cobertura' : 'malla aún no disponible';
+    }
+    if (active === 'splat' && (!splat || !splat.aligned)) {
+      active = visualMesh && terrain.meshMask.available ? 'mesh' : 'terrain';
+      fallbackReason = 'splat alineado no disponible';
+    }
+    terrain.mesh.visible = true;
+    terrain.mesh.position.y = 0;
+    terrain.mesh.updateMatrix();
+    terrain.meshMask.uMeshOn.value = active === 'mesh' ? 1 : 0;
+    terrain.splatMask.uSplatOn.value = active === 'splat' ? 1 : 0;
+    terrain.splatMask.uSplatC.value.set(0, 0);
+    terrain.splatMask.uSplatR.value = playableHalfExtent;
+    if (visualMesh) visualMesh.object.visible = active === 'mesh';
+    if (splat) splat.object.visible = active === 'splat';
+    representation.active = active;
+    representation.fallbackReason = fallbackReason;
+    representation.visibleStructuralLayers = active === 'terrain'
+      ? ['terrain']
+      : [active, 'terrain-fallback'];
+    const labels = { terrain: 'terreno', mesh: 'malla 3D', splat: 'foto-real' };
+    $('#vl-vista').textContent = `vista · ${labels[active]}`;
+    $('#vl-vista').style.opacity = active === requestedRenderer ? 1 : 0.7;
+  };
+  const cycleVista = () => {
+    const renderers = ['terrain', 'mesh', 'splat'];
+    requestedRenderer = renderers[(renderers.indexOf(requestedRenderer) + 1) % renderers.length];
+    applyVista();
+    if (requestedRenderer === 'mesh') void ensureVisualMesh();
+  };
+  $('#vl-vista').addEventListener('click', cycleVista);
+  applyVista();
+
+  const canLoadVisualMesh = Boolean(
+    man.capabilities?.mesh && man.assets?.mesh_mtl_low && man.transforms?.mesh_offset,
+  );
+  const visualMeshLoader = canLoadVisualMesh
+    ? createLazyLayerLoader(() => attachVisualMesh(man, worldGroup, {
       renderer,
+      coverageMask: terrain.meshMask,
       onProgress: f => {
         if (f != null) $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla ${Math.round(f * 100)}%`;
       },
-    }).then(v => {
+    }))
+    : null;
+  report.visualMesh = false;
+  report.visualMeshState = visualMeshLoader ? visualMeshLoader.state : 'unavailable';
+  let visualMeshReady = null;
+  const ensureVisualMesh = () => {
+    if (!visualMeshLoader) return Promise.resolve(null);
+    if (visualMeshReady) return visualMeshReady;
+    report.visualMeshState = 'loading';
+    visualMeshReady = visualMeshLoader.ensure().then(v => {
       if (!v) return;
+      if (!generation.isCurrent()) {
+        v.dispose();
+        report.lifecycle.disposedStaleLoads++;
+        return null;
+      }
       visualMesh = v;
       $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · malla fotogramétrica`;
       report.visualMesh = true;
-      $('#vb-malla').classList.add('ok');
+      report.visualMeshState = 'ready';
+      report.visualMeshCoverageClipped = Boolean(v.coverageClipped);
+      markLoadStep(document, 'vb-malla');
       applyVista();
-      upgradeMeshTex(calidad);                 // la calidad pudo fijarse antes de llegar la malla
-    }).catch(e => report.errors.push('malla visual: ' + e.message));
-  }
+      return v;
+    }).catch(e => {
+      report.visualMeshState = 'error';
+      report.errors.push('malla visual: ' + e.message);
+      return null;
+    });
+    return visualMeshReady;
+  };
+  if (requestedRenderer === 'mesh') void ensureVisualMesh();
   // objetos de escena (plataforma de juegos: docs/SCENE_OBJECTS.md)
   let sceneObjects = null;
-  loadSceneObjects(man, scene, { heightAt: terrain.heightAt })
-    .then(so => { sceneObjects = so; if (so) report.objects = so.count; })
+  loadSceneObjects(man, worldGroup, { heightAt: terrain.heightAt })
+    .then(so => {
+      if (!generation.isCurrent()) {
+        so?.dispose();
+        report.lifecycle.disposedStaleLoads++;
+        return;
+      }
+      sceneObjects = so;
+      if (so) {
+        collision.setItems(sceneObjects.collision);
+        report.objects = so.count;
+        report.collision.items = collision.qa.itemCount;
+      }
+    })
     .catch(e => report.errors.push('objects: ' + e.message));
-  const W = terrain.world;
-  const mask = { uMaskOn: terrain.splatMask.uSplatOn, uMaskC: terrain.splatMask.uSplatC, uMaskR: terrain.splatMask.uSplatR };
 
   // splat héroe: solo si splat_align.py lo dejó 'aligned' (RMSE sub-métrico).
   // Carga DESPUÉS del terreno (el juego ya es volable mientras llega el ksplat).
-  let splat = null;
   if (man.capabilities?.splat && man.transforms?.splat?.status === 'aligned') {
-    attachSplat(man, scene, {
+    attachSplat(man, worldGroup, {
       renderer,
       onProgress: p => { if (p < 100) $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · splat ${Math.round(p)}%`; },
     }).then(s => {
+      if (!generation.isCurrent()) {
+        s?.dispose();
+        report.lifecycle.disposedStaleLoads++;
+        return;
+      }
       splat = s;
-      if (coverageProduct?.preferred_renderer === 'splat') vista = 1;
-      syncVistaChip?.();                       // el splat llegó: chip de vista activo
       $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
       report.splat = { aligned: s.aligned, rmse_m: s.rmse };
-      $('#vb-splat').classList.add('ok');
-      applyVista();               // default 3D siempre (pedido del operador)
+      markLoadStep(document, 'vb-splat');
+      applyVista();
     }).catch(e => {
       report.errors.push('splat: ' + e.message);
       $('#vl-scene').textContent = `${man.name} · ${coverageLabel}`;
     });
   }
 
-  // colisión precisa contra EDIFICIOS: proxy voxel del splat (splat-transform)
-  // horneado al frame del juego (collision_bake.py) + BVH. Lazy: el vuelo ya
-  // funciona con el heightfield mientras llega; queries closestPointToPoint
-  // ~17µs — cabe de sobra en el paso de 120Hz.
-  let coll = null;
-  const collV = new THREE.Vector3();
-  if (man.assets?.collision_bin && man.assets?.collision_meta) {
-    Promise.all([
-      fetch(man.assets.collision_meta, { cache: 'no-store' }).then(r => r.json()),
-      fetch(man.assets.collision_bin).then(r => r.arrayBuffer()),
-    ]).then(([cm, buf]) => {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(buf, 0, cm.verts * 3), 3));
-      g.setIndex(new THREE.BufferAttribute(new Uint32Array(buf, cm.bytes_pos, cm.tris * 3), 1));
-      g.computeBoundsTree();
-      g.computeBoundingBox();
-      const bb = g.boundingBox;
-      mask.uMaskC.value.set((bb.min.x + bb.max.x) / 2, (bb.min.z + bb.max.z) / 2);
-      mask.uMaskR.value = Math.min(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.42;
-      applyVista();                       // re-evalúa mixta ahora que hay huella
-      coll = g.boundsTree;
-      report.collision = { tris: cm.tris };
-      $('#vl-ghost').textContent += ' · colisión ✓';
-    }).catch(e => report.errors.push('colisión: ' + e.message));
-  }
-  const collide = (p, r) => {
-    if (!coll) return null;
-    return coll.closestPointToPoint(collV.copy(p), {}, 0, r);
-  };
-
   // dron rediseñado: proporciones DJI (~0.85m), cuerpo bajo, brazos finos,
   // props que giran con la velocidad, gimbal frontal — solo primitivas three
-  const drone = createDrone({ heightAt: terrain.heightAt, collide, spawn: man.spawn });
+  const drone = createDrone({ world: collision, spawn: man.spawn });
+  report.collision.radius_m = +drone.collisionRadius.toFixed(3);
+  report.collision.radius_source = 'fallback';
+  report.customDrone = false;
+  let cameraCollisionHits = 0;
+  let cameraCollisionChecks = 0;
+  report.camera = { collision_checks: 0, collision_hits: 0, rig: null };
   const dmesh = new THREE.Group();
   const matHull = new THREE.MeshPhongMaterial({ color: 0xdfe5ee, specular: 0x8899aa, shininess: 62, flatShading: true });
   const matGrey = new THREE.MeshPhongMaterial({ color: 0x7e8898, specular: 0x556070, shininess: 40 });
@@ -473,6 +663,10 @@ async function main() {
   const props = [];
   const navLights = [];                       // LEDs: [strobe, rojo babor, verde estribor]
   const hardpoints = [];                      // nodos hardpoint_N del GLB (anclaje de misiles)
+  let weaponModels = null;
+  let selectedWeaponKey = 'm';
+  const weaponModelErrors = new Set();
+  let selectWeaponModel = () => Promise.resolve(null);
   const propBlurs = [];                       // discos motion-blur bajo cada helice
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
     const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.019, 0.27, 4, 8), matGrey);
@@ -515,16 +709,22 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=280', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=343', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=280');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=343');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
-    const size = bb.getSize(new THREE.Vector3());
-    const s = 0.85 / Math.max(size.x, size.z || 0.001);
-    m.scale.setScalar(s);
+    const envelope = deriveDroneEnvelope(bb);
+    if (envelope.source !== 'glb') {
+      report.collision.radius_reason = envelope.reason;
+      return;
+    }
+    m.scale.setScalar(envelope.scale);
     bb.setFromObject(m); bb.getCenter(m.position).multiplyScalar(-1);
+    drone.setCollisionRadius(envelope.radius);
+    report.collision.radius_m = +drone.collisionRadius.toFixed(3);
+    report.collision.radius_source = envelope.source;
     while (dmesh.children.length) dmesh.remove(dmesh.children[0]);   // fuera el procedural
     props.length = 0;
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -566,6 +766,7 @@ async function main() {
     strobe.position.set(0, 0.07, 0.20);
     m.add(ledR, ledG, strobe); navLights.push(strobe, ledR, ledG);
     dmesh.add(m);
+    void selectWeaponModel(selectedWeaponKey);
     report.customDrone = true;
   }).catch(() => { /* GLB opcional */ });
 
@@ -664,8 +865,31 @@ async function main() {
   // ── armamento: misiles + explosiones + destrucción (X o botón FIRE) ──
   const shake = { mag: 0 };
   let curYaw = 0;
+  const { GLTFLoader: ArsenalGLTFLoader } = await import(
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=343'
+  );
+  weaponModels = createWeaponModelLibrary({
+    quality: Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto',
+    coarse: matchMedia('(pointer:coarse)').matches,
+    loader: new ArsenalGLTFLoader(),
+    root: '/assets/weapons',
+  });
+  selectWeaponModel = key => weaponModels.select(key, hardpoints).catch(error => {
+    const message = `arma 3D ${key}: ${error?.message || error}`;
+    if (!weaponModelErrors.has(message)) {
+      weaponModelErrors.add(message);
+      report.errors.push(message);
+    }
+    return null;
+  });
   const weapons = createWeapons(scene, {
-    heightAt: terrain.heightAt, audio, crater: terrain.crater,
+    world: collision, heightAt: terrain.heightAt, audio, crater: terrain.crater,
+    getCameraPosition: () => camera.position,
+    effectTier: coarsePointer
+      ? (Math.min(innerWidth, innerHeight) < 700 ? 'phone' : 'tablet')
+      : 'desktop',
+    cloneProjectile: key => weaponModels?.cloneProjectile(key),
+    onDestroy: node => sceneObjects?.markDestroyed(node),
     onShake: (pos, big) => {
       const d = camera.position.distanceTo(pos);
       shake.mag = Math.max(shake.mag, Math.min(0.9, (9 * big) / (5 + d)));
@@ -680,7 +904,6 @@ async function main() {
       depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
     const r1 = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.9, 28), am);
     const r2 = new THREE.Mesh(new THREE.CircleGeometry(0.14, 12), am.clone());
-    r1.rotation.x = r2.rotation.x = -Math.PI / 2;
     aim.add(r1, r2);
   }
   aim.visible = false;
@@ -690,8 +913,12 @@ async function main() {
   const hitFlash = () => {
     const hx = $('#vl-hitfx'); hx.classList.remove('go'); void hx.offsetWidth; hx.classList.add('go');
   };
+  const invasionTier = coarsePointer || (navigator.deviceMemory || 4) <= 4
+    ? 'low'
+    : (navigator.deviceMemory || 8) >= 8 && (navigator.hardwareConcurrency || 4) >= 8
+      ? 'high' : 'medium';
   const invasion = createInvasion(scene, {
-    heightAt: terrain.heightAt, audio,
+    heightAt: terrain.heightAt, audio, deviceTier: invasionTier,
     onHit: dmg => { health.hp = Math.max(0, health.hp - dmg); hitFlash(); audio.crash?.(); },
     fx: {
       impact: pos => weapons.explodeAt(pos, 0.5),
@@ -699,6 +926,7 @@ async function main() {
     },
   });
   weapons.state._enemies = invasion.hittables;     // splash de explosión a la horda
+  let overlayCoordinator = null;
   const zBtn = $('#vl-zombies');
   const invModal = $('#vl-inv');
   zBtn.addEventListener('click', () => {
@@ -708,66 +936,181 @@ async function main() {
       $('#vl-zhud').classList.remove('show');
       return;
     }
-    invModal.classList.toggle('show');             // elegir enemigos
+    overlayCoordinator?.toggle('invasion');       // elegir enemigos
   });
   invModal.addEventListener('click', e => {
     const chip = e.target.closest('button[data-e]');
     if (chip) { chip.classList.toggle('sel'); return; }
+    const difficulty = e.target.closest('button[data-inv-d]');
+    if (difficulty) {
+      invModal.querySelectorAll('button[data-inv-d]').forEach(button => button.classList.toggle('sel', button === difficulty));
+      return;
+    }
     if (e.target.closest('#vl-inv-go')) {
       const sel = [...invModal.querySelectorAll('button[data-e].sel')].map(b => b.dataset.e);
-      invModal.classList.remove('show');
-      invasion.toggle(P, sel.length ? sel : ['zombie']);
+      const diff = invModal.querySelector('button[data-inv-d].sel')?.dataset.invD || 'media';
+      overlayCoordinator?.close('invasion');
+      invasion.toggle(P, sel.length ? sel : ['zombie'], diff);
       zBtn.classList.add('on');
       health.hp = 100;
       $('#vl-zhud').classList.add('show');
     }
   });
   const fireBtn = $('#vl-fire');
-  const doFire = (pitch) => {
+  const triggerBtn = $('#vl-trigger');
+  const weaponToggle = $('#vl-weapon-toggle');
+  const weaponOptionMarkup = Object.entries(WEAPON_PROFILES).map(([key, profile]) => (
+    `<button role="option" data-w="${key}" aria-selected="${key === 'm'}">${profile.label}</button>`
+  )).join('');
+  $('#vl-weps').innerHTML = weaponOptionMarkup;
+  $('#vl-weapon-picker').innerHTML = weaponOptionMarkup;
+  const weaponItems = [...document.querySelectorAll('#vl-weapon-picker button[data-w]')];
+  const WEAPON_CODES = Object.fromEntries(
+    Object.entries(WEAPON_PROFILES).map(([key, profile]) => [key, profile.code]),
+  );
+  const triggerState = {
+    held: false, locked: false, source: null, pointerId: null,
+    presses: 0, releases: 0, accepted: 0, mode: 'single',
+  };
+  const triggerLabel = () => triggerState.locked
+    ? 'LIBERA PARA REARMAR'
+    : triggerState.mode === 'auto' && triggerState.held ? 'MG AUTO'
+      : 'LISTO';
+  const updateTriggerUi = () => {
+    const weapon = ARSENAL[weapons.state.weapon];
+    const ammo = Math.floor(weapons.state.ammo[weapons.state.weapon]);
+    $('#vl-weapon-code').textContent = WEAPON_CODES[weapons.state.weapon];
+    $('#vl-weapon-status').textContent = ammo;
+    weaponToggle.setAttribute('aria-label', `${weapon.label}, ${ammo} municiones`);
+    for (const item of weaponItems) {
+      item.setAttribute('aria-selected', String(item.dataset.w === weapons.state.weapon));
+    }
+    triggerBtn.classList.toggle('locked', triggerState.locked);
+    triggerBtn.setAttribute('aria-pressed', String(triggerState.held));
+    triggerBtn.setAttribute('aria-label', `Disparar ${weapon.label}. ${triggerLabel()}`);
+  };
+  const aimDirection = new THREE.Vector3();
+  const resolveCombatAim = () => {
+    camera.getWorldDirection(aimDirection);
+    const hittables = invasion.state.on
+      ? [...(sceneObjects?.hittables || []), ...invasion.hittables]
+      : sceneObjects?.hittables || [];
+    return resolveAimRay({
+      position: camera.position,
+      direction: aimDirection,
+      far: 1200,
+    }, collision, hittables);
+  };
+  const doFire = () => {
+    if (overlayCoordinator?.active()) return false;
     // si el GLB trae hardpoints, el misil sale del siguiente en turno
     const hp = hardpoints.length
       ? hardpoints[weapons.state.fired % hardpoints.length].getWorldPosition(new THREE.Vector3())
       : P.clone();
-    if (!weapons.fire(hp, curYaw, pitch ?? gimbalTilt * 0.55)) return;
+    const target = resolveCombatAim();
+    if (!weapons.fire(hp, { aimPoint: target.point, target: target.target || null })) return false;
     fireBtn.classList.remove('flash'); void fireBtn.offsetWidth;   // reinicia anim
     fireBtn.classList.add('flash');
+    triggerBtn.classList.remove('flash'); void triggerBtn.offsetWidth;
+    triggerBtn.classList.add('flash');
+    return true;
   };
   let firing = false;
-  const stopFiring = e => {
-    if (e?.pointerId != null && fireBtn.hasPointerCapture?.(e.pointerId))
-      fireBtn.releasePointerCapture(e.pointerId);
+  const releaseFiring = (source, e) => {
+    if (source === 'pointer' && e?.pointerId != null
+        && e.pointerId !== triggerState.pointerId) return;
+    const captureId = e?.pointerId ?? triggerState.pointerId;
+    for (const button of [fireBtn, triggerBtn]) {
+      if (captureId != null && button.hasPointerCapture?.(captureId)) button.releasePointerCapture(captureId);
+    }
+    if (!triggerState.held || (source && triggerState.source !== source)) return;
     firing = false;
+    triggerState.held = false;
+    triggerState.locked = false;
+    triggerState.source = null;
+    triggerState.pointerId = null;
+    triggerState.releases += 1;
+    updateTriggerUi();
   };
-  fireBtn.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    fireBtn.setPointerCapture(e.pointerId);
+  const beginFiring = (source, button = null, pointerId = null) => {
+    if (triggerState.held || overlayCoordinator?.active()) return false;
+    const auto = isContinuousWeaponKey(weapons.state.weapon);
     firing = true;
-    doFire();
+    triggerState.held = true;
+    triggerState.locked = !auto;
+    triggerState.source = source;
+    triggerState.pointerId = pointerId;
+    triggerState.mode = auto ? 'auto' : 'single';
+    triggerState.presses += 1;
+    if (button && pointerId != null) button.setPointerCapture(pointerId);
+    if (doFire()) triggerState.accepted += 1;
+    updateTriggerUi();
+    return true;
+  };
+  const firePointers = createFirePointerBindings({
+    elements: [fireBtn, triggerBtn],
+    onPress: pointerId => beginFiring('pointer', null, pointerId),
+    onRelease: (reason, event, accepted) => {
+      if (accepted) releaseFiring('pointer', event);
+    },
+    isEnabled: () => !overlayCoordinator?.active(),
   });
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
-    fireBtn.addEventListener(type, stopFiring);
-  addEventListener('pointerup', stopFiring);
   const setWeapon = k => {
     weapons.setWeapon(k);
-    document.querySelectorAll('#vl-weps button').forEach(b =>
+    selectedWeaponKey = weapons.state.weapon;
+    void selectWeaponModel(selectedWeaponKey);
+    document.querySelectorAll('#vl-weps button, #vl-weapon-picker button').forEach(b =>
       b.classList.toggle('sel', b.dataset.w === k));
+    updateTriggerUi();
   };
+  const weaponPicker = createWeaponPicker({
+    trigger: weaponToggle,
+    panel: $('#vl-weapon-picker'),
+    items: weaponItems,
+    eventRoot: document,
+    onSelect: setWeapon,
+    onActiveChange: active => {
+      if (active) flightTools?.closeAll('peer');
+      const gimbalTrigger = $('#vl-gimbal-toggle');
+      if (gimbalTrigger) gimbalTrigger.hidden = active;
+    },
+  });
+  void selectWeaponModel(weapons.state.weapon);
+  let flightTools = null;
   document.addEventListener('pointerdown', e => {
+    const activeOverlay = overlayCoordinator?.active();
     const b = e.target.closest('#vl-weps button[data-w]');
+    if (activeOverlay && (activeOverlay !== 'combat' || !b?.closest('#vl-combat'))) return;
     if (b) setWeapon(b.dataset.w);
   });
   const sticks = createTouchSticks($('#vl-hud'));
-  let sfx = { idx: 0, phase: '', crash: false, count: 0 };
-  let modeKey = 'asistido', rigIx = 0;
-  if (Q.get('rig') != null) rigIx = Math.abs(+Q.get('rig')) % RIGS.length;   // QA: cámara por URL
-  let gimbalTilt = -0.12;                      // tilt del gimbal (rad); rueda/slider lo mueven
-  const setGimbal = r => {
-    gimbalTilt = Math.max(-1.26, Math.min(0.38, r));
-    $('#vl-gwheel').value = Math.round(gimbalTilt * 180 / Math.PI);
-    $('#osd-gimbal').textContent = `GIMBAL ${Math.round(gimbalTilt * 180 / Math.PI)}°`;
+  const resetCommandOnOrientation = () => {
+    weaponPicker.close('orientation');
+    flightTools?.closeAll('orientation');
+    firePointers.cancel('orientation');
+    releaseFiring();
+    sticks?.reset();
   };
-  $('#vl-gwheel').addEventListener('input', e => setGimbal(+e.target.value * Math.PI / 180));
+  addEventListener('orientationchange', resetCommandOnOrientation);
+  let lastFlightInput = {
+    fwd: 0, strafe: 0, yaw: 0, lift: 0,
+    boost: false, brake: false, mouseDX: 0, mouseDY: 0,
+  };
+  let sfx = { idx: 0, phase: '', crash: false, count: 0 };
+  let modeKey = 'asistido';
+  const requestedRig = Q.get('rig');
+  let rigIx = Math.max(0, RIGS.findIndex(rig => rig.key === 'fpv'));
+  if (requestedRig != null) {
+    const byKey = RIGS.findIndex(rig => rig.key === requestedRig);
+    rigIx = byKey >= 0 ? byKey : Math.abs(+requestedRig || 0) % RIGS.length;
+  }
+  const cameraController = createCameraRigController({ initialKey: RIGS[rigIx].key });
+  let gimbalTilt = cameraController.snapshot().gimbalRadians;
+  const setGimbal = r => {
+    gimbalTilt = cameraController.setGimbalRadians(r);
+    $('#osd-gimbal').textContent = `GIMBAL ${Math.round(gimbalTilt * 180 / Math.PI)}°`;
+    flightTools?.syncGimbalRadians(gimbalTilt);
+  };
   const cine = { v: 0.14, a: 0.24 };
   $('#cine-v').addEventListener('input', e => { cine.v = +e.target.value; });
   $('#cine-a').addEventListener('input', e => { cine.a = +e.target.value; });
@@ -788,117 +1131,123 @@ async function main() {
   $('#vl-goto').addEventListener('click', () => goToStart());
   const setRig = ix => {
     rigIx = ((ix % RIGS.length) + RIGS.length) % RIGS.length;
+    cameraController.select(RIGS[rigIx].key);
+    report.camera.rig = cameraController.snapshot().key;
     camera.fov = RIGS[rigIx].fov; camera.updateProjectionMatrix();
     $('#vl-rig').textContent = `cámara · ${RIGS[rigIx].label}`;
     dmesh.visible = !RIGS[rigIx].hideDrone;
     $('#vl-fpv').classList.toggle('show', !!RIGS[rigIx].hideDrone);
     $('#vl-hud').classList.toggle('fpv-active', !!RIGS[rigIx].hideDrone);
+    $('#vl-gimbal-toggle').disabled = !RIGS[rigIx].hideDrone;
+    if (!RIGS[rigIx].hideDrone) flightTools?.closeGimbal('camera');
+    flightTools?.syncCamera(RIGS[rigIx]);
   };
-  // vista: 0 mixta · 1 foto-real (solo splat) · 2 orto (solo terreno)
-  let vista = coverageProduct?.preferred_renderer === 'splat' ? 1 : 2;
-  const applyVista = () => {
-    if (!splat && vista !== 2) { vista = 2; }
-    // con malla fotogramétrica: SOLO la representación high-res (el DSM
-    // derretido no aparece nunca — ni de anillo). Sin malla: reglas de siempre.
-    terrain.mesh.visible = visualMesh ? false : vista !== 1;
-    terrain.mesh.position.y = vista === 0 ? -0.35 : 0;
-    terrain.mesh.updateMatrix();
-    mask.uMaskOn.value = 0;
-    if (splat) splat.object.visible = vista !== 2;
-    if (visualMesh) visualMesh.object.visible = vista !== 1;
-    terrain.mesh.material.color.setScalar((grade?.t ?? 1) * (vista === 0 ? 0.85 : 1));
-    $('#vl-vista').textContent = 'vista · ' + (vista === 0 ? 'mixta' : vista === 1 ? 'foto-real' : '3D');
-  };
-  const cycleVista = () => {
-    if (!splat) {
-      // honesto: sin splat alineado no hay foto-real ni mixta — decirlo, no callar
-      $('#vl-challenge').textContent = 'esta escena no tiene splat alineado — solo vista 3D';
-      setTimeout(() => { if ($('#vl-challenge').textContent.includes('splat alineado')) $('#vl-challenge').textContent = ''; }, 2600);
-      return;
-    }
-    vista = (vista + 1) % 3;
-    applyVista();
-  };
-  $('#vl-vista').addEventListener('click', cycleVista);
-  // chip atenuado mientras no haya splat (attachSplat puede llegar después)
-  const syncVistaChip = () => { $('#vl-vista').style.opacity = splat ? 1 : 0.45; };
-  syncVistaChip();
+  const cycleRig = () => setRig(rigIx + 1);
+  const cameraItems = [...document.querySelectorAll('#vl-camera-picker button[data-camera]')];
+  flightTools = createFlightTools({
+    cameraTrigger: $('#vl-camera-toggle'),
+    cameraPickerTrigger: $('#vl-camera-picker-toggle'),
+    cameraPanel: $('#vl-camera-picker'),
+    cameraItems,
+    gimbalTrigger: $('#vl-gimbal-toggle'),
+    gimbalTray: $('#vl-gimbal-tray'),
+    gimbalRange: $('#vl-gimbal-range'),
+    gimbalValue: $('#vl-gimbal-value'),
+    gimbalButtons: [...document.querySelectorAll('#vl-gimbal-tray button')],
+    eventRoot: document,
+    visibilityRoot: document,
+    onCycleCamera: direction => setRig(rigIx + direction),
+    onSelectCamera: key => {
+      const next = RIGS.findIndex(rig => rig.key === key);
+      if (next >= 0) setRig(next);
+    },
+    onGimbal: setGimbal,
+  });
+  flightTools.syncGimbalRadians(gimbalTilt);
   const CIELO_LB = { dia: 'día', atardecer: 'atardecer', noche: 'noche' };
   $('#vl-cielo').addEventListener('click', () => {
-    $('#vl-cielo').textContent = 'cielo · ' + CIELO_LB[sky.cycle()];
+    const preset = sky.cycle();
+    terrain.frontier.uFrontierColor.value.set(FRONTIER_COLORS[preset] || FRONTIER_COLORS.dia);
+    $('#vl-cielo').textContent = 'cielo · ' + CIELO_LB[preset];
   });
   $('#vl-cielo').textContent = 'cielo · ' + (CIELO_LB[sky.preset] || 'día');
   $('#vl-mode').addEventListener('click', () => {
     const ks = Object.keys(MODES);
     setMode(ks[(ks.indexOf(modeKey) + 1) % ks.length]);
   });
-  $('#vl-rig').addEventListener('click', () => setRig(rigIx + 1));
+  $('#vl-rig').addEventListener('click', cycleRig);
   $('#vl-reto').addEventListener('click', () => startReto());   // arrow: startReto se declara abajo
   $('#vl-ayuda').addEventListener('click', () => {
-    closeFlightOverlays('guide');
-    $('#vl-guide').classList.add('show');
+    overlayCoordinator.open('guide');
   });
   $('#vl-ajustes').addEventListener('click', e => {
     e.stopPropagation();
-    const grade = $('#vl-grade');
-    const opening = !grade.classList.contains('show');
-    setMobileSheet('', false);
-    closeFlightOverlays(opening ? 'image' : '');
-    grade.classList.toggle('show', opening);
+    const opening = overlayCoordinator.active() !== 'image';
+    overlayCoordinator.toggle('image');
     if (opening) movable.image.clamp();
   });
-  $('#gr-close').addEventListener('click', () => $('#vl-grade').classList.remove('show'));
-  document.addEventListener('pointerdown', e => {
-    const g = $('#vl-grade');
-    if (g.classList.contains('show') && !g.contains(e.target) && !e.target.closest('#vl-ajustes'))
-      g.classList.remove('show');
+  $('#gr-close').addEventListener('click', () => overlayCoordinator.close('image'));
+  $('#gr-expand').addEventListener('click', e => {
+    e.stopPropagation();
+    const compact = gradePanel.classList.toggle('compact');
+    $('#gr-expand').setAttribute('aria-expanded', String(!compact));
+    localStorage.setItem('ab.fv.grade.expanded', compact ? '0' : '1');
+    if (!compact) movable.image.clamp();
   });
   const mobileSheets = {
     menu: { panel: $('#vl-dock'), trigger: $('#vl-fab') },
-    combat: { panel: $('#vl-combat'), trigger: $('#vl-combat-fab') },
+    combat: { panel: $('#vl-combat'), trigger: $('#vl-armamento') },
   };
   const movable = {
     menu: makeDraggablePanel($('#vl-dock'), $('#vl-dock .vl-panel-drag'), 'ab.fv.panel.menu'),
     combat: makeDraggablePanel($('#vl-combat'), $('#vl-combat .vl-panel-drag'), 'ab.fv.panel.combat'),
     image: makeDraggablePanel($('#vl-grade'), $('#vl-grade .vl-grade-drag'), 'ab.fv.panel.image'),
   };
-  const closeFlightOverlays = except => {
-    const overlays = {
-      image: $('#vl-grade'),
-      guide: $('#vl-guide'),
-      invasion: $('#vl-inv'),
-      difficulty: $('#vl-diff'),
-    };
-    for (const [key, panel] of Object.entries(overlays)) {
-      if (key !== except) panel?.classList.remove('show');
-    }
-  };
-  const setMobileSheet = (name, open) => {
-    if (open) closeFlightOverlays(name);
-    for (const [key, sheet] of Object.entries(mobileSheets)) {
-      const active = key === name && open;
-      sheet.panel.classList.toggle('open', active);
-      sheet.trigger.setAttribute('aria-expanded', String(active));
-    }
-    document.body.classList.toggle('vl-mobile-sheet-open', !!open);
-    if (open && movable[name]) movable[name].clamp();
-  };
-  $('#vl-fab').addEventListener('click', () =>
-    setMobileSheet('menu', !$('#vl-dock').classList.contains('open')));
-  $('#vl-combat-fab').addEventListener('click', () =>
-    setMobileSheet('combat', !$('#vl-combat').classList.contains('open')));
-  $('#vl-dock-close').addEventListener('click', () => setMobileSheet('menu', false));
-  $('#vl-combat-close').addEventListener('click', () => setMobileSheet('combat', false));
-  // tap FUERA de un sheet abierto lo cierra (escape universal en táctil)
-  document.addEventListener('pointerdown', e => {
-    if (!document.body.classList.contains('vl-mobile-sheet-open')) return;
-    if (e.target.closest('.vl-dock, .vl-combat, .vl-fab, .vl-combat-fab')) return;
-    setMobileSheet('menu', false);
-  }, { capture: true });
-  addEventListener('keydown', e => {
-    if (e.key === 'Escape' && document.body.classList.contains('vl-mobile-sheet-open'))
-      setMobileSheet('', false);
+  const touchUi = matchMedia('(pointer:coarse)').matches;
+  overlayCoordinator = createOverlayCoordinator({
+    eventRoot: document,
+    scrim: touchUi ? $('#vl-overlay-scrim') : null,
+    inertTargets: [
+      renderer.domElement,
+      $('#vl-command-hud'),
+      $('#vl-flight-tools-left'),
+      $('#vl-gimbal-tools'),
+    ],
+    overlays: {
+      ...(touchUi ? {
+        menu: { ...mobileSheets.menu, openClass: 'open' },
+        combat: { ...mobileSheets.combat, openClass: 'open' },
+      } : {}),
+      image: { panel: gradePanel, trigger: $('#vl-ajustes'), openClass: 'show' },
+      guide: { panel: $('#vl-guide'), trigger: $('#vl-ayuda'), openClass: 'show' },
+      invasion: { panel: invModal, trigger: zBtn, openClass: 'show' },
+      difficulty: { panel: $('#vl-diff'), trigger: $('#vl-reto'), openClass: 'show' },
+      result: { panel: $('#vl-result'), openClass: 'show' },
+      director: { panel: $('#vl-director'), openClass: 'show', dismissible: false },
+    },
+    onChange: active => {
+      if (active) {
+        weaponPicker.close('overlay');
+        flightTools.closeAll('overlay');
+        firePointers.cancel('overlay');
+        releaseFiring();
+      }
+      input.setEnabled(!active);
+      document.body.classList.toggle('vl-overlay-open', !!active);
+      document.body.classList.toggle('vl-mobile-sheet-open', active === 'menu' || active === 'combat');
+      sticks?.setEnabled(!active);
+      if (active && (active === 'image' || !touchUi) && movable[active]) movable[active].clamp();
+    },
   });
+  if (!touchUi) {
+    for (const sheet of Object.values(mobileSheets)) sheet.panel.setAttribute('aria-hidden', 'false');
+  }
+  $('#vl-fab').addEventListener('click', () => overlayCoordinator.toggle('menu'));
+  $('#vl-armamento').addEventListener('click', () => {
+    if (touchUi) overlayCoordinator.toggle('combat');
+  });
+  $('#vl-dock-close').addEventListener('click', () => overlayCoordinator.close('menu'));
+  $('#vl-combat-close').addEventListener('click', () => overlayCoordinator.close('combat'));
   $('#vl-dockmin').addEventListener('click', () => {
     const min = $('#vl-dock').classList.toggle('min');
     $('#vl-dockmin').textContent = min ? '»' : '«';
@@ -948,10 +1297,10 @@ async function main() {
   if (!(grade.b >= 0.35 && grade.b <= 1.6)) grade.b = 0.88;  // migra esquemas viejos (y el 1.3 quemado)
   applyGrade(grade);
   $('#vl-guide-ok').addEventListener('click', () => {
-    $('#vl-guide').classList.remove('show');
+    overlayCoordinator.close('guide');
     localStorage.setItem('ab.fv.guided', '1');
   });
-  if (!localStorage.getItem('ab.fv.guided') && !AT) $('#vl-guide').classList.add('show');
+  if (!localStorage.getItem('ab.fv.guided') && !AT) overlayCoordinator.open('guide');
   $('#vl-sound').addEventListener('pointerdown', e => {
     e.preventDefault();
     const m = audio.toggleMute();
@@ -969,21 +1318,7 @@ async function main() {
   setMode(qModo && MODES[qModo] ? qModo : 'asistido'); setRig(rigIx); applyVista();
   if (Q.get('reto') === '1' && !AT) setTimeout(() => startReto(Q.get('dif') || 'media'), 3800);   // tras el arrival
   const modeKeys = { Digit1: 'cinematico', Digit2: 'asistido', Digit3: 'arcade', Digit4: 'dios' };
-  addEventListener('keydown', e => {
-    if (modeKeys[e.code]) setMode(modeKeys[e.code]);
-    if (e.code === 'KeyC') setRig(rigIx + 1);
-    if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
-    if (e.code === 'KeyH') $('#vl-guide').classList.toggle('show');
-    if (e.code === 'KeyT') startReto(localStorage.getItem('ab.fv.gr.diff') || 'media');
-    if (e.code === 'KeyP') cycleVista();
-    if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
-    if (e.code === 'KeyX') { firing = true; doFire(); }
-    if (e.code === 'KeyZ') {
-      const ks = Object.keys(ARSENAL);
-      setWeapon(ks[(ks.indexOf(weapons.state.weapon) + 1) % ks.length]);
-    }
-    if (e.code === 'Escape' && replay) { replay = null; reto?.setVisible(true); if (resultShown) $('#vl-result').classList.add('show'); }
-  });
+  const globalHotkeyAllowed = event => !event.defaultPrevented && !overlayCoordinator?.active();
   renderer.domElement.addEventListener('click', () => { if (modeKey === 'fpv') input.requestLock(); });
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
@@ -994,11 +1329,10 @@ async function main() {
   // ── Gate Rush (desafío del slice) + replay ──
   let reto = null, replay = null, resultShown = false, retoFly = null;
   const startReto = (diff) => {
-    const dp = $('#vl-diff');
-    if (!diff) { dp.classList.toggle('show'); return; }   // sin dif → picker
-    dp.classList.remove('show');
+    if (!diff) { overlayCoordinator.toggle('difficulty'); return; }   // sin dif → picker
+    overlayCoordinator.close();
     localStorage.setItem('ab.fv.gr.diff', diff);
-    $('#vl-result').classList.remove('show'); $('#vl-result').innerHTML = '';
+    $('#vl-result').innerHTML = '';
     replay = null; resultShown = false;
     if (reto) reto.dispose();
     reto = createGateRush({ scene, trackPts: ghost?.pts, world: W, heightAt: terrain.heightAt, difficulty: diff });
@@ -1015,7 +1349,7 @@ async function main() {
   });
   const startReplay = () => {
     if (!reto?.state.rec.length) return;
-    $('#vl-result').classList.remove('show');
+    overlayCoordinator.close('result');
     replay = { rec: reto.state.rec, f: 0 };
     reto.setVisible(false);
   };
@@ -1063,12 +1397,12 @@ async function main() {
           <a href="mundo.html">Mundo</a>
         </div>
       </div>`;
-    $('#vl-result').classList.add('show');
+    overlayCoordinator.open('result');
   };
   $('#vl-result').addEventListener('click', e => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'retry') startReto(reto.state.difficulty);
-    if (act === 'diff') { $('#vl-result').classList.remove('show'); $('#vl-diff').classList.add('show'); }
+    if (act === 'diff') overlayCoordinator.open('difficulty');
     if (act === 'replay') startReplay();
     if (act === 'director') enterDirector();
   });
@@ -1087,21 +1421,20 @@ async function main() {
   };
   function enterDirector() {
     if (!reto?.state.rec?.length) return;
-    $('#vl-result').classList.remove('show');
+    overlayCoordinator.open('director');
     replay = null;
     reto?.setVisible(false);
     director = { keys: [], playing: false, f: 0, len: reto.state.rec.length - 1 };
     cc.enabled = true;
     cc.setLookAt(drone.pos.x + 20, drone.pos.y + 12, drone.pos.z + 20,
       drone.pos.x, drone.pos.y, drone.pos.z, false);
-    $('#vl-director').classList.add('show');
     $('#dir-scrub').max = String(director.len);
     paintKeys();
   }
   function exitDirector() {
     director = null; cc.enabled = false; reto?.setVisible(true);
-    $('#vl-director').classList.remove('show');
-    if (resultShown) $('#vl-result').classList.add('show');
+    overlayCoordinator.close('director');
+    if (resultShown) overlayCoordinator.open('result');
   }
   function paintKeys() {
     $('#dir-keys').innerHTML = director.keys.map((k, i) =>
@@ -1268,8 +1601,28 @@ async function main() {
     } else if (recorder.start()) { recBtn.classList.add('on'); audio.rec(true); }
   };
   recBtn.addEventListener('click', toggleRec);
-  addEventListener('keydown', e => { if (e.code === 'KeyV') toggleRec(); });
-  addEventListener('keyup', e => { if (e.code === 'KeyX') firing = false; });
+  addEventListener('keydown', e => {
+    if (!globalHotkeyAllowed(e)) return;
+    if (modeKeys[e.code]) setMode(modeKeys[e.code]);
+    if (e.code === 'KeyC') cycleRig();
+    if (e.code === 'KeyG' && ghost) { ghost.on = !ghost.on; ghost.grp.visible = ghost.on; }
+    if (e.code === 'KeyH') overlayCoordinator.toggle('guide');
+    if (e.code === 'KeyT') startReto(localStorage.getItem('ab.fv.gr.diff') || 'media');
+    if (e.code === 'KeyP') cycleVista();
+    if (e.code === 'KeyM') $('#vl-mode').style.opacity = audio.toggleMute() ? 0.4 : 1;
+    if (e.code === 'KeyX' && !e.repeat) beginFiring('keyboard');
+    if (e.code === 'KeyZ') {
+      const ks = Object.keys(ARSENAL);
+      setWeapon(ks[(ks.indexOf(weapons.state.weapon) + 1) % ks.length]);
+    }
+    if (e.code === 'KeyV') toggleRec();
+    if (e.code === 'Escape' && replay) {
+      replay = null;
+      reto?.setVisible(true);
+      if (resultShown) overlayCoordinator.open('result');
+    }
+  });
+  addEventListener('keyup', e => { if (e.code === 'KeyX') releaseFiring('keyboard'); });
   if (AT === 'record') {
     setTimeout(() => {
       const started = recorder.start();
@@ -1283,7 +1636,16 @@ async function main() {
     }, 1000);
   }
   const P = new THREE.Vector3();
+  let qualityGovernor = null;
+  let dprNow = Math.min(devicePixelRatio, 2);
+  let renderReportFrame = 0;
+  const renderLifecycle = { pauses: 0, resumes: 0 };
   const loop = createLoop({
+    onPause: () => { renderLifecycle.pauses += 1; },
+    onResume: () => {
+      renderLifecycle.resumes += 1;
+      if (qualityGovernor) qualityGovernor.reset();
+    },
     update(dt) {
       simT += dt;
       if (director) {
@@ -1351,6 +1713,13 @@ async function main() {
         const ts = sticks?.sample();
         if (ts?.active) { inp.fwd = ts.fwd; inp.strafe = ts.strafe; inp.yaw = ts.yaw; inp.lift = ts.lift; }
         if (auto && simT < auto.until) inp = { fwd: 1, strafe: 0, yaw: 0.15, lift: 0.1, boost: simT > 2, brake: false, mouseDX: 0, mouseDY: 0 };
+        if (overlayCoordinator?.active()) {
+          inp = {
+            fwd: 0, strafe: 0, yaw: 0, lift: 0,
+            boost: false, brake: false, mouseDX: 0, mouseDY: 0,
+          };
+        }
+        lastFlightInput = { ...inp };
         drone.step(dt, inp, modeKey);
         if (autoReto) {
           // autotest del slice: teleporta por los gates — prueba detección,
@@ -1393,28 +1762,35 @@ async function main() {
         }
         sfx.crash = drone.crashedSoft;
       }
-      // Una cobertura elegida es un producto medible, no una etiqueta: el vuelo
-      // queda dentro de su círculo/cuadrado exacto. Auto conserva toda la escena.
-      if (COVERAGE_REQUEST) {
-        const half = COVERAGE_REQUEST / 2;
-        let clipped = false;
-        if (COVERAGE_SHAPE === 'circle') {
-          const distance = Math.hypot(drone.pos.x, drone.pos.z);
-          if (distance > half) {
-            const scale = half / distance;
-            drone.pos.x *= scale; drone.pos.z *= scale; clipped = true;
-          }
-        } else {
-          const x = THREE.MathUtils.clamp(drone.pos.x, -half, half);
-          const z = THREE.MathUtils.clamp(drone.pos.z, -half, half);
-          clipped = x !== drone.pos.x || z !== drone.pos.z;
-          drone.pos.x = x; drone.pos.z = z;
-        }
-        if (clipped) {
-          drone.vel.x *= -0.18; drone.vel.z *= -0.18;
-          report.coverage.boundary_hits = (report.coverage.boundary_hits || 0) + 1;
-        }
+      const allHit = invasion.state.on
+        ? [...(sceneObjects?.hittables || []), ...invasion.hittables]
+        : sceneObjects?.hittables;
+      weapons.update(dt, allHit);
+      if (Q.get('invasion') && !invasion.state.on && simT > 0.5) {
+        invasion.toggle(
+          drone.pos,
+          Q.get('invasion').split(',').filter(k => ENEMIES[k]),
+          Q.get('invDifficulty') || 'media',
+        );
+        zBtn.classList.add('on'); $('#vl-zhud').classList.add('show');
       }
+      invasion.update(dt, drone.pos, drone.vel);
+      if (Q.get('fuego') === 'mg' && simT > 1 && simT < 2.6) {
+        if (!weapons._mg) { weapons._mg = true; weapons.setWeapon('mg'); }
+        doFire();
+      } else if (Q.get('fuego') && simT > 1 && !weapons.state.fired) {
+        doFire();
+      }
+      if (Q.get('boom') && simT > 5.2 && !weapons._boomed) {
+        weapons._boomed = true;
+        const bx = drone.pos.x - Math.sin(drone.yaw) * 6;
+        const bz = drone.pos.z - Math.cos(drone.yaw) * 6;
+        const bgy = terrain.heightAt(bx, bz) ?? (drone.pos.y - 60);
+        weapons.explodeAt(new THREE.Vector3(bx, bgy + 0.3, bz));
+      }
+      const fixedWeapon = ARSENAL[weapons.state.weapon];
+      if (firing && fixedWeapon.auto) doFire();
+      report.coverage.boundary_hits = world.qa.boundaryHits;
       if (ghost?.on) {
         ghost.t = (ghost.t + dt) % ghost.dur;
         const i = ghost.T.findIndex(t => t > ghost.t);
@@ -1424,12 +1800,13 @@ async function main() {
         ghost.marker.position.lerpVectors(ghost.pts[a], ghost.pts[b] || ghost.pts[a], f);
       }
     },
-    render(alpha) {
+    render(alpha, frameMs) {
       const o = drone.lerpPose(alpha, P);
       curYaw = o.yaw;
       // FOV kick con turbo: sensación de velocidad AAA (lerp suave, barato)
       if (shake.fov > 0.05) shake.fov *= Math.pow(0.006, STEP * 2);   // decae ~rápido
-      const wantFov = RIGS[rigIx].fov + (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') ? 9 : 0)
+      const activeCamera = cameraController.snapshot();
+      const wantFov = activeCamera.fov + (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') ? 9 : 0)
         + (shake.fov || 0);
       if (Math.abs(camera.fov - wantFov) > 0.1) {
         camera.fov += (wantFov - camera.fov) * 0.08;
@@ -1481,86 +1858,168 @@ async function main() {
         camera.position.set(Math.cos(tourT) * r, diag * cine.a, Math.sin(tourT) * r);
         camera.lookAt(0, (W.elev_max - W.elev_min) * 0.4, 0);
       } else {
-        const rig = RIGS[rigIx];
-        rig.fn(P, o, camera, STEP, rig);
         const dw = input.takeWheel();
         if (dw) setGimbal(gimbalTilt - dw * 0.0011);
-        if (rig.hideDrone) camera.rotation.x += gimbalTilt;
-        else camera.rotateX(gimbalTilt + 0.12);   // gimbal también en chase/orbita (offset neutro)
+        const cameraPose = cameraController.update({
+          dronePosition: P,
+          dronePose: o,
+          velocity: drone.vel,
+          dt: STEP,
+        });
+        camera.position.set(...cameraPose.position);
+        camera.quaternion.set(...cameraPose.quaternion);
+        if (!cameraPose.hideDrone) {
+          cameraCollisionChecks += 1;
+          report.camera.collision_checks = cameraCollisionChecks;
+          if (resolveCameraCollision(collision, P, camera.position)) {
+            cameraCollisionHits += 1;
+            report.camera.collision_hits = cameraCollisionHits;
+          }
+        }
+        report.camera = {
+          ...report.camera,
+          ...cameraPose,
+          rig: cameraPose.key,
+          collision_checks: cameraCollisionChecks,
+          collision_hits: cameraCollisionHits,
+        };
       }
       sky.update(STEP, camera.position, P);
       sceneObjects?.update(simT);
       {
-        const now = performance.now();
-        const wdt = Math.min(0.05, (now - (weapons._lt || now)) / 1000);
-        weapons._lt = now;
-        const allHit = invasion.state.on
-          ? [...(sceneObjects?.hittables || []), ...invasion.hittables]
-          : sceneObjects?.hittables;
-        weapons.update(wdt, allHit);
-        if (Q.get('invasion') && !invasion.state.on && simT > 0.5) {
-          invasion.toggle(P, Q.get('invasion').split(',').filter(k => ENEMIES[k]));
-          zBtn.classList.add('on'); $('#vl-zhud').classList.add('show');
-        }
-        invasion.update(wdt, P);
-        report.invasion = { on: invasion.state.on, wave: invasion.state.wave, alive: invasion.state.alive, killed: invasion.state.killed };
-        report.weapons = { fired: weapons.state.fired, exploded: weapons.state.exploded };
+        report.collision.casts = collision.qa.casts;
+        report.collision.sweeps = collision.qa.sweeps;
+        report.collision.recoveries = collision.qa.recoveries;
+        report.collision.world_hits = collision.qa.worldHits;
+        report.collision.item_hits = collision.qa.itemHits;
+        report.invasion = {
+          on: invasion.state.on,
+          phase: invasion.state.phase,
+          wave: invasion.state.wave,
+          alive: invasion.state.alive,
+          queued: invasion.state.queue.length,
+          killed: invasion.state.killed,
+          score: invasion.state.score,
+          combo: invasion.state.combo,
+          countdown: +invasion.state.countdown.toFixed(2),
+          difficulty: invasion.state.difficulty,
+          types: [...invasion.state.types],
+          telemetry: invasion.state.telemetry,
+        };
+        report.weapons = {
+          fired: weapons.state.fired,
+          exploded: weapons.state.exploded,
+          structure_hits: weapons.state.structureHits,
+          terrain_hits: weapons.state.terrainHits,
+          boundary_hits: weapons.state.boundaryHits,
+          item_hits: weapons.state.itemHits,
+          target_hits: weapons.state.targetHits,
+          proximity_triggers: weapons.state.proximityTriggers,
+          occluded_fuses: weapons.state.occludedFuses,
+          rail_hits: weapons.state.railHits,
+          projectiles: weapons.state.missiles.length
+            + weapons.state.bullets.length
+            + weapons.state.schedules.length,
+          fired_projectiles: { ...weapons.state.firedProjectiles },
+          models: weaponModels.snapshot(),
+          effects: weapons.effects.snapshot(),
+          pools: weapons.state.effectCounters,
+          resources: { ...weapons.state.resources },
+          impact: weapons.state.impactEvidence,
+          lod: { ...weapons.state.lod },
+        };
         report.weaponState = { weapon: weapons.state.weapon, cool: +weapons.state.cool.toFixed(2),
-          ammo: Object.fromEntries(Object.entries(weapons.state.ammo).map(([k2, n2]) => [k2, Math.floor(n2)])) };
+          ammo: Object.fromEntries(Object.entries(weapons.state.ammo).map(([k2, n2]) => [k2, Math.floor(n2)])),
+          trigger: { ...triggerState } };
+        report.controls = {
+          overlay: overlayCoordinator?.active() || null,
+          flightTool: flightTools?.active() || null,
+          inputEnabled: input.enabled,
+          keyboardKeys: input.keys.size,
+          lastInput: { ...lastFlightInput },
+        };
         if (invasion.state.on) {
-          $('#vl-zwave').textContent = `OLEADA ${invasion.state.wave || 1}`;
-          $('#vl-zkill').textContent = `${invasion.state.killed} abatidos · ${invasion.state.alive} activos`;
+          const inv = invasion.state;
+          $('#vl-zwave').textContent = inv.phase === 'loading'
+            ? 'PREPARANDO INVASIÓN'
+            : inv.phase === 'countdown'
+              ? `OLEADA ${inv.wave + 1} · ${Math.max(1, Math.ceil(inv.countdown))}`
+              : `OLEADA ${inv.wave || 1}`;
+          $('#vl-zkill').textContent = `${inv.killed} abatidos · ${inv.alive + inv.queue.length} restantes`;
+          $('#vl-zscore').textContent = `${inv.score} PTS`;
+          $('#vl-zcombo').textContent = `COMBO ×${Math.max(1, inv.combo)}`;
+          $('#vl-zcombo').classList.toggle('hot', inv.combo > 1);
           $('#vl-zhp').style.transform = `scaleX(${health.hp / 100})`;
         }
         // mini-barras de munición por arma (HUD de vida de armas)
-        document.querySelectorAll('#vl-weps button').forEach(b => {
+        document.querySelectorAll('#vl-weps button, #vl-weapon-picker button').forEach(b => {
           const k = b.dataset.w;
           b.style.setProperty('--ammo', `${(weapons.state.ammo[k] / ARSENAL[k].max) * 100}%`);
         });
-        if (Q.get('fuego') === 'mg' && simT > 1 && simT < 2.6) {
-          if (!weapons._mg) { weapons._mg = true; weapons.setWeapon('mg'); }
-          doFire(-0.5);                        // ráfaga sostenida de QA
-        } else if (Q.get('fuego') && simT > 1 && !weapons.state.fired) doFire(-1.25);
-        if (Q.get('boom') && simT > 5.2 && !weapons._boomed) {
-          weapons._boomed = true;             // QA: detonación a nivel de suelo bajo el dron
-          const bx = P.x - Math.sin(curYaw) * 6, bz = P.z - Math.cos(curYaw) * 6;
-          const bgy = terrain.heightAt(bx, bz) ?? (P.y - 60);
-          weapons.explodeAt(new THREE.Vector3(bx, bgy + 0.3, bz));
-        }
         const st = weapons.state;
         const WA = ARSENAL[st.weapon];
-        if (firing && WA.auto) doFire();               // MG sostenida
         $('#vl-ammo').textContent = Math.floor(st.ammo[st.weapon]);
+        updateTriggerUi();
         $('#vl-cool').style.transform = `scaleX(${1 - st.cool / (WA.cd || WA.rate)})`;
         fireBtn.classList.toggle('empty', st.ammo[st.weapon] < 1);
         if (st.destroyed) { const k = $('#vl-kills'); k.textContent = `DERRIBOS ${st.destroyed}`; k.classList.add('show'); }
-        // retícula: 80 pasos de balística contra el heightfield
-        if (st.ammo > 0 && !director) {
-          const pitch = gimbalTilt * 0.55;
-          const simP = P.clone(); simP.y -= 0.3;
-          const sv = new THREE.Vector3(-Math.sin(curYaw) * Math.cos(pitch), Math.sin(pitch),
-            -Math.cos(curYaw) * Math.cos(pitch)).multiplyScalar(56);
-          let hitP = null;
-          for (let s2 = 0; s2 < 80; s2++) {
-            sv.y -= 2.2 * 0.045;
-            simP.addScaledVector(sv, 0.045);
-            const gy = terrain.heightAt(simP.x, simP.z);
-            if (gy != null && simP.y <= gy + 0.3) { simP.y = gy + 0.32; hitP = simP; break; }
-          }
-          if (hitP) {
-            aim.visible = true;
-            aim.position.copy(hitP);
-            aim.scale.setScalar((1 + Math.sin(simT * 6) * 0.1) * (1 + camera.position.distanceTo(hitP) * 0.015));
-          } else aim.visible = false;
-        } else aim.visible = false;
+        // Reticle and launch direction share the same camera-center ray. This
+        // avoids gimbal-yaw drift and keeps the hardpoint converged on the hit.
+        const reticleHit = !director ? resolveCombatAim() : null;
+        if (reticleHit?.kind !== 'none') {
+          const hitP = new THREE.Vector3(reticleHit.point.x, reticleHit.point.y, reticleHit.point.z);
+          aim.visible = true;
+          aim.position.copy(hitP);
+          aim.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(
+            reticleHit.normal.x, reticleHit.normal.y, reticleHit.normal.z,
+          ));
+          aim.scale.setScalar((1 + Math.sin(simT * 6) * 0.1) * (1 + camera.position.distanceTo(hitP) * 0.015));
+          report.aim = {
+            kind: reticleHit.kind,
+            point: { ...reticleHit.point },
+            normal: { ...reticleHit.normal },
+            distance: +reticleHit.distance.toFixed(2),
+          };
+        } else {
+          aim.visible = false;
+          report.aim = reticleHit ? { kind: 'none', distance: +reticleHit.distance.toFixed(2) } : null;
+        }
         if (shake.mag > 0.003) {                 // sacudida de impacto (decae)
           camera.position.x += (Math.random() - 0.5) * shake.mag;
           camera.position.y += (Math.random() - 0.5) * shake.mag * 0.6;
           camera.rotation.z += (Math.random() - 0.5) * shake.mag * 0.02;
-          shake.mag *= Math.pow(0.02, wdt);      // ~decadencia 98%/s
+          shake.mag *= Math.pow(0.02, STEP * 2); // ~decadencia 98%/s
         } else shake.mag = 0;
       }
       composer.render();
+      if (calidad === 'auto' && qualityGovernor) {
+        const decision = qualityGovernor.sample(frameMs, performance.now());
+        if (decision.changed) {
+          dprNow = decision.dpr;
+          applyDpr(dprNow);
+        }
+      }
+      renderReportFrame += 1;
+      if (renderReportFrame % 30 === 0) {
+        const measured = qualityGovernor?.snapshot() || {
+          tier: -1, changes: 0, reason: 'manual', avgMs: frameMs, p95Ms: frameMs, samples: 1,
+        };
+        report.render = {
+          dpr: +dprNow.toFixed(2),
+          tier: measured.tier,
+          changes: measured.changes,
+          reason: calidad === 'auto' ? measured.reason : 'manual',
+          avgMs: +measured.avgMs.toFixed(2),
+          p95Ms: +measured.p95Ms.toFixed(2),
+          samples: measured.samples,
+          calls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+          geometries: renderer.info.memory.geometries,
+          textures: renderer.info.memory.textures,
+          pauses: renderLifecycle.pauses,
+          resumes: renderLifecycle.resumes,
+        };
+      }
       drawMinimap();
       // HUD (barato: texto directo, sin re-layout)
       $('#vl-agl').textContent = drone.agl == null ? 'fuera' : `${drone.agl.toFixed(1)} m`;
@@ -1585,7 +2044,7 @@ async function main() {
         audio.update(propSpin, spd, drone.vel.y, camDist,
           lpv.x / Math.max(camDist, 0.001));
       }
-      if (RIGS[rigIx].hideDrone) {
+      if (cameraController.snapshot().hideDrone) {
         const rollV = new THREE.Vector3(1, 0, 0).applyQuaternion(drone.quat).y;
         $('#vl-horizon').style.transform =
           `translateY(${(-o.pitch * 260).toFixed(1)}px) rotate(${(-rollV * 40).toFixed(1)}deg)`;
@@ -1648,6 +2107,7 @@ async function main() {
   let calidad = Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto';   // QA: calidad por URL
   if (!CALIDADES[calidad]) calidad = 'auto';
   const applyDpr = d => {
+    if (Math.abs(renderer.getPixelRatio() - d) < 0.001) return;
     renderer.setPixelRatio(d);
     renderer.setSize(innerWidth, innerHeight);
     composer.setSize(innerWidth, innerHeight);
@@ -1685,8 +2145,17 @@ async function main() {
     } else if (fullTex) {
       terrain.mesh.material.map = fullTex;   // ya cargada: persiste
     }
-    if (c.dpr) { dprNow = c.dpr; applyDpr(c.dpr); }
-    else { dprNow = Math.min(devicePixelRatio, 2); applyDpr(dprNow); }
+    if (c.dpr) {
+      dprNow = c.dpr;
+      applyDpr(c.dpr);
+    } else {
+      qualityGovernor = createRenderQualityGovernor({
+        deviceDpr: Math.min(devicePixelRatio, 2),
+        initialDpr: Math.min(dprNow, devicePixelRatio, 2),
+      });
+      dprNow = qualityGovernor.snapshot().dpr;
+      applyDpr(dprNow);
+    }
     localStorage.setItem('ab.fv.calidad', k);
     report.calidad = { k, dpr: +dprNow.toFixed(2) };
     upgradeMeshTex(k);
@@ -1696,19 +2165,34 @@ async function main() {
     setCalidad(ks[(ks.indexOf(calidad) + 1) % ks.length]);
   });
 
-  let dprNow = Math.min(devicePixelRatio, 2);
   setCalidad(calidad);
-  setInterval(() => {
-    if (calidad !== 'auto') return;              // manual manda; el governor descansa
-    const f = loop.fps() || 60;
-    const maxDpr = Math.min(devicePixelRatio, 2);
-    let want = dprNow;
-    if (f < 52) want = Math.max(1, dprNow - 0.25);
-    else if (f > 58 && dprNow < maxDpr) want = Math.min(maxDpr, dprNow + 0.25);
-    if (want !== dprNow) { dprNow = want; applyDpr(want); }
-  }, 2000);
 
   renderer.compile(scene, camera);             // warmup: sin hitch del primer frame
+  addEventListener('pagehide', () => {
+    generation.invalidate();
+    loop.stop();
+    removeEventListener('orientationchange', resetCommandOnOrientation);
+    weaponPicker.dispose();
+    flightTools.dispose();
+    firePointers.dispose();
+    surfaceGuards.dispose();
+    overlayCoordinator?.dispose();
+    sticks?.dispose();
+    input.dispose();
+    cameraController.dispose();
+    collision.dispose();
+    world.dispose();
+    sceneObjects?.dispose();
+    visualMesh?.dispose();
+    splat?.dispose();
+    terrain.dispose();
+    weapons.dispose();
+    weaponModels.dispose();
+    invasion.dispose();
+    worldGroup.removeFromParent();
+    composer.dispose?.();
+    renderer.dispose();
+  }, { once: true });
   loop.start();
   report.ready = true;
 
@@ -1716,13 +2200,44 @@ async function main() {
     setTimeout(() => {
       report.fps = Math.round(loop.fps() || 0);
       report.audioArmed = audio.armed;
-      report.weapons = { fired: weapons.state.fired, exploded: weapons.state.exploded };
+      report.weapons = {
+        ...(report.weapons || {}),
+        fired: weapons.state.fired,
+        exploded: weapons.state.exploded,
+        projectiles: weapons.state.missiles.length
+          + weapons.state.bullets.length
+          + weapons.state.schedules.length,
+      };
       report.pos = { x: +drone.pos.x.toFixed(1), y: +drone.pos.y.toFixed(1), z: +drone.pos.z.toFixed(1) };
       report.agl = drone.agl == null ? null : +drone.agl.toFixed(1);
+      report.collision.radius_m = +drone.collisionRadius.toFixed(3);
+      report.camera.collision_checks = cameraCollisionChecks;
+      report.camera.collision_hits = cameraCollisionHits;
+      report.camera.rig = cameraController.snapshot().key;
       report.distance = Math.round(drone.distance);
       report.ghost = !!ghost;
       report.moved = drone.distance > 20;
-      report.ok = report.moved && report.fps >= 20 && Number.isFinite(drone.pos.y);
+      report.lifecycle.groups = scene.children.filter(node => node.name === 'fv-world').length;
+      report.rendererMemory = {
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+      };
+      report.render = {
+        ...(report.render || {}),
+        dpr: +dprNow.toFixed(2),
+        calls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        pauses: renderLifecycle.pauses,
+        resumes: renderLifecycle.resumes,
+      };
+      report.ok = report.moved
+        && report.fps >= 50
+        && report.collision.ready
+        && report.lifecycle.groups === 1
+        && report.lifecycle.disposedStaleLoads === 0
+        && Number.isFinite(drone.pos.y);
       report.done = true;
     }, (auto.until + 1.5) * 1000);
   }

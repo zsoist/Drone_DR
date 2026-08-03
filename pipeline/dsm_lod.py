@@ -21,6 +21,62 @@ VAULT = Path("/Volumes/SSD/drone-vault")
 M_PER_DEG_LAT = 111_320.0  # esferoide medio; error <0.4% — suficiente para vuelo
 
 
+def fill_nodata(surface: np.ndarray, invalid: np.ndarray) -> np.ndarray:
+    """Extend the nearest valid terrain into holes without inventing a low floor."""
+    out = np.asarray(surface, dtype=np.float32).copy()
+    known = ~np.asarray(invalid, dtype=bool)
+    if not known.any():
+        raise ValueError("heightfield sin celdas válidas")
+    out[~known] = 0
+    rows, cols = out.shape
+    for _ in range(rows + cols):
+        total = np.zeros_like(out)
+        count = np.zeros(out.shape, dtype=np.uint8)
+        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            values = np.roll(np.roll(out, dy, axis=0), dx, axis=1)
+            neighbors = np.roll(np.roll(known, dy, axis=0), dx, axis=1)
+            if dy == -1:
+                neighbors[-1, :] = False
+            elif dy == 1:
+                neighbors[0, :] = False
+            elif dx == -1:
+                neighbors[:, -1] = False
+            else:
+                neighbors[:, 0] = False
+            total += values * neighbors
+            count += neighbors
+        frontier = ~known & (count > 0)
+        if not frontier.any():
+            break
+        out[frontier] = total[frontier] / count[frontier]
+        known |= frontier
+        if known.all():
+            break
+    if not known.all():
+        raise ValueError("heightfield contiene nodata no alcanzable")
+    return out
+
+
+def smooth_ground(surface: np.ndarray, *, conservative: bool = False) -> np.ndarray:
+    """Build a terrain-scale DTM; buildings remain in the structural collider."""
+    out = np.asarray(surface, dtype=np.float32)
+    if conservative:
+        # Sparse merged reconstructions can contain coherent false hills too
+        # wide for a median kernel. Keep the central terrain band playable;
+        # buildings and other vertical truth still come from collision.bin.
+        low, high = np.percentile(out, (2, 90))
+        out = np.clip(out, low, high)
+    padded = np.pad(out, 4, mode="edge")
+    windows = np.lib.stride_tricks.sliding_window_view(padded, (9, 9))
+    out = np.median(windows, axis=(-2, -1)).astype(np.float32)
+    # A second compact pass removes multi-pixel reconstruction needles while
+    # retaining hills. Edge padding is deliberate: np.roll wrapped opposite
+    # borders together and could manufacture a ridge across the map.
+    padded = np.pad(out, 2, mode="edge")
+    windows = np.lib.stride_tricks.sliding_window_view(padded, (5, 5))
+    return np.median(windows, axis=(-2, -1)).astype(np.float32)
+
+
 def build(cid: str, target: int = 256) -> dict:
     mdir = VAULT / "models" / cid
     meta = json.loads((mdir / "meta.json").read_text())
@@ -39,13 +95,8 @@ def build(cid: str, target: int = 256) -> dict:
     valid = sub[~invalid]
     if valid.size == 0:
         raise SystemExit(f"DSM de {cid} sin celdas válidas")
-    floor = float(np.percentile(valid, 5))
-    sub = np.where(invalid, np.float32(floor), sub)
-    # mediana 3x3: las AGUJAS del DSM (px sueltos de reconstrucción) fundían
-    # los edificios en púas — la mediana las mata preservando bordes reales
-    st = np.stack([np.roll(np.roll(sub, dy, 0), dx, 1)
-                   for dy in (-1, 0, 1) for dx in (-1, 0, 1)])
-    sub = np.median(st, axis=0).astype(np.float32)
+    sub = fill_nodata(sub, invalid)
+    sub = smooth_ground(sub, conservative=float(invalid.mean()) > 0.25)
 
     lat_c = gt[3] + gt[5] * (h / 2.0)
     m_lon = M_PER_DEG_LAT * math.cos(math.radians(lat_c))

@@ -1,0 +1,67 @@
+{
+  "weapon": "swarm8_pod",
+  "key": "sw",
+  "seed": 20260727,
+  "nodes": [
+    "collision_proxy",
+    "mount",
+    "muzzle",
+    "projectile"
+  ],
+  "tiers": {
+    "ultra": {
+      "path": "ultra/swarm8_pod.glb",
+      "sha256": "6828970f234439f9da53ae85e278fa7d286aa95db9124b4ddc17fa6d4e64409f",
+      "bytes": 5382868,
+      "triangles": 2764,
+      "texture_dimensions": [
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          4096
+        ]
+      ],
+      "bounds": [
+        1.36,
+        0.915,
+        1.599053
+      ]
+    },
+    "runtime": {
+      "path": "runtime/swarm8_pod.glb",
+      "sha256": "b57d29a0839d06e174cb7f812379c3c5ea4486b5929af68ad34894e6e0d4ca0e",
+      "bytes": 972556,
+      "triangles": 2764,
+      "texture_dimensions": [
+        [
+          1024,
+          1024
+        ],
+        [
+          1024,
+          1024
+        ],
+        [
+          1024,
+          1024
+        ]
+      ],
+      "bounds": [
+        1.36,
+        0.915,
+        1.599053
+      ]
+    }
+  },
+  "preview": {
+    "path": "previews/swarm8_pod.png",
+    "sha256": "499222a4f2d190b4eb532184bbd395df6b45ebe02ee5eeaf1591736bba4481ff"
+  }
+}

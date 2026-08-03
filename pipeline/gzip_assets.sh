@@ -6,8 +6,22 @@ cd "$(dirname "$0")/../web" || exit 1
 find . -type f \( -name '*.css' -o -name '*.js' -o -name '*.svg' -o -name '*.json' -o -name '*.html' \) \
     ! -path './node_modules/*' ! -name '*.gz' | while read -r f; do
   gz="$f.gz"
-  if [ ! -f "$gz" ] || [ "$f" -nt "$gz" ]; then
+  if [ ! -f "$gz" ] || [ "$f" -nt "$gz" ] || ! gzip -cd "$gz" | cmp -s - "$f"; then
     gzip -9 -k -f "$f"
   fi
 done
+python3 - <<'PY'
+import os
+from pathlib import Path
+
+for sidecar in Path(".").rglob("*.gz"):
+    source = sidecar.with_name(sidecar.name.removesuffix(".gz"))
+    if not source.is_file():
+        continue
+    source_stat = source.stat()
+    os.utime(
+        sidecar,
+        ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns),
+    )
+PY
 echo "gz sidecars: $(find . -name '*.gz' | wc -l | tr -d ' ') archivos"

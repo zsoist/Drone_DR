@@ -1,9 +1,10 @@
-  import * as THREE from '/vendor/three180.module.js?v=280';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=280';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=280';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=280';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=280';
-  import { mountSplatViewer } from '/splatview.js?v=280';
+  import * as THREE from '/vendor/three180.module.js?v=343';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=343';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=343';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=343';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=343';
+  import { mountSplatViewer } from '/splatview.js?v=343';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=343';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -378,48 +379,27 @@
       <div class="pb" id="m-result" style="display:none;border-top:1px solid var(--line)"></div>
     </div>
 
-    <div class="fl-layout" style="margin-top:16px">
-      <div>
-        <div class="panel">
-          <div class="ph">${icon('cube')} Nube de puntos 3D
-            <span class="spacer" style="flex:1"></span>
-            <button class="btn primary" id="load-cloud-main" style="padding:4px 12px;font-size:11.5px">Cargar</button>
-          </div>
-          <div id="cloud-box" style="height:54dvh;min-height:360px;display:grid;place-items:center">
-            <p class="footer-note" style="margin:0">Nube de ~800k puntos con color real — arrastra para mover, click-derecho rota, doble-click enfoca.</p>
-          </div>
+    <div class="panel scene-viewer-panel" style="margin-top:16px">
+      <div class="ph scene-viewer-head" data-no-collapse="true">
+        <div class="scene-viewer-tabs" id="scene-viewer-tabs" role="tablist" aria-label="Representación 3D">
+          <button type="button" class="on" role="tab" aria-selected="true" aria-controls="scene-viewer-box" data-viewer-mode="cloud">${icon('layers')} Nube</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="mesh">${icon('cube')} Malla</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="splat">${icon('spark')} Gaussian</button>
         </div>
-      </div>
-      <div>
-        <div class="panel">
-          <div class="ph">${icon('cube')} Malla texturizada
-            <span class="chip" id="mesh-q" style="font-size:10.5px;padding:2px 9px"></span>
-            <span class="spacer" style="flex:1"></span>
-            <button class="btn primary" id="load-mesh" style="padding:4px 12px;font-size:11.5px">Cargar</button>
-          </div>
-          <div id="mesh-box" style="height:54dvh;min-height:360px;display:grid;place-items:center">
-            <p class="footer-note" style="margin:0">Modelo sólido con textura foto-real — brilla con vuelos en órbita/oblicuos.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel" style="margin-top:16px">
-      <div class="ph">${icon('spark')} Gaussian splat del proyecto
-        <span class="chip" id="sp-status" style="font-size:10.5px;padding:2px 9px"></span>
+        <span class="chip scene-viewer-status" id="scene-viewer-status"></span>
         <span class="spacer" style="flex:1"></span>
-        <select id="sp-select" title="Versión del splat" style="display:none;max-width:260px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:11.5px"></select>
-        <button class="btn primary" id="load-splat" style="padding:4px 12px;font-size:11.5px">Cargar</button>
+        <select id="sp-select" class="scene-viewer-version" title="Versión del splat" aria-label="Versión del Gaussian splat"></select>
+        <button class="btn primary" id="viewer-load">Cargar nube</button>
       </div>
-      <div id="splat-box" style="height:56dvh;min-height:360px;display:grid;place-items:center;position:relative">
-        <p class="footer-note" style="margin:0" id="splat-note"></p>
+      <div id="scene-viewer-box" class="scene-viewer-box" role="tabpanel" aria-live="polite" aria-label="Nube de puntos">
+        <p class="footer-note scene-viewer-note">Nube con color real — arrastra para mover, botón derecho rota, rueda o pellizco acerca y doble toque enfoca.</p>
       </div>
     </div>
 
     <div class="panel" style="margin-top:16px">
       <div class="ph">${icon('gauge')} Reporte de calidad & descargas
         <span class="spacer" style="flex:1"></span>
-        <button class="btn primary" id="improve-scene">${icon('layers')} Mejorar esta escena</button>
+        <button class="btn primary" id="improve-scene">${icon('layers')} Mejorar con nuevas capturas</button>
       </div>
       <div class="pb" id="dls"></div>
     </div>
@@ -1025,6 +1005,7 @@
         </div>
         <div class="pc-actions">
           <button class="btn primary" data-act="open">Abrir</button>
+          <button class="btn pc-improve" data-act="improve">${icon('layers')} Mejorar</button>
           <button class="btn" data-act="rename" data-tip="Cambiar el nombre del proyecto">Renombrar</button>
           <button class="btn" data-act="share" data-tip="Copiar link público del modelo">Compartir</button>
           <button class="btn pc-del" data-act="del" data-tip="Borra modelo y splats; el video no se toca">Borrar</button>
@@ -1099,6 +1080,7 @@
     };
     if (!btn) { smashOpen(); return; }                      // tap en la tarjeta = abrir
     if (btn.dataset.act === 'open') smashOpen();
+    if (btn.dataset.act === 'improve') location.href = `scene-improve.html?id=${encodeURIComponent(cid)}`;
     if (btn.dataset.act === 'rename') {
       const tEl = card.querySelector('.pc-title');
       tEl.innerHTML = `<input class="ctl" style="width:100%;font-size:12.5px" value="${esc(titleFor(m))}" maxlength="80">`;
@@ -2207,21 +2189,20 @@
       } finally { go.disabled = false; }
     });
   }
-  document.getElementById('improve-scene')?.addEventListener('click', () => openImproveScene(cur));
+  document.getElementById('improve-scene')?.addEventListener('click', () => {
+    if (cur?.clip_id) location.href = `scene-improve.html?id=${encodeURIComponent(cur.clip_id)}`;
+  });
 
   // ---------- ortofoto en MapLibre ----------
   let omap = null;
   let autoloadTimer = 0;
+  let viewerMode = localStorage.getItem('ab.3d.viewerMode') || 'cloud';
   function setProject(cid, opts = {}) {
     cur = models.find(m => m.clip_id === cid);
     if (!cur) return;
     if (!opts.keepTab) showTdMod('projects');   // keepTab: refrescar sin teletransportar de tab
     clearTimeout(autoloadTimer);                  // cancela auto-carga del proyecto anterior (#12)
-    // invalida cargas mesh/cloud en vuelo del proyecto anterior (#1 currency guard)
-    ['mesh-box', 'cloud-box'].forEach(id => {
-      const b = document.getElementById(id);
-      if (b) b._loadToken = (b._loadToken || 0) + 1;
-    });
+    disposeUnifiedViewer();                       // un proyecto = un único renderer vivo
     localStorage.setItem(PROJ_KEY, cid);
     document.getElementById('proj-view').style.display = '';
     if (opts.scroll) {
@@ -2236,15 +2217,6 @@
     const sp = splatAssetFor(cid);
     const spFmt = (sp?.format || sp?.name.split('.').pop() || 'splat').toUpperCase();
     const meshOk = cur.mesh_ok !== false;
-    const meshBtn = document.getElementById('load-mesh');
-    const meshBox = document.getElementById('mesh-box');
-    document.getElementById('mesh-q').textContent = meshOk ? 'lista' : 'no concluyente';
-    document.getElementById('mesh-q').style.color = meshOk ? 'var(--mint)' : 'var(--amber)';
-    if (meshBtn) meshBtn.style.display = meshOk ? '' : 'none';
-    if (!meshOk && meshBox) {
-      meshBox.innerHTML = `<p class="footer-note" style="margin:0;color:var(--amber)">
-        ${icon('warn')} ODM produjo una malla débil para este vuelo. Usa la nube de puntos o el gaussian splat para inspección cercana.</p>`;
-    }
     document.getElementById('dls').innerHTML = `
       ${q.status && q.status !== 'ok' ? `<p class="footer-note" style="margin:0 0 10px;color:var(--amber)">
         ${icon('warn')} Métricas de calidad ${q.status === 'parcial' ? 'parciales' : 'no disponibles'} para esta corrida
@@ -2358,16 +2330,12 @@
       const label = splatVersionLabel(s);
       return `<option value="${esc(splatKey(s))}"${spMeta && splatKey(s) === splatKey(spMeta) ? ' selected' : ''}>${esc(label)}</option>`;
     }).join('');
-    document.getElementById('sp-status').textContent = spMeta
-      ? `${spList.length} ${spList.length === 1 ? 'versión' : 'versiones'} · ${(spMeta.bytes / 1e6).toFixed(1)} MB · ${spStatusFmt}`
-      : 'sin entrenar';
-    document.getElementById('load-splat').style.display = spMeta ? '' : 'none';
     // estado PARCIAL visible: con un splat de ESTE clip en cola/entrenando, decía 'sin entrenar'
     authFetch('/api/jobs').then(r => r.ok ? r.json() : null).then(d => {
       if (!d || !cur || cur.clip_id !== cid) return;   // cambió el proyecto mientras respondía
       const act = (d.jobs || []).find(x => x.kind === 'splat' && x.label === cid
         && ['running', 'queued'].includes(x.status));
-      if (act) document.getElementById('sp-status').textContent =
+      if (act && viewerMode === 'splat') document.getElementById('scene-viewer-status').textContent =
         act.status === 'queued' ? 'splat en cola…' : `entrenando… ${Math.round((act.progress || 0) * 100)}%`;
     }).catch(() => {});
     // capas/herramientas que REQUIEREN DSM: deshabilitadas sin él (antes fallaban en silencio)
@@ -2388,33 +2356,16 @@
     document.querySelectorAll('[data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === 'ortho'));
     const opEl = document.getElementById('op');
     if (opEl) opEl.value = 82;
-    const sbox = document.getElementById('splat-box');
-    // dispose() del visor de splat es ASYNC y el vendored lanza NotFoundError (removeChild
-    // sobre un rootElement anidado) → hay que silenciar el rechazo del promise, no basta try/catch
-    sbox._loadToken = (sbox._loadToken || 0) + 1;   // invalida cualquier mount en vuelo (evita 2 viewers)
-    if (sbox._splatDispose) { const d = sbox._splatDispose; sbox._splatDispose = null; sbox._viewer = null; try { d(); } catch {} }
-    else if (sbox._viewer) { try { const p = sbox._viewer.dispose(); if (p?.catch) p.catch(() => {}); } catch {} sbox._viewer = null; }
-    sbox._loading = false;
-    sbox.innerHTML = `<p class="footer-note" style="margin:0" id="splat-note">${spMeta
-      ? 'Splat entrenado y listo — elige versión y pulsa Cargar para el render foto-real.'
-      : 'Este proyecto aún no tiene splat — entrénalo desde la pestaña <b>Procesamiento</b> → "Generar splat…".'}</p>`;
     const cloudMB = (cur.cloud_bytes || 0) / 1e6;
-    resetViewer('cloud-box', `Nube de puntos${cloudMB ? ` · ${cloudMB.toFixed(0)} MB` : ''}`, 'load-cloud-main');
-    // solo si la malla es usable: con mesh_ok=false el bloque de arriba (línea ~540) ya puso
-    // "no concluyente" ámbar + aviso en mesh-box y OCULTÓ el botón — pisarlo aquí dejaba un
-    // botón Cargar visible que no hacía nada y el aviso jamás se veía
-    if (meshOk) {
-      const beM = cur.reconstruction?.backend;
-      document.getElementById('mesh-q').innerHTML =
-        esc({ rapido: 'calidad rápida', alta: 'calidad alta' }[cur.preset] || 'calidad estándar') +
-        (beM ? ` <em class="be-pill ${/cuda/i.test(beM) ? 'cuda' : 'metal'}">${esc(beM)}</em>` : '');
-      resetViewer('mesh-box', 'Modelo sólido con textura foto-real.', 'load-mesh');
-    }
-    // auto-carga la estrella — salvo nubes pesadas en móvil (datos + memoria)
-    if (!(matchMedia('(max-width: 700px)').matches && cloudMB > 25))
+    activateViewerMode(viewerMode);
+    // restaura la representación elegida; sólo una nube pesada espera confirmación en móvil
+    if (shouldAutoloadViewer(viewerMode, {
+      mobile: matchMedia('(max-width: 700px)').matches,
+      cloudMB,
+    }))
       autoloadTimer = setTimeout(() => {
-        const b = document.getElementById('load-cloud-main');
-        if (b && b.style.display !== 'none') b.click();   // si ya lo clickearon (botón oculto), no duplicar la descarga
+        const b = document.getElementById('viewer-load');
+        if (b && !b.disabled) b.click();
       }, 300);
   }
   // ---------- capas + mediciones ----------
@@ -2571,17 +2522,109 @@
     }
   }
 
-  function resetViewer(boxId, msg, btnId) {
-    const box = document.getElementById(boxId);
-    // salir de FULLSCREEN antes de vaciar: el refresh borraba la barra con el botón de salir
-    // y dejaba el box position:fixed inset:0 con scroll bloqueado = app "colgada" sin salida
-    box.classList.remove('viewer-fs');
-    document.body.style.overflow = '';
-    box.innerHTML = `<p class="footer-note" style="margin:0">${msg}</p>`;
-    const btn = document.getElementById(btnId);
-    btn.style.display = '';
-    btn.textContent = 'Cargar';                   // deshace el 'Reintentar' pegajoso de un fallo previo
+  const unifiedViewerBox = () => document.getElementById('scene-viewer-box');
+
+  function viewerAvailability() {
+    return {
+      cloud: !!cur,
+      mesh: !!cur && cur.mesh_ok !== false,
+      splat: !!cur && !!splatAssetFor(cur.clip_id),
+    };
   }
+
+  function viewerContext() {
+    const splat = cur ? splatAssetFor(cur.clip_id) : null;
+    return {
+      cloudMB: (cur?.cloud_bytes || 0) / 1e6,
+      meshOk: cur?.mesh_ok !== false,
+      meshQuality: ({ rapido: 'rápida', alta: 'alta' }[cur?.preset] || 'estándar'),
+      splatCount: cur ? splatAssetsFor(cur.clip_id).length : 0,
+      splatMB: splat ? splat.bytes / 1e6 : 0,
+      splatFormat: splat ? (splat.format || splat.name.split('.').pop() || 'splat').toUpperCase() : '',
+    };
+  }
+
+  function viewerPlaceholder(mode) {
+    if (mode === 'mesh') return 'Modelo sólido con textura fotográfica — arrastra para mover, botón derecho rota y doble toque enfoca.';
+    if (mode === 'splat') return splatAssetFor(cur?.clip_id)
+      ? 'Gaussian listo — selecciona una versión y cárgala para inspección foto-realista.'
+      : 'Este proyecto aún no tiene Gaussian. Entrénalo desde Procesamiento.';
+    return 'Nube con color real — arrastra para mover, botón derecho rota, rueda o pellizco acerca y doble toque enfoca.';
+  }
+
+  function disposeUnifiedViewer(box = unifiedViewerBox()) {
+    if (!box) return;
+    clearTimeout(autoloadTimer);
+    box._loadToken = (box._loadToken || 0) + 1;
+    box._loading = false;
+    box.classList.remove('viewer-fs', 'sv-fullscreen');
+    document.documentElement.classList.remove('sv-noscroll');
+    document.body.style.overflow = '';
+    if (box._splatDispose) {
+      const dispose = box._splatDispose;
+      box._splatDispose = null;
+      box._viewer = null;
+      try { const p = dispose(); if (p?.catch) p.catch(() => {}); } catch {}
+    } else if (box._viewer) {
+      const viewer = box._viewer;
+      box._viewer = null;
+      try { const p = viewer.dispose?.(); if (p?.catch) p.catch(() => {}); } catch {}
+    }
+    box._pcid = null;
+    box.innerHTML = '';
+  }
+
+  function renderViewerHeader() {
+    if (!cur) return;
+    const availability = viewerAvailability();
+    viewerMode = normalizeViewerMode(viewerMode, availability);
+    const state = viewerHeaderState(viewerMode, viewerContext());
+    document.querySelectorAll('[data-viewer-mode]').forEach(tab => {
+      const active = tab.dataset.viewerMode === viewerMode;
+      tab.classList.toggle('on', active);
+      tab.setAttribute('aria-selected', String(active));
+      tab.disabled = availability[tab.dataset.viewerMode] === false;
+      if (tab.dataset.viewerMode === 'mesh' && tab.disabled) tab.title = 'ODM marcó esta malla como no concluyente';
+      else if (tab.dataset.viewerMode === 'splat' && tab.disabled) tab.title = 'Este proyecto todavía no tiene Gaussian';
+      else tab.title = '';
+    });
+    const status = document.getElementById('scene-viewer-status');
+    status.textContent = state.status;
+    status.style.color = viewerMode === 'mesh' && cur.mesh_ok === false ? 'var(--amber)' : '';
+    const select = document.getElementById('sp-select');
+    select.style.display = viewerMode === 'splat' && splatAssetsFor(cur.clip_id).length > 1 ? '' : 'none';
+    const load = document.getElementById('viewer-load');
+    load.textContent = state.loadLabel;
+    load.disabled = availability[viewerMode] === false;
+    load.style.display = availability[viewerMode] === false ? 'none' : '';
+    const box = unifiedViewerBox();
+    box.dataset.viewerMode = viewerMode;
+    box.setAttribute('aria-label', state.title);
+  }
+
+  function activateViewerMode(mode, { autoload = false } = {}) {
+    if (!cur) return;
+    viewerMode = normalizeViewerMode(mode, viewerAvailability());
+    localStorage.setItem('ab.3d.viewerMode', viewerMode);
+    const box = unifiedViewerBox();
+    disposeUnifiedViewer(box);
+    renderViewerHeader();
+    box.innerHTML = `<p class="footer-note scene-viewer-note">${viewerPlaceholder(viewerMode)}</p>`;
+    if (autoload) autoloadTimer = setTimeout(loadActiveViewer, 0);
+  }
+
+  async function loadActiveViewer() {
+    if (viewerMode === 'mesh') return loadMeshViewer();
+    if (viewerMode === 'splat') return loadSplatViewer();
+    return loadCloudViewer();
+  }
+
+  document.getElementById('scene-viewer-tabs').addEventListener('click', event => {
+    const tab = event.target.closest('[data-viewer-mode]');
+    if (!tab || tab.disabled || tab.dataset.viewerMode === viewerMode) return;
+    activateViewerMode(tab.dataset.viewerMode, { autoload: true });
+  });
+  document.getElementById('viewer-load').addEventListener('click', loadActiveViewer);
 
   // ---------- three.js viewers ----------
   function makeScene(box) {
@@ -2758,8 +2801,8 @@
         wakeControls();
       };
       if (b.dataset.vt === 'center') { cam.position.copy(cam0); controls.target.set(0, 0, 0); wakeControls(); }
-      if (b.dataset.vt === 'zin') dolly(0.35);
-      if (b.dataset.vt === 'zout') dolly(1.55);
+      if (b.dataset.vt === 'zin') dolly(0.72);
+      if (b.dataset.vt === 'zout') dolly(1.38);
       if (b.dataset.vt === 'rot') {
         controls.autoRotate = !controls.autoRotate;
         controls.autoRotateSpeed = 1.1;
@@ -2776,23 +2819,31 @@
     });
   }
 
-  document.getElementById('load-mesh').addEventListener('click', async e => {
-    if (!cur || cur.mesh_ok === false) return;
-    const meshLoadBtn = e.currentTarget;
-    meshLoadBtn.style.display = 'none';
-    const box = document.getElementById('mesh-box');
+  async function loadMeshViewer() {
+    if (!cur || cur.mesh_ok === false || viewerMode !== 'mesh') return;
+    const meshLoadBtn = document.getElementById('viewer-load');
+    meshLoadBtn.disabled = true;
+    meshLoadBtn.textContent = 'Cargando…';
+    const box = unifiedViewerBox();
+    const myLoad = (box._loadToken = (box._loadToken || 0) + 1);
     const stM = spin(box, 'Cargando malla texturizada…');
     const base = `data/models/${cur.clip_id}/model/`;
     try {
       await buildMeshViewer(box, base, cur, stM);
     } catch (err) {
+      if (box._loadToken !== myLoad || viewerMode !== 'mesh') return;
       // sin esto: spinner infinito con el botón ya oculto = pantalla muda sin salida
       box.innerHTML = `<p class="footer-note" style="margin:0;color:var(--amber)">
         ${icon('warn')} No se pudo cargar la malla · ${esc(String(err?.message || err).slice(0, 80))}</p>`;
-      meshLoadBtn.style.display = '';
       meshLoadBtn.textContent = 'Reintentar';
+      meshLoadBtn.disabled = false;
+      return;
     }
-  });
+    if (box._loadToken === myLoad && viewerMode === 'mesh') {
+      meshLoadBtn.textContent = 'Recargar malla';
+      meshLoadBtn.disabled = false;
+    }
+  }
 
   // visor de malla con SWITCH de calidad (bajo=1024/256MB · alto=2048/1024MB) y render
   // (foto/relieve). El default en móvil es "bajo" para no evictar texturas (Safari/iPhone
@@ -2913,12 +2964,13 @@
     });
   }
 
-  document.getElementById('load-cloud-main').addEventListener('click', async e => {
-    if (!cur) return;
-    e.currentTarget.style.display = 'none';
-    const box = document.getElementById('cloud-box');
-    const myLoad = box._loadToken;                 // currency: bail si cambia de proyecto (#1)
-    const cloudBtn = e.currentTarget;
+  async function loadCloudViewer() {
+    if (!cur || viewerMode !== 'cloud') return;
+    const box = unifiedViewerBox();
+    const myLoad = (box._loadToken = (box._loadToken || 0) + 1);
+    const cloudBtn = document.getElementById('viewer-load');
+    cloudBtn.disabled = true;
+    cloudBtn.textContent = 'Cargando…';
     const stC = spin(box, 'Descargando nube de puntos…');
     let geo;
     try {
@@ -2927,14 +2979,14 @@
                                            : `Nube · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
     } catch (err) {
       // 404/red caída: sin esto el skeleton giraba para siempre (y el autoload lo dispara solo)
-      if (box._loadToken !== myLoad) return;
+      if (box._loadToken !== myLoad || viewerMode !== 'cloud') return;
       box.innerHTML = `<p class="footer-note" style="margin:0;color:var(--amber)">
         ${icon('warn')} No se pudo cargar la nube · ${esc(String(err?.message || err).slice(0, 80))}</p>`;
-      cloudBtn.style.display = '';
       cloudBtn.textContent = 'Reintentar';
+      cloudBtn.disabled = false;
       return;
     }
-    if (box._loadToken !== myLoad) { geo.dispose(); return; }   // proyecto cambió durante la descarga
+    if (box._loadToken !== myLoad || viewerMode !== 'cloud') { geo.dispose(); return; }
     const mat = new THREE.PointsMaterial({ size: 0.18, sizeAttenuation: true, vertexColors: geo.hasAttribute('color') });
     const pts = new THREE.Points(geo, mat);
     const { scene, cam, controls } = makeScene(box);
@@ -3009,7 +3061,9 @@
       arr.needsUpdate = true;
       box._wake?.();                                          // redibuja el nuevo color (#6/#17)
     });
-  });
+    cloudBtn.textContent = 'Recargar nube';
+    cloudBtn.disabled = false;
+  }
 
   // splats: gestión rica (calidad/gaussianas/cámaras) + ver inline + compartir + borrar + generar
   const gfmt = n => n >= 1e6 ? (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M'
@@ -3240,8 +3294,8 @@
       selectedSplatByClip[scid] = viewBtn.dataset.view;
       saveSplatChoice();
       setProject(scid);
-      document.getElementById('load-splat').click();
-      setTimeout(() => document.getElementById('splat-box').scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
+      activateViewerMode('splat', { autoload: true });
+      setTimeout(() => unifiedViewerBox().scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
     } else if (shareBtn) {
       const url = `${location.origin}/share.html?m=${encodeURIComponent(shareBtn.dataset.share)}${shareBtn.dataset.splat ? `&s=${encodeURIComponent(shareBtn.dataset.splat)}` : ''}`;
       try { await navigator.clipboard.writeText(url); shareBtn.innerHTML = icon('check'); setTimeout(() => { shareBtn.innerHTML = icon('ext'); }, 1300); }
@@ -3261,7 +3315,7 @@
       // saca el splat del estado del cliente: si no, splatAssetFor lo sigue viendo y RESUCITA
       // (botón "Cargar" reaparece, apunta a un archivo ya en la papelera → 404) al reabrir el proyecto
       if (sys.splats) sys.splats = sys.splats.filter(s => (s.clip_id || s.name.replace(SPLAT_EXT, '')) !== scid);
-      const box = document.getElementById('splat-box');
+      const box = unifiedViewerBox();
       if (box && box._pcid === scid && box._splatDispose) { try { box._splatDispose(); } catch {} box._splatDispose = null; box._viewer = null; box._pcid = null; }
       // si el proyecto borrado está abierto, refresca su panel de splat (oculta "Cargar")
       // sin sacarte del tab donde estabas (keepTab)
@@ -3277,30 +3331,21 @@
     if (!cur) return;
     selectedSplatByClip[cur.clip_id] = e.target.value;
     saveSplatChoice();
-    const box = document.getElementById('splat-box');
-    if (box._splatDispose) { try { box._splatDispose(); } catch {} box._splatDispose = null; box._viewer = null; }
-    box._loadToken = (box._loadToken || 0) + 1;
-    box._loading = false;   // sin esto, cambiar de versión a media descarga deja "Cargar" muerto
-                            // (el mount invalidado retorna sin resetear el guard de re-entrada)
-    const spMeta = splatAssetFor(cur.clip_id);
-    const fmtS = (spMeta?.format || spMeta?.name.split('.').pop() || 'splat').toUpperCase();
-    document.getElementById('sp-status').textContent = spMeta
-      ? `${splatAssetsFor(cur.clip_id).length} ${splatAssetsFor(cur.clip_id).length === 1 ? 'versión' : 'versiones'} · ${(spMeta.bytes / 1e6).toFixed(1)} MB · ${fmtS}`
-      : 'sin entrenar';
-    // cambiar de versión y quedar en negro esperando otro click se sentía ROTO — autocarga
-    document.getElementById('load-splat')?.click();
-    box.innerHTML = `<p class="footer-note" style="margin:0">Versión seleccionada — pulsa Cargar para verla.</p>`;
+    activateViewerMode('splat', { autoload: true });
   });
 
-  document.getElementById('load-splat').addEventListener('click', async () => {
-    if (!cur) return;
+  async function loadSplatViewer() {
+    if (!cur || viewerMode !== 'splat') return;
     const asset = splatAssetFor(cur.clip_id);
     if (!asset) return;
     const name = splatKey(asset);
-    const box = document.getElementById('splat-box');
+    const box = unifiedViewerBox();
     if (box._loading) return;                     // re-entrada: un solo load a la vez (#3)
     box._loading = true;
     const myToken = (box._loadToken = (box._loadToken || 0) + 1);   // currency: gana el último
+    const loadBtn = document.getElementById('viewer-load');
+    loadBtn.disabled = true;
+    loadBtn.textContent = 'Cargando…';
     // visor anterior fuera ANTES de crear otro (dispose premium del módulo si lo hay)
     if (box._splatDispose) { const d = box._splatDispose; box._splatDispose = null; box._viewer = null; try { d(); } catch {} }
     else if (box._viewer) { const v = box._viewer; box._viewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
@@ -3320,19 +3365,25 @@
         box._loading = false;
         const el = box.querySelector('.splat-load');
         if (el) el.innerHTML = `<p class="footer-note">No se pudo cargar ${esc(name)} · ${esc(String(err && err.message || err).slice(0, 90))}</p>`;
+        loadBtn.textContent = 'Reintentar';
+        loadBtn.disabled = false;
       }
       return;
     }
     // otro load (o un setProject) arrancó mientras descargábamos → este visor es obsoleto: tíralo
-    if (box._loadToken !== myToken) { try { handle.dispose(); } catch {} return; }
+    if (box._loadToken !== myToken || viewerMode !== 'splat') { try { handle.dispose(); } catch {} return; }
     box._loading = false;
     box._viewer = handle.viewer;
     box._splatDispose = handle.dispose;           // dispose premium (HUD + listeners + viewer)
     box._pcid = cur.clip_id;                       // qué clip está en pantalla (para borrar en vivo)
     box.querySelector('.splat-load')?.remove();
-  });
+    loadBtn.textContent = 'Recargar Gaussian';
+    loadBtn.disabled = false;
+  }
 
   // sin auto-abrir: solo se restaura una selección previa del usuario
   renderCards();
   const saved = localStorage.getItem(PROJ_KEY);
   if (saved && models.some(m => m.clip_id === saved)) setProject(saved);
+  const requestedTab = new URLSearchParams(location.search).get('tab');
+  if (['projects', 'process', 'jobs'].includes(requestedTab)) showTdMod(requestedTab);

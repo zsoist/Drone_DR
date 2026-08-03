@@ -1,0 +1,67 @@
+{
+  "weapon": "nova_bomb",
+  "key": "tb",
+  "seed": 20260727,
+  "nodes": [
+    "collision_proxy",
+    "mount",
+    "muzzle",
+    "projectile"
+  ],
+  "tiers": {
+    "ultra": {
+      "path": "ultra/nova_bomb.glb",
+      "sha256": "a6f517e898a5e1daf1877698f20ad8e6625a8af4c4d8fc99ae764f54c62abe0e",
+      "bytes": 5181696,
+      "triangles": 2052,
+      "texture_dimensions": [
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          4096
+        ]
+      ],
+      "bounds": [
+        0.88,
+        1.075,
+        2.61
+      ]
+    },
+    "runtime": {
+      "path": "runtime/nova_bomb.glb",
+      "sha256": "45e23f12d6b94eb7617004bca02910901ec04f218cdf14e46d129040b6f30cc2",
+      "bytes": 936088,
+      "triangles": 2052,
+      "texture_dimensions": [
+        [
+          1024,
+          1024
+        ],
+        [
+          1024,
+          1024
+        ],
+        [
+          1024,
+          1024
+        ]
+      ],
+      "bounds": [
+        0.88,
+        1.075,
+        2.61
+      ]
+    }
+  },
+  "preview": {
+    "path": "previews/nova_bomb.png",
+    "sha256": "5a181c6f69e1745cf2b85260ae4e8a75ff96467666c3d8c1344e1f58f9f6ea72"
+  }
+}

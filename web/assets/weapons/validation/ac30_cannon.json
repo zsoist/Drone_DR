@@ -1,0 +1,67 @@
+{
+  "weapon": "ac30_cannon",
+  "key": "ac",
+  "seed": 20260727,
+  "nodes": [
+    "collision_proxy",
+    "mount",
+    "muzzle",
+    "projectile"
+  ],
+  "tiers": {
+    "ultra": {
+      "path": "ultra/ac30_cannon.glb",
+      "sha256": "142824379187147819a6da736b337ddd617278cd2163186c724e7fd4fb8829e0",
+      "bytes": 5512120,
+      "triangles": 3116,
+      "texture_dimensions": [
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          4096
+        ]
+      ],
+      "bounds": [
+        1.12,
+        0.715,
+        2.9
+      ]
+    },
+    "runtime": {
+      "path": "runtime/ac30_cannon.glb",
+      "sha256": "dca84880b15bfe2a5d2b3ef8e460c279276d4b464476ff199b71fbe8cc507dbb",
+      "bytes": 1025052,
+      "triangles": 3116,
+      "texture_dimensions": [
+        [
+          1024,
+          1024
+        ],
+        [
+          1024,
+          1024
+        ],
+        [
+          1024,
+          1024
+        ]
+      ],
+      "bounds": [
+        1.12,
+        0.715,
+        2.9
+      ]
+    }
+  },
+  "preview": {
+    "path": "previews/ac30_cannon.png",
+    "sha256": "8b3964277eff092a5579aeda1da06a6efe1d30a0f2ff907b76aa2fb52fab4ed3"
+  }
+}

@@ -7,6 +7,14 @@ const fechaDe = cid => { const m = /(\d{4})(\d{2})(\d{2})/.exec(cid||''); return
 const dur = s => { s = Math.round(s||0); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
 const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const best = cid => { const t = parseFloat(localStorage.getItem(`ab.fv.best.${cid}.gaterush`)); return Number.isFinite(t) ? t : null; };
+const hydratePreview = card => {
+  const poster = card?.querySelector('.wi-poster');
+  if (!poster || poster.dataset.previewLoaded === 'true') return false;
+  const url = poster.dataset.preview || '';
+  poster.dataset.previewLoaded = 'true';
+  if (url) poster.style.backgroundImage = `url(${JSON.stringify(url)})`;
+  return true;
+};
 
 const SV = (d, s=13) => `<svg width="${s}" height="${s}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const I = {
@@ -20,22 +28,69 @@ let cfg = { cielo: 'dia', calidad: 'auto', modo: 'asistido', cobertura: 'auto', 
 try { cfg = { ...cfg, ...JSON.parse(localStorage.getItem('ab.fv.launchcfg') || '{}') } } catch {}
 cfg.cobertura = ['auto','100','200','400','600','1000'].includes(String(cfg.cobertura)) ? String(cfg.cobertura) : 'auto';
 cfg.forma = cfg.forma === 'square' ? 'square' : 'circle';
-const cfgExtra = () =>
+const effectiveCoverageChoice = scene => {
+  if (cfg.cobertura === 'auto') return 'auto';
+  const rows = scene?.coverage?.shapes?.[cfg.forma] || [];
+  return rows.some(row => row.ready && String(row.diameter_m) === cfg.cobertura)
+    ? cfg.cobertura
+    : 'auto';
+};
+const cfgExtra = (scene=sel) =>
   (cfg.cielo !== 'dia' ? `&cielo=${cfg.cielo}` : '')
   + (cfg.calidad !== 'auto' ? `&calidad=${cfg.calidad}` : '')
   + (cfg.modo !== 'asistido' ? `&modo=${cfg.modo}` : '')
-  + (cfg.cobertura !== 'auto' ? `&diametro=${cfg.cobertura}` : '')
+  + (effectiveCoverageChoice(scene) !== 'auto'
+    ? `&diametro=${effectiveCoverageChoice(scene)}`
+    : '')
   + (cfg.forma !== 'circle' ? `&forma=${cfg.forma}` : '');
 let filtro = 'todas';
 let scenes = [], sel = null;
+let mapLibrePromise = null;
+
+function loadMapLibre() {
+  if (window.maplibregl) return Promise.resolve(window.maplibregl);
+  if (mapLibrePromise) return mapLibrePromise;
+  mapLibrePromise = Promise.all([
+    new Promise((resolve, reject) => {
+      const existing = document.getElementById('fv-maplibre-css');
+      if (existing) { resolve(); return; }
+      const link = document.createElement('link');
+      link.id = 'fv-maplibre-css';
+      link.rel = 'stylesheet';
+      link.href = 'vendor/maplibre-gl.css';
+      link.addEventListener('load', resolve, { once: true });
+      link.addEventListener('error', () => reject(new Error('MapLibre CSS no cargó')), { once: true });
+      document.head.append(link);
+    }),
+    new Promise((resolve, reject) => {
+      const existing = document.getElementById('fv-maplibre-js');
+      if (existing) { existing.addEventListener('load', resolve, { once: true }); return; }
+      const script = document.createElement('script');
+      script.id = 'fv-maplibre-js';
+      script.src = 'vendor/maplibre-gl.js';
+      script.addEventListener('load', resolve, { once: true });
+      script.addEventListener('error', () => reject(new Error('MapLibre JS no cargó')), { once: true });
+      document.head.append(script);
+    }),
+  ]).then(() => {
+    if (!window.maplibregl) throw new Error('MapLibre no quedó disponible');
+    return window.maplibregl;
+  }).catch(error => {
+    mapLibrePromise = null;
+    throw error;
+  });
+  return mapLibrePromise;
+}
 
 function isla(sc, i) {
   const c = sc.capabilities||{}, st = sc.stats||{};
   const site = sc.site || {};
   const rec = best(sc.clip_id);
   return `
-  <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms">
-    <div class="wi-poster" style="background-image:url('${esc(sc.assets?.poster||'')}')"></div>
+  <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms"
+    role="button" tabindex="0" aria-selected="false"
+    aria-label="Seleccionar ${esc(sc.name)}">
+    <div class="wi-poster" data-preview="${esc(sc.assets?.poster||'')}"></div>
     <div class="wi-shine"></div>
     <div class="wi-shade"></div>
     ${c.splat?'<span class="wi-badge">FOTO-REAL</span>':c.mesh?'<span class="wi-badge mesh">MALLA 3D</span>':''}
@@ -56,7 +111,12 @@ function isla(sc, i) {
 
 function pick(i) {
   sel = scenes[i];
-  document.querySelectorAll('.wi').forEach((el,j)=>el.classList.toggle('sel', j===i));
+  document.querySelectorAll('.wi').forEach(el => {
+    const selected = +el.dataset.i === i;
+    el.classList.toggle('sel', selected);
+    el.setAttribute('aria-selected', String(selected));
+    if (selected) hydratePreview(el);
+  });
   const c = sel.capabilities||{}, st = sel.stats||{}, w = sel.world||{};
   const site = sel.site || {}, coverage = sel.coverage?.shapes?.circle || [];
   const integrated = site.source_status?.integrated || site.effective_sources?.length || 0;
@@ -106,7 +166,8 @@ function pick(i) {
   p.classList.add('show');
   p.querySelectorAll('.wp-cfg-g').forEach(g => {
     const k = g.dataset.k;
-    g.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === cfg[k]));
+    const selected = k === 'cobertura' ? effectiveCoverageChoice(sel) : cfg[k];
+    g.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === selected));
   });
 }
 
@@ -203,6 +264,23 @@ async function boot() {
     (secs?`<span><b>${dur(secs)}</b> de vuelo real</span>`:'');
 
   const rail = document.getElementById('w-rail');
+  let previewObserver = null;
+  const observePreviews = () => {
+    previewObserver?.disconnect();
+    const cards = [...rail.querySelectorAll('.wi')];
+    if (!('IntersectionObserver' in window)) {
+      cards.slice(0, 2).forEach(hydratePreview);
+      return;
+    }
+    previewObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        hydratePreview(entry.target);
+        previewObserver?.unobserve(entry.target);
+      });
+    }, { root: rail, rootMargin: '0px 280px', threshold: 0.01 });
+    cards.forEach(card => previewObserver.observe(card));
+  };
   const applyFiltro = () => {
     const f = filtro;
     const list = scenes.map((sc, i) => ({ sc, i })).filter(({ sc }) =>
@@ -213,6 +291,7 @@ async function boot() {
     rail.innerHTML = list.length
       ? list.map(({ sc, i }) => isla(sc, i)).join('')
       : '<div class="fv-loading">Nada con ese filtro.</div>';
+    observePreviews();
     const first = list[0];
     if (first) pick(first.i);
   };
@@ -226,10 +305,19 @@ async function boot() {
   document.getElementById('w-prev').addEventListener('click', () => rail.scrollBy({ left: -step(), behavior: 'smooth' }));
   document.getElementById('w-next').addEventListener('click', () => rail.scrollBy({ left: step(), behavior: 'smooth' }));
   applyFiltro();
-  rail.addEventListener('click', e => {
-    const el = e.target.closest('.wi'); if (!el) return;
+  const activateCard = el => {
     pick(+el.dataset.i);
     el.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+  };
+  rail.addEventListener('click', e => {
+    const el = e.target.closest('.wi'); if (!el) return;
+    activateCard(el);
+  });
+  rail.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target.closest('.wi'); if (!el) return;
+    e.preventDefault();
+    activateCard(el);
   });
   document.getElementById('w-panel').addEventListener('click', e => {
     const cb = e.target.closest('.wp-cfg-g button[data-v]');
@@ -258,7 +346,7 @@ async function boot() {
     dark: RASTER('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'),
     plano: RASTER('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'),
   };
-  const mapBounds = new maplibregl.LngLatBounds();
+  let mapBounds = null;
   const MLAT = 111320;
   const footprints = { type:'FeatureCollection', features: scenes.flatMap(sc => {
     const c = sc.world?.center_wgs84, s = sc.world?.size_m; if (!c || !s) return [];
@@ -298,7 +386,7 @@ async function boot() {
   }
   const missionPopup = sc => {
     const rec = best(sc.clip_id), st = sc.stats || {};
-    const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}${cfgExtra()}`;
+    const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}${cfgExtra(sc)}`;
     return `<div class="fv-pop">
       <div class="fv-pop-poster" style="background-image:url('${esc(sc.assets?.poster||'')}')"></div>
       <b>${esc(sc.name)}</b>
@@ -310,10 +398,18 @@ async function boot() {
       </div>` : '<em>en preparación</em>'}
     </div>`;
   };
-  function showMap() {
+  async function showMap() {
     document.getElementById('fv-mapwrap').hidden = false;
-    document.getElementById('w-cards').style.display = 'none';
+    document.getElementById('w-cards').hidden = true;
     if (map) { map.resize(); return; }
+    try {
+      await loadMapLibre();
+    } catch (error) {
+      document.getElementById('fv-mapwrap').hidden = true;
+      document.getElementById('w-cards').hidden = false;
+      throw error;
+    }
+    mapBounds = new maplibregl.LngLatBounds();
     map = new maplibregl.Map({ container: document.getElementById('fv-map'), style: LAYERS.sat,
       center: [-74.06, 4.75], zoom: 11, attributionControl: false });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
@@ -352,8 +448,14 @@ async function boot() {
   document.querySelector('.fv-viewtoggle').addEventListener('click', e => {
     const b = e.target.closest('[data-fvv]'); if (!b) return;
     document.querySelectorAll('.fv-viewtoggle button').forEach(x => x.classList.toggle('on', x===b));
-    if (b.dataset.fvv === 'map') showMap();
-    else { document.getElementById('fv-mapwrap').hidden = true; document.getElementById('w-cards').style.display = ''; }
+    if (b.dataset.fvv === 'map') {
+      void showMap().catch(error => {
+        main.insertAdjacentHTML('beforeend', `<div class="fv-loading">Mapa: ${esc(error.message)}</div>`);
+      });
+    } else {
+      document.getElementById('fv-mapwrap').hidden = true;
+      document.getElementById('w-cards').hidden = false;
+    }
   });
 }
 boot().catch(e => main.insertAdjacentHTML('beforeend', `<div class="fv-loading">Error: ${esc(e.message)}</div>`));

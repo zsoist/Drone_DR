@@ -106,7 +106,7 @@ def audit() -> tuple[list[str], list[str], dict]:
         current = [s for s in rows if s.get("current")]
         if len(current) > 1:
             failures.append(f"duplicate current splats for {clip}: {[s.get('path') for s in current]}")
-    preset_counts = Counter(s.get("preset") for s in splats)
+    preset_counts = Counter(str(s.get("preset") or "unknown") for s in splats)
     missing_presets = sorted(REQUIRED_PRESETS - set(preset_counts))
     if missing_presets:
         failures.append(f"missing required preset coverage: {missing_presets}")

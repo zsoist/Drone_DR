@@ -599,9 +599,37 @@ _share_module_parse = subprocess.run([
 check("browser gate: módulos ESM del share compilan antes de publicar",
       _share_module_parse.returncode == 0,
       (_share_module_parse.stderr or _share_module_parse.stdout)[-300:])
+_mobile_command_tests = subprocess.run(
+    [
+        "node", "--test",
+        "pipeline/test_mobile_command.mjs",
+        "pipeline/test_camera_rigs.mjs",
+        "pipeline/test_flight_tools.mjs",
+        "pipeline/test_scene_object_collision.mjs",
+        "pipeline/test_weapon_registry.mjs",
+        "pipeline/test_weapon_effects.mjs",
+    ],
+    capture_output=True, text=True)
+check("flightverse mobile tools, camera rigs, collisions and weapon registry: deterministic suites pass",
+      _mobile_command_tests.returncode == 0,
+      (_mobile_command_tests.stderr or _mobile_command_tests.stdout)[-500:])
+_weapon_asset_env = os.environ.copy()
+_weapon_asset_env.pop("PYTHONPATH", None)
+_weapon_asset_tests = subprocess.run(
+    [
+        "/Volumes/SSD/_system/venv/bin/python3",
+        "-m", "unittest", "pipeline.test_weapon_assets", "-v",
+    ],
+    capture_output=True, text=True, env=_weapon_asset_env)
+check("flightverse weapon GLBs: 4K/runtime contracts and deterministic rebuild pass",
+      _weapon_asset_tests.returncode == 0,
+      (_weapon_asset_tests.stderr or _weapon_asset_tests.stdout)[-700:])
 import browser_matrix
-check("browser matrix: cubre mobile, iPad y desktop",
-      set(browser_matrix.VIEWPORTS) == {"mobile", "ipad", "desktop"})
+check("browser matrix: cubre phone/iPad portrait+landscape y desktop",
+      set(browser_matrix.VIEWPORTS) == {
+          "mobile", "ipad", "mobile_portrait", "mobile_landscape",
+          "ipad_portrait", "ipad_landscape", "desktop",
+      })
 _bm_src = Path("pipeline/browser_matrix.py").read_text()
 check("browser matrix: cubre share, workspace y consola de trabajos",
       "def run_share" in _bm_src and "def run_workspace" in _bm_src and "def run_jobs" in _bm_src)
@@ -744,11 +772,12 @@ check("viewer: archived splat links use manifest path",
       and "const splatUrl = s => 'data/splats/' + splatKey(s).split('/')" in _web_lab
       and "data/splats/${encodeURIComponent(s.name)}" not in _web_tresd
       and "'/data/splats/' + s.name" not in _web_lab)
-check("viewer: splat macro mode permite inspección cercana real",
+check("viewer: splat detalle permite acercamiento controlado",
       "radius * 0.00008" in _web_splatview
       and "radius * 0.012" in _web_splatview
-      and "dolly(0.08)" in _web_splatview
-      and "Modo macro" in _web_splatview)
+      and "dolly(0.3)" in _web_splatview
+      and "dolly(0.08)" not in _web_splatview
+      and "Acercamiento de detalle" in _web_splatview)
 check("viewer: etiquetas de splat muestran runtime y loss",
       "fmtRun(s.duration_s)" in _web_tresd
       and "fmtRun(s.duration_s)" in _web_share
@@ -1001,6 +1030,22 @@ check("entity: camino PARTIAL con los datos del test #1 — 0106 0/7 dropped, la
       and _reg["dropped_sources"] == ["C0106"]
       and _wk.merge_label(2, 0, _reg["dropped_sources"]) == "PARTIAL")
 
+# FLIGHTVERSE world publication must use the same active-version dedupe as
+# Mundo and must never advertise a mesh collider from file existence alone.
+import audit_world as _audit_world
+_world_targets = _audit_world._targets({
+    "models": [{"clip_id": "ACTIVE"}, {"clip_id": "OLD"},
+               {"clip_id": "SOLO"}, {"clip_id": "SOLO"}],
+    "scenes": [{"active_version": "ACTIVE",
+                "versions": [{"id": "ACTIVE"}, {"id": "OLD"}]}],
+}, True)
+check("world audit: dedupe activo + standalone coincide con Mundo",
+      _world_targets == ["ACTIVE", "SOLO"])
+_scene_manifest_src = Path("pipeline/scene_manifest.py").read_text()
+check("world manifest: collider y cobertura se validan antes de publicar capability",
+      'collision_bake.validate(cid, vault=VAULT)' in _scene_manifest_src
+      and 'mesh_coverage.validate(cid, vault=VAULT)' in _scene_manifest_src
+      and '"collision": collision_ready' in _scene_manifest_src)
 
 # browser_gate: el import fantasma de threading (11-jul) — el NameError en launch_chrome
 # se ENMASCARABA como OSError del rmtree del TemporaryDirectory (error secundario del

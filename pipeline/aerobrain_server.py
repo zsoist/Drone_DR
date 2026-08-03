@@ -92,6 +92,12 @@ APP_CSP = (
 )
 VIEWER_ACTIVITY = Path("/tmp/aerobrain-viewer-active")
 VIEWER_ACTIVE_S = 45
+SCENE_LIMITS = {
+    "max_sources": 16,
+    "max_duration_s": 1200,
+    "max_distance_m": 500,
+    "max_photos": 80,
+}
 
 # OJO: jobstore.init(orphan_kinds=...) NO va aquí a nivel de módulo. El worker importa este
 # módulo (splat_quality/prune) y un init con LIGHT_KINDS desde el proceso worker MATARÍA los
@@ -250,6 +256,19 @@ def static_cache_policy(f: Path, request_path: str) -> tuple[bool, str]:
     if cacheable:
         return revalidate, "public, max-age=86400"
     return revalidate, "no-store, must-revalidate"
+
+
+def fresh_gzip_sidecar(source: Path) -> Path | None:
+    """Use precompressed bytes only when they represent the current source."""
+    sidecar = Path(str(source) + ".gz")
+    try:
+        source_mtime = source.stat().st_mtime_ns
+        sidecar_stat = sidecar.stat()
+        if sidecar.is_file() and sidecar_stat.st_mtime_ns >= source_mtime:
+            return sidecar
+    except OSError:
+        pass
+    return None
 
 
 def clip_history_files(hist_dir: Path, cid: str) -> list:
@@ -1797,9 +1816,9 @@ def source_evidence(clip_id: str, vault: Path | None = None) -> dict:
 
 
 def scene_source_compatibility(scene: dict, sources: list, *, evidence_fn=source_evidence,
-                               max_distance_m: float = 500.0) -> dict:
+                               max_distance_m: float | None = None) -> dict:
     """Enforce a measured same-place boundary before building a scene version."""
-    limit = max(1.0, float(max_distance_m or 500.0))
+    limit = max(1.0, float(max_distance_m or SCENE_LIMITS["max_distance_m"]))
     measured = {}
     for source in sources:
         try:
@@ -3141,7 +3160,8 @@ class H(BaseHTTPRequestHandler):
         if urllib.parse.urlparse(self.path).path == "/api/scenes":
             if not self.auth():
                 return
-            return self.send_json({"scenes": scenestore.list_scenes()})
+            return self.send_json({"scenes": scenestore.list_scenes(),
+                                   "limits": dict(SCENE_LIMITS)})
         if urllib.parse.urlparse(self.path).path == "/api/scene":
             if not self.auth():
                 return
@@ -3458,8 +3478,8 @@ class H(BaseHTTPRequestHandler):
                     return
         # sidecar .gz pre-comprimido (nube/malla): Content-Encoding gzip transparente.
         # Solo sin Range — gzip + rangos parciales no se mezclan.
-        gz = Path(str(f) + ".gz")
-        if not rng and gz.is_file() and "gzip" in self.headers.get("Accept-Encoding", ""):
+        gz = fresh_gzip_sidecar(f)
+        if not rng and gz and "gzip" in self.headers.get("Accept-Encoding", ""):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Encoding", "gzip")
@@ -3570,7 +3590,7 @@ class H(BaseHTTPRequestHandler):
                              LOGIN_CSP if f.name == "login.html" else APP_CSP)
             self.end_headers()
             return
-        gz = Path(str(f) + ".gz")
+        gz = fresh_gzip_sidecar(f)
         public_asset = self._is_public_resource()
         revalidate, cache_header = static_cache_policy(f, self.path)
         if not public_asset:
@@ -3583,7 +3603,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", cache_header)
         if not public_asset:
             self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
-        if gz.is_file() and "gzip" in self.headers.get("Accept-Encoding", ""):
+        if gz and "gzip" in self.headers.get("Accept-Encoding", ""):
             # espejo exacto de lo que GET va a servir (audit: HEAD mentia el tamano)
             self.send_header("Content-Encoding", "gzip")
             self.send_header("Content-Length", str(gz.stat().st_size))
@@ -4347,8 +4367,10 @@ class H(BaseHTTPRequestHandler):
                     sources.append(cid)
             if not sources:
                 return self.send_json({"error": "elige al menos un video con GPS"}, 400)
-            if len(sources) > 16:
-                return self.send_json({"error": "máximo 16 videos por versión de escena"}, 400)
+            if len(sources) > SCENE_LIMITS["max_sources"]:
+                return self.send_json({
+                    "error": f"máximo {SCENE_LIMITS['max_sources']} videos por versión de escena"
+                }, 400)
             # el camino gemelo (/api/odm) limita por DURACIÓN combinada, que es lo que de
             # verdad cuesta; aquí faltaba, así que 24 clips de 5 min entraban sin freno.
             _tot = 0.0
@@ -4358,8 +4380,9 @@ class H(BaseHTTPRequestHandler):
                                   .get("duration_s") or 0)
                 except (ValueError, OSError):
                     pass
-            if _tot > 1200:
-                return self.send_json({"error": f"máximo 20 min de video por versión de escena "
+            if _tot > SCENE_LIMITS["max_duration_s"]:
+                return self.send_json({"error": f"máximo {SCENE_LIMITS['max_duration_s'] // 60} min "
+                                               f"de video por versión de escena "
                                                f"(llevas {_tot / 60:.0f} min)"}, 400)
             compatibility = scene_source_compatibility(scene, sources)
             if compatibility["rejected"]:
@@ -4369,7 +4392,8 @@ class H(BaseHTTPRequestHandler):
                            if row["reason"] == "coverage_unknown"]
                 parts = []
                 if far:
-                    parts.append(f"{len(far)} fuera del radio de sitio de 500 m")
+                    parts.append(f"{len(far)} fuera del radio de sitio de "
+                                 f"{SCENE_LIMITS['max_distance_m']} m")
                 if unknown:
                     parts.append(f"{len(unknown)} sin cobertura GPS medible")
                 return self.send_json({
@@ -4381,7 +4405,8 @@ class H(BaseHTTPRequestHandler):
             requested_photos = spec.get("photos") if isinstance(spec.get("photos"), list) else [
                 *active.get("photos", []), *(spec.get("new_photos") or [])]
             photos = [Path(str(p)).name for p in requested_photos
-                      if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][:80]
+                      if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][
+                          :SCENE_LIMITS["max_photos"]]
             reconstruction_id = jobstore.recon_id_for(sources, photos)
             if jobstore.pending("3d", reconstruction_id):
                 return self.send_json({"error": "esa versión ya está en cola o procesándose"}, 409)
@@ -4872,7 +4897,7 @@ class H(BaseHTTPRequestHandler):
                 if not isinstance(o, dict):
                     return self.send_json({"error": "objeto no es dict"}, 400)
                 typ = str(o.get("type", ""))
-                if typ not in ("glb", "ring", "beacon", "box"):
+                if typ not in ("glb", "kit", "ring", "beacon", "box"):
                     return self.send_json({"error": f"type inválido: {typ}"}, 400)
                 try:
                     pos = [float(v) for v in o.get("pos", [])]
@@ -4883,14 +4908,25 @@ class H(BaseHTTPRequestHandler):
                         "yaw": float(o.get("yaw", 0)),
                         "scale": max(0.05, min(50.0, float(o.get("scale", 1)))),
                         "ground": bool(o.get("ground", True))}
-                if typ == "glb":
+                if typ in ("glb", "kit"):
                     f = re.sub(r"[^\w.-]", "", str(o.get("file", "")))
                     if not f.endswith(".glb"):
-                        return self.send_json({"error": "glb requiere file *.glb"}, 400)
+                        return self.send_json(
+                            {"error": f"{typ} requiere file *.glb"}, 400
+                        )
                     item["file"] = f
                 for k in ("spin", "bob", "color"):
                     if k in o:
                         item[k] = o[k] if k == "color" else bool(o[k])
+                for k in ("destructible", "collidable"):
+                    if k in o:
+                        item[k] = bool(o[k])
+                if "materialClass" in o:
+                    material_class = re.sub(
+                        r"[^\w-]", "", str(o["materialClass"])
+                    )[:32]
+                    if material_class:
+                        item["materialClass"] = material_class
                 clean.append(item)
             (mdir / "objects.json").write_text(json.dumps({"version": 1, "objects": clean}, ensure_ascii=False))
             return self.send_json({"ok": True, "count": len(clean)})

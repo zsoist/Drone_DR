@@ -832,6 +832,88 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertLess(command.index(marker),
                         command.index('yes | "$VIRTUAL_ENV/bin/ns-train"'))
 
+    def test_absolute_resume_target_guard_prevents_checkpoint_step_overshoot(self):
+        upstream = """def train(self):
+            num_iterations = self.config.max_num_iterations
+            for step in range(self._start_step, self._start_step + num_iterations):
+                self.train_iteration(step)
+"""
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / "trainer.py"
+            source.write_text(upstream)
+            guard = gpu_lane.absolute_resume_target_guard(source)
+
+            first = subprocess.run(["bash", "-s"], input=guard, text=True,
+                                   capture_output=True)
+            second = subprocess.run(["bash", "-s"], input=guard, text=True,
+                                    capture_output=True)
+
+            self.assertEqual(0, first.returncode, first.stderr)
+            self.assertEqual(0, second.returncode, second.stderr)
+            patched = source.read_text()
+            self.assertNotIn("self._start_step + num_iterations", patched)
+            self.assertIn("range(self._start_step, num_iterations)", patched)
+            self.assertIn("absolute resume target", patched)
+            compile(patched, str(source), "exec")
+
+    def test_train_applies_absolute_resume_target_guard_before_checkpoint_load(self):
+        command = gpu_lane.train_script(
+            "frontier-recovery", 40_000, 1, "resume-run",
+            resume_checkpoint=(
+                "/root/gpu-jobs/checkpoints/splat-safe/step-000040000.ckpt"),
+        )
+
+        marker = "AeroBrain: absolute resume target"
+        self.assertIn(marker, command)
+        self.assertLess(command.index(marker),
+                        command.index('yes | "$VIRTUAL_ENV/bin/ns-train"'))
+
+    def test_absolute_resume_target_guard_repairs_malformed_previous_marker(self):
+        malformed = """def train(self):
+            for step in range(self._start_step, num_iterations)  # AeroBrain: absolute resume target:
+                self.train_iteration(step)
+"""
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / "trainer.py"
+            source.write_text(malformed)
+
+            result = subprocess.run(
+                ["bash", "-s"], input=gpu_lane.absolute_resume_target_guard(source),
+                text=True, capture_output=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = source.read_text()
+            self.assertIn("range(self._start_step, num_iterations):", patched)
+            compile(patched, str(source), "exec")
+
+    def test_completed_checkpoint_export_script_never_launches_trainer(self):
+        config = (
+            "/root/gpu-jobs/checkpoints/splat-safe/config.yml")
+        script = gpu_lane.resume_export_script("resume-export", config)
+
+        self.assertIn(
+            'ns-export gaussian-splat --load-config "$CFG"', script)
+        self.assertIn(config, script)
+        self.assertIn(
+            "/mnt/c/Users/reyes/gpu-transfer/out-resume-export.ply", script)
+        self.assertNotIn("ns-train", script)
+
+    def test_completed_checkpoint_export_config_is_confined_to_vault(self):
+        valid = "/root/gpu-jobs/checkpoints/splat-safe/config.yml"
+        self.assertEqual(valid, gpu_lane.validate_resume_config(valid))
+        for invalid in ("/tmp/config.yml", "../../config.yml",
+                        "/root/gpu-jobs/checkpoints/a/../config.yml"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                gpu_lane.validate_resume_config(invalid)
+
+    def test_worker_uses_export_only_path_when_resume_target_is_complete(self):
+        source = inspect.getsource(worker.run_splat_cuda)
+
+        self.assertIn("resume_step >= iters", source)
+        self.assertIn("gpu_lane.finalize_resume_checkpoint", source)
+        self.assertIn('"cuda_checkpoint_export"', source)
+
     def test_worker_applies_and_records_measured_cuda_cache_policy(self):
         source = inspect.getsource(worker.run_splat_cuda)
 

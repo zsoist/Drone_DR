@@ -3,12 +3,13 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=280';
+import * as THREE from '/flightverse/three.js?v=343';
+import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=343';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
 
-export function createLoop({ update, render }) {
+export function createLoop({ update, render, onPause, onResume }) {
   let acc = 0, last = 0, raf = 0, running = false;
   let frames = 0, fpsT = 0, fps = 0;
   const tick = (tms) => {
@@ -21,14 +22,26 @@ export function createLoop({ update, render }) {
     let n = 0;
     while (acc >= STEP && n < MAX_STEPS) { update(STEP); acc -= STEP; n++; }
     if (n === MAX_STEPS) acc = 0;         // descartar deuda: mejor saltar que congelar
-    render(acc / STEP);
+    render(acc / STEP, dt * 1000);
     frames++; fpsT += dt;
     if (fpsT >= 1) { fps = frames / fpsT; frames = 0; fpsT = 0; }
   };
   const onVis = () => { if (document.hidden) pause(); else resume(); };
   function start() { running = true; last = 0; document.addEventListener('visibilitychange', onVis); raf = requestAnimationFrame(tick); }
-  function pause() { running = false; cancelAnimationFrame(raf); }
-  function resume() { if (!running) { running = true; last = 0; raf = requestAnimationFrame(tick); } }
+  function pause() {
+    if (!running) return;
+    running = false;
+    cancelAnimationFrame(raf);
+    onPause?.();
+  }
+  function resume() {
+    if (!running) {
+      running = true;
+      last = 0;
+      onResume?.();
+      raf = requestAnimationFrame(tick);
+    }
+  }
   function stop() { pause(); document.removeEventListener('visibilitychange', onVis); }
   return { start, stop, pause, resume, fps: () => fps };
 }
@@ -37,23 +50,42 @@ export function createLoop({ update, render }) {
 // sample() devuelve ejes normalizados [-1..1] — el modo decide qué significan.
 export function createInput(el) {
   const keys = new Set();
-  let mouseDX = 0, mouseDY = 0, locked = false;
-  const kd = e => { if (!e.repeat) keys.add(e.code); };
+  let mouseDX = 0, mouseDY = 0, locked = false, enabled = true;
+  const kd = e => { if (enabled && !e.repeat) keys.add(e.code); };
   const ku = e => keys.delete(e.code);
-  const mm = e => { if (locked) { mouseDX += e.movementX; mouseDY += e.movementY; } };
+  const mm = e => { if (enabled && locked) { mouseDX += e.movementX; mouseDY += e.movementY; } };
   const lc = () => { locked = document.pointerLockElement === el; };
   let wheelAcc = 0;
-  const wh = e => { wheelAcc += e.deltaY; e.preventDefault(); };
+  const wh = e => { if (enabled) wheelAcc += e.deltaY; e.preventDefault(); };
   addEventListener('keydown', kd); addEventListener('keyup', ku);
   addEventListener('mousemove', mm); document.addEventListener('pointerlockchange', lc);
   el.addEventListener('wheel', wh, { passive: false });
   const ax = (neg, pos) => (keys.has(pos) ? 1 : 0) - (keys.has(neg) ? 1 : 0);
+  const reset = () => {
+    keys.clear();
+    mouseDX = 0;
+    mouseDY = 0;
+    wheelAcc = 0;
+    if (locked) document.exitPointerLock?.();
+  };
   return {
     keys,
-    requestLock: () => el.requestPointerLock?.(),
+    requestLock: () => { if (enabled) el.requestPointerLock?.(); },
     releaseLock: () => document.exitPointerLock?.(),
+    reset,
+    setEnabled(active) {
+      enabled = !!active;
+      if (!enabled) reset();
+    },
+    get enabled() { return enabled; },
     get locked() { return locked; },
     sample() {
+      if (!enabled) {
+        return {
+          fwd: 0, strafe: 0, yaw: 0, lift: 0,
+          boost: false, brake: false, mouseDX: 0, mouseDY: 0,
+        };
+      }
       const s = {
         fwd: ax('KeyS', 'KeyW'), strafe: ax('KeyA', 'KeyD'),
         yaw: ax('KeyE', 'KeyQ'), lift: ax('KeyF', 'KeyR'),
@@ -64,7 +96,10 @@ export function createInput(el) {
       mouseDX = 0; mouseDY = 0;
       return s;
     },
-    takeWheel() { const w = wheelAcc; wheelAcc = 0; return w; },
+    takeWheel() {
+      if (!enabled) return 0;
+      const w = wheelAcc; wheelAcc = 0; return w;
+    },
     dispose() {
       el.removeEventListener('wheel', wh);
       removeEventListener('keydown', kd); removeEventListener('keyup', ku);
@@ -159,10 +194,35 @@ function step6(d, inp, m, dt) {
 }
 
 const MIN_AGL = 1.2;             // el dron nunca “entra” al terreno: piso duro honesto
-const DRONE_R = 1.2;             // radio de colisión contra el proxy de edificios
+const DEFAULT_DRONE_COLLISION_RADIUS = 0.59;
+const MIN_DRONE_COLLISION_RADIUS = 0.42;
+const MAX_DRONE_COLLISION_RADIUS = 0.70;
 const _n = new THREE.Vector3();  // scratch de la respuesta de colisión
+const _start = new THREE.Vector3(), _desired = new THREE.Vector3();
+const _current = new THREE.Vector3(), _remaining = new THREE.Vector3();
+const _next = new THREE.Vector3();
+const _cameraBoom = new THREE.Vector3();
 
-export function createDrone({ heightAt, collide, spawn }) {
+export function resolveCameraCollision(world, focus, desired, clearance = 0.18) {
+  if (!world?.castSegment || !focus?.isVector3 || !desired?.isVector3) return null;
+  const boomLength = _cameraBoom.subVectors(desired, focus).length();
+  if (!Number.isFinite(boomLength) || boomLength <= 1e-7) return null;
+  try {
+    const hit = world.castSegment(focus, desired, 0);
+    if (!hit || !Number.isFinite(hit.fraction)) return null;
+    const margin = Number.isFinite(clearance) ? Math.max(0, clearance) : 0.18;
+    const safeDistance = Math.max(
+      0.05,
+      THREE.MathUtils.clamp(hit.fraction, 0, 1) * boomLength - margin,
+    );
+    desired.copy(focus).addScaledVector(_cameraBoom, safeDistance / boomLength);
+    return hit;
+  } catch {
+    return null;
+  }
+}
+
+export function createDrone({ world, spawn }) {
   const d = {
     pos: new THREE.Vector3(...(spawn?.position_m || [0, 60, 0])),
     vel: new THREE.Vector3(),
@@ -170,19 +230,38 @@ export function createDrone({ heightAt, collide, spawn }) {
     yaw: 0, pitch: 0,
     prev: { pos: new THREE.Vector3(), yaw: 0, pitch: 0 },
     agl: null, crashedSoft: false, distance: 0,
-    _stuck: 0, _noColl: 0, _t: 0,
+    collisionHits: 0, collisionFailures: 0, _t: 0,
+    collisionRadius: DEFAULT_DRONE_COLLISION_RADIUS,
   };
   d.prev.pos.copy(d.pos);
+  const collisionRadii = {
+    structure: d.collisionRadius,
+    terrain: MIN_AGL,
+    boundary: d.collisionRadius,
+  };
+  d.setCollisionRadius = (value) => {
+    const radius = Number(value);
+    if (!Number.isFinite(radius)) return d.collisionRadius;
+    d.collisionRadius = THREE.MathUtils.clamp(
+      radius,
+      MIN_DRONE_COLLISION_RADIUS,
+      MAX_DRONE_COLLISION_RADIUS,
+    );
+    collisionRadii.structure = d.collisionRadius;
+    collisionRadii.boundary = d.collisionRadius;
+    return d.collisionRadius;
+  };
 
   d.step = (dt, inp, modeKey) => {
     const m = MODES[modeKey] || MODES.asistido;
     d.prev.pos.copy(d.pos); d.prev.yaw = d.yaw; d.prev.pitch = d.pitch;
+    _start.copy(d.pos);
     if (m.tour) return;                       // cinemático: la cámara vuela, no el dron
 
     if (m.six) {                               // FPV/Arcade: rígido 6DOF real
       step6(d, inp, m, dt);
-      d.distance += d.vel.length() * dt;
-      applyWorldConstraints(d, m);
+      applyWorldConstraints(d, m, _start);
+      d.distance += _start.distanceTo(d.pos);
       return;
     }
     // sincronizar quat con el heading del modo asistido (cambio de modo suave)
@@ -219,40 +298,99 @@ export function createDrone({ heightAt, collide, spawn }) {
       d.vel.x += wx * 0.5 * dt; d.vel.z += wz * 0.5 * dt;
     }
 
-    d.distance += d.vel.length() * dt;
     d.pos.addScaledVector(d.vel, dt);
-    applyWorldConstraints(d, m);
+    applyWorldConstraints(d, m, _start);
+    d.distance += _start.distanceTo(d.pos);
   };
 
-  function applyWorldConstraints(d, m) {
-    const ground = heightAt(d.pos.x, d.pos.z);
+  function applyWorldConstraints(d, m, safeStart) {
+    const ground = world?.groundHeight?.(d.pos.x, d.pos.z);
     d.agl = ground == null ? null : d.pos.y - ground;
-    if (!m.noclip && ground != null && d.pos.y < ground + MIN_AGL) {
-      d.pos.y = ground + MIN_AGL;             // clamp suave: tocar, no atravesar
-      d.crashedSoft = d.vel.y < -6;
-      if (d.vel.y < 0) d.vel.y = 0;
-      d.vel.x *= 0.7; d.vel.z *= 0.7;         // fricción de “raspar” el suelo
-    } else d.crashedSoft = false;
+    d.crashedSoft = false;
+    if (m.noclip || !world?.sweepSphere) return;
 
-    // colisión v2: DESLIZAR (proyección tangencial), corrección suave, y
-    // escape honesto: si llevas ~0.7s clavado contra 'nada' (floater del
-    // proxy), la colisión se suspende 0.8s para soltarte — determinista.
-    if (!m.noclip && collide && d._noColl <= 0) {
-      const hit = collide(d.pos, DRONE_R + 0.3);
-      if (hit && hit.distance < DRONE_R) {
-        _n.subVectors(d.pos, hit.point);
-        const len = _n.length() || 1e-6;
-        _n.multiplyScalar(1 / len);
-        const pen = DRONE_R - len;
-        d.pos.addScaledVector(_n, pen * 0.5);             // salida SUAVE, no teleport
-        const vn = d.vel.dot(_n);
-        if (vn < 0) d.vel.addScaledVector(_n, -vn);       // slide: mata solo la normal
-        d.crashedSoft = vn < -6;
-        d._stuck = d.vel.length() < 0.7 ? d._stuck + 1 : 0;
-        if (d._stuck > 84) { d._noColl = 0.8; d._stuck = 0; }
-      } else d._stuck = 0;
+    try {
+      _desired.copy(d.pos);
+      _current.copy(safeStart);
+
+      // Deterministic spawn/stale-pose recovery. Terrain hits carry the exact
+      // legal center; mesh hits carry closest distance + outward normal.
+      const recovery = world.recoverSphere?.(_current, collisionRadii);
+      if (recovery?.translation) {
+        _current.add(recovery.translation);
+        _n.copy(recovery.normal).normalize();
+        d.collisionHits += 1;
+      }
+      const embedded = recovery
+        ? null
+        : world.sweepSphere(_current, _current, collisionRadii);
+      if (embedded?.fraction === 0) {
+        _n.copy(embedded.normal).normalize();
+        if (embedded.kind === 'terrain' || embedded.kind === 'boundary') {
+          _current.copy(embedded.point).addScaledVector(_n, 0.003);
+        } else {
+          const penetration = Math.max(
+            0.003,
+            d.collisionRadius - (Number(embedded.distance) || 0) + 0.003,
+          );
+          _current.addScaledVector(_n, penetration);
+        }
+        d.collisionHits += 1;
+      }
+
+      _remaining.subVectors(_desired, safeStart);
+      for (let contact = 0; contact < 2; contact += 1) {
+        if (_remaining.lengthSq() <= 1e-10) break;
+        _next.copy(_current).add(_remaining);
+        const hit = world.sweepSphere(_current, _next, collisionRadii);
+        if (!hit) {
+          _current.copy(_next);
+          _remaining.set(0, 0, 0);
+          break;
+        }
+        _n.copy(hit.normal).normalize();
+        const travel = Math.max(0, hit.fraction - 1e-4);
+        _current.addScaledVector(_remaining, travel).addScaledVector(_n, 0.003);
+        _remaining.multiplyScalar(Math.max(0, 1 - hit.fraction));
+        const remainingNormal = _remaining.dot(_n);
+        if (remainingNormal < 0) {
+          _remaining.addScaledVector(_n, -remainingNormal);
+        }
+        const velocityNormal = d.vel.dot(_n);
+        if (velocityNormal < 0) d.vel.addScaledVector(_n, -velocityNormal);
+        d.crashedSoft ||= velocityNormal < -6;
+        d.collisionHits += 1;
+      }
+
+      if (_remaining.lengthSq() > 1e-10) {
+        _next.copy(_current).add(_remaining);
+        if (!world.sweepSphere(_current, _next, collisionRadii)) {
+          _current.copy(_next);
+        }
+      }
+      if (
+        Number.isFinite(_current.x)
+        && Number.isFinite(_current.y)
+        && Number.isFinite(_current.z)
+      ) {
+        d.pos.copy(_current);
+      } else {
+        d.pos.copy(safeStart);
+        d.vel.set(0, 0, 0);
+        d.collisionFailures += 1;
+      }
+    } catch {
+      d.pos.copy(safeStart);
+      d.vel.set(0, 0, 0);
+      d.collisionFailures += 1;
     }
-    if (d._noColl > 0) d._noColl -= dt;
+    const resolvedGround = world.groundHeight?.(d.pos.x, d.pos.z);
+    d.agl = resolvedGround == null ? null : d.pos.y - resolvedGround;
+    if (d.agl != null && d.agl < MIN_AGL - 0.01) {
+      d.pos.copy(safeStart);
+      d.vel.set(0, 0, 0);
+      d.collisionFailures += 1;
+    }
   }
 
   d.lerpPose = (alpha, outPos) => {
@@ -263,53 +401,6 @@ export function createDrone({ heightAt, collide, spawn }) {
   return d;
 }
 
-// Rigs de cámara — cada rig es una función pura (drone interpolado → cámara).
-// Registro extensible; C cicla. (6 de los 10 del spec; el resto con Director.)
-export const RIGS = [
-  { key: 'muycerca', label: 'Muy cerca', fov: 66,
-    fn: (p, o, cam, dt) => {
-      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(2.3);
-      const want = p.clone().add(back).add(new THREE.Vector3(0, 0.9, 0));
-      cam.position.lerp(want, 1 - Math.exp(-dt * 7));
-      cam.lookAt(p);
-    } },
-  { key: 'cerca', label: 'Cerca', fov: 62,
-    fn: (p, o, cam, dt) => {
-      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(4.6);
-      const want = p.clone().add(back).add(new THREE.Vector3(0, 1.9, 0));
-      cam.position.lerp(want, 1 - Math.exp(-dt * 6));
-      cam.lookAt(p);
-    } },
-  { key: 'lejos', label: 'Lejos', fov: 57,
-    fn: (p, o, cam, dt) => {
-      const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(12);
-      const want = p.clone().add(back).add(new THREE.Vector3(0, 4.6, 0));
-      cam.position.lerp(want, 1 - Math.exp(-dt * 4));
-      cam.lookAt(p);
-    } },
-  { key: 'fpv', label: 'FPV', fov: 78, hideDrone: true,
-    fn: (p, o, cam) => {
-      // cámara EN el gimbal (nariz -Z del cuerpo), mirando al frente del dron
-      cam.position.set(
-        p.x - Math.sin(o.yaw) * 0.28, p.y - 0.02, p.z - Math.cos(o.yaw) * 0.28);
-      cam.rotation.set(o.pitch * 0.7, o.yaw, 0, 'YXZ');
-    } },
-  { key: 'top', label: 'Cenital', fov: 55,
-    fn: (p, o, cam, dt) => {
-      cam.position.lerp(p.clone().add(new THREE.Vector3(0, 55, 0.01)), 1 - Math.exp(-dt * 4));
-      cam.lookAt(p);
-    } },
-  { key: 'orbit', label: 'Órbita', fov: 58, t: 0,
-    fn: (p, o, cam, dt, rig) => {
-      rig.t = (rig.t || 0) + dt * 0.25;
-      cam.position.lerp(p.clone().add(new THREE.Vector3(
-        Math.cos(rig.t) * 12, 5.5, Math.sin(rig.t) * 12)), 1 - Math.exp(-dt * 6));
-      cam.lookAt(p);
-    } },
-  { key: 'lado', label: 'Lateral', fov: 50,
-    fn: (p, o, cam, dt) => {
-      const side = new THREE.Vector3(Math.cos(o.yaw), 0, -Math.sin(o.yaw)).multiplyScalar(10);
-      cam.position.lerp(p.clone().add(side).add(new THREE.Vector3(0, 2.4, 0)), 1 - Math.exp(-dt * 4));
-      cam.lookAt(p);
-    } },
-];
+// Immutable camera metadata. Per-session phase, gimbal ownership and pose math
+// live in camera-rigs.js; exported here only for existing menu labels/contracts.
+export const RIGS = CAMERA_RIGS;

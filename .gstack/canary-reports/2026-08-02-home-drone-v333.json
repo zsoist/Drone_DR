@@ -1,0 +1,41 @@
+{
+  "status": "HEALTHY",
+  "url": "https://vuelos.metislab.work",
+  "candidate": "6c185469ba76987bc8138f0fa3f77a746ae5bfbd",
+  "branch": "codex/scene-ops-stability",
+  "web_build": 333,
+  "web_tree": "c3ea44d75ef525aeb8ce0620efd854c955cc5dae",
+  "alerts": 0,
+  "production": {
+    "desktop": {
+      "viewport": "1024x609",
+      "ready": true,
+      "build333": true,
+      "filter": "none",
+      "canvas_stage_delta_px": 0,
+      "overflow": false
+    },
+    "mobile": {
+      "viewport": "390x844",
+      "ready": true,
+      "build333": true,
+      "filter": "none",
+      "canvas_stage_delta_px": 0,
+      "hero_stage_delta_px": -0.0078125,
+      "overflow": false
+    },
+    "rotor_angles": [3.4336293856408275, -3.4336293856408275, 3.4336293856408275, -3.4336293856408275],
+    "reduced_motion_static": true,
+    "browser_errors": [],
+    "session_revoked": true,
+    "public_login_ms": 485
+  },
+  "local": {
+    "focused_tests": "20/20",
+    "browser_gate": "pass",
+    "smoke": "pass",
+    "vault_audit_failures": 0,
+    "splat_audit_failures": 0,
+    "world_audit": "9/9"
+  }
+}

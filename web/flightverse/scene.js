@@ -3,9 +3,21 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=280';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=280';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=280';
+import * as THREE from '/flightverse/three.js?v=343';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=343';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=343';
+import { applyVisualCoverageMask } from '/flightverse/visual-coverage.js?v=343';
+
+let sceneGenerationId = 0;
+export function createSceneGeneration() {
+  const token = ++sceneGenerationId;
+  let current = true;
+  return {
+    token,
+    isCurrent: () => current,
+    invalidate() { current = false; },
+  };
+}
 
 export async function loadManifest(cid) {
   const id = String(cid || '').replace(/[^\w-]/g, '');
@@ -74,28 +86,66 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
     if (mbuf && mbuf.byteLength === rows * cols) {
       maskTex = new THREE.DataTexture(new Uint8Array(mbuf), cols, rows, THREE.RedFormat, THREE.UnsignedByteType);
       maskTex.flipY = true;                 // fila 0 = norte = v alto del plano
+      maskTex.minFilter = THREE.NearestFilter;
+      maskTex.magFilter = THREE.NearestFilter;
       maskTex.needsUpdate = true;
     }
   }
+  let meshCoverageTex = null;
+  if (man.assets.mesh_coverage) {
+    const cbuf = await fetch(man.assets.mesh_coverage, { cache: 'no-store' })
+      .then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
+    if (cbuf && cbuf.byteLength === rows * cols) {
+      meshCoverageTex = new THREE.DataTexture(
+        new Uint8Array(cbuf), cols, rows, THREE.RedFormat, THREE.UnsignedByteType);
+      meshCoverageTex.flipY = true;
+      meshCoverageTex.minFilter = THREE.NearestFilter;
+      meshCoverageTex.magFilter = THREE.NearestFilter;
+      meshCoverageTex.needsUpdate = true;
+    }
+  }
   const splatMask = { uSplatOn: { value: 0 }, uSplatC: { value: new THREE.Vector2() }, uSplatR: { value: 0 } };
+  const meshMask = {
+    available: !!meshCoverageTex,
+    uMeshOn: { value: 0 },
+    texture: meshCoverageTex,
+    worldSize: new THREE.Vector2(Wm, Hm),
+    texel: new THREE.Vector2(1 / cols, 1 / rows),
+  };
+  const frontier = {
+    uFrontierOn: { value: 1 },
+    uFrontierWidth: { value: 0.055 },
+    uFrontierColor: { value: new THREE.Color(0xcfe2f2) },
+  };
   material.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, splatMask);
+    Object.assign(sh.uniforms, splatMask, frontier, { uMeshOn: meshMask.uMeshOn });
     if (maskTex) sh.uniforms.uValid = { value: maskTex };
+    if (meshCoverageTex) sh.uniforms.uMeshCoverage = { value: meshCoverageTex };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFvW;\nvarying vec2 vFvUv;')
       .replace('#include <uv_vertex>', '#include <uv_vertex>\nvFvUv = uv;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvFvW = (modelMatrix * vec4(transformed,1.)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFvW;\nvarying vec2 vFvUv;\nuniform float uSplatOn;uniform vec2 uSplatC;uniform float uSplatR;'
-        + (maskTex ? '\nuniform sampler2D uValid;' : ''))
+        + '\nuniform float uMeshOn;'
+        + '\nuniform float uFrontierOn;uniform float uFrontierWidth;uniform vec3 uFrontierColor;'
+        + (maskTex ? '\nuniform sampler2D uValid;' : '')
+        + (meshCoverageTex ? '\nuniform sampler2D uMeshCoverage;' : ''))
       .replace('#include <map_fragment>',
         (maskTex ? 'if (texture2D(uValid, vFvUv).r < 0.5) discard;\n' : '')
+        + (meshCoverageTex ? 'if (uMeshOn > .5 && texture2D(uMeshCoverage, vFvUv).r > 0.5) discard;\n' : '')
         + `if (uSplatOn > .5) {
              float dfv = distance(vFvW.xz, uSplatC);
              float ffv = smoothstep(uSplatR * 0.8, uSplatR, dfv);
              float nfv = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
              if (ffv < nfv) discard;
            }\n#include <map_fragment>`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>',
+      `#include <color_fragment>
+       float fvEdge = min(min(vFvUv.x, vFvUv.y), min(1.0 - vFvUv.x, 1.0 - vFvUv.y));
+       fvEdge = smoothstep(0.0, uFrontierWidth, fvEdge);
+       float fvKeep = mix(1.0, fvEdge, uFrontierOn);
+       diffuseColor.rgb = mix(uFrontierColor, diffuseColor.rgb, fvKeep);`);
   };
 
   const mesh = new THREE.Mesh(geo, material);
@@ -134,18 +184,32 @@ export async function loadTerrain(man, { anisotropy = 4 } = {}) {
     return true;
   }
   return {
-    splatMask,
+    splatMask, meshMask, frontier: frontier,
     mesh, hf, crater,
     heightAt: makeHeightSampler(hf, { ...lodMeta, elev_min: lodMeta.elev_min }),
     world: lodMeta,
-    dispose: () => { geo.dispose(); material.map?.dispose(); material.dispose(); },
+    dispose: () => {
+      geo.dispose();
+      material.map?.dispose();
+      maskTex?.dispose();
+      meshCoverageTex?.dispose();
+      material.dispose();
+    },
   };
 }
 
 // La física sigue usando el DSM pequeño y estable; esta capa solo dibuja la
 // malla fotogramétrica del visor. En móvil usa el tier 512px (~45 MB GPU en la
 // escena real), no las 73 páginas 4K originales.
-export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}) {
+export async function attachVisualMesh(
+  man,
+  scene,
+  {
+    renderer,
+    onProgress,
+    coverageMask = null,
+  } = {},
+) {
   const objUrl = man.assets?.mesh_viewer;
   // tier de texturas: móvil → low (3MB); desktop → extra/vtx (13MB, el más
   // nítido de los viewer). Los atlas ORIGINALES (geo, ~90MB) llegan después
@@ -168,6 +232,7 @@ export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}
   const object = await new OBJLoader().setMaterials(materials).setPath(objBase).loadAsync(
     objFile, ev => onProgress?.(ev.total ? ev.loaded / ev.total : null));
   const maxAniso = Math.min(8, renderer?.capabilities?.getMaxAnisotropy?.() || 4);
+  let coverageClipped = false;
   object.traverse(node => {
     if (!node.isMesh) return;
     const src = Array.isArray(node.material) ? node.material : [node.material];
@@ -182,6 +247,11 @@ export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}
         side: THREE.DoubleSide,
       });
       m2.name = mat.name;                     // ancla para upgradeTextures
+      coverageClipped = applyVisualCoverageMask(m2, {
+        texture: coverageMask?.texture,
+        worldSize: coverageMask?.worldSize,
+        texel: coverageMask?.texel,
+      }) || coverageClipped;
       return m2;
     });
     node.material = photo.length === 1 ? photo[0] : photo;
@@ -194,13 +264,11 @@ export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}
   object.position.set(offset[0], offset[2] - man.world.elev_min, -offset[1]);
   object.name = 'fv-photogrammetry-visual';
   scene.add(object);
-  // huella XZ en mundo (la usa el caller para recortar el DSM debajo)
-  const bb = new THREE.Box3().setFromObject(object);
-  const c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
   let upgraded = false;
+  let disposed = false;
   return {
     object,
-    footprint: { x: c.x, z: c.z, r: (sz.x + sz.z) * 0.25 },
+    coverageClipped,
     // sube los mapas al tier dado (p.ej. atlas geo full-res) intercambiando
     // por NOMBRE de material — one-shot, perezoso, sin recrear geometría
     async upgradeTextures(newMtlUrl) {
@@ -225,12 +293,17 @@ export async function attachVisualMesh(man, scene, { renderer, onProgress } = {}
       });
       return true;
     },
-    dispose: () => object.traverse(node => {
-      if (!node.isMesh) return;
-      node.geometry?.dispose();
-      const mats = Array.isArray(node.material) ? node.material : [node.material];
-      mats.forEach(m => { m.map?.dispose(); m.dispose(); });
-    }),
+    dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      scene.remove(object);
+      object.traverse(node => {
+        if (!node.isMesh) return;
+        node.geometry?.dispose();
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        mats.forEach(m => { m.map?.dispose(); m.dispose(); });
+      });
+    },
   };
 }
 
@@ -245,12 +318,15 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=280');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=343');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
+    sp.userData.fvRefs = 0;
     scene.userData.fvSpark = sp;
     scene.add(sp);
   }
+  const spark = scene.userData.fvSpark;
+  spark.userData.fvRefs++;
   const tr = man.transforms?.splat;
   const aligned = tr?.status === 'aligned' && Array.isArray(tr.matrix) && tr.matrix.length === 16;
   const mesh = new SplatMesh({ url: man.assets.splat });   // URL termina en .ksplat → loader KSPLAT
@@ -263,13 +339,22 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
     m.decompose(mesh.position, mesh.quaternion, mesh.scale);
   }
   scene.add(mesh);
+  let disposed = false;
   return {
     object: mesh, aligned,
     rmse: aligned ? tr.rmse_m : null,
     splats: mesh.numSplats ?? null,
     dispose: async () => {
+      if (disposed) return;
+      disposed = true;
       scene.remove(mesh);
       try { mesh.dispose?.(); } catch { /* ya liberado */ }
+      spark.userData.fvRefs = Math.max(0, (spark.userData.fvRefs || 1) - 1);
+      if (!spark.userData.fvRefs && scene.userData.fvSpark === spark) {
+        scene.remove(spark);
+        try { spark.dispose?.(); } catch { /* ya liberado */ }
+        delete scene.userData.fvSpark;
+      }
     },
   };
 }

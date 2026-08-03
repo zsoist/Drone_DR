@@ -1,5 +1,18 @@
 # FLIGHTVERSE — Ledger de implementación
 
+## v284 (2026-07-25) — colisión continua y mundo de representación única
+
+- Collider estructural publicado desde OBJ/GLB con fingerprint, escritura
+  atómica y máscara de cobertura alineada al DSM; los 11 mundos actuales
+  quedaron regenerados y auditados.
+- Dron, MG y misiles S/M/L consultan un único mundo BVH+DSM+borde con sweeps
+  continuos. La espoleta de proximidad exige línea de visión estructural.
+- Terreno, malla y splat obedecen una política exclusiva: la malla sólo recorta
+  el terreno dentro de sus triángulos reales; fuera de ellos queda fallback
+  continuo. Cargas obsoletas se descartan por generación y Spark usa refcount.
+- Gate de lanzamiento: fixture determinista de 10.000 consultas más 100 muestras
+  del mundo vivo, ≥50 FPS, memoria estable, un grupo `fv-world`, cero duplicados.
+
 > **Ledger acumulativo.** Las decisiones tempranas quedan como historial; cuando una entrada
 > contradiga otra, manda la versión más nueva y el contrato actual de [GAME_ENGINE.md](GAME_ENGINE.md).
 

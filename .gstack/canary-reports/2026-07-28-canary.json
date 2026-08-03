@@ -1,0 +1,49 @@
+{
+  "alerts": 0,
+  "branch": "codex/scene-ops-stability",
+  "candidate": "b6e2623122bc78e963bfe346e284ae176f414687",
+  "checks": 12,
+  "duration_min": 18,
+  "login": {
+    "console_errors": 0,
+    "load_time_ms": 392,
+    "status": "HEALTHY"
+  },
+  "production": "https://vuelos.metislab.work",
+  "session_revoked": true,
+  "status": "HEALTHY",
+  "viewports": {
+    "desktop": {
+      "fps": 60,
+      "input": "mouse",
+      "islands": 9,
+      "status": "HEALTHY"
+    },
+    "ipad_landscape": {
+      "fps": 60,
+      "input": "real-touch",
+      "islands": 9,
+      "status": "HEALTHY"
+    },
+    "ipad_portrait": {
+      "fps": 60,
+      "input": "real-touch",
+      "islands": 9,
+      "status": "HEALTHY"
+    },
+    "mobile_landscape": {
+      "fps": 60,
+      "input": "real-touch",
+      "islands": 9,
+      "status": "HEALTHY"
+    },
+    "mobile_portrait": {
+      "fps": 60,
+      "input": "real-touch",
+      "islands": 9,
+      "status": "HEALTHY"
+    }
+  },
+  "web_build": 331,
+  "web_tree": "9eaa368db2a309757d264a3f3f41909830d77bc2"
+}

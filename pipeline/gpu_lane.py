@@ -51,6 +51,10 @@ NERFSTUDIO_SPLATFACTO_MODEL = (
     f"{REMOTE_JOBS}/splat-env/lib/python3.10/site-packages/nerfstudio/"
     "models/splatfacto.py"
 )
+NERFSTUDIO_TRAINER = (
+    f"{REMOTE_JOBS}/splat-env/lib/python3.10/site-packages/nerfstudio/"
+    "engine/trainer.py"
+)
 NTFS_TRANSFER = "C:/Users/reyes/gpu-transfer"    # puente binario-seguro WSL->Mac
 WSL_TRANSFER = "/mnt/c/Users/reyes/gpu-transfer"
 
@@ -350,6 +354,37 @@ PY
 """
 
 
+def absolute_resume_target_guard(source_path: str | Path = NERFSTUDIO_TRAINER) -> str:
+    """Make Nerfstudio's max iteration contract absolute across resumes.
+
+    Upstream treats ``max_num_iterations`` as an additional count after the
+    loaded checkpoint. AeroBrain exposes it as the final quality target, so a
+    22K checkpoint resumed with Grandmaster 40K must stop at 40K, not 62K.
+    """
+    source = shlex.quote(str(source_path))
+    return f"""python - {source} <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = "AeroBrain: absolute resume target"
+old = "range(self._start_step, self._start_step + num_iterations):"
+new = "range(self._start_step, num_iterations):  # " + marker
+malformed = "range(self._start_step, num_iterations)  # " + marker + ":"
+if old in text:
+    text = text.replace(old, new)
+    path.write_text(text)
+elif malformed in text:
+    text = text.replace(malformed, new)
+    path.write_text(text)
+elif new not in text:
+    raise SystemExit("unsupported Nerfstudio trainer resume loop")
+print(marker)
+PY
+"""
+
+
 def validate_resume_checkpoint(path: str | None) -> str | None:
     """Confine trainer resume input to immutable checkpoint evidence on the PC."""
     if path is None:
@@ -358,6 +393,15 @@ def validate_resume_checkpoint(path: str | None) -> str | None:
     pattern = rf"{re.escape(REMOTE_CHECKPOINTS)}/[A-Za-z0-9._-]+/step-\d{{9}}\.ckpt"
     if not re.fullmatch(pattern, value):
         raise ValueError(f"checkpoint CUDA fuera del vault permitido: {value}")
+    return value
+
+
+def validate_resume_config(path: str | None) -> str:
+    """Confine export-only recovery configs to the immutable checkpoint vault."""
+    value = str(path or "")
+    pattern = rf"{re.escape(REMOTE_CHECKPOINTS)}/[A-Za-z0-9._-]+/config\.yml"
+    if not re.fullmatch(pattern, value):
+        raise ValueError(f"config CUDA de recuperación fuera del vault permitido: {value}")
     return value
 
 
@@ -418,6 +462,7 @@ source splat-env/bin/activate
 test -x "$VIRTUAL_ENV/bin/ns-train"
 {pageable_cpu_cache_guard()}
 {stable_splat_resume_guard()}
+{absolute_resume_target_guard()}
 rm -rf {REMOTE_RUNS}/{name}
 rm -f {telemetry}
 (
@@ -527,6 +572,35 @@ echo "BYTES=$(stat -c%s {REMOTE_RUNS}/{name}/export/splat.ply) PEAK_MIB=$PEAK SA
     return {"run_id": run_id, "ply_bytes": int(parts["BYTES"]),
             "remote_peak_vram_mib": int(float(parts["PEAK_MIB"])),
             "telemetry_samples": int(parts["SAMPLES"])}
+
+
+def resume_export_script(name: str, resume_config: str) -> str:
+    """Build a bounded export-only script for a checkpoint already at target."""
+    name = _safe_name(name)
+    config = validate_resume_config(resume_config)
+    return f"""
+CFG={config}
+test -f "$CFG"
+rm -rf {REMOTE_RUNS}/{name}/export
+ns-export gaussian-splat --load-config "$CFG" \
+  --output-dir {REMOTE_RUNS}/{name}/export >/dev/null 2>&1
+mkdir -p {WSL_TRANSFER}
+cp {REMOTE_RUNS}/{name}/export/splat.ply {WSL_TRANSFER}/out-{name}.ply
+cp "$CFG" {WSL_TRANSFER}/out-{name}.yml
+echo "BYTES=$(stat -c%s {REMOTE_RUNS}/{name}/export/splat.ply)"
+"""
+
+
+def finalize_resume_checkpoint(name: str, resume_config: str) -> dict:
+    """Export a completed checkpoint without entering Nerfstudio's train loop."""
+    name = _safe_name(name)
+    out = _wsl(REMOTE_PRELUDE + resume_export_script(name, resume_config),
+               timeout=1200, label="export checkpoint CUDA")
+    last = [line for line in out.splitlines() if line.startswith("BYTES=")][-1]
+    parts = dict(token.split("=", 1) for token in last.split())
+    return {"run_id": "checkpoint-export", "ply_bytes": int(parts["BYTES"]),
+            "remote_peak_vram_mib": 0, "telemetry_samples": 0,
+            "checkpoint_export_only": True}
 
 
 def train(name: str, iters: int, downscale: int, timeout_s: int) -> dict:

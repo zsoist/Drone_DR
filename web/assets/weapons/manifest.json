@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "seed": 20260727,
+  "coordinateSystem": "+Y up, -Z forward",
+  "weapons": {
+    "ac": {
+      "stem": "ac30_cannon",
+      "label": "AC-30",
+      "runtime": "runtime/ac30_cannon.glb",
+      "ultra": "ultra/ac30_cannon.glb",
+      "preview": "previews/ac30_cannon.png",
+      "validation": "validation/ac30_cannon.json"
+    },
+    "sw": {
+      "stem": "swarm8_pod",
+      "label": "SWARM-8",
+      "runtime": "runtime/swarm8_pod.glb",
+      "ultra": "ultra/swarm8_pod.glb",
+      "preview": "previews/swarm8_pod.png",
+      "validation": "validation/swarm8_pod.json"
+    },
+    "vx": {
+      "stem": "viperx_missile",
+      "label": "VIPER-X",
+      "runtime": "runtime/viperx_missile.glb",
+      "ultra": "ultra/viperx_missile.glb",
+      "preview": "previews/viperx_missile.png",
+      "validation": "validation/viperx_missile.json"
+    },
+    "rg": {
+      "stem": "railgun_pod",
+      "label": "RAIL",
+      "runtime": "runtime/railgun_pod.glb",
+      "ultra": "ultra/railgun_pod.glb",
+      "preview": "previews/railgun_pod.png",
+      "validation": "validation/railgun_pod.json"
+    },
+    "tb": {
+      "stem": "nova_bomb",
+      "label": "NOVA",
+      "runtime": "runtime/nova_bomb.glb",
+      "ultra": "ultra/nova_bomb.glb",
+      "preview": "previews/nova_bomb.png",
+      "validation": "validation/nova_bomb.json"
+    }
+  },
+  "contactSheet": "previews/contact-sheet.png"
+}

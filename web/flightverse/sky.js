@@ -3,7 +3,7 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=280';
+import * as THREE from '/flightverse/three.js?v=343';
 
 const PRESETS = {
   dia: {
@@ -30,7 +30,7 @@ const PRESETS = {
   },
 };
 
-function cloudTexture() {
+function cloudTexture(radial = false) {
   // fbm de value-noise TILEABLE (lattice con wrap): cielos rotos con bordes de
   // cúmulo real, sin la repetición obvia de las manchas gaussianas
   const N = 256;
@@ -55,7 +55,12 @@ function cloudTexture() {
     const u = x / N, v = y / N;
     const n = vn(u, v, 4, 1) * 0.5 + vn(u, v, 8, 2) * 0.25
             + vn(u, v, 16, 3) * 0.15 + vn(u, v, 32, 4) * 0.10;
-    const a = Math.pow(Math.max(0, (n - 0.47) / 0.53), 1.3);
+    let a = Math.pow(Math.max(0, (n - 0.47) / 0.53), 1.3);
+    if (radial) {
+      const dx = u * 2 - 1, dy = v * 2 - 1;
+      const feather = Math.max(0, Math.min(1, (1 - Math.hypot(dx, dy)) * 4));
+      a *= feather * feather * (3 - 2 * feather);
+    }
     const i = (y * N + x) * 4;
     img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
     img.data[i + 3] = Math.min(255, a * 700);
@@ -216,11 +221,12 @@ export function createSky(scene, { radius = 2600 } = {}) {
   flare.renderOrder = -8;
   scene.add(flare);
   // CÚMULOS billboard: 6 nubes gordas de sprites que derivan con parallax
+  const puffTex = cloudTexture(true);
   const puffs = [];
   for (let i = 0; i < 6; i++) {
     const g = new THREE.Group();
     for (let j = 0; j < 5; j++) {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true,
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, transparent: true,
         opacity: 0.42 + 0.18 * Math.abs(Math.sin(i * 5 + j * 1.7)), depthWrite: false }));
       const py = Math.max(-3, Math.sin(j * 2.1) * 8);        // base plana: cúmulo real
       sp.position.set((j - 2) * 26 + Math.sin(i * 3 + j) * 9, py, Math.cos(i + j) * 12);

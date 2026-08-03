@@ -1,0 +1,67 @@
+{
+  "weapon": "viperx_missile",
+  "key": "vx",
+  "seed": 20260727,
+  "nodes": [
+    "collision_proxy",
+    "mount",
+    "muzzle",
+    "projectile"
+  ],
+  "tiers": {
+    "ultra": {
+      "path": "ultra/viperx_missile.glb",
+      "sha256": "410bfafcc61ad617b779b532d8e88578f8121b0f130f9f1b5aa2bc3eda57d088",
+      "bytes": 5363948,
+      "triangles": 620,
+      "texture_dimensions": [
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          4096
+        ]
+      ],
+      "bounds": [
+        0.66,
+        0.69,
+        2.798
+      ]
+    },
+    "runtime": {
+      "path": "runtime/viperx_missile.glb",
+      "sha256": "304e25ab372a2a2bbb756a041a0a7996b8596ddeb37d870577bf65c5353cb4ca",
+      "bytes": 857684,
+      "triangles": 620,
+      "texture_dimensions": [
+        [
+          1024,
+          1024
+        ],
+        [
+          1024,
+          1024
+        ],
+        [
+          1024,
+          1024
+        ]
+      ],
+      "bounds": [
+        0.66,
+        0.69,
+        2.798
+      ]
+    }
+  },
+  "preview": {
+    "path": "previews/viperx_missile.png",
+    "sha256": "ac16243624559dc3685655ce97ef227d90f323638888a07c19a3d5f49c77e14f"
+  }
+}
