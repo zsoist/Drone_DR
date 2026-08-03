@@ -4,7 +4,12 @@ const root = document.getElementById('scene-improve-root');
 const shellMain = renderShell('tresd.html');
 shellMain.append(root);
 
-const { buildImprovementPlan, classifyCapture, validateSelection } = SceneImprovePolicy;
+const {
+  buildImprovementPlan,
+  classifyCapture,
+  resolveActiveModel,
+  validateSelection,
+} = SceneImprovePolicy;
 const modelId = new URLSearchParams(location.search).get('id') || '';
 const state = {
   model: null,
@@ -294,13 +299,16 @@ async function load() {
       getFlights(),
       authFetch('/api/scenes').then(response => response.json()),
     ]);
-    state.model = (systemResponse.models || []).find(model => model.clip_id === modelId);
-    if (!state.model) return renderFailure('Este modelo no existe o ya no está disponible.');
+    const models = systemResponse.models || [];
+    const requestedModel = models.find(model => model.clip_id === modelId);
+    if (!requestedModel) return renderFailure('Este modelo no existe o ya no está disponible.');
+    state.model = requestedModel;
     state.flights = flights;
     state.scenes = scenesResponse.scenes || [];
     state.limits = scenesResponse.limits || state.limits;
-    state.scene = findScene(state.model);
+    state.scene = findScene(requestedModel);
     const version = activeVersion(state.scene);
+    state.model = resolveActiveModel(models, requestedModel, state.scene);
     const baseIds = version?.sources?.length ? version.sources : [state.model.clip_id];
     state.baseSources = baseIds.map(id => {
       const flight = flights.find(item => item.clip_id === id) || {};
@@ -309,7 +317,8 @@ async function load() {
         captureAt: flight.date ? `${flight.date}T${flight.time || '00:00:00'}` : '',
         classification: { role: 'Fuente actual', weak: false, reasons: ['Incluida en la versión activa.'] } };
     });
-    const baseFlight = flights.find(flight => flight.clip_id === state.model.clip_id);
+    const baseFlight = flights.find(flight => flight.clip_id === baseIds[0])
+      || flights.find(flight => flight.clip_id === requestedModel.clip_id);
     const center = modelCenter(state.model, baseFlight);
     const baseSet = new Set(baseIds);
     const nearby = flights.map(flight => {

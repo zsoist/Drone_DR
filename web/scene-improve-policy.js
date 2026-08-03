@@ -109,6 +109,12 @@
     return { valid: errors.length === 0, errors, totals, limits: safeLimits };
   }
 
+  function resolveActiveModel(models, requestedModel, scene) {
+    const activeId = scene?.active_version;
+    if (!activeId || !Array.isArray(models)) return requestedModel || null;
+    return models.find(model => model?.clip_id === activeId) || requestedModel || null;
+  }
+
   function buildImprovementPlan({ baseSources = [], candidates = [], limits } = {}) {
     const safeLimits = normalizeLimits(limits);
     const locked = baseSources
@@ -163,6 +169,7 @@
     ROLE_ORDER,
     buildImprovementPlan,
     classifyCapture,
+    resolveActiveModel,
     selectionTotals,
     validateSelection,
   };

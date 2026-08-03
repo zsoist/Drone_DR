@@ -10,6 +10,25 @@ import worker
 
 
 class TresdInitializationTests(unittest.TestCase):
+    def test_scene_improvement_card_resolves_the_active_reconstruction_model(self):
+        root = Path(__file__).resolve().parent.parent
+        script = """
+const policy = require('./web/scene-improve-policy.js');
+const requested = {clip_id: 'DJI_BASE', qa: {cameras_reconstructed: 221}};
+const active = {clip_id: 'recon_full', qa: {cameras_reconstructed: 428}};
+const scene = {active_version: 'recon_full', versions: [
+  {id: 'recon_full', sources: ['DJI_BASE', 'DJI_NEW']},
+]};
+console.log(JSON.stringify(policy.resolveActiveModel([requested, active], requested, scene)));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=root, text=True,
+            capture_output=True, check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(428, json.loads(result.stdout)["qa"]["cameras_reconstructed"])
+
     def test_scene_improvement_workspace_is_dedicated_semantic_and_budget_visible(self):
         root = Path(__file__).resolve().parent.parent
         html = (root / "web" / "scene-improve.html").read_text()
