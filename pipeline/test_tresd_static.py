@@ -152,6 +152,48 @@ console.log(JSON.stringify(policy.resolveActiveModel([requested, active], reques
         self.assertIn("export_viewer_sog", (root / "pipeline" / "worker.py").read_text())
         self.assertTrue(worker.SPLAT_TRANSFORM.is_file())
 
+    def test_project_uses_one_semantic_viewer_for_cloud_mesh_and_gaussian(self):
+        root = Path(__file__).resolve().parent.parent
+        source = (root / "web" / "tresd.js").read_text()
+
+        self.assertIn("unified-viewer-state.js", source)
+        self.assertEqual(1, source.count('id="scene-viewer-box"'))
+        self.assertIn('id="scene-viewer-tabs"', source)
+        self.assertIn('role="tablist"', source)
+        self.assertIn('data-viewer-mode="cloud"', source)
+        self.assertIn('data-viewer-mode="mesh"', source)
+        self.assertIn('data-viewer-mode="splat"', source)
+        self.assertIn('id="viewer-load"', source)
+        self.assertIn('data-no-collapse', source)
+        self.assertNotIn('id="cloud-box"', source)
+        self.assertNotIn('id="mesh-box"', source)
+        self.assertNotIn('id="splat-box"', source)
+        shell = (root / "web" / "shell.js").read_text()
+        self.assertIn("ph.dataset.noCollapse", shell)
+
+    def test_unified_viewer_has_responsive_and_accessible_visual_contract(self):
+        css = (Path(__file__).resolve().parent.parent / "web" / "style.css").read_text()
+
+        self.assertIn(".scene-viewer-box", css)
+        self.assertIn("height: 64dvh", css)
+        self.assertIn("min-height: 520px", css)
+        self.assertIn(".scene-viewer-tabs button[aria-selected=\"true\"]", css)
+        self.assertIn(".scene-viewer-tabs button:focus-visible", css)
+        self.assertIn("overflow-x: auto", css)
+        self.assertIn("min-height: 420px", css)
+
+    def test_gaussian_uses_the_same_navigation_rail_and_gentle_zoom(self):
+        source = (Path(__file__).resolve().parent.parent / "web" / "splatview.js").read_text()
+        tresd = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
+
+        self.assertIn("viewer-tools sv-nav", source)
+        self.assertIn("dolly(0.72)", source)
+        self.assertIn("dolly(1.38)", source)
+        self.assertNotIn("dolly(0.08)", source)
+        self.assertNotIn("dolly(0.25)", source)
+        self.assertIn("dolly(0.72)", tresd)
+        self.assertIn("dolly(1.38)", tresd)
+
 
 if __name__ == "__main__":
     unittest.main()

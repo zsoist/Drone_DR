@@ -772,11 +772,12 @@ check("viewer: archived splat links use manifest path",
       and "const splatUrl = s => 'data/splats/' + splatKey(s).split('/')" in _web_lab
       and "data/splats/${encodeURIComponent(s.name)}" not in _web_tresd
       and "'/data/splats/' + s.name" not in _web_lab)
-check("viewer: splat macro mode permite inspección cercana real",
+check("viewer: splat detalle permite acercamiento controlado",
       "radius * 0.00008" in _web_splatview
       and "radius * 0.012" in _web_splatview
-      and "dolly(0.08)" in _web_splatview
-      and "Modo macro" in _web_splatview)
+      and "dolly(0.3)" in _web_splatview
+      and "dolly(0.08)" not in _web_splatview
+      and "Acercamiento de detalle" in _web_splatview)
 check("viewer: etiquetas de splat muestran runtime y loss",
       "fmtRun(s.duration_s)" in _web_tresd
       and "fmtRun(s.duration_s)" in _web_share

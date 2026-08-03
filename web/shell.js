@@ -732,7 +732,7 @@ function haversine(a, b) {
 // paneles colapsables: click en el titulo (no en sus botones) pliega el cuerpo
 document.addEventListener('click', e => {
   const ph = e.target.closest('.panel > .ph');
-  if (!ph || e.target.closest('button, a, input, select, label, .seg, .chip')) return;
+  if (!ph || ph.dataset.noCollapse || e.target.closest('button, a, input, select, label, .seg, .chip')) return;
   const panel = ph.parentElement;
   const collapsed = panel.classList.contains('clpsd');
   const from = panel.offsetHeight;

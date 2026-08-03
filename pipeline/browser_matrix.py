@@ -365,7 +365,9 @@ def run_workspace(cdp, base_url: str, cid: str, viewport: str, expected_path: st
     wait_for(cdp, "document.body && /Proyectos 3D/i.test(document.body.innerText)", timeout=45, label="3D workspace")
     cdp.eval(f"localStorage.setItem('ab.proj3d', {json.dumps(cid)}); location.reload();")
     wait_for(cdp, js("""
-      return !!(document.querySelector('#proj-view') && document.querySelector('#load-splat'));
+      return !!(document.querySelector('#proj-view')
+        && document.querySelector('#scene-viewer-box')
+        && document.querySelector('[data-viewer-mode="splat"]'));
     """), timeout=45, label="selected project")
     meta = cdp.eval(js("""
       const sel = document.querySelector('#sp-select');
@@ -379,19 +381,21 @@ def run_workspace(cdp, base_url: str, cid: str, viewport: str, expected_path: st
     if meta.get("value") and meta["value"] != expected_path:
         raise RuntimeError(f"workspace default splat incorrecto: {meta['value']} != {expected_path}")
     clicked = cdp.eval(js("""
-      const b = document.querySelector('#load-splat');
-      if (!b || getComputedStyle(b).display === 'none') return false;
-      b.click();
+      const tab = document.querySelector('[data-viewer-mode="splat"]');
+      if (!tab || tab.disabled) return false;
+      tab.click();
+      const root = document.querySelector('#scene-viewer-box');
+      if (!root.querySelector('canvas')) document.querySelector('#viewer-load')?.click();
       return true;
     """))
     if not clicked:
-        raise RuntimeError("3D workspace no expuso botón Cargar splat")
+        raise RuntimeError("3D workspace no expuso la pestaña Gaussian")
     wait_for(cdp, js("""
-      const root = document.querySelector('#splat-box');
+      const root = document.querySelector('#scene-viewer-box');
       return !!(root && root.querySelector('canvas') && root._viewer);
     """), timeout=75, label="workspace splat canvas")
-    state = common_surface_checks(cdp, "#splat-box")
-    macro = verify_macro_zoom(cdp, "#splat-box")
+    state = common_surface_checks(cdp, "#scene-viewer-box")
+    macro = verify_macro_zoom(cdp, "#scene-viewer-box")
     screenshot(cdp, QA_DIR / f"{cid}-workspace-{viewport}.png")
     return {"surface": "workspace", "viewport": viewport, "state": state, "macro": macro, "selected": meta}
 

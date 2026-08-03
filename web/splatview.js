@@ -4,8 +4,8 @@
 // La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
 // auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
 // contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
-import * as THREE from '/vendor/three180.module.js?v=339';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=339';
+import * as THREE from '/vendor/three180.module.js?v=343';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=343';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -25,7 +25,7 @@ const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
 
 export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, unitsMeters = null } = {}) {
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=339');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=343');
   host.style.position = 'relative';
   const holder = document.createElement('div');
   holder.style.cssText = 'position:absolute;inset:0;touch-action:none';
@@ -264,21 +264,26 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   };
   host.addEventListener('pointerup', onPtrUp, true);
 
-  // ---- HUD premium (sin slider de tamaño: era un uniform de GS3D) ----
-  const hud = document.createElement('div');
-  hud.className = 'sv-hud';
-  hud.innerHTML =
+  // Navegación común arriba a la derecha, igual que nube y malla. Las herramientas
+  // específicas del Gaussian quedan abajo y ya no mezclan cámara, captura y medición.
+  const nav = document.createElement('div');
+  nav.className = 'viewer-tools sv-nav';
+  nav.innerHTML =
     btn('home', 'Reiniciar vista (R)', I.home) +
-    btn('inspect', 'Modo macro', I.target) +
     btn('zin', 'Acercar', I.plus) +
     btn('zout', 'Alejar', I.minus) +
     btn('rot', 'Auto-rotar', I.rot) +
+    btn('full', 'Pantalla completa (F)', I.full);
+  host.appendChild(nav);
+  const hud = document.createElement('div');
+  hud.className = 'sv-hud';
+  hud.innerHTML =
+    btn('inspect', 'Acercamiento de detalle', I.target) +
     btn('measure', 'Medir distancia — 2 clics sobre el suelo (≈ metros); el 3º inicia otra medición', I.rule) +
     `<span class="sv-sep"></span>` +
     `<label class="sv-slider" title="Campo de visión">${svg(I.fov)}<input type="range" data-sv="fov" min="30" max="80" value="${Math.round(cam.fov)}"></label>` +
     `<span class="sv-sep"></span>` +
-    btn('shot', 'Captura PNG', I.cam) +
-    btn('full', 'Pantalla completa (F)', I.full);
+    btn('shot', 'Captura PNG', I.cam);
   host.appendChild(hud);
   const tip = document.createElement('div');
   tip.className = 'sv-tip';
@@ -291,7 +296,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
 
   function svg(p) { return `<svg viewBox="0 0 24 24">${p}</svg>`; }
 
-  hud.addEventListener('click', e => {
+  const handleViewerAction = e => {
     const b = e.target.closest('[data-sv]'); if (!b) return;
     const k = b.dataset.sv;
     if (k === 'home') {
@@ -300,15 +305,17 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
       cam.fov = homeState.fov; cam.updateProjectionMatrix();
       const fovIn = hud.querySelector('[data-sv="fov"]'); if (fovIn) fovIn.value = Math.round(homeState.fov);
     }
-    else if (k === 'inspect') { ctrl.minDistance = inspectMin; dolly(0.08); b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 700); }
-    else if (k === 'zin') { ctrl.minDistance = inspectMin; dolly(0.25); }
-    else if (k === 'zout') dolly(1.55);
+    else if (k === 'inspect') { ctrl.minDistance = inspectMin; dolly(0.3); b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 700); }
+    else if (k === 'zin') { ctrl.minDistance = inspectMin; dolly(0.72); }
+    else if (k === 'zout') dolly(1.38);
     else if (k === 'rot') { ctrl.autoRotate = !ctrl.autoRotate; ctrl.autoRotateSpeed = 0.9; b.classList.toggle('on', ctrl.autoRotate); }
     else if (k === 'measure') { measuring = !measuring; b.classList.toggle('on', measuring); if (!measuring) clearMeasure(); }
     else if (k === 'shot') screenshot();
     else if (k === 'full') toggleFull();
     wake();
-  });
+  };
+  nav.addEventListener('click', handleViewerAction);
+  hud.addEventListener('click', handleViewerAction);
   hud.addEventListener('input', e => {
     if (e.target.dataset.sv === 'fov') { cam.fov = +e.target.value; cam.updateProjectionMatrix(); wake(); }
   });
@@ -344,10 +351,10 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
     if (!holder.isConnected) return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-    if (e.key === 'r' || e.key === 'R') hud.querySelector('[data-sv="home"]').click();
+    if (e.key === 'r' || e.key === 'R') nav.querySelector('[data-sv="home"]').click();
     else if (e.key === 'f' || e.key === 'F') toggleFull();
-    else if (e.key === '+' || e.key === '=') dolly(0.25);
-    else if (e.key === '-' || e.key === '_') dolly(1.55);
+    else if (e.key === '+' || e.key === '=') dolly(0.72);
+    else if (e.key === '-' || e.key === '_') dolly(1.38);
     else if (e.key === 'Escape' && host.classList.contains('sv-fullscreen')) toggleFull();
   }
 
@@ -361,7 +368,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
     host.classList.remove('sv-fullscreen');
     document.documentElement.classList.remove('sv-noscroll');
     if (history.state && history.state.svFull) { try { history.back(); } catch {} }
-    hud.remove(); tip.remove();
+    nav.remove(); hud.remove(); tip.remove();
     teardownCore();
   }
   // interfaz compatible con los callers y browser_matrix: camera/controls/dispose
