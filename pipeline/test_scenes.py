@@ -266,6 +266,32 @@ class SceneStoreTests(unittest.TestCase):
         self.assertEqual("medium", metrics["splat"]["effective_preset"])
         self.assertTrue(metrics["splat"]["fallback"])
 
+    def test_republished_model_preserves_existing_splat_history(self):
+        previous = {
+            "reconstruction": {
+                "id": "recon_scene",
+                "splat_runs": [{"job_id": "splat-finished", "target_iters": 40000}],
+            },
+        }
+        republished = {
+            "reconstruction": {
+                "id": "recon_scene",
+                "job_id": "3d-rebuilt",
+                "splat_runs": [],
+            },
+        }
+
+        worker.preserve_splat_history(republished, previous)
+
+        self.assertEqual(
+            [{"job_id": "splat-finished", "target_iters": 40000}],
+            republished["reconstruction"]["splat_runs"],
+        )
+        self.assertIsNot(
+            previous["reconstruction"]["splat_runs"],
+            republished["reconstruction"]["splat_runs"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -194,6 +194,19 @@ def aim_fire_control_at_ground(cdp) -> bool:
     })()"""))
 
 
+def prepare_ground_arsenal(cdp, timeout: int) -> bool:
+    """Wait for a fresh FPV navigation and restore its deterministic aim.
+
+    Navigation resets the gimbal to the normal shallow FPV angle.  The arsenal
+    gate requires an actual surface impact from every weapon, so its dedicated
+    page load must reapply the ground aim just like the stress phase does.
+    """
+    return bool(
+        _wait_for_world_ready(cdp, timeout)
+        and aim_fire_control_at_ground(cdp)
+    )
+
+
 def _wait_for_world_ready(cdp, timeout: int) -> dict | None:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -497,7 +510,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
                     })
 
         cdp.send("Page.navigate", {"url": fpv_url})
-        ready = _wait_for_world_ready(cdp, timeout)
+        ready = prepare_ground_arsenal(cdp, timeout)
         fpv_camera = None
         arsenal = []
         if ready:

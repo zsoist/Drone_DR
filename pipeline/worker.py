@@ -465,6 +465,33 @@ def splat_run_record(jid: str, quality: dict) -> dict:
     }
 
 
+def preserve_splat_history(meta: dict, previous_meta: dict | None) -> dict:
+    """Carry bounded Gaussian provenance across a destructive ODM republish.
+
+    ``tresd_publish.py`` replaces the model metadata before the worker enriches
+    it.  Reading ``meta`` after that replacement cannot recover prior splat
+    runs, so callers must snapshot the previous document first and merge it
+    back here.
+    """
+    reconstruction = meta.setdefault("reconstruction", {})
+    previous_runs = ((previous_meta or {}).get("reconstruction") or {}).get("splat_runs") or []
+    current_runs = reconstruction.get("splat_runs") or []
+    combined = []
+    positions = {}
+    for row in [*previous_runs, *current_runs]:
+        if not isinstance(row, dict):
+            continue
+        copied = dict(row)
+        identity = copied.get("job_id") or json.dumps(copied, sort_keys=True, default=str)
+        if identity in positions:
+            combined[positions[identity]] = copied
+        else:
+            positions[identity] = len(combined)
+            combined.append(copied)
+    reconstruction["splat_runs"] = combined[-10:]
+    return meta
+
+
 def splat_attempt_plan(spec: dict | None) -> list[dict]:
     """Build a bounded, truthful OpenSplat fallback ladder.
 
@@ -1406,6 +1433,13 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
     requested_preset = preset_name
     proj = VAULT / "odm" / f"proj_{cid}"
     container = f"odm-{j['id']}"
+    mf = VAULT / "models" / cid / "meta.json"
+    previous_meta = {}
+    try:
+        if mf.exists():
+            previous_meta = json.loads(mf.read_text())
+    except (OSError, ValueError):
+        previous_meta = {}
     jobstore.update(j["id"], container=container)
 
     frame_profile = ODM_FRAME_PROFILE.get(preset_name, "balanced")
@@ -1543,7 +1577,6 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         raise RuntimeError("publicación falló")
 
     # graba preset + título elegidos en el asistente (la UI los muestra en tarjeta/reporte)
-    mf = VAULT / "models" / cid / "meta.json"
     if mf.exists():
         m = json.loads(mf.read_text())
         m["preset"] = preset_name                 # el REAL usado (puede ser el fallback)
@@ -1583,8 +1616,9 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
             "photos": list(photos or []),
             "merge_label": merge_label(len(src_list), len(photos or []), reg["dropped_sources"]),
             **quality_provenance,
-            "splat_runs": m.get("reconstruction", {}).get("splat_runs", []),
+            "splat_runs": [],
         }
+        preserve_splat_history(m, previous_meta)
         _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
     rebuild_index()
     browser_gate(j["id"], "model", cid)

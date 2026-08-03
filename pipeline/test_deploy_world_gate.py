@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -22,6 +23,27 @@ class DeployWorldGateTests(unittest.TestCase):
         "softAlpha": True,
         "shockwaveViewportCap": 0.35,
     }
+
+    def test_arsenal_run_reapplies_ground_aim_after_navigation(self):
+        cdp = object()
+        with (
+            mock.patch.object(
+                flightverse_collision_gate,
+                "_wait_for_world_ready",
+                return_value={"done": True},
+            ) as wait_ready,
+            mock.patch.object(
+                flightverse_collision_gate,
+                "aim_fire_control_at_ground",
+                return_value=True,
+            ) as aim_ground,
+        ):
+            self.assertTrue(
+                flightverse_collision_gate.prepare_ground_arsenal(cdp, 120)
+            )
+
+        wait_ready.assert_called_once_with(cdp, 120)
+        aim_ground.assert_called_once_with(cdp)
 
     def _run_web_restart(
         self,
