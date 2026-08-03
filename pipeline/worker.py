@@ -1668,7 +1668,8 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
                    iters: int, downscale: int = 1, *, train_args: list | None = None,
                    reuse_dataset: bool = False, timeout_s: int = 4 * 3600,
                    resume_checkpoint: str | None = None,
-                   resume_step: int | None = None) -> dict:
+                   resume_step: int | None = None,
+                   resume_config: str | None = None) -> dict:
     """Run one strict CUDA resolution attempt and return measured evidence."""
     import gpu_lane
     from ply2splat import ply_to_splat
@@ -1679,6 +1680,44 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
         info = gpu_lane.probe()
         jobstore.event(j["id"], "cuda_lane", f"nodo GPU verificado: torch {info['torch']} · "
                        f"gsplat {info['gsplat']}", data=info)
+        resume_checkpoint = gpu_lane.validate_resume_checkpoint(resume_checkpoint)
+        resume_step = int(resume_step or 0)
+        if resume_checkpoint and resume_step >= iters:
+            resume_config = gpu_lane.validate_resume_config(resume_config)
+            jobstore.event(
+                j["id"], "cuda_checkpoint_export",
+                f"checkpoint {resume_step:,} ya alcanzó el objetivo {iters:,}; exportando sin entrenar",
+                data={"step": resume_step, "target": iters, "downscale": downscale})
+            jobstore.update(j["id"], detail="exportando checkpoint CUDA completo",
+                            stage="publish", progress=0.8, backend="NVIDIA CUDA")
+            m = {"train_s": 0.0}
+            m.update(gpu_lane.finalize_resume_checkpoint(name, resume_config))
+            ply = gpu_lane.fetch(name, stage)
+            conv = ply_to_splat(ply, tmp_out)
+            ply.unlink()
+            gpu_lane.cleanup(name, success=True)
+            measured = {
+                **m, **conv,
+                "effective_downscale": downscale,
+                "remote_gpu": info.get("gpu"),
+                "remote_driver": info.get("driver"),
+                "torch": info.get("torch"),
+                "cuda_runtime": info.get("cuda_runtime"),
+                "gsplat": info.get("gsplat"),
+                "wsl_free_bytes": info.get("wsl_free_bytes"),
+                "bridge_free_bytes": info.get("bridge_free_bytes"),
+                "image_cache": {"device": "not_required", "images": 0,
+                                "decoded_mib": 0, "gpu_cache_budget_mib": 0,
+                                "downscale": downscale},
+                "trainer_args": list(train_args or []),
+                "resumed_from_step": resume_step,
+            }
+            jobstore.event(
+                j["id"], "cuda_trained",
+                f"checkpoint {resume_step:,} d{downscale} exportado · "
+                f"{conv['gaussians']} gaussianas",
+                data=measured)
+            return measured
         image_cache = gpu_lane.image_cache_policy(
             proj, downscale, info.get("vram_total_mb") or 0)
         effective_train_args = gpu_lane.with_image_cache_policy(train_args, image_cache)
@@ -1721,7 +1760,6 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
                         detail=f"entrenando {iters} iteraciones en NVIDIA CUDA · entrada d{downscale}",
                         stage="train", progress=0.3, backend="NVIDIA CUDA")
         run_id = f"gpu-{int(time.time())}"
-        resume_checkpoint = gpu_lane.validate_resume_checkpoint(resume_checkpoint)
         if resume_checkpoint:
             jobstore.event(j["id"], "cuda_resumed",
                            f"reanudando checkpoint exacto desde paso {int(resume_step or 0):,}",
@@ -1866,6 +1904,8 @@ def run_splat(j: dict):
                                        and effective_d == resume_downscale else None),
                     resume_step=(resume_step if attempt_no == 1
                                  and effective_d == resume_downscale else None),
+                    resume_config=(j["spec"].get("resume_config") if attempt_no == 1
+                                   and effective_d == resume_downscale else None),
                 )
             except gpu_lane.CudaLaneError as exc:
                 attempt_row = {
