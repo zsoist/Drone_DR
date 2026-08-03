@@ -80,6 +80,16 @@ def select_job_target(rows: list[dict], cid: str) -> dict:
     return target
 
 
+def job_provenance_cid(cid: str) -> str:
+    """Resolve a derived AOI to the immutable reconstruction job that trained it."""
+    try:
+        meta = json.loads((VAULT / "models" / cid / "meta.json").read_text())
+    except (OSError, ValueError):
+        return cid
+    source = meta.get("derived_from")
+    return str(source) if isinstance(source, str) and source else cid
+
+
 def log_contracts_for_job(job: dict) -> list[str]:
     """Return retry evidence that belongs to this job, never to an unrelated card."""
     attempts = job.get("attempts") or []
@@ -403,7 +413,10 @@ def run_workspace(cdp, base_url: str, cid: str, viewport: str, expected_path: st
 def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -> dict:
     """Operational console: truthful quality, responsive layout and real full-log drawer."""
     with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/jobs", timeout=15) as response:
-        target = select_job_target(json.loads(response.read()).get("jobs") or [], cid)
+        target = select_job_target(
+            json.loads(response.read()).get("jobs") or [],
+            job_provenance_cid(cid),
+        )
     target_id = str(target["id"])
     cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/tresd.html"})
     wait_for(cdp, "document.body && /Proyectos 3D/i.test(document.body.innerText)",

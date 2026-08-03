@@ -21,6 +21,7 @@ from pathlib import Path
 
 VAULT = Path("/Volumes/SSD/drone-vault")
 DOCKER = "/usr/local/bin/docker"
+REBUILD_INDEX_AFTER_PUBLISH = True
 
 
 def wgs84_area_m2(corners):
@@ -533,7 +534,8 @@ EOF""")
     os.replace(_mtmp, out / "meta.json")   # atómico: un write parcial vaciaría el índice
     # el manifest NUNCA queda stale tras publicar (el audit encontró model_viewer
     # ausente del system.json porque el rebuild solo lo hacía el worker)
-    subprocess.run(["python3", str(Path(__file__).parent / "build_index.py")], check=True)
+    if REBUILD_INDEX_AFTER_PUBLISH:
+        subprocess.run(["python3", str(Path(__file__).parent / "build_index.py")], check=True)
     print(f"✅ publicado → {out} · nube {meta['cloud_bytes'] / 1e6:.0f}MB · {meta['textures']} texturas")
 
 

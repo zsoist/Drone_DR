@@ -54,6 +54,46 @@ def _obj_center(path: Path) -> list[float] | None:
     return [round(sx / n, 4), round(sy / n, 4), round(sz / n, 4)] if n else None
 
 
+def splat_transform_contract(splat_meta: dict | None) -> dict:
+    """Expose an alignment only when the producer supplied a valid 4x4 matrix."""
+    fallback = {
+        "rotation": [-0.7071067811865476, 0, 0, 0.7071067811865476],
+        "status": "unaligned",
+    }
+    world = (splat_meta or {}).get("world_transform")
+    if not isinstance(world, dict) or world.get("status") != "aligned":
+        return fallback
+    matrix = world.get("matrix")
+    if not isinstance(matrix, list) or len(matrix) != 16:
+        return fallback
+    try:
+        matrix = [float(value) for value in matrix]
+    except (TypeError, ValueError):
+        return fallback
+    if not all(math.isfinite(value) for value in matrix):
+        return fallback
+    if any(abs(matrix[12 + index] - expected) > 1e-9
+           for index, expected in enumerate((0.0, 0.0, 0.0, 1.0))):
+        return fallback
+    linear = (matrix[0:3], matrix[4:7], matrix[8:11])
+    determinant = (
+        linear[0][0] * (linear[1][1] * linear[2][2] - linear[1][2] * linear[2][1])
+        - linear[0][1] * (linear[1][0] * linear[2][2] - linear[1][2] * linear[2][0])
+        + linear[0][2] * (linear[1][0] * linear[2][1] - linear[1][1] * linear[2][0])
+    )
+    column_norm_product = math.prod(
+        math.sqrt(sum(linear[row][column] ** 2 for row in range(3)))
+        for column in range(3)
+    )
+    if column_norm_product <= 1e-12 or abs(determinant) / column_norm_product <= 1e-6:
+        return fallback
+    return {
+        "status": "aligned",
+        "matrix": matrix,
+        **{key: world[key] for key in ("rmse_m", "method", "source") if key in world},
+    }
+
+
 def coverage_products(scene: dict | None, manifest: dict, shape: str = "circle") -> list[dict]:
     """Describe honest site products at the five shared coverage diameters.
 
@@ -238,11 +278,11 @@ def build(cid: str) -> dict:
             "objects": f"data/models/{cid}/objects.json" if (mdir / "objects.json").exists() else None,
             "poster": f"data/models/{cid}/{meta['ortho_asset']}" if meta.get("ortho_asset") else f"data/thumbs/{cid}.jpg",
         }.items() if v},
-        # honestidad: la alineación splat<->terreno NO está resuelta; el runtime
-        # debe leer status y no fingir registro. Materia prima anotada.
         "transforms": {
-            "splat": {"rotation": [-0.7071067811865476, 0, 0, 0.7071067811865476],
-                      "status": "unaligned"},
+            # Metadata without a complete verified matrix remains explicitly
+            # unaligned. Derived AOI versions can publish the exact CUDA pose
+            # transform without weakening that honesty contract.
+            "splat": splat_transform_contract(splat_meta),
             "mesh_offset": mesh_offset,
         },
         "spawn": {

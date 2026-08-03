@@ -1,4 +1,7 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
 
 import browser_matrix
 
@@ -26,6 +29,21 @@ class JobsMatrixRoutingTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "no splat jobs"):
             browser_matrix.select_job_target(rows, "recon_full")
+
+    def test_derived_scene_uses_its_source_training_job_without_inventing_a_duplicate(self):
+        with tempfile.TemporaryDirectory() as td:
+            previous = browser_matrix.VAULT
+            browser_matrix.VAULT = Path(td)
+            model = browser_matrix.VAULT / "models" / "recon_crop"
+            model.mkdir(parents=True)
+            (model / "meta.json").write_text(json.dumps({"derived_from": "recon_full"}))
+            try:
+                self.assertEqual("recon_full", browser_matrix.job_provenance_cid("recon_crop"))
+            finally:
+                browser_matrix.VAULT = previous
+
+    def test_normal_scene_keeps_its_own_job_identity(self):
+        self.assertEqual("recon_full", browser_matrix.job_provenance_cid("recon_full"))
 
     def test_clean_job_does_not_inherit_retry_contracts_from_other_cards(self):
         clean = {
