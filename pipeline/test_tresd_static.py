@@ -24,9 +24,18 @@ class TresdInitializationTests(unittest.TestCase):
         self.assertIn('Versión actual protegida', source)
         self.assertIn('max_duration_s', source)
         self.assertIn('<option value="grandmaster">Grandmaster 40K</option>', source)
+        self.assertIn('<option value="extra">Extra 3D · edificio</option>', source)
+        self.assertNotIn('option value="media"', source)
+        self.assertNotIn('option value="rapida"', source)
         self.assertIn('/api/scene_create', source)
         self.assertIn('/api/scene_improve', source)
         self.assertIn('scene-improve.html?id=', tresd)
+
+    def test_building_presets_request_a_true_volumetric_mesh(self):
+        for preset in ("extra", "ultra"):
+            args = worker.PRESETS[preset]["args"]
+            self.assertIn("--use-3dmesh", args)
+            self.assertNotIn("--skip-3dmodel", args)
 
     def test_splat_controls_exist_before_first_combined_render(self):
         source = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()

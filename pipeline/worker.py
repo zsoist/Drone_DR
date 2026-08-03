@@ -229,7 +229,7 @@ PRESETS = {
                  "args": ["--pc-quality", "high", "--feature-quality", "high",
                           "--orthophoto-resolution", "2", "--dem-resolution", "4",
                           "--mesh-size", "600000", "--mesh-octree-depth", "11",
-                          "--pc-skip-geometric"]},
+                          "--pc-skip-geometric", "--use-3dmesh"]},
     # ultra: pc-quality ultra (~8.5x tiempo) + mesh 800k, octree 11 (12 revienta). El máximo
     # del M4; la CADENA de fallback (ultra→extra→alta→estandar) garantiza que nunca se pierda
     # el trabajo por un preset demasiado agresivo.
@@ -237,7 +237,7 @@ PRESETS = {
                  "args": ["--pc-quality", "ultra", "--feature-quality", "ultra",
                           "--orthophoto-resolution", "2", "--dem-resolution", "3",
                           "--mesh-size", "800000", "--mesh-octree-depth", "11",
-                          "--pc-skip-geometric"]},
+                          "--pc-skip-geometric", "--use-3dmesh"]},
 }
 
 

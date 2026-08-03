@@ -175,9 +175,9 @@ function renderWorkspace() {
 
         <section class="panel si-section" aria-labelledby="si-build-title">
           <div class="si-step"><span>03</span><div><h2 id="si-build-title">Reconstrucción</h2>
-            <p>Un preset equilibrado para recuperar fachadas, cubierta y contexto sin ocultar fallbacks.</p></div></div>
+            <p>Una ruta volumétrica para recuperar fachadas, cubierta y contexto sin ocultar fallbacks.</p></div></div>
           <div class="si-build-choice">
-            <span>${icon('cube')}</span><div><b>ODM Alta · NVIDIA CUDA</b><small>Fotogrametría, nube, DSM, ortofoto y malla texturizada.</small></div><em>RECOMENDADO</em>
+            <span>${icon('cube')}</span><div><b>ODM Extra 3D · NVIDIA CUDA</b><small>Malla volumétrica de edificio, nube, DSM, ortofoto y texturas.</small></div><em>RECOMENDADO</em>
           </div>
           <div class="si-build-choice">
             <span>${icon('spark')}</span><div><b>Gaussian Grandmaster 40K · CUDA</b><small>Máximo refinamiento estricto; no sustituye la solicitud por un tier inferior.</small></div><em>40K</em>
@@ -185,7 +185,7 @@ function renderWorkspace() {
           <details class="si-advanced">
             <summary>Ajustes avanzados</summary>
             <div class="si-settings">
-              <label>Calidad ODM<select class="ctl" id="si-preset"><option value="alta">Alta</option><option value="media">Media</option><option value="rapida">Rápida</option></select></label>
+              <label>Calidad ODM<select class="ctl" id="si-preset"><option value="extra">Extra 3D · edificio</option><option value="alta">Alta · nube/DSM</option><option value="estandar">Estándar</option><option value="rapido">Rápida</option><option value="ultra">Ultra 3D</option></select></label>
               <label>Gaussian<select class="ctl" id="si-splat-preset"><option value="grandmaster">Grandmaster 40K</option><option value="frontier">Frontier 30K</option><option value="ultra20">Ultra+ 20K</option><option value="ultra">Ultra 15K</option></select></label>
               <label>Resolución CUDA<select class="ctl" id="si-resolution"><option value="auto">Completa → ½ solo por OOM</option><option value="full">Solo completa</option><option value="half">½ desde el inicio</option></select></label>
               <label class="si-check"><input type="checkbox" id="si-then-splat" checked> Generar Gaussian después de ODM</label>
