@@ -119,6 +119,12 @@ class CompilerCliTests(unittest.TestCase):
             "qa/baseline/truth_debug.png",
         ):
             self.assertTrue((manifest_path.parent / relative).is_file(), relative)
+        semantics = json.loads((manifest_path.parent / "semantics/masks.json").read_text())
+        self.assertEqual("ortho_dsm_conservative_v1", semantics["method"])
+        self.assertIn("roof", semantics["rasters"])
+        self.assertIn("vegetation", semantics["rasters"])
+        for relative in semantics["rasters"].values():
+            self.assertTrue((manifest_path.parent / relative).is_file(), relative)
         import_plan = json.loads((manifest_path.parent / "unreal/import_manifest.json").read_text())
         self.assertEqual("F8", import_plan["provenance_debug"]["hotkey"])
         self.assertEqual({"day", "sunset", "night", "rain"}, set(import_plan["lighting_profiles"]))

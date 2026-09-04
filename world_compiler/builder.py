@@ -50,7 +50,11 @@ from world_compiler.selection.hero_cell import (
     raster_candidate_evidence,
     select_hero_cell,
 )
-from world_compiler.semantics.masks import compose_static_mask
+from world_compiler.semantics.masks import (
+    SemanticClass,
+    compose_static_mask,
+    conservative_semantic_masks,
+)
 from world_compiler.semantics.scene_graph import SceneGraph, SceneNode
 from world_compiler.storage import WorldPaths, atomic_world_build
 
@@ -630,15 +634,48 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             reference_views["truth_debug"] = "qa/baseline/truth_debug.png"
         _write_json(staging / "qa/reference_views.json", reference_views)
 
-        mask = compose_static_mask({}, shape=patch.shape)
+        semantic_masks = conservative_semantic_masks(
+            patch,
+            patch_valid,
+            vegetation_patch,
+        )
+        mask = compose_static_mask(semantic_masks)
+        semantic_rasters = {}
+        for semantic_class, semantic_mask in semantic_masks.items():
+            relative = Path("semantics/masks") / f"{semantic_class.value}.png"
+            (staging / relative).parent.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(semantic_mask.astype(np.uint8) * 255).save(staging / relative)
+            semantic_rasters[semantic_class.value] = relative.as_posix()
+        for name, semantic_mask in (("static", mask.static), ("replacement", mask.replacement)):
+            relative = Path("semantics/masks") / f"{name}.png"
+            Image.fromarray(semantic_mask.astype(np.uint8) * 255).save(staging / relative)
+            semantic_rasters[name] = relative.as_posix()
         _write_json(staging / "semantics/masks.json", {
-            "version": 1, "method": mask.method, "evidence_classes": list(mask.evidence_classes),
+            "version": 1,
+            "method": "ortho_dsm_conservative_v1",
+            "evidence_classes": list(mask.evidence_classes),
             "shape": list(patch.shape), "static_true": int(mask.static.sum()),
             "replacement_true": int(mask.replacement.sum()),
+            "rasters": semantic_rasters,
+            "class_pixel_count": {
+                semantic_class.value: int(semantic_mask.sum())
+                for semantic_class, semantic_mask in semantic_masks.items()
+            },
+            "unmeasured_classes": [
+                "wall", "road", "sidewalk", "soil", "vehicle", "motorcycle",
+                "person", "pole", "cable", "sign", "glass", "water",
+            ],
+            "limitations": [
+                "vegetation is a green-dominance color proxy, not instance segmentation",
+                "roof is elevated non-vegetation DSM support, not facade classification",
+                "ground_surface is intentionally not split into road/sidewalk/soil",
+            ],
         })
         graph = SceneGraph(1, (
-            SceneNode("ground", "unknown", "ground"),
-            SceneNode("structure", "unknown", "clean_observed_structure"),
+            SceneNode("ground", "ground_surface", "ground"),
+            SceneNode("observed_roof_structure", "roof", "clean_observed_structure"),
+            SceneNode("inferred_roof_structure", "roof", "geometrically_inferred_structure"),
+            SceneNode("vegetation_replacement", "vegetation", "generated_completion"),
         ))
         _write_json(staging / "semantics/scene_graph.json", graph.as_dict())
         _write_json(staging / "semantics/dynamic_objects.json", {
@@ -646,7 +683,13 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "detector_status": "unavailable",
             "removed_instances": [],
             "replacement_instances": [],
-            "reason": "no validated local semantic detector; no object identity inferred",
+            "class_level_removal": {
+                "semantic_class": "vegetation",
+                "mask": semantic_rasters["vegetation"],
+                "pixel_count": int(semantic_masks[SemanticClass.VEGETATION].sum()),
+                "replacement_policy": "editable Unreal foliage instances pending",
+            },
+            "reason": "no validated instance detector; no vehicle/person/object identity inferred",
         })
 
         recipes = allocate_materials([

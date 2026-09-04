@@ -9,6 +9,7 @@ import numpy as np
 
 
 class SemanticClass(str, Enum):
+    GROUND_SURFACE = "ground_surface"
     BUILDING = "building"
     WALL = "wall"
     ROOF = "roof"
@@ -34,6 +35,7 @@ TRANSIENT = {
     SemanticClass.PERSON,
 }
 STATIC = {
+    SemanticClass.GROUND_SURFACE,
     SemanticClass.BUILDING,
     SemanticClass.WALL,
     SemanticClass.ROOF,
@@ -54,6 +56,38 @@ class MaskComposition:
     replacement: np.ndarray
     method: str
     evidence_classes: tuple[str, ...]
+
+
+def conservative_semantic_masks(
+    heightfield: np.ndarray,
+    valid_mask: np.ndarray,
+    vegetation_mask: np.ndarray | None,
+    *,
+    structure_threshold_m: float = 2.0,
+) -> dict[SemanticClass, np.ndarray]:
+    """Derive only classes supported by DSM validity and a measured ortho color proxy."""
+    height = np.asarray(heightfield, dtype=np.float64)
+    valid = np.asarray(valid_mask, dtype=bool)
+    vegetation = (
+        np.zeros(height.shape, dtype=bool)
+        if vegetation_mask is None
+        else np.asarray(vegetation_mask, dtype=bool)
+    )
+    if height.ndim != 2 or valid.shape != height.shape or vegetation.shape != height.shape:
+        raise ValueError("semantic evidence rasters must share one 2D shape")
+    if not np.isfinite(height).all():
+        raise ValueError("semantic heightfield must be finite")
+    vegetation &= valid
+    ground_ceiling = float(np.percentile(height[valid], 60)) if valid.any() else float(height.min())
+    elevated = valid & (height - np.minimum(height, ground_ceiling) > structure_threshold_m)
+    roof = elevated & ~vegetation
+    ground_surface = valid & ~elevated & ~vegetation
+    return {
+        SemanticClass.GROUND_SURFACE: ground_surface,
+        SemanticClass.ROOF: roof,
+        SemanticClass.VEGETATION: vegetation,
+        SemanticClass.SKY_NO_DATA: ~valid,
+    }
 
 
 def compose_static_mask(
