@@ -9,7 +9,7 @@ R0 usa `scene_0cadd1911f/recon_4e4245a1f4_aoi130`: versión activa y completa, c
 ## Flujo y límites
 
 1. `WorldRepository` valida manifests y capacidades sin invocar builders mutantes; confina cada asset al vault y calcula hashes en streaming.
-2. `HeroCellSelector` enumera cuadrados contenidos, mide mask/DSM/cobertura y deja cualquier métrica ausente en cero con razón explícita.
+2. `HeroCellSelector` enumera cuadrados contenidos, mide mask/DSM/cobertura, combina rango vertical con planitud elevada para no confundir copas con cubiertas, penaliza vegetación mediante un proxy RGB de la ortofoto y deja cualquier métrica ausente en cero con razón explícita. El reporte conserva los diez mejores candidatos y los rechazos con sus razones.
 3. `CoordinateContract` fija un único cambio AB metros (`+X east`, `+Y up`, `+Z south`) a Unreal centímetros (`X,Z,Y`), con matriz inversa y cambio de winding.
 4. El estructurador conserva seis roles separados: referencia, ground, estructura limpia, estructura inferida, completion y colisión.
 5. Truth Field transforma las poses OpenSfM a frame AeroBrain y proyecta cada muestra DSM a los frusta reales. Como R0 todavía no resuelve oclusión contra mesh ni valida sharpness/reproyección, confidence queda limitada a 0,49 y ninguna muestra puede promocionarse a multi-view.
@@ -29,8 +29,8 @@ El comando es:
   --vault /Volumes/SSD/drone-vault
 ```
 
-El output actual es `hero_ad3bb01dd71f6b4d`. Su identidad incorpora 14 hashes fuente y hashes SHA-256 reales de los árboles `world_compiler` y Unreal. Toda escritura derivada queda bajo `/Volumes/SSD/drone-vault/worlds`; los originales y manifests permanecen read-only.
+El output actual es `hero_ee2d91d89938632a`, centrado en `(-30, -10)` m AB. Su identidad incorpora 14 hashes fuente y hashes SHA-256 reales de los árboles `world_compiler` y Unreal. Toda escritura derivada queda bajo `/Volumes/SSD/drone-vault/worlds`; los originales y manifests permanecen read-only.
 
 ## Gates
 
-Los tests Python cubren confinamiento, identidad, coordenadas, selección, Truth Field, separación de capas, presupuesto de materiales, completion, schema y reproducibilidad. Import Unreal, capturas, ruta de vuelo, FPS, 1% low y VRAM requieren un editor real y permanecen bloqueados externamente cuando no existe `UnrealEditor-Cmd`.
+Los 71 tests Python cubren confinamiento, identidad, coordenadas, selección, Truth Field, separación de capas, presupuesto de materiales, completion, schema, vistas baseline y reproducibilidad. Import Unreal, capturas finales, ruta de vuelo, FPS, 1% low y VRAM requieren un editor real y permanecen bloqueados externamente cuando no existe `UnrealEditor-Cmd`.
