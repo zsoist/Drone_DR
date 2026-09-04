@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-04  
 Rama: `feat/herocell-aaa-r0`  
-Hero ID: `hero_155016510db89403`
+Hero ID: `hero_869467105f175bb1`
 Veredicto: **partially accepted**
 
 ## Qué sí pasó
@@ -10,7 +10,7 @@ Veredicto: **partially accepted**
 - Input real: `scene_0cadd1911f/recon_4e4245a1f4_aoi130`, activo, ready/full, terrain + mesh + collider v3.
 - Selección determinista de cuadrado 100×100 m: centro local AeroBrain `(-30, -10)` m, score `0.576708604566`, 221 candidatos elegibles y 4 rechazados. `selection.json` conserva los diez mejores candidatos con todos sus componentes y hasta diez rechazos con razón.
 - La inspección de la ortofoto baseline refutó el selector inicial, que confundía rango vertical de copas con mezcla de cubiertas. El selector corregido combina rango vertical con planitud de superficies elevadas y penaliza la fracción de vegetación medida en ortofoto; la celda final contiene dos cubiertas grandes, calles y patios, con proxy de vegetación `0,126552`.
-- Build atómico y content-addressed bajo `/Volumes/SSD/drone-vault/worlds/scene_0cadd1911f/hero_155016510db89403`.
+- Build atómico y content-addressed bajo `/Volumes/SSD/drone-vault/worlds/scene_0cadd1911f/hero_869467105f175bb1`.
 - Geometría: 18.624 triángulos de referencia, 18.624 ground, 1.022 estructura observada limpia, 2.330 estructura inferida, 0 completion generado y 21.976 collision. La extracción descarta componentes pequeños, exige planitud, usa altura robusta, excluye el proxy de vegetación y extruye la huella raster observada con paredes solo en su contorno; ya no rellena el rectángulo envolvente de patios o plantas irregulares.
 - El Hallucination Firewall compara cada vértice estructural con la superficie fuente usando tolerancia `1,1071 m` (0,75 diagonales de celda DSM, nunca menos de 0,40 m): conserva 30,49% de las caras candidatas como `OBSERVED_WEAK` y mueve 69,51% a `GEOMETRICALLY_INFERRED` en vez de fingir soporte observado.
 - Seis roles separados, matrices AB↔UE invertibles, source hashes, records de coste/run/request, materiales dentro de 256 MiB y output externo US$0.
@@ -23,7 +23,8 @@ Veredicto: **partially accepted**
 - La cobertura simple por conteo de triángulos es 89,3975% `OBSERVED_WEAK` y 10,6025% `GEOMETRICALLY_INFERRED`. El nuevo cálculo interpola 31 posiciones de la ruta de aceptación, aplica área proyectada potencial, distancia, orientación a doble cara y línea de vista DSM: el desglose visible ponderado baja a 81,7519% observado y sube a 18,2481% inferido, con 0% multi-view, generado y unknown. No usa frustum porque el contrato de ruta aún carece de orientación/FOV, ni modela auto-oclusión estructural; no sustituye la ejecución Unreal.
 - Tres vistas baseline locales —ortofoto fuente, hillshade DSM y Truth Field— y ocho overlays de silhouette fuente/candidato quedaron bajo `qa/baseline`; están rotulados como QA del compilador, no como capturas de aceptación Unreal.
 - El rasterizador software usa la rotación, traslación e intrínsecos OpenSfM completos en las ocho reference cameras. Contra triángulos elevados del collider de la misma reconstrucción midió IoU mediana `0,339700119` (mín. `0,335424554`, máx. `0,377248734`), por lo que refuta el objetivo proxy `0,90`; los overlays también revelan masa elevada fuente —incluida vegetación— ausente de la capa estructural canónica. El reporte queda marcado no independiente y no elegible para aceptación.
-- Build local medido: 4,058807 s; coste externo US$0; electricidad no estimada.
+- Cada Hero incluye ahora `qa/metrics.json` y `qa/acceptance.md`. El compiler los inicia con Unreal `not_run`; el importer real actualizó el mismo snapshot a `blocked_external`, retiró el blocker provisional y registró `unreal_python_module_unavailable`, 0 assets importados y 0 errores. Geometría independiente, FPS, VRAM, ruta y relighting permanecen `null`/false, no valores estimados.
+- Build local medido: 4,115860 s; coste externo US$0; electricidad no estimada.
 - `audit_vault.py`: 0 hallazgos. `audit_splats.py`: 0 fallos y 4 avisos legacy.
 
 ## Qué no está aceptado
