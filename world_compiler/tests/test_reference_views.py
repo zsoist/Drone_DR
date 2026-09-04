@@ -6,13 +6,53 @@ import numpy as np
 from PIL import Image
 
 from world_compiler.qa.reference_views import (
+    compare_mesh_silhouettes,
     crop_source_ortho,
     render_dsm_hillshade,
     render_truth_debug,
 )
+from world_compiler.aerobrain.cameras import CameraPose, CameraSet
 
 
 class ReferenceViewTests(unittest.TestCase):
+    def test_mesh_silhouette_iou_uses_full_opensfm_projection(self):
+        camera = CameraPose(
+            "camera-1",
+            (0.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+            (0.0, 0.0, 0.0),
+            1.0,
+            1.0,
+            0.0,
+            0.0,
+            100,
+            100,
+        )
+        cameras = CameraSet((camera,), 0.0, 0.0, 0.0)
+        vertices = np.asarray([
+            [-2.0, 10.0, -2.0],
+            [2.0, 10.0, -2.0],
+            [0.0, 10.0, 2.0],
+        ])
+        faces = np.asarray([[0, 1, 2]])
+
+        identical = compare_mesh_silhouettes(
+            cameras, vertices, faces, vertices, faces, output_size=(100, 100)
+        )
+        shifted = compare_mesh_silhouettes(
+            cameras,
+            vertices,
+            faces,
+            vertices + np.asarray([1.0, 0.0, 0.0]),
+            faces,
+            output_size=(100, 100),
+        )
+
+        self.assertEqual(1.0, identical["median_iou"])
+        self.assertLess(shifted["median_iou"], 1.0)
+        self.assertEqual("camera-1", identical["cameras"][0]["camera_id"])
+
     def test_ortho_crop_uses_local_aoi_bounds(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "ortho.png"

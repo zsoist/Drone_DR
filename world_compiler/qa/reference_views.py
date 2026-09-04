@@ -5,7 +5,110 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
+
+from world_compiler.aerobrain.cameras import CameraPose, CameraSet
+
+
+def render_mesh_silhouette(
+    camera: CameraPose,
+    cameras: CameraSet,
+    vertices_ab_m: np.ndarray,
+    faces: np.ndarray,
+    *,
+    output_size: tuple[int, int] = (256, 144),
+) -> np.ndarray:
+    """Rasterize a binary mesh silhouette with the compiler's OpenSfM pinhole model."""
+    vertices = np.asarray(vertices_ab_m, dtype=np.float64)
+    triangles = np.asarray(faces, dtype=np.int64)
+    width, height = (int(value) for value in output_size)
+    if vertices.ndim != 2 or vertices.shape[1:] != (3,) or not len(vertices):
+        raise ValueError("silhouette vertices must be a non-empty Nx3 array")
+    if triangles.ndim != 2 or triangles.shape[1:] != (3,) or not len(triangles):
+        raise ValueError("silhouette faces must be a non-empty Mx3 array")
+    if width < 2 or height < 2 or int(triangles.min()) < 0 or int(triangles.max()) >= len(vertices):
+        raise ValueError("silhouette raster configuration is invalid")
+    topo = np.stack(
+        (
+            vertices[:, 0] - cameras.east_offset_m,
+            -vertices[:, 2] - cameras.north_offset_m,
+            vertices[:, 1] + cameras.elevation_origin_m,
+        ),
+        axis=-1,
+    )
+    projected = topo @ np.asarray(camera.rotation_topocentric_to_camera).T
+    projected += np.asarray(camera.translation)
+    depth = projected[:, 2]
+    safe_depth = np.where(depth > 1e-9, depth, 1.0)
+    normalized_x = projected[:, 0] / safe_depth
+    normalized_y = projected[:, 1] / safe_depth
+    pixels = np.stack(
+        (
+            (normalized_x - camera.principal_x) * camera.focal_x * width + width / 2.0,
+            (normalized_y - camera.principal_y) * camera.focal_y * width + height / 2.0,
+        ),
+        axis=-1,
+    )
+    image = Image.new("1", (width, height), 0)
+    draw = ImageDraw.Draw(image)
+    for face in triangles:
+        if np.all(depth[face] > 1e-6):
+            draw.polygon([tuple(point) for point in pixels[face]], fill=1)
+    return np.asarray(image, dtype=bool)
+
+
+def compare_mesh_silhouettes(
+    cameras: CameraSet,
+    reference_vertices: np.ndarray,
+    reference_faces: np.ndarray,
+    candidate_vertices: np.ndarray,
+    candidate_faces: np.ndarray,
+    *,
+    output_size: tuple[int, int] = (256, 144),
+    output_dir: Path | None = None,
+) -> dict:
+    """Compare two meshes in source-camera image space and optionally write overlays."""
+    rows = []
+    if output_dir is not None:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+    for camera in cameras.poses:
+        reference = render_mesh_silhouette(
+            camera, cameras, reference_vertices, reference_faces, output_size=output_size
+        )
+        candidate = render_mesh_silhouette(
+            camera, cameras, candidate_vertices, candidate_faces, output_size=output_size
+        )
+        union = reference | candidate
+        if not union.any():
+            continue
+        intersection = reference & candidate
+        iou = float(intersection.sum() / union.sum())
+        row = {
+            "camera_id": camera.camera_id,
+            "iou": round(iou, 9),
+            "reference_pixels": int(reference.sum()),
+            "candidate_pixels": int(candidate.sum()),
+            "union_pixels": int(union.sum()),
+        }
+        if output_dir is not None:
+            overlay = np.zeros((*reference.shape, 3), dtype=np.uint8)
+            overlay[reference] = (255, 68, 68)
+            overlay[candidate] = np.maximum(overlay[candidate], (0, 210, 255))
+            overlay[intersection] = (255, 255, 255)
+            relative = f"silhouette_{len(rows):02d}.png"
+            Image.fromarray(overlay).save(Path(output_dir) / relative)
+            row["overlay"] = relative
+        rows.append(row)
+    if not rows:
+        raise ValueError("selected cameras contain no rasterized mesh silhouettes")
+    values = np.asarray([row["iou"] for row in rows], dtype=np.float64)
+    return {
+        "camera_count": len(rows),
+        "median_iou": round(float(np.median(values)), 9),
+        "min_iou": round(float(values.min()), 9),
+        "max_iou": round(float(values.max()), 9),
+        "cameras": rows,
+    }
 
 
 def crop_source_ortho(

@@ -115,6 +115,7 @@ class CompilerCliTests(unittest.TestCase):
             "qa/coordinate_validation.json",
             "qa/source_support.json",
             "qa/source_geometry_agreement.json",
+            "qa/source_silhouette_agreement.json",
             "qa/reference_views.json", "qa/baseline/dsm_hillshade.png",
             "qa/baseline/truth_debug.png",
         ):
@@ -153,6 +154,12 @@ class CompilerCliTests(unittest.TestCase):
         )
         self.assertFalse(agreement["independent_ground_truth"])
         self.assertFalse(agreement["acceptance_gate_eligible"])
+        silhouette = json.loads(
+            (manifest_path.parent / "qa/source_silhouette_agreement.json").read_text()
+        )
+        self.assertFalse(silhouette["independent_ground_truth"])
+        self.assertFalse(silhouette["acceptance_gate_eligible"])
+        self.assertEqual("opensfm_source_camera_mesh_silhouette_iou_v1", silhouette["method"])
         selection = json.loads((manifest_path.parent / "selection.json").read_text())
         self.assertGreaterEqual(len(selection["top_candidates"]), 1)
         self.assertLessEqual(len(selection["top_candidates"]), 10)

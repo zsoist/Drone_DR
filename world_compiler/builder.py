@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from world_compiler.aerobrain.cameras import camera_support_grid, load_opensfm_cameras
+from world_compiler.aerobrain.cameras import CameraSet, camera_support_grid, load_opensfm_cameras
 from world_compiler.aerobrain.coordinates import CoordinateContract
 from world_compiler.aerobrain.manifests import hash_file, load_object
 from world_compiler.aerobrain.repository import SceneVersion, WorldRepository
@@ -39,6 +39,7 @@ from world_compiler.geometry.structuralize import (
 )
 from world_compiler.ids import canonical_json, hero_id, tree_hash
 from world_compiler.qa.reference_views import (
+    compare_mesh_silhouettes,
     crop_source_ortho,
     render_dsm_hillshade,
     render_truth_debug,
@@ -516,6 +517,81 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "route_visibility_weighted": False,
         }
         _write_json(staging / "truth/geometry_coverage.json", geometry_coverage)
+        silhouette_report = {
+            "version": 1,
+            "status": "unavailable",
+            "method": "opensfm_source_camera_mesh_silhouette_iou_v1",
+            "reference": "published structural collider from the same reconstruction",
+            "independent_ground_truth": False,
+            "acceptance_gate_eligible": False,
+            "reason": "source cameras or structural meshes were unavailable",
+        }
+        try:
+            if source_vertices is None or source_faces is None:
+                source_vertices, source_faces = load_collision_mesh(
+                    scene.assets["collision_bin"], scene.assets["collision_meta"]
+                )
+            if not reference_camera_poses:
+                raise ValueError("no source reference cameras selected")
+            half = float(request.size_m) / 2.0
+            source_triangles = source_vertices[source_faces]
+            source_min = source_triangles.min(axis=1)
+            source_max = source_triangles.max(axis=1)
+            structure_floor = float(np.percentile(patch, 60)) + 2.0
+            source_structure_mask = (
+                (source_max[:, 0] >= center[0] - half)
+                & (source_min[:, 0] <= center[0] + half)
+                & (source_max[:, 2] >= center[1] - half)
+                & (source_min[:, 2] <= center[1] + half)
+                & (source_max[:, 1] >= structure_floor)
+            )
+            source_structure_faces = source_faces[source_structure_mask]
+            if not len(source_structure_faces):
+                raise ValueError("source collider has no elevated structure triangles in the Hero Cell")
+            candidate_vertices_parts = []
+            candidate_faces_parts = []
+            vertex_offset = 0
+            for layer, vertices in translated_layers:
+                if layer.role not in {"clean_observed_structure", "geometrically_inferred_structure"}:
+                    continue
+                if len(layer.faces):
+                    candidate_vertices_parts.append(vertices)
+                    candidate_faces_parts.append(layer.faces.astype(np.uint32) + vertex_offset)
+                    vertex_offset += len(vertices)
+            if not candidate_faces_parts:
+                raise ValueError("canonical build has no structural triangles")
+            source_camera_set = CameraSet(
+                tuple(reference_camera_poses),
+                cameras.east_offset_m,
+                cameras.north_offset_m,
+                cameras.elevation_origin_m,
+                cameras.projection_method,
+            )
+            comparison = compare_mesh_silhouettes(
+                source_camera_set,
+                source_vertices,
+                source_structure_faces,
+                np.concatenate(candidate_vertices_parts),
+                np.concatenate(candidate_faces_parts),
+                output_dir=staging / "qa/baseline/silhouettes",
+            )
+            for row in comparison["cameras"]:
+                row["overlay"] = f"qa/baseline/silhouettes/{row['overlay']}"
+            silhouette_report = silhouette_report | comparison | {
+                "status": "measured_same_reconstruction_proxy",
+                "reason": None,
+                "source_structure_triangle_count": int(len(source_structure_faces)),
+                "candidate_structure_triangle_count": int(
+                    sum(len(faces) for faces in candidate_faces_parts)
+                ),
+                "structure_floor_ab_m": round(structure_floor, 9),
+                "target_iou": 0.90,
+                "passes_proxy_target": comparison["median_iou"] >= 0.90,
+                "note": "Regression proxy only; source collider and candidate share reconstruction evidence.",
+            }
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            silhouette_report["reason"] = str(error)
+        _write_json(staging / "qa/source_silhouette_agreement.json", silhouette_report)
         clean_vertices = next(
             vertices
             for layer, vertices in translated_layers
@@ -898,6 +974,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                 "coordinate_validation": "qa/coordinate_validation.json",
                 "source_support": "qa/source_support.json",
                 "source_geometry_agreement": "qa/source_geometry_agreement.json",
+                "source_silhouette_agreement": "qa/source_silhouette_agreement.json",
                 "reference_views": "qa/reference_views.json",
             },
         }
