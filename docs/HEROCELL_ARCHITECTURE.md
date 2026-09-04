@@ -29,8 +29,8 @@ El comando es:
   --vault /Volumes/SSD/drone-vault
 ```
 
-El output actual es `hero_68eca8767b533a51`, centrado en `(-30, -10)` m AB. Su identidad incorpora 14 hashes fuente y hashes SHA-256 reales de los árboles `world_compiler` y Unreal. Toda escritura derivada queda bajo `/Volumes/SSD/drone-vault/worlds`; los originales y manifests permanecen read-only.
+El output actual es `hero_52d78c71e57f9634`, centrado en `(-30, -10)` m AB. Su identidad incorpora 14 hashes fuente y hashes SHA-256 reales de los árboles `world_compiler` y Unreal. Toda escritura derivada queda bajo `/Volumes/SSD/drone-vault/worlds`; los originales y manifests permanecen read-only.
 
 ## Gates
 
-Los 77 tests Python cubren confinamiento, identidad, coordenadas, selección, Truth Field, separación de capas, presupuesto de materiales, completion, schema, vistas baseline, exclusión de copas, huellas irregulares, acuerdo punto-superficie, escrow de caras sin soporte, semántica conservadora y reproducibilidad. El proxy proyecta muestras deduplicadas sobre triángulos fuente cercanos; no sustituye ground truth independiente y todavía refuta la precisión requerida. Import Unreal, capturas finales, ruta de vuelo, FPS, 1% low y VRAM requieren un editor real y permanecen bloqueados externamente cuando no existe `UnrealEditor-Cmd`.
+Los 78 tests Python cubren confinamiento, identidad, coordenadas, selección, Truth Field, separación de capas, presupuesto de materiales, completion, schema, vistas baseline, exclusión de copas, huellas irregulares, acuerdo punto-superficie, escrow de caras sin soporte, semántica conservadora, Evidence Atlas raster y reproducibilidad. El proxy proyecta muestras deduplicadas sobre triángulos fuente cercanos; no sustituye ground truth independiente y todavía refuta la precisión requerida. Import Unreal, relighting, capturas finales, ruta de vuelo, FPS, 1% low y VRAM requieren un editor real y permanecen bloqueados externamente cuando no existe `UnrealEditor-Cmd`.
