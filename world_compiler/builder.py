@@ -35,6 +35,7 @@ from world_compiler.qa.reference_views import (
     render_dsm_hillshade,
     render_truth_debug,
 )
+from world_compiler.qa.geometry_metrics import load_collision_vertices, source_vertex_agreement
 from world_compiler.selection.hero_cell import (
     _raster_window,
     enumerate_grid,
@@ -410,7 +411,8 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         })
 
         geometry_rows = []
-        for layer, vertices in _translate_bundle(bundle, center):
+        translated_layers = _translate_bundle(bundle, center)
+        for layer, vertices in translated_layers:
             relative = Path("geometry") / f"{layer.role}.obj"
             target = staging / relative
             write_obj(target, vertices, layer.faces, role=layer.role)
@@ -424,6 +426,34 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                 "triangles": int(len(layer.faces)),
                 "sha256": hash_file(target),
             })
+        clean_vertices = next(
+            vertices
+            for layer, vertices in translated_layers
+            if layer.role == "clean_observed_structure"
+        )
+        if len(clean_vertices):
+            try:
+                source_vertices = load_collision_vertices(
+                    scene.assets["collision_bin"], scene.assets["collision_meta"]
+                )
+                agreement = source_vertex_agreement(
+                    clean_vertices,
+                    source_vertices,
+                    center_ab_m=center,
+                    size_m=request.size_m,
+                )
+            except (OSError, ValueError, json.JSONDecodeError) as error:
+                agreement = {
+                    "version": 1,
+                    "status": "unavailable",
+                    "reason": str(error),
+                    "independent_ground_truth": False,
+                    "acceptance_gate_eligible": False,
+                }
+            _write_json(
+                staging / "qa/source_geometry_agreement.json",
+                agreement,
+            )
 
         confidence_u8 = None
         class_rgb = None
@@ -676,6 +706,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "records": {"request": "request.json", "run": "run.json", "cost": "cost.json"},
             "qa": {
                 "coordinate_validation": "qa/coordinate_validation.json",
+                "source_geometry_agreement": "qa/source_geometry_agreement.json",
                 "reference_views": "qa/reference_views.json",
             },
         }

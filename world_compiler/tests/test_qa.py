@@ -2,12 +2,27 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from world_compiler.qa.geometry_metrics import summarize_errors
+import numpy as np
+
+from world_compiler.qa.geometry_metrics import source_vertex_agreement, summarize_errors
 from world_compiler.qa.performance import evaluate_performance
 from world_compiler.qa.report import acceptance_verdict, write_acceptance_report
 
 
 class QualityAcceptanceTests(unittest.TestCase):
+    def test_source_vertex_proxy_is_measured_but_never_independent_ground_truth(self):
+        candidate = np.asarray([[0, 1, 0], [1, 1, 0]], dtype=float)
+        source = np.asarray([[0, 1.1, 0], [1, 1.2, 0], [99, 99, 99]], dtype=float)
+
+        result = source_vertex_agreement(
+            candidate, source, center_ab_m=(0.0, 0.0), size_m=10.0
+        )
+
+        self.assertEqual(2, result["source_vertex_count_in_aoi"])
+        self.assertAlmostEqual(0.15, result["proxy"]["median_m"])
+        self.assertFalse(result["independent_ground_truth"])
+        self.assertFalse(result["acceptance_gate_eligible"])
+
     def test_geometry_distribution_uses_literal_median_and_p95(self):
         result = summarize_errors([0.05, 0.10, 0.15, 0.20, 0.40])
 

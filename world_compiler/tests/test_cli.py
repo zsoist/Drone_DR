@@ -112,6 +112,7 @@ class CompilerCliTests(unittest.TestCase):
             "semantics/dynamic_objects.json", "materials/lighting_profiles.json",
             "unreal/import_manifest.json",
             "qa/coordinate_validation.json",
+            "qa/source_geometry_agreement.json",
             "qa/reference_views.json", "qa/baseline/dsm_hillshade.png",
             "qa/baseline/truth_debug.png",
         ):
@@ -126,6 +127,11 @@ class CompilerCliTests(unittest.TestCase):
         visibility = json.loads((manifest_path.parent / "truth/visibility.json").read_text())
         self.assertEqual("dsm_ray_march_v1", visibility["occlusion_method"])
         self.assertFalse(visibility["occlusion_calibrated_with_heldout_views"])
+        agreement = json.loads(
+            (manifest_path.parent / "qa/source_geometry_agreement.json").read_text()
+        )
+        self.assertFalse(agreement["independent_ground_truth"])
+        self.assertFalse(agreement["acceptance_gate_eligible"])
         selection = json.loads((manifest_path.parent / "selection.json").read_text())
         self.assertGreaterEqual(len(selection["top_candidates"]), 1)
         self.assertLessEqual(len(selection["top_candidates"]), 10)
