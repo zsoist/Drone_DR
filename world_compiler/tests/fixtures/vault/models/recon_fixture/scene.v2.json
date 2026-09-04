@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "clip_id": "recon_fixture",
+  "capabilities": {"terrain": true, "mesh": true, "collision": true, "splat": false},
+  "collision": {"status": "ready", "version": 3},
+  "world": {"size_m": [260.0, 260.0], "grid": [2, 2], "spacing_m": [260.0, 260.0]},
+  "assets": {
+    "dsm_lod_meta": "data/models/recon_fixture/dsm_lod.json",
+    "dsm_lod_bin": "data/models/recon_fixture/dsm_lod.bin",
+    "mesh_viewer": "data/models/recon_fixture/model.obj",
+    "collision_bin": "data/models/recon_fixture/collision.bin",
+    "collision_meta": "data/models/recon_fixture/collision.json"
+  },
+  "transforms": {"splat": {"status": "unaligned"}, "mesh_offset": [0, 0, 0]}
+}

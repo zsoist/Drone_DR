@@ -1,0 +1,21 @@
+{
+  "schema": 2,
+  "id": "scene_fixture",
+  "active_version": "recon_fixture",
+  "versions": [
+    {
+      "id": "recon_fixture",
+      "status": "ready",
+      "merge_label": "FULL",
+      "required_artifacts_ok": true,
+      "sources": ["clip_a", "clip_b"]
+    },
+    {
+      "id": "recon_historical",
+      "status": "ready",
+      "merge_label": "SINGLE",
+      "required_artifacts_ok": true,
+      "sources": ["clip_a"]
+    }
+  ]
+}
