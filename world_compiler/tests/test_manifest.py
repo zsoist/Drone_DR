@@ -2,7 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 from world_compiler.export.manifest import REQUIRED_GEOMETRY_ROLES, validate_game_scene_document
+from world_compiler.export.obj import write_obj
 
 
 def valid_document():
@@ -40,6 +43,23 @@ def valid_document():
 
 
 class GameSceneManifestTests(unittest.TestCase):
+    def test_obj_writer_emits_aoi_planar_uvs_for_material_maps(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "layer.obj"
+            write_obj(
+                path,
+                np.asarray([[-50.0, 0.0, -50.0], [50.0, 0.0, -50.0], [-50.0, 0.0, 50.0]]),
+                np.asarray([[0, 1, 2]], dtype=np.uint32),
+                role="ground",
+                uv_bounds=(-50.0, -50.0, 50.0, 50.0),
+            )
+
+            lines = path.read_text().splitlines()
+            self.assertIn("vt 0.000000000 0.000000000", lines)
+            self.assertIn("vt 1.000000000 0.000000000", lines)
+            self.assertIn("vt 0.000000000 1.000000000", lines)
+            self.assertIn("f 1/1 2/2 3/3", lines)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)

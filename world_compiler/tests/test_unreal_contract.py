@@ -17,19 +17,48 @@ SPEC.loader.exec_module(IMPORTER)
 
 
 class UnrealImporterContractTests(unittest.TestCase):
+    def test_material_map_loader_resolves_generated_maps_inside_world(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            maps = {
+                name: f"materials/{name}.png"
+                for name in (
+                    "delighted_basecolor",
+                    "normal",
+                    "roughness",
+                    "ambient_occlusion",
+                    "microdetail",
+                )
+            }
+            for relative in maps.values():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"png")
+            recipe_path = root / "materials/recipes.json"
+            recipe_path.write_text(json.dumps({"map_availability": maps, "recipes": []}))
+
+            _, resolved = IMPORTER.load_material_recipe(root, "materials/recipes.json")
+
+            self.assertEqual(set(maps), set(resolved))
+            self.assertTrue(all(path.is_file() for path in resolved.values()))
+
     def test_obj_conversion_applies_manifest_matrix_and_winding_once(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source.obj"
             target = root / "converted.obj"
-            source.write_text("v 1 2 3\nv 2 2 3\nv 1 4 3\nf 1 2 3\n")
+            source.write_text(
+                "v 1 2 3\nv 2 2 3\nv 1 4 3\n"
+                "vt 0 0\nvt 1 0\nvt 0 1\nf 1/1 2/2 3/3\n"
+            )
             matrix = [[100, 0, 0, 0], [0, 0, 100, 0], [0, 100, 0, 0], [0, 0, 0, 1]]
 
             result = IMPORTER.convert_obj_to_ue(source, target, matrix, flip_winding=True)
 
             lines = target.read_text().splitlines()
             self.assertIn("v 100.000000000 300.000000000 200.000000000", lines)
-            self.assertIn("f 1 3 2", lines)
+            self.assertIn("vt 1 0", lines)
+            self.assertIn("f 1/1 3/3 2/2", lines)
             self.assertEqual(3, result["vertices"])
             self.assertEqual(1, result["triangles"])
 

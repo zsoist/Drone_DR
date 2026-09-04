@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 from world_compiler.builder import BuildRequest, build_world
 
@@ -38,6 +39,11 @@ class CompilerCliTests(unittest.TestCase):
         height.tofile(model / "dsm_lod.bin")
         valid.tofile(model / "dsm_lod.mask.bin")
         coverage.tofile(model / "mesh_coverage.bin")
+        ortho = np.zeros((*shape, 3), dtype=np.uint8)
+        ortho[..., 0] = np.linspace(60, 210, shape[1], dtype=np.uint8)
+        ortho[..., 1] = 120
+        ortho[..., 2] = 80
+        Image.fromarray(ortho).save(model / "ortho.png")
         (model / "dsm_lod.json").write_text(json.dumps({
             "grid": list(shape), "size_m": [120.0, 120.0],
             "spacing_m": [1.0, 1.0], "elev_min": 0.0, "elev_max": 8.0,
@@ -54,6 +60,7 @@ class CompilerCliTests(unittest.TestCase):
             "dsm_lod_mask": "data/models/recon_fixture/dsm_lod.mask.bin",
             "mesh_coverage": "data/models/recon_fixture/mesh_coverage.bin",
             "mesh_coverage_meta": "data/models/recon_fixture/mesh_coverage.json",
+            "ortho_full": "data/models/recon_fixture/ortho.png",
         })
         manifest_path.write_text(json.dumps(manifest))
         reconstruction = self.vault / "odm/proj_recon_fixture/opensfm/reconstruction.json"
@@ -142,8 +149,13 @@ class CompilerCliTests(unittest.TestCase):
         atlas = json.loads((manifest_path.parent / "materials/evidence_atlas.json").read_text())
         self.assertFalse(atlas["per_texel_camera_weights_available"])
         recipes = json.loads((manifest_path.parent / "materials/recipes.json").read_text())
-        self.assertEqual("planned_not_generated", recipes["allocation_status"])
-        self.assertIsNone(recipes["map_availability"]["normal"])
+        self.assertEqual("generated_proxy_maps", recipes["allocation_status"])
+        for relative in recipes["map_availability"].values():
+            self.assertTrue((manifest_path.parent / relative).is_file(), relative)
+        self.assertLess(
+            recipes["generation_metrics"]["low_frequency_luma_std_after"],
+            recipes["generation_metrics"]["low_frequency_luma_std_before"],
+        )
         geometry_coverage = json.loads(
             (manifest_path.parent / "truth/geometry_coverage.json").read_text()
         )

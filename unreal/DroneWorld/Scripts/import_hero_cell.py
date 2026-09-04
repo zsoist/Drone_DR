@@ -121,6 +121,23 @@ def _transform_vector(vector, matrix):
     return tuple(sum(float(matrix[row][col]) * float(vector[col]) for col in range(3)) for row in range(3))
 
 
+def load_material_recipe(root: Path, relative: str) -> tuple[dict, dict[str, Path]]:
+    root = Path(root).resolve()
+    path = (root / relative).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise ValueError("material recipes escape or are missing")
+    document = json.loads(path.read_text(encoding="utf-8"))
+    resolved = {}
+    for name, map_relative in (document.get("map_availability") or {}).items():
+        if not map_relative:
+            continue
+        map_path = (root / map_relative).resolve()
+        if not map_path.is_relative_to(root) or not map_path.is_file():
+            raise ValueError(f"material map escapes or is missing: {name}")
+        resolved[str(name)] = map_path
+    return document, resolved
+
+
 def _provenance_materials(unreal, destination: str, legend: dict) -> dict:
     materials = {}
     asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
@@ -148,10 +165,8 @@ def _pbr_materials(unreal, destination: str, root: Path, plan: dict) -> dict:
     relative = plan.get("materials")
     if not relative:
         return {}
-    path = (root / relative).resolve()
-    if not path.is_relative_to(root) or not path.is_file():
-        raise ValueError("material recipes escape or are missing")
-    recipes = json.loads(path.read_text(encoding="utf-8")).get("recipes") or []
+    recipe_document, map_paths = load_material_recipe(root, relative)
+    recipes = recipe_document.get("recipes") or []
     colors = {
         "ground": (0.18, 0.16, 0.13),
         "generic_structure": (0.42, 0.40, 0.36),
@@ -159,6 +174,51 @@ def _pbr_materials(unreal, destination: str, root: Path, plan: dict) -> dict:
     roughness = {"ground": 0.82, "generic_structure": 0.68}
     materials = {}
     asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+    texture_assets = {}
+    texture_package = f"{destination}/Materials/Textures"
+    texture_tasks = []
+    texture_names = []
+    for map_name, map_path in sorted(map_paths.items()):
+        task = unreal.AssetImportTask()
+        task.filename = str(map_path)
+        task.destination_path = texture_package
+        task.destination_name = f"T_{map_name}"
+        task.automated = True
+        task.replace_existing = True
+        task.save = True
+        texture_tasks.append(task)
+        texture_names.append(map_name)
+    if texture_tasks:
+        asset_tools.import_asset_tasks(texture_tasks)
+    for map_name, task in zip(texture_names, texture_tasks):
+        if not task.imported_object_paths:
+            continue
+        texture = unreal.EditorAssetLibrary.load_asset(task.imported_object_paths[0])
+        if texture and map_name == "normal":
+            texture.set_editor_property(
+                "compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP
+            )
+            texture.set_editor_property("srgb", False)
+        elif texture and map_name in {"roughness", "ambient_occlusion", "microdetail"}:
+            texture.set_editor_property("srgb", False)
+        if texture:
+            unreal.EditorAssetLibrary.save_loaded_asset(texture)
+            texture_assets[map_name] = texture
+
+    def texture_sample(material, map_name, parameter_name, material_property, output="RGB"):
+        texture = texture_assets.get(map_name)
+        if not texture:
+            return False
+        sample = unreal.MaterialEditingLibrary.create_material_expression(
+            material, unreal.MaterialExpressionTextureSampleParameter2D
+        )
+        sample.set_editor_property("parameter_name", parameter_name)
+        sample.set_editor_property("texture", texture)
+        unreal.MaterialEditingLibrary.connect_material_property(
+            sample, output, material_property
+        )
+        return True
+
     for recipe in recipes:
         material_class = str(recipe["material_class"])
         if material_class in materials:
@@ -169,20 +229,35 @@ def _pbr_materials(unreal, destination: str, root: Path, plan: dict) -> dict:
         material = unreal.EditorAssetLibrary.load_asset(asset_path)
         if not material:
             material = asset_tools.create_asset(name, package, unreal.Material, unreal.MaterialFactoryNew())
-            base = unreal.MaterialEditingLibrary.create_material_expression(
-                material, unreal.MaterialExpressionConstant3Vector
+            if not texture_sample(
+                material, "delighted_basecolor", "AeroBrainBaseColor",
+                unreal.MaterialProperty.MP_BASE_COLOR,
+            ):
+                base = unreal.MaterialEditingLibrary.create_material_expression(
+                    material, unreal.MaterialExpressionConstant3Vector
+                )
+                color = colors.get(material_class, (0.35, 0.35, 0.35))
+                base.constant = unreal.LinearColor(*color, 1.0)
+                unreal.MaterialEditingLibrary.connect_material_property(
+                    base, "", unreal.MaterialProperty.MP_BASE_COLOR
+                )
+            if not texture_sample(
+                material, "roughness", "AeroBrainRoughness",
+                unreal.MaterialProperty.MP_ROUGHNESS, "R",
+            ):
+                rough = unreal.MaterialEditingLibrary.create_material_expression(
+                    material, unreal.MaterialExpressionConstant
+                )
+                rough.r = roughness.get(material_class, 0.7)
+                unreal.MaterialEditingLibrary.connect_material_property(
+                    rough, "", unreal.MaterialProperty.MP_ROUGHNESS
+                )
+            texture_sample(
+                material, "normal", "AeroBrainNormal", unreal.MaterialProperty.MP_NORMAL
             )
-            color = colors.get(material_class, (0.35, 0.35, 0.35))
-            base.constant = unreal.LinearColor(*color, 1.0)
-            unreal.MaterialEditingLibrary.connect_material_property(
-                base, "", unreal.MaterialProperty.MP_BASE_COLOR
-            )
-            rough = unreal.MaterialEditingLibrary.create_material_expression(
-                material, unreal.MaterialExpressionConstant
-            )
-            rough.r = roughness.get(material_class, 0.7)
-            unreal.MaterialEditingLibrary.connect_material_property(
-                rough, "", unreal.MaterialProperty.MP_ROUGHNESS
+            texture_sample(
+                material, "ambient_occlusion", "AeroBrainAO",
+                unreal.MaterialProperty.MP_AMBIENT_OCCLUSION, "R",
             )
             unreal.MaterialEditingLibrary.recompile_material(material)
             unreal.EditorAssetLibrary.save_loaded_asset(material)

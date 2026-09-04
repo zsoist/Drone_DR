@@ -15,7 +15,11 @@ from world_compiler.aerobrain.coordinates import CoordinateContract
 from world_compiler.aerobrain.manifests import hash_file, load_object
 from world_compiler.aerobrain.repository import SceneVersion, WorldRepository
 from world_compiler.appearance.evidence_atlas import build_raster_evidence_atlas
-from world_compiler.appearance.pbr import SurfacePriority, allocate_materials
+from world_compiler.appearance.pbr import (
+    SurfacePriority,
+    allocate_materials,
+    generate_reality_sandwich_maps,
+)
 from world_compiler.completion.missing_views import (
     MissingRegion,
     derive_missing_views,
@@ -505,10 +509,17 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
 
         geometry_rows = []
         translated_layers = _translate_bundle(bundle, center)
+        half_size = float(request.size_m) / 2.0
+        uv_bounds = (
+            center[0] - half_size,
+            center[1] - half_size,
+            center[0] + half_size,
+            center[1] + half_size,
+        )
         for layer, vertices in translated_layers:
             relative = Path("geometry") / f"{layer.role}.obj"
             target = staging / relative
-            write_obj(target, vertices, layer.faces, role=layer.role)
+            write_obj(target, vertices, layer.faces, role=layer.role, uv_bounds=uv_bounds)
             geometry_rows.append({
                 "role": layer.role,
                 "asset": relative.as_posix(),
@@ -821,6 +832,8 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             SurfacePriority("structure", 0.5, 8.0, 0.8, 0.8, "generic_structure"),
         ], resident_budget_bytes=256 * 1024 * 1024, max_4k=1)
         source_color_relative = None
+        generated_map_paths = {}
+        generation_metrics = None
         source_ortho_path = scene.assets.get("ortho_full") or scene.assets.get("ortho")
         if source_ortho_path is not None:
             source_color = crop_source_ortho(
@@ -829,32 +842,49 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             source_color_relative = "materials/source_color_ortho_proxy.png"
             (staging / source_color_relative).parent.mkdir(parents=True, exist_ok=True)
             source_color.save(staging / source_color_relative)
+            generated_maps, generation_metrics = generate_reality_sandwich_maps(
+                np.asarray(source_color),
+                patch,
+                spacing_m=spacing,
+                semantic_masks={
+                    semantic_class.value: semantic_mask
+                    for semantic_class, semantic_mask in semantic_masks.items()
+                },
+            )
+            for name, pixels in generated_maps.items():
+                relative = f"materials/{name}.png"
+                Image.fromarray(pixels).save(staging / relative)
+                generated_map_paths[name] = relative
+        generated_texture_paths = (
+            [source_color_relative] if source_color_relative else []
+        ) + list(generated_map_paths.values())
         _write_json(staging / "materials/recipes.json", {
             "version": 1,
-            "allocation_status": "planned_not_generated",
+            "allocation_status": (
+                "generated_proxy_maps" if generated_map_paths else "planned_not_generated"
+            ),
             "resident_budget_bytes": 256 * 1024 * 1024,
             "planned_resident_bytes": sum(recipe.resident_bytes for recipe in recipes),
-            "actual_generated_texture_bytes": (
-                (staging / source_color_relative).stat().st_size
-                if source_color_relative
-                else 0
+            "actual_generated_texture_bytes": sum(
+                (staging / relative).stat().st_size for relative in generated_texture_paths
             ),
             "recipes": [asdict(recipe) for recipe in recipes],
             "layer_status": {
-                "physical_base": "parameter_recipe_only",
-                "source_microdetail": "unavailable",
+                "physical_base": "generated_proxy" if generated_map_paths else "parameter_recipe_only",
+                "source_microdetail": "generated_proxy" if generated_map_paths else "unavailable",
                 "procedural_variation": "parameter_recipe_only",
                 "decals_wetness": "parameter_recipe_only",
             },
             "map_availability": {
                 "source_color_orthomosaic_proxy": source_color_relative,
-                "delighted_basecolor": None,
-                "normal": None,
-                "roughness": None,
-                "ambient_occlusion": None,
-                "microdetail": None,
+                "delighted_basecolor": generated_map_paths.get("delighted_basecolor"),
+                "normal": generated_map_paths.get("normal"),
+                "roughness": generated_map_paths.get("roughness"),
+                "ambient_occlusion": generated_map_paths.get("ambient_occlusion"),
+                "microdetail": generated_map_paths.get("microdetail"),
             },
-            "validation_status": "incomplete_unreal_relighting_required",
+            "generation_metrics": generation_metrics,
+            "validation_status": "generated_proxy_maps_unreal_relighting_required",
         })
         _write_json(
             staging / "materials/evidence_atlas.json",
