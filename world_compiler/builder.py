@@ -40,7 +40,7 @@ from world_compiler.semantics.scene_graph import SceneGraph, SceneNode
 from world_compiler.storage import WorldPaths, atomic_world_build
 
 
-COMPILER_CONTRACT = "world-compiler-r0-v2-camera-evidence"
+COMPILER_CONTRACT = "world-compiler-r0-v3-unreal-import-plan"
 
 
 @dataclass(frozen=True)
@@ -172,6 +172,8 @@ def _validate_staging(root: Path) -> bool:
         for relative in (truth.get("raster") or {}).values():
             if not (root / relative).is_file():
                 raise ValueError("truth raster is missing")
+        if document.get("unreal_import") and not (root / document["unreal_import"]).is_file():
+            raise ValueError("Unreal import plan is missing")
     except (OSError, ValueError, KeyError):
         return False
     return True
@@ -382,6 +384,13 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             SceneNode("structure", "unknown", "clean_observed_structure"),
         ))
         _write_json(staging / "semantics/scene_graph.json", graph.as_dict())
+        _write_json(staging / "semantics/dynamic_objects.json", {
+            "version": 1,
+            "detector_status": "unavailable",
+            "removed_instances": [],
+            "replacement_instances": [],
+            "reason": "no validated local semantic detector; no object identity inferred",
+        })
 
         recipes = allocate_materials([
             SurfacePriority("ground", 0.8, 5.0, 1.0, 1.0, "ground"),
@@ -394,6 +403,33 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         _write_json(staging / "materials/evidence_atlas.json", build_evidence_atlas({
             "ground": [], "structure": []
         }))
+        lighting_profiles = {
+            "day": {
+                "directional_lux": 80000.0, "temperature_k": 6500.0,
+                "sky_intensity": 1.0, "wetness": 0.0, "exposure_ev100": 14.0,
+                "sun_rotation_deg": [-45.0, -35.0, 0.0],
+            },
+            "sunset": {
+                "directional_lux": 20000.0, "temperature_k": 3500.0,
+                "sky_intensity": 0.45, "wetness": 0.0, "exposure_ev100": 11.0,
+                "sun_rotation_deg": [-10.0, -70.0, 0.0],
+            },
+            "night": {
+                "directional_lux": 0.2, "temperature_k": 9000.0,
+                "sky_intensity": 0.08, "wetness": 0.0, "exposure_ev100": 4.0,
+                "sun_rotation_deg": [-25.0, 120.0, 0.0],
+            },
+            "rain": {
+                "directional_lux": 30000.0, "temperature_k": 7000.0,
+                "sky_intensity": 0.65, "wetness": 1.0, "exposure_ev100": 11.5,
+                "sun_rotation_deg": [-55.0, -20.0, 0.0],
+            },
+        }
+        _write_json(staging / "materials/lighting_profiles.json", {
+            "version": 1,
+            "profiles": lighting_profiles,
+            "capture_lighting_baked_into_materials": False,
+        })
         _write_json(staging / "completion/decisions.json", {
             "version": 1, "status": "not_attempted", "hypotheses": [],
             "reason": "no completion may run without occlusion-validated per-surface evidence",
@@ -403,6 +439,43 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             15.0, -45.0, 0.0, 55.0, "occlusion-validated surface evidence unavailable",
         )])
         _write_json(staging / "missing_views.json", missing)
+        import_plan = {
+            "version": 1,
+            "hero_id": identity,
+            "level_path": f"/Game/Generated/{identity}/HeroCellMap",
+            "layers": [
+                {
+                    "role": row["role"],
+                    "asset": row["asset"],
+                    "provenance": row["provenance"],
+                    "nanite": row["role"] != "collision_geometry" and row["triangles"] > 0,
+                    "visible": row["role"] != "collision_geometry" and row["triangles"] > 0,
+                    "collision": row["role"] == "collision_geometry",
+                    "triangles": row["triangles"],
+                }
+                for row in geometry_rows
+            ],
+            "lighting_profiles": lighting_profiles,
+            "default_lighting_profile": "day",
+            "provenance_debug": {
+                "hotkey": "F8",
+                "texture": "truth/provenance.png" if spatial_truth is not None else None,
+                "legend": dict(LEGEND),
+            },
+            "reference_cameras": [pose.as_dict() for pose in reference_camera_poses],
+            "spawn_ab_m": [center[0], float(np.max(patch) + 5.0), center[1]],
+            "materials": "materials/recipes.json",
+            "role_materials": {
+                "observed_reference_geometry": "generic_structure",
+                "ground": "ground",
+                "clean_observed_structure": "generic_structure",
+                "geometrically_inferred_structure": "generic_structure",
+                "generated_completion": "generic_structure",
+            },
+            "dynamic_objects": "semantics/dynamic_objects.json",
+            "generated_content_policy": "rebuild_only_do_not_commit",
+        }
+        _write_json(staging / "unreal/import_manifest.json", import_plan)
 
         manifest = {
             "version": 1,
@@ -423,6 +496,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "evidence_atlas": "materials/evidence_atlas.json",
             "semantics": "semantics/scene_graph.json",
             "completion": "completion/decisions.json",
+            "unreal_import": "unreal/import_manifest.json",
             "reference_cameras": {
                 "status": "available" if reference_camera_poses else "unavailable",
                 "cameras": [pose.as_dict() for pose in reference_camera_poses],

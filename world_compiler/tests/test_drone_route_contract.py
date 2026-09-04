@@ -30,6 +30,15 @@ class DroneRouteContractTests(unittest.TestCase):
         self.assertIn("AGL", hud)
         self.assertIn("Camera", hud)
 
+    def test_f8_provenance_mode_is_bound_and_switches_tagged_layers(self):
+        pawn = (ROOT / "unreal/DroneWorld/Source/DroneWorld/ABDronePawn.cpp").read_text()
+        inputs = (ROOT / "unreal/DroneWorld/Config/DefaultInput.ini").read_text()
+
+        self.assertIn('ActionName="ToggleProvenance",Key=F8', inputs)
+        self.assertIn('BindAction("ToggleProvenance"', pawn)
+        self.assertIn("provenance:", pawn)
+        self.assertIn("M_Provenance_", pawn)
+
 
 if __name__ == "__main__":
     unittest.main()

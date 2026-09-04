@@ -59,6 +59,27 @@ class UnrealImporterContractTests(unittest.TestCase):
             self.assertEqual(report, json.loads(report_path.read_text()))
             self.assertFalse((root / "unreal/converted").exists())
 
+    def test_import_plan_requires_layers_profiles_provenance_and_reference_cameras(self):
+        document = valid_document()
+        document["reference_cameras"] = {
+            "status": "available",
+            "cameras": [{"camera_id": "c1", "center_ab_m": [0, 10, 0], "forward_ab": [0, -1, 0]}],
+        }
+        plan = {
+            "version": 1,
+            "level_path": "/Game/Generated/hero_0123456789abcdef/HeroCellMap",
+            "layers": [{"role": row["role"], "asset": row["asset"], "provenance": row["provenance"]} for row in document["geometry"]],
+            "lighting_profiles": {name: {} for name in ("day", "sunset", "night", "rain")},
+            "provenance_debug": {"hotkey": "F8", "texture": "truth/provenance.png"},
+            "reference_cameras": document["reference_cameras"]["cameras"],
+        }
+
+        result = IMPORTER.validate_import_plan(plan, document)
+
+        self.assertEqual(6, len(result["layers"]))
+        self.assertEqual("F8", result["provenance_debug"]["hotkey"])
+        self.assertEqual(1, len(result["reference_cameras"]))
+
 
 if __name__ == "__main__":
     unittest.main()

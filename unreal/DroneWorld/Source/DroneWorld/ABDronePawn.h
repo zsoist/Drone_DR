@@ -9,6 +9,7 @@ class UFloatingPawnMovement;
 class USphereComponent;
 class USpringArmComponent;
 class UStaticMeshComponent;
+class UMaterialInterface;
 
 UCLASS()
 class DRONEWORLD_API AABDronePawn : public APawn
@@ -25,6 +26,9 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Drone")
     bool bFPVActive = true;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Drone")
+    bool bProvenanceActive = false;
 
 protected:
     virtual void BeginPlay() override;
@@ -44,11 +48,13 @@ private:
     UFloatingPawnMovement* Movement;
 
     FTransform ResetTransform;
+    TMap<TWeakObjectPtr<UStaticMeshComponent>, TArray<TWeakObjectPtr<UMaterialInterface>>> ProvenanceOriginalMaterials;
     void MoveForward(float Value);
     void MoveRight(float Value);
     void MoveUp(float Value);
     void Yaw(float Value);
     void ToggleCamera();
+    void ToggleProvenance();
     void ResetDrone();
 
     UFUNCTION()

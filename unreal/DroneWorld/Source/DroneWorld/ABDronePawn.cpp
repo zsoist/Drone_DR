@@ -3,9 +3,12 @@
 #include "Camera/CameraComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Materials/MaterialInterface.h"
 
 AABDronePawn::AABDronePawn()
 {
@@ -74,6 +77,7 @@ void AABDronePawn::SetupPlayerInputComponent(UInputComponent* Input)
     Input->BindAxis("MoveUp", this, &AABDronePawn::MoveUp);
     Input->BindAxis("Yaw", this, &AABDronePawn::Yaw);
     Input->BindAction("ToggleCamera", IE_Pressed, this, &AABDronePawn::ToggleCamera);
+    Input->BindAction("ToggleProvenance", IE_Pressed, this, &AABDronePawn::ToggleProvenance);
     Input->BindAction("ResetDrone", IE_Pressed, this, &AABDronePawn::ResetDrone);
 }
 
@@ -87,6 +91,57 @@ void AABDronePawn::ToggleCamera()
     bFPVActive = !bFPVActive;
     FPVCamera->SetActive(bFPVActive);
     ThirdPersonCamera->SetActive(!bFPVActive);
+}
+
+void AABDronePawn::ToggleProvenance()
+{
+    bProvenanceActive = !bProvenanceActive;
+    for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
+    {
+        AStaticMeshActor* Actor = *It;
+        FString Provenance;
+        for (const FName Tag : Actor->Tags)
+        {
+            const FString Value = Tag.ToString();
+            if (Value.StartsWith(TEXT("provenance:")))
+            {
+                Provenance = Value.RightChop(11);
+                break;
+            }
+        }
+        if (Provenance.IsEmpty()) continue;
+        UStaticMeshComponent* Component = Actor->GetStaticMeshComponent();
+        UMaterialInterface* DebugMaterial = nullptr;
+        if (bProvenanceActive)
+        {
+            TArray<TWeakObjectPtr<UMaterialInterface>> Original;
+            for (int32 Slot = 0; Slot < Component->GetNumMaterials(); ++Slot)
+            {
+                Original.Add(Component->GetMaterial(Slot));
+            }
+            ProvenanceOriginalMaterials.FindOrAdd(Component) = Original;
+            const FString HeroPackage = Actor->GetPackage()->GetName().Replace(TEXT("/HeroCellMap"), TEXT(""));
+            const FString MaterialName = FString::Printf(TEXT("M_Provenance_%s"), *Provenance);
+            const FString MaterialPath = FString::Printf(TEXT("%s/Debug/%s.%s"), *HeroPackage, *MaterialName, *MaterialName);
+            DebugMaterial = LoadObject<UMaterialInterface>(nullptr, *MaterialPath);
+        }
+        const int32 Slots = Component->GetNumMaterials();
+        for (int32 Slot = 0; Slot < Slots; ++Slot)
+        {
+            if (bProvenanceActive)
+            {
+                Component->SetMaterial(Slot, DebugMaterial);
+            }
+            else if (const TArray<TWeakObjectPtr<UMaterialInterface>>* Original = ProvenanceOriginalMaterials.Find(Component))
+            {
+                Component->SetMaterial(Slot, Original->IsValidIndex(Slot) ? (*Original)[Slot].Get() : nullptr);
+            }
+        }
+    }
+    if (!bProvenanceActive)
+    {
+        ProvenanceOriginalMaterials.Empty();
+    }
 }
 
 void AABDronePawn::ResetDrone()

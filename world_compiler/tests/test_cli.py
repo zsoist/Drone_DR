@@ -106,8 +106,13 @@ class CompilerCliTests(unittest.TestCase):
             "source/manifests.json", "source/cameras.json", "source/selected_frames.json",
             "source/aoi.json", "truth/confidence.png", "truth/provenance.png",
             "truth/camera_index.png", "truth/visibility.json", "truth/coverage.json",
+            "semantics/dynamic_objects.json", "materials/lighting_profiles.json",
+            "unreal/import_manifest.json",
         ):
             self.assertTrue((manifest_path.parent / relative).is_file(), relative)
+        import_plan = json.loads((manifest_path.parent / "unreal/import_manifest.json").read_text())
+        self.assertEqual("F8", import_plan["provenance_debug"]["hotkey"])
+        self.assertEqual({"day", "sunset", "night", "rain"}, set(import_plan["lighting_profiles"]))
 
 
 if __name__ == "__main__":
