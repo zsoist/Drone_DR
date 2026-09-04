@@ -16,3 +16,8 @@ splat/supersplat/
 .gstack/
 tools/node_modules/
 artifacts/home-v2-*.png
+unreal/**/Binaries/
+unreal/**/DerivedDataCache/
+unreal/**/Intermediate/
+unreal/**/Saved/
+unreal/**/Content/Generated/
