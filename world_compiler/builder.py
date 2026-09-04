@@ -483,6 +483,31 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                 "triangles": int(len(layer.faces)),
                 "sha256": hash_file(target),
             })
+        canonical_roles = {
+            "ground",
+            "clean_observed_structure",
+            "geometrically_inferred_structure",
+            "generated_completion",
+        }
+        provenance_triangles = {truth_class.value: 0 for truth_class in TruthClass}
+        for row in geometry_rows:
+            if row["role"] in canonical_roles:
+                provenance_triangles[row["provenance"]] += row["triangles"]
+        canonical_triangles = sum(provenance_triangles.values())
+        geometry_coverage = {
+            "version": 1,
+            "basis": "canonical render triangle count; excludes source reference and collision",
+            "canonical_triangles": canonical_triangles,
+            "triangle_count": provenance_triangles,
+            "coverage_pct": {
+                name: round(100.0 * count / canonical_triangles, 8)
+                if canonical_triangles
+                else 0.0
+                for name, count in provenance_triangles.items()
+            },
+            "route_visibility_weighted": False,
+        }
+        _write_json(staging / "truth/geometry_coverage.json", geometry_coverage)
         clean_vertices = next(
             vertices
             for layer, vertices in translated_layers
@@ -743,6 +768,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             },
             "geometry": geometry_rows,
             "truth_field": "truth/truth_field.v1.json",
+            "geometry_truth_coverage": "truth/geometry_coverage.json",
             "materials": "materials/recipes.json",
             "evidence_atlas": "materials/evidence_atlas.json",
             "semantics": "semantics/scene_graph.json",

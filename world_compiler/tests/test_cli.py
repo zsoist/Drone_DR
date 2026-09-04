@@ -109,6 +109,7 @@ class CompilerCliTests(unittest.TestCase):
             "source/manifests.json", "source/cameras.json", "source/selected_frames.json",
             "source/aoi.json", "truth/confidence.png", "truth/provenance.png",
             "truth/camera_index.png", "truth/visibility.json", "truth/coverage.json",
+            "truth/geometry_coverage.json",
             "semantics/dynamic_objects.json", "materials/lighting_profiles.json",
             "unreal/import_manifest.json",
             "qa/coordinate_validation.json",
@@ -128,6 +129,11 @@ class CompilerCliTests(unittest.TestCase):
         visibility = json.loads((manifest_path.parent / "truth/visibility.json").read_text())
         self.assertEqual("dsm_ray_march_v1", visibility["occlusion_method"])
         self.assertFalse(visibility["occlusion_calibrated_with_heldout_views"])
+        geometry_coverage = json.loads(
+            (manifest_path.parent / "truth/geometry_coverage.json").read_text()
+        )
+        self.assertAlmostEqual(100.0, sum(geometry_coverage["coverage_pct"].values()))
+        self.assertFalse(geometry_coverage["route_visibility_weighted"])
         agreement = json.loads(
             (manifest_path.parent / "qa/source_geometry_agreement.json").read_text()
         )
