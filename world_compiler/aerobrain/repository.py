@@ -15,6 +15,14 @@ _REQUIRED_ASSETS = {
     "mesh": ("mesh_viewer",),
     "collision": ("collision_bin", "collision_meta"),
 }
+_OPTIONAL_ASSETS = (
+    "dsm_lod_mask",
+    "mesh_coverage",
+    "mesh_coverage_meta",
+    "ortho",
+    "ortho_full",
+    "splat",
+)
 
 
 class RepositoryError(ValueError):
@@ -140,6 +148,13 @@ class WorldRepository:
                     raise RepositoryError(
                         f"{capability} asset invalid ({name}): {error}"
                     ) from error
+        for name in _OPTIONAL_ASSETS:
+            raw = raw_assets.get(name)
+            if raw:
+                try:
+                    assets[name] = self._asset_path(model_dir, raw)
+                except RepositoryError as error:
+                    raise RepositoryError(f"optional asset invalid ({name}): {error}") from error
 
         world = manifest.get("world") or {}
         try:

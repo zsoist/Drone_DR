@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerobrain.local/schemas/game_scene.v1.schema.json",
+  "title": "AeroBrain Game Scene v1",
+  "type": "object",
+  "required": [
+    "version", "hero_id", "scene_id", "version_id", "profile", "aoi",
+    "coordinates", "geometry", "truth_field", "materials", "reference_cameras",
+    "missing_views", "source_hashes", "dependency_hashes", "records"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "hero_id": {"type": "string", "pattern": "^hero_[0-9a-f]{16}$"},
+    "geometry": {"type": "array", "minItems": 6, "maxItems": 6},
+    "source_hashes": {"type": "object", "minProperties": 1},
+    "dependency_hashes": {"type": "object", "minProperties": 1}
+  },
+  "additionalProperties": true
+}
