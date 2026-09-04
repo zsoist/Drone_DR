@@ -35,7 +35,7 @@ from world_compiler.qa.reference_views import (
     render_dsm_hillshade,
     render_truth_debug,
 )
-from world_compiler.qa.geometry_metrics import load_collision_vertices, source_vertex_agreement
+from world_compiler.qa.geometry_metrics import load_collision_mesh, source_surface_agreement
 from world_compiler.selection.hero_cell import (
     _raster_window,
     enumerate_grid,
@@ -442,12 +442,13 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         )
         if len(clean_vertices):
             try:
-                source_vertices = load_collision_vertices(
+                source_vertices, source_faces = load_collision_mesh(
                     scene.assets["collision_bin"], scene.assets["collision_meta"]
                 )
-                agreement = source_vertex_agreement(
+                agreement = source_surface_agreement(
                     clean_vertices,
                     source_vertices,
+                    source_faces,
                     center_ab_m=center,
                     size_m=request.size_m,
                 )

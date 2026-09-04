@@ -4,7 +4,11 @@ from pathlib import Path
 
 import numpy as np
 
-from world_compiler.qa.geometry_metrics import source_vertex_agreement, summarize_errors
+from world_compiler.qa.geometry_metrics import (
+    source_surface_agreement,
+    source_vertex_agreement,
+    summarize_errors,
+)
 from world_compiler.qa.performance import evaluate_performance
 from world_compiler.qa.report import acceptance_verdict, write_acceptance_report
 
@@ -21,6 +25,23 @@ class QualityAcceptanceTests(unittest.TestCase):
         self.assertEqual(2, result["source_vertex_count_in_aoi"])
         self.assertAlmostEqual(0.15, result["proxy"]["median_m"])
         self.assertFalse(result["independent_ground_truth"])
+        self.assertFalse(result["acceptance_gate_eligible"])
+
+    def test_surface_proxy_measures_triangles_and_deduplicates_candidate_vertices(self):
+        source = np.asarray([[0, 0, 0], [2, 0, 0], [0, 0, 2]], dtype=float)
+        faces = np.asarray([[0, 1, 2]], dtype=np.uint32)
+        candidate = np.asarray([[0.5, 0.2, 0.5], [0.5, 0.2, 0.5]], dtype=float)
+
+        result = source_surface_agreement(
+            candidate,
+            source,
+            faces,
+            center_ab_m=(0.0, 0.0),
+            size_m=10.0,
+        )
+
+        self.assertEqual(1, result["candidate_vertex_count"])
+        self.assertAlmostEqual(0.2, result["proxy"]["median_m"])
         self.assertFalse(result["acceptance_gate_eligible"])
 
     def test_geometry_distribution_uses_literal_median_and_p95(self):
