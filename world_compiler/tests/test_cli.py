@@ -112,6 +112,8 @@ class CompilerCliTests(unittest.TestCase):
             "semantics/dynamic_objects.json", "materials/lighting_profiles.json",
             "unreal/import_manifest.json",
             "qa/coordinate_validation.json",
+            "qa/reference_views.json", "qa/baseline/dsm_hillshade.png",
+            "qa/baseline/truth_debug.png",
         ):
             self.assertTrue((manifest_path.parent / relative).is_file(), relative)
         import_plan = json.loads((manifest_path.parent / "unreal/import_manifest.json").read_text())
@@ -124,6 +126,11 @@ class CompilerCliTests(unittest.TestCase):
         visibility = json.loads((manifest_path.parent / "truth/visibility.json").read_text())
         self.assertEqual("dsm_ray_march_v1", visibility["occlusion_method"])
         self.assertFalse(visibility["occlusion_calibrated_with_heldout_views"])
+        selection = json.loads((manifest_path.parent / "selection.json").read_text())
+        self.assertGreaterEqual(len(selection["top_candidates"]), 1)
+        self.assertLessEqual(len(selection["top_candidates"]), 10)
+        self.assertEqual(selection["selected"], selection["top_candidates"][0])
+        self.assertIn("components", selection["top_candidates"][0])
 
 
 if __name__ == "__main__":

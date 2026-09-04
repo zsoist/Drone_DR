@@ -30,6 +30,11 @@ from world_compiler.export.manifest import validate_game_scene_document
 from world_compiler.export.obj import write_obj
 from world_compiler.geometry.structuralize import GeometryBundle, structuralize_heightfield
 from world_compiler.ids import canonical_json, hero_id, tree_hash
+from world_compiler.qa.reference_views import (
+    crop_source_ortho,
+    render_dsm_hillshade,
+    render_truth_debug,
+)
 from world_compiler.selection.hero_cell import (
     _raster_window,
     enumerate_grid,
@@ -110,7 +115,35 @@ def _global_metrics(scene: SceneVersion) -> dict:
     }
 
 
-def _select(scene: SceneVersion, request: BuildRequest, height: np.ndarray, valid: np.ndarray, coverage: np.ndarray):
+def _vegetation_proxy(scene: SceneVersion, shape: tuple[int, int]) -> np.ndarray | None:
+    ortho_path = scene.assets.get("ortho_full") or scene.assets.get("ortho")
+    if ortho_path is None:
+        return None
+    rows, cols = shape
+    rgb = np.asarray(
+        Image.open(ortho_path).convert("RGB").resize((cols, rows), Image.Resampling.BILINEAR),
+        dtype=np.float32,
+    )
+    red, green, blue = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    maximum = rgb.max(axis=-1)
+    minimum = rgb.min(axis=-1)
+    saturation = np.divide(maximum - minimum, np.maximum(maximum, 1.0))
+    return (
+        (green > 45.0)
+        & (green > red * 1.06)
+        & (green > blue * 1.10)
+        & (saturation > 0.12)
+    )
+
+
+def _select(
+    scene: SceneVersion,
+    request: BuildRequest,
+    height: np.ndarray,
+    valid: np.ndarray,
+    coverage: np.ndarray,
+    vegetation: np.ndarray | None,
+):
     if request.center == "auto":
         centers = enumerate_grid(scene.world_size_m, request.size_m, 10.0)
     else:
@@ -124,6 +157,7 @@ def _select(scene: SceneVersion, request: BuildRequest, height: np.ndarray, vali
         valid_mask=valid,
         mesh_coverage=coverage,
         heightfield=height,
+        vegetation_mask=vegetation,
         global_metrics=_global_metrics(scene),
     )
     return select_hero_cell(scene, evidence, request.size_m)
@@ -131,16 +165,23 @@ def _select(scene: SceneVersion, request: BuildRequest, height: np.ndarray, vali
 
 def _selection_dict(report) -> dict:
     selected = report.selected
+    def candidate_dict(candidate) -> dict:
+        return {
+            "center_ab_m": list(candidate.center_ab_m),
+            "score": candidate.score.total,
+            "valid_fraction": candidate.valid_fraction,
+            "rejection_reason": candidate.rejection_reason,
+            "components": {
+                name: asdict(component)
+                for name, component in candidate.score.components.items()
+            },
+        }
+
     return {
         "size_m": report.size_m,
-        "selected": {
-            "center_ab_m": list(selected.center_ab_m),
-            "score": selected.score.total,
-            "valid_fraction": selected.valid_fraction,
-            "components": {
-                name: asdict(component) for name, component in selected.score.components.items()
-            },
-        },
+        "selected": candidate_dict(selected),
+        "top_candidates": [candidate_dict(candidate) for candidate in report.eligible[:10]],
+        "rejected_candidates": [candidate_dict(candidate) for candidate in report.rejected[:10]],
         "candidate_counts": {"eligible": len(report.eligible), "rejected": len(report.rejected)},
     }
 
@@ -246,7 +287,8 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
     vault = Path(vault).resolve()
     scene = WorldRepository(vault).resolve_scene(request.scene_id, request.version_id)
     meta, height, valid, coverage = _read_rasters(scene)
-    selection = _select(scene, request, height, valid, coverage)
+    vegetation = _vegetation_proxy(scene, height.shape)
+    selection = _select(scene, request, height, valid, coverage, vegetation)
     center = selection.selected.center_ab_m
     identity_request = request.as_dict() | {"version_id": scene.version_id, "selected_center_ab_m": list(center)}
     package_root = Path(__file__).resolve().parent
@@ -383,6 +425,8 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                 "sha256": hash_file(target),
             })
 
+        confidence_u8 = None
+        class_rgb = None
         if spatial_truth is None:
             evidence_rows = [
                 SurfaceEvidence.inferred(layer.confidence, "dsm-structuralization-v1")
@@ -444,6 +488,33 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             })
         validate_truth_field_document(truth)
         _write_json(staging / "truth/truth_field.v1.json", truth)
+        baseline_dir = staging / "qa/baseline"
+        baseline_dir.mkdir(parents=True, exist_ok=True)
+        hillshade_path = baseline_dir / "dsm_hillshade.png"
+        render_dsm_hillshade(patch, spacing).save(hillshade_path)
+        reference_views = {
+            "version": 1,
+            "status": "compiler_baseline_only",
+            "dsm_hillshade": "qa/baseline/dsm_hillshade.png",
+            "source_ortho": None,
+            "truth_debug": None,
+            "unreal_final": [],
+            "note": "These are compiler QA views, not Unreal acceptance captures.",
+        }
+        ortho_path = scene.assets.get("ortho_full") or scene.assets.get("ortho")
+        if ortho_path is not None:
+            ortho = crop_source_ortho(
+                ortho_path, center, scene.world_size_m, request.size_m
+            )
+            ortho.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            ortho.save(baseline_dir / "source_ortho.png")
+            reference_views["source_ortho"] = "qa/baseline/source_ortho.png"
+        if confidence_u8 is not None and class_rgb is not None:
+            render_truth_debug(class_rgb, confidence_u8).save(
+                baseline_dir / "truth_debug.png"
+            )
+            reference_views["truth_debug"] = "qa/baseline/truth_debug.png"
+        _write_json(staging / "qa/reference_views.json", reference_views)
 
         mask = compose_static_mask({}, shape=patch.shape)
         _write_json(staging / "semantics/masks.json", {
@@ -603,7 +674,10 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "source_hashes": dict(sorted(scene.source_hashes.items())),
             "dependency_hashes": dependency_hashes,
             "records": {"request": "request.json", "run": "run.json", "cost": "cost.json"},
-            "qa": {"coordinate_validation": "qa/coordinate_validation.json"},
+            "qa": {
+                "coordinate_validation": "qa/coordinate_validation.json",
+                "reference_views": "qa/reference_views.json",
+            },
         }
         _write_json(staging / "game_scene.v1.json", manifest)
     return summary | {"output": str(paths.target)}

@@ -93,6 +93,48 @@ class HeroCellSelectionTests(unittest.TestCase):
             rows[1].metrics["geometry_completeness"]["value"],
         )
 
+    def test_planar_roof_candidate_outranks_equally_tall_rough_canopy(self):
+        height = np.zeros((100, 100), dtype=np.float32)
+        height[35:65, 15:35] = 8.0
+        checker = np.indices((30, 20)).sum(axis=0) % 2
+        height[35:65, 65:85] = checker * 8.0
+        evidence = raster_candidate_evidence(
+            centers=[(-25.0, 0.0), (25.0, 0.0)],
+            world_size_m=(100.0, 100.0),
+            size_m=40.0,
+            valid_mask=np.ones_like(height, dtype=np.uint8),
+            mesh_coverage=np.ones_like(height, dtype=np.uint8),
+            heightfield=height,
+        )
+
+        self.assertGreater(
+            evidence[0].metrics["roof_and_vertical_surface_mix"]["value"],
+            evidence[1].metrics["roof_and_vertical_surface_mix"]["value"],
+        )
+
+    def test_measured_vegetation_proxy_reduces_route_playability(self):
+        height = np.zeros((50, 100), dtype=np.float32)
+        vegetation = np.zeros_like(height, dtype=bool)
+        vegetation[:, 50:] = True
+        evidence = raster_candidate_evidence(
+            centers=[(-25.0, 0.0), (25.0, 0.0)],
+            world_size_m=(100.0, 50.0),
+            size_m=40.0,
+            valid_mask=np.ones_like(height, dtype=np.uint8),
+            mesh_coverage=np.ones_like(height, dtype=np.uint8),
+            heightfield=height,
+            vegetation_mask=vegetation,
+        )
+
+        self.assertGreater(
+            evidence[0].metrics["route_playability"]["value"],
+            evidence[1].metrics["route_playability"]["value"],
+        )
+        self.assertEqual(
+            "ortho green-dominance vegetation proxy",
+            evidence[1].metrics["route_playability"]["source"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

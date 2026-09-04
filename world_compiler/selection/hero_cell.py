@@ -169,6 +169,7 @@ def raster_candidate_evidence(
     valid_mask: np.ndarray,
     mesh_coverage: np.ndarray,
     heightfield: np.ndarray,
+    vegetation_mask: np.ndarray | None = None,
     global_metrics: dict[str, Any] | None = None,
 ) -> list[CandidateEvidence]:
     valid = np.asarray(valid_mask)
@@ -176,6 +177,9 @@ def raster_candidate_evidence(
     height = np.asarray(heightfield, dtype=np.float64)
     if valid.ndim != 2 or mesh.shape != valid.shape or height.shape != valid.shape:
         raise ValueError("selection rasters must share one 2D shape")
+    vegetation = None if vegetation_mask is None else np.asarray(vegetation_mask, dtype=bool)
+    if vegetation is not None and vegetation.shape != valid.shape:
+        raise ValueError("vegetation proxy must match selection rasters")
     if not np.isfinite(height).all():
         raise ValueError("heightfield must be finite")
     width, world_height = (float(value) for value in world_size_m)
@@ -185,12 +189,35 @@ def raster_candidate_evidence(
         valid_patch = valid[row_slice, col_slice] > 0
         mesh_patch = mesh[row_slice, col_slice]
         height_patch = height[row_slice, col_slice]
+        vegetation_patch = vegetation[row_slice, col_slice] if vegetation is not None else None
         valid_fraction = float(valid_patch.mean()) if valid_patch.size else 0.0
         mesh_fraction = float((mesh_patch > 0).mean()) if mesh_patch.size else 0.0
         if height_patch.size:
             vertical_range = float(np.percentile(height_patch, 95) - np.percentile(height_patch, 5))
+            base = float(np.percentile(height_patch, 30))
+            elevated = height_patch > base + 2.0
+            roughness = np.zeros_like(height_patch)
+            if min(height_patch.shape) >= 2:
+                roughness[1:, :] = np.maximum(
+                    roughness[1:, :], np.abs(height_patch[1:, :] - height_patch[:-1, :])
+                )
+                roughness[:-1, :] = np.maximum(
+                    roughness[:-1, :], np.abs(height_patch[:-1, :] - height_patch[1:, :])
+                )
+                roughness[:, 1:] = np.maximum(
+                    roughness[:, 1:], np.abs(height_patch[:, 1:] - height_patch[:, :-1])
+                )
+                roughness[:, :-1] = np.maximum(
+                    roughness[:, :-1], np.abs(height_patch[:, :-1] - height_patch[:, 1:])
+                )
+            planar_fraction = float((roughness[elevated] < 1.0).mean()) if elevated.any() else 0.0
         else:
             vertical_range = 0.0
+            planar_fraction = 0.0
+        vegetation_fraction = (
+            float(vegetation_patch.mean()) if vegetation_patch is not None and vegetation_patch.size else 0.0
+        )
+        route_playability = valid_fraction * (1.0 - 0.75 * vegetation_fraction)
         x, z = center
         clearance = min(
             width / 2 - abs(x) - size_m / 2,
@@ -204,12 +231,26 @@ def raster_candidate_evidence(
                     "source": "mesh_coverage raster",
                 },
                 "roof_and_vertical_surface_mix": {
-                    "value": min(1.0, vertical_range / 20.0),
-                    "source": "heightfield p95-p05",
+                    "value": min(1.0, vertical_range / 20.0) * planar_fraction,
+                    "source": "heightfield p95-p05 with elevated-surface planarity",
                 },
                 "route_playability": {
-                    "value": valid_fraction,
-                    "source": "valid terrain mask",
+                    "value": route_playability,
+                    "source": (
+                        "ortho green-dominance vegetation proxy"
+                        if vegetation_patch is not None
+                        else "valid terrain mask"
+                    ),
+                    "reason": (
+                        f"vegetation_fraction={vegetation_fraction:.6f}"
+                        if vegetation_patch is not None
+                        else None
+                    ),
+                },
+                "vegetation_proxy_fraction": {
+                    "value": vegetation_fraction if vegetation_patch is not None else None,
+                    "source": "ortho green-dominance vegetation proxy" if vegetation_patch is not None else None,
+                    "reason": None if vegetation_patch is not None else "ortho vegetation proxy unavailable",
                 },
                 "clean_AOI_boundary": {
                     "value": max(0.0, min(1.0, clearance / max(size_m / 2, 1.0))),
