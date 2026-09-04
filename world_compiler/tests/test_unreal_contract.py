@@ -87,6 +87,12 @@ class UnrealImporterContractTests(unittest.TestCase):
             self.assertEqual("unreal_python_module_unavailable", report["blocker"])
             self.assertEqual(report, json.loads(report_path.read_text()))
             self.assertFalse((root / "unreal/converted").exists())
+            metrics = json.loads((root / "qa/metrics.json").read_text())
+            self.assertEqual("blocked_external", metrics["unreal_status"])
+            self.assertEqual("partially accepted", metrics["verdict"])
+            self.assertIn("blocked_external", (root / "qa/acceptance.md").read_text())
+            self.assertNotIn("unreal_import_not_run", metrics.get("blockers", []))
+            self.assertIn("unreal_python_module_unavailable", metrics.get("blockers", []))
 
     def test_import_plan_requires_layers_profiles_provenance_and_reference_cameras(self):
         document = valid_document()

@@ -123,6 +123,7 @@ class CompilerCliTests(unittest.TestCase):
             "qa/source_support.json",
             "qa/source_geometry_agreement.json",
             "qa/source_silhouette_agreement.json",
+            "qa/metrics.json", "qa/acceptance.md",
             "qa/reference_views.json", "qa/baseline/dsm_hillshade.png",
             "qa/baseline/truth_debug.png",
         ):
@@ -174,6 +175,16 @@ class CompilerCliTests(unittest.TestCase):
         self.assertFalse(silhouette["independent_ground_truth"])
         self.assertFalse(silhouette["acceptance_gate_eligible"])
         self.assertEqual("opensfm_source_camera_mesh_silhouette_iou_v1", silhouette["method"])
+        metrics = json.loads((manifest_path.parent / "qa/metrics.json").read_text())
+        self.assertEqual("partially accepted", metrics["verdict"])
+        self.assertEqual("not_run", metrics["unreal_status"])
+        self.assertIsNone(metrics["geometry"]["median_m"])
+        self.assertFalse(metrics["geometry"]["independent_ground_truth"])
+        self.assertEqual(5, len(metrics["provenance"]["route_coverage_pct"]))
+        acceptance_text = (manifest_path.parent / "qa/acceptance.md").read_text()
+        self.assertIn(first["hero_id"], acceptance_text)
+        self.assertIn("OBSERVED_WEAK", acceptance_text)
+        self.assertIn("unreal_import_not_run", acceptance_text)
         selection = json.loads((manifest_path.parent / "selection.json").read_text())
         self.assertGreaterEqual(len(selection["top_candidates"]), 1)
         self.assertLessEqual(len(selection["top_candidates"]), 10)

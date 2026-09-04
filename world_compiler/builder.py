@@ -54,6 +54,8 @@ from world_compiler.qa.geometry_metrics import (
     source_surface_agreement,
     source_surface_distances,
 )
+from world_compiler.qa.performance import evaluate_performance
+from world_compiler.qa.report import write_acceptance_report
 from world_compiler.selection.hero_cell import (
     _raster_window,
     enumerate_grid,
@@ -647,6 +649,13 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         except (OSError, ValueError, json.JSONDecodeError) as error:
             silhouette_report["reason"] = str(error)
         _write_json(staging / "qa/source_silhouette_agreement.json", silhouette_report)
+        agreement = {
+            "version": 1,
+            "status": "unavailable",
+            "independent_ground_truth": False,
+            "acceptance_gate_eligible": False,
+            "reason": "clean observed structure is empty",
+        }
         clean_vertices = next(
             vertices
             for layer, vertices in translated_layers
@@ -988,12 +997,10 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "generated_content_policy": "rebuild_only_do_not_commit",
         }
         _write_json(staging / "unreal/import_manifest.json", import_plan)
-        _write_json(
-            staging / "qa/coordinate_validation.json",
-            _coordinate_validation_report(
-                coordinate, center, request.size_m, patch, spacing, reference_camera_poses
-            ),
+        coordinate_report = _coordinate_validation_report(
+            coordinate, center, request.size_m, patch, spacing, reference_camera_poses
         )
+        _write_json(staging / "qa/coordinate_validation.json", coordinate_report)
         local_compute_seconds = round(time.perf_counter() - started, 6)
         _write_json(staging / "cost.json", {
             "version": 1,
@@ -1050,7 +1057,62 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                 "source_geometry_agreement": "qa/source_geometry_agreement.json",
                 "source_silhouette_agreement": "qa/source_silhouette_agreement.json",
                 "reference_views": "qa/reference_views.json",
+                "metrics": "qa/metrics.json",
+                "acceptance": "qa/acceptance.md",
             },
         }
         _write_json(staging / "game_scene.v1.json", manifest)
+        acceptance_metrics = {
+            "version": 1,
+            "hero_id": identity,
+            "scene_id": scene.scene_id,
+            "version_id": scene.version_id,
+            "compiler_passes": True,
+            "compiler_status": "passed_build_contract",
+            "unreal_status": "not_run",
+            "geometry": {
+                "independent_ground_truth": False,
+                "acceptance_gate_eligible": False,
+                "median_m": None,
+                "p95_m": None,
+                "targets_m": {"median_max": 0.15, "p95_max": 0.40},
+                "source_surface_proxy": agreement.get("proxy"),
+                "source_silhouette_proxy": {
+                    "median_iou": silhouette_report.get("median_iou"),
+                    "min_iou": silhouette_report.get("min_iou"),
+                    "max_iou": silhouette_report.get("max_iou"),
+                    "target_iou": 0.90,
+                    "passes": silhouette_report.get("passes_proxy_target", False),
+                    "independent_ground_truth": False,
+                },
+            },
+            "provenance": {
+                "route_visibility_weighted": geometry_coverage["route_visibility_weighted"],
+                "route_coverage_pct": geometry_coverage["coverage_pct"],
+                "triangle_count_coverage_pct": geometry_coverage["triangle_count_coverage_pct"],
+            },
+            "materials": {
+                "status": (
+                    "generated_proxy_maps" if generated_map_paths else "planned_not_generated"
+                ),
+                "unreal_relighting_validated": False,
+                "generation_metrics": generation_metrics,
+                "actual_generated_texture_bytes": sum(
+                    (staging / relative).stat().st_size for relative in generated_texture_paths
+                ),
+            },
+            "coordinates": coordinate_report,
+            "performance": evaluate_performance(
+                None, None, None, route_completed=None
+            ),
+            "external_cost_usd": 0.0,
+            "blockers": [
+                "independent_geometry_ground_truth_unavailable",
+                "unreal_import_not_run",
+                "unreal_relighting_not_run",
+                "rtx_performance_not_run",
+                "mac_playability_not_run",
+            ],
+        }
+        write_acceptance_report(staging / "qa", acceptance_metrics)
     return summary | {"output": str(paths.target)}

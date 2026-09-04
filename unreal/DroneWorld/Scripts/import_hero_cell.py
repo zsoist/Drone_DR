@@ -20,6 +20,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from world_compiler.export.manifest import validate_game_scene_document
 from world_compiler.ids import canonical_json
+from world_compiler.qa.performance import evaluate_performance
+from world_compiler.qa.report import write_acceptance_report
 
 
 REQUIRED_PROFILES = {"day", "sunset", "night", "rain"}
@@ -115,6 +117,45 @@ def convert_obj_to_ue(source: Path, target: Path, matrix: list, *, flip_winding:
 def _write_report(path: Path, report: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(canonical_json(report) + b"\n")
+
+
+def _update_acceptance_from_import(root: Path, report: dict) -> None:
+    metrics_path = root / "qa/metrics.json"
+    if metrics_path.is_file():
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        metrics.pop("verdict", None)
+    else:
+        metrics = {
+            "version": 1,
+            "hero_id": report.get("hero_id"),
+            "compiler_passes": True,
+            "compiler_status": "manifest_validated_by_importer",
+            "geometry": {
+                "independent_ground_truth": False,
+                "acceptance_gate_eligible": False,
+                "median_m": None,
+                "p95_m": None,
+            },
+            "performance": evaluate_performance(None, None, None, route_completed=None),
+        }
+    metrics["unreal_status"] = (
+        "passed" if report.get("status") == "imported" else report.get("status")
+    )
+    blockers = [
+        value for value in (metrics.get("blockers") or [])
+        if value != "unreal_import_not_run"
+    ]
+    if report.get("blocker") and report["blocker"] not in blockers:
+        blockers.append(report["blocker"])
+    metrics["blockers"] = blockers
+    metrics["unreal_import"] = {
+        "status": report.get("status"),
+        "blocker": report.get("blocker"),
+        "engine_version": report.get("engine_version"),
+        "imported_asset_count": len(report.get("imported_assets") or []),
+        "error_count": len(report.get("errors") or []),
+    }
+    write_acceptance_report(root / "qa", metrics)
 
 
 def _transform_vector(vector, matrix):
@@ -342,6 +383,7 @@ def run_import(manifest_path: Path, report_path: Path) -> dict:
             "errors": [],
         }
         _write_report(report_path, report)
+        _update_acceptance_from_import(root, report)
         return report
 
     converted_root = Path(report_path).parent / "converted"
@@ -423,6 +465,7 @@ def run_import(manifest_path: Path, report_path: Path) -> dict:
         "errors": errors,
     }
     _write_report(report_path, report)
+    _update_acceptance_from_import(root, report)
     return report
 
 
