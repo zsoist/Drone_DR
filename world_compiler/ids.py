@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from pathlib import Path
 
 
 def canonical_json(value: object) -> bytes:
@@ -31,3 +32,26 @@ def hero_id(
     }
     digest = hashlib.sha256(canonical_json(envelope)).hexdigest()
     return f"hero_{digest[:16]}"
+
+
+def tree_hash(
+    root: Path,
+    *,
+    suffixes: tuple[str, ...] = (".py", ".json", ".ini", ".cpp", ".h", ".cs", ".uproject"),
+) -> str:
+    """Hash stable source files below a tree, excluding generated/cache/test content."""
+    root = Path(root).resolve()
+    excluded = {"__pycache__", "tests", "Binaries", "DerivedDataCache", "Intermediate", "Saved", "Generated"}
+    records = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in suffixes:
+            continue
+        relative = path.relative_to(root)
+        if any(part in excluded for part in relative.parts):
+            continue
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+        records[relative.as_posix()] = digest.hexdigest()
+    return hashlib.sha256(canonical_json(records)).hexdigest()

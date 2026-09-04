@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -28,7 +29,7 @@ from world_compiler.evidence.spatial_truth import build_spatial_truth
 from world_compiler.export.manifest import validate_game_scene_document
 from world_compiler.export.obj import write_obj
 from world_compiler.geometry.structuralize import GeometryBundle, structuralize_heightfield
-from world_compiler.ids import canonical_json, hero_id
+from world_compiler.ids import canonical_json, hero_id, tree_hash
 from world_compiler.selection.hero_cell import (
     _raster_window,
     enumerate_grid,
@@ -180,13 +181,21 @@ def _validate_staging(root: Path) -> bool:
 
 
 def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) -> dict:
+    started = time.perf_counter()
     vault = Path(vault).resolve()
     scene = WorldRepository(vault).resolve_scene(request.scene_id, request.version_id)
     meta, height, valid, coverage = _read_rasters(scene)
     selection = _select(scene, request, height, valid, coverage)
     center = selection.selected.center_ab_m
     identity_request = request.as_dict() | {"version_id": scene.version_id, "selected_center_ab_m": list(center)}
-    identity = hero_id(identity_request, scene.source_hashes, {"compiler_contract": COMPILER_CONTRACT})
+    package_root = Path(__file__).resolve().parent
+    repository_root = package_root.parent
+    dependency_hashes = {
+        "compiler_contract": COMPILER_CONTRACT,
+        "world_compiler_source": tree_hash(package_root),
+        "unreal_project_source": tree_hash(repository_root / "unreal" / "DroneWorld"),
+    }
+    identity = hero_id(identity_request, scene.source_hashes, dependency_hashes)
     paths = WorldPaths(vault, scene.scene_id, identity)
     summary = {
         "status": "dry_run" if dry_run else "built",
@@ -261,11 +270,6 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "version": 1, "compiler_contract": COMPILER_CONTRACT,
             "deterministic": True, "external_network_calls": 0,
             "source_mode": "read_only", "timestamps_excluded_for_reproducibility": True,
-        })
-        _write_json(staging / "cost.json", {
-            "version": 1, "currency": "USD", "external_total": 0.0,
-            "cloud": 0.0, "api": 0.0, "paid_assets": 0.0,
-            "local_compute_seconds": None, "electricity_estimate": None,
         })
         _write_json(staging / "selection.json", _selection_dict(selection))
         _write_json(staging / "source/manifests.json", {
@@ -476,6 +480,19 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "generated_content_policy": "rebuild_only_do_not_commit",
         }
         _write_json(staging / "unreal/import_manifest.json", import_plan)
+        local_compute_seconds = round(time.perf_counter() - started, 6)
+        _write_json(staging / "cost.json", {
+            "version": 1,
+            "currency": "USD",
+            "external_total": 0.0,
+            "cloud": 0.0,
+            "api": 0.0,
+            "paid_assets": 0.0,
+            "local_compute_seconds": local_compute_seconds,
+            "local_compute_hours": round(local_compute_seconds / 3600.0, 12),
+            "electricity_estimate": None,
+            "electricity_note": "not estimated",
+        })
 
         manifest = {
             "version": 1,
@@ -510,7 +527,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             },
             "missing_views": "missing_views.json",
             "source_hashes": dict(sorted(scene.source_hashes.items())),
-            "dependency_hashes": {"compiler_contract": COMPILER_CONTRACT},
+            "dependency_hashes": dependency_hashes,
             "records": {"request": "request.json", "run": "run.json", "cost": "cost.json"},
         }
         _write_json(staging / "game_scene.v1.json", manifest)

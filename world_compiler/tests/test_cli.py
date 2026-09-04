@@ -102,6 +102,9 @@ class CompilerCliTests(unittest.TestCase):
         truth = json.loads((manifest_path.parent / document["truth_field"]).read_text())
         self.assertAlmostEqual(100.0, sum(truth["coverage_pct"].values()))
         self.assertIn("raster", truth)
+        cost = json.loads((manifest_path.parent / "cost.json").read_text())
+        self.assertGreater(cost["local_compute_seconds"], 0.0)
+        self.assertEqual(0.0, cost["external_total"])
         for relative in (
             "source/manifests.json", "source/cameras.json", "source/selected_frames.json",
             "source/aoi.json", "truth/confidence.png", "truth/provenance.png",

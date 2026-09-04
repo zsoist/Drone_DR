@@ -1,7 +1,9 @@
 import math
+import tempfile
 import unittest
+from pathlib import Path
 
-from world_compiler.ids import canonical_json, hero_id
+from world_compiler.ids import canonical_json, hero_id, tree_hash
 
 
 class HeroIdentityTests(unittest.TestCase):
@@ -32,6 +34,17 @@ class HeroIdentityTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
                     canonical_json({"value": value})
+
+    def test_tree_hash_tracks_content_and_ignores_cache_artifacts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "module.py").write_text("VALUE = 1\n")
+            first = tree_hash(root)
+            (root / "__pycache__").mkdir()
+            (root / "__pycache__/module.pyc").write_bytes(b"unstable")
+            self.assertEqual(first, tree_hash(root))
+            (root / "module.py").write_text("VALUE = 2\n")
+            self.assertNotEqual(first, tree_hash(root))
 
 
 if __name__ == "__main__":
