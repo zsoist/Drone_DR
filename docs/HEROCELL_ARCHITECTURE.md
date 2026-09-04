@@ -29,8 +29,8 @@ El comando es:
   --vault /Volumes/SSD/drone-vault
 ```
 
-El output actual es `hero_17503cfc9d4b3847`, centrado en `(-30, -10)` m AB. Su identidad incorpora 14 hashes fuente y hashes SHA-256 reales de los árboles `world_compiler` y Unreal. Toda escritura derivada queda bajo `/Volumes/SSD/drone-vault/worlds`; los originales y manifests permanecen read-only.
+El output actual es `hero_655235990c84a42e`, centrado en `(-30, -10)` m AB. Su identidad incorpora 14 hashes fuente y hashes SHA-256 reales de los árboles `world_compiler` y Unreal. Toda escritura derivada queda bajo `/Volumes/SSD/drone-vault/worlds`; los originales y manifests permanecen read-only.
 
 ## Gates
 
-Los 72 tests Python cubren confinamiento, identidad, coordenadas, selección, Truth Field, separación de capas, presupuesto de materiales, completion, schema, vistas baseline, proxy de acuerdo con geometría fuente y reproducibilidad. Ese proxy no sustituye ground truth independiente y actualmente refuta la precisión de la aproximación por cajas. Import Unreal, capturas finales, ruta de vuelo, FPS, 1% low y VRAM requieren un editor real y permanecen bloqueados externamente cuando no existe `UnrealEditor-Cmd`.
+Los 73 tests Python cubren confinamiento, identidad, coordenadas, selección, Truth Field, separación de capas, presupuesto de materiales, completion, schema, vistas baseline, exclusión de copas, proxy de acuerdo con geometría fuente y reproducibilidad. Ese proxy no sustituye ground truth independiente y aún refuta la precisión de la aproximación rectangular, aunque el filtro de planitud/vegetación redujo materialmente el error. Import Unreal, capturas finales, ruta de vuelo, FPS, 1% low y VRAM requieren un editor real y permanecen bloqueados externamente cuando no existe `UnrealEditor-Cmd`.
