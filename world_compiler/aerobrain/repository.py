@@ -46,6 +46,7 @@ class SceneVersion:
     source_hashes: dict[str, str]
     world_size_m: tuple[float, float]
     camera_reconstruction_path: Path | None
+    camera_image_dir: Path | None
 
 
 class WorldRepository:
@@ -85,6 +86,17 @@ class WorldRepository:
         if not path.is_file():
             raise RepositoryError(f"asset does not exist: {path.name}")
         return path
+
+    def _camera_image_directory(self, reconstruction: Path) -> Path | None:
+        project = self._inside_vault(Path(reconstruction).resolve().parents[1])
+        direct = self._inside_vault(project / "images")
+        if direct.is_dir():
+            return direct
+        parent_name = re.sub(r"_aoi\d+$", "", project.name)
+        if parent_name == project.name:
+            return None
+        inherited = self._inside_vault(project.parent / parent_name / "images")
+        return inherited if inherited.is_dir() else None
 
     def resolve_scene(
         self, scene_id: str, version_id: str | None = None
@@ -177,8 +189,10 @@ class WorldRepository:
         )
         if camera_reconstruction.is_file():
             hashes["camera_reconstruction"] = hash_file(camera_reconstruction)
+            camera_image_dir = self._camera_image_directory(camera_reconstruction)
         else:
             camera_reconstruction = None
+            camera_image_dir = None
         return SceneVersion(
             scene_id=scene_id,
             version_id=selected_id,
@@ -195,4 +209,5 @@ class WorldRepository:
             source_hashes=hashes,
             world_size_m=(width, height),
             camera_reconstruction_path=camera_reconstruction,
+            camera_image_dir=camera_image_dir,
         )

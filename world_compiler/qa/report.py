@@ -45,6 +45,7 @@ Verdict: **{verdict}**
 - Unreal gate: {document.get('unreal_status')}
 - Geometry median/p95: {geometry.get('median_m')} / {geometry.get('p95_m')} m
 - Source silhouette proxy IoU: {(geometry.get('source_silhouette_proxy') or {}).get('median_iou')}
+- Source-image edge support: {(geometry.get('source_image_edge_proxy') or {}).get('median_edge_support')}
 - Route-weighted provenance: {route_rows}
 - Materials: {materials.get('status')}; Unreal relighting validated={materials.get('unreal_relighting_validated')}
 - RTX avg/1% low/VRAM: {performance.get('avg_fps')} / {performance.get('one_percent_low_fps')} / {performance.get('vram_mib')} MiB

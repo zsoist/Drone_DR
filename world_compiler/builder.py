@@ -44,6 +44,7 @@ from world_compiler.geometry.structuralize import (
 from world_compiler.ids import canonical_json, hero_id, tree_hash
 from world_compiler.qa.reference_views import (
     compare_mesh_silhouettes,
+    compare_mesh_to_source_image_edges,
     crop_source_ortho,
     render_dsm_hillshade,
     render_truth_debug,
@@ -341,6 +342,53 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
     vegetation = _vegetation_proxy(scene, height.shape)
     selection = _select(scene, request, height, valid, coverage, vegetation)
     center = selection.selected.center_ab_m
+    cameras = (
+        load_opensfm_cameras(scene.camera_reconstruction_path, scene.world_manifest["world"])
+        if scene.camera_reconstruction_path is not None
+        else None
+    )
+    selected_camera_poses = []
+    reference_camera_poses = []
+    reference_image_paths: dict[str, Path] = {}
+    if cameras is not None:
+        radius = max(request.size_m, 1.0)
+        selected_camera_poses = [
+            pose
+            for pose in cameras.poses
+            if np.hypot(pose.center_ab_m[0] - center[0], pose.center_ab_m[2] - center[1])
+            <= 2.0 * radius
+        ]
+        identity_row_slice, identity_col_slice = _raster_window(
+            center, scene.world_size_m, request.size_m, height.shape
+        )
+        identity_patch = height[identity_row_slice, identity_col_slice]
+        identity_valid = valid[identity_row_slice, identity_col_slice] > 0
+        if not identity_valid.any():
+            raise ValueError("selected Hero Cell has no valid DSM samples")
+        target_y = float(
+            np.median(identity_patch[identity_valid])
+            - float(meta.get("elev_min", height.min()))
+        )
+        reference_camera_poses = sorted(
+            selected_camera_poses,
+            key=lambda pose: (
+                float(
+                    np.linalg.norm(
+                        np.asarray(pose.center_ab_m)
+                        - np.asarray([center[0], target_y, center[1]])
+                    )
+                ),
+                pose.camera_id,
+            ),
+        )[:8]
+    source_hashes = dict(scene.source_hashes)
+    if scene.camera_image_dir is not None:
+        image_root = scene.camera_image_dir.resolve()
+        for pose in reference_camera_poses:
+            image_path = (image_root / pose.camera_id).resolve()
+            if image_path.is_relative_to(image_root) and image_path.is_file():
+                reference_image_paths[pose.camera_id] = image_path
+                source_hashes[f"camera_image:{pose.camera_id}"] = hash_file(image_path)
     identity_request = request.as_dict() | {"version_id": scene.version_id, "selected_center_ab_m": list(center)}
     package_root = Path(__file__).resolve().parent
     repository_root = package_root.parent
@@ -349,7 +397,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         "world_compiler_source": tree_hash(package_root),
         "unreal_project_source": tree_hash(repository_root / "unreal" / "DroneWorld"),
     }
-    identity = hero_id(identity_request, scene.source_hashes, dependency_hashes)
+    identity = hero_id(identity_request, source_hashes, dependency_hashes)
     paths = WorldPaths(vault, scene.scene_id, identity)
     summary = {
         "status": "dry_run" if dry_run else "built",
@@ -428,15 +476,8 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
     except (OSError, ValueError, json.JSONDecodeError) as error:
         source_support["reason"] = str(error)
     coordinate = CoordinateContract(center)
-    cameras = (
-        load_opensfm_cameras(scene.camera_reconstruction_path, scene.world_manifest["world"])
-        if scene.camera_reconstruction_path is not None
-        else None
-    )
     support = None
     spatial_truth = None
-    selected_camera_poses = []
-    reference_camera_poses = []
     if cameras is not None:
         rows, cols = patch.shape
         x_values = center[0] + (np.arange(cols) - (cols - 1) / 2.0) * spacing[0]
@@ -456,21 +497,6 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             support.angular_diversity,
             occlusion_validated=False,
         )
-        radius = max(request.size_m, 1.0)
-        selected_camera_poses = [
-            pose
-            for pose in cameras.poses
-            if np.hypot(pose.center_ab_m[0] - center[0], pose.center_ab_m[2] - center[1])
-            <= 2.0 * radius
-        ]
-        target_y = float(np.median(patch))
-        reference_camera_poses = sorted(
-            selected_camera_poses,
-            key=lambda pose: (
-                float(np.linalg.norm(np.asarray(pose.center_ab_m) - np.asarray([center[0], target_y, center[1]]))),
-                pose.camera_id,
-            ),
-        )[:8]
 
     with atomic_world_build(paths, validator=_validate_staging) as staging:
         _write_json(staging / "request.json", identity_request)
@@ -484,7 +510,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "version": 1,
             "scene_id": scene.scene_id,
             "version_id": scene.version_id,
-            "source_hashes": dict(sorted(scene.source_hashes.items())),
+            "source_hashes": dict(sorted(source_hashes.items())),
             "source_paths_redacted": True,
         })
         _write_json(staging / "source/aoi.json", {
@@ -574,6 +600,19 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "triangle_count_coverage_pct": triangle_count_coverage_pct,
         }
         _write_json(staging / "truth/geometry_coverage.json", geometry_coverage)
+        candidate_vertices_parts = []
+        candidate_faces_parts = []
+        vertex_offset = 0
+        for layer, vertices in translated_layers:
+            if layer.role not in {
+                "clean_observed_structure",
+                "geometrically_inferred_structure",
+            }:
+                continue
+            if len(layer.faces):
+                candidate_vertices_parts.append(vertices)
+                candidate_faces_parts.append(layer.faces.astype(np.uint32) + vertex_offset)
+                vertex_offset += len(vertices)
         silhouette_report = {
             "version": 1,
             "status": "unavailable",
@@ -605,16 +644,6 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             source_structure_faces = source_faces[source_structure_mask]
             if not len(source_structure_faces):
                 raise ValueError("source collider has no elevated structure triangles in the Hero Cell")
-            candidate_vertices_parts = []
-            candidate_faces_parts = []
-            vertex_offset = 0
-            for layer, vertices in translated_layers:
-                if layer.role not in {"clean_observed_structure", "geometrically_inferred_structure"}:
-                    continue
-                if len(layer.faces):
-                    candidate_vertices_parts.append(vertices)
-                    candidate_faces_parts.append(layer.faces.astype(np.uint32) + vertex_offset)
-                    vertex_offset += len(vertices)
             if not candidate_faces_parts:
                 raise ValueError("canonical build has no structural triangles")
             source_camera_set = CameraSet(
@@ -649,6 +678,44 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         except (OSError, ValueError, json.JSONDecodeError) as error:
             silhouette_report["reason"] = str(error)
         _write_json(staging / "qa/source_silhouette_agreement.json", silhouette_report)
+        source_image_edge_report = {
+            "version": 1,
+            "status": "unavailable",
+            "method": "opensfm_projected_silhouette_to_source_gradient_support_v1",
+            "independent_ground_truth": False,
+            "acceptance_gate_eligible": False,
+            "held_out_from_reconstruction": False,
+            "reason": "source images or canonical structure were unavailable",
+        }
+        try:
+            if cameras is None or not reference_camera_poses:
+                raise ValueError("no source reference cameras selected")
+            if not reference_image_paths:
+                raise ValueError("selected source camera JPEGs are unavailable")
+            if not candidate_faces_parts:
+                raise ValueError("canonical build has no structural triangles")
+            source_camera_set = CameraSet(
+                tuple(reference_camera_poses),
+                cameras.east_offset_m,
+                cameras.north_offset_m,
+                cameras.elevation_origin_m,
+                cameras.projection_method,
+            )
+            source_image_edge_report = compare_mesh_to_source_image_edges(
+                source_camera_set,
+                reference_image_paths,
+                np.concatenate(candidate_vertices_parts),
+                np.concatenate(candidate_faces_parts),
+                output_dir=staging / "qa/baseline/source_edges",
+            )
+            source_image_edge_report["reason"] = None
+            for row in source_image_edge_report["cameras"]:
+                row["overlay"] = f"qa/baseline/source_edges/{row['overlay']}"
+        except (OSError, ValueError) as error:
+            source_image_edge_report["reason"] = str(error)
+        _write_json(
+            staging / "qa/source_image_edge_support.json", source_image_edge_report
+        )
         agreement = {
             "version": 1,
             "status": "unavailable",
@@ -1048,7 +1115,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                 "aoi": "source/aoi.json",
             },
             "missing_views": "missing_views.json",
-            "source_hashes": dict(sorted(scene.source_hashes.items())),
+            "source_hashes": dict(sorted(source_hashes.items())),
             "dependency_hashes": dependency_hashes,
             "records": {"request": "request.json", "run": "run.json", "cost": "cost.json"},
             "qa": {
@@ -1056,6 +1123,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                 "source_support": "qa/source_support.json",
                 "source_geometry_agreement": "qa/source_geometry_agreement.json",
                 "source_silhouette_agreement": "qa/source_silhouette_agreement.json",
+                "source_image_edge_support": "qa/source_image_edge_support.json",
                 "reference_views": "qa/reference_views.json",
                 "metrics": "qa/metrics.json",
                 "acceptance": "qa/acceptance.md",
@@ -1084,6 +1152,18 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                     "target_iou": 0.90,
                     "passes": silhouette_report.get("passes_proxy_target", False),
                     "independent_ground_truth": False,
+                },
+                "source_image_edge_proxy": {
+                    "median_edge_support": source_image_edge_report.get(
+                        "median_edge_support"
+                    ),
+                    "median_support_lift_over_edge_density": source_image_edge_report.get(
+                        "median_support_lift_over_edge_density"
+                    ),
+                    "camera_count": source_image_edge_report.get("camera_count", 0),
+                    "held_out_from_reconstruction": False,
+                    "independent_ground_truth": False,
+                    "acceptance_gate_eligible": False,
                 },
             },
             "provenance": {

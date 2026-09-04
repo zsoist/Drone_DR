@@ -10,6 +10,81 @@ from PIL import Image, ImageDraw
 from world_compiler.aerobrain.cameras import CameraPose, CameraSet
 
 
+def _dilate(mask: np.ndarray, radius: int) -> np.ndarray:
+    result = np.asarray(mask, dtype=bool).copy()
+    for _ in range(max(0, int(radius))):
+        padded = np.pad(result, 1, mode="constant")
+        result = (
+            padded[1:-1, 1:-1]
+            | padded[:-2, 1:-1]
+            | padded[2:, 1:-1]
+            | padded[1:-1, :-2]
+            | padded[1:-1, 2:]
+            | padded[:-2, :-2]
+            | padded[:-2, 2:]
+            | padded[2:, :-2]
+            | padded[2:, 2:]
+        )
+    return result
+
+
+def silhouette_edge_support(
+    source_rgb: np.ndarray,
+    silhouette: np.ndarray,
+    *,
+    tolerance_px: int = 3,
+) -> tuple[dict, np.ndarray]:
+    """Measure projected silhouette-boundary support from source-image gradients."""
+    source = np.asarray(source_rgb, dtype=np.uint8)
+    mask = np.asarray(silhouette, dtype=bool)
+    if source.ndim != 3 or source.shape[2] != 3 or source.shape[:2] != mask.shape:
+        raise ValueError("source image and silhouette shapes are incompatible")
+    if tolerance_px < 0:
+        raise ValueError("edge tolerance must be non-negative")
+    padded = np.pad(mask, 1, mode="constant")
+    interior = (
+        padded[:-2, 1:-1]
+        & padded[2:, 1:-1]
+        & padded[1:-1, :-2]
+        & padded[1:-1, 2:]
+    )
+    boundary = mask & ~interior
+    if not boundary.any():
+        raise ValueError("silhouette has no boundary pixels")
+    rgb = source.astype(np.float64) / 255.0
+    gray = np.einsum("...i,i->...", rgb, np.asarray([0.2126, 0.7152, 0.0722]))
+    gradient_y, gradient_x = np.gradient(gray)
+    magnitude = np.hypot(gradient_x, gradient_y)
+    nonzero = magnitude[magnitude > 1e-9]
+    if not len(nonzero):
+        strong_edges = np.zeros(mask.shape, dtype=bool)
+        threshold = 0.0
+    else:
+        threshold = max(
+            float(np.percentile(magnitude, 90)),
+            float(np.percentile(nonzero, 25)),
+        )
+        strong_edges = magnitude >= threshold
+    nearby_edges = _dilate(strong_edges, tolerance_px)
+    supported = boundary & nearby_edges
+    edge_support = float(supported.sum() / boundary.sum())
+    edge_density = float(strong_edges.mean())
+    overlay = np.rint(source.astype(np.float64) * 0.45).astype(np.uint8)
+    overlay[boundary] = (255, 70, 70)
+    overlay[supported] = (40, 255, 120)
+    return {
+        "edge_support": round(edge_support, 9),
+        "silhouette_boundary_pixels": int(boundary.sum()),
+        "supported_boundary_pixels": int(supported.sum()),
+        "strong_edge_density": round(edge_density, 9),
+        "support_lift_over_edge_density": round(
+            edge_support / max(edge_density, 1e-9), 9
+        ),
+        "gradient_threshold": round(threshold, 9),
+        "tolerance_px": int(tolerance_px),
+    }, overlay
+
+
 def render_mesh_silhouette(
     camera: CameraPose,
     cameras: CameraSet,
@@ -108,6 +183,75 @@ def compare_mesh_silhouettes(
         "min_iou": round(float(values.min()), 9),
         "max_iou": round(float(values.max()), 9),
         "cameras": rows,
+    }
+
+
+def compare_mesh_to_source_image_edges(
+    cameras: CameraSet,
+    image_paths: dict[str, Path],
+    candidate_vertices: np.ndarray,
+    candidate_faces: np.ndarray,
+    *,
+    output_size: tuple[int, int] = (768, 432),
+    tolerance_px: int = 3,
+    output_dir: Path | None = None,
+) -> dict:
+    """Measure canonical silhouette-edge support in real local source frames."""
+    rows = []
+    if output_dir is not None:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+    for camera in cameras.poses:
+        image_path = image_paths.get(camera.camera_id)
+        if image_path is None or not Path(image_path).is_file():
+            continue
+        source = Image.open(image_path).convert("RGB").resize(
+            output_size, Image.Resampling.LANCZOS
+        )
+        silhouette = render_mesh_silhouette(
+            camera,
+            cameras,
+            candidate_vertices,
+            candidate_faces,
+            output_size=output_size,
+        )
+        metrics, overlay = silhouette_edge_support(
+            np.asarray(source), silhouette, tolerance_px=tolerance_px
+        )
+        row = {"camera_id": camera.camera_id} | metrics
+        if output_dir is not None:
+            relative = f"source_edge_{len(rows):02d}.jpg"
+            Image.fromarray(overlay).save(
+                Path(output_dir) / relative, quality=88, optimize=True
+            )
+            row["overlay"] = relative
+        rows.append(row)
+    if not rows:
+        raise ValueError("no selected source camera images were available")
+    scores = np.asarray([row["edge_support"] for row in rows], dtype=np.float64)
+    lifts = np.asarray(
+        [row["support_lift_over_edge_density"] for row in rows], dtype=np.float64
+    )
+    return {
+        "version": 1,
+        "status": "measured_source_image_edge_proxy",
+        "method": "opensfm_projected_silhouette_to_source_gradient_support_v1",
+        "camera_count": len(rows),
+        "median_edge_support": round(float(np.median(scores)), 9),
+        "min_edge_support": round(float(scores.min()), 9),
+        "max_edge_support": round(float(scores.max()), 9),
+        "median_support_lift_over_edge_density": round(float(np.median(lifts)), 9),
+        "source_images_used_locally": True,
+        "source_images_copied": False,
+        "held_out_from_reconstruction": False,
+        "independent_ground_truth": False,
+        "acceptance_gate_eligible": False,
+        "brown_distortion_applied": False,
+        "cameras": rows,
+        "limitations": [
+            "source frames contributed to the same reconstruction and are not held out",
+            "strong image gradients include texture, vegetation, shadow, and dynamic-object edges",
+            "OpenSfM Brown distortion coefficients are not applied by this pinhole proxy",
+        ],
     }
 
 

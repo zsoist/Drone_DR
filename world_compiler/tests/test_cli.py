@@ -80,6 +80,12 @@ class CompilerCliTests(unittest.TestCase):
             }},
             "shots": shots,
         }]))
+        source_images = reconstruction.parents[1] / "images"
+        source_images.mkdir()
+        grid = np.indices((1000, 1000)).sum(axis=0) // 32 % 2
+        frame_pixels = np.repeat((grid * 180 + 40).astype(np.uint8)[..., None], 3, axis=2)
+        for camera_id in shots:
+            Image.fromarray(frame_pixels).save(source_images / camera_id)
         self.request = BuildRequest("scene_fixture", "recon_fixture", 100.0, "auto", "hero-r0")
 
     def tearDown(self):
@@ -123,6 +129,7 @@ class CompilerCliTests(unittest.TestCase):
             "qa/source_support.json",
             "qa/source_geometry_agreement.json",
             "qa/source_silhouette_agreement.json",
+            "qa/source_image_edge_support.json",
             "qa/metrics.json", "qa/acceptance.md",
             "qa/reference_views.json", "qa/baseline/dsm_hillshade.png",
             "qa/baseline/truth_debug.png",
@@ -175,6 +182,13 @@ class CompilerCliTests(unittest.TestCase):
         self.assertFalse(silhouette["independent_ground_truth"])
         self.assertFalse(silhouette["acceptance_gate_eligible"])
         self.assertEqual("opensfm_source_camera_mesh_silhouette_iou_v1", silhouette["method"])
+        image_edges = json.loads(
+            (manifest_path.parent / "qa/source_image_edge_support.json").read_text()
+        )
+        self.assertEqual("measured_source_image_edge_proxy", image_edges["status"])
+        self.assertEqual(3, image_edges["camera_count"])
+        self.assertFalse(image_edges["acceptance_gate_eligible"])
+        self.assertFalse(image_edges["held_out_from_reconstruction"])
         metrics = json.loads((manifest_path.parent / "qa/metrics.json").read_text())
         self.assertEqual("partially accepted", metrics["verdict"])
         self.assertEqual("not_run", metrics["unreal_status"])
@@ -184,6 +198,7 @@ class CompilerCliTests(unittest.TestCase):
         acceptance_text = (manifest_path.parent / "qa/acceptance.md").read_text()
         self.assertIn(first["hero_id"], acceptance_text)
         self.assertIn("OBSERVED_WEAK", acceptance_text)
+        self.assertIn("Source-image edge support", acceptance_text)
         self.assertIn("unreal_import_not_run", acceptance_text)
         selection = json.loads((manifest_path.parent / "selection.json").read_text())
         self.assertGreaterEqual(len(selection["top_candidates"]), 1)

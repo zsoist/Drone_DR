@@ -3,18 +3,37 @@ import unittest
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from world_compiler.qa.reference_views import (
     compare_mesh_silhouettes,
     crop_source_ortho,
     render_dsm_hillshade,
+    silhouette_edge_support,
     render_truth_debug,
 )
 from world_compiler.aerobrain.cameras import CameraPose, CameraSet
 
 
 class ReferenceViewTests(unittest.TestCase):
+    def test_source_image_edges_support_aligned_silhouette_more_than_shifted_one(self):
+        image = Image.new("RGB", (96, 64), "black")
+        draw = ImageDraw.Draw(image)
+        polygon = [(20, 50), (48, 12), (76, 50)]
+        draw.line(polygon + [polygon[0]], fill="white", width=2)
+        mask_image = Image.new("1", image.size, 0)
+        ImageDraw.Draw(mask_image).polygon(polygon, fill=1)
+        mask = np.asarray(mask_image, dtype=bool)
+
+        aligned, _ = silhouette_edge_support(np.asarray(image), mask, tolerance_px=2)
+        shifted, _ = silhouette_edge_support(
+            np.asarray(image), np.roll(mask, 10, axis=1), tolerance_px=2
+        )
+
+        self.assertGreater(aligned["edge_support"], 0.9)
+        self.assertGreater(aligned["edge_support"], shifted["edge_support"])
+        self.assertGreater(aligned["support_lift_over_edge_density"], 1.0)
+
     def test_mesh_silhouette_iou_uses_full_opensfm_projection(self):
         camera = CameraPose(
             "camera-1",
