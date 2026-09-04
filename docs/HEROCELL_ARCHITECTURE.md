@@ -13,7 +13,7 @@ R0 usa `scene_0cadd1911f/recon_4e4245a1f4_aoi130`: versión activa y completa, c
 3. `CoordinateContract` fija un único cambio AB metros (`+X east`, `+Y up`, `+Z south`) a Unreal centímetros (`X,Z,Y`), con matriz inversa y cambio de winding.
 4. El estructurador conserva seis roles separados: referencia, ground, estructura limpia, estructura inferida, completion y colisión.
 5. Truth Field transforma las poses OpenSfM a frame AeroBrain y proyecta cada muestra DSM a los frusta reales. Como R0 todavía no resuelve oclusión contra mesh ni valida sharpness/reproyección, confidence queda limitada a 0,49 y ninguna muestra puede promocionarse a multi-view.
-6. Evidence Atlas y recetas PBR conservan fuente/confidence y presupuesto residente; las texturas de captura no se declaran normal o roughness verdaderas.
+6. Evidence Atlas y recetas PBR conservan fuente/confidence y presupuesto residente. El compilador genera proxies UV-mapped de basecolor corregido, normal DSM tangente, roughness semántico, AO de cavidad y microdetail; sus métricas y limitaciones impiden confundirlos con BRDF o intrinsic decomposition calibrados.
 7. Completion sólo entra mediante hipótesis sembradas, escrow y render-to-refute. El build R0 real no genera completion porque falta evidencia por superficie.
 8. `atomic_world_build` escribe en staging bajo `vault/worlds/<scene>` y promociona un directorio completo sólo si manifest y Truth Field validan.
 
@@ -29,8 +29,8 @@ El comando es:
   --vault /Volumes/SSD/drone-vault
 ```
 
-El output actual es `hero_28766c80a65c896c`, centrado en `(-30, -10)` m AB. Su identidad incorpora 14 hashes fuente y hashes SHA-256 reales de los árboles `world_compiler` y Unreal. Toda escritura derivada queda bajo `/Volumes/SSD/drone-vault/worlds`; los originales y manifests permanecen read-only.
+El output actual es `hero_155016510db89403`, centrado en `(-30, -10)` m AB. Su identidad incorpora 14 hashes fuente y hashes SHA-256 reales de los árboles `world_compiler` y Unreal. Toda escritura derivada queda bajo `/Volumes/SSD/drone-vault/worlds`; los originales y manifests permanecen read-only.
 
 ## Gates
 
-Los 81 tests Python cubren confinamiento, identidad, coordenadas, selección, Truth Field, separación de capas, presupuesto de materiales, completion, schema, vistas baseline, rasterización OpenSfM de silhouettes, ponderación de provenance por la ruta de 30 s, exclusión de copas, huellas irregulares, acuerdo punto-superficie, escrow de caras sin soporte, semántica conservadora, Evidence Atlas raster, Active Reflight Plan y reproducibilidad. Los proxies punto-superficie, silhouette y visibilidad de ruta aportan evidencia de regresión y riesgo, pero no sustituyen ground truth ni capturas Unreal. Import Unreal, relighting, capturas finales, ejecución de la ruta, FPS, 1% low y VRAM requieren un editor real y permanecen bloqueados externamente cuando no existe `UnrealEditor-Cmd`.
+Los 84 tests Python cubren confinamiento, identidad, coordenadas, selección, Truth Field, separación de capas, presupuesto y generación de mapas PBR, UV AOI, preservación UV al convertir a Unreal, confinement de texturas, completion, schema, vistas baseline, rasterización OpenSfM de silhouettes, ponderación de provenance por la ruta de 30 s, exclusión de copas, huellas irregulares, acuerdo punto-superficie, escrow de caras sin soporte, semántica conservadora, Evidence Atlas raster, Active Reflight Plan y reproducibilidad. Los proxies aportan evidencia de regresión y riesgo, pero no sustituyen ground truth ni capturas Unreal. Import real, relighting, capturas finales, ejecución de la ruta, FPS, 1% low y VRAM requieren un editor y permanecen bloqueados externamente cuando no existe `UnrealEditor-Cmd`.
