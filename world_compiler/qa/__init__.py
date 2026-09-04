@@ -4,6 +4,7 @@ from .geometry_metrics import (
     load_collision_mesh,
     load_collision_vertices,
     source_surface_agreement,
+    source_surface_distances,
     source_vertex_agreement,
     summarize_errors,
 )
@@ -14,7 +15,8 @@ from .report import acceptance_verdict, write_acceptance_report
 __all__ = [
     "acceptance_verdict", "crop_source_ortho", "evaluate_performance",
     "load_collision_mesh", "load_collision_vertices", "render_dsm_hillshade",
-    "render_truth_debug", "source_surface_agreement", "source_vertex_agreement",
+    "render_truth_debug", "source_surface_agreement", "source_surface_distances",
+    "source_vertex_agreement",
     "summarize_errors",
     "write_acceptance_report",
 ]

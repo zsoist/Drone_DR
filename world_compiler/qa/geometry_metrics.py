@@ -104,13 +104,50 @@ def source_surface_agreement(
     nearest_triangles: int = 64,
 ) -> dict:
     """Approximate point-to-surface distance using nearby source triangle centroids."""
+    candidate, distances, _, triangle_count = source_surface_distances(
+        candidate_vertices,
+        source_vertices,
+        source_faces,
+        center_ab_m=center_ab_m,
+        size_m=size_m,
+        nearest_triangles=nearest_triangles,
+    )
+    summary = summarize_errors(distances.tolist())
+    return {
+        "version": 1,
+        "status": "measured_source_surface_proxy",
+        "reference": "published structural collider from the same reconstruction",
+        "independent_ground_truth": False,
+        "acceptance_gate_eligible": False,
+        "direction": "unique_clean_structure_vertices_to_nearby_source_triangles",
+        "method": "triangle_centroid_kdtree_then_exact_point_triangle",
+        "nearest_triangles_per_sample": min(max(1, int(nearest_triangles)), triangle_count),
+        "source_triangle_count_in_aoi": triangle_count,
+        "candidate_vertex_count": int(len(candidate)),
+        "proxy": summary,
+        "note": "Useful regression evidence; it cannot prove the independent geometry gate.",
+    }
+
+
+def source_surface_distances(
+    candidate_vertices: np.ndarray,
+    source_vertices: np.ndarray,
+    source_faces: np.ndarray,
+    *,
+    center_ab_m: tuple[float, float],
+    size_m: float,
+    nearest_triangles: int = 64,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """Return unique candidates, distances, inverse indices, and AOI triangle count."""
     try:
         from scipy.spatial import cKDTree
         from trimesh.triangles import closest_point
     except ImportError as error:  # pragma: no cover - exercised by build fallback
         raise ValueError("surface agreement dependencies are unavailable") from error
-    candidate = np.unique(
-        np.round(np.asarray(candidate_vertices, dtype=np.float64), 9), axis=0
+    candidate, inverse = np.unique(
+        np.round(np.asarray(candidate_vertices, dtype=np.float64), 9),
+        axis=0,
+        return_inverse=True,
     )
     source = np.asarray(source_vertices, dtype=np.float64)
     faces = np.asarray(source_faces, dtype=np.uint32)
@@ -145,18 +182,4 @@ def source_surface_agreement(
         nearby = triangles[ids]
         projected = closest_point(nearby, np.repeat(point[None, :], len(nearby), axis=0))
         distances.append(float(np.sqrt(np.min(np.sum((projected - point) ** 2, axis=1)))))
-    summary = summarize_errors(distances)
-    return {
-        "version": 1,
-        "status": "measured_source_surface_proxy",
-        "reference": "published structural collider from the same reconstruction",
-        "independent_ground_truth": False,
-        "acceptance_gate_eligible": False,
-        "direction": "unique_clean_structure_vertices_to_nearby_source_triangles",
-        "method": "triangle_centroid_kdtree_then_exact_point_triangle",
-        "nearest_triangles_per_sample": count,
-        "source_triangle_count_in_aoi": int(len(triangles)),
-        "candidate_vertex_count": int(len(candidate)),
-        "proxy": summary,
-        "note": "Useful regression evidence; it cannot prove the independent geometry gate.",
-    }
+    return candidate, np.asarray(distances, dtype=np.float64), inverse, int(len(triangles))

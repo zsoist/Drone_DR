@@ -28,14 +28,22 @@ from world_compiler.evidence.truth_field import (
 from world_compiler.evidence.spatial_truth import build_spatial_truth
 from world_compiler.export.manifest import validate_game_scene_document
 from world_compiler.export.obj import write_obj
-from world_compiler.geometry.structuralize import GeometryBundle, structuralize_heightfield
+from world_compiler.geometry.structuralize import (
+    GeometryBundle,
+    split_by_source_support,
+    structuralize_heightfield,
+)
 from world_compiler.ids import canonical_json, hero_id, tree_hash
 from world_compiler.qa.reference_views import (
     crop_source_ortho,
     render_dsm_hillshade,
     render_truth_debug,
 )
-from world_compiler.qa.geometry_metrics import load_collision_mesh, source_surface_agreement
+from world_compiler.qa.geometry_metrics import (
+    load_collision_mesh,
+    source_surface_agreement,
+    source_surface_distances,
+)
 from world_compiler.selection.hero_cell import (
     _raster_window,
     enumerate_grid,
@@ -338,6 +346,45 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         spacing_m=spacing,
         exclusion_mask=vegetation_patch,
     )
+    source_vertices = None
+    source_faces = None
+    source_support = {
+        "version": 1,
+        "status": "unavailable",
+        "reason": "source surface support was not measured",
+    }
+    try:
+        source_vertices, source_faces = load_collision_mesh(
+            scene.assets["collision_bin"], scene.assets["collision_meta"]
+        )
+        clean_world_vertices = bundle.clean_observed.vertices.copy()
+        clean_world_vertices[:, 0] += center[0]
+        clean_world_vertices[:, 2] += center[1]
+        _, unique_distances, inverse, _ = source_surface_distances(
+            clean_world_vertices,
+            source_vertices,
+            source_faces,
+            center_ab_m=center,
+            size_m=request.size_m,
+        )
+        tolerance_m = max(0.4, 0.75 * float(np.hypot(*spacing)))
+        observed, inferred, source_support = split_by_source_support(
+            bundle.clean_observed,
+            unique_distances[inverse],
+            tolerance_m=tolerance_m,
+        )
+        source_support["status"] = "measured"
+        source_support["basis"] = "0.75 DSM cell diagonal, never below 0.40 m"
+        bundle = GeometryBundle(
+            bundle.observed_reference,
+            bundle.ground,
+            observed,
+            inferred,
+            bundle.generated,
+            bundle.collision,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        source_support["reason"] = str(error)
     coordinate = CoordinateContract(center)
     cameras = (
         load_opensfm_cameras(scene.camera_reconstruction_path, scene.world_manifest["world"])
@@ -418,6 +465,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "camera_ids": [pose.camera_id for pose in selected_camera_poses],
             "source_images_copied": False,
         })
+        _write_json(staging / "qa/source_support.json", source_support)
 
         geometry_rows = []
         translated_layers = _translate_bundle(bundle, center)
@@ -442,9 +490,10 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         )
         if len(clean_vertices):
             try:
-                source_vertices, source_faces = load_collision_mesh(
-                    scene.assets["collision_bin"], scene.assets["collision_meta"]
-                )
+                if source_vertices is None or source_faces is None:
+                    source_vertices, source_faces = load_collision_mesh(
+                        scene.assets["collision_bin"], scene.assets["collision_meta"]
+                    )
                 agreement = source_surface_agreement(
                     clean_vertices,
                     source_vertices,
@@ -716,6 +765,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "records": {"request": "request.json", "run": "run.json", "cost": "cost.json"},
             "qa": {
                 "coordinate_validation": "qa/coordinate_validation.json",
+                "source_support": "qa/source_support.json",
                 "source_geometry_agreement": "qa/source_geometry_agreement.json",
                 "reference_views": "qa/reference_views.json",
             },

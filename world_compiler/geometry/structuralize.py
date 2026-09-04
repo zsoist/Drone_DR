@@ -84,6 +84,61 @@ class GeometryBundle:
     collision: GeometryLayer
 
 
+def _compact_faces(vertices: np.ndarray, faces: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    if not len(faces):
+        return (
+            np.empty((0, 3), dtype=np.float64),
+            np.empty((0, 3), dtype=np.uint32),
+        )
+    used = np.unique(faces)
+    remap = np.full(len(vertices), np.iinfo(np.uint32).max, dtype=np.uint32)
+    remap[used] = np.arange(len(used), dtype=np.uint32)
+    return vertices[used].copy(), remap[faces]
+
+
+def split_by_source_support(
+    layer: GeometryLayer,
+    vertex_distance_m: np.ndarray,
+    *,
+    tolerance_m: float,
+) -> tuple[GeometryLayer, GeometryLayer, dict]:
+    """Keep source-supported faces observed and escrow the remainder as inferred."""
+    distances = np.asarray(vertex_distance_m, dtype=np.float64)
+    if distances.shape != (len(layer.vertices),) or not np.isfinite(distances).all():
+        raise ValueError("vertex support distances must match the geometry layer")
+    if tolerance_m <= 0:
+        raise ValueError("source support tolerance must be positive")
+    supported_mask = np.all(distances[layer.faces] <= tolerance_m, axis=1)
+    observed_vertices, observed_faces = _compact_faces(layer.vertices, layer.faces[supported_mask])
+    inferred_vertices, inferred_faces = _compact_faces(layer.vertices, layer.faces[~supported_mask])
+    observed = GeometryLayer(
+        layer.role,
+        TruthClass.OBSERVED_WEAK,
+        observed_vertices,
+        observed_faces,
+        layer.confidence if len(observed_faces) else 0.0,
+        layer.material,
+    )
+    inferred = GeometryLayer(
+        "geometrically_inferred_structure",
+        TruthClass.GEOMETRICALLY_INFERRED,
+        inferred_vertices,
+        inferred_faces,
+        min(layer.confidence, 0.49) if len(inferred_faces) else 0.0,
+        layer.material,
+    )
+    total = len(layer.faces)
+    report = {
+        "version": 1,
+        "method": "all_face_vertices_within_source_surface_tolerance",
+        "tolerance_m": round(float(tolerance_m), 9),
+        "observed_faces": int(supported_mask.sum()),
+        "inferred_faces": int((~supported_mask).sum()),
+        "observed_pct": round(100.0 * float(supported_mask.mean()), 8) if total else 0.0,
+    }
+    return observed, inferred, report
+
+
 def _grid_mesh(height: np.ndarray, spacing_m: tuple[float, float]) -> tuple[np.ndarray, np.ndarray]:
     rows, cols = height.shape
     sx, sz = spacing_m

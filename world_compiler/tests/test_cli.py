@@ -112,6 +112,7 @@ class CompilerCliTests(unittest.TestCase):
             "semantics/dynamic_objects.json", "materials/lighting_profiles.json",
             "unreal/import_manifest.json",
             "qa/coordinate_validation.json",
+            "qa/source_support.json",
             "qa/source_geometry_agreement.json",
             "qa/reference_views.json", "qa/baseline/dsm_hillshade.png",
             "qa/baseline/truth_debug.png",

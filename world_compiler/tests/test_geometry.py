@@ -6,6 +6,7 @@ from world_compiler.evidence.truth_field import TruthClass
 from world_compiler.geometry.structuralize import (
     GeometryLayer,
     HallucinationFirewallError,
+    split_by_source_support,
     structuralize_heightfield,
     validate_layer_separation,
 )
@@ -57,6 +58,26 @@ class StructuralGeometryTests(unittest.TestCase):
         ]
 
         self.assertEqual(14, len(roof_faces))
+
+    def test_unsupported_faces_move_to_inferred_layer(self):
+        layer = GeometryLayer(
+            "clean_observed_structure",
+            TruthClass.OBSERVED_WEAK,
+            np.asarray([[0, 0, 0], [1, 0, 0], [0, 0, 1], [2, 0, 0]], dtype=float),
+            np.asarray([[0, 1, 2], [1, 3, 2]], dtype=np.uint32),
+            0.6,
+        )
+
+        observed, inferred, report = split_by_source_support(
+            layer,
+            np.asarray([0.1, 0.2, 0.3, 2.0]),
+            tolerance_m=0.5,
+        )
+
+        self.assertEqual(1, len(observed.faces))
+        self.assertEqual(1, len(inferred.faces))
+        self.assertEqual(TruthClass.GEOMETRICALLY_INFERRED, inferred.provenance)
+        self.assertEqual(50.0, report["observed_pct"])
 
     def test_hallucination_firewall_rejects_generated_overlap(self):
         observed = GeometryLayer.box(
