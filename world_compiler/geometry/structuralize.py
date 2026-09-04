@@ -126,10 +126,20 @@ def structuralize_heightfield(
     *,
     spacing_m: tuple[float, float],
     structure_threshold_m: float = 2.0,
+    exclusion_mask: np.ndarray | None = None,
+    minimum_component_cells: int = 4,
+    minimum_planar_fraction: float = 0.3,
 ) -> GeometryBundle:
     height = np.asarray(heightfield, dtype=np.float64)
     if height.ndim != 2 or min(height.shape) < 2 or not np.isfinite(height).all():
         raise ValueError("heightfield must be finite and at least 2x2")
+    excluded = (
+        np.zeros(height.shape, dtype=bool)
+        if exclusion_mask is None
+        else np.asarray(exclusion_mask, dtype=bool)
+    )
+    if excluded.shape != height.shape:
+        raise ValueError("exclusion mask must match the heightfield")
     ground_ceiling = float(np.percentile(height, 60))
     ground_height = np.minimum(height, ground_ceiling)
     ground_vertices, ground_faces = _grid_mesh(ground_height, spacing_m)
@@ -149,16 +159,41 @@ def structuralize_heightfield(
     sx, sz = spacing_m
     rows, cols = height.shape
     boxes: list[GeometryLayer] = []
-    structure_mask = height - ground_height > structure_threshold_m
+    roughness = np.zeros_like(height)
+    roughness[1:, :] = np.maximum(
+        roughness[1:, :], np.abs(height[1:, :] - height[:-1, :])
+    )
+    roughness[:-1, :] = np.maximum(
+        roughness[:-1, :], np.abs(height[:-1, :] - height[1:, :])
+    )
+    roughness[:, 1:] = np.maximum(
+        roughness[:, 1:], np.abs(height[:, 1:] - height[:, :-1])
+    )
+    roughness[:, :-1] = np.maximum(
+        roughness[:, :-1], np.abs(height[:, :-1] - height[:, 1:])
+    )
+    structure_mask = (height - ground_height > structure_threshold_m) & ~excluded
     for component in _components(structure_mask):
+        if len(component) < minimum_component_cells:
+            continue
         component_rows = np.asarray([row for row, _ in component])
         component_cols = np.asarray([col for _, col in component])
+        component_height = height[component_rows, component_cols]
+        component_median = float(np.median(component_height))
+        planar = (
+            (roughness[component_rows, component_cols] < 1.0)
+            | (np.abs(component_height - component_median) < 1.0)
+        )
+        if float(planar.mean()) < minimum_planar_fraction:
+            continue
         x0 = (component_cols.min() - (cols - 1) / 2.0 - 0.5) * sx
         x1 = (component_cols.max() - (cols - 1) / 2.0 + 0.5) * sx
         z0 = (component_rows.min() - (rows - 1) / 2.0 - 0.5) * sz
         z1 = (component_rows.max() - (rows - 1) / 2.0 + 0.5) * sz
-        base = float(ground_height[component_rows, component_cols].min())
-        roof = float(height[component_rows, component_cols].max())
+        base = float(np.median(ground_height[component_rows, component_cols]))
+        roof = float(np.median(height[component_rows[planar], component_cols[planar]]))
+        if roof - base <= structure_threshold_m:
+            continue
         boxes.append(
             GeometryLayer.box(
                 "clean_observed_structure",

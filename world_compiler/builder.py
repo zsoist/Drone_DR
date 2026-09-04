@@ -328,7 +328,16 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
     spacing = tuple(float(value) for value in meta.get("spacing_m") or ())
     if len(spacing) != 2 or min(spacing) <= 0:
         raise ValueError("DSM spacing is invalid")
-    bundle = structuralize_heightfield(patch, spacing_m=spacing)
+    vegetation_patch = (
+        vegetation[row_slice, col_slice]
+        if vegetation is not None
+        else None
+    )
+    bundle = structuralize_heightfield(
+        patch,
+        spacing_m=spacing,
+        exclusion_mask=vegetation_patch,
+    )
     coordinate = CoordinateContract(center)
     cameras = (
         load_opensfm_cameras(scene.camera_reconstruction_path, scene.world_manifest["world"])

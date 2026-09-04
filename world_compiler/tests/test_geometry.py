@@ -25,6 +25,22 @@ class StructuralGeometryTests(unittest.TestCase):
         self.assertGreater(len(bundle.collision.faces), len(bundle.ground.faces))
         self.assertIsNone(bundle.collision.material)
 
+    def test_structuralization_rejects_excluded_canopy_and_roof_outlier(self):
+        height = np.zeros((20, 20), dtype=np.float32)
+        height[2:8, 2:8] = 8.0
+        height[4, 4] = 20.0
+        height[12:18, 12:18] = 9.0
+        excluded = np.zeros_like(height, dtype=bool)
+        excluded[12:18, 12:18] = True
+
+        bundle = structuralize_heightfield(
+            height, spacing_m=(1.0, 1.0), exclusion_mask=excluded
+        )
+
+        self.assertEqual(8, len(bundle.clean_observed.vertices))
+        self.assertAlmostEqual(8.0, bundle.clean_observed.vertices[:, 1].max())
+        self.assertLess(bundle.clean_observed.vertices[:, 0].max(), 0.0)
+
     def test_hallucination_firewall_rejects_generated_overlap(self):
         observed = GeometryLayer.box(
             "clean_observed_structure",
