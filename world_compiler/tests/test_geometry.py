@@ -37,9 +37,26 @@ class StructuralGeometryTests(unittest.TestCase):
             height, spacing_m=(1.0, 1.0), exclusion_mask=excluded
         )
 
-        self.assertEqual(8, len(bundle.clean_observed.vertices))
+        self.assertGreater(len(bundle.clean_observed.vertices), 8)
         self.assertAlmostEqual(8.0, bundle.clean_observed.vertices[:, 1].max())
         self.assertLess(bundle.clean_observed.vertices[:, 0].max(), 0.0)
+
+    def test_irregular_footprint_does_not_fill_its_bounding_box(self):
+        height = np.zeros((8, 8), dtype=np.float32)
+        height[2:6, 2] = 7.0
+        height[5, 2:6] = 7.0
+
+        bundle = structuralize_heightfield(height, spacing_m=(1.0, 1.0))
+        roof_faces = bundle.clean_observed.faces[
+            np.all(
+                np.isclose(
+                    bundle.clean_observed.vertices[bundle.clean_observed.faces, 1], 7.0
+                ),
+                axis=1,
+            )
+        ]
+
+        self.assertEqual(14, len(roof_faces))
 
     def test_hallucination_firewall_rejects_generated_overlap(self):
         observed = GeometryLayer.box(

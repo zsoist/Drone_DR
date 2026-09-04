@@ -121,6 +121,50 @@ def _components(mask: np.ndarray) -> list[list[tuple[int, int]]]:
     return components
 
 
+def _extrude_component(
+    component: list[tuple[int, int]],
+    *,
+    shape: tuple[int, int],
+    spacing_m: tuple[float, float],
+    base: float,
+    roof: float,
+) -> GeometryLayer:
+    """Extrude the measured raster footprint without filling its bounding box."""
+    rows, cols = shape
+    sx, sz = spacing_m
+    occupied = set(component)
+    vertices: list[tuple[float, float, float]] = []
+    faces: list[tuple[int, int, int]] = []
+
+    def quad(points: list[tuple[float, float, float]]) -> None:
+        start = len(vertices)
+        vertices.extend(points)
+        faces.extend(((start, start + 2, start + 1), (start, start + 3, start + 2)))
+
+    for row, col in sorted(component):
+        x0 = (col - (cols - 1) / 2.0 - 0.5) * sx
+        x1 = x0 + sx
+        z0 = (row - (rows - 1) / 2.0 - 0.5) * sz
+        z1 = z0 + sz
+        quad([(x0, roof, z0), (x1, roof, z0), (x1, roof, z1), (x0, roof, z1)])
+        if (row - 1, col) not in occupied:
+            quad([(x0, base, z0), (x0, roof, z0), (x1, roof, z0), (x1, base, z0)])
+        if (row + 1, col) not in occupied:
+            quad([(x1, base, z1), (x1, roof, z1), (x0, roof, z1), (x0, base, z1)])
+        if (row, col - 1) not in occupied:
+            quad([(x0, base, z1), (x0, roof, z1), (x0, roof, z0), (x0, base, z0)])
+        if (row, col + 1) not in occupied:
+            quad([(x1, base, z0), (x1, roof, z0), (x1, roof, z1), (x1, base, z1)])
+    return GeometryLayer(
+        "clean_observed_structure",
+        TruthClass.OBSERVED_WEAK,
+        np.asarray(vertices, dtype=np.float64),
+        np.asarray(faces, dtype=np.uint32),
+        0.6,
+        "structure",
+    )
+
+
 def structuralize_heightfield(
     heightfield: np.ndarray,
     *,
@@ -158,7 +202,7 @@ def structuralize_heightfield(
 
     sx, sz = spacing_m
     rows, cols = height.shape
-    boxes: list[GeometryLayer] = []
+    structures: list[GeometryLayer] = []
     roughness = np.zeros_like(height)
     roughness[1:, :] = np.maximum(
         roughness[1:, :], np.abs(height[1:, :] - height[:-1, :])
@@ -186,25 +230,32 @@ def structuralize_heightfield(
         )
         if float(planar.mean()) < minimum_planar_fraction:
             continue
-        x0 = (component_cols.min() - (cols - 1) / 2.0 - 0.5) * sx
-        x1 = (component_cols.max() - (cols - 1) / 2.0 + 0.5) * sx
-        z0 = (component_rows.min() - (rows - 1) / 2.0 - 0.5) * sz
-        z1 = (component_rows.max() - (rows - 1) / 2.0 + 0.5) * sz
-        base = float(np.median(ground_height[component_rows, component_cols]))
+        neighbors = []
+        occupied = set(component)
+        for row, col in component:
+            for neighbor in ((row - 1, col), (row + 1, col), (row, col - 1), (row, col + 1)):
+                nr, nc = neighbor
+                if neighbor not in occupied and 0 <= nr < rows and 0 <= nc < cols:
+                    neighbors.append(height[nr, nc])
+        base = float(
+            np.median(neighbors)
+            if neighbors
+            else np.median(ground_height[component_rows, component_cols])
+        )
         roof = float(np.median(height[component_rows[planar], component_cols[planar]]))
         if roof - base <= structure_threshold_m:
             continue
-        boxes.append(
-            GeometryLayer.box(
-                "clean_observed_structure",
-                TruthClass.OBSERVED_WEAK,
-                minimum=(x0, base, z0),
-                maximum=(x1, roof, z1),
-                confidence=0.6,
+        structures.append(
+            _extrude_component(
+                component,
+                shape=height.shape,
+                spacing_m=spacing_m,
+                base=base,
+                roof=roof,
             )
         )
     structure_vertices, structure_faces = merge_meshes(
-        [(box.vertices, box.faces) for box in boxes]
+        [(structure.vertices, structure.faces) for structure in structures]
     )
     clean = GeometryLayer(
         "clean_observed_structure",
