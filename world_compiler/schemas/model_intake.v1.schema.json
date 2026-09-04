@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerobrain.local/schemas/model_intake.v1.schema.json",
+  "title": "AeroBrain Model Intake v1",
+  "type": "object",
+  "required": [
+    "name", "code_license", "weights_license", "checkpoint_sha256",
+    "data_egress", "private_upload_opt_in", "intended_use", "evaluated",
+    "hardware_measurements", "performance_claims"
+  ],
+  "properties": {
+    "checkpoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "private_upload_opt_in": {"type": "boolean"},
+    "evaluated": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}
