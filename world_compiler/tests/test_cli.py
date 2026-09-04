@@ -1,4 +1,5 @@
 import json
+import math
 import shutil
 import tempfile
 import unittest
@@ -48,12 +49,30 @@ class CompilerCliTests(unittest.TestCase):
         manifest_path = model / "scene.v2.json"
         manifest = json.loads(manifest_path.read_text())
         manifest["world"].update({"size_m": [120.0, 120.0], "grid": list(shape), "spacing_m": [1.0, 1.0]})
+        manifest["world"].update({"center_wgs84": [0.0, 0.0], "elev_min": 0.0})
         manifest["assets"].update({
             "dsm_lod_mask": "data/models/recon_fixture/dsm_lod.mask.bin",
             "mesh_coverage": "data/models/recon_fixture/mesh_coverage.bin",
             "mesh_coverage_meta": "data/models/recon_fixture/mesh_coverage.json",
         })
         manifest_path.write_text(json.dumps(manifest))
+        reconstruction = self.vault / "odm/proj_recon_fixture/opensfm/reconstruction.json"
+        reconstruction.parent.mkdir(parents=True)
+        shots = {}
+        for index, x in enumerate((-20.0, 0.0, 20.0)):
+            rotation = [math.pi, 0.0, 0.0]
+            # t = -R*C for C=(x, 0, 30) in topocentric ENU.
+            shots[f"frame_{index}.jpg"] = {
+                "camera": "cam", "rotation": rotation, "translation": [-x, 0.0, 30.0],
+            }
+        reconstruction.write_text(json.dumps([{
+            "reference_lla": {"latitude": 0.0, "longitude": 0.0, "altitude": 0.0},
+            "cameras": {"cam": {
+                "projection_type": "brown", "width": 1000, "height": 1000,
+                "focal_x": 0.8, "focal_y": 0.8, "c_x": 0.0, "c_y": 0.0,
+            }},
+            "shots": shots,
+        }]))
         self.request = BuildRequest("scene_fixture", "recon_fixture", 100.0, "auto", "hero-r0")
 
     def tearDown(self):
@@ -78,8 +97,17 @@ class CompilerCliTests(unittest.TestCase):
         self.assertEqual(first_bytes, manifest_path.read_bytes())
         document = json.loads(first_bytes)
         self.assertEqual(6, len(document["geometry"]))
-        self.assertEqual("unavailable", document["reference_cameras"]["status"])
-        self.assertAlmostEqual(100.0, sum(json.loads((manifest_path.parent / document["truth_field"]).read_text())["coverage_pct"].values()))
+        self.assertEqual("available", document["reference_cameras"]["status"])
+        self.assertEqual(3, len(document["reference_cameras"]["cameras"]))
+        truth = json.loads((manifest_path.parent / document["truth_field"]).read_text())
+        self.assertAlmostEqual(100.0, sum(truth["coverage_pct"].values()))
+        self.assertIn("raster", truth)
+        for relative in (
+            "source/manifests.json", "source/cameras.json", "source/selected_frames.json",
+            "source/aoi.json", "truth/confidence.png", "truth/provenance.png",
+            "truth/camera_index.png", "truth/visibility.json", "truth/coverage.json",
+        ):
+            self.assertTrue((manifest_path.parent / relative).is_file(), relative)
 
 
 if __name__ == "__main__":

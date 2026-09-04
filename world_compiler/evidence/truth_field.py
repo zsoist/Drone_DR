@@ -156,6 +156,28 @@ def validate_truth_field_document(document: dict) -> None:
     if not isinstance(samples, list) or document.get("sample_count") != len(samples):
         raise ValueError("truth field sample count mismatch")
     valid_classes = {truth_class.value for truth_class in TruthClass}
+    coverage = document.get("coverage_pct")
+    if not isinstance(coverage, dict) or set(coverage) != valid_classes:
+        raise ValueError("truth coverage must include every class")
+    try:
+        coverage_total = sum(float(coverage[name]) for name in valid_classes)
+    except (TypeError, ValueError) as error:
+        raise ValueError("truth coverage is invalid") from error
+    raster = document.get("raster")
+    if raster is not None:
+        required_rasters = {"confidence", "provenance", "dominant_camera_index"}
+        shape = document.get("shape")
+        if (
+            not isinstance(raster, dict)
+            or set(raster) != required_rasters
+            or not all(isinstance(value, str) and value for value in raster.values())
+            or not isinstance(shape, list)
+            or len(shape) != 2
+            or any(not isinstance(value, int) or value <= 0 for value in shape)
+        ):
+            raise ValueError("spatial truth raster contract is incomplete")
+    if (samples or raster is not None) and abs(coverage_total - 100.0) > 1e-5:
+        raise ValueError("truth coverage must sum to 100")
     for sample in samples:
         if sample.get("class") not in valid_classes:
             raise ValueError("invalid truth class")

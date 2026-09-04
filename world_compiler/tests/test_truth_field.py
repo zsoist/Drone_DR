@@ -122,6 +122,14 @@ class TruthFieldTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "observed sample requires cameras"):
             validate_truth_field_document(field)
 
+    def test_spatial_document_requires_complete_raster_contract(self):
+        field = build_truth_field([], Calibration())
+        field["raster"] = {"confidence": "truth/confidence.png"}
+        field["shape"] = [10, 10]
+
+        with self.assertRaisesRegex(ValueError, "spatial truth raster"):
+            validate_truth_field_document(field)
+
 
 if __name__ == "__main__":
     unittest.main()

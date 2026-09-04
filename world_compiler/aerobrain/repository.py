@@ -45,6 +45,7 @@ class SceneVersion:
     assets: dict[str, Path]
     source_hashes: dict[str, str]
     world_size_m: tuple[float, float]
+    camera_reconstruction_path: Path | None
 
 
 class WorldRepository:
@@ -171,6 +172,13 @@ class WorldRepository:
         hashes.update(
             {f"asset:{name}": hash_file(path) for name, path in sorted(assets.items())}
         )
+        camera_reconstruction = self._inside_vault(
+            self.vault / "odm" / f"proj_{selected_id}" / "opensfm" / "reconstruction.json"
+        )
+        if camera_reconstruction.is_file():
+            hashes["camera_reconstruction"] = hash_file(camera_reconstruction)
+        else:
+            camera_reconstruction = None
         return SceneVersion(
             scene_id=scene_id,
             version_id=selected_id,
@@ -186,4 +194,5 @@ class WorldRepository:
             assets=assets,
             source_hashes=hashes,
             world_size_m=(width, height),
+            camera_reconstruction_path=camera_reconstruction,
         )

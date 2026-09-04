@@ -7,7 +7,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
+from world_compiler.aerobrain.cameras import camera_support_grid, load_opensfm_cameras
 from world_compiler.aerobrain.coordinates import CoordinateContract
 from world_compiler.aerobrain.manifests import hash_file, load_object
 from world_compiler.aerobrain.repository import SceneVersion, WorldRepository
@@ -16,10 +18,13 @@ from world_compiler.appearance.pbr import SurfacePriority, allocate_materials
 from world_compiler.completion.missing_views import MissingRegion, rank_missing_views
 from world_compiler.evidence.truth_field import (
     Calibration,
+    LEGEND,
     SurfaceEvidence,
+    TruthClass,
     build_truth_field,
     validate_truth_field_document,
 )
+from world_compiler.evidence.spatial_truth import build_spatial_truth
 from world_compiler.export.manifest import validate_game_scene_document
 from world_compiler.export.obj import write_obj
 from world_compiler.geometry.structuralize import GeometryBundle, structuralize_heightfield
@@ -35,7 +40,7 @@ from world_compiler.semantics.scene_graph import SceneGraph, SceneNode
 from world_compiler.storage import WorldPaths, atomic_world_build
 
 
-COMPILER_CONTRACT = "world-compiler-r0-v1"
+COMPILER_CONTRACT = "world-compiler-r0-v2-camera-evidence"
 
 
 @dataclass(frozen=True)
@@ -164,6 +169,9 @@ def _validate_staging(root: Path) -> bool:
         validate_game_scene_document(document, root)
         truth = load_object(root / document["truth_field"])
         validate_truth_field_document(truth)
+        for relative in (truth.get("raster") or {}).values():
+            if not (root / relative).is_file():
+                raise ValueError("truth raster is missing")
     except (OSError, ValueError, KeyError):
         return False
     return True
@@ -207,6 +215,43 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         raise ValueError("DSM spacing is invalid")
     bundle = structuralize_heightfield(patch, spacing_m=spacing)
     coordinate = CoordinateContract(center)
+    cameras = (
+        load_opensfm_cameras(scene.camera_reconstruction_path, scene.world_manifest["world"])
+        if scene.camera_reconstruction_path is not None
+        else None
+    )
+    support = None
+    spatial_truth = None
+    selected_camera_poses = []
+    reference_camera_poses = []
+    if cameras is not None:
+        rows, cols = patch.shape
+        x_values = center[0] + (np.arange(cols) - (cols - 1) / 2.0) * spacing[0]
+        z_values = center[1] + (np.arange(rows) - (rows - 1) / 2.0) * spacing[1]
+        x_grid, z_grid = np.meshgrid(x_values, z_values)
+        support = camera_support_grid(
+            cameras, x_ab_m=x_grid, y_ab_m=patch, z_ab_m=z_grid
+        )
+        spatial_truth = build_spatial_truth(
+            support.visible_count,
+            support.angular_diversity,
+            occlusion_validated=False,
+        )
+        radius = max(request.size_m, 1.0)
+        selected_camera_poses = [
+            pose
+            for pose in cameras.poses
+            if np.hypot(pose.center_ab_m[0] - center[0], pose.center_ab_m[2] - center[1])
+            <= 2.0 * radius
+        ]
+        target_y = float(np.median(patch))
+        reference_camera_poses = sorted(
+            selected_camera_poses,
+            key=lambda pose: (
+                float(np.linalg.norm(np.asarray(pose.center_ab_m) - np.asarray([center[0], target_y, center[1]]))),
+                pose.camera_id,
+            ),
+        )[:8]
 
     with atomic_world_build(paths, validator=_validate_staging) as staging:
         _write_json(staging / "request.json", identity_request)
@@ -221,6 +266,33 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "local_compute_seconds": None, "electricity_estimate": None,
         })
         _write_json(staging / "selection.json", _selection_dict(selection))
+        _write_json(staging / "source/manifests.json", {
+            "version": 1,
+            "scene_id": scene.scene_id,
+            "version_id": scene.version_id,
+            "source_hashes": dict(sorted(scene.source_hashes.items())),
+            "source_paths_redacted": True,
+        })
+        _write_json(staging / "source/aoi.json", {
+            "version": 1,
+            "frame": "aerobrain_local_m",
+            "center_ab_m": list(center),
+            "size_m": float(request.size_m),
+            "geographic_coordinates_included": False,
+        })
+        _write_json(staging / "source/cameras.json", {
+            "version": 1,
+            "frame": "aerobrain_local_m",
+            "projection_method": cameras.projection_method if cameras else None,
+            "camera_count": len(selected_camera_poses),
+            "cameras": [pose.as_dict() for pose in selected_camera_poses],
+        })
+        _write_json(staging / "source/selected_frames.json", {
+            "version": 1,
+            "selection_method": "camera centers within two AOI widths; local poses only",
+            "camera_ids": [pose.camera_id for pose in selected_camera_poses],
+            "source_images_copied": False,
+        })
 
         geometry_rows = []
         for layer, vertices in _translate_bundle(bundle, center):
@@ -238,13 +310,64 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                 "sha256": hash_file(target),
             })
 
-        evidence_rows = [
-            SurfaceEvidence.inferred(layer.confidence, "dsm-structuralization-v1")
-            for layer, _ in _translate_bundle(bundle, center)
-            if len(layer.faces) and layer.role != "collision_geometry"
-        ]
-        evidence_rows.append(SurfaceEvidence.unknown())
-        truth = build_truth_field(evidence_rows, Calibration())
+        if spatial_truth is None:
+            evidence_rows = [
+                SurfaceEvidence.inferred(layer.confidence, "dsm-structuralization-v1")
+                for layer, _ in _translate_bundle(bundle, center)
+                if len(layer.faces) and layer.role != "collision_geometry"
+            ]
+            evidence_rows.append(SurfaceEvidence.unknown())
+            truth = build_truth_field(evidence_rows, Calibration())
+        else:
+            (staging / "truth").mkdir(parents=True, exist_ok=True)
+            confidence_u8 = np.rint(np.clip(spatial_truth.confidence, 0.0, 1.0) * 255.0).astype(np.uint8)
+            class_rgb = np.zeros((*spatial_truth.classes.shape, 3), dtype=np.uint8)
+            class_rgb[spatial_truth.classes == "OBSERVED_MULTI_VIEW"] = (0, 166, 81)
+            class_rgb[spatial_truth.classes == "OBSERVED_WEAK"] = (255, 212, 0)
+            class_rgb[spatial_truth.classes == "GEOMETRICALLY_INFERRED"] = (255, 212, 0)
+            class_rgb[spatial_truth.classes == "GENERATED_CONSTRAINED"] = (227, 27, 35)
+            camera_index_u16 = (support.dominant_camera_index.astype(np.int64) + 1).astype(np.uint16)
+            Image.fromarray(confidence_u8).save(staging / "truth/confidence.png")
+            Image.fromarray(class_rgb).save(staging / "truth/provenance.png")
+            Image.fromarray(camera_index_u16).save(staging / "truth/camera_index.png")
+            truth = {
+                "version": 1,
+                "calibration_id": spatial_truth.calibration_id,
+                "sample_count": 0,
+                "classes": [truth_class.value for truth_class in TruthClass],
+                "legend": dict(LEGEND),
+                "coverage_pct": spatial_truth.coverage_pct,
+                "samples": [],
+                "raster": {
+                    "confidence": "truth/confidence.png",
+                    "provenance": "truth/provenance.png",
+                    "dominant_camera_index": "truth/camera_index.png",
+                },
+                "shape": list(spatial_truth.classes.shape),
+                "camera_count": len(cameras.poses),
+                "occlusion_validated": False,
+                "confidence_cap": 0.49,
+            }
+            _write_json(staging / "truth/visibility.json", {
+                "version": 1,
+                "method": support.method,
+                "projection_method": cameras.projection_method,
+                "occlusion_method": "unavailable",
+                "shape": list(support.visible_count.shape),
+                "camera_count": len(cameras.poses),
+                "visible_count_min": int(support.visible_count.min()),
+                "visible_count_max": int(support.visible_count.max()),
+                "visible_count_mean": round(float(support.visible_count.mean()), 8),
+            })
+            _write_json(staging / "truth/coverage.json", {
+                "version": 1,
+                "coverage_pct": spatial_truth.coverage_pct,
+                "occlusion_validated": False,
+                "unmeasured_factors": [
+                    "occlusion", "source_sharpness", "exposure_consistency",
+                    "reprojection_residual", "dynamic_contamination",
+                ],
+            })
         validate_truth_field_document(truth)
         _write_json(staging / "truth/truth_field.v1.json", truth)
 
@@ -273,11 +396,11 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         }))
         _write_json(staging / "completion/decisions.json", {
             "version": 1, "status": "not_attempted", "hypotheses": [],
-            "reason": "no completion may run without per-surface observation sidecar",
+            "reason": "no completion may run without occlusion-validated per-surface evidence",
         })
         missing = rank_missing_views([MissingRegion(
             "surface_visibility_gap", 1.0, 1.0, 1.0, (0.0, 15.0, 0.0),
-            15.0, -45.0, 0.0, 55.0, "per-surface camera visibility unavailable",
+            15.0, -45.0, 0.0, 55.0, "occlusion-validated surface evidence unavailable",
         )])
         _write_json(staging / "missing_views.json", missing)
 
@@ -301,8 +424,15 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "semantics": "semantics/scene_graph.json",
             "completion": "completion/decisions.json",
             "reference_cameras": {
-                "status": "unavailable", "cameras": [],
-                "reason": "no public per-surface camera sidecar in selected version",
+                "status": "available" if reference_camera_poses else "unavailable",
+                "cameras": [pose.as_dict() for pose in reference_camera_poses],
+                "reason": None if reference_camera_poses else "no OpenSfM reconstruction available",
+            },
+            "source": {
+                "manifests": "source/manifests.json",
+                "cameras": "source/cameras.json",
+                "selected_frames": "source/selected_frames.json",
+                "aoi": "source/aoi.json",
             },
             "missing_views": "missing_views.json",
             "source_hashes": dict(sorted(scene.source_hashes.items())),
