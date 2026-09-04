@@ -71,6 +71,7 @@ class CameraSupportGrid:
     dominant_camera_index: np.ndarray
     nearest_distance_m: np.ndarray
     method: str = "opensfm_frustum_no_occlusion_v1"
+    occlusion_method: str = "unavailable"
 
 
 def load_opensfm_cameras(path: Path, world: dict) -> CameraSet:
@@ -131,12 +132,61 @@ def load_opensfm_cameras(path: Path, world: dict) -> CameraSet:
     return CameraSet(tuple(poses), east_offset, north_offset, elevation_origin)
 
 
+def dsm_line_of_sight(
+    camera_center_ab_m: tuple[float, float, float],
+    x_ab_m: np.ndarray,
+    y_ab_m: np.ndarray,
+    z_ab_m: np.ndarray,
+    heightfield: np.ndarray,
+    world_size_m: tuple[float, float],
+    valid_mask: np.ndarray,
+    *,
+    samples: int = 18,
+    clearance_m: float = 0.35,
+) -> np.ndarray:
+    """Return a conservative DSM ray-march visibility mask for surface samples."""
+    x = np.asarray(x_ab_m, dtype=np.float64)
+    y = np.asarray(y_ab_m, dtype=np.float64)
+    z = np.asarray(z_ab_m, dtype=np.float64)
+    height = np.asarray(heightfield, dtype=np.float64)
+    valid = np.asarray(valid_mask, dtype=bool)
+    if x.shape != y.shape or x.shape != z.shape or height.shape != valid.shape or height.ndim != 2:
+        raise ValueError("DSM line-of-sight inputs are incompatible")
+    if samples < 2 or clearance_m < 0 or not np.isfinite(height).all():
+        raise ValueError("DSM line-of-sight configuration is invalid")
+    width, depth = (float(value) for value in world_size_m)
+    if width <= 0 or depth <= 0:
+        raise ValueError("DSM world size is invalid")
+    rows, cols = height.shape
+    cx, cy, cz = (float(value) for value in camera_center_ab_m)
+    blocked = np.zeros(x.shape, dtype=bool)
+    for fraction in np.linspace(0.05, 0.95, samples):
+        sample_x = x + (cx - x) * fraction
+        sample_y = y + (cy - y) * fraction
+        sample_z = z + (cz - z) * fraction
+        inside = (
+            (sample_x >= -width / 2.0)
+            & (sample_x <= width / 2.0)
+            & (sample_z >= -depth / 2.0)
+            & (sample_z <= depth / 2.0)
+        )
+        col = np.clip(np.rint((sample_x + width / 2.0) / width * (cols - 1)), 0, cols - 1).astype(int)
+        row = np.clip(np.rint((sample_z + depth / 2.0) / depth * (rows - 1)), 0, rows - 1).astype(int)
+        sampled_valid = valid[row, col]
+        sampled_height = height[row, col]
+        blocked |= inside & sampled_valid & (sampled_height > sample_y + clearance_m)
+    return ~blocked
+
+
 def camera_support_grid(
     cameras: CameraSet,
     *,
     x_ab_m: np.ndarray,
     y_ab_m: np.ndarray,
     z_ab_m: np.ndarray,
+    occlusion_heightfield: np.ndarray | None = None,
+    occlusion_world_size_m: tuple[float, float] | None = None,
+    occlusion_valid_mask: np.ndarray | None = None,
 ) -> CameraSupportGrid:
     x = np.asarray(x_ab_m, dtype=np.float64)
     y = np.asarray(y_ab_m, dtype=np.float64)
@@ -173,6 +223,18 @@ def camera_support_grid(
             & (np.abs(image_x - pose.principal_x) <= half_x)
             & (np.abs(image_y - pose.principal_y) <= half_y)
         )
+        if occlusion_heightfield is not None:
+            if occlusion_world_size_m is None or occlusion_valid_mask is None:
+                raise ValueError("DSM occlusion requires world size and valid mask")
+            visible &= dsm_line_of_sight(
+                pose.center_ab_m,
+                x,
+                y,
+                z,
+                occlusion_heightfield,
+                occlusion_world_size_m,
+                occlusion_valid_mask,
+            )
         count += visible.astype(np.uint16)
         cx, _, cz = pose.center_ab_m
         dx = cx - x
@@ -190,4 +252,12 @@ def camera_support_grid(
     concentration = np.hypot(azimuth_x / safe_count, azimuth_z / safe_count)
     diversity = np.where(count >= 2, np.clip(1.0 - concentration, 0.0, 1.0), 0.0)
     nearest = np.where(np.isfinite(nearest), nearest, -1.0)
-    return CameraSupportGrid(count, diversity.astype(np.float32), dominant, nearest.astype(np.float32))
+    has_occlusion = occlusion_heightfield is not None
+    return CameraSupportGrid(
+        count,
+        diversity.astype(np.float32),
+        dominant,
+        nearest.astype(np.float32),
+        "opensfm_frustum_dsm_occlusion_v1" if has_occlusion else "opensfm_frustum_no_occlusion_v1",
+        "dsm_ray_march_v1" if has_occlusion else "unavailable",
+    )

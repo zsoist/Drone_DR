@@ -111,11 +111,19 @@ class CompilerCliTests(unittest.TestCase):
             "truth/camera_index.png", "truth/visibility.json", "truth/coverage.json",
             "semantics/dynamic_objects.json", "materials/lighting_profiles.json",
             "unreal/import_manifest.json",
+            "qa/coordinate_validation.json",
         ):
             self.assertTrue((manifest_path.parent / relative).is_file(), relative)
         import_plan = json.loads((manifest_path.parent / "unreal/import_manifest.json").read_text())
         self.assertEqual("F8", import_plan["provenance_debug"]["hotkey"])
         self.assertEqual({"day", "sunset", "night", "rain"}, set(import_plan["lighting_profiles"]))
+        coordinate_report = json.loads((manifest_path.parent / "qa/coordinate_validation.json").read_text())
+        self.assertLessEqual(coordinate_report["max_roundtrip_error_m"], 1e-9)
+        self.assertEqual(3, coordinate_report["source_camera_centers"])
+        self.assertEqual("insufficient_source_cameras", coordinate_report["status"])
+        visibility = json.loads((manifest_path.parent / "truth/visibility.json").read_text())
+        self.assertEqual("dsm_ray_march_v1", visibility["occlusion_method"])
+        self.assertFalse(visibility["occlusion_calibrated_with_heldout_views"])
 
 
 if __name__ == "__main__":

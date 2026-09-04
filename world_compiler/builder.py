@@ -164,6 +164,67 @@ def _translate_bundle(bundle: GeometryBundle, center: tuple[float, float]) -> li
     return translated
 
 
+def _coordinate_validation_report(
+    coordinate: CoordinateContract,
+    center: tuple[float, float],
+    size_m: float,
+    patch: np.ndarray,
+    spacing: tuple[float, float],
+    reference_cameras: list,
+) -> dict:
+    half = size_m / 2.0
+    low, high = float(np.min(patch)), float(np.max(patch))
+    corners = np.asarray(
+        [
+            [center[0] + dx, elevation, center[1] + dz]
+            for elevation in (low, high)
+            for dx in (-half, half)
+            for dz in (-half, half)
+        ],
+        dtype=np.float64,
+    )
+    rows, cols = patch.shape
+    terrain = []
+    for row, col in ((0, 0), (0, cols - 1), (rows - 1, 0), (rows - 1, cols - 1)):
+        terrain.append(
+            [
+                center[0] + (col - (cols - 1) / 2.0) * spacing[0],
+                float(patch[row, col]),
+                center[1] + (row - (rows - 1) / 2.0) * spacing[1],
+            ]
+        )
+    roof_row, roof_col = np.unravel_index(int(np.argmax(patch)), patch.shape)
+    roof = np.asarray(
+        [[
+            center[0] + (roof_col - (cols - 1) / 2.0) * spacing[0],
+            float(patch[roof_row, roof_col]),
+            center[1] + (roof_row - (rows - 1) / 2.0) * spacing[1],
+        ]],
+        dtype=np.float64,
+    )
+    origin = np.asarray([center[0], high + 5.0, center[1]], dtype=np.float64)
+    axes = np.asarray([origin, origin + [1, 0, 0], origin + [0, 1, 0], origin + [0, 0, 1]])
+    camera_points = np.asarray([pose.center_ab_m for pose in reference_cameras], dtype=np.float64).reshape(-1, 3)
+    groups = [corners, np.asarray(terrain), roof, axes]
+    if len(camera_points):
+        groups.append(camera_points)
+    points = np.concatenate(groups)
+    roundtrip = coordinate.ue_to_ab(coordinate.ab_to_ue(points))
+    maximum_error = float(np.max(np.abs(roundtrip - points)))
+    return {
+        "version": 1,
+        "status": "passed" if len(camera_points) >= 8 and maximum_error <= 1e-9 else "insufficient_source_cameras",
+        "max_roundtrip_error_m": round(maximum_error, 15),
+        "aoi_corners": len(corners),
+        "source_camera_centers": len(camera_points),
+        "terrain_control_points": len(terrain),
+        "roof_control_points": len(roof),
+        "drone_axis_points": len(axes),
+        "winding_flip_required": True,
+        "determinant": coordinate.metadata["determinant"],
+    }
+
+
 def _validate_staging(root: Path) -> bool:
     try:
         document = load_object(root / "game_scene.v1.json")
@@ -241,7 +302,13 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         z_values = center[1] + (np.arange(rows) - (rows - 1) / 2.0) * spacing[1]
         x_grid, z_grid = np.meshgrid(x_values, z_values)
         support = camera_support_grid(
-            cameras, x_ab_m=x_grid, y_ab_m=patch, z_ab_m=z_grid
+            cameras,
+            x_ab_m=x_grid,
+            y_ab_m=patch,
+            z_ab_m=z_grid,
+            occlusion_heightfield=height - float(meta.get("elev_min", height.min())),
+            occlusion_world_size_m=scene.world_size_m,
+            occlusion_valid_mask=valid > 0,
         )
         spatial_truth = build_spatial_truth(
             support.visible_count,
@@ -358,7 +425,8 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                 "version": 1,
                 "method": support.method,
                 "projection_method": cameras.projection_method,
-                "occlusion_method": "unavailable",
+                "occlusion_method": support.occlusion_method,
+                "occlusion_calibrated_with_heldout_views": False,
                 "shape": list(support.visible_count.shape),
                 "camera_count": len(cameras.poses),
                 "visible_count_min": int(support.visible_count.min()),
@@ -370,7 +438,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
                 "coverage_pct": spatial_truth.coverage_pct,
                 "occlusion_validated": False,
                 "unmeasured_factors": [
-                    "occlusion", "source_sharpness", "exposure_consistency",
+                    "heldout_occlusion_calibration", "source_sharpness", "exposure_consistency",
                     "reprojection_residual", "dynamic_contamination",
                 ],
             })
@@ -436,11 +504,11 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
         })
         _write_json(staging / "completion/decisions.json", {
             "version": 1, "status": "not_attempted", "hypotheses": [],
-            "reason": "no completion may run without occlusion-validated per-surface evidence",
+            "reason": "no completion may run without held-out-calibrated per-surface evidence",
         })
         missing = rank_missing_views([MissingRegion(
             "surface_visibility_gap", 1.0, 1.0, 1.0, (0.0, 15.0, 0.0),
-            15.0, -45.0, 0.0, 55.0, "occlusion-validated surface evidence unavailable",
+            15.0, -45.0, 0.0, 55.0, "held-out-calibrated surface evidence unavailable",
         )])
         _write_json(staging / "missing_views.json", missing)
         import_plan = {
@@ -480,6 +548,12 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "generated_content_policy": "rebuild_only_do_not_commit",
         }
         _write_json(staging / "unreal/import_manifest.json", import_plan)
+        _write_json(
+            staging / "qa/coordinate_validation.json",
+            _coordinate_validation_report(
+                coordinate, center, request.size_m, patch, spacing, reference_camera_poses
+            ),
+        )
         local_compute_seconds = round(time.perf_counter() - started, 6)
         _write_json(staging / "cost.json", {
             "version": 1,
@@ -529,6 +603,7 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "source_hashes": dict(sorted(scene.source_hashes.items())),
             "dependency_hashes": dependency_hashes,
             "records": {"request": "request.json", "run": "run.json", "cost": "cost.json"},
+            "qa": {"coordinate_validation": "qa/coordinate_validation.json"},
         }
         _write_json(staging / "game_scene.v1.json", manifest)
     return summary | {"output": str(paths.target)}

@@ -6,7 +6,11 @@ from pathlib import Path
 
 import numpy as np
 
-from world_compiler.aerobrain.cameras import camera_support_grid, load_opensfm_cameras
+from world_compiler.aerobrain.cameras import (
+    camera_support_grid,
+    dsm_line_of_sight,
+    load_opensfm_cameras,
+)
 
 
 class CameraEvidenceTests(unittest.TestCase):
@@ -61,6 +65,26 @@ class CameraEvidenceTests(unittest.TestCase):
             self.assertEqual(0, int(support.visible_count[0, 1]))
             self.assertEqual(0, int(support.dominant_camera_index[0, 0]))
             self.assertEqual(-1, int(support.dominant_camera_index[0, 1]))
+
+    def test_dsm_line_of_sight_rejects_a_surface_hidden_by_a_taller_ridge(self):
+        dsm = np.zeros((11, 11), dtype=np.float32)
+        dsm[:, 5] = 8.0
+        target_x = np.array([[5.0]])
+        target_y = np.array([[0.0]])
+        target_z = np.array([[0.0]])
+
+        blocked = dsm_line_of_sight(
+            (-5.0, 10.0, 0.0), target_x, target_y, target_z,
+            dsm, (10.0, 10.0), np.ones_like(dsm, dtype=bool),
+        )
+        dsm[:, 5] = 2.0
+        clear = dsm_line_of_sight(
+            (-5.0, 10.0, 0.0), target_x, target_y, target_z,
+            dsm, (10.0, 10.0), np.ones_like(dsm, dtype=bool),
+        )
+
+        self.assertFalse(bool(blocked[0, 0]))
+        self.assertTrue(bool(clear[0, 0]))
 
 
 if __name__ == "__main__":
