@@ -29,8 +29,8 @@ El comando es:
   --vault /Volumes/SSD/drone-vault
 ```
 
-El output actual es `hero_7530cc3e7d7fce3b`, centrado en `(-30, -10)` m AB. Su identidad incorpora 14 hashes fuente y hashes SHA-256 reales de los árboles `world_compiler` y Unreal. Toda escritura derivada queda bajo `/Volumes/SSD/drone-vault/worlds`; los originales y manifests permanecen read-only.
+El output actual es `hero_c9678e46611cae19`, centrado en `(-30, -10)` m AB. Su identidad incorpora 14 hashes fuente y hashes SHA-256 reales de los árboles `world_compiler` y Unreal. Toda escritura derivada queda bajo `/Volumes/SSD/drone-vault/worlds`; los originales y manifests permanecen read-only.
 
 ## Gates
 
-Los 79 tests Python cubren confinamiento, identidad, coordenadas, selección, Truth Field, separación de capas, presupuesto de materiales, completion, schema, vistas baseline, exclusión de copas, huellas irregulares, acuerdo punto-superficie, escrow de caras sin soporte, semántica conservadora, Evidence Atlas raster, Active Reflight Plan y reproducibilidad. El proxy proyecta muestras deduplicadas sobre triángulos fuente cercanos; no sustituye ground truth independiente y todavía refuta la precisión requerida. Import Unreal, relighting, capturas finales, ruta de vuelo, FPS, 1% low y VRAM requieren un editor real y permanecen bloqueados externamente cuando no existe `UnrealEditor-Cmd`.
+Los 80 tests Python cubren confinamiento, identidad, coordenadas, selección, Truth Field, separación de capas, presupuesto de materiales, completion, schema, vistas baseline, rasterización OpenSfM de silhouettes, exclusión de copas, huellas irregulares, acuerdo punto-superficie, escrow de caras sin soporte, semántica conservadora, Evidence Atlas raster, Active Reflight Plan y reproducibilidad. Los proxies punto-superficie y silhouette usan el collider de la misma reconstrucción: aportan evidencia de regresión y actualmente refutan los objetivos, pero no sustituyen ground truth independiente. Import Unreal, relighting, capturas finales, ruta de vuelo, FPS, 1% low y VRAM requieren un editor real y permanecen bloqueados externamente cuando no existe `UnrealEditor-Cmd`.
