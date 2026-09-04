@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-04  
 Rama: `feat/herocell-aaa-r0`  
-Hero ID: `hero_8100319e97e6e82b`
+Hero ID: `hero_e034c97d20d23b12`
 Veredicto: **partially accepted**
 
 ## Qué sí pasó
@@ -10,12 +10,14 @@ Veredicto: **partially accepted**
 - Input real: `scene_0cadd1911f/recon_4e4245a1f4_aoi130`, activo, ready/full, terrain + mesh + collider v3.
 - Selección determinista de cuadrado 100×100 m: centro local AeroBrain `(-30, -10)` m, score `0.576708604566`, 221 candidatos elegibles y 4 rechazados. `selection.json` conserva los diez mejores candidatos con todos sus componentes y hasta diez rechazos con razón.
 - La inspección de la ortofoto baseline refutó el selector inicial, que confundía rango vertical de copas con mezcla de cubiertas. El selector corregido combina rango vertical con planitud de superficies elevadas y penaliza la fracción de vegetación medida en ortofoto; la celda final contiene dos cubiertas grandes, calles y patios, con proxy de vegetación `0,126552`.
-- Build atómico y content-addressed bajo `/Volumes/SSD/drone-vault/worlds/scene_0cadd1911f/hero_8100319e97e6e82b`.
-- Geometría: 18.624 triángulos de referencia, 18.624 ground, 3.352 estructura limpia, 0 completion generado y 21.976 collision. La extracción descarta componentes pequeños, exige planitud, usa altura robusta, excluye el proxy de vegetación y extruye la huella raster observada con paredes solo en su contorno; ya no rellena el rectángulo envolvente de patios o plantas irregulares.
+- Build atómico y content-addressed bajo `/Volumes/SSD/drone-vault/worlds/scene_0cadd1911f/hero_e034c97d20d23b12`.
+- Geometría: 18.624 triángulos de referencia, 18.624 ground, 1.022 estructura observada limpia, 2.330 estructura inferida, 0 completion generado y 21.976 collision. La extracción descarta componentes pequeños, exige planitud, usa altura robusta, excluye el proxy de vegetación y extruye la huella raster observada con paredes solo en su contorno; ya no rellena el rectángulo envolvente de patios o plantas irregulares.
+- El Hallucination Firewall compara cada vértice estructural con la superficie fuente usando tolerancia `1,1071 m` (0,75 diagonales de celda DSM, nunca menos de 0,40 m): conserva 30,49% de las caras candidatas como `OBSERVED_WEAK` y mueve 69,51% a `GEOMETRICALLY_INFERRED` en vez de fingir soporte observado.
 - Seis roles separados, matrices AB↔UE invertibles, source hashes, records de coste/run/request, materiales dentro de 256 MiB y output externo US$0.
 - Evidencia real: 428 poses OpenSfM transformadas a coordenadas locales, ocho reference cameras y mapas 97×98 de confidence, provenance y cámara dominante. Frustum + ray-march DSM registra 24–348 cámaras por muestra (media 169,192), pero conserva 100% `OBSERVED_WEAK`, confidence ≤0,49 y 0% multi-view porque la oclusión aún no está calibrada con held-out views y faltan sharpness/reproyección.
 - Plan de import regenerable con seis capas, materiales PBR base, provenance F8, cuatro perfiles (day/sunset/night/rain), ocho cámaras y política de contenido generado no versionado.
-- 75 pruebas del compilador/contratos pasaron; la identidad contiene 14 hashes fuente y hashes reales de los árboles del compilador y Unreal. El gate de coordenadas pasó con ocho esquinas AOI, ocho cámaras, cuatro puntos terrain, un roof control y axes del dron; error round-trip máximo `4e-15` m. No quedó staging, ni hubo merge, push, upload privado o gasto cloud.
+- 76 pruebas del compilador/contratos pasaron; la identidad contiene 14 hashes fuente y hashes reales de los árboles del compilador y Unreal. El gate de coordenadas pasó con ocho esquinas AOI, ocho cámaras, cuatro puntos terrain, un roof control y axes del dron; error round-trip máximo `4e-15` m. No quedó staging, ni hubo merge, push, upload privado o gasto cloud.
+- La cobertura de geometría canónica por conteo de triángulos —separada de la cobertura raster de cámaras— es 89,3975% `OBSERVED_WEAK`, 10,6025% `GEOMETRICALLY_INFERRED`, 0% generado y 0% unknown; todavía no está ponderada por visibilidad de ruta.
 - Tres vistas baseline locales —ortofoto fuente, hillshade DSM y Truth Field— quedaron bajo `qa/baseline`; están rotuladas como QA del compilador, no como capturas de aceptación Unreal.
 - Build local medido: 1,715225 s; coste externo US$0; electricidad no estimada.
 - `audit_vault.py`: 0 hallazgos. `audit_splats.py`: 0 fallos y 4 avisos legacy.
@@ -25,7 +27,7 @@ Veredicto: **partially accepted**
 - El host no ofrece `UnrealEditor`/`UnrealEditor-Cmd`; el gate del importer para el Hero actual produjo exit 2 y `blocked_external`, con cero assets importados. El plan sí validó nivel, cuatro perfiles, F8 y ocho cámaras.
 - El PC RTX no respondió por SSH durante el preflight. No existen mediciones reales de avg FPS, 1% low, VRAM, ruta, hover drift, clipping, shader compile ni estabilidad Mac.
 - No existen imágenes fijas Unreal ni comparación renderizada contra las ocho reference cameras porque el editor no está disponible.
-- Median/p95 geométrico y silhouette contra ground truth independiente permanecen `null`, no “pass”. El diagnóstico ya no usa distancia a vértices, sensible a la densidad de triangulación: deduplica la geometría con precisión OBJ y mide 1.934 muestras contra los 64 triángulos fuente más cercanos entre 94.475 triángulos del AOI, con proyección punto-triángulo exacta. El proxy superficial da mediana `1,4930 m` y p95 `9,0664 m`; permanece muy por encima del objetivo. Es estable entre búsquedas de 16, 64 y 256 vecinos y se rotula expresamente como referencia no independiente/no elegible para aceptación.
+- Median/p95 geométrico y silhouette contra ground truth independiente permanecen `null`, no “pass”. Para la capa que sí conserva etiqueta observada, el diagnóstico deduplica con precisión OBJ y mide 714 muestras contra los 64 triángulos fuente más cercanos entre 94.475 triángulos del AOI, con proyección punto-triángulo exacta. El proxy superficial da mediana `0,4101 m` y p95 `1,0219 m`; mejora materialmente tras el escrow, pero todavía falla los objetivos `0,15/0,40 m`. Se rotula expresamente como referencia no independiente/no elegible para aceptación.
 - El smoke general mantiene un fallo baseline anterior a Hero Cell: hash de `ac30_cannon/ultra`.
 - `audit_world.py --all` conserva dos fallos legacy ajenos al input seleccionado: collider inválido en `DJI_20260712135736_0117_D` y `recon_60b23208db`. El AOI R0 `recon_4e4245a1f4_aoi130` sí reportó mesh, terrain, collider v3, 404.878 triángulos y 72,53% de cobertura.
 - `ops_status` sólo reflejó discontinuidad histórica de 24 h aunque el estado actual de servicios, auth, Range, recursos y jobs estaba sano.
