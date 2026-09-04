@@ -291,7 +291,7 @@ def structuralize_heightfield(
             for neighbor in ((row - 1, col), (row + 1, col), (row, col - 1), (row, col + 1)):
                 nr, nc = neighbor
                 if neighbor not in occupied and 0 <= nr < rows and 0 <= nc < cols:
-                    neighbors.append(height[nr, nc])
+                    neighbors.append(ground_height[nr, nc])
         base = float(
             np.median(neighbors)
             if neighbors

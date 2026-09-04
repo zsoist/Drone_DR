@@ -42,6 +42,23 @@ class StructuralGeometryTests(unittest.TestCase):
         self.assertAlmostEqual(8.0, bundle.clean_observed.vertices[:, 1].max())
         self.assertLess(bundle.clean_observed.vertices[:, 0].max(), 0.0)
 
+    def test_excluded_roof_ring_cannot_be_mistaken_for_the_building_base(self):
+        height = np.zeros((20, 20), dtype=np.float32)
+        height[6:14, 6:14] = 10.0
+        excluded = np.zeros_like(height, dtype=bool)
+        excluded[6:14, 6] = True
+        excluded[6:14, 13] = True
+        excluded[6, 6:14] = True
+        excluded[13, 6:14] = True
+
+        bundle = structuralize_heightfield(
+            height, spacing_m=(1.0, 1.0), exclusion_mask=excluded
+        )
+
+        self.assertGreater(len(bundle.clean_observed.faces), 0)
+        self.assertAlmostEqual(10.0, bundle.clean_observed.vertices[:, 1].max())
+        self.assertAlmostEqual(0.0, bundle.clean_observed.vertices[:, 1].min())
+
     def test_irregular_footprint_does_not_fill_its_bounding_box(self):
         height = np.zeros((8, 8), dtype=np.float32)
         height[2:6, 2] = 7.0
