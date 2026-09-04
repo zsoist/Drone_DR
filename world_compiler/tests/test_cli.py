@@ -135,6 +135,11 @@ class CompilerCliTests(unittest.TestCase):
         visibility = json.loads((manifest_path.parent / "truth/visibility.json").read_text())
         self.assertEqual("dsm_ray_march_v1", visibility["occlusion_method"])
         self.assertFalse(visibility["occlusion_calibrated_with_heldout_views"])
+        atlas = json.loads((manifest_path.parent / "materials/evidence_atlas.json").read_text())
+        self.assertFalse(atlas["per_texel_camera_weights_available"])
+        recipes = json.loads((manifest_path.parent / "materials/recipes.json").read_text())
+        self.assertEqual("planned_not_generated", recipes["allocation_status"])
+        self.assertIsNone(recipes["map_availability"]["normal"])
         geometry_coverage = json.loads(
             (manifest_path.parent / "truth/geometry_coverage.json").read_text()
         )

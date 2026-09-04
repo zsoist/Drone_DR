@@ -14,7 +14,7 @@ from world_compiler.aerobrain.cameras import camera_support_grid, load_opensfm_c
 from world_compiler.aerobrain.coordinates import CoordinateContract
 from world_compiler.aerobrain.manifests import hash_file, load_object
 from world_compiler.aerobrain.repository import SceneVersion, WorldRepository
-from world_compiler.appearance.evidence_atlas import build_evidence_atlas
+from world_compiler.appearance.evidence_atlas import build_raster_evidence_atlas
 from world_compiler.appearance.pbr import SurfacePriority, allocate_materials
 from world_compiler.completion.missing_views import MissingRegion, rank_missing_views
 from world_compiler.evidence.truth_field import (
@@ -696,13 +696,54 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             SurfacePriority("ground", 0.8, 5.0, 1.0, 1.0, "ground"),
             SurfacePriority("structure", 0.5, 8.0, 0.8, 0.8, "generic_structure"),
         ], resident_budget_bytes=256 * 1024 * 1024, max_4k=1)
+        source_color_relative = None
+        source_ortho_path = scene.assets.get("ortho_full") or scene.assets.get("ortho")
+        if source_ortho_path is not None:
+            source_color = crop_source_ortho(
+                source_ortho_path, center, scene.world_size_m, request.size_m
+            ).resize((patch.shape[1], patch.shape[0]), Image.Resampling.LANCZOS)
+            source_color_relative = "materials/source_color_ortho_proxy.png"
+            (staging / source_color_relative).parent.mkdir(parents=True, exist_ok=True)
+            source_color.save(staging / source_color_relative)
         _write_json(staging / "materials/recipes.json", {
-            "version": 1, "resident_budget_bytes": 256 * 1024 * 1024,
+            "version": 1,
+            "allocation_status": "planned_not_generated",
+            "resident_budget_bytes": 256 * 1024 * 1024,
+            "planned_resident_bytes": sum(recipe.resident_bytes for recipe in recipes),
+            "actual_generated_texture_bytes": (
+                (staging / source_color_relative).stat().st_size
+                if source_color_relative
+                else 0
+            ),
             "recipes": [asdict(recipe) for recipe in recipes],
+            "layer_status": {
+                "physical_base": "parameter_recipe_only",
+                "source_microdetail": "unavailable",
+                "procedural_variation": "parameter_recipe_only",
+                "decals_wetness": "parameter_recipe_only",
+            },
+            "map_availability": {
+                "source_color_orthomosaic_proxy": source_color_relative,
+                "delighted_basecolor": None,
+                "normal": None,
+                "roughness": None,
+                "ambient_occlusion": None,
+                "microdetail": None,
+            },
+            "validation_status": "incomplete_unreal_relighting_required",
         })
-        _write_json(staging / "materials/evidence_atlas.json", build_evidence_atlas({
-            "ground": [], "structure": []
-        }))
+        _write_json(
+            staging / "materials/evidence_atlas.json",
+            build_raster_evidence_atlas(
+                shape=patch.shape,
+                source_color=source_color_relative,
+                confidence="truth/confidence.png" if confidence_u8 is not None else None,
+                dominant_camera_index=(
+                    "truth/camera_index.png" if confidence_u8 is not None else None
+                ),
+                generated_or_repair_mask=semantic_rasters["replacement"],
+            ),
+        )
         lighting_profiles = {
             "day": {
                 "directional_lux": 80000.0, "temperature_k": 6500.0,

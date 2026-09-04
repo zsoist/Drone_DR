@@ -31,3 +31,40 @@ def build_evidence_atlas(
             "seam_mask": len(blend) > 1,
         }
     return {"version": 1, "patches": patches}
+
+
+def build_raster_evidence_atlas(
+    *,
+    shape: tuple[int, int],
+    source_color: str | None,
+    confidence: str | None,
+    dominant_camera_index: str | None,
+    generated_or_repair_mask: str | None,
+) -> dict:
+    """Describe measured raster evidence without inventing per-camera blend weights."""
+    if len(shape) != 2 or min(shape) <= 0:
+        raise ValueError("evidence atlas shape must be positive and 2D")
+    return {
+        "version": 1,
+        "status": "measured_orthomosaic_proxy" if source_color else "source_color_unavailable",
+        "shape": list(shape),
+        "rasters": {
+            "source_color": source_color,
+            "confidence": confidence,
+            "dominant_camera_index": dominant_camera_index,
+            "generated_or_repair_mask": generated_or_repair_mask,
+        },
+        "lineage": {
+            "source_color": "cropped published ODM orthomosaic" if source_color else None,
+            "camera_support": "OpenSfM frustum plus uncalibrated DSM occlusion proxy",
+        },
+        "per_texel_camera_weights_available": False,
+        "source_sharpness_available": False,
+        "exposure_consistency_available": False,
+        "seam_mask_available": False,
+        "limitations": [
+            "orthomosaic color contains capture illumination",
+            "dominant camera index is a support proxy, not exact ODM texel lineage",
+            "no de-lighted basecolor, normal, roughness, AO, or seam repair was generated",
+        ],
+    }

@@ -5,7 +5,10 @@ from world_compiler.appearance.camera_selection import (
     rank_observations,
     select_compatible_blend,
 )
-from world_compiler.appearance.evidence_atlas import build_evidence_atlas
+from world_compiler.appearance.evidence_atlas import (
+    build_evidence_atlas,
+    build_raster_evidence_atlas,
+)
 
 
 class EvidenceAtlasTests(unittest.TestCase):
@@ -44,6 +47,19 @@ class EvidenceAtlasTests(unittest.TestCase):
         self.assertAlmostEqual(1.0, sum(atlas["patches"]["roof_1"]["weights"].values()))
         self.assertTrue(atlas["patches"]["hidden_1"]["generated_mask"])
         self.assertTrue(atlas["patches"]["hidden_1"]["repair_mask"])
+
+    def test_raster_atlas_never_claims_unmeasured_camera_weights_or_pbr_maps(self):
+        atlas = build_raster_evidence_atlas(
+            shape=(10, 12),
+            source_color="materials/source_color.png",
+            confidence="truth/confidence.png",
+            dominant_camera_index="truth/camera_index.png",
+            generated_or_repair_mask="semantics/masks/replacement.png",
+        )
+
+        self.assertEqual("measured_orthomosaic_proxy", atlas["status"])
+        self.assertFalse(atlas["per_texel_camera_weights_available"])
+        self.assertIn("capture illumination", " ".join(atlas["limitations"]))
 
 
 if __name__ == "__main__":
