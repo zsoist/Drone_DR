@@ -1,0 +1,218 @@
+"""Deterministic structural baseline from an AOI heightfield."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+from world_compiler.evidence.truth_field import TruthClass
+
+from .collision import merge_meshes
+
+
+class HallucinationFirewallError(ValueError):
+    """Generated geometry contradicts high-confidence observed structure."""
+
+
+@dataclass(frozen=True)
+class GeometryLayer:
+    role: str
+    provenance: TruthClass
+    vertices: np.ndarray
+    faces: np.ndarray
+    confidence: float
+    material: str | None = "default"
+
+    @classmethod
+    def empty(cls, role: str, provenance: TruthClass) -> "GeometryLayer":
+        return cls(
+            role,
+            provenance,
+            np.empty((0, 3), dtype=np.float64),
+            np.empty((0, 3), dtype=np.uint32),
+            0.0,
+            None,
+        )
+
+    @classmethod
+    def box(
+        cls,
+        role: str,
+        provenance: TruthClass,
+        *,
+        minimum: tuple[float, float, float],
+        maximum: tuple[float, float, float],
+        confidence: float,
+        material: str | None = "structure",
+    ) -> "GeometryLayer":
+        x0, y0, z0 = minimum
+        x1, y1, z1 = maximum
+        if not (x1 > x0 and y1 > y0 and z1 > z0):
+            raise ValueError("box bounds must have positive volume")
+        vertices = np.asarray(
+            [
+                [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1],
+                [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1],
+            ],
+            dtype=np.float64,
+        )
+        faces = np.asarray(
+            [
+                [0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7],
+                [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5],
+                [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7],
+            ],
+            dtype=np.uint32,
+        )
+        return cls(role, provenance, vertices, faces, float(confidence), material)
+
+    @property
+    def bounds(self) -> tuple[np.ndarray, np.ndarray] | None:
+        if not len(self.vertices):
+            return None
+        return self.vertices.min(axis=0), self.vertices.max(axis=0)
+
+
+@dataclass(frozen=True)
+class GeometryBundle:
+    observed_reference: GeometryLayer
+    ground: GeometryLayer
+    clean_observed: GeometryLayer
+    inferred: GeometryLayer
+    generated: GeometryLayer
+    collision: GeometryLayer
+
+
+def _grid_mesh(height: np.ndarray, spacing_m: tuple[float, float]) -> tuple[np.ndarray, np.ndarray]:
+    rows, cols = height.shape
+    sx, sz = spacing_m
+    x = (np.arange(cols) - (cols - 1) / 2.0) * sx
+    z = (np.arange(rows) - (rows - 1) / 2.0) * sz
+    xx, zz = np.meshgrid(x, z)
+    vertices = np.column_stack((xx.ravel(), height.ravel(), zz.ravel()))
+    faces = []
+    for row in range(rows - 1):
+        for col in range(cols - 1):
+            first = row * cols + col
+            faces.extend(
+                ((first, first + cols + 1, first + 1),
+                 (first, first + cols, first + cols + 1))
+            )
+    return vertices, np.asarray(faces, dtype=np.uint32)
+
+
+def _components(mask: np.ndarray) -> list[list[tuple[int, int]]]:
+    remaining = set(map(tuple, np.argwhere(mask)))
+    components: list[list[tuple[int, int]]] = []
+    while remaining:
+        seed = min(remaining)
+        remaining.remove(seed)
+        stack = [seed]
+        component = []
+        while stack:
+            row, col = stack.pop()
+            component.append((row, col))
+            for neighbor in ((row - 1, col), (row + 1, col), (row, col - 1), (row, col + 1)):
+                if neighbor in remaining:
+                    remaining.remove(neighbor)
+                    stack.append(neighbor)
+        components.append(component)
+    return components
+
+
+def structuralize_heightfield(
+    heightfield: np.ndarray,
+    *,
+    spacing_m: tuple[float, float],
+    structure_threshold_m: float = 2.0,
+) -> GeometryBundle:
+    height = np.asarray(heightfield, dtype=np.float64)
+    if height.ndim != 2 or min(height.shape) < 2 or not np.isfinite(height).all():
+        raise ValueError("heightfield must be finite and at least 2x2")
+    ground_ceiling = float(np.percentile(height, 60))
+    ground_height = np.minimum(height, ground_ceiling)
+    ground_vertices, ground_faces = _grid_mesh(ground_height, spacing_m)
+    reference_vertices, reference_faces = _grid_mesh(height, spacing_m)
+    ground = GeometryLayer(
+        "ground", TruthClass.OBSERVED_WEAK, ground_vertices, ground_faces, 0.6, "ground"
+    )
+    reference = GeometryLayer(
+        "observed_reference_geometry",
+        TruthClass.OBSERVED_WEAK,
+        reference_vertices,
+        reference_faces,
+        0.6,
+        "source_reference",
+    )
+
+    sx, sz = spacing_m
+    rows, cols = height.shape
+    boxes: list[GeometryLayer] = []
+    structure_mask = height - ground_height > structure_threshold_m
+    for component in _components(structure_mask):
+        component_rows = np.asarray([row for row, _ in component])
+        component_cols = np.asarray([col for _, col in component])
+        x0 = (component_cols.min() - (cols - 1) / 2.0 - 0.5) * sx
+        x1 = (component_cols.max() - (cols - 1) / 2.0 + 0.5) * sx
+        z0 = (component_rows.min() - (rows - 1) / 2.0 - 0.5) * sz
+        z1 = (component_rows.max() - (rows - 1) / 2.0 + 0.5) * sz
+        base = float(ground_height[component_rows, component_cols].min())
+        roof = float(height[component_rows, component_cols].max())
+        boxes.append(
+            GeometryLayer.box(
+                "clean_observed_structure",
+                TruthClass.OBSERVED_WEAK,
+                minimum=(x0, base, z0),
+                maximum=(x1, roof, z1),
+                confidence=0.6,
+            )
+        )
+    structure_vertices, structure_faces = merge_meshes(
+        [(box.vertices, box.faces) for box in boxes]
+    )
+    clean = GeometryLayer(
+        "clean_observed_structure",
+        TruthClass.OBSERVED_WEAK,
+        structure_vertices,
+        structure_faces,
+        0.6 if len(structure_faces) else 0.0,
+        "structure",
+    )
+    collision_vertices, collision_faces = merge_meshes(
+        [(ground.vertices, ground.faces), (clean.vertices, clean.faces)]
+    )
+    collision = GeometryLayer(
+        "collision_geometry",
+        TruthClass.GEOMETRICALLY_INFERRED,
+        collision_vertices,
+        collision_faces,
+        0.6,
+        None,
+    )
+    return GeometryBundle(
+        reference,
+        ground,
+        clean,
+        GeometryLayer.empty("geometrically_inferred_structure", TruthClass.GEOMETRICALLY_INFERRED),
+        GeometryLayer.empty("generated_completion", TruthClass.GENERATED_CONSTRAINED),
+        collision,
+    )
+
+
+def validate_layer_separation(
+    observed: GeometryLayer,
+    generated: GeometryLayer,
+    *,
+    high_confidence: float = 0.8,
+    tolerance_m: float = 1e-6,
+) -> None:
+    if observed.confidence < high_confidence or observed.bounds is None or generated.bounds is None:
+        return
+    observed_min, observed_max = observed.bounds
+    generated_min, generated_max = generated.bounds
+    overlap = np.minimum(observed_max, generated_max) - np.maximum(observed_min, generated_min)
+    if np.all(overlap > tolerance_m):
+        raise HallucinationFirewallError(
+            "generated geometry overlaps high-confidence observed structure"
+        )
