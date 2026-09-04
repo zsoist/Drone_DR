@@ -1,7 +1,13 @@
 import unittest
 
 from world_compiler.completion.hypotheses import CompletionHypothesis, select_hypothesis
-from world_compiler.completion.missing_views import MissingRegion, rank_missing_views
+import numpy as np
+
+from world_compiler.completion.missing_views import (
+    MissingRegion,
+    derive_missing_views,
+    rank_missing_views,
+)
 from world_compiler.completion.validator import ObservationCheck, validate_hypothesis
 from world_compiler.evidence.truth_field import TruthClass
 
@@ -45,6 +51,32 @@ class CompletionTests(unittest.TestCase):
         self.assertEqual("hero", report["requests"][0]["target_region"])
         self.assertGreater(report["requests"][0]["expected_information_gain"], report["requests"][1]["expected_information_gain"])
         self.assertIn("safety_legal_note", report["requests"][0])
+
+    def test_real_reflight_plan_uses_weak_cells_and_spatial_separation(self):
+        x, z = np.meshgrid(np.arange(4) * 10.0, np.arange(4) * 10.0)
+        visible = np.full((4, 4), 10, dtype=int)
+        visible[0, 0] = 1
+        visible[3, 3] = 2
+
+        report = derive_missing_views(
+            x_ab_m=x,
+            z_ab_m=z,
+            height_ab_m=np.zeros((4, 4)),
+            confidence=visible / 20.0,
+            visible_count=visible,
+            angular_diversity=np.full((4, 4), 0.5),
+            limit=2,
+            minimum_spacing_m=15.0,
+        )
+
+        self.assertEqual(2, len(report["requests"]))
+        self.assertEqual("weak_support_r000_c000", report["requests"][0]["target_region"])
+        self.assertFalse(report["controls_drone"])
+        self.assertIsNotNone(report["requests"][0]["target_position_local_m"])
+        self.assertNotEqual(
+            report["requests"][0]["camera_position_local_m"],
+            report["requests"][1]["camera_position_local_m"],
+        )
 
 
 if __name__ == "__main__":

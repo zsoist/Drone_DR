@@ -16,7 +16,11 @@ from world_compiler.aerobrain.manifests import hash_file, load_object
 from world_compiler.aerobrain.repository import SceneVersion, WorldRepository
 from world_compiler.appearance.evidence_atlas import build_raster_evidence_atlas
 from world_compiler.appearance.pbr import SurfacePriority, allocate_materials
-from world_compiler.completion.missing_views import MissingRegion, rank_missing_views
+from world_compiler.completion.missing_views import (
+    MissingRegion,
+    derive_missing_views,
+    rank_missing_views,
+)
 from world_compiler.evidence.truth_field import (
     Calibration,
     LEGEND,
@@ -775,10 +779,27 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             "version": 1, "status": "not_attempted", "hypotheses": [],
             "reason": "no completion may run without held-out-calibrated per-surface evidence",
         })
-        missing = rank_missing_views([MissingRegion(
-            "surface_visibility_gap", 1.0, 1.0, 1.0, (0.0, 15.0, 0.0),
-            15.0, -45.0, 0.0, 55.0, "held-out-calibrated surface evidence unavailable",
-        )])
+        if support is not None and spatial_truth is not None:
+            missing = derive_missing_views(
+                x_ab_m=x_grid,
+                z_ab_m=z_grid,
+                height_ab_m=patch,
+                confidence=spatial_truth.confidence,
+                visible_count=support.visible_count,
+                angular_diversity=support.angular_diversity,
+                vegetation_mask=vegetation_patch,
+            )
+        else:
+            missing = rank_missing_views([MissingRegion(
+                "surface_visibility_gap", 1.0, 1.0, 1.0, (center[0], 15.0, center[1]),
+                15.0, -45.0, 0.0, 55.0, "camera support evidence unavailable",
+            )])
+            missing.update({
+                "method": "fallback_no_camera_support",
+                "coordinate_frame": "aerobrain_local_m",
+                "controls_drone": False,
+                "heldout_occlusion_calibrated": False,
+            })
         _write_json(staging / "missing_views.json", missing)
         import_plan = {
             "version": 1,

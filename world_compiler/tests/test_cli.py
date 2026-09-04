@@ -125,6 +125,9 @@ class CompilerCliTests(unittest.TestCase):
         self.assertIn("vegetation", semantics["rasters"])
         for relative in semantics["rasters"].values():
             self.assertTrue((manifest_path.parent / relative).is_file(), relative)
+        missing_views = json.loads((manifest_path.parent / "missing_views.json").read_text())
+        self.assertFalse(missing_views["controls_drone"])
+        self.assertEqual("truth_field_weak_support_nms_v1", missing_views["method"])
         import_plan = json.loads((manifest_path.parent / "unreal/import_manifest.json").read_text())
         self.assertEqual("F8", import_plan["provenance_debug"]["hotkey"])
         self.assertEqual({"day", "sunset", "night", "rain"}, set(import_plan["lighting_profiles"]))
