@@ -148,7 +148,9 @@ class CompilerCliTests(unittest.TestCase):
             (manifest_path.parent / "truth/geometry_coverage.json").read_text()
         )
         self.assertAlmostEqual(100.0, sum(geometry_coverage["coverage_pct"].values()))
-        self.assertFalse(geometry_coverage["route_visibility_weighted"])
+        self.assertTrue(geometry_coverage["route_visibility_weighted"])
+        self.assertEqual(31, geometry_coverage["route_sample_count"])
+        self.assertFalse(geometry_coverage["camera_frustum_applied"])
         agreement = json.loads(
             (manifest_path.parent / "qa/source_geometry_agreement.json").read_text()
         )

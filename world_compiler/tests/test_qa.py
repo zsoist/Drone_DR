@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from world_compiler.qa.geometry_metrics import (
+    route_visibility_weighted_coverage,
     source_surface_agreement,
     source_vertex_agreement,
     summarize_errors,
@@ -14,6 +15,46 @@ from world_compiler.qa.report import acceptance_verdict, write_acceptance_report
 
 
 class QualityAcceptanceTests(unittest.TestCase):
+    def test_route_visibility_weights_near_screen_space_more_than_far_geometry(self):
+        triangle = np.asarray([[0, 1, 2]], dtype=np.uint32)
+        near = np.asarray([[-1.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 0.0, 1.0]])
+        far = near + np.asarray([30.0, 0.0, 0.0])
+
+        report = route_visibility_weighted_coverage(
+            [
+                ("OBSERVED_WEAK", near, triangle),
+                ("GEOMETRICALLY_INFERRED", far, triangle),
+            ],
+            np.asarray([[0.0, 10.0, 0.0]]),
+            heightfield=np.zeros((11, 51)),
+            world_size_m=(50.0, 10.0),
+            valid_mask=np.ones((11, 51), dtype=bool),
+            provenance_classes=(
+                "OBSERVED_MULTI_VIEW",
+                "OBSERVED_WEAK",
+                "GEOMETRICALLY_INFERRED",
+                "GENERATED_CONSTRAINED",
+                "UNKNOWN",
+            ),
+        )
+
+        self.assertTrue(report["route_visibility_weighted"])
+        self.assertGreater(
+            report["coverage_pct"]["OBSERVED_WEAK"],
+            report["coverage_pct"]["GEOMETRICALLY_INFERRED"],
+        )
+        self.assertFalse(report["camera_frustum_applied"])
+        self.assertEqual(
+            {
+                "OBSERVED_MULTI_VIEW",
+                "OBSERVED_WEAK",
+                "GEOMETRICALLY_INFERRED",
+                "GENERATED_CONSTRAINED",
+                "UNKNOWN",
+            },
+            set(report["coverage_pct"]),
+        )
+
     def test_source_vertex_proxy_is_measured_but_never_independent_ground_truth(self):
         candidate = np.asarray([[0, 1, 0], [1, 1, 0]], dtype=float)
         source = np.asarray([[0, 1.1, 0], [1, 1.2, 0], [99, 99, 99]], dtype=float)

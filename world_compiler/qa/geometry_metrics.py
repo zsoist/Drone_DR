@@ -7,6 +7,115 @@ from pathlib import Path
 
 import numpy as np
 
+from world_compiler.aerobrain.cameras import dsm_line_of_sight
+
+
+def route_visibility_weighted_coverage(
+    layers: list[tuple[str, np.ndarray, np.ndarray]],
+    route_points_ab_m: np.ndarray,
+    *,
+    heightfield: np.ndarray,
+    world_size_m: tuple[float, float],
+    valid_mask: np.ndarray,
+    provenance_classes: tuple[str, ...] = (),
+) -> dict:
+    """Weight provenance by route-visible projected triangle area potential.
+
+    The proxy uses two-sided triangle orientation, inverse-square distance, and
+    DSM line of sight. The route contract has no camera orientation, so it does
+    not claim a camera-frustum or structure-occlusion measurement.
+    """
+    route = np.asarray(route_points_ab_m, dtype=np.float64)
+    if route.ndim != 2 or route.shape[1:] != (3,) or not len(route) or not np.isfinite(route).all():
+        raise ValueError("route points must be a non-empty finite Nx3 array")
+    weighted: dict[str, float] = {name: 0.0 for name in provenance_classes}
+    triangle_count: dict[str, int] = {name: 0 for name in provenance_classes}
+    visible_triangle_count: dict[str, int] = {name: 0 for name in provenance_classes}
+    for provenance, raw_vertices, raw_faces in layers:
+        vertices = np.asarray(raw_vertices, dtype=np.float64)
+        faces = np.asarray(raw_faces, dtype=np.int64)
+        if not len(faces):
+            weighted.setdefault(provenance, 0.0)
+            triangle_count.setdefault(provenance, 0)
+            visible_triangle_count.setdefault(provenance, 0)
+            continue
+        if (
+            vertices.ndim != 2
+            or vertices.shape[1:] != (3,)
+            or faces.ndim != 2
+            or faces.shape[1:] != (3,)
+            or int(faces.min()) < 0
+            or int(faces.max()) >= len(vertices)
+            or not np.isfinite(vertices).all()
+        ):
+            raise ValueError("route coverage mesh is invalid")
+        triangles = vertices[faces]
+        edges_a = triangles[:, 1] - triangles[:, 0]
+        edges_b = triangles[:, 2] - triangles[:, 0]
+        cross = np.cross(edges_a, edges_b)
+        double_area = np.linalg.norm(cross, axis=1)
+        normals = np.divide(
+            cross,
+            double_area[:, None],
+            out=np.zeros_like(cross),
+            where=double_area[:, None] > 1e-12,
+        )
+        centroids = triangles.mean(axis=1)
+        best = np.zeros(len(triangles), dtype=np.float64)
+        for point in route:
+            camera_to_surface = centroids - point
+            distance = np.linalg.norm(camera_to_surface, axis=1)
+            direction = np.divide(
+                camera_to_surface,
+                distance[:, None],
+                out=np.zeros_like(camera_to_surface),
+                where=distance[:, None] > 1e-9,
+            )
+            facing = np.abs(np.einsum("ij,ij->i", normals, direction))
+            line_of_sight = dsm_line_of_sight(
+                tuple(float(value) for value in point),
+                centroids[:, 0],
+                centroids[:, 1],
+                centroids[:, 2],
+                heightfield,
+                world_size_m,
+                valid_mask,
+            )
+            projected = np.divide(
+                0.5 * double_area * facing,
+                np.maximum(distance * distance, 1e-6),
+            )
+            best = np.maximum(best, np.where(line_of_sight, projected, 0.0))
+        weighted[provenance] = weighted.get(provenance, 0.0) + float(best.sum())
+        triangle_count[provenance] = triangle_count.get(provenance, 0) + int(len(faces))
+        visible_triangle_count[provenance] = (
+            visible_triangle_count.get(provenance, 0) + int((best > 0).sum())
+        )
+    total = sum(weighted.values())
+    if total <= 0:
+        raise ValueError("route has no DSM-visible projected triangle area")
+    return {
+        "version": 1,
+        "route_visibility_weighted": True,
+        "method": "max_two_sided_projected_area_inverse_square_dsm_los_v1",
+        "route_sample_count": int(len(route)),
+        "camera_frustum_applied": False,
+        "structure_occlusion_applied": False,
+        "triangle_count": dict(sorted(triangle_count.items())),
+        "visible_triangle_count": dict(sorted(visible_triangle_count.items())),
+        "projected_weight": {
+            key: round(value, 12) for key, value in sorted(weighted.items())
+        },
+        "coverage_pct": {
+            key: round(100.0 * value / total, 8) for key, value in sorted(weighted.items())
+        },
+        "limitations": [
+            "route contract has positions and camera modes but no camera orientation or FOV",
+            "DSM ray marching does not model self-occlusion by canonical structures",
+            "weights measure maximum potential screen-space contribution, not captured Unreal pixels",
+        ],
+    }
+
 
 def summarize_errors(errors_m: list[float]) -> dict:
     values = np.asarray(errors_m, dtype=np.float64)

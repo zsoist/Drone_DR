@@ -46,6 +46,7 @@ from world_compiler.qa.reference_views import (
 )
 from world_compiler.qa.geometry_metrics import (
     load_collision_mesh,
+    route_visibility_weighted_coverage,
     source_surface_agreement,
     source_surface_distances,
 )
@@ -300,6 +301,32 @@ def _validate_staging(root: Path) -> bool:
     return True
 
 
+def _acceptance_route_points(path: Path, center_ab_m: tuple[float, float]) -> np.ndarray:
+    """Interpolate the versioned Unreal route at one-second intervals in absolute AB space."""
+    document = load_object(path)
+    samples = document.get("samples") or []
+    if len(samples) < 2 or float(document.get("duration_s") or -1) != 30.0:
+        raise ValueError("acceptance route must contain a 30-second sampled path")
+    times = np.asarray([row["time_s"] for row in samples], dtype=np.float64)
+    positions = np.asarray([row["position_ab_local_m"] for row in samples], dtype=np.float64)
+    if (
+        positions.shape != (len(samples), 3)
+        or not np.isfinite(positions).all()
+        or not np.isfinite(times).all()
+        or np.any(np.diff(times) <= 0)
+        or times[0] != 0.0
+        or times[-1] != 30.0
+    ):
+        raise ValueError("acceptance route samples are invalid")
+    dense_times = np.arange(31, dtype=np.float64)
+    dense = np.column_stack(
+        [np.interp(dense_times, times, positions[:, axis]) for axis in range(3)]
+    )
+    dense[:, 0] += center_ab_m[0]
+    dense[:, 2] += center_ab_m[1]
+    return dense
+
+
 def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) -> dict:
     started = time.perf_counter()
     vault = Path(vault).resolve()
@@ -503,18 +530,35 @@ def build_world(vault: Path, request: BuildRequest, *, dry_run: bool = False) ->
             if row["role"] in canonical_roles:
                 provenance_triangles[row["provenance"]] += row["triangles"]
         canonical_triangles = sum(provenance_triangles.values())
-        geometry_coverage = {
+        triangle_count_coverage_pct = {
+            name: round(100.0 * count / canonical_triangles, 8)
+            if canonical_triangles
+            else 0.0
+            for name, count in provenance_triangles.items()
+        }
+        route_points = _acceptance_route_points(
+            repository_root / "unreal/DroneWorld/Config/AcceptanceRoute.json", center
+        )
+        route_layers = [
+            (layer.provenance.value, vertices, layer.faces)
+            for layer, vertices in translated_layers
+            if layer.role in canonical_roles
+        ]
+        route_coverage = route_visibility_weighted_coverage(
+            route_layers,
+            route_points,
+            heightfield=height - float(meta.get("elev_min", height.min())),
+            world_size_m=scene.world_size_m,
+            valid_mask=valid > 0,
+            provenance_classes=tuple(truth_class.value for truth_class in TruthClass),
+        )
+        geometry_coverage = route_coverage | {
             "version": 1,
-            "basis": "canonical render triangle count; excludes source reference and collision",
+            "basis": "route-visible projected triangle area potential; excludes source reference and collision",
+            "unweighted_basis": "canonical render triangle count",
             "canonical_triangles": canonical_triangles,
             "triangle_count": provenance_triangles,
-            "coverage_pct": {
-                name: round(100.0 * count / canonical_triangles, 8)
-                if canonical_triangles
-                else 0.0
-                for name, count in provenance_triangles.items()
-            },
-            "route_visibility_weighted": False,
+            "triangle_count_coverage_pct": triangle_count_coverage_pct,
         }
         _write_json(staging / "truth/geometry_coverage.json", geometry_coverage)
         silhouette_report = {
