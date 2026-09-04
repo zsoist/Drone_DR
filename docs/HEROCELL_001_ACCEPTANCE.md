@@ -13,7 +13,8 @@ Veredicto: **partially accepted**
 - Geometría: 18.432 triángulos de referencia, 18.432 ground, 108 estructura limpia, 0 completion generado y 18.540 collision.
 - Seis roles separados, matrices AB↔UE invertibles, source hashes, records de coste/run/request, materiales dentro de 256 MiB y output externo US$0.
 - Truth Field real conservador: 75% `GEOMETRICALLY_INFERRED`, 25% `UNKNOWN`, 0% generated/observed en cuatro muestras de cobertura. No hay sidecar público para atribuir visibilidad por superficie, por lo que no se inventaron cámaras.
-- 53 pruebas del compilador/contratos pasaron antes de este reporte; no hubo merge, push, upload privado ni gasto cloud.
+- 58 pruebas del compilador/contratos, `compileall` y el rebuild idempotente pasaron; los 13 hashes fuente del manifest coinciden byte por byte y no quedó staging. No hubo merge, push, upload privado ni gasto cloud.
+- `audit_vault.py`: 0 hallazgos. `audit_splats.py`: 0 fallos y 4 avisos legacy.
 
 ## Qué no está aceptado
 
@@ -21,7 +22,9 @@ Veredicto: **partially accepted**
 - El PC RTX no respondió por SSH durante el preflight. No existen mediciones reales de avg FPS, 1% low, VRAM, ruta, hover drift, clipping, shader compile ni estabilidad Mac.
 - No existen imágenes fijas Unreal ni comparación contra reference cameras porque la versión seleccionada carece del sidecar público por superficie.
 - Median/p95 geométrico y silhouette contra ground truth independiente permanecen `null`, no “pass”.
-- El smoke general mantiene un fallo baseline anterior a Hero Cell: hash de `ac30_cannon/ultra`. `audit_vault` dio 0 hallazgos y `audit_splats` 0 fallos; `ops_status` sólo reflejó discontinuidad histórica 24 h aunque el estado actual estaba sano.
+- El smoke general mantiene un fallo baseline anterior a Hero Cell: hash de `ac30_cannon/ultra`.
+- `audit_world.py --all` conserva dos fallos legacy ajenos al input seleccionado: collider inválido en `DJI_20260712135736_0117_D` y `recon_60b23208db`. El AOI R0 `recon_4e4245a1f4_aoi130` sí reportó mesh, terrain, collider v3, 404.878 triángulos y 72,53% de cobertura.
+- `ops_status` sólo reflejó discontinuidad histórica de 24 h aunque el estado actual de servicios, auth, Range, recursos y jobs estaba sano.
 
 ## Decisión de expansión
 
