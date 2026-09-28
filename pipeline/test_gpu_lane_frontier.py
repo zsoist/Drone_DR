@@ -10,6 +10,10 @@ from unittest import mock
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The guard scripts run `python`, as on the PC's venv. macOS ships no `python`, so
+# expose the interpreter running these tests (a venv always provides that name).
+import os  # noqa: E402
+os.environ["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
 
 import gpu_lane  # noqa: E402
 import jobs as jobstore  # noqa: E402
@@ -896,7 +900,7 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
             'ns-export gaussian-splat --load-config "$CFG"', script)
         self.assertIn(config, script)
         self.assertIn(
-            "/mnt/c/Users/reyes/gpu-transfer/out-resume-export.ply", script)
+            "/mnt/d/gpu-vault/transfer/out-resume-export.ply", script)
         self.assertNotIn("ns-train", script)
 
     def test_completed_checkpoint_export_config_is_confined_to_vault(self):
@@ -934,8 +938,8 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
 
         self.assertIn("/root/gpu-jobs/data/job-finished", script)
         self.assertIn("/root/gpu-jobs/runs/job-finished", script)
-        self.assertIn("/mnt/c/Users/reyes/gpu-transfer/in-job-finished", script)
-        self.assertIn("/mnt/c/Users/reyes/gpu-transfer/out-job-finished", script)
+        self.assertIn("/mnt/d/gpu-vault/transfer/in-job-finished", script)
+        self.assertIn("/mnt/d/gpu-vault/transfer/out-job-finished", script)
         self.assertNotIn("/root/gpu-jobs/data/*", script)
         self.assertNotIn("/root/gpu-jobs/runs/*", script)
 

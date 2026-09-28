@@ -61,7 +61,10 @@ saltarse el gate ni una regla de transformación puede romper la sesión.
 | `ai/router.py` | Lanes multi-LLM: Gemini (vision) · DeepSeek (texto) · OpenAI (fallback) |
 | `ai/analyze.py` | Keyframes → resumen, tags, highlights, travel_score (~$0.002/clip) |
 | `ai/reel.py` | Auto-editor: top highlights → reel 1080p o 9:16 vertical |
-| `pipeline/worker.py` | Cola heavy única: ODM, Metal local 1K/2K, CUDA remoto 7K–40K, publicación y gates |
+| `pipeline/worker.py` | Cola heavy única: todo ODM/splat al PC CUDA (política PC-only), publicación y gates |
+| `pipeline/compute_policy.py` | Enruta ODM/splat al PC (strict); `AEROBRAIN_COMPUTE=local` = legacy Mac |
+| `pipeline/docker_ondemand.py` | OrbStack sólo mientras un job usa un contenedor local; se apaga tras 5 min |
+| `pipeline/pc_janitor.py` | Retención del scratch del PC GPU (7 d terminales / 30 d huérfanos) |
 | `pipeline/scenes.py` | Sitios estables, versiones inmutables y aporte registrado por video |
 | `pipeline/scene_manifest.py` | Contrato Mundo/Flightverse con cobertura verificada 100/200/400/600/1000 m |
 | `pipeline/external_probe.py` | SLO público: health + home + video Range desde GitHub Actions cada 15 min |
@@ -81,7 +84,7 @@ El control, el vault y la publicación son locales; el cómputo premium usa el P
 2. Worker encola ODM en SQLite y corre Docker separado del server web. Reiniciar la web no mata jobs.
 3. Preset `alta` usa 3072px, `pc-quality high`, `feature-quality high`, DSM/DTM/ortho y nube densa. La ruta remota CUDA puede producir malla completa para capturas orbitales/oblicuas; para nadir, DSM, ortho, nube y splat siguen siendo el producto principal.
 4. `tresd_publish.py` publica ortho/DSM/hillshade WebP con feather alpha, DSM binario para mediciones, nube PLY gzip, malla viewer re-centrada si existe, QA y `system.json` atómico.
-5. El contrato único de splat define Fast 1K y Medium 2K para Apple Metal/CUDA. Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K y Grandmaster 40K son NVIDIA CUDA estrictos: no bajan de tier ni caen al Mac. `auto` prueba resolución completa y sólo reintenta `-d2` tras OOM CUDA clasificado.
+5. El contrato único de splat define Fast 1K y Medium 2K para Apple Metal/CUDA (desde 2026-09-28 la política por defecto es **PC-only** (`pipeline/compute_policy.py`); `AEROBRAIN_COMPUTE=local` reactiva el Mac). Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K y Grandmaster 40K son NVIDIA CUDA estrictos: no bajan de tier ni caen al Mac. `auto` prueba resolución completa y sólo reintenta `-d2` tras OOM CUDA clasificado.
 6. Publicación de splats es atómica: current se archiva en `splats/history/`, se genera SOG, se reconstruye el índice y el gate de navegador debe pasar antes de marcar `done`.
 7. El viewer se verifica con matriz real: `share.html` y `tresd.html` en mobile, iPad y desktop deben renderizar canvas, exponer versiones, no desbordar horizontalmente y permitir macro zoom medible.
 

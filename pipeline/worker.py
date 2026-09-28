@@ -18,6 +18,7 @@ import subprocess
 import time
 from pathlib import Path
 
+import docker_ondemand
 import jobs as jobstore
 import perf
 import scenes as scenestore
@@ -688,6 +689,7 @@ def run_odm_container(jid, container, proj, preset, preset_name, rerun_from: str
     # el AutoRemove de docker tras un kill es ASÍNCRONO: relanzar con el mismo --name en la
     # cadena de fallback puede dar "name already in use" (rc 125) y quemar un escalón entero.
     # rm -f síncrono garantiza el nombre libre (no-op si no existe).
+    docker_ondemand.ensure_up()
     try:
         subprocess.run([DOCKER, "rm", "-f", container], capture_output=True, timeout=30)
     except (subprocess.TimeoutExpired, OSError):
@@ -721,6 +723,7 @@ def run_fast_ortho_fallback(jid: str, proj: Path, container: str) -> int:
                    "OpenMVS falló; generando ortofoto/DSM 25D",
                    level="warning", data={"effective_product": "ortho_25d"})
     try:
+        docker_ondemand.ensure_up()
         return jobstore.run_tracked(jid, fast_ortho_cmd(container, proj), timeout=2 * 3600,
                                     tick=adaptive_priority(container))
     except TimeoutError:
@@ -1306,7 +1309,9 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     timeout/cancel son el aparato de siempre (matar el ssh tumba la VM WSL y el
     contenedor con ella)."""
     import odm_gpu_lane
+    import pc_janitor
     odm_gpu_lane.probe()
+    pc_janitor.sweep_best_effort()   # el PC se limpia cuando ya está despierto, sin agenda
     plan = odm_cuda_execution_plan(j, list(preset["args"]))
     name = plan["name"]
     container = f"odm-gpu-{name[:40]}"
@@ -1645,6 +1650,8 @@ def phased_splat_job_spec(parent_spec: dict, cid: str) -> dict:
 
 
 def run_3d(j: dict):
+    import compute_policy
+    j["spec"] = compute_policy.route_odm(j["spec"])   # red de seguridad: jobs viejos en cola
     cid = j["spec"]["clip_id"]
     sources = j["spec"].get("sources") or [cid]
     photos = j["spec"].get("photos") or []
@@ -1712,6 +1719,8 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
     info = {}
     try:
         info = gpu_lane.probe()
+        import pc_janitor
+        pc_janitor.sweep_best_effort()
         jobstore.event(j["id"], "cuda_lane", f"nodo GPU verificado: torch {info['torch']} · "
                        f"gsplat {info['gsplat']}", data=info)
         resume_checkpoint = gpu_lane.validate_resume_checkpoint(resume_checkpoint)
@@ -1767,6 +1776,7 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
                 shutil.rmtree(ds)
             ds.mkdir(parents=True)
             (ds / "images").symlink_to(proj / "images")
+            docker_ondemand.ensure_up()
             r = subprocess.run([DOCKER, "run", "--rm", "-v", f"{proj}:/datasets/code",
                                 "--entrypoint", "/code/SuperBuild/install/bin/opensfm/bin/opensfm",
                                 "opendronemap/odm", "export_colmap", "/datasets/code/opensfm"],
@@ -2211,9 +2221,18 @@ def main():
     except Exception as e:
         print(f"rebuild_index de arranque falló (no fatal): {e}", flush=True)
     print(f"worker listo · poll {POLL_S}s · kinds {jobstore.HEAVY_KINDS}", flush=True)
+    idle_check = 0.0
     while True:
         j = jobstore.claim(jobstore.HEAVY_KINDS)
         if not j:
+            # OrbStack solo mientras un job lo usa: en reposo el Mac no paga la VM
+            if time.time() - idle_check > 60:
+                idle_check = time.time()
+                try:
+                    if docker_ondemand.stop_if_idle(active_jobs=0):
+                        print("OrbStack detenido: sin uso local de Docker", flush=True)
+                except Exception as e:                  # noqa: BLE001 — housekeeping
+                    print(f"stop_if_idle omitido: {e}", flush=True)
             time.sleep(POLL_S)
             continue
         print(f"→ {j['id']} ({j['kind']}) {j['label']}", flush=True)

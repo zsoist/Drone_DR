@@ -236,6 +236,30 @@ def all_splats(splat_dir: Path) -> list:
                                      -(s.get("iters") or 0), s.get("archived_at") or "", s["name"]))
 
 
+def trip_diaries(flights: list, ai_dir: Path) -> dict:
+    """{fecha: resumen} para Viajes — el del clip con mejor travel_score de ese día.
+    Sin LLM: reutiliza el análisis por clip que ya existe. Siempre se escribe (aunque
+    sea {}), porque trips.js lo pide en cada visita y antes recibía un 404."""
+    best: dict = {}
+    for f in flights:
+        date, cid = f.get("date"), f.get("clip_id")
+        try:
+            ai = json.loads((ai_dir / f"{cid}.json").read_text())
+        except (OSError, ValueError):
+            continue
+        summary = str(ai.get("summary") or "").strip()
+        if not (date and summary):
+            continue
+        try:
+            score = float(ai.get("travel_score") or 0)
+        except (TypeError, ValueError):
+            score = 0.0
+        if date not in best or score > best[date][0]:
+            best[date] = (score, summary)
+    return {d: (s[:277].rsplit(" ", 1)[0] + "…" if len(s) > 280 else s)
+            for d, (_, s) in sorted(best.items())}
+
+
 def main():
     flights = []
     routes = []
@@ -284,6 +308,8 @@ def main():
                  json.dumps({"flights": flights}, separators=(",", ":")))
     write_atomic(VAULT / "manifest" / "routes.json",
                  json.dumps({"routes": routes}, separators=(",", ":")))
+    write_atomic(VAULT / "ai" / "trips.json",
+                 json.dumps(trip_diaries(flights, VAULT / "ai"), ensure_ascii=False))
 
     # system.json: storage + reels + splats + last ingest
     ingests = sorted((VAULT / "manifest").glob("ingest-*.json"))

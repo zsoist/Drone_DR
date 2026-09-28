@@ -47,6 +47,8 @@ def sh_in_odm(proj: Path, script: str) -> str:
     # el contenedor; con nombre, el siguiente run lo barre (rm -f) en vez de dejar un huérfano
     # GDAL/PDAL quemando CPU hasta 30 min. (mismo patrón que fast-ortho/run_odm_container)
     name = f"publish-{proj.name}"
+    import docker_ondemand
+    docker_ondemand.ensure_up()                  # OrbStack arranca solo cuando se usa
     subprocess.run([DOCKER, "rm", "-f", name], capture_output=True, timeout=30)
     r = subprocess.run([DOCKER, "run", "--rm", "--name", name, "-v", f"{proj}:/d",
                         "--entrypoint", "bash", "opendronemap/odm", "-c", script],

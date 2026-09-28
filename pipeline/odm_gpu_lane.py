@@ -28,10 +28,9 @@ import tempfile
 import re
 from pathlib import Path
 
-from gpu_lane import SSH_HOST, NTFS_TRANSFER, ensure_awake, _run, _wsl
+from gpu_lane import SSH_HOST, NTFS_TRANSFER, WSL_TRANSFER, ensure_awake, _run, _wsl
 
 REMOTE_ODM = "/root/gpu-jobs/odm"
-WSL_TRANSFER = "/mnt/c/Users/reyes/gpu-transfer"
 LOCAL_TRANSFER_TMP = Path("/Volumes/SSD/drone-vault/ops/transfer")
 # dirs que el publish del Mac consume — images/ NO viaja de vuelta (ya vive alla)
 OUTPUT_DIRS = ("opensfm", "odm_report", "odm_georeferencing", "odm_filterpoints",

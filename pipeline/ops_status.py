@@ -227,6 +227,9 @@ def resource_status(active_jobs: int = 0) -> dict:
 
     odm_containers = []
     try:
+        import docker_ondemand
+        if not docker_ondemand.running():       # a docker call would boot OrbStack
+            raise LookupError("OrbStack detenido: sin contenedores posibles")
         raw = subprocess.check_output(
             ["/usr/local/bin/docker", "ps", "--filter", "name=odm-", "--format", "{{.Names}}"],
             text=True, timeout=5)

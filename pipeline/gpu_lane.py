@@ -55,8 +55,10 @@ NERFSTUDIO_TRAINER = (
     f"{REMOTE_JOBS}/splat-env/lib/python3.10/site-packages/nerfstudio/"
     "engine/trainer.py"
 )
-NTFS_TRANSFER = "C:/Users/reyes/gpu-transfer"    # puente binario-seguro WSL->Mac
-WSL_TRANSFER = "/mnt/c/Users/reyes/gpu-transfer"
+# Puente binario-seguro WSL<->Mac. En D: (no C:): C: del PC vive al 94% por datos
+# personales y un tar ODM ultra pesa 14+ GB. Una sola fuente de verdad para ambas vistas.
+NTFS_TRANSFER = "D:/gpu-vault/transfer"
+WSL_TRANSFER = "/mnt/d/gpu-vault/transfer"
 
 REMOTE_PRELUDE = (
     "export HOME=/root; export PATH=\"$HOME/.local/bin:$PATH\"; "
@@ -151,7 +153,7 @@ gpu = torch.cuda.get_device_properties(0) if torch.cuda.is_available() else None
 driver = subprocess.run(["nvidia-smi", "--query-gpu=driver_version,memory.free,temperature.gpu",
                          "--format=csv,noheader,nounits"], capture_output=True, text=True).stdout.strip().split(',')
 wsl = shutil.disk_usage('/root/gpu-jobs')
-bridge = shutil.disk_usage('/mnt/c/Users/reyes/gpu-transfer')
+bridge = shutil.disk_usage('__WSL_TRANSFER__')
 print(json.dumps({"torch": torch.__version__, "cuda_runtime": torch.version.cuda,
                   "cuda": torch.cuda.is_available(), "gsplat": gsplat.__version__,
                   "kernels": _C is not None, "gpu": gpu.name if gpu else None,
@@ -162,7 +164,7 @@ print(json.dumps({"torch": torch.__version__, "cuda_runtime": torch.version.cuda
                   "wsl_free_bytes": wsl.free, "bridge_free_bytes": bridge.free,
                   "environment_verified": bool(torch.cuda.is_available() and _C is not None)}))
 PY
-""", timeout=120, label="probe env")
+""".replace("__WSL_TRANSFER__", WSL_TRANSFER), timeout=120, label="probe env")
     info = json.loads(out.strip().splitlines()[-1])
     if not (info["cuda"] and info["kernels"]):
         raise RuntimeError(f"env CUDA degradado: {info}")
@@ -186,9 +188,9 @@ def ship_dataset(dataset: Path, name: str) -> None:
     _wsl(REMOTE_PRELUDE + f"""
 rm -rf {REMOTE_DATA}/{name}
 mkdir -p {REMOTE_DATA}
-cp -r /mnt/c/Users/reyes/gpu-transfer/in-{name} {REMOTE_DATA}/{name}
+cp -r {WSL_TRANSFER}/in-{name} {REMOTE_DATA}/{name}
 test -d {REMOTE_DATA}/{name}/images && test -d {REMOTE_DATA}/{name}/sparse/0
-rm -rf /mnt/c/Users/reyes/gpu-transfer/in-{name}
+rm -rf {WSL_TRANSFER}/in-{name}
 echo DATASET_OK
 """, timeout=900, label="staging a ext4")
 

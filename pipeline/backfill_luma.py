@@ -20,17 +20,23 @@ VAULT = Path("/Volumes/SSD/drone-vault")
 W, H = 32, 18
 
 
-def measure(proxy: Path) -> dict | None:
-    """Una muestra cada 4s a 32x18 en gris: barato y suficiente para decidir usabilidad."""
+def _samples(proxy: Path, rate: str) -> list[float]:
     try:
         raw = subprocess.run(
             ["ffmpeg", "-v", "error", "-i", str(proxy),
-             "-vf", "fps=1/4,scale=32:18,format=gray", "-f", "rawvideo", "-"],
+             "-vf", f"fps={rate},scale={W}:{H},format=gray", "-f", "rawvideo", "-"],
             capture_output=True, timeout=180).stdout
     except (OSError, subprocess.SubprocessError):
-        return None
+        return []
     n = W * H
-    frames = [sum(raw[i * n:(i + 1) * n]) / n for i in range(len(raw) // n)]
+    return [sum(raw[i * n:(i + 1) * n]) / n for i in range(len(raw) // n)]
+
+
+def measure(proxy: Path) -> dict | None:
+    """Una muestra cada 4s a 32x18 en gris: barato y suficiente para decidir usabilidad.
+    Única implementación (process.py la importa). Un clip de <2s no produce ninguna
+    muestra a 1/4 fps — 7 micro-clips quedaron sin brillo — así que cae a 4 fps."""
+    frames = _samples(proxy, "1/4") or _samples(proxy, "4")
     if not frames:
         return None
     return {"avg_luma": round(sum(frames) / len(frames), 1),

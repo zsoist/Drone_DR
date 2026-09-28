@@ -54,10 +54,13 @@
   `GPU_RUNTIME=MPS`; CPU build is fallback only. Worker auto-selects Metal/MPS if available.
   `image_list.txt` from OpenSfM carries container paths; worker rewrites `/datasets/code` to
   the host project path before training.
-- Docker corre en ORBSTACK y su VM tenía 3.9GB totales — el -m 7g del contenedor ODM
-  era ilusorio (OOM exit 137 en mvs_texturing con texturas 8192). Fix aplicado:
-  `orb config set memory_mib 10240` + `orb stop/start` → VM 9.77GB. Si ODM vuelve a
-  dar 137, revisar `docker info | grep "Total Memory"` ANTES de bajar calidad.
+- Docker corre en ORBSTACK, **bajo demanda** desde 2026-09-28 (`docker_ondemand.py`): no arranca
+  con la sesión y se apaga tras 5 min sin uso. CUALQUIER comando `docker` lo enciende — las
+  sondas miran `orb status` primero. Tope 8 GB: el Mac ya sólo hace post-proceso; ODM corre en
+  el PC. (Histórico: con la VM en 3.9 GB, ODM local daba OOM 137 en mvs_texturing.)
+- El PC GPU es `ssh pc` → 192.168.1.5 (MAC BC:5F:F4:45:7E:B8). Si "no responde", verificar la IP
+  con `arp -a` antes de asumir que está apagado: el 2026-09-28 `~/.ssh/config` apuntaba a .3 (otro
+  equipo) y el carril GPU estaba roto sin que nada lo reportara.
 - Jobs pesados: worker desacoplado (com.aerobrain.worker) — restart del server web
   NO los mata (probado en vivo). Restart del WORKER mata sus procesos huérfanos
   antes de re-reclamar (fix de codex).

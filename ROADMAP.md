@@ -28,6 +28,8 @@
 - [x] ✅ Fast 1K/Medium 2K local en Metal/CPU; Cinematic 7K, Ultra 15K, Ultra+ 20K,
   Frontier 30K y Grandmaster 40K en RTX CUDA estricto, con quality/browser gates
 - [x] ✅ .ksplat export + historial versionado: current y history seleccionables en 3D/share/Splat Lab
+- [x] ✅ (2026-09-28) Política PC-only: todo ODM/splat en el PC CUDA; OrbStack bajo demanda (0 en reposo);
+  retención automática del scratch del PC; puente de transferencia en D:
 - [x] Browser gate: jobs 3d/splat no se marcan done sin QA real en Chrome headless ✅ 2026-07-05
 - [x] ✅ Alta ODM optimizado para video nadir: 3072px, dense estable, DSM/ortho/nube/splat como producto principal, sin malla full cara por defecto
 - [ ] WebODM ortomosaico (fotos JPG/DNG) — opcional, ODM directo ya cubre video DJI

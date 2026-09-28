@@ -4,47 +4,47 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=343';
+import * as THREE from '/flightverse/three.js?v=344';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=343';
+} from '/flightverse/scene.js?v=344';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=343';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=343';
-import { createRecorder } from '/flightverse/recorder.js?v=343';
-import { createAudio } from '/flightverse/audio.js?v=343';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=343';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=343';
+} from '/flightverse/runtime.js?v=344';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=344';
+import { createRecorder } from '/flightverse/recorder.js?v=344';
+import { createAudio } from '/flightverse/audio.js?v=344';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=344';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=344';
 import {
   createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=343';
-import { createSky } from '/flightverse/sky.js?v=343';
-import { loadSceneObjects } from '/flightverse/objects.js?v=343';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=343';
-import { resolveAimRay } from '/flightverse/aiming.js?v=343';
+} from '/flightverse/mobile-command.js?v=344';
+import { createSky } from '/flightverse/sky.js?v=344';
+import { loadSceneObjects } from '/flightverse/objects.js?v=344';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=344';
+import { resolveAimRay } from '/flightverse/aiming.js?v=344';
 import {
   WEAPON_PROFILES,
   isContinuousWeaponKey,
-} from '/flightverse/weapon-registry.js?v=343';
-import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=343';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=343';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=343';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=343';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=343';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=343';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=343';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=343';
-import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=343';
-import CameraControls from '/vendor/camera-controls.module.js?v=343';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=343';
+} from '/flightverse/weapon-registry.js?v=344';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=344';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=344';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=344';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=344';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=344';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=344';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=344';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=344';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=344';
+import CameraControls from '/vendor/camera-controls.module.js?v=344';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=344';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=343';
+} from '/vendor/postprocessing180.module.js?v=344';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -709,9 +709,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=343', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=344', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=343');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=344');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -866,7 +866,7 @@ async function main() {
   const shake = { mag: 0 };
   let curYaw = 0;
   const { GLTFLoader: ArsenalGLTFLoader } = await import(
-    '/vendor/three-addons180/loaders/GLTFLoader.js?v=343'
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=344'
   );
   weaponModels = createWeaponModelLibrary({
     quality: Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto',

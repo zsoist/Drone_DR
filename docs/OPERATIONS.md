@@ -48,9 +48,10 @@ cloudflared (QUIC preferido, fallback HTTP/2)
 static/video Range            SQLite jobs.db
                               |
                      worker único launchd
-                       |             |
-              Mac/OrbStack      SSH/WSL2 PC RTX
-              ODM + 1K/2K       ODM CUDA + gsplat 7K–40K
+                       |                     |
+              Mac (bajo demanda)       SSH/WSL2 PC RTX (todo el cómputo)
+              OrbStack: GDAL/PDAL/     ODM CUDA + gsplat 1K–40K
+              OpenSfM post-proceso
 ```
 
 | Servicio | LaunchAgent | Función |
@@ -63,34 +64,57 @@ static/video Range            SQLite jobs.db
 `aerobrain-private-data-edge` no es un LaunchAgent: es el Worker de Cloudflare
 versionado en `edge/`, limitado a `vuelos.metislab.work/*`.
 
-Todos usan `RunAtLoad`; web, worker y tunnel usan `KeepAlive`. OrbStack tiene
-`app.start_at_login=true` para volver después de iniciar sesión.
+Todos usan `RunAtLoad`; web, worker y tunnel usan `KeepAlive`. OrbStack **no**
+arranca al iniciar sesión (`app.start_at_login=false`, desde 2026-09-28): el worker
+lo enciende sólo cuando un job necesita un contenedor local (ver abajo).
 
 ## Política de recursos
 
-Hardware actual: Mac Mini M4, 10 cores (4P+6E), 16 GB RAM. OrbStack: 10 cores,
-10 GB RAM. El PC RTX 4060 Ti/WSL2 es el acelerador remoto: Metal local queda
-restringido a Fast 1K y Medium 2K; 7K–40K usan CUDA estricto.
+Decisión del operador (2026-09-28): **todo el cómputo pesado corre en el PC GPU**.
+El Mac sirve la web y el video y sólo hace post-proceso ligero bajo demanda.
 
-| Estado | ODM | OpenSplat | Web/stream |
-|---|---|---|---|
-| Sin viewer | 10 cores disponibles | prioridad normal + MPS | base ligera |
-| Video reproduciendo | límite dinámico 7 cores | `taskpolicy -b` | 3 cores reservados |
-| 45 s sin heartbeat | vuelve a 10 cores | `taskpolicy -B` | base ligera |
+- `pipeline/compute_policy.py` enruta cada job: ODM → CUDA `strict` (un fallo en el
+  PC nunca cae al Mac, ni siquiera en presets rápidos) y todo splat → CUDA. Se aplica
+  en `/api/odm`, `/api/scene_improve`, `build_splat_job_spec` y, como red de
+  seguridad, al iniciar `run_3d`. `AEROBRAIN_COMPUTE=local` reactiva los caminos
+  legacy (Metal 1K/2K, ODM local) para una corrida puntual.
+- `pipeline/docker_ondemand.py`: OrbStack se enciende justo antes de un contenedor
+  local (`sh_in_odm` de publicación, AOI, export OpenSfM→COLMAP) y el loop ocioso del
+  worker lo detiene tras 5 min sin uso y sin contenedores. Arranque en frío medido:
+  1.3 s. En reposo el Mac no paga la VM. Cuidado: cualquier comando `docker` enciende
+  OrbStack; las sondas deben mirar `orb status` primero.
+- OrbStack: tope `memory_mib=8192` (es un límite, no una reserva) y la imagen
+  `opendronemap/odm` presente (GDAL 3.11, PDAL 2.9, OpenSfM) para el post-proceso.
 
-El reproductor envía `/api/viewer_ping` cada 15 s. El origin también registra
-requests MP4 reales, excluyendo probes. El worker revisa el heartbeat cada 5 s.
+Hardware: Mac Mini M4 (10 cores, 16 GB). PC: i7-3770S 4c/8t, 32 GB, RTX 4060 Ti 8 GB
+— la GPU es el músculo, la CPU del PC es el cuello de botella en pasos no-CUDA.
 
-Contención de memoria:
-
-- ODM estándar: 7 GB; alta/extra/ultra: 8.5 GB, concurrencia 2.
-- La VM usa ~0.75 GB en otros contenedores; 8.5 GB evita exceder sus 10 GB.
-- OpenSplat: `taskpolicy -m 11000` (MiB). Usa GPU/CPU al máximo, pero el proceso
-  falla contenido antes de llevar al host de 16 GB a presión extrema.
 - Cola única SQLite con claim atómico: nunca corren dos ODM/splats a la vez.
-- Cancelación mata grupo de procesos y contenedor; timeouts terminan y registran error.
-- El Mac conserva request, vault y publicación. El PC sólo recibe staging, entrena y devuelve PLY;
-  ningún asset remoto reemplaza `current` sin conversión, QA y browser gate en el Mac.
+- Cancelación mata grupo de procesos y contenedor (local o remoto vía WSL).
+- El Mac conserva request, vault y publicación. El PC sólo recibe staging, entrena y devuelve
+  resultados; ningún asset remoto reemplaza `current` sin conversión, QA y browser gate en el Mac.
+
+## Nodo PC GPU (fuerza de trabajo)
+
+| Qué | Dónde |
+|---|---|
+| Red | `192.168.1.5` (MAC `BC:5F:F4:45:7E:B8`), alias `ssh pc`, WoL por `pc-wake` |
+| WSL | distro `Ubuntu`, disco `D:\WSL\Ubuntu\ext4.vhdx` (sparse), imagen `opendronemap/odm:gpu` |
+| Scratch de jobs | `/root/gpu-jobs/{data,runs,checkpoints,odm}` + `splat-env` (entorno, no tocar) |
+| Puente WSL↔Mac | `D:\gpu-vault\transfer` = `/mnt/d/gpu-vault/transfer` (antes C:, que vive al 94%) |
+| Config WSL | `%USERPROFILE%\.wslconfig`: 24 GB, 8 CPUs, `vmIdleTimeout=60000`, `autoMemoryReclaim=gradual`, `sparseVhd=true` |
+
+Retención (`pipeline/pc_janitor.py`, corre al inicio de cada job GPU — sin agenda):
+jobs activos nunca; `retain-until` futuro se respeta; job terminal (done/error/
+cancelled) expira a los 7 días; restos sin job en el Mac, a los 30. Borra por ruta
+exacta sólo hijos directos de las raíces conocidas y termina con `fstrim` para
+devolver el espacio a D:. Manual: `python3 pipeline/pc_janitor.py` (dry-run) /
+`--apply`. Primera pasada 2026-09-28: 64 restos de jul–ago, 110.5 GB.
+
+Compactar el `.vhdx` a fondo requiere PowerShell **como administrador** en el PC:
+`wsl --shutdown` y luego `diskpart` → `select vdisk file="D:\WSL\Ubuntu\ext4.vhdx"`,
+`attach vdisk readonly`, `compact vdisk`, `detach vdisk`. Revertir sparse:
+`wsl --manage Ubuntu --set-sparse false`.
 
 `pipeline/ops_status.py` falla si ve OpenSplat/ODM/ffmpeg sin job activo. En idle,
 web+worker+tunnel deben quedar <15% CPU agregado y <500 MB RSS; normalmente son
@@ -183,17 +207,14 @@ Evidencia 2026-09-28 (upgrade a macOS 27.0): apagado ~05:50, arranque 06:18, log
 Desde ese día el log del watchdog vive en `~/Library/Logs/AeroBrain/` y sobrevive
 reinicios (antes `/tmp`, que borraba justo la evidencia de la caída).
 
-Deriva detectada el mismo día (pendiente de decisión del operador, no corregida):
-OrbStack corre con `memory_mib=4096` (no los 10 GB de esta guía) y la imagen
-`opendronemap/odm` no está en el Mac. El 3D pesado va al PC CUDA, pero los pasos
-locales `sh_in_odm` (previews de ortofoto, recorte AOI) harían pull (~4 GB, disco
-interno) en el primer uso y ODM local completo haría OOM con 4 GB.
+La deriva detectada ese día (OrbStack en 4 GB, sin imagen ODM local) se resolvió con
+la política PC-only + OrbStack bajo demanda descrita en "Política de recursos".
 
 Térmica:
 
 - No usar fan-control ni undervolt no soportado; macOS gestiona el M4.
 - Mantener entradas/salida de aire libres y no encerrar el Mini con el SSD.
-- No aumentar OrbStack por encima de 10 GB en un host de 16 GB.
+- No subir el tope de OrbStack por encima de 8 GB: en este host sólo hace post-proceso.
 - Revisar durante un job largo: `pmset -g therm`, `memory_pressure`,
   `docker stats --no-stream` y la UI. El scheduler reduce CPU si aparece viewer.
 - Fallbacks de ODM y límites de memoria prefieren un job degradado/failed a un host colgado.
@@ -268,7 +289,7 @@ sólo contratos y hitos cerrados con fecha/evidencia, evitando estados “corrie
 
 Prioridad de implementación/mantenimiento:
 
-1. Mantener power settings, LaunchAgents, OrbStack login y Tunnel sanos.
+1. Mantener power settings, LaunchAgents y Tunnel sanos; OrbStack apagado en reposo.
 2. Mantener watchdog local + workflow externo verdes.
 3. No romper Range/cache; verificar `206`, Brotli y `HIT` tras deploy.
 4. Mantener cola heavy única, caps 8.5/11 GB y prioridad adaptativa.

@@ -2,6 +2,7 @@
 
 > Contrato vigente auditado contra `4dbfb2a2` y el manifest vivo del 2026-07-14.
 > Las secciones OpenSplat describen el fallback local; el producto premium usa CUDA.
+> Actualización: desde 2026-09-28 la política por defecto es **PC-only** (`pipeline/compute_policy.py`); `AEROBRAIN_COMPUTE=local` reactiva el Mac.
 
 ## Identidad
 

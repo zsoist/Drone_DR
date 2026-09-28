@@ -44,6 +44,7 @@ from zoneinfo import ZoneInfo
 import jobs as jobstore
 import perf as perfmod
 import scenes as scenestore
+import compute_policy
 from splat_presets import (normalize_splat_request, public_splat_profiles,
                            resolve_splat_spec)
 from pathlib import Path
@@ -456,7 +457,7 @@ def requires_local_splat_binary(backend: str) -> bool:
 def build_splat_job_spec(cid: str, raw: dict | None,
                          preflight_result: dict | None = None) -> dict:
     """Build the one immutable splat request used by every enqueue path."""
-    raw = raw or {}
+    raw = compute_policy.route_splat(raw or {})
     request = normalize_splat_request(raw)
     model_preset = str(raw.get("model_preset") or "estandar")
     if model_preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
@@ -3106,8 +3107,16 @@ class H(BaseHTTPRequestHandler):
         if urllib.parse.urlparse(self.path).path == "/api/splat_profiles":
             if not self.auth():
                 return
-            return self.send_json({"profiles": splat_profiles_with_history(),
-                                   "resolution_options": ["auto", "full", "half"]})
+            profiles = splat_profiles_with_history()
+            if compute_policy.pc_only():
+                # la UI deriva todo (toggle bloqueado, etiqueta, texto de política) de
+                # supported_backends: bajo PC-only ningún perfil ofrece el Mac
+                for prof in profiles:
+                    prof["supported_backends"] = ["cuda"]
+                    prof["default_backend"] = "cuda"
+            return self.send_json({"profiles": profiles,
+                                   "resolution_options": ["auto", "full", "half"],
+                                   "compute": "pc" if compute_policy.pc_only() else "local"})
         if self.path.startswith("/api/perf"):
             # telemetría en vivo del Mac (CPU/GPU/RAM/swap/térmica/disk + uso por job).
             # El sampler solo corre mientras alguien consulta — idle = 0 costo.
@@ -3537,6 +3546,9 @@ class H(BaseHTTPRequestHandler):
                 "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "  # wasm: el sort worker de splats compila WebAssembly
                 "style-src 'self' 'unsafe-inline'; "        # inline style attrs (bajo riesgo)
                 "img-src 'self' data: blob: https:; "
+                # PCUI inyecta su fuente de iconos (pc-icon) como data: URI; sin esto el
+                # editor SuperSplat salía sin un solo icono (document.fonts: pc-icon:error)
+                "font-src 'self' data:; "
                 "connect-src 'self' data: blob: https://server.arcgisonline.com https://basemaps.cartocdn.com; "
                 f"worker-src 'self' blob:; media-src 'self' blob:; frame-src 'self'; frame-ancestors {anc}")
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -4421,6 +4433,7 @@ class H(BaseHTTPRequestHandler):
                     str(spec.get("backend") or "cuda"))
             except ValueError as e:
                 return self.send_json({"error": str(e)}, 400)
+            job_spec = compute_policy.route_odm(job_spec)
             job = jobstore.enqueue("3d", reconstruction_id, job_spec)
             scenestore.update_version(scene_id, reconstruction_id, job_id=job["id"])
             return self.send_json({"ok": True, "job": job["id"], "scene_id": scene_id,
@@ -4493,6 +4506,8 @@ class H(BaseHTTPRequestHandler):
                 job_spec["backend"] = "cuda"
                 job_spec["backend_policy"] = (
                     "strict" if preset in ("alta", "extra", "ultra") else "best_available")
+            job_spec = compute_policy.route_odm(job_spec)
+            spec = compute_policy.route_odm(spec)
             if spec.get("then_splat"):                   # phased: gaussian tras el 3D
                 try:
                     followup = build_followup_splat_spec(ident, spec)

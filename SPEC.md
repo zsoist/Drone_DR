@@ -4,20 +4,21 @@
 en inteligencia: mapas, detección de objetos, escenas 3D y diarios de viaje.
 
 ## Arquitectura
-- **Mac Mini M4** = control plane y cómputo local: ingesta SD, ffmpeg/VideoToolbox,
-  API/SQLite/vault/publicación/gates, ODM local cuando corresponde, OpenSplat Fast 1K/Medium 2K
-  en Metal/CPU y YOLO (MPS)
-- **PC RTX 4060 Ti + WSL2** = acelerador desechable: ODM CUDA y Nerfstudio/gsplat estricto para
-  Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K y Grandmaster 40K. Nunca es autoridad de publicación.
+- **Mac Mini M4** = control plane y servidor: ingesta SD, proxies ffmpeg/VideoToolbox, web y
+  video, API/SQLite/vault/publicación/gates y reels. Post-proceso GDAL/PDAL/OpenSfM en OrbStack
+  **sólo bajo demanda** (apagado en reposo). Desde 2026-09-28 no entrena ni corre ODM.
+- **PC RTX 4060 Ti + WSL2** = fuerza de trabajo: todo ODM (CUDA, strict) y todo splat
+  (Nerfstudio/gsplat, 1K–40K). Nunca es autoridad de publicación; su scratch expira solo
+  (`pc_janitor.py`). `AEROBRAIN_COMPUTE=local` reactiva los caminos legacy del Mac.
 - **Cloudflare** = SOLO túnel + dominio (vuelos.metislab.work → localhost:8790). Sin Pages ni R2: el media se sirve del SSD local con HTTP Range + gzip sidecars — $0/mes real. (Actualizado 2026-07-05; ver 3D_PROCESSING_AUDIT.md)
 - **drone-vault** (`/Volumes/SSD/drone-vault/`) = datos, fuera del repo
 
 ## 3D contract
 - ODM runs from video frames, not WebODM SaaS: SRT → EXIF GPS → OpenSfM/OpenMVS →
-  DSM/DTM/ortho/cloud/mesh. El worker elige Mac/OrbStack o el nodo CUDA según el contrato del job.
+  DSM/DTM/ortho/cloud/mesh. Por política (`compute_policy.py`) todo ODM va al nodo CUDA en modo strict.
 - Preset `alta` is the stable local video route and may use `--skip-3dmodel` for nadir.
   Remote CUDA Ultra is the full-product route for large orbital/oblique scene versions.
-- Gaussian splats are first-class outputs. Fast 1K/Medium 2K pueden correr localmente;
+- Gaussian splats are first-class outputs. Todos corren en CUDA (política PC-only);
   7K–40K son CUDA estrictos, con `d1→d2` sólo tras OOM clasificado y sin fallback al Mac.
   Publicación atómica, SOG/legacy formats, history versions, checksums y Chrome browser gate.
 - Una escena estable conserva versiones `recon_<hash>` inmutables. Una fuente sólo cuenta como

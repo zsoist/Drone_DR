@@ -624,6 +624,16 @@ _weapon_asset_tests = subprocess.run(
 check("flightverse weapon GLBs: 4K/runtime contracts and deterministic rebuild pass",
       _weapon_asset_tests.returncode == 0,
       (_weapon_asset_tests.stderr or _weapon_asset_tests.stdout)[-700:])
+_placement_tests = subprocess.run(
+    [
+        "/Volumes/SSD/_system/venv/bin/python3",
+        "-m", "unittest", "pipeline.test_compute_placement", "pipeline.test_pc_janitor",
+    ],
+    capture_output=True, text=True, env=_weapon_asset_env,
+    cwd=Path(__file__).resolve().parent.parent)
+check("compute PC-only + OrbStack bajo demanda + retención del PC: contratos pasan",
+      _placement_tests.returncode == 0,
+      (_placement_tests.stderr or _placement_tests.stdout)[-700:])
 import browser_matrix
 check("browser matrix: cubre phone/iPad portrait+landscape y desktop",
       set(browser_matrix.VIEWPORTS) == {
