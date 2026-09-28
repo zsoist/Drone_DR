@@ -23,12 +23,13 @@ import ops_watchdog
 VAULT = Path("/Volumes/SSD/drone-vault")
 REPO = Path("/Volumes/SSD/work/forge-projects/aerobrain")
 TUNNEL_CONFIG = Path("/Users/daniel_serverm4/.cloudflared/metislab-work.yml")
+_LOG_DIR = Path.home() / "Library" / "Logs" / "AeroBrain"
 LOGS = (
-    Path("/tmp/aerobrain-web.log"),
-    Path("/tmp/aerobrain-worker.log"),
-    Path("/tmp/metislab-tunnel.log"),
-    Path.home() / "Library" / "Logs" / "AeroBrain" / "watchdog.log",
-    Path("/tmp/aerobrain-watchdog.launchd.log"),
+    _LOG_DIR / "web.log",
+    _LOG_DIR / "worker.log",
+    _LOG_DIR / "tunnel.log",
+    _LOG_DIR / "watchdog.log",
+    _LOG_DIR / "watchdog.launchd.log",
 )
 WATCHDOG_LOG = Path.home() / "Library" / "Logs" / "AeroBrain" / "watchdog.log"
 LABELS = ("com.aerobrain.web", "com.aerobrain.worker", "com.metislab.tunnel", "com.aerobrain.watchdog")
@@ -105,7 +106,7 @@ def latest_proxy_urls() -> tuple[str, str] | tuple[None, None]:
     try:
         flights = json.loads((VAULT / "manifest" / "flights.json").read_text()).get("flights", [])
     except Exception:
-        return None
+        return None, None
     for f in flights:
         cid = f.get("clip_id")
         if cid and f.get("has_proxy") and (VAULT / "proxies" / f"{cid}.mp4").is_file():

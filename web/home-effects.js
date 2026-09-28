@@ -91,6 +91,7 @@
     };
 
     rootNode.addEventListener('click', onClick);
+    window.__abReloadOnRestore = true;  // shell.js recarga si Safari restaura desde bfcache
     addEventListener('pagehide', stop, { once: true });
     return () => { rootNode.removeEventListener('click', onClick); stop(); };
   }

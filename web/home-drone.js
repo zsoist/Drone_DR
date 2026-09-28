@@ -1,6 +1,6 @@
-import * as THREE from '/flightverse/three.js?v=344';
-import { GLTFLoader } from '/vendor/three-addons180/loaders/GLTFLoader.js?v=344';
-import { HOME_DRONE_VIEW, homeDroneFrame } from './home-drone-motion.js?v=344';
+import * as THREE from '/flightverse/three.js?v=346';
+import { GLTFLoader } from '/vendor/three-addons180/loaders/GLTFLoader.js?v=346';
+import { HOME_DRONE_VIEW, homeDroneFrame } from './home-drone-motion.js?v=346';
 
 export async function mountHomeDrone(selector = '#home-drone-stage') {
   const stage = typeof selector === 'string' ? document.querySelector(selector) : selector;
@@ -31,7 +31,7 @@ export async function mountHomeDrone(selector = '#home-drone-stage') {
   let model;
   const rotors = [];
   try {
-    const gltf = await new GLTFLoader().loadAsync('/assets/drone.glb?v=344');
+    const gltf = await new GLTFLoader().loadAsync('/assets/drone.glb?v=346');
     model = gltf.scene;
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
@@ -107,6 +107,7 @@ export async function mountHomeDrone(selector = '#home-drone-stage') {
   stage.addEventListener('pointermove', pointerMove); stage.addEventListener('pointerleave', pointerLeave);
   document.addEventListener('visibilitychange', onVisibility);
   motionPreference.addEventListener('change', onMotionPreference);
+  window.__abReloadOnRestore = true;  // shell.js recarga si Safari restaura desde bfcache
   addEventListener('pagehide', dispose, { once: true });
   renderer.render(scene, camera);
   stage.classList.add('is-3d');

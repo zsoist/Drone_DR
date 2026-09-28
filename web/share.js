@@ -1,11 +1,11 @@
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
-import * as THREE from '/vendor/three180.module.js?v=344';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=344';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=344';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=344';
-import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=344';
-import { mountSplatViewer } from '/splatview.js?v=344';
+import * as THREE from '/vendor/three180.module.js?v=346';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=346';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=346';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=346';
+import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=346';
+import { mountSplatViewer } from '/splatview.js?v=346';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -126,11 +126,13 @@ body.innerHTML = `
     <p class="footer-note" style="margin:10px 0 0">Procesado localmente con AeroBrain — fotogrametría ODM sobre video de dron DJI.</p></div>
   </div>`;
 
-if (splat && splats.length > 1) {
-  fetch(`data/models/${cid}/scene.v2.json`).then(r => r.ok ? r.json() : null)
+// "VOLAR EN 3D" depende solo de la escena del modelo, no de cuántos splats haya
+fetch(`data/models/${cid}/scene.v2.json`).then(r => r.ok ? r.json() : null)
   .then(sc => { if (sc?.capabilities?.terrain) { const b = document.getElementById('sh-volar'); if (b) b.style.display = 'inline-block'; } })
   .catch(() => {});
-const seg = document.querySelector('.seg');
+
+if (splat && splats.length > 1) {
+  const seg = document.querySelector('.seg');
   const sel = document.createElement('select');
   sel.className = 'share-splat-select';
   sel.title = 'Versión del splat';
@@ -378,10 +380,13 @@ const loaders = {
   async splat() {
     const myLoad = view._loadToken;
     const st = spinner('Descargando gaussian splat…');
+    const ac = view._loadAbort = new AbortController();   // cambiar de tab aborta el mount en vuelo
     let handle;
     try {
       handle = await mountSplatViewer(view, splatUrl(splat),
-        { bytes: splat.bytes, onStatus: t => { if (st) st.textContent = t; } });
+        { bytes: splat.bytes, signal: ac.signal, onStatus: t => { if (st) st.textContent = t; },
+          // mismo criterio que tresd.js: el lane CUDA entrena normalizado → unidades relativas
+          unitsMeters: splat.backend ? !/cuda|nvidia/i.test(splat.backend) : null });
     } catch (err) {
       if (view._loadToken !== myLoad) return;       // superado por otro load: no error falso
       throw err;
@@ -397,6 +402,7 @@ document.querySelector('.seg').addEventListener('click', e => {
   const b = e.target.closest('[data-v]');
   if (!b) return;
   view._loadToken = (view._loadToken || 0) + 1;   // invalida carga mesh/cloud/splat en vuelo (#1)
+  try { view._loadAbort?.abort(); } catch {} view._loadAbort = null;
   // el módulo premium expone su propio dispose (limpia HUD + listeners + viewer)
   if (view._splatDispose) { const d = view._splatDispose; view._splatDispose = null; view._splatViewer = null; try { d(); } catch {} }
   else if (view._splatViewer) { const v = view._splatViewer; view._splatViewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }

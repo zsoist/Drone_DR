@@ -106,7 +106,7 @@ def job_usage(jobs: list, proc_rows: list, docker_cache: dict) -> list:
                 if pgid == pid:
                     cpu += pcpu
                     rss_mb += rss / 1024
-        cont = j.get("container")
+        cont = local_container(j)
         if cont and cont in docker_cache:
             dc = docker_cache[cont]
             cpu += dc.get("cpu", 0.0)
@@ -118,6 +118,22 @@ def job_usage(jobs: list, proc_rows: list, docker_cache: dict) -> list:
                     "elapsed_s": round(max(0.0, time.time() - started)),
                     "cpu_pct": round(cpu, 1), "rss_mb": round(rss_mb)})
     return out
+
+
+def local_container(job: dict) -> str | None:
+    """Nombre del contenedor LOCAL (Mac) del job; None si no hay o es remoto (odm-gpu-*)."""
+    cont = job.get("container")
+    if not cont or str(cont).startswith("odm-gpu-"):
+        return None
+    return cont
+
+
+def docker_vm_running() -> bool:
+    try:
+        import docker_ondemand
+        return docker_ondemand.running()
+    except Exception:
+        return False
 
 
 def docker_stats() -> dict:
@@ -162,8 +178,13 @@ class PerfSampler:
             jobs = []
         # docker stats cada 3 ticks y solo si hay contenedores de jobs (es lento)
         self._tick_n += 1
-        if any(j.get("container") for j in jobs) and self._tick_n % 3 == 1:
-            self._docker_cache = docker_stats()
+        # Contenedores odm-gpu-* viven en el PC; y cualquier `docker` local BOOTEA OrbStack,
+        # así que sólo se consulta si la VM ya está arriba.
+        if any(local_container(j) for j in jobs):
+            if self._tick_n % 3 == 1:
+                self._docker_cache = docker_stats() if docker_vm_running() else {}
+        else:
+            self._docker_cache = {}
         try:
             disk_free = round(shutil.disk_usage(VAULT).free / 1024**3, 1)
         except OSError:

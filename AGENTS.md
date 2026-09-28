@@ -16,7 +16,7 @@ curl http://localhost:8790/api/whoami                      # -> dev_mode:true, u
 curl http://localhost:8790/api/jobs                        # job list
 curl -X POST http://localhost:8790/api/search -d '{"q":"selva verde"}'   # semantic search
 curl -X POST http://localhost:8790/api/odm    -d '{"clip_id":"...","preset":"alta"}'    # premium ODM video route
-curl -X POST http://localhost:8790/api/splat  -d '{"clip_id":"...","preset":"medium","backend":"metal"}'
+curl -X POST http://localhost:8790/api/splat  -d '{"clip_id":"...","preset":"medium","backend":"metal"}'   # PC-only policy (default) overrides backend to CUDA on the GPU PC; metal only honored with AEROBRAIN_COMPUTE=local
 curl -X POST http://localhost:8790/api/splat  -d '{"clip_id":"recon_...","preset":"frontier","backend":"cuda","backend_policy":"strict","resolution":"auto"}'
 ```
 
@@ -66,7 +66,7 @@ pipeline/safe_restart.sh tunnel     # Cloudflare tunnel only
 pipeline/safe_restart.sh worker     # refuses while a 3D/splat job is running
 tail -20 ~/Library/Logs/AeroBrain/watchdog.log
 python3 pipeline/ops_status.py        # one-shot 24/7 ops audit
-python3 pipeline/external_probe.py    # public health + HTML + video Range
+python3 pipeline/external_probe.py    # public healthz, login redirect, whoami/manifest/media 401 gates
 ```
 `safe_restart.sh web/server/both` ejecuta automáticamente `audit_world.py` y
 el gate FLIGHTVERSE 100× sobre el mundo activo. El escape de recuperación

@@ -500,7 +500,12 @@ function upStart(item) {
   xhr.onload = () => {
     if (xhr.status === 200) finish('procesando');
     else if (xhr.status === 401) { item.err = 'sesión expirada'; finish('error'); redirectToLogin(); }
-    else { item.err = (JSON.parse(xhr.responseText || '{}').error) || `error ${xhr.status}`; finish('error'); }
+    else {
+      let msg = '';
+      try { msg = JSON.parse(xhr.responseText || '{}').error || ''; } catch { /* cuerpo HTML (Cloudflare 413/502) */ }
+      item.err = String(msg || `error ${xhr.status}`).slice(0, 200);
+      finish('error');
+    }
   };
   xhr.onerror = () => { item.err = 'error de red — reintenta'; finish('error'); };
   xhr.onabort = () => finish('cancelado');
@@ -532,7 +537,7 @@ function upMeta(it) {
   if (it.status === 'subiendo')
     return `${it.pct}% · ${mb(it.loaded)}/${mb(it.file.size)} MB · ${(it.speed / 1e6).toFixed(1)} MB/s · ~${fmt.dur(Math.min(5940, it.eta))} restantes`;
   if (it.status === 'procesando') return `${mb(it.file.size)} MB · proxy + AI en curso, mira Trabajos abajo`;
-  if (it.status === 'error') return it.err || 'error';
+  if (it.status === 'error') return esc(it.err || 'error');
   return `${mb(it.file.size)} MB`;
 }
 function upPaint(it) {

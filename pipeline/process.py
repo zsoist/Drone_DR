@@ -134,13 +134,18 @@ def main():
         clips = [Path(a) for a in sys.argv[1:]]
     if not clips:
         print("nothing to process")
-        return
+        return 0
+    failed = 0
     for mp4 in clips:
         try:
             process_clip(mp4)
         except subprocess.CalledProcessError as e:
+            failed += 1                      # sigue con el resto, pero el exit code lo delata
             print(f"✗ {mp4.name}: {e}")
+    if failed:
+        print(f"{failed}/{len(clips)} clip(s) fallaron", file=sys.stderr)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

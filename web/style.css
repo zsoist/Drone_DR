@@ -829,6 +829,7 @@ details.explain b { color: var(--text); font-weight: 600; }
   animation: ovIn 180ms var(--ease); padding: 16px;
 }
 @keyframes ovIn { from { opacity: 0; } }
+.modal-ov.modal-ov-top { z-index: 400; }   /* sobre el visor de reels (.rv-ov 350) */
 .modal {
   width: 100%; max-width: 560px; max-height: 88dvh; overflow: auto;
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
@@ -4124,7 +4125,7 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 /* --- timeline de Studio en TÁCTIL (crít): los elementos arrastrables (clips, manijas de recorte,
    playhead) necesitan touch-action:none o el navegador se traga el gesto como pan/scroll — el
    .tl-scroll declara pan-x pero los hijos no lo reseteaban, y en iPad (>640px) ni había pan-x. --- */
-.tl-clip, .tl-handle, .tl-playhead, .tl-playhead::before, .tl-trans { touch-action: none; }
+.tl-clip, .tl-handle, .tl-playhead, .tl-playhead::before, .tl-trans, .tl-txt, .tl-txt-h { touch-action: none; }   /* bloques de texto: sin esto el drag paneaba el timeline y lanzaba pointercancel */
 @media (pointer: coarse) {
   .tl-scroll { touch-action: pan-x; }        /* también iPad, no solo ≤640px */
 }

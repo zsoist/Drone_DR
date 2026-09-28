@@ -32,12 +32,15 @@ VAULT = Path("/Volumes/SSD/drone-vault")
 PUBLIC_INTERVAL_S = 300
 STREAM_INTERVAL_S = 900
 MAX_LOG_BYTES = 5 * 1024 * 1024
+ALERT = LOG_DIR / "ALERT"
+ALERT_NOTIFY_INTERVAL_S = 3600
+# launchd stdout/stderr also land in LOG_DIR (see the plists), so they survive reboots.
 LOGS_TO_ROTATE = (
     LOG,
-    Path("/tmp/aerobrain-watchdog.launchd.log"),
-    Path("/tmp/aerobrain-web.log"),
-    Path("/tmp/aerobrain-worker.log"),
-    Path("/tmp/metislab-tunnel.log"),
+    LOG_DIR / "watchdog.launchd.log",
+    LOG_DIR / "web.log",
+    LOG_DIR / "worker.log",
+    LOG_DIR / "tunnel.log",
 )
 
 
@@ -97,8 +100,11 @@ def launch_state(label: str) -> str:
 
 def kick(label: str, why: str):
     log("kickstart", label=label, why=why)
-    subprocess.run(["launchctl", "kickstart", "-k", f"gui/501/{label}"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+    try:
+        subprocess.run(["launchctl", "kickstart", "-k", f"gui/501/{label}"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+    except subprocess.TimeoutExpired:
+        log("kickstart_timeout", label=label)
 
 
 def _alive(status: int, body: str) -> bool:
@@ -132,7 +138,7 @@ def latest_proxy_urls() -> tuple[str, str] | tuple[None, None]:
     try:
         flights = json.loads((VAULT / "manifest" / "flights.json").read_text()).get("flights", [])
     except (OSError, ValueError):
-        return None
+        return None, None
     for f in flights:
         cid = f.get("clip_id")
         if cid and f.get("has_proxy") and (VAULT / "proxies" / f"{cid}.mp4").is_file():
@@ -241,46 +247,124 @@ def probe_and_heal(event: str, label: str, probe_fn, why: str,
     return ok
 
 
+def _notify(title: str, message: str):
+    """Best-effort macOS notification; never raises."""
+    script = "display notification {} with title {}".format(
+        json.dumps(message[:200]), json.dumps(title))
+    try:
+        subprocess.run(["osascript", "-e", script], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=10)
+    except Exception:
+        pass
+
+
+def raise_alert(state: dict, source: str, reason: str, now: float):
+    """Record an active alert (ALERT file) and notify at most once per hour per source."""
+    alerts = state.setdefault("alerts", {})
+    alerts[source] = reason
+    notified = state.setdefault("alert_notified", {})
+    if now - float(notified.get(source, 0)) >= ALERT_NOTIFY_INTERVAL_S:
+        notified[source] = now
+        _notify("AeroBrain ALERT", f"{source}: {reason}")
+    write_alert_file(alerts, now)
+
+
+def clear_alert(state: dict, source: str, now: float):
+    alerts = state.get("alerts") or {}
+    if alerts.pop(source, None) is not None:
+        write_alert_file(alerts, now)
+
+
+def write_alert_file(alerts: dict, now: float):
+    try:
+        if alerts:
+            ALERT.parent.mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(now))
+            ALERT.write_text("".join(f"{stamp} {k}: {v}\n" for k, v in sorted(alerts.items())))
+        else:
+            ALERT.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _step(name: str, fn):
+    """Run one watchdog step; an exception must not skip the remaining steps."""
+    try:
+        fn()
+    except Exception as e:
+        try:
+            log("step_error", step=name, error=type(e).__name__, detail=str(e)[:200])
+        except Exception:
+            pass
+
+
 def main():
     state = load_state()
     now = time.time()
 
-    for label in (WEB_LABEL, WORKER_LABEL, TUNNEL_LABEL):
-        st = launch_state(label)
-        if st != "running":
-            kick(label, f"launchd state {st}")
+    def check_services():
+        for label in (WEB_LABEL, WORKER_LABEL, TUNNEL_LABEL):
+            st = launch_state(label)
+            if st != "running":
+                kick(label, f"launchd state {st}")
 
-    probe_and_heal("local_probe", WEB_LABEL, lambda: probe(LOCAL_URL, 4),
-                   "local probe")
+    def local_step():
+        if probe_and_heal("local_probe", WEB_LABEL, lambda: probe(LOCAL_URL, 4),
+                          "local probe"):
+            clear_alert(state, "local_probe", now)
+        else:
+            raise_alert(state, "local_probe",
+                        "local health probe failed after retry and restart", now)
 
-    if now - float(state.get("last_public_probe", 0)) >= PUBLIC_INTERVAL_S:
+    def public_step():
+        if now - float(state.get("last_public_probe", 0)) < PUBLIC_INTERVAL_S:
+            return
         state["last_public_probe"] = now
         # The local origin was checked first. A repeated public-only failure
         # points at cloudflared, DNS, or Cloudflare edge state.
-        probe_and_heal("public_probe", TUNNEL_LABEL,
-                       lambda: probe(PUBLIC_URL, 12), "public probe")
-        probe_and_heal("public_www_probe", TUNNEL_LABEL,
-                       lambda: probe(PUBLIC_WWW_URL, 12), "public www probe")
+        _step("public_probe", lambda: probe_and_heal(
+            "public_probe", TUNNEL_LABEL, lambda: probe(PUBLIC_URL, 12), "public probe"))
+        _step("public_www_probe", lambda: probe_and_heal(
+            "public_www_probe", TUNNEL_LABEL, lambda: probe(PUBLIC_WWW_URL, 12),
+            "public www probe"))
 
-    if now - float(state.get("last_stream_probe", 0)) >= STREAM_INTERVAL_S:
+    def stream_step():
+        if now - float(state.get("last_stream_probe", 0)) < STREAM_INTERVAL_S:
+            return
         state["last_stream_probe"] = now
         local_video_url, public_video_url = latest_proxy_urls()
         if not local_video_url:
             log("stream_probe", ok=False, detail="no proxy video found")
-        else:
-            probe_and_heal("stream_probe", WEB_LABEL,
-                           lambda: range_probe(local_video_url, 15),
-                           "local stream range probe",
-                           url=local_video_url.rsplit("/", 1)[-1])
+            return
+        _step("stream_probe", lambda: probe_and_heal(
+            "stream_probe", WEB_LABEL, lambda: range_probe(local_video_url, 15),
+            "local stream range probe", url=local_video_url.rsplit("/", 1)[-1]))
+
+        def boundary():
             # A boundary failure is a security alert. Restarting the tunnel
-            # cannot clear a stale edge object, so record it without restart.
+            # cannot clear a stale edge object, so record + notify without restart.
             ok, detail, ms = auth_boundary_probe(public_video_url, 15)
             log("auth_boundary_probe", ok=ok, detail=detail, ms=ms,
                 url=public_video_url.rsplit("/", 1)[-1])
+            if ok:
+                clear_alert(state, "auth_boundary_probe", now)
+            else:
+                raise_alert(state, "auth_boundary_probe", detail, now)
+
+        def bridge():
             ok, detail, ms = auth_bridge_probe(PUBLIC_WHOAMI_URL, 15)
             log("auth_bridge_probe", ok=ok, detail=detail, ms=ms)
 
-    save_state(state)
+        _step("auth_boundary_probe", boundary)
+        _step("auth_bridge_probe", bridge)
+
+    try:
+        _step("launchd_check", check_services)
+        _step("local_probe", local_step)
+        _step("public_probes", public_step)
+        _step("stream_probes", stream_step)
+    finally:
+        save_state(state)
 
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@
 // La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
 // auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
 // contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
-import * as THREE from '/vendor/three180.module.js?v=344';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=344';
+import * as THREE from '/vendor/three180.module.js?v=346';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=346';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -24,8 +24,11 @@ const I = {
 const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
 
-export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, unitsMeters = null } = {}) {
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=344');
+export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, unitsMeters = null, signal = null } = {}) {
+  const abortErr = () => new DOMException('carga de splat cancelada', 'AbortError');
+  if (signal?.aborted) throw abortErr();
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=346');
+  if (signal?.aborted) throw abortErr();
   host.style.position = 'relative';
   const holder = document.createElement('div');
   holder.style.cssText = 'position:absolute;inset:0;touch-action:none';
@@ -91,7 +94,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
 
   // ── carga con timeout proporcional al peso (mismo contrato que antes) ──
   const tmoMs = Math.min(120000, 45000 + Math.round((bytes || 0) / 1048576) * 3000);
-  let tmoId = 0;
+  let tmoId = 0, onAbort = null;
   const mesh = new SplatMesh({ url: splatUrl });
   mesh.quaternion.set(...SPLAT_ROT);
   scene.add(mesh);
@@ -101,21 +104,36 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
     await Promise.race([
       loadP,
       new Promise((_, rej) => { tmoId = setTimeout(() => rej(new Error(`timeout de ${Math.round(tmoMs / 1000)}s procesando el splat`)), tmoMs); }),
+      // el caller superó esta carga (otro proyecto/versión): soltar renderer + worker YA, sin esperar la descarga
+      new Promise((_, rej) => {
+        if (!signal) return;
+        onAbort = () => rej(abortErr());
+        if (signal.aborted) onAbort(); else signal.addEventListener('abort', onAbort, { once: true });
+      }),
     ]);
   } catch (err) {
     clearTimeout(tmoId);
+    if (onAbort) signal.removeEventListener('abort', onAbort);
     teardownCore();
     throw err;
   }
   clearTimeout(tmoId);
+  if (onAbort) signal.removeEventListener('abort', onAbort);
+  if (signal?.aborted) { teardownCore(); throw abortErr(); }
   onStatus?.('Splat · 100%');
 
   // ── bounds: Spark no expone centro/radio como GS3D — Box3 del mesh con
   // guard anti no-finito (mismo patrón defensivo del visor anterior) ──
-  const bb = new THREE.Box3().setFromObject(mesh);
+  // Box3.setFromObject(mesh) sale VACÍO (SplatMesh no tiene geometry) → usamos el
+  // getBoundingBox() de Spark (espacio local, solo centros) y lo llevamos a mundo.
+  let bb = new THREE.Box3();
+  try {
+    mesh.updateMatrixWorld(true);
+    bb = mesh.getBoundingBox(true).applyMatrix4(mesh.matrixWorld);
+  } catch { bb = new THREE.Box3(); }
   const center = new THREE.Vector3();
   let radius = 1;
-  if (Number.isFinite(bb.min.x) && Number.isFinite(bb.max.x)) {
+  if (!bb.isEmpty() && [bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z].every(Number.isFinite)) {
     bb.getCenter(center);
     radius = Math.max(bb.getSize(new THREE.Vector3()).length() / 2, 0.5);
   }
@@ -246,7 +264,8 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   };
   // clic sin arrastre (≤5px) — no interfiere con el pan/rotate de OrbitControls
   let mDownX = 0, mDownY = 0;
-  host.addEventListener('pointerdown', e => { mDownX = e.clientX; mDownY = e.clientY; }, true);
+  const onPtrDown = e => { mDownX = e.clientX; mDownY = e.clientY; };
+  host.addEventListener('pointerdown', onPtrDown, true);
   const inViewer = e => holder.contains(e.target) || e.target === holder;
   const onDbl = e => { if (!inViewer(e)) return; e.preventDefault(); e.stopPropagation(); focusAt(e.clientX, e.clientY); };
   host.addEventListener('dblclick', onDbl, true);
@@ -349,6 +368,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   window.addEventListener('popstate', onPop);
   function onKey(e) {
     if (!holder.isConnected) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;          // Cmd+F / Ctrl± son del navegador
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
     if (e.key === 'r' || e.key === 'R') nav.querySelector('[data-sv="home"]').click();
@@ -363,6 +383,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
     window.removeEventListener('popstate', onPop);
     host.removeEventListener('dblclick', onDbl, true);
     host.removeEventListener('pointerup', onPtrUp, true);
+    host.removeEventListener('pointerdown', onPtrDown, true);
     cancelAnimationFrame(anim);
     ro.disconnect();
     host.classList.remove('sv-fullscreen');

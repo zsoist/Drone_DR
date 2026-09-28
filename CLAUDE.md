@@ -50,8 +50,11 @@
   fails, worker falls back through stable dense or 25D publish with explicit QA, never silent.
 - gdal_array (ReadAsArray) está ROTO en la imagen ODM (numpy mismatch). Para mediciones:
   exportar DSM como binario ENVI en tresd_publish y leer con numpy en el HOST (memmap).
-- OpenSplat en macOS: production path is `splat/OpenSplat/build-mps/opensplat` with
-  `GPU_RUNTIME=MPS`; CPU build is fallback only. Worker auto-selects Metal/MPS if available.
+- OpenSplat en macOS (LEGACY, hoy roto e inusado): el build local
+  `splat/OpenSplat/build-mps/opensplat` enlaza dylibs de opencv .413 y brew ya trae opencv 5,
+  así que no arranca. Bajo la política PC-only (default) todo splat entrena en el PC CUDA y
+  esta ruta no se usa; sólo sería relevante con `AEROBRAIN_COMPUTE=local` y tras recompilar.
+  El canary-splat semanal se está retirando por lo mismo.
   `image_list.txt` from OpenSfM carries container paths; worker rewrites `/datasets/code` to
   the host project path before training.
 - Docker corre en ORBSTACK, **bajo demanda** desde 2026-09-28 (`docker_ondemand.py`): no arranca

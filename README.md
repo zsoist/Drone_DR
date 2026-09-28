@@ -67,7 +67,7 @@ saltarse el gate ni una regla de transformación puede romper la sesión.
 | `pipeline/pc_janitor.py` | Retención del scratch del PC GPU (7 d terminales / 30 d huérfanos) |
 | `pipeline/scenes.py` | Sitios estables, versiones inmutables y aporte registrado por video |
 | `pipeline/scene_manifest.py` | Contrato Mundo/Flightverse con cobertura verificada 100/200/400/600/1000 m |
-| `pipeline/external_probe.py` | SLO público: health + home + video Range desde GitHub Actions cada 15 min |
+| `pipeline/external_probe.py` | SLO público desde GitHub Actions (best-effort, ver OPERATIONS): healthz, redirect a login, `whoami` 401, manifest 401 y media 401 con headers del Worker |
 | `pipeline/browser_gate.py` | QA real en Chrome headless (CDP stdlib) antes de dar un job 3D por done |
 | `pipeline/browser_matrix.py` | QA multi-viewport de splats: share + workspace en mobile/iPad/desktop, macro zoom, overflow y screenshots |
 | `pipeline/audit_splats.py` | Auditor de salud de splats: assets, current/history, metadata, jobs, warnings legacy |
@@ -134,10 +134,14 @@ python3 pipeline/external_probe.py    # mismo probe público que ejecuta GitHub 
 
 Servicios launchd: `com.aerobrain.web` (:8790) · `com.aerobrain.worker`
 (cola 3D/splat) · `com.metislab.tunnel` (Cloudflare) ·
-`com.aerobrain.watchdog` (health check local/public). Sin viewer, heavy compute usa
-10 cores/MPS; durante reproducción ODM baja a 7 cores y OpenSplat a background,
-restaurándose tras 45 s. Runbook:
-[docs/OPERATIONS.md](docs/OPERATIONS.md).
+`com.aerobrain.watchdog` (health check local cada minuto; es el chequeo de nivel minuto,
+el monitor externo de GitHub es best-effort). Política PC-only (por defecto): todo ODM y
+splat pesado corre en el PC CUDA, así que el Mac sólo sirve web/video y hace post-proceso
+liviano; no hay compute pesado local que ceder ante un viewer. La prioridad adaptativa
+local (ODM 10→7 cores y OpenSplat a background durante reproducción, restaurándose tras
+45 s) sólo aplica con `AEROBRAIN_COMPUTE=local`. Logs de servicios en
+`~/Library/Logs/AeroBrain/` (`web.log`, `worker.log`, `tunnel.log`, `watchdog.log`,
+`watchdog.launchd.log`). Runbook: [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 El Home de producción usa un renderer híbrido: carga contenido y métricas antes del GLB, conserva
 un fallback estático si WebGL o el modelo fallan, pausa animación fuera de pantalla y limita el

@@ -154,6 +154,7 @@ function openPhotoEditor({ url, name }) {
       const sc = Math.min(1, w / sw);
       ov.querySelector('#pm-dims').textContent = `${Math.round(sw * sc)}×${Math.round(sh * sc)}`;
     });
+    schedulePrepare();
   }
   img.onload = draw;
   img.src = url;
@@ -161,8 +162,24 @@ function openPhotoEditor({ url, name }) {
     const w = fx.size === 'ig' ? 1080 : fx.size === 'custom' ? fx.custom : 3840;
     const out = document.createElement('canvas');
     renderTo(out, w);                          // export: mismo motor, full res
-    return new Promise(res => out.toBlob(res, 'image/jpeg', 0.92));
+    const blob = await new Promise(res => out.toBlob(res, 'image/jpeg', 0.92));
+    if (!blob) throw new Error('No se pudo generar la imagen (¿demasiado grande para este dispositivo?)');
+    return blob;
   }
+  // el blob se PRERRENDERIZA cuando los ajustes se asientan: en iOS, navigator.share tras un
+  // await largo (export 4K) pierde la activación del usuario y falla en silencio
+  const outName = name.replace(/\.[^./\\]+$/, '') + '.jpg';   // el blob es JPEG aunque la fuente sea .DNG
+  const notify = m => { if (typeof toast === 'function') toast(m); else alert(m); };
+  let prep = { key: '', blob: null, p: null }, prepT = null;
+  function prepare() {
+    const key = JSON.stringify(fx);
+    if (prep.key === key && prep.p) return prep.p;
+    const cur = prep = { key, blob: null, p: null };
+    cur.p = exportBlob().then(b => { cur.blob = b; return b; });
+    cur.p.catch(() => { if (prep === cur) prep = { key: '', blob: null, p: null }; });
+    return cur.p;
+  }
+  const schedulePrepare = () => { clearTimeout(prepT); prepT = setTimeout(() => { prepare().catch(() => {}); }, 700); };
 
   const PRESETS = {
     orig: { ...DEF },
@@ -193,7 +210,13 @@ function openPhotoEditor({ url, name }) {
   setTimeout(moveInk, 30);   // tras layout; rAF no dispara con tab oculto
   const onRs = () => moveInk();
   window.addEventListener('resize', onRs);
-  ov.addEventListener('click', e => { if (e.target.closest('[data-close]')) window.removeEventListener('resize', onRs); });
+  function close() {          // única salida: quita el listener global y suelta la imagen decodificada
+    window.removeEventListener('resize', onRs);
+    clearTimeout(prepT);
+    img.onload = null; img.removeAttribute('src');
+    prep = { key: '', blob: null, p: null };
+    ov.remove();
+  }
   ov.querySelector('.pm-tabs').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]');
     if (!b) return;
@@ -254,26 +277,46 @@ function openPhotoEditor({ url, name }) {
       syncUI(); draw();
     }
   });
-  ov.querySelector('[data-sharephoto]').addEventListener('click', async ev => {
+  const shareBtn = ov.querySelector('[data-sharephoto]');
+  shareBtn.addEventListener('pointerdown', () => { prepare().catch(() => {}); }, { passive: true });
+  shareBtn.addEventListener('click', async ev => {
     const btn = ev.currentTarget, orig = btn.innerHTML;
-    btn.innerHTML = 'Preparando…';
-    const blob = await exportBlob();
-    const file = new File([blob], name, { type: 'image/jpeg' });
+    const key = JSON.stringify(fx);
+    // camino rápido: blob ya listo → share() es lo PRIMERO que corre dentro del gesto
+    let blob = prep.key === key ? prep.blob : null;
+    let fresh = !!blob;
     try {
-      if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
-      else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click(); }
-    } catch {}
-    btn.innerHTML = orig;
+      if (!blob) {
+        btn.innerHTML = 'Preparando…';
+        blob = await prepare();
+      }
+      const file = new File([blob], outName, { type: 'image/jpeg' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file] }); }
+        catch (err) {
+          if (err?.name === 'AbortError') return;
+          if (!fresh && err?.name === 'NotAllowedError') { notify('Listo — toca «Guardar en Fotos» otra vez'); return; }
+          throw err;
+        }
+      } else {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = outName; a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+      }
+    } catch (err) {
+      notify(`No se pudo guardar: ${err?.message || err}`);
+    } finally { btn.innerHTML = orig; }
   });
   ov.querySelector('[data-dl]').addEventListener('click', async () => {
-    const blob = await exportBlob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    try {
+      const blob = await prepare();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = outName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    } catch (err) { notify(`No se pudo exportar: ${err?.message || err}`); }
   });
   ov.addEventListener('click', e => {
-    if (e.target === ov || e.target.closest('[data-close]')) ov.remove();
+    if (e.target === ov || e.target.closest('[data-close]')) close();
   });
 }

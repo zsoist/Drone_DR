@@ -386,6 +386,7 @@ function jobRelativeTime(job, now) {
   poll();
   const pollId = setInterval(poll, 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });  // al volver al tab: dato fresco YA
+  window.__abReloadOnRestore = true;  // shell.js recarga si Safari restaura desde bfcache
   addEventListener('pagehide', () => { clearInterval(pollId); dead = true; }, { once: true });
   draw();
 })();

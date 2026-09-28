@@ -58,6 +58,41 @@ def sh_in_odm(proj: Path, script: str) -> str:
     return r.stdout
 
 
+# Derivados del DSM que un re-publish debe REGENERAR o borrar: si el DSM nuevo no los
+# reproduce (o ya no hay DSM), los viejos quedaban sirviendo terreno de otra reconstrucción
+# y scene_manifest (que sólo construye dsm_lod "si falta") los daba por buenos.
+DSM_OUTPUTS = ("dsm_color.png", "dsm_color.webp", "hillshade.png", "hillshade.webp",
+               "ortho_cmp.webp", "dsm.bin", "contours.geojson", "dsm_4326.tif")
+DSM_DERIVED_GLOBS = ("dsm_lod*.json", "dsm_lod*.bin", "scene.v2.json", "site.lod.json")
+
+
+def purge_stale_dsm_derived(out: Path) -> list[str]:
+    """Delete products computed FROM the previous DSM so scene_manifest rebuilds them."""
+    removed = []
+    for pattern in DSM_DERIVED_GLOBS:
+        for f in out.glob(pattern):
+            if f.is_file():
+                f.unlink(missing_ok=True)
+                removed.append(f.name)
+    return removed
+
+
+def swap_model_dir(new_dir: Path, final: Path) -> None:
+    """Replace `final` by `new_dir` only now that the new mesh/textures were fully written:
+    a crash before this point leaves the previous model untouched."""
+    old = final.with_name(f".{final.name}.old")
+    shutil.rmtree(old, ignore_errors=True)
+    if final.exists():
+        final.rename(old)
+    try:
+        new_dir.rename(final)
+    except OSError:
+        if old.exists() and not final.exists():
+            old.rename(final)              # rollback
+        raise
+    shutil.rmtree(old, ignore_errors=True)
+
+
 def make_viewer_mesh(geo, dst):
     n = 0
     sx = sy = sz = 0.0
@@ -285,8 +320,10 @@ EOF""")
                 shutil.rmtree(dest)
             shutil.move(str(proj / ".web_tiles"), dest)
             tiles_meta = {"tiles": True, "tiles_minzoom": zooms[0], "tiles_maxzoom": zooms[-1]}
-    except (RuntimeError, OSError) as e:
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
         print(f"  tiles omitidos: {str(e)[:120]}")
+    if not tiles_meta and (out / "tiles").exists():
+        shutil.rmtree(out / "tiles", ignore_errors=True)   # tiles de la corrida anterior: obsoletos
 
     # 2) nube de puntos → PLY submuestreado para el browser (pdal vive en SuperBuild)
     print("nube de puntos…")
@@ -315,6 +352,7 @@ EOF""")
 
     # 2.5) DSM → relieve coloreado + hillshade + curvas de nivel (si existe)
     dsm_meta = {}
+    dsm_produced = set()
     if (proj / "odm_dem" / "dsm.tif").exists():
         print("elevación (DSM + curvas)…")
         out_dem = sh_in_odm(proj, r"""python3 - << 'EOF'
@@ -398,31 +436,46 @@ EOF""")
             p = proj / src_name
             if p.exists():
                 p.replace(out / dst_name)
+                dsm_produced.add(dst_name)
         # copia el DSM warpeado a 4326: es la base de mediciones de volumen/perfil
         if (proj / ".web_dsm_4326.tif").exists():
             (proj / ".web_dsm_4326.tif").replace(out / "dsm_4326.tif")
+            dsm_produced.add("dsm_4326.tif")
+    # salidas DSM del publish anterior que ESTA corrida no regeneró, y todo lo derivado de
+    # ellas (dsm_lod*, scene.v2.json, site.lod.json): fuera, se reconstruyen del DSM fresco
+    for name in DSM_OUTPUTS:
+        if name not in dsm_produced:
+            (out / name).unlink(missing_ok=True)
+    purged = purge_stale_dsm_derived(out)
+    if purged:
+        print(f"  derivados obsoletos del DSM anterior eliminados: {', '.join(sorted(purged))}")
 
     # 3) mesh texturizado → carpeta web (obj + mtl + texturas)
     # limpiar primero: un re-publish (p.ej. estandar→alta) puede producir MENOS
     # materiales — sin wipe, las texturas del run viejo quedan huérfanas mezcladas
     print("modelo texturizado…")
-    shutil.rmtree(out / "model", ignore_errors=True)
-    (out / "model").mkdir(parents=True, exist_ok=True)
+    # se escribe en un dir hermano y se intercambia AL FINAL: si algo falla a mitad, el
+    # modelo anterior sigue intacto (antes se borraba ANTES de escribir el nuevo)
+    new_model = out / ".model.new"
+    shutil.rmtree(new_model, ignore_errors=True)
+    new_model.mkdir(parents=True)
     tex, pipeline_mode = find_texture_dir(proj)
     if tex is not None:
         for f in tex.glob("odm_textured_model_geo*"):
-            (out / "model" / f.name).write_bytes(f.read_bytes())
+            (new_model / f.name).write_bytes(f.read_bytes())
         for f in [*tex.glob("*.jpg"), *tex.glob("*.png")]:
-            (out / "model" / f.name).write_bytes(f.read_bytes())
+            (new_model / f.name).write_bytes(f.read_bytes())
     # el .mtl referencia texturas por nombre relativo — ya quedan al lado
     # viewer mesh: vertices re-centrados al origen. El OBJ georeferenciado vive en
     # coordenadas UTM (~cientos de miles) y three.js parsea a float32 → artefactos
     # de precision. GIS/descarga usan el geo; el visor usa este.
-    geo_obj = out / "model" / "odm_textured_model_geo.obj"
     mesh_offset = None
-    if geo_obj.exists():
-        mesh_offset = make_viewer_mesh(geo_obj, out / "model" / "odm_textured_model_viewer.obj")
-    make_viewer_textures(out / "model")
+    if (new_model / "odm_textured_model_geo.obj").exists():
+        mesh_offset = make_viewer_mesh(new_model / "odm_textured_model_geo.obj",
+                                       new_model / "odm_textured_model_viewer.obj")
+    make_viewer_textures(new_model)
+    swap_model_dir(new_model, out / "model")
+    geo_obj = out / "model" / "odm_textured_model_geo.obj"
     mesh_stats = obj_stats(geo_obj)
     mesh_ok = mesh_stats["vertices"] >= 100 and mesh_stats["faces"] >= 50
 

@@ -22,6 +22,11 @@ def route_odm(spec: dict) -> dict:
         spec["backend_policy"] = "strict"
         if spec.get("splat_backend") or spec.get("splat"):
             spec["splat_backend"] = "cuda"
+        # phased_splat_job_spec prefers the nested dict over splat_backend, so it must be
+        # forced too or a queued 3d job could enqueue a Metal splat on the Mac.
+        if isinstance(spec.get("splat"), dict):
+            spec["splat"] = route_splat(spec["splat"])
+            spec["splat"]["backend_policy"] = "strict"
     return spec
 
 

@@ -175,6 +175,7 @@ function launch(url, poster) {
   const ov = document.getElementById('w-launch');
   ov.querySelector('.wl-bg').style.backgroundImage = `url('${poster}')`;
   ov.classList.add('go');
+  window.__abReloadOnRestore = true;  // shell.js recarga al volver por bfcache (el overlay .go taparía la página)
   setTimeout(() => { location.href = url; }, 520);
 }
 

@@ -351,7 +351,7 @@ class AuthSecurityTests(unittest.TestCase):
             },
         )
         self.assertEqual(status, 200)
-        self.assertEqual(headers["Clear-Site-Data"], '"cache", "cookies", "storage"')
+        self.assertEqual(headers["Clear-Site-Data"], '"cookies"')
         status, _, _ = self.request("GET", "/api/whoami", headers={"Cookie": cookie})
         self.assertEqual(status, 401)
 
@@ -416,7 +416,7 @@ class AuthSecurityTests(unittest.TestCase):
                     "X-AeroBrain-Edge-Signature": signature,
                 })
             self.assertEqual(status, 200)
-            self.assertEqual(headers["Clear-Site-Data"], '"cache", "cookies", "storage"')
+            self.assertEqual(headers["Clear-Site-Data"], '"cookies"')
             self.assertIsNone(jobs.session_info(sid))
         finally:
             server.EDGE_AUTH_KEY = old_key

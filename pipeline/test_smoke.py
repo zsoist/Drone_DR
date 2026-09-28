@@ -1,7 +1,7 @@
 """Smoke tests del pipeline — corre con: python3 test_smoke.py (sin dependencias de test).
 
 Cubre las piezas puras: parser SRT (con puntos 0,0), política de tiers,
-mediciones DSM (volumen y perfil sobre un DSM sintético), y contención de paths.
+mediciones DSM (volumen y perfil sobre un DSM sintético). El resto de suites corre vía run_all_tests.py --fast (último check).
 """
 import json
 import shutil
@@ -117,16 +117,6 @@ except ValueError as e:
     _huge_poly = "área demasiado grande" in str(e)
 check("measure: polígono gigante rechaza antes de asignar malla", _huge_poly)
 
-# ---------- path containment ----------
-base = Path("/Volumes/SSD/drone-vault").resolve()
-evil = Path("/Volumes/SSD/drone-vault2/secret").resolve()
-try:
-    evil.relative_to(base)
-    contained = True
-except ValueError:
-    contained = False
-check("paths: drone-vault2 NO pasa el contención", not contained)
-
 # ---------- SD importer: respaldo por stem + tamaño, no sólo nombre ----------
 import aerobrain_server as _srv
 _old_vault = _srv.VAULT
@@ -186,7 +176,8 @@ threading.Thread(target=_to_run, daemon=True).start()
 time.sleep(0.8); to_pid["pid"] = jobs.get(jt["id"])["pid"]
 time.sleep(2.5)
 _jt = jobs.get(jt["id"])
-check("job: timeout mata el proceso silencioso", not _pid_alive(to_pid.get("pid")))
+check("job: timeout mata el proceso silencioso",
+      bool(to_pid.get("pid")) and not _pid_alive(to_pid.get("pid")))
 check("job: timeout deja row en 'error' (auto-consistente)",
       _jt["status"] == "error" and "timeout" in (_jt["detail"] or ""))
 
@@ -1061,13 +1052,32 @@ check("world manifest: collider y cobertura se validan antes de publicar capabil
 # se ENMASCARABA como OSError del rmtree del TemporaryDirectory (error secundario del
 # unwind). Compilar el módulo entero atrapa imports fantasma sin lanzar Chrome.
 import py_compile as _pyc
-_swallow(lambda: _pyc.compile("pipeline/browser_gate.py", doraise=True))
+try:
+    _pyc.compile("pipeline/browser_gate.py", doraise=True)
+    _bg_compile_err = ""
+except Exception as _e:
+    _bg_compile_err = str(_e)[:300]
+check("browser_gate: compila sin errores de sintaxis", not _bg_compile_err, _bg_compile_err)
 import ast as _ast
 _bg_tree = _ast.parse(Path("pipeline/browser_gate.py").read_text())
 _bg_imports = {n.name.split(".")[0] for x in _ast.walk(_bg_tree) if isinstance(x, _ast.Import) for n in x.names}
 check("browser_gate: threading importado (el drain thread lo usa) + cleanup a prueba de race",
       "threading" in _bg_imports
       and "ignore_cleanup_errors=True" in Path("pipeline/browser_gate.py").read_text())
+
+# ---------- resto de suites (auth/seguridad, ops, scenes, gzip-freshness, node...) ----------
+# test_smoke solo cubría una fracción de los test_*.py; run_all_tests.py --fast corre el
+# resto (unittest por módulo + node --test) para que el pre-commit los cubra también.
+_t0 = time.monotonic()
+try:
+    _ra = subprocess.run([sys.executable, str(Path(__file__).parent / "run_all_tests.py"), "--fast"],
+                         capture_output=True, text=True, timeout=600)
+    _ra_ok, _ra_out = _ra.returncode == 0, (_ra.stdout + _ra.stderr)
+except subprocess.TimeoutExpired:
+    _ra_ok, _ra_out = False, "run_all_tests.py --fast: timeout 600s"
+_ra_tail = "\n".join(_ra_out.strip().splitlines()[-40:])
+check(f"run_all_tests --fast: resto de suites python + node ({time.monotonic() - _t0:.0f}s)",
+      _ra_ok, "\n" + _ra_tail)
 
 print(f"\n{'FALLARON: ' + ', '.join(FAILS) if FAILS else 'TODOS LOS TESTS PASAN'}")
 if __name__ == "__main__":

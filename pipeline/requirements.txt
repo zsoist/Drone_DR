@@ -3,8 +3,12 @@
 # (python 3.14.7, ffmpeg 9.0.2). An unpinned `pip install -U` on 2026-09-03 changed
 # trimesh 4→5 and silently broke the weapon-GLB rebuild test for weeks.
 #
-# The web server (aerobrain_server.py) is stdlib-only. These are for generators,
-# splat evaluation and the test suite.
+# The web server (aerobrain_server.py) is NOT stdlib-only: it lazily imports numpy
+# (DSM measurement) and PIL (thumbnails/images), besides the generators, splat
+# evaluation and the test suite that use the rest of this file.
+# NOTE: the launchd services (web, worker, watchdog) currently run
+# /opt/homebrew/bin/python3 (brew site-packages), NOT this venv. numpy/pillow must
+# therefore also exist there; the venv is used by tests, the pre-commit gate and tools.
 #
 # Install:  /Volumes/SSD/_system/venv/bin/pip install -r pipeline/requirements.txt
 

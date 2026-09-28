@@ -10,7 +10,7 @@ en inteligencia: mapas, detección de objetos, escenas 3D y diarios de viaje.
 - **PC RTX 4060 Ti + WSL2** = fuerza de trabajo: todo ODM (CUDA, strict) y todo splat
   (Nerfstudio/gsplat, 1K–40K). Nunca es autoridad de publicación; su scratch expira solo
   (`pc_janitor.py`). `AEROBRAIN_COMPUTE=local` reactiva los caminos legacy del Mac.
-- **Cloudflare** = SOLO túnel + dominio (vuelos.metislab.work → localhost:8790). Sin Pages ni R2: el media se sirve del SSD local con HTTP Range + gzip sidecars — $0/mes real. (Actualizado 2026-07-05; ver 3D_PROCESSING_AUDIT.md)
+- **Cloudflare** = túnel + dominio (vuelos.metislab.work → localhost:8790) + el Worker de borde OBLIGATORIO en `edge/` (private-data-v1: gate de auth y puente HMAC hacia el origen; sin él no hay acceso). Sin Pages ni R2: el media se sirve del SSD local con HTTP Range + gzip sidecars — $0/mes real. (Actualizado 2026-07-05; ver 3D_PROCESSING_AUDIT.md)
 - **drone-vault** (`/Volumes/SSD/drone-vault/`) = datos, fuera del repo
 
 ## 3D contract
@@ -32,7 +32,7 @@ en inteligencia: mapas, detección de objetos, escenas 3D y diarios de viaje.
 3. Keyframes JPG baratos como input de AI vision
 4. Telemetría SRT → flight.json 1Hz (GPS, altitud, exposición)
 5. Tiers de procesamiento por clip — compute donde vale la pena
-6. LLM lanes: batch vision = API paga (Haiku) o modelos locales; nunca OAuth headless
+6. LLM lanes: ai/router.py: vision = Gemini Flash (frames JPG), texto = DeepSeek, fallback = OpenAI (todas con API key paga); nunca OAuth headless
 
 ## Non-goals (v1)
 - No control de vuelo en vivo / DJI SDK

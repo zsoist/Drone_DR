@@ -230,8 +230,12 @@ def all_splats(splat_dir: Path) -> list:
             size = p.stat().st_size
         except OSError:
             continue                    # el prune del server pudo borrar la versión a mitad del rebuild
-        out.append({"name": p.name, "path": rel, "bytes": size,
-                    "format": p.suffix.lower().lstrip("."), **info, **stats})
+        entry = {"name": p.name, "path": rel, "bytes": size,
+                 "format": p.suffix.lower().lstrip("."), **info, **stats}
+        if base == splat_dir:
+            # Splat Lab habilita "A/B crudo" con esto; sin el dato hacía HEAD → 404 en consola
+            entry["has_raw"] = (splat_dir / f"{info.get('clip_id') or logical_stem}.raw.splat").is_file()
+        out.append(entry)
     return sorted(out, key=lambda s: (s["clip_id"], 0 if s.get("current") else 1,
                                      -(s.get("iters") or 0), s.get("archived_at") or "", s["name"]))
 

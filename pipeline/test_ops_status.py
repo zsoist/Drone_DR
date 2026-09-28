@@ -112,5 +112,19 @@ class OpsStatusTests(unittest.TestCase):
         self.assertEqual(report["detail"], "protected media leaked")
 
 
+class LatestProxyUrlsTests(unittest.TestCase):
+    def test_missing_manifest_returns_pair_and_range_probe_handles_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(ops_status, "VAULT", Path(tmp)):
+                local, public = ops_status.latest_proxy_urls()
+        self.assertIsNone(local)
+        self.assertIsNone(public)
+        self.assertFalse(ops_status.range_probe(local)["ok"])
+
+    def test_logs_live_outside_tmp(self):
+        for p in ops_status.LOGS:
+            self.assertNotIn("/tmp", str(p))
+
+
 if __name__ == "__main__":
     unittest.main()

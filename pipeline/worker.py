@@ -120,7 +120,9 @@ def run_autoclean(splat_path: Path, preset: str = "aerial") -> bool:
     """Auto-Clean v2 (docs/SPLATLAB_V2_PLAN.md): opacidad+escala+bbox+anisotropía+radial+voxel,
     adaptativo por escena, reversible (no muta hasta escribir la salida). Reemplaza al viejo
     crop_floaters (caja posicional) que no tocaba spikes/haze/agujas. Fail-open interno."""
-    tmp = splat_path.with_suffix(".ac.tmp")
+    # splat-transform decide el formato por la extensión: el tmp DEBE terminar en .splat
+    # (con ".ac.tmp" rechazaba el tipo y el filtro voxel nunca corría, en silencio)
+    tmp = splat_path.with_name(f".{splat_path.stem}.ac.tmp.splat")
     try:
         r = subprocess.run(["node", str(PIPE / "autoclean.mjs"), str(splat_path), str(tmp),
                             "--preset", preset],
@@ -1302,6 +1304,54 @@ def monotonic_job_progress(jid: str, requested: float) -> float:
     return max(float(requested), current)
 
 
+def _release_docker_after_step() -> None:
+    """Best-effort: stop OrbStack now that the local docker step is done."""
+    try:
+        docker_ondemand.touch()
+        mark = docker_ondemand.last_use()
+        if docker_ondemand.release(expected_mark=mark):
+            print("OrbStack detenido tras export_colmap (entrenamiento remoto)", flush=True)
+    except Exception as exc:                      # noqa: BLE001
+        print(f"release OrbStack omitido: {exc}", flush=True)
+
+
+def resume_protect_paths(spec: dict | None) -> list[str]:
+    """Remote paths this job resumes from. They belong to an OLDER terminal job A that the
+    janitor may consider expired, so sweep_best_effort must be told to leave them alone."""
+    spec = spec if isinstance(spec, dict) else {}
+    out = []
+    for key in ("resume_checkpoint", "resume_config"):
+        if spec.get(key):
+            out.append(str(spec[key]))
+    name = str(spec.get("odm_remote_resume") or "").strip()
+    if name and re.fullmatch(r"[A-Za-z0-9._-]+", name):
+        import odm_gpu_lane
+        out.append(f"{odm_gpu_lane.REMOTE_ODM}/{name}")
+    return out
+
+
+def _cleanup_success_best_effort(gpu_lane, name: str) -> None:
+    """The run already finished and the splat is fetched: a flaky ssh in cleanup must not
+    turn a completed attempt into an error (and wipe .training). The janitor reaps later."""
+    try:
+        gpu_lane.cleanup(name, success=True)
+    except Exception as exc:                      # noqa: BLE001
+        print(f"  cleanup CUDA (post-éxito) omitido, lo barre el janitor: {exc}", flush=True)
+
+
+def _archive_checkpoint_best_effort(gpu_lane, name: str, job_id: str) -> None:
+    """After a timeout/cancel the run dir still holds the newest step-*.ckpt; preserve it
+    so the job can be resumed. Never masks the original exception."""
+    try:
+        checkpoint = gpu_lane.archive_latest_checkpoint(name, job_id)
+        if checkpoint:
+            jobstore.event(job_id, "cuda_checkpoint",
+                           f"checkpoint {checkpoint['step']:,} preservado para recuperación",
+                           level="warning", data=checkpoint)
+    except Exception as exc:                      # noqa: BLE001
+        print(f"  no se pudo preservar checkpoint tras corte: {exc}", flush=True)
+
+
 def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     """Corre la fotogrametria en el nodo CUDA (odm:gpu en el PC). Devuelve rc:
     0 = outputs ya en proj, listos para el publish local; !=0 o excepcion deja
@@ -1311,7 +1361,7 @@ def run_odm_cuda(j: dict, proj: Path, preset: dict, preset_name: str) -> int:
     import odm_gpu_lane
     import pc_janitor
     odm_gpu_lane.probe()
-    pc_janitor.sweep_best_effort()   # el PC se limpia cuando ya está despierto, sin agenda
+    pc_janitor.sweep_best_effort(protect=resume_protect_paths(j.get("spec")))  # el PC se limpia cuando ya está despierto, sin agenda
     plan = odm_cuda_execution_plan(j, list(preset["args"]))
     name = plan["name"]
     container = f"odm-gpu-{name[:40]}"
@@ -1720,7 +1770,7 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
     try:
         info = gpu_lane.probe()
         import pc_janitor
-        pc_janitor.sweep_best_effort()
+        pc_janitor.sweep_best_effort(protect=resume_protect_paths(j.get("spec")))
         jobstore.event(j["id"], "cuda_lane", f"nodo GPU verificado: torch {info['torch']} · "
                        f"gsplat {info['gsplat']}", data=info)
         resume_checkpoint = gpu_lane.validate_resume_checkpoint(resume_checkpoint)
@@ -1738,7 +1788,7 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
             ply = gpu_lane.fetch(name, stage)
             conv = ply_to_splat(ply, tmp_out)
             ply.unlink()
-            gpu_lane.cleanup(name, success=True)
+            _cleanup_success_best_effort(gpu_lane, name)
             measured = {
                 **m, **conv,
                 "effective_downscale": downscale,
@@ -1777,11 +1827,22 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
             ds.mkdir(parents=True)
             (ds / "images").symlink_to(proj / "images")
             docker_ondemand.ensure_up()
-            r = subprocess.run([DOCKER, "run", "--rm", "-v", f"{proj}:/datasets/code",
-                                "--entrypoint", "/code/SuperBuild/install/bin/opensfm/bin/opensfm",
-                                "opendronemap/odm", "export_colmap", "/datasets/code/opensfm"],
-                               capture_output=True, text=True, timeout=900)
-            if r.returncode != 0:
+            colmap_name = re.sub(r"[^A-Za-z0-9_.-]", "-", f"colmap-{j['id']}")[:60]
+            try:
+                r = subprocess.run([DOCKER, "run", "--rm", "--name", colmap_name,
+                                    "-v", f"{proj}:/datasets/code",
+                                    "--entrypoint", "/code/SuperBuild/install/bin/opensfm/bin/opensfm",
+                                    "opendronemap/odm", "export_colmap", "/datasets/code/opensfm"],
+                                   capture_output=True, text=True, timeout=900)
+            except subprocess.TimeoutExpired:
+                # matar el CLI no mata el contenedor: sin rm -f seguiría gastando CPU
+                subprocess.run([DOCKER, "rm", "-f", colmap_name], capture_output=True, timeout=30)
+                raise RuntimeError("export_colmap agotó el tiempo (900s)")
+            finally:
+                # el entrenamiento remoto dura horas sin Docker local: no dejar OrbStack
+                # arriba (release() respeta a otros usuarios vía la marca de last_use)
+                _release_docker_after_step()
+            if r.returncode != 0:      # el contenedor salió (--rm lo borra): rm -f aquí re-bootearía OrbStack
                 raise RuntimeError(f"export_colmap falló: {(r.stderr or r.stdout)[-300:]}")
             exported = next((d for d in [proj / "opensfm" / "colmap_export",
                                          proj / "colmap_export"]
@@ -1812,11 +1873,16 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
                                       train_args=effective_train_args,
                                       resume_checkpoint=resume_checkpoint)
         t0 = time.time()
-        rc = jobstore.run_tracked(
-            j["id"], gpu_lane.train_argv(name, iters, downscale, run_id,
-                                          train_args=effective_train_args),
-            timeout=timeout_s, tail=80,
-            progress_re=r"\((\d+)(?:\.\d+)?%\)", progress_span=(0.3, 0.76))
+        try:
+            rc = jobstore.run_tracked(
+                j["id"], gpu_lane.train_argv(name, iters, downscale, run_id,
+                                              train_args=effective_train_args),
+                timeout=timeout_s, tail=80,
+                progress_re=r"\((\d+)(?:\.\d+)?%\)", progress_span=(0.3, 0.76))
+        except (TimeoutError, RuntimeError):
+            # timeout de 4 h / cancel / abort: el run dir aún guarda el último checkpoint
+            _archive_checkpoint_best_effort(gpu_lane, name, j["id"])
+            raise
         if rc != 0:
             log = (jobstore.get(j["id"]) or {}).get("log", "")
             if _cancelled(j["id"]):
@@ -1837,7 +1903,7 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
         ply = gpu_lane.fetch(name, stage)
         conv = ply_to_splat(ply, tmp_out)
         ply.unlink()
-        gpu_lane.cleanup(name, success=True)
+        _cleanup_success_best_effort(gpu_lane, name)
         measured = {
             **m, **conv,
             "effective_downscale": downscale,
@@ -1876,6 +1942,8 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
 def run_splat(j: dict):
     # import tardío: reutiliza el quality gate del server sin duplicarlo
     from aerobrain_server import splat_quality
+    import compute_policy
+    j["spec"] = compute_policy.route_splat(j["spec"])   # red de seguridad: jobs viejos en cola
     cid = j["spec"]["clip_id"]
     # preferir la reconstrucción más nueva con opensfm válido: un re-run alta crea
     # proj_<cid> premium; proj0104 es el dir legacy de 0104 (fallback)
@@ -2203,6 +2271,85 @@ def run_splat(j: dict):
 RUNNERS = {"3d": run_3d, "splat": run_splat}
 
 
+def sweep_transfer_tmp(root: Path | None = None) -> list[str]:
+    """Remove odm-cuda-* staging dirs an interrupted fetch_outputs left on the vault SSD
+    (tar of 34+ GiB each). The worker is single: at startup nothing is legitimately using them."""
+    if root is None:
+        import odm_gpu_lane
+        root = odm_gpu_lane.LOCAL_TRANSFER_TMP
+    removed = []
+    try:
+        for d in Path(root).glob("odm-cuda-*"):
+            if d.is_dir() and not d.is_symlink():
+                shutil.rmtree(d, ignore_errors=True)
+                removed.append(d.name)
+    except OSError:
+        pass
+    return removed
+
+
+def reconcile_scene_versions() -> list[str]:
+    """Scene versions stuck in 'processing' because their 3d job was cancelled while queued
+    (jobs.cancel) or marked orphan at worker start (jobs.init) never reach the failure
+    handler. Any 'processing' version whose job is not queued/running becomes 'failed'."""
+    fixed = []
+    for row in scenestore.processing_versions():
+        jid = row.get("job_id")
+        if not jid:
+            continue                       # server may be mid-enqueue: not knowable yet
+        job = jobstore.get(jid)
+        if job and job.get("status") in ("queued", "running"):
+            continue
+        try:
+            scenestore.update_version(row["scene_id"], row["version_id"], status="failed",
+                                      completed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+            fixed.append(row["version_id"])
+        except (KeyError, ValueError, OSError):
+            pass
+    return fixed
+
+
+def scene_version_status(spec: dict | None) -> str | None:
+    spec = spec or {}
+    if not spec.get("scene_id"):
+        return None
+    try:
+        scene = scenestore.get_scene(spec["scene_id"])
+    except (KeyError, ValueError, OSError):
+        return None
+    vid = spec.get("version_id") or spec.get("clip_id")
+    return next((v.get("status") for v in scene.get("versions", []) if v.get("id") == vid), None)
+
+
+def mark_scene_version_failed(j: dict, prior_status: str | None, started_at: float) -> str:
+    """Failure handler for a scene 3d job. A same-recon re-run of an already READY version
+    whose model files were never replaced (meta.json older than this job) keeps its status:
+    the old model is intact and a failed re-run must not hide it. Returns the action taken."""
+    spec = j.get("spec") or {}
+    vid = spec.get("version_id") or spec.get("clip_id")
+    if prior_status == "ready":
+        try:
+            intact = (VAULT / "models" / str(vid) / "meta.json").stat().st_mtime < started_at
+        except OSError:
+            intact = False
+        if intact:
+            # solo se deshace un 'processing' intermedio; un estado que la propia corrida
+            # fijó a propósito (p.ej. failed del preflight de frames) no se toca
+            if scene_version_status(spec) == "processing":
+                try:
+                    scenestore.update_version(spec["scene_id"], vid, status="ready")
+                except (KeyError, ValueError, OSError):
+                    pass
+            return "kept_ready"
+    try:
+        scenestore.update_version(spec["scene_id"], vid, status="failed",
+                                  completed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                                  job_id=j["id"])
+    except (KeyError, ValueError, OSError):
+        return "error"
+    return "failed"
+
+
 def main():
     # al arrancar, SOLO los heavy jobs (de este dueño) que quedaron running son huérfanos
     jobstore.init(orphan_kinds=jobstore.HEAVY_KINDS)
@@ -2220,6 +2367,13 @@ def main():
         rebuild_index()
     except Exception as e:
         print(f"rebuild_index de arranque falló (no fatal): {e}", flush=True)
+    try:
+        for name in sweep_transfer_tmp():
+            print(f"limpiado staging de transferencia huérfano: {name}", flush=True)
+        for vid in reconcile_scene_versions():
+            print(f"versión de escena {vid}: 'processing' sin job activo → failed", flush=True)
+    except Exception as e:                          # noqa: BLE001 — housekeeping
+        print(f"reconciliación de arranque falló (no fatal): {e}", flush=True)
     print(f"worker listo · poll {POLL_S}s · kinds {jobstore.HEAVY_KINDS}", flush=True)
     idle_check = 0.0
     while True:
@@ -2236,6 +2390,8 @@ def main():
             time.sleep(POLL_S)
             continue
         print(f"→ {j['id']} ({j['kind']}) {j['label']}", flush=True)
+        job_started = time.time()
+        prior_scene_status = scene_version_status(j.get("spec")) if j["kind"] == "3d" else None
         try:
             RUNNERS[j["kind"]](j)
             print(f"✓ {j['id']} done", flush=True)
@@ -2243,13 +2399,7 @@ def main():
             if not _cancelled(j["id"]):
                 jobstore.end(j["id"], "error", str(e)[-250:])
             if (j.get("spec") or {}).get("scene_id") and j["kind"] == "3d":
-                try:
-                    scenestore.update_version(j["spec"]["scene_id"],
-                                              j["spec"].get("version_id") or j["spec"].get("clip_id"),
-                                              status="failed", completed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                                              job_id=j["id"])
-                except (KeyError, ValueError, OSError):
-                    pass
+                mark_scene_version_failed(j, prior_scene_status, job_started)
             print(f"✗ {j['id']}: {e}", flush=True)
             # stage huérfano de un splat fallido: cientos de MB que antes vivían hasta el
             # próximo reinicio del worker (KeepAlive ≈ nunca)

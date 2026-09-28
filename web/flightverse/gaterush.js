@@ -3,7 +3,7 @@
 // splits por gate. Circuito HONESTO: gates sobre la ruta del vuelo REAL
 // (track GPS en frame local); sin track: anillo procedural documentado como
 // fallback. Detección por proximidad en timestep fijo (determinista → replay).
-import * as THREE from '/flightverse/three.js?v=344';
+import * as THREE from '/flightverse/three.js?v=346';
 
 export const DIFFS = {
   facil:   { label: 'Fácil',   n: 8,  r: 9,   pass: 1.25, color: 0x52C79A },
@@ -22,6 +22,17 @@ function glowSprite(color) {
     map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false,
     blending: THREE.AdditiveBlending, color }));
   return sp;
+}
+
+function disposeMaterial(m) {
+  if (!m) return;
+  if (m.map) m.map.dispose();
+  m.dispose();
+}
+function disposeObject(o) {
+  if (!o.isSprite) o.geometry?.dispose();   // la geometría del Sprite es compartida por three
+  if (Array.isArray(o.material)) o.material.forEach(disposeMaterial);
+  else disposeMaterial(o.material);
 }
 
 export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 'media' }) {
@@ -159,7 +170,7 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
       for (let i = flashes.length - 1; i >= 0; i--) {  // celebración de paso
         const f = flashes[i];
         f.k += dt * 2.2;
-        if (f.k >= 1) { grp.remove(f.m); flashes.splice(i, 1); continue; }
+        if (f.k >= 1) { grp.remove(f.m); disposeObject(f.m); flashes.splice(i, 1); continue; }
         f.m.scale.setScalar(1 + f.k * 1.1);
         f.m.material.opacity = 0.7 * (1 - f.k);
       }
@@ -202,6 +213,9 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
     },
     dispose() {
       scene.remove(grp);
+      // glow/beam/trim/migas/flashes: geometrías, materiales y texturas propios del grupo
+      grp.traverse(disposeObject);
+      flashes.length = 0;
       ringGeo.dispose(); trimGeo.dispose(); matNext.dispose(); matIdle.dispose(); matDone.dispose();
       pathGeo.dispose(); pathMat.dispose();
     },
@@ -211,10 +225,11 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
 // Mejores tiempos por escena+dificultad — localStorage hasta store server-side (P9).
 export function bestTime(cid, t, difficulty = 'media') {
   const k = `ab.fv.best.${cid}.gaterush.${difficulty}`;
-  const prev = parseFloat(localStorage.getItem(k));
-  if (t != null && (!Number.isFinite(prev) || t < prev)) {
+  const prevRaw = parseFloat(localStorage.getItem(k));
+  const prev = Number.isFinite(prevRaw) ? prevRaw : null;   // récord anterior (null = primera marca)
+  if (t != null && (prev == null || t < prev)) {
     localStorage.setItem(k, String(t));
-    return { best: t, isNew: true };
+    return { best: t, isNew: true, prev };
   }
-  return { best: Number.isFinite(prev) ? prev : null, isNew: false };
+  return { best: prev, isNew: false, prev };
 }

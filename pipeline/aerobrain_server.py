@@ -280,7 +280,7 @@ def clip_history_files(hist_dir: Path, cid: str) -> list:
     del timestamp, así 'A-2-...' nunca cae en el conjunto de 'A'."""
     if not hist_dir.is_dir():
         return []
-    pat = re.compile(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.(clean\.sog|spz|splat|ksplat|ply|meta\.json|cameras\.json)$", re.IGNORECASE)
+    pat = re.compile(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.(clean\.sog|spz|raw\.splat|splat|ksplat|ply|meta\.json|cameras\.json)$", re.IGNORECASE)
     return [p for p in hist_dir.iterdir() if p.is_file() and pat.fullmatch(p.name)]
 
 
@@ -291,7 +291,7 @@ def prune_splat_history(hist_dir: Path, cid: str, keep: int = 6):
     breaks old versions into unusable partial sets.
     """
     groups = {}
-    pat = re.compile(rf"({re.escape(cid)}-\d{{8}}-\d{{6}})\.(clean\.sog|spz|splat|ksplat|ply|meta\.json|cameras\.json)$",
+    pat = re.compile(rf"({re.escape(cid)}-\d{{8}}-\d{{6}})\.(clean\.sog|spz|raw\.splat|splat|ksplat|ply|meta\.json|cameras\.json)$",
                      re.IGNORECASE)
     for p in clip_history_files(hist_dir, cid):
         m = pat.fullmatch(p.name)
@@ -309,6 +309,22 @@ def job_add(kind, label, container=""):
 
 def job_end(j, status, detail=""):
     jobstore.end(j["id"], status, detail)
+
+
+def rebuild_scene_manifest(cid: str):
+    """Regenera models/<cid>/scene.v2.json (splat/objetos/capacidades). Antes solo lo rehacían
+    el worker y scene_promote: tras borrar/subir/limpiar/revertir un splat el manifest seguía
+    apuntando al archivo viejo. Best-effort en subproceso (scene_manifest puede salir con
+    SystemExit): un fallo se loguea pero nunca rompe la respuesta de la API."""
+    try:
+        if not (VAULT / "models" / cid / "meta.json").exists():
+            return          # sin modelo publicado no hay scene.v2.json que mantener
+        r = subprocess.run(["python3", str(PIPE / "scene_manifest.py"), cid],
+                           check=False, timeout=120, capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"scene_manifest {cid} rc={r.returncode}: {(r.stderr or r.stdout)[-200:]}", flush=True)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"scene_manifest {cid} falló: {e}", flush=True)
 
 
 def rebuild_index():
@@ -358,14 +374,37 @@ def health_status() -> tuple[dict, int]:
     return {"ok": ok, "checks": checks, "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, (200 if ok else 503)
 
 
+def _run_process_clip(path: Path) -> str | None:
+    """Corre process.py sobre un clip. Devuelve None si OK o el motivo del fallo.
+    OK = exit 0 Y manifest/<cid>.json escrito/actualizado ahora (process.py loguea el fallo
+    de un clip y antes salía 0; un manifest viejo de un import previo no cuenta)."""
+    t0 = time.time() - 2      # margen por granularidad de mtime
+    try:
+        r = subprocess.run(["python3", str(PIPE / "process.py"), str(path)],
+                           cwd=PIPE, capture_output=True, text=True)
+    except OSError as e:
+        return str(e)[-300:]
+    if r.returncode != 0:
+        return (r.stderr or r.stdout or f"process.py salió con código {r.returncode}").strip()[-300:]
+    man = VAULT / "manifest" / f"{path.stem}.json"
+    try:
+        if man.stat().st_mtime < t0:
+            raise FileNotFoundError
+    except OSError:
+        return f"process.py no generó manifest/{path.stem}.json — {(r.stdout or r.stderr or '').strip()[-200:]}"
+    return None
+
+
 def process_upload(path: Path, j):
     try:
-        subprocess.run(["python3", str(PIPE / "process.py"), str(path)],
-                       check=True, cwd=PIPE, capture_output=True, text=True)
+        err = _run_process_clip(path)
+        if err:
+            job_end(j, "error", err)
+            return
         rebuild_index()
         job_end(j, "done", path.stem)
-    except subprocess.CalledProcessError as e:
-        job_end(j, "error", (e.stderr or str(e))[-300:])
+    except Exception as e:                       # noqa: BLE001 — el job nunca queda en 'running'
+        job_end(j, "error", str(e)[-300:])
 
 
 # LUT presets — investigados de los grandes (DaVinci/LightCut), intensidad ~50%
@@ -823,13 +862,16 @@ def run_sd_import(spec: dict, j):
                 raise RuntimeError(f"copia no verificada: {src.name}")
             copied.append((src, dest))
         vids_copied = [(s2, d2) for s2, d2 in copied if d2.suffix in SD_VIDEO_EXT]
+        failed = []
         for i, (src, dest) in enumerate(vids_copied):
             jobstore.update(j["id"], detail=f"procesando {i + 1}/{len(vids_copied)} · proxy + GPS + thumbs",
                             stage="process", progress=0.5 + 0.4 * i / max(1, len(vids_copied)))
-            subprocess.run(["python3", str(PIPE / "process.py"), str(dest)],
-                           check=True, cwd=PIPE, capture_output=True, text=True)
+            err = _run_process_clip(dest)
+            if err:
+                failed.append(f"{dest.name}: {err[-120:]}")
         cleaned = 0
-        if clean:
+        # los originales de la SD nunca se borran si algún clip quedó sin manifest
+        if clean and not failed:
             jobstore.update(j["id"], detail="limpiando la SD (solo copias verificadas)", stage="clean", progress=0.93)
             for src, dest in copied:
                 if dest.exists() and dest.stat().st_size == src.stat().st_size:
@@ -839,6 +881,10 @@ def run_sd_import(spec: dict, j):
                     cleaned += 1
         rebuild_index()
         jobstore.update(j["id"], progress=1.0)
+        if failed:
+            job_end(j, "error", (f"{len(failed)}/{len(vids_copied)} clips sin procesar (SD intacta): "
+                                 + " · ".join(failed))[-250:])
+            return
         n_fotos = len(copied) - len(vids_copied)
         job_end(j, "done", f"{len(vids_copied)} videos + {n_fotos} fotos importados a raw/{drone}"
                            + (f" · {cleaned} borrados de la SD" if clean else ""))
@@ -1001,16 +1047,28 @@ def measure_dsm(mdir: Path, spec: dict) -> dict:
              math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
         return {"profile": prof, "distance_m": round(2 * 6371000 * math.asin(math.sqrt(a)), 1)}
 
-    # volumen: ray-casting vectorizado dentro del polígono
-    lons = gt[0] + (np.arange(w) + 0.5) * gt[1]
-    lats = gt[3] + (np.arange(h) + 0.5) * gt[5]
+    # volumen: ray-casting vectorizado dentro del polígono. Solo sobre la ventana (bbox en píxeles)
+    # del polígono: algunos DSM son 33754×30530 y un meshgrid del raster completo pide ~16 GB.
+    def _win(c0, c1, g0, g1, n):
+        # índices de píxel cuyo centro (g0 + (i+0.5)*g1) cae en [c0, c1], con 1 px de margen
+        a, b = (c0 - g0) / g1 - 0.5, (c1 - g0) / g1 - 0.5
+        lo, hi = (a, b) if a <= b else (b, a)
+        return max(0, int(math.floor(lo)) - 1), min(n, int(math.ceil(hi)) + 2)
+    x0, x1 = _win(min(p[0] for p in pts), max(p[0] for p in pts), gt[0], gt[1], w)
+    y0, y1 = _win(min(p[1] for p in pts), max(p[1] for p in pts), gt[3], gt[5], h)
+    if x1 <= x0 or y1 <= y0:
+        return {"error": "polígono fuera del DSM"}
+    arr = arr[y0:y1, x0:x1]
+    hh, ww = arr.shape
+    lons = gt[0] + (np.arange(x0, x1) + 0.5) * gt[1]
+    lats = gt[3] + (np.arange(y0, y1) + 0.5) * gt[5]
     LON, LAT = np.meshgrid(lons, lats)
-    mask = np.zeros((h, w), dtype=bool)
+    mask = np.zeros((hh, ww), dtype=bool)
     P = pts + [pts[0]]
     for i in range(len(P) - 1):
-        (x1, y1), (x2, y2) = P[i], P[i + 1]
-        mask ^= ((y1 <= LAT) != (y2 <= LAT)) & \
-                (LON < (x2 - x1) * (LAT - y1) / (y2 - y1 + 1e-15) + x1)
+        (x1_, y1_), (x2_, y2_) = P[i], P[i + 1]
+        mask ^= ((y1_ <= LAT) != (y2_ <= LAT)) & \
+                (LON < (x2_ - x1_) * (LAT - y1_) / (y2_ - y1_ + 1e-15) + x1_)
     if nod is not None:
         mask &= np.abs(arr - nod) > 1e-3
     if not mask.any():
@@ -1882,6 +1940,19 @@ def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: st
         preset = "estandar"
     reconstruction_id = jobstore.recon_id_for(sources, photos)
     evidence = [source_evidence(source) for source in sources]
+    # validar splat_preset/backend ANTES de tocar la escena: un ValueError (400) después de
+    # add_version dejaba una versión 'processing' huérfana sin job
+    followup = None
+    if then_splat:
+        followup = build_followup_splat_spec(reconstruction_id, {
+            "splat_preset": splat_preset,
+            "splat_backend": splat_backend,
+            "splat_resolution": splat_resolution,
+            "best_available": best_available,
+            "scene_id": scene_id,
+            "version_id": reconstruction_id,
+            "title": title,
+        })
     scenestore.update_source_evidence(scene_id, evidence)
     scenestore.add_version(scene_id, reconstruction_id, sources, photos, "processing",
                            source_evidence=evidence)
@@ -1899,16 +1970,7 @@ def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: st
         "backend_policy": ("strict" if str(odm_backend).lower() == "cuda"
                            and preset in ("alta", "extra", "ultra") else "best_available"),
     }
-    if then_splat:
-        followup = build_followup_splat_spec(reconstruction_id, {
-            "splat_preset": splat_preset,
-            "splat_backend": splat_backend,
-            "splat_resolution": splat_resolution,
-            "best_available": best_available,
-            "scene_id": scene_id,
-            "version_id": reconstruction_id,
-            "title": title,
-        })
+    if followup:
         spec.update({
             "splat": followup,
             # Compatibility fields for workers deployed before the nested contract.
@@ -1968,17 +2030,22 @@ def vertical_vf(aspect: str, resolution: str, fit: str, framing: float) -> str:
                 f"[bg]scale={int(W * 1.08) // 5}:{int(H * 1.08) // 5}:force_original_aspect_ratio=increase,"
                 f"crop={W // 5}:{H // 5},gblur=sigma=9,scale={W}:{H}:flags=bicubic,"
                 f"eq=brightness=-0.15:saturation=0.72,vignette=PI/4[bgb];"
-                f"[fg]crop=w='min(iw,ih*4/5)':h=ih:x='(iw-min(iw,ih*4/5))*(1+{fr:.3f})/2':y=0,"
+                f"[fg]crop=w='min(iw,ih*4/5)':h='min(ih,iw*5/4)':x='(iw-min(iw,ih*4/5))*(1+{fr:.3f})/2':y='(ih-min(ih,iw*5/4))/2',"
                 f"scale={W}:{fh}:flags=lanczos,format=rgba,"
                 f"pad={W + 6}:{fh + 6}:3:3:color=white@0.12[fgs];"
                 f"[bgb][fgs]overlay=(W-w)/2:{y},format=yuv420p,setsar=1")
     if fit == "bars":
-        return f"scale={W}:-2,pad={W}:{H}:0:(oh-ih)/2:black,setsar=1"
+        # decrease + pad centrado: nunca pad < entrada (fuente vertical, p. ej. reel 1080x1920 → 4:5)
+        return (f"scale={W}:{H}:force_original_aspect_ratio=decrease,"
+                f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black,setsar=1")
     # recorte con punto focal: 0 = centro, -1 = pegado a la izquierda, 1 = a la derecha
     fr = max(-1.0, min(1.0, float(framing or 0)))
     ratio = {"9:16": "9/16", "1:1": "1", "4:5": "4/5"}.get(aspect, "9/16")
-    off = f"(iw-ih*{ratio})/2" if abs(fr) < 0.01 else f"(iw-ih*{ratio})/2+(iw-ih*{ratio})/2*{fr:.3f}"
-    return f"crop=ih*{ratio}:ih:{off}:0,scale={W}:{H},setsar=1"
+    # w/h con min(): una fuente más estrecha que el destino (vertical) recorta en alto en vez de
+    # pedir un crop más ancho que iw (ffmpeg: "Invalid too big or non positive size")
+    cw, ch = f"min(iw,ih*{ratio})", f"min(ih,iw/({ratio}))"
+    x = "(iw-ow)/2" if abs(fr) < 0.01 else f"(iw-ow)/2*(1+{fr:.3f})"
+    return f"crop=w='{cw}':h='{ch}':x='{x}':y='(ih-oh)/2',scale={W}:{H},setsar=1"
 
 
 def aspect_vf(aspect, resolution="1080", fit="crop", framing=0.0):
@@ -2122,18 +2189,31 @@ def _wrap_lines(txt: str, fkey: str, max_em: float) -> list:
     """Parte el texto en líneas por palabras para que quepa en max_em; máx. 3 líneas
     (más que eso en un reel es un párrafo, no un título)."""
     words = txt.split()
-    lines, cur = [], ""
-    for wd in words:
-        cand = f"{cur} {wd}".strip()
-        if cur and _txt_em(cand, fkey) > max_em:
+
+    def greedy(limit):
+        lines, cur = [], ""
+        for wd in words:
+            cand = f"{cur} {wd}".strip()
+            if cur and _txt_em(cand, fkey) > limit:
+                lines.append(cur)
+                cur = wd
+            else:
+                cur = cand
+        if cur:
             lines.append(cur)
-            cur = wd
-        else:
-            cur = cand
-    if cur:
-        lines.append(cur)
+        return lines
+
+    lines = greedy(max_em)
     if len(lines) > 3:      # re-reparte en 3 líneas equilibradas en vez de truncar
-        lines = _wrap_lines(txt, fkey, _txt_em(txt, fkey) / 3 + 2)[:3]
+        # ensancha max_em hasta ≤3 líneas: con un max_em fijo (total/3+2) puede no converger
+        # (la recursión anterior → RecursionError). El caller encoge la fuente si no cabe.
+        limit = _txt_em(txt, fkey) / 3 + 2
+        for _ in range(60):
+            lines = greedy(limit)
+            if len(lines) <= 3:
+                break
+            limit *= 1.1
+        lines = lines[:3]
     return lines
 
 
@@ -2447,6 +2527,9 @@ def _mix_music(video: Path, music: Path, opts: dict, has_audio: bool, dur: float
     fi = _clampf(opts.get("fadeIn", 0.8), 0, 5, 0.8)
     fo = _clampf(opts.get("fadeOut", 1.2), 0, 5, 1.2)
     start = _clampf(opts.get("startAt", 0), 0, 3600, 0)
+    mdur = _probe_dur(music)
+    if mdur > 1:
+        start = min(start, mdur - 1)    # atrim pasado el final → stream vacío → -shortest → mp4 de 0 frames
     duck = bool(opts.get("duck", True)) and has_audio
     orig_vol = _clampf(opts.get("originalVolume", 0.35 if duck else 1.0), 0, 1, 0.35)
     fo_st = max(0.0, dur - fo)
@@ -2524,7 +2607,87 @@ def _reel_meta(reel: Path) -> dict:
     return m
 
 
+def _reel_sidecars(stem: str) -> dict:
+    """Archivos que viajan con un reel en reel-posters/ (póster, meta cacheada, receta)."""
+    pdir = VAULT / "reel-posters"
+    return {"jpg": pdir / f"{stem}.jpg", "meta": pdir / f"{stem}.meta.json",
+            "recipe": pdir / f"{stem}.recipe.json"}
+
+
+def _reel_order_update(old: str, new: str | None):
+    """Renombra (o quita, new=None) la clave de un reel en reels/.order.json. Atómico."""
+    of = VAULT / "reels" / ".order.json"
+    try:
+        omap = json.loads(of.read_text())
+    except (OSError, ValueError):
+        return
+    if not isinstance(omap, dict) or old not in omap:
+        return
+    idx = omap.pop(old)
+    if new:
+        omap[new] = idx
+    tmp = of.with_name(".order.json.tmp")
+    tmp.write_text(json.dumps(omap))
+    os.replace(tmp, of)
+
+
+def _claim_edit_out(vertical: bool) -> Path:
+    """Reserva un nombre edit-*.mp4 ÚNICO con O_EXCL: dos exports en el mismo segundo
+    generaban el mismo nombre y ambos jobs escribían un solo archivo."""
+    rdir = VAULT / "reels"
+    rdir.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    for n in range(1, 1000):
+        cand = rdir / f"edit-{stamp}{'-v' if vertical else ''}{'' if n == 1 else f'-{n}'}.mp4"
+        try:
+            os.close(os.open(cand, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
+            return cand
+        except FileExistsError:
+            continue
+    raise RuntimeError("no se pudo reservar un nombre de reel único")
+
+
+def _aspect_h_over_w(aspect: str) -> float:
+    """h/w del destino (para encoger títulos por segmento en modo legacy)."""
+    dims = {"9:16": (1080, 1920), "1:1": (1080, 1080), "4:5": (1080, 1350)}.get(aspect, (1920, 1080))
+    return dims[1] / dims[0]
+
+
+def _probe_fps(path) -> float:
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                            "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", str(path)],
+                           capture_output=True, text=True, timeout=30)
+        num, _, den = r.stdout.strip().partition("/")
+        v = float(num) / (float(den) if den else 1.0)
+        return v if 1 <= v <= 240 else 30.0
+    except (ValueError, ZeroDivisionError, OSError, subprocess.SubprocessError):
+        return 30.0
+
+
+def _remap_texts_for_overlap(texts: list, joins: list, out_dur: float) -> list:
+    """Los textos del cliente viajan en tiempo de TIMELINE (Σ duraciones de los cortes),
+    pero la cadena xfade solapa cada unión d segundos → el archivo es más corto. `joins` =
+    [(t_timeline_de_la_unión, d_solape)]. start cuenta las uniones con T <= t (un texto
+    que arranca justo en el corte entra con el clip nuevo); end las que T < t (uno que
+    termina justo en el corte sale cuando acaba el clip anterior). Devuelve copias."""
+    out = []
+    for t in texts:
+        if not isinstance(t, dict):
+            out.append(t)
+            continue
+        st = _clampf(t.get("start", 0), 0, 1e6, 0)
+        en = _clampf(t.get("end", st + 3), st, 1e6, st + 3)
+        st2 = st - sum(d for T, d in joins if T <= st)
+        en2 = en - sum(d for T, d in joins if T < en)
+        st2 = max(0.0, min(st2, max(out_dur - 0.1, 0.0)))
+        en2 = max(st2, min(en2, out_dur))
+        out.append({**t, "start": round(st2, 3), "end": round(en2, 3)})
+    return out
+
+
 def run_edit(spec: dict, j):
+    out0 = None      # reel en curso (edit-*.mp4): se limpia si el job falla; None = ya es el destino de 'replace'
     try:
         fps = int(spec.get("fps") or 0)
         fps = fps if fps in (24, 30, 60) else 0        # 0 = fps del fuente
@@ -2536,6 +2699,7 @@ def run_edit(spec: dict, j):
         vfit = str(spec.get("vfit", "crop"))
         if vfit not in ("crop", "blur", "bars"):
             vfit = "crop"
+        h_over_w = _aspect_h_over_w(aspect)
         base_vf = aspect_vf(aspect, resolution, vfit, _clampf(spec.get("framing", 0), -1, 1, 0))
         lut = LUTS.get(spec.get("filter", "none"), "")
         fade = spec.get("fade", True)
@@ -2569,6 +2733,13 @@ def run_edit(spec: dict, j):
         # timeline es multi-clip y el usuario dejó fps='Fuente', normalizamos a 30 igual.
         elif not fps and len({(s0.get("clip_id") if isinstance(s0, dict) else None) for s0 in raw_segs}) > 1:
             rate = ["-r", "30"]
+        elif not fps and any(isinstance(s0, dict) and _clampf(s0.get("speed", 1), 0.1, 100, 1) < 1
+                             for s0 in raw_segs):
+            # cámara lenta con fps 'Fuente': setpts=PTS/0.5 deja el stream a 15 fps → fija el
+            # fps de la fuente (mínimo 24) para todos los cortes (el concat -c copy exige igualdad)
+            _s0 = raw_segs[0] if isinstance(raw_segs[0], dict) else {}
+            _c0 = re.sub(r"[^\w-]", "", _s0.get("clip_id", "") or default_cid)
+            rate = ["-r", f"{max(24, round(_probe_fps(VAULT / 'proxies' / f'{_c0}.mp4'))):d}"]
         for i, s in enumerate(raw_segs):
             if not isinstance(s, dict):
                 s = {"a": s[0], "b": s[1]}
@@ -2630,10 +2801,11 @@ def run_edit(spec: dict, j):
                 # heredaba estilo. Ahora se dibujan AMBOS cuando existen, y el global respeta
                 # el titleStyle del reel.
                 if seg_title:
-                    vf.append(_title_drawtext(seg_title, title_style, out_dur))
+                    vf.append(_title_drawtext(seg_title, title_style, out_dur, h_over_w))
                 if title and i == 0 and title != seg_title:
                     vf.append(_title_drawtext(title, spec.get("titleStyle")
-                                              if isinstance(spec.get("titleStyle"), dict) else {}, out_dur))
+                                              if isinstance(spec.get("titleStyle"), dict) else {},
+                                              out_dur, h_over_w))
             seg = tmp / f"e{i}.mp4"
             # -t de ENTRADA (antes de -i): sin él, 'reverse' bufferea desde 'a' hasta el FIN
             # del archivo y el -t de salida se queda con los ÚLTIMOS out_dur seg invertidos
@@ -2670,12 +2842,13 @@ def run_edit(spec: dict, j):
             trans_durs.append(_clampf(s.get("transDur", XFADE_DEFAULT), 0.2, 1.5, XFADE_DEFAULT))
         if not segs:
             raise ValueError("sin segmentos válidos")
-        out = VAULT / "reels" / f"edit-{time.strftime('%Y%m%d-%H%M%S')}{'-v' if spec.get('vertical') else ''}.mp4"
+        out = out0 = _claim_edit_out(bool(spec.get("vertical")))
 
         # cualquier corte (idx>=1) con transición != 'none' entra a la ruta xfade encadenada
         def _xname(t):
             return XFADE_MAP.get(t) if t and t != "none" else None
         wants_xfade = len(segs) > 1 and any(_xname(t) for t in transitions[1:])
+        join_ov = []       # solapes de la cadena xfade (vacío en la ruta concat: no hay nada que remapear)
         if not wants_xfade:
             # ruta concat actual (rápida, probada) — cortes duros; 'fade' ya aplicado por segmento
             lst = tmp / "l.txt"
@@ -2695,6 +2868,7 @@ def run_edit(spec: dict, j):
             fc = []
             vprev, aprev = "[0:v]", "[0:a]"
             acc = durs[0]  # tiempo acumulado del stream de video ya compuesto
+            t_line = durs[0]   # posición de la unión en tiempo de TIMELINE (Σ duraciones)
             for i in range(1, len(segs)):
                 xname = _xname(transitions[i])  # nombre mapeado de ffmpeg o None si 'none'
                 td = trans_durs[i]              # transDur ya clamp 0.2..1.5
@@ -2718,10 +2892,14 @@ def run_edit(spec: dict, j):
                     if xname:
                         fc.append(f"{aprev}[{i}:a]acrossfade=d={td:.3f}{aout}")
                     else:
-                        fc.append(f"{aprev}[{i}:a]concat=n=2:v=0:a=1{aout}")
+                        # el video solapa hard_cut: el audio debe solapar lo mismo o acumula
+                        # n×0.034 s de deriva (concat no solapa)
+                        fc.append(f"{aprev}[{i}:a]acrossfade=d={d:.3f}{aout}")
                     aprev = aout
                 vprev = vout
                 acc = acc + durs[i] - d
+                join_ov.append((t_line, d))
+                t_line += durs[i]
             maps = ["-map", vprev]
             if keep_audio:
                 maps += ["-map", aprev]
@@ -2739,6 +2917,9 @@ def run_edit(spec: dict, j):
         texts = spec.get("texts") if isinstance(spec.get("texts"), list) else []
         if texts and HAS_DRAWTEXT:
             jobstore.update(j["id"], detail=f"escribiendo {len(texts)} texto(s)", progress=0.94)
+            if join_ov:
+                # el cliente manda start/end en tiempo de timeline; el xfade acorta el archivo
+                texts = _remap_texts_for_overlap(texts, join_ov, _probe_dur(out))
             _burn_texts(out, texts, br)
         # ---- música (I2): se mezcla al final, sobre el reel ya compuesto ----
         music = spec.get("music") if isinstance(spec.get("music"), dict) else None
@@ -2761,6 +2942,7 @@ def run_edit(spec: dict, j):
                 tgt.relative_to((VAULT / "reels").resolve())
                 out.replace(tgt)
                 out = tgt
+                out0 = None      # el destino de 'replace' NUNCA se borra si algo falla después
                 # el póster viejo es de otro contenido: fuera para que se regenere
                 (VAULT / "reel-posters" / f"{tgt.stem}.jpg").unlink(missing_ok=True)
             except (ValueError, OSError):
@@ -2784,6 +2966,12 @@ def run_edit(spec: dict, j):
         except Exception as e:                      # noqa: BLE001 — el reel ya está en disco
             print(f"reel {out.name} ok, pero rebuild_index falló: {e}", flush=True)
     except Exception as e:
+        # el mux/textos/música dejan edit-*.mp4 (+ .txt.mp4/.mus.mp4) a medias en reels/, listados
+        # como reels rotos. Solo lo NUESTRO: si ya se reemplazó un reel existente, out0 es None.
+        if out0 is not None:
+            for stale in (out0, out0.with_name(out0.stem + ".txt.mp4"),
+                          out0.with_name(out0.stem + ".mus.mp4")):
+                stale.unlink(missing_ok=True)
         job_end(j, "error", str(e)[-300:])
     finally:
         shutil.rmtree(VAULT / "reels" / f".tmp-{j['id']}", ignore_errors=True)
@@ -3063,10 +3251,11 @@ class H(BaseHTTPRequestHandler):
         # el TOKEN MAESTRO por el túnel público (write total) y /data/manifest/jobs.db la BD entera.
         # El vault mezcla assets públicos (models/thumbs/manifest/ai/splats) con secretos y estado.
         if base == VAULT.resolve():
-            parts = f.relative_to(base).parts
+            # /Volumes/SSD es APFS case-insensitive: /data/OPS/x abre ops/x → comparar en minúsculas
+            parts = tuple(seg.lower() for seg in f.relative_to(base).parts)
             if (any(seg.startswith(".") for seg in parts)                    # .token .training .tmp-* dotfiles
                     or f.suffix.lower() in (".db", ".token", ".env", ".sqlite", ".jsonl", ".log")
-                    or parts[0] in ("ops", "trash", "odm", "raw")):          # dirs internos: nunca públicos
+                    or (parts and parts[0] in ("ops", "trash", "odm", "raw"))):   # dirs internos: nunca públicos
                 return None
         return f if f.is_file() else None
 
@@ -3818,7 +4007,8 @@ class H(BaseHTTPRequestHandler):
                              f"{LEGACY_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
             self.send_header("Set-Cookie",
                              f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
-            self.send_header("Clear-Site-Data", '"cache", "cookies", "storage"')
+            # solo cookies: "storage" borraba localStorage (récords de Gate Rush, prefs, autosave del editor)
+            self.send_header("Clear-Site-Data", '"cookies"')
             self.send_header("Cache-Control", "no-store")
             self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
             self.send_header("Content-Length", "0")
@@ -3843,7 +4033,10 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "body vacío"}, 400)
             if length > 25 * 1024**3:  # 25GB tope de cordura (video 4K real cabe de sobra)
                 return self.send_json({"error": "archivo > 25GB"}, 413)
-            cid = f"UP_{time.strftime('%Y%m%d%H%M%S')}{secrets.token_hex(2)}_{Path(name).stem[:40]}"
+            # el resto del servidor sanitiza clip_id con [^\w-]: un punto en el stem ("clip.final")
+            # dejaba un clip inalcanzable
+            stem_safe = re.sub(r"[^\w-]", "_", Path(name).stem)[:40]
+            cid = f"UP_{time.strftime('%Y%m%d%H%M%S')}{secrets.token_hex(2)}_{stem_safe}"
             dest = VAULT / "raw" / "uploads"
             dest.mkdir(parents=True, exist_ok=True)
             path = dest / f"{cid}{ext}"
@@ -3879,8 +4072,18 @@ class H(BaseHTTPRequestHandler):
             pdir.mkdir(parents=True, exist_ok=True)
             safe = re.sub(r"[^\w.\- ]", "_", raw_name)
             dst = pdir / safe
-            if dst.exists():
-                dst = pdir / f"{Path(safe).stem}-{time.strftime('%H%M%S')}{ext}"
+            heic = ext in (".heic", ".heif")
+
+            def _taken(pth):    # HEIC → se convertirá a .jpg: ese nombre también debe estar libre
+                return pth.exists() or (heic and pth.with_suffix(".jpg").exists())
+            if _taken(dst):
+                stem0, n = Path(safe).stem, 0
+                while True:
+                    tag = time.strftime("%H%M%S") + (f"-{n}" if n else "")
+                    dst = pdir / f"{stem0}-{tag}{ext}"
+                    if not _taken(dst):
+                        break
+                    n += 1
             read = 0
             with open(dst, "wb") as f:
                 while read < length:
@@ -4043,7 +4246,10 @@ class H(BaseHTTPRequestHandler):
             if op == "delete":
                 tdir = VAULT / "trash" / "audio"
                 tdir.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(src), str(tdir / src.name))
+                tdst = tdir / src.name
+                if tdst.exists():           # no pisar una pista borrada antes con el mismo nombre
+                    tdst = tdir / f"{src.stem}.{time.time_ns()}{src.suffix}"
+                shutil.move(str(src), str(tdst))
                 (AUDIO_DIR / ".meta" / f"{src.name}.json").unlink(missing_ok=True)
                 return self.send_json({"ok": True})
             if op == "rename":
@@ -4099,6 +4305,7 @@ class H(BaseHTTPRequestHandler):
                     m["clean_params"] = {"preset": preset, "engine": "autoclean.mjs"}
                     m["reverted_to"] = None
                     mf.write_text(json.dumps(m, indent=1))
+                rebuild_scene_manifest(cid)
                 rebuild_index()
                 return self.send_json({"ok": True, "cid": cid, "report": report})
             except Exception as e:
@@ -4120,31 +4327,40 @@ class H(BaseHTTPRequestHandler):
             sdir = VAULT / "splats"
             hist = sdir / "history"; hist.mkdir(parents=True, exist_ok=True)
             cur_splat = sdir / f"{cid}.splat"
-            src_splat = (sdir / f"{cid}.raw.splat") if to == "raw" else (hist / Path(re.sub(r"[^\w.\-]", "_", to)).name)
+            # to=<archivo>: SOLO un .splat de ESTE clip en history/ ({cid}-YYYYMMDD-HHMMSS.splat).
+            # Antes aceptaba cualquier archivo de history/ (splats de otros clips, .sog/.ply/meta)
+            # y lo copiaba sobre el master antes de validar nada.
+            if to != "raw" and not re.fullmatch(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.splat", to):
+                return self.send_json({"error": "versión inválida — usa 'raw' o un .splat de history de este clip"}, 400)
+            src_splat = (sdir / f"{cid}.raw.splat") if to == "raw" else (hist / to)
             try:
                 src_splat.resolve().relative_to(sdir.resolve())   # contención
             except ValueError:
                 return self.send_json({"error": "ruta inválida"}, 400)
-            if not src_splat.is_file():
+            if not src_splat.is_file() or src_splat.is_symlink():
                 return self.send_json({"error": ("no hay versión cruda pre-clean" if to == "raw"
                                                  else "versión no encontrada")}, 404)
+            import subprocess as _sp
+            sog = sdir / f"{cid}.clean.sog"
+            tmp_sog = sdir / f".{cid}.revert.tmp.sog"
+            tmp_splat = sdir / f".{cid}.revert.tmp.splat"
             try:
+                # 1) convierte a SOG en temporal ANTES de tocar nada: si falla, el master sigue intacto
+                st = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
+                r = _sp.run(["node", str(st), str(src_splat), str(tmp_sog), "--overwrite", "--no-tty", "-q"],
+                            capture_output=True, text=True, timeout=600)
+                if r.returncode != 0 or not tmp_sog.exists():
+                    raise RuntimeError((r.stderr or r.stdout or "SOG falló")[-160:])
+                # 2) archiva la actual (limpia) — reversible en ambos sentidos
                 ts = time.strftime("%Y%m%d-%H%M%S")
-                # archiva la actual (limpia) antes de pisarla — reversible en ambos sentidos
                 if cur_splat.exists():
                     shutil.copy2(cur_splat, hist / f"{cid}-{ts}.splat")
-                    cur_sog = sdir / f"{cid}.clean.sog"
-                    if cur_sog.exists():
-                        shutil.copy2(cur_sog, hist / f"{cid}-{ts}.clean.sog")
-                shutil.copy2(src_splat, cur_splat)
-                # re-exporta SOG desde el splat restaurado
-                import subprocess as _sp
-                st = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
-                sog = sdir / f"{cid}.clean.sog"
-                r = _sp.run(["node", str(st), str(cur_splat), str(sog), "--overwrite", "--no-tty", "-q"],
-                                   capture_output=True, text=True, timeout=600)
-                if r.returncode != 0:
-                    raise RuntimeError((r.stderr or r.stdout or "SOG falló")[-160:])
+                    if sog.exists():
+                        shutil.copy2(sog, hist / f"{cid}-{ts}.clean.sog")
+                # 3) publica: copia a temporal + os.replace (nunca un master a medio copiar)
+                shutil.copy2(src_splat, tmp_splat)
+                os.replace(tmp_splat, cur_splat)
+                os.replace(tmp_sog, sog)
                 mf = sdir / f"{cid}.meta.json"
                 if mf.exists():
                     m = json.loads(mf.read_text())
@@ -4153,9 +4369,12 @@ class H(BaseHTTPRequestHandler):
                     m["reverted_to"] = to
                     mf.write_text(json.dumps(m, indent=1))
                 prune_splat_history(hist, cid)
+                rebuild_scene_manifest(cid)
                 rebuild_index()
                 return self.send_json({"ok": True, "cid": cid, "to": to, "sog_bytes": sog.stat().st_size})
             except Exception as e:
+                tmp_sog.unlink(missing_ok=True)
+                tmp_splat.unlink(missing_ok=True)
                 return self.send_json({"error": f"revert falló: {str(e)[-160:]}"}, 500)
 
         if u.path == "/api/splat_upload":
@@ -4209,8 +4428,11 @@ class H(BaseHTTPRequestHandler):
                 except (ValueError, OSError):
                     old_meta = {}
             archived_splat = archived_viewer = None
+            # .raw.splat (crudo pre-clean) también: si se queda, "revertir a crudo" restauraba
+            # la salida de entrenamiento ANTERIOR a esta subida, no la versión editada
             for old in (sdir / f"{cid}.clean.sog", sdir / f"{cid}.spz",
                         sdir / f"{cid}.splat", sdir / f"{cid}.ksplat", sdir / f"{cid}.ply",
+                        sdir / f"{cid}.raw.splat",
                         meta_p, sdir / f"{cid}.cameras.json"):
                 if old.is_file():
                     suffix = old.name[len(cid):]
@@ -4247,6 +4469,7 @@ class H(BaseHTTPRequestHandler):
                         ktmp.unlink(missing_ok=True)
                 except (OSError, subprocess.TimeoutExpired):
                     ktmp.unlink(missing_ok=True)
+            rebuild_scene_manifest(cid)
             rebuild_index()
             return self.send_json({"ok": True, "published": final.name, "optimized": optimized,
                                    "archived": archived, "bytes": read})
@@ -4303,7 +4526,16 @@ class H(BaseHTTPRequestHandler):
                 # otro valor ("vol", vacío) que measure_dsm tratara como área/volumen
                 # rasterizaba el DSM entero sin límite → un polígono grande podía pedir
                 # decenas de GB en una máquina de 16. El guard es barato: va siempre.
-                if spec.get("points"):
+                if spec.get("type") == "profile":
+                    # perfil = segmento de EXACTAMENTE 2 puntos (check_polygon exige >=3 vértices)
+                    pp = spec.get("points")
+                    if (not isinstance(pp, list) or len(pp) != 2
+                            or not all(isinstance(p, (list, tuple)) and len(p) >= 2
+                                       and all(isinstance(c, (int, float)) and not isinstance(c, bool)
+                                               and math.isfinite(c) for c in p[:2]) for p in pp)):
+                        raise ValueError("perfil necesita exactamente 2 puntos [lon, lat] finitos")
+                    spec["points"] = [[float(p[0]), float(p[1])] for p in pp]
+                else:
                     check_polygon(spec.get("points", []))
                 return self.send_json(measure_dsm(mdir, spec))
             except ValueError as e:
@@ -4449,8 +4681,12 @@ class H(BaseHTTPRequestHandler):
                 version_ids = {v.get("id") for v in scene.get("versions") or [] if v.get("id")}
                 for version_id in version_ids:
                     if (VAULT / "models" / version_id / "meta.json").exists():
-                        subprocess.run(["python3", str(PIPE / "scene_manifest.py"), version_id],
-                                       check=False, timeout=180)
+                        try:
+                            subprocess.run(["python3", str(PIPE / "scene_manifest.py"), version_id],
+                                           check=False, timeout=180)
+                        except subprocess.SubprocessError as e:
+                            # TimeoutExpired escapaba del except de abajo → 500 con el promote YA escrito
+                            print(f"scene_promote: scene_manifest {version_id} falló: {e}", flush=True)
                 rebuild_index()
                 return self.send_json({"ok": True, "scene": scene})
             except (KeyError, ValueError) as e:
@@ -4548,8 +4784,23 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "modelo no encontrado"}, 404)
             if jobstore.pending("3d", cid) or jobstore.pending("splat", cid):
                 return self.send_json({"error": "hay un trabajo activo sobre este modelo — cancélalo primero"}, 409)
+            # una escena apunta a su active_version: borrarla dejaba la escena sirviendo un modelo
+            # inexistente. Si es una versión no activa, se marca 'failed' (no promovible) en la escena.
+            scene_versions = []
+            for sc in scenestore.list_scenes():
+                if sc.get("active_version") == cid:
+                    return self.send_json({"error": f"este modelo es la versión activa de la escena "
+                                                    f"'{sc.get('title') or sc.get('id')}' — promueve otra versión antes de borrarlo"}, 400)
+                if any(v.get("id") == cid for v in sc.get("versions") or []):
+                    scene_versions.append(sc["id"])
             freed = ["models/" + cid]
             shutil.rmtree(mdir)
+            for sid in scene_versions:
+                try:
+                    scenestore.update_version(sid, cid, status="failed", required_artifacts_ok=False,
+                                              completed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+                except (KeyError, ValueError, OSError) as e:
+                    print(f"model_delete: no se pudo marcar {cid} en {sid}: {e}", flush=True)
             # borra TODO el set de splat del clip + historial: si sobrevive el .ksplat, best_splats
             # lo rankea sobre el .splat y el splat "borrado" RESUCITA en la UI (cid ya saneado)
             sdir = VAULT / "splats"
@@ -4601,6 +4852,7 @@ class H(BaseHTTPRequestHandler):
                     _to_trash(h, "splats/history/")
             if not moved:
                 return self.send_json({"error": "no hay splat para este clip"}, 404)
+            rebuild_scene_manifest(cid)
             rebuild_index()
             return self.send_json({"ok": True, "moved": moved})
         if u.path == "/api/media_op":
@@ -4633,6 +4885,14 @@ class H(BaseHTTPRequestHandler):
                 if dst.exists():
                     dst = tdir / f"{src.stem}.{time.time_ns()}{src.suffix}"
                 shutil.move(str(src), str(dst))
+                if mtype == "reel":
+                    # póster/meta son regenerables → fuera; la receta (timeline editable) viaja a la papelera
+                    sc = _reel_sidecars(src.stem)
+                    sc["jpg"].unlink(missing_ok=True)
+                    sc["meta"].unlink(missing_ok=True)
+                    if sc["recipe"].is_file():
+                        shutil.move(str(sc["recipe"]), str(tdir / f"{dst.stem}.recipe.json"))
+                    _reel_order_update(src.name, None)
                 rebuild_index()
                 return self.send_json({"ok": True, "name": dst.name})
             if op == "rename":
@@ -4645,6 +4905,13 @@ class H(BaseHTTPRequestHandler):
                 if dst.exists():
                     return self.send_json({"error": "ya existe un archivo con ese nombre"}, 400)
                 src.rename(dst)
+                if mtype == "reel":
+                    # sin esto el reel renombrado perdía póster, receta ("Reabrir en Estudio") y orden
+                    old_sc, new_sc = _reel_sidecars(src.stem), _reel_sidecars(dst.stem)
+                    for k, f in old_sc.items():
+                        if f.is_file():
+                            os.replace(f, new_sc[k])
+                    _reel_order_update(src.name, dst.name)
                 rebuild_index()
                 return self.send_json({"ok": True, "name": dst.name})
             # duplicate: sufijo " copia" (o " copia 2", " copia 3", ...)
@@ -4654,6 +4921,11 @@ class H(BaseHTTPRequestHandler):
                 dst = base / f"{src.stem} copia {n}{src.suffix}"
                 n += 1
             shutil.copy2(src, dst)
+            if mtype == "reel":
+                rec = _reel_sidecars(src.stem)["recipe"]
+                if rec.is_file():
+                    shutil.copy2(rec, _reel_sidecars(dst.stem)["recipe"])
+                _reel_poster(dst)
             rebuild_index()
             return self.send_json({"ok": True, "name": dst.name})
         if u.path == "/api/splat_campaign":
@@ -4919,9 +5191,17 @@ class H(BaseHTTPRequestHandler):
                     assert len(pos) == 3 and all(abs(v) < 5000 for v in pos)
                 except Exception:
                     return self.send_json({"error": "pos inválida"}, 400)
+                try:
+                    yaw = float(o.get("yaw", 0))
+                    scale = float(o.get("scale", 1))
+                except (TypeError, ValueError):
+                    return self.send_json({"error": "yaw/scale inválidos"}, 400)
+                if not (math.isfinite(yaw) and math.isfinite(scale)):
+                    # NaN/Infinity se serializaban como token no-JSON y objects.json quedaba ilegible
+                    return self.send_json({"error": "yaw/scale no finitos"}, 400)
                 item = {"type": typ, "pos": pos,
-                        "yaw": float(o.get("yaw", 0)),
-                        "scale": max(0.05, min(50.0, float(o.get("scale", 1)))),
+                        "yaw": yaw,
+                        "scale": max(0.05, min(50.0, scale)),
                         "ground": bool(o.get("ground", True))}
                 if typ in ("glb", "kit"):
                     f = re.sub(r"[^\w.-]", "", str(o.get("file", "")))
@@ -4943,7 +5223,11 @@ class H(BaseHTTPRequestHandler):
                     if material_class:
                         item["materialClass"] = material_class
                 clean.append(item)
-            (mdir / "objects.json").write_text(json.dumps({"version": 1, "objects": clean}, ensure_ascii=False))
+            # atómico: el juego lee objects.json en caliente y un write_text truncado lo dejaba a medias
+            otmp = mdir / f".objects.{secrets.token_hex(4)}.tmp"
+            otmp.write_text(json.dumps({"version": 1, "objects": clean}, ensure_ascii=False, allow_nan=False))
+            os.replace(otmp, mdir / "objects.json")
+            rebuild_scene_manifest(cid)
             return self.send_json({"ok": True, "count": len(clean)})
 
         if u.path == "/api/highlight":
@@ -5116,6 +5400,15 @@ if __name__ == "__main__":
             if _tmp.is_file():
                 _tmp.unlink(missing_ok=True)
                 print(f"limpiado upload huérfano: {_tmp.name}")
+    except OSError:
+        pass
+    # reels/.tmp-<job>: si el server reinicia a mitad de un export el finally de run_edit nunca corre
+    # y los segmentos intermedios (GBs) quedan huérfanos. Los >1 h no pueden pertenecer a un export vivo.
+    try:
+        for _tmp in (VAULT / "reels").glob(".tmp-*"):
+            if _tmp.is_dir() and time.time() - _tmp.stat().st_mtime > 3600:
+                shutil.rmtree(_tmp, ignore_errors=True)
+                print(f"limpiado tmp de export huérfano: {_tmp.name}")
     except OSError:
         pass
     print(f"AeroBrain server :8790 · token en {TOKEN_FILE}")

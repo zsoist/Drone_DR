@@ -67,7 +67,9 @@ console.log(JSON.stringify(policy.resolveActiveModel([requested, active], reques
         self.assertIn("d: 'Malla 600k · octree 11 · 2 cm/px'", source)
         self.assertIn("/api/splat_profiles", source)
         self.assertIn("Medium 2K", source)
-        self.assertIn("~4-12 min", source)
+        # PC-only (2026-09-28): the offline fallback advertises CUDA only, no Mac ETA
+        self.assertIn("supported_backends: ['cuda']", source)
+        self.assertNotIn("~4-12 min", source)
         self.assertIn("projected_from_measured", source)
 
     def test_jobs_console_has_summary_search_and_type_filters(self):

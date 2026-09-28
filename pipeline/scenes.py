@@ -1,16 +1,62 @@
 """Stable real-world scenes with immutable reconstruction-version membership."""
 
+import fcntl
 import hashlib
 import json
 import os
 import re
+import tempfile
 import threading
 import time
 from pathlib import Path
 
 
 SCENES_DIR = Path("/Volumes/SSD/drone-vault/manifest/scenes")
-_LOCK = threading.RLock()
+
+
+class _ProcessLock:
+    """Reentrant lock across threads AND processes: the web server and the worker both
+    read-modify-write the same scene manifests, and a thread lock alone can't serialize
+    them (lost updates). flock on a sidecar file in SCENES_DIR (resolved at use time so
+    tests can redirect SCENES_DIR)."""
+
+    def __init__(self):
+        self._rlock = threading.RLock()
+        self._depth = 0
+        self._fd = None
+
+    def __enter__(self):
+        self._rlock.acquire()
+        try:
+            if self._depth == 0:
+                SCENES_DIR.mkdir(parents=True, exist_ok=True)
+                fd = os.open(SCENES_DIR / ".scenes.lock", os.O_CREAT | os.O_RDWR, 0o600)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX)
+                except BaseException:
+                    os.close(fd)
+                    raise
+                self._fd = fd
+            self._depth += 1
+        except BaseException:
+            self._rlock.release()
+            raise
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            self._depth -= 1
+            if self._depth == 0 and self._fd is not None:
+                try:
+                    fcntl.flock(self._fd, fcntl.LOCK_UN)
+                finally:
+                    os.close(self._fd)
+                    self._fd = None
+        finally:
+            self._rlock.release()
+
+
+_LOCK = _ProcessLock()
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 ALTITUDE_BANDS_M = (100, 200, 400, 600, 1000)
 SOURCE_STATUSES = {"integrated", "eligible", "duplicate", "insufficient_overlap",
@@ -99,9 +145,18 @@ def _path(scene_id: str) -> Path:
 
 def _write(scene: dict):
     path = _path(scene["id"])
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(scene, ensure_ascii=False, indent=1))
-    os.replace(tmp, path)
+    # nombre único (dos procesos nunca comparten el tmp) en el MISMO dir → os.replace atómico
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps(scene, ensure_ascii=False, indent=1))
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def get_scene(scene_id: str) -> dict:
@@ -204,7 +259,9 @@ def add_version(scene_id: str, reconstruction_id: str, sources, photos,
         scene = get_scene(scene_id)
         existing = next((v for v in scene["versions"] if v["id"] == reconstruction_id), None)
         if existing:
-            if existing.get("sources") != sources or existing.get("photos") != photos:
+            # recon_id_for ORDENA las fuentes: el mismo set en otro orden es la misma identidad
+            if (sorted(existing.get("sources") or []) != sorted(sources)
+                    or sorted(existing.get("photos") or []) != sorted(photos)):
                 raise ValueError("version source membership is immutable")
             return existing
         version = {
@@ -327,3 +384,14 @@ def promote(scene_id: str, reconstruction_id: str) -> dict:
         scene["updated_at"] = _now()
         _write(scene)
         return scene
+
+
+def processing_versions() -> list[dict]:
+    """Every version still marked 'processing' -> {scene_id, version_id, job_id}."""
+    out = []
+    for scene in list_scenes():
+        for v in scene.get("versions") or []:
+            if v.get("status") == "processing":
+                out.append({"scene_id": scene["id"], "version_id": v["id"],
+                            "job_id": v.get("job_id")})
+    return out

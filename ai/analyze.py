@@ -67,6 +67,19 @@ def extract_frames_from_proxy(cid: str, fdir) -> list:
     return sorted(fdir.glob("f_*.jpg"))
 
 
+def sample_frames(frames: list, n_sample: int) -> tuple[list, int]:
+    """n_sample frames equiespaciados sobre TODO el clip (frames[::step][:n] solo cubría el
+    inicio cuando len(frames) no era múltiplo de n_sample). Devuelve (muestra, segundos entre
+    frames muestreados); los frames de origen están a 1 cada 2 s."""
+    n = len(frames)
+    if n <= n_sample:
+        return list(frames), 2
+    idxs = sorted({round(i * (n - 1) / (n_sample - 1)) for i in range(n_sample)})
+    sample = [frames[i] for i in idxs]
+    spacing = 2 * (n - 1) / (len(sample) - 1) if len(sample) > 1 else 2
+    return sample, max(2, round(spacing))
+
+
 def analyze_clip(cid: str, keys: dict, deep: bool = False) -> dict | None:
     fdir = VAULT / "frames" / cid
     frames = sorted(fdir.glob("f_*.jpg"))
@@ -76,11 +89,11 @@ def analyze_clip(cid: str, keys: dict, deep: bool = False) -> dict | None:
         print(f"— {cid}: sin frames ni proxy, skip")
         return None
     n_sample = 16 if deep else 8
-    step = max(1, len(frames) // n_sample)
-    sample = frames[::step][:n_sample]
+    sample, spacing_s = sample_frames(frames, n_sample)
     # frames are 1-every-2s → frame index i ≈ second i*2 in the video
     tpl = DEEP_PROMPT if deep else PROMPT
-    prompt = tpl.format(n=len(sample), cid=cid, step=step * 2)
+    spacing_s = round(2 * (n - 1) / (len(sample) - 1)) if len(sample) > 1 else 2 * step
+    prompt = tpl.format(n=len(sample), cid=cid, step=spacing_s)
     raw = gemini_vision(prompt, sample, keys)
     m = re.search(r"\{.*\}", raw, re.DOTALL)
     data = json.loads(m.group()) if m else {"summary": raw, "tags": []}
@@ -139,7 +152,10 @@ def main():
             analyze_clip(cid, keys, deep=True)
         return
     if "--all" in sys.argv:
-        done = {p.stem for p in (VAULT / "ai").glob("DJI_*.json")} if (VAULT / "ai").exists() else set()
+        # TODOS los análisis previos (DJI_* y UP_*), salvo el índice trips.json; con solo DJI_*
+        # los uploads se re-analizaban (y cobraban) en cada corrida
+        done = ({p.stem for p in (VAULT / "ai").glob("*.json") if p.name != "trips.json"}
+                if (VAULT / "ai").exists() else set())
         cids = sorted(d.name for d in (VAULT / "frames").iterdir()
                       if d.is_dir() and d.name not in done)
     else:

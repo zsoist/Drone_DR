@@ -130,7 +130,13 @@ async function api(path, body) {
 function getToken() { return 'session'; }
 // migración: borra el token que versiones anteriores dejaron en localStorage
 localStorage.removeItem('ab_token');
-addEventListener('pageshow', event => { if (event.persisted) requireSession(); });
+// páginas con teardown en pagehide (volar/mundo/home/system) marcan __abReloadOnRestore:
+// al restaurarse desde bfcache quedan rotas, así que se recargan completas.
+addEventListener('pageshow', event => {
+  if (!event.persisted) return;
+  if (window.__abReloadOnRestore) { location.reload(); return; }
+  requireSession();
+});
 setInterval(requireSession, 5 * 60 * 1000);
 // limpia códigos ANSI/escape que ODM mete en el log
 function cleanLog(t) {
@@ -390,18 +396,22 @@ function renderJobLog() {
   drawer.querySelector('.jl-count').textContent = `${visible.length}/${jobLogState.lines.length} líneas cargadas`;
   if (jobLogState.autoscroll) pre.scrollTop = pre.scrollHeight;
 }
-async function fetchJobLogChunk() {
-  if (!jobLogState || jobLogState.loading || jobLogState.eof || jobLogState.paused) return;
-  jobLogState.loading = true;
-  try {
-    const r = await authFetch(`/api/job_log?id=${encodeURIComponent(jobLogState.id)}&after=${jobLogState.cursor}&limit=500`);
+async function fetchJobLogChunk(force = false) {
+  const st = jobLogState;
+  if (!st) return;
+  if (force && st.inflight) await st.inflight.catch(() => {});
+  if (jobLogState !== st || st.loading || st.eof || (st.paused && !force)) return;
+  st.loading = true;
+  st.inflight = (async () => {
+    const r = await authFetch(`/api/job_log?id=${encodeURIComponent(st.id)}&after=${st.cursor}&limit=500`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const chunk = await r.json();
-    jobLogState.lines.push(...(chunk.lines || []));
-    jobLogState.cursor = chunk.next || jobLogState.cursor;
-    jobLogState.eof = !!chunk.eof;
-    renderJobLog();
-  } finally { jobLogState.loading = false; }
+    st.lines.push(...(chunk.lines || []));
+    st.cursor = chunk.next || st.cursor;
+    st.eof = !!chunk.eof;
+    if (jobLogState === st) renderJobLog();
+  })();
+  try { await st.inflight; } finally { st.loading = false; st.inflight = null; }
 }
 async function openJobLog(jid) {
   document.getElementById('job-log-drawer')?.remove();
@@ -597,7 +607,15 @@ document.addEventListener('click', async e => {
   if (e.target.closest('[data-log-more]')) { jobLogState.eof = false; await fetchJobLogChunk(); }
   if (e.target.closest('[data-log-copy]')) await navigator.clipboard.writeText(jobLogState.lines.join('\n'));
   if (e.target.closest('[data-log-download]')) {
-    while (!jobLogState.eof) await fetchJobLogChunk();
+    const st = jobLogState;
+    try {
+      while (jobLogState === st && !st.eof) {
+        const before = st.cursor;
+        await fetchJobLogChunk(true);
+        if (st.cursor === before) break; // sin avance: evita bucle infinito
+      }
+    } catch (err) { console.warn('descarga de log incompleta', err); }
+    if (jobLogState !== st) return;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([jobLogState.lines.join('\n')], { type: 'text/plain' }));
     a.download = `${jobLogState.id}.log`; a.click(); URL.revokeObjectURL(a.href);

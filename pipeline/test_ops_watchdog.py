@@ -1,7 +1,10 @@
 import io
 import json
+import subprocess
+import tempfile
 import unittest
 import urllib.error
+from pathlib import Path
 from unittest import mock
 
 from pipeline import ops_watchdog
@@ -123,6 +126,103 @@ class ProbeAndHealTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(detail, "TimeoutError")
         delete.assert_called_once_with("probe-token")
+
+
+class LatestProxyUrlsTests(unittest.TestCase):
+    def test_missing_manifest_returns_pair_so_callers_can_unpack(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(ops_watchdog, "VAULT", Path(tmp)):
+                local, public = ops_watchdog.latest_proxy_urls()
+        self.assertIsNone(local)
+        self.assertIsNone(public)
+
+    def test_corrupt_manifest_returns_pair(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "manifest").mkdir()
+            (Path(tmp) / "manifest" / "flights.json").write_text("{nope")
+            with mock.patch.object(ops_watchdog, "VAULT", Path(tmp)):
+                self.assertEqual(ops_watchdog.latest_proxy_urls(), (None, None))
+
+
+class MainResilienceTests(unittest.TestCase):
+    def _run_main(self, tmp, state, **patches):
+        log_dir = Path(tmp)
+        stack = mock.patch.multiple(
+            ops_watchdog,
+            LOG_DIR=log_dir, STATE=log_dir / "state.json", LOG=log_dir / "watchdog.log",
+            ALERT=log_dir / "ALERT", LOGS_TO_ROTATE=(),
+            load_state=mock.Mock(return_value=state),
+            launch_state=mock.Mock(return_value="running"),
+            **patches)
+        with stack, mock.patch.object(ops_watchdog, "_notify") as notify:
+            ops_watchdog.main()
+        return notify
+
+    def test_state_saved_and_later_steps_run_when_a_step_raises(self):
+        state = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = mock.Mock()
+            boundary = mock.Mock(return_value=(True, "401 cache= edge=private-data-v1", 1))
+            self._run_main(
+                tmp, state,
+                save_state=saved,
+                probe_and_heal=mock.Mock(side_effect=RuntimeError("boom")),
+                latest_proxy_urls=mock.Mock(return_value=("http://l/x.mp4", "https://p/x.mp4")),
+                auth_boundary_probe=boundary,
+                auth_bridge_probe=mock.Mock(return_value=(True, "ok", 1)),
+            )
+        saved.assert_called_once_with(state)
+        boundary.assert_called_once()
+
+    def test_no_proxy_video_does_not_abort_main(self):
+        state = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = mock.Mock()
+            self._run_main(tmp, state, save_state=saved,
+                           probe_and_heal=mock.Mock(return_value=True),
+                           latest_proxy_urls=mock.Mock(return_value=(None, None)))
+        saved.assert_called_once_with(state)
+        self.assertIn("last_stream_probe", state)
+
+    def test_kick_swallows_timeout(self):
+        with (mock.patch.object(ops_watchdog, "log") as log,
+              mock.patch.object(ops_watchdog.subprocess, "run",
+                                side_effect=subprocess.TimeoutExpired("launchctl", 15))):
+            ops_watchdog.kick("com.aerobrain.web", "test")
+        self.assertEqual(log.call_args_list[-1].args[0], "kickstart_timeout")
+
+    def test_boundary_leak_writes_alert_and_notifies_once_per_hour(self):
+        state = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            common = dict(
+                save_state=mock.Mock(),
+                probe_and_heal=mock.Mock(return_value=True),
+                latest_proxy_urls=mock.Mock(return_value=("http://l/x.mp4", "https://p/x.mp4")),
+                auth_boundary_probe=mock.Mock(return_value=(False, "LEAK 206 cache=HIT", 1)),
+                auth_bridge_probe=mock.Mock(return_value=(True, "ok", 1)),
+            )
+            notify = self._run_main(tmp, state, **common)
+            alert = (Path(tmp) / "ALERT").read_text()
+            self.assertIn("auth_boundary_probe: LEAK 206", alert)
+            notify.assert_called_once()
+            # second run inside the hour: file kept, no second notification
+            state["last_stream_probe"] = 0
+            notify2 = self._run_main(tmp, state, **common)
+            notify2.assert_not_called()
+            self.assertTrue((Path(tmp) / "ALERT").exists())
+            # recovery clears the alert file
+            state["last_stream_probe"] = 0
+            common["auth_boundary_probe"] = mock.Mock(return_value=(True, "401", 1))
+            self._run_main(tmp, state, **common)
+            self.assertFalse((Path(tmp) / "ALERT").exists())
+
+    def test_local_probe_failure_raises_alert(self):
+        state = {"last_public_probe": 9e12, "last_stream_probe": 9e12}
+        with tempfile.TemporaryDirectory() as tmp:
+            notify = self._run_main(tmp, state, save_state=mock.Mock(),
+                                    probe_and_heal=mock.Mock(return_value=False))
+            self.assertIn("local_probe", (Path(tmp) / "ALERT").read_text())
+        notify.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
-  import * as THREE from '/vendor/three180.module.js?v=344';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=344';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=344';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=344';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=344';
-  import { mountSplatViewer } from '/splatview.js?v=344';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=344';
+  import * as THREE from '/vendor/three180.module.js?v=346';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=346';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=346';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=346';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=346';
+  import { mountSplatViewer } from '/splatview.js?v=346';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=346';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -13,24 +13,30 @@
   const SPLAT_PROFILE_KEYS = ['fast', 'medium', 'cinematic', 'ultra', 'ultra20', 'frontier', 'grandmaster'];
   const SPLAT_COPY = {
     fast: 'Vista previa para validar poses y cobertura.',
-    medium: 'Fallback local de inspección estable.',
+    medium: 'Inspección estable con pocas iteraciones.',
     cinematic: 'Calidad foto-realista lista para compartir.',
     ultra: 'Detalle premium con crecimiento completo.',
     ultra20: 'Refinamiento CUDA después de estabilizar gaussianas.',
     frontier: 'Ruta 30K completa para máxima convergencia.',
     grandmaster: 'Refinamiento extendido 40K de máxima calidad.',
   };
+  // Perfiles de respaldo (si /api/splat_profiles falla): todo el cómputo corre en el PC → CUDA-only.
   const _profileFallback = SPLAT_PROFILE_KEYS.map((key, i) => ({
     key, label: ['Fast 1K', 'Medium 2K', 'Cinematic 7K', 'Ultra 15K',
       'Ultra+ 20K', 'Frontier 30K', 'Grandmaster 40K'][i],
     iters: [1000, 2000, 7000, 15000, 20000, 30000, 40000][i],
-    supported_backends: i < 2 ? ['metal', 'cpu', 'cuda'] : ['cuda'],
-    eta_mps: i === 0 ? '~8-18 min' : i === 1 ? '~4-12 min' : 'CUDA only',
+    supported_backends: ['cuda'], default_backend: 'cuda', eta_mps: null,
   }));
+  // 'pc' = todo el procesamiento corre en la GPU remota (el servidor lo declara con
+  // `compute` en /api/splat_profiles). Es el default: el respaldo y la realidad actual.
+  let splatCompute = 'pc';
+  const pcOnly = () => splatCompute === 'pc';
+  const splatCopy = key => key === 'medium' && !pcOnly()
+    ? 'Fallback local de inspección estable.' : (SPLAT_COPY[key] || '');
   const splatProfilesPromise = authFetch('/api/splat_profiles')
     .then(r => r.ok ? r.json() : Promise.reject(new Error(`profiles ${r.status}`)))
-    .then(d => d.profiles?.length ? d.profiles : _profileFallback)
-    .catch(() => _profileFallback);
+    .then(d => { splatCompute = d.compute === 'pc' ? 'pc' : 'local'; return d.profiles?.length ? d.profiles : _profileFallback; })
+    .catch(() => { splatCompute = 'pc'; return _profileFallback; });
   const fmtEta = seconds => {
     seconds = Math.max(0, Number(seconds || 0));
     if (seconds >= 3600) return `${(seconds / 3600).toFixed(seconds >= 10800 ? 1 : 2)} h`;
@@ -42,7 +48,7 @@
     const rate = eta?.iterations_per_second
       ? `${Number(eta.iterations_per_second).toFixed(1)} iter/s · ${Number(eta.iteration_time_ms).toFixed(1)} ms/iter`
       : '';
-    const localCapable = profile.supported_backends?.includes('metal');
+    const localCapable = !pcOnly() && profile.supported_backends?.includes('metal');
     if (localCapable && eta?.source === 'projected_from_measured') {
       return { main: `CUDA ~${fmtEta(eta.seconds)} · Mac ${profile.eta_mps}`,
         sub: `${rate ? `CUDA ${rate} · ` : ''}proyectado desde ${eta.baseline_iterations / 1000}K · Mac estimado`,
@@ -62,6 +68,7 @@
     if (profile.supported_backends?.length === 1) {
       return { main: 'Primera medición', sub: 'Se calibrará con esta RTX al completar', cls: 'first' };
     }
+    if (pcOnly()) return { main: 'Tiempo variable', sub: 'Se estimará al medir en el PC CUDA', cls: 'first' };
     return { main: profile.eta_mps || 'Tiempo variable', sub: 'Estimación local Apple Metal', cls: 'local' };
   }
   function renderSplatProfiles(profiles, selected = 'frontier') {
@@ -72,7 +79,7 @@
         data-splat-profile="${esc(profile.key)}" data-iters="${esc(profile.iters)}" data-cuda-only="${onlyCuda ? '1' : '0'}">
         <span class="sp-profile-top"><b>${esc(profile.label)}</b><em>${onlyCuda ? 'NVIDIA CUDA' : 'MAC / CUDA'}</em></span>
         <span class="sp-eta ${eta.cls}">${esc(eta.main)}</span>
-        <small>${esc(eta.sub)}</small><small class="sp-desc">${esc(SPLAT_COPY[profile.key] || profile.description)}</small>
+        <small>${esc(eta.sub)}</small><small class="sp-desc">${esc(splatCopy(profile.key) || profile.description)}</small>
       </button>`;
     }).join('');
   }
@@ -104,7 +111,7 @@
       }
       root.querySelector('[data-resolution-box]')?.classList.toggle('muted', request.backend !== 'cuda');
       if (policy) policy.innerHTML = request.backend === 'cuda'
-        ? `<b>CUDA estricto</b> · ${request.cudaOnly ? 'Requerido por este perfil. ' : ''}Sin fallback local; si el PC no está disponible, el job conserva la solicitud y reporta el error.`
+        ? `<b>CUDA estricto</b> · ${request.cudaOnly ? (pcOnly() ? 'Todo el procesamiento corre en el PC con GPU NVIDIA. ' : 'Requerido por este perfil. ') : ''}Sin fallback local; si el PC no está disponible, el job conserva la solicitud y reporta el error.`
         : '<b>Apple Metal local</b> · disponible únicamente para Fast 1K y Medium 2K.';
       onChange?.(request);
     };
@@ -238,8 +245,8 @@
               'OpenSfM reconstruye las cámaras (SfM), OpenMVS densifica con depthmaps, y salen malla texturizada, DSM de elevación y ortofoto georreferenciada.'],
              ['layers', 'Nube / Malla', 'visores 3D', null,
               'Nube de ~800k puntos con color real y malla texturizada — visor three.js con BVH, medición de distancias, áreas y volúmenes.'],
-             ['spark', 'Splat', '<span id="td-splat-dev">Metal/MPS</span>', 'td-live-splats',
-              'Gaussian splatting foto-realista: Fast/Medium en Apple Metal; Cinematic 7K hasta Grandmaster 40K en NVIDIA CUDA estricto.'],
+             ['spark', 'Splat', '<span id="td-splat-dev">CUDA · PC</span>', 'td-live-splats',
+              'Gaussian splatting foto-realista entrenado en la GPU NVIDIA del PC (CUDA estricto, de Fast 1K a Grandmaster 40K).'],
              ['ext', 'Publicar', 'share + QA', null,
               'Un gate de navegador real verifica que el asset renderiza (0 errores de consola) antes de publicar el link compartible.']]
             .map(([ic, t, sub, liveId, pop], i, a) => `
@@ -255,7 +262,7 @@
             ${icon('cube')}<span><b>Procesar un vuelo…</b><small>frames + geotag + fotogrametría · combina tomas del mismo lugar</small></span>
             <i class="td-cta-arrow">›</i></button>
           <button class="btn td-cta" id="btn-splat" data-open-splat>
-            ${icon('spark')}<span><b>Generar splat…</b><small>Mac 1K/2K · NVIDIA CUDA 7K/15K/20K/30K/40K</small></span>
+            ${icon('spark')}<span><b>Generar splat…</b><small data-splat-cta-sub>PC NVIDIA CUDA · 1K a 40K</small></span>
             <i class="td-cta-arrow">›</i></button>
           <button class="btn td-cta" id="btn-cuda-campaign">
             ${icon('cpu')}<span><b>Campaña CUDA…</b><small>reprocesar sitios activos · 15K/20K/30K/40K estricto</small></span>
@@ -282,8 +289,8 @@
         <span class="jt-thermal mono" id="jt-thermal"></span></div>
       <div class="pb">
         <div class="jt-strip" id="jt-strip" aria-label="Telemetría en vivo — clic en una tarjeta para el detalle">
-          ${[['cpu', 'CPU', '10 núcleos M4 · frames, ODM local y publish'],
-             ['gpu', 'GPU', 'Metal/MPS · splats locales y visor 3D'],
+          ${[['cpu', 'CPU', '10 núcleos M4 · frames, publish y control-plane'],
+             ['gpu', 'GPU', 'Metal/MPS · visor 3D y renders'],
              ['ram', 'RAM', '16 GB unificada · cap OpenSplat 11 GB']].map(([k, lb, sub]) => `
           <button class="jt-cell" data-metric="${k}">
             <div class="jt-top"><span class="jt-lb"><em>MAC</em> ${lb}</span>
@@ -416,6 +423,21 @@
     tdInk.style.left = on.offsetLeft + 'px';
     tdInk.style.width = on.offsetWidth + 'px';
   }
+  const tdModVisible = name => {
+    const m = document.querySelector(`.td-mod[data-mod="${name}"]`);
+    return !!m && m.style.display !== 'none';
+  };
+  // Polling con conciencia de visibilidad: no dispara con la pestaña del navegador oculta ni con
+  // el módulo apagado (cada /api/gpu_node puede hacer ssh al PC y mantener despierta su VM WSL),
+  // y refresca UNA vez al volver a ser visible (visibilitychange o cambio de módulo).
+  function pollWhen(fn, ms, mod = null) {
+    const active = () => !document.hidden && (!mod || tdModVisible(mod));
+    const tick = () => { if (active()) fn(); };
+    setInterval(tick, ms);
+    document.addEventListener('visibilitychange', tick);
+    document.addEventListener('td:mod', tick);
+    tick();
+  }
   function showTdMod(name) {
     tdTabs?.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
     document.querySelectorAll('.td-mod').forEach(m => {
@@ -429,6 +451,7 @@
       }
     });
     requestAnimationFrame(moveTdInk);
+    document.dispatchEvent(new CustomEvent('td:mod', { detail: name }));
   }
   tdTabs?.addEventListener('click', e => {
     const b = e.target.closest('[data-tab]');
@@ -450,6 +473,18 @@
       document.querySelectorAll('.td-step.pop-open').forEach(x => x.classList.remove('pop-open'));
   }, { capture: true });
 
+  // el HTML estático del stepper usa el texto PC-GPU (realidad actual); si el servidor declara
+  // cómputo local (compute !== 'pc') se restituye el texto Mac + CUDA
+  splatProfilesPromise.then(() => {
+    if (pcOnly()) return;
+    const dev = document.getElementById('td-splat-dev');
+    if (dev) dev.textContent = 'Metal/MPS';
+    const pop = dev?.closest('.td-step')?.querySelector('.td-pop p');
+    if (pop) pop.textContent = 'Gaussian splatting foto-realista: Fast/Medium en Apple Metal; Cinematic 7K hasta Grandmaster 40K en NVIDIA CUDA estricto.';
+    const sub = document.querySelector('[data-splat-cta-sub]');
+    if (sub) sub.textContent = 'Mac 1K/2K · NVIDIA CUDA 7K/15K/20K/30K/40K';
+  });
+
   // badge de trabajos activos + botón de estado → tab Trabajos
   (() => {
     const badge = document.getElementById('td-jobs-badge');
@@ -461,7 +496,7 @@
         if (badge) { badge.textContent = n; badge.hidden = !n; }
       } catch {}
     };
-    poll(); setInterval(poll, 30000);
+    pollWhen(poll, 30000);
     document.getElementById('btn-jobs-status')?.addEventListener('click', () => showTdMod('jobs'));
   })();
 
@@ -483,10 +518,12 @@
           ? `nodo GPU · <b class="ok">RTX 4060 Ti despierto</b>${last.util_pct ? ` · ${last.util_pct}%` : ''}`
           : 'nodo GPU · <b class="dim">dormido · WoL</b>';
         const dev = document.getElementById('td-splat-dev');
-        if (dev) dev.textContent = awake ? 'Mac 1K/2K · CUDA 7K–40K listo' : 'Mac 1K/2K · CUDA dormido';
+        if (dev) dev.textContent = pcOnly()
+          ? (awake ? 'CUDA · PC listo' : 'CUDA · PC dormido')
+          : (awake ? 'Mac 1K/2K · CUDA 7K–40K listo' : 'Mac 1K/2K · CUDA dormido');
       } catch { chip.innerHTML = 'nodo GPU · <b class="dim">sin datos</b>'; }
     };
-    poll(); setInterval(poll, 30000);
+    pollWhen(poll, 30000, 'process');        // el chip vive en el módulo Procesamiento
     chip.addEventListener('click', () => {
       const d = last || {};
       const awake = d.status === 'awake';
@@ -667,7 +704,7 @@
       cpu: { t: 'CPU del Mac Mini M4', co: '69,160,230', src: '/api/perf · muestreo 2s',
         fmt: v => Math.round(v * 100) + '%', data: () => [...hist.cpu, shown.cpu],
         desc: '10 núcleos (4 performance + 6 efficiency). Aquí viven la extracción de ' +
-          'frames con geotag, la fotogrametría ODM local (contenedor docker), el publish ' +
+          'frames con geotag, el staging de datasets hacia el PC, el publish ' +
           'de assets web y los gates de navegador. Si el nodo CUDA procesa, esta curva baja: ' +
           'ese es el objetivo del PC remoto.',
         extra: () => lastPerf ? [['load 1m', lastPerf.load1?.toFixed(2)],
@@ -675,9 +712,9 @@
           ['límite clock', (lastPerf.thermal?.speed_limit ?? 100) + '%']] : [] },
       gpu: { t: 'GPU del Mac (Metal/MPS)', co: '82,199,154', src: '/api/perf · muestreo 2s',
         fmt: v => Math.round(v * 100) + '%', data: () => [...hist.gpu, shown.gpu],
-        desc: 'La GPU integrada del M4 entrena únicamente Fast 1K y Medium 2K vía ' +
-          'OpenSplat-MPS y renderiza el visor 3D/FLIGHTVERSE. Cinematic 7K, Ultra 15K, ' +
-          'Ultra+ 20K, Frontier 30K y Grandmaster 40K permanecen CUDA estricto.',
+        desc: 'La GPU integrada del M4 renderiza el visor 3D/FLIGHTVERSE y los gates de ' +
+          'navegador. El entrenamiento de gaussian splats (Fast 1K a Grandmaster 40K) ' +
+          'corre en el PC con CUDA estricto — esta curva no sube durante un entreno.',
         extra: () => [] },
       ram: { t: 'Memoria unificada del Mac', co: '224,164,88', src: '/api/perf · muestreo 2s',
         fmt: v => (v * ramTotal).toFixed(1) + ' GB', data: () => [...hist.ram, shown.ram],
@@ -793,8 +830,7 @@
       g.addColorStop(0, `rgba(${M.co},.25)`); g.addColorStop(1, `rgba(${M.co},0)`);
       ctx.fillStyle = g; ctx.fill();
     }
-    poll(); pollNode();
-    setInterval(poll, 2000); setInterval(pollNode, 10000);
+    pollWhen(poll, 2000, 'jobs'); pollWhen(pollNode, 10000, 'jobs');
     requestAnimationFrame(draw);
   })();
 
@@ -1043,7 +1079,7 @@
       </div>
       <div class="proj-group">${g.items.map(projCard).join('')}</div>`;
     }).join('') : `<p class="footer-note" style="margin:0">${sysErr
-      ? 'No se pudo cargar el índice de proyectos — revisa la conexión y <a href="#" onclick="location.reload();return false" style="color:var(--accent)">recarga</a>.'
+      ? 'No se pudo cargar el índice de proyectos — revisa la conexión y <a href="#" data-reload style="color:var(--accent)">recarga</a>.'
       : models.length ? 'No hay proyectos que coincidan con ese filtro.'
         : 'Sin proyectos 3D aún — ve a la pestaña <b>Procesamiento</b> (arriba) para crear el primero.'}</p>`;
   }
@@ -1067,6 +1103,7 @@
     renderCards();
   });
   document.getElementById('proj-grid').addEventListener('click', async e => {
+    if (e.target.closest('[data-reload]')) { e.preventDefault(); location.reload(); return; }   // CSP: sin onclick inline
     if (e.target.tagName === 'INPUT') return;      // click DENTRO del input de renombrar ≠ acción de card
     const btn = e.target.closest('[data-act]');
     const card = e.target.closest('.proj-card');
@@ -1128,9 +1165,15 @@
       <div class="modal-h"><b>${title}</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
       <div class="modal-b">${body}</div></div>`;
     document.body.appendChild(ov);
-    const close = () => ov.remove();
+    // onClose(fn): limpieza al cerrar (mapas WebGL, listeners de window/document, previews)
+    const cleanups = [];
+    const onClose = fn => { cleanups.push(fn); };
+    const close = () => {
+      cleanups.splice(0).forEach(fn => { try { fn(); } catch {} });
+      ov.remove();
+    };
     ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) close(); });
-    return { ov, close };
+    return { ov, close, onClose };
   }
 
   document.getElementById('btn-cuda-campaign')?.addEventListener('click', async () => {
@@ -1203,7 +1246,7 @@
       { k: 'estandar', n: 'Estándar', t: '~45-75 min', d: '5 cm/px · DSM 10 cm' },
       { k: 'alta', n: 'Alta', t: '~15 min-4 h', d: 'Nube densa · 3 cm/px' },
       { k: 'extra', n: 'Extra', t: '~4-7 h', d: 'Malla 600k · octree 11 · 2 cm/px' },
-      { k: 'ultra', n: 'Ultra', t: '~8-14 h', d: 'pc-quality ultra · malla 800k · máx M4' },
+      { k: 'ultra', n: 'Ultra', t: '~8-14 h', d: 'pc-quality ultra · malla 800k' },
     ];
     // U1.1: agrupar por CENTROIDE del track (~130 m) — el test #1 refutó "mismo despegue
     // = mismo sujeto" (clip a 1m + vuelo a 90m compartían home y 0 features). El centro
@@ -1260,7 +1303,7 @@
         <span class="pc-score tip-r" data-score="${esc(f.clip_id)}" data-tip="Aptitud de escaneo 3D (cobertura/altura/GPS)">·</span>
       </label>`;
 
-    const { ov, close } = openModal(`${icon('cube')} Estudio 3D`, `
+    const { ov, close, onClose } = openModal(`${icon('cube')} Estudio 3D`, `
       <div class="st-steps"><span class="st-step on" data-st="1">1 · Seleccionar tomas</span>
         <span class="st-sep">›</span><span class="st-step" data-st="2">2 · Configurar y encolar</span></div>
 
@@ -1335,13 +1378,13 @@
         <p class="mlb">Calidad de la fotogrametría</p>
         <div class="mpresets">${PRE.map(p => `
           <div class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
-            <b>${p.n}</b><span class="mono">${p.t}</span><small>${p.d}</small></div>`).join('')}</div>
+            <b>${p.n}</b><span class="mono" title="Tiempo aproximado en el PC CUDA; varía con el nº de imágenes y la carga del nodo">${p.t}</span><small>${p.d}</small></div>`).join('')}</div>
         <label class="proc-phase compute-choice" id="m-odm-compute"><input type="checkbox" id="m-odm-cuda" checked disabled>
           <span>${icon('cpu')} <b>Fotogrametría en PC CUDA</b><small>Todo el procesamiento corre en el PC GPU (CUDA estricto, con fusión densa preflight); nunca cae al Mac. Si el PC está apagado, se despierta solo.</small></span></label>
         <label class="proc-phase"><input type="checkbox" id="m-splat">
           <span>${icon('spark')} <b>También entrenar gaussian splat</b> al terminar el 3D (foto-realista)</span></label>
         <div id="m-splatpreset" class="splat-config" style="display:none">
-          <div class="splat-contract-head"><span><b>Calidad gaussian</b><small>Fast/Medium pueden correr en el Mac. 7K–40K son CUDA-only.</small></span>
+          <div class="splat-contract-head"><span><b>Calidad gaussian</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC (CUDA estricto).' : 'Fast/Medium pueden correr en el Mac. 7K–40K son CUDA-only.'}</small></span>
             <span class="splat-contract-badge">30K READY</span></div>
           <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles, 'frontier')}</div>
           <label class="proc-phase compute-choice" id="m-cuda-row"><input type="checkbox" id="m-cuda" data-cuda-toggle checked>
@@ -1404,6 +1447,7 @@
     // renderCombined() invokes the hoisted renderPreflight(); initialize these controls
     // before the first render so renderPreflight never crosses a const TDZ.
     const splatChk = ov.querySelector('#m-splat'), splatPre = ov.querySelector('#m-splatpreset');
+    let preflightSeq = 0;   // token monótono: solo la última respuesta de /api/preflight pinta
     wireSplatCompute(splatPre, { onChange: () => renderPreflight() });
     // chip de score POR CLIP (aptitud individual del escáner — sí está fundamentado). NO predice
     // la fusión: eso solo se sabe DESPUÉS de procesar (el modelo reporta qué fuentes co-registraron).
@@ -1559,13 +1603,29 @@
       try {
         const r = await api('/api/analyze', { clip_id: cid });
         if (r?.error && !/corriendo/.test(r.error)) throw new Error(r.error);
+        // el chip vuelve a '✨?' (reintentable) si el job falla o el resultado no aparece
+        const resetChip = tip => {
+          chip.textContent = '✨?';
+          chip.className = 'pc-ai tip-r idle';
+          chip.dataset.tip = tip;
+          delete chip.dataset.busy;
+        };
+        let stopped = false;
         const poll = setInterval(async () => {
+          if (!chip.isConnected) { stopped = true; clearInterval(poll); delete chip.dataset.busy; return; }   // modal cerrado
           try {
             const { jobs } = await (await authFetch('/api/jobs')).json();
-            const j = jobs.find(x => x.kind === 'analyze' && (x.label || '').startsWith(cid));
-            if (j && j.status === 'running') return;
-            clearInterval(poll);
-            const ai = await (await fetch(`data/ai/${encodeURIComponent(cid)}.json?t=${Date.now()}`)).json();
+            const mine = jobs.filter(x => x.kind === 'analyze' && (x.label || '').startsWith(cid));
+            if (mine.some(x => x.status === 'running')) return;
+            stopped = true; clearInterval(poll);
+            const aiRes = await fetch(`data/ai/${encodeURIComponent(cid)}.json?t=${Date.now()}`);
+            if (!aiRes.ok) {
+              const bad = mine.find(x => ['error', 'cancelled', 'cancel_failed'].includes(x.status));
+              return resetChip(bad
+                ? `El análisis falló${bad.detail ? ` (${String(bad.detail).slice(0, 80)})` : ''} — click para reintentar`
+                : 'El análisis no produjo resultado — click para reintentar');
+            }
+            const ai = await aiRes.json();
             if (f) f.ai = ai;
             const sc = ai.travel_score;
             chip.textContent = sc ? `✨${sc}` : '✨—';
@@ -1573,7 +1633,11 @@
             chip.dataset.tip = sc ? `AI vision ${sc}/10 — ${(ai.summary || '').slice(0, 140)}` : 'El análisis no devolvió score';
             delete chip.dataset.busy;
             dispatchEvent(new CustomEvent('ab:ai-ready', { detail: cid }));   // preview abierto se refresca
-          } catch { /* siguiente tick */ }
+          } catch {
+            // error de red en /api/jobs → el intervalo sigue vivo (siguiente tick);
+            // si ya lo detuvimos (JSON inválido del resultado) hay que soltar el chip
+            if (stopped) resetChip('No se pudo leer el análisis — click para reintentar');
+          }
         }, 3000);
       } catch (err) {
         chip.textContent = '✨!';
@@ -1712,6 +1776,7 @@
         }
       };
       addEventListener('keydown', onKey);
+      onClose(() => { removeEventListener('keydown', onKey); removeEventListener('ab:ai-ready', onAI); pv.remove(); });
       const onAI = e => {
         if (!document.body.contains(pv)) { removeEventListener('ab:ai-ready', onAI); return; }
         if (e.detail === cid) render();
@@ -1819,6 +1884,7 @@
           if (pts.length > 1) feats.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts } });
         } catch { }
       }
+      if (!stMap) return;                              // el modal se cerró mientras bajaban los tracks
       const data = { type: 'FeatureCollection', features: feats };
       if (stMap.getSource('sel-tracks')) stMap.getSource('sel-tracks').setData(data);
       else {
@@ -1849,7 +1915,7 @@
         });
         stMap.on('load', () => { fitAll(); drawTracks(); });
         stMap.on('style.load', drawTracks);            // las capas geojson mueren al cambiar estilo
-        setTimeout(() => { stMap.resize(); fitAll(); }, 120);
+        setTimeout(() => { if (!stMap) return; stMap.resize(); fitAll(); }, 120);
         // controles superpuestos: capas + radio del spot
         const ctl = document.createElement('div');
         ctl.className = 'st-map-ctl';
@@ -1884,6 +1950,9 @@
         });
       }
     } catch { /* sin mapa no se bloquea el flujo */ }
+    // cada apertura crea un contexto WebGL de MapLibre: sin remove() se filtran al abrir/cerrar
+    // el modal y iOS acaba soltando el contexto del visor de splats
+    onClose(() => { try { stMap?.remove(); } catch {} stMap = null; });
     // nombres humanos por grupo (geocode cacheado server-side): ciudad · barrio,
     // con las coordenadas degradadas a tooltip — premium sin perder precisión
     spots.forEach(async ([sk, fs]) => {
@@ -1902,6 +1971,7 @@
     async function renderPreflight() {
       const box = ov.querySelector('#m-preflight');
       if (!box) return;
+      const mySeq = ++preflightSeq;
       if (!splatChk.checked) { box.innerHTML = ''; return; }
       const fs = [...sel].map(c => byCid[c]).filter(Boolean);
       const odmK = ov.querySelector('.mpresets .mpreset.on')?.dataset.k || 'estandar';
@@ -1913,6 +1983,7 @@
       try {
         const r = await api('/api/preflight', { n_images: nEst, width, preset: sp,
           backend: request.backend });
+        if (mySeq !== preflightSeq || !ov.isConnected) return;     // superado por una selección más nueva
         if (r.error) { box.innerHTML = ''; return; }
         const cls = { SAFE: 'ok', ELEVATED: 'mid', LIKELY_OOM: 'mid',
           UNVERIFIED_HIGH_RISK: 'mid', UNVERIFIED_FULL_RES: 'mid', NODE_UNAVAILABLE: 'bad',
@@ -1933,7 +2004,7 @@
           <span><b>Preflight de memoria (${esc(sp)})</b>: ${esc(r.verdict)} · ~${nEst} imágenes. ${measured}
           ${esc(r.note || '')}${action}
           <i class="st-proj-note">Estimación local Apple Metal; conserva incertidumbre y solo aplica a Fast/Medium.</i></span></div>`;
-      } catch { box.innerHTML = ''; }
+      } catch { if (mySeq === preflightSeq) box.innerHTML = ''; }
     }
     ov.querySelector('.mpresets').addEventListener('click', () => renderPreflight());
 
@@ -2113,7 +2184,7 @@
       <label class="proc-phase"><input type="checkbox" data-scene-splat checked>
         <span>${icon('spark')} <b>Entrenar Gaussian al terminar</b><small>30K por defecto; 7K–40K conservan la solicitud y nunca caen al Mac.</small></span></label>
       <div class="splat-config scene-splat" data-scene-splat-config>
-        <div class="splat-contract-head"><span><b>Calidad Gaussian</b><small>Fast/Medium: Mac o CUDA · 7K–40K: CUDA estricto.</small></span>
+        <div class="splat-contract-head"><span><b>Calidad Gaussian</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC (CUDA estricto).' : 'Fast/Medium: Mac o CUDA · 7K–40K: CUDA estricto.'}</small></span>
           <span class="splat-contract-badge">30K READY</span></div>
         <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles, 'frontier')}</div>
         <label class="proc-phase compute-choice"><input type="checkbox" data-cuda-toggle checked>
@@ -2350,7 +2421,7 @@
     // MEDICIÓN y CAPAS no se heredan entre proyectos: el chip activo + puntos del sitio
     // anterior producían distancias/volúmenes ABSURDOS mezclando coordenadas de dos lugares,
     // y los chips de capa quedaban desincronizados del mapa nuevo (ortho@82, dsm oculto)
-    tool = null; mpts = [];
+    tool = null; mpts = []; measSeq++;                 // invalida cálculos en vuelo del proyecto anterior
     try { result(null); } catch {}
     document.querySelectorAll('[data-tool]').forEach(x => x.classList.remove('on'));
     document.querySelectorAll('[data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === 'ortho'));
@@ -2370,6 +2441,10 @@
   }
   // ---------- capas + mediciones ----------
   let tool = null, mpts = [];
+  // token monótono de mediciones (volumen/comparar/perfil): un resultado tardío solo pinta si
+  // sigue vigente la misma herramienta Y el mismo proyecto que lo pidió
+  let measSeq = 0;
+  const measStale = (seq, cid) => seq !== measSeq || cur?.clip_id !== cid;
   const R = 6371000, rad = Math.PI / 180;
   const hav = (a, b) => 2 * R * Math.asin(Math.sqrt(
     Math.sin((b[1] - a[1]) * rad / 2) ** 2 +
@@ -2424,7 +2499,7 @@
       cmpSel.style.display = others.length ? '' : 'none';
       if (!others.length) result('Necesitas 2+ fechas procesadas en 3D del mismo sector. Procesa otro vuelo con "Procesar 3D".');
     } else { cmpSel.style.display = 'none'; }
-    mpts = []; paintDraw();
+    mpts = []; measSeq++; paintDraw();
     const noSecond = tool === 'compare' && document.getElementById('cmp-date').options.length && !document.getElementById('cmp-date').value;
     if (!noSecond) result(tool ? ({ dist: 'Toca puntos en el mapa para medir distancia.',
       area: 'Toca los vértices del área.', volume: 'Dibuja el polígono sobre el stockpile/edificio y toca "Calcular".',
@@ -2432,7 +2507,7 @@
       compare: 'Dibuja el polígono del área a comparar entre las dos fechas y toca "Comparar".' })[tool] : null);
   }));
   document.getElementById('m-clear').addEventListener('click', () => {
-    tool = null; mpts = []; paintDraw(); result(null);
+    tool = null; mpts = []; measSeq++; paintDraw(); result(null);
     document.querySelectorAll('[data-tool]').forEach(x => x.classList.remove('on'));
   });
   function paintDraw() {
@@ -2467,7 +2542,9 @@
       result(`<button class="btn primary" id="calc-vol">Calcular volumen (${mpts.length} vértices)</button>`);
       document.getElementById('calc-vol').onclick = async () => {
         result('Calculando contra el DSM…');
-        const r = await api('/api/measure', { type: 'volume', clip_id: cur.clip_id, points: mpts });
+        const mySeq = ++measSeq, myCid = cur.clip_id;
+        const r = await api('/api/measure', { type: 'volume', clip_id: myCid, points: mpts });
+        if (measStale(mySeq, myCid)) return;
         result(r.error ? `<span style="color:var(--red)">${esc(r.error)}</span>` : `
           <div class="statgrid" style="margin:0">
             <div class="stat"><div class="lb">Volumen (fill)</div><div class="v">${r.volume_m3.toLocaleString()}<small> m³</small></div></div>
@@ -2483,13 +2560,21 @@
         const other = document.getElementById('cmp-date').value;
         if (!other) return result('Elige la fecha a comparar.');
         result('Comparando las dos fechas contra el DSM…');
-        const r = await api('/api/compare', { clip_a: other, clip_b: cur.clip_id, points: mpts });
-        if (r.error) return result(`<span style="color:var(--red)">${esc(r.error)}</span>`);
+        const mySeq = ++measSeq, myCid = cur.clip_id;
+        // el servidor trata clip_b como el MÁS NUEVO (positivo = material agregado): ordenar por fecha de vuelo
         const of = flights.find(x => x.clip_id === other);
+        const cf = flights.find(x => x.clip_id === myCid);
+        const when = f => `${f.date}T${f.time || ''}`;
+        // sin fechas de ambos vuelos, los clip_id llevan el timestamp (orden léxico = cronológico)
+        const otherIsOlder = (of?.date && cf?.date) ? when(of) <= when(cf) : other <= myCid;
+        const [clipA, clipB] = otherIsOlder ? [other, myCid] : [myCid, other];
+        const r = await api('/api/compare', { clip_a: clipA, clip_b: clipB, points: mpts });
+        if (measStale(mySeq, myCid)) return;
+        if (r.error) return result(`<span style="color:var(--red)">${esc(r.error)}</span>`);
         const sign = r.net_change_m3 >= 0 ? '+' : '';
         const color = r.net_change_m3 >= 0 ? 'var(--mint)' : 'var(--amber)';
         result(`
-          <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Cambio desde ${of ? fmt.date(of.date) : 'fecha A'} → ${fmt.date(cur.dsm_date || (flights.find(x=>x.clip_id===cur.clip_id)||{}).date)}</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Cambio desde ${fmt.date((otherIsOlder ? of?.date : (cur.dsm_date || cf?.date)) || '') || 'fecha A'} → ${fmt.date((otherIsOlder ? (cur.dsm_date || cf?.date) : of?.date) || '') || 'fecha B'}</div>
           <div class="statgrid" style="margin:0">
             <div class="stat"><div class="lb">Cambio neto</div><div class="v" style="color:${color}">${sign}${r.net_change_m3.toLocaleString()}<small> m³</small></div></div>
             <div class="stat"><div class="lb">Agregado</div><div class="v">${r.added_m3.toLocaleString()}<small> m³</small></div></div>
@@ -2503,7 +2588,9 @@
     if (tool === 'profile' && mpts.length === 2) {
       (async () => {
         result('Muestreando el DSM…');
-        const r = await api('/api/measure', { type: 'profile', clip_id: cur.clip_id, points: mpts });
+        const mySeq = ++measSeq, myCid = cur.clip_id;
+        const r = await api('/api/measure', { type: 'profile', clip_id: myCid, points: mpts });
+        if (measStale(mySeq, myCid)) return;
         if (r.error) return result(`<span style="color:var(--red)">${esc(r.error)}</span>`);
         const vals = r.profile.filter(v => v != null);
         if (!vals.length) return result('El perfil cae fuera del DSM — traza la línea dentro de la ortofoto.');
@@ -2552,11 +2639,19 @@
     return 'Nube con color real — arrastra para mover, botón derecho rota, rueda o pellizco acerca y doble toque enfoca.';
   }
 
+  // invalida cualquier carga en vuelo del visor unificado Y aborta su mount de splat (que si no
+  // seguiría descargando/decodificando con su propio renderer hasta terminar el await)
+  function bumpLoad(box) {
+    try { box._loadAbort?.abort(); } catch {}
+    box._loadAbort = null;
+    box._loading = false;
+    return (box._loadToken = (box._loadToken || 0) + 1);
+  }
+
   function disposeUnifiedViewer(box = unifiedViewerBox()) {
     if (!box) return;
     clearTimeout(autoloadTimer);
-    box._loadToken = (box._loadToken || 0) + 1;
-    box._loading = false;
+    bumpLoad(box);
     box.classList.remove('viewer-fs', 'sv-fullscreen');
     document.documentElement.classList.remove('sv-noscroll');
     document.body.style.overflow = '';
@@ -2825,7 +2920,7 @@
     meshLoadBtn.disabled = true;
     meshLoadBtn.textContent = 'Cargando…';
     const box = unifiedViewerBox();
-    const myLoad = (box._loadToken = (box._loadToken || 0) + 1);
+    const myLoad = bumpLoad(box);
     const stM = spin(box, 'Cargando malla texturizada…');
     const base = `data/models/${cur.clip_id}/model/`;
     try {
@@ -2967,7 +3062,7 @@
   async function loadCloudViewer() {
     if (!cur || viewerMode !== 'cloud') return;
     const box = unifiedViewerBox();
-    const myLoad = (box._loadToken = (box._loadToken || 0) + 1);
+    const myLoad = bumpLoad(box);
     const cloudBtn = document.getElementById('viewer-load');
     cloudBtn.disabled = true;
     cloudBtn.textContent = 'Cargando…';
@@ -3124,7 +3219,7 @@
       // el thumb es el render QA REAL del splat publicado — solo aplica a la versión actual
       const thumb = s.current
         ? `<img src="data/qa/${esc(scid)}-splat.png" loading="lazy" width="150" height="94"
-             alt="Render verificado de ${esc(title)}" onerror="this.parentElement.classList.add('empty');this.remove()">`
+             alt="Render verificado de ${esc(title)}">`
         : '';
       return `
       <div class="splat-row" data-cid="${esc(scid)}">
@@ -3167,6 +3262,10 @@
       : `<p class="footer-note">Sin splats aún — "Generar splat…" entrena uno sobre las poses
       del proyecto que elijas. El resultado se ve aquí mismo.</p>`;
 
+    // fallback de miniatura sin onerror inline (CSP script-src 'self' lo bloquea)
+    box.querySelectorAll('.sr-thumb img').forEach(im => im.addEventListener('error', () => {
+      im.parentElement?.classList.add('empty'); im.remove();
+    }, { once: true }));
     const inp = box.querySelector('#sp-search');
     inp?.addEventListener('input', () => {
       spState.q = inp.value; renderSplatList();
@@ -3222,7 +3321,7 @@
         <span class="splat-contract-badge">CUDA 30K / 40K</span></div>
       <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles, 'frontier')}</div>
       <label class="proc-phase compute-choice" id="gs-cuda-row"><input type="checkbox" id="gs-cuda" data-cuda-toggle checked>
-        <span>${icon('cpu')} <b>Entrenar en nodo NVIDIA CUDA</b><small>Fast/Medium pueden usar Apple Metal; 7K–40K bloquean CUDA por calidad.</small></span></label>
+        <span>${icon('cpu')} <b>Entrenar en nodo NVIDIA CUDA</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC; la solicitud es CUDA estricta.' : 'Fast/Medium pueden usar Apple Metal; 7K–40K bloquean CUDA por calidad.'}</small></span></label>
       ${splatResolutionControls()}
       <div class="splat-policy" data-splat-policy></div>
       <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Entrenar splat</button>`, 'modal--splat-train');
@@ -3341,8 +3440,9 @@
     const name = splatKey(asset);
     const box = unifiedViewerBox();
     if (box._loading) return;                     // re-entrada: un solo load a la vez (#3)
+    const myToken = bumpLoad(box);                // currency: gana el último (aborta cualquier mount previo)
     box._loading = true;
-    const myToken = (box._loadToken = (box._loadToken || 0) + 1);   // currency: gana el último
+    const loadAbort = box._loadAbort = new AbortController();
     const loadBtn = document.getElementById('viewer-load');
     loadBtn.disabled = true;
     loadBtn.textContent = 'Cargando…';
@@ -3356,7 +3456,7 @@
     let handle;
     try {
       handle = await mountSplatViewer(box, splatUrl(asset),
-        { bytes: asset.bytes, onStatus: t => { if (st) st.textContent = t; },
+        { bytes: asset.bytes, signal: loadAbort.signal, onStatus: t => { if (st) st.textContent = t; },
           // medición honesta: Metal/MPS entrena topocéntrico (= metros); el lane CUDA
           // normaliza poses (nerfstudio) → unidades relativas hasta tener scene_to_meters
           unitsMeters: asset.backend ? !/cuda|nvidia/i.test(asset.backend) : null });
@@ -3373,6 +3473,7 @@
     // otro load (o un setProject) arrancó mientras descargábamos → este visor es obsoleto: tíralo
     if (box._loadToken !== myToken || viewerMode !== 'splat') { try { handle.dispose(); } catch {} return; }
     box._loading = false;
+    if (box._loadAbort === loadAbort) box._loadAbort = null;
     box._viewer = handle.viewer;
     box._splatDispose = handle.dispose;           // dispose premium (HUD + listeners + viewer)
     box._pcid = cur.clip_id;                       // qué clip está en pantalla (para borrar en vivo)

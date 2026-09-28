@@ -517,7 +517,10 @@ function showMod(name) {
     } else if (!show) {
       // teardown SPA: los <video> del grid siguen decodificando si no se pausan al ocultar el tab
       m.querySelectorAll('.media-grid video').forEach(v => { try { v.pause(); } catch {} });
-      if (m.dataset.mod === 'editor' || m.querySelector('#tl-video')) { try { document.getElementById('tl-video')?.pause(); } catch {} }
+      if (m.dataset.mod === 'editor' || m.querySelector('#tl-video')) {
+        try { document.getElementById('tl-video')?.pause(); } catch {}
+        try { window.__abEditorPause?.(); } catch {}   // corta también la música y el rAF de reproducción
+      }
       m.style.display = 'none';
     }
   });
@@ -761,6 +764,7 @@ function openReelViewer(name) {
   const onKey = ev => {
     if (!document.body.contains(ov)) { removeEventListener('keydown', onKey); return; }
     if (ev.target.tagName === 'INPUT') return;
+    if (document.querySelector('.modal-ov')) return;   // un modal (p. ej. Textos) manda sobre el visor
     if (ev.key === 'Escape') close();
     else if (ev.key === 'ArrowRight' && list.length > 1) go(1);
     else if (ev.key === 'ArrowLeft' && list.length > 1) go(-1);
@@ -932,8 +936,14 @@ function openBurnTexts(it, onDone) {
   const items = [{ text: '', start: +(dur * 0.06).toFixed(1), end: +Math.min(dur, dur * 0.06 + 3.2).toFixed(1),
                    style: { pos: 'bottom', size: 46, color: 'ffffff', box: true, style: 'clean', font: 'din' } }];
   const ov = document.createElement('div');
-  ov.className = 'modal-ov';
+  ov.className = 'modal-ov modal-ov-top';   // por encima del visor (.rv-ov z 350)
   document.body.appendChild(ov);
+  const closeOv = () => { ov.remove(); removeEventListener('keydown', onEsc); };
+  const onEsc = ev => {
+    if (!document.body.contains(ov)) { removeEventListener('keydown', onEsc); return; }
+    if (ev.key === 'Escape') closeOv();
+  };
+  addEventListener('keydown', onEsc);
   const STYLES = [['clean', 'Limpio'], ['bold', 'Bold · MAYÚS'], ['kinetic', 'Kinético · cine'],
                   ['lower', 'Lower third'], ['minimal', 'Minimal']];
   const FONTS = [['din', 'DIN · cine'], ['sansbold', 'Arial Bold'], ['black', 'Arial Black'],
@@ -994,7 +1004,7 @@ function openBurnTexts(it, onDone) {
     });
   };
   ov.addEventListener('click', async e => {
-    if (e.target === ov || e.target.closest('.modal-x')) { ov.remove(); return; }
+    if (e.target === ov || e.target.closest('.modal-x')) { closeOv(); return; }
     const del = e.target.closest('[data-btx]');
     if (del) { collect(); items.splice(+del.dataset.btx, 1); render(); return; }
     if (e.target.closest('#bt-add')) {
@@ -1018,7 +1028,7 @@ function openBurnTexts(it, onDone) {
       if (r?.error) { burn.disabled = false; burn.textContent = 'Quemar textos'; toast(r.error); return; }
       await loadMedia();
       toast(`Textos quemados: ${r.name}`);
-      ov.remove();
+      closeOv();
       onDone?.(r.name);
     }
   });
@@ -1038,7 +1048,15 @@ async function loadMedia() {
     document.getElementById('st-count').textContent = 'No se pudo cargar la biblioteca';
     return;
   }
-  media = await r.json();
+  const fresh = await r.json();
+  if (orderMode && media) {
+    // ordenando: no pisar el orden sin guardar — conserva el local, quita borrados y pone lo nuevo al frente
+    const srv = new Map((fresh.reels || []).map(x => [x.name, x]));
+    const have = new Set((media.reels || []).map(x => x.name));
+    fresh.reels = [...(fresh.reels || []).filter(x => !have.has(x.name)),
+                   ...(media.reels || []).filter(x => srv.has(x.name)).map(x => srv.get(x.name))];
+  }
+  media = fresh;
   document.getElementById('st-count').textContent =
     `${(media.reels || []).length} reels · ${(media.photos || []).length} fotos`;
   renderGrid('reels');
@@ -1263,8 +1281,9 @@ document.getElementById('btn-ord')?.addEventListener('click', async e => {
   if (!orderMode) {
     orderMode = true;
     mstate.reels.q = ''; mstate.reels.sort = 'recientes';
-    document.getElementById('q-reels').value = '';
-    document.getElementById('s-reels').value = 'recientes';
+    const qr = document.getElementById('q-reels'), sr = document.getElementById('s-reels');
+    qr.value = ''; sr.value = 'recientes';
+    qr.disabled = sr.disabled = true;   // filtrar/ordenar mientras se reordena mostraría un subconjunto
     b.textContent = '✓ Guardar orden';
     b.classList.add('primary');
     renderGrid('reels');
@@ -1272,13 +1291,19 @@ document.getElementById('btn-ord')?.addEventListener('click', async e => {
     return;
   }
   b.disabled = true;
-  const r = await api('/api/reel_order', { names: (media?.reels || []).map(x => x.name) });
-  b.disabled = false;
-  orderMode = false;
-  b.textContent = '⇅ Ordenar';
-  b.classList.remove('primary');
-  if (r?.error) toast(r.error);
-  else toast(`Orden guardado (${r.count} reels)`);
+  let r = null;
+  try { r = await api('/api/reel_order', { names: (media?.reels || []).map(x => x.name) }); }
+  catch (err) { r = { error: String(err?.message || err || 'falló la conexión') }; }
+  finally {
+    b.disabled = false;
+    orderMode = false;
+    b.textContent = '⇅ Ordenar';
+    b.classList.remove('primary');
+    document.getElementById('q-reels').disabled = false;
+    document.getElementById('s-reels').disabled = false;
+  }
+  if (r?.error) { toast(r.error); loadMedia(); return; }
+  toast(`Orden guardado (${r.count} reels)`);
   renderGrid('reels');
 });
 
@@ -1432,10 +1457,33 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   }
 
   // ---- historial ----
-  const snap = () => JSON.parse(JSON.stringify(tl));
+  // el snapshot incluye textos y música: deshacer un montaje/receta no debe dejar textos huérfanos
+  const snap = () => ({ tl: JSON.parse(JSON.stringify(tl)), texts: JSON.parse(JSON.stringify(texts)),
+                        music: music ? { ...music } : null });
+  function applySnap(o) {
+    tl = o.tl; texts = o.texts; textSel = -1;
+    const changed = (music?.name || null) !== (o.music?.name || null);
+    music = o.music;
+    if (changed) syncMusicEl();
+    musicChip();
+  }
   function pushUndo() { undoStack.push(snap()); if (undoStack.length > 60) undoStack.shift(); redoStack = []; }
-  function undo() { if (!undoStack.length) return; redoStack.push(snap()); tl = undoStack.pop(); clampSel(); renderAll(); }
-  function redo() { if (!redoStack.length) return; undoStack.push(snap()); tl = redoStack.pop(); clampSel(); renderAll(); }
+  function undo() { if (!undoStack.length) return; redoStack.push(snap()); applySnap(undoStack.pop()); clampSel(); renderAll(); }
+  function redo() { if (!redoStack.length) return; undoStack.push(snap()); applySnap(redoStack.pop()); clampSel(); renderAll(); }
+  function syncMusicEl() {
+    try {
+      if (music) musicEl.src = `${DATA}/audio/${encodeURIComponent(music.name)}`;
+      else { musicEl.pause(); musicEl.removeAttribute('src'); }
+    } catch {}
+  }
+  // un proyecto NUEVO (vaciar, cargar, Momentos AI, montaje) no hereda el reel reabierto ni sus textos/música
+  function resetProjectState({ keepMusic = false } = {}) {
+    replaceTarget = null;
+    const row = document.getElementById('ed-replace-row');
+    if (row) row.style.display = 'none';
+    texts = []; textSel = -1;
+    if (!keepMusic) { music = null; syncMusicEl(); musicChip(); }
+  }
   function clampSel() { if (sel >= tl.length) sel = tl.length - 1; }
 
   // sliders con relleno de progreso (mismo look que el editor de fotos)
@@ -1751,23 +1799,37 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     playing = true;
     setPlayIcon();
     seek(playhead, true);
+    let lastW = performance.now();
     const tick = () => {
       if (!playing) return;
+      const now = performance.now(), dt = Math.min(0.1, (now - lastW) / 1000);
+      lastW = now;
       const at = clipAt(playhead);
       if (at && curCid === at.clip.clip_id) {
-        // gt = offset del clip actual + progreso local escalado por speed
-        const gt = offset(at.idx) + (video.currentTime - at.clip.a) / at.clip.speed;
-        playhead = Math.max(playhead, gt);
-        // fin del corte actual → salta al siguiente
-        if (video.currentTime >= at.clip.b - 0.03) {
-          if (at.idx < tl.length - 1) {
-            seek(offset(at.idx + 1) + 0.001, true);
-          } else {
-            if (loop) { seek(0, true); }
-            else { pause(); playhead = total(); paintPlayhead(); return; }
+        // false = fin del timeline sin bucle (ya pausado)
+        const advance = () => {
+          if (at.idx < tl.length - 1) seek(offset(at.idx + 1) + 0.001, true);
+          else if (loop) seek(0, true);
+          else { pause(); playhead = total(); paintPlayhead(); return false; }
+          return true;
+        };
+        if (at.clip.freeze > 0) {
+          // freeze: el <video> NO manda el tiempo (seguiría reproduciendo la fuente); se sostiene el
+          // fotograma 'a' y el playhead avanza por reloj hasta cumplir la duración del segmento
+          if (!video.paused) video.pause();
+          if (video.readyState >= 1 && !video.seeking && Math.abs(video.currentTime - at.clip.a) > 0.05) {
+            try { video.currentTime = at.clip.a; } catch {}
           }
+          playhead += dt;
+          if (playhead >= offset(at.idx) + segDur(at.clip) - 0.02) { if (!advance()) return; }
+          else paintPlayhead();
         } else {
-          paintPlayhead();
+          // gt = offset del clip actual + progreso local escalado por speed
+          const gt = offset(at.idx) + (video.currentTime - at.clip.a) / at.clip.speed;
+          playhead = Math.max(playhead, gt);
+          // fin del corte actual → salta al siguiente
+          if (video.currentTime >= at.clip.b - 0.03) { if (!advance()) return; }
+          else paintPlayhead();
         }
       }
       rafId = requestAnimationFrame(tick);
@@ -1781,6 +1843,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     try { musicEl.pause(); } catch {}
   }
   function togglePlay() { playing ? pause() : play(); }
+  window.__abEditorPause = () => { if (playing) pause(); else { try { musicEl.pause(); } catch {} } };
   function setPlayIcon() {
     const b = document.querySelector('.tl-tool[data-tp="play"]');
     b.innerHTML = (playing ? icon('pause') : icon('play')) + '<span class="tl-lb">Play</span>';
@@ -1828,8 +1891,11 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     if (local < 0.1 || local > segDur(clip) - 0.1) return;
     pushUndo();
     const cutSrc = clip.a + local * clip.speed;             // punto de corte en tiempo fuente
-    const right = { ...cloneSeg(clip), a: +cutSrc.toFixed(2), transition: 'none' };
-    const left  = { ...clip, b: +cutSrc.toFixed(2) };
+    // el título se queda en la mitad izquierda (si no, se dibuja dos veces); un freeze reparte su duración
+    const frz = clip.freeze > 0;
+    const right = { ...cloneSeg(clip), a: frz ? clip.a : +cutSrc.toFixed(2), transition: 'none', title: '',
+                    freeze: frz ? +(segDur(clip) - local).toFixed(2) : 0 };
+    const left  = frz ? { ...clip, freeze: +local.toFixed(2) } : { ...clip, b: +cutSrc.toFixed(2) };
     tl.splice(idx, 1, left, right);
     sel = idx + 1; renderAll();
   }
@@ -1837,7 +1903,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     if (!tl.length) return;
     if (!confirm('¿Vaciar el timeline?')) return;
     cancelSeek();   // aborta cualquier ciclo de carga en vuelo antes de vaciar
-    pushUndo(); tl = []; sel = -1; playhead = 0; curCid = null; renderAll();
+    pushUndo(); tl = []; resetProjectState(); sel = -1; playhead = 0; curCid = null; renderAll();
   }
 
   // ---- 45 · Momentos AI: llena el timeline con highlights ----
@@ -1850,6 +1916,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     top.sort((x, y) => x.cid.localeCompare(y.cid) || x.t - y.t);
     if (!top.length) return;
     pushUndo();
+    resetProjectState({ keepMusic: !replaceTarget });   // la música elegida a mano se conserva salvo que venga de un reel reabierto
     tl = top.map(h => {
       const s = makeSeg(h.cid, Math.max(0, h.t - 2.5), Math.min(h.dur, h.t + 2.5),
         { speed: 1, transition: 'crossfade' });
@@ -1909,6 +1976,10 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       document.getElementById('tl-stage')?.appendChild(ov);
     }
     const vis = texts.filter(t => playhead >= t.start && playhead <= t.end);
+    // se llama en cada frame de reproducción: reconstruir el DOM reiniciaba la animación CSS de entrada
+    const key = vis.map(t => `${t.id}|${t.text}|${JSON.stringify(t.style)}`).join('¦');
+    if (ov._key === key) return;
+    ov._key = key;
     const FONTS = { sans: '"Helvetica Neue",system-ui,sans-serif',
                     sansbold: 'Arial,system-ui,sans-serif', black: '"Arial Black",Arial,sans-serif',
                     din: '"DIN Condensed","Avenir Next Condensed",sans-serif',
@@ -2031,20 +2102,26 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   (() => {
     const lane = document.getElementById('tl-textlane');
     if (!lane) return;
-    let drag = null;
+    let drag = null, tapIdx = null;
     lane.addEventListener('pointerdown', e => {
+      tapIdx = null;
       const blk = e.target.closest('[data-txt]');
       if (!blk) return;
       if (e.target.closest('[data-txtx]')) return;
       const i = +blk.dataset.txt;
       textSel = i;
+      // sin re-render aquí: reemplazar los hijos mataría el objetivo del click/pointerup
+      lane.querySelectorAll('.tl-txt').forEach(el => el.classList.toggle('on', +el.dataset.txt === i));
       const h = e.target.closest('[data-txth]');
-      drag = { i, mode: h ? h.dataset.txth : 'move', x0: e.clientX, a0: texts[i].start, b0: texts[i].end };
+      drag = { i, mode: h ? h.dataset.txth : 'move', x0: e.clientX, a0: texts[i].start, b0: texts[i].end, moved: false };
       try { lane.setPointerCapture(e.pointerId); } catch {}
-      renderTextLane();
     });
     lane.addEventListener('pointermove', e => {
       if (!drag) return;
+      if (!drag.moved) {
+        if (Math.abs(e.clientX - drag.x0) <= 3) return;
+        drag.moved = true;
+      }
       const d = (e.clientX - drag.x0) / pps;
       const t = texts[drag.i];
       const T = total();
@@ -2059,12 +2136,16 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       }
       renderTextLane();
     });
-    lane.addEventListener('pointerup', () => { drag = null; });
+    lane.addEventListener('pointerup', () => {
+      const d = drag; drag = null;
+      if (d && !d.moved && d.mode === 'move' && texts[d.i]) tapIdx = d.i;   // tap: se abre en el click (abrirlo aquí dejaba el modal recibir el click fantasma)
+    });
+    lane.addEventListener('pointercancel', () => { drag = null; tapIdx = null; });
     lane.addEventListener('click', e => {
       const x = e.target.closest('[data-txtx]');
-      if (x) { texts.splice(+x.dataset.txtx, 1); textSel = -1; renderTextLane(); return; }
-      const blk = e.target.closest('[data-txt]');
-      if (blk && !drag) openTextEditor(+blk.dataset.txt);
+      if (x) { tapIdx = null; texts.splice(+x.dataset.txtx, 1); textSel = -1; renderTextLane(); return; }
+      // con setPointerCapture el click llega al carril, no al bloque: por eso se usa el índice del pointerdown
+      if (tapIdx != null) { const i = tapIdx; tapIdx = null; if (texts[i]) openTextEditor(i); }
     });
   })();
 
@@ -2114,6 +2195,9 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         else toast(`La pista "${recipe.music.name}" ya no está en tu biblioteca`);
       } catch { /* sin música: el resto de la receta sigue siendo válido */ }
     }
+    syncMusicEl();
+    musicChip();
+    if (music && !music.beats) loadBeats(music.name);
     replaceTarget = reelName || null;
     const row = G('ed-replace-row');
     if (row) {
@@ -2121,6 +2205,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       if (replaceTarget) G('ed-replace-name').textContent = replaceTarget;
     }
     renderAll();
+    fit(); seek(0);
     toast(`Reel reabierto: ${tl.length} tomas · ${texts.length} texto(s)`);
     return true;
   }
@@ -2173,6 +2258,17 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     });
     renderAll(); seek(0);
     return hit;
+  }
+
+  // el pulso se analiza en el server (cacheado); al llegar, repinta la regla (y opciones si hay modal)
+  function loadBeats(name, after) {
+    authFetch(`/api/audio_beats?name=${encodeURIComponent(name)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!music || music.name !== name || d.error) return;
+        music.beats = d.beats || []; music.bpm = d.bpm || 0;
+        renderRuler(); after?.();
+      }).catch(() => {});
   }
 
   function musicChip() {
@@ -2358,14 +2454,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         musicEl.src = `${DATA}/audio/${encodeURIComponent(t.name)}`;
         musicSync(playhead);
         musicChip(); render();
-        // el pulso se analiza en el server (cacheado); al llegar, repinta regla y opciones
-        authFetch(`/api/audio_beats?name=${encodeURIComponent(t.name)}`)
-          .then(r => r.json())
-          .then(d => {
-            if (!music || music.name !== t.name || d.error) return;
-            music.beats = d.beats || []; music.bpm = d.bpm || 0;
-            renderRuler(); render();
-          }).catch(() => {});
+        loadBeats(t.name, render);
         return;
       }
       if (e.target.closest('#mu-clear')) {
@@ -2438,11 +2527,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     return Math.round((Math.atan2(b[2] - b[0], b[3] - b[1]) * 180 / Math.PI + 360) % 360);
   };
 
-  function rmBuild(cids, opts) {
-    const R = RM_RHYTHM[opts.rhythm] || RM_RHYTHM.medio;
-    const clips = cids.map(c => byId[c]).filter(Boolean);
-    if (!clips.length) return 0;
-    const target = +opts.target || 30;
+  // Cuántos planos entran y cuánto aporta cada toma (lo usa rmBuild y el texto del wizard).
+  function rmQuota(clips, target) {
     // DURACIÓN MEDIA DE PLANO del cine, no "los cortes que quepan". Investigación: 3.0s
     // para 15s, 3.3s para 30s, 4.0s para 60s. Antes metía 16 cortes en 30s (1.9s cada uno)
     // — eso es exactamente lo que se siente picado y barato.
@@ -2465,6 +2551,15 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         left--;
       }
     }
+    return { nSeg, quotaMap };
+  }
+
+  function rmBuild(cids, opts) {
+    const R = RM_RHYTHM[opts.rhythm] || RM_RHYTHM.medio;
+    const clips = cids.map(c => byId[c]).filter(Boolean);
+    if (!clips.length) return 0;
+    const target = +opts.target || 30;
+    const { quotaMap } = rmQuota(clips, target);
     const quota = clips.map(c => quotaMap.get(c.clip_id) || 0);
     const segs = [];
     clips.forEach((c, ci) => {
@@ -2591,11 +2686,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     tl = segs;
     // montaje NUEVO = pista de texto nueva: sin esto los textos del reel anterior se
     // acumulaban (3, 6, 9…) y se exportaban duplicados encima de los del siguiente
-    texts = [];
-    textSel = -1;
-    replaceTarget = null;      // un montaje nuevo nunca debe pisar un reel reabierto
-    const _rr = document.getElementById('ed-replace-row');
-    if (_rr) _rr.style.display = 'none';
+    resetProjectState({ keepMusic: !replaceTarget });   // un montaje nuevo nunca debe pisar un reel reabierto
     sel = 0; playhead = 0; curCid = null;
     const fmtSel = RM_FORMATS[opts.aspect] || RM_FORMATS['9:16'];
     const asp = document.getElementById('ed-aspect');
@@ -2743,11 +2834,16 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
             <b>${icon('spark')} Lo que va a pasar</b>
             <p>${(() => {
               const R = RM_RHYTHM[st.rhythm];
-              const n = Math.max(pick.size, Math.min(24, Math.round(st.target / R.seg)));
+              const { quotaMap } = rmQuota([...pick].map(c => byId[c]).filter(Boolean), st.target);
+              const n = [...quotaMap.values()].reduce((a, b) => a + b, 0) || 1;
+              const used = quotaMap.size;
               const per = (st.target / n).toFixed(1);
-              return `Se arman <b>${n} cortes</b> de ~<b>${per}s</b> repartidos entre tus
-                <b>${pick.size} toma${pick.size === 1 ? '' : 's'}</b>, dando más espacio a las de mejor score AI
-                pero sin dejar ninguna fuera. Unión: <b>${TX_LABELS[R.trans] || R.trans}</b>.
+              const who = used >= pick.size
+                ? `repartidos entre tus <b>${pick.size} toma${pick.size === 1 ? '' : 's'}</b>, dando más espacio a las de mejor score AI
+                pero sin dejar ninguna fuera`
+                : `de las <b>${used} mejores</b> de tus <b>${pick.size} tomas</b> (por score AI): las otras ${pick.size - used}
+                no tienen cupo en ${st.target}s y quedan fuera — sube la duración o elige menos`;
+              return `Se arman <b>${n} cortes</b> de ~<b>${per}s</b> ${who}. Unión: <b>${TX_LABELS[R.trans] || R.trans}</b>.
                 Al terminar se abre en el Editor para que lo retoques.`;
             })()}</p>
           </div>`}
@@ -3352,11 +3448,14 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     if (!editorVisible()) return;
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+    // con un modal/hoja/visor encima los atajos del timeline no deben actuar por debajo
+    if (document.querySelector('.modal-ov, .ce-ov, .rv-ov, .tx-pop, .rm-peek')) return;
+    if (['ex-sheet', 'tl-projmodal'].some(id => { const el = document.getElementById(id); return el && el.style.display !== 'none'; })) return;
     const meta = e.metaKey || e.ctrlKey;
     if (meta && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if (meta && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
     if (e.key === ' ') { e.preventDefault(); togglePlay(); }
-    else if (e.key === 's' || e.key === 'S') { e.preventDefault(); razor(); }
+    else if ((e.key === 's' || e.key === 'S') && !meta && !e.altKey) { e.preventDefault(); razor(); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); delClip(); }
     else if (e.key === 'ArrowLeft') {
       e.preventDefault();
@@ -3436,6 +3535,12 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const f = byId[s?.clip_id];
     if (!s || !f) return;
     const a0 = s.a, b0 = s.b;                       // por si cancela
+    // el historial debe guardar el corte ANTERIOR: s.a/s.b ya se mutaron durante el arrastre
+    const commitUndo = () => {
+      if (s.a === a0 && s.b === b0) return;
+      const na = s.a, nb = s.b;
+      s.a = a0; s.b = b0; pushUndo(); s.a = na; s.b = nb;
+    };
     const ov = document.createElement('div');
     ov.className = 'ce-ov';
     const A = ai[s.clip_id] || {};
@@ -3538,9 +3643,9 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       if (!b) { if (e.target === ov) { s.a = a0; s.b = b0; ov.remove(); } return; }
       const act = b.dataset.ce;
       if (act === 'close' || act === 'cancel') { s.a = a0; s.b = b0; ov.remove(); renderAll(); return; }
-      if (act === 'ok') { pushUndo(); ov.remove(); renderAll(); seek(offset(i)); toast('Corte actualizado'); return; }
+      if (act === 'ok') { commitUndo(); ov.remove(); renderAll(); seek(offset(i)); toast('Corte actualizado'); return; }
       if (act === 'prev' || act === 'next') {
-        pushUndo();
+        commitUndo();
         const ni = i + (act === 'next' ? 1 : -1);
         ov.remove(); renderAll();
         if (tl[ni]) openClipEditor(ni);
@@ -3549,7 +3654,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     addEventListener('keydown', function ck(ev) {
       if (!document.body.contains(ov)) { removeEventListener('keydown', ck); return; }
       if (ev.key === 'Escape') { s.a = a0; s.b = b0; ov.remove(); renderAll(); }
-      if (ev.key === 'Enter') { pushUndo(); ov.remove(); renderAll(); }
+      if (ev.key === 'Enter') { commitUndo(); ov.remove(); renderAll(); }
     });
   }
 
@@ -3653,6 +3758,11 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     });
     closeExSheet();
     if (r && r.error) { alert(r.error); return; }
+    if (r) {   // el reemplazo se consumió con este export: el siguiente no debe pisar el mismo reel
+      replaceTarget = null;
+      const rr = document.getElementById('ed-replace-row');
+      if (rr) rr.style.display = 'none';
+    }
     // NO vaciar el timeline aquí: el job apenas se ENCOLÓ. Si el export falla (fps mezclados,
     // ffmpeg, cancel), vaciarlo destruía la edición del usuario — solo la rescataba un undo
     // que muere al recargar. El reel aparece solo vía el hook onDone de pollJobs.
@@ -3695,6 +3805,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   function restoreProject(p) {
     // descarta segmentos cuyo clip_id ya no existe (proyecto viejo / clip archivado / manipulado):
     // uno huérfano rompería byId[cid] en makeSeg/render y dejaría el editor inconsistente
+    cancelSeek(); pause();
+    resetProjectState();
     tl = (p.tl || []).filter(s => s && byId[s.clip_id]).map(s => ({ ...s, id: uid() }));   // ids frescos
     const g = p.globals || {};
     const set = (id, v, chk) => { const el = document.getElementById(id); if (el && v != null) { if (chk) el.checked = !!v; else el.value = v; } };
@@ -3709,7 +3821,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     textSel = -1;
     if (p.music && p.music.name) {
       music = { ...p.music };
-      try { musicEl.src = `${DATA}/audio/${encodeURIComponent(music.name)}`; } catch {}
+      syncMusicEl();
       try { musicChip(); } catch {}
     }
     syncFpsChips();   // alinea el chip de fps con edFps restaurado

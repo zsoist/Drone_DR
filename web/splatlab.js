@@ -9,7 +9,9 @@ main.classList.add('lab-main');
   let sys = {}, splats = [], cur = 0;
   const load_sys = async () => {
     sys = await (await fetch(`${DATA}/manifest/system.json`, { cache: 'no-store' })).json();
-    splats = sys.splats || [];
+    // solo versiones ACTUALES: Limpiar publicado / Revertir / Subir actúan sobre el archivo
+    // vigente del clip, no sobre una copia archivada en history/ (que el picker mostraba sin etiqueta)
+    splats = (sys.splats || []).filter(s => s.current !== false);
   };
   try { await load_sys(); } catch {}
   const models = () => sys.models || [];
@@ -51,6 +53,21 @@ main.classList.add('lab-main');
   const drop = document.getElementById('lab-drop');
   const hint = document.getElementById('lab-drophint');
 
+  // ---- puente con el editor (same-origin): origen fijo, nunca '*' ----
+  const toEditor = msg => { try { frame.contentWindow?.postMessage(msg, location.origin); return true; } catch { return false; } };
+  const fromEditor = e => e.origin === location.origin && e.source === frame.contentWindow;
+  // ¿hay ediciones sin exportar? SuperSplat responde a 'supersplat:is-scene-dirty' (iframe-api.ts)
+  const editorDirty = () => new Promise(res => {
+    let done = false;
+    const fin = v => { if (done) return; done = true; window.removeEventListener('message', on); clearTimeout(t); res(v); };
+    const on = e => { if (fromEditor(e) && e.data?.type === 'supersplat:is-scene-dirty') fin(!!e.data.result); };
+    const t = setTimeout(() => fin(false), 600);          // editor aún cargando / sin API → no bloquear
+    window.addEventListener('message', on);
+    if (!toEditor({ type: 'supersplat:is-scene-dirty' })) fin(false);
+  });
+  const okToDiscard = async () =>
+    !(await editorDirty()) || confirm('Hay ediciones sin exportar en el editor. ¿Descartarlas?');
+
   const renderPicker = () => {
     picker.innerHTML = splats.map((s, i) => `
       <button class="chip ${i === cur ? 'on' : ''}" data-i="${i}" title="${esc(s.name)}"
@@ -73,6 +90,7 @@ main.classList.add('lab-main');
   };
   const rawUrl = s => 'data/splats/' + encodeURIComponent(`${s.clip_id}.raw.splat`);
   let abRaw = false;                       // A/B: viendo el crudo pre-clean en el editor
+  const rawOk = {};                        // clip_id → ¿existe <cid>.raw.splat? (solo hay tras un Auto-Clean)
   function renderClean() {
     const s = splats[cur];
     const box = document.getElementById('lab-clean');
@@ -89,7 +107,7 @@ main.classList.add('lab-main');
       <button class="btn" id="lab-revert" title="Restaura el crudo pre-clean como versión actual (la limpia queda en history/) — nada se pierde">${icon('undo')} Revertir</button>
       <button class="btn" id="lab-undo" title="Deshace el último paso dentro del editor (el Auto-Clean es UN solo paso)" aria-label="Deshacer en el editor">${icon('undo')}</button>
       <button class="btn" id="lab-redo" title="Rehace el paso deshecho dentro del editor" aria-label="Rehacer en el editor" style="transform:scaleX(-1)">${icon('undo')}</button>
-      <button class="btn" id="lab-ab" title="Alterna el editor entre el crudo y la versión actual para comparar antes/después" aria-pressed="${abRaw}">${abRaw ? 'Viendo: crudo' : 'A/B crudo'}</button>
+      <button class="btn" id="lab-ab" title="Alterna el editor entre el crudo y la versión actual para comparar antes/después (requiere un crudo pre-clean)" aria-pressed="${abRaw}"${rawOk[s.clip_id] === false && !abRaw ? ' disabled' : ''}>${abRaw ? 'Viendo: crudo' : 'A/B crudo'}</button>
       <button class="btn" id="lab-tune" title="Ajustes finos del Auto-Clean: umbral de haze, factor de spikes y agujas — se aplican al próximo Limpiar" aria-expanded="false">${icon('gauge')} Ajustes</button>
       <span class="footer-note mono" id="lab-clean-status" role="status" aria-live="polite"></span>
       <div class="lab-tune-panel" id="lab-tune-panel" hidden>
@@ -111,6 +129,18 @@ main.classList.add('lab-main');
           <em class="mono tn-count" id="tn-rad-c"></em></div>
         <p class="footer-note" style="flex-basis:100%;margin:2px 0 0">Cada limpieza es UN paso de undo — prueba, mira los contadores por etapa, deshaz y ajusta.</p>
       </div>`;
+    if (rawOk[s.clip_id] === undefined && typeof s.has_raw === 'boolean') rawOk[s.clip_id] = s.has_raw;
+    if (rawOk[s.clip_id] === undefined) {
+      const cid = s.clip_id;
+      rawOk[cid] = null;                                   // consulta en vuelo
+      fetch(rawUrl(s), { method: 'HEAD', cache: 'no-store' })
+        .then(r => r.ok, () => true)                       // error de red: no bloquear el botón
+        .then(ok => {
+          rawOk[cid] = ok;
+          const ab = document.getElementById('lab-ab');
+          if (ab && splats[cur]?.clip_id === cid && !abRaw) ab.disabled = !ok;
+        });
+    }
     const cst = t => { const el = document.getElementById('lab-clean-status'); if (el) el.textContent = t; };
     // limpieza IN-EDITOR: postMessage al iframe (fork src/aerobrain) — undo nativo de SuperSplat
     const tuneOverrides = () => {
@@ -126,8 +156,7 @@ main.classList.add('lab-main');
     document.getElementById('lab-ac-ed').addEventListener('click', () => {
       const preset = document.getElementById('lab-preset').value;
       cst('limpiando en el editor…');
-      try { frame.contentWindow.postMessage({ type: 'aerobrain:autoclean', preset, overrides: tuneOverrides() }, '*'); }
-      catch { cst('✗ el editor no respondió'); }
+      if (!toEditor({ type: 'aerobrain:autoclean', preset, overrides: tuneOverrides() })) cst('✗ el editor no respondió');
     });
     document.getElementById('lab-tune').addEventListener('click', e2 => {
       const panel = document.getElementById('lab-tune-panel');
@@ -141,6 +170,7 @@ main.classList.add('lab-main');
     });
     document.getElementById('lab-ac').addEventListener('click', async e2 => {
       const btn = e2.currentTarget; btn.disabled = true;
+      if (!(await okToDiscard())) { btn.disabled = false; return; }
       const preset = document.getElementById('lab-preset').value;
       cst('limpiando…');
       try {
@@ -149,15 +179,15 @@ main.classList.add('lab-main');
         if (!r.ok || out.error) throw new Error(out.error || r.status);
         const rep = out.report, rm = rep.removed;
         cst(`✓ ${rep.input.toLocaleString()} → ${rep.output.toLocaleString()} (${rep.kept_pct}%) · haze ${rm.opacity} · spikes ${rm.scale} · agujas ${rm.aniso} · voxel ${rm.voxel}`);
+        delete rawOk[s.clip_id];                          // el clean crea el crudo
         await load_sys(); abRaw = false; load(cur);
       } catch (err) { cst(`✗ ${String(err.message || err).slice(0, 90)}`); }
       finally { btn.disabled = false; }
     });
-    document.getElementById('lab-undo').addEventListener('click', () =>
-      frame.contentWindow?.postMessage({ type: 'aerobrain:undo' }, '*'));
-    document.getElementById('lab-redo').addEventListener('click', () =>
-      frame.contentWindow?.postMessage({ type: 'aerobrain:redo' }, '*'));
+    document.getElementById('lab-undo').addEventListener('click', () => toEditor({ type: 'aerobrain:undo' }));
+    document.getElementById('lab-redo').addEventListener('click', () => toEditor({ type: 'aerobrain:redo' }));
     document.getElementById('lab-revert').addEventListener('click', async () => {
+      if (!(await okToDiscard())) return;
       cst('revirtiendo al crudo…');
       try {
         const r = await authFetch(`/api/splat_revert?cid=${encodeURIComponent(s.clip_id)}&to=raw`, { method: 'POST' });
@@ -167,7 +197,8 @@ main.classList.add('lab-main');
         await load_sys(); abRaw = false; load(cur);
       } catch (err) { cst(`✗ ${String(err.message || err).slice(0, 90)}`); }
     });
-    document.getElementById('lab-ab').addEventListener('click', () => {
+    document.getElementById('lab-ab').addEventListener('click', async () => {
+      if (!(await okToDiscard())) return;
       abRaw = !abRaw;
       const src = abRaw
         ? `/supersplat/?load=${encodeURIComponent('/' + rawUrl(s))}&filename=${encodeURIComponent(s.clip_id + '.raw.splat')}`
@@ -183,9 +214,11 @@ main.classList.add('lab-main');
     renderPicker(); renderActions(); renderClean();
   };
 
-  picker.addEventListener('click', e => {
+  picker.addEventListener('click', async e => {
     const b = e.target.closest('[data-i]');
-    if (b) load(+b.dataset.i);
+    if (!b) return;
+    if (+b.dataset.i !== cur && !(await okToDiscard())) return;
+    load(+b.dataset.i);
   });
 
   // ---- subida del splat editado (botón o drag&drop) ----
@@ -196,6 +229,7 @@ main.classList.add('lab-main');
     const s = splats[cur];                                // captura el clip fijo (#34)
     if (!s || !file) return;
     if (!/\.(ply|splat|ksplat)$/i.test(file.name)) { setStatus('formato no soportado (.ply/.splat/.ksplat)'); return; }
+    if (!(await okToDiscard())) return;
     setStatus(`Subiendo ${file.name} (${(file.size / 1e6).toFixed(1)}MB)…`);
     try {
       const r = await authFetch(`/api/splat_upload?cid=${encodeURIComponent(s.clip_id)}&name=${encodeURIComponent(file.name)}`,
@@ -280,6 +314,7 @@ main.classList.add('lab-main');
   }
 
   window.addEventListener('message', e => {
+    if (!fromEditor(e)) return;
     const d = e.data;
     if (!d || d.type !== 'aerobrain:autoclean:done') return;
     const el = document.getElementById('lab-clean-status');

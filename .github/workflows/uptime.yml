@@ -2,6 +2,9 @@ name: AeroBrain external uptime
 
 on:
   schedule:
+    # Nominal 15 min, but GitHub throttles scheduled workflows: observed ~every 3-4 h
+    # (99 runs in 15.5 days). Best-effort external check; the minute-level check is the
+    # local watchdog (pipeline/ops_watchdog.py).
     - cron: "*/15 * * * *"
   workflow_dispatch:
 

@@ -58,13 +58,45 @@ def job_id_for(name: str) -> str | None:
     return m.group(0) if m else None
 
 
+def protected_roots(protect) -> set[str]:
+    """Normalize protected paths (files or dirs) to their janitor-root child dir:
+    /root/gpu-jobs/checkpoints/<A>/step-1.ckpt -> /root/gpu-jobs/checkpoints/<A>."""
+    out = set()
+    for raw in protect or ():
+        path = str(raw or "").rstrip("/")
+        if not path:
+            continue
+        out.add(path)
+        for root in ROOTS:
+            if path.startswith(root + "/"):
+                out.add(root + "/" + path[len(root) + 1:].split("/", 1)[0])
+    return out
+
+
+def is_protected(path: str, protect) -> bool:
+    """An entry is protected when it equals, or is an ancestor of, a protected path."""
+    for p in protect or ():
+        p = str(p).rstrip("/")
+        if p and (path == p or p.startswith(path + "/")):
+            return True
+    return False
+
+
 def plan(entries: list[Entry], statuses: dict[str, str], now: float,
-         retain_days: int = RETAIN_DAYS, untracked_days: int = UNTRACKED_DAYS) -> list[tuple[Entry, str]]:
-    """Return (entry, reason) for every entry that should be deleted."""
+         retain_days: int = RETAIN_DAYS, untracked_days: int = UNTRACKED_DAYS,
+         protect=None) -> list[tuple[Entry, str]]:
+    """Return (entry, reason) for every entry that should be deleted.
+
+    `protect`: remote paths the job starting NOW resumes from (checkpoints/<A>/..., odm/<A>).
+    They map to an older terminal job A that may already be past retention, so status
+    alone would delete the very inputs the new job was launched to resume."""
     out = []
+    protect = protected_roots(protect)
     for e in entries:
         parent, _, name = e.path.rpartition("/")
         if parent not in ROOTS or not _SAFE.fullmatch(name) or name.startswith("."):
+            continue
+        if is_protected(e.path, protect):
             continue
         if e.retain_until and e.retain_until > now:
             continue
@@ -111,8 +143,8 @@ def remote_entries() -> list[Entry]:
     return entries
 
 
-def sweep(apply: bool = False, now: float | None = None) -> dict:
-    victims = plan(remote_entries(), mac_statuses(), now or time.time())
+def sweep(apply: bool = False, now: float | None = None, protect=None) -> dict:
+    victims = plan(remote_entries(), mac_statuses(), now or time.time(), protect=protect)
     freed_gb = sum(e.kbytes for e, _ in victims) / 1024 / 1024
     if apply and victims:
         from gpu_lane import _wsl
@@ -124,10 +156,10 @@ def sweep(apply: bool = False, now: float | None = None) -> dict:
             "items": [(e.path, reason, round(e.kbytes / 1024 / 1024, 2)) for e, reason in victims]}
 
 
-def sweep_best_effort() -> None:
+def sweep_best_effort(protect=None) -> None:
     """Called at the start of every GPU job; housekeeping never fails a job."""
     try:
-        r = sweep(apply=True)
+        r = sweep(apply=True, protect=protect)
         if r["count"]:
             print(f"janitor PC: {r['count']} restos, {r['freed_gb']} GB liberados", flush=True)
     except Exception as exc:                     # noqa: BLE001

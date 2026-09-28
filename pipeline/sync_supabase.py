@@ -1,10 +1,13 @@
 """Mirror local vault metadata → Supabase (free tier). Media stays on the Mac.
 
+STATUS: the Supabase project (ehmfpq…) is currently unreachable (NXDOMAIN since 2026-09);
+schema lives in supabase/migrations/.
+
 Reads creds from /Volumes/SSD/_system/claude/.api-keys.env:
   SUPABASE_DRONE_URL, SUPABASE_DRONE_SERVICE_KEY, SUPABASE_DRONE_DB_URL
 
 Steps:
-  --schema   apply supabase/schema.sql via psql (one-time / on change)
+  --schema   apply supabase/migrations/*.sql via psql (one-time / on change)
   (default)  upsert flights + tracks + ai + models + properties via PostgREST
   --embed    also generate OpenAI embeddings for semantic search
 

@@ -85,6 +85,10 @@ def classify_cuda_failure(returncode: int | None, output: str) -> str:
         return "oom"
     if returncode in (-15, 130, 143) or "cancelled by user" in text or "canceled by user" in text:
         return "cancelled"
+    if returncode == 137:
+        # SIGKILL sin traza de texto: el OOM-killer de WSL/Linux mata el trainer así.
+        # Es la clase OOM (elegible para el reintento d1→d2), salvo cancelación explícita (arriba).
+        return "oom"
     if (returncode == 255 or "connection timed out" in text or "connect to host" in text
             or "connection reset" in text or "broken pipe" in text):
         return "connectivity"
@@ -125,17 +129,29 @@ def _wsl(script: str, timeout: int, label: str) -> str:
 
 
 def node_awake(timeout_s: int = 6) -> bool:
-    return subprocess.run(["ssh", "-o", f"ConnectTimeout={timeout_s}", SSH_HOST, "exit"],
-                          capture_output=True, timeout=timeout_s + 8).returncode == 0
+    try:
+        return subprocess.run(["ssh", "-o", f"ConnectTimeout={timeout_s}", SSH_HOST, "exit"],
+                              capture_output=True, timeout=timeout_s + 8).returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
 
 
-def ensure_awake(max_wait_s: int = 90) -> None:
+WAKE_RESEND_S = 20
+
+
+def ensure_awake(max_wait_s: int = 180) -> None:
     if node_awake():
         return
-    if PC_WAKE.exists():
-        subprocess.run([str(PC_WAKE)], capture_output=True, timeout=15)
     deadline = time.time() + max_wait_s
+    last_wake = 0.0
     while time.time() < deadline:
+        # un único paquete WoL se pierde fácil: reenviar cada ~20 s durante la ventana
+        if PC_WAKE.exists() and time.time() - last_wake >= WAKE_RESEND_S:
+            last_wake = time.time()
+            try:
+                subprocess.run([str(PC_WAKE)], capture_output=True, timeout=15)
+            except (subprocess.TimeoutExpired, OSError):
+                pass
         if node_awake():
             return
         time.sleep(5)
@@ -643,7 +659,8 @@ def fetch(name: str, out_dir: Path) -> Path:
     dest = out_dir / f"{name}.ply"
     _run(["scp", "-q", f"{SSH_HOST}:{NTFS_TRANSFER}/out-{name}.ply", str(dest)],
          900, "scp artefacto")
-    head = dest.read_bytes()[:400]
+    with dest.open("rb") as fh:                   # un PLY pesa GBs: solo se lee la cabecera
+        head = fh.read(400)
     if not head.startswith(b"ply"):
         raise RuntimeError("el artefacto no es un PLY valido (transferencia corrupta)")
     for suffix in ("yml", "csv"):

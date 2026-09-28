@@ -110,7 +110,7 @@ def init(orphan_kinds: tuple = ()):
                 c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
         if orphan_kinds:
             ph = ",".join("?" * len(orphan_kinds))
-            orphans = c.execute(f"SELECT id, pid, container FROM jobs "
+            orphans = c.execute(f"SELECT id, pid, container, backend FROM jobs "
                                 f"WHERE status='running' AND kind IN ({ph})",
                                 orphan_kinds).fetchall()
             for o in orphans:
@@ -121,11 +121,7 @@ def init(orphan_kinds: tuple = ()):
                     if not _proc_gone(pid):
                         _kill_pg(pid, signal.SIGKILL)
                 if o["container"]:
-                    try:
-                        subprocess.run(["/usr/local/bin/docker", "kill", o["container"]],
-                                       capture_output=True, timeout=30)
-                    except (subprocess.TimeoutExpired, OSError):
-                        pass
+                    kill_container(o["container"], o["backend"])
             c.execute(f"UPDATE jobs SET status='error', detail='proceso dueño reiniciado "
                       f"durante el job', finished=?, pid=NULL "
                       f"WHERE status='running' AND kind IN ({ph})",
@@ -399,6 +395,38 @@ def running(kinds: tuple = ("3d", "splat")) -> dict | None:
         return dict(r) if r else None
 
 
+def is_remote_container(name, backend=None) -> bool:
+    """Los contenedores CUDA (odm-gpu-*) viven en WSL2 del PC, no en el Mac."""
+    return str(name or "").startswith("odm-gpu-") or "CUDA" in str(backend or "").upper()
+
+
+def kill_container(name, backend=None, timeout: int = 40) -> tuple[bool, str]:
+    """Mata un contenedor en el lado correcto. Remoto (odm-gpu-*/CUDA): ssh pc + WSL.
+    Local: `docker kill` SOLO si OrbStack ya está arriba — cualquier llamada docker lo
+    arranca, y si la VM está apagada no hay contenedor que matar.
+    Devuelve (ok, nota) y nunca lanza."""
+    if not name:
+        return True, "sin contenedor"
+    remoto = is_remote_container(name, backend)
+    if remoto:
+        cmd = ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", "pc",
+               f'wsl -d Ubuntu -- bash -lc "docker kill {name}"']
+        donde = "PC/WSL"
+    else:
+        import docker_ondemand
+        if not docker_ondemand.running():
+            return True, "local: OrbStack apagado, nada que matar"
+        cmd = [docker_ondemand.DOCKER, "kill", name]
+        donde = "local"
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return False, f"docker kill {donde} error: {type(e).__name__}"
+    if r.returncode == 0:
+        return True, f"docker killed ({donde})"
+    return False, f"docker kill {donde} falló: {(r.stderr or '').strip()[:60]}"
+
+
 def _kill_pg(pid: int, sig=signal.SIGTERM) -> bool:
     """Mata el grupo de procesos; True si algo fue señalizado."""
     if not pid:
@@ -428,6 +456,16 @@ def _proc_ours(pid: int) -> bool:
     # (P2 resuelto 11-jul: el flake del smoke era ESTA carrera — verde si init
     # corría dentro de la ventana, rojo bajo carga). El término del framework
     # cubre el post-re-exec sin ampliar a cualquier "python" inocente.
+    return _cmd_is_ours(out)
+
+
+def _cmd_is_ours(out: str) -> bool:
+    out = out.lower()
+    # ssh de NUESTROS carriles remotos (gpu_lane / odm_gpu_lane: `ssh pc wsl -d Ubuntu ...`
+    # o `ssh pc cmd /c ...`). Sin esto un restart del worker dejaba el ssh de entrenamiento
+    # huérfano. No se acepta "ssh" a secas: mataría sesiones interactivas del operador.
+    if re.search(r"\bssh\b.*\bpc (wsl|cmd)\b", out):
+        return True
     return any(t in out for t in ("python3", "python.app/contents/macos/python",
                                   "opensplat", "docker", "ffmpeg", "odm_prep", "tresd_publish"))
 
@@ -470,19 +508,8 @@ def cancel(jid: str) -> bool:
     # WSL2 en el PC, así que cancelar dejaba el contenedor VIVO ocupando la RTX durante
     # horas mientras la UI decía 'cancelado'. El contenedor remoto se llama odm-gpu-*.
     if j["container"]:
-        remoto = str(j["container"]).startswith("odm-gpu-") or \
-            "CUDA" in str(j.get("backend") or "").upper()
-        cmd = (["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", "pc",
-                f'wsl -d Ubuntu -- bash -lc "docker kill {j["container"]}"']
-               if remoto else
-               ["/usr/local/bin/docker", "kill", j["container"]])
-        donde = "PC/WSL" if remoto else "local"
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
-            notes.append(f"docker killed ({donde})" if r.returncode == 0 else
-                         f"docker kill {donde} falló: {(r.stderr or '').strip()[:60]}")
-        except (subprocess.TimeoutExpired, OSError) as e:
-            notes.append(f"docker kill {donde} error: {type(e).__name__}")
+        _ok, nota = kill_container(j["container"], j.get("backend"))
+        notes.append(nota)
     # marca 'cancelled' para que el watcher de run_tracked corte la secuencia
     confirmed = (not pid or _proc_gone(pid))
     # estado honesto: 'cancelled' sólo si el kill se confirmó; si no, 'cancel_failed'
@@ -523,7 +550,8 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
     totalmente silencioso también respeta timeout y cancel. Un hilo lector sólo
     actualiza el tail del log."""
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1, env=env, start_new_session=True)
+                            text=True, encoding="utf-8", errors="replace",
+                            bufsize=1, env=env, start_new_session=True)
     update(jid, pid=proc.pid)
 
     lines: list[str] = []
@@ -544,42 +572,45 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
         try:
             with full_log.open("a", encoding="utf-8", buffering=1) as durable:
                 for line in proc.stdout:
-                    raw = line.rstrip("\n")
-                    stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-                    durable.write(f"[{stamp}] {raw}\n")
-                    lines.append(raw)
-                    del lines[:-200]
-                    fields = {}
-                    if progress_re:
-                        m = re.search(progress_re, line)
-                        if m and int(m.group(1)) != last_pct:
-                            last_pct = int(m.group(1))
-                            lo, hi = progress_span
-                            fields["progress"] = round(lo + (hi - lo) * last_pct / 100, 3)
-                    if line_progress:
-                        try:
-                            observed = line_progress(raw)
-                        except Exception as e:
-                            print(f"line progress warning: {type(e).__name__}: {e}", flush=True)
-                        else:
-                            if observed is not None:
-                                observed_fields = line_progress_fields(
-                                    observed,
-                                    current_progress=max(
-                                        last_observed_progress,
-                                        float(fields.get("progress") or 0.0),
-                                    ),
-                                )
-                                fields.update(observed_fields)
-                                last_observed_progress = float(
-                                    fields.get("progress") or last_observed_progress)
-                    now = time.time()
-                    if fields or now - last_write >= 0.5:
-                        last_write = now
-                        fields["log"] = "\n".join(lines[-tail:])
-                        update(jid, **fields)
-                    if abort_re and re.search(abort_re, line):
-                        abort_hit.set()
+                    try:
+                        raw = line.rstrip("\n")
+                        stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                        durable.write(f"[{stamp}] {raw}\n")
+                        lines.append(raw)
+                        del lines[:-200]
+                        fields = {}
+                        if progress_re:
+                            m = re.search(progress_re, line)
+                            if m and int(m.group(1)) != last_pct:
+                                last_pct = int(m.group(1))
+                                lo, hi = progress_span
+                                fields["progress"] = round(lo + (hi - lo) * last_pct / 100, 3)
+                        if line_progress:
+                            try:
+                                observed = line_progress(raw)
+                            except Exception as e:
+                                print(f"line progress warning: {type(e).__name__}: {e}", flush=True)
+                            else:
+                                if observed is not None:
+                                    observed_fields = line_progress_fields(
+                                        observed,
+                                        current_progress=max(
+                                            last_observed_progress,
+                                            float(fields.get("progress") or 0.0),
+                                        ),
+                                    )
+                                    fields.update(observed_fields)
+                                    last_observed_progress = float(
+                                        fields.get("progress") or last_observed_progress)
+                        now = time.time()
+                        if fields or now - last_write >= 0.5:
+                            last_write = now
+                            fields["log"] = "\n".join(lines[-tail:])
+                            update(jid, **fields)
+                        if abort_re and re.search(abort_re, line):
+                            abort_hit.set()
+                    except Exception as e:  # una línea mala NUNCA debe parar el drenaje del pipe
+                        print(f"log reader warning: {type(e).__name__}: {e}", flush=True)
             update(jid, log="\n".join(lines[-tail:]))
         finally:
             reader_done.set()
@@ -618,13 +649,9 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                 _kill_pg(proc.pid, signal.SIGKILL)
                 proc.wait()
             # el contenedor no muere al matar la CLI de docker: tumbarlo explícito
-            cont = (get(jid) or {}).get("container")
-            if cont:
-                try:
-                    subprocess.run(["/usr/local/bin/docker", "kill", cont],
-                                   capture_output=True, timeout=30)
-                except (subprocess.TimeoutExpired, OSError):
-                    pass
+            row = get(jid) or {}
+            if row.get("container"):
+                kill_container(row["container"], row.get("backend"), timeout=30)
             break
 
     reader_done.wait(5)

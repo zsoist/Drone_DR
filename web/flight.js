@@ -266,7 +266,9 @@ const cid = new URLSearchParams(location.search).get('id');
     const orig = btn.innerHTML;
     btn.innerHTML = 'Preparando…';
     try {
-      const blob = await (await fetch(url)).blob();
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const blob = await r.blob();
       const file = new File([blob], name, { type });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file] });
@@ -277,7 +279,9 @@ const cid = new URLSearchParams(location.search).get('id');
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 30000);
       }
-    } catch {}
+    } catch (err) {
+      if (err?.name !== 'AbortError') alert(`No se pudo guardar el archivo: ${err?.message || err}`);
+    }
     btn.innerHTML = orig;
   }
   document.getElementById('share-video')?.addEventListener('click', e => {
@@ -394,7 +398,8 @@ const cid = new URLSearchParams(location.search).get('id');
     // rumbo: bearing hacia el siguiente punto — flecha que gira con el dron
     const q = pts[Math.min(i + 1, pts.length - 1)];
     const brg = bearing(p, q);
-    const card = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(brg / 45) % 8];
+    const trueBrg = (brg - 270 + 360) % 360;  // brg lleva +270 (offset de la flecha); el punto cardinal usa el rumbo real
+    const card = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(trueBrg / 45) % 8];
     set('head', `<span class="hud-arrow" style="transform:rotate(${Math.round(brg)}deg)">➤</span> <small>${card}</small>`);
     const hm = s.home ? havm(s.home[1], s.home[0], p.lat, p.lon) : null;
     set('home', hm != null ? `${Math.round(hm)}<small> m</small>` : '—');

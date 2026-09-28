@@ -50,8 +50,31 @@ main.innerHTML = `
     }
     c.flights.push(f);
   });
+  clusters.forEach(c => { c.key = `${c.lat.toFixed(2)},${c.lon.toFixed(2)}`; });
+  // la clave sale del despegue del primer vuelo (el más nuevo): un vuelo nuevo desde otro punto la cambia
+  // y perdería nombre/carátula. Si no hay meta para la clave, adoptar la más cercana (<30 km) no usada
+  // por otro cluster y migrarla a la clave nueva.
+  const usedMetaKeys = new Set(clusters.map(c => c.key).filter(k => tripsMeta[k]));
   clusters.forEach(c => {
-    c.key = `${c.lat.toFixed(2)},${c.lon.toFixed(2)}`;
+    if (tripsMeta[c.key]) return;
+    let best = null, bestD = 30;
+    for (const k of Object.keys(tripsMeta)) {
+      if (usedMetaKeys.has(k)) continue;
+      const m = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(k);
+      if (!m) continue;
+      const d = havKm(c.lat, c.lon, +m[1], +m[2]);
+      if (d < bestD) { bestD = d; best = k; }
+    }
+    if (!best) return;
+    usedMetaKeys.add(best);
+    const old = tripsMeta[best] || {};
+    tripsMeta[c.key] = { ...old };
+    const body = { key: c.key };
+    if (old.name) body.name = old.name;
+    if (old.cover) body.cover = old.cover;
+    if (body.name || body.cover) api('/api/trip_meta', body).catch(() => {});
+  });
+  clusters.forEach(c => {
     const srv = tripsMeta[c.key] || {};
     const saved = localStorage.getItem(`ab.city.${c.key}`);
     const near = CITIES.map(([n, la, lo]) => [n, havKm(c.lat, c.lon, la, lo)]).sort((a, b) => a[1] - b[1])[0];
@@ -268,7 +291,7 @@ main.innerHTML = `
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 30000);
       }
-    } catch { alert('No se pudo generar la postal.'); }
+    } catch (err) { if (err?.name !== 'AbortError') alert('No se pudo generar la postal.'); }
     btn.innerHTML = orig; btn._busy = false;
   }
 

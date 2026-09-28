@@ -21,16 +21,21 @@ por el origen público. Un `206 HIT` público es una fuga de cache y pone
 `ops_status.py` en FAIL.
 
 Objetivo mensual: >=99%. En 30 días esto permite como máximo 7 h 18 min de caída.
-El workflow `.github/workflows/uptime.yml` prueba desde infraestructura externa
-cada 15 minutos. La disponibilidad aproximada mensual es:
+El workflow `.github/workflows/uptime.yml` prueba desde infraestructura externa con cron
+`*/15`, pero GitHub estrangula los cron programados: en la práctica corrió cada ~3-4 h
+(99 ejecuciones en 15.5 días), así que es best-effort. El chequeo de nivel minuto es el
+watchdog local (`com.aerobrain.watchdog`, 60 s). La disponibilidad aproximada mensual es:
 
 ```text
 checks exitosos / checks programados * 100
 ```
 
 El watchdog local cura procesos; el workflow externo detecta también Mac apagado,
-internet caído, DNS o Cloudflare. Uptime Kuma en `127.0.0.1:3001` sirve como
-dashboard local, pero no cuenta como monitor externo porque cae junto con el Mac.
+internet caído, DNS o Cloudflare. No hay dashboard local (Uptime Kuma ya no corre; nada
+escucha en `127.0.0.1:3001`): el estado se lee con `python3 pipeline/ops_status.py` y
+`~/Library/Logs/AeroBrain/watchdog.log`. Si la sonda de frontera auth o la sonda local
+fallan, el watchdog escribe `~/Library/Logs/AeroBrain/ALERT` y lanza una notificación
+macOS (máx. 1/hora por causa); el archivo se borra al recuperarse.
 
 ## Arquitectura
 
@@ -196,6 +201,17 @@ sleep=0  disksleep=0  autorestart=1  lowpowermode=0
 El watchdog reintenta una vez antes de reiniciar. Un timeout aislado no mata un
 ingest/edit activo. Si el proceso desaparece de launchd, sí se reinicia de inmediato.
 Los logs rotan a 5 MB con una copia anterior.
+
+Ubicación de logs (cambió el 2026-09-28): stdout/stderr de los LaunchAgents van a
+`~/Library/Logs/AeroBrain/{web,worker,tunnel,watchdog.launchd}.log` (antes
+`/tmp/aerobrain-web.log`, `/tmp/aerobrain-worker.log`, `/tmp/metislab-tunnel.log`,
+`/tmp/aerobrain-watchdog.launchd.log`, que `/tmp` borraba en cada reinicio);
+`watchdog.log` vive ahí desde antes. `ops_status.py` y la rotación del watchdog usan
+las rutas nuevas.
+
+Degradado conocido: la búsqueda semántica respaldada por Supabase está degradada — el
+proyecto Supabase (`ehmfpq…`) no resuelve DNS (NXDOMAIN desde 2026-09), por lo que
+`sync_supabase.py` no puede sincronizar. El esquema vive en `supabase/migrations/`.
 
 Límite físico importante: FileVault está habilitado. Después de pérdida total de
 energía, `autorestart=1` enciende el Mac, pero macOS exige desbloqueo manual antes
