@@ -24,7 +24,7 @@ from pathlib import Path
 
 VAULT = Path("/Volumes/SSD/drone-vault")
 ERRLOG = VAULT / "ops" / "errors.jsonl"
-WATCHLOG = Path("/tmp/aerobrain-watchdog.log")
+WATCHLOG = Path.home() / "Library" / "Logs" / "AeroBrain" / "watchdog.log"
 JOBS_DB = VAULT / "manifest" / "jobs.db"
 REPORTS = VAULT / "ops" / "reports"
 KEYS_ENV = Path("/Volumes/SSD/_system/claude/.api-keys.env")

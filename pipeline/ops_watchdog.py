@@ -23,8 +23,11 @@ LOCAL_URL = "http://127.0.0.1:8790/api/healthz"
 PUBLIC_URL = "https://vuelos.metislab.work/api/healthz"
 PUBLIC_WWW_URL = "https://www.metislab.work/"
 PUBLIC_WHOAMI_URL = "https://vuelos.metislab.work/api/whoami"
-STATE = Path("/tmp/aerobrain-watchdog-state.json")
-LOG = Path("/tmp/aerobrain-watchdog.log")
+# Outside /tmp on purpose: /tmp is wiped on reboot, which erased the evidence of the
+# very outage a reboot causes (2026-09-28: ~80 min down waiting at the FileVault login).
+LOG_DIR = Path.home() / "Library" / "Logs" / "AeroBrain"
+STATE = LOG_DIR / "watchdog-state.json"
+LOG = LOG_DIR / "watchdog.log"
 VAULT = Path("/Volumes/SSD/drone-vault")
 PUBLIC_INTERVAL_S = 300
 STREAM_INTERVAL_S = 900
@@ -67,6 +70,7 @@ def load_state() -> dict:
 
 
 def save_state(state: dict):
+    STATE.parent.mkdir(parents=True, exist_ok=True)
     tmp = STATE.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, separators=(",", ":")))
     tmp.replace(STATE)

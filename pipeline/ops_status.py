@@ -27,10 +27,10 @@ LOGS = (
     Path("/tmp/aerobrain-web.log"),
     Path("/tmp/aerobrain-worker.log"),
     Path("/tmp/metislab-tunnel.log"),
-    Path("/tmp/aerobrain-watchdog.log"),
+    Path.home() / "Library" / "Logs" / "AeroBrain" / "watchdog.log",
     Path("/tmp/aerobrain-watchdog.launchd.log"),
 )
-WATCHDOG_LOG = Path("/tmp/aerobrain-watchdog.log")
+WATCHDOG_LOG = Path.home() / "Library" / "Logs" / "AeroBrain" / "watchdog.log"
 LABELS = ("com.aerobrain.web", "com.aerobrain.worker", "com.metislab.tunnel", "com.aerobrain.watchdog")
 
 

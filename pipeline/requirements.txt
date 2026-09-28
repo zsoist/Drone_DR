@@ -1,0 +1,23 @@
+# AeroBrain pipeline — Python deps of the shared venv (/Volumes/SSD/_system/venv).
+# Pinned to the exact versions under which the full smoke suite passed on 2026-09-28
+# (python 3.14.7, ffmpeg 9.0.2). An unpinned `pip install -U` on 2026-09-03 changed
+# trimesh 4→5 and silently broke the weapon-GLB rebuild test for weeks.
+#
+# The web server (aerobrain_server.py) is stdlib-only. These are for generators,
+# splat evaluation and the test suite.
+#
+# Install:  /Volumes/SSD/_system/venv/bin/pip install -r pipeline/requirements.txt
+
+numpy==2.5.2
+pillow==12.3.0
+trimesh==5.1.0
+scikit-image==0.26.0
+torch==2.14.0
+lpips==0.1.4
+
+# Optional: only generate_destruction_kit.py --preview (lazy import, needs EGL)
+# pyrender
+
+# NOT here on purpose:
+# - GDAL/PDAL run INSIDE the opendronemap/odm container (tresd_publish.sh_in_odm)
+# - @playcanvas/splat-transform is a Node dep in tools/package.json

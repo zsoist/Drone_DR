@@ -178,6 +178,17 @@ energía, `autorestart=1` enciende el Mac, pero macOS exige desbloqueo manual an
 de iniciar los LaunchAgents. Desactivar FileVault permitiría auto-login, pero es
 una decisión de seguridad, no un ajuste que este proyecto debe hacer solo.
 
+Evidencia 2026-09-28 (upgrade a macOS 27.0): apagado ~05:50, arranque 06:18, login
+07:14 → ~80 min de caída real; el workflow externo la detectó (run 36412081105).
+Desde ese día el log del watchdog vive en `~/Library/Logs/AeroBrain/` y sobrevive
+reinicios (antes `/tmp`, que borraba justo la evidencia de la caída).
+
+Deriva detectada el mismo día (pendiente de decisión del operador, no corregida):
+OrbStack corre con `memory_mib=4096` (no los 10 GB de esta guía) y la imagen
+`opendronemap/odm` no está en el Mac. El 3D pesado va al PC CUDA, pero los pasos
+locales `sh_in_odm` (previews de ortofoto, recorte AOI) harían pull (~4 GB, disco
+interno) en el primer uso y ODM local completo haría OOM con 4 GB.
+
 Térmica:
 
 - No usar fan-control ni undervolt no soportado; macOS gestiona el M4.
@@ -209,7 +220,7 @@ curl http://127.0.0.1:8790/api/healthz
 curl https://vuelos.metislab.work/api/healthz
 curl -I -H 'Range: bytes=0-0' \
   https://vuelos.metislab.work/data/proxies/DJI_20260709145011_0101_D.mp4
-tail -40 /tmp/aerobrain-watchdog.log
+tail -40 ~/Library/Logs/AeroBrain/watchdog.log
 ```
 
 Restart seguro:

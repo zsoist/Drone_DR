@@ -64,7 +64,7 @@ testing uses `http://localhost:8790` (trusted, no cookie needed).
 pipeline/safe_restart.sh server     # alias for web; picks up backend changes
 pipeline/safe_restart.sh tunnel     # Cloudflare tunnel only
 pipeline/safe_restart.sh worker     # refuses while a 3D/splat job is running
-tail -20 /tmp/aerobrain-watchdog.log
+tail -20 ~/Library/Logs/AeroBrain/watchdog.log
 python3 pipeline/ops_status.py        # one-shot 24/7 ops audit
 python3 pipeline/external_probe.py    # public health + HTML + video Range
 ```

@@ -52,10 +52,20 @@ def request(url: str, *, headers: dict | None = None, limit: int = 2_000_000,
         return response.status, body, response.headers, elapsed_ms, response.geturl()
 
 
+def json_or_fail(what: str, status: int, body: bytes):
+    # When the origin is down, Cloudflare answers with an HTML error page (e.g. 530/1033).
+    # json.loads on it used to surface as a bare JSONDecodeError traceback in CI.
+    try:
+        return json.loads(body)
+    except ValueError:
+        snippet = body[:120].decode("utf-8", "replace").replace("\n", " ")
+        raise RuntimeError(f"{what} failed: status={status} non-JSON body: {snippet!r}") from None
+
+
 def probe(base: str) -> dict:
     base = base.rstrip("/")
     status, body, headers, health_ms, _ = request(f"{base}/api/healthz", limit=4096)
-    health = json.loads(body)
+    health = json_or_fail("health", status, body)
     if status != 200 or health.get("ok") is not True or not edge_worker_present(headers):
         raise RuntimeError(f"health failed: status={status} body={health}")
 
@@ -67,7 +77,7 @@ def probe(base: str) -> dict:
         raise RuntimeError(f"login gate failed: status={status} final={final_url}")
 
     status, body, headers, whoami_ms, _ = request(f"{base}/api/whoami", limit=4096)
-    whoami = json.loads(body)
+    whoami = json_or_fail("whoami", status, body)
     if status != 401 or whoami != {"ok": False} or not edge_worker_present(headers):
         raise RuntimeError(f"whoami boundary failed: status={status} body={whoami}")
 
