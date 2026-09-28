@@ -77,4 +77,9 @@ def stop_if_idle(active_jobs: int, now: float | None = None) -> bool:
     if ps.returncode != 0 or ps.stdout.strip():
         return False                     # a container is alive (maybe started by hand): leave it
     subprocess.run([orb, "stop"], capture_output=True, timeout=120)
+    if not running():
+        # `orb start/stop` leave a ~66 MB CLI helper alive; with the VM already down it
+        # holds nothing, and ensure_up() relaunches everything from cold in ~1.3 s
+        subprocess.run(["pkill", "-TERM", "-f", "OrbStack --internal-cli-background"],
+                       capture_output=True, timeout=10)
     return True
