@@ -39,7 +39,11 @@ def _geocode_name(lat: float, lon: float) -> str | None:
 
 
 def _obj_center(path: Path) -> list[float] | None:
-    """Media XYZ que publish resta al viewer.obj; fallback para modelos previos."""
+    """Vertex mean of a geo.obj = what make_viewer_mesh subtracts to make viewer.obj.
+
+    This is NOT the game-frame offset: it is the position of the viewer.obj origin
+    in ODM's local frame (origin = coords.txt). See mesh_offset_game_frame().
+    """
     if not path.exists():
         return None
     n = 0
@@ -51,6 +55,46 @@ def _obj_center(path: Path) -> list[float] | None:
             p = line.split()
             sx += float(p[1]); sy += float(p[2]); sz += float(p[3]); n += 1
     return [round(sx / n, 4), round(sy / n, 4), round(sz / n, 4)] if n else None
+
+
+def _dsm_center_in_odm_frame(cid: str, lod: dict | None) -> tuple[float, float] | None:
+    """(east, north) metres of the DSM centre relative to the ODM local origin.
+
+    The game frame has its origin at the DSM centre (dsm_lod.center_wgs84; see
+    splat_align.py) while geo.obj lives in ODM's local frame whose origin is the
+    projected point in odm_georeferencing/coords.txt. They only coincide by luck.
+    """
+    center = (lod or {}).get("center_wgs84")
+    coords = VAULT / "odm" / f"proj_{cid}" / "odm_georeferencing" / "coords.txt"
+    if not center or not coords.exists():
+        return None
+    import scene_aoi          # lazy: keeps numpy-only import cost off the hot path
+    try:
+        origin_e, origin_n = scene_aoi.parse_odm_coords_origin(coords)
+    except ValueError:
+        return None           # non UTM-18N frame: no verified conversion available
+    east, north = scene_aoi.utm18_from_wgs84(center[1], center[0])
+    return east - origin_e, north - origin_n
+
+
+def mesh_offset_game_frame(cid: str, geo_obj: Path, lod: dict | None,
+                           meta_offset: list | None) -> tuple[list[float] | None, str | None]:
+    """Where viewer.obj's origin sits in the game frame (x=E, y=U, z=S; origin=DSM centre).
+
+        game_xy = geo_xy - dsm_center_local,   viewer = geo - vertex_mean(geo)
+        =>  mesh_offset = vertex_mean(geo) - dsm_center_local        (x=E, y=N, z=elev MSL)
+
+    Returns (offset, frame). frame is "dsm_center" when verified; otherwise the legacy
+    meta.mesh_offset is passed through unchanged (frame None) because without coords.txt
+    the ODM origin is unknown.
+    """
+    mean = _obj_center(geo_obj)
+    center = _dsm_center_in_odm_frame(cid, lod)
+    if mean is not None and center is not None:
+        return [round(mean[0] - center[0], 4), round(mean[1] - center[1], 4), mean[2]], "dsm_center"
+    if meta_offset:
+        return list(meta_offset), None
+    return mean, None
 
 
 def splat_transform_contract(splat_meta: dict | None) -> dict:
@@ -185,8 +229,12 @@ def build(cid: str) -> dict:
     track = _load(track_p) or {}
     viewer_obj = meta.get("model_viewer")
     mesh_offset = meta.get("mesh_offset")
-    if viewer_obj and not mesh_offset:
-        mesh_offset = _obj_center(mdir / "model" / "odm_textured_model_geo.obj")
+    mesh_offset_frame = None
+    if viewer_obj:
+        # meta.mesh_offset (written by tresd_publish) is the RAW vertex mean of geo.obj in
+        # ODM's local frame; the game frame is centred on the DSM. Publish the real thing.
+        mesh_offset, mesh_offset_frame = mesh_offset_game_frame(
+            cid, mdir / "model" / "odm_textured_model_geo.obj", lod, mesh_offset)
 
     collision_ready = bool(lod and not viewer_obj)
     collision_info = {
@@ -293,7 +341,10 @@ def build(cid: str) -> dict:
             # unaligned. Derived AOI versions can publish the exact CUDA pose
             # transform without weakening that honesty contract.
             "splat": splat_transform_contract(splat_meta),
+            # viewer.obj origin in the game frame [E, N, elev_msl]; scene.js places it at
+            # (ox, oz - elev_min, -oy) after rotation.x=-PI/2. Frame origin = DSM centre.
             "mesh_offset": mesh_offset,
+            "mesh_offset_frame": mesh_offset_frame,
         },
         "spawn": {
             "position_m": [0, round(((lod or {}).get("elev_max", 0) or 0)

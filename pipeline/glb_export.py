@@ -205,7 +205,13 @@ def _obj_arrays(viewer: Path) -> tuple[np.ndarray, np.ndarray]:
 
 def source_frame_stats(viewer: Path) -> dict:
     verts, idx = _obj_arrays(viewer)
-    v = verts.astype(np.float64)
+    # Only vertices a face references are rendered (and survive gltfpack); ODM meshes carry
+    # tens of thousands of orphan `v` lines (some 75 m below the terrain) that would make a
+    # correct GLB look "shrunk". Compare against the rendered geometry.
+    v = verts.astype(np.float64)[np.unique(idx)]
+    remap = np.zeros(len(verts), dtype=np.int64)
+    remap[np.unique(idx)] = np.arange(len(v))
+    idx = remap[idx]
     tri = v[idx.reshape(-1, 3)]
     area = 0.5 * np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
     centroid = (area[:, None] * tri.mean(axis=1)).sum(axis=0) / area.sum()
@@ -272,7 +278,18 @@ def _tier_args(tier: str, cfg: dict, ratio: float, threads: int) -> list[str]:
     args += ["-tq", str(cfg["quality"]), "-tj", str(threads)]
     if ratio < 0.9995:
         args += ["-si", f"{ratio:.5f}"]
-    args += ["-vp", str(cfg["pos_bits"]), "-vt", str(cfg["uv_bits"]), "-km"]
+    # pos_bits ladder for very large extents, where the 16-bit integer grid (extent/65535,
+    # ~12 mm at 780 m) exceeds the 1 cm frame tolerance (measured on recon_4e4245a1f4):
+    #   16 -> integer grid (default)   24 -> float positions, 16-bit mantissa (-vpf -vp 16)
+    #   32 -> no quantisation at all (-noq, exact but ~20 % bigger)
+    # NB: bare -vpf (default 14-bit mantissa) is WORSE than the integer grid.
+    if cfg["pos_bits"] >= 32:
+        args += ["-noq"]
+    elif cfg["pos_bits"] >= 24:
+        args += ["-vpf", "-vp", "16"]
+    else:
+        args += ["-vp", str(cfg["pos_bits"])]
+    args += ["-vt", str(cfg["uv_bits"]), "-km"]
     return args
 
 

@@ -138,8 +138,9 @@ are approximate in that case. Do not claim survey accuracy.
 - One folder per pass (`nadir`, `ringA`, `ringB`, `ringC`, `facade`, `video`) [V]; upload as one scene.
 - Do not delete or edit photos on the card; the pipeline handles selection. Do not use in-app crop, beauty,
   or filter modes.
-- Ingest via the SD-card flow so EXIF and SRT reach the vault (see [Runbooks](RUNBOOKS.md)); the direct
-  upload accepts video only.
+- Ingest via the SD-card flow (video + SRT) or the direct upload's **Fotos · malla 3D** mode (JPG/DNG, drop the
+  whole folder — each subfolder becomes a pass under `raw/<set>/<pass>/`). Note: a stills-only set does not yet
+  feed ODM from the 3D page (processing still starts from a video clip); that link is pending.
 
 ## 9. Post-flight quick checks (5 minutes, on site)
 

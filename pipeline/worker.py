@@ -1696,6 +1696,24 @@ def phased_splat_job_spec(parent_spec: dict, cid: str) -> dict:
     return followup
 
 
+def glb_after_publish(j: dict, cid: str) -> bool:
+    """W1: GLB tiers (gltfpack + gate) for a freshly published 3D model. Runs on the Mac in
+    a detached process (backfill_glb --refresh-manifest also refreshes scene.v2.json), never
+    on the PC GPU lane. NON-FATAL: any problem is logged and the publish job stays done."""
+    def log(msg: str) -> None:
+        print(f"  {msg}", flush=True)
+        try:
+            jobstore.event(j["id"], "glb_export", msg, level="info")
+        except Exception:                                   # noqa: BLE001
+            pass
+    try:
+        import backfill_glb
+        return bool(backfill_glb.post_publish(cid, log=log))
+    except Exception as exc:                                # noqa: BLE001
+        log(f"GLB export omitido para {cid}: {exc}")
+        return False
+
+
 def run_3d(j: dict):
     import compute_policy
     j["spec"] = compute_policy.route_odm(j["spec"])   # red de seguridad: jobs viejos en cola
@@ -1738,6 +1756,7 @@ def run_3d(j: dict):
                              "merge_label": (mm.get("reconstruction") or {}).get("merge_label")})
     jobstore.end(j["id"], "done", f"modelo 3D de {cid} listo{extra} — míralo en el tab 3D",
                  artifact=f"models/{cid}/meta.json")
+    glb_after_publish(j, cid)
     # phased: gaussian al terminar — pero NO sobre una fusión parcial (§gate del review)
     if j["spec"].get("then_splat"):
         if partial:

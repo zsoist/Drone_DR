@@ -5,7 +5,7 @@ georreferencia (aprendido a la mala: ortofoto de 67x66px). Con GPS, el bundle
 adjustment converge y la ortofoto sale georreferenciada de verdad.
 
 Usage:
-    python3 odm_prep.py DJI_20260704160358_0104_D
+    python3 odm_prep.py DJI_20260704160358_0104_D [--camera-profile neo2]
     # luego:
     docker run --rm -m 7g -v /Volumes/SSD/drone-vault/odm/<proj>:/datasets/code \
       opendronemap/odm --project-path /datasets --fast-orthophoto \
@@ -24,6 +24,101 @@ from paths import VAULT  # noqa: E402
 from fsutil import atomic_write_json, atomic_write_text  # noqa: E402
 FPS = 0.5          # 1 frame cada 2s
 WIDTH = 2688       # default: balance calidad/RAM en 16GB
+
+
+# ---- perfiles de cámara: EXIF Model -> args extra de ODM ----------------------------------
+# Un lente ultra-ancho (Neo 2, ~120°) necesita el modelo Brown; sin él OpenSfM asume perspectiva
+# y la escena se "abomba" (doming). --use-fixed-camera-params congela los parámetros ajustados
+# (ayuda contra el doming en vuelos de una sola altura). Cualquier otra cámara: SIN args extra.
+#
+# Clave = EXIF Model normalizado (minúsculas, solo [a-z0-9]). `verified=False` = la clave NO se
+# leyó de un archivo real de esa cámara: ningún Neo 2 existe hoy en el vault (solo FC8582 = Flip,
+# 24 mm eq., FOV 73.7°). Al ingerir el primer Neo 2, `camera_profile.models` de frames_manifest.json
+# muestra el Model real: añádelo aquí y pon verified=True. Los DJI de consumo suelen exponer un
+# código FCxxxx en vez del nombre comercial, así que estas claves pueden no coincidir nunca.
+_BROWN = ["--camera-lens", "brown", "--use-fixed-camera-params"]
+CAMERA_PROFILES = {
+    "djineo2": {"label": "DJI Neo 2", "args": _BROWN, "verified": False},
+    "neo2":    {"label": "DJI Neo 2", "args": _BROWN, "verified": False},
+}
+
+
+def normalize_camera_model(model) -> str:
+    return "".join(ch for ch in str(model or "").lower() if ch.isalnum())
+
+
+def detect_camera_models(images: Path) -> dict:
+    """{EXIF Model: nº de imágenes} de los JPG/PNG de `images`. Los frames de video no traen
+    Model (solo las fotos), así que un set solo-video devuelve {}."""
+    try:
+        out = subprocess.run(
+            ["exiftool", "-json", "-Model", "-ext", "jpg", "-ext", "jpeg", "-ext", "png", str(images)],
+            capture_output=True, text=True, timeout=300)
+        rows = json.loads(out.stdout or "[]")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}
+    counts: dict = {}
+    for row in rows:
+        m = str(row.get("Model") or "").strip()
+        if m:
+            counts[m] = counts.get(m, 0) + 1
+    return counts
+
+
+def select_camera_profile(models: dict, override: str | None = None) -> dict:
+    """Decide los args extra de ODM. Gana el Model más frecuente con perfil (>= la mitad de las
+    imágenes con Model); `override` (clave de CAMERA_PROFILES) fuerza uno. Siempre devuelve un
+    registro auditable, también cuando no hay coincidencia (args == [])."""
+    record = {"profile": None, "label": None, "args": [], "verified": None,
+              "models": dict(models), "reason": "sin coincidencia: ODM por defecto"}
+    if override:
+        key = normalize_camera_model(override)
+        if key not in CAMERA_PROFILES:
+            raise SystemExit(f"--camera-profile desconocido: {override}")
+        prof = CAMERA_PROFILES[key]
+        record.update(profile=key, label=prof["label"], args=list(prof["args"]),
+                      verified=prof["verified"], reason="forzado por --camera-profile")
+        return record
+    total = sum(models.values())
+    best = None
+    for model, n in models.items():
+        key = normalize_camera_model(model)
+        if key in CAMERA_PROFILES and (best is None or n > best[1]):
+            best = (key, n, model)
+    if best and best[1] * 2 >= total:
+        prof = CAMERA_PROFILES[best[0]]
+        record.update(profile=best[0], label=prof["label"], args=list(prof["args"]),
+                      verified=prof["verified"],
+                      reason=f"EXIF Model {best[2]!r} en {best[1]}/{total} imágenes")
+    elif not models:
+        record["reason"] = "sin EXIF Model (frames de video): ODM por defecto"
+    return record
+
+
+def merge_odm_args(base: list, extra: list) -> list:
+    """base + extra sin duplicar ni pisar flags que el preset ya fija (el preset manda)."""
+    out = list(base)
+    have = {a for a in out if str(a).startswith("--")}
+    i = 0
+    while i < len(extra):
+        flag = extra[i]
+        has_val = i + 1 < len(extra) and not str(extra[i + 1]).startswith("--")
+        if flag not in have:
+            out.append(flag)
+            if has_val:
+                out.append(extra[i + 1])
+            have.add(flag)
+        i += 2 if has_val else 1
+    return out
+
+
+def camera_extra_args(proj: Path) -> list:
+    """Args extra guardados por odm_prep en frames_manifest.json (sobrevive a clean_odm_outputs)."""
+    try:
+        args = json.loads((Path(proj) / "frames_manifest.json").read_text()).get("camera_profile", {}).get("args", [])
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [str(a) for a in args] if isinstance(args, list) else []
 
 
 def find_raw(cid: str) -> Path:
@@ -230,9 +325,16 @@ def main():
                    check=True, capture_output=True)
     for leak in images.glob("*.jpg_original"):
         leak.unlink()
+    camera_override = argv[argv.index("--camera-profile") + 1] if "--camera-profile" in argv else None
+    camera = select_camera_profile(detect_camera_models(images), camera_override)
     atomic_write_json(proj / "frames_manifest.json",
         {"profile": profile, "sources": per_source, "photos": n_photos,
-         "total_frames": total, "width": width, "fps": fps}, indent=1, ensure_ascii=True)
+         "total_frames": total, "width": width, "fps": fps, "camera_profile": camera},
+        indent=1, ensure_ascii=True)
+    if camera["args"]:
+        print(f"cámara {camera['label']} ({camera['reason']}"
+              f"{'' if camera['verified'] else ', perfil SIN verificar'}) → ODM {' '.join(camera['args'])}",
+              flush=True)
     src_lbl = f"{len(sources)} video(s)" + (f" + {n_photos} foto(s)" if n_photos else "")
     print(f"✅ {total} frames geotagged de {src_lbl} → {proj}")
 

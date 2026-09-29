@@ -8,7 +8,7 @@
 // que va en el MISMO marco que el OBJ y el caller aplica la MISMA transformación
 // (rotation.x = -PI/2 + mesh_offset). Aquí no se rota ni se traslada nada.
 
-const V = '?v=360';
+const V = '?v=361';
 const TRANSCODER_PATH = '/vendor/three-addons180/libs/basis/';
 const STALL_MS = 20000;
 const DECODE_MS = 40000;

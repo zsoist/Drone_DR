@@ -84,6 +84,18 @@ class FingerprintTests(unittest.TestCase):
         obj.write_text(obj.read_text() + "# touched\n")
         self.assertNotEqual(first, glb_export.source_fingerprint(obj, mtls))  # OBJ change
 
+    def test_orphan_vertices_do_not_count_as_geometry(self):
+        obj = write_fixture(self.tmp)
+        base = glb_export.source_frame_stats(obj)
+        lines = obj.read_text().splitlines()
+        i = max(k for k, ln in enumerate(lines) if ln.startswith("v "))
+        lines.insert(i + 1, "v 0.0 0.0 -75.0")                 # unreferenced vertex far below
+        obj.write_text("\n".join(lines) + "\n")
+        # the inserted vertex shifts nothing referenced only if appended after all vertices
+        with_orphan = glb_export.source_frame_stats(obj)
+        np.testing.assert_allclose(with_orphan["bbox_min"], base["bbox_min"])
+        self.assertEqual(len(with_orphan["verts"]), len(base["verts"]))
+
     def test_validate_fails_closed_without_meta(self):
         write_fixture(self.tmp)
         with self.assertRaises(ValueError):
@@ -199,6 +211,171 @@ class BuildTests(unittest.TestCase):
     def test_verify_reruns_the_frame_gate_from_disk(self):
         out = glb_export.verify(CID, vault=self.tmp, log=lambda *_: None)
         self.assertTrue(all(ev["ok"] for ev in out.values()))
+
+
+# --------------------------------------------------------------- backfill / hook (mocked)
+class BackfillSearchTests(unittest.TestCase):
+    """Bounded parameter search + idempotency + worker hook. No gltfpack, no Chrome."""
+
+    def _hist(self, checks, target=420_000, quality=10, override=None, ssim=0.95):
+        return [{"override": override or {}, "checks": checks, "ssim_mean": ssim,
+                 "params": {"target_tris": target, "quality": quality}}]
+
+    def test_quality_failure_raises_tris_then_full_mesh(self):
+        import backfill_glb
+        red = {"ssim": False, "sharpness": True, "download": True, "gpu": True, "first_frame": True}
+        self.assertEqual(backfill_glb.next_override(self._hist(red), 900_000), {"target_tris": 525_000})
+        self.assertEqual(backfill_glb.next_override(self._hist(red, target=440_000), 529_356),
+                         {"target_tris": None})                      # 550k >= 97% of source -> full
+        self.assertIsNone(backfill_glb.next_override(self._hist(red, target=None), 529_356))
+
+    def test_budget_failure_lowers_quality_only_with_ssim_headroom(self):
+        import backfill_glb
+        red = {"ssim": True, "sharpness": True, "download": False, "gpu": True, "first_frame": True}
+        nxt = backfill_glb.next_override(self._hist(red, ssim=0.985), 500_000)
+        self.assertEqual(nxt, {"quality": backfill_glb.QUALITY_FLOOR})
+        nxt = backfill_glb.next_override(self._hist(red, ssim=0.971), 500_000)      # no headroom
+        self.assertEqual(nxt, {"target_tris": 315_000})
+
+    def test_conflicting_or_exhausted_search_stops(self):
+        import backfill_glb
+        both = {"ssim": False, "sharpness": True, "download": False, "gpu": True, "first_frame": True}
+        self.assertIsNone(backfill_glb.next_override(self._hist(both), 500_000))
+        red = {"ssim": False, "sharpness": True, "download": True, "gpu": True, "first_frame": True}
+        long = self._hist(red) * backfill_glb.MAX_ATTEMPTS
+        self.assertIsNone(backfill_glb.next_override(long, 500_000))
+
+    def test_frame_rejection_tries_float_positions_then_more_tris(self):
+        import backfill_glb
+        bad = 'frame gate FAILED: {"vertex_subset_max_m": 0.02, "bbox_grow_m": 0.0}'
+        h = [{"override": {}, "error": bad, "checks": {}, "params": {}, "target_tris": 420_000}]
+        nxt = backfill_glb.next_override(h, 900_000)
+        self.assertEqual(nxt, {"pos_bits": 24})
+        h.append({"override": nxt, "error": bad, "checks": {}, "params": {}, "target_tris": 420_000})
+        self.assertEqual(backfill_glb.next_override(h, 900_000), {"pos_bits": 32})
+        h.append({"override": {"pos_bits": 32}, "error": bad, "checks": {}, "params": {},
+                  "target_tris": 420_000})
+        self.assertEqual(backfill_glb.next_override(h, 900_000), {"pos_bits": 32, "target_tris": 525_000})
+        decim = 'frame gate FAILED: {"vertex_subset_max_m": 0.004, "bbox_grow_m": 0.0, "centroid_delta_m": 0.15}'
+        self.assertEqual(backfill_glb.next_override(
+            [{"override": {}, "error": decim, "checks": {}, "params": {}, "target_tris": 420_000}], 900_000),
+            {"target_tris": 525_000})                       # decimation, not quantisation -> more tris
+        a24 = glb_export._tier_args("mobile", {**glb_export.TIERS["mobile"], "pos_bits": 24}, 1.0, 2)
+        self.assertEqual(a24[a24.index("-vpf"):a24.index("-vpf") + 3], ["-vpf", "-vp", "16"])
+        self.assertIn("-noq", glb_export._tier_args("mobile", {**glb_export.TIERS["mobile"], "pos_bits": 32}, 1.0, 2))
+        self.assertNotIn("-noq", glb_export._tier_args("mobile", glb_export.TIERS["mobile"], 1.0, 2))
+
+    def test_quality_limited_full_mesh_tries_uastc_once_and_stops_on_budget(self):
+        import backfill_glb
+        red = {"ssim": False, "sharpness": True, "download": True, "gpu": True, "first_frame": True}
+        h = [{"override": {"target_tris": None}, "checks": red, "ssim_mean": 0.96,
+              "params": {"target_tris": None, "quality": 10, "codec": "etc1s"}}]
+        nxt = backfill_glb.next_override(h, 500_000)
+        self.assertEqual(nxt, {"target_tris": None, "codec": "uastc"})
+        over = {"ssim": True, "sharpness": True, "download": False, "gpu": True, "first_frame": True}
+        h.append({"override": nxt, "checks": over, "ssim_mean": 0.99,
+                  "params": {"target_tris": None, "quality": 10, "codec": "uastc"}})
+        self.assertIsNone(backfill_glb.next_override(h, 500_000))      # codec fixed SSIM, broke budget
+
+    def test_search_tier_stops_on_green_and_records_attempts(self):
+        import backfill_glb
+        import glb_gate
+        calls = []
+
+        def fake_build(cid, *, vault, tiers, tier_overrides, log):
+            ov = (tier_overrides or {}).get(tiers[0], {})
+            calls.append(ov)
+            tgt = ov.get("target_tris", 420_000)
+            return {"tiers": {tiers[0]: {"key": f"k{len(calls)}", "src_tris": 529_356, "tris": tgt or 529_356,
+                                         "bytes": 1, "params": {"target_tris": tgt, "quality": 10}}}}
+
+        def fake_gate(base, cid, tier, shots, log=print, files=None, ref=None):
+            ok = len(calls) >= 2
+            return {"ok": ok, "ssim_mean": 0.97 if ok else 0.95, "ssim_min": 0.9,
+                    "checks": {"ssim": ok, "sharpness": True, "download": True, "gpu": True, "first_frame": True},
+                    "budget": {}}
+
+        orig = glb_gate.run_variant
+        glb_gate.run_variant = lambda *a, **k: {"cams": []}
+        try:
+            out = backfill_glb.search_tier("c", "mobile", vault=Path("/nonexistent"), base_url="x",
+                                           log=lambda *_: None, build=fake_build, gate_tier=fake_gate)
+        finally:
+            glb_gate.run_variant = orig
+        self.assertEqual(out["status"], "green")
+        self.assertEqual(len(out["attempts"]), 2)
+        self.assertEqual(calls, [{}, {"target_tris": None}])   # 525k >= 97% of source -> full mesh
+        self.assertEqual(out["verdict"]["key"], "k2")
+
+    def test_search_tier_is_bounded_and_reports_exhausted(self):
+        import backfill_glb
+        import glb_gate
+        n = []
+
+        def fake_build(cid, *, vault, tiers, tier_overrides, log):
+            n.append(1)
+            tgt = ((tier_overrides or {}).get(tiers[0]) or {}).get("target_tris", 100_000)
+            return {"tiers": {tiers[0]: {"key": f"k{len(n)}", "src_tris": 1_000_000, "tris": 1,
+                                         "bytes": 1, "params": {"target_tris": tgt, "quality": 10}}}}
+
+        fake_gate = lambda *a, **k: {"ok": False, "ssim_mean": 0.9, "ssim_min": 0.9, "budget": {},  # noqa: E731
+                                     "checks": {"ssim": False, "sharpness": True, "download": True,
+                                                "gpu": True, "first_frame": True}}
+        orig = glb_gate.run_variant
+        glb_gate.run_variant = lambda *a, **k: {"cams": []}
+        try:
+            out = backfill_glb.search_tier("c", "desktop", vault=Path("/x"), base_url="x",
+                                           log=lambda *_: None, build=fake_build, gate_tier=fake_gate)
+        finally:
+            glb_gate.run_variant = orig
+        self.assertEqual(out["status"], "exhausted")
+        self.assertLessEqual(len(n), backfill_glb.MAX_ATTEMPTS)
+
+    def test_process_model_skips_when_done_and_force_bypasses(self):
+        import backfill_glb
+        from unittest import mock
+        with mock.patch.object(backfill_glb, "is_done", return_value=True):
+            r = backfill_glb.process_model("c", vault=Path("/x"))
+        self.assertEqual(r["status"], "skipped")
+
+    def test_is_done_needs_fresh_meta(self):
+        import backfill_glb
+        tmp = Path(tempfile.mkdtemp(prefix="glbtest-bf-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        write_fixture(tmp)
+        self.assertFalse(backfill_glb.is_done(CID, tmp))              # nothing built
+        self.assertEqual(backfill_glb.candidates(tmp), [CID])
+
+    def test_post_publish_spawns_detached_mac_process_and_never_raises(self):
+        import backfill_glb
+        tmp = Path(tempfile.mkdtemp(prefix="glbtest-hook-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        seen = {}
+
+        def fake_popen(cmd, **kw):
+            seen["cmd"], seen["kw"] = cmd, kw
+
+        logs: list[str] = []
+        self.assertTrue(backfill_glb.post_publish("recon_x", log=logs.append, popen=fake_popen, vault=tmp))
+        self.assertIn("--refresh-manifest", seen["cmd"])
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--only") + 1], "recon_x")
+        self.assertTrue(seen["kw"]["start_new_session"])
+        self.assertTrue((tmp / "models" / "recon_x" / "glb" / "backfill.log").exists())
+
+        def boom(*a, **k):
+            raise OSError("no fork")
+        logs.clear()
+        self.assertFalse(backfill_glb.post_publish("recon_x", log=logs.append, popen=boom, vault=tmp))
+        self.assertTrue(any("omitido" in m for m in logs))
+
+    def test_worker_hook_is_non_fatal_and_wired_after_job_end(self):
+        src = (Path(__file__).parent / "worker.py").read_text()
+        body = src[src.index("def run_3d("):]
+        self.assertLess(body.index('jobstore.end(j["id"], "done"'), body.index("glb_after_publish(j, cid)"))
+        self.assertNotIn("gpu_lane", src[src.index("def glb_after_publish"):src.index("def run_3d(")])
+        hook = src[src.index("def glb_after_publish"):src.index("def run_3d(")]
+        self.assertIn("except Exception", hook)
+        self.assertNotIn("raise", hook)
 
 
 if __name__ == "__main__":

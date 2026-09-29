@@ -54,7 +54,7 @@
 
   function build() {
     const wrap = document.querySelector('.dr-mod[data-mod="up"] .dr-up-wrap');
-    const zone = wrap && wrap.querySelector('#drop');
+    const zone = wrap && (wrap.querySelector('#up-panes') || wrap.querySelector('#drop'));
     if (!wrap || !zone || wrap.querySelector('.sb-cap')) return !!(wrap && wrap.querySelector('.sb-cap'));
     let open = true;
     try { open = localStorage.getItem(KEY) !== '0'; } catch (e) {}

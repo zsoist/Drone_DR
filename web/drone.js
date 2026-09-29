@@ -23,7 +23,7 @@ main.innerHTML = `
 
   <div class="pm-tabs seg dr-tabs" id="dr-tabs" role="tablist" aria-label="Vía de importación">
     <button class="on" role="tab" aria-selected="true" data-tab="sd" data-tip="La vía recomendada: los .SRT traen GPS, mapa y telemetría">${icon('db')} Tarjeta SD · con GPS</button>
-    <button role="tab" aria-selected="false" data-tab="up" data-tip="Desde Fotos del iPhone/iPad o arrastrando en PC — sin telemetría">${icon('dl')} Subida directa</button>
+    <button role="tab" aria-selected="false" data-tab="up" data-tip="Videos o fotos desde iPhone/iPad o arrastrando en PC — sin telemetría de vuelo">${icon('dl')} Subida directa</button>
     <span class="pm-ink"></span>
   </div>
 
@@ -65,29 +65,89 @@ main.innerHTML = `
 
   <section class="dr-mod" data-mod="up" hidden>
     <div class="dr-up-wrap">
-      <div class="dr-up-zone rise" id="drop" data-tip="También puedes soltar varios a la vez — van en cola">
-        <span class="dr-up-ring"></span>
-        ${icon('dl')}
-        <p class="dr-up-t">Arrastra videos o toca para elegir</p>
-        <p class="dr-up-s">En iPhone y iPad se abre tu app de <b>Fotos</b> directamente.</p>
-        <div class="dr-up-devices">
-          <span class="gchip" data-tip="El selector abre la fototeca — exporta del dron a Fotos y sube">${icon('iso')} iPhone · Fotos</span>
-          <span class="gchip" data-tip="Igual que iPhone, con pantalla grande">${icon('grid')} iPad</span>
-          <span class="gchip" data-tip="Arrastra archivos desde el Finder o Explorador">${icon('db')} PC · arrastra</span>
-        </div>
-        <input type="file" id="file" multiple accept="video/*,.mts,.mkv" hidden>
+      <div class="pm-tabs seg dr-kind" id="up-kind" role="tablist" aria-label="Qué vas a subir">
+        <button class="on" role="tab" aria-selected="true" data-kind="video" data-tip="Clips de video: proxy, análisis y galería">${icon('film')} Videos</button>
+        <button role="tab" aria-selected="false" data-kind="foto" data-tip="Fotos fijas JPG o DNG: la entrada recomendada para malla 3D">${icon('iso')} Fotos · malla 3D</button>
       </div>
 
-      <ol class="dr-chain dr-chain-up">
-        <li class="dr-step" data-tip="Cola secuencial con velocidad y ETA"><span class="dr-step-ic">${icon('dl')}</span><span class="dr-step-t"><b>Subes</b><small>cola con ETA</small></span></li>
-        <li class="dr-step" data-tip="Streaming 1080p por hardware del M4"><span class="dr-step-ic">${icon('gauge')}</span><span class="dr-step-t"><b>Proxy 1080p</b><small>hardware M4</small></span></li>
-        <li class="dr-step" data-tip="Resumen, tags y highlights automáticos"><span class="dr-step-ic">${icon('spark')}</span><span class="dr-step-t"><b>Análisis AI</b><small>resumen y tags</small></span></li>
-        <li class="dr-step end" data-tip="Aparece en la galería y en el editor"><span class="dr-step-ic">${icon('check')}</span><span class="dr-step-t"><b>Listo</b><small>en Vuelos y Studio</small></span></li>
-      </ol>
-      <p class="dr-note">Sin telemetría: esta vía no trae GPS ni mapa. Si el video salió del dron con su .SRT,
-        usa la <b>Tarjeta SD</b>: es la diferencia entre un clip y un vuelo completo.</p>
+      <div class="dr-up-panes" id="up-panes">
+        <div class="dr-up-pane" data-pane="video">
+          <div class="dr-up-zone rise" id="drop" data-tip="También puedes soltar varios a la vez — van en cola">
+            <span class="dr-up-ring"></span>
+            ${icon('dl')}
+            <p class="dr-up-t">Arrastra videos o toca para elegir</p>
+            <p class="dr-up-s">En iPhone y iPad se abre tu app de <b>Fotos</b> directamente.</p>
+            <div class="dr-up-devices">
+              <span class="gchip" data-tip="El selector abre la fototeca — exporta del dron a Fotos y sube">${icon('iso')} iPhone · Fotos</span>
+              <span class="gchip" data-tip="Igual que iPhone, con pantalla grande">${icon('grid')} iPad</span>
+              <span class="gchip" data-tip="Arrastra archivos desde el Finder o Explorador">${icon('db')} PC · arrastra</span>
+            </div>
+            <input type="file" id="file" multiple accept="video/*,.mts,.mkv" hidden>
+          </div>
 
-      <div id="queue" class="dr-up-queue"></div>
+          <ol class="dr-chain dr-chain-up">
+            <li class="dr-step" data-tip="Cola secuencial con velocidad y ETA"><span class="dr-step-ic">${icon('dl')}</span><span class="dr-step-t"><b>Subes</b><small>cola con ETA</small></span></li>
+            <li class="dr-step" data-tip="Streaming 1080p por hardware del M4"><span class="dr-step-ic">${icon('gauge')}</span><span class="dr-step-t"><b>Proxy 1080p</b><small>hardware M4</small></span></li>
+            <li class="dr-step" data-tip="Resumen, tags y highlights automáticos"><span class="dr-step-ic">${icon('spark')}</span><span class="dr-step-t"><b>Análisis AI</b><small>resumen y tags</small></span></li>
+            <li class="dr-step end" data-tip="Aparece en la galería y en el editor"><span class="dr-step-ic">${icon('check')}</span><span class="dr-step-t"><b>Listo</b><small>en Vuelos y Studio</small></span></li>
+          </ol>
+          <p class="dr-note">Sin telemetría: esta vía no trae GPS ni mapa. Si el video salió del dron con su .SRT,
+            usa la <b>Tarjeta SD</b>: es la diferencia entre un clip y un vuelo completo.</p>
+
+          <div id="queue" class="dr-up-queue"></div>
+        </div>
+
+        <div class="dr-up-pane" data-pane="foto" hidden>
+          <div class="dr-up-zone rise" id="ph-drop" role="button" tabindex="0" aria-label="Elegir fotos o soltar una carpeta"
+               data-tip="Suelta fotos sueltas o una carpeta entera (cada subcarpeta es una pasada)">
+            <span class="dr-up-ring"></span>
+            ${icon('iso')}
+            <p class="dr-up-t">Arrastra fotos o una carpeta</p>
+            <p class="dr-up-s">JPG, JPEG y DNG del dron. Hasta 200 MB por foto y 25 GB por set.</p>
+            <div class="dr-up-devices">
+              <button type="button" class="btn sm" id="ph-pick">${icon('plus')} Elegir fotos</button>
+              <button type="button" class="btn sm" id="ph-pick-dir">${icon('folder')} Elegir carpeta</button>
+            </div>
+            <input type="file" id="ph-file" multiple accept=".jpg,.jpeg,.dng,image/jpeg" hidden>
+            <input type="file" id="ph-dir" webkitdirectory multiple hidden>
+          </div>
+
+          <div class="panel dr-panel dr-ph" id="ph-stage" hidden>
+            <div class="ph">${icon('layers')} Set de fotos
+              <span class="spacer"></span>
+              <button type="button" class="btn sm ghost" id="ph-clear">${icon('trash')} Vaciar</button>
+            </div>
+            <div class="pb">
+              <div class="dr-ph-fields">
+                <label class="dr-ph-f"><span class="dr-ph-lb">Set</span>
+                  <input class="ctl" id="ph-set" maxlength="60" autocomplete="off" placeholder="Ej. Edificio Dialectica"></label>
+                <label class="dr-ph-f"><span class="dr-ph-lb">Pasada</span>
+                  <input class="ctl" id="ph-pass" list="ph-pass-list" maxlength="60" autocomplete="off" placeholder="nadir, anillo A, fachada…"></label>
+                <datalist id="ph-pass-list"><option value="nadir"><option value="anillo A"><option value="anillo B"><option value="anillo C"><option value="fachada"></datalist>
+              </div>
+              <div class="dr-ph-sum" id="ph-sum" aria-live="polite"></div>
+              <div class="dr-ph-prog" id="ph-prog" hidden>
+                <div class="dr-up-meta mono" id="ph-meta" aria-live="polite"></div>
+                <div class="dr-up-bar"><i id="ph-bar" style="--p:0"></i></div>
+              </div>
+              <div id="ph-msg"></div>
+              <div class="dr-ph-acts">
+                <button type="button" class="btn primary" id="ph-go">${icon('dl')} Subir fotos</button>
+                <button type="button" class="btn" id="ph-cancel" hidden>Cancelar</button>
+              </div>
+              <p class="dr-note" id="ph-dest"></p>
+            </div>
+          </div>
+
+          <ol class="dr-chain dr-chain-up">
+            <li class="dr-step" data-tip="Una foto por petición, con progreso total y ETA"><span class="dr-step-ic">${icon('dl')}</span><span class="dr-step-t"><b>Subes</b><small>foto a foto</small></span></li>
+            <li class="dr-step" data-tip="Se comprueba la firma real del archivo: JPEG o DNG"><span class="dr-step-ic">${icon('check')}</span><span class="dr-step-t"><b>Validación</b><small>JPEG · DNG</small></span></li>
+            <li class="dr-step" data-tip="Mismo layout que la tarjeta SD: nombres intactos"><span class="dr-step-ic">${icon('db')}</span><span class="dr-step-t"><b>raw/set/pasada</b><small>originales</small></span></li>
+            <li class="dr-step end" data-tip="Aparecen en Studio, pestaña Fotos"><span class="dr-step-ic">${icon('image')}</span><span class="dr-step-t"><b>Listo</b><small>en Studio · Fotos</small></span></li>
+          </ol>
+          <p class="dr-note">Las fotos conservan su EXIF (GPS, lente) y su nombre original: no las renombres, el protocolo de captura depende de ello.</p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -495,9 +555,16 @@ drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', async e => {
   e.preventDefault(); drop.classList.remove('over');
   const files = [...e.dataTransfer.files];   // ANTES del await: el drag data store se vacía al retornar
-  files.forEach(upEnqueue);
+  routeDropped(files, e.dataTransfer);
 });
-fileIn.addEventListener('change', () => { [...fileIn.files].forEach(upEnqueue); fileIn.value = ''; });
+fileIn.addEventListener('change', () => { routeDropped([...fileIn.files]); fileIn.value = ''; });
+// fotos soltadas en la zona de video: en vez de rechazarlas, van al set de fotos
+function routeDropped(files, dt) {
+  const isPhoto = f => PH_EXT.test(f.name);
+  const hasDir = dt && [...(dt.items || [])].some(i => i.webkitGetAsEntry?.()?.isDirectory);
+  if (hasDir || (files.length && files.every(isPhoto))) { setUpKind('foto'); phStageEntries(dt ? phCollect(dt) : files.map(f => ({ file: f, rel: f.name }))); return; }
+  files.forEach(upEnqueue);
+}
 
 const upQ = [];
 let upActive = null;
@@ -589,4 +656,219 @@ upQueue.addEventListener('click', e => {
   const r = e.target.closest('[data-retry]');
   if (r) { const it = upQ[+r.dataset.retry]; if (it) { it.status = 'pendiente'; it.pct = 0; it.err = null; upRender(); upPump(); } }
 });
-window.addEventListener('beforeunload', e => { if (upActive) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { if (upActive || phBusy) { e.preventDefault(); e.returnValue = ''; } });
+
+
+// ================= subida directa de FOTOS (set para malla 3D) =================
+// Una foto por petición a /api/photo_set_upload → raw/<set>/<pasada>/<nombre> (layout de la SD).
+const PH_EXT = /\.(jpe?g|dng)$/i;
+const PH_FILE_MAX = 200 * 1024 ** 2, PH_TOTAL_MAX = 25 * 1024 ** 3, PH_MAX_FILES = 2000;   // = servidor
+const phEl = id => document.getElementById(id);
+let phItems = [];          // {file, rel, pass, status: 'pend'|'sub'|'ok'|'dup'|'err', err}
+let phBusy = false, phStop = false, phXhr = null, phFatal = '';
+
+function setUpKind(kind) {
+  document.querySelectorAll('#up-kind [data-kind]').forEach(b => {
+    b.classList.toggle('on', b.dataset.kind === kind);
+    b.setAttribute('aria-selected', b.dataset.kind === kind);
+  });
+  document.querySelectorAll('#up-panes [data-pane]').forEach(p => { p.hidden = p.dataset.pane !== kind; });
+  try { localStorage.setItem('ab_up_kind', kind); } catch { /* modo privado */ }
+}
+phEl('up-kind').addEventListener('click', e => {
+  const b = e.target.closest('[data-kind]');
+  if (b) setUpKind(b.dataset.kind);
+});
+try {
+  if (localStorage.getItem('ab_up_kind') === 'foto' && new URLSearchParams(location.search).get('via') === 'subir') setUpKind('foto');
+} catch { /* sin storage */ }
+
+const phMB = v => v >= 1e9 ? (v / 1e9).toFixed(1) + ' GB' : (v / 1e6).toFixed(0) + ' MB';
+const phDefaultSet = () => 'Fotos ' + new Date().toISOString().slice(0, 10);
+if (!('webkitdirectory' in phEl('ph-dir'))) phEl('ph-pick-dir').hidden = true;   // iOS Safari: sin carpetas
+
+// Entradas del drop: DEBE ejecutarse síncrono dentro del handler (el DataTransfer se vacía al await).
+function phCollect(dt) {
+  const entries = [...(dt.items || [])].map(i => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null)).filter(Boolean);
+  if (!entries.length) return Promise.resolve([...dt.files].map(f => ({ file: f, rel: f.name })));
+  const out = [];
+  const walk = async (en, path) => {
+    if (en.isFile) {
+      const f = await new Promise((res, rej) => en.file(res, rej));
+      out.push({ file: f, rel: path + f.name });
+    } else if (en.isDirectory) {
+      const rd = en.createReader();
+      let batch;
+      do {
+        batch = await new Promise((res, rej) => rd.readEntries(res, rej));
+        for (const c of batch) await walk(c, path + en.name + '/');
+      } while (batch.length);
+    }
+  };
+  return (async () => { for (const en of entries) await walk(en, ''); return out; })();
+}
+
+async function phStageEntries(entries) {
+  const list = await entries;
+  let skipped = 0, tooBig = 0, over = 0;
+  const seen = new Set(phItems.map(i => i.rel + ':' + i.file.size));
+  let total = phItems.reduce((a, i) => a + i.file.size, 0);
+  for (const { file, rel } of list) {
+    if (file.name.startsWith('.')) continue;                      // .DS_Store y similares: ruido, no aviso
+    if (!PH_EXT.test(file.name) || !file.size) { skipped++; continue; }
+    if (file.size > PH_FILE_MAX) { tooBig++; continue; }
+    if (seen.has(rel + ':' + file.size)) continue;
+    if (phItems.length >= PH_MAX_FILES || total + file.size > PH_TOTAL_MAX) { over++; continue; }
+    seen.add(rel + ':' + file.size);
+    total += file.size;
+    const parts = rel.split('/');
+    phItems.push({ file, rel, pass: parts.length > 1 ? parts[parts.length - 2] : '', status: 'pend', err: '' });
+  }
+  const notes = [];
+  if (skipped) notes.push(`${skipped} archivo${skipped === 1 ? '' : 's'} omitido${skipped === 1 ? '' : 's'} (solo JPG, JPEG y DNG)`);
+  if (tooBig) notes.push(`${tooBig} pesa${tooBig === 1 ? '' : 'n'} más de 200 MB`);
+  if (over) notes.push(`${over} no caben en el set (máx. 2000 fotos y 25 GB)`);
+  if (notes.length) toast(notes.join(' · '));
+  phFatal = '';
+  phRender();
+}
+
+function phSetName() { return (phEl('ph-set').value || '').trim() || phDefaultSet(); }
+function phPassOf(it) { return it.pass || (phEl('ph-pass').value || '').trim() || 'fotos'; }
+
+function phRender() {
+  const stage = phEl('ph-stage');
+  stage.hidden = !phItems.length;
+  if (!phItems.length) return;
+  if (!phEl('ph-set').value) phEl('ph-set').placeholder = phDefaultSet();
+  const pend = phItems.filter(i => i.status === 'pend' || i.status === 'err');
+  const done = phItems.filter(i => i.status === 'ok' || i.status === 'dup');
+  const failed = phItems.filter(i => i.status === 'err');
+  const nJpg = phItems.filter(i => /\.jpe?g$/i.test(i.file.name)).length;
+  const nDng = phItems.length - nJpg;
+  const passes = new Set(phItems.map(phPassOf));
+  const bytes = phItems.reduce((a, i) => a + i.file.size, 0);
+  phEl('ph-sum').innerHTML = [
+    `<span class="chip on">${phItems.length} foto${phItems.length === 1 ? '' : 's'}</span>`,
+    `<span class="chip mono">${phMB(bytes)}</span>`,
+    nJpg ? `<span class="chip mono">${nJpg} JPG</span>` : '',
+    nDng ? `<span class="chip mono">${nDng} DNG</span>` : '',
+    passes.size > 1 ? `<span class="chip">${passes.size} pasadas</span>` : '',
+    done.length ? `<span class="chip ok">${done.length} subida${done.length === 1 ? '' : 's'}</span>` : '',
+    failed.length ? `<span class="chip err">${failed.length} con error</span>` : '',
+  ].join('');
+  const go = phEl('ph-go');
+  go.disabled = phBusy || !pend.length;
+  go.innerHTML = `${icon(failed.length && !phBusy ? 'loop' : 'dl')} ${failed.length && !phBusy && pend.length === failed.length
+    ? `Reintentar ${failed.length}` : pend.length ? `Subir ${pend.length} foto${pend.length === 1 ? '' : 's'}` : 'Todo subido'}`;
+  phEl('ph-cancel').hidden = !phBusy;
+  phEl('ph-clear').disabled = phBusy;
+  phEl('ph-set').disabled = phEl('ph-pass').disabled = phBusy;
+  const many = passes.size > 1;
+  phEl('ph-dest').innerHTML = `Destino: <span class="mono">raw/${esc(phSetName())}/${many ? '&lt;pasada&gt;' : esc([...passes][0])}/</span> · nombres originales, sin recomprimir.`;
+  // mensaje de estado: error fatal, errores por foto, o éxito
+  const msg = phEl('ph-msg');
+  if (phFatal) {
+    msg.innerHTML = `<div class="dr-ph-alert bad" role="alert">${icon('warn')}<span>${esc(phFatal)}</span></div>`;
+  } else if (failed.length && !phBusy) {
+    const first = failed.slice(0, 4).map(i => `<li><span class="mono">${esc(i.file.name)}</span> · ${esc(i.err || 'error')}</li>`).join('');
+    msg.innerHTML = `<div class="dr-ph-alert bad" role="alert">${icon('warn')}<div><b>${failed.length} foto${failed.length === 1 ? '' : 's'} no se subió${failed.length === 1 ? '' : 'eron'}.</b>
+      <ul>${first}${failed.length > 4 ? `<li>y ${failed.length - 4} más…</li>` : ''}</ul></div></div>`;
+  } else if (done.length && !pend.length && !phBusy) {
+    msg.innerHTML = `<div class="dr-ph-alert ok" role="status">${icon('check')}<span><b>${done.length} foto${done.length === 1 ? '' : 's'} en el vault.</b> Ya aparecen en Studio.</span>
+      <a class="btn sm" href="studio.html?tab=fotos">Ver en Studio ${icon('chevR')}</a></div>`;
+  } else msg.innerHTML = '';
+}
+
+function phSend(it, set) {
+  return new Promise(resolve => {
+    const xhr = phXhr = new XMLHttpRequest();
+    const q = new URLSearchParams({ name: it.file.name, set, pass: phPassOf(it) });
+    xhr.open('POST', `/api/photo_set_upload?${q}`);
+    xhr.setRequestHeader('X-AeroBrain-CSRF', '1');
+    xhr.onload = () => {
+      let body = {};
+      try { body = JSON.parse(xhr.responseText || '{}'); } catch { /* HTML de Cloudflare */ }
+      if (xhr.status === 200) return resolve({ ok: true, dup: !!body.duplicate });
+      if (xhr.status === 401) { redirectToLogin(); return resolve({ ok: false, fatal: 'sesión expirada' }); }
+      const err = String(body.error || `error ${xhr.status}`).slice(0, 200);
+      resolve({ ok: false, err, fatal: (xhr.status === 507 || (xhr.status === 413 && /set/.test(err))) ? err : '' });
+    };
+    xhr.onerror = () => resolve({ ok: false, err: 'error de red — reintenta' });
+    xhr.onabort = () => resolve({ ok: false, aborted: true });
+    xhr.send(it.file);
+  });
+}
+
+async function phRun() {
+  if (phBusy) return;
+  const todo = phItems.filter(i => i.status === 'pend' || i.status === 'err');
+  if (!todo.length) return;
+  phBusy = true; phStop = false; phFatal = '';
+  const set = phSetName();
+  todo.forEach(i => { i.status = 'pend'; i.err = ''; });
+  const total = todo.reduce((a, i) => a + i.file.size, 0);
+  let doneBytes = 0, speed = 0, lastT = performance.now(), lastB = 0, cur = 0, nDone = 0;
+  const prog = phEl('ph-prog'), meta = phEl('ph-meta'), bar = phEl('ph-bar');
+  prog.hidden = false;
+  const paint = () => {
+    const loaded = doneBytes + cur;
+    bar.style.setProperty('--p', total ? Math.min(1, loaded / total) : 1);
+    const eta = speed > 0 ? (total - loaded) / speed : 0;
+    meta.textContent = `${nDone}/${todo.length} fotos · ${phMB(loaded)} de ${phMB(total)}`
+      + (speed > 0 ? ` · ${(speed / 1e6).toFixed(1)} MB/s · ~${fmt.dur(Math.min(5940, eta))} restantes` : '');
+  };
+  phRender(); paint();
+  for (const it of todo) {
+    if (phStop) break;
+    it.status = 'sub'; cur = 0;
+    const p = phSend(it, set);
+    // el progreso llega por el XHR activo; se engancha aquí para no ensuciar la promesa
+    phXhr.upload.onprogress = e => {
+      cur = e.loaded;
+      const now = performance.now(), dt = (now - lastT) / 1000;
+      if (dt > 0.4) {
+        const inst = (doneBytes + cur - lastB) / dt;
+        speed = speed ? speed * 0.6 + inst * 0.4 : inst;
+        lastT = now; lastB = doneBytes + cur;
+      }
+      paint();
+    };
+    const r = await p;
+    phXhr = null;
+    if (r.aborted) { it.status = 'pend'; break; }
+    if (r.ok) { it.status = r.dup ? 'dup' : 'ok'; doneBytes += it.file.size; nDone++; cur = 0; }
+    else { it.status = 'err'; it.err = r.err || r.fatal; cur = 0; }
+    paint();
+    if (r.fatal) { phFatal = r.fatal; break; }
+  }
+  phBusy = false;
+  prog.hidden = true;
+  const ok = phItems.filter(i => i.status === 'ok' || i.status === 'dup').length;
+  if (!phStop && !phFatal && !phItems.some(i => i.status === 'err')) toast(`${ok} foto${ok === 1 ? '' : 's'} subida${ok === 1 ? '' : 's'} a "${set}"`);
+  phRender();
+}
+
+phEl('ph-go').addEventListener('click', phRun);
+phEl('ph-cancel').addEventListener('click', () => { phStop = true; phXhr?.abort(); });
+phEl('ph-clear').addEventListener('click', () => { phItems = []; phFatal = ''; phEl('ph-msg').innerHTML = ''; phRender(); });
+phEl('ph-set').addEventListener('input', phRender);
+phEl('ph-pass').addEventListener('input', phRender);
+const phDrop = phEl('ph-drop');
+const phPickFiles = () => phEl('ph-file').click();
+phDrop.addEventListener('click', e => { if (!e.target.closest('button')) phPickFiles(); });
+phDrop.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === phDrop) { e.preventDefault(); phPickFiles(); } });
+phEl('ph-pick').addEventListener('click', phPickFiles);
+phEl('ph-pick-dir').addEventListener('click', () => phEl('ph-dir').click());
+phDrop.addEventListener('dragover', e => { e.preventDefault(); phDrop.classList.add('over'); });
+phDrop.addEventListener('dragleave', () => phDrop.classList.remove('over'));
+phDrop.addEventListener('drop', e => {
+  e.preventDefault(); phDrop.classList.remove('over');
+  phStageEntries(phCollect(e.dataTransfer));           // síncrono hasta las entradas; el resto async
+});
+phEl('ph-file').addEventListener('change', e => {
+  phStageEntries([...e.target.files].map(f => ({ file: f, rel: f.name }))); e.target.value = '';
+});
+phEl('ph-dir').addEventListener('change', e => {
+  phStageEntries([...e.target.files].map(f => ({ file: f, rel: f.webkitRelativePath || f.name }))); e.target.value = '';
+});

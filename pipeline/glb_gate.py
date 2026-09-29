@@ -302,11 +302,11 @@ def fallback_check(base_url: str, cid: str, vault: Path = VAULT, log=print) -> d
     return out
 
 
-def csp_check(base_url: str, cid: str, log=print) -> dict:
+def csp_check(base_url: str, cid: str, log=print, tiers: tuple = ("mobile", "desktop")) -> dict:
     """Load the GLB (both device tiers) on a page that carries the PRODUCTION CSP
     (no 'unsafe-eval'): the KTX2 blob worker + wasm must work, with zero console errors."""
     out = {}
-    for tier in ("mobile", "desktop"):
+    for tier in tiers:
         r = run_variant(base_url, cid, tier, "glb", host=CSP_HOST_PAGE)
         noise = [e for e in r.get("console_errors", []) if "404" not in e]
         out[tier] = {"ok": r.get("source") == "glb" and not noise and not r.get("console_warnings"),
@@ -317,20 +317,27 @@ def csp_check(base_url: str, cid: str, log=print) -> dict:
 
 
 def run(cid: str, tiers: list[str] | None = None, base_url: str = DEFAULT_BASE_URL,
-        shots_dir: Path | None = None, vault: Path = VAULT, log=print) -> dict:
+        shots_dir: Path | None = None, vault: Path = VAULT, log=print,
+        precomputed: dict | None = None) -> dict:
+    """`precomputed` = {tier: verdict} from gate_tier() runs the caller already did (the
+    backfill's bounded parameter search); those tiers are not re-rendered. Thresholds are
+    the module constants either way - this only avoids measuring twice."""
     meta = glb_export.validate(cid, vault=vault)
     _model_dir, glb_dir, _viewer = glb_export._paths(cid, vault)
     prev = read_json(glb_dir / "gate.json", {}) or {}
     keep = prev.get("tiers", {}) if prev.get("source_fingerprint") == meta["source_fingerprint"] else {}
     results = dict(keep)
-    for tier in (tiers or list(meta["tiers"])):
+    for tier in (list(meta["tiers"]) if tiers is None else tiers):
         if tier not in meta["tiers"]:
             continue
-        verdict = gate_tier(base_url, cid, tier, shots_dir, log=log)
+        verdict = (precomputed or {}).get(tier) or gate_tier(base_url, cid, tier, shots_dir, log=log)
         verdict["key"] = meta["tiers"][tier]["key"]
         results[tier] = verdict
     fallback = fallback_check(base_url, cid, vault, log=log)
-    csp = csp_check(base_url, cid, log=log)
+    # the CSP-safe decode is a property of the loader, not of a tier: probe the device tiers
+    # this model has (a model whose mobile/desktop GLB was rejected still proves it via extra)
+    csp_tiers = tuple(t for t in ("mobile", "desktop") if t in meta["tiers"]) or tuple(list(meta["tiers"])[:1])
+    csp = csp_check(base_url, cid, log=log, tiers=csp_tiers)
     gate = {"version": 1, "clip_id": cid, "fallback": fallback, "csp": csp, "source_fingerprint": meta["source_fingerprint"],
             "gltfpack": meta.get("gltfpack"), "web_version": web_version(),
             "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),

@@ -1,4 +1,4 @@
-import { LinearTransfer, Matrix3, SRGBTransfer, SRGBColorSpace, ColorManagement } from '/vendor/three180.module.js?v=360';
+import { LinearTransfer, Matrix3, SRGBTransfer, SRGBColorSpace, ColorManagement } from '/vendor/three180.module.js?v=361';
 
 /** @module ColorSpaces */
 

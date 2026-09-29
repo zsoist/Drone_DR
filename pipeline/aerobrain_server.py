@@ -721,6 +721,47 @@ SD_VIDEO_EXT = (".MP4", ".mp4", ".MOV", ".mov")
 SD_PHOTO_EXT = (".JPG", ".jpg", ".JPEG", ".DNG", ".dng", ".PNG", ".png")
 SD_SKIP_VOLS = ("SSD", "Macintosh HD", "com.apple.TimeMachine.localsnapshots")
 
+# ---- subida directa de sets de FOTOS (JPG/JPEG/DNG del dron) ----
+# Mismo layout que el ingest de SD: raw/<set>/<pasada>/<archivo>. Nombres intactos (el protocolo
+# pide no renombrar: el vínculo con gcp_list.txt depende de ellos). /api/drone_photos los lista.
+PHOTO_SET_EXT = (".jpg", ".jpeg", ".dng")
+PHOTO_SET_FILE_MAX = 200 * 1024**2        # por archivo: igual que /api/photo_upload (DNG 48MP cabe)
+PHOTO_SET_TOTAL_MAX = 25 * 1024**3        # por set: mismo tope de cordura que el video (25GB)
+PHOTO_SET_MAX_FILES = 2000                # 300 fotos/edificio es lo normal; 2000 = varios pasos
+PHOTO_SET_DEFAULT = "Subida directa"
+PHOTO_SET_DEFAULT_PASS = "fotos"
+PHOTO_SET_RESERVED = ("uploads", "audio", "photos", "reels")   # raw/uploads = videos subidos (UP_*)
+
+
+def photo_set_label(raw, default: str) -> str:
+    """Nombre de set/pasada: [\\w -], sin puntos ni separadores (no hay traversal posible),
+    tope 60 chars. Vacío o reservado → default (APFS es insensible a mayúsculas)."""
+    s = re.sub(r"[^\w -]", "", str(raw or "")).strip()[:60].strip()
+    if not s or s.lower() in PHOTO_SET_RESERVED:
+        return default
+    return s
+
+
+def photo_set_filename(raw) -> str:
+    """Basename saneado ([\\w.-]), sin puntos iniciales, tope 120. '' si no queda nada usable."""
+    s = safe_upload_name(re.split(r"[\\/]", str(raw or ""))[-1]).lstrip(".")
+    stem, ext = Path(s).stem[:100], Path(s).suffix
+    return f"{stem}{ext}" if stem else ""
+
+
+def photo_magic_ok(path: Path, ext: str) -> bool:
+    """Magic bytes reales: JPEG = FF D8 FF; DNG = TIFF ('II*\\0' o 'MM\\0*')."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(4)
+    except OSError:
+        return False
+    if ext in (".jpg", ".jpeg"):
+        return head[:3] == b"\xff\xd8\xff"
+    if ext == ".dng":
+        return head in (b"II*\x00", b"MM\x00*")
+    return False
+
 
 def sd_volumes() -> list:
     """Tarjetas montadas con estructura DCIM (DJI). Nunca lista el SSD."""
@@ -4828,6 +4869,96 @@ class H(BaseHTTPRequestHandler):
                 pass          # se queda el HEIC: descargable aunque no se previsualice
         return self.send_json({"ok": True, "name": dst.name, "bytes": read})
 
+    def _photo_set_reject(self, msg, code):
+        """Rechazo previo a leer el body: cerrar el socket para no dejar bytes sin consumir."""
+        self.close_connection = True
+        return self.send_json({"error": msg}, code, {"Connection": "close"})
+
+    def _post_photo_set_upload(self, u, q):
+        # UNA foto de un set del dron (JPG/JPEG/DNG) por petición, body crudo + ?name=&set=&pass=.
+        # Guarda en raw/<set>/<pasada>/<nombre> — el layout del ingest de SD — para que Studio
+        # (/api/drone_photos) y todo lo que ya lee raw/ las vea sin rutas nuevas.
+        if not self.auth(q):
+            return
+        name = photo_set_filename((q.get("name") or [""])[0])
+        ext = Path(name).suffix.lower()
+        if ext not in PHOTO_SET_EXT:
+            return self._photo_set_reject(f"formato {ext or '?'} no soportado — usa JPG, JPEG o DNG", 400)
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            length = 0
+        if length <= 0:
+            return self._photo_set_reject("body vacío", 400)
+        if length > PHOTO_SET_FILE_MAX:
+            return self._photo_set_reject(
+                f"la foto pesa más de {PHOTO_SET_FILE_MAX // 1024**2}MB", 413)
+        set_name = photo_set_label((q.get("set") or [""])[0], PHOTO_SET_DEFAULT)
+        pass_name = photo_set_label((q.get("pass") or [""])[0], PHOTO_SET_DEFAULT_PASS)
+        raw_root = (VAULT / "raw").resolve()
+        set_dir = raw_root / set_name
+        dest_dir = set_dir / pass_name
+        try:
+            dest_dir.resolve().relative_to(raw_root)      # defensa en profundidad (symlinks)
+        except ValueError:
+            return self._photo_set_reject("set inválido", 400)
+        if set_dir.is_symlink() or dest_dir.is_symlink():
+            return self._photo_set_reject("set inválido", 400)
+        n_files = total = 0
+        if set_dir.is_dir():
+            for f in set_dir.rglob("*"):
+                try:
+                    if f.is_file() and not f.name.startswith("."):
+                        n_files += 1
+                        total += f.stat().st_size
+                except OSError:
+                    continue
+        existing = dest_dir / name
+        try:
+            if existing.is_file() and existing.stat().st_size == length:
+                # reintento de un set a medias: mismo nombre y tamaño = ya está (criterio del ingest SD)
+                self.close_connection = True
+                return self.send_json({"ok": True, "duplicate": True, "name": name, "set": set_name,
+                                       "pass": pass_name, "bytes": length,
+                                       "set_files": n_files, "set_bytes": total},
+                                      200, {"Connection": "close"})
+        except OSError:
+            pass
+        if n_files >= PHOTO_SET_MAX_FILES:
+            return self._photo_set_reject(f"el set ya tiene {PHOTO_SET_MAX_FILES} fotos (máximo)", 413)
+        if total + length > PHOTO_SET_TOTAL_MAX:
+            return self._photo_set_reject(
+                f"el set superaría {PHOTO_SET_TOTAL_MAX // 1024**3}GB — divídelo en otro set", 413)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        tmp = dest_dir / f".{secrets.token_hex(4)}.{name}.part"
+        read = self._receive_upload(tmp, length, 1024 * 256)
+        if read is None:
+            return
+        if read != length:
+            tmp.unlink(missing_ok=True)
+            return self.send_json({"error": f"subida incompleta ({read}/{length}) — reintenta"}, 400)
+        if not photo_magic_ok(tmp, ext):
+            tmp.unlink(missing_ok=True)
+            return self.send_json({"error": f"{name} no es un {'DNG' if ext == '.dng' else 'JPEG'} válido"}, 400)
+        final, n = dest_dir / name, 0
+        while True:
+            try:
+                os.link(tmp, final)               # publicación atómica SIN pisar (link falla si existe)
+                break
+            except FileExistsError:
+                n += 1
+                tag = time.strftime("%H%M%S") + (f"-{n}" if n > 1 else "")
+                final = dest_dir / f"{Path(name).stem}-{tag}{Path(name).suffix}"
+            except OSError:
+                os.replace(tmp, final)            # FS sin hardlinks: replace atómico
+                break
+        tmp.unlink(missing_ok=True)
+        _DRONE_PHOTOS["ts"] = 0.0                 # que /api/drone_photos la liste ya
+        return self.send_json({"ok": True, "duplicate": False, "name": final.name, "set": set_name,
+                               "pass": pass_name, "bytes": read,
+                               "rel": str(final.relative_to(raw_root)),
+                               "set_files": n_files + 1, "set_bytes": total + read})
+
     def _post_splat_autoclean(self, u, q):
         # Auto-Clean bajo demanda (Splat Lab v2): archiva el crudo si no existe, corre el
         # motor (autoclean.mjs) sobre el .splat actual, re-exporta SOG y actualiza meta.
@@ -5523,6 +5654,7 @@ class H(BaseHTTPRequestHandler):
         "/api/job_cancel": "_post_job_cancel",
         "/upload": "_post_upload",
         "/api/photo_upload": "_post_photo_upload",
+        "/api/photo_set_upload": "_post_photo_set_upload",
         "/api/reel_order": "_post_reel_order",
         "/api/reel_edit": "_post_reel_edit",
         "/api/audio_upload": "_post_audio_upload",

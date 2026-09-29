@@ -26,7 +26,7 @@ import jobs
 
 POST_ROUTES = [
     "/api/login", "/api/logout", "/api/job_cancel", "/upload", "/api/photo_upload",
-    "/api/reel_order", "/api/reel_edit", "/api/audio_upload", "/api/audio_op",
+    "/api/photo_set_upload", "/api/reel_order", "/api/reel_edit", "/api/audio_upload", "/api/audio_op",
     "/api/splat_autoclean", "/api/splat_revert", "/api/splat_upload", "/api/edit",
     "/api/sd_import", "/api/frame", "/api/measure", "/api/compare", "/api/scene_create",
     "/api/scene_improve", "/api/scene_promote", "/api/odm", "/api/model_update",

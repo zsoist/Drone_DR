@@ -33,6 +33,7 @@ from gpu_lane import SSH_HOST, NTFS_TRANSFER, WSL_TRANSFER, ensure_awake, _run, 
 
 REMOTE_ODM = "/root/gpu-jobs/odm"
 LOCAL_TRANSFER_TMP = VAULT / "ops" / "transfer"
+CAMERA_ARGS_DIR = VAULT / "ops" / "odm_camera"   # <name>.json: args de cámara del envío (auditable, sobrevive al resume)
 # dirs que el publish del Mac consume — images/ NO viaja de vuelta (ya vive alla)
 OUTPUT_DIRS = ("opensfm", "odm_report", "odm_georeferencing", "odm_filterpoints",
                "odm_meshing", "odm_texturing", "odm_texturing_25d", "odm_dem",
@@ -60,12 +61,37 @@ docker info --format '{{range .Runtimes}}{{println .}}{{end}}' 2>/dev/null | gre
         raise RuntimeError("imagen opendronemap/odm:gpu no esta en el PC (docker pull pendiente)")
 
 
+def record_camera_args(proj: Path, name: str) -> list[str]:
+    """Copia los args de cámara que odm_prep dejó en frames_manifest.json a un registro por
+    workdir remoto. remote_run_argv (que solo conoce `name`) los lee de ahí, incluso en un resume
+    donde ship_images ya no corre. Siempre reescribe: un envío sin perfil borra uno viejo."""
+    from odm_prep import camera_extra_args
+    from fsutil import atomic_write_json
+    validate_remote_name(name)
+    args = camera_extra_args(proj)
+    CAMERA_ARGS_DIR.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(CAMERA_ARGS_DIR / f"{name}.json", {"name": name, "proj": str(proj), "args": args},
+                      indent=1, ensure_ascii=True)
+    return args
+
+
+def camera_args_for(name: str) -> list[str]:
+    from fsutil import read_json
+    try:
+        data = read_json(CAMERA_ARGS_DIR / f"{validate_remote_name(name)}.json", {})
+    except ValueError:
+        return []
+    args = data.get("args") if isinstance(data, dict) else None
+    return [str(a) for a in args] if isinstance(args, list) else []
+
+
 def ship_images(proj: Path, name: str) -> int:
     """Imagenes al camino caliente del PC. Devuelve el numero enviado."""
     images = proj / "images"
     n = len(list(images.iterdir()))
     if not n:
         raise RuntimeError(f"proyecto sin imagenes: {images}")
+    record_camera_args(proj, name)
     staging = f"{NTFS_TRANSFER}/odm-{name}"
     win = staging.replace("/", "\\")
     _run(["ssh", SSH_HOST, "cmd", "/c",
@@ -90,6 +116,9 @@ def remote_run_argv(name: str, container: str, preset_args: list[str],
     segfaulteo (139 en detect_features a los 2s) y el repro identico que paso —
     la ruta probada es esta. Sin -t: el tty no hace falta (run_tracked lee el
     stdout por hilo) y ssh solo emitia el warning de pseudo-terminal."""
+    from odm_prep import merge_odm_args
+    # args de cámara (p. ej. Neo 2 -> --camera-lens brown): el preset manda si ya fija el flag
+    preset_args = merge_odm_args(list(preset_args), camera_args_for(name))
     cmd = ["docker", "run", "--rm", "--name", container, "--gpus", "all",
            "-m", "20g", "-v", f"{REMOTE_ODM}/{name}:/datasets/code",
            "opendronemap/odm:gpu", "--project-path", "/datasets",

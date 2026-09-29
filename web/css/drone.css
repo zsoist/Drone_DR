@@ -159,6 +159,37 @@
 .dr-up-card.bad .dr-up-bar i { background: var(--err); }
 .dr-up-acts { display: flex; gap: 6px; flex: none; }
 .dr-up-acts .btn svg.ic { width: var(--ic-sm); height: var(--ic-sm); stroke-width: 1.75; }
+/* ---- Subida de fotos (set para malla 3D) ---- */
+.dr-kind { margin: 0; }
+.dr-up-panes, .dr-up-pane { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.dr-up-zone:focus-visible { border-color: var(--accent); }
+.dr-up-devices .btn svg.ic { width: var(--ic-sm); height: var(--ic-sm); stroke-width: 1.75; }
+.dr-ph .pb { display: flex; flex-direction: column; gap: var(--sp-3); }
+.dr-ph-fields { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-3); }
+.dr-ph-f { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.dr-ph-f .ctl { width: 100%; }
+.dr-ph-lb { font: 500 var(--fs-xs) var(--mono); letter-spacing: var(--tr-caps); text-transform: uppercase; color: var(--text-2); }
+.dr-ph-sum { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.dr-ph-prog .dr-up-meta { margin-top: 0; color: var(--text-2); }
+.dr-ph-alert { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-lg); border: 1px solid var(--line); font-size: var(--fs-md); }
+.dr-ph-alert > svg.ic { width: var(--ic-md); height: var(--ic-md); flex: none; margin-top: 2px; }
+.dr-ph-alert > span, .dr-ph-alert > div { flex: 1; min-width: 0; }
+.dr-ph-alert ul { margin: var(--sp-1) 0 0; padding-left: var(--sp-4); color: var(--text-2); font-size: var(--fs-sm); }
+.dr-ph-alert.bad { background: var(--err-bg); border-color: var(--err-bd); }
+.dr-ph-alert.bad > svg.ic { color: var(--err-fg); }
+.dr-ph-alert.ok { background: var(--ok-bg); border-color: var(--ok-bd); align-items: center; }
+.dr-ph-alert.ok > svg.ic { color: var(--ok-fg); }
+.dr-ph-alert .btn { flex: none; }
+.dr-ph-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .dr-ph-fields { grid-template-columns: minmax(0, 1fr); }
+  .dr-ph-acts .btn { flex: 1; justify-content: center; }
+  .dr-ph-alert { flex-wrap: wrap; }
+  .dr-ph-alert .btn { width: 100%; justify-content: center; }
+  .dr-kind { width: 100%; }
+  .dr-kind button { flex: 1 1 0; padding: 0 8px; }
+}
 @media (max-width: 640px) {
   .dr-up-zone { padding: 36px 16px 26px; }
   .dr-up-card { flex-wrap: wrap; }
