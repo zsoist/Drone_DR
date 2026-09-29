@@ -6,7 +6,7 @@ const cid = new URLSearchParams(location.search).get('id');
   const flights = await getFlights();
   const idx = flights.findIndex(f => f.clip_id === cid);
   const meta = flights[idx];
-  if (!meta) { main.innerHTML = `<div class="empty">${icon('warn')}<p>Vuelo no encontrado.</p></div>`; return; }
+  if (!meta) { main.innerHTML = emptyState({ icon: 'warn', title: 'Vuelo no encontrado', help: 'El enlace no corresponde a ningún vuelo.', action: '<a class="btn" href="index.html">Ver vuelos</a>' }); return; }
   const [aiData, track] = await Promise.all([
     getAI(cid),
     meta.has_srt ? fetch(`${DATA}/tracks/${cid}.flight.json`).then(r => r.json()) : null,
@@ -81,7 +81,7 @@ const cid = new URLSearchParams(location.search).get('id');
           </div>
           <div class="hud" id="hud"></div>
         </div>
-        ${pts.length ? `<div class="panel rise fl-tel">
+        ${pts.length ? `<div class="panel rise fl-tel" data-collapsible>
           <div class="ph">${icon('activity')} Telemetría <span class="hint">Toca la curva para saltar</span></div>
           <div class="pb fl-tel-b">
             <div class="chart-wrap" id="ch-alt"></div>
@@ -90,14 +90,14 @@ const cid = new URLSearchParams(location.search).get('id');
               : '<div class="chart-wrap" id="ch-speed"></div>'}
           </div>
         </div>` : ''}
-        ${meta.frame_count ? `<div class="panel fl-film">
+        ${meta.frame_count ? `<div class="panel fl-film" data-collapsible>
           <div class="ph">${icon('film')} Fotogramas <span class="hint">Toca para saltar</span></div>
           <div class="filmstrip" id="strip"></div>
         </div>` : ''}
 
-        <div class="panel fl-moments">
+        <div class="panel fl-moments" data-collapsible>
           <div class="ph">${icon('activity')} Momentos
-            <button class="btn sm primary fl-push" id="btn-hl">${icon('plus')} Marcar aquí</button>
+            <button class="btn sm primary ph-push" id="btn-hl">${icon('plus')} Marcar aquí</button>
           </div>
           <div class="pb" id="hl-list">
             ${(aiData?.highlights || []).map(h => `<div class="hl-item">
@@ -108,7 +108,7 @@ const cid = new URLSearchParams(location.search).get('id');
           </div>
         </div>
 
-        ${aiData?.edit_suggestions?.length ? `<div class="panel fl-edits">
+        ${aiData?.edit_suggestions?.length ? `<div class="panel fl-edits" data-collapsible>
           <div class="ph">${icon('film')} Sugerencias de edición</div>
           <div class="pb">
             ${aiData.edit_suggestions.map(s => `<div class="hl-item"><p>${esc(s)}</p></div>`).join('')}
@@ -116,7 +116,7 @@ const cid = new URLSearchParams(location.search).get('id');
           </div>
         </div>` : ''}
 
-        <div class="panel fl-tech">
+        <div class="panel fl-tech" data-collapsible>
           <div class="ph">${icon('gauge')} Datos técnicos</div>
           <div class="pb">
           <div class="kv2">
@@ -152,9 +152,9 @@ const cid = new URLSearchParams(location.search).get('id');
       <div class="fl-side">
         <div class="panel fl-map"><div id="map"></div></div>
 
-        <div class="panel fl-ai">
+        <div class="panel fl-ai" data-collapsible>
           <div class="ph">${icon('spark')} Análisis AI${aiData?.deep ? ' · profundo' : ''}
-            <button class="btn sm fl-push" id="btn-deep">${aiData ? 'Re-analizar' : 'Analizar ahora'}</button>
+            <button class="btn sm ph-push" id="btn-deep">${aiData ? 'Re-analizar' : 'Analizar ahora'}</button>
           </div>
           <div class="pb">
             ${aiData ? `

@@ -84,7 +84,7 @@ class HomeMarkupTests(unittest.TestCase):
         self.assertIn("HomeData.buildHomeViewModel", source)
 
     def test_home_v2_has_keyboard_focus_and_responsive_mobile_rules(self):
-        css = (ROOT / "web/style.css").read_text()
+        css = (ROOT / "web/css/home.css").read_text()   # hv2 base layer moved out of style.css (2026-09 consolidation)
         self.assertIn(".hv2-card:focus-visible", css)
         self.assertIn("@media (max-width: 680px)", css)
         self.assertIn(".hv2-telemetry", css)

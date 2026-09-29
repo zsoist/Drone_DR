@@ -26,18 +26,8 @@ main.classList.add('lab-main');
   const editorUrl = s =>
     `/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}`;
 
-  // iconos extra para esta página (icons.js es global y compartido; se extiende en runtime)
-  if (typeof ICONS === 'object') Object.assign(ICONS, {
-    chev: '<path d="M5.5 8l4.5 4.5L14.5 8"/>',
-    more: '<circle cx="4.5" cy="10" r="1.1"/><circle cx="10" cy="10" r="1.1"/><circle cx="15.5" cy="10" r="1.1"/>',
-  });
-
   main.innerHTML = `
-    <div class="page-head sl-head">
-      <h1>Splat Lab</h1><span class="count">edición de gaussian splats · SuperSplat</span>
-      <span class="spacer"></span>
-      <div class="sl-switch" id="lab-picker"></div>
-    </div>
+    ${pageHead('Splat Lab', 'Edición de gaussian splats · SuperSplat', '<div class="sl-switch" id="lab-picker"></div>')}
     <div class="sl-bar" role="toolbar" aria-label="Herramientas del splat">
       <div class="sl-files" id="lab-actions" role="group" aria-label="Archivo del splat"></div>
       <div class="sl-clean" id="lab-clean" role="group" aria-label="Auto-Clean del splat"></div>
@@ -96,30 +86,6 @@ main.classList.add('lab-main');
   const okToDiscard = async () =>
     !(await editorDirty()) || confirm('Hay ediciones sin exportar en el editor. ¿Descartarlas?');
 
-  // ---- popovers (switcher + menú "más"): un solo abierto, Esc / clic fuera cierran ----
-  const closePop = (p, refocus) => {
-    p.hidden = true;
-    const t = p.parentElement.querySelector('[aria-haspopup]');
-    t?.setAttribute('aria-expanded', 'false');
-    if (refocus) t?.focus();
-  };
-  const togglePop = wrap => {
-    const p = wrap.querySelector('.sl-pop');
-    const t = wrap.querySelector('[aria-haspopup]');
-    const willOpen = p.hidden;
-    document.querySelectorAll('.sl-pop:not([hidden])').forEach(x => closePop(x));
-    if (!willOpen) return;
-    p.hidden = false;
-    t.setAttribute('aria-expanded', 'true');
-    p.querySelector('input, [role=menuitem]')?.focus({ preventScroll: true });
-  };
-  document.addEventListener('click', e => {
-    document.querySelectorAll('.sl-pop:not([hidden])').forEach(p => { if (!p.parentElement.contains(e.target)) closePop(p); });
-  });
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') document.querySelectorAll('.sl-pop:not([hidden])').forEach(p => closePop(p, true));
-  });
-
   const sizeMB = s => `${((s.bytes || 0) / 1e6).toFixed(1)} MB`;
   const itersK = s => s.iters ? `${s.iters >= 1000 ? s.iters / 1000 + 'K' : s.iters} iters` : '';
   let pickerQ = '';
@@ -144,12 +110,37 @@ main.classList.add('lab-main');
     pickerQ = '';
     picker.innerHTML = `
       <button type="button" class="btn sl-switch-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Cambiar splat (${splats.length})">
-        ${icon('cube')}<span class="sl-sw-name">${esc(title(s))}</span><span class="sl-sw-meta mono">${sizeMB(s)}</span>${icon('chev')}
-      </button>
-      <div class="sl-pop sl-pop-list" hidden>
-        <div class="search sl-pop-search">${icon('search')}<input type="search" id="lab-pq" placeholder="Buscar…" aria-label="Buscar splat" autocomplete="off"></div>
-        <div class="sl-list" id="lab-list" role="listbox" aria-label="Splats disponibles"></div>
-      </div>`;
+        ${icon('cube')}<span class="sl-sw-name">${esc(title(s))}</span><span class="sl-sw-meta mono">${sizeMB(s)}</span>${icon('chevD')}
+      </button>`;
+  };
+  // selector de splat: popover canónico (openPopover) con búsqueda + listbox
+  const openPicker = btn => {
+    pickerQ = '';
+    const box = document.createElement('div');
+    box.innerHTML = `
+      <div class="search sl-pop-search">${icon('search')}<input type="search" id="lab-pq" placeholder="Buscar…" aria-label="Buscar splat" autocomplete="off"></div>
+      <div class="sl-list" id="lab-list" role="listbox" aria-label="Splats disponibles"></div>`;
+    const pop = openPopover(btn, box, {
+      haspopup: 'listbox', className: 'pop-pad sl-pop-list', focus: '#lab-pq',
+      onKey: e => {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        const items = [...box.querySelectorAll('.sl-opt')];
+        if (!items.length) return;
+        e.preventDefault();
+        const i = items.indexOf(document.activeElement);
+        const n = e.key === 'ArrowDown' ? Math.min(items.length - 1, i + 1) : i - 1;
+        (n < 0 ? box.querySelector('#lab-pq') : items[n]).focus();
+      },
+    });
+    if (!pop) return;
+    box.addEventListener('input', e => { if (e.target.id === 'lab-pq') { pickerQ = e.target.value; renderList(); } });
+    box.addEventListener('click', async e => {
+      const b = e.target.closest('[data-i]');
+      if (!b) return;
+      pop.close({ refocus: true });
+      if (+b.dataset.i !== cur && !(await okToDiscard())) return;
+      load(+b.dataset.i, true);
+    });
     renderList();
   };
   const renderActions = () => {
@@ -179,19 +170,13 @@ main.classList.add('lab-main');
         <option value="object">Objeto / interior</option>
       </select>
       <button class="btn primary" id="lab-ac-ed" title="Limpia DENTRO del editor: selecciona floaters/haze/agujas y los borra como pasos de undo (Ctrl+Z ×2 deshace; Edit→Reset restaura todo). Luego File→Export para publicar">${icon('spark')} Limpiar en editor</button>
-      <div class="sl-hist" role="group" aria-label="Historial del editor">
+      <div class="btn-group" role="group" aria-label="Historial del editor">
         <button class="btn icon" id="lab-undo" title="Deshace el último paso dentro del editor (el Auto-Clean es UN solo paso)" aria-label="Deshacer en el editor">${icon('undo')}</button>
         <button class="btn icon" id="lab-redo" title="Rehace el paso deshecho dentro del editor" aria-label="Rehacer en el editor">${icon('redo')}</button>
       </div>
       <button class="btn${abRaw ? ' on' : ''}" id="lab-ab" title="Alterna el editor entre el crudo y la versión actual para comparar antes/después (requiere un crudo pre-clean)" aria-pressed="${abRaw}"${rawOk[s.clip_id] === false && !abRaw ? ' disabled' : ''}>${abRaw ? 'Viendo: crudo' : 'A/B'}</button>
       <button class="btn${tuneOpen ? ' on' : ''}" id="lab-tune" title="Ajustes finos del Auto-Clean: umbral de haze, factor de spikes y agujas — se aplican al próximo Limpiar" aria-expanded="${tuneOpen}" aria-controls="lab-tune-panel">${icon('gauge')} Ajustes</button>
-      <span class="sl-pop-wrap">
-        <button class="btn icon" id="lab-more" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones sobre el archivo publicado" title="Más acciones">${icon('more')}</button>
-        <div class="sl-pop sl-menu" role="menu" aria-label="Archivo publicado" hidden>
-          <button role="menuitem" class="sl-mi" id="lab-ac" title="Limpia el archivo PUBLICADO en el servidor (mismo motor) — reversible con Revertir">${icon('save')}<span><b>Limpiar publicado</b><small>Aplica el preset al archivo del servidor</small></span></button>
-          <button role="menuitem" class="sl-mi danger" id="lab-revert" title="Restaura el crudo pre-clean como versión actual (la limpia queda en history/) — nada se pierde">${icon('undo')}<span><b>Revertir al crudo</b><small>La versión limpia queda en history/</small></span></button>
-        </div>
-      </span>`;
+      <button class="btn icon" id="lab-more" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones sobre el archivo publicado" title="Más acciones">${icon('more')}</button>`;
     if (rawOk[s.clip_id] === undefined && typeof s.has_raw === 'boolean') rawOk[s.clip_id] = s.has_raw;
     if (rawOk[s.clip_id] === undefined) {
       const cid = s.clip_id;
@@ -221,16 +206,18 @@ main.classList.add('lab-main');
       cst('limpiando en el editor…');
       if (!toEditor({ type: 'aerobrain:autoclean', preset, overrides: tuneOverrides() })) cst('Error: el editor no respondió');
     });
-    document.getElementById('lab-more').addEventListener('click', e2 => { e2.stopPropagation(); togglePop(e2.currentTarget.parentElement); });
-    document.querySelectorAll('.sl-menu .sl-mi').forEach(b => b.addEventListener('click', () => closePop(b.closest('.sl-pop'))));
+    document.getElementById('lab-more').addEventListener('click', e2 => openMenu(e2.currentTarget, [
+      { id: 'ac', label: 'Limpiar publicado', hint: 'Aplica el preset al archivo del servidor', icon: 'save' },
+      { id: 'revert', label: 'Revertir al crudo', hint: 'La versión limpia queda en history/', icon: 'undo', danger: true },
+    ], { label: 'Archivo publicado', onSelect: id => (id === 'ac' ? runAc() : runRevert()) }));
     document.getElementById('lab-tune').addEventListener('click', e2 => {
       const panel = document.getElementById('lab-tune-panel');
       panel.hidden = !panel.hidden;
       e2.currentTarget.setAttribute('aria-expanded', String(!panel.hidden));
       e2.currentTarget.classList.toggle('on', !panel.hidden);
     });
-    document.getElementById('lab-ac').addEventListener('click', async e2 => {
-      const btn = e2.currentTarget; btn.disabled = true;
+    const runAc = async () => {
+      const btn = document.getElementById('lab-more'); btn.disabled = true;
       if (!(await okToDiscard())) { btn.disabled = false; return; }
       const preset = document.getElementById('lab-preset').value;
       cst('limpiando…');
@@ -244,10 +231,10 @@ main.classList.add('lab-main');
         await load_sys(); abRaw = false; load(cur);
       } catch (err) { cst(`Error: ${String(err.message || err).slice(0, 90)}`); }
       finally { btn.disabled = false; }
-    });
+    };
     document.getElementById('lab-undo').addEventListener('click', () => toEditor({ type: 'aerobrain:undo' }));
     document.getElementById('lab-redo').addEventListener('click', () => toEditor({ type: 'aerobrain:redo' }));
-    document.getElementById('lab-revert').addEventListener('click', async () => {
+    const runRevert = async () => {
       if (!(await okToDiscard())) return;
       cst('revirtiendo al crudo…');
       try {
@@ -257,7 +244,7 @@ main.classList.add('lab-main');
         cst('crudo restaurado como actual · la limpia quedó en history/');
         await load_sys(); abRaw = false; load(cur);
       } catch (err) { cst(`Error: ${String(err.message || err).slice(0, 90)}`); }
-    });
+    };
     document.getElementById('lab-ab').addEventListener('click', async () => {
       if (!(await okToDiscard())) return;
       abRaw = !abRaw;
@@ -274,14 +261,14 @@ main.classList.add('lab-main');
   const LAZY = matchMedia('(max-width: 800px), (pointer: coarse)').matches;
   let armed = !LAZY;
   const lazyBox = document.createElement('div');
-  lazyBox.className = 'lab-lazy sl-empty';
+  lazyBox.className = 'lab-lazy empty sl-empty';
   const wrapEmpty = on => drop.classList.toggle('is-empty', on);
   const renderLazy = () => {
     const s = splats[cur];
     lazyBox.innerHTML = `
-      <span class="sl-empty-ic">${icon('cube')}</span>
-      <b class="sl-empty-t">Editor SuperSplat · ~25 MB</b>
-      <span class="sl-empty-d">Se descarga solo cuando vayas a editar.</span>
+      ${icon('cube')}
+      <b>Editor SuperSplat · ~25 MB</b>
+      <p>Se descarga solo cuando vayas a editar.</p>
       ${s ? `<span class="sl-empty-stats"><span class="chip sm">${esc(title(s))}</span>
         <span class="chip sm mono">${sizeMB(s)}</span>${s.iters ? `<span class="chip sm mono">${esc(itersK(s))}</span>` : ''}</span>` : ''}
       <button class="btn primary" id="lab-load-ed" aria-label="Cargar editor SuperSplat">${icon('cube')} Cargar editor</button>`;
@@ -306,24 +293,9 @@ main.classList.add('lab-main');
     renderPicker(); renderActions(); renderClean();
   };
 
-  picker.addEventListener('click', async e => {
+  picker.addEventListener('click', e => {
     const t = e.target.closest('.sl-switch-btn');
-    if (t) { e.stopPropagation(); togglePop(picker); return; }
-    const b = e.target.closest('[data-i]');
-    if (!b) return;
-    closePop(picker.querySelector('.sl-pop'), true);
-    if (+b.dataset.i !== cur && !(await okToDiscard())) return;
-    load(+b.dataset.i, true);
-  });
-  picker.addEventListener('input', e => { if (e.target.id === 'lab-pq') { pickerQ = e.target.value; renderList(); } });
-  picker.addEventListener('keydown', e => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    const items = [...picker.querySelectorAll('.sl-opt')];
-    if (!items.length) return;
-    e.preventDefault();
-    const i = items.indexOf(document.activeElement);
-    const n = e.key === 'ArrowDown' ? Math.min(items.length - 1, i + 1) : i - 1;
-    (n < 0 ? picker.querySelector('#lab-pq') : items[n]).focus();
+    if (t) openPicker(t);
   });
 
   // ---- subida del splat editado (botón o drag&drop) ----

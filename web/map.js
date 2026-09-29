@@ -2,10 +2,7 @@
 // spots agrupados por lugar, filtros, y modal de preview con video.
 const main = renderShell('map.html');
 main.innerHTML = `
-  <div class="page-head"><h1>Mapa de vuelos</h1><span class="count" id="count"></span>
-    <span class="spacer"></span>
-    <div class="seg" role="group"><button id="st-sat" class="on">Satélite</button><button id="st-dark">Oscuro</button></div>
-  </div>
+  ${pageHead('Mapa de vuelos', '', '<div class="seg" role="group"><button id="st-sat" class="on">Satélite</button><button id="st-dark">Oscuro</button></div>', { subId: 'count' })}
   <div class="panel map-wrap">
     <div style="position:relative;min-height:0">
       <div id="map" style="position:absolute;inset:0"></div>
@@ -124,7 +121,7 @@ main.innerHTML = `
     if (state.spot) {
       c.style.display = '';
       c.classList.add('on');
-      c.textContent = `✕ ${spots[state.spot].name}`;
+      c.innerHTML = `${icon('close')} ${esc(spots[state.spot].name)}`;
     } else c.style.display = 'none';
     Object.entries(spotEls).forEach(([k, el]) => el.classList.toggle('on', k === state.spot));
   }
@@ -187,7 +184,7 @@ main.innerHTML = `
     ov.className = 'modal-ov';
     ov.innerHTML = `<div class="modal" style="max-width:640px">
       <div class="modal-h"><b>${icon('drone')} ${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
-        <button class="modal-x" aria-label="Cerrar">✕</button></div>
+        <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
         ${f.has_proxy
           ? `<video class="m-prev" style="max-height:320px" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" controls muted playsinline preload="none"></video>`

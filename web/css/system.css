@@ -11,7 +11,7 @@
 .sy-panel { margin-bottom: var(--sp-4); }
 
 /* panel heading: title + sentence-case subtitle */
-.panel .ph.sy-ph { text-transform: none; letter-spacing: 0; color: var(--text); gap: var(--sp-3); flex-wrap: wrap; }
+.panel .ph.sy-ph { gap: var(--sp-3); flex-wrap: wrap; }
 .sy-ph > svg.ic { color: var(--text-2); flex: none; }
 .sy-ph-t { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .sy-ph-t b { font-size: var(--fs-lg); font-weight: 600; letter-spacing: var(--tr-tight); }

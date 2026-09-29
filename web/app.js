@@ -4,18 +4,17 @@ let flights = [], ai = {}, semRank = null, models = new Set();
 let state = { q: '', tier: 'all', sort: 'date', scene: null, semantic: false, spot: null, has: new Set(),
               view: localStorage.getItem('ab.vview') || 'grid' };
 
-const FILTER_ICON = '<svg class="ic" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M6 10h8M8.5 14.5h3"/></svg>';
 const TIERS = [['all', 'Todos'], ['full', 'Full'], ['standard', 'Standard'], ['skim', 'Skim'], ['archived', 'Archivados']];
 const TIER_TIPS = { all: 'Todos los tiers', full: 'Con video y análisis AI', standard: 'Análisis AI sin proxy', skim: 'Solo telemetría', archived: 'Vuelos archivados' };
 
 main.classList.add('vf-page');
 main.innerHTML = `
-  <div class="page-head"><h1>Vuelos</h1><span class="count" id="count" aria-live="polite"></span></div>
+  ${pageHead('Vuelos', '', '', { subId: 'count' })}
   <div class="vf-bar" role="search">
     <label class="search vf-search">${icon('search')}<input id="q" type="search" placeholder="Buscar vuelos" aria-label="Buscar vuelos" autocomplete="off">
       <button type="button" class="vf-sem" id="sem-toggle" aria-pressed="false" aria-label="Búsqueda semántica" data-tip="Semántica: busca por significado con embeddings — escribe y pulsa Enter">${icon('spark')}</button>
       <kbd>/</kbd></label>
-    <button type="button" class="btn vf-filters-btn" id="vf-filters-btn" aria-expanded="false" aria-controls="vf-more">${FILTER_ICON} Filtros <span class="vf-badge" id="vf-badge" hidden></span></button>
+    <button type="button" class="btn vf-filters-btn" id="vf-filters-btn" aria-expanded="false" aria-controls="vf-more">${icon('sliders')} Filtros <span class="vf-badge" id="vf-badge" hidden></span></button>
     <div class="vf-more" id="vf-more">
       <div class="vf-tools">
         <select class="ctl" id="sort" aria-label="Ordenar">
@@ -33,9 +32,9 @@ main.innerHTML = `
           <button data-view="dates" data-tip="Agrupados por fecha" aria-label="Agrupar por fechas">${icon('cal')}<span class="seg-lb">Fechas</span></button>
         </div>
       </div>
-      <div class="vf-chiprow" role="toolbar" aria-label="Filtros">
+      <div class="chip-row vf-chips" role="toolbar" aria-label="Filtros">
         ${TIERS.map(([k, l]) => `<button class="chip ${k === 'all' ? 'on' : ''}" data-tier="${k}" aria-pressed="${k === 'all'}" data-tip="${TIER_TIPS[k]}">${l}</button>`).join('')}
-        <span class="vf-div" aria-hidden="true"></span>
+        <span class="chip-div" aria-hidden="true"></span>
         <button class="chip" data-qf="video" aria-pressed="false" data-tip="Solo clips con streaming">${icon('play')} Video</button>
         <button class="chip" data-qf="model" aria-pressed="false" data-tip="Con modelo 3D procesado">${icon('cube')} 3D</button>
         <button class="chip" data-qf="ai" aria-pressed="false" data-tip="Con análisis AI">${icon('spark')} AI</button>
@@ -102,17 +101,9 @@ const SORTS = {
 };
 
 // Título corto: etiqueta manual > arranque del resumen AI (sin muletilla "El vuelo inicia con…") > fecha.
-function shortTitle(text) {
-  let t = String(text || '').trim();
-  t = t.replace(/^(el|la|este|esta)\s+(vuelo|dron|drone|clip|video|metraje|material)(\s+\S+)??\s+(inicia|comienza|muestra|captura|realiza|presenta|sobrevuela|ofrece|documenta|registra|recorre|revela)(\s+(con|sobre|en))?\s+/i, '');
-  t = t.replace(/^(un|una|unos|unas)\s+/i, '');
-  t = t.split(/[,.;:]| y | para | mientras | luego | donde /i)[0].trim();
-  if (t.length > 64) t = t.slice(0, 64).replace(/\s+\S*$/, '') + '…';
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
-}
 const flightTitle = (f, a) => f.label || shortTitle(a?.summary) || fmt.date(f.date);
 const metric = (ico, label, value) =>
-  `<span title="${label}">${icon(ico)}<b>${value}</b><span class="vf-sr">${label}</span></span>`;
+  `<span title="${label}">${icon(ico)}<b>${value}</b><span class="sr-only">${label}</span></span>`;
 
 function card(f) {
   const a = ai[f.clip_id];
@@ -147,7 +138,7 @@ function chipsRow() {
   const clear = state.spot && spots[state.spot]
     ? `<button class="chip on" data-clearspot aria-label="Quitar lugar ${esc(spots[state.spot].name)}">${icon('close')} ${esc(spots[state.spot].name)}</button>` : '';
   setHTML(document.getElementById('scene-chips'),
-    (clear || scenes.length ? '<span class="vf-div" aria-hidden="true"></span>' : '') + clear +
+    (clear || scenes.length ? '<span class="chip-div" aria-hidden="true"></span>' : '') + clear +
     scenes.map(sc =>
       `<button class="chip ${state.scene === sc ? 'on' : ''}" data-scene="${esc(sc)}" aria-pressed="${state.scene === sc}">${esc(sc)}</button>`).join(''));
 }
@@ -197,7 +188,7 @@ function render() {
   if (state.view === 'dates') { renderDates(list); return; }
   grid.className = `grid ${state.view === 'list' ? 'list' : ''}`;
   if (setHTML(grid, list.length ? list.map(card).join('') :
-    `<div class="empty vf-span">${icon('search')}<p>Sin resultados para esa búsqueda.</p></div>`)) {
+    emptyState({ icon: 'search', title: 'Sin resultados', help: 'Prueba con otra búsqueda o quita filtros.', cls: 'vf-span' }))) {
     enterOnce(grid);
     attachScrub(grid);
   }
@@ -249,7 +240,7 @@ function renderPlaces(list) {
         </div>
       </div>
     </a>`;
-  }).join('') : `<div class="empty vf-span">${icon('pin')}<p>Sin lugares con esos filtros.</p></div>`;
+  }).join('') : emptyState({ icon: 'pin', title: 'Sin lugares', help: 'Ningún lugar coincide con esos filtros.', cls: 'vf-span' });
 }
 
 // ---------- fechas: cronología agrupada por mes ----------
@@ -268,7 +259,7 @@ function renderDates(list) {
       <b>${esc(name.charAt(0).toUpperCase() + name.slice(1))}</b>
       <span class="mono">${fs.length} vuelos · ${fmt.km(dist)} · ${fmt.hours(dur)}</span></div>` +
       fs.map(card).join('');
-  }).join('') : `<div class="empty vf-span">${icon('cal')}<p>Sin vuelos con esos filtros.</p></div>`;
+  }).join('') : emptyState({ icon: 'cal', title: 'Sin vuelos', help: 'Ningún vuelo coincide con esos filtros.', cls: 'vf-span' });
   attachScrub(grid);
 }
 document.addEventListener('click', async e => {
@@ -468,5 +459,5 @@ document.addEventListener('keydown', e => {
   fetch(`${DATA}/manifest/system.json`).then(r => r.json())
     .then(sy => { models = new Set((sy.models || []).map(m => m.clip_id)); if (state.has.has('model')) render(); }).catch(() => {});
 })().catch(e => {
-  main.querySelector('#grid').innerHTML = `<div class="empty vf-span">${icon('warn')}<p>Error: ${esc(e.message)}</p></div>`;
+  main.querySelector('#grid').innerHTML = emptyState({ icon: 'warn', title: 'No se pudo cargar', help: e.message, cls: 'vf-span' });
 });

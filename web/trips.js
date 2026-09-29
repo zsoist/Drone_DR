@@ -17,19 +17,9 @@ const R0 = Math.PI / 180;
 const havKm = (a, b, c, d) => 12742 * Math.asin(Math.sqrt(
   Math.sin((c - a) * R0 / 2) ** 2 + Math.cos(a * R0) * Math.cos(c * R0) * Math.sin((d - b) * R0 / 2) ** 2));
 
-// iconos locales (icons.js no trae "más" ni "filtros"); mismo grid de 20px y trazo
-const MORE_ICON = '<svg class="ic" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 10h.01M10 10h.01M15.5 10h.01"/></svg>';
-const shortTitle = text => {                                // igual que Vuelos: arranque del resumen AI sin la muletilla
-  let t = String(text || '').trim();
-  t = t.replace(/^(el|la|este|esta)\s+(vuelo|dron|drone|clip|video|metraje|material)(\s+\S+)??\s+(inicia|comienza|muestra|captura|realiza|presenta|sobrevuela|ofrece|documenta|registra|recorre|revela)(\s+(con|sobre|en))?\s+/i, '');
-  t = t.replace(/^(un|una|unos|unas)\s+/i, '').split(/[,.;:]| y | para | mientras | luego | donde /i)[0].trim();
-  if (t.length > 64) t = t.slice(0, 64).replace(/\s+\S*$/, '') + '…';
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
-};
-
 main.classList.add('tr-page');
 main.innerHTML = `
-  <div class="page-head"><h1>Viajes</h1><span class="count" id="count" aria-live="polite"></span></div>
+  ${pageHead('Viajes', '', '', { subId: 'count' })}
   <div class="statgrid" id="t-stats">${'<div class="sk tr-sk-stat"></div>'.repeat(4)}</div>
   <div id="cities" class="city-grid">${'<div class="sk tr-sk-city"></div>'.repeat(3)}</div>
   <div id="detail" hidden></div>`;
@@ -121,7 +111,7 @@ main.innerHTML = `
       <div class="city-card ${anim ? 'cc-in' : ''}" data-city="${esc(c.key)}" role="button" tabindex="0" aria-label="Abrir ${esc(c.name)}" style="--in-delay:${Math.min(i, 4) * 30}ms">
         <div class="cc-cover">
           <img src="${DATA}/thumbs/${esc(c.cover?.clip_id || '')}.jpg" loading="lazy" alt="" width="960" height="540">
-          <div class="cc-shade"></div>
+          <div class="scrim"></div>
           ${c.score ? `<span class="score-pill cc-score" data-tip="Mejor score AI del lugar">${c.score}/10</span>` : ''}
           <div class="cc-cap">
             <h2>${esc(c.name)}</h2>
@@ -129,74 +119,30 @@ main.innerHTML = `
           </div>
         </div>
         <div class="cc-stats">
-          <span data-tip="Vuelos en este lugar">${icon('drone')} ${c.flights.length}<i class="tr-sr"> vuelos</i></span>
-          <span data-tip="Días distintos">${icon('cal')} ${c.dates.length}<i class="tr-sr"> días</i></span>
+          <span data-tip="Vuelos en este lugar">${icon('drone')} ${c.flights.length}<i class="sr-only"> vuelos</i></span>
+          <span data-tip="Días distintos">${icon('cal')} ${c.dates.length}<i class="sr-only"> días</i></span>
           <span data-tip="Tiempo total en el aire">${icon('clock')} ${fmt.hours(c.dur)}</span>
           <span data-tip="Distancia total volada">${icon('route')} ${fmt.km(c.dist)}</span>
           <span data-tip="Altura máxima alcanzada">${icon('mountain')} ${Math.round(c.alt)} m</span>
-          <button class="btn icon sm tr-more" data-city-menu="${esc(c.key)}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(c.name)}">${MORE_ICON}</button>
+          <button class="btn icon sm tr-more" data-city-menu="${esc(c.key)}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(c.name)}">${icon('more')}</button>
         </div>
       </div>`).join('') ||
-      `<div class="empty tr-span">${icon('pin')}<p>Sin vuelos con GPS todavía.</p></div>`;
+      emptyState({ icon: 'pin', title: 'Sin viajes todavía', help: 'Aparecerán cuando haya vuelos con GPS.', cls: 'tr-span' });
   }
 
-  // ---------- menú de acciones por lugar (un solo popover, roles de menú, teclado) ----------
-  let menuEl = null, menuBtn = null;
-  function closeMenu(restoreFocus = true) {
-    if (!menuEl) return;
-    menuEl.remove(); menuEl = null;
-    menuBtn?.setAttribute('aria-expanded', 'false');
-    if (restoreFocus) menuBtn?.focus();
-    menuBtn = null;
-    document.removeEventListener('pointerdown', onMenuOutside, true);
-    removeEventListener('scroll', onMenuScroll, true);
-    removeEventListener('resize', onMenuScroll);
-  }
-  const onMenuOutside = e => { if (menuEl && !menuEl.contains(e.target) && !menuBtn?.contains(e.target)) closeMenu(false); };
-  const onMenuScroll = () => closeMenu(false);
-  function openMenu(btn) {
-    if (menuEl) { const same = menuBtn === btn; closeMenu(false); if (same) return; }
+  // ---------- menú de acciones por lugar: openMenu() canónico (shell.js) ----------
+  function openCityMenu(btn) {
     const c = clusters.find(x => x.key === btn.dataset.cityMenu);
     if (!c) return;
-    menuBtn = btn;
-    btn.setAttribute('aria-expanded', 'true');
-    menuEl = document.createElement('div');
-    menuEl.className = 'tr-menu';
-    menuEl.setAttribute('role', 'menu');
-    menuEl.setAttribute('aria-label', `Acciones de ${c.name}`);
-    menuEl.innerHTML = `
-      <button role="menuitem" data-act="postal">${icon('dl')} Descargar postal</button>
-      <button role="menuitem" data-act="cover">${icon('iso')} Elegir portada</button>
-      <button role="menuitem" data-act="rename">${icon('tag')} Renombrar</button>`;
-    document.body.appendChild(menuEl);
-    const r = btn.getBoundingClientRect();
-    const w = menuEl.offsetWidth, h = menuEl.offsetHeight;
-    const left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w));
-    const top = r.bottom + 6 + h > innerHeight ? r.top - h - 6 : r.bottom + 6;
-    menuEl.style.setProperty('--mx', `${left}px`);
-    menuEl.style.setProperty('--my', `${Math.max(8, top)}px`);
-    menuEl.addEventListener('click', e => {
-      const it = e.target.closest('[data-act]');
-      if (!it) return;
-      e.stopPropagation();
-      const act = it.dataset.act, trigger = menuBtn;
-      closeMenu(false);
-      if (act === 'postal') makePostal(c, trigger);
+    openMenu(btn, [
+      { id: 'postal', label: 'Descargar postal', icon: 'dl' },
+      { id: 'cover', label: 'Elegir portada', icon: 'iso' },
+      { id: 'rename', label: 'Renombrar', icon: 'tag' },
+    ], { label: `Acciones de ${c.name}`, onSelect: act => {
+      if (act === 'postal') makePostal(c, btn);
       else if (act === 'cover') pickCover(c);
       else renameCity(c);
-    });
-    menuEl.addEventListener('keydown', e => {
-      const items = [...menuEl.querySelectorAll('[role=menuitem]')];
-      const i = items.indexOf(document.activeElement);
-      if (e.key === 'Escape') { e.preventDefault(); closeMenu(); }
-      else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
-      else if (e.key === 'Tab') closeMenu(false);
-    });
-    document.addEventListener('pointerdown', onMenuOutside, true);
-    addEventListener('scroll', onMenuScroll, true);
-    addEventListener('resize', onMenuScroll);
-    menuEl.querySelector('[role=menuitem]').focus();
+    } });
   }
 
   // ---------- vista 2: detalle de ciudad (días adentro) ----------
@@ -238,9 +184,9 @@ main.innerHTML = `
       </div>
       <div class="tr-bar ${rise}">
         <label class="search tr-search">${icon('search')}<input id="d-q" type="search" placeholder="Buscar en ${esc(c.name)}" aria-label="Buscar en ${esc(c.name)}" value="${esc(dstate.q)}"></label>
-        <div class="tr-chiprow" role="toolbar" aria-label="Filtros">
+        <div class="chip-row" role="toolbar" aria-label="Filtros">
           ${filterChips}
-          ${scenes.length ? '<span class="tr-div" aria-hidden="true"></span>' : ''}
+          ${scenes.length ? '<span class="chip-div" aria-hidden="true"></span>' : ''}
           ${scenes.map(sc => `<button class="chip ${dstate.scene === sc ? 'on' : ''}" data-dscene="${esc(sc)}" aria-pressed="${dstate.scene === sc}">${esc(sc)}</button>`).join('')}
         </div>
       </div>
@@ -274,8 +220,8 @@ main.innerHTML = `
                 <div class="t"><span class="tr-title">${esc(title)}</span></div>
                 ${title !== f.time ? `<div class="tr-when"><time>${f.time || ''}</time></div>` : ''}
                 <div class="metrics">
-                  <span title="Distancia">${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b><i class="tr-sr">Distancia</i></span>
-                  <span title="Altura máxima">${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b><i class="tr-sr">Altura máxima</i></span>
+                  <span title="Distancia">${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b><i class="sr-only">Distancia</i></span>
+                  <span title="Altura máxima">${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b><i class="sr-only">Altura máxima</i></span>
                 </div>
                 ${f.label && a?.summary ? `<p class="ai-line">${esc(a.summary)}</p>` : ''}
               </div>
@@ -283,7 +229,7 @@ main.innerHTML = `
           }).join('')}
           </div>
         </section>`;
-      }).join('') || `<div class="empty">${icon('search')}<p>Nada con esos filtros.</p></div>`}`;
+      }).join('') || emptyState({ icon: 'search', title: 'Nada con esos filtros', help: 'Quita algún filtro para ver más días.' })}`;
     el.querySelector('#city-back').addEventListener('click', () => {
       if (dstate._leaving) return;                        // ya saliendo → evita doble animación y su race
       dstate._leaving = true;
@@ -438,7 +384,7 @@ main.innerHTML = `
     const pb = e.target.closest('[data-postal]');
     if (pb) { e.stopPropagation(); makePostal(clusters.find(x => x.key === pb.dataset.postal), pb); return; }
     const mb = e.target.closest('[data-city-menu]');
-    if (mb) { e.stopPropagation(); openMenu(mb); return; }
+    if (mb) { e.stopPropagation(); openCityMenu(mb); return; }
     const cc = e.target.closest('[data-city]');
     if (cc) {
       const c = clusters.find(x => x.key === cc.dataset.city);

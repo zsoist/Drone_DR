@@ -1,22 +1,10 @@
 // Studio v5 — motor de medios: 4 módulos en tabs (Editor · Reels · Fotos · Trabajos).
 // El editor de video v4 (carrusel, timeline arrastrable, Momentos AI, exportbar) vive
 // intacto dentro del módulo Editor; Reels/Fotos gestionan la biblioteca vía /api/media_op.
-// iconos propios del Studio que icons.js no trae (se registran en el set compartido)
-Object.assign(ICONS, {
-  more: '<circle cx="4.5" cy="10" r="1.3"/><circle cx="10" cy="10" r="1.3"/><circle cx="15.5" cy="10" r="1.3"/>',
-  star: '<path d="M10 3l2.1 4.4 4.9.6-3.6 3.3.9 4.8L10 13.7 5.7 16.1l.9-4.8L3 8l4.9-.6z"/>',
-  keyboard: '<rect x="2.5" y="5" width="15" height="10" rx="2"/><path d="M5.5 8.5h1M9.5 8.5h1M13.5 8.5h1M6 12h8"/>',
-});
 const main = renderShell('studio.html');
 main.classList.add('st-page');
 main.innerHTML = `
-  <div class="st-hero rise">
-    <div class="st-hero-row">
-      <h1>Studio</h1>
-      <span class="gchip" id="st-count">cargando…</span>
-    </div>
-    <p class="st-sub">Motor de medios — edita, gestiona y comparte</p>
-  </div>
+  ${pageHead('Studio', 'Motor de medios — edita, gestiona y comparte', '<span class="gchip" id="st-count">cargando…</span>')}
 
   <div class="pm-tabs st-tabs rise" id="st-tabs" role="tablist" aria-label="Módulos de Studio">
     <button class="on" data-tab="editor" role="tab" aria-selected="true">${icon('film')} Editor</button>
@@ -26,14 +14,14 @@ main.innerHTML = `
     <span class="pm-ink"></span>
   </div>
 
-  <div class="up-zone" id="up-zone">
-    <button class="up-cta" id="up-pick">
-      <span class="up-ic">${icon('dl')}</span>
-      <span class="up-t"><b>Subir desde tu teléfono</b><small>Videos y fotos del carrete — se procesan solos al llegar</small></span>
-      <span class="up-go">${icon('chevR')}</span>
+  <div class="st-up" id="up-zone">
+    <button class="st-up-cta" id="up-pick">
+      <span class="st-up-ic">${icon('dl')}</span>
+      <span class="st-up-t"><b>Subir desde tu teléfono</b><small>Videos y fotos del carrete — se procesan solos al llegar</small></span>
+      <span class="st-up-go">${icon('chevR')}</span>
     </button>
     <input type="file" id="up-file" accept="video/*,image/*" multiple hidden>
-    <div class="up-list" id="up-list" hidden></div>
+    <div class="st-up-list" id="up-list" hidden></div>
   </div>
 
   <section class="st-mod" data-mod="editor">
@@ -529,6 +517,11 @@ stTabs.addEventListener('click', e => {
   const b = e.target.closest('[data-tab]');
   if (b) showMod(b.dataset.tab);
 });
+// deep-link: studio.html?tab=jobs|reels|fotos|editor (Dron enlaza a Trabajos)
+{
+  const want = new URLSearchParams(location.search).get('tab');
+  if (want && want !== 'editor' && stTabs.querySelector(`[data-tab="${CSS.escape(want)}"]`)) showMod(want);
+}
 
 // ---- atajos de teclado: botón fantasma en la cabecera del editor ----
 document.getElementById('ed-keys')?.addEventListener('click', e => {
@@ -581,11 +574,11 @@ addEventListener('visibilitychange', () => { if (document.hidden) shareCache.cle
 
   const row = f => {
     const el = document.createElement('div');
-    el.className = 'up-row';
-    el.innerHTML = `<span class="up-n">${esc(f.name)}</span>
-      <span class="up-sz mono">${fmt.gb(f.size)}</span>
-      <span class="up-bar"><i></i></span>
-      <span class="up-st mono">en cola</span>`;
+    el.className = 'st-up-row';
+    el.innerHTML = `<span class="st-up-n">${esc(f.name)}</span>
+      <span class="st-up-sz mono">${fmt.gb(f.size)}</span>
+      <span class="st-up-bar"><i></i></span>
+      <span class="st-up-st mono">en cola</span>`;
     list.appendChild(el);
     return el;
   };
@@ -594,7 +587,7 @@ addEventListener('visibilitychange', () => { if (document.hidden) shareCache.cle
     const isVid = VID.test(file.name);
     const isImg = IMG.test(file.name);
     if (!isVid && !isImg) {
-      el.querySelector('.up-st').textContent = 'formato no soportado';
+      el.querySelector('.st-up-st').textContent = 'formato no soportado';
       el.classList.add('bad');
       return null;
     }
@@ -608,25 +601,25 @@ addEventListener('visibilitychange', () => { if (document.hidden) shareCache.cle
       xhr.upload.addEventListener('progress', e => {
         if (!e.lengthComputable) return;
         const p = e.loaded / e.total;
-        el.querySelector('.up-bar i').style.setProperty('--p', p.toFixed(3));
-        el.querySelector('.up-st').textContent = `${Math.round(p * 100)}%`;
+        el.querySelector('.st-up-bar i').style.setProperty('--p', p.toFixed(3));
+        el.querySelector('.st-up-st').textContent = `${Math.round(p * 100)}%`;
       });
       xhr.addEventListener('load', () => {
         let d = {};
         try { d = JSON.parse(xhr.responseText); } catch {}
         if (xhr.status >= 400 || d.error) {
           el.classList.add('bad');
-          el.querySelector('.up-st').textContent = (d.error || `error ${xhr.status}`).slice(0, 40);
+          el.querySelector('.st-up-st').textContent = (d.error || `error ${xhr.status}`).slice(0, 40);
         } else {
           el.classList.add('ok');
-          el.querySelector('.up-bar i').style.setProperty('--p', '1');
-          el.querySelector('.up-st').textContent = isVid ? 'procesando…' : 'listo';
+          el.querySelector('.st-up-bar i').style.setProperty('--p', '1');
+          el.querySelector('.st-up-st').textContent = isVid ? 'procesando…' : 'listo';
         }
         resolve(d);
       });
       xhr.addEventListener('error', () => {
         el.classList.add('bad');
-        el.querySelector('.up-st').textContent = 'falló la red';
+        el.querySelector('.st-up-st').textContent = 'falló la red';
         resolve(null);
       });
       xhr.send(file);
@@ -746,10 +739,6 @@ function openReelViewer(name) {
           <span class="spacer"></span>
           <button class="btn danger rv-del" data-rv="del">${icon('trash')} Borrar</button>
         </div>
-        <div class="st-menu rv-menu" role="menu" hidden>
-          <button role="menuitem" class="st-menu-i" data-rv="copy">${icon('link')} Copiar link</button>
-          <button role="menuitem" class="st-menu-i" data-rv="ren">${icon('tag')} Renombrar</button>
-        </div>
         <div class="rv-kbd"><span><kbd>←</kbd><kbd>→</kbd> cambiar reel</span><span><kbd>Espacio</kbd> pausa</span><span><kbd>Esc</kbd> cerrar</span></div>
       </div>`;
     // cebar el compartir en cuanto se abre: el gesto del click no se pierde
@@ -818,18 +807,16 @@ function openReelViewer(name) {
       return;
     }
     const b = ev.target.closest('[data-rv]');
-    if (!b) { ov.querySelector('.rv-menu')?.setAttribute('hidden', ''); if (ev.target === ov || ev.target.classList.contains('rv-bg')) close(); return; }
+    if (!b) { if (ev.target === ov || ev.target.classList.contains('rv-bg')) close(); return; }
     const a = b.dataset.rv, it = list[idx];
     const url = `/data/reels/${encodeURIComponent(it.name)}`;
-    const menuEl = ov.querySelector('.rv-menu');
     if (a === 'more') {
-      const r = b.getBoundingClientRect();
-      menuEl.hidden = !menuEl.hidden;
-      menuEl.style.setProperty('--mx', Math.max(8, Math.min(innerWidth - 188, r.right - 180)) + 'px');
-      menuEl.style.setProperty('--my', Math.max(8, r.top - menuEl.offsetHeight - 8) + 'px');
+      // openMenu() canónico; la acción elegida vuelve a este mismo handler vía un proxy [data-rv]
+      const fire = act => { const t = document.createElement('button'); t.dataset.rv = act; t.hidden = true; ov.appendChild(t); t.click(); t.remove(); };
+      openMenu(b, [{ id: 'copy', label: 'Copiar link', icon: 'link' }, { id: 'ren', label: 'Renombrar', icon: 'tag' }],
+        { label: 'Más acciones del reel', onSelect: fire });
       return;
     }
-    if (menuEl) menuEl.hidden = true;
     if (a === 'close') return close();
     if (a === 'prev') return go(-1);
     if (a === 'next') return go(1);
@@ -1194,39 +1181,14 @@ function cardHTML(kind, it) {
   </div>`;
 }
 
-// ---- menú flotante "⋯": un solo nodo compartido, posicionado junto al botón ----
-let cardMenu = null;
-function closeCardMenu() { cardMenu?.remove(); cardMenu = null; }
+// ---- menú "⋯" de las tarjetas: openMenu() canónico (shell.js) ----
 function openCardMenu(kind, card, anchor) {
-  closeCardMenu();
-  const m = document.createElement('div');
-  m.className = 'st-menu';
-  m.setAttribute('role', 'menu');
-  m.innerHTML = (CARD_MENU[kind] || []).map(([act, ic, label, tone]) =>
-    `<button role="menuitem" class="st-menu-i${tone ? ' ' + tone : ''}" data-mact="${act}">${icon(ic)} ${label}</button>`).join('');
-  document.body.appendChild(m);
-  const r = anchor.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
-  const left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w));
-  const top = r.bottom + 6 + h > innerHeight - 8 ? Math.max(8, r.top - h - 6) : r.bottom + 6;
-  m.style.setProperty('--mx', left + 'px');
-  m.style.setProperty('--my', top + 'px');
-  if (kind === 'fotos') primeShare(`/data/photos/${encodeURIComponent(card.dataset.name)}`, card.dataset.name, 'image/jpeg').catch(() => {});
-  m.addEventListener('click', ev => {
-    const it = ev.target.closest('[data-mact]');
-    if (!it) return;
-    const name = card.dataset.name;
-    closeCardMenu();
-    runCardAct(kind, name, it.dataset.mact);
-  });
-  m.querySelector('button')?.focus();
-  cardMenu = m;
+  const name = card.dataset.name;
+  if (kind === 'fotos') primeShare(`/data/photos/${encodeURIComponent(name)}`, name, 'image/jpeg').catch(() => {});
+  openMenu(anchor, (CARD_MENU[kind] || []).map(([act, ic, label, tone]) =>
+    ({ id: act, icon: ic, label, danger: tone === 'danger' })),
+    { label: 'Acciones', onSelect: act => runCardAct(kind, name, act) });
 }
-document.addEventListener('pointerdown', e => {
-  if (cardMenu && !cardMenu.contains(e.target) && !e.target.closest('[data-act="more"]')) closeCardMenu();
-}, true);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCardMenu(); });
-addEventListener('scroll', closeCardMenu, true);
-addEventListener('resize', closeCardMenu);
 
 function renderGrid(kind) {
   const grid = document.getElementById(`grid-${kind}`);
@@ -1235,7 +1197,7 @@ function renderGrid(kind) {
   grid.querySelectorAll('video').forEach(v => { try { v.pause(); v.removeAttribute('src'); v.load(); } catch {} });
   const items = viewOf(kind);
   grid.innerHTML = items.map(it => cardHTML(kind, it)).join('') ||
-    `<div class="u-span-all empty">${kind === 'reels' ? 'Aún no hay reels — exporta uno desde el Editor.' : 'Aún no hay fotos capturadas.'}</div>`;
+    emptyState(kind === 'reels' ? { icon: 'play', title: 'Aún no hay reels', help: 'Exporta uno desde el Editor.', cls: 'u-span-all' } : { icon: 'iso', title: 'Aún no hay fotos', help: 'Captura fotos desde un video del editor.', cls: 'u-span-all' });
   if (kind === 'reels') grid.querySelectorAll('video').forEach(v => {
     v.addEventListener('loadedmetadata', () => {
       const chip = v.parentElement.querySelector('.m-dur');
@@ -1601,7 +1563,7 @@ pollJobs(jobsEl, 2500, j => {
     mask.hidden = !tl.length;
     playhead = Math.min(playhead, total());
     phEl.style.display = tl.length ? '' : 'none';
-    scroll.classList.toggle('empty', !tl.length);
+    scroll.classList.toggle('is-empty', !tl.length);
     paintPlayhead();
     if (!tl.length) { video.removeAttribute('src'); video.load?.(); curCid = null; preloadClip(null); }
     paintAllRanges();
@@ -2058,7 +2020,7 @@ pollJobs(jobsEl, 2500, j => {
         <span class="tl-txt-h r" data-txth="r"></span>
       </div>`;
     }).join('');
-    lane.classList.toggle('empty', !texts.length);
+    lane.classList.toggle('is-empty', !texts.length);
     paintTextOverlay();
     // el texto se edita SIN pasar por renderAll, así que hay que guardar aquí también
     if (typeof autosave === 'function') autosave();
@@ -2958,8 +2920,8 @@ pollJobs(jobsEl, 2500, j => {
         <div class="rm-foot">
           <span class="rm-count mono">${pick.size ? `${pick.size} toma${pick.size === 1 ? '' : 's'} · ${estimate()}` : 'Elige al menos una toma'}</span>
           <span class="u-f1 spacer"></span>
-          ${st.step === 2 ? '<button class="btn" id="rm-back">‹ Tomas</button>' : ''}
-          <button class="btn primary" id="rm-go" ${pick.size ? '' : 'disabled'}>${st.step === 1 ? 'Continuar ›' : `${icon('spark')} Crear reel`}</button>
+          ${st.step === 2 ? `<button class="btn" id="rm-back">${icon('chevL')} Tomas</button>` : ''}
+          <button class="btn primary" id="rm-go" ${pick.size ? '' : 'disabled'}>${st.step === 1 ? `Continuar ${icon('chevR')}` : `${icon('spark')} Crear reel`}</button>
         </div>
       </div>`;
     };
@@ -3139,7 +3101,7 @@ pollJobs(jobsEl, 2500, j => {
       <span class="scrub-line"></span>
       <span class="cr-lb">${esc(f.label) || fmt.date(f.date)} · ${fmt.dur(f.duration_s)}</span>
       <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar en playhead" aria-label="Insertar en el playhead">${icon('plus')}</button>
-    </div>`).join('') || `<div class="empty">No hay clips con proxy disponibles.</div>`;
+    </div>`).join('') || emptyState({ icon: 'film', title: 'Sin clips disponibles', help: 'Ningún clip tiene proxy todavía.' });
   rail.querySelectorAll('.cr-item').forEach(el => el.classList.add('scrub'));
   attachScrub(rail);   // 27 · scrub por hover reutilizando el helper del repo
   rail.addEventListener('click', e => {
@@ -3689,11 +3651,11 @@ pollJobs(jobsEl, 2500, j => {
           `<button class="chip" data-jump="${(+h.t || 0).toFixed(1)}" data-tip="${esc(h.reason || '')}">${fmt.dur(+h.t || 0)} · ${esc(h.type || 'momento')}</button>`).join('')}
       </div>` : ''}
       <div class="ce-f">
-        <button class="btn" data-ce="prev" ${i === 0 ? 'disabled' : ''}>‹ Corte anterior</button>
+        <button class="btn" data-ce="prev" ${i === 0 ? 'disabled' : ''}>${icon('chevL')} Corte anterior</button>
         <span class="u-f1 spacer"></span>
         <button class="btn" data-ce="cancel">Cancelar</button>
         <button class="btn primary" data-ce="ok">Aplicar</button>
-        <button class="btn" data-ce="next" ${i === tl.length - 1 ? 'disabled' : ''}>Siguiente corte ›</button>
+        <button class="btn" data-ce="next" ${i === tl.length - 1 ? 'disabled' : ''}>Siguiente corte ${icon('chevR')}</button>
       </div>
     </div>`;
     document.body.appendChild(ov);
@@ -3954,7 +3916,7 @@ pollJobs(jobsEl, 2500, j => {
         <span class="spacer"></span>
         <button class="btn" data-proj="load" data-i="${i}">${icon('play')} Cargar</button>
         <button class="btn danger" data-proj="del" data-i="${i}" data-tip="Borrar">${icon('warn')}</button>
-      </div>`).join('') : `<div class="empty">Aún no has guardado proyectos.</div>`;
+      </div>`).join('') : emptyState({ icon: 'folder', title: 'Sin proyectos guardados', help: 'Guarda un montaje desde el editor para reabrirlo aquí.' });
   }
   function openProjModal() { renderProjList(); projModal.style.display = 'grid'; }
   function closeProjModal() { projModal.style.display = 'none'; }

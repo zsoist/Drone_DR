@@ -107,7 +107,7 @@ function isla(sc, i) {
     aria-label="Seleccionar ${esc(sc.name)}">
     <div class="wi-poster" data-preview="${esc(sc.assets?.poster||'')}"></div>
     <div class="wi-shine"></div>
-    <div class="wi-shade"></div>
+    <div class="scrim"></div>
     ${c.splat?'<span class="wi-badge">FOTO-REAL</span>':c.mesh?'<span class="wi-badge mesh">MALLA 3D</span>':''}
     ${rec!=null?`<span class="wi-rec">${I.trophy} ${rec.toFixed(1)}s</span>`:''}
     <div class="wi-body">

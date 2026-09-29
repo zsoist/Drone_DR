@@ -35,13 +35,136 @@ const NAV = [
 ];
 // destinos secundarios del móvil (hoja «Más») + Guía, que solo vive en el footer/hoja
 const NAV_MORE = [...NAV.filter(n => !n.tab), { href: 'guia.html', ic: 'list', label: 'Guía' }];
-if (typeof ICONS !== 'undefined' && !ICONS.more)
-  ICONS.more = '<circle cx="4.5" cy="10" r="1.3"/><circle cx="10" cy="10" r="1.3"/><circle cx="15.5" cy="10" r="1.3"/>';
 
-// Cabecera de página unificada: título (--fs-2xl) + subtítulo opcional + acciones a la derecha.
+// Cabecera de página unificada (.page-head en style.css): título + subtítulo opcional + acciones a la derecha.
 // pageHead('Sistema', 'inventario · costos', '<button class="btn sm">…</button>')
-function pageHead(title, sub = '', actions = '') {
-  return `<header class="page-head ph2"><div class="ph2-t"><h1>${esc(title)}</h1>${sub ? `<p class="ph2-sub">${esc(sub)}</p>` : ''}</div>${actions ? `<div class="ph2-actions">${actions}</div>` : ''}</header>`;
+// opts.subId: el subtítulo existe siempre con ese id + aria-live (contador que el JS de la página rellena).
+function pageHead(title, sub = '', actions = '', opts = {}) {
+  const subEl = sub || opts.subId
+    ? `<p class="page-head-sub"${opts.subId ? ` id="${opts.subId}" aria-live="polite"` : ''}>${esc(sub)}</p>` : '';
+  return `<header class="page-head"><div class="page-head-t"><h1>${esc(title)}</h1>${subEl}</div>${actions ? `<div class="page-head-actions">${actions}</div>` : ''}</header>`;
+}
+
+// Estado vacío canónico (.empty): icono + título + ayuda + acción opcional (HTML de un .btn).
+// emptyState({ icon: 'pin', title: 'Sin vuelos', help: 'Importa una SD desde Dron.', action: '<a class="btn primary" href="drone.html">Ir a Dron</a>' })
+function emptyState({ icon: ic = 'search', title = '', help = '', action = '', cls = '' } = {}) {
+  return `<div class="empty${cls ? ' ' + cls : ''}">${ic ? icon(ic) : ''}${title ? `<b>${esc(title)}</b>` : ''}${help ? `<p>${esc(help)}</p>` : ''}${action}</div>`;
+}
+
+// Arranque del resumen AI sin la muletilla ("El vuelo inicia con…") — títulos cortos de vuelo (Vuelos, Viajes).
+function shortTitle(text) {
+  let t = String(text || '').trim();
+  t = t.replace(/^(el|la|este|esta)\s+(vuelo|dron|drone|clip|video|metraje|material)(\s+\S+)??\s+(inicia|comienza|muestra|captura|realiza|presenta|sobrevuela|ofrece|documenta|registra|recorre|revela)(\s+(con|sobre|en))?\s+/i, '');
+  t = t.replace(/^(un|una|unos|unas)\s+/i, '');
+  t = t.split(/[,.;:]| y | para | mientras | luego | donde /i)[0].trim();
+  if (t.length > 64) t = t.slice(0, 64).replace(/\s+\S*$/, '') + '…';
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+}
+
+// ---- popover + menú canónicos (CSS: .pop / .menu-i en style.css) ------------------------------------------
+// openPopover(anchor, content, opts) → { el, close } | null   (null = estaba abierto para ese ancla y se cerró: toggle)
+//   content: Node ya construido · opts: { label, role, haspopup, align:'end'|'start', className, focus: selector|false,
+//   onClose }. Un solo popover abierto a la vez. Cierra con Esc (devuelve el foco al ancla), clic/tap fuera, scroll
+//   fuera del popover, resize y Tab. Se posiciona `fixed` bajo el ancla y se voltea arriba si no cabe.
+// openMenu(anchor, items, opts) → igual, con role=menu/menuitem, flechas ↑↓ Home End, tipeo-para-saltar.
+//   items: [{ id, label, icon, hint, danger, disabled, href, target, sep }] · opts.onSelect(id, item) corre DESPUÉS
+//   de cerrar y devolver el foco (un modal abierto desde la acción recuerda el ancla como opener).
+let _pop = null;
+function closePopover({ refocus = false } = {}) {
+  const p = _pop;
+  if (!p) return;
+  _pop = null;
+  window.removeEventListener('keydown', p.onKey, true);
+  document.removeEventListener('pointerdown', p.onDown, true);
+  window.removeEventListener('scroll', p.onScroll, true);
+  window.removeEventListener('resize', p.onResize);
+  p.anchor.setAttribute('aria-expanded', 'false');
+  p.el.remove();
+  try { p.onClose && p.onClose(); } catch {}
+  if (refocus && p.anchor.isConnected) { try { p.anchor.focus({ preventScroll: true }); } catch {} }
+}
+function placePopover(el, anchor, align) {
+  const r = anchor.getBoundingClientRect();
+  const w = el.offsetWidth, h = el.offsetHeight, gap = 6, m = 8;
+  const left = align === 'start' ? r.left : r.right - w;
+  const below = r.bottom + gap + h <= innerHeight - m;
+  const top = below ? r.bottom + gap : Math.max(m, r.top - gap - h);
+  el.style.left = Math.max(m, Math.min(innerWidth - w - m, left)) + 'px';
+  el.style.top = top + 'px';
+}
+function openPopover(anchor, content, opts = {}) {
+  if (_pop && _pop.anchor === anchor) { closePopover(); return null; }
+  closePopover();
+  const el = document.createElement('div');
+  el.className = 'pop' + (opts.className ? ' ' + opts.className : '');
+  if (opts.role) el.setAttribute('role', opts.role);
+  if (opts.label) el.setAttribute('aria-label', opts.label);
+  el.appendChild(content);
+  document.body.appendChild(el);
+  anchor.setAttribute('aria-haspopup', opts.haspopup || opts.role || 'true');
+  anchor.setAttribute('aria-expanded', 'true');
+  placePopover(el, anchor, opts.align || 'end');
+  const p = _pop = { el, anchor, onClose: opts.onClose };
+  p.onKey = e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePopover({ refocus: true }); }
+    else if (e.key === 'Tab') closePopover();
+    else if (opts.onKey) opts.onKey(e, el);
+  };
+  p.onDown = e => { if (!el.contains(e.target) && !anchor.contains(e.target)) closePopover(); };
+  p.onScroll = e => { if (!el.contains(e.target)) closePopover(); };
+  p.onResize = () => closePopover();
+  window.addEventListener('keydown', p.onKey, true);   // window+capture: gana a los Esc de modales/visores
+  document.addEventListener('pointerdown', p.onDown, true);
+  window.addEventListener('scroll', p.onScroll, true);
+  window.addEventListener('resize', p.onResize);
+  if (opts.focus !== false) {
+    const f = typeof opts.focus === 'string' ? el.querySelector(opts.focus) : null;
+    (f || el.querySelector('[role=menuitem]:not([aria-disabled=true]), input, button, [tabindex="0"]'))?.focus({ preventScroll: true });
+  }
+  return { el, close: o => { if (_pop === p) closePopover(o); } };
+}
+function openMenu(anchor, items, opts = {}) {
+  const box = document.createElement('div');
+  box.style.display = 'contents';
+  box.innerHTML = items.map((it, i) => {
+    if (it.sep) return '<div class="menu-sep" role="separator"></div>';
+    const inner = `${it.icon ? icon(it.icon) : ''}${it.hint
+      ? `<span class="menu-t"><b>${esc(it.label)}</b><small>${esc(it.hint)}</small></span>` : `<span>${esc(it.label)}</span>`}`;
+    const cls = `menu-i${it.danger ? ' danger' : ''}`;
+    const dis = it.disabled ? ' aria-disabled="true"' : '';
+    return it.href
+      ? `<a role="menuitem" class="${cls}" data-mi="${i}" href="${esc(it.href)}"${it.target ? ` target="${esc(it.target)}" rel="noopener"` : ''}${dis}>${inner}</a>`
+      : `<button type="button" role="menuitem" class="${cls}" data-mi="${i}"${dis}>${inner}</button>`;
+  }).join('');
+  const enabled = () => [...box.querySelectorAll('[role=menuitem]:not([aria-disabled=true])')];
+  const pop = openPopover(anchor, box, {
+    role: 'menu', haspopup: 'menu', label: opts.label, align: opts.align, className: opts.className, focus: false,
+    onKey: (e, el) => {
+      const list = enabled(), i = list.indexOf(document.activeElement);
+      if (!list.length) return;
+      const go = n => { e.preventDefault(); list[(n + list.length) % list.length].focus({ preventScroll: true }); };
+      if (e.key === 'ArrowDown') go(i + 1);
+      else if (e.key === 'ArrowUp') go(i < 0 ? -1 : i - 1);
+      else if (e.key === 'Home') go(0);
+      else if (e.key === 'End') go(-1);
+      else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const k = e.key.toLowerCase();
+        const hit = [...list.slice(i + 1), ...list.slice(0, i + 1)].find(b => b.textContent.trim().toLowerCase().startsWith(k));
+        if (hit) { e.preventDefault(); hit.focus({ preventScroll: true }); }
+      }
+    },
+  });
+  if (!pop) return null;
+  pop.el.addEventListener('click', e => {
+    const b = e.target.closest('[data-mi]');
+    if (!b || b.getAttribute('aria-disabled') === 'true') return;
+    const item = items[+b.dataset.mi];
+    closePopover({ refocus: true });
+    if (item.onSelect) item.onSelect(item.id, item);
+    if (opts.onSelect) opts.onSelect(item.id, item);
+  });
+  (opts.focusLast ? enabled().pop() : enabled()[0])?.focus({ preventScroll: true });
+  return pop;
 }
 
 // ---- modal accesible compartido: role=dialog + aria-modal + aria-labelledby, Esc cierra, Tab queda
@@ -339,7 +462,7 @@ function phaseDash(j, pct) {
       <span class="jc-ph-dot"></span>
       <div class="jc-ph-main"><b>${name}</b><span>${sub}</span></div>
       <div class="jc-ph-bar"><div style="--p:${width / 100}"></div></div>
-      <span class="jc-ph-time mono">${done ? (st != null ? fmtDur(dur) : '✓')
+      <span class="jc-ph-time mono">${done ? (st != null ? fmtDur(dur) : icon('check'))
         : act ? `<b>${width}%</b>${st != null ? ' · ' + fmtDur(dur) : ''}` : '—'}</span>
     </div>`;
   }).join('');
@@ -611,7 +734,7 @@ async function pollJobs(el, every = 2500, onDone = null, opts = {}) {
       const shown = opts.filter ? jobs.filter(opts.filter) : jobs;
       if (!shown.length) {
         el.dataset.ids = '';
-        el.innerHTML = `<p class="jcx-empty">${esc(opts.emptyText || 'Sin trabajos aún.')}</p>`;
+        el.innerHTML = emptyState({ icon: 'activity', title: opts.emptyText || 'Sin trabajos aún' });
         el.dispatchEvent(new CustomEvent('jobs:paint', { detail: { jobs, counts } }));
         return;
       }
@@ -928,10 +1051,11 @@ function haversine(a, b) {
 // satelite: maxzoom 17 — mas alla MapLibre ESCALA el tile (suave) en vez de
 // pedir niveles que Esri no tiene en zonas rurales (tiles "not available");
 // la ortofoto del dron va encima con su propia nitidez de todos modos
-// paneles colapsables: click en el titulo (no en sus botones) pliega el cuerpo
+// paneles colapsables (opt-in): <section class="panel" data-collapsible> — click en el título (no en sus botones)
+// pliega el cuerpo; el chevron lo dibuja style.css.
 document.addEventListener('click', e => {
-  const ph = e.target.closest('.panel > .ph');
-  if (!ph || ph.dataset.noCollapse || e.target.closest('button, a, input, select, label, .seg, .chip')) return;
+  const ph = e.target.closest('.panel[data-collapsible] > .ph');
+  if (!ph || e.target.closest('button, a, input, select, label, .seg, .chip')) return;
   const panel = ph.parentElement;
   const collapsed = panel.classList.contains('clpsd');
   const from = panel.offsetHeight;

@@ -518,7 +518,7 @@ class VolarMobileHudContractTests(unittest.TestCase):
             coarse,
             r"\.vl-osd(?:,\s*\.vl-osd-home,\s*\.vl-osd-gimbal)?\s*\{\s*display:none",
         )
-        self.assertIn(".vl-gimbal-toggle[hidden]{ display:none !important }", coarse)
+        self.assertIn("[hidden] { display: none !important; }", self.styles)   # global [hidden] rule (2026-09 consolidation)
         # motion rules (2026-09-29): the flash animates opacity, not box-shadow, and its
         # keyframes live with the other feedback keyframes; the trigger must still use it
         self.assertIn("@keyframes triggerFlash", self.styles)

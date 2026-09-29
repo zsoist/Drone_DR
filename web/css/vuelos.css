@@ -1,7 +1,5 @@
 /* AeroBrain Vuelos (index.html) — page layer on top of style.css (DESIGN.md). Loaded AFTER style.css. */
 
-.vf-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.vf-page .grid[hidden], .vf-page #mapview[hidden] { display: none; }
 .vf-page .vf-span { grid-column: 1 / -1; }
 
 /* ---- filter bar: row 1 = search + sort + view; row 2 = one scrollable chip row ---- */
@@ -21,19 +19,10 @@
 @media (hover: hover) { .vf-sem:hover:not(.on) { color: var(--text); background: var(--surface-2); } }
 .vf-filters-btn { display: none; }
 .vf-badge { min-width: 18px; height: 18px; padding: 0 5px; display: inline-grid; place-items: center; border-radius: var(--r-pill); background: var(--accent-solid); color: var(--text-on-accent); font-size: var(--fs-xs); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
-.vf-badge[hidden] { display: none; }
 .vf-tools select.ctl { width: auto; min-width: 150px; }
 
-.vf-chiprow {
-  flex: 1 0 100%; display: flex; align-items: center; gap: var(--sp-2);
-  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; padding-block: 2px;
-}
-.vf-chiprow::-webkit-scrollbar { display: none; }
-.vf-chiprow .chip, .vf-chiprow .vf-div { flex: none; }
+.vf-chips { flex: 1 0 100%; }
 .vf-scenes { display: contents; }
-.vf-chiprow .chip { height: var(--ctl-h); padding: 0 var(--sp-3); font-size: var(--fs-md); }
-.vf-chiprow .chip svg.ic { width: var(--ic-sm); height: var(--ic-sm); }
-.vf-div { width: 1px; height: 20px; background: var(--line-strong); margin-inline: var(--sp-1); }
 
 @media (pointer: coarse), (max-width: 820px) {
   .vf-bar { gap: var(--sp-2); }
@@ -43,14 +32,11 @@
   .vf-filters-btn { display: inline-flex; height: 44px; flex: none; }
   .vf-more { display: none; flex: 1 0 100%; flex-direction: column; align-items: stretch; gap: var(--sp-2); }
   .vf-more.open { display: flex; }
-  .vf-more, .vf-tools, .vf-chiprow { min-width: 0; max-width: 100%; }
+  .vf-more, .vf-tools, .chip-row { min-width: 0; max-width: 100%; }
   .vf-tools { width: 100%; }
   .vf-tools { margin-left: 0; }
   .vf-tools select.ctl { flex: 1 1 0; min-width: 0; height: 44px; }
   .vf-tools .seg { flex: none; }
-  /* 32px chips with a 44px touch target */
-  .vf-chiprow .chip { position: relative; height: 32px; }
-  .vf-chiprow .chip::before { content: ""; position: absolute; inset: -6px -2px; }
 }
 
 /* ---- cards ---- */

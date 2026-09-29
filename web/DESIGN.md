@@ -63,6 +63,22 @@ Labels mono en mayúsculas: 10–11px, `--tr-caps`, color `--text-2` (no `--text
 - **Barras de progreso**: `width:100%` + `transform:scaleX(var(--p,1))`, origen izquierdo. El JS debe fijar `--p` (0..1); un `style.width` heredado sigue funcionando (sin animación).
 - **Tab ink** `.pm-ink`: `--ink-x` (px, translateX) y `--ink-w` (px); un `left/width` inline heredado sigue funcionando (sin deslizar).
 
+## Componentes compartidos (style.css §4 + shell.js)
+- **Menú / popover** — UN solo componente para todo lo flotante anclado a un botón. `openMenu(anchor, items, opts)` y `openPopover(anchor, node, opts)` (shell.js; CSS `.pop`, `.menu-i`, `.menu-sep`). Items: `{id, label, icon, hint, danger, disabled, href, sep}`; `opts.onSelect(id)` corre DESPUÉS de cerrar y devolver el foco al ancla. Pone `aria-haspopup`/`aria-expanded` en el ancla, `role=menu/menuitem`, ↑↓ Home End + tipeo, Esc (foco vuelve al ancla; escucha en `window` captura, gana a modales y visores), Tab/clic fuera/scroll fuera/resize cierran, se voltea si no cabe, un solo popover abierto (clic en el mismo ancla = toggle). `danger` = `--err-fg`. Fila táctil 44px. Prohibido construir menús locales (`.td-menu`, `.sl-pop`… ya no existen). El sheet «Más» del móvil (`#msheet-ov`) es un diálogo de navegación, no un menú. Páginas sin shell.js (share, p, volar, login) conservan sus propios controles.
+- **`.btn-group`** — botones unidos (deshacer/rehacer, anterior/siguiente): hijos `.btn` normales, solo cambia radio y solape. **`.spacer`** = `flex:1`.
+- **`.chip-row`** — fila de chips/filtros con scroll horizontal, sin barra y con desvanecido en los bordes; `.chip-div` separador. Los chips dentro miden `--ctl-h` (32 táctil con zona de toque de 44).
+- **`.sr-only`** — texto solo para lectores de pantalla. **`[hidden]`** gana siempre (`display:none !important`): nunca escribas `.x[hidden]` en CSS de página.
+- **`.score-pill`** — la única insignia de puntuación (mono, `--on-media` sobre `--media-scrim`). **`.tierdot`** tiene dos looks: `full` = acento, el resto neutro.
+- **`.scrim`** — degradado inferior (`--media-scrim-strong`) para texto sobre foto/video; sustituye a `.cc-shade/.wi-shade/.hv2-card-wash`.
+- **Estado vacío** — `emptyState({icon, title, help, action, cls})` → `.empty` (icono + `<b>` título + `<p>` ayuda + botón opcional). No uses `.empty` como clase de estado: para eso `.is-empty`.
+- **Cabecera de página** — `pageHead(title, sub, actionsHTML, {subId})` → `.page-head` (h1 20/600, `.page-head-sub`, `.page-head-actions`). Todas las páginas con shell la usan; el contador dinámico va en `subId` (aria-live).
+- **Panel** — `.panel > .ph` es un título en frase (13/600, icono 16). Colapsable solo si el panel lleva `data-collapsible` (chevron por máscara CSS con `--chev-d`).
+- **Comparador** `.cmp-handle` (dos chevrons por CSS), `details.explain`/`.tl-help` (chevron por máscara): sin glifos de texto.
+- **Iconos** — todo en `icons.js` (`more, sliders, star, keyboard, edit, chevU/chevD/chevL/chevR, arrowL/arrowR, swap, bolt`…). Prohibido `Object.assign(ICONS, …)` en páginas y SVG inline sueltos; glifos ✕ ✓ ▾ ▸ › ✨ ⚡ fuera de la UI.
+
+## CSS por página
+`web/css/<page>.css` (se enlaza DESPUÉS de style.css y shell.css) contiene SOLO layout de esa página: rejillas, anchos, orden en móvil y prefijos propios (`.st-`, `.sl-`, `.tr-`…). Los componentes (botón, chip, menú, vacío, cabecera, insignias, scrim) viven UNA vez en style.css; una página puede ajustar ancho/margen, nunca alto, padding ni tamaño de fuente de un componente. Nada de `[hidden]`, `text-transform` en `.ph`, ni copias de `.chip-row`/`.sr-only`/`.score-pill`. Un selector cuyas clases no aparecen en ningún `web/**/*.js|html` está muerto y se borra. `position: sticky` funciona porque `body` usa `overflow-x: clip` (con `hidden`, `body` pasaba a ser contenedor de scroll y el sticky no se activaba).
+
 ## Motion
 Tokens: `--dur-instant 80` · `fast 140` · `base 200` · `slow 320` · `hero 600`; `--ease-out cubic-bezier(.16,1,.3,1)` (defecto, `--ease`) · `--ease-in-out` · `--ease-in` · `--ease-spring` (solo hero Home + juego).
 Reglas:

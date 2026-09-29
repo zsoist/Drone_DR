@@ -64,13 +64,13 @@ main.innerHTML = `
   </section>
 
   <section class="dr-mod" data-mod="up" hidden>
-    <div class="up-wrap">
-      <div class="up-zone rise" id="drop" data-tip="También puedes soltar varios a la vez — van en cola">
-        <span class="up-ring"></span>
+    <div class="dr-up-wrap">
+      <div class="dr-up-zone rise" id="drop" data-tip="También puedes soltar varios a la vez — van en cola">
+        <span class="dr-up-ring"></span>
         ${icon('dl')}
-        <p class="up-t">Arrastra videos o toca para elegir</p>
-        <p class="up-s">En iPhone y iPad se abre tu app de <b>Fotos</b> directamente.</p>
-        <div class="up-devices">
+        <p class="dr-up-t">Arrastra videos o toca para elegir</p>
+        <p class="dr-up-s">En iPhone y iPad se abre tu app de <b>Fotos</b> directamente.</p>
+        <div class="dr-up-devices">
           <span class="gchip" data-tip="El selector abre la fototeca — exporta del dron a Fotos y sube">${icon('iso')} iPhone · Fotos</span>
           <span class="gchip" data-tip="Igual que iPhone, con pantalla grande">${icon('grid')} iPad</span>
           <span class="gchip" data-tip="Arrastra archivos desde el Finder o Explorador">${icon('db')} PC · arrastra</span>
@@ -87,7 +87,7 @@ main.innerHTML = `
       <p class="dr-note">Sin telemetría: esta vía no trae GPS ni mapa. Si el video salió del dron con su .SRT,
         usa la <b>Tarjeta SD</b>: es la diferencia entre un clip y un vuelo completo.</p>
 
-      <div id="queue" class="up-queue"></div>
+      <div id="queue" class="dr-up-queue"></div>
     </div>
   </section>
 
@@ -235,11 +235,8 @@ async function scan() {
       <div class="sd-browser" data-browser="${esc(v.volume)}" hidden></div>
     </div>`;
   }).join('') : `
-    <div class="dr-empty">${icon('db')}
-      <b>Sin tarjetas SD detectadas</b>
-      <p>Inserta la micro SD del dron. Se detecta sola cada 10 s (busca la carpeta DCIM).</p>
-      <button class="btn primary" data-rescan>${icon('loop')} Escanear ahora</button>
-    </div>`;
+    ${emptyState({ icon: 'db', title: 'Sin tarjetas SD detectadas', help: 'Inserta la micro SD del dron. Se detecta sola cada 10 s (busca la carpeta DCIM).',
+      action: `<button class="btn primary" data-rescan>${icon('loop')} Escanear ahora</button>` })}`;
   // anima los gauges tras el primer layout
   requestAnimationFrame(() => el.querySelectorAll('.sd-gauge [data-target]').forEach(c => {
     c.style.strokeDashoffset = c.dataset.target;
@@ -539,14 +536,14 @@ const UP_STATE = {
 };
 function upRender() {
   upQueue.innerHTML = upQ.map((it, i) => `
-    <div class="up-card ${UP_STATE[it.status].cls}">
-      <span class="up-ic">${icon(UP_STATE[it.status].ic)}</span>
-      <div class="up-info">
-        <div class="up-name">${esc(it.file.name)}</div>
-        <div class="up-meta mono" data-meta="${i}">${upMeta(it)}</div>
-        <div class="up-bar"><i data-bar="${i}" style="--p:${it.pct / 100}"></i></div>
+    <div class="dr-up-card ${UP_STATE[it.status].cls}">
+      <span class="dr-up-ic">${icon(UP_STATE[it.status].ic)}</span>
+      <div class="dr-up-info">
+        <div class="dr-up-name">${esc(it.file.name)}</div>
+        <div class="dr-up-meta mono" data-meta="${i}">${upMeta(it)}</div>
+        <div class="dr-up-bar"><i data-bar="${i}" style="--p:${it.pct / 100}"></i></div>
       </div>
-      <div class="up-acts">
+      <div class="dr-up-acts">
         ${it.status === 'subiendo' ? `<button class="btn sm" data-cancel="${i}">Cancelar</button>` : ''}
         ${it.status === 'error' || it.status === 'cancelado' ? `<button class="btn sm" data-retry="${i}">${icon('loop')} Reintentar</button>` : ''}
       </div>

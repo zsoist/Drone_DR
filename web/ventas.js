@@ -115,7 +115,7 @@ document.addEventListener('click', e => {
           <button class="btn sm" data-edit="${esc(p.slug)}">Editar</button>
         </div>
       </div>`).join('') :
-      `<p class="vt-empty">Aún no hay propiedades publicadas. Cuando publiques la primera aparecerá aquí.</p>`;
+      emptyState({ icon: 'tag', title: 'Sin propiedades publicadas', help: 'Cuando publiques la primera aparecerá aquí.' });
   }
   loadList();
 

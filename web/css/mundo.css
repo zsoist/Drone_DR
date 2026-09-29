@@ -38,7 +38,6 @@
 .wi-badge { font-size: var(--fs-2xs); color: var(--media-accent); background: var(--media-scrim); border-color: var(--media-line); }
 .wi-badge.mesh { color: var(--media-ok); background: var(--media-scrim); }
 .wi-rec { font-size: var(--fs-2xs); color: var(--media-warn); background: var(--media-scrim); border-color: var(--media-line); }
-.wi-shade { background: linear-gradient(180deg, transparent 22%, var(--media-scrim-strong) 82%); }
 
 /* ── Panel de misión ──────────────────────────────────────── */
 .wp-in {

@@ -1,7 +1,6 @@
 /* AeroBrain shell — sidebar footer, mobile tab bar + "Más" sheet, page header, shared job card.
    Loads after style.css. Uses only tokens from DESIGN.md. Motion: transform/opacity only. */
 
-.foot-btns [hidden], .msheet-foot [hidden], .msheet-ov[hidden], .foot-dev[hidden] { display: none; }
 
 /* ---------- sidebar footer (desktop) ---------- */
 .sidebar .foot { padding: 12px 4px 4px; }
@@ -16,16 +15,6 @@
 .sidebar .foot-btns .btn { width: 100%; justify-content: center; white-space: nowrap; }
 .sidebar .foot-btns .btn.ghost { border-color: var(--line-strong); }
 .sidebar .foot-btns .btn.on { background: var(--surface-2); color: var(--text); }
-
-/* ---------- page header (pageHead() in shell.js) ---------- */
-.page-head.ph2 {
-  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 20px;
-  flex-wrap: wrap; margin-bottom: var(--sp-5);
-}
-.ph2-t { min-width: 0; }
-.ph2 h1 { font-size: var(--fs-2xl); font-weight: var(--fw-semibold, 600); letter-spacing: var(--tr-tight); line-height: var(--lh-tight); margin: 0; }
-.ph2-sub { margin: 4px 0 0; font-size: var(--fs-md); color: var(--text-2); line-height: var(--lh-snug); max-width: 62ch; }
-.ph2-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 
 /* ---------- mobile tab bar ---------- */
 .mnav, .msheet-ov { display: none; }
@@ -61,7 +50,6 @@
     display: block; position: fixed; inset: 0; z-index: var(--z-overlay);
     background: var(--overlay-scrim); opacity: 0; transition: opacity var(--dur-base) var(--ease-out);
   }
-  .msheet-ov[hidden] { display: none; }
   .msheet-ov.on { opacity: 1; }
   .msheet {
     position: absolute; left: 0; right: 0; bottom: 0;
@@ -117,7 +105,6 @@
 .jcx-note.err { color: var(--err-fg); }
 .jcx-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .jcx-actions:empty { display: none; }
-.jcx-empty { margin: 0; padding: var(--sp-4) 0; font-size: var(--fs-md); color: var(--text-3); text-align: center; }
 
 .jcx-more { border-top: 1px solid var(--line); margin-top: var(--sp-1); padding-top: var(--sp-1); }
 .jcx-more > summary {

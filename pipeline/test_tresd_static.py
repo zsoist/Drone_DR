@@ -171,7 +171,7 @@ console.log(JSON.stringify(policy.resolveActiveModel([requested, active], reques
         self.assertNotIn('id="mesh-box"', source)
         self.assertNotIn('id="splat-box"', source)
         shell = (root / "web" / "shell.js").read_text()
-        self.assertIn("ph.dataset.noCollapse", shell)
+        self.assertIn(".panel[data-collapsible] > .ph", shell)   # collapse is opt-in now
 
     def test_unified_viewer_has_responsive_and_accessible_visual_contract(self):
         css = (Path(__file__).resolve().parent.parent / "web" / "style.css").read_text()

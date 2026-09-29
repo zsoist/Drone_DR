@@ -35,23 +35,6 @@
   .fl-head .hero-t h1 { font-size: var(--fs-xl); }
 }
 
-/* ── Títulos de sección: frase, 13/600, pista a la derecha ─── */
-.fl .panel > .ph {
-  text-transform: none; letter-spacing: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold);
-  color: var(--text); min-height: 48px;
-}
-.fl .panel > .ph .hint, .fl-dl summary .hint {
-  margin-left: auto; font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--text-2);
-  text-transform: none; letter-spacing: 0;
-}
-.fl .panel > .ph .fl-push { margin-left: auto; }
-.fl .panel > .ph .hint + .fl-push { margin-left: var(--sp-2); }
-.fl .panel > .ph::after {
-  content: ""; width: 6px; height: 6px; margin: -3px 2px 0 var(--sp-1); flex: none; font-size: 0;
-  border-right: 1.5px solid var(--text-2); border-bottom: 1.5px solid var(--text-2); transform: rotate(45deg);
-}
-.fl .panel.clpsd > .ph::after { transform: rotate(-45deg); }
-.fl .panel > .ph:not(:has(.hint, .fl-push))::after { margin-left: auto; }
 .fl .panel + .panel { margin-top: 0; }
 
 /* ── Video + barra única ──────────────────────────────────── */
@@ -150,6 +133,7 @@
   font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text);
 }
 .fl-dl > summary::-webkit-details-marker { display: none; }
+.fl-dl summary .hint { margin-left: auto; font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--text-2); }
 .fl-dl > summary > svg.ic { width: var(--ic-sm); height: var(--ic-sm); color: var(--text-2); }
 .fl-dl .fl-caret { display: inline-grid; place-items: center; color: var(--text-2); transition: transform var(--dur-base) var(--ease-out); }
 .fl-dl .fl-caret svg.ic { width: var(--ic-sm); height: var(--ic-sm); }

@@ -1,7 +1,7 @@
 /* ==========================================================================
    Studio — estilos de página sobre el design system (web/DESIGN.md).
    Se enlaza DESPUÉS de style.css. Todo va bajo `.st-page` (la clase la pone
-   studio.js en <main>) o bajo el prefijo de cada capa flotante (.st-menu,
+   studio.js en <main>) o bajo el prefijo de cada capa flotante (
    .rv-*), así que no toca otras páginas. Solo transform/opacity animan.
    ========================================================================== */
 
@@ -13,10 +13,6 @@
 html:has(.st-page) { scrollbar-gutter: stable; }
 
 /* ---------- 1 · marco: hero, tabs, subida ---------- */
-.st-page .st-hero { padding: var(--sp-4) 0 0; }
-.st-hero-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
-.st-page .st-hero h1 { margin: 0; }
-.st-sub { margin: var(--sp-1) 0 0; color: var(--text-2); font-size: var(--fs-lg); }
 
 .st-tabs { margin: var(--sp-4) 0; width: fit-content; min-width: min(100%, 520px); max-width: 100%; }
 .st-page .pm-tabs button { min-height: 40px; font-size: var(--fs-md); font-weight: var(--fw-medium); }
@@ -28,34 +24,43 @@ html:has(.st-page) { scrollbar-gutter: stable; }
 @keyframes stIn { from { opacity: 0; transform: translateY(6px); } }
 
 /* franja de subida: una línea, no un bloque */
-.st-page .up-zone {
-  margin: 0 0 var(--st-gap); padding: 0; text-align: left; cursor: default; overflow: visible;
-  border: 0; border-radius: 0; background: none; transform: none; box-shadow: none;
+.st-up { margin: 0 0 var(--st-gap); }
+.st-up.hot .st-up-cta { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.st-up-cta {
+  display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 52px; padding: var(--sp-2) var(--sp-3);
+  text-align: left; cursor: pointer; border-radius: var(--r-lg); border: 1px dashed var(--line-strong); background: var(--surface);
+  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 }
-.st-page .up-zone .up-ring { display: none; }
-.st-page .up-list { margin-top: var(--sp-2); }
-.st-page .up-cta {
-  padding: var(--sp-2) var(--sp-3); min-height: 52px; gap: var(--sp-3);
-  border-radius: var(--r-lg); border-color: var(--line-strong);
+@media (hover: hover) { .st-up-cta:hover { border-color: var(--accent); } }
+.st-up-ic { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: var(--r-md); background: var(--accent-dim); color: var(--accent-fg); }
+.st-up-ic svg.ic { width: var(--ic-md); height: var(--ic-md); }
+.st-up-t { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; font-size: var(--fs-md); }
+.st-up-t b { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
+.st-up-t small { font-size: var(--fs-xs); color: var(--text-2); }
+.st-up-go { margin-left: auto; color: var(--text-3); }
+.st-up-list { display: flex; flex-direction: column; gap: var(--sp-half); margin-top: var(--sp-2); }
+.st-up-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto 90px 64px; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2);
+  font-size: var(--fs-sm);
 }
-.st-page .up-ic { width: 32px; height: 32px; border-radius: var(--r-md); }
-.st-page .up-ic svg.ic { width: var(--ic-md); height: var(--ic-md); }
-.st-page .up-t { flex-direction: row; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; margin: 0; font-size: var(--fs-md); letter-spacing: 0; }
-.st-page .up-t b { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
-.st-page .up-t small { font-size: var(--fs-xs); color: var(--text-2); }
-.st-page .up-sz, .st-page .up-st { font-size: var(--fs-xs); }
-.st-page .up-row.ok { border-color: var(--ok-bd); }
-.st-page .up-row.ok .up-bar i { background: var(--ok); }
-.st-page .up-row.bad { border-color: var(--err-bd); }
+.st-up-n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-up-sz, .st-up-st { font-size: var(--fs-xs); color: var(--text-3); }
+.st-up-st { text-align: right; }
+.st-up-bar { height: 4px; border-radius: var(--r-xs); background: var(--line); overflow: hidden; }
+.st-up-bar i { display: block; height: 100%; background: var(--accent); }
+.st-up-row.ok { border-color: var(--ok-bd); }
+.st-up-row.ok .st-up-bar i { background: var(--ok); }
+.st-up-row.ok .st-up-st { color: var(--ok-fg); }
+.st-up-row.bad { border-color: var(--err-bd); }
+.st-up-row.bad .st-up-st { color: var(--err-fg); }
 
 /* ---------- 2 · editor ---------- */
 .st-page .tl-editor { gap: var(--st-gap); }
 .st-page .st-panel { margin: 0; }
-.st-page .panel > .ph::after { content: none; }
-.st-page .panel > .ph { cursor: default; }
 .st-ph { min-height: 52px; flex-wrap: wrap; }
 .st-ph-t { display: inline-flex; align-items: center; gap: var(--sp-2); }
-.st-ph-actions { display: flex; align-items: center; gap: var(--sp-2); text-transform: none; letter-spacing: 0; }
+.st-ph-actions { display: flex; align-items: center; gap: var(--sp-2); }
 .st-vsep { width: 1px; height: 20px; background: var(--line-strong); margin: 0 var(--sp-1); }
 .st-page .st-pb { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }
 
@@ -124,19 +129,19 @@ html:has(.st-page) { scrollbar-gutter: stable; }
 /* pistas: el track y el texto se ven aunque estén vacíos */
 .st-page .tl-scroll { padding: var(--sp-1) 0 var(--sp-2); }
 .st-page .tl-track { min-height: 64px; }
-.st-page .tl-scroll.empty .tl-track {
+.st-page .tl-scroll.is-empty .tl-track {
   border: 1px dashed var(--line-strong); border-radius: var(--r-md); background: var(--surface-2);
 }
-.st-page .tl-scroll.empty .tl-track::after, .st-page .tl-textlane.empty::after {
+.st-page .tl-scroll.is-empty .tl-track::after, .st-page .tl-textlane.is-empty::after {
   position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
   font-size: var(--fs-xs); letter-spacing: var(--tr-caps); text-transform: uppercase; color: var(--text-2);
 }
-.st-page .tl-scroll.empty .tl-track::after { content: "Video · añade tomas de la biblioteca"; }
-.st-page .tl-textlane, .st-page .tl-textlane.empty {
+.st-page .tl-scroll.is-empty .tl-track::after { content: "Video · añade tomas de la biblioteca"; }
+.st-page .tl-textlane, .st-page .tl-textlane.is-empty {
   padding: 0; height: 32px; margin-top: var(--sp-2); border: 1px dashed var(--line-strong);
   background: var(--surface-2); border-radius: var(--r-md);
 }
-.st-page .tl-textlane.empty::after { content: "Texto · pulsa el botón de texto (T)"; }
+.st-page .tl-textlane.is-empty::after { content: "Texto · pulsa el botón de texto (T)"; }
 .st-page .tl-txt-x, .st-page .tl-x, .st-page .tl-expand { display: grid; place-items: center; padding: 0; }
 .st-page .tl-txt-x svg.ic, .st-page .tl-x svg.ic, .st-page .tl-expand svg.ic { width: var(--ic-xs); height: var(--ic-xs); stroke-width: 1.75; }
 .st-page .tl-junction { display: grid; place-items: center; padding: 0; }
@@ -193,24 +198,6 @@ html:has(.st-page) { scrollbar-gutter: stable; }
 .st-page .m-ordbtns button { display: grid; place-items: center; padding: 0; }
 .st-page .m-ordbtns button svg.ic { width: var(--ic-lg); height: var(--ic-lg); }
 
-/* menú "⋯" (tarjetas y visor) */
-.st-menu {
-  position: fixed; left: var(--mx, 0); top: var(--my, 0); z-index: var(--z-modal);
-  min-width: 176px; padding: var(--sp-1);
-  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md);
-  box-shadow: var(--shadow-2); animation: stMenuIn var(--dur-fast) var(--ease-out);
-}
-@keyframes stMenuIn { from { opacity: 0; transform: translateY(4px); } }
-.st-menu-i {
-  display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 36px; padding: 0 var(--sp-3);
-  border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text);
-  font-size: var(--fs-md); text-align: left; cursor: pointer;
-}
-.st-menu-i svg.ic { width: var(--ic-md); height: var(--ic-md); color: var(--text-2); }
-.st-menu-i.danger, .st-menu-i.danger svg.ic { color: var(--err-fg); }
-@media (hover: hover) { .st-menu-i:hover { background: var(--surface-2); } }
-@media (pointer: coarse) { .st-menu-i { height: 44px; } }
-
 /* ---------- 4 · Crear reel / Reel automático: mismo tamaño y padding ---------- */
 .st-page .rm-ctas { gap: var(--sp-3); margin-bottom: var(--st-gap); align-items: stretch; }
 .st-page .rm-cta, .st-page .rm-auto {
@@ -243,7 +230,6 @@ html:has(.st-page) { scrollbar-gutter: stable; }
 .rv-ov .rv-actions .btn.icon { width: var(--ctl-h); padding: 0; }
 .rv-ov .rv-actions .btn.primary { padding: 0 var(--sp-4); }
 .rv-ov .rv-actions .btn.danger.armed { background: var(--err-bg); border-color: var(--err); }
-.rv-menu { z-index: calc(var(--z-modal) + 1); }
 .rv-kbd {
   display: flex; justify-content: center; gap: var(--sp-4); flex-wrap: wrap;
   font-size: var(--fs-xs); color: var(--text-2); opacity: 1;
@@ -256,7 +242,6 @@ html:has(.st-page) { scrollbar-gutter: stable; }
 
 /* ---------- 6 · trabajos ---------- */
 .st-jobs { display: grid; gap: var(--sp-3); }
-.st-page .st-jobs > .job-card[hidden], .st-page .st-jobs > [hidden] { display: none; }
 .st-more { display: flex; justify-content: center; padding: 0 var(--sp-4) var(--sp-4); }
 
 /* ---------- utilidades (sustituyen los style="" estáticos) ---------- */
@@ -271,10 +256,8 @@ html:has(.st-page) { scrollbar-gutter: stable; }
 .u-chk { display: flex; align-items: center; gap: 5px; font-size: var(--fs-sm); }
 .u-ptr { cursor: pointer; }
 .u-span-all { grid-column: 1 / -1; }
-.u-fs-xs { font-size: var(--fs-xs); }
 .modal.m-w560 { max-width: 560px; }
 .modal.m-w520 { max-width: 520px; }
-.st-page [hidden], .rv-ov [hidden], .st-menu[hidden] { display: none; }
 
 /* ---------- móvil ---------- */
 @media (max-width: 820px) {
@@ -286,7 +269,10 @@ html:has(.st-page) { scrollbar-gutter: stable; }
   .st-hide-sm { display: none; }
   .st-note { display: none; }
   .st-page .st-pb { padding: var(--sp-3); }
-  .st-page .up-t small { display: none; }
+  .st-up-t small { display: none; }
+  .st-up-row { grid-template-columns: minmax(0, 1fr) 58px; }
+  .st-up-row .st-up-bar { grid-column: 1 / -1; }
+  .st-up-sz { display: none; }
   /* barra horizontal con snap: nada se corta ni salta de línea */
   .st-page .tb {
     flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;

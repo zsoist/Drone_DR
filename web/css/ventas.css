@@ -48,7 +48,6 @@
 .vt-item-d { font-family: var(--mono); font-size: var(--fs-xs) !important; color: var(--text-3) !important; white-space: nowrap; }
 .vt-item-a { display: flex; gap: var(--sp-1); flex: none; }
 .vt-item-a .btn svg.ic { width: var(--ic-sm); height: var(--ic-sm); }
-.vt-empty { margin: 0; font-size: var(--fs-md); color: var(--text-2); line-height: var(--lh-base); }
 
 /* how it works */
 .vt-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-3); counter-reset: vt; }

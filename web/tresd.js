@@ -1,10 +1,10 @@
-  import * as THREE from '/vendor/three180.module.js?v=353';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=353';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=353';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=353';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=353';
-  import { mountSplatViewer } from '/splatview.js?v=353';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=353';
+  import * as THREE from '/vendor/three180.module.js?v=354';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=354';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=354';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=354';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=354';
+  import { mountSplatViewer } from '/splatview.js?v=354';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=354';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -185,16 +185,10 @@
     return all.find(s => splatKey(s) === chosen) || all[0] || null;
   }
 
-  // iconos extra de esta página (icons.js es global; se extiende en runtime)
-  if (typeof ICONS === 'object') Object.assign(ICONS, {
-    more: '<circle cx="4.5" cy="10" r="1.1"/><circle cx="10" cy="10" r="1.1"/><circle cx="15.5" cy="10" r="1.1"/>',
-    back: '<path d="M11.5 5L6.5 10l5 5"/>',
-    edit: '<path d="M4 16l.8-3.6L13.4 3.8a1.6 1.6 0 012.3 0l.5.5a1.6 1.6 0 010 2.3L7.6 15.2z"/><path d="M12 5.4l2.6 2.6"/>',
-  });
   const main = renderShell('tresd.html');
   main.classList.add('page-3d');
   main.innerHTML = `
-    <div class="page-head"><h1>3D</h1><span class="count">fotogrametría · nube de puntos · splats</span></div>
+    ${pageHead('3D', 'Fotogrametría · nube de puntos · splats')}
 
     <div class="pm-tabs rise td-tabs" id="td-tabs">
       <i class="pm-ink"></i>
@@ -266,13 +260,13 @@
         <div class="td-actions">
           <button class="btn primary td-cta" id="btn-run3d" data-open-run3d>
             ${icon('cube')}<span><b>Procesar un vuelo…</b><small>frames + geotag + fotogrametría · combina tomas del mismo lugar</small></span>
-            <i class="td-cta-arrow">›</i></button>
+            <i class="td-cta-arrow">${icon('chevR')}</i></button>
           <button class="btn td-cta" id="btn-splat" data-open-splat>
             ${icon('spark')}<span><b>Generar splat…</b><small data-splat-cta-sub>PC NVIDIA CUDA · 1K a 40K</small></span>
-            <i class="td-cta-arrow">›</i></button>
+            <i class="td-cta-arrow">${icon('chevR')}</i></button>
           <button class="btn td-cta" id="btn-cuda-campaign">
             ${icon('cpu')}<span><b>Campaña CUDA…</b><small>reprocesar sitios activos · 15K/20K/30K/40K estricto</small></span>
-            <i class="td-cta-arrow">›</i></button>
+            <i class="td-cta-arrow">${icon('chevR')}</i></button>
           <button class="btn td-cta ghost" id="btn-jobs-status">
             ${icon('activity')}<span><b>Estado de trabajos</b><small>cola, progreso y fases en vivo</small></span>
             <em class="td-jobs-badge mono" id="td-jobs-badge" hidden></em></button>
@@ -366,7 +360,7 @@
 
     <div id="proj-view" style="display:none">
     <div class="td-crumb" id="td-crumb" role="navigation" aria-label="Proyecto abierto">
-      <button class="btn ghost sm" id="proj-back" type="button">${icon('back')} Proyectos</button>
+      <button class="btn ghost sm" id="proj-back" type="button">${icon('chevL')} Proyectos</button>
       <span class="td-crumb-sep" aria-hidden="true">/</span>
       <b class="td-crumb-t" id="td-crumb-t"></b>
       <span class="td-crumb-meta mono" id="td-crumb-m"></span>
@@ -1142,51 +1136,13 @@
     localStorage.setItem('ab.3d.projectMode', projMode);
     renderCards();
   });
-  // ---- menú "más" de la tarjeta: UN menú flotante global (las tarjetas recortan overflow) ----
-  const menu = document.createElement('div');
-  menu.className = 'td-menu';
-  menu.id = 'td-menu';
-  menu.setAttribute('role', 'menu');
-  menu.hidden = true;
-  menu.innerHTML = `
-    <button type="button" role="menuitem" class="td-mi" data-act="rename">${icon('edit')} Renombrar</button>
-    <button type="button" role="menuitem" class="td-mi" data-act="share">${icon('link')} <span>Copiar link público</span></button>
-    <div class="td-mi-sep" role="separator"></div>
-    <button type="button" role="menuitem" class="td-mi danger" data-act="del">${icon('trash')} Borrar proyecto…</button>`;
-  document.body.appendChild(menu);
-  let menuFor = null;                           // botón "⋯" que abrió el menú
-  const closeMenu = (refocus) => {
-    if (menu.hidden) return;
-    menu.hidden = true;
-    if (menuFor) { menuFor.setAttribute('aria-expanded', 'false'); if (refocus) menuFor.focus(); }
-    menuFor = null;
-  };
-  const openMenu = btn => {
-    menuFor = btn;
-    btn.setAttribute('aria-expanded', 'true');
-    menu.dataset.cid = btn.dataset.cid;
-    menu.hidden = false;
-    const r = btn.getBoundingClientRect();
-    const mw = menu.offsetWidth, mh = menu.offsetHeight;
-    const left = Math.max(8, Math.min(innerWidth - mw - 8, r.right - mw));
-    const top = r.bottom + 4 + mh > innerHeight - 8 ? Math.max(8, r.top - mh - 4) : r.bottom + 4;
-    menu.style.left = left + 'px';
-    menu.style.top = top + 'px';
-    menu.querySelector('.td-mi')?.focus({ preventScroll: true });
-  };
-  document.addEventListener('click', e => { if (!menu.hidden && !e.target.closest('#td-menu, .pc-more')) closeMenu(); });
-  document.addEventListener('keydown', e => {
-    if (menu.hidden) return;
-    if (e.key === 'Escape') { closeMenu(true); return; }
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      const items = [...menu.querySelectorAll('.td-mi')];
-      const i = items.indexOf(document.activeElement);
-      items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
-    }
-  });
-  window.addEventListener('scroll', () => closeMenu(), { passive: true });
-  window.addEventListener('resize', () => closeMenu());
+  // ---- menú "más" de la tarjeta: openMenu() canónico (shell.js) ----
+  const openProjMenu = btn => openMenu(btn, [
+    { id: 'rename', label: 'Renombrar', icon: 'edit' },
+    { id: 'share', label: 'Copiar link público', icon: 'link' },
+    { sep: true },
+    { id: 'del', label: 'Borrar proyecto…', icon: 'trash', danger: true },
+  ], { label: 'Acciones del proyecto', onSelect: id => runProjAct(id, btn.dataset.cid, btn) });
 
   async function runProjAct(act, cid, btn) {
     const card = document.querySelector(`.proj-card[data-cid="${CSS.escape(cid)}"]`);
@@ -1217,11 +1173,8 @@
     }
     if (act === 'share') {
       const url = `${location.origin}/share.html?m=${encodeURIComponent(cid)}`;
-      const lbl = btn.querySelector('span') || btn;
-      const orig = lbl.textContent;
-      try { await navigator.clipboard.writeText(url); lbl.textContent = 'Link copiado'; }
+      try { await navigator.clipboard.writeText(url); toast('Link público copiado'); }
       catch { prompt('Copia el link:', url); }
-      setTimeout(() => { lbl.textContent = orig; closeMenu(); }, 900);
     }
     if (act === 'del') {
       if (!confirm(`¿Borrar "${titleFor(m)}"?\n\nSe eliminan el modelo 3D, sus splats y los archivos de procesamiento. El video original NO se toca.`)) return;
@@ -1234,13 +1187,6 @@
       renderCards();
     }
   }
-  menu.addEventListener('click', async e => {
-    const b = e.target.closest('.td-mi');
-    if (!b) return;
-    const cid = menu.dataset.cid;
-    if (b.dataset.act !== 'share') closeMenu();
-    await runProjAct(b.dataset.act, cid, b);
-  });
   document.getElementById('proj-grid').addEventListener('click', async e => {
     if (e.target.closest('[data-reload]')) { e.preventDefault(); location.reload(); return; }   // CSP: sin onclick inline
     if (e.target.tagName === 'INPUT') return;      // click DENTRO del input de renombrar ≠ acción de card
@@ -1250,7 +1196,7 @@
     const cid = card.dataset.cid;
     if (btn?.dataset.act === 'more') {
       e.stopPropagation();
-      if (menuFor === btn) closeMenu(); else { closeMenu(); openMenu(btn); }
+      openProjMenu(btn);
       return;
     }
     await runProjAct(btn ? btn.dataset.act : 'open', cid, btn);   // tap en la tarjeta = abrir
@@ -1279,7 +1225,7 @@
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
     ov.innerHTML = `<div class="modal ${cls}">
-      <div class="modal-h"><b>${title}</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+      <div class="modal-h"><b>${title}</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">${body}</div></div>`;
     document.body.appendChild(ov);
     // onClose(fn): limpieza al cerrar (mapas WebGL, listeners de window/document, previews)
@@ -1416,13 +1362,13 @@
               data-tip="${f.ai?.travel_score
                 ? esc(`AI vision ${f.ai.travel_score}/10 — ${(f.ai.summary || 'sin resumen').slice(0, 140)}${(f.ai.summary || '').length > 140 ? '…' : ''}`)
                 : 'Sin análisis AI aún — click para analizar este video (~30s)'}">${
-                  f.ai?.travel_score ? `✨${f.ai.travel_score}` : '✨?'}</span>
+                  f.ai?.travel_score ? `${f.ai.travel_score}` : '?'}</span>
         <span class="pc-score tip-r" data-score="${esc(f.clip_id)}" data-tip="Aptitud de escaneo 3D (cobertura/altura/GPS)">·</span>
       </label>`;
 
     const { ov, close, onClose } = openModal(`${icon('cube')} Estudio 3D`, `
       <div class="st-steps"><span class="st-step on" data-st="1">1 · Seleccionar tomas</span>
-        <span class="st-sep">›</span><span class="st-step" data-st="2">2 · Configurar y encolar</span></div>
+        <span class="st-sep">${icon('chevR')}</span><span class="st-step" data-st="2">2 · Configurar y encolar</span></div>
 
       <div class="st-pane" data-pane="1">
         <div class="st-grid">
@@ -1435,7 +1381,7 @@
               <select class="ctl" id="st-sort" aria-label="Ordenar">
                 <option value="spot">Por lugar</option><option value="date">Más recientes</option>
                 <option value="dur">Más largos</option><option value="alt">Más altos</option>
-                <option value="ai">Mejor AI ✨</option>
+                <option value="ai">Mejor AI</option>
               </select>
             </div>
             <div class="st-filters">
@@ -1491,7 +1437,7 @@
         <div id="m-preflight"></div>
         <p class="mlb">Nombre del proyecto <span class="td-opt">(opcional)</span></p>
         <div class="st-namer"><input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — combinado">
-          <button class="btn" id="m-suggest" title="Sugerir con IA (DeepSeek)">✨ Sugerir</button></div>
+          <button class="btn" id="m-suggest" title="Sugerir con IA (DeepSeek)">${icon('spark')} Sugerir</button></div>
         <p class="mlb">Calidad de la fotogrametría</p>
         <div class="mpresets">${PRE.map(p => `
           <div class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
@@ -1513,9 +1459,9 @@
 
       <div class="st-tray" id="st-tray"></div>
       <div class="st-footer">
-        <button class="btn" id="st-back" style="display:none">‹ Atrás</button>
+        <button class="btn" id="st-back" style="display:none">${icon('chevL')} Atrás</button>
         <span class="spacer"></span>
-        <button class="btn primary" id="st-next">Continuar ›</button>
+        <button class="btn primary" id="st-next">Continuar ${icon('chevR')}</button>
         <button class="btn primary" id="m-go" style="display:none">${icon('cube')} Encolar procesamiento</button>
       </div>`, 'modal--studio');
 
@@ -1617,7 +1563,7 @@
           <div class="pcm-row">
             <span class="pcm"><b>${cids.length}</b> video${cids.length === 1 ? '' : 's'}${photoSel.size ? ` + <b>${photoSel.size}</b> fotos` : ''}</span>
             <span class="pcm">altura <b>${alts.length ? Math.min(...alts) + '–' + Math.max(...alts) : '—'}</b> m</span>
-            <span class="pcm">${days.size === 1 ? 'misma sesión ✓' : days.size + ' fechas'}</span>
+            <span class="pcm">${days.size === 1 ? 'misma sesión' : days.size + ' fechas'}</span>
           </div>
           ${warns.map(([c, t]) => `<div class="scan-mem ${c}">${icon('warn')}<span>${t}</span></div>`).join('')}
           ${ok ? `<div class="scan-mem ok">${icon('check')}<span>Tomas compatibles (misma salida, alturas parecidas). El modelo reportará qué fuentes fusionaron de verdad.</span></div>` : ''}
@@ -1693,7 +1639,7 @@
       const durTot = fs.reduce((a, f) => a + (f.duration_s || 0), 0);
       tray.innerHTML = fs.length
         ? `<span class="st-tray-l">${icon('layers')} ${fs.length} video${fs.length === 1 ? '' : 's'}${photoSel.size ? ` + ${photoSel.size} fotos` : ''} · ${fmt.dur(durTot)}</span>`
-          + fs.map(f => `<span class="st-chip" data-untray="${esc(f.clip_id)}">${esc((f.label || fmt.date(f.date) + ' ' + f.time).slice(0, 22))} ✕</span>`).join('')
+          + fs.map(f => `<span class="st-chip" data-untray="${esc(f.clip_id)}">${esc((f.label || fmt.date(f.date) + ' ' + f.time).slice(0, 22))} ${icon('close')}</span>`).join('')
         : '<span class="st-tray-l">Selecciona al menos un video</span>';
       // sin selección no hay paso 2 — el gate vive AQUÍ, no en candados de deselección
       const next = ov.querySelector('#st-next');
@@ -1715,14 +1661,14 @@
       if (f?.ai?.travel_score) { openPreviewAt(cid); return; }   // ya analizado → ver el video con su resumen
       if (chip.dataset.busy) return;
       chip.dataset.busy = '1';
-      chip.textContent = '✨…';
+      chip.textContent = '…';
       chip.dataset.tip = 'Analizando con AI vision (~30s) — 16 frames, prompt de director de fotografía';
       try {
         const r = await api('/api/analyze', { clip_id: cid });
         if (r?.error && !/corriendo/.test(r.error)) throw new Error(r.error);
-        // el chip vuelve a '✨?' (reintentable) si el job falla o el resultado no aparece
+        // el chip vuelve a '?' (reintentable) si el job falla o el resultado no aparece
         const resetChip = tip => {
-          chip.textContent = '✨?';
+          chip.textContent = '?';
           chip.className = 'pc-ai tip-r idle';
           chip.dataset.tip = tip;
           delete chip.dataset.busy;
@@ -1745,7 +1691,7 @@
             const ai = await aiRes.json();
             if (f) f.ai = ai;
             const sc = ai.travel_score;
-            chip.textContent = sc ? `✨${sc}` : '✨—';
+            chip.textContent = sc ? `${sc}` : '—';
             chip.className = `pc-ai tip-r ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : sc ? 'bad' : 'idle'}`;
             chip.dataset.tip = sc ? `AI vision ${sc}/10 — ${(ai.summary || '').slice(0, 140)}` : 'El análisis no devolvió score';
             delete chip.dataset.busy;
@@ -1757,7 +1703,7 @@
           }
         }, 3000);
       } catch (err) {
-        chip.textContent = '✨!';
+        chip.textContent = '!';
         chip.dataset.tip = `Error: ${err.message || err}`;
         delete chip.dataset.busy;
       }
@@ -1811,8 +1757,8 @@
               </div>
             </div>
             <span class="spacer"></span>
-            ${sc ? aiRing(sc) : `<button class="btn sm" data-pv="analyze">✨ Analizar</button>`}
-            <button class="modal-x" aria-label="Cerrar">✕</button>
+            ${sc ? aiRing(sc) : `<button class="btn sm" data-pv="analyze">${icon('spark')} Analizar</button>`}
+            <button class="modal-x" aria-label="Cerrar">${icon('close')}</button>
           </div>
           <div class="pv-body${slideDir ? (slideDir > 0 ? ' slide-l' : ' slide-r') : ''}">
             <video src="data/proxies/${encodeURIComponent(cid)}.mp4" controls autoplay muted playsinline
@@ -1823,17 +1769,17 @@
               ${ai.scene_type ? `<span class="pv-tag scene">${esc(ai.scene_type)}</span>` : ''}</div>` : ''}
           </div>
           <div class="st-pv-f">
-            <button class="btn" data-pv="prev" data-tip="Toma anterior (←)">‹ Anterior</button>
+            <button class="btn" data-pv="prev" data-tip="Toma anterior (←)">${icon('chevL')} Anterior</button>
             <div class="pv-center">
-              <button class="btn ${sel.has(cid) ? 'pv-on' : 'primary'}" data-pv="toggle">${sel.has(cid) ? '✓ En la selección — quitar' : '+ Seleccionar para procesar'}</button>
+              <button class="btn ${sel.has(cid) ? 'pv-on' : 'primary'}" data-pv="toggle">${sel.has(cid) ? `${icon('check')} En la selección — quitar` : '+ Seleccionar para procesar'}</button>
               <span class="pv-selcount mono">${sel.size} seleccionada${sel.size === 1 ? '' : 's'}</span>
             </div>
             <div class="pv-right">
               <button class="pv-auto${auto.on ? ' on' : ''}" data-pv="auto" data-tip="Al terminar el video, pasa solo a la siguiente toma">▶▶ auto</button>
-              <button class="btn" data-pv="next" data-tip="Siguiente toma (→)">Siguiente ›</button>
+              <button class="btn" data-pv="next" data-tip="Siguiente toma (→)">Siguiente ${icon('chevR')}</button>
             </div>
           </div>
-          <div class="pv-kbd mono">␣ pausa · ⏎ seleccionar · ← → navegar · esc cerrar</div>
+          <div class="pv-kbd mono"><kbd>Espacio</kbd> pausa · <kbd>Enter</kbd> seleccionar · <kbd>←</kbd><kbd>→</kbd> navegar · <kbd>Esc</kbd> cerrar</div>
         </div>`;
         const v = pv.querySelector('video');
         v.addEventListener('ended', () => { if (auto.on) step(1); });
@@ -1874,7 +1820,7 @@
           } else if (b.dataset.pv === 'analyze') {
             // reusa el flujo del chip de la fila (poll + pintado); el preview se refresca al volver
             const chip = ov.querySelector(`[data-ai="${CSS.escape(cid)}"]`);
-            if (chip) { chip.click(); b.textContent = '✨ Analizando…'; b.disabled = true; }
+            if (chip) { chip.click(); b.innerHTML = `${icon('spark')} Analizando…`; b.disabled = true; }
           } else step(b.dataset.pv === 'next' ? 1 : -1);
           return;
         }
@@ -2136,7 +2082,7 @@
           date: fmt.date(f.date), n: sel.size });
         if (r.name) { const t = ov.querySelector('#m-title'); t.value = r.name; t.focus(); }
         else if (r.error) alert(r.error);
-      } finally { b.disabled = false; b.textContent = '✨ Sugerir'; }
+      } finally { b.disabled = false; b.innerHTML = `${icon('spark')} Sugerir`; }
     });
 
     ov.querySelector('#m-go').addEventListener('click', async e2 => {
@@ -3351,7 +3297,7 @@
         : '';
       return `
       <div class="splat-row" data-cid="${esc(scid)}">
-        <div class="sr-thumb${thumb ? '' : ' empty'}">${thumb || icon('spark')}</div>
+        <div class="sr-thumb${thumb ? '' : ' is-empty'}">${thumb || icon('spark')}</div>
         <div class="sr-main">
           <div class="sr-hd">
             <b>${esc(title)}</b>
@@ -3392,7 +3338,7 @@
 
     // fallback de miniatura sin onerror inline (CSP script-src 'self' lo bloquea)
     box.querySelectorAll('.sr-thumb img').forEach(im => im.addEventListener('error', () => {
-      im.parentElement?.classList.add('empty'); im.remove();
+      im.parentElement?.classList.add('is-empty'); im.remove();
     }, { once: true }));
     const inp = box.querySelector('#sp-search');
     inp?.addEventListener('input', () => {

@@ -4,47 +4,47 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=353';
+import * as THREE from '/flightverse/three.js?v=354';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=353';
+} from '/flightverse/scene.js?v=354';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=353';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=353';
-import { createRecorder } from '/flightverse/recorder.js?v=353';
-import { createAudio } from '/flightverse/audio.js?v=353';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=353';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=353';
+} from '/flightverse/runtime.js?v=354';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=354';
+import { createRecorder } from '/flightverse/recorder.js?v=354';
+import { createAudio } from '/flightverse/audio.js?v=354';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=354';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=354';
 import {
   createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=353';
-import { createSky } from '/flightverse/sky.js?v=353';
-import { loadSceneObjects } from '/flightverse/objects.js?v=353';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=353';
-import { resolveAimRay } from '/flightverse/aiming.js?v=353';
+} from '/flightverse/mobile-command.js?v=354';
+import { createSky } from '/flightverse/sky.js?v=354';
+import { loadSceneObjects } from '/flightverse/objects.js?v=354';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=354';
+import { resolveAimRay } from '/flightverse/aiming.js?v=354';
 import {
   WEAPON_PROFILES,
   isContinuousWeaponKey,
-} from '/flightverse/weapon-registry.js?v=353';
-import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=353';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=353';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=353';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=353';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=353';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=353';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=353';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=353';
-import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=353';
-import CameraControls from '/vendor/camera-controls.module.js?v=353';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=353';
+} from '/flightverse/weapon-registry.js?v=354';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=354';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=354';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=354';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=354';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=354';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=354';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=354';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=354';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=354';
+import CameraControls from '/vendor/camera-controls.module.js?v=354';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=354';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=353';
+} from '/vendor/postprocessing180.module.js?v=354';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -94,7 +94,7 @@ function hud() {
   document.body.insertAdjacentHTML('beforeend', `
   <div class="vl-hud" id="vl-hud">
     <div class="vl-corner tl">
-      <a class="vl-back" href="mundo.html">← Mundo</a>
+      <a class="vl-back" href="mundo.html"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.5L6.5 10 12 15.5"/></svg> Mundo</a>
       <button class="vl-chip" id="vl-share">Compartir</button>
       <div class="vl-scene" id="vl-scene"></div>
     </div>
@@ -148,7 +148,7 @@ function hud() {
       </button>
       <button class="vl-camera-picker-toggle" id="vl-camera-picker-toggle"
         aria-label="Elegir cámara" aria-controls="vl-camera-picker"
-        aria-haspopup="listbox" aria-expanded="false">⌄</button>
+        aria-haspopup="listbox" aria-expanded="false"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 8L10 13.5 15.5 8"/></svg></button>
       <div class="vl-camera-picker" id="vl-camera-picker"
         role="listbox" aria-label="Seleccionar cámara" hidden>
         <button role="option" data-camera="muycerca">Muy cerca</button>
@@ -254,7 +254,7 @@ function hud() {
         <div class="vl-grade-actions">
           <button class="vl-grade-expand" id="gr-expand" aria-expanded="false"
             aria-controls="vl-grade-body">Ajustes</button>
-          <button class="vl-grade-x" id="gr-close" aria-label="cerrar">✕</button>
+          <button class="vl-grade-x" id="gr-close" aria-label="cerrar"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg></button>
         </div>
       </div>
       <div class="vl-presets">
@@ -328,9 +328,10 @@ function bootProgress(pct, label) {
   const bar = document.querySelector('#vl-boot .vb-bar b');
   if (bar) {
     bar.style.animation = 'none';
-    bar.style.transform = 'none';
-    bar.style.transition = 'width .35s ease';
-    bar.style.width = `${pct}%`;
+    bar.style.width = '100%';
+    bar.style.transformOrigin = 'left center';
+    bar.style.transition = 'transform .35s ease';
+    bar.style.transform = `scaleX(${Math.max(0, Math.min(1, pct / 100))})`;
   }
   const st = $('#vb-stage');
   if (st) st.textContent = `${label} · ${pct}%`;
@@ -534,7 +535,7 @@ async function main() {
     structure: world.qa.structure,
     tris: world.qa.tris || 0,
   };
-  $('#vl-ghost').textContent += ' · colisión ✓';
+  $('#vl-ghost').textContent += ' · colisión ok';
 
   let visualMesh = null;
   let splat = null;
@@ -783,9 +784,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=353', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=354', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=353');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=354');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -940,7 +941,7 @@ async function main() {
   const shake = { mag: 0 };
   let curYaw = 0;
   const { GLTFLoader: ArsenalGLTFLoader } = await import(
-    '/vendor/three-addons180/loaders/GLTFLoader.js?v=353'
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=354'
   );
   weaponModels = createWeaponModelLibrary({
     quality: Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto',
@@ -1537,7 +1538,7 @@ async function main() {
   }
   function paintKeys() {
     $('#dir-keys').innerHTML = director.keys.map((k, i) =>
-      `<button data-dk="${i}">${(k.f / 60).toFixed(1)}s ✕</button>`).join('')
+      `<button data-dk="${i}">${(k.f / 60).toFixed(1)}s <svg viewBox="0 0 20 20" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg></button>`).join('')
       || '<span>añade keyframes moviendo la cámara y pulsando + Keyframe</span>';
   }
   const dirCam = f => {                    // cámara interpolada entre keyframes
@@ -2089,7 +2090,7 @@ async function main() {
         $('#vl-ammo').textContent = Math.floor(st.ammo[st.weapon]);
         updateTriggerUi();
         $('#vl-cool').style.transform = `scaleX(${1 - st.cool / (WA.cd || WA.rate)})`;
-        fireBtn.classList.toggle('empty', st.ammo[st.weapon] < 1);
+        fireBtn.classList.toggle('is-empty', st.ammo[st.weapon] < 1);
         if (st.destroyed) { const k = $('#vl-kills'); k.textContent = `DERRIBOS ${st.destroyed}`; k.classList.add('show'); }
         // Reticle and launch direction share the same camera-center ray. This
         // avoids gimbal-yaw drift and keeps the hardpoint converged on the hit.

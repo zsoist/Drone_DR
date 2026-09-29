@@ -65,7 +65,7 @@ function renderHome(vm, states) {
     return `
       <a class="hv2-card" href="${card.href}" data-tone="${card.icon}">
         <span class="hv2-card-media" ${image ? `style="background-image:url('${image}')"` : ''} aria-hidden="true"></span>
-        <span class="hv2-card-wash" aria-hidden="true"></span>
+        <span class="scrim" aria-hidden="true"></span>
         <span class="hv2-card-content">
           <span class="hv2-card-head"><span class="hv2-card-icon">${icon(card.icon)}</span><strong>${safeText(card.title)}</strong></span>
           <span class="hv2-card-copy">${safeText(card.description)}</span>
@@ -152,7 +152,7 @@ function mountDroneWhenIdle() {
   const lite = navigator.connection?.saveData || matchMedia('(max-width: 680px)').matches || matchMedia('(pointer: coarse)').matches;
   if (lite) { stage.classList.add('is-off'); return; }
   const fail = () => stage.classList.add('is-failed');
-  const mount = () => import('./home-drone.js?v=353')
+  const mount = () => import('./home-drone.js?v=354')
     .then(mod => mod.mountHomeDrone?.('#home-drone-stage'))
     .then(res => { if (!res) fail(); })
     .catch(fail);
