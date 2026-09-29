@@ -17,6 +17,9 @@ import sys
 import time
 from pathlib import Path
 
+from fsutil import atomic_write_json
+from paths import VAULT
+
 import numpy as np
 
 
@@ -494,9 +497,7 @@ def _copy_independent(source: Path, destination: Path) -> None:
 
 
 def _write_json_atomic(path: Path, value: dict) -> None:
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=1))
-    os.replace(temporary, path)
+    atomic_write_json(path, value, indent=1, ensure_ascii=False)
 
 
 def publish_bundle(moves: list[tuple[Path, Path]], after_publish=None) -> None:
@@ -916,7 +917,7 @@ def main() -> None:
     parser.add_argument("--focus-lat", type=float, required=True)
     parser.add_argument("--focus-lon", type=float, required=True)
     parser.add_argument("--focus-radius", type=float, required=True)
-    parser.add_argument("--vault", type=Path, default=Path("/Volumes/SSD/drone-vault"))
+    parser.add_argument("--vault", type=Path, default=VAULT)
     args = parser.parse_args()
     report = derive_scene_aoi(
         vault=args.vault,

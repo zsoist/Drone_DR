@@ -13,7 +13,9 @@ import os
 import urllib.request
 from pathlib import Path
 
-KEYS_FILE = Path("/Volumes/SSD/_system/claude/.api-keys.env")
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+from paths import KEYS_ENV as KEYS_FILE  # noqa: E402
 
 GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"]  # try in order
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")

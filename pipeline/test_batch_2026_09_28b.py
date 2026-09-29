@@ -66,7 +66,7 @@ class RepublishOrderTests(unittest.TestCase):
         self.assertGreater(purge, body.index("swap_model_dir(new_model"))
         self.assertGreater(purge, body.index("sidecars .gz"))
         self.assertLess(purge, body.index('meta = {\n        "clip_id"'))
-        self.assertLess(purge, body.index("os.replace(_mtmp"))
+        self.assertLess(purge, body.index('atomic_write_json(out / "meta.json"'))
 
 
 class OrphanKillOutsideTransactionTests(unittest.TestCase):

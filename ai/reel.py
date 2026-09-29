@@ -16,7 +16,8 @@ import sys
 import time
 from pathlib import Path
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+from paths import VAULT  # noqa: E402
 SEG_LEN = 5          # segundos por highlight
 MAX_SEGS = 10        # reel máximo ≈ 50s
 

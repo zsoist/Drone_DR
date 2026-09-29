@@ -30,9 +30,11 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from paths import VAULT
+
 
 CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
-QA_DIR = Path("/Volumes/SSD/drone-vault/qa")
+QA_DIR = VAULT / "qa"
 DEFAULT_BASE_URL = "http://127.0.0.1:8790"
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 

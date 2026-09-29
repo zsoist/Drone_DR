@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-WEB = Path(__file__).resolve().parent.parent / "web"
+from paths import WEB  # noqa: E402
 PAT = re.compile(r"\?v=(\d+)")
 
 

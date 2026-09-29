@@ -19,7 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from fsutil import atomic_write_json  # noqa: E402
+from paths import VAULT  # noqa: E402
 DOCKER = "/usr/local/bin/docker"
 REBUILD_INDEX_AFTER_PUBLISH = True
 
@@ -633,8 +634,7 @@ EOF""")
     # limpieza: temporales y basura de macOS no se publican
     for junk in [*out.rglob(".DS_Store"), *out.glob(".*.tif"), *out.glob("*.aux.xml")]:
         junk.unlink(missing_ok=True)
-    _mtmp = out / "meta.json.tmp"; _mtmp.write_text(json.dumps(meta, indent=1))
-    os.replace(_mtmp, out / "meta.json")   # atómico: un write parcial vaciaría el índice
+    atomic_write_json(out / "meta.json", meta, indent=1, ensure_ascii=True)   # atómico: un write parcial vaciaría el índice
     # el manifest NUNCA queda stale tras publicar (el audit encontró model_viewer
     # ausente del system.json porque el rebuild solo lo hacía el worker)
     if REBUILD_INDEX_AFTER_PUBLISH:

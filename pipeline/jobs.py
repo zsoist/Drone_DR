@@ -18,9 +18,11 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-DB = Path("/Volumes/SSD/drone-vault/manifest/jobs.db")
+from paths import VAULT
+
+DB = VAULT / "manifest" / "jobs.db"
 JOB_LOG_DIR = Path(os.environ.get("AEROBRAIN_JOB_LOG_DIR")
-                   or "/Volumes/SSD/drone-vault/ops/job_logs")
+                   or str(VAULT / "ops" / "job_logs"))
 _LOCK = threading.Lock()
 _TERMINAL_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 SESSION_TTL_SECONDS = 24 * 60 * 60

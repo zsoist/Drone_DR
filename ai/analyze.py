@@ -20,7 +20,8 @@ from pathlib import Path
 
 from router import load_keys, gemini_vision, deepseek_text
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+from paths import VAULT  # noqa: E402
 
 # Daniel: este prompt es la personalidad del analista — edítalo a tu gusto.
 PROMPT = """Eres el analista de vuelos de un dron DJI (footage aéreo, Bogotá/viajes).

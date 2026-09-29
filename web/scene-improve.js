@@ -25,9 +25,6 @@ const state = {
   error: '',
 };
 
-const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-}[char]));
 const finite = value => Number.isFinite(Number(value)) ? Number(value) : null;
 const durationFor = flight => finite(flight?.duration_s) || finite(flight?.stats?.duration_s) || 0;
 const dateLabel = flight => [flight?.date ? fmt.date(flight.date) : '', flight?.time || '']

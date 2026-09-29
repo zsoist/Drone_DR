@@ -24,7 +24,8 @@ import sys
 import time
 from pathlib import Path
 
-CONFIG = Path(__file__).resolve().parent.parent / "config" / "hardware.json"
+from paths import REPO as _REPO  # noqa: E402
+CONFIG = _REPO / "config" / "hardware.json"
 
 # caps calibrados para el M4/16GB (los valores que vivían hardcodeados en worker.py)
 DEFAULT_CAPS = {

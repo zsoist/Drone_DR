@@ -28,7 +28,8 @@ PUBLIC_WHOAMI_URL = "https://vuelos.metislab.work/api/whoami"
 LOG_DIR = Path.home() / "Library" / "Logs" / "AeroBrain"
 STATE = LOG_DIR / "watchdog-state.json"
 LOG = LOG_DIR / "watchdog.log"
-VAULT = Path("/Volumes/SSD/drone-vault")
+from fsutil import atomic_write_json, read_json  # noqa: E402
+from paths import VAULT  # noqa: E402
 PUBLIC_INTERVAL_S = 300
 STREAM_INTERVAL_S = 900
 MAX_LOG_BYTES = 5 * 1024 * 1024
@@ -66,17 +67,12 @@ def log(event: str, **fields):
 
 
 def load_state() -> dict:
-    try:
-        return json.loads(STATE.read_text())
-    except (OSError, ValueError):
-        return {}
+    return read_json(STATE, {})
 
 
 def save_state(state: dict):
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = STATE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, separators=(",", ":")))
-    tmp.replace(STATE)
+    atomic_write_json(STATE, state, separators=(",", ":"), ensure_ascii=True)
 
 
 def launch_state(label: str) -> str:

@@ -10,29 +10,19 @@ from pathlib import Path
 import numpy as np
 
 import collision_bake
+from fsutil import atomic_write_bytes, read_json
 
 VAULT = collision_bake.VAULT
 VERSION = 1
 
 
 def _load_json(path: Path) -> dict:
-    try:
-        value = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return {}
+    value = read_json(path, {})
     return value if isinstance(value, dict) else {}
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    try:
-        with temporary.open("wb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    atomic_write_bytes(path, data, fsync=True)
 
 
 def _rasterize_triangle(

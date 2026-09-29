@@ -20,7 +20,7 @@ from pathlib import Path
 
 from srt_parser import point_at
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT  # noqa: E402
 FPS = 0.5          # 1 frame cada 2s
 WIDTH = 2688       # default: balance calidad/RAM en 16GB
 

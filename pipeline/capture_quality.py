@@ -29,7 +29,8 @@ from PIL import Image, ImageFilter
 
 from srt_parser import parse_srt
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from fsutil import atomic_write_json  # noqa: E402
+from paths import VAULT  # noqa: E402
 CACHE = VAULT / "manifest" / "capture"
 
 PROFILES = {
@@ -254,9 +255,7 @@ def analyze(cid: str) -> dict:
         "samples": frames,
     }
     CACHE.mkdir(parents=True, exist_ok=True)
-    tmp = CACHE / f".{cid}.json.{os.getpid()}.tmp"
-    tmp.write_text(json.dumps(report, indent=1))
-    os.replace(tmp, CACHE / f"{cid}.json")           # atómico: los threads del server leen en paralelo
+    atomic_write_json(CACHE / f"{cid}.json", report, indent=1, ensure_ascii=True)   # atómico: los threads del server leen en paralelo
     return report
 
 

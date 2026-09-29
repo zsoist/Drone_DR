@@ -10,8 +10,11 @@ import threading
 import time
 from pathlib import Path
 
+from fsutil import atomic_write_json
+from paths import VAULT
 
-SCENES_DIR = Path("/Volumes/SSD/drone-vault/manifest/scenes")
+
+SCENES_DIR = VAULT / "manifest" / "scenes"
 
 
 class _ProcessLock:
@@ -145,19 +148,8 @@ def _path(scene_id: str) -> Path:
 
 def _write(scene: dict):
     path = _path(scene["id"])
-    # nombre único (dos procesos nunca comparten el tmp) en el MISMO dir → os.replace atómico
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w") as fh:
-            fh.write(json.dumps(scene, ensure_ascii=False, indent=1))
-            os.fchmod(fh.fileno(), 0o644)      # mkstemp crea 0600: el server/web deben poder leerlo
-        os.replace(tmp_name, path)
-    except BaseException:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
+    # tmp único en el MISMO dir + os.replace atómico, modo 0644 (server/web deben poder leerlo)
+    atomic_write_json(path, scene, indent=1, ensure_ascii=False)
 
 
 def get_scene(scene_id: str) -> dict:

@@ -9,14 +9,12 @@ from pathlib import Path
 import collision_bake
 import mesh_coverage
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from fsutil import read_json  # noqa: E402
+from paths import VAULT  # noqa: E402
 
 
 def _load(path: Path) -> dict:
-    try:
-        value = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return {}
+    value = read_json(path, {})
     return value if isinstance(value, dict) else {}
 
 

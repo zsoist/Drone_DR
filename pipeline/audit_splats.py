@@ -28,7 +28,7 @@ from pathlib import Path
 from splat_presets import SPLAT_PRESETS
 
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT  # noqa: E402
 SYSTEM = VAULT / "manifest" / "system.json"
 JOBS = VAULT / "manifest" / "jobs.db"
 REQUIRED_PRESETS = {"medium", "cinematic", "ultra", "ultra20", "frontier", "grandmaster"}

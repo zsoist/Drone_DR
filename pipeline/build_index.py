@@ -9,7 +9,8 @@ from pathlib import Path
 
 from splat_presets import SPLAT_PRESETS
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from fsutil import atomic_write_text  # noqa: E402
+from paths import VAULT  # noqa: E402
 
 
 def dir_size(p: Path) -> int:
@@ -28,12 +29,7 @@ def dir_size(p: Path) -> int:
 def write_atomic(path: Path, text: str):
     """tmp + os.replace: la app lee estos manifests directo; un write parcial concurrente
     (worker + server llaman rebuild_index) los dejaría truncados y vaciaría la UI."""
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
-    try:
-        tmp.write_text(text)
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
+    atomic_write_text(path, text)
 
 
 def load_models(models_dir: Path) -> list:

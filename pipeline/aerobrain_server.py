@@ -45,19 +45,21 @@ import jobs as jobstore
 import perf as perfmod
 import scenes as scenestore
 import compute_policy
+import media_probe
+from splat_history import clip_history_files, prune_splat_history, splat_quality  # noqa: F401 (re-exported)
+from paths import KEYS_ENV, PIPE, REPO, VAULT, WEB
+from fsutil import atomic_write_text as _atomic_write_text
+from util_ids import safe_id, safe_name, safe_upload_name, safe_upload_name_spaces
 from splat_presets import (normalize_splat_request, public_splat_profiles,
                            resolve_splat_spec)
 from pathlib import Path
 
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
 
-WEB = Path("/Volumes/SSD/work/forge-projects/aerobrain/web")
-VAULT = Path("/Volumes/SSD/drone-vault")
 # binarios 3D grandes con URL estable: cachean con revalidación 304 (nunca stale, nunca re-bajar MBs)
 REVALIDATE_EXTS = (".ply", ".splat", ".ksplat", ".sog", ".spz", ".obj", ".mtl", ".laz", ".geojson", ".tif")
 # editor SuperSplat auto-hosteado (post-procesado de splats: limpiar floaters, crop, export)
 SUPERSPLAT = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/supersplat/dist")
-PIPE = Path("/Volumes/SSD/work/forge-projects/aerobrain/pipeline")
 TOKEN_FILE = VAULT / ".token"
 if not TOKEN_FILE.exists():
     TOKEN_FILE.write_text(secrets.token_urlsafe(24))
@@ -271,37 +273,6 @@ def fresh_gzip_sidecar(source: Path) -> Path | None:
     return None
 
 
-def clip_history_files(hist_dir: Path, cid: str) -> list:
-    """Archivos de historial que pertenecen EXACTAMENTE a este clip.
-    Formato de archivado: '{cid}-{YYYYMMDD}-{HHMMSS}.{clean.sog|splat|ksplat|ply}'.
-    cruzaría el guion y capturaría el historial de un clip VECINO '{cid}-<suf>' (p.ej. el clip
-    'A' se comería el de 'A-2') — pérdida de datos entre clips. El regex ancla los 8+6 dígitos
-    del timestamp, así 'A-2-...' nunca cae en el conjunto de 'A'."""
-    if not hist_dir.is_dir():
-        return []
-    pat = re.compile(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.(clean\.sog|spz|raw\.splat|splat|ksplat|ply|meta\.json|cameras\.json)$", re.IGNORECASE)
-    return [p for p in hist_dir.iterdir() if p.is_file() and pat.fullmatch(p.name)]
-
-
-def prune_splat_history(hist_dir: Path, cid: str, keep: int = 6):
-    """Keep the latest N version groups, not merely N files.
-
-    A version can have .splat + .ksplat + .meta.json + .cameras.json. Pruning by file count
-    breaks old versions into unusable partial sets.
-    """
-    groups = {}
-    pat = re.compile(rf"({re.escape(cid)}-\d{{8}}-\d{{6}})\.(clean\.sog|spz|raw\.splat|splat|ksplat|ply|meta\.json|cameras\.json)$",
-                     re.IGNORECASE)
-    for p in clip_history_files(hist_dir, cid):
-        m = pat.fullmatch(p.name)
-        if m:
-            groups.setdefault(m.group(1), []).append(p)
-    stale = sorted(groups.items(), key=lambda kv: max(p.stat().st_mtime for p in kv[1]), reverse=True)[keep:]
-    for _, files in stale:
-        for p in files:
-            p.unlink(missing_ok=True)
-
-
 def job_add(kind, label, container=""):
     return jobstore.add(kind, label, container)
 
@@ -478,7 +449,6 @@ def _ffmpeg_has(filter_name: str) -> bool:
 
 
 HAS_DRAWTEXT = _ffmpeg_has("drawtext")   # sin drawtext, el título se omite (el export NO falla)
-KEYS_ENV = Path("/Volumes/SSD/_system/claude/.api-keys.env")
 SPLAT_BIN = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/OpenSplat/build/opensplat")
 SPLAT_MPS_BIN = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/OpenSplat/build-mps/opensplat")
 
@@ -1081,31 +1051,6 @@ def measure_dsm(mdir: Path, spec: dict) -> dict:
             "base_elev": round(base, 1),
             "area_m2": round(cell * int(mask.sum()), 1),
             "max_height": round(float(vals.max() - base), 1)}
-
-
-def splat_quality(out: Path, log: str, n_cams: int, iters: int) -> dict:
-    """Quality gate del splat: tamaño + cámaras + convergencia de loss."""
-    size = out.stat().st_size if out.exists() else 0
-    step_rows = re.findall(
-        r"Step\s+(\d+):\s+([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?|nan|inf)",
-        log or "", flags=re.I)
-    losses = [v.lower() for _, v in step_rows]
-    final_loss = next((float(x) for x in reversed(losses) if x not in ("nan", "inf")), None)
-    last_step = max((int(s) for s, _ in step_rows), default=0)
-    reasons = []
-    if losses and losses[-1] in ("nan", "inf"):
-        reasons.append("el entrenamiento divergió (loss=nan) — reintenta o baja las iteraciones")
-    if iters and last_step and last_step < int(iters * 0.95):
-        reasons.append(f"entrenamiento incompleto ({last_step}/{iters} pasos)")
-    if size < 200_000:
-        reasons.append(f"archivo muy pequeño ({size} bytes) — escena insuficiente")
-    if n_cams < 8:
-        reasons.append(f"solo {n_cams} cámaras — vuela una órbita con más solape (>=8)")
-    if final_loss is not None and final_loss > 0.5:
-        reasons.append(f"loss final alto ({final_loss}) — captura ruidosa")
-    return {"passed": not reasons, "reason": " · ".join(reasons) or "ok",
-            "bytes": size, "cameras": n_cams, "final_loss": final_loss,
-            "last_step": last_step, "steps_logged": len(step_rows), "target_iters": iters}
 
 
 def odm_live_phase(log: str, current: float | None = None) -> dict | None:
@@ -1844,7 +1789,7 @@ def splat_project_preflight(cid: str, job_spec: dict, vault: Path | None = None,
 def source_evidence(clip_id: str, vault: Path | None = None) -> dict:
     """Measured, reproducible capture evidence used by scene and altitude products."""
     root = Path(vault or VAULT)
-    clip_id = re.sub(r"[^\w-]", "", str(clip_id))
+    clip_id = safe_id(clip_id)
     payload = {}
     for path in (root / "tracks" / f"{clip_id}.flight.json",
                  root / "manifest" / f"{clip_id}.json"):
@@ -2308,14 +2253,7 @@ def _atempo_chain(speed):
     return [f"atempo={f:.4f}".rstrip("0").rstrip(".") for f in factors]
 
 
-def _has_audio(src):
-    try:
-        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a",
-                            "-show_entries", "stream=index", "-of", "csv=p=0", str(src)],
-                           capture_output=True, text=True)
-        return bool(r.stdout.strip())
-    except Exception:
-        return False
+_has_audio = media_probe.has_audio      # alias: tests/callers still use the private name
 
 
 _PHOTO_ORIG_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
@@ -2324,15 +2262,7 @@ _PHOTO_ORIG_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image
 
 
 def _probe_dur(path):
-    try:
-        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                        "-of", "csv=p=0", str(path)], capture_output=True, text=True, timeout=60)
-    except (subprocess.TimeoutExpired, OSError):
-        return 0.0
-    try:
-        return float(r.stdout.strip())
-    except ValueError:
-        return 0.0
+    return media_probe.probe_duration(path, timeout=60)
 
 
 def _ff(cmd: list):
@@ -2470,9 +2400,9 @@ def _burn_texts(video: Path, texts: list, bitrate: str) -> Path:
     dur = _probe_dur(video)
     _w = _h = 0
     try:
-        wh = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
-                             "-show_entries", "stream=width,height", "-of", "csv=p=0",
-                             str(video)], capture_output=True, text=True, timeout=30).stdout.strip()
+        wh = media_probe.ffprobe_text(["-select_streams", "v:0", "-show_entries",
+                                       "stream=width,height", "-of", "csv=p=0"],
+                                      video, timeout=30).strip()
         _w, _h = (int(x) for x in wh.split(",")[:2])
         h_over_w = _h / _w if _w else 0.0
     except (ValueError, OSError, subprocess.SubprocessError):
@@ -2593,14 +2523,14 @@ def _reel_meta(reel: Path) -> dict:
         except (ValueError, OSError):
             pass
     try:
-        p = subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-show_format",
-                            "-of", "json", str(reel)], capture_output=True, text=True, timeout=30)
-        d = json.loads(p.stdout)
+        d = media_probe.probe_streams_json(reel, timeout=30)
+        if d is None:
+            return {}
         v = next((s for s in d["streams"] if s["codec_type"] == "video"), {})
         m = {"duration_s": round(float(d["format"].get("duration") or 0), 1),
              "w": v.get("width", 0), "h": v.get("height", 0),
              "has_audio": any(s["codec_type"] == "audio" for s in d["streams"])}
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+    except (OSError, ValueError, KeyError):
         return {}
     cache.write_text(json.dumps({**m, "mtime": int(st.st_mtime)}))
     return m
@@ -2616,24 +2546,6 @@ def _reel_sidecars(stem: str) -> dict:
 _TRIP_KEY_RE = re.compile(r"-?\d{1,3}\.\d{2},-?\d{1,3}\.\d{2}")
 _ORDER_LOCK = threading.Lock()
 _TRIPS_LOCK = threading.Lock()
-
-
-def _atomic_write_text(path, text: str):
-    """Escritura atómica con tmp ÚNICO en el mismo dir (mkstemp) + os.replace: dos escritores
-    concurrentes ya no se pisan un `x.json.tmp` fijo. Deja el archivo en 0o644."""
-    path = Path(path)
-    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        os.chmod(tmp, 0o644)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
 
 
 def _reel_order_write(omap: dict):
@@ -2712,10 +2624,10 @@ def _aspect_h_over_w(aspect: str) -> float:
 
 def _probe_fps(path) -> float:
     try:
-        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
-                            "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", str(path)],
-                           capture_output=True, text=True, timeout=30)
-        num, _, den = r.stdout.strip().partition("/")
+        out = media_probe.ffprobe_text(["-select_streams", "v:0", "-show_entries",
+                                        "stream=r_frame_rate", "-of", "csv=p=0"],
+                                       path, timeout=30)
+        num, _, den = out.strip().partition("/")
         v = float(num) / (float(den) if den else 1.0)
         return v if 1 <= v <= 240 else 30.0
     except (ValueError, ZeroDivisionError, OSError, subprocess.SubprocessError):
@@ -2981,7 +2893,7 @@ def run_edit(spec: dict, j):
             _burn_texts(out, texts, br)
         # ---- música (I2): se mezcla al final, sobre el reel ya compuesto ----
         music = spec.get("music") if isinstance(spec.get("music"), dict) else None
-        mname = re.sub(r"[^\w.\- ]", "", str(music.get("name", ""))) if music else ""
+        mname = safe_name(music.get("name", "")) if music else ""
         if mname:
             mpath = (AUDIO_DIR / mname).resolve()
             try:
@@ -2993,7 +2905,7 @@ def run_edit(spec: dict, j):
                 _mix_music(out, mpath, music, keep_audio, _probe_dur(out))
         # ---- reemplazo (T2): si la edición nació de un reel existente y el usuario pidió
         # sustituirlo, el export exitoso toma su nombre (links, orden y posters se heredan)
-        rep = re.sub(r"[^\w.\- ]", "", str(spec.get("replace", "")))
+        rep = safe_name(spec.get("replace", ""))
         if rep and rep.endswith(".mp4"):
             tgt = (VAULT / "reels" / rep).resolve()
             try:
@@ -3506,7 +3418,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            cid = re.sub(r"[^\w-]", "", (qs.get("clip_id") or [""])[0])
+            cid = safe_id((qs.get("clip_id") or [""])[0])
             if not cid:
                 return self.send_json({"error": "clip_id requerido"}, 400)
             import capture_quality
@@ -3527,7 +3439,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             qq = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            name = re.sub(r"[^\w.\- ]", "", (qq.get("name") or [""])[0])
+            name = safe_name((qq.get("name") or [""])[0])
             p = (AUDIO_DIR / name).resolve() if name else None
             try:
                 p.relative_to(AUDIO_DIR.resolve())
@@ -3680,7 +3592,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             q2 = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            name = re.sub(r"[^\w.\- ]", "", str(q2.get("name", [""])[0]))
+            name = safe_name(q2.get("name", [""])[0])
             rf = VAULT / "reel-posters" / f"{Path(name).stem}.recipe.json"
             if not name or not rf.is_file():
                 return self.send_json({"error": "sin receta"}, 404)
@@ -4096,7 +4008,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/upload":
             if not self.auth(q):
                 return
-            name = re.sub(r"[^\w.\-]", "_", Path(q.get("name", ["video.mp4"])[0]).name)
+            name = safe_upload_name(Path(q.get("name", ["video.mp4"])[0]).name)
             ext = Path(name).suffix.lower() or ".mp4"
             if ext not in (".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm"):
                 return self.send_json({"error": f"formato {ext} no soportado"}, 400)
@@ -4142,7 +4054,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "la foto pesa más de 200MB"}, 413)
             pdir = VAULT / "photos"
             pdir.mkdir(parents=True, exist_ok=True)
-            safe = re.sub(r"[^\w.\- ]", "_", raw_name)
+            safe = safe_upload_name_spaces(raw_name)
             dst = pdir / safe
             heic = ext in (".heic", ".heif")
 
@@ -4184,7 +4096,7 @@ class H(BaseHTTPRequestHandler):
                 return
             spec = self.read_json()
             names = spec.get("names") if isinstance(spec.get("names"), list) else []
-            omap = {re.sub(r"[^\w.\- ]", "", str(n)): i
+            omap = {safe_name(n): i
                     for i, n in enumerate(names[:500]) if str(n).endswith(".mp4")}
             try:
                 with _ORDER_LOCK:
@@ -4199,7 +4111,7 @@ class H(BaseHTTPRequestHandler):
                 return
             spec = self.read_json()
             op = str(spec.get("op", ""))
-            name = re.sub(r"[^\w.\- ]", "", str(spec.get("name", "")))
+            name = safe_name(spec.get("name", ""))
             base = (VAULT / "reels").resolve()
             src = (base / name).resolve() if name else None
             try:
@@ -4275,7 +4187,7 @@ class H(BaseHTTPRequestHandler):
             # body crudo + ?name=. NUNCA descargamos audio de servicios con DRM.
             if not self.auth(q):
                 return
-            name = re.sub(r"[^\w.\- ]", "_", Path(q.get("name", ["pista.mp3"])[0]).name).strip()
+            name = safe_upload_name_spaces(Path(q.get("name", ["pista.mp3"])[0]).name).strip()
             ext = Path(name).suffix.lower()
             if ext not in AUDIO_EXT:
                 return self.send_json({"error": f"formato {ext or '?'} no soportado — usa mp3, m4a, wav, flac u ogg"}, 400)
@@ -4308,7 +4220,7 @@ class H(BaseHTTPRequestHandler):
                 return
             spec = self.read_json()
             op = str(spec.get("op", ""))
-            name = re.sub(r"[^\w.\- ]", "", str(spec.get("name", "")))
+            name = safe_name(spec.get("name", ""))
             src = (AUDIO_DIR / name).resolve() if name else None
             try:
                 src.relative_to(AUDIO_DIR.resolve())
@@ -4326,7 +4238,7 @@ class H(BaseHTTPRequestHandler):
                 (AUDIO_DIR / ".meta" / f"{src.name}.json").unlink(missing_ok=True)
                 return self.send_json({"ok": True})
             if op == "rename":
-                new = re.sub(r"[^\w.\- ]", "", str(spec.get("new_name", ""))).strip()
+                new = safe_name(spec.get("new_name", "")).strip()
                 if not new:
                     return self.send_json({"error": "nombre nuevo inválido"}, 400)
                 dst = AUDIO_DIR / (new + src.suffix if not new.lower().endswith(src.suffix) else new)
@@ -4342,8 +4254,8 @@ class H(BaseHTTPRequestHandler):
             # Reversible: /api/splat_revert deshace. pending-lock igual que upload/revert.
             if not self.auth(q):
                 return
-            cid = re.sub(r"[^\w-]", "", q.get("cid", [""])[0])
-            preset = re.sub(r"[^\w-]", "", q.get("preset", ["aerial"])[0]) or "aerial"
+            cid = safe_id(q.get("cid", [""])[0])
+            preset = safe_id(q.get("preset", ["aerial"])[0]) or "aerial"
             if not cid:
                 return self.send_json({"error": "cid requerido"}, 400)
             if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
@@ -4391,7 +4303,7 @@ class H(BaseHTTPRequestHandler):
             # toggle. También acepta to=<archivo de history> para revertir a cualquier versión.
             if not self.auth(q):
                 return
-            cid = re.sub(r"[^\w-]", "", q.get("cid", [""])[0])
+            cid = safe_id(q.get("cid", [""])[0])
             to = q.get("to", ["raw"])[0]
             if not cid:
                 return self.send_json({"error": "cid requerido"}, 400)
@@ -4455,8 +4367,8 @@ class H(BaseHTTPRequestHandler):
             # versionado — los formatos anteriores del clip van a splats/history/ (nada se pierde)
             if not self.auth(q):
                 return
-            cid = re.sub(r"[^\w-]", "", q.get("cid", [""])[0])
-            name = re.sub(r"[^\w.\-]", "_", Path(q.get("name", [""])[0]).name)
+            cid = safe_id(q.get("cid", [""])[0])
+            name = safe_upload_name(Path(q.get("name", [""])[0]).name)
             ext = Path(name).suffix.lower()
             if not cid:
                 return self.send_json({"error": "cid requerido"}, 400)
@@ -4590,7 +4502,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            cid = safe_id(spec.get("clip_id", ""))
             mdir = VAULT / "models" / cid
             if not (mdir / "dsm.bin").exists():
                 return self.send_json({"error": "este proyecto no tiene DSM aún"}, 404)
@@ -4619,8 +4531,8 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            a = re.sub(r"[^\w-]", "", str(spec.get("clip_a", "")))
-            b = re.sub(r"[^\w-]", "", str(spec.get("clip_b", "")))
+            a = safe_id(spec.get("clip_a", ""))
+            b = safe_id(spec.get("clip_b", ""))
             da, db = VAULT / "models" / a, VAULT / "models" / b
             if not ((da / "dsm.bin").exists() and (db / "dsm.bin").exists()):
                 return self.send_json({"error": "ambas fechas necesitan modelo 3D con DSM"}, 404)
@@ -4641,7 +4553,7 @@ class H(BaseHTTPRequestHandler):
                                              spec.get("photos") if isinstance(spec.get("photos"), list) else [],
                                              source_evidence=[source_evidence(cid) for cid in
                                                (spec.get("sources") if isinstance(spec.get("sources"), list) else [])])
-            existing = re.sub(r"[^\w-]", "", str(spec.get("existing_version") or ""))
+            existing = safe_id(spec.get("existing_version") or "")
             if existing and (VAULT / "models" / existing / "meta.json").exists():
                 sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [existing]
                 photos = spec.get("photos") if isinstance(spec.get("photos"), list) else []
@@ -4664,7 +4576,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            scene_id = re.sub(r"[^\w-]", "", str(spec.get("scene_id", "")))
+            scene_id = safe_id(spec.get("scene_id", ""))
             try:
                 scene = scenestore.get_scene(scene_id)
             except (KeyError, ValueError):
@@ -4677,7 +4589,7 @@ class H(BaseHTTPRequestHandler):
                 requested_sources = [*active.get("sources", []), *(spec.get("new_sources") or [])]
             sources = []
             for value in requested_sources:
-                cid = re.sub(r"[^\w-]", "", str(value))
+                cid = safe_id(value)
                 if (cid and cid not in sources
                         and (VAULT / "manifest" / f"{cid}.json").exists()
                         and (VAULT / "tracks" / f"{cid}.flight.json").exists()):
@@ -4768,7 +4680,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            cid = safe_id(spec.get("clip_id", ""))
             if not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
                 return self.send_json({"error": "clip no encontrado en el vault"}, 404)
             if jobstore.pending("3d", cid):
@@ -4781,7 +4693,7 @@ class H(BaseHTTPRequestHandler):
             raw_sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [cid]
             sources, seen = [], set()
             for s in raw_sources:
-                s = re.sub(r"[^\w-]", "", str(s))
+                s = safe_id(s)
                 if s and s not in seen and (VAULT / "tracks" / f"{s}.flight.json").exists():
                     seen.add(s); sources.append(s)
             if cid not in sources:                       # el primario manda la identidad
@@ -4838,7 +4750,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            cid = safe_id(spec.get("clip_id", ""))
             mdir = VAULT / "models" / cid
             if not cid or not (mdir / "meta.json").exists():
                 return self.send_json({"error": "modelo no encontrado"}, 404)
@@ -4851,7 +4763,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            cid = safe_id(spec.get("clip_id", ""))
             mdir = (VAULT / "models" / cid).resolve()
             if not cid or mdir.parent != (VAULT / "models").resolve() or not mdir.is_dir():
                 return self.send_json({"error": "modelo no encontrado"}, 404)
@@ -4899,7 +4811,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            cid = safe_id(spec.get("clip_id", ""))
             if not cid:
                 return self.send_json({"error": "clip_id requerido"}, 400)
             if jobstore.pending("splat", cid):
@@ -4969,7 +4881,7 @@ class H(BaseHTTPRequestHandler):
                 rebuild_index()
                 return self.send_json({"ok": True, "name": dst.name})
             if op == "rename":
-                new_name = re.sub(r"[^\w.\- ]", "", str(spec.get("new_name", ""))).strip()
+                new_name = safe_name(spec.get("new_name", "")).strip()
                 if new_name.lower().endswith(src.suffix.lower()):  # quita ext duplicada
                     new_name = new_name[: -len(src.suffix)].strip()
                 if not new_name or new_name.startswith("."):
@@ -5060,7 +4972,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            cid = safe_id(spec.get("clip_id", ""))
             proj = VAULT / "odm" / f"proj_{cid}"    # sin alias legacy: cada clip usa SU proyecto (proj0104 compartido = data-loss si 2 clips 0104_D)
             has_model = (proj / "opensfm" / "reconstruction.json").exists()
             if not has_model and not spec.get("auto_model"):
@@ -5193,7 +5105,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            cid = safe_id(spec.get("clip_id", ""))
             # dedupe + validación: doble click = 2 análisis deep concurrentes (2× costo LLM
             # y carrera sobre ai/{cid}.json); cid inexistente = job basura
             if not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
@@ -5249,7 +5161,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            cid = safe_id(spec.get("clip_id", ""))
             mdir = VAULT / "models" / cid
             if not cid or not (mdir / "meta.json").exists():
                 return self.send_json({"error": "clip_id inválido"}, 400)
@@ -5310,7 +5222,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            cid = safe_id(spec.get("clip_id", ""))
             if not cid:
                 return self.send_json({"error": "clip_id requerido"}, 400)
             try:
@@ -5334,7 +5246,7 @@ class H(BaseHTTPRequestHandler):
             if not self.auth(q):
                 return
             spec = self.read_json()
-            cid = re.sub(r"[^\w-]", "", str(spec.get("clip_id", "")))
+            cid = safe_id(spec.get("clip_id", ""))
             mf = VAULT / "manifest" / f"{cid}.json"
             if not mf.exists():
                 return self.send_json({"error": "clip no existe"}, 404)
@@ -5403,7 +5315,7 @@ class H(BaseHTTPRequestHandler):
                     else:
                         entry.pop("name", None)     # vacío = volver al nombre automático
                 if "cover" in spec:
-                    cover = re.sub(r"[^\w-]", "", str(spec["cover"]))
+                    cover = safe_id(spec["cover"])
                     if cover:
                         entry["cover"] = cover
                     else:

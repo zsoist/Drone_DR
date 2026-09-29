@@ -22,12 +22,12 @@ import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT  # noqa: E402
 ERRLOG = VAULT / "ops" / "errors.jsonl"
 WATCHLOG = Path.home() / "Library" / "Logs" / "AeroBrain" / "watchdog.log"
 JOBS_DB = VAULT / "manifest" / "jobs.db"
 REPORTS = VAULT / "ops" / "reports"
-KEYS_ENV = Path("/Volumes/SSD/_system/claude/.api-keys.env")
+from paths import KEYS_ENV  # noqa: E402
 EXPECTED_BASELINES = (
     "ODM alta medido~12-25min para 30-77 cámaras (datasets grandes pueden tardar más); "
     "ODM Alta de 238 cámaras medido en 98min con dense high→medium y producto 25D; "

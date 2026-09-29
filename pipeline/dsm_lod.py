@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT  # noqa: E402
 M_PER_DEG_LAT = 111_320.0  # esferoide medio; error <0.4% — suficiente para vuelo
 
 

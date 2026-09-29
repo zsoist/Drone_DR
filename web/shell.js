@@ -156,6 +156,15 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+// Aviso no-bloqueante compartido (estilo .ed-toast en style.css; alert() rompe el flujo en móvil)
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'ed-toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('on'));
+  setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 350); }, 3600);
+}
 // The server gates every document and data asset before this code runs. These
 // checks cover session expiry while a tab is already open or restored by bfcache.
 function loginLocation() {

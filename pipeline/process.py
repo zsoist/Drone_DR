@@ -17,6 +17,7 @@ import sys
 from fractions import Fraction
 from pathlib import Path
 
+import media_probe
 from srt_parser import parse_srt
 from policy import processing_tier
 
@@ -24,9 +25,8 @@ VAULT = Path("/Volumes/SSD/drone-vault")
 
 
 def ffprobe(path: Path) -> dict:
-    out = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-show_format", "-show_streams", "-of", "json", str(path)],
-        capture_output=True, text=True, check=True).stdout
+    out = media_probe.ffprobe_text(["-show_format", "-show_streams", "-of", "json"],
+                                   path, log_level="quiet", check=True)
     return json.loads(out)
 
 

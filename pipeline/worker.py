@@ -27,8 +27,9 @@ from splat_presets import normalize_splat_request, resolve_splat_spec
 
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
 
-VAULT = Path("/Volumes/SSD/drone-vault")
-PIPE = Path(__file__).resolve().parent
+from paths import VAULT  # noqa: E402
+from fsutil import atomic_write_json, read_json  # noqa: E402
+from paths import PIPE  # noqa: E402
 SPLAT_TRANSFORM = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
 SPLAT_ROOT = PIPE.parent / "splat" / "OpenSplat"
 SPLAT_CPU_BIN = SPLAT_ROOT / "build" / "opensplat"
@@ -282,7 +283,7 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
         jobstore.retarget_splat_artifacts(cid, archived_splat, archived_viewer)
     # poda de versiones también en la ruta de ENTRENAMIENTO (antes solo en /api/splat_upload):
     # iterar cinematic/ultra archivaba 20MB+ por corrida sin límite
-    from aerobrain_server import prune_splat_history
+    from splat_history import prune_splat_history
     prune_splat_history(hist, cid, keep=6)
     os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
     os.replace(tmp_out, final_out)
@@ -1490,11 +1491,7 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
     container = f"odm-{j['id']}"
     mf = VAULT / "models" / cid / "meta.json"
     previous_meta = {}
-    try:
-        if mf.exists():
-            previous_meta = json.loads(mf.read_text())
-    except (OSError, ValueError):
-        previous_meta = {}
+    previous_meta = read_json(mf, {})
     jobstore.update(j["id"], container=container)
 
     frame_profile = ODM_FRAME_PROFILE.get(preset_name, "balanced")
@@ -1674,7 +1671,7 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
             "splat_runs": [],
         }
         preserve_splat_history(m, previous_meta)
-        _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
+        atomic_write_json(mf, m, indent=1, ensure_ascii=True)
     rebuild_index()
     browser_gate(j["id"], "model", cid)
     return preset_name
@@ -1726,9 +1723,7 @@ def run_3d(j: dict):
         mm["scene_id"] = j["spec"]["scene_id"]
         mm["scene_version"] = j["spec"].get("version_id") or cid
         meta_path = VAULT / "models" / cid / "meta.json"
-        tmp_meta = meta_path.with_suffix(".json.tmp")
-        tmp_meta.write_text(json.dumps(mm, indent=1))
-        os.replace(tmp_meta, meta_path)
+        atomic_write_json(meta_path, mm, indent=1, ensure_ascii=True)
         version = record_scene_completion(j, mm)
         site_manifest = rebuild_scene_manifest(cid)
         if version and site_manifest and site_manifest.get("coverage"):
@@ -1942,7 +1937,7 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
 
 def run_splat(j: dict):
     # import tardío: reutiliza el quality gate del server sin duplicarlo
-    from aerobrain_server import splat_quality
+    from splat_history import splat_quality
     import compute_policy
     j["spec"] = compute_policy.route_splat(j["spec"])   # red de seguridad: jobs viejos en cola
     cid = j["spec"]["clip_id"]
@@ -2223,7 +2218,7 @@ def run_splat(j: dict):
             runs = recon.setdefault("splat_runs", [])
             runs.append(splat_run_record(j["id"], quality))
             del runs[:-10]                            # historial acotado, como splats/history
-            _t = mf.with_suffix(".json.tmp"); _t.write_text(json.dumps(m, indent=1)); os.replace(_t, mf)
+            atomic_write_json(mf, m, indent=1, ensure_ascii=True)
         except (ValueError, OSError) as e:
             print(f"  splat_runs no actualizado ({e}) — el sidecar sigue siendo la fuente", flush=True)
     # REVERSIBLE: archiva el crudo pre-clean como versión propia ANTES de limpiar (antes

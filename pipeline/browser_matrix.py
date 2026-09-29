@@ -29,7 +29,7 @@ from browser_gate import DEFAULT_BASE_URL, QA_DIR, launch_chrome, new_page
 from splat_presets import SPLAT_PRESETS
 
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT  # noqa: E402
 VIEWPORTS = {
     "mobile_portrait": {"width": 390, "height": 844, "deviceScaleFactor": 3, "mobile": True},
     "mobile_landscape": {"width": 844, "height": 390, "deviceScaleFactor": 3, "mobile": True},

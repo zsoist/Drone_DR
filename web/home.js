@@ -121,7 +121,7 @@ function renderHome(vm, states) {
   // en escritorio se pospone hasta después del load y un rato de reposo. Queda la imagen estática de fallback.
   const lite = navigator.connection?.saveData || matchMedia('(max-width: 600px)').matches || matchMedia('(pointer: coarse)').matches;
   if (!lite && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const mount = () => import('./home-drone.js?v=348').then(mod => mod.mountHomeDrone?.('#home-drone-stage')).catch(() => {});
+    const mount = () => import('./home-drone.js?v=349').then(mod => mod.mountHomeDrone?.('#home-drone-stage')).catch(() => {});
     const idle = () => ('requestIdleCallback' in window) ? requestIdleCallback(mount, { timeout: 4000 }) : setTimeout(mount, 1200);
     if (document.readyState === 'complete') idle(); else addEventListener('load', idle, { once: true });
   }

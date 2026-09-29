@@ -20,9 +20,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
-VAULT = Path("/Volumes/SSD/drone-vault")
-ROOT = Path("/Volumes/SSD/work/forge-projects/aerobrain")
-KEYS = Path("/Volumes/SSD/_system/claude/.api-keys.env")
+from paths import VAULT  # noqa: E402
+from paths import REPO as ROOT, KEYS_ENV as KEYS  # noqa: E402
 
 
 def load_keys() -> dict:

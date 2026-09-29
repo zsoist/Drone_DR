@@ -12,7 +12,7 @@ from pathlib import Path
 from browser_gate import DEFAULT_BASE_URL, launch_chrome, new_page
 
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT  # noqa: E402
 NEW_WEAPON_KEYS = ("ac", "sw", "vx", "rg", "tb")
 WEAPON_SETTLE_SECONDS = {
     "ac": 1.5,

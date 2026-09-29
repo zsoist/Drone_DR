@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT  # noqa: E402
 W, H = 32, 18
 
 

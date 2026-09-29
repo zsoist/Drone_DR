@@ -5,7 +5,6 @@
 const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 const fechaDe = cid => { const m = /(\d{4})(\d{2})(\d{2})/.exec(cid||''); return m ? `${+m[3]} ${MESES[+m[2]-1]} ${m[1]}` : ''; };
 const dur = s => { s = Math.round(s||0); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
-const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const best = cid => { const t = parseFloat(localStorage.getItem(`ab.fv.best.${cid}.gaterush`)); return Number.isFinite(t) ? t : null; };
 // poster ligero (ortho_thumb.webp) con capa de respaldo al ortho.webp: si la miniatura da 404
 // la capa falla en silencio y se ve la siguiente

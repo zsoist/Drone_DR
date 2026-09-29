@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT  # noqa: E402
 VOLUMES = Path("/Volumes")
 
 

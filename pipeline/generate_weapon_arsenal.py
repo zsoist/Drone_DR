@@ -24,6 +24,7 @@ import trimesh
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from trimesh.visual.material import PBRMaterial
 
+from paths import WEB
 from weapon_asset_contract import validate_weapon_glb
 
 
@@ -707,7 +708,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).resolve().parent.parent / "web" / "assets" / "weapons",
+        default=WEB / "assets" / "weapons",
     )
     parser.add_argument("--seed", type=int, default=20260727)
     args = parser.parse_args()

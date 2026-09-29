@@ -22,15 +22,13 @@ import dsm_lod
 import mesh_coverage
 import scenes
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from fsutil import read_json  # noqa: E402
+from paths import VAULT  # noqa: E402
 COVERAGE_DIAMETERS_M = (100, 200, 400, 600, 1000)
 
 
 def _load(p: Path):
-    try:
-        return json.loads(p.read_text())
-    except Exception:
-        return None
+    return read_json(p)
 
 
 def _geocode_name(lat: float, lon: float) -> str | None:

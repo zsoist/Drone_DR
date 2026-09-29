@@ -27,9 +27,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from paths import VAULT
+
 RETAIN_DAYS = 7
 UNTRACKED_DAYS = 30
-JOBS_DB = Path("/Volumes/SSD/drone-vault/manifest/jobs.db")
+JOBS_DB = VAULT / "manifest" / "jobs.db"
 ACTIVE = {"queued", "running", "claimed"}
 TERMINAL = {"done", "error", "cancelled", "cancel_failed"}
 ROOTS = (

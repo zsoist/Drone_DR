@@ -16,8 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-VAULT = Path("/Volumes/SSD/drone-vault")
-PIPE = Path(__file__).resolve().parent
+from paths import VAULT  # noqa: E402
+from paths import PIPE  # noqa: E402
 FIX = "--fix" in sys.argv
 
 

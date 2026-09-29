@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT  # noqa: E402
 M_LAT = 111_320.0
 
 

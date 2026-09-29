@@ -38,7 +38,7 @@ from pathlib import Path
 
 import numpy as np
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import REPO, VAULT  # noqa: E402
 
 from worker import (PeakTracker, choose_splat_backend, opensplat_train_cmd,
                     OPENSPLAT_MEMORY_MIB, LIBTORCH_LIB, _HWCFG)
@@ -272,7 +272,7 @@ def _trainer_context(force_cpu: bool = False) -> dict:
                            capture_output=True, text=True, timeout=30).stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         v = "unknown"
-    patch = Path(__file__).resolve().parent.parent / "patches" / "opensplat-render-cameras.patch"
+    patch = REPO / "patches" / "opensplat-render-cameras.patch"
     return {"version": v, "binary": str(backend["bin"]), "device": backend["device"],
             "patch_sha": hashlib.sha1(patch.read_bytes()).hexdigest()[:12]
             if patch.exists() else None}

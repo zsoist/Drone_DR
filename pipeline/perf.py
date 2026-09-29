@@ -24,7 +24,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT  # noqa: E402
 DOCKER = "/usr/local/bin/docker"
 NCPU = os.cpu_count() or 10
 PAGE = 16384

@@ -20,8 +20,8 @@ from pathlib import Path
 
 import ops_watchdog
 
-VAULT = Path("/Volumes/SSD/drone-vault")
-REPO = Path("/Volumes/SSD/work/forge-projects/aerobrain")
+from paths import VAULT  # noqa: E402
+from paths import REPO  # noqa: E402
 TUNNEL_CONFIG = Path("/Users/daniel_serverm4/.cloudflared/metislab-work.yml")
 _LOG_DIR = Path.home() / "Library" / "Logs" / "AeroBrain"
 LOGS = (
@@ -211,7 +211,7 @@ def resource_status(active_jobs: int = 0) -> dict:
         is_workload = ("splat/OpenSplat" in cmd
                        or any(f"pipeline/{name}" in cmd for name in
                               ("odm_prep.py", "tresd_publish.py", "process.py"))
-                       or ("ffmpeg" in cmd and "/Volumes/SSD/drone-vault" in cmd)
+                       or ("ffmpeg" in cmd and str(VAULT) in cmd)
                        or ("docker run" in cmd and "odm-" in cmd))
         if not (is_base or is_workload):
             continue

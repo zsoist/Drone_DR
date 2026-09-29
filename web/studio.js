@@ -560,18 +560,6 @@ function primeShare(url, name, mime) {
 // liberar memoria al salir de la pestaña (iOS mata la página si acumulas blobs)
 addEventListener('visibilitychange', () => { if (document.hidden) shareCache.clear(); });
 
-// Aviso no-bloqueante a NIVEL DE MÓDULO: el editor tenía su propio toast() dentro de su
-// IIFE, así que el visor (que vive fuera) lanzaba ReferenceError dentro de un handler
-// async — o sea, un fallo mudo: el recorte funcionaba en el server y la UI no decía nada.
-function toast(msg) {
-  const t = document.createElement('div');
-  t.className = 'ed-toast';
-  t.textContent = msg;
-  document.body.appendChild(t);
-  requestAnimationFrame(() => t.classList.add('on'));
-  setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 350); }, 3600);
-}
-
 // ================= SUBIDA DESDE EL TELÉFONO =================
 // Un input file con accept="video/*,image/*" abre el CARRETE en iOS. Se sube archivo a
 // archivo (no en paralelo): el túnel y el iPhone rinden mejor así, y el progreso es honesto.
@@ -3720,14 +3708,6 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   }
 
   // ================= export (46,47) =================
-  function toast(msg) {   // aviso no-bloqueante (alert() rompe el flujo en móvil)
-    const t = document.createElement('div');
-    t.className = 'ed-toast';
-    t.textContent = msg;
-    document.body.appendChild(t);
-    requestAnimationFrame(() => t.classList.add('on'));
-    setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 350); }, 3600);
-  }
   document.getElementById('ed-title')?.addEventListener('focus', e2 =>
     setTimeout(() => e2.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250));  // el teclado iOS tapaba el input (sheet fija)
   document.getElementById('ed-export').addEventListener('click', async e => {
