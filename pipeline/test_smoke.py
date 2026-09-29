@@ -805,7 +805,8 @@ check("odm_prep: geotag apunta a images/ (ruta FINAL), NO a images.new/tmp_dir (
       "_geotag(images / name" in _op_src and "_geotag(tmp_dir" not in _op_src
       and "_geotag(dest" not in _op_src)
 check("odm_prep: 1 sola fuente conserva nombres f_XXXX (compat); multi usa prefijo s{idx}_",
-      'prefix = f"s{idx}_" if multi else ""' in _op_src and "multi = len(sources) > 1 or bool(photos)" in _op_src)
+      'prefix = f"s{idx}_" if multi else ""' in _op_src
+      and "multi = len(entries) > 1 or bool(photos) or bool(photo_groups)" in _op_src)   # sets de fotos también prefijan
 _w_src = Path("pipeline/worker.py").read_text()
 check("worker: build_3d_assets pasa --sources/--photos a odm_prep y el primario manda la identidad",
       '"--sources"' in _w_src and 'src_list[0] != cid' in _w_src)

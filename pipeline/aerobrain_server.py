@@ -763,6 +763,132 @@ def photo_magic_ok(path: Path, ext: str) -> bool:
     return False
 
 
+# ---- sets de fotos como FUENTE de 3D (Procesar → /api/odm) ----
+_PHOTO_PASS_CACHE: dict = {}          # str(dir) -> (fingerprint, info)
+PHOTO_SET_ODM_MAX_PASSES = 24
+
+
+def photo_set_valid_name(name) -> bool:
+    """Un nombre de set/pasada es válido solo si pasa por el sanitizador del upload sin cambios."""
+    return isinstance(name, str) and bool(name) and photo_set_label(name, "") == name
+
+
+def _photo_pass_info(set_name: str, pdir: Path):
+    """Resumen de UNA pasada (conteo JPG, DNG, cobertura GPS, cámaras, fechas). exiftool corre
+    solo si cambió el fingerprint (nº archivos, bytes, mtime): el listado no re-escanea cada vez."""
+    import odm_prep
+    n = size = mt = 0
+    try:
+        for f in pdir.iterdir():
+            if f.name.startswith(".") or f.is_symlink() or not f.is_file():
+                continue
+            if f.suffix.lower() in (".jpg", ".jpeg", ".dng"):
+                st = f.stat()
+                n += 1
+                size += st.st_size
+                mt = max(mt, st.st_mtime_ns)
+    except OSError:
+        return None
+    if not n:
+        return None
+    key, fp = str(pdir), (n, size, mt)
+    hit = _PHOTO_PASS_CACHE.get(key)
+    if hit and hit[0] == fp:
+        return hit[1]
+    g = odm_prep.scan_photo_pass(set_name, pdir.name, pdir)
+    summ = odm_prep.summarize_rows(g["rows"])
+    info = {"pass": pdir.name, "token": odm_prep.photo_set_token(set_name, pdir.name),
+            "dng_paired": len(g["dng_paired"]), "dng_only": len(g["dng_only"]),
+            "invalid": len(g["invalid"]), "bytes": size, **summ,
+            "sample": f"{set_name}/{pdir.name}/{g['rows'][0]['name']}" if g["rows"] else None}
+    if len(_PHOTO_PASS_CACHE) > 512:
+        _PHOTO_PASS_CACHE.clear()
+    _PHOTO_PASS_CACHE[key] = (fp, info)
+    return info
+
+
+def photo_set_inventory() -> dict:
+    """raw/<set>/<pasada>/ con JPG/DNG: conteo, cobertura GPS, cámaras y rango de fechas por
+    pasada y por set. Solo lee nombres que pasan photo_set_valid_name (sin symlinks)."""
+    import odm_prep
+    raw = VAULT / "raw"
+    out = []
+    if raw.is_dir():
+        for sd in sorted(raw.iterdir(), key=lambda p: p.name):
+            if sd.is_symlink() or not sd.is_dir() or not photo_set_valid_name(sd.name):
+                continue
+            passes = []
+            for pd in sorted(sd.iterdir(), key=lambda p: p.name):
+                if pd.is_symlink() or not pd.is_dir() or not photo_set_valid_name(pd.name):
+                    continue
+                info = _photo_pass_info(sd.name, pd)
+                if info:
+                    passes.append(info)
+            if not passes:
+                continue
+            count = sum(p["count"] for p in passes)
+            gps = sum(p["gps"] for p in passes)
+            models: dict = {}
+            for p in passes:
+                for m, c in p["models"].items():
+                    models[m] = models.get(m, 0) + c
+            dmin = [p["date_min"] for p in passes if p["date_min"]]
+            dmax = [p["date_max"] for p in passes if p["date_max"]]
+            out.append({"set": sd.name, "passes": passes, "count": count, "gps": gps,
+                        "gps_coverage": round(gps / count, 3) if count else 0.0,
+                        "models": models, "date_min": min(dmin) if dmin else None,
+                        "date_max": max(dmax) if dmax else None,
+                        "dng_only": sum(p["dng_only"] for p in passes),
+                        "bytes": sum(p["bytes"] for p in passes)})
+    return {"sets": out, "max_images": odm_prep.PHOTO_SET_MAX_IMAGES}
+
+
+def resolve_photo_set_tokens(items) -> tuple:
+    """Lista de 'Set', 'Set/pasada', 'set:Set/pasada' o {set, pass} → (tokens, error).
+    Cada nombre debe pasar el sanitizador del upload Y existir en el listado real de raw/
+    (jamás se compone una ruta con lo que manda el cliente). Un set sin pasada = todas sus pasadas."""
+    import odm_prep
+    if not isinstance(items, list) or not items:
+        return [], None
+    inv = {s["set"]: {p["pass"]: p for p in s["passes"]} for s in photo_set_inventory()["sets"]}
+    tokens, total, seen = [], 0, set()
+    for item in items:
+        if isinstance(item, dict):
+            set_name, pass_name = item.get("set"), item.get("pass") or None
+        else:
+            ref = str(item or "")
+            for pre in (odm_prep.PHOTO_SET_TOKEN, "raw/"):
+                if ref.startswith(pre):
+                    ref = ref[len(pre):]
+            set_name, _, pass_name = ref.partition("/")
+            pass_name = pass_name or None
+        if not photo_set_valid_name(set_name) or (pass_name is not None and not photo_set_valid_name(pass_name)):
+            return [], "set/pasada de fotos inválido"
+        if set_name not in inv:
+            return [], f"set de fotos no encontrado: {set_name}"
+        passes = [pass_name] if pass_name else list(inv[set_name])
+        for pn in passes:
+            info = inv[set_name].get(pn)
+            if not info:
+                return [], f"pasada no encontrada: {set_name}/{pn}"
+            if info["token"] in seen:
+                continue
+            seen.add(info["token"])
+            if info["count"] == 0:
+                return [], (f"{set_name}/{pn}: solo tiene DNG sin JPG gemelo — ODM necesita JPG "
+                            f"(exporta JPG o vuela en JPG+RAW)")
+            if info["gps"] == 0:
+                return [], f"{set_name}/{pn}: sin GPS en el EXIF — ODM no puede georreferenciarlo"
+            tokens.append(info["token"])
+            total += info["count"]
+    if len(tokens) > PHOTO_SET_ODM_MAX_PASSES:
+        return [], f"máximo {PHOTO_SET_ODM_MAX_PASSES} pasadas de fotos por modelo"
+    if total > odm_prep.PHOTO_SET_MAX_IMAGES:
+        return [], (f"{total} fotos en los sets elegidos — máximo {odm_prep.PHOTO_SET_MAX_IMAGES} "
+                    f"por reconstrucción; elige menos pasadas")
+    return tokens, None
+
+
 def sd_volumes() -> list:
     """Tarjetas montadas con estructura DCIM (DJI). Nunca lista el SSD."""
     vols = []
@@ -1861,8 +1987,41 @@ def splat_project_preflight(cid: str, job_spec: dict, vault: Path | None = None,
         bridge_free_bytes=(node or {}).get("bridge_free_bytes"))
 
 
+def photo_set_source_evidence(token: str, vault: Path | None = None) -> dict:
+    """Evidencia MEDIDA de una pasada de fotos (raw/<set>/<pasada>) a partir de su EXIF: bbox GPS,
+    fecha, conteos y miniatura. Sin manifest de clip. Pasada ilegible -> fila sin bbox (el gate de
+    compatibilidad la rechaza como coverage_unknown en vez de fallar)."""
+    import odm_prep
+    parsed = scenestore.parse_photo_set_source(token)
+    row = {"clip_id": str(token), "altitude_m": 0.0,
+           "altitude_band_m": scenestore.altitude_band(0), "status": "eligible"}
+    if not parsed:
+        return row
+    root = Path(vault or VAULT)
+    try:
+        dirs = odm_prep.photo_set_pass_dirs(parsed[0], parsed[1], root=root / "raw")
+        scan = odm_prep.scan_photo_pass(parsed[0], parsed[1], dirs[0][2])
+    except (SystemExit, OSError, IndexError):
+        return row
+    rows = scan["rows"]
+    pts = [(r["lon"], r["lat"]) for r in rows if r.get("lat") is not None]
+    dates = sorted(r["date"] for r in rows if r.get("date"))
+    row.update({
+        "photo_count": len(rows),
+        "gps_count": len(pts),
+        "gps_coverage": round(len(pts) / len(rows), 3) if rows else 0.0,
+        "capture_at": dates[0] if dates else None,
+        "coverage_bbox": ([min(p[0] for p in pts), min(p[1] for p in pts),
+                           max(p[0] for p in pts), max(p[1] for p in pts)] if pts else None),
+        "thumb_rel": f"{parsed[0]}/{parsed[1]}/{rows[0]['name']}" if rows else None,
+    })
+    return {k: v for k, v in row.items() if v is not None}
+
+
 def source_evidence(clip_id: str, vault: Path | None = None) -> dict:
     """Measured, reproducible capture evidence used by scene and altitude products."""
+    if scenestore.is_photo_set_source(clip_id):
+        return photo_set_source_evidence(clip_id, vault)
     root = Path(vault or VAULT)
     clip_id = safe_id(clip_id)
     payload = {}
@@ -1954,7 +2113,7 @@ def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: st
     sources = list(dict.fromkeys(str(x) for x in sources if str(x)))
     photos = list(dict.fromkeys(Path(str(x)).name for x in photos if str(x)))
     if not sources:
-        raise ValueError("a scene version needs at least one video")
+        raise ValueError("a scene version needs at least one video or photo pass")
     if preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
         preset = "estandar"
     reconstruction_id = jobstore.recon_id_for(sources, photos)
@@ -1977,13 +2136,16 @@ def prepare_scene_version(scene_id: str, sources: list, photos: list, preset: st
                            source_evidence=evidence)
     spec = {
         "clip_id": reconstruction_id,
-        "primary_cid": sources[0],
+        # primer VIDEO (un token set:<set>/<pasada> no es un clip); None si la versión es solo fotos
+        "primary_cid": next((x for x in sources if not scenestore.is_photo_set_source(x)), None),
         "scene_id": scene_id,
         "version_id": reconstruction_id,
         "preset": preset,
         "title": str(title or scene.get("title") or "Escena")[:80].strip(),
         "sources": sources,
         "photos": photos,
+        **({"photo_sets": [x for x in sources if scenestore.is_photo_set_source(x)]}
+           if any(scenestore.is_photo_set_source(x) for x in sources) else {}),
         "then_splat": bool(then_splat),
         "backend": "cuda" if str(odm_backend).lower() == "cuda" else None,
         "backend_policy": ("strict" if str(odm_backend).lower() == "cuda"
@@ -3612,6 +3774,11 @@ class H(BaseHTTPRequestHandler):
                 _DRONE_PHOTOS.update(ts=now, items=items)
             return self.send_json({"photos": _DRONE_PHOTOS["items"]})
 
+        if self.path.startswith("/api/photo_sets"):
+            if not self.auth():
+                return
+            return self.send_json(photo_set_inventory())
+
         if self.path.startswith("/api/photo_thumb"):
             if not self.auth():
                 return
@@ -4518,15 +4685,18 @@ class H(BaseHTTPRequestHandler):
         if not self.auth(q):
             return
         spec = self.read_json()
+        # clips (safe_id) + pasadas de fotos "set:<set>/<pasada>" válidas; el resto se descarta
+        req_sources = [x for x in (spec.get("sources") if isinstance(spec.get("sources"), list) else [])
+                       if (scenestore.parse_photo_set_source(x) if scenestore.is_photo_set_source(x)
+                           else safe_id(x) == str(x) and x)]
         scene = scenestore.create_scene(str(spec.get("title") or "Escena"),
                                          spec.get("anchor") if isinstance(spec.get("anchor"), dict) else {},
-                                         spec.get("sources") if isinstance(spec.get("sources"), list) else [],
+                                         req_sources,
                                          spec.get("photos") if isinstance(spec.get("photos"), list) else [],
-                                         source_evidence=[source_evidence(cid) for cid in
-                                           (spec.get("sources") if isinstance(spec.get("sources"), list) else [])])
+                                         source_evidence=[source_evidence(cid) for cid in req_sources])
         existing = safe_id(spec.get("existing_version") or "")
         if existing and (VAULT / "models" / existing / "meta.json").exists():
-            sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [existing]
+            sources = req_sources if isinstance(spec.get("sources"), list) else [existing]
             photos = spec.get("photos") if isinstance(spec.get("photos"), list) else []
             try:
                 meta = json.loads((VAULT / "models" / existing / "meta.json").read_text())
@@ -5247,10 +5417,17 @@ class H(BaseHTTPRequestHandler):
         if not self.auth(q):
             return
         spec = self.read_json()
+        # SETS DE FOTOS (raw/<set>/<pasada>): fuentes tipo "set:<set>/<pasada>". clip_id pasa a ser
+        # opcional si hay al menos un set (job solo de fotos, sin video ni track).
+        photo_sets, ps_err = resolve_photo_set_tokens(spec.get("photo_sets"))
+        if ps_err:
+            return self.send_json({"error": ps_err}, 400)
         cid = safe_id(spec.get("clip_id", ""))
-        if not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
+        if photo_sets and not cid:
+            cid = None
+        elif not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
             return self.send_json({"error": "clip no encontrado en el vault"}, 404)
-        if jobstore.pending("3d", cid):
+        if cid and jobstore.pending("3d", cid):
             return self.send_json({"error": "ese vuelo ya está en cola o procesándose"}, 409)
         preset = str(spec.get("preset", "estandar"))
         if preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
@@ -5259,13 +5436,14 @@ class H(BaseHTTPRequestHandler):
         # cada uno debe tener track GPS. photos = fotos sueltas del vault.
         raw_sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [cid]
         sources, seen = [], set()
-        for s in raw_sources:
+        for s in (raw_sources if cid or spec.get("sources") else []):
             s = safe_id(s)
             if s and s not in seen and (VAULT / "tracks" / f"{s}.flight.json").exists():
                 seen.add(s); sources.append(s)
-        if cid not in sources:                       # el primario manda la identidad
-            sources.insert(0, cid)
-        sources = [cid] + [s for s in sources if s != cid]
+        if cid:
+            if cid not in sources:                   # el primario manda la identidad
+                sources.insert(0, cid)
+            sources = [cid] + [s for s in sources if s != cid]
         # límite por lo que DE VERDAD cuesta (frames ≈ duración), no por conteo de archivos:
         # 11 clips de 17s pesan menos que 3 de 5 min. Tope de conteo alto como sanidad.
         if len(sources) > 16:
@@ -5284,12 +5462,22 @@ class H(BaseHTTPRequestHandler):
         # entity U0: los combinados nuevos nacen con identidad PROPIA (recon_<hash>,
         # determinista por set de fuentes+fotos) — ya no usurpan el clip_id del primario.
         # Los single-source conservan su cid: alias no-op, share links intactos.
+        # Las pasadas de fotos entran como fuentes (videos primero, luego "set:<set>/<pasada>": el
+        # mismo orden que odm_prep usa para el prefijo s<N>_) y SIEMPRE crean recon_<hash>.
+        n_video = len(sources)
+        sources = sources + photo_sets
         ident = jobstore.recon_id_for(sources, photos) if (len(sources) > 1 or photos) else cid
+        if not ident:                                # job de UNA sola pasada de fotos, sin video
+            ident = jobstore.recon_id_for(sources, photos)
         if ident != cid and jobstore.pending("3d", ident):
             return self.send_json({"error": "esa combinación ya está en cola o procesándose"}, 409)
+        title = str(spec.get("title", ""))[:80].strip()
+        if not title and photo_sets and not n_video:
+            title = photo_sets[0][len("set:"):].split("/")[0][:80]
         job_spec = {"clip_id": ident, "primary_cid": cid, "preset": preset,
-                    "title": str(spec.get("title", ""))[:80].strip(),
-                    "sources": sources, "photos": photos}
+                    "title": title,
+                    "sources": sources, "photos": photos,
+                    **({"photo_sets": photo_sets} if photo_sets else {})}
         if str(spec.get("backend") or "").lower() == "cuda":
             job_spec["backend"] = "cuda"
             job_spec["backend_policy"] = (
@@ -5312,7 +5500,8 @@ class H(BaseHTTPRequestHandler):
         j = jobstore.enqueue("3d", ident, job_spec)
         return self.send_json({"ok": True, "job": j["id"], "queued": True,
                                "reconstruction": ident,
-                               "sources": len(sources), "photos": len(photos)})
+                               "sources": len(sources), "photos": len(photos),
+                               "photo_sets": len(photo_sets)})
 
     def _post_media_op(self, u, q):
         if not self.auth(q):
@@ -5487,14 +5676,25 @@ class H(BaseHTTPRequestHandler):
         else:
             requested_sources = [*active.get("sources", []), *(spec.get("new_sources") or [])]
         sources = []
+        set_refs = []
         for value in requested_sources:
+            if scenestore.is_photo_set_source(value):     # pasada de fotos: no es un clip
+                set_refs.append(str(value))
+                continue
             cid = safe_id(value)
             if (cid and cid not in sources
                     and (VAULT / "manifest" / f"{cid}.json").exists()
                     and (VAULT / "tracks" / f"{cid}.flight.json").exists()):
                 sources.append(cid)
+        # mismo orden que /api/odm y odm_prep (prefijo s<N>_): videos primero, luego pasadas.
+        # resolve_photo_set_tokens exige que existan en raw/, con JPG y GPS (jamás compone rutas).
+        set_tokens, ps_err = resolve_photo_set_tokens(set_refs)
+        if ps_err:
+            return self.send_json({"error": ps_err}, 400)
+        n_video_sources = len(sources)
+        sources = sources + [t for t in set_tokens if t not in sources]
         if not sources:
-            return self.send_json({"error": "elige al menos un video con GPS"}, 400)
+            return self.send_json({"error": "elige al menos un video con GPS o una pasada de fotos"}, 400)
         if len(sources) > SCENE_LIMITS["max_sources"]:
             return self.send_json({
                 "error": f"máximo {SCENE_LIMITS['max_sources']} videos por versión de escena"
@@ -5502,7 +5702,7 @@ class H(BaseHTTPRequestHandler):
         # el camino gemelo (/api/odm) limita por DURACIÓN combinada, que es lo que de
         # verdad cuesta; aquí faltaba, así que 24 clips de 5 min entraban sin freno.
         _tot = 0.0
-        for _s in sources:
+        for _s in sources[:n_video_sources]:
             try:
                 _tot += float(json.loads((VAULT / "manifest" / f"{_s}.json").read_text())
                               .get("duration_s") or 0)

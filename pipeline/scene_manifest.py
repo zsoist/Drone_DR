@@ -21,6 +21,7 @@ import collision_bake
 import dsm_lod
 import glb_export
 import mesh_coverage
+import scatter
 import scenes
 
 from fsutil import atomic_write_json, read_json  # noqa: E402
@@ -236,6 +237,14 @@ def build(cid: str) -> dict:
         mesh_offset, mesh_offset_frame = mesh_offset_game_frame(
             cid, mdir / "model" / "odm_textured_model_geo.obj", lod, mesh_offset)
 
+    scatter_fresh = False
+    if lod and (mdir / "scatter.json").exists():
+        try:
+            scatter.validate(cid, vault=VAULT)
+            scatter_fresh = True
+        except ValueError:
+            scatter_fresh = False
+
     collision_ready = bool(lod and not viewer_obj)
     collision_info = {
         "status": "ready" if collision_ready else "unavailable",
@@ -332,6 +341,8 @@ def build(cid: str) -> dict:
             "mesh_coverage_meta": f"data/models/{cid}/mesh_coverage.json"
                                   if collision_ready and viewer_obj else None,
             "objects": f"data/models/{cid}/objects.json" if (mdir / "objects.json").exists() else None,
+            # W5: vegetation instances (visual only). Advertised only while fresh, see scatter.validate.
+            "scatter": f"data/models/{cid}/scatter.json" if scatter_fresh else None,
             "poster": (f"data/models/{cid}/ortho_thumb.webp" if (mdir / "ortho_thumb.webp").exists()
                        else f"data/models/{cid}/{meta['ortho_asset']}" if meta.get("ortho_asset")
                        else f"data/thumbs/{cid}.jpg"),

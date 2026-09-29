@@ -19,3 +19,4 @@ tools/node_modules/
 .dev.vars.*
 .wrangler/
 .superpowers/sdd/
+roofer.log.json

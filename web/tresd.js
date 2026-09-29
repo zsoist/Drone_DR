@@ -1,11 +1,11 @@
-  import * as THREE from '/vendor/three180.module.js?v=361';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=361';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=361';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=361';
-  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=361';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=361';
-  import { mountSplatViewer } from '/splatview.js?v=361';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=361';
+  import * as THREE from '/vendor/three180.module.js?v=363';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=363';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=363';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=363';
+  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=363';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=363';
+  import { mountSplatViewer } from '/splatview.js?v=363';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=363';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1325,7 +1325,13 @@
   // ---------- asistente: procesar un vuelo ----------
   const candidates = flights.filter(f => f.has_srt && f.stats?.bbox && !f.archived);
   document.getElementById('btn-run3d').addEventListener('click', async () => {
-    if (!candidates.length) return alert('Sin vuelos con GPS listos para 3D — sube un video con telemetría.');
+    // sets de fotos (raw/<set>/<pasada>) como fuentes: un servidor viejo (404) simplemente no los ofrece
+    let psInv = { sets: [], max_images: 1000 };
+    try {
+      const r = await authFetch('/api/photo_sets');
+      if (r.ok) { const d = await r.json(); if (Array.isArray(d.sets)) psInv = d; }
+    } catch { /* sin sets: el modal funciona como siempre */ }
+    if (!candidates.length && !psInv.sets.length) return alert('Sin vuelos con GPS listos para 3D — sube un video con telemetría o un set de fotos.');
     const splatProfiles = await splatProfilesPromise;
     const PRE = [
       { k: 'rapido', n: 'Rápido', t: '~25-40 min', d: 'Borrador · 8 cm/px' },
@@ -1389,6 +1395,50 @@
         <span class="pc-score tip-r" data-score="${esc(f.clip_id)}" data-tip="Aptitud de escaneo 3D (cobertura/altura/GPS)">·</span>
       </label>`;
 
+    // ---- sets de fotos como fuentes ----
+    const psSel = new Set();                          // tokens "set:<set>/<pasada>"
+    const psPass = {};                                // token -> {set, ...pasada}
+    const PS_GPS_WARN = 0.9;                          // mismo umbral que odm_prep (GPS_WARN_COVERAGE)
+    psInv.sets.forEach(st => st.passes.forEach(p => { psPass[p.token] = { ...p, set: st.set }; }));
+    const psDateRange = (a, b) => {
+      const da = fmt.date((a || '').slice(0, 10)), db = fmt.date((b || '').slice(0, 10));
+      return !da ? '' : (da === db || !db) ? da : `${da} – ${db}`;
+    };
+    const psGpsChip = (cov, gps, n) => {
+      const cls = gps === 0 ? 'err' : cov < PS_GPS_WARN ? 'warn' : 'ok';
+      const tip = gps === 0 ? 'Sin GPS en el EXIF — ODM no puede georreferenciar'
+        : cov < PS_GPS_WARN ? `Solo ${gps} de ${n} fotos traen GPS: ODM georreferencia peor` : `${gps} de ${n} fotos con GPS`;
+      return `<span class="chip sm ${cls} mono" title="${esc(tip)}">${cls === 'ok' ? icon('pin') : icon('warn')} GPS ${Math.round(cov * 100)}%</span>`;
+    };
+    const psModels = m => Object.keys(m || {}).slice(0, 2).map(x => esc(x)).join(' · ');
+    function psPassRow(p) {
+      const usable = p.count > 0 && p.gps > 0;
+      return `
+      <label class="ps-row${psSel.has(p.token) ? ' on' : ''}${usable ? '' : ' off'}" data-ps="${esc(p.token)}">
+        <input type="checkbox" ${psSel.has(p.token) ? 'checked' : ''} ${usable ? '' : 'disabled'}>
+        <span class="ps-thumb">${p.sample ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(p.sample)}&w=160" loading="lazy" alt="">` : ''}</span>
+        <div class="pc-meta">
+          <b>${esc(p.pass)}</b>
+          <span class="pc-sub mono">${p.count} foto${p.count === 1 ? '' : 's'}${psModels(p.models) ? ` · ${psModels(p.models)}` : ''}${psDateRange(p.date_min, p.date_max) ? ` · ${esc(psDateRange(p.date_min, p.date_max))}` : ''}</span>
+        </div>
+        <span class="ps-chips">
+          ${p.dng_only ? `<span class="chip sm warn mono" title="ODM usa JPG: los DNG sin JPG gemelo se omiten">${icon('warn')} ${p.dng_only} DNG omitido${p.dng_only === 1 ? '' : 's'}</span>` : ''}
+          ${p.count ? psGpsChip(p.gps_coverage, p.gps, p.count) : `<span class="chip sm err mono">${icon('warn')} Sin JPG</span>`}
+        </span>
+      </label>`;
+    }
+    function setRow(st) {
+      return `
+      <div class="ps-group" data-set="${esc(st.set)}">
+        <div class="ps-ghead">
+          <span class="ps-gname">${icon('layers')} ${esc(st.set)}</span>
+          <span class="ps-gmeta mono">${st.passes.length} pasada${st.passes.length === 1 ? '' : 's'} · ${st.count} foto${st.count === 1 ? '' : 's'}</span>
+          ${st.passes.length > 1 ? `<button type="button" class="pg-all" data-ps-all="${esc(st.set)}">Combinar todo</button>` : ''}
+        </div>
+        <div class="ps-rows">${st.passes.map(psPassRow).join('')}</div>
+      </div>`;
+    }
+
     const { ov, close, onClose } = tdModal(`${icon('cube')} Estudio 3D`, `
       <div class="st-steps"><span class="st-step on" data-st="1">1 · Seleccionar<span class="st-x"> tomas</span></span>
         <span class="st-sep">${icon('chevR')}</span><span class="st-step" data-st="2">2 · Configurar<span class="st-x"> y encolar</span></span></div>
@@ -1439,6 +1489,11 @@
                 </div>
                 <div class="pg-clips">${fs.map(clipRow).join('')}</div>
               </div>`; }).join('')}</div>
+            <section class="ps-sets" id="st-psets" aria-label="Sets de fotos"${psInv.sets.length ? '' : ' hidden'}>
+              <div class="ps-head">${icon('iso')} <b>Sets de fotos</b>
+                <span class="ps-note">JPG con GPS propio en el EXIF · sin video</span></div>
+              ${psInv.sets.map(setRow).join('')}
+            </section>
             ${availPhotos.length ? `<details class="proc-photos"><summary>${icon('iso')} Añadir fotos sueltas <span class="count">(${availPhotos.length})</span></summary>
               <p class="footer-note td-mt-sm">Fotos del dron: heredan el GPS del video del que
               salieron. Probado con fotos del dron de la misma sesión; el reporte del modelo confirma la fusión.</p>
@@ -1562,12 +1617,20 @@
     // (la iluminación cambia). Advertimos ESO; el resultado real lo reporta el modelo tras procesar.
     function renderCombined() {
       const cids = [...sel];
-      if (!cids.length) { combinedBox.innerHTML = '<div class="proc-combined-empty">Selecciona al menos un video.</div>'; return; }
+      const passes = [...psSel].map(t => psPass[t]).filter(Boolean);
+      if (!cids.length && !passes.length) { combinedBox.innerHTML = '<div class="proc-combined-empty">Selecciona al menos un video o un set de fotos.</div>'; return; }
       const fs = cids.map(c => byCid[c]).filter(Boolean);
       const alts = fs.map(f => Math.round(f.stats?.max_rel_alt_m || 0));
       const days = new Set(fs.map(f => f.date));
-      const multi = cids.length + photoSel.size > 1;
+      const psImgs = passes.reduce((a, p) => a + p.count, 0);
+      const multi = cids.length + photoSel.size + passes.length > 1;
       const warns = [];
+      passes.filter(p => p.gps_coverage < PS_GPS_WARN).forEach(p =>
+        warns.push(['mid', `<b>${esc(p.set)} / ${esc(p.pass)}</b>: solo ${p.gps} de ${p.count} fotos traen GPS (${Math.round(p.gps_coverage * 100)}%) — ODM georreferencia peor.`]));
+      if (psImgs > (psInv.max_images || 1000))
+        warns.push(['bad', `<b>${psImgs} fotos</b> — el máximo es ${psInv.max_images || 1000} por reconstrucción. Quita pasadas.`]);
+      if (passes.length && cids.length)
+        warns.push(['mid', 'Mezclas <b>video y fotos</b>: solo se sabe si fusionan tras procesar — el reporte del modelo lo confirma por fuente.']);
       if (multi) {
         const ground = alts.some(a => a < 12), aerial = alts.some(a => a >= 30);
         if (ground && aerial) warns.push(['bad', 'Mezclas una toma a <b>ras de suelo</b> con otra <b>aérea</b> — ven cosas distintas, probablemente NO se fusionen.']);
@@ -1575,7 +1638,7 @@
         const amax = Math.max(...alts), amin = Math.min(...alts.filter(a => a > 0), amax);
         if (amax > 0 && amin > 0 && amax / amin > 4 && !(ground && aerial)) warns.push(['mid', `Alturas muy distintas (${amin}–${amax} m) — puede que solo fusione parte.`]);
       }
-      const ok = multi && !warns.length;
+      const ok = multi && !warns.length && !passes.length;
       combinedBox.innerHTML = `
         <div class="scan-card">
           <div class="scan-hd">${icon('layers')} MODELO COMBINADO
@@ -1583,9 +1646,10 @@
               !multi ? 'Toma única' : warns.some(w => w[0] === 'bad') ? 'Posible incompatibilidad' : ok ? 'Compatibles' : 'Revisa avisos'}</span>
           </div>
           <div class="pcm-row">
-            <span class="pcm"><b>${cids.length}</b> video${cids.length === 1 ? '' : 's'}${photoSel.size ? ` + <b>${photoSel.size}</b> fotos` : ''}</span>
-            <span class="pcm">altura <b>${alts.length ? Math.min(...alts) + '–' + Math.max(...alts) : '—'}</b> m</span>
-            <span class="pcm">${days.size === 1 ? 'misma sesión' : days.size + ' fechas'}</span>
+            ${cids.length || !passes.length ? `<span class="pcm"><b>${cids.length}</b> video${cids.length === 1 ? '' : 's'}${photoSel.size ? ` + <b>${photoSel.size}</b> fotos` : ''}</span>` : ''}
+            ${passes.length ? `<span class="pcm"><b>${psImgs}</b> foto${psImgs === 1 ? '' : 's'} en <b>${passes.length}</b> pasada${passes.length === 1 ? '' : 's'}</span>` : ''}
+            ${alts.length ? `<span class="pcm">altura <b>${Math.min(...alts)}–${Math.max(...alts)}</b> m</span>
+            <span class="pcm">${days.size === 1 ? 'misma sesión' : days.size + ' fechas'}</span>` : ''}
           </div>
           ${warns.map(([c, t]) => `<div class="scan-mem ${c}">${icon('warn')}<span>${t}</span></div>`).join('')}
           ${ok ? `<div class="scan-mem ok">${icon('check')}<span>Tomas compatibles (misma salida, alturas parecidas). El modelo reportará qué fuentes fusionaron de verdad.</span></div>` : ''}
@@ -1628,6 +1692,31 @@
       it.classList.toggle('on', e.target.checked);
       renderCombined();
     });
+    // sets de fotos: fila por pasada + "Combinar todo" por set
+    const syncPs = tok => {
+      const lbl = ov.querySelector(`.ps-row[data-ps="${CSS.escape(tok)}"]`);
+      if (lbl) { lbl.classList.toggle('on', psSel.has(tok)); lbl.querySelector('input').checked = psSel.has(tok); }
+    };
+    ov.querySelector('#st-psets')?.addEventListener('click', e => {
+      const all = e.target.closest('[data-ps-all]');
+      if (all) {
+        e.preventDefault();
+        const toks = (psInv.sets.find(x => x.set === all.dataset.psAll)?.passes || [])
+          .filter(p => p.count > 0 && p.gps > 0).map(p => p.token);
+        const allOn = toks.every(t => psSel.has(t));
+        toks.forEach(t => { allOn ? psSel.delete(t) : psSel.add(t); syncPs(t); });
+        renderCombined(); applyFilters();
+        return;
+      }
+      const lbl = e.target.closest('.ps-row');
+      if (!lbl || lbl.classList.contains('off')) return;
+      const tok = lbl.dataset.ps;
+      setTimeout(() => {                              // deja que el checkbox nativo togglee primero
+        lbl.querySelector('input').checked ? psSel.add(tok) : psSel.delete(tok);
+        lbl.classList.toggle('on', psSel.has(tok));
+        renderCombined(); applyFilters();
+      }, 0);
+    });
     ov.querySelector('.mpresets').addEventListener('click', e => {
       const c = e.target.closest('.mpreset'); if (!c) return;
       c.parentElement.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
@@ -1658,16 +1747,25 @@
     function renderTray() {
       const tray = ov.querySelector('#st-tray');
       const fs = [...sel].map(c => byCid[c]).filter(Boolean);
+      const passes = [...psSel].map(t => psPass[t]).filter(Boolean);
       const durTot = fs.reduce((a, f) => a + (f.duration_s || 0), 0);
-      tray.innerHTML = fs.length
-        ? `<span class="st-tray-l">${icon('layers')} ${fs.length} video${fs.length === 1 ? '' : 's'}${photoSel.size ? ` + ${photoSel.size} fotos` : ''} · ${fmt.dur(durTot)}</span>`
+      const psImgs = passes.reduce((a, p) => a + p.count, 0);
+      const parts = [fs.length ? `${fs.length} video${fs.length === 1 ? '' : 's'}` : '',
+        photoSel.size ? `${photoSel.size} fotos` : '',
+        passes.length ? `${psImgs} fotos de ${passes.length} pasada${passes.length === 1 ? '' : 's'}` : ''].filter(Boolean);
+      const over = psImgs > (psInv.max_images || 1000);
+      tray.innerHTML = (fs.length || passes.length)
+        ? `<span class="st-tray-l">${icon('layers')} ${parts.join(' + ')}${fs.length ? ` · ${fmt.dur(durTot)}` : ''}</span>`
           + fs.map(f => `<span class="st-chip" data-untray="${esc(f.clip_id)}">${esc((f.label || fmt.date(f.date) + ' ' + f.time).slice(0, 22))} ${icon('close')}</span>`).join('')
-        : '<span class="st-tray-l">Selecciona al menos un video</span>';
+          + passes.map(p => `<span class="st-chip" data-untray-ps="${esc(p.token)}">${esc(`${p.set} / ${p.pass}`.slice(0, 26))} ${icon('close')}</span>`).join('')
+        : '<span class="st-tray-l">Selecciona al menos un video o set de fotos</span>';
       // sin selección no hay paso 2 — el gate vive AQUÍ, no en candados de deselección
       const next = ov.querySelector('#st-next');
-      if (next) next.toggleAttribute('disabled', !fs.length);
+      if (next) next.toggleAttribute('disabled', !(fs.length || passes.length) || over);
     }
     ov.querySelector('#st-tray').addEventListener('click', e => {
+      const ps = e.target.closest('[data-untray-ps]');
+      if (ps) { psSel.delete(ps.dataset.untrayPs); syncPs(ps.dataset.untrayPs); renderTray(); renderCombined(); applyFilters(); return; }
       const c = e.target.closest('[data-untray]'); if (!c) return;
       sel.delete(c.dataset.untray); syncClip(c.dataset.untray); renderTray(); renderCombined(); applyFilters();
     });
@@ -1896,7 +1994,8 @@
         if (filtering && hay) g.classList.remove('collapsed');   // filtrar = mostrar resultados
       });
       const ct = ov.querySelector('#st-count');
-      if (ct) ct.textContent = `${sel.size} seleccionada${sel.size === 1 ? '' : 's'} · ${visTot} visibles`;
+      if (ct) ct.textContent = `${sel.size} seleccionada${sel.size === 1 ? '' : 's'} · ${visTot} visibles`
+        + (psInv.sets.length ? ` · ${psSel.size} pasada${psSel.size === 1 ? '' : 's'} de fotos` : '');
     };
     // headers con nombre real (barrio · ciudad) — mismo cache que los pins
     ov.querySelectorAll('.proc-group').forEach(async g => {
@@ -1930,6 +2029,7 @@
       ov.querySelectorAll('.proc-group').forEach(g => g.classList.add('collapsed')));
     ov.querySelector('#st-clear').addEventListener('click', () => {
       [...sel].forEach(c => { sel.delete(c); syncClip(c); });   // limpiar = CERO (Continuar se desactiva solo)
+      [...psSel].forEach(t => { psSel.delete(t); syncPs(t); });
       renderTray(); renderCombined(); applyFilters();
     });
     applyFilters();
@@ -2062,7 +2162,8 @@
       const odmK = ov.querySelector('.mpresets .mpreset.on')?.dataset.k || 'estandar';
       const fps = { rapido: 0.33, estandar: 0.5, alta: 1.0, extra: 1.0, ultra: 1.0 }[odmK] || 0.5;
       const width = { rapido: 2048, estandar: 2688, alta: 3072, extra: 3072, ultra: 3072 }[odmK] || 2688;
-      const nEst = Math.max(8, Math.round(fs.reduce((a, f) => a + (f.duration_s || 0) * fps, 0) * 0.72) + photoSel.size);
+      const nEst = Math.max(8, Math.round(fs.reduce((a, f) => a + (f.duration_s || 0) * fps, 0) * 0.72) + photoSel.size
+        + [...psSel].reduce((a, t) => a + (psPass[t]?.count || 0), 0));
       const request = selectedSplatRequest(splatPre);
       const sp = request.preset;
       try {
@@ -2098,10 +2199,11 @@
       const b = e.currentTarget; b.disabled = true; b.textContent = '…';
       try {
         const f = byCid[[...sel][0]];
-        const gEl = ov.querySelector(`.proc-group[data-spot="${CSS.escape(spotKey(f))}"] .pg-place`);
+        const ps0 = psPass[[...psSel][0]];
+        const gEl = f && ov.querySelector(`.proc-group[data-spot="${CSS.escape(spotKey(f))}"] .pg-place`);
         const r = await api('/api/suggest_name', {
-          place: (gEl?.textContent || f.place || '').trim(),
-          date: fmt.date(f.date), n: sel.size });
+          place: ((f ? (gEl?.textContent || f.place) : ps0?.set) || '').trim(),
+          date: f ? fmt.date(f.date) : psDateRange(ps0?.date_min, ps0?.date_min), n: sel.size + psSel.size });
         if (r.name) { const t = ov.querySelector('#m-title'); t.value = r.name; t.focus(); }
         else if (r.error) alert(r.error);
       } finally { b.disabled = false; b.innerHTML = `${icon('spark')} Sugerir`; }
@@ -2113,8 +2215,9 @@
       try {
         const sources = [...sel];
         const r = await api('/api/odm', {
-          clip_id: sources[0],
+          ...(sources.length ? { clip_id: sources[0] } : {}),   // job solo de fotos: sin clip primario
           sources,
+          photo_sets: [...psSel],
           photos: [...photoSel],
           preset: ov.querySelector('.mpresets .mpreset.on')?.dataset.k || 'estandar',
           title: ov.querySelector('#m-title').value.trim(),
@@ -2158,6 +2261,9 @@
     const rows = model?.reconstruction?.sources || model?.sources || [model?.clip_id];
     return rows.map(x => typeof x === 'string' ? x : x?.clip_id).filter(Boolean);
   };
+  // fuentes "set:<set>/<pasada>" = pasadas de fotos (no son vuelos: sin manifest/track/miniatura de clip)
+  const isPhotoSetSource = id => /^set:.+\/[^/]+$/.test(String(id ?? ''));
+  const photoSetLabel = id => String(id).replace(/^set:/, 'Fotos · ');
   const modelPhotoIds = model => model?.reconstruction?.photos || model?.source_photos || [];
   const sceneForVersion = (sceneRows, versionId) => (sceneRows || []).find(scene =>
     scene.active_version === versionId || (scene.versions || []).some(v => v.id === versionId));
@@ -2176,8 +2282,10 @@
     const splat = metrics.splat || {};
     const requested = version?.requested_preset || metrics.requested_preset;
     const effective = version?.effective_preset || metrics.effective_preset;
+    const nSets = (version?.sources || []).filter(isPhotoSetSource).length;
     const parts = [version?.status, version?.merge_label || 'pendiente',
-      `${(version?.sources || []).length} videos`];
+      `${(version?.sources || []).length - nSets} videos`];
+    if (nSets) parts.push(`${nSets} pasada${nSets === 1 ? '' : 's'} de fotos`);
     if (requested) parts.push(`ODM solicitado ${requested}${effective ? ` → ${effective} efectivo` : ''}`);
     if (metrics.dense_quality_requested || metrics.dense_quality) {
       parts.push(`nube ${metrics.dense_quality_requested || '—'} → ${metrics.dense_quality || '—'}`);
@@ -2208,6 +2316,8 @@
     const currentChoices = ranked.filter(({ f }) => currentSources.includes(f.clip_id));
     const choices = currentChoices.concat(
       ranked.filter(({ f }) => !currentSources.includes(f.clip_id)));
+    // pasadas de fotos ya en la versión: filas propias (marcadas) para que un envío no las descarte
+    const setSources = currentSources.filter(isPhotoSetSource);
     const compatibleCount = choices.filter(({ f, distance }) =>
       currentSources.includes(f.clip_id) || distance != null && distance <= 500).length;
     const photoRows = [...(sys.photos || [])];
@@ -2236,7 +2346,17 @@
       <div class="scene-source-heading"><p class="mlb">Videos de la nueva versión · ${compatibleCount} del sitio · ${choices.length} visibles</p>
         <div><button class="btn" data-scene-compatible>Seleccionar candidatos ≤500 m</button>
         <button class="btn" data-scene-current>Solo versión activa</button><span class="scene-source-count" data-scene-source-count>${currentSources.length}/24 seleccionados</span></div></div>
-      <div class="scene-sources">${choices.map(({ f, distance }) => {
+      <div class="scene-sources">${setSources.map(id => {
+        const ev = evidenceById[id] || {};
+        const cov = ev.gps_coverage != null ? ` · ${Math.round(ev.gps_coverage * 100)}% GPS` : '';
+        const thumb = ev.thumb_rel
+          ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(ev.thumb_rel)}&w=160" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<img alt="">';
+        return `<label class="scene-source on same-site photo-set" data-distance="">
+          <input type="checkbox" value="${esc(id)}" checked>
+          ${thumb}
+          <span><b>${esc(photoSetLabel(id))}</b><small>${ev.photo_count ?? ev.submitted ?? '—'} fotos${cov}</small>
+          <small class="scene-evidence ${esc(ev.status || 'new')}">${esc(evidenceLabels[ev.status] || 'por verificar')}${ev.reason ? ` · ${esc(ev.reason)}` : ''}</small></span></label>`;
+      }).join('')}${choices.map(({ f, distance }) => {
         const selected = currentSources.includes(f.clip_id);
         const alt = Math.round(f.stats?.max_rel_alt_m || 0);
         const evidence = evidenceById[f.clip_id];

@@ -66,6 +66,47 @@ SOURCE_STATUSES = {"integrated", "eligible", "duplicate", "insufficient_overlap"
                    "insufficient_views", "registration_failed"}
 
 
+# ---- fuentes tipo "set de fotos" -------------------------------------------------------------
+# Un job 3D puede mezclar videos (clip ids) y pasadas de fotos (raw/<set>/<pasada>). Las pasadas
+# viajan como tokens "set:<set>/<pasada>" (odm_prep.PHOTO_SET_TOKEN). NO son clips: no tienen
+# manifest/<clip>.json ni track, y su nombre admite espacios ([\w -], igual que el upload).
+PHOTO_SET_TOKEN = "set:"
+_SET_LABEL = r"[\w][\w -]{0,58}[\w]|[\w]"
+_SET_TOKEN_RE = re.compile(rf"^set:({_SET_LABEL})/({_SET_LABEL})$")
+
+
+def is_photo_set_source(value) -> bool:
+    return str(value or "").startswith(PHOTO_SET_TOKEN)
+
+
+def parse_photo_set_source(value):
+    """'set:A/nadir' -> ('A', 'nadir'); None si no es un token válido (sin '.', sin '/' extra)."""
+    m = _SET_TOKEN_RE.fullmatch(str(value or ""))
+    return (m.group(1), m.group(2)) if m else None
+
+
+def source_label(value) -> str:
+    """Etiqueta humana de una fuente: 'Fotos · A/nadir' para pasadas, el id tal cual para clips."""
+    parsed = parse_photo_set_source(value)
+    return f"Fotos · {parsed[0]}/{parsed[1]}" if parsed else str(value or "")
+
+
+def validate_source_id(value, kind: str = "source") -> str:
+    """Clip id ([A-Za-z0-9_-]+) O token de set de fotos. Cualquier otra cosa -> ValueError."""
+    if is_photo_set_source(value):
+        if not parse_photo_set_source(value):
+            raise ValueError(f"invalid {kind} id")
+        return str(value)
+    return _validate_id(value, kind)
+
+
+def split_sources(sources) -> tuple:
+    """(clips, photo_set_tokens) preservando orden, sin duplicados."""
+    uniq = _unique(sources)
+    return ([s for s in uniq if not is_photo_set_source(s)],
+            [s for s in uniq if is_photo_set_source(s)])
+
+
 def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
@@ -79,6 +120,17 @@ def _unique(values) -> list[str]:
     return out
 
 
+def _add_inventory(inv: dict, sources, photos) -> dict:
+    """videos = solo clips; las pasadas de fotos van a photo_sets (la UI cuenta 'videos' con
+    videos.length: un token ahí se contaría —y se buscaría— como clip)."""
+    clips, sets = split_sources(sources)
+    inv["videos"] = _unique([*inv.get("videos", []), *clips])
+    inv["photos"] = _unique([*inv.get("photos", []), *_unique(photos)])
+    if sets or inv.get("photo_sets"):
+        inv["photo_sets"] = _unique([*inv.get("photo_sets", []), *sets])
+    return inv
+
+
 def altitude_band(altitude_m) -> int:
     """Bucket measured capture altitude without treating it as map coverage."""
     try:
@@ -90,7 +142,7 @@ def altitude_band(altitude_m) -> int:
 
 def _evidence(row: dict) -> dict:
     row = row if isinstance(row, dict) else {}
-    clip_id = _validate_id(row.get("clip_id"), "source")
+    clip_id = validate_source_id(row.get("clip_id"), "source")
     try:
         altitude = round(float(row.get("altitude_m") or 0), 1)
     except (TypeError, ValueError):
@@ -108,6 +160,14 @@ def _evidence(row: dict) -> dict:
                 "submitted", "registered", "registration_ratio", "attempts"):
         if row.get(key) is not None:
             out[key] = row[key]
+    parsed = parse_photo_set_source(clip_id)
+    if parsed:
+        # fuente de primera clase: tipo, etiqueta y datos propios (nada de manifest de clip)
+        out.update({"kind": "photo_set", "label": source_label(clip_id),
+                    "set": parsed[0], "pass": parsed[1]})
+        for key in ("photo_count", "gps_count", "gps_coverage", "thumb_rel"):
+            if row.get(key) is not None:
+                out[key] = row[key]
     return out
 
 
@@ -218,8 +278,7 @@ def create_scene(title: str, anchor: dict | None, sources=None, photos=None,
             scene = get_scene(scene_id)
             scene["schema"] = max(2, int(scene.get("schema") or 1))
             inv = scene.setdefault("source_inventory", {"videos": [], "photos": []})
-            inv["videos"] = _unique([*inv.get("videos", []), *_unique(sources)])
-            inv["photos"] = _unique([*inv.get("photos", []), *_unique(photos)])
+            _add_inventory(inv, sources, photos)
             scene["source_evidence"] = _merge_evidence(scene.get("source_evidence"), source_evidence)
             scene["updated_at"] = _now()
             _write(scene)
@@ -233,7 +292,7 @@ def create_scene(title: str, anchor: dict | None, sources=None, photos=None,
             "created_at": now,
             "updated_at": now,
             "active_version": None,
-            "source_inventory": {"videos": _unique(sources), "photos": _unique(photos)},
+            "source_inventory": _add_inventory({"videos": [], "photos": []}, sources, photos),
             "source_evidence": _merge_evidence([], source_evidence),
             "versions": [],
         }
@@ -274,8 +333,7 @@ def add_version(scene_id: str, reconstruction_id: str, sources, photos,
                                                for row in version["source_evidence"]})
         scene["versions"].append(version)
         inv = scene.setdefault("source_inventory", {"videos": [], "photos": []})
-        inv["videos"] = _unique([*inv.get("videos", []), *sources])
-        inv["photos"] = _unique([*inv.get("photos", []), *photos])
+        _add_inventory(inv, sources, photos)
         scene["schema"] = max(2, int(scene.get("schema") or 1))
         scene["source_evidence"] = evidence
         scene["updated_at"] = _now()
@@ -325,7 +383,7 @@ def record_contributions(scene_id: str, reconstruction_id: str, contributions) -
         evidence_by_id = {row.get("clip_id"): dict(row)
                           for row in scene.get("source_evidence") or []}
         for raw in contributions or []:
-            clip_id = _validate_id(raw.get("clip_id"), "source")
+            clip_id = validate_source_id(raw.get("clip_id"), "source")
             if clip_id not in membership:
                 raise ValueError("contribution is outside immutable version membership")
             submitted = max(0, int(raw.get("submitted") or 0))
@@ -337,8 +395,14 @@ def record_contributions(scene_id: str, reconstruction_id: str, contributions) -
                             "registered": registered, "merged": merged, "reason": reason}
             if submitted:
                 contribution["registration_ratio"] = round(registered / submitted, 4)
+            if is_photo_set_source(clip_id):
+                contribution["kind"] = "photo_set"
             normalized.append(contribution)
             row = evidence_by_id.get(clip_id, _evidence({"clip_id": clip_id}))
+            if is_photo_set_source(clip_id):
+                for key in ("photo_count", "gps_count", "gps_coverage", "thumb_rel"):
+                    if raw.get(key) is not None:
+                        row[key] = raw[key]
             attempt = {"version_id": reconstruction_id, "at": _now(), **contribution}
             row["attempts"] = [*(row.get("attempts") or []), attempt][-12:]
             status = ("integrated" if merged else

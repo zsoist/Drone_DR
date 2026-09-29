@@ -45,7 +45,7 @@ GET_EXACT_ROUTES = [
 GET_PREFIX_ROUTES = [
     "/api/viewer_ping", "/api/gpu_node", "/api/perf", "/api/error_report_content",
     "/api/error_reports", "/api/geocode", "/api/capture_report", "/api/sd_scan",
-    "/api/audio_beats", "/api/audio_list", "/api/drone_photos", "/api/photo_thumb",
+    "/api/audio_beats", "/api/audio_list", "/api/drone_photos", "/api/photo_sets", "/api/photo_thumb",
     "/api/studio_media", "/api/reel_recipe", "/api/properties",
 ]
 

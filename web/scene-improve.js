@@ -7,7 +7,9 @@ shellMain.append(root);
 const {
   buildImprovementPlan,
   classifyCapture,
+  isPhotoSetSource,
   resolveActiveModel,
+  sourceLabel,
   validateSelection,
 } = SceneImprovePolicy;
 const modelId = new URLSearchParams(location.search).get('id') || '';
@@ -59,7 +61,27 @@ function findScene(model) {
     version.id === model.clip_id || (version.sources || []).includes(model.clip_id))) || null;
 }
 
+// Fuente = pasada de fotos (set:<set>/<pasada>): fila propia, sin vuelo/manifest de clip.
+function photoSetRow(source, { selected = false, locked = false } = {}) {
+  const count = Number(source.photoCount) || 0;
+  const cov = Number.isFinite(Number(source.gpsCoverage)) ? `${Math.round(Number(source.gpsCoverage) * 100)}% GPS` : null;
+  const evidence = [count ? `${count} fotos` : 'fotos', cov, source.status ? `estado: ${source.status}` : null]
+    .filter(Boolean).join(' · ');
+  const thumb = source.thumbRel
+    ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(source.thumbRel).replace(/%2F/g, '/')}&w=160" alt="Vista previa de ${esc(sourceLabel(source.id))}" loading="lazy" onerror="this.style.visibility='hidden'">`
+    : '<span class="si-thumb-empty" aria-hidden="true"></span>';
+  return `<label class="si-capture si-photo-set${selected ? ' is-selected' : ''}${locked ? ' is-locked' : ''}">
+    <input type="checkbox" data-source-id="${esc(source.id)}" ${selected ? 'checked' : ''} ${locked ? 'disabled' : ''}>
+    ${thumb}
+    <span class="si-capture-copy">
+      <span class="si-capture-title"><b>${esc(sourceLabel(source.id))}</b><span class="si-role">Fotos</span></span>
+      <span class="si-evidence mono">${esc(evidence)}</span>
+    </span>
+  </label>`;
+}
+
 function captureRow(candidate, { selected = false, locked = false } = {}) {
+  if (isPhotoSetSource(candidate.id)) return photoSetRow(candidate, { selected, locked });
   const classification = candidate.classification || classifyCapture(candidate);
   const report = candidate.report || {};
   const suitability = report.suitability || {};
@@ -95,7 +117,10 @@ function updateReview() {
   const additions = selected.filter(item => !state.baseSources.some(base => base.id === item.id));
   const roles = SceneImprovePolicy.ROLE_ORDER.filter(role => additions.some(item =>
     (item.classification || classifyCapture(item)).role === role));
-  document.querySelectorAll('[data-si-source-count]').forEach(node => { node.textContent = validation.totals.sources; });
+  document.querySelectorAll('[data-si-source-count]').forEach(node => {
+    const sets = validation.totals.photoSets || 0;
+    node.textContent = sets ? `${validation.totals.sources - sets} + ${sets} fotos` : validation.totals.sources;
+  });
   document.querySelectorAll('[data-si-duration]').forEach(node => { node.textContent = fmt.dur(validation.totals.durationS); });
   const roleNode = document.querySelector('[data-si-roles]');
   if (roleNode) roleNode.innerHTML = roles.length
@@ -301,14 +326,24 @@ async function load() {
     const version = activeVersion(state.scene);
     state.model = resolveActiveModel(models, requestedModel, state.scene);
     const baseIds = version?.sources?.length ? version.sources : [state.model.clip_id];
+    const evidenceById = Object.fromEntries((state.scene?.source_evidence || []).map(row => [row.clip_id, row]));
     state.baseSources = baseIds.map(id => {
+      if (isPhotoSetSource(id)) {
+        // pasada de fotos: datos de la evidencia de escena / reconstruction.sources, jamás de un vuelo
+        const ev = evidenceById[id] || (state.model?.reconstruction?.sources || [])
+          .find(row => row && row.clip_id === id) || {};
+        return { id, kind: 'photo_set', durationS: 0, sameSite: true, distanceM: 0,
+          photoCount: ev.photo_count ?? ev.submitted, gpsCoverage: ev.gps_coverage,
+          thumbRel: ev.thumb_rel, status: ev.status,
+          classification: { role: 'Fotos', weak: false, reasons: [] } };
+      }
       const flight = flights.find(item => item.clip_id === id) || {};
       return { id, durationS: durationFor(flight), flight, sameSite: true, distanceM: 0,
         altitudeM: finite(flight.stats?.max_rel_alt_m),
         captureAt: flight.date ? `${flight.date}T${flight.time || '00:00:00'}` : '',
         classification: { role: 'Activa', weak: false, reasons: [] } };
     });
-    const baseFlight = flights.find(flight => flight.clip_id === baseIds[0])
+    const baseFlight = flights.find(flight => flight.clip_id === baseIds.find(id => !isPhotoSetSource(id)))
       || flights.find(flight => flight.clip_id === requestedModel.clip_id);
     const center = modelCenter(state.model, baseFlight);
     const baseSet = new Set(baseIds);

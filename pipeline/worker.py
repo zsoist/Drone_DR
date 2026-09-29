@@ -563,6 +563,8 @@ def record_scene_completion(j: dict, meta: dict) -> dict | None:
             "merged": merged,
             "reason": row.get("reason") or (
                 "registered in shared component" if merged else "no shared registration component"),
+            **{k: row[k] for k in ("photo_count", "gps_count", "gps_coverage", "thumb_rel")
+               if scenestore.is_photo_set_source(row["clip_id"]) and row.get(k) is not None},
         })
     if contributions:
         scenestore.record_contributions(scene_id, version_id, contributions)
@@ -759,6 +761,68 @@ def _openmvs_unstable(jid: str, rc: int) -> bool:
                                   "corrupted double-linked list"))
 
 
+def normalize_sources(sources) -> list:
+    """Fuentes de un job 3D en el MISMO orden/expansión que odm_prep (prefijo s<N>_ = índice).
+    Deduplica y expande un token de set sin pasada ('set:A') a una fuente por pasada, igual que
+    odm_prep.main; así odm_registration/odm_frame_preflight no se desalinean con las imágenes."""
+    out = []
+    for raw in sources or []:
+        src = str(raw)
+        parsed = scenestore.parse_photo_set_source(src)
+        if scenestore.is_photo_set_source(src) and not parsed and "/" not in src[len("set:"):]:
+            import odm_prep
+            try:
+                set_name, _pass = odm_prep.parse_photo_set_ref(src)
+                out += [odm_prep.photo_set_token(a, b)
+                        for a, b, _d in odm_prep.photo_set_pass_dirs(set_name, None)]
+            except SystemExit as exc:
+                raise RuntimeError(f"fuente de fotos inválida {src!r}: {exc}") from exc
+            continue
+        out.append(src)
+    return list(dict.fromkeys(out))
+
+
+def photo_set_source_info(proj: Path) -> dict:
+    """{token: datos de la pasada} desde frames_manifest.json (photo_sets + sources[kind=photo_set]).
+    Fuente de verdad de conteos/GPS/miniatura de una fuente de fotos: NUNCA un manifest de clip."""
+    try:
+        manifest = json.loads((proj / "frames_manifest.json").read_text())
+    except (OSError, ValueError, TypeError):
+        return {}
+    out = {}
+    for row in manifest.get("sources") or []:
+        if isinstance(row, dict) and row.get("kind") == "photo_set" and row.get("cid"):
+            out[str(row["cid"])] = {
+                "photo_count": int(row.get("count") or row.get("frames") or 0),
+                "gps_count": int(row.get("gps") or 0),
+                "gps_coverage": row.get("gps_coverage"),
+            }
+    for ps in manifest.get("photo_sets") or []:
+        if not isinstance(ps, dict) or not ps.get("set") or not ps.get("pass"):
+            continue
+        token = f"set:{ps['set']}/{ps['pass']}"
+        info = out.setdefault(token, {})
+        info.setdefault("photo_count", int(ps.get("count") or len(ps.get("images") or [])))
+        info.setdefault("gps_count", int(ps.get("gps") or 0))
+        info.setdefault("gps_coverage", ps.get("gps_coverage"))
+        images = ps.get("images") or []
+        first = images[0].get("src") if images and isinstance(images[0], dict) else None
+        if first:
+            info["thumb_rel"] = first          # 'set/pasada/archivo' -> /api/photo_thumb?rel=
+    return out
+
+
+def source_row_extras(source: str, info: dict) -> dict:
+    """Campos de primera clase que acompañan a una fuente en meta/escena (vacío para clips)."""
+    parsed = scenestore.parse_photo_set_source(source)
+    if not parsed:
+        return {}
+    extra = {"kind": "photo_set", "label": scenestore.source_label(source),
+             "set": parsed[0], "pass": parsed[1]}
+    extra.update({k: v for k, v in (info.get(source) or {}).items() if v is not None})
+    return extra
+
+
 def odm_registration(proj: Path, sources: list) -> dict:
     """Lee opensfm/reconstruction.json tras el SfM y reporta CUÁNTAS imágenes de CADA fuente
     se integraron de verdad. Sin esto, un modelo 'combinado' puede DESCARTAR una fuente entera
@@ -857,8 +921,13 @@ def odm_frame_preflight(proj: Path, sources: list, minimum_frames: int = 5) -> d
         pattern = f"{prefix}f_*.jpg" if prefix else "f_*.jpg"
         submitted = sum(1 for _ in (proj / "images").glob(pattern))
         viable = submitted >= minimum
-        reason = (f"selección adaptativa dejó {submitted}/{minimum} frames mínimos"
-                  if not viable else f"{submitted} frames listos para registro")
+        is_set = scenestore.is_photo_set_source(source)
+        if is_set:
+            reason = (f"la pasada de fotos tiene {submitted}/{minimum} fotos mínimas"
+                      if not viable else f"{submitted} fotos listas para registro")
+        else:
+            reason = (f"selección adaptativa dejó {submitted}/{minimum} frames mínimos"
+                      if not viable else f"{submitted} frames listos para registro")
         by_source[source] = {
             "clip_id": source,
             "prefix": prefix or None,
@@ -866,6 +935,7 @@ def odm_frame_preflight(proj: Path, sources: list, minimum_frames: int = 5) -> d
             "minimum": minimum,
             "viable": viable,
             "reason": reason,
+            **({"kind": "photo_set", "label": scenestore.source_label(source)} if is_set else {}),
         }
         (viable_sources if viable else sparse_sources).append(source)
     return {
@@ -888,9 +958,12 @@ def frame_viable_recovery_spec(parent_spec: dict, viable_sources: list) -> dict:
     spec.update({
         "clip_id": recovery_id,
         "version_id": recovery_id,
-        "primary_cid": viable[0],
+        # primary_cid = primer VIDEO viable (un token de fotos no es un clip); None si solo fotos
+        "primary_cid": next((x for x in viable if not scenestore.is_photo_set_source(x)), None),
         "sources": viable,
     })
+    if spec.get("photo_sets"):
+        spec["photo_sets"] = [x for x in viable if scenestore.is_photo_set_source(x)]
     if isinstance(spec.get("splat"), dict):
         spec["splat"].update({"clip_id": recovery_id, "version_id": recovery_id})
     return spec
@@ -945,6 +1018,18 @@ def queue_frame_viable_recovery(j: dict, preflight: dict) -> str | None:
         data={"sparse_sources": sparse, "viable_sources": viable,
               "recovery_job": queued["id"], "recovery_version": recovery_id})
     return queued["id"]
+
+
+def source_mix_label(n_videos: int, n_sets: int = 0, n_photos: int = 0) -> str:
+    """'3 videos + 2 pasadas de fotos + 4 fotos' (solo las partes no vacías)."""
+    parts = []
+    if n_videos:
+        parts.append(f"{n_videos} video" + ("s" if n_videos != 1 else ""))
+    if n_sets:
+        parts.append(f"{n_sets} pasada" + ("s" if n_sets != 1 else "") + " de fotos")
+    if n_photos:
+        parts.append(f"{n_photos} foto" + ("s" if n_photos != 1 else ""))
+    return " + ".join(parts) or "0 fuentes"
 
 
 def merge_label(n_sources: int, n_photos: int, dropped: list) -> str:
@@ -1498,13 +1583,15 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
     # entity U0: cid puede ser un recon_<hash> (identidad propia del combinado) — en ese
     # caso las fuentes son clips REALES distintos del cid y no se fuerza ninguno como
     # primario de identidad. Para single-source legacy, cid sigue mandando (alias no-op).
-    src_list = sources or [cid]
+    src_list = normalize_sources(sources or [cid])
+    n_sets = sum(1 for x in src_list if scenestore.is_photo_set_source(x))
+    n_videos = len(src_list) - n_sets
     is_recon = cid.startswith("recon_")
     if not is_recon and src_list[0] != cid:
         src_list = [cid] + [s for s in src_list if s != cid]   # cid manda la identidad (legacy)
     n_extra = len(src_list) - 1 + len(photos or [])
     jobstore.update(j["id"], detail=f"1/3 frames + geotag + selección adaptativa"
-                    + (f" · {len(src_list)} videos" + (f" + {len(photos)} fotos" if photos else "")
+                    + (f" · {source_mix_label(n_videos, n_sets, len(photos or []))}"
                        if n_extra else ""),
                     stage="frames", progress=0.05)
     prep_cmd = ["python3", str(PIPE / "odm_prep.py"), "--sources", ",".join(src_list),
@@ -1640,9 +1727,9 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
             m[key] = quality_provenance[key]
         if title:
             m["title"] = title
-        multi = (sources and len(sources) > 1) or photos
+        multi = len(src_list) > 1 or photos or n_sets
         if multi:                                     # modelo combinado: registra sus fuentes
-            m["sources"] = list(sources or [cid])
+            m["sources"] = list(src_list)
             if photos:
                 m["source_photos"] = list(photos)
             # GATE por-fuente: cuántas imágenes de cada fuente se integraron de verdad
@@ -1658,12 +1745,14 @@ def build_3d_assets(j: dict, cid: str, preset_name: str = "estandar", title: str
         # entity U0: bloque reconstruction UNIFORME (single y combinado) — la identidad,
         # la composición per-fuente y los splat_runs viven juntos; la UI (U1-U3) renderiza
         # esto, nunca lo re-deriva. splat_runs los va llenando run_splat al publicar.
+        set_info = photo_set_source_info(proj) if n_sets else {}
         m["reconstruction"] = {
             "id": cid,
             "job_id": j["id"],
             "backend": (jobstore.get(j["id"]) or {}).get("backend"),
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "sources": [{"clip_id": s, **reg["by_source"].get(s, {"merged": True})}
+            "sources": [{"clip_id": s, **reg["by_source"].get(s, {"merged": True}),
+                         **source_row_extras(s, set_info)}
                         for s in src_list],
             "photos": list(photos or []),
             "merge_label": merge_label(len(src_list), len(photos or []), reg["dropped_sources"]),
@@ -1720,13 +1809,14 @@ def run_3d(j: dict):
     cid = j["spec"]["clip_id"]
     sources = j["spec"].get("sources") or [cid]
     photos = j["spec"].get("photos") or []
+    n_sets = sum(1 for x in sources if scenestore.is_photo_set_source(x))
     build_3d_assets(j, cid, j["spec"].get("preset", "estandar"),
                     str(j["spec"].get("title", ""))[:80].strip(),
                     sources=sources, photos=photos)
     jobstore.update(j["id"], progress=1.0)
     extra = ""
-    if len(sources) > 1 or photos:
-        extra = f" (fusión de {len(sources)} videos" + (f" + {len(photos)} fotos" if photos else "") + ")"
+    if len(sources) > 1 or photos or n_sets:
+        extra = f" (fusión de {source_mix_label(len(sources) - n_sets, n_sets, len(photos))})"
     # ¿fusión parcial? (una fuente no co-registró) — el modelo NO es "mejor por combinar"
     partial = []
     mm = {}

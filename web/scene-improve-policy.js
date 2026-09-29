@@ -19,6 +19,24 @@
     'Cobertura adicional',
   ]);
 
+  // Fuentes de una versión: clip ids de video O pasadas de fotos "set:<set>/<pasada>".
+  // Un token de fotos NO es un clip: sin manifest/track/miniatura de vuelo ni duración de video.
+  const PHOTO_SET_RE = /^set:(.+)\/([^/]+)$/;
+  const isPhotoSetSource = id => PHOTO_SET_RE.test(String(id ?? ''));
+  const parsePhotoSetSource = id => {
+    const m = PHOTO_SET_RE.exec(String(id ?? ''));
+    return m ? { set: m[1], pass: m[2] } : null;
+  };
+  const sourceLabel = id => {
+    const p = parsePhotoSetSource(id);
+    return p ? `Fotos · ${p.set}/${p.pass}` : String(id ?? '');
+  };
+  const countSources = ids => {
+    const list = Array.isArray(ids) ? ids : [];
+    const photoSets = list.filter(isPhotoSetSource).length;
+    return { videos: list.length - photoSets, photoSets };
+  };
+
   const finite = (value, fallback = 0) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -92,6 +110,7 @@
   function selectionTotals(items) {
     return {
       sources: items.length,
+      photoSets: items.filter(item => isPhotoSetSource(item?.id)).length,
       durationS: Math.round(items.reduce((sum, item) => sum + Math.max(0, finite(item?.durationS)), 0)),
     };
   }
@@ -169,8 +188,12 @@
     ROLE_ORDER,
     buildImprovementPlan,
     classifyCapture,
+    countSources,
+    isPhotoSetSource,
+    parsePhotoSetSource,
     resolveActiveModel,
     selectionTotals,
+    sourceLabel,
     validateSelection,
   };
 }));

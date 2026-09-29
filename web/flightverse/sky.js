@@ -3,7 +3,7 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=361';
+import * as THREE from '/flightverse/three.js?v=363';
 
 const PRESETS = {
   dia: {
@@ -110,7 +110,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
           vec3 col = mix(uHorizon, uMid, smoothstep(0.0, uMidPos, h));
           col = mix(col, uTop, smoothstep(uMidPos, uTopPos, h));
           float hb = clamp(-d.y, 0., 1.);
-          col = mix(col, uFogC * 0.82, smoothstep(0.015, 0.3, hb));
+          col = mix(col, uFogC, smoothstep(0.015, 0.3, hb));
           if (uScatter > 0.01) {
             // dispersión Mie de juguete: banda cálida alrededor del azimut del sol,
             // fuerte cerca del horizonte — el atardecer deja de ser un color plano
@@ -217,7 +217,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
   fc.fillStyle = fg; fc.fillRect(0, 0, 128, 128);
   const flare = new THREE.Sprite(new THREE.SpriteMaterial({
     map: new THREE.CanvasTexture(fcv), transparent: true, depthWrite: false, depthTest: false,
-    blending: THREE.AdditiveBlending }));
+    fog: false, blending: THREE.AdditiveBlending }));
   flare.renderOrder = -8;
   scene.add(flare);
   // CÚMULOS billboard: 6 nubes gordas de sprites que derivan con parallax
@@ -226,7 +226,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
   for (let i = 0; i < 6; i++) {
     const g = new THREE.Group();
     for (let j = 0; j < 5; j++) {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, transparent: true,
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, transparent: true, fog: false,
         opacity: 0.42 + 0.18 * Math.abs(Math.sin(i * 5 + j * 1.7)), depthWrite: false }));
       const py = Math.max(-3, Math.sin(j * 2.1) * 8);        // base plana: cúmulo real
       sp.position.set((j - 2) * 26 + Math.sin(i * 3 + j) * 9, py, Math.cos(i + j) * 12);
@@ -239,6 +239,22 @@ export function createSky(scene, { radius = 2600 } = {}) {
     puffs.push(g);
   }
 
+  // ATMÓSFERA (W5): niebla exponencial ligada al tamaño del mundo (la Fog lineal 600-2200 m
+  // de antes no tocaba nada: las islas miden 260-580 m) + plano de bruma bajo la isla que se
+  // funde con el horizonte. Es atmósfera, no terreno: sin textura, mismo color que la niebla.
+  const fogColor = new THREE.Color();
+  const hazeGround = new THREE.Mesh(
+    new THREE.CircleGeometry(4500, 48),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, fog: true }));
+  hazeGround.rotation.x = -Math.PI / 2;
+  hazeGround.position.y = -7;
+  hazeGround.name = 'fv-haze-ground';
+  hazeGround.matrixAutoUpdate = false;
+  hazeGround.frustumCulled = false;
+  scene.add(hazeGround);
+  let fogDensity = 0.0012;                     // se recalibra con setWorldScale
+  let fogEnabled = true;
+  const FOG_K = 0.30;                          // ~30% de bruma a 2 radios de la isla
   const _ld = new THREE.Vector3();
   window.__skyUni = uni;                    // debug: inspección CDP de uniforms
   let cur = 'dia';
@@ -258,12 +274,18 @@ export function createSky(scene, { radius = 2600 } = {}) {
     uni.uGalaxy.value = p.galaxy;
     uni.uStars.value = p.stars;
     uni.uScatter.value = p.scatter || 0;
-    uni.uFogC.value.set(p.fog);
+    // color de la niebla = franja de horizonte apenas hacia el cenit: el terreno lejano se funde
+    // EXACTAMENTE con el cielo que tiene detrás (antes 0xcfe2f2 fijo vs horizonte del preset)
+    fogColor.set(p.horizon).lerp(uni.uMid.value, 0.22);
+    uni.uFogC.value.copy(fogEnabled ? fogColor : new THREE.Color(p.fog));
+    if (fogEnabled) uni.uHorizon.value.copy(fogColor);      // el cielo nace del color de la niebla: sin costura en el horizonte
+    hazeGround.material.color.copy(fogColor).multiplyScalar(0.9);   // más cerca = apenas más oscuro; la niebla lo sube al color del cielo
     sun.color.set(p.sunTint || p.sun || 0xffffff); sun.intensity = p.sunI;
     const lp = (p.moon > 0 && p.moonPos) ? p.moonPos : p.sunPos;
     sun.position.set(lp[0] * 600, lp[1] * 600, lp[2] * 600);
     ambient.intensity = p.ambient;
-    scene.fog = new THREE.Fog(p.fog, 600, 2200);
+    scene.fog = fogEnabled ? new THREE.FogExp2(fogColor.clone(), fogDensity) : new THREE.Fog(p.fog, 600, 2200);   // off = niebla de siempre
+    hazeGround.visible = fogEnabled;
     for (const c of clouds) {
       c.m.material.opacity = (c.m.material.userData.base ?? c.m.material.opacity);
       c.m.material.userData.base = c.m.material.userData.base ?? c.m.material.opacity;
@@ -285,12 +307,21 @@ export function createSky(scene, { radius = 2600 } = {}) {
   return {
     get preset() { return cur; },
     setPreset,
+    fogColor,
+    // radio (m) de la isla: la niebla se calibra a su escala. enabled=false → sin niebla ni bruma
+    setWorldScale(halfExtentM, { enabled = true } = {}) {
+      fogDensity = FOG_K / Math.max(60, halfExtentM);
+      fogEnabled = enabled;
+      setPreset(cur);
+    },
     cycle() {
       const ks = Object.keys(PRESETS);
       return setPreset(ks[(ks.indexOf(cur) + 1) % ks.length]);
     },
     update(dt, camPos, focus) {
       dome.position.copy(camPos);                       // el domo sigue a la cámara
+      hazeGround.position.x = camPos.x; hazeGround.position.z = camPos.z;
+      hazeGround.updateMatrix();
       uni.uTime.value += dt;
       for (const c of clouds) {
         c.t.offset.x += dt * c.sp / 1000;

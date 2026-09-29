@@ -245,6 +245,279 @@ def _extract_source(tmp_dir: Path, images: Path, src_cid: str, prefix: str, prof
     return args, len(survivors)
 
 
+# ---- sets de FOTOS (raw/<set>/<pasada>/*.JPG) como fuente ---------------------------------------
+# Las fotos del dron traen su propio EXIF GPS/gimbal: NO se re-geotaggean (a diferencia de los
+# frames de video). Cada pasada es una "fuente" con su prefijo s<N>_ (mismo esquema que el video),
+# de modo que worker.odm_registration / odm_frame_preflight las cuentan por fuente sin cambios.
+# Token de fuente en --sources / job spec: "set:<set>/<pasada>".
+PHOTO_SET_TOKEN = "set:"
+PHOTO_SET_MAX_IMAGES = 1000        # tope de fotos ÚNICAS (tras dedup) por reconstrucción
+PHOTO_SET_JPG_EXT = (".jpg", ".jpeg")
+PHOTO_SET_RESERVED = ("uploads", "audio", "photos", "reels")   # raw/uploads = videos subidos
+GPS_WARN_COVERAGE = 0.9
+_LABEL_RE = __import__("re").compile(r"[\w -]{1,60}")
+
+
+def raw_root() -> Path:
+    return (VAULT / "raw")
+
+
+def valid_photo_label(name) -> bool:
+    r"""Mismo alfabeto que el upload (server.photo_set_label): [\w -], ≤60, sin reservados,
+    sin espacios en los bordes. Sin puntos ni separadores → no hay traversal posible."""
+    s = str(name or "")
+    return bool(_LABEL_RE.fullmatch(s)) and s == s.strip() and s.lower() not in PHOTO_SET_RESERVED
+
+
+def photo_set_token(set_name: str, pass_name: str) -> str:
+    return f"{PHOTO_SET_TOKEN}{set_name}/{pass_name}"
+
+
+def is_photo_set_ref(ref) -> bool:
+    return str(ref or "").startswith(PHOTO_SET_TOKEN)
+
+
+def parse_photo_set_ref(ref) -> tuple:
+    """'set:A/nadir' | 'raw/A/nadir' | 'A' → (set, pass|None). Valida nombres (SystemExit)."""
+    s = str(ref or "").strip()
+    if s.startswith(PHOTO_SET_TOKEN):
+        s = s[len(PHOTO_SET_TOKEN):]
+    elif s.startswith("raw/"):
+        s = s[len("raw/"):]
+    parts = s.split("/")
+    if not 1 <= len(parts) <= 2:
+        raise SystemExit(f"set de fotos inválido: {ref!r} (esperaba <set>[/<pasada>])")
+    for part in parts:
+        if not valid_photo_label(part):
+            raise SystemExit(f"nombre de set/pasada inválido: {part!r}")
+    return parts[0], (parts[1] if len(parts) == 2 else None)
+
+
+def photo_set_pass_dirs(set_name: str, pass_name: str | None = None, root: Path | None = None) -> list:
+    """[(set, pasada, Path)] existentes bajo raw/. Sin symlinks ni salidas de raw/ (resolve)."""
+    base = (root or raw_root())
+    try:
+        base_r = base.resolve()
+    except OSError:
+        return []
+    sd = base / set_name
+    if not sd.is_dir() or sd.is_symlink():
+        raise SystemExit(f"set de fotos no existe en raw/: {set_name}")
+    names = [pass_name] if pass_name else sorted(
+        p.name for p in sd.iterdir() if p.is_dir() and not p.is_symlink() and valid_photo_label(p.name))
+    out = []
+    for n in names:
+        d = sd / n
+        if not d.is_dir() or d.is_symlink():
+            if pass_name:
+                raise SystemExit(f"pasada no existe: {set_name}/{n}")
+            continue
+        try:
+            d.resolve().relative_to(base_r)
+        except ValueError:
+            raise SystemExit(f"pasada fuera de raw/: {set_name}/{n}")
+        out.append((set_name, n, d))
+    return out
+
+
+def _gps_ok(lat, lon) -> bool:
+    return (isinstance(lat, (int, float)) and isinstance(lon, (int, float))
+            and abs(lat) <= 90 and abs(lon) <= 180 and not (lat == 0 and lon == 0))
+
+
+def _exif_date(v):
+    """'2026:03:15 12:15:28' → '2026-03-15T12:15:28' (None si no calza)."""
+    import re
+    m = re.match(r"^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})", str(v or ""))
+    return f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}" if m else None
+
+
+def read_photo_exif(directory: Path) -> dict:
+    """{filename: {lat, lon, alt, model, date, gimbal}} con UNA llamada a exiftool por directorio.
+    Falla suave ({}): el caller trata las fotos sin fila como sin GPS."""
+    try:
+        out = subprocess.run(
+            ["exiftool", "-json", "-n", "-q", "-GPSLatitude", "-GPSLongitude", "-GPSAltitude",
+             "-Model", "-DateTimeOriginal", "-GimbalPitchDegree", "-GimbalYawDegree",
+             "-ext", "jpg", "-ext", "jpeg", "-ext", "dng", str(directory)],
+            capture_output=True, text=True, timeout=600)
+        rows = json.loads(out.stdout or "[]")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}
+    res = {}
+    for r in rows:
+        name = Path(str(r.get("SourceFile") or "")).name
+        if not name:
+            continue
+        lat, lon = r.get("GPSLatitude"), r.get("GPSLongitude")
+        res[name] = {"lat": lat if _gps_ok(lat, lon) else None, "lon": lon if _gps_ok(lat, lon) else None,
+                     "alt": r.get("GPSAltitude") if isinstance(r.get("GPSAltitude"), (int, float)) else None,
+                     "model": str(r.get("Model") or "").strip() or None,
+                     "date": _exif_date(r.get("DateTimeOriginal")),
+                     "gimbal": r.get("GimbalPitchDegree") is not None}
+    return res
+
+
+def _jpeg_magic(path: Path) -> bool:
+    try:
+        with open(path, "rb") as f:
+            return f.read(3) == b"\xff\xd8\xff"
+    except OSError:
+        return False
+
+
+def scan_photo_pass(set_name: str, pass_name: str, directory: Path) -> dict:
+    """Inventario de UNA pasada: JPG/JPEG utilizables + DNG (sin gemelo JPG → omitidos)."""
+    jpgs, dngs, junk = [], [], []
+    for f in sorted(directory.iterdir(), key=lambda p: p.name):
+        if not f.is_file() or f.is_symlink() or f.name.startswith("."):
+            continue
+        ext = f.suffix.lower()
+        if ext in PHOTO_SET_JPG_EXT:
+            try:
+                ok = f.stat().st_size > 0 and _jpeg_magic(f)
+            except OSError:
+                ok = False
+            (jpgs if ok else junk).append(f)
+        elif ext == ".dng":
+            dngs.append(f)
+    twins = {f.stem.lower() for f in jpgs}
+    dng_paired = [f for f in dngs if f.stem.lower() in twins]
+    dng_only = [f for f in dngs if f.stem.lower() not in twins]
+    exif = read_photo_exif(directory) if (jpgs or dngs) else {}
+    rows = []
+    for f in jpgs:
+        e = exif.get(f.name) or {}
+        rows.append({"path": f, "name": f.name, "lat": e.get("lat"), "lon": e.get("lon"),
+                     "alt": e.get("alt"), "model": e.get("model"), "date": e.get("date"),
+                     "gimbal": bool(e.get("gimbal"))})
+    return {"set": set_name, "pass": pass_name, "dir": directory, "rows": rows,
+            "dng_paired": [f.name for f in dng_paired], "dng_only": [f.name for f in dng_only],
+            "invalid": [f.name for f in junk]}
+
+
+def summarize_rows(rows: list) -> dict:
+    """Conteo, cobertura GPS, cámaras y rango de fechas de una lista de filas de foto."""
+    n = len(rows)
+    gps = sum(1 for r in rows if r.get("lat") is not None)
+    models: dict = {}
+    for r in rows:
+        if r.get("model"):
+            models[r["model"]] = models.get(r["model"], 0) + 1
+    dates = sorted(r["date"] for r in rows if r.get("date"))
+    alts = sorted(r["alt"] for r in rows if r.get("alt") is not None)
+    return {"count": n, "gps": gps, "gps_coverage": round(gps / n, 3) if n else 0.0,
+            "gimbal": sum(1 for r in rows if r.get("gimbal")),
+            "models": models, "date_min": dates[0] if dates else None,
+            "date_max": dates[-1] if dates else None,
+            "alt_min": alts[0] if alts else None, "alt_max": alts[-1] if alts else None}
+
+
+def _sha1(path: Path) -> str:
+    import hashlib
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def dedup_photo_groups(groups: list) -> list:
+    """Quita duplicados EXACTOS (mismo contenido) dentro del job: la misma foto subida en dos
+    pasadas/sets. Solo se hashean los archivos que comparten tamaño. Conserva la primera y anota
+    las descartadas en group['duplicates']. (NO es near-duplicate: el solape entre fotos vecinas
+    es justo lo que el SfM necesita.)"""
+    by_size: dict = {}
+    for g in groups:
+        for r in g["rows"]:
+            try:
+                r["size"] = r["path"].stat().st_size
+            except OSError:
+                r["size"] = -1
+            by_size.setdefault(r["size"], []).append(r)
+    dup_ids = {}
+    for size, rs in by_size.items():
+        if len(rs) < 2 or size < 0:
+            continue
+        seen: dict = {}
+        for r in rs:                      # rs conserva el orden grupo→nombre
+            digest = _sha1(r["path"])
+            if digest in seen:
+                dup_ids[id(r)] = seen[digest]
+            else:
+                seen[digest] = r
+    for g in groups:
+        keep, dups = [], []
+        for r in g["rows"]:
+            first = dup_ids.get(id(r))
+            if first is None:
+                keep.append(r)
+            else:
+                dups.append({"name": r["name"], "same_as": f"{first['set']}/{first['pass']}/{first['name']}"})
+        g["rows"], g["duplicates"] = keep, dups
+    return groups
+
+
+def prepare_photo_groups(refs: list) -> list:
+    """refs (tokens/rutas) → grupos por pasada listos para preparar. Falla ANTES de extraer video:
+    set inexistente, pasada sin JPG usables, grupo sin GPS o más de PHOTO_SET_MAX_IMAGES únicas."""
+    groups, seen_dirs = [], set()
+    for ref in refs:
+        set_name, pass_name = parse_photo_set_ref(ref)
+        for s, p, d in photo_set_pass_dirs(set_name, pass_name):
+            if d in seen_dirs:
+                continue
+            seen_dirs.add(d)
+            g = scan_photo_pass(s, p, d)
+            for r in g["rows"]:
+                r["set"], r["pass"] = s, p
+            groups.append(g)
+    dedup_photo_groups(groups)
+    total = sum(len(g["rows"]) for g in groups)
+    if total > PHOTO_SET_MAX_IMAGES:
+        raise SystemExit(f"{total} fotos únicas en los sets elegidos — máximo {PHOTO_SET_MAX_IMAGES} por "
+                         f"reconstrucción; elige menos pasadas o divide el set")
+    for g in groups:
+        label = f"{g['set']}/{g['pass']}"
+        if g["dng_only"]:
+            print(f"[{label}] {len(g['dng_only'])} DNG sin JPG gemelo omitidos (ODM usa JPG; "
+                  f"exporta JPG o vuela en JPG+RAW)", flush=True)
+        if not g["rows"]:
+            why = (f"{len(g['dng_only'])} DNG sin JPG gemelo" if g["dng_only"] else
+                   f"{len(g['invalid'])} JPG inválidos" if g["invalid"] else "vacía")
+            raise SystemExit(f"la pasada {label} no tiene fotos JPG utilizables ({why})")
+        g["summary"] = summarize_rows(g["rows"])
+        if g["summary"]["gps"] == 0:
+            raise SystemExit(f"{label} sin GPS en el EXIF — ODM no puede georreferenciarlo")
+        if g["summary"]["gps_coverage"] < GPS_WARN_COVERAGE:
+            print(f"⚠ [{label}] solo {g['summary']['gps']}/{g['summary']['count']} fotos con GPS "
+                  f"({g['summary']['gps_coverage']:.0%}) — ODM georreferencia peor", flush=True)
+    return groups
+
+
+def stage_photo_group(tmp_dir: Path, prefix: str, group: dict) -> list:
+    """Enlaza/copia las fotos SIN tocar su EXIF a tmp_dir como <prefix>f_<stem>.jpg.
+    Devuelve la procedencia por imagen (para frames_manifest)."""
+    import re
+    prov, used = [], set()
+    for r in group["rows"]:
+        stem = re.sub(r"[^\w.-]", "_", Path(r["name"]).stem)[:100] or "img"
+        name, n = f"{prefix}f_{stem}.jpg", 1
+        while name.lower() in used:            # IMG.JPG vs img.jpeg
+            n += 1
+            name = f"{prefix}f_{stem}-{n}.jpg"
+        used.add(name.lower())
+        dst = tmp_dir / name
+        try:
+            os.link(r["path"], dst)            # mismo FS: sin duplicar GBs (el swap solo reubica el enlace)
+        except OSError:
+            shutil.copy2(r["path"], dst)
+        prov.append({"file": name, "src": f"{r['set']}/{r['pass']}/{r['name']}",
+                     "gps": r["lat"] is not None, "model": r["model"], "date": r["date"]})
+    return prov
+
+
+
 def main():
     argv = sys.argv[1:]
     profile = argv[argv.index("--profile") + 1] if "--profile" in argv else None
@@ -253,13 +526,39 @@ def main():
     if "--sources" in argv:
         sources = [s for s in argv[argv.index("--sources") + 1].split(",") if s]
     else:
-        sources = [a for a in argv if not a.startswith("--")][:1]
-    if not sources:
-        raise SystemExit("uso: odm_prep.py <cid> | --sources a,b,c [--proj-id id] [--photos ...] [--profile ...]")
+        positional = [a for i, a in enumerate(argv)
+                      if not a.startswith("--") and not (i and argv[i - 1].startswith("--"))]
+        sources = positional[:1]
+    # sets de fotos: tokens "set:<set>/<pasada>" dentro de --sources (así los pasa el worker sin
+    # cambios) y/o --photo-set / --photo-sets a,b (rutas "raw/<set>[/<pasada>]" o "<set>[/<pasada>]").
+    # El orden de `entries` fija el prefijo s<N>_ (= índice de fuente en el job spec).
+    photo_refs = []
+    for flag in ("--photo-set", "--photo-sets"):
+        if flag in argv:
+            photo_refs += [x for x in argv[argv.index(flag) + 1].split(",") if x]
+    entries = []
+    for ref in list(sources) + photo_refs:
+        if is_photo_set_ref(ref) or ref in photo_refs:
+            # un set completo expande a UNA fuente por pasada (su propio prefijo y evidencia)
+            set_name, pass_name = parse_photo_set_ref(ref)
+            entries += [photo_set_token(s_, p_) for s_, p_, _d in photo_set_pass_dirs(set_name, pass_name)]
+        else:
+            entries.append(ref)
+    entries = list(dict.fromkeys(entries))
+    if not entries:
+        raise SystemExit("uso: odm_prep.py <cid> | --sources a,b,c [--proj-id id] [--photos ...] "
+                         "[--photo-set raw/<set>[/<pasada>]] [--profile ...]")
+    has_video = any(not is_photo_set_ref(e) for e in entries)
+    if not has_video and "--proj-id" not in argv:
+        raise SystemExit("un job solo de fotos necesita --proj-id (identidad recon_<hash>)")
+    # fallo rápido y barato ANTES de extraer video: valida/inventaría/dedup los sets de fotos
+    photo_groups = prepare_photo_groups([e for e in entries if is_photo_set_ref(e)])
+    groups_by_pass = {(g["set"], g["pass"]): g for g in photo_groups}
     # entity U0: el proyecto puede llevar identidad propia (recon_<hash>) en vez de heredar
     # la del primario — los combinados nuevos ya no usurpan el clip_id. --proj-id solo
     # aplica junto a --sources (el modo posicional de compat lo ignora por diseño).
-    proj_id = argv[argv.index("--proj-id") + 1] if "--proj-id" in argv and "--sources" in argv else sources[0]
+    proj_id = (argv[argv.index("--proj-id") + 1]
+               if "--proj-id" in argv and ("--sources" in argv or photo_groups) else entries[0])
     proj = VAULT / "odm" / f"proj_{proj_id}"
     images = proj / "images"
     images.mkdir(parents=True, exist_ok=True)
@@ -275,9 +574,24 @@ def main():
 
     geotag_args = []
     per_source = []
-    multi = len(sources) > 1 or bool(photos)
-    for idx, src in enumerate(sources):
+    photo_set_images = 0
+    photo_set_prov = []
+    multi = len(entries) > 1 or bool(photos) or bool(photo_groups)
+    for idx, src in enumerate(entries):
         prefix = f"s{idx}_" if multi else ""        # 1 sola fuente sin fotos → nombres f_XXXX intactos (compat)
+        if is_photo_set_ref(src):
+            set_name, pass_name = parse_photo_set_ref(src)
+            g = groups_by_pass[(set_name, pass_name)]
+            prov = stage_photo_group(tmp_dir, prefix, g)
+            photo_set_images += len(prov)
+            summ = g["summary"]
+            per_source.append({"cid": src, "prefix": prefix, "frames": len(prov), "kind": "photo_set",
+                               "set": g["set"], "pass": g["pass"], **summ})
+            photo_set_prov.append({"set": g["set"], "pass": g["pass"], "prefix": prefix, **summ,
+                                   "dng_paired": g["dng_paired"], "dng_only_skipped": g["dng_only"],
+                                   "invalid_skipped": g["invalid"], "duplicates": g["duplicates"],
+                                   "images": prov})
+            continue
         source_args, source_frames = _extract_source(
             tmp_dir, images, src, prefix, profile, fps, width)
         geotag_args += source_args
@@ -299,7 +613,7 @@ def main():
             geotag_args += _geotag(images / name, point_at(pts, t))   # ruta final tras swap
         n_photos += 1
 
-    total = sum(1 for a in geotag_args if a == "-execute")   # un -execute por imagen geotaggeada
+    total = sum(1 for a in geotag_args if a == "-execute") + photo_set_images   # un -execute por imagen geotaggeada + fotos con EXIF propio
     if total == 0:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise SystemExit("cero imágenes geotaggeadas — nada que procesar")
@@ -320,22 +634,29 @@ def main():
     # geotag de TODAS las imágenes en una sola pasada de exiftool
     argfile = proj / ".geotag.args"
     argfile.write_text("\n".join(geotag_args))
-    # -common_args: -overwrite_original aplica a TODOS los -execute (no solo el primero)
-    subprocess.run(["exiftool", "-@", str(argfile), "-common_args", "-overwrite_original"],
-                   check=True, capture_output=True)
+    # -common_args: -overwrite_original aplica a TODOS los -execute (no solo el primero).
+    # Sin argumentos (job solo de fotos con EXIF propio) exiftool no tiene nada que hacer: se omite.
+    if geotag_args:
+        subprocess.run(["exiftool", "-@", str(argfile), "-common_args", "-overwrite_original"],
+                       check=True, capture_output=True)
     for leak in images.glob("*.jpg_original"):
         leak.unlink()
     camera_override = argv[argv.index("--camera-profile") + 1] if "--camera-profile" in argv else None
     camera = select_camera_profile(detect_camera_models(images), camera_override)
     atomic_write_json(proj / "frames_manifest.json",
         {"profile": profile, "sources": per_source, "photos": n_photos,
-         "total_frames": total, "width": width, "fps": fps, "camera_profile": camera},
+         "total_frames": total, "width": width, "fps": fps, "camera_profile": camera,
+         **({"photo_sets": photo_set_prov} if photo_set_prov else {})},
         indent=1, ensure_ascii=True)
     if camera["args"]:
         print(f"cámara {camera['label']} ({camera['reason']}"
               f"{'' if camera['verified'] else ', perfil SIN verificar'}) → ODM {' '.join(camera['args'])}",
               flush=True)
-    src_lbl = f"{len(sources)} video(s)" + (f" + {n_photos} foto(s)" if n_photos else "")
+    n_video = sum(1 for e in entries if not is_photo_set_ref(e))
+    parts = ([f"{n_video} video(s)"] if n_video else []) + \
+        ([f"{n_photos} foto(s)"] if n_photos else []) + \
+        ([f"{photo_set_images} foto(s) de {len(photo_groups)} pasada(s)"] if photo_set_images else [])
+    src_lbl = " + ".join(parts)
     print(f"✅ {total} frames geotagged de {src_lbl} → {proj}")
 
 

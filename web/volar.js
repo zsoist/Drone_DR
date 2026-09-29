@@ -4,47 +4,48 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=361';
+import * as THREE from '/flightverse/three.js?v=363';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=361';
+} from '/flightverse/scene.js?v=363';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=361';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=361';
-import { createRecorder } from '/flightverse/recorder.js?v=361';
-import { createAudio } from '/flightverse/audio.js?v=361';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=361';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=361';
+} from '/flightverse/runtime.js?v=363';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=363';
+import { createRecorder } from '/flightverse/recorder.js?v=363';
+import { createAudio } from '/flightverse/audio.js?v=363';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=363';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=363';
 import {
   createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=361';
-import { createSky } from '/flightverse/sky.js?v=361';
-import { loadSceneObjects } from '/flightverse/objects.js?v=361';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=361';
-import { resolveAimRay } from '/flightverse/aiming.js?v=361';
+} from '/flightverse/mobile-command.js?v=363';
+import { createSky } from '/flightverse/sky.js?v=363';
+import { createVegetation, reducedMotion } from '/flightverse/vegetation.js?v=363';
+import { loadSceneObjects } from '/flightverse/objects.js?v=363';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=363';
+import { resolveAimRay } from '/flightverse/aiming.js?v=363';
 import {
   WEAPON_PROFILES,
   isContinuousWeaponKey,
-} from '/flightverse/weapon-registry.js?v=361';
-import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=361';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=361';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=361';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=361';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=361';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=361';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=361';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=361';
-import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=361';
-import CameraControls from '/vendor/camera-controls.module.js?v=361';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=361';
+} from '/flightverse/weapon-registry.js?v=363';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=363';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=363';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=363';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=363';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=363';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=363';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=363';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=363';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=363';
+import CameraControls from '/vendor/camera-controls.module.js?v=363';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=363';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=361';
+} from '/vendor/postprocessing180.module.js?v=363';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -488,6 +489,17 @@ async function main() {
     scene.environmentIntensity = 0.85;
   }
   const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.3, 6000);
+  // ?qa=1 → window.__volar.qa.pose(x,y,z,yawDeg,pitchDeg) fija la cámara (solo QA visual)
+  let qaPose = null;
+  if (Q.get('qa') === '1') {
+    report.qa = {
+      pose: (x, y, z, yawDeg = 0, pitchDeg = 0) => {
+        qaPose = { x, y, z, yaw: THREE.MathUtils.degToRad(yawDeg), pitch: THREE.MathUtils.degToRad(pitchDeg) };
+      },
+      clear: () => { qaPose = null; },
+      scene, camera,
+    };
+  }
   // cielo vivo: domo gradiente + sol/estrellas + nubes a la deriva; las luces
   // y la niebla las gobierna el preset (dia/atardecer/noche)
   const sky = createSky(scene);
@@ -519,16 +531,31 @@ async function main() {
     fx.bc, fx.vig,
   ));
 
-  const terrain = await loadTerrain(man, { anisotropy: 8 });
+  // nivel visual del terreno/atmósfera (W5): high (desktop) · lite (táctil) · off (?fx=0 = look anterior)
+  const FX = Q.get('fx') === '0' ? 'off' : (coarsePointer ? 'lite' : 'high');
+  report.fx = FX;
+  const terrain = await loadTerrain(man, { anisotropy: 8, fx: FX });
+  if (report.qa) { report.qa.heightAt = terrain.heightAt; report.qa.world = terrain.world; }
   const FRONTIER_COLORS = { dia: 0xcfe2f2, atardecer: 0xc08066, noche: 0x0c1420 };
   terrain.frontier.uFrontierOn.value = Q.get('diagnostic') !== '1' ? 1 : 0;
-  terrain.frontier.uFrontierColor.value.set(FRONTIER_COLORS[sky.preset] || FRONTIER_COLORS.dia);
+  const LIFT = { dia: 0.5, atardecer: 0.4, noche: 0.3 };       // piso de luz de sombras (fracción del albedo)
+  const syncLook = () => {
+    if (FX === 'off') {
+      terrain.frontier.uFrontierColor.value.set(FRONTIER_COLORS[sky.preset] || FRONTIER_COLORS.dia);
+    } else {
+      terrain.frontier.uFrontierColor.value.copy(sky.fogColor);   // el borde se funde con la niebla/horizonte
+      terrain.look.uLift.value = LIFT[sky.preset] ?? LIFT.dia;
+    }
+  };
+  syncLook();
   terrain.mesh.matrixAutoUpdate = false; terrain.mesh.updateMatrix();   // estática
   terrain.mesh.receiveShadow = true;
   worldGroup.add(terrain.mesh);
   markLoadStep(document, 'vb-terreno');
   bootProgress(55, 'Preparando colisiones');
   const W = terrain.world;
+  sky.setWorldScale(Math.min(...W.size_m) / 2, { enabled: FX !== 'off' });
+  syncLook();
   if (man.capabilities?.mesh && !man.capabilities?.collision) {
     throw new Error('mundo bloqueado: malla sin collider estructural vigente');
   }
@@ -558,6 +585,7 @@ async function main() {
 
   let visualMesh = null;
   let splat = null;
+  let vegetation = null;
   const preferredRenderer = coverageProduct?.preferred_renderer || 'terrain';
   const representation = {
     preferred: preferredRenderer,
@@ -593,6 +621,7 @@ async function main() {
     terrain.splatMask.uSplatR.value = playableHalfExtent;
     if (visualMesh) visualMesh.object.visible = active === 'mesh';
     if (splat) splat.object.visible = active === 'splat';
+    vegetation?.setVisible(active !== 'splat');   // el splat es dueño de su huella: sin vegetación flotando
     representation.active = active;
     representation.fallbackReason = fallbackReason;
     representation.visibleStructuralLayers = active === 'terrain'
@@ -655,6 +684,20 @@ async function main() {
     return visualMeshReady;
   };
   if (requestedRenderer === 'mesh') void ensureVisualMesh();
+  // vegetación (W5): scatter.py → InstancedMesh. Solo relleno visual del terreno sin malla; sin colisión.
+  // ?scatter=0 la apaga; cualquier fallo deja el mundo como estaba.
+  report.vegetation = null;
+  if (FX !== 'off' && Q.get('scatter') !== '0' && man.assets?.scatter) {
+    createVegetation(man, worldGroup, { heightAt: terrain.heightAt, fx: FX, sway: !reducedMotion() })
+      .then(veg => {
+        if (!veg) return;
+        if (!generation.isCurrent()) { veg.dispose(); report.lifecycle.disposedStaleLoads++; return; }
+        vegetation = veg;
+        report.vegetation = { ...veg.stats, fx: FX, sway: !reducedMotion() };
+        applyVista();
+      })
+      .catch(e => console.warn('[fv] vegetación no disponible:', e?.message || e));
+  }
   // objetos de escena (plataforma de juegos: docs/SCENE_OBJECTS.md)
   let sceneObjects = null;
   loadSceneObjects(man, worldGroup, { heightAt: terrain.heightAt })
@@ -803,9 +846,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=361', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=363', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=361');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=363');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -960,7 +1003,7 @@ async function main() {
   const shake = { mag: 0 };
   let curYaw = 0;
   const { GLTFLoader: ArsenalGLTFLoader } = await import(
-    '/vendor/three-addons180/loaders/GLTFLoader.js?v=361'
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=363'
   );
   weaponModels = createWeaponModelLibrary({
     quality: Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto',
@@ -1282,7 +1325,7 @@ async function main() {
   const CIELO_LB = { dia: 'día', atardecer: 'atardecer', noche: 'noche' };
   $('#vl-cielo').addEventListener('click', () => {
     const preset = sky.cycle();
-    terrain.frontier.uFrontierColor.value.set(FRONTIER_COLORS[preset] || FRONTIER_COLORS.dia);
+    syncLook();
     $('#vl-cielo').textContent = 'cielo · ' + CIELO_LB[preset];
   });
   $('#vl-cielo').textContent = 'cielo · ' + (CIELO_LB[sky.preset] || 'día');
@@ -2046,6 +2089,7 @@ async function main() {
         };
       }
       sky.update(STEP, camera.position, P);
+      vegetation?.update(simT);
       sceneObjects?.update(simT);
       {
         report.collision.casts = collision.qa.casts;
@@ -2152,7 +2196,14 @@ async function main() {
           shake.mag *= Math.pow(0.02, STEP * 2); // ~decadencia 98%/s
         } else shake.mag = 0;
       }
+      if (qaPose) {                            // ?qa=1: cámara libre para capturas de comparación
+        camera.position.set(qaPose.x, qaPose.y, qaPose.z);
+        camera.rotation.set(qaPose.pitch, qaPose.yaw, 0, 'YXZ');
+        camera.updateMatrixWorld();
+      }
+      if (report.qa) renderer.info.autoReset = false, renderer.info.reset();   // ?qa=1: contadores de TODO el frame
       composer.render();
+      if (report.qa) report.qa.frame = { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles };
       if (calidad === 'auto' && qualityGovernor) {
         const decision = qualityGovernor.sample(frameMs, performance.now());
         if (decision.changed) {
@@ -2349,6 +2400,7 @@ async function main() {
     world.dispose();
     sceneObjects?.dispose();
     visualMesh?.dispose();
+    vegetation?.dispose();
     splat?.dispose();
     terrain.dispose();
     weapons.dispose();
