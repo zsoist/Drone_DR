@@ -121,10 +121,11 @@ html[data-td-tab="process"] #proj-view, html[data-td-tab="jobs"] #proj-view { di
   min-height: 44px; padding: var(--sp-1) var(--sp-3); margin-bottom: var(--sp-3);
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
 }
-.td-crumb .spacer { flex: 1; }
 .td-crumb-sep { color: var(--text-3); }
 .td-crumb-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-lg); font-weight: var(--fw-semibold); letter-spacing: var(--tr-tight); }
-.td-crumb-meta { font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; }
+.td-crumb-meta { font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; flex: none; }
+.td-crumb-t { flex: 0 1 auto; }
+.td-crumb-meta { margin-left: auto; }
 .td-crumb .btn svg.ic { width: var(--ic-sm); height: var(--ic-sm); }
 #proj-view { scroll-margin-top: var(--sp-3); }
 
@@ -276,3 +277,112 @@ html.td-open .td-mod[data-mod="projects"] > .panel:first-child { display: none; 
   .page-3d .td-cta { min-height: 56px; }
 }
 .page-3d .jt-strip.pc-off .jt-pc[data-metric="ncuda"] .jt-val { display: none; }
+
+
+/* ================= d2: modal Procesar, pipeline, crumb, downloads ================= */
+/* metadata tokens: separator is a ::before that hangs in the previous token's right margin; at a line start it lands outside
+   the (overflow:hidden) box and is clipped, so a "·" never dangles at either end of a line */
+.mtok { display: inline-block; position: relative; white-space: nowrap; margin-right: 14px; }
+.mtok:last-child { margin-right: 0; }
+.mtok + .mtok::before { content: "·"; position: absolute; left: -7px; transform: translateX(-50%); }
+.page-3d .td-stepper.v2 .td-step > .td-sub { overflow: hidden; max-width: 100%; }
+.page-3d .td-stepper.v2 .td-step > .td-sub .mtok { margin: 0 7px; }
+.page-3d .td-stepper.v2 .td-step > .td-sub .mtok:first-child { margin-left: 0; }
+.page-3d .td-stepper.v2 .td-step > .td-sub .mtok:last-child { margin-right: 0; }
+.page-3d .td-stepper.v2 .td-step > .td-sub .mtok + .mtok::before { left: -7px; }
+
+/* pipeline connectors: a real hairline with an arrowhead, level with the step icons (no shimmer dashes) */
+.page-3d .td-flowline { align-self: flex-start; margin-top: calc(4px + 16px + 19px); width: 26px; height: 1px; display: block; position: relative; }
+.page-3d .td-flowline i {
+  position: absolute; inset: 0 3px 0 4px; width: auto; height: 1px; animation: none; background: var(--line-strong);
+}
+.page-3d .td-flowline::after {
+  content: ""; position: absolute; right: 3px; top: -3px; width: 6px; height: 6px;
+  border-top: 1px solid var(--line-strong); border-right: 1px solid var(--line-strong); transform: rotate(45deg);
+}
+
+/* download tiles: format tag + one-line use, no separator to dangle */
+.page-3d .exp > div { min-width: 0; }
+.page-3d .exp b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-3d .exp .exp-m { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; letter-spacing: 0; text-transform: none; font-family: var(--font); font-size: var(--fs-xs); color: var(--text-2); }
+.page-3d .exp .exp-m em {
+  display: inline-block; margin-right: var(--sp-2); font-style: normal; font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: var(--tr-caps); text-transform: uppercase;
+  color: var(--text-2); padding: 1px 6px; border: 1px solid var(--line-strong); border-radius: var(--r-xs);
+}
+
+/* Estudio 3D: map frame without HUD brackets; zoom controls sit under the hide-map pill */
+.modal--studio .st-map-wrap { box-shadow: none; }
+.modal--studio .st-map-wrap::before, .modal--studio .st-map-wrap::after { content: none; }
+.modal--studio .st-map-wrap .maplibregl-ctrl-top-right { top: 44px; }
+.modal--studio .st-map-ctl { max-width: calc(100% - 156px); }
+
+/* takes: checkbox + fixed chip columns so GPS/altitude/AI line up on every row */
+.modal--studio .pc-clip {
+  display: grid; grid-template-columns: 18px auto minmax(0, 1fr) 64px 58px 26px 26px; column-gap: var(--sp-3); align-items: center;
+}
+.modal--studio .pc-clip .pc-gps { justify-content: center; }
+.modal--studio .pc-clip .pc-alt { text-align: center; }
+.modal--studio .pc-clip .pc-ai, .modal--studio .pc-clip .pc-score { justify-self: center; }
+.modal input[type=checkbox] {
+  -webkit-appearance: none; appearance: none; width: 18px; height: 18px; margin: 0; flex: none; cursor: pointer;
+  border: 1.5px solid var(--line-strong); border-radius: var(--r-xs); background: var(--surface-2) center / 12px no-repeat;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+@media (hover: hover) { .modal input[type=checkbox]:not(:disabled):hover { border-color: var(--text-3); } }
+.modal input[type=checkbox]:checked {
+  border-color: var(--accent-solid); background-color: var(--accent-solid);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%2306111C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5'/%3E%3C/svg%3E");
+}
+html[data-theme="light"] .modal input[type=checkbox]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5'/%3E%3C/svg%3E");
+}
+.modal input[type=checkbox]:disabled { opacity: .4; cursor: not-allowed; }
+
+/* footer: selection summary + actions on ONE row (.modal-foot / .modal-hint) */
+.modal--studio .st-footer { margin: var(--sp-3) calc(-1 * 18px) 0; padding: var(--sp-3) 18px; border-top: 1px solid var(--line); }
+.modal--studio .st-tray {
+  flex: 1 1 0; min-width: 0; margin: 0; padding: 0; min-height: 0; border: 0; display: flex; align-items: center; gap: var(--sp-1);
+  flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; white-space: nowrap; margin-right: 0;
+}
+.modal--studio .st-tray::-webkit-scrollbar { display: none; }
+.modal--studio .st-tray > * { flex: none; }
+.modal--studio .st-tray-l { margin-right: var(--sp-2); font: inherit; color: var(--text-2); }
+.modal--studio .st-steps { flex-wrap: nowrap; }
+.modal--studio .st-step { white-space: nowrap; }
+@media (max-width: 560px) {
+  .td-crumb-meta { display: none; }
+  .modal--studio .st-x { display: none; }
+  .modal--studio .st-map-wrap .maplibregl-ctrl-top-right { top: 10px; }
+  .modal--studio .st-map-toggle { top: auto; bottom: 10px; right: 10px; }
+  .modal--studio .st-map-hint { display: none; }
+  .modal--studio .st-toolbar { flex-wrap: wrap; }
+  .modal--studio .st-toolbar .td-search { flex: 1 1 100%; min-width: 0; }
+  .modal--studio .st-toolbar .ctl { flex: 1 1 100%; min-width: 0; }
+  .modal--studio .st-actions { flex-wrap: wrap; }
+  .modal--studio .st-actions .st-count { flex: 1 1 100%; }
+  .modal--studio .st-actions .spacer { display: none; }
+  .modal--studio .st-map-ctl { max-width: calc(100% - 66px); }
+  .modal--studio .pc-clip { grid-template-columns: 18px auto minmax(0, 1fr) 58px 26px; row-gap: var(--sp-1); }
+  .modal--studio .pc-clip .pc-gps, .modal--studio .pc-clip .pc-score { display: none; }
+}
+
+/* option rows: icon + title inline, helper text under them (style.css stacked the icon above the title) */
+.modal .compute-choice > span { display: block; }
+.modal .compute-choice small { display: block; margin-top: 2px; }
+.modal .compute-choice > span > svg.ic { margin-right: var(--sp-1); }
+.modal--studio .st-chip svg.ic { width: var(--ic-xs); height: var(--ic-xs); vertical-align: -1px; }
+
+/* pipeline on narrow screens: a 3-up grid of steps (the desktop row + connectors cannot fit) */
+.td-live { white-space: nowrap; }
+@media (max-width: 1000px) {
+  .page-3d .td-stepper.v2 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
+  .page-3d .td-stepper.v2 .td-step { min-width: 0; }
+  .page-3d .td-flowline { display: none; }
+}
+.page-3d .td-cta > span { flex: 1 1 0; }
+.page-3d .td-cta small { white-space: normal; overflow-wrap: anywhere; }
+/* centred step subtitles cannot use the clipped-separator trick: below 1240px stack the tokens, no separators */
+@media (max-width: 1240px) {
+  .page-3d .td-stepper.v2 .td-step > .td-sub .mtok { display: block; margin: 0; }
+  .page-3d .td-stepper.v2 .td-step > .td-sub .mtok + .mtok::before { content: none; }
+}

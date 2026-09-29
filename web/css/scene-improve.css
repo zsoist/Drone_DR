@@ -15,6 +15,21 @@
 .si-capture-title { flex-wrap: wrap; }
 .si-evidence { white-space: normal; }
 
+/* source checkbox: drawn (not the grey native one) so it reads on both themes, locked rows included */
+.si-capture > input[type=checkbox] {
+  -webkit-appearance: none; appearance: none; width: 18px; height: 18px; margin: 0; cursor: pointer;
+  border: 1.5px solid var(--line-strong); border-radius: var(--r-xs); background: var(--surface-2) center / 12px no-repeat;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.si-capture > input[type=checkbox]:checked {
+  border-color: var(--accent-solid); background-color: var(--accent-solid);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%2306111C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5'/%3E%3C/svg%3E");
+}
+html[data-theme="light"] .si-capture > input[type=checkbox]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5'/%3E%3C/svg%3E");
+}
+.si-capture > input[type=checkbox]:disabled { cursor: default; opacity: .85; }
+
 /* review card */
 .si-submit:disabled { opacity: 1; background: var(--surface-3); border-color: var(--line-strong); color: var(--text-2); cursor: not-allowed; }
 .si-cancel { display: flex; justify-content: center; margin-top: var(--sp-2); font-size: var(--fs-md); }
@@ -26,6 +41,14 @@
 @media (max-width: 1120px) { .si-review > .si-cancel { display: none; } }
 .si-mobile-summary [data-si-roles], .si-role-summary { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); }
 @media (max-width: 820px) {
+  /* rows: 56px thumbnail + text; the checkbox is overlaid on the thumbnail's corner */
+  .si-capture { grid-template-columns: 56px minmax(0, 1fr); gap: var(--sp-3); align-items: start; padding: var(--sp-2); }
+  .si-capture > img { width: 56px; height: 56px; aspect-ratio: 1; }
+  .si-capture > input[type=checkbox] {
+    position: absolute; left: calc(var(--sp-2) + 4px); top: calc(var(--sp-2) + 4px); z-index: 1;
+    background-color: var(--media-scrim); border-color: var(--on-media-2);
+  }
+  .si-capture > input[type=checkbox]:checked { background-color: var(--accent-solid); border-color: var(--accent-solid); }
   .si-review { bottom: calc(var(--mnav-h, 56px) + env(safe-area-inset-bottom)); }
   .si-workspace { padding-bottom: calc(var(--mnav-h, 56px) + 112px + env(safe-area-inset-bottom)); }
 }

@@ -6,10 +6,11 @@ body { background: var(--bg); color: var(--text); }
 .p-loading { padding: var(--sp-8) 0; text-align: center; color: var(--text-2); font-size: var(--fs-lg); }
 
 /* Hero */
-.hero { margin: 0 calc(var(--sp-4) * -1); background: #000; border-radius: 0 0 var(--r-xl) var(--r-xl); overflow: hidden; }
-.hero video, .hero img { width: 100%; display: block; max-height: 62dvh; object-fit: cover; aspect-ratio: 16 / 9; }
-.hero-empty { aspect-ratio: 16 / 9; background: var(--surface-3); }
-@media (min-width: 900px) { .hero { margin: 0; border-radius: 0 0 var(--r-xl) var(--r-xl); } }
+/* .prop .hero pisa el .hero global de style.css (flex + padding 18/20 + margen): ese padding era el marco negro alrededor del video */
+.prop .hero { display: block; padding: 0; gap: 0; margin: 0 calc(var(--sp-4) * -1); background: #000; border-radius: 0 0 var(--r-xl) var(--r-xl); overflow: hidden; aspect-ratio: 16 / 9; max-height: 62dvh; }
+.prop .hero video, .prop .hero img, .prop .hero-empty { width: 100%; height: 100%; display: block; object-fit: cover; }
+.hero-empty { background: var(--surface-3); }
+@media (min-width: 900px) { .prop .hero { margin: 0; } }
 
 /* Cabecera */
 .head { padding: var(--sp-5) 0 var(--sp-1); }
@@ -19,8 +20,8 @@ body { background: var(--bg); color: var(--text); }
 .price { margin-top: var(--sp-3); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: var(--fs-2xl); font-weight: var(--fw-semibold); color: var(--accent-fg); }
 
 /* Especificaciones */
-.specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: var(--sp-2); margin: var(--sp-5) 0; }
-.spec { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--sp-3) var(--sp-3); text-align: center; display: flex; flex-direction: column; gap: var(--sp-0); }
+.specs { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-5) 0; }
+.spec { flex: 1 1 96px; max-width: 240px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--sp-3) var(--sp-3); text-align: center; display: flex; flex-direction: column; gap: var(--sp-0); }
 .spec b { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: var(--fs-xl); font-weight: var(--fw-semibold); }
 .spec span { font-size: var(--fs-xs); color: var(--text-2); }
 

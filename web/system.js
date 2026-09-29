@@ -42,25 +42,28 @@ main.innerHTML = `
     <div class="pb">
       <div class="gn-grid" id="gn-body"><div class="sk" style="height:56px"></div></div>
       <div class="gn-actions">
-        <button class="btn sm" id="gn-wake">Despertar</button>
-        <button class="btn sm ghost" id="gn-sleep">Dormir</button>
+        <button class="btn sm" id="gn-wake" title="Solo disponible cuando el PC está dormido">Despertar</button>
+        <button class="btn sm" id="gn-sleep" title="Solo disponible cuando el PC está despierto">Dormir</button>
         <span class="sy-hint" id="gn-note">El estado sale de un sondeo SSH real.</span>
       </div>
     </div>
   </div>
 
   <div class="sy-cols">
+    <div class="sy-col">
     <div class="panel">
       ${panelHead('activity', 'Actividad', 'Trabajos por estado y duración media')}
       <div class="pb" id="activity"><div class="sk" style="height:120px"></div></div>
     </div>
     <div class="panel">
-      ${panelHead('clock', 'Trabajos recientes', 'Los últimos 9')}
-      <div class="pb" id="feed"></div>
-    </div>
-    <div class="panel">
       ${panelHead('db', 'Storage del vault', 'Espacio por categoría')}
       <div class="pb" id="storage"><div class="sk" style="height:120px"></div></div>
+    </div>
+    </div>
+    <div class="sy-col">
+    <div class="panel">
+      ${panelHead('clock', 'Trabajos recientes', 'Los últimos 9')}
+      <div class="pb" id="feed"></div>
     </div>
     <div class="panel">
       ${panelHead('wifi', 'Servicios', 'Procesos locales y dominio')}
@@ -71,6 +74,7 @@ main.innerHTML = `
         <div><dt>Dominio</dt><dd class="mono">vuelos.metislab.work</dd></div>
         <div><dt>Compute</dt><dd>Mac Mini M4 · VideoToolbox</dd></div>
       </dl></div>
+    </div>
     </div>
     <div class="panel sy-wide">
       ${panelHead('check', 'Modelo de costos', 'Todo corre local salvo el análisis AI')}
@@ -215,7 +219,7 @@ function jobRelativeTime(job, now) {
   // ---------- base de datos de contenido (filtros + tabla paginada) ----------
   const PAGE = 25;
   const state = { q: '', tier: '', has: new Set(), shown: PAGE };
-  const ok = on => on ? `<span class="sy-yes" aria-label="sí">${icon('check')}</span>` : '<span class="sy-no" aria-label="no">·</span>';
+  const ok = on => on ? `<span class="sy-yes" aria-label="sí">${icon('check')}</span>` : '<span class="sy-no" aria-label="no">—</span>';
   function renderTable() {
     const rows = flights.filter(f => {
       if (state.tier && f.tier !== state.tier) return false;

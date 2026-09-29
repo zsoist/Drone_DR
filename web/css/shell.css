@@ -85,7 +85,10 @@
 }
 
 /* ---------- shared job card (Dron / Studio / 3D) ---------- */
-.job-card.jcx { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.job-card.jcx { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+/* rhythm: text lines pack at --sp-2; blocks (header, actions, log toggle) breathe at --sp-3 */
+.jcx-top { margin-bottom: var(--sp-1); }
+.jcx-actions, .jcx-more { margin-top: var(--sp-1); }
 .jcx-top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
 .jcx-ic {
   flex: none; display: grid; place-items: center; width: 32px; height: 32px;

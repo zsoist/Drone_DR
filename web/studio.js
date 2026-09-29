@@ -68,6 +68,7 @@ main.innerHTML = `
 
           <!-- 32-35 + 12-17 · UNA barra: transporte · edición · IA · historial · vista -->
           <div class="tb" id="tl-toolbar" role="toolbar" aria-label="Herramientas del editor">
+            <div class="tb-sc scroll-x-fade">
             <div class="tb-g">
               <button class="btn icon sm ghost" data-tp="start" data-tip="Ir al inicio" aria-label="Ir al inicio">${icon('skipStart')}</button>
               <button class="btn icon sm ghost" data-tp="prev" data-tip="Clip anterior" aria-label="Clip anterior">${icon('prev')}</button>
@@ -102,6 +103,7 @@ main.innerHTML = `
               <button class="btn icon sm ghost" data-tool="zoomin" data-tip="Acercar timeline" aria-label="Acercar timeline">${icon('zoomIn')}</button>
               <button class="btn icon sm ghost" data-tool="fit" data-tip="Ajustar todo a la ventana" aria-label="Ajustar a la ventana">${icon('fit')}</button>
             </div>
+            </div>
           </div>
 
           <!-- 3,4,7 · regla + track con scroll horizontal -->
@@ -130,15 +132,18 @@ main.innerHTML = `
             <div class="tl-sec" data-sec="speed">
               <div class="tl-seclabel">${icon('gauge')} Velocidad</div>
               <div class="chip-row" id="tli-speed" role="group" aria-label="Velocidad"></div>
-              <div class="tl-inspect-row tl-sp-row">
+              <div class="tl-inspect-row">
                 <label for="tli-speed-range">Ajuste fino</label>
-                <input class="tl-range" id="tli-speed-range" type="range" min="0.1" max="100" step="0.05">
+                <input class="tl-range" id="tli-speed-range" type="range" min="0" max="100" step="1" aria-valuetext="1x" data-tip="Escala logarítmica de 0.1x a 10x (el centro es 1x). Para más de 10x escribe el valor.">
                 <span class="tl-numx"><input class="ctl" id="tli-speed-num" type="number" min="0.1" max="100" step="0.05" aria-label="Velocidad (x)"><span class="mono">x</span></span>
               </div>
-              <div class="tl-sp-opts">
-                <label class="tl-fld tl-fld-chk"><input type="checkbox" id="tli-reverse"><span>Reversa</span></label>
-                <label class="tl-fld"><span>Congelar</span>
-                  <span class="tl-numx"><input class="ctl" id="tli-freeze" type="number" min="0" max="10" step="0.1" value="0"><span class="mono">s</span></span></label>
+              <div class="tl-inspect-row">
+                <label for="tli-reverse">Reversa</label>
+                <label class="tx-switch" data-tip="Reproduce el clip al revés"><input type="checkbox" id="tli-reverse" role="switch"><i aria-hidden="true"></i></label>
+              </div>
+              <div class="tl-inspect-row">
+                <label for="tli-freeze">Congelar</label>
+                <span class="tl-numx"><input class="ctl" id="tli-freeze" type="number" min="0" max="10" step="0.1" value="0"><span class="mono">s</span></span>
               </div>
             </div>
 
@@ -146,7 +151,7 @@ main.innerHTML = `
             <div class="tl-sec" data-sec="color">
               <div class="tl-seclabel">${icon('sun')} Color
                 <span class="spacer"></span>
-                <button class="btn" id="tli-grade-reset" data-tip="Restablecer color">Reset color</button>
+                <button class="btn sm" id="tli-grade-reset" data-tip="Restablecer color">Reset color</button>
               </div>
               <div class="tl-grade">
                 <div class="tl-inspect-row"><label>Brillo</label>
@@ -194,38 +199,47 @@ main.innerHTML = `
               <div class="tl-inspect-row">
                 <input class="u-f1 ctl" id="tli-title" placeholder="Título de este corte…" maxlength="60">
               </div>
-              <div class="tl-inspect-row">
-                <label>Estilo</label>
-                <select class="ctl" id="tli-title-style" data-tip="Cada estilo trae su propia animación de entrada">
-                  <option value="clean">Limpio</option>
-                  <option value="bold">Bold · mayúsculas</option>
-                  <option value="kinetic">Kinético · sube</option>
-                  <option value="lower">Lower third · entra</option>
-                  <option value="minimal">Minimal</option>
-                </select>
-                <label>Fuente</label>
-                <select class="ctl" id="tli-title-font" data-tip="Fuentes del sistema, se renderizan en el Mac">
-                  <option value="sans">Helvetica Neue</option>
-                  <option value="condensed">Avenir Condensed</option>
-                  <option value="avenir">Avenir Next</option>
-                  <option value="optima">Optima</option>
-                  <option value="serif">Georgia</option>
-                  <option value="mono">Menlo</option>
-                </select>
-              </div>
-              <div class="tl-inspect-row">
-                <label>Posición</label>
-                <select class="ctl" id="tli-title-pos">
-                  <option value="top">Arriba</option><option value="mid">Centro</option><option value="bottom">Abajo</option>
-                </select>
-                <label>Tamaño</label>
-                <input class="u-f1 u-minw70 tl-range" id="tli-title-size" type="range" min="1" max="100" step="1" value="40">
-              </div>
-              <div class="tl-inspect-row">
-                <label>Color</label>
-                <input class="u-color ctl" id="tli-title-color" type="color" value="#ffffff">
-                <span class="spacer"></span>
-                <label class="u-chk"><input type="checkbox" id="tli-title-box"> Fondo</label>
+              <div class="tl-rows">
+                <div class="tl-inspect-row">
+                  <label for="tli-title-style">Estilo</label>
+                  <select class="ctl" id="tli-title-style" data-tip="Cada estilo trae su propia animación de entrada">
+                    <option value="clean">Limpio</option>
+                    <option value="bold">Bold · mayúsculas</option>
+                    <option value="kinetic">Kinético · sube</option>
+                    <option value="lower">Lower third · entra</option>
+                    <option value="minimal">Minimal</option>
+                  </select>
+                </div>
+                <div class="tl-inspect-row">
+                  <label for="tli-title-font">Fuente</label>
+                  <select class="ctl" id="tli-title-font" data-tip="Fuentes del sistema, se renderizan en el Mac">
+                    <option value="sans">Helvetica Neue</option>
+                    <option value="condensed">Avenir Condensed</option>
+                    <option value="avenir">Avenir Next</option>
+                    <option value="optima">Optima</option>
+                    <option value="serif">Georgia</option>
+                    <option value="mono">Menlo</option>
+                  </select>
+                </div>
+                <div class="tl-inspect-row">
+                  <label for="tli-title-pos">Posición</label>
+                  <select class="ctl" id="tli-title-pos">
+                    <option value="top">Arriba</option><option value="mid">Centro</option><option value="bottom">Abajo</option>
+                  </select>
+                </div>
+                <div class="tl-inspect-row">
+                  <label for="tli-title-size">Tamaño</label>
+                  <input class="tl-range" id="tli-title-size" type="range" min="1" max="100" step="1" value="40">
+                  <span class="mono" id="tli-title-size-v">40</span>
+                </div>
+                <div class="tl-inspect-row">
+                  <label for="tli-title-color">Color</label>
+                  <input class="u-color ctl" id="tli-title-color" type="color" value="#ffffff">
+                </div>
+                <div class="tl-inspect-row">
+                  <label for="tli-title-box">Fondo</label>
+                  <label class="tx-switch" data-tip="Caja oscura detrás del título"><input type="checkbox" id="tli-title-box" role="switch"><i aria-hidden="true"></i></label>
+                </div>
               </div>
             </div>
 
@@ -280,8 +294,7 @@ main.innerHTML = `
       <!-- hoja de export estilo CapCut: ajustes agrupados + estimación en vivo -->
       <div class="ex-sheet" id="ex-sheet" style="display:none">
         <div class="ex-card">
-          <div class="ph">${icon('dl')} Exportar reel
-            <span class="spacer"></span>
+          <div class="modal-h"><b>${icon('dl')} Exportar reel</b>
             <button class="modal-x" type="button" id="ex-close" aria-label="Cerrar" data-tip="Cerrar">${icon('close')}</button>
           </div>
           <div class="ex-body">
@@ -396,8 +409,7 @@ main.innerHTML = `
       <!-- v7 · modal de proyectos guardados (localStorage) -->
       <div class="tl-projmodal" id="tl-projmodal" style="display:none">
         <div class="tl-projcard">
-          <div class="ph">${icon('db')} Proyectos guardados
-            <span class="spacer"></span>
+          <div class="modal-h"><b>${icon('db')} Proyectos guardados</b>
             <button class="modal-x" type="button" id="proj-close" aria-label="Cerrar" data-tip="Cerrar">${icon('close')}</button>
           </div>
           <div class="pb" id="proj-list"></div>
@@ -410,9 +422,8 @@ main.innerHTML = `
   <section class="st-mod" data-mod="reels" style="display:none">
     <div class="rm-ctas">
       <button class="rm-cta" id="rm-open">
-        <span class="rm-cta-ic">${icon('film')}</span>
-        <span class="rm-cta-t"><b>Crear reel</b><small>Elige tus tomas y AeroBrain arma el montaje; luego lo editas</small></span>
-        <span class="rm-cta-go">${icon('chevR')}</span>
+        <span class="rm-auto-h"><b>${icon('film')} Crear reel</b><small>Elige tus tomas y AeroBrain arma el montaje; luego lo editas</small></span>
+        <span class="rm-cta-b">Elegir tomas ${icon('chevR')}</span>
       </button>
       <div class="rm-auto">
         <div class="rm-auto-h"><b>${icon('spark')} Reel automático</b><small>Un toque y listo: elige la sesión y la duración</small></div>
@@ -427,12 +438,14 @@ main.innerHTML = `
     </div>
     <div class="media-toolbar">
       <label class="search u-f1 u-minw150"><input id="q-reels" type="search" placeholder="Buscar reel…" aria-label="Buscar reel"></label>
-      <select class="ctl" id="s-reels" aria-label="Ordenar por">
-        <option value="recientes">Más recientes</option>
-        <option value="tamano">Más pesados</option>
-        <option value="nombre">Nombre A–Z</option>
-      </select>
-      <button class="btn" id="btn-ord" data-tip="Modo reordenar: mueve los reels con las flechas y guarda el orden" aria-pressed="false">${icon('swap')} Reordenar</button>
+      <div class="mt-sort">
+        <select class="ctl" id="s-reels" aria-label="Ordenar por">
+          <option value="recientes">Más recientes</option>
+          <option value="tamano">Más pesados</option>
+          <option value="nombre">Nombre A–Z</option>
+        </select>
+        <button class="btn" id="btn-ord" data-tip="Modo reordenar: mueve los reels con las flechas y guarda el orden" aria-pressed="false">${icon('swap')} Reordenar</button>
+      </div>
     </div>
     <div class="media-grid" id="grid-reels"><div class="sk-card sk"></div><div class="sk-card sk"></div></div>
   </section>
@@ -1044,10 +1057,22 @@ function openBurnTexts(it, onDone) {
   });
 }
 
+const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+// fecha corta: sin año si es el actual ("20 jul"); con año si no ("20 jul 2025")
 function mdate(mtime) {
   const d = new Date(mtime * 1000);
-  const M = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-  return `${d.getDate()} ${M[d.getMonth()]} ${d.getFullYear()}`;
+  return `${d.getDate()} ${MES[d.getMonth()]}${d.getFullYear() === new Date().getFullYear() ? '' : ' ' + d.getFullYear()}`;
+}
+function fmtDayShort(iso) {   // '2026-07-24' → '24 jul' (año solo si no es el actual)
+  const [y, m, day] = String(iso || '').split('-');
+  if (!m) return '';
+  return `${+day} ${MES[+m - 1]}${+y === new Date().getFullYear() ? '' : ' ' + y}`;
+}
+// nombre con elipsis en el MEDIO: se conserva el inicio y el final (lo que distingue a DJI_…_0099_D_000X)
+function midName(base) {
+  if (base.length <= 18) return esc(base);
+  const k = 7;
+  return `<span class="mn-a">${esc(base.slice(0, -k))}</span><span class="mn-b">${esc(base.slice(-k))}</span>`;
 }
 
 async function loadMedia() {
@@ -1142,7 +1167,7 @@ function cardHTML(kind, it) {
         <img loading="lazy" src="/api/photo_thumb?rel=${rel}&w=512" alt="" class="u-ptr">
         <span class="m-fmt ${it.kind === 'DNG' ? 'dng' : ''}">${esc(it.kind)}</span>
       </div>
-      <div class="m-head"><div class="m-name" title="${esc(base)}">${esc(base)}</div></div>
+      <div class="m-head"><div class="m-name" title="${esc(base)}">${midName(base)}</div></div>
       <div class="m-meta mono">${fmt.gb(it.bytes)} · ${it.date ? esc(it.date) : mdate(it.mtime)}</div>
       <div class="m-actions">
         <button class="btn sm primary" data-act="edit" aria-label="Abrir en el editor">${icon('iso')} Editar</button>
@@ -1168,7 +1193,7 @@ function cardHTML(kind, it) {
       </div>` : ''}
     </div>
     <div class="m-head">
-      <div class="m-name" title="${esc(base)}">${esc(base)}</div>
+      <div class="m-name" title="${esc(base)}">${midName(base)}</div>
       ${fmtBadge}
     </div>
     <div class="m-meta mono">${fmt.gb(it.bytes)} · ${mdate(it.mtime)}${it.h ? ` · ${it.h}p` : ''}</div>
@@ -1540,16 +1565,6 @@ pollJobs(jobsEl, 2500, j => {
   }
   function clampSel() { if (sel >= tl.length) sel = tl.length - 1; }
 
-  // sliders con relleno de progreso (mismo look que el editor de fotos)
-  function paintR(r) {
-    const p = ((+r.value) - (+r.min)) / ((+r.max) - (+r.min)) * 100;
-    r.style.background = `linear-gradient(90deg, var(--accent) ${p}%, var(--surface-2) ${p}%)`;
-  }
-  const paintAllRanges = () => document.querySelectorAll('.tl-inspect .tl-range').forEach(paintR);
-  document.getElementById('tl-inspect').addEventListener('input', e => {
-    if (e.target.classList.contains('tl-range')) paintR(e.target);
-  });
-
   // ---- render maestro ----
   function renderAll() {
     renderRuler();
@@ -1567,7 +1582,6 @@ pollJobs(jobsEl, 2500, j => {
     scroll.classList.toggle('is-empty', !tl.length);
     paintPlayhead();
     if (!tl.length) { video.removeAttribute('src'); video.load?.(); curCid = null; preloadClip(null); }
-    paintAllRanges();
   }
 
   // 3,4 · regla de tiempo con marcas
@@ -1640,7 +1654,7 @@ pollJobs(jobsEl, 2500, j => {
       const trans = i > 0
         ? `<button class="tl-junction${txSet ? ' set' : ''}" data-j="${i}"
              data-tip="${txSet ? esc((TX_LABELS[s.transition] || s.transition) + ' · ' + (s.transDur || 0.4) + 's — click para cambiar') : 'Corte seco — click para elegir transición'}" aria-label="Transición entre tomas">${txSet ? icon('layers') : icon('plus')}</button>` : '';
-      const lb = esc(f?.label) || fmt.date(f?.date || 0);
+      const lb = esc(f?.label) || esc(`${fmtDayShort(f?.date)} ${f?.time || ''}`.trim());   // '24 jul 16:24' (sin año: es el dato que se trunca)
       return `${trans}<div class="tl-clip${i === sel ? ' sel' : ''}" data-i="${i}" data-cid="${s.clip_id}"
                 style="width:${w}px" draggable="false">
           <div class="tl-thumbs">${thumbs}</div>
@@ -1656,6 +1670,9 @@ pollJobs(jobsEl, 2500, j => {
   }
 
   // 18-23 · inspector del clip seleccionado (v7 · velocidad+color+título+transición)
+  // "Ajuste fino" de velocidad: slider logarítmico 0.1x–10x (1x al centro); por encima de 10x se escribe el valor
+  const speedToPos = v => Math.max(0, Math.min(100, Math.round(50 * Math.log10((+v || 1) / 0.1))));
+  const posToSpeed = p => 0.1 * Math.pow(10, (+p) / 50);
   function renderInspector() {
     if (sel < 0 || !tl[sel]) { inspect.hidden = true; return; }
     const s = tl[sel];
@@ -1672,7 +1689,8 @@ pollJobs(jobsEl, 2500, j => {
     // velocidad: chips + slider + input numérico sincronizados
     g('tli-speed').innerHTML = SPEEDS.map(v =>
       `<button class="chip${s.speed === v ? ' on' : ''}" data-spd="${v}">${v}x</button>`).join('');
-    g('tli-speed-range').value = s.speed;
+    g('tli-speed-range').value = speedToPos(s.speed);
+    g('tli-speed-range').setAttribute('aria-valuetext', s.speed + 'x');
     g('tli-speed-num').value = s.speed;
     g('tli-reverse').checked = !!s.reverse;
     g('tli-freeze').value = s.freeze || 0;
@@ -1689,6 +1707,7 @@ pollJobs(jobsEl, 2500, j => {
     g('tli-title-style').value = s.titleStyle.style || 'clean';
     g('tli-title-font').value = s.titleStyle.font || 'sans';
     g('tli-title-size').value = s.titleStyle.size;
+    g('tli-title-size-v').textContent = s.titleStyle.size;
     g('tli-title-color').value = '#' + (s.titleStyle.color || 'ffffff');
     g('tli-title-box').checked = !!s.titleStyle.box;
     // transición
@@ -2153,7 +2172,7 @@ pollJobs(jobsEl, 2500, j => {
           <b class="mono" id="tx-boxav">${Math.round((+S.boxAlpha || 0.45) * 100)}%</b></div>
       </div>
       <div class="rm-foot">
-        <span class="rm-count">Se quema en el video al exportar</span>
+        <span class="rm-count modal-hint">Se quema en el video al exportar</span>
         <span class="u-f1 spacer"></span>
         <button class="btn rv-del" data-tx="del">${icon('trash')} Quitar</button>
         <button class="btn primary" data-tx="ok">Listo</button>
@@ -2460,7 +2479,7 @@ pollJobs(jobsEl, 2500, j => {
           </div>` : ''}
         </div>
         <div class="rm-foot">
-          <span class="rm-count mono">${music ? `${esc(music.name)} · se mezcla al exportar` : 'Sin música — el reel usará solo el audio original'}</span>
+          <span class="rm-count modal-hint">${music ? `${esc(music.name)} · se mezcla al exportar` : 'Sin música — el reel usará solo el audio original'}</span>
           <span class="u-f1 spacer"></span>
           ${music ? '<button class="btn" id="mu-clear">Quitar música</button>' : ''}
           <button class="btn primary" id="mu-ok">Listo</button>
@@ -2943,7 +2962,7 @@ pollJobs(jobsEl, 2500, j => {
           </div>`}
         </div>
         <div class="rm-foot">
-          <span class="rm-count mono">${pick.size ? `${pick.size} toma${pick.size === 1 ? '' : 's'} · ${estimate()}` : 'Elige al menos una toma'}</span>
+          <span class="rm-count modal-hint">${pick.size ? `${pick.size} toma${pick.size === 1 ? '' : 's'} · ${estimate()}` : 'Elige al menos una toma'}</span>
           <span class="u-f1 spacer"></span>
           ${st.step === 2 ? `<button class="btn" id="rm-back">${icon('chevL')} Tomas</button>` : ''}
           <button class="btn primary" id="rm-go" ${pick.size ? '' : 'disabled'}>${st.step === 1 ? `Continuar ${icon('chevR')}` : `${icon('spark')} Crear reel`}</button>
@@ -3118,13 +3137,19 @@ pollJobs(jobsEl, 2500, j => {
 
   // ================= carrusel de clips fuente (24-27) =================
   const rail = document.getElementById('rail');
-  rail.innerHTML = editable.map(f => `
+  // etiqueta = hora primero + duración; la fecha se dice UNA vez por día (separador), no en cada tarjeta
+  let railDay = null;
+  rail.innerHTML = editable.map(f => {
+    const day = f.date !== railDay ? `<div class="cr-day" role="presentation"><b>${esc(fmtDayShort(f.date))}</b></div>` : '';
+    railDay = f.date;
+    return `${day}
     <div class="cr-item" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
       <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="" width="320" height="180">
       <span class="scrub-line"></span>
-      <span class="cr-lb">${esc(f.label) || fmt.date(f.date)} · ${fmt.dur(f.duration_s)}</span>
+      <span class="cr-lb"><b>${esc(f.label || f.time || fmtDayShort(f.date))}</b><em>${fmt.dur(f.duration_s)}</em></span>
       <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar en playhead" aria-label="Insertar en el playhead">${icon('plus')}</button>
-    </div>`).join('') || emptyState({ icon: 'film', title: 'Sin clips disponibles', help: 'Ningún clip tiene proxy todavía.' });
+    </div>`;
+  }).join('') || emptyState({ icon: 'film', title: 'Sin clips disponibles', help: 'Ningún clip tiene proxy todavía.' });
   rail.querySelectorAll('.cr-item').forEach(el => el.classList.add('scrub'));
   attachScrub(rail);   // 27 · scrub por hover reutilizando el helper del repo
   rail.addEventListener('click', e => {
@@ -3361,7 +3386,7 @@ pollJobs(jobsEl, 2500, j => {
   const livePreview = () => { const s = selSeg(); if (s) video.style.filter = cssFilterFor(s); };
 
   // --- velocidad: chips + slider + input numérico (0.1..100) ---
-  function setSpeed(v, doSeek = true) {
+  function setSpeed(v, doSeek = true) {   // (speedToPos/posToSpeed: escala log del slider, definidas arriba)
     const s = selSeg(); if (!s) return;
     v = Math.max(0.1, Math.min(100, +v || 1));
     pushUndo(); s.speed = +v.toFixed(2); renderAll(); if (doSeek) seek(offset(sel));
@@ -3369,8 +3394,11 @@ pollJobs(jobsEl, 2500, j => {
   $('tli-speed').addEventListener('click', e => {
     const b = e.target.closest('[data-spd]'); if (b) setSpeed(+b.dataset.spd);
   });
-  $('tli-speed-range').addEventListener('input', e => { $('tli-speed-num').value = e.target.value; });
-  $('tli-speed-range').addEventListener('change', e => setSpeed(e.target.value));
+  $('tli-speed-range').addEventListener('input', e => {
+    const v = +posToSpeed(e.target.value).toFixed(2);
+    $('tli-speed-num').value = v; e.target.setAttribute('aria-valuetext', v + 'x');
+  });
+  $('tli-speed-range').addEventListener('change', e => setSpeed(posToSpeed(e.target.value)));
   $('tli-speed-num').addEventListener('change', e => setSpeed(e.target.value));
   $('tli-reverse').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.reverse = e.target.checked; renderTrack(); } });
   $('tli-freeze').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.freeze = Math.max(0, +e.target.value || 0); renderTrack(); } });
@@ -3410,7 +3438,7 @@ pollJobs(jobsEl, 2500, j => {
   $('tli-title-pos').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.pos = e.target.value; } });
   $('tli-title-style').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.style = e.target.value; renderTrack(); } });
   $('tli-title-font').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.font = e.target.value; } });
-  $('tli-title-size').addEventListener('input', e => { const s = selSeg(); if (!s) return; commitEdit(); s.titleStyle.size = +e.target.value; });
+  $('tli-title-size').addEventListener('input', e => { const s = selSeg(); if (!s) return; commitEdit(); s.titleStyle.size = +e.target.value; $('tli-title-size-v').textContent = e.target.value; });
   $('tli-title-color').addEventListener('input', e => { const s = selSeg(); if (!s) return; commitEdit(); s.titleStyle.color = e.target.value.replace('#', ''); });
   $('tli-title-box').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.titleStyle.box = e.target.checked; } });
 

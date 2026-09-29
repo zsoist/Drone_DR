@@ -30,7 +30,10 @@
 .dr-stats .v.is-zero { color: var(--text-3); }
 
 .dr-panel { margin-bottom: var(--sp-4); }
-.dr-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+.dr-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--sp-4); align-items: stretch; }
+.dr-two > .dr-panel { display: flex; flex-direction: column; }
+.dr-two > .dr-panel > .pb { flex: 1; display: flex; flex-direction: column; }
+.dr-two .dr-chain { margin: auto 0; padding: var(--sp-3) 0; }
 .dr-two > .dr-panel { margin-bottom: 0; }
 .dr-two { margin-bottom: var(--sp-4); }
 .dr-note { margin: var(--sp-3) 0 0; font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-2); }

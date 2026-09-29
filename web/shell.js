@@ -604,9 +604,9 @@ function jobCard(j, flightsIdx, entering = true) {
   const f = flightsIdx?.[j.label];
   const subject = j.title || (f ? (f.label || fmt.date(f.date) + ' ' + f.time) : j.label || 'trabajo');
   const titleText = `${meta.name} · ${subject}`;
-  const stLabel = { running: 'procesando', queued: 'en cola', done: 'listo',
-    error: 'falló', cancelled: 'cancelado', cancel_failed: 'cancel falló' }[j.status] || j.status;
-  const outcomeLabel = j.outcome === 'completed_with_fallback' ? 'listo con fallback' : stLabel;
+  const stLabel = { running: 'en proceso', queued: 'en cola', done: 'listo',
+    error: 'falló', cancelled: 'cancelado', cancel_failed: 'no se pudo cancelar' }[j.status] || j.status;
+  const outcomeLabel = j.outcome === 'completed_with_fallback' ? 'Listo · con respaldo' : stLabel;
   const pct = Number.isFinite(+j.progress) ? Math.round(+j.progress * 100) : null;
   const active = ['running', 'queued'].includes(j.status);
   const quality = [];
@@ -1165,3 +1165,35 @@ const DARK_STYLE = {
   sources: { c: { type: 'raster', tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'], tileSize: 256, attribution: 'CARTO · OSM' } },
   layers: [{ id: 'c', type: 'raster', source: 'c' }],
 };
+
+// ---- range sliders: keep --fill (0..100%) in sync so input[type=range] paints its filled part (style.css "range slider").
+// Delegated 'input' listener + programmatic `.value =` + nodes added later + attribute changes (min/max). Also honours a legacy --p.
+(() => {
+  const paint = r => {
+    const mn = +r.min || 0, mx = r.max === '' ? 100 : +r.max, v = +r.value;
+    const p = mx > mn ? Math.min(1, Math.max(0, (v - mn) / (mx - mn))) : 0;
+    r.style.setProperty('--fill', (p * 100).toFixed(2) + '%');
+  };
+  const scan = root => {
+    if (!root || root.nodeType !== 1) return;
+    if (root.matches?.('input[type=range]')) paint(root);
+    root.querySelectorAll?.('input[type=range]').forEach(paint);
+  };
+  window.paintRange = paint;
+  document.addEventListener('input', e => { if (e.target?.matches?.('input[type=range]')) paint(e.target); }, true);
+  document.addEventListener('change', e => { if (e.target?.matches?.('input[type=range]')) paint(e.target); }, true);
+  try {
+    const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    Object.defineProperty(HTMLInputElement.prototype, 'value', {
+      ...d, set(v) { d.set.call(this, v); if (this.type === 'range') paint(this); },
+    });
+  } catch {}
+  const start = () => {
+    scan(document.body);
+    new MutationObserver(ms => ms.forEach(m => {
+      if (m.type === 'attributes') { if (m.target.matches?.('input[type=range]')) paint(m.target); }
+      else m.addedNodes.forEach(scan);
+    })).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['min', 'max', 'value'] });
+  };
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();

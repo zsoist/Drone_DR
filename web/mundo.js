@@ -18,12 +18,20 @@ const best = cid => { const t = parseFloat(localStorage.getItem(`ab.fv.best.${ci
 // una sola capa: con dos (thumb + ortho de respaldo) el navegador descarga AMBAS
 // imágenes siempre. tresd_publish genera ortho_thumb.webp en cada publicación.
 const bgLayers = (p, q) => (p ? `url(${q}${p}${q})` : 'none');
+// Mientras la miniatura no está lista (o no existe) la tarjeta muestra el placeholder neutro
+// (.wi-poster::before: degradado + inicial de la isla); al cargar, .has-img lo oculta.
 const hydratePreview = card => {
   const poster = card?.querySelector('.wi-poster');
   if (!poster || poster.dataset.previewLoaded === 'true') return false;
   const url = poster.dataset.preview || '';
   poster.dataset.previewLoaded = 'true';
-  if (url) poster.style.backgroundImage = bgLayers(url, '"');
+  if (url) {
+    poster.style.backgroundImage = bgLayers(url, '"');   // síncrono; el placeholder (::before) la cubre hasta que carga
+    const probe = new Image();
+    probe.onload = () => poster.classList.add('has-img');
+    probe.onerror = () => { poster.style.backgroundImage = 'none'; };   // 404: queda el placeholder
+    probe.src = url;
+  }
   return true;
 };
 
@@ -105,7 +113,7 @@ function isla(sc, i) {
   <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms"
     role="button" tabindex="0" aria-selected="false"
     aria-label="Seleccionar ${esc(sc.name)}">
-    <div class="wi-poster" data-preview="${esc(sc.assets?.poster||'')}"></div>
+    <div class="wi-poster" data-ini="${esc(([...String(sc.name||'').trim()][0]||'·').toUpperCase())}" data-preview="${esc(sc.assets?.poster||'')}"></div>
     <div class="wi-shine"></div>
     <div class="scrim"></div>
     ${c.splat?'<span class="wi-badge">FOTO-REAL</span>':c.mesh?'<span class="wi-badge mesh">MALLA 3D</span>':''}
@@ -337,6 +345,8 @@ async function boot() {
     const max = rail.scrollWidth - rail.clientWidth - 2;
     document.getElementById('w-prev').disabled = rail.scrollLeft <= 2;
     document.getElementById('w-next').disabled = rail.scrollLeft >= max;
+    rail.classList.toggle('at-end', rail.scrollLeft >= max);   // al final del carrusel no se difumina la última tarjeta
+    rail.classList.toggle('at-start', rail.scrollLeft <= 2);
   };
   rail.addEventListener('scroll', syncArrows, { passive: true });
   addEventListener('resize', syncArrows);

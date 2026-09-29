@@ -117,7 +117,7 @@ document.addEventListener('click', e => {
         </div>
         <div class="vt-item-a">
           <a class="btn sm" href="p.html?id=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">${icon('ext')} Ver</a>
-          <button class="btn sm" data-edit="${esc(p.slug)}">Editar</button>
+          <button class="btn sm" data-edit="${esc(p.slug)}">${icon('edit')} Editar</button>
         </div>
       </div>`).join('') :
       emptyState({ icon: 'tag', title: 'Sin propiedades publicadas', help: 'Cuando publiques la primera aparecerá aquí.' });

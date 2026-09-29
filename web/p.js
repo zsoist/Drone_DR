@@ -1,5 +1,10 @@
-// Ficha pública de propiedad — /p.html?id=<slug>. Sin shell.js: sigue la preferencia del sistema.
-document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+// Ficha pública de propiedad — /p.html?id=<slug>. Sin shell.js. Tema: ab_theme si el visitante ya lo eligió
+// en la app (igual que share.html); si no, prefers-color-scheme. El data-theme="light" de p.html es solo el respaldo sin JS.
+{
+  let t = null;
+  try { const v = localStorage.getItem('ab_theme'); if (v === 'light' || v === 'dark') t = v; } catch {}
+  document.documentElement.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+}
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const root = document.getElementById('root');
 

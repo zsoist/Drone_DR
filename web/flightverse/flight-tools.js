@@ -36,7 +36,11 @@ export function createFlightTools({
 
   const paintGimbal = () => {
     const rounded = Math.round(gimbalDegrees);
-    if (gimbalRange) gimbalRange.value = String(rounded);
+    if (gimbalRange) {
+      gimbalRange.value = String(rounded);
+      // volar no carga shell.js: pintar aquí el --fill del rango global
+      gimbalRange.style?.setProperty('--fill', `${((rounded + 90) / 115) * 100}%`);
+    }
     if (gimbalValue) gimbalValue.textContent = `${rounded}°`;
     if (gimbalTrigger) {
       gimbalTrigger.setAttribute('aria-label', `Ajustar gimbal. Actual: ${rounded}°`);

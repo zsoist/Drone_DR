@@ -94,10 +94,15 @@
 .fl .ch-line { animation: flIn var(--dur-slow) var(--ease-out) both; }
 @keyframes flIn { from { opacity: 0; } }
 .fl-flat {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3);
   padding: var(--sp-3) var(--sp-4); font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--text-2);
 }
-.fl-flat span { font-weight: var(--fw-regular); font-size: var(--fs-xs); text-align: right; }
+.fl-flat b { font-weight: var(--fw-medium); }
+.fl-flat span { font-weight: var(--fw-regular); font-size: var(--fs-xs); text-align: right; min-width: 0; }
+@media (max-width: 640px) { .fl-flat { flex-direction: column; align-items: flex-start; } .fl-flat span { text-align: left; } }   /* etiqueta y leyenda en líneas propias */
+.fl-head .hero-back { gap: var(--sp-1); padding-inline: var(--sp-3); }
+.fl-head .hero-back-l { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+.fl .chips:has(.chip.mom) { margin-bottom: var(--sp-3); }
 @media (max-width: 820px) { .fl .chart-wrap { height: 112px; } }
 
 /* ── Momentos, filmstrip, IA ──────────────────────────────── */
@@ -163,3 +168,4 @@
 .fl .hl-item .tc { min-width: 44px; min-height: 32px; display: inline-grid; place-items: center; }
 .fl-copy { min-height: 32px; display: inline-flex; align-items: center; padding: 0 var(--sp-2); margin: 0 calc(-1 * var(--sp-2)); border-radius: var(--r-sm); }
 @media (hover: hover) { .fl-copy:hover { background: var(--accent-dim); } }
+@media (max-width: 820px) { .fl-head .hero-back-l { display: none; } .fl-head .hero-back { padding-inline: var(--sp-3); } }   /* móvil: solo la flecha (aria-label "Volver a Vuelos") */

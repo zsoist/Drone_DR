@@ -48,7 +48,7 @@ const cid = new URLSearchParams(location.search).get('id');
   main.innerHTML = `
   <div class="fl">
     <div class="hero glass rise fl-head">
-      <a class="btn icon hero-back" href="index.html" aria-label="Volver a la galería" data-tip="Volver a la galería">${icon('chevL')}</a>
+      <a class="btn hero-back" href="index.html" aria-label="Volver a Vuelos" data-tip="Volver a la galería">${icon('arrowL')}<span class="hero-back-l">Vuelos</span></a>
       <div class="hero-t">
         <h1>${esc(meta.label || fmt.date(meta.date) + ' · ' + meta.time)}</h1>
         <div class="hero-sub mono">${meta.label ? fmt.date(meta.date) + ' ' + meta.time + ' · ' : ''}${cid}</div>
@@ -88,7 +88,7 @@ const cid = new URLSearchParams(location.search).get('id');
           <div class="pb fl-tel-b">
             <div class="chart-wrap" id="ch-alt"></div>
             ${flatSpeed
-              ? `<div class="fl-flat">Velocidad<span class="mono">sin desplazamiento apreciable · máx ${maxSpeed.toFixed(1)} km/h</span></div>`
+              ? `<div class="fl-flat"><b>Velocidad</b><span class="mono">sin desplazamiento apreciable · máx ${maxSpeed.toFixed(1)} km/h</span></div>`
               : '<div class="chart-wrap" id="ch-speed"></div>'}
           </div>
         </div>` : ''}

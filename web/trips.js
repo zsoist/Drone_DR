@@ -177,7 +177,7 @@ main.innerHTML = `
         <div class="hero-chips">
           <span class="gchip" data-tip="Vuelos filtrados / totales">${list.length}/${c.flights.length} vuelos</span>
           <span class="gchip" data-tip="Tiempo total en el aire">${fmt.hours(c.dur)}</span>
-          ${c.score ? `<span class="score-pill" data-tip="Mejor score AI">${c.score}/10</span>` : ''}
+          ${c.score ? `<span class="chip sm tr-score" data-tip="Mejor score AI">${icon('star')} ${c.score}/10</span>` : ''}
         </div>
         <div class="hero-actions">
           <a class="btn" href="index.html?v=map" data-tip="Ver las rutas en el mapa">${icon('map')} Mapa</a>

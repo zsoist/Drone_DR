@@ -1,6 +1,6 @@
-import * as THREE from "/vendor/three180.module.js?v=356";
-import { Loader, FileLoader, Quaternion, Vector3, Color, Matrix4 } from "/vendor/three180.module.js?v=356";
-import { FullScreenQuad } from "/vendor/three180-pass.js?v=356";
+import * as THREE from "/vendor/three180.module.js?v=358";
+import { Loader, FileLoader, Quaternion, Vector3, Color, Matrix4 } from "/vendor/three180.module.js?v=358";
+import { FullScreenQuad } from "/vendor/three180-pass.js?v=358";
 class OldSplatGeometry extends THREE.InstancedBufferGeometry {
   constructor(ordering, activeSplats) {
     super();

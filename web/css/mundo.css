@@ -16,20 +16,20 @@
 .w-rail {
   scroll-snap-type: x mandatory; scroll-padding-inline: var(--sp-5);
   padding: var(--sp-half) var(--sp-5) var(--sp-4); gap: var(--sp-4); overscroll-behavior-x: contain;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 calc(100% - var(--sp-8)), transparent 100%);
-          mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 calc(100% - var(--sp-8)), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 calc(100% - var(--sp-10)), transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 calc(100% - var(--sp-10)), transparent 100%);
 }
 .wi { flex: 0 0 min(340px, 78vw); scroll-snap-align: start; }
 .wi:focus-visible { outline-offset: -3px; }
 .wi.sel { border-color: var(--accent); }
-.wi-body { display: flex; flex-direction: column; gap: var(--sp-0); padding: var(--sp-3) var(--sp-4); }
+.wi-body { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); }
 .wi-name {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
   font-size: var(--fs-xl); font-weight: var(--fw-semibold); line-height: var(--lh-snug);
-  min-height: calc(2 * 1.3em); text-wrap: balance; color: var(--on-media);
+  text-wrap: balance; color: var(--on-media);
 }
-.wi-meta { font-size: var(--fs-xs); color: var(--on-media-2); margin-top: 0; }
-.wi-stats { flex-wrap: nowrap; overflow: hidden; margin-top: var(--sp-1); }
+.wi-meta { font-size: var(--fs-xs); color: var(--on-media-2); margin: calc(var(--sp-1) * -1) 0 0; }   /* meta pegada bajo el título; el gap separa las stats */
+.wi-stats { flex-wrap: nowrap; overflow: hidden; margin-top: 0; }
 .wi-stats i {
   flex: none; white-space: nowrap; font-size: var(--fs-xs); color: var(--on-media-2);
   border-radius: var(--r-pill); background: var(--media-scrim); border-color: var(--media-line);
@@ -91,6 +91,22 @@
 /* toggle de vista + barra del mapa */
 .fv-viewseg { margin-top: var(--sp-4); width: fit-content; }
 .fv-mapbar .spacer { flex: 1; }
-@media (max-width: 640px) { .fv-mapbar { flex-wrap: wrap; } .fv-mapbar .spacer { display: none; } .fv-mapbar .seg { flex: 1 1 100%; } .fv-mapbar .seg button { flex: 1; } .fv-mapbar .btn { flex: 1; } }
+@media (max-width: 640px) { .fv-mapbar { flex-wrap: wrap; } .fv-mapbar .spacer { display: none; } .fv-mapbar .seg { flex: 0 1 auto; width: fit-content; max-width: 100%; } .fv-mapbar .btn { flex: 1 1 calc(50% - var(--sp-1)); } }
 
 .w-panel { margin-bottom: 0; }   /* el padding inferior de <main> ya deja aire; sin ~150px muertos bajo el panel */
+
+/* ── Cabecera: mismo título que el resto de páginas (20px/600); se conserva el eyebrow FLIGHTVERSE ── */
+.fv-hero h1 { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); letter-spacing: var(--tr-tight); line-height: var(--lh-tight); margin: var(--sp-2) 0 var(--sp-1); }
+
+/* ── Placeholder neutro mientras la miniatura carga / no existe ── */
+.wi-poster::before {
+  content: attr(data-ini); position: absolute; inset: 0; display: grid; place-items: center; padding-bottom: 38%;   /* letra en la mitad alta: el texto vive abajo */
+  font: var(--fw-bold) 56px/1 var(--mono); color: color-mix(in srgb, var(--media-accent, #7cc4ff) 45%, transparent);
+  background: linear-gradient(135deg, #1a2433 0%, #0e141d 60%, #0A0C10 100%);
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+.wi-poster.has-img::before { opacity: 0; }
+.w-rail.at-end {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 100%);
+          mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 100%);
+}

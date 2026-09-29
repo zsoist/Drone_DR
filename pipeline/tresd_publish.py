@@ -270,20 +270,127 @@ def build_tiles(proj: Path, out: Path) -> dict:
 
 THUMB_NAME = "ortho_thumb.webp"
 THUMB_MAX_W = 480
+THUMB_ASPECT = 16 / 10          # card/poster aspect; the crop follows it
+_VOID_ALPHA = 16                # alpha below this = nodata
+_VOID_LUMA = 12                 # RGB max below this = nodata (opaque black voids)
+_MASK_W = 240                   # the void mask is analysed at this width (speed)
+
+
+def _void_mask(im):
+    """True where the ortho has no data (transparent or pure black)."""
+    import numpy as np
+    a = np.asarray(im.convert("RGBA"))
+    return (a[..., 3] < _VOID_ALPHA) | (a[..., :3].max(-1) < _VOID_LUMA)
+
+
+def _best_window(void, aspect=THUMB_ASPECT, tol=0.0):
+    """Largest axis-aligned window of the given aspect whose void fraction is <= tol,
+    the one closest to the image centre. Returns (x, y, w, h) in mask pixels or None.
+    Uses an integral image and a binary search on the width (validity is monotone)."""
+    import numpy as np
+    H, W = void.shape
+    ii = np.zeros((H + 1, W + 1), dtype=np.int64)
+    ii[1:, 1:] = void.astype(np.int64).cumsum(0).cumsum(1)
+
+    def search(w):
+        h = max(1, round(w / aspect))
+        if w > W or h > H:
+            return None
+        cnt = ii[h:, w:] - ii[:-h, w:] - ii[h:, :-w] + ii[:-h, :-w]
+        ok = cnt <= tol * w * h
+        if not ok.any():
+            return None
+        ys, xs = np.nonzero(ok)
+        d = (xs + w / 2 - W / 2) ** 2 + (ys + h / 2 - H / 2) ** 2
+        i = int(d.argmin())
+        return int(xs[i]), int(ys[i]), w, h
+
+    lo, hi, best = 8, W, None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        r = search(mid)
+        if r:
+            best, lo = r, mid + 1
+        else:
+            hi = mid - 1
+    return best
+
+
+def _fill_voids(rgb, void, max_iter=400):
+    """Fill void pixels from their valid neighbours (iterative 4-neighbour averaging)."""
+    import numpy as np
+    out = rgb.astype(np.float32)
+    todo = void.copy()
+    if not todo.any() or todo.all():
+        return out.astype(np.uint8)
+    for _ in range(max_iter):
+        valid = (~todo).astype(np.float32)
+        acc = np.zeros_like(out)
+        cnt = np.zeros(todo.shape, np.float32)
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            v = np.roll(valid, (dy, dx), (0, 1))
+            if dy == 1: v[0, :] = 0
+            if dy == -1: v[-1, :] = 0
+            if dx == 1: v[:, 0] = 0
+            if dx == -1: v[:, -1] = 0
+            acc += np.roll(out, (dy, dx), (0, 1)) * v[..., None]
+            cnt += v
+        grow = todo & (cnt > 0)
+        if not grow.any():
+            break
+        out[grow] = acc[grow] / cnt[grow][:, None]
+        todo &= ~grow
+        if not todo.any():
+            break
+    return out.astype(np.uint8)
+
+
+def clean_ortho_for_thumb(im):
+    """Crop the ortho to its largest valid (non-nodata) ~16:10 window, centre-weighted,
+    then fill any remaining voids so the poster has no transparent/black holes.
+    Returns an RGB image; an ortho without voids is returned whole (RGB)."""
+    import numpy as np
+    from PIL import Image
+    void = _void_mask(im)
+    if void.mean() < 0.001:
+        return im.convert("RGB")
+    W, H = im.size
+    mw = min(_MASK_W, W)
+    mh = max(1, round(H * mw / W))
+    small = np.asarray(Image.fromarray((void * 255).astype(np.uint8)).resize((mw, mh), Image.BOX)) > 96
+    win = None
+    for tol in (0.0, 0.004, 0.02, 0.06):        # relax only if the clean window would be tiny
+        w = _best_window(small, tol=tol)
+        if w and (win is None or w[2] > win[2]):
+            win = w
+        if w and w[2] >= 0.5 * mw:
+            win = w
+            break
+    if win is None:
+        win = _best_window(small, tol=1.0)     # degenerate: everything void; keep centre
+    x, y, w, h = win
+    sx, sy = W / mw, H / mh
+    box = (int(x * sx), int(y * sy), min(W, int((x + w) * sx)), min(H, int((y + h) * sy)))
+    crop = im.convert("RGBA").crop(box)
+    if crop.width > THUMB_MAX_W * 2:            # fill on a bounded working size
+        crop = crop.resize((THUMB_MAX_W * 2, max(1, round(crop.height * THUMB_MAX_W * 2 / crop.width))), Image.LANCZOS)
+    arr = np.asarray(crop)
+    cv = _void_mask(crop)
+    return Image.fromarray(_fill_voids(arr[..., :3], cv), "RGB")
 
 
 def make_ortho_thumb(src: Path, dst: Path, max_w: int = THUMB_MAX_W, quality: int = 70) -> bool:
-    """Small preview of the ortho for cards/posters (the full webp is 0.5-1 MB). Keeps alpha.
-    Atomic write; returns False (and leaves no partial file) on any failure."""
+    """Small preview of the ortho for cards/posters (the full webp is 0.5-1 MB). The ortho's
+    nodata voids are cropped away and any leftover filled (clean_ortho_for_thumb), so the
+    result is an opaque RGB webp. Atomic write; returns False (no partial file) on failure."""
     tmp = dst.with_name(f".{dst.name}.tmp")
     try:
         from PIL import Image
         with Image.open(src) as im:
             im.load()
+            im = clean_ortho_for_thumb(im)
             if im.width > max_w:
                 im = im.resize((max_w, max(1, round(im.height * max_w / im.width))), Image.LANCZOS)
-            if im.mode not in ("RGB", "RGBA"):
-                im = im.convert("RGBA" if "A" in im.getbands() or im.mode == "P" else "RGB")
             im.save(tmp, "WEBP", quality=quality, method=4)
         os.replace(tmp, dst)
         return True

@@ -1,10 +1,10 @@
-  import * as THREE from '/vendor/three180.module.js?v=356';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=356';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=356';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=356';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=356';
-  import { mountSplatViewer } from '/splatview.js?v=356';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=356';
+  import * as THREE from '/vendor/three180.module.js?v=358';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=358';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=358';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=358';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=358';
+  import { mountSplatViewer } from '/splatview.js?v=358';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=358';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -251,7 +251,7 @@
               'Un gate de navegador real verifica que el asset renderiza (0 errores de consola) antes de publicar el link compartible.']]
             .map(([ic, t, sub, liveId, pop], i, a) => `
             <div class="td-step" tabindex="0">
-              <i>${icon(ic)}</i><b>${t}</b><span>${sub}</span>
+              <i>${icon(ic)}</i><b>${t}</b><span class="td-sub">${sub.includes('<') ? sub : sub.split(' · ').map(t => `<span class="mtok">${t}</span>`).join('')}</span>
               ${liveId ? `<em class="td-live mono" id="${liveId}"></em>` : ''}
               <div class="td-pop"><b>${t}</b><p>${pop}</p></div>
             </div>
@@ -364,8 +364,6 @@
       <span class="td-crumb-sep" aria-hidden="true">/</span>
       <b class="td-crumb-t" id="td-crumb-t"></b>
       <span class="td-crumb-meta mono" id="td-crumb-m"></span>
-      <span class="spacer"></span>
-      <button class="btn ghost sm icon" id="proj-close" type="button" aria-label="Cerrar proyecto" data-tip="Cerrar proyecto">${icon('close')}</button>
     </div>
     <div class="panel">
       <div class="ph">${icon('map')} Mapa del proyecto
@@ -487,7 +485,7 @@
   splatProfilesPromise.then(() => {
     if (pcOnly()) return;
     const dev = document.getElementById('td-splat-dev');
-    if (dev) dev.textContent = 'Metal/MPS';
+    if (dev) dev.innerHTML = subToks('Metal/MPS');
     const pop = dev?.closest('.td-step')?.querySelector('.td-pop p');
     if (pop) pop.textContent = 'Gaussian splatting foto-realista: Fast/Medium en Apple Metal; Cinematic 7K hasta Grandmaster 40K en NVIDIA CUDA estricto.';
     const sub = document.querySelector('[data-splat-cta-sub]');
@@ -527,9 +525,9 @@
           ? `nodo GPU · <b class="ok">RTX 4060 Ti despierto</b>${last.util_pct ? ` · ${last.util_pct}%` : ''}`
           : 'nodo GPU · <b class="dim">dormido · WoL</b>';
         const dev = document.getElementById('td-splat-dev');
-        if (dev) dev.textContent = pcOnly()
+        if (dev) dev.innerHTML = subToks(pcOnly()
           ? (awake ? 'CUDA · PC listo' : 'CUDA · PC dormido')
-          : (awake ? 'Mac 1K/2K · CUDA 7K–40K listo' : 'Mac 1K/2K · CUDA dormido');
+          : (awake ? 'Mac 1K/2K · CUDA 7K–40K listo' : 'Mac 1K/2K · CUDA dormido'));
       } catch { chip.innerHTML = 'nodo GPU · <b class="dim">sin datos</b>'; }
     };
     pollWhen(poll, 30000, 'process');        // el chip vive en el módulo Procesamiento
@@ -1040,6 +1038,9 @@
     cameras: (a, b) => (b.qa?.cameras_reconstructed || 0) - (a.qa?.cameras_reconstructed || 0),
     size: (a, b) => (b.cloud_bytes || 0) - (a.cloud_bytes || 0),
   };
+  // metadatos en tokens nowrap: el separador es un ::before recortado al inicio de línea → nunca queda un «·» colgando
+  function subToks(t) { return String(t).split(' · ').map(x => `<span class="mtok">${esc(x)}</span>`).join(''); }
+  function mtoks(parts) { return parts.filter(Boolean).map(t => `<span class="mtok">${esc(t)}</span>`).join(''); }
   function projCard(m) {
     const f = flightFor(m);
     const q = m.qa || {};
@@ -1064,7 +1065,8 @@
       </div>
       <div class="pc-body">
         <div class="pc-top"><p class="pc-title" title="${esc(m.clip_id)}">${esc(titleFor(m))}</p></div>
-        <p class="pc-meta mono">${f?.duration_s ? fmt.dur(f.duration_s) + ' vuelo · ' : ''}${q.gsd_cm_px ? q.gsd_cm_px + ' cm/px · ' : ''}${q.area_m2 ? ha : ''}${bestIters ? ` · ${bestIters >= 1000 ? bestIters / 1000 + 'K' : bestIters} iters` : ''}</p>
+        <p class="pc-meta mono">${mtoks([f?.duration_s ? fmt.dur(f.duration_s) + ' vuelo' : '', q.gsd_cm_px ? q.gsd_cm_px + ' cm/px' : '', q.area_m2 ? ha : '',
+          bestIters ? `${bestIters >= 1000 ? bestIters / 1000 + 'K' : bestIters} iters` : ''])}</p>
         <div class="pc-badges">${status.filter(([, s]) => s).map(([cls, s, tip]) => `<span class="${cls.trim()}" data-tip="${esc(tip)}">${esc(s)}</span>`).join('')}</div>
         <div class="pc-kpis">
           <span data-tip="Cámaras reconstruidas por SfM" title="Cámaras reconstruidas"><b>${q.cameras_reconstructed ?? '—'}</b><small>cám.</small></span>
@@ -1387,8 +1389,8 @@
       </label>`;
 
     const { ov, close, onClose } = tdModal(`${icon('cube')} Estudio 3D`, `
-      <div class="st-steps"><span class="st-step on" data-st="1">1 · Seleccionar tomas</span>
-        <span class="st-sep">${icon('chevR')}</span><span class="st-step" data-st="2">2 · Configurar y encolar</span></div>
+      <div class="st-steps"><span class="st-step on" data-st="1">1 · Seleccionar<span class="st-x"> tomas</span></span>
+        <span class="st-sep">${icon('chevR')}</span><span class="st-step" data-st="2">2 · Configurar<span class="st-x"> y encolar</span></span></div>
 
       <div class="st-pane" data-pane="1">
         <div class="st-grid">
@@ -1477,10 +1479,9 @@
         </div>
       </div>
 
-      <div class="st-tray" id="st-tray"></div>
-      <div class="st-footer">
+      <div class="st-footer modal-foot">
+        <div class="st-tray modal-hint" id="st-tray"></div>
         <button class="btn" id="st-back" style="display:none">${icon('chevL')} Atrás</button>
-        <span class="spacer"></span>
         <button class="btn primary" id="st-next">Continuar ${icon('chevR')}</button>
         <button class="btn primary" id="m-go" style="display:none">${icon('cube')} Encolar procesamiento</button>
       </div>`, 'modal--studio');
@@ -2411,18 +2412,18 @@
         ±GPS del dron (~2-5 m). Para grado topográfico certificable, importa puntos de control.</p>
       </details>` : ''}
       <div class="exp-grid">
-        <a class="exp" href="${base}/ortho_full.jpg" target="_blank" rel="noopener">${icon('map')}<div><b>Ortofoto 5K</b><span>JPG · presentaciones</span></div></a>
-        <a class="exp" href="${base}/${cur.ortho_asset || 'ortho.png'}" download>${icon('grid')}<div><b>Ortofoto transparente</b><span>WebP · overlays</span></div></a>
+        <a class="exp" href="${base}/ortho_full.jpg" target="_blank" rel="noopener">${icon('map')}<div><b>Ortofoto 5K</b><span class="exp-m"><em>JPG</em>presentaciones</span></div></a>
+        <a class="exp" href="${base}/${cur.ortho_asset || 'ortho.png'}" download>${icon('grid')}<div><b>Ortofoto transparente</b><span class="exp-m"><em>WebP</em>overlays</span></div></a>
         ${cur.has_dsm ? `
-        <a class="exp" href="${base}/dsm_4326.tif" download>${icon('mountain')}<div><b>DSM GeoTIFF</b><span>TIF · QGIS / GIS</span></div></a>
-        <a class="exp" href="${base}/contours.geojson" download>${icon('route')}<div><b>Curvas de nivel</b><span>GeoJSON · CAD / GIS</span></div></a>
-        <a class="exp" href="${base}/hillshade.png" download>${icon('sun')}<div><b>Relieve sombreado</b><span>PNG · mapas</span></div></a>
-        <a class="exp" href="${base}/dsm_color.png" download>${icon('gauge')}<div><b>Elevación color</b><span>PNG · mapas</span></div></a>` : ''}
-        <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>Nube de puntos</b><span>PLY · CloudCompare</span></div></a>
-        ${cur.cloud_copc_asset ? `<a class="exp" href="${base}/${cur.cloud_copc_asset}" download>${icon('db')}<div><b>Nube optimizada</b><span>COPC · ${(cur.cloud_copc_bytes / 1e6).toFixed(0)} MB · GIS</span></div></a>` : ''}
-        ${meshOk ? `<a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span>OBJ · Blender / 3D</span></div></a>` : ''}
-        ${sp ? `<a class="exp" href="${splatUrl(sp)}" download>${icon('spark')}<div><b>Gaussian splat</b><span>${spFmt} · SuperSplat</span></div></a>` : ''}
-        <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Visor privado</b><span>LINK · requiere sesión</span></div></a>
+        <a class="exp" href="${base}/dsm_4326.tif" download>${icon('mountain')}<div><b>DSM GeoTIFF</b><span class="exp-m"><em>TIF</em>QGIS / GIS</span></div></a>
+        <a class="exp" href="${base}/contours.geojson" download>${icon('route')}<div><b>Curvas de nivel</b><span class="exp-m"><em>GeoJSON</em>CAD / GIS</span></div></a>
+        <a class="exp" href="${base}/hillshade.png" download>${icon('sun')}<div><b>Relieve sombreado</b><span class="exp-m"><em>PNG</em>mapas</span></div></a>
+        <a class="exp" href="${base}/dsm_color.png" download>${icon('gauge')}<div><b>Elevación color</b><span class="exp-m"><em>PNG</em>mapas</span></div></a>` : ''}
+        <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>Nube de puntos</b><span class="exp-m"><em>PLY</em>CloudCompare</span></div></a>
+        ${cur.cloud_copc_asset ? `<a class="exp" href="${base}/${cur.cloud_copc_asset}" download>${icon('db')}<div><b>Nube optimizada</b><span class="exp-m"><em>COPC</em>${(cur.cloud_copc_bytes / 1e6).toFixed(0)} MB · GIS</span></div></a>` : ''}
+        ${meshOk ? `<a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span class="exp-m"><em>OBJ</em>Blender / 3D</span></div></a>` : ''}
+        ${sp ? `<a class="exp" href="${splatUrl(sp)}" download>${icon('spark')}<div><b>Gaussian splat</b><span class="exp-m"><em>${spFmt}</em>SuperSplat</span></div></a>` : ''}
+        <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Visor privado</b><span class="exp-m"><em>LINK</em>con sesión</span></div></a>
       </div>`;
     if (omap) omap.remove();
     const b = new maplibregl.LngLatBounds();
@@ -2816,6 +2817,12 @@
     activateViewerMode(tab.dataset.viewerMode, { autoload: true });
   });
   document.getElementById('viewer-load').addEventListener('click', loadActiveViewer);
+  // «Recargar …» es acción secundaria: ghost. «Cargar/Reintentar/Cargando…» siguen siendo la primaria del panel.
+  { const lb = document.getElementById('viewer-load');
+    new MutationObserver(() => {
+      const re = /^Recargar/.test(lb.textContent);
+      lb.classList.toggle('ghost', re); lb.classList.toggle('primary', !re);
+    }).observe(lb, { childList: true, characterData: true, subtree: true }); }
 
   // ---------- three.js viewers ----------
   function makeScene(box) {

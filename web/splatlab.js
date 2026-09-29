@@ -35,7 +35,22 @@ main.classList.add('lab-main');
     </div>
     <div class="sl-status" role="status" aria-live="polite"><span id="lab-status"></span><span id="lab-clean-status"></span></div>
     <div class="lab-frame-wrap" id="lab-drop">
-    <div class="sl-tune" id="lab-tune-panel" inert role="group" aria-label="Ajustes finos del Auto-Clean">
+      <iframe id="lab-frame" class="lab-frame" allow="fullscreen" title="Editor SuperSplat"></iframe>
+      <button class="btn lab-exit" id="lab-exit" hidden aria-label="Salir de pantalla completa">${icon('close')} Salir</button>
+      <div class="lab-drophint" id="lab-drophint" hidden>Suelta el splat editado (.ply / .splat / .ksplat) para publicarlo</div>
+    </div>
+    <p class="page-foot lab-tip"><b>Flujo:</b> limpia floaters con pincel/lazo + borrar · recorta con crop ·
+      <b>File → Export</b> descarga el resultado · súbelo aquí (botón o arrástralo) y queda publicado —
+      la versión anterior se archiva en <span class="mono">splats/history/</span>.</p>
+    <input type="file" id="lab-file" accept=".ply,.splat,.ksplat" hidden aria-hidden="true">`;
+
+  // ---- Ajustes finos: popover canónico (openPopover) anclado a su botón; el nodo vive aquí y persiste entre aperturas ----
+  const tuneNode = document.createElement('div');
+  tuneNode.className = 'sl-tune';
+  tuneNode.id = 'lab-tune-panel';
+  tuneNode.setAttribute('role', 'group');
+  tuneNode.setAttribute('aria-label', 'Ajustes finos del Auto-Clean');
+  tuneNode.innerHTML = `
       ${[['op', 'Neblina', 'Gaussianas casi transparentes = niebla. Desmarca para conservarlas', 'Umbral neblina', 0.5, 20, 3.5, 0.5, '3.5%'],
          ['k', 'Picos', 'Gaussianas gigantes vs la mediana = picos y manchas. Más bajo = más agresivo', 'Umbral picos', 2, 10, 6, 0.5, '6.0×'],
          ['an', 'Agujas', 'Agujas: eje máximo >> eje intermedio (no toca discos-superficie). Más bajo = más agujas fuera', 'Umbral agujas', 5, 25, 15, 1, '15'],
@@ -46,16 +61,11 @@ main.classList.add('lab-main');
         <input type="range" id="tn-${k}" aria-label="${aria}" min="${mn}" max="${mx}" value="${v}" step="${st}">
         <b class="mono" id="tn-${k}-v">${txt}</b>
         <em class="mono tn-count" id="tn-${k}-c"></em></div>`).join('')}
-      <p class="sl-tune-note">Cada limpieza es UN paso de undo — prueba, mira los contadores por etapa, deshaz y ajusta.</p>
-    </div>
-      <iframe id="lab-frame" class="lab-frame" allow="fullscreen" title="Editor SuperSplat"></iframe>
-      <button class="btn lab-exit" id="lab-exit" hidden aria-label="Salir de pantalla completa">${icon('close')} Salir</button>
-      <div class="lab-drophint" id="lab-drophint" hidden>Suelta el splat editado (.ply / .splat / .ksplat) para publicarlo</div>
-    </div>
-    <p class="page-foot lab-tip"><b>Flujo:</b> limpia floaters con pincel/lazo + borrar · recorta con crop ·
-      <b>File → Export</b> descarga el resultado · súbelo aquí (botón o arrástralo) y queda publicado —
-      la versión anterior se archiva en <span class="mono">splats/history/</span>.</p>
-    <input type="file" id="lab-file" accept=".ply,.splat,.ksplat" hidden aria-hidden="true">`;
+      <p class="sl-tune-note">Cada limpieza es UN paso de undo — prueba, mira los contadores por etapa, deshaz y ajusta.
+        <button type="button" class="btn ghost sm" id="tn-reset">Restablecer</button></p>`;
+  const tn = id => tuneNode.querySelector('#' + id);
+  let tuneTouched = false;          // el usuario movió algo → los valores del panel se aplican al próximo «Limpiar en editor»
+  let tunePop = null;
 
   const frame = document.getElementById('lab-frame');
   const picker = document.getElementById('lab-picker');
@@ -63,11 +73,25 @@ main.classList.add('lab-main');
   const fileIn = document.getElementById('lab-file');
   const drop = document.getElementById('lab-drop');
   const hint = document.getElementById('lab-drophint');
-  // ajustes finos: el panel es estático (no se re-crea con cada load) → listeners una sola vez
-  [['tn-op', v => v + '%'], ['tn-k', v => (+v).toFixed(1) + '×'], ['tn-an', v => v],
-   ['tn-rad', v => 'P' + v]].forEach(([id, f]) => {
-    document.getElementById(id).addEventListener('input', e2 =>
-      document.getElementById(id + '-v').textContent = f(e2.target.value));
+  const TUNE_FMT = [['tn-op', v => v + '%'], ['tn-k', v => (+v).toFixed(1) + '×'], ['tn-an', v => v], ['tn-rad', v => 'P' + v]];
+  const TUNE_DEF = { 'tn-op': 3.5, 'tn-k': 6, 'tn-an': 15, 'tn-rad': 99.5 };
+  const markTune = on => {
+    tuneTouched = on;
+    const b = document.getElementById('lab-tune');
+    if (b) b.classList.toggle('on', on || !!tunePop);
+  };
+  TUNE_FMT.forEach(([id, f]) => {
+    tn(id).addEventListener('input', e2 => { tn(id + '-v').textContent = f(e2.target.value); markTune(true); });
+  });
+  tuneNode.addEventListener('change', e2 => { if (e2.target.type === 'checkbox') markTune(true); });
+  tn('tn-reset').addEventListener('click', () => {
+    TUNE_FMT.forEach(([id, f]) => {
+      const r = tn(id); r.value = TUNE_DEF[id]; tn(id + '-v').textContent = f(r.value);
+      r.dispatchEvent(new Event('input', { bubbles: true }));       // el helper global repinta --fill
+      tn(id + '-c').textContent = '';
+    });
+    tuneNode.querySelectorAll('input[type=checkbox]').forEach(c => { c.checked = true; });
+    markTune(false);
   });
 
   // ---- puente con el editor (same-origin): origen fijo, nunca '*' ----
@@ -86,14 +110,16 @@ main.classList.add('lab-main');
   const okToDiscard = async () =>
     !(await editorDirty()) || confirm('Hay ediciones sin exportar en el editor. ¿Descartarlas?');
 
-  // Ajustes: panel flotante sobre el editor (opacity/transform) → el editor no salta de sitio
-  const setTune = on => {
-    const panel = document.getElementById('lab-tune-panel');
-    panel.classList.toggle('open', on);
-    panel.inert = !on;
-    const b = document.getElementById('lab-tune');
-    if (b) { b.setAttribute('aria-expanded', String(on)); b.classList.toggle('on', on); }
+  const toggleTune = btn => {
+    const pop = openPopover(btn, tuneNode, {
+      role: 'group', haspopup: 'true', label: 'Ajustes finos del Auto-Clean', className: 'pop-pad sl-tune-pop', focus: 'input[type=checkbox]',
+      onClose: () => { tunePop = null; markTune(tuneTouched); },
+    });
+    tunePop = pop;                                       // null = estaba abierto y openPopover lo cerró (toggle)
+    markTune(tuneTouched);
   };
+  // clic dentro del editor (iframe): el documento padre nunca ve el pointerdown → cerramos por blur de la ventana
+  window.addEventListener('blur', () => { if (tunePop) tunePop.close(); });
   const sizeMB = s => `${((s.bytes || 0) / 1e6).toFixed(1)} MB`;
   const itersK = s => s.iters ? `${s.iters >= 1000 ? s.iters / 1000 + 'K' : s.iters} iters` : '';
   let pickerQ = '';
@@ -178,7 +204,8 @@ main.classList.add('lab-main');
     const s = splats[cur];
     const box = document.getElementById('lab-clean');
     if (!s || !box) { if (box) box.innerHTML = ''; return; }
-    const tuneOpen = document.getElementById('lab-tune-panel').classList.contains('open');
+    if (tunePop) tunePop.close();                // el ancla se re-crea: cerrar antes de reemplazarla
+    const tuneOn = tuneTouched;
     box.innerHTML = `
       <select class="ctl sl-preset" id="lab-preset" aria-label="Preset de Auto-Clean" title="Preset de limpieza — aéreo conserva estructuras dispersas legítimas; agresivo quita más spray de borde">
         <option value="aerial">Aéreo (seguro)</option>
@@ -191,7 +218,7 @@ main.classList.add('lab-main');
         <button class="btn icon" id="lab-redo" title="Rehace el paso deshecho dentro del editor" aria-label="Rehacer en el editor">${icon('redo')}</button>
       </div>
       <button class="btn${abRaw ? ' on' : ''}" id="lab-ab" title="Alterna el editor entre el crudo y la versión actual para comparar antes/después (requiere un crudo pre-clean)" aria-pressed="${abRaw}"${rawOk[s.clip_id] === false && !abRaw ? ' disabled' : ''}>${abRaw ? 'Viendo: crudo' : 'A/B'}</button>
-      <button class="btn${tuneOpen ? ' on' : ''}" id="lab-tune" title="Ajustes finos del Auto-Clean: umbral de neblina, factor de picos y agujas — se aplican al próximo Limpiar" aria-expanded="${tuneOpen}" aria-controls="lab-tune-panel">${icon('gauge')} Ajustes</button>
+      <button class="btn${tuneOn ? ' on' : ''}" id="lab-tune" title="Ajustes finos del Auto-Clean: umbral de neblina, factor de picos y agujas — se aplican al próximo Limpiar" aria-haspopup="true" aria-expanded="false">${icon('gauge')} Ajustes</button>
       <button class="btn icon" id="lab-more" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones sobre el archivo publicado" title="Más acciones">${icon('more')}</button>`;
     if (rawOk[s.clip_id] === undefined && typeof s.has_raw === 'boolean') rawOk[s.clip_id] = s.has_raw;
     if (rawOk[s.clip_id] === undefined) {
@@ -208,10 +235,9 @@ main.classList.add('lab-main');
     const cst = t => { const el = document.getElementById('lab-clean-status'); if (el) { el.textContent = t; el.classList.toggle('err', /^Error/.test(t)); } };
     // limpieza IN-EDITOR: postMessage al iframe (fork src/aerobrain) — undo nativo de SuperSplat
     const tuneOverrides = () => {
-      const panel = document.getElementById('lab-tune-panel');
-      if (!panel || !panel.classList.contains('open')) return undefined;          // solo si el usuario abrió Ajustes
-      const on = id => document.getElementById(id).checked;
-      const v = id => +document.getElementById(id).value;
+      if (!tuneTouched) return undefined;                                        // sin tocar Ajustes → preset puro
+      const on = id => tn(id).checked;
+      const v = id => +tn(id).value;
       return { opacityMin: on('tn-op-on') ? v('tn-op') / 100 : 0,
                scaleK: on('tn-k-on') ? v('tn-k') : 0,
                anisoMax: on('tn-an-on') ? v('tn-an') : 0,
@@ -226,9 +252,7 @@ main.classList.add('lab-main');
       { id: 'ac', label: 'Limpiar publicado', hint: 'Aplica el preset al archivo del servidor', icon: 'save' },
       { id: 'revert', label: 'Revertir al crudo', hint: 'La versión limpia queda en history/', icon: 'undo', danger: true },
     ], { label: 'Archivo publicado', onSelect: id => (id === 'ac' ? runAc() : runRevert()) }));
-    document.getElementById('lab-tune').addEventListener('click', e2 => {
-      setTune(!document.getElementById('lab-tune-panel').classList.contains('open'));
-    });
+    document.getElementById('lab-tune').addEventListener('click', e2 => toggleTune(e2.currentTarget));
     const runAc = async () => {
       const btn = document.getElementById('lab-more'); btn.disabled = true;
       if (!(await okToDiscard())) { btn.disabled = false; return; }
@@ -372,12 +396,7 @@ main.classList.add('lab-main');
   };
   document.getElementById('lab-full').addEventListener('click', () => { arm(); setFull(true); });
   exitBtn.addEventListener('click', () => setFull(false));
-  document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return;
-    const tp = document.getElementById('lab-tune-panel');
-    if (tp.classList.contains('open') && tp.contains(document.activeElement)) { setTune(false); document.getElementById('lab-tune')?.focus(); return; }
-    setFull(false);
-  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') setFull(false); });   // Esc del popover lo maneja la pila de capas
 
   // ---- ajuste fino del editor (same-origin): el cubo de vista y la barra derecha de SuperSplat
   //      se pisaban cuando el marco es bajo → cubo más compacto y barra siempre por debajo ----
@@ -437,7 +456,7 @@ main.classList.add('lab-main');
     // contadores vivos por etapa en el wizard
     [['tn-op-c', rm.opacity], ['tn-k-c', (rm.scale || 0) + (rm.bbox || 0)],
      ['tn-an-c', rm.aniso], ['tn-rad-c', rm.radial]].forEach(([id, n]) => {
-      const c = document.getElementById(id);
+      const c = tn(id);
       if (c) c.textContent = n ? `−${(+n).toLocaleString()}` : '';
     });
   });

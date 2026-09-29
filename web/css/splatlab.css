@@ -44,19 +44,14 @@
 .sl-clean .btn:not(.icon) { padding: 0 12px; }
 .lab-exit svg.ic { width: var(--ic-md); height: var(--ic-md); }
 
-/* ---- fine-tune sliders: floating panel over the editor (opacity/transform only → no layout jump) ---- */
+/* ---- fine-tune sliders: content of an openPopover (frame = .pop, anchored right-aligned under the «Ajustes» button) ---- */
+.pop.sl-tune-pop { max-width: min(560px, calc(100vw - 16px)); }
 .sl-tune {
-  position: absolute; z-index: 6; top: var(--sp-3); left: 50%;
-  width: min(580px, calc(100% - 2 * var(--sp-3))); max-height: calc(100% - 2 * var(--sp-3)); overflow-y: auto;
+  width: min(544px, calc(100vw - 32px)); max-height: min(70dvh, 520px); overflow-y: auto;
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2);
-  padding: var(--sp-3);
-  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-2);
-  opacity: 0; visibility: hidden; pointer-events: none; transform: translate(-50%, -8px);
-  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out), visibility 0s linear var(--dur-base);
 }
-.sl-tune.open { opacity: 1; visibility: visible; pointer-events: auto; transform: translate(-50%, 0); transition-delay: 0s; }
 .sl-tune .tn-stage {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: var(--sp-1) var(--sp-3);
+  display: grid; grid-template-columns: 92px minmax(0, 1fr) 56px; grid-template-rows: auto auto; gap: var(--sp-1) var(--sp-3);
   align-items: center; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2);
 }
 .sl-tune .tn-stage:has(input[type=checkbox]:not(:checked)) { opacity: .55; }
@@ -65,11 +60,12 @@
   font-size: var(--fs-md); font-weight: var(--fw-medium); letter-spacing: 0; color: var(--text);
 }
 .sl-tune .tn-lb input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
-.sl-tune input[type=range] { width: 100%; min-width: 0; accent-color: var(--accent); }
+.sl-tune input[type=range] { width: 100%; min-width: 0; }
 .sl-tune .tn-stage b { min-width: 48px; text-align: right; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
 .sl-tune .tn-count { grid-column: 1 / -1; min-height: 14px; font-style: normal; font-size: var(--fs-xs); color: var(--warn-fg); text-align: left; min-width: 0; }
 .sl-tune .tn-count:empty { display: none; }
-.sl-tune-note { grid-column: 1 / -1; margin: 0; font-size: var(--fs-sm); color: var(--text-2); }
+.sl-tune-note { grid-column: 1 / -1; margin: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--text-2); }
+.sl-tune-note .btn { flex: none; }
 
 /* ---- status line ---- */
 .sl-status { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); margin: 0 var(--sp-1); font-size: var(--fs-sm); color: var(--text-2); }
@@ -88,7 +84,7 @@
 /* ---- mobile ---- */
 @media (max-width: 820px) {
   .shell > .main.lab-main { padding-bottom: calc(var(--mnav-h, 56px) + env(safe-area-inset-bottom) + var(--sp-6)); }
-  .sl-tune { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); padding: var(--sp-2); }
+  .sl-tune { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
   .page-head-actions:has(> .sl-switch) { width: 100%; }
   .sl-switch, .sl-switch-btn { width: 100%; max-width: none; }
   .sl-switch-btn { justify-content: flex-start; }

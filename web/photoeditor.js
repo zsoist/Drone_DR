@@ -191,18 +191,13 @@ function openPhotoEditor({ url, name }) {
     dorado: { ...DEF, bright: 104, contrast: 104, sat: 112, temp: 26, vig: 14, shadow: 8 },
     bn: { ...DEF, bright: 102, contrast: 120, sat: 0, vig: 18, grain: 16, fade: 8 },
   };
-  function paintRange(r) {
-    const p = (r.value - r.min) / (r.max - r.min) * 100;
-    r.style.background = `linear-gradient(90deg, var(--accent) ${p}%, var(--surface-2) ${p}%)`;
-  }
   function syncUI() {
-    ov.querySelectorAll('input[data-f]').forEach(r => { r.value = fx[r.dataset.f]; paintRange(r); });
+    ov.querySelectorAll('input[data-f]').forEach(r => { r.value = fx[r.dataset.f]; });
     ov.querySelectorAll('.pm-val').forEach(v => { v.textContent = fx[v.dataset.v]; });
     ov.querySelectorAll('[data-ratio]').forEach(x => x.classList.toggle('on', x.dataset.ratio === fx.ratio));
     ov.querySelectorAll('[data-size]').forEach(x => x.classList.toggle('on', x.dataset.size === fx.size));
     ov.querySelector('#pm-custom').style.display = fx.size === 'custom' ? '' : 'none';
   }
-  ov.querySelectorAll('.pm-range').forEach(paintRange);
   // tabs con tinta deslizante
   const ink = ov.querySelector('.pm-ink');
   function moveInk() {
@@ -238,7 +233,6 @@ function openPhotoEditor({ url, name }) {
     const f = ev.target.dataset.f;
     if (f) {
       fx[f] = +ev.target.value;
-      paintRange(ev.target);
       const val = ov.querySelector(`.pm-val[data-v="${f}"]`);
       val.textContent = fx[f];
       val.style.transform = 'scale(1.35)';

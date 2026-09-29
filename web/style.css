@@ -406,9 +406,9 @@ select.ctl:focus-visible, input.ctl:focus-visible, textarea.ctl:focus-visible, .
 .clip-rail .cr-item.on { border-color: var(--accent); }
 .clip-rail img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
 .clip-rail .cr-lb { position: absolute; bottom: 0; left: 0; right: 0; font-size: var(--fs-2xs); padding: 3px 6px; background: var(--media-scrim); color: #E6EBF2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.exportbar { position: sticky; bottom: 74px; z-index: var(--z-sticky); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; box-shadow: var(--shadow-2); }
+.exportbar { position: sticky; bottom: 74px; z-index: var(--z-sticky); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; box-shadow: var(--shadow-2); }
 @media (min-width: 821px) {
-  .exportbar { bottom: 12px; }
+  .exportbar { bottom: 0; }
 }
 /* ---------- job cards v2 ---------- */
 .job-card {
@@ -418,7 +418,7 @@ select.ctl:focus-visible, input.ctl:focus-visible, textarea.ctl:focus-visible, .
 .job-card .jc-title { font-size: var(--fs-md); font-weight: 600; flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .job-card .jc-status {
-  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: var(--tr-caps); text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: var(--tr-caps); text-transform: uppercase;
   padding: 3px 9px; border-radius: var(--r-lg); flex: none;
 }
 .jc-status.running { color: var(--accent-fg); background: var(--accent-dim); }
@@ -890,8 +890,9 @@ details.explain b { color: var(--text); font-weight: 600; }
   #improve-scene { padding-inline: 8px; font-size: var(--fs-2xs); }
 }
 /* ---------- mejora guiada de escenas ---------- */
-.scene-improve-page { overflow-x: hidden; }
-.scene-improve-page .main { max-width: 1500px; overflow-x: hidden; }
+/* clip, not hidden: `hidden` makes the element a scroll container and kills position:sticky inside it */
+.scene-improve-page { overflow-x: clip; }
+.scene-improve-page .main { overflow-x: clip; }
 #scene-improve-root, .si-workspace, .si-layout, .si-flow, .si-section, .si-head { min-width: 0; max-width: 100%; }
 .si-head h1, .si-head p, .si-section h2, .si-section p { overflow-wrap: anywhere; }
 .si-loading { min-height: 70dvh; display: grid; align-content: center; gap: 12px; max-width: 760px; margin: auto; }
@@ -1454,19 +1455,7 @@ button.exp { text-align: left; cursor: pointer; }
   border-radius: var(--r-md); ;
   box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 25%, transparent); }
 .pm-group { display: flex; flex-direction: column; gap: 8px; min-height: 118px; }
-.pm-range { -webkit-appearance: none; appearance: none; flex: 1; min-width: 120px; height: 5px;
-  border-radius: var(--r-pill); background: var(--surface-2); outline: none; cursor: pointer;
-  }
-.pm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 17px; height: 17px; border-radius: 50%;
-  background: #fff; border: 2.5px solid var(--accent); box-shadow: var(--shadow-1);
-  transition: transform var(--dur-fast) var(--ease-out); }
-@media (hover: hover) {
-  .pm-range::-webkit-slider-thumb:hover { transform: scale(1.2); }
-}
-.pm-range:active::-webkit-slider-thumb { transform: scale(1.35);
-  box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 18%, transparent), var(--shadow-1); }
-.pm-range::-moz-range-thumb { width: 17px; height: 17px; border-radius: 50%;
-  background: #fff; border: 2.5px solid var(--accent); }
+.pm-range { flex: 1; min-width: 120px; }
 .pm-val { min-width: 36px; text-align: right; font-size: var(--fs-sm); font-weight: 700; color: var(--accent-fg);
   font-variant-numeric: tabular-nums; transition: transform var(--dur-fast) var(--ease-out); }
 .pm-row .tool-lb[data-dbl] { cursor: pointer; }
@@ -2118,7 +2107,7 @@ button.exp { text-align: left; cursor: pointer; }
   display: flex; align-items: center; gap: 10px; padding: 13px 18px;
   border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--surface);
 }
-.rm-count { font-size: var(--fs-xs); color: var(--text-3); }
+.rm-count { font: var(--fw-regular) var(--fs-sm)/var(--lh-snug) var(--font); color: var(--text-2); }
 @media (max-width: 640px) {
   .rm-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); max-height: 40dvh; }
   .rm-opt { min-width: 96px; padding: 9px 11px; }
@@ -2397,27 +2386,7 @@ button.exp { text-align: left; cursor: pointer; }
 }
 .tl-grade .mono { min-width: 34px; text-align: right; font-size: var(--fs-sm); font-weight: 700;
   color: var(--accent-fg); font-variant-numeric: tabular-nums; }
-/* slider custom reutilizado del editor de fotos (.pm-range) para toda la sección */
-.tl-inspect input.tl-range,
-.tl-inspect input[type=range].tl-range {
-  -webkit-appearance: none; appearance: none; flex: 1; min-width: 90px; height: 5px;
-  border-radius: var(--r-pill); outline: none; cursor: pointer; background: var(--surface-2);
-  /* relleno de progreso: variable --p (0..1) opcional desde el JS; fallback plano */
-  background-image: linear-gradient(90deg, var(--accent) 0, var(--accent) calc(var(--p, 0) * 100%),
-    var(--surface-2) calc(var(--p, 0) * 100%));
-  }
-.tl-inspect input.tl-range::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
-  background: #fff; border: 2.5px solid var(--accent); box-shadow: var(--shadow-1);
-  transition: transform var(--dur-fast) var(--ease-out);
-}
-@media (hover: hover) {
-  .tl-inspect input.tl-range::-webkit-slider-thumb:hover { transform: scale(1.18); }
-}
-.tl-inspect input.tl-range:active::-webkit-slider-thumb { transform: scale(1.32);
-  box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 18%, transparent), var(--shadow-1); }
-.tl-inspect input.tl-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2.5px solid var(--accent); }
-.tl-inspect input.tl-range::-moz-range-progress { background: var(--accent); height: 5px; border-radius: var(--r-pill); }
+.tl-inspect input.tl-range { flex: 1; min-width: 90px; }
 /* input de color del título: cuadrado limpio sin cromo del navegador */
 .tl-inspect input[type=color] {
   -webkit-appearance: none; appearance: none; border: 1px solid var(--line);
@@ -2554,16 +2523,6 @@ button.exp { text-align: left; cursor: pointer; }
 .tl-io { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   flex-wrap: wrap; padding-bottom: 4px; }
 .tl-io .mono { font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; }
-/* sliders premium (mismo lenguaje que el editor de fotos) */
-.tl-inspect .tl-range { -webkit-appearance: none; appearance: none; height: 5px;
-  border-radius: var(--r-pill); background: var(--surface-2); outline: none; cursor: pointer; min-width: 90px; }
-.tl-inspect .tl-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px;
-  border-radius: 50%; background: #fff; border: 2.5px solid var(--accent);
-  box-shadow: var(--shadow-1); transition: transform var(--dur-fast) var(--ease-out); }
-.tl-inspect .tl-range:active::-webkit-slider-thumb { transform: scale(1.3);
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent); }
-.tl-inspect .tl-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%;
-  background: #fff; border: 2.5px solid var(--accent); }
 /* selects e inputs descriptivos y consistentes */
 .tl-inspect select.ctl, .exportbar select.ctl {
   appearance: none; -webkit-appearance: none; padding-right: 30px;
@@ -2598,13 +2557,15 @@ button.exp { text-align: left; cursor: pointer; }
 /* hoja de export: bottom-sheet en móvil, modal centrado en desktop */
 .ex-sheet { position: fixed; inset: 0; z-index: var(--z-overlay); display: flex;
   align-items: flex-end; justify-content: center;
-  background: rgba(4,6,10,.55); backdrop-filter: blur(6px); }
+  background: var(--overlay-scrim); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  animation: ovIn var(--dur-base) var(--ease-out); }
 .ex-card { width: min(680px, 100%); max-height: 88dvh; overflow-y: auto;
-  background: var(--surface-2); border: 1px solid var(--line);
-  border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: var(--shadow-3); }
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: var(--shadow-3);
+  animation: mIn var(--dur-base) var(--ease-out); }
 @media (min-width: 700px) {
   .ex-sheet { align-items: center; padding: 24px; }
-  .ex-card { border-radius: var(--r-xl); }
+  .ex-card { border-radius: var(--r-lg); }
 }
 .ex-body { padding: 14px 18px 6px; display: flex; flex-direction: column; gap: 16px; }
 .ex-row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -2614,11 +2575,7 @@ button.exp { text-align: left; cursor: pointer; }
 .ex-lb { font-size: var(--fs-xs); letter-spacing: var(--tr-caps); text-transform: uppercase; color: var(--text-2);
   display: flex; justify-content: space-between; align-items: baseline; }
 .ex-lb b { color: var(--accent-fg); font-size: var(--fs-md); letter-spacing: 0; text-transform: none; }
-.ex-sec .tl-range { width: 100%; -webkit-appearance: none; appearance: none; height: 5px;
-  border-radius: var(--r-pill); background: var(--surface-2); }
-.ex-sec .tl-range::-webkit-slider-thumb { -webkit-appearance: none; width: 17px; height: 17px;
-  border-radius: 50%; background: #fff; border: 2.5px solid var(--accent);
-  box-shadow: var(--shadow-1); }
+.ex-sec .tl-range { width: 100%; }
 .ex-check { display: flex; align-items: center; gap: 7px; font-size: var(--fs-md); align-self: flex-end;
   padding-bottom: 8px; color: var(--text-2); }
 .ex-check input { width: 16px; height: 16px; accent-color: var(--accent); }
@@ -2641,7 +2598,6 @@ button.exp { text-align: left; cursor: pointer; }
 .tl-lib.pulse { animation: lib-pulse var(--dur-hero) var(--ease-out); }
 /* la tarjeta de export debe ser opaca (surface-1 es translúcido) */
 .ex-card { background: var(--surface); }
-.ex-card .ex-body, .ex-card .ph, .ex-card .ex-foot { background: color-mix(in srgb, var(--surface-2) 60%, var(--surface)); }
 /* ===== BLOQUE 12 · Vuelos denso y premium ===== */
 /* cards más densas y con hover de nivel */
 .grid { gap: 12px; }
@@ -2777,10 +2733,6 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   .cr-ins::after { content: ''; position: absolute; inset: -9px; }
   .modal-x { display: inline-flex; align-items: center; justify-content: center; }
   /* segmentos y chips: separa y centra para que el dedo no toque el vecino */
-  /* sliders nativos: banda de toque alta + thumb grande (Puntos/Suelo/Techo/opacidad, HUD) */
-  input[type=range] { height: 30px; }
-  input[type=range]::-webkit-slider-thumb { width: 22px; height: 22px; }
-  input[type=range]::-moz-range-thumb { width: 22px; height: 22px; }
 }
 /* --- manijas del timeline de Studio: en táctil (hover:none) estaban invisibles (opacity:0
    salvo :hover) y el tirador del playhead era de 12px → dedo no lo agarra --- */
@@ -4157,6 +4109,63 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
 .chip-row .chip { height: var(--chip-h); padding: 0 var(--sp-3); font-size: var(--fs-sm); }   /* misma altura que cualquier .chip */
 .chip-row .chip svg.ic { width: var(--ic-sm); height: var(--ic-sm); }
 .chip-row > .chip-div { width: 1px; height: 20px; background: var(--line-strong); margin-inline: var(--sp-1); }
+
+/* ---- ::selection: accent-tinted in both themes ---- */
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--text); }
+
+/* ---- .scroll-x-fade: a horizontally scrolling toolbar/row with the same soft edge fade as .chip-row.
+   Use on any overflow row that would otherwise hide actions with no hint (Studio mobile toolbar...). ---- */
+.scroll-x-fade {
+  --fade: 22px;
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; min-width: 0;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, rgba(0,0,0,.28) 6px, #000 var(--fade), #000 calc(100% - var(--fade)), rgba(0,0,0,.28) calc(100% - 6px), transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, rgba(0,0,0,.28) 6px, #000 var(--fade), #000 calc(100% - var(--fade)), rgba(0,0,0,.28) calc(100% - 6px), transparent 100%);
+}
+.scroll-x-fade::-webkit-scrollbar { display: none; }
+.scroll-x-fade > * { flex-shrink: 0; }
+/* bleed variant: pad inside so the first/last item rest un-faded (like .chip-row) */
+.scroll-x-fade.bleed { padding-inline: var(--fade); margin-inline: calc(var(--fade) * -1); }
+
+/* ---- modal footer: .modal-foot bar + .modal-hint prose (sans, never mono). .rm-count is an alias. ---- */
+.modal-foot { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--line); background: var(--surface); }
+.modal-hint, .rm-count, .modal-foot .mono:not(.num), .rm-foot .mono:not(.num) {
+  font: var(--fw-regular) var(--fs-sm)/var(--lh-snug) var(--font); letter-spacing: 0; text-transform: none; color: var(--text-2);
+}
+.modal-foot .modal-hint, .rm-foot .rm-count { margin-right: auto; min-width: 0; }
+
+/* ---- range slider: ONE component. `input[type=range]` is canonical; .pm-range / .tl-range are aliases (layout-only rules live on the
+   page). Fill = --fill (0..100%), kept in sync by the global helper in shell.js (input events, programmatic .value, new nodes). Track
+   --surface-3 + hairline so it reads on any card; 16px thumb (22px coarse); visible focus ring; disabled state. ---- */
+input[type=range] {
+  --track-h: 6px; --thumb: 16px; --fill: 0%;
+  -webkit-appearance: none; appearance: none; background: transparent !important; /* !important: legacy JS paints inline gradients on the input */
+  height: 24px; margin: 0; padding: 0; cursor: pointer; border-radius: var(--r-pill); accent-color: var(--accent);
+  touch-action: pan-y;
+}
+input[type=range]::-webkit-slider-runnable-track {
+  height: var(--track-h); border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--accent) var(--fill), var(--surface-3) var(--fill));
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+input[type=range]::-moz-range-track { height: var(--track-h); border-radius: var(--r-pill); background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--line-strong); }
+input[type=range]::-moz-range-progress { height: var(--track-h); border-radius: var(--r-pill); background: var(--accent); }
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: var(--thumb); height: var(--thumb); margin-top: calc((var(--track-h) - var(--thumb)) / 2);
+  border-radius: 50%; background: #fff; border: 2px solid var(--accent); box-shadow: var(--shadow-1);
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+input[type=range]::-moz-range-thumb {
+  width: var(--thumb); height: var(--thumb); box-sizing: border-box; border-radius: 50%; background: #fff; border: 2px solid var(--accent); box-shadow: var(--shadow-1);
+}
+@media (hover: hover) { input[type=range]:not(:disabled):hover::-webkit-slider-thumb { transform: scale(1.12); } }
+input[type=range]:not(:disabled):active::-webkit-slider-thumb { transform: scale(1.2); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent), var(--shadow-1); }
+input[type=range]:focus-visible { outline: none; }
+input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent); }
+input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent); }
+input[type=range]:disabled { opacity: .4; cursor: not-allowed; }
+input[type=range]:disabled::-webkit-slider-thumb { border-color: var(--text-3); }
+input[type=range]:disabled::-webkit-slider-runnable-track { background: var(--surface-3); }
+@media (pointer: coarse) { input[type=range] { --thumb: 22px; --track-h: 8px; height: 32px; } }
 
 /* ---- popover + menu (openPopover / openMenu in shell.js). ONE floating-layer recipe for every "⋯" menu,
    picker and sort list; position is set inline by the helper (fixed, flips to stay on screen). ---- */
