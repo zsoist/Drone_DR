@@ -11,8 +11,8 @@
   "tiers": {
     "ultra": {
       "path": "ultra/viperx_missile.glb",
-      "sha256": "410bfafcc61ad617b779b532d8e88578f8121b0f130f9f1b5aa2bc3eda57d088",
-      "bytes": 5363948,
+      "sha256": "c15fe670d929947f1c88bdd0776f5e998513393c309c927b6b4e5400008acee4",
+      "bytes": 5363916,
       "triangles": 620,
       "texture_dimensions": [
         [
@@ -31,13 +31,13 @@
       "bounds": [
         0.66,
         0.69,
-        2.798
+        2.996
       ]
     },
     "runtime": {
       "path": "runtime/viperx_missile.glb",
-      "sha256": "304e25ab372a2a2bbb756a041a0a7996b8596ddeb37d870577bf65c5353cb4ca",
-      "bytes": 857684,
+      "sha256": "854900d88c8a9cd06f0d265549fefa3eb8cf849c803bec5c75642e77f7da408c",
+      "bytes": 857652,
       "triangles": 620,
       "texture_dimensions": [
         [
@@ -56,12 +56,12 @@
       "bounds": [
         0.66,
         0.69,
-        2.798
+        2.996
       ]
     }
   },
   "preview": {
     "path": "previews/viperx_missile.png",
-    "sha256": "ac16243624559dc3685655ce97ef227d90f323638888a07c19a3d5f49c77e14f"
+    "sha256": "56af9c4069c7d3e43d22bce449c996dbe720fb4e298288a619b276a98a363e44"
   }
 }

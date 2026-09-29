@@ -1,4 +1,5 @@
-// AeroBrain icon set — 20px grid, 1.5px stroke, no fills. Usage: icon('route')
+// AeroBrain icon set — 20px grid, no fills. Usage: icon('route')
+// Sizes come from CSS tokens (--ic-xs 12 / sm 14 / md 16 / lg 20 / xl 24); stroke 1.5 default, 1.75 at <=14px, 1.25 at >=24px.
 const ICONS = {
   drone: '<path d="M5 5l3.5 3.5M15 5l-3.5 3.5M5 15l3.5-3.5M15 15l-3.5-3.5"/><circle cx="10" cy="10" r="2.2"/><circle cx="4.5" cy="4.5" r="2"/><circle cx="15.5" cy="4.5" r="2"/><circle cx="4.5" cy="15.5" r="2"/><circle cx="15.5" cy="15.5" r="2"/>',
   grid: '<rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/>',
@@ -27,6 +28,11 @@ const ICONS = {
   eyeOff: '<path d="M3 3l14 14M8.2 5.3A7.8 7.8 0 0110 5c4.7 0 7.5 5 7.5 5a12 12 0 01-2 2.6M12.2 14.7A7.8 7.8 0 0110 15c-4.7 0-7.5-5-7.5-5a12.5 12.5 0 012.3-2.9M8.4 8.4a2.2 2.2 0 003.2 3.2"/>',
   logOut: '<path d="M8 4H5a2 2 0 00-2 2v8a2 2 0 002 2h3M12.5 6.5L16 10l-3.5 3.5M7 10h9"/>',
   chevL: '<path d="M12 4.5L6.5 10 12 15.5"/>',
+  chevLeft: '<path d="M12 4.5L6.5 10 12 15.5"/>',
+  chevD: '<path d="M4.5 8L10 13.5 15.5 8"/>',
+  shield: '<path d="M10 2.8l6 2.2v4.6c0 3.9-2.5 6.5-6 7.6-3.5-1.1-6-3.7-6-7.6V5z"/><path d="M7.2 10l2 2 3.6-4"/>',
+  chip: '<rect x="5" y="5" width="10" height="10" rx="1.8"/><rect x="8" y="8" width="4" height="4" rx=".6"/><path d="M8 2.8v2.2M12 2.8v2.2M8 15v2.2M12 15v2.2M2.8 8h2.2M2.8 12h2.2M15 8h2.2M15 12h2.2"/>',
+  link: '<path d="M8.5 11.5a3.2 3.2 0 004.5 0l2.6-2.6a3.2 3.2 0 00-4.5-4.5l-.9.9"/><path d="M11.5 8.5a3.2 3.2 0 00-4.5 0l-2.6 2.6a3.2 3.2 0 004.5 4.5l.9-.9"/>',
   chevR: '<path d="M8 4.5L13.5 10 8 15.5"/>',
   ext: '<path d="M8.5 4H5a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-3.5M12 3h5v5M17 3l-8 8"/>',
   layers: '<path d="M10 2.8l7 3.7-7 3.7-7-3.7zM3 10.3l7 3.7 7-3.7M3 13.8l7 3.7 7-3.7"/>',

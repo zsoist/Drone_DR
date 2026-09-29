@@ -21,6 +21,7 @@ from pathlib import Path
 from srt_parser import point_at
 
 from paths import VAULT  # noqa: E402
+from fsutil import atomic_write_json, atomic_write_text  # noqa: E402
 FPS = 0.5          # 1 frame cada 2s
 WIDTH = 2688       # default: balance calidad/RAM en 16GB
 
@@ -69,9 +70,10 @@ def prune_frames(images, track_pts, fps, profile, manifest_path=None):
             f.unlink()
             dropped += 1
     if manifest_path is not None:
-        manifest_path.write_text(json.dumps(
+        atomic_write_json(manifest_path,
             {"profile": profile, "kept": len(keep), "dropped": dropped,
-             "width": PROFILE_WIDTH.get(profile, WIDTH), "fps": fps, "frames": chosen}, indent=1))
+             "width": PROFILE_WIDTH.get(profile, WIDTH), "fps": fps, "frames": chosen},
+            indent=1, ensure_ascii=True)
     print(f"poda adaptativa [{profile}]: {len(keep)} frames elegidos · {dropped} descartados "
           f"(blur / casi-duplicados)", flush=True)
     return len(keep)
@@ -228,9 +230,9 @@ def main():
                    check=True, capture_output=True)
     for leak in images.glob("*.jpg_original"):
         leak.unlink()
-    (proj / "frames_manifest.json").write_text(json.dumps(
+    atomic_write_json(proj / "frames_manifest.json",
         {"profile": profile, "sources": per_source, "photos": n_photos,
-         "total_frames": total, "width": width, "fps": fps}, indent=1))
+         "total_frames": total, "width": width, "fps": fps}, indent=1, ensure_ascii=True)
     src_lbl = f"{len(sources)} video(s)" + (f" + {n_photos} foto(s)" if n_photos else "")
     print(f"✅ {total} frames geotagged de {src_lbl} → {proj}")
 

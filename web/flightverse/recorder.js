@@ -3,7 +3,7 @@
 // honesto (lo que ves es lo que sale) y sin servidor. La exportación
 // DETERMINISTA frame-a-frame (WebCodecs, replay re-simulado) es la segunda
 // mitad de P7 — esto no la sustituye, la complementa como camino instantáneo.
-export function createRecorder(canvas, { fps = 60, mbps = 12 } = {}) {
+export function createRecorder(canvas, { fps = 60, mbps = 12, onError = null } = {}) {
   const pick = () => ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
     .find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || null;
 
@@ -19,6 +19,15 @@ export function createRecorder(canvas, { fps = 60, mbps = 12 } = {}) {
       rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: mbps * 1e6 });
       chunks = [];
       rec.ondataavailable = e => { if (e.data?.size) chunks.push(e.data); };
+      const failed = rec;
+      rec.onerror = e => {
+        // fallo del codificador: parar, soltar el stream y avisar (sin blob a medias)
+        if (rec === failed) rec = null;
+        chunks = [];
+        try { if (failed.state !== 'inactive') failed.stop(); } catch { /* ya parado */ }
+        failed.stream.getTracks().forEach(t => t.stop());
+        onError?.(e?.error || e);
+      };
       rec.start(500);
       startedAt = performance.now();
       return true;
@@ -27,6 +36,7 @@ export function createRecorder(canvas, { fps = 60, mbps = 12 } = {}) {
       return new Promise(resolve => {
         if (!rec) return resolve(null);
         const r = rec; rec = null;
+        r.onerror = null;
         r.onstop = () => {
           const blob = new Blob(chunks, { type: r.mimeType });
           chunks = [];

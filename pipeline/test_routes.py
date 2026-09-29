@@ -7,9 +7,11 @@ If you add/remove a route on purpose, update the fixtures below.
 """
 from __future__ import annotations
 
+import ast
 import http.client
 import inspect
 import re
+import textwrap
 import sys
 import tempfile
 import threading
@@ -77,17 +79,45 @@ def _dedupe(seq):
     return out
 
 
+def _path_literals(func, attr_only):
+    """String literals compared with `==` to `<x>.path` (and bare `path` for GET), via ast."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    out = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Compare) and len(node.ops) == 1
+                and isinstance(node.ops[0], ast.Eq)):
+            continue
+        left, right = node.left, node.comparators[0]
+        is_path = ((isinstance(left, ast.Attribute) and left.attr == "path")
+                   or (not attr_only and isinstance(left, ast.Name) and left.id == "path"))
+        if is_path and isinstance(right, ast.Constant) and isinstance(right.value, str) \
+                and right.value.startswith("/"):
+            out.add(right.value)
+    return out
+
+
 class RouteDriftTests(unittest.TestCase):
     def test_post_routes_match_fixture(self):
-        src = inspect.getsource(server.H._post)
-        found = _dedupe(re.findall(r'\.path == "(/[^"]*)"', src))
-        self.assertEqual(found, POST_ROUTES,
+        # rutas ya migradas a la tabla de despacho + literales que queden en la cadena de _post
+        in_chain = _path_literals(server.H._post, attr_only=True)
+        table = set(getattr(server.H, "_POST_ROUTES", {}))
+        self.assertFalse(in_chain & table, "route both in the dispatch table and in the if-chain")
+        self.assertEqual(in_chain | table, set(POST_ROUTES),
                          "POST routes changed: update POST_ROUTES in test_routes.py")
 
+    def test_post_dispatch_table_is_complete_and_callable(self):
+        self.assertEqual(set(server.H._POST_ROUTES), set(POST_ROUTES))
+        self.assertEqual(_path_literals(server.H._post, attr_only=True), set(),
+                         "_post still has inline route blocks")
+        for path, name in server.H._POST_ROUTES.items():
+            with self.subTest(route=path):
+                fn = getattr(server.H, name)
+                self.assertEqual(["self", "u", "q"],
+                                 list(inspect.signature(fn).parameters))
+
     def test_get_exact_routes_match_fixture(self):
-        src = inspect.getsource(server.H.do_GET)
-        found = _dedupe(re.findall(r'(?:\.path|\bpath) == "(/[^"]*)"', src))
-        self.assertEqual(found, GET_EXACT_ROUTES,
+        found = _path_literals(server.H.do_GET, attr_only=False)
+        self.assertEqual(found, set(GET_EXACT_ROUTES),
                          "GET exact routes changed: update GET_EXACT_ROUTES in test_routes.py")
 
     def test_get_prefix_routes_match_fixture(self):

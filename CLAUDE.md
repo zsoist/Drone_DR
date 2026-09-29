@@ -30,7 +30,9 @@ Legacy Mac (OpenSplat/MPS/xcodebuild): `docs/archive/LEGACY_MAC_TRAINER.md`.
 - wrangler (OAuth) refuses writes in non-interactive shells: wrap with `script -q /dev/null …` for a pseudo-TTY, and export CLOUDFLARE_ACCOUNT_ID.
 - R2 requires one-time dashboard activation (error 10042) + card on file — AVOIDED by design: media is served from the vault via Cloudflare Tunnel ($0).
 - `cloudflared tunnel route dns` uses the default cert zone (danielreyes.work); for metislab.work pass TUNNEL_ORIGIN_CERT=~/.cloudflared/zone-certs/metislab.work.pem. (A stray CNAME vuelos.metislab.work.danielreyes.work was created by the first attempt — harmless, delete in dash when convenient.)
-- Media serving = python http.server behind the tunnel; if video seeking ever feels slow, swap to Caddy (proper Range support).
+- Media is served by `aerobrain_server.py` (stdlib) behind the tunnel; HTTP Range is implemented there, so no Caddy swap is needed.
+- After a structural refactor (moving code between modules, dispatch tables, renames), smoke checks that assert source literals or AST shapes will fail. Update them to the new invariant; do not revert the refactor to satisfy them.
+- Tests must never write into the real vault: point `AEROBRAIN_JOB_LOG_DIR`, `AEROBRAIN_ERRLOG` and `AEROBRAIN_VAULT` at a temp dir before importing anything that touches them.
 - ODM photogrammetry from video frames REQUIRES GPS EXIF geotags (from the SRT track
   via pipeline/odm_prep.py) — without them the orthophoto comes out 67x66px garbage.
   Current best default for DJI video is preset `alta`: 3072px frame prep, `pc-quality high`,

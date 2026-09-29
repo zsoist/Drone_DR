@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=349';
+import * as THREE from '/flightverse/three.js?v=352';
 import {
   capWaveQueue,
   createBurstSchedule,
@@ -15,7 +15,7 @@ import {
   predictiveAim,
   selectEnemyLod,
   steerGroundEnemy,
-} from '/flightverse/invasion-policy.js?v=349';
+} from '/flightverse/invasion-policy.js?v=352';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -134,7 +134,7 @@ const SPECS = {
   arquero: { build: () => bZombie(true),  hp: 90,  speed: 1.2, radius: 1.7, y: 1.15, shoot: { every: 3.2, speed: 26, dmg: 6, grav: 9, range: 90, band: { min: 24, max: 80 } } },
   soldado: { build: bSoldado,             hp: 120, speed: 3.2, radius: 1.7, y: 1.2,  shoot: { every: 2.4, speed: 46, dmg: 3, grav: 0, range: 110, burst: 3, band: { min: 20, max: 95 } } },
   ufo:     { build: bUfo,                 hp: 240, speed: 7,   radius: 4.5, y: 0,    fly: 'orbit', shoot: { every: 4, speed: 20, dmg: 10, grav: 0, range: 140, plasma: true, band: { min: 28, max: 115 } } },
-  avion:   { build: bAvion,               hp: 140, speed: 34,  radius: 6,   y: 0,    fly: 'pass', attackDistance: 120 },
+  avion:   { build: bAvion,               hp: 140, speed: 34,  radius: 6,   y: 0,    fly: 'pass', attackDistance: 120, dmg: 12, passHit: 16 },
   dragon:  { build: bDragon,              hp: 700, speed: 9,   radius: 6,   y: 0,    fly: 'serp', shoot: { every: 4.5, speed: 17, dmg: 15, grav: 2, range: 150, fire: true, band: { min: 32, max: 125 } } },
   gigante: { build: bGigante,             hp: 1600, speed: 2.1, radius: 14, y: 8.8,  dmg: 22, melee: 7, slope: 6, foot: 5 },
 };
@@ -215,7 +215,7 @@ export function createInvasion(scene, {
 
   async function loadCatalog() {
     if (!catalogPromise) {
-      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=349', { cache: 'no-store' })
+      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=352', { cache: 'no-store' })
         .then(response => {
           if (!response.ok) throw new Error(`enemy catalog ${response.status}`);
           return response.json();
@@ -254,9 +254,9 @@ export function createInvasion(scene, {
         await loadCatalog();
         const file = modelFile(type, lod);
         if (!file) throw new Error(`catalog missing ${key}`);
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=349'));
-        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=349');
-        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=349`);
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=352'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=352');
+        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=352`);
         const loaded = { scene: gltf.scene, clips: gltf.animations || [], type, lod };
         if (disposed || loadSession !== session) {
           disposeTree(loaded.scene);
@@ -708,7 +708,7 @@ export function createInvasion(scene, {
           if (next === 'attack') {
             e.act?.attack?.reset().play();
             if (!e.act?.attack && e.anim.aR) e.anim.aR.rotation.x = 2.2;
-            if (e.spec.fly === 'pass') e.passDir = dronePos.clone().sub(p).setY(0).normalize();
+            if (e.spec.fly === 'pass') { e.passDir = dronePos.clone().sub(p).setY(0).normalize(); e.passHit = false; }
           }
           if (previous === 'attack') {
             const cadence = DIFFICULTY[S.difficulty].cadence;
@@ -719,6 +719,12 @@ export function createInvasion(scene, {
             }
             e.cool = (e.spec.shoot?.every || 0.8) * cadence * (0.9 + Math.random() * 0.2);
           }
+        }
+
+        // Pasada de ataque: el avión daña al dron si lo cruza de cerca (una vez por pasada).
+        if (e.spec.fly === 'pass' && e.state === 'attack' && !e.passHit && dist <= e.spec.passHit) {
+          e.passHit = true;
+          onHit?.(e.spec.dmg);
         }
 
         if (e.spec.fly) {

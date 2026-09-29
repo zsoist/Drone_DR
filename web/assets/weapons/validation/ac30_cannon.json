@@ -11,8 +11,8 @@
   "tiers": {
     "ultra": {
       "path": "ultra/ac30_cannon.glb",
-      "sha256": "142824379187147819a6da736b337ddd617278cd2163186c724e7fd4fb8829e0",
-      "bytes": 5512120,
+      "sha256": "3506e9c7b6a05557f5ad590566e9c7c8a145eebbf25c13838dd9bc50b663ed33",
+      "bytes": 5512088,
       "triangles": 3116,
       "texture_dimensions": [
         [
@@ -36,8 +36,8 @@
     },
     "runtime": {
       "path": "runtime/ac30_cannon.glb",
-      "sha256": "dca84880b15bfe2a5d2b3ef8e460c279276d4b464476ff199b71fbe8cc507dbb",
-      "bytes": 1025052,
+      "sha256": "ea3e6c11bda9e9a504cdb89ea956d05ea2dbff1643083c0cf573cb6c3b762cb7",
+      "bytes": 1025020,
       "triangles": 3116,
       "texture_dimensions": [
         [

@@ -153,7 +153,7 @@ ingress:
 ```
 
 Las dos reglas de AeroBrain deben permanecer antes de cualquier wildcard (`*.metislab.work` va
-a otro servicio local en `:4310`).
+a otro servicio local en `:4310`, externo a AeroBrain y hoy sin proceso escuchando: esos hostnames devuelven 502 hasta que ese backend se levante).
 
 Existe un segundo túnel independiente, `com.cloudflare.cloudflared` (`~/.cloudflared/config.yml`,
 tunnel `2b64631e-...`), que sólo publica `ssh.danielreyes.work` hacia `ssh://localhost:22`. Es de

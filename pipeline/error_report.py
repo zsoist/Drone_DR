@@ -18,16 +18,15 @@ import re
 import sqlite3
 import sys
 import time
-import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
 from paths import VAULT  # noqa: E402
+from fsutil import atomic_write_json, atomic_write_text  # noqa: E402
 ERRLOG = VAULT / "ops" / "errors.jsonl"
 WATCHLOG = Path.home() / "Library" / "Logs" / "AeroBrain" / "watchdog.log"
 JOBS_DB = VAULT / "manifest" / "jobs.db"
 REPORTS = VAULT / "ops" / "reports"
-from paths import KEYS_ENV  # noqa: E402
 EXPECTED_BASELINES = (
     "ODM alta medido~12-25min para 30-77 cámaras (datasets grandes pueden tardar más); "
     "ODM Alta de 238 cámaras medido en 98min con dense high→medium y producto 25D; "
@@ -323,19 +322,13 @@ def jobs_summary(days: int) -> dict:
 
 
 def deepseek(prompt: str) -> str:
-    key = ""
-    for line in KEYS_ENV.read_text().splitlines():
-        if line.startswith("DEEPSEEK_API_KEY="):
-            key = line.split("=", 1)[1].strip().strip('"')
+    from keys import get_key
+    key = get_key("DEEPSEEK_API_KEY")
     if not key:
         raise RuntimeError("DEEPSEEK_API_KEY no encontrada")
-    req = urllib.request.Request(
-        "https://api.deepseek.com/chat/completions",
-        data=json.dumps({"model": "deepseek-chat", "temperature": 0.3,
-                         "messages": [{"role": "user", "content": prompt}]}).encode(),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return json.loads(r.read())["choices"][0]["message"]["content"]
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ai"))
+    from router import deepseek_text
+    return deepseek_text(prompt, {"DEEPSEEK_API_KEY": key}, temperature=0.3, model="deepseek-chat")
 
 
 def collision_context(summary: dict) -> str:
@@ -527,13 +520,13 @@ def main():
     lines += ["", "---", "Estado: PENDIENTE DE REVISIÓN (Codex/Claude) · "
               f"fuente: error_report.py --days {days} · AI guardrails="
               f"{'UNAVAILABLE' if ai_unavailable else 'REJECTED' if ai_validation else 'PASS'}"]
-    out.write_text("\n".join(lines))
-    (REPORTS / "latest.json").write_text(json.dumps(
+    atomic_write_text(out, "\n".join(lines))
+    atomic_write_json(REPORTS / "latest.json",
         {"file": out.name, "ts": ts, "events": len(items), "signatures": len(d),
          "ai": bool(ai and not ai.startswith("_(")),
          "ai_valid": (not ai_validation) and not ai_unavailable,
          "ai_unavailable": ai_unavailable,
-         "ai_validation": ai_validation}))
+         "ai_validation": ai_validation}, ensure_ascii=True)
     print(f"reporte: {out} · {len(items)} eventos · {len(d)} firmas · AI={'sí' if ai else 'no'}")
 
 

@@ -25,6 +25,7 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 import textwrap
 import zipfile
 from dataclasses import dataclass
@@ -36,7 +37,12 @@ import trimesh
 from PIL import Image, ImageDraw, ImageFont
 from trimesh.visual.material import PBRMaterial
 
-ROOT = Path("/mnt/data")
+REPO = Path(__file__).resolve().parent.parent
+# Output root: $AEROBRAIN_KIT_ROOT, or --root on the CLI (rebinds via set_root), else a
+# git-ignored dir inside the repo. The kit carries 4K source maps and zips, so it never
+# defaults into web/. Use --publish to copy the shipped subset into web/assets/destruction.
+DEFAULT_ROOT = REPO / ".forge" / "destruction_kit"  # .forge/ is git-ignored
+ROOT = Path(os.environ.get("AEROBRAIN_KIT_ROOT") or DEFAULT_ROOT)
 KIT = ROOT / "threejs_destruction_kit"
 MODELS = KIT / "models"
 PASSES = KIT / "passes"
@@ -49,8 +55,22 @@ PREVIEWS = KIT / "previews"
 
 RUNTIME_TEX_SIZE = 1024
 SOURCE_TEX_SIZE = 4096
-GLTF_VALIDATOR = Path("/tmp/gltfval/node_modules/gltf-validator")
-THREE_NODE = Path("/tmp/threecheck/node_modules/three")
+GLTF_VALIDATOR = Path(os.environ.get("GLTF_VALIDATOR_DIR", "/tmp/gltfval/node_modules/gltf-validator"))
+THREE_NODE = Path(os.environ.get("THREE_NODE_DIR", "/tmp/threecheck/node_modules/three"))
+SHIPPED_MODELS = (
+    "concrete_block.glb", "brick_wall.glb", "pine_tree.glb",
+    "explosive_barrel.glb", "impact_crater.glb", "debris_pack.glb",
+)
+
+
+def set_root(root: Path) -> None:
+    """Rebind every output path derived from ROOT (used by --root and by tests)."""
+    global ROOT, KIT, MODELS, PASSES, TEXTURES_1K, TEXTURES_4K, PHYSICS, DEMO, VALIDATION, PREVIEWS
+    ROOT = Path(root)
+    KIT = ROOT / "threejs_destruction_kit"
+    MODELS, PASSES = KIT / "models", KIT / "passes"
+    TEXTURES_1K, TEXTURES_4K = KIT / "textures" / "runtime_1k", KIT / "textures" / "source_4k"
+    PHYSICS, DEMO, VALIDATION, PREVIEWS = KIT / "physics", KIT / "demo", KIT / "validation", KIT / "previews"
 
 
 # -----------------------------------------------------------------------------
@@ -298,7 +318,9 @@ def tapered_cylinder_y(radius_bottom: float, radius_top: float, height: float,
         j = (i+1) % sections
         faces += [[i, j, sections+j], [i, sections+j, sections+i]]
         faces += [[2*sections, j, i], [2*sections+1, sections+i, sections+j]]
-    mesh = trimesh.Trimesh(np.asarray(verts), np.asarray(faces), process=True)
+    # The index order above winds clockwise seen from outside (inward normals, negative
+    # volume): reverse every triangle so sides and caps face outward.
+    mesh = trimesh.Trimesh(np.asarray(verts), np.asarray(faces)[:, ::-1], process=True)
     mesh.apply_translation(center)
     return mesh
 
@@ -419,7 +441,8 @@ def make_crater(radius: float = 1.5, resolution_r: int = 12, resolution_a: int =
             c = (ir+1)*resolution_a+ia
             d = (ir+1)*resolution_a+j
             faces.extend([[a,c,b],[b,c,d]])
-    mesh = trimesh.Trimesh(np.asarray(verts), np.asarray(faces), process=False)
+    # [a,c,b] winds downward (-Y); the crater surface must face up, so reverse.
+    mesh = trimesh.Trimesh(np.asarray(verts), np.asarray(faces)[:, ::-1], process=False)
     return assign_planar_uv(mesh, scale=0.6)
 
 
@@ -433,17 +456,22 @@ def barrel_sector(angle0: float, angle1: float, radius: float, height: float,
             verts.extend([[r*math.cos(a), y, r*math.sin(a)] for a in angles])
     ring = segments+1
     faces = []
-    # Four surfaces: outer, inner, top, bottom.
+    # Vertex blocks: inner low 0, inner high ring, outer low 2*ring, outer high 3*ring.
+    # All triangles wind counter-clockwise seen from outside (outward normals).
     for i in range(segments):
-        j=i+1
-        # inner low/high indices 0/ring; outer low/high 2ring/3ring
-        faces += [[2*ring+i, 2*ring+j, 3*ring+i], [2*ring+j, 3*ring+j, 3*ring+i]]
-        faces += [[i, ring+i, j], [j, ring+i, ring+j]]
-        faces += [[ring+i, 3*ring+i, ring+j], [ring+j, 3*ring+i, 3*ring+j]]
-        faces += [[i, j, 2*ring+i], [j, 2*ring+j, 2*ring+i]]
-    # radial end caps
-    for idx in (0, segments):
-        faces += [[idx, 2*ring+idx, ring+idx], [2*ring+idx, 3*ring+idx, ring+idx]]
+        j = i+1
+        # outer (+radial)
+        faces += [[2*ring+i, 3*ring+i, 2*ring+j], [2*ring+j, 3*ring+i, 3*ring+j]]
+        # inner (-radial)
+        faces += [[i, j, ring+i], [j, ring+j, ring+i]]
+        # top (+Y)
+        faces += [[ring+i, ring+j, 3*ring+i], [ring+j, 3*ring+j, 3*ring+i]]
+        # bottom (-Y)
+        faces += [[i, 2*ring+i, j], [j, 2*ring+i, 2*ring+j]]
+    # radial end caps: +tangent at the last angle, -tangent at the first
+    end = segments
+    faces += [[end, 2*ring+end, ring+end], [2*ring+end, 3*ring+end, ring+end]]
+    faces += [[0, ring, 2*ring], [2*ring, ring, 3*ring]]
     return trimesh.Trimesh(np.asarray(verts), np.asarray(faces), process=True)
 
 
@@ -752,13 +780,14 @@ def build_brick_wall(materials: Materials, detail: int = 5) -> tuple[SceneBuilde
     width, height, depth = 4.8, 2.45, 0.36
     cols, rows = (10, 7) if detail >= 4 else (8, 5)
     brick_h = height/rows*0.90
-    brick_w = width/cols*0.92
+    pitch = width/cols            # column step; bricks are 8% narrower than the pitch (mortar gap)
+    brick_w = pitch*0.92
     rng = np.random.default_rng(913)
     count = 0
     for row in range(rows):
-        offset = 0.5*brick_w if row % 2 else 0.0
+        offset = 0.5*pitch if row % 2 else 0.0
         for col in range(cols+1):
-            x = -width/2 + (col+0.5)*brick_w + offset
+            x = -width/2 + (col+0.5)*pitch + offset
             if x-brick_w/2 < -width/2 or x+brick_w/2 > width/2:
                 continue
             y = (row+0.5)*(height/rows)
@@ -844,14 +873,21 @@ def build_tree(materials: Materials, detail: int = 5) -> tuple[SceneBuilder, dic
             cluster.apply_transform(mat_rotate(-a, [0,1,0]))
             cluster.apply_translation(np.array([end[0]*0.72, end[1]+0.12, end[2]*0.72]))
             cluster_parts.append(cluster)
+        foliage = trimesh.util.concatenate(cluster_parts)
+        # Pivot at the foliage centre so the crown rigid body rotates about its own centre
+        # (the mesh used to sit at world coordinates under an identity node). Branches share
+        # the pivot; the runtime re-attaches them to their crown with world transform kept.
+        pivot = np.asarray(foliage.bounds, dtype=float).mean(axis=0)
         branches = trimesh.util.concatenate(branch_parts)
+        branches.apply_translation(-pivot)
         branches = assign_face_projection_uv(branches, scale=1.5)
         b.mesh(f"branches_{level:02d}", branches, materials.bark, parent=fragments,
+               transform=mat_translate(pivot),
                extras={"role": "visualFragment", "parentFragment": f"crown_{level:02d}", "initialHidden": False})
-        foliage = trimesh.util.concatenate(cluster_parts)
+        foliage.apply_translation(-pivot)
         foliage = assign_face_projection_uv(foliage, scale=0.9)
         b.mesh(f"crown_{level:02d}", foliage, materials.foliage, parent=fragments,
-               extras={
+               transform=mat_translate(pivot), extras={
                    "role": "fragment", "initialHidden": False, "massKg": round(18-level*1.8,2),
                    "collider": {"type": "ball", "radius": round(radial*0.66,3)},
                    "friction": 0.45, "restitution": 0.08, "linearDamping": 0.8,
@@ -1109,11 +1145,43 @@ def triangle_counts(gltf: dict) -> tuple[int, int]:
     return unique, rendered
 
 
+OPEN_SURFACE_UP = frozenset({"terrain_surface", "crater_surface"})
+
+
+def winding_issues(scene: trimesh.Scene) -> list[str]:
+    """Outward-facing check per mesh node (the materials are single-sided, so an inverted
+    mesh is culled from outside).
+
+    - Closed meshes (watertight once vertices are merged by position, e.g. GLB seam
+      duplicates): signed volume must be positive.
+    - Open height-field surfaces (terrain / crater floor): mean normal must point up (+Y).
+    """
+    issues = []
+    for node in scene.graph.nodes_geometry:
+        _, geom_name = scene.graph[node]
+        geom = scene.geometry[geom_name]
+        if len(geom.faces) == 0:
+            continue
+        merged = trimesh.Trimesh(np.asarray(geom.vertices), np.asarray(geom.faces), process=True)
+        if node in OPEN_SURFACE_UP:
+            areas = merged.area_faces
+            up = float((merged.face_normals[:, 1] * areas).sum() / max(areas.sum(), 1e-12))
+            if up <= 0:
+                issues.append(f"{node}: open surface faces down (mean ny {up:.3f})")
+        elif merged.is_watertight:
+            if not merged.is_winding_consistent:
+                issues.append(f"{node}: closed mesh with mixed triangle winding")
+            elif merged.volume <= 0:
+                issues.append(f"{node}: inward-facing (signed volume {merged.volume:.5f})")
+    return issues
+
+
 def validate_structural(path: Path) -> dict[str, Any]:
     raw = path.read_bytes()
     gltf, _ = parse_glb(raw)
     unique, rendered = triangle_counts(gltf)
     scene = trimesh.load(path, force="scene", process=False)
+    reload_ok = len(scene.geometry) > 0
     bounds = np.asarray(scene.bounds, dtype=float)
     nodes = [n.get("name", "") for n in gltf.get("nodes", [])]
     prims = [p for m in gltf.get("meshes", []) for p in m.get("primitives", [])]
@@ -1140,7 +1208,8 @@ def validate_structural(path: Path) -> dict[str, Any]:
         "tangentSpaceReady": tangent_ready,
         "fragmentNodes": sum(1 for n in nodes if n.startswith(("chunk_", "brick_", "trunk_", "crown_", "barrel_shard_", "debris_"))),
         "nodeNames": nodes,
-        "trimeshReload": True,
+        "trimeshReload": reload_ok,
+        "windingIssues": winding_issues(scene),
     }
 
 
@@ -1215,6 +1284,28 @@ def run_three_loader_test(paths: Sequence[Path]) -> dict[str, Any]:
     raw = json.loads(proc.stdout)
     return {"available": True, "files": {str(Path(k).relative_to(KIT)): v for k, v in raw.items()},
             "allLoadable": all(v.get("ok") for v in raw.values())}
+
+
+def validation_failures(structural: Sequence[dict], validator: dict, loader_test: dict,
+                        *, allow_missing: bool = False) -> list[str]:
+    """Every reason the build must not be called green. Empty list == pass."""
+    failures = []
+    for rec in structural:
+        if not rec.get("trimeshReload"):
+            failures.append(f"{rec['file']}: trimesh reload produced no geometry")
+        for issue in rec.get("windingIssues") or []:
+            failures.append(f"{rec['file']}: {issue}")
+    for label, report, ok_key in (("khronos validator", validator, "allZeroErrorsWarnings"),
+                                  ("three.js loader", loader_test, "allLoadable")):
+        if not report.get("available"):
+            if not allow_missing:
+                failures.append(f"{label} not available ({report.get('reason')}); "
+                                f"install it or pass --allow-missing-validators")
+        elif report.get("processError"):
+            failures.append(f"{label} crashed: {str(report['processError'])[:300]}")
+        elif not report.get(ok_key):
+            failures.append(f"{label} reported problems")
+    return failures
 
 
 def _look_at(eye: np.ndarray, target: np.ndarray, up=np.array([0.0,1.0,0.0])) -> np.ndarray:
@@ -2094,7 +2185,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-preview", action="store_true")
     parser.add_argument("--no-4k", action="store_true", help="Delete optional 4K source maps after generation")
+    parser.add_argument("--root", type=Path, default=None,
+                        help=f"output root (default $AEROBRAIN_KIT_ROOT or {DEFAULT_ROOT})")
+    parser.add_argument("--allow-missing-validators", action="store_true",
+                        help="do not fail when the Khronos validator / three.js loader are not installed "
+                             "(local dev only; a validator that RAN and reported problems always fails)")
+    parser.add_argument("--publish", action="store_true",
+                        help="after a passing run copy the shipped models into web/assets/destruction/models")
     args = parser.parse_args()
+    if args.root is not None:
+        set_root(args.root)
 
     clean_output()
     textures = generate_texture_library()
@@ -2160,6 +2260,8 @@ def main() -> None:
     json_dump(VALIDATION / "structural-report.json", {"files": structural})
     json_dump(VALIDATION / "gltf-validator-report.json", validator)
     json_dump(VALIDATION / "threejs-loader-report.json", loader_test)
+    failures = validation_failures(structural, validator, loader_test,
+                                   allow_missing=args.allow_missing_validators)
 
     pass_report = {
         "process": "five_pass_production",
@@ -2225,6 +2327,14 @@ def main() -> None:
             elif p.is_dir():
                 for f in p.rglob("*"):
                     if f.is_file(): zf.write(f, Path(KIT.name) / f.relative_to(KIT))
+
+    if failures:
+        print("VALIDATION FAILED:\n  " + "\n  ".join(failures), file=sys.stderr)
+        raise SystemExit(1)
+    if args.publish:
+        target = REPO / "web" / "assets" / "destruction" / "models"
+        for name in SHIPPED_MODELS:
+            shutil.copy2(MODELS / name, target / name)
 
     print(json.dumps({
         "summary": summary,

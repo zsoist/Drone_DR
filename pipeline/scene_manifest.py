@@ -22,7 +22,7 @@ import dsm_lod
 import mesh_coverage
 import scenes
 
-from fsutil import read_json  # noqa: E402
+from fsutil import atomic_write_json, read_json  # noqa: E402
 from paths import VAULT  # noqa: E402
 COVERAGE_DIAMETERS_M = (100, 200, 400, 600, 1000)
 
@@ -335,12 +335,12 @@ def build(cid: str) -> dict:
         }
         site_lod = {"version": 1, "clip_id": cid, "site": site_summary,
                     "coverage": coverage}
-        (mdir / "site.lod.json").write_text(json.dumps(site_lod, ensure_ascii=False, indent=1))
+        atomic_write_json(mdir / "site.lod.json", site_lod, indent=1)
         man["name"] = site_scene.get("title") or man["name"]
         man["site"] = site_summary
         man["coverage"] = coverage
         man["assets"]["site_lod"] = f"data/models/{cid}/site.lod.json"
-    (mdir / "scene.v2.json").write_text(json.dumps(man, ensure_ascii=False, indent=1))
+    atomic_write_json(mdir / "scene.v2.json", man, indent=1)
     return man
 
 

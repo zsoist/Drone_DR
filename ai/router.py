@@ -15,20 +15,10 @@ from pathlib import Path
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
-from paths import KEYS_ENV as KEYS_FILE  # noqa: E402
+from keys import load_keys  # noqa: E402,F401  (re-exported for callers)
 
 GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"]  # try in order
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-
-
-def load_keys() -> dict:
-    keys = {}
-    for line in KEYS_FILE.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, _, v = line.partition("=")
-            keys[k.strip()] = v.strip().strip('"')
-    return keys
 
 
 def _post(url: str, payload: dict, headers: dict, timeout=120) -> dict:
@@ -59,11 +49,12 @@ def gemini_vision(prompt: str, image_paths: list[Path], keys: dict) -> str:
     raise RuntimeError(f"gemini failed: {last_err}")
 
 
-def deepseek_text(prompt: str, keys: dict, system: str = "") -> str:
+def deepseek_text(prompt: str, keys: dict, system: str = "", temperature: float = 0.4,
+                  model: str | None = None) -> str:
     msgs = ([{"role": "system", "content": system}] if system else [])
     msgs.append({"role": "user", "content": prompt})
     out = _post("https://api.deepseek.com/chat/completions",
-                {"model": DEEPSEEK_MODEL, "messages": msgs, "temperature": 0.4},
+                {"model": model or DEEPSEEK_MODEL, "messages": msgs, "temperature": temperature},
                 {"Authorization": f"Bearer {keys['DEEPSEEK_API_KEY']}"})
     return out["choices"][0]["message"]["content"]
 

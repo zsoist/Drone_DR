@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compute_policy  # noqa: E402
 import docker_ondemand  # noqa: E402
 from splat_presets import normalize_splat_request  # noqa: E402
+import worker  # noqa: E402
 
 
 class ComputePolicyTests(unittest.TestCase):
@@ -85,6 +86,52 @@ class OnDemandDockerTests(unittest.TestCase):
         stopped, calls = self._stop(age=9999, running=False)
         self.assertFalse(stopped)
         self.assertEqual(calls, [])       # a docker call would boot OrbStack again
+
+
+
+class ComputePolicySplatTests(unittest.TestCase):
+    def test_route_splat_is_strict_when_pc_only(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop("AEROBRAIN_COMPUTE", None)
+            r = compute_policy.route_splat({"backend": "metal", "best_available": True})
+        self.assertEqual("strict", r["backend_policy"])
+        self.assertEqual("cuda", r["backend"])
+        with mock.patch.dict(os.environ, {"AEROBRAIN_COMPUTE": "local"}):
+            self.assertNotIn("backend_policy", compute_policy.route_splat({"backend": "metal"}))
+
+
+class ComputePolicyNestedSplatTests(unittest.TestCase):
+    def test_nested_splat_dict_is_forced_to_strict_cuda(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("AEROBRAIN_COMPUTE", None)
+            spec = compute_policy.route_odm({
+                "preset": "alta",
+                "splat": {"clip_id": "c", "backend": "metal", "best_available": True}})
+        self.assertEqual("cuda", spec["splat"]["backend"])
+        self.assertEqual("strict", spec["splat"]["backend_policy"])
+        self.assertFalse(spec["splat"]["best_available"])
+        followup = worker.phased_splat_job_spec(spec, "c")
+        self.assertEqual("cuda", followup["backend"])
+
+    def test_run_splat_routes_spec_through_policy(self):
+        j = {"id": "s1", "spec": {"clip_id": "nope", "backend": "metal"}}
+        returned = []
+        real = compute_policy.route_splat
+
+        def spy(raw):
+            returned.append(real(raw))
+            return returned[-1]
+        with mock.patch.object(worker, "VAULT", Path(tempfile.mkdtemp())), \
+                mock.patch.object(compute_policy, "route_splat", side_effect=spy) as route:
+            with self.assertRaisesRegex(RuntimeError, "primero procesa el vuelo en 3D"):
+                worker.run_splat(j)
+        route.assert_called_once()
+        routed = returned[0]
+        self.assertEqual("cuda", routed["backend"])
+        self.assertEqual("strict", routed["backend_policy"])
+        self.assertFalse(routed["best_available"])
+        self.assertEqual("nope", routed["clip_id"])
+        self.assertIs(routed, j["spec"])           # el spec que sigue usando el job ES el ruteado
 
 
 if __name__ == "__main__":

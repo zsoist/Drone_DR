@@ -144,6 +144,19 @@ export function createTouchSticks(host, options = {}) {
       disposed = true;
     },
   };
+  // Si la pestaña pierde foco a mitad de gesto no llega pointerup: soltar sticks.
+  const releaseAll = () => controller.reset();
+  const onVisibility = () => { if (typeof document !== 'undefined' && document.hidden) releaseAll(); };
+  const win = typeof window !== 'undefined' ? window : null;
+  const doc = typeof document !== 'undefined' ? document : null;
+  win?.addEventListener?.('blur', releaseAll);
+  doc?.addEventListener?.('visibilitychange', onVisibility);
+  const baseDispose = controller.dispose;
+  controller.dispose = () => {
+    win?.removeEventListener?.('blur', releaseAll);
+    doc?.removeEventListener?.('visibilitychange', onVisibility);
+    baseDispose();
+  };
   controller.setEnabled(true);
   return controller;
 }

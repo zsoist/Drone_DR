@@ -154,6 +154,14 @@ def run_sweep(
         row for row in disk_audit["worlds"]
         if row.get("terrain") and row.get("collision")
     ]
+    if not candidates and not only:
+        # Fail closed: nothing to sweep must not read as a passing sweep.
+        return {
+            "ok": False,
+            "worlds": [],
+            "failures": [_failure("*", "no_candidate_worlds")],
+            "disk_audit": disk_audit,
+        }
     if only:
         requested = set(only)
         candidates = [row for row in candidates if row["clip_id"] in requested]

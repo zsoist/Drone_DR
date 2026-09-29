@@ -18,20 +18,35 @@ from fractions import Fraction
 from pathlib import Path
 
 import media_probe
+from fsutil import atomic_write_json
 from srt_parser import parse_srt
 from policy import processing_tier
 
 VAULT = Path("/Volumes/SSD/drone-vault")
 
 
+# Medios no confiables (subidas): solo file/pipe, y el demuxer real debe estar en la lista cerrada
+# (una "playlist" HLS/concat con extensión .mp4 leería archivos locales o haría requests).
+FF_PROTOCOLS = ["-protocol_whitelist", "file,pipe"]
+ALLOWED_MEDIA_FORMATS = frozenset({
+    "mov", "mp4", "m4a", "3gp", "3g2", "mj2", "matroska", "webm", "avi", "mpegts",
+    "mp3", "wav", "flac", "ogg", "aac"})
+
+
+def media_format_allowed(format_name: str) -> bool:
+    names = {n.strip() for n in str(format_name or "").split(",") if n.strip()}
+    return bool(names) and names <= ALLOWED_MEDIA_FORMATS
+
+
 def ffprobe(path: Path) -> dict:
-    out = media_probe.ffprobe_text(["-show_format", "-show_streams", "-of", "json"],
+    out = media_probe.ffprobe_text([*FF_PROTOCOLS, "-show_format", "-show_streams", "-of", "json"],
                                    path, log_level="quiet", check=True)
     return json.loads(out)
 
 
 def run_ffmpeg(args: list[str]):
-    subprocess.run(["ffmpeg", "-v", "error", "-y", *args], check=True)
+    # el whitelist es opción de INPUT: va antes del primer -i (todos los usos son de 1 input)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", *FF_PROTOCOLS, *args], check=True)
 
 
 def clip_id(mp4: Path) -> str:
@@ -65,6 +80,9 @@ def make_proxy_720(src: Path, out: Path, has_audio: bool):
 def process_clip(mp4: Path) -> dict:
     cid = clip_id(mp4)
     probe = ffprobe(mp4)
+    fmt = probe.get("format", {}).get("format_name", "")
+    if not media_format_allowed(fmt):
+        raise RuntimeError(f"formato de contenedor no permitido: {fmt or '?'}")
     vstream = next(s for s in probe["streams"] if s["codec_type"] == "video")
     has_audio = any(s["codec_type"] == "audio" for s in probe["streams"])
     duration = float(probe["format"]["duration"])
@@ -72,8 +90,8 @@ def process_clip(mp4: Path) -> dict:
     srt = mp4.with_suffix(".SRT")
     track = parse_srt(srt) if srt.exists() else None
     if track:
-        (VAULT / "tracks" / f"{cid}.flight.json").write_text(
-            json.dumps(track, separators=(",", ":")))
+        atomic_write_json(VAULT / "tracks" / f"{cid}.flight.json", track,
+                          separators=(",", ":"), ensure_ascii=True)
 
     meta = {
         "clip_id": cid,
@@ -117,7 +135,7 @@ def process_clip(mp4: Path) -> dict:
     from backfill_luma import measure as measure_luma
     meta.update(measure_luma(proxy) or {})
 
-    (VAULT / "manifest" / f"{cid}.json").write_text(json.dumps(meta, indent=1))
+    atomic_write_json(VAULT / "manifest" / f"{cid}.json", meta, indent=1, ensure_ascii=True)
     print(f"✅ {cid} [{tier}] {meta['duration_s']}s "
           f"proxy={'%.0fMB' % (meta.get('proxy_bytes', 0) / 1e6) if 'proxy_bytes' in meta else '—'} "
           f"frames={meta.get('frame_count', '—')}")
@@ -139,7 +157,7 @@ def main():
     for mp4 in clips:
         try:
             process_clip(mp4)
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, RuntimeError) as e:
             failed += 1                      # sigue con el resto, pero el exit code lo delata
             print(f"✗ {mp4.name}: {e}")
     if failed:

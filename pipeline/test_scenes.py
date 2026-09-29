@@ -13,6 +13,10 @@ import jobs
 import aerobrain_server as server
 import worker
 import scene_manifest
+import os
+import stat
+import subprocess
+from unittest import mock
 
 
 class SceneStoreTests(unittest.TestCase):
@@ -291,6 +295,56 @@ class SceneStoreTests(unittest.TestCase):
             previous["reconstruction"]["splat_runs"],
             republished["reconstruction"]["splat_runs"],
         )
+
+
+
+class ScenesConcurrencyTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old = scenes.SCENES_DIR
+        scenes.SCENES_DIR = Path(self.tmp.name)
+
+    def tearDown(self):
+        scenes.SCENES_DIR = self.old
+        self.tmp.cleanup()
+
+    def test_same_source_set_in_another_order_is_the_same_version(self):
+        sc = scenes.create_scene("Casa", {"lat": 1, "lon": 2}, ["A", "B"], [])
+        first = scenes.add_version(sc["id"], "recon_1", ["A", "B"], ["p1", "p2"])
+        again = scenes.add_version(sc["id"], "recon_1", ["B", "A"], ["p2", "p1"])
+        self.assertEqual(first["id"], again["id"])
+        with self.assertRaises(ValueError):
+            scenes.add_version(sc["id"], "recon_1", ["A"], [])
+
+    def test_write_uses_unique_tmp_and_leaves_no_debris(self):
+        sc = scenes.create_scene("Casa", {"lat": 1, "lon": 2}, ["A"], [])
+        names = {p.name for p in Path(self.tmp.name).iterdir()}
+        self.assertEqual({f"{sc['id']}.json", ".scenes.lock"}, names)
+
+    def test_lock_is_reentrant_and_serializes_processes(self):
+        with scenes._LOCK:
+            with scenes._LOCK:
+                pass
+        code = ("import sys, fcntl, os;"
+                "fd=os.open(sys.argv[1], os.O_RDWR);"
+                "\ntry:\n fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB); print('free')\n"
+                "except BlockingIOError:\n print('held')")
+        lock = str(Path(self.tmp.name) / ".scenes.lock")
+        with scenes._LOCK:
+            held = subprocess.run([sys.executable, "-c", code, lock],
+                                  capture_output=True, text=True).stdout.strip()
+        free = subprocess.run([sys.executable, "-c", code, lock],
+                              capture_output=True, text=True).stdout.strip()
+        self.assertEqual(("held", "free"), (held, free))
+
+
+class ScenesPermissionTests(unittest.TestCase):
+    def test_scene_json_is_world_readable(self):
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(scenes, "SCENES_DIR", Path(td)):
+                sc = scenes.create_scene("Casa", {"lat": 1, "lon": 2}, ["A"], [])
+                mode = stat.S_IMODE((Path(td) / f"{sc['id']}.json").stat().st_mode)
+        self.assertEqual(0o644, mode)
 
 
 if __name__ == "__main__":

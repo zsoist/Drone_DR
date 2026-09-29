@@ -19,6 +19,13 @@ from scene_aoi import (
     validate_nerfstudio_normalization_contract,
 )
 from scene_manifest import splat_transform_contract
+import os
+import subprocess
+import sys
+import time
+from unittest import mock
+
+import scene_aoi
 
 
 class SceneAoiGeometryTests(unittest.TestCase):
@@ -259,6 +266,121 @@ camera_optimizer:
             self.assertTrue(first_stage.exists())
             self.assertFalse(first_final.exists())
             self.assertTrue(second_stage.exists())
+
+
+
+def dead_pid() -> int:
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    return p.pid
+
+
+class LockTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.lock = Path(self.tmp.name) / ".x.scene-aoi.lock"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_fresh_lock(self):
+        fd = scene_aoi._acquire_lock(self.lock)
+        os.close(fd)
+        self.assertTrue(self.lock.exists())
+
+    def test_live_owner_blocks(self):
+        self.lock.write_text(f"pid={os.getpid()}\n")
+        with self.assertRaises(FileExistsError):
+            scene_aoi._acquire_lock(self.lock)
+
+    def test_dead_owner_is_taken_over(self):
+        self.lock.write_text(f"pid={dead_pid()}\n")
+        fd = scene_aoi._acquire_lock(self.lock)
+        os.close(fd)
+        self.assertTrue(self.lock.exists())
+
+    def test_too_old_lock_is_taken_over_even_if_pid_alive(self):
+        self.lock.write_text(f"pid={os.getpid()}\n")
+        old = time.time() - scene_aoi.LOCK_MAX_AGE_S - 10
+        os.utime(self.lock, (old, old))
+        os.close(scene_aoi._acquire_lock(self.lock))
+
+    def test_pidless_lock_fresh_blocks_old_takes_over(self):
+        self.lock.write_text("")
+        with self.assertRaises(FileExistsError):
+            scene_aoi._acquire_lock(self.lock)
+        old = time.time() - 120
+        os.utime(self.lock, (old, old))
+        os.close(scene_aoi._acquire_lock(self.lock))
+
+    def test_takeover_never_deletes_a_fresh_lock_created_after_the_stale_judgement(self):
+        """Interleaving from the race: we judged the lock stale, but another process replaced it
+        with its own fresh lock before our rename. The fresh lock must survive and we must lose."""
+        self.lock.write_text(f"pid={dead_pid()}\n")
+
+        def judged_stale_then_replaced(path):
+            path.unlink()
+            path.write_text(f"pid={os.getpid()}\nfresh\n")   # the other racer's brand-new lock
+            return True
+
+        with mock.patch.object(scene_aoi, "_lock_is_stale", side_effect=judged_stale_then_replaced):
+            with self.assertRaises(FileExistsError):
+                scene_aoi._acquire_lock(self.lock)
+        self.assertIn("fresh", self.lock.read_text())
+        self.assertEqual([p.name for p in self.lock.parent.iterdir()], [self.lock.name])
+
+    def test_two_processes_racing_for_a_stale_lock_never_both_win(self):
+        child = (
+            "import sys, time, os\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from pathlib import Path\n"
+            "import scene_aoi\n"
+            "lock, go, out = Path(sys.argv[2]), float(sys.argv[3]), Path(sys.argv[4])\n"
+            "while time.time() < go: pass\n"
+            "try:\n"
+            "    fd = scene_aoi._acquire_lock(lock)\n"
+            "    out.write_text('won'); time.sleep(0.3); os.close(fd)\n"
+            "except FileExistsError:\n"
+            "    out.write_text('lost')\n"
+        )
+        pipeline = str(Path(scene_aoi.__file__).resolve().parent)
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(Path(pipeline).parent), pipeline])}
+        dead = dead_pid()
+        for rnd in range(8):
+            self.lock.write_text(f"pid={dead}\n")
+            go = time.time() + 0.45
+            outs = [Path(self.tmp.name) / f"r{rnd}_{i}" for i in range(2)]
+            procs = [subprocess.Popen([sys.executable, "-c", child, pipeline, str(self.lock), str(go), str(o)],
+                                      env=env) for o in outs]
+            for p in procs:
+                self.assertEqual(p.wait(timeout=30), 0)
+            results = sorted(o.read_text() for o in outs)
+            self.assertEqual(results.count("won"), 1, f"round {rnd}: {results}")
+            self.lock.unlink(missing_ok=True)
+
+    def test_derive_recovers_from_stale_lock_and_releases(self):
+        vault = Path(self.tmp.name)
+        lock = vault / "staging" / ".DJI_TARGET.scene-aoi.lock"
+        lock.parent.mkdir()
+        lock.write_text(f"pid={dead_pid()}\n")
+        with mock.patch.object(scene_aoi, "_derive_scene_aoi_locked", return_value={"ok": 1}) as m:
+            out = scene_aoi.derive_scene_aoi(
+                vault=vault, source_cid="DJI_SRC", target_cid="DJI_TARGET", latitude=1, longitude=1,
+                radius_m=1, focus_latitude=1, focus_longitude=1, focus_radius_m=1)
+        self.assertEqual(out, {"ok": 1})
+        self.assertTrue(m.called)
+        self.assertFalse(lock.exists())
+
+    def test_derive_live_lock_still_refuses(self):
+        vault = Path(self.tmp.name)
+        lock = vault / "staging" / ".DJI_TARGET.scene-aoi.lock"
+        lock.parent.mkdir()
+        lock.write_text(f"pid={os.getpid()}\n")
+        with self.assertRaisesRegex(RuntimeError, "already running"):
+            scene_aoi.derive_scene_aoi(
+                vault=vault, source_cid="DJI_SRC", target_cid="DJI_TARGET", latitude=1, longitude=1,
+                radius_m=1, focus_latitude=1, focus_longitude=1, focus_radius_m=1)
+        self.assertTrue(lock.exists())   # no borra el lock ajeno
 
 
 if __name__ == "__main__":

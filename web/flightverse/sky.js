@@ -3,7 +3,7 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=349';
+import * as THREE from '/flightverse/three.js?v=352';
 
 const PRESETS = {
   dia: {
@@ -239,6 +239,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
     puffs.push(g);
   }
 
+  const _ld = new THREE.Vector3();
   window.__skyUni = uni;                    // debug: inspección CDP de uniforms
   let cur = 'dia';
   function setPreset(name) {
@@ -299,7 +300,8 @@ export function createSky(scene, { radius = 2600 } = {}) {
       for (const pg of puffs) { pg.position.x += dt * 1.7; if (pg.position.x > 900) pg.position.x = -900; }
       if (focus) {                                       // frustum de sombra sigue al dron
         sun.target.position.copy(focus);
-        sun.position.copy(focus).addScaledVector(uni.uSunDir.value.clone().normalize(), 420);
+        const ld = (uni.uMoon.value > 0 && cur && PRESETS[cur] && PRESETS[cur].moonPos) ? uni.uMoonDir.value : uni.uSunDir.value;
+        sun.position.copy(focus).addScaledVector(_ld.copy(ld).normalize(), 420);
         sun.target.updateMatrixWorld();
       }
     },

@@ -170,7 +170,7 @@ class SplatFrontierUiContractTests(unittest.TestCase):
 
     def test_cuda_campaign_has_dry_run_and_all_or_nothing_confirm(self):
         self.assertIn("/api/splat_campaign", self.tresd)
-        self.assertIn('u.path == "/api/splat_campaign"', self.server)
+        self.assertIn('"/api/splat_campaign": "_post_splat_campaign"', self.server)
         self.assertIn("ready_to_enqueue", self.server)
         self.assertIn("campaña bloqueada por preflight; no se encoló ningún job", self.server)
 

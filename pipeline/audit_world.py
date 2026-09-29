@@ -48,10 +48,20 @@ def _targets(system: dict, active_only: bool) -> list[str]:
 
 def audit(*, vault: Path = VAULT, active_only: bool = True) -> dict:
     vault = Path(vault)
-    system = _load(vault / "manifest" / "system.json")
+    system_path = vault / "manifest" / "system.json"
+    system = _load(system_path)
     worlds = []
     failures = []
-    for cid in _targets(system, active_only):
+    # Fail closed: a missing/unreadable/empty manifest, or one with nothing to audit, used
+    # to yield zero targets and "ok" — an audit that verified nothing.
+    if not system_path.is_file() or not system:
+        failures.append({"reason": "system_manifest_missing", "path": str(system_path)})
+        targets: list[str] = []
+    else:
+        targets = _targets(system, active_only)
+        if not targets:
+            failures.append({"reason": "no_worlds_to_audit", "active_only": bool(active_only)})
+    for cid in targets:
         manifest_path = vault / "models" / cid / "scene.v2.json"
         manifest = _load(manifest_path)
         if not manifest:

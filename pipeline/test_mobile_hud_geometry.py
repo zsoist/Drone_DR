@@ -7,8 +7,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def css_norm(text: str) -> str:
+    """Formatting-insensitive CSS: the contracts pin declarations, not whitespace
+    (the 2026-09-29 design-system rewrite reformatted style.css without changing rules)."""
+    import re as _re
+    text = _re.sub(r"\s+", " ", text)
+    return _re.sub(r"\s*([{}:;,>])\s*", r"\1", text)
+
+
 ROOT = Path(__file__).resolve().parent.parent
-STYLES = (ROOT / "web" / "style.css").read_text()
+STYLES = css_norm((ROOT / "web" / "style.css").read_text())
 COMMAND_STYLES = STYLES[STYLES.index("BLOQUE 55d"):]
 
 TOUCH_PROFILES = {
@@ -51,6 +59,16 @@ def vertical_clearance(control: Rect, zone: Rect) -> float:
 
 
 class MobileHudGeometryContractTests(unittest.TestCase):
+
+    def assertIn(self, member, container, msg=None):
+        if isinstance(member, str) and isinstance(container, str):
+            member, container = css_norm(member), css_norm(container)
+        return super().assertIn(member, container, msg)
+
+    def assertNotIn(self, member, container, msg=None):
+        if isinstance(member, str) and isinstance(container, str):
+            member, container = css_norm(member), css_norm(container)
+        return super().assertNotIn(member, container, msg)
     def test_premium_flight_tools_clear_safe_areas_sticks_and_each_other(self):
         stick_bottom = number(
             r"\.vl-stick\{[^}]*bottom:(\d+(?:\.\d+)?)px"
@@ -62,7 +80,7 @@ class MobileHudGeometryContractTests(unittest.TestCase):
             COMMAND_STYLES,
         )
         gimbal_portrait_clearance = number(
-            r"\n\s*\.vl-gimbal-tools\{\s*bottom:calc\("
+            r"(?:\}|\*/)\s*\.vl-gimbal-tools\{\s*bottom:calc\("
             r"min\(34vh,300px\) \+ (\d+(?:\.\d+)?)px",
             COMMAND_STYLES,
         )

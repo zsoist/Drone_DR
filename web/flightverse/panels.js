@@ -38,10 +38,12 @@ export function makeDraggablePanel(panel, handle, storageKey) {
     if (save) {
       const dx = Math.max(1, v.width - r.width - EDGE * 2);
       const dy = Math.max(1, v.height - r.height - EDGE * 2);
-      localStorage.setItem(storageKey, JSON.stringify({
-        x: Math.max(0, Math.min(1, (nx - v.left - EDGE) / dx)),
-        y: Math.max(0, Math.min(1, (ny - v.top - EDGE) / dy)),
-      }));
+      try {
+        localStorage.setItem(storageKey, JSON.stringify({
+          x: Math.max(0, Math.min(1, (nx - v.left - EDGE) / dx)),
+          y: Math.max(0, Math.min(1, (ny - v.top - EDGE) / dy)),
+        }));
+      } catch { /* almacenamiento bloqueado o lleno: la posición no se recuerda */ }
     }
     return true;
   };
@@ -84,7 +86,7 @@ export function makeDraggablePanel(panel, handle, storageKey) {
   return {
     clamp: () => requestAnimationFrame(() => restore() || clamp()),
     reset() {
-      localStorage.removeItem(storageKey);
+      try { localStorage.removeItem(storageKey); } catch { /* bloqueado */ }
       panel.removeAttribute('style');
       panel.classList.remove('vl-panel-positioned');
     },

@@ -45,10 +45,11 @@ import jobs as jobstore
 import perf as perfmod
 import scenes as scenestore
 import compute_policy
+import keys as keystore
 import media_probe
 from splat_history import clip_history_files, prune_splat_history, splat_quality  # noqa: F401 (re-exported)
-from paths import KEYS_ENV, PIPE, REPO, VAULT, WEB
-from fsutil import atomic_write_text as _atomic_write_text
+from paths import KEYS_ENV, PIPE, REPO, VAULT, WEB  # noqa: F401 (KEYS_ENV re-exported)
+from fsutil import atomic_write_json, atomic_write_text as _atomic_write_text
 from util_ids import safe_id, safe_name, safe_upload_name, safe_upload_name_spaces
 from splat_presets import (normalize_splat_request, public_splat_profiles,
                            resolve_splat_spec)
@@ -62,8 +63,7 @@ REVALIDATE_EXTS = (".ply", ".splat", ".ksplat", ".sog", ".spz", ".obj", ".mtl", 
 SUPERSPLAT = Path("/Volumes/SSD/work/forge-projects/aerobrain/splat/supersplat/dist")
 TOKEN_FILE = VAULT / ".token"
 if not TOKEN_FILE.exists():
-    TOKEN_FILE.write_text(secrets.token_urlsafe(24))
-    TOKEN_FILE.chmod(0o600)
+    _atomic_write_text(TOKEN_FILE, secrets.token_urlsafe(24), mode=0o600)
 TOKEN = TOKEN_FILE.read_text().strip()
 OPERATOR_ID = "daniel"
 OPERATOR_NAME = "Daniel"
@@ -149,7 +149,9 @@ def safe_next_path(value: str | None) -> str:
 class LoginRateLimiter:
     """Small in-memory gate for the one-account login endpoint."""
 
-    def __init__(self, window_seconds=15 * 60, per_ip_limit=5, global_limit=100):
+    # El límite global es solo un techo anti-botnet: con 100 un atacante distribuido bloqueaba
+    # también al operador (única cuenta). La protección real es por IP.
+    def __init__(self, window_seconds=15 * 60, per_ip_limit=5, global_limit=1000):
         self.window_seconds = window_seconds
         self.per_ip_limit = per_ip_limit
         self.global_limit = global_limit
@@ -273,6 +275,15 @@ def fresh_gzip_sidecar(source: Path) -> Path | None:
     return None
 
 
+def _scrub(msg) -> str:
+    """Quita rutas absolutas del vault/repo de mensajes de error que viajan al cliente."""
+    out = str(msg)
+    for root, alias in ((str(PIPE), "pipeline"), (str(REPO), "repo"), (str(VAULT), "vault")):
+        if root and root != "/":
+            out = out.replace(root, alias)
+    return out
+
+
 def job_add(kind, label, container=""):
     return jobstore.add(kind, label, container)
 
@@ -308,7 +319,38 @@ def read_json_file(path: Path, max_bytes: int = 8_000_000):
     return json.loads(path.read_text())
 
 
+_MANIFEST_LOCKS: dict[str, threading.Lock] = {}
+_MANIFEST_LOCKS_GUARD = threading.Lock()
+
+
+def _manifest_lock(cid: str) -> threading.Lock:
+    """Lock por clip para los read-modify-write de manifest/<cid>.json entre hilos."""
+    with _MANIFEST_LOCKS_GUARD:
+        return _MANIFEST_LOCKS.setdefault(str(cid), threading.Lock())
+
+
+_HEALTH_CACHE = {"key": None, "at": 0.0, "value": None}
+_HEALTH_LOCK = threading.Lock()
+HEALTH_CACHE_TTL_S = 5.0
+
+
 def health_status() -> tuple[dict, int]:
+    """health_status con caché de 5 s (thread-safe): /api/healthz es público y cada hit
+    leía JSONs, SQLite y disk_usage."""
+    key = (str(VAULT), str(WEB), str(jobstore.DB))
+    now = time.monotonic()
+    with _HEALTH_LOCK:
+        c = _HEALTH_CACHE
+        if c["value"] is not None and c["key"] == key and now - c["at"] < HEALTH_CACHE_TTL_S:
+            body, code = c["value"]
+            return dict(body), code
+    body, code = _compute_health_status()
+    with _HEALTH_LOCK:
+        _HEALTH_CACHE.update(key=key, at=time.monotonic(), value=(body, code))
+    return dict(body), code
+
+
+def _compute_health_status() -> tuple[dict, int]:
     checks = {}
 
     checks["web"] = WEB.is_dir()
@@ -497,12 +539,7 @@ def build_followup_splat_spec(cid: str, raw: dict) -> dict:
 
 
 def _sb_keys():
-    k = {}
-    for line in KEYS_ENV.read_text().splitlines():
-        if "=" in line and not line.startswith("#"):
-            a, _, b = line.strip().partition("=")
-            k[a] = b.strip().strip('"')
-    return k
+    return keystore.load_keys()     # parser único (keys.py); se conserva el nombre por los tests
 
 
 _SCRYPT_DEFAULTS = {"n": 2 ** 15, "r": 8, "p": 3}
@@ -670,10 +707,7 @@ def semantic_search(q: str, k: int = 12) -> dict:
 
 
 def _deepseek(prompt: str) -> str:
-    key = ""
-    for line in KEYS_ENV.read_text().splitlines():
-        if line.startswith("DEEPSEEK_API_KEY="):
-            key = line.split("=", 1)[1].strip().strip('"')
+    key = keystore.get_key("DEEPSEEK_API_KEY")
     req = urllib.request.Request(
         "https://api.deepseek.com/chat/completions",
         data=json.dumps({"model": "deepseek-chat", "temperature": 0.6,
@@ -880,7 +914,7 @@ def capture_frame(spec: dict, j):
             raise FileNotFoundError("clip no encontrado")
         (VAULT / "photos").mkdir(exist_ok=True)
         out = VAULT / "photos" / f"{cid}_{t:07.1f}s.jpg"
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(t), "-i", str(src),
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(t), *FF_PROTOCOLS, "-i", str(src),
                         "-frames:v", "1", "-q:v", "2", str(out)], check=True)
         job_end(j, "done", f"photos/{out.name}")
     except Exception as e:
@@ -2253,7 +2287,14 @@ def _atempo_chain(speed):
     return [f"atempo={f:.4f}".rstrip("0").rstrip(".") for f in factors]
 
 
-_has_audio = media_probe.has_audio      # alias: tests/callers still use the private name
+def _has_audio(path) -> bool:
+    """¿Tiene pista de audio? (False ante cualquier fallo). Protocolos restringidos."""
+    try:
+        out = media_probe.ffprobe_text([*FF_PROTOCOLS, "-select_streams", "a", "-show_entries",
+                                        "stream=index", "-of", "csv=p=0"], path)
+        return bool(out.strip())
+    except Exception:
+        return False
 
 
 _PHOTO_ORIG_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
@@ -2261,8 +2302,46 @@ _PHOTO_ORIG_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image
                      ".tif": "image/tiff", ".tiff": "image/tiff", ".webp": "image/webp"}
 
 
+# Medios no confiables (subidas): ffmpeg/ffprobe solo pueden abrir file/pipe (nada de http,
+# tcp, concat de URLs…) y el demuxer real debe ser de una lista cerrada (un .mp4 que en verdad
+# es una playlist HLS/concat leería archivos locales o haría requests salientes).
+FF_PROTOCOLS = ["-protocol_whitelist", "file,pipe"]
+ALLOWED_MEDIA_FORMATS = frozenset({
+    "mov", "mp4", "m4a", "3gp", "3g2", "mj2", "matroska", "webm", "avi", "mpegts",
+    "mp3", "wav", "flac", "ogg", "aac"})
+
+
+def media_format_allowed(format_name: str) -> bool:
+    """format_name de ffprobe ('mov,mp4,m4a,3gp,3g2,mj2'): todos sus alias deben estar permitidos."""
+    names = {n.strip() for n in str(format_name or "").split(",") if n.strip()}
+    return bool(names) and names <= ALLOWED_MEDIA_FORMATS
+
+
+def _media_format_ok(path) -> bool:
+    try:
+        out = media_probe.ffprobe_text([*FF_PROTOCOLS, "-show_entries", "format=format_name",
+                                        "-of", "csv=p=0"], path, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return media_format_allowed(out.strip())
+
+
 def _probe_dur(path):
-    return media_probe.probe_duration(path, timeout=60)
+    try:
+        out = media_probe.ffprobe_text([*FF_PROTOCOLS, "-show_entries", "format=duration",
+                                        "-of", "csv=p=0"], path, timeout=60)
+        return float(out.strip())
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return 0.0
+
+
+def _probe_dur_strict(path, what="video") -> float:
+    """Duración > 0 o RuntimeError: en el export, 0.0 (ffprobe falló) rompería en silencio
+    el timing de textos/música; mejor que el job falle a las claras."""
+    d = _probe_dur(path)
+    if d <= 0:
+        raise RuntimeError(f"no pude medir la duración del {what} ({Path(path).name})")
+    return d
 
 
 def _ff(cmd: list):
@@ -2281,7 +2360,7 @@ def _audio_peaks(path: Path, buckets: int = 240) -> list:
     """Silueta de onda para la UI: decodifica a PCM mono 8kHz y saca picos por bucket.
     Sin dependencias (array de stdlib); 8kHz basta para dibujar y es ~1s de CPU por pista."""
     try:
-        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "s16le",
+        raw = subprocess.run(["ffmpeg", "-v", "error", *FF_PROTOCOLS, "-i", str(path), "-f", "s16le",
                               "-ac", "1", "-ar", "8000", "-"],
                              capture_output=True, timeout=120).stdout
     except (OSError, subprocess.SubprocessError):
@@ -2315,7 +2394,7 @@ def _audio_meta(path: Path, rebuild: bool = False) -> dict:
     m = {"name": path.name, "bytes": path.stat().st_size,
          "mtime": int(path.stat().st_mtime),
          "duration_s": round(_probe_dur(path), 2), "peaks": _audio_peaks(path)}
-    cache.write_text(json.dumps(m))
+    atomic_write_json(cache, m, ensure_ascii=True)
     return m
 
 
@@ -2338,7 +2417,7 @@ def _audio_beats(path: Path) -> dict:
             pass
     SR, FRAME, HOP = 11025, 512, 256
     try:
-        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "s16le",
+        raw = subprocess.run(["ffmpeg", "-v", "error", *FF_PROTOCOLS, "-i", str(path), "-f", "s16le",
                               "-ac", "1", "-ar", str(SR), "-"],
                              capture_output=True, timeout=180).stdout
     except (OSError, subprocess.SubprocessError):
@@ -2389,7 +2468,7 @@ def _audio_beats(path: Path) -> dict:
             bpm = round(60.0 * fps_env / bestlag, 1)
     out = {"beats": beats[:600], "bpm": bpm, "mtime": int(path.stat().st_mtime),
            "duration_s": round(len(pcm) / SR, 2)}
-    cache.write_text(json.dumps(out))
+    atomic_write_json(cache, out, ensure_ascii=True)
     return out
 
 
@@ -2397,7 +2476,7 @@ def _burn_texts(video: Path, texts: list, bitrate: str) -> Path:
     """PISTA DE TEXTO (independiente de los cortes): cada bloque aparece entre start y end
     del reel completo, no atado a un clip. Se quema en una sola pasada con drawtext y
     enable=between(t,...), así 10 textos cuestan lo mismo que uno."""
-    dur = _probe_dur(video)
+    dur = _probe_dur_strict(video, "video a rotular")
     _w = _h = 0
     try:
         wh = media_probe.ffprobe_text(["-select_streams", "v:0", "-show_entries",
@@ -2436,7 +2515,7 @@ def _burn_texts(video: Path, texts: list, bitrate: str) -> Path:
         if not chain:
             return video
         out = video.with_name(video.stem + ".txt.mp4")
-        _ff(["ffmpeg", "-v", "error", "-y", "-i", str(video), "-vf", ",".join(chain),
+        _ff(["ffmpeg", "-v", "error", "-y", *FF_PROTOCOLS, "-i", str(video), "-vf", ",".join(chain),
              "-c:v", "h264_videotoolbox", "-b:v", bitrate, "-pix_fmt", "yuv420p",
              "-c:a", "copy", "-movflags", "+faststart", str(out)])
     video.unlink(missing_ok=True)
@@ -2481,7 +2560,7 @@ def _mix_music(video: Path, music: Path, opts: dict, has_audio: bool, dur: float
     else:
         fc.append(f"{m},loudnorm=I=-14:TP=-1.0:LRA=11[aout]")
     out = video.with_name(video.stem + ".mus.mp4")
-    _ff(["ffmpeg", "-v", "error", "-y", "-i", str(video), "-i", str(music),
+    _ff(["ffmpeg", "-v", "error", "-y", *FF_PROTOCOLS, "-i", str(video), *FF_PROTOCOLS, "-i", str(music),
          "-filter_complex", ";".join(fc), "-map", "0:v", "-map", "[aout]",
          "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
          "-movflags", "+faststart", "-shortest", str(out)])
@@ -2501,7 +2580,7 @@ def _reel_poster(reel: Path) -> Path | None:
     if dst.exists() and dst.stat().st_mtime >= reel.stat().st_mtime:
         return dst
     try:
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "0.5", "-i", str(reel),
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "0.5", *FF_PROTOCOLS, "-i", str(reel),
                         "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", str(dst)],
                        check=True, capture_output=True, timeout=60)
         return dst
@@ -2532,7 +2611,7 @@ def _reel_meta(reel: Path) -> dict:
              "has_audio": any(s["codec_type"] == "audio" for s in d["streams"])}
     except (OSError, ValueError, KeyError):
         return {}
-    cache.write_text(json.dumps({**m, "mtime": int(st.st_mtime)}))
+    atomic_write_json(cache, {**m, "mtime": int(st.st_mtime)}, ensure_ascii=True)
     return m
 
 
@@ -2780,7 +2859,7 @@ def run_edit(spec: dict, j):
             # -t de ENTRADA (antes de -i): sin él, 'reverse' bufferea desde 'a' hasta el FIN
             # del archivo y el -t de salida se queda con los ÚLTIMOS out_dur seg invertidos
             # (contenido equivocado) + pico de RAM de minutos de 1080p.
-            cmd = ["ffmpeg", "-v", "error", "-y", "-ss", str(a), "-t", f"{in_dur:.3f}", "-i", str(src)]
+            cmd = ["ffmpeg", "-v", "error", "-y", "-ss", str(a), "-t", f"{in_dur:.3f}", *FF_PROTOCOLS, "-i", str(src)]
             if keep_audio:
                 src_audio = _has_audio(src)
                 # audio real solo tiene sentido a velocidad normal (o casi): reverse, freeze y
@@ -2826,7 +2905,7 @@ def run_edit(spec: dict, j):
             # +faststart: el moov al principio = el reel empieza a verse al instante en
             # web/iOS en vez de esperar a descargar el archivo entero.
             _ff(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
-                 "-i", str(lst), "-c", "copy", "-movflags", "+faststart", str(out)])
+                 *FF_PROTOCOLS, "-i", str(lst), "-c", "copy", "-movflags", "+faststart", str(out)])
             lst.unlink()
         else:
             # pase final con xfade encadenado en cada corte que pida transición de librería;
@@ -2834,7 +2913,7 @@ def run_edit(spec: dict, j):
             durs = [_probe_dur(s) for s in segs]
             cmd = ["ffmpeg", "-v", "error", "-y"]
             for s in segs:
-                cmd += ["-i", str(s)]
+                cmd += [*FF_PROTOCOLS, "-i", str(s)]
             fc = []
             vprev, aprev = "[0:v]", "[0:a]"
             acc = durs[0]  # tiempo acumulado del stream de video ya compuesto
@@ -2889,7 +2968,7 @@ def run_edit(spec: dict, j):
             jobstore.update(j["id"], detail=f"escribiendo {len(texts)} texto(s)", progress=0.94)
             if join_ov:
                 # el cliente manda start/end en tiempo de timeline; el xfade acorta el archivo
-                texts = _remap_texts_for_overlap(texts, join_ov, _probe_dur(out))
+                texts = _remap_texts_for_overlap(texts, join_ov, _probe_dur_strict(out, "reel"))
             _burn_texts(out, texts, br)
         # ---- música (I2): se mezcla al final, sobre el reel ya compuesto ----
         music = spec.get("music") if isinstance(spec.get("music"), dict) else None
@@ -2902,7 +2981,7 @@ def run_edit(spec: dict, j):
                 mpath = None
             if mpath and mpath.is_file():
                 jobstore.update(j["id"], detail="mezclando música", progress=0.96)
-                _mix_music(out, mpath, music, keep_audio, _probe_dur(out))
+                _mix_music(out, mpath, music, keep_audio, _probe_dur_strict(out, "reel"))
         # ---- reemplazo (T2): si la edición nació de un reel existente y el usuario pidió
         # sustituirlo, el export exitoso toma su nombre (links, orden y posters se heredan)
         rep = safe_name(spec.get("replace", ""))
@@ -2923,8 +3002,7 @@ def run_edit(spec: dict, j):
         try:
             rdir = VAULT / "reel-posters"
             rdir.mkdir(parents=True, exist_ok=True)
-            (rdir / f"{out.stem}.recipe.json").write_text(
-                json.dumps(spec, ensure_ascii=False))
+            atomic_write_json(rdir / f"{out.stem}.recipe.json", spec, ensure_ascii=False)
         except OSError:
             pass
         # BUG (auditoría jul-20): rebuild_index() corría DENTRO del try y ANTES de job_end.
@@ -3052,8 +3130,17 @@ def gpu_node_wake() -> dict:
     return {"ok": True, "sent": GPU_NODE_MAC}
 
 
+# Sentinel: un handler _post_* cuyo cuerpo termina sin `return` cae al 404 final
+# (igual que caía por la cadena de ifs original).
+_POST_FALLTHROUGH = object()
+
+
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # timeout de INACTIVIDAD por recv/send (StreamRequestHandler.setup → settimeout): un cliente
+    # estancado no retiene un hilo para siempre, pero una subida legítima de 25 GB sigue viva
+    # mientras lleguen bytes (el plazo se reinicia en cada recv, no es un tope total).
+    timeout = 60
     server_version = "AeroBrain"
     sys_version = ""
 
@@ -3428,7 +3515,7 @@ class H(BaseHTTPRequestHandler):
                     rep = None                    # cache pre-upgrade: re-analiza para incluir el riesgo de memoria
                 rep = rep or capture_quality.analyze(cid)
             except Exception as e:
-                return self.send_json({"error": str(e)[-200:]}, 500)
+                return self.send_json({"error": _scrub(str(e))[-200:]}, 500)
             rep.pop("samples", None)
             return self.send_json(rep)
         if self.path.startswith("/api/sd_scan"):
@@ -3490,7 +3577,10 @@ class H(BaseHTTPRequestHandler):
             import subprocess as _sp, shutil as _sh
             q2 = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             rel = (q2.get("rel") or [""])[0]
-            w = int((q2.get("w") or ["512"])[0])
+            try:
+                w = int((q2.get("w") or ["512"])[0])
+            except ValueError:
+                return self.send_json({"error": "w inválido"}, 400)
             src = (VAULT / "raw" / rel).resolve()
             try:
                 src.relative_to((VAULT / "raw").resolve())   # contención estricta
@@ -3927,1440 +4017,1557 @@ class H(BaseHTTPRequestHandler):
         except Exception:
             pass
 
-    def _post(self):
-        u = urllib.parse.urlparse(self.path)
-        q = urllib.parse.parse_qs(u.query)
-        if u.path == "/api/login":
-            try:
-                body = self.read_json(4096)
-            except Exception:
-                return self.send_json({"error": "body inválido"}, 400)
-            if not isinstance(body, dict):
-                return self.send_json({"error": "body inválido"}, 400)
-            client_ip = self._client_ip()
-            retry_after = LOGIN_LIMITER.retry_after(client_ip)
-            if retry_after:
-                _auth_event("login_throttled", client_ip, retry_after=retry_after)
-                return self.send_json({"error": "inicio de sesión temporalmente limitado"}, 429,
-                                      {"Retry-After": str(retry_after)})
-            user = str(body.get("user", "")).strip().lower()
-            if not AUTH_KDF_SLOTS.acquire(blocking=False):
-                _auth_event("login_capacity_limited", client_ip)
-                return self.send_json({"error": "inicio de sesión temporalmente limitado"}, 429,
-                                      {"Retry-After": "2"})
-            try:
-                password_ok = verify_operator_password(body.get("password", ""))
-            finally:
-                AUTH_KDF_SLOTS.release()
-            user_ok = hmac.compare_digest(user, OPERATOR_ID)
-            ok = user_ok and password_ok
-            if not ok:
-                LOGIN_LIMITER.failure(client_ip)
-                _auth_event("login_failed", client_ip)
-                return self.send_json({"error": "credenciales inválidas"}, 401)
-            LOGIN_LIMITER.success(client_ip)
-            jobstore.session_delete(self._presented_session_token())
-            jobstore.session_delete(self._cookie(LEGACY_SESSION_COOKIE))
-            sid = jobstore.session_create()
-            info = jobstore.session_info(sid)
-            payload = self._session_payload({"kind": "session", **info})
-            body_out = json.dumps(payload).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
-            self.send_header("Set-Cookie",
-                             f"{LEGACY_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
-            self.send_header("Set-Cookie",
-                             f"{SESSION_COOKIE}={sid}; Path=/; Max-Age={SESSION_TTL_SECONDS}; "
-                             f"Expires={formatdate(info['expiry'], usegmt=True)}; "
-                             "HttpOnly; SameSite=Strict; Secure; Priority=High")
-            self.send_header("Content-Length", str(len(body_out)))
-            self.end_headers()
-            self.wfile.write(body_out)
-            _auth_event("login_succeeded", client_ip)
-            return
-        if u.path == "/api/logout":
-            self.discard_body(4096)
-            client_ip = self._client_ip()
-            context = self._auth_context() or {}
-            jobstore.session_delete(context.get("session_token") or self._presented_session_token())
-            jobstore.session_delete(self._cookie(LEGACY_SESSION_COOKIE))
-            self.send_response(200)
-            self.send_header("Set-Cookie",
-                             f"{LEGACY_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
-            self.send_header("Set-Cookie",
-                             f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
-            # solo cookies: "storage" borraba localStorage (récords de Gate Rush, prefs, autosave del editor)
-            self.send_header("Clear-Site-Data", '"cookies"')
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            _auth_event("logout", client_ip)
-            return
-        if u.path == "/api/job_cancel":
-            if not self.auth(q):
-                return
-            spec = self.read_json(4096)
-            ok = jobstore.cancel(str(spec.get("id", "")))
-            return self.send_json({"ok": ok})
-        if u.path == "/upload":
-            if not self.auth(q):
-                return
-            name = safe_upload_name(Path(q.get("name", ["video.mp4"])[0]).name)
-            ext = Path(name).suffix.lower() or ".mp4"
-            if ext not in (".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm"):
-                return self.send_json({"error": f"formato {ext} no soportado"}, 400)
-            length = int(self.headers.get("Content-Length", 0))
-            if not length:
-                return self.send_json({"error": "body vacío"}, 400)
-            if length > 25 * 1024**3:  # 25GB tope de cordura (video 4K real cabe de sobra)
-                return self.send_json({"error": "archivo > 25GB"}, 413)
-            # el resto del servidor sanitiza clip_id con [^\w-]: un punto en el stem ("clip.final")
-            # dejaba un clip inalcanzable
-            stem_safe = re.sub(r"[^\w-]", "_", Path(name).stem)[:40]
-            cid = f"UP_{time.strftime('%Y%m%d%H%M%S')}{secrets.token_hex(2)}_{stem_safe}"
-            dest = VAULT / "raw" / "uploads"
-            dest.mkdir(parents=True, exist_ok=True)
-            path = dest / f"{cid}{ext}"
-            read = 0
-            with open(path, "wb") as f:
-                while read < length:
-                    chunk = self.rfile.read(min(1024 * 512, length - read))
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    read += len(chunk)
-            if read != length:
-                path.unlink(missing_ok=True)   # corte de red/túnel: NO procesar un video truncado
-                return self.send_json({"error": f"subida incompleta ({read}/{length} bytes) — reintenta"}, 400)
-            j = job_add("upload", name)
-            threading.Thread(target=process_upload, args=(path, j), daemon=True).start()
-            return self.send_json({"ok": True, "clip_id": cid, "bytes": read, "job": j["id"]})
-        if u.path == "/api/photo_upload":
-            # foto desde el iPhone (carrete) — mismo patrón de body crudo que /upload.
-            # Las fotos NO pasan por process.py: van directas a la biblioteca de Fotos.
-            if not self.auth(q):
-                return
-            raw_name = Path(q.get("name", ["foto.jpg"])[0]).name
-            ext = Path(raw_name).suffix.lower()
-            if ext not in (".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".dng"):
-                return self.send_json({"error": f"formato {ext or '?'} no soportado"}, 400)
-            length = int(self.headers.get("Content-Length", 0))
-            if not length:
-                return self.send_json({"error": "body vacío"}, 400)
-            if length > 200 * 1024**2:
-                return self.send_json({"error": "la foto pesa más de 200MB"}, 413)
-            pdir = VAULT / "photos"
-            pdir.mkdir(parents=True, exist_ok=True)
-            safe = safe_upload_name_spaces(raw_name)
-            dst = pdir / safe
-            heic = ext in (".heic", ".heif")
+    UPLOAD_DISK_MARGIN = 1024**3      # colchón libre que debe sobrar tras escribir la subida
 
-            def _taken(pth):    # HEIC → se convertirá a .jpg: ese nombre también debe estar libre
-                return pth.exists() or (heic and pth.with_suffix(".jpg").exists())
-            if _taken(dst):
-                stem0, n = Path(safe).stem, 0
-                while True:
-                    tag = time.strftime("%H%M%S") + (f"-{n}" if n else "")
-                    dst = pdir / f"{stem0}-{tag}{ext}"
-                    if not _taken(dst):
-                        break
-                    n += 1
-            read = 0
-            with open(dst, "wb") as f:
+    def _receive_upload(self, dest: Path, length: int, chunk_size: int):
+        """Vuelca el body crudo a `dest`. Devuelve los bytes leídos, o None si ya respondió
+        el error (507 sin espacio / 408 cliente estancado) y borró el parcial. Un corte de
+        red normal devuelve read < length y el caller decide (mismo contrato de antes)."""
+        try:
+            free = shutil.disk_usage(dest.parent).free
+        except OSError:
+            free = None
+        if free is not None and free < length + self.UPLOAD_DISK_MARGIN:
+            self.close_connection = True       # el body no se consume: no reutilizar el socket
+            self.send_json({"error": "espacio insuficiente en el disco para esta subida"}, 507,
+                           {"Connection": "close"})
+            return None
+        read = 0
+        try:
+            with open(dest, "wb") as f:
                 while read < length:
-                    chunk = self.rfile.read(min(1024 * 256, length - read))
+                    chunk = self.rfile.read(min(chunk_size, length - read))
                     if not chunk:
                         break
                     f.write(chunk)
                     read += len(chunk)
-            if read != length:
+        except TimeoutError:               # sin bytes durante H.timeout s: cliente estancado
+            dest.unlink(missing_ok=True)
+            self.close_connection = True
+            self.send_json({"error": "subida detenida: el cliente dejó de enviar datos"}, 408,
+                           {"Connection": "close"})
+            return None
+        except OSError as e:               # ENOSPC, EIO…: no dejar el archivo parcial
+            dest.unlink(missing_ok=True)
+            self.close_connection = True
+            perfmod.log_error("upload-write", f"{type(e).__name__}: {e}"[:200], ctx={"path": self.path[:120]})
+            self.send_json({"error": "no se pudo guardar el archivo: disco lleno o error de escritura"},
+                           507, {"Connection": "close"})
+            return None
+        return read
+
+    def _post_gpu_node_wake(self, u, q):
+        if not self.auth():
+            return
+        return self.send_json(gpu_node_wake())
+
+    def _post_rescan(self, u, q):
+        if not self.auth(q):
+            return
+        rebuild_index()
+        return self.send_json({"ok": True})
+
+    def _post_job_cancel(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json(4096)
+        ok = jobstore.cancel(str(spec.get("id", "")))
+        return self.send_json({"ok": ok})
+
+    def _post_edit(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        j = job_add("edit", f'{len(spec.get("segments", []))} cortes')
+        threading.Thread(target=run_edit, args=(spec, j), daemon=True).start()
+        return self.send_json({"ok": True, "job": j["id"]})
+
+    def _post_frame(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        j = job_add("foto4k", f'{spec.get("clip_id", "?")} @ {spec.get("t", 0)}s')
+        th = threading.Thread(target=capture_frame, args=(spec, j), daemon=True)
+        th.start()
+        th.join(timeout=25)  # las fotos son rápidas: respuesta síncrona con la URL
+        fresh = jobstore.get(j["id"]) or {}   # re-lee del store (el dict local es stale)
+        done = fresh.get("status") == "done"
+        return self.send_json({"ok": done, "url": f"/data/{fresh.get('detail')}" if done else None,
+                               "error": None if done else (fresh.get("detail") or "captura falló o tardó demasiado")})
+
+    def _post_model_update(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        cid = safe_id(spec.get("clip_id", ""))
+        mdir = VAULT / "models" / cid
+        if not cid or not (mdir / "meta.json").exists():
+            return self.send_json({"error": "modelo no encontrado"}, 404)
+        meta = json.loads((mdir / "meta.json").read_text())
+        meta["title"] = str(spec.get("title", ""))[:80].strip()
+        _atomic_write_text(mdir / "meta.json", json.dumps(meta, indent=1))
+        rebuild_index()
+        return self.send_json({"ok": True, "title": meta["title"]})
+
+    def _post_property(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        slug = re.sub(r"[^a-z0-9-]", "", str(spec.get("slug", "")).lower())[:40]
+        if not slug:
+            return self.send_json({"error": "slug requerido"}, 400)
+        spec["slug"] = slug
+        spec["updated"] = time.strftime("%Y-%m-%d %H:%M")
+        pdir = VAULT / "properties"
+        pdir.mkdir(exist_ok=True)
+        atomic_write_json(pdir / f"{slug}.json", spec, indent=1, ensure_ascii=False)
+        return self.send_json({"ok": True, "url": f"https://vuelos.metislab.work/p.html?id={slug}"})
+
+    def _post_search(self, u, q):
+        # búsqueda semántica (embeddings + Supabase RPC). Quedó MUERTA cuando el refactor
+        # del worker borró este handler — la UI mostraba 'sin sesión' en falso.
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        qtext = str(spec.get("q", "")).strip()[:400]
+        if not qtext:
+            return self.send_json({"results": []})
+        try:
+            return self.send_json(semantic_search(qtext))
+        except Exception as e:
+            return self.send_json({"error": f"búsqueda AI no disponible: {_scrub(str(e))[-120:]}", "results": []}, 502)
+        return _POST_FALLTHROUGH
+
+    def _post_reel_order(self, u, q):
+        # T4 · orden manual de la librería de reels (drag / flechas en el grid)
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        names = spec.get("names") if isinstance(spec.get("names"), list) else []
+        omap = {safe_name(n): i
+                for i, n in enumerate(names[:500]) if str(n).endswith(".mp4")}
+        try:
+            with _ORDER_LOCK:
+                _reel_order_write(omap)
+        except OSError as e:
+            return self.send_json({"error": _scrub(str(e))[-200:]}, 500)
+        return self.send_json({"ok": True, "count": len(omap)})
+
+    def _post_compare(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        a = safe_id(spec.get("clip_a", ""))
+        b = safe_id(spec.get("clip_b", ""))
+        da, db = VAULT / "models" / a, VAULT / "models" / b
+        if not ((da / "dsm.bin").exists() and (db / "dsm.bin").exists()):
+            return self.send_json({"error": "ambas fechas necesitan modelo 3D con DSM"}, 404)
+        try:
+            check_polygon(spec.get("points", []))
+            return self.send_json(compare_dsm(da, db, spec.get("points", [])))
+        except ValueError as e:
+            return self.send_json({"error": _scrub(str(e))}, 400)
+        except Exception as e:
+            return self.send_json({"error": _scrub(str(e))[-200:]}, 500)
+        return _POST_FALLTHROUGH
+
+    def _post_property_ai(self, u, q):
+        if not self.auth(q):
+            return
+        body = self.read_json()
+        slug = re.sub(r"[^a-z0-9-]", "", str(body.get("slug", "")).lower())
+        pf = VAULT / "properties" / f"{slug}.json"
+        if not pf.exists():
+            return self.send_json({"error": "propiedad no existe"}, 404)
+        p = read_json_file(pf)
+        prompt = (
+            "Escribe la descripción de venta para una propiedad, en español, tono premium "
+            "inmobiliario, 2 párrafos cortos + 4 líneas de características precedidas por '· '. "
+            "TEXTO PLANO: sin markdown, sin asteriscos, sin títulos, sin emojis, sin exagerar. "
+            "Datos: " + json.dumps(p, ensure_ascii=False))
+        p["descripcion"] = _deepseek(prompt)
+        atomic_write_json(pf, p, indent=1, ensure_ascii=False)
+        return self.send_json({"ok": True, "descripcion": p["descripcion"]})
+
+    def _post_suggest_name(self, u, q):
+        # DeepSeek (lane de texto): nombre de proyecto corto y humano desde lugar+fecha+tomas
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        place = str(spec.get("place", ""))[:80]
+        date = str(spec.get("date", ""))[:20]
+        n = max(1, min(20, int(spec.get("n", 1) or 1)))
+        try:
+            name = _deepseek(
+                f"Nombre corto (máx 5 palabras, español, sin comillas ni emojis) para un proyecto "
+                f"de fotogrametría con dron: lugar '{place}', fecha {date}, {n} video(s). "
+                f"Estilo: evocador pero sobrio, tipo 'Atardecer en Suba' o 'Casa Chía — combinado'. "
+                f"Responde SOLO el nombre.").strip().strip('"')[:60]
+            return self.send_json({"name": name})
+        except Exception as e:
+            return self.send_json({"error": f"DeepSeek no disponible: {_scrub(e)}"}, 502)
+        return _POST_FALLTHROUGH
+
+    def _post_logout(self, u, q):
+        self.discard_body(4096)
+        client_ip = self._client_ip()
+        context = self._auth_context() or {}
+        jobstore.session_delete(context.get("session_token") or self._presented_session_token())
+        jobstore.session_delete(self._cookie(LEGACY_SESSION_COOKIE))
+        self.send_response(200)
+        self.send_header("Set-Cookie",
+                         f"{LEGACY_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
+        self.send_header("Set-Cookie",
+                         f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
+        # solo cookies: "storage" borraba localStorage (récords de Gate Rush, prefs, autosave del editor)
+        self.send_header("Clear-Site-Data", '"cookies"')
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        _auth_event("logout", client_ip)
+        return
+
+    def _post_scene_promote(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        try:
+            scene = scenestore.promote(str(spec.get("scene_id") or ""),
+                                       str(spec.get("version_id") or ""))
+            version_ids = {v.get("id") for v in scene.get("versions") or [] if v.get("id")}
+            for version_id in version_ids:
+                if (VAULT / "models" / version_id / "meta.json").exists():
+                    try:
+                        subprocess.run(["python3", str(PIPE / "scene_manifest.py"), version_id],
+                                       check=False, timeout=180)
+                    except subprocess.SubprocessError as e:
+                        # TimeoutExpired escapaba del except de abajo → 500 con el promote YA escrito
+                        print(f"scene_promote: scene_manifest {version_id} falló: {e}", flush=True)
+            rebuild_index()
+            return self.send_json({"ok": True, "scene": scene})
+        except (KeyError, ValueError) as e:
+            return self.send_json({"error": _scrub(str(e))}, 409)
+        return _POST_FALLTHROUGH
+
+    def _post_sd_import(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        _vol = str(spec.get("volume", ""))
+        if any(x.get("kind") == "ingest" and x.get("status") in ("running", "queued")
+               for x in jobstore.recent(10)):
+            return self.send_json({"error": "ya hay una importación corriendo — espera a que termine"}, 409)
+        _exts = SD_VIDEO_EXT + SD_PHOTO_EXT   # importar también acepta fotos (no solo clean)
+        try:
+            for rel in list(spec.get("files", []))[:500]:
+                _sd_resolve(str(spec.get("volume", "")), str(rel), _exts)
+        except (ValueError, OSError) as e:
+            return self.send_json({"error": _scrub(str(e))}, 400)
+        if not spec.get("files"):
+            return self.send_json({"error": "elige al menos un video"}, 400)
+        j = job_add("ingest", f'{spec.get("volume", "?")} · {len(spec["files"])} archivos')
+        target = run_sd_clean if spec.get("clean_only") else run_sd_import
+        threading.Thread(target=target, args=(spec, j), daemon=True).start()
+        return self.send_json({"ok": True, "job": j["id"]})
+
+    def _post_client_error(self, u, q):
+        # errores JS del frontend → registro central. El gate POST central ya exige
+        # sesión/token/dev; además validamos mismo-origen y un presupuesto global 60/h
+        # para que una pestaña rota no infle el log ni gaste disco.
+        site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+        if not (self._is_local() or site in ("same-origin", "same-site")):
+            return self.send_json({"ok": False}, 403)
+        now = time.time()
+        if now > _CLIENT_ERR_BUDGET["reset"]:
+            _CLIENT_ERR_BUDGET.update(n=0, reset=now + 3600)
+        if _CLIENT_ERR_BUDGET["n"] >= 60:
+            return self.send_json({"ok": False, "rate": True}, 429)
+        _CLIENT_ERR_BUDGET["n"] += 1
+        try:
+            spec = self.read_json(max_bytes=4000)
+        except (ValueError, json.JSONDecodeError):
+            return self.send_json({"error": "body inválido"}, 400)
+        perfmod.log_error("client", str(spec.get("msg", ""))[:300],
+                          {"page": str(spec.get("page", ""))[:80],
+                           "stack": str(spec.get("stack", ""))[:200]})
+        return self.send_json({"ok": True})
+
+    def _post_error_report(self, u, q):
+        # genera el reporte AI (DeepSeek SOLO escribe; el .md queda para revisión humana/Codex)
+        if not self.auth(q):
+            return
+        j = job_add("error_report", "reporte de errores (DeepSeek)")
+
+        def _run_report():
+            try:
+                rc = jobstore.run_tracked(j["id"],
+                                          ["python3", str(PIPE / "error_report.py"),
+                                           "--days", "7"], timeout=300)
+                tail = (jobstore.get(j["id"]) or {}).get("log") or ""
+                if rc == 0:
+                    job_end(j, "done", tail.strip().splitlines()[-1][-200:] if tail.strip()
+                            else "reporte generado")
+                else:
+                    job_end(j, "error", tail.strip()[-200:] or "error_report falló")
+            except (subprocess.TimeoutExpired, OSError) as e:
+                job_end(j, "error", str(e)[-200:])
+        threading.Thread(target=_run_report, daemon=True).start()
+        return self.send_json({"ok": True, "job": j["id"]})
+
+    def _post_gpu_node_sleep(self, u, q):
+        if not self.auth():
+            return
+        # OJO: jamás `import subprocess` local aquí — convierte 'subprocess' en variable
+        # local de TODO do_POST y los closures de otros handlers (analyze._run) capturan
+        # la local sin valor: "cannot access free variable". Ya pasó con urllib (#fixture).
+        try:
+            # guardia de cortesía: pantalla desbloqueada = alguien usando el PC
+            chk = subprocess.run(["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
+                'tasklist /FI "IMAGENAME eq LogonUI.exe" | find /C "LogonUI"'],
+                capture_output=True, text=True, timeout=8)
+            locked = (chk.stdout or "").replace("\x00", "").strip().splitlines()
+            if locked and locked[-1].strip() == "0":
+                return self.send_json({"ok": False, "reason": "sesion activa en el PC"}, 409)
+            subprocess.run(["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
+                "rundll32.exe powrprof.dll,SetSuspendState 0,1,0"],
+                capture_output=True, timeout=8)
+            GPU_NODE["ts"] = 0.0            # invalidar caché
+            return self.send_json({"ok": True})
+        except Exception as e:
+            return self.send_json({"ok": False, "reason": _scrub(str(e))}, 500)
+        return _POST_FALLTHROUGH
+
+    def _post_preflight(self, u, q):
+        # U1.3 en el modal: proyección de memoria per-preset ANTES de encolar.
+        # Etiquetada como proyección del modelo (±25%) — la UI jamás la vende como promesa.
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        import preflight as _pf
+        try:
+            n = max(1, min(5000, int(spec.get("n_images", 0))))
+            w = max(640, min(8192, int(spec.get("width", 2688))))
+            p = resolve_splat_spec({"preset": str(spec.get("preset", "medium"))})["key"]
+            backend = normalize_splat_request({"preset": p,
+                                               "backend": spec.get("backend")})["backend"]
+        except (TypeError, ValueError):
+            return self.send_json({"error": "parámetros inválidos"}, 400)
+        node = gpu_cuda_preflight_status(bool(spec.get("force"))) if backend == "cuda" else None
+        return self.send_json(_pf.splat_preflight_for_backend(
+            n, w, p, backend, node=node,
+            project_bytes=max(0, int(spec.get("project_bytes") or 0)),
+            wsl_free_bytes=node.get("wsl_free_bytes") if node else None,
+            bridge_free_bytes=node.get("bridge_free_bytes") if node else None))
+
+    def _post_highlight(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        cid = safe_id(spec.get("clip_id", ""))
+        if not cid:
+            return self.send_json({"error": "clip_id requerido"}, 400)
+        try:
+            t_val = float(spec.get("t", 0))
+        except (TypeError, ValueError):
+            t_val = 0.0
+        if not math.isfinite(t_val):
+            return self.send_json({"error": "t inválido"}, 400)   # NaN rompía el JSON del panel AI
+        aif = VAULT / "ai" / f"{cid}.json"
+        data = read_json_file(aif) if aif.exists() else {"clip_id": cid, "tags": [], "highlights": []}
+        data.setdefault("highlights", []).append({
+            "t": round(t_val, 1),
+            "reason": str(spec.get("reason", "marcado por Daniel"))[:120],
+            "type": "manual"})
+        data["highlights"].sort(key=lambda h: h["t"])
+        aif.parent.mkdir(exist_ok=True)
+        atomic_write_json(aif, data, indent=1, ensure_ascii=False)
+        rebuild_index()
+        return self.send_json({"ok": True, "highlights": data["highlights"]})
+
+    def _post_audio_upload(self, u, q):
+        # pista de música del usuario (su propia biblioteca). Mismo patrón que /upload:
+        # body crudo + ?name=. NUNCA descargamos audio de servicios con DRM.
+        if not self.auth(q):
+            return
+        name = safe_upload_name_spaces(Path(q.get("name", ["pista.mp3"])[0]).name).strip()
+        ext = Path(name).suffix.lower()
+        if ext not in AUDIO_EXT:
+            return self.send_json({"error": f"formato {ext or '?'} no soportado — usa mp3, m4a, wav, flac u ogg"}, 400)
+        length = int(self.headers.get("Content-Length", 0))
+        if not length:
+            return self.send_json({"error": "body vacío"}, 400)
+        if length > 120 * 1024**2:
+            return self.send_json({"error": "la pista pesa más de 120MB"}, 413)
+        AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+        path = AUDIO_DIR / name
+        if path.exists():
+            path = AUDIO_DIR / f"{Path(name).stem} {time.strftime('%H%M%S')}{ext}"
+        read = self._receive_upload(path, length, 1024 * 256)
+        if read is None:
+            return
+        if read != length:
+            path.unlink(missing_ok=True)
+            return self.send_json({"error": f"subida incompleta ({read}/{length})"}, 400)
+        if not _media_format_ok(path) or _probe_dur(path) <= 0:   # no es audio real (o está corrupto / demuxer no permitido): no ensuciar la biblioteca
+            path.unlink(missing_ok=True)
+            return self.send_json({"error": "no pude leer ese archivo como audio"}, 400)
+        return self.send_json({"ok": True, "track": _audio_meta(path)})
+
+    def _post_upload(self, u, q):
+        if not self.auth(q):
+            return
+        name = safe_upload_name(Path(q.get("name", ["video.mp4"])[0]).name)
+        ext = Path(name).suffix.lower() or ".mp4"
+        if ext not in (".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm"):
+            return self.send_json({"error": f"formato {ext} no soportado"}, 400)
+        length = int(self.headers.get("Content-Length", 0))
+        if not length:
+            return self.send_json({"error": "body vacío"}, 400)
+        if length > 25 * 1024**3:  # 25GB tope de cordura (video 4K real cabe de sobra)
+            return self.send_json({"error": "archivo > 25GB"}, 413)
+        # el resto del servidor sanitiza clip_id con [^\w-]: un punto en el stem ("clip.final")
+        # dejaba un clip inalcanzable
+        stem_safe = re.sub(r"[^\w-]", "_", Path(name).stem)[:40]
+        cid = f"UP_{time.strftime('%Y%m%d%H%M%S')}{secrets.token_hex(2)}_{stem_safe}"
+        dest = VAULT / "raw" / "uploads"
+        dest.mkdir(parents=True, exist_ok=True)
+        path = dest / f"{cid}{ext}"
+        read = self._receive_upload(path, length, 1024 * 512)
+        if read is None:
+            return
+        if read != length:
+            path.unlink(missing_ok=True)   # corte de red/túnel: NO procesar un video truncado
+            return self.send_json({"error": f"subida incompleta ({read}/{length} bytes) — reintenta"}, 400)
+        j = job_add("upload", name)
+        threading.Thread(target=process_upload, args=(path, j), daemon=True).start()
+        return self.send_json({"ok": True, "clip_id": cid, "bytes": read, "job": j["id"]})
+
+    def _post_analyze(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        cid = safe_id(spec.get("clip_id", ""))
+        # dedupe + validación: doble click = 2 análisis deep concurrentes (2× costo LLM
+        # y carrera sobre ai/{cid}.json); cid inexistente = job basura
+        if not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
+            return self.send_json({"error": "clip no encontrado"}, 404)
+        if any(x.get("kind") == "analyze" and x.get("label", "").startswith(cid)
+               and x.get("status") in ("running", "queued") for x in jobstore.recent(12)):
+            return self.send_json({"error": "ese análisis ya está corriendo"}, 409)
+        j = job_add("analyze", f"{cid} (profundo)")
+
+        def _run():
+            try:
+                r = subprocess.run(["python3", str(PIPE.parent / "ai" / "analyze.py"),
+                                    cid, "--deep"], check=True, capture_output=True, text=True,
+                                   cwd=PIPE.parent / "ai", timeout=600)
+                if not (VAULT / "ai" / f"{cid}.json").exists():
+                    # exit 0 pero sin resultado (p.ej. clip sin frames ni proxy) ≠ éxito
+                    return job_end(j, "error", (r.stdout or "análisis sin resultado")[-250:])
+                rebuild_index()
+                job_end(j, "done", cid)
+            except Exception as e:   # CUALQUIER fallo — un raise no atrapado dejaba el job "running" fantasma
+                err = getattr(e, "stderr", "") or str(e)
+                job_end(j, "error", err[-250:])
+        threading.Thread(target=_run, daemon=True).start()
+        return self.send_json({"ok": True, "job": j["id"]})
+
+    def _post_scene_create(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        scene = scenestore.create_scene(str(spec.get("title") or "Escena"),
+                                         spec.get("anchor") if isinstance(spec.get("anchor"), dict) else {},
+                                         spec.get("sources") if isinstance(spec.get("sources"), list) else [],
+                                         spec.get("photos") if isinstance(spec.get("photos"), list) else [],
+                                         source_evidence=[source_evidence(cid) for cid in
+                                           (spec.get("sources") if isinstance(spec.get("sources"), list) else [])])
+        existing = safe_id(spec.get("existing_version") or "")
+        if existing and (VAULT / "models" / existing / "meta.json").exists():
+            sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [existing]
+            photos = spec.get("photos") if isinstance(spec.get("photos"), list) else []
+            try:
+                meta = json.loads((VAULT / "models" / existing / "meta.json").read_text())
+                recon = meta.get("reconstruction") or {}
+                qa = meta.get("qa") or {}
+                version = scenestore.add_version(
+                    scene["id"], existing, sources, photos, "ready",
+                    merge_label=recon.get("merge_label") or "SINGLE",
+                    required_artifacts_ok=bool(qa.get("cameras_reconstructed")),
+                    metrics=scenestore.model_metrics(meta),
+                    source_evidence=[source_evidence(cid) for cid in sources])
+                if version.get("required_artifacts_ok") and version.get("merge_label") in ("SINGLE", "FULL"):
+                    scene = scenestore.promote(scene["id"], existing)
+            except (ValueError, OSError):
+                pass
+        return self.send_json({"ok": True, "scene": scene})
+
+    def _post_measure(self, u, q):
+        # mediciones survey contra el DSM: volumen (stockpile) y perfil de elevación
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        cid = safe_id(spec.get("clip_id", ""))
+        mdir = VAULT / "models" / cid
+        if not (mdir / "dsm.bin").exists():
+            return self.send_json({"error": "este proyecto no tiene DSM aún"}, 404)
+        try:
+            # BUG (jul-20): el guard solo corría con type EXACTAMENTE "volume". Cualquier
+            # otro valor ("vol", vacío) que measure_dsm tratara como área/volumen
+            # rasterizaba el DSM entero sin límite → un polígono grande podía pedir
+            # decenas de GB en una máquina de 16. El guard es barato: va siempre.
+            if spec.get("type") == "profile":
+                # perfil = segmento de EXACTAMENTE 2 puntos (check_polygon exige >=3 vértices)
+                pp = spec.get("points")
+                if (not isinstance(pp, list) or len(pp) != 2
+                        or not all(isinstance(p, (list, tuple)) and len(p) >= 2
+                                   and all(isinstance(c, (int, float)) and not isinstance(c, bool)
+                                           and math.isfinite(c) for c in p[:2]) for p in pp)):
+                    raise ValueError("perfil necesita exactamente 2 puntos [lon, lat] finitos")
+                spec["points"] = [[float(p[0]), float(p[1])] for p in pp]
+            else:
+                check_polygon(spec.get("points", []))
+            return self.send_json(measure_dsm(mdir, spec))
+        except ValueError as e:
+            return self.send_json({"error": _scrub(str(e))}, 400)
+        except Exception as e:
+            return self.send_json({"error": _scrub(str(e))[-200:]}, 500)
+        return _POST_FALLTHROUGH
+
+    def _post_audio_op(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        op = str(spec.get("op", ""))
+        name = safe_name(spec.get("name", ""))
+        src = (AUDIO_DIR / name).resolve() if name else None
+        try:
+            src.relative_to(AUDIO_DIR.resolve())
+        except (ValueError, AttributeError):
+            return self.send_json({"error": "nombre inválido"}, 400)
+        if not src.is_file():
+            return self.send_json({"error": "pista no encontrada"}, 404)
+        if op == "delete":
+            tdir = VAULT / "trash" / "audio"
+            tdir.mkdir(parents=True, exist_ok=True)
+            tdst = tdir / src.name
+            if tdst.exists():           # no pisar una pista borrada antes con el mismo nombre
+                tdst = tdir / f"{src.stem}.{time.time_ns()}{src.suffix}"
+            shutil.move(str(src), str(tdst))
+            (AUDIO_DIR / ".meta" / f"{src.name}.json").unlink(missing_ok=True)
+            return self.send_json({"ok": True})
+        if op == "rename":
+            new = safe_name(spec.get("new_name", "")).strip()
+            if not new:
+                return self.send_json({"error": "nombre nuevo inválido"}, 400)
+            dst = AUDIO_DIR / (new + src.suffix if not new.lower().endswith(src.suffix) else new)
+            if dst.exists():
+                return self.send_json({"error": "ya existe una pista con ese nombre"}, 400)
+            src.rename(dst)
+            (AUDIO_DIR / ".meta" / f"{src.name}.json").unlink(missing_ok=True)
+            return self.send_json({"ok": True, "name": dst.name})
+        return self.send_json({"error": "op inválida"}, 400)
+
+    def _post_splat_delete(self, u, q):
+        # borra SOLO el splat (a la papelera, reversible) — el modelo 3D, la nube y el
+        # video RAW no se tocan. Para nuke completo del clip existe /api/model_delete.
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        cid = safe_id(spec.get("clip_id", ""))
+        if not cid:
+            return self.send_json({"error": "clip_id requerido"}, 400)
+        if jobstore.pending("splat", cid):
+            return self.send_json({"error": "hay un entrenamiento activo sobre este splat — cancélalo primero"}, 409)
+        sdir = (VAULT / "splats").resolve()
+        tdir = VAULT / "trash" / "splats"
+        tdir.mkdir(parents=True, exist_ok=True)
+        moved = []
+
+        def _to_trash(src: Path, rel: str):
+            dst = tdir / src.name
+            if dst.exists():
+                dst = tdir / f"{src.stem}.{time.time_ns()}{src.suffix}"
+            shutil.move(str(src), str(dst))
+            moved.append(rel + src.name)
+
+        for extra in sorted(sdir.glob(f"{cid}.*")):     # .splat .ksplat .cameras.json .meta.json
+            if extra.is_file() and not extra.is_symlink() and extra.resolve().parent == sdir:
+                _to_trash(extra, "splats/")
+        hist = sdir / "history"
+        for h in sorted(clip_history_files(hist, cid)):   # re-subidas archivadas de SuperSplat (solo ESTE clip)
+            if h.is_file() and not h.is_symlink():
+                _to_trash(h, "splats/history/")
+        if not moved:
+            return self.send_json({"error": "no hay splat para este clip"}, 404)
+        rebuild_scene_manifest(cid)
+        rebuild_index()
+        return self.send_json({"ok": True, "moved": moved})
+
+    def _post_clip(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        cid = safe_id(spec.get("clip_id", ""))
+        mf = VAULT / "manifest" / f"{cid}.json"
+        if not mf.exists():
+            return self.send_json({"error": "clip no existe"}, 404)
+        if spec.get("delete") is True:
+            # borrado REVERSIBLE: todos los artefactos del clip van a trash/clips/<cid>/
+            # (raw+SRT incluidos) — nada se destruye; restaurar = mover de vuelta + rescan
+            tdir = VAULT / "trash" / "clips" / cid
+            tdir.mkdir(parents=True, exist_ok=True)
+            moved = []
+            artifacts = [mf,
+                         VAULT / "thumbs" / f"{cid}.jpg",
+                         VAULT / "proxies" / f"{cid}.mp4",
+                         VAULT / "proxies720" / f"{cid}.mp4",
+                         VAULT / "tracks" / f"{cid}.flight.json",
+                         VAULT / "ai" / f"{cid}.json",
+                         *(VAULT / "raw").rglob(f"{cid}.*")]
+            for a in artifacts:
+                if a.is_file():
+                    shutil.move(str(a), str(tdir / a.name))
+                    moved.append(a.name)
+            fdir = VAULT / "frames" / cid
+            if fdir.is_dir():
+                shutil.move(str(fdir), str(tdir / "frames"))
+                moved.append("frames/")
+            rebuild_index()
+            return self.send_json({"ok": True, "moved": moved})
+        with _manifest_lock(cid):
+            m = read_json_file(mf)
+            if "label" in spec:
+                m["label"] = str(spec["label"])[:80]     # sin cap, un body de 1MB entraba al flights.json público
+            if "archived" in spec:
+                m["archived"] = bool(spec["archived"])
+            atomic_write_json(mf, m, indent=1, ensure_ascii=True)
+        rebuild_index()
+        return self.send_json({"ok": True})
+
+    def _post_splat(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        cid = safe_id(spec.get("clip_id", ""))
+        proj = VAULT / "odm" / f"proj_{cid}"    # sin alias legacy: cada clip usa SU proyecto (proj0104 compartido = data-loss si 2 clips 0104_D)
+        has_model = (proj / "opensfm" / "reconstruction.json").exists()
+        if not has_model and not spec.get("auto_model"):
+            return self.send_json({"error": "primero procesa el vuelo en 3D (necesita las poses de ODM)"}, 400)
+        if not has_model and not (VAULT / "manifest" / f"{cid}.json").exists():
+            return self.send_json({"error": "clip no encontrado en el vault"}, 404)
+        try:
+            job_spec = build_splat_job_spec(cid, spec)
+        except ValueError as e:
+            return self.send_json({"error": _scrub(str(e))}, 400)
+        if (requires_local_splat_binary(job_spec["backend"])
+                and not any_opensplat_bin_exists()):
+            return self.send_json({"error": "opensplat no está compilado"}, 500)
+        if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
+            return self.send_json({"error": "ese vuelo ya tiene un modelo/splat en cola o entrenando"}, 409)
+        # PREFLIGHT (U1.3): veredicto ANTES de encolar — el P1 hecho producto.
+        # Con proyecto existente el conteo es EXACTO (image_list); REJECTED no
+        # encola (salvo force_preflight: escape consciente). La proyección viaja
+        # al job = telemetría proyectado-vs-observado permanente del modelo.
+        pfv = splat_project_preflight(
+            cid, job_spec,
+            node=(gpu_cuda_preflight_status() if job_spec["backend"] == "cuda" else None))
+        if pfv:
+            blocked = ("REJECTED", "INPUT_FLOOR_EXCEEDS_CAP", "NODE_UNAVAILABLE",
+                       "ENVIRONMENT_INVALID", "INSUFFICIENT_DISK")
+            if pfv["verdict"] in blocked and not spec.get("force_preflight"):
+                return self.send_json({"error": "preflight: la carga de entrada queda fuera del sobre seguro — "
+                                       + pfv.get("note", ""), "preflight": pfv}, 409)
+        job_spec["preflight"] = pfv
+        j = jobstore.enqueue("splat", cid, job_spec)
+        return self.send_json({"ok": True, "job": j["id"], "queued": True,
+                               "preset": job_spec["preset"], "iters": job_spec["iters"],
+                               "backend": job_spec["backend"],
+                               "resolution": job_spec["resolution"],
+                               "preflight": pfv})
+
+    def _post_trip_meta(self, u, q):
+        # nombre + carátula por lugar (key = "lat,lon" a 2 decimales) — server-side
+        # para que sincronice entre dispositivos (antes: localStorage, solo un browser)
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        key = str(spec.get("key", ""))
+        if not _TRIP_KEY_RE.fullmatch(key):
+            return self.send_json({"error": "key inválida"}, 400)
+        tm_file = VAULT / "manifest" / "trips_meta.json"
+        old_key = spec.get("migrate_from")
+        if old_key is not None:
+            old_key = str(old_key)
+            if not _TRIP_KEY_RE.fullmatch(old_key):
+                return self.send_json({"error": "migrate_from inválida"}, 400)
+        with _TRIPS_LOCK:
+            try:
+                tm = json.loads(tm_file.read_text()) if tm_file.exists() else {}
+            except ValueError:
+                tm = {}
+            if old_key and old_key != key and old_key in tm:
+                # migración atómica (misma escritura): la clave vieja pasa a la nueva solo si
+                # esta aún no tiene meta; la vieja se borra siempre
+                moved = tm.pop(old_key)
+                if not tm.get(key) and isinstance(moved, dict):
+                    tm[key] = moved
+            entry = tm.get(key, {})
+            if "name" in spec:
+                name = str(spec["name"]).strip()[:60]
+                if name:
+                    entry["name"] = name
+                else:
+                    entry.pop("name", None)     # vacío = volver al nombre automático
+            if "cover" in spec:
+                cover = safe_id(spec["cover"])
+                if cover:
+                    entry["cover"] = cover
+                else:
+                    entry.pop("cover", None)    # vacío = volver a la mejor por score AI
+            tm[key] = entry
+            if not entry:
+                tm.pop(key, None)
+            tm_file.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write_text(tm_file, json.dumps(tm, indent=1))
+        return self.send_json({"ok": True, "meta": tm.get(key, {})})
+
+    def _post_model_delete(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        cid = safe_id(spec.get("clip_id", ""))
+        mdir = (VAULT / "models" / cid).resolve()
+        if not cid or mdir.parent != (VAULT / "models").resolve() or not mdir.is_dir():
+            return self.send_json({"error": "modelo no encontrado"}, 404)
+        if jobstore.pending("3d", cid) or jobstore.pending("splat", cid):
+            return self.send_json({"error": "hay un trabajo activo sobre este modelo — cancélalo primero"}, 409)
+        # una escena apunta a su active_version: borrarla dejaba la escena sirviendo un modelo
+        # inexistente. Si es una versión no activa, se marca 'failed' (no promovible) en la escena.
+        scene_versions = []
+        for sc in scenestore.list_scenes():
+            if sc.get("active_version") == cid:
+                return self.send_json({"error": f"este modelo es la versión activa de la escena "
+                                                f"'{sc.get('title') or sc.get('id')}' — promueve otra versión antes de borrarlo"}, 400)
+            if any(v.get("id") == cid for v in sc.get("versions") or []):
+                scene_versions.append(sc["id"])
+        freed = ["models/" + cid]
+        shutil.rmtree(mdir)
+        for sid in scene_versions:
+            try:
+                scenestore.update_version(sid, cid, status="failed", required_artifacts_ok=False,
+                                          completed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+            except (KeyError, ValueError, OSError) as e:
+                print(f"model_delete: no se pudo marcar {cid} en {sid}: {e}", flush=True)
+        # borra TODO el set de splat del clip + historial: si sobrevive el .ksplat, best_splats
+        # lo rankea sobre el .splat y el splat "borrado" RESUCITA en la UI (cid ya saneado)
+        sdir = VAULT / "splats"
+        for extra in sdir.glob(f"{cid}.*"):        # .splat .ksplat .cameras.json .meta.json
+            if extra.is_file():
+                extra.unlink(); freed.append("splats/" + extra.name)
+        hist = sdir / "history"
+        for h in clip_history_files(hist, cid):     # re-subidas archivadas de SuperSplat (solo ESTE clip)
+            if h.is_file():
+                h.unlink(); freed.append("splats/history/" + h.name)
+        # purga opcional del proyecto ODM (GBs de frames+etapas; el video RAW nunca se toca)
+        # sin alias legacy proj0104: cada clip usa SU proyecto (proj0104 compartido = data-loss si 2 clips 0104_D)
+        proj = (VAULT / "odm" / f"proj_{cid}").resolve()
+        if spec.get("purge_source") and proj.parent == (VAULT / "odm").resolve() and proj.is_dir():
+            shutil.rmtree(proj)
+            freed.append("odm/" + proj.name)
+        jobstore.clear_artifacts(cid)
+        rebuild_index()
+        return self.send_json({"ok": True, "freed": freed})
+
+    def _post_photo_upload(self, u, q):
+        # foto desde el iPhone (carrete) — mismo patrón de body crudo que /upload.
+        # Las fotos NO pasan por process.py: van directas a la biblioteca de Fotos.
+        if not self.auth(q):
+            return
+        raw_name = Path(q.get("name", ["foto.jpg"])[0]).name
+        ext = Path(raw_name).suffix.lower()
+        if ext not in (".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".dng"):
+            return self.send_json({"error": f"formato {ext or '?'} no soportado"}, 400)
+        length = int(self.headers.get("Content-Length", 0))
+        if not length:
+            return self.send_json({"error": "body vacío"}, 400)
+        if length > 200 * 1024**2:
+            return self.send_json({"error": "la foto pesa más de 200MB"}, 413)
+        pdir = VAULT / "photos"
+        pdir.mkdir(parents=True, exist_ok=True)
+        safe = safe_upload_name_spaces(raw_name)
+        dst = pdir / safe
+        heic = ext in (".heic", ".heif")
+
+        def _taken(pth):    # HEIC → se convertirá a .jpg: ese nombre también debe estar libre
+            return pth.exists() or (heic and pth.with_suffix(".jpg").exists())
+        if _taken(dst):
+            stem0, n = Path(safe).stem, 0
+            while True:
+                tag = time.strftime("%H%M%S") + (f"-{n}" if n else "")
+                dst = pdir / f"{stem0}-{tag}{ext}"
+                if not _taken(dst):
+                    break
+                n += 1
+        read = self._receive_upload(dst, length, 1024 * 256)
+        if read is None:
+            return
+        if read != length:
+            dst.unlink(missing_ok=True)
+            return self.send_json({"error": f"subida incompleta ({read}/{length})"}, 400)
+        # HEIC del iPhone: el navegador no lo pinta — se convierte a JPG con sips
+        if ext in (".heic", ".heif"):
+            jpg = dst.with_suffix(".jpg")
+            try:
+                subprocess.run(["sips", "-s", "format", "jpeg", str(dst), "--out", str(jpg)],
+                               check=True, capture_output=True, timeout=120)
                 dst.unlink(missing_ok=True)
-                return self.send_json({"error": f"subida incompleta ({read}/{length})"}, 400)
-            # HEIC del iPhone: el navegador no lo pinta — se convierte a JPG con sips
-            if ext in (".heic", ".heif"):
-                jpg = dst.with_suffix(".jpg")
-                try:
-                    subprocess.run(["sips", "-s", "format", "jpeg", str(dst), "--out", str(jpg)],
-                                   check=True, capture_output=True, timeout=120)
-                    dst.unlink(missing_ok=True)
-                    dst = jpg
-                except (OSError, subprocess.SubprocessError):
-                    pass          # se queda el HEIC: descargable aunque no se previsualice
-            return self.send_json({"ok": True, "name": dst.name, "bytes": read})
-        if u.path == "/api/reel_order":
-            # T4 · orden manual de la librería de reels (drag / flechas en el grid)
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            names = spec.get("names") if isinstance(spec.get("names"), list) else []
-            omap = {safe_name(n): i
-                    for i, n in enumerate(names[:500]) if str(n).endswith(".mp4")}
-            try:
-                with _ORDER_LOCK:
-                    _reel_order_write(omap)
-            except OSError as e:
-                return self.send_json({"error": str(e)[-200:]}, 500)
-            return self.send_json({"ok": True, "count": len(omap)})
-        if u.path == "/api/reel_edit":
-            # R4 · retoques sobre un reel YA exportado, sin re-montar el proyecto.
-            # Nunca sobrescribe el original salvo 'poster' (que solo toca la miniatura).
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            op = str(spec.get("op", ""))
-            name = safe_name(spec.get("name", ""))
-            base = (VAULT / "reels").resolve()
-            src = (base / name).resolve() if name else None
-            try:
-                src.relative_to(base)
-            except (ValueError, AttributeError):
-                return self.send_json({"error": "nombre inválido"}, 400)
-            if not src or not src.is_file():
-                return self.send_json({"error": "reel no encontrado"}, 404)
-            dur = _probe_dur(src)
-            stem = src.stem
-            if op == "poster":
-                t = _clampf(spec.get("t", 0.5), 0, max(dur - 0.05, 0.05), 0.5)
-                pdir = VAULT / "reel-posters"
-                pdir.mkdir(parents=True, exist_ok=True)
-                try:
-                    _ff(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", str(src),
-                         "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4",
-                         str(pdir / f"{stem}.jpg")])
-                except Exception as e:                      # noqa: BLE001
-                    return self.send_json({"error": str(e)[-200:]}, 500)
-                return self.send_json({"ok": True, "t": round(t, 2)})
-            if op in ("trim", "reframe", "duplicate"):
-                out = base / f"{stem}-{'corte' if op == 'trim' else 'formato' if op == 'reframe' else 'copia'}"\
-                             f"-{time.strftime('%H%M%S')}.mp4"
-                try:
-                    if op == "trim":
-                        a = _clampf(spec.get("a", 0), 0, max(dur - 0.3, 0), 0)
-                        b = _clampf(spec.get("b", dur), a + 0.3, dur, dur)
-                        # -c copy corta en keyframes: rapidísimo y sin pérdida de calidad
-                        _ff(["ffmpeg", "-v", "error", "-y", "-ss", f"{a:.2f}", "-to", f"{b:.2f}",
-                             "-i", str(src), "-c", "copy", "-movflags", "+faststart", str(out)])
-                    elif op == "reframe":
-                        asp = str(spec.get("aspect", "9:16"))
-                        if asp not in ASPECTS:
-                            return self.send_json({"error": "aspecto inválido"}, 400)
-                        _ff(["ffmpeg", "-v", "error", "-y", "-i", str(src),
-                             "-vf", aspect_vf(asp, "1080"), "-c:v", "h264_videotoolbox",
-                             "-b:v", "9M", "-pix_fmt", "yuv420p", "-c:a", "copy",
-                             "-movflags", "+faststart", str(out)])
-                    else:
-                        shutil.copy2(src, out)
-                except Exception as e:                      # noqa: BLE001
-                    out.unlink(missing_ok=True)
-                    return self.send_json({"error": str(e)[-200:]}, 500)
-                _reel_poster(out)
-                return self.send_json({"ok": True, "name": out.name})
-            if op == "texts":
-                # T3 · quemar textos sobre un reel YA exportado (los viejos no tienen
-                # receta: esta es su vía para llevar títulos sin re-montar nada)
-                texts = spec.get("texts") if isinstance(spec.get("texts"), list) else []
-                if not texts:
-                    return self.send_json({"error": "sin textos"}, 400)
-                replace = bool(spec.get("replace"))
-                work = base / f"{stem}-textos-{time.strftime('%H%M%S')}.mp4"
-                try:
-                    shutil.copy2(src, work)
-                    # bitrate del fuente para no degradar (mínimo 6M, techo 20M)
-                    br = f"{max(6, min(20, round(src.stat().st_size * 8 / max(dur, 0.5) / 1e6)))}M"
-                    _burn_texts(work, texts, br)
-                    if replace:
-                        work.replace(src)
-                        work = src
-                        (VAULT / "reel-posters" / f"{stem}.jpg").unlink(missing_ok=True)
-                except Exception as e:                  # noqa: BLE001
-                    if work != src:
-                        work.unlink(missing_ok=True)
-                    return self.send_json({"error": str(e)[-200:]}, 500)
-                _reel_poster(work)
-                return self.send_json({"ok": True, "name": work.name})
-            return self.send_json({"error": "op inválida"}, 400)
-        if u.path == "/api/audio_upload":
-            # pista de música del usuario (su propia biblioteca). Mismo patrón que /upload:
-            # body crudo + ?name=. NUNCA descargamos audio de servicios con DRM.
-            if not self.auth(q):
-                return
-            name = safe_upload_name_spaces(Path(q.get("name", ["pista.mp3"])[0]).name).strip()
-            ext = Path(name).suffix.lower()
-            if ext not in AUDIO_EXT:
-                return self.send_json({"error": f"formato {ext or '?'} no soportado — usa mp3, m4a, wav, flac u ogg"}, 400)
-            length = int(self.headers.get("Content-Length", 0))
-            if not length:
-                return self.send_json({"error": "body vacío"}, 400)
-            if length > 120 * 1024**2:
-                return self.send_json({"error": "la pista pesa más de 120MB"}, 413)
-            AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-            path = AUDIO_DIR / name
-            if path.exists():
-                path = AUDIO_DIR / f"{Path(name).stem} {time.strftime('%H%M%S')}{ext}"
-            read = 0
-            with open(path, "wb") as f:
-                while read < length:
-                    chunk = self.rfile.read(min(1024 * 256, length - read))
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    read += len(chunk)
-            if read != length:
-                path.unlink(missing_ok=True)
-                return self.send_json({"error": f"subida incompleta ({read}/{length})"}, 400)
-            if _probe_dur(path) <= 0:      # no es audio real (o está corrupto): no ensuciar la biblioteca
-                path.unlink(missing_ok=True)
-                return self.send_json({"error": "no pude leer ese archivo como audio"}, 400)
-            return self.send_json({"ok": True, "track": _audio_meta(path)})
-        if u.path == "/api/audio_op":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            op = str(spec.get("op", ""))
-            name = safe_name(spec.get("name", ""))
-            src = (AUDIO_DIR / name).resolve() if name else None
-            try:
-                src.relative_to(AUDIO_DIR.resolve())
-            except (ValueError, AttributeError):
-                return self.send_json({"error": "nombre inválido"}, 400)
-            if not src.is_file():
-                return self.send_json({"error": "pista no encontrada"}, 404)
-            if op == "delete":
-                tdir = VAULT / "trash" / "audio"
-                tdir.mkdir(parents=True, exist_ok=True)
-                tdst = tdir / src.name
-                if tdst.exists():           # no pisar una pista borrada antes con el mismo nombre
-                    tdst = tdir / f"{src.stem}.{time.time_ns()}{src.suffix}"
-                shutil.move(str(src), str(tdst))
-                (AUDIO_DIR / ".meta" / f"{src.name}.json").unlink(missing_ok=True)
-                return self.send_json({"ok": True})
-            if op == "rename":
-                new = safe_name(spec.get("new_name", "")).strip()
-                if not new:
-                    return self.send_json({"error": "nombre nuevo inválido"}, 400)
-                dst = AUDIO_DIR / (new + src.suffix if not new.lower().endswith(src.suffix) else new)
-                if dst.exists():
-                    return self.send_json({"error": "ya existe una pista con ese nombre"}, 400)
-                src.rename(dst)
-                (AUDIO_DIR / ".meta" / f"{src.name}.json").unlink(missing_ok=True)
-                return self.send_json({"ok": True, "name": dst.name})
-            return self.send_json({"error": "op inválida"}, 400)
-        if u.path == "/api/splat_autoclean":
-            # Auto-Clean bajo demanda (Splat Lab v2): archiva el crudo si no existe, corre el
-            # motor (autoclean.mjs) sobre el .splat actual, re-exporta SOG y actualiza meta.
-            # Reversible: /api/splat_revert deshace. pending-lock igual que upload/revert.
-            if not self.auth(q):
-                return
-            cid = safe_id(q.get("cid", [""])[0])
-            preset = safe_id(q.get("preset", ["aerial"])[0]) or "aerial"
-            if not cid:
-                return self.send_json({"error": "cid requerido"}, 400)
-            if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
-                return self.send_json({"error": "hay un trabajo activo para este clip — espera a que termine"}, 409)
-            sdir = VAULT / "splats"
-            cur_splat = sdir / f"{cid}.splat"
-            if not cur_splat.is_file():
-                return self.send_json({"error": "este clip no tiene .splat master"}, 404)
-            import subprocess as _sp
-            try:
-                raw_keep = sdir / f"{cid}.raw.splat"
-                if not raw_keep.exists():
-                    shutil.copy2(cur_splat, raw_keep)      # reversibilidad garantizada
-                tmp = sdir / f".{cid}.ac.tmp.splat"
-                r = _sp.run(["node", str(PIPE / "autoclean.mjs"), str(cur_splat), str(tmp),
-                             "--preset", preset, "--json"],
-                            capture_output=True, text=True, timeout=600)
-                if r.returncode != 0 or not tmp.exists():
-                    raise RuntimeError((r.stderr or r.stdout or "autoclean falló")[-200:])
-                report = json.loads(r.stdout.strip().splitlines()[-1])
-                os.replace(tmp, cur_splat)
-                st = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
-                sog = sdir / f"{cid}.clean.sog"
-                r2 = _sp.run(["node", str(st), str(cur_splat), str(sog), "--overwrite", "--no-tty", "-q"],
-                             capture_output=True, text=True, timeout=600)
-                if r2.returncode != 0:
-                    raise RuntimeError((r2.stderr or r2.stdout or "SOG falló")[-160:])
-                mf = sdir / f"{cid}.meta.json"
+                dst = jpg
+            except (OSError, subprocess.SubprocessError):
+                pass          # se queda el HEIC: descargable aunque no se previsualice
+        return self.send_json({"ok": True, "name": dst.name, "bytes": read})
+
+    def _post_splat_autoclean(self, u, q):
+        # Auto-Clean bajo demanda (Splat Lab v2): archiva el crudo si no existe, corre el
+        # motor (autoclean.mjs) sobre el .splat actual, re-exporta SOG y actualiza meta.
+        # Reversible: /api/splat_revert deshace. pending-lock igual que upload/revert.
+        if not self.auth(q):
+            return
+        cid = safe_id(q.get("cid", [""])[0])
+        preset = safe_id(q.get("preset", ["aerial"])[0]) or "aerial"
+        if not cid:
+            return self.send_json({"error": "cid requerido"}, 400)
+        if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
+            return self.send_json({"error": "hay un trabajo activo para este clip — espera a que termine"}, 409)
+        sdir = VAULT / "splats"
+        cur_splat = sdir / f"{cid}.splat"
+        if not cur_splat.is_file():
+            return self.send_json({"error": "este clip no tiene .splat master"}, 404)
+        import subprocess as _sp
+        try:
+            raw_keep = sdir / f"{cid}.raw.splat"
+            if not raw_keep.exists():
+                shutil.copy2(cur_splat, raw_keep)      # reversibilidad garantizada
+            tmp = sdir / f".{cid}.ac.tmp.splat"
+            r = _sp.run(["node", str(PIPE / "autoclean.mjs"), str(cur_splat), str(tmp),
+                         "--preset", preset, "--json"],
+                        capture_output=True, text=True, timeout=600)
+            if r.returncode != 0 or not tmp.exists():
+                raise RuntimeError((r.stderr or r.stdout or "autoclean falló")[-200:])
+            report = json.loads(r.stdout.strip().splitlines()[-1])
+            os.replace(tmp, cur_splat)
+            st = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
+            sog = sdir / f"{cid}.clean.sog"
+            r2 = _sp.run(["node", str(st), str(cur_splat), str(sog), "--overwrite", "--no-tty", "-q"],
+                         capture_output=True, text=True, timeout=600)
+            if r2.returncode != 0:
+                raise RuntimeError((r2.stderr or r2.stdout or "SOG falló")[-160:])
+            mf = sdir / f"{cid}.meta.json"
+            with _manifest_lock(cid):
                 if mf.exists():
                     m = json.loads(mf.read_text())
                     m["bytes"] = sog.stat().st_size
                     m["clean_params"] = {"preset": preset, "engine": "autoclean.mjs"}
                     m["reverted_to"] = None
-                    mf.write_text(json.dumps(m, indent=1))
-                rebuild_scene_manifest(cid)
-                rebuild_index()
-                return self.send_json({"ok": True, "cid": cid, "report": report})
-            except Exception as e:
-                (sdir / f".{cid}.ac.tmp.splat").unlink(missing_ok=True)
-                return self.send_json({"error": f"auto-clean falló: {str(e)[-160:]}"}, 500)
+                    atomic_write_json(mf, m, indent=1, ensure_ascii=True)
+            rebuild_scene_manifest(cid)
+            rebuild_index()
+            return self.send_json({"ok": True, "cid": cid, "report": report})
+        except Exception as e:
+            (sdir / f".{cid}.ac.tmp.splat").unlink(missing_ok=True)
+            return self.send_json({"error": f"auto-clean falló: {_scrub(str(e))[-160:]}"}, 500)
+        return _POST_FALLTHROUGH
 
-        if u.path == "/api/splat_revert":
-            # Reversibilidad del Auto-Clean (v2): restaura el crudo pre-clean (.raw.splat) como
-            # versión actual; la versión limpia se archiva en history/ = nada se pierde, es un
-            # toggle. También acepta to=<archivo de history> para revertir a cualquier versión.
-            if not self.auth(q):
-                return
-            cid = safe_id(q.get("cid", [""])[0])
-            to = q.get("to", ["raw"])[0]
-            if not cid:
-                return self.send_json({"error": "cid requerido"}, 400)
-            if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
-                return self.send_json({"error": "hay un trabajo activo para este clip — espera a que termine"}, 409)
-            sdir = VAULT / "splats"
-            hist = sdir / "history"; hist.mkdir(parents=True, exist_ok=True)
-            cur_splat = sdir / f"{cid}.splat"
-            # to=<archivo>: SOLO un .splat de ESTE clip en history/ ({cid}-YYYYMMDD-HHMMSS.splat).
-            # Antes aceptaba cualquier archivo de history/ (splats de otros clips, .sog/.ply/meta)
-            # y lo copiaba sobre el master antes de validar nada.
-            if to != "raw" and not re.fullmatch(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.splat", to):
-                return self.send_json({"error": "versión inválida — usa 'raw' o un .splat de history de este clip"}, 400)
-            src_splat = (sdir / f"{cid}.raw.splat") if to == "raw" else (hist / to)
+    def _post_login(self, u, q):
+        try:
+            body = self.read_json(4096)
+        except Exception:
+            return self.send_json({"error": "body inválido"}, 400)
+        if not isinstance(body, dict):
+            return self.send_json({"error": "body inválido"}, 400)
+        client_ip = self._client_ip()
+        retry_after = LOGIN_LIMITER.retry_after(client_ip)
+        if retry_after:
+            _auth_event("login_throttled", client_ip, retry_after=retry_after)
+            return self.send_json({"error": "inicio de sesión temporalmente limitado"}, 429,
+                                  {"Retry-After": str(retry_after)})
+        user = str(body.get("user", "")).strip().lower()
+        if not AUTH_KDF_SLOTS.acquire(blocking=False):
+            _auth_event("login_capacity_limited", client_ip)
+            return self.send_json({"error": "inicio de sesión temporalmente limitado"}, 429,
+                                  {"Retry-After": "2"})
+        try:
+            password_ok = verify_operator_password(body.get("password", ""))
+        finally:
+            AUTH_KDF_SLOTS.release()
+        user_ok = hmac.compare_digest(user, OPERATOR_ID)
+        ok = user_ok and password_ok
+        if not ok:
+            LOGIN_LIMITER.failure(client_ip)
+            _auth_event("login_failed", client_ip)
+            return self.send_json({"error": "credenciales inválidas"}, 401)
+        LOGIN_LIMITER.success(client_ip)
+        jobstore.session_delete(self._presented_session_token())
+        jobstore.session_delete(self._cookie(LEGACY_SESSION_COOKIE))
+        sid = jobstore.session_create()
+        info = jobstore.session_info(sid)
+        payload = self._session_payload({"kind": "session", **info})
+        body_out = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
+        self.send_header("Set-Cookie",
+                         f"{LEGACY_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure")
+        self.send_header("Set-Cookie",
+                         f"{SESSION_COOKIE}={sid}; Path=/; Max-Age={SESSION_TTL_SECONDS}; "
+                         f"Expires={formatdate(info['expiry'], usegmt=True)}; "
+                         "HttpOnly; SameSite=Strict; Secure; Priority=High")
+        self.send_header("Content-Length", str(len(body_out)))
+        self.end_headers()
+        self.wfile.write(body_out)
+        _auth_event("login_succeeded", client_ip)
+        return
+
+    def _post_splat_campaign(self, u, q):
+        if not self.auth(q):
+            return
+        request = self.read_json()
+        preset = str(request.get("preset") or "frontier")
+        if preset not in ("ultra", "ultra20", "frontier", "grandmaster"):
+            return self.send_json({"error": "campaña admite 15K, 20K, 30K o 40K"}, 400)
+        scope = "all_models" if request.get("scope") == "all_models" else "active_sites"
+        resolution = str(request.get("resolution") or "auto")
+        if resolution not in ("auto", "full", "half"):
+            return self.send_json({"error": "resolución inválida"}, 400)
+        plan = splat_campaign_inventory(VAULT, preset, scope=scope)
+        node = gpu_cuda_preflight_status()
+        blocked_verdicts = {"REJECTED", "INPUT_FLOOR_EXCEEDS_CAP", "NODE_UNAVAILABLE",
+                            "ENVIRONMENT_INVALID", "INSUFFICIENT_DISK"}
+        specs, blocked = [], []
+        for row in plan["eligible"]:
+            raw = {"preset": preset, "backend": "cuda", "resolution": resolution,
+                   "best_available": False, "scene_id": row.get("scene_id"),
+                   "version_id": row["clip_id"] if row.get("scene_id") else None,
+                   "title": row.get("title")}
+            spec = build_splat_job_spec(row["clip_id"], raw)
+            pfv = splat_project_preflight(row["clip_id"], spec, node=node)
+            spec["preflight"] = pfv
+            row["preflight"] = pfv
+            if pfv and pfv.get("verdict") in blocked_verdicts:
+                blocked.append({"clip_id": row["clip_id"], "verdict": pfv.get("verdict"),
+                                "note": pfv.get("note")})
+            specs.append(spec)
+        plan.update({"resolution": resolution, "node": node, "blocked": blocked,
+                     "ready_to_enqueue": bool(specs) and not blocked})
+        if not request.get("confirm"):
+            return self.send_json({"ok": True, "dry_run": True, "plan": plan})
+        if blocked:
+            return self.send_json({"error": "campaña bloqueada por preflight; no se encoló ningún job",
+                                   "plan": plan}, 409)
+        if not specs:
+            return self.send_json({"error": "no hay modelos elegibles", "plan": plan}, 409)
+        if any(jobstore.pending("splat", spec["clip_id"]) or
+               jobstore.pending("3d", spec["clip_id"]) for spec in specs):
+            return self.send_json({"error": "la cola cambió; vuelve a ejecutar el dry-run"}, 409)
+        campaign_id = f"cuda-{preset}-{int(time.time())}"
+        jobs = []
+        for position, spec in enumerate(specs, 1):
+            spec["campaign"] = {"id": campaign_id, "position": position,
+                                "total": len(specs)}
+            job = jobstore.enqueue("splat", spec["clip_id"], spec)
+            jobs.append({"id": job["id"], "clip_id": spec["clip_id"],
+                         "position": position})
+        return self.send_json({"ok": True, "campaign_id": campaign_id,
+                               "queued": jobs, "plan": plan})
+
+    def _post_scene_objects(self, u, q):
+        # objetos de escena del juego (FLIGHTVERSE): valida contra el
+        # contrato de docs/SCENE_OBJECTS.md y escribe objects.json
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        cid = safe_id(spec.get("clip_id", ""))
+        mdir = VAULT / "models" / cid
+        if not cid or not (mdir / "meta.json").exists():
+            return self.send_json({"error": "clip_id inválido"}, 400)
+        objs = spec.get("objects")
+        if not isinstance(objs, list) or len(objs) > 200:
+            return self.send_json({"error": "objects: lista de máx 200"}, 400)
+        clean = []
+        for o in objs:
+            if not isinstance(o, dict):
+                return self.send_json({"error": "objeto no es dict"}, 400)
+            typ = str(o.get("type", ""))
+            if typ not in ("glb", "kit", "ring", "beacon", "box"):
+                return self.send_json({"error": f"type inválido: {typ}"}, 400)
             try:
-                src_splat.resolve().relative_to(sdir.resolve())   # contención
-            except ValueError:
-                return self.send_json({"error": "ruta inválida"}, 400)
-            if not src_splat.is_file() or src_splat.is_symlink():
-                return self.send_json({"error": ("no hay versión cruda pre-clean" if to == "raw"
-                                                 else "versión no encontrada")}, 404)
-            import subprocess as _sp
-            sog = sdir / f"{cid}.clean.sog"
-            tmp_sog = sdir / f".{cid}.revert.tmp.sog"
-            tmp_splat = sdir / f".{cid}.revert.tmp.splat"
+                pos = [float(v) for v in o.get("pos", [])]
+                assert len(pos) == 3 and all(abs(v) < 5000 for v in pos)
+            except Exception:
+                return self.send_json({"error": "pos inválida"}, 400)
             try:
-                # 1) convierte a SOG en temporal ANTES de tocar nada: si falla, el master sigue intacto
-                st = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
-                r = _sp.run(["node", str(st), str(src_splat), str(tmp_sog), "--overwrite", "--no-tty", "-q"],
-                            capture_output=True, text=True, timeout=600)
-                if r.returncode != 0 or not tmp_sog.exists():
-                    raise RuntimeError((r.stderr or r.stdout or "SOG falló")[-160:])
-                # 2) archiva la actual (limpia) — reversible en ambos sentidos
-                ts = time.strftime("%Y%m%d-%H%M%S")
-                if cur_splat.exists():
-                    shutil.copy2(cur_splat, hist / f"{cid}-{ts}.splat")
-                    if sog.exists():
-                        shutil.copy2(sog, hist / f"{cid}-{ts}.clean.sog")
-                # 3) publica: copia a temporal + os.replace (nunca un master a medio copiar)
-                shutil.copy2(src_splat, tmp_splat)
-                os.replace(tmp_splat, cur_splat)
-                os.replace(tmp_sog, sog)
-                mf = sdir / f"{cid}.meta.json"
+                yaw = float(o.get("yaw", 0))
+                scale = float(o.get("scale", 1))
+            except (TypeError, ValueError):
+                return self.send_json({"error": "yaw/scale inválidos"}, 400)
+            if not (math.isfinite(yaw) and math.isfinite(scale)):
+                # NaN/Infinity se serializaban como token no-JSON y objects.json quedaba ilegible
+                return self.send_json({"error": "yaw/scale no finitos"}, 400)
+            item = {"type": typ, "pos": pos,
+                    "yaw": yaw,
+                    "scale": max(0.05, min(50.0, scale)),
+                    "ground": bool(o.get("ground", True))}
+            if typ in ("glb", "kit"):
+                f = re.sub(r"[^\w.-]", "", str(o.get("file", "")))
+                if not f.endswith(".glb"):
+                    return self.send_json(
+                        {"error": f"{typ} requiere file *.glb"}, 400
+                    )
+                item["file"] = f
+            for k in ("spin", "bob", "color"):
+                if k in o:
+                    item[k] = o[k] if k == "color" else bool(o[k])
+            for k in ("destructible", "collidable"):
+                if k in o:
+                    item[k] = bool(o[k])
+            if "materialClass" in o:
+                material_class = re.sub(
+                    r"[^\w-]", "", str(o["materialClass"])
+                )[:32]
+                if material_class:
+                    item["materialClass"] = material_class
+            clean.append(item)
+        # atómico: el juego lee objects.json en caliente y un write_text truncado lo dejaba a medias
+        _atomic_write_text(mdir / "objects.json",
+                           json.dumps({"version": 1, "objects": clean}, ensure_ascii=False, allow_nan=False))
+        rebuild_scene_manifest(cid)
+        return self.send_json({"ok": True, "count": len(clean)})
+
+    def _post_splat_revert(self, u, q):
+        # Reversibilidad del Auto-Clean (v2): restaura el crudo pre-clean (.raw.splat) como
+        # versión actual; la versión limpia se archiva en history/ = nada se pierde, es un
+        # toggle. También acepta to=<archivo de history> para revertir a cualquier versión.
+        if not self.auth(q):
+            return
+        cid = safe_id(q.get("cid", [""])[0])
+        to = q.get("to", ["raw"])[0]
+        if not cid:
+            return self.send_json({"error": "cid requerido"}, 400)
+        if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
+            return self.send_json({"error": "hay un trabajo activo para este clip — espera a que termine"}, 409)
+        sdir = VAULT / "splats"
+        hist = sdir / "history"; hist.mkdir(parents=True, exist_ok=True)
+        cur_splat = sdir / f"{cid}.splat"
+        # to=<archivo>: SOLO un .splat de ESTE clip en history/ ({cid}-YYYYMMDD-HHMMSS.splat).
+        # Antes aceptaba cualquier archivo de history/ (splats de otros clips, .sog/.ply/meta)
+        # y lo copiaba sobre el master antes de validar nada.
+        if to != "raw" and not re.fullmatch(rf"{re.escape(cid)}-\d{{8}}-\d{{6}}\.splat", to):
+            return self.send_json({"error": "versión inválida — usa 'raw' o un .splat de history de este clip"}, 400)
+        src_splat = (sdir / f"{cid}.raw.splat") if to == "raw" else (hist / to)
+        try:
+            src_splat.resolve().relative_to(sdir.resolve())   # contención
+        except ValueError:
+            return self.send_json({"error": "ruta inválida"}, 400)
+        if not src_splat.is_file() or src_splat.is_symlink():
+            return self.send_json({"error": ("no hay versión cruda pre-clean" if to == "raw"
+                                             else "versión no encontrada")}, 404)
+        import subprocess as _sp
+        sog = sdir / f"{cid}.clean.sog"
+        tmp_sog = sdir / f".{cid}.revert.tmp.sog"
+        tmp_splat = sdir / f".{cid}.revert.tmp.splat"
+        try:
+            # 1) convierte a SOG en temporal ANTES de tocar nada: si falla, el master sigue intacto
+            st = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
+            r = _sp.run(["node", str(st), str(src_splat), str(tmp_sog), "--overwrite", "--no-tty", "-q"],
+                        capture_output=True, text=True, timeout=600)
+            if r.returncode != 0 or not tmp_sog.exists():
+                raise RuntimeError((r.stderr or r.stdout or "SOG falló")[-160:])
+            # 2) archiva la actual (limpia) — reversible en ambos sentidos
+            ts = time.strftime("%Y%m%d-%H%M%S")
+            if cur_splat.exists():
+                shutil.copy2(cur_splat, hist / f"{cid}-{ts}.splat")
+                if sog.exists():
+                    shutil.copy2(sog, hist / f"{cid}-{ts}.clean.sog")
+            # 3) publica: copia a temporal + os.replace (nunca un master a medio copiar)
+            shutil.copy2(src_splat, tmp_splat)
+            os.replace(tmp_splat, cur_splat)
+            os.replace(tmp_sog, sog)
+            mf = sdir / f"{cid}.meta.json"
+            with _manifest_lock(cid):
                 if mf.exists():
                     m = json.loads(mf.read_text())
                     m["bytes"] = sog.stat().st_size
                     m["clean_params"] = None if to == "raw" else m.get("clean_params")
                     m["reverted_to"] = to
-                    mf.write_text(json.dumps(m, indent=1))
-                prune_splat_history(hist, cid)
-                rebuild_scene_manifest(cid)
-                rebuild_index()
-                return self.send_json({"ok": True, "cid": cid, "to": to, "sog_bytes": sog.stat().st_size})
-            except Exception as e:
-                tmp_sog.unlink(missing_ok=True)
-                tmp_splat.unlink(missing_ok=True)
-                return self.send_json({"error": f"revert falló: {str(e)[-160:]}"}, 500)
-
-        if u.path == "/api/splat_upload":
-            # round-trip de Splat Lab: sube el splat EDITADO (SuperSplat export) y publícalo
-            # versionado — los formatos anteriores del clip van a splats/history/ (nada se pierde)
-            if not self.auth(q):
-                return
-            cid = safe_id(q.get("cid", [""])[0])
-            name = safe_upload_name(Path(q.get("name", [""])[0]).name)
-            ext = Path(name).suffix.lower()
-            if not cid:
-                return self.send_json({"error": "cid requerido"}, 400)
-            if ext not in (".ply", ".splat", ".ksplat", ".sog", ".spz"):
-                return self.send_json({"error": f"formato {ext or '?'} no soportado"}, 400)
-            if jobstore.pending("splat", cid):     # no pisar un entrenamiento que escribe el mismo .splat
-                return self.send_json({"error": "hay un entrenamiento de splat activo para este clip — espera a que termine"}, 409)
-            length = int(self.headers.get("Content-Length", 0))
-            if not length:
-                return self.send_json({"error": "body vacío"}, 400)
-            if length > 2 * 1024**3:
-                return self.send_json({"error": "archivo > 2GB"}, 413)
-            sdir = VAULT / "splats"
-            sdir.mkdir(parents=True, exist_ok=True)
-            tmp = sdir / f".upload-{cid}-{secrets.token_hex(4)}{ext}"   # único: 2 uploads no colisionan
-            read = 0
-            with open(tmp, "wb") as f:
-                while read < length:
-                    chunk = self.rfile.read(min(1024 * 512, length - read))
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    read += len(chunk)
-            if read != length:
-                tmp.unlink(missing_ok=True)
-                return self.send_json({"error": f"subida incompleta ({read}/{length} bytes)"}, 400)
-            # archiva TODAS las variantes publicadas: si quedara un .ksplat viejo, el
-            # manifest lo preferiría sobre el archivo editado recién subido. Conservamos también
-            # metadata/cámaras para que el selector de versiones no pierda calidad/iters/cámaras.
-            hist = sdir / "history"
-            hist.mkdir(exist_ok=True)
-            ts = time.strftime("%Y%m%d-%H%M%S")
-            archived = []
-            # lee el meta ANTES de archivarlo: la versión editada hereda cámaras/iters (sin loss,
-            # ya no es medible tras la edición). Sin esto queda iters=0 y el sort "iters primero"
-            # dejaría el splat recién editado DEBAJO del viejo — el round-trip de SuperSplat no serviría.
-            old_meta = {}
-            meta_p = sdir / f"{cid}.meta.json"
-            if meta_p.is_file():
-                try:
-                    old_meta = json.loads(meta_p.read_text())
-                except (ValueError, OSError):
-                    old_meta = {}
-            archived_splat = archived_viewer = None
-            # .raw.splat (crudo pre-clean) también: si se queda, "revertir a crudo" restauraba
-            # la salida de entrenamiento ANTERIOR a esta subida, no la versión editada
-            for old in (sdir / f"{cid}.clean.sog", sdir / f"{cid}.spz",
-                        sdir / f"{cid}.splat", sdir / f"{cid}.ksplat", sdir / f"{cid}.ply",
-                        sdir / f"{cid}.raw.splat",
-                        meta_p, sdir / f"{cid}.cameras.json"):
-                if old.is_file():
-                    suffix = old.name[len(cid):]
-                    dst = hist / f"{cid}-{ts}{suffix}"
-                    os.replace(old, dst)
-                    archived.append(old.name)
-                    if suffix == ".splat":
-                        archived_splat = f"splats/history/{dst.name}"
-                    elif suffix in (".clean.sog", ".spz", ".ksplat"):
-                        archived_viewer = f"splats/history/{dst.name}"
-            # los jobs 'done' del entrenamiento anterior deben seguir apuntando a SU versión
-            # archivada, no al path mutable que ahora es el archivo editado (mismo contrato que
-            # publish_splat_stage)
-            if archived_splat or archived_viewer:
-                jobstore.retarget_splat_artifacts(cid, archived_splat, archived_viewer)
-            prune_splat_history(hist, cid, keep=6)
-            final = sdir / f"{cid}{ext}"
-            os.replace(tmp, final)
-            if old_meta:
-                new_meta = {k: v for k, v in old_meta.items() if k != "final_loss"}
-                new_meta["edited"] = True          # editado en SuperSplat: el loss ya no aplica
-                _atomic_write_text(meta_p, json.dumps(new_meta, indent=1))
-            optimized = None
-            if ext not in (".sog", ".spz", ".ksplat"):
-                ktmp = sdir / f".{cid}.clean.tmp.sog"
-                try:
-                    tool = PIPE.parent / "tools/node_modules/@playcanvas/splat-transform/bin/cli.mjs"
-                    r = subprocess.run(["node", str(tool), str(final), str(ktmp), "--overwrite"],
-                                       capture_output=True, text=True, timeout=600)
-                    if r.returncode == 0 and ktmp.exists() and ktmp.stat().st_size > 1024:
-                        os.replace(ktmp, sdir / f"{cid}.clean.sog")
-                        optimized = f"{cid}.clean.sog"
-                    else:
-                        ktmp.unlink(missing_ok=True)
-                except (OSError, subprocess.TimeoutExpired):
-                    ktmp.unlink(missing_ok=True)
+                    atomic_write_json(mf, m, indent=1, ensure_ascii=True)
+            prune_splat_history(hist, cid)
             rebuild_scene_manifest(cid)
             rebuild_index()
-            return self.send_json({"ok": True, "published": final.name, "optimized": optimized,
-                                   "archived": archived, "bytes": read})
-        if u.path == "/api/edit":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            j = job_add("edit", f'{len(spec.get("segments", []))} cortes')
-            threading.Thread(target=run_edit, args=(spec, j), daemon=True).start()
-            return self.send_json({"ok": True, "job": j["id"]})
-        if u.path == "/api/sd_import":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            _vol = str(spec.get("volume", ""))
-            if any(x.get("kind") == "ingest" and x.get("status") in ("running", "queued")
-                   for x in jobstore.recent(10)):
-                return self.send_json({"error": "ya hay una importación corriendo — espera a que termine"}, 409)
-            _exts = SD_VIDEO_EXT + SD_PHOTO_EXT   # importar también acepta fotos (no solo clean)
+            return self.send_json({"ok": True, "cid": cid, "to": to, "sog_bytes": sog.stat().st_size})
+        except Exception as e:
+            tmp_sog.unlink(missing_ok=True)
+            tmp_splat.unlink(missing_ok=True)
+            return self.send_json({"error": f"revert falló: {_scrub(str(e))[-160:]}"}, 500)
+        return _POST_FALLTHROUGH
+
+    def _post_odm(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        cid = safe_id(spec.get("clip_id", ""))
+        if not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
+            return self.send_json({"error": "clip no encontrado en el vault"}, 404)
+        if jobstore.pending("3d", cid):
+            return self.send_json({"error": "ese vuelo ya está en cola o procesándose"}, 409)
+        preset = str(spec.get("preset", "estandar"))
+        if preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
+            preset = "estandar"
+        # MULTI-FUENTE: sources = videos a fundir (cid primario + otros del mismo lugar);
+        # cada uno debe tener track GPS. photos = fotos sueltas del vault.
+        raw_sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [cid]
+        sources, seen = [], set()
+        for s in raw_sources:
+            s = safe_id(s)
+            if s and s not in seen and (VAULT / "tracks" / f"{s}.flight.json").exists():
+                seen.add(s); sources.append(s)
+        if cid not in sources:                       # el primario manda la identidad
+            sources.insert(0, cid)
+        sources = [cid] + [s for s in sources if s != cid]
+        # límite por lo que DE VERDAD cuesta (frames ≈ duración), no por conteo de archivos:
+        # 11 clips de 17s pesan menos que 3 de 5 min. Tope de conteo alto como sanidad.
+        if len(sources) > 16:
+            return self.send_json({"error": "máximo 16 videos por modelo combinado"}, 400)
+        total_s = 0.0
+        for s in sources:
             try:
-                for rel in list(spec.get("files", []))[:500]:
-                    _sd_resolve(str(spec.get("volume", "")), str(rel), _exts)
-            except (ValueError, OSError) as e:
-                return self.send_json({"error": str(e)}, 400)
-            if not spec.get("files"):
-                return self.send_json({"error": "elige al menos un video"}, 400)
-            j = job_add("ingest", f'{spec.get("volume", "?")} · {len(spec["files"])} archivos')
-            target = run_sd_clean if spec.get("clean_only") else run_sd_import
-            threading.Thread(target=target, args=(spec, j), daemon=True).start()
-            return self.send_json({"ok": True, "job": j["id"]})
-        if u.path == "/api/frame":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            j = job_add("foto4k", f'{spec.get("clip_id", "?")} @ {spec.get("t", 0)}s')
-            th = threading.Thread(target=capture_frame, args=(spec, j), daemon=True)
-            th.start()
-            th.join(timeout=25)  # las fotos son rápidas: respuesta síncrona con la URL
-            fresh = jobstore.get(j["id"]) or {}   # re-lee del store (el dict local es stale)
-            done = fresh.get("status") == "done"
-            return self.send_json({"ok": done, "url": f"/data/{fresh.get('detail')}" if done else None,
-                                   "error": None if done else (fresh.get("detail") or "captura falló o tardó demasiado")})
-        if u.path == "/api/measure":
-            # mediciones survey contra el DSM: volumen (stockpile) y perfil de elevación
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            cid = safe_id(spec.get("clip_id", ""))
-            mdir = VAULT / "models" / cid
-            if not (mdir / "dsm.bin").exists():
-                return self.send_json({"error": "este proyecto no tiene DSM aún"}, 404)
+                total_s += float(json.loads((VAULT / "manifest" / f"{s}.json").read_text())
+                                 .get("duration_s") or 0)
+            except (ValueError, OSError):
+                pass
+        if total_s > 1200:
+            return self.send_json({"error": f"máximo 20 min de video combinado (llevas {total_s/60:.0f} min) — los frames extraídos no caben en RAM del Mac"}, 400)
+        photos = [Path(str(p)).name for p in (spec.get("photos") or [])
+                  if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][:40]
+        # entity U0: los combinados nuevos nacen con identidad PROPIA (recon_<hash>,
+        # determinista por set de fuentes+fotos) — ya no usurpan el clip_id del primario.
+        # Los single-source conservan su cid: alias no-op, share links intactos.
+        ident = jobstore.recon_id_for(sources, photos) if (len(sources) > 1 or photos) else cid
+        if ident != cid and jobstore.pending("3d", ident):
+            return self.send_json({"error": "esa combinación ya está en cola o procesándose"}, 409)
+        job_spec = {"clip_id": ident, "primary_cid": cid, "preset": preset,
+                    "title": str(spec.get("title", ""))[:80].strip(),
+                    "sources": sources, "photos": photos}
+        if str(spec.get("backend") or "").lower() == "cuda":
+            job_spec["backend"] = "cuda"
+            job_spec["backend_policy"] = (
+                "strict" if preset in ("alta", "extra", "ultra") else "best_available")
+        job_spec = compute_policy.route_odm(job_spec)
+        spec = compute_policy.route_odm(spec)
+        if spec.get("then_splat"):                   # phased: gaussian tras el 3D
             try:
-                # BUG (jul-20): el guard solo corría con type EXACTAMENTE "volume". Cualquier
-                # otro valor ("vol", vacío) que measure_dsm tratara como área/volumen
-                # rasterizaba el DSM entero sin límite → un polígono grande podía pedir
-                # decenas de GB en una máquina de 16. El guard es barato: va siempre.
-                if spec.get("type") == "profile":
-                    # perfil = segmento de EXACTAMENTE 2 puntos (check_polygon exige >=3 vértices)
-                    pp = spec.get("points")
-                    if (not isinstance(pp, list) or len(pp) != 2
-                            or not all(isinstance(p, (list, tuple)) and len(p) >= 2
-                                       and all(isinstance(c, (int, float)) and not isinstance(c, bool)
-                                               and math.isfinite(c) for c in p[:2]) for p in pp)):
-                        raise ValueError("perfil necesita exactamente 2 puntos [lon, lat] finitos")
-                    spec["points"] = [[float(p[0]), float(p[1])] for p in pp]
-                else:
-                    check_polygon(spec.get("points", []))
-                return self.send_json(measure_dsm(mdir, spec))
+                followup = build_followup_splat_spec(ident, spec)
             except ValueError as e:
-                return self.send_json({"error": str(e)}, 400)
-            except Exception as e:
-                return self.send_json({"error": str(e)[-200:]}, 500)
-        if u.path == "/api/compare":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            a = safe_id(spec.get("clip_a", ""))
-            b = safe_id(spec.get("clip_b", ""))
-            da, db = VAULT / "models" / a, VAULT / "models" / b
-            if not ((da / "dsm.bin").exists() and (db / "dsm.bin").exists()):
-                return self.send_json({"error": "ambas fechas necesitan modelo 3D con DSM"}, 404)
-            try:
-                check_polygon(spec.get("points", []))
-                return self.send_json(compare_dsm(da, db, spec.get("points", [])))
-            except ValueError as e:
-                return self.send_json({"error": str(e)}, 400)
-            except Exception as e:
-                return self.send_json({"error": str(e)[-200:]}, 500)
-        if u.path == "/api/scene_create":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            scene = scenestore.create_scene(str(spec.get("title") or "Escena"),
-                                             spec.get("anchor") if isinstance(spec.get("anchor"), dict) else {},
-                                             spec.get("sources") if isinstance(spec.get("sources"), list) else [],
-                                             spec.get("photos") if isinstance(spec.get("photos"), list) else [],
-                                             source_evidence=[source_evidence(cid) for cid in
-                                               (spec.get("sources") if isinstance(spec.get("sources"), list) else [])])
-            existing = safe_id(spec.get("existing_version") or "")
-            if existing and (VAULT / "models" / existing / "meta.json").exists():
-                sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [existing]
-                photos = spec.get("photos") if isinstance(spec.get("photos"), list) else []
-                try:
-                    meta = json.loads((VAULT / "models" / existing / "meta.json").read_text())
-                    recon = meta.get("reconstruction") or {}
-                    qa = meta.get("qa") or {}
-                    version = scenestore.add_version(
-                        scene["id"], existing, sources, photos, "ready",
-                        merge_label=recon.get("merge_label") or "SINGLE",
-                        required_artifacts_ok=bool(qa.get("cameras_reconstructed")),
-                        metrics=scenestore.model_metrics(meta),
-                        source_evidence=[source_evidence(cid) for cid in sources])
-                    if version.get("required_artifacts_ok") and version.get("merge_label") in ("SINGLE", "FULL"):
-                        scene = scenestore.promote(scene["id"], existing)
-                except (ValueError, OSError):
-                    pass
-            return self.send_json({"ok": True, "scene": scene})
-        if u.path == "/api/scene_improve":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            scene_id = safe_id(spec.get("scene_id", ""))
-            try:
-                scene = scenestore.get_scene(scene_id)
-            except (KeyError, ValueError):
-                return self.send_json({"error": "escena no encontrada"}, 404)
-            active = next((v for v in scene.get("versions", [])
-                           if v.get("id") == scene.get("active_version")), None) or {}
-            if isinstance(spec.get("sources"), list):
-                requested_sources = spec["sources"]
-            else:
-                requested_sources = [*active.get("sources", []), *(spec.get("new_sources") or [])]
-            sources = []
-            for value in requested_sources:
-                cid = safe_id(value)
-                if (cid and cid not in sources
-                        and (VAULT / "manifest" / f"{cid}.json").exists()
-                        and (VAULT / "tracks" / f"{cid}.flight.json").exists()):
-                    sources.append(cid)
-            if not sources:
-                return self.send_json({"error": "elige al menos un video con GPS"}, 400)
-            if len(sources) > SCENE_LIMITS["max_sources"]:
-                return self.send_json({
-                    "error": f"máximo {SCENE_LIMITS['max_sources']} videos por versión de escena"
-                }, 400)
-            # el camino gemelo (/api/odm) limita por DURACIÓN combinada, que es lo que de
-            # verdad cuesta; aquí faltaba, así que 24 clips de 5 min entraban sin freno.
-            _tot = 0.0
-            for _s in sources:
-                try:
-                    _tot += float(json.loads((VAULT / "manifest" / f"{_s}.json").read_text())
-                                  .get("duration_s") or 0)
-                except (ValueError, OSError):
-                    pass
-            if _tot > SCENE_LIMITS["max_duration_s"]:
-                return self.send_json({"error": f"máximo {SCENE_LIMITS['max_duration_s'] // 60} min "
-                                               f"de video por versión de escena "
-                                               f"(llevas {_tot / 60:.0f} min)"}, 400)
-            compatibility = scene_source_compatibility(scene, sources)
-            if compatibility["rejected"]:
-                far = [row for row in compatibility["rejected"]
-                       if row["reason"] == "outside_site_radius"]
-                unknown = [row for row in compatibility["rejected"]
-                           if row["reason"] == "coverage_unknown"]
-                parts = []
-                if far:
-                    parts.append(f"{len(far)} fuera del radio de sitio de "
-                                 f"{SCENE_LIMITS['max_distance_m']} m")
-                if unknown:
-                    parts.append(f"{len(unknown)} sin cobertura GPS medible")
-                return self.send_json({
-                    "error": "no se mezclaron zonas distintas: " + "; ".join(parts),
-                    "code": "SCENE_SOURCE_INCOMPATIBLE",
-                    "rejected_sources": compatibility["rejected"],
-                    "max_distance_m": compatibility["max_distance_m"],
-                }, 400)
-            requested_photos = spec.get("photos") if isinstance(spec.get("photos"), list) else [
-                *active.get("photos", []), *(spec.get("new_photos") or [])]
-            photos = [Path(str(p)).name for p in requested_photos
-                      if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][
-                          :SCENE_LIMITS["max_photos"]]
-            reconstruction_id = jobstore.recon_id_for(sources, photos)
-            if jobstore.pending("3d", reconstruction_id):
-                return self.send_json({"error": "esa versión ya está en cola o procesándose"}, 409)
-            try:
-                reconstruction_id, job_spec = prepare_scene_version(
-                    scene_id, sources, photos, str(spec.get("preset") or "alta"),
-                    str(spec.get("title") or scene.get("title") or "Escena"),
-                    bool(spec.get("then_splat")), str(spec.get("splat_preset") or "cinematic"),
-                    spec.get("best_available", True) is not False,
-                    str(spec.get("splat_backend") or "cuda"),
-                    spec.get("splat_resolution") or spec.get("resolution"),
-                    str(spec.get("backend") or "cuda"))
-            except ValueError as e:
-                return self.send_json({"error": str(e)}, 400)
-            job_spec = compute_policy.route_odm(job_spec)
-            job = jobstore.enqueue("3d", reconstruction_id, job_spec)
-            scenestore.update_version(scene_id, reconstruction_id, job_id=job["id"])
-            return self.send_json({"ok": True, "job": job["id"], "scene_id": scene_id,
-                                   "reconstruction": reconstruction_id,
-                                   "sources": len(sources), "photos": len(photos)})
-        if u.path == "/api/scene_promote":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            try:
-                scene = scenestore.promote(str(spec.get("scene_id") or ""),
-                                           str(spec.get("version_id") or ""))
-                version_ids = {v.get("id") for v in scene.get("versions") or [] if v.get("id")}
-                for version_id in version_ids:
-                    if (VAULT / "models" / version_id / "meta.json").exists():
-                        try:
-                            subprocess.run(["python3", str(PIPE / "scene_manifest.py"), version_id],
-                                           check=False, timeout=180)
-                        except subprocess.SubprocessError as e:
-                            # TimeoutExpired escapaba del except de abajo → 500 con el promote YA escrito
-                            print(f"scene_promote: scene_manifest {version_id} falló: {e}", flush=True)
-                rebuild_index()
-                return self.send_json({"ok": True, "scene": scene})
-            except (KeyError, ValueError) as e:
-                return self.send_json({"error": str(e)}, 409)
-        if u.path == "/api/odm":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            cid = safe_id(spec.get("clip_id", ""))
-            if not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
-                return self.send_json({"error": "clip no encontrado en el vault"}, 404)
-            if jobstore.pending("3d", cid):
-                return self.send_json({"error": "ese vuelo ya está en cola o procesándose"}, 409)
-            preset = str(spec.get("preset", "estandar"))
-            if preset not in ("rapido", "estandar", "alta", "extra", "ultra"):
-                preset = "estandar"
-            # MULTI-FUENTE: sources = videos a fundir (cid primario + otros del mismo lugar);
-            # cada uno debe tener track GPS. photos = fotos sueltas del vault.
-            raw_sources = spec.get("sources") if isinstance(spec.get("sources"), list) else [cid]
-            sources, seen = [], set()
-            for s in raw_sources:
-                s = safe_id(s)
-                if s and s not in seen and (VAULT / "tracks" / f"{s}.flight.json").exists():
-                    seen.add(s); sources.append(s)
-            if cid not in sources:                       # el primario manda la identidad
-                sources.insert(0, cid)
-            sources = [cid] + [s for s in sources if s != cid]
-            # límite por lo que DE VERDAD cuesta (frames ≈ duración), no por conteo de archivos:
-            # 11 clips de 17s pesan menos que 3 de 5 min. Tope de conteo alto como sanidad.
-            if len(sources) > 16:
-                return self.send_json({"error": "máximo 16 videos por modelo combinado"}, 400)
-            total_s = 0.0
-            for s in sources:
-                try:
-                    total_s += float(json.loads((VAULT / "manifest" / f"{s}.json").read_text())
-                                     .get("duration_s") or 0)
-                except (ValueError, OSError):
-                    pass
-            if total_s > 1200:
-                return self.send_json({"error": f"máximo 20 min de video combinado (llevas {total_s/60:.0f} min) — los frames extraídos no caben en RAM del Mac"}, 400)
-            photos = [Path(str(p)).name for p in (spec.get("photos") or [])
-                      if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][:40]
-            # entity U0: los combinados nuevos nacen con identidad PROPIA (recon_<hash>,
-            # determinista por set de fuentes+fotos) — ya no usurpan el clip_id del primario.
-            # Los single-source conservan su cid: alias no-op, share links intactos.
-            ident = jobstore.recon_id_for(sources, photos) if (len(sources) > 1 or photos) else cid
-            if ident != cid and jobstore.pending("3d", ident):
-                return self.send_json({"error": "esa combinación ya está en cola o procesándose"}, 409)
-            job_spec = {"clip_id": ident, "primary_cid": cid, "preset": preset,
-                        "title": str(spec.get("title", ""))[:80].strip(),
-                        "sources": sources, "photos": photos}
-            if str(spec.get("backend") or "").lower() == "cuda":
-                job_spec["backend"] = "cuda"
-                job_spec["backend_policy"] = (
-                    "strict" if preset in ("alta", "extra", "ultra") else "best_available")
-            job_spec = compute_policy.route_odm(job_spec)
-            spec = compute_policy.route_odm(spec)
-            if spec.get("then_splat"):                   # phased: gaussian tras el 3D
-                try:
-                    followup = build_followup_splat_spec(ident, spec)
-                except ValueError as e:
-                    return self.send_json({"error": str(e)}, 400)
-                job_spec.update({
-                    "then_splat": True,
-                    "splat": followup,
-                    "splat_preset": followup["preset"],
-                    "splat_backend": followup["backend"],
-                    "splat_resolution": followup["resolution"],
-                    "best_available": followup["best_available"],
-                })
-            j = jobstore.enqueue("3d", ident, job_spec)
-            return self.send_json({"ok": True, "job": j["id"], "queued": True,
-                                   "reconstruction": ident,
-                                   "sources": len(sources), "photos": len(photos)})
-        if u.path == "/api/model_update":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            cid = safe_id(spec.get("clip_id", ""))
-            mdir = VAULT / "models" / cid
-            if not cid or not (mdir / "meta.json").exists():
-                return self.send_json({"error": "modelo no encontrado"}, 404)
-            meta = json.loads((mdir / "meta.json").read_text())
-            meta["title"] = str(spec.get("title", ""))[:80].strip()
-            _atomic_write_text(mdir / "meta.json", json.dumps(meta, indent=1))
-            rebuild_index()
-            return self.send_json({"ok": True, "title": meta["title"]})
-        if u.path == "/api/model_delete":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            cid = safe_id(spec.get("clip_id", ""))
-            mdir = (VAULT / "models" / cid).resolve()
-            if not cid or mdir.parent != (VAULT / "models").resolve() or not mdir.is_dir():
-                return self.send_json({"error": "modelo no encontrado"}, 404)
-            if jobstore.pending("3d", cid) or jobstore.pending("splat", cid):
-                return self.send_json({"error": "hay un trabajo activo sobre este modelo — cancélalo primero"}, 409)
-            # una escena apunta a su active_version: borrarla dejaba la escena sirviendo un modelo
-            # inexistente. Si es una versión no activa, se marca 'failed' (no promovible) en la escena.
-            scene_versions = []
-            for sc in scenestore.list_scenes():
-                if sc.get("active_version") == cid:
-                    return self.send_json({"error": f"este modelo es la versión activa de la escena "
-                                                    f"'{sc.get('title') or sc.get('id')}' — promueve otra versión antes de borrarlo"}, 400)
-                if any(v.get("id") == cid for v in sc.get("versions") or []):
-                    scene_versions.append(sc["id"])
-            freed = ["models/" + cid]
-            shutil.rmtree(mdir)
-            for sid in scene_versions:
-                try:
-                    scenestore.update_version(sid, cid, status="failed", required_artifacts_ok=False,
-                                              completed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
-                except (KeyError, ValueError, OSError) as e:
-                    print(f"model_delete: no se pudo marcar {cid} en {sid}: {e}", flush=True)
-            # borra TODO el set de splat del clip + historial: si sobrevive el .ksplat, best_splats
-            # lo rankea sobre el .splat y el splat "borrado" RESUCITA en la UI (cid ya saneado)
-            sdir = VAULT / "splats"
-            for extra in sdir.glob(f"{cid}.*"):        # .splat .ksplat .cameras.json .meta.json
-                if extra.is_file():
-                    extra.unlink(); freed.append("splats/" + extra.name)
-            hist = sdir / "history"
-            for h in clip_history_files(hist, cid):     # re-subidas archivadas de SuperSplat (solo ESTE clip)
-                if h.is_file():
-                    h.unlink(); freed.append("splats/history/" + h.name)
-            # purga opcional del proyecto ODM (GBs de frames+etapas; el video RAW nunca se toca)
-            # sin alias legacy proj0104: cada clip usa SU proyecto (proj0104 compartido = data-loss si 2 clips 0104_D)
-            proj = (VAULT / "odm" / f"proj_{cid}").resolve()
-            if spec.get("purge_source") and proj.parent == (VAULT / "odm").resolve() and proj.is_dir():
-                shutil.rmtree(proj)
-                freed.append("odm/" + proj.name)
-            jobstore.clear_artifacts(cid)
-            rebuild_index()
-            return self.send_json({"ok": True, "freed": freed})
-        if u.path == "/api/splat_delete":
-            # borra SOLO el splat (a la papelera, reversible) — el modelo 3D, la nube y el
-            # video RAW no se tocan. Para nuke completo del clip existe /api/model_delete.
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            cid = safe_id(spec.get("clip_id", ""))
-            if not cid:
-                return self.send_json({"error": "clip_id requerido"}, 400)
-            if jobstore.pending("splat", cid):
-                return self.send_json({"error": "hay un entrenamiento activo sobre este splat — cancélalo primero"}, 409)
-            sdir = (VAULT / "splats").resolve()
-            tdir = VAULT / "trash" / "splats"
+                return self.send_json({"error": _scrub(str(e))}, 400)
+            job_spec.update({
+                "then_splat": True,
+                "splat": followup,
+                "splat_preset": followup["preset"],
+                "splat_backend": followup["backend"],
+                "splat_resolution": followup["resolution"],
+                "best_available": followup["best_available"],
+            })
+        j = jobstore.enqueue("3d", ident, job_spec)
+        return self.send_json({"ok": True, "job": j["id"], "queued": True,
+                               "reconstruction": ident,
+                               "sources": len(sources), "photos": len(photos)})
+
+    def _post_media_op(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        op = str(spec.get("op", ""))
+        mtype = str(spec.get("type", ""))
+        name = str(spec.get("name", ""))
+        if op not in ("rename", "delete", "duplicate"):
+            return self.send_json({"error": "op inválida"}, 400)
+        if mtype not in ("reel", "photo"):
+            return self.send_json({"error": "type inválido"}, 400)
+        if not name or "/" in name or "\\" in name or name.startswith("."):
+            return self.send_json({"error": "nombre inválido"}, 400)
+        base = (VAULT / ("reels" if mtype == "reel" else "photos")).resolve()
+        if (base / name).is_symlink():
+            return self.send_json({"error": "nombre inválido"}, 400)
+        src = (base / name).resolve()
+        try:
+            src.relative_to(base)  # contención: nunca fuera del directorio
+        except ValueError:
+            return self.send_json({"error": "nombre inválido"}, 400)
+        if not src.is_file():
+            return self.send_json({"error": "archivo no encontrado"}, 400)
+        if op == "delete":
+            tdir = VAULT / "trash" / mtype
             tdir.mkdir(parents=True, exist_ok=True)
-            moved = []
-
-            def _to_trash(src: Path, rel: str):
-                dst = tdir / src.name
-                if dst.exists():
-                    dst = tdir / f"{src.stem}.{time.time_ns()}{src.suffix}"
-                shutil.move(str(src), str(dst))
-                moved.append(rel + src.name)
-
-            for extra in sorted(sdir.glob(f"{cid}.*")):     # .splat .ksplat .cameras.json .meta.json
-                if extra.is_file() and not extra.is_symlink() and extra.resolve().parent == sdir:
-                    _to_trash(extra, "splats/")
-            hist = sdir / "history"
-            for h in sorted(clip_history_files(hist, cid)):   # re-subidas archivadas de SuperSplat (solo ESTE clip)
-                if h.is_file() and not h.is_symlink():
-                    _to_trash(h, "splats/history/")
-            if not moved:
-                return self.send_json({"error": "no hay splat para este clip"}, 404)
-            rebuild_scene_manifest(cid)
-            rebuild_index()
-            return self.send_json({"ok": True, "moved": moved})
-        if u.path == "/api/media_op":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            op = str(spec.get("op", ""))
-            mtype = str(spec.get("type", ""))
-            name = str(spec.get("name", ""))
-            if op not in ("rename", "delete", "duplicate"):
-                return self.send_json({"error": "op inválida"}, 400)
-            if mtype not in ("reel", "photo"):
-                return self.send_json({"error": "type inválido"}, 400)
-            if not name or "/" in name or "\\" in name or name.startswith("."):
-                return self.send_json({"error": "nombre inválido"}, 400)
-            base = (VAULT / ("reels" if mtype == "reel" else "photos")).resolve()
-            if (base / name).is_symlink():
-                return self.send_json({"error": "nombre inválido"}, 400)
-            src = (base / name).resolve()
-            try:
-                src.relative_to(base)  # contención: nunca fuera del directorio
-            except ValueError:
-                return self.send_json({"error": "nombre inválido"}, 400)
-            if not src.is_file():
-                return self.send_json({"error": "archivo no encontrado"}, 400)
-            if op == "delete":
-                tdir = VAULT / "trash" / mtype
-                tdir.mkdir(parents=True, exist_ok=True)
-                dst = tdir / src.name
-                if dst.exists():
-                    dst = tdir / f"{src.stem}.{time.time_ns()}{src.suffix}"
-                shutil.move(str(src), str(dst))
-                if mtype == "reel":
-                    # póster/meta son regenerables → fuera; la receta (timeline editable) viaja a la papelera
-                    sc = _reel_sidecars(src.stem)
-                    sc["jpg"].unlink(missing_ok=True)
-                    sc["meta"].unlink(missing_ok=True)
-                    if sc["recipe"].is_file():
-                        shutil.move(str(sc["recipe"]), str(tdir / f"{dst.stem}.recipe.json"))
-                    _reel_order_update(src.name, None)
-                rebuild_index()
-                return self.send_json({"ok": True, "name": dst.name})
-            if op == "rename":
-                new_name = safe_name(spec.get("new_name", "")).strip()
-                if new_name.lower().endswith(src.suffix.lower()):  # quita ext duplicada
-                    new_name = new_name[: -len(src.suffix)].strip()
-                if not new_name or new_name.startswith("."):
-                    return self.send_json({"error": "nombre nuevo inválido"}, 400)
-                dst = base / (new_name + src.suffix)
-                if dst.exists():
-                    return self.send_json({"error": "ya existe un archivo con ese nombre"}, 400)
-                src.rename(dst)
-                if mtype == "reel":
-                    # sin esto el reel renombrado perdía póster, receta ("Reabrir en Estudio") y orden
-                    old_sc, new_sc = _reel_sidecars(src.stem), _reel_sidecars(dst.stem)
-                    # dst.exists() ya se rechazó arriba → cualquier sidecar bajo el stem nuevo es
-                    # huérfano de un reel muerto: se borra a propósito (no se hereda contenido ajeno)
-                    for f in new_sc.values():
-                        f.unlink(missing_ok=True)
-                    for k, f in old_sc.items():
-                        if f.is_file():
-                            os.replace(f, new_sc[k])
-                    _reel_order_update(src.name, dst.name)
-                rebuild_index()
-                return self.send_json({"ok": True, "name": dst.name})
-            # duplicate: sufijo " copia" (o " copia 2", " copia 3", ...)
-            dst = base / f"{src.stem} copia{src.suffix}"
-            n = 2
-            while dst.exists():
-                dst = base / f"{src.stem} copia {n}{src.suffix}"
-                n += 1
-            shutil.copy2(src, dst)
+            dst = tdir / src.name
+            if dst.exists():
+                dst = tdir / f"{src.stem}.{time.time_ns()}{src.suffix}"
+            shutil.move(str(src), str(dst))
             if mtype == "reel":
-                rec = _reel_sidecars(src.stem)["recipe"]
-                if rec.is_file():
-                    shutil.copy2(rec, _reel_sidecars(dst.stem)["recipe"])
-                _reel_poster(dst)
+                # póster/meta son regenerables → fuera; la receta (timeline editable) viaja a la papelera
+                sc = _reel_sidecars(src.stem)
+                sc["jpg"].unlink(missing_ok=True)
+                sc["meta"].unlink(missing_ok=True)
+                if sc["recipe"].is_file():
+                    shutil.move(str(sc["recipe"]), str(tdir / f"{dst.stem}.recipe.json"))
+                _reel_order_update(src.name, None)
             rebuild_index()
             return self.send_json({"ok": True, "name": dst.name})
-        if u.path == "/api/splat_campaign":
-            if not self.auth(q):
-                return
-            request = self.read_json()
-            preset = str(request.get("preset") or "frontier")
-            if preset not in ("ultra", "ultra20", "frontier", "grandmaster"):
-                return self.send_json({"error": "campaña admite 15K, 20K, 30K o 40K"}, 400)
-            scope = "all_models" if request.get("scope") == "all_models" else "active_sites"
-            resolution = str(request.get("resolution") or "auto")
-            if resolution not in ("auto", "full", "half"):
-                return self.send_json({"error": "resolución inválida"}, 400)
-            plan = splat_campaign_inventory(VAULT, preset, scope=scope)
-            node = gpu_cuda_preflight_status()
-            blocked_verdicts = {"REJECTED", "INPUT_FLOOR_EXCEEDS_CAP", "NODE_UNAVAILABLE",
-                                "ENVIRONMENT_INVALID", "INSUFFICIENT_DISK"}
-            specs, blocked = [], []
-            for row in plan["eligible"]:
-                raw = {"preset": preset, "backend": "cuda", "resolution": resolution,
-                       "best_available": False, "scene_id": row.get("scene_id"),
-                       "version_id": row["clip_id"] if row.get("scene_id") else None,
-                       "title": row.get("title")}
-                spec = build_splat_job_spec(row["clip_id"], raw)
-                pfv = splat_project_preflight(row["clip_id"], spec, node=node)
-                spec["preflight"] = pfv
-                row["preflight"] = pfv
-                if pfv and pfv.get("verdict") in blocked_verdicts:
-                    blocked.append({"clip_id": row["clip_id"], "verdict": pfv.get("verdict"),
-                                    "note": pfv.get("note")})
-                specs.append(spec)
-            plan.update({"resolution": resolution, "node": node, "blocked": blocked,
-                         "ready_to_enqueue": bool(specs) and not blocked})
-            if not request.get("confirm"):
-                return self.send_json({"ok": True, "dry_run": True, "plan": plan})
-            if blocked:
-                return self.send_json({"error": "campaña bloqueada por preflight; no se encoló ningún job",
-                                       "plan": plan}, 409)
-            if not specs:
-                return self.send_json({"error": "no hay modelos elegibles", "plan": plan}, 409)
-            if any(jobstore.pending("splat", spec["clip_id"]) or
-                   jobstore.pending("3d", spec["clip_id"]) for spec in specs):
-                return self.send_json({"error": "la cola cambió; vuelve a ejecutar el dry-run"}, 409)
-            campaign_id = f"cuda-{preset}-{int(time.time())}"
-            jobs = []
-            for position, spec in enumerate(specs, 1):
-                spec["campaign"] = {"id": campaign_id, "position": position,
-                                    "total": len(specs)}
-                job = jobstore.enqueue("splat", spec["clip_id"], spec)
-                jobs.append({"id": job["id"], "clip_id": spec["clip_id"],
-                             "position": position})
-            return self.send_json({"ok": True, "campaign_id": campaign_id,
-                                   "queued": jobs, "plan": plan})
-        if u.path == "/api/splat":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            cid = safe_id(spec.get("clip_id", ""))
-            proj = VAULT / "odm" / f"proj_{cid}"    # sin alias legacy: cada clip usa SU proyecto (proj0104 compartido = data-loss si 2 clips 0104_D)
-            has_model = (proj / "opensfm" / "reconstruction.json").exists()
-            if not has_model and not spec.get("auto_model"):
-                return self.send_json({"error": "primero procesa el vuelo en 3D (necesita las poses de ODM)"}, 400)
-            if not has_model and not (VAULT / "manifest" / f"{cid}.json").exists():
-                return self.send_json({"error": "clip no encontrado en el vault"}, 404)
-            try:
-                job_spec = build_splat_job_spec(cid, spec)
-            except ValueError as e:
-                return self.send_json({"error": str(e)}, 400)
-            if (requires_local_splat_binary(job_spec["backend"])
-                    and not any_opensplat_bin_exists()):
-                return self.send_json({"error": "opensplat no está compilado"}, 500)
-            if jobstore.pending("splat", cid) or jobstore.pending("3d", cid):
-                return self.send_json({"error": "ese vuelo ya tiene un modelo/splat en cola o entrenando"}, 409)
-            # PREFLIGHT (U1.3): veredicto ANTES de encolar — el P1 hecho producto.
-            # Con proyecto existente el conteo es EXACTO (image_list); REJECTED no
-            # encola (salvo force_preflight: escape consciente). La proyección viaja
-            # al job = telemetría proyectado-vs-observado permanente del modelo.
-            pfv = splat_project_preflight(
-                cid, job_spec,
-                node=(gpu_cuda_preflight_status() if job_spec["backend"] == "cuda" else None))
-            if pfv:
-                blocked = ("REJECTED", "INPUT_FLOOR_EXCEEDS_CAP", "NODE_UNAVAILABLE",
-                           "ENVIRONMENT_INVALID", "INSUFFICIENT_DISK")
-                if pfv["verdict"] in blocked and not spec.get("force_preflight"):
-                    return self.send_json({"error": "preflight: la carga de entrada queda fuera del sobre seguro — "
-                                           + pfv.get("note", ""), "preflight": pfv}, 409)
-            job_spec["preflight"] = pfv
-            j = jobstore.enqueue("splat", cid, job_spec)
-            return self.send_json({"ok": True, "job": j["id"], "queued": True,
-                                   "preset": job_spec["preset"], "iters": job_spec["iters"],
-                                   "backend": job_spec["backend"],
-                                   "resolution": job_spec["resolution"],
-                                   "preflight": pfv})
-        if u.path == "/api/preflight":
-            # U1.3 en el modal: proyección de memoria per-preset ANTES de encolar.
-            # Etiquetada como proyección del modelo (±25%) — la UI jamás la vende como promesa.
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            import preflight as _pf
-            try:
-                n = max(1, min(5000, int(spec.get("n_images", 0))))
-                w = max(640, min(8192, int(spec.get("width", 2688))))
-                p = resolve_splat_spec({"preset": str(spec.get("preset", "medium"))})["key"]
-                backend = normalize_splat_request({"preset": p,
-                                                   "backend": spec.get("backend")})["backend"]
-            except (TypeError, ValueError):
-                return self.send_json({"error": "parámetros inválidos"}, 400)
-            node = gpu_cuda_preflight_status(bool(spec.get("force"))) if backend == "cuda" else None
-            return self.send_json(_pf.splat_preflight_for_backend(
-                n, w, p, backend, node=node,
-                project_bytes=max(0, int(spec.get("project_bytes") or 0)),
-                wsl_free_bytes=node.get("wsl_free_bytes") if node else None,
-                bridge_free_bytes=node.get("bridge_free_bytes") if node else None))
-        if u.path == "/api/suggest_name":
-            # DeepSeek (lane de texto): nombre de proyecto corto y humano desde lugar+fecha+tomas
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            place = str(spec.get("place", ""))[:80]
-            date = str(spec.get("date", ""))[:20]
-            n = max(1, min(20, int(spec.get("n", 1) or 1)))
-            try:
-                name = _deepseek(
-                    f"Nombre corto (máx 5 palabras, español, sin comillas ni emojis) para un proyecto "
-                    f"de fotogrametría con dron: lugar '{place}', fecha {date}, {n} video(s). "
-                    f"Estilo: evocador pero sobrio, tipo 'Atardecer en Suba' o 'Casa Chía — combinado'. "
-                    f"Responde SOLO el nombre.").strip().strip('"')[:60]
-                return self.send_json({"name": name})
-            except Exception as e:
-                return self.send_json({"error": f"DeepSeek no disponible: {e}"}, 502)
-        if u.path == "/api/client_error":
-            # errores JS del frontend → registro central. El gate POST central ya exige
-            # sesión/token/dev; además validamos mismo-origen y un presupuesto global 60/h
-            # para que una pestaña rota no infle el log ni gaste disco.
-            site = (self.headers.get("Sec-Fetch-Site") or "").lower()
-            if not (self._is_local() or site in ("same-origin", "same-site")):
-                return self.send_json({"ok": False}, 403)
-            now = time.time()
-            if now > _CLIENT_ERR_BUDGET["reset"]:
-                _CLIENT_ERR_BUDGET.update(n=0, reset=now + 3600)
-            if _CLIENT_ERR_BUDGET["n"] >= 60:
-                return self.send_json({"ok": False, "rate": True}, 429)
-            _CLIENT_ERR_BUDGET["n"] += 1
-            try:
-                spec = self.read_json(max_bytes=4000)
-            except (ValueError, json.JSONDecodeError):
-                return self.send_json({"error": "body inválido"}, 400)
-            perfmod.log_error("client", str(spec.get("msg", ""))[:300],
-                              {"page": str(spec.get("page", ""))[:80],
-                               "stack": str(spec.get("stack", ""))[:200]})
-            return self.send_json({"ok": True})
-        if u.path == "/api/error_report":
-            # genera el reporte AI (DeepSeek SOLO escribe; el .md queda para revisión humana/Codex)
-            if not self.auth(q):
-                return
-            j = job_add("error_report", "reporte de errores (DeepSeek)")
-
-            def _run_report():
-                try:
-                    rc = jobstore.run_tracked(j["id"],
-                                              ["python3", str(PIPE / "error_report.py"),
-                                               "--days", "7"], timeout=300)
-                    tail = (jobstore.get(j["id"]) or {}).get("log") or ""
-                    if rc == 0:
-                        job_end(j, "done", tail.strip().splitlines()[-1][-200:] if tail.strip()
-                                else "reporte generado")
-                    else:
-                        job_end(j, "error", tail.strip()[-200:] or "error_report falló")
-                except (subprocess.TimeoutExpired, OSError) as e:
-                    job_end(j, "error", str(e)[-200:])
-            threading.Thread(target=_run_report, daemon=True).start()
-            return self.send_json({"ok": True, "job": j["id"]})
-        if u.path == "/api/search":
-            # búsqueda semántica (embeddings + Supabase RPC). Quedó MUERTA cuando el refactor
-            # del worker borró este handler — la UI mostraba 'sin sesión' en falso.
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            qtext = str(spec.get("q", "")).strip()[:400]
-            if not qtext:
-                return self.send_json({"results": []})
-            try:
-                return self.send_json(semantic_search(qtext))
-            except Exception as e:
-                return self.send_json({"error": f"búsqueda AI no disponible: {str(e)[-120:]}", "results": []}, 502)
-        if u.path == "/api/analyze":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            cid = safe_id(spec.get("clip_id", ""))
-            # dedupe + validación: doble click = 2 análisis deep concurrentes (2× costo LLM
-            # y carrera sobre ai/{cid}.json); cid inexistente = job basura
-            if not cid or not (VAULT / "manifest" / f"{cid}.json").exists():
-                return self.send_json({"error": "clip no encontrado"}, 404)
-            if any(x.get("kind") == "analyze" and x.get("label", "").startswith(cid)
-                   and x.get("status") in ("running", "queued") for x in jobstore.recent(12)):
-                return self.send_json({"error": "ese análisis ya está corriendo"}, 409)
-            j = job_add("analyze", f"{cid} (profundo)")
-
-            def _run():
-                try:
-                    r = subprocess.run(["python3", str(PIPE.parent / "ai" / "analyze.py"),
-                                        cid, "--deep"], check=True, capture_output=True, text=True,
-                                       cwd=PIPE.parent / "ai", timeout=600)
-                    if not (VAULT / "ai" / f"{cid}.json").exists():
-                        # exit 0 pero sin resultado (p.ej. clip sin frames ni proxy) ≠ éxito
-                        return job_end(j, "error", (r.stdout or "análisis sin resultado")[-250:])
-                    rebuild_index()
-                    job_end(j, "done", cid)
-                except Exception as e:   # CUALQUIER fallo — un raise no atrapado dejaba el job "running" fantasma
-                    err = getattr(e, "stderr", "") or str(e)
-                    job_end(j, "error", err[-250:])
-            threading.Thread(target=_run, daemon=True).start()
-            return self.send_json({"ok": True, "job": j["id"]})
-        if u.path == "/api/gpu_node/wake":
-            if not self.auth():
-                return
-            return self.send_json(gpu_node_wake())
-        if u.path == "/api/gpu_node/sleep":
-            if not self.auth():
-                return
-            # OJO: jamás `import subprocess` local aquí — convierte 'subprocess' en variable
-            # local de TODO do_POST y los closures de otros handlers (analyze._run) capturan
-            # la local sin valor: "cannot access free variable". Ya pasó con urllib (#fixture).
-            try:
-                # guardia de cortesía: pantalla desbloqueada = alguien usando el PC
-                chk = subprocess.run(["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
-                    'tasklist /FI "IMAGENAME eq LogonUI.exe" | find /C "LogonUI"'],
-                    capture_output=True, text=True, timeout=8)
-                locked = (chk.stdout or "").replace("\x00", "").strip().splitlines()
-                if locked and locked[-1].strip() == "0":
-                    return self.send_json({"ok": False, "reason": "sesion activa en el PC"}, 409)
-                subprocess.run(["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "pc",
-                    "rundll32.exe powrprof.dll,SetSuspendState 0,1,0"],
-                    capture_output=True, timeout=8)
-                GPU_NODE["ts"] = 0.0            # invalidar caché
-                return self.send_json({"ok": True})
-            except Exception as e:
-                return self.send_json({"ok": False, "reason": str(e)}, 500)
-        if u.path == "/api/scene_objects":
-            # objetos de escena del juego (FLIGHTVERSE): valida contra el
-            # contrato de docs/SCENE_OBJECTS.md y escribe objects.json
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            cid = safe_id(spec.get("clip_id", ""))
-            mdir = VAULT / "models" / cid
-            if not cid or not (mdir / "meta.json").exists():
-                return self.send_json({"error": "clip_id inválido"}, 400)
-            objs = spec.get("objects")
-            if not isinstance(objs, list) or len(objs) > 200:
-                return self.send_json({"error": "objects: lista de máx 200"}, 400)
-            clean = []
-            for o in objs:
-                if not isinstance(o, dict):
-                    return self.send_json({"error": "objeto no es dict"}, 400)
-                typ = str(o.get("type", ""))
-                if typ not in ("glb", "kit", "ring", "beacon", "box"):
-                    return self.send_json({"error": f"type inválido: {typ}"}, 400)
-                try:
-                    pos = [float(v) for v in o.get("pos", [])]
-                    assert len(pos) == 3 and all(abs(v) < 5000 for v in pos)
-                except Exception:
-                    return self.send_json({"error": "pos inválida"}, 400)
-                try:
-                    yaw = float(o.get("yaw", 0))
-                    scale = float(o.get("scale", 1))
-                except (TypeError, ValueError):
-                    return self.send_json({"error": "yaw/scale inválidos"}, 400)
-                if not (math.isfinite(yaw) and math.isfinite(scale)):
-                    # NaN/Infinity se serializaban como token no-JSON y objects.json quedaba ilegible
-                    return self.send_json({"error": "yaw/scale no finitos"}, 400)
-                item = {"type": typ, "pos": pos,
-                        "yaw": yaw,
-                        "scale": max(0.05, min(50.0, scale)),
-                        "ground": bool(o.get("ground", True))}
-                if typ in ("glb", "kit"):
-                    f = re.sub(r"[^\w.-]", "", str(o.get("file", "")))
-                    if not f.endswith(".glb"):
-                        return self.send_json(
-                            {"error": f"{typ} requiere file *.glb"}, 400
-                        )
-                    item["file"] = f
-                for k in ("spin", "bob", "color"):
-                    if k in o:
-                        item[k] = o[k] if k == "color" else bool(o[k])
-                for k in ("destructible", "collidable"):
-                    if k in o:
-                        item[k] = bool(o[k])
-                if "materialClass" in o:
-                    material_class = re.sub(
-                        r"[^\w-]", "", str(o["materialClass"])
-                    )[:32]
-                    if material_class:
-                        item["materialClass"] = material_class
-                clean.append(item)
-            # atómico: el juego lee objects.json en caliente y un write_text truncado lo dejaba a medias
-            _atomic_write_text(mdir / "objects.json",
-                               json.dumps({"version": 1, "objects": clean}, ensure_ascii=False, allow_nan=False))
-            rebuild_scene_manifest(cid)
-            return self.send_json({"ok": True, "count": len(clean)})
-
-        if u.path == "/api/highlight":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            cid = safe_id(spec.get("clip_id", ""))
-            if not cid:
-                return self.send_json({"error": "clip_id requerido"}, 400)
-            try:
-                t_val = float(spec.get("t", 0))
-            except (TypeError, ValueError):
-                t_val = 0.0
-            if not math.isfinite(t_val):
-                return self.send_json({"error": "t inválido"}, 400)   # NaN rompía el JSON del panel AI
-            aif = VAULT / "ai" / f"{cid}.json"
-            data = read_json_file(aif) if aif.exists() else {"clip_id": cid, "tags": [], "highlights": []}
-            data.setdefault("highlights", []).append({
-                "t": round(t_val, 1),
-                "reason": str(spec.get("reason", "marcado por Daniel"))[:120],
-                "type": "manual"})
-            data["highlights"].sort(key=lambda h: h["t"])
-            aif.parent.mkdir(exist_ok=True)
-            aif.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+        if op == "rename":
+            new_name = safe_name(spec.get("new_name", "")).strip()
+            if new_name.lower().endswith(src.suffix.lower()):  # quita ext duplicada
+                new_name = new_name[: -len(src.suffix)].strip()
+            if not new_name or new_name.startswith("."):
+                return self.send_json({"error": "nombre nuevo inválido"}, 400)
+            dst = base / (new_name + src.suffix)
+            if dst.exists():
+                return self.send_json({"error": "ya existe un archivo con ese nombre"}, 400)
+            src.rename(dst)
+            if mtype == "reel":
+                # sin esto el reel renombrado perdía póster, receta ("Reabrir en Estudio") y orden
+                old_sc, new_sc = _reel_sidecars(src.stem), _reel_sidecars(dst.stem)
+                # dst.exists() ya se rechazó arriba → cualquier sidecar bajo el stem nuevo es
+                # huérfano de un reel muerto: se borra a propósito (no se hereda contenido ajeno)
+                for f in new_sc.values():
+                    f.unlink(missing_ok=True)
+                for k, f in old_sc.items():
+                    if f.is_file():
+                        os.replace(f, new_sc[k])
+                _reel_order_update(src.name, dst.name)
             rebuild_index()
-            return self.send_json({"ok": True, "highlights": data["highlights"]})
-        if u.path == "/api/clip":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            cid = safe_id(spec.get("clip_id", ""))
-            mf = VAULT / "manifest" / f"{cid}.json"
-            if not mf.exists():
-                return self.send_json({"error": "clip no existe"}, 404)
-            m = read_json_file(mf)
-            if spec.get("delete") is True:
-                # borrado REVERSIBLE: todos los artefactos del clip van a trash/clips/<cid>/
-                # (raw+SRT incluidos) — nada se destruye; restaurar = mover de vuelta + rescan
-                tdir = VAULT / "trash" / "clips" / cid
-                tdir.mkdir(parents=True, exist_ok=True)
-                moved = []
-                artifacts = [mf,
-                             VAULT / "thumbs" / f"{cid}.jpg",
-                             VAULT / "proxies" / f"{cid}.mp4",
-                             VAULT / "proxies720" / f"{cid}.mp4",
-                             VAULT / "tracks" / f"{cid}.flight.json",
-                             VAULT / "ai" / f"{cid}.json",
-                             *(VAULT / "raw").rglob(f"{cid}.*")]
-                for a in artifacts:
-                    if a.is_file():
-                        shutil.move(str(a), str(tdir / a.name))
-                        moved.append(a.name)
-                fdir = VAULT / "frames" / cid
-                if fdir.is_dir():
-                    shutil.move(str(fdir), str(tdir / "frames"))
-                    moved.append("frames/")
-                rebuild_index()
-                return self.send_json({"ok": True, "moved": moved})
-            if "label" in spec:
-                m["label"] = str(spec["label"])[:80]     # sin cap, un body de 1MB entraba al flights.json público
-            if "archived" in spec:
-                m["archived"] = bool(spec["archived"])
-            mf.write_text(json.dumps(m, indent=1))
-            rebuild_index()
-            return self.send_json({"ok": True})
-        if u.path == "/api/trip_meta":
-            # nombre + carátula por lugar (key = "lat,lon" a 2 decimales) — server-side
-            # para que sincronice entre dispositivos (antes: localStorage, solo un browser)
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            key = str(spec.get("key", ""))
-            if not _TRIP_KEY_RE.fullmatch(key):
-                return self.send_json({"error": "key inválida"}, 400)
-            tm_file = VAULT / "manifest" / "trips_meta.json"
-            old_key = spec.get("migrate_from")
-            if old_key is not None:
-                old_key = str(old_key)
-                if not _TRIP_KEY_RE.fullmatch(old_key):
-                    return self.send_json({"error": "migrate_from inválida"}, 400)
-            with _TRIPS_LOCK:
-                try:
-                    tm = json.loads(tm_file.read_text()) if tm_file.exists() else {}
-                except ValueError:
-                    tm = {}
-                if old_key and old_key != key and old_key in tm:
-                    # migración atómica (misma escritura): la clave vieja pasa a la nueva solo si
-                    # esta aún no tiene meta; la vieja se borra siempre
-                    moved = tm.pop(old_key)
-                    if not tm.get(key) and isinstance(moved, dict):
-                        tm[key] = moved
-                entry = tm.get(key, {})
-                if "name" in spec:
-                    name = str(spec["name"]).strip()[:60]
-                    if name:
-                        entry["name"] = name
-                    else:
-                        entry.pop("name", None)     # vacío = volver al nombre automático
-                if "cover" in spec:
-                    cover = safe_id(spec["cover"])
-                    if cover:
-                        entry["cover"] = cover
-                    else:
-                        entry.pop("cover", None)    # vacío = volver a la mejor por score AI
-                tm[key] = entry
-                if not entry:
-                    tm.pop(key, None)
-                tm_file.parent.mkdir(parents=True, exist_ok=True)
-                _atomic_write_text(tm_file, json.dumps(tm, indent=1))
-            return self.send_json({"ok": True, "meta": tm.get(key, {})})
-        if u.path == "/api/rescan":
-            if not self.auth(q):
-                return
-            rebuild_index()
-            return self.send_json({"ok": True})
-        if u.path == "/api/property":
-            if not self.auth(q):
-                return
-            spec = self.read_json()
-            slug = re.sub(r"[^a-z0-9-]", "", str(spec.get("slug", "")).lower())[:40]
-            if not slug:
-                return self.send_json({"error": "slug requerido"}, 400)
-            spec["slug"] = slug
-            spec["updated"] = time.strftime("%Y-%m-%d %H:%M")
-            pdir = VAULT / "properties"
-            pdir.mkdir(exist_ok=True)
-            (pdir / f"{slug}.json").write_text(json.dumps(spec, ensure_ascii=False, indent=1))
-            return self.send_json({"ok": True, "url": f"https://vuelos.metislab.work/p.html?id={slug}"})
-        if u.path == "/api/property_ai":
-            if not self.auth(q):
-                return
-            body = self.read_json()
-            slug = re.sub(r"[^a-z0-9-]", "", str(body.get("slug", "")).lower())
-            pf = VAULT / "properties" / f"{slug}.json"
-            if not pf.exists():
-                return self.send_json({"error": "propiedad no existe"}, 404)
-            p = read_json_file(pf)
-            prompt = (
-                "Escribe la descripción de venta para una propiedad, en español, tono premium "
-                "inmobiliario, 2 párrafos cortos + 4 líneas de características precedidas por '· '. "
-                "TEXTO PLANO: sin markdown, sin asteriscos, sin títulos, sin emojis, sin exagerar. "
-                "Datos: " + json.dumps(p, ensure_ascii=False))
-            p["descripcion"] = _deepseek(prompt)
-            pf.write_text(json.dumps(p, ensure_ascii=False, indent=1))
-            return self.send_json({"ok": True, "descripcion": p["descripcion"]})
+            return self.send_json({"ok": True, "name": dst.name})
+        # duplicate: sufijo " copia" (o " copia 2", " copia 3", ...)
+        dst = base / f"{src.stem} copia{src.suffix}"
+        n = 2
+        while dst.exists():
+            dst = base / f"{src.stem} copia {n}{src.suffix}"
+            n += 1
+        shutil.copy2(src, dst)
+        if mtype == "reel":
+            rec = _reel_sidecars(src.stem)["recipe"]
+            if rec.is_file():
+                shutil.copy2(rec, _reel_sidecars(dst.stem)["recipe"])
+            _reel_poster(dst)
+        rebuild_index()
+        return self.send_json({"ok": True, "name": dst.name})
+
+    def _post_reel_edit(self, u, q):
+        # R4 · retoques sobre un reel YA exportado, sin re-montar el proyecto.
+        # Nunca sobrescribe el original salvo 'poster' (que solo toca la miniatura).
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        op = str(spec.get("op", ""))
+        name = safe_name(spec.get("name", ""))
+        base = (VAULT / "reels").resolve()
+        src = (base / name).resolve() if name else None
+        try:
+            src.relative_to(base)
+        except (ValueError, AttributeError):
+            return self.send_json({"error": "nombre inválido"}, 400)
+        if not src or not src.is_file():
+            return self.send_json({"error": "reel no encontrado"}, 404)
+        dur = _probe_dur(src)
+        stem = src.stem
+        if op == "poster":
+            t = _clampf(spec.get("t", 0.5), 0, max(dur - 0.05, 0.05), 0.5)
+            pdir = VAULT / "reel-posters"
+            pdir.mkdir(parents=True, exist_ok=True)
+            try:
+                _ff(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.2f}", *FF_PROTOCOLS, "-i", str(src),
+                     "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4",
+                     str(pdir / f"{stem}.jpg")])
+            except Exception as e:                      # noqa: BLE001
+                return self.send_json({"error": _scrub(str(e))[-200:]}, 500)
+            return self.send_json({"ok": True, "t": round(t, 2)})
+        if op in ("trim", "reframe", "duplicate"):
+            out = base / f"{stem}-{'corte' if op == 'trim' else 'formato' if op == 'reframe' else 'copia'}"\
+                         f"-{time.strftime('%H%M%S')}.mp4"
+            try:
+                if op == "trim":
+                    a = _clampf(spec.get("a", 0), 0, max(dur - 0.3, 0), 0)
+                    b = _clampf(spec.get("b", dur), a + 0.3, dur, dur)
+                    # -c copy corta en keyframes: rapidísimo y sin pérdida de calidad
+                    _ff(["ffmpeg", "-v", "error", "-y", "-ss", f"{a:.2f}", "-to", f"{b:.2f}",
+                         *FF_PROTOCOLS, "-i", str(src), "-c", "copy", "-movflags", "+faststart", str(out)])
+                elif op == "reframe":
+                    asp = str(spec.get("aspect", "9:16"))
+                    if asp not in ASPECTS:
+                        return self.send_json({"error": "aspecto inválido"}, 400)
+                    _ff(["ffmpeg", "-v", "error", "-y", *FF_PROTOCOLS, "-i", str(src),
+                         "-vf", aspect_vf(asp, "1080"), "-c:v", "h264_videotoolbox",
+                         "-b:v", "9M", "-pix_fmt", "yuv420p", "-c:a", "copy",
+                         "-movflags", "+faststart", str(out)])
+                else:
+                    shutil.copy2(src, out)
+            except Exception as e:                      # noqa: BLE001
+                out.unlink(missing_ok=True)
+                return self.send_json({"error": _scrub(str(e))[-200:]}, 500)
+            _reel_poster(out)
+            return self.send_json({"ok": True, "name": out.name})
+        if op == "texts":
+            # T3 · quemar textos sobre un reel YA exportado (los viejos no tienen
+            # receta: esta es su vía para llevar títulos sin re-montar nada)
+            texts = spec.get("texts") if isinstance(spec.get("texts"), list) else []
+            if not texts:
+                return self.send_json({"error": "sin textos"}, 400)
+            replace = bool(spec.get("replace"))
+            work = base / f"{stem}-textos-{time.strftime('%H%M%S')}.mp4"
+            try:
+                shutil.copy2(src, work)
+                # bitrate del fuente para no degradar (mínimo 6M, techo 20M)
+                br = f"{max(6, min(20, round(src.stat().st_size * 8 / max(dur, 0.5) / 1e6)))}M"
+                _burn_texts(work, texts, br)
+                if replace:
+                    work.replace(src)
+                    work = src
+                    (VAULT / "reel-posters" / f"{stem}.jpg").unlink(missing_ok=True)
+            except Exception as e:                  # noqa: BLE001
+                if work != src:
+                    work.unlink(missing_ok=True)
+                return self.send_json({"error": _scrub(str(e))[-200:]}, 500)
+            _reel_poster(work)
+            return self.send_json({"ok": True, "name": work.name})
+        return self.send_json({"error": "op inválida"}, 400)
+
+    def _post_scene_improve(self, u, q):
+        if not self.auth(q):
+            return
+        spec = self.read_json()
+        scene_id = safe_id(spec.get("scene_id", ""))
+        try:
+            scene = scenestore.get_scene(scene_id)
+        except (KeyError, ValueError):
+            return self.send_json({"error": "escena no encontrada"}, 404)
+        active = next((v for v in scene.get("versions", [])
+                       if v.get("id") == scene.get("active_version")), None) or {}
+        if isinstance(spec.get("sources"), list):
+            requested_sources = spec["sources"]
+        else:
+            requested_sources = [*active.get("sources", []), *(spec.get("new_sources") or [])]
+        sources = []
+        for value in requested_sources:
+            cid = safe_id(value)
+            if (cid and cid not in sources
+                    and (VAULT / "manifest" / f"{cid}.json").exists()
+                    and (VAULT / "tracks" / f"{cid}.flight.json").exists()):
+                sources.append(cid)
+        if not sources:
+            return self.send_json({"error": "elige al menos un video con GPS"}, 400)
+        if len(sources) > SCENE_LIMITS["max_sources"]:
+            return self.send_json({
+                "error": f"máximo {SCENE_LIMITS['max_sources']} videos por versión de escena"
+            }, 400)
+        # el camino gemelo (/api/odm) limita por DURACIÓN combinada, que es lo que de
+        # verdad cuesta; aquí faltaba, así que 24 clips de 5 min entraban sin freno.
+        _tot = 0.0
+        for _s in sources:
+            try:
+                _tot += float(json.loads((VAULT / "manifest" / f"{_s}.json").read_text())
+                              .get("duration_s") or 0)
+            except (ValueError, OSError):
+                pass
+        if _tot > SCENE_LIMITS["max_duration_s"]:
+            return self.send_json({"error": f"máximo {SCENE_LIMITS['max_duration_s'] // 60} min "
+                                           f"de video por versión de escena "
+                                           f"(llevas {_tot / 60:.0f} min)"}, 400)
+        compatibility = scene_source_compatibility(scene, sources)
+        if compatibility["rejected"]:
+            far = [row for row in compatibility["rejected"]
+                   if row["reason"] == "outside_site_radius"]
+            unknown = [row for row in compatibility["rejected"]
+                       if row["reason"] == "coverage_unknown"]
+            parts = []
+            if far:
+                parts.append(f"{len(far)} fuera del radio de sitio de "
+                             f"{SCENE_LIMITS['max_distance_m']} m")
+            if unknown:
+                parts.append(f"{len(unknown)} sin cobertura GPS medible")
+            return self.send_json({
+                "error": "no se mezclaron zonas distintas: " + "; ".join(parts),
+                "code": "SCENE_SOURCE_INCOMPATIBLE",
+                "rejected_sources": compatibility["rejected"],
+                "max_distance_m": compatibility["max_distance_m"],
+            }, 400)
+        requested_photos = spec.get("photos") if isinstance(spec.get("photos"), list) else [
+            *active.get("photos", []), *(spec.get("new_photos") or [])]
+        photos = [Path(str(p)).name for p in requested_photos
+                  if isinstance(p, str) and (VAULT / "photos" / Path(str(p)).name).is_file()][
+                      :SCENE_LIMITS["max_photos"]]
+        reconstruction_id = jobstore.recon_id_for(sources, photos)
+        if jobstore.pending("3d", reconstruction_id):
+            return self.send_json({"error": "esa versión ya está en cola o procesándose"}, 409)
+        try:
+            reconstruction_id, job_spec = prepare_scene_version(
+                scene_id, sources, photos, str(spec.get("preset") or "alta"),
+                str(spec.get("title") or scene.get("title") or "Escena"),
+                bool(spec.get("then_splat")), str(spec.get("splat_preset") or "cinematic"),
+                spec.get("best_available", True) is not False,
+                str(spec.get("splat_backend") or "cuda"),
+                spec.get("splat_resolution") or spec.get("resolution"),
+                str(spec.get("backend") or "cuda"))
+        except ValueError as e:
+            return self.send_json({"error": _scrub(str(e))}, 400)
+        job_spec = compute_policy.route_odm(job_spec)
+        job = jobstore.enqueue("3d", reconstruction_id, job_spec)
+        scenestore.update_version(scene_id, reconstruction_id, job_id=job["id"])
+        return self.send_json({"ok": True, "job": job["id"], "scene_id": scene_id,
+                               "reconstruction": reconstruction_id,
+                               "sources": len(sources), "photos": len(photos)})
+
+    def _post_splat_upload(self, u, q):
+        # round-trip de Splat Lab: sube el splat EDITADO (SuperSplat export) y publícalo
+        # versionado — los formatos anteriores del clip van a splats/history/ (nada se pierde)
+        if not self.auth(q):
+            return
+        cid = safe_id(q.get("cid", [""])[0])
+        name = safe_upload_name(Path(q.get("name", [""])[0]).name)
+        ext = Path(name).suffix.lower()
+        if not cid:
+            return self.send_json({"error": "cid requerido"}, 400)
+        if ext not in (".ply", ".splat", ".ksplat", ".sog", ".spz"):
+            return self.send_json({"error": f"formato {ext or '?'} no soportado"}, 400)
+        if jobstore.pending("splat", cid):     # no pisar un entrenamiento que escribe el mismo .splat
+            return self.send_json({"error": "hay un entrenamiento de splat activo para este clip — espera a que termine"}, 409)
+        length = int(self.headers.get("Content-Length", 0))
+        if not length:
+            return self.send_json({"error": "body vacío"}, 400)
+        if length > 2 * 1024**3:
+            return self.send_json({"error": "archivo > 2GB"}, 413)
+        sdir = VAULT / "splats"
+        sdir.mkdir(parents=True, exist_ok=True)
+        tmp = sdir / f".upload-{cid}-{secrets.token_hex(4)}{ext}"   # único: 2 uploads no colisionan
+        read = self._receive_upload(tmp, length, 1024 * 512)
+        if read is None:
+            return
+        if read != length:
+            tmp.unlink(missing_ok=True)
+            return self.send_json({"error": f"subida incompleta ({read}/{length} bytes)"}, 400)
+        # archiva TODAS las variantes publicadas: si quedara un .ksplat viejo, el
+        # manifest lo preferiría sobre el archivo editado recién subido. Conservamos también
+        # metadata/cámaras para que el selector de versiones no pierda calidad/iters/cámaras.
+        hist = sdir / "history"
+        hist.mkdir(exist_ok=True)
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        archived = []
+        # lee el meta ANTES de archivarlo: la versión editada hereda cámaras/iters (sin loss,
+        # ya no es medible tras la edición). Sin esto queda iters=0 y el sort "iters primero"
+        # dejaría el splat recién editado DEBAJO del viejo — el round-trip de SuperSplat no serviría.
+        old_meta = {}
+        meta_p = sdir / f"{cid}.meta.json"
+        if meta_p.is_file():
+            try:
+                old_meta = json.loads(meta_p.read_text())
+            except (ValueError, OSError):
+                old_meta = {}
+        archived_splat = archived_viewer = None
+        # .raw.splat (crudo pre-clean) también: si se queda, "revertir a crudo" restauraba
+        # la salida de entrenamiento ANTERIOR a esta subida, no la versión editada
+        for old in (sdir / f"{cid}.clean.sog", sdir / f"{cid}.spz",
+                    sdir / f"{cid}.splat", sdir / f"{cid}.ksplat", sdir / f"{cid}.ply",
+                    sdir / f"{cid}.raw.splat",
+                    meta_p, sdir / f"{cid}.cameras.json"):
+            if old.is_file():
+                suffix = old.name[len(cid):]
+                dst = hist / f"{cid}-{ts}{suffix}"
+                os.replace(old, dst)
+                archived.append(old.name)
+                if suffix == ".splat":
+                    archived_splat = f"splats/history/{dst.name}"
+                elif suffix in (".clean.sog", ".spz", ".ksplat"):
+                    archived_viewer = f"splats/history/{dst.name}"
+        # los jobs 'done' del entrenamiento anterior deben seguir apuntando a SU versión
+        # archivada, no al path mutable que ahora es el archivo editado (mismo contrato que
+        # publish_splat_stage)
+        if archived_splat or archived_viewer:
+            jobstore.retarget_splat_artifacts(cid, archived_splat, archived_viewer)
+        prune_splat_history(hist, cid, keep=6)
+        final = sdir / f"{cid}{ext}"
+        os.replace(tmp, final)
+        if old_meta:
+            new_meta = {k: v for k, v in old_meta.items() if k != "final_loss"}
+            new_meta["edited"] = True          # editado en SuperSplat: el loss ya no aplica
+            _atomic_write_text(meta_p, json.dumps(new_meta, indent=1))
+        optimized = None
+        if ext not in (".sog", ".spz", ".ksplat"):
+            ktmp = sdir / f".{cid}.clean.tmp.sog"
+            try:
+                tool = PIPE.parent / "tools/node_modules/@playcanvas/splat-transform/bin/cli.mjs"
+                r = subprocess.run(["node", str(tool), str(final), str(ktmp), "--overwrite"],
+                                   capture_output=True, text=True, timeout=600)
+                if r.returncode == 0 and ktmp.exists() and ktmp.stat().st_size > 1024:
+                    os.replace(ktmp, sdir / f"{cid}.clean.sog")
+                    optimized = f"{cid}.clean.sog"
+                else:
+                    ktmp.unlink(missing_ok=True)
+            except (OSError, subprocess.TimeoutExpired):
+                ktmp.unlink(missing_ok=True)
+        rebuild_scene_manifest(cid)
+        rebuild_index()
+        return self.send_json({"ok": True, "published": final.name, "optimized": optimized,
+                               "archived": archived, "bytes": read})
+
+    _POST_ROUTES = {
+        "/api/login": "_post_login",
+        "/api/logout": "_post_logout",
+        "/api/job_cancel": "_post_job_cancel",
+        "/upload": "_post_upload",
+        "/api/photo_upload": "_post_photo_upload",
+        "/api/reel_order": "_post_reel_order",
+        "/api/reel_edit": "_post_reel_edit",
+        "/api/audio_upload": "_post_audio_upload",
+        "/api/audio_op": "_post_audio_op",
+        "/api/splat_autoclean": "_post_splat_autoclean",
+        "/api/splat_revert": "_post_splat_revert",
+        "/api/splat_upload": "_post_splat_upload",
+        "/api/edit": "_post_edit",
+        "/api/sd_import": "_post_sd_import",
+        "/api/frame": "_post_frame",
+        "/api/measure": "_post_measure",
+        "/api/compare": "_post_compare",
+        "/api/scene_create": "_post_scene_create",
+        "/api/scene_improve": "_post_scene_improve",
+        "/api/scene_promote": "_post_scene_promote",
+        "/api/odm": "_post_odm",
+        "/api/model_update": "_post_model_update",
+        "/api/model_delete": "_post_model_delete",
+        "/api/splat_delete": "_post_splat_delete",
+        "/api/media_op": "_post_media_op",
+        "/api/splat_campaign": "_post_splat_campaign",
+        "/api/splat": "_post_splat",
+        "/api/preflight": "_post_preflight",
+        "/api/suggest_name": "_post_suggest_name",
+        "/api/client_error": "_post_client_error",
+        "/api/error_report": "_post_error_report",
+        "/api/search": "_post_search",
+        "/api/analyze": "_post_analyze",
+        "/api/gpu_node/wake": "_post_gpu_node_wake",
+        "/api/gpu_node/sleep": "_post_gpu_node_sleep",
+        "/api/scene_objects": "_post_scene_objects",
+        "/api/highlight": "_post_highlight",
+        "/api/clip": "_post_clip",
+        "/api/trip_meta": "_post_trip_meta",
+        "/api/rescan": "_post_rescan",
+        "/api/property": "_post_property",
+        "/api/property_ai": "_post_property_ai",
+    }
+
+    def _post(self):
+        u = urllib.parse.urlparse(self.path)
+        q = urllib.parse.parse_qs(u.query)
+        handler = self._POST_ROUTES.get(u.path)
+        if handler is not None and getattr(self, handler)(u, q) is not _POST_FALLTHROUGH:
+            return
         self.send_error(404)
 
     def do_GET_properties(self):

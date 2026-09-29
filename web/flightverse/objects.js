@@ -4,8 +4,8 @@
 // (ring/beacon/box) con anclaje al suelo real (heightAt), animaciones
 // spin/bob y materiales emisivos. Optimizado: matrices estáticas quietas,
 // un solo update() barato para los animados.
-import * as THREE from '/flightverse/three.js?v=349';
-import { createSceneObjectCollision } from '/flightverse/scene-object-collision.js?v=349';
+import * as THREE from '/flightverse/three.js?v=352';
+import { createSceneObjectCollision } from '/flightverse/scene-object-collision.js?v=352';
 
 const PRIMS = {
   ring: ({ color }) => new THREE.Mesh(
@@ -67,7 +67,7 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
     let node = null;
     if ((o.type === 'glb' || o.type === 'kit') && o.file) {
       try {
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=349'));
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=352'));
         const base = o.type === 'kit' ? '/assets/destruction/models/' : '/assets/props/';
         const g = await new GLTFLoader().loadAsync(base + encodeURIComponent(o.file));
         node = g.scene;
@@ -168,6 +168,16 @@ export async function loadSceneObjects(man, scene, { heightAt } = {}) {
     dispose() {
       collision.dispose();
       scene.remove(group);
+      const done = new Set();
+      const free = r => { if (r && !done.has(r) && !r.userData?.shared) { done.add(r); try { r.dispose?.(); } catch { /* ya liberado */ } } };
+      group.traverse(n => {
+        free(n.geometry);
+        for (const m of (Array.isArray(n.material) ? n.material : n.material ? [n.material] : [])) {
+          if (!m || done.has(m) || m.userData?.shared) continue;
+          for (const v of Object.values(m)) if (v && v.isTexture) free(v);
+          free(m);
+        }
+      });
     },
   };
 }

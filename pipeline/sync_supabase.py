@@ -22,16 +22,7 @@ from pathlib import Path
 
 from paths import VAULT  # noqa: E402
 from paths import REPO as ROOT, KEYS_ENV as KEYS  # noqa: E402
-
-
-def load_keys() -> dict:
-    out = {}
-    for line in KEYS.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, _, v = line.partition("=")
-            out[k.strip()] = v.strip().strip('"')
-    return out
+from keys import load_keys  # noqa: E402
 
 
 def require(keys, *names):

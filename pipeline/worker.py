@@ -259,7 +259,7 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
     if not quality.get("passed"):
         raise RuntimeError(quality.get("reason") or "splat no pasó el quality gate")
     splat_dir.mkdir(parents=True, exist_ok=True)
-    tmp_meta.write_text(json.dumps(quality, indent=1))
+    atomic_write_json(tmp_meta, quality, indent=1, ensure_ascii=True)
     # Antes se pisaba el splat anterior del mismo clip. Eso impedía comparar 2k/7k/15k o
     # ediciones SuperSplat. Ahora el set actual se archiva como una versión fechada y la UI
     # expone todas las versiones desde manifest/system.json.

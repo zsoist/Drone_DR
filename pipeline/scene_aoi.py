@@ -7,6 +7,7 @@ container.  The publishing CLI is added below those helpers.
 """
 from __future__ import annotations
 
+import errno
 import math
 import os
 import json
@@ -15,6 +16,7 @@ import re
 import shutil
 import sys
 import time
+import uuid
 from pathlib import Path
 
 from fsutil import atomic_write_json
@@ -553,15 +555,48 @@ def _lock_is_stale(lock_path: Path) -> bool:
     return False
 
 
-def _acquire_lock(lock_path: Path) -> int:
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+def _lock_identity(lock_path: Path):
+    """(dev, inode, mtime_ns) of the lock file, or None if it does not exist."""
     try:
-        return os.open(lock_path, flags, 0o600)
-    except FileExistsError:
-        if not _lock_is_stale(lock_path):
-            raise
-        lock_path.unlink(missing_ok=True)
-        return os.open(lock_path, flags, 0o600)   # si otro lo tomó primero, FileExistsError sube
+        st = lock_path.stat()
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino, st.st_mtime_ns)
+
+
+def _acquire_lock(lock_path: Path) -> int:
+    """Create the lock exclusively; take over a stale one without a takeover race.
+
+    The old code did `unlink(stale); open(O_EXCL)`: two processes that both judged the same
+    lock stale could interleave as A.unlink, A.create, B.unlink (deleting A's FRESH lock),
+    B.create — both then "hold" the lock. Now the stale lock is CLAIMED by an atomic rename
+    to a private name, and the renamed file's identity must be the one we judged stale;
+    if a fresh lock slipped in, it is put back and we lose."""
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    for _ in range(3):
+        try:
+            return os.open(lock_path, flags, 0o600)
+        except FileExistsError:
+            judged = _lock_identity(lock_path)
+            if judged is None:
+                continue                      # vanished meanwhile: just try to create again
+            if not _lock_is_stale(lock_path):
+                raise
+            claim = lock_path.with_name(f"{lock_path.name}.stale-{os.getpid()}-{uuid.uuid4().hex[:8]}")
+            try:
+                os.rename(lock_path, claim)   # atomic: only one racer can move a given file
+            except FileNotFoundError:
+                continue                      # somebody else already claimed it
+            if _lock_identity(claim) != judged:
+                # we grabbed a lock created after we judged: restore it (link never overwrites)
+                try:
+                    os.link(claim, lock_path)
+                except OSError:
+                    pass
+                os.unlink(claim)
+                raise FileExistsError(errno.EEXIST, "lock is held", str(lock_path))
+            os.unlink(claim)
+    raise FileExistsError(errno.EEXIST, "lock is held", str(lock_path))
 
 
 def derive_scene_aoi(

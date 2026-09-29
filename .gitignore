@@ -15,7 +15,6 @@ __pycache__/
 splat/supersplat/
 .gstack/
 tools/node_modules/
-artifacts/home-v2-*.png
 .dev.vars
 .dev.vars.*
 .wrangler/

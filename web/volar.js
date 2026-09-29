@@ -4,47 +4,47 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=349';
+import * as THREE from '/flightverse/three.js?v=352';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=349';
+} from '/flightverse/scene.js?v=352';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=349';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=349';
-import { createRecorder } from '/flightverse/recorder.js?v=349';
-import { createAudio } from '/flightverse/audio.js?v=349';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=349';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=349';
+} from '/flightverse/runtime.js?v=352';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=352';
+import { createRecorder } from '/flightverse/recorder.js?v=352';
+import { createAudio } from '/flightverse/audio.js?v=352';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=352';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=352';
 import {
   createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=349';
-import { createSky } from '/flightverse/sky.js?v=349';
-import { loadSceneObjects } from '/flightverse/objects.js?v=349';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=349';
-import { resolveAimRay } from '/flightverse/aiming.js?v=349';
+} from '/flightverse/mobile-command.js?v=352';
+import { createSky } from '/flightverse/sky.js?v=352';
+import { loadSceneObjects } from '/flightverse/objects.js?v=352';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=352';
+import { resolveAimRay } from '/flightverse/aiming.js?v=352';
 import {
   WEAPON_PROFILES,
   isContinuousWeaponKey,
-} from '/flightverse/weapon-registry.js?v=349';
-import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=349';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=349';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=349';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=349';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=349';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=349';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=349';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=349';
-import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=349';
-import CameraControls from '/vendor/camera-controls.module.js?v=349';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=349';
+} from '/flightverse/weapon-registry.js?v=352';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=352';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=352';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=352';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=352';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=352';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=352';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=352';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=352';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=352';
+import CameraControls from '/vendor/camera-controls.module.js?v=352';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=352';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=349';
+} from '/vendor/postprocessing180.module.js?v=352';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -90,6 +90,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const M_LAT = 111320;
 
 function hud() {
+  const TOUCH_GUIDE = matchMedia('(pointer:coarse)').matches;
   document.body.insertAdjacentHTML('beforeend', `
   <div class="vl-hud" id="vl-hud">
     <div class="vl-corner tl">
@@ -197,6 +198,7 @@ function hud() {
     <div class="vl-boot" id="vl-boot">
       <small>FLIGHTVERSE</small><b id="vb-name">Cargando escena…</b>
       <div class="vb-bar"><b></b></div>
+      <small id="vb-stage" aria-live="polite">Preparando · 0%</small>
       <div class="vb-steps"><i id="vb-terreno">TERRENO</i><i id="vb-malla">MALLA</i><i id="vb-splat">SPLAT</i></div>
     </div>
     <div class="vl-hitfx" id="vl-hitfx"></div>
@@ -290,21 +292,26 @@ function hud() {
     <div class="vl-guide" id="vl-guide">
       <div class="vl-guide-card">
         <div class="vl-guide-k">GUÍA DE VUELO</div>
-        <div class="vl-guide-rows">
+        <div class="vl-guide-rows">${TOUCH_GUIDE ? `
+          <div><span class="vl-gi">01</span><b>Volar</b><br>
+            Palanca izquierda: subir, bajar y girar · palanca derecha: avanzar y moverte de lado.</div>
+          <div><span class="vl-gi">02</span><b>Modos y cámaras</b><br>
+            Abre <b>Menú</b> para cambiar el modo (Cine · Normal · Arcade · Dios), la cámara y la vista.</div>
+          <div><span class="vl-gi">03</span><b>Jugar y grabar</b><br>
+            En el Menú: Gate Rush (aros sobre tu ruta real), Modo Invasión, grabar video y sonido.</div>` : `
           <div><span class="vl-gi">01</span><b>Volar</b><br>
             <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> mover · <kbd>R</kbd><kbd>F</kbd> subir/bajar · <kbd>Q</kbd><kbd>E</kbd> girar<br>
-            <kbd>Shift</kbd> turbo · <kbd>Espacio</kbd> freno · <span class="vl-kmouse">rueda</span> gimbal</div>
+            <kbd>Shift</kbd> turbo · <kbd>Espacio</kbd> freno · <span class="vl-kmouse">rueda</span> inclinar cámara</div>
           <div><span class="vl-gi">02</span><b>Modos y cámaras</b><br>
-            <kbd>1</kbd>–<kbd>4</kbd> modo (Cine·Normal·Arcade·Dios) · <kbd>C</kbd> cámara · <kbd>P</kbd> vista · <kbd>G</kbd> ghost</div>
+            <kbd>1</kbd>–<kbd>4</kbd> modo (Cine·Normal·Arcade·Dios) · <kbd>C</kbd> cámara · <kbd>P</kbd> vista · <kbd>G</kbd> fantasma</div>
           <div><span class="vl-gi">03</span><b>Jugar y grabar</b><br>
-            <kbd>T</kbd> Gate Rush (aros sobre tu ruta REAL) · <kbd>V</kbd> grabar WebM · <kbd>M</kbd> sonido</div>
+            <kbd>T</kbd> Gate Rush (aros sobre tu ruta real) · <kbd>V</kbd> grabar video · <kbd>M</kbd> sonido</div>`}
           <div><span class="vl-gi">04</span><b>Vistas</b><br>
-            3D = malla · foto-real = gaussian · mixta = 3D realzado con foto-realismo encima.</div>
+            3D = malla del terreno · foto-real = fotografías reconstruidas · mixta = malla 3D con foto-real encima.</div>
           <div><span class="vl-gi">05</span><b>Calidad</b><br>
-            auto = fluidez adaptativa (recomendado al volar) · HD→ultra = supersampling real
-            (afila bordes y 3D; el gaussian conserva su blur natural). Ideal para fotos/tomas.</div>
+            Auto ajusta la fluidez sola (recomendado al volar). HD y Ultra dibujan más nítido: ideales para fotos y tomas.</div>
         </div>
-        <button id="vl-guide-ok">¡A volar!</button>
+        <button id="vl-guide-go" class="btn primary big">¡A volar!</button>
       </div>
     </div>
     <div class="vl-help" id="vl-help">
@@ -313,6 +320,67 @@ function hud() {
       Shift turbo · Space freno · 1-5 modo · C cámara · G ghost · P foto-real · V grabar · H ayuda
     </div>
   </div>`);
+}
+
+// Progreso de carga determinista: cada etapa real (manifiesto, terreno, dron...) fija
+// un porcentaje y una etiqueta. La barra deja de ser indeterminada en el primer paso.
+function bootProgress(pct, label) {
+  const bar = document.querySelector('#vl-boot .vb-bar b');
+  if (bar) {
+    bar.style.animation = 'none';
+    bar.style.transform = 'none';
+    bar.style.transition = 'width .35s ease';
+    bar.style.width = `${pct}%`;
+  }
+  const st = $('#vb-stage');
+  if (st) st.textContent = `${label} · ${pct}%`;
+}
+// Pastillas de capas que esta escena no tiene: se atenúan para no parecer "pendientes".
+function markLayerUnavailable(id) {
+  const el = $('#' + id);
+  if (el) { el.style.opacity = '0.35'; el.title = 'No disponible en esta escena'; el.dataset.na = '1'; }
+}
+function bootError(e) {
+  console.error('[volar] no se pudo iniciar:', e);
+  const missing = e?.status === 404;
+  const title = missing ? 'Esta isla aún no tiene escena 3D' : 'No se pudo cargar la isla';
+  const help = missing
+    ? 'Todavía no se ha procesado esta zona. Vuelve al Mundo y elige otra isla.'
+    : 'Revisa tu conexión e inténtalo de nuevo, o elige otra isla en el Mundo.';
+  let host = $('#vl-boot');
+  if (!host) {                                     // el overlay ya se retiró: crear uno
+    host = document.createElement('div');
+    host.className = 'vl-boot';
+    host.style.zIndex = '80';
+    document.body.appendChild(host);
+  }
+  host.classList.remove('hide');
+  host.style.pointerEvents = 'auto';
+  host.style.padding = '24px 16px';
+  host.style.overflowY = 'auto';
+  host.textContent = '';
+  const pills = document.createElement('div');
+  pills.className = 'vb-steps';
+  for (const t of ['TERRENO', 'MALLA', 'SPLAT']) {
+    const i = document.createElement('i'); i.textContent = t; pills.appendChild(i);
+  }
+  const card = document.createElement('div');
+  card.className = 'vl-err-card';
+  card.setAttribute('role', 'alert');
+  Object.assign(card.style, { display: 'flex', flexDirection: 'column', alignItems: 'center',
+    gap: '12px', maxWidth: '360px', textAlign: 'center' });
+  const h = document.createElement('b'); h.textContent = title;
+  const p = document.createElement('p');
+  p.textContent = help;
+  Object.assign(p.style, { margin: '0', font: '400 14px/1.5 var(--font)', color: '#B7C2D0' });
+  const a = document.createElement('a');
+  a.href = 'mundo.html';
+  a.className = 'btn primary big';
+  a.textContent = 'Volver al Mundo';
+  Object.assign(a.style, { minHeight: '44px', justifyContent: 'center', textDecoration: 'none' });
+  card.append(h, p, a);
+  host.append(pills, card);
+  const sc = $('#vl-scene'); if (sc) sc.textContent = '';
 }
 
 async function main() {
@@ -327,8 +395,10 @@ async function main() {
   }
   const say = m => { $('#vl-scene').textContent = m; };
   say('Cargando escena…');
+  bootProgress(5, 'Leyendo escena');
 
   const man = await loadManifest(CID);
+  bootProgress(15, 'Cargando terreno');
   const coverageRows = man.coverage?.shapes?.[COVERAGE_SHAPE] || [];
   const requestedCoverage = COVERAGE_REQUEST
     ? coverageRows.find(row =>
@@ -437,6 +507,7 @@ async function main() {
   terrain.mesh.receiveShadow = true;
   worldGroup.add(terrain.mesh);
   markLoadStep(document, 'vb-terreno');
+  bootProgress(55, 'Preparando colisiones');
   const W = terrain.world;
   if (man.capabilities?.mesh && !man.capabilities?.collision) {
     throw new Error('mundo bloqueado: malla sin collider estructural vigente');
@@ -523,6 +594,8 @@ async function main() {
   const canLoadVisualMesh = Boolean(
     man.capabilities?.mesh && man.assets?.mesh_mtl_low && man.transforms?.mesh_offset,
   );
+  if (!canLoadVisualMesh) markLayerUnavailable('vb-malla');
+  if (!(man.capabilities?.splat && man.transforms?.splat?.status === 'aligned')) markLayerUnavailable('vb-splat');
   const visualMeshLoader = canLoadVisualMesh
     ? createLazyLayerLoader(() => attachVisualMesh(man, worldGroup, {
       renderer,
@@ -605,6 +678,7 @@ async function main() {
 
   // dron rediseñado: proporciones DJI (~0.85m), cuerpo bajo, brazos finos,
   // props que giran con la velocidad, gimbal frontal — solo primitivas three
+  bootProgress(80, 'Preparando el dron');
   const drone = createDrone({ world: collision, spawn: man.spawn });
   report.collision.radius_m = +drone.collisionRadius.toFixed(3);
   report.collision.radius_source = 'fallback';
@@ -709,9 +783,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=349', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=352', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=349');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=352');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -866,7 +940,7 @@ async function main() {
   const shake = { mag: 0 };
   let curYaw = 0;
   const { GLTFLoader: ArsenalGLTFLoader } = await import(
-    '/vendor/three-addons180/loaders/GLTFLoader.js?v=349'
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=352'
   );
   weaponModels = createWeaponModelLibrary({
     quality: Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto',
@@ -1317,11 +1391,12 @@ async function main() {
   grade.c = Math.max(-0.15, Math.min(0.55, grade.c));
   if (!(grade.b >= 0.35 && grade.b <= 1.6)) grade.b = 0.88;  // migra esquemas viejos (y el 1.3 quemado)
   applyGrade(grade);
-  $('#vl-guide-ok').addEventListener('click', () => {
+  const guidedBefore = () => { try { return !!localStorage.getItem('ab.fv.guided'); } catch { return false; } };
+  $('#vl-guide-go').addEventListener('click', () => {
     overlayCoordinator.close('guide');
-    localStorage.setItem('ab.fv.guided', '1');
+    try { localStorage.setItem('ab.fv.guided', '1'); } catch { /* almacenamiento bloqueado */ }
   });
-  if (!localStorage.getItem('ab.fv.guided') && !AT) overlayCoordinator.open('guide');
+  if (!guidedBefore() && !AT) overlayCoordinator.open('guide');
   const toggleSound = () => {
     const m = audio.toggleMute();
     $('#vl-sound').textContent = m ? 'Sonido off' : 'Sonido';
@@ -1621,7 +1696,14 @@ async function main() {
   const autoReto = AT === 'gaterush' ? { last: 0, replayed: false } : null;
 
   // ── Quick Record (WebM del canvas — camino instantáneo del Video Studio) ──
-  const recorder = createRecorder(renderer.domElement);
+  const recorder = createRecorder(renderer.domElement, {
+    onError: err => {
+      console.warn('[recorder]', err);
+      recBtn.classList.remove('on'); recBtn.textContent = '● Grabar';
+      audio.rec?.(false);
+      toast('La grabación se detuvo por un error. Prueba de nuevo.');
+    },
+  });
   const recBtn = $('#vl-rec');
   const toggleRec = async () => {
     if (!recorder.supported) { recBtn.textContent = 'grabación no soportada'; return; }
@@ -2075,6 +2157,7 @@ async function main() {
       $('#vl-agl-b').style.transform = `scaleX(${drone.agl == null ? 0 : Math.min(1, drone.agl / 160)})`;
       if (!window.__bootHidden && simT > 0.5) {
         window.__bootHidden = true;
+        bootProgress(100, 'Listo');
         const bo = $('#vl-boot');
         bo.classList.add('hide');
         setTimeout(() => bo.remove(), 700);
@@ -2294,6 +2377,5 @@ async function main() {
 main().catch(e => {
   report.errors.push(String(e?.message || e));
   report.done = true;
-  document.body.insertAdjacentHTML('beforeend',
-    `<div class="vl-err">No se pudo iniciar el vuelo: ${esc(e.message)} · <a href="mundo.html">volver al Mundo</a></div>`);
+  bootError(e);
 });

@@ -20,6 +20,11 @@ preserved for provenance and must not override a current contract.
 | [Multi-source 3D](MULTISOURCE_3D.md) | current + live evidence | Scene/version semantics and shared-component registration gate |
 | [Roadmap](../ROADMAP.md) | current | Shipped scope and outstanding acceptance work |
 
+## Design system
+
+UI tokens, components and visual rules live in [`web/DESIGN.md`](../web/DESIGN.md); read it before touching `web/style.css`
+or adding UI. Acceptance evidence: [Design QA](qa/design-qa.md).
+
 ## Current engineering contracts
 
 - [Agent access and acceptance](../AGENTS.md)
@@ -27,9 +32,9 @@ preserved for provenance and must not override a current contract.
 - [Splat Lab v2 plan](SPLATLAB_V2_PLAN.md)
 - [Engineering pitfalls](../CLAUDE.md)
 - Test entry point: `python3 pipeline/run_all_tests.py` (flags `--fast`, `-k NEEDLE`, `-j JOBS`, `-v`; runs
-  every `pipeline/test_*.py` except `test_smoke.py`, plus `node --test` over `pipeline/`, `edge/` and `tools/`
-  `test_*.mjs`; about 40+ Python modules and ~17 Node files as of 2026-09-28, still growing; count with `ls pipeline/test_*`). `test_smoke.py` is the pre-commit gate
-  and calls it with `--fast`. See [Runbooks](RUNBOOKS.md#run-all-tests).
+  every `pipeline/test_*.py` except `test_smoke.py`, plus `node --test` over the `test_*.mjs` files in `pipeline/`, `edge/` and
+  `tools/`; the suite keeps growing, so list it with `ls pipeline/test_*` instead of trusting counts). `test_smoke.py` is the
+  pre-commit gate and calls it with `--fast`. See [Runbooks](RUNBOOKS.md#run-all-tests).
 - [Scene objects](SCENE_OBJECTS.md)
 - [Game engine](GAME_ENGINE.md)
 - [World collision/stability design](superpowers/specs/2026-07-25-flightverse-world-collision-stability-design.md)
@@ -51,7 +56,7 @@ preserved for provenance and must not override a current contract.
 
 ## Historical snapshots
 
-Kept in [`archive/`](archive/) (and the two below that code comments still cite). Their headers state what superseded them.
+Kept in [`archive/`](archive/) (and the one below that code comments still cite). Their headers state what superseded them.
 
 - [3D processing audit](archive/3D_PROCESSING_AUDIT.md)
 - [3D frontier audit](archive/3D_FRONTIER_AUDIT.md)
@@ -78,6 +83,15 @@ Plans:
 - [Scene similarity UI](superpowers/plans/2026-07-13-scene-similarity-ui.md)
 - [Truthful stability](superpowers/plans/2026-07-13-truthful-stability.md)
 - [Cinematic Home V2](superpowers/plans/2026-07-15-home-v2-cinematic-dashboard.md)
+- [Flightverse adaptive visual UI](superpowers/plans/2026-07-25-flightverse-adaptive-visual-ui.md)
+- [Flightverse near-structure flight](superpowers/plans/2026-07-25-flightverse-near-structure-flight.md)
+- [Flightverse world collision stability](superpowers/plans/2026-07-25-flightverse-world-collision-stability.md)
+- [World premium invasion mobile](superpowers/plans/2026-07-25-world-premium-invasion-mobile.md)
+- [Flightverse mobile command HUD](superpowers/plans/2026-07-27-flightverse-mobile-command-hud.md)
+- [Flightverse premium FPV combat arsenal](superpowers/plans/2026-07-27-flightverse-premium-fpv-combat-arsenal.md)
+- [Home light theme layout](superpowers/plans/2026-08-02-home-light-theme-layout.md)
+- [Scene improvement workspace](superpowers/plans/2026-08-02-scene-improvement-workspace.md)
+- [Unified 3D viewer](superpowers/plans/2026-08-03-unified-3d-viewer.md)
 
 Design specs:
 
@@ -87,6 +101,15 @@ Design specs:
 - [Scene similarity UI design](superpowers/specs/2026-07-13-scene-similarity-ui-design.md)
 - [Truthful scene operations](superpowers/specs/2026-07-13-truthful-scene-operations-design.md)
 - [Cinematic Home V2 design](superpowers/specs/2026-07-15-home-v2-cinematic-dashboard-design.md)
+- [Flightverse adaptive visual UI design](superpowers/specs/2026-07-25-flightverse-adaptive-visual-ui-design.md)
+- [Flightverse near-structure flight design](superpowers/specs/2026-07-25-flightverse-near-structure-flight-design.md)
+- [Flightverse world collision stability design](superpowers/specs/2026-07-25-flightverse-world-collision-stability-design.md)
+- [World premium invasion mobile design](superpowers/specs/2026-07-25-world-premium-invasion-mobile-design.md)
+- [Flightverse mobile command HUD design](superpowers/specs/2026-07-27-flightverse-mobile-command-hud-design.md)
+- [Flightverse premium FPV combat arsenal design](superpowers/specs/2026-07-27-flightverse-premium-fpv-combat-arsenal-design.md)
+- [Home light theme layout design](superpowers/specs/2026-08-02-home-light-theme-layout-design.md)
+- [Scene improvement workspace design](superpowers/specs/2026-08-02-scene-improvement-workspace-design.md)
+- [Unified 3D viewer design](superpowers/specs/2026-08-03-unified-3d-viewer-design.md)
 
 ## Freshness rules
 

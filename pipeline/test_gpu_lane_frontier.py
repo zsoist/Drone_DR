@@ -953,5 +953,57 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
         self.assertNotIn("rm -rf /root/gpu-jobs/runs/job-failed", script)
 
 
+
+class GpuLaneTests(unittest.TestCase):
+    def test_rc137_is_oom_class_unless_cancelled(self):
+        self.assertEqual("oom", gpu_lane.classify_cuda_failure(137, "Killed"))
+        self.assertEqual("oom", gpu_lane.classify_cuda_failure(
+            137, "Out of memory: Killed process 123 (python)"))
+        self.assertEqual("oom", gpu_lane.classify_cuda_failure(137, "oom-kill:constraint=..."))
+        # sin evidencia: kill manual / WSL shutdown / kill_container → no reintentable
+        self.assertEqual("killed", gpu_lane.classify_cuda_failure(137, ""))
+        self.assertEqual("killed", gpu_lane.classify_cuda_failure(137, "step 300/4000"))
+        self.assertFalse(gpu_lane.should_retry_cuda("killed", "auto", 1))
+        self.assertEqual("cancelled", gpu_lane.classify_cuda_failure(137, "cancelled by user"))
+        self.assertTrue(gpu_lane.should_retry_cuda("oom", "auto", 1))
+
+    def test_ensure_awake_resends_wol_and_uses_longer_window(self):
+        clock = {"t": 1000.0}
+        wakes = []
+
+        def fake_run(cmd, **kw):
+            wakes.append(clock["t"])
+            return mock.Mock(returncode=0)
+
+        def sleep(s):
+            clock["t"] += s
+        awake_at = 1000.0 + 47
+        with mock.patch.object(gpu_lane.time, "time", side_effect=lambda: clock["t"]), \
+                mock.patch.object(gpu_lane.time, "sleep", side_effect=sleep), \
+                mock.patch.object(gpu_lane, "node_awake",
+                                  side_effect=lambda *a, **k: clock["t"] >= awake_at), \
+                mock.patch.object(gpu_lane, "PC_WAKE", mock.Mock(exists=lambda: True)), \
+                mock.patch.object(gpu_lane.subprocess, "run", side_effect=fake_run):
+            gpu_lane.ensure_awake()
+        self.assertGreaterEqual(len(wakes), 3)          # t=0, ~20, ~40
+        import inspect
+        self.assertGreaterEqual(inspect.signature(gpu_lane.ensure_awake).parameters[
+            "max_wait_s"].default, 180)
+
+    def test_fetch_reads_only_the_header(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+
+            def fake_run(cmd, timeout, label):
+                (out / "job.ply").write_bytes(b"ply\nformat binary" + b"\0" * 1000)
+            with mock.patch.object(gpu_lane, "_run", side_effect=fake_run), \
+                    mock.patch.object(gpu_lane, "_wsl"), \
+                    mock.patch.object(gpu_lane.subprocess, "run"), \
+                    mock.patch.object(Path, "read_bytes",
+                                      side_effect=AssertionError("read_bytes loads the whole PLY")):
+                dest = gpu_lane.fetch("job", out)
+            self.assertTrue(dest.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

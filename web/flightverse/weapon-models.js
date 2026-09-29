@@ -1,7 +1,7 @@
 import {
   WEAPON_PROFILES,
   weaponAssetTier,
-} from './weapon-registry.js?v=349';
+} from './weapon-registry.js?v=352';
 
 const textureSlots = [
   'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap',
@@ -43,6 +43,9 @@ export function createWeaponModelLibrary({
         }
         record.scene = scene;
         return scene;
+      }).catch(err => {
+        if (cache.get(key) === record) cache.delete(key);   // no cachear rechazos para siempre
+        throw err;
       });
       cache.set(key, record);
     }

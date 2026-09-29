@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from paths import VAULT  # noqa: E402
+from fsutil import atomic_write_json, atomic_write_text  # noqa: E402
 VOLUMES = Path("/Volumes")
 
 
@@ -80,7 +81,7 @@ def main():
         manifest["files"][str(p.relative_to(dest))] = entry
 
     out = VAULT / "manifest" / f"ingest-{label}-{time.strftime('%Y%m%d-%H%M%S')}.json"
-    out.write_text(json.dumps(manifest, indent=1))
+    atomic_write_json(out, manifest, indent=1, ensure_ascii=True)
     gb = manifest["total_bytes"] / 1e9
     print(f"✅ {len(files)} archivos, {gb:.1f}GB → manifest {out.name}")
 

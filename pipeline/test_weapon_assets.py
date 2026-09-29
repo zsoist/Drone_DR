@@ -15,8 +15,8 @@ PIPELINE = Path(__file__).resolve().parent
 ROOT = PIPELINE.parent / "web" / "assets" / "weapons"
 sys.path.insert(0, str(PIPELINE))
 
-from weapon_asset_contract import audit_weapon_arsenal, validate_weapon_glb
-from generate_weapon_arsenal import generate
+from weapon_asset_contract import audit_weapon_arsenal, check_nose_orientation, parse_glb, validate_weapon_glb
+from generate_weapon_arsenal import cone, generate
 
 
 def _glb_content(data: bytes) -> dict:
@@ -122,6 +122,30 @@ class WeaponAssetContractTests(unittest.TestCase):
         self.assertEqual(manifest["seed"], 20260727)
         self.assertEqual(manifest["coordinateSystem"], "+Y up, -Z forward")
         self.assertEqual(set(manifest["weapons"]), set(WEAPONS))
+
+    def test_nose_cones_point_down_the_fire_axis(self):
+        tip = cone(0.2, 0.5)
+        self.assertAlmostEqual(float(tip.vertices[:, 2].min()), -0.25)
+        self.assertLess(float(np.linalg.norm(tip.vertices[tip.vertices[:, 2] < -0.249][:, :2], axis=1).max()), 1e-6)
+        aft = cone(0.2, 0.5, reverse=True)
+        self.assertLess(float(np.linalg.norm(aft.vertices[aft.vertices[:, 2] < -0.249][:, :2], axis=1).max()), 0.21)
+        self.assertGreater(float(np.linalg.norm(aft.vertices[aft.vertices[:, 2] < -0.249][:, :2], axis=1).max()), 0.19)
+        for stem in WEAPONS.values():
+            for tier in ("ultra", "runtime"):
+                self.assertEqual(check_nose_orientation(parse_glb(ROOT / tier / f"{stem}.glb")), [])
+
+    def test_validator_rejects_aft_facing_nose(self):
+        import generate_weapon_arsenal as g
+        original = g.cone
+        try:
+            g.cone = lambda *a, **k: original(*a, **{**k, "reverse": True})
+            builder = g.build_viperx(g.pbr_material(64, 1, (200, 60, 40)))
+            with tempfile.TemporaryDirectory() as folder:
+                out = Path(folder) / "x.glb"
+                builder.scene.export(str(out))
+                self.assertTrue(check_nose_orientation(parse_glb(out)))
+        finally:
+            g.cone = original
 
     def test_seed_rebuild_is_content_deterministic(self):
         with tempfile.TemporaryDirectory(prefix="flightverse-weapons-") as folder:

@@ -9,7 +9,25 @@ sys.path.insert(0, str(ROOT / "pipeline"))
 import browser_matrix
 
 
+def css_norm(text: str) -> str:
+    """Formatting-insensitive CSS: the contracts pin declarations, not whitespace
+    (the 2026-09-29 design-system rewrite reformatted style.css without changing rules)."""
+    import re as _re
+    text = _re.sub(r"\s+", " ", text)
+    return _re.sub(r"\s*([{}:;,>])\s*", r"\1", text)
+
+
 class VolarMobileHudContractTests(unittest.TestCase):
+
+    def assertIn(self, member, container, msg=None):
+        if isinstance(member, str) and isinstance(container, str):
+            member, container = css_norm(member), css_norm(container)
+        return super().assertIn(member, container, msg)
+
+    def assertNotIn(self, member, container, msg=None):
+        if isinstance(member, str) and isinstance(container, str):
+            member, container = css_norm(member), css_norm(container)
+        return super().assertNotIn(member, container, msg)
     @classmethod
     def setUpClass(cls):
         cls.source = (ROOT / "web" / "volar.js").read_text()
@@ -74,7 +92,8 @@ class VolarMobileHudContractTests(unittest.TestCase):
             ".vl-overlay-scrim",
             ".vl-overlay-scrim.open",
             "env(safe-area-inset-bottom)",
-            "border-radius:22px 22px 0 0",
+            # tokenized by the design system (--r-2xl); still top-rounded bottom sheet
+            "border-radius:var(--r-2xl) var(--r-2xl) 0 0",
         ):
             self.assertIn(contract, self.styles)
 
@@ -500,12 +519,10 @@ class VolarMobileHudContractTests(unittest.TestCase):
             r"\.vl-osd(?:,\s*\.vl-osd-home,\s*\.vl-osd-gimbal)?\s*\{\s*display:none",
         )
         self.assertIn(".vl-gimbal-toggle[hidden]{ display:none !important }", coarse)
-        self.assertIn("@keyframes triggerFlash", coarse)
-        self.assertIn("0 0 0 10px rgba(255,140,90,0)", coarse)
-        self.assertIn(
-            ".vl-trigger.flash{ animation:triggerFlash .28s var(--ease) }",
-            coarse,
-        )
+        # motion rules (2026-09-29): the flash animates opacity, not box-shadow, and its
+        # keyframes live with the other feedback keyframes; the trigger must still use it
+        self.assertIn("@keyframes triggerFlash", self.styles)
+        self.assertIn(".vl-trigger.flash{ animation:triggerFlash", coarse)
 
     def test_flight_uses_detailed_mesh_as_visual_layer_only(self):
         scene = (ROOT / "web" / "flightverse" / "scene.js").read_text()

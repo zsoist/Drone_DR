@@ -4,15 +4,18 @@
   python3 pipeline/run_all_tests.py           # everything
   python3 pipeline/run_all_tests.py --fast    # skip modules known to take > 60 s
   python3 pipeline/run_all_tests.py -k scenes # only modules whose name contains "scenes"
+  python3 pipeline/run_all_tests.py -k scenes -k jobs  # -k repeats: a suite matching ANY needle runs
 
 Python: every pipeline/test_*.py except test_smoke.py, as `python -m unittest <module>`
 from pipeline/ with PYTHONPATH="..:." (tests import both `pipeline.x` and bare `x`).
 Node: `node --test` over pipeline/test_*.mjs, edge/test_*.mjs and tools/test_*.mjs.
-Exit code is non-zero if any suite fails. test_smoke.py runs this with --fast, so the
+Exit code is non-zero if any suite fails, if a suite runs zero tests, or if a -k needle
+matches no suite (a typo must not read as green). test_smoke.py runs this with --fast, so the
 pre-commit gate covers these suites too.
 """
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -58,7 +61,7 @@ def _env() -> dict:
     return env
 
 
-def discover(fast: bool, needle: str | None) -> list[tuple[str, list[str], Path]]:
+def discover(fast: bool, needles: list[str] | None) -> list[tuple[str, list[str] | None, Path]]:
     suites = []
     for path in sorted(PIPELINE.glob("test_*.py")):
         if path.name == "test_smoke.py":
@@ -69,17 +72,40 @@ def discover(fast: bool, needle: str | None) -> list[tuple[str, list[str], Path]
         suites.append((name, [sys.executable, "-m", "unittest", name], PIPELINE))
     node = None
     for label, folder in NODE_GROUPS:
-        files = sorted(folder.glob("test_*.mjs"))
-        if not files:
-            continue
-        node = node or _which_node()
-        if node is None:
-            suites.append((label, None, folder))
-            continue
-        suites.append((label, [node, "--test", *map(str, files)], ROOT))
-    if needle:
-        suites = [s for s in suites if needle in s[0]]
+        # One suite per file so a file that registers zero tests is reported by name
+        # (a combined `node --test a b c` hides an empty file behind its neighbours).
+        for file in sorted(folder.glob("test_*.mjs")):
+            node = node or _which_node()
+            name = f"{label}/{file.stem}"
+            if node is None:
+                suites.append((name, None, folder))
+            else:
+                suites.append((name, [node, "--test", "--test-reporter=tap", str(file)], ROOT))
+    if needles:
+        suites = [s for s in suites if any(n in s[0] for n in needles)]
     return suites
+
+
+def unmatched_needles(needles: list[str] | None, all_suites) -> list[str]:
+    return [n for n in needles or [] if not any(n in s[0] for s in all_suites)]
+
+
+_RAN = re.compile(r"^Ran (\d+) tests? in", re.M)
+_TAP_SUBTEST = re.compile(r"^# Subtest: (.+)$", re.M)
+
+
+def tests_executed(name: str, out: str) -> int | None:
+    """Number of tests the child reports having run (None if it printed no count).
+
+    Node's TAP output reports a file that registers no tests as ONE test titled with the
+    file name ("# tests 1"), so count top-level subtests that are not file names instead."""
+    if name.startswith("node:"):
+        titles = _TAP_SUBTEST.findall(out)
+        if not titles and "TAP version" not in out:
+            return None
+        return sum(1 for t in titles if not re.search(r"\.[cm]?js$", t.strip()))
+    m = _RAN.search(out)
+    return int(m.group(1)) if m else None
 
 
 def _which_node() -> str | None:
@@ -96,11 +122,17 @@ def run_one(suite) -> dict:
         return {"name": name, "rc": 1, "secs": 0.0, "tail": "node not found on PATH"}
     t0 = time.monotonic()
     try:
+        # stdin=DEVNULL: a suite whose mocks read stdin (`$(cat)`) otherwise blocks forever
+        # when this runner itself sits on an open pipe (pre-commit hook, CI) — intermittent hang
         p = subprocess.run(argv, cwd=cwd, env=_env(), capture_output=True, text=True,
-                           timeout=MODULE_TIMEOUT_S)
+                           stdin=subprocess.DEVNULL, timeout=MODULE_TIMEOUT_S)
         rc, out = p.returncode, (p.stdout or "") + (p.stderr or "")
     except subprocess.TimeoutExpired:
         rc, out = 124, f"timeout after {MODULE_TIMEOUT_S}s"
+    if rc == 0:
+        ran = tests_executed(name, out)
+        if not ran:  # 0 tests, or no count at all: an empty suite is not a passing suite
+            rc, out = 1, out + f"\nNO TESTS RAN in {name} (count={ran})"
     return {"name": name, "rc": rc, "secs": time.monotonic() - t0,
             "tail": "\n".join(out.strip().splitlines()[-25:])}
 
@@ -108,12 +140,18 @@ def run_one(suite) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--fast", action="store_true", help="skip modules that take > 60 s")
-    ap.add_argument("-k", dest="needle", help="only suites whose name contains this")
+    ap.add_argument("-k", dest="needles", action="append",
+                    help="only suites whose name contains this (repeatable; any match runs)")
     ap.add_argument("-j", "--jobs", type=int, default=1, help="suites in parallel (default 1)")
     ap.add_argument("-v", "--verbose", action="store_true", help="print output of passing suites too")
     args = ap.parse_args()
 
-    suites = discover(args.fast, args.needle)
+    suites = discover(args.fast, args.needles)
+    dead = unmatched_needles(args.needles, discover(args.fast, None))
+    if dead or not suites:
+        print(f"no suites match -k {', '.join(dead or args.needles or ['(none)'])}; "
+              f"running nothing is a failure", file=sys.stderr)
+        return 2
     t0 = time.monotonic()
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as ex:
         results = list(ex.map(run_one, suites))

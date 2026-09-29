@@ -22,6 +22,7 @@ from router import load_keys, gemini_vision, deepseek_text
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
 from paths import VAULT  # noqa: E402
+from fsutil import atomic_write_json, atomic_write_text  # noqa: E402
 
 # Daniel: este prompt es la personalidad del analista — edítalo a tu gusto.
 PROMPT = """Eres el analista de vuelos de un dron DJI (footage aéreo, Bogotá/viajes).
@@ -107,7 +108,7 @@ def analyze_clip(cid: str, keys: dict, deep: bool = False) -> dict | None:
             print(f"  (informe del director falló, sigo sin él: {e})")
     out = VAULT / "ai" / f"{cid}.json"
     out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+    atomic_write_json(out, data, indent=1)
     print(f"🧠 {cid}: {data.get('scene_type', '?')} · score {data.get('travel_score', '?')}/10 · {len(data.get('tags', []))} tags")
     return data
 

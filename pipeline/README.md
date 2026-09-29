@@ -4,6 +4,17 @@ One line per file. **[entry]** marks something you run or launchd runs; the rest
 Retired scripts live in [`archive/`](archive/README.md). Architecture: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md);
 procedures: [`../docs/RUNBOOKS.md`](../docs/RUNBOOKS.md).
 
+## Shared modules
+
+Imported by the server, worker and tools; none is a service. New code should use these instead of local copies.
+
+- `paths.py` Filesystem roots: `REPO`, `PIPE`, `WEB`, `VAULT`, `KEYS_ENV`. `AEROBRAIN_VAULT` and `AEROBRAIN_KEYS_ENV` override the vault and the API-keys file (tests, other machines).
+- `fsutil.py` Crash-safe writes (`atomic_write_*`, unique tmp in the same dir + `os.replace`) and `read_json`.
+- `util_ids.py` Id/filename sanitizers (`safe_id` and friends) shared by the HTTP server.
+- `media_probe.py` `ffprobe` wrappers (`ffprobe_text` primitive plus high-level helpers) for server and ingest.
+- `splat_history.py` Splat history retention (prune, keeps the newest 6 versions per clip) and the training quality gate; re-exported by `aerobrain_server`.
+- `keys.py` Single parser for the API-keys env file (`paths.KEYS_ENV`), cached per process; replaces the private copies in `ai/router.py`, `error_report.py` and `sync_supabase.py`.
+
 ## Server
 
 - `aerobrain_server.py` **[entry, `com.aerobrain.web`]** HTTP origin on 127.0.0.1:8790: static + Range, auth/session, upload, all `/api/*`.
@@ -21,25 +32,25 @@ procedures: [`../docs/RUNBOOKS.md`](../docs/RUNBOOKS.md).
 - `odm_gpu_lane.py` ODM on the PC (GPU container), ship images, resume checks, fetch outputs.
 - `pc_janitor.py` **[entry, dry-run by default]** Retention of PC scratch (7 d terminal jobs, 30 d untracked).
 - `docker_ondemand.py` OrbStack on demand (boot before a local container step, stop after 5 min idle).
-- `capture_quality.py` Capture Intelligence: scores a flight before spending ODM time.
+- `capture_quality.py` **[entry]** Capture Intelligence: scores a flight before spending ODM time.
 - `preflight.py` Evidence-based memory preflight for the local (legacy) OpenSplat path.
 - `policy.py` Per-clip processing tiers (full/standard/skim).
 
 ## 3D, splat and scene
 
-- `odm_prep.py` Frame extraction + SRT-to-EXIF geotags for ODM.
-- `tresd_publish.py` Publishes ODM products as web assets in `models/<id>/`.
+- `odm_prep.py` **[entry]** Frame extraction + SRT-to-EXIF geotags for ODM.
+- `tresd_publish.py` **[entry]** Publishes ODM products as web assets in `models/<id>/`.
 - `scenes.py` Stable scenes, immutable `recon_<hash>` versions, promote.
 - `scene_manifest.py` **[entry]** SceneManifestV2, the contract Mundo/Flightverse consume.
-- `scene_aoi.py` Reversible AOI derivation for an existing scene.
+- `scene_aoi.py` **[entry]** Reversible AOI derivation for an existing scene.
 - `splat_presets.py` Single source of truth for splat tiers (Fast 1K to Grandmaster 40K).
-- `splat_eval.py` Held-out eval harness (split, train, render, score); legacy MPS trainer env.
+- `splat_eval.py` **[entry]** Held-out eval harness (split, train, render, score); legacy MPS trainer env.
 - `splat_align.py` Splat-to-terrain alignment (unused; wrong vertical datum; slated for archive).
-- `ply2splat.py` PLY 3DGS to `.splat` conversion (production CUDA path).
+- `ply2splat.py` **[entry]** PLY 3DGS to `.splat` conversion (production CUDA path).
 - `autoclean.mjs`, `autoclean_presets.json` Splat Lab v2 Auto-Clean engine and presets.
 - `crop_splat.mjs` Removes floater halos from a `.splat`.
 - `make_ksplat.mjs` `.splat`/`.ply` to `.ksplat` using the vendored viewer lib.
-- `dsm_lod.py`, `mesh_coverage.py`, `collision_bake.py` DSM LOD, mesh rasterization and structural collider for Flightverse worlds.
+- `dsm_lod.py`, `mesh_coverage.py`, `collision_bake.py` **[entry each]** DSM LOD, mesh rasterization and structural collider for Flightverse worlds.
 
 ## Media and ingest
 
@@ -81,5 +92,5 @@ procedures: [`../docs/RUNBOOKS.md`](../docs/RUNBOOKS.md).
 
 - `run_all_tests.py` **[entry: the test entry point]** Runs every suite. Flags: `--fast`, `-k NEEDLE`, `-j JOBS`, `-v`.
 - `test_smoke.py` **[entry, pre-commit gate]** Smoke suite; it invokes `run_all_tests.py --fast` itself. Run it without a pipe.
-- `test_*.py` Python unittest modules (run as `python -m unittest` from `pipeline/`).
+- `test_*.py` Python `unittest` modules (run as `python -m unittest` from `pipeline/`), split by subject: server/auth/routes, jobs and worker, scenes and AOI, splat policy and frontier, world collision and runtime gates, ops/watchdog/status, web/UI regressions, weapon assets, and shared helpers. List them with `ls pipeline/test_*`.
 - `test_*.mjs` Node `node --test` modules (also `edge/test_*.mjs`, `tools/test_*.mjs`).

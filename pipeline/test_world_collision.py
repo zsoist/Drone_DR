@@ -426,6 +426,23 @@ class WorldCollisionBuilderTests(unittest.TestCase):
             [world["clip_id"] for world in result["worlds"]],
         )
 
+    def test_audit_fails_closed_without_system_manifest(self):
+        result = audit_world.audit(vault=self.vault)
+        self.assertFalse(result["ok"])
+        self.assertEqual("system_manifest_missing", result["failures"][0]["reason"])
+        (self.vault / "manifest").mkdir()
+        (self.vault / "manifest" / "system.json").write_text("{}")
+        self.assertEqual("system_manifest_missing",
+                         audit_world.audit(vault=self.vault)["failures"][0]["reason"])
+
+    def test_audit_fails_closed_when_there_are_zero_worlds(self):
+        (self.vault / "manifest").mkdir()
+        (self.vault / "manifest" / "system.json").write_text(json.dumps(
+            {"models": [], "scenes": [{"active_version": None, "versions": []}]}))
+        result = audit_world.audit(vault=self.vault)
+        self.assertFalse(result["ok"])
+        self.assertEqual("no_worlds_to_audit", result["failures"][0]["reason"])
+
 
 class SceneObjectCollisionRuntimeWiringTests(unittest.TestCase):
     @classmethod

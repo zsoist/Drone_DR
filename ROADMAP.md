@@ -6,7 +6,7 @@
 - [x] srt_parser.py: SRT → flight.json (1Hz + stats) ✅ 2026-07-05
 - [x] process.py: proxy 1080p VT + thumbs + keyframes ✅ 2026-07-05
 - [x] policy.py: tiers de procesamiento ✅ 2026-07-05 (defaults, umbrales ajustables)
-- [x] Batch completo de la SD ✅ 2026-07-05 (41 vuelos en flights.json)
+- [x] Batch completo de la SD ✅ 2026-07-05 (41 vuelos en flights.json en esa fecha; hoy 122)
 
 ## V1b — Flight Deck web
 - [x] Web app: mapa MapLibre + player sincronizado con ruta GPS ✅ 2026-07-05

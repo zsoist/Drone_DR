@@ -29,7 +29,7 @@ It never trains or runs ODM (PC-only policy since 2026-09-28).
 | Web origin | `com.aerobrain.web` runs `pipeline/aerobrain_server.py` | :8790 on 127.0.0.1, KeepAlive. Auth, static + HTTP Range, upload, all `/api/*`. Restarting it does not kill jobs. |
 | Worker | `com.aerobrain.worker` runs `pipeline/worker.py` | Claims one `3d`/`splat` job at a time from `manifest/jobs.db`. KeepAlive. |
 | Watchdog | `com.aerobrain.watchdog` runs `pipeline/ops_watchdog.py` | StartInterval 60 s. Heals web/worker/tunnel, probes the stream and the auth boundary, writes `ALERT`. |
-| Tunnel | `com.metislab.tunnel` runs `cloudflared tunnel --config ~/.cloudflared/metislab-work.yml run` | Tunnel `20543a36-...`. Ingress: `vuelos.metislab.work` and `www.metislab.work` to `http://127.0.0.1:8790`; `workspace.metislab.work` and `*.metislab.work` to `http://localhost:4310`; catch-all 404. |
+| Tunnel | `com.metislab.tunnel` runs `cloudflared tunnel --config ~/.cloudflared/metislab-work.yml run` | Tunnel `20543a36-...`. Ingress: `vuelos.metislab.work` and `www.metislab.work` to `http://127.0.0.1:8790`; `workspace.metislab.work` and `*.metislab.work` to `http://localhost:4310`; catch-all 404. The `:4310` backend is external (not AeroBrain) and **currently not listening**, so those hostnames return 502 until it is started. |
 | PC job queue (generic) | `com.macmini.pc-queue` runs `~/.local/scripts/pc-queue-runner.sh` | Not AeroBrain code. Every 120 s it drains JSON jobs from `~/.local/pc-jobs/queue/` on the PC (WoL wake, `ssh pc`, results to `done/` or `failed/`, sleeps the PC only if it woke it). AeroBrain's own lane does not use it (see section 2). |
 
 Separate tunnel: `com.cloudflare.cloudflared` runs the tunnel `2b64631e-...` from `~/.cloudflared/config.yml`,
@@ -50,7 +50,7 @@ forces CUDA strict. A PC failure never spills onto the Mac. Applied in `/api/odm
 
 - Host: `ssh pc` = `192.168.1.5`, user `reyes`, key `~/.ssh/pc_gpu` (from `~/.ssh/config`). WoL: `~/.local/scripts/pc-wake`
   (broadcast to 192.168.1.255, MAC in `~/.config/pc-gpu.env`).
-- `pipeline/gpu_lane.py`: wakes the PC, rsyncs the COLMAP dataset to `/root/gpu-jobs/data` inside WSL Ubuntu,
+- `pipeline/gpu_lane.py`: wakes the PC, copies the COLMAP dataset with `scp -r` to the NTFS staging on `D:` (`/mnt/d/gpu-vault/transfer`) and then `cp` into WSL ext4 at `/root/gpu-jobs/data` (Ubuntu),
   runs nerfstudio splatfacto + gsplat in a held SSH session (WSL dies ~15 s after the last session closes), exports
   the PLY and brings it back with scp. `--probe` checks node and environment.
 - `pipeline/odm_gpu_lane.py`: ODM on the PC. Ships images, runs the GPU ODM container (`/root/gpu-jobs/odm`),
@@ -73,6 +73,10 @@ COLMAP export). The worker's idle loop calls `stop_if_idle()`, stopping it after
 Leases and the last-use marker live in `~/Library/Caches/AeroBrain/`. Any `docker` command starts OrbStack, so
 probes must use `orb status` first. Memory cap 8 GB (a limit, not a reservation).
 
+Callers that need Docker for one step wrap it in `docker_ondemand.session()`, a context manager that takes a lease file
+first (so `stop_if_idle()` cannot stop the VM under the step), calls `ensure_up()`, and always removes the lease on exit,
+even on failure; the idle window then restarts from that moment.
+
 ## 4. Cloudflare edge
 
 - Worker `aerobrain-private-data-edge` (source `edge/`, config `edge/wrangler.toml`), route `vuelos.metislab.work/*` only,
@@ -90,16 +94,17 @@ The vault is data, outside the repo. Web paths `/data/...` map to it (with `ops/
 |---|---|
 | `raw/` | Original DJI media, bit-perfect, checksummed. Never re-encoded or touched by cleanups. |
 | `proxies/`, `proxies720/` | Web proxies (1080p H.264 / 720p). |
+| `reels/` | Rendered reels (their posters are in `reel-posters/`). |
 | `frames/`, `thumbs/`, `reel-posters/`, `photos/` | Keyframes for AI, thumbnails, posters, still photos. |
 | `tracks/` | Per-clip 1 Hz GPS track (flight.json from SRT). |
 | `ai/`, `audio/` | AI analysis output; audio assets. |
 | `manifest/` | **App data, not just per-clip manifests**: `DJI_*.json` per clip, `flights.json` and `system.json` (indexes the web reads), `trips_meta.json`, `routes.json`, `geocode.json`, `capture/`, **`jobs.db`** (SQLite queue + sessions), and **`scenes/scene_<id>.json`** (stable scenes: `active_version`, `versions[]`, `source_evidence`). |
 | `odm/` | ODM projects `proj_<clip-or-recon_id>/` (images + opensfm). They survive training (needed for re-splat and evals). |
 | `models/<id>/` | Published 3D products per clip or `recon_<hash>`: ortho, DSM, cloud, mesh, `meta.json`, `scene.v2.json` (SceneManifestV2). |
-| `splats/` | Current splat set `<id>.{splat,clean.sog,ksplat,cameras.json,meta.json}`; `history/` archived versions; `.training/` staging. |
+| `splats/` | Current splat set `<id>.{splat,clean.sog,ksplat,cameras.json,meta.json}`; `history/` archived versions; `.training/` training staging (created on demand). |
 | `worlds/`, `eval/`, `qa/`, `properties/` | Flightverse world assets, held-out eval runs, browser QA screenshots, property data. |
-| `ops/` | Private ops data: `job_logs/`, `errors.jsonl`, `reports/`, `auth-events.jsonl`, `evidence/`, `transfer/`. |
-| `staging/`, `trash/` | Upload staging; reversible deletes (`trash/{splats,clips/<cid>,reel,audio,...}`). |
+| `ops/` | Private ops data: `job_logs/`, `errors.jsonl`, `reports/`, `auth-events.jsonl`, `evidence/`, `transfer/` (created on demand). |
+| `staging/`, `trash/` | `staging/` (created on demand) is scene-AOI scratch plus locks (browser uploads land in `raw/uploads`); `trash/` holds reversible deletes (`trash/{splats,clips/<cid>,reel,audio,...}`). |
 
 ## 6. Data flow: ingest to web
 

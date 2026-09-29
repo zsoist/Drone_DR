@@ -38,6 +38,7 @@ from pathlib import Path
 
 import numpy as np
 
+from fsutil import atomic_write_json, atomic_write_text  # noqa: E402
 from paths import REPO, VAULT  # noqa: E402
 
 from worker import (PeakTracker, choose_splat_backend, opensplat_train_cmd,
@@ -70,6 +71,8 @@ def _source_of(name: str) -> str:
 def _pick_even(names: list, k: int, seed_key: str) -> set:
     """k nombres espaciados uniformemente con offset determinista del seed."""
     n = len(names)
+    if k <= 0 or n == 0:
+        return set()
     if k >= n:
         return set(names)
     stride = n / k
@@ -121,15 +124,15 @@ def make_split(proj: Path, out_root: Path, seed_key: str) -> dict:
             shots = {k: v for k, v in r.get("shots", {}).items() if keep(k)}
             if shots:
                 pruned.append({**r, "shots": shots})
-        (d / "reconstruction.json").write_text(json.dumps(pruned))
-        (d / "image_list.txt").write_text(il_txt)
+        atomic_write_json(d / "reconstruction.json", pruned)
+        atomic_write_text(d / "image_list.txt", il_txt)
     split = {"seed_key": seed_key, "n_total": n, "n_train": n - len(test),
              "n_test": len(test), "test_views": sorted(test)}
     if len(groups) > 1:
         split["by_source"] = {pfx or "(sin prefijo)": {
             "total": len(names), "test": sum(1 for t in test if _source_of(t) == pfx)}
             for pfx, names in sorted(groups.items())}
-    (out_root / "split.json").write_text(json.dumps(split, indent=1))
+    atomic_write_json(out_root / "split.json", split, indent=1)
     return split
 
 
@@ -160,9 +163,10 @@ def train(train_dir: Path, out_ply: Path, preset_key: str, force_cpu: bool = Fal
         t0 = time.time()
         # stdout a archivo, NO a DEVNULL: un rc=1 sin el mensaje del trainer es
         # in-diagnosticable (aprendido con el experimento watermark)
-        tlog = open(out_ply.parent / f"train-rung{rung}.log", "w")
-        proc = subprocess.Popen(cmd, env=env, stdout=tlog,
-                                stderr=subprocess.STDOUT, start_new_session=True)
+        # el hijo hereda su propio descriptor: el padre cierra el handle de inmediato
+        with open(out_ply.parent / f"train-rung{rung}.log", "w") as tlog:
+            proc = subprocess.Popen(cmd, env=env, stdout=tlog,
+                                    stderr=subprocess.STDOUT, start_new_session=True)
         timeout = time.time() + int(preset.get("timeout") or 4 * 3600)
         while proc.poll() is None:
             if time.time() > timeout:
@@ -291,6 +295,14 @@ def _machine_load() -> dict:
     return {"load1": round(os.getloadavg()[0], 2), "worker_jobs_running": running}
 
 
+def params_hash(cmd: list, test_views: list, run_root: Path) -> str:
+    """Hash of what defines the measurement, not where it ran: the run dir (which embeds the
+    timestamped run_id) is replaced by a placeholder so two runs of the same params match."""
+    root = str(run_root)
+    portable = [str(a).replace(root, "<run>") for a in cmd]
+    return hashlib.sha1(json.dumps([portable, test_views]).encode()).hexdigest()[:12]
+
+
 def run(cid: str, preset_key: str = "cinematic", force_cpu: bool = False) -> Path:
     proj = VAULT / "odm" / f"proj_{cid}"
     if not (proj / "opensfm" / "reconstruction.json").exists():
@@ -329,13 +341,12 @@ def run(cid: str, preset_key: str = "cinematic", force_cpu: bool = False) -> Pat
                 **({"lpips": round(float(np.mean([v["lpips"] for v in vs])), 4)}
                    if all("lpips" in v for v in vs) else {})}
     rec = {"run_id": run_id, "clip_id": cid, "preset": preset_key,
-           "params_hash": hashlib.sha1(json.dumps(
-               [tinfo["cmd"], split["test_views"]]).encode()).hexdigest()[:12],
+           "params_hash": params_hash(tinfo["cmd"], split["test_views"], root),
            "trainer": _trainer_context(force_cpu),
            "machine_load": _machine_load(),
            "split": split, "train": tinfo, "eval": ev,
            "created": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
-    (root / "run.json").write_text(json.dumps(rec, indent=1))
+    atomic_write_json(root / "run.json", rec, indent=1)
     print(f"✅ PSNR {ev['psnr']} · SSIM {ev['ssim']}"
           + (f" · LPIPS {ev['lpips']}" if "lpips" in ev else "") + f" → {root}/run.json")
     return root

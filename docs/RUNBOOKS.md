@@ -135,6 +135,25 @@ It runs every `pipeline/test_*.py` except `test_smoke.py` (as `python -m unittes
 `errors.jsonl`, never the live vault. `test_smoke.py` runs it with `--fast`. Run the smoke test **without a pipe**
 (or `set -o pipefail`) before any commit. Extra 3D acceptance checks: [AGENTS.md](../AGENTS.md#3d-acceptance-checks-for-agents).
 
+## Rebuild SuperSplat
+
+`/supersplat/` is served from `splat/supersplat/dist`, which is gitignored (build output). The source is a fork checked out
+in `splat/supersplat` (branch `aerobrain-fork`; `origin` = upstream playcanvas, `backup` = private `github.com/zsoist/aerobrain-supersplat`).
+Local patches are listed in `splat/supersplat/AEROBRAIN_PATCHES.md`.
+
+```bash
+cd splat/supersplat && npm ci && npm run build    # npm ci only on a fresh checkout; regenerates dist/
+git push backup aerobrain-fork                     # keep the private backup current after fork commits
+```
+
+No server restart is needed; the static server reads `dist` on demand.
+
+## Node tooling in `tools/`
+
+`cd tools && npm ci` installs `@playcanvas/splat-transform` (lockfile-pinned). The server's splat convert/clean/export paths (`aerobrain_server.py`) shell out to
+`tools/node_modules/@playcanvas/splat-transform/bin/cli.mjs`, and Auto-Clean (`pipeline/autoclean.mjs`) uses it for the GPU floater filter
+(it degrades to the local filter result when missing); without `tools/node_modules` the server paths fail. `tools/node_modules` is gitignored.
+
 ## Bump the web version
 
 After ANY edit under `web/` (code or docs):

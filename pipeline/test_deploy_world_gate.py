@@ -42,7 +42,7 @@ class DeployWorldGateTests(unittest.TestCase):
                 flightverse_collision_gate.prepare_ground_arsenal(cdp, 120)
             )
 
-        wait_ready.assert_called_once_with(cdp, 120)
+        wait_ready.assert_called_once_with(cdp, 120, None)
         aim_ground.assert_called_once_with(cdp)
 
     def _run_web_restart(
@@ -110,6 +110,7 @@ echo world-a
                 env=env,
                 text=True,
                 capture_output=True,
+                stdin=subprocess.DEVNULL,   # the python3 mock does $(cat): never inherit a live stdin
                 check=False,
             )
             return result, trace.read_text().splitlines()
@@ -449,6 +450,62 @@ echo world-a
             flightverse_collision_gate.validate_live_sample(
                 sample, requires_structural_collision=False),
         )
+
+
+class StressGateStrictnessTests(unittest.TestCase):
+    def test_single_shot_in_a_long_run_no_longer_passes(self):
+        failures = flightverse_collision_gate.validate_stress_actions({
+            "attempts": 200, "fired_delta": 1, "exploded_delta": 1, "reloads": 4})
+        self.assertEqual(["fire_rate_too_low"], [row["reason"] for row in failures])
+
+    def test_healthy_fire_rate_passes(self):
+        self.assertEqual([], flightverse_collision_gate.validate_stress_actions({
+            "attempts": 200, "fired_delta": 60, "exploded_delta": 5, "reloads": 4,
+            "fired_by_generation": {1: 15, 2: 15, 3: 15, 4: 15}}))
+
+    def test_a_generation_that_never_fired_fails(self):
+        failures = flightverse_collision_gate.validate_stress_actions({
+            "attempts": 40, "fired_delta": 30, "exploded_delta": 2, "reloads": 1,
+            "fired_by_generation": {1: 30, 2: 0}})
+        self.assertEqual(["fire_not_observed_in_generation"], [row["reason"] for row in failures])
+
+
+class _FakeCdp:
+    """Serves the OLD document's ready report for the first polls after navigation."""
+
+    def __init__(self, origins):
+        self.origins = list(origins)
+        self.polls = 0
+
+    def pump(self, _seconds):
+        pass
+
+    def eval(self, expression):
+        if expression == "performance.timeOrigin":
+            return self.origins[0]
+        self.polls += 1
+        origin = self.origins[0] if self.polls <= 3 else self.origins[1]
+        return {"done": True, "__timeOrigin": origin}
+
+
+class WaitForWorldReadyTests(unittest.TestCase):
+    def test_stale_document_is_ignored_until_time_origin_changes(self):
+        cdp = _FakeCdp([1000.0, 2000.0])
+        previous = flightverse_collision_gate._time_origin(cdp)
+        ready = flightverse_collision_gate._wait_for_world_ready(cdp, 5, previous)
+        self.assertEqual(2000.0, ready["__timeOrigin"])
+        self.assertEqual(4, cdp.polls)
+
+    def test_without_previous_origin_first_ready_report_wins(self):
+        cdp = _FakeCdp([1000.0, 2000.0])
+        ready = flightverse_collision_gate._wait_for_world_ready(cdp, 5)
+        self.assertEqual(1000.0, ready["__timeOrigin"])
+
+    def test_times_out_when_document_never_changes(self):
+        cdp = _FakeCdp([1000.0, 1000.0])
+        with mock.patch.object(flightverse_collision_gate.time, "time",
+                               side_effect=[0, 0, 1, 2, 3, 99]):
+            self.assertIsNone(flightverse_collision_gate._wait_for_world_ready(cdp, 5, 1000.0))
 
 
 if __name__ == "__main__":

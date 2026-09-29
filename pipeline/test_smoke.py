@@ -624,7 +624,7 @@ check("flightverse weapon GLBs: 4K/runtime contracts and deterministic rebuild p
 _placement_tests = subprocess.run(
     [
         "/Volumes/SSD/_system/venv/bin/python3",
-        "-m", "unittest", "pipeline.test_compute_placement", "pipeline.test_pc_janitor",
+        "-m", "unittest", "pipeline.test_compute_policy", "pipeline.test_pc_janitor",
     ],
     capture_output=True, text=True, env=_weapon_asset_env,
     cwd=Path(__file__).resolve().parent.parent)

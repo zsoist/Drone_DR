@@ -1,13 +1,15 @@
-# Assets del héroe (Inicio)
+# Assets de la app
 
-## Fondo pixel-art
-Suelta la imagen aquí con el nombre EXACTO:
+## Héroe de Inicio (Home V2)
 
-    web/assets/hero-pixel.png
+- `hero-pixel.webp` (~200 KB) es el arte del héroe. Lo usan `web/home.html` (`<link rel="preload" ... fetchpriority="high">`)
+  y `web/style.css` (`.home-v2::before` y `.hv2-hero-art`, como fondo atenuado con máscara/`mix-blend-mode`).
+- `hero-pixel.png` (~2.8 MB) es la fuente sin comprimir; ningún HTML/CSS la referencia. Para cambiar el héroe, reemplaza el
+  `.webp` (mismo nombre) y regenera desde el PNG; no cargues el PNG en la web.
+- Tras cualquier cambio bajo `web/`, ejecuta `python3 pipeline/bump_web_version.py` (bump `?v=N` y regenera los `.gz`).
 
-- Recomendado: pixel-art panorámico (cielo/skyline/paisaje), ancho ~1600×450 px,
-  idealmente tileable en horizontal (se repite sin costura).
-- Se sirve en /assets/hero-pixel.png y la home lo detecta sola (aparece atenuado
-  detrás del héroe con image-rendering: pixelated). Si el archivo no existe, no pasa nada.
-- Formatos: .png (mejor para pixel-art), .webp o .gif (animado) también sirven —
-  si usas otro nombre/extensión, avísame y lo cableo.
+## Otros contenidos
+
+- `drone.glb`, `enemies/`, `weapons/`, `destruction/`, `props/`: modelos y kits de Flightverse (ver `props/README.md`,
+  `destruction/THIRD_PARTY.md` y `docs/DRONE_MODEL_SPEC.md`, `docs/ENEMY_MODEL_SPEC.md`).
+- `manifest.json`: manifiesto PWA. `touch-icon.png`, `ovi-drone.{png,svg}`: iconos y marca del dron.

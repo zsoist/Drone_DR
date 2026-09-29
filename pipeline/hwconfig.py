@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 
 from paths import REPO as _REPO  # noqa: E402
+from fsutil import atomic_write_json  # noqa: E402
 CONFIG = _REPO / "config" / "hardware.json"
 
 # caps calibrados para el M4/16GB (los valores que vivían hardcodeados en worker.py)
@@ -154,7 +155,7 @@ def load() -> dict:
     else:
         cfg = {"machine": detect_machine(), "caps": DEFAULT_CAPS}
         CONFIG.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG.write_text(json.dumps(cfg, indent=1))
+        atomic_write_json(CONFIG, cfg, indent=1, ensure_ascii=True)
     live_gb = round(_sysctl("hw.memsize") / 2**30, 1)
     if live_gb and abs(live_gb - cfg["machine"].get("system_ram_gb", 0)) >= 1:
         cfg = _on_ram_mismatch(cfg["machine"].get("system_ram_gb", 0), live_gb, cfg)
@@ -167,7 +168,7 @@ if __name__ == "__main__":
         cfg = json.loads(CONFIG.read_text()) if CONFIG.exists() else {"caps": DEFAULT_CAPS}
         cfg["machine"] = detect_machine()
         CONFIG.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG.write_text(json.dumps(cfg, indent=1))
+        atomic_write_json(CONFIG, cfg, indent=1, ensure_ascii=True)
         print(json.dumps(cfg, indent=1))
     else:
         print(json.dumps(load(), indent=1))

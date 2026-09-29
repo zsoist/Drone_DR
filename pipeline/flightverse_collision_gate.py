@@ -13,6 +13,9 @@ from browser_gate import DEFAULT_BASE_URL, launch_chrome, new_page
 
 
 from paths import VAULT  # noqa: E402
+# A stress run must FIRE on a real share of its trigger pulls, not once in total. Weapons have
+# cooldowns and finite ammo, so this is a floor (20%), not 1:1.
+MIN_FIRE_PER_ATTEMPT = 0.2
 NEW_WEAPON_KEYS = ("ac", "sw", "vx", "rg", "tb")
 WEAPON_SETTLE_SECONDS = {
     "ac": 1.5,
@@ -115,8 +118,16 @@ def validate_effect_snapshot(sample: dict) -> list[dict]:
 
 def validate_stress_actions(actions: dict) -> list[dict]:
     failures = []
-    if actions.get("attempts", 0) < 1 or actions.get("fired_delta", 0) < 1:
+    attempts = int(actions.get("attempts", 0) or 0)
+    fired = int(actions.get("fired_delta", 0) or 0)
+    if attempts < 1 or fired < 1:
         failures.append({"reason": "fire_not_observed", **actions})
+    elif fired < math.ceil(attempts * MIN_FIRE_PER_ATTEMPT):
+        failures.append({"reason": "fire_rate_too_low",
+                         "min_per_attempt": MIN_FIRE_PER_ATTEMPT, **actions})
+    for generation, count in sorted((actions.get("fired_by_generation") or {}).items()):
+        if int(count) < 1:
+            failures.append({"reason": "fire_not_observed_in_generation", "generation": generation})
     if actions.get("exploded_delta", 0) < 1:
         failures.append({"reason": "explosion_not_observed", **actions})
     if actions.get("reloads", 0) < 1:
@@ -194,7 +205,7 @@ def aim_fire_control_at_ground(cdp) -> bool:
     })()"""))
 
 
-def prepare_ground_arsenal(cdp, timeout: int) -> bool:
+def prepare_ground_arsenal(cdp, timeout: int, previous_origin: float | None = None) -> bool:
     """Wait for a fresh FPV navigation and restore its deterministic aim.
 
     Navigation resets the gimbal to the normal shallow FPV angle.  The arsenal
@@ -202,12 +213,27 @@ def prepare_ground_arsenal(cdp, timeout: int) -> bool:
     page load must reapply the ground aim just like the stress phase does.
     """
     return bool(
-        _wait_for_world_ready(cdp, timeout)
+        _wait_for_world_ready(cdp, timeout, previous_origin)
         and aim_fire_control_at_ground(cdp)
     )
 
 
-def _wait_for_world_ready(cdp, timeout: int) -> dict | None:
+def _time_origin(cdp) -> float | None:
+    """performance.timeOrigin of the CURRENT document (changes on every navigation/reload)."""
+    try:
+        value = cdp.eval("performance.timeOrigin")
+    except RuntimeError:
+        return None
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _wait_for_world_ready(cdp, timeout: int, previous_origin: float | None = None) -> dict | None:
+    """Wait until window.__volar reports done for a NEW document.
+
+    Right after Page.navigate / Page.reload the old document can still be alive for a few
+    polls and its `__volar.done` is already true. Pass the timeOrigin read BEFORE issuing the
+    navigation: a ready report only counts once the document's timeOrigin differs.
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
         cdp.pump(0.25)
@@ -215,11 +241,14 @@ def _wait_for_world_ready(cdp, timeout: int) -> dict | None:
             ready = cdp.eval(
                 "(() => { const r=window.__volar;"
                 " return r?.done && r?.customDrone"
-                " && r?.collision?.radius_source === 'glb' ? r : null; })()"
+                " && r?.collision?.radius_source === 'glb'"
+                " ? Object.assign({}, r, {__timeOrigin: performance.timeOrigin}) : null; })()"
             )
         except RuntimeError:
             continue
         if ready:
+            if previous_origin is not None and ready.get("__timeOrigin") == previous_origin:
+                continue          # still the pre-navigation document
             return ready
     return None
 
@@ -408,8 +437,9 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             f"{base_url.rstrip('/')}/volar.html"
             f"?m={urllib.parse.quote(cid)}&autotest=1&rig=0"
         )
+        origin = _time_origin(cdp)
         cdp.send("Page.navigate", {"url": url})
-        ready = _wait_for_world_ready(cdp, timeout)
+        ready = _wait_for_world_ready(cdp, timeout, origin)
         if not ready:
             raise RuntimeError(
                 f"mundo vivo no terminó en {timeout}s · console={cdp.errors[:6]}"
@@ -422,8 +452,9 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             f"{base_url.rstrip('/')}/volar.html"
             f"?m={urllib.parse.quote(cid)}&autotest=1&rig=3"
         )
+        origin = _time_origin(cdp)
         cdp.send("Page.navigate", {"url": fpv_url})
-        if not _wait_for_world_ready(cdp, timeout):
+        if not _wait_for_world_ready(cdp, timeout, origin):
             raise RuntimeError(
                 f"FPV vivo no terminó en {timeout}s · console={cdp.errors[:6]}"
             )
@@ -431,7 +462,8 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             raise RuntimeError("control de gimbal no disponible para stress de fuego")
 
         samples = []
-        actions = {"attempts": 0, "fired_delta": 0, "exploded_delta": 0, "reloads": 0}
+        actions = {"attempts": 0, "fired_delta": 0, "exploded_delta": 0, "reloads": 0,
+                   "fired_by_generation": {}}
         generation = 1
         previous_weapon_counts = _weapon_counts(cdp)
         reload_every = max(1, stress // 4)
@@ -449,20 +481,25 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
                 "fired": sample.get("fired") or 0,
                 "exploded": sample.get("exploded") or 0,
             }
-            actions["fired_delta"] += max(
-                0, weapon_counts["fired"] - previous_weapon_counts["fired"])
+            fired_now = max(0, weapon_counts["fired"] - previous_weapon_counts["fired"])
+            actions["fired_delta"] += fired_now
+            actions["fired_by_generation"][generation] = (
+                actions["fired_by_generation"].get(generation, 0) + fired_now)
             actions["exploded_delta"] += max(
                 0, weapon_counts["exploded"] - previous_weapon_counts["exploded"])
             previous_weapon_counts = weapon_counts
             if (index + 1) % reload_every == 0:
                 cdp.pump(3)
                 settled = _weapon_counts(cdp)
-                actions["fired_delta"] += max(
-                    0, settled["fired"] - previous_weapon_counts["fired"])
+                settled_fired = max(0, settled["fired"] - previous_weapon_counts["fired"])
+                actions["fired_delta"] += settled_fired
+                actions["fired_by_generation"][generation] = (
+                    actions["fired_by_generation"].get(generation, 0) + settled_fired)
                 actions["exploded_delta"] += max(
                     0, settled["exploded"] - previous_weapon_counts["exploded"])
+                origin = _time_origin(cdp)
                 cdp.send("Page.reload")
-                if not _wait_for_world_ready(cdp, timeout):
+                if not _wait_for_world_ready(cdp, timeout, origin):
                     failures = [{"run": index + 1, "reason": "reload_timeout"}]
                     break
                 actions["reloads"] += 1
@@ -509,8 +546,9 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
                         "last": values[-1],
                     })
 
+        origin = _time_origin(cdp)
         cdp.send("Page.navigate", {"url": fpv_url})
-        ready = prepare_ground_arsenal(cdp, timeout)
+        ready = prepare_ground_arsenal(cdp, timeout, origin)
         fpv_camera = None
         arsenal = []
         if ready:

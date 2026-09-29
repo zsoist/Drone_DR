@@ -1,5 +1,6 @@
 """Regression coverage for the all-map World runtime deployment sweep."""
 import unittest
+from unittest import mock
 
 import world_runtime_sweep
 
@@ -151,6 +152,17 @@ class WorldRuntimeSweepTests(unittest.TestCase):
             "scene_group_leak",
             "stale_load_disposal",
         }.issubset(reasons))
+
+
+    def test_zero_candidate_worlds_fails_closed_without_launching_chrome(self):
+        disk = {"ok": True, "worlds": [{"clip_id": "m", "terrain": False, "collision": False}],
+                "failures": []}
+        with mock.patch.object(world_runtime_sweep.audit_world, "audit", return_value=disk), \
+                mock.patch.object(world_runtime_sweep, "launch_chrome",
+                                  side_effect=AssertionError("chrome must not start")):
+            result = world_runtime_sweep.run_sweep()
+        self.assertFalse(result["ok"])
+        self.assertEqual("no_candidate_worlds", result["failures"][0]["reason"])
 
 
 if __name__ == "__main__":

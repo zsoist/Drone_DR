@@ -6,7 +6,7 @@ Conventions:
 - nose/camera toward -Z
 - four propeller nodes named prop_1 .. prop_4, pivoted on motor axes
 - deployed X span ~= 0.85 m
-- <= 2 PBR materials, no textures/lights/cameras/animations
+- <= 3 PBR materials (light plastic, dark detail, emissive accent), no textures/lights/cameras/animations
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import math
 import struct
+import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -23,6 +24,8 @@ from trimesh.visual.material import PBRMaterial
 
 OUT = Path('drone_hd.glb')
 REPORT = Path('drone_hd_validation.json')
+MATERIAL_BUDGET = 3
+TRIANGLE_BUDGET = 120000
 
 
 def mat_translate(v: Iterable[float]) -> np.ndarray:
@@ -309,7 +312,7 @@ def build_model() -> trimesh.Scene:
                     rotation=mat_rotate(-angle, [0, 1, 0]))
         accent_parts.append(torus_y(0.0225, 0.0018, major_sections=40, minor_sections=8, center=[x2, 0.0285, z2]))
 
-    # Build exactly two PBR materials.
+    # Build the three PBR materials (MATERIAL_BUDGET).
     light_mat = PBRMaterial(
         name='mat_light_plastic',
         baseColorFactor=[196, 201, 205, 255],
@@ -492,10 +495,10 @@ def validate(out_path: Path) -> dict:
         'triangles': rendered_triangles,
         'triangles_unique_meshes': unique_triangles,
         'triangles_rendered_instances': rendered_triangles,
-        'triangle_budget_ok': rendered_triangles <= 120000,
+        'triangle_budget_ok': rendered_triangles <= TRIANGLE_BUDGET,
         'materials': [m.get('name') for m in materials],
         'material_count': len(materials),
-        'material_budget_ok': len(materials) <= 8,
+        'material_budget_ok': len(materials) <= MATERIAL_BUDGET,
         'textures': len(gltf.get('textures', [])),
         'images': len(gltf.get('images', [])),
         'animations': len(gltf.get('animations', [])),
@@ -514,15 +517,34 @@ def validate(out_path: Path) -> dict:
     return report
 
 
-def main() -> None:
+def gate_failures(report: dict) -> list[str]:
+    """Reasons the generated drone violates its own contract. Empty list == pass."""
+    checks = {
+        'triangle budget': report['triangle_budget_ok'],
+        f'material budget (<= {MATERIAL_BUDGET})': report['material_budget_ok'],
+        'propeller nodes prop_1..prop_4': report['propeller_nodes_present'],
+        'X span within 5 mm of target': report['x_span_error_m'] <= 0.005,
+        'no textures/images': report['textures'] == 0 and report['images'] == 0,
+        'no animations/cameras': report['animations'] == 0 and report['cameras'] == 0,
+    }
+    return [name for name, ok in checks.items() if not ok]
+
+
+def main() -> int:
     scene = build_model()
     glb = trimesh.exchange.gltf.export_glb(scene, include_normals=True)
     glb = postprocess_glb(glb)
     OUT.write_bytes(glb)
     report = validate(OUT)
+    failures = gate_failures(report)
+    report['gate_failures'] = failures
     REPORT.write_text(json.dumps(report, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     print(json.dumps(report, indent=2, ensure_ascii=False))
+    if failures:
+        print('DRONE VALIDATION FAILED: ' + '; '.join(failures), file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

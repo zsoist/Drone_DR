@@ -91,10 +91,14 @@ def cone(
     sections: int = 24,
     reverse: bool = False,
 ) -> trimesh.Trimesh:
+    """Cone centered on `center`, apex toward -Z (the fire direction) unless reverse=True.
+
+    trimesh.creation.cone spans z=0..height with the APEX at +height, so the raw mesh
+    points aft (+Z). Weapons fire down -Z, so flip it by default (rotation keeps winding).
+    """
     mesh = trimesh.creation.cone(radius=radius, height=length, sections=sections)
-    # trimesh cone spans z=0..height; center it, with its point facing -Z.
     mesh.apply_translation([0, 0, -length / 2])
-    if reverse:
+    if not reverse:
         mesh.apply_transform(
             trimesh.transformations.rotation_matrix(math.pi, [1, 0, 0])
         )
@@ -309,7 +313,7 @@ def add_projectile(
     )
     builder.mesh(
         "projectile_nose",
-        cone(radius, radius * 2.2, (0, 0, -length)),
+        cone(radius, radius * 2.2, (0, 0, -length - radius * 1.1)),
         parent="projectile",
     )
     if fins:
@@ -372,7 +376,7 @@ def build_viperx(material: PBRMaterial) -> SceneBuilder:
     builder = SceneBuilder("viperx_missile", material)
     builder.mesh("launch_rail", box((0.28, 0.16, 2.30), (0, -0.28, -0.25)))
     builder.mesh("missile_body", cylinder(0.18, 1.92, (0, 0, -0.42), 32))
-    builder.mesh("seeker", cone(0.18, 0.46, (0, 0, -1.38), 32))
+    builder.mesh("seeker", cone(0.18, 0.26, (0, 0, -1.49), 32))
     builder.mesh("exhaust", cylinder(0.135, 0.22, (0, 0, 0.65), 24))
     for index, angle in enumerate((0, math.pi / 2)):
         fin = box((0.66, 0.045, 0.48), (0, 0, 0.34))
@@ -409,7 +413,7 @@ def build_nova(material: PBRMaterial) -> SceneBuilder:
     builder = SceneBuilder("nova_bomb", material)
     builder.mesh("mount_yoke", box((0.84, 0.17, 0.58), (0, 0.55, 0.25)))
     builder.mesh("faceted_casing", ellipsoid((0.82, 0.82, 1.82), (0, 0, -0.38), 2))
-    builder.mesh("nose_cap", cone(0.34, 0.52, (0, 0, -1.28), 24))
+    builder.mesh("nose_cap", cone(0.26, 0.44, (0, 0, -1.32), 24))
     builder.mesh("tail_shaft", cylinder(0.20, 0.50, (0, 0, 0.73), 20))
     for index, angle in enumerate((0, math.pi / 2)):
         fin = box((0.88, 0.055, 0.58), (0, 0, 0.78))

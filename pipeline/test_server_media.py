@@ -1,5 +1,5 @@
-"""Round-2 server fixes: reel claim, supersplat route, photo_thumb streaming, sidecar/order
-atomicity, trip_meta migration, atomic writes, probe timeout."""
+"""Server media/library fixes: reel claim, photo_thumb streaming, sidecar/order atomicity,
+trip_meta migration, atomic writes, probe timeout."""
 import http.client
 import json
 import os
@@ -100,26 +100,6 @@ class ReelClaimTests(Base):
             code, _, raw = self.http("GET", "/api/studio_media")
         self.assertEqual(200, code)
         self.assertEqual(["edit-ok.mp4"], [r["name"] for r in json.loads(raw)["reels"]])
-
-
-class StaticRouteTests(Base):
-    def test_supersplat_mobile_css_resolves_from_web(self):
-        h = server.H.__new__(server.H)
-        h.path = "/supersplat-mobile.css"
-        h.headers = {}
-        f = h.resolve()
-        self.assertIsNotNone(f)
-        self.assertEqual(server.WEB.resolve() / "supersplat-mobile.css", f)
-
-    def test_supersplat_prefix_still_maps_to_editor_dir(self):
-        with tempfile.TemporaryDirectory() as td:
-            (Path(td) / "index.html").write_text("x")
-            with mock.patch.object(server, "SUPERSPLAT", Path(td)):
-                for path in ("/supersplat", "/supersplat/", "/supersplat/index.html"):
-                    h = server.H.__new__(server.H)
-                    h.path = path
-                    h.headers = {}
-                    self.assertEqual(Path(td).resolve() / "index.html", h.resolve(), path)
 
 
 class PhotoThumbTests(Base):

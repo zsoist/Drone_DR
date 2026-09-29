@@ -5,6 +5,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pc_janitor import Entry, job_id_for, plan
+from unittest import mock
+
+import pc_janitor
+import worker
 
 NOW = 2_000_000_000.0
 DAY = 86400
@@ -53,6 +57,39 @@ class PcJanitorPolicyTests(unittest.TestCase):
                    old("/mnt/d/Games/job-splat-1-abcdef", 400),
                    old("/root/gpu-jobs/data/bad name", 400)]
         self.assertEqual(plan(entries, {"splat-1-abcdef": "done"}, NOW), [])
+
+
+
+class PcJanitorProtectTests(unittest.TestCase):
+    NOW = 2_000_000_000.0
+
+    def test_resume_inputs_of_an_old_terminal_job_are_protected(self):
+        ckpt = pc_janitor.Entry("/root/gpu-jobs/checkpoints/splat-1-abcdef", self.NOW - 90 * 86400)
+        odm = pc_janitor.Entry("/root/gpu-jobs/odm/3d-2-bbbbbb", self.NOW - 90 * 86400)
+        other = pc_janitor.Entry("/root/gpu-jobs/odm/3d-3-cccccc", self.NOW - 90 * 86400)
+        statuses = {"splat-1-abcdef": "error", "3d-2-bbbbbb": "error", "3d-3-cccccc": "error"}
+        self.assertEqual(3, len(pc_janitor.plan([ckpt, odm, other], statuses, self.NOW)))
+        got = pc_janitor.plan(
+            [ckpt, odm, other], statuses, self.NOW,
+            protect=["/root/gpu-jobs/checkpoints/splat-1-abcdef/step-000012000.ckpt",
+                     "/root/gpu-jobs/odm/3d-2-bbbbbb"])
+        self.assertEqual(["/root/gpu-jobs/odm/3d-3-cccccc"], [e.path for e, _ in got])
+
+    def test_sweep_passes_protect_through(self):
+        with mock.patch.object(pc_janitor, "remote_entries", return_value=[]), \
+                mock.patch.object(pc_janitor, "mac_statuses", return_value={}), \
+                mock.patch.object(pc_janitor, "plan", return_value=[]) as plan:
+            pc_janitor.sweep(apply=False, protect=["/x"])
+        self.assertEqual(["/x"], plan.call_args.kwargs["protect"])
+
+    def test_worker_collects_protect_paths_from_spec(self):
+        spec = {"resume_checkpoint": "/root/gpu-jobs/checkpoints/A/step-000000100.ckpt",
+                "resume_config": "/root/gpu-jobs/checkpoints/A/config.yml",
+                "odm_remote_resume": "3d-old-1"}
+        paths = worker.resume_protect_paths(spec)
+        self.assertIn("/root/gpu-jobs/checkpoints/A/config.yml", paths)
+        self.assertIn("/root/gpu-jobs/odm/3d-old-1", paths)
+        self.assertEqual([], worker.resume_protect_paths({}))
 
 
 if __name__ == "__main__":

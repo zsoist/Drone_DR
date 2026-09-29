@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 from paths import VAULT  # noqa: E402
+from jsonlock import locked_update_json  # noqa: E402
 W, H = 32, 18
 
 
@@ -63,8 +64,8 @@ def main() -> int:
         if not r:
             failed += 1
             continue
-        m.update(r)
-        mf.write_text(json.dumps(m, indent=1))
+        locked_update_json(mf, lambda cur: cur.update(r), VAULT / "manifest" / ".locks",
+                           indent=1, ensure_ascii=True)
         done += 1
         if done % 20 == 0:
             print(f"  {done} medidos…", flush=True)

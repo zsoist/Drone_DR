@@ -111,7 +111,23 @@ export function capWaveQueue({
     const swap = Math.floor(random() * (index + 1));
     [queue[index], queue[swap]] = [queue[swap], queue[index]];
   }
-  return queue.slice(0, DEVICE_BUDGETS[tierName(tier)].maxEnemies);
+  const max = DEVICE_BUDGETS[tierName(tier)].maxEnemies;
+  const head = queue.slice(0, max);
+  // Reserve one slot per enemy type so truncation never drops a type (e.g. the dragon).
+  const counts = new Map();
+  for (const t of head) counts.set(t, (counts.get(t) || 0) + 1);
+  for (const type of selected) {
+    if (counts.get(type) || head.length < 1) continue;
+    for (let i = head.length - 1; i >= 0; i -= 1) {
+      if (counts.get(head[i]) > 1) {
+        counts.set(head[i], counts.get(head[i]) - 1);
+        head[i] = type;
+        counts.set(type, 1);
+        break;
+      }
+    }
+  }
+  return head;
 }
 
 export function engagementState(distance, band = {}) {

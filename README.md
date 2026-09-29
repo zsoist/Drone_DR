@@ -71,7 +71,7 @@ saltarse el gate ni una regla de transformación puede romper la sesión.
 | `pipeline/browser_matrix.py` | QA multi-viewport de splats: share + workspace en mobile/iPad/desktop, macro zoom, overflow y screenshots |
 | `pipeline/audit_splats.py` | Auditor de salud de splats: assets, current/history, metadata, jobs, warnings legacy |
 | `pipeline/make_ksplat.mjs` | .splat/.ply → .ksplat con la lib vendoreada del viewer (sin npm) |
-| `/supersplat/` | Editor SuperSplat (MIT) self-hosted — post-pro de splats: floaters, crop, export |
+| `/supersplat/` | Editor SuperSplat (MIT) self-hosted — post-pro de splats. Se sirve desde `splat/supersplat/dist` (gitignored); fork en `splat/supersplat` (rama `aerobrain-fork`, backup privado `github.com/zsoist/aerobrain-supersplat`); rebuild en [RUNBOOKS](docs/RUNBOOKS.md#rebuild-supersplat) |
 | `web/` | Flight Deck V2: Home cinematográfico, galería, mapa MapLibre/Esri y telemetría sincronizada |
 | `web/home-data.js` | Vista veraz del Home: vuelos, jobs, bóveda y siete módulos con fallos independientes |
 

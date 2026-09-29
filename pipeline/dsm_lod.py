@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from paths import VAULT  # noqa: E402
+from fsutil import atomic_write_json  # noqa: E402
 M_PER_DEG_LAT = 111_320.0  # esferoide medio; error <0.4% — suficiente para vuelo
 
 
@@ -135,7 +136,7 @@ def build(cid: str, target: int = 256) -> dict:
         "center_wgs84": [round(gt[0] + gt[1] * w / 2, 7), round(lat_c, 7)],
         "source": {"dsm_shape": [h, w], "dsm_gt": gt, "nodata": nodata},
     }
-    (mdir / "dsm_lod.json").write_text(json.dumps(side, indent=1))
+    atomic_write_json(mdir / "dsm_lod.json", side, indent=1, ensure_ascii=True)
     return side
 
 

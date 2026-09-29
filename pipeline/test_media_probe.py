@@ -1,50 +1,15 @@
-"""Unit tests for the small shared helpers extracted from aerobrain_server."""
+"""media_probe.py: ffprobe wrappers."""
 from __future__ import annotations
 
-import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import subprocess
-from unittest import mock
-
-import media_probe
-import util_ids
-
-HOSTILE = [
-    "", "clip_0104", "a-b_c", "../../etc/passwd", "..\\..\\x", "a\x00b", "a/b.mp4",
-    "my file.mp3", "  lead trail  ", "...", ".hidden", "ñandú día.mp3", "日本語-01",
-    "a;rm -rf /", "tab\tnew\nline", "emoji\U0001F681x", "a" * 300, 123, None, 4.5, ["x", "y"],
-]
-
-
-class UtilIdsTests(unittest.TestCase):
-    def check(self, fn, pattern, repl):
-        for s in HOSTILE:
-            with self.subTest(fn=fn.__name__, s=s):
-                self.assertEqual(fn(s), re.sub(pattern, repl, str(s)))
-
-    def test_safe_id(self):
-        self.check(util_ids.safe_id, r"[^\w-]", "")
-
-    def test_safe_name(self):
-        self.check(util_ids.safe_name, r"[^\w.\- ]", "")
-
-    def test_safe_upload_name(self):
-        self.check(util_ids.safe_upload_name, r"[^\w.\-]", "_")
-
-    def test_safe_upload_name_spaces(self):
-        self.check(util_ids.safe_upload_name_spaces, r"[^\w.\- ]", "_")
-
-    def test_no_path_separators_survive(self):
-        for fn in (util_ids.safe_id, util_ids.safe_name, util_ids.safe_upload_name):
-            out = fn("../../a/b\\c\x00")
-            self.assertNotIn("/", out)
-            self.assertNotIn("\\", out)
-            self.assertNotIn("\x00", out)
+import media_probe  # noqa: E402
 
 
 class MediaProbeTests(unittest.TestCase):

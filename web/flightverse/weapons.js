@@ -6,29 +6,29 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=349';
+import * as THREE from '/flightverse/three.js?v=352';
 import {
   earliestHit,
   normalizeTargetRadius,
   segmentSphereHit,
-} from '/flightverse/collision-math.js?v=349';
+} from '/flightverse/collision-math.js?v=352';
 import {
   EffectPool,
   disposeOwnedRenderObject,
   impactTransform,
   projectileDirection,
-} from '/flightverse/aiming.js?v=349';
+} from '/flightverse/aiming.js?v=352';
 import {
   WEAPON_PROFILES,
   advanceLaunchSchedules,
   createLaunchSchedule,
   isGuidanceTargetVisible,
   steerVector,
-} from '/flightverse/weapon-registry.js?v=349';
+} from '/flightverse/weapon-registry.js?v=352';
 import {
   createWeaponEffects,
   radialDamage,
-} from '/flightverse/weapon-effects.js?v=349';
+} from '/flightverse/weapon-effects.js?v=352';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -69,7 +69,7 @@ export const ARSENAL = WEAPON_PROFILES;
 let debrisFrags = null;
 (async () => {
   try {
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=349');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=352');
     const g = await new GLTFLoader().loadAsync('/assets/destruction/models/debris_pack.glb');
     const frags = [];
     g.scene.traverse(n => { if (n.isMesh && n.userData.role === 'fragment') frags.push(n); });
@@ -188,6 +188,23 @@ export function createWeapons(scene, {
       () => disposeObject(sp, { geometry: false })));
     return part;
   };
+
+  // Pool fijo de luces de explosión: añadir/quitar PointLights cambia el nº de luces
+  // del shader y fuerza recompilaciones, así que se reutilizan (intensidad 0 = libre).
+  const BLAST_LIGHTS = 4;
+  const blastLights = [];
+  let blastCursor = 0;
+  function acquireBlastLight() {
+    let slot = blastLights.find(sl => !sl.token);
+    if (!slot && blastLights.length < BLAST_LIGHTS) {
+      const light = new THREE.PointLight(0xffb066, 0, 85, 1.8);
+      group.add(light);
+      slot = { light, token: null };
+      blastLights.push(slot);
+    }
+    if (!slot) slot = blastLights[blastCursor++ % blastLights.length];   // robar la más antigua
+    return slot;
+  }
 
   function fireAftermath(p) {                 // fuego residual que arde y muere
     if (S.fires.length >= 3) {
@@ -359,10 +376,15 @@ export function createWeapons(scene, {
     });
     // One short-lived light preserves local illumination. All visible smoke,
     // fire, sparks, streaks and flying debris live in five fixed GPU batches.
-    const light = new THREE.PointLight(0xffb066, 150 * big, 85 * big, 1.8);
+    const lightSlot = acquireBlastLight();
+    const light = lightSlot.light;
+    light.color.setHex(0xffb066);
+    light.intensity = 150 * big; light.distance = 85 * big;
     light.position.copy(p).addScaledVector(normal, 1.5);
-    group.add(light);
-    S.parts.push(poolEffect('fire', { light, t: 0, life: 0.22 }, () => removeObject(light)));
+    const lightToken = lightSlot.token = {};
+    S.parts.push(poolEffect('fire', { light, t: 0, life: 0.22 }, () => {
+      if (lightSlot.token === lightToken) { light.intensity = 0; lightSlot.token = null; }
+    }));
     // A handful of bounded persistent chunks settle into world rubble. The
     // visible blowout itself is instanced in weapon-effects.
     for (let i = 0; i < 4; i++) {

@@ -3,10 +3,10 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=349';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=349';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=349';
-import { applyVisualCoverageMask } from '/flightverse/visual-coverage.js?v=349';
+import * as THREE from '/flightverse/three.js?v=352';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=352';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=352';
+import { applyVisualCoverageMask } from '/flightverse/visual-coverage.js?v=352';
 
 let sceneGenerationId = 0;
 export function createSceneGeneration() {
@@ -24,7 +24,7 @@ export async function loadManifest(cid) {
   // no-store: el edge de Cloudflare cacheaba manifiestos viejos (misma URL,
   // contenido nuevo) → grid 512 vs bin 256 → malla NaN 'invisible' + ±NaNcm
   const r = await fetch(`data/models/${id}/scene.v2.json`, { cache: 'no-store' });
-  if (!r.ok) throw new Error(`escena ${id}: sin manifiesto (${r.status})`);
+  if (!r.ok) throw Object.assign(new Error(`escena ${id}: sin manifiesto (${r.status})`), { status: r.status });
   const man = await r.json();
   if (man.version !== 2) throw new Error(`escena ${id}: versión ${man.version} no soportada`);
   return man;
@@ -318,7 +318,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=349');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=352');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     sp.userData.fvRefs = 0;
@@ -329,10 +329,23 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   spark.userData.fvRefs++;
   const tr = man.transforms?.splat;
   const aligned = tr?.status === 'aligned' && Array.isArray(tr.matrix) && tr.matrix.length === 16;
-  const mesh = new SplatMesh({ url: man.assets.splat });   // URL termina en .ksplat → loader KSPLAT
-  onProgress?.(40);
-  await mesh.initialized;
-  onProgress?.(100);
+  let mesh;
+  try {
+    mesh = new SplatMesh({ url: man.assets.splat });   // URL termina en .ksplat → loader KSPLAT
+    onProgress?.(40);
+    await mesh.initialized;
+    onProgress?.(100);
+  } catch (err) {
+    // carga fallida: liberar la referencia al SparkRenderer y el mesh a medias
+    try { mesh?.dispose?.(); } catch { /* nada que liberar */ }
+    spark.userData.fvRefs = Math.max(0, (spark.userData.fvRefs || 1) - 1);
+    if (!spark.userData.fvRefs && scene.userData.fvSpark === spark) {
+      scene.remove(spark);
+      try { spark.dispose?.(); } catch { /* ya liberado */ }
+      delete scene.userData.fvSpark;
+    }
+    throw err;
+  }
   if (aligned) {
     const m = new THREE.Matrix4();
     m.set(...tr.matrix);                      // Matrix4.set es row-major, como el JSON

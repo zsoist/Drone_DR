@@ -37,6 +37,8 @@ import sys
 import time
 from pathlib import Path
 
+from fsutil import atomic_write_json  # noqa: E402
+
 SSH_HOST = "pc"                      # ~/.ssh/config: 192.168.1.5, user reyes, key pc_gpu
 PC_WAKE = Path.home() / ".local/scripts/pc-wake"
 REMOTE_JOBS = "/root/gpu-jobs"
@@ -706,7 +708,7 @@ def main() -> int:
     dest = fetch(a.name, Path(a.out).resolve())
     m.update({"backend": "NVIDIA CUDA", "iters": a.iters, "downscale": a.downscale,
               "artifact": str(dest), "total_s": round(time.time() - t0, 1)})
-    (dest.with_suffix(".json")).write_text(json.dumps(m, indent=1))
+    atomic_write_json(dest.with_suffix(".json"), m, indent=1, ensure_ascii=True)
     print(json.dumps(m, indent=1), flush=True)
     return 0
 

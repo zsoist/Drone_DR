@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+import numpy as np
 from PIL import Image
 
 
@@ -45,6 +46,10 @@ EXPECTED_STEMS = {
     "railgun_pod",
     "nova_bomb",
 }
+
+
+# Nodes whose mesh is a nose/seeker cone: its apex must point down the fire axis (-Z).
+NOSE_NODES = frozenset({"seeker", "nose_cap", "projectile_nose"})
 
 
 @dataclass(frozen=True)
@@ -172,6 +177,75 @@ def _image_dimensions(document: GlbDocument) -> list[list[int]]:
     return sorted(dimensions)
 
 
+def _local_matrix(node: dict[str, Any]) -> np.ndarray:
+    if node.get("matrix"):
+        return np.asarray(node["matrix"], dtype=float).reshape(4, 4).T
+    matrix = np.eye(4)
+    scale = node.get("scale") or [1, 1, 1]
+    x, y, z, w = node.get("rotation") or [0, 0, 0, 1]
+    rot = np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ])
+    matrix[:3, :3] = rot * np.asarray(scale, dtype=float)
+    matrix[:3, 3] = node.get("translation") or [0, 0, 0]
+    return matrix
+
+
+def _node_world_positions(document: GlbDocument, index: int) -> np.ndarray:
+    """World-space POSITION vertices of every primitive of a mesh node."""
+    gltf = document.gltf
+    nodes = gltf.get("nodes") or []
+    parent_of = {c: i for i, n in enumerate(nodes) for c in n.get("children", [])}
+    world = np.eye(4)
+    cursor: int | None = index
+    while cursor is not None:
+        world = _local_matrix(nodes[cursor]) @ world
+        cursor = parent_of.get(cursor)
+    views = gltf.get("bufferViews") or []
+    accessors = gltf.get("accessors") or []
+    chunks = []
+    mesh = (gltf.get("meshes") or [])[nodes[index]["mesh"]]
+    for primitive in mesh.get("primitives") or []:
+        accessor = accessors[primitive["attributes"]["POSITION"]]
+        view = views[accessor["bufferView"]]
+        start = int(view.get("byteOffset", 0)) + int(accessor.get("byteOffset", 0))
+        stride = int(view.get("byteStride", 12))
+        count = int(accessor["count"])
+        raw = np.frombuffer(document.binary, dtype=np.uint8, count=(count - 1) * stride + 12, offset=start)
+        pts = np.lib.stride_tricks.as_strided(raw, shape=(count, 12), strides=(stride, 1))
+        chunks.append(np.ascontiguousarray(pts).view("<f4").reshape(count, 3).astype(float))
+    pts = np.vstack(chunks)
+    return pts @ world[:3, :3].T + world[:3, 3]
+
+
+def check_nose_orientation(document: GlbDocument) -> list[str]:
+    """Nose/seeker cones must taper toward -Z: the most -Z slice is (near) a point and
+    narrower than the +Z end. An aft-facing apex (buried in the body) fails."""
+    problems = []
+    for index, node in enumerate(document.gltf.get("nodes") or []):
+        if node.get("name") not in NOSE_NODES or "mesh" not in node:
+            continue
+        pts = _node_world_positions(document, index)
+        zmin, zmax = float(pts[:, 2].min()), float(pts[:, 2].max())
+        length = zmax - zmin
+        if length <= 1e-6:
+            problems.append(f"{node['name']}: degenerate")
+            continue
+        centre = (pts[:, :2].min(axis=0) + pts[:, :2].max(axis=0)) / 2
+        radial = np.linalg.norm(pts[:, :2] - centre, axis=1)
+        widest = float(radial.max())
+        tip = float(radial[pts[:, 2] <= zmin + 0.02 * length].max())
+        tail = float(radial[pts[:, 2] >= zmax - 0.02 * length].max())
+        if tip > 0.1 * widest or tip >= tail:
+            problems.append(
+                f"{node['name']}: apex must be the most -Z point "
+                f"(tip radius {tip:.3f}, aft radius {tail:.3f})"
+            )
+    return problems
+
+
 def _triangles(gltf: dict[str, Any]) -> int:
     accessors = gltf.get("accessors") or []
     total = 0
@@ -246,6 +320,9 @@ def validate_weapon_glb(
     )
     if not axis_contract:
         raise ValueError(f"{document.path}: coordinate/tier metadata missing")
+    nose_problems = check_nose_orientation(document)
+    if nose_problems:
+        raise ValueError(f"{document.path}: nose orientation: {nose_problems}")
     triangles = _triangles(gltf)
     byte_budget = 15 * 1024 * 1024 if tier == "ultra" else 3 * 1024 * 1024
     triangle_budget = 120_000 if tier == "ultra" else 30_000

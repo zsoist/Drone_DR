@@ -14,6 +14,8 @@ import re
 import sys
 from pathlib import Path
 
+from fsutil import atomic_write_json  # noqa: E402
+
 FIELD_RE = re.compile(
     r"\[iso:\s*(?P<iso>[\d.]+)\].*?"
     r"\[shutter:\s*(?P<shutter>[^\]]+)\].*?"
@@ -112,7 +114,7 @@ def main():
     srt = Path(sys.argv[1])
     out = Path(sys.argv[2]) if len(sys.argv) > 2 else srt.with_suffix(".flight.json")
     data = parse_srt(srt)
-    out.write_text(json.dumps(data, separators=(",", ":")))
+    atomic_write_json(out, data, separators=(",", ":"), ensure_ascii=True)
     s = data["stats"]
     print(f"{srt.name}: {len(data['points'])} pts, "
           f"{s.get('distance_m', 0)}m recorridos, "

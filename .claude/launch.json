@@ -2,24 +2,8 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "aerobrain-web",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": [
-        "-m",
-        "http.server",
-        "8787",
-        "--directory",
-        "/Volumes/SSD/work/forge-projects/aerobrain/web"
-      ],
-      "port": 8787
-    },
-    {
-      "name": "aerobrain-live",
-      "runtimeExecutable": "tail",
-      "runtimeArgs": [
-        "-f",
-        "/dev/null"
-      ],
+      "name": "aerobrain",
+      "url": "http://localhost:8790",
       "port": 8790
     }
   ]

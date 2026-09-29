@@ -90,9 +90,11 @@ PY
     return 1
   fi
   run_timeout 600 python3 "$ROOT/pipeline/flightverse_collision_gate.py" "$ACTIVE_WORLD" --stress 100 \
-    >/tmp/aerobrain-world-stress-deploy.json || {
-    echo "ABORTADO: gate FLIGHTVERSE 100x rojo ($ACTIVE_WORLD) antes del reinicio" >&2
+    >/tmp/aerobrain-world-stress-deploy.json 2>/tmp/aerobrain-world-stress-deploy.err || {
+    echo "ABORTADO: gate FLIGHTVERSE 100x rojo ($ACTIVE_WORLD) antes del reinicio (rc=$?)" >&2
     tail -30 /tmp/aerobrain-world-stress-deploy.json >&2
+    # un JSON vacío = el gate no llegó a veredicto (Chrome, timeout): la causa está en stderr
+    tail -20 /tmp/aerobrain-world-stress-deploy.err >&2
     return 1
   }
   echo "world gate preflight: $ACTIVE_WORLD · 100/100 verde"
