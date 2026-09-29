@@ -1,0 +1,55 @@
+/* AeroBrain · Ficha pública de propiedad (p.html) — loads AFTER style.css.
+   Página de cliente: el tema sigue prefers-color-scheme (lo fija p.js). Tokens only. */
+
+body { background: var(--bg); color: var(--text); }
+.prop { max-width: 860px; margin: 0 auto; padding: 0 var(--sp-4) 104px; }
+.p-loading { padding: var(--sp-8) 0; text-align: center; color: var(--text-2); font-size: var(--fs-lg); }
+
+/* Hero */
+.hero { margin: 0 calc(var(--sp-4) * -1); background: #000; border-radius: 0 0 var(--r-xl) var(--r-xl); overflow: hidden; }
+.hero video, .hero img { width: 100%; display: block; max-height: 62dvh; object-fit: cover; aspect-ratio: 16 / 9; }
+.hero-empty { aspect-ratio: 16 / 9; background: var(--surface-3); }
+@media (min-width: 900px) { .hero { margin: 0; border-radius: 0 0 var(--r-xl) var(--r-xl); } }
+
+/* Cabecera */
+.head { padding: var(--sp-5) 0 var(--sp-1); }
+.head h1 { font-size: var(--fs-3xl); font-weight: var(--fw-semibold); letter-spacing: var(--tr-tight); line-height: var(--lh-tight); text-wrap: balance; }
+.head .loc { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); color: var(--text-2); font-size: var(--fs-lg); }
+.head .loc svg.ic { width: var(--ic-md); height: var(--ic-md); flex: none; }
+.price { margin-top: var(--sp-3); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: var(--fs-2xl); font-weight: var(--fw-semibold); color: var(--accent-fg); }
+
+/* Especificaciones */
+.specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: var(--sp-2); margin: var(--sp-5) 0; }
+.spec { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--sp-3) var(--sp-3); text-align: center; display: flex; flex-direction: column; gap: var(--sp-0); }
+.spec b { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: var(--fs-xl); font-weight: var(--fw-semibold); }
+.spec span { font-size: var(--fs-xs); color: var(--text-2); }
+
+/* Secciones */
+.sec { margin-top: var(--sp-6); }
+.sec-t { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text-2); margin: 0 0 var(--sp-2); }
+.desc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--sp-5); font-size: var(--fs-lg); line-height: var(--lh-loose); color: var(--text); white-space: pre-line; }
+#pmap { height: 320px; border-radius: var(--r-lg); overflow: hidden; border: 1px solid var(--line); }
+.gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-2); }
+.gal a { display: block; border-radius: var(--r-md); overflow: hidden; background: var(--surface-2); }
+.gal img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; transition: opacity var(--dur-base) var(--ease-out); }
+@media (hover: hover) { .gal a:hover img { opacity: .85; } }
+.brandline { text-align: center; color: var(--text-2); font-size: var(--fs-xs); padding: var(--sp-7) 0 var(--sp-2); }
+
+/* Barra de contacto */
+.cta {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-sticky);
+  display: flex; gap: var(--sp-2); justify-content: center;
+  padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--line);
+}
+.cta .btn { flex: 1; max-width: 300px; }
+
+/* Estado vacío */
+.p-empty {
+  min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; gap: var(--sp-3); padding: var(--sp-8) var(--sp-4);
+}
+.p-empty-ic { width: 56px; height: 56px; display: grid; place-items: center; border-radius: var(--r-xl); background: var(--accent-dim); color: var(--accent-fg); }
+.p-empty-ic svg.ic { width: var(--ic-xl); height: var(--ic-xl); }
+.p-empty h1 { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); letter-spacing: var(--tr-tight); margin: var(--sp-1) 0 0; }
+.p-empty p { max-width: 36ch; margin: 0; color: var(--text-2); font-size: var(--fs-lg); line-height: var(--lh-base); text-wrap: balance; }

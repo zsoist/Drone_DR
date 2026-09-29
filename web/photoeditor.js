@@ -206,8 +206,8 @@ function openPhotoEditor({ url, name }) {
   const ink = ov.querySelector('.pm-ink');
   function moveInk() {
     const on = ov.querySelector('.pm-tabs button.on');
-    ink.style.left = on.offsetLeft + 'px';
-    ink.style.width = on.offsetWidth + 'px';
+    ink.style.setProperty('--ink-x', on.offsetLeft + 'px');
+    ink.style.setProperty('--ink-w', on.offsetWidth + 'px');
   }
   setTimeout(moveInk, 30);   // tras layout; rAF no dispara con tab oculto
   const onRs = () => moveInk();

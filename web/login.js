@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  try { if (localStorage.getItem('ab_theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch { /* dark by default */ }
+
   const form = document.getElementById('login-form');
   const password = document.getElementById('login-password');
   const submit = document.getElementById('login-submit');
@@ -36,11 +38,13 @@
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (!password.value) {
+      password.setAttribute('aria-invalid', 'true');
       error.textContent = 'Ingresa tu contraseña.';
       password.focus();
       return;
     }
     error.textContent = '';
+    password.removeAttribute('aria-invalid');
     form.setAttribute('aria-busy', 'true');
     submit.disabled = true;
     submit.querySelector('span').textContent = 'Verificando';
@@ -65,6 +69,7 @@
       } else {
         error.textContent = 'No se pudo iniciar sesión. Revisa la contraseña.';
       }
+      password.setAttribute('aria-invalid', 'true');
       password.select();
     } catch {
       error.textContent = 'No se pudo conectar con AeroBrain.';

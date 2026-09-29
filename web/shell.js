@@ -22,17 +22,27 @@ const DATA = 'data';
 })();
 
 const NAV = [
-  { href: 'home.html', ic: 'gauge', label: 'Inicio' },
-  { href: 'index.html', ic: 'grid', label: 'Vuelos' },
+  { href: 'home.html', ic: 'gauge', label: 'Inicio', tab: true },
+  { href: 'index.html', ic: 'grid', label: 'Vuelos', tab: true },
   { href: 'drone.html', ic: 'drone', label: 'Dron' },
   { href: 'trips.html', ic: 'pin', label: 'Viajes' },
   { href: 'mundo.html', ic: 'globe', label: 'Mundo' },
-  { href: 'studio.html', ic: 'film', label: 'Studio' },
-  { href: 'tresd.html', ic: 'cube', label: '3D' },
+  { href: 'studio.html', ic: 'film', label: 'Studio', tab: true },
+  { href: 'tresd.html', ic: 'cube', label: '3D', tab: true },
   { href: 'splatlab.html', ic: 'spark', label: 'Splat Lab' },
   { href: 'ventas.html', ic: 'tag', label: 'Ventas' },
   { href: 'system.html', ic: 'db', label: 'Sistema' },
 ];
+// destinos secundarios del móvil (hoja «Más») + Guía, que solo vive en el footer/hoja
+const NAV_MORE = [...NAV.filter(n => !n.tab), { href: 'guia.html', ic: 'list', label: 'Guía' }];
+if (typeof ICONS !== 'undefined' && !ICONS.more)
+  ICONS.more = '<circle cx="4.5" cy="10" r="1.3"/><circle cx="10" cy="10" r="1.3"/><circle cx="15.5" cy="10" r="1.3"/>';
+
+// Cabecera de página unificada: título (--fs-2xl) + subtítulo opcional + acciones a la derecha.
+// pageHead('Sistema', 'inventario · costos', '<button class="btn sm">…</button>')
+function pageHead(title, sub = '', actions = '') {
+  return `<header class="page-head ph2"><div class="ph2-t"><h1>${esc(title)}</h1>${sub ? `<p class="ph2-sub">${esc(sub)}</p>` : ''}</div>${actions ? `<div class="ph2-actions">${actions}</div>` : ''}</header>`;
+}
 
 // ---- modal accesible compartido: role=dialog + aria-modal + aria-labelledby, Esc cierra, Tab queda
 // atrapado dentro, click en el fondo / .modal-x cierra y el foco vuelve a quien lo abrió.
@@ -328,7 +338,7 @@ function phaseDash(j, pct) {
     return `<div class="jc-ph-row ${done ? 'done' : act ? 'act' : 'pend'}">
       <span class="jc-ph-dot"></span>
       <div class="jc-ph-main"><b>${name}</b><span>${sub}</span></div>
-      <div class="jc-ph-bar"><div style="width:${width}%"></div></div>
+      <div class="jc-ph-bar"><div style="--p:${width / 100}"></div></div>
       <span class="jc-ph-time mono">${done ? (st != null ? fmtDur(dur) : '✓')
         : act ? `<b>${width}%</b>${st != null ? ' · ' + fmtDur(dur) : ''}` : '—'}</span>
     </div>`;
@@ -388,82 +398,105 @@ function jobDataGrid(j) {
   if (j.gaussians) cells.push(['GAUSSIANAS', j.gaussians >= 1e6
     ? (j.gaussians / 1e6).toFixed(2) + ' M' : Math.round(j.gaussians / 1000) + ' k']);
   if (!cells.length) return '';
-  return `<div class="jc-data">${cells.map(([lb, v, field]) =>
-    `<div class="jc-data-cell"${field ? ` data-live-field="${field}"` : ''}><span>${lb}</span><b class="mono">${v}</b></div>`).join('')}</div>`;
+  const sentence = t => t.charAt(0) + t.slice(1).toLowerCase();
+  return `<dl class="jcx-dl">${cells.map(([lb, v, field]) =>
+    `<div class="jcx-row"${field ? ` data-live-field="${field}"` : ''}><dt>${esc(sentence(lb))}</dt><dd class="mono">${v}</dd></div>`).join('')}</dl>`;
+}
+// línea de meta de UNA sola línea: preset · backend · iteraciones · ritmo · tiempo
+function jobMetaLine(j) {
+  const b = String(j.effective_backend || j.backend || j.requested_backend || '');
+  const backend = /cuda|nvidia/i.test(b) ? 'NVIDIA CUDA' : /metal|mps/i.test(b) ? 'Apple Metal' : b ? 'CPU' : '';
+  const iters = j.iterations || j.requested_iterations;
+  const parts = [
+    j.effective_preset || j.requested_preset ? presetLabel(j.effective_preset || j.requested_preset) : '',
+    backend,
+    iters ? `${iters >= 1000 && iters % 1000 === 0 ? `${iters / 1000}k` : iters} iteraciones` : '',
+    j.iterations_per_second ? `${Number(j.iterations_per_second).toFixed(1)} iter/s` : '',
+    j.cameras_registered != null ? `${j.cameras_registered}/${j.cameras_total || j.cameras_registered} cámaras` : '',
+    j.eta_remaining_s != null && ['running', 'queued'].includes(j.status) ? `ETA ${fmtDur(j.eta_remaining_s)}` : '',
+    jobTimingLabel(j),
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+function jobLogLines(j, n = 14) {
+  return cleanLog(j.log_tail || '').split('\n').filter(Boolean).slice(-n).join('\n');
 }
 function jobCard(j, flightsIdx, entering = true) {
   const meta = KIND_META[j.kind] || { ic: 'activity', name: j.kind };
   const f = flightsIdx?.[j.label];
   const subject = j.title || (f ? (f.label || fmt.date(f.date) + ' ' + f.time) : j.label || 'trabajo');
   const titleText = `${meta.name} · ${subject}`;
-  const title = esc(titleText);
   const stLabel = { running: 'procesando', queued: 'en cola', done: 'listo',
     error: 'falló', cancelled: 'cancelado', cancel_failed: 'cancel falló' }[j.status] || j.status;
   const outcomeLabel = j.outcome === 'completed_with_fallback' ? 'listo con fallback' : stLabel;
   const pct = Number.isFinite(+j.progress) ? Math.round(+j.progress * 100) : null;
-  const lastLog = cleanLog((j.log_tail || '').split('\n').pop());
+  const active = ['running', 'queued'].includes(j.status);
   const quality = [];
-  if (j.requested_preset) quality.push(`<span><b>${j.kind === 'splat' ? 'Splat' : 'ODM'}</b> · ${esc(presetLabel(j.requested_preset))} solicitada</span>`);
-  if (j.effective_preset) quality.push(`<span><b>Efectiva</b> · ${esc(presetLabel(j.effective_preset))}</span>`);
-  if (j.dense_quality) quality.push(`<span><b>Nube densa</b> · ${esc(presetLabel(j.dense_quality))}${j.dense_quality_requested && j.dense_quality_requested !== j.dense_quality ? ` (solicitada ${esc(j.dense_quality_requested)})` : ''}</span>`);
-  if (j.input_scale > 1) quality.push(`<span><b>Entrada</b> · -d ${esc(j.input_scale)}</span>`);
+  if (j.requested_preset) quality.push(`<b>${j.kind === 'splat' ? 'Splat' : 'ODM'}</b> · ${esc(presetLabel(j.requested_preset))} solicitada`);
+  if (j.effective_preset) quality.push(`<b>Efectiva</b> · ${esc(presetLabel(j.effective_preset))}`);
+  if (j.dense_quality) quality.push(`<b>Nube densa</b> · ${esc(presetLabel(j.dense_quality))}${j.dense_quality_requested && j.dense_quality_requested !== j.dense_quality ? ` (solicitada ${esc(j.dense_quality_requested)})` : ''}`);
+  if (j.input_scale > 1) quality.push(`<b>Entrada</b> · -d ${esc(j.input_scale)}`);
   if (j.kind === 'splat' && j.requested_resolution)
-    quality.push(`<span><b>Resolución solicitada</b> · ${esc({ auto: 'Auto · completa primero', full: 'Completa', half: '½ resolución' }[j.requested_resolution] || j.requested_resolution)}</span>`);
+    quality.push(`<b>Resolución solicitada</b> · ${esc({ auto: 'Auto · completa primero', full: 'Completa', half: '½ resolución' }[j.requested_resolution] || j.requested_resolution)}`);
   if (j.kind === 'splat' && j.effective_resolution)
-    quality.push(`<span><b>Resolución efectiva</b> · ${esc(j.effective_resolution === 'half' ? '½ resolución' : 'Completa')}</span>`);
+    quality.push(`<b>Resolución efectiva</b> · ${esc(j.effective_resolution === 'half' ? '½ resolución' : 'Completa')}`);
   if (j.kind === 'splat' && /cuda/i.test(j.requested_backend || ''))
-    quality.push('<span><b>Política</b> · CUDA estricto</span>');
+    quality.push('<b>Política</b> · CUDA estricto');
   if (j.kind === 'splat' && j.image_cache_device)
-    quality.push(`<span title="La resolución de entrada no cambia"><b>Cache</b> · ${String(j.image_cache_device).toUpperCase()}${j.image_cache_device === 'cpu' ? ' · VRAM libre para gaussianas' : ' · acceso rápido en GPU'}</span>`);
+    quality.push(`<b>Cache</b> · ${String(j.image_cache_device).toUpperCase()}${j.image_cache_device === 'cpu' ? ' · VRAM libre para gaussianas' : ' · acceso rápido en GPU'}`);
   if (j.kind === 'splat' && j.resume_available && j.checkpoint_step)
-    quality.push(`<span><b>Recuperación</b> · checkpoint ${Number(j.checkpoint_step).toLocaleString()} verificado</span>`);
+    quality.push(`<b>Recuperación</b> · checkpoint ${Number(j.checkpoint_step).toLocaleString()} verificado`);
   if (j.kind === 'splat' && j.resumed_from_step)
-    quality.push(`<span><b>Continuidad</b> · ${j.status === 'queued' ? 'preparado para reanudar desde' : 'reanudado desde'} ${Number(j.resumed_from_step).toLocaleString()}</span>`);
+    quality.push(`<b>Continuidad</b> · ${j.status === 'queued' ? 'preparado para reanudar desde' : 'reanudado desde'} ${Number(j.resumed_from_step).toLocaleString()}`);
   const attempts = Array.isArray(j.attempts) ? j.attempts : [];
   const attemptScales = [...new Set(attempts.map(a => Number(a.d)).filter(Boolean))];
   const facts = [
-    j.cameras_registered != null ? `${j.cameras_registered}/${j.cameras_total || j.cameras_registered} cámaras` : '',
     j.source_count ? `${j.source_count} video${j.source_count === 1 ? '' : 's'}` : '',
     j.photo_count ? `${j.photo_count} foto${j.photo_count === 1 ? '' : 's'}` : '',
     j.product_mode ? String(j.product_mode).replaceAll('_', ' ') : '',
-    j.iterations ? `${j.iterations >= 1000 && j.iterations % 1000 === 0 ? `${j.iterations / 1000}k` : j.iterations} iteraciones` : '',
     j.peak_mib ? `pico ${j.peak_mib} MiB${j.memory_cap_mib ? ` / ${j.memory_cap_mib}` : ''}` : '',
     attemptScales.length > 1 ? 'OOM CUDA: completa → ½ resolución' :
       attempts.length ? `${attempts.length} intento${attempts.length === 1 ? '' : 's'} CUDA` : '',
   ].filter(Boolean);
   const search = `${titleText} ${j.kind} ${j.status} ${j.backend || ''} ${j.detail || ''} ${quality.join(' ')}`.toLowerCase();
+  const stage = active ? (humanStage(j) || 'procesando…') : '';
+  const log = jobLogLines(j);
+  const line = jobMetaLine(j);
+  const detailRows = [...quality, ...facts.map(esc)];
   return `
-  <article class="job-card${entering ? '' : ' upd'}" data-jid="${esc(j.id)}" data-kind="${esc(j.kind)}" data-status="${esc(j.status)}" data-search="${esc(search)}">
-    <div class="jc-eyebrow">${icon(meta.ic)}<span>${esc(meta.name)}</span>
-      <span class="spacer"></span>
-      ${backendBadge(j.effective_backend || j.backend || j.requested_backend)}
-      <span class="jc-status ${esc(j.status)}${j.fallback ? ' fallback' : ''}">${['running','queued'].includes(j.status) ? '<i class="jc-pulse"></i>' : ''}${esc(outcomeLabel)}${pct != null && j.status === 'running' ? ` ${pct}%` : ''}</span></div>
-    <div class="jc-head"><span class="jc-title">${esc(subject)}</span></div>
-    ${quality.length ? `<div class="jc-quality">${quality.join('')}</div>` : ''}
-    ${['running', 'queued'].includes(j.status) ? `
-      <div class="jc-run">
-        ${phaseDash(j, pct)}
-        <div class="jc-run-top">
-          <span class="jc-run-stage">${esc(humanStage(j) || 'procesando\u2026')}</span>
-          <b class="jc-run-pct mono">${pct != null ? pct + '%' : ''}</b>
-        </div>
-        ${j.detail && humanStage(j) !== j.detail ? `<div class="jc-run-detail">${esc(j.detail)}</div>` : ''}
-        ${pct != null ? `<div class="jc-bar" role="progressbar" aria-label="Progreso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div style="width:${pct}%"></div></div>` : ''}
-        ${lastLog && j.status === 'running' ? `<button class="jc-ticker mono" data-job-log="${esc(j.id)}" title="Abrir log completo"><span class="jc-tick-dot"></span>${esc(lastLog.slice(0, 160))}</button>` : ''}
-        ${jobDataGrid(j)}
-      </div>` : ''}
-    ${facts.length ? `<div class="jc-facts">${facts.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
-    ${!['running', 'queued'].includes(j.status) ? jobDataGrid(j) : ''}
-    <div class="jc-meta"><span>${esc(j.id)}</span><span>${jobTimingLabel(j)}</span></div>
-    ${lastLog && !['running', 'queued'].includes(j.status) ? `<button class="jc-log" data-job-log="${esc(j.id)}" title="Abrir log completo">${esc(lastLog)}</button>` : ''}
-    ${j.status === 'queued' ? `<div class="jc-stage">Esperando turno — el worker procesa un trabajo pesado a la vez.</div>` : ''}
-    ${j.detail && !['running', 'queued'].includes(j.status) ? `<div class="jc-result ${j.status === 'error' ? 'error' : ''}">${esc(j.detail)}</div>` : ''}
-    <div class="jc-actions">
-      <button class="btn" data-job-log="${esc(j.id)}">${icon('list')} Logs completos</button>
-      ${j.status === 'done' && ['3d', 'splat'].includes(j.kind) ? `<a class="btn primary" href="tresd.html">${j.kind === '3d' ? 'Ver escena' : 'Ver splat'}</a>` : ''}
-      ${j.status === 'done' && !['3d', 'splat'].includes(j.kind) && j.artifact && j.artifact_exists ? `<a class="btn primary" href="data/${esc(j.artifact)}" target="_blank">Abrir</a>` : ''}
-      ${['running', 'queued'].includes(j.status) && ['3d', 'splat'].includes(j.kind) ? `<button class="btn danger" data-cancel="${esc(j.id)}">Cancelar</button>` : ''}
+  <article class="job-card jcx${entering ? '' : ' upd'}" data-jid="${esc(j.id)}" data-kind="${esc(j.kind)}" data-status="${esc(j.status)}" data-search="${esc(search)}">
+    <div class="jcx-top">
+      <span class="jcx-ic">${icon(meta.ic)}</span>
+      <div class="jcx-tt"><span class="jc-title" title="${esc(subject)}">${esc(subject)}</span><span class="jcx-kind">${esc(meta.name)}</span></div>
+      <span class="jc-status ${esc(j.status)}${j.fallback ? ' fallback' : ''}">${active ? '<i class="jc-pulse"></i>' : ''}${esc(outcomeLabel)}</span>
     </div>
+    ${active ? `
+    <div class="jcx-run">
+      <span class="jcx-stage">${esc(stage)}</span>
+      <b class="jcx-pct mono">${pct != null ? pct + '%' : ''}</b>
+    </div>
+    ${pct != null ? `<div class="jc-bar jcx-bar" role="progressbar" aria-label="Progreso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div style="--p:${pct / 100}"></div></div>` : ''}` : ''}
+    <p class="jcx-line" title="${esc(line)}">${esc(line)}</p>
+    ${j.status === 'queued' ? '<p class="jcx-note">Esperando turno: el worker procesa un trabajo pesado a la vez.</p>' : ''}
+    ${!active && j.detail ? `<p class="jcx-note${j.status === 'error' ? ' err' : ''}">${esc(j.detail)}</p>` : ''}
+    <div class="jcx-actions">
+      ${j.status === 'done' && ['3d', 'splat'].includes(j.kind) ? `<a class="btn sm primary" href="tresd.html">${j.kind === '3d' ? 'Ver escena' : 'Ver splat'}</a>` : ''}
+      ${j.status === 'done' && !['3d', 'splat'].includes(j.kind) && j.artifact && j.artifact_exists ? `<a class="btn sm primary" href="data/${esc(j.artifact)}" target="_blank">Abrir</a>` : ''}
+      ${active && ['3d', 'splat'].includes(j.kind) ? `<button class="btn sm danger" data-cancel="${esc(j.id)}">Cancelar</button>` : ''}
+    </div>
+    <details class="jcx-more">
+      <summary><span>Ver log</span>${icon('chevD')}</summary>
+      <div class="jcx-more-b">
+        ${active && j.kind === '3d' ? phaseDash(j, pct) : ''}
+        ${jobDataGrid(j)}
+        ${detailRows.length ? `<ul class="jcx-list">${detailRows.map(x => `<li>${x}</li>`).join('')}</ul>` : ''}
+        <pre class="jcx-pre" tabindex="0">${esc(log || 'Sin salida registrada todavía.')}</pre>
+        <div class="jcx-more-a">
+          <span class="jcx-id mono">${esc(j.id)}</span>
+          <button class="btn sm" data-job-log="${esc(j.id)}">${icon('list')} Logs completos</button>
+        </div>
+      </div>
+    </details>
   </article>`;
 }
 
@@ -551,7 +584,8 @@ function orderJobsForDisplay(jobs) {
   const history = rows.filter(j => !['running', 'queued'].includes(j.status));
   return [...running, ...queued, ...history];
 }
-async function pollJobs(el, every = 2500, onDone = null) {
+// opts: { filter(j)→bool, limit:n, emptyText } — recorta lo que muestra esta página (Dron solo ingest)
+async function pollJobs(el, every = 2500, onDone = null, opts = {}) {
   let flightsIdx = null;
   try {
     const fl = await getFlights();
@@ -574,11 +608,17 @@ async function pollJobs(el, every = 2500, onDone = null) {
           prevStatus[j.id] = j.status;
         }
       }
-      if (!jobs.length) { el.innerHTML = '<p class="footer-note">Sin trabajos aún.</p>'; return; }
+      const shown = opts.filter ? jobs.filter(opts.filter) : jobs;
+      if (!shown.length) {
+        el.dataset.ids = '';
+        el.innerHTML = `<p class="jcx-empty">${esc(opts.emptyText || 'Sin trabajos aún.')}</p>`;
+        el.dispatchEvent(new CustomEvent('jobs:paint', { detail: { jobs, counts } }));
+        return;
+      }
       // El operador necesita ver primero lo que realmente consume el worker. Las campañas
       // pueden llevar timestamps futuros para preservar su orden de claim; el orden crudo
       // DESC del API las pondría delante del job en ejecución y además invertiría la cola.
-      const list = orderJobsForDisplay(jobs);
+      const list = orderJobsForDisplay(shown).slice(0, opts.limit || Infinity);
       // hash ESTRUCTURAL: solo lo que cambia la forma de la card. Los valores vivos
       // (progreso, ticker, tiempos) se parchan in-place — reemplazar el nodo cada poll
       // re-disparaba animaciones y producía el jitter de 1s en la card activa
@@ -595,37 +635,36 @@ async function pollJobs(el, every = 2500, onDone = null) {
         const pct = Number.isFinite(+j.progress) ? Math.round(+j.progress * 100) : null;
         const setTxt = (sel, v) => { const n = node.querySelector(sel);
           if (n && v != null && n.textContent !== String(v)) n.textContent = v; };
-        setTxt('.jc-run-pct', pct != null ? pct + '%' : '');
-        setTxt('.jc-status', (node.querySelector('.jc-status')?.textContent || '')
-          .replace(/\d+%$/, pct + '%'));
+        setTxt('.jcx-pct', pct != null ? pct + '%' : '');
         const bar = node.querySelector('.jc-bar > div');
-        if (bar && pct != null) bar.style.width = pct + '%';
-        const tick = node.querySelector('.jc-ticker');
-        const last = cleanLog((j.log_tail || '').split('\n').pop()).slice(0, 160);
-        if (tick && last && tick.dataset.t !== last) {
-          tick.dataset.t = last;
-          tick.lastChild.textContent = last;                 // el dot span queda intacto
+        if (bar && pct != null) {
+          bar.style.setProperty('--p', pct / 100);
+          bar.parentElement.setAttribute('aria-valuenow', pct);
         }
-        setTxt('.jc-run-stage', humanStage(j) || 'procesando\u2026');
-        setTxt('.jc-run-detail', j.detail || '');
-        setTxt('[data-live-field="iteration"] b', j.current_iteration != null && j.target_iterations
+        setTxt('.jcx-stage', humanStage(j) || 'procesando…');
+        const line = node.querySelector('.jcx-line');
+        const lineTxt = jobMetaLine(j);
+        if (line && line.textContent !== lineTxt) { line.textContent = lineTxt; line.title = lineTxt; }
+        const pre = node.querySelector('.jcx-pre');
+        const logTxt = jobLogLines(j) || 'Sin salida registrada todavía.';
+        if (pre && pre.textContent !== logTxt) {
+          const stick = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
+          pre.textContent = logTxt;
+          if (stick) pre.scrollTop = pre.scrollHeight;
+        }
+        const D = (f, v) => setTxt(`[data-live-field="${f}"] dd`, v);
+        D('iteration', j.current_iteration != null && j.target_iterations
           ? `${Number(j.current_iteration).toLocaleString()} / ${Number(j.target_iterations).toLocaleString()}` : null);
-        setTxt('[data-live-field="phase-count"] b', j.phase_completed != null && j.phase_total
+        D('phase-count', j.phase_completed != null && j.phase_total
           ? `${Number(j.phase_completed).toLocaleString()} / ${Number(j.phase_total).toLocaleString()}` : null);
-        setTxt('[data-live-field="rate"] b', j.iterations_per_second
-          ? `${Number(j.iterations_per_second).toFixed(1)} iter/s` : null);
-        setTxt('[data-live-field="phase-rate"] b', j.phase_items_per_minute
-          ? phaseRateText(j) : null);
-        setTxt('[data-live-field="registered-cameras"] b', j.cameras_registered != null
+        D('rate', j.iterations_per_second ? `${Number(j.iterations_per_second).toFixed(1)} iter/s` : null);
+        D('phase-rate', j.phase_items_per_minute ? phaseRateText(j) : null);
+        D('registered-cameras', j.cameras_registered != null
           ? `${Number(j.cameras_registered).toLocaleString()} / ${Number(j.cameras_total).toLocaleString()}` : null);
-        setTxt('[data-live-field="active-sources"] b', j.active_sources != null
+        D('active-sources', j.active_sources != null
           ? `${Number(j.active_sources).toLocaleString()} / ${Number(j.total_sources).toLocaleString()}` : null);
-        setTxt('[data-live-field="good-tracks"] b', j.good_tracks != null
-          ? Number(j.good_tracks).toLocaleString() : null);
-        setTxt('[data-live-field="eta"] b', j.eta_remaining_s != null
-          ? fmtDur(j.eta_remaining_s) : null);
-        const meta = node.querySelectorAll('.jc-meta span')[1];
-        if (meta) meta.textContent = jobTimingLabel(j);
+        D('good-tracks', j.good_tracks != null ? Number(j.good_tracks).toLocaleString() : null);
+        D('eta', j.eta_remaining_s != null ? fmtDur(j.eta_remaining_s) : null);
         // dashboard de fases: solo anchos y tiempos (misma estructura)
         node.querySelectorAll('.jc-ph-row').forEach((row, i) => {
           const tmp = document.createElement('div');
@@ -634,7 +673,7 @@ async function pollJobs(el, every = 2500, onDone = null) {
           if (!fresh) return;
           if (row.className !== fresh.className) { row.replaceWith(fresh); return; }
           const b1 = row.querySelector('.jc-ph-bar > div'), b2 = fresh.querySelector('.jc-ph-bar > div');
-          if (b1 && b2) b1.style.width = b2.style.width;
+          if (b1 && b2) b1.style.setProperty('--p', b2.style.getPropertyValue('--p'));
           const t1 = row.querySelector('.jc-ph-time'), t2 = fresh.querySelector('.jc-ph-time');
           if (t1 && t2 && t1.textContent !== t2.textContent) t1.textContent = t2.textContent;
         });
@@ -656,6 +695,7 @@ async function pollJobs(el, every = 2500, onDone = null) {
           tmp.innerHTML = jobCard(j, flightsIdx, false);
           const next = tmp.firstElementChild;
           next.dataset.h = hash(j);
+          if (node.querySelector('.jcx-more')?.open) next.querySelector('.jcx-more')?.setAttribute('open', '');   // el log abierto sobrevive al cambio de estructura
           node.replaceWith(next);
         });
       }
@@ -720,7 +760,7 @@ function toggleTheme() {
 
 document.addEventListener('click', async e => {
   if (e.target.closest('[data-theme-toggle]')) toggleTheme();
-  if (e.target.closest('#auth-link')) {
+  if (e.target.closest('#auth-link, [data-auth-link]')) {
     e.preventDefault();
     const session = await requireSession();
     if (!session || session.dev_mode) return;
@@ -731,8 +771,46 @@ document.addEventListener('click', async e => {
     }
   }
 });
+
+// Hoja «Más» del móvil: accesible (dialog, Esc, foco atrapado simple, vuelve al disparador).
+function setupMoreSheet() {
+  const btn = document.getElementById('mnav-more');
+  const ov = document.getElementById('msheet-ov');
+  if (!btn || !ov) return;
+  const sheet = ov.querySelector('.msheet');
+  const close = () => {
+    if (ov.hidden) return;
+    ov.classList.remove('on');
+    btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', onKey, true);
+    setTimeout(() => { ov.hidden = true; }, 220);
+    btn.focus({ preventScroll: true });
+  };
+  const onKey = e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    if (e.key !== 'Tab') return;
+    const f = [...sheet.querySelectorAll('a[href],button:not([disabled])')];
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
+  const open = () => {
+    ov.hidden = false;
+    requestAnimationFrame(() => ov.classList.add('on'));
+    btn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('keydown', onKey, true);
+    sheet.querySelector('a[href],button')?.focus({ preventScroll: true });
+  };
+  btn.addEventListener('click', () => (ov.hidden ? open() : close()));
+  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('[data-msheet-close]')) close(); });
+  sheet.addEventListener('click', e => { if (e.target.closest('[data-theme-toggle]')) setTimeout(close, 120); });
+}
+
 function renderShell(active) {
-  const cur = location.pathname.split('/').pop() || 'index.html';
+  const cur = active || location.pathname.split('/').pop() || 'index.html';
+  const isMore = NAV_MORE.some(n => n.href === cur);
+  const light = document.documentElement.dataset.theme === 'light';
   document.body.insertAdjacentHTML('afterbegin', `
     <div class="shell">
       <aside class="sidebar">
@@ -741,39 +819,52 @@ function renderShell(active) {
           <span><b>AeroBrain</b><span>Flight Intelligence</span></span>
         </a>
         ${NAV.map(n => `
-          <a class="nav-item ${n.href === (active || cur) ? 'active' : ''}" href="${n.href}">
+          <a class="nav-item ${n.href === cur ? 'active' : ''}" href="${n.href}"${n.href === cur ? ' aria-current="page"' : ''}>
             ${icon(n.ic)}<span>${n.label}</span>
           </a>`).join('')}
-        <button class="nav-item" data-theme-toggle>${icon('sun')}<span class="theme-lb">${document.documentElement.dataset.theme === 'light' ? 'Oscuro' : 'Claro'}</span></button>
+        <button class="nav-item" data-theme-toggle>${icon('sun')}<span class="theme-lb">${light ? 'Oscuro' : 'Claro'}</span></button>
         <div class="foot">
-          <span class="foot-status"><span class="dot"></span>Mac Mini M4 · vault local</span>
+          <span class="foot-status"><span class="dot"></span>Mac Mini M4 · vault local<span class="chip sm foot-dev" id="dev-chip" hidden>Dev local</span></span>
           <div class="foot-btns">
-            <a class="fbtn" href="guia.html">${icon('list')} Guía</a>
-            <a class="fbtn" href="#" id="auth-link">${icon('logOut')} Salir</a>
+            <a class="btn sm ghost${cur === 'guia.html' ? ' on' : ''}" href="guia.html">${icon('list')} Guía</a>
+            <a class="btn sm ghost" href="#" id="auth-link">${icon('logOut')} Salir</a>
           </div>
         </div>
       </aside>
       <main class="main" id="main"></main>
+    </div>
+    <nav class="mnav" aria-label="Navegación principal">
+      ${NAV.filter(n => n.tab).map(n => `
+        <a class="mnav-i${n.href === cur ? ' active' : ''}" href="${n.href}"${n.href === cur ? ' aria-current="page"' : ''}>${icon(n.ic)}<span>${n.label}</span></a>`).join('')}
+      <button class="mnav-i${isMore ? ' active' : ''}" id="mnav-more" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="msheet-ov">${icon('more')}<span>Más</span></button>
+    </nav>
+    <div class="msheet-ov" id="msheet-ov" hidden>
+      <div class="msheet" role="dialog" aria-modal="true" aria-label="Más secciones">
+        <div class="msheet-grip" aria-hidden="true"></div>
+        <div class="msheet-grid">
+          ${NAV_MORE.map(n => `
+            <a class="ms-item${n.href === cur ? ' active' : ''}" href="${n.href}"${n.href === cur ? ' aria-current="page"' : ''}>${icon(n.ic)}<span>${n.label}</span></a>`).join('')}
+        </div>
+        <div class="msheet-foot">
+          <button class="btn ghost" type="button" data-theme-toggle>${icon('sun')} <span class="theme-lb">${light ? 'Oscuro' : 'Claro'}</span></button>
+          <a class="btn ghost" href="#" data-auth-link id="auth-link-m">${icon('logOut')} Salir</a>
+        </div>
+      </div>
     </div>`);
-  // rail móvil (≤820px, scroll-x): centra el tab ACTIVO al cargar — sin esto, en las tabs del
-  // final (3D/Splat Lab/Sistema) la barra arranca mostrando Inicio y no ves dónde estás
-  const bar = document.querySelector('.sidebar');
-  const act = bar?.querySelector('.nav-item.active');
-  if (bar && act && bar.scrollWidth > bar.clientWidth + 1) {
-    bar.scrollLeft = act.offsetLeft - (bar.clientWidth - act.offsetWidth) / 2;
-  }
+  setupMoreSheet();
   requireSession().then(session => {
-    const control = document.getElementById('auth-link');
-    if (!control || !session) return;
+    if (!session) return;
+    const links = document.querySelectorAll('#auth-link, #auth-link-m');
     if (session.dev_mode) {
-      control.innerHTML = `${icon('cpu')} Dev local`;
-      control.title = 'Acceso local para Codex y Claude Code';
-      control.setAttribute('aria-disabled', 'true');
+      // sesión local de desarrollo: no hay nada que cerrar → «Salir» desaparece y queda una etiqueta
+      links.forEach(l => { l.hidden = true; });
+      document.getElementById('dev-chip')?.removeAttribute('hidden');
+      document.querySelector('.foot-btns')?.classList.add('solo');
     } else if (session.expires_at) {
       const expiresInColombia = new Date(session.expires_at).toLocaleString('es-CO', {
         timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'short',
       });
-      control.title = `Sesión de Daniel hasta ${expiresInColombia}`;
+      links.forEach(l => { l.title = `Sesión activa hasta ${expiresInColombia}`; });
     }
   });
   return document.getElementById('main');

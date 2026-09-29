@@ -28,9 +28,25 @@ const cid = new URLSearchParams(location.search).get('id');
   const hevcOK = !!document.createElement('video')
     .canPlayType('video/mp4; codecs="hvc1.2.4.L153.B0"');
 
+  const maxSpeed = speeds.length ? Math.max(...speeds) : 0;
+  const flatSpeed = pts.length > 0 && maxSpeed < 2;      // serie plana: no merece una curva
+  const older = flights[idx + 1], newer = flights[idx - 1];
+  const navBtn = (f, ic, label) => f
+    ? `<a class="btn icon" href="flight.html?id=${f.clip_id}" aria-label="${label}" data-tip="${label}">${icon(ic)}</a>`
+    : `<button class="btn icon" type="button" disabled aria-label="${label}">${icon(ic)}</button>`;
+  const dlItems = [
+    meta.has_proxy && `<button class="exp" id="share-video">${icon('ext')}<div><b>Guardar en Fotos</b><span>iPhone · share sheet</span></div></button>`,
+    meta.has_proxy && `<a class="exp" href="${DATA}/proxies/${cid}.mp4" download>${icon('dl')}<div><b>Video 1080p</b><span>MP4 · ${meta.proxy_bytes ? fmt.gb(meta.proxy_bytes) : ''}</span></div></a>`,
+    meta.has_proxy720 && `<a class="exp" href="${DATA}/proxies720/${cid}.mp4" download>${icon('dl')}<div><b>Video 720p</b><span>MP4 · ligero</span></div></a>`,
+    meta.raw_rel && `<a class="exp" href="${DATA}/raw/${meta.raw_rel}" download>${icon('db')}<div><b>Original 4K</b><span>HEVC · ${fmt.gb(meta.size_bytes)}</span></div></a>`,
+    meta.has_srt && `<a class="exp" href="${DATA}/tracks/${cid}.flight.json" download>${icon('route')}<div><b>Track GPS</b><span>JSON · 1 Hz</span></div></a>`,
+    s.home && `<a class="exp" href="https://maps.apple.com/?ll=${s.home[1]},${s.home[0]}&q=Despegue" target="_blank" rel="noopener">${icon('pin')}<div><b>Ver despegue</b><span>Apple Maps</span></div></a>`,
+  ].filter(Boolean);
+
   main.innerHTML = `
-    <div class="hero glass rise">
-      <a class="btn hero-back" href="index.html" data-tip="Volver a la galería">${icon('chevL')}</a>
+  <div class="fl">
+    <div class="hero glass rise fl-head">
+      <a class="btn icon hero-back" href="index.html" aria-label="Volver a la galería" data-tip="Volver a la galería">${icon('chevL')}</a>
       <div class="hero-t">
         <h1>${esc(meta.label) || fmt.date(meta.date) + ' · ' + meta.time}</h1>
         <div class="hero-sub mono">${meta.label ? fmt.date(meta.date) + ' ' + meta.time + ' · ' : ''}${cid}</div>
@@ -42,61 +58,65 @@ const cid = new URLSearchParams(location.search).get('id');
         ${meta.has_srt ? `<span class="gchip" data-tip="Telemetría GPS de 1 Hz disponible">${icon('route')} GPS</span>` : ''}
         ${has3D ? `<span class="gchip mint" data-tip="Este vuelo tiene modelo 3D procesado">${icon('cube')} 3D listo</span>` : ''}
       </div>
-      <div class="hero-actions">
-        <button class="btn" id="btn-label" data-tip="Ponle nombre a este vuelo">${icon('tag')} Editar detalles</button>
-        ${meta.has_proxy ? `<a class="btn" href="studio.html?clip=${cid}" data-tip="Cortes, reels y LUTs">${icon('film')} Studio</a>` : ''}
-        ${has3D ? `<a class="btn primary" href="tresd.html" data-tip="Abrir el proyecto de fotogrametría">${icon('cube')} Ver en 3D</a>` : ''}
-        <button class="btn" id="btn-arch" data-tip="${meta.archived ? 'Devolver a la galería' : 'Ocultar de la galería (no borra nada)'}">${icon('db')}</button>
+      <div class="hero-actions fl-actions">
+        <div class="fl-group fl-nav" role="group" aria-label="Navegar entre vuelos">
+          ${navBtn(older, 'chevL', 'Vuelo anterior')}${navBtn(newer, 'chevR', 'Vuelo siguiente')}
+        </div>
+        <div class="fl-group fl-acts" role="group" aria-label="Acciones del vuelo">
+          <button class="btn" id="btn-label" data-tip="Ponle nombre a este vuelo">${icon('tag')} Editar</button>
+          ${meta.has_proxy ? `<a class="btn" href="studio.html?clip=${cid}" data-tip="Cortes, reels y LUTs">${icon('film')} Studio</a>` : ''}
+          ${has3D ? `<a class="btn primary" href="tresd.html" data-tip="Abrir el proyecto de fotogrametría">${icon('cube')} Ver en 3D</a>` : ''}
+          <button class="btn icon" id="btn-arch" aria-label="${meta.archived ? 'Devolver a la galería' : 'Archivar vuelo'}" data-tip="${meta.archived ? 'Devolver a la galería' : 'Ocultar de la galería (no borra nada)'}">${icon('db')}</button>
+        </div>
       </div>
     </div>
 
     <div class="fl-layout">
-      <div>
-        <div class="panel videobox">
+      <div class="fl-main">
+        <div class="panel videobox fl-video">
           <div id="video-slot"></div>
-          <div class="toolbar" style="padding:10px 12px;margin:0;border-top:1px solid var(--line)">
-            <button class="btn primary" id="btn-photo">${icon('iso')} Foto 4K</button>
-            <div class="seg" id="q-seg"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720" data-tip="720p · ligero, ideal en LTE">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd" data-tip="1080p · balance calidad/datos">1080p</button>' : ''}${meta.raw_rel && hevcOK ? '<button data-q="4k" data-tip="Original 4K HEVC · pesado, mejor en WiFi">4K</button>' : ''}</div>
-            <span class="spacer"></span>
+          <div class="fl-bar">
+            <div class="seg" id="q-seg" role="group" aria-label="Calidad de video"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720" data-tip="720p · ligero, ideal en LTE">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd" data-tip="1080p · balance calidad/datos">1080p</button>' : ''}${meta.raw_rel && hevcOK ? '<button data-q="4k" data-tip="Original 4K HEVC · pesado, mejor en WiFi">4K</button>' : ''}</div>
+            <button class="btn primary" id="btn-photo" data-tip="Extrae el frame actual del original 4K">${icon('iso')} Foto 4K</button>
           </div>
           <div class="hud" id="hud"></div>
         </div>
-        ${pts.length ? `<div class="panel rise" style="margin-top:16px">
-          <div class="ph">${icon('activity')} Telemetría en vivo — click en la curva para saltar el video</div>
-          <div class="pb" style="padding:0">
+        ${pts.length ? `<div class="panel rise fl-tel">
+          <div class="ph">${icon('activity')} Telemetría <span class="hint">Toca la curva para saltar</span></div>
+          <div class="pb fl-tel-b">
             <div class="chart-wrap" id="ch-alt"></div>
-            <div class="chart-wrap" id="ch-speed" style="border-top:1px solid var(--line)"></div>
+            ${flatSpeed
+              ? `<div class="fl-flat">Velocidad<span class="mono">sin desplazamiento apreciable · máx ${maxSpeed.toFixed(1)} km/h</span></div>`
+              : '<div class="chart-wrap" id="ch-speed"></div>'}
           </div>
-    </div>` : ''}
-        ${meta.frame_count ? `<div class="panel" style="margin-top:16px">
-          <div class="ph">${icon('film')} Filmstrip — click para saltar</div>
+        </div>` : ''}
+        ${meta.frame_count ? `<div class="panel fl-film">
+          <div class="ph">${icon('film')} Fotogramas <span class="hint">Toca para saltar</span></div>
           <div class="filmstrip" id="strip"></div>
         </div>` : ''}
 
-
-        <div class="panel" style="margin-top:16px">
+        <div class="panel fl-moments">
           <div class="ph">${icon('activity')} Momentos
-            <span class="spacer" style="flex:1"></span>
-            <button class="btn primary" id="btn-hl" style="padding:4px 10px;font-size:11px">+ Highlight aquí</button>
+            <button class="btn sm primary fl-push" id="btn-hl">${icon('plus')} Marcar aquí</button>
           </div>
           <div class="pb" id="hl-list">
             ${(aiData?.highlights || []).map(h => `<div class="hl-item">
               <button class="tc" data-t="${+h.t || 0}">${fmt.dur(+h.t || 0)}</button>
-              <p>${esc(h.reason)}${h.type ? ` <span class="mono" style="font-size:10px;color:${h.type === 'manual' ? 'var(--mint)' : 'var(--text-3)'}">${esc(h.type)}</span>` : ''}</p>
-              <a class="btn" style="padding:3px 9px;font-size:11px" href="studio.html?clip=${cid}&a=${Math.max(0, (+h.t || 0) - 3)}&b=${(+h.t || 0) + 4}">Editar</a>
-            </div>`).join('') || '<p class="footer-note">Sin momentos aún — marca uno con el video pausado donde quieras.</p>'}
+              <p>${esc(h.reason)}${h.type ? ` <span class="mono fl-type${h.type === 'manual' ? ' manual' : ''}">${esc(h.type)}</span>` : ''}</p>
+              <a class="btn sm" href="studio.html?clip=${cid}&a=${Math.max(0, (+h.t || 0) - 3)}&b=${(+h.t || 0) + 4}">Editar</a>
+            </div>`).join('') || '<p class="footer-note">Sin momentos aún — pausa el video donde quieras y márcalo.</p>'}
           </div>
         </div>
 
-        ${aiData?.edit_suggestions?.length ? `<div class="panel" style="margin-top:16px">
+        ${aiData?.edit_suggestions?.length ? `<div class="panel fl-edits">
           <div class="ph">${icon('film')} Sugerencias de edición</div>
           <div class="pb">
             ${aiData.edit_suggestions.map(s => `<div class="hl-item"><p>${esc(s)}</p></div>`).join('')}
-            ${aiData.hashtags?.length ? `<div class="chips" style="margin-top:10px">${aiData.hashtags.map(h => `<span class="chip">${esc(h)}</span>`).join('')}</div>` : ''}
+            ${aiData.hashtags?.length ? `<div class="chips fl-chips">${aiData.hashtags.map(h => `<span class="chip">${esc(h)}</span>`).join('')}</div>` : ''}
           </div>
         </div>` : ''}
 
-        <div class="panel" style="margin-top:16px">
+        <div class="panel fl-tech">
           <div class="ph">${icon('gauge')} Datos técnicos</div>
           <div class="pb">
           <div class="kv2">
@@ -106,8 +126,8 @@ const cid = new URLSearchParams(location.search).get('id');
               <tr><td>Distancia</td><td>${fmt.km(s.distance_m || 0)}</td></tr>
               <tr><td>Altura máx/prom</td><td>${s.max_rel_alt_m ?? '—'}${pts.length ? ` / ${Math.round(pts.reduce((a, p) => a + p.rel_alt, 0) / pts.length)}` : ''} m</td></tr>
               <tr><td>Vel. máx/prom</td><td>${speeds.length ? `${Math.round(Math.max(...speeds))} / ${Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length)} km/h` : '—'}</td></tr>
-              ${pts.length ? `<tr><td>Alejamiento</td><td>${Math.round(Math.max(...pts.map(p => haversine({ lat: s.home[1], lon: s.home[0] }, p))))} m máx</td></tr>` : ''}
-              ${s.home ? `<tr><td>Despegue</td><td><button class="mono" id="copy-home" title="Copiar" style="color:var(--accent)">${s.home[1].toFixed(5)}, ${s.home[0].toFixed(5)}</button></td></tr>` : ''}
+              ${pts.length && s.home ? `<tr><td>Alejamiento</td><td>${Math.round(Math.max(...pts.map(p => haversine({ lat: s.home[1], lon: s.home[0] }, p))))} m máx</td></tr>` : ''}
+              ${s.home ? `<tr><td>Despegue</td><td><button class="mono fl-copy" id="copy-home" title="Copiar coordenadas">${s.home[1].toFixed(5)}, ${s.home[0].toFixed(5)}</button></td></tr>` : ''}
             </table>
             <table class="kv">
               <tr><td colspan="2" class="kv-h">Cámara y archivo</td></tr>
@@ -118,67 +138,59 @@ const cid = new URLSearchParams(location.search).get('id');
               <tr><td>Frames</td><td>${Math.round(meta.duration_s * meta.fps).toLocaleString()}</td></tr>
               ${pts.length ? `<tr><td>ISO rango</td><td>${Math.min(...pts.map(p => p.iso))} – ${Math.max(...pts.map(p => p.iso))}</td></tr>` : ''}
             </table>
-          </div>
-          <div class="exp-grid" style="margin-top:4px">
-            ${meta.has_proxy ? `<a class="exp" href="studio.html?clip=${cid}">${icon('film')}<div><b>Editar en Studio</b><span>cortes · reels · LUTs</span></div></a>` : ''}
-            ${meta.has_proxy ? `<button class="exp" id="share-video">${icon('ext')}<div><b>Guardar en Fotos</b><span>iPhone · share sheet</span></div></button>` : ''}
-            ${meta.has_proxy ? `<a class="exp" href="${DATA}/proxies/${cid}.mp4" download>${icon('dl')}<div><b>Video 1080p</b><span>MP4 · ${meta.proxy_bytes ? fmt.gb(meta.proxy_bytes) : ''}</span></div></a>` : ''}
-            ${meta.has_proxy720 ? `<a class="exp" href="${DATA}/proxies720/${cid}.mp4" download>${icon('dl')}<div><b>Video 720p</b><span>MP4 · ligero</span></div></a>` : ''}
-            ${meta.raw_rel ? `<a class="exp" href="${DATA}/raw/${meta.raw_rel}" download>${icon('db')}<div><b>Original 4K</b><span>HEVC · ${fmt.gb(meta.size_bytes)}</span></div></a>` : ''}
-            ${meta.has_srt ? `<a class="exp" href="${DATA}/tracks/${cid}.flight.json" download>${icon('route')}<div><b>Track GPS</b><span>JSON · 1 Hz</span></div></a>` : ''}
-            ${s.home ? `<a class="exp" href="https://maps.apple.com/?ll=${s.home[1]},${s.home[0]}&q=Despegue" target="_blank" rel="noopener">${icon('pin')}<div><b>Ver despegue</b><span>Apple Maps</span></div></a>` : ''}
           </div></div>
         </div>
 
-        <div class="navrow">
-          ${flights[idx + 1] ? `<a class="btn" href="flight.html?id=${flights[idx + 1].clip_id}">${icon('chevL')} Anterior</a>` : '<span></span>'}
-          ${flights[idx - 1] ? `<a class="btn" href="flight.html?id=${flights[idx - 1].clip_id}">Siguiente ${icon('chevR')}</a>` : '<span></span>'}
-        </div>
+        <details class="panel fl-dl" id="fl-dl">
+          <summary>${icon('dl')} Descargas y accesos <span class="hint">${dlItems.length} elementos</span><span class="fl-caret" aria-hidden="true">${icon('chevD')}</span></summary>
+          <div class="pb"><div class="fl-dl-grid">
+            ${dlItems.join('')}
+          </div></div>
+        </details>
       </div>
 
-      <div>
-        <div class="panel"><div id="map"></div></div>
+      <div class="fl-side">
+        <div class="panel fl-map"><div id="map"></div></div>
 
-        <div class="panel" style="margin-top:16px">
-          <div class="ph">${icon('spark')} Análisis AI ${aiData?.deep ? '· profundo' : ''}
-            <span class="spacer" style="flex:1"></span>
-            <button class="btn" id="btn-deep" style="padding:4px 10px;font-size:11px">${aiData ? 'Re-analizar profundo' : 'Analizar ahora'}</button>
+        <div class="panel fl-ai">
+          <div class="ph">${icon('spark')} Análisis AI${aiData?.deep ? ' · profundo' : ''}
+            <button class="btn sm fl-push" id="btn-deep">${aiData ? 'Re-analizar' : 'Analizar ahora'}</button>
           </div>
           <div class="pb">
             ${aiData ? `
             <div class="gauge">${scoreRing(aiData.travel_score)}<p>${esc(aiData.summary || '')}</p></div>
-            ${aiData.camera_motion || aiData.quality ? `<table class="kv" style="margin-top:12px">
-              ${aiData.camera_motion ? `<tr><td>Cámara</td><td style="text-align:left;font-family:var(--font)">${esc(aiData.camera_motion)}</td></tr>` : ''}
-              ${aiData.quality ? `<tr><td>Calidad</td><td style="text-align:left;font-family:var(--font)">
+            ${aiData.camera_motion || aiData.quality ? `<table class="kv fl-kvtxt">
+              ${aiData.camera_motion ? `<tr><td>Cámara</td><td>${esc(aiData.camera_motion)}</td></tr>` : ''}
+              ${aiData.quality ? `<tr><td>Calidad</td><td>
                 exposición ${esc(aiData.quality.exposure)} · ${esc(aiData.quality.stability)} · luz ${esc(aiData.quality.light)}
-                ${aiData.quality.issues?.length ? `<br><span style="color:var(--amber)">⚠ ${esc(aiData.quality.issues.join(' · '))}</span>` : ''}</td></tr>` : ''}
-              ${aiData.subjects?.length ? `<tr><td>Sujetos</td><td style="text-align:left;font-family:var(--font)">${esc(aiData.subjects.join(' · '))}</td></tr>` : ''}
+                ${aiData.quality.issues?.length ? `<br><span class="fl-issue">${icon('warn')} ${esc(aiData.quality.issues.join(' · '))}</span>` : ''}</td></tr>` : ''}
+              ${aiData.subjects?.length ? `<tr><td>Sujetos</td><td>${esc(aiData.subjects.join(' · '))}</td></tr>` : ''}
             </table>` : ''}
             ${aiData.story_arc ? `<p class="ai-arc">«${esc(aiData.story_arc)}»</p>` : ''}
             ${aiData.director_notes?.length ? `<div class="dir-notes">
-              <p class="mlb" style="margin:14px 0 6px">Informe del director</p>
+              <p class="mlb fl-sub">Informe del director</p>
               ${aiData.director_notes.map(n => `<p>${esc(n)}</p>`).join('')}</div>` : ''}
-            ${aiData.highlights?.length ? `<p class="mlb" style="margin:14px 0 6px">Momentos — tap para saltar</p>
+            ${aiData.highlights?.length ? `<p class="mlb fl-sub">Momentos <span class="fl-subhint">toca para saltar</span></p>
             <div class="chips">${aiData.highlights.map(h =>
-              `<button class="chip tc mom" data-t="${+h.t || 0}">▶ ${fmt.dur(+h.t || 0)}${h.type ? ' · ' + esc(h.type) : ''}</button>`).join('')}</div>
-            ${aiData.highlights[0]?.reason ? `<p class="footer-note" style="margin:6px 0 0" id="mom-why">${esc(aiData.highlights[0].reason)}</p>` : ''}` : ''}
-            ${aiData.edit_suggestions?.length ? `<p class="mlb" style="margin:14px 0 6px">Sugerencias de edición</p>
+              `<button class="chip tc mom" data-t="${+h.t || 0}">${icon('play')} ${fmt.dur(+h.t || 0)}${h.type ? ' · ' + esc(h.type) : ''}</button>`).join('')}</div>
+            ${aiData.highlights[0]?.reason ? `<p class="footer-note fl-why" id="mom-why">${esc(aiData.highlights[0].reason)}</p>` : ''}` : ''}
+            ${aiData.edit_suggestions?.length ? `<p class="mlb fl-sub">Sugerencias de edición</p>
             <ul class="ai-edits">${aiData.edit_suggestions.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-            ${aiData.uses?.length ? `<p class="mlb" style="margin:14px 0 6px">Úsalo para</p>
+            ${aiData.uses?.length ? `<p class="mlb fl-sub">Úsalo para</p>
             <ul class="ai-edits">${aiData.uses.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-            ${aiData.hashtags?.length ? `<div class="chips" style="margin-top:12px">
-              ${aiData.hashtags.map(t => `<span class="chip" style="color:var(--accent)">${esc(t)}</span>`).join('')}</div>` : ''}
-            ${aiData.tags?.length ? `<div class="chips" style="margin-top:10px">
+            ${aiData.hashtags?.length ? `<div class="chips fl-chips">
+              ${aiData.hashtags.map(t => `<span class="chip fl-tag">${esc(t)}</span>`).join('')}</div>` : ''}
+            ${aiData.tags?.length ? `<div class="chips fl-chips">
               ${aiData.tags.map(t => `<a class="chip" href="index.html?q=${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}
             </div>` : ''}` : `<p class="footer-note">Este clip aún no tiene análisis — pídelo con el botón.</p>`}
           </div>
         </div>
-
-        </div>
       </div>
     </div>
-
+  </div>
 `;
+  // Descargas: abierto en escritorio (datos primero), colapsado en móvil
+  if (matchMedia('(min-width: 821px)').matches) document.getElementById('fl-dl')?.setAttribute('open', '');
 
   // ---- video ----
   const slot = document.getElementById('video-slot');
@@ -205,12 +217,12 @@ const cid = new URLSearchParams(location.search).get('id');
   } else {
     // sin fuente reproducible: estado honesto — el thumb + qué falta y por qué
     slot.innerHTML = `
-      <div style="position:relative">
-        <img src="${DATA}/thumbs/${cid}.jpg" style="width:100%;height:auto;display:block;opacity:.55" alt="" width="960" height="540">
-        <div style="position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px">
-          <div class="glass" style="padding:14px 20px;border-radius:12px;max-width:420px">
-            <b style="font-size:13px">${icon('film')} Proxy de video en proceso</b>
-            <p class="footer-note" style="margin:6px 0 0">${meta.raw_rel && !hevcOK
+      <div class="fl-noproxy">
+        <img src="${DATA}/thumbs/${cid}.jpg" alt="" width="960" height="540">
+        <div class="fl-noproxy-msg">
+          <div class="glass">
+            <b>${icon('film')} Proxy de video en proceso</b>
+            <p class="footer-note">${meta.raw_rel && !hevcOK
               ? 'El original es 4K HEVC y este navegador no lo decodifica. El proxy H.264 se está generando — recarga en unos minutos.'
               : 'El video web de este clip se está generando en el Mac. Recarga en unos minutos.'}</p>
           </div>
@@ -330,19 +342,19 @@ const cid = new URLSearchParams(location.search).get('id');
   document.getElementById('btn-label').addEventListener('click', () => {
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
-    ov.innerHTML = `<div class="modal" style="max-width:480px">
-      <div class="modal-h"><b>${icon('tag')} Editar vuelo</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+    ov.innerHTML = `<div class="modal fl-modal">
+      <div class="modal-h"><b>${icon('tag')} Editar vuelo</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
         <div class="mlb">Nombre</div>
         <div class="tool-row">
-          <input id="m-label" class="m-ipt" style="flex:1" maxlength="80" placeholder="${esc(fmt.date(meta.date))} · ${esc(meta.time)}" value="${esc(meta.label || '')}">
+          <input id="m-label" class="m-ipt fl-grow" maxlength="80" placeholder="${esc(fmt.date(meta.date))} · ${esc(meta.time)}" value="${esc(meta.label || '')}">
           <button class="btn primary" id="m-save">Guardar</button>
         </div>
         <div class="mlb">Galería</div>
         <button class="btn" id="m-arch" data-tip="${meta.archived ? 'Vuelve a aparecer en la galería' : 'Se oculta de la galería; nada se borra'}">${icon('db')} ${meta.archived ? 'Desarchivar' : 'Archivar'}</button>
-        <div class="mlb" style="color:#e2635f">Zona de peligro</div>
-        <button class="btn" id="m-del" style="border-color:rgba(226,99,95,.45);color:#e2635f">${icon('warn')} Borrar este vuelo</button>
-        <p class="footer-note" style="margin-top:8px">Borrar mueve el original 4K, proxies y telemetría a la papelera del vault — reversible desde el Mac, no destructivo.</p>
+        <div class="mlb fl-danger-lb">Zona de peligro</div>
+        <button class="btn danger" id="m-del">${icon('warn')} Borrar este vuelo</button>
+        <p class="footer-note fl-danger-note">Borrar mueve el original 4K, proxies y telemetría a la papelera del vault — reversible desde el Mac, no destructivo.</p>
       </div></div>`;
     openModal(ov);
     ov.querySelector('#m-save').addEventListener('click', async () => {
@@ -361,7 +373,7 @@ const cid = new URLSearchParams(location.search).get('id');
       if (!b.dataset.armed) {           // confirmación en dos pasos, sin confirm() nativo
         b.dataset.armed = '1';
         b.innerHTML = `${icon('warn')} ¿Seguro? Click otra vez para borrar`;
-        b.style.background = 'rgba(226,99,95,.15)';
+        b.classList.add('armed');
         return;
       }
       b.disabled = true;
@@ -392,13 +404,13 @@ const cid = new URLSearchParams(location.search).get('id');
     set('dist', cum[i] >= 1000 ? `${(cum[i] / 1000).toFixed(2)}<small> km</small>` : `${Math.round(cum[i])}<small> m</small>`);
     set('speed', `${Math.round(speeds[i] || 0)}<small> km/h</small>`);
     set('iso', esc(p.iso));
-    set('shutter', `<small>${esc(p.shutter)}</small>`);
+    set('shutter', esc(p.shutter));
     // rumbo: bearing hacia el siguiente punto — flecha que gira con el dron
     const q = pts[Math.min(i + 1, pts.length - 1)];
     const brg = bearing(p, q);
     const trueBrg = (brg - 270 + 360) % 360;  // brg lleva +270 (offset de la flecha); el punto cardinal usa el rumbo real
     const card = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(trueBrg / 45) % 8];
-    set('head', `<span class="hud-arrow" style="transform:rotate(${Math.round(brg)}deg)">➤</span> <small>${card}</small>`);
+    set('head', `<span class="hud-arrow" style="transform:rotate(${Math.round(brg)}deg)">${icon('chevR')}</span> <small>${card}</small>`);
     const hm = s.home ? havm(s.home[1], s.home[0], p.lat, p.lon) : null;
     set('home', hm != null ? `${Math.round(hm)}<small> m</small>` : '—');
     marker?.setLngLat([p.lon, p.lat]);
@@ -429,52 +441,47 @@ const cid = new URLSearchParams(location.search).get('id');
   }
 
   // ---- charts SVG ----
+  // colores desde los tokens del tema (los atributos SVG no resuelven var())
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const C = { accent: css('--accent') || '#45A0E6', ok: css('--ok') || '#52C79A' };
   const CHARTS = {};
   function chart(el, series, label, unit, color) {
     const w = 800, h = 130, max = Math.max(...series, 1), pad = 8;
-    const X = i => (i / (series.length - 1)) * w;
+    const X = i => (i / Math.max(series.length - 1, 1)) * w;
     const Y = v => h - pad - (v / max) * (h - 34);
     const pth = series.map((v, i) => `${X(i)},${Y(v)}`).join(' ');
     const gid = `g-${el.id}`;
     el.innerHTML = `
       <span class="chart-lb">${label}</span>
       <span class="chart-badge mono" id="${el.id}-v">— ${unit}</span>
-      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <span class="chart-ax mono max">${Math.round(max)} ${unit}</span>
+      <span class="chart-ax mono min">0</span>
+      <div class="chart-plot">
+      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="${label}: toca para saltar el video" role="img">
         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="${color}" stop-opacity="0.28"/>
           <stop offset="1" stop-color="${color}" stop-opacity="0.02"/>
         </linearGradient></defs>
         ${[0.25, 0.5, 0.75].map(f => `<line x1="0" x2="${w}" y1="${Y(max * f)}" y2="${Y(max * f)}"
-          stroke="currentColor" stroke-width="0.4" opacity="0.10"/>`).join('')}
-        <text x="6" y="${Y(max) + 4}" font-size="9" fill="currentColor" opacity="0.4"
-          font-family="var(--mono)">${Math.round(max)} ${unit}</text>
+          stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke" opacity="0.10"/>`).join('')}
         <polyline points="${pth} ${w},${h} 0,${h}" fill="url(#${gid})" stroke="none"/>
-        <polyline class="ch-line" points="${pth}" fill="none" stroke="${color}" stroke-width="1.8"/>
-        <line id="${el.id}-c" x1="0" x2="0" y1="0" y2="${h}" stroke="currentColor" stroke-width="0.75" opacity="0"/>
-        <circle id="${el.id}-dot" r="4.5" fill="${color}" stroke="#fff" stroke-width="1.4"
-          cx="0" cy="${Y(series[0] || 0)}" style="filter:drop-shadow(0 0 6px ${color})"/>
-      </svg>`;
-    // dibujo animado de la curva al montar
-    const line = el.querySelector('.ch-line');
-    const len = line.getTotalLength();
-    line.style.strokeDasharray = len;
-    line.style.strokeDashoffset = len;
-    requestAnimationFrame(() => {
-      line.style.transition = 'stroke-dashoffset 1100ms cubic-bezier(.25,.1,.25,1)';
-      line.style.strokeDashoffset = '0';
-    });
-    CHARTS[el.id] = { series, unit, X, Y };
+        <polyline class="ch-line" points="${pth}" fill="none" stroke="${color}" stroke-width="1.8" vector-effect="non-scaling-stroke"/>
+        <line id="${el.id}-c" x1="0" x2="0" y1="0" y2="${h}" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke" opacity="0"/>
+      </svg>
+      <i class="chart-dot" id="${el.id}-dot" style="left:0;top:${(Y(series[0] || 0) / h * 100).toFixed(2)}%;--dot:${color}"></i>
+      </div>`;
+    CHARTS[el.id] = { series, unit, X, Y, w, h };
     const svg = el.querySelector('svg');
     svg.style.touchAction = 'pan-y';               // deslizar horizontal = scrub; vertical sigue scrolleando
     svg.addEventListener('pointermove', e => {     // pointermove cubre mouse Y dedo (mousemove era desktop-only)
       const r = svg.getBoundingClientRect();
-      const i = Math.round(((e.clientX - r.left) / r.width) * (series.length - 1));
+      const i = Math.max(0, Math.min(series.length - 1, Math.round(((e.clientX - r.left) / r.width) * (series.length - 1))));
       document.getElementById(`${el.id}-v`).textContent = `${Math.round(series[i] || 0)} ${unit} · ${fmt.dur(i)}`;
       const c = document.getElementById(`${el.id}-c`);
       c.setAttribute('x1', X(i)); c.setAttribute('x2', X(i));
       c.setAttribute('opacity', 0.3);
     });
-    svg.addEventListener('mouseleave', () => document.getElementById(`${el.id}-c`).setAttribute('opacity', 0));
+    svg.addEventListener('pointerleave', () => document.getElementById(`${el.id}-c`).setAttribute('opacity', 0));
     svg.addEventListener('click', e => {
       const r = svg.getBoundingClientRect();
       seek(Math.round(((e.clientX - r.left) / r.width) * (series.length - 1)));
@@ -482,13 +489,13 @@ const cid = new URLSearchParams(location.search).get('id');
   }
   let cursorAt = () => {};
   if (pts.length) {
-    chart(document.getElementById('ch-alt'), pts.map(p => p.rel_alt), 'Altitud', 'm', '#45A0E6');
-    chart(document.getElementById('ch-speed'), speeds, 'Velocidad', 'km/h', '#52C79A');
+    chart(document.getElementById('ch-alt'), pts.map(p => p.rel_alt), 'Altitud', 'm', C.accent);
+    if (!flatSpeed) chart(document.getElementById('ch-speed'), speeds, 'Velocidad', 'km/h', C.ok);
     cursorAt = i => ['ch-alt', 'ch-speed'].forEach(id => {
       const ch = CHARTS[id];
       if (!ch) return;
       const dot = document.getElementById(`${id}-dot`);
-      if (dot) { dot.setAttribute('cx', ch.X(i)); dot.setAttribute('cy', ch.Y(ch.series[i] || 0)); }
+      if (dot) { dot.style.left = `${(ch.X(i) / ch.w * 100).toFixed(2)}%`; dot.style.top = `${(ch.Y(ch.series[i] || 0) / ch.h * 100).toFixed(2)}%`; }
       const badge = document.getElementById(`${id}-v`);
       if (badge) badge.textContent = `${Math.round(ch.series[i] || 0)} ${ch.unit} · ${fmt.dur(i)}`;
     });
@@ -507,10 +514,11 @@ const cid = new URLSearchParams(location.search).get('id');
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.on('load', () => {
       map.addSource('route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } } });
-      map.addLayer({ id: 'route-glow', type: 'line', source: 'route', paint: { 'line-color': '#45A0E6', 'line-width': 7, 'line-opacity': 0.22 } });
-      map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-color': '#45A0E6', 'line-width': 2.2 } });
+      map.addLayer({ id: 'route-glow', type: 'line', source: 'route', paint: { 'line-color': C.accent, 'line-width': 7, 'line-opacity': 0.22 } });
+      map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-color': C.accent, 'line-width': 2.2 } });
       const el = document.createElement('div');
-      el.innerHTML = `<svg width="26" height="26" viewBox="0 0 20 20" style="filter:drop-shadow(0 1px 4px rgba(0,0,0,.9))"><circle cx="10" cy="10" r="5" fill="#45A0E6" stroke="#E6EBF2" stroke-width="1.6"/><circle cx="10" cy="10" r="1.6" fill="#0A0C10"/></svg>`;
+      el.className = 'fl-marker';
+      el.innerHTML = `<svg width="26" height="26" viewBox="0 0 20 20"><circle class="o" cx="10" cy="10" r="5"/><circle class="i" cx="10" cy="10" r="1.6"/></svg>`;
       marker = new maplibregl.Marker({ element: el, rotationAlignment: 'map' }).setLngLat(coords[0]).addTo(map);
       map.on('click', 'route', e => {
         let best = 0, bd = Infinity;
@@ -558,10 +566,10 @@ const cid = new URLSearchParams(location.search).get('id');
 })();
 
 function scoreRing(score = 0) {
-  const r = 22, c = 2 * Math.PI * r, pct = Math.max(0, Math.min(10, score)) / 10;
-  return `<span class="ring"><svg width="54" height="54">
-    <circle cx="27" cy="27" r="${r}" fill="none" stroke="#1E2530" stroke-width="4"/>
-    <circle cx="27" cy="27" r="${r}" fill="none" stroke="#45A0E6" stroke-width="4"
+  const r = 24, c = 2 * Math.PI * r, pct = Math.max(0, Math.min(10, score)) / 10;
+  return `<span class="ring"><svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
+    <circle class="trk" cx="28" cy="28" r="${r}" fill="none" stroke-width="4"/>
+    <circle class="val" cx="28" cy="28" r="${r}" fill="none" stroke-width="4"
       stroke-dasharray="${c * pct} ${c}" stroke-linecap="round"/>
   </svg><b>${score}</b></span>`;
 }

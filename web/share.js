@@ -1,25 +1,31 @@
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
-import * as THREE from '/vendor/three180.module.js?v=352';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=352';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=352';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=352';
-import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=352';
-import { mountSplatViewer } from '/splatview.js?v=352';
+import * as THREE from '/vendor/three180.module.js?v=353';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=353';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=353';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=353';
+import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=353';
+import { mountSplatViewer } from '/splatview.js?v=353';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// Tema: esta página pública no carga shell.js; honra la preferencia guardada (ab_theme) igual que la app.
+try { document.documentElement.dataset.theme = localStorage.getItem('ab_theme') === 'light' ? 'light' : 'dark'; } catch { document.documentElement.dataset.theme = 'dark'; }
+
 const cid = (new URLSearchParams(location.search).get('m') || '').replace(/[^\w-]/g, '');
 document.body.classList.add('share-page');
-document.body.innerHTML = `<div class="share-main" style="max-width:1120px;margin:0 auto;padding:22px 16px 60px">
-  <div class="page-head rise" style="align-items:center">
-    <span style="width:32px;height:32px;border-radius:8px;background:var(--accent-dim);display:grid;place-items:center;color:var(--accent);font-weight:700;font-size:13px">A</span>
-    <h1 id="sh-title">Modelo 3D</h1>
-    <span class="count">AeroBrain · fotogrametría de dron</span>
-  </div>
+document.body.innerHTML = `<div class="share-main">
+  <header class="sh-head rise">
+    <span class="sh-mark" aria-hidden="true">${icon('drone')}</span>
+    <div class="sh-head-t">
+      <h1 id="sh-title">Modelo 3D</h1>
+      <span class="sh-sub">AeroBrain · fotogrametría de dron</span>
+    </div>
+  </header>
   <div id="sh-body"><p class="footer-note">Cargando…</p></div>
-</div>`;
+</div>
+<svg class="sh-defs" width="0" height="0" aria-hidden="true" focusable="false"><filter id="sh-hard" color-interpolation-filters="sRGB"><feComponentTransfer><feFuncA type="discrete" tableValues="0 1"/></feComponentTransfer></filter></svg>`;
 const body = document.getElementById('sh-body');
 
 async function jfetch(url) {
@@ -63,12 +69,12 @@ function splatAssetFor(clipId, system) {
 let meta = null, sys = {};
 if (!cid) {
   // sin ?m= no hay nada que pedir: antes hacía fetch a data/models//meta.json (404) y lanzaba
-  body.innerHTML = '<div class="empty">Falta el modelo en el link (parámetro <code>?m=</code>).</div>';
+  body.innerHTML = `<div class="empty">${icon('link')}<p>Falta el modelo en el link (parámetro <code>?m=</code>).</p></div>`;
 } else try {
   meta = await jfetch(`data/models/${cid}/meta.json`);
   sys = await jfetch('data/manifest/system.json').catch(() => ({}));
 } catch {
-  body.innerHTML = '<div class="empty">Este modelo no existe o el link ya no está activo.</div>';
+  body.innerHTML = `<div class="empty">${icon('warn')}<p>Este modelo no existe o el link ya no está activo.</p></div>`;
 }
 if (!meta) await new Promise(() => {});   // página vacía con mensaje: no seguir montando visores
 
@@ -82,8 +88,12 @@ const splatFmt = (splat?.format || splat?.name.split('.').pop() || 'splat').toUp
 const meshOk = meta.mesh_ok !== false;
 const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(2) + ' ha' : Math.round(q.area_m2 || 0) + ' m²';
 
+const dlRow = (href, name, sub, opts = '') =>
+  `<a class="exp sh-dl" href="${href}" ${opts}>${icon('dl')}<div><b>${name}</b><span class="sh-dl-sub" data-size-url="${href}">${sub}</span></div></a>`;
+const sizeOf = b => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`;
+
 body.innerHTML = `
-  <div class="tool-row rise" style="margin-bottom:14px">
+  <div class="sh-chips rise">
     ${q.gsd_cm_px ? `<span class="chip on">${q.gsd_cm_px} cm/px</span>` : ''}
     ${q.area_m2 ? `<span class="chip on">${ha}</span>` : ''}
     ${q.cameras_reconstructed ? `<span class="chip">${q.cameras_reconstructed} cámaras</span>` : ''}
@@ -91,55 +101,62 @@ body.innerHTML = `
     ${splat ? `<span class="chip">Gaussian splat</span>` : ''}
   </div>
 
-  <div class="panel rise">
-    <div class="ph">Visor 3D
-      <span class="spacer" style="flex:1"></span>
-      <a id="sh-volar" href="volar.html?m=${encodeURIComponent(cid)}" style="display:none;
-        text-decoration:none;font:650 12px var(--font);letter-spacing:.1em;color:#fff;
-        padding:8px 14px;border-radius:8px;background:linear-gradient(135deg,#45A0E6,#5A78E8);
-        margin-right:10px">✈ VOLAR EN 3D</a>
-      <div class="seg">
-        <button class="on" data-v="cloud">Nube de puntos</button>
-        ${meshOk ? '<button data-v="mesh">Malla texturizada</button>' : ''}
-        ${splat ? '<button data-v="splat">Gaussian splat</button>' : ''}
+  <div class="panel rise sh-viewer">
+    <div class="ph sh-ph">
+      <span class="sh-ph-t">Visor 3D</span>
+      <a id="sh-volar" class="btn primary sh-volar" href="volar.html?m=${encodeURIComponent(cid)}" hidden>${icon('drone')} Volar en 3D</a>
+      <div class="seg sh-tabs" role="tablist" aria-label="Tipo de visor">
+        <button class="on" data-v="cloud" role="tab" aria-selected="true">Nube</button>
+        ${meshOk ? '<button data-v="mesh" role="tab" aria-selected="false">Malla</button>' : ''}
+        ${splat ? '<button data-v="splat" role="tab" aria-selected="false">Splat</button>' : ''}
       </div>
     </div>
-    <div id="sh-view" style="height:64dvh;min-height:400px;display:grid;place-items:center;position:relative;background:radial-gradient(ellipse at 50% 40%, #131a24 0%, #0a0e14 70%)"></div>
+    <div id="sh-view" class="sh-view"></div>
   </div>
 
   ${meta.cmp_asset && meta.has_dsm ? `
-  <div class="panel rise" style="margin-top:14px">
-    <div class="ph">Foto real ↔ Elevación — arrastra el divisor</div>
-    <div class="cmp" id="cmp">
+  <div class="panel rise">
+    <div class="ph">Foto real y elevación <span class="hint">Arrastra el divisor</span></div>
+    <div class="cmp" id="cmp" role="img" aria-label="Comparador de foto real y mapa de elevación">
       <img src="${base}/dsm_color.webp" alt="" draggable="false">
       <img class="cmp-over" src="${base}/${esc(meta.cmp_asset)}" alt="" draggable="false" style="clip-path:inset(0 50% 0 0)">
       <div class="cmp-handle" style="left:50%"><span></span></div>
     </div>
   </div>` : ''}
 
-  <div class="panel rise" style="margin-top:14px">
+  <div class="panel rise">
     <div class="ph">Descargas</div>
-    <div class="pb"><div class="exp-grid">
-      <a class="exp" href="${base}/ortho_full.jpg" target="_blank" rel="noopener"><div><b>Ortofoto 5K</b><span>JPG</span></div></a>
-      <a class="exp" href="${base}/cloud.ply" download><div><b>Nube de puntos</b><span>PLY</span></div></a>
-      ${meta.cloud_copc_asset ? `<a class="exp" href="${base}/${meta.cloud_copc_asset}" download><div><b>Nube optimizada</b><span>COPC</span></div></a>` : ''}
-      ${meshOk ? `<a class="exp" href="${base}/model/odm_textured_model_geo.obj" download><div><b>Malla 3D</b><span>OBJ</span></div></a>` : ''}
-      ${splat ? `<a class="exp" href="${splatUrl(splat)}" download><div><b>Gaussian splat</b><span>${splatFmt}</span></div></a>` : ''}
+    <div class="pb"><div class="sh-dl-grid">
+      ${dlRow(`${base}/ortho_full.jpg`, 'Ortofoto 5K', 'JPG', 'target="_blank" rel="noopener"')}
+      ${dlRow(`${base}/cloud.ply`, 'Nube de puntos', 'PLY', 'download')}
+      ${meta.cloud_copc_asset ? dlRow(`${base}/${meta.cloud_copc_asset}`, 'Nube optimizada', 'COPC', 'download') : ''}
+      ${meshOk ? dlRow(`${base}/model/odm_textured_model_geo.obj`, 'Malla 3D', 'OBJ', 'download') : ''}
+      ${splat ? dlRow(splatUrl(splat), 'Gaussian splat', `${splatFmt}${splat.bytes ? ' · ' + sizeOf(splat.bytes) : ''}`, 'download') : ''}
     </div>
-    <p class="footer-note" style="margin:10px 0 0">Procesado localmente con AeroBrain — fotogrametría ODM sobre video de dron DJI.</p></div>
+    <p class="footer-note sh-foot">Procesado localmente con AeroBrain — fotogrametría ODM sobre video de dron DJI.</p></div>
   </div>`;
+
+// tamaño de cada descarga como subtítulo (HEAD, solo lectura; si falla queda el formato)
+document.querySelectorAll('[data-size-url]').forEach(el => {
+  if (/·/.test(el.textContent)) return;
+  fetch(el.dataset.sizeUrl, { method: 'HEAD' }).then(r => {
+    const n = +r.headers.get('content-length');
+    if (r.ok && n) el.textContent = `${el.textContent} · ${sizeOf(n)}`;
+  }).catch(() => {});
+});
 
 // "VOLAR EN 3D" depende solo de la escena del modelo, no de cuántos splats haya
 fetch(`data/models/${cid}/scene.v2.json`).then(r => r.ok ? r.json() : null)
-  .then(sc => { if (sc?.capabilities?.terrain) { const b = document.getElementById('sh-volar'); if (b) b.style.display = 'inline-block'; } })
+  .then(sc => { if (sc?.capabilities?.terrain) { const b = document.getElementById('sh-volar'); if (b) b.hidden = false; } })
   .catch(() => {});
 
 if (splat && splats.length > 1) {
-  const seg = document.querySelector('.seg');
+  const seg = document.querySelector('.sh-ph');
   const sel = document.createElement('select');
   sel.className = 'share-splat-select';
+  sel.classList.add('ctl');
   sel.title = 'Versión del splat';
-  sel.style.cssText = 'background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px';
+  sel.setAttribute('aria-label', 'Versión del splat');
   sel.innerHTML = splats.map(s => {
     const label = splatVersionLabel(s);
     return `<option value="${esc(splatKey(s))}"${splatKey(s) === splatKey(splat) ? ' selected' : ''}>${esc(label)}</option>`;
@@ -169,9 +186,9 @@ if (cmp) {
 // ---------- visores (nube / malla / splat) ----------
 const view = document.getElementById('sh-view');
 const spinner = label => {
-  view.innerHTML = `<div style="width:80%;text-align:center">
-    <div class="sk" style="height:10px;border-radius:5px"></div>
-    <p class="footer-note sh-st" style="margin:10px 0 0">${label}</p></div>`;
+  view.innerHTML = `<div class="sh-spin">
+    <div class="sk"></div>
+    <p class="footer-note sh-st">${label}</p></div>`;
   return view.querySelector('.sh-st');
 };
 
@@ -401,7 +418,7 @@ const loaders = {
   },
 };
 
-document.querySelector('.seg').addEventListener('click', e => {
+document.querySelector('.sh-tabs').addEventListener('click', e => {
   const b = e.target.closest('[data-v]');
   if (!b) return;
   view._loadToken = (view._loadToken || 0) + 1;   // invalida carga mesh/cloud/splat en vuelo (#1)
@@ -409,14 +426,14 @@ document.querySelector('.seg').addEventListener('click', e => {
   // el módulo premium expone su propio dispose (limpia HUD + listeners + viewer)
   if (view._splatDispose) { const d = view._splatDispose; view._splatDispose = null; view._splatViewer = null; try { d(); } catch {} }
   else if (view._splatViewer) { const v = view._splatViewer; view._splatViewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
-  document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.sh-tabs button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', String(x === b)); });
   const NAMES = { cloud: 'la nube de puntos (cloud.ply)', mesh: 'la malla texturizada (OBJ/MTL)', splat: `el gaussian splat (.${splatFmt.toLowerCase()})` };
   loaders[b.dataset.v]().catch(err => {
     view.innerHTML = `<p class="footer-note">No se pudo cargar ${NAMES[b.dataset.v]} del modelo ${esc(cid)}.
-      <span style="color:var(--text-3)">${esc(String(err && err.message || err).slice(0, 120))}</span></p>`;
+      <span class="sh-err">${esc(String(err && err.message || err).slice(0, 120))}</span></p>`;
   });
 });
 loaders.cloud().catch(err => {
   view.innerHTML = `<p class="footer-note">No se pudo cargar la nube de puntos (cloud.ply) del modelo ${esc(cid)}.
-    <span style="color:var(--text-3)">${esc(String(err && err.message || err).slice(0, 120))}</span></p>`;
+    <span class="sh-err">${esc(String(err && err.message || err).slice(0, 120))}</span></p>`;
 });

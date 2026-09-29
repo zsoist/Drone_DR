@@ -1,10 +1,10 @@
-  import * as THREE from '/vendor/three180.module.js?v=352';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=352';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=352';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=352';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=352';
-  import { mountSplatViewer } from '/splatview.js?v=352';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=352';
+  import * as THREE from '/vendor/three180.module.js?v=353';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=353';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=353';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=353';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=353';
+  import { mountSplatViewer } from '/splatview.js?v=353';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=353';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -135,7 +135,7 @@
   async function renderScanCard(box, cid) {
     if (!box) return;
     box._scanCid = cid;   // currency: dos clicks rápidos → el fetch viejo NO pinta bajo la selección nueva
-    box.innerHTML = '<div class="scan-card"><div class="sk" style="height:96px;border-radius:12px"></div></div>';
+    box.innerHTML = '<div class="scan-card"><div class="sk td-sk-scan"></div></div>';
     let rep = _scanCache[cid];
     try {
       if (!rep) {
@@ -151,7 +151,7 @@
     const num = v => Number.isFinite(+v) ? +v : 0;   // el reporte viene del server, pero un meta corrupto no debe inyectar HTML
     const bar = (lb, v) => `
       <div class="scan-row"><span class="scan-lb">${lb}</span>
-        <div class="scan-bar"><i class="${cls(v)}" style="width:${v * 10}%"></i></div>
+        <div class="scan-bar"><i class="${cls(v)}" style="--p:${v / 10}"></i></div>
         <b class="scan-v ${cls(v)}">${v}</b></div>`;
     const memCls = { bajo: 'ok', medio: 'mid', alto: 'bad' }[mem.level] || 'ok';
     const verdictV = Math.max(su.ortho_dsm || 0, su.mesh || 0, su.splat || 0);
@@ -185,12 +185,18 @@
     return all.find(s => splatKey(s) === chosen) || all[0] || null;
   }
 
+  // iconos extra de esta página (icons.js es global; se extiende en runtime)
+  if (typeof ICONS === 'object') Object.assign(ICONS, {
+    more: '<circle cx="4.5" cy="10" r="1.1"/><circle cx="10" cy="10" r="1.1"/><circle cx="15.5" cy="10" r="1.1"/>',
+    back: '<path d="M11.5 5L6.5 10l5 5"/>',
+    edit: '<path d="M4 16l.8-3.6L13.4 3.8a1.6 1.6 0 012.3 0l.5.5a1.6 1.6 0 010 2.3L7.6 15.2z"/><path d="M12 5.4l2.6 2.6"/>',
+  });
   const main = renderShell('tresd.html');
   main.classList.add('page-3d');
   main.innerHTML = `
     <div class="page-head"><h1>3D</h1><span class="count">fotogrametría · nube de puntos · splats</span></div>
 
-    <div class="pm-tabs rise td-tabs" id="td-tabs" style="margin-bottom:14px">
+    <div class="pm-tabs rise td-tabs" id="td-tabs">
       <i class="pm-ink"></i>
       <button class="on" data-tab="projects">${icon('layers')} Proyectos</button>
       <button data-tab="process">${icon('activity')} Procesamiento</button>
@@ -202,7 +208,7 @@
       <div class="ph">${icon('layers')} Proyectos 3D <span class="count" id="proj-count"></span></div>
       <div class="pb">
         <div class="td-browserbar">
-          <div class="search td-search">${icon('search')}<input id="proj-q" type="search" placeholder="Buscar proyecto, fecha, ubicación…" autocomplete="off"></div>
+          <div class="search td-search">${icon('search')}<input id="proj-q" type="search" placeholder="Buscar proyecto, fecha, lugar…" aria-label="Buscar proyecto" autocomplete="off"></div>
           <select class="ctl" id="proj-filter" aria-label="Filtrar proyectos" data-tip="Filtra por lo que tiene cada proyecto">
             <option value="all">Todos</option>
             <option value="dsm">Con DSM</option>
@@ -223,7 +229,7 @@
             <button data-proj-mode="list">${icon('list')} Lista</button>
           </div>
         </div>
-        <div class="td-project-hint">Finder 3D: selecciona un proyecto para abrir mapa, visores, metadata, descargas y enlaces públicos.</div>
+        <p class="td-project-hint">Selecciona un proyecto para abrir mapa, visores, descargas y enlaces públicos.</p>
         <div class="proj-grid" id="proj-grid"></div>
       </div>
     </div>
@@ -232,7 +238,7 @@
     <section class="td-mod" data-mod="process" style="display:none">
     <div class="panel td-flow">
       <div class="ph">${icon('activity')} Pipeline de procesamiento
-        <span class="spacer" style="flex:1"></span>
+        <span class="spacer"></span>
         <button class="linklike" id="td-how">¿Cómo funciona?</button>
       </div>
       <div class="pb">
@@ -273,9 +279,9 @@
         </div>
       </div>
     </div>
-    <div class="panel" style="margin-top:14px">
+    <div class="panel">
       <div class="ph">${icon('cube')} Gaussian Splats <span class="count" id="splat-count"></span>
-        <span class="spacer" style="flex:1"></span>
+        <span class="spacer"></span>
         <button class="linklike" id="td-what-splat">¿Qué es un splat?</button>
       </div>
       <div class="pb td-splats-wide" id="splats"></div>
@@ -283,9 +289,9 @@
     </section>
 
     <section class="td-mod" data-mod="jobs" style="display:none">
-    <div class="panel" style="margin-top:16px">
+    <div class="panel">
       <div class="ph">${icon('activity')} Trabajos y procesamiento
-        <span class="spacer" style="flex:1"></span>
+        <span class="spacer"></span>
         <span class="jt-thermal mono" id="jt-thermal"></span></div>
       <div class="pb">
         <div class="jt-strip" id="jt-strip" aria-label="Telemetría en vivo — clic en una tarjeta para el detalle">
@@ -359,13 +365,21 @@
     </section>
 
     <div id="proj-view" style="display:none">
-    <div class="panel" style="margin-top:16px">
+    <div class="td-crumb" id="td-crumb" role="navigation" aria-label="Proyecto abierto">
+      <button class="btn ghost sm" id="proj-back" type="button">${icon('back')} Proyectos</button>
+      <span class="td-crumb-sep" aria-hidden="true">/</span>
+      <b class="td-crumb-t" id="td-crumb-t"></b>
+      <span class="td-crumb-meta mono" id="td-crumb-m"></span>
+      <span class="spacer"></span>
+      <button class="btn ghost sm icon" id="proj-close" type="button" aria-label="Cerrar proyecto" data-tip="Cerrar proyecto">${icon('close')}</button>
+    </div>
+    <div class="panel">
       <div class="ph">${icon('map')} Mapa del proyecto
-        <span class="spacer" style="flex:1"></span>
-        <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-2)">
-          Opacidad <input type="range" id="op" min="0" max="100" value="82" style="width:110px"></label>
+        <span class="spacer"></span>
+        <label class="td-op">
+          Opacidad <input type="range" id="op" min="0" max="100" value="82"></label>
       </div>
-      <div class="pb" style="padding:10px 12px;border-bottom:1px solid var(--line)">
+      <div class="pb td-maptools">
         <div class="tool-row"><span class="tool-lb">Capas</span>
           <button class="chip on" data-layer="ortho">Ortofoto</button>
           <button class="chip" data-layer="dsm">Elevación</button>
@@ -378,15 +392,15 @@
           <button class="chip" data-tool="volume">Volumen</button>
           <button class="chip" data-tool="profile">Perfil</button>
           <button class="chip" data-tool="compare">Comparar</button>
-          <select class="ctl" id="cmp-date" style="display:none;font-size:12px"></select>
-          <button class="btn" id="m-clear" style="padding:4px 11px;font-size:11px;margin-left:auto">Limpiar</button>
+          <select class="ctl" id="cmp-date" style="display:none"></select>
+          <button class="btn sm td-clear" id="m-clear">Limpiar</button>
         </div>
       </div>
-      <div id="omap" style="height:56dvh;min-height:340px"></div>
-      <div class="pb" id="m-result" style="display:none;border-top:1px solid var(--line)"></div>
+      <div id="omap"></div>
+      <div class="pb td-result" id="m-result" style="display:none"></div>
     </div>
 
-    <div class="panel scene-viewer-panel" style="margin-top:16px">
+    <div class="panel scene-viewer-panel">
       <div class="ph scene-viewer-head" data-no-collapse="true">
         <div class="scene-viewer-tabs" id="scene-viewer-tabs" role="tablist" aria-label="Representación 3D">
           <button type="button" class="on" role="tab" aria-selected="true" aria-controls="scene-viewer-box" data-viewer-mode="cloud">${icon('layers')} Nube</button>
@@ -394,7 +408,7 @@
           <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="splat">${icon('spark')} Gaussian</button>
         </div>
         <span class="chip scene-viewer-status" id="scene-viewer-status"></span>
-        <span class="spacer" style="flex:1"></span>
+        <span class="spacer"></span>
         <select id="sp-select" class="scene-viewer-version" title="Versión del splat" aria-label="Versión del Gaussian splat"></select>
         <button class="btn primary" id="viewer-load">Cargar nube</button>
       </div>
@@ -403,9 +417,9 @@
       </div>
     </div>
 
-    <div class="panel" style="margin-top:16px">
+    <div class="panel">
       <div class="ph">${icon('gauge')} Reporte de calidad & descargas
-        <span class="spacer" style="flex:1"></span>
+        <span class="spacer"></span>
         <button class="btn primary" id="improve-scene">${icon('layers')} Mejorar con nuevas capturas</button>
       </div>
       <div class="pb" id="dls"></div>
@@ -420,8 +434,8 @@
   function moveTdInk() {
     const on = tdTabs?.querySelector('button.on');
     if (!on || !tdInk) return;
-    tdInk.style.left = on.offsetLeft + 'px';
-    tdInk.style.width = on.offsetWidth + 'px';
+    tdInk.style.setProperty('--ink-x', on.offsetLeft + 'px');
+    tdInk.style.setProperty('--ink-w', on.offsetWidth + 'px');
   }
   const tdModVisible = name => {
     const m = document.querySelector(`.td-mod[data-mod="${name}"]`);
@@ -439,6 +453,7 @@
     tick();
   }
   function showTdMod(name) {
+    document.documentElement.dataset.tdTab = name;
     tdTabs?.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
     document.querySelectorAll('.td-mod').forEach(m => {
       const show = m.dataset.mod === name;
@@ -531,7 +546,7 @@
         <p class="footer-note">RTX 4060 Ti (8GB) en la LAN, invocable por SSH desde este Mac.
         Desbloquea gsplat CUDA: pose refinement y SH-desde-0 — las dos palancas que
         Metal/MPS no expone. Probe real: nada de estos datos se inventa.</p>
-        <div class="gn-grid" style="margin:14px 0">
+        <div class="gn-grid td-gap-y">
           ${[['ESTADO', awake ? 'despierto' : 'dormido'],
              ['GPU', d.gpu || '—'],
              ['VRAM', d.vram_total_mb ? `${(d.vram_used_mb/1024).toFixed(1)} / ${(d.vram_total_mb/1024).toFixed(0)} GB` : '—'],
@@ -543,7 +558,7 @@
         <p class="footer-note">Lane CUDA <b>operativo y validado end-to-end</b>: dataset al PC,
         perfiles exactos 7K/15K/20K/30K/40K, entrenamiento splatfacto, exportación y gate de
         navegador de vuelta al Mac. Auto intenta resolución completa y solo reintenta a ½ ante OOM CUDA.</p>
-        <div style="display:flex;gap:8px;margin-top:12px">
+        <div class="td-actions-row">
           ${awake ? '' : '<button class="btn" id="gnm-wake">Despertar (WoL)</button>'}
           <a class="btn ghost" href="system.html">Abrir Sistema</a>
         </div>`);
@@ -792,9 +807,9 @@
         <div class="jtm-head"><b class="jtm-val mono" id="jtm-val">—</b>
           <span class="jtm-src mono">${M.src} · sparkline 60fps</span></div>
         <canvas id="jtm-spark" data-metric="${cell.dataset.metric}" height="120"
-          style="width:100%;height:120px;display:${M.data().length ? 'block' : 'none'}"></canvas>
-        <div class="gn-grid" id="jtm-stats" style="margin:14px 0"></div>
-        <p class="footer-note" style="line-height:1.55">${M.desc}</p>`);
+          class="td-jtm-canvas"${M.data().length ? '' : ' hidden'}></canvas>
+        <div class="gn-grid td-gap-y" id="jtm-stats"></div>
+        <p class="footer-note td-desc">${M.desc}</p>`);
     });
     function drawModal() {
       const cv = document.getElementById('jtm-spark');
@@ -1046,7 +1061,7 @@
       [cuda ? ' b-nv' : '', splats.length ? (cuda ? 'NVIDIA' : 'Metal') : null,
        cuda ? 'Entrenado en la RTX 4060 Ti (CUDA)' : 'Entrenado en el Mac (Metal/MPS)'],
     ];
-    return `<div class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
+    return `<div class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}"${cur?.clip_id === m.clip_id ? ' aria-current="true"' : ''}>
       <div class="pc-cover">
         <img src="${m.thumb ? esc(m.thumb.includes('/') ? m.thumb : `data/models/${m.clip_id}/${m.thumb}`) : `data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}`}" data-fb="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="" width="320" height="180">
         ${(f?.date || dateKeyFor(m)) ? `<span class="pc-date mono">${esc(f ? `${fmt.date(f.date)} · ${f.time || ''}` : dateKeyFor(m))}</span>` : ''}
@@ -1061,11 +1076,10 @@
           <span data-tip="Tamaño de la nube de puntos"><b>${m.cloud_bytes ? (m.cloud_bytes / 1e6).toFixed(0) + 'MB' : '—'}</b><small>nube</small></span>
         </div>
         <div class="pc-actions">
-          <button class="btn primary" data-act="open">Abrir</button>
-          <button class="btn pc-improve" data-act="improve">${icon('layers')} Mejorar</button>
-          <button class="btn" data-act="rename" data-tip="Cambiar el nombre del proyecto">Renombrar</button>
-          <button class="btn" data-act="share" data-tip="Copiar link público del modelo">Compartir</button>
-          <button class="btn pc-del" data-act="del" data-tip="Borra modelo y splats; el video no se toca">Borrar</button>
+          <button class="btn sm primary" data-act="open">Abrir</button>
+          <button class="btn sm pc-improve" data-act="improve">${icon('layers')} Mejorar</button>
+          <button class="btn sm icon pc-more" data-act="more" data-cid="${esc(m.clip_id)}" aria-haspopup="menu" aria-expanded="false"
+            aria-label="Más acciones de ${esc(titleFor(m))}" data-tip="Renombrar, compartir, borrar">${icon('more')}</button>
         </div>
       </div>
     </div>`;
@@ -1099,8 +1113,8 @@
         <span class="mono">${g.items.length} proyecto${g.items.length === 1 ? '' : 's'}${area ? ` · ${area >= 10000 ? (area / 10000).toFixed(1) + ' ha' : Math.round(area) + ' m²'}` : ''}${nSplats ? ` · ${nSplats} splats` : ''}</span>
       </div>
       <div class="proj-group">${g.items.map(projCard).join('')}</div>`;
-    }).join('') : `<p class="footer-note" style="margin:0">${sysErr
-      ? 'No se pudo cargar el índice de proyectos — revisa la conexión y <a href="#" data-reload style="color:var(--accent)">recarga</a>.'
+    }).join('') : `<p class="footer-note td-flush">${sysErr
+      ? 'No se pudo cargar el índice de proyectos — revisa la conexión y <a href="#" data-reload class="td-link">recarga</a>.'
       : models.length ? 'No hay proyectos que coincidan con ese filtro.'
         : 'Sin proyectos 3D aún — ve a la pestaña <b>Procesamiento</b> (arriba) para crear el primero.'}</p>`;
   }
@@ -1128,25 +1142,65 @@
     localStorage.setItem('ab.3d.projectMode', projMode);
     renderCards();
   });
-  document.getElementById('proj-grid').addEventListener('click', async e => {
-    if (e.target.closest('[data-reload]')) { e.preventDefault(); location.reload(); return; }   // CSP: sin onclick inline
-    if (e.target.tagName === 'INPUT') return;      // click DENTRO del input de renombrar ≠ acción de card
-    const btn = e.target.closest('[data-act]');
-    const card = e.target.closest('.proj-card');
-    if (!card) return;
-    const cid = card.dataset.cid;
+  // ---- menú "más" de la tarjeta: UN menú flotante global (las tarjetas recortan overflow) ----
+  const menu = document.createElement('div');
+  menu.className = 'td-menu';
+  menu.id = 'td-menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+  menu.innerHTML = `
+    <button type="button" role="menuitem" class="td-mi" data-act="rename">${icon('edit')} Renombrar</button>
+    <button type="button" role="menuitem" class="td-mi" data-act="share">${icon('link')} <span>Copiar link público</span></button>
+    <div class="td-mi-sep" role="separator"></div>
+    <button type="button" role="menuitem" class="td-mi danger" data-act="del">${icon('trash')} Borrar proyecto…</button>`;
+  document.body.appendChild(menu);
+  let menuFor = null;                           // botón "⋯" que abrió el menú
+  const closeMenu = (refocus) => {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    if (menuFor) { menuFor.setAttribute('aria-expanded', 'false'); if (refocus) menuFor.focus(); }
+    menuFor = null;
+  };
+  const openMenu = btn => {
+    menuFor = btn;
+    btn.setAttribute('aria-expanded', 'true');
+    menu.dataset.cid = btn.dataset.cid;
+    menu.hidden = false;
+    const r = btn.getBoundingClientRect();
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    const left = Math.max(8, Math.min(innerWidth - mw - 8, r.right - mw));
+    const top = r.bottom + 4 + mh > innerHeight - 8 ? Math.max(8, r.top - mh - 4) : r.bottom + 4;
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+    menu.querySelector('.td-mi')?.focus({ preventScroll: true });
+  };
+  document.addEventListener('click', e => { if (!menu.hidden && !e.target.closest('#td-menu, .pc-more')) closeMenu(); });
+  document.addEventListener('keydown', e => {
+    if (menu.hidden) return;
+    if (e.key === 'Escape') { closeMenu(true); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const items = [...menu.querySelectorAll('.td-mi')];
+      const i = items.indexOf(document.activeElement);
+      items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+    }
+  });
+  window.addEventListener('scroll', () => closeMenu(), { passive: true });
+  window.addEventListener('resize', () => closeMenu());
+
+  async function runProjAct(act, cid, btn) {
+    const card = document.querySelector(`.proj-card[data-cid="${CSS.escape(cid)}"]`);
     const m = models.find(x => x.clip_id === cid);
-    const smashOpen = () => {
-      card.classList.add('smash');
-      setTimeout(() => card.classList.remove('smash'), 420);
+    if (!m) return;
+    if (act === 'open') {
+      if (card) { card.classList.add('smash'); setTimeout(() => card.classList.remove('smash'), 420); }
       setProject(cid, { scroll: true });
-    };
-    if (!btn) { smashOpen(); return; }                      // tap en la tarjeta = abrir
-    if (btn.dataset.act === 'open') smashOpen();
-    if (btn.dataset.act === 'improve') location.href = `scene-improve.html?id=${encodeURIComponent(cid)}`;
-    if (btn.dataset.act === 'rename') {
-      const tEl = card.querySelector('.pc-title');
-      tEl.innerHTML = `<input class="ctl" style="width:100%;font-size:12.5px" value="${esc(titleFor(m))}" maxlength="80">`;
+    }
+    if (act === 'improve') location.href = `scene-improve.html?id=${encodeURIComponent(cid)}`;
+    if (act === 'rename') {
+      const tEl = card?.querySelector('.pc-title');
+      if (!tEl) return;
+      tEl.innerHTML = `<input class="ctl td-rename" value="${esc(titleFor(m))}" maxlength="80" aria-label="Nuevo nombre del proyecto">`;
       const inp = tEl.querySelector('input');
       inp.focus(); inp.select();
       const save = async () => {
@@ -1161,26 +1215,63 @@
       inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') renderCards(); });
       inp.addEventListener('blur', save);
     }
-    if (btn.dataset.act === 'share') {
+    if (act === 'share') {
       const url = `${location.origin}/share.html?m=${encodeURIComponent(cid)}`;
-      try { await navigator.clipboard.writeText(url); btn.textContent = 'Copiado ✓'; }
+      const lbl = btn.querySelector('span') || btn;
+      const orig = lbl.textContent;
+      try { await navigator.clipboard.writeText(url); lbl.textContent = 'Link copiado'; }
       catch { prompt('Copia el link:', url); }
-      setTimeout(() => { btn.textContent = 'Compartir'; }, 1800);
+      setTimeout(() => { lbl.textContent = orig; closeMenu(); }, 900);
     }
-    if (btn.dataset.act === 'del') {
+    if (act === 'del') {
       if (!confirm(`¿Borrar "${titleFor(m)}"?\n\nSe eliminan el modelo 3D, sus splats y los archivos de procesamiento. El video original NO se toca.`)) return;
       let r;
       try { r = await api('/api/model_delete', { clip_id: cid, purge_source: true }); }
       catch (err) { return alert(String(err?.message || err)); }
       if (r.error) return alert(r.error);
       models = models.filter(x => x.clip_id !== cid);
-      if (cur?.clip_id === cid) {
-        cur = null;
-        localStorage.removeItem(PROJ_KEY);
-        document.getElementById('proj-view').style.display = 'none';
-      }
+      if (cur?.clip_id === cid) closeProject();
       renderCards();
     }
+  }
+  menu.addEventListener('click', async e => {
+    const b = e.target.closest('.td-mi');
+    if (!b) return;
+    const cid = menu.dataset.cid;
+    if (b.dataset.act !== 'share') closeMenu();
+    await runProjAct(b.dataset.act, cid, b);
+  });
+  document.getElementById('proj-grid').addEventListener('click', async e => {
+    if (e.target.closest('[data-reload]')) { e.preventDefault(); location.reload(); return; }   // CSP: sin onclick inline
+    if (e.target.tagName === 'INPUT') return;      // click DENTRO del input de renombrar ≠ acción de card
+    const btn = e.target.closest('[data-act]');
+    const card = e.target.closest('.proj-card');
+    if (!card) return;
+    const cid = card.dataset.cid;
+    if (btn?.dataset.act === 'more') {
+      e.stopPropagation();
+      if (menuFor === btn) closeMenu(); else { closeMenu(); openMenu(btn); }
+      return;
+    }
+    await runProjAct(btn ? btn.dataset.act : 'open', cid, btn);   // tap en la tarjeta = abrir
+  });
+  // migas del proyecto abierto: volver al listado / cerrar
+  function closeProject() {
+    cur = null;
+    localStorage.removeItem(PROJ_KEY);
+    clearTimeout(autoloadTimer);
+    disposeUnifiedViewer();
+    document.getElementById('proj-view').style.display = 'none';
+    document.querySelectorAll('.proj-card.on').forEach(c => { c.classList.remove('on'); c.removeAttribute('aria-current'); });
+  }
+  document.getElementById('proj-back')?.addEventListener('click', () => {
+    const t = document.getElementById('proj-grid');
+    t?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelector('.proj-card.on')?.querySelector('[data-act=open]')?.focus({ preventScroll: true });
+  });
+  document.getElementById('proj-close')?.addEventListener('click', () => {
+    closeProject();
+    document.getElementById('proj-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
   // ---------- mini-modal reutilizable ----------
@@ -1205,14 +1296,14 @@
   document.getElementById('btn-cuda-campaign')?.addEventListener('click', async () => {
     const profiles = (await splatProfilesPromise).filter(p => ['ultra','ultra20','frontier','grandmaster'].includes(p.key));
     const { ov, close } = openModal(`${icon('cpu')} Campaña NVIDIA CUDA`, `
-      <p class="footer-note" style="margin:0 0 12px">Reentrena cada sitio activo y cada modelo suelto elegible sin reemplazar el asset actual hasta que publicación y gate de navegador terminen.</p>
+      <p class="footer-note td-note">Reentrena cada sitio activo y cada modelo suelto elegible sin reemplazar el asset actual hasta que publicación y gate de navegador terminen.</p>
       <div class="campaign-controls">
         <label><span>Calidad</span><select class="ctl" data-campaign-preset>${profiles.map(p => `<option value="${p.key}"${p.key==='grandmaster'?' selected':''}>${esc(p.label)} · ${p.iters/1000}K</option>`).join('')}</select></label>
         <label><span>Alcance</span><select class="ctl" data-campaign-scope><option value="active_sites">Sitios activos + modelos sueltos</option><option value="all_models">Todos los modelos, incluidas versiones antiguas</option></select></label>
         <label><span>Entrada</span><select class="ctl" data-campaign-resolution><option value="auto">Completa → ½ solo por OOM CUDA</option><option value="full">Solo completa</option><option value="half">½ desde el inicio</option></select></label>
       </div>
       <div class="campaign-plan" data-campaign-plan><div class="fv-loading">Midiendo proyectos y nodo RTX…</div></div>
-      <button class="btn primary" data-campaign-go disabled style="width:100%;justify-content:center">Encolar campaña verificada</button>`, 'cuda-campaign-modal');
+      <button class="btn primary td-block" data-campaign-go disabled>Encolar campaña verificada</button>`, 'cuda-campaign-modal');
     const planBox = ov.querySelector('[data-campaign-plan]');
     const go = ov.querySelector('[data-campaign-go]');
     let currentPlan = null;
@@ -1362,7 +1453,7 @@
             </div>
             <div class="st-actions">
               <span class="st-count mono" id="st-count"></span>
-              <span class="spacer" style="flex:1"></span>
+              <span class="spacer"></span>
               <button class="btn sm" id="st-expand">Expandir todo</button>
               <button class="btn sm" id="st-collapse">Plegar</button>
               <button class="btn sm" id="st-clear">Limpiar selección</button>
@@ -1380,7 +1471,7 @@
                 <div class="pg-clips">${fs.map(clipRow).join('')}</div>
               </div>`; }).join('')}</div>
             ${availPhotos.length ? `<details class="proc-photos"><summary>${icon('iso')} Añadir fotos sueltas <span class="count">(${availPhotos.length})</span></summary>
-              <p class="footer-note" style="margin:6px 0 0">Fotos del dron: heredan el GPS del video del que
+              <p class="footer-note td-mt-sm">Fotos del dron: heredan el GPS del video del que
               salieron. Probado con fotos del dron de la misma sesión; el reporte del modelo confirma la fusión.</p>
               <div class="pp-grid">${availPhotos.map(n => `
                 <label class="pp-item" data-photo="${esc(n)}"><input type="checkbox">
@@ -1394,11 +1485,11 @@
         <div class="st-node mono" id="st-node">
           <span class="st-node-dot"></span>
           <span id="st-node-txt">nodo GPU · consultando…</span>
-          <span class="spacer" style="flex:1"></span>
+          <span class="spacer"></span>
           <span class="st-node-note" id="st-node-note">CUDA remoto · verificando RTX, VRAM y carga</span>
         </div>
         <div id="m-preflight"></div>
-        <p class="mlb">Nombre del proyecto <span style="text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional)</span></p>
+        <p class="mlb">Nombre del proyecto <span class="td-opt">(opcional)</span></p>
         <div class="st-namer"><input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — combinado">
           <button class="btn" id="m-suggest" title="Sugerir con IA (DeepSeek)">✨ Sugerir</button></div>
         <p class="mlb">Calidad de la fotogrametría</p>
@@ -1423,7 +1514,7 @@
       <div class="st-tray" id="st-tray"></div>
       <div class="st-footer">
         <button class="btn" id="st-back" style="display:none">‹ Atrás</button>
-        <span class="spacer" style="flex:1"></span>
+        <span class="spacer"></span>
         <button class="btn primary" id="st-next">Continuar ›</button>
         <button class="btn primary" id="m-go" style="display:none">${icon('cube')} Encolar procesamiento</button>
       </div>`, 'modal--studio');
@@ -1680,7 +1771,7 @@
     // anillo SVG del score AI: número grande + arco coloreado — legible de un vistazo
     // (el chip "✨8" críptico con tooltip flotante confundía; aquí la info va inline)
     const aiRing = sc => {
-      const col = sc >= 7 ? 'var(--mint)' : sc >= 4 ? '#e8b34c' : 'var(--red)';
+      const col = sc >= 7 ? 'var(--ok-fg)' : sc >= 4 ? 'var(--warn-fg)' : 'var(--err-fg)';
       const C = 2 * Math.PI * 17;
       return `<div class="pv-ring-wrap" data-tip="Score de calidad visual del análisis AI (1-10)">
         <div class="pv-ring" style="--ring:${col}">
@@ -1707,7 +1798,7 @@
         const scanBest = scan?.suitability
           ? Math.max(scan.suitability.ortho_dsm || 0, scan.suitability.mesh || 0, scan.suitability.splat || 0) : null;
         pv.innerHTML = `<div class="st-preview">
-          <div class="pv-progress"><i style="width:${list.length ? ((pos + 1) / list.length) * 100 : 0}%"></i></div>
+          <div class="pv-progress"><i style="--p:${list.length ? ((pos + 1) / list.length).toFixed(3) : 0}"></i></div>
           <div class="st-pv-h">
             <div class="pv-title">
               <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
@@ -1719,7 +1810,7 @@
                 <span class="pv-pos mono">${pos + 1} / ${list.length}</span>
               </div>
             </div>
-            <span class="spacer" style="flex:1"></span>
+            <span class="spacer"></span>
             ${sc ? aiRing(sc) : `<button class="btn sm" data-pv="analyze">✨ Analizar</button>`}
             <button class="modal-x" aria-label="Cerrar">✕</button>
           </div>
@@ -2163,7 +2254,7 @@
       registration_failed: 'no registró',
     };
     const { ov, close } = openModal(`${icon('layers')} Mejorar esta escena`, `
-      <p class="footer-note" style="margin:0 0 12px">Cada mejora crea una versión nueva: combina todas las
+      <p class="footer-note td-note">Cada mejora crea una versión nueva: combina todas las
       capturas seleccionadas, verifica cada fuente y conserva intacta la versión activa.</p>
       <div class="scene-version-head"><span>Sitio estable · ${esc(scene?.title || titleFor(model))}</span><b>${esc(scene?.active_version || model.clip_id)}</b></div>
       <div class="scene-coverage-contract">
@@ -2218,7 +2309,7 @@
         ${splatResolutionControls()}
         <div class="splat-policy" data-splat-policy></div>
       </div>
-      <button class="btn primary" data-scene-go style="width:100%;justify-content:center;margin-top:14px">Crear versión mejorada</button>`, 'scene-improve-modal');
+      <button class="btn primary td-block td-mt" data-scene-go>Crear versión mejorada</button>`, 'scene-improve-modal');
     ov.querySelectorAll('.mpresets').forEach(group => group.addEventListener('click', e => {
       const pick = e.target.closest('.mpreset'); if (!pick) return;
       group.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === pick));
@@ -2306,7 +2397,18 @@
       requestAnimationFrame(() => document.getElementById('proj-view')
         ?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     }
-    document.querySelectorAll('.proj-card').forEach(c => c.classList.toggle('on', c.dataset.cid === cid));
+    document.querySelectorAll('.proj-card').forEach(c => {
+      const on = c.dataset.cid === cid;
+      c.classList.toggle('on', on);
+      if (on) c.setAttribute('aria-current', 'true'); else c.removeAttribute('aria-current');
+    });
+    const crumbT = document.getElementById('td-crumb-t');
+    if (crumbT) {
+      crumbT.textContent = titleFor(cur);
+      const cf = flightFor(cur);
+      const cm = document.getElementById('td-crumb-m');
+      if (cm) cm.textContent = cf?.date ? `${fmt.date(cf.date)}${cf.time ? ' · ' + cf.time : ''}` : '';
+    }
     const base = `data/models/${cid}`;
     const q = cur.qa || {};
     const reproj = q.reprojection_error_px;
@@ -2315,16 +2417,16 @@
     const spFmt = (sp?.format || sp?.name.split('.').pop() || 'splat').toUpperCase();
     const meshOk = cur.mesh_ok !== false;
     document.getElementById('dls').innerHTML = `
-      ${q.status && q.status !== 'ok' ? `<p class="footer-note" style="margin:0 0 10px;color:var(--amber)">
+      ${q.status && q.status !== 'ok' ? `<p class="footer-note td-warn-note">
         ${icon('warn')} Métricas de calidad ${q.status === 'parcial' ? 'parciales' : 'no disponibles'} para esta corrida
         — el modelo es usable, pero re-procesa para el reporte completo.</p>` : ''}
-      ${q.cameras_reconstructed != null ? `<table class="kv" style="margin-bottom:12px">
+      ${q.cameras_reconstructed != null ? `<table class="kv td-kv">
         <tr><td>Cámaras reconstruidas</td><td>${q.cameras_reconstructed}${q.cameras_total ? ' / ' + q.cameras_total : ''}</td></tr>
-        ${reproj != null ? `<tr><td>Error de reproyección</td><td>${reproj} px · <span style="color:${reproj < 1.5 ? 'var(--mint)' : 'var(--amber)'}">${grade}</span></td></tr>` : ''}
+        ${reproj != null ? `<tr><td>Error de reproyección</td><td>${reproj} px · <span class="${reproj < 1.5 ? 'td-tint-ok' : 'td-tint-warn'}">${grade}</span></td></tr>` : ''}
         ${q.gsd_cm_px != null ? `<tr><td>Resolución (GSD)</td><td>${q.gsd_cm_px} cm/px</td></tr>` : ''}
         ${q.area_m2 != null ? `<tr><td>Área cubierta</td><td>${q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(2) + ' ha' : Math.round(q.area_m2) + ' m²'}</td></tr>` : ''}
       </table>
-      <details class="explain" style="margin-bottom:14px">
+      <details class="explain td-explain">
         <summary>Detalles técnicos</summary>
         <table class="kv">
           <tr><td>Puntos sparse</td><td>${(q.sparse_points || 0).toLocaleString()}</td></tr>
@@ -2337,7 +2439,7 @@
           <tr><td>Borde fundido</td><td>${cur.ortho_feather_px || 0} px</td></tr>
           <tr><td>Datum</td><td>WGS84 · elipsoidal</td></tr>
         </table>
-        <p class="footer-note" style="margin:8px 0 0">Sin GCPs: precisión relativa alta, absoluta
+        <p class="footer-note td-mt-sm">Sin GCPs: precisión relativa alta, absoluta
         ±GPS del dron (~2-5 m). Para grado topográfico certificable, importa puntos de control.</p>
       </details>` : ''}
       <div class="exp-grid">
@@ -2556,13 +2658,13 @@
     if (tool === 'dist' && mpts.length > 1) {
       let d = 0;
       for (let i = 1; i < mpts.length; i++) d += hav(mpts[i - 1], mpts[i]);
-      result(`<b class="mono" style="font-size:16px;color:var(--accent)">${d >= 1000 ? (d / 1000).toFixed(2) + ' km' : d.toFixed(1) + ' m'}</b>
-        <span class="footer-note" style="margin:0 0 0 10px">distancia · ${mpts.length} puntos</span>`);
+      result(`<b class="mono td-result-v">${d >= 1000 ? (d / 1000).toFixed(2) + ' km' : d.toFixed(1) + ' m'}</b>
+        <span class="footer-note td-result-n">distancia · ${mpts.length} puntos</span>`);
     }
     if (tool === 'area' && mpts.length > 2) {
       const a = areaM2(mpts);
-      result(`<b class="mono" style="font-size:16px;color:var(--accent)">${a >= 10000 ? (a / 10000).toFixed(2) + ' ha' : Math.round(a).toLocaleString() + ' m²'}</b>
-        <span class="footer-note" style="margin:0 0 0 10px">área · ${mpts.length} vértices</span>`);
+      result(`<b class="mono td-result-v">${a >= 10000 ? (a / 10000).toFixed(2) + ' ha' : Math.round(a).toLocaleString() + ' m²'}</b>
+        <span class="footer-note td-result-n">área · ${mpts.length} vértices</span>`);
     }
     if (tool === 'volume' && mpts.length > 2) {
       result(`<button class="btn primary" id="calc-vol">Calcular volumen (${mpts.length} vértices)</button>`);
@@ -2571,8 +2673,8 @@
         const mySeq = ++measSeq, myCid = cur.clip_id;
         const r = await api('/api/measure', { type: 'volume', clip_id: myCid, points: mpts });
         if (measStale(mySeq, myCid)) return;
-        result(r.error ? `<span style="color:var(--red)">${esc(r.error)}</span>` : `
-          <div class="statgrid" style="margin:0">
+        result(r.error ? `<span class="td-tint-err">${esc(r.error)}</span>` : `
+          <div class="statgrid td-flush">
             <div class="stat"><div class="lb">Volumen (fill)</div><div class="v">${r.volume_m3.toLocaleString()}<small> m³</small></div></div>
             <div class="stat"><div class="lb">Corte (cut)</div><div class="v">${r.cut_m3.toLocaleString()}<small> m³</small></div></div>
             <div class="stat"><div class="lb">Área</div><div class="v">${Math.round(r.area_m2).toLocaleString()}<small> m²</small></div></div>
@@ -2596,13 +2698,13 @@
         const [clipA, clipB] = otherIsOlder ? [other, myCid] : [myCid, other];
         const r = await api('/api/compare', { clip_a: clipA, clip_b: clipB, points: mpts });
         if (measStale(mySeq, myCid)) return;
-        if (r.error) return result(`<span style="color:var(--red)">${esc(r.error)}</span>`);
+        if (r.error) return result(`<span class="td-tint-err">${esc(r.error)}</span>`);
         const sign = r.net_change_m3 >= 0 ? '+' : '';
-        const color = r.net_change_m3 >= 0 ? 'var(--mint)' : 'var(--amber)';
+        const color = r.net_change_m3 >= 0 ? 'td-tint-ok' : 'td-tint-warn';
         result(`
-          <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Cambio desde ${fmt.date((otherIsOlder ? of?.date : (cur.dsm_date || cf?.date)) || '') || 'fecha A'} → ${fmt.date((otherIsOlder ? (cur.dsm_date || cf?.date) : of?.date) || '') || 'fecha B'}</div>
-          <div class="statgrid" style="margin:0">
-            <div class="stat"><div class="lb">Cambio neto</div><div class="v" style="color:${color}">${sign}${r.net_change_m3.toLocaleString()}<small> m³</small></div></div>
+          <div class="td-cmp-note">Cambio desde ${fmt.date((otherIsOlder ? of?.date : (cur.dsm_date || cf?.date)) || '') || 'fecha A'} → ${fmt.date((otherIsOlder ? (cur.dsm_date || cf?.date) : of?.date) || '') || 'fecha B'}</div>
+          <div class="statgrid td-flush">
+            <div class="stat"><div class="lb">Cambio neto</div><div class="v ${color}">${sign}${r.net_change_m3.toLocaleString()}<small> m³</small></div></div>
             <div class="stat"><div class="lb">Agregado</div><div class="v">${r.added_m3.toLocaleString()}<small> m³</small></div></div>
             <div class="stat"><div class="lb">Removido</div><div class="v">${r.removed_m3.toLocaleString()}<small> m³</small></div></div>
             <div class="stat"><div class="lb">Cambio medio</div><div class="v">${r.mean_change_m}<small> m</small></div></div>
@@ -2617,7 +2719,7 @@
         const mySeq = ++measSeq, myCid = cur.clip_id;
         const r = await api('/api/measure', { type: 'profile', clip_id: myCid, points: mpts });
         if (measStale(mySeq, myCid)) return;
-        if (r.error) return result(`<span style="color:var(--red)">${esc(r.error)}</span>`);
+        if (r.error) return result(`<span class="td-tint-err">${esc(r.error)}</span>`);
         const vals = r.profile.filter(v => v != null);
         if (!vals.length) return result('El perfil cae fuera del DSM — traza la línea dentro de la ortofoto.');
         const lo = Math.min(...vals), hi = Math.max(...vals);
@@ -2625,9 +2727,9 @@
         const pth = r.profile.map((v, i) =>
           v == null ? null : `${(i / (r.profile.length - 1)) * W},${H - 8 - ((v - lo) / (hi - lo || 1)) * (H - 24)}`)
           .filter(Boolean).join(' ');
-        result(`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3)">
+        result(`<div class="td-profile-h">
             <span>Perfil de elevación · ${r.distance_m} m</span><span class="mono">${lo.toFixed(1)}–${hi.toFixed(1)} m snm · Δ${(hi - lo).toFixed(1)} m</span></div>
-          <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px">
+          <svg class="td-profile" viewBox="0 0 ${W} ${H}" height="${H}">
             <polyline points="${pth} ${W},${H} 0,${H}" fill="#45A0E6" opacity="0.1"/>
             <polyline points="${pth}" fill="none" stroke="#45A0E6" stroke-width="1.6"/></svg>`);
         mpts = [];
@@ -2711,7 +2813,7 @@
     });
     const status = document.getElementById('scene-viewer-status');
     status.textContent = state.status;
-    status.style.color = viewerMode === 'mesh' && cur.mesh_ok === false ? 'var(--amber)' : '';
+    status.classList.toggle('td-tint-warn', viewerMode === 'mesh' && cur.mesh_ok === false);
     const select = document.getElementById('sp-select');
     select.style.display = viewerMode === 'splat' && splatAssetsFor(cur.clip_id).length > 1 ? '' : 'none';
     const load = document.getElementById('viewer-load');
@@ -2890,9 +2992,9 @@
     }
   }
   const spin = (box, label = 'Cargando…') => {
-    box.innerHTML = `<div style="width:80%;text-align:center">
-      <div class="sk" style="height:10px;border-radius:5px"></div>
-      <p class="footer-note vload-status" style="margin:10px 0 0">${label}</p></div>`;
+    box.innerHTML = `<div class="td-load-box">
+      <div class="sk td-sk-line"></div>
+      <p class="footer-note vload-status td-load-note">${label}</p></div>`;
     return box.querySelector('.vload-status');
   };
 
@@ -2954,7 +3056,7 @@
     } catch (err) {
       if (box._loadToken !== myLoad || viewerMode !== 'mesh') return;
       // sin esto: spinner infinito con el botón ya oculto = pantalla muda sin salida
-      box.innerHTML = `<p class="footer-note" style="margin:0;color:var(--amber)">
+      box.innerHTML = `<p class="footer-note td-flush td-tint-warn">
         ${icon('warn')} No se pudo cargar la malla · ${esc(String(err?.message || err).slice(0, 80))}</p>`;
       meshLoadBtn.textContent = 'Reintentar';
       meshLoadBtn.disabled = false;
@@ -3067,7 +3169,7 @@
       .map(([k, t]) => `<button class="chip${k === curTier ? ' on' : ''}" data-mq="${k}">${t.label}</button>`).join('');
     mhud.innerHTML = `<label>Render <button class="chip on" data-mr="foto">Foto</button>
       <button class="chip" data-mr="relieve">Relieve</button></label>
-      <label style="margin-left:10px">Calidad ${tierBtns}</label>`;
+      <label class="td-tier">Calidad ${tierBtns}</label>`;
     box.appendChild(mhud);
     mhud.addEventListener('click', async ev => {
       const mr = ev.target.closest('[data-mr]'), mq = ev.target.closest('[data-mq]');
@@ -3101,7 +3203,7 @@
     } catch (err) {
       // 404/red caída: sin esto el skeleton giraba para siempre (y el autoload lo dispara solo)
       if (box._loadToken !== myLoad || viewerMode !== 'cloud') return;
-      box.innerHTML = `<p class="footer-note" style="margin:0;color:var(--amber)">
+      box.innerHTML = `<p class="footer-note td-flush td-tint-warn">
         ${icon('warn')} No se pudo cargar la nube · ${esc(String(err?.message || err).slice(0, 80))}</p>`;
       cloudBtn.textContent = 'Reintentar';
       cloudBtn.disabled = false;
@@ -3221,21 +3323,21 @@
 
     const toolbar = `
     <div class="sp-toolbar">
-      <div class="search">${icon('search')}<input id="sp-search" type="search"
-        placeholder="Buscar por título, proyecto, preset, backend…" value="${esc(spState.q)}" autocomplete="off"></div>
-      <div class="td-jobbar" aria-label="Versión">
+      <div class="search">${icon('search')}<input id="sp-search" type="search" aria-label="Buscar splats"
+        placeholder="Buscar…" value="${esc(spState.q)}" autocomplete="off"></div>
+      <div class="seg sp-ver" role="group" aria-label="Versión">
         ${[['all', 'Todas'], ['cur', 'Actuales'], ['hist', 'Historial']].map(([v, lb]) =>
-          `<button class="chip${spState.ver === v ? ' on' : ''}" data-sp-ver="${v}">${lb}</button>`).join('')}
+          `<button type="button" class="${spState.ver === v ? 'on' : ''}" aria-pressed="${spState.ver === v}" data-sp-ver="${v}">${lb}</button>`).join('')}
       </div>
-      <div class="td-jobbar" aria-label="Calidad">
+      <select class="ctl" id="sp-qual" aria-label="Calidad" title="Filtrar por calidad (loss final)">
         ${[['all', 'Toda calidad'], ['exc', 'Excelente'], ['good', 'Buena'], ['mid', 'Media'], ['low', 'Básica']].map(([v, lb]) =>
-          `<button class="chip${spState.qual === v ? ' on' : ''}" data-sp-qual="${v}">${lb}</button>`).join('')}
-      </div>
-      <select class="ctl" id="sp-sort" title="Ordenar">
-        ${[['reciente', 'Recientes primero'], ['loss', 'Mejor loss'], ['gauss', 'Más gaussianas'], ['peso', 'Más pesados']].map(([v, lb]) =>
+          `<option value="${v}"${spState.qual === v ? ' selected' : ''}>${lb}</option>`).join('')}
+      </select>
+      <select class="ctl" id="sp-sort" aria-label="Ordenar" title="Ordenar">
+        ${[['reciente', 'Recientes'], ['loss', 'Mejor loss'], ['gauss', 'Más gaussianas'], ['peso', 'Más pesados']].map(([v, lb]) =>
           `<option value="${v}"${spState.sort === v ? ' selected' : ''}>${lb}</option>`).join('')}
       </select>
-      <span class="sp-count mono">${rows.length} / ${all.length}</span>
+      <span class="sp-count mono" aria-live="polite">${rows.length} / ${all.length}</span>
     </div>`;
 
     const rowHtml = ({ s, scid, sm, title, q }) => {
@@ -3267,16 +3369,16 @@
         </div>
         <div class="sr-loss">
           ${s.loss != null ? `<span>LOSS FINAL</span><b class="mono">${s.loss}</b>
-          <div class="sr-loss-bar" title="0.03 excelente ← → 0.15 básica"><div style="width:${Math.round(100 * Math.max(0, Math.min(1, (0.15 - s.loss) / 0.12)))}%"></div></div>` : '<span>LOSS</span><b>—</b>'}
+          <div class="sr-loss-bar" title="0.03 excelente ← → 0.15 básica"><div style="--p:${Math.max(0, Math.min(1, (0.15 - s.loss) / 0.12)).toFixed(3)}"></div></div>` : '<span>LOSS</span><b>—</b>'}
         </div>
         <div class="sr-acts">
-          <button class="btn primary" data-cid="${esc(scid)}" data-view="${esc(splatKey(s))}"${hasModel ? '' : ' disabled title="Sin proyecto 3D publicado"'}>Ver</button>
+          <button class="btn sm primary" data-cid="${esc(scid)}" data-view="${esc(splatKey(s))}" aria-label="Ver ${esc(title)} en el visor"${hasModel ? '' : ' disabled title="Sin proyecto 3D publicado"'}>Ver</button>
           <div class="sr-icons">
-            <a class="btn" href="${splatUrl(s)}" download title="Descargar .${sFmt}">${icon('dl')}</a>
-            <a class="btn" target="_blank" rel="noopener" title="Editar en SuperSplat"
+            <a class="btn sm icon" href="${splatUrl(s)}" download title="Descargar .${sFmt}" aria-label="Descargar .${sFmt} de ${esc(title)}">${icon('dl')}</a>
+            <a class="btn sm icon" target="_blank" rel="noopener" title="Editar en SuperSplat" aria-label="Editar ${esc(title)} en SuperSplat"
                href="/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}">${icon('broom')}</a>
-            ${hasModel ? `<button class="btn" data-share="${esc(scid)}" data-splat="${esc(splatKey(s))}" title="Copiar link público">${icon('ext')}</button>` : ''}
-            <button class="btn danger" data-del="${esc(scid)}" data-title="${esc(title)}" title="Borrar splats del proyecto (papelera)">${icon('trash')}</button>
+            ${hasModel ? `<button class="btn sm icon" data-share="${esc(scid)}" data-splat="${esc(splatKey(s))}" title="Copiar link público" aria-label="Copiar link público de ${esc(title)}">${icon('ext')}</button>` : ''}
+            <button class="btn sm icon danger" data-del="${esc(scid)}" data-title="${esc(title)}" title="Borrar splats del proyecto (papelera)" aria-label="Borrar splats de ${esc(title)}">${icon('trash')}</button>
           </div>
         </div>
       </div>`;
@@ -3300,7 +3402,7 @@
     });
     box.querySelector('#sp-sort')?.addEventListener('change', e => { spState.sort = e.target.value; renderSplatList(); });
     box.querySelectorAll('[data-sp-ver]').forEach(b => b.addEventListener('click', () => { spState.ver = b.dataset.spVer; renderSplatList(); }));
-    box.querySelectorAll('[data-sp-qual]').forEach(b => b.addEventListener('click', () => { spState.qual = b.dataset.spQual; renderSplatList(); }));
+    box.querySelector('#sp-qual')?.addEventListener('change', e => { spState.qual = e.target.value; renderSplatList(); });
   }
 
   renderSplatList();
@@ -3318,7 +3420,7 @@
       .map((f, i) => ({ kind: 'video', f, i }));
     const choices = modelChoices.concat(videoChoices);
     const { ov, close } = openModal(`${icon('spark')} Generar gaussian splat`, `
-      <p class="footer-note" style="margin:0 0 12px">Entrena un archivo <b>.splat</b> nuevo con las
+      <p class="footer-note td-note">Entrena un archivo <b>.splat</b> nuevo con las
       fotos y poses del proyecto elegido — <b>no modifica</b> la nube ni la malla. Al terminar
       aparece en la lista, en el visor y en el enlace privado.</p>
       <div class="st-node mono" id="gs-node"><span class="st-node-dot"></span>
@@ -3350,7 +3452,7 @@
         <span>${icon('cpu')} <b>Entrenar en nodo NVIDIA CUDA</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC; la solicitud es CUDA estricta.' : 'Fast/Medium pueden usar Apple Metal; 7K–40K bloquean CUDA por calidad.'}</small></span></label>
       ${splatResolutionControls()}
       <div class="splat-policy" data-splat-policy></div>
-      <button class="btn primary" id="m-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('spark')} Entrenar splat</button>`, 'modal--splat-train');
+      <button class="btn primary td-block td-mt" id="m-go">${icon('spark')} Entrenar splat</button>`, 'modal--splat-train');
     wireSplatCompute(ov);
     // Estado visible incluso dormido: ocultarlo confundía "no disponible" con "Mac".
     authFetch('/api/gpu_node').then(r => r.json()).then(d => {
@@ -3476,8 +3578,8 @@
     if (box._splatDispose) { const d = box._splatDispose; box._splatDispose = null; box._viewer = null; try { d(); } catch {} }
     else if (box._viewer) { const v = box._viewer; box._viewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
     box.style.position = 'relative';
-    box.innerHTML = `<div class="splat-load"><div class="sk" style="height:10px;border-radius:5px"></div>
-      <p class="footer-note splat-st" style="margin:10px 0 0">Descargando splat…</p></div>`;
+    box.innerHTML = `<div class="splat-load"><div class="sk td-sk-line"></div>
+      <p class="footer-note splat-st td-load-note">Descargando splat…</p></div>`;
     const st = box.querySelector('.splat-st');
     let handle;
     try {

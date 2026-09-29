@@ -17,11 +17,22 @@ const R0 = Math.PI / 180;
 const havKm = (a, b, c, d) => 12742 * Math.asin(Math.sqrt(
   Math.sin((c - a) * R0 / 2) ** 2 + Math.cos(a * R0) * Math.cos(c * R0) * Math.sin((d - b) * R0 / 2) ** 2));
 
+// iconos locales (icons.js no trae "más" ni "filtros"); mismo grid de 20px y trazo
+const MORE_ICON = '<svg class="ic" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 10h.01M10 10h.01M15.5 10h.01"/></svg>';
+const shortTitle = text => {                                // igual que Vuelos: arranque del resumen AI sin la muletilla
+  let t = String(text || '').trim();
+  t = t.replace(/^(el|la|este|esta)\s+(vuelo|dron|drone|clip|video|metraje|material)(\s+\S+)??\s+(inicia|comienza|muestra|captura|realiza|presenta|sobrevuela|ofrece|documenta|registra|recorre|revela)(\s+(con|sobre|en))?\s+/i, '');
+  t = t.replace(/^(un|una|unos|unas)\s+/i, '').split(/[,.;:]| y | para | mientras | luego | donde /i)[0].trim();
+  if (t.length > 64) t = t.slice(0, 64).replace(/\s+\S*$/, '') + '…';
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+};
+
+main.classList.add('tr-page');
 main.innerHTML = `
-  <div class="page-head"><h1>Viajes</h1><span class="count" id="count"></span></div>
-  <div class="statgrid" id="t-stats">${'<div class="sk" style="height:74px"></div>'.repeat(4)}</div>
-  <div id="cities" class="city-grid">${'<div class="sk" style="height:210px;border-radius:14px"></div>'.repeat(3)}</div>
-  <div id="detail" style="display:none"></div>`;
+  <div class="page-head"><h1>Viajes</h1><span class="count" id="count" aria-live="polite"></span></div>
+  <div class="statgrid" id="t-stats">${'<div class="sk tr-sk-stat"></div>'.repeat(4)}</div>
+  <div id="cities" class="city-grid">${'<div class="sk tr-sk-city"></div>'.repeat(3)}</div>
+  <div id="detail" hidden></div>`;
 
 (async () => {
   const flights = (await getFlights()).filter(f => !f.archived);
@@ -93,55 +104,108 @@ main.innerHTML = `
   const days = new Set(flights.map(f => f.date)).size;
   document.getElementById('count').textContent = `${clusters.length} ${clusters.length === 1 ? 'lugar' : 'lugares'} · ${days} días`;
   document.getElementById('t-stats').innerHTML = `
-    <div class="stat rise"><div class="lb">${icon('pin')} Lugares</div><div class="v">${clusters.length}</div><div class="sub">explorados desde el aire</div></div>
-    <div class="stat rise"><div class="lb">${icon('cal')} Días</div><div class="v">${days}</div><div class="sub">de vuelo registrados</div></div>
-    <div class="stat rise"><div class="lb">${icon('drone')} Vuelos</div><div class="v">${flights.length}</div><div class="sub">en el diario</div></div>
-    <div class="stat rise"><div class="lb">${icon('route')} Distancia</div><div class="v">${fmt.km(flights.reduce((a, f) => a + (f.stats.distance_m || 0), 0))}</div><div class="sub">recorrida en total</div></div>`;
-
-  // tile satelital estático del centro del cluster (z12) — mini-mapa gratis
-  const tileURL = c => {
-    const z = 12, lat = c.lat * R0;
-    const x = Math.floor((c.lon + 180) / 360 * 2 ** z);
-    const y = Math.floor((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * 2 ** z);
-    return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
-  };
+    <div class="stat"><div class="lb">${icon('pin')} Lugares</div><div class="v">${clusters.length}</div><div class="sub">explorados desde el aire</div></div>
+    <div class="stat"><div class="lb">${icon('cal')} Días</div><div class="v">${days}</div><div class="sub">de vuelo registrados</div></div>
+    <div class="stat"><div class="lb">${icon('drone')} Vuelos</div><div class="v">${flights.length}</div><div class="sub">en el diario</div></div>
+    <div class="stat"><div class="lb">${icon('route')} Distancia</div><div class="v">${fmt.km(flights.reduce((a, f) => a + (f.stats.distance_m || 0), 0))}</div><div class="sub">recorrida en total</div></div>`;
 
   // ---------- vista 1: selector de ciudades ----------
+  let citiesEntered = false;
   function renderCities() {
     const el = document.getElementById('cities');
-    el.style.display = '';
-    document.getElementById('detail').style.display = 'none';
+    el.hidden = false;
+    document.getElementById('detail').hidden = true;
+    const anim = !citiesEntered && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    citiesEntered = true;
     el.innerHTML = clusters.map((c, i) => `
-      <div class="city-card" data-city="${esc(c.key)}" role="button" tabindex="0" aria-label="Abrir ${esc(c.name)}" style="animation-delay:${i * 70}ms">
+      <div class="city-card ${anim ? 'cc-in' : ''}" data-city="${esc(c.key)}" role="button" tabindex="0" aria-label="Abrir ${esc(c.name)}" style="--in-delay:${Math.min(i, 4) * 30}ms">
         <div class="cc-cover">
           <img src="${DATA}/thumbs/${esc(c.cover?.clip_id || '')}.jpg" loading="lazy" alt="" width="960" height="540">
-          <img class="cc-tile" src="${tileURL(c)}" loading="lazy" alt="" data-tip="Vista satelital de la zona">
           <div class="cc-shade"></div>
-          <h2>${esc(c.name)}</h2>
-          <span class="cc-range mono">${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates[c.dates.length - 1]) : ''}</span>
-          ${c.score ? `<span class="cc-score" data-tip="Mejor score AI del lugar">${c.score}/10</span>` : ''}
+          ${c.score ? `<span class="score-pill cc-score" data-tip="Mejor score AI del lugar">${c.score}/10</span>` : ''}
+          <div class="cc-cap">
+            <h2>${esc(c.name)}</h2>
+            <span class="cc-range">${icon('pin')} ${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates[c.dates.length - 1]) : ''}</span>
+          </div>
         </div>
         <div class="cc-stats">
-          <span data-tip="Vuelos en este lugar">${icon('drone')} ${c.flights.length}</span>
-          <span data-tip="Días distintos">${icon('cal')} ${c.dates.length}</span>
+          <span data-tip="Vuelos en este lugar">${icon('drone')} ${c.flights.length}<i class="tr-sr"> vuelos</i></span>
+          <span data-tip="Días distintos">${icon('cal')} ${c.dates.length}<i class="tr-sr"> días</i></span>
           <span data-tip="Tiempo total en el aire">${icon('clock')} ${fmt.hours(c.dur)}</span>
           <span data-tip="Distancia total volada">${icon('route')} ${fmt.km(c.dist)}</span>
           <span data-tip="Altura máxima alcanzada">${icon('mountain')} ${Math.round(c.alt)} m</span>
-          <span class="spacer" style="flex:1"></span>
-          <button class="btn" data-postal="${esc(c.key)}" data-tip="Genera una postal PNG del lugar" aria-label="Descargar postal de ${esc(c.name)}">${icon('dl')}</button>
-          <button class="btn" data-cover-city="${esc(c.key)}" data-tip="Elegir la foto de portada" aria-label="Elegir portada de ${esc(c.name)}">${icon('iso')}</button>
-          <button class="btn" data-rename-city="${esc(c.key)}" data-tip="Renombrar este lugar" aria-label="Renombrar ${esc(c.name)}">${icon('tag')}</button>
+          <button class="btn icon sm tr-more" data-city-menu="${esc(c.key)}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(c.name)}">${MORE_ICON}</button>
         </div>
       </div>`).join('') ||
-      `<div class="empty">${icon('pin')}<p>Sin vuelos con GPS todavía.</p></div>`;
+      `<div class="empty tr-span">${icon('pin')}<p>Sin vuelos con GPS todavía.</p></div>`;
+  }
+
+  // ---------- menú de acciones por lugar (un solo popover, roles de menú, teclado) ----------
+  let menuEl = null, menuBtn = null;
+  function closeMenu(restoreFocus = true) {
+    if (!menuEl) return;
+    menuEl.remove(); menuEl = null;
+    menuBtn?.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) menuBtn?.focus();
+    menuBtn = null;
+    document.removeEventListener('pointerdown', onMenuOutside, true);
+    removeEventListener('scroll', onMenuScroll, true);
+    removeEventListener('resize', onMenuScroll);
+  }
+  const onMenuOutside = e => { if (menuEl && !menuEl.contains(e.target) && !menuBtn?.contains(e.target)) closeMenu(false); };
+  const onMenuScroll = () => closeMenu(false);
+  function openMenu(btn) {
+    if (menuEl) { const same = menuBtn === btn; closeMenu(false); if (same) return; }
+    const c = clusters.find(x => x.key === btn.dataset.cityMenu);
+    if (!c) return;
+    menuBtn = btn;
+    btn.setAttribute('aria-expanded', 'true');
+    menuEl = document.createElement('div');
+    menuEl.className = 'tr-menu';
+    menuEl.setAttribute('role', 'menu');
+    menuEl.setAttribute('aria-label', `Acciones de ${c.name}`);
+    menuEl.innerHTML = `
+      <button role="menuitem" data-act="postal">${icon('dl')} Descargar postal</button>
+      <button role="menuitem" data-act="cover">${icon('iso')} Elegir portada</button>
+      <button role="menuitem" data-act="rename">${icon('tag')} Renombrar</button>`;
+    document.body.appendChild(menuEl);
+    const r = btn.getBoundingClientRect();
+    const w = menuEl.offsetWidth, h = menuEl.offsetHeight;
+    const left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w));
+    const top = r.bottom + 6 + h > innerHeight ? r.top - h - 6 : r.bottom + 6;
+    menuEl.style.setProperty('--mx', `${left}px`);
+    menuEl.style.setProperty('--my', `${Math.max(8, top)}px`);
+    menuEl.addEventListener('click', e => {
+      const it = e.target.closest('[data-act]');
+      if (!it) return;
+      e.stopPropagation();
+      const act = it.dataset.act, trigger = menuBtn;
+      closeMenu(false);
+      if (act === 'postal') makePostal(c, trigger);
+      else if (act === 'cover') pickCover(c);
+      else renameCity(c);
+    });
+    menuEl.addEventListener('keydown', e => {
+      const items = [...menuEl.querySelectorAll('[role=menuitem]')];
+      const i = items.indexOf(document.activeElement);
+      if (e.key === 'Escape') { e.preventDefault(); closeMenu(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      else if (e.key === 'Tab') closeMenu(false);
+    });
+    document.addEventListener('pointerdown', onMenuOutside, true);
+    addEventListener('scroll', onMenuScroll, true);
+    addEventListener('resize', onMenuScroll);
+    menuEl.querySelector('[role=menuitem]').focus();
   }
 
   // ---------- vista 2: detalle de ciudad (días adentro) ----------
   const dstate = { q: '', has: new Set(), scene: null };
-  function renderDetail(c) {
+  function renderDetail(c, animate = false) {
     const el = document.getElementById('detail');
-    document.getElementById('cities').style.display = 'none';
-    el.style.display = '';
+    document.getElementById('cities').hidden = true;
+    el.hidden = false;
+    const rise = animate && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'rise' : '';
     const list = c.flights.filter(f => {
       if (dstate.has.has('video') && !f.has_proxy) return false;
       if (dstate.has.has('ai') && !ai[f.clip_id]) return false;
@@ -154,62 +218,72 @@ main.innerHTML = `
     const byDay = {};
     list.forEach(f => (byDay[f.date] = byDay[f.date] || []).push(f));
     const days = Object.entries(byDay).sort((a, b) => b[0].localeCompare(a[0]));
+    const range = `${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates[c.dates.length - 1]) : ''}`;
+    const filterChips = [['video', 'play', 'Video'], ['ai', 'spark', 'AI'], ['top', 'spark', 'Score 6+']]
+      .map(([k, ic, l]) => `<button class="chip ${dstate.has.has(k) ? 'on' : ''}" data-df="${k}" aria-pressed="${dstate.has.has(k)}">${icon(ic)} ${l}</button>`).join('');
     el.innerHTML = `
-      <div class="hero glass rise" style="margin-bottom:14px">
-        <button class="btn hero-back" id="city-back" data-tip="Volver a los lugares">${icon('chevL')}</button>
+      <div class="hero glass tr-hero ${rise}">
+        <button class="btn hero-back" id="city-back" data-tip="Volver a los lugares" aria-label="Volver a los lugares">${icon('chevL')}</button>
         <div class="hero-t"><h1>${esc(c.name)}</h1>
-          <div class="hero-sub mono">${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates[c.dates.length - 1]) : ''}</div></div>
+          <div class="hero-sub">${range}</div></div>
         <div class="hero-chips">
           <span class="gchip" data-tip="Vuelos filtrados / totales">${list.length}/${c.flights.length} vuelos</span>
           <span class="gchip" data-tip="Tiempo total en el aire">${fmt.hours(c.dur)}</span>
-          ${c.score ? `<span class="gchip mint" data-tip="Mejor score AI">${c.score}/10</span>` : ''}
+          ${c.score ? `<span class="score-pill" data-tip="Mejor score AI">${c.score}/10</span>` : ''}
         </div>
         <div class="hero-actions">
           <a class="btn" href="index.html?v=map" data-tip="Ver las rutas en el mapa">${icon('map')} Mapa</a>
           <button class="btn primary" data-postal="${esc(c.key)}">${icon('dl')} Postal</button>
         </div>
       </div>
-      <div class="glass tbcard rise" style="animation-delay:60ms">
-        <div class="tb-row">
-          <label class="search" style="max-width:280px">${icon('search')}<input id="d-q" placeholder="Buscar en ${esc(c.name)}…" value="${esc(dstate.q)}"></label>
-          <button class="chip ${dstate.has.has('video') ? 'on' : ''}" data-df="video">${icon('play')} Video</button>
-          <button class="chip ${dstate.has.has('ai') ? 'on' : ''}" data-df="ai">${icon('spark')} AI</button>
-          <button class="chip ${dstate.has.has('top') ? 'on' : ''}" data-df="top">${icon('spark')} Score 6+</button>
-          <span class="spacer" style="flex:1"></span>
-          ${scenes.map(sc => `<button class="chip ${dstate.scene === sc ? 'on' : ''}" data-dscene="${esc(sc)}">${esc(sc)}</button>`).join('')}
+      <div class="tr-bar ${rise}">
+        <label class="search tr-search">${icon('search')}<input id="d-q" type="search" placeholder="Buscar en ${esc(c.name)}" aria-label="Buscar en ${esc(c.name)}" value="${esc(dstate.q)}"></label>
+        <div class="tr-chiprow" role="toolbar" aria-label="Filtros">
+          ${filterChips}
+          ${scenes.length ? '<span class="tr-div" aria-hidden="true"></span>' : ''}
+          ${scenes.map(sc => `<button class="chip ${dstate.scene === sc ? 'on' : ''}" data-dscene="${esc(sc)}" aria-pressed="${dstate.scene === sc}">${esc(sc)}</button>`).join('')}
         </div>
       </div>
+      ${days.length > 1 ? `<nav class="tr-days" aria-label="Ir a un día">
+        ${days.map(([date, dl]) => `<a class="chip" href="#day-${esc(date)}" data-day="${esc(date)}" data-tip="${dl.length} ${dl.length === 1 ? 'vuelo' : 'vuelos'}">${fmt.date(date)}</a>`).join('')}
+      </nav>` : ''}
       ${days.map(([date, dl], di) => {
         const dist = dl.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
         const dur = dl.reduce((a, f) => a + (f.duration_s || 0), 0);   // idem: sin NaN min por día
         const diary = diaries[date];
         return `
-        <section class="trip rise" style="animation-delay:${100 + di * 60}ms">
+        <section class="trip ${di < 3 ? rise : ''}" id="day-${esc(date)}">
           <div class="trip-head">
             <h2>${fmt.date(date)}</h2>
-            <span class="mono">${dl.length} vuelos · ${fmt.km(dist)} · ${fmt.hours(dur)}</span>
+            <span class="tr-daymeta">${dl.length} ${dl.length === 1 ? 'vuelo' : 'vuelos'} · ${fmt.km(dist)} · ${fmt.hours(dur)}</span>
           </div>
           ${diary ? `<div class="summary">${esc(diary)}</div>` : ''}
-          <div class="grid">${dl.map(f => `
+          <div class="grid">${dl.map(f => {
+            const a = ai[f.clip_id];
+            const title = f.label || shortTitle(a?.summary) || f.time || '';
+            return `
             <a class="card scrub" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
               <div class="thumb">
                 <img src="${DATA}/thumbs/${f.clip_id}.jpg" alt="" loading="lazy" width="960" height="540">
                 <span class="tierdot ${f.tier}"><i></i>${f.tier}</span>
-                <span class="ovl mono">${icon('clock')} ${fmt.dur(f.duration_s)}</span>
+                ${a?.travel_score != null ? `<span class="score-pill" title="Score AI">${a.travel_score}/10</span>` : ''}
+                <span class="ovl mono">${fmt.dur(f.duration_s)}</span>
                 <span class="scrub-line"></span>
               </div>
               <div class="body">
-                <div class="t"><span>${esc(f.label || f.time || "")}</span></div>
+                <div class="t"><span class="tr-title">${esc(title)}</span></div>
+                ${title !== f.time ? `<div class="tr-when"><time>${f.time || ''}</time></div>` : ''}
                 <div class="metrics">
-                  <span>${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b></span>
-                  <span>${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b></span>
+                  <span title="Distancia">${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b><i class="tr-sr">Distancia</i></span>
+                  <span title="Altura máxima">${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b><i class="tr-sr">Altura máxima</i></span>
                 </div>
-                ${ai[f.clip_id]?.summary ? `<p class="ai-line">${esc(ai[f.clip_id].summary)}</p>` : ''}
+                ${f.label && a?.summary ? `<p class="ai-line">${esc(a.summary)}</p>` : ''}
               </div>
-            </a>`).join('')}
+            </a>`;
+          }).join('')}
           </div>
         </section>`;
-      }).join('') || '<div class="empty">' + icon('search') + '<p>Nada con esos filtros.</p></div>'}`;
+      }).join('') || `<div class="empty">${icon('search')}<p>Nada con esos filtros.</p></div>`}`;
     el.querySelector('#city-back').addEventListener('click', () => {
       if (dstate._leaving) return;                        // ya saliendo → evita doble animación y su race
       dstate._leaving = true;
@@ -246,8 +320,12 @@ main.innerHTML = `
       dstate.scene = dstate.scene === b.dataset.dscene ? null : b.dataset.dscene;
       renderDetail(c);
     }));
+    el.querySelectorAll('[data-day]').forEach(a => a.addEventListener('click', e => {
+      e.preventDefault();
+      document.getElementById(`day-${a.dataset.day}`)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    }));
     attachScrub(el);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (animate) window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   // ---------- postal descargable (canvas: portada + nombre + stats) ----------
@@ -297,14 +375,14 @@ main.innerHTML = `
   function renameCity(c) {
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
-    ov.innerHTML = `<div class="modal" style="max-width:420px">
-      <div class="modal-h"><b>${icon('tag')} Renombrar lugar</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+    ov.innerHTML = `<div class="modal tr-modal-sm">
+      <div class="modal-h"><b>${icon('tag')} Renombrar lugar</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
         <div class="tool-row">
-          <input class="m-ipt" id="tm-name" style="flex:1" maxlength="60" value="${esc(c.name)}">
+          <input class="m-ipt tr-name" id="tm-name" maxlength="60" value="${esc(c.name)}">
           <button class="btn primary" id="tm-save">Guardar</button>
         </div>
-        <p class="footer-note" style="margin-top:8px">El nombre se guarda en el servidor: lo verás igual en el iPhone, iPad y desktop.</p>
+        <p class="footer-note tr-note">El nombre se guarda en el servidor: lo verás igual en el iPhone, iPad y desktop.</p>
       </div></div>`;
     openModal(ov);
     const save = async () => {
@@ -327,10 +405,10 @@ main.innerHTML = `
     ov.className = 'modal-ov';
     const sorted = [...c.flights].sort((a, b) =>
       (ai[b.clip_id]?.travel_score || 0) - (ai[a.clip_id]?.travel_score || 0));
-    ov.innerHTML = `<div class="modal" style="max-width:560px">
-      <div class="modal-h"><b>${icon('iso')} Portada de ${esc(c.name)}</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+    ov.innerHTML = `<div class="modal tr-modal-md">
+      <div class="modal-h"><b>${icon('iso')} Portada de ${esc(c.name)}</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
-        <div class="mflights" style="max-height:340px">
+        <div class="mflights tr-covers">
           ${sorted.map(f => `
             <div class="mflight ${f.clip_id === c.cover?.clip_id ? 'on' : ''}" data-pick="${esc(f.clip_id)}" role="button" tabindex="0" aria-label="Usar como portada: ${esc(f.label || fmt.date(f.date))}">
               <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="" width="960" height="540">
@@ -338,7 +416,7 @@ main.innerHTML = `
                 <span>${fmt.dur(f.duration_s)}${ai[f.clip_id]?.travel_score ? ` · ${ai[f.clip_id].travel_score}/10 AI` : ''}</span></div>
             </div>`).join('')}
         </div>
-        <p class="footer-note" style="margin-top:10px">Se guarda en el servidor. La estrella AI seguirá eligiendo si borras la elección manual.</p>
+        <p class="footer-note tr-note">Se guarda en el servidor. La estrella AI seguirá eligiendo si borras la elección manual.</p>
       </div></div>`;
     openModal(ov);
     const doPick = async row => {
@@ -359,29 +437,20 @@ main.innerHTML = `
   main.addEventListener('click', e => {
     const pb = e.target.closest('[data-postal]');
     if (pb) { e.stopPropagation(); makePostal(clusters.find(x => x.key === pb.dataset.postal), pb); return; }
-    const rb = e.target.closest('[data-rename-city]');
-    if (rb) {
-      e.stopPropagation();
-      renameCity(clusters.find(x => x.key === rb.dataset.renameCity));
-      return;
-    }
-    const cv = e.target.closest('[data-cover-city]');
-    if (cv) {
-      e.stopPropagation();
-      pickCover(clusters.find(x => x.key === cv.dataset.coverCity));
-      return;
-    }
+    const mb = e.target.closest('[data-city-menu]');
+    if (mb) { e.stopPropagation(); openMenu(mb); return; }
     const cc = e.target.closest('[data-city]');
     if (cc) {
       const c = clusters.find(x => x.key === cc.dataset.city);
-      cc.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.97)' }, { transform: 'scale(1)' }], { duration: 180 });
-      setTimeout(() => renderDetail(c), 120);
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
+        cc.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.98)' }, { transform: 'scale(1)' }], { duration: 180 });
+      setTimeout(() => renderDetail(c, true), 120);
     }
   });
 
   // tarjetas de ciudad alcanzables por teclado (Enter / Espacio); los botones internos conservan lo suyo
   main.addEventListener('keydown', e => {
-    if ((e.key !== 'Enter' && e.key !== ' ') || e.target !== e.target.closest('.city-card')) return;
+    if ((e.key !== 'Enter' && e.key !== ' ') || e.target !== e.target.closest('.city-card')) return;   // los botones internos (menú) conservan lo suyo
     e.preventDefault();
     e.target.click();
   });

@@ -1,75 +1,101 @@
-    const main = renderShell('guia.html');   // activo = ninguna tab del nav (antes resaltaba Sistema en falso)
-    main.innerHTML = `
-      <div class="page-head"><h1>Guía de operación</h1><span class="count">cómo hacer todo</span></div>
-      <div class="fl-layout">
-        <div>
-          <div class="panel"><div class="ph">Flujo 1 — Vuelos del dron (SD)</div>
-            <div class="pb"><table class="kv">
-              <tr><td>1. Vuela</td><td>DJI Flip o Neo 2, graba normal</td></tr>
-              <tr><td>2. Inserta la micro SD</td><td>en el Mac Mini</td></tr>
-              <tr><td>3. Ingesta</td><td class="mono">python3 pipeline/ingest.py</td></tr>
-              <tr><td>4. Procesa</td><td class="mono">python3 pipeline/process.py --all</td></tr>
-              <tr><td>5. Analiza</td><td class="mono">python3 ai/analyze.py --all</td></tr>
-              <tr><td>6. Índice</td><td class="mono">python3 pipeline/build_index.py</td></tr>
-              <tr><td>Resultado</td><td>todo aparece aquí, con mapa y AI</td></tr>
-            </table>
-            <p class="footer-note">V5 del roadmap automatiza los pasos 3-6 al insertar la SD.</p></div>
-          </div>
-          <div class="panel" style="margin-top:16px"><div class="ph">Flujo 2 — Subir video (web)</div>
-            <div class="pb"><table class="kv">
-              <tr><td>1. Ve a Subir</td><td>desde cualquier dispositivo</td></tr>
-              <tr><td>2. Arrastra el video</td><td>MP4, MOV, MKV, AVI, MTS, WEBM</td></tr>
-              <tr><td>3. Inicia sesión</td><td>como Daniel con tu contraseña (sesión absoluta de 24 horas)</td></tr>
-              <tr><td>4. Espera</td><td>el M4 hace proxy + AI solo</td></tr>
-            </table></div>
-          </div>
-          <div class="panel" style="margin-top:16px"><div class="ph">Flujo 3 — Video de propiedad en venta</div>
-            <div class="pb"><table class="kv">
-              <tr><td>1. Graba el recorrido</td><td>dron + interiores con teléfono</td></tr>
-              <tr><td>2. Sube ambos</td><td>por SD (dron) y por Subir (teléfono)</td></tr>
-              <tr><td>3. Edita</td><td>Studio → marca los mejores cortes → Exportar</td></tr>
-              <tr><td>4. Comparte</td><td>el link del vuelo o descarga el reel</td></tr>
-            </table>
-            <p class="footer-note">El link de un vuelo (flight.html?id=…) conserva video, mapa y datos,
-            pero sólo abre dentro de tu sesión privada de AeroBrain.</p></div>
-          </div>
+const main = renderShell('guia.html');   // activo = ninguna tab del nav (antes resaltaba Sistema en falso)
+main.classList.add('gd-page');
+
+// valor de fila: texto HTML de confianza, o { cmd } para un comando con botón de copiar
+const FLOWS = [
+  { id: 'sd', title: 'Vuelos del dron (tarjeta SD)', rows: [
+    ['Vuela', 'DJI Flip o Neo 2, graba con normalidad.'],
+    ['Inserta la SD', 'En el Mac Mini. Dron detecta la tarjeta solo.'],
+    ['Importa', 'En <b>Dron</b>, pulsa <b>Importar nuevos</b>. Cada copia se verifica byte a byte.'],
+    ['Procesa', { cmd: 'python3 pipeline/process.py --all' }],
+    ['Analiza', { cmd: 'python3 ai/analyze.py --all' }],
+    ['Reindexa', { cmd: 'python3 pipeline/build_index.py' }],
+    ['Resultado', 'Todo aparece en Vuelos, con mapa y análisis AI.'],
+  ], note: 'Los originales quedan intocables en <span class="mono">raw/</span>; el borrado de la SD es opcional.' },
+  { id: 'subir', title: 'Subir un video desde la web', rows: [
+    ['Abre Dron', 'En la pestaña <b>Subida directa</b>, desde cualquier dispositivo.'],
+    ['Arrastra el video', 'MP4, MOV, MKV, AVI, MTS o WEBM. Puedes soltar varios a la vez.'],
+    ['Inicia sesión', 'Con tu contraseña. La sesión dura 24 horas.'],
+    ['Espera', 'El Mac hace el proxy y el análisis AI por su cuenta.'],
+  ] },
+  { id: 'venta', title: 'Video de una propiedad en venta', rows: [
+    ['Graba', 'Dron para el exterior, teléfono para los interiores.'],
+    ['Sube ambos', 'El dron por SD, el teléfono por Subida directa.'],
+    ['Edita', 'Studio: marca los mejores cortes y pulsa Exportar.'],
+    ['Publica', 'En <b>Ventas</b> obtienes una página aislada con link y QR.'],
+  ], note: 'El link de un vuelo (<span class="mono">flight.html?id=…</span>) conserva video, mapa y datos, pero solo abre dentro de tu sesión privada.' },
+  { id: 'reels', title: 'Editar y crear reels', rows: [
+    ['Editor manual', 'Studio: elige un clip, marca IN y OUT, Exportar.'],
+    ['Reel automático', { cmd: 'python3 ai/reel.py --vertical' }],
+    ['Reel de un día', { cmd: 'python3 ai/reel.py --date 2026-07-04' }],
+    ['Formatos', '16:9 para YouTube o 9:16 para Instagram y TikTok.'],
+  ] },
+  { id: 'buscar', title: 'Buscar en tu archivo', rows: [
+    ['Por contenido', 'Vuelos: escribe «selva», «atardecer» o «canchas».'],
+    ['Por lugar', 'Mapa: haz click en cualquier ruta.'],
+    ['Por viaje', 'Viajes: agrupado por día.'],
+    ['Atajo', 'Pulsa <kbd>/</kbd> para enfocar la búsqueda.'],
+  ] },
+  { id: '3d', title: '3D y Gaussian Splats', rows: [
+    ['Procesa', '3D › Procesamiento: elige vuelo y calidad (estándar, alta, extra o ultra).'],
+    ['Explora', 'Proyectos › Abrir: mapa, nube, malla y descargas.'],
+    ['Entrena el splat', '«Generar splat…» de Rápido a Ultra. Puede correr toda la noche.'],
+    ['Navega', 'Arrastra para mover, rueda o pellizco para zoom, click derecho o dos dedos para rotar, doble click para enfocar.'],
+    ['Pule', 'Editar abre SuperSplat (quitar floaters, recortar). Cada re-subida guarda una versión.'],
+    ['Comparte', 'El botón Compartir de la tarjeta crea un link público del visor.'],
+  ], note: 'Las tarjetas muestran calidad (loss), gaussianas, cámaras e iteraciones. Borrar un splat lo manda a la papelera y no toca el modelo 3D ni el video.' },
+  { id: 'atajos', title: 'Atajos del reproductor', rows: [
+    ['Espacio', 'Reproducir o pausar.'],
+    ['← →', 'Saltar 5 segundos.'],
+    ['F', 'Pantalla completa.'],
+    ['Click', 'En la ruta, la gráfica o el filmstrip salta a ese momento.'],
+  ] },
+];
+const val = v => typeof v === 'string' ? `<span class="gd-txt">${v}</span>`
+  : `<span class="gd-cmd"><code>${esc(v.cmd)}</code><button class="btn sm icon ghost" type="button" data-copy-cmd="${esc(v.cmd)}" aria-label="Copiar comando" data-tip="Copiar">${icon('copy')}</button></span>`;
+
+main.innerHTML = `
+  ${pageHead('Guía de operación', 'Cómo hacer cada cosa, paso a paso.')}
+  <div class="gd-wrap">
+    <nav class="gd-index" aria-label="Flujos">
+      ${FLOWS.map((f, i) => `<a href="#g-${f.id}" data-gi="${f.id}"><span>${i + 1}</span>${f.title}</a>`).join('')}
+    </nav>
+    <div class="gd-flows">
+      ${FLOWS.map((f, i) => `
+      <section class="panel gd-flow" id="g-${f.id}">
+        <div class="ph gd-ph"><span class="gd-n">${i + 1}</span><b>${f.title}</b></div>
+        <div class="pb">
+          <dl class="gd-rows">
+            ${f.rows.map(([k, v]) => `<div class="gd-row"><dt>${k}</dt><dd>${val(v)}</dd></div>`).join('')}
+          </dl>
+          ${f.note ? `<p class="gd-note">${f.note}</p>` : ''}
         </div>
-        <div>
-          <div class="panel"><div class="ph">Flujo 4 — Editar y reels</div>
-            <div class="pb"><table class="kv">
-              <tr><td>Editor manual</td><td>Studio → elegir clip → IN/OUT → Exportar</td></tr>
-              <tr><td>Reel automático</td><td class="mono">python3 ai/reel.py --vertical</td></tr>
-              <tr><td>Reel de un día</td><td class="mono">ai/reel.py --date 2026-07-04</td></tr>
-              <tr><td>Formatos</td><td>16:9 (YouTube) o 9:16 (IG/TikTok)</td></tr>
-            </table></div>
-          </div>
-          <div class="panel" style="margin-top:16px"><div class="ph">Flujo 5 — Buscar en tu archivo</div>
-            <div class="pb"><table class="kv">
-              <tr><td>Por contenido</td><td>Vuelos → escribe "selva", "atardecer", "canchas"</td></tr>
-              <tr><td>Por lugar</td><td>Mapa → click en cualquier ruta</td></tr>
-              <tr><td>Por viaje</td><td>Viajes → agrupado por día</td></tr>
-              <tr><td>Atajo</td><td><span class="mono">/</span> enfoca la búsqueda</td></tr>
-            </table></div>
-          </div>
-          <div class="panel" style="margin-top:16px"><div class="ph">Flujo 6 — 3D y Gaussian Splats</div>
-            <div class="pb"><table class="kv">
-              <tr><td>1. Procesa</td><td>3D → Procesamiento → elige vuelo y calidad (estándar/alta/extra/ultra)</td></tr>
-              <tr><td>2. Explora</td><td>Proyectos → Abrir: mapa, nube, malla y descargas</td></tr>
-              <tr><td>3. Entrena splat</td><td>"Generar splat…" (Rápido → Ultra; se puede dejar de noche)</td></tr>
-              <tr><td>4. Ver</td><td>como Google Maps: arrastra = mover · rueda/pellizco = zoom · click-derecho/2 dedos = rotar · doble-click = enfocar · 🎯 = macro</td></tr>
-              <tr><td>5. Pule</td><td>Editar abre SuperSplat (quitar floaters, recortar); cada re-subida guarda versión</td></tr>
-              <tr><td>6. Comparte</td><td>botón Compartir de la tarjeta = link público del visor</td></tr>
-            </table>
-            <p class="footer-note">Las tarjetas muestran calidad (loss), gaussianas, cámaras e iteraciones.
-            Borrar un splat va a la papelera y no toca el modelo 3D ni el video.</p></div>
-          </div>
-          <div class="panel" style="margin-top:16px"><div class="ph">Atajos del player</div>
-            <div class="pb"><table class="kv">
-              <tr><td class="mono">espacio</td><td>play / pausa</td></tr>
-              <tr><td class="mono">← →</td><td>saltar 5s</td></tr>
-              <tr><td class="mono">f</td><td>pantalla completa</td></tr>
-              <tr><td>Click en ruta / gráfica / filmstrip</td><td>salta a ese momento</td></tr>
-            </table></div>
-          </div>
-        </div>
-      </div>`;
+      </section>`).join('')}
+    </div>
+  </div>`;
+
+main.addEventListener('click', async e => {
+  const b = e.target.closest('[data-copy-cmd]');
+  if (!b) return;
+  try {
+    await navigator.clipboard.writeText(b.dataset.copyCmd);
+    b.classList.add('done');
+    b.innerHTML = icon('check');
+    b.setAttribute('aria-label', 'Copiado');
+    setTimeout(() => { b.classList.remove('done'); b.innerHTML = icon('copy'); b.setAttribute('aria-label', 'Copiar comando'); }, 1400);
+  } catch { toast('No se pudo copiar. Selecciona el comando a mano.'); }
+});
+
+// índice: resalta el flujo visible
+if ('IntersectionObserver' in window) {
+  const links = Object.fromEntries([...main.querySelectorAll('[data-gi]')].map(a => [a.dataset.gi, a]));
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(en => {
+      if (en.isIntersecting) {
+        Object.values(links).forEach(a => a.classList.remove('on'));
+        links[en.target.id.slice(2)]?.classList.add('on');
+      }
+    });
+  }, { rootMargin: '-15% 0px -70% 0px' });
+  main.querySelectorAll('.gd-flow').forEach(s => io.observe(s));
+}

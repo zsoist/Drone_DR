@@ -108,7 +108,7 @@ function updateReview() {
   const button = document.getElementById('si-submit');
   if (button) button.disabled = !validation.valid || !additions.length;
   const fill = document.querySelector('[data-si-budget-fill]');
-  if (fill) fill.style.width = `${Math.min(100, validation.totals.durationS / state.limits.max_duration_s * 100)}%`;
+  if (fill) fill.style.setProperty('--p', Math.min(1, validation.totals.durationS / state.limits.max_duration_s).toFixed(3));
 }
 
 function wireSelection() {

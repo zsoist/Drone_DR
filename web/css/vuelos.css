@@ -1,0 +1,94 @@
+/* AeroBrain Vuelos (index.html) — page layer on top of style.css (DESIGN.md). Loaded AFTER style.css. */
+
+.vf-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.vf-page .grid[hidden], .vf-page #mapview[hidden] { display: none; }
+.vf-page .vf-span { grid-column: 1 / -1; }
+
+/* ---- filter bar: row 1 = search + sort + view; row 2 = one scrollable chip row ---- */
+.vf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.vf-more { display: contents; }
+.vf-tools { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+.vf-search { flex: 1 1 260px; max-width: none; min-width: 0; padding-right: var(--sp-1); }
+.vf-search input { text-overflow: ellipsis; }
+.vf-search kbd { margin-right: var(--sp-1); }
+.vf-sem {
+  flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0;
+  border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.vf-sem .ic { width: var(--ic-md); height: var(--ic-md); color: inherit; }
+.vf-sem.on { color: var(--accent-fg); background: var(--accent-dim); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+@media (hover: hover) { .vf-sem:hover:not(.on) { color: var(--text); background: var(--surface-2); } }
+.vf-filters-btn { display: none; }
+.vf-badge { min-width: 18px; height: 18px; padding: 0 5px; display: inline-grid; place-items: center; border-radius: var(--r-pill); background: var(--accent-solid); color: var(--text-on-accent); font-size: var(--fs-xs); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+.vf-badge[hidden] { display: none; }
+.vf-tools select.ctl { width: auto; min-width: 150px; }
+
+.vf-chiprow {
+  flex: 1 0 100%; display: flex; align-items: center; gap: var(--sp-2);
+  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; padding-block: 2px;
+}
+.vf-chiprow::-webkit-scrollbar { display: none; }
+.vf-chiprow .chip, .vf-chiprow .vf-div { flex: none; }
+.vf-scenes { display: contents; }
+.vf-chiprow .chip { height: var(--ctl-h); padding: 0 var(--sp-3); font-size: var(--fs-md); }
+.vf-chiprow .chip svg.ic { width: var(--ic-sm); height: var(--ic-sm); }
+.vf-div { width: 1px; height: 20px; background: var(--line-strong); margin-inline: var(--sp-1); }
+
+@media (pointer: coarse), (max-width: 820px) {
+  .vf-bar { gap: var(--sp-2); }
+  .vf-search { height: 44px; flex: 1 1 0; }
+  .vf-search kbd { display: none; }
+  .vf-sem { width: 36px; height: 36px; }
+  .vf-filters-btn { display: inline-flex; height: 44px; flex: none; }
+  .vf-more { display: none; flex: 1 0 100%; flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+  .vf-more.open { display: flex; }
+  .vf-more, .vf-tools, .vf-chiprow { min-width: 0; max-width: 100%; }
+  .vf-tools { width: 100%; }
+  .vf-tools { margin-left: 0; }
+  .vf-tools select.ctl { flex: 1 1 0; min-width: 0; height: 44px; }
+  .vf-tools .seg { flex: none; }
+  /* 32px chips with a 44px touch target */
+  .vf-chiprow .chip { position: relative; height: 32px; }
+  .vf-chiprow .chip::before { content: ""; position: absolute; inset: -6px -2px; }
+}
+
+/* ---- cards ---- */
+.vf-page .grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.vf-page .grid.list { grid-template-columns: 1fr; }
+.vf-sk { aspect-ratio: 16 / 11; }
+.vf-page .card { border-color: var(--line); }
+@media (hover: hover) {
+  .vf-page .card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+}
+.vf-page .card.vf-in { animation: vf-in var(--dur-base) var(--ease-out) var(--in-delay, 0ms) backwards; }
+@keyframes vf-in { from { opacity: 0; transform: translateY(8px); } }
+.vf-page .card .body { padding: var(--sp-3) var(--sp-4) var(--sp-4); }
+.vf-page .card .t { display: block; margin: 0; }
+.vf-title { display: block; font-size: var(--fs-lg); font-weight: var(--fw-semibold); line-height: var(--lh-snug); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vf-when { margin-top: 2px; color: var(--text-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.vf-when time { color: inherit; font-size: inherit; }
+.vf-page .card .metrics { margin-top: var(--sp-2); gap: var(--sp-3); }
+.vf-page .card .metrics span { position: relative; }
+.vf-page .card .ai-line { margin-top: var(--sp-2); }
+
+/* badges on thumbnails: two looks — "full" is the accent, everything else is neutral; score shares the geometry */
+.vf-page .tierdot.standard, .vf-page .tierdot.skim { color: var(--on-media-2); }
+.vf-page .tierdot.standard i, .vf-page .tierdot.skim i { background: var(--on-media-2); }
+.vf-page .tierdot { font-size: var(--fs-2xs); }
+.vf-page .score-pill { color: var(--on-media); }
+
+/* ---- map + preview ---- */
+.vf-mappanel { position: relative; }
+.vf-maptools { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); }
+.vf-map { height: calc(100dvh - 380px); min-height: 400px; }
+.vf-note { margin-top: var(--sp-3); }
+.vf-modal { max-width: 640px; }
+.vf-prev { max-height: 320px; }
+.vf-prev-img { width: 100%; height: auto; border-radius: var(--r-md); display: block; }
+.vf-prev-chips { margin-top: var(--sp-3); }
+.vf-prev-note { margin: var(--sp-3) 0 0; }
+.vf-prev-actions { margin-top: var(--sp-4); flex-wrap: wrap; }
+@media (pointer: coarse), (max-width: 820px) {
+  .vf-tools .seg button { padding: 0 var(--sp-2); min-width: 38px; }
+}

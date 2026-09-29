@@ -1,46 +1,76 @@
 // Studio v5 — motor de medios: 4 módulos en tabs (Editor · Reels · Fotos · Trabajos).
 // El editor de video v4 (carrusel, timeline arrastrable, Momentos AI, exportbar) vive
 // intacto dentro del módulo Editor; Reels/Fotos gestionan la biblioteca vía /api/media_op.
+// iconos propios del Studio que icons.js no trae (se registran en el set compartido)
+Object.assign(ICONS, {
+  more: '<circle cx="4.5" cy="10" r="1.3"/><circle cx="10" cy="10" r="1.3"/><circle cx="15.5" cy="10" r="1.3"/>',
+  star: '<path d="M10 3l2.1 4.4 4.9.6-3.6 3.3.9 4.8L10 13.7 5.7 16.1l.9-4.8L3 8l4.9-.6z"/>',
+  keyboard: '<rect x="2.5" y="5" width="15" height="10" rx="2"/><path d="M5.5 8.5h1M9.5 8.5h1M13.5 8.5h1M6 12h8"/>',
+});
 const main = renderShell('studio.html');
+main.classList.add('st-page');
 main.innerHTML = `
   <div class="st-hero rise">
-    <h1>Studio</h1>
-    <p style="color:var(--text-2);font-size:14px;margin:0 0 12px">Motor de medios — edita, gestiona y comparte</p>
-    <span class="gchip" id="st-count">cargando…</span>
+    <div class="st-hero-row">
+      <h1>Studio</h1>
+      <span class="gchip" id="st-count">cargando…</span>
+    </div>
+    <p class="st-sub">Motor de medios — edita, gestiona y comparte</p>
   </div>
 
-  <div class="pm-tabs rise" id="st-tabs" style="margin-bottom:14px">
-    <button class="on" data-tab="editor">${icon('film')} Editor</button>
-    <button data-tab="reels">${icon('play')} Reels</button>
-    <button data-tab="fotos">${icon('iso')} Fotos</button>
-    <button data-tab="jobs">${icon('activity')} Trabajos</button>
+  <div class="pm-tabs st-tabs rise" id="st-tabs" role="tablist" aria-label="Módulos de Studio">
+    <button class="on" data-tab="editor" role="tab" aria-selected="true">${icon('film')} Editor</button>
+    <button data-tab="reels" role="tab" aria-selected="false">${icon('play')} Reels</button>
+    <button data-tab="fotos" role="tab" aria-selected="false">${icon('iso')} Fotos</button>
+    <button data-tab="jobs" role="tab" aria-selected="false">${icon('activity')} Trabajos</button>
     <span class="pm-ink"></span>
+  </div>
+
+  <div class="up-zone" id="up-zone">
+    <button class="up-cta" id="up-pick">
+      <span class="up-ic">${icon('dl')}</span>
+      <span class="up-t"><b>Subir desde tu teléfono</b><small>Videos y fotos del carrete — se procesan solos al llegar</small></span>
+      <span class="up-go">${icon('chevR')}</span>
+    </button>
+    <input type="file" id="up-file" accept="video/*,image/*" multiple hidden>
+    <div class="up-list" id="up-list" hidden></div>
   </div>
 
   <section class="st-mod" data-mod="editor">
     <div class="tl-editor" id="tl-editor">
 
-      <!-- barra de proyecto: nuevo · guardar · abrir -->
-      <div class="tl-projbar">
-        <button class="btn" id="ed-new" data-tip="Vaciar y empezar de cero">${icon('plusFile')} Nuevo proyecto</button>
-        <span class="spacer"></span>
-        <button class="btn" id="ed-save" data-tip="Guardar este proyecto">${icon('save')} Guardar</button>
-        <button class="btn" id="ed-open" data-tip="Abrir proyectos guardados">${icon('folder')} Proyectos</button>
-      </div>
-
-      <!-- encabezado del editor: contador de clips + longitud del reel -->
-      <div class="panel" style="margin-bottom:14px">
-        <div class="ph">${icon('film')} Editor
-          <span class="spacer"></span>
+      <div class="panel st-panel">
+        <!-- encabezado del editor: título + contador + proyecto (nuevo · guardar · abrir) -->
+        <div class="ph st-ph" data-no-collapse>
+          <span class="st-ph-t">${icon('film')} Editor</span>
           <span class="gchip" id="tl-stat">0 clips · 0:00</span>
+          <span class="spacer"></span>
+          <div class="st-ph-actions">
+            <button class="btn sm ghost" id="ed-new" data-tip="Vaciar y empezar de cero" aria-label="Nuevo proyecto">${icon('plusFile')}<span class="st-hide-sm">Nuevo</span></button>
+            <button class="btn sm" id="ed-save" data-tip="Guardar este proyecto">${icon('save')} Guardar</button>
+            <button class="btn sm" id="ed-open" data-tip="Abrir proyectos guardados">${icon('folder')} Proyectos</button>
+            <span class="st-vsep" aria-hidden="true"></span>
+            <button class="btn sm ghost" id="ed-keys" aria-label="Atajos de teclado" aria-expanded="false" aria-controls="tl-help">${icon('keyboard')}<span class="st-hide-sm">Atajos</span></button>
+          </div>
         </div>
-        <div class="pb">
+        <!-- 48 · ayuda de atajos -->
+        <div class="st-help" id="tl-help" hidden>
+          <span><kbd>Espacio</kbd> reproducir / pausa</span>
+          <span><kbd>S</kbd> cortar en el playhead</span>
+          <span><kbd>T</kbd> añadir texto</span>
+          <span><kbd>Supr</kbd> eliminar clip</span>
+          <span><kbd>←</kbd><kbd>→</kbd> mover playhead (<kbd>Shift</kbd> = 1 s)</span>
+          <span><kbd>Alt</kbd><kbd>←</kbd><kbd>→</kbd> reordenar clip</span>
+          <span><kbd>Cmd</kbd><kbd>Z</kbd> deshacer</span>
+          <span><kbd>Cmd</kbd><kbd>Shift</kbd><kbd>Z</kbd> rehacer</span>
+        </div>
+        <div class="pb st-pb">
 
           <!-- 28-35 · escenario del compositor -->
           <div class="tl-stage" id="tl-stage">
             <video class="tl-video" id="tl-video" playsinline webkit-playsinline preload="auto" muted></video>
             <canvas class="tl-hold" id="tl-hold" aria-hidden="true"></canvas>
-            <div class="tl-aspect-mask" id="tl-mask" data-aspect="16:9"></div>
+            <div class="tl-aspect-mask" id="tl-mask" data-aspect="16:9" hidden></div>
             <div class="tl-empty" id="tl-empty">
               ${icon('film')}
               <p><b>Tu timeline está vacío</b></p>
@@ -48,65 +78,41 @@ main.innerHTML = `
             </div>
           </div>
 
-          <!-- 32-35 · transporte -->
-          <div class="tl-transport" id="tl-transport">
-            <div class="tl-group">
-              <div class="tl-group-btns">
-                <button class="tl-tool" data-tp="start" data-tip="Ir al inicio">${icon('skipStart')}<span class="tl-lb">Inicio</span></button>
-                <button class="tl-tool" data-tp="prev" data-tip="Clip anterior">${icon('prev')}<span class="tl-lb">Atrás</span></button>
-                <button class="tl-tool big" data-tp="play" data-tip="Reproducir / Pausa (Espacio)">${icon('play')}<span class="tl-lb">Play</span></button>
-                <button class="tl-tool" data-tp="next" data-tip="Clip siguiente">${icon('next')}<span class="tl-lb">Sig.</span></button>
-                <button class="tl-tool" data-tp="end" data-tip="Ir al final">${icon('skipEnd')}<span class="tl-lb">Final</span></button>
-              </div>
-              <span class="tl-group-lb">Reproducción</span>
+          <!-- 32-35 + 12-17 · UNA barra: transporte · edición · IA · historial · vista -->
+          <div class="tb" id="tl-toolbar" role="toolbar" aria-label="Herramientas del editor">
+            <div class="tb-g">
+              <button class="btn icon sm ghost" data-tp="start" data-tip="Ir al inicio" aria-label="Ir al inicio">${icon('skipStart')}</button>
+              <button class="btn icon sm ghost" data-tp="prev" data-tip="Clip anterior" aria-label="Clip anterior">${icon('prev')}</button>
+              <button class="btn sm primary tb-play" data-tp="play" data-tip="Reproducir / Pausa (Espacio)" aria-label="Reproducir o pausar">${icon('play')}<span>Play</span></button>
+              <button class="btn icon sm ghost" data-tp="next" data-tip="Clip siguiente" aria-label="Clip siguiente">${icon('next')}</button>
+              <button class="btn icon sm ghost" data-tp="end" data-tip="Ir al final" aria-label="Ir al final">${icon('skipEnd')}</button>
             </div>
-            <div class="tl-group">
-              <div class="tl-group-btns">
-                <button class="tl-tool" data-tp="mute" data-tip="Activar / silenciar audio">${icon('volume')}<span class="tl-lb">Audio</span></button>
-                <button class="tl-tool" data-tp="loop" data-tip="Repetir en bucle">${icon('loop')}<span class="tl-lb">Bucle</span></button>
-              </div>
-              <span class="tl-group-lb">Sonido</span>
+            <span class="tb-time mono" id="tl-time">0:00 / 0:00</span>
+            <div class="tb-g">
+              <button class="btn icon sm ghost" data-tp="mute" data-tip="Activar / silenciar audio" aria-label="Audio">${icon('volume')}</button>
+              <button class="btn icon sm ghost" data-tp="loop" data-tip="Repetir en bucle" aria-label="Bucle">${icon('loop')}</button>
             </div>
-            <span class="spacer"></span>
-            <span class="tl-time mono" id="tl-time">0:00 / 0:00</span>
-          </div>
-
-          <!-- 12,14,15,16,17 + zoom 5,6 · barra de herramientas -->
-          <div class="tl-toolbar" id="tl-toolbar">
-            <div class="tl-group">
-              <div class="tl-group-btns">
-                <button class="tl-tool" data-tool="razor" data-tip="Cortar en playhead (S)">${icon('scissors')}<span class="tl-lb">Cortar</span></button>
-                <button class="tl-tool" data-tool="dup" data-tip="Duplicar clip">${icon('copy')}<span class="tl-lb">Duplicar</span></button>
-                <button class="tl-tool" data-tool="left" data-tip="Mover antes (⌥←)">${icon('chevL')}<span class="tl-lb">Antes</span></button>
-                <button class="tl-tool" data-tool="right" data-tip="Mover después (⌥→)">${icon('chevR')}<span class="tl-lb">Después</span></button>
-                <button class="tl-tool" data-tool="del" data-tip="Eliminar clip (Supr)">${icon('trash')}<span class="tl-lb">Eliminar</span></button>
-                <button class="tl-tool" data-tool="clear" data-tip="Vaciar todo el timeline">${icon('broom')}<span class="tl-lb">Vaciar</span></button>
-              </div>
-              <span class="tl-group-lb">Edición</span>
+            <div class="tb-g">
+              <button class="btn sm ghost" data-tool="razor" data-tip="Cortar en playhead (S)" aria-label="Cortar">${icon('scissors')}<span>Cortar</span></button>
+              <button class="btn icon sm ghost" data-tool="dup" data-tip="Duplicar clip" aria-label="Duplicar clip">${icon('copy')}</button>
+              <button class="btn icon sm ghost" data-tool="left" data-tip="Mover antes (⌥←)" aria-label="Mover clip antes">${icon('chevL')}</button>
+              <button class="btn icon sm ghost" data-tool="right" data-tip="Mover después (⌥→)" aria-label="Mover clip después">${icon('chevR')}</button>
+              <button class="btn icon sm ghost" data-tool="del" data-tip="Eliminar clip (Supr)" aria-label="Eliminar clip">${icon('trash')}</button>
+              <button class="btn icon sm ghost" data-tool="clear" data-tip="Vaciar todo el timeline" aria-label="Vaciar timeline">${icon('broom')}</button>
             </div>
-            <div class="tl-group">
-              <div class="tl-group-btns">
-                <button class="tl-tool ai" data-tool="magic" id="btn-magic" data-tip="Autoarmar el reel con los mejores momentos">${icon('spark')}<span class="tl-lb">Momentos</span></button>
-              <button class="tl-tool" data-tool="music" id="btn-music" data-tip="Ponle música al reel (tu biblioteca)">${icon('volume')}<span class="tl-lb">Música</span></button>
-              <button class="tl-tool" data-tool="text" id="btn-text" data-tip="Añadir texto en el punto del playhead (T)">${icon('tag')}<span class="tl-lb">Texto</span></button>
-              </div>
-              <span class="tl-group-lb">IA</span>
+            <div class="tb-g">
+              <button class="btn sm ghost tb-ai" data-tool="magic" id="btn-magic" data-tip="Autoarmar el reel con los mejores momentos" aria-label="Momentos AI">${icon('spark')}<span>Momentos AI</span></button>
+              <button class="btn icon sm ghost" data-tool="music" id="btn-music" data-tip="Ponle música al reel (tu biblioteca)" aria-label="Música">${icon('volume')}</button>
+              <button class="btn icon sm ghost" data-tool="text" id="btn-text" data-tip="Añadir texto en el playhead (T)" aria-label="Añadir texto">${icon('tag')}</button>
             </div>
-            <div class="tl-group">
-              <div class="tl-group-btns">
-                <button class="tl-tool" data-tool="undo" data-tip="Deshacer (⌘Z)">${icon('undo')}<span class="tl-lb">Deshacer</span></button>
-                <button class="tl-tool" data-tool="redo" data-tip="Rehacer (⌘⇧Z)">${icon('redo')}<span class="tl-lb">Rehacer</span></button>
-              </div>
-              <span class="tl-group-lb">Historial</span>
+            <div class="tb-g">
+              <button class="btn icon sm ghost" data-tool="undo" data-tip="Deshacer (⌘Z)" aria-label="Deshacer">${icon('undo')}</button>
+              <button class="btn icon sm ghost" data-tool="redo" data-tip="Rehacer (⌘⇧Z)" aria-label="Rehacer">${icon('redo')}</button>
             </div>
-            <span class="spacer"></span>
-            <div class="tl-group">
-              <div class="tl-group-btns">
-                <button class="tl-tool" data-tool="zoomout" data-tip="Alejar timeline">${icon('zoomOut')}<span class="tl-lb">Alejar</span></button>
-                <button class="tl-tool" data-tool="zoomin" data-tip="Acercar timeline">${icon('zoomIn')}<span class="tl-lb">Acercar</span></button>
-                <button class="tl-tool" data-tool="fit" data-tip="Ajustar todo a la ventana">${icon('fit')}<span class="tl-lb">Ajustar</span></button>
-              </div>
-              <span class="tl-group-lb">Vista</span>
+            <div class="tb-g tb-end">
+              <button class="btn icon sm ghost" data-tool="zoomout" data-tip="Alejar timeline" aria-label="Alejar timeline">${icon('zoomOut')}</button>
+              <button class="btn icon sm ghost" data-tool="zoomin" data-tip="Acercar timeline" aria-label="Acercar timeline">${icon('zoomIn')}</button>
+              <button class="btn icon sm ghost" data-tool="fit" data-tip="Ajustar todo a la ventana" aria-label="Ajustar a la ventana">${icon('fit')}</button>
             </div>
           </div>
 
@@ -114,12 +120,12 @@ main.innerHTML = `
           <div class="tl-scroll" id="tl-scroll">
             <div class="tl-ruler" id="tl-ruler"></div>
             <div class="tl-track" id="tl-track"></div>
-            <div class="tl-textlane" id="tl-textlane" data-tip="Pista de texto — los bloques van donde tú los pongas, no atados a los cortes"></div>
+            <div class="tl-textlane" id="tl-textlane"></div>
             <div class="tl-playhead" id="tl-playhead"></div>
           </div>
 
           <!-- 18-23 · inspector del clip seleccionado (v7 · secciones agrupadas) -->
-          <div class="tl-inspect" id="tl-inspect" style="display:none">
+          <div class="tl-inspect" id="tl-inspect" hidden>
             <div class="tl-io">
               <span class="mono" id="tli-io">—</span>
               <button class="btn" id="tli-goto" data-tip="Saltar el playhead a este clip">${icon('play')} Ir al clip</button>
@@ -139,15 +145,15 @@ main.innerHTML = `
                 <span id="tli-speed" class="tl-chips"></span>
               </div>
               <div class="tl-inspect-row">
-                <input class="ctl tl-range" id="tli-speed-range" type="range" min="0.1" max="100" step="0.05" style="flex:1">
-                <input class="ctl" id="tli-speed-num" type="number" min="0.1" max="100" step="0.05" style="width:74px">
+                <input class="u-f1 ctl tl-range" id="tli-speed-range" type="range" min="0.1" max="100" step="0.05">
+                <input class="u-w74 ctl" id="tli-speed-num" type="number" min="0.1" max="100" step="0.05">
                 <span class="mono">x</span>
               </div>
               <div class="tl-inspect-row">
-                <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="tli-reverse"> Reversa</label>
+                <label class="u-chk"><input type="checkbox" id="tli-reverse"> Reversa</label>
                 <span class="spacer"></span>
                 <label>Congelar</label>
-                <input class="ctl" id="tli-freeze" type="number" min="0" max="10" step="0.1" value="0" style="width:74px">
+                <input class="u-w74 ctl" id="tli-freeze" type="number" min="0" max="10" step="0.1" value="0">
                 <span class="mono">s</span>
               </div>
             </div>
@@ -160,16 +166,16 @@ main.innerHTML = `
               </div>
               <div class="tl-grade">
                 <div class="tl-inspect-row"><label>Brillo</label>
-                  <input class="tl-range" id="tli-bright" type="range" min="50" max="150" step="1" value="100" style="flex:1">
+                  <input class="u-f1 tl-range" id="tli-bright" type="range" min="50" max="150" step="1" value="100">
                   <span class="mono" id="tli-bright-v">100</span></div>
                 <div class="tl-inspect-row"><label>Contraste</label>
-                  <input class="tl-range" id="tli-contrast" type="range" min="50" max="150" step="1" value="100" style="flex:1">
+                  <input class="u-f1 tl-range" id="tli-contrast" type="range" min="50" max="150" step="1" value="100">
                   <span class="mono" id="tli-contrast-v">100</span></div>
                 <div class="tl-inspect-row"><label>Saturación</label>
-                  <input class="tl-range" id="tli-sat" type="range" min="0" max="200" step="1" value="100" style="flex:1">
+                  <input class="u-f1 tl-range" id="tli-sat" type="range" min="0" max="200" step="1" value="100">
                   <span class="mono" id="tli-sat-v">100</span></div>
                 <div class="tl-inspect-row"><label>Temperatura</label>
-                  <input class="tl-range" id="tli-temp" type="range" min="-100" max="100" step="1" value="0" style="flex:1">
+                  <input class="u-f1 tl-range" id="tli-temp" type="range" min="-100" max="100" step="1" value="0">
                   <span class="mono" id="tli-temp-v">0</span></div>
               </div>
             </div>
@@ -178,7 +184,7 @@ main.innerHTML = `
             <div class="tl-sec" data-sec="look">
               <div class="tl-seclabel">${icon('layers')} Look</div>
               <div class="tl-inspect-row">
-                <select class="ctl" id="tli-filter" style="flex:1">
+                <select class="u-f1 ctl" id="tli-filter">
                   <option value="none">Sin look</option>
                   <optgroup label="Cine">
                     <option value="nolan">Nolan — naturalista, sombras densas</option>
@@ -202,7 +208,7 @@ main.innerHTML = `
             <div class="tl-sec" data-sec="title">
               <div class="tl-seclabel">${icon('tag')} Título</div>
               <div class="tl-inspect-row">
-                <input class="ctl" id="tli-title" placeholder="Título de este corte…" maxlength="60" style="flex:1">
+                <input class="u-f1 ctl" id="tli-title" placeholder="Título de este corte…" maxlength="60">
               </div>
               <div class="tl-inspect-row">
                 <label>Estilo</label>
@@ -229,13 +235,13 @@ main.innerHTML = `
                   <option value="top">Arriba</option><option value="mid">Centro</option><option value="bottom">Abajo</option>
                 </select>
                 <label>Tamaño</label>
-                <input class="tl-range" id="tli-title-size" type="range" min="1" max="100" step="1" value="40" style="flex:1;min-width:70px">
+                <input class="u-f1 u-minw70 tl-range" id="tli-title-size" type="range" min="1" max="100" step="1" value="40">
               </div>
               <div class="tl-inspect-row">
                 <label>Color</label>
-                <input class="ctl" id="tli-title-color" type="color" value="#ffffff" style="width:52px;padding:2px">
+                <input class="u-color ctl" id="tli-title-color" type="color" value="#ffffff">
                 <span class="spacer"></span>
-                <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="tli-title-box"> Fondo</label>
+                <label class="u-chk"><input type="checkbox" id="tli-title-box"> Fondo</label>
               </div>
             </div>
 
@@ -243,7 +249,7 @@ main.innerHTML = `
             <div class="tl-sec" data-sec="trans">
               <div class="tl-seclabel">${icon('activity')} Transición de entrada</div>
               <div class="tl-inspect-row">
-                <select class="ctl" id="tli-trans" style="flex:1">
+                <select class="u-f1 ctl" id="tli-trans">
                   <option value="none">Ninguna</option>
                   <option value="fade">Fundido</option>
                   <option value="crossfade">Crossfade</option>
@@ -263,7 +269,7 @@ main.innerHTML = `
               </div>
               <div class="tl-inspect-row">
                 <label>Duración</label>
-                <input class="tl-range" id="tli-trans-dur" type="range" min="0.2" max="1.5" step="0.1" value="0.4" style="flex:1">
+                <input class="u-f1 tl-range" id="tli-trans-dur" type="range" min="0.2" max="1.5" step="0.1" value="0.4">
                 <span class="mono" id="tli-trans-dur-v">0.4s</span>
               </div>
             </div>
@@ -272,10 +278,10 @@ main.innerHTML = `
       </div>
 
       <!-- 24-27 · biblioteca de clips fuente -->
-      <div class="tl-lib panel" style="margin-bottom:14px">
-        <div class="ph">${icon('film')} Paso 1 · Elige tu video
+      <div class="tl-lib panel">
+        <div class="ph" data-no-collapse>${icon('film')} Paso 1 · Elige tu video
           <span class="spacer"></span>
-          <span class="footer-note" style="font-size:11px">Toca = añadir al final · botón + = insertar en playhead</span>
+          <span class="st-note">Toca = añadir al final · + = insertar en el playhead</span>
         </div>
         <div class="pb"><div class="clip-rail" id="rail"></div></div>
       </div>
@@ -414,31 +420,18 @@ main.innerHTML = `
         </div>
       </div>
 
-      <!-- 48 · ayuda de atajos -->
-      <details class="tl-help" id="tl-help">
-        <summary>${icon('clock')} Atajos de teclado</summary>
-        <div class="tl-help-body">
-          <span><kbd>Espacio</kbd> reproducir/pausa</span>
-          <span><kbd>S</kbd> cortar en playhead</span>
-          <span><kbd>Supr</kbd> eliminar clip</span>
-          <span><kbd>←</kbd><kbd>→</kbd> mover playhead · <kbd>⇧</kbd> = 1s</span>
-          <span><kbd>⌥←</kbd><kbd>⌥→</kbd> reordenar clip</span>
-          <span><kbd>⌘Z</kbd> deshacer · <kbd>⌘⇧Z</kbd> rehacer</span>
-        </div>
-      </details>
-
     </div>
   </section>
 
   <section class="st-mod" data-mod="reels" style="display:none">
     <div class="rm-ctas">
       <button class="rm-cta" id="rm-open">
-        <span class="rm-cta-ic">${icon('spark')}</span>
-        <span class="rm-cta-t"><b>Crear reel</b><small>Elige tus tomas y AeroBrain arma el montaje — luego lo editas</small></span>
+        <span class="rm-cta-ic">${icon('film')}</span>
+        <span class="rm-cta-t"><b>Crear reel</b><small>Elige tus tomas y AeroBrain arma el montaje; luego lo editas</small></span>
         <span class="rm-cta-go">${icon('chevR')}</span>
       </button>
       <div class="rm-auto">
-        <div class="rm-auto-h"><b>⚡ Reel automático</b><small>un toque y listo — elige la sesión y la duración</small></div>
+        <div class="rm-auto-h"><b>${icon('spark')} Reel automático</b><small>Un toque y listo: elige la sesión y la duración</small></div>
         <label class="rm-daypick"><span>Sesión</span>
           <select class="ctl" id="rm-day"><option value="">Mejor día automático</option></select></label>
         <div class="rm-auto-b">
@@ -449,48 +442,44 @@ main.innerHTML = `
       </div>
     </div>
     <div class="media-toolbar">
-      <input class="ctl" id="q-reels" type="search" placeholder="Buscar reel…" style="flex:1;min-width:150px">
+      <input class="u-f1 u-minw150 ctl" id="q-reels" type="search" placeholder="Buscar reel…">
       <select class="ctl" id="s-reels">
         <option value="recientes">Recientes</option>
         <option value="tamano">Tamaño</option>
         <option value="nombre">Nombre</option>
       </select>
-      <button class="btn" id="btn-ord" data-tip="Reordena los reels con las flechas y guarda">⇅ Ordenar</button>
+      <button class="btn" id="btn-ord" data-tip="Reordena los reels con las flechas y guarda">${icon('list')} Ordenar</button>
     </div>
-    <div class="media-grid" id="grid-reels"><div class="sk" style="height:150px"></div><div class="sk" style="height:150px"></div></div>
+    <div class="media-grid" id="grid-reels"><div class="sk-card sk"></div><div class="sk-card sk"></div></div>
   </section>
 
-  <div class="up-zone" id="up-zone">
-    <button class="up-cta" id="up-pick">
-      <span class="up-ic">${icon('dl')}</span>
-      <span class="up-t"><b>Subir desde tu teléfono</b><small>videos y fotos del carrete — se procesan solos al llegar</small></span>
-      <span class="up-go">${icon('chevR')}</span>
-    </button>
-    <input type="file" id="up-file" accept="video/*,image/*" multiple hidden>
-    <div class="up-list" id="up-list" hidden></div>
-  </div>
-
   <section class="st-mod" data-mod="fotos" style="display:none">
-    <div class="td-jobbar" id="fotos-sub" style="margin-bottom:10px" aria-label="Origen de fotos">
+    <div class="td-jobbar" id="fotos-sub" aria-label="Origen de fotos">
       <button class="chip on" data-fsub="fotos">Capturas</button>
       <button class="chip" data-fsub="dron">Del dron <span class="mono" id="dron-count"></span></button>
     </div>
     <div class="media-toolbar">
-      <input class="ctl" id="q-fotos" type="search" placeholder="Buscar foto…" style="flex:1;min-width:150px">
+      <input class="u-f1 u-minw150 ctl" id="q-fotos" type="search" placeholder="Buscar foto…">
       <select class="ctl" id="s-fotos">
         <option value="recientes">Recientes</option>
         <option value="tamano">Tamaño</option>
         <option value="nombre">Nombre</option>
       </select>
     </div>
-    <div class="media-grid" id="grid-fotos"><div class="sk" style="height:150px"></div><div class="sk" style="height:150px"></div></div>
-    <div class="media-grid" id="grid-dron" style="display:none"><div class="sk" style="height:150px"></div><div class="sk" style="height:150px"></div></div>
+    <div class="media-grid" id="grid-fotos"><div class="sk-card sk"></div><div class="sk-card sk"></div></div>
+    <div class="media-grid" id="grid-dron" style="display:none"><div class="sk-card sk"></div><div class="sk-card sk"></div></div>
   </section>
 
   <section class="st-mod" data-mod="jobs" style="display:none">
     <div class="panel">
-      <div class="ph">${icon('activity')} Trabajos</div>
-      <div class="pb" id="jobs"></div>
+      <div class="ph" data-no-collapse>${icon('activity')} Trabajos recientes
+        <span class="spacer"></span>
+        <span class="gchip" id="jobs-count" hidden></span>
+      </div>
+      <div class="pb st-jobs" id="jobs"></div>
+      <div class="st-more" id="jobs-more" hidden>
+        <button class="btn sm" id="jobs-more-btn"></button>
+      </div>
     </div>
   </section>`;
 
@@ -499,21 +488,32 @@ const stTabs = document.getElementById('st-tabs');
 const stInk = stTabs.querySelector('.pm-ink');
 function moveInk() {
   const on = stTabs.querySelector('button.on');
-  stInk.style.left = on.offsetLeft + 'px';
-  stInk.style.width = on.offsetWidth + 'px';
+  stInk.style.setProperty('--ink-x', on.offsetLeft + 'px');
+  stInk.style.setProperty('--ink-w', on.offsetWidth + 'px');
 }
 setTimeout(moveInk, 30);   // tras layout; rAF no dispara con tab oculto
 window.addEventListener('resize', () => setTimeout(moveInk, 30));
 
+const seenMods = new Set(['editor']);
 function showMod(name) {
-  stTabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  stTabs.querySelectorAll('button').forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  const upz = document.getElementById('up-zone');
+  if (upz) upz.hidden = name === 'jobs';
   moveInk();
   document.querySelectorAll('.st-mod').forEach(m => {
     const show = m.dataset.mod === name;
     if (show && m.style.display === 'none') {
       m.style.display = '';
-      m.animate([{ opacity: 0, transform: 'translateX(14px)' }, { opacity: 1, transform: 'translateX(0)' }],
-                { duration: 220, easing: 'ease-out' });
+      // la entrada corre UNA vez por módulo (primer montaje), no en cada cambio de tab
+      if (!seenMods.has(name)) {
+        seenMods.add(name);
+        m.classList.add('st-enter');
+        m.addEventListener('animationend', () => m.classList.remove('st-enter'), { once: true });
+      }
     } else if (!show) {
       // teardown SPA: los <video> del grid siguen decodificando si no se pausan al ocultar el tab
       m.querySelectorAll('.media-grid video').forEach(v => { try { v.pause(); } catch {} });
@@ -528,6 +528,14 @@ function showMod(name) {
 stTabs.addEventListener('click', e => {
   const b = e.target.closest('[data-tab]');
   if (b) showMod(b.dataset.tab);
+});
+
+// ---- atajos de teclado: botón fantasma en la cabecera del editor ----
+document.getElementById('ed-keys')?.addEventListener('click', e => {
+  const help = document.getElementById('tl-help');
+  help.hidden = !help.hidden;
+  e.currentTarget.setAttribute('aria-expanded', String(!help.hidden));
+  e.currentTarget.classList.toggle('on', !help.hidden);
 });
 
 // ---- I7 · compartir sin perder el gesto del usuario ----
@@ -600,7 +608,7 @@ addEventListener('visibilitychange', () => { if (document.hidden) shareCache.cle
       xhr.upload.addEventListener('progress', e => {
         if (!e.lengthComputable) return;
         const p = e.loaded / e.total;
-        el.querySelector('.up-bar i').style.width = `${p * 100}%`;
+        el.querySelector('.up-bar i').style.setProperty('--p', p.toFixed(3));
         el.querySelector('.up-st').textContent = `${Math.round(p * 100)}%`;
       });
       xhr.addEventListener('load', () => {
@@ -611,7 +619,7 @@ addEventListener('visibilitychange', () => { if (document.hidden) shareCache.cle
           el.querySelector('.up-st').textContent = (d.error || `error ${xhr.status}`).slice(0, 40);
         } else {
           el.classList.add('ok');
-          el.querySelector('.up-bar i').style.width = '100%';
+          el.querySelector('.up-bar i').style.setProperty('--p', '1');
           el.querySelector('.up-st').textContent = isVid ? 'procesando…' : 'listo';
         }
         resolve(d);
@@ -688,8 +696,8 @@ function openReelViewer(name) {
             <b id="rv-name">${esc(base)}</b>
             <span class="mono">${list.length > 1 ? `${idx + 1} / ${list.length} · ` : ''}${mdate(it.mtime)}</span>
           </div>
-          <span class="spacer" style="flex:1"></span>
-          <button class="rv-x" data-rv="close" aria-label="Cerrar">✕</button>
+          <span class="u-f1 spacer"></span>
+          <button class="btn icon ghost rv-x" data-rv="close" aria-label="Cerrar">${icon('close')}</button>
         </div>
         <div class="rv-stage${vert ? ' vert' : ''}">
           ${list.length > 1 ? `<button class="rv-nav prev" data-rv="prev" aria-label="Anterior">${icon('chevL')}</button>` : ''}
@@ -708,7 +716,7 @@ function openReelViewer(name) {
             <span class="rv-elb">${icon('scissors')} Recortar</span>
             <input type="range" id="rv-a" min="0" max="${(it.duration_s || 1).toFixed(1)}" step="0.1" value="${trim.a}">
             <input type="range" id="rv-b" min="0" max="${(it.duration_s || 1).toFixed(1)}" step="0.1" value="${trim.b ?? it.duration_s ?? 1}">
-            <span class="mono" id="rv-trimlb">${fmt.dur(trim.a)} → ${fmt.dur(trim.b ?? it.duration_s ?? 1)}</span>
+            <span class="mono" id="rv-trimlb">${fmt.dur(trim.a)} – ${fmt.dur(trim.b ?? it.duration_s ?? 1)}</span>
             <button class="btn sm" data-rv="trim">Crear recorte</button>
           </div>
           <div class="rv-edit-row">
@@ -720,22 +728,29 @@ function openReelViewer(name) {
             <span class="rv-elb">${icon('iso')} Portada</span>
             <button class="btn sm" data-rv="poster">Usar el fotograma actual</button>
             <span class="rm-hint">toma el segundo donde tengas pausado el video</span>
-            <span class="spacer" style="flex:1"></span>
+            <span class="u-f1 spacer"></span>
             <button class="btn sm" data-rv="dup">${icon('copy')} Duplicar</button>
           </div>
         </div>
         <div class="rv-actions">
-          <button class="btn primary" data-rv="share">${icon('ext')} Compartir</button>
-          <button class="btn${edit ? ' on' : ''}" data-rv="edit">${icon('scissors')} Editar</button>
-          ${it.has_recipe ? `<button class="btn" data-rv="studio" data-tip="Reabre este reel en el editor con sus tomas, textos y música">${icon('film')} Estudio</button>` : ''}
-          <button class="btn" data-rv="txts" data-tip="Añade textos sobre este reel sin re-montarlo">${icon('tag')} Textos</button>
-          <button class="btn" data-rv="dl">${icon('dl')} ${window.showSaveFilePicker ? 'Guardar como…' : 'Descargar'}</button>
-          <button class="btn" data-rv="ren">${icon('tag')} Renombrar</button>
-          <button class="btn" data-rv="copy">${icon('link') || icon('ext')} Copiar link</button>
-          <span class="spacer" style="flex:1"></span>
-          <button class="btn rv-del" data-rv="del">${icon('trash')} Borrar</button>
+          <div class="rv-grp">
+            <button class="btn primary" data-rv="share">${icon('ext')} Compartir</button>
+            <button class="btn" data-rv="dl">${icon('dl')} ${window.showSaveFilePicker ? 'Guardar como' : 'Descargar'}</button>
+          </div>
+          <div class="rv-grp">
+            <button class="btn${edit ? ' on' : ''}" data-rv="edit" aria-pressed="${edit}">${icon('scissors')} Editar</button>
+            ${it.has_recipe ? `<button class="btn" data-rv="studio" data-tip="Reabre este reel en el editor con sus tomas, textos y música">${icon('film')} Estudio</button>` : ''}
+            <button class="btn" data-rv="txts" data-tip="Añade textos sobre este reel sin re-montarlo">${icon('tag')} Textos</button>
+            <button class="btn icon" data-rv="more" data-tip="Más acciones" aria-label="Más acciones" aria-haspopup="menu">${icon('more')}<span class="rv-lb">Más</span></button>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn danger rv-del" data-rv="del">${icon('trash')} Borrar</button>
         </div>
-        <div class="rv-kbd mono">← → cambiar reel · espacio pausa · esc cerrar</div>
+        <div class="st-menu rv-menu" role="menu" hidden>
+          <button role="menuitem" class="st-menu-i" data-rv="copy">${icon('link')} Copiar link</button>
+          <button role="menuitem" class="st-menu-i" data-rv="ren">${icon('tag')} Renombrar</button>
+        </div>
+        <div class="rv-kbd"><span><kbd>←</kbd><kbd>→</kbd> cambiar reel</span><span><kbd>Espacio</kbd> pausa</span><span><kbd>Esc</kbd> cerrar</span></div>
       </div>`;
     // cebar el compartir en cuanto se abre: el gesto del click no se pierde
     primeShare(url, it.name, 'video/mp4').catch(() => {});
@@ -764,11 +779,27 @@ function openReelViewer(name) {
   };
   addEventListener('keydown', onKey);
 
+  // móvil: sin flechas — deslizar horizontalmente sobre el video cambia de reel
+  let swipe = null;
+  ov.addEventListener('touchstart', ev => {
+    const st = ev.target.closest('.rv-stage');
+    if (!st || list.length < 2 || ev.touches.length !== 1) { swipe = null; return; }
+    const r = st.getBoundingClientRect(), t = ev.touches[0];
+    // la franja inferior del <video> es la barra de controles: ahí el gesto es de seek
+    swipe = t.clientY < r.bottom - 64 ? { x: t.clientX, y: t.clientY } : null;
+  }, { passive: true });
+  ov.addEventListener('touchend', ev => {
+    if (!swipe) return;
+    const t = ev.changedTouches[0], dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
+    swipe = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1);
+  }, { passive: true });
+
   ov.addEventListener('input', ev => {
     if (ev.target.id !== 'rv-a' && ev.target.id !== 'rv-b') return;
     const A = +ov.querySelector('#rv-a').value, B = +ov.querySelector('#rv-b').value;
     trim = { a: Math.min(A, B - 0.3), b: Math.max(B, A + 0.3) };
-    ov.querySelector('#rv-trimlb').textContent = `${fmt.dur(trim.a)} → ${fmt.dur(trim.b)}`;
+    ov.querySelector('#rv-trimlb').textContent = `${fmt.dur(trim.a)} – ${fmt.dur(trim.b)}`;
     const v = ov.querySelector('video');
     if (v) v.currentTime = ev.target.id === 'rv-a' ? trim.a : trim.b;   // scrub en vivo
   });
@@ -787,9 +818,18 @@ function openReelViewer(name) {
       return;
     }
     const b = ev.target.closest('[data-rv]');
-    if (!b) { if (ev.target === ov || ev.target.classList.contains('rv-bg')) close(); return; }
+    if (!b) { ov.querySelector('.rv-menu')?.setAttribute('hidden', ''); if (ev.target === ov || ev.target.classList.contains('rv-bg')) close(); return; }
     const a = b.dataset.rv, it = list[idx];
     const url = `/data/reels/${encodeURIComponent(it.name)}`;
+    const menuEl = ov.querySelector('.rv-menu');
+    if (a === 'more') {
+      const r = b.getBoundingClientRect();
+      menuEl.hidden = !menuEl.hidden;
+      menuEl.style.setProperty('--mx', Math.max(8, Math.min(innerWidth - 188, r.right - 180)) + 'px');
+      menuEl.style.setProperty('--my', Math.max(8, r.top - menuEl.offsetHeight - 8) + 'px');
+      return;
+    }
+    if (menuEl) menuEl.hidden = true;
     if (a === 'close') return close();
     if (a === 'prev') return go(-1);
     if (a === 'next') return go(1);
@@ -853,7 +893,7 @@ function openReelViewer(name) {
     }
     if (a === 'copy') {
       const full = location.origin + url;
-      try { await navigator.clipboard.writeText(full); b.textContent = '✓ Copiado'; setTimeout(render, 1400); }
+      try { await navigator.clipboard.writeText(full); toast('Link copiado'); }
       catch { prompt('Copia el link:', full); }
       return;
     }
@@ -938,44 +978,44 @@ function openBurnTexts(it, onDone) {
                  ['sans', 'Helvetica'], ['condensed', 'Avenir Cond.'], ['avenir', 'Avenir'],
                  ['optima', 'Optima'], ['serif', 'Georgia'], ['mono', 'Menlo']];
   const render = () => {
-    ov.innerHTML = `<div class="modal" style="max-width:560px">
+    ov.innerHTML = `<div class="m-w560 modal">
       <div class="modal-h"><b>${icon('tag')} Textos sobre «${esc(it.name.replace(/\.[^.]+$/, ''))}»</b>
-        <button class="modal-x" aria-label="Cerrar">✕</button></div>
+        <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
         ${items.map((t, i) => `<div class="bt-item" data-bt="${i}">
           <div class="tx-row">
-            <input class="m-ipt" data-f="text" style="flex:1;font-size:14px" maxlength="120"
+            <input class="u-f1 m-ipt" data-f="text" maxlength="120"
                    placeholder="Texto ${i + 1}…" value="${esc(t.text)}">
-            ${items.length > 1 ? `<button class="btn rv-del" data-btx="${i}" style="padding:6px 9px">✕</button>` : ''}
+            ${items.length > 1 ? `<button class="btn icon sm ghost" data-btx="${i}" aria-label="Quitar texto" data-tip="Quitar texto">${icon('close')}</button>` : ''}
           </div>
           <div class="tx-row"><span>Aparece</span>
-            <input type="number" class="ctl" data-f="start" min="0" max="${dur}" step="0.1" value="${t.start}" style="width:76px">
-            <span style="width:auto">→</span>
-            <input type="number" class="ctl" data-f="end" min="0.3" max="${dur}" step="0.1" value="${t.end}" style="width:76px">
-            <span style="width:auto">s</span>
-            <select class="ctl" data-f="pos" style="flex:1">
+            <input type="number" class="u-w76 ctl" data-f="start" min="0" max="${dur}" step="0.1" value="${t.start}">
+            <span class="u-wauto">a</span>
+            <input type="number" class="u-w76 ctl" data-f="end" min="0.3" max="${dur}" step="0.1" value="${t.end}">
+            <span class="u-wauto">s</span>
+            <select class="u-f1 ctl" data-f="pos">
               <option value="top"${t.style.pos === 'top' ? ' selected' : ''}>Arriba</option>
               <option value="mid"${t.style.pos === 'mid' ? ' selected' : ''}>Centro</option>
               <option value="bottom"${t.style.pos === 'bottom' ? ' selected' : ''}>Abajo</option>
             </select></div>
           <div class="tx-row">
-            <select class="ctl" data-f="style" style="flex:1">
+            <select class="u-f1 ctl" data-f="style">
               ${STYLES.map(([k, l]) => `<option value="${k}"${t.style.style === k ? ' selected' : ''}>${l}</option>`).join('')}
             </select>
-            <select class="ctl" data-f="font" style="flex:1">
+            <select class="u-f1 ctl" data-f="font">
               ${FONTS.map(([k, l]) => `<option value="${k}"${t.style.font === k ? ' selected' : ''}>${l}</option>`).join('')}
             </select>
-            <input type="range" data-f="size" min="10" max="100" value="${t.style.size}" style="flex:1">
-            <label style="display:flex;align-items:center;gap:5px;font-size:11.5px">
+            <input type="range" data-f="size" min="10" max="100" value="${t.style.size}" class="u-f1">
+            <label class="u-chk">
               <input type="checkbox" data-f="box"${t.style.box ? ' checked' : ''}> Fondo</label>
           </div>
         </div>`).join('')}
-        <button class="btn" id="bt-add" style="width:100%">+ Otro texto</button>
+        <button class="u-w100 btn" id="bt-add">+ Otro texto</button>
       </div>
       <div class="rm-foot">
         <label class="ex-check" data-tip="Sin copia: el reel original queda con los textos">
           <input type="checkbox" id="bt-replace"> Reemplazar original</label>
-        <span class="spacer" style="flex:1"></span>
+        <span class="u-f1 spacer"></span>
         <button class="btn primary" id="bt-burn">${icon('check')} Quemar textos</button>
       </div></div>`;
   };
@@ -1085,10 +1125,25 @@ function viewOf(kind) {
   if (st.sort === 'tamano') out.sort((a, b) => b.bytes - a.bytes);
   else if (st.sort === 'nombre') out.sort((a, b) => a.name.localeCompare(b.name));
   // reels en "Recientes": respetar el orden del SERVER (nuevos primero + orden manual
-  // de .order.json). Re-ordenar por mtime aquí pisaba el "⇅ Ordenar" del usuario.
+  // de .order.json). Re-ordenar por mtime aquí pisaba el "Ordenar" del usuario.
   else if (kind !== 'reels') out.sort((a, b) => b.mtime - a.mtime);
   return out;
 }
+
+// I8 · badge de formato: dice para qué red sirve el reel, no solo sus píxeles
+function fmtBadgeOf(it) {
+  const ar = it.w && it.h ? it.w / it.h : 0;
+  if (!ar) return '';
+  return ar < 0.65 ? '<span class="chip sm on" data-tip="Vertical: Reels, TikTok, Shorts">9:16</span>'
+    : ar < 0.9 ? '<span class="chip sm" data-tip="Feed vertical">4:5</span>'
+      : ar < 1.1 ? '<span class="chip sm" data-tip="Cuadrado">1:1</span>'
+        : '<span class="chip sm" data-tip="Horizontal: YouTube, web">16:9</span>';
+}
+// menú "⋯" de las tarjetas: qué acciones van detrás del overflow según el tipo
+const CARD_MENU = {
+  reels: [['dl', 'dl', 'Descargar'], ['dup', 'copy', 'Duplicar'], ['ren', 'tag', 'Renombrar'], ['del', 'trash', 'Eliminar', 'danger']],
+  fotos: [['share', 'ext', 'Compartir'], ['dl', 'dl', 'Descargar'], ['dup', 'copy', 'Duplicar'], ['ren', 'tag', 'Renombrar'], ['del', 'trash', 'Eliminar', 'danger']],
+};
 
 function cardHTML(kind, it) {
   const enc = encodeURIComponent(it.name);
@@ -1097,14 +1152,14 @@ function cardHTML(kind, it) {
     const rel = encodeURIComponent(it.rel);
     return `<div class="m-card" data-name="${esc(it.name)}" data-rel="${esc(it.rel)}" data-kind="${esc(it.kind)}">
       <div class="m-prevbox">
-        <img loading="lazy" src="/api/photo_thumb?rel=${rel}&w=512" alt="${esc(base)}" style="cursor:pointer">
+        <img loading="lazy" src="/api/photo_thumb?rel=${rel}&w=512" alt="${esc(base)}" class="u-ptr">
         <span class="m-fmt ${it.kind === 'DNG' ? 'dng' : ''}">${esc(it.kind)}</span>
       </div>
-      <div class="m-name">${esc(base)}</div>
+      <div class="m-head"><div class="m-name" title="${esc(base)}">${esc(base)}</div></div>
       <div class="m-meta mono">${fmt.gb(it.bytes)} · ${it.date ? esc(it.date) : mdate(it.mtime)}</div>
       <div class="m-actions">
-        <button data-act="dl" data-tip="Descargar original ${esc(it.kind)}">${icon('dl')}</button>
-        <button data-act="edit" data-tip="Abrir en el editor">${icon('iso')}</button>
+        <button class="btn sm primary" data-act="edit" aria-label="Abrir en el editor">${icon('iso')} Editar</button>
+        <button class="btn sm icon" data-act="dl" data-tip="Descargar original ${esc(it.kind)}" aria-label="Descargar original ${esc(it.kind)}">${icon('dl')}</button>
       </div>
     </div>`;
   }
@@ -1114,35 +1169,64 @@ function cardHTML(kind, it) {
     ? `<video src="/data/reels/${enc}#t=0.5" preload="none" muted playsinline loop
               poster="/data/reel-posters/${encodeURIComponent(it.name.replace(/\.[^.]+$/, ''))}.jpg"></video>
        <span class="gchip m-dur" style="display:none"></span>`
-    : `<img loading="lazy" src="/data/photos/${enc}" alt="${esc(base)}" style="cursor:pointer">`;
-  // I8 · badge de formato: dice para qué red sirve el reel, no solo sus píxeles
-  const ar = it.w && it.h ? it.w / it.h : 0;
-  const fmtBadge = !ar ? '' :
-    ar < 0.65 ? `<span class="m-badge vert">9:16 · Reels/TikTok</span>` :
-    ar < 0.9 ? `<span class="m-badge">4:5 · Feed</span>` :
-    ar < 1.1 ? `<span class="m-badge">1:1 · Cuadrado</span>` :
-    `<span class="m-badge wide">16:9 · YouTube</span>`;
+    : `<img loading="lazy" src="/data/photos/${enc}" alt="${esc(base)}" class="u-ptr">`;
+  const fmtBadge = kind === 'reels' ? fmtBadgeOf(it) : '';
   return `<div class="m-card${kind === 'reels' ? ' m-reel' : ''}" data-name="${esc(it.name)}">
     <div class="m-prevbox">${prev}
       ${kind === 'reels' && it.duration_s ? `<span class="m-time mono">${fmt.dur(it.duration_s)}</span>` : ''}
-      ${kind === 'reels' && it.has_audio === false ? '<span class="m-mute" data-tip="Sin audio">🔇</span>' : ''}
+      ${kind === 'reels' && it.has_audio === false ? `<span class="m-mute" data-tip="Sin audio" role="img" aria-label="Sin audio">${icon('volumeOff')}</span>` : ''}
       ${kind === 'reels' && orderMode ? `<div class="m-ordbtns">
-        <button data-ord="-1" aria-label="Mover antes">◀</button>
-        <button data-ord="1" aria-label="Mover después">▶</button>
+        <button data-ord="-1" aria-label="Mover antes">${icon('chevL')}</button>
+        <button data-ord="1" aria-label="Mover después">${icon('chevR')}</button>
       </div>` : ''}
     </div>
-    <div class="m-name">${esc(base)}</div>
+    <div class="m-head">
+      <div class="m-name" title="${esc(base)}">${esc(base)}</div>
+      ${fmtBadge}
+    </div>
     <div class="m-meta mono">${fmt.gb(it.bytes)} · ${mdate(it.mtime)}${it.h ? ` · ${it.h}p` : ''}</div>
-    ${fmtBadge ? `<div class="m-badges">${fmtBadge}</div>` : ''}
     <div class="m-actions">
-      <button data-act="share" data-tip="${IS_IOS ? 'Compartir · guardar en Fotos' : 'Compartir'}">${icon('ext')}</button>
-      <button data-act="dl" data-tip="${window.showSaveFilePicker ? 'Guardar como…' : 'Descargar a Archivos'}">${icon('dl')}</button>
-      <button data-act="dup" data-tip="Duplicar">${icon('copy')}</button>
-      <button data-act="ren" data-tip="Renombrar">${icon('tag')}</button>
-      <button class="danger" data-act="del" data-tip="Eliminar">${icon('warn')}</button>
+      ${kind === 'reels'
+        ? `<button class="btn sm primary" data-act="share" aria-label="Compartir">${icon('ext')} ${IS_IOS ? 'Guardar o compartir' : 'Compartir'}</button>`
+        : `<button class="btn sm primary" data-act="edit" aria-label="Abrir en el editor">${icon('iso')} Editar</button>`}
+      <button class="btn sm icon" data-act="more" data-tip="Más acciones" aria-label="Más acciones" aria-haspopup="menu">${icon('more')}</button>
     </div>
   </div>`;
 }
+
+// ---- menú flotante "⋯": un solo nodo compartido, posicionado junto al botón ----
+let cardMenu = null;
+function closeCardMenu() { cardMenu?.remove(); cardMenu = null; }
+function openCardMenu(kind, card, anchor) {
+  closeCardMenu();
+  const m = document.createElement('div');
+  m.className = 'st-menu';
+  m.setAttribute('role', 'menu');
+  m.innerHTML = (CARD_MENU[kind] || []).map(([act, ic, label, tone]) =>
+    `<button role="menuitem" class="st-menu-i${tone ? ' ' + tone : ''}" data-mact="${act}">${icon(ic)} ${label}</button>`).join('');
+  document.body.appendChild(m);
+  const r = anchor.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
+  const left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w));
+  const top = r.bottom + 6 + h > innerHeight - 8 ? Math.max(8, r.top - h - 6) : r.bottom + 6;
+  m.style.setProperty('--mx', left + 'px');
+  m.style.setProperty('--my', top + 'px');
+  if (kind === 'fotos') primeShare(`/data/photos/${encodeURIComponent(card.dataset.name)}`, card.dataset.name, 'image/jpeg').catch(() => {});
+  m.addEventListener('click', ev => {
+    const it = ev.target.closest('[data-mact]');
+    if (!it) return;
+    const name = card.dataset.name;
+    closeCardMenu();
+    runCardAct(kind, name, it.dataset.mact);
+  });
+  m.querySelector('button')?.focus();
+  cardMenu = m;
+}
+document.addEventListener('pointerdown', e => {
+  if (cardMenu && !cardMenu.contains(e.target) && !e.target.closest('[data-act="more"]')) closeCardMenu();
+}, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCardMenu(); });
+addEventListener('scroll', closeCardMenu, true);
+addEventListener('resize', closeCardMenu);
 
 function renderGrid(kind) {
   const grid = document.getElementById(`grid-${kind}`);
@@ -1151,7 +1235,7 @@ function renderGrid(kind) {
   grid.querySelectorAll('video').forEach(v => { try { v.pause(); v.removeAttribute('src'); v.load(); } catch {} });
   const items = viewOf(kind);
   grid.innerHTML = items.map(it => cardHTML(kind, it)).join('') ||
-    `<div class="empty" style="grid-column:1/-1">${kind === 'reels' ? 'Aún no hay reels — exporta uno desde el Editor.' : 'Aún no hay fotos capturadas.'}</div>`;
+    `<div class="u-span-all empty">${kind === 'reels' ? 'Aún no hay reels — exporta uno desde el Editor.' : 'Aún no hay fotos capturadas.'}</div>`;
   if (kind === 'reels') grid.querySelectorAll('video').forEach(v => {
     v.addEventListener('loadedmetadata', () => {
       const chip = v.parentElement.querySelector('.m-dur');
@@ -1180,19 +1264,22 @@ async function onCardClick(kind, e) {
     }
     return;   // en modo ordenar no se abre el visor ni corren otras acciones
   }
-  const type = kind === 'reels' ? 'reel' : 'photo';
-  const url = `/data/${kind === 'reels' ? 'reels' : 'photos'}/${encodeURIComponent(name)}`;
   const btn = e.target.closest('[data-act]');
-  if (btn?.dataset.act === 'share') primeShare(url, name, kind === 'reels' ? 'video/mp4' : 'image/jpeg').catch(() => {});
-
+  if (btn?.dataset.act === 'more') { openCardMenu(kind, card, btn); return; }
   if (!btn) {
     // fotos: tap en la imagen abre el editor premium (photoeditor.js)
-    if (kind === 'fotos' && e.target.closest('.m-prevbox')) openPhotoEditor({ url, name });
+    if (kind === 'fotos' && e.target.closest('.m-prevbox')) openPhotoEditor({ url: `/data/photos/${encodeURIComponent(name)}`, name });
     // reels: tap en la tarjeta abre el VISOR dedicado (R2)
     if (kind === 'reels' && e.target.closest('.m-prevbox')) openReelViewer(name);
     return;
   }
-  const act = btn.dataset.act;
+  return runCardAct(kind, name, btn.dataset.act);
+}
+
+async function runCardAct(kind, name, act) {
+  const type = kind === 'reels' ? 'reel' : 'photo';
+  const url = `/data/${kind === 'reels' ? 'reels' : 'photos'}/${encodeURIComponent(name)}`;
+  if (act === 'edit') { openPhotoEditor({ url, name }); return; }
 
   if (act === 'dl') {
     // desktop moderno: diálogo "Guardar como" real con streaming a disco (sin blob en RAM)
@@ -1261,7 +1348,7 @@ async function onCardClick(kind, e) {
   await loadMedia();
 }
 
-// T4 · ⇅ Ordenar: primer tap entra al modo (flechas ◀ ▶ en cada tarjeta), segundo tap
+// T4 · Ordenar: primer tap entra al modo (flechas en cada tarjeta), segundo tap
 // guarda el orden completo en el server (.order.json) y sale. Flechas > drag: cero
 // conflicto con el scroll táctil del iPhone.
 document.getElementById('btn-ord')?.addEventListener('click', async e => {
@@ -1272,10 +1359,10 @@ document.getElementById('btn-ord')?.addEventListener('click', async e => {
     const qr = document.getElementById('q-reels'), sr = document.getElementById('s-reels');
     qr.value = ''; sr.value = 'recientes';
     qr.disabled = sr.disabled = true;   // filtrar/ordenar mientras se reordena mostraría un subconjunto
-    b.textContent = '✓ Guardar orden';
+    b.innerHTML = `${icon('check')} Guardar orden`;
     b.classList.add('primary');
     renderGrid('reels');
-    toast('Mueve los reels con ◀ ▶ y toca Guardar');
+    toast('Mueve los reels con las flechas y toca Guardar');
     return;
   }
   b.disabled = true;
@@ -1285,7 +1372,7 @@ document.getElementById('btn-ord')?.addEventListener('click', async e => {
   finally {
     b.disabled = false;
     orderMode = false;
-    b.textContent = '⇅ Ordenar';
+    b.innerHTML = `${icon('list')} Ordenar`;
     b.classList.remove('primary');
     document.getElementById('q-reels').disabled = false;
     document.getElementById('s-reels').disabled = false;
@@ -1321,7 +1408,23 @@ for (const kind of ['reels', 'fotos']) {
 loadMedia();
 
 // ---- módulo Trabajos ----
-pollJobs(document.getElementById('jobs'), 2500, j => {
+const JOBS_CAP = 6;      // los más recientes; el resto tras "Ver más"
+let jobsAll = false;
+const jobsEl = document.getElementById('jobs');
+function capJobs() {
+  const cards = [...jobsEl.children].filter(c => c.dataset?.jid);
+  cards.forEach((c, i) => { c.hidden = !jobsAll && i >= JOBS_CAP; });
+  const hidden = Math.max(0, cards.length - JOBS_CAP);
+  const more = document.getElementById('jobs-more');
+  const cnt = document.getElementById('jobs-count');
+  cnt.hidden = !cards.length;
+  cnt.textContent = `${cards.length} en total`;
+  more.hidden = !hidden;
+  document.getElementById('jobs-more-btn').textContent = jobsAll ? 'Ver menos' : `Ver ${hidden} más`;
+}
+jobsEl.addEventListener('jobs:paint', capJobs);
+document.getElementById('jobs-more-btn').addEventListener('click', () => { jobsAll = !jobsAll; capJobs(); });
+pollJobs(jobsEl, 2500, j => {
   // el reel exportado aparece SOLO al terminar (antes: recargar la página a mano)
   if (j.kind === 'edit') { loadMedia(); }
 });
@@ -1494,7 +1597,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     syncTools();
     exportbar.style.display = tl.length ? 'flex' : 'none';
     if (typeof autosave === 'function') autosave();   // cada cambio queda a salvo de un F5
-    emptyEl.style.display = tl.length ? 'none' : 'flex';
+    emptyEl.hidden = tl.length > 0;
+    mask.hidden = !tl.length;
     playhead = Math.min(playhead, total());
     phEl.style.display = tl.length ? '' : 'none';
     scroll.classList.toggle('empty', !tl.length);
@@ -1539,9 +1643,9 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   // catálogo de transiciones = exactamente lo que el export ffmpeg (XFADE_MAP) renderiza
   const TX_LABELS = {
     none: 'Corte', fade: 'Fundido', dissolve: 'Disolver', fadeblack: 'A negro',
-    fadewhite: 'A blanco', wipeleft: 'Cortina ←', wiperight: 'Cortina →',
-    slideup: 'Deslizar ↑', slidedown: 'Deslizar ↓', circleopen: 'Círculo abre',
-    circleclose: 'Círculo cierra', radial: 'Radial', smoothleft: 'Suave ←', pixelize: 'Pixel',
+    fadewhite: 'A blanco', wipeleft: 'Cortina izq.', wiperight: 'Cortina der.',
+    slideup: 'Deslizar arriba', slidedown: 'Deslizar abajo', circleopen: 'Círculo abre',
+    circleclose: 'Círculo cierra', radial: 'Radial', smoothleft: 'Suave izq.', pixelize: 'Pixel',
     crossfade: 'Fundido',
   };
   function renderTrack() {
@@ -1572,15 +1676,15 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       const txSet = s.transition && s.transition !== 'none';
       const trans = i > 0
         ? `<button class="tl-junction${txSet ? ' set' : ''}" data-j="${i}"
-             data-tip="${txSet ? esc((TX_LABELS[s.transition] || s.transition) + ' · ' + (s.transDur || 0.4) + 's — click para cambiar') : 'Corte seco — click para elegir transición'}">${txSet ? '⋈' : '+'}</button>` : '';
+             data-tip="${txSet ? esc((TX_LABELS[s.transition] || s.transition) + ' · ' + (s.transDur || 0.4) + 's — click para cambiar') : 'Corte seco — click para elegir transición'}" aria-label="Transición entre tomas">${txSet ? icon('layers') : icon('plus')}</button>` : '';
       const lb = esc(f?.label) || fmt.date(f?.date || 0);
       return `${trans}<div class="tl-clip${i === sel ? ' sel' : ''}" data-i="${i}" data-cid="${s.clip_id}"
                 style="width:${w}px" draggable="false">
           <div class="tl-thumbs">${thumbs}</div>
           <span class="tl-clip-lb">${lb} · ${(s.b - s.a).toFixed(1)}s</span>
           <span class="tl-badges">${badges}</span>
-          <button class="tl-x" data-x="${i}" data-tip="Quitar del timeline">✕</button>
-          <button class="tl-expand" data-expand="${i}" data-tip="Abrir en grande y elegir el tramo (doble click)">⤢</button>
+          <button class="tl-x" data-x="${i}" data-tip="Quitar del timeline" aria-label="Quitar del timeline">${icon('close')}</button>
+          <button class="tl-expand" data-expand="${i}" data-tip="Abrir en grande y elegir el tramo (doble click)" aria-label="Abrir en grande">${icon('fit')}</button>
           <div class="tl-handle l" data-i="${i}"></div>
           <div class="tl-handle r" data-i="${i}"></div>
         </div>`;
@@ -1590,7 +1694,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
 
   // 18-23 · inspector del clip seleccionado (v7 · velocidad+color+título+transición)
   function renderInspector() {
-    if (sel < 0 || !tl[sel]) { inspect.style.display = 'none'; return; }
+    if (sel < 0 || !tl[sel]) { inspect.hidden = true; return; }
     const s = tl[sel];
     // normaliza campos v7 por si el seg viene de un proyecto viejo
     s.grade = s.grade && Object.keys(s.grade).length ? { ...GRADE_NEUTRAL, ...s.grade } : { ...GRADE_NEUTRAL };
@@ -1599,7 +1703,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     if (s.reverse == null) s.reverse = false;
     if (s.freeze == null) s.freeze = 0;
     const g = (id) => document.getElementById(id);
-    inspect.style.display = '';
+    inspect.hidden = false;
     g('tli-io').textContent =
       `In ${fmt.dur(s.a)} · Out ${fmt.dur(s.b)} · dur ${segDur(s).toFixed(1)}s (fuente ${(s.b - s.a).toFixed(1)}s)`;
     // velocidad: chips + slider + input numérico sincronizados
@@ -1641,7 +1745,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const at = clipAt(playhead);
     const canRazor = has && at && at.local > 0.1 && at.local < segDur(at.clip) - 0.1;
     const set = (name, on) => {
-      const b = document.querySelector(`.tl-tool[data-tool="${name}"]`);
+      const b = document.querySelector(`.tb [data-tool="${name}"]`);
       if (b) b.toggleAttribute('disabled', !on);
     };
     set('razor', canRazor);
@@ -1649,8 +1753,13 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     set('dup', eff >= 0); set('del', eff >= 0); set('left', eff > 0); set('right', eff >= 0 && eff < tl.length - 1);
     set('clear', has); set('fit', has);
     set('undo', undoStack.length > 0); set('redo', redoStack.length > 0);
-    document.querySelector('.tl-tool[data-tp="mute"]').innerHTML = (muted ? icon('volumeOff') : icon('volume')) + '<span class="tl-lb">Audio</span>';
-    document.querySelector('.tl-tool[data-tp="loop"]').classList.toggle('on', loop);
+    const muteBtn = document.querySelector('[data-tp="mute"]');
+    muteBtn.innerHTML = muted ? icon('volumeOff') : icon('volume');
+    muteBtn.classList.toggle('on', !muted);
+    muteBtn.setAttribute('aria-pressed', String(!muted));
+    const loopBtn = document.querySelector('[data-tp="loop"]');
+    loopBtn.classList.toggle('on', loop);
+    loopBtn.setAttribute('aria-pressed', String(loop));
   }
 
   // ---- máscara de aspecto (31) ----
@@ -1833,8 +1942,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   function togglePlay() { playing ? pause() : play(); }
   window.__abEditorPause = () => { if (playing) pause(); else { try { musicEl.pause(); } catch {} } };
   function setPlayIcon() {
-    const b = document.querySelector('.tl-tool[data-tp="play"]');
-    b.innerHTML = (playing ? icon('pause') : icon('play')) + '<span class="tl-lb">Play</span>';
+    const b = document.querySelector('[data-tp="play"]');
+    b.innerHTML = (playing ? icon('pause') : icon('play')) + `<span>${playing ? 'Pausa' : 'Play'}</span>`;
   }
 
   // ---- añadir / insertar clips ----
@@ -1945,7 +2054,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
                    style="left:${L}px;width:${W}px" data-tip="${esc(t.text)} · ${fmt.dur(t.start)}–${fmt.dur(t.end)}">
         <span class="tl-txt-h l" data-txth="l"></span>
         <b>${esc(t.text.slice(0, 26))}</b>
-        <button class="tl-txt-x" data-txtx="${i}" aria-label="Quitar">✕</button>
+        <button class="tl-txt-x" data-txtx="${i}" aria-label="Quitar texto">${icon('close')}</button>
         <span class="tl-txt-h r" data-txth="r"></span>
       </div>`;
     }).join('');
@@ -2001,10 +2110,10 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
     const S = { ...TEXT_DEF, ...(t.style || {}) };
-    ov.innerHTML = `<div class="modal" style="max-width:520px">
-      <div class="modal-h"><b>${icon('tag')} Texto</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+    ov.innerHTML = `<div class="m-w520 modal">
+      <div class="modal-h"><b>${icon('tag')} Texto</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
-        <input class="m-ipt" id="tx-t" style="width:100%;font-size:15px" maxlength="120" value="${esc(t.text)}">
+        <input class="u-w100 m-ipt" id="tx-t" maxlength="120" value="${esc(t.text)}">
         <div class="mlb">Cuándo aparece</div>
         <div class="tx-row"><span>Entra</span>
           <input type="range" id="tx-a" min="0" max="${total().toFixed(1)}" step="0.1" value="${t.start}">
@@ -2014,18 +2123,18 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
           <b class="mono" id="tx-bv">${fmt.dur(t.end)}</b></div>
         <div class="mlb">Estilo</div>
         <div class="tx-row"><span>Estilo</span>
-          <select class="ctl" id="tx-style" style="flex:1">
+          <select class="u-f1 ctl" id="tx-style">
             ${[['clean', 'Limpio'], ['bold', 'Bold · mayúsculas'], ['kinetic', 'Kinético · cine'],
                ['lower', 'Lower third'], ['minimal', 'Minimal']].map(([k, l]) =>
               `<option value="${k}"${S.style === k ? ' selected' : ''}>${l}</option>`).join('')}
           </select>
-          <select class="ctl" id="tx-anim" style="flex:1" data-tip="Cómo entra el texto">
+          <select class="u-f1 ctl" id="tx-anim" data-tip="Cómo entra el texto">
             ${[['', 'Anim · auto'], ['fade', 'Fundido'], ['pop', 'Pop'], ['slide', 'Sube'],
-               ['slideL', 'Desliza ←'], ['none', 'Sin animación']].map(([k, l]) =>
+               ['slideL', 'Desliza lateral'], ['none', 'Sin animación']].map(([k, l]) =>
               `<option value="${k}"${(S.anim || '') === k ? ' selected' : ''}>${l}</option>`).join('')}
           </select></div>
         <div class="tx-row"><span>Fuente</span>
-          <select class="ctl" id="tx-font" style="flex:1">
+          <select class="u-f1 ctl" id="tx-font">
             ${[['din', 'DIN Condensed · cine'], ['sansbold', 'Arial Bold · impacto'],
                ['black', 'Arial Black · máximo'], ['sans', 'Helvetica Neue'],
                ['condensed', 'Avenir Condensed'], ['avenir', 'Avenir Next'],
@@ -2033,21 +2142,21 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
               `<option value="${k}"${S.font === k ? ' selected' : ''}>${l}</option>`).join('')}
           </select></div>
         <div class="tx-row"><span>Posición</span>
-          <select class="ctl" id="tx-pos" style="flex:1">
+          <select class="u-f1 ctl" id="tx-pos">
             <option value="top"${S.pos === 'top' ? ' selected' : ''}>Arriba</option>
             <option value="mid"${S.pos === 'mid' ? ' selected' : ''}>Centro</option>
             <option value="bottom"${S.pos === 'bottom' ? ' selected' : ''}>Abajo</option>
           </select>
           <span>Tamaño</span>
-          <input type="range" id="tx-size" min="10" max="100" step="1" value="${S.size}" style="flex:1">
+          <input type="range" id="tx-size" min="10" max="100" step="1" value="${S.size}" class="u-f1">
         </div>
-        <div class="tx-row"><span>Ajuste ↕</span>
+        <div class="tx-row"><span>Ajuste vertical</span>
           <input type="range" id="tx-dy" min="-20" max="20" step="1" value="${+S.dy || 0}"
                  data-tip="Sube o baja el texto en pasos del 1% de la pantalla">
           <b class="mono" id="tx-dyv">${(+S.dy || 0)}%</b></div>
         <div class="tx-row"><span>Color</span>
-          <input type="color" class="ctl" id="tx-color" value="#${esc(S.color)}" style="width:52px;padding:2px">
-          <label style="display:flex;align-items:center;gap:6px;font-size:11.5px">
+          <input type="color" class="u-color ctl" id="tx-color" value="#${esc(S.color)}">
+          <label class="u-chk">
             <input type="checkbox" id="tx-box"${S.box ? ' checked' : ''}> Fondo</label>
           <input type="range" id="tx-boxa" min="0.1" max="0.85" step="0.05" value="${+S.boxAlpha || 0.45}"
                  style="flex:1${S.box ? '' : ';opacity:.35'}" data-tip="Opacidad del fondo">
@@ -2055,7 +2164,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       </div>
       <div class="rm-foot">
         <span class="rm-count mono">se quema en el video al exportar</span>
-        <span class="spacer" style="flex:1"></span>
+        <span class="u-f1 spacer"></span>
         <button class="btn rv-del" data-tx="del">${icon('trash')} Quitar</button>
         <button class="btn primary" data-tx="ok">Listo</button>
       </div></div>`;
@@ -2298,7 +2407,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const render = () => {
       const m = music || {};
       ovr.innerHTML = `<div class="modal mus-modal">
-        <div class="modal-h"><b>${icon('volume')} Música del reel</b><button class="modal-x" aria-label="Cerrar">✕</button></div>
+        <div class="modal-h"><b>${icon('volume')} Música del reel</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
         <div class="modal-b">
           <div class="mus-drop" id="mus-drop">
             <b>${icon('dl')} Sube tu pista</b>
@@ -2317,7 +2426,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
                 <svg class="mus-wave" viewBox="0 0 560 42" preserveAspectRatio="none"><path d="${wavePath(t.peaks)}"/></svg>
               </div>
               <span class="mono mus-d">${fmt.dur(t.duration_s)}</span>
-              <button class="mus-del" data-del="${esc(t.name)}" data-tip="Quitar de la biblioteca">✕</button>
+              <button class="mus-del" data-del="${esc(t.name)}" data-tip="Quitar de la biblioteca" aria-label="Quitar de la biblioteca">${icon('close')}</button>
             </div>`).join('') || '<p class="footer-note">Todavía no hay pistas — sube una arriba.</p>'}
           </div>
           ${music ? `
@@ -2356,7 +2465,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         </div>
         <div class="rm-foot">
           <span class="rm-count mono">${music ? `${esc(music.name)} · se mezcla al exportar` : 'Sin música — el reel usará solo el audio original'}</span>
-          <span class="spacer" style="flex:1"></span>
+          <span class="u-f1 spacer"></span>
           ${music ? '<button class="btn" id="mu-clear">Quitar música</button>' : ''}
           <button class="btn primary" id="mu-ok">Listo</button>
         </div>
@@ -2385,7 +2494,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         render();
       } catch (e) {
         drop.classList.remove('busy');
-        drop.querySelector('b').textContent = `✕ ${String(e.message || e).slice(0, 60)}`;
+        drop.querySelector('b').textContent = `No se pudo subir: ${String(e.message || e).slice(0, 50)}`;
       }
       busy = false;
     };
@@ -2711,7 +2820,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       <div class="rm-peek-f">
         <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
         <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m</span>
-        <span class="spacer" style="flex:1"></span>
+        <span class="u-f1 spacer"></span>
         <button class="btn sm" data-peek-close>Cerrar</button>
       </div>
     </div>`;
@@ -2776,19 +2885,19 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       ovr.innerHTML = `<div class="modal rm-modal">
         <div class="modal-h"><b>${icon('spark')} Crear reel</b>
           <span class="rm-steps"><i class="${st.step === 1 ? 'on' : ''}">1 · Tomas</i><i class="${st.step === 2 ? 'on' : ''}">2 · Receta</i></span>
-          <button class="modal-x" aria-label="Cerrar">✕</button></div>
+          <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
         <div class="modal-b">
         ${st.step === 1 ? `
           <div class="rm-bar">
-            <label class="search" style="flex:1"><input id="rm-q" placeholder="Buscar toma, fecha o tag AI…" value="${esc(st.q)}"></label>
+            <label class="u-f1 search"><input id="rm-q" placeholder="Buscar toma, fecha o tag AI…" value="${esc(st.q)}"></label>
             <button class="btn sm" id="rm-all">Todas (${vis.length})</button>
             <button class="btn sm" id="rm-none">Ninguna</button>
           </div>
           <div class="rm-filters">
-            <button class="chip${st.only === 'top' ? ' on' : ''}" data-only="top">✨ Score 7+</button>
+            <button class="chip${st.only === 'top' ? ' on' : ''}" data-only="top">${icon('star')} Score 7+</button>
             <button class="chip${st.only === 'ai' ? ' on' : ''}" data-only="ai">Con análisis AI</button>
             <button class="chip${st.only === 'long' ? ' on' : ''}" data-only="long">Más de 10s</button>
-            <span class="spacer" style="flex:1"></span>
+            <span class="u-f1 spacer"></span>
             <span class="rm-hint mono">${vis.length} de ${pool().length} tomas</span>
           </div>
           ${groupsOf(vis).map(([day, fs]) => `
@@ -2808,7 +2917,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
               <div class="rm-thumb" data-hover="${esc(f.clip_id)}">
                 <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="" width="320" height="180">
                 <span class="rm-check">${ord > 0 ? ord : ''}</span>
-                ${sc ? `<span class="rm-sc ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}">✨${sc}</span>` : ''}
+                ${sc ? `<span class="rm-sc ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}">${icon('star')}${sc}</span>` : ''}
                 <button class="rm-eye" data-eye="${esc(f.clip_id)}" aria-label="Ver toma">${icon('play')}</button>
               </div>
               <div class="rm-lb"><b>${esc((f.label || f.time || fmt.date(f.date)).slice(0, 24))}</b><em>${fmt.dur(f.duration_s)}</em></div>
@@ -2848,7 +2957,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         </div>
         <div class="rm-foot">
           <span class="rm-count mono">${pick.size ? `${pick.size} toma${pick.size === 1 ? '' : 's'} · ${estimate()}` : 'Elige al menos una toma'}</span>
-          <span class="spacer" style="flex:1"></span>
+          <span class="u-f1 spacer"></span>
           ${st.step === 2 ? '<button class="btn" id="rm-back">‹ Tomas</button>' : ''}
           <button class="btn primary" id="rm-go" ${pick.size ? '' : 'disabled'}>${st.step === 1 ? 'Continuar ›' : `${icon('spark')} Crear reel`}</button>
         </div>
@@ -3191,7 +3300,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   });
 
   // ================= transporte (32-34) =================
-  document.getElementById('tl-transport').addEventListener('click', e => {
+  document.getElementById('tl-toolbar').addEventListener('click', e => {
     const b = e.target.closest('[data-tp]'); if (!b) return;
     const tp = b.dataset.tp;
     if (tp === 'play') togglePlay();
@@ -3477,7 +3586,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     const OPTS = ['none', 'fade', 'dissolve', 'fadeblack', 'fadewhite', 'wipeleft', 'wiperight',
                   'slideup', 'slidedown', 'circleopen', 'circleclose', 'radial', 'smoothleft', 'pixelize'];
     pop.innerHTML = `
-      <div class="tx-pop-h"><b>Transición entre toma ${j} y ${j + 1}</b><button class="modal-x">✕</button></div>
+      <div class="tx-pop-h"><b>Transición entre toma ${j} y ${j + 1}</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="tx-grid">${OPTS.map(t => `
         <button class="tx-opt${cur() === t || (t === 'fade' && cur() === 'crossfade') ? ' on' : ''}" data-tx="${t}">
           <span class="tx-demo tx-${t}"><i></i></span><b>${TX_LABELS[t]}</b>
@@ -3514,7 +3623,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         pushUndo();
         for (let i = 1; i < tl.length; i++) { tl[i].transition = cur(); tl[i].transDur = curDur(); }
         renderTrack();
-        pop.querySelector('.tx-all').textContent = '✓ Aplicada a todas';
+        pop.querySelector('.tx-all').textContent = 'Aplicada a todas';
         setTimeout(() => pop.remove(), 700);
       }
     });
@@ -3548,8 +3657,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
           <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
           <span class="mono">corte ${i + 1} de ${tl.length} · fuente ${fmt.dur(f.duration_s)}</span>
         </div>
-        <span class="spacer" style="flex:1"></span>
-        <button class="rv-x" data-ce="close" aria-label="Cerrar">✕</button>
+        <span class="u-f1 spacer"></span>
+        <button class="btn icon ghost rv-x" data-ce="close" aria-label="Cerrar">${icon('close')}</button>
       </div>
       <div class="ce-stage">
         <video src="${DATA}/proxies/${encodeURIComponent(s.clip_id)}.mp4" playsinline preload="auto" muted></video>
@@ -3581,7 +3690,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       </div>` : ''}
       <div class="ce-f">
         <button class="btn" data-ce="prev" ${i === 0 ? 'disabled' : ''}>‹ Corte anterior</button>
-        <span class="spacer" style="flex:1"></span>
+        <span class="u-f1 spacer"></span>
         <button class="btn" data-ce="cancel">Cancelar</button>
         <button class="btn primary" data-ce="ok">Aplicar</button>
         <button class="btn" data-ce="next" ${i === tl.length - 1 ? 'disabled' : ''}>Siguiente corte ›</button>

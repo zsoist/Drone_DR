@@ -4,73 +4,71 @@ let flights = [], ai = {}, semRank = null, models = new Set();
 let state = { q: '', tier: 'all', sort: 'date', scene: null, semantic: false, spot: null, has: new Set(),
               view: localStorage.getItem('ab.vview') || 'grid' };
 
+const FILTER_ICON = '<svg class="ic" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M6 10h8M8.5 14.5h3"/></svg>';
+const TIERS = [['all', 'Todos'], ['full', 'Full'], ['standard', 'Standard'], ['skim', 'Skim'], ['archived', 'Archivados']];
+const TIER_TIPS = { all: 'Todos los tiers', full: 'Con video y análisis AI', standard: 'Análisis AI sin proxy', skim: 'Solo telemetría', archived: 'Vuelos archivados' };
+
+main.classList.add('vf-page');
 main.innerHTML = `
-  <div class="page-head"><h1>Vuelos</h1><span class="count" id="count"></span></div>
-  <div class="glass tbcard tb2">
-    <div class="tb-row">
-      <label class="search" data-tip="Busca por fecha, lugar o cualquier tag del análisis AI">${icon('search')}<input id="q" type="search" placeholder="Buscar por fecha, lugar, tags AI…" autocomplete="off"><kbd>/</kbd></label>
-      <button class="chip" id="sem-toggle" data-tip="Busca por significado con embeddings — escribe y pulsa Enter">${icon('spark')} Semántica</button>
-      <span class="spacer" style="flex:1"></span>
-      <label class="eb-field"><span>Tier</span>
-      <select class="ctl" id="tier" aria-label="Filtrar por tier">
-        <option value="all">Todos</option>
-        <option value="full">Full — con video</option>
-        <option value="standard">Standard</option>
-        <option value="skim">Skim</option>
-        <option value="archived">Archivados</option>
-      </select></label>
-      <label class="eb-field"><span>Orden</span>
-      <select class="ctl" id="sort" aria-label="Ordenar">
-        <option value="date">Más recientes</option>
-        <option value="dur">Más largos</option>
-        <option value="dist">Más distancia</option>
-        <option value="alt">Más altura</option>
-        <option value="score">Mejor score AI</option>
-      </select></label>
-    </div>
-    <div class="tb-div"></div>
-    <div class="tb-row">
-      <span class="tb-lb">Filtros</span>
-      <button class="chip" data-qf="video" data-tip="Solo clips con streaming">${icon('play')} Video</button>
-      <button class="chip" data-qf="model" data-tip="Con modelo 3D procesado">${icon('cube')} 3D</button>
-      <button class="chip" data-qf="ai" data-tip="Con análisis AI">${icon('spark')} AI</button>
-      <button class="chip" data-qf="alto" data-tip="Altura máxima sobre 100 m">${icon('mountain')} +100 m</button>
-      <button class="chip" data-qf="4k60" data-tip="4K a 60 cuadros">${icon('film')} 4K60</button>
-      <button class="chip" data-qf="largo" data-tip="Duración sobre 1 minuto">${icon('clock')} +1 min</button>
-      <button class="chip" data-qf="top" data-tip="Score AI de 6 o más">${icon('spark')} Score 6+</button>
-      <span class="spacer" style="flex:1"></span>
-      <span class="tb-lb">Vista</span>
-      <div class="seg" role="group" aria-label="Vista">
-      <button data-view="grid" class="on" data-tip="Cuadrícula" aria-label="Vista de cuadrícula">${icon('grid')}</button>
-      <button data-view="list" data-tip="Lista compacta" aria-label="Vista de lista">${icon('list')}</button>
-      <button data-view="map" data-tip="Rutas en el mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
-      <button data-view="places" data-tip="Agrupados por lugar de despegue">${icon('pin')}<span class="seg-lb">Lugares</span></button>
-      <button data-view="dates" data-tip="Agrupados por fecha">${icon('cal')}<span class="seg-lb">Fechas</span></button>
+  <div class="page-head"><h1>Vuelos</h1><span class="count" id="count" aria-live="polite"></span></div>
+  <div class="vf-bar" role="search">
+    <label class="search vf-search">${icon('search')}<input id="q" type="search" placeholder="Buscar vuelos" aria-label="Buscar vuelos" autocomplete="off">
+      <button type="button" class="vf-sem" id="sem-toggle" aria-pressed="false" aria-label="Búsqueda semántica" data-tip="Semántica: busca por significado con embeddings — escribe y pulsa Enter">${icon('spark')}</button>
+      <kbd>/</kbd></label>
+    <button type="button" class="btn vf-filters-btn" id="vf-filters-btn" aria-expanded="false" aria-controls="vf-more">${FILTER_ICON} Filtros <span class="vf-badge" id="vf-badge" hidden></span></button>
+    <div class="vf-more" id="vf-more">
+      <div class="vf-tools">
+        <select class="ctl" id="sort" aria-label="Ordenar">
+          <option value="date">Más recientes</option>
+          <option value="dur">Más largos</option>
+          <option value="dist">Más distancia</option>
+          <option value="alt">Más altura</option>
+          <option value="score">Mejor score AI</option>
+        </select>
+        <div class="seg" role="group" aria-label="Vista">
+          <button data-view="grid" class="on" data-tip="Cuadrícula" aria-label="Vista de cuadrícula">${icon('grid')}</button>
+          <button data-view="list" data-tip="Lista compacta" aria-label="Vista de lista">${icon('list')}</button>
+          <button data-view="map" data-tip="Rutas en el mapa" aria-label="Vista de mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
+          <button data-view="places" data-tip="Agrupados por lugar de despegue" aria-label="Agrupar por lugares">${icon('pin')}<span class="seg-lb">Lugares</span></button>
+          <button data-view="dates" data-tip="Agrupados por fecha" aria-label="Agrupar por fechas">${icon('cal')}<span class="seg-lb">Fechas</span></button>
+        </div>
+      </div>
+      <div class="vf-chiprow" role="toolbar" aria-label="Filtros">
+        ${TIERS.map(([k, l]) => `<button class="chip ${k === 'all' ? 'on' : ''}" data-tier="${k}" aria-pressed="${k === 'all'}" data-tip="${TIER_TIPS[k]}">${l}</button>`).join('')}
+        <span class="vf-div" aria-hidden="true"></span>
+        <button class="chip" data-qf="video" aria-pressed="false" data-tip="Solo clips con streaming">${icon('play')} Video</button>
+        <button class="chip" data-qf="model" aria-pressed="false" data-tip="Con modelo 3D procesado">${icon('cube')} 3D</button>
+        <button class="chip" data-qf="ai" aria-pressed="false" data-tip="Con análisis AI">${icon('spark')} AI</button>
+        <button class="chip" data-qf="alto" aria-pressed="false" data-tip="Altura máxima sobre 100 m">${icon('mountain')} +100 m</button>
+        <button class="chip" data-qf="4k60" aria-pressed="false" data-tip="4K a 60 cuadros">${icon('film')} 4K60</button>
+        <button class="chip" data-qf="largo" aria-pressed="false" data-tip="Duración sobre 1 minuto">${icon('clock')} +1 min</button>
+        <button class="chip" data-qf="top" aria-pressed="false" data-tip="Score AI de 6 o más">${icon('spark')} Score 6+</button>
+        <span class="vf-scenes" id="scene-chips"></span>
       </div>
     </div>
-    <div class="chips tb-scenes" id="scene-chips"></div>
   </div>
-  <div class="grid" id="grid">${'<div class="sk" style="aspect-ratio:16/11"></div>'.repeat(6)}</div>
-  <div id="mapview" style="display:none">
-    <div class="panel" style="position:relative">
-      <div class="tool-row" style="padding:10px 14px;border-bottom:1px solid var(--line)">
+  <div class="grid" id="grid">${'<div class="sk vf-sk"></div>'.repeat(6)}</div>
+  <div id="mapview" hidden>
+    <div class="panel vf-mappanel">
+      <div class="tool-row vf-maptools">
         <span class="tool-lb">Color</span>
         <button class="chip on" data-mc="uni">Ruta</button>
         <button class="chip" data-mc="alt">Altura</button>
         <button class="chip" data-mc="year">Año</button>
       </div>
-      <div id="vmap" style="height:calc(100dvh - 380px);min-height:400px"></div>
-      <button class="map-recenter" id="vm-fit" title="Ver todo">${icon('map')}</button>
+      <div id="vmap" class="vf-map"></div>
+      <button class="map-recenter" id="vm-fit" title="Ver todo" aria-label="Ver todos los vuelos">${icon('map')}</button>
     </div>
-    <p class="footer-note" style="margin-top:10px">Los filtros y la búsqueda de arriba también
+    <p class="footer-note vf-note">Los filtros y la búsqueda de arriba también
     filtran el mapa. Click en una ruta o pin de lugar para el preview.</p>
   </div>
   <p class="footer-note">Los clips en tier full incluyen video 1080p; standard tienen análisis AI sin proxy; skim solo telemetría. Procesado localmente en el Mac Mini M4.</p>`;
 
 function setHTML(el, html) {
-  if (el.__h === html) return;
+  if (el.__h === html) return false;
   el.__h = html;
   el.innerHTML = html;
+  return true;
 }
 
 
@@ -103,37 +101,83 @@ const SORTS = {
   score: (a, b) => (ai[b.clip_id]?.travel_score || 0) - (ai[a.clip_id]?.travel_score || 0),
 };
 
+// Título corto: etiqueta manual > arranque del resumen AI (sin muletilla "El vuelo inicia con…") > fecha.
+function shortTitle(text) {
+  let t = String(text || '').trim();
+  t = t.replace(/^(el|la|este|esta)\s+(vuelo|dron|drone|clip|video|metraje|material)(\s+\S+)??\s+(inicia|comienza|muestra|captura|realiza|presenta|sobrevuela|ofrece|documenta|registra|recorre|revela)(\s+(con|sobre|en))?\s+/i, '');
+  t = t.replace(/^(un|una|unos|unas)\s+/i, '');
+  t = t.split(/[,.;:]| y | para | mientras | luego | donde /i)[0].trim();
+  if (t.length > 64) t = t.slice(0, 64).replace(/\s+\S*$/, '') + '…';
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+}
+const flightTitle = (f, a) => f.label || shortTitle(a?.summary) || fmt.date(f.date);
+const metric = (ico, label, value) =>
+  `<span title="${label}">${icon(ico)}<b>${value}</b><span class="vf-sr">${label}</span></span>`;
+
 function card(f) {
   const a = ai[f.clip_id];
+  const title = flightTitle(f, a);
+  const dated = title !== fmt.date(f.date);
   return `
   <a class="card scrub" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
     <div class="thumb">
       <img src="${DATA}/thumbs/${f.clip_id}.jpg" alt="" loading="lazy" width="960" height="540">
       <span class="tierdot ${f.tier}"><i></i>${f.tier}</span>
-      ${a?.travel_score != null ? `<span class="score-pill">${a.travel_score}/10</span>` : ''}
+      ${a?.travel_score != null ? `<span class="score-pill" title="Score AI">${a.travel_score}/10</span>` : ''}
       <span class="ovl mono">${fmt.dur(f.duration_s)}</span>
       ${f.has_proxy ? `<span class="play-badge" data-tip="Ver vuelo con streaming">${icon('play')}</span>` : ''}
       <span class="scrub-line"></span>
-      <button class="rename-btn" data-rename="${f.clip_id}" title="Renombrar">${icon('tag')}</button>
+      <button class="rename-btn" data-rename="${f.clip_id}" title="Renombrar" aria-label="Renombrar vuelo">${icon('tag')}</button>
     </div>
     <div class="body">
-      <div class="t"><span>${esc(f.label) || fmt.date(f.date)}</span><time>${f.label ? fmt.date(f.date) + ' ' : ''}${f.time}</time></div>
+      <div class="t"><span class="vf-title">${esc(title)}</span></div>
+      <div class="vf-when"><time>${dated ? fmt.date(f.date) + ' · ' : ''}${f.time}</time></div>
       <div class="metrics">
-        <span>${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b></span>
-        <span>${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b></span>
-        <span>${icon('film')}<b>${(f.resolution || '').split('x')[1] || '?'}p${Math.round(f.fps || 0)}</b></span>
+        ${metric('route', 'Distancia', fmt.km(f.stats.distance_m || 0))}
+        ${metric('mountain', 'Altura máxima', Math.round(f.stats.max_rel_alt_m || 0) + ' m')}
+        ${metric('film', 'Resolución y fps', ((f.resolution || '').split('x')[1] || '?') + 'p' + Math.round(f.fps || 0))}
       </div>
-      ${a?.summary ? `<p class="ai-line">${esc(a.summary)}</p>` : ''}
+      ${f.label && a?.summary ? `<p class="ai-line">${esc(a.summary)}</p>` : ''}
     </div>
   </a>`;
 }
 
 function chipsRow() {
   const scenes = [...new Set(flights.map(f => ai[f.clip_id]?.scene_type).filter(Boolean))];
+  const clear = state.spot && spots[state.spot]
+    ? `<button class="chip on" data-clearspot aria-label="Quitar lugar ${esc(spots[state.spot].name)}">${icon('close')} ${esc(spots[state.spot].name)}</button>` : '';
   setHTML(document.getElementById('scene-chips'),
-    (state.spot && spots[state.spot] ? `<button class="chip on" data-clearspot>✕ ${esc(spots[state.spot].name)}</button>` : '') +
+    (clear || scenes.length ? '<span class="vf-div" aria-hidden="true"></span>' : '') + clear +
     scenes.map(sc =>
-      `<button class="chip ${state.scene === sc ? 'on' : ''}" data-scene="${esc(sc)}">${esc(sc)}</button>`).join(''));
+      `<button class="chip ${state.scene === sc ? 'on' : ''}" data-scene="${esc(sc)}" aria-pressed="${state.scene === sc}">${esc(sc)}</button>`).join(''));
+}
+
+// Entrada de tarjetas: solo en el primer montaje y solo las del primer viewport.
+// Escalón de 30 ms (máx. 4 pasos = 120 ms) + 200 ms de animación = 320 ms en total.
+let entered = false;
+function enterOnce(grid) {
+  if (entered) return;
+  entered = true;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const vh = innerHeight;
+  [...grid.querySelectorAll('.card')]
+    .filter(c => c.getBoundingClientRect().top < vh)
+    .slice(0, 12)
+    .forEach((c, i) => { c.style.setProperty('--in-delay', `${Math.min(i, 4) * 30}ms`); c.classList.add('vf-in'); });
+}
+
+function syncControls() {
+  const n = state.has.size + (state.tier !== 'all' ? 1 : 0) + (state.scene ? 1 : 0) + (state.spot ? 1 : 0);
+  const badge = document.getElementById('vf-badge');
+  badge.hidden = !n; badge.textContent = n;
+  document.querySelectorAll('[data-tier]').forEach(b => {
+    const on = b.dataset.tier === state.tier;
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+  });
+  document.querySelectorAll('[data-qf]').forEach(b => {
+    const on = state.has.has(b.dataset.qf);
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+  });
 }
 
 function render() {
@@ -144,20 +188,19 @@ function render() {
   const grid = document.getElementById('grid');
   const mapv = document.getElementById('mapview');
   const isMap = state.view === 'map';
-  grid.style.display = isMap ? 'none' : '';
-  mapv.style.display = isMap ? '' : 'none';
+  grid.hidden = isMap;
+  mapv.hidden = !isMap;
   chipsRow();
+  syncControls();
   if (isMap) { renderMap(list); return; }
   if (state.view === 'places') { renderPlaces(list); return; }
   if (state.view === 'dates') { renderDates(list); return; }
   grid.className = `grid ${state.view === 'list' ? 'list' : ''}`;
-  grid.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
-  grid.innerHTML = list.length ? list.map(card).join('') :
-    `<div class="empty" style="grid-column:1/-1">${icon('search')}<p>Sin resultados para esa búsqueda.</p></div>`;
-  grid.querySelectorAll('.card').forEach((c, i) => {
-    c.style.animation = `cardIn 340ms cubic-bezier(.25,.1,.25,1) both ${Math.min(i * 35, 420)}ms`;
-  });
-  attachScrub(grid);
+  if (setHTML(grid, list.length ? list.map(card).join('') :
+    `<div class="empty vf-span">${icon('search')}<p>Sin resultados para esa búsqueda.</p></div>`)) {
+    enterOnce(grid);
+    attachScrub(grid);
+  }
 }
 
 // ---------- lugares: spots agrupados por punto de despegue (~500 m) ----------
@@ -183,29 +226,30 @@ function renderPlaces(list) {
     .filter(sp => sp.flights.length)
     .sort((a, b) => b.flights.length - a.flights.length);
   grid.className = 'grid';
-  grid.innerHTML = visible.length ? visible.map((sp, i) => {
+  grid.__h = null;
+  grid.innerHTML = visible.length ? visible.map(sp => {
     const fs = sp.flights;
     const dates = fs.map(f => f.date).sort();
     const dist = fs.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
     const dur = fs.reduce((a, f) => a + f.duration_s, 0);
     const best = [...fs].sort((a, b) => (ai[b.clip_id]?.travel_score || 0) - (ai[a.clip_id]?.travel_score || 0))[0];
     return `
-    <a class="card" data-spotcard="${esc(sp.key)}" style="animation:cardIn 340ms var(--ease) both ${i * 45}ms">
+    <a class="card" data-spotcard="${esc(sp.key)}">
       <div class="thumb">
         <img src="${DATA}/thumbs/${esc(best.clip_id)}.jpg" alt="" loading="lazy" width="960" height="540">
         <span class="ovl mono">${fs.length} ${fs.length === 1 ? 'vuelo' : 'vuelos'}</span>
       </div>
       <div class="body">
-        <div class="t"><span>${esc(sp.name)}</span>
-          <time>${fmt.date(dates[0])}${dates.length > 1 ? ' – ' + fmt.date(dates[dates.length - 1]) : ''}</time></div>
+        <div class="t"><span class="vf-title">${esc(sp.name)}</span></div>
+        <div class="vf-when"><time>${fmt.date(dates[0])}${dates.length > 1 ? ' – ' + fmt.date(dates[dates.length - 1]) : ''}</time></div>
         <div class="metrics">
-          <span>${icon('route')}<b>${fmt.km(dist)}</b></span>
-          <span>${icon('clock')}<b>${fmt.hours(dur)}</b></span>
-          <span>${icon('mountain')}<b>${Math.round(Math.max(...fs.map(f => f.stats.max_rel_alt_m || 0)))} m</b></span>
+          ${metric('route', 'Distancia total', fmt.km(dist))}
+          ${metric('clock', 'Tiempo en el aire', fmt.hours(dur))}
+          ${metric('mountain', 'Altura máxima', Math.round(Math.max(...fs.map(f => f.stats.max_rel_alt_m || 0))) + ' m')}
         </div>
       </div>
     </a>`;
-  }).join('') : `<div class="empty" style="grid-column:1/-1">${icon('pin')}<p>Sin lugares con esos filtros.</p></div>`;
+  }).join('') : `<div class="empty vf-span">${icon('pin')}<p>Sin lugares con esos filtros.</p></div>`;
 }
 
 // ---------- fechas: cronología agrupada por mes ----------
@@ -215,15 +259,16 @@ function renderDates(list) {
   list.forEach(f => { (groups[(f.date || 'sin-fecha').slice(0, 7)] ??= []).push(f); });
   const months = Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
   grid.className = 'grid list';
+  grid.__h = null;
   grid.innerHTML = months.length ? months.map(([m, fs]) => {
     const name = new Date(m + '-15').toLocaleDateString('es', { month: 'long', year: 'numeric' });
     const dist = fs.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
     const dur = fs.reduce((a, f) => a + f.duration_s, 0);
-    return `<div class="month-head" style="grid-column:1/-1">
+    return `<div class="month-head vf-span">
       <b>${esc(name.charAt(0).toUpperCase() + name.slice(1))}</b>
       <span class="mono">${fs.length} vuelos · ${fmt.km(dist)} · ${fmt.hours(dur)}</span></div>` +
       fs.map(card).join('');
-  }).join('') : `<div class="empty" style="grid-column:1/-1">${icon('cal')}<p>Sin vuelos con esos filtros.</p></div>`;
+  }).join('') : `<div class="empty vf-span">${icon('cal')}<p>Sin vuelos con esos filtros.</p></div>`;
   attachScrub(grid);
 }
 document.addEventListener('click', async e => {
@@ -337,21 +382,21 @@ function openPreview(f) {
   const a = ai[f.clip_id];
   const ov = document.createElement('div');
   ov.className = 'modal-ov';
-  ov.innerHTML = `<div class="modal" style="max-width:640px">
+  ov.innerHTML = `<div class="modal vf-modal">
     <div class="modal-h"><b>${icon('drone')} ${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
-      <button class="modal-x" aria-label="Cerrar">✕</button></div>
+      <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
     <div class="modal-b">
       ${f.has_proxy
-        ? `<video class="m-prev" style="max-height:320px" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" controls muted playsinline preload="none"></video>`
-        : `<img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" style="width:100%;height:auto;border-radius:10px" alt="" width="960" height="540">`}
-      <div class="tool-row" style="margin-top:12px">
+        ? `<video class="m-prev vf-prev" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" controls muted playsinline preload="none"></video>`
+        : `<img class="vf-prev-img" src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" alt="" width="960" height="540">`}
+      <div class="tool-row vf-prev-chips">
         <span class="chip">${fmt.dur(f.duration_s)}</span>
         <span class="chip">${Math.round(f.stats.max_rel_alt_m || 0)} m alt</span>
         <span class="chip">${fmt.km(f.stats.distance_m || 0)}</span>
         ${models.has(f.clip_id) ? `<span class="chip on">3D</span>` : ''}
       </div>
-      ${a?.summary ? `<p class="footer-note" style="margin:10px 0 0">${esc(a.summary)}</p>` : ''}
-      <div class="navrow" style="margin-top:14px;flex-wrap:wrap">
+      ${a?.summary ? `<p class="footer-note vf-prev-note">${esc(a.summary)}</p>` : ''}
+      <div class="navrow vf-prev-actions">
         <a class="btn primary" href="flight.html?id=${encodeURIComponent(f.clip_id)}">${icon('film')} Ver vuelo completo</a>
         ${models.has(f.clip_id) ? `<a class="btn" href="tresd.html">${icon('cube')} Modelo 3D</a>` : ''}
       </div>
@@ -376,20 +421,27 @@ qEl.addEventListener('keydown', async e => {
     } catch (err) { if (mySeq === semSeq) document.getElementById('count').textContent = 'sin sesión para búsqueda AI'; }
   }
 });
-document.getElementById('sem-toggle').addEventListener('click', () => {
+document.getElementById('sem-toggle').addEventListener('click', e => {
+  e.preventDefault();
   state.semantic = !state.semantic;
-  document.getElementById('sem-toggle').classList.toggle('on', state.semantic);
-  qEl.placeholder = state.semantic ? 'Describe lo que buscas y pulsa Enter…' : 'Buscar por fecha, lugar, tags AI…';
+  const t = document.getElementById('sem-toggle');
+  t.classList.toggle('on', state.semantic);
+  t.setAttribute('aria-pressed', state.semantic);
+  qEl.placeholder = state.semantic ? 'Describe lo que buscas y pulsa Enter…' : 'Buscar vuelos';
   if (!state.semantic) { semRank = null; }
+  qEl.focus();
   render();
 });
 document.querySelectorAll('[data-qf]').forEach(b => b.addEventListener('click', () => {
-  b.classList.toggle('on');
   state.has.has(b.dataset.qf) ? state.has.delete(b.dataset.qf) : state.has.add(b.dataset.qf);
   render();
 }));
-document.getElementById('tier').addEventListener('change', e => { state.tier = e.target.value; render(); });
+document.querySelectorAll('[data-tier]').forEach(b => b.addEventListener('click', () => { state.tier = b.dataset.tier; render(); }));
 document.getElementById('sort').addEventListener('change', e => { state.sort = e.target.value; render(); });
+document.getElementById('vf-filters-btn').addEventListener('click', e => {
+  const open = document.getElementById('vf-more').classList.toggle('open');
+  e.currentTarget.setAttribute('aria-expanded', open);
+});
 document.querySelectorAll('[data-view]').forEach(b =>
   b.addEventListener('click', () => setView(b.dataset.view)));
 function setView(v) {
@@ -410,12 +462,11 @@ document.addEventListener('keydown', e => {
   if (['grid', 'list', 'map', 'places', 'dates'].includes(params.get('v'))) state.view = params.get('v');
   document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === state.view));
   flights = await getFlights();
+  ai = await getAIAll(flights);   // embebido en flights.json: sin requests extra
   buildSpots();
-  render();                       // pinta ya con manifests
+  render();                       // un solo pintado inicial (con títulos AI): la entrada se anima una vez
   fetch(`${DATA}/manifest/system.json`).then(r => r.json())
-    .then(sy => { models = new Set((sy.models || []).map(m => m.clip_id)); }).catch(() => {});
-  ai = await getAIAll(flights);   // enriquece con AI cuando llegue
-  render();
+    .then(sy => { models = new Set((sy.models || []).map(m => m.clip_id)); if (state.has.has('model')) render(); }).catch(() => {});
 })().catch(e => {
-  main.querySelector('#grid').innerHTML = `<div class="empty" style="grid-column:1/-1">${icon('warn')}<p>Error: ${esc(e.message)}</p></div>`;
+  main.querySelector('#grid').innerHTML = `<div class="empty vf-span">${icon('warn')}<p>Error: ${esc(e.message)}</p></div>`;
 });

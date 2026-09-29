@@ -1,0 +1,21 @@
+/* AeroBrain · Volar (volar.html) — loads AFTER style.css. The game HUD (.vl-*) lives in style.css;
+   volar.js sets a few inline styles, this file gives them a class-based twin so they can be dropped later. */
+
+/* Error card (bootError): centered column, readable secondary text */
+.vl-err-card { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 360px; text-align: center; }
+.vl-err-card p { margin: 0; font: 400 14px/1.5 var(--font); color: var(--on-media-2); }
+
+/* Determinate progress bar: width is set inline by bootProgress() */
+.vl-boot .vb-bar b { transition: width .35s; background: var(--media-accent); }
+/* once bootProgress() has set an inline width the bar is determinate: stop the slide */
+.vl-boot .vb-bar b[style*="width"] { animation: none; }
+/* the recovery button is UI, not telemetry: no mono */
+.vl-err-card .btn { font-family: var(--font) !important; letter-spacing: 0 !important; }
+
+/* Layers the scene does not have */
+.vb-steps i[data-na] { opacity: .35; }
+
+/* Legibility of the boot overlay on the dark stage (AA contrast, >=11px for the stage label) */
+.vl-boot small { color: var(--on-media-2); }
+.vl-boot .vb-steps i { color: var(--on-media-2); }
+.vl-boot .vb-steps i.ok { color: var(--media-ok); }

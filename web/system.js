@@ -1,30 +1,32 @@
-// Sistema — dashboard completo: inventario, actividad de procesamiento,
-// base de datos de contenido con filtros, storage, servicios y costos.
+// Sistema — inventario, rendimiento en vivo, nodo GPU, actividad, storage y base de contenido.
 const main = renderShell('system.html');
-main.innerHTML = `
-  <div class="page-head"><h1>Sistema</h1><span class="count">inventario · actividad · contenido · costos</span></div>
-  <div class="statgrid" id="top">${'<div class="sk" style="height:74px"></div>'.repeat(8)}</div>
+main.classList.add('sy-page');
+// escribe innerHTML solo si cambió: los polls de 1–30 s no reconstruyen (ni re-animan) nada igual
+const setHTML = (el, html) => { if (el && el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; } };
+const panelHead = (ic, title, sub = '', extra = '') => `
+  <div class="ph sy-ph">${icon(ic)}<span class="sy-ph-t"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</span>${extra}</div>`;
 
-  <div class="panel rise" style="margin-bottom:16px">
-    <div class="ph">${icon('gauge')} Rendimiento del Mac Mini en vivo
-      <span class="count">muestreo 1s · render 60fps</span>
-      <span class="spacer" style="flex:1"></span>
-      <span class="perf-chip mono" id="pf-therm">térmica —</span>
-    </div>
+main.innerHTML = `
+  ${pageHead('Sistema', 'Inventario, rendimiento, procesamiento y costos del vault.')}
+  <div class="sy-stats" id="top">${'<div class="sk" style="height:76px"></div>'.repeat(8)}</div>
+
+  <div class="panel sy-panel">
+    ${panelHead('gauge', 'Rendimiento del Mac Mini', 'En vivo · muestreo cada segundo · ventana de 2 min',
+      '<span class="chip sm" id="pf-therm">Térmica</span>')}
     <div class="pb">
-      <div class="perf-grid">
+      <div class="perf-grid sy-perf">
         <div class="perf-cell"><div class="perf-lb">CPU <b id="pf-cpu">—</b></div><canvas id="pfc-cpu" height="72"></canvas></div>
         <div class="perf-cell"><div class="perf-lb">GPU <b id="pf-gpu">—</b></div><canvas id="pfc-gpu" height="72"></canvas></div>
         <div class="perf-cell"><div class="perf-lb">RAM <b id="pf-ram">—</b></div><canvas id="pfc-ram" height="72"></canvas></div>
       </div>
-      <div class="perf-chips mono" id="pf-chips"></div>
+      <div class="perf-chips" id="pf-chips"></div>
       <div id="pf-jobs"></div>
       <details class="perf-errs" id="pf-errwrap">
         <summary>${icon('warn')} Errores y reporte AI <span class="count" id="pf-errcount"></span></summary>
-        <div class="pb" style="padding:10px 0 0">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-            <button class="btn" id="pf-genreport">${icon('spark')} Generar reporte AI (DeepSeek)</button>
-            <span class="footer-note" style="margin:0">DeepSeek solo redacta el triage — lo valida Codex/Claude después.</span>
+        <div class="pb sy-errs">
+          <div class="sy-errs-a">
+            <button class="btn sm" id="pf-genreport">${icon('spark')} Generar reporte AI</button>
+            <span class="sy-hint">DeepSeek redacta el triage; Codex o Claude lo validan después.</span>
           </div>
           <div id="pf-reports"></div>
           <pre class="job-log-output" id="pf-report-body" hidden></pre>
@@ -34,81 +36,73 @@ main.innerHTML = `
     </div>
   </div>
 
-  <div class="panel rise" style="margin-bottom:16px">
-    <div class="ph">${icon('chip')} Nodo GPU — PC remoto
-      <span class="count">RTX 4060 Ti · invocable por SSH · Wake-on-LAN</span>
-      <span class="spacer" style="flex:1"></span>
-      <span class="perf-chip mono" id="gn-status">consultando…</span>
-    </div>
+  <div class="panel sy-panel">
+    ${panelHead('cpu', 'Nodo GPU', 'PC remoto · RTX 4060 Ti · SSH y Wake-on-LAN',
+      '<span class="chip sm" id="gn-status">Consultando</span>')}
     <div class="pb">
       <div class="gn-grid" id="gn-body"><div class="sk" style="height:56px"></div></div>
       <div class="gn-actions">
-        <button class="btn" id="gn-wake">Despertar (WoL)</button>
-        <button class="btn ghost" id="gn-sleep">Dormir</button>
-        <span class="footer-note" style="margin:0" id="gn-note">el probe es SSH real — si duerme, se reporta dormido</span>
+        <button class="btn sm" id="gn-wake">Despertar</button>
+        <button class="btn sm ghost" id="gn-sleep">Dormir</button>
+        <span class="sy-hint" id="gn-note">El estado sale de un sondeo SSH real.</span>
       </div>
     </div>
   </div>
 
-  <div class="fl-layout">
-    <div>
-      <div class="panel rise">
-        <div class="ph">${icon('activity')} Actividad de procesamiento</div>
-        <div class="pb" id="activity"><div class="sk" style="height:120px"></div></div>
-      </div>
-      <div class="panel rise" style="margin-top:16px">
-        <div class="ph">${icon('clock')} Trabajos recientes</div>
-        <div class="pb" id="feed"></div>
-      </div>
+  <div class="sy-cols">
+    <div class="panel">
+      ${panelHead('activity', 'Actividad', 'Trabajos por estado y duración media')}
+      <div class="pb" id="activity"><div class="sk" style="height:120px"></div></div>
     </div>
-    <div>
-      <div class="panel rise">
-        <div class="ph">${icon('db')} Storage del vault</div>
-        <div class="pb" id="storage"><div class="sk" style="height:120px"></div></div>
-      </div>
-      <div class="panel rise" style="margin-top:16px">
-        <div class="ph">${icon('wifi')} Servicios</div>
-        <div class="pb"><table class="kv">
-          <tr><td>Web server</td><td>com.aerobrain.web · :8790</td></tr>
-          <tr><td>Worker 3D</td><td>com.aerobrain.worker · cola SQLite</td></tr>
-          <tr><td>Túnel Cloudflare</td><td>com.metislab.tunnel</td></tr>
-          <tr><td>Dominio</td><td>vuelos.metislab.work</td></tr>
-          <tr><td>Compute</td><td>Mac Mini M4 · VideoToolbox</td></tr>
-        </table></div>
-      </div>
-      <div class="panel rise" style="margin-top:16px">
-        <div class="ph">${icon('check')} Modelo de costos</div>
-        <div class="pb"><table class="kv">
-          <tr><td>Hosting + streaming</td><td>$0 (túnel + SSD)</td></tr>
-          <tr><td>Storage</td><td>$0 (vault local)</td></tr>
-          <tr><td>Fotogrametría + splats</td><td>$0 (ODM + OpenSplat locales)</td></tr>
-          <tr><td>AI vision (Gemini)</td><td>~$0.002 / clip</td></tr>
-          <tr><td>Síntesis (DeepSeek)</td><td>centavos / mes</td></tr>
-          <tr><td><b>Total mensual</b></td><td><b style="color:var(--mint)">≈ $0</b></td></tr>
-        </table></div>
-      </div>
+    <div class="panel">
+      ${panelHead('clock', 'Trabajos recientes', 'Los últimos 9')}
+      <div class="pb" id="feed"></div>
+    </div>
+    <div class="panel">
+      ${panelHead('db', 'Storage del vault', 'Espacio por categoría')}
+      <div class="pb" id="storage"><div class="sk" style="height:120px"></div></div>
+    </div>
+    <div class="panel">
+      ${panelHead('wifi', 'Servicios', 'Procesos locales y dominio')}
+      <div class="pb"><dl class="sy-kv">
+        <div><dt>Web server</dt><dd class="mono">com.aerobrain.web · :8790</dd></div>
+        <div><dt>Worker 3D</dt><dd class="mono">com.aerobrain.worker</dd></div>
+        <div><dt>Túnel Cloudflare</dt><dd class="mono">com.metislab.tunnel</dd></div>
+        <div><dt>Dominio</dt><dd class="mono">vuelos.metislab.work</dd></div>
+        <div><dt>Compute</dt><dd>Mac Mini M4 · VideoToolbox</dd></div>
+      </dl></div>
+    </div>
+    <div class="panel sy-wide">
+      ${panelHead('check', 'Modelo de costos', 'Todo corre local salvo el análisis AI')}
+      <div class="pb"><dl class="sy-kv sy-kv2">
+        <div><dt>Hosting y streaming</dt><dd>$0 (túnel + SSD)</dd></div>
+        <div><dt>Storage</dt><dd>$0 (vault local)</dd></div>
+        <div><dt>Fotogrametría y splats</dt><dd>$0 (ODM + OpenSplat)</dd></div>
+        <div><dt>AI vision (Gemini)</dt><dd>~$0.002 por clip</dd></div>
+        <div><dt>Síntesis (DeepSeek)</dt><dd>centavos al mes</dd></div>
+        <div class="total"><dt>Total mensual</dt><dd>≈ $0</dd></div>
+      </dl></div>
     </div>
   </div>
 
-  <div class="panel rise" style="margin-top:16px">
-    <div class="ph">${icon('grid')} Base de datos de contenido
-      <span class="count" id="db-count"></span>
-      <span class="spacer" style="flex:1"></span>
-      <input class="ctl" id="db-q" placeholder="Buscar…" style="width:170px;font-size:12px">
-    </div>
-    <div class="pb" style="padding-bottom:8px">
-      <div class="tool-row" style="padding-top:0"><span class="tool-lb">Tier</span>
-        <button class="chip on" data-tier="">Todos</button>
-        <button class="chip" data-tier="full">Full</button>
-        <button class="chip" data-tier="standard">Standard</button>
-        <button class="chip" data-tier="skim">Skim</button>
-        <span style="flex:1"></span>
-        <button class="chip" data-has="model">Con 3D</button>
-        <button class="chip" data-has="ai">Con AI</button>
-        <button class="chip" data-has="gps">Con GPS</button>
+  <div class="panel sy-panel" id="db-panel">
+    ${panelHead('grid', 'Base de datos de contenido', '<span id="db-count">Clips indexados</span>',
+      '<input class="ctl sy-q" id="db-q" type="search" placeholder="Buscar clip" aria-label="Buscar clip">')}
+    <div class="pb sy-filters">
+      <div class="seg" id="db-tier" role="group" aria-label="Filtrar por tier">
+        <button class="on" data-tier="">Todos</button>
+        <button data-tier="full">Full</button>
+        <button data-tier="standard">Standard</button>
+        <button data-tier="skim">Skim</button>
+      </div>
+      <div class="sy-flags">
+        <button class="chip" data-has="model" aria-pressed="false">Con 3D</button>
+        <button class="chip" data-has="ai" aria-pressed="false">Con AI</button>
+        <button class="chip" data-has="gps" aria-pressed="false">Con GPS</button>
       </div>
     </div>
-    <div style="overflow-x:auto"><table class="dtable" id="db-table"></table></div>
+    <div class="sy-tablewrap"><table class="dtable sy-table" id="db-table"></table></div>
+    <div class="sy-more" id="db-more"></div>
   </div>`;
 
 function jobRelativeTime(job, now) {
@@ -131,18 +125,18 @@ function jobRelativeTime(job, now) {
   const st = sys.storage || {};
   const models = new Set((sys.models || []).map(m => m.clip_id));
 
-  // ---------- stats con count-up ----------
+  // ---------- stats (etiquetas cortas, misma altura) ----------
   const doneJobs = jobs.filter(j => j.status === 'done');
   const cpuMin = Math.round(doneJobs.reduce((a, j) => a + (j.mins || 0), 0));
   const stats = [
     ['drone', 'Clips', flights.length],
     ['db', 'Raw 4K', fmt.gb(st.raw || 0), true],
     ['cube', 'Modelos 3D', (sys.models || []).length],
-    ['spark', 'Splats', (sys.splats || []).filter(s => /\.(splat|ksplat|ply)$/i.test(s.name)).length],  // los current son .ksplat — /\.splat$/ contaba 0
+    ['spark', 'Splats', (sys.splats || []).filter(s => /\.(splat|ksplat|ply)$/i.test(s.name)).length],
     ['film', 'Fotos 4K', (sys.photos || []).length],
     ['play', 'Reels', (sys.reels || []).length],
-    ['check', 'Jobs completados', doneJobs.length],
-    ['clock', 'CPU de procesos', cpuMin >= 90 ? (cpuMin / 60).toFixed(1) + ' h' : cpuMin + ' min', true],
+    ['check', 'Completados', doneJobs.length],
+    ['clock', 'Tiempo CPU', cpuMin >= 90 ? (cpuMin / 60).toFixed(1) + ' h' : cpuMin + ' min', true],
   ];
   document.getElementById('top').innerHTML = stats.map(([ic, lb, v, raw]) => `
     <div class="stat rise"><div class="lb">${icon(ic)} ${lb}</div>
@@ -160,62 +154,59 @@ function jobRelativeTime(job, now) {
   const byStatus = {};
   jobs.forEach(j => { byStatus[j.status] = (byStatus[j.status] || 0) + 1; });
   const KINDS = { '3d': 'Fotogrametría 3D', splat: 'Gaussian splat', foto4k: 'Foto 4K',
-                  edit: 'Edición', upload: 'Subida', analyze: 'Análisis AI' };
+                  edit: 'Edición', upload: 'Subida', analyze: 'Análisis AI', ingest: 'Importar SD' };
   const durs = {};
   doneJobs.forEach(j => { if (j.mins) (durs[j.kind] ??= []).push(j.mins); });
   const durRows = Object.entries(durs).map(([k, v]) =>
     [KINDS[k] || k, v.reduce((a, b) => a + b, 0) / v.length, v.length]).sort((a, b) => b[1] - a[1]);
   const maxDur = Math.max(...durRows.map(r => r[1]), 1);
-  const PILL = { done: ['listos', 'var(--mint)'], running: ['en proceso', 'var(--accent)'],
-                 queued: ['en cola', 'var(--text-3)'], error: ['fallidos', 'var(--red)'],
-                 cancelled: ['cancelados', 'var(--amber)'] };
+  const PILL = { done: ['listos', 'ok'], running: ['en proceso', 'on'],
+                 queued: ['en cola', ''], error: ['fallidos', 'err'],
+                 cancelled: ['cancelados', 'warn'] };
   document.getElementById('activity').innerHTML = `
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+    <div class="sy-pills">
       ${Object.entries(PILL).filter(([k]) => byStatus[k]).map(([k, [lb, c]]) =>
-        `<span class="chip" style="color:${c};border-color:color-mix(in srgb, ${c} 40%, transparent)">
-         ${byStatus[k]} ${lb}</span>`).join('') || '<span class="footer-note">Sin trabajos aún.</span>'}
+        `<span class="chip sm ${c}">${byStatus[k]} ${lb}</span>`).join('') || '<span class="sy-hint">Sin trabajos aún.</span>'}
     </div>
-    <p class="mlb" style="margin-top:0">Duración media por tipo</p>
+    <p class="sy-sublb">Duración media por tipo</p>
     ${durRows.map(([lb, avg, n]) => `
-      <div style="margin-bottom:9px">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-          <span style="color:var(--text-2)">${esc(lb)} <span style="color:var(--text-3)">×${n}</span></span>
-          <span class="mono" style="color:var(--text-3)">${avg < 1 ? '<1 min' : avg >= 90 ? (avg / 60).toFixed(1) + ' h' : Math.round(avg) + ' min'}</span>
+      <div class="sy-bar">
+        <div class="sy-bar-h">
+          <span>${esc(lb)} <small>×${n}</small></span>
+          <span class="mono">${avg < 1 ? '<1 min' : avg >= 90 ? (avg / 60).toFixed(1) + ' h' : Math.round(avg) + ' min'}</span>
         </div>
-        <div class="sbar"><div style="width:${(avg / maxDur * 100).toFixed(1)}%"></div></div>
-      </div>`).join('') || '<p class="footer-note">Aún no hay trabajos completados.</p>'}`;
+        <div class="sbar"><div style="--p:${(avg / maxDur).toFixed(3)}"></div></div>
+      </div>`).join('') || '<p class="sy-hint">Aún no hay trabajos completados.</p>'}`;
 
   // ---------- feed de trabajos recientes ----------
   document.getElementById('feed').innerHTML = orderJobsForDisplay(jobs).slice(0, 9).map(j => {
-    const stc = { done: 'var(--mint)', running: 'var(--accent)', queued: 'var(--text-3)',
-                  error: 'var(--red)', cancelled: 'var(--amber)', cancel_failed: 'var(--red)' }[j.status] || 'var(--text-3)';
+    const lbl = String(j.label || j.id || 'job');
     return `<div class="act-row">
-      <span class="act-dot" style="background:${stc}"></span>
+      <span class="act-dot ${esc(j.status)}"></span>
       <span class="act-k">${esc(KINDS[j.kind] || j.kind)}</span>
-      <span class="act-l mono">${esc((j.label || j.id || "job").length > 26 ? (j.label || "").slice(-16) : (j.label || j.id || "job"))}</span>
+      <span class="act-l mono">${esc(lbl.length > 26 ? lbl.slice(-16) : lbl)}</span>
       <span class="spacer" style="flex:1"></span>
-      ${j.mins ? `<span class="mono" style="color:var(--text-3);font-size:11px">${j.mins} min</span>` : ''}
-      <span class="mono" style="color:var(--text-3);font-size:11px">${jobRelativeTime(j, Date.now())}</span>
+      ${j.mins ? `<span class="mono act-t">${j.mins} min</span>` : ''}
+      <span class="mono act-t">${jobRelativeTime(j, Date.now())}</span>
     </div>`;
-  }).join('') || '<p class="footer-note">Sin actividad todavía.</p>';
+  }).join('') || '<p class="sy-hint">Sin actividad todavía.</p>';
 
-  // ---------- storage con barras animadas ----------
+  // ---------- storage con barras ----------
   const cats = [['raw', 'Originales 4K (intocables)'], ['proxies', 'Proxies 1080p'], ['frames', 'Keyframes AI'],
-                ['thumbs', 'Thumbnails'], ['tracks', 'Tracks GPS'], ['reels', 'Reels'], ['splats', 'Splats']];
+                ['thumbs', 'Miniaturas'], ['tracks', 'Tracks GPS'], ['reels', 'Reels'], ['splats', 'Splats']];
   const maxB = Math.max(...cats.map(([k]) => st[k] || 0), 1);
   document.getElementById('storage').innerHTML = cats.map(([k, lb], i) => `
-    <div style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-        <span style="color:var(--text-2)">${lb}</span>
-        <span class="mono" style="color:var(--text-3)">${fmt.gb(st[k] || 0)}</span>
-      </div>
-      <div class="sbar"><div style="width:${((st[k] || 0) / maxB * 100).toFixed(1)}%;animation-delay:${i * 60}ms"></div></div>
+    <div class="sy-bar">
+      <div class="sy-bar-h"><span>${lb}</span><span class="mono">${fmt.gb(st[k] || 0)}</span></div>
+      <div class="sbar"><div style="--p:${((st[k] || 0) / maxB).toFixed(3)};animation-delay:${i * 60}ms"></div></div>
     </div>`).join('') + `
-    <p class="footer-note" style="margin:4px 0 0">Ingesta: ${sys.last_ingest ? `${sys.last_ingest.files} archivos · ${fmt.gb(sys.last_ingest.bytes)}` : '—'}
-    · índice ${sys.generated_at || '—'}</p>`;
+    <p class="sy-hint sy-foot">Última ingesta: ${sys.last_ingest ? `${sys.last_ingest.files} archivos · ${fmt.gb(sys.last_ingest.bytes)}` : '—'}
+    · índice ${esc(sys.generated_at || '—')}</p>`;
 
-  // ---------- base de datos de contenido (filtros + tabla) ----------
-  const state = { q: '', tier: '', has: new Set() };
+  // ---------- base de datos de contenido (filtros + tabla paginada) ----------
+  const PAGE = 25;
+  const state = { q: '', tier: '', has: new Set(), shown: PAGE };
+  const ok = on => on ? `<span class="sy-yes" aria-label="sí">${icon('check')}</span>` : '<span class="sy-no" aria-label="no">·</span>';
   function renderTable() {
     const rows = flights.filter(f => {
       if (state.tier && f.tier !== state.tier) return false;
@@ -225,49 +216,70 @@ function jobRelativeTime(job, now) {
       const hay = `${f.label || ''} ${f.clip_id} ${f.date || ''}`.toLowerCase();
       return !state.q || hay.includes(state.q);
     });
-    document.getElementById('db-count').textContent = `(${rows.length} de ${flights.length})`;
-    const chk = on => on ? '<span style="color:var(--mint)">✓</span>' : '<span style="color:var(--text-3)">·</span>';
+    const visible = rows.slice(0, state.shown);
+    document.getElementById('db-count').textContent = `${rows.length} de ${flights.length} clips`;
+    const showName = rows.some(f => f.label);            // la columna Nombre solo existe si algún clip tiene nombre
+    const resOf = f => esc((f.resolution || '').replace('3840x2160', '4K'));
     document.getElementById('db-table').innerHTML = `
-      <thead><tr><th>Fecha</th><th>Nombre</th><th>Dur</th><th>Tamaño</th><th>Res</th>
-      <th>Tier</th><th>GPS</th><th>AI</th><th>3D</th></tr></thead>
-      <tbody>${rows.map(f => `
-        <tr data-cid="${esc(f.clip_id)}">
-          <td class="mono">${fmt.date(f.date)} ${f.time || ''}</td>
-          <td>${esc(f.label) || '<span style="color:var(--text-3)">—</span>'}</td>
-          <td class="mono">${fmt.dur(f.duration_s)}</td>
-          <td class="mono">${fmt.gb(f.size_bytes || 0)}</td>
-          <td class="mono">${esc((f.resolution || '').replace('3840x2160', '4K'))}</td>
-          <td><span class="chip" style="padding:1px 9px;font-size:10.5px">${esc(f.tier || '—')}</span></td>
-          <td>${chk(f.has_srt)}</td><td>${chk(!!f.ai)}</td><td>${chk(models.has(f.clip_id))}</td>
-        </tr>`).join('')}</tbody>`;
+      <thead><tr><th>Fecha</th>${showName ? '<th>Nombre</th>' : ''}<th>Duración</th><th>Tamaño</th><th>Res.</th>
+      <th>Tier</th><th class="c">GPS</th><th class="c">AI</th><th class="c">3D</th></tr></thead>
+      <tbody>${visible.map(f => `
+        <tr data-cid="${esc(f.clip_id)}" tabindex="0">
+          <td class="mono c-date">${fmt.date(f.date)} <span>${esc(f.time || '')}</span></td>
+          ${showName ? `<td class="c-name">${esc(f.label) || ''}</td>` : ''}
+          <td class="mono c-dur">${fmt.dur(f.duration_s)}</td>
+          <td class="mono c-size">${fmt.gb(f.size_bytes || 0)}</td>
+          <td class="mono c-res">${resOf(f)}</td>
+          <td class="c-tier"><span class="chip sm">${esc(f.tier || '—')}</span></td>
+          <td class="c c-flag${f.has_srt ? ' on' : ''}" data-l="GPS">${ok(f.has_srt)}</td>
+          <td class="c c-flag${f.ai ? ' on' : ''}" data-l="AI">${ok(!!f.ai)}</td>
+          <td class="c c-flag${models.has(f.clip_id) ? ' on' : ''}" data-l="3D">${ok(models.has(f.clip_id))}</td>
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="9">Ningún clip coincide con estos filtros.</td></tr>`}</tbody>`;
+    document.getElementById('db-more').innerHTML = rows.length > visible.length
+      ? `<button class="btn sm" id="db-showmore">Mostrar ${Math.min(PAGE, rows.length - visible.length)} más</button>
+         <span class="sy-hint">${visible.length} de ${rows.length}</span>` : '';
   }
   renderTable();
-  document.getElementById('db-q').addEventListener('input', e => { state.q = e.target.value.toLowerCase(); renderTable(); });
+  const reset = () => { state.shown = PAGE; renderTable(); };
+  document.getElementById('db-q').addEventListener('input', e => { state.q = e.target.value.toLowerCase(); reset(); });
   main.querySelectorAll('[data-tier]').forEach(b => b.addEventListener('click', () => {
     main.querySelectorAll('[data-tier]').forEach(x => x.classList.toggle('on', x === b));
     state.tier = b.dataset.tier;
-    renderTable();
+    reset();
   }));
   main.querySelectorAll('[data-has]').forEach(b => b.addEventListener('click', () => {
     b.classList.toggle('on');
+    b.setAttribute('aria-pressed', b.classList.contains('on'));
     state.has.has(b.dataset.has) ? state.has.delete(b.dataset.has) : state.has.add(b.dataset.has);
-    renderTable();
+    reset();
   }));
-  document.getElementById('db-table').addEventListener('click', e => {
-    const tr = e.target.closest('tr[data-cid]');
-    if (tr) location.href = `flight.html?id=${encodeURIComponent(tr.dataset.cid)}`;
+  document.getElementById('db-more').addEventListener('click', e => {
+    if (e.target.closest('#db-showmore')) { state.shown += PAGE; renderTable(); }
   });
+  const openRow = tr => { if (tr) location.href = `flight.html?id=${encodeURIComponent(tr.dataset.cid)}`; };
+  const tbl = document.getElementById('db-table');
+  tbl.addEventListener('click', e => openRow(e.target.closest('tr[data-cid]')));
+  tbl.addEventListener('keydown', e => { if (e.key === 'Enter') openRow(e.target.closest('tr[data-cid]')); });
 })();
 
 // ═══════════ Rendimiento en vivo — poll 1Hz, render 60fps (interpolación temporal) ═══════════
 (() => {
   const $ = id => document.getElementById(id);
   const charts = {
-    cpu: { cv: $('pfc-cpu'), color: '#45a0e6', max: 100, get: s => s.cpu, lb: v => v.toFixed(0) + '%' },
-    gpu: { cv: $('pfc-gpu'), color: '#3ddc97', max: 100, get: s => s.gpu, lb: v => v.toFixed(0) + '%' },
-    ram: { cv: $('pfc-ram'), color: '#e0b64a', max: 16, get: s => s.ram_used_gb, lb: v => v.toFixed(1) + ' GB' },
+    cpu: { cv: $('pfc-cpu'), tok: '--accent', max: 100, get: s => s.cpu },
+    gpu: { cv: $('pfc-gpu'), tok: '--ok', max: 100, get: s => s.gpu },
+    ram: { cv: $('pfc-ram'), tok: '--warn', max: 16, get: s => s.ram_used_gb },
   };
   let hist = [], now = null, dead = false;
+  // colores desde tokens (cambian con el tema): se releen solo cuando cambia data-theme
+  let palette = {};
+  const readPalette = () => {
+    const cs = getComputedStyle(document.documentElement);
+    palette = { grid: cs.getPropertyValue('--line-strong').trim() || '#2E3846' };
+    for (const c of Object.values(charts)) palette[c.tok] = cs.getPropertyValue(c.tok).trim() || '#45A0E6';
+  };
+  readPalette();
+  new MutationObserver(readPalette).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
   async function poll() {
     if (document.hidden) return;
@@ -275,7 +287,9 @@ function jobRelativeTime(job, now) {
       const r = await authFetch('/api/perf');
       if (!r.ok) return;
       const d = await r.json();
-      hist = d.history || []; now = d.now;
+      // el historial arranca con muestras sintéticas a 0 en el primer arranque: se descartan
+      hist = (d.history || []).filter(s => !(s.cpu === 0 && s.gpu === 0 && !s.ram_used_gb));
+      now = d.now;
       charts.ram.max = (now?.ram_total_gb) || 16;
       paintStatics(d);
     } catch { /* red caída: el último frame queda en pantalla */ }
@@ -288,51 +302,59 @@ function jobRelativeTime(job, now) {
     $('pf-ram').textContent = `${now.ram_used_gb.toFixed(1)} / ${now.ram_total_gb} GB`;
     const th = now.thermal || {};
     const t = $('pf-therm');
-    t.textContent = th.throttling ? `⚠ THROTTLING ${th.speed_limit}%` : 'térmica nominal';
+    t.textContent = th.throttling ? `Limitado por temperatura · ${th.speed_limit}%` : 'Térmica nominal';
     t.classList.toggle('warn', !!th.throttling);
-    $('pf-chips').innerHTML = [
-      `load ${now.load1.toFixed(2)}`,
-      `swap ${(now.swap_used_mb / 1024).toFixed(1)} GB`,
-      `disco ${now.disk_free_gb ?? '—'} GB libres`,
-      `${d.ncpu} cores`,
-    ].map(x => `<span class="perf-chip">${x}</span>`).join('');
-    // uso por job: la parte "cuando haya un job, sé eficiente" — cpu/rss/etapa/eta en vivo
-    $('pf-jobs').innerHTML = (now.jobs || []).length ? `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="kv perf-jobs">
+    t.classList.toggle('ok', !th.throttling);
+    setHTML($('pf-chips'), [
+      `Carga ${now.load1.toFixed(2)}`,
+      `Swap ${(now.swap_used_mb / 1024).toFixed(1)} GB`,
+      `Disco libre ${now.disk_free_gb ?? '—'} GB`,
+      `${d.ncpu} núcleos`,
+    ].map(x => `<span class="chip sm">${x}</span>`).join(''));
+    // uso por job: cpu/rss/etapa/eta en vivo
+    setHTML($('pf-jobs'), (now.jobs || []).length ? `<div class="sy-tablewrap"><table class="kv perf-jobs">
       <tr><th>Job</th><th>Etapa</th><th>CPU</th><th>RAM</th><th>Lleva</th><th>Progreso</th></tr>
       ${now.jobs.map(j => `<tr>
         <td class="mono">${esc(j.kind)} · ${esc((j.label || '').slice(-14))}</td>
         <td>${esc(j.stage || '—')} <span class="count">${esc(j.detail || '')}</span></td>
         <td class="mono">${j.cpu_pct}%</td><td class="mono">${(j.rss_mb / 1024).toFixed(1)}G</td>
         <td class="mono">${j.elapsed_s >= 3600 ? (j.elapsed_s / 3600).toFixed(1) + 'h' : Math.round(j.elapsed_s / 60) + 'm'}</td>
-        <td><div class="pf-bar"><i style="width:${Math.round((j.progress || 0) * 100)}%"></i></div></td>
-      </tr>`).join('')}</table></div>` : '';
+        <td><div class="pf-bar"><i style="--p:${(j.progress || 0).toFixed(3)}"></i></div></td>
+      </tr>`).join('')}</table></div>` : '');
   }
 
   function draw() {
     if (dead) return;
     requestAnimationFrame(draw);
-    if (document.hidden || !hist.length) return;
+    if (document.hidden) return;
     const tNow = Date.now() / 1000;
     for (const c of Object.values(charts)) {
       const cv = c.cv; if (!cv) { dead = true; return; }
-      const W = cv.width = cv.clientWidth * devicePixelRatio || 600;
-      const H = cv.height;
+      const dpr = devicePixelRatio || 1;
+      const W = cv.width = Math.round(cv.clientWidth * dpr) || 600;
+      const H = cv.height = Math.round(72 * dpr);
       const g = cv.getContext('2d');
       g.clearRect(0, 0, W, H);
-      const SPAN = 120;                            // ventana de 2 min
-      const x = ts => W - ((tNow - ts) / SPAN) * W;   // el tiempo REAL fija x → scroll suave a 60fps
-      g.beginPath();
-      let started = false;
+      // escala fija 0–max con línea tenue al 50%
+      g.strokeStyle = palette.grid; g.globalAlpha = .45; g.lineWidth = 1; g.setLineDash([3 * dpr, 4 * dpr]);
+      g.beginPath(); g.moveTo(0, Math.round(H / 2) + .5); g.lineTo(W, Math.round(H / 2) + .5); g.stroke();
+      g.setLineDash([]); g.globalAlpha = 1;
+      const SPAN = 120;                                  // ventana de 2 min
+      const x = ts => W - ((tNow - ts) / SPAN) * W;      // el tiempo REAL fija x → scroll suave a 60fps
+      const pts = [];
       for (const s of hist) {
-        const px = x(s.ts), py = H - Math.min(1, c.get(s) / c.max) * (H - 6) - 3;
+        const px = x(s.ts);
         if (px < -4) continue;
-        started ? g.lineTo(px, py) : (g.moveTo(px, py), started = true);
+        pts.push([px, H - Math.min(1, Math.max(0, c.get(s) / c.max)) * (H - 6 * dpr) - 3 * dpr]);
       }
-      g.strokeStyle = c.color; g.lineWidth = 1.6; g.stroke();
-      if (started) {                                // relleno suave bajo la línea
-        g.lineTo(W, H); g.lineTo(0, H); g.closePath();
-        g.globalAlpha = 0.12; g.fillStyle = c.color; g.fill(); g.globalAlpha = 1;
-      }
+      if (pts.length < 2) continue;                      // sin ≥2 muestras reales no se dibuja nada
+      const col = palette[c.tok];
+      g.beginPath();
+      pts.forEach(([px, py], i) => i ? g.lineTo(px, py) : g.moveTo(px, py));
+      g.strokeStyle = col; g.lineWidth = 1.6 * dpr; g.lineJoin = 'round'; g.stroke();
+      // relleno solo bajo el tramo real de la línea (sin rampa desde el borde)
+      g.lineTo(pts[pts.length - 1][0], H); g.lineTo(pts[0][0], H); g.closePath();
+      g.globalAlpha = 0.12; g.fillStyle = col; g.fill(); g.globalAlpha = 1;
     }
   }
 
@@ -345,7 +367,7 @@ function jobRelativeTime(job, now) {
       $('pf-reports').innerHTML = (d.reports || []).slice(0, 5).map(rep => `
         <button class="pf-report" type="button" data-report="${esc(rep.name)}">
           ${icon('list')} ${esc(rep.name)} <span class="count">${esc(rep.ts)}</span></button>`).join('')
-        || '<p class="footer-note" style="margin:0 0 8px">Aún no hay reportes — genera el primero.</p>';
+        || '<p class="sy-hint">Aún no hay reportes. Genera el primero.</p>';
       $('pf-errors').innerHTML = (d.recent_errors || []).map(e2 => `
         <div class="pf-err mono"><span class="count">${esc((e2.ts || '').slice(5, 16))}</span>
         <b>[${esc(e2.source || '?')}]</b> ${esc((e2.msg || '').slice(0, 110))}</div>`).join('');
@@ -394,40 +416,50 @@ function jobRelativeTime(job, now) {
 // ═══════════ Nodo GPU (PC remoto) — poll 30s, acciones reales ═══════════
 (() => {
   const $g = id => document.getElementById(id);
+  const ago = ts => {
+    const m = Math.max(0, Math.round((Date.now() / 1000 - Number(ts)) / 60));
+    return !Number.isFinite(m) ? '' : m < 1 ? 'hace menos de 1 min' : m < 60 ? `hace ${m} min` : `hace ${Math.round(m / 60)} h`;
+  };
   const paint = d => {
     const st = $g('gn-status');
     if (!st) return;
-    const awake = d.status === 'awake';
-    st.textContent = awake ? 'despierto' : d.status === 'asleep' ? 'dormido' : 'sin datos';
-    st.style.color = awake ? 'var(--ok, #52C79A)' : 'var(--text-3)';
+    const awake = d.status === 'awake', asleep = d.status === 'asleep';
+    st.textContent = awake ? 'Despierto' : asleep ? 'Dormido' : 'Sin datos';
+    st.className = `chip sm ${awake ? 'ok' : ''}`;
     $g('gn-sleep').disabled = !awake;
     $g('gn-wake').disabled = awake;
     if (!awake) {
-      $g('gn-body').innerHTML = `<div class="gn-cell"><b>—</b><span>el PC duerme · Despertar tarda ~30s</span></div>`;
+      setHTML($g('gn-body'), `
+        <div class="gn-off">
+          <span class="gn-off-ic">${icon('cpu')}</span>
+          <div><b>${asleep ? 'PC apagado' : 'Sin respuesta del nodo'}</b>
+          <p>${asleep ? 'Se despierta solo al encolar un trabajo pesado (splat o 3D). También puedes despertarlo ahora; tarda unos 30 s.'
+            : 'El sondeo SSH no obtuvo datos. Revisa que el PC esté en la red y vuelve a intentarlo.'}${d.ts ? ` <span class="gn-when">Último sondeo ${ago(d.ts)}.</span>` : ''}</p></div>
+        </div>`);
       return;
     }
-    const vramPct = d.vram_total_mb ? Math.round((d.vram_used_mb / d.vram_total_mb) * 100) : 0;
-    $g('gn-body').innerHTML = [
+    const vramPct = d.vram_total_mb ? d.vram_used_mb / d.vram_total_mb : 0;
+    setHTML($g('gn-body'), [
       ['GPU', d.gpu || '—', ''],
-      ['VRAM', d.vram_total_mb ? `${(d.vram_used_mb/1024).toFixed(1)} / ${(d.vram_total_mb/1024).toFixed(0)} GB` : '—', `<i class="gn-bar"><b style="width:${vramPct}%"></b></i>`],
-      ['USO GPU', d.util_pct != null ? `${d.util_pct}%` : '—', `<i class="gn-bar"><b style="width:${d.util_pct||0}%"></b></i>`],
-      ['TEMP', d.temp_c != null ? `${d.temp_c}°C` : '—', ''],
-      ['POTENCIA', d.power_w != null ? `${d.power_w} W` : '—', ''],
-      ['DRIVER', d.driver || '—', ''],
-    ].map(([lb, v, extra]) => `<div class="gn-cell"><span>${lb}</span><b>${v}</b>${extra}</div>`).join('');
+      ['VRAM', d.vram_total_mb ? `${(d.vram_used_mb / 1024).toFixed(1)} / ${(d.vram_total_mb / 1024).toFixed(0)} GB` : '—', `<i class="gn-bar"><b style="--p:${vramPct.toFixed(3)}"></b></i>`],
+      ['Uso GPU', d.util_pct != null ? `${d.util_pct}%` : '—', `<i class="gn-bar"><b style="--p:${((d.util_pct || 0) / 100).toFixed(3)}"></b></i>`],
+      ['Temperatura', d.temp_c != null ? `${d.temp_c} °C` : '—', ''],
+      ['Potencia', d.power_w != null ? `${d.power_w} W` : '—', ''],
+      ['Driver', d.driver || '—', ''],
+    ].map(([lb, v, extra]) => `<div class="gn-cell"><span>${lb}</span><b>${esc(v)}</b>${extra}</div>`).join(''));
   };
   const poll = async (force = false) => {
     try { paint(await (await authFetch('/api/gpu_node' + (force ? '?force=1' : ''))).json()); }
-    catch { const st = $g('gn-status'); if (st) st.textContent = 'error de probe'; }
+    catch { const st = $g('gn-status'); if (st) { st.textContent = 'Error de sondeo'; st.className = 'chip sm err'; } }
   };
   $g('gn-wake')?.addEventListener('click', async () => {
-    $g('gn-note').textContent = 'magic packet enviado — despertando (~30s)…';
+    $g('gn-note').textContent = 'Señal enviada. Despertando, tarda unos 30 s…';
     await authFetch('/api/gpu_node/wake', { method: 'POST' });
     setTimeout(() => poll(true), 25000);
   });
   $g('gn-sleep')?.addEventListener('click', async () => {
     const r = await (await authFetch('/api/gpu_node/sleep', { method: 'POST' })).json();
-    $g('gn-note').textContent = r.ok ? 'suspendido — Despertar lo revive' : `no se durmió: ${r.reason}`;
+    $g('gn-note').textContent = r.ok ? 'Suspendido. Despertar lo revive.' : `No se durmió: ${r.reason}`;
     setTimeout(() => poll(true), 4000);
   });
   poll();

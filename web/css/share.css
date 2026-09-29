@@ -1,0 +1,78 @@
+/* AeroBrain · Modelo compartido (share.html) — loads AFTER style.css. Tokens only; see DESIGN.md.
+   El tema (ab_theme) lo aplica share.js; esta página no carga shell.js. */
+
+.sh-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.share-page { background: var(--bg); color: var(--text); }
+.share-main { max-width: 1120px; margin: 0 auto; padding: var(--sp-5) var(--sp-5) var(--sp-9); display: flex; flex-direction: column; gap: var(--sp-4); }
+.share-main > #sh-body { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+@media (max-width: 640px) { .share-main { padding: var(--sp-4) var(--sp-4) var(--sp-8); } }
+
+/* ── Cabecera ─────────────────────────────────────────────── */
+.sh-head { display: flex; align-items: center; gap: var(--sp-3); }
+.sh-mark { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: var(--r-md); background: var(--accent-dim); color: var(--accent-fg); }
+.sh-mark svg.ic { width: var(--ic-lg); height: var(--ic-lg); }
+.sh-head-t { display: flex; flex-direction: column; gap: var(--sp-0); min-width: 0; }
+.sh-head h1 { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); letter-spacing: var(--tr-tight); line-height: var(--lh-snug); overflow-wrap: anywhere; text-wrap: balance; }
+.sh-sub { font-size: var(--fs-md); color: var(--text-2); }
+
+.sh-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+/* ── Visor ────────────────────────────────────────────────── */
+.share-page .panel > .ph { cursor: default; text-transform: none; letter-spacing: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text); min-height: 48px; }
+.share-page .panel > .ph::after { display: none; }
+.share-page .panel > .ph .hint { margin-left: auto; font-weight: var(--fw-regular); font-size: var(--fs-xs); color: var(--text-2); }
+.sh-ph { flex-wrap: wrap; row-gap: var(--sp-2); align-items: center; }
+.sh-ph-t { margin-right: auto; }
+.sh-volar[hidden] { display: none; }
+.share-page .sh-tabs { width: auto; flex-wrap: nowrap; overflow: visible; }
+.share-page .sh-tabs button { flex: 0 0 auto; min-height: 32px; white-space: nowrap; padding-inline: var(--sp-4); line-height: 1; }
+.share-page .share-splat-select { width: auto; max-width: 260px; height: 32px; margin-left: var(--sp-2); }
+.sh-view { --stage: #0A0C10; height: 64dvh; min-height: 400px; display: grid; place-items: center; position: relative; background: var(--stage); }
+.sh-spin { width: min(80%, 320px); text-align: center; }
+.sh-spin .sk { height: 8px; border-radius: var(--r-pill); }
+.sh-spin .footer-note { margin: var(--sp-2) 0 0; color: var(--on-media-2); }
+.sh-err { color: var(--on-media-2); }
+.share-page .sh-view > .footer-note { color: var(--on-media-2); padding: var(--sp-5); text-align: center; }
+@media (max-width: 700px) {
+  .sh-ph { padding: var(--sp-3); }
+  .sh-ph-t { margin-right: 0; flex: 1 1 auto; }
+  .sh-volar { flex: none; }
+  .share-page .sh-tabs { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
+  .share-page .sh-tabs:has(button:only-child) { grid-template-columns: 1fr; }
+  .share-page .sh-tabs button { min-height: 44px; padding-inline: var(--sp-1); }
+  .share-page .share-splat-select { grid-column: 1 / -1; width: 100%; max-width: none !important; height: 44px; margin: var(--sp-1) 0 0; }
+  .share-page .sh-ph > .share-splat-select { flex: 1 1 100%; }
+}
+
+/* ── Comparador ───────────────────────────────────────────── */
+.share-page { --stage: #0A0C10; }
+.share-page .cmp { aspect-ratio: 4 / 3; max-height: 70vh; width: 100%; background: var(--stage); }
+.share-page .cmp img { width: 100%; height: 100%; object-fit: contain; filter: url(#sh-hard); }
+.share-page .cmp-over { position: absolute; inset: 0; }
+.share-page .cmp-handle { width: 2px; background: var(--on-media); box-shadow: var(--shadow-1); }
+.share-page .cmp-handle span { width: 36px; height: 36px; background: var(--on-media); }
+.share-page .cmp-handle span::before, .share-page .cmp-handle span::after {
+  content: ""; position: absolute; top: 50%; width: 7px; height: 7px; margin-top: -3.5px;
+  border-top: 2px solid var(--media-scrim-strong); border-left: 2px solid var(--media-scrim-strong);
+}
+.share-page .cmp-handle span::before { left: 8px; transform: rotate(-45deg); }
+.share-page .cmp-handle span::after { right: 8px; transform: rotate(135deg); }
+@media (pointer: coarse) {
+  .share-page .cmp-handle span { width: 44px; height: 44px; }
+  .share-page .cmp-handle span::before { left: 12px; }
+  .share-page .cmp-handle span::after { right: 12px; }
+}
+@media (max-width: 700px) { .share-page .cmp { max-height: 60vh; } }
+
+/* ── Descargas ────────────────────────────────────────────── */
+.sh-dl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-2); }
+.sh-dl { flex-direction: row; align-items: center; gap: var(--sp-3); min-width: 0; }
+.sh-dl > div { display: flex; flex-direction: column; gap: var(--sp-0); min-width: 0; }
+.sh-dl svg.ic { flex: none; width: var(--ic-md); height: var(--ic-md); color: var(--accent-fg); }
+.sh-dl .sh-dl-sub { font-size: var(--fs-2xs); letter-spacing: var(--tr-caps); }
+.sh-foot { margin: var(--sp-3) 0 0; }
+@media (max-width: 480px) { .sh-dl-grid { grid-template-columns: 1fr; } }
+
+/* estados vacíos */
+.share-page .empty { padding: var(--sp-9) var(--sp-5); }
+.share-page .empty p { margin: 0; color: var(--text-2); }

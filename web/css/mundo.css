@@ -1,0 +1,75 @@
+/* AeroBrain · Mundo (mundo.html) — loads AFTER style.css. Tokens only; see DESIGN.md. */
+
+/* ── Filtros + navegación del carrusel en una sola fila ──── */
+.w-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-2); flex-wrap: nowrap; }
+.w-bar .w-filters { margin: 0; flex: 1 1 auto; min-width: 0; }
+.w-nav { display: inline-flex; gap: var(--sp-1); flex: none; }
+.w-nav .btn:disabled { opacity: .4; }
+@media (pointer: coarse), (max-width: 820px) { .w-nav { display: none; } }
+@media (max-width: 640px) {
+  .w-bar .w-filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: calc(var(--sp-4) * -1); padding-inline: var(--sp-4); }
+  .w-bar .w-filters::-webkit-scrollbar { display: none; }
+}
+
+/* ── Carrusel: snap real, sin flechas encima de las tarjetas ── */
+.w-railwrap { margin-inline: calc(var(--sp-5) * -1); }
+.w-rail {
+  scroll-snap-type: x mandatory; scroll-padding-inline: var(--sp-5);
+  padding: var(--sp-half) var(--sp-5) var(--sp-4); gap: var(--sp-4); overscroll-behavior-x: contain;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 calc(100% - var(--sp-8)), transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 calc(100% - var(--sp-8)), transparent 100%);
+}
+.wi { flex: 0 0 min(340px, 78vw); scroll-snap-align: start; }
+.wi:focus-visible { outline-offset: -3px; }
+.wi.sel { border-color: var(--accent); }
+.wi-body { display: flex; flex-direction: column; gap: var(--sp-0); padding: var(--sp-3) var(--sp-4); }
+.wi-name {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+  font-size: var(--fs-xl); font-weight: var(--fw-semibold); line-height: var(--lh-snug);
+  min-height: calc(2 * 1.3em); text-wrap: balance; color: var(--on-media);
+}
+.wi-meta { font-size: var(--fs-xs); color: var(--on-media-2); margin-top: 0; }
+.wi-stats { flex-wrap: nowrap; overflow: hidden; margin-top: var(--sp-1); }
+.wi-stats i {
+  flex: none; white-space: nowrap; font-size: var(--fs-xs); color: var(--on-media-2);
+  border-radius: var(--r-pill); background: var(--media-scrim); border-color: var(--media-line);
+}
+.wi-stats i:nth-child(n+4) { display: none; }
+.wi-badge { font-size: var(--fs-2xs); color: var(--media-accent); background: var(--media-scrim); border-color: var(--media-line); }
+.wi-badge.mesh { color: var(--media-ok); background: var(--media-scrim); }
+.wi-rec { font-size: var(--fs-2xs); color: var(--media-warn); background: var(--media-scrim); border-color: var(--media-line); }
+.wi-shade { background: linear-gradient(180deg, transparent 22%, var(--media-scrim-strong) 82%); }
+
+/* ── Panel de misión ──────────────────────────────────────── */
+.wp-in {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, auto);
+  gap: var(--sp-5) var(--sp-7); align-items: start; padding: var(--sp-5) var(--sp-6);
+  border-radius: var(--r-xl);
+}
+.wp-name { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); line-height: var(--lh-snug); text-wrap: balance; }
+.wp-chips { margin-top: var(--sp-2); }
+.wp-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: var(--sp-4) var(--sp-5); margin-top: var(--sp-4); }
+.wp-data b { font-size: var(--fs-xl); white-space: nowrap; }
+.wp-data span { font-size: var(--fs-xs); letter-spacing: var(--tr-caps); color: var(--text-2); }
+.wp-cfg { margin: 0; gap: var(--sp-2); }
+.wp-cfg-g > span { font-size: var(--fs-xs); color: var(--text-2); min-width: 64px; }
+.wp-cfg-g.coverage button, .wp-cfg-g button { font-size: var(--fs-sm); }
+.wp-go {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: var(--sp-4) var(--sp-5); flex-wrap: wrap;
+  padding-top: var(--sp-5); border-top: 1px solid var(--line);
+}
+.wp-modes { flex: none; }
+.wp-modes button { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.wp-modes button svg { flex: none; }
+.wp-mis-sub { flex: 1 1 160px; margin: 0; font-size: var(--fs-md); color: var(--text-2); }
+.wp-fly { min-width: 200px; height: 48px; padding: 0 var(--sp-6); font-size: var(--fs-xl); font-weight: var(--fw-semibold); gap: var(--sp-2); }
+@media (max-width: 820px) {
+  .wp-in { grid-template-columns: minmax(0, 1fr); padding: var(--sp-4); gap: var(--sp-4); }
+  .wp-go { flex-direction: column; align-items: stretch; padding-top: var(--sp-4); gap: var(--sp-3); }
+  .wp-modes { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .wp-modes button { justify-content: center; padding-inline: var(--sp-1); gap: var(--sp-1); font-size: var(--fs-sm); }
+  .wp-modes button svg { display: none; }
+  .wp-mis-sub { flex: none; text-align: center; }
+  .wp-fly { width: 100%; }
+  .w-panel { margin-bottom: var(--sp-8); }
+}

@@ -18,6 +18,17 @@
   font-synthesis: none;
 }
 
+/* Light theme: same values as style.css (html[data-theme="light"]); login.js applies ab_theme */
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F2F4F8; --surface: #FFFFFF; --surface-2: #EAEEF4;
+  --line: #DDE3EC; --line-strong: #C4CDDA;
+  --text: #17202B; --text-2: #4E5D70; --text-3: #5F6C7E;
+  --accent: #1E7FD1; --accent-fg: #1565B0; --accent-solid: #1668B5; --accent-hover: #135A9E; --accent-press: #114F8A;
+  --text-on-accent: #FFFFFF;
+  --ok: #1E8F63; --err: #C24C4C; --err-fg: #B03A3A;
+}
+
 * { box-sizing: border-box; }
 html { scrollbar-gutter: stable; }
 html, body { min-height: 100%; }
@@ -51,9 +62,10 @@ button, input, select, textarea { font: inherit; }
   transition: border-color var(--dur-fast) var(--ease-out);
 }
 .login-field input:focus { border-color: var(--accent); }
+.login-field input[aria-invalid="true"] { border-color: var(--err); }
 .login-field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .login-reveal {
-  position: absolute; top: 6px; right: 6px; width: 40px; height: 40px; display: grid; place-items: center;
+  position: absolute; top: 4px; right: 4px; width: 44px; height: 44px; display: grid; place-items: center;
   border: 0; border-radius: var(--r-sm); color: var(--text-2); background: transparent; cursor: pointer;
   transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 }

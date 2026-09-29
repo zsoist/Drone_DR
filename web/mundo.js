@@ -5,6 +5,13 @@
 const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 const fechaDe = cid => { const m = /(\d{4})(\d{2})(\d{2})/.exec(cid||''); return m ? `${+m[3]} ${MESES[+m[2]-1]} ${m[1]}` : ''; };
 const dur = s => { s = Math.round(s||0); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
+// guion no separable en rangos ("18-65m" nunca parte en el guion)
+const nbh = t => String(t).replace(/(\d)-(?=\d)/g, '$1\u2011');
+const MISSIONS = {
+  libre: { label: 'Vuelo libre', sub: 'Explora sin límites', extra: '' },
+  gaterush: { label: 'Gate Rush', sub: 'Aros sobre tu ruta real', extra: '&reto=1' },
+  cine: { label: 'Cinemático', sub: 'Tour orbital automático', extra: '&modo=cinematico' },
+};
 const best = cid => { const t = parseFloat(localStorage.getItem(`ab.fv.best.${cid}.gaterush`)); return Number.isFinite(t) ? t : null; };
 // poster ligero (ortho_thumb.webp) con capa de respaldo al ortho.webp: si la miniatura da 404
 // la capa falla en silencio y se ve la siguiente
@@ -22,16 +29,20 @@ const hydratePreview = card => {
 
 const SV = (d, s=13) => `<svg width="${s}" height="${s}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const I = {
-  plane: SV('<path d="M2.5 10.5L17 3l-4.5 14-3-6z"/>'),
+  plane: SV('<path d="M2.5 10.5L17 3l-4.5 14-3-6z"/>', 16),
   flag: SV('<path d="M5 17V4c3-1.8 6 1.8 9 0v8c-3 1.8-6-1.8-9 0"/>'),
   cam: SV('<rect x="2.5" y="5.5" width="11" height="9" rx="2"/><path d="M13.5 9l4-2.5v7l-4-2.5z"/>'),
+  libre: SV('<path d="M2.5 10.5L17 3l-4.5 14-3-6z"/>', 16),
+  gaterush: SV('<path d="M5 17V4c3-1.8 6 1.8 9 0v8c-3 1.8-6-1.8-9 0"/>', 16),
+  cine: SV('<rect x="2.5" y="5.5" width="11" height="9" rx="2"/><path d="M13.5 9l4-2.5v7l-4-2.5z"/>', 16),
   trophy: SV('<path d="M6 3.5h8v4a4 4 0 01-8 0zM6 5H3.5a2.5 2.5 0 002.5 3M14 5h2.5A2.5 2.5 0 0114 8M10 11.5V15M7 16.5h6"/>', 11),
 };
 const main = renderShell('mundo.html');
-let cfg = { cielo: 'dia', calidad: 'auto', modo: 'asistido', cobertura: 'auto', forma: 'circle' };
+let cfg = { cielo: 'dia', calidad: 'auto', modo: 'asistido', cobertura: 'auto', forma: 'circle', mision: 'libre' };
 try { cfg = { ...cfg, ...JSON.parse(localStorage.getItem('ab.fv.launchcfg') || '{}') } } catch {}
 cfg.cobertura = ['auto','100','200','400','600','1000'].includes(String(cfg.cobertura)) ? String(cfg.cobertura) : 'auto';
 cfg.forma = cfg.forma === 'square' ? 'square' : 'circle';
+if (!MISSIONS[cfg.mision]) cfg.mision = 'libre';
 const effectiveCoverageChoice = scene => {
   if (cfg.cobertura === 'auto') return 'auto';
   const rows = scene?.coverage?.shapes?.[cfg.forma] || [];
@@ -100,14 +111,14 @@ function isla(sc, i) {
     ${c.splat?'<span class="wi-badge">FOTO-REAL</span>':c.mesh?'<span class="wi-badge mesh">MALLA 3D</span>':''}
     ${rec!=null?`<span class="wi-rec">${I.trophy} ${rec.toFixed(1)}s</span>`:''}
     <div class="wi-body">
-      <div class="wi-name">${esc(sc.name)}</div>
-      <div class="wi-meta">${fechaDe(sc.clip_id)||''}${st.track_duration_s?` · vuelo ${dur(st.track_duration_s)}`:''}</div>
+      <div class="wi-name">${nbh(esc(sc.name))}</div>
+      <div class="wi-meta">${fechaDe(sc.clip_id)||'&nbsp;'}${st.track_duration_s?` · vuelo ${dur(st.track_duration_s)}`:''}</div>
       <div class="wi-stats">
-        ${site.scene_id?`<i>sitio · v${site.version_count||1}</i>`:''}
-        ${site.source_count?`<i>${site.source_count} ${site.source_count===1?'video':'videos'}</i>`:''}
-        ${sc.world?.size_m?`<i>${(sc.world.size_m[0]*sc.world.size_m[1]/10000).toFixed(1)} ha</i>`:''}
-        ${st.gsd_cm_px?`<i>${st.gsd_cm_px} cm/px</i>`:''}
-        ${c.track?'<i>ruta GPS</i>':''}
+        ${sc.world?.size_m?`<i>${(sc.world.size_m[0]*sc.world.size_m[1]/10000).toFixed(1)}&nbsp;ha</i>`:''}
+        ${st.gsd_cm_px?`<i>${st.gsd_cm_px}&nbsp;cm/px</i>`:''}
+        ${site.source_count?`<i>${site.source_count}&nbsp;${site.source_count===1?'video':'videos'}</i>`:''}
+        ${c.track?'<i>ruta&nbsp;GPS</i>':''}
+        ${site.scene_id?`<i>sitio&nbsp;·&nbsp;v${site.version_count||1}</i>`:''}
       </div>
     </div>
   </article>`;
@@ -126,12 +137,13 @@ function pick(i) {
   const integrated = site.source_status?.integrated || site.effective_sources?.length || 0;
   const readyCoverage = coverage.filter(row => row.ready).map(row => row.diameter_m);
   const rec = best(sel.clip_id);
-  const go = (extra='') => `volar.html?m=${encodeURIComponent(sel.clip_id)}${extra}${cfgExtra()}`;
+  const mis = MISSIONS[cfg.mision] || MISSIONS.libre;
+  const goUrl = `volar.html?m=${encodeURIComponent(sel.clip_id)}${mis.extra}${cfgExtra()}`;
   const p = document.getElementById('w-panel');
   p.innerHTML = c.terrain ? `
     <div class="wp-in">
       <div>
-        <div class="wp-name">${esc(sel.name)}</div>
+        <div class="wp-name">${nbh(esc(sel.name))}</div>
         <div class="wp-chips">
           ${site.scene_id?`<span class="fv-chip on">sitio estable · ${site.version_count||1} versiones</span>`:''}
           ${site.source_count?`<span class="fv-chip">${integrated}/${site.source_count} videos integrados</span>`:''}
@@ -160,13 +172,15 @@ function pick(i) {
         <div class="wp-cfg-g" data-k="forma"><span>Forma</span>
           <button data-v="circle">Círculo</button><button data-v="square">Cuadrado</button></div>`:''}
       </div>
-      <div class="wp-missions">
-        <button class="wp-m" data-go="${go()}"><b>${I.plane} Vuelo libre</b><span>explora sin límites</span></button>
-        <button class="wp-m hot" data-go="${go('&reto=1')}"><b>${I.flag} Gate Rush</b><span>${rec!=null?`bate tu ${rec.toFixed(1)}s`:'contra tu ruta real'}</span></button>
-        <button class="wp-m" data-go="${go('&modo=cinematico')}"><b>${I.cam} Cinemático</b><span>tour orbital</span></button>
+      <div class="wp-go">
+        <div class="seg wp-modes" id="wp-modes" role="group" aria-label="Misión">
+          ${Object.entries(MISSIONS).map(([k, m]) => `<button type="button" data-mis="${k}" aria-pressed="${k===cfg.mision}" class="${k===cfg.mision?'on':''}">${I[k]} ${m.label}</button>`).join('')}
+        </div>
+        <p class="wp-mis-sub">${cfg.mision==='gaterush'&&rec!=null?`Bate tu ${rec.toFixed(1)}s`:mis.sub}</p>
+        <button class="btn primary lg wp-fly" data-go="${goUrl}">${I.plane} Volar</button>
       </div>
-    </div>` : `<div class="wp-in"><div class="wp-name">${esc(sel.name)}</div>
-      <a class="fv-cta ghost" href="tresd.html" style="max-width:280px">Procesar en Estudio 3D</a></div>`;
+    </div>` : `<div class="wp-in"><div class="wp-name">${nbh(esc(sel.name))}</div>
+      <a class="btn" href="tresd.html">Procesar en Estudio 3D</a></div>`;
   p.classList.add('show');
   p.querySelectorAll('.wp-cfg-g').forEach(g => {
     const k = g.dataset.k;
@@ -196,16 +210,20 @@ async function boot() {
       </div>
     </header>
     <div id="w-cards">
-      <div class="w-filters" id="w-filters">
-        <button class="on" data-f="todas">Todas</button>
-        <button data-f="fotoreal">Foto-real</button>
-        <button data-f="record">Con récord</button>
-        <button data-f="volables">Volables</button>
+      <div class="w-bar">
+        <div class="w-filters" id="w-filters" role="group" aria-label="Filtrar islas">
+          <button class="on" data-f="todas">Todas</button>
+          <button data-f="fotoreal">Foto-real</button>
+          <button data-f="record">Con récord</button>
+          <button data-f="volables">Volables</button>
+        </div>
+        <div class="w-nav">
+          <button class="btn icon" id="w-prev" aria-label="Islas anteriores">${icon('chevL')}</button>
+          <button class="btn icon" id="w-next" aria-label="Islas siguientes">${icon('chevR')}</button>
+        </div>
       </div>
       <div class="w-railwrap">
-        <button class="w-arrow prev" id="w-prev" aria-label="anterior">‹</button>
         <div class="w-rail" id="w-rail"><div class="fv-loading">Cargando mundo…</div></div>
-        <button class="w-arrow next" id="w-next" aria-label="siguiente">›</button>
       </div>
       <div class="w-panel" id="w-panel"></div>
     </div>
@@ -297,6 +315,8 @@ async function boot() {
       ? list.map(({ sc, i }) => isla(sc, i)).join('')
       : '<div class="fv-loading">Nada con ese filtro.</div>';
     observePreviews();
+    rail.scrollLeft = 0;
+    requestAnimationFrame(() => syncArrows());
     const first = list[0];
     if (first) pick(first.i);
   };
@@ -309,10 +329,18 @@ async function boot() {
   const step = () => (rail.querySelector('.wi')?.getBoundingClientRect().width || 320) + 16;
   document.getElementById('w-prev').addEventListener('click', () => rail.scrollBy({ left: -step(), behavior: 'smooth' }));
   document.getElementById('w-next').addEventListener('click', () => rail.scrollBy({ left: step(), behavior: 'smooth' }));
+  const syncArrows = () => {
+    const max = rail.scrollWidth - rail.clientWidth - 2;
+    document.getElementById('w-prev').disabled = rail.scrollLeft <= 2;
+    document.getElementById('w-next').disabled = rail.scrollLeft >= max;
+  };
+  rail.addEventListener('scroll', syncArrows, { passive: true });
+  addEventListener('resize', syncArrows);
   applyFiltro();
+  syncArrows();
   const activateCard = el => {
     pick(+el.dataset.i);
-    el.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+    el.scrollIntoView({ behavior:'smooth', inline:'nearest', block:'nearest' });
   };
   rail.addEventListener('click', e => {
     const el = e.target.closest('.wi'); if (!el) return;
@@ -331,6 +359,14 @@ async function boot() {
       cfg[g.dataset.k] = cb.dataset.v;
       localStorage.setItem('ab.fv.launchcfg', JSON.stringify(cfg));
       pick(scenes.indexOf(sel));
+      return;
+    }
+    const mb = e.target.closest('[data-mis]');
+    if (mb) {
+      cfg.mision = mb.dataset.mis;
+      localStorage.setItem('ab.fv.launchcfg', JSON.stringify(cfg));
+      pick(scenes.indexOf(sel));
+      document.querySelector(`#wp-modes [data-mis="${cfg.mision}"]`)?.focus({ preventScroll: true });
       return;
     }
     const b = e.target.closest('[data-go]'); if (!b) return;

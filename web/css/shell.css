@@ -1,0 +1,151 @@
+/* AeroBrain shell — sidebar footer, mobile tab bar + "Más" sheet, page header, shared job card.
+   Loads after style.css. Uses only tokens from DESIGN.md. Motion: transform/opacity only. */
+
+.foot-btns [hidden], .msheet-foot [hidden], .msheet-ov[hidden], .foot-dev[hidden] { display: none; }
+
+/* ---------- sidebar footer (desktop) ---------- */
+.sidebar .foot { padding: 12px 4px 4px; }
+.sidebar .foot .foot-status {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 10px; font-size: var(--fs-xs); letter-spacing: 0; color: var(--text-2);
+}
+.sidebar .foot .dot { margin-right: 0; background: var(--ok); }
+.sidebar .foot .foot-dev { flex-basis: auto; color: var(--text-2); }
+.sidebar .foot-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sidebar .foot-btns.solo { grid-template-columns: 1fr; }
+.sidebar .foot-btns .btn { width: 100%; justify-content: center; white-space: nowrap; }
+.sidebar .foot-btns .btn.ghost { border-color: var(--line-strong); }
+.sidebar .foot-btns .btn.on { background: var(--surface-2); color: var(--text); }
+
+/* ---------- page header (pageHead() in shell.js) ---------- */
+.page-head.ph2 {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 20px;
+  flex-wrap: wrap; margin-bottom: var(--sp-5);
+}
+.ph2-t { min-width: 0; }
+.ph2 h1 { font-size: var(--fs-2xl); font-weight: var(--fw-semibold, 600); letter-spacing: var(--tr-tight); line-height: var(--lh-tight); margin: 0; }
+.ph2-sub { margin: 4px 0 0; font-size: var(--fs-md); color: var(--text-2); line-height: var(--lh-snug); max-width: 62ch; }
+.ph2-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* ---------- mobile tab bar ---------- */
+.mnav, .msheet-ov { display: none; }
+@media (max-width: 820px) {
+  :root { --mnav-h: 56px; }
+  .shell > .sidebar { display: none; }
+  .shell > .main { padding-bottom: calc(var(--mnav-h) + env(safe-area-inset-bottom) + var(--sp-4)); }
+  .mnav {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-nav);
+    height: calc(var(--mnav-h) + env(safe-area-inset-bottom));
+    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: var(--surface); border-top: 1px solid var(--line);
+  }
+  .mnav-i {
+    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    min-height: 44px; padding: 0 2px; border: 0; background: none; font: inherit;
+    font-size: var(--fs-xs); font-weight: var(--fw-medium, 500); color: var(--text-2);
+    -webkit-tap-highlight-color: transparent; cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .mnav-i svg.ic { width: var(--ic-lg); height: var(--ic-lg); }
+  .mnav-i span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mnav-i::before {
+    content: ""; position: absolute; top: 0; left: 28%; right: 28%; height: 2px; border-radius: 0 0 var(--r-xs) var(--r-xs);
+    background: var(--accent); transform: scaleX(0); transition: transform var(--dur-base) var(--ease-out);
+  }
+  .mnav-i.active { color: var(--accent-fg); }
+  .mnav-i.active::before { transform: scaleX(1); }
+  .mnav-i:active { transform: scale(.97); }
+
+  .msheet-ov {
+    display: block; position: fixed; inset: 0; z-index: var(--z-overlay);
+    background: var(--overlay-scrim); opacity: 0; transition: opacity var(--dur-base) var(--ease-out);
+  }
+  .msheet-ov[hidden] { display: none; }
+  .msheet-ov.on { opacity: 1; }
+  .msheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: var(--sp-2) var(--sp-4) calc(var(--sp-4) + env(safe-area-inset-bottom));
+    background: var(--surface); border-top: 1px solid var(--line-strong);
+    border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: var(--shadow-3);
+    transform: translateY(24px); transition: transform var(--dur-slow) var(--ease-out);
+    max-height: 85dvh; overflow-y: auto;
+  }
+  .msheet-ov.on .msheet { transform: translateY(0); }
+  .msheet-grip { width: 36px; height: 4px; border-radius: var(--r-pill); background: var(--line-strong); margin: 4px auto var(--sp-3); }
+  .msheet-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
+  .ms-item {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    min-height: 76px; padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-lg);
+    background: var(--surface-2); color: var(--text); font-size: var(--fs-md); font-weight: var(--fw-medium, 500);
+    text-align: center;
+  }
+  .ms-item svg.ic { width: var(--ic-xl); height: var(--ic-xl); color: var(--text-2); }
+  .ms-item.active { border-color: var(--accent); color: var(--accent-fg); }
+  .ms-item.active svg.ic { color: var(--accent-fg); }
+  .ms-item:active { transform: scale(.98); }
+  .msheet-foot { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+  .msheet-foot:has([hidden]) { grid-template-columns: 1fr; }
+  .msheet-foot .btn { width: 100%; justify-content: center; border-color: var(--line-strong); }
+}
+
+/* ---------- shared job card (Dron / Studio / 3D) ---------- */
+.job-card.jcx { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.jcx-top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.jcx-ic {
+  flex: none; display: grid; place-items: center; width: 32px; height: 32px;
+  border-radius: var(--r-md); background: var(--accent-dim); color: var(--accent-fg);
+}
+.jcx-ic svg.ic { width: var(--ic-md); height: var(--ic-md); }
+.jcx-tt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.job-card.jcx .jc-title {
+  display: block; margin: 0; font-size: var(--fs-lg); font-weight: 600; letter-spacing: var(--tr-tight);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: var(--lh-snug);
+}
+.jcx-kind { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
+.job-card.jcx .jc-status { flex: none; align-self: center; margin: 0; }
+.jcx-run { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); margin-top: var(--sp-1); }
+.jcx-stage { font-size: var(--fs-md); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jcx-pct { font-size: var(--fs-lg); font-weight: 600; color: var(--accent-fg); }
+.job-card.jcx .jc-bar.jcx-bar { height: 6px; margin: 0; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
+.jcx-bar > div { border-radius: var(--r-pill); }
+.jcx-line {
+  margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jcx-note { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-base); overflow-wrap: anywhere; }
+.jcx-note.err { color: var(--err-fg); }
+.jcx-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.jcx-actions:empty { display: none; }
+.jcx-empty { margin: 0; padding: var(--sp-4) 0; font-size: var(--fs-md); color: var(--text-3); text-align: center; }
+
+.jcx-more { border-top: 1px solid var(--line); margin-top: var(--sp-1); padding-top: var(--sp-1); }
+.jcx-more > summary {
+  display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none;
+  min-height: 32px; font-size: var(--fs-sm); font-weight: 500; color: var(--text-2);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.jcx-more > summary::-webkit-details-marker { display: none; }
+.jcx-more > summary svg.ic { width: var(--ic-sm); height: var(--ic-sm); transition: transform var(--dur-base) var(--ease-out); }
+.jcx-more[open] > summary svg.ic { transform: rotate(180deg); }
+@media (hover: hover) { .jcx-more > summary:hover { color: var(--text); } }
+.jcx-more-b { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-2) 0 var(--sp-1); min-width: 0; }
+.jcx-dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: var(--sp-2) var(--sp-4); margin: 0; }
+.jcx-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.jcx-row dt { font-size: var(--fs-xs); color: var(--text-2); }
+.jcx-row dd { margin: 0; font-size: var(--fs-md); color: var(--text); overflow-wrap: anywhere; }
+.jcx-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: var(--fs-sm); color: var(--text-2); }
+.jcx-list b { color: var(--text); font-weight: 600; }
+.jcx-pre {
+  margin: 0; padding: var(--sp-2) var(--sp-3); max-height: 160px; overflow: auto;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md);
+  font: var(--fs-xs)/var(--lh-base) var(--mono); color: var(--text-2);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.jcx-more-a { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.jcx-id { font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; min-width: 0; }
+.job-card.jcx .jc-ph { margin: 0; }
+@media (max-width: 820px) {
+  .job-card.jcx .jc-ph-row { grid-template-columns: 14px minmax(0, 1fr) 72px; }
+  .job-card.jcx .jc-ph-bar { grid-column: 2 / -1; grid-row: 2; }
+}
