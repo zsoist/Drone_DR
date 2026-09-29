@@ -42,13 +42,26 @@ PY
   }
   echo "worker reiniciado"
 }
+# Un Chrome colgado no puede colgar el deploy: timeout (coreutils) si existe, si no perl alarm.
+# Exit 124 = expiró (mismo contrato que timeout).
+run_timeout() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$secs" "$@"
+  else
+    perl -e '$s=shift; $p=fork(); if(!$p){exec @ARGV or exit 127} $SIG{ALRM}=sub{kill "TERM",$p; sleep 2; kill "KILL",$p; waitpid($p,0); exit 124}; alarm $s; waitpid($p,0); exit($? >> 8)' "$secs" "$@"
+  fi
+}
+
 preflight_world() {
-  python3 "$ROOT/pipeline/audit_world.py" >/tmp/aerobrain-world-audit-deploy.json || {
+  run_timeout 300 python3 "$ROOT/pipeline/audit_world.py" >/tmp/aerobrain-world-audit-deploy.json || {
     echo "ABORTADO: audit_world rojo antes del reinicio" >&2
     tail -20 /tmp/aerobrain-world-audit-deploy.json >&2
     return 1
   }
-  python3 "$ROOT/pipeline/world_runtime_sweep.py" \
+  run_timeout 600 python3 "$ROOT/pipeline/world_runtime_sweep.py" \
     >/tmp/aerobrain-world-runtime-deploy.json || {
     echo "ABORTADO: sweep runtime multi-mapa rojo antes del reinicio" >&2
     tail -40 /tmp/aerobrain-world-runtime-deploy.json >&2
@@ -76,7 +89,7 @@ PY
     echo "ABORTADO: no hay mundo activo collision-ready" >&2
     return 1
   fi
-  python3 "$ROOT/pipeline/flightverse_collision_gate.py" "$ACTIVE_WORLD" --stress 100 \
+  run_timeout 600 python3 "$ROOT/pipeline/flightverse_collision_gate.py" "$ACTIVE_WORLD" --stress 100 \
     >/tmp/aerobrain-world-stress-deploy.json || {
     echo "ABORTADO: gate FLIGHTVERSE 100x rojo ($ACTIVE_WORLD) antes del reinicio" >&2
     tail -30 /tmp/aerobrain-world-stress-deploy.json >&2

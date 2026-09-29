@@ -1,6 +1,10 @@
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     (async () => {
       const slug = new URLSearchParams(location.search).get('id');
+      if (!slug || !/^[\w-]+$/.test(slug)) {   // sin ?id válido no se pide properties/null.json (404 en consola)
+        document.getElementById('root').innerHTML = '<p style="padding:40px;color:#2A3646">Este enlace no incluye una propiedad. Pide el enlace completo a quien te lo compartió.</p>';
+        return;
+      }
       let p;
       try {
         const r = await fetch(`data/properties/${slug}.json`);

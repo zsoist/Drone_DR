@@ -19,7 +19,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 DB = Path("/Volumes/SSD/drone-vault/manifest/jobs.db")
-JOB_LOG_DIR = Path("/Volumes/SSD/drone-vault/ops/job_logs")
+JOB_LOG_DIR = Path(os.environ.get("AEROBRAIN_JOB_LOG_DIR")
+                   or "/Volumes/SSD/drone-vault/ops/job_logs")
 _LOCK = threading.Lock()
 _TERMINAL_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 SESSION_TTL_SECONDS = 24 * 60 * 60
@@ -80,6 +81,7 @@ def init(orphan_kinds: tuple = ()):
     marcarlos huérfanos en su arranque (server → light, worker → heavy). Así un
     restart del server web YA NO mata jobs 3D del worker."""
     DB.parent.mkdir(parents=True, exist_ok=True)
+    orphan_containers = []       # se matan DESPUÉS del commit: ssh puede bloquear ~40 s
     with _LOCK, _conn() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY, kind TEXT, label TEXT, status TEXT, detail TEXT,
@@ -121,7 +123,7 @@ def init(orphan_kinds: tuple = ()):
                     if not _proc_gone(pid):
                         _kill_pg(pid, signal.SIGKILL)
                 if o["container"]:
-                    kill_container(o["container"], o["backend"])
+                    orphan_containers.append((o["container"], o["backend"]))
             c.execute(f"UPDATE jobs SET status='error', detail='proceso dueño reiniciado "
                       f"durante el job', finished=?, pid=NULL "
                       f"WHERE status='running' AND kind IN ({ph})",
@@ -129,6 +131,8 @@ def init(orphan_kinds: tuple = ()):
         c.execute("UPDATE jobs SET pid=NULL WHERE status != 'running' AND pid IS NOT NULL")
         c.execute("DELETE FROM sessions WHERE expiry < ?", (time.time(),))
     DB.chmod(0o600)
+    for name, backend in orphan_containers:
+        kill_container(name, backend)
 
 
 # ---------------- sessions (cookies HttpOnly, persistentes) ----------------

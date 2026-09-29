@@ -4,8 +4,8 @@
 // La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
 // auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
 // contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
-import * as THREE from '/vendor/three180.module.js?v=346';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=346';
+import * as THREE from '/vendor/three180.module.js?v=348';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=348';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -27,7 +27,7 @@ const btn = (id, label, path) =>
 export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, unitsMeters = null, signal = null } = {}) {
   const abortErr = () => new DOMException('carga de splat cancelada', 'AbortError');
   if (signal?.aborted) throw abortErr();
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=346');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=348');
   if (signal?.aborted) throw abortErr();
   host.style.position = 'relative';
   const holder = document.createElement('div');
@@ -138,8 +138,8 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
     radius = Math.max(bb.getSize(new THREE.Vector3()).length() / 2, 0.5);
   }
   const homeState = {};
-  const homeMin = Math.max(radius * 0.0012, 0.001);
-  const inspectMin = Math.max(radius * 0.00008, 0.00018);
+  let homeMin = Math.max(radius * 0.0012, 0.001);
+  let inspectMin = Math.max(radius * 0.00008, 0.00018);
 
   function frame() {
     const dir = new THREE.Vector3(0.18, 0.78, 0.52).normalize();
@@ -157,6 +157,42 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   }
   frame();
   loop();
+
+  // ── extensión ROBUSTA: la caja min/max de todos los centros se infla con floaters lejanos y el
+  // encuadre inicial queda diminuto. Tras el primer frame muestreamos ≤~50k centros y usamos el
+  // percentil 2–98 por eje (fuera del camino crítico; si algo falla se queda la caja completa) ──
+  let touched = false;
+  ctrl.addEventListener('start', () => { touched = true; });
+  setTimeout(() => {
+    try {
+      const n = mesh.numSplats ?? mesh.splats?.numSplats ?? mesh.packedSplats?.numSplats ?? 0;
+      if (n < 2000 || n > 8e6 || typeof mesh.forEachSplat !== 'function') return;
+      const stride = Math.max(1, Math.floor(n / 50000));
+      const xs = [], ys = [], zs = [];
+      const v = new THREE.Vector3();
+      mesh.updateMatrixWorld(true);
+      mesh.forEachSplat((i, c) => {
+        if (i % stride) return;
+        v.copy(c).applyMatrix4(mesh.matrixWorld);
+        if (Number.isFinite(v.x + v.y + v.z)) { xs.push(v.x); ys.push(v.y); zs.push(v.z); }
+      });
+      if (xs.length < 500) return;
+      const pct = (a, q) => { a.sort((p, r) => p - r); return a[Math.min(a.length - 1, Math.max(0, Math.round(q * (a.length - 1))))]; };
+      const lo = new THREE.Vector3(pct(xs, 0.02), pct(ys, 0.02), pct(zs, 0.02));
+      const hi = new THREE.Vector3(pct(xs, 0.98), pct(ys, 0.98), pct(zs, 0.98));
+      const r2 = Math.max(hi.clone().sub(lo).length() / 2, 0.5);
+      if (!Number.isFinite(r2) || Math.abs(r2 - radius) / radius < 0.1) return;
+      center.copy(lo).add(hi).multiplyScalar(0.5);
+      radius = r2;
+      homeMin = Math.max(radius * 0.0012, 0.001);
+      inspectMin = Math.max(radius * 0.00008, 0.00018);
+      if (touched) {                                   // el usuario ya movió la cámara: no se la quitamos
+        const p0 = cam.position.clone(), t0 = ctrl.target.clone();
+        frame(); cam.position.copy(p0); ctrl.target.copy(t0); ctrl.update();
+      } else frame();
+      wake();
+    } catch { /* se queda la caja completa */ }
+  }, 400);
 
   // resize: el host puede cambiar (fullscreen, layout) — GS lo hacía interno
   const ro = new ResizeObserver(() => {

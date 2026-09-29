@@ -1,11 +1,11 @@
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
-import * as THREE from '/vendor/three180.module.js?v=346';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=346';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=346';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=346';
-import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=346';
-import { mountSplatViewer } from '/splatview.js?v=346';
+import * as THREE from '/vendor/three180.module.js?v=348';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=348';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=348';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=348';
+import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=348';
+import { mountSplatViewer } from '/splatview.js?v=348';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -61,13 +61,16 @@ function splatAssetFor(clipId, system) {
 }
 
 let meta = null, sys = {};
-try {
+if (!cid) {
+  // sin ?m= no hay nada que pedir: antes hacía fetch a data/models//meta.json (404) y lanzaba
+  body.innerHTML = '<div class="empty">Falta el modelo en el link (parámetro <code>?m=</code>).</div>';
+} else try {
   meta = await jfetch(`data/models/${cid}/meta.json`);
   sys = await jfetch('data/manifest/system.json').catch(() => ({}));
 } catch {
   body.innerHTML = '<div class="empty">Este modelo no existe o el link ya no está activo.</div>';
-  throw new Error('modelo no encontrado');
 }
+if (!meta) await new Promise(() => {});   // página vacía con mensaje: no seguir montando visores
 
 document.getElementById('sh-title').textContent = meta.title || `Vuelo ${cid.slice(-6)}`;
 document.title = `AeroBrain — ${meta.title || cid}`;

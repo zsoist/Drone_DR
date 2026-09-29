@@ -15,8 +15,10 @@ Reporte cacheado en vault/manifest/capture/<cid>.json.
 
 Usage: python3 capture_quality.py <clip_id> [--profile preview|balanced|premium|splat]
 """
+import bisect
 import json
 import math
+import os
 import subprocess
 import sys
 import tempfile
@@ -136,6 +138,15 @@ def gps_metrics(points: list) -> dict:
     }
 
 
+def _manifest_duration(cid: str) -> float | None:
+    """Duración real del clip (manifest top-level duration_s) — stats del SRT puede faltar."""
+    try:
+        v = json.loads((VAULT / "manifest" / f"{cid}.json").read_text()).get("duration_s")
+        return float(v) if v and float(v) > 0 else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def analyze(cid: str) -> dict:
     video = _video_for(cid)
     if not video:
@@ -147,7 +158,7 @@ def analyze(cid: str) -> dict:
             srt = hits[0]
             break
     track = parse_srt(srt) if srt else {"points": [], "stats": {}}
-    dur = track["stats"].get("duration_s") or 60
+    dur = _manifest_duration(cid) or track["stats"].get("duration_s") or 60
     frames = sample_frames(video, dur)
     sharps = [f["sharp"] for f in frames] or [0]
     brights = [f["bright"] for f in frames] or [0]
@@ -243,7 +254,9 @@ def analyze(cid: str) -> dict:
         "samples": frames,
     }
     CACHE.mkdir(parents=True, exist_ok=True)
-    (CACHE / f"{cid}.json").write_text(json.dumps(report, indent=1))
+    tmp = CACHE / f".{cid}.json.{os.getpid()}.tmp"
+    tmp.write_text(json.dumps(report, indent=1))
+    os.replace(tmp, CACHE / f"{cid}.json")           # atómico: los threads del server leen en paralelo
     return report
 
 
@@ -258,7 +271,22 @@ def choose_frames(track_points: list, frame_times: list, sharp_by_time: dict,
     exige movimiento GPS mínimo entre frames elegidos. Respeta el presupuesto."""
     cfg = PROFILES.get(profile, PROFILES["balanced"])
     _secs = _t_seconds(track_points)
-    pos_by_t = {round(sec): (p["lon"], p["lat"]) for sec, p in zip(_secs, track_points)}
+    have_vt = bool(track_points) and all(p.get("vt") is not None for p in track_points)
+    if have_vt:
+        vts = [p["vt"] for p in track_points]
+        lls = [(p["lon"], p["lat"]) for p in track_points]
+
+        def pos_at(t):
+            # vecino más cercano por tiempo de VIDEO; en un hueco > 2.5 s no hay posición fiable
+            i = bisect.bisect_left(vts, t)
+            cands = [j for j in (i - 1, i) if 0 <= j < len(vts)]
+            j = min(cands, key=lambda k: abs(vts[k] - t))
+            return lls[j] if abs(vts[j] - t) <= 2.5 else None
+    else:
+        pos_by_t = {round(sec): (p["lon"], p["lat"]) for sec, p in zip(_secs, track_points)}
+
+        def pos_at(t):
+            return pos_by_t.get(int(t)) or pos_by_t.get(round(t))
     sharp_vals = sorted(sharp_by_time.values())
     cut = sharp_vals[int(len(sharp_vals) * cfg["blur_drop"])] if sharp_vals else 0
     best = sharp_vals[-1] if sharp_vals else 0
@@ -270,7 +298,7 @@ def choose_frames(track_points: list, frame_times: list, sharp_by_time: dict,
         # (el empate importa cuando un bloque entero comparte el valor mínimo)
         if s is not None and (s < cut or (s == cut and s < best * 0.5)):
             continue
-        pos = pos_by_t.get(int(t)) or pos_by_t.get(round(t))
+        pos = pos_at(t)
         if pos and last_pos:
             d = _hav_m(last_pos, pos)
             if d < cfg["min_dist_m"]:
@@ -281,8 +309,12 @@ def choose_frames(track_points: list, frame_times: list, sharp_by_time: dict,
         chosen.append({"t": t, "why": " · ".join(reason) or "espaciado"})
         if pos:
             last_pos = pos
-        if len(chosen) >= cfg["budget"]:
-            break
+    budget = cfg["budget"]
+    if len(chosen) > budget:
+        # diezma uniforme sobre TODO el clip (antes: corte al llegar al presupuesto → se perdía la cola)
+        n = len(chosen)
+        chosen = [chosen[round(i * (n - 1) / (budget - 1))] if budget > 1 else chosen[0]
+                  for i in range(budget)]
     return chosen
 
 

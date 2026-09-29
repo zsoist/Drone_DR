@@ -25,8 +25,8 @@
 - [x] ✅ Worker desacoplado + cola SQLite + progreso vivo + cancel + abort-on-nan
 - [x] ✅ Visores nube/malla/splat + mediciones (distancia/área/volumen/perfil/comparar)
 - [x] ✅ Visor por enlace dentro de la sesión privada + exports (GeoTIFF, GeoJSON, PLY, OBJ, SPLAT)
-- [x] ✅ Fast 1K/Medium 2K local en Metal/CPU; Cinematic 7K, Ultra 15K, Ultra+ 20K,
-  Frontier 30K y Grandmaster 40K en RTX CUDA estricto, con quality/browser gates
+- [x] ✅ Fast 1K/Medium 2K (Metal/CPU local sólo con `AEROBRAIN_COMPUTE=local`, legacy; hoy también van al PC);
+  Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K y Grandmaster 40K en RTX CUDA estricto, con quality/browser gates
 - [x] ✅ .ksplat export + historial versionado: current y history seleccionables en 3D/share/Splat Lab
 - [x] ✅ (2026-09-28) Política PC-only: todo ODM/splat en el PC CUDA; OrbStack bajo demanda (0 en reposo);
   retención automática del scratch del PC; puente de transferencia en D:
@@ -35,18 +35,13 @@
 - [ ] WebODM ortomosaico (fotos JPG/DNG) — opcional, ODM directo ya cubre video DJI
 - [ ] Captura orbital/oblicua dedicada para splats de fachada y malla full 3D premium
 
-### Validación CUDA vigente (2026-07-14)
+### Validación CUDA (2026-07-14)
 
-- [x] 7K, 15K y 20K reales sobre 238 cámaras; 20K verificó retry CUDA `d1→d2` por OOM.
-- [x] Gate OpenSfM de la reconstrucción acumulativa: 996/1.019 cámaras en el componente compartido,
-  10/10 fuentes, merge `FULL`; recuperación densa post-write clasificada sin OOM.
-- [x] Paquete ODM acumulativo publicado y verificado: ortho/DSM/DTM 30.539×33.664, nube, malla,
-  manifest de escena y browser QA; `recon_60b23208db` promovida explícitamente.
-- [x] Frontier 30K CUDA FULL desde cero: 3.236.419 gaussianas, pico 7.755 MiB, SOG 37,1 MB,
-  publicación y browser QA sobre `recon_60b23208db`.
-- [x] Grandmaster 40K CUDA FULL sobre la misma versión: un intento `d1`, 3.067.353 gaussianas
-  fuente, 2.881.394 publicadas tras de-halo, pico 7.730 MiB, SOG 34.903.178 bytes, publicación
-  atómica y browser QA; sin OOM ni fallback.
+- [x] 7K, 15K, 20K, Frontier 30K y Grandmaster 40K reales en RTX CUDA; gate OpenSfM de la reconstrucción
+  acumulativa `recon_60b23208db` (10/10 fuentes, merge `FULL`) y paquete ODM publicado con browser QA.
+  Cifras y tiempos: [README, "Evidencia medida"](README.md#evidencia-medida-registro-único).
+- Nota de estado: la versión **activa** de `scene_64f22e89f2` es `recon_b2fbe03239` (verificado 2026-09-28
+  en `manifest/scenes/scene_64f22e89f2.json`); `recon_60b23208db` es `ready` pero no está activa.
 
 ## V4 — Travel mode
 - [ ] Diario de viaje AI por lugar/fecha

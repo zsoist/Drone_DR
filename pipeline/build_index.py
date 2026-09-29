@@ -46,7 +46,10 @@ def load_models(models_dir: Path) -> list:
         if not mf.exists():
             continue
         try:
-            out.append(json.loads(mf.read_text()))
+            meta = json.loads(mf.read_text())
+            if isinstance(meta, dict) and (d / "ortho_thumb.webp").exists():
+                meta["thumb"] = f"data/models/{d.name}/ortho_thumb.webp"
+            out.append(meta)
         except (ValueError, OSError) as e:
             print(f"  skip meta.json corrupto {d.name}: {e}", flush=True)
     return out

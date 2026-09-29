@@ -528,6 +528,41 @@ def publish_bundle(moves: list[tuple[Path, Path]], after_publish=None) -> None:
         raise
 
 
+LOCK_MAX_AGE_S = 6 * 3600
+
+
+def _lock_is_stale(lock_path: Path) -> bool:
+    """Un lock cuyo pid ya no existe (SIGKILL) o demasiado viejo no protege a nadie."""
+    try:
+        age = time.time() - lock_path.stat().st_mtime
+        text = lock_path.read_text()
+    except OSError:
+        return False          # desapareció o ilegible: que el reintento de O_EXCL decida
+    if age > LOCK_MAX_AGE_S:
+        return True
+    m = re.search(r"pid=(\d+)", text)
+    if not m:
+        return age > 60       # lock sin pid: quizá su dueño aún está escribiéndolo
+    try:
+        os.kill(int(m.group(1)), 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False          # existe, de otro usuario
+    return False
+
+
+def _acquire_lock(lock_path: Path) -> int:
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    try:
+        return os.open(lock_path, flags, 0o600)
+    except FileExistsError:
+        if not _lock_is_stale(lock_path):
+            raise
+        lock_path.unlink(missing_ok=True)
+        return os.open(lock_path, flags, 0o600)   # si otro lo tomó primero, FileExistsError sube
+
+
 def derive_scene_aoi(
     *,
     vault: Path,
@@ -547,7 +582,7 @@ def derive_scene_aoi(
     lock_dir.mkdir(parents=True, exist_ok=True)
     lock_path = lock_dir / f".{target_cid}.scene-aoi.lock"
     try:
-        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        lock_fd = _acquire_lock(lock_path)
     except FileExistsError as error:
         raise RuntimeError(f"AOI derivation already running for {target_cid}") from error
     try:

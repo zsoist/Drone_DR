@@ -1,6 +1,6 @@
 # AeroBrain documentation index
 
-Last audited: 2026-07-15.
+Last audited: 2026-09-28.
 
 This index is the discoverability and freshness contract for first-party documentation. A document
 marked **current** describes live behavior; **evidence** records measured results; **historical** is
@@ -12,7 +12,10 @@ preserved for provenance and must not override a current contract.
 |---|---|---|
 | [README](../README.md) | current | Product overview, architecture and measured production evidence |
 | [SPEC](../SPEC.md) | current | Product and safety contract |
-| [Operations](OPERATIONS.md) | current | 24/7 services, recovery, Mac↔RTX lane and post-ODM gate |
+| [Architecture](ARCHITECTURE.md) | current | Single source of truth: Mac control plane, PC GPU workforce, OrbStack on demand, Cloudflare, vault, data flows |
+| [Runbooks](RUNBOOKS.md) | current | Restart, PC unreachable, rerun, promote, purge, key rotation, tests, web version bump |
+| [Operations](OPERATIONS.md) | current | 24/7 services, SLO, Cloudflare settings, recovery, Mac↔RTX lane and post-ODM gate |
+| [Pipeline map](../pipeline/README.md) | current | One line per script, grouped, entry points marked (retired scripts: [archive](../pipeline/archive/README.md)) |
 | [Splat pipeline](SPLAT_PIPELINE.md) | current | Trainer, tiers, retries, metadata and measured CUDA runs |
 | [Multi-source 3D](MULTISOURCE_3D.md) | current + live evidence | Scene/version semantics and shared-component registration gate |
 | [Roadmap](../ROADMAP.md) | current | Shipped scope and outstanding acceptance work |
@@ -20,7 +23,13 @@ preserved for provenance and must not override a current contract.
 ## Current engineering contracts
 
 - [Agent access and acceptance](../AGENTS.md)
+- [Auth and security](AUTH_SECURITY.md)
+- [Splat Lab v2 plan](SPLATLAB_V2_PLAN.md)
 - [Engineering pitfalls](../CLAUDE.md)
+- Test entry point: `python3 pipeline/run_all_tests.py` (flags `--fast`, `-k NEEDLE`, `-j JOBS`, `-v`; runs
+  every `pipeline/test_*.py` except `test_smoke.py`, plus `node --test` over `pipeline/`, `edge/` and `tools/`
+  `test_*.mjs`; about 40+ Python modules and ~17 Node files as of 2026-09-28, still growing; count with `ls pipeline/test_*`). `test_smoke.py` is the pre-commit gate
+  and calls it with `--fast`. See [Runbooks](RUNBOOKS.md#run-all-tests).
 - [Scene objects](SCENE_OBJECTS.md)
 - [Game engine](GAME_ENGINE.md)
 - [World collision/stability design](superpowers/specs/2026-07-25-flightverse-world-collision-stability-design.md)
@@ -29,7 +38,7 @@ preserved for provenance and must not override a current contract.
 - [Enemy model specification](ENEMY_MODEL_SPEC.md)
 - [Flightverse implementation ledger](FLIGHTVERSE_IMPLEMENTATION.md)
 - [Design system](../web/DESIGN.md)
-- [Home V2 design QA](../design-qa.md)
+- [Home V2 design QA](qa/design-qa.md)
 - [Asset pipeline notes](../web/assets/README.md)
 - [Props asset notes](../web/assets/props/README.md)
 - [Destruction third-party notices](../web/assets/destruction/THIRD_PARTY.md)
@@ -37,21 +46,22 @@ preserved for provenance and must not override a current contract.
 ## Evidence and active backlogs
 
 - [Bug Hunt backlog](BUGHUNT_BACKLOG.md) — active items plus explicitly closed forensic history.
-- [Design QA](../design-qa.md) — production acceptance evidence for Home V2 across desktop, tablet and iPhone.
-- [Case study baseline v1](CASE_STUDY_BASELINE_V1.md) — frozen held-out baseline.
+- [Design QA](qa/design-qa.md) — production acceptance evidence for Home V2 across desktop, tablet and iPhone (screenshots in `qa/home-v2-*.png`).
 - [Splat experiments](SPLAT_EXPERIMENTS.md) — frozen MPS/OpenSplat experiment dataset.
 
 ## Historical snapshots
 
-These are intentionally retained. Their headers state what superseded them.
+Kept in [`archive/`](archive/) (and the two below that code comments still cite). Their headers state what superseded them.
 
-- [3D processing audit](../3D_PROCESSING_AUDIT.md)
-- [3D frontier audit](../3D_FRONTIER_AUDIT.md)
-- [Flightverse renderer decision](FLIGHTVERSE_RENDERER_DECISION.md)
-- [Flightverse UI audit](FLIGHTVERSE_UI_AUDIT.md)
-- [Game experience v1](GAME_EXPERIENCE_SPEC.md)
-- [Trainer migration research](MIGRATION_SPEC.md)
-- [2026-07-10 bug-hunt triage](HUNT_2026-07-10_TRIAGE.md)
+- [3D processing audit](archive/3D_PROCESSING_AUDIT.md)
+- [3D frontier audit](archive/3D_FRONTIER_AUDIT.md)
+- [Case study baseline v1](archive/CASE_STUDY_BASELINE_V1.md) — frozen held-out baseline.
+- [Flightverse UI audit](archive/FLIGHTVERSE_UI_AUDIT.md)
+- [Game experience v1](archive/GAME_EXPERIENCE_SPEC.md)
+- [Trainer migration research](archive/MIGRATION_SPEC.md)
+- [2026-07-10 bug-hunt triage](archive/HUNT_2026-07-10_TRIAGE.md)
+- [Legacy Mac trainer (OpenSplat/MPS)](archive/LEGACY_MAC_TRAINER.md)
+- [Flightverse renderer decision](FLIGHTVERSE_RENDERER_DECISION.md) — still in `docs/` because `web/flightverse/scene.js` cites it.
 
 ## Dated implementation plans and design specs
 
@@ -81,8 +91,9 @@ Design specs:
 ## Freshness rules
 
 1. Measured facts include date, scene/version and backend; estimates are labeled as estimates.
-2. 7K–40K are NVIDIA CUDA-only (desde 2026-09-28 la política por defecto es **PC-only** (`pipeline/compute_policy.py`); `AEROBRAIN_COMPUTE=local` reactiva el Mac). Mac fallback is limited to Fast 1K, Medium 2K and legacy
-   custom requests within the same 500–2,000-iteration envelope; custom work above 2K is CUDA-only.
+2. Compute policy: since 2026-09-28 the default is **PC-only** (`pipeline/compute_policy.py`; all ODM and splats
+   on the RTX PC, `AEROBRAIN_COMPUTE=local` re-enables the legacy Mac paths). 7K–40K are NVIDIA CUDA-only; the
+   Mac-local envelope (Fast 1K, Medium 2K, legacy custom 500–2,000 iterations) is legacy. Details: [Architecture](ARCHITECTURE.md).
 3. Strict CUDA preserves tier/backend and retries only `d1→d2` after classified OOM.
 4. A multi-source splat waits for final persisted `reconstruction.json` validation against the
    current shared-component logic.

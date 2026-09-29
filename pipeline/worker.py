@@ -691,13 +691,13 @@ def run_odm_container(jid, container, proj, preset, preset_name, rerun_from: str
     # el AutoRemove de docker tras un kill es ASÍNCRONO: relanzar con el mismo --name en la
     # cadena de fallback puede dar "name already in use" (rc 125) y quemar un escalón entero.
     # rm -f síncrono garantiza el nombre libre (no-op si no existe).
-    docker_ondemand.ensure_up()
-    try:
-        subprocess.run([DOCKER, "rm", "-f", container], capture_output=True, timeout=30)
-    except (subprocess.TimeoutExpired, OSError):
-        pass
-    return jobstore.run_tracked(jid, odm_cmd(container, proj, preset, rerun_from, stable_dense),
-                                timeout=preset["timeout"], tick=adaptive_priority(container))
+    with docker_ondemand.session():
+        try:
+            subprocess.run([DOCKER, "rm", "-f", container], capture_output=True, timeout=30)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        return jobstore.run_tracked(jid, odm_cmd(container, proj, preset, rerun_from, stable_dense),
+                                    timeout=preset["timeout"], tick=adaptive_priority(container))
 
 
 def fast_ortho_cmd(container: str, proj: Path, ortho_res: str = "5") -> list[str]:
@@ -725,9 +725,9 @@ def run_fast_ortho_fallback(jid: str, proj: Path, container: str) -> int:
                    "OpenMVS falló; generando ortofoto/DSM 25D",
                    level="warning", data={"effective_product": "ortho_25d"})
     try:
-        docker_ondemand.ensure_up()
-        return jobstore.run_tracked(jid, fast_ortho_cmd(container, proj), timeout=2 * 3600,
-                                    tick=adaptive_priority(container))
+        with docker_ondemand.session():
+            return jobstore.run_tracked(jid, fast_ortho_cmd(container, proj), timeout=2 * 3600,
+                                        tick=adaptive_priority(container))
     except TimeoutError:
         print("  ODM fast-orthophoto agotó el tiempo", flush=True)
         return 124
@@ -1826,21 +1826,22 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
                 shutil.rmtree(ds)
             ds.mkdir(parents=True)
             (ds / "images").symlink_to(proj / "images")
-            docker_ondemand.ensure_up()
             colmap_name = re.sub(r"[^A-Za-z0-9_.-]", "-", f"colmap-{j['id']}")[:60]
             try:
-                r = subprocess.run([DOCKER, "run", "--rm", "--name", colmap_name,
-                                    "-v", f"{proj}:/datasets/code",
-                                    "--entrypoint", "/code/SuperBuild/install/bin/opensfm/bin/opensfm",
-                                    "opendronemap/odm", "export_colmap", "/datasets/code/opensfm"],
-                                   capture_output=True, text=True, timeout=900)
-            except subprocess.TimeoutExpired:
-                # matar el CLI no mata el contenedor: sin rm -f seguiría gastando CPU
-                subprocess.run([DOCKER, "rm", "-f", colmap_name], capture_output=True, timeout=30)
-                raise RuntimeError("export_colmap agotó el tiempo (900s)")
+                with docker_ondemand.session():
+                    try:
+                        r = subprocess.run([DOCKER, "run", "--rm", "--name", colmap_name,
+                                            "-v", f"{proj}:/datasets/code",
+                                            "--entrypoint", "/code/SuperBuild/install/bin/opensfm/bin/opensfm",
+                                            "opendronemap/odm", "export_colmap", "/datasets/code/opensfm"],
+                                           capture_output=True, text=True, timeout=900)
+                    except subprocess.TimeoutExpired:
+                        # matar el CLI no mata el contenedor: sin rm -f seguiría gastando CPU
+                        subprocess.run([DOCKER, "rm", "-f", colmap_name], capture_output=True, timeout=30)
+                        raise RuntimeError("export_colmap agotó el tiempo (900s)")
             finally:
                 # el entrenamiento remoto dura horas sin Docker local: no dejar OrbStack
-                # arriba (release() respeta a otros usuarios vía la marca de last_use)
+                # arriba (la lease ya se soltó; release() respeta leases ajenas y la marca)
                 _release_docker_after_step()
             if r.returncode != 0:      # el contenedor salió (--rm lo borra): rm -f aquí re-bootearía OrbStack
                 raise RuntimeError(f"export_colmap falló: {(r.stderr or r.stdout)[-300:]}")

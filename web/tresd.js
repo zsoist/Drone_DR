@@ -1,10 +1,10 @@
-  import * as THREE from '/vendor/three180.module.js?v=346';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=346';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=346';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=346';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=346';
-  import { mountSplatViewer } from '/splatview.js?v=346';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=346';
+  import * as THREE from '/vendor/three180.module.js?v=348';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=348';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=348';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=348';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=348';
+  import { mountSplatViewer } from '/splatview.js?v=348';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=348';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -592,6 +592,31 @@
       } catch {}
     }
     const pcHist = { ncuda: [], ncpu: [], nnet: [] };   // historiales del nodo (client-side)
+    const pcTs = { ncuda: [], ncpu: [], nnet: [] };     // timestamp real (ms) de cada muestra
+    const PC_GAP_MS = 60000;                            // >3× el intervalo del nodo (~20s) = hueco: se corta la línea
+    const pushPc = (k, v) => {
+      pcHist[k].push(v); pcTs[k].push(Date.now());
+      if (pcHist[k].length > 60) { pcHist[k].shift(); pcTs[k].shift(); }
+    };
+    // dibuja una serie con x proporcional al tiempo real y corta la línea en los huecos
+    function drawSeries(ctx, pts, ts, W, H, yOf, co, lw, fillTop) {
+      const t0 = ts[0], span = Math.max(1, ts[ts.length - 1] - t0);
+      const xOf = i => (ts[i] - t0) / span * W;
+      let a = 0;
+      for (let i = 1; i <= pts.length; i++) {
+        if (i < pts.length && ts[i] - ts[i - 1] <= PC_GAP_MS) continue;
+        if (i - a >= 2) {
+          ctx.beginPath();
+          for (let j = a; j < i; j++) j === a ? ctx.moveTo(xOf(j), yOf(pts[j])) : ctx.lineTo(xOf(j), yOf(pts[j]));
+          ctx.strokeStyle = `rgba(${co},.95)`; ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.stroke();
+          ctx.lineTo(xOf(i - 1), H); ctx.lineTo(xOf(a), H); ctx.closePath();
+          const g = ctx.createLinearGradient(0, 0, 0, H);
+          g.addColorStop(0, `rgba(${co},${fillTop})`); g.addColorStop(1, `rgba(${co},0)`);
+          ctx.fillStyle = g; ctx.fill();
+        }
+        a = i;
+      }
+    }
     let lastPerf = null, lastNode = null;
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     async function pollNode() {
@@ -611,7 +636,7 @@
         const util = d.util_pct ?? 0;
         set('jt-node-util', util + '%');
         set('jt-node-body', `${(d.gpu || '').replace('NVIDIA GeForce ', '')} · ${d.temp_c ?? '—'}°C · ${d.power_w ?? '—'}W · drv ${d.driver || '—'}`);
-        if (fresh) { pcHist.ncuda.push(util / 100); if (pcHist.ncuda.length > 60) pcHist.ncuda.shift(); }
+        if (fresh) pushPc('ncuda', util / 100);
         if (d.vram_total_mb) {
           set('jt-vram-val', `${(d.vram_used_mb / 1024).toFixed(1)} / ${Math.round(d.vram_total_mb / 1024)} GB`);
           set('jt-vram-facts', `${Math.round(100 * d.vram_used_mb / d.vram_total_mb)}% ocupada · gsplat + odm:gpu listos`);
@@ -620,7 +645,7 @@
         }
         if (d.pc_cpu_pct != null) {
           set('jt-ncpu', d.pc_cpu_pct + '%');
-          if (fresh) { pcHist.ncpu.push(d.pc_cpu_pct / 100); if (pcHist.ncpu.length > 60) pcHist.ncpu.shift(); }
+          if (fresh) pushPc('ncpu', d.pc_cpu_pct / 100);
         }
         if (d.pc_ram_total_gb) set('jt-ncpu-facts',
           `RAM ${d.pc_ram_used_gb ?? '—'} / ${d.pc_ram_total_gb} GB · 8 cores WSL`);
@@ -628,7 +653,7 @@
           const peak = Math.max(d.net_rx_mbps, d.net_tx_mbps || 0);
           set('jt-net', peak >= 1000 ? (peak / 1000).toFixed(2) + ' Gb/s' : peak.toFixed(1) + ' Mb/s');
           set('jt-net-facts', `RX ${d.net_rx_mbps} · TX ${d.net_tx_mbps ?? 0} Mbit/s`);
-          if (fresh) { pcHist.nnet.push(Math.min(1, peak / 1000)); if (pcHist.nnet.length > 60) pcHist.nnet.shift(); }
+          if (fresh) pushPc('nnet', Math.min(1, peak / 1000));
         }
       } catch {}
     }
@@ -644,17 +669,7 @@
         const ctx = cv.getContext('2d');
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, W, H);
-        const step = W / (pts.length - 1);
-        ctx.beginPath();
-        pts.forEach((v, i) => {
-          const x = i * step, y = H - 2 - v * (H - 6);
-          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-        });
-        ctx.strokeStyle = `rgba(${CO2[k]},.9)`; ctx.lineWidth = 1.4; ctx.stroke();
-        ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
-        const g = ctx.createLinearGradient(0, 0, 0, H);
-        g.addColorStop(0, `rgba(${CO2[k]},.2)`); g.addColorStop(1, `rgba(${CO2[k]},0)`);
-        ctx.fillStyle = g; ctx.fill();
+        drawSeries(ctx, pts, pcTs[k], W, H, v => H - 2 - v * (H - 6), CO2[k], 1.4, 0.2);
       }
     }
     function draw() {
@@ -802,8 +817,9 @@
           rows.push(['MÍN', unit(Math.min(...pts))],
                     ['PROM', unit(pts.reduce((a, b) => a + b) / pts.length)],
                     ['MÁX', unit(Math.max(...pts))]);
-          const span = cv.dataset.metric.startsWith('n')
-            ? Math.round(pts.length * 20 / 60)   // muestras reales del nodo ~20s (TTL server)
+          const nts = pcTs[cv.dataset.metric];
+          const span = nts && nts.length > 1
+            ? Math.round((nts[nts.length - 1] - nts[0]) / 60000)   // ventana real por timestamps
             : Math.round(pts.length * 5 / 60);   // historial /api/perf ~5s
           rows.push(['VENTANA', '~' + Math.max(1, span) + ' min']);
         }
@@ -818,6 +834,11 @@
       const ctx = cv.getContext('2d');
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
+      const mts = pcTs[cv.dataset.metric];
+      if (mts && mts.length === pts.length) {
+        drawSeries(ctx, pts, mts, W, H, v => H - 4 - v * (H - 12), M.co, 2, 0.25);
+        return;
+      }
       const step = W / Math.max(1, pts.length - 1);
       ctx.beginPath();
       pts.forEach((v, i) => {
@@ -1027,7 +1048,7 @@
     ];
     return `<div class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
       <div class="pc-cover">
-        <img src="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="" width="320" height="180">
+        <img src="${m.thumb ? esc(m.thumb.includes('/') ? m.thumb : `data/models/${m.clip_id}/${m.thumb}`) : `data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}`}" data-fb="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="" width="320" height="180">
         ${(f?.date || dateKeyFor(m)) ? `<span class="pc-date mono">${esc(f ? `${fmt.date(f.date)} · ${f.time || ''}` : dateKeyFor(m))}</span>` : ''}
       </div>
       <div class="pc-body">
@@ -1083,6 +1104,11 @@
       : models.length ? 'No hay proyectos que coincidan con ese filtro.'
         : 'Sin proyectos 3D aún — ve a la pestaña <b>Procesamiento</b> (arriba) para crear el primero.'}</p>`;
   }
+  // miniatura ligera 404 → cae al ortho original (error no burbujea: captura)
+  document.addEventListener('error', e => {
+    const im = e.target;
+    if (im?.tagName === 'IMG' && im.dataset.fb && im.getAttribute('src') !== im.dataset.fb) im.src = im.dataset.fb;
+  }, true);
   document.getElementById('proj-q')?.addEventListener('input', e => { projQ = e.target.value; renderCards(); });
   document.getElementById('proj-filter')?.addEventListener('change', e => { projFilter = e.target.value; renderCards(); });
   const sortSel = document.getElementById('proj-sort');

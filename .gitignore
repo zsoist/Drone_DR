@@ -19,3 +19,4 @@ artifacts/home-v2-*.png
 .dev.vars
 .dev.vars.*
 .wrangler/
+.superpowers/sdd/

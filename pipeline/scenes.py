@@ -150,6 +150,7 @@ def _write(scene: dict):
     try:
         with os.fdopen(fd, "w") as fh:
             fh.write(json.dumps(scene, ensure_ascii=False, indent=1))
+            os.fchmod(fh.fileno(), 0o644)      # mkstemp crea 0600: el server/web deben poder leerlo
         os.replace(tmp_name, path)
     except BaseException:
         try:

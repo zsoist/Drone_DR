@@ -337,8 +337,7 @@ function openImport(v) {
       </label>
       <button class="btn primary" id="sd-go" style="width:100%;justify-content:center;margin-top:16px;padding:10px 0">${icon('dl')} Importar al vault</button>
     </div></div>`;
-  document.body.appendChild(ov);
-  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) ov.remove(); });
+  openModal(ov);
   ov.querySelector('#sd-go').addEventListener('click', async e2 => {
     const goBtn = e2.currentTarget;
     if (goBtn.disabled) return;
@@ -401,8 +400,7 @@ function openOptimize(v) {
       <div id="opt-detail"></div>
       <button class="btn primary" id="opt-go" style="width:100%;justify-content:center;margin-top:14px;padding:10px 0">${icon('spark')} Optimizar tarjeta</button>
     </div></div>`;
-  document.body.appendChild(ov);
-  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) ov.remove(); });
+  openModal(ov);
 
   function paintDetail() {
     const lv = LV.find(l => l.k === ov.querySelector('.mpreset.on')?.dataset.lv) || LV[1];

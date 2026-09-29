@@ -18,6 +18,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from srt_parser import point_at
+
 VAULT = Path("/Volumes/SSD/drone-vault")
 FPS = 0.5          # 1 frame cada 2s
 WIDTH = 2688       # default: balance calidad/RAM en 16GB
@@ -37,6 +39,12 @@ PROFILE_FPS = {"preview": 0.33, "balanced": 0.5, "premium": 1.0, "splat": 0.75}
 PROFILE_WIDTH = {"preview": 2048, "balanced": 2688, "premium": 3072, "splat": 3072}
 
 
+def frame_time(path: Path, fps: float) -> float:
+    """Segundo de video de un frame f_NNNN.jpg. El filtro fps de ffmpeg emite el frame 1 en t=0,
+    así que frame num → (num-1)/fps."""
+    return (int(path.stem.split("_")[1]) - 1) / fps
+
+
 def prune_frames(images, track_pts, fps, profile, manifest_path=None):
     """Poda adaptativa post-extracción: fuera el cuartil borroso y los frames
     casi-duplicados (sin movimiento GPS). Opera sobre los f_*.jpg de `images`.
@@ -47,8 +55,8 @@ def prune_frames(images, track_pts, fps, profile, manifest_path=None):
     if len(files) < 40:
         return len(files)                      # clips chicos: no vale la pena podar
     sharp_by_t, time_of = {}, {}
-    for i, f in enumerate(files):
-        t = round((i + 0.5) / fps, 1)
+    for f in files:
+        t = round(frame_time(f, fps), 1)       # por número de archivo, no por índice
         time_of[t] = f
         img = Image.open(f)
         img.thumbnail((480, 480))
@@ -66,7 +74,6 @@ def prune_frames(images, track_pts, fps, profile, manifest_path=None):
              "width": PROFILE_WIDTH.get(profile, WIDTH), "fps": fps, "frames": chosen}, indent=1))
     print(f"poda adaptativa [{profile}]: {len(keep)} frames elegidos · {dropped} descartados "
           f"(blur / casi-duplicados)", flush=True)
-    return len(keep)
     return len(keep)
 
 
@@ -131,11 +138,12 @@ def _extract_source(tmp_dir: Path, images: Path, src_cid: str, prefix: str, prof
     args = []
     survivors = sorted(stmp.glob("f_*.jpg"))
     for f in survivors:
-        num = int(f.stem.split("_")[1])            # el número del ARCHIVO fija el tiempo (no el índice tras poda)
-        sec = min(int((num - 0.5) / fps), len(pts) - 1)
+        # el número del ARCHIVO fija el tiempo (no el índice tras poda); posición por tiempo
+        # de VIDEO (vt), no por índice: puntos descartados (sin lock/dropouts) desplazan el índice
+        pt = point_at(pts, frame_time(f, fps))
         name = f"{prefix}{f.name}" if prefix else f.name   # 's0_f_0042.jpg' o 'f_0042.jpg'
         os.replace(f, tmp_dir / name)
-        args += _geotag(images / name, pts[sec])   # ruta FINAL: el geotag corre tras el swap
+        args += _geotag(images / name, pt)   # ruta FINAL: el geotag corre tras el swap
     shutil.rmtree(stmp, ignore_errors=True)
     return args, len(survivors)
 
@@ -191,7 +199,7 @@ def main():
         parent, t = _photo_parent(sp.name)
         pts = _load_pts(parent) if parent else []
         if pts:
-            geotag_args += _geotag(images / name, pts[min(int(t), len(pts) - 1)])   # ruta final tras swap
+            geotag_args += _geotag(images / name, point_at(pts, t))   # ruta final tras swap
         n_photos += 1
 
     total = sum(1 for a in geotag_args if a == "-execute")   # un -execute por imagen geotaggeada

@@ -1,8 +1,13 @@
 # AeroBrain Operations
 
 Objetivo: `vuelos.metislab.work` funciona siempre que el Mac Mini esté encendido y
-la sesión FileVault esté desbloqueada. La web y el streaming conservan prioridad;
-ODM/OpenSplat usan toda la máquina cuando no hay reproducción activa.
+la sesión FileVault esté desbloqueada. La web y el streaming conservan prioridad: desde
+2026-09-28 el Mac no ejecuta ODM ni entrenamiento de splats (política PC-only, ver
+"Política de recursos"); el cómputo pesado va al PC GPU. La ruta legacy en que ODM/OpenSplat
+usan toda la máquina cuando no hay reproducción activa sólo existe con `AEROBRAIN_COMPUTE=local`.
+
+Ver también: [ARCHITECTURE.md](ARCHITECTURE.md) (cómo está armado hoy) y
+[RUNBOOKS.md](RUNBOOKS.md) (procedimientos: restart, PC caído, rerun, promote, tests).
 
 ## SLO y definición de "up"
 
@@ -65,6 +70,7 @@ static/video Range            SQLite jobs.db
 | Worker | `com.aerobrain.worker` | Reclama un solo job `3d`/`splat` de SQLite |
 | Tunnel | `com.metislab.tunnel` | Publica el origin por Cloudflare Tunnel |
 | Watchdog | `com.aerobrain.watchdog` | Local 60 s, público 5 min, stream+auth 15 min |
+| Cola PC genérica | `com.macmini.pc-queue` | No es código de AeroBrain: cada 120 s drena JSON de `~/.local/pc-jobs/queue/` en el PC (WoL, `ssh pc`). El carril GPU de AeroBrain (`gpu_lane.py`) no la usa. |
 
 `aerobrain-private-data-edge` no es un LaunchAgent: es el Worker de Cloudflare
 versionado en `edge/`, limitado a `vuelos.metislab.work/*`.
@@ -103,7 +109,7 @@ Hardware: Mac Mini M4 (10 cores, 16 GB). PC: i7-3770S 4c/8t, 32 GB, RTX 4060 Ti 
 
 | Qué | Dónde |
 |---|---|
-| Red | `192.168.1.5` (MAC `BC:5F:F4:45:7E:B8`), alias `ssh pc`, WoL por `pc-wake` |
+| Red | `192.168.1.5` (MAC `BC:5F:F4:45:7E:B8`), alias `ssh pc`, WoL por `pc-wake` (si no responde: RUNBOOKS, "PC unreachable"; no confundir con `.3`) |
 | WSL | distro `Ubuntu`, disco `D:\WSL\Ubuntu\ext4.vhdx` (sparse), imagen `opendronemap/odm:gpu` |
 | Scratch de jobs | `/root/gpu-jobs/{data,runs,checkpoints,odm}` + `splat-env` (entorno, no tocar) |
 | Puente WSL↔Mac | `D:\gpu-vault\transfer` = `/mnt/d/gpu-vault/transfer` (antes C:, que vive al 94%) |
@@ -127,25 +133,34 @@ web+worker+tunnel deben quedar <15% CPU agregado y <500 MB RSS; normalmente son
 
 ## Cloudflare
 
-Config local requerida:
+Config local real (`~/.cloudflared/metislab-work.yml`, la que carga `com.metislab.tunnel`;
+`ops_status.py` exige que contenga los dos hostnames de AeroBrain apuntando a `http://127.0.0.1:8790`):
 
 ```yaml
 tunnel: 20543a36-a318-415e-b292-b88dd5f4a041
 credentials-file: /Users/daniel_serverm4/.cloudflared/20543a36-a318-415e-b292-b88dd5f4a041.json
+
 ingress:
   - hostname: vuelos.metislab.work
     service: http://127.0.0.1:8790
   - hostname: www.metislab.work
     service: http://127.0.0.1:8790
+  - hostname: workspace.metislab.work
+    service: http://localhost:4310
+  - hostname: "*.metislab.work"
+    service: http://localhost:4310
   - service: http_status:404
 ```
 
-Si el mismo túnel mantiene `workspace` u otros hostnames, sus reglas explícitas
-van antes del catch-all; las dos reglas de AeroBrain deben permanecer antes de
-cualquier wildcard.
+Las dos reglas de AeroBrain deben permanecer antes de cualquier wildcard (`*.metislab.work` va
+a otro servicio local en `:4310`).
 
-Usar IPv4 explícito, no `localhost`: macOS puede resolverlo a `::1` mientras el
-origin escucha en `127.0.0.1`. `cloudflared` negocia QUIC y mantiene conexiones
+Existe un segundo túnel independiente, `com.cloudflare.cloudflared` (`~/.cloudflared/config.yml`,
+tunnel `2b64631e-...`), que sólo publica `ssh.danielreyes.work` hacia `ssh://localhost:22`. Es de
+acceso SSH al Mac, no lleva tráfico de AeroBrain y no debe reiniciarse para arreglar la web.
+
+Para AeroBrain usar IPv4 explícito, no `localhost`: macOS puede resolverlo a `::1` mientras el
+origin escucha en `127.0.0.1` (la regla `:4310` de `workspace` usa `localhost` porque ese servicio no es AeroBrain). `cloudflared` negocia QUIC y mantiene conexiones
 redundantes; si UDP falla, cae a HTTP/2.
 
 Dashboard Cloudflare recomendado:
@@ -231,11 +246,14 @@ Térmica:
 - No usar fan-control ni undervolt no soportado; macOS gestiona el M4.
 - Mantener entradas/salida de aire libres y no encerrar el Mini con el SSD.
 - No subir el tope de OrbStack por encima de 8 GB: en este host sólo hace post-proceso.
-- Revisar durante un job largo: `pmset -g therm`, `memory_pressure`,
-  `docker stats --no-stream` y la UI. El scheduler reduce CPU si aparece viewer.
-- Fallbacks de ODM y límites de memoria prefieren un job degradado/failed a un host colgado.
+- Revisar durante un job largo: `pmset -g therm`, `memory_pressure` y la UI. Con PC-only el
+  cómputo pesado está en el PC. (`docker stats` enciende OrbStack: mirar `orb status` antes.)
+- **Legacy (`AEROBRAIN_COMPUTE=local`):** el scheduler reduce CPU si aparece viewer y los fallbacks de
+  ODM/límites de memoria (caps 8.5/11 GB) prefieren un job degradado/failed a un host colgado.
 
 ## Operación
+
+### Consola de jobs y reportes
 
 La pestaña **3D → Trabajos** es la consola operativa. El polling usa resúmenes acotados; el detalle
 se obtiene bajo demanda. Cada job nuevo escribe un log completo append-only en
@@ -250,6 +268,8 @@ solapados y mantiene error histórico separado de su resolución. Medium es la b
 ningún tier CUDA 7K–40K se recomienda como mitigación de memoria de otro. Los cuerpos Markdown viven en
 `ops/reports` (privado) y se leen mediante el endpoint autenticado, no por `/data` público.
 
+### Comandos de estado
+
 ```bash
 python3 pipeline/ops_status.py
 python3 pipeline/external_probe.py
@@ -260,7 +280,7 @@ curl -I -H 'Range: bytes=0-0' \
 tail -40 ~/Library/Logs/AeroBrain/watchdog.log
 ```
 
-Restart seguro:
+### Restart seguro
 
 ```bash
 pipeline/safe_restart.sh web
@@ -269,10 +289,14 @@ pipeline/safe_restart.sh worker  # se niega si hay 3d/splat activo
 pipeline/safe_restart.sh both
 ```
 
-Campaña CUDA: usar **3D → Procesamiento → Campaña CUDA**. El dry-run enumera sitios
+### Campaña CUDA
+
+Usar **3D → Procesamiento → Campaña CUDA**. El dry-run enumera sitios
 activos/modelos sueltos, cámaras, bytes, tier actual, nodo, entorno CUDA y disco. La confirmación
 es todo-o-nada y encola jobs strict sequentiales; `auto` conserva tier y sólo pasa `d1→d2` por
 OOM CUDA clasificado. Nunca reiniciar worker mientras exista un job `queued|running`.
+
+### Gates post-ODM y recuperación multi-fuente
 
 Gate post-ODM para escenas multi-fuente: antes de encolar un splat, auditar el
 `opensfm/reconstruction.json` persistido con la lógica actual de componente compartido.
@@ -299,16 +323,18 @@ del MVS y persiste el diagnóstico inmutable; sólo entonces puede reanudar ODM 
 Un archivo parcial, un magic incorrecto o una discrepancia de conteo obliga a reconstruir la
 fase; nunca se publica ni abre la compuerta de splat.
 
+### Documentación y monitoreo
+
 La documentación no es el monitor de un job vivo. Para etapa, memoria, progreso y fallos manda
 **3D → Trabajos**, `jobs.db`, `job_events` y `ops/job_logs/`. Los Markdown actuales conservan
 sólo contratos y hitos cerrados con fecha/evidencia, evitando estados “corriendo” que envejecen.
 
-Prioridad de implementación/mantenimiento:
+### Prioridad de mantenimiento
 
 1. Mantener power settings, LaunchAgents y Tunnel sanos; OrbStack apagado en reposo.
 2. Mantener watchdog local + workflow externo verdes.
 3. No romper Range/cache; verificar `206`, Brotli y `HIT` tras deploy.
-4. Mantener cola heavy única, caps 8.5/11 GB y prioridad adaptativa.
+4. Mantener cola heavy única (un solo job pesado a la vez). Los caps 8.5/11 GB y la prioridad adaptativa son legacy (`AEROBRAIN_COMPUTE=local`).
 5. Revisar `ops_status.py` antes/después de jobs y después de cualquier reboot.
 6. Para recovery totalmente desatendido tras corte: decidir conscientemente entre
    FileVault (seguridad) y auto-login (disponibilidad), o añadir UPS en el futuro.

@@ -30,8 +30,85 @@ const NAV = [
   { href: 'studio.html', ic: 'film', label: 'Studio' },
   { href: 'tresd.html', ic: 'cube', label: '3D' },
   { href: 'splatlab.html', ic: 'spark', label: 'Splat Lab' },
+  { href: 'ventas.html', ic: 'tag', label: 'Ventas' },
   { href: 'system.html', ic: 'db', label: 'Sistema' },
 ];
+
+// ---- modal accesible compartido: role=dialog + aria-modal + aria-labelledby, Esc cierra, Tab queda
+// atrapado dentro, click en el fondo / .modal-x cierra y el foco vuelve a quien lo abrió.
+// Uso: const close = openModal(ov, { onClose }) con ov = <div class="modal-ov"><div class="modal">…
+// Cualquier ov.remove() posterior (p. ej. tras guardar) también restaura el foco y limpia listeners.
+const _modalStack = [];
+let _modalSeq = 0;
+function openModal(ov, { onClose } = {}) {
+  const opener = document.activeElement;
+  const modal = ov.querySelector('.modal') || ov;
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  const head = modal.querySelector('.modal-h b, .modal-h, h1, h2, h3');
+  if (head) { head.id = head.id || `mdl-t${++_modalSeq}`; modal.setAttribute('aria-labelledby', head.id); }
+  else modal.setAttribute('aria-label', 'Diálogo');
+  modal.tabIndex = -1;
+  const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  const focusables = () => [...modal.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null || el === document.activeElement);
+  let done = false;
+  const nativeRemove = ov.remove.bind(ov);
+  const cleanup = () => {
+    if (done) return;
+    done = true;
+    document.removeEventListener('keydown', onKey, true);
+    const i = _modalStack.indexOf(ov); if (i >= 0) _modalStack.splice(i, 1);
+    try { onClose && onClose(); } catch {}
+    nativeRemove();
+    if (opener && opener.isConnected && typeof opener.focus === 'function') { try { opener.focus({ preventScroll: true }); } catch {} }
+  };
+  function onKey(e) {
+    if (_modalStack[_modalStack.length - 1] !== ov) return;   // solo el modal de arriba
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cleanup(); return; }
+    if (e.key !== 'Tab') return;
+    const f = focusables();
+    if (!f.length) { e.preventDefault(); modal.focus(); return; }
+    const first = f[0], last = f[f.length - 1], cur = document.activeElement;
+    if (!modal.contains(cur)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && (cur === first || cur === modal)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && cur === last) { e.preventDefault(); first.focus(); }
+  }
+  ov.remove = cleanup;
+  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) cleanup(); });
+  document.body.appendChild(ov);
+  _modalStack.push(ov);
+  document.addEventListener('keydown', onKey, true);
+  modal.focus({ preventScroll: true });
+  return cleanup;
+}
+
+// ---- nombre accesible para botones/enlaces solo-icono: aria-label sale de data-tip
+(() => {
+  const SEL = 'button[data-tip],a[data-tip],[role=button][data-tip]';
+  const name = el => {
+    if (el.hasAttribute('aria-label') && !el.hasAttribute('data-autoname')) return;
+    if (el.hasAttribute('aria-labelledby') || el.textContent.trim() || !el.dataset.tip) return;
+    el.setAttribute('aria-label', el.dataset.tip); el.setAttribute('data-autoname', '');
+  };
+  const scan = root => {
+    if (root.nodeType !== 1) return;
+    if (root.matches(SEL)) name(root);
+    root.querySelectorAll(SEL).forEach(name);
+  };
+  const start = () => {
+    scan(document.body);
+    let queued = new Set(), raf = 0;
+    new MutationObserver(muts => {
+      for (const m of muts) {
+        if (m.type === 'attributes') queued.add(m.target);
+        else m.addedNodes.forEach(n => queued.add(n));
+      }
+      if (raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; const q = queued; queued = new Set(); q.forEach(scan); });
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-tip'] });
+  };
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();
 
 // scrub de miniaturas compartido (Vuelos, Viajes, Inicio): mouse hover + swipe horizontal iOS
 function attachScrub(root) {
@@ -724,12 +801,16 @@ async function getFlights() {
 async function getAI(cid) {
   // la página de detalle lee el JSON completo (director_notes, edit_suggestions…);
   // el embebido de flights.json es solo el resumen para las listas
+  // flights.json trae `ai` (resumen) SOLO si el vuelo tiene análisis: sin él no existe /data/ai/<id>.json
+  // y pedirlo dejaba un 404 en consola en cada vuelo sin AI.
+  const fl = await getFlights();
+  const summary = fl.find(f => f.clip_id === cid)?.ai || null;
+  if (!summary) return null;
   try {
     const r = await fetch(`${DATA}/ai/${encodeURIComponent(cid)}.json`);
     if (r.ok) return await r.json();
   } catch {}
-  const fl = await getFlights();
-  return fl.find(f => f.clip_id === cid)?.ai || null;
+  return summary;
 }
 async function getAIAll(flights) {
   const out = {};

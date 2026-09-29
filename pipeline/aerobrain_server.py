@@ -103,7 +103,6 @@ SCENE_LIMITS = {
 # OJO: jobstore.init(orphan_kinds=...) NO va aquí a nivel de módulo. El worker importa este
 # módulo (splat_quality/prune) y un init con LIGHT_KINDS desde el proceso worker MATARÍA los
 # jobs ligeros (edit/upload) que el server tiene corriendo. El init vive en __main__.
-JLOCK = threading.Lock()         # compat: secciones que actualizan detail
 PERF = perfmod.PerfSampler(jobstore)   # panel de performance en vivo (hilo 1Hz solo si alguien mira)
 _CLIENT_ERR_BUDGET = {"n": 0, "reset": 0.0}   # rate-limit global de /api/client_error
 _AUTH_FILE_LOCK = threading.Lock()
@@ -1993,13 +1992,6 @@ ASPECTS = {
     "4:5": "crop=ih*4/5:ih,scale=1080:1350",
 }
 
-# altura destino por aspecto/resolución → aspect_vf() escala el resto en proporción
-_ASPECT_H = {
-    "16:9": {"1080": 1080, "2160": 2160},
-    "9:16": {"1080": 1920, "2160": 3840},
-    "1:1":  {"1080": 1080, "2160": 2160},
-    "4:5":  {"1080": 1350, "2160": 2700},
-}
 
 
 def vertical_vf(aspect: str, resolution: str, fit: str, framing: float) -> str:
@@ -2075,7 +2067,6 @@ def _aspect_vf_wide(aspect, resolution="1080"):
     return "scale=-2:2160"
 
 
-XFADE_DUR = 0.4  # duración de crossfade (video + audio)
 XFADE_DEFAULT = 0.4  # transDur por defecto para transiciones de librería
 
 # nombres del contrato v7 → nombres válidos de transición de xfade en ffmpeg.
@@ -2327,9 +2318,17 @@ def _has_audio(src):
         return False
 
 
+_PHOTO_ORIG_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                     ".dng": "image/x-adobe-dng", ".heic": "image/heic", ".heif": "image/heif",
+                     ".tif": "image/tiff", ".tiff": "image/tiff", ".webp": "image/webp"}
+
+
 def _probe_dur(path):
-    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                        "-of", "csv=p=0", str(path)], capture_output=True, text=True)
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                        "-of", "csv=p=0", str(path)], capture_output=True, text=True, timeout=60)
+    except (subprocess.TimeoutExpired, OSError):
+        return 0.0
     try:
         return float(r.stdout.strip())
     except ValueError:
@@ -2614,37 +2613,95 @@ def _reel_sidecars(stem: str) -> dict:
             "recipe": pdir / f"{stem}.recipe.json"}
 
 
+_TRIP_KEY_RE = re.compile(r"-?\d{1,3}\.\d{2},-?\d{1,3}\.\d{2}")
+_ORDER_LOCK = threading.Lock()
+_TRIPS_LOCK = threading.Lock()
+
+
+def _atomic_write_text(path, text: str):
+    """Escritura atómica con tmp ÚNICO en el mismo dir (mkstemp) + os.replace: dos escritores
+    concurrentes ya no se pisan un `x.json.tmp` fijo. Deja el archivo en 0o644."""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _reel_order_write(omap: dict):
+    """Único punto de escritura de reels/.order.json (lock + tmp único + replace)."""
+    _atomic_write_text(VAULT / "reels" / ".order.json", json.dumps(omap))
+
+
 def _reel_order_update(old: str, new: str | None):
     """Renombra (o quita, new=None) la clave de un reel en reels/.order.json. Atómico."""
     of = VAULT / "reels" / ".order.json"
-    try:
-        omap = json.loads(of.read_text())
-    except (OSError, ValueError):
-        return
-    if not isinstance(omap, dict) or old not in omap:
-        return
-    idx = omap.pop(old)
-    if new:
-        omap[new] = idx
-    tmp = of.with_name(".order.json.tmp")
-    tmp.write_text(json.dumps(omap))
-    os.replace(tmp, of)
+    with _ORDER_LOCK:
+        try:
+            omap = json.loads(of.read_text())
+        except (OSError, ValueError):
+            return
+        if not isinstance(omap, dict) or old not in omap:
+            return
+        idx = omap.pop(old)
+        if new:
+            omap[new] = idx
+        _reel_order_write(omap)
 
 
 def _claim_edit_out(vertical: bool) -> Path:
-    """Reserva un nombre edit-*.mp4 ÚNICO con O_EXCL: dos exports en el mismo segundo
-    generaban el mismo nombre y ambos jobs escribían un solo archivo."""
+    """Reserva un nombre edit-*.mp4 ÚNICO con un archivo-claim oculto (reels/.claim-<nombre>,
+    O_EXCL): dos exports en el mismo segundo generaban el mismo nombre. El .mp4 real lo crea
+    ffmpeg — antes se creaba de 0 bytes aquí y se listaba como reel roto durante todo el export.
+    El llamador debe llamar _release_edit_claim(out) en un finally."""
     rdir = VAULT / "reels"
     rdir.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     for n in range(1, 1000):
         cand = rdir / f"edit-{stamp}{'-v' if vertical else ''}{'' if n == 1 else f'-{n}'}.mp4"
+        claim = rdir / f".claim-{cand.name}"
         try:
-            os.close(os.open(cand, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
-            return cand
+            os.close(os.open(claim, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
         except FileExistsError:
             continue
+        if cand.exists():           # ya hay un reel con ese nombre (claim anterior ya liberado)
+            claim.unlink(missing_ok=True)
+            continue
+        return cand
     raise RuntimeError("no se pudo reservar un nombre de reel único")
+
+
+def _cleanup_stale_reel_claims(max_age: float = 3600):
+    """Arranque: quita .claim-* y edit-*.mp4 de 0 bytes de >1 h (un export vivo no dura tanto
+    sin escribir; los claims/0-bytes más nuevos podrían ser de otro proceso)."""
+    try:
+        now = time.time()
+        rdir = VAULT / "reels"
+        for f in list(rdir.glob(".claim-*")) + list(rdir.glob("edit-*.mp4")):
+            try:
+                st = f.stat()
+                if now - st.st_mtime <= max_age:
+                    continue
+                if f.name.startswith(".claim-") or st.st_size == 0:
+                    f.unlink(missing_ok=True)
+                    print(f"limpiado claim/reel vacío huérfano: {f.name}")
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+def _release_edit_claim(out):
+    if out is not None:
+        (Path(out).parent / f".claim-{Path(out).name}").unlink(missing_ok=True)
 
 
 def _aspect_h_over_w(aspect: str) -> float:
@@ -2687,6 +2744,7 @@ def _remap_texts_for_overlap(texts: list, joins: list, out_dur: float) -> list:
 
 
 def run_edit(spec: dict, j):
+    claimed = None   # nombre reservado con claim oculto (se libera en el finally)
     out0 = None      # reel en curso (edit-*.mp4): se limpia si el job falla; None = ya es el destino de 'replace'
     try:
         fps = int(spec.get("fps") or 0)
@@ -2842,7 +2900,7 @@ def run_edit(spec: dict, j):
             trans_durs.append(_clampf(s.get("transDur", XFADE_DEFAULT), 0.2, 1.5, XFADE_DEFAULT))
         if not segs:
             raise ValueError("sin segmentos válidos")
-        out = out0 = _claim_edit_out(bool(spec.get("vertical")))
+        out = out0 = claimed = _claim_edit_out(bool(spec.get("vertical")))
 
         # cualquier corte (idx>=1) con transición != 'none' entra a la ruta xfade encadenada
         def _xname(t):
@@ -2975,6 +3033,7 @@ def run_edit(spec: dict, j):
         job_end(j, "error", str(e)[-300:])
     finally:
         shutil.rmtree(VAULT / "reels" / f".tmp-{j['id']}", ignore_errors=True)
+        _release_edit_claim(claimed)
 
 
 
@@ -3235,7 +3294,7 @@ class H(BaseHTTPRequestHandler):
                 return None
             raw = find_raw(cid)
             return raw if raw and raw.is_file() else None
-        if p.startswith("/supersplat"):
+        if p == "/supersplat" or p.startswith("/supersplat/"):
             # editor SuperSplat (MIT, build local en splat/supersplat/dist) — post-pro de splats
             base = SUPERSPLAT.resolve()
             rel = p[len("/supersplat"):].lstrip("/") or "index.html"
@@ -3439,9 +3498,7 @@ class H(BaseHTTPRequestHandler):
                     barrio = a.get("neighbourhood") or a.get("suburb") or a.get("quarter") or a.get("village") or ""
                     ciudad = a.get("city") or a.get("town") or a.get("municipality") or a.get("state") or ""
                     cache[key] = {"name": " · ".join(x for x in (barrio, ciudad) if x) or None}
-                    _t = gc_file.with_suffix(".json.tmp")
-                    _t.write_text(json.dumps(cache, ensure_ascii=False))
-                    os.replace(_t, gc_file)
+                    _atomic_write_text(gc_file, json.dumps(cache, ensure_ascii=False))
                 except Exception:
                     return self.send_json({"name": None, "cached": False})
             return self.send_json({**cache[key], "cached": True})
@@ -3530,16 +3587,29 @@ class H(BaseHTTPRequestHandler):
             if not src.is_file():
                 return self.send_json({"error": "no existe"}, 404)
             if w <= 0:                                       # original (descarga)
-                data = src.read_bytes()
+                # solo imágenes (un .mov de GBs no es "foto") y en streaming: nunca read_bytes()
+                ctype = _PHOTO_ORIG_TYPES.get(src.suffix.lower())
+                if not ctype:
+                    return self.send_json({"error": "no es una imagen"}, 415)
+                size = src.stat().st_size
                 self.send_response(200)
-                self.send_header("Content-Type", "image/x-adobe-dng"
-                                 if src.suffix.lower() == ".dng" else "image/jpeg")
-                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(size))
                 self.send_header("Content-Disposition", f'attachment; filename="{src.name}"')
                 self.send_header("Cache-Control", "private, no-store")
                 self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
                 self.end_headers()
-                self.wfile.write(data)
+                try:
+                    with src.open("rb") as fh:
+                        left = size
+                        while left > 0:
+                            chunk = fh.read(min(1 << 20, left))
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            left -= len(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
                 return
             w = 2048 if w > 1024 else 512                    # dos tiers de cache, no infinitos
             cache = VAULT / "ops" / "photo-thumbs" / str(w)
@@ -3585,6 +3655,8 @@ class H(BaseHTTPRequestHandler):
                         if f.name.startswith(".") or f.is_symlink() or not f.is_file() or f.suffix.lower() != ext:
                             continue
                         st = f.stat()
+                        if key == "reels" and st.st_size == 0:
+                            continue      # reel a medias / huérfano de 0 bytes: no se lista
                         it = {"name": f.name, "bytes": st.st_size, "mtime": st.st_mtime}
                         if key == "reels":
                             it.update(_reel_meta(f))   # duración + formato reales (cacheado)
@@ -4115,7 +4187,8 @@ class H(BaseHTTPRequestHandler):
             omap = {re.sub(r"[^\w.\- ]", "", str(n)): i
                     for i, n in enumerate(names[:500]) if str(n).endswith(".mp4")}
             try:
-                (VAULT / "reels" / ".order.json").write_text(json.dumps(omap))
+                with _ORDER_LOCK:
+                    _reel_order_write(omap)
             except OSError as e:
                 return self.send_json({"error": str(e)[-200:]}, 500)
             return self.send_json({"ok": True, "count": len(omap)})
@@ -4454,7 +4527,7 @@ class H(BaseHTTPRequestHandler):
             if old_meta:
                 new_meta = {k: v for k, v in old_meta.items() if k != "final_loss"}
                 new_meta["edited"] = True          # editado en SuperSplat: el loss ya no aplica
-                meta_p.write_text(json.dumps(new_meta, indent=1))
+                _atomic_write_text(meta_p, json.dumps(new_meta, indent=1))
             optimized = None
             if ext not in (".sog", ".spz", ".ksplat"):
                 ktmp = sdir / f".{cid}.clean.tmp.sog"
@@ -4771,7 +4844,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "modelo no encontrado"}, 404)
             meta = json.loads((mdir / "meta.json").read_text())
             meta["title"] = str(spec.get("title", ""))[:80].strip()
-            _mt = mdir / "meta.json.tmp"; _mt.write_text(json.dumps(meta, indent=1)); os.replace(_mt, mdir / "meta.json")
+            _atomic_write_text(mdir / "meta.json", json.dumps(meta, indent=1))
             rebuild_index()
             return self.send_json({"ok": True, "title": meta["title"]})
         if u.path == "/api/model_delete":
@@ -4908,6 +4981,10 @@ class H(BaseHTTPRequestHandler):
                 if mtype == "reel":
                     # sin esto el reel renombrado perdía póster, receta ("Reabrir en Estudio") y orden
                     old_sc, new_sc = _reel_sidecars(src.stem), _reel_sidecars(dst.stem)
+                    # dst.exists() ya se rechazó arriba → cualquier sidecar bajo el stem nuevo es
+                    # huérfano de un reel muerto: se borra a propósito (no se hereda contenido ajeno)
+                    for f in new_sc.values():
+                        f.unlink(missing_ok=True)
                     for k, f in old_sc.items():
                         if f.is_file():
                             os.replace(f, new_sc[k])
@@ -5224,9 +5301,8 @@ class H(BaseHTTPRequestHandler):
                         item["materialClass"] = material_class
                 clean.append(item)
             # atómico: el juego lee objects.json en caliente y un write_text truncado lo dejaba a medias
-            otmp = mdir / f".objects.{secrets.token_hex(4)}.tmp"
-            otmp.write_text(json.dumps({"version": 1, "objects": clean}, ensure_ascii=False, allow_nan=False))
-            os.replace(otmp, mdir / "objects.json")
+            _atomic_write_text(mdir / "objects.json",
+                               json.dumps({"version": 1, "objects": clean}, ensure_ascii=False, allow_nan=False))
             rebuild_scene_manifest(cid)
             return self.send_json({"ok": True, "count": len(clean)})
 
@@ -5300,30 +5376,43 @@ class H(BaseHTTPRequestHandler):
                 return
             spec = self.read_json()
             key = str(spec.get("key", ""))
-            if not re.fullmatch(r"-?\d{1,3}\.\d{2},-?\d{1,3}\.\d{2}", key):
+            if not _TRIP_KEY_RE.fullmatch(key):
                 return self.send_json({"error": "key inválida"}, 400)
             tm_file = VAULT / "manifest" / "trips_meta.json"
-            try:
-                tm = json.loads(tm_file.read_text()) if tm_file.exists() else {}
-            except ValueError:
-                tm = {}
-            entry = tm.get(key, {})
-            if "name" in spec:
-                name = str(spec["name"]).strip()[:60]
-                if name:
-                    entry["name"] = name
-                else:
-                    entry.pop("name", None)     # vacío = volver al nombre automático
-            if "cover" in spec:
-                cover = re.sub(r"[^\w-]", "", str(spec["cover"]))
-                if cover:
-                    entry["cover"] = cover
-                else:
-                    entry.pop("cover", None)    # vacío = volver a la mejor por score AI
-            tm[key] = entry
-            if not entry:
-                tm.pop(key, None)
-            tm_file.write_text(json.dumps(tm, indent=1))
+            old_key = spec.get("migrate_from")
+            if old_key is not None:
+                old_key = str(old_key)
+                if not _TRIP_KEY_RE.fullmatch(old_key):
+                    return self.send_json({"error": "migrate_from inválida"}, 400)
+            with _TRIPS_LOCK:
+                try:
+                    tm = json.loads(tm_file.read_text()) if tm_file.exists() else {}
+                except ValueError:
+                    tm = {}
+                if old_key and old_key != key and old_key in tm:
+                    # migración atómica (misma escritura): la clave vieja pasa a la nueva solo si
+                    # esta aún no tiene meta; la vieja se borra siempre
+                    moved = tm.pop(old_key)
+                    if not tm.get(key) and isinstance(moved, dict):
+                        tm[key] = moved
+                entry = tm.get(key, {})
+                if "name" in spec:
+                    name = str(spec["name"]).strip()[:60]
+                    if name:
+                        entry["name"] = name
+                    else:
+                        entry.pop("name", None)     # vacío = volver al nombre automático
+                if "cover" in spec:
+                    cover = re.sub(r"[^\w-]", "", str(spec["cover"]))
+                    if cover:
+                        entry["cover"] = cover
+                    else:
+                        entry.pop("cover", None)    # vacío = volver a la mejor por score AI
+                tm[key] = entry
+                if not entry:
+                    tm.pop(key, None)
+                tm_file.parent.mkdir(parents=True, exist_ok=True)
+                _atomic_write_text(tm_file, json.dumps(tm, indent=1))
             return self.send_json({"ok": True, "meta": tm.get(key, {})})
         if u.path == "/api/rescan":
             if not self.auth(q):
@@ -5411,5 +5500,6 @@ if __name__ == "__main__":
                 print(f"limpiado tmp de export huérfano: {_tmp.name}")
     except OSError:
         pass
+    _cleanup_stale_reel_claims()
     print(f"AeroBrain server :8790 · token en {TOKEN_FILE}")
     QuietThreadingHTTPServer(("127.0.0.1", 8790), H).serve_forever()

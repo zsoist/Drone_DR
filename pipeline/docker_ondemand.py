@@ -11,15 +11,75 @@ Note: any `docker` CLI call auto-starts OrbStack, so status probes must check
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 DOCKER = "/usr/local/bin/docker"
 IDLE_STOP_S = 300
 # shared by the web server and the worker (both may run docker steps)
 MARKER = Path.home() / "Library" / "Caches" / "AeroBrain" / "docker-last-use"
+LEASE_MAX_AGE_S = 2 * 3600       # a lease older than this is ignored (crashed holder)
+
+
+def _lease_dir() -> Path:
+    return MARKER.parent
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def active_leases(now: float | None = None) -> list[Path]:
+    """Lease files of live callers younger than LEASE_MAX_AGE_S (stale/dead ones ignored)."""
+    now = now or time.time()
+    out = []
+    try:
+        files = list(_lease_dir().glob("docker-lease-*"))
+    except OSError:
+        return []
+    for f in files:
+        try:
+            age = now - f.stat().st_mtime
+            pid = int(f.name.rsplit("-", 2)[-2])
+        except (OSError, ValueError, IndexError):
+            continue
+        if age < LEASE_MAX_AGE_S and _pid_alive(pid):
+            out.append(f)
+    return out
+
+
+@contextmanager
+def session(timeout_s: int = 120):
+    """Hold Docker for one container step: lease first (so stop_if_idle/release cannot stop
+    the VM under us), then ensure_up(). The lease is removed on exit even on failure."""
+    _lease_dir().mkdir(parents=True, exist_ok=True)
+    lease = _lease_dir() / f"docker-lease-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    lease.touch()
+    try:
+        ensure_up(timeout_s)
+        yield
+    finally:
+        try:
+            lease.unlink()
+        except OSError:
+            pass
+        try:
+            touch()                      # idle window starts when the step ends
+        except OSError:
+            pass
 
 
 def touch() -> None:
@@ -85,11 +145,13 @@ def stop_if_idle(active_jobs: int, now: float | None = None) -> bool:
     orb = _orb()
     if not orb or active_jobs or now - last_use() < IDLE_STOP_S or not running():
         return False
+    if active_leases():
+        return False                     # a step is between ensure_up() and its container
     ps = subprocess.run([DOCKER, "ps", "-q"], capture_output=True, text=True, timeout=30)
     if ps.returncode != 0 or ps.stdout.strip():
         return False                     # a container is alive (maybe started by hand): leave it
     # `docker ps` takes a while: a server thread may have called ensure_up() meanwhile
-    if time.time() - last_use() < IDLE_STOP_S:
+    if time.time() - last_use() < IDLE_STOP_S or active_leases():
         return False
     _stop_vm(orb)
     return True
@@ -105,12 +167,14 @@ def release(expected_mark: float | None = None) -> bool:
     orb = _orb()
     if not orb or not running():
         return False
+    if active_leases():
+        return False
     if expected_mark is not None and last_use() != expected_mark:
         return False
     ps = subprocess.run([DOCKER, "ps", "-q"], capture_output=True, text=True, timeout=30)
     if ps.returncode != 0 or ps.stdout.strip():
         return False
-    if expected_mark is not None and last_use() != expected_mark:
+    if (expected_mark is not None and last_use() != expected_mark) or active_leases():
         return False
     _stop_vm(orb)
     return True

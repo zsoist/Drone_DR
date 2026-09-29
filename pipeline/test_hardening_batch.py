@@ -185,6 +185,43 @@ class DockerOnDemandTests(unittest.TestCase):
             self.assertTrue(docker_ondemand.release(expected_mark=mark))
         self.assertIn(["/usr/local/bin/orb", "stop"], calls)
 
+    def test_lease_blocks_stop_and_release_until_session_ends(self):
+        old = time.time() - docker_ondemand.IDLE_STOP_S - 50
+        docker_ondemand.touch()
+        os.utime(docker_ondemand.MARKER, (old, old))
+        calls = []
+        with mock.patch.object(docker_ondemand, "ensure_up"), \
+                mock.patch.object(docker_ondemand, "running", return_value=True), \
+                mock.patch.object(docker_ondemand.subprocess, "run",
+                                  side_effect=lambda cmd, **kw: calls.append(cmd) or
+                                  mock.Mock(returncode=0, stdout="")):
+            with docker_ondemand.session():
+                self.assertEqual(1, len(docker_ondemand.active_leases()))
+                os.utime(docker_ondemand.MARKER, (old, old))   # marca vieja: sin lease pararía
+                self.assertFalse(docker_ondemand.stop_if_idle(0))
+                self.assertFalse(docker_ondemand.release())
+            self.assertEqual([], docker_ondemand.active_leases())
+            self.assertNotIn(["/usr/local/bin/orb", "stop"], calls)
+
+    def test_lease_removed_even_when_the_step_fails(self):
+        with mock.patch.object(docker_ondemand, "ensure_up"):
+            with self.assertRaises(RuntimeError):
+                with docker_ondemand.session():
+                    raise RuntimeError("docker step failed")
+        self.assertEqual([], docker_ondemand.active_leases())
+
+    def test_stale_and_dead_pid_leases_are_ignored(self):
+        d = docker_ondemand.MARKER.parent
+        stale = d / f"docker-lease-{os.getpid()}-old"
+        stale.touch()
+        os.utime(stale, (time.time() - docker_ondemand.LEASE_MAX_AGE_S - 60,) * 2)
+        dead = d / "docker-lease-999999999-dead"
+        dead.touch()
+        self.assertEqual([], docker_ondemand.active_leases())
+        live = d / f"docker-lease-{os.getpid()}-live"
+        live.touch()
+        self.assertEqual([live], docker_ondemand.active_leases())
+
     def test_release_respects_a_container_or_a_foreign_touch(self):
         docker_ondemand.touch()
         mark = docker_ondemand.last_use()
@@ -247,13 +284,23 @@ class ComputePolicyNestedSplatTests(unittest.TestCase):
 
     def test_run_splat_routes_spec_through_policy(self):
         j = {"id": "s1", "spec": {"clip_id": "nope", "backend": "metal"}}
+        returned = []
+        real = compute_policy.route_splat
+
+        def spy(raw):
+            returned.append(real(raw))
+            return returned[-1]
         with mock.patch.object(worker, "VAULT", Path(tempfile.mkdtemp())), \
-                mock.patch.object(compute_policy, "route_splat",
-                                  wraps=compute_policy.route_splat) as route:
-            with self.assertRaises(Exception):
+                mock.patch.object(compute_policy, "route_splat", side_effect=spy) as route:
+            with self.assertRaisesRegex(RuntimeError, "primero procesa el vuelo en 3D"):
                 worker.run_splat(j)
         route.assert_called_once()
-        self.assertEqual("cuda", j["spec"]["backend"])
+        routed = returned[0]
+        self.assertEqual("cuda", routed["backend"])
+        self.assertEqual("strict", routed["backend_policy"])
+        self.assertFalse(routed["best_available"])
+        self.assertEqual("nope", routed["clip_id"])
+        self.assertIs(routed, j["spec"])           # el spec que sigue usando el job ES el ruteado
 
 
 class WorkerCudaBestEffortTests(unittest.TestCase):
@@ -398,6 +445,13 @@ class ScenesConcurrencyTests(unittest.TestCase):
 class GpuLaneTests(unittest.TestCase):
     def test_rc137_is_oom_class_unless_cancelled(self):
         self.assertEqual("oom", gpu_lane.classify_cuda_failure(137, "Killed"))
+        self.assertEqual("oom", gpu_lane.classify_cuda_failure(
+            137, "Out of memory: Killed process 123 (python)"))
+        self.assertEqual("oom", gpu_lane.classify_cuda_failure(137, "oom-kill:constraint=..."))
+        # sin evidencia: kill manual / WSL shutdown / kill_container → no reintentable
+        self.assertEqual("killed", gpu_lane.classify_cuda_failure(137, ""))
+        self.assertEqual("killed", gpu_lane.classify_cuda_failure(137, "step 300/4000"))
+        self.assertFalse(gpu_lane.should_retry_cuda("killed", "auto", 1))
         self.assertEqual("cancelled", gpu_lane.classify_cuda_failure(137, "cancelled by user"))
         self.assertTrue(gpu_lane.should_retry_cuda("oom", "auto", 1))
 
@@ -516,9 +570,51 @@ class TresdPublishTests(unittest.TestCase):
             self.assertEqual(["new.jpg"], [p.name for p in (out / "model").iterdir()])
             self.assertFalse((out / ".model.old").exists())
 
+    def test_model_swap_recovers_when_only_the_old_copy_survived(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            old = out / ".model.old"
+            old.mkdir()
+            (old / "good.jpg").write_text("good")      # crash entre rename(final→old) y rename(new→final)
+            new = out / ".model.new"
+            new.mkdir()
+            (new / "new.jpg").write_text("new")
+            with mock.patch.object(Path, "rename", autospec=True,
+                                   side_effect=lambda self, tgt, _r=Path.rename:
+                                   (_ for _ in ()).throw(OSError("boom")) if self.name == ".model.new"
+                                   else _r(self, tgt)):
+                with self.assertRaises(OSError):
+                    tresd_publish.swap_model_dir(new, out / "model")
+            # la única copia buena NO se borró: quedó restaurada como model/
+            self.assertEqual("good", (out / "model" / "good.jpg").read_text())
+
+    def test_model_swap_rolls_back_when_the_new_rename_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            (out / "model").mkdir()
+            (out / "model" / "old.jpg").write_text("old")
+            new = out / ".model.new"
+            new.mkdir()
+            (new / "new.jpg").write_text("new")
+            with mock.patch.object(Path, "rename", autospec=True,
+                                   side_effect=lambda self, tgt, _r=Path.rename:
+                                   (_ for _ in ()).throw(OSError("boom")) if self.name == ".model.new"
+                                   else _r(self, tgt)):
+                with self.assertRaises(OSError):
+                    tresd_publish.swap_model_dir(new, out / "model")
+            self.assertEqual(["old.jpg"], [p.name for p in (out / "model").iterdir()])
+
     def test_tiles_timeout_does_not_abort_publish(self):
-        src = (HERE / "tresd_publish.py").read_text()
-        self.assertIn("except (RuntimeError, OSError, subprocess.TimeoutExpired)", src)
+        with tempfile.TemporaryDirectory() as td:
+            proj, out = Path(td) / "proj", Path(td) / "out"
+            proj.mkdir()
+            (out / "tiles").mkdir(parents=True)
+            (out / "tiles" / "stale.png").write_text("x")   # tiles de la corrida anterior
+            for exc in (subprocess.TimeoutExpired("docker", 1800), RuntimeError("gdal2tiles"),
+                        OSError("disk")):
+                with mock.patch.object(tresd_publish, "sh_in_odm", side_effect=exc):
+                    self.assertEqual({}, tresd_publish.build_tiles(proj, out))
+            self.assertFalse((out / "tiles").exists())      # obsoletos fuera
 
 
 class AutocleanTmpNameTests(unittest.TestCase):

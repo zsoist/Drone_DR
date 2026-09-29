@@ -29,7 +29,7 @@
 - Los 11 REPO FACTS (gz-trap, hook, sesión, assets, CSP, urllib, python-argv,
   MapLibre globals, iconos, preflight) están en /tmp/world-flight-prompt.md y
   en la memoria del proyecto — siguen vigentes.
-- El plan G0-G3 previo (docs/GAME_EXPERIENCE_SPEC.md) queda SUPERSEDED por
+- El plan G0-G3 previo (docs/archive/GAME_EXPERIENCE_SPEC.md) queda SUPERSEDED por
   FLIGHTVERSE; se conserva como referencia de la tesis DSM=terreno.
 
 ## Decisiones tomadas (con razón, actualizable)
@@ -48,7 +48,7 @@
 ## Estado por fase
 | Fase | Estado | Evidencia |
 |---|---|---|
-| P0 baseline+audit | HECHA | FLIGHTVERSE_UI_AUDIT.md (A+E consolidados, I1-I4, baseline perf) |
+| P0 baseline+audit | HECHA | archive/FLIGHTVERSE_UI_AUDIT.md (A+E consolidados, I1-I4, baseline perf) |
 | P1 renderer gate + SceneManifest V2 | HECHA | FLIGHTVERSE_RENDERER_DECISION.md — spike OK (92/100 incumbente, 5/5 preguntas, qa/*-flightverse-spike.png); dsm_lod.py (126MB→234KB) + spike_flightverse.{html,js} + flightverse_spike_gate.py |
 | P2 world shell (/mundo) | HECHA | mundo.html/js + NAV globe + BLOQUE 28; 6 escenas, verificado pane (desktop+390px, 0 errores, sin overflow) |
 | P3 vuelo jugable (loop fijo, modos, rigs) | HECHA (núcleo) | volar.{html,js} + flightverse/runtime.js — timestep fijo 120Hz, 5 modos, 6 rigs, ghost del track real, HUD 4-esquinas; gate CDP: 62fps, AGL real, 0 errores (qa/*-volar.png). Deudas: touch móvil, 4 rigs restantes, audio |

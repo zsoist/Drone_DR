@@ -15,6 +15,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -33,8 +34,23 @@ SLOW: frozenset[str] = frozenset()
 MODULE_TIMEOUT_S = 180
 
 
+_SANDBOX = None
+
+
+def _sandbox() -> Path:
+    """Fresh temp dir shared by every child of this run: tests must never write into the
+    live vault (ops/errors.jsonl, ops/job_logs)."""
+    global _SANDBOX
+    if _SANDBOX is None:
+        _SANDBOX = Path(tempfile.mkdtemp(prefix="aerobrain-tests-"))
+    return _SANDBOX
+
+
 def _env() -> dict:
     env = dict(os.environ)
+    box = _sandbox()
+    env["AEROBRAIN_JOB_LOG_DIR"] = str(box / "job_logs")
+    env["AEROBRAIN_ERRLOG"] = str(box / "errors.jsonl")
     # Some tests shell out to a bare `python`: make it resolve to the interpreter running us.
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
     env["PYTHONPATH"] = os.pathsep.join([str(ROOT), str(PIPELINE)])

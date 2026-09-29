@@ -7,12 +7,17 @@ const fechaDe = cid => { const m = /(\d{4})(\d{2})(\d{2})/.exec(cid||''); return
 const dur = s => { s = Math.round(s||0); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
 const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const best = cid => { const t = parseFloat(localStorage.getItem(`ab.fv.best.${cid}.gaterush`)); return Number.isFinite(t) ? t : null; };
+// poster ligero (ortho_thumb.webp) con capa de respaldo al ortho.webp: si la miniatura da 404
+// la capa falla en silencio y se ve la siguiente
+// una sola capa: con dos (thumb + ortho de respaldo) el navegador descarga AMBAS
+// imágenes siempre. tresd_publish genera ortho_thumb.webp en cada publicación.
+const bgLayers = (p, q) => (p ? `url(${q}${p}${q})` : 'none');
 const hydratePreview = card => {
   const poster = card?.querySelector('.wi-poster');
   if (!poster || poster.dataset.previewLoaded === 'true') return false;
   const url = poster.dataset.preview || '';
   poster.dataset.previewLoaded = 'true';
-  if (url) poster.style.backgroundImage = `url(${JSON.stringify(url)})`;
+  if (url) poster.style.backgroundImage = bgLayers(url, '"');
   return true;
 };
 
@@ -173,7 +178,7 @@ function pick(i) {
 
 function launch(url, poster) {
   const ov = document.getElementById('w-launch');
-  ov.querySelector('.wl-bg').style.backgroundImage = `url('${poster}')`;
+  ov.querySelector('.wl-bg').style.backgroundImage = bgLayers(poster, "'");
   ov.classList.add('go');
   window.__abReloadOnRestore = true;  // shell.js recarga al volver por bfcache (el overlay .go taparía la página)
   setTimeout(() => { location.href = url; }, 520);
@@ -389,7 +394,7 @@ async function boot() {
     const rec = best(sc.clip_id), st = sc.stats || {};
     const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}${cfgExtra(sc)}`;
     return `<div class="fv-pop">
-      <div class="fv-pop-poster" style="background-image:url('${esc(sc.assets?.poster||'')}')"></div>
+      <div class="fv-pop-poster" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></div>
       <b>${esc(sc.name)}</b>
       <span>${st.gsd_cm_px ? st.gsd_cm_px + ' cm/px · ' : ''}${st.track_duration_s ? dur(st.track_duration_s) + ' vuelo real' : ''}${rec != null ? ' · récord ' + rec.toFixed(1) + 's' : ''}</span>
       ${sc.capabilities?.terrain ? `<div class="fv-pop-btns">
@@ -422,7 +427,7 @@ async function boot() {
         .setHTML(missionPopup(sc));
       const dot = document.createElement('div');
       dot.className = 'fv-pin2' + (sc.capabilities?.splat ? ' splat' : '');
-      dot.innerHTML = `<span class="fv-pin-img" style="background-image:url('${esc(sc.assets?.poster||'')}')"></span><span class="fv-pin-lb">${esc(sc.name.split(' · ')[0])}</span>`;
+      dot.innerHTML = `<span class="fv-pin-img" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></span><span class="fv-pin-lb">${esc(sc.name.split(' · ')[0])}</span>`;
       new maplibregl.Marker({ element: dot }).setLngLat(c).setPopup(pop).addTo(map);
       dot.addEventListener('click', () => map.flyTo({ center: c, zoom: 15.5, speed: 1.35 }));
     }

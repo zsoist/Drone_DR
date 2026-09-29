@@ -6,7 +6,7 @@
   --line: #1E2530;
   --text: #E6EBF2;
   --text-2: #8A97A8;
-  --text-3: #566274;
+  --text-3: #7B899C;   /* AA: 5.50 / 5.14 / 4.76 sobre bg / surface / surface-2 (antes #566274 = 3.16 / 2.96 / 2.74) */
   --accent: #45A0E6;
   --accent-dim: rgba(69, 160, 230, 0.14);
   --amber: #E0A458;
@@ -171,7 +171,7 @@
   --line: #DDE3EC;
   --text: #17202B;
   --text-2: #4E5D70;
-  --text-3: #8794A6;
+  --text-3: #5F6C7E;   /* AA: 4.85 / 5.34 / 4.59 sobre bg / surface / surface-2 (antes #8794A6 = 2.80 / 3.08 / 2.65) */
   --accent: #1E7FD1;
   --accent-dim: rgba(30, 127, 209, 0.10);
   --amber: #B97A1F;
@@ -306,6 +306,10 @@ select.ctl, input.ctl {
   -webkit-appearance: none; appearance: none;
 }
 input.ctl::placeholder { color: var(--text-3); }
+/* foco visible por teclado: el outline:none de arriba ganaba sobre :focus-visible */
+select.ctl:focus-visible, input.ctl:focus-visible, textarea.ctl:focus-visible, .m-ipt:focus-visible,
+.city-card:focus-visible, .mflight[role="button"]:focus-visible, .cr-ins:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; }
 input.ctl:focus { border-color: var(--accent); }
 .btn {
   display: inline-flex; align-items: center; gap: 7px;
@@ -1622,7 +1626,7 @@ button.exp { text-align: left; cursor: pointer; }
   border-color: rgba(69,160,230,0.55);
   box-shadow: 0 14px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(69,160,230,0.25);
 }
-.cc-cover { position: relative; aspect-ratio: 16/10; overflow: hidden; }
+.cc-cover { position: relative; aspect-ratio: 16/10; overflow: hidden; background: #0b0f16; }   /* fondo oscuro fijo: texto blanco legible aunque la portada falle o el tema sea claro */
 .cc-cover > img:first-child {
   width: 100%; height: 100%; object-fit: cover; display: block;
   transition: transform 600ms var(--ease);
@@ -1637,14 +1641,14 @@ button.exp { text-align: left; cursor: pointer; }
 .city-card:hover .cc-tile { transform: scale(1.08) rotate(1.5deg); }
 .cc-shade {
   position: absolute; inset: 0;
-  background: linear-gradient(180deg, transparent 40%, rgba(6,9,14,0.88) 100%);
+  background: linear-gradient(180deg, transparent 30%, rgba(6,9,14,0.92) 100%);
 }
 .cc-cover h2 {
   position: absolute; left: 16px; bottom: 30px; margin: 0;
   font-size: 24px; font-weight: 750; color: #fff; letter-spacing: 0.2px;
   text-shadow: 0 2px 12px rgba(0,0,0,0.6);
 }
-.cc-range { position: absolute; left: 17px; bottom: 12px; font-size: 10.5px; color: rgba(255,255,255,0.75); }
+.cc-range { position: absolute; left: 17px; bottom: 12px; font-size: 10.5px; color: rgba(255,255,255,0.92); text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 .cc-score {
   position: absolute; left: 16px; top: 12px;
   background: rgba(69,160,230,0.9); color: #fff; font-weight: 700;
@@ -1670,7 +1674,7 @@ button.exp { text-align: left; cursor: pointer; }
 
 /* pills de miniatura legibles (glass) — antes: negro sobre oscuro ilegible */
 .card .ovl, .thumb .ovl {
-  background: color-mix(in srgb, #0a0c10 72%, transparent) !important;
+  background: rgba(10, 12, 16, 0.82) !important;   /* scrim oscuro sin color-mix: idéntico en tema claro */
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255,255,255,0.14);
   color: #fff !important; font-size: 10.5px !important;
@@ -4092,6 +4096,9 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   .splat-item .si-acts .btn:not(.primary) {
     min-width: 44px;
   }
+  /* insertar-en-playhead del carrusel: 26px visibles, área táctil 44px sin mover el icono */
+  .cr-ins { top: 9px; right: 9px; }
+  .cr-ins::after { content: ''; position: absolute; inset: -9px; }
   .modal-x { display: inline-flex; align-items: center; justify-content: center; }
   /* segmentos y chips: separa y centra para que el dedo no toque el vecino */
   .seg { gap: 4px; }

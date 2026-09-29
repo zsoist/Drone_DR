@@ -1937,12 +1937,13 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   function addText() {
     if (!tl.length) return toast('Primero añade tomas al timeline');
     const start = Math.min(playhead, Math.max(0, total() - 1));
+    pushUndo();
     const t = { id: uid(), text: 'Tu texto', start: +start.toFixed(2),
                 end: +Math.min(total(), start + 3).toFixed(2), style: { ...TEXT_DEF } };
     texts.push(t);
     textSel = texts.length - 1;
     renderTextLane();
-    openTextEditor(textSel);
+    openTextEditor(textSel, true);
   }
 
   function renderTextLane() {
@@ -2006,7 +2007,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     }).join('');
   }
 
-  function openTextEditor(i) {
+  function openTextEditor(i, alreadyUndone = false) {
     const t = texts[i];
     if (!t) return;
     const ov = document.createElement('div');
@@ -2071,6 +2072,8 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         <button class="btn primary" data-tx="ok">Listo</button>
       </div></div>`;
     document.body.appendChild(ov);
+    let undone = alreadyUndone;   // un solo paso de historial por sesión del editor (no por tecla)
+    const undoOnce = () => { if (!undone) { undone = true; pushUndo(); } };
     const apply = () => {
       t.text = ov.querySelector('#tx-t').value || 'Texto';
       const A = +ov.querySelector('#tx-a').value, B = +ov.querySelector('#tx-b').value;
@@ -2089,10 +2092,10 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       ov.querySelector('#tx-boxa').style.opacity = ov.querySelector('#tx-box').checked ? '' : '.35';
       renderTextLane();
     };
-    ov.addEventListener('input', apply);
-    ov.addEventListener('change', apply);
+    ov.addEventListener('input', () => { undoOnce(); apply(); });
+    ov.addEventListener('change', () => { undoOnce(); apply(); });
     ov.addEventListener('click', e => {
-      if (e.target.closest('[data-tx="del"]')) { texts.splice(i, 1); textSel = -1; ov.remove(); renderTextLane(); return; }
+      if (e.target.closest('[data-tx="del"]')) { undoOnce(); texts.splice(i, 1); textSel = -1; ov.remove(); renderTextLane(); return; }
       if (e.target === ov || e.target.closest('.modal-x') || e.target.closest('[data-tx="ok"]')) { apply(); ov.remove(); }
     });
     setTimeout(() => { const el = ov.querySelector('#tx-t'); el.focus(); el.select(); }, 60);
@@ -2121,6 +2124,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       if (!drag.moved) {
         if (Math.abs(e.clientX - drag.x0) <= 3) return;
         drag.moved = true;
+        pushUndo();   // una sola vez al empezar a arrastrar
       }
       const d = (e.clientX - drag.x0) / pps;
       const t = texts[drag.i];
@@ -2143,7 +2147,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
     lane.addEventListener('pointercancel', () => { drag = null; tapIdx = null; });
     lane.addEventListener('click', e => {
       const x = e.target.closest('[data-txtx]');
-      if (x) { tapIdx = null; texts.splice(+x.dataset.txtx, 1); textSel = -1; renderTextLane(); return; }
+      if (x) { tapIdx = null; pushUndo(); texts.splice(+x.dataset.txtx, 1); textSel = -1; renderTextLane(); return; }
       // con setPointerCapture el click llega al carril, no al bloque: por eso se usa el índice del pointerdown
       if (tapIdx != null) { const i = tapIdx; tapIdx = null; if (texts[i]) openTextEditor(i); }
     });
@@ -2386,6 +2390,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         const d = await r.json();
         if (d.error) throw new Error(d.error);
         await load();
+        pushUndo();
         music = { ...MUSIC_DEFAULTS, ...d.track };
         musicEl.src = `${DATA}/audio/${encodeURIComponent(d.track.name)}`;
         musicChip();
@@ -2397,15 +2402,18 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       busy = false;
     };
 
+    let musEdit = false;   // un pushUndo por gesto de slider, no por tick
     ovr.addEventListener('change', e => {
       if (e.target.id === 'mus-file') upload(e.target.files?.[0]);
-      if (e.target.id === 'mu-duck' && music) { music.duck = e.target.checked; }
+      musEdit = false;
+      if (e.target.id === 'mu-duck' && music) { pushUndo(); music.duck = e.target.checked; }
     });
     ovr.addEventListener('input', e => {
       if (!music) return;
       const map = { 'mu-vol': 'volume', 'mu-orig': 'originalVolume', 'mu-fi': 'fadeIn', 'mu-fo': 'fadeOut', 'mu-st': 'startAt' };
       const key = map[e.target.id];
       if (!key) return;
+      if (!musEdit) { musEdit = true; pushUndo(); }
       music[key] = +e.target.value;
       const out = e.target.parentElement.querySelector('b');
       if (out) out.textContent = key === 'volume' || key === 'originalVolume'
@@ -2436,7 +2444,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         const name = del.dataset.del;
         if (del.dataset.armed !== '1') { del.dataset.armed = '1'; del.textContent = '¿seguro?'; return; }
         await api('/api/audio_op', { op: 'delete', name });
-        if (music?.name === name) { music = null; musicChip(); }
+        if (music?.name === name) { pushUndo(); music = null; musicChip(); }
         await load(); render();
         return;
       }
@@ -2450,6 +2458,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
       if (it) {
         const t = tracks.find(x => x.name === it.dataset.track);
         if (!t) return;
+        pushUndo();
         music = { ...MUSIC_DEFAULTS, ...(music?.name === t.name ? music : {}), ...t };
         musicEl.src = `${DATA}/audio/${encodeURIComponent(t.name)}`;
         musicSync(playhead);
@@ -2458,6 +2467,7 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
         return;
       }
       if (e.target.closest('#mu-clear')) {
+        pushUndo();
         music = null;
         try { musicEl.pause(); musicEl.removeAttribute('src'); } catch {}
         musicChip(); render();
@@ -3028,10 +3038,10 @@ pollJobs(document.getElementById('jobs'), 2500, j => {
   const rail = document.getElementById('rail');
   rail.innerHTML = editable.map(f => `
     <div class="cr-item" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
-      <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="">
+      <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="" width="320" height="180">
       <span class="scrub-line"></span>
       <span class="cr-lb">${esc(f.label) || fmt.date(f.date)} · ${fmt.dur(f.duration_s)}</span>
-      <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar en playhead">${icon('plus')}</button>
+      <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar en playhead" aria-label="Insertar en el playhead">${icon('plus')}</button>
     </div>`).join('') || `<div class="empty">No hay clips con proxy disponibles.</div>`;
   rail.querySelectorAll('.cr-item').forEach(el => el.classList.add('scrub'));
   attachScrub(rail);   // 27 · scrub por hover reutilizando el helper del repo

@@ -67,12 +67,10 @@ main.innerHTML = `
     }
     if (!best) return;
     usedMetaKeys.add(best);
-    const old = tripsMeta[best] || {};
-    tripsMeta[c.key] = { ...old };
-    const body = { key: c.key };
-    if (old.name) body.name = old.name;
-    if (old.cover) body.cover = old.cover;
-    if (body.name || body.cover) api('/api/trip_meta', body).catch(() => {});
+    // el server mueve + borra la clave vieja de forma atómica (ya no se copia y se deja huérfana)
+    tripsMeta[c.key] = { ...(tripsMeta[best] || {}) };
+    delete tripsMeta[best];
+    api('/api/trip_meta', { key: c.key, migrate_from: best }).catch(() => {});
   });
   clusters.forEach(c => {
     const srv = tripsMeta[c.key] || {};
@@ -114,9 +112,9 @@ main.innerHTML = `
     el.style.display = '';
     document.getElementById('detail').style.display = 'none';
     el.innerHTML = clusters.map((c, i) => `
-      <div class="city-card" data-city="${esc(c.key)}" style="animation-delay:${i * 70}ms">
+      <div class="city-card" data-city="${esc(c.key)}" role="button" tabindex="0" aria-label="Abrir ${esc(c.name)}" style="animation-delay:${i * 70}ms">
         <div class="cc-cover">
-          <img src="${DATA}/thumbs/${esc(c.cover?.clip_id || '')}.jpg" loading="lazy" alt="">
+          <img src="${DATA}/thumbs/${esc(c.cover?.clip_id || '')}.jpg" loading="lazy" alt="" width="960" height="540">
           <img class="cc-tile" src="${tileURL(c)}" loading="lazy" alt="" data-tip="Vista satelital de la zona">
           <div class="cc-shade"></div>
           <h2>${esc(c.name)}</h2>
@@ -130,9 +128,9 @@ main.innerHTML = `
           <span data-tip="Distancia total volada">${icon('route')} ${fmt.km(c.dist)}</span>
           <span data-tip="Altura máxima alcanzada">${icon('mountain')} ${Math.round(c.alt)} m</span>
           <span class="spacer" style="flex:1"></span>
-          <button class="btn" data-postal="${esc(c.key)}" data-tip="Genera una postal PNG del lugar">${icon('dl')}</button>
-          <button class="btn" data-cover-city="${esc(c.key)}" data-tip="Elegir la foto de portada">${icon('iso')}</button>
-          <button class="btn" data-rename-city="${esc(c.key)}" data-tip="Renombrar este lugar">${icon('tag')}</button>
+          <button class="btn" data-postal="${esc(c.key)}" data-tip="Genera una postal PNG del lugar" aria-label="Descargar postal de ${esc(c.name)}">${icon('dl')}</button>
+          <button class="btn" data-cover-city="${esc(c.key)}" data-tip="Elegir la foto de portada" aria-label="Elegir portada de ${esc(c.name)}">${icon('iso')}</button>
+          <button class="btn" data-rename-city="${esc(c.key)}" data-tip="Renombrar este lugar" aria-label="Renombrar ${esc(c.name)}">${icon('tag')}</button>
         </div>
       </div>`).join('') ||
       `<div class="empty">${icon('pin')}<p>Sin vuelos con GPS todavía.</p></div>`;
@@ -308,8 +306,7 @@ main.innerHTML = `
         </div>
         <p class="footer-note" style="margin-top:8px">El nombre se guarda en el servidor: lo verás igual en el iPhone, iPad y desktop.</p>
       </div></div>`;
-    document.body.appendChild(ov);
-    ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) ov.remove(); });
+    openModal(ov);
     const save = async () => {
       const name = ov.querySelector('#tm-name').value.trim();
       if (!name) return;
@@ -335,24 +332,26 @@ main.innerHTML = `
       <div class="modal-b">
         <div class="mflights" style="max-height:340px">
           ${sorted.map(f => `
-            <div class="mflight ${f.clip_id === c.cover?.clip_id ? 'on' : ''}" data-pick="${esc(f.clip_id)}">
-              <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">
+            <div class="mflight ${f.clip_id === c.cover?.clip_id ? 'on' : ''}" data-pick="${esc(f.clip_id)}" role="button" tabindex="0" aria-label="Usar como portada: ${esc(f.label || fmt.date(f.date))}">
+              <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="" width="960" height="540">
               <div class="mf-t"><b>${esc(f.label || `${fmt.date(f.date)} · ${f.time || ''}`)}</b>
                 <span>${fmt.dur(f.duration_s)}${ai[f.clip_id]?.travel_score ? ` · ${ai[f.clip_id].travel_score}/10 AI` : ''}</span></div>
             </div>`).join('')}
         </div>
         <p class="footer-note" style="margin-top:10px">Se guarda en el servidor. La estrella AI seguirá eligiendo si borras la elección manual.</p>
       </div></div>`;
-    document.body.appendChild(ov);
-    ov.addEventListener('click', async e => {
-      if (e.target === ov || e.target.closest('.modal-x')) { ov.remove(); return; }
-      const row = e.target.closest('[data-pick]');
-      if (!row) return;
+    openModal(ov);
+    const doPick = async row => {
       const cid2 = row.dataset.pick;
       await api('/api/trip_meta', { key: c.key, cover: cid2 });
       c.cover = c.flights.find(f => f.clip_id === cid2) || c.cover;
       ov.remove();
       renderCities();
+    };
+    ov.addEventListener('click', e => { const row = e.target.closest('[data-pick]'); if (row) doPick(row); });
+    ov.addEventListener('keydown', e => {
+      const row = e.target.closest('[data-pick]');
+      if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); doPick(row); }
     });
   }
 
@@ -378,6 +377,13 @@ main.innerHTML = `
       cc.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.97)' }, { transform: 'scale(1)' }], { duration: 180 });
       setTimeout(() => renderDetail(c), 120);
     }
+  });
+
+  // tarjetas de ciudad alcanzables por teclado (Enter / Espacio); los botones internos conservan lo suyo
+  main.addEventListener('keydown', e => {
+    if ((e.key !== 'Enter' && e.key !== ' ') || e.target !== e.target.closest('.city-card')) return;
+    e.preventDefault();
+    e.target.click();
   });
 
   renderCities();

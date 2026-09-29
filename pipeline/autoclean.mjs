@@ -121,7 +121,11 @@ function localFilter(inFile, outFile, preset) {
 }
 
 function voxelFilter(st, inFile, outFile, voxel) {
-  if (!st || !fs.existsSync(st)) return { skipped: 'splat-transform ausente' };
+  if (!st || !fs.existsSync(st)) {
+    // sin splat-transform el resultado del filtro local ya es válido: entregarlo como salida
+    fs.copyFileSync(inFile, outFile);
+    return { skipped: 'splat-transform ausente' };
+  }
   const [size, op, min] = voxel;
   const before = fs.statSync(inFile).size / STRIDE;
   const r = spawnSync('node', [st, inFile, '--filter-floaters', `${size},${op},${min}`,

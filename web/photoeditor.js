@@ -162,7 +162,9 @@ function openPhotoEditor({ url, name }) {
     const w = fx.size === 'ig' ? 1080 : fx.size === 'custom' ? fx.custom : 3840;
     const out = document.createElement('canvas');
     renderTo(out, w);                          // export: mismo motor, full res
-    const blob = await new Promise(res => out.toBlob(res, 'image/jpeg', 0.92));
+    let blob;
+    try { blob = await new Promise(res => out.toBlob(res, 'image/jpeg', 0.92)); }
+    finally { out.width = out.height = 0; }   // iOS limita la memoria total de canvas: suelta el de 4K ya
     if (!blob) throw new Error('No se pudo generar la imagen (¿demasiado grande para este dispositivo?)');
     return blob;
   }
@@ -179,7 +181,7 @@ function openPhotoEditor({ url, name }) {
     cur.p.catch(() => { if (prep === cur) prep = { key: '', blob: null, p: null }; });
     return cur.p;
   }
-  const schedulePrepare = () => { clearTimeout(prepT); prepT = setTimeout(() => { prepare().catch(() => {}); }, 700); };
+  const schedulePrepare = () => { clearTimeout(prepT); prepT = setTimeout(() => { prepare().catch(() => {}); }, 2500); };   // reposo largo: cada prerender 4K cuesta ~64 MB de canvas
 
   const PRESETS = {
     orig: { ...DEF },

@@ -343,7 +343,7 @@ function openPreview(f) {
     <div class="modal-b">
       ${f.has_proxy
         ? `<video class="m-prev" style="max-height:320px" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" controls muted playsinline preload="none"></video>`
-        : `<img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" style="width:100%;border-radius:10px" alt="">`}
+        : `<img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" style="width:100%;height:auto;border-radius:10px" alt="" width="960" height="540">`}
       <div class="tool-row" style="margin-top:12px">
         <span class="chip">${fmt.dur(f.duration_s)}</span>
         <span class="chip">${Math.round(f.stats.max_rel_alt_m || 0)} m alt</span>
@@ -356,10 +356,7 @@ function openPreview(f) {
         ${models.has(f.clip_id) ? `<a class="btn" href="tresd.html">${icon('cube')} Modelo 3D</a>` : ''}
       </div>
     </div></div>`;
-  document.body.appendChild(ov);
-  ov.addEventListener('click', e => {
-    if (e.target === ov || e.target.closest('.modal-x')) { ov.querySelector('video')?.pause(); ov.remove(); }
-  });
+  openModal(ov, { onClose: () => ov.querySelector('video')?.pause() });
 }
 
 const qEl = document.getElementById('q');

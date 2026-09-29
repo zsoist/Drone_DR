@@ -288,7 +288,7 @@ PATH=/Volumes/SSD/_system/venv/bin:$PATH git commit -m "feat: render the real dr
 **Files:**
 - Create: `pipeline/browser_home_v2.py`
 - Modify: `pipeline/test_home_v2.py`
-- Modify: `design-qa.md`
+- Modify: `docs/qa/design-qa.md`
 - Regenerate: `web/home.html.gz`, `web/home.js.gz`, `web/home-data.js.gz`, `web/home-effects.js.gz`, `web/home-drone.js.gz`, `web/style.css.gz`
 
 **Interfaces:**
@@ -326,7 +326,7 @@ For every finding: add the smallest regression assertion, verify RED, implement 
 
 - [ ] **Step 4: Compare reference and implementation**
 
-Open the supplied desktop screenshot and the new 1440 × 960 capture together. Update `design-qa.md` with hierarchy, spacing, crop, typography, card completeness, motion and input findings. Repeat until `final result: passed` with no P0/P1/P2 items.
+Open the supplied desktop screenshot and the new 1440 × 960 capture together. Update `docs/qa/design-qa.md` with hierarchy, spacing, crop, typography, card completeness, motion and input findings. Repeat until `final result: passed` with no P0/P1/P2 items.
 
 - [ ] **Step 5: Regenerate compressed assets and run all gates**
 
@@ -352,6 +352,6 @@ Run the same browser gate with `--base-url https://vuelos.metislab.work`. Confir
 - [ ] **Step 7: Commit**
 
 ```bash
-git add pipeline/browser_home_v2.py pipeline/test_home_v2.py design-qa.md web/home.html.gz web/home.js.gz web/home-data.js.gz web/home-effects.js.gz web/home-drone.js.gz web/style.css.gz
+git add pipeline/browser_home_v2.py pipeline/test_home_v2.py docs/qa/design-qa.md web/home.html.gz web/home.js.gz web/home-data.js.gz web/home-effects.js.gz web/home-drone.js.gz web/style.css.gz
 PATH=/Volumes/SSD/_system/venv/bin:$PATH git commit -m "test: accept Home V2 across devices"
 ```

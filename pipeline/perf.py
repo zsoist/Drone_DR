@@ -230,7 +230,8 @@ class PerfSampler:
 
 
 # ---------- registro central de errores ----------
-ERRLOG = VAULT / "ops" / "errors.jsonl"
+ERRLOG = Path(os.environ["AEROBRAIN_ERRLOG"]) if os.environ.get("AEROBRAIN_ERRLOG") \
+    else VAULT / "ops" / "errors.jsonl"
 
 
 def log_error(source: str, msg: str, ctx: dict | None = None):

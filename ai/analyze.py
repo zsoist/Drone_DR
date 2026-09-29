@@ -92,7 +92,6 @@ def analyze_clip(cid: str, keys: dict, deep: bool = False) -> dict | None:
     sample, spacing_s = sample_frames(frames, n_sample)
     # frames are 1-every-2s → frame index i ≈ second i*2 in the video
     tpl = DEEP_PROMPT if deep else PROMPT
-    spacing_s = round(2 * (n - 1) / (len(sample) - 1)) if len(sample) > 1 else 2 * step
     prompt = tpl.format(n=len(sample), cid=cid, step=spacing_s)
     raw = gemini_vision(prompt, sample, keys)
     m = re.search(r"\{.*\}", raw, re.DOTALL)

@@ -276,7 +276,9 @@ def build(cid: str) -> dict:
             "mesh_coverage_meta": f"data/models/{cid}/mesh_coverage.json"
                                   if collision_ready and viewer_obj else None,
             "objects": f"data/models/{cid}/objects.json" if (mdir / "objects.json").exists() else None,
-            "poster": f"data/models/{cid}/{meta['ortho_asset']}" if meta.get("ortho_asset") else f"data/thumbs/{cid}.jpg",
+            "poster": (f"data/models/{cid}/ortho_thumb.webp" if (mdir / "ortho_thumb.webp").exists()
+                       else f"data/models/{cid}/{meta['ortho_asset']}" if meta.get("ortho_asset")
+                       else f"data/thumbs/{cid}.jpg"),
         }.items() if v},
         "transforms": {
             # Metadata without a complete verified matrix remains explicitly

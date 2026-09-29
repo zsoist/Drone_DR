@@ -58,6 +58,7 @@ main.classList.add('lab-main');
   const fromEditor = e => e.origin === location.origin && e.source === frame.contentWindow;
   // ¿hay ediciones sin exportar? SuperSplat responde a 'supersplat:is-scene-dirty' (iframe-api.ts)
   const editorDirty = () => new Promise(res => {
+    if (!frame.getAttribute('src')) { res(false); return; }   // editor aún no cargado (móvil lazy)
     let done = false;
     const fin = v => { if (done) return; done = true; window.removeEventListener('message', on); clearTimeout(t); res(v); };
     const on = e => { if (fromEditor(e) && e.data?.type === 'supersplat:is-scene-dirty') fin(!!e.data.result); };
@@ -112,20 +113,20 @@ main.classList.add('lab-main');
       <span class="footer-note mono" id="lab-clean-status" role="status" aria-live="polite"></span>
       <div class="lab-tune-panel" id="lab-tune-panel" hidden>
         <div class="tn-stage" title="Gaussianas casi transparentes = niebla/haze. Desmarca para conservarlas">
-          <input type="checkbox" id="tn-op-on" checked><span class="tn-lb">HAZE</span>
-          <input type="range" id="tn-op" min="0.5" max="20" value="3.5" step="0.5"><b class="mono" id="tn-op-v">3.5%</b>
+          <label style="display:inline-flex;align-items:center;gap:6px;min-height:32px;cursor:pointer"><input type="checkbox" id="tn-op-on" checked style="width:20px;height:20px"><span class="tn-lb">HAZE</span></label>
+          <input type="range" id="tn-op" aria-label="Umbral haze" min="0.5" max="20" value="3.5" step="0.5"><b class="mono" id="tn-op-v">3.5%</b>
           <em class="mono tn-count" id="tn-op-c"></em></div>
         <div class="tn-stage" title="Gaussianas gigantes vs la mediana = spikes/blobs. Más bajo = más agresivo">
-          <input type="checkbox" id="tn-k-on" checked><span class="tn-lb">SPIKES</span>
-          <input type="range" id="tn-k" min="2" max="10" value="6" step="0.5"><b class="mono" id="tn-k-v">6.0×</b>
+          <label style="display:inline-flex;align-items:center;gap:6px;min-height:32px;cursor:pointer"><input type="checkbox" id="tn-k-on" checked style="width:20px;height:20px"><span class="tn-lb">SPIKES</span></label>
+          <input type="range" id="tn-k" aria-label="Umbral spikes" min="2" max="10" value="6" step="0.5"><b class="mono" id="tn-k-v">6.0×</b>
           <em class="mono tn-count" id="tn-k-c"></em></div>
         <div class="tn-stage" title="Agujas: eje máximo >> eje intermedio (no toca discos-superficie). Más bajo = más agujas fuera">
-          <input type="checkbox" id="tn-an-on" checked><span class="tn-lb">AGUJAS</span>
-          <input type="range" id="tn-an" min="5" max="25" value="15" step="1"><b class="mono" id="tn-an-v">15</b>
+          <label style="display:inline-flex;align-items:center;gap:6px;min-height:32px;cursor:pointer"><input type="checkbox" id="tn-an-on" checked style="width:20px;height:20px"><span class="tn-lb">AGUJAS</span></label>
+          <input type="range" id="tn-an" aria-label="Umbral agujas" min="5" max="25" value="15" step="1"><b class="mono" id="tn-an-v">15</b>
           <em class="mono tn-count" id="tn-an-c"></em></div>
         <div class="tn-stage" title="Spray radial más allá del footprint de vuelo. Desmarca si tu escena es alargada">
-          <input type="checkbox" id="tn-rad-on" checked><span class="tn-lb">BORDE</span>
-          <input type="range" id="tn-rad" min="95" max="99.9" value="99.5" step="0.1"><b class="mono" id="tn-rad-v">P99.5</b>
+          <label style="display:inline-flex;align-items:center;gap:6px;min-height:32px;cursor:pointer"><input type="checkbox" id="tn-rad-on" checked style="width:20px;height:20px"><span class="tn-lb">BORDE</span></label>
+          <input type="range" id="tn-rad" aria-label="Umbral borde" min="95" max="99.9" value="99.5" step="0.1"><b class="mono" id="tn-rad-v">P99.5</b>
           <em class="mono tn-count" id="tn-rad-c"></em></div>
         <p class="footer-note" style="flex-basis:100%;margin:2px 0 0">Cada limpieza es UN paso de undo — prueba, mira los contadores por etapa, deshaz y ajusta.</p>
       </div>`;
@@ -200,6 +201,7 @@ main.classList.add('lab-main');
     document.getElementById('lab-ab').addEventListener('click', async () => {
       if (!(await okToDiscard())) return;
       abRaw = !abRaw;
+      armed = true; lazyBox.hidden = true;
       const src = abRaw
         ? `/supersplat/?load=${encodeURIComponent('/' + rawUrl(s))}&filename=${encodeURIComponent(s.clip_id + '.raw.splat')}`
         : editorUrl(s);
@@ -207,10 +209,31 @@ main.classList.add('lab-main');
       renderClean();
     });
   }
-  const load = i => {
+  // móvil/táctil: el editor pesa ~25 MB (index.js + .sog) y el iframe queda bajo el pliegue →
+  // no fijamos src hasta que el usuario toque "Cargar editor" o elija un splat
+  const LAZY = matchMedia('(max-width: 800px), (pointer: coarse)').matches;
+  let armed = !LAZY;
+  const lazyBox = document.createElement('div');
+  lazyBox.className = 'lab-lazy';
+  lazyBox.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:16px;background:var(--bg,#0A0C10);z-index:2';
+  lazyBox.innerHTML = `<button class="btn primary" id="lab-load-ed" aria-label="Cargar editor SuperSplat">${icon('cube')} Cargar editor</button>
+    <span class="footer-note">El editor descarga ~25 MB. Cárgalo solo cuando vayas a editar.</span>`;
+  lazyBox.hidden = armed;
+  drop.appendChild(lazyBox);
+  const arm = () => {
+    if (armed) return;
+    armed = true; lazyBox.hidden = true;
+    const s = splats[cur];
+    if (s) frame.src = abRaw
+      ? `/supersplat/?load=${encodeURIComponent('/' + rawUrl(s))}&filename=${encodeURIComponent(s.clip_id + '.raw.splat')}`
+      : editorUrl(s);
+  };
+  lazyBox.querySelector('button').addEventListener('click', arm);
+  const load = (i, user) => {
     if (!splats[i]) return;
     cur = i;
-    frame.src = editorUrl(splats[i]);
+    if (user && !armed) { armed = true; lazyBox.hidden = true; }
+    if (armed) frame.src = editorUrl(splats[i]);
     renderPicker(); renderActions(); renderClean();
   };
 
@@ -218,7 +241,7 @@ main.classList.add('lab-main');
     const b = e.target.closest('[data-i]');
     if (!b) return;
     if (+b.dataset.i !== cur && !(await okToDiscard())) return;
-    load(+b.dataset.i);
+    load(+b.dataset.i, true);
   });
 
   // ---- subida del splat editado (botón o drag&drop) ----
@@ -280,7 +303,7 @@ main.classList.add('lab-main');
     exitBtn.hidden = !on;
     document.documentElement.classList.toggle('lab-noscroll', on);
   };
-  document.getElementById('lab-full').addEventListener('click', () => setFull(true));
+  document.getElementById('lab-full').addEventListener('click', () => { arm(); setFull(true); });
   exitBtn.addEventListener('click', () => setFull(false));
   document.addEventListener('keydown', e => { if (e.key === 'Escape') setFull(false); });
 

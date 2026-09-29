@@ -10,14 +10,15 @@ en inteligencia: mapas, detección de objetos, escenas 3D y diarios de viaje.
 - **PC RTX 4060 Ti + WSL2** = fuerza de trabajo: todo ODM (CUDA, strict) y todo splat
   (Nerfstudio/gsplat, 1K–40K). Nunca es autoridad de publicación; su scratch expira solo
   (`pc_janitor.py`). `AEROBRAIN_COMPUTE=local` reactiva los caminos legacy del Mac.
-- **Cloudflare** = túnel + dominio (vuelos.metislab.work → localhost:8790) + el Worker de borde OBLIGATORIO en `edge/` (private-data-v1: gate de auth y puente HMAC hacia el origen; sin él no hay acceso). Sin Pages ni R2: el media se sirve del SSD local con HTTP Range + gzip sidecars — $0/mes real. (Actualizado 2026-07-05; ver 3D_PROCESSING_AUDIT.md)
+- **Cloudflare** = túnel + dominio (vuelos.metislab.work → localhost:8790) + el Worker de borde OBLIGATORIO en `edge/` (private-data-v1: gate de auth y puente HMAC hacia el origen; sin él no hay acceso). Sin Pages ni R2: el media se sirve del SSD local con HTTP Range + gzip sidecars — $0/mes real. (Actualizado 2026-07-05; ver docs/archive/3D_PROCESSING_AUDIT.md)
 - **drone-vault** (`/Volumes/SSD/drone-vault/`) = datos, fuera del repo
 
 ## 3D contract
 - ODM runs from video frames, not WebODM SaaS: SRT → EXIF GPS → OpenSfM/OpenMVS →
   DSM/DTM/ortho/cloud/mesh. Por política (`compute_policy.py`) todo ODM va al nodo CUDA en modo strict.
-- Preset `alta` is the stable local video route and may use `--skip-3dmodel` for nadir.
-  Remote CUDA Ultra is the full-product route for large orbital/oblique scene versions.
+- Preset `alta` is the stable video route (3072 px, DSM/DTM/ortho/cloud) and may use `--skip-3dmodel` for nadir.
+  Under the PC-only policy it also runs on the PC CUDA lane; the old "local Mac" execution exists only with
+  `AEROBRAIN_COMPUTE=local` (legacy). Remote CUDA Ultra is the full-product route for large orbital/oblique scene versions.
 - Gaussian splats are first-class outputs. Todos corren en CUDA (política PC-only);
   7K–40K son CUDA estrictos, con `d1→d2` sólo tras OOM clasificado y sin fallback al Mac.
   Publicación atómica, SOG/legacy formats, history versions, checksums y Chrome browser gate.

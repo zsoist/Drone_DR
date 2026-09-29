@@ -86,9 +86,13 @@ def classify_cuda_failure(returncode: int | None, output: str) -> str:
     if returncode in (-15, 130, 143) or "cancelled by user" in text or "canceled by user" in text:
         return "cancelled"
     if returncode == 137:
-        # SIGKILL sin traza de texto: el OOM-killer de WSL/Linux mata el trainer así.
-        # Es la clase OOM (elegible para el reintento d1→d2), salvo cancelación explícita (arriba).
-        return "oom"
+        # SIGKILL: solo es OOM con evidencia en la salida (Killed / oom-kill). Sin ella puede
+        # ser un kill manual, un shutdown de WSL o nuestro kill_container: NO reintentar d1→d2.
+        if (re.search(r"\bkilled\b", text) or "oom-kill" in text or "oom_kill" in text
+                or "oom killer" in text or "oom-killer" in text
+                or "out of memory: kill" in text):
+            return "oom"
+        return "killed"
     if (returncode == 255 or "connection timed out" in text or "connect to host" in text
             or "connection reset" in text or "broken pipe" in text):
         return "connectivity"

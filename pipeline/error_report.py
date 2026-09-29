@@ -287,7 +287,9 @@ def jobs_summary(days: int) -> dict:
                 "job_id": row["id"], "kind": row["kind"], "label": row["label"],
                 "workload_key": "|".join(key),
                 "status": row["status"],
-                "dur_min": round(((row.get("finished") or 0) - (row.get("started") or 0)) / 60, 1),
+                "dur_min": (round((row["finished"] - row["started"]) / 60, 1)
+                            if row.get("finished") is not None and row.get("started") is not None
+                            else None),
                 "historical_detail": historical[:240],
                 "resolved": bool(resolution),
                 "resolution_note": resolution[:300] if resolution else "",
@@ -304,7 +306,7 @@ def jobs_summary(days: int) -> dict:
                            "AND label != 'timeout-test' AND label NOT LIKE 'TEST\\_%' ESCAPE '\\' "
                            "ORDER BY finished DESC LIMIT 8", (cutoff,)):
             out["recent_done"].append({"kind": r["kind"], "clip": r["label"],
-                                       "dur_min": round(r["dur"] / 60),
+                                       "dur_min": round(r["dur"] / 60) if r["dur"] is not None else None,
                                        "detail": (r["detail"] or "")[:80]})
         c.close()
     except sqlite3.Error:
@@ -453,6 +455,7 @@ def main():
 
     ai = None
     ai_validation = []
+    ai_unavailable = False
     jsum = jobs_summary(days)
     if (d or jsum["by_kind"]) and not dry:
         collisions = collision_context(jsum)
@@ -498,6 +501,8 @@ def main():
                 ai_validation = validate_ai_analysis(ai, jsum)
         except Exception as e:
             ai = f"_(análisis AI no disponible: {e})_"
+            ai_validation = []
+            ai_unavailable = True
     if jsum["by_kind"]:
         lines += ["", "## Salud de jobs (ventana)", "",
                   "```json", json.dumps({"attempts": jsum["by_kind"],
@@ -507,7 +512,9 @@ def main():
                                           "label_suffix_collisions": jsum["label_suffix_collisions"]},
                                          ensure_ascii=False, indent=1), "```"]
     if ai:
-        validation_text = ("APROBADA por guardrails automáticos (identidad y recuperación)"
+        validation_text = ("NO DISPONIBLE: la llamada a DeepSeek falló; el texto no fue validado"
+                           if ai_unavailable else
+                           "APROBADA por guardrails automáticos (identidad y recuperación)"
                            if not ai_validation else "RECHAZADA: " + "; ".join(ai_validation))
         lines += ["", "## Validación automática del texto", "", validation_text]
         if ai_validation:
@@ -519,11 +526,13 @@ def main():
             lines += ["", "## Análisis DeepSeek", "", ai]
     lines += ["", "---", "Estado: PENDIENTE DE REVISIÓN (Codex/Claude) · "
               f"fuente: error_report.py --days {days} · AI guardrails="
-              f"{'REJECTED' if ai_validation else 'PASS'}"]
+              f"{'UNAVAILABLE' if ai_unavailable else 'REJECTED' if ai_validation else 'PASS'}"]
     out.write_text("\n".join(lines))
     (REPORTS / "latest.json").write_text(json.dumps(
         {"file": out.name, "ts": ts, "events": len(items), "signatures": len(d),
-         "ai": bool(ai and not ai.startswith("_(")), "ai_valid": not ai_validation,
+         "ai": bool(ai and not ai.startswith("_(")),
+         "ai_valid": (not ai_validation) and not ai_unavailable,
+         "ai_unavailable": ai_unavailable,
          "ai_validation": ai_validation}))
     print(f"reporte: {out} · {len(items)} eventos · {len(d)} firmas · AI={'sí' if ai else 'no'}")
 

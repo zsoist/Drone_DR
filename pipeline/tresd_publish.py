@@ -48,11 +48,11 @@ def sh_in_odm(proj: Path, script: str) -> str:
     # GDAL/PDAL quemando CPU hasta 30 min. (mismo patrón que fast-ortho/run_odm_container)
     name = f"publish-{proj.name}"
     import docker_ondemand
-    docker_ondemand.ensure_up()                  # OrbStack arranca solo cuando se usa
-    subprocess.run([DOCKER, "rm", "-f", name], capture_output=True, timeout=30)
-    r = subprocess.run([DOCKER, "run", "--rm", "--name", name, "-v", f"{proj}:/d",
-                        "--entrypoint", "bash", "opendronemap/odm", "-c", script],
-                       capture_output=True, text=True, timeout=1800)
+    with docker_ondemand.session():              # OrbStack arranca solo cuando se usa (+ lease)
+        subprocess.run([DOCKER, "rm", "-f", name], capture_output=True, timeout=30)
+        r = subprocess.run([DOCKER, "run", "--rm", "--name", name, "-v", f"{proj}:/d",
+                            "--entrypoint", "bash", "opendronemap/odm", "-c", script],
+                           capture_output=True, text=True, timeout=1800)
     if r.returncode != 0:
         raise RuntimeError(r.stderr[-400:])
     return r.stdout
@@ -81,6 +81,8 @@ def swap_model_dir(new_dir: Path, final: Path) -> None:
     """Replace `final` by `new_dir` only now that the new mesh/textures were fully written:
     a crash before this point leaves the previous model untouched."""
     old = final.with_name(f".{final.name}.old")
+    if not final.exists() and old.exists():
+        old.rename(final)                  # crash recovery: `.old` es la única copia buena
     shutil.rmtree(old, ignore_errors=True)
     if final.exists():
         final.rename(old)
@@ -241,6 +243,65 @@ def find_texture_dir(proj: Path) -> tuple[Path | None, str]:
     return None, "no_mesh"
 
 
+def build_tiles(proj: Path, out: Path) -> dict:
+    """Best-effort XYZ tiles at native resolution; returns the meta fragment ({} when
+    skipped). A tiles failure (docker error, timeout, disk) never aborts the publish."""
+    tiles_meta = {}
+    try:
+        sh_in_odm(proj, "rm -rf /d/.web_tiles && python3 -m osgeo_utils.gdal2tiles "
+                        "--xyz -w none --processes 8 -r bilinear "
+                        "/d/odm_orthophoto/odm_orthophoto.tif /d/.web_tiles >/dev/null 2>&1 "
+                        "&& ls /d/.web_tiles")
+        zooms = sorted(int(z.name) for z in (proj / ".web_tiles").iterdir()
+                       if z.name.isdigit())
+        if zooms:
+            dest = out / "tiles"
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.move(str(proj / ".web_tiles"), dest)
+            tiles_meta = {"tiles": True, "tiles_minzoom": zooms[0], "tiles_maxzoom": zooms[-1]}
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+        print(f"  tiles omitidos: {str(e)[:120]}")
+    if not tiles_meta and (out / "tiles").exists():
+        shutil.rmtree(out / "tiles", ignore_errors=True)   # tiles de la corrida anterior: obsoletos
+    return tiles_meta
+
+
+THUMB_NAME = "ortho_thumb.webp"
+THUMB_MAX_W = 480
+
+
+def make_ortho_thumb(src: Path, dst: Path, max_w: int = THUMB_MAX_W, quality: int = 70) -> bool:
+    """Small preview of the ortho for cards/posters (the full webp is 0.5-1 MB). Keeps alpha.
+    Atomic write; returns False (and leaves no partial file) on any failure."""
+    tmp = dst.with_name(f".{dst.name}.tmp")
+    try:
+        from PIL import Image
+        with Image.open(src) as im:
+            im.load()
+            if im.width > max_w:
+                im = im.resize((max_w, max(1, round(im.height * max_w / im.width))), Image.LANCZOS)
+            if im.mode not in ("RGB", "RGBA"):
+                im = im.convert("RGBA" if "A" in im.getbands() or im.mode == "P" else "RGB")
+            im.save(tmp, "WEBP", quality=quality, method=4)
+        os.replace(tmp, dst)
+        return True
+    except Exception as e:                       # noqa: BLE001 - la miniatura nunca tumba un publish
+        print(f"  miniatura omitida: {str(e)[:120]}")
+        tmp.unlink(missing_ok=True)
+        return False
+
+
+def refresh_ortho_thumb(out: Path) -> bool:
+    src = out / "ortho.webp"
+    if not src.exists():
+        src = out / "ortho.png"
+    if not src.exists() or not make_ortho_thumb(src, out / THUMB_NAME):
+        (out / THUMB_NAME).unlink(missing_ok=True)   # nunca servir la miniatura de OTRA corrida
+        return False
+    return True
+
+
 def main():
     cid = sys.argv[1]
     proj = Path(sys.argv[2]) if len(sys.argv) > 2 else VAULT / "odm" / "proj0104"
@@ -306,24 +367,7 @@ EOF""")
     # gdal2tiles webmercator; maplibre los funde por zoom. Best-effort: sin tiles
     # el mapa sigue con el overlay — jamás tumbar un publish por la capa de lujo.
     print("tiles ortho…")
-    tiles_meta = {}
-    try:
-        sh_in_odm(proj, "rm -rf /d/.web_tiles && python3 -m osgeo_utils.gdal2tiles "
-                        "--xyz -w none --processes 8 -r bilinear "
-                        "/d/odm_orthophoto/odm_orthophoto.tif /d/.web_tiles >/dev/null 2>&1 "
-                        "&& ls /d/.web_tiles")
-        zooms = sorted(int(z.name) for z in (proj / ".web_tiles").iterdir()
-                       if z.name.isdigit())
-        if zooms:
-            dest = out / "tiles"
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.move(str(proj / ".web_tiles"), dest)
-            tiles_meta = {"tiles": True, "tiles_minzoom": zooms[0], "tiles_maxzoom": zooms[-1]}
-    except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
-        print(f"  tiles omitidos: {str(e)[:120]}")
-    if not tiles_meta and (out / "tiles").exists():
-        shutil.rmtree(out / "tiles", ignore_errors=True)   # tiles de la corrida anterior: obsoletos
+    tiles_meta = build_tiles(proj, out)
 
     # 2) nube de puntos → PLY submuestreado para el browser (pdal vive en SuperBuild)
     print("nube de puntos…")
@@ -349,6 +393,7 @@ EOF""")
         p = proj / src_name
         if p.exists():
             p.replace(out / dst_name)
+    refresh_ortho_thumb(out)
 
     # 2.5) DSM → relieve coloreado + hillshade + curvas de nivel (si existe)
     dsm_meta = {}
@@ -441,15 +486,6 @@ EOF""")
         if (proj / ".web_dsm_4326.tif").exists():
             (proj / ".web_dsm_4326.tif").replace(out / "dsm_4326.tif")
             dsm_produced.add("dsm_4326.tif")
-    # salidas DSM del publish anterior que ESTA corrida no regeneró, y todo lo derivado de
-    # ellas (dsm_lod*, scene.v2.json, site.lod.json): fuera, se reconstruyen del DSM fresco
-    for name in DSM_OUTPUTS:
-        if name not in dsm_produced:
-            (out / name).unlink(missing_ok=True)
-    purged = purge_stale_dsm_derived(out)
-    if purged:
-        print(f"  derivados obsoletos del DSM anterior eliminados: {', '.join(sorted(purged))}")
-
     # 3) mesh texturizado → carpeta web (obj + mtl + texturas)
     # limpiar primero: un re-publish (p.ej. estandar→alta) puede producir MENOS
     # materiales — sin wipe, las texturas del run viejo quedan huérfanas mezcladas
@@ -547,6 +583,17 @@ EOF""")
                 while chunk := fi.read(1 << 20):
                     fo.write(chunk)
 
+    # (movido aquí: se borra SOLO cuando todos los productos nuevos ya están escritos, justo
+    # antes del meta.json atómico; si el job falla antes, la versión anterior conserva su DSM)
+    # salidas DSM del publish anterior que ESTA corrida no regeneró, y todo lo derivado de
+    # ellas (dsm_lod*, scene.v2.json, site.lod.json): fuera, se reconstruyen del DSM fresco
+    for name in DSM_OUTPUTS:
+        if name not in dsm_produced:
+            (out / name).unlink(missing_ok=True)
+    purged = purge_stale_dsm_derived(out)
+    if purged:
+        print(f"  derivados obsoletos del DSM anterior eliminados: {', '.join(sorted(purged))}")
+
     meta = {
         "clip_id": cid,
         "corners": ometa["corners"],
@@ -557,6 +604,7 @@ EOF""")
         "hills_asset": "hillshade.webp" if (out / "hillshade.webp").exists() else "hillshade.png",
         "ortho_feather_px": ometa.get("feather_px", 0),
         **tiles_meta,
+        "ortho_thumb": THUMB_NAME if (out / THUMB_NAME).exists() else None,
         "ortho_bytes": (out / "ortho.webp").stat().st_size if (out / "ortho.webp").exists() else 0,
         "qa": qa,
         "pipeline_mode": pipeline_mode,

@@ -1,5 +1,5 @@
 // Ventas: crea páginas de propiedad aisladas (p.html?id=slug) con link + QR.
-const main = renderShell('studio.html');
+const main = renderShell('ventas.html');
 const F = [
   ['slug', 'URL corta (ej: casa-cajica)'], ['titulo', 'Título (ej: Casa campestre en Cajicá)'],
   ['precio', 'Precio (ej: $850.000.000 COP)'], ['ubicacion', 'Ubicación (ej: Cajicá, Cundinamarca)'],
@@ -17,10 +17,10 @@ main.innerHTML = `
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             ${F.map(([k, ph]) => `<input class="ctl" id="f-${k}" placeholder="${ph}"
               style="${['slug', 'titulo', 'ubicacion'].includes(k) ? 'grid-column:1/-1' : ''}">`).join('')}
-            <select class="ctl" id="f-clip" style="grid-column:1/-1"></select>
-            <select class="ctl" id="f-video" style="grid-column:1/-1"></select>
+            <select class="ctl" id="f-clip" aria-label="Clip de portada" style="grid-column:1/-1"></select>
+            <select class="ctl" id="f-video" aria-label="Video de la propiedad" style="grid-column:1/-1"></select>
           </div>
-          <textarea class="ctl" id="f-descripcion" rows="6" placeholder="Descripción de venta (o genera con AI)"
+          <textarea class="ctl" id="f-descripcion" aria-label="Descripción de venta" rows="6" placeholder="Descripción de venta (o genera con AI)"
             style="width:100%;margin-top:10px;resize:vertical;font-family:var(--font)"></textarea>
           <div class="toolbar" style="margin-top:12px">
             <button class="btn" id="btn-ai">${icon('spark')} Generar descripción AI</button>

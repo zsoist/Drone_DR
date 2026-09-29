@@ -14,9 +14,9 @@
   <meta property="og:description" content="Fotogrametría de dron, mapa interactivo y modelo 3D de la propiedad.">
   <meta property="og:image" content="/assets/touch-icon.png">
   <meta name="twitter:card" content="summary">
-  <link rel="stylesheet" href="style.css?v=346">
+  <link rel="stylesheet" href="style.css?v=348">
   <link rel="stylesheet" href="vendor/maplibre-gl.css">
-  <script src="vendor/maplibre-gl.js"></script>
+  <script src="vendor/maplibre-gl.js" defer></script>
   <style>
     body { background: #F7F8FA; }
     .prop { max-width: 860px; margin: 0 auto; padding: 0 18px 90px; }
@@ -29,9 +29,9 @@
     .specs { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
     .spec { background: #fff; border: 1px solid #E3E8EF; border-radius: 10px; padding: 10px 16px; text-align: center; flex: 1; min-width: 90px; }
     .spec b { display: block; font-family: var(--mono); font-size: 17px; color: #17202B; }
-    .spec span { font-size: 10.5px; letter-spacing: 0.8px; text-transform: uppercase; color: #8794A6; }
+    .spec span { font-size: 10.5px; letter-spacing: 0.8px; text-transform: uppercase; color: #5F6C7E; }
     .desc { background: #fff; border: 1px solid #E3E8EF; border-radius: 14px; padding: 20px 22px; font-size: 14.5px; line-height: 1.65; color: #2A3646; white-space: pre-line; }
-    .sec-t { font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; color: #8794A6; font-weight: 700; margin: 26px 2px 10px; }
+    .sec-t { font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; color: #5F6C7E; font-weight: 700; margin: 26px 2px 10px; }
     #pmap { height: 320px; border-radius: 14px; overflow: hidden; border: 1px solid #E3E8EF; }
     .gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
     .gal img { width: 100%; aspect-ratio: 16/10; object-fit: cover; border-radius: 8px; cursor: pointer; }
@@ -48,7 +48,7 @@
   </style>
 </head>
 <body>
-  <div class="prop" id="root"><p style="padding:40px;color:#8794A6">Cargando propiedad…</p></div>
-  <script src="p.js?v=346"></script>
+  <div class="prop" id="root"><p style="padding:40px;color:#5F6C7E">Cargando propiedad…</p></div>
+  <script src="p.js?v=348" defer></script>
 </body>
 </html>

@@ -22,6 +22,7 @@ FIELD_RE = re.compile(
     r"\[rel_alt:\s*(?P<rel_alt>-?[\d.]+)\s+abs_alt:\s*(?P<abs_alt>-?[\d.]+)\]",
     re.DOTALL,
 )
+CUE_RE = re.compile(r"(\d+):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->")
 TIME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.(\d+)", re.MULTILINE)
 
 
@@ -31,6 +32,23 @@ def haversine_m(lat1, lon1, lat2, lon2):
     dp, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * r * math.asin(math.sqrt(a))
+
+
+def point_at(points: list, t: float):
+    """Punto del track más cercano al segundo de VIDEO `t` (bisect sobre `vt`).
+    Sin `vt` (tracks viejos) cae al índice, como antes."""
+    import bisect
+    if not points:
+        return None
+    vts = [p.get("vt") for p in points]
+    if any(v is None for v in vts):
+        return points[max(0, min(int(t), len(points) - 1))]
+    i = bisect.bisect_left(vts, t)
+    if i <= 0:
+        return points[0]
+    if i >= len(points):
+        return points[-1]
+    return points[i] if vts[i] - t < t - vts[i - 1] else points[i - 1]
 
 
 def parse_srt(srt_path: Path) -> dict:
@@ -43,6 +61,9 @@ def parse_srt(srt_path: Path) -> dict:
         f = FIELD_RE.search(block)
         if not (t and f):
             continue
+        cue = CUE_RE.search(block)
+        vt = (int(cue.group(1)) * 3600 + int(cue.group(2)) * 60 + int(cue.group(3))
+              + int(cue.group(4).ljust(3, "0")) / 1000.0) if cue else None
         second = t.group(1)  # datetime truncated to the second → 1Hz downsample
         if second == last_second:
             continue
@@ -52,6 +73,9 @@ def parse_srt(srt_path: Path) -> dict:
         last_second = second
         points.append({
             "t": second,
+            # tiempo de VIDEO (s) del bloque: los puntos descartados (sin lock GPS / huecos)
+            # rompen la equivalencia índice==segundo; los consumidores deben buscar por vt.
+            "vt": round(vt, 3) if vt is not None else None,
             "lat": float(f.group("lat")),
             "lon": float(f.group("lon")),
             "rel_alt": float(f.group("rel_alt")),
@@ -71,6 +95,9 @@ def parse_srt(srt_path: Path) -> dict:
         )
         stats = {
             "duration_s": len(points),
+            "video_span_s": (round(points[-1]["vt"] - points[0]["vt"], 1)
+                             if points[-1].get("vt") is not None and points[0].get("vt") is not None
+                             else None),
             "start": points[0]["t"],
             "end": points[-1]["t"],
             "max_rel_alt_m": max(p["rel_alt"] for p in points),

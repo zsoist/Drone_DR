@@ -14,6 +14,12 @@ from contextlib import closing
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+# El smoke nunca escribe en el vault vivo: logs de jobs y errors.jsonl van a un temp propio
+# (ANTES de importar jobs/perf, que leen estas variables al cargar).
+import os as _os_env
+_smoke_box = Path(tempfile.mkdtemp(prefix="aerobrain-smoke-"))
+_os_env.environ["AEROBRAIN_JOB_LOG_DIR"] = str(_smoke_box / "job_logs")
+_os_env.environ["AEROBRAIN_ERRLOG"] = str(_smoke_box / "errors.jsonl")
 FAILS = []
 
 
@@ -1061,9 +1067,14 @@ check("browser_gate: compila sin errores de sintaxis", not _bg_compile_err, _bg_
 import ast as _ast
 _bg_tree = _ast.parse(Path("pipeline/browser_gate.py").read_text())
 _bg_imports = {n.name.split(".")[0] for x in _ast.walk(_bg_tree) if isinstance(x, _ast.Import) for n in x.names}
-check("browser_gate: threading importado (el drain thread lo usa) + cleanup a prueba de race",
+_bg_src = Path("pipeline/browser_gate.py").read_text()
+check("browser_gate: threading importado + cleanup a prueba de race + Chrome en su propio grupo",
       "threading" in _bg_imports
-      and "ignore_cleanup_errors=True" in Path("pipeline/browser_gate.py").read_text())
+      # el perfil se borra tolerando la carrera con Chrome escribiéndolo (antes vía
+      # TemporaryDirectory(ignore_cleanup_errors=True), ahora _Profile.cleanup)
+      and ("ignore_cleanup_errors=True" in _bg_src or "rmtree(self.name, ignore_errors=True)" in _bg_src)
+      # sin grupo propio + killpg, un gate muerto dejaba árboles de Chrome huérfanos (~4 GB)
+      and "start_new_session=True" in _bg_src and "killpg" in _bg_src)
 
 # ---------- resto de suites (auth/seguridad, ops, scenes, gzip-freshness, node...) ----------
 # test_smoke solo cubría una fracción de los test_*.py; run_all_tests.py --fast corre el

@@ -206,7 +206,7 @@ const cid = new URLSearchParams(location.search).get('id');
     // sin fuente reproducible: estado honesto — el thumb + qué falta y por qué
     slot.innerHTML = `
       <div style="position:relative">
-        <img src="${DATA}/thumbs/${cid}.jpg" style="width:100%;display:block;opacity:.55" alt="">
+        <img src="${DATA}/thumbs/${cid}.jpg" style="width:100%;height:auto;display:block;opacity:.55" alt="" width="960" height="540">
         <div style="position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px">
           <div class="glass" style="padding:14px 20px;border-radius:12px;max-width:420px">
             <b style="font-size:13px">${icon('film')} Proxy de video en proceso</b>
@@ -344,9 +344,7 @@ const cid = new URLSearchParams(location.search).get('id');
         <button class="btn" id="m-del" style="border-color:rgba(226,99,95,.45);color:#e2635f">${icon('warn')} Borrar este vuelo</button>
         <p class="footer-note" style="margin-top:8px">Borrar mueve el original 4K, proxies y telemetría a la papelera del vault — reversible desde el Mac, no destructivo.</p>
       </div></div>`;
-    document.body.appendChild(ov);
-    const close = () => ov.remove();
-    ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) close(); });
+    openModal(ov);
     ov.querySelector('#m-save').addEventListener('click', async () => {
       await api('/api/clip', { clip_id: cid, label: ov.querySelector('#m-label').value.trim() });
       location.reload();

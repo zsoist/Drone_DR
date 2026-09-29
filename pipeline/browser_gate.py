@@ -11,10 +11,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import atexit
 import base64
 import hashlib
 import json
 import os
+import queue
+import re
+import shutil
+import signal
 import socket
 import struct
 import threading
@@ -172,38 +177,212 @@ class CDP:
         self.ws.close()
 
 
+PROFILE_PREFIX = "aerobrain-chrome-"
+STARTUP_DEADLINE_S = 12
+
+
+class _Profile:
+    """Perfil temporal de Chrome. cleanup() es idempotente y NUNCA falla (la limpieza jamás
+    decide el estado de un job — el rmtree corre en race con Chrome escribiendo el perfil)."""
+
+    def __init__(self):
+        self.name = tempfile.mkdtemp(prefix=PROFILE_PREFIX)
+
+    def cleanup(self):
+        for _ in range(2):
+            shutil.rmtree(self.name, ignore_errors=True)
+            if not os.path.exists(self.name):
+                break
+            time.sleep(0.3)
+
+
+def _signal_group(pgid: int, sig: int) -> bool:
+    try:
+        os.killpg(pgid, sig)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
+class ChromeProc(subprocess.Popen):
+    """Chrome headless como líder de su PROPIO grupo de procesos (start_new_session):
+    terminate()/kill() alcanzan a todo el árbol (GPU, renderers, network, crashpad), no solo
+    al proceso superior — antes quedaban árboles huérfanos reparentados a launchd."""
+
+    def terminate(self):
+        _signal_group(self.pid, signal.SIGTERM)
+
+    def kill(self):
+        _signal_group(self.pid, signal.SIGKILL)
+
+
+def teardown_chrome(proc, profile=None, grace: float = 5.0):
+    """SIGTERM al grupo → espera `grace` → SIGKILL al grupo (incluso si el líder ya salió pero
+    quedaron hijos) → borra el perfil temporal. Idempotente."""
+    try:
+        if proc is not None:
+            _signal_group(proc.pid, signal.SIGTERM)
+            try:
+                proc.wait(timeout=grace)
+            except subprocess.TimeoutExpired:
+                pass
+            _signal_group(proc.pid, signal.SIGKILL)     # ESRCH si el grupo ya no existe
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+    finally:
+        if profile is not None:
+            profile.cleanup()
+
+
+_LIVE: dict[int, tuple] = {}     # pid → (proc, profile) de Chromes lanzados por ESTE proceso
+_HOOKS_INSTALLED = False
+
+
+def _cleanup_all():
+    for pid, (proc, profile) in list(_LIVE.items()):
+        try:
+            teardown_chrome(proc, profile, grace=2.0)
+        finally:
+            _LIVE.pop(pid, None)
+
+
+def _install_exit_hooks():
+    """atexit + SIGTERM: si el gate muere por SIGTERM (timeout del worker) el `finally` no corre."""
+    global _HOOKS_INSTALLED
+    if _HOOKS_INSTALLED:
+        return
+    _HOOKS_INSTALLED = True
+    atexit.register(_cleanup_all)
+    if threading.current_thread() is not threading.main_thread():
+        return
+    prev = signal.getsignal(signal.SIGTERM)
+
+    def _on_term(signum, frame):
+        _cleanup_all()
+        if callable(prev):
+            prev(signum, frame)
+            return
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    signal.signal(signal.SIGTERM, _on_term)
+
+
+def _ps_table() -> list[tuple[int, int, int, str]]:
+    out = subprocess.run(["ps", "-axo", "pid=,ppid=,pgid=,command="],
+                         capture_output=True, text=True, timeout=10).stdout
+    rows = []
+    for line in out.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) == 4 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit():
+            rows.append((int(parts[0]), int(parts[1]), int(parts[2]), parts[3]))
+    return rows
+
+
+def reap_stale_chrome(rows=None, tmp_root: str | None = None, kill: bool = True) -> list[int]:
+    """Mata árboles de Chrome headless HUÉRFANOS (ppid 1) de gates anteriores cuyo
+    --user-data-dir cuelga del prefijo temporal de este módulo. Jamás toca el Chrome real del
+    usuario (perfil propio, no headless, o con padre vivo). Devuelve los pids raíz encontrados."""
+    root = os.path.realpath(tmp_root or tempfile.gettempdir())
+    markers = tuple(f"--user-data-dir={base}{os.sep}{PROFILE_PREFIX}"
+                    for base in {root, tmp_root or tempfile.gettempdir()})
+    try:
+        rows = rows if rows is not None else _ps_table()
+    except (OSError, subprocess.SubprocessError):
+        return []
+    children: dict[int, list[int]] = {}
+    for pid, ppid, _pg, _cmd in rows:
+        children.setdefault(ppid, []).append(pid)
+    roots = [(pid, pgid, cmd) for pid, ppid, pgid, cmd in rows
+             if ppid == 1 and "--headless" in cmd and any(m in cmd for m in markers)]
+    for pid, pgid, cmd in roots:
+        if kill:
+            if pgid == pid:
+                _signal_group(pgid, signal.SIGKILL)        # grupo propio (lanzado por esta versión)
+            else:
+                # versión vieja: compartía pgid con el gate/worker → NO matar el grupo, solo el árbol
+                stack, tree = [pid], []
+                while stack:
+                    cur = stack.pop()
+                    tree.append(cur)
+                    stack.extend(children.get(cur, []))
+                for victim in tree:
+                    try:
+                        os.kill(victim, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+        m = re.search(r"--user-data-dir=(\S+)", cmd)
+        if kill and m and os.path.basename(m.group(1)).startswith(PROFILE_PREFIX):
+            shutil.rmtree(m.group(1), ignore_errors=True)
+    if kill:
+        # perfiles temporales viejos que ningún proceso usa (fugas de corridas muertas)
+        in_use = "\n".join(cmd for _p, _pp, _pg, cmd in rows)
+        try:
+            for d in Path(root).glob(PROFILE_PREFIX + "*"):
+                if d.is_dir() and str(d) not in in_use and time.time() - d.stat().st_mtime > 3600:
+                    shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
+    return [pid for pid, _pg, _cmd in roots]
+
+
 def launch_chrome():
     if not CHROME.exists():
         raise RuntimeError(f"Chrome no encontrado: {CHROME}")
-    # ignore_cleanup_errors: el rmtree del teardown corre en RACE con Chrome aún
-    # escribiendo el perfil ("Directory not empty") — y ese flake de LIMPIEZA marcó
-    # error un job cuyo publish fue perfecto (recon_c97cd120a1, merge FULL, share 200).
-    # La limpieza jamás decide el estado de un job.
-    profile = tempfile.TemporaryDirectory(prefix="aerobrain-chrome-", ignore_cleanup_errors=True)
-    proc = subprocess.Popen([
-        str(CHROME), "--headless=new", "--remote-debugging-port=0",
-        f"--user-data-dir={profile.name}", "--no-first-run", "--no-default-browser-check",
-        "--window-size=1280,900",
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-    ws_url = None
-    deadline = time.time() + 12
-    while time.time() < deadline:
-        line = proc.stderr.readline() if proc.stderr else ""
-        if "DevTools listening on " in line:
-            ws_url = line.split("DevTools listening on ", 1)[1].strip()
-            break
-        if proc.poll() is not None:
-            raise RuntimeError("Chrome terminó antes de abrir DevTools")
-    if not ws_url:
-        proc.terminate()
-        raise RuntimeError("Chrome no abrió DevTools a tiempo")
-    # DRENAR stderr en background: dejarlo sin leer llena el buffer de 64KB del PIPE con
-    # warnings de GPU/GL (habitual en headless) → Chrome se bloquea escribiendo → gate cuelga
-    # → timeout → job en error con el asset YA publicado
-    threading.Thread(target=lambda: [None for _ in iter(proc.stderr.readline, "")],
-                     daemon=True).start()
-    port = urllib.parse.urlparse(ws_url).port
-    return proc, profile, port
+    _install_exit_hooks()
+    reap_stale_chrome()
+    profile = _Profile()
+    proc = None
+    try:
+        proc = ChromeProc([
+            str(CHROME), "--headless=new", "--remote-debugging-port=0",
+            f"--user-data-dir={profile.name}", "--no-first-run", "--no-default-browser-check",
+            "--window-size=1280,900",
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+            start_new_session=True)
+        _LIVE[proc.pid] = (proc, profile)
+        # stderr por hilo+cola: readline() directo bloquea para siempre si Chrome no imprime
+        # nada y se salta el deadline. El hilo sigue drenando después (un PIPE sin leer se llena
+        # con warnings GPU/GL, Chrome se bloquea y el gate cuelga con el asset ya publicado).
+        lines: queue.Queue = queue.Queue()
+
+        def _pump(stream):
+            try:
+                for line in iter(stream.readline, ""):
+                    lines.put(line)
+            except (OSError, ValueError):
+                pass
+            lines.put(None)
+
+        threading.Thread(target=_pump, args=(proc.stderr,), daemon=True).start()
+        ws_url = None
+        deadline = time.time() + STARTUP_DEADLINE_S
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            try:
+                line = lines.get(timeout=min(remaining, 0.5))
+            except queue.Empty:
+                if proc.poll() is not None:
+                    raise RuntimeError("Chrome terminó antes de abrir DevTools")
+                continue
+            if line is None:
+                raise RuntimeError("Chrome terminó antes de abrir DevTools")
+            if "DevTools listening on " in line:
+                ws_url = line.split("DevTools listening on ", 1)[1].strip()
+                break
+        if not ws_url:
+            raise RuntimeError("Chrome no abrió DevTools a tiempo")
+        port = urllib.parse.urlparse(ws_url).port
+        return proc, profile, port
+    except BaseException:
+        if proc is not None:
+            _LIVE.pop(proc.pid, None)
+        teardown_chrome(proc, profile)
+        raise
 
 
 def new_page(port: int) -> CDP:
@@ -262,12 +441,8 @@ def gate(kind: str, cid: str, base_url: str, timeout: int) -> Path:
     finally:
         if cdp:
             cdp.close()
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-        profile.cleanup()
+        _LIVE.pop(proc.pid, None)
+        teardown_chrome(proc, profile)
 
 
 def main():

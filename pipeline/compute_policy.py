@@ -36,4 +36,5 @@ def route_splat(raw: dict) -> dict:
     if pc_only():
         raw["backend"] = "cuda"
         raw["best_available"] = False
+        raw["backend_policy"] = "strict"
     return raw

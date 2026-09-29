@@ -117,8 +117,13 @@ function renderHome(vm, states) {
   attachScrub(main);
   if (window.HomeEffects) HomeEffects.attachVoidNavigation(main);
   requestAnimationFrame(() => main.classList.add('is-ready'));
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    setTimeout(() => import('./home-drone.js?v=346').then(mod => mod.mountHomeDrone?.('#home-drone-stage')).catch(() => {}), 260);
+  // el dron 3D es decorativo (~1.3 MB: drone.glb + three): sin él en móvil / ahorro de datos / movimiento reducido;
+  // en escritorio se pospone hasta después del load y un rato de reposo. Queda la imagen estática de fallback.
+  const lite = navigator.connection?.saveData || matchMedia('(max-width: 600px)').matches || matchMedia('(pointer: coarse)').matches;
+  if (!lite && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const mount = () => import('./home-drone.js?v=348').then(mod => mod.mountHomeDrone?.('#home-drone-stage')).catch(() => {});
+    const idle = () => ('requestIdleCallback' in window) ? requestIdleCallback(mount, { timeout: 4000 }) : setTimeout(mount, 1200);
+    if (document.readyState === 'complete') idle(); else addEventListener('load', idle, { once: true });
   }
 }
 
