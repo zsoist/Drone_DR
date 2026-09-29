@@ -1,0 +1,31 @@
+/* Scene improve — page overrides on top of style.css (Instrument Graphite). Tokens only. */
+
+/* the shared --page-max cap rules; no local max-width */
+.scene-improve-page .main { max-width: calc(var(--page-max) + 2 * var(--main-px)); }
+
+.si-back { display: inline-flex; align-items: center; gap: var(--sp-1); margin-bottom: var(--sp-3); color: var(--text-2); font-size: var(--fs-md); }
+.si-back svg.ic { width: var(--ic-md); height: var(--ic-md); }
+@media (hover: hover) { .si-back:hover { color: var(--text); } }
+.si-workspace > .page-head { margin-bottom: var(--sp-5); }
+
+/* source rows: 8px rhythm, one status chip, evidence in a single meta line */
+.si-capture-list { gap: var(--sp-2); }
+.si-capture { grid-template-columns: 22px 104px minmax(0, 1fr); }
+.si-capture.is-locked .si-capture-copy { display: grid; gap: var(--sp-1); }
+.si-capture-title { flex-wrap: wrap; }
+.si-evidence { white-space: normal; }
+
+/* review card */
+.si-submit:disabled { opacity: 1; background: var(--surface-3); border-color: var(--line-strong); color: var(--text-2); cursor: not-allowed; }
+.si-cancel { display: flex; justify-content: center; margin-top: var(--sp-2); font-size: var(--fs-md); }
+.si-action-status:empty { display: none; }
+
+/* empty / error states never out-shout a page title */
+.si-failure h1, .si-success h1 { font-size: var(--fs-2xl); }
+.si-failure .panel { max-width: 560px; }
+@media (max-width: 1120px) { .si-review > .si-cancel { display: none; } }
+.si-mobile-summary [data-si-roles], .si-role-summary { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); }
+@media (max-width: 820px) {
+  .si-review { bottom: calc(var(--mnav-h, 56px) + env(safe-area-inset-bottom)); }
+  .si-workspace { padding-bottom: calc(var(--mnav-h, 56px) + 112px + env(safe-area-inset-bottom)); }
+}

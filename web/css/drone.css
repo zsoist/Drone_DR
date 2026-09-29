@@ -1,6 +1,5 @@
 /* Dron — SD import hub. Loads after style.css + shell.css. */
 
-.dr-page { max-width: 1100px; }
 .dr-page .spacer { flex: 1; }
 
 /* session status: small, quiet, with a dot */
@@ -20,15 +19,15 @@
 .dr-tabs button { white-space: nowrap; }
 
 /* stat strip */
-.dr-stats {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-2);
-  margin-bottom: var(--sp-4);
-}
+/* flex-wrap + grow: cada fila se llena (el último stat se estira en vez de quedar huérfano) */
+.dr-stats { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.dr-stats > * { flex: 1 1 170px; min-width: 0; }
 .dr-stats .stat { padding: var(--sp-3) var(--sp-4); }
 .dr-stats .stat .lb { font-size: var(--fs-xs); }
 .dr-stats .stat .v { font-size: var(--fs-2xl); line-height: var(--lh-tight); margin-top: 6px; }
 .dr-stats .v.is-accent { color: var(--accent-fg); }
 .dr-stats .v.is-warn { color: var(--warn-fg); }
+.dr-stats .v.is-zero { color: var(--text-3); }
 
 .dr-panel { margin-bottom: var(--sp-4); }
 .dr-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
@@ -50,13 +49,13 @@
 .sd-meta .btn svg.ic { transition: transform var(--dur-base) var(--ease-out); }
 .sd-meta .btn.open svg.ic { transform: rotate(180deg); }
 .sd-tools { padding: var(--sp-3) 0 var(--sp-2); }
-.sd-tools .chip { height: 28px; }
-.sd-q { margin-left: auto; width: 170px; height: 32px; font-size: var(--fs-sm); }
+.sd-q { margin-left: auto; flex: 0 1 240px; }
 .sd-file .sf-name { font-size: var(--fs-sm); }
 .sd-file .sf-st.in { color: var(--ok-fg); }
 .sd-file .sf-st.new { color: var(--accent-fg); }
 
-/* empty SD state */
+/* empty SD state: compacto (~200px) */
+.dr-empty { padding: var(--sp-4) var(--sp-5); }
 
 /* import chain: horizontal on desktop, vertical stepper on mobile */
 .dr-chain { list-style: none; margin: 0; padding: 0; display: flex; align-items: flex-start; }
@@ -90,7 +89,6 @@
 .t-ok { color: var(--ok-fg); }
 .t-warn { color: var(--warn-fg); }
 .opt-arrow svg.ic { width: var(--ic-sm); height: var(--ic-sm); vertical-align: -2px; }
-.modal .modal-x svg.ic { width: var(--ic-md); height: var(--ic-md); }
 
 /* direct upload */
 .dr-jobs .pb { display: grid; gap: var(--sp-3); }
@@ -100,12 +98,10 @@
   .dr-two { grid-template-columns: minmax(0, 1fr); }
   .dr-tabs { max-width: none; }
   .dr-tabs button { padding: 0 8px; }
-  .dr-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dr-stats .stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .sd-acts { width: 100%; }
   .sd-acts .btn { flex: 1; justify-content: center; }
   .sd-meta .btn { margin-left: 0; width: 100%; justify-content: center; }
-  .sd-q { width: 100%; margin-left: 0; }
+  .sd-q { flex: 1 1 100%; margin-left: 0; max-width: none; }
   /* vertical stepper */
   .dr-chain { flex-direction: column; gap: 0; padding-left: 2px; }
   .dr-step { flex-direction: row; align-items: center; text-align: left; gap: var(--sp-3); padding: var(--sp-2) 0; }

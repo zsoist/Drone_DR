@@ -15,6 +15,8 @@ const cid = new URLSearchParams(location.search).get('id');
   const s = meta.stats || {};
   const cum = [0];
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
+  // El reproductor nativo muestra el tiempo truncado (0:24); la cabecera usa el mismo criterio.
+  const durTxt = fmt.dur(Math.floor(meta.duration_s));
   const speeds = pts.map((p, i) => i ? haversine(pts[i - 1], p) * 3.6 : 0);
 
   let has3D = false;
@@ -48,13 +50,13 @@ const cid = new URLSearchParams(location.search).get('id');
     <div class="hero glass rise fl-head">
       <a class="btn icon hero-back" href="index.html" aria-label="Volver a la galería" data-tip="Volver a la galería">${icon('chevL')}</a>
       <div class="hero-t">
-        <h1>${esc(meta.label) || fmt.date(meta.date) + ' · ' + meta.time}</h1>
+        <h1>${esc(meta.label || fmt.date(meta.date) + ' · ' + meta.time)}</h1>
         <div class="hero-sub mono">${meta.label ? fmt.date(meta.date) + ' ' + meta.time + ' · ' : ''}${cid}</div>
       </div>
       <div class="hero-chips">
         <span class="gchip ${meta.tier}" data-tip="${meta.tier === 'full' ? 'Tier full: video + AI + GPS + frames' : meta.tier === 'standard' ? 'Tier standard: video + AI + GPS' : 'Tier skim: video + telemetría'}">${esc(meta.tier)}</span>
         <span class="gchip" data-tip="Resolución y cuadros por segundo del original">${meta.resolution === '3840x2160' ? '4K' : esc(meta.resolution)}${Math.round(meta.fps) >= 50 ? '60' : ''}</span>
-        <span class="gchip" data-tip="Duración del clip">${fmt.dur(meta.duration_s)}</span>
+        <span class="gchip" data-tip="Duración del clip">${durTxt}</span>
         ${meta.has_srt ? `<span class="gchip" data-tip="Telemetría GPS de 1 Hz disponible">${icon('route')} GPS</span>` : ''}
         ${has3D ? `<span class="gchip mint" data-tip="Este vuelo tiene modelo 3D procesado">${icon('cube')} 3D listo</span>` : ''}
       </div>
@@ -63,7 +65,7 @@ const cid = new URLSearchParams(location.search).get('id');
           ${navBtn(older, 'chevL', 'Vuelo anterior')}${navBtn(newer, 'chevR', 'Vuelo siguiente')}
         </div>
         <div class="fl-group fl-acts" role="group" aria-label="Acciones del vuelo">
-          <button class="btn" id="btn-label" data-tip="Ponle nombre a este vuelo">${icon('tag')} Editar</button>
+          <button class="btn" id="btn-label" data-tip="Ponle nombre a este vuelo">${icon('edit')} Editar</button>
           ${meta.has_proxy ? `<a class="btn" href="studio.html?clip=${cid}" data-tip="Cortes, reels y LUTs">${icon('film')} Studio</a>` : ''}
           ${has3D ? `<a class="btn primary" href="tresd.html" data-tip="Abrir el proyecto de fotogrametría">${icon('cube')} Ver en 3D</a>` : ''}
           <button class="btn icon" id="btn-arch" aria-label="${meta.archived ? 'Devolver a la galería' : 'Archivar vuelo'}" data-tip="${meta.archived ? 'Devolver a la galería' : 'Ocultar de la galería (no borra nada)'}">${icon('db')}</button>
@@ -101,10 +103,10 @@ const cid = new URLSearchParams(location.search).get('id');
           </div>
           <div class="pb" id="hl-list">
             ${(aiData?.highlights || []).map(h => `<div class="hl-item">
-              <button class="tc" data-t="${+h.t || 0}">${fmt.dur(+h.t || 0)}</button>
+              <button class="tc hit44" data-t="${+h.t || 0}">${fmt.dur(+h.t || 0)}</button>
               <p>${esc(h.reason)}${h.type ? ` <span class="mono fl-type${h.type === 'manual' ? ' manual' : ''}">${esc(h.type)}</span>` : ''}</p>
               <a class="btn sm" href="studio.html?clip=${cid}&a=${Math.max(0, (+h.t || 0) - 3)}&b=${(+h.t || 0) + 4}">Editar</a>
-            </div>`).join('') || '<p class="footer-note">Sin momentos aún — pausa el video donde quieras y márcalo.</p>'}
+            </div>`).join('') || '<p class="fl-hint">Sin momentos aún — pausa el video donde quieras y márcalo.</p>'}
           </div>
         </div>
 
@@ -122,12 +124,12 @@ const cid = new URLSearchParams(location.search).get('id');
           <div class="kv2">
             <table class="kv">
               <tr><td colspan="2" class="kv-h">Vuelo</td></tr>
-              <tr><td>Duración</td><td>${fmt.dur(meta.duration_s)}</td></tr>
+              <tr><td>Duración</td><td>${durTxt}</td></tr>
               <tr><td>Distancia</td><td>${fmt.km(s.distance_m || 0)}</td></tr>
               <tr><td>Altura máx/prom</td><td>${s.max_rel_alt_m ?? '—'}${pts.length ? ` / ${Math.round(pts.reduce((a, p) => a + p.rel_alt, 0) / pts.length)}` : ''} m</td></tr>
               <tr><td>Vel. máx/prom</td><td>${speeds.length ? `${Math.round(Math.max(...speeds))} / ${Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length)} km/h` : '—'}</td></tr>
               ${pts.length && s.home ? `<tr><td>Alejamiento</td><td>${Math.round(Math.max(...pts.map(p => haversine({ lat: s.home[1], lon: s.home[0] }, p))))} m máx</td></tr>` : ''}
-              ${s.home ? `<tr><td>Despegue</td><td><button class="mono fl-copy" id="copy-home" title="Copiar coordenadas">${s.home[1].toFixed(5)}, ${s.home[0].toFixed(5)}</button></td></tr>` : ''}
+              ${s.home ? `<tr><td>Despegue</td><td><button class="mono fl-copy hit44" id="copy-home" title="Copiar coordenadas">${s.home[1].toFixed(5)}, ${s.home[0].toFixed(5)}</button></td></tr>` : ''}
             </table>
             <table class="kv">
               <tr><td colspan="2" class="kv-h">Cámara y archivo</td></tr>
@@ -141,12 +143,12 @@ const cid = new URLSearchParams(location.search).get('id');
           </div></div>
         </div>
 
-        <details class="panel fl-dl" id="fl-dl">
-          <summary>${icon('dl')} Descargas y accesos <span class="hint">${dlItems.length} elementos</span><span class="fl-caret" aria-hidden="true">${icon('chevD')}</span></summary>
+        <div class="panel fl-dl" id="fl-dl" data-collapsible>
+          <div class="ph">${icon('dl')} Descargas y accesos <span class="hint">${dlItems.length} elementos</span></div>
           <div class="pb"><div class="fl-dl-grid">
             ${dlItems.join('')}
           </div></div>
-        </details>
+        </div>
       </div>
 
       <div class="fl-side">
@@ -173,7 +175,7 @@ const cid = new URLSearchParams(location.search).get('id');
             ${aiData.highlights?.length ? `<p class="mlb fl-sub">Momentos <span class="fl-subhint">toca para saltar</span></p>
             <div class="chips">${aiData.highlights.map(h =>
               `<button class="chip tc mom" data-t="${+h.t || 0}">${icon('play')} ${fmt.dur(+h.t || 0)}${h.type ? ' · ' + esc(h.type) : ''}</button>`).join('')}</div>
-            ${aiData.highlights[0]?.reason ? `<p class="footer-note fl-why" id="mom-why">${esc(aiData.highlights[0].reason)}</p>` : ''}` : ''}
+            ${aiData.highlights[0]?.reason ? `<p class="fl-hint fl-why" id="mom-why">${esc(aiData.highlights[0].reason)}</p>` : ''}` : ''}
             ${aiData.edit_suggestions?.length ? `<p class="mlb fl-sub">Sugerencias de edición</p>
             <ul class="ai-edits">${aiData.edit_suggestions.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
             ${aiData.uses?.length ? `<p class="mlb fl-sub">Úsalo para</p>
@@ -182,7 +184,7 @@ const cid = new URLSearchParams(location.search).get('id');
               ${aiData.hashtags.map(t => `<span class="chip fl-tag">${esc(t)}</span>`).join('')}</div>` : ''}
             ${aiData.tags?.length ? `<div class="chips fl-chips">
               ${aiData.tags.map(t => `<a class="chip" href="index.html?q=${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}
-            </div>` : ''}` : `<p class="footer-note">Este clip aún no tiene análisis — pídelo con el botón.</p>`}
+            </div>` : ''}` : `<p class="fl-hint">Este clip aún no tiene análisis — pídelo con el botón.</p>`}
           </div>
         </div>
       </div>
@@ -190,7 +192,7 @@ const cid = new URLSearchParams(location.search).get('id');
   </div>
 `;
   // Descargas: abierto en escritorio (datos primero), colapsado en móvil
-  if (matchMedia('(min-width: 821px)').matches) document.getElementById('fl-dl')?.setAttribute('open', '');
+  if (matchMedia('(max-width: 820px)').matches) document.getElementById('fl-dl')?.classList.add('clpsd');
 
   // ---- video ----
   const slot = document.getElementById('video-slot');
@@ -218,11 +220,11 @@ const cid = new URLSearchParams(location.search).get('id');
     // sin fuente reproducible: estado honesto — el thumb + qué falta y por qué
     slot.innerHTML = `
       <div class="fl-noproxy">
-        <img src="${DATA}/thumbs/${cid}.jpg" alt="" width="960" height="540">
+        <img src="${DATA}/thumbs/${cid}.jpg" alt="Miniatura del vuelo (el video aún no está disponible)" width="960" height="540">
         <div class="fl-noproxy-msg">
           <div class="glass">
             <b>${icon('film')} Proxy de video en proceso</b>
-            <p class="footer-note">${meta.raw_rel && !hevcOK
+            <p class="fl-hint">${meta.raw_rel && !hevcOK
               ? 'El original es 4K HEVC y este navegador no lo decodifica. El proxy H.264 se está generando — recarga en unos minutos.'
               : 'El video web de este clip se está generando en el Mac. Recarga en unos minutos.'}</p>
           </div>
@@ -292,7 +294,7 @@ const cid = new URLSearchParams(location.search).get('id');
         setTimeout(() => URL.revokeObjectURL(a.href), 30000);
       }
     } catch (err) {
-      if (err?.name !== 'AbortError') alert(`No se pudo guardar el archivo: ${err?.message || err}`);
+      if (err?.name !== 'AbortError') toast(`No se pudo guardar el archivo: ${err?.message || err}`);
     }
     btn.innerHTML = orig;
   }
@@ -309,7 +311,7 @@ const cid = new URLSearchParams(location.search).get('id');
     btn.textContent = 'Capturando…';
     const d = await api('/api/frame', { clip_id: cid, t: +(video?.currentTime || 0).toFixed(1) });
     btn.innerHTML = `${icon('iso')} Foto 4K`;
-    if (!d.ok) return alert(d.error || 'error');
+    if (!d.ok) return toast(d.error || 'No se pudo capturar el frame.');
     // modal (iOS Safari bloquea window.open async y no siempre respeta download):
     // imagen inline + botón descargar + hint de guardar con long-press
     openPhotoEditor({ url: d.url, name: `${cid}_foto.jpg` });
@@ -328,22 +330,37 @@ const cid = new URLSearchParams(location.search).get('id');
     }, 3000);
   });
 
-  // highlight manual en el segundo actual del video
-  document.getElementById('btn-hl')?.addEventListener('click', async () => {
-    const token = getToken();
-    if (!token) return;
+  // highlight manual en el segundo actual del video (modal canónico, sin prompt())
+  document.getElementById('btn-hl')?.addEventListener('click', () => {
+    if (!getToken()) return;
     const t = +(video?.currentTime || 0).toFixed(1);
-    const reason = prompt(`Highlight en ${fmt.dur(t)} — ¿por qué?`, 'momento favorito');
-    if (reason == null) return;
-    await api('/api/highlight', { clip_id: cid, t, reason });
-    location.reload();
+    const ov = document.createElement('div');
+    ov.className = 'modal-ov';
+    ov.innerHTML = `<form class="modal fl-modal">
+      <div class="modal-h"><b>${icon('plus')} Marcar momento · ${fmt.dur(t)}</b><button class="modal-x" type="button" aria-label="Cerrar">${icon('close')}</button></div>
+      <div class="modal-b">
+        <label class="mlb" for="hl-reason">¿Por qué es especial?</label>
+        <input id="hl-reason" class="m-ipt fl-grow" maxlength="140" value="momento favorito" autocomplete="off">
+        <p class="fl-hint" id="hl-err" role="alert" hidden></p>
+        <div class="tool-row fl-actions-row"><button class="btn primary" type="submit">Marcar</button><button class="btn" type="button" data-cancel>Cancelar</button></div>
+      </div></form>`;
+    const close = openModal(ov, { initialFocus: '#hl-reason' });
+    ov.querySelector('#hl-reason').select();
+    ov.querySelector('[data-cancel]').addEventListener('click', () => close());
+    ov.querySelector('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const reason = ov.querySelector('#hl-reason').value.trim() || 'momento favorito';
+      e.submitter && (e.submitter.disabled = true);
+      try { await api('/api/highlight', { clip_id: cid, t, reason }); location.reload(); }
+      catch { const er = ov.querySelector('#hl-err'); er.textContent = 'No se pudo guardar — revisa tu sesión.'; er.hidden = false; e.submitter && (e.submitter.disabled = false); }
+    });
   });
 
   document.getElementById('btn-label').addEventListener('click', () => {
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
     ov.innerHTML = `<div class="modal fl-modal">
-      <div class="modal-h"><b>${icon('tag')} Editar vuelo</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
+      <div class="modal-h"><b>${icon('edit')} Editar vuelo</b><button class="modal-x" type="button" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
         <div class="mlb">Nombre</div>
         <div class="tool-row">
@@ -354,12 +371,12 @@ const cid = new URLSearchParams(location.search).get('id');
         <button class="btn" id="m-arch" data-tip="${meta.archived ? 'Vuelve a aparecer en la galería' : 'Se oculta de la galería; nada se borra'}">${icon('db')} ${meta.archived ? 'Desarchivar' : 'Archivar'}</button>
         <div class="mlb fl-danger-lb">Zona de peligro</div>
         <button class="btn danger" id="m-del">${icon('warn')} Borrar este vuelo</button>
-        <p class="footer-note fl-danger-note">Borrar mueve el original 4K, proxies y telemetría a la papelera del vault — reversible desde el Mac, no destructivo.</p>
+        <p class="fl-hint fl-danger-note">Borrar mueve el original 4K, proxies y telemetría a la papelera del vault — reversible desde el Mac, no destructivo.</p>
       </div></div>`;
-    openModal(ov);
+    openModal(ov, { initialFocus: '#m-label' });
     ov.querySelector('#m-save').addEventListener('click', async () => {
-      await api('/api/clip', { clip_id: cid, label: ov.querySelector('#m-label').value.trim() });
-      location.reload();
+      try { await api('/api/clip', { clip_id: cid, label: ov.querySelector('#m-label').value.trim() }); location.reload(); }
+      catch { toast('No se pudo guardar el nombre — revisa tu sesión.'); }
     });
     ov.querySelector('#m-label').addEventListener('keydown', e => {
       if (e.key === 'Enter') ov.querySelector('#m-save').click();
@@ -382,7 +399,6 @@ const cid = new URLSearchParams(location.search).get('id');
       if (r?.ok) location.href = 'index.html';
       else { b.disabled = false; b.innerHTML = `${icon('warn')} Error: ${esc(r?.error || 'no se pudo')}`; }
     });
-    setTimeout(() => ov.querySelector('#m-label').focus(), 60);
   });
   document.getElementById('btn-arch').addEventListener('click', async () => {
     const token = getToken();
@@ -436,7 +452,7 @@ const cid = new URLSearchParams(location.search).get('id');
   if (meta.frame_count) {
     const strip = document.getElementById('strip');
     strip.innerHTML = Array.from({ length: meta.frame_count }, (_, i) =>
-      `<img src="${DATA}/frames/${cid}/f_${String(i + 1).padStart(4, '0')}.jpg" loading="lazy" data-t="${i * 2}" alt="">`).join('');
+      `<img src="${DATA}/frames/${cid}/f_${String(i + 1).padStart(4, '0')}.jpg" loading="lazy" data-t="${i * 2}" alt="Fotograma en ${fmt.dur(i * 2)}">`).join('');
     strip.addEventListener('click', e => { if (e.target.dataset.t) seek(+e.target.dataset.t); });
   }
 
@@ -455,7 +471,7 @@ const cid = new URLSearchParams(location.search).get('id');
       <span class="chart-lb">${label}</span>
       <span class="chart-badge mono" id="${el.id}-v">— ${unit}</span>
       <span class="chart-ax mono max">${Math.round(max)} ${unit}</span>
-      <span class="chart-ax mono min">0</span>
+      <span class="chart-ax mono min">0 ${unit}</span>
       <div class="chart-plot">
       <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="${label}: toca para saltar el video" role="img">
         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">

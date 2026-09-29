@@ -4,47 +4,47 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=354';
+import * as THREE from '/flightverse/three.js?v=356';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=354';
+} from '/flightverse/scene.js?v=356';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=354';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=354';
-import { createRecorder } from '/flightverse/recorder.js?v=354';
-import { createAudio } from '/flightverse/audio.js?v=354';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=354';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=354';
+} from '/flightverse/runtime.js?v=356';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=356';
+import { createRecorder } from '/flightverse/recorder.js?v=356';
+import { createAudio } from '/flightverse/audio.js?v=356';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=356';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=356';
 import {
   createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=354';
-import { createSky } from '/flightverse/sky.js?v=354';
-import { loadSceneObjects } from '/flightverse/objects.js?v=354';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=354';
-import { resolveAimRay } from '/flightverse/aiming.js?v=354';
+} from '/flightverse/mobile-command.js?v=356';
+import { createSky } from '/flightverse/sky.js?v=356';
+import { loadSceneObjects } from '/flightverse/objects.js?v=356';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=356';
+import { resolveAimRay } from '/flightverse/aiming.js?v=356';
 import {
   WEAPON_PROFILES,
   isContinuousWeaponKey,
-} from '/flightverse/weapon-registry.js?v=354';
-import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=354';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=354';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=354';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=354';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=354';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=354';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=354';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=354';
-import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=354';
-import CameraControls from '/vendor/camera-controls.module.js?v=354';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=354';
+} from '/flightverse/weapon-registry.js?v=356';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=356';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=356';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=356';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=356';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=356';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=356';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=356';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=356';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=356';
+import CameraControls from '/vendor/camera-controls.module.js?v=356';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=356';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=354';
+} from '/vendor/postprocessing180.module.js?v=356';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -88,6 +88,10 @@ document.addEventListener('visibilitychange', () => {
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const M_LAT = 111320;
+// Táctil = sin atajos de teclado en pantalla (T · …, H, etc.)
+const COARSE_PTR = matchMedia('(pointer:coarse)').matches;
+// Ventana compacta con puntero fino (móvil emulado, ventana estrecha): el dock arranca plegado
+const COMPACT_FINE = matchMedia('(pointer:fine) and (max-width:640px), (pointer:fine) and (max-height:520px)');
 
 function hud() {
   const TOUCH_GUIDE = matchMedia('(pointer:coarse)').matches;
@@ -293,25 +297,40 @@ function hud() {
       <div class="vl-guide-card">
         <div class="vl-guide-k">GUÍA DE VUELO</div>
         <div class="vl-guide-rows">${TOUCH_GUIDE ? `
-          <div><span class="vl-gi">01</span><b>Volar</b><br>
-            Palanca izquierda: subir, bajar y girar · palanca derecha: avanzar y moverte de lado.</div>
-          <div><span class="vl-gi">02</span><b>Modos y cámaras</b><br>
-            Abre <b>Menú</b> para cambiar el modo (Cine · Normal · Arcade · Dios), la cámara y la vista.</div>
-          <div><span class="vl-gi">03</span><b>Jugar y grabar</b><br>
-            En el Menú: Gate Rush (aros sobre tu ruta real), Modo Invasión, grabar video y sonido.</div>` : `
-          <div><span class="vl-gi">01</span><b>Volar</b><br>
-            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> mover · <kbd>R</kbd><kbd>F</kbd> subir/bajar · <kbd>Q</kbd><kbd>E</kbd> girar<br>
-            <kbd>Shift</kbd> turbo · <kbd>Espacio</kbd> freno · <span class="vl-kmouse">rueda</span> inclinar cámara</div>
-          <div><span class="vl-gi">02</span><b>Modos y cámaras</b><br>
-            <kbd>1</kbd>–<kbd>4</kbd> modo (Cine·Normal·Arcade·Dios) · <kbd>C</kbd> cámara · <kbd>P</kbd> vista · <kbd>G</kbd> fantasma</div>
-          <div><span class="vl-gi">03</span><b>Jugar y grabar</b><br>
-            <kbd>T</kbd> Gate Rush (aros sobre tu ruta real) · <kbd>V</kbd> grabar video · <kbd>M</kbd> sonido</div>`}
-          <div><span class="vl-gi">04</span><b>Vistas</b><br>
-            3D = malla del terreno · foto-real = fotografías reconstruidas · mixta = malla 3D con foto-real encima.</div>
-          <div><span class="vl-gi">05</span><b>Calidad</b><br>
-            Auto ajusta la fluidez sola (recomendado al volar). HD y Ultra dibujan más nítido: ideales para fotos y tomas.</div>
+          <div class="vl-guide-row"><span class="vl-gi">01</span><div><b>Volar</b>
+            <p>Palanca izquierda: subir, bajar y girar. Palanca derecha: avanzar y moverte de lado.</p></div></div>
+          <div class="vl-guide-row"><span class="vl-gi">02</span><div><b>Modos y cámaras</b>
+            <p>Abre <b>Menú</b> para cambiar el modo (Cine · Normal · Arcade · Dios), la cámara y la vista.</p></div></div>
+          <div class="vl-guide-row"><span class="vl-gi">03</span><div><b>Jugar y grabar</b>
+            <p>En el Menú: Gate Rush (aros sobre tu ruta real), Modo Invasión, grabar video y sonido.</p></div></div>` : `
+          <div class="vl-guide-row"><span class="vl-gi">01</span><div><b>Volar</b>
+            <div class="vl-keys">
+              <span class="vl-kv"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>mover</span>
+              <span class="vl-kv"><kbd>R</kbd><kbd>F</kbd>subir/bajar</span>
+              <span class="vl-kv"><kbd>Q</kbd><kbd>E</kbd>girar</span>
+              <span class="vl-kv"><kbd>Shift</kbd>turbo</span>
+              <span class="vl-kv"><kbd>Espacio</kbd>freno</span>
+              <span class="vl-kv"><kbd class="vl-kmouse">Rueda</kbd>inclinar cámara</span>
+            </div></div></div>
+          <div class="vl-guide-row"><span class="vl-gi">02</span><div><b>Modos y cámaras</b>
+            <div class="vl-keys">
+              <span class="vl-kv"><kbd>1</kbd>–<kbd>4</kbd>modo (Cine · Normal · Arcade · Dios)</span>
+              <span class="vl-kv"><kbd>C</kbd>cámara</span>
+              <span class="vl-kv"><kbd>P</kbd>vista</span>
+              <span class="vl-kv"><kbd>G</kbd>fantasma</span>
+            </div></div></div>
+          <div class="vl-guide-row"><span class="vl-gi">03</span><div><b>Jugar y grabar</b>
+            <div class="vl-keys">
+              <span class="vl-kv"><kbd>T</kbd>Gate Rush (aros sobre tu ruta real)</span>
+              <span class="vl-kv"><kbd>V</kbd>grabar video</span>
+              <span class="vl-kv"><kbd>M</kbd>sonido</span>
+            </div></div></div>`}
+          <div class="vl-guide-row"><span class="vl-gi">04</span><div><b>Vistas</b>
+            <p>3D = malla del terreno · foto-real = fotografías reconstruidas · mixta = malla 3D con foto-real encima.</p></div></div>
+          <div class="vl-guide-row"><span class="vl-gi">05</span><div><b>Calidad</b>
+            <p>Auto ajusta la fluidez sola (recomendado al volar). HD y Ultra dibujan más nítido: ideales para fotos y tomas.</p></div></div>
         </div>
-        <button id="vl-guide-go" class="btn primary big">¡A volar!</button>
+        <div class="vl-guide-foot"><button id="vl-guide-go" class="btn primary big">¡A volar!</button></div>
       </div>
     </div>
     <div class="vl-help" id="vl-help">
@@ -784,9 +803,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=354', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=356', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=354');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=356');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -941,7 +960,7 @@ async function main() {
   const shake = { mag: 0 };
   let curYaw = 0;
   const { GLTFLoader: ArsenalGLTFLoader } = await import(
-    '/vendor/three-addons180/loaders/GLTFLoader.js?v=354'
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=356'
   );
   weaponModels = createWeaponModelLibrary({
     quality: Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto',
@@ -1344,9 +1363,22 @@ async function main() {
   });
   $('#vl-dock-close').addEventListener('click', () => overlayCoordinator.close('menu'));
   $('#vl-combat-close').addEventListener('click', () => overlayCoordinator.close('combat'));
+  const syncDockMin = () => {
+    const min = $('#vl-dock').classList.contains('min');
+    $('#vl-dockmin').textContent = COMPACT_FINE.matches ? (min ? 'Menú' : 'Cerrar') : (min ? '»' : '«');
+    $('#vl-dockmin').setAttribute('aria-expanded', String(!min));
+    $('#vl-dockmin').title = min ? 'Mostrar panel' : 'Ocultar panel';
+  };
+  // compacto: dock plegado por defecto; se abre como hoja inferior con el botón Menú
+  if (COMPACT_FINE.matches && !touchUi) $('#vl-dock').classList.add('min');
+  syncDockMin();
+  COMPACT_FINE.addEventListener?.('change', () => {
+    if (!touchUi) $('#vl-dock').classList.toggle('min', COMPACT_FINE.matches);
+    syncDockMin();
+  });
   $('#vl-dockmin').addEventListener('click', () => {
-    const min = $('#vl-dock').classList.toggle('min');
-    $('#vl-dockmin').textContent = min ? '»' : '«';
+    $('#vl-dock').classList.toggle('min');
+    syncDockMin();
   });
   $('#vl-dock').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
@@ -2220,7 +2252,7 @@ async function main() {
         if (st.phase === 'finished') ch.textContent = `GATE RUSH · ${st.time.toFixed(2)}s`;
         }
       } else {
-        ch.textContent = 'T · iniciar Gate Rush'; cnt.classList.remove('show');
+        ch.textContent = COARSE_PTR ? '' : 'T · iniciar Gate Rush'; cnt.classList.remove('show');
       }
     },
   });

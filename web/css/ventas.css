@@ -1,6 +1,5 @@
 /* Ventas — property page builder. Loads after style.css + shell.css. */
 
-.vt-page { max-width: 1240px; }
 .vt-page .spacer { flex: 1; }
 .vt-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: var(--sp-4); align-items: start; }
 .vt-side { display: grid; gap: var(--sp-4); min-width: 0; position: sticky; top: var(--sp-4); }
@@ -14,7 +13,14 @@
 }
 .vt-group legend::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .vt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: var(--sp-3); }
-.vt-grid.tight { grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); }
+.vt-form { container-type: inline-size; }
+/* campos numéricos: 5 en una fila; en estrecho 3 + 2 (las filas siempre se llenan, sin huérfano) */
+.vt-grid.tight { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@container (max-width: 520px) {
+  .vt-grid.tight { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .vt-grid.tight > .vt-f { grid-column: span 2; }
+  .vt-grid.tight > .vt-f:nth-child(n+4) { grid-column: span 3; }
+}
 .vt-f { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .vt-f.full { grid-column: 1 / -1; }
 .vt-f label { font-size: var(--fs-sm); font-weight: 500; color: var(--text); }

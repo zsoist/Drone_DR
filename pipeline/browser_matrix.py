@@ -537,7 +537,7 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
       return {
         islas,
         filtros: document.querySelectorAll('#w-filters button').length,
-        misiones: document.querySelectorAll('.w-panel .wp-m').length,
+        misiones: document.querySelectorAll('.w-panel [data-mis]').length,
         overflow: document.documentElement.scrollWidth - window.innerWidth,
       };
     """), timeout=30, label="mundo world-select")
@@ -635,7 +635,7 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
         """))
         wait_for(cdp, js("""
           return document.querySelectorAll('.wi').length > 1
-            && document.querySelectorAll('.w-panel .wp-m').length >= 2;
+            && document.querySelectorAll('.w-panel [data-mis]').length >= 2;
         """), timeout=30, label="Mundo con cobertura 100 m recordada")
         coverage_fallback = cdp.eval(js("""
           const cards=[...document.querySelectorAll('.wi')];
@@ -697,7 +697,7 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
         cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/mundo.html"})
         wait_for(cdp, js("""
           return document.querySelectorAll('.wi').length > 1
-            && document.querySelectorAll('.w-panel .wp-m').length >= 2;
+            && document.querySelectorAll('.w-panel [data-mis]').length >= 2;
         """), timeout=30, label="Mundo restaurado tras fallback nativo")
     screenshot(cdp, QA_DIR / f"matrix-mundo-{viewport}.png")
     return {"surface": "mundo", "viewport": viewport, **state,

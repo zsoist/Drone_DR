@@ -50,7 +50,7 @@ html[data-td-tab="process"] #proj-view, html[data-td-tab="jobs"] #proj-view { di
 .page-3d .td-browserbar { grid-template-columns: minmax(200px, 1fr) auto auto auto; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .page-3d .td-search { max-width: none; min-width: 0; min-height: var(--ctl-h); }
 .page-3d .td-browserbar .ctl { min-width: 132px; }
-.page-3d .td-viewseg button { height: 30px; }
+.page-3d .td-viewseg button { height: var(--seg-h, 32px); }
 .page-3d .td-project-hint {
   margin: 0 0 var(--sp-3); padding: 0; border: 0; background: none;
   font-size: var(--fs-sm); color: var(--text-2);
@@ -181,7 +181,7 @@ html[data-td-tab="process"] #proj-view, html[data-td-tab="jobs"] #proj-view { di
   .page-3d .td-browserbar { grid-template-columns: 1fr 1fr; }
   .page-3d .td-browserbar .td-search, .page-3d .td-browserbar .td-viewseg { grid-column: 1 / -1; }
   .page-3d .td-viewseg { display: grid; grid-template-columns: 1fr 1fr; }
-  .page-3d .td-viewseg button { height: 36px; }
+  .page-3d .td-viewseg button { height: 44px; }
   .page-3d .td-project-hint { display: none; }
   .page-3d .proj-card .pc-actions { display: flex; }
   .page-3d .proj-group { grid-template-columns: 1fr; }
@@ -209,3 +209,70 @@ html[data-td-tab="process"] #proj-view, html[data-td-tab="jobs"] #proj-view { di
   .page-3d .sp-toolbar .ctl { flex: 1 1 0; min-width: 0; }
   .page-3d .sp-count { margin-left: 0; }
 }
+
+
+/* ================= c2 polish ================= */
+/* open project: the list folds away so the detail is its own view (back restores list + scroll) */
+html.td-open .td-mod[data-mod="projects"] > .panel:first-child { display: none; }
+#proj-view > .td-crumb { position: sticky; top: 0; z-index: var(--z-sticky); }
+
+/* card: KPI labels + empty-thumbnail placeholder */
+.page-3d .proj-card .pc-kpis small { letter-spacing: .04em; }
+.pc-ph {
+  position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-1);
+  background: var(--surface-2); color: var(--text-2); font-size: var(--fs-xs);
+}
+.pc-ph svg.ic { width: var(--ic-xl); height: var(--ic-xl); opacity: .6; stroke-width: 1.25; }
+.pc-cover.is-blank .pc-ph { display: flex; }
+.pc-cover.is-blank img { visibility: hidden; }
+.pc-cover .pc-date { z-index: 1; }
+.page-3d .proj-grid.proj-list .pc-ph span { display: none; }
+.page-3d .proj-grid.proj-list .pc-ph svg.ic { width: var(--ic-lg); height: var(--ic-lg); }
+
+/* processing: action rows */
+.page-3d .td-actions { gap: var(--sp-2); }
+.page-3d .td-cta { height: auto; min-height: 56px; padding: var(--sp-2) var(--sp-4) !important; gap: var(--sp-3); align-items: center; }
+.page-3d .td-cta.ghost { border-color: var(--line-strong); color: var(--text); }
+.page-3d .td-cta > span { min-width: 0; align-items: flex-start; }
+.page-3d .td-cta small { opacity: 1; color: var(--text-2); }
+.page-3d .td-cta.primary small { color: var(--text-on-accent); opacity: .8; }
+.page-3d .td-cta svg.ic { flex: none; }
+.page-3d .td-cta.primary .td-cta-arrow, .page-3d .td-cta.primary:hover .td-cta-arrow { color: var(--text-on-accent); }
+.page-3d .td-cta-arrow svg.ic { color: inherit; }
+.page-3d .td-cta .td-jobs-badge { color: var(--text-on-accent); background: var(--accent-solid); }
+
+/* jobs: telemetry aligned on one baseline, PC collapses to one row when asleep */
+.page-3d .jt-strip { align-items: stretch; }
+.page-3d button.jt-cell { display: flex; flex-direction: column; }
+.page-3d .jt-top { align-items: center; min-height: 28px; }
+.page-3d .jt-sub { margin-top: auto; padding-top: var(--sp-2); }
+.page-3d .jt-cell > .jt-facts:not(:last-child) { margin-bottom: var(--sp-1); }
+.page-3d .jt-strip.pc-off .jt-pc:not([data-metric="ncuda"]) { display: none; }
+.page-3d .jt-strip.pc-off .jt-pc[data-metric="ncuda"] { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: var(--sp-4); }
+.page-3d .jt-strip.pc-off .jt-pc[data-metric="ncuda"] .jt-spark { display: none; }
+.page-3d .jt-strip.pc-off .jt-pc[data-metric="ncuda"] .jt-top { flex: none; gap: var(--sp-4); }
+.page-3d .jt-strip.pc-off .jt-pc[data-metric="ncuda"] .jt-sub { margin: 0; padding: 0; }
+
+/* Estudio 3D / Procesar modal */
+.modal--studio .st-steps { gap: var(--sp-2); }
+.modal--studio .st-step { text-transform: none; letter-spacing: 0; font-size: var(--fs-sm); font-weight: var(--fw-medium); padding: 0 var(--sp-3); height: var(--chip-h); display: inline-flex; align-items: center; }
+.modal--studio .st-sep { display: inline-flex; }
+.modal--studio .st-sep svg.ic { width: var(--ic-xs); height: var(--ic-xs); }
+.modal--studio .st-footer { border-top: 0; padding-top: var(--sp-2); }
+.modal--studio .chip { height: var(--chip-h); min-height: var(--chip-h); }
+.modal--studio .st-actions .btn, .modal--studio .pg-all { height: 28px; }
+
+/* splat rows: quiet delete, single-colour loss bar */
+.page-3d .sr-icons .btn.sr-del { color: var(--err-fg); background: transparent; border-color: transparent; }
+@media (hover: hover) {
+  .page-3d .sr-icons .btn.sr-del:hover { background: var(--err-bg); border-color: var(--err-bd); }
+}
+.page-3d .sr-icons .btn.sr-del svg.ic { color: currentColor; }
+.page-3d .sr-loss-bar > div { background: var(--ok); }
+.page-3d .sr-loss-bar > div.lv-warn { background: var(--warn); }
+.page-3d .sr-loss-bar > div::after { display: none; }
+
+@media (max-width: 820px) {
+  .page-3d .td-cta { min-height: 56px; }
+}
+.page-3d .jt-strip.pc-off .jt-pc[data-metric="ncuda"] .jt-val { display: none; }

@@ -45,9 +45,9 @@ const FLOWS = [
     ['Comparte', 'El botón Compartir de la tarjeta crea un link público del visor.'],
   ], note: 'Las tarjetas muestran calidad (loss), gaussianas, cámaras e iteraciones. Borrar un splat lo manda a la papelera y no toca el modelo 3D ni el video.' },
   { id: 'atajos', title: 'Atajos del reproductor', rows: [
-    ['Espacio', 'Reproducir o pausar.'],
-    ['← →', 'Saltar 5 segundos.'],
-    ['F', 'Pantalla completa.'],
+    ['<kbd>Espacio</kbd>', 'Reproducir o pausar.'],
+    ['<kbd>←</kbd> <kbd>→</kbd>', 'Saltar 5 segundos.'],
+    ['<kbd>F</kbd>', 'Pantalla completa.'],
     ['Click', 'En la ruta, la gráfica o el filmstrip salta a ese momento.'],
   ] },
 ];
@@ -57,6 +57,9 @@ const val = v => typeof v === 'string' ? `<span class="gd-txt">${v}</span>`
 main.innerHTML = `
   ${pageHead('Guía de operación', 'Cómo hacer cada cosa, paso a paso.')}
   <div class="gd-wrap">
+    <nav class="chip-row gd-chips" aria-label="Flujos (móvil)">
+      ${FLOWS.map((f, i) => `<a class="chip" href="#g-${f.id}" data-gi="${f.id}">${i + 1} · ${f.title}</a>`).join('')}
+    </nav>
     <nav class="gd-index" aria-label="Flujos">
       ${FLOWS.map((f, i) => `<a href="#g-${f.id}" data-gi="${f.id}"><span>${i + 1}</span>${f.title}</a>`).join('')}
     </nav>
@@ -82,18 +85,18 @@ main.addEventListener('click', async e => {
     b.classList.add('done');
     b.innerHTML = icon('check');
     b.setAttribute('aria-label', 'Copiado');
-    setTimeout(() => { b.classList.remove('done'); b.innerHTML = icon('copy'); b.setAttribute('aria-label', 'Copiar comando'); }, 1400);
+    setTimeout(() => { b.classList.remove('done'); b.innerHTML = icon('copy'); b.setAttribute('aria-label', 'Copiar comando'); }, 1200);
   } catch { toast('No se pudo copiar. Selecciona el comando a mano.'); }
 });
 
 // índice: resalta el flujo visible
 if ('IntersectionObserver' in window) {
-  const links = Object.fromEntries([...main.querySelectorAll('[data-gi]')].map(a => [a.dataset.gi, a]));
+  const all = [...main.querySelectorAll('[data-gi]')];
   const io = new IntersectionObserver(entries => {
     entries.forEach(en => {
       if (en.isIntersecting) {
-        Object.values(links).forEach(a => a.classList.remove('on'));
-        links[en.target.id.slice(2)]?.classList.add('on');
+        const id = en.target.id.slice(2);
+        all.forEach(a => a.classList.toggle('on', a.dataset.gi === id));
       }
     });
   }, { rootMargin: '-15% 0px -70% 0px' });

@@ -9,14 +9,14 @@ from pathlib import Path
 
 def css_norm(text: str) -> str:
     """Formatting-insensitive CSS: the contracts pin declarations, not whitespace
-    (the 2026-09-29 design-system rewrite reformatted style.css without changing rules)."""
+    (the 2026-09-29 design-system rewrite reformatted the stylesheets without changing rules)."""
     import re as _re
     text = _re.sub(r"\s+", " ", text)
     return _re.sub(r"\s*([{}:;,>])\s*", r"\1", text)
 
 
 ROOT = Path(__file__).resolve().parent.parent
-STYLES = css_norm((ROOT / "web" / "style.css").read_text())
+STYLES = css_norm((ROOT / "web" / "css" / "volar.css").read_text())
 COMMAND_STYLES = STYLES[STYLES.index("BLOQUE 55d"):]
 
 TOUCH_PROFILES = {

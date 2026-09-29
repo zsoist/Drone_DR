@@ -19,7 +19,8 @@
 
 /* ── Visor ────────────────────────────────────────────────── */
 .sh-ph { flex-wrap: wrap; row-gap: var(--sp-2); align-items: center; }
-.sh-ph-t { margin-right: auto; }
+.sh-ph-t { margin-right: auto; align-self: center; }
+.sh-ph .sh-volar { align-self: center; }
 .share-page .sh-tabs { width: auto; flex-wrap: nowrap; overflow: visible; }
 .share-page .sh-tabs button { flex: 0 0 auto; min-height: 32px; white-space: nowrap; padding-inline: var(--sp-4); line-height: 1; }
 .share-page .share-splat-select { width: auto; max-width: 260px; height: 32px; margin-left: var(--sp-2); }
@@ -30,7 +31,7 @@
 .sh-err { color: var(--on-media-2); }
 .share-page .sh-view > .footer-note { color: var(--on-media-2); padding: var(--sp-5); text-align: center; }
 @media (max-width: 700px) {
-  .sh-ph { padding: var(--sp-3); }
+  .sh-ph { padding: var(--sp-3); align-items: center; }
   .sh-ph-t { margin-right: 0; flex: 1 1 auto; }
   .sh-volar { flex: none; }
   .share-page .sh-tabs { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
@@ -48,12 +49,12 @@
 @media (max-width: 700px) { .share-page .cmp { max-height: 60vh; } }
 
 /* ── Descargas ────────────────────────────────────────────── */
-.sh-dl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-2); }
+.sh-dl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--sp-2); }
 .sh-dl { flex-direction: row; align-items: center; gap: var(--sp-3); min-width: 0; }
 .sh-dl > div { display: flex; flex-direction: column; gap: var(--sp-0); min-width: 0; }
 .sh-dl svg.ic { flex: none; width: var(--ic-md); height: var(--ic-md); color: var(--accent-fg); }
 .sh-dl .sh-dl-sub { font-size: var(--fs-2xs); letter-spacing: var(--tr-caps); }
-.sh-foot { margin: var(--sp-3) 0 0; }
+.sh-foot { margin: var(--sp-4) 0 0; max-width: none; }
 @media (max-width: 480px) { .sh-dl-grid { grid-template-columns: 1fr; } }
 
 /* estados vacíos */

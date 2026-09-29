@@ -1,4 +1,4 @@
-/* global renderShell, getFlights, authFetch, api, fmt, icon, haversine, SceneImprovePolicy */
+/* global renderShell, pageHead, getFlights, authFetch, api, fmt, icon, haversine, SceneImprovePolicy */
 
 const root = document.getElementById('scene-improve-root');
 const shellMain = renderShell('tresd.html');
@@ -69,6 +69,7 @@ function captureRow(candidate, { selected = false, locked = false } = {}) {
     `${fmt.dur(candidate.durationS)} video`,
     Number.isFinite(candidate.distanceM) ? `${Math.round(candidate.distanceM)} m del sitio` : 'GPS no medible',
     Number.isFinite(candidate.altitudeM) ? `${Math.round(candidate.altitudeM)} m AGL` : null,
+    !locked && score ? `aporte 3D ${score}` : null,
   ].filter(Boolean).join(' · ');
   return `<label class="si-capture${selected ? ' is-selected' : ''}${classification.weak ? ' is-weak' : ''}${locked ? ' is-locked' : ''}">
     <input type="checkbox" data-source-id="${esc(candidate.id)}" ${selected ? 'checked' : ''} ${locked ? 'disabled' : ''}>
@@ -77,10 +78,8 @@ function captureRow(candidate, { selected = false, locked = false } = {}) {
       <span class="si-capture-title"><b>${esc(dateLabel(flight))}</b>
         <span class="si-role">${esc(classification.role)}</span></span>
       <span class="si-evidence mono">${esc(evidence)}</span>
-      <span class="si-reason">${esc(classification.reasons[0] || 'Captura compatible del mismo sitio.')}</span>
+      ${locked ? '' : `<span class="si-reason">${esc(classification.reasons[0] || 'Captura compatible del mismo sitio.')}</span>`}
     </span>
-    <span class="si-quality"><b>${score || '—'}</b><small>aporte 3D</small></span>
-    ${locked ? '<span class="si-locked">Fuente activa</span>' : ''}
   </label>`;
 }
 
@@ -139,15 +138,10 @@ function renderWorkspace() {
   root.className = 'si-workspace';
   root.setAttribute('aria-busy', 'false');
   root.innerHTML = `
-    <header class="si-head">
-      <a class="si-back" href="tresd.html">${icon('chevLeft')} Modelos 3D</a>
-      <div>
-        <span class="eyebrow">NUEVA VERSIÓN · ESCENA EXISTENTE</span>
-        <h1>Mejorar ${esc(model.title || 'esta escena')}</h1>
-        <p>Combina nuevas tomas del mismo edificio. La versión visible hoy no cambia hasta que la nueva pase registro y control de calidad.</p>
-      </div>
-      <span class="si-safe">${icon('check')} Versión actual protegida</span>
-    </header>
+    <a class="si-back" href="tresd.html">${icon('chevL')} Volver a 3D</a>
+    ${pageHead(`Mejorar ${esc(model.title || 'esta escena')}`,
+      'Combina nuevas tomas del mismo edificio. La versión visible no cambia hasta que la nueva pase registro y control de calidad.',
+      `<span class="chip ok">${icon('check')} Versión actual protegida</span>`)}
 
     <div class="si-layout">
       <div class="si-flow">
@@ -159,7 +153,7 @@ function renderWorkspace() {
               <p class="mono">${q.cameras_reconstructed ?? '—'} cámaras · ${q.gsd_cm_px ?? '—'} cm/px · ${q.area_m2 ? (q.area_m2 / 10000).toFixed(1) + ' ha' : 'área no medida'}</p>
               <p>Se crea una versión independiente; podrás comparar y promoverla después.</p></div>
           </div>
-          <div class="si-current"><h3>Fuentes actuales</h3>${currentRows}</div>
+          <div class="si-current"><h3>Fuentes actuales</h3><div class="si-capture-list">${currentRows}</div></div>
         </section>
 
         <section class="panel si-section" aria-labelledby="si-captures-title">
@@ -210,7 +204,7 @@ function renderWorkspace() {
         <div class="si-truth">${icon('shield')} <span><b>Sin reemplazo automático</b><small>La versión nueva se promueve solo después de confirmar registro FULL y artefactos.</small></span></div>
         <p id="si-action-status" class="si-action-status" aria-live="polite"></p>
         <button class="btn primary si-submit" id="si-submit">${icon('layers')} Crear versión mejorada</button>
-        <a href="tresd.html" class="si-cancel">Cancelar y volver</a>
+        <a href="tresd.html" class="btn ghost si-cancel">Cancelar y volver</a>
       </aside>
     </div>`;
   wireSelection();
@@ -273,7 +267,7 @@ function renderSuccess(result) {
     <div class="si-success-facts"><span><small>Trabajo</small><b class="mono">${esc(result.job)}</b></span>
       <span><small>Reconstrucción</small><b class="mono">${esc(result.reconstruction)}</b></span></div>
     <div class="si-success-actions"><a class="btn primary" href="tresd.html?tab=jobs&job=${encodeURIComponent(result.job)}">${icon('activity')} Ver procesamiento</a>
-      <a class="btn" href="tresd.html">Volver a Modelos 3D</a></div>
+      <a class="btn" href="tresd.html">Volver a 3D</a></div>
   </section>`;
   root.focus?.();
 }
@@ -282,7 +276,7 @@ function renderFailure(message) {
   root.className = 'si-failure';
   root.setAttribute('aria-busy', 'false');
   root.innerHTML = `<div class="panel"><span>${icon('warn')}</span><h1>No pudimos abrir esta escena</h1>
-    <p>${esc(message)}</p><a class="btn primary" href="tresd.html">Volver a Modelos 3D</a></div>`;
+    <p>${esc(message)}</p><a class="btn primary" href="tresd.html">Volver a 3D</a></div>`;
 }
 
 async function load() {
@@ -312,7 +306,7 @@ async function load() {
       return { id, durationS: durationFor(flight), flight, sameSite: true, distanceM: 0,
         altitudeM: finite(flight.stats?.max_rel_alt_m),
         captureAt: flight.date ? `${flight.date}T${flight.time || '00:00:00'}` : '',
-        classification: { role: 'Fuente actual', weak: false, reasons: ['Incluida en la versión activa.'] } };
+        classification: { role: 'Activa', weak: false, reasons: [] } };
     });
     const baseFlight = flights.find(flight => flight.clip_id === baseIds[0])
       || flights.find(flight => flight.clip_id === requestedModel.clip_id);

@@ -29,7 +29,7 @@ const NAV = [
   { href: 'mundo.html', ic: 'globe', label: 'Mundo' },
   { href: 'studio.html', ic: 'film', label: 'Studio', tab: true },
   { href: 'tresd.html', ic: 'cube', label: '3D', tab: true },
-  { href: 'splatlab.html', ic: 'spark', label: 'Splat Lab' },
+  { href: 'splatlab.html', ic: 'splat', label: 'Splat Lab' },
   { href: 'ventas.html', ic: 'tag', label: 'Ventas' },
   { href: 'system.html', ic: 'db', label: 'Sistema' },
 ];
@@ -69,12 +69,45 @@ function shortTitle(text) {
 // openMenu(anchor, items, opts) → igual, con role=menu/menuitem, flechas ↑↓ Home End, tipeo-para-saltar.
 //   items: [{ id, label, icon, hint, danger, disabled, href, target, sep }] · opts.onSelect(id, item) corre DESPUÉS
 //   de cerrar y devolver el foco (un modal abierto desde la acción recuerda el ancla como opener).
+// ---- pila de capas (UN solo listener de teclado en window+captura) ----------------------------------------
+// Popovers, modales y la hoja «Más» se apilan aquí; solo la capa de ARRIBA recibe teclas, así Esc cierra primero
+// lo más alto (menú > modal > visor) y nunca hay dos listeners compitiendo.
+// pushLayer({ onKey(e) }) → layer · popLayer(layer). Bloqueo de scroll de <html> con contador: lockScroll()/unlockScroll().
+const _layers = [];
+function _layerKey(e) { const top = _layers[_layers.length - 1]; if (top) top.onKey(e); }
+function pushLayer(layer) {
+  _layers.push(layer);
+  if (_layers.length === 1) window.addEventListener('keydown', _layerKey, true);
+  return layer;
+}
+function popLayer(layer) {
+  const i = _layers.indexOf(layer);
+  if (i < 0) return;
+  _layers.splice(i, 1);
+  if (!_layers.length) window.removeEventListener('keydown', _layerKey, true);
+}
+let _lockN = 0, _lockPad = '';
+function lockScroll() {
+  if (_lockN++ > 0) return;
+  const html = document.documentElement;
+  const sb = window.innerWidth - html.clientWidth;          // compensa el ancho de la barra para que no salte el layout
+  _lockPad = html.style.paddingRight;
+  html.classList.add('modal-open');
+  if (sb > 0) html.style.paddingRight = sb + 'px';
+}
+function unlockScroll() {
+  if (_lockN === 0 || --_lockN > 0) return;
+  const html = document.documentElement;
+  html.classList.remove('modal-open');
+  html.style.paddingRight = _lockPad;
+}
+
 let _pop = null;
 function closePopover({ refocus = false } = {}) {
   const p = _pop;
   if (!p) return;
   _pop = null;
-  window.removeEventListener('keydown', p.onKey, true);
+  popLayer(p.layer);
   document.removeEventListener('pointerdown', p.onDown, true);
   window.removeEventListener('scroll', p.onScroll, true);
   window.removeEventListener('resize', p.onResize);
@@ -113,7 +146,7 @@ function openPopover(anchor, content, opts = {}) {
   p.onDown = e => { if (!el.contains(e.target) && !anchor.contains(e.target)) closePopover(); };
   p.onScroll = e => { if (!el.contains(e.target)) closePopover(); };
   p.onResize = () => closePopover();
-  window.addEventListener('keydown', p.onKey, true);   // window+capture: gana a los Esc de modales/visores
+  p.layer = pushLayer({ onKey: p.onKey });   // pila de capas: gana a los Esc de modales/visores y solo el de arriba responde
   document.addEventListener('pointerdown', p.onDown, true);
   window.addEventListener('scroll', p.onScroll, true);
   window.addEventListener('resize', p.onResize);
@@ -167,36 +200,47 @@ function openMenu(anchor, items, opts = {}) {
   return pop;
 }
 
-// ---- modal accesible compartido: role=dialog + aria-modal + aria-labelledby, Esc cierra, Tab queda
-// atrapado dentro, click en el fondo / .modal-x cierra y el foco vuelve a quien lo abrió.
-// Uso: const close = openModal(ov, { onClose }) con ov = <div class="modal-ov"><div class="modal">…
-// Cualquier ov.remove() posterior (p. ej. tras guardar) también restaura el foco y limpia listeners.
+// ---- modal accesible compartido (API pública para páginas) ------------------------------------------------
+// const close = openModal(ov, { onClose, label, initialFocus, closeOnBackdrop })   ov = <div class="modal-ov"><div class="modal">…
+//   · role=dialog + aria-modal + aria-labelledby (auto: primer .modal-h b / h1-h3; si no hay, opts.label o «Diálogo»).
+//   · Foco inicial: opts.initialFocus (selector|Element) → [autofocus] → primer control que NO sea la ×; en táctil los
+//     campos de texto no se enfocan solos (evita abrir el teclado): entonces el foco va a la tarjeta.
+//   · Tab atrapado dentro; Esc cierra SOLO el modal de arriba (pila de capas); clic en el fondo o en .modal-x cierra
+//     (el clic debe empezar Y terminar en el fondo: arrastrar una selección de texto fuera no lo cierra).
+//   · <html> sin scroll mientras haya ≥1 modal (contador); el foco vuelve a quien abrió el modal.
+//   · Cualquier ov.remove() posterior (p. ej. tras guardar) hace lo mismo que close(): limpia capa, scroll y foco.
+//   · La × es <button class="modal-x">: se le fuerza type=button y aria-label «Cerrar» si falta.
 const _modalStack = [];
 let _modalSeq = 0;
-function openModal(ov, { onClose } = {}) {
+function openModal(ov, { onClose, label, initialFocus, closeOnBackdrop = true } = {}) {
   const opener = document.activeElement;
   const modal = ov.querySelector('.modal') || ov;
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
-  const head = modal.querySelector('.modal-h b, .modal-h, h1, h2, h3');
-  if (head) { head.id = head.id || `mdl-t${++_modalSeq}`; modal.setAttribute('aria-labelledby', head.id); }
-  else modal.setAttribute('aria-label', 'Diálogo');
+  const head = modal.querySelector('.modal-h b, .tx-pop-h b, .modal-h, h1, h2, h3');
+  if (head && !label) { head.id = head.id || `mdl-t${++_modalSeq}`; modal.setAttribute('aria-labelledby', head.id); }
+  else modal.setAttribute('aria-label', label || 'Diálogo');
   modal.tabIndex = -1;
+  ov.querySelectorAll('.modal-x').forEach(x => {
+    if (x.tagName === 'BUTTON' && !x.getAttribute('type')) x.type = 'button';
+    if (!x.hasAttribute('aria-label')) x.setAttribute('aria-label', 'Cerrar');
+  });
   const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
   const focusables = () => [...modal.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null || el === document.activeElement);
-  let done = false;
+  let done = false, downOnBackdrop = false;
   const nativeRemove = ov.remove.bind(ov);
+  const layer = { onKey };
   const cleanup = () => {
     if (done) return;
     done = true;
-    document.removeEventListener('keydown', onKey, true);
+    popLayer(layer);
     const i = _modalStack.indexOf(ov); if (i >= 0) _modalStack.splice(i, 1);
+    unlockScroll();
     try { onClose && onClose(); } catch {}
     nativeRemove();
     if (opener && opener.isConnected && typeof opener.focus === 'function') { try { opener.focus({ preventScroll: true }); } catch {} }
   };
   function onKey(e) {
-    if (_modalStack[_modalStack.length - 1] !== ov) return;   // solo el modal de arriba
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cleanup(); return; }
     if (e.key !== 'Tab') return;
     const f = focusables();
@@ -207,11 +251,22 @@ function openModal(ov, { onClose } = {}) {
     else if (!e.shiftKey && cur === last) { e.preventDefault(); first.focus(); }
   }
   ov.remove = cleanup;
-  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) cleanup(); });
+  ov.addEventListener('pointerdown', e => { downOnBackdrop = e.target === ov; });
+  ov.addEventListener('click', e => {
+    if (e.target.closest('.modal-x')) cleanup();
+    else if (closeOnBackdrop && e.target === ov && downOnBackdrop) cleanup();
+  });
   document.body.appendChild(ov);
   _modalStack.push(ov);
-  document.addEventListener('keydown', onKey, true);
-  modal.focus({ preventScroll: true });
+  pushLayer(layer);
+  lockScroll();
+  let target = typeof initialFocus === 'string' ? modal.querySelector(initialFocus) : initialFocus;
+  if (!target) target = modal.querySelector('[autofocus]');
+  if (!target) {
+    target = focusables().find(el => !el.classList.contains('modal-x')) || null;
+    if (target && matchMedia('(pointer: coarse)').matches && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) target = null;
+  }
+  (target || modal).focus({ preventScroll: true });
   return cleanup;
 }
 
@@ -873,12 +928,32 @@ document.addEventListener('click', async e => {
 document.addEventListener('input', e => { if (e.target.matches('[data-log-search], [data-log-level]')) renderJobLog(); });
 
 // tema: aplicar ANTES de pintar para evitar flash
-document.documentElement.dataset.theme = localStorage.getItem('ab_theme') || 'dark';
+try { document.documentElement.dataset.theme = localStorage.getItem('ab_theme') || 'dark'; } catch { document.documentElement.dataset.theme = 'dark'; }
+// Los toggles muestran el tema ACTUAL (icono luna/sol + «Tema oscuro/claro»), con aria-pressed = tema oscuro activo.
+function syncThemeToggles() {
+  const light = document.documentElement.dataset.theme === 'light';
+  const name = light ? 'Tema claro' : 'Tema oscuro';
+  document.querySelectorAll('[data-theme-toggle]').forEach(b => {
+    const svg = b.querySelector('svg.ic');
+    if (svg) svg.outerHTML = icon(light ? 'sun' : 'moon');
+    const lb = b.querySelector('.theme-lb'); if (lb) lb.textContent = name;
+    b.setAttribute('aria-pressed', String(!light));
+    b.setAttribute('aria-label', name);
+    b.title = `Cambiar a tema ${light ? 'oscuro' : 'claro'}`;
+  });
+}
+let _themeT = 0;
 function toggleTheme() {
-  const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-  document.documentElement.dataset.theme = t;
-  localStorage.setItem('ab_theme', t);
-  document.querySelectorAll('.theme-lb').forEach(e => { e.textContent = t === 'light' ? 'Oscuro' : 'Claro'; });
+  const root = document.documentElement;
+  const t = root.dataset.theme === 'light' ? 'dark' : 'light';
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {   // fundido de color 160ms (solo bg/color/border)
+    root.classList.add('theme-anim');
+    clearTimeout(_themeT);
+    _themeT = setTimeout(() => root.classList.remove('theme-anim'), 220);
+  }
+  root.dataset.theme = t;
+  try { localStorage.setItem('ab_theme', t); } catch {}
+  syncThemeToggles();
 }
 
 document.addEventListener('click', async e => {
@@ -895,37 +970,43 @@ document.addEventListener('click', async e => {
   }
 });
 
-// Hoja «Más» del móvil: accesible (dialog, Esc, foco atrapado simple, vuelve al disparador).
+// Hoja «Más» del móvil: diálogo de navegación (título + ×, Esc por la pila de capas, Tab atrapado, scroll lock,
+// el foco vuelve al disparador).
 function setupMoreSheet() {
   const btn = document.getElementById('mnav-more');
   const ov = document.getElementById('msheet-ov');
   if (!btn || !ov) return;
   const sheet = ov.querySelector('.msheet');
+  let layer = null, closeT = 0;
   const close = () => {
-    if (ov.hidden) return;
+    if (ov.hidden || !layer) return;
     ov.classList.remove('on');
     btn.setAttribute('aria-expanded', 'false');
-    document.removeEventListener('keydown', onKey, true);
-    setTimeout(() => { ov.hidden = true; }, 220);
+    popLayer(layer); layer = null;
+    unlockScroll();
+    clearTimeout(closeT);
+    closeT = setTimeout(() => { if (!layer) ov.hidden = true; }, 220);
     btn.focus({ preventScroll: true });
   };
   const onKey = e => {
-    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.key !== 'Tab') return;
-    const f = [...sheet.querySelectorAll('a[href],button:not([disabled])')];
+    const f = [...sheet.querySelectorAll('a[href],button:not([disabled])')].filter(el => !el.hidden && el.offsetParent !== null);
     if (!f.length) return;
     const first = f[0], last = f[f.length - 1];
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   };
   const open = () => {
+    clearTimeout(closeT);
     ov.hidden = false;
     requestAnimationFrame(() => ov.classList.add('on'));
     btn.setAttribute('aria-expanded', 'true');
-    document.addEventListener('keydown', onKey, true);
-    sheet.querySelector('a[href],button')?.focus({ preventScroll: true });
+    layer = pushLayer({ onKey });
+    lockScroll();
+    sheet.querySelector('a[href]')?.focus({ preventScroll: true });
   };
-  btn.addEventListener('click', () => (ov.hidden ? open() : close()));
+  btn.addEventListener('click', () => (ov.hidden || !layer ? open() : close()));
   ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('[data-msheet-close]')) close(); });
   sheet.addEventListener('click', e => { if (e.target.closest('[data-theme-toggle]')) setTimeout(close, 120); });
 }
@@ -935,6 +1016,7 @@ function renderShell(active) {
   const isMore = NAV_MORE.some(n => n.href === cur);
   const light = document.documentElement.dataset.theme === 'light';
   document.body.insertAdjacentHTML('afterbegin', `
+    <a class="skip-link" href="#main">Saltar al contenido</a>
     <div class="shell">
       <aside class="sidebar">
         <a class="brand" href="index.html">
@@ -945,7 +1027,7 @@ function renderShell(active) {
           <a class="nav-item ${n.href === cur ? 'active' : ''}" href="${n.href}"${n.href === cur ? ' aria-current="page"' : ''}>
             ${icon(n.ic)}<span>${n.label}</span>
           </a>`).join('')}
-        <button class="nav-item" data-theme-toggle>${icon('sun')}<span class="theme-lb">${light ? 'Oscuro' : 'Claro'}</span></button>
+        <button class="nav-item" type="button" data-theme-toggle aria-pressed="${!light}" aria-label="${light ? 'Tema claro' : 'Tema oscuro'}" title="Cambiar a tema ${light ? 'oscuro' : 'claro'}">${icon(light ? 'sun' : 'moon')}<span class="theme-lb">${light ? 'Tema claro' : 'Tema oscuro'}</span></button>
         <div class="foot">
           <span class="foot-status"><span class="dot"></span>Mac Mini M4 · vault local<span class="chip sm foot-dev" id="dev-chip" hidden>Dev local</span></span>
           <div class="foot-btns">
@@ -954,7 +1036,7 @@ function renderShell(active) {
           </div>
         </div>
       </aside>
-      <main class="main" id="main"></main>
+      <main class="main" id="main" tabindex="-1"></main>
     </div>
     <nav class="mnav" aria-label="Navegación principal">
       ${NAV.filter(n => n.tab).map(n => `
@@ -962,19 +1044,24 @@ function renderShell(active) {
       <button class="mnav-i${isMore ? ' active' : ''}" id="mnav-more" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="msheet-ov">${icon('more')}<span>Más</span></button>
     </nav>
     <div class="msheet-ov" id="msheet-ov" hidden>
-      <div class="msheet" role="dialog" aria-modal="true" aria-label="Más secciones">
+      <div class="msheet" role="dialog" aria-modal="true" aria-labelledby="msheet-t">
         <div class="msheet-grip" aria-hidden="true"></div>
+        <div class="msheet-head"><b id="msheet-t">Más</b><button class="btn icon ghost sm" type="button" data-msheet-close aria-label="Cerrar">${icon('close')}</button></div>
         <div class="msheet-grid">
           ${NAV_MORE.map(n => `
             <a class="ms-item${n.href === cur ? ' active' : ''}" href="${n.href}"${n.href === cur ? ' aria-current="page"' : ''}>${icon(n.ic)}<span>${n.label}</span></a>`).join('')}
         </div>
         <div class="msheet-foot">
-          <button class="btn ghost" type="button" data-theme-toggle>${icon('sun')} <span class="theme-lb">${light ? 'Oscuro' : 'Claro'}</span></button>
+          <button class="btn ghost" type="button" data-theme-toggle aria-pressed="${!light}" aria-label="${light ? 'Tema claro' : 'Tema oscuro'}" title="Cambiar a tema ${light ? 'oscuro' : 'claro'}">${icon(light ? 'sun' : 'moon')} <span class="theme-lb">${light ? 'Tema claro' : 'Tema oscuro'}</span></button>
           <a class="btn ghost" href="#" data-auth-link id="auth-link-m">${icon('logOut')} Salir</a>
         </div>
       </div>
     </div>`);
   setupMoreSheet();
+  document.querySelector('.skip-link')?.addEventListener('click', e => {
+    e.preventDefault();
+    const m = document.getElementById('main'); if (m) { m.focus({ preventScroll: true }); m.scrollIntoView({ block: 'start' }); }
+  });
   requireSession().then(session => {
     if (!session) return;
     const links = document.querySelectorAll('#auth-link, #auth-link-m');

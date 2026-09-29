@@ -1,6 +1,1232 @@
-/* AeroBrain · Volar (volar.html) — loads AFTER style.css. The game HUD (.vl-*) lives in style.css;
-   volar.js sets a few inline styles, this file gives them a class-based twin so they can be dropped later. */
+/* AeroBrain · Volar (volar.html) — game HUD. Loads AFTER style.css (tokens/base/components live there).
+   All .vl-* / .vb-* rules and the keyframes only they use live here (moved out of style.css 2026-09-29).
+   The HUD keeps its own dark tokens and may use --ease-spring. */
 
+/* ── BLOQUE 29 · FLIGHTVERSE /volar — HUD del vuelo ───────────────────────
+   Arquitectura cero-solape: 4 esquinas fijas + ayuda central; ningún panel
+   comparte esquina. Todo pointer-events:none salvo lo clicable. */
+.vl-body { margin:0; overflow:hidden; background:#0A0C10 }
+.vl-canvas { position:fixed; inset:0; display:block }
+.vl-hud { position:fixed; inset:0; pointer-events:none; z-index:5;
+  font-family:var(--mono); color:#E6EBF2 }
+.vl-corner { position:absolute; display:flex; flex-direction:column; gap:6px }
+.vl-corner.tl { top:14px; left:14px; align-items:flex-start }
+.vl-corner.tr { top:14px; right:14px; align-items:flex-end; flex-direction:row; gap:10px }
+.vl-corner.bl { bottom:14px; left:14px; align-items:flex-start }
+.vl-corner.br { bottom:14px; right:14px; align-items:flex-end }
+.vl-back { pointer-events:auto; text-decoration:none; color:#E6EBF2;
+  font:600 var(--fs-sm) var(--mono); padding:7px 12px; border-radius:var(--r-md);
+  border:1px solid rgba(255,255,255,.16); background:rgba(10,12,16,.6);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px) }
+@media (hover: hover) {
+.vl-back:hover { border-color:rgba(69,160,230,.6) }
+}
+.vl-scene { font:600 var(--fs-sm) var(--mono); color:#B7C2D0; padding:5px 10px;
+  border-radius:var(--r-md); background:rgba(10,12,16,.5); max-width:52vw;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.vl-metric { text-align:right; padding:7px 12px; border-radius:var(--r-md);
+  border:1px solid rgba(255,255,255,.12); background:rgba(10,12,16,.6);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); min-width:84px }
+.vl-metric span { display:block; font:700 var(--fs-xl)/1.1 var(--mono); color:#E6EBF2 }
+.vl-metric label { font:600 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:#8A97A8 }
+.vl-mode,.vl-rig,.vl-ghost,.vl-fps { font:600 var(--fs-xs) var(--mono); color:#B7C2D0;
+  padding:5px 10px; border-radius:var(--r-md); background:rgba(10,12,16,.55) }
+.vl-mode { color:var(--accent) }
+.vl-help { position:absolute; left:50%; bottom:64px; transform:translateX(-50%) translateY(8px);
+  padding:12px 16px; border-radius:var(--r-md); border:1px solid rgba(255,255,255,.14);
+  background:rgba(10,12,16,.82); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  font:500 var(--fs-sm)/1.7 var(--mono); color:#B7C2D0; text-align:center;
+  opacity:0; transition:opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out)}
+.vl-help.show { opacity:1; transform:translateX(-50%) translateY(0) }
+@media (max-width:640px) {
+.vl-scene { max-width:38vw }
+.vl-metric { min-width:64px; padding:5px 9px }
+.vl-metric span { font-size:var(--fs-lg) }
+}
+/* BLOQUE 29b · Gate Rush: HUD superior-centro, countdown, panel resultado */
+.vl-center-top { position:absolute; top:14px; left:50%; transform:translateX(-50%);
+  font:700 var(--fs-md) var(--mono); color:#E6EBF2; padding:7px 14px; border-radius:var(--r-md);
+  border:1px solid rgba(255,255,255,.14); background:rgba(10,12,16,.6);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); white-space:nowrap }
+.vl-count { position:absolute; top:38%; left:50%; transform:translate(-50%,-50%) scale(.8);
+  font:700 var(--fs-display) var(--mono); color:var(--accent); opacity:0;
+  text-shadow:0 0 42px rgba(69,160,230,.5); transition:opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out)}
+.vl-count.show { opacity:1; transform:translate(-50%,-50%) scale(1) }
+.vl-result { position:absolute; inset:0; display:none; place-items:center;
+  background:rgba(10,12,16,.45); pointer-events:auto }
+.vl-result.show { display:grid }
+.vl-result-card { min-width:300px; text-align:center; padding:26px 30px;
+  border-radius:var(--r-lg); border:1px solid rgba(69,160,230,.35);
+  background:rgba(17,21,28,.92); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+  box-shadow:var(--shadow-3)}
+.vl-result-k { font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:var(--accent) }
+.vl-result-time { font:700 var(--fs-display)/1.1 var(--mono); color:#E6EBF2; margin:10px 0 4px }
+.vl-result-time small { font-size:var(--fs-2xl); color:#8A97A8 }
+.vl-result-btns { display:flex; gap:10px; justify-content:center }
+.vl-result-btns button,.vl-result-btns a { font:600 var(--fs-sm) var(--font); letter-spacing:var(--tr-caps);
+  padding:9px 16px; border-radius:var(--r-md); cursor:pointer; text-decoration:none;
+  border:1px solid var(--line); background:transparent; color:var(--text-2) }
+.vl-result-btns button:first-child { background:linear-gradient(135deg,#45A0E6,#5A78E8);
+  color:#fff; border:none }
+@media (hover: hover) {
+.vl-result-btns :is(button,a):hover { filter:brightness(1.2) }
+}
+/* BLOQUE 29c · Quick Record */
+.vl-rec { pointer-events:auto; cursor:pointer; font:600 var(--fs-xs) var(--mono);
+  color:#B7C2D0; padding:5px 10px; border-radius:var(--r-md); text-align:left;
+  border:1px solid rgba(255,255,255,.14); background:rgba(10,12,16,.55) }
+@media (hover: hover) {
+.vl-rec:hover { border-color:rgba(69,160,230,.5) }
+}
+.vl-rec.on { color:#fff; background:rgba(217,106,106,.85); border-color:transparent;
+  animation:recPulse 1.2s var(--ease-in-out) infinite}
+/* BLOQUE 29d · minimapa táctico */
+.vl-minimap { position:absolute; left:50%; bottom:14px; transform:translateX(-50%);
+  width:150px; height:150px; border-radius:var(--r-md); border:1px solid rgba(255,255,255,.18);
+  background:rgba(10,12,16,.5); box-shadow:var(--shadow-2)}
+@media (max-width:640px) {
+.vl-minimap { width:104px; height:104px; bottom:12px }
+}
+/* BLOQUE 29e · dual-stick táctil */
+.vl-stick { position:absolute; bottom:24px; width:38vw; height:min(34vh, 300px); max-width:260px; z-index:1;
+  pointer-events:auto; touch-action:none; display:none }
+.vl-stick.left { left:8px }
+.vl-stick.right { right:8px }
+.vl-stick-base { position:absolute; bottom:26px; left:50%; transform:translateX(-50%);
+  width:112px; height:112px; border-radius:50%; border:1.5px solid rgba(255,255,255,.22);
+  background:rgba(10,12,16,.35); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px) }
+.vl-stick-nub { position:absolute; inset:0; margin:auto; width:46px; height:46px;
+  border-radius:50%; background:rgba(69,160,230,.75); box-shadow:0 2px 14px rgba(69,160,230,.5) }
+@media (pointer:coarse) {
+.vl-stick { display:block }
+.vl-help { display:none }
+}
+/* BLOQUE 29f · UX táctil iOS/iPad: targets 44px+, safe-areas, chips-botón */
+.vl-chip { pointer-events:auto; cursor:pointer; font:600 var(--fs-xs) var(--mono); color:#B7C2D0;
+  padding:5px 10px; border-radius:var(--r-md); border:1px solid rgba(255,255,255,.14);
+  background:rgba(10,12,16,.55); text-align:left; -webkit-tap-highlight-color:transparent }
+@media (hover: hover) {
+.vl-chip:hover { border-color:rgba(69,160,230,.5) }
+}
+#vl-mode { color:var(--accent) }
+.vl-corner.tl { top:calc(14px + env(safe-area-inset-top)); left:calc(14px + env(safe-area-inset-left)) }
+.vl-corner.tr { top:calc(14px + env(safe-area-inset-top)); right:calc(14px + env(safe-area-inset-right)) }
+.vl-corner.bl { bottom:calc(14px + env(safe-area-inset-bottom)); left:calc(14px + env(safe-area-inset-left)) }
+.vl-corner.br { bottom:calc(14px + env(safe-area-inset-bottom)); right:calc(14px + env(safe-area-inset-right)) }
+.vl-canvas { touch-action:none }
+@media (pointer:coarse) {
+.vl-chip,.vl-rec,.vl-back { padding:12px 15px; font-size:var(--fs-md); border-radius:var(--r-lg);
+    min-height:44px; display:flex; align-items:center }
+.vl-corner.bl { gap:9px; max-width:46vw }
+.vl-metric { min-width:78px }
+.vl-minimap { bottom:calc(12px + env(safe-area-inset-bottom)) }
+.vl-count { font-size:var(--fs-display) }
+.vl-result-btns button,.vl-result-btns a { padding:13px 18px; font-size:var(--fs-lg) }
+}
+@media (pointer:coarse) and (max-width:920px) {
+.vl-corner.bl { bottom:calc(30vh + 20px) }
+}
+/* hidden debe ganar a .fv-grid{display:grid} */
+/* ── BLOQUE 29g · HUD PREMIUM: glass, dock, brújula, scrims, orientación ── */
+.vl-scrim { position:absolute; left:0; right:0; height:120px; pointer-events:none }
+.vl-scrim.top { top:0; background:linear-gradient(180deg, rgba(6,8,11,.55), transparent) }
+.vl-scrim.bottom { bottom:0; background:linear-gradient(0deg, rgba(6,8,11,.5), transparent) }
+.vl-corner,.vl-center-top,.vl-minimap,.vl-compass { z-index:2 }
+.vl-metric { border:1px solid rgba(255,255,255,.09); border-radius:var(--r-lg);
+  background:linear-gradient(160deg, rgba(23,29,38,.78), rgba(10,12,16,.72));
+  -webkit-backdrop-filter:blur(14px) saturate(1.3); backdrop-filter:blur(14px) saturate(1.3);
+  box-shadow:var(--shadow-2); padding:9px 14px }
+.vl-metric span { font-size:var(--fs-2xl); letter-spacing:0 }
+.vl-metric label { color:#6E7B8D; margin-top:2px; display:block }
+.vl-center-top { border-radius:var(--r-lg); border:1px solid rgba(69,160,230,.28);
+  background:linear-gradient(160deg, rgba(23,29,38,.82), rgba(10,12,16,.75));
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+  box-shadow:var(--shadow-2)}
+.vl-compass { position:absolute; top:calc(60px + env(safe-area-inset-top)); left:50%;
+  transform:translateX(-50%); font:700 var(--fs-xs) var(--mono); color:#B7C2D0;
+  padding:5px 14px; border-radius:var(--r-pill); border:1px solid rgba(255,255,255,.12);
+  background:rgba(10,12,16,.6); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  letter-spacing:var(--tr-eyebrow) }
+.vl-dock { display:flex; flex-direction:column; gap:7px; padding:9px;
+  border-radius:var(--r-lg); border:1px solid rgba(255,255,255,.09);
+  background:linear-gradient(160deg, rgba(23,29,38,.75), rgba(10,12,16,.68));
+  -webkit-backdrop-filter:blur(14px) saturate(1.3); backdrop-filter:blur(14px) saturate(1.3);
+  box-shadow:var(--shadow-2)}
+.vl-dock .vl-chip,.vl-dock .vl-rec { border:none; background:rgba(255,255,255,.05);
+  border-radius:var(--r-md); transition:background var(--dur-base) var(--ease-out), transform var(--dur-fast) var(--ease-out)}
+@media (hover: hover) {
+.vl-dock .vl-chip:hover { background:rgba(69,160,230,.16) }
+}
+.vl-dock .vl-chip:active,.vl-dock .vl-rec:active { transform:scale(.96) }
+#vl-sound.off { color:#566274 }
+.vl-back { border-radius:var(--r-lg); background:linear-gradient(160deg, rgba(23,29,38,.8), rgba(10,12,16,.7));
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px) }
+.vl-scene { border-radius:var(--r-md); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  background:rgba(10,12,16,.62); border:1px solid rgba(255,255,255,.07) }
+.vl-minimap { border:1px solid rgba(255,255,255,.14); border-radius:var(--r-lg);
+  box-shadow:var(--shadow-2)}
+/* móvil VERTICAL: métricas compactas; los paneles agrupados viven sobre los sticks */
+@media (pointer:coarse) and (orientation:portrait) {
+.vl-corner.tr { flex-direction:column; gap:6px }
+.vl-metric { min-width:64px; padding:6px 10px }
+.vl-metric span { font-size:var(--fs-lg) }
+.vl-dock { flex-direction:row; overflow-x:auto; max-width:calc(100vw - 24px);
+    scrollbar-width:none; -webkit-overflow-scrolling:touch }
+.vl-dock::-webkit-scrollbar { display:none }
+.vl-dock .vl-chip,.vl-dock .vl-rec { white-space:nowrap; flex:none }
+.vl-corner.bl { bottom:calc(34vh + 12px); left:12px; right:12px; max-width:none }
+.vl-minimap { width:92px; height:92px; left:auto; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); transform:none }
+.vl-compass { top:calc(52px + env(safe-area-inset-top)) }
+}
+@media (pointer:coarse) and (orientation:landscape) {
+.vl-corner.bl { bottom:calc(12px + env(safe-area-inset-bottom)); left:calc(12px + env(safe-area-inset-left)) }
+.vl-fab { bottom:calc(40vh + 34px + env(safe-area-inset-bottom)) }
+.vl-combat-fab { bottom:calc(40vh + 34px + env(safe-area-inset-bottom)) }
+.vl-dock { flex-direction:column }
+.vl-stick { width:32vw; height:40vh; max-width:300px }
+.vl-minimap { width:110px; height:110px }
+.vl-help { display:none }
+}
+/* BLOQUE 29h · guía premium de vuelo */
+.vl-guide { position:absolute; inset:0; display:none; place-items:center; z-index:6;
+  background:rgba(6,8,11,.62); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+  pointer-events:auto }
+.vl-guide.show { display:grid }
+.vl-guide-card { max-width:520px; width:calc(100vw - 48px); max-height:80dvh; overflow-y:auto;
+  padding:26px 28px; border-radius:var(--r-xl); border:1px solid rgba(69,160,230,.3);
+  background:linear-gradient(165deg, rgba(23,29,38,.96), rgba(10,12,16,.94));
+  box-shadow:var(--shadow-3)}
+.vl-guide-k { font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:var(--accent); margin-bottom:16px }
+.vl-guide-rows { display:flex; flex-direction:column; gap:15px;
+  font:400 var(--fs-md)/1.65 var(--font); color:#B7C2D0 }
+.vl-guide-rows b { color:#E6EBF2 }
+.vl-gi { float:left; margin:2px 12px 0 0; font-size:var(--fs-2xl); color:var(--accent) }
+/* BLOQUE 29i · panel de imagen + fixes de layout */
+.vl-grade { position:absolute; left:calc(14px + env(safe-area-inset-left)); bottom:50%;
+  transform:translateY(50%); display:none; flex-direction:column; gap:9px; z-index:5;
+  padding:16px 18px; border-radius:var(--r-lg); border:1px solid rgba(69,160,230,.28);
+  background:linear-gradient(160deg, rgba(23,29,38,.92), rgba(10,12,16,.88));
+  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+  box-shadow:var(--shadow-3); pointer-events:auto; width:220px }
+.vl-grade.show { display:flex }
+.vl-grade-k { font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:var(--accent) }
+.vl-grade label { font:600 var(--fs-xs) var(--mono); color:#8A97A8; display:flex;
+  flex-direction:column; gap:4px; text-transform:uppercase; letter-spacing:var(--tr-eyebrow) }
+.vl-grade input[type=range] { accent-color:#45A0E6; height:22px }
+.vl-help { bottom:190px }
+/* no pisar el minimapa */
+@media (pointer:coarse) {
+.vl-grade { width:min(260px, calc(100vw - 32px)) }
+}
+/* BLOQUE 29j · FAB móvil: HUD mínimo, dock bajo demanda */
+.vl-fab { display:none; pointer-events:auto; width:52px; height:52px; border-radius:var(--r-xl);
+  border:1px solid rgba(255,255,255,.14); font-size:var(--fs-2xl); color:#E6EBF2; cursor:pointer;
+  background:linear-gradient(160deg, rgba(23,29,38,.85), rgba(10,12,16,.8));
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+  box-shadow:var(--shadow-2)}
+.vl-dock .vl-chip,.vl-dock .vl-rec { white-space:nowrap }
+@media (pointer:coarse) {
+.vl-fab { display:grid; place-items:center }
+.vl-dock { display:none }
+.vl-dock.open { display:flex; animation:dockIn var(--dur-base) var(--ease-out) }
+}
+.vl-gi { font:700 var(--fs-2xs) var(--mono); color:var(--accent); letter-spacing:var(--tr-caps);
+  border:1px solid rgba(69,160,230,.35); border-radius:var(--r-sm); padding:3px 6px; float:left; margin:2px 10px 0 0 }
+.vl-chip, .vl-back, .vl-scene, .vl-mode, .vl-rig, .vl-ghost, .vl-rec, .vl-center-top, .vl-guide-rows, .vl-grade label {
+  font-family:var(--font) !important; letter-spacing:0 !important;
+  text-transform:none !important }
+.vl-metric span, .vl-fps, .vl-compass, .vl-result-time { font-family:var(--mono) !important }
+.vl-grade label { font-size:var(--fs-sm) !important; color:#9AA7B8 !important }
+.vl-presets { display:flex; gap:6px; margin-bottom:4px }
+.vl-presets button { flex:1; font:600 var(--fs-xs) var(--font); padding:7px 4px; border-radius:var(--r-md);
+  border:1px solid var(--line); background:rgba(255,255,255,.04); color:var(--text-2); cursor:pointer }
+@media (hover: hover) {
+.vl-presets button:hover { border-color:rgba(69,160,230,.5); color:var(--text) }
+}
+.vl-flash { position:absolute; inset:0; pointer-events:none; opacity:0; z-index:1;
+  background:radial-gradient(ellipse at center, rgba(82,199,154,.28), transparent 62%) }
+.vl-flash.hit { animation:gateFlash var(--dur-slow) var(--ease-out) }
+@keyframes gateFlash { 0%{ opacity:0 } 18%{ opacity:1 } 100%{ opacity:0 } }
+/* móvil: panel imagen = modal centrado (no pisa sticks) */
+@media (pointer:coarse) {
+.vl-grade { left:50%; bottom:auto; top:50%; transform:translate(-50%,-50%) }
+}
+/* BLOQUE 31 · Director */
+.vl-director { position:absolute; left:50%; bottom:180px; transform:translateX(-50%);
+  display:none; flex-direction:column; gap:9px; z-index:5; width:min(560px, calc(100vw - 28px));
+  padding:14px 16px; border-radius:var(--r-lg); border:1px solid rgba(69,160,230,.3);
+  background:linear-gradient(160deg, rgba(23,29,38,.92), rgba(10,12,16,.9));
+  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); pointer-events:auto }
+.vl-director.show { display:flex }
+.vl-dir-row { display:flex; gap:8px; flex-wrap:wrap }
+.vl-dir-row button { flex:1; min-height:38px; font:600 var(--fs-sm) var(--font); color:var(--text-2);
+  border:1px solid var(--line); border-radius:var(--r-md); background:rgba(255,255,255,.04); cursor:pointer }
+.vl-dir-row button:first-child { color:#fff; background:linear-gradient(135deg,#45A0E6,#5A78E8); border:none }
+@media (hover: hover) {
+.vl-dir-row button:hover { filter:brightness(1.15) }
+}
+.vl-dir-keys { display:flex; gap:6px; flex-wrap:wrap; font:500 var(--fs-xs) var(--font); color:var(--text-3) }
+.vl-dir-keys button { font:600 var(--fs-xs) var(--mono); color:#B7C2D0; padding:4px 8px;
+  border-radius:var(--r-sm); border:1px solid var(--line); background:transparent; cursor:pointer }
+@media (hover: hover) {
+.vl-dir-keys button:hover { border-color:var(--red); color:var(--red) }
+}
+@media (pointer:coarse) {
+.vl-director { bottom:calc(34vh + 90px) }
+}
+/* BLOQUE 32 · gauges de métricas (videojuego) */
+.vl-bar { display:block; height:3px; margin-top:6px; border-radius:var(--r-xs);
+  background:rgba(255,255,255,.1); overflow:hidden }
+.vl-bar b { display:block; height:100%; width:100%; border-radius:var(--r-xs);
+  background:linear-gradient(90deg,#45A0E6,#7dffc9); transform-origin:left;
+  transform:scaleX(0); transition:transform var(--dur-base) var(--ease-out)}
+/* BLOQUE 34 · HUD FPV: crosshair + horizonte artificial */
+.vl-fpv { position:absolute; inset:0; display:none; pointer-events:none; z-index:3 }
+.vl-fpv.show { display:block }
+.vl-fpv-cross { position:absolute; left:50%; top:50%; width:26px; height:26px;
+  transform:translate(-50%,-50%) }
+.vl-fpv-cross::before,.vl-fpv-cross::after { content:''; position:absolute; background:rgba(255,255,255,.85) }
+.vl-fpv-cross::before { left:50%; top:0; width:1.5px; height:100%; transform:translateX(-50%) }
+.vl-fpv-cross::after { top:50%; left:0; height:1.5px; width:100%; transform:translateY(-50%) }
+.vl-fpv-horizon { position:absolute; left:50%; top:50%; width:min(46vw,520px); height:0;
+  margin-left:calc(min(46vw,520px) / -2); will-change:transform }
+.vl-fpv-horizon i { display:block; height:1.5px;
+  background:linear-gradient(90deg, transparent, rgba(125,255,201,.8) 18%, rgba(125,255,201,.8) 82%, transparent) }
+/* BLOQUE 35 · OSD FPV: cintas de velocidad/altitud + home (estilo goggles) */
+.vl-osd { position:absolute; top:50%; transform:translateY(-50%); width:64px; height:180px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  overflow:hidden }
+.vl-osd.tape-l { left:calc(50% - min(33vw, 380px)) }
+.vl-osd.tape-r { right:calc(50% - min(33vw, 380px)) }
+.vl-osd-ticks { position:absolute; inset:-20px 0; will-change:transform;
+  background:repeating-linear-gradient(180deg, rgba(255,255,255,.35) 0 1.5px, transparent 1.5px 18px) }
+.vl-osd.tape-l .vl-osd-ticks { -webkit-mask:linear-gradient(90deg, transparent, #000 30%); mask:linear-gradient(90deg, transparent, #000 30%) }
+.vl-osd.tape-r .vl-osd-ticks { -webkit-mask:linear-gradient(270deg, transparent, #000 30%); mask:linear-gradient(270deg, transparent, #000 30%) }
+.vl-osd b { font:700 var(--fs-2xl) var(--mono); color:#EAF6FF; text-shadow:0 0 12px rgba(125,255,201,.35); z-index:1 }
+.vl-osd label { font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:#8A97A8; z-index:1 }
+.vl-osd-home { position:absolute; left:50%; top:calc(50% + 54px); transform:translateX(-50%);
+  font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:#B7C2D0;
+  padding:4px 10px; border-radius:var(--r-pill); background:rgba(10,12,16,.5) }
+@media (max-width:760px) {
+.vl-osd.tape-l { left:8px }
+.vl-osd.tape-r { right:8px }
+}
+/* BLOQUE 36 · lectura del gimbal; el control táctil vive en BLOQUE 55d */
+.vl-osd-gimbal { position:absolute; left:50%; top:calc(50% + 78px); transform:translateX(-50%);
+  font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:#7dffc9; opacity:.8 }
+/* BLOQUE 37 · panel Imagen usable: ancho real, sliders con dedo */
+.vl-grade { width:290px; gap:12px; padding:18px 20px }
+.vl-grade-body { display:flex; min-height:0; flex-direction:column; gap:12px }
+.vl-grade-actions { display:flex; align-items:center; gap:7px }
+.vl-grade-expand { display:none; border:1px solid var(--line); border-radius:var(--r-md);
+  background:rgba(255,255,255,.05); color:var(--text-2); font:600 var(--fs-xs) var(--font) }
+.vl-grade input[type=range] { height:30px; width:100% }
+.vl-grade input[type=range]::-webkit-slider-thumb { width:22px; height:22px }
+@media (pointer:coarse) {
+.vl-grade { width:min(340px, calc(100vw - 28px)) }
+.vl-grade input[type=range] { height:38px }
+}
+/* BLOQUE 38 · selector de calidad solo con puntero fino */
+@media (pointer:coarse) {
+.vl-solo-fino { display:none }
+.vl-ghost { display:none }
+}
+/* ── BLOQUE 39 · dock seccionado por color + keycaps + zap ── */
+.vl-sep { height:1px; margin:3px 6px; background:rgba(255,255,255,.09) }
+.vl-dock .vl-chip { border-left:3px solid transparent; border-radius:var(--r-md) }
+.vl-dock button.zap { animation:chipZap var(--dur-slow) var(--ease-out) }
+.vl-guide kbd { display:inline-block; font:700 var(--fs-xs) var(--mono); color:#EAF2FB;
+  padding:2px 7px; margin:0 2px; border-radius:var(--r-sm); border:1px solid rgba(255,255,255,.25);
+  border-bottom-width:2.5px; background:rgba(255,255,255,.08); vertical-align:middle }
+.vl-kmouse { font:600 var(--fs-xs) var(--mono); color:#7dffc9; border:1px dashed rgba(125,255,201,.4);
+  padding:2px 7px; border-radius:var(--r-sm)}
+#vl-ayuda kbd { margin-left:6px }
+@media (pointer:coarse) {
+.vl-dock.open .vl-sep { width:1px; height:auto; margin:6px 3px }
+}
+/* BLOQUE 41 · cine sliders, FPV dron real, estela */
+.vl-cine { position:absolute; left:50%; bottom:190px; transform:translateX(-50%);
+  display:none; gap:16px; padding:12px 16px; border-radius:var(--r-lg); z-index:5;
+  border:1px solid rgba(69,160,230,.3); background:rgba(13,17,23,.85);
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); pointer-events:auto }
+.vl-cine.show { display:flex }
+.vl-cine label { font:600 var(--fs-2xs) var(--font); color:#9AA7B8; display:flex; flex-direction:column; gap:4px }
+.vl-cine input { width:130px; accent-color:#45A0E6 }
+.vl-fpv-br { position:absolute; width:34px; height:34px; border:2px solid rgba(255,255,255,.5) }
+.vl-fpv-br.tl { top:12%; left:14%; border-right:0; border-bottom:0 }
+.vl-fpv-br.tr { top:12%; right:14%; border-left:0; border-bottom:0 }
+.vl-fpv-br.bl { bottom:14%; left:14%; border-right:0; border-top:0 }
+.vl-fpv-br.br { bottom:14%; right:14%; border-left:0; border-top:0 }
+.vl-fpv-sig { position:absolute; top:12%; right:calc(14% + 44px); display:flex; gap:3px; align-items:flex-end }
+.vl-fpv-sig i { width:5px; background:rgba(255,255,255,.25); border-radius:var(--r-xs) }
+.vl-fpv-sig i:nth-child(1) { height:8px }
+.vl-fpv-sig i:nth-child(2) { height:13px }
+.vl-fpv-sig i:nth-child(3) { height:18px }
+.vl-fpv-sig[data-n="1"] i:nth-child(1),
+.vl-fpv-sig[data-n="2"] i:nth-child(-n+2),
+.vl-fpv-sig[data-n="3"] i { background:#7dffc9 }
+.vl-fpv-rec { position:absolute; top:12%; left:calc(14% + 44px); font:700 var(--fs-xs) var(--mono);
+  letter-spacing:var(--tr-eyebrow); color:#566274 }
+.vl-fpv-rec.on { color:#ff453a; animation:recBlink 1s steps(2) infinite }
+.vl-fpv-rec.on::before { content:''; display:inline-block; width:7px; height:7px; margin-right:5px; border-radius:50%; background:currentColor }
+@keyframes recBlink { 50%{ opacity:.25 } }
+/* BLOQUE 42 · dock premium ocultable */
+.vl-dock { transition:transform var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out);
+  border:1px solid rgba(69,160,230,.18);
+  box-shadow:var(--shadow-2), inset 0 1px 0 rgba(255,255,255,.05)}
+.vl-dock.min { transform:translateX(calc(-100% - 20px)); opacity:0; pointer-events:none }
+.vl-dockmin { pointer-events:auto; width:26px; height:44px; margin-bottom:6px;
+  border-radius:var(--r-md); border:1px solid rgba(255,255,255,.14); cursor:pointer;
+  background:rgba(10,12,16,.6); color:#8A97A8; font-size:var(--fs-xl);
+  transition:color var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out)}
+@media (hover: hover) {
+.vl-dockmin:hover { color:#E6EBF2; border-color:rgba(69,160,230,.5) }
+}
+/* BLOQUE 43 · botón fast-travel del autopiloto */
+.vl-goto { position:absolute; top:calc(96px + env(safe-area-inset-top)); left:50%;
+  transform:translateX(-50%); display:none; pointer-events:auto; cursor:pointer;
+  font:600 var(--fs-sm) var(--font); letter-spacing:var(--tr-caps); color:#0d1117;
+  padding:9px 18px; border:none; border-radius:var(--r-pill);
+  background:linear-gradient(135deg,#7dffc9,#45d6a0);
+  box-shadow:0 8px 26px -8px rgba(125,255,201,.5) }
+.vl-goto.show { display:block; animation:wiIn var(--dur-slow) var(--ease-out) }
+.vl-goto:active { transform:translateX(-50%) scale(.96) }
+/* BLOQUE 44 · header FPV goggles */
+.vl-fpv-head { position:absolute; top:calc(8% - 26px); left:50%; transform:translateX(-50%);
+  font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:#DFF6EC; white-space:nowrap;
+  padding:5px 14px; border-radius:var(--r-md); background:rgba(8,12,16,.45);
+  border:1px solid rgba(125,255,201,.2); max-width:calc(100vw - 20px);
+  box-sizing:border-box; overflow:hidden; text-overflow:ellipsis }
+/* ── BLOQUE 45 · panel Imagen premium: header, outputs, sliders custom ── */
+.vl-grade { animation:gradeIn var(--dur-slow) var(--ease-out) }
+@keyframes gradeIn { from{ opacity:0; transform:translateY(46%) scale(.97) } }
+.vl-grade-head { display:flex; align-items:center; justify-content:space-between }
+.vl-grade-x { width:30px; height:30px; border-radius:var(--r-md); border:1px solid var(--line);
+  background:transparent; color:var(--text-2); cursor:pointer; font-size:var(--fs-md) }
+@media (hover: hover) {
+.vl-grade-x:hover { color:#fff; border-color:rgba(217,106,106,.6) }
+}
+.vl-grade label { position:relative }
+.vl-grade output { float:right; font:700 var(--fs-xs) var(--mono); color:var(--accent) }
+.vl-grade input[type=range] { -webkit-appearance:none; appearance:none; background:transparent }
+.vl-grade input[type=range]::-webkit-slider-runnable-track { height:6px; border-radius:var(--r-xs);
+  background:linear-gradient(90deg, rgba(69,160,230,.55), rgba(125,255,201,.4)) }
+.vl-grade input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px;
+  border-radius:50%; margin-top:-7px; background:#EAF2FB;
+  border:2.5px solid #45A0E6; box-shadow:0 2px 10px rgba(69,160,230,.45);
+  transition:transform var(--dur-fast) var(--ease-out)}
+@media (hover: hover) {
+.vl-grade input[type=range]::-webkit-slider-thumb:hover { transform:scale(1.15) }
+}
+/* ── BLOQUE 46: dock premium video-game — sheen sweep, glow por sección,
+      entrada escalonada, press táctil ── */
+.vl-dock .vl-chip,.vl-dock .vl-rec { position:relative; overflow:hidden;
+  transition:background var(--dur-base) var(--ease-out), transform var(--dur-fast) var(--ease-out), color var(--dur-base) var(--ease-out)}
+.vl-dock .vl-chip::after,.vl-dock .vl-rec::after { content:''; position:absolute; top:0;
+  left:-90%; width:55%; height:100%; transform:skewX(-18deg); pointer-events:none;
+  background:linear-gradient(105deg, transparent, rgba(255,255,255,.15), transparent);
+  }
+@media (hover: hover) {
+.vl-dock .vl-chip:hover::after,.vl-dock .vl-rec:hover::after { left:135% }
+.vl-dock .vl-chip:hover { transform:translateX(3px); color:#EAF2FB;
+  box-shadow:inset 0 0 0 1px rgba(69,160,230,.3), var(--shadow-accent)}
+.vl-dock .sec-mundo:hover { box-shadow:inset 0 0 0 1px rgba(82,199,154,.32),
+  0 4px 18px -8px rgba(82,199,154,.55); background:rgba(82,199,154,.13) }
+.vl-dock .sec-juego:hover { box-shadow:inset 0 0 0 1px rgba(154,108,255,.34),
+  0 4px 18px -8px rgba(154,108,255,.6); background:rgba(154,108,255,.14) }
+.vl-dock .sec-media:hover { box-shadow:inset 0 0 0 1px rgba(224,164,88,.32),
+  0 4px 18px -8px rgba(224,164,88,.55); background:rgba(224,164,88,.12) }
+.vl-dock .sec-ayuda:hover { box-shadow:inset 0 0 0 1px rgba(138,151,168,.3),
+  0 4px 18px -8px rgba(138,151,168,.5) }
+}
+.vl-dock .vl-chip:active,.vl-dock .vl-rec:active { transform:translateX(3px) scale(.94) }
+@keyframes vlDockIn { from{ opacity:0; transform:translateX(-16px) } to{ opacity:1; transform:none } }
+.vl-dock > * { animation:vlDockIn var(--dur-slow) var(--ease-out) backwards }
+.vl-dock > *:nth-child(1) { animation-delay:.02s }
+.vl-dock > *:nth-child(2) { animation-delay:.05s }
+.vl-dock > *:nth-child(3) { animation-delay:.08s }
+.vl-dock > *:nth-child(4) { animation-delay:.11s }
+.vl-dock > *:nth-child(5) { animation-delay:.14s }
+.vl-dock > *:nth-child(6) { animation-delay:.17s }
+.vl-dock > *:nth-child(7) { animation-delay:.2s }
+.vl-dock > *:nth-child(8) { animation-delay:.23s }
+.vl-dock > *:nth-child(9) { animation-delay:.26s }
+.vl-dock > *:nth-child(10) { animation-delay:.29s }
+.vl-dock > *:nth-child(11) { animation-delay:.32s }
+.vl-dock > *:nth-child(12) { animation-delay:.35s }
+.vl-dock .vl-sep { animation:none; opacity:1 }
+@media (hover: hover) {
+#vl-rec:hover { box-shadow:inset 0 0 0 1px rgba(232,90,90,.4), 0 4px 18px -8px rgba(232,90,90,.6) }
+}
+/* ── BLOQUE 47: botón FIRE de armamento — premium, contador y cooldown ── */
+.vl-fire { pointer-events:auto; cursor:pointer; position:relative; overflow:hidden;
+  width:58px; height:58px; border-radius:50%; color:#ff9d8a;
+  border:1px solid rgba(232,90,90,.4);
+  background:radial-gradient(circle at 34% 30%, rgba(60,22,20,.9), rgba(16,10,10,.85));
+  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+  box-shadow:0 8px 26px -12px rgba(232,90,90,.5);
+  transition:transform var(--dur-fast) var(--ease-out), color var(--dur-base) var(--ease-out)}
+@media (hover: hover) {
+.vl-fire:hover { transform:scale(1.07); color:#ffc4b5;
+  box-shadow:0 10px 30px -10px rgba(232,90,90,.75), inset 0 0 0 1px rgba(232,90,90,.5) }
+}
+.vl-fire:active { transform:scale(.93) }
+.vl-fire #vl-ammo { font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-caps) }
+.vl-fire #vl-cool { position:absolute; left:0; bottom:0; width:100%; height:3px;
+  background:linear-gradient(90deg, #E85A5A, #ffb36b); transform-origin:left;
+  transform:scaleX(1); transition:transform var(--dur-instant) linear}
+.vl-fire.is-empty { color:#5a5f68; border-color:rgba(255,255,255,.12);
+  box-shadow:none; filter:saturate(.3) }
+.vl-fire.flash { animation:fireFlash var(--dur-slow) var(--ease-out) }
+@media (pointer:coarse) {
+.vl-fire { width:66px; height:66px }
+}
+/* BLOQUE 47b: contador de derribos junto al FIRE */
+.vl-kills { display:none; font:700 var(--fs-2xs) var(--mono); color:#ffb36b; letter-spacing:var(--tr-eyebrow);
+  padding:5px 10px; border-radius:var(--r-pill); border:1px solid rgba(224,164,88,.35);
+  background:rgba(20,12,8,.7); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px) }
+.vl-kills.show { display:block; animation:vlDockIn var(--dur-slow) var(--ease-out) }
+/* ── BLOQUE 48: picker de dificultad Gate Rush ── */
+.vl-diff { display:none; position:absolute; top:calc(96px + env(safe-area-inset-top)); left:50%;
+  transform:translateX(-50%); gap:8px; padding:8px; border-radius:var(--r-lg);
+  border:1px solid rgba(255,255,255,.1);
+  background:linear-gradient(160deg, rgba(23,29,38,.85), rgba(10,12,16,.8));
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); z-index:30 }
+.vl-diff.show { display:flex; animation:vlDockIn var(--dur-slow) var(--ease-out) }
+.vl-diff button { pointer-events:auto; cursor:pointer; display:flex; flex-direction:column;
+  align-items:center; gap:3px; padding:10px 16px; border-radius:var(--r-md); border:1px solid transparent;
+  background:rgba(255,255,255,.05); color:#EAF2FB; font:700 var(--fs-sm) var(--mono);
+  transition:transform var(--dur-fast) var(--ease-out), background var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out)}
+.vl-diff button span { font:500 var(--fs-2xs) var(--mono); color:#8A97A8; letter-spacing:var(--tr-caps) }
+@media (hover: hover) {
+.vl-diff button:hover { transform:translateY(-1px) }
+.vl-diff button[data-d=facil]:hover { border-color:rgba(82,199,154,.5); background:rgba(82,199,154,.12) }
+.vl-diff button[data-d=media]:hover { border-color:rgba(69,160,230,.5); background:rgba(69,160,230,.12) }
+.vl-diff button[data-d=dificil]:hover { border-color:rgba(154,108,255,.5); background:rgba(154,108,255,.14) }
+}
+/* ── BLOQUE 49: modal de resultado v2 — z-index sobre el OSD, grid, splits ── */
+.vl-result { z-index:60 }
+.vl-result-card.v2 { min-width:380px; max-width:480px; padding:28px 32px;
+  border:1px solid rgba(69,160,230,.25);
+  background:linear-gradient(165deg, rgba(19,26,36,.96), rgba(9,11,15,.94));
+  box-shadow:var(--shadow-3), inset 0 1px 0 rgba(255,255,255,.06);
+  animation:gradeIn var(--dur-slow) var(--ease-out)}
+.vl-newrec { display:inline-block; margin-left:8px; padding:2px 9px; border-radius:var(--r-pill);
+  font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); font-style:normal; color:#0A0C10;
+  background:linear-gradient(90deg, #52C79A, #7dffc9);
+  animation:fireFlash var(--dur-hero) var(--ease-out)}
+.vl-result-sub { font:500 var(--fs-sm) var(--mono); color:#8A97A8; margin:2px 0 14px }
+.vl-result-sub .vl-delta { color:#E0A458 }
+.vl-result-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin:0 0 12px }
+.vl-result-grid div { padding:10px 6px; border-radius:var(--r-md); background:rgba(255,255,255,.045);
+  border:1px solid rgba(255,255,255,.07) }
+.vl-result-grid b { display:block; font:700 var(--fs-xl) var(--mono); color:#EAF2FB }
+.vl-result-grid span { font:500 var(--fs-2xs) var(--mono); color:#68758A; letter-spacing:var(--tr-caps); text-transform:uppercase }
+.vl-result-splits { display:flex; flex-wrap:wrap; gap:5px; justify-content:center; margin:0 0 16px }
+.vl-split { display:flex; align-items:center; gap:5px; padding:4px 9px; border-radius:var(--r-md);
+  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06);
+  font:600 var(--fs-xs) var(--mono); color:#B7C2D0 }
+.vl-split i { font-style:normal; color:#566274; font-size:var(--fs-2xs) }
+.vl-split.best { border-color:rgba(82,199,154,.45); color:#7dffc9;
+  box-shadow:0 0 12px -4px rgba(82,199,154,.5) }
+@media (max-width:520px) {
+.vl-result-card.v2 { min-width:0; width:calc(100vw - 40px) }
+.vl-result-grid { grid-template-columns:repeat(2, 1fr) }
+}
+/* ── BLOQUE 50: selector de armas + flash de colisión ── */
+.vl-weps { display:flex; flex-direction:column; gap:4px }
+.vl-weps button { pointer-events:auto; cursor:pointer; width:44px; padding:5px 0;
+  border-radius:var(--r-md); border:1px solid rgba(255,255,255,.12); color:#8A97A8;
+  background:rgba(12,10,10,.72); font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-caps);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  transition:color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out)}
+@media (hover: hover) {
+.vl-weps button:hover { color:#EAF2FB; transform:translateX(-2px) }
+}
+.vl-weps button.sel { color:#ffb36b; border-color:rgba(232,120,70,.55);
+  background:rgba(60,26,14,.8); box-shadow:0 0 14px -4px rgba(232,120,70,.5) }
+.vl-hitfx { position:absolute; inset:0; pointer-events:none; opacity:0; z-index:55;
+  background:radial-gradient(ellipse at center, transparent 55%, rgba(220,60,40,.45) 100%) }
+.vl-hitfx.go { animation:vlHit var(--dur-hero) var(--ease-out) }
+@keyframes vlHit { 0%{ opacity:1 } 100%{ opacity:0 } }
+/* ── BLOQUE 51: HUD de Modo Tierra (horda) ── */
+#vl-zombies.on { color:#ff9d8a; border-left-color:#E85A5A !important }
+.vl-zhud { display:none; position:absolute; top:calc(96px + env(safe-area-inset-top)); left:50%;
+  transform:translateX(-50%); flex-direction:column; align-items:center; gap:6px; z-index:25 }
+.vl-zhud.show { display:flex; animation:vlDockIn var(--dur-slow) var(--ease-out) }
+.vl-zwave { display:flex; flex-direction:column; align-items:center; gap:1px;
+  padding:6px 18px; border-radius:var(--r-lg); border:1px solid rgba(232,90,90,.3);
+  background:rgba(20,10,10,.72); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px) }
+.vl-zwave span { font:700 var(--fs-md) var(--mono); color:#ff9d8a; letter-spacing:var(--tr-eyebrow) }
+.vl-zwave small { font:600 var(--fs-2xs) var(--mono); color:#8A97A8; letter-spacing:var(--tr-caps) }
+.vl-zscore { display:flex; align-items:center; gap:8px; font:700 var(--fs-2xs) var(--mono);
+  color:#D7E0EA; letter-spacing:var(--tr-caps) }
+.vl-zscore span { color:#8A97A8; transition:color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out)}
+.vl-zscore span.hot { color:#ffb36b; transform:scale(1.08) }
+.vl-zhp { width:180px; height:6px; border-radius:var(--r-pill); overflow:hidden;
+  background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.12) }
+.vl-zhp i { display:block; width:100%; height:100%; transform-origin:left;
+  background:linear-gradient(90deg, #E85A5A, #52C79A); transition:transform var(--dur-base) var(--ease-out)}
+/* ── BLOQUE 52: modal invasión + barras de munición ── */
+.vl-inv { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  flex-direction:column; gap:12px; align-items:center; padding:22px 26px; z-index:70;
+  border-radius:var(--r-xl); border:1px solid rgba(232,90,90,.3);
+  background:linear-gradient(165deg, rgba(26,16,14,.95), rgba(10,8,8,.93));
+  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+  box-shadow:var(--shadow-3)}
+.vl-inv.show { display:flex; animation:gradeIn var(--dur-slow) var(--ease-out) }
+.vl-inv > b { font:700 var(--fs-sm) var(--mono); color:#ff9d8a; letter-spacing:var(--tr-eyebrow) }
+.vl-inv-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:7px }
+.vl-inv-grid button { pointer-events:auto; cursor:pointer; padding:10px 12px; border-radius:var(--r-md);
+  border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.04); color:#8A97A8;
+  font:700 var(--fs-xs) var(--mono); transition:color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out)}
+@media (hover: hover) {
+.vl-inv-grid button:hover { transform:translateY(-1px); color:#EAF2FB }
+}
+.vl-inv-grid button.sel { color:#ffb36b; border-color:rgba(232,120,70,.55);
+  background:rgba(60,26,14,.7); box-shadow:0 0 14px -5px rgba(232,120,70,.6) }
+.vl-inv-diff { display:grid; grid-template-columns:repeat(3, 1fr); gap:7px; width:100% }
+.vl-inv-diff button { pointer-events:auto; cursor:pointer; min-height:38px; border-radius:var(--r-md);
+  border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.035);
+  color:#8A97A8; font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-caps) }
+.vl-inv-diff button.sel { color:#ffb36b; border-color:rgba(232,120,70,.55);
+  background:rgba(60,26,14,.7) }
+#vl-inv-go { pointer-events:auto; cursor:pointer; width:100%; padding:12px; border-radius:var(--r-lg);
+  border:none; font:700 var(--fs-sm) var(--mono); letter-spacing:var(--tr-eyebrow); color:#1a0e08;
+  background:linear-gradient(90deg, #E85A5A, #ffb36b);
+  transition:transform var(--dur-fast) var(--ease-out)}
+@media (hover: hover) {
+#vl-inv-go:hover { transform:scale(1.03); box-shadow:0 8px 26px -8px rgba(232,120,70,.7) }
+}
+.vl-weps button { position:relative; overflow:hidden }
+.vl-weps button::after { content:''; position:absolute; left:0; bottom:0; height:2.5px;
+  width:var(--ammo, 100%); background:linear-gradient(90deg, #E85A5A, #ffb36b);
+  }
+@media (max-width:520px) {
+.vl-inv-grid { grid-template-columns:repeat(2, 1fr) }
+}
+/* ── BLOQUE 53: HUD táctil agrupado, accesible y sin colisiones ─────────── */
+.vl-dock-head { display:none }
+.vl-combat-fab { display:none }
+.vl-combat { display:flex; flex-direction:column; align-items:flex-end; gap:6px }
+.vl-flight-status { position:absolute; right:86px;
+  bottom:calc(14px + env(safe-area-inset-bottom)); z-index:2;
+  display:flex; flex-direction:column; align-items:flex-end; gap:5px }
+@media (pointer:coarse) {
+.vl-corner.br > .vl-kills,
+  .vl-corner.br > .vl-weps,
+  .vl-corner.br > .vl-fire,
+  .vl-corner.br > .vl-ghost,
+  .vl-corner.br > .vl-fps { display:none !important }
+.vl-corner.bl,.vl-corner.br { position:static; max-width:none }
+.vl-fab,.vl-combat-fab { display:flex; position:fixed; z-index:44; pointer-events:auto;
+    touch-action:manipulation;
+    align-items:center; justify-content:center; width:auto; min-width:76px; height:52px;
+    padding:0 16px; border-radius:var(--r-xl); border:1px solid rgba(69,160,230,.3);
+    color:#EAF2FB; font:700 var(--fs-sm) var(--font); letter-spacing:var(--tr-caps); cursor:pointer;
+    background:linear-gradient(160deg, rgba(28,37,49,.94), rgba(10,12,16,.9));
+    -webkit-backdrop-filter:blur(16px) saturate(1.25); backdrop-filter:blur(16px) saturate(1.25);
+    box-shadow:var(--shadow-2), inset 0 1px 0 rgba(255,255,255,.08)}
+.vl-fab { left:calc(14px + env(safe-area-inset-left));
+    bottom:calc(min(34vh, 300px) + 36px + env(safe-area-inset-bottom)) }
+.vl-combat-fab { right:calc(14px + env(safe-area-inset-right));
+    bottom:calc(min(34vh, 300px) + 36px + env(safe-area-inset-bottom));
+    border-color:rgba(232,120,70,.38); color:#ffc09a }
+.vl-fab[aria-expanded=true],.vl-combat-fab[aria-expanded=true] { border-color:rgba(125,255,201,.58); box-shadow:var(--shadow-accent) }
+.vl-dock,.vl-combat { display:none; position:fixed; z-index:43; overflow-y:auto;
+    max-height:min(50dvh,420px); padding:12px; border-radius:var(--r-xl);
+    border:1px solid rgba(69,160,230,.3);
+    background:linear-gradient(160deg, rgba(25,33,44,.97), rgba(9,12,17,.95));
+    -webkit-backdrop-filter:blur(18px) saturate(1.35); backdrop-filter:blur(18px) saturate(1.35);
+    box-shadow:var(--shadow-3), inset 0 1px 0 rgba(255,255,255,.08)}
+.vl-dock { left:calc(12px + env(safe-area-inset-left));
+    right:calc(12px + env(safe-area-inset-right));
+    bottom:calc(34vh + 24px + env(safe-area-inset-bottom));
+    grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; max-width:none }
+.vl-dock.open { display:grid; animation:dockIn var(--dur-base) var(--ease-out) }
+.vl-combat { right:calc(12px + env(safe-area-inset-right));
+    bottom:calc(34vh + 24px + env(safe-area-inset-bottom));
+    width:min(264px,calc(100vw - 24px));
+    grid-template-columns:minmax(0,1fr) 76px; gap:10px; align-items:center }
+.vl-combat.open { display:grid; animation:dockIn var(--dur-base) var(--ease-out) }
+.vl-dock-head { display:flex; grid-column:1/-1; min-height:44px;
+    align-items:center; justify-content:space-between; gap:12px;
+    padding:0 2px 8px; border-bottom:1px solid rgba(255,255,255,.09) }
+.vl-dock-head b { color:#8FA5BD; font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow) }
+.vl-dock-head b small,.vl-grade-k small { display:block; margin-top:4px;
+    color:#65788d; font:600 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow) }
+.vl-dock-head button { min-width:64px; min-height:44px; padding:0 12px;
+    border-radius:var(--r-lg); border:1px solid rgba(255,255,255,.13);
+    background:rgba(255,255,255,.055); color:#D9E3EE;
+    font:600 var(--fs-sm) var(--font); cursor:pointer }
+.vl-dock .vl-chip,.vl-dock .vl-rec { min-width:0; min-height:44px; width:100%;
+    padding:10px 12px; white-space:normal; line-height:1.25; overflow-wrap:anywhere }
+.vl-dock .vl-sep { display:none }
+.vl-combat .vl-weps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:7px; width:100% }
+.vl-combat .vl-weps button { width:100%; min-height:44px; padding:8px 4px;
+    border-radius:var(--r-lg); font-size:var(--fs-xs) }
+.vl-combat .vl-fire { width:84px; height:76px; justify-self:end; flex-direction:column; gap:2px;
+    touch-action:none; user-select:none; -webkit-user-select:none }
+.vl-combat .vl-fire strong { font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-caps) }
+.vl-combat .vl-kills { grid-column:1/-1; justify-self:start }
+.vl-flight-status { left:50%; right:auto; transform:translateX(-50%);
+    bottom:calc(34vh + 15px + env(safe-area-inset-bottom));
+    width:min(42vw,164px); align-items:center; text-align:center }
+.vl-flight-status .vl-ghost,.vl-flight-status .vl-fps { max-width:100%;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.vl-minimap { left:50%; right:auto; bottom:calc(28px + env(safe-area-inset-bottom));
+    transform:translateX(-50%); width:92px; height:92px }
+.vl-mobile-sheet-open .vl-fab,.vl-mobile-sheet-open .vl-combat-fab { opacity:.92 }
+.vl-mobile-sheet-open .vl-flight-status { opacity:0 }
+}
+@media (pointer:coarse) and (orientation:portrait) {
+.vl-grade { position:fixed; z-index:40; left:calc(12px + env(safe-area-inset-left));
+    right:calc(12px + env(safe-area-inset-right)); top:auto;
+    bottom:calc(14px + env(safe-area-inset-bottom)); width:auto;
+    max-height:min(44dvh,410px); transform:none; overflow:hidden;
+    overscroll-behavior:contain; padding:14px 16px }
+.vl-grade-head { position:sticky; top:-14px; z-index:2; margin:-14px -16px 2px;
+    padding:12px 16px 9px; background:rgba(17,23,31,.97);
+    border-bottom:1px solid rgba(255,255,255,.08) }
+.vl-grade-x { min-width:44px; min-height:44px }
+.vl-grade-expand { display:block; min-width:76px; min-height:44px }
+.vl-grade-body { overflow-y:auto; overscroll-behavior:contain; padding-right:3px }
+.vl-grade.compact { max-height:none }
+.vl-grade.compact .vl-grade-body { display:none }
+.vl-grade.compact .vl-grade-k small { display:none }
+.vl-grade input[type=range] { height:32px }
+}
+.vl-panel-drag,.vl-grade-drag { cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none }
+.vl-panel-drag:active,.vl-grade-drag:active,.vl-panel-dragging { cursor:grabbing }
+.vl-panel-drag button,.vl-grade-drag button { cursor:pointer }
+.vl-panel-positioned { margin:0 !important; animation:none !important }
+.vl-panel-dragging { transition:none !important; animation:none !important;
+  box-shadow:var(--shadow-3), 0 0 0 1px rgba(125,255,201,.28)}
+@media (pointer:coarse) and (max-width:480px) {
+.vl-minimap { width:72px; height:72px }
+}
+@media (pointer:coarse) and (orientation:landscape) {
+.vl-fab,.vl-combat-fab { bottom:calc(52vh + 14px + env(safe-area-inset-bottom)) }
+.vl-dock,.vl-combat { bottom:calc(52vh + 12px + env(safe-area-inset-bottom)); max-height:42dvh }
+.vl-flight-status { bottom:calc(52vh + 8px + env(safe-area-inset-bottom)) }
+}
+/* FPV ya trae su propio OSD (velocidad, altura, rumbo, enlace y home). En
+   táctil ocultamos el HUD general duplicado: era la causa de los solapes de
+   las capturas en iPhone/iPad, no una falta de espacio del dispositivo. */
+@media (pointer:coarse) {
+.vl-hud.fpv-active .vl-corner.tl .vl-scene,
+  .vl-hud.fpv-active .vl-corner.tl .vl-chip,
+  .vl-hud.fpv-active .vl-corner.tr,
+  .vl-hud.fpv-active .vl-center-top,
+  .vl-hud.fpv-active .vl-compass,
+  .vl-hud.fpv-active .vl-flight-status,
+  .vl-hud.fpv-active .vl-goto { display:none !important }
+}
+/* ── BLOQUE 53: HUD táctil premium — telemetría, cinta de rumbo, sticks ── */
+.vl-metric { min-width:96px; padding:9px 14px; border-radius:var(--r-lg); text-align:right;
+  border:1px solid rgba(255,255,255,.1);
+  background:linear-gradient(160deg, rgba(23,29,38,.82), rgba(10,12,16,.76));
+  -webkit-backdrop-filter:blur(14px) saturate(1.25); backdrop-filter:blur(14px) saturate(1.25);
+  box-shadow:var(--shadow-2), inset 0 1px 0 rgba(255,255,255,.06)}
+.vl-metric span { font:700 var(--fs-2xl)/1.15 var(--mono); color:#EAF2FB; font-variant-numeric:tabular-nums }
+.vl-metric label { font:600 var(--fs-2xs) var(--mono); color:#68758A; letter-spacing:var(--tr-eyebrow) }
+.vl-bar.vs b { background:linear-gradient(90deg, #7dffc9, #52C79A); transform-origin:left }
+.vl-bar.vs b.down { background:linear-gradient(90deg, #E0A458, #E85A5A) }
+.vl-compass.tape { padding:0; width:min(300px, 44vw); height:36px; overflow:hidden;
+  border-radius:var(--r-lg); border:1px solid rgba(255,255,255,.12);
+  background:linear-gradient(160deg, rgba(14,18,24,.78), rgba(8,10,14,.72));
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
+  -webkit-mask-image:linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image:linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent) }
+.vl-compass.tape canvas { width:100%; height:100%; display:block }
+@media (pointer:coarse) {
+.vl-metric { min-width:104px; padding:10px 15px }
+.vl-metric span { font-size:var(--fs-2xl) }
+.vl-stick-base { width:132px; height:132px }
+.vl-stick-nub { width:58px; height:58px }
+.vl-fire { touch-action:none }
+}
+@media (pointer:coarse) and (min-width:900px) {
+.vl-stick-base { width:156px; height:156px }
+.vl-stick-nub { width:66px; height:66px }
+}
+/* ── BLOQUE 54: los sheets y sus cierres SIEMPRE reciben input ──
+   El HUD es pointer-events:none y los paneles del refactor nunca optaron
+   de vuelta: se podía abrir (FAB fixed con auto) pero NADA dentro — ni
+   Cerrar — recibía taps. Una regla lo cura para todo el árbol del panel. */
+.vl-dock,.vl-combat,.vl-dock-head,.vl-dock-head button { pointer-events:auto }
+.vl-dock-head button { min-height:44px; min-width:64px; touch-action:manipulation }
+/* ── BLOQUE 55: combate sin overlap + chip FPS premium ── */
+.vl-fire { width:auto; min-width:72px; height:64px; border-radius:var(--r-xl); padding:0 16px;
+  flex-direction:row; gap:8px }
+.vl-fire svg { flex:none }
+.vl-fire strong { font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-caps) }
+.vl-fire #vl-ammo { font:700 var(--fs-sm) var(--mono); padding:2px 7px; border-radius:var(--r-md);
+  background:rgba(255,255,255,.08) }
+.vl-combat { padding-right:4px }
+.vl-corner.br { align-items:flex-end; gap:8px }
+.vl-combat { margin-bottom:8px; order:9 }
+/* combate al fondo: ghost/fps arriba, sin solaparse */
+.vl-fps { font:700 var(--fs-xs) var(--mono); color:#B7C2D0; letter-spacing:var(--tr-caps);
+  font-variant-numeric:tabular-nums; padding:6px 12px; border-radius:var(--r-md);
+  border:1px solid rgba(255,255,255,.1); display:inline-flex; align-items:center; gap:7px;
+  background:linear-gradient(160deg, rgba(23,29,38,.8), rgba(10,12,16,.74));
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px) }
+.vl-fps::before { content:''; width:7px; height:7px; border-radius:50%;
+  background:#52C79A; box-shadow:0 0 8px rgba(82,199,154,.8) }
+.vl-fps.low::before { background:#E0A458; box-shadow:0 0 8px rgba(224,164,88,.8) }
+@media (pointer:coarse) {
+.vl-fire { height:72px }
+}
+/* ── BLOQUE 55c: un solo plano modal + bottom sheets adaptativos ────────── */
+.vl-overlay-scrim { display:none }
+@media (pointer:coarse) {
+.vl-overlay-scrim { display:block; position:fixed; inset:0; z-index:42;
+    pointer-events:none; opacity:0; background:rgba(3,7,12,.58);
+    -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px);
+    transition:opacity var(--dur-base) var(--ease-out)}
+.vl-overlay-scrim.open { pointer-events:auto; opacity:1 }
+.vl-grade,.vl-guide,.vl-inv,.vl-diff,.vl-result,.vl-director { z-index:43 }
+.vl-dock.open,.vl-combat.open {
+    position:fixed !important; z-index:43;
+    left:0 !important; right:0 !important; top:auto !important; bottom:0 !important;
+    width:auto !important; max-width:none; max-height:min(56dvh,520px);
+    margin:0 !important; padding:14px
+      calc(16px + env(safe-area-inset-right))
+      calc(14px + env(safe-area-inset-bottom))
+      calc(16px + env(safe-area-inset-left));
+    border-radius:var(--r-2xl) var(--r-2xl) 0 0; transform:none !important;
+    overscroll-behavior:contain }
+.vl-dock.open { grid-template-columns:repeat(2,minmax(0,1fr)) }
+.vl-combat.open { grid-template-columns:minmax(0,1fr) 88px }
+.vl-dock.open .vl-panel-drag,.vl-combat.open .vl-panel-drag { cursor:default; touch-action:manipulation }
+.vl-stick.disabled { opacity:0; pointer-events:none }
+.vl-stick { transition:opacity var(--dur-fast) var(--ease-out) }
+}
+@media (pointer:coarse) and (orientation:landscape) {
+.vl-dock.open,.vl-combat.open {
+    left:50% !important; transform:translateX(-50%) !important;
+    width:min(720px,calc(100vw - 2 * max(14px,env(safe-area-inset-left)))) !important;
+    max-height:min(66dvh,420px) }
+.vl-corner.tl { flex-direction:row; align-items:flex-start; max-width:46vw }
+.vl-corner.tl .vl-scene { display:none }
+.vl-compass { top:calc(98px + env(safe-area-inset-top)) }
+.vl-center-top { top:calc(140px + env(safe-area-inset-top)) }
+.vl-grade { position:fixed; left:calc(12px + env(safe-area-inset-left));
+    right:auto; top:auto; bottom:calc(12px + env(safe-area-inset-bottom));
+    width:min(360px,48vw); max-height:min(44dvh,320px);
+    transform:none; overflow:hidden }
+.vl-grade-body { min-height:0; overflow-y:auto; overscroll-behavior:contain }
+}
+/* ── BLOQUE 55d: HUD móvil premium, tres carriles sin solapamientos ────── */
+.vl-command-hud,.vl-flight-tools-left,.vl-gimbal-tools,.vl-mobile-action { display:none }
+@media (pointer:coarse) {
+.vl-body,.vl-hud,.vl-hud * {
+    -webkit-user-select:none;
+    user-select:none;
+    -webkit-touch-callout:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+.vl-body { overscroll-behavior:none; touch-action:none }
+.vl-body .vl-canvas,.vl-stick,.vl-trigger,.vl-weapon-toggle,.vl-weapon-picker,
+  .vl-camera-toggle,.vl-camera-picker-toggle,.vl-camera-picker,.vl-gimbal-tools { touch-action:none; }
+.vl-hud button,.vl-dock,.vl-combat,.vl-grade,.vl-guide { touch-action:manipulation }
+.vl-trigger,.vl-weapon-toggle,.vl-weapon-picker,.vl-weapon-picker button,
+  .vl-gimbal-tray input { touch-action:none }
+.vl-mobile-action { display:block }
+.vl-osd,.vl-osd-home,.vl-osd-gimbal { display:none }
+.vl-command-hud,.vl-flight-tools-left,.vl-gimbal-tools {
+    position:fixed;
+    bottom:calc(min(34vh,300px) + 36px + env(safe-area-inset-bottom));
+    z-index:45;
+    pointer-events:auto;
+  }
+.vl-gimbal-tools { bottom:calc(min(34vh,300px) + 136px + env(safe-area-inset-bottom)); }
+.vl-flight-tools-left {
+    left:calc(14px + env(safe-area-inset-left));
+    display:grid;
+    grid-template-columns:56px 44px;
+    grid-template-rows:56px 52px;
+    gap:8px;
+    align-items:start;
+  }
+.vl-flight-tools-left .vl-fab {
+    position:static !important;
+    left:auto; right:auto; top:auto; bottom:auto;
+    grid-column:1;
+    grid-row:2;
+    width:52px; min-width:52px; height:52px; padding:0;
+    font:700 var(--fs-xs) var(--font); letter-spacing:0;
+  }
+.vl-camera-toggle {
+    width:56px;
+    height:56px;
+    padding:5px;
+    display:grid;
+    place-items:center;
+    align-content:center;
+    gap:3px;
+    border-radius:var(--r-xl);
+    border:1px solid rgba(79,174,236,.56);
+    color:#a9dcff;
+    background:linear-gradient(155deg,rgba(24,48,67,.97),rgba(10,15,20,.95));
+    box-shadow:var(--shadow-2), inset 0 1px rgba(255,255,255,.1);
+    cursor:pointer;
+  }
+.vl-camera-toggle span { font:700 var(--fs-2xs)/1 var(--mono); letter-spacing:var(--tr-eyebrow) }
+.vl-camera-toggle output { color:#f0f7ff; font:700 var(--fs-sm)/1 var(--mono) }
+.vl-camera-picker-toggle {
+    width:44px;
+    height:44px;
+    padding:0;
+    border-radius:var(--r-lg);
+    border:1px solid rgba(79,174,236,.38);
+    color:#cceaff;
+    background:linear-gradient(155deg,rgba(24,42,57,.96),rgba(10,14,19,.94));
+    font:700 var(--fs-2xl)/1 var(--mono);
+    cursor:pointer;
+  }
+.vl-camera-picker-toggle[aria-expanded=true],.vl-camera-toggle:active {
+    border-color:#79caff;
+    box-shadow:0 0 0 2px rgba(79,174,236,.18), var(--shadow-2);
+  }
+.vl-camera-picker {
+    position:absolute;
+    left:0;
+    bottom:calc(100% + 10px);
+    width:224px;
+    padding:6px;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:4px;
+    border-radius:var(--r-xl);
+    border:1px solid rgba(79,174,236,.4);
+    background:linear-gradient(160deg,rgba(22,34,45,.99),rgba(8,12,17,.98));
+    -webkit-backdrop-filter:blur(16px) saturate(1.2);
+    backdrop-filter:blur(16px) saturate(1.2);
+    box-shadow:var(--shadow-3);
+  }
+.vl-camera-picker button {
+    min-height:48px;
+    padding:0 10px;
+    border-radius:var(--r-lg);
+    border:1px solid transparent;
+    background:transparent;
+    color:#c6d5e2;
+    text-align:left;
+    font:600 var(--fs-sm) var(--font);
+    cursor:pointer;
+  }
+.vl-camera-picker button[aria-selected=true] {
+    color:#bce5ff;
+    border-color:rgba(79,174,236,.42);
+    background:rgba(79,174,236,.14);
+  }
+.vl-command-hud {
+    right:calc(14px + env(safe-area-inset-right));
+    display:grid;
+    justify-items:end;
+    gap:10px;
+  }
+.vl-weapon-toggle {
+    width:56px;
+    height:56px;
+    padding:5px;
+    display:grid;
+    place-items:center;
+    align-content:center;
+    gap:2px;
+    border-radius:var(--r-xl);
+    border:1px solid rgba(224,164,88,.5);
+    color:#f7c983;
+    background:linear-gradient(155deg,rgba(39,38,37,.96),rgba(13,15,19,.94));
+    box-shadow:var(--shadow-2), inset 0 1px rgba(255,255,255,.08);
+    cursor:pointer;
+  }
+.vl-weapon-toggle span { font:700 var(--fs-xs)/1 var(--mono); letter-spacing:var(--tr-caps) }
+.vl-weapon-toggle output { color:#f2eee8; font:700 var(--fs-sm)/1 var(--mono); font-variant-numeric:tabular-nums; }
+.vl-weapon-toggle[aria-expanded=true] {
+    border-color:#f1b95f;
+    box-shadow:0 0 0 2px rgba(224,164,88,.18), var(--shadow-2);
+  }
+.vl-weapon-picker {
+    position:absolute;
+    right:0;
+    bottom:calc(100% + 10px);
+    width:240px;
+    max-height:min(54dvh,260px);
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    padding:6px;
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:4px;
+    border-radius:var(--r-xl);
+    border:1px solid rgba(224,164,88,.38);
+    background:linear-gradient(160deg,rgba(32,31,30,.99),rgba(10,12,16,.98));
+    -webkit-backdrop-filter:blur(16px) saturate(1.2);
+    backdrop-filter:blur(16px) saturate(1.2);
+    box-shadow:var(--shadow-3);
+  }
+.vl-weapon-picker button {
+    min-height:48px;
+    padding:0 7px;
+    border-radius:var(--r-lg);
+    border:1px solid transparent;
+    background:transparent;
+    color:#c6ced8;
+    text-align:center;
+    font:600 var(--fs-xs) var(--font);
+    cursor:pointer;
+  }
+.vl-weapon-picker button[aria-selected=true] {
+    color:#ffd495;
+    border-color:rgba(224,164,88,.38);
+    background:rgba(224,164,88,.13);
+  }
+.vl-trigger {
+    pointer-events:auto;
+    width:72px;
+    height:72px;
+    min-height:72px;
+    padding:0;
+    border:1px solid rgba(255,150,100,.62);
+    border-radius:var(--r-2xl);
+    color:#ffe5d6;
+    background:linear-gradient(145deg,rgba(169,58,31,.97),rgba(73,25,21,.96));
+    box-shadow:var(--shadow-2), 0 0 22px -10px rgba(255,90,55,.75);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap:3px;
+    cursor:pointer;
+    font-family:var(--font);
+  }
+.vl-trigger span { font:700 var(--fs-3xl)/1 var(--mono); color:#fff1e7 }
+.vl-trigger strong { font:700 var(--fs-2xs)/1 var(--font); letter-spacing:0 }
+.vl-trigger:active { transform:scale(.97) }
+.vl-trigger.locked {
+    border-color:#ffd36d;
+    box-shadow:0 0 0 2px rgba(255,211,109,.22), var(--shadow-2);
+  }
+.vl-trigger.flash { animation:triggerFlash var(--dur-slow) var(--ease-out) }
+.vl-gimbal-tools {
+    left:50%;
+    transform:translateX(-50%);
+    display:block;
+  }
+.vl-gimbal-toggle {
+    width:96px;
+    height:44px;
+    padding:0 11px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    border-radius:var(--r-xl);
+    border:1px solid rgba(74,213,174,.45);
+    color:#8ce9cb;
+    background:linear-gradient(155deg,rgba(20,48,43,.96),rgba(9,16,17,.95));
+    box-shadow:var(--shadow-2), inset 0 1px rgba(255,255,255,.08);
+    cursor:pointer;
+  }
+.vl-gimbal-toggle span { font:700 var(--fs-2xs)/1 var(--mono); letter-spacing:var(--tr-caps) }
+.vl-gimbal-toggle output { color:#e8fff7; font:700 var(--fs-xs)/1 var(--mono) }
+.vl-gimbal-toggle[aria-expanded=true] {
+    border-color:#6de4bf;
+    box-shadow:0 0 0 2px rgba(74,213,174,.17), var(--shadow-2);
+  }
+.vl-gimbal-toggle:disabled { display:none }
+.vl-gimbal-tray {
+    position:absolute;
+    left:calc(50% + 16px);
+    bottom:calc(100% + 10px);
+    width:148px;
+    padding:6px;
+    transform:translateX(-50%);
+    border-radius:var(--r-xl);
+    border:1px solid rgba(74,213,174,.42);
+    background:linear-gradient(160deg,rgba(20,37,35,.99),rgba(8,13,15,.98));
+    -webkit-backdrop-filter:blur(16px) saturate(1.2);
+    backdrop-filter:blur(16px) saturate(1.2);
+    box-shadow:var(--shadow-3);
+  }
+.vl-gimbal-tray label {
+    display:flex;
+    justify-content:space-between;
+    color:#8ba7a0;
+    font:700 var(--fs-2xs) var(--mono);
+    letter-spacing:var(--tr-caps);
+  }
+.vl-gimbal-tray label output { color:#dffff5; font-size:var(--fs-2xs) }
+.vl-gimbal-tray input { width:100%; min-height:38px; accent-color:#52c79a }
+.vl-gimbal-tray > div { display:grid; grid-template-columns:repeat(3,1fr); gap:2px }
+.vl-gimbal-tray button {
+    min-width:44px;
+    min-height:44px;
+    padding:0;
+    border-radius:var(--r-lg);
+    border:1px solid rgba(74,213,174,.2);
+    background:rgba(74,213,174,.08);
+    color:#c7f8e8;
+    font:700 var(--fs-xs) var(--mono);
+  }
+.vl-overlay-open .vl-fab,.vl-overlay-open .vl-command-hud,
+  .vl-overlay-open .vl-flight-tools-left,.vl-overlay-open .vl-gimbal-tools {
+    opacity:0;
+    pointer-events:none;
+  }
+}
+@media (pointer:coarse) and (min-width:601px) {
+.vl-gimbal-tray { left:50%; width:220px; padding:10px }
+}
+@media (pointer:coarse) and (max-width:600px) {
+.vl-stick-base { width:112px; height:112px; opacity:.54 }
+}
+@media (pointer:coarse) and (orientation:landscape) {
+.vl-command-hud,.vl-flight-tools-left,.vl-gimbal-tools {
+    top:calc(12px + env(safe-area-inset-top));
+    bottom:auto;
+  }
+.vl-gimbal-tools { top:calc(50px + env(safe-area-inset-top)); }
+.vl-hud:not(.fpv-active) .vl-flight-tools-left,
+  .vl-hud:not(.fpv-active) .vl-command-hud { top:calc(89px + env(safe-area-inset-top)); }
+.vl-hud:not(.fpv-active) .vl-flight-tools-left {
+    grid-template-columns:56px 44px 52px;
+    grid-template-rows:56px;
+  }
+.vl-hud:not(.fpv-active) .vl-flight-tools-left .vl-fab {
+    grid-column:3;
+    grid-row:1;
+  }
+.vl-hud:not(.fpv-active) .vl-command-hud {
+    grid-template-columns:56px 72px;
+    grid-template-rows:72px;
+    align-items:start;
+  }
+.vl-hud:not(.fpv-active) .vl-weapon-toggle { grid-column:1; grid-row:1 }
+.vl-hud:not(.fpv-active) .vl-trigger { grid-column:2; grid-row:1 }
+.vl-camera-picker,.vl-weapon-picker {
+    position:fixed;
+    top:calc(70px + env(safe-area-inset-top));
+    left:50%;
+    right:auto;
+    bottom:auto;
+    transform:translateX(-50%);
+  }
+.vl-camera-picker {
+    width:min(520px,62vw);
+    grid-template-columns:repeat(4,minmax(0,1fr));
+  }
+.vl-weapon-picker {
+    top:calc(12px + env(safe-area-inset-top));
+    width:min(480px,74vw);
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+.vl-gimbal-tray {
+    top:calc(100% + 10px);
+    bottom:auto;
+    left:50%;
+    width:min(520px,72vw);
+    padding:4px 6px;
+    display:grid;
+    grid-template-columns:auto minmax(116px,1fr) auto;
+    align-items:center;
+    gap:8px;
+  }
+.vl-gimbal-tray label { min-width:92px; gap:8px }
+.vl-gimbal-tray input { min-height:44px }
+.vl-gimbal-tray > div {
+    grid-template-columns:repeat(3,44px);
+    gap:3px;
+  }
+}
+/* overlay de carga de escena en volar (60fps: solo opacity/transform) */
+.vl-boot { position:absolute; inset:0; z-index:80; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:14px;
+  background:radial-gradient(120% 100% at 50% 0%, #101722 0%, #07090d 70%);
+  transition:opacity var(--dur-hero) var(--ease-out); pointer-events:none }
+.vl-boot.hide { opacity:0 }
+.vl-boot b { font:700 var(--fs-2xl) var(--font); color:#EAF2FB; letter-spacing:0 }
+.vl-boot small { font:600 var(--fs-xs) var(--mono); color:#68758A; letter-spacing:var(--tr-eyebrow) }
+.vl-boot .vb-bar { width:min(300px, 60vw); height:3px; border-radius:var(--r-pill); overflow:hidden;
+  background:rgba(255,255,255,.08) }
+.vl-boot .vb-bar b { display:block; height:100%; width:30%; border-radius:var(--r-pill);
+  background:linear-gradient(90deg, #45A0E6, #7dffc9);
+  animation:vbSlide 1.1s var(--ease) infinite}
+@keyframes vbSlide { 0%{ transform:translateX(-110%) } 100%{ transform:translateX(400%) } }
+.vl-boot .vb-steps { display:flex; gap:8px }
+.vl-boot .vb-steps i { font:600 var(--fs-2xs) var(--mono); font-style:normal; color:#566274;
+  padding:4px 10px; border-radius:var(--r-md); border:1px solid rgba(255,255,255,.08);
+  letter-spacing:var(--tr-caps); transition:color var(--dur-slow) var(--ease-out), background-color var(--dur-slow) var(--ease-out), border-color var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out)}
+.vl-boot .vb-steps i.ok { color:var(--media-ok); border-color:rgba(82,199,154,.4) }
+/* ── BLOQUE 75: HUD de vuelo estrecho — tres métricas en una sola fila ──
+   Debe vivir al final: los bloques premium posteriores anulaban el layout
+   móvil anterior y apilaban 213px de telemetría sobre Mundo y la brújula. */
+@media (pointer:coarse) and (orientation:portrait) and (max-width:900px) {
+.vl-corner.tr { flex-direction:row; align-items:flex-start }
+.vl-goto { top:calc(148px + env(safe-area-inset-top)) }
+.vl-compass { top:calc(190px + env(safe-area-inset-top)) }
+.vl-center-top { top:calc(236px + env(safe-area-inset-top)) }
+}
+@keyframes vlGotoIn {
+  from{ opacity:0 }
+  to{ opacity:1 }
+}
+.vl-goto.show { animation:vlGotoIn var(--dur-slow) var(--ease-out) forwards }
+@media (pointer:coarse) and (orientation:portrait) and (max-width:480px) {
+.vl-corner.tr { flex-direction:row; align-items:flex-start; gap:4px }
+.vl-corner.tr .vl-metric {
+    flex:0 0 68px; width:68px; min-width:68px; padding:6px;
+    border-radius:var(--r-lg)}
+.vl-corner.tr .vl-metric span { font-size:var(--fs-lg) }
+.vl-corner.tr .vl-metric label { font-size:var(--fs-2xs); letter-spacing:var(--tr-caps) }
+.vl-compass { width:min(230px,58vw) }
+}
+/* the game / immersive viewers are always dark: keep their local tokens dark in the light theme */
+html[data-theme="light"] body.vl-body {
+  color-scheme: dark;
+  --bg: #0A0C10; --surface: #11151C; --surface-2: #171D26; --surface-3: #1E2530;
+  --line: #1E2530; --line-strong: #2E3846;
+  --text: #E6EBF2; --text-2: #8A97A8; --text-3: #7B899C;
+  --accent: #45A0E6; --accent-fg: #45A0E6; --accent-solid: #45A0E6; --accent-hover: #5AB0F0; --accent-press: #3890D4; --text-on-accent: #06111C;
+  --ok: #52C79A; --ok-fg: #52C79A; --warn: #E0A458; --warn-fg: #E0A458; --err: #D96A6A; --err-fg: #D96A6A;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.35); --shadow-2: 0 6px 20px rgba(0,0,0,.35); --shadow-3: 0 24px 60px rgba(0,0,0,.45);
+  --accent-dim: color-mix(in srgb, var(--accent) 14%, transparent);
+  --ok-bg: color-mix(in srgb, var(--ok) 14%, transparent); --warn-bg: color-mix(in srgb, var(--warn) 14%, transparent); --err-bg: color-mix(in srgb, var(--err) 14%, transparent);
+}
+.vl-result-btns button:first-child, .vl-dir-row button:first-child {
+  background: var(--accent-solid); color: var(--text-on-accent);
+}
+@keyframes dockIn { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes chipZap { 30% { transform: scale(1.04); } }
+@keyframes flashRing { 0% { opacity: 1; } 100% { opacity: 0; } }
+.vl-rec.on { animation: stPulse 1.2s ease-in-out infinite; }
+.vl-fire.flash { animation: none; }
+.vl-fire.flash::after, .vl-trigger.flash::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  border: 3px solid rgba(255, 140, 90, .8); animation: flashRing var(--dur-slow) var(--ease-out) forwards;
+}
+.vl-trigger { position: relative; }
+.vl-trigger.flash { animation: none; }
+.vl-newrec { animation: mIn var(--dur-slow) var(--ease-out); }
+.vl-dock .vl-chip::after, .vl-dock .vl-rec::after { left: 0; transform: translateX(-164%) skewX(-18deg); transition: transform var(--dur-hero) var(--ease-out); }
+.vl-dock .vl-chip:hover::after, .vl-dock .vl-rec:hover::after { left: 0; transform: translateX(245%) skewX(-18deg); }
+.vl-weps button::after { width: 100%; clip-path: inset(0 calc(100% - var(--ammo, 100%)) 0 0); transition: clip-path var(--dur-base) linear; }
+/* ---------- reduced motion (single global block; keep last) ---------- */
+/* Feedback keyframes rebuilt on transform/opacity (2026-09-29). The originals animated
+   box-shadow/filter/background-position and were removed with the motion rewrite, but
+   .vl-fire/.vl-trigger/.tl-lib/.st-pin/.st-step/.vl-rec/.hv2-sk still reference them.
+   Opacity-only where the element already uses transform for position or press. */
+@keyframes fireFlash    { 0% { opacity: .55 } 100% { opacity: 1 } }
+@keyframes triggerFlash { 0% { opacity: .5 }  100% { opacity: 1 } }
+@keyframes recPulse     { 0%, 100% { opacity: 1 } 50% { opacity: .5 } }
+
+/* ---------- boot / error / states (previous pass) ---------- */
 /* Error card (bootError): centered column, readable secondary text */
 .vl-err-card { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 360px; text-align: center; }
 .vl-err-card p { margin: 0; font: 400 14px/1.5 var(--font); color: var(--on-media-2); }
@@ -18,3 +1244,157 @@
 .vl-boot small { color: var(--on-media-2); }
 .vl-boot .vb-steps i { color: var(--on-media-2); }
 .vl-boot .vb-steps i.ok { color: var(--media-ok); }
+
+/* ══ BLOQUE 80 · pase de calidad del HUD (2026-09-29) ═══════════════════════
+   Vive al final a propósito: ordena colisiones de escritorio, legibilidad sobre
+   cielo claro, guía, y el layout compacto (móvil y ventanas estrechas/bajas).
+   Regla: nada compite por el mismo píxel — cada esquina/carril tiene dueño. */
+
+/* — pista de teclado vacía (táctil) = sin cápsula — */
+.vl-center-top:empty { display:none }
+
+/* — legibilidad sobre cielo/foto claros: respaldo de media scrim en la lectura FPV — */
+.vl-osd b, .vl-osd label, .vl-osd-gimbal {
+  background:var(--media-scrim); border-radius:var(--r-md);
+  text-shadow:0 1px 2px rgba(6,8,12,.9) }
+.vl-osd b { padding:1px 10px; color:var(--on-media) }
+.vl-osd label { padding:1px 8px; color:var(--on-media-2) }
+.vl-osd-home { background:var(--media-scrim); color:var(--on-media); text-shadow:0 1px 2px rgba(6,8,12,.9) }
+.vl-osd-gimbal { padding:2px 8px; opacity:1; color:var(--media-ok); white-space:nowrap }
+.vl-fpv-head { background:var(--media-scrim); color:var(--on-media) }
+.vl-fpv-rec { top:calc(12% + 8px); left:calc(14% + 10px); color:var(--on-media-2);
+  text-shadow:0 1px 2px rgba(6,8,12,.9) }
+.vl-fpv-rec.on { color:#ff6b5f }
+/* brújula bajo la tira FLT, no encima */
+.vl-hud.fpv-active .vl-compass { top:calc(8% + 6px) }
+
+/* — escritorio (puntero fino): carriles sin choque — */
+.vl-flight-status { right:calc(14px + 158px + 14px) }     /* a la izquierda de la columna de combate */
+.vl-weps button { width:auto; min-width:64px; min-height:30px; padding:0 10px; white-space:nowrap;
+  display:flex; align-items:center; justify-content:center }
+.vl-weps { align-items:flex-end }
+@media (pointer:fine) {
+.vl-dock .vl-chip:not(.vl-mobile-action), .vl-dock .vl-rec { min-height:32px; display:flex; align-items:center }
+.vl-back, .vl-corner.tl .vl-chip { min-height:32px; display:inline-flex; align-items:center }
+}
+@media (pointer:fine) and (max-height:760px) {
+.vl-weps { display:grid; grid-template-columns:repeat(2,auto); justify-content:end }
+}
+
+/* — táctil: objetivos >= 44px, sin atajos de teclado en pantalla, marcos que no tocan sticks — */
+@media (pointer:coarse) {
+.vl-back, .vl-corner.tl .vl-chip, .vl-chip, .vl-rec { min-height:44px; display:inline-flex; align-items:center }
+.vl-dock.open .vl-chip, .vl-dock.open .vl-rec { display:flex }
+.vl-fpv-br.bl, .vl-fpv-br.br { display:none }
+}
+
+/* — marco FPV: no debajo de la etiqueta de escena (columna izquierda) ni fuera de las cintas — */
+@media (min-width:641px) {
+.vl-fpv-br.tl, .vl-fpv-br.bl { left:max(14%, 330px) }
+.vl-fpv-br.tr, .vl-fpv-br.br { right:max(14%, 330px) }
+.vl-fpv-sig { right:calc(max(14%, 330px) + 44px) }
+.vl-fpv-rec { left:calc(max(14%, 330px) + 10px) }
+}
+
+/* táctil vertical: la herramienta de gimbal no tapa el punto de mira (centro de pantalla) */
+@media (pointer:coarse) and (orientation:portrait) {
+.vl-gimbal-tools { bottom:calc(50dvh + 30px) }
+}
+
+/* — guía de vuelo: filas en rejilla, atajos que no se parten, botón de sistema — */
+.vl-guide-card { display:flex; flex-direction:column; padding:28px 28px 24px }
+.vl-guide-k { margin-bottom:18px }
+.vl-guide-rows { gap:18px }
+.vl-guide-row { display:grid; grid-template-columns:32px minmax(0,1fr); column-gap:12px; align-items:start }
+.vl-guide-row .vl-gi { float:none; margin:2px 0 0; text-align:center; padding:3px 0 }
+.vl-guide-row p { margin:4px 0 0; text-wrap:pretty }
+.vl-keys { display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:6px }
+.vl-kv { display:inline-flex; align-items:center; gap:6px; max-width:100% }
+.vl-kv kbd { margin:0 }
+.vl-kv kbd + kbd { margin-left:-2px }
+.vl-guide-foot { margin-top:26px; padding-top:18px; border-top:1px solid rgba(255,255,255,.08);
+  display:flex; justify-content:flex-end }
+.vl-guide .btn { font:600 var(--fs-lg) var(--font) !important; letter-spacing:0 !important;
+  text-transform:none !important; min-height:44px; padding:0 26px }
+
+/* — carga/error: la tarjeta de error queda centrada en el viewport; las pastillas van al pie — */
+.vl-boot { min-height:100dvh }
+.vl-boot:has(.vl-err-card) .vb-steps { position:absolute; left:0; right:0; justify-content:center;
+  bottom:calc(24px + env(safe-area-inset-bottom)) }
+
+/* ── HUD compacto: móvil vertical (táctil o no) ≤ 640px ──────────────────────
+   Barra superior en 2 filas: [Mundo][Compartir][escena…] / [ALT][VEL][VS];
+   brújula y estado de reto debajo. Todo dentro de las áreas seguras. */
+@media (max-width:640px) {
+.vl-corner.tl { top:calc(10px + env(safe-area-inset-top)); left:calc(12px + env(safe-area-inset-left));
+    right:calc(12px + env(safe-area-inset-right)); flex-direction:row; align-items:center; gap:8px }
+.vl-corner.tl .vl-back, .vl-corner.tl .vl-chip { flex:none; min-height:44px; padding:0 14px;
+    display:inline-flex; align-items:center }
+.vl-corner.tl .vl-scene { flex:1 1 0; min-width:0; max-width:none; height:44px; line-height:42px; padding:0 12px; display:block }
+.vl-corner.tr { top:calc(62px + env(safe-area-inset-top)); left:calc(12px + env(safe-area-inset-left));
+    right:calc(12px + env(safe-area-inset-right)); display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px; align-items:stretch }
+.vl-corner.tr .vl-metric { flex:none; width:auto; min-width:0; padding:6px 8px; text-align:center }
+.vl-corner.tr .vl-metric span { font-size:var(--fs-lg) }
+.vl-corner.tr .vl-metric label { letter-spacing:var(--tr-caps) }
+.vl-compass, .vl-compass.tape { top:calc(128px + env(safe-area-inset-top)); width:min(260px,64vw) }
+.vl-center-top { top:calc(172px + env(safe-area-inset-top)); max-width:calc(100vw - 24px); overflow:hidden; text-overflow:ellipsis }
+.vl-goto { top:calc(172px + env(safe-area-inset-top)) }
+.vl-diff { top:calc(216px + env(safe-area-inset-top)) }
+/* FPV: la tira FLT ya trae la telemetría; solo quedan Mundo/Compartir arriba */
+.vl-hud.fpv-active .vl-corner.tr, .vl-hud.fpv-active .vl-compass { display:none }
+.vl-fpv-head { top:calc(62px + env(safe-area-inset-top)); max-width:calc(100vw - 24px); letter-spacing:var(--tr-caps); padding:5px 10px }
+.vl-hud.fpv-active .vl-center-top, .vl-hud.fpv-active .vl-goto { top:calc(98px + env(safe-area-inset-top)) }
+.vl-fpv-br.tl, .vl-fpv-br.tr, .vl-fpv-sig { top:calc(150px + env(safe-area-inset-top)) }
+.vl-fpv-rec { top:calc(158px + env(safe-area-inset-top)) }
+}
+
+/* ── HUD compacto con puntero fino (móvil emulado, ventana estrecha o baja) ──
+   Carril inferior: [Menú] [minimapa] [combate]. El dock arranca plegado y se abre
+   como hoja inferior; nada tapa el punto de mira ni el minimapa. */
+@media (pointer:fine) and (max-width:640px), (pointer:fine) and (max-height:520px) {
+.vl-corner.bl { left:calc(12px + env(safe-area-inset-left)); bottom:calc(12px + env(safe-area-inset-bottom)); gap:0 }
+.vl-solo-fino.vl-dockmin { display:inline-flex; align-items:center; justify-content:center; width:auto;
+    min-width:88px; height:44px; margin:0; padding:0 18px; font:600 var(--fs-md) var(--font);
+    background:linear-gradient(160deg, rgba(23,29,38,.86), rgba(10,12,16,.78)); color:#E6EBF2 }
+.vl-dock { position:fixed; z-index:44; left:calc(12px + env(safe-area-inset-left)); bottom:calc(68px + env(safe-area-inset-bottom));
+    width:min(560px, calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+    max-height:calc(100dvh - 68px - 96px - env(safe-area-inset-bottom)); overflow-y:auto;
+    display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; padding:10px;
+    align-content:start; grid-auto-rows:min-content; background:rgba(13,17,23,.96) }
+.vl-corner.bl { z-index:44 }
+.vl-dock.min { visibility:hidden; transform:translateY(12px) }
+.vl-dock .vl-chip, .vl-dock .vl-rec { min-height:44px }
+.vl-dock .vl-sep { grid-column:1/-1; margin:2px 4px }
+.vl-corner.br { right:calc(12px + env(safe-area-inset-right)); bottom:calc(12px + env(safe-area-inset-bottom)); gap:8px }
+.vl-corner.br .vl-combat { margin-bottom:0 }
+.vl-weps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; width:120px; justify-content:stretch }
+.vl-weps button { min-width:0; min-height:34px; padding:0 4px }
+.vl-fire { width:120px; height:56px; padding:0 8px; gap:6px }
+.vl-fire strong { font-size:var(--fs-2xs) }
+.vl-minimap { width:84px; height:84px; bottom:calc(12px + env(safe-area-inset-bottom)) }
+.vl-flight-status { left:calc(12px + env(safe-area-inset-left)); right:auto; transform:none; flex-direction:row;
+    align-items:center; gap:6px; bottom:calc(112px + env(safe-area-inset-bottom)) }
+.vl-flight-status .vl-fps { padding:5px 10px }
+.vl-help { display:none }
+.vl-fpv-br.bl, .vl-fpv-br.br { display:none }
+}
+@media (pointer:fine) and (min-width:641px) and (max-height:520px) {
+.vl-dock { grid-template-columns:repeat(3,minmax(0,1fr)) }
+.vl-flight-status { bottom:calc(68px + env(safe-area-inset-bottom)) }
+}
+@media (pointer:fine) and (max-height:520px) {
+.vl-hud.fpv-active .vl-corner.tr, .vl-hud.fpv-active .vl-compass, .vl-hud.fpv-active .vl-center-top { display:none }
+.vl-corner.tl { flex-direction:row; align-items:center }
+}
+@media (pointer:fine) and (max-height:520px) {
+.vl-hud.fpv-active .vl-corner.tl .vl-scene { display:none }
+}
+/* táctil horizontal: Mundo ya no se oculta en FPV, así que las herramientas bajan bajo él y el gimbal bajo la tira FLT */
+@media (pointer:coarse) and (orientation:landscape) {
+.vl-hud.fpv-active .vl-flight-tools-left { top:calc(64px + env(safe-area-inset-top)) }
+.vl-gimbal-tools { top:calc(76px + env(safe-area-inset-top)) }
+}
+@media (pointer:coarse) and (orientation:landscape) {
+.vl-goto { top:calc(158px + env(safe-area-inset-top)) }
+}

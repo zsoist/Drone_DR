@@ -197,12 +197,13 @@ main.home-v2 .hv2-card.hv2-in { animation: hv2-in var(--dur-base) var(--ease-out
 }
 main.home-v2 .hv2-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 main.home-v2 .hv2-card-media { transform: none; filter: saturate(.8) brightness(.66); background-color: var(--surface-2); transition: none; }
-main.home-v2 main.home-v2 .hv2-card .scrim { background: linear-gradient(0deg, var(--media-scrim-strong) 0%, var(--media-scrim) 55%, transparent 100%); }
+/* copy sits on photos: solid scrim up to 40% of the card height, then fades out (contrast >= 4.5 on bright photos) */
+main.home-v2 .hv2-card .scrim { background: linear-gradient(0deg, var(--media-scrim-strong) 0%, var(--media-scrim-strong) 40%, color-mix(in srgb, var(--media-scrim-strong) 45%, transparent) 72%, transparent 100%); }
 main.home-v2 .hv2-card-content { padding: var(--sp-5); gap: 0; height: 100%; justify-content: flex-end; align-items: stretch; }
 main.home-v2 .hv2-card-head { gap: var(--sp-3); }
 main.home-v2 .hv2-card-head strong { color: var(--on-media); font-size: var(--fs-2xl); font-weight: var(--fw-semibold); letter-spacing: var(--tr-tight); text-shadow: none; }
 main.home-v2 .hv2-card-icon { width: 36px; height: 36px; border-radius: var(--r-md); background: var(--media-scrim); border: 1px solid var(--media-line); color: var(--card-accent); }
-main.home-v2 .hv2-card-copy { max-width: none; margin-top: var(--sp-3); color: var(--on-media-2); font-size: var(--fs-md); line-height: var(--lh-base); min-height: calc(2 * 1.45em); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+main.home-v2 .hv2-card-copy { max-width: none; margin-top: var(--sp-3); color: var(--on-media); font-size: var(--fs-lg); line-height: var(--lh-base); min-height: calc(2 * 1.45em); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 main.home-v2 .hv2-chips { flex-wrap: nowrap; overflow: hidden; margin-top: var(--sp-3); gap: var(--sp-half); }
 main.home-v2 .hv2-chips > span { flex: none; max-width: 100%; height: 22px; display: inline-flex; align-items: center; padding: 0 var(--sp-3); border-color: var(--media-line); background: var(--media-scrim); color: var(--on-media); font: var(--fw-medium) var(--fs-xs) var(--font); font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 main.home-v2 .hv2-go { margin-top: var(--sp-3); color: var(--on-media-2); opacity: 1; font-size: var(--fs-xs); letter-spacing: var(--tr-caps); }

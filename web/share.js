@@ -1,11 +1,11 @@
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
-import * as THREE from '/vendor/three180.module.js?v=354';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=354';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=354';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=354';
-import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=354';
-import { mountSplatViewer } from '/splatview.js?v=354';
+import * as THREE from '/vendor/three180.module.js?v=356';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=356';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=356';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=356';
+import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=356';
+import { mountSplatViewer } from '/splatview.js?v=356';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -118,8 +118,8 @@ body.innerHTML = `
   <div class="panel rise">
     <div class="ph">Foto real y elevación <span class="hint">Arrastra el divisor</span></div>
     <div class="cmp" id="cmp" role="img" aria-label="Comparador de foto real y mapa de elevación">
-      <img src="${base}/dsm_color.webp" alt="" draggable="false">
-      <img class="cmp-over" src="${base}/${esc(meta.cmp_asset)}" alt="" draggable="false" style="clip-path:inset(0 50% 0 0)">
+      <img src="${base}/dsm_color.webp" alt="Mapa de elevación en color" draggable="false">
+      <img class="cmp-over" src="${base}/${esc(meta.cmp_asset)}" alt="Foto real del sitio" draggable="false" style="clip-path:inset(0 50% 0 0)">
       <div class="cmp-handle" style="left:50%"><span></span></div>
     </div>
   </div>` : ''}
@@ -133,7 +133,7 @@ body.innerHTML = `
       ${meshOk ? dlRow(`${base}/model/odm_textured_model_geo.obj`, 'Malla 3D', 'OBJ', 'download') : ''}
       ${splat ? dlRow(splatUrl(splat), 'Gaussian splat', `${splatFmt}${splat.bytes ? ' · ' + sizeOf(splat.bytes) : ''}`, 'download') : ''}
     </div>
-    <p class="footer-note sh-foot">Procesado localmente con AeroBrain — fotogrametría ODM sobre video de dron DJI.</p></div>
+    <p class="page-foot sh-foot">Procesado localmente con AeroBrain — fotogrametría ODM sobre video de dron DJI.</p></div>
   </div>`;
 
 // tamaño de cada descarga como subtítulo (HEAD, solo lectura; si falla queda el formato)

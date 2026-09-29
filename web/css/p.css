@@ -46,10 +46,12 @@ body { background: var(--bg); color: var(--text); }
 
 /* Estado vacío */
 .p-empty {
-  min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; gap: var(--sp-3); padding: var(--sp-8) var(--sp-4);
+  min-height: 100dvh; min-height: 100svh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; gap: var(--sp-3); padding: var(--sp-5) var(--sp-4) calc(var(--sp-5) + env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 .p-empty-ic { width: 56px; height: 56px; display: grid; place-items: center; border-radius: var(--r-xl); background: var(--accent-dim); color: var(--accent-fg); }
 .p-empty-ic svg.ic { width: var(--ic-xl); height: var(--ic-xl); }
+.p-empty-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: center; margin-top: var(--sp-2); }
 .p-empty h1 { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); letter-spacing: var(--tr-tight); margin: var(--sp-1) 0 0; }
 .p-empty p { max-width: 36ch; margin: 0; color: var(--text-2); font-size: var(--fs-lg); line-height: var(--lh-base); text-wrap: balance; }

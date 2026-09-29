@@ -24,15 +24,21 @@
   .fl-edits { order: 7; }
   .fl-tech { order: 8; }
   .fl-dl { order: 9; }
-  .fl-head { padding: var(--sp-3) var(--sp-4); gap: var(--sp-3); }
-  .fl-head .hero-back { order: 0; }
-  .fl-head .hero-t { order: 1; flex: 1 1 0; }
-  .fl-head .hero-chips { order: 3; flex: 1 1 100%; }
+  /* cabecera compacta: [atrás | título + badges | ‹ ›] y una fila de acciones (sin el id técnico → ~30px menos antes del video) */
+  .fl-head {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: var(--sp-3); row-gap: var(--sp-2);
+    grid-template-areas: "back title nav" "chips chips chips" "acts acts acts";
+    align-items: center; padding: var(--sp-3);
+  }
+  .fl-head .hero-back { grid-area: back; }
+  .fl-head .hero-t { grid-area: title; min-width: 0; }
+  .fl-head .hero-sub { display: none; }
+  .fl-head .hero-chips { grid-area: chips; }
   .fl-actions { display: contents; }
-  .fl-nav { order: 2; }
-  .fl-acts { order: 4; flex: 1 1 100%; }
+  .fl-nav { grid-area: nav; }
+  .fl-acts { grid-area: acts; }
   .fl-acts .btn:not(.icon) { flex: 1; }
-  .fl-head .hero-t h1 { font-size: var(--fs-xl); }
+  .fl-head .hero-t h1 { font-size: var(--fs-xl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 
 .fl .panel + .panel { margin-top: 0; }
@@ -74,7 +80,7 @@
 }
 .fl .chart-badge { top: var(--sp-2); right: var(--sp-3); font-size: var(--fs-xs); padding: 0 var(--sp-2); line-height: 22px; }
 .fl .chart-ax {
-  position: absolute; left: var(--sp-4); font-size: var(--fs-2xs); color: var(--text-2); pointer-events: none;
+  position: absolute; left: var(--sp-4); font-size: var(--fs-xs); color: var(--text-2); pointer-events: none;
   font-variant-numeric: tabular-nums; z-index: 1;
 }
 .fl .chart-ax.max { top: 32px; }
@@ -127,19 +133,8 @@
 
 /* ── Datos técnicos + descargas ───────────────────────────── */
 .fl-tech .pb { padding-top: var(--sp-3); }
-.fl-dl > summary {
-  list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4); min-height: 48px;
-  font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text);
-}
-.fl-dl > summary::-webkit-details-marker { display: none; }
-.fl-dl summary .hint { margin-left: auto; font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--text-2); }
-.fl-dl > summary > svg.ic { width: var(--ic-sm); height: var(--ic-sm); color: var(--text-2); }
-.fl-dl .fl-caret { display: inline-grid; place-items: center; color: var(--text-2); transition: transform var(--dur-base) var(--ease-out); }
-.fl-dl .fl-caret svg.ic { width: var(--ic-sm); height: var(--ic-sm); }
-.fl-dl:not([open]) .fl-caret { transform: rotate(-90deg); }
-.fl-dl[open] > summary { border-bottom: 1px solid var(--line); }
-.fl-dl > summary:focus-visible { outline-offset: -2px; }
+/* Descargas: panel colapsable canónico (mismo chevron que el resto); colapsado por defecto en móvil */
+.fl-dl .ph .hint { margin-left: auto; font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--text-2); }
 .fl-dl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
 .fl-dl .exp { padding: var(--sp-2) var(--sp-3); min-width: 0; gap: var(--sp-2); }
 .fl-dl .exp b, .fl-dl .exp span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -155,6 +150,16 @@
 .fl-danger-lb { color: var(--err-fg); }
 .fl-danger-note { margin-top: var(--sp-2); }
 #m-del.armed { background: var(--err-bg); }
-.fl-modal .modal-x svg.ic { width: var(--ic-md); height: var(--ic-md); }
 
 @media (prefers-reduced-motion: reduce) { .fl .ch-line { animation: none; } }
+
+/* notas inline (no son notas de página → no .page-foot) */
+.fl-hint { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-2); }
+.fl-noproxy-msg .fl-hint { margin-top: var(--sp-half); }
+.fl-actions-row { margin-top: var(--sp-4); }
+#hl-err { color: var(--err-fg); margin-top: var(--sp-2); }
+
+/* controles pequeños: tamaño visual ≥32, zona táctil 44 por .hit44 */
+.fl .hl-item .tc { min-width: 44px; min-height: 32px; display: inline-grid; place-items: center; }
+.fl-copy { min-height: 32px; display: inline-flex; align-items: center; padding: 0 var(--sp-2); margin: 0 calc(-1 * var(--sp-2)); border-radius: var(--r-sm); }
+@media (hover: hover) { .fl-copy:hover { background: var(--accent-dim); } }

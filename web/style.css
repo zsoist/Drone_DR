@@ -112,8 +112,13 @@
 
   /* layout + per-element inputs (JS / inline styles override these) */
   --sidebar-w: 220px;
+  --page-max: 1168px;        /* ancho de contenido de TODAS las páginas con shell */
+  --main-px: 26px;           /* padding lateral de .main (14px en móvil) */
+  --chip-h: 28px;            /* UNA altura de chip */
+  --seg-h: 32px;             /* botón de segmentado (44 en táctil) */
   --ring: var(--accent); --frame-x: 0%; --ammo: 100%; --d: 0ms; --reveal-delay: 0ms;
   --card-accent: var(--accent);
+  --ic-search: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='9' r='5.5'/%3E%3Cpath d='M13 13l4 4'/%3E%3C/svg%3E");
   --chev-d: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 8L10 13.5 15.5 8'/%3E%3C/svg%3E");
 }
 
@@ -192,7 +197,6 @@ svg.ic { width: var(--ic-lg); height: var(--ic-lg); stroke: currentColor; fill: 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 :focus:not(:focus-visible) { outline: none; }
 
-
 /* =========================================================
    3. PAGES  (legacy feature blocks, normalised onto tokens)
    ========================================================= */
@@ -226,7 +230,8 @@ svg.ic { width: var(--ic-lg); height: var(--ic-lg); stroke: currentColor; fill: 
 }
 .sidebar .foot { margin-top: auto; padding: 10px; font-size: var(--fs-xs); color: var(--text-3); }
 .sidebar .foot .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--mint); margin-right: 6px; }
-.main { flex: 1; min-width: 0; padding: 22px 26px 60px; }
+.main { flex: 1; min-width: 0; padding: 22px var(--main-px) 60px; max-width: calc(var(--page-max) + 2 * var(--main-px)); }
+.main.wide, .main.home-v2 { max-width: none; }   /* opt-out: canvas a sangre (home, editores) */
 /* mobile: bottom nav — TODOS los items reparten el ancho (flex:1) para que quepan sin el
    scroll-x oculto que dejaba 3D/Splat Lab/Sistema fuera de pantalla sin señal (crit nav). */
 @media (max-width: 820px) {
@@ -257,7 +262,8 @@ svg.ic { width: var(--ic-lg); height: var(--ic-lg); stroke: currentColor; fill: 
   /* restaura Guía + Sesión en la barra (estaban ocultos ≤820px = únicos accesos a Guía/login) */
   .sidebar .foot { display: contents; }
   .sidebar .foot .foot-btns { display: contents; }
-  .main { padding: 16px 14px 96px; }
+  :root { --main-px: 14px; }
+  .main { padding: 16px var(--main-px) 96px; }
 }
 /* ---------- controls ---------- */
 .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
@@ -304,7 +310,8 @@ select.ctl:focus-visible, input.ctl:focus-visible, textarea.ctl:focus-visible, .
 .card .metrics { display: flex; gap: 16px; margin-top: 8px; }
 .card .metrics span { font-size: var(--fs-sm); color: var(--text-2); display: flex; align-items: center; gap: 5px; }
 .card .metrics b { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 500; color: var(--text); }
-.card .metrics svg.ic { width: var(--ic-sm); height: var(--ic-sm); color: var(--text-3); stroke-width: 1.75; }
+.card .metrics svg.ic { width: var(--ic-sm); height: var(--ic-sm); stroke-width: 1.75; }
+:where(.card .metrics) svg.ic { color: var(--text-3); }
 .card .ai-line { margin-top: 8px; font-size: var(--fs-sm); color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 @keyframes cardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .rename-btn {
@@ -334,7 +341,8 @@ select.ctl:focus-visible, input.ctl:focus-visible, textarea.ctl:focus-visible, .
   display: flex; align-items: center; gap: var(--sp-2); min-height: 48px; padding: var(--sp-2) var(--sp-4);
   border-bottom: 1px solid var(--line); font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text);
 }
-.panel .ph svg.ic { width: var(--ic-md); height: var(--ic-md); color: var(--text-2); }
+.panel .ph svg.ic { width: var(--ic-md); height: var(--ic-md); }
+:where(.panel .ph) svg.ic { color: var(--text-2); }
 .panel .ph .hint, .panel .ph .ph-push { margin-left: auto; }
 .panel .ph .hint { font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--text-2); }
 .panel .ph .hint + .ph-push { margin-left: var(--sp-2); }
@@ -506,7 +514,8 @@ select.ctl:focus-visible, input.ctl:focus-visible, textarea.ctl:focus-visible, .
 .td-mod { animation: riseIn var(--dur-base) var(--ease-out) backwards; }
 .td-browserbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 10px; align-items: center; margin-bottom: 10px; }
 .td-search { min-height: 38px; align-items: center; }
-.td-search svg.ic { width: var(--ic-md); height: var(--ic-md); color: var(--text-3); }
+.td-search svg.ic { width: var(--ic-md); height: var(--ic-md); }
+:where(.td-search) svg.ic { color: var(--text-3); }
 .td-search input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--text); outline: 0; font-size: var(--fs-md); }
 .td-project-hint {
   margin: 0 0 12px; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r-md);
@@ -522,7 +531,8 @@ select.ctl:focus-visible, input.ctl:focus-visible, textarea.ctl:focus-visible, .
 }
 .proj-group-h:not(:first-child) { border-top: 1px solid var(--line); padding-top: 14px; }
 .proj-group-h b { font-size: var(--fs-lg); display: inline-flex; align-items: center; gap: 6px; }
-.proj-group-h b svg.ic { width: var(--ic-sm); height: var(--ic-sm); color: var(--accent-fg); stroke-width: 1.75; }
+.proj-group-h b svg.ic { width: var(--ic-sm); height: var(--ic-sm); stroke-width: 1.75; }
+:where(.proj-group-h b) svg.ic { color: var(--accent-fg); }
 .proj-group-h span { font-size: var(--fs-xs); color: var(--text-3); }
 .proj-card {
   border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden;
@@ -670,11 +680,9 @@ details.explain b { color: var(--text); font-weight: 600; }
   position: sticky; top: 0; background: var(--surface); z-index: 2;
 }
 .modal-h b { font-size: var(--fs-lg); display: flex; align-items: center; gap: 9px; }
-.modal-h svg.ic { width: var(--ic-md); height: var(--ic-md); color: var(--accent-fg); }
-.modal-x { font-size: var(--fs-md); color: var(--text-3); padding: 4px 8px; border-radius: var(--r-sm); }
-@media (hover: hover) {
-  .modal-x:hover { color: var(--text); background: var(--surface-2); }
-}
+.modal-h svg.ic { width: var(--ic-md); height: var(--ic-md); }
+:where(.modal-h b) svg.ic { color: var(--accent-fg); }
+.modal-x { /* canonical close = .btn.icon.ghost.sm geometry; full recipe in §4 (Modal close) */ font-size: var(--fs-md); }
 .modal-b { padding: 16px 18px 18px; }
 .mlb {
   font-size: var(--fs-2xs); letter-spacing: var(--tr-caps); text-transform: uppercase;
@@ -1053,7 +1061,8 @@ details.explain b { color: var(--text); font-weight: 600; }
 }
 /* ---------- exports con icono ---------- */
 .exp { flex-direction: row; align-items: center; gap: 12px; }
-.exp svg.ic { width: var(--ic-md); height: var(--ic-md); color: var(--accent-fg); flex: none; }
+.exp svg.ic { width: var(--ic-md); height: var(--ic-md); flex: none; }
+:where(.exp) svg.ic { color: var(--accent-fg); }
 .exp > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 /* ---------- micro-polish global ---------- */
 .panel { transition: border-color var(--dur-base) var(--ease-out); }
@@ -1202,7 +1211,8 @@ details.explain b { color: var(--text); font-weight: 600; }
 .sd-card { border: 1px solid var(--line); border-radius: var(--r-lg); padding: 13px 15px; background: var(--surface-2); }
 .sd-card + .sd-card { margin-top: 10px; }
 .sd-head { display: flex; align-items: center; gap: 9px; }
-.sd-head svg.ic { width: var(--ic-md); height: var(--ic-md); color: var(--accent-fg); }
+.sd-head svg.ic { width: var(--ic-md); height: var(--ic-md); }
+:where(.sd-head) svg.ic { color: var(--accent-fg); }
 .sd-head b { font-size: var(--fs-lg); }
 .mflight input[type=checkbox] { margin: 0 2px 0 6px; }
 /* visor de splat: overlay de carga propio */
@@ -1226,7 +1236,8 @@ details.explain b { color: var(--text); font-weight: 600; }
   animation: riseIn var(--dur-base) var(--ease-out) backwards;
 }
 .sd-file:last-child { border-bottom: none; }
-.sd-file .sf-ic svg.ic { width: var(--ic-sm); height: var(--ic-sm); color: var(--text-3); stroke-width: 1.75; }
+.sd-file .sf-ic svg.ic { width: var(--ic-sm); height: var(--ic-sm); stroke-width: 1.75; }
+:where(.sd-file .sf-ic) svg.ic { color: var(--text-3); }
 .sd-file .sf-name { font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .sd-file .sf-size { font-size: var(--fs-xs); color: var(--text-3); }
 .sd-file .sf-st { font-size: var(--fs-xs); font-weight: 600; }
@@ -1244,9 +1255,11 @@ details.explain b { color: var(--text); font-weight: 600; }
   border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent); background: color-mix(in srgb, var(--ok) 6%, transparent);
   border-radius: var(--r-md); padding: 10px 12px; margin-bottom: 12px;
 }
-.opt-safe svg.ic { width: var(--ic-sm); height: var(--ic-sm); color: var(--ok-fg); flex: none; margin-top: 1px; stroke-width: 1.75; }
+.opt-safe svg.ic { width: var(--ic-sm); height: var(--ic-sm); flex: none; margin-top: 1px; stroke-width: 1.75; }
+:where(.opt-safe) svg.ic { color: var(--ok-fg); }
 .mpreset b { display: flex; align-items: center; gap: 6px; }
-.mpreset b svg.ic { width: var(--ic-xs); height: var(--ic-xs); color: var(--accent-fg); stroke-width: 1.75; }
+.mpreset b svg.ic { width: var(--ic-xs); height: var(--ic-xs); stroke-width: 1.75; }
+:where(.mpreset b) svg.ic { color: var(--accent-fg); }
 .opt-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .opt-col { border: 1px solid var(--line); border-radius: var(--r-md); padding: 9px 11px; display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-sm); }
 .opt-col b { font-size: var(--fs-xs); display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
@@ -1397,7 +1410,8 @@ button.exp { text-align: left; cursor: pointer; }
   display: flex; align-items: center; gap: 12px; padding: 11px 14px;
   font-size: var(--fs-sm); color: var(--text-2); flex-wrap: wrap;
 }
-.cc-stats svg.ic { width: var(--ic-xs); height: var(--ic-xs); vertical-align: -2px; color: var(--text-3); stroke-width: 1.75; }
+.cc-stats svg.ic { width: var(--ic-xs); height: var(--ic-xs); vertical-align: -2px; stroke-width: 1.75; }
+:where(.cc-stats) svg.ic { color: var(--text-3); }
 .cc-stats .btn {  }
 .cc-stats .btn svg.ic { width: var(--ic-sm); height: var(--ic-sm); stroke-width: 1.75; }
 /* editor v2 */
@@ -1426,9 +1440,9 @@ button.exp { text-align: left; cursor: pointer; }
 .card.scrub .thumb { touch-action: pan-y; }
 /* ---- editor de fotos v3: tabs con tinta + sliders custom ---- */
 .photo-modal.pm2 { animation: mIn var(--dur-slow) var(--ease-out); }
-.pm-tabs { position: relative; display: flex; gap: 4px; padding: 3px; margin: 2px 0;
+.pm-tabs { position: relative; display: flex; gap: 4px; padding: 3px; margin: 2px 0; width: fit-content; max-width: 100%;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); }
-.pm-tabs button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+.pm-tabs button { flex: 0 1 auto; display: flex; align-items: center; justify-content: center; gap: 6px;
   padding: 7px 10px; font-size: var(--fs-md); font-weight: 600; color: var(--text-3);
   background: none; border: 0; border-radius: var(--r-md); cursor: pointer; position: relative; z-index: 1;
   transition: color var(--dur-base) var(--ease-out); }
@@ -1618,7 +1632,8 @@ button.exp { text-align: left; cursor: pointer; }
 .mus-drop b { font-size: var(--fs-md); display: inline-flex; align-items: center; gap: 7px; }
 .mus-drop small { font-size: var(--fs-xs); color: var(--text-3); }
 .mus-note { margin: 10px 0 2px; line-height: 1.5; display: flex; gap: 7px; align-items: flex-start; }
-.mus-note svg.ic { width: var(--ic-sm); height: var(--ic-sm); flex: none; margin-top: 2px; color: var(--warn-fg); stroke-width: 1.75; }
+.mus-note svg.ic { width: var(--ic-sm); height: var(--ic-sm); flex: none; margin-top: 2px; stroke-width: 1.75; }
+:where(.mus-note) svg.ic { color: var(--warn-fg); }
 .mus-list { display: flex; flex-direction: column; gap: 6px; max-height: 30dvh; overflow: auto; }
 .mus-item {
   display: flex; align-items: center; gap: 10px; padding: 7px 10px;
@@ -1890,7 +1905,8 @@ button.exp { text-align: left; cursor: pointer; }
   display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-2);
   width: 118px; flex: none;
 }
-.rv-elb svg.ic { width: var(--ic-sm); height: var(--ic-sm); color: var(--accent-fg); stroke-width: 1.75; }
+.rv-elb svg.ic { width: var(--ic-sm); height: var(--ic-sm); stroke-width: 1.75; }
+:where(.rv-elb) svg.ic { color: var(--accent-fg); }
 .rv-edit input[type=range] { flex: 1; min-width: 90px; accent-color: var(--accent); }
 .rv-edit .mono { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
 .rv-edit .chip {  }
@@ -2010,7 +2026,8 @@ button.exp { text-align: left; cursor: pointer; }
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .rm-plan b { font-size: var(--fs-sm); display: inline-flex; align-items: center; gap: 7px; }
-.rm-plan svg.ic { width: var(--ic-sm); height: var(--ic-sm); color: var(--accent-fg); stroke-width: 1.75; }
+.rm-plan svg.ic { width: var(--ic-sm); height: var(--ic-sm); stroke-width: 1.75; }
+:where(.rm-plan) svg.ic { color: var(--accent-fg); }
 .rm-plan p { margin: 6px 0 0; font-size: var(--fs-sm); line-height: 1.55; color: var(--text-2); }
 .rm-plan p b { font-size: inherit; color: var(--text); }
 .rm-clip {
@@ -2296,8 +2313,7 @@ button.exp { text-align: left; cursor: pointer; }
   display: inline-flex; align-items: center; gap: 6px; color: var(--accent-fg); }
 .tl-help summary::before { content: ""; flex: none; width: var(--ic-xs); height: var(--ic-xs); background: currentColor; -webkit-mask: var(--chev-d) center / contain no-repeat; mask: var(--chev-d) center / contain no-repeat; transform: rotate(-90deg); transition: transform var(--dur-fast) var(--ease-out); }
 .tl-help[open] summary::before { transform: none; }
-.tl-help kbd { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--text-2);
-  border: 1px solid var(--line); border-radius: var(--r-xs); padding: 1px 5px; background: var(--surface-2); }
+.tl-help kbd { font-size: var(--fs-2xs); }
 .tl-help p { margin-top: 6px; line-height: 1.7; }
 /* carrusel de fuentes */
 .tl-lib { padding-top: 2px; }
@@ -2366,7 +2382,8 @@ button.exp { text-align: left; cursor: pointer; }
   font-size: var(--fs-2xs); letter-spacing: var(--tr-caps); text-transform: uppercase;
   color: var(--text-2); font-weight: 600;
 }
-.tl-seclabel svg.ic { width: var(--ic-sm); height: var(--ic-sm); color: var(--accent-fg); stroke-width: 1.75; }
+.tl-seclabel svg.ic { width: var(--ic-sm); height: var(--ic-sm); stroke-width: 1.75; }
+:where(.tl-seclabel) svg.ic { color: var(--accent-fg); }
 .tl-seclabel .spacer { flex: 1; }
 .tl-seclabel .btn {  }
 /* chips de velocidad rápidos (0.5× / 1× / 2× …) */
@@ -2838,7 +2855,8 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
   font-size: var(--fs-2xs); font-weight: 700; letter-spacing: var(--tr-eyebrow); color: var(--text-3);
 }
-.scan-hd svg.ic { width: var(--ic-sm); height: var(--ic-sm); color: var(--accent-fg); stroke-width: 1.75; }
+.scan-hd svg.ic { width: var(--ic-sm); height: var(--ic-sm); stroke-width: 1.75; }
+:where(.scan-hd) svg.ic { color: var(--accent-fg); }
 .scan-verdict { font-size: var(--fs-2xs); padding: 2px 9px; border-radius: var(--r-pill); letter-spacing: var(--tr-caps); }
 .scan-verdict.ok { color: var(--ok-fg); background: color-mix(in srgb, var(--mint) 14%, transparent); }
 .scan-verdict.mid { color: var(--warn-fg); background: color-mix(in srgb, var(--amber) 14%, transparent); }
@@ -2860,10 +2878,10 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
   font-size: var(--fs-xs); line-height: 1.45; color: var(--text-2);
 }
 .scan-mem svg.ic, .scan-warn svg.ic { width: var(--ic-sm); height: var(--ic-sm); flex: none; margin-top: 1px; stroke-width: 1.75; }
-.scan-mem.ok svg.ic { color: var(--ok-fg); }
-.scan-mem.mid svg.ic { color: var(--warn-fg); }
-.scan-mem.bad svg.ic { color: var(--err-fg); }
-.scan-warn svg.ic { color: var(--warn-fg); }
+:where(.scan-mem.ok) svg.ic { color: var(--ok-fg); }
+:where(.scan-mem.mid) svg.ic { color: var(--warn-fg); }
+:where(.scan-mem.bad) svg.ic { color: var(--err-fg); }
+:where(.scan-warn) svg.ic { color: var(--warn-fg); }
 .mflights { max-height: 300px; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
 .mflight { scroll-margin: 8px; }
 .mpresets .mpreset { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
@@ -2891,7 +2909,8 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .proc-group { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface-2); overflow: hidden; }
 .pg-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .pg-place { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); min-width: 0; }
-.pg-place svg { width: var(--ic-sm); height: var(--ic-sm); color: var(--accent-fg); flex: none; stroke-width: 1.75; }
+.pg-place svg { width: var(--ic-sm); height: var(--ic-sm); flex: none; stroke-width: 1.75; }
+:where(.pg-place) svg { color: var(--accent-fg); }
 .pg-head .count { margin-left: auto; }
 .pg-all { font-size: var(--fs-xs); padding: 3px 10px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: var(--r-pill); color: var(--accent-fg); background: none; }
 .pg-clips { display: flex; flex-direction: column; }
@@ -2923,7 +2942,8 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .pcm b { font-family: var(--mono); color: var(--text); }
 .proc-phase { display: flex; align-items: center; gap: 9px; margin: 14px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); cursor: pointer; font-size: var(--fs-md); }
 .proc-phase input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
-.proc-phase svg { width: var(--ic-sm); height: var(--ic-sm); color: var(--accent-fg); vertical-align: -2px; stroke-width: 1.75; }
+.proc-phase svg { width: var(--ic-sm); height: var(--ic-sm); vertical-align: -2px; stroke-width: 1.75; }
+:where(.proc-phase) svg { color: var(--accent-fg); }
 /* ══ BLOQUE 25 · Procesamiento v2: stepper, CTAs, Estudio 3D con mapa ══ */
 .linklike {background:none;border:none;color:var(--accent-fg);font:inherit;font-size:var(--fs-sm);cursor:pointer;padding:2px 4px}
 @media (hover: hover) {
@@ -2966,7 +2986,8 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .pg-chips { font-size:var(--fs-xs);color:var(--text-3) }
 .pc-thumb { position:relative;display:block;flex:none;cursor:zoom-in }
 .pc-thumb img { display:block }
-.pc-thumb svg {position:absolute;inset:0;margin:auto;width:var(--ic-md);height:var(--ic-md);color:#fff;filter:drop-shadow(0 1px 3px rgba(0,0,0,.8));opacity:0;transition:opacity var(--dur-fast) var(--ease-out)}
+.pc-thumb svg { position:absolute; inset:0; margin:auto; width:var(--ic-md); height:var(--ic-md); filter:drop-shadow(0 1px 3px rgba(0,0,0,.8)); opacity:0; transition:opacity var(--dur-fast) var(--ease-out); }
+:where(.pc-thumb) svg { color:#fff; }
 @media (hover: hover) {
   .pc-thumb:hover svg { opacity:1 }
 }
@@ -3117,129 +3138,8 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 @media (max-width:640px) {
   .fv-hero h1 { font-size:var(--fs-3xl) }
 }
-/* ── BLOQUE 29 · FLIGHTVERSE /volar — HUD del vuelo ───────────────────────
-   Arquitectura cero-solape: 4 esquinas fijas + ayuda central; ningún panel
-   comparte esquina. Todo pointer-events:none salvo lo clicable. */
-.vl-body { margin:0; overflow:hidden; background:#0A0C10 }
-.vl-canvas { position:fixed; inset:0; display:block }
-.vl-hud { position:fixed; inset:0; pointer-events:none; z-index:5;
-  font-family:var(--mono); color:#E6EBF2 }
-.vl-corner { position:absolute; display:flex; flex-direction:column; gap:6px }
-.vl-corner.tl { top:14px; left:14px; align-items:flex-start }
-.vl-corner.tr { top:14px; right:14px; align-items:flex-end; flex-direction:row; gap:10px }
-.vl-corner.bl { bottom:14px; left:14px; align-items:flex-start }
-.vl-corner.br { bottom:14px; right:14px; align-items:flex-end }
-.vl-back { pointer-events:auto; text-decoration:none; color:#E6EBF2;
-  font:600 var(--fs-sm) var(--mono); padding:7px 12px; border-radius:var(--r-md);
-  border:1px solid rgba(255,255,255,.16); background:rgba(10,12,16,.6);
-  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px) }
-@media (hover: hover) {
-  .vl-back:hover { border-color:rgba(69,160,230,.6) }
-}
-.vl-scene { font:600 var(--fs-sm) var(--mono); color:#B7C2D0; padding:5px 10px;
-  border-radius:var(--r-md); background:rgba(10,12,16,.5); max-width:52vw;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-.vl-metric { text-align:right; padding:7px 12px; border-radius:var(--r-md);
-  border:1px solid rgba(255,255,255,.12); background:rgba(10,12,16,.6);
-  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); min-width:84px }
-.vl-metric span { display:block; font:700 var(--fs-xl)/1.1 var(--mono); color:#E6EBF2 }
-.vl-metric label { font:600 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:#8A97A8 }
-.vl-mode,.vl-rig,.vl-ghost,.vl-fps { font:600 var(--fs-xs) var(--mono); color:#B7C2D0;
-  padding:5px 10px; border-radius:var(--r-md); background:rgba(10,12,16,.55) }
-.vl-mode { color:var(--accent) }
-.vl-help { position:absolute; left:50%; bottom:64px; transform:translateX(-50%) translateY(8px);
-  padding:12px 16px; border-radius:var(--r-md); border:1px solid rgba(255,255,255,.14);
-  background:rgba(10,12,16,.82); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
-  font:500 var(--fs-sm)/1.7 var(--mono); color:#B7C2D0; text-align:center;
-  opacity:0; transition:opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out)}
-.vl-help.show { opacity:1; transform:translateX(-50%) translateY(0) }
-@media (max-width:640px) {
-  .vl-scene { max-width:38vw }
-  .vl-metric { min-width:64px; padding:5px 9px }
-  .vl-metric span { font-size:var(--fs-lg) }
-}
-/* BLOQUE 29b · Gate Rush: HUD superior-centro, countdown, panel resultado */
-.vl-center-top { position:absolute; top:14px; left:50%; transform:translateX(-50%);
-  font:700 var(--fs-md) var(--mono); color:#E6EBF2; padding:7px 14px; border-radius:var(--r-md);
-  border:1px solid rgba(255,255,255,.14); background:rgba(10,12,16,.6);
-  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); white-space:nowrap }
-.vl-count { position:absolute; top:38%; left:50%; transform:translate(-50%,-50%) scale(.8);
-  font:700 var(--fs-display) var(--mono); color:var(--accent); opacity:0;
-  text-shadow:0 0 42px rgba(69,160,230,.5); transition:opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out)}
-.vl-count.show { opacity:1; transform:translate(-50%,-50%) scale(1) }
-.vl-result { position:absolute; inset:0; display:none; place-items:center;
-  background:rgba(10,12,16,.45); pointer-events:auto }
-.vl-result.show { display:grid }
-.vl-result-card { min-width:300px; text-align:center; padding:26px 30px;
-  border-radius:var(--r-lg); border:1px solid rgba(69,160,230,.35);
-  background:rgba(17,21,28,.92); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
-  box-shadow:var(--shadow-3)}
-.vl-result-k { font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:var(--accent) }
-.vl-result-time { font:700 var(--fs-display)/1.1 var(--mono); color:#E6EBF2; margin:10px 0 4px }
-.vl-result-time small { font-size:var(--fs-2xl); color:#8A97A8 }
-.vl-result-btns { display:flex; gap:10px; justify-content:center }
-.vl-result-btns button,.vl-result-btns a { font:600 var(--fs-sm) var(--font); letter-spacing:var(--tr-caps);
-  padding:9px 16px; border-radius:var(--r-md); cursor:pointer; text-decoration:none;
-  border:1px solid var(--line); background:transparent; color:var(--text-2) }
-.vl-result-btns button:first-child { background:linear-gradient(135deg,#45A0E6,#5A78E8);
-  color:#fff; border:none }
-@media (hover: hover) {
-  .vl-result-btns :is(button,a):hover { filter:brightness(1.2) }
-}
-/* BLOQUE 29c · Quick Record */
-.vl-rec { pointer-events:auto; cursor:pointer; font:600 var(--fs-xs) var(--mono);
-  color:#B7C2D0; padding:5px 10px; border-radius:var(--r-md); text-align:left;
-  border:1px solid rgba(255,255,255,.14); background:rgba(10,12,16,.55) }
-@media (hover: hover) {
-  .vl-rec:hover { border-color:rgba(69,160,230,.5) }
-}
-.vl-rec.on { color:#fff; background:rgba(217,106,106,.85); border-color:transparent;
-  animation:recPulse 1.2s var(--ease-in-out) infinite}
-/* BLOQUE 29d · minimapa táctico */
-.vl-minimap { position:absolute; left:50%; bottom:14px; transform:translateX(-50%);
-  width:150px; height:150px; border-radius:var(--r-md); border:1px solid rgba(255,255,255,.18);
-  background:rgba(10,12,16,.5); box-shadow:var(--shadow-2)}
-@media (max-width:640px) {
-  .vl-minimap { width:104px; height:104px; bottom:12px }
-}
-/* BLOQUE 29e · dual-stick táctil */
-.vl-stick { position:absolute; bottom:24px; width:38vw; height:min(34vh, 300px); max-width:260px; z-index:1;
-  pointer-events:auto; touch-action:none; display:none }
-.vl-stick.left { left:8px }
-.vl-stick.right { right:8px }
-.vl-stick-base { position:absolute; bottom:26px; left:50%; transform:translateX(-50%);
-  width:112px; height:112px; border-radius:50%; border:1.5px solid rgba(255,255,255,.22);
-  background:rgba(10,12,16,.35); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px) }
-.vl-stick-nub { position:absolute; inset:0; margin:auto; width:46px; height:46px;
-  border-radius:50%; background:rgba(69,160,230,.75); box-shadow:0 2px 14px rgba(69,160,230,.5) }
-@media (pointer:coarse) {
-  .vl-stick { display:block }
-  .vl-help { display:none }
-}
-/* BLOQUE 29f · UX táctil iOS/iPad: targets 44px+, safe-areas, chips-botón */
-.vl-chip { pointer-events:auto; cursor:pointer; font:600 var(--fs-xs) var(--mono); color:#B7C2D0;
-  padding:5px 10px; border-radius:var(--r-md); border:1px solid rgba(255,255,255,.14);
-  background:rgba(10,12,16,.55); text-align:left; -webkit-tap-highlight-color:transparent }
-@media (hover: hover) {
-  .vl-chip:hover { border-color:rgba(69,160,230,.5) }
-}
-#vl-mode { color:var(--accent) }
-.vl-corner.tl { top:calc(14px + env(safe-area-inset-top)); left:calc(14px + env(safe-area-inset-left)) }
-.vl-corner.tr { top:calc(14px + env(safe-area-inset-top)); right:calc(14px + env(safe-area-inset-right)) }
-.vl-corner.bl { bottom:calc(14px + env(safe-area-inset-bottom)); left:calc(14px + env(safe-area-inset-left)) }
-.vl-corner.br { bottom:calc(14px + env(safe-area-inset-bottom)); right:calc(14px + env(safe-area-inset-right)) }
-.vl-canvas { touch-action:none }
-@media (pointer:coarse) {
-  .vl-chip,.vl-rec,.vl-back { padding:12px 15px; font-size:var(--fs-md); border-radius:var(--r-lg);
-    min-height:44px; display:flex; align-items:center }
-  .vl-corner.bl { gap:9px; max-width:46vw }
-  .vl-metric { min-width:78px }
-  .vl-minimap { bottom:calc(12px + env(safe-area-inset-bottom)) }
-  .vl-count { font-size:var(--fs-display) }
-  .vl-result-btns button,.vl-result-btns a { padding:13px 18px; font-size:var(--fs-lg) }
-}
 @media (pointer:coarse) and (max-width:920px) {
-  .vl-corner.bl { bottom:calc(30vh + 20px) }
+  
   /* chips sobre el stick izquierdo */
 }
 /* BLOQUE 28b · mundo: toggle de vista + mapa + pins */
@@ -3251,114 +3151,19 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .fv-viewtoggle button.on { background:var(--accent-dim); color:var(--accent-fg) }
 .fv-map { height:min(64dvh,620px); border-radius:var(--r-lg); overflow:hidden;
   border:1px solid var(--line); margin-bottom:32px }
-/* hidden debe ganar a .fv-grid{display:grid} */
-/* ── BLOQUE 29g · HUD PREMIUM: glass, dock, brújula, scrims, orientación ── */
-.vl-scrim { position:absolute; left:0; right:0; height:120px; pointer-events:none }
-.vl-scrim.top { top:0; background:linear-gradient(180deg, rgba(6,8,11,.55), transparent) }
-.vl-scrim.bottom { bottom:0; background:linear-gradient(0deg, rgba(6,8,11,.5), transparent) }
-.vl-corner,.vl-center-top,.vl-minimap,.vl-compass { z-index:2 }
-.vl-metric { border:1px solid rgba(255,255,255,.09); border-radius:var(--r-lg);
-  background:linear-gradient(160deg, rgba(23,29,38,.78), rgba(10,12,16,.72));
-  -webkit-backdrop-filter:blur(14px) saturate(1.3); backdrop-filter:blur(14px) saturate(1.3);
-  box-shadow:var(--shadow-2); padding:9px 14px }
-.vl-metric span { font-size:var(--fs-2xl); letter-spacing:0 }
-.vl-metric label { color:#6E7B8D; margin-top:2px; display:block }
-.vl-center-top { border-radius:var(--r-lg); border:1px solid rgba(69,160,230,.28);
-  background:linear-gradient(160deg, rgba(23,29,38,.82), rgba(10,12,16,.75));
-  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
-  box-shadow:var(--shadow-2)}
-.vl-compass { position:absolute; top:calc(60px + env(safe-area-inset-top)); left:50%;
-  transform:translateX(-50%); font:700 var(--fs-xs) var(--mono); color:#B7C2D0;
-  padding:5px 14px; border-radius:var(--r-pill); border:1px solid rgba(255,255,255,.12);
-  background:rgba(10,12,16,.6); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
-  letter-spacing:var(--tr-eyebrow) }
-.vl-dock { display:flex; flex-direction:column; gap:7px; padding:9px;
-  border-radius:var(--r-lg); border:1px solid rgba(255,255,255,.09);
-  background:linear-gradient(160deg, rgba(23,29,38,.75), rgba(10,12,16,.68));
-  -webkit-backdrop-filter:blur(14px) saturate(1.3); backdrop-filter:blur(14px) saturate(1.3);
-  box-shadow:var(--shadow-2)}
-.vl-dock .vl-chip,.vl-dock .vl-rec { border:none; background:rgba(255,255,255,.05);
-  border-radius:var(--r-md); transition:background var(--dur-base) var(--ease-out), transform var(--dur-fast) var(--ease-out)}
-@media (hover: hover) {
-  .vl-dock .vl-chip:hover { background:rgba(69,160,230,.16) }
-}
-.vl-dock .vl-chip:active,.vl-dock .vl-rec:active { transform:scale(.96) }
-#vl-sound.off { color:#566274 }
-.vl-back { border-radius:var(--r-lg); background:linear-gradient(160deg, rgba(23,29,38,.8), rgba(10,12,16,.7));
-  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px) }
-.vl-scene { border-radius:var(--r-md); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
-  background:rgba(10,12,16,.62); border:1px solid rgba(255,255,255,.07) }
-.vl-minimap { border:1px solid rgba(255,255,255,.14); border-radius:var(--r-lg);
-  box-shadow:var(--shadow-2)}
-/* móvil VERTICAL: métricas compactas; los paneles agrupados viven sobre los sticks */
-@media (pointer:coarse) and (orientation:portrait) {
-  .vl-corner.tr { flex-direction:column; gap:6px }
-  .vl-metric { min-width:64px; padding:6px 10px }
-  .vl-metric span { font-size:var(--fs-lg) }
-  .vl-dock { flex-direction:row; overflow-x:auto; max-width:calc(100vw - 24px);
-    scrollbar-width:none; -webkit-overflow-scrolling:touch }
-  .vl-dock::-webkit-scrollbar { display:none }
-  .vl-dock .vl-chip,.vl-dock .vl-rec { white-space:nowrap; flex:none }
-  .vl-corner.bl { bottom:calc(34vh + 12px); left:12px; right:12px; max-width:none }
-  .vl-minimap { width:92px; height:92px; left:auto; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); transform:none }
-  .vl-compass { top:calc(52px + env(safe-area-inset-top)) }
-}
 /* móvil HORIZONTAL (landscape juego): dock vertical izquierda, sticks a los lados */
 @media (pointer:coarse) and (orientation:landscape) {
-  .vl-corner.bl { bottom:calc(12px + env(safe-area-inset-bottom)); left:calc(12px + env(safe-area-inset-left)) }
+  
   /* FABs SOBRE la zona de stick de 40vh (colisión geométrica = esquina muerta) */
-  .vl-fab { bottom:calc(40vh + 34px + env(safe-area-inset-bottom)) }
-  .vl-combat-fab { bottom:calc(40vh + 34px + env(safe-area-inset-bottom)) }
-  .vl-dock { flex-direction:column }
-  .vl-stick { width:32vw; height:40vh; max-width:300px }
-  .vl-minimap { width:110px; height:110px }
-  .vl-help { display:none }
+  
+  
+  
+  
+  
+  
 }
-/* BLOQUE 29h · guía premium de vuelo */
-.vl-guide { position:absolute; inset:0; display:none; place-items:center; z-index:6;
-  background:rgba(6,8,11,.62); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
-  pointer-events:auto }
-.vl-guide.show { display:grid }
-.vl-guide-card { max-width:520px; width:calc(100vw - 48px); max-height:80dvh; overflow-y:auto;
-  padding:26px 28px; border-radius:var(--r-xl); border:1px solid rgba(69,160,230,.3);
-  background:linear-gradient(165deg, rgba(23,29,38,.96), rgba(10,12,16,.94));
-  box-shadow:var(--shadow-3)}
-.vl-guide-k { font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:var(--accent); margin-bottom:16px }
-.vl-guide-rows { display:flex; flex-direction:column; gap:15px;
-  font:400 var(--fs-md)/1.65 var(--font); color:#B7C2D0 }
-.vl-guide-rows b { color:#E6EBF2 }
-.vl-gi { float:left; margin:2px 12px 0 0; font-size:var(--fs-2xl); color:var(--accent) }
-/* BLOQUE 29i · panel de imagen + fixes de layout */
-.vl-grade { position:absolute; left:calc(14px + env(safe-area-inset-left)); bottom:50%;
-  transform:translateY(50%); display:none; flex-direction:column; gap:9px; z-index:5;
-  padding:16px 18px; border-radius:var(--r-lg); border:1px solid rgba(69,160,230,.28);
-  background:linear-gradient(160deg, rgba(23,29,38,.92), rgba(10,12,16,.88));
-  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
-  box-shadow:var(--shadow-3); pointer-events:auto; width:220px }
-.vl-grade.show { display:flex }
-.vl-grade-k { font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:var(--accent) }
-.vl-grade label { font:600 var(--fs-xs) var(--mono); color:#8A97A8; display:flex;
-  flex-direction:column; gap:4px; text-transform:uppercase; letter-spacing:var(--tr-eyebrow) }
-.vl-grade input[type=range] { accent-color:#45A0E6; height:22px }
 #gr-reset { margin-top:4px; padding:8px; border:1px solid var(--line); border-radius:var(--r-md);
   background:transparent; color:var(--text-2); font:600 var(--fs-xs) var(--font); cursor:pointer }
-.vl-help { bottom:190px }
-/* no pisar el minimapa */
-@media (pointer:coarse) {
-  .vl-grade { width:min(260px, calc(100vw - 32px)) }
-}
-/* BLOQUE 29j · FAB móvil: HUD mínimo, dock bajo demanda */
-.vl-fab { display:none; pointer-events:auto; width:52px; height:52px; border-radius:var(--r-xl);
-  border:1px solid rgba(255,255,255,.14); font-size:var(--fs-2xl); color:#E6EBF2; cursor:pointer;
-  background:linear-gradient(160deg, rgba(23,29,38,.85), rgba(10,12,16,.8));
-  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
-  box-shadow:var(--shadow-2)}
-.vl-dock .vl-chip,.vl-dock .vl-rec { white-space:nowrap }
-@media (pointer:coarse) {
-  .vl-fab { display:grid; place-items:center }
-  .vl-dock { display:none }
-  .vl-dock.open { display:flex; animation:dockIn var(--dur-base) var(--ease-out) }
-}
 /* ── BLOQUE 28c · WORLD SELECT videojuego: islas, panel de misión, launch ── */
 .w-rail { display:flex; gap:16px; overflow-x:auto; padding:6px 24px 18px;
   scroll-snap-type:x mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch }
@@ -3438,65 +3243,18 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 .wp-data span { font:600 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:var(--text-2); text-transform:uppercase; margin-top:2px }
 .wi-rec { display:inline-flex; align-items:center; gap:4px }
 .wp-m b { display:flex; align-items:center; gap:7px }
-.vl-gi { font:700 var(--fs-2xs) var(--mono); color:var(--accent); letter-spacing:var(--tr-caps);
-  border:1px solid rgba(69,160,230,.35); border-radius:var(--r-sm); padding:3px 6px; float:left; margin:2px 10px 0 0 }
 /* ── BLOQUE 30 · tipografía sans (adiós notepad), flash, presets, pins ── */
-.vl-chip,.vl-back,.vl-scene,.vl-mode,.vl-rig,.vl-ghost,.vl-rec,.vl-center-top,
-.vl-guide-rows,.w-filters button,.wp-m span,.fv-chip,.vl-grade label {
+.w-filters button, .wp-m span, .fv-chip {
   font-family:var(--font) !important; letter-spacing:0 !important;
   text-transform:none !important }
-.vl-metric span,.vl-fps,.vl-compass,.wp-data b,.vl-result-time { font-family:var(--mono) !important }
-.vl-grade label { font-size:var(--fs-sm) !important; color:#9AA7B8 !important }
-.vl-presets { display:flex; gap:6px; margin-bottom:4px }
-.vl-presets button { flex:1; font:600 var(--fs-xs) var(--font); padding:7px 4px; border-radius:var(--r-md);
-  border:1px solid var(--line); background:rgba(255,255,255,.04); color:var(--text-2); cursor:pointer }
-@media (hover: hover) {
-  .vl-presets button:hover { border-color:rgba(69,160,230,.5); color:var(--text) }
-}
-.vl-flash { position:absolute; inset:0; pointer-events:none; opacity:0; z-index:1;
-  background:radial-gradient(ellipse at center, rgba(82,199,154,.28), transparent 62%) }
-.vl-flash.hit { animation:gateFlash var(--dur-slow) var(--ease-out) }
-@keyframes gateFlash { 0%{ opacity:0 } 18%{ opacity:1 } 100%{ opacity:0 } }
+.wp-data b { font-family:var(--mono) !important }
 .fv-pin-img { width:44px; height:44px; border-radius:50%; background-size:cover;
   background-position:center; border:2.5px solid #E6EBF2;
   box-shadow:var(--shadow-2); transition:transform var(--dur-base) var(--ease-out)}
 .fv-pin-lb { font:600 var(--fs-xs) var(--font); color:#fff; background:var(--media-scrim);
   padding:3px 8px; border-radius:var(--r-sm); white-space:nowrap;
   -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px) }
-/* móvil: panel imagen = modal centrado (no pisa sticks) */
-@media (pointer:coarse) {
-  .vl-grade { left:50%; bottom:auto; top:50%; transform:translate(-50%,-50%) }
-}
-/* BLOQUE 31 · Director */
-.vl-director { position:absolute; left:50%; bottom:180px; transform:translateX(-50%);
-  display:none; flex-direction:column; gap:9px; z-index:5; width:min(560px, calc(100vw - 28px));
-  padding:14px 16px; border-radius:var(--r-lg); border:1px solid rgba(69,160,230,.3);
-  background:linear-gradient(160deg, rgba(23,29,38,.92), rgba(10,12,16,.9));
-  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); pointer-events:auto }
-.vl-director.show { display:flex }
-.vl-dir-row { display:flex; gap:8px; flex-wrap:wrap }
-.vl-dir-row button { flex:1; min-height:38px; font:600 var(--fs-sm) var(--font); color:var(--text-2);
-  border:1px solid var(--line); border-radius:var(--r-md); background:rgba(255,255,255,.04); cursor:pointer }
-.vl-dir-row button:first-child { color:#fff; background:linear-gradient(135deg,#45A0E6,#5A78E8); border:none }
-@media (hover: hover) {
-  .vl-dir-row button:hover { filter:brightness(1.15) }
-}
 #dir-scrub { accent-color:#45A0E6; height:24px }
-.vl-dir-keys { display:flex; gap:6px; flex-wrap:wrap; font:500 var(--fs-xs) var(--font); color:var(--text-3) }
-.vl-dir-keys button { font:600 var(--fs-xs) var(--mono); color:#B7C2D0; padding:4px 8px;
-  border-radius:var(--r-sm); border:1px solid var(--line); background:transparent; cursor:pointer }
-@media (hover: hover) {
-  .vl-dir-keys button:hover { border-color:var(--red); color:var(--red) }
-}
-@media (pointer:coarse) {
-  .vl-director { bottom:calc(34vh + 90px) }
-}
-/* BLOQUE 32 · gauges de métricas (videojuego) */
-.vl-bar { display:block; height:3px; margin-top:6px; border-radius:var(--r-xs);
-  background:rgba(255,255,255,.1); overflow:hidden }
-.vl-bar b { display:block; height:100%; width:100%; border-radius:var(--r-xs);
-  background:linear-gradient(90deg,#45A0E6,#7dffc9); transform-origin:left;
-  transform:scaleX(0); transition:transform var(--dur-base) var(--ease-out)}
 /* ── BLOQUE 33 · Estudio 3D paso 1: UN solo scroll, acordeón, badges ── */
 .proc-groups { max-height:none; overflow:visible }
 /* mata el doble-scroll */
@@ -3528,75 +3286,14 @@ html.sv-noscroll, html.sv-noscroll body { overflow: hidden; }
 }
 /* la causa raíz del recorte: cascada de flex-shrink aplastaba grupos a 70px */
 .proc-groups, .proc-group, .proc-photos { flex-shrink:0 }
-/* BLOQUE 34 · HUD FPV: crosshair + horizonte artificial */
-.vl-fpv { position:absolute; inset:0; display:none; pointer-events:none; z-index:3 }
-.vl-fpv.show { display:block }
-.vl-fpv-cross { position:absolute; left:50%; top:50%; width:26px; height:26px;
-  transform:translate(-50%,-50%) }
-.vl-fpv-cross::before,.vl-fpv-cross::after { content:''; position:absolute; background:rgba(255,255,255,.85) }
-.vl-fpv-cross::before { left:50%; top:0; width:1.5px; height:100%; transform:translateX(-50%) }
-.vl-fpv-cross::after { top:50%; left:0; height:1.5px; width:100%; transform:translateY(-50%) }
-.vl-fpv-horizon { position:absolute; left:50%; top:50%; width:min(46vw,520px); height:0;
-  margin-left:calc(min(46vw,520px) / -2); will-change:transform }
-.vl-fpv-horizon i { display:block; height:1.5px;
-  background:linear-gradient(90deg, transparent, rgba(125,255,201,.8) 18%, rgba(125,255,201,.8) 82%, transparent) }
-/* BLOQUE 35 · OSD FPV: cintas de velocidad/altitud + home (estilo goggles) */
-.vl-osd { position:absolute; top:50%; transform:translateY(-50%); width:64px; height:180px;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
-  overflow:hidden }
-.vl-osd.tape-l { left:calc(50% - min(33vw, 380px)) }
-.vl-osd.tape-r { right:calc(50% - min(33vw, 380px)) }
-.vl-osd-ticks { position:absolute; inset:-20px 0; will-change:transform;
-  background:repeating-linear-gradient(180deg, rgba(255,255,255,.35) 0 1.5px, transparent 1.5px 18px) }
-.vl-osd.tape-l .vl-osd-ticks { -webkit-mask:linear-gradient(90deg, transparent, #000 30%); mask:linear-gradient(90deg, transparent, #000 30%) }
-.vl-osd.tape-r .vl-osd-ticks { -webkit-mask:linear-gradient(270deg, transparent, #000 30%); mask:linear-gradient(270deg, transparent, #000 30%) }
-.vl-osd b { font:700 var(--fs-2xl) var(--mono); color:#EAF6FF; text-shadow:0 0 12px rgba(125,255,201,.35); z-index:1 }
-.vl-osd label { font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:#8A97A8; z-index:1 }
-.vl-osd-home { position:absolute; left:50%; top:calc(50% + 54px); transform:translateX(-50%);
-  font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:#B7C2D0;
-  padding:4px 10px; border-radius:var(--r-pill); background:rgba(10,12,16,.5) }
-@media (max-width:760px) {
-  .vl-osd.tape-l { left:8px }
-  .vl-osd.tape-r { right:8px }
-}
-/* BLOQUE 36 · lectura del gimbal; el control táctil vive en BLOQUE 55d */
-.vl-osd-gimbal { position:absolute; left:50%; top:calc(50% + 78px); transform:translateX(-50%);
-  font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:#7dffc9; opacity:.8 }
-/* BLOQUE 37 · panel Imagen usable: ancho real, sliders con dedo */
-.vl-grade { width:290px; gap:12px; padding:18px 20px }
-.vl-grade-body { display:flex; min-height:0; flex-direction:column; gap:12px }
-.vl-grade-actions { display:flex; align-items:center; gap:7px }
-.vl-grade-expand { display:none; border:1px solid var(--line); border-radius:var(--r-md);
-  background:rgba(255,255,255,.05); color:var(--text-2); font:600 var(--fs-xs) var(--font) }
-.vl-grade input[type=range] { height:30px; width:100% }
-.vl-grade input[type=range]::-webkit-slider-thumb { width:22px; height:22px }
-@media (pointer:coarse) {
-  .vl-grade { width:min(340px, calc(100vw - 28px)) }
-  .vl-grade input[type=range] { height:38px }
-}
-/* BLOQUE 38 · selector de calidad solo con puntero fino */
-@media (pointer:coarse) {
-  .vl-solo-fino { display:none }
-  .vl-ghost { display:none }
-}
-/* ── BLOQUE 39 · dock seccionado por color + keycaps + zap ── */
-.vl-sep { height:1px; margin:3px 6px; background:rgba(255,255,255,.09) }
-.vl-dock .vl-chip { border-left:3px solid transparent; border-radius:var(--r-md) }
 .sec-nav { border-left-color:#45A0E6 !important }
 .sec-mundo { border-left-color:#52C79A !important }
 .sec-juego { border-left-color:#9a6cff !important }
 .sec-media { border-left-color:#E0A458 !important }
 .sec-ayuda { border-left-color:#8A97A8 !important }
-.vl-dock button.zap { animation:chipZap var(--dur-slow) var(--ease-out) }
-kbd, .vl-guide kbd { display:inline-block; font:700 var(--fs-xs) var(--mono); color:#EAF2FB;
+kbd { display:inline-block; font:700 var(--fs-xs) var(--mono); color:#EAF2FB;
   padding:2px 7px; margin:0 2px; border-radius:var(--r-sm); border:1px solid rgba(255,255,255,.25);
   border-bottom-width:2.5px; background:rgba(255,255,255,.08); vertical-align:middle }
-.vl-kmouse { font:600 var(--fs-xs) var(--mono); color:#7dffc9; border:1px dashed rgba(125,255,201,.4);
-  padding:2px 7px; border-radius:var(--r-sm)}
-#vl-ayuda kbd { margin-left:6px }
-@media (pointer:coarse) {
-  .vl-dock.open .vl-sep { width:1px; height:auto; margin:6px 3px }
-}
 .fv-pin2 { display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer }
 .fv-pin2 .fv-pin-img { width:46px; height:46px; border-radius:50%; background-size:cover;
   background-position:center; border:2.5px solid #E6EBF2;
@@ -3624,819 +3321,131 @@ kbd, .vl-guide kbd { display:inline-block; font:700 var(--fs-xs) var(--mono); co
 .fv-pop-btns { display:flex; gap:6px; margin-top:2px }
 .fv-pop-btns a { flex:1; text-align:center; padding:7px 4px; border-radius:var(--r-md); cursor:pointer;
   font:700 var(--fs-xs) var(--font); color:var(--accent-fg); background:color-mix(in srgb, var(--accent) 14%, transparent); text-decoration:none }
-/* BLOQUE 41 · cine sliders, FPV dron real, estela */
-.vl-cine { position:absolute; left:50%; bottom:190px; transform:translateX(-50%);
-  display:none; gap:16px; padding:12px 16px; border-radius:var(--r-lg); z-index:5;
-  border:1px solid rgba(69,160,230,.3); background:rgba(13,17,23,.85);
-  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); pointer-events:auto }
-.vl-cine.show { display:flex }
-.vl-cine label { font:600 var(--fs-2xs) var(--font); color:#9AA7B8; display:flex; flex-direction:column; gap:4px }
-.vl-cine input { width:130px; accent-color:#45A0E6 }
-.vl-fpv-br { position:absolute; width:34px; height:34px; border:2px solid rgba(255,255,255,.5) }
-.vl-fpv-br.tl { top:12%; left:14%; border-right:0; border-bottom:0 }
-.vl-fpv-br.tr { top:12%; right:14%; border-left:0; border-bottom:0 }
-.vl-fpv-br.bl { bottom:14%; left:14%; border-right:0; border-top:0 }
-.vl-fpv-br.br { bottom:14%; right:14%; border-left:0; border-top:0 }
-.vl-fpv-sig { position:absolute; top:12%; right:calc(14% + 44px); display:flex; gap:3px; align-items:flex-end }
-.vl-fpv-sig i { width:5px; background:rgba(255,255,255,.25); border-radius:var(--r-xs) }
-.vl-fpv-sig i:nth-child(1) { height:8px }
-.vl-fpv-sig i:nth-child(2) { height:13px }
-.vl-fpv-sig i:nth-child(3) { height:18px }
-.vl-fpv-sig[data-n="1"] i:nth-child(1),
-.vl-fpv-sig[data-n="2"] i:nth-child(-n+2),
-.vl-fpv-sig[data-n="3"] i { background:#7dffc9 }
-.vl-fpv-rec { position:absolute; top:12%; left:calc(14% + 44px); font:700 var(--fs-xs) var(--mono);
-  letter-spacing:var(--tr-eyebrow); color:#566274 }
-.vl-fpv-rec.on { color:#ff453a; animation:recBlink 1s steps(2) infinite }
-.vl-fpv-rec.on::before { content:''; display:inline-block; width:7px; height:7px; margin-right:5px; border-radius:50%; background:currentColor }
-@keyframes recBlink { 50%{ opacity:.25 } }
-/* BLOQUE 42 · dock premium ocultable */
-.vl-dock { transition:transform var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out);
-  border:1px solid rgba(69,160,230,.18);
-  box-shadow:var(--shadow-2), inset 0 1px 0 rgba(255,255,255,.05)}
-.vl-dock.min { transform:translateX(calc(-100% - 20px)); opacity:0; pointer-events:none }
-.vl-dockmin { pointer-events:auto; width:26px; height:44px; margin-bottom:6px;
-  border-radius:var(--r-md); border:1px solid rgba(255,255,255,.14); cursor:pointer;
-  background:rgba(10,12,16,.6); color:#8A97A8; font-size:var(--fs-xl);
-  transition:color var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out)}
-@media (hover: hover) {
-  .vl-dockmin:hover { color:#E6EBF2; border-color:rgba(69,160,230,.5) }
-}
-/* BLOQUE 43 · botón fast-travel del autopiloto */
-.vl-goto { position:absolute; top:calc(96px + env(safe-area-inset-top)); left:50%;
-  transform:translateX(-50%); display:none; pointer-events:auto; cursor:pointer;
-  font:600 var(--fs-sm) var(--font); letter-spacing:var(--tr-caps); color:#0d1117;
-  padding:9px 18px; border:none; border-radius:var(--r-pill);
-  background:linear-gradient(135deg,#7dffc9,#45d6a0);
-  box-shadow:0 8px 26px -8px rgba(125,255,201,.5) }
-.vl-goto.show { display:block; animation:wiIn var(--dur-slow) var(--ease-out) }
-.vl-goto:active { transform:translateX(-50%) scale(.96) }
-/* BLOQUE 44 · header FPV goggles */
-.vl-fpv-head { position:absolute; top:calc(8% - 26px); left:50%; transform:translateX(-50%);
-  font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:#DFF6EC; white-space:nowrap;
-  padding:5px 14px; border-radius:var(--r-md); background:rgba(8,12,16,.45);
-  border:1px solid rgba(125,255,201,.2); max-width:calc(100vw - 20px);
-  box-sizing:border-box; overflow:hidden; text-overflow:ellipsis }
-/* ── BLOQUE 45 · panel Imagen premium: header, outputs, sliders custom ── */
-.vl-grade { animation:gradeIn var(--dur-slow) var(--ease-out) }
-@keyframes gradeIn { from{ opacity:0; transform:translateY(46%) scale(.97) } }
-.vl-grade-head { display:flex; align-items:center; justify-content:space-between }
-.vl-grade-x { width:30px; height:30px; border-radius:var(--r-md); border:1px solid var(--line);
-  background:transparent; color:var(--text-2); cursor:pointer; font-size:var(--fs-md) }
-@media (hover: hover) {
-  .vl-grade-x:hover { color:#fff; border-color:rgba(217,106,106,.6) }
-}
-.vl-grade label { position:relative }
-.vl-grade output { float:right; font:700 var(--fs-xs) var(--mono); color:var(--accent) }
-.vl-grade input[type=range] { -webkit-appearance:none; appearance:none; background:transparent }
-.vl-grade input[type=range]::-webkit-slider-runnable-track { height:6px; border-radius:var(--r-xs);
-  background:linear-gradient(90deg, rgba(69,160,230,.55), rgba(125,255,201,.4)) }
-.vl-grade input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px;
-  border-radius:50%; margin-top:-7px; background:#EAF2FB;
-  border:2.5px solid #45A0E6; box-shadow:0 2px 10px rgba(69,160,230,.45);
-  transition:transform var(--dur-fast) var(--ease-out)}
-@media (hover: hover) {
-  .vl-grade input[type=range]::-webkit-slider-thumb:hover { transform:scale(1.15) }
-}
-/* ── BLOQUE 46: dock premium video-game — sheen sweep, glow por sección,
-      entrada escalonada, press táctil ── */
-.vl-dock .vl-chip,.vl-dock .vl-rec { position:relative; overflow:hidden;
-  transition:background var(--dur-base) var(--ease-out), transform var(--dur-fast) var(--ease-out), color var(--dur-base) var(--ease-out)}
-.vl-dock .vl-chip::after,.vl-dock .vl-rec::after { content:''; position:absolute; top:0;
-  left:-90%; width:55%; height:100%; transform:skewX(-18deg); pointer-events:none;
-  background:linear-gradient(105deg, transparent, rgba(255,255,255,.15), transparent);
-  }
-@media (hover: hover) {
-  .vl-dock .vl-chip:hover::after,.vl-dock .vl-rec:hover::after { left:135% }
-  .vl-dock .vl-chip:hover { transform:translateX(3px); color:#EAF2FB;
-  box-shadow:inset 0 0 0 1px rgba(69,160,230,.3), var(--shadow-accent)}
-  .vl-dock .sec-mundo:hover { box-shadow:inset 0 0 0 1px rgba(82,199,154,.32),
-  0 4px 18px -8px rgba(82,199,154,.55); background:rgba(82,199,154,.13) }
-  .vl-dock .sec-juego:hover { box-shadow:inset 0 0 0 1px rgba(154,108,255,.34),
-  0 4px 18px -8px rgba(154,108,255,.6); background:rgba(154,108,255,.14) }
-  .vl-dock .sec-media:hover { box-shadow:inset 0 0 0 1px rgba(224,164,88,.32),
-  0 4px 18px -8px rgba(224,164,88,.55); background:rgba(224,164,88,.12) }
-  .vl-dock .sec-ayuda:hover { box-shadow:inset 0 0 0 1px rgba(138,151,168,.3),
-  0 4px 18px -8px rgba(138,151,168,.5) }
-}
-.vl-dock .vl-chip:active,.vl-dock .vl-rec:active { transform:translateX(3px) scale(.94) }
-@keyframes vlDockIn { from{ opacity:0; transform:translateX(-16px) } to{ opacity:1; transform:none } }
-.vl-dock > * { animation:vlDockIn var(--dur-slow) var(--ease-out) backwards }
-.vl-dock > *:nth-child(1) { animation-delay:.02s }
-.vl-dock > *:nth-child(2) { animation-delay:.05s }
-.vl-dock > *:nth-child(3) { animation-delay:.08s }
-.vl-dock > *:nth-child(4) { animation-delay:.11s }
-.vl-dock > *:nth-child(5) { animation-delay:.14s }
-.vl-dock > *:nth-child(6) { animation-delay:.17s }
-.vl-dock > *:nth-child(7) { animation-delay:.2s }
-.vl-dock > *:nth-child(8) { animation-delay:.23s }
-.vl-dock > *:nth-child(9) { animation-delay:.26s }
-.vl-dock > *:nth-child(10) { animation-delay:.29s }
-.vl-dock > *:nth-child(11) { animation-delay:.32s }
-.vl-dock > *:nth-child(12) { animation-delay:.35s }
-.vl-dock .vl-sep { animation:none; opacity:1 }
-@media (hover: hover) {
-  #vl-rec:hover { box-shadow:inset 0 0 0 1px rgba(232,90,90,.4), 0 4px 18px -8px rgba(232,90,90,.6) }
-}
-/* ── BLOQUE 47: botón FIRE de armamento — premium, contador y cooldown ── */
-.vl-fire { pointer-events:auto; cursor:pointer; position:relative; overflow:hidden;
-  width:58px; height:58px; border-radius:50%; color:#ff9d8a;
-  border:1px solid rgba(232,90,90,.4);
-  background:radial-gradient(circle at 34% 30%, rgba(60,22,20,.9), rgba(16,10,10,.85));
-  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
-  box-shadow:0 8px 26px -12px rgba(232,90,90,.5);
-  transition:transform var(--dur-fast) var(--ease-out), color var(--dur-base) var(--ease-out)}
-@media (hover: hover) {
-  .vl-fire:hover { transform:scale(1.07); color:#ffc4b5;
-  box-shadow:0 10px 30px -10px rgba(232,90,90,.75), inset 0 0 0 1px rgba(232,90,90,.5) }
-}
-.vl-fire:active { transform:scale(.93) }
-.vl-fire #vl-ammo { font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-caps) }
-.vl-fire #vl-cool { position:absolute; left:0; bottom:0; width:100%; height:3px;
-  background:linear-gradient(90deg, #E85A5A, #ffb36b); transform-origin:left;
-  transform:scaleX(1); transition:transform var(--dur-instant) linear}
-.vl-fire.is-empty { color:#5a5f68; border-color:rgba(255,255,255,.12);
-  box-shadow:none; filter:saturate(.3) }
-.vl-fire.flash { animation:fireFlash var(--dur-slow) var(--ease-out) }
-@media (pointer:coarse) {
-  .vl-fire { width:66px; height:66px }
-}
-/* BLOQUE 47b: contador de derribos junto al FIRE */
-.vl-kills { display:none; font:700 var(--fs-2xs) var(--mono); color:#ffb36b; letter-spacing:var(--tr-eyebrow);
-  padding:5px 10px; border-radius:var(--r-pill); border:1px solid rgba(224,164,88,.35);
-  background:rgba(20,12,8,.7); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px) }
-.vl-kills.show { display:block; animation:vlDockIn var(--dur-slow) var(--ease-out) }
-/* ── BLOQUE 48: picker de dificultad Gate Rush ── */
-.vl-diff { display:none; position:absolute; top:calc(96px + env(safe-area-inset-top)); left:50%;
-  transform:translateX(-50%); gap:8px; padding:8px; border-radius:var(--r-lg);
-  border:1px solid rgba(255,255,255,.1);
-  background:linear-gradient(160deg, rgba(23,29,38,.85), rgba(10,12,16,.8));
-  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); z-index:30 }
-.vl-diff.show { display:flex; animation:vlDockIn var(--dur-slow) var(--ease-out) }
-.vl-diff button { pointer-events:auto; cursor:pointer; display:flex; flex-direction:column;
-  align-items:center; gap:3px; padding:10px 16px; border-radius:var(--r-md); border:1px solid transparent;
-  background:rgba(255,255,255,.05); color:#EAF2FB; font:700 var(--fs-sm) var(--mono);
-  transition:transform var(--dur-fast) var(--ease-out), background var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out)}
-.vl-diff button span { font:500 var(--fs-2xs) var(--mono); color:#8A97A8; letter-spacing:var(--tr-caps) }
-@media (hover: hover) {
-  .vl-diff button:hover { transform:translateY(-1px) }
-  .vl-diff button[data-d=facil]:hover { border-color:rgba(82,199,154,.5); background:rgba(82,199,154,.12) }
-  .vl-diff button[data-d=media]:hover { border-color:rgba(69,160,230,.5); background:rgba(69,160,230,.12) }
-  .vl-diff button[data-d=dificil]:hover { border-color:rgba(154,108,255,.5); background:rgba(154,108,255,.14) }
-}
-/* ── BLOQUE 49: modal de resultado v2 — z-index sobre el OSD, grid, splits ── */
-.vl-result { z-index:60 }
-.vl-result-card.v2 { min-width:380px; max-width:480px; padding:28px 32px;
-  border:1px solid rgba(69,160,230,.25);
-  background:linear-gradient(165deg, rgba(19,26,36,.96), rgba(9,11,15,.94));
-  box-shadow:var(--shadow-3), inset 0 1px 0 rgba(255,255,255,.06);
-  animation:gradeIn var(--dur-slow) var(--ease-out)}
-.vl-newrec { display:inline-block; margin-left:8px; padding:2px 9px; border-radius:var(--r-pill);
-  font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow); font-style:normal; color:#0A0C10;
-  background:linear-gradient(90deg, #52C79A, #7dffc9);
-  animation:fireFlash var(--dur-hero) var(--ease-out)}
-.vl-result-sub { font:500 var(--fs-sm) var(--mono); color:#8A97A8; margin:2px 0 14px }
-.vl-result-sub .vl-delta { color:#E0A458 }
-.vl-result-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin:0 0 12px }
-.vl-result-grid div { padding:10px 6px; border-radius:var(--r-md); background:rgba(255,255,255,.045);
-  border:1px solid rgba(255,255,255,.07) }
-.vl-result-grid b { display:block; font:700 var(--fs-xl) var(--mono); color:#EAF2FB }
-.vl-result-grid span { font:500 var(--fs-2xs) var(--mono); color:#68758A; letter-spacing:var(--tr-caps); text-transform:uppercase }
-.vl-result-splits { display:flex; flex-wrap:wrap; gap:5px; justify-content:center; margin:0 0 16px }
-.vl-split { display:flex; align-items:center; gap:5px; padding:4px 9px; border-radius:var(--r-md);
-  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06);
-  font:600 var(--fs-xs) var(--mono); color:#B7C2D0 }
-.vl-split i { font-style:normal; color:#566274; font-size:var(--fs-2xs) }
-.vl-split.best { border-color:rgba(82,199,154,.45); color:#7dffc9;
-  box-shadow:0 0 12px -4px rgba(82,199,154,.5) }
-@media (max-width:520px) {
-  .vl-result-card.v2 { min-width:0; width:calc(100vw - 40px) }
-  .vl-result-grid { grid-template-columns:repeat(2, 1fr) }
-}
-/* ── BLOQUE 50: selector de armas + flash de colisión ── */
-.vl-weps { display:flex; flex-direction:column; gap:4px }
-.vl-weps button { pointer-events:auto; cursor:pointer; width:44px; padding:5px 0;
-  border-radius:var(--r-md); border:1px solid rgba(255,255,255,.12); color:#8A97A8;
-  background:rgba(12,10,10,.72); font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-caps);
-  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
-  transition:color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out)}
-@media (hover: hover) {
-  .vl-weps button:hover { color:#EAF2FB; transform:translateX(-2px) }
-}
-.vl-weps button.sel { color:#ffb36b; border-color:rgba(232,120,70,.55);
-  background:rgba(60,26,14,.8); box-shadow:0 0 14px -4px rgba(232,120,70,.5) }
-.vl-hitfx { position:absolute; inset:0; pointer-events:none; opacity:0; z-index:55;
-  background:radial-gradient(ellipse at center, transparent 55%, rgba(220,60,40,.45) 100%) }
-.vl-hitfx.go { animation:vlHit var(--dur-hero) var(--ease-out) }
-@keyframes vlHit { 0%{ opacity:1 } 100%{ opacity:0 } }
-/* ── BLOQUE 51: HUD de Modo Tierra (horda) ── */
-#vl-zombies.on { color:#ff9d8a; border-left-color:#E85A5A !important }
-.vl-zhud { display:none; position:absolute; top:calc(96px + env(safe-area-inset-top)); left:50%;
-  transform:translateX(-50%); flex-direction:column; align-items:center; gap:6px; z-index:25 }
-.vl-zhud.show { display:flex; animation:vlDockIn var(--dur-slow) var(--ease-out) }
-.vl-zwave { display:flex; flex-direction:column; align-items:center; gap:1px;
-  padding:6px 18px; border-radius:var(--r-lg); border:1px solid rgba(232,90,90,.3);
-  background:rgba(20,10,10,.72); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px) }
-.vl-zwave span { font:700 var(--fs-md) var(--mono); color:#ff9d8a; letter-spacing:var(--tr-eyebrow) }
-.vl-zwave small { font:600 var(--fs-2xs) var(--mono); color:#8A97A8; letter-spacing:var(--tr-caps) }
-.vl-zscore { display:flex; align-items:center; gap:8px; font:700 var(--fs-2xs) var(--mono);
-  color:#D7E0EA; letter-spacing:var(--tr-caps) }
-.vl-zscore span { color:#8A97A8; transition:color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out)}
-.vl-zscore span.hot { color:#ffb36b; transform:scale(1.08) }
-.vl-zhp { width:180px; height:6px; border-radius:var(--r-pill); overflow:hidden;
-  background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.12) }
-.vl-zhp i { display:block; width:100%; height:100%; transform-origin:left;
-  background:linear-gradient(90deg, #E85A5A, #52C79A); transition:transform var(--dur-base) var(--ease-out)}
-/* ── BLOQUE 52: modal invasión + barras de munición ── */
-.vl-inv { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  flex-direction:column; gap:12px; align-items:center; padding:22px 26px; z-index:70;
-  border-radius:var(--r-xl); border:1px solid rgba(232,90,90,.3);
-  background:linear-gradient(165deg, rgba(26,16,14,.95), rgba(10,8,8,.93));
-  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
-  box-shadow:var(--shadow-3)}
-.vl-inv.show { display:flex; animation:gradeIn var(--dur-slow) var(--ease-out) }
-.vl-inv > b { font:700 var(--fs-sm) var(--mono); color:#ff9d8a; letter-spacing:var(--tr-eyebrow) }
-.vl-inv-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:7px }
-.vl-inv-grid button { pointer-events:auto; cursor:pointer; padding:10px 12px; border-radius:var(--r-md);
-  border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.04); color:#8A97A8;
-  font:700 var(--fs-xs) var(--mono); transition:color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out)}
-@media (hover: hover) {
-  .vl-inv-grid button:hover { transform:translateY(-1px); color:#EAF2FB }
-}
-.vl-inv-grid button.sel { color:#ffb36b; border-color:rgba(232,120,70,.55);
-  background:rgba(60,26,14,.7); box-shadow:0 0 14px -5px rgba(232,120,70,.6) }
-.vl-inv-diff { display:grid; grid-template-columns:repeat(3, 1fr); gap:7px; width:100% }
-.vl-inv-diff button { pointer-events:auto; cursor:pointer; min-height:38px; border-radius:var(--r-md);
-  border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.035);
-  color:#8A97A8; font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-caps) }
-.vl-inv-diff button.sel { color:#ffb36b; border-color:rgba(232,120,70,.55);
-  background:rgba(60,26,14,.7) }
-#vl-inv-go { pointer-events:auto; cursor:pointer; width:100%; padding:12px; border-radius:var(--r-lg);
-  border:none; font:700 var(--fs-sm) var(--mono); letter-spacing:var(--tr-eyebrow); color:#1a0e08;
-  background:linear-gradient(90deg, #E85A5A, #ffb36b);
-  transition:transform var(--dur-fast) var(--ease-out)}
-@media (hover: hover) {
-  #vl-inv-go:hover { transform:scale(1.03); box-shadow:0 8px 26px -8px rgba(232,120,70,.7) }
-}
-.vl-weps button { position:relative; overflow:hidden }
-.vl-weps button::after { content:''; position:absolute; left:0; bottom:0; height:2.5px;
-  width:var(--ammo, 100%); background:linear-gradient(90deg, #E85A5A, #ffb36b);
-  }
-@media (max-width:520px) {
-  .vl-inv-grid { grid-template-columns:repeat(2, 1fr) }
-}
-/* ── BLOQUE 53: HUD táctil agrupado, accesible y sin colisiones ─────────── */
-.vl-dock-head { display:none }
-.vl-combat-fab { display:none }
-.vl-combat { display:flex; flex-direction:column; align-items:flex-end; gap:6px }
-.vl-flight-status { position:absolute; right:86px;
-  bottom:calc(14px + env(safe-area-inset-bottom)); z-index:2;
-  display:flex; flex-direction:column; align-items:flex-end; gap:5px }
 @media (pointer:coarse) {
   /* Compatibilidad con una pestaña restaurada por Safari: el DOM anterior
      dejaba combate/estado como hijos directos de .br. El CSS nuevo nunca debe
      volver a colocarlos sobre el joystick derecho. */
-  .vl-corner.br > .vl-kills,
-  .vl-corner.br > .vl-weps,
-  .vl-corner.br > .vl-fire,
-  .vl-corner.br > .vl-ghost,
-  .vl-corner.br > .vl-fps { display:none !important }
-  .vl-corner.bl,.vl-corner.br { position:static; max-width:none }
-  .vl-fab,.vl-combat-fab { display:flex; position:fixed; z-index:44; pointer-events:auto;
-    touch-action:manipulation;
-    align-items:center; justify-content:center; width:auto; min-width:76px; height:52px;
-    padding:0 16px; border-radius:var(--r-xl); border:1px solid rgba(69,160,230,.3);
-    color:#EAF2FB; font:700 var(--fs-sm) var(--font); letter-spacing:var(--tr-caps); cursor:pointer;
-    background:linear-gradient(160deg, rgba(28,37,49,.94), rgba(10,12,16,.9));
-    -webkit-backdrop-filter:blur(16px) saturate(1.25); backdrop-filter:blur(16px) saturate(1.25);
-    box-shadow:var(--shadow-2), inset 0 1px 0 rgba(255,255,255,.08)}
-  .vl-fab { left:calc(14px + env(safe-area-inset-left));
-    bottom:calc(min(34vh, 300px) + 36px + env(safe-area-inset-bottom)) }
-  .vl-combat-fab { right:calc(14px + env(safe-area-inset-right));
-    bottom:calc(min(34vh, 300px) + 36px + env(safe-area-inset-bottom));
-    border-color:rgba(232,120,70,.38); color:#ffc09a }
-  .vl-fab[aria-expanded=true],.vl-combat-fab[aria-expanded=true] { border-color:rgba(125,255,201,.58); box-shadow:var(--shadow-accent) }
-  .vl-dock,.vl-combat { display:none; position:fixed; z-index:43; overflow-y:auto;
-    max-height:min(50dvh,420px); padding:12px; border-radius:var(--r-xl);
-    border:1px solid rgba(69,160,230,.3);
-    background:linear-gradient(160deg, rgba(25,33,44,.97), rgba(9,12,17,.95));
-    -webkit-backdrop-filter:blur(18px) saturate(1.35); backdrop-filter:blur(18px) saturate(1.35);
-    box-shadow:var(--shadow-3), inset 0 1px 0 rgba(255,255,255,.08)}
-  .vl-dock { left:calc(12px + env(safe-area-inset-left));
-    right:calc(12px + env(safe-area-inset-right));
-    bottom:calc(34vh + 24px + env(safe-area-inset-bottom));
-    grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; max-width:none }
-  .vl-dock.open { display:grid; animation:dockIn var(--dur-base) var(--ease-out) }
-  .vl-combat { right:calc(12px + env(safe-area-inset-right));
-    bottom:calc(34vh + 24px + env(safe-area-inset-bottom));
-    width:min(264px,calc(100vw - 24px));
-    grid-template-columns:minmax(0,1fr) 76px; gap:10px; align-items:center }
-  .vl-combat.open { display:grid; animation:dockIn var(--dur-base) var(--ease-out) }
-  .vl-dock-head { display:flex; grid-column:1/-1; min-height:44px;
-    align-items:center; justify-content:space-between; gap:12px;
-    padding:0 2px 8px; border-bottom:1px solid rgba(255,255,255,.09) }
-  .vl-dock-head b { color:#8FA5BD; font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow) }
-  .vl-dock-head b small,.vl-grade-k small { display:block; margin-top:4px;
-    color:#65788d; font:600 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-eyebrow) }
-  .vl-dock-head button { min-width:64px; min-height:44px; padding:0 12px;
-    border-radius:var(--r-lg); border:1px solid rgba(255,255,255,.13);
-    background:rgba(255,255,255,.055); color:#D9E3EE;
-    font:600 var(--fs-sm) var(--font); cursor:pointer }
-  .vl-dock .vl-chip,.vl-dock .vl-rec { min-width:0; min-height:44px; width:100%;
-    padding:10px 12px; white-space:normal; line-height:1.25; overflow-wrap:anywhere }
-  .vl-dock .vl-sep { display:none }
-  .vl-combat .vl-weps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:7px; width:100% }
-  .vl-combat .vl-weps button { width:100%; min-height:44px; padding:8px 4px;
-    border-radius:var(--r-lg); font-size:var(--fs-xs) }
-  .vl-combat .vl-fire { width:84px; height:76px; justify-self:end; flex-direction:column; gap:2px;
-    touch-action:none; user-select:none; -webkit-user-select:none }
-  .vl-combat .vl-fire strong { font:700 var(--fs-2xs) var(--mono); letter-spacing:var(--tr-caps) }
-  .vl-combat .vl-kills { grid-column:1/-1; justify-self:start }
-  .vl-flight-status { left:50%; right:auto; transform:translateX(-50%);
-    bottom:calc(34vh + 15px + env(safe-area-inset-bottom));
-    width:min(42vw,164px); align-items:center; text-align:center }
-  .vl-flight-status .vl-ghost,.vl-flight-status .vl-fps { max-width:100%;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-  .vl-minimap { left:50%; right:auto; bottom:calc(28px + env(safe-area-inset-bottom));
-    transform:translateX(-50%); width:92px; height:92px }
-  .vl-mobile-sheet-open .vl-fab,.vl-mobile-sheet-open .vl-combat-fab { opacity:.92 }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   /* siguen vivos: re-tap = cerrar (matarlos dejaba sheets sin salida) */
-  .vl-mobile-sheet-open .vl-flight-status { opacity:0 }
+  
 }
-@media (pointer:coarse) and (orientation:portrait) {
-  .vl-grade { position:fixed; z-index:40; left:calc(12px + env(safe-area-inset-left));
-    right:calc(12px + env(safe-area-inset-right)); top:auto;
-    bottom:calc(14px + env(safe-area-inset-bottom)); width:auto;
-    max-height:min(44dvh,410px); transform:none; overflow:hidden;
-    overscroll-behavior:contain; padding:14px 16px }
-  .vl-grade-head { position:sticky; top:-14px; z-index:2; margin:-14px -16px 2px;
-    padding:12px 16px 9px; background:rgba(17,23,31,.97);
-    border-bottom:1px solid rgba(255,255,255,.08) }
-  .vl-grade-x { min-width:44px; min-height:44px }
-  .vl-grade-expand { display:block; min-width:76px; min-height:44px }
-  .vl-grade-body { overflow-y:auto; overscroll-behavior:contain; padding-right:3px }
-  .vl-grade.compact { max-height:none }
-  .vl-grade.compact .vl-grade-body { display:none }
-  .vl-grade.compact .vl-grade-k small { display:none }
-  .vl-grade input[type=range] { height:32px }
-}
-.vl-panel-drag,.vl-grade-drag { cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none }
-.vl-panel-drag:active,.vl-grade-drag:active,.vl-panel-dragging { cursor:grabbing }
-.vl-panel-drag button,.vl-grade-drag button { cursor:pointer }
-.vl-panel-positioned { margin:0 !important; animation:none !important }
-.vl-panel-dragging { transition:none !important; animation:none !important;
-  box-shadow:var(--shadow-3), 0 0 0 1px rgba(125,255,201,.28)}
-@media (pointer:coarse) and (max-width:480px) {
-  .vl-minimap { width:72px; height:72px }
-}
-@media (pointer:coarse) and (orientation:landscape) {
-  .vl-fab,.vl-combat-fab { bottom:calc(52vh + 14px + env(safe-area-inset-bottom)) }
-  .vl-dock,.vl-combat { bottom:calc(52vh + 12px + env(safe-area-inset-bottom)); max-height:42dvh }
-  .vl-flight-status { bottom:calc(52vh + 8px + env(safe-area-inset-bottom)) }
-}
-/* FPV ya trae su propio OSD (velocidad, altura, rumbo, enlace y home). En
-   táctil ocultamos el HUD general duplicado: era la causa de los solapes de
-   las capturas en iPhone/iPad, no una falta de espacio del dispositivo. */
 @media (pointer:coarse) {
-  .vl-hud.fpv-active .vl-corner.tl,
-  .vl-hud.fpv-active .vl-corner.tr,
-  .vl-hud.fpv-active .vl-center-top,
-  .vl-hud.fpv-active .vl-compass,
-  .vl-hud.fpv-active .vl-flight-status,
-  .vl-hud.fpv-active .vl-goto { display:none !important }
-}
-/* ── BLOQUE 53: HUD táctil premium — telemetría, cinta de rumbo, sticks ── */
-.vl-metric { min-width:96px; padding:9px 14px; border-radius:var(--r-lg); text-align:right;
-  border:1px solid rgba(255,255,255,.1);
-  background:linear-gradient(160deg, rgba(23,29,38,.82), rgba(10,12,16,.76));
-  -webkit-backdrop-filter:blur(14px) saturate(1.25); backdrop-filter:blur(14px) saturate(1.25);
-  box-shadow:var(--shadow-2), inset 0 1px 0 rgba(255,255,255,.06)}
-.vl-metric span { font:700 var(--fs-2xl)/1.15 var(--mono); color:#EAF2FB; font-variant-numeric:tabular-nums }
-.vl-metric label { font:600 var(--fs-2xs) var(--mono); color:#68758A; letter-spacing:var(--tr-eyebrow) }
-.vl-bar.vs b { background:linear-gradient(90deg, #7dffc9, #52C79A); transform-origin:left }
-.vl-bar.vs b.down { background:linear-gradient(90deg, #E0A458, #E85A5A) }
-.vl-compass.tape { padding:0; width:min(300px, 44vw); height:36px; overflow:hidden;
-  border-radius:var(--r-lg); border:1px solid rgba(255,255,255,.12);
-  background:linear-gradient(160deg, rgba(14,18,24,.78), rgba(8,10,14,.72));
-  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
-  -webkit-mask-image:linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
-  mask-image:linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent) }
-.vl-compass.tape canvas { width:100%; height:100%; display:block }
-@media (pointer:coarse) {
-  .vl-metric { min-width:104px; padding:10px 15px }
-  .vl-metric span { font-size:var(--fs-2xl) }
-  .vl-stick-base { width:132px; height:132px }
-  .vl-stick-nub { width:58px; height:58px }
-  .vl-fire { touch-action:none }
+  
+  
+  
+  
+  
   /* SOLO fire (pointerdown); en los demás mataba el click */
 }
-@media (pointer:coarse) and (min-width:900px) {
-  .vl-stick-base { width:156px; height:156px }
-  .vl-stick-nub { width:66px; height:66px }
-}
-/* ── BLOQUE 54: los sheets y sus cierres SIEMPRE reciben input ──
-   El HUD es pointer-events:none y los paneles del refactor nunca optaron
-   de vuelta: se podía abrir (FAB fixed con auto) pero NADA dentro — ni
-   Cerrar — recibía taps. Una regla lo cura para todo el árbol del panel. */
-.vl-dock,.vl-combat,.vl-dock-head,.vl-dock-head button { pointer-events:auto }
-.vl-dock-head button { min-height:44px; min-width:64px; touch-action:manipulation }
-/* ── BLOQUE 55: combate sin overlap + chip FPS premium ── */
-.vl-fire { width:auto; min-width:72px; height:64px; border-radius:var(--r-xl); padding:0 16px;
-  flex-direction:row; gap:8px }
-.vl-fire svg { flex:none }
-.vl-fire strong { font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-caps) }
-.vl-fire #vl-ammo { font:700 var(--fs-sm) var(--mono); padding:2px 7px; border-radius:var(--r-md);
-  background:rgba(255,255,255,.08) }
-.vl-combat { padding-right:4px }
-.vl-corner.br { align-items:flex-end; gap:8px }
-.vl-combat { margin-bottom:8px; order:9 }
-/* combate al fondo: ghost/fps arriba, sin solaparse */
-.vl-fps { font:700 var(--fs-xs) var(--mono); color:#B7C2D0; letter-spacing:var(--tr-caps);
-  font-variant-numeric:tabular-nums; padding:6px 12px; border-radius:var(--r-md);
-  border:1px solid rgba(255,255,255,.1); display:inline-flex; align-items:center; gap:7px;
-  background:linear-gradient(160deg, rgba(23,29,38,.8), rgba(10,12,16,.74));
-  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px) }
-.vl-fps::before { content:''; width:7px; height:7px; border-radius:50%;
-  background:#52C79A; box-shadow:0 0 8px rgba(82,199,154,.8) }
-.vl-fps.low::before { background:#E0A458; box-shadow:0 0 8px rgba(224,164,88,.8) }
 @media (pointer:coarse) {
-  .vl-fire { height:72px }
-}
-/* ── BLOQUE 55c: un solo plano modal + bottom sheets adaptativos ────────── */
-.vl-overlay-scrim { display:none }
-@media (pointer:coarse) {
-  .vl-overlay-scrim { display:block; position:fixed; inset:0; z-index:42;
-    pointer-events:none; opacity:0; background:rgba(3,7,12,.58);
-    -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px);
-    transition:opacity var(--dur-base) var(--ease-out)}
-  .vl-overlay-scrim.open { pointer-events:auto; opacity:1 }
-  .vl-grade,.vl-guide,.vl-inv,.vl-diff,.vl-result,.vl-director { z-index:43 }
+  
+  
+  
   /* En táctil Menú y Combate son sheets reales: nacen del borde inferior,
      respetan el home indicator y no heredan posiciones arrastradas de desktop. */
-  .vl-dock.open,.vl-combat.open {
-    position:fixed !important; z-index:43;
-    left:0 !important; right:0 !important; top:auto !important; bottom:0 !important;
-    width:auto !important; max-width:none; max-height:min(56dvh,520px);
-    margin:0 !important; padding:14px
-      calc(16px + env(safe-area-inset-right))
-      calc(14px + env(safe-area-inset-bottom))
-      calc(16px + env(safe-area-inset-left));
-    border-radius:var(--r-2xl) var(--r-2xl) 0 0; transform:none !important;
-    overscroll-behavior:contain }
-  .vl-dock.open { grid-template-columns:repeat(2,minmax(0,1fr)) }
-  .vl-combat.open { grid-template-columns:minmax(0,1fr) 88px }
-  .vl-dock.open .vl-panel-drag,.vl-combat.open .vl-panel-drag { cursor:default; touch-action:manipulation }
-  .vl-stick.disabled { opacity:0; pointer-events:none }
-  .vl-stick { transition:opacity var(--dur-fast) var(--ease-out) }
+  
+  
+  
+  
+  
+  
 }
-@media (pointer:coarse) and (orientation:landscape) {
-  .vl-dock.open,.vl-combat.open {
-    left:50% !important; transform:translateX(-50%) !important;
-    width:min(720px,calc(100vw - 2 * max(14px,env(safe-area-inset-left)))) !important;
-    max-height:min(66dvh,420px) }
-  .vl-corner.tl { flex-direction:row; align-items:flex-start; max-width:46vw }
-  .vl-corner.tl .vl-scene { display:none }
-  .vl-compass { top:calc(98px + env(safe-area-inset-top)) }
-  .vl-center-top { top:calc(140px + env(safe-area-inset-top)) }
-  .vl-grade { position:fixed; left:calc(12px + env(safe-area-inset-left));
-    right:auto; top:auto; bottom:calc(12px + env(safe-area-inset-bottom));
-    width:min(360px,48vw); max-height:min(44dvh,320px);
-    transform:none; overflow:hidden }
-  .vl-grade-body { min-height:0; overflow-y:auto; overscroll-behavior:contain }
-}
-/* ── BLOQUE 55d: HUD móvil premium, tres carriles sin solapamientos ────── */
-.vl-command-hud,.vl-flight-tools-left,.vl-gimbal-tools,.vl-mobile-action { display:none }
 @media (pointer:coarse) {
-  .vl-body,.vl-hud,.vl-hud * {
-    -webkit-user-select:none;
-    user-select:none;
-    -webkit-touch-callout:none;
-    -webkit-tap-highlight-color:transparent;
-  }
-  .vl-body { overscroll-behavior:none; touch-action:none }
-  .vl-body .vl-canvas,.vl-stick,.vl-trigger,.vl-weapon-toggle,.vl-weapon-picker,
-  .vl-camera-toggle,.vl-camera-picker-toggle,.vl-camera-picker,.vl-gimbal-tools { touch-action:none; }
-  .vl-hud button,.vl-dock,.vl-combat,.vl-grade,.vl-guide { touch-action:manipulation }
-  .vl-trigger,.vl-weapon-toggle,.vl-weapon-picker,.vl-weapon-picker button,
-  .vl-gimbal-tray input { touch-action:none }
-  .vl-mobile-action { display:block }
+  
+  
+  
+  
+  
+  
   /* DIST ya vive en la cabecera FPV y el valor de gimbal en su botón:
      ocultar estas dos copias evita texto fantasma detrás de los controles. */
-  .vl-osd,.vl-osd-home,.vl-osd-gimbal { display:none }
-  .vl-command-hud,.vl-flight-tools-left,.vl-gimbal-tools {
-    position:fixed;
-    bottom:calc(min(34vh,300px) + 36px + env(safe-area-inset-bottom));
-    z-index:45;
-    pointer-events:auto;
-  }
+  
+  
   /* El centro de la retícula queda libre: Gimbal vive en un carril superior
      propio y los pickers siguen siendo mutuamente exclusivos. */
-  .vl-gimbal-tools { bottom:calc(min(34vh,300px) + 136px + env(safe-area-inset-bottom)); }
-  .vl-flight-tools-left {
-    left:calc(14px + env(safe-area-inset-left));
-    display:grid;
-    grid-template-columns:56px 44px;
-    grid-template-rows:56px 52px;
-    gap:8px;
-    align-items:start;
-  }
-  .vl-flight-tools-left .vl-fab {
-    position:static !important;
-    left:auto; right:auto; top:auto; bottom:auto;
-    grid-column:1;
-    grid-row:2;
-    width:52px; min-width:52px; height:52px; padding:0;
-    font:700 var(--fs-xs) var(--font); letter-spacing:0;
-  }
-  .vl-camera-toggle {
-    width:56px;
-    height:56px;
-    padding:5px;
-    display:grid;
-    place-items:center;
-    align-content:center;
-    gap:3px;
-    border-radius:var(--r-xl);
-    border:1px solid rgba(79,174,236,.56);
-    color:#a9dcff;
-    background:linear-gradient(155deg,rgba(24,48,67,.97),rgba(10,15,20,.95));
-    box-shadow:var(--shadow-2), inset 0 1px rgba(255,255,255,.1);
-    cursor:pointer;
-  }
-  .vl-camera-toggle span { font:700 var(--fs-2xs)/1 var(--mono); letter-spacing:var(--tr-eyebrow) }
-  .vl-camera-toggle output { color:#f0f7ff; font:700 var(--fs-sm)/1 var(--mono) }
-  .vl-camera-picker-toggle {
-    width:44px;
-    height:44px;
-    padding:0;
-    border-radius:var(--r-lg);
-    border:1px solid rgba(79,174,236,.38);
-    color:#cceaff;
-    background:linear-gradient(155deg,rgba(24,42,57,.96),rgba(10,14,19,.94));
-    font:700 var(--fs-2xl)/1 var(--mono);
-    cursor:pointer;
-  }
-  .vl-camera-picker-toggle[aria-expanded=true],.vl-camera-toggle:active {
-    border-color:#79caff;
-    box-shadow:0 0 0 2px rgba(79,174,236,.18), var(--shadow-2);
-  }
-  .vl-camera-picker {
-    position:absolute;
-    left:0;
-    bottom:calc(100% + 10px);
-    width:224px;
-    padding:6px;
-    display:grid;
-    grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:4px;
-    border-radius:var(--r-xl);
-    border:1px solid rgba(79,174,236,.4);
-    background:linear-gradient(160deg,rgba(22,34,45,.99),rgba(8,12,17,.98));
-    -webkit-backdrop-filter:blur(16px) saturate(1.2);
-    backdrop-filter:blur(16px) saturate(1.2);
-    box-shadow:var(--shadow-3);
-  }
-  .vl-camera-picker button {
-    min-height:48px;
-    padding:0 10px;
-    border-radius:var(--r-lg);
-    border:1px solid transparent;
-    background:transparent;
-    color:#c6d5e2;
-    text-align:left;
-    font:600 var(--fs-sm) var(--font);
-    cursor:pointer;
-  }
-  .vl-camera-picker button[aria-selected=true] {
-    color:#bce5ff;
-    border-color:rgba(79,174,236,.42);
-    background:rgba(79,174,236,.14);
-  }
-  .vl-command-hud {
-    right:calc(14px + env(safe-area-inset-right));
-    display:grid;
-    justify-items:end;
-    gap:10px;
-  }
-  .vl-weapon-toggle {
-    width:56px;
-    height:56px;
-    padding:5px;
-    display:grid;
-    place-items:center;
-    align-content:center;
-    gap:2px;
-    border-radius:var(--r-xl);
-    border:1px solid rgba(224,164,88,.5);
-    color:#f7c983;
-    background:linear-gradient(155deg,rgba(39,38,37,.96),rgba(13,15,19,.94));
-    box-shadow:var(--shadow-2), inset 0 1px rgba(255,255,255,.08);
-    cursor:pointer;
-  }
-  .vl-weapon-toggle span { font:700 var(--fs-xs)/1 var(--mono); letter-spacing:var(--tr-caps) }
-  .vl-weapon-toggle output { color:#f2eee8; font:700 var(--fs-sm)/1 var(--mono); font-variant-numeric:tabular-nums; }
-  .vl-weapon-toggle[aria-expanded=true] {
-    border-color:#f1b95f;
-    box-shadow:0 0 0 2px rgba(224,164,88,.18), var(--shadow-2);
-  }
-  .vl-weapon-picker {
-    position:absolute;
-    right:0;
-    bottom:calc(100% + 10px);
-    width:240px;
-    max-height:min(54dvh,260px);
-    overflow-y:auto;
-    overscroll-behavior:contain;
-    padding:6px;
-    display:grid;
-    grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:4px;
-    border-radius:var(--r-xl);
-    border:1px solid rgba(224,164,88,.38);
-    background:linear-gradient(160deg,rgba(32,31,30,.99),rgba(10,12,16,.98));
-    -webkit-backdrop-filter:blur(16px) saturate(1.2);
-    backdrop-filter:blur(16px) saturate(1.2);
-    box-shadow:var(--shadow-3);
-  }
-  .vl-weapon-picker button {
-    min-height:48px;
-    padding:0 7px;
-    border-radius:var(--r-lg);
-    border:1px solid transparent;
-    background:transparent;
-    color:#c6ced8;
-    text-align:center;
-    font:600 var(--fs-xs) var(--font);
-    cursor:pointer;
-  }
-  .vl-weapon-picker button[aria-selected=true] {
-    color:#ffd495;
-    border-color:rgba(224,164,88,.38);
-    background:rgba(224,164,88,.13);
-  }
-  .vl-trigger {
-    pointer-events:auto;
-    width:72px;
-    height:72px;
-    min-height:72px;
-    padding:0;
-    border:1px solid rgba(255,150,100,.62);
-    border-radius:var(--r-2xl);
-    color:#ffe5d6;
-    background:linear-gradient(145deg,rgba(169,58,31,.97),rgba(73,25,21,.96));
-    box-shadow:var(--shadow-2), 0 0 22px -10px rgba(255,90,55,.75);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    flex-direction:column;
-    gap:3px;
-    cursor:pointer;
-    font-family:var(--font);
-  }
-  .vl-trigger span { font:700 var(--fs-3xl)/1 var(--mono); color:#fff1e7 }
-  .vl-trigger strong { font:700 var(--fs-2xs)/1 var(--font); letter-spacing:0 }
-  .vl-trigger:active { transform:scale(.97) }
-  .vl-trigger.locked {
-    border-color:#ffd36d;
-    box-shadow:0 0 0 2px rgba(255,211,109,.22), var(--shadow-2);
-  }
-  .vl-trigger.flash { animation:triggerFlash var(--dur-slow) var(--ease-out) }
-  .vl-gimbal-tools {
-    left:50%;
-    transform:translateX(-50%);
-    display:block;
-  }
-  .vl-gimbal-toggle {
-    width:96px;
-    height:44px;
-    padding:0 11px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:8px;
-    border-radius:var(--r-xl);
-    border:1px solid rgba(74,213,174,.45);
-    color:#8ce9cb;
-    background:linear-gradient(155deg,rgba(20,48,43,.96),rgba(9,16,17,.95));
-    box-shadow:var(--shadow-2), inset 0 1px rgba(255,255,255,.08);
-    cursor:pointer;
-  }
-  .vl-gimbal-toggle span { font:700 var(--fs-2xs)/1 var(--mono); letter-spacing:var(--tr-caps) }
-  .vl-gimbal-toggle output { color:#e8fff7; font:700 var(--fs-xs)/1 var(--mono) }
-  .vl-gimbal-toggle[aria-expanded=true] {
-    border-color:#6de4bf;
-    box-shadow:0 0 0 2px rgba(74,213,174,.17), var(--shadow-2);
-  }
-  .vl-gimbal-toggle:disabled { display:none }
-  .vl-gimbal-tray {
-    position:absolute;
-    left:calc(50% + 16px);
-    bottom:calc(100% + 10px);
-    width:148px;
-    padding:6px;
-    transform:translateX(-50%);
-    border-radius:var(--r-xl);
-    border:1px solid rgba(74,213,174,.42);
-    background:linear-gradient(160deg,rgba(20,37,35,.99),rgba(8,13,15,.98));
-    -webkit-backdrop-filter:blur(16px) saturate(1.2);
-    backdrop-filter:blur(16px) saturate(1.2);
-    box-shadow:var(--shadow-3);
-  }
-  .vl-gimbal-tray label {
-    display:flex;
-    justify-content:space-between;
-    color:#8ba7a0;
-    font:700 var(--fs-2xs) var(--mono);
-    letter-spacing:var(--tr-caps);
-  }
-  .vl-gimbal-tray label output { color:#dffff5; font-size:var(--fs-2xs) }
-  .vl-gimbal-tray input { width:100%; min-height:38px; accent-color:#52c79a }
-  .vl-gimbal-tray > div { display:grid; grid-template-columns:repeat(3,1fr); gap:2px }
-  .vl-gimbal-tray button {
-    min-width:44px;
-    min-height:44px;
-    padding:0;
-    border-radius:var(--r-lg);
-    border:1px solid rgba(74,213,174,.2);
-    background:rgba(74,213,174,.08);
-    color:#c7f8e8;
-    font:700 var(--fs-xs) var(--mono);
-  }
-  .vl-overlay-open .vl-fab,.vl-overlay-open .vl-command-hud,
-  .vl-overlay-open .vl-flight-tools-left,.vl-overlay-open .vl-gimbal-tools {
-    opacity:0;
-    pointer-events:none;
-  }
-}
-@media (pointer:coarse) and (min-width:601px) {
-  .vl-gimbal-tray { left:50%; width:220px; padding:10px }
-}
-@media (pointer:coarse) and (max-width:600px) {
-  .vl-stick-base { width:112px; height:112px; opacity:.54 }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
 }
 @media (pointer:coarse) and (orientation:landscape) {
-  .vl-command-hud,.vl-flight-tools-left,.vl-gimbal-tools {
-    top:calc(12px + env(safe-area-inset-top));
-    bottom:auto;
-  }
-  .vl-gimbal-tools { top:calc(50px + env(safe-area-inset-top)); }
+  
+  
   /* Chase/cenital/orbital muestran el HUD general del mundo. Reagrupamos los
      mandos persistentes en dos filas horizontales bajo sus esquinas para que
      nunca tapen Mundo/Compartir ni ALT/VEL/VS, sin reducir los tap targets. */
-  .vl-hud:not(.fpv-active) .vl-flight-tools-left,
-  .vl-hud:not(.fpv-active) .vl-command-hud { top:calc(89px + env(safe-area-inset-top)); }
-  .vl-hud:not(.fpv-active) .vl-flight-tools-left {
-    grid-template-columns:56px 44px 52px;
-    grid-template-rows:56px;
-  }
-  .vl-hud:not(.fpv-active) .vl-flight-tools-left .vl-fab {
-    grid-column:3;
-    grid-row:1;
-  }
-  .vl-hud:not(.fpv-active) .vl-command-hud {
-    grid-template-columns:56px 72px;
-    grid-template-rows:72px;
-    align-items:start;
-  }
-  .vl-hud:not(.fpv-active) .vl-weapon-toggle { grid-column:1; grid-row:1 }
-  .vl-hud:not(.fpv-active) .vl-trigger { grid-column:2; grid-row:1 }
-  .vl-camera-picker,.vl-weapon-picker {
-    position:fixed;
-    top:calc(70px + env(safe-area-inset-top));
-    left:50%;
-    right:auto;
-    bottom:auto;
-    transform:translateX(-50%);
-  }
-  .vl-camera-picker {
-    width:min(520px,62vw);
-    grid-template-columns:repeat(4,minmax(0,1fr));
-  }
-  .vl-weapon-picker {
-    top:calc(12px + env(safe-area-inset-top));
-    width:min(480px,74vw);
-    display:grid;
-    grid-template-columns:repeat(3,minmax(0,1fr));
-  }
-  .vl-gimbal-tray {
-    top:calc(100% + 10px);
-    bottom:auto;
-    left:50%;
-    width:min(520px,72vw);
-    padding:4px 6px;
-    display:grid;
-    grid-template-columns:auto minmax(116px,1fr) auto;
-    align-items:center;
-    gap:8px;
-  }
-  .vl-gimbal-tray label { min-width:92px; gap:8px }
-  .vl-gimbal-tray input { min-height:44px }
-  .vl-gimbal-tray > div {
-    grid-template-columns:repeat(3,44px);
-    gap:3px;
-  }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
 }
 /* ── BLOQUE 56: Mundo overhaul — compacto, cards ricas, cfg de lanzamiento,
       mapa decluttered, overlay de carga ── */
@@ -4480,25 +3489,6 @@ kbd, .vl-guide kbd { display:inline-block; font:700 var(--fs-xs) var(--mono); co
 @media (hover: hover) {
   .fv-pin2:hover .fv-pin-img { box-shadow:var(--shadow-2), 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent) }
 }
-/* overlay de carga de escena en volar (60fps: solo opacity/transform) */
-.vl-boot { position:absolute; inset:0; z-index:80; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:14px;
-  background:radial-gradient(120% 100% at 50% 0%, #101722 0%, #07090d 70%);
-  transition:opacity var(--dur-hero) var(--ease-out); pointer-events:none }
-.vl-boot.hide { opacity:0 }
-.vl-boot b { font:700 var(--fs-2xl) var(--font); color:#EAF2FB; letter-spacing:0 }
-.vl-boot small { font:600 var(--fs-xs) var(--mono); color:#68758A; letter-spacing:var(--tr-eyebrow) }
-.vl-boot .vb-bar { width:min(300px, 60vw); height:3px; border-radius:var(--r-pill); overflow:hidden;
-  background:rgba(255,255,255,.08) }
-.vl-boot .vb-bar b { display:block; height:100%; width:30%; border-radius:var(--r-pill);
-  background:linear-gradient(90deg, #45A0E6, #7dffc9);
-  animation:vbSlide 1.1s var(--ease) infinite}
-@keyframes vbSlide { 0%{ transform:translateX(-110%) } 100%{ transform:translateX(400%) } }
-.vl-boot .vb-steps { display:flex; gap:8px }
-.vl-boot .vb-steps i { font:600 var(--fs-2xs) var(--mono); font-style:normal; color:#566274;
-  padding:4px 10px; border-radius:var(--r-md); border:1px solid rgba(255,255,255,.08);
-  letter-spacing:var(--tr-caps); transition:color var(--dur-slow) var(--ease-out), background-color var(--dur-slow) var(--ease-out), border-color var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out)}
-.vl-boot .vb-steps i.ok { color:var(--media-ok); border-color:rgba(82,199,154,.4) }
 /* ── BLOQUE 57: nodo GPU (Sistema + 3D) ── */
 .gn-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px }
 .gn-cell { padding:10px 12px; border-radius:var(--r-lg); background:color-mix(in srgb, var(--text) 4%, transparent);
@@ -4716,7 +3706,8 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
 @media (hover: hover) {
   .splat-row:hover .sr-thumb img { transform:scale(1.06) }
 }
-.sr-thumb.is-empty svg.ic { width:var(--ic-xl); height:var(--ic-xl); color:var(--text-3); opacity:.5; stroke-width: 1.25; }
+.sr-thumb.is-empty svg.ic { width:var(--ic-xl); height:var(--ic-xl); opacity:.5; stroke-width: 1.25; }
+:where(.sr-thumb.is-empty) svg.ic { color:var(--text-3); }
 .sr-main { min-width:0 }
 .sr-hd { display:flex; align-items:center; gap:9px; flex-wrap:wrap }
 .sr-hd b { font-size:var(--fs-lg); font-weight:600; letter-spacing:var(--tr-tight) }
@@ -4729,7 +3720,8 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
 .sr-stats span { display:inline-flex; align-items:center; gap:5px; font-size:var(--fs-2xs);
   color:var(--text-2); padding:3px 9px; border-radius:var(--r-pill);
   background:var(--surface); border:1px solid var(--line) }
-.sr-stats svg.ic { width:var(--ic-xs); height:var(--ic-xs); color:var(--text-3); stroke-width: 1.75; }
+.sr-stats svg.ic { width:var(--ic-xs); height:var(--ic-xs); stroke-width: 1.75; }
+:where(.sr-stats) svg.ic { color:var(--text-3); }
 .sr-be.cuda { color:var(--nv-fg); border-color:rgba(118,185,0,.35); background:rgba(118,185,0,.1) }
 .sr-be.metal { color:var(--text); border-color:rgba(200,214,235,.22) }
 .sr-loss { display:flex; flex-direction:column; gap:4px }
@@ -4769,7 +3761,8 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
 @media (hover: hover) {
   .td-stepper.v2 .td-step:hover i { box-shadow:0 0 18px -4px color-mix(in srgb, var(--accent) 60%, transparent) }
 }
-.td-stepper.v2 .td-step i svg.ic { width:var(--ic-md); height:var(--ic-md); color:var(--accent-fg) }
+.td-stepper.v2 .td-step i svg.ic { width:var(--ic-md); height:var(--ic-md); }
+:where(.td-stepper.v2 .td-step i) svg.ic { color:var(--accent-fg); }
 .td-stepper.v2 .td-step b { font-size:var(--fs-md); font-weight:600; letter-spacing:var(--tr-tight) }
 .td-stepper.v2 .td-step > span { font-size:var(--fs-2xs); color:var(--text-3); font-family:var(--mono);
   letter-spacing:var(--tr-caps); text-align:center }
@@ -4980,29 +3973,6 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
 .rm-daypick { display: flex; align-items: center; gap: 9px; }
 .rm-daypick > span { font-size: var(--fs-xs); color: var(--text-3); flex: none; }
 .rm-daypick .ctl { flex: 1; min-width: 0; }
-/* ── BLOQUE 75: HUD de vuelo estrecho — tres métricas en una sola fila ──
-   Debe vivir al final: los bloques premium posteriores anulaban el layout
-   móvil anterior y apilaban 213px de telemetría sobre Mundo y la brújula. */
-@media (pointer:coarse) and (orientation:portrait) and (max-width:900px) {
-  .vl-corner.tr { flex-direction:row; align-items:flex-start }
-  .vl-goto { top:calc(148px + env(safe-area-inset-top)) }
-  .vl-compass { top:calc(190px + env(safe-area-inset-top)) }
-  .vl-center-top { top:calc(236px + env(safe-area-inset-top)) }
-}
-@keyframes vlGotoIn {
-  from{ opacity:0 }
-  to{ opacity:1 }
-}
-.vl-goto.show { animation:vlGotoIn var(--dur-slow) var(--ease-out) forwards }
-@media (pointer:coarse) and (orientation:portrait) and (max-width:480px) {
-  .vl-corner.tr { flex-direction:row; align-items:flex-start; gap:4px }
-  .vl-corner.tr .vl-metric {
-    flex:0 0 68px; width:68px; min-width:68px; padding:6px;
-    border-radius:var(--r-lg)}
-  .vl-corner.tr .vl-metric span { font-size:var(--fs-lg) }
-  .vl-corner.tr .vl-metric label { font-size:var(--fs-2xs); letter-spacing:var(--tr-caps) }
-  .vl-compass { width:min(230px,58vw) }
-}
 
 /* =========================================================
    4. COMPONENTS  (canonical; contexts may only change width / margin / layout)
@@ -5072,7 +4042,7 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
 /* ---- .chip (filters / tags) + .chip.sm (badges) ---- */
 .chip {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: 28px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  height: var(--chip-h); padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-pill);
   background: var(--surface-2); color: var(--text-2);
   font-size: var(--fs-sm); font-weight: var(--fw-regular); line-height: 1; white-space: nowrap;
   cursor: pointer; -webkit-tap-highlight-color: transparent;
@@ -5116,7 +4086,7 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
   .st-chip:hover { border-color: var(--err); color: var(--err-fg); }
   .pv-tag:hover { border-color: var(--accent); color: var(--accent-fg); }
 }
-@media (pointer: coarse) { .chip { height: 32px; } .chip.sm { height: 24px; } }
+/* chip: 28px en TODOS los punteros; la zona táctil (44px) sale de la utilidad .hit44 (§4b), no de agrandar el chip */
 
 /* ---- segmented control: one look for every tab / toggle strip ---- */
 .seg, .pm-tabs, .scene-viewer-tabs, .fv-viewtoggle, .td-viewseg {
@@ -5125,7 +4095,7 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
 }
 .seg button, .pm-tabs button, .scene-viewer-tabs button, .fv-viewtoggle button, .td-viewseg button {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: 32px; min-height: 0; padding: 0 12px; border: 0; border-radius: var(--r-sm);
+  height: var(--seg-h); min-height: var(--seg-h); padding: 0 12px; border: 0; border-radius: var(--r-sm);
   background: transparent; color: var(--text-2);
   font: var(--fw-medium) var(--fs-md)/1 var(--font); letter-spacing: 0; white-space: nowrap;
   -webkit-tap-highlight-color: transparent; cursor: pointer; position: relative; z-index: 1;
@@ -5144,7 +4114,7 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
   background: var(--surface); border: 0; border-radius: var(--r-sm); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--line-strong);
   transition: transform var(--dur-base) var(--ease-out);
 }
-.fv-viewtoggle.sm button { height: 28px; padding: 0 10px; font-size: var(--fs-sm); }
+.fv-viewtoggle.sm button { padding: 0 10px; font-size: var(--fs-sm); }   /* misma altura que .seg; solo más denso en horizontal */
 .st-map-toggle {
   display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: var(--r-md);
   border: 1px solid var(--media-line); background: var(--media-scrim); color: var(--on-media-2);
@@ -5156,8 +4126,8 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
   .st-map-toggle:hover { color: var(--on-media); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
 }
 @media (pointer: coarse), (max-width: 820px) {
-  .seg button, .pm-tabs button, .scene-viewer-tabs button, .fv-viewtoggle button, .td-viewseg button { height: 44px; }
-  .fv-viewtoggle.sm button { height: 36px; }
+  .seg button, .pm-tabs button, .scene-viewer-tabs button, .fv-viewtoggle button, .td-viewseg button,
+  .fv-viewtoggle.sm button { height: 44px; min-height: 44px; }
   .seg { gap: 2px; }
   .st-map-toggle { height: 44px; }
 }
@@ -5177,18 +4147,15 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
 .chip-row {
   display: flex; align-items: center; gap: var(--sp-2); min-width: 0;
   overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
-  padding: 2px var(--sp-3); margin-inline: calc(var(--sp-3) * -1);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-3), #000 calc(100% - var(--sp-3)), transparent 100%);
-          mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-3), #000 calc(100% - var(--sp-3)), transparent 100%);
+  --chip-bleed: 22px;
+  padding: 2px var(--chip-bleed); margin-inline: calc(var(--chip-bleed) * -1);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, rgba(0,0,0,.28) 6px, #000 var(--chip-bleed), #000 calc(100% - var(--chip-bleed)), rgba(0,0,0,.28) calc(100% - 6px), transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, rgba(0,0,0,.28) 6px, #000 var(--chip-bleed), #000 calc(100% - var(--chip-bleed)), rgba(0,0,0,.28) calc(100% - 6px), transparent 100%);
 }
 .chip-row::-webkit-scrollbar { display: none; }
 .chip-row > * { flex: none; }
-.chip-row .chip { height: var(--ctl-h); padding: 0 var(--sp-3); font-size: var(--fs-md); }
+.chip-row .chip { height: var(--chip-h); padding: 0 var(--sp-3); font-size: var(--fs-sm); }   /* misma altura que cualquier .chip */
 .chip-row .chip svg.ic { width: var(--ic-sm); height: var(--ic-sm); }
-@media (pointer: coarse), (max-width: 820px) {
-  .chip-row .chip { position: relative; height: 32px; }
-  .chip-row .chip::before { content: ""; position: absolute; inset: -6px -2px; }   /* 44px touch target */
-}
 .chip-row > .chip-div { width: 1px; height: 20px; background: var(--line-strong); margin-inline: var(--sp-1); }
 
 /* ---- popover + menu (openPopover / openMenu in shell.js). ONE floating-layer recipe for every "⋯" menu,
@@ -5246,10 +4213,11 @@ select.ctl, input.ctl, textarea.ctl, input.m-ipt, .search {
   transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 }
 .search { display: flex; align-items: center; gap: 8px; min-width: 220px; flex: 1; max-width: 380px; }
-.search svg.ic { width: var(--ic-md); height: var(--ic-md); color: var(--text-3); }
+.search svg.ic { width: var(--ic-md); height: var(--ic-md); }
+:where(.search) svg.ic { color: var(--text-3); }
 .search input { background: none; border: none; outline: none; color: var(--text); font: inherit; font-size: var(--fs-md); width: 100%; min-width: 0; height: 100%; }
 .search input::placeholder, input.ctl::placeholder, textarea.ctl::placeholder { color: var(--text-3); }
-.search kbd { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-3); border: 1px solid var(--line); border-radius: var(--r-xs); padding: 1px 5px; }
+.search kbd { flex: none; }
 select.ctl {
   padding-right: 32px; cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%238A97A8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
@@ -5317,6 +4285,74 @@ select.ctl:disabled, input.ctl:disabled, textarea.ctl:disabled { opacity: .4; cu
 @media (pointer: coarse) { .search kbd { display: none; } }
 
 /* =========================================================
+   4b. GLOBAL FIXES (design QA c1) — hit44, kbd, search icon, modal close, buttons' icons, page-foot, skip link
+   ========================================================= */
+
+/* Icon colour inside a button always follows the button (heading/context icon rules are :where() and lose). */
+.btn.primary svg.ic { color: var(--text-on-accent); }
+.btn.danger svg.ic { color: var(--err-fg); }
+
+/* Modal close: canonical = .btn.icon.ghost.sm geometry, neutral --text-2; accent only on hover / keyboard focus. */
+.modal-x {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: calc(var(--ctl-h) - 4px); height: calc(var(--ctl-h) - 4px); padding: 0;
+  border: 1px solid transparent; border-radius: var(--r-md); background: transparent;
+  color: var(--text-2); font-size: var(--fs-md); line-height: 1; cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.modal-x svg.ic { width: var(--ic-md); height: var(--ic-md); color: inherit; }
+.modal-x:focus-visible { color: var(--accent-fg); }
+@media (hover: hover) { .modal-x:hover { color: var(--accent-fg); background: var(--surface-2); } }
+
+/* .hit44: visible size stays small, touch target grows to >=44px on coarse pointers (centered ::after).
+   Position is :where() so an authored position:absolute (tl-x, tl-expand, cr-ins) is never overridden. */
+:where(.hit44, .hl-item .tc) { position: relative; }
+@media (pointer: coarse) {
+  .hit44::after, .tl-x::after, .tl-expand::after, .cr-ins::after, .hl-item .tc::after, .chip:not(.sm)::after {
+    content: ""; position: absolute; left: 50%; top: 50%; right: auto; bottom: auto;
+    width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%);
+  }
+  .chip:not(.sm) { position: relative; }
+}
+
+/* kbd: ONE key-cap look (both themes). Game HUD keeps its own `.vl-guide kbd`. */
+kbd {
+  display: inline-block; padding: 1px 6px; margin: 0; vertical-align: baseline;
+  font: var(--fw-medium) var(--fs-xs)/1.5 var(--mono); color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--r-xs); box-shadow: none;
+}
+
+/* .search: every search field carries its own magnifier (pages that already draw an svg.ic keep theirs). */
+.search:not(:has(svg))::before {
+  content: ""; flex: none; width: var(--ic-md); height: var(--ic-md); background: var(--text-3);
+  -webkit-mask: var(--ic-search) center / contain no-repeat; mask: var(--ic-search) center / contain no-repeat;
+}
+.search:focus-within:not(:has(svg))::before { background: var(--accent-fg); }
+
+/* .page-foot: footnote under page content. Never floats under an empty state. */
+.page-foot { margin-top: var(--sp-6); font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-2); max-width: 72ch; }
+.page-foot:only-child, .empty + .page-foot, .is-empty + .page-foot { display: none; }
+
+/* skip link (first focusable in shell.js) */
+.skip-link {
+  position: fixed; left: var(--sp-3); top: var(--sp-3); z-index: var(--z-tooltip);
+  padding: 8px 14px; border-radius: var(--r-md); background: var(--accent-solid); color: var(--text-on-accent);
+  font-size: var(--fs-md); font-weight: var(--fw-semibold); text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip-link:focus { transform: none; outline: 2px solid var(--text); outline-offset: 2px; }
+main:focus { outline: none; }
+
+/* theme crossfade: shell.js adds html.theme-anim for ~200ms while switching; colours only. */
+html.theme-anim *, html.theme-anim *::before, html.theme-anim *::after {
+  transition: background-color var(--dur-fast) linear, color var(--dur-fast) linear, border-color var(--dur-fast) linear !important;
+}
+@media (prefers-reduced-motion: reduce) { html.theme-anim *, html.theme-anim *::before, html.theme-anim *::after { transition: none !important; } }
+
+/* scroll lock while any shell modal is open (ref-counted in shell.js) */
+html.modal-open { overflow: hidden; }
+
+/* =========================================================
    5. THEME + MEDIA CHROME
    Anything drawn over photos / video / 3D uses the fixed --media-* / --on-media-* tokens so it reads
    identically in both themes. Surfaces use --surface* and flip with the theme.
@@ -5331,19 +4367,6 @@ select.ctl:disabled, input.ctl:disabled, textarea.ctl:disabled { opacity: .4; cu
 }
 @media (max-width: 680px) {
   .home-v2::before { aspect-ratio: auto; height: 740px; background-size: auto 100%; }
-}
-
-/* the game / immersive viewers are always dark: keep their local tokens dark in the light theme */
-html[data-theme="light"] body.vl-body {
-  color-scheme: dark;
-  --bg: #0A0C10; --surface: #11151C; --surface-2: #171D26; --surface-3: #1E2530;
-  --line: #1E2530; --line-strong: #2E3846;
-  --text: #E6EBF2; --text-2: #8A97A8; --text-3: #7B899C;
-  --accent: #45A0E6; --accent-fg: #45A0E6; --accent-solid: #45A0E6; --accent-hover: #5AB0F0; --accent-press: #3890D4; --text-on-accent: #06111C;
-  --ok: #52C79A; --ok-fg: #52C79A; --warn: #E0A458; --warn-fg: #E0A458; --err: #D96A6A; --err-fg: #D96A6A;
-  --shadow-1: 0 1px 2px rgba(0,0,0,.35); --shadow-2: 0 6px 20px rgba(0,0,0,.35); --shadow-3: 0 24px 60px rgba(0,0,0,.45);
-  --accent-dim: color-mix(in srgb, var(--accent) 14%, transparent);
-  --ok-bg: color-mix(in srgb, var(--ok) 14%, transparent); --warn-bg: color-mix(in srgb, var(--warn) 14%, transparent); --err-bg: color-mix(in srgb, var(--err) 14%, transparent);
 }
 
 /* Mundo: island detail panel is a real surface (was dark text on a dark translucent slab in light) */
@@ -5380,7 +4403,7 @@ html[data-theme="light"] body.vl-body {
 @media (pointer: coarse), (max-width: 820px) {
   .w-filters button, .wp-cfg-g button { height: 36px; }
 }
- .fv-pop-btns a.hot, .vl-result-btns button:first-child, .vl-dir-row button:first-child {
+ .fv-pop-btns a.hot {
   background: var(--accent-solid); color: var(--text-on-accent);
 }
 
@@ -5408,14 +4431,11 @@ html[data-theme="light"] body.vl-body {
    ========================================================= */
 @keyframes ovIn { from { opacity: 0; } }
 @keyframes mIn { from { opacity: 0; transform: translateY(8px) scale(.98); } }
-@keyframes dockIn { from { opacity: 0; transform: translateY(-8px); } }
 @keyframes shimmer-slide { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
 @keyframes sbarIn { from { transform: scaleX(0); } }
 @keyframes ringPulse { 0% { opacity: .7; transform: scale(1); } 100% { opacity: 0; transform: scale(1.7); } }
 @keyframes glowPulse { 50% { opacity: 1; } }
 @keyframes cardSmash { 0% { transform: scale(.985); } 55% { transform: scale(1.012); } 100% { transform: none; } }
-@keyframes chipZap { 30% { transform: scale(1.04); } }
-@keyframes flashRing { 0% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes txPix { 0%, 25% { opacity: 0; } 40% { opacity: .6; } 65%, 100% { opacity: 1; } }
 @keyframes wlZoom { to { transform: scale(1.14); opacity: .35; } }
 @keyframes libRing { 0%, 100% { opacity: 0; } 30% { opacity: 1; } }
@@ -5467,18 +4487,6 @@ html[data-theme="light"] body.vl-body {
   content: ""; position: absolute; inset: 0; border-radius: var(--r-lg); pointer-events: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent); opacity: 0; animation: libRing 1.3s ease-out;
 }
-.vl-rec.on { animation: stPulse 1.2s ease-in-out infinite; }
-.vl-fire.flash { animation: none; }
-.vl-fire.flash::after, .vl-trigger.flash::after {
-  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  border: 3px solid rgba(255, 140, 90, .8); animation: flashRing var(--dur-slow) var(--ease-out) forwards;
-}
-.vl-trigger { position: relative; }
-.vl-trigger.flash { animation: none; }
-.vl-newrec { animation: mIn var(--dur-slow) var(--ease-out); }
-.vl-dock .vl-chip::after, .vl-dock .vl-rec::after { left: 0; transform: translateX(-164%) skewX(-18deg); transition: transform var(--dur-hero) var(--ease-out); }
-.vl-dock .vl-chip:hover::after, .vl-dock .vl-rec:hover::after { left: 0; transform: translateX(245%) skewX(-18deg); }
-.vl-weps button::after { width: 100%; clip-path: inset(0 calc(100% - var(--ammo, 100%)) 0 0); transition: clip-path var(--dur-base) linear; }
 .w-launch .wl-bg { filter: brightness(.35) saturate(1.1); }
 .w-launch { background: #000; }
 .hv2-go { transition: opacity var(--dur-base) var(--ease-out); }
@@ -5498,18 +4506,9 @@ html[data-theme="light"] body.vl-body {
 .hv2-ambient > span:nth-child(2) { background: radial-gradient(closest-side, rgba(14,229,176,.13), transparent); }
 .hv2-ambient > span:nth-child(3) { background: radial-gradient(closest-side, rgba(140,92,255,.13), transparent); }
 @media (max-width: 820px) { .hv2-ambient { display: none; } }
-
-/* ---------- reduced motion (single global block; keep last) ---------- */
-/* Feedback keyframes rebuilt on transform/opacity (2026-09-29). The originals animated
-   box-shadow/filter/background-position and were removed with the motion rewrite, but
-   .vl-fire/.vl-trigger/.tl-lib/.st-pin/.st-step/.vl-rec/.hv2-sk still reference them.
-   Opacity-only where the element already uses transform for position or press. */
-@keyframes fireFlash    { 0% { opacity: .55 } 100% { opacity: 1 } }
-@keyframes triggerFlash { 0% { opacity: .5 }  100% { opacity: 1 } }
 @keyframes lib-pulse    { 0%, 100% { transform: scale(1) } 40% { transform: scale(1.015) } }
 @keyframes pinPulse     { 0%, 100% { opacity: 1 } 50% { opacity: .6 } }
 @keyframes stepGlow     { 0%, 100% { opacity: 1 } 50% { opacity: .72 } }
-@keyframes recPulse     { 0%, 100% { opacity: 1 } 50% { opacity: .5 } }
 @keyframes hv2-shimmer  { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }
 
 @media (prefers-reduced-motion: reduce) {

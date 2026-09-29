@@ -8,7 +8,10 @@ function emptyState(ic, title, text, retry) {
     <span class="p-empty-ic" aria-hidden="true">${icon(ic)}</span>
     <h1>${title}</h1>
     <p>${text}</p>
-    ${retry ? '<button class="btn" type="button" id="p-retry">Reintentar</button>' : ''}
+    <div class="p-empty-actions">
+      ${retry ? '<button class="btn primary" type="button" id="p-retry">Reintentar</button>' : ''}
+      <a class="btn${retry ? '' : ' primary'}" href="/">Ir a AeroBrain</a>
+    </div>
   </div>`;
   document.getElementById('p-retry')?.addEventListener('click', () => location.reload());
 }
@@ -42,7 +45,7 @@ function emptyState(ic, title, text, retry) {
   root.innerHTML = `
     <div class="hero">${video
       ? `<video src="${video}" controls playsinline webkit-playsinline preload="metadata" ${poster ? `poster="${poster}"` : ''} autoplay muted loop></video>`
-      : poster ? `<img src="${poster}" alt="">` : '<div class="hero-empty"></div>'}</div>
+      : poster ? `<img src="${poster}" alt="Vista aérea de ${esc(p.titulo || 'la propiedad')}">` : '<div class="hero-empty"></div>'}</div>
     <header class="head">
       <h1>${esc(p.titulo) || 'Propiedad en venta'}</h1>
       ${p.ubicacion ? `<div class="loc">${icon('pin')}<span>${esc(p.ubicacion)}</span></div>` : ''}

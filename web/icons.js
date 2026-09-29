@@ -76,6 +76,10 @@ const ICONS = {
   freeze: '<path d="M10 3v14M4 6.5l12 7M16 6.5l-12 7M10 3l-2 2M10 3l2 2M10 17l-2-2M10 17l2-2"/>',
   volumeOff: '<path d="M4 7.5h2.5L11 4v12L6.5 12.5H4z"/><path d="M13.5 8l4 4M17.5 8l-4 4"/>',
   plusFile: '<path d="M11 3.5H5.5A1.5 1.5 0 004 5v10a1.5 1.5 0 001.5 1.5h9A1.5 1.5 0 0016 15V8.5z"/><path d="M11 3.5V8.5h5M10 10.5v4M8 12.5h4"/>',
+  // Splat Lab: cúmulo de gaussianas (elipses rotadas + puntos). 'spark' queda solo para IA.
+  splat: '<ellipse cx="7.5" cy="8" rx="4.4" ry="2.6" transform="rotate(-28 7.5 8)"/><ellipse cx="13" cy="12.5" rx="4" ry="2.3" transform="rotate(24 13 12.5)"/><circle cx="14.5" cy="5.2" r="1.1"/><circle cx="4.8" cy="14.2" r="1"/><circle cx="10" cy="16.4" r=".7"/>',
+  image: '<rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="7.5" cy="8.3" r="1.3"/><path d="M3.5 14l4-3.6 3 2.6 2.5-2.2 3.5 3.2"/>',
+  moon: '<path d="M16 11.6A6.6 6.6 0 018.4 4 6.6 6.6 0 1016 11.6z"/>',
   broom: '<path d="M13.5 3.5l3 3M11 6l3 3-4.5 4.5a3 3 0 01-1.6.8L4 15l.7-3.9a3 3 0 01.8-1.6z"/><path d="M6 12.5l1.5 1.5"/>',
 };
 function icon(name, cls = '') {

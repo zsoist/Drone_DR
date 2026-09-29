@@ -58,7 +58,8 @@ function openPhotoEditor({ url, name }) {
         <button class="btn" data-close>Cerrar</button>
       </div>
     </div>`;
-  document.body.appendChild(ov);
+  // openModal (shell.js): role=dialog, foco atrapado, Esc por la pila de capas, scroll lock; cleanup en onClose
+  openModal(ov, { label: 'Editor de foto', initialFocus: '[data-close]', onClose: () => release() });
 
   // --- motor: pixel-math unificado — preview 720p EXACTO al export ---
   const cv = ov.querySelector('#pm-cv');
@@ -212,13 +213,13 @@ function openPhotoEditor({ url, name }) {
   setTimeout(moveInk, 30);   // tras layout; rAF no dispara con tab oculto
   const onRs = () => moveInk();
   window.addEventListener('resize', onRs);
-  function close() {          // única salida: quita el listener global y suelta la imagen decodificada
+  function release() {        // quita el listener global y suelta la imagen decodificada (Esc, fondo y Cerrar pasan por aquí)
     window.removeEventListener('resize', onRs);
     clearTimeout(prepT);
     img.onload = null; img.removeAttribute('src');
     prep = { key: '', blob: null, p: null };
-    ov.remove();
   }
+  const close = () => ov.remove();
   ov.querySelector('.pm-tabs').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]');
     if (!b) return;
@@ -319,6 +320,6 @@ function openPhotoEditor({ url, name }) {
     } catch (err) { notify(`No se pudo exportar: ${err?.message || err}`); }
   });
   ov.addEventListener('click', e => {
-    if (e.target === ov || e.target.closest('[data-close]')) close();
+    if (e.target.closest('[data-close]')) close();
   });
 }

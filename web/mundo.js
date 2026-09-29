@@ -112,7 +112,7 @@ function isla(sc, i) {
     ${rec!=null?`<span class="wi-rec">${I.trophy} ${rec.toFixed(1)}s</span>`:''}
     <div class="wi-body">
       <div class="wi-name">${nbh(esc(sc.name))}</div>
-      <div class="wi-meta">${fechaDe(sc.clip_id)||'&nbsp;'}${st.track_duration_s?` · vuelo ${dur(st.track_duration_s)}`:''}</div>
+      <div class="wi-meta"><span>${fechaDe(sc.clip_id) || (site.scene_id ? 'Sitio estable' : 'Sin fecha')}</span>${st.track_duration_s?`<span>vuelo ${dur(st.track_duration_s)}</span>`:''}</div>
       <div class="wi-stats">
         ${sc.world?.size_m?`<i>${(sc.world.size_m[0]*sc.world.size_m[1]/10000).toFixed(1)}&nbsp;ha</i>`:''}
         ${st.gsd_cm_px?`<i>${st.gsd_cm_px}&nbsp;cm/px</i>`:''}
@@ -204,9 +204,9 @@ async function boot() {
       <h1>Mundo</h1>
       <p class="fv-sub">Elige tu isla — lugares reales reconstruidos desde tus vuelos.</p>
       <div class="fv-statbar" id="fv-stats"></div>
-      <div class="fv-viewtoggle">
-        <button class="on" data-fvv="cards">Islas</button>
-        <button data-fvv="map">Mapa</button>
+      <div class="seg fv-viewseg" role="group" aria-label="Vista">
+        <button class="on" data-fvv="cards" aria-pressed="true">Islas</button>
+        <button data-fvv="map" aria-pressed="false">Mapa</button>
       </div>
     </header>
     <div id="w-cards">
@@ -229,13 +229,14 @@ async function boot() {
     </div>
     <div class="fv-mapwrap" id="fv-mapwrap" hidden>
       <div class="fv-mapbar">
-        <div class="fv-viewtoggle sm" id="fv-layers">
-          <button class="on" data-ly="sat">Satélite</button>
-          <button data-ly="dark">Oscuro</button>
-          <button data-ly="plano">Plano</button>
+        <div class="seg" id="fv-layers" role="group" aria-label="Capa base">
+          <button class="on" data-ly="sat" aria-pressed="true">Satélite</button>
+          <button data-ly="dark" aria-pressed="false">Oscuro</button>
+          <button data-ly="plano" aria-pressed="false">Plano</button>
         </div>
-        <button class="fv-mapbtn" id="fv-rutas">Rutas reales</button>
-        <button class="fv-mapbtn" id="fv-fit">Encuadrar todo</button>
+        <span class="spacer"></span>
+        <button class="btn sm" id="fv-rutas" aria-pressed="false">Rutas reales</button>
+        <button class="btn sm" id="fv-fit">Encuadrar todo</button>
       </div>
       <div class="fv-map" id="fv-map"></div>
     </div>
@@ -283,8 +284,8 @@ async function boot() {
   const nSp = scenes.filter(s=>s.capabilities?.splat).length;
   const secs = scenes.reduce((t,s)=>t+(s.stats?.track_duration_s||0),0);
   document.getElementById('fv-stats').innerHTML =
-    `<span><b>${nFly}</b> islas volables</span><span><b>${nSp}</b> foto-realistas</span>`+
-    (secs?`<span><b>${dur(secs)}</b> de vuelo real</span>`:'');
+    `<span><b>${nFly}</b><em>islas volables</em></span><span><b>${nSp}</b><em>foto-realistas</em></span>`+
+    (secs?`<span><b>${dur(secs)}</b><em>de vuelo real</em></span>`:'');
 
   const rail = document.getElementById('w-rail');
   let previewObserver = null;
@@ -304,6 +305,7 @@ async function boot() {
     }, { root: rail, rootMargin: '0px 280px', threshold: 0.01 });
     cards.forEach(card => previewObserver.observe(card));
   };
+  let railShown = false;
   const applyFiltro = () => {
     const f = filtro;
     const list = scenes.map((sc, i) => ({ sc, i })).filter(({ sc }) =>
@@ -311,6 +313,8 @@ async function boot() {
       : f === 'fotoreal' ? sc.capabilities?.splat
       : f === 'record' ? best(sc.clip_id) != null
       : sc.capabilities?.terrain);
+    rail.classList.toggle('settled', railShown);   // la entrada escalonada solo en el primer montaje
+    railShown = true;
     rail.innerHTML = list.length
       ? list.map(({ sc, i }) => isla(sc, i)).join('')
       : '<div class="fv-loading">Nada con ese filtro.</div>';
@@ -469,13 +473,13 @@ async function boot() {
     if (!mapBounds.isEmpty()) map.fitBounds(mapBounds, { padding: 70, maxZoom: 14 });
     document.getElementById('fv-layers').addEventListener('click', e => {
       const b = e.target.closest('[data-ly]'); if (!b) return;
-      document.querySelectorAll('#fv-layers button').forEach(x => x.classList.toggle('on', x === b));
+      document.querySelectorAll('#fv-layers button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); });
       map.setStyle(LAYERS[b.dataset.ly]);
       map.once('styledata', () => setTimeout(addOverlays, 80));
     });
     document.getElementById('fv-rutas').addEventListener('click', e => {
       rutasOn = !rutasOn;
-      e.target.classList.toggle('on', rutasOn);
+      e.currentTarget.classList.toggle('on', rutasOn); e.currentTarget.setAttribute('aria-pressed', rutasOn);
       if (rutasOn) drawRutas();
       else if (map.getLayer('rt-line')) { map.removeLayer('rt-line'); map.removeSource('rt'); }
     });
@@ -486,9 +490,9 @@ async function boot() {
       launch(a.dataset.golaunch, a.dataset.poster);
     });
   }
-  document.querySelector('.fv-viewtoggle').addEventListener('click', e => {
+  document.querySelector('.fv-viewseg').addEventListener('click', e => {
     const b = e.target.closest('[data-fvv]'); if (!b) return;
-    document.querySelectorAll('.fv-viewtoggle button').forEach(x => x.classList.toggle('on', x===b));
+    document.querySelectorAll('.fv-viewseg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); });
     if (b.dataset.fvv === 'map') {
       void showMap().catch(error => {
         main.insertAdjacentHTML('beforeend', `<div class="fv-loading">Mapa: ${esc(error.message)}</div>`);

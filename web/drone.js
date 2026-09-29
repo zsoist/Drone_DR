@@ -153,12 +153,14 @@ function paintStats() {
   const st = sys.storage || {};
   const newCount = volumes.reduce((a, v) => a + v.videos.filter(x => !x.in_vault).length, 0);
   const lib = volumes.reduce((a, v) => a + freeable(v), 0);
+  const vids = volumes.reduce((a, v) => a + v.videos.length, 0);
+  const zero = (n, cls = '') => n > 0 ? cls : 'is-zero';   // un cero no pesa como un dato real
   const items = [
-    ['db', 'Vault raw', fmt.gb(st.raw || 0), ''],
-    ['drone', 'Tarjetas', volumes.length, ''],
-    ['film', 'Videos en SD', volumes.reduce((a, v) => a + v.videos.length, 0), ''],
-    ['spark', 'Nuevos', newCount, newCount ? 'is-accent' : ''],
-    ['dl', 'Liberable', gb(lib), lib > 5e9 ? 'is-warn' : ''],
+    ['db', 'Vault raw', fmt.gb(st.raw || 0), zero(st.raw || 0)],
+    ['drone', 'Tarjetas', volumes.length, zero(volumes.length)],
+    ['film', 'Videos en SD', vids, zero(vids)],
+    ['spark', 'Nuevos', newCount, zero(newCount, 'is-accent')],
+    ['dl', 'Liberable', gb(lib), zero(lib, lib > 5e9 ? 'is-warn' : '')],
   ];
   const sig = JSON.stringify(items);
   if (sig === statsSig) return;             // sin cambios: no reconstruir (evita replay de animación cada 10 s)
@@ -189,6 +191,7 @@ async function scan() {
     volumes = (await r.json()).volumes || [];
   } catch { volumes = []; }
   paintStats();
+  document.getElementById('sd-rescan').hidden = !volumes.length;   // vacío: el CTA del estado vacío ya escanea
   const el = document.getElementById('sd-list');
   // DIFF antes de re-pintar: el poll de 10s reconstruía el DOM idéntico → replay de .rise y
   // del sweep del gauge en cada tick, y si tecleabas en el buscador, innerHTML destruía el
@@ -236,7 +239,7 @@ async function scan() {
     </div>`;
   }).join('') : `
     ${emptyState({ icon: 'db', title: 'Sin tarjetas SD detectadas', help: 'Inserta la micro SD del dron. Se detecta sola cada 10 s (busca la carpeta DCIM).',
-      action: `<button class="btn primary" data-rescan>${icon('loop')} Escanear ahora</button>` })}`;
+      action: `<button class="btn primary" data-rescan>${icon('loop')} Escanear ahora</button>`, cls: 'dr-empty' })}`;
   // anima los gauges tras el primer layout
   requestAnimationFrame(() => el.querySelectorAll('.sd-gauge [data-target]').forEach(c => {
     c.style.strokeDashoffset = c.dataset.target;
@@ -249,7 +252,23 @@ async function scan() {
 document.getElementById('sd-rescan').addEventListener('click', scan);
 scan();
 setInterval(scan, 10000);
-pollJobs(document.getElementById('jobs-sd'), 2500, null, {
+// La etiqueta del servidor trae el volumen crudo («Untitled · 8 archivos»): si no tiene nombre útil,
+// cae a carpeta destino + fecha del trabajo.
+const jobsEl = document.getElementById('jobs-sd');
+jobsEl.addEventListener('jobs:paint', ev => {
+  const byId = Object.fromEntries((ev.detail?.jobs || []).map(j => [j.id, j]));
+  jobsEl.querySelectorAll('[data-jid]').forEach(card => {
+    const j = byId[card.dataset.jid];
+    const t = card.querySelector('.jc-title');
+    if (!j || !t || j.title || !/^(untitled|sin t[ií]tulo|no name)\b/i.test(j.label || '')) return;
+    const n = (j.label.match(/·\s*(.+)$/) || [])[1];
+    const dest = ((j.detail || '').match(/raw\/([^·]+?)\s*(?:·|$)/) || [])[1];
+    const when = j.started ? fmt.date(new Date(j.started * 1000).toISOString().slice(0, 10)) : '';
+    const name = [dest || 'Tarjeta SD', when, n].filter(Boolean).join(' · ');
+    if (t.textContent !== name) { t.textContent = name; t.title = name; }
+  });
+});
+pollJobs(jobsEl, 2500, null, {
   filter: j => ['ingest', 'upload'].includes(j.kind), limit: 3,
   emptyText: 'Aún no hay importaciones. Cuando importes una tarjeta o subas un video, aparecerá aquí.',
 });
@@ -280,7 +299,7 @@ function renderBrowser(v) {
     <div class="tool-row sd-tools">
       ${['todo', 'nuevos', 'respaldados', 'videos', 'fotos'].map(f =>
         `<button class="chip ${st.filtro === f ? 'on' : ''}" data-bf="${f}">${f[0].toUpperCase() + f.slice(1)}</button>`).join('')}
-      <input class="ctl sd-q" data-bq placeholder="Buscar…" aria-label="Buscar archivos" value="${esc(st.q)}">
+      <label class="search sd-q">${icon('search')}<input data-bq type="search" placeholder="Buscar archivo…" aria-label="Buscar archivos" autocomplete="off" value="${esc(st.q)}"></label>
     </div>
     <div class="sd-files">${rows.slice(0, 120).map(x => `
       <div class="sd-file">
@@ -365,13 +384,13 @@ function openImport(v) {
     goBtn.disabled = true;                       // doble click = 2 ingest sobre los mismos archivos
     setTimeout(() => { goBtn.disabled = false; }, 4000);
     const files = [...ov.querySelectorAll('input[data-rel]:checked')].map(c => c.dataset.rel);
-    if (!files.length) return alert('Elige al menos un video.');
+    if (!files.length) return toast('Elige al menos un video.');
     const r = await api('/api/sd_import', {
       volume: v.volume, files,
       drone: ov.querySelector('#sd-drone').value.trim(),
       clean: ov.querySelector('#sd-clean').checked,
     });
-    if (r.error) return alert(r.error);
+    if (r.error) return toast(r.error);
     ov.remove();
   });
 }
@@ -454,11 +473,11 @@ function openOptimize(v) {
     goBtn.disabled = true;
     setTimeout(() => { goBtn.disabled = false; }, 4000);
     const lv = LV.find(l => l.k === ov.querySelector('.mpreset.on')?.dataset.lv) || LV[1];
-    if (!lv.files.length) return alert('Nada respaldado que borrar todavía.');
+    if (!lv.files.length) return toast('Nada respaldado que borrar todavía.');
     const r = await api('/api/sd_import', {
       volume: v.volume, files: lv.files.map(x => x.rel), clean_only: true,
     });
-    if (r.error) return alert(r.error);
+    if (r.error) return toast(r.error);
     ov.remove();
   });
 }

@@ -3,21 +3,21 @@ const main = renderShell('ventas.html');
 // [clave, etiqueta, placeholder, pista, opciones]
 const GROUPS = [
   ['Básico', [
-    ['slug', 'URL corta', 'casa-cajica', 'Será el link de la página: p.html?id=…', { full: true, mono: true }],
-    ['titulo', 'Título', 'Casa campestre en Cajicá', '', { full: true }],
-    ['ubicacion', 'Ubicación', 'Cajicá, Cundinamarca', '', { full: true }],
-    ['precio', 'Precio', '$850.000.000 COP', '', { full: true }],
+    ['slug', 'URL corta', 'Ej. casa-cajica', 'Será el link de la página: p.html?id=…', { full: true, mono: true }],
+    ['titulo', 'Título', 'Ej. Casa campestre en Cajicá', '', { full: true }],
+    ['ubicacion', 'Ubicación', 'Ej. Cajicá, Cundinamarca', '', { full: true }],
+    ['precio', 'Precio', 'Ej. $850.000.000 COP', '', { full: true }],
   ]],
   ['Características', [
-    ['area', 'Área (m²)', '240', '', { inputmode: 'decimal' }],
-    ['habitaciones', 'Habitaciones', '4', '', { inputmode: 'numeric' }],
-    ['banos', 'Baños', '3', '', { inputmode: 'numeric' }],
-    ['parqueaderos', 'Parqueaderos', '2', '', { inputmode: 'numeric' }],
-    ['estrato', 'Estrato', '5', '', { inputmode: 'numeric' }],
+    ['area', 'Área (m²)', 'Ej. 240', '', { inputmode: 'decimal' }],
+    ['habitaciones', 'Habitaciones', 'Ej. 4', '', { inputmode: 'numeric' }],
+    ['banos', 'Baños', 'Ej. 3', '', { inputmode: 'numeric' }],
+    ['parqueaderos', 'Parqueaderos', 'Ej. 2', '', { inputmode: 'numeric' }],
+    ['estrato', 'Estrato', 'Ej. 5', '', { inputmode: 'numeric' }],
   ]],
   ['Contacto', [
-    ['whatsapp', 'WhatsApp', '573001234567', 'Con indicativo de país, sin + ni espacios.', { inputmode: 'tel' }],
-    ['telefono', 'Teléfono', '300 123 4567', '', { inputmode: 'tel' }],
+    ['whatsapp', 'WhatsApp', 'Ej. 573001234567', 'Con indicativo de país, sin + ni espacios.', { inputmode: 'tel' }],
+    ['telefono', 'Teléfono', 'Ej. 300 123 4567', '', { inputmode: 'tel' }],
   ]],
 ];
 const F = GROUPS.flatMap(([, fields]) => fields);
@@ -56,7 +56,7 @@ main.innerHTML = `
           </div>
         </fieldset>
         <div class="vt-actions">
-          <button class="btn ghost" id="btn-ai" type="button">${icon('spark')} Generar descripción AI</button>
+          <button class="btn" id="btn-ai" type="button">${icon('spark')} Generar descripción AI</button>
           <span class="spacer"></span>
           <button class="btn primary" id="btn-save" type="button">${icon('check')} Guardar y publicar</button>
         </div>
@@ -85,7 +85,12 @@ main.innerHTML = `
 
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-copy]');
-  if (b) { navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copiado'; }
+  if (!b) return;
+  const html = b.innerHTML;
+  navigator.clipboard.writeText(b.dataset.copy).then(() => {
+    b.innerHTML = `${icon('check')} Copiado`;
+    setTimeout(() => { b.innerHTML = html; }, 1200);
+  }, () => toast('No se pudo copiar el link.'));
 });
 (async () => {
   const flights = await getFlights();
@@ -111,7 +116,7 @@ document.addEventListener('click', e => {
           <span class="vt-item-d">${esc(String(p.updated || '').slice(0, 16).replace('T', ' '))}</span>
         </div>
         <div class="vt-item-a">
-          <a class="btn sm ghost" href="p.html?id=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">${icon('ext')} Ver</a>
+          <a class="btn sm" href="p.html?id=${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">${icon('ext')} Ver</a>
           <button class="btn sm" data-edit="${esc(p.slug)}">Editar</button>
         </div>
       </div>`).join('') :

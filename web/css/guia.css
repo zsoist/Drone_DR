@@ -1,7 +1,8 @@
 /* Guía — operating guide. Loads after style.css + shell.css. */
 
-.gd-page { max-width: 1040px; }
-.gd-wrap { display: grid; grid-template-columns: 220px minmax(0, 760px); gap: var(--sp-6); align-items: start; }
+.gd-chips { display: none; }
+/* lectura estrecha: tope interno, mismo borde izquierdo que el resto de páginas (sin margin auto) */
+.gd-wrap { max-width: 1040px; display: grid; grid-template-columns: 220px minmax(0, 760px); gap: var(--sp-6); align-items: start; }
 .gd-index {
   position: sticky; top: var(--sp-4); display: flex; flex-direction: column; gap: 2px;
 }
@@ -35,7 +36,7 @@
 .gd-row dd { margin: 0; min-width: 0; text-align: left; }
 .gd-txt { font-size: var(--fs-md); line-height: var(--lh-base); color: var(--text); }
 .gd-txt b { font-weight: 600; }
-.gd-txt kbd, .gd-txt .mono {
+.gd-txt .mono {
   font-family: var(--mono); font-size: var(--fs-sm); padding: 1px 6px; border-radius: var(--r-xs);
   background: var(--surface-2); border: 1px solid var(--line);
 }
@@ -54,9 +55,8 @@
 
 @media (max-width: 900px) {
   .gd-wrap { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
-  .gd-index { position: static; flex-direction: row; overflow-x: auto; gap: var(--sp-2); padding-bottom: var(--sp-1); scrollbar-width: none; }
-  .gd-index::-webkit-scrollbar { display: none; }
-  .gd-index a { flex: none; border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+  .gd-index { display: none; }
+  .gd-chips { display: flex; }
 }
 @media (max-width: 560px) {
   .gd-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }

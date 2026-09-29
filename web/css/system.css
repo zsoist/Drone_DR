@@ -1,6 +1,6 @@
 /* Sistema — dashboard. Loads after style.css + shell.css. */
 
-.sy-page { max-width: 1240px; }
+/* ancho = --page-max compartido (.main); sin max-width propio */
 
 /* stat tiles: identical height, 4 up on desktop */
 .sy-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); margin-bottom: var(--sp-4); }
@@ -16,20 +16,23 @@
 .sy-ph-t { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .sy-ph-t b { font-size: var(--fs-lg); font-weight: 600; letter-spacing: var(--tr-tight); }
 .sy-ph-t small { font-size: var(--fs-sm); font-weight: 400; color: var(--text-2); }
-.sy-ph > .chip, .sy-ph > .ctl { flex: none; margin-left: auto; }
+.sy-ph > .chip, .sy-ph > .ctl, .sy-ph > .search { flex: none; margin-left: auto; }
 .sy-hint { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-base); }
 .sy-hint.sy-foot { margin: var(--sp-3) 0 0; }
 p.sy-hint { margin: 0; }
 
 /* live performance */
 .sy-perf { gap: var(--sp-3); }
+.perf-cell { position: relative; }
 .perf-cell canvas { height: 72px; }
+.perf-wait { position: absolute; left: 12px; right: 12px; bottom: 6px; height: 72px; display: grid; place-items: center;
+  font-size: var(--fs-sm); color: var(--text-2); border: 1px dashed var(--line-strong); border-radius: var(--r-sm); }
 .perf-lb { color: var(--text-2); }
 .perf-chips { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin: var(--sp-3) 0 0; }
 #pf-jobs:not(:empty) { margin-top: var(--sp-3); }
 .perf-jobs th { color: var(--text-2); }
 .pf-bar i { border-radius: var(--r-xs); }
-.sy-tablewrap { overflow: auto; -webkit-overflow-scrolling: touch; }
+.sy-scrollx { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .perf-errs { margin-top: var(--sp-3); border-top: 1px solid var(--line); padding-top: var(--sp-2); }
 .sy-errs { padding: var(--sp-2) 0 0; display: grid; gap: var(--sp-3); }
 .sy-errs-a { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
@@ -50,9 +53,8 @@ p.sy-hint { margin: 0; }
 .gn-when { color: var(--text-3); }
 
 /* two balanced columns */
-.sy-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); margin-bottom: var(--sp-4); align-items: stretch; }
+.sy-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); margin-bottom: var(--sp-4); align-items: start; }
 .sy-cols > .panel { display: flex; flex-direction: column; }
-.sy-cols > .panel > .pb { flex: 1; }
 .sy-cols .sy-wide { grid-column: 1 / -1; }
 .sy-pills { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-4); }
 .sy-sublb { margin: 0 0 var(--sp-3); font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); }
@@ -83,17 +85,17 @@ p.sy-hint { margin: 0; }
 .sy-kv .total dt { color: var(--text); font-weight: 600; }
 
 /* content database */
-.sy-q { width: 220px; height: 32px; font-size: var(--fs-md); }
+.sy-q { width: 240px; flex: none; }
 .sy-filters { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; padding-bottom: var(--sp-3); }
 .sy-flags { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-.sy-tablewrap { max-height: 640px; border-top: 1px solid var(--line); }
-.sy-table { min-width: 720px; }
+.sy-tablewrap { border-top: 1px solid var(--line); }   /* sin scroller interno: la cabecera es sticky respecto a la página */
 .sy-table thead th {
-  position: sticky; top: 0; z-index: 1; background: var(--surface);
+  position: sticky; top: 0; z-index: var(--z-sticky); background: var(--surface);
   text-align: left; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2);
   letter-spacing: 0; text-transform: none; padding: 10px 14px; border-bottom: 1px solid var(--line-strong);
 }
 .sy-table th.c, .sy-table td.c { text-align: center; }
+.sy-table th.n, .sy-table td.n { text-align: right; font-variant-numeric: tabular-nums; }
 .sy-table td { font-size: var(--fs-md); }
 .sy-table .c-date span { color: var(--text-3); margin-left: 4px; }
 .sy-yes { color: var(--ok-fg); display: inline-flex; }
@@ -111,13 +113,15 @@ p.sy-hint { margin: 0; }
   .sy-kv2 { grid-template-columns: minmax(0, 1fr); }
   .sy-kv2 > div:nth-last-child(2):nth-child(odd) { border-bottom: 1px solid var(--line); }
   .sy-q { width: 100%; }
-  .sy-ph > .ctl { flex-basis: 100%; margin-left: 0; }
+  .sy-ph > .search { flex-basis: 100%; margin-left: 0; max-width: none; }
 }
+
+@media (min-width: 641px) and (max-width: 820px) { .sy-table .c-res { display: none; } }
 
 /* mobile: table rows become cards */
 @media (max-width: 640px) {
-  .sy-tablewrap { max-height: none; overflow: visible; border-top: 0; }
-  .sy-table { min-width: 0; display: block; }
+  .sy-tablewrap { border-top: 0; }
+  .sy-table { display: block; }
   .sy-table thead { display: none; }
   .sy-table tbody { display: grid; gap: var(--sp-2); padding: 0 var(--sp-4) var(--sp-3); }
   .sy-table tbody tr {
@@ -136,3 +140,6 @@ p.sy-hint { margin: 0; }
   .sy-table td.c-res:empty { display: none; }
   .sy-table .empty-row { display: block; }
 }
+
+/* overflow:clip conserva el recorte redondeado del panel sin crear scroll container: el th sticky sigue a la página */
+#db-panel { overflow: clip; }

@@ -34,11 +34,11 @@ main.innerHTML = `
           <span class="gchip" id="tl-stat">0 clips · 0:00</span>
           <span class="spacer"></span>
           <div class="st-ph-actions">
-            <button class="btn sm ghost" id="ed-new" data-tip="Vaciar y empezar de cero" aria-label="Nuevo proyecto">${icon('plusFile')}<span class="st-hide-sm">Nuevo</span></button>
-            <button class="btn sm" id="ed-save" data-tip="Guardar este proyecto">${icon('save')} Guardar</button>
-            <button class="btn sm" id="ed-open" data-tip="Abrir proyectos guardados">${icon('folder')} Proyectos</button>
+            <button class="btn sm ghost" id="ed-new" data-tip="Nuevo proyecto: vaciar y empezar de cero" aria-label="Nuevo proyecto">${icon('plusFile')}<span class="st-hide-sm">Nuevo</span></button>
+            <button class="btn sm ghost" id="ed-save" data-tip="Guardar este proyecto" aria-label="Guardar proyecto">${icon('save')}<span class="st-hide-sm">Guardar</span></button>
+            <button class="btn sm ghost" id="ed-open" data-tip="Abrir proyectos guardados" aria-label="Proyectos guardados">${icon('folder')}<span class="st-hide-sm">Proyectos</span></button>
             <span class="st-vsep" aria-hidden="true"></span>
-            <button class="btn sm ghost" id="ed-keys" aria-label="Atajos de teclado" aria-expanded="false" aria-controls="tl-help">${icon('keyboard')}<span class="st-hide-sm">Atajos</span></button>
+            <button class="btn sm ghost" id="ed-keys" aria-label="Atajos de teclado" aria-expanded="false" aria-controls="tl-help" data-tip="Atajos de teclado">${icon('keyboard')}<span class="st-hide-sm">Atajos</span></button>
           </div>
         </div>
         <!-- 48 · ayuda de atajos -->
@@ -115,7 +115,7 @@ main.innerHTML = `
           <!-- 18-23 · inspector del clip seleccionado (v7 · secciones agrupadas) -->
           <div class="tl-inspect" id="tl-inspect" hidden>
             <div class="tl-io">
-              <span class="mono" id="tli-io">—</span>
+              <dl class="tl-io-vals" id="tli-io"></dl>
               <button class="btn" id="tli-goto" data-tip="Saltar el playhead a este clip">${icon('play')} Ir al clip</button>
             </div>
 
@@ -129,20 +129,16 @@ main.innerHTML = `
             <!-- sección Velocidad + reversa + congelar -->
             <div class="tl-sec" data-sec="speed">
               <div class="tl-seclabel">${icon('gauge')} Velocidad</div>
-              <div class="tl-inspect-row">
-                <span id="tli-speed" class="tl-chips"></span>
+              <div class="chip-row" id="tli-speed" role="group" aria-label="Velocidad"></div>
+              <div class="tl-inspect-row tl-sp-row">
+                <label for="tli-speed-range">Ajuste fino</label>
+                <input class="tl-range" id="tli-speed-range" type="range" min="0.1" max="100" step="0.05">
+                <span class="tl-numx"><input class="ctl" id="tli-speed-num" type="number" min="0.1" max="100" step="0.05" aria-label="Velocidad (x)"><span class="mono">x</span></span>
               </div>
-              <div class="tl-inspect-row">
-                <input class="u-f1 ctl tl-range" id="tli-speed-range" type="range" min="0.1" max="100" step="0.05">
-                <input class="u-w74 ctl" id="tli-speed-num" type="number" min="0.1" max="100" step="0.05">
-                <span class="mono">x</span>
-              </div>
-              <div class="tl-inspect-row">
-                <label class="u-chk"><input type="checkbox" id="tli-reverse"> Reversa</label>
-                <span class="spacer"></span>
-                <label>Congelar</label>
-                <input class="u-w74 ctl" id="tli-freeze" type="number" min="0" max="10" step="0.1" value="0">
-                <span class="mono">s</span>
+              <div class="tl-sp-opts">
+                <label class="tl-fld tl-fld-chk"><input type="checkbox" id="tli-reverse"><span>Reversa</span></label>
+                <label class="tl-fld"><span>Congelar</span>
+                  <span class="tl-numx"><input class="ctl" id="tli-freeze" type="number" min="0" max="10" step="0.1" value="0"><span class="mono">s</span></span></label>
               </div>
             </div>
 
@@ -286,7 +282,7 @@ main.innerHTML = `
         <div class="ex-card">
           <div class="ph">${icon('dl')} Exportar reel
             <span class="spacer"></span>
-            <button class="btn" id="ex-close" data-tip="Cerrar">${icon('close')}</button>
+            <button class="modal-x" type="button" id="ex-close" aria-label="Cerrar" data-tip="Cerrar">${icon('close')}</button>
           </div>
           <div class="ex-body">
             <div class="ex-row">
@@ -402,7 +398,7 @@ main.innerHTML = `
         <div class="tl-projcard">
           <div class="ph">${icon('db')} Proyectos guardados
             <span class="spacer"></span>
-            <button class="btn" id="proj-close" data-tip="Cerrar">${icon('close')}</button>
+            <button class="modal-x" type="button" id="proj-close" aria-label="Cerrar" data-tip="Cerrar">${icon('close')}</button>
           </div>
           <div class="pb" id="proj-list"></div>
         </div>
@@ -430,13 +426,13 @@ main.innerHTML = `
       </div>
     </div>
     <div class="media-toolbar">
-      <input class="u-f1 u-minw150 ctl" id="q-reels" type="search" placeholder="Buscar reel…">
-      <select class="ctl" id="s-reels">
-        <option value="recientes">Recientes</option>
-        <option value="tamano">Tamaño</option>
-        <option value="nombre">Nombre</option>
+      <label class="search u-f1 u-minw150"><input id="q-reels" type="search" placeholder="Buscar reel…" aria-label="Buscar reel"></label>
+      <select class="ctl" id="s-reels" aria-label="Ordenar por">
+        <option value="recientes">Más recientes</option>
+        <option value="tamano">Más pesados</option>
+        <option value="nombre">Nombre A–Z</option>
       </select>
-      <button class="btn" id="btn-ord" data-tip="Reordena los reels con las flechas y guarda">${icon('list')} Ordenar</button>
+      <button class="btn" id="btn-ord" data-tip="Modo reordenar: mueve los reels con las flechas y guarda el orden" aria-pressed="false">${icon('swap')} Reordenar</button>
     </div>
     <div class="media-grid" id="grid-reels"><div class="sk-card sk"></div><div class="sk-card sk"></div></div>
   </section>
@@ -447,11 +443,11 @@ main.innerHTML = `
       <button class="chip" data-fsub="dron">Del dron <span class="mono" id="dron-count"></span></button>
     </div>
     <div class="media-toolbar">
-      <input class="u-f1 u-minw150 ctl" id="q-fotos" type="search" placeholder="Buscar foto…">
-      <select class="ctl" id="s-fotos">
-        <option value="recientes">Recientes</option>
-        <option value="tamano">Tamaño</option>
-        <option value="nombre">Nombre</option>
+      <label class="search u-f1 u-minw150"><input id="q-fotos" type="search" placeholder="Buscar foto…" aria-label="Buscar foto"></label>
+      <select class="ctl" id="s-fotos" aria-label="Ordenar por">
+        <option value="recientes">Más recientes</option>
+        <option value="tamano">Más pesados</option>
+        <option value="nombre">Nombre A–Z</option>
       </select>
     </div>
     <div class="media-grid" id="grid-fotos"><div class="sk-card sk"></div><div class="sk-card sk"></div></div>
@@ -669,7 +665,6 @@ function openReelViewer(name) {
   if (idx < 0) return;
   const ov = document.createElement('div');
   ov.className = 'rv-ov';
-  document.body.appendChild(ov);
   let armedDelete = false;
   let edit = false;                       // panel de edición desplegado
   let trim = { a: 0, b: null };           // recorte en curso
@@ -752,13 +747,13 @@ function openReelViewer(name) {
     armedDelete = false;
     render();
   };
-  const close = () => { ov.querySelector('video')?.pause(); ov.remove(); removeEventListener('keydown', onKey); };
+  // openModal: role=dialog, foco atrapado, Esc por la pila de capas (solo cierra la capa de arriba)
+  const close = openModal(ov, { label: 'Visor de reel', closeOnBackdrop: false, initialFocus: '[data-rv="share"]',
+    onClose: () => { ov.querySelector('video')?.pause(); removeEventListener('keydown', onKey); } });
   const onKey = ev => {
-    if (!document.body.contains(ov)) { removeEventListener('keydown', onKey); return; }
-    if (ev.target.tagName === 'INPUT') return;
-    if (document.querySelector('.modal-ov')) return;   // un modal (p. ej. Textos) manda sobre el visor
-    if (ev.key === 'Escape') close();
-    else if (ev.key === 'ArrowRight' && list.length > 1) go(1);
+    if (_modalStack[_modalStack.length - 1] !== ov) return;   // un modal (p. ej. Textos) o menú manda sobre el visor
+    if (ev.target.tagName === 'INPUT' || document.querySelector('.pop')) return;
+    if (ev.key === 'ArrowRight' && list.length > 1) go(1);
     else if (ev.key === 'ArrowLeft' && list.length > 1) go(-1);
     else if (ev.key === ' ') {
       ev.preventDefault();
@@ -890,7 +885,10 @@ function openReelViewer(name) {
       host.innerHTML = `<input class="m-ipt rv-ipt" value="${esc(old)}" maxlength="60">`;
       const inp = host.querySelector('input');
       inp.focus(); inp.select();
+      // Esc dentro del campo cancela el renombrado (capa propia: no cierra el visor)
+      const lay = pushLayer({ onKey: k => { if (k.key === 'Escape') { k.preventDefault(); k.stopPropagation(); popLayer(lay); render(); } } });
       const save = async () => {
+        popLayer(lay);
         const nn = inp.value.trim();
         if (!nn || nn === old) return render();
         const r = await api('/api/media_op', { op: 'rename', type: 'reel', name: it.name, new_name: nn });
@@ -899,7 +897,7 @@ function openReelViewer(name) {
         await loadMedia();
         render();
       };
-      inp.addEventListener('keydown', k => { if (k.key === 'Enter') inp.blur(); if (k.key === 'Escape') render(); });
+      inp.addEventListener('keydown', k => { if (k.key === 'Enter') inp.blur(); });
       inp.addEventListener('blur', save);
       return;
     }
@@ -952,20 +950,15 @@ function openBurnTexts(it, onDone) {
                    style: { pos: 'bottom', size: 46, color: 'ffffff', box: true, style: 'clean', font: 'din' } }];
   const ov = document.createElement('div');
   ov.className = 'modal-ov modal-ov-top';   // por encima del visor (.rv-ov z 350)
-  document.body.appendChild(ov);
-  const closeOv = () => { ov.remove(); removeEventListener('keydown', onEsc); };
-  const onEsc = ev => {
-    if (!document.body.contains(ov)) { removeEventListener('keydown', onEsc); return; }
-    if (ev.key === 'Escape') closeOv();
-  };
-  addEventListener('keydown', onEsc);
   const STYLES = [['clean', 'Limpio'], ['bold', 'Bold · MAYÚS'], ['kinetic', 'Kinético · cine'],
                   ['lower', 'Lower third'], ['minimal', 'Minimal']];
   const FONTS = [['din', 'DIN · cine'], ['sansbold', 'Arial Bold'], ['black', 'Arial Black'],
                  ['sans', 'Helvetica'], ['condensed', 'Avenir Cond.'], ['avenir', 'Avenir'],
                  ['optima', 'Optima'], ['serif', 'Georgia'], ['mono', 'Menlo']];
+  ov.innerHTML = '<div class="m-w560 modal"></div>';   // contenedor estable: openModal le pone el rol
+  const mdl = ov.firstElementChild;
   const render = () => {
-    ov.innerHTML = `<div class="m-w560 modal">
+    mdl.innerHTML = `
       <div class="modal-h"><b>${icon('tag')} Textos sobre «${esc(it.name.replace(/\.[^.]+$/, ''))}»</b>
         <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
@@ -975,24 +968,26 @@ function openBurnTexts(it, onDone) {
                    placeholder="Texto ${i + 1}…" value="${esc(t.text)}">
             ${items.length > 1 ? `<button class="btn icon sm ghost" data-btx="${i}" aria-label="Quitar texto" data-tip="Quitar texto">${icon('close')}</button>` : ''}
           </div>
-          <div class="tx-row"><span>Aparece</span>
-            <input type="number" class="u-w76 ctl" data-f="start" min="0" max="${dur}" step="0.1" value="${t.start}">
+          <div class="tx-row bt-time"><span>Aparece</span>
+            <input type="number" class="u-w76 ctl" data-f="start" min="0" max="${dur}" step="0.1" value="${t.start}" aria-label="Inicio (s)">
             <span class="u-wauto">a</span>
-            <input type="number" class="u-w76 ctl" data-f="end" min="0.3" max="${dur}" step="0.1" value="${t.end}">
-            <span class="u-wauto">s</span>
-            <select class="u-f1 ctl" data-f="pos">
+            <input type="number" class="u-w76 ctl" data-f="end" min="0.3" max="${dur}" step="0.1" value="${t.end}" aria-label="Fin (s)">
+            <span class="u-wauto">s</span></div>
+          <div class="tx-row">
+            <select class="u-f1 ctl" data-f="pos" aria-label="Posición">
               <option value="top"${t.style.pos === 'top' ? ' selected' : ''}>Arriba</option>
               <option value="mid"${t.style.pos === 'mid' ? ' selected' : ''}>Centro</option>
               <option value="bottom"${t.style.pos === 'bottom' ? ' selected' : ''}>Abajo</option>
-            </select></div>
-          <div class="tx-row">
-            <select class="u-f1 ctl" data-f="style">
+            </select>
+            <select class="u-f1 ctl" data-f="style" aria-label="Estilo">
               ${STYLES.map(([k, l]) => `<option value="${k}"${t.style.style === k ? ' selected' : ''}>${l}</option>`).join('')}
             </select>
-            <select class="u-f1 ctl" data-f="font">
+            <select class="u-f1 ctl" data-f="font" aria-label="Fuente">
               ${FONTS.map(([k, l]) => `<option value="${k}"${t.style.font === k ? ' selected' : ''}>${l}</option>`).join('')}
             </select>
-            <input type="range" data-f="size" min="10" max="100" value="${t.style.size}" class="u-f1">
+          </div>
+          <div class="tx-row"><span>Tamaño</span>
+            <input type="range" data-f="size" min="10" max="100" value="${t.style.size}" class="u-f1" aria-label="Tamaño">
             <label class="u-chk">
               <input type="checkbox" data-f="box"${t.style.box ? ' checked' : ''}> Fondo</label>
           </div>
@@ -1004,7 +999,7 @@ function openBurnTexts(it, onDone) {
           <input type="checkbox" id="bt-replace"> Reemplazar original</label>
         <span class="u-f1 spacer"></span>
         <button class="btn primary" id="bt-burn">${icon('check')} Quemar textos</button>
-      </div></div>`;
+      </div>`;
   };
   render();
   const collect = () => {
@@ -1018,8 +1013,8 @@ function openBurnTexts(it, onDone) {
                   font: F('font').value, size: +F('size').value, box: F('box').checked };
     });
   };
+  const closeOv = openModal(ov, { initialFocus: '[data-f="text"]' });
   ov.addEventListener('click', async e => {
-    if (e.target === ov || e.target.closest('.modal-x')) { closeOv(); return; }
     const del = e.target.closest('[data-btx]');
     if (del) { collect(); items.splice(+del.dataset.btx, 1); render(); return; }
     if (e.target.closest('#bt-add')) {
@@ -1047,7 +1042,6 @@ function openBurnTexts(it, onDone) {
       onDone?.(r.name);
     }
   });
-  setTimeout(() => ov.querySelector('[data-f="text"]')?.focus(), 60);
 }
 
 function mdate(mtime) {
@@ -1104,6 +1098,12 @@ document.getElementById('grid-dron')?.addEventListener('click', e => {
     openPhotoEditor({ url: `/api/photo_thumb?rel=${rel}&w=2048`, name: card.dataset.name });
 });
 
+// .m-prevbox es role=button: Enter / Espacio equivalen al clic (teclado)
+document.addEventListener('keydown', e => {
+  const pb = e.target?.classList?.contains('m-prevbox') ? e.target : null;
+  if (pb && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pb.click(); }
+});
+
 function viewOf(kind) {
   const list = (kind === 'dron' ? (dronePhotos || [])
     : (kind === 'reels' ? media.reels : media.photos) || []).slice();
@@ -1138,8 +1138,8 @@ function cardHTML(kind, it) {
   if (kind === 'dron') {
     const rel = encodeURIComponent(it.rel);
     return `<div class="m-card" data-name="${esc(it.name)}" data-rel="${esc(it.rel)}" data-kind="${esc(it.kind)}">
-      <div class="m-prevbox">
-        <img loading="lazy" src="/api/photo_thumb?rel=${rel}&w=512" alt="${esc(base)}" class="u-ptr">
+      <div class="m-prevbox" role="button" tabindex="0" aria-label="Abrir ${esc(base)} en el editor">
+        <img loading="lazy" src="/api/photo_thumb?rel=${rel}&w=512" alt="" class="u-ptr">
         <span class="m-fmt ${it.kind === 'DNG' ? 'dng' : ''}">${esc(it.kind)}</span>
       </div>
       <div class="m-head"><div class="m-name" title="${esc(base)}">${esc(base)}</div></div>
@@ -1156,10 +1156,10 @@ function cardHTML(kind, it) {
     ? `<video src="/data/reels/${enc}#t=0.5" preload="none" muted playsinline loop
               poster="/data/reel-posters/${encodeURIComponent(it.name.replace(/\.[^.]+$/, ''))}.jpg"></video>
        <span class="gchip m-dur" style="display:none"></span>`
-    : `<img loading="lazy" src="/data/photos/${enc}" alt="${esc(base)}" class="u-ptr">`;
+    : `<img loading="lazy" src="/data/photos/${enc}" alt="" class="u-ptr">`;
   const fmtBadge = kind === 'reels' ? fmtBadgeOf(it) : '';
   return `<div class="m-card${kind === 'reels' ? ' m-reel' : ''}" data-name="${esc(it.name)}">
-    <div class="m-prevbox">${prev}
+    <div class="m-prevbox" role="button" tabindex="0" aria-label="${kind === 'reels' ? 'Reproducir' : 'Abrir'} ${esc(base)}">${prev}
       ${kind === 'reels' && it.duration_s ? `<span class="m-time mono">${fmt.dur(it.duration_s)}</span>` : ''}
       ${kind === 'reels' && it.has_audio === false ? `<span class="m-mute" data-tip="Sin audio" role="img" aria-label="Sin audio">${icon('volumeOff')}</span>` : ''}
       ${kind === 'reels' && orderMode ? `<div class="m-ordbtns">
@@ -1322,6 +1322,7 @@ document.getElementById('btn-ord')?.addEventListener('click', async e => {
     qr.value = ''; sr.value = 'recientes';
     qr.disabled = sr.disabled = true;   // filtrar/ordenar mientras se reordena mostraría un subconjunto
     b.innerHTML = `${icon('check')} Guardar orden`;
+    b.setAttribute('aria-pressed', 'true');
     b.classList.add('primary');
     renderGrid('reels');
     toast('Mueve los reels con las flechas y toca Guardar');
@@ -1334,7 +1335,7 @@ document.getElementById('btn-ord')?.addEventListener('click', async e => {
   finally {
     b.disabled = false;
     orderMode = false;
-    b.innerHTML = `${icon('list')} Ordenar`;
+    b.innerHTML = `${icon('swap')} Reordenar`; b.setAttribute('aria-pressed', 'false');
     b.classList.remove('primary');
     document.getElementById('q-reels').disabled = false;
     document.getElementById('s-reels').disabled = false;
@@ -1560,7 +1561,7 @@ pollJobs(jobsEl, 2500, j => {
     exportbar.style.display = tl.length ? 'flex' : 'none';
     if (typeof autosave === 'function') autosave();   // cada cambio queda a salvo de un F5
     emptyEl.hidden = tl.length > 0;
-    mask.hidden = !tl.length;
+    layoutMask();
     playhead = Math.min(playhead, total());
     phEl.style.display = tl.length ? '' : 'none';
     scroll.classList.toggle('is-empty', !tl.length);
@@ -1666,8 +1667,8 @@ pollJobs(jobsEl, 2500, j => {
     if (s.freeze == null) s.freeze = 0;
     const g = (id) => document.getElementById(id);
     inspect.hidden = false;
-    g('tli-io').textContent =
-      `In ${fmt.dur(s.a)} · Out ${fmt.dur(s.b)} · dur ${segDur(s).toFixed(1)}s (fuente ${(s.b - s.a).toFixed(1)}s)`;
+    g('tli-io').innerHTML = [['In', fmt.dur(s.a)], ['Out', fmt.dur(s.b)], ['Duración', `${segDur(s).toFixed(1)}s`],
+      ['Fuente', `${(s.b - s.a).toFixed(1)}s`]].map(([k, v]) => `<div><dt>${k}</dt><dd class="mono">${v}</dd></div>`).join('');
     // velocidad: chips + slider + input numérico sincronizados
     g('tli-speed').innerHTML = SPEEDS.map(v =>
       `<button class="chip${s.speed === v ? ' on' : ''}" data-spd="${v}">${v}x</button>`).join('');
@@ -1728,7 +1729,30 @@ pollJobs(jobsEl, 2500, j => {
   function applyAspect() {
     const a = document.getElementById('ed-aspect').value;
     mask.dataset.aspect = a;
+    layoutMask();
   }
+  // Marco de salida: solo se dibuja cuando el aspecto de salida != aspecto de la fuente; entonces es el
+  // rectángulo EXACTO (px) del encuadre dentro del video visible (object-fit: contain), contorno 1px, sin relleno.
+  let frameF = 0;
+  function layoutMask() {
+    const v = document.getElementById('tl-video');
+    const [aw, ah] = (document.getElementById('ed-aspect')?.value || '16:9').split(':').map(Number);
+    const out = aw / ah, sw = stage.clientWidth, sh = stage.clientHeight;
+    const src = v && v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9;
+    if (!tl.length || !sw || !sh || Math.abs(out - src) < 0.02) { mask.hidden = true; return; }
+    // rect del contenido del video dentro del escenario
+    let cw = sw, ch = sw / src;
+    if (ch > sh) { ch = sh; cw = sh * src; }
+    const cx = (sw - cw) / 2, cy = (sh - ch) / 2;
+    let w, h;
+    if (out < src) { h = ch; w = ch * out; } else { w = cw; h = cw / out; }
+    const crop = (mask.dataset.fit || 'crop') === 'crop';
+    const left = cx + (cw - w) / 2 * (1 + (crop ? frameF : 0));
+    mask.style.cssText = `left:${left.toFixed(1)}px;top:${(cy + (ch - h) / 2).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px`;
+    mask.hidden = false;
+  }
+  document.getElementById('tl-video')?.addEventListener('loadedmetadata', layoutMask);
+  window.addEventListener('resize', layoutMask);
 
   // ---- playhead visual (4) ----
   function paintPlayhead() {
@@ -2077,10 +2101,10 @@ pollJobs(jobsEl, 2500, j => {
       <div class="modal-b">
         <input class="u-w100 m-ipt" id="tx-t" maxlength="120" value="${esc(t.text)}">
         <div class="mlb">Cuándo aparece</div>
-        <div class="tx-row"><span>Entra</span>
+        <div class="tx-row tx-sl"><span>Entra</span>
           <input type="range" id="tx-a" min="0" max="${total().toFixed(1)}" step="0.1" value="${t.start}">
           <b class="mono" id="tx-av">${fmt.dur(t.start)}</b></div>
-        <div class="tx-row"><span>Sale</span>
+        <div class="tx-row tx-sl"><span>Sale</span>
           <input type="range" id="tx-b" min="0" max="${total().toFixed(1)}" step="0.1" value="${t.end}">
           <b class="mono" id="tx-bv">${fmt.dur(t.end)}</b></div>
         <div class="mlb">Estilo</div>
@@ -2108,29 +2132,33 @@ pollJobs(jobsEl, 2500, j => {
             <option value="top"${S.pos === 'top' ? ' selected' : ''}>Arriba</option>
             <option value="mid"${S.pos === 'mid' ? ' selected' : ''}>Centro</option>
             <option value="bottom"${S.pos === 'bottom' ? ' selected' : ''}>Abajo</option>
-          </select>
-          <span>Tamaño</span>
-          <input type="range" id="tx-size" min="10" max="100" step="1" value="${S.size}" class="u-f1">
-        </div>
-        <div class="tx-row"><span>Ajuste vertical</span>
+          </select></div>
+        <div class="mlb">Tamaño y color</div>
+        <div class="tx-row tx-sl"><span>Tamaño</span>
+          <input type="range" id="tx-size" min="10" max="100" step="1" value="${S.size}">
+          <b class="mono" id="tx-sizev">${S.size}</b></div>
+        <div class="tx-row tx-sl"><span>Ajuste vertical</span>
           <input type="range" id="tx-dy" min="-20" max="20" step="1" value="${+S.dy || 0}"
                  data-tip="Sube o baja el texto en pasos del 1% de la pantalla">
           <b class="mono" id="tx-dyv">${(+S.dy || 0)}%</b></div>
-        <div class="tx-row"><span>Color</span>
+        <div class="tx-row tx-sl"><span>Color</span>
           <input type="color" class="u-color ctl" id="tx-color" value="#${esc(S.color)}">
-          <label class="u-chk">
-            <input type="checkbox" id="tx-box"${S.box ? ' checked' : ''}> Fondo</label>
+          <span></span></div>
+        <div class="tx-row tx-sl"><span>Fondo</span>
+          <label class="tx-switch" data-tip="Caja oscura detrás del texto"><input type="checkbox" id="tx-box" role="switch"${S.box ? ' checked' : ''}><i aria-hidden="true"></i><em class="sr-only">Fondo</em></label>
+          <span></span></div>
+        <div class="tx-row tx-sl"><span>Opacidad</span>
           <input type="range" id="tx-boxa" min="0.1" max="0.85" step="0.05" value="${+S.boxAlpha || 0.45}"
-                 style="flex:1${S.box ? '' : ';opacity:.35'}" data-tip="Opacidad del fondo">
-        </div>
+                 ${S.box ? '' : 'disabled'} data-tip="Opacidad del fondo">
+          <b class="mono" id="tx-boxav">${Math.round((+S.boxAlpha || 0.45) * 100)}%</b></div>
       </div>
       <div class="rm-foot">
-        <span class="rm-count mono">se quema en el video al exportar</span>
+        <span class="rm-count">Se quema en el video al exportar</span>
         <span class="u-f1 spacer"></span>
         <button class="btn rv-del" data-tx="del">${icon('trash')} Quitar</button>
         <button class="btn primary" data-tx="ok">Listo</button>
       </div></div>`;
-    document.body.appendChild(ov);
+    let deleted = false;
     let undone = alreadyUndone;   // un solo paso de historial por sesión del editor (no por tecla)
     const undoOnce = () => { if (!undone) { undone = true; pushUndo(); } };
     const apply = () => {
@@ -2148,16 +2176,20 @@ pollJobs(jobsEl, 2500, j => {
       ov.querySelector('#tx-av').textContent = fmt.dur(t.start);
       ov.querySelector('#tx-bv').textContent = fmt.dur(t.end);
       ov.querySelector('#tx-dyv').textContent = `${+ov.querySelector('#tx-dy').value}%`;
-      ov.querySelector('#tx-boxa').style.opacity = ov.querySelector('#tx-box').checked ? '' : '.35';
+      ov.querySelector('#tx-sizev').textContent = String(+ov.querySelector('#tx-size').value);
+      ov.querySelector('#tx-boxav').textContent = `${Math.round(+ov.querySelector('#tx-boxa').value * 100)}%`;
+      ov.querySelector('#tx-boxa').disabled = !ov.querySelector('#tx-box').checked;
       renderTextLane();
     };
     ov.addEventListener('input', () => { undoOnce(); apply(); });
     ov.addEventListener('change', () => { undoOnce(); apply(); });
     ov.addEventListener('click', e => {
-      if (e.target.closest('[data-tx="del"]')) { undoOnce(); texts.splice(i, 1); textSel = -1; ov.remove(); renderTextLane(); return; }
-      if (e.target === ov || e.target.closest('.modal-x') || e.target.closest('[data-tx="ok"]')) { apply(); ov.remove(); }
+      if (e.target.closest('[data-tx="del"]')) { undoOnce(); deleted = true; texts.splice(i, 1); textSel = -1; ov.remove(); renderTextLane(); return; }
+      if (e.target.closest('[data-tx="ok"]')) ov.remove();
     });
-    setTimeout(() => { const el = ov.querySelector('#tx-t'); el.focus(); el.select(); }, 60);
+    // Esc / × / fondo / Listo: todos cierran vía openModal y aplican los cambios
+    openModal(ov, { initialFocus: '#tx-t', onClose: () => { if (!deleted) apply(); } });
+    ov.querySelector('#tx-t').select();
   }
 
   // arrastrar el bloque y sus bordes sobre la pista
@@ -2366,9 +2398,11 @@ pollJobs(jobsEl, 2500, j => {
       try { tracks = (await (await authFetch('/api/audio_list')).json()).tracks || []; }
       catch { tracks = []; }
     };
+    ovr.innerHTML = '<div class="modal mus-modal"></div>';   // contenedor estable: openModal le pone el rol
+    const mdl = ovr.firstElementChild;
     const render = () => {
       const m = music || {};
-      ovr.innerHTML = `<div class="modal mus-modal">
+      mdl.innerHTML = `
         <div class="modal-h"><b>${icon('volume')} Música del reel</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
         <div class="modal-b">
           <div class="mus-drop" id="mus-drop">
@@ -2430,12 +2464,11 @@ pollJobs(jobsEl, 2500, j => {
           <span class="u-f1 spacer"></span>
           ${music ? '<button class="btn" id="mu-clear">Quitar música</button>' : ''}
           <button class="btn primary" id="mu-ok">Listo</button>
-        </div>
-      </div>`;
+        </div>`;
     };
     await load();
     render();
-    document.body.appendChild(ovr);
+    openModal(ovr, { initialFocus: '#mu-ok', onClose: () => { try { musicEl.pause(); } catch {} } });
 
     const upload = async file => {
       if (!file || busy) return;
@@ -2483,10 +2516,7 @@ pollJobs(jobsEl, 2500, j => {
       musicChip();
     });
     ovr.addEventListener('click', async e => {
-      if (e.target === ovr || e.target.closest('.modal-x') || e.target.closest('#mu-ok')) {
-        try { musicEl.pause(); } catch {}
-        ovr.remove(); return;
-      }
+      if (e.target.closest('#mu-ok')) { ovr.remove(); return; }
       if (e.target.closest('#mus-drop')) { ovr.querySelector('#mus-file').click(); return; }
       const pv = e.target.closest('[data-prev]');
       if (pv) {
@@ -2786,15 +2816,8 @@ pollJobs(jobsEl, 2500, j => {
         <button class="btn sm" data-peek-close>Cerrar</button>
       </div>
     </div>`;
-    document.body.appendChild(pk);
-    const close = () => { pk.querySelector('video')?.pause(); pk.remove(); };
-    pk.addEventListener('click', ev => {
-      if (ev.target === pk || ev.target.closest('[data-peek-close]')) close();
-    });
-    addEventListener('keydown', function esc2(ev) {
-      if (!document.body.contains(pk)) { removeEventListener('keydown', esc2); return; }
-      if (ev.key === 'Escape') { close(); removeEventListener('keydown', esc2); }
-    });
+    openModal(pk, { label: 'Vista rápida de toma', initialFocus: '[data-peek-close]',
+      onClose: () => pk.querySelector('video')?.pause() });
   }
 
   function openReelMaker() {
@@ -2842,9 +2865,11 @@ pollJobs(jobsEl, 2500, j => {
         ? `${pick.size} toma${pick.size === 1 ? '' : 's'} · ${estimate()}` : 'Elige al menos una toma';
       ovr.querySelector('#rm-go')?.toggleAttribute('disabled', !pick.size);
     };
+    ovr.innerHTML = '<div class="modal rm-modal"></div>';   // contenedor estable: openModal le pone el rol
+    const mdl = ovr.firstElementChild;
     const render = () => {
       const vis = visible();
-      ovr.innerHTML = `<div class="modal rm-modal">
+      mdl.innerHTML = `
         <div class="modal-h"><b>${icon('spark')} Crear reel</b>
           <span class="rm-steps"><i class="${st.step === 1 ? 'on' : ''}">1 · Tomas</i><i class="${st.step === 2 ? 'on' : ''}">2 · Receta</i></span>
           <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
@@ -2852,15 +2877,15 @@ pollJobs(jobsEl, 2500, j => {
         ${st.step === 1 ? `
           <div class="rm-bar">
             <label class="u-f1 search"><input id="rm-q" placeholder="Buscar toma, fecha o tag AI…" value="${esc(st.q)}"></label>
-            <button class="btn sm" id="rm-all">Todas (${vis.length})</button>
-            <button class="btn sm" id="rm-none">Ninguna</button>
           </div>
-          <div class="rm-filters">
-            <button class="chip${st.only === 'top' ? ' on' : ''}" data-only="top">${icon('star')} Score 7+</button>
-            <button class="chip${st.only === 'ai' ? ' on' : ''}" data-only="ai">Con análisis AI</button>
-            <button class="chip${st.only === 'long' ? ' on' : ''}" data-only="long">Más de 10s</button>
-            <span class="u-f1 spacer"></span>
-            <span class="rm-hint mono">${vis.length} de ${pool().length} tomas</span>
+          <div class="chip-row rm-filters" role="toolbar" aria-label="Filtros y selección">
+            <button class="chip${st.only === 'top' ? ' on' : ''}" data-only="top" aria-pressed="${st.only === 'top'}">${icon('star')} Score 7+</button>
+            <button class="chip${st.only === 'ai' ? ' on' : ''}" data-only="ai" aria-pressed="${st.only === 'ai'}">Con análisis AI</button>
+            <button class="chip${st.only === 'long' ? ' on' : ''}" data-only="long" aria-pressed="${st.only === 'long'}">Más de 10s</button>
+            <span class="chip-div"></span>
+            <button class="chip" id="rm-all">Todas (${vis.length})</button>
+            <button class="chip" id="rm-none">Ninguna</button>
+            <span class="rm-hint mono">${vis.length} de ${pool().length}</span>
           </div>
           ${groupsOf(vis).map(([day, fs]) => `
           <div class="rm-day">
@@ -2922,13 +2947,11 @@ pollJobs(jobsEl, 2500, j => {
           <span class="u-f1 spacer"></span>
           ${st.step === 2 ? `<button class="btn" id="rm-back">${icon('chevL')} Tomas</button>` : ''}
           <button class="btn primary" id="rm-go" ${pick.size ? '' : 'disabled'}>${st.step === 1 ? `Continuar ${icon('chevR')}` : `${icon('spark')} Crear reel`}</button>
-        </div>
-      </div>`;
+        </div>`;
     };
     render();
-    document.body.appendChild(ovr);
+    openModal(ovr, { initialFocus: '#rm-q' });
     ovr.addEventListener('click', e => {
-      if (e.target === ovr || e.target.closest('.modal-x')) { ovr.remove(); return; }
       const eye = e.target.closest('[data-eye]');
       if (eye) {   // ver la toma sin seleccionarla
         e.stopPropagation();
@@ -3470,7 +3493,7 @@ pollJobs(jobsEl, 2500, j => {
     if (row) row.style.display = edVfit === 'crop' ? '' : 'none';
     // el preview muestra el modo elegido, no siempre un recorte
     const mask = document.getElementById('tl-mask');
-    if (mask) mask.dataset.fit = edVfit;
+    if (mask) { mask.dataset.fit = edVfit; layoutMask(); }
     const sec = document.getElementById('ex-vfit-sec');
     const vertical = ['9:16', '1:1', '4:5'].includes(document.getElementById('ed-aspect')?.value);
     if (sec) sec.style.display = vertical ? '' : 'none';   // en 16:9 no hay nada que rellenar
@@ -3486,8 +3509,7 @@ pollJobs(jobsEl, 2500, j => {
     const f = +e.target.value;
     document.getElementById('ed-framing-v').textContent =
       Math.abs(f) < 0.06 ? 'centro' : f < 0 ? `izquierda ${Math.round(-f * 100)}%` : `derecha ${Math.round(f * 100)}%`;
-    const mask = document.getElementById('tl-mask');
-    if (mask) mask.style.setProperty('--frame-x', `${f * 50}%`);
+    frameF = f; layoutMask();
   });
   document.getElementById('ed-aspect')?.addEventListener('change', syncVfit);
   syncVfit();
@@ -3519,7 +3541,6 @@ pollJobs(jobsEl, 2500, j => {
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
     // con un modal/hoja/visor encima los atajos del timeline no deben actuar por debajo
     if (document.querySelector('.modal-ov, .ce-ov, .rv-ov, .tx-pop, .rm-peek')) return;
-    if (['ex-sheet', 'tl-projmodal'].some(id => { const el = document.getElementById(id); return el && el.style.display !== 'none'; })) return;
     const meta = e.metaKey || e.ctrlKey;
     if (meta && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if (meta && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
@@ -3543,12 +3564,14 @@ pollJobs(jobsEl, 2500, j => {
     document.querySelector('.tx-pop')?.remove();
     const pop = document.createElement('div');
     pop.className = 'tx-pop';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-label', `Transición entre toma ${j} y ${j + 1}`);
     const cur = () => tl[j]?.transition || 'none';
     const curDur = () => tl[j]?.transDur || 0.4;
     const OPTS = ['none', 'fade', 'dissolve', 'fadeblack', 'fadewhite', 'wipeleft', 'wiperight',
                   'slideup', 'slidedown', 'circleopen', 'circleclose', 'radial', 'smoothleft', 'pixelize'];
     pop.innerHTML = `
-      <div class="tx-pop-h"><b>Transición entre toma ${j} y ${j + 1}</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
+      <div class="tx-pop-h"><b>Transición entre toma ${j} y ${j + 1}</b><button class="modal-x" type="button" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="tx-grid">${OPTS.map(t => `
         <button class="tx-opt${cur() === t || (t === 'fade' && cur() === 'crossfade') ? ' on' : ''}" data-tx="${t}">
           <span class="tx-demo tx-${t}"><i></i></span><b>${TX_LABELS[t]}</b>
@@ -3560,6 +3583,26 @@ pollJobs(jobsEl, 2500, j => {
       </div>
       <button class="btn tx-all">${icon('layers')} Aplicar a todas las uniones</button>`;
     document.body.appendChild(pop);
+    // capa propia en la pila: Esc cierra SOLO este popover (foco vuelve a la unión), Tab queda dentro
+    let popClosed = false;
+    const closePop = (refocus = true) => {
+      if (popClosed) return;
+      popClosed = true;
+      popLayer(layer);
+      removeEventListener('pointerdown', away, true);
+      pop.remove();
+      if (refocus && anchor.isConnected) { try { anchor.focus({ preventScroll: true }); } catch {} }
+    };
+    const layer = pushLayer({ onKey: e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePop(); return; }
+      if (e.key !== 'Tab') return;
+      const f = [...pop.querySelectorAll('button:not([disabled]),input')];
+      if (!f.length) return;
+      const cur = document.activeElement;
+      if (!pop.contains(cur)) { e.preventDefault(); f[0].focus(); }
+      else if (e.shiftKey && cur === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && cur === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+    } });
     // posicionar junto al nodo, contenido en el viewport
     const r = anchor.getBoundingClientRect();
     const pw = pop.offsetWidth, phh = pop.offsetHeight;
@@ -3571,7 +3614,7 @@ pollJobs(jobsEl, 2500, j => {
       pop.querySelector('.tx-dur .mono').textContent = curDur().toFixed(1) + 's';
     };
     pop.addEventListener('click', e => {
-      if (e.target.closest('.modal-x')) { pop.remove(); return; }
+      if (e.target.closest('.modal-x')) { closePop(); return; }
       const o = e.target.closest('.tx-opt');
       if (o) {
         pushUndo(); tl[j].transition = o.dataset.tx; if (!tl[j].transDur) tl[j].transDur = 0.4;
@@ -3586,14 +3629,15 @@ pollJobs(jobsEl, 2500, j => {
         for (let i = 1; i < tl.length; i++) { tl[i].transition = cur(); tl[i].transDur = curDur(); }
         renderTrack();
         pop.querySelector('.tx-all').textContent = 'Aplicada a todas';
-        setTimeout(() => pop.remove(), 700);
+        setTimeout(() => closePop(false), 700);
       }
     });
     pop.querySelector('.tx-dur input').addEventListener('input', e => {
       tl[j].transDur = +e.target.value; paint();
     });
-    const away = e => { if (!pop.contains(e.target) && !e.target.closest('.tl-junction')) { pop.remove(); removeEventListener('pointerdown', away, true); } };
+    function away(e) { if (!pop.contains(e.target) && !e.target.closest('.tl-junction')) closePop(false); }
     addEventListener('pointerdown', away, true);
+    (pop.querySelector('.tx-opt.on') || pop.querySelector('.tx-opt')).focus({ preventScroll: true });
   }
 
   // ---- E1 · inspector expandible: doble click en un corte lo abre en grande ----
@@ -3658,7 +3702,9 @@ pollJobs(jobsEl, 2500, j => {
         <button class="btn" data-ce="next" ${i === tl.length - 1 ? 'disabled' : ''}>Siguiente corte ${icon('chevR')}</button>
       </div>
     </div>`;
-    document.body.appendChild(ov);
+    let committed = false;   // Esc / × / Cancelar / fondo revierten el corte (onClose); Aplicar y navegar lo confirman
+    openModal(ov, { label: 'Editar corte', initialFocus: '[data-ce="ok"]',
+      onClose: () => { removeEventListener('keydown', ck); if (!committed) { s.a = a0; s.b = b0; renderAll(); } } });
     const v = ov.querySelector('video');
     const scrub = ov.querySelector('#ce-scrub');
     const D = f.duration_s || 1;
@@ -3709,22 +3755,24 @@ pollJobs(jobsEl, 2500, j => {
         return;
       }
       const b = e.target.closest('[data-ce]');
-      if (!b) { if (e.target === ov) { s.a = a0; s.b = b0; ov.remove(); } return; }
+      if (!b) return;
       const act = b.dataset.ce;
-      if (act === 'close' || act === 'cancel') { s.a = a0; s.b = b0; ov.remove(); renderAll(); return; }
-      if (act === 'ok') { commitUndo(); ov.remove(); renderAll(); seek(offset(i)); toast('Corte actualizado'); return; }
+      if (act === 'close' || act === 'cancel') { ov.remove(); return; }
+      if (act === 'ok') { commitUndo(); committed = true; ov.remove(); renderAll(); seek(offset(i)); toast('Corte actualizado'); return; }
       if (act === 'prev' || act === 'next') {
-        commitUndo();
+        commitUndo(); committed = true;
         const ni = i + (act === 'next' ? 1 : -1);
         ov.remove(); renderAll();
         if (tl[ni]) openClipEditor(ni);
       }
     });
-    addEventListener('keydown', function ck(ev) {
-      if (!document.body.contains(ov)) { removeEventListener('keydown', ck); return; }
-      if (ev.key === 'Escape') { s.a = a0; s.b = b0; ov.remove(); renderAll(); }
-      if (ev.key === 'Enter') { commitUndo(); ov.remove(); renderAll(); }
-    });
+    function ck(ev) {
+      if (_modalStack[_modalStack.length - 1] !== ov) return;
+      if (ev.key === 'Enter' && !/^(BUTTON|INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) {
+        commitUndo(); committed = true; ov.remove(); renderAll();
+      }
+    }
+    addEventListener('keydown', ck);
   }
 
   track.addEventListener('dblclick', e => {
@@ -3749,14 +3797,25 @@ pollJobs(jobsEl, 2500, j => {
   // ================= hoja de export (CapCut-style) =================
   const exSheet = document.getElementById('ex-sheet');
   let edFps = '';
-  function openExSheet() { exSheet.style.display = 'flex'; updateExportUI();
+  const exHome = exSheet.parentNode;
+  let exClose = null;
+  function openExSheet() {
+    if (exClose) return;
+    delete exSheet.remove;   // quita el ov.remove de una apertura anterior (openModal lo envuelve cada vez)
+    exSheet.style.display = 'flex';
+    updateExportUI();
+    exClose = openModal(exSheet, { label: 'Exportar reel', initialFocus: '#ed-preset',
+      onClose: () => {
+        exClose = null;
+        // la hoja es DOM fijo de la página (updateExportUI la consulta por id): vuelve a su sitio, oculta
+        queueMicrotask(() => { exSheet.style.display = 'none'; delete exSheet.remove; exHome.appendChild(exSheet); });
+      } });
     exSheet.querySelector('.ex-card').animate(
       [{ transform: 'translateY(40px)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }],
-      { duration: 260, easing: 'cubic-bezier(.22,1.2,.36,1)' }); }
-  function closeExSheet() { exSheet.style.display = 'none'; }
+      { duration: 260, easing: 'cubic-bezier(.22,1.2,.36,1)' });
+  }
+  function closeExSheet() { exClose?.(); }
   document.getElementById('eb-open').addEventListener('click', openExSheet);
-  document.getElementById('ex-close').addEventListener('click', closeExSheet);
-  exSheet.addEventListener('click', e => { if (e.target === exSheet) closeExSheet(); });
   function syncFpsChips() {   // refleja edFps en el chip activo (evita desync tras restore)
     document.querySelectorAll('#ed-fps .chip').forEach(x => x.classList.toggle('on', (x.dataset.fps || '') === String(edFps ?? '')));
   }
@@ -3918,12 +3977,22 @@ pollJobs(jobsEl, 2500, j => {
         <button class="btn danger" data-proj="del" data-i="${i}" data-tip="Borrar">${icon('warn')}</button>
       </div>`).join('') : emptyState({ icon: 'folder', title: 'Sin proyectos guardados', help: 'Guarda un montaje desde el editor para reabrirlo aquí.' });
   }
-  function openProjModal() { renderProjList(); projModal.style.display = 'grid'; }
-  function closeProjModal() { projModal.style.display = 'none'; }
+  const projHome = projModal.parentNode;
+  let projClose = null;
+  function openProjModal() {
+    if (projClose) return;
+    delete projModal.remove;
+    renderProjList();
+    projModal.style.display = 'grid';
+    projClose = openModal(projModal, { label: 'Proyectos guardados',
+      onClose: () => {
+        projClose = null;
+        queueMicrotask(() => { projModal.style.display = 'none'; delete projModal.remove; projHome.appendChild(projModal); });
+      } });
+  }
+  function closeProjModal() { projClose?.(); }
   document.getElementById('ed-open').addEventListener('click', openProjModal);
-  document.getElementById('proj-close').addEventListener('click', closeProjModal);
   projModal.addEventListener('click', e => {
-    if (e.target === projModal) { closeProjModal(); return; }   // click fuera de la tarjeta
     const b = e.target.closest('[data-proj]'); if (!b) return;
     const i = +b.dataset.i, list = loadProjects();
     if (b.dataset.proj === 'load') {

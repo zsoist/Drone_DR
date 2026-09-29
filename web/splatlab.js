@@ -33,9 +33,11 @@ main.classList.add('lab-main');
       <div class="sl-clean" id="lab-clean" role="group" aria-label="Auto-Clean del splat"></div>
       <button class="btn icon sl-full" id="lab-full" title="Editor a pantalla completa (Esc para salir)" aria-label="Editor a pantalla completa">${icon('fit')}</button>
     </div>
-    <div class="sl-tune" id="lab-tune-panel" hidden aria-label="Ajustes finos del Auto-Clean">
-      ${[['op', 'Haze', 'Gaussianas casi transparentes = niebla/haze. Desmarca para conservarlas', 'Umbral haze', 0.5, 20, 3.5, 0.5, '3.5%'],
-         ['k', 'Spikes', 'Gaussianas gigantes vs la mediana = spikes/blobs. Más bajo = más agresivo', 'Umbral spikes', 2, 10, 6, 0.5, '6.0×'],
+    <div class="sl-status" role="status" aria-live="polite"><span id="lab-status"></span><span id="lab-clean-status"></span></div>
+    <div class="lab-frame-wrap" id="lab-drop">
+    <div class="sl-tune" id="lab-tune-panel" inert role="group" aria-label="Ajustes finos del Auto-Clean">
+      ${[['op', 'Neblina', 'Gaussianas casi transparentes = niebla. Desmarca para conservarlas', 'Umbral neblina', 0.5, 20, 3.5, 0.5, '3.5%'],
+         ['k', 'Picos', 'Gaussianas gigantes vs la mediana = picos y manchas. Más bajo = más agresivo', 'Umbral picos', 2, 10, 6, 0.5, '6.0×'],
          ['an', 'Agujas', 'Agujas: eje máximo >> eje intermedio (no toca discos-superficie). Más bajo = más agujas fuera', 'Umbral agujas', 5, 25, 15, 1, '15'],
          ['rad', 'Borde', 'Spray radial más allá del footprint de vuelo. Desmarca si tu escena es alargada', 'Umbral borde', 95, 99.9, 99.5, 0.1, 'P99.5']]
         .map(([k, lb, tip, aria, mn, mx, v, st, txt]) => `
@@ -46,13 +48,11 @@ main.classList.add('lab-main');
         <em class="mono tn-count" id="tn-${k}-c"></em></div>`).join('')}
       <p class="sl-tune-note">Cada limpieza es UN paso de undo — prueba, mira los contadores por etapa, deshaz y ajusta.</p>
     </div>
-    <div class="sl-status" role="status" aria-live="polite"><span id="lab-status"></span><span id="lab-clean-status"></span></div>
-    <div class="lab-frame-wrap" id="lab-drop">
       <iframe id="lab-frame" class="lab-frame" allow="fullscreen" title="Editor SuperSplat"></iframe>
       <button class="btn lab-exit" id="lab-exit" hidden aria-label="Salir de pantalla completa">${icon('close')} Salir</button>
       <div class="lab-drophint" id="lab-drophint" hidden>Suelta el splat editado (.ply / .splat / .ksplat) para publicarlo</div>
     </div>
-    <p class="footer-note lab-tip"><b>Flujo:</b> limpia floaters con pincel/lazo + borrar · recorta con crop ·
+    <p class="page-foot lab-tip"><b>Flujo:</b> limpia floaters con pincel/lazo + borrar · recorta con crop ·
       <b>File → Export</b> descarga el resultado · súbelo aquí (botón o arrástralo) y queda publicado —
       la versión anterior se archiva en <span class="mono">splats/history/</span>.</p>
     <input type="file" id="lab-file" accept=".ply,.splat,.ksplat" hidden aria-hidden="true">`;
@@ -86,6 +86,14 @@ main.classList.add('lab-main');
   const okToDiscard = async () =>
     !(await editorDirty()) || confirm('Hay ediciones sin exportar en el editor. ¿Descartarlas?');
 
+  // Ajustes: panel flotante sobre el editor (opacity/transform) → el editor no salta de sitio
+  const setTune = on => {
+    const panel = document.getElementById('lab-tune-panel');
+    panel.classList.toggle('open', on);
+    panel.inert = !on;
+    const b = document.getElementById('lab-tune');
+    if (b) { b.setAttribute('aria-expanded', String(on)); b.classList.toggle('on', on); }
+  };
   const sizeMB = s => `${((s.bytes || 0) / 1e6).toFixed(1)} MB`;
   const itersK = s => s.iters ? `${s.iters >= 1000 ? s.iters / 1000 + 'K' : s.iters} iters` : '';
   let pickerQ = '';
@@ -94,12 +102,20 @@ main.classList.add('lab-main');
     if (!list) return;
     const q = pickerQ.trim().toLowerCase();
     const rows = splats.map((x, i) => [x, i]).filter(([x]) => !q || `${title(x)} ${x.clip_id}`.toLowerCase().includes(q));
+    list.onscroll = () => fadeList(list);
     list.innerHTML = rows.map(([x, i]) => `
       <button type="button" class="sl-opt${i === cur ? ' on' : ''}" role="option" data-i="${i}" aria-selected="${i === cur}" title="${esc(x.name)}">
         <span class="sl-opt-t">${esc(title(x))}</span>
         <span class="sl-opt-m mono">${esc([sizeMB(x), itersK(x)].filter(Boolean).join(' · '))}</span>
         ${i === cur ? icon('check') : ''}
       </button>`).join('') || '<p class="sl-empty-list">Sin resultados</p>';
+    fadeList(list);
+    list.querySelector('.sl-opt.on')?.scrollIntoView({ block: 'nearest' });
+  };
+  // desvanecido de borde: avisa que la lista continúa (sin cortar una fila a medias en seco)
+  const fadeList = list => {
+    list.classList.toggle('fade-b', list.scrollHeight - list.scrollTop - list.clientHeight > 4);
+    list.classList.toggle('fade-t', list.scrollTop > 4);
   };
   const renderPicker = () => {
     const s = splats[cur];
@@ -162,20 +178,20 @@ main.classList.add('lab-main');
     const s = splats[cur];
     const box = document.getElementById('lab-clean');
     if (!s || !box) { if (box) box.innerHTML = ''; return; }
-    const tuneOpen = !document.getElementById('lab-tune-panel').hidden;
+    const tuneOpen = document.getElementById('lab-tune-panel').classList.contains('open');
     box.innerHTML = `
       <select class="ctl sl-preset" id="lab-preset" aria-label="Preset de Auto-Clean" title="Preset de limpieza — aéreo conserva estructuras dispersas legítimas; agresivo quita más spray de borde">
         <option value="aerial">Aéreo (seguro)</option>
         <option value="aerial_aggressive">Aéreo agresivo</option>
         <option value="object">Objeto / interior</option>
       </select>
-      <button class="btn primary" id="lab-ac-ed" title="Limpia DENTRO del editor: selecciona floaters/haze/agujas y los borra como pasos de undo (Ctrl+Z ×2 deshace; Edit→Reset restaura todo). Luego File→Export para publicar">${icon('spark')} Limpiar en editor</button>
+      <button class="btn primary" id="lab-ac-ed" title="Limpia DENTRO del editor: selecciona flotantes/neblina/agujas y los borra como pasos de undo (Ctrl+Z ×2 deshace; Edit→Reset restaura todo). Luego File→Export para publicar">${icon('spark')} Limpiar en editor</button>
       <div class="btn-group" role="group" aria-label="Historial del editor">
         <button class="btn icon" id="lab-undo" title="Deshace el último paso dentro del editor (el Auto-Clean es UN solo paso)" aria-label="Deshacer en el editor">${icon('undo')}</button>
         <button class="btn icon" id="lab-redo" title="Rehace el paso deshecho dentro del editor" aria-label="Rehacer en el editor">${icon('redo')}</button>
       </div>
       <button class="btn${abRaw ? ' on' : ''}" id="lab-ab" title="Alterna el editor entre el crudo y la versión actual para comparar antes/después (requiere un crudo pre-clean)" aria-pressed="${abRaw}"${rawOk[s.clip_id] === false && !abRaw ? ' disabled' : ''}>${abRaw ? 'Viendo: crudo' : 'A/B'}</button>
-      <button class="btn${tuneOpen ? ' on' : ''}" id="lab-tune" title="Ajustes finos del Auto-Clean: umbral de haze, factor de spikes y agujas — se aplican al próximo Limpiar" aria-expanded="${tuneOpen}" aria-controls="lab-tune-panel">${icon('gauge')} Ajustes</button>
+      <button class="btn${tuneOpen ? ' on' : ''}" id="lab-tune" title="Ajustes finos del Auto-Clean: umbral de neblina, factor de picos y agujas — se aplican al próximo Limpiar" aria-expanded="${tuneOpen}" aria-controls="lab-tune-panel">${icon('gauge')} Ajustes</button>
       <button class="btn icon" id="lab-more" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones sobre el archivo publicado" title="Más acciones">${icon('more')}</button>`;
     if (rawOk[s.clip_id] === undefined && typeof s.has_raw === 'boolean') rawOk[s.clip_id] = s.has_raw;
     if (rawOk[s.clip_id] === undefined) {
@@ -193,7 +209,7 @@ main.classList.add('lab-main');
     // limpieza IN-EDITOR: postMessage al iframe (fork src/aerobrain) — undo nativo de SuperSplat
     const tuneOverrides = () => {
       const panel = document.getElementById('lab-tune-panel');
-      if (!panel || panel.hidden) return undefined;          // solo si el usuario abrió Ajustes
+      if (!panel || !panel.classList.contains('open')) return undefined;          // solo si el usuario abrió Ajustes
       const on = id => document.getElementById(id).checked;
       const v = id => +document.getElementById(id).value;
       return { opacityMin: on('tn-op-on') ? v('tn-op') / 100 : 0,
@@ -211,10 +227,7 @@ main.classList.add('lab-main');
       { id: 'revert', label: 'Revertir al crudo', hint: 'La versión limpia queda en history/', icon: 'undo', danger: true },
     ], { label: 'Archivo publicado', onSelect: id => (id === 'ac' ? runAc() : runRevert()) }));
     document.getElementById('lab-tune').addEventListener('click', e2 => {
-      const panel = document.getElementById('lab-tune-panel');
-      panel.hidden = !panel.hidden;
-      e2.currentTarget.setAttribute('aria-expanded', String(!panel.hidden));
-      e2.currentTarget.classList.toggle('on', !panel.hidden);
+      setTune(!document.getElementById('lab-tune-panel').classList.contains('open'));
     });
     const runAc = async () => {
       const btn = document.getElementById('lab-more'); btn.disabled = true;
@@ -226,7 +239,7 @@ main.classList.add('lab-main');
         const out = await r.json();
         if (!r.ok || out.error) throw new Error(out.error || r.status);
         const rep = out.report, rm = rep.removed;
-        cst(`${rep.input.toLocaleString()} → ${rep.output.toLocaleString()} (${rep.kept_pct}%) · haze ${rm.opacity} · spikes ${rm.scale} · agujas ${rm.aniso} · voxel ${rm.voxel}`);
+        cst(`${rep.input.toLocaleString()} → ${rep.output.toLocaleString()} (${rep.kept_pct}%) · neblina ${rm.opacity} · picos ${rm.scale} · agujas ${rm.aniso} · voxel ${rm.voxel}`);
         delete rawOk[s.clip_id];                          // el clean crea el crudo
         await load_sys(); abRaw = false; load(cur);
       } catch (err) { cst(`Error: ${String(err.message || err).slice(0, 90)}`); }
@@ -359,7 +372,26 @@ main.classList.add('lab-main');
   };
   document.getElementById('lab-full').addEventListener('click', () => { arm(); setFull(true); });
   exitBtn.addEventListener('click', () => setFull(false));
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') setFull(false); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    const tp = document.getElementById('lab-tune-panel');
+    if (tp.classList.contains('open') && tp.contains(document.activeElement)) { setTune(false); document.getElementById('lab-tune')?.focus(); return; }
+    setFull(false);
+  });
+
+  // ---- ajuste fino del editor (same-origin): el cubo de vista y la barra derecha de SuperSplat
+  //      se pisaban cuando el marco es bajo → cubo más compacto y barra siempre por debajo ----
+  frame.addEventListener('load', () => {
+    try {
+      const doc = frame.contentDocument;
+      if (!doc || doc.getElementById('ab-lab-css')) return;
+      const st = doc.createElement('style');
+      st.id = 'ab-lab-css';
+      st.textContent = `body:not(.ab-mobile) #view-cube-container { transform: scale(.72); transform-origin: top right; }
+        body:not(.ab-mobile) #right-toolbar { top: max(50%, 300px) !important; }`;
+      doc.head.appendChild(st);
+    } catch { /* mismo origen: no debería fallar */ }
+  });
 
   // ---- capa móvil: inyecta CSS + pestaña del drawer DENTRO del iframe (same-origin).
   //      SuperSplat es desktop-first; en <768px su panel izquierdo tapa el canvas ----
@@ -401,7 +433,7 @@ main.classList.add('lab-main');
     el.classList.remove('err');
     const rm = r.removed || {};
     el.textContent = r.note ? `${r.note}` :
-      `${(r.selected || 0).toLocaleString()} gaussianas borradas (un undo lo deshace) · haze ${rm.opacity || 0} · spikes ${rm.scale || 0} · agujas ${rm.aniso || 0} · borde ${rm.radial || 0} — File→Export y súbelo para publicar`;
+      `${(r.selected || 0).toLocaleString()} gaussianas borradas (un undo lo deshace) · neblina ${rm.opacity || 0} · picos ${rm.scale || 0} · agujas ${rm.aniso || 0} · borde ${rm.radial || 0} — File→Export y súbelo para publicar`;
     // contadores vivos por etapa en el wizard
     [['tn-op-c', rm.opacity], ['tn-k-c', (rm.scale || 0) + (rm.bbox || 0)],
      ['tn-an-c', rm.aniso], ['tn-rad-c', rm.radial]].forEach(([id, n]) => {

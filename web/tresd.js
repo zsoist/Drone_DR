@@ -1,10 +1,10 @@
-  import * as THREE from '/vendor/three180.module.js?v=354';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=354';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=354';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=354';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=354';
-  import { mountSplatViewer } from '/splatview.js?v=354';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=354';
+  import * as THREE from '/vendor/three180.module.js?v=356';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=356';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=356';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=356';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=356';
+  import { mountSplatViewer } from '/splatview.js?v=356';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=356';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -536,7 +536,7 @@
     chip.addEventListener('click', () => {
       const d = last || {};
       const awake = d.status === 'awake';
-      openModal('Nodo GPU — PC remoto', `
+      tdModal('Nodo GPU — PC remoto', `
         <p class="footer-note">RTX 4060 Ti (8GB) en la LAN, invocable por SSH desde este Mac.
         Desbloquea gsplat CUDA: pose refinement y SH-desde-0 — las dos palancas que
         Metal/MPS no expone. Probe real: nada de estos datos se inventa.</p>
@@ -635,8 +635,9 @@
         lastNode = d;                              // segundo poll duplicaba el punto
         const awake = d.status === 'awake';
         document.getElementById('jt-node-dot')?.classList.toggle('awake', awake);
+        document.getElementById('jt-strip')?.classList.toggle('pc-off', !awake);   // PC dormido → una sola fila
         if (!awake) {
-          set('jt-node-util', '—'); set('jt-node-body', 'dormido · WoL en Sistema');
+          set('jt-node-util', '—'); set('jt-node-body', 'Nodo GPU dormido · despierta con WoL desde Sistema');
           set('jt-vram-val', '—'); set('jt-ncpu', '—'); set('jt-net', '—');
           const f = document.getElementById('jt-vram-fill');
           if (f) f.style.transform = 'scaleX(0)';
@@ -797,7 +798,7 @@
       const cell = e.target.closest('[data-metric]');
       const M = cell && METRICS[cell.dataset.metric];
       if (!M) return;
-      openModal(M.t, `
+      tdModal(M.t, `
         <div class="jtm-head"><b class="jtm-val mono" id="jtm-val">—</b>
           <span class="jtm-src mono">${M.src} · sparkline 60fps</span></div>
         <canvas id="jtm-spark" data-metric="${cell.dataset.metric}" height="120"
@@ -1058,6 +1059,7 @@
     return `<div class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}"${cur?.clip_id === m.clip_id ? ' aria-current="true"' : ''}>
       <div class="pc-cover">
         <img src="${m.thumb ? esc(m.thumb.includes('/') ? m.thumb : `data/models/${m.clip_id}/${m.thumb}`) : `data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}`}" data-fb="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="" width="320" height="180">
+        <span class="pc-ph" aria-hidden="true">${icon('image')}<span>Sin vista previa</span></span>
         ${(f?.date || dateKeyFor(m)) ? `<span class="pc-date mono">${esc(f ? `${fmt.date(f.date)} · ${f.time || ''}` : dateKeyFor(m))}</span>` : ''}
       </div>
       <div class="pc-body">
@@ -1065,7 +1067,7 @@
         <p class="pc-meta mono">${f?.duration_s ? fmt.dur(f.duration_s) + ' vuelo · ' : ''}${q.gsd_cm_px ? q.gsd_cm_px + ' cm/px · ' : ''}${q.area_m2 ? ha : ''}${bestIters ? ` · ${bestIters >= 1000 ? bestIters / 1000 + 'K' : bestIters} iters` : ''}</p>
         <div class="pc-badges">${status.filter(([, s]) => s).map(([cls, s, tip]) => `<span class="${cls.trim()}" data-tip="${esc(tip)}">${esc(s)}</span>`).join('')}</div>
         <div class="pc-kpis">
-          <span data-tip="Cámaras reconstruidas por SfM"><b>${q.cameras_reconstructed ?? '—'}</b><small>cámaras</small></span>
+          <span data-tip="Cámaras reconstruidas por SfM" title="Cámaras reconstruidas"><b>${q.cameras_reconstructed ?? '—'}</b><small>cám.</small></span>
           <span class="${qCls.trim()}" data-tip="${sp?.loss != null ? 'Loss ' + sp.loss + ' del splat activo' : 'Aún sin splat'}"><b>${sp ? splatQualityLabel(sp.loss) : '—'}</b><small>gaussian</small></span>
           <span data-tip="Tamaño de la nube de puntos"><b>${m.cloud_bytes ? (m.cloud_bytes / 1e6).toFixed(0) + 'MB' : '—'}</b><small>nube</small></span>
         </div>
@@ -1116,6 +1118,23 @@
   document.addEventListener('error', e => {
     const im = e.target;
     if (im?.tagName === 'IMG' && im.dataset.fb && im.getAttribute('src') !== im.dataset.fb) im.src = im.dataset.fb;
+    else if (im?.tagName === 'IMG' && im.closest('.pc-cover')) im.closest('.pc-cover').classList.add('is-blank');
+  }, true);
+  // miniatura vacía (nube casi negra / sin ortofoto): muestra el placeholder en vez de un bloque negro
+  const blankThumb = im => {
+    try {
+      const c = document.createElement('canvas'); c.width = 16; c.height = 9;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(im, 0, 0, 16, 9);
+      const d = x.getImageData(0, 0, 16, 9).data;
+      let sum = 0, bright = 0;
+      for (let i = 0; i < d.length; i += 4) { const l = (d[i] + d[i + 1] + d[i + 2]) / 3; sum += l; if (l > 40) bright++; }
+      return sum / 144 < 16 && bright < 30;   // casi todo negro: la nube apenas tiene puntos
+    } catch { return false; }
+  };
+  document.addEventListener('load', e => {
+    const im = e.target;
+    if (im?.tagName === 'IMG' && im.closest('.pc-cover')) im.closest('.pc-cover').classList.toggle('is-blank', blankThumb(im));
   }, true);
   document.getElementById('proj-q')?.addEventListener('input', e => { projQ = e.target.value; renderCards(); });
   document.getElementById('proj-filter')?.addEventListener('change', e => { projFilter = e.target.value; renderCards(); });
@@ -1202,46 +1221,47 @@
     await runProjAct(btn ? btn.dataset.act : 'open', cid, btn);   // tap en la tarjeta = abrir
   });
   // migas del proyecto abierto: volver al listado / cerrar
+  let listScroll = 0;
   function closeProject() {
     cur = null;
     localStorage.removeItem(PROJ_KEY);
     clearTimeout(autoloadTimer);
     disposeUnifiedViewer();
     document.getElementById('proj-view').style.display = 'none';
+    document.documentElement.classList.remove('td-open');
     document.querySelectorAll('.proj-card.on').forEach(c => { c.classList.remove('on'); c.removeAttribute('aria-current'); });
   }
-  document.getElementById('proj-back')?.addEventListener('click', () => {
-    const t = document.getElementById('proj-grid');
-    t?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    document.querySelector('.proj-card.on')?.querySelector('[data-act=open]')?.focus({ preventScroll: true });
-  });
-  document.getElementById('proj-close')?.addEventListener('click', () => {
+  // volver: restaura el listado y la posición de scroll donde estaba; el foco vuelve a la tarjeta abierta
+  function backToList() {
+    const cid = cur?.clip_id;
     closeProject();
-    document.getElementById('proj-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: listScroll, behavior: 'instant' });
+      const card = [...document.querySelectorAll('.proj-card')].find(c => c.dataset.cid === cid);
+      card?.querySelector('[data-act=open]')?.focus({ preventScroll: true });
+    });
+  }
+  document.getElementById('proj-back')?.addEventListener('click', backToList);
+  document.getElementById('proj-close')?.addEventListener('click', backToList);
 
   // ---------- mini-modal reutilizable ----------
-  function openModal(title, body, cls = '') {
+  // Modal de página sobre el openModal del shell (dialog role, foco atrapado, Esc por la pila, scroll lock).
+  function tdModal(title, body, cls = '') {
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
     ov.innerHTML = `<div class="modal ${cls}">
-      <div class="modal-h"><b>${title}</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
+      <div class="modal-h"><b>${title}</b><button class="modal-x" type="button" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">${body}</div></div>`;
-    document.body.appendChild(ov);
     // onClose(fn): limpieza al cerrar (mapas WebGL, listeners de window/document, previews)
     const cleanups = [];
     const onClose = fn => { cleanups.push(fn); };
-    const close = () => {
-      cleanups.splice(0).forEach(fn => { try { fn(); } catch {} });
-      ov.remove();
-    };
-    ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) close(); });
+    const close = window.openModal(ov, { onClose: () => cleanups.splice(0).forEach(fn => { try { fn(); } catch {} }) });
     return { ov, close, onClose };
   }
 
   document.getElementById('btn-cuda-campaign')?.addEventListener('click', async () => {
     const profiles = (await splatProfilesPromise).filter(p => ['ultra','ultra20','frontier','grandmaster'].includes(p.key));
-    const { ov, close } = openModal(`${icon('cpu')} Campaña NVIDIA CUDA`, `
+    const { ov, close } = tdModal(`${icon('cpu')} Campaña NVIDIA CUDA`, `
       <p class="footer-note td-note">Reentrena cada sitio activo y cada modelo suelto elegible sin reemplazar el asset actual hasta que publicación y gate de navegador terminen.</p>
       <div class="campaign-controls">
         <label><span>Calidad</span><select class="ctl" data-campaign-preset>${profiles.map(p => `<option value="${p.key}"${p.key==='grandmaster'?' selected':''}>${esc(p.label)} · ${p.iters/1000}K</option>`).join('')}</select></label>
@@ -1366,7 +1386,7 @@
         <span class="pc-score tip-r" data-score="${esc(f.clip_id)}" data-tip="Aptitud de escaneo 3D (cobertura/altura/GPS)">·</span>
       </label>`;
 
-    const { ov, close, onClose } = openModal(`${icon('cube')} Estudio 3D`, `
+    const { ov, close, onClose } = tdModal(`${icon('cube')} Estudio 3D`, `
       <div class="st-steps"><span class="st-step on" data-st="1">1 · Seleccionar tomas</span>
         <span class="st-sep">${icon('chevR')}</span><span class="st-step" data-st="2">2 · Configurar y encolar</span></div>
 
@@ -2199,7 +2219,7 @@
       insufficient_overlap: 'sin solape', insufficient_views: 'pocas vistas',
       registration_failed: 'no registró',
     };
-    const { ov, close } = openModal(`${icon('layers')} Mejorar esta escena`, `
+    const { ov, close } = tdModal(`${icon('layers')} Mejorar esta escena`, `
       <p class="footer-note td-note">Cada mejora crea una versión nueva: combina todas las
       capturas seleccionadas, verifica cada fuente y conserva intacta la versión activa.</p>
       <div class="scene-version-head"><span>Sitio estable · ${esc(scene?.title || titleFor(model))}</span><b>${esc(scene?.active_version || model.clip_id)}</b></div>
@@ -2338,10 +2358,12 @@
     clearTimeout(autoloadTimer);                  // cancela auto-carga del proyecto anterior (#12)
     disposeUnifiedViewer();                       // un proyecto = un único renderer vivo
     localStorage.setItem(PROJ_KEY, cid);
+    const wasOpen = document.documentElement.classList.contains('td-open');
+    if (!wasOpen) listScroll = tdModVisible('projects') ? window.scrollY : 0;
     document.getElementById('proj-view').style.display = '';
-    if (opts.scroll) {
-      requestAnimationFrame(() => document.getElementById('proj-view')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    document.documentElement.classList.add('td-open');   // el listado se pliega: la ficha ocupa la vista
+    if (opts.scroll || (!wasOpen && !opts.keepTab && !opts.restore)) {
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     }
     document.querySelectorAll('.proj-card').forEach(c => {
       const on = c.dataset.cid === cid;
@@ -3315,7 +3337,7 @@
         </div>
         <div class="sr-loss">
           ${s.loss != null ? `<span>LOSS FINAL</span><b class="mono">${s.loss}</b>
-          <div class="sr-loss-bar" title="0.03 excelente ← → 0.15 básica"><div style="--p:${Math.max(0, Math.min(1, (0.15 - s.loss) / 0.12)).toFixed(3)}"></div></div>` : '<span>LOSS</span><b>—</b>'}
+          <div class="sr-loss-bar" title="0.03 excelente ← → 0.15 básica"><div class="${s.loss <= 0.07 ? 'lv-ok' : 'lv-warn'}" style="--p:${Math.max(0, Math.min(1, (0.15 - s.loss) / 0.12)).toFixed(3)}"></div></div>` : '<span>LOSS</span><b>—</b>'}
         </div>
         <div class="sr-acts">
           <button class="btn sm primary" data-cid="${esc(scid)}" data-view="${esc(splatKey(s))}" aria-label="Ver ${esc(title)} en el visor"${hasModel ? '' : ' disabled title="Sin proyecto 3D publicado"'}>Ver</button>
@@ -3324,7 +3346,7 @@
             <a class="btn sm icon" target="_blank" rel="noopener" title="Editar en SuperSplat" aria-label="Editar ${esc(title)} en SuperSplat"
                href="/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}">${icon('broom')}</a>
             ${hasModel ? `<button class="btn sm icon" data-share="${esc(scid)}" data-splat="${esc(splatKey(s))}" title="Copiar link público" aria-label="Copiar link público de ${esc(title)}">${icon('ext')}</button>` : ''}
-            <button class="btn sm icon danger" data-del="${esc(scid)}" data-title="${esc(title)}" title="Borrar splats del proyecto (papelera)" aria-label="Borrar splats de ${esc(title)}">${icon('trash')}</button>
+            <button class="btn sm icon ghost sr-del" data-del="${esc(scid)}" data-title="${esc(title)}" title="Borrar splats del proyecto (papelera)" aria-label="Borrar splats de ${esc(title)}">${icon('trash')}</button>
           </div>
         </div>
       </div>`;
@@ -3365,7 +3387,7 @@
       .reverse()
       .map((f, i) => ({ kind: 'video', f, i }));
     const choices = modelChoices.concat(videoChoices);
-    const { ov, close } = openModal(`${icon('spark')} Generar gaussian splat`, `
+    const { ov, close } = tdModal(`${icon('spark')} Generar gaussian splat`, `
       <p class="footer-note td-note">Entrena un archivo <b>.splat</b> nuevo con las
       fotos y poses del proyecto elegido — <b>no modifica</b> la nube ni la malla. Al terminar
       aparece en la lista, en el visor y en el enlace privado.</p>
@@ -3559,6 +3581,6 @@
   // sin auto-abrir: solo se restaura una selección previa del usuario
   renderCards();
   const saved = localStorage.getItem(PROJ_KEY);
-  if (saved && models.some(m => m.clip_id === saved)) setProject(saved);
+  if (saved && models.some(m => m.clip_id === saved)) setProject(saved, { restore: true });
   const requestedTab = new URLSearchParams(location.search).get('tab');
   if (['projects', 'process', 'jobs'].includes(requestedTab)) showTdMod(requestedTab);

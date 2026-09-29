@@ -15,9 +15,9 @@ main.innerHTML = `
       '<span class="chip sm" id="pf-therm">Térmica</span>')}
     <div class="pb">
       <div class="perf-grid sy-perf">
-        <div class="perf-cell"><div class="perf-lb">CPU <b id="pf-cpu">—</b></div><canvas id="pfc-cpu" height="72"></canvas></div>
-        <div class="perf-cell"><div class="perf-lb">GPU <b id="pf-gpu">—</b></div><canvas id="pfc-gpu" height="72"></canvas></div>
-        <div class="perf-cell"><div class="perf-lb">RAM <b id="pf-ram">—</b></div><canvas id="pfc-ram" height="72"></canvas></div>
+        <div class="perf-cell"><div class="perf-lb">CPU <b id="pf-cpu">—</b></div><canvas id="pfc-cpu" height="72"></canvas><span class="perf-wait" hidden>Recopilando muestras…</span></div>
+        <div class="perf-cell"><div class="perf-lb">GPU <b id="pf-gpu">—</b></div><canvas id="pfc-gpu" height="72"></canvas><span class="perf-wait" hidden>Recopilando muestras…</span></div>
+        <div class="perf-cell"><div class="perf-lb">RAM <b id="pf-ram">—</b></div><canvas id="pfc-ram" height="72"></canvas><span class="perf-wait" hidden>Recopilando muestras…</span></div>
       </div>
       <div class="perf-chips" id="pf-chips"></div>
       <div id="pf-jobs"></div>
@@ -87,7 +87,7 @@ main.innerHTML = `
 
   <div class="panel sy-panel" id="db-panel">
     ${panelHead('grid', 'Base de datos de contenido', '<span id="db-count">Clips indexados</span>',
-      '<input class="ctl sy-q" id="db-q" type="search" placeholder="Buscar clip" aria-label="Buscar clip">')}
+      `<label class="search sy-q">${icon('search')}<input id="db-q" type="search" placeholder="Buscar clip" aria-label="Buscar clip" autocomplete="off"></label>`)}
     <div class="pb sy-filters">
       <div class="seg" id="db-tier" role="group" aria-label="Filtrar por tier">
         <button class="on" data-tier="">Todos</button>
@@ -127,7 +127,14 @@ function jobRelativeTime(job, now) {
 
   // ---------- stats (etiquetas cortas, misma altura) ----------
   const doneJobs = jobs.filter(j => j.status === 'done');
-  const cpuMin = Math.round(doneJobs.reduce((a, j) => a + (j.mins || 0), 0));
+  // duración real de un trabajo terminado (s): started/finished; el campo `mins` es opcional
+  const durOf = j => {
+    if (j.mins > 0) return j.mins * 60;
+    const d = Number(j.finished) - Number(j.started);
+    return Number.isFinite(d) && d > 0 ? d : 0;
+  };
+  const fmtSpan = s => s < 60 ? `${Math.max(1, Math.round(s))} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`;
+  const totalSec = doneJobs.reduce((a, j) => a + durOf(j), 0);
   const stats = [
     ['drone', 'Clips', flights.length],
     ['db', 'Raw 4K', fmt.gb(st.raw || 0), true],
@@ -136,7 +143,7 @@ function jobRelativeTime(job, now) {
     ['film', 'Fotos 4K', (sys.photos || []).length],
     ['play', 'Reels', (sys.reels || []).length],
     ['check', 'Completados', doneJobs.length],
-    ['clock', 'Tiempo CPU', cpuMin >= 90 ? (cpuMin / 60).toFixed(1) + ' h' : cpuMin + ' min', true],
+    ['clock', 'Tiempo de proceso', totalSec ? fmtSpan(totalSec) : '—', true],
   ];
   document.getElementById('top').innerHTML = stats.map(([ic, lb, v, raw]) => `
     <div class="stat rise"><div class="lb">${icon(ic)} ${lb}</div>
@@ -156,37 +163,39 @@ function jobRelativeTime(job, now) {
   const KINDS = { '3d': 'Fotogrametría 3D', splat: 'Gaussian splat', foto4k: 'Foto 4K',
                   edit: 'Edición', upload: 'Subida', analyze: 'Análisis AI', ingest: 'Importar SD' };
   const durs = {};
-  doneJobs.forEach(j => { if (j.mins) (durs[j.kind] ??= []).push(j.mins); });
+  doneJobs.forEach(j => { const d = durOf(j); if (d) (durs[j.kind] ??= []).push(d); });
   const durRows = Object.entries(durs).map(([k, v]) =>
     [KINDS[k] || k, v.reduce((a, b) => a + b, 0) / v.length, v.length]).sort((a, b) => b[1] - a[1]);
   const maxDur = Math.max(...durRows.map(r => r[1]), 1);
   const PILL = { done: ['listos', 'ok'], running: ['en proceso', 'on'],
                  queued: ['en cola', ''], error: ['fallidos', 'err'],
                  cancelled: ['cancelados', 'warn'] };
-  document.getElementById('activity').innerHTML = `
-    <div class="sy-pills">
-      ${Object.entries(PILL).filter(([k]) => byStatus[k]).map(([k, [lb, c]]) =>
-        `<span class="chip sm ${c}">${byStatus[k]} ${lb}</span>`).join('') || '<span class="sy-hint">Sin trabajos aún.</span>'}
-    </div>
+  const durHTML = durRows.length ? `
     <p class="sy-sublb">Duración media por tipo</p>
     ${durRows.map(([lb, avg, n]) => `
       <div class="sy-bar">
         <div class="sy-bar-h">
           <span>${esc(lb)} <small>×${n}</small></span>
-          <span class="mono">${avg < 1 ? '<1 min' : avg >= 90 ? (avg / 60).toFixed(1) + ' h' : Math.round(avg) + ' min'}</span>
+          <span class="mono">${fmtSpan(avg)}</span>
         </div>
         <div class="sbar"><div style="--p:${(avg / maxDur).toFixed(3)}"></div></div>
-      </div>`).join('') || '<p class="sy-hint">Aún no hay trabajos completados.</p>'}`;
+      </div>`).join('')}` : '';
+  document.getElementById('activity').innerHTML = `
+    <div class="sy-pills">
+      ${Object.entries(PILL).filter(([k]) => byStatus[k]).map(([k, [lb, c]]) =>
+        `<span class="chip sm ${c}">${byStatus[k]} ${lb}</span>`).join('') || '<span class="sy-hint">Sin trabajos aún.</span>'}
+    </div>
+    ${durHTML}`;
 
   // ---------- feed de trabajos recientes ----------
   document.getElementById('feed').innerHTML = orderJobsForDisplay(jobs).slice(0, 9).map(j => {
-    const lbl = String(j.label || j.id || 'job');
+    const lbl = String(j.label || j.id || 'job').replace(/^untitled\b/i, 'SD');
     return `<div class="act-row">
       <span class="act-dot ${esc(j.status)}"></span>
       <span class="act-k">${esc(KINDS[j.kind] || j.kind)}</span>
       <span class="act-l mono">${esc(lbl.length > 26 ? lbl.slice(-16) : lbl)}</span>
       <span class="spacer" style="flex:1"></span>
-      ${j.mins ? `<span class="mono act-t">${j.mins} min</span>` : ''}
+      ${durOf(j) ? `<span class="mono act-t">${fmtSpan(durOf(j))}</span>` : ''}
       <span class="mono act-t">${jobRelativeTime(j, Date.now())}</span>
     </div>`;
   }).join('') || '<p class="sy-hint">Sin actividad todavía.</p>';
@@ -221,14 +230,14 @@ function jobRelativeTime(job, now) {
     const showName = rows.some(f => f.label);            // la columna Nombre solo existe si algún clip tiene nombre
     const resOf = f => esc((f.resolution || '').replace('3840x2160', '4K'));
     document.getElementById('db-table').innerHTML = `
-      <thead><tr><th>Fecha</th>${showName ? '<th>Nombre</th>' : ''}<th>Duración</th><th>Tamaño</th><th>Res.</th>
+      <thead><tr><th>Fecha</th>${showName ? '<th>Nombre</th>' : ''}<th class="n">Duración</th><th class="n">Tamaño</th><th class="c-res">Res.</th>
       <th>Tier</th><th class="c">GPS</th><th class="c">AI</th><th class="c">3D</th></tr></thead>
       <tbody>${visible.map(f => `
         <tr data-cid="${esc(f.clip_id)}" tabindex="0">
           <td class="mono c-date">${fmt.date(f.date)} <span>${esc(f.time || '')}</span></td>
           ${showName ? `<td class="c-name">${esc(f.label) || ''}</td>` : ''}
-          <td class="mono c-dur">${fmt.dur(f.duration_s)}</td>
-          <td class="mono c-size">${fmt.gb(f.size_bytes || 0)}</td>
+          <td class="mono n c-dur">${fmt.dur(f.duration_s)}</td>
+          <td class="mono n c-size">${fmt.gb(f.size_bytes || 0)}</td>
           <td class="mono c-res">${resOf(f)}</td>
           <td class="c-tier"><span class="chip sm">${esc(f.tier || '—')}</span></td>
           <td class="c c-flag${f.has_srt ? ' on' : ''}" data-l="GPS">${ok(f.has_srt)}</td>
@@ -270,6 +279,8 @@ function jobRelativeTime(job, now) {
     gpu: { cv: $('pfc-gpu'), tok: '--ok', max: 100, get: s => s.gpu },
     ram: { cv: $('pfc-ram'), tok: '--warn', max: 16, get: s => s.ram_used_gb },
   };
+  const MIN_PTS = 10;                                  // muestras mínimas dentro de la ventana para dibujar
+  for (const c of Object.values(charts)) c.wait = c.cv?.parentElement.querySelector('.perf-wait');
   let hist = [], now = null, dead = false;
   // colores desde tokens (cambian con el tema): se releen solo cuando cambia data-theme
   let palette = {};
@@ -312,7 +323,7 @@ function jobRelativeTime(job, now) {
       `${d.ncpu} núcleos`,
     ].map(x => `<span class="chip sm">${x}</span>`).join(''));
     // uso por job: cpu/rss/etapa/eta en vivo
-    setHTML($('pf-jobs'), (now.jobs || []).length ? `<div class="sy-tablewrap"><table class="kv perf-jobs">
+    setHTML($('pf-jobs'), (now.jobs || []).length ? `<div class="sy-scrollx"><table class="kv perf-jobs">
       <tr><th>Job</th><th>Etapa</th><th>CPU</th><th>RAM</th><th>Lleva</th><th>Progreso</th></tr>
       ${now.jobs.map(j => `<tr>
         <td class="mono">${esc(j.kind)} · ${esc((j.label || '').slice(-14))}</td>
@@ -347,7 +358,10 @@ function jobRelativeTime(job, now) {
         if (px < -4) continue;
         pts.push([px, H - Math.min(1, Math.max(0, c.get(s) / c.max)) * (H - 6 * dpr) - 3 * dpr]);
       }
-      if (pts.length < 2) continue;                      // sin ≥2 muestras reales no se dibuja nada
+      const wait = pts.length < MIN_PTS;                 // pocas muestras: estado «Recopilando…» en vez de línea plana + pico
+      if (c.wait) c.wait.hidden = !wait;
+      cv.style.visibility = wait ? 'hidden' : '';
+      if (wait) continue;
       const col = palette[c.tok];
       g.beginPath();
       pts.forEach(([px, py], i) => i ? g.lineTo(px, py) : g.moveTo(px, py));

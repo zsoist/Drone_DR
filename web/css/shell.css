@@ -45,6 +45,7 @@
   .mnav-i.active { color: var(--accent-fg); }
   .mnav-i.active::before { transform: scaleX(1); }
   .mnav-i:active { transform: scale(.97); }
+  .mnav-i:focus-visible { outline-offset: -4px; border-radius: var(--r-md); }   /* anillo dentro de la barra: no lo recorta el borde de pantalla */
 
   .msheet-ov {
     display: block; position: fixed; inset: 0; z-index: var(--z-overlay);
@@ -61,7 +62,13 @@
   }
   .msheet-ov.on .msheet { transform: translateY(0); }
   .msheet-grip { width: 36px; height: 4px; border-radius: var(--r-pill); background: var(--line-strong); margin: 4px auto var(--sp-3); }
-  .msheet-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
+  .msheet-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 var(--sp-3); }
+  .msheet-head b { font-size: var(--fs-xl); font-weight: var(--fw-semibold); letter-spacing: var(--tr-tight); }
+  /* rejilla de 6 columnas, cada tile ocupa 2: la última fila nunca deja un tile huérfano (1 restante = ancho completo, 2 = mitad y mitad) */
+  .msheet-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-2); }
+  .ms-item { grid-column: span 2; }
+  .ms-item:last-child:nth-child(3n+1) { grid-column: 1 / -1; flex-direction: row; min-height: 56px; gap: var(--sp-3); }
+  .ms-item:last-child:nth-child(3n+2), .ms-item:nth-last-child(2):nth-child(3n+1) { grid-column: span 3; }
   .ms-item {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
     min-height: 76px; padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-lg);
@@ -78,7 +85,7 @@
 }
 
 /* ---------- shared job card (Dron / Studio / 3D) ---------- */
-.job-card.jcx { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.job-card.jcx { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
 .jcx-top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
 .jcx-ic {
   flex: none; display: grid; place-items: center; width: 32px; height: 32px;
@@ -92,7 +99,7 @@
 }
 .jcx-kind { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
 .job-card.jcx .jc-status { flex: none; align-self: center; margin: 0; }
-.jcx-run { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); margin-top: var(--sp-1); }
+.jcx-run { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
 .jcx-stage { font-size: var(--fs-md); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jcx-pct { font-size: var(--fs-lg); font-weight: 600; color: var(--accent-fg); }
 .job-card.jcx .jc-bar.jcx-bar { height: 6px; margin: 0; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
@@ -106,7 +113,7 @@
 .jcx-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .jcx-actions:empty { display: none; }
 
-.jcx-more { border-top: 1px solid var(--line); margin-top: var(--sp-1); padding-top: var(--sp-1); }
+.jcx-more { border-top: 1px solid var(--line); padding-top: var(--sp-1); }
 .jcx-more > summary {
   display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none;
   min-height: 32px; font-size: var(--fs-sm); font-weight: 500; color: var(--text-2);

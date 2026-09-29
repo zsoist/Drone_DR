@@ -20,7 +20,7 @@ const havKm = (a, b, c, d) => 12742 * Math.asin(Math.sqrt(
 main.classList.add('tr-page');
 main.innerHTML = `
   ${pageHead('Viajes', '', '', { subId: 'count' })}
-  <div class="statgrid" id="t-stats">${'<div class="sk tr-sk-stat"></div>'.repeat(4)}</div>
+  <div class="statgrid tr-kpis" id="t-stats">${'<div class="sk tr-sk-stat"></div>'.repeat(4)}</div>
   <div id="cities" class="city-grid">${'<div class="sk tr-sk-city"></div>'.repeat(3)}</div>
   <div id="detail" hidden></div>`;
 
@@ -104,6 +104,7 @@ main.innerHTML = `
   function renderCities() {
     const el = document.getElementById('cities');
     el.hidden = false;
+    document.getElementById('t-stats').hidden = false;
     document.getElementById('detail').hidden = true;
     const anim = !citiesEntered && !matchMedia('(prefers-reduced-motion: reduce)').matches;
     citiesEntered = true;
@@ -124,7 +125,7 @@ main.innerHTML = `
           <span data-tip="Tiempo total en el aire">${icon('clock')} ${fmt.hours(c.dur)}</span>
           <span data-tip="Distancia total volada">${icon('route')} ${fmt.km(c.dist)}</span>
           <span data-tip="Altura máxima alcanzada">${icon('mountain')} ${Math.round(c.alt)} m</span>
-          <button class="btn icon sm tr-more" data-city-menu="${esc(c.key)}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(c.name)}">${icon('more')}</button>
+          <button class="btn icon sm tr-more hit44" data-city-menu="${esc(c.key)}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(c.name)}">${icon('more')}</button>
         </div>
       </div>`).join('') ||
       emptyState({ icon: 'pin', title: 'Sin viajes todavía', help: 'Aparecerán cuando haya vuelos con GPS.', cls: 'tr-span' });
@@ -136,9 +137,9 @@ main.innerHTML = `
     if (!c) return;
     openMenu(btn, [
       { id: 'postal', label: 'Descargar postal', icon: 'dl' },
-      { id: 'cover', label: 'Elegir portada', icon: 'iso' },
-      { id: 'rename', label: 'Renombrar', icon: 'tag' },
-    ], { label: `Acciones de ${c.name}`, onSelect: act => {
+      { id: 'cover', label: 'Elegir portada', icon: 'image' },
+      { id: 'rename', label: 'Renombrar', icon: 'edit' },
+    ], { label: `Acciones de ${c.name}`, align: 'end', onSelect: act => {
       if (act === 'postal') makePostal(c, btn);
       else if (act === 'cover') pickCover(c);
       else renameCity(c);
@@ -150,6 +151,7 @@ main.innerHTML = `
   function renderDetail(c, animate = false) {
     const el = document.getElementById('detail');
     document.getElementById('cities').hidden = true;
+    document.getElementById('t-stats').hidden = true;   // los KPI globales solo en la vista de lugares
     el.hidden = false;
     const rise = animate && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'rise' : '';
     const list = c.flights.filter(f => {
@@ -165,7 +167,7 @@ main.innerHTML = `
     list.forEach(f => (byDay[f.date] = byDay[f.date] || []).push(f));
     const days = Object.entries(byDay).sort((a, b) => b[0].localeCompare(a[0]));
     const range = `${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates[c.dates.length - 1]) : ''}`;
-    const filterChips = [['video', 'play', 'Video'], ['ai', 'spark', 'AI'], ['top', 'spark', 'Score 6+']]
+    const filterChips = [['video', 'play', 'Video'], ['ai', 'spark', 'AI'], ['top', 'star', 'Score 6+']]
       .map(([k, ic, l]) => `<button class="chip ${dstate.has.has(k) ? 'on' : ''}" data-df="${k}" aria-pressed="${dstate.has.has(k)}">${icon(ic)} ${l}</button>`).join('');
     el.innerHTML = `
       <div class="hero glass tr-hero ${rise}">
@@ -190,7 +192,7 @@ main.innerHTML = `
           ${scenes.map(sc => `<button class="chip ${dstate.scene === sc ? 'on' : ''}" data-dscene="${esc(sc)}" aria-pressed="${dstate.scene === sc}">${esc(sc)}</button>`).join('')}
         </div>
       </div>
-      ${days.length > 1 ? `<nav class="tr-days" aria-label="Ir a un día">
+      ${days.length > 1 ? `<nav class="tr-days chip-row" aria-label="Ir a un día">
         ${days.map(([date, dl]) => `<a class="chip" href="#day-${esc(date)}" data-day="${esc(date)}" data-tip="${dl.length} ${dl.length === 1 ? 'vuelo' : 'vuelos'}">${fmt.date(date)}</a>`).join('')}
       </nav>` : ''}
       ${days.map(([date, dl], di) => {
@@ -206,7 +208,7 @@ main.innerHTML = `
           ${diary ? `<div class="summary">${esc(diary)}</div>` : ''}
           <div class="grid">${dl.map(f => {
             const a = ai[f.clip_id];
-            const title = f.label || shortTitle(a?.summary) || f.time || '';
+            const title = f.label || shortTitle(a?.summary) || `Sin título${f.time ? ' · ' + f.time : ''}`;
             return `
             <a class="card scrub" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
               <div class="thumb">
@@ -218,10 +220,10 @@ main.innerHTML = `
               </div>
               <div class="body">
                 <div class="t"><span class="tr-title">${esc(title)}</span></div>
-                ${title !== f.time ? `<div class="tr-when"><time>${f.time || ''}</time></div>` : ''}
+                ${f.label || a?.summary ? `<div class="tr-when"><time>${f.time || ''}</time></div>` : ''}
                 <div class="metrics">
                   <span title="Distancia">${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b><i class="sr-only">Distancia</i></span>
-                  <span title="Altura máxima">${icon('mountain')}<b>${Math.round(f.stats.max_rel_alt_m || 0)} m</b><i class="sr-only">Altura máxima</i></span>
+                  <span title="Altura máxima">${icon('mountain')}<b>${(f.stats.max_rel_alt_m || 0) < 0 ? '—' : Math.round(f.stats.max_rel_alt_m || 0) + ' m'}</b><i class="sr-only">Altura máxima</i></span>
                 </div>
                 ${f.label && a?.summary ? `<p class="ai-line">${esc(a.summary)}</p>` : ''}
               </div>
@@ -313,7 +315,7 @@ main.innerHTML = `
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 30000);
       }
-    } catch (err) { if (err?.name !== 'AbortError') alert('No se pudo generar la postal.'); }
+    } catch (err) { if (err?.name !== 'AbortError') toast('No se pudo generar la postal.'); }
     btn.innerHTML = orig; btn._busy = false;
   }
 
@@ -322,19 +324,20 @@ main.innerHTML = `
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
     ov.innerHTML = `<div class="modal tr-modal-sm">
-      <div class="modal-h"><b>${icon('tag')} Renombrar lugar</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
+      <div class="modal-h"><b>${icon('edit')} Renombrar lugar</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
         <div class="tool-row">
           <input class="m-ipt tr-name" id="tm-name" maxlength="60" value="${esc(c.name)}">
           <button class="btn primary" id="tm-save">Guardar</button>
         </div>
-        <p class="footer-note tr-note">El nombre se guarda en el servidor: lo verás igual en el iPhone, iPad y desktop.</p>
+        <p class="page-foot tr-note">El nombre se guarda en el servidor: lo verás igual en el iPhone, iPad y desktop.</p>
       </div></div>`;
-    openModal(ov);
+    openModal(ov, { initialFocus: '#tm-name' });
     const save = async () => {
       const name = ov.querySelector('#tm-name').value.trim();
       if (!name) return;
-      await api('/api/trip_meta', { key: c.key, name });
+      try { await api('/api/trip_meta', { key: c.key, name }); }
+      catch { toast('No se pudo guardar el nombre — revisa tu sesión.'); return; }
       localStorage.setItem(`ab.city.${c.key}`, name);   // cache local por si el fetch server falla
       c.name = name;
       ov.remove();
@@ -342,7 +345,7 @@ main.innerHTML = `
     };
     ov.querySelector('#tm-save').addEventListener('click', save);
     ov.querySelector('#tm-name').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
-    setTimeout(() => { const i = ov.querySelector('#tm-name'); i.focus(); i.select(); }, 60);
+    ov.querySelector('#tm-name').select();
   }
 
   // ---------- elegir carátula (grid de thumbs del lugar) ----------
@@ -352,7 +355,7 @@ main.innerHTML = `
     const sorted = [...c.flights].sort((a, b) =>
       (ai[b.clip_id]?.travel_score || 0) - (ai[a.clip_id]?.travel_score || 0));
     ov.innerHTML = `<div class="modal tr-modal-md">
-      <div class="modal-h"><b>${icon('iso')} Portada de ${esc(c.name)}</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
+      <div class="modal-h"><b>${icon('image')} Portada de ${esc(c.name)}</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
         <div class="mflights tr-covers">
           ${sorted.map(f => `
@@ -362,12 +365,13 @@ main.innerHTML = `
                 <span>${fmt.dur(f.duration_s)}${ai[f.clip_id]?.travel_score ? ` · ${ai[f.clip_id].travel_score}/10 AI` : ''}</span></div>
             </div>`).join('')}
         </div>
-        <p class="footer-note tr-note">Se guarda en el servidor. La estrella AI seguirá eligiendo si borras la elección manual.</p>
+        <p class="page-foot tr-note">Se guarda en el servidor. La estrella AI seguirá eligiendo si borras la elección manual.</p>
       </div></div>`;
     openModal(ov);
     const doPick = async row => {
       const cid2 = row.dataset.pick;
-      await api('/api/trip_meta', { key: c.key, cover: cid2 });
+      try { await api('/api/trip_meta', { key: c.key, cover: cid2 }); }
+      catch { toast('No se pudo guardar la portada — revisa tu sesión.'); return; }
       c.cover = c.flights.find(f => f.clip_id === cid2) || c.cover;
       ov.remove();
       renderCities();

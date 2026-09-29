@@ -12,26 +12,32 @@ main.innerHTML = `
   ${pageHead('Vuelos', '', '', { subId: 'count' })}
   <div class="vf-bar" role="search">
     <label class="search vf-search">${icon('search')}<input id="q" type="search" placeholder="Buscar vuelos" aria-label="Buscar vuelos" autocomplete="off">
-      <button type="button" class="vf-sem" id="sem-toggle" aria-pressed="false" aria-label="Búsqueda semántica" data-tip="Semántica: busca por significado con embeddings — escribe y pulsa Enter">${icon('spark')}</button>
+      <button type="button" class="vf-sem hit44" id="sem-toggle" aria-pressed="false" aria-label="Búsqueda semántica" data-tip="Semántica: busca por significado con embeddings — escribe y pulsa Enter">${icon('spark')}</button>
       <kbd>/</kbd></label>
-    <button type="button" class="btn vf-filters-btn" id="vf-filters-btn" aria-expanded="false" aria-controls="vf-more">${icon('sliders')} Filtros <span class="vf-badge" id="vf-badge" hidden></span></button>
+    <button type="button" class="btn vf-filters-btn" id="vf-filters-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="vf-more">${icon('sliders')} Filtros <span class="vf-badge" id="vf-badge" hidden></span></button>
     <div class="vf-more" id="vf-more">
       <div class="vf-tools">
+        <div class="vf-fld"><span class="tool-lb vf-lb">Ordenar por</span>
         <select class="ctl" id="sort" aria-label="Ordenar">
           <option value="date">Más recientes</option>
           <option value="dur">Más largos</option>
           <option value="dist">Más distancia</option>
           <option value="alt">Más altura</option>
           <option value="score">Mejor score AI</option>
-        </select>
+        </select></div>
+        <div class="vf-fld"><span class="tool-lb vf-lb">Vista</span>
         <div class="seg" role="group" aria-label="Vista">
-          <button data-view="grid" class="on" data-tip="Cuadrícula" aria-label="Vista de cuadrícula">${icon('grid')}</button>
-          <button data-view="list" data-tip="Lista compacta" aria-label="Vista de lista">${icon('list')}</button>
-          <button data-view="map" data-tip="Rutas en el mapa" aria-label="Vista de mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
+          <button data-view="grid" class="on" data-tip="Cuadrícula" aria-label="Vista de cuadrícula">${icon('grid')}<span class="seg-lb">Cuadrícula</span></button>
+          <button data-view="list" data-tip="Lista compacta" aria-label="Vista de lista">${icon('list')}<span class="seg-lb">Lista</span></button>
+        </div></div>
+        <div class="vf-fld"><span class="tool-lb vf-lb">Explorar por</span>
+        <div class="seg vf-explore" role="group" aria-label="Explorar por">
+          <button data-view="map" data-tip="Rutas en el mapa" aria-label="Explorar en el mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
           <button data-view="places" data-tip="Agrupados por lugar de despegue" aria-label="Agrupar por lugares">${icon('pin')}<span class="seg-lb">Lugares</span></button>
           <button data-view="dates" data-tip="Agrupados por fecha" aria-label="Agrupar por fechas">${icon('cal')}<span class="seg-lb">Fechas</span></button>
-        </div>
+        </div></div>
       </div>
+      <div class="vf-fld vf-fld-chips"><span class="tool-lb vf-lb">Filtrar</span>
       <div class="chip-row vf-chips" role="toolbar" aria-label="Filtros">
         ${TIERS.map(([k, l]) => `<button class="chip ${k === 'all' ? 'on' : ''}" data-tier="${k}" aria-pressed="${k === 'all'}" data-tip="${TIER_TIPS[k]}">${l}</button>`).join('')}
         <span class="chip-div" aria-hidden="true"></span>
@@ -43,7 +49,7 @@ main.innerHTML = `
         <button class="chip" data-qf="largo" aria-pressed="false" data-tip="Duración sobre 1 minuto">${icon('clock')} +1 min</button>
         <button class="chip" data-qf="top" aria-pressed="false" data-tip="Score AI de 6 o más">${icon('spark')} Score 6+</button>
         <span class="vf-scenes" id="scene-chips"></span>
-      </div>
+      </div></div>
     </div>
   </div>
   <div class="grid" id="grid">${'<div class="sk vf-sk"></div>'.repeat(6)}</div>
@@ -58,10 +64,9 @@ main.innerHTML = `
       <div id="vmap" class="vf-map"></div>
       <button class="map-recenter" id="vm-fit" title="Ver todo" aria-label="Ver todos los vuelos">${icon('map')}</button>
     </div>
-    <p class="footer-note vf-note">Los filtros y la búsqueda de arriba también
-    filtran el mapa. Click en una ruta o pin de lugar para el preview.</p>
+    <p class="page-foot vf-note">Los filtros y la búsqueda de arriba también filtran el mapa. Toca una ruta o un pin de lugar para ver el preview.</p>
   </div>
-  <p class="footer-note">Los clips en tier full incluyen video 1080p; standard tienen análisis AI sin proxy; skim solo telemetría. Procesado localmente en el Mac Mini M4.</p>`;
+  <footer class="page-foot" id="vf-foot">Los clips en tier full incluyen video 1080p; standard tienen análisis AI sin proxy; skim solo telemetría. Procesado localmente en el Mac Mini M4.</footer>`;
 
 function setHTML(el, html) {
   if (el.__h === html) return false;
@@ -101,14 +106,17 @@ const SORTS = {
 };
 
 // Título corto: etiqueta manual > arranque del resumen AI (sin muletilla "El vuelo inicia con…") > fecha.
-const flightTitle = (f, a) => f.label || shortTitle(a?.summary) || fmt.date(f.date);
+const flightTitle = (f, a) => f.label || shortTitle(a?.summary) || `Sin título${f.time ? ' · ' + f.time : ''}`;
+// Altura relativa al punto de despegue: valores negativos (barómetro bajo el home) no son "altura" → guion.
+const altM = v => { const n = Math.round(v || 0); return n < 0 ? '—' : n + ' m'; };
 const metric = (ico, label, value) =>
   `<span title="${label}">${icon(ico)}<b>${value}</b><span class="sr-only">${label}</span></span>`;
 
 function card(f) {
   const a = ai[f.clip_id];
   const title = flightTitle(f, a);
-  const dated = title !== fmt.date(f.date);
+  const untitled = !f.label && title.startsWith('Sin título');
+  const named = !untitled;
   return `
   <a class="card scrub" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
     <div class="thumb">
@@ -122,10 +130,10 @@ function card(f) {
     </div>
     <div class="body">
       <div class="t"><span class="vf-title">${esc(title)}</span></div>
-      <div class="vf-when"><time>${dated ? fmt.date(f.date) + ' · ' : ''}${f.time}</time></div>
+      <div class="vf-when"><time>${named ? fmt.date(f.date) + (f.time ? ' · ' + f.time : '') : fmt.date(f.date)}</time></div>
       <div class="metrics">
         ${metric('route', 'Distancia', fmt.km(f.stats.distance_m || 0))}
-        ${metric('mountain', 'Altura máxima', Math.round(f.stats.max_rel_alt_m || 0) + ' m')}
+        ${metric('mountain', 'Altura máxima', altM(f.stats.max_rel_alt_m))}
         ${metric('film', 'Resolución y fps', ((f.resolution || '').split('x')[1] || '?') + 'p' + Math.round(f.fps || 0))}
       </div>
       ${f.label && a?.summary ? `<p class="ai-line">${esc(a.summary)}</p>` : ''}
@@ -157,10 +165,14 @@ function enterOnce(grid) {
     .forEach((c, i) => { c.style.setProperty('--in-delay', `${Math.min(i, 4) * 30}ms`); c.classList.add('vf-in'); });
 }
 
+let lastCount = 0;
 function syncControls() {
   const n = state.has.size + (state.tier !== 'all' ? 1 : 0) + (state.scene ? 1 : 0) + (state.spot ? 1 : 0);
   const badge = document.getElementById('vf-badge');
   badge.hidden = !n; badge.textContent = n;
+  filtersBtn.classList.toggle('on', n > 0);
+  const done = document.querySelector('[data-done]');
+  if (done) done.textContent = `Ver ${lastCount} ${lastCount === 1 ? 'vuelo' : 'vuelos'}`;
   document.querySelectorAll('[data-tier]').forEach(b => {
     const on = b.dataset.tier === state.tier;
     b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
@@ -174,6 +186,7 @@ function syncControls() {
 function render() {
   const list = flights.filter(matches).sort(
     state.semantic && semRank ? (a, b) => (semRank.get(b.clip_id) || 0) - (semRank.get(a.clip_id) || 0) : SORTS[state.sort]);
+  lastCount = list.length;
   document.getElementById('count').textContent =
     `${list.length} de ${flights.length}` + (state.q ? ` · "${state.q}"` : '');
   const grid = document.getElementById('grid');
@@ -183,16 +196,35 @@ function render() {
   mapv.hidden = !isMap;
   chipsRow();
   syncControls();
-  if (isMap) { renderMap(list); return; }
+  if (isMap) { renderMap(list); syncFoot(list.length, true); return; }
   if (state.view === 'places') { renderPlaces(list); return; }
   if (state.view === 'dates') { renderDates(list); return; }
   grid.className = `grid ${state.view === 'list' ? 'list' : ''}`;
-  if (setHTML(grid, list.length ? list.map(card).join('') :
-    emptyState({ icon: 'search', title: 'Sin resultados', help: 'Prueba con otra búsqueda o quita filtros.', cls: 'vf-span' }))) {
+  if (setHTML(grid, list.length ? list.map(card).join('') : noResults('search', 'Sin resultados', 'Prueba con otra búsqueda.'))) {
     enterOnce(grid);
     attachScrub(grid);
   }
+  grid.classList.toggle('is-empty', !list.length);
+  syncFoot(list.length, isMap);
 }
+
+// Estado vacío único de la página: con filtros activos explica por qué y ofrece limpiarlos.
+const activeFilters = () => state.has.size + (state.tier !== 'all' ? 1 : 0) + (state.scene ? 1 : 0) + (state.spot ? 1 : 0) + (state.q ? 1 : 0);
+function noResults(ic, title, base) {
+  const n = activeFilters();
+  const onlyQ = n === 1 && state.q;
+  return emptyState({ icon: ic, title,
+    help: !n ? base : onlyQ ? 'Nada coincide con tu búsqueda. Prueba otras palabras o bórrala.'
+      : `${n} filtros activos dejan la lista vacía. Quítalos para ver todos los vuelos.`,
+    action: n ? `<button type="button" class="btn sm" data-clear-filters>${onlyQ ? 'Borrar búsqueda' : 'Limpiar filtros'}</button>` : '', cls: 'vf-span' });
+}
+function clearFilters() {
+  state.q = ''; state.tier = 'all'; state.scene = null; state.spot = null; state.has.clear();
+  if (state.semantic) { state.semantic = false; semRank = null; const t = document.getElementById('sem-toggle'); t.classList.remove('on'); t.setAttribute('aria-pressed', 'false'); qEl.placeholder = 'Buscar vuelos'; }
+  qEl.value = '';
+  render();
+}
+function syncFoot(n, isMap) { document.getElementById('vf-foot').hidden = isMap || !n; }
 
 // ---------- lugares: spots agrupados por punto de despegue (~500 m) ----------
 let spots = {};
@@ -236,11 +268,13 @@ function renderPlaces(list) {
         <div class="metrics">
           ${metric('route', 'Distancia total', fmt.km(dist))}
           ${metric('clock', 'Tiempo en el aire', fmt.hours(dur))}
-          ${metric('mountain', 'Altura máxima', Math.round(Math.max(...fs.map(f => f.stats.max_rel_alt_m || 0))) + ' m')}
+          ${metric('mountain', 'Altura máxima', altM(Math.max(...fs.map(f => f.stats.max_rel_alt_m || 0))))}
         </div>
       </div>
     </a>`;
-  }).join('') : emptyState({ icon: 'pin', title: 'Sin lugares', help: 'Ningún lugar coincide con esos filtros.', cls: 'vf-span' });
+  }).join('') : noResults('pin', 'Sin lugares', 'Todavía no hay lugares de despegue registrados.');
+  grid.classList.toggle('is-empty', !visible.length);
+  syncFoot(visible.length, false);
 }
 
 // ---------- fechas: cronología agrupada por mes ----------
@@ -259,7 +293,9 @@ function renderDates(list) {
       <b>${esc(name.charAt(0).toUpperCase() + name.slice(1))}</b>
       <span class="mono">${fs.length} vuelos · ${fmt.km(dist)} · ${fmt.hours(dur)}</span></div>` +
       fs.map(card).join('');
-  }).join('') : emptyState({ icon: 'cal', title: 'Sin vuelos', help: 'Ningún vuelo coincide con esos filtros.', cls: 'vf-span' });
+  }).join('') : noResults('cal', 'Sin vuelos', 'Todavía no hay vuelos para agrupar por fecha.');
+  grid.classList.toggle('is-empty', !months.length);
+  syncFoot(months.length, false);
   attachScrub(grid);
 }
 document.addEventListener('click', async e => {
@@ -268,20 +304,47 @@ document.addEventListener('click', async e => {
   const spc = e.target.closest('[data-spotcard]');
   if (spc) { e.preventDefault(); state.spot = spc.dataset.spotcard; setView('grid'); }
   if (e.target.closest('[data-clearspot]')) { state.spot = null; render(); }
+  if (e.target.closest('[data-clear-filters]')) { clearFilters(); return; }
   const rn = e.target.closest('[data-rename]');
   if (rn) {
     e.preventDefault(); e.stopPropagation();
-    const token = getToken();
-    if (!token) return;
+    if (!getToken()) return;
     const f = flights.find(x => x.clip_id === rn.dataset.rename);
-    const label = prompt('Nombre para este vuelo:', f?.label || '');
-    if (label == null) return;
-    try {                                                 // api() puede rechazar (403/red) → no dejar unhandled (#7)
-      await api('/api/clip', { clip_id: rn.dataset.rename, label });
-      if (f) { f.label = label; render(); }
-    } catch { alert('No se pudo renombrar — revisa tu sesión.'); }
+    if (f) openRename(f);
   }
 }, true);
+
+// ---------- renombrar (modal canónico, sin prompt()) ----------
+function openRename(f) {
+  const ov = document.createElement('div');
+  ov.className = 'modal-ov';
+  ov.innerHTML = `<form class="modal vf-modal vf-rename">
+    <div class="modal-h"><b>${icon('edit')} Renombrar vuelo</b>
+      <button class="modal-x" type="button" aria-label="Cerrar">${icon('close')}</button></div>
+    <div class="modal-b">
+      <label class="mlb" for="vf-rn-in">Nombre</label>
+      <input class="ctl" id="vf-rn-in" maxlength="120" autocomplete="off" placeholder="Ej. Fachada norte, atardecer" value="${esc(f.label || '')}">
+      <p class="vf-rn-err" id="vf-rn-err" role="alert" hidden></p>
+      <div class="navrow vf-prev-actions">
+        <button class="btn primary" type="submit">Guardar</button>
+        <button class="btn" type="button" data-cancel>Cancelar</button>
+      </div>
+    </div></form>`;
+  const close = openModal(ov, { initialFocus: '#vf-rn-in' });
+  ov.querySelector('[data-cancel]').addEventListener('click', () => close());
+  const form = ov.querySelector('form'), input = ov.querySelector('#vf-rn-in'), err = ov.querySelector('#vf-rn-err');
+  input.select();
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const label = input.value.trim();
+    const btn = form.querySelector('[type=submit]');
+    btn.disabled = true; err.hidden = true;
+    try {                                                 // api() puede rechazar (403/red)
+      await api('/api/clip', { clip_id: f.clip_id, label });
+      f.label = label; close(); render();
+    } catch { btn.disabled = false; err.textContent = 'No se pudo renombrar — revisa tu sesión.'; err.hidden = false; }
+  });
+}
 
 // ---------- vista mapa: rutas + pins de lugar, filtrados por la barra de arriba ----------
 let vmap = null, vmapLoaded = false;
@@ -374,19 +437,19 @@ function openPreview(f) {
   const ov = document.createElement('div');
   ov.className = 'modal-ov';
   ov.innerHTML = `<div class="modal vf-modal">
-    <div class="modal-h"><b>${icon('drone')} ${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
+    <div class="modal-h"><b>${icon('drone')} ${esc(f.label || fmt.date(f.date) + ' · ' + (f.time || ''))}</b>
       <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
     <div class="modal-b">
       ${f.has_proxy
         ? `<video class="m-prev vf-prev" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" controls muted playsinline preload="none"></video>`
-        : `<img class="vf-prev-img" src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" alt="" width="960" height="540">`}
+        : `<img class="vf-prev-img" src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" alt="Miniatura de ${esc(flightTitle(f, a))}" width="960" height="540">`}
       <div class="tool-row vf-prev-chips">
         <span class="chip">${fmt.dur(f.duration_s)}</span>
-        <span class="chip">${Math.round(f.stats.max_rel_alt_m || 0)} m alt</span>
+        <span class="chip">${altM(f.stats.max_rel_alt_m)} alt</span>
         <span class="chip">${fmt.km(f.stats.distance_m || 0)}</span>
         ${models.has(f.clip_id) ? `<span class="chip on">3D</span>` : ''}
       </div>
-      ${a?.summary ? `<p class="footer-note vf-prev-note">${esc(a.summary)}</p>` : ''}
+      ${a?.summary ? `<p class="vf-prev-note">${esc(a.summary)}</p>` : ''}
       <div class="navrow vf-prev-actions">
         <a class="btn primary" href="flight.html?id=${encodeURIComponent(f.clip_id)}">${icon('film')} Ver vuelo completo</a>
         ${models.has(f.clip_id) ? `<a class="btn" href="tresd.html">${icon('cube')} Modelo 3D</a>` : ''}
@@ -429,17 +492,51 @@ document.querySelectorAll('[data-qf]').forEach(b => b.addEventListener('click', 
 }));
 document.querySelectorAll('[data-tier]').forEach(b => b.addEventListener('click', () => { state.tier = b.dataset.tier; render(); }));
 document.getElementById('sort').addEventListener('change', e => { state.sort = e.target.value; render(); });
-document.getElementById('vf-filters-btn').addEventListener('click', e => {
-  const open = document.getElementById('vf-more').classList.toggle('open');
-  e.currentTarget.setAttribute('aria-expanded', open);
+// Móvil: los filtros viven en una hoja inferior (openModal) en vez de empujar el contenido; los mismos nodos
+// (con sus listeners) se mueven a la hoja y vuelven a su sitio al cerrar.
+const filtersBtn = document.getElementById('vf-filters-btn');
+let sheetOpen = false;
+filtersBtn.addEventListener('click', () => {
+  if (sheetOpen) return;
+  const more = document.getElementById('vf-more');
+  const mark = document.createComment('vf-more');
+  more.before(mark);
+  const ov = document.createElement('div');
+  ov.className = 'modal-ov vf-sheet-ov';
+  ov.innerHTML = `<div class="modal vf-sheet">
+    <div class="modal-h"><b>${icon('sliders')} Filtros</b><button class="modal-x" type="button" aria-label="Cerrar">${icon('close')}</button></div>
+    <div class="modal-b"></div>
+    <div class="vf-sheet-f"><button type="button" class="btn ghost" data-reset>Limpiar</button><button type="button" class="btn primary" data-done></button></div>
+  </div>`;
+  ov.querySelector('.modal-b').appendChild(more);
+  more.classList.add('in-sheet');
+  sheetOpen = true;
+  filtersBtn.setAttribute('aria-expanded', 'true');
+  const close = openModal(ov, { initialFocus: '#sort', onClose: () => {
+    sheetOpen = false; filtersBtn.setAttribute('aria-expanded', 'false');
+    more.classList.remove('in-sheet'); mark.replaceWith(more);
+  } });
+  ov.querySelector('[data-done]').addEventListener('click', () => close());
+  ov.querySelector('[data-reset]').addEventListener('click', () => { clearFilters(); });
+  syncControls();
 });
 document.querySelectorAll('[data-view]').forEach(b =>
-  b.addEventListener('click', () => setView(b.dataset.view)));
+  b.addEventListener('click', () => {
+    const v = b.dataset.view;
+    // los modos de "Explorar por" se apagan al pulsarlos otra vez → vuelve a la cuadrícula
+    setView(b.closest('.vf-explore') && state.view === v ? 'grid' : v);
+  }));
 function setView(v) {
   state.view = v;
   localStorage.setItem('ab.vview', v);
-  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  syncViewButtons();
   render();
+}
+function syncViewButtons() {
+  document.querySelectorAll('[data-view]').forEach(b => {
+    const on = b.dataset.view === state.view;
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+  });
 }
 document.addEventListener('keydown', e => {
   if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
@@ -451,7 +548,7 @@ document.addEventListener('keydown', e => {
   const params = new URLSearchParams(location.search);
   if (params.get('q')) { state.q = params.get('q'); document.getElementById('q').value = state.q; }
   if (['grid', 'list', 'map', 'places', 'dates'].includes(params.get('v'))) state.view = params.get('v');
-  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === state.view));
+  syncViewButtons();
   flights = await getFlights();
   ai = await getAIAll(flights);   // embebido en flights.json: sin requests extra
   buildSpots();

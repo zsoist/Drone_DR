@@ -70,5 +70,27 @@
   .wp-modes button svg { display: none; }
   .wp-mis-sub { flex: none; text-align: center; }
   .wp-fly { width: 100%; }
-  .w-panel { margin-bottom: var(--sp-8); }
 }
+
+/* ── Poster: los splats renderizados tienen huecos transparentes → respaldo oscuro fijo en ambos temas ── */
+.wi-poster, .fv-pop-poster, .fv-pin-img, .wl-bg { background-color: #0A0C10; }   /* fixed dark backing (media chrome), same in both themes */
+
+/* meta de la isla: misma estructura en todas (fecha · vuelo), una línea, nunca se parte */
+.wi-meta { display: flex; gap: var(--sp-2); white-space: nowrap; overflow: hidden; }
+.wi-meta > span + span::before { content: "·"; margin-right: var(--sp-2); }
+
+/* estadísticas de la cabecera: valor arriba, etiqueta debajo → nada queda huérfano al envolver */
+.fv-statbar { gap: var(--sp-3) var(--sp-6); }
+.fv-statbar > span { display: flex; flex-direction: column; gap: var(--sp-0); white-space: nowrap; }
+.fv-statbar b { font-size: var(--fs-xl); font-weight: var(--fw-semibold); line-height: var(--lh-tight); }
+.fv-statbar em { font-style: normal; font-size: var(--fs-xs); color: var(--text-2); }
+
+/* entrada de las islas: solo la primera vez; cambiar de filtro no re-escalona */
+.w-rail.settled .wi { animation: none; opacity: 1; }
+
+/* toggle de vista + barra del mapa */
+.fv-viewseg { margin-top: var(--sp-4); width: fit-content; }
+.fv-mapbar .spacer { flex: 1; }
+@media (max-width: 640px) { .fv-mapbar { flex-wrap: wrap; } .fv-mapbar .spacer { display: none; } .fv-mapbar .seg { flex: 1 1 100%; } .fv-mapbar .seg button { flex: 1; } .fv-mapbar .btn { flex: 1; } }
+
+.w-panel { margin-bottom: 0; }   /* el padding inferior de <main> ya deja aire; sin ~150px muertos bajo el panel */

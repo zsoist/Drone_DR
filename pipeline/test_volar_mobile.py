@@ -11,7 +11,7 @@ import browser_matrix
 
 def css_norm(text: str) -> str:
     """Formatting-insensitive CSS: the contracts pin declarations, not whitespace
-    (the 2026-09-29 design-system rewrite reformatted style.css without changing rules)."""
+    (the 2026-09-29 design-system rewrite reformatted the stylesheets without changing rules)."""
     import re as _re
     text = _re.sub(r"\s+", " ", text)
     return _re.sub(r"\s*([{}:;,>])\s*", r"\1", text)
@@ -31,7 +31,7 @@ class VolarMobileHudContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = (ROOT / "web" / "volar.js").read_text()
-        cls.styles = (ROOT / "web" / "style.css").read_text()
+        cls.styles = (ROOT / "web" / "css" / "volar.css").read_text()
 
     def test_mobile_launchers_are_named_and_control_real_sheets(self):
         for contract in (
@@ -518,7 +518,7 @@ class VolarMobileHudContractTests(unittest.TestCase):
             coarse,
             r"\.vl-osd(?:,\s*\.vl-osd-home,\s*\.vl-osd-gimbal)?\s*\{\s*display:none",
         )
-        self.assertIn("[hidden] { display: none !important; }", self.styles)   # global [hidden] rule (2026-09 consolidation)
+        self.assertIn("[hidden] { display: none !important; }", css_norm((ROOT / "web" / "style.css").read_text()))   # global [hidden] rule (2026-09 consolidation)
         # motion rules (2026-09-29): the flash animates opacity, not box-shadow, and its
         # keyframes live with the other feedback keyframes; the trigger must still use it
         self.assertIn("@keyframes triggerFlash", self.styles)
