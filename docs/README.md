@@ -31,6 +31,7 @@ or adding UI. Acceptance evidence: [Design QA](qa/design-qa.md).
 - [Auth and security](AUTH_SECURITY.md)
 - [Splat Lab v2 plan](SPLATLAB_V2_PLAN.md)
 - [World upgrade plan — Blender, reconstruction, AI agents](WORLD_UPGRADE_PLAN.md) (2026-09-29, proposed)
+- [Capture protocol — DJI Flip / Neo 2 manual flights](CAPTURE_PROTOCOL.md) (W6; field checklist, also summarised in the upload flow)
 - [Engineering pitfalls](../CLAUDE.md)
 - Test entry point: `python3 pipeline/run_all_tests.py` (flags `--fast`, `-k NEEDLE`, `-j JOBS`, `-v`; runs
   every `pipeline/test_*.py` except `test_smoke.py`, plus `node --test` over the `test_*.mjs` files in `pipeline/`, `edge/` and

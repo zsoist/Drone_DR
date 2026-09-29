@@ -19,6 +19,7 @@ from pathlib import Path
 
 import collision_bake
 import dsm_lod
+import glb_export
 import mesh_coverage
 import scenes
 
@@ -219,6 +220,11 @@ def build(cid: str) -> dict:
                 "error": str(error),
             }
 
+    # W1: GLB (meshopt + KTX2) por tier de dispositivo. Solo se anuncian los tiers con
+    # GLB fresco (fingerprint) Y veredicto verde de glb_gate.py; sin ellos la web usa la
+    # escalera OBJ. collision.bin sigue saliendo del viewer OBJ.
+    glb_tiers = glb_export.approved(cid, vault=VAULT) if viewer_obj else {}
+
     caps = {
         "terrain": bool(lod),
         "ortho": bool(meta.get("ortho_asset")),
@@ -227,6 +233,8 @@ def build(cid: str) -> dict:
         "mesh": bool(viewer_obj),
         "collision": collision_ready,
     }
+    if glb_tiers:
+        caps["glb_mesh"] = True
     center = (lod or {}).get("center_wgs84")
     name = None
     if center:
@@ -265,6 +273,8 @@ def build(cid: str) -> dict:
                               if (mdir / "model" / "odm_textured_model_viewer_extra.mtl").exists() else None,
             "mesh_mtl_geo": f"data/models/{cid}/model/odm_textured_model_geo.mtl"
                             if (mdir / "model" / "odm_textured_model_geo.mtl").exists() else None,
+            **{f"mesh_glb_{tier}": f"data/models/{cid}/glb/{entry['file']}"
+               for tier, entry in glb_tiers.items()},
             "collision_bin": f"data/models/{cid}/collision.bin"
                              if collision_ready and viewer_obj else None,
             "collision_meta": f"data/models/{cid}/collision.json"
@@ -305,6 +315,10 @@ def build(cid: str) -> dict:
             "ortho_bytes": meta.get("ortho_bytes"),
         }.items() if v},
     }
+    if glb_tiers:
+        man["glb"] = {tier: {"bytes": entry["bytes"], "tris": entry["tris"],
+                             "gpu_texture_mb": entry["gpu_texture_mb"]}
+                      for tier, entry in glb_tiers.items()}
     site_scene = _site_for_version(cid)
     if site_scene:
         active_version = next((version for version in site_scene.get("versions") or []

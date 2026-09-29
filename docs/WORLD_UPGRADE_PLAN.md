@@ -131,7 +131,7 @@ Effort: 2–3 days.
 
 ### W6 — Capture protocol (biggest long-term quality lever)
 
-Manual protocol for Flip / Neo 2, documented in `docs/CAPTURE_PROTOCOL.md` and shown as a checklist
+Manual protocol for Flip / Neo 2, documented in [`docs/CAPTURE_PROTOCOL.md`](CAPTURE_PROTOCOL.md) and shown as a checklist
 in the upload flow:
 - **Stills, not video**, for mesh sites (Timed Shot 2–3 s); fixed shutter ≥1/500, ISO and WB locked.
 - Nadir lawnmower at 40–60 m (gimbal −90°) + oblique orbits at 3 heights (−25°, −45°, −60°),

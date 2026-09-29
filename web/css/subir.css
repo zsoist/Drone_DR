@@ -1,0 +1,23 @@
+/* Subir (dentro de Dron > Subida directa): panel «Cómo capturar para 3D» — solo layout de la página */
+.sb-cap > summary.ph { cursor: pointer; list-style: none; user-select: none; }
+.sb-cap > summary.ph::-webkit-details-marker { display: none; }
+.sb-cap > summary.ph::after {
+  content: ""; width: var(--ic-md); height: var(--ic-md); margin-left: auto; flex: none; background: var(--text-2);
+  -webkit-mask: var(--chev-d) center / contain no-repeat; mask: var(--chev-d) center / contain no-repeat;
+  transform: rotate(-90deg); transition: transform var(--dur-base) var(--ease-out);
+}
+.sb-cap[open] > summary.ph::after { transform: none; }
+.sb-cap:not([open]) > summary.ph { border-bottom: none; }
+.sb-cap > summary.ph:focus-visible { outline-offset: -2px; }
+.sb-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); }
+.sb-list li { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; font-size: var(--fs-md); line-height: var(--lh-base); }
+.sb-list li::before { content: ""; width: var(--ic-xs); height: var(--ic-xs); margin-top: 4px; border-radius: var(--r-xs); border: 1.5px solid var(--accent); flex: none; margin-left: 2px; }
+.sb-list li > span { flex: 1; min-width: 0; }
+.sb-list b { color: var(--text); font-weight: var(--fw-semibold); }
+.sb-list .mono { color: var(--text); }
+.sb-foot { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-top: var(--sp-4); }
+.sb-foot .dr-note { margin: 0; flex: 1 1 220px; }
+.sb-modal { max-width: 640px; }
+.sb-modal .modal-b h3 { margin: var(--sp-5) 0 var(--sp-2); font-size: var(--fs-2xs); letter-spacing: var(--tr-caps); text-transform: uppercase; color: var(--text-2); font-weight: 600; }
+.sb-modal .modal-b h3:first-child { margin-top: 0; }
+@media (max-width: 820px) { .sb-cap { margin-bottom: var(--sp-3); } }

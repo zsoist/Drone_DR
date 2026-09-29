@@ -3,10 +3,11 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=358';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=358';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=358';
-import { applyVisualCoverageMask } from '/flightverse/visual-coverage.js?v=358';
+import * as THREE from '/flightverse/three.js?v=360';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=360';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=360';
+import { applyVisualCoverageMask } from '/flightverse/visual-coverage.js?v=360';
+import { glbDeviceTier, glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=360';
 
 let sceneGenerationId = 0;
 export function createSceneGeneration() {
@@ -208,6 +209,136 @@ export async function attachVisualMesh(
     renderer,
     onProgress,
     coverageMask = null,
+    // 'auto' → GLB del tier del dispositivo si el manifiesto lo anuncia; false/'off'
+    // fuerza la escalera OBJ; 'mobile'|'desktop'|'extra' fuerza ese GLB (gates).
+    glb = 'auto',
+  } = {},
+) {
+  if (glb !== false && glb !== 'off') {
+    try {
+      const h = await attachGlbVisualMesh(man, scene, { renderer, onProgress, coverageMask, tier: glb });
+      if (h) return h;
+    } catch (err) {
+      // CUALQUIER fallo (red, meshopt, transcoder KTX2, GLB vacío): escalera OBJ de siempre
+      console.warn('[fv] malla GLB falló, uso la escalera OBJ:', err?.message || err);
+    }
+  }
+  return attachObjVisualMesh(man, scene, { renderer, onProgress, coverageMask });
+}
+
+// Reemplaza los materiales del GLB (PBR) por el MeshBasicMaterial unlit del camino OBJ
+// + máscara de cobertura. Devuelve si algún material quedó recortado por cobertura.
+function unlitFromGlb(root, { renderer, coverageMask }) {
+  const maxAniso = Math.min(8, renderer?.capabilities?.getMaxAnisotropy?.() || 4);
+  let coverageClipped = false;
+  root.traverse(node => {
+    if (!node.isMesh) return;
+    const src = Array.isArray(node.material) ? node.material : [node.material];
+    const photo = src.map(mat => {
+      if (mat.map) {
+        mat.map.colorSpace = THREE.SRGBColorSpace;
+        mat.map.anisotropy = maxAniso;
+      }
+      const m2 = new THREE.MeshBasicMaterial({
+        map: mat.map || null, color: mat.map ? 0xffffff : 0x8a97a8,
+        side: THREE.DoubleSide,
+      });
+      m2.name = mat.name;
+      coverageClipped = applyVisualCoverageMask(m2, {
+        texture: coverageMask?.texture,
+        worldSize: coverageMask?.worldSize,
+        texel: coverageMask?.texel,
+      }) || coverageClipped;
+      mat.dispose();                 // el PBR sale; el mapa se conserva en m2
+      return m2;
+    });
+    node.material = photo.length === 1 ? photo[0] : photo;
+    node.castShadow = false;
+    node.receiveShadow = false;
+  });
+  return coverageClipped;
+}
+
+// Malla como GLB (meshopt + KTX2): mismo marco, misma transformación y mismo material
+// unlit que el OBJ. Devuelve null si el manifiesto no anuncia GLB para el tier;
+// LANZA ante cualquier error (el wrapper cae al OBJ).
+async function attachGlbVisualMesh(man, scene, { renderer, onProgress, coverageMask, tier }) {
+  const want = tier && tier !== 'auto' ? tier : glbDeviceTier();
+  const url = glbUrlFromManifest(man, want);
+  const offset = man.transforms?.mesh_offset;
+  if (!url || !Array.isArray(offset) || offset.length !== 3) return null;
+  if (!renderer) throw new Error('GLB necesita el renderer (detectSupport KTX2)');
+  const loaded = await loadGlbMesh(url, { renderer, onProgress });
+  let coverageClipped;
+  try {
+    coverageClipped = unlitFromGlb(loaded.root, { renderer, coverageMask });
+  } catch (err) {
+    loaded.dispose();
+    throw err;
+  }
+  // mismo marco que el OBJ: el GLB es el viewer.obj (centrado por su media) → misma
+  // rotación norte y mismo offset (ver attachObjVisualMesh).
+  const object = new THREE.Group();
+  object.name = 'fv-photogrammetry-visual';
+  object.userData.fvMeshSource = 'glb';
+  object.userData.fvGlbTier = want;
+  object.add(loaded.root);
+  object.rotation.x = -Math.PI / 2;
+  object.position.set(offset[0], offset[2] - man.world.elev_min, -offset[1]);
+  scene.add(object);
+  let current = loaded;
+  let upgraded = false;
+  let upgrading = null;
+  let disposed = false;
+  return {
+    object,
+    coverageClipped,
+    source: 'glb',
+    tier: want,
+    // "calidad extra": el equivalente GLB es el tier `extra` (malla completa + atlas
+    // geo). Intercambia el contenido del MISMO grupo; si falla deja el tier actual.
+    async upgradeTextures() {
+      if (upgraded || disposed) return false;
+      if (upgrading) return upgrading;
+      const extraUrl = glbUrlFromManifest(man, 'extra');
+      if (!extraUrl || want === 'extra') return false;
+      upgrading = (async () => {
+        try {
+          const next = await loadGlbMesh(extraUrl, { renderer });
+          if (disposed) { next.dispose(); return false; }
+          unlitFromGlb(next.root, { renderer, coverageMask });
+          object.remove(current.root);
+          current.dispose();
+          object.add(next.root);
+          current = next;
+          object.userData.fvGlbTier = 'extra';
+          upgraded = true;
+          return true;
+        } catch (err) {
+          console.warn('[fv] upgrade GLB extra falló, conservo el tier actual:', err?.message || err);
+          return false;
+        } finally {
+          upgrading = null;
+        }
+      })();
+      return upgrading;
+    },
+    dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      scene.remove(object);
+      current.dispose();
+    },
+  };
+}
+
+async function attachObjVisualMesh(
+  man,
+  scene,
+  {
+    renderer,
+    onProgress,
+    coverageMask = null,
   } = {},
 ) {
   const objUrl = man.assets?.mesh_viewer;
@@ -269,6 +400,7 @@ export async function attachVisualMesh(
   return {
     object,
     coverageClipped,
+    source: 'obj',
     // sube los mapas al tier dado (p.ej. atlas geo full-res) intercambiando
     // por NOMBRE de material — one-shot, perezoso, sin recrear geometría
     async upgradeTextures(newMtlUrl) {
@@ -318,7 +450,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=358');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=360');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     sp.userData.fvRefs = 0;

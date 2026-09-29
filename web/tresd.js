@@ -1,10 +1,11 @@
-  import * as THREE from '/vendor/three180.module.js?v=358';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=358';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=358';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=358';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=358';
-  import { mountSplatViewer } from '/splatview.js?v=358';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=358';
+  import * as THREE from '/vendor/three180.module.js?v=360';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=360';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=360';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=360';
+  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=360';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=360';
+  import { mountSplatViewer } from '/splatview.js?v=360';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=360';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -3078,22 +3079,47 @@
     mc.preload();
     return mc;
   }
+  // W1: escalera de calidad → tier de GLB (pipeline/glb_export.py). bajo=mobile, alto/extra=desktop,
+  // ultra=extra (malla completa + atlas geo). Sin GLB anunciado (o ante CUALQUIER error) se usa el OBJ.
+  const GLB_FOR = { bajo: 'mobile', alto: 'desktop', extra: 'desktop', ultra: 'extra' };
   async function buildMeshViewer(box, base, model, stM) {
     const myLoad = box._loadToken;                 // token de currency: si cambia de proyecto, aborta
     let curTier = matchMedia('(max-width: 820px), (pointer: coarse)').matches ? 'bajo' : 'alto';
-    const mc0 = await tierMaterials(base, curTier, true);
-    if (box._loadToken !== myLoad) return;         // el usuario cambió de proyecto durante la carga
-    const meshFile = (model.model_viewer || model.model_obj || 'model/odm_textured_model_geo.obj').split('/').pop();
-    const obj = await new OBJLoader().setMaterials(mc0).setPath(base).loadAsync(meshFile,
-      ev => { if (ev.loaded) stM.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB descargados`; });
-    if (box._loadToken !== myLoad) return;         // no montar la malla del proyecto viejo en el box nuevo
+    let glbMan = null, glbLoaded = null, curGlb = null;
+    try {
+      const r = await fetch(`data/models/${model.clip_id}/scene.v2.json`, { cache: 'no-store' });
+      glbMan = r.ok ? await r.json() : null;
+    } catch { glbMan = null; }
+    const glbUrlFor = tier => glbUrlFromManifest(glbMan, GLB_FOR[tier]);
+    if (glbUrlFor(curTier)) {
+      try {
+        glbLoaded = await loadGlbMesh(glbUrlFor(curTier), {
+          onProgress: f => { if (f != null) stM.textContent = `Malla GLB · ${Math.round(f * 100)}%`; } });
+        curGlb = GLB_FOR[curTier];
+      } catch (err) {
+        console.warn('[tresd] malla GLB falló, uso OBJ:', err?.message || err);
+        glbLoaded = null;
+      }
+    }
+    if (box._loadToken !== myLoad) { glbLoaded?.dispose(); return; }
+    let obj;
+    if (glbLoaded) {
+      obj = glbLoaded.root;
+    } else {
+      const mc0 = await tierMaterials(base, curTier, true);
+      if (box._loadToken !== myLoad) return;         // el usuario cambió de proyecto durante la carga
+      const meshFile = (model.model_viewer || model.model_obj || 'model/odm_textured_model_geo.obj').split('/').pop();
+      obj = await new OBJLoader().setMaterials(mc0).setPath(base).loadAsync(meshFile,
+        ev => { if (ev.loaded) stM.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB descargados`; });
+      if (box._loadToken !== myLoad) return;         // no montar la malla del proyecto viejo en el box nuevo
+    }
     const { scene, cam, controls, renderer } = makeScene(box);
     renderer.setPixelRatio(prFor(curTier));                    // supersampling del tier inicial
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
     // por cada submalla guardo su NOMBRE de material (idéntico entre tiers) + los
     // materiales Foto (unlit) y Relieve (con luces) para intercambiar sin reparsear.
     const swatches = [];
-    obj.traverse(n => {
+    const buildSwatches = root => root.traverse(n => {
       if (!n.isMesh) return;
       // normales NO se computan aquí: solo 'Relieve' (Lambert, con luz) las usa; el default
       // 'Foto' (Basic, unlit) no. Se calculan perezosamente al primer switch a Relieve (#18)
@@ -3103,6 +3129,7 @@
       swatches.push({ mesh: n, names: src.map(m => m.name), foto: mk(THREE.MeshBasicMaterial), relieve: mk(THREE.MeshLambertMaterial) });
       n.material = swatches[swatches.length - 1].foto.length === 1 ? swatches[swatches.length - 1].foto[0] : swatches[swatches.length - 1].foto;
     });
+    buildSwatches(obj);
     let renderMode = 'foto', normalsReady = false;
     const applyMode = () => {
       if (renderMode === 'relieve' && !normalsReady) {       // computa normales una sola vez, al pedirse
@@ -3112,8 +3139,35 @@
       swatches.forEach(s => { s.mesh.material = s[renderMode].length === 1 ? s[renderMode][0] : s[renderMode]; });
       box._wake?.();
     };
+    // GLB: alto↔extra comparten el GLB desktop (solo cambia el pixelRatio); bajo/ultra
+    // cargan otro GLB y reemplazan la malla. Si falla deja el tier actual intacto.
+    async function switchTierGlb(tier) {
+      const want = GLB_FOR[tier], url = glbUrlFor(tier);
+      if (!url) return false;
+      if (want !== curGlb) {
+        let next;
+        try { next = await loadGlbMesh(url); }
+        catch (err) { console.warn('[tresd] GLB', want, 'falló:', err?.message || err); return false; }
+        if (box._loadToken !== myLoad) { next.dispose(); return false; }
+        scene.remove(obj);
+        glbLoaded.dispose();
+        obj = next.root; glbLoaded = next; curGlb = want;
+        obj.rotation.x = -Math.PI / 2;
+        scene.add(obj);
+        swatches.length = 0;
+        buildSwatches(obj);
+        normalsReady = false;                                 // la geometría nueva aún no tiene normales
+        applyMode();
+      }
+      renderer.setPixelRatio(prFor(tier));
+      curTier = tier;
+      box._wake?.();
+      setTimeout(() => box._wake?.(), 900);
+      return true;
+    }
     async function switchTier(tier) {
       if (tier === curTier) return false;
+      if (curGlb) return switchTierGlb(tier);
       let mc;
       try { mc = await tierMaterials(base, tier); }
       catch { return false; }                                 // deja el tier actual intacto
