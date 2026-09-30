@@ -15,6 +15,7 @@ ap.add_argument("--inputs", nargs="+", required=True)
 ap.add_argument("--out", required=True)
 ap.add_argument("--target", default="0,0,20")
 ap.add_argument("--dist", type=float, default=120)
+ap.add_argument("--cams", default="", help="name:az:el:dist:tx:ty:tz;... custom perspective views (blender space) instead of the default 5")
 ap.add_argument("--w", type=int, default=1400)
 ap.add_argument("--h", type=int, default=1000)
 a = ap.parse_args(argv)
@@ -44,6 +45,13 @@ sc.collection.objects.link(cam)
 sc.camera = cam
 cam_d.clip_end = 1000
 views = [("oblique_a", 30, 35), ("oblique_b", 120, 35), ("oblique_c", 210, 35), ("oblique_d", 300, 35), ("top", 0, 90)]
+custom = {}
+if a.cams:
+    views = []
+    for c in a.cams.split(";"):
+        nm, az, el, dist, x, y, z = c.split(":")
+        views.append((nm, float(az), float(el)))
+        custom[nm] = (float(dist), Vector((float(x), float(y), float(z))))
 for name, az, el in views:
     if name == "top":
         cam_d.type = "ORTHO"; cam_d.ortho_scale = 110
@@ -52,8 +60,9 @@ for name, az, el in views:
     else:
         cam_d.type = "PERSP"; cam_d.lens = 35
         e, z = math.radians(el), math.radians(az)
-        cam.location = target + Vector((math.sin(z) * math.cos(e), -math.cos(z) * math.cos(e), math.sin(e))) * a.dist
-        d = target - cam.location
+        dist_, tgt_ = custom.get(name, (a.dist, target))
+        cam.location = tgt_ + Vector((math.sin(z) * math.cos(e), -math.cos(z) * math.cos(e), math.sin(e))) * dist_
+        d = tgt_ - cam.location
         cam.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
     sc.render.filepath = f"{a.out}_{name}.png"
     bpy.ops.render.render(write_still=True)

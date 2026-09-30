@@ -5,6 +5,7 @@
     python3 -m pipeline.buildings.run shell      <clip_id>     # step 2 (Roofer or LoD1.x fallback)
     python3 -m pipeline.buildings.run bake       <clip_id>     # step 3 (Blender headless)
     python3 -m pipeline.buildings.run export     <clip_id>     # step 4 (gltfpack)
+    python3 -m pipeline.buildings.run photobake  <clip_id>     # W4b: best-photo projected atlas + GLB (no Blender)
     python3 -m pipeline.buildings.run all        <clip_id>
 
 Outputs under models/<cid>/buildings/ ; scratch (point-cloud crops, Roofer output, raw
@@ -318,9 +319,12 @@ def step_export(cid: str, vault: Path = VAULT, *, quality: int = 10) -> dict:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("step", choices=["footprints", "shell", "bake", "export", "all"])
+    ap.add_argument("step", choices=["footprints", "shell", "bake", "export", "all", "photobake"])
     ap.add_argument("clip_id")
     a = ap.parse_args()
+    if a.step == "photobake":      # W4b: photo-projected textures (replaces bake+export for the visual GLB)
+        from buildings import photobake as PBK
+        print(json.dumps({k: {kk: vv for kk, vv in v.items() if kk != "facets"} for k, v in PBK.photobake(a.clip_id).items()}, indent=1, default=float))
     if a.step in ("footprints", "all"):
         print(json.dumps(step_footprints(a.clip_id), indent=1))
     if a.step in ("shell", "all"):
