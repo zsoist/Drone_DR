@@ -25,11 +25,14 @@
 | cinematic | 7000 | CUDA estricto · foto-real compartible |
 | ultra | 15000 | CUDA estricto · crecimiento completo |
 | ultra20 | 20000 | CUDA estricto · refinamiento post-densificación |
-| frontier | 30000 | CUDA estricto · schedule completo (default interactivo) |
+| frontier | 30000 | CUDA estricto · schedule completo (default interactivo hasta 2026-09-30) |
 | grandmaster | 40000 | CUDA estricto · campaña máxima |
-| mcmc1m / mcmc3m | 15000 | opt-in (W2): splatfacto + MCMC con tope de 1M / 3M gaussianas; ver SPLAT_EXPERIMENTS.md |
+| **mcmc1m** ("Equilibrado (MCMC 1M)") | 15000 | **default interactivo desde 2026-09-30** (`DEFAULT_SPLAT_PRESET`): splatfacto + MCMC, tope 1M gaussianas; ganó en PSNR/LPIPS/SOG en Dialectica (W2) y en una escena rural (W2b). `select_only` |
+| mcmc3m ("Calidad (MCMC 3M)") | 15000 | tope 3M; mejor calidad en Dialectica pero SOG mayor y en la escena rural crasheó dos veces en 8 GB (W2b). `select_only` |
 
-Fast/Medium aceptan Metal/CPU (sólo `AEROBRAIN_COMPUTE=local`, legacy) o CUDA; bajo PC-only van a CUDA. Los otros cinco sólo aceptan CUDA. En CUDA,
+`mcmc1m` es sólo el preset preseleccionado por la UI (`default: true` en `/api/splat_profiles`): un `iters` solo, o un request sin preset, sigue resolviendo como antes (`select_only`), y los splats existentes no se tocan.
+
+Fast/Medium aceptan Metal/CPU (sólo `AEROBRAIN_COMPUTE=local`, legacy) o CUDA; bajo PC-only van a CUDA. Los demás sólo aceptan CUDA. En CUDA,
 `auto = d1 → d2 únicamente por OOM clasificado`; `full = d1`; `half = d2`. Nunca existe
 Ultra→Medium ni CUDA→Mac implícito. El sidecar conserva solicitado/efectivo, resolución,
 intentos, GPU/driver, duración, gaussianas, parámetros y hash.

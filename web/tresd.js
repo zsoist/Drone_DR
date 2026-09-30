@@ -1,17 +1,19 @@
-  import * as THREE from '/vendor/three180.module.js?v=363';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=363';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=363';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=363';
-  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=363';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=363';
-  import { mountSplatViewer } from '/splatview.js?v=363';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=363';
+  import * as THREE from '/vendor/three180.module.js?v=364';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=364';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=364';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=364';
+  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=364';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=364';
+  import { mountSplatViewer } from '/splatview.js?v=364';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=364';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
   const splatKey = s => s.path || s.name;
   const splatUrl = s => 'data/splats/' + splatKey(s).split('/').map(encodeURIComponent).join('/');
-  const SPLAT_PROFILE_KEYS = ['fast', 'medium', 'cinematic', 'ultra', 'ultra20', 'frontier', 'grandmaster'];
+  const SPLAT_PROFILE_KEYS = ['fast', 'medium', 'cinematic', 'ultra', 'ultra20', 'frontier', 'grandmaster', 'mcmc1m', 'mcmc3m'];
+  const SPLAT_DEFAULT_KEY = 'mcmc1m';   // espejo de splat_presets.DEFAULT_SPLAT_PRESET (el servidor manda `default`)
+  const defaultSplatKey = profiles => (profiles || []).find(p => p.default)?.key || SPLAT_DEFAULT_KEY;
   const SPLAT_COPY = {
     fast: 'Vista previa para validar poses y cobertura.',
     medium: 'Inspección estable con pocas iteraciones.',
@@ -20,13 +22,16 @@
     ultra20: 'Refinamiento CUDA después de estabilizar gaussianas.',
     frontier: 'Ruta 30K completa para máxima convergencia.',
     grandmaster: 'Refinamiento extendido 40K de máxima calidad.',
+    mcmc1m: 'Recomendado: mejor nitidez que Ultra 15K con ~40% menos gaussianas y archivo más liviano.',
+    mcmc3m: 'MCMC con tope 3M: máxima calidad medida en 8 GB, archivo más grande.',
   };
   // Perfiles de respaldo (si /api/splat_profiles falla): todo el cómputo corre en el PC → CUDA-only.
   const _profileFallback = SPLAT_PROFILE_KEYS.map((key, i) => ({
     key, label: ['Fast 1K', 'Medium 2K', 'Cinematic 7K', 'Ultra 15K',
-      'Ultra+ 20K', 'Frontier 30K', 'Grandmaster 40K'][i],
-    iters: [1000, 2000, 7000, 15000, 20000, 30000, 40000][i],
+      'Ultra+ 20K', 'Frontier 30K', 'Grandmaster 40K', 'Equilibrado (MCMC 1M)', 'Calidad (MCMC 3M · experimental)'][i],
+    iters: [1000, 2000, 7000, 15000, 20000, 30000, 40000, 15000, 15000][i],
     supported_backends: ['cuda'], default_backend: 'cuda', eta_mps: null,
+    default: key === SPLAT_DEFAULT_KEY,
   }));
   // 'pc' = todo el procesamiento corre en la GPU remota (el servidor lo declara con
   // `compute` en /api/splat_profiles). Es el default: el respaldo y la realidad actual.
@@ -72,12 +77,12 @@
     if (pcOnly()) return { main: 'Tiempo variable', sub: 'Se estimará al medir en el PC CUDA', cls: 'first' };
     return { main: profile.eta_mps || 'Tiempo variable', sub: 'Estimación local Apple Metal', cls: 'local' };
   }
-  function renderSplatProfiles(profiles, selected = 'frontier') {
+  function renderSplatProfiles(profiles, selected = defaultSplatKey(profiles)) {
     return profiles.map(profile => {
       const onlyCuda = profile.supported_backends?.length === 1 && profile.supported_backends[0] === 'cuda';
       const eta = splatEta(profile);
-      return `<button type="button" class="mpreset splat-profile${profile.key === selected ? ' on' : ''}${onlyCuda ? ' cuda-only' : ' local-ok'}${profile.key === 'frontier' ? ' featured' : ''}"
-        data-splat-profile="${esc(profile.key)}" data-iters="${esc(profile.iters)}" data-cuda-only="${onlyCuda ? '1' : '0'}">
+      return `<button type="button" class="mpreset splat-profile${profile.key === selected ? ' on' : ''}${onlyCuda ? ' cuda-only' : ' local-ok'}${profile.key === defaultSplatKey(profiles) ? ' featured' : ''}"
+        data-badge="${esc(profile.key === 'mcmc1m' ? '1M' : profile.iters >= 1000 ? profile.iters / 1000 + 'K' : profile.iters)}" data-splat-profile="${esc(profile.key)}" data-iters="${esc(profile.iters)}" data-cuda-only="${onlyCuda ? '1' : '0'}">
         <span class="sp-profile-top"><b>${esc(profile.label)}</b><em>${onlyCuda ? 'NVIDIA CUDA' : 'MAC / CUDA'}</em></span>
         <span class="sp-eta ${eta.cls}">${esc(eta.main)}</span>
         <small>${esc(eta.sub)}</small><small class="sp-desc">${esc(splatCopy(profile.key) || profile.description)}</small>
@@ -95,7 +100,7 @@
     const cudaToggle = root.querySelector('[data-cuda-toggle]');
     const cudaOnly = card?.dataset.cudaOnly === '1';
     return {
-      preset: card?.dataset.splatProfile || 'frontier',
+      preset: card?.dataset.splatProfile || SPLAT_DEFAULT_KEY,
       backend: cudaOnly || cudaToggle?.checked ? 'cuda' : 'metal',
       resolution: root.querySelector('[data-splat-resolution].on')?.dataset.splatResolution || 'auto',
       cudaOnly,
@@ -1526,8 +1531,8 @@
           <span>${icon('spark')} <b>También entrenar gaussian splat</b> al terminar el 3D (foto-realista)</span></label>
         <div id="m-splatpreset" class="splat-config" style="display:none">
           <div class="splat-contract-head"><span><b>Calidad gaussian</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC (CUDA estricto).' : 'Fast/Medium pueden correr en el Mac. 7K–40K son CUDA-only.'}</small></span>
-            <span class="splat-contract-badge">30K READY</span></div>
-          <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles, 'frontier')}</div>
+            <span class="splat-contract-badge">MCMC 1M READY</span></div>
+          <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles)}</div>
           <label class="proc-phase compute-choice" id="m-cuda-row"><input type="checkbox" id="m-cuda" data-cuda-toggle checked>
             <span>${icon('cpu')} <b>Usar PC NVIDIA CUDA</b><small>RTX 4060 Ti · entrenamiento remoto sin ocupar la GPU del Mac</small></span></label>
           ${splatResolutionControls()}
@@ -2387,11 +2392,11 @@
       <label class="proc-phase compute-choice"><input type="checkbox" data-scene-odm-cuda checked>
         <span>${icon('cpu')} <b>ODM en PC NVIDIA CUDA</b><small>Alta/Extra/Ultra: CUDA estricto, con fusión densa preflight y evidencia remota preservada; sin fallback local.</small></span></label>
       <label class="proc-phase"><input type="checkbox" data-scene-splat checked>
-        <span>${icon('spark')} <b>Entrenar Gaussian al terminar</b><small>30K por defecto; 7K–40K conservan la solicitud y nunca caen al Mac.</small></span></label>
+        <span>${icon('spark')} <b>Entrenar Gaussian al terminar</b><small>MCMC 1M por defecto; 7K–40K conservan la solicitud y nunca caen al Mac.</small></span></label>
       <div class="splat-config scene-splat" data-scene-splat-config>
         <div class="splat-contract-head"><span><b>Calidad Gaussian</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC (CUDA estricto).' : 'Fast/Medium: Mac o CUDA · 7K–40K: CUDA estricto.'}</small></span>
-          <span class="splat-contract-badge">30K READY</span></div>
-        <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles, 'frontier')}</div>
+          <span class="splat-contract-badge">MCMC 1M READY</span></div>
+        <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles)}</div>
         <label class="proc-phase compute-choice"><input type="checkbox" data-cuda-toggle checked>
           <span>${icon('cpu')} <b>Usar PC NVIDIA CUDA</b><small>RTX 4060 Ti · sin degradación silenciosa de calidad.</small></span></label>
         ${splatResolutionControls()}
@@ -3596,7 +3601,7 @@
       <div id="ms-score"></div>
       <div class="splat-contract-head"><span><b>Calidad del entrenamiento</b><small>Tiempo medido cuando existe; proyección identificada cuando todavía no.</small></span>
         <span class="splat-contract-badge">CUDA 30K / 40K</span></div>
-      <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles, 'frontier')}</div>
+      <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles)}</div>
       <label class="proc-phase compute-choice" id="gs-cuda-row"><input type="checkbox" id="gs-cuda" data-cuda-toggle checked>
         <span>${icon('cpu')} <b>Entrenar en nodo NVIDIA CUDA</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC; la solicitud es CUDA estricta.' : 'Fast/Medium pueden usar Apple Metal; 7K–40K bloquean CUDA por calidad.'}</small></span></label>
       ${splatResolutionControls()}

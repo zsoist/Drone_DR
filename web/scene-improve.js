@@ -207,7 +207,7 @@ function renderWorkspace() {
             <summary>Ajustes avanzados</summary>
             <div class="si-settings">
               <label>Calidad ODM<select class="ctl" id="si-preset"><option value="extra">Extra 3D · edificio</option><option value="alta">Alta · nube/DSM</option><option value="estandar">Estándar</option><option value="rapido">Rápida</option><option value="ultra">Ultra 3D</option></select></label>
-              <label>Gaussian<select class="ctl" id="si-splat-preset"><option value="grandmaster">Grandmaster 40K</option><option value="frontier">Frontier 30K</option><option value="ultra20">Ultra+ 20K</option><option value="ultra">Ultra 15K</option></select></label>
+              <label>Gaussian<select class="ctl" id="si-splat-preset"><option value="mcmc1m">Equilibrado (MCMC 1M)</option><option value="mcmc3m">Calidad (MCMC 3M · experimental)</option><option value="grandmaster">Grandmaster 40K</option><option value="frontier">Frontier 30K</option><option value="ultra20">Ultra+ 20K</option><option value="ultra">Ultra 15K</option></select></label>
               <label>Resolución CUDA<select class="ctl" id="si-resolution"><option value="auto">Completa → ½ solo por OOM</option><option value="full">Solo completa</option><option value="half">½ desde el inicio</option></select></label>
               <label class="si-check"><input type="checkbox" id="si-then-splat" checked> Generar Gaussian después de ODM</label>
             </div>

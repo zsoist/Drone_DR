@@ -21,7 +21,7 @@ class SplatFrontierUiContractTests(unittest.TestCase):
         self.assertIn("/api/splat_profiles", self.tresd)
         self.assertIn("data-splat-profile", self.tresd)
         for key in ("fast", "medium", "cinematic", "ultra", "ultra20",
-                    "frontier", "grandmaster"):
+                    "frontier", "grandmaster", "mcmc1m", "mcmc3m"):
             self.assertIn(key, self.tresd)
 
     def test_ui_exposes_strict_cuda_resolution_and_truthful_eta_sources(self):
@@ -164,7 +164,11 @@ class SplatFrontierUiContractTests(unittest.TestCase):
         self.assertIn("7K–40K permanece CUDA estricto", self.tresd)
 
     def test_scene_improvement_uses_the_same_seven_profile_contract(self):
-        self.assertIn("renderSplatProfiles(splatProfiles, 'frontier')", self.tresd)
+        self.assertIn("renderSplatProfiles(splatProfiles)", self.tresd)
+        self.assertNotIn("renderSplatProfiles(splatProfiles, 'frontier')", self.tresd)
+        self.assertIn("const SPLAT_DEFAULT_KEY = 'mcmc1m'", self.tresd)
+        self.assertIn('<option value="mcmc1m">Equilibrado (MCMC 1M)</option>',
+                      (ROOT / "web" / "scene-improve.js").read_text())
         self.assertIn("selectedSplatRequest(sceneSplatConfig)", self.tresd)
         self.assertNotIn("data-scene-splat-preset", self.tresd)
 

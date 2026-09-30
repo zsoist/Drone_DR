@@ -389,3 +389,49 @@ python3 w2_chain.py <arm>            # ply -> .splat -> autoclean(aerial) -> SOG
 `w2_run.py` builds the script with `gpu_lane.train_script` (paths rebased to the sandbox), then runs eval + `ns-export`.
 Use in production: `{"preset": "mcmc1m"}` (train_args carry `--pipeline.model.cap-max`, which makes `gpu_lane` launch
 `splatfacto_mcmc` and ship the module to `/root/gpu-jobs/lib`; `finalize_train` exports either method).
+
+## W2b - MCMC on a rural / vegetation-heavy scene, then promotion of mcmc1m to default (2026-09-30)
+
+Follow-up of W2 (which was one urban scene). Same harness, copied to `experiments/w2b-rural-2026-09-30/` (`w2_run.py`,
+`w2_chain.py`, `w2_montage.py`, `lib/w2_eval.py`, `lib/splatfacto_mcmc.py` identical to `pipeline/`). Same stack (nerfstudio
+1.1.5, gsplat 1.4.0, RTX 4060 Ti 8 GB), 15,000 iterations, input d1, image cache on CPU (production policy), eval = every 8th image
+(15 eval / 102 train views), `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for **all** arms, same flags as W2.
+
+**Scene: `recon_d77ef7af86`** (117 frames 3072x1728, OpenSfM->COLMAP export as shipped by the worker). Chosen by measuring
+greenness of `ortho_thumb.webp` (share of pixels with G > 1.05 R and G > 1.05 B, 400 px): d77 = **0.80**, next 0.50
+(`DJI_20260706133243_0100_D`, a sports park with lawns, urban), the rest 0.17-0.33. d77 is pasture, forest edges and
+a few farm buildings (Dialectica was 0.27). Caveat versus the "prefer full_3d" rule: d77 is published as `ortho_25d`
+(nadir-biased flight, 117 cameras); it is the only truly rural scene with a ready `colmap_export` and no full_3d scene is
+rural (the greenest full_3d, 0100_D, is 0.50 and needs Docker for the export). Held-out views therefore include some ground-level
+frames (s0/s2) that no arm reconstructs well.
+
+| arm | PSNR | SSIM | LPIPS | Gaussians (trainer / after clean) | peak VRAM | train | SOG clean |
+|---|---|---|---|---|---|---|---|
+| base (gpu_lane splatfacto flags) | 20.93 | 0.529 | 0.587 | 0.95M / 0.82M | 2.6 GB | 32.1 min | 10.30 MB |
+| mcmc1m | **21.64** | **0.536** | **0.535** | 1.00M / 0.76M | 4.7 GB | 51.1 min | **9.75 MB** |
+| mcmc3m | crashed twice | | | | 7.6 GB | | |
+
+- mcmc1m vs base: +0.71 dB PSNR, LPIPS -0.052 (-9%), SSIM +0.007, SOG -5% (Dialectica: +0.55 dB, -0.012, -42%). The decision
+  rule (PSNR and LPIPS better AND SOG <= base) holds on the second scene, too.
+- The SOG gain is small here because plain splatfacto only reached 0.95M Gaussians on this smaller scene (nothing to cap); the win
+  is quality per Gaussian, not size. Costs vs base: +59% train time (51 vs 32 min) and 4.7 GB peak (W2 measured 2.7 GB on the
+  larger scene; still far below the 8 GB card).
+- mcmc3m **failed twice** at step ~7.3K (48%) with `CUDA driver error: device not ready` inside gsplat `isect_tiles`, telemetry at
+  7.6 GB used just before. On this scene the 3M cap does not fit reliably on the 8 GB card (it did on Dialectica, 4.8 GB).
+  No mitigation attempted; treat `mcmc3m` as scene-dependent / unsafe on 8 GB until measured per scene.
+- Eye check (6 held-out views, GT | base | mcmc1m, `scratchpad/worlds/w2b/sxs_*.jpg`, eval idx 1,3,5,8,10,13): base shows directional
+  streaking/smearing in the grass and pasture (looks like motion blur); mcmc1m renders grass as cleaner texture and keeps
+  roofs, car, fences and pond edges sharper. Trees: both soft; mcmc1m is slightly muddier in some dense canopy but no dropouts,
+  holes or floaters, and no sky problems in either arm (aerial views, sky barely visible). The 1M cap does not hurt vegetation here.
+  The ground-level eval view (terrace, id 3) is poor for both, expected from a nadir-biased flight.
+- 30K vs 15K for mcmc1m was **not measured**: ~100 min on this scene, over the 1.5 h budget. The default therefore ships at the
+  measured 15K schedule (`stop-split-at 12500`); `frontier`/`grandmaster` stay selectable for the long schedule.
+- Caveats: two scenes, single seed, raw-model metrics, 15 eval views.
+
+**Promotion.** `mcmc1m` is now the interactive default for new splat jobs (`splat_presets.DEFAULT_SPLAT_PRESET`, exposed as
+`default: true` in `/api/splat_profiles`; UI label "Equilibrado (MCMC 1M)"; `mcmc3m` is "Calidad (MCMC 3M)"). Unchanged on purpose:
+bare `{"iters": N}` and preset-less API requests (still `select_only`), every other preset, existing splats, campaign
+allow-list (ultra/ultra20/frontier/grandmaster), and the phased ODM->splat server fallback.
+
+Reproduce: same commands as W2 with `w2b-rural-2026-09-30/` scripts; dataset name `rural`, `EVAL_IDX="1,3,5,8,10,13"`, `--alloc expandable_segments:True`.
+Artifacts kept there: `chain/*/*.clean.sog`, `results/` (timing, metrics, telemetry, mcmc3m crash tail), `renders/`.

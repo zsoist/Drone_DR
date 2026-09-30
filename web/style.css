@@ -3833,7 +3833,7 @@ button.jt-cell:active { transform:translateY(0) scale(.995) }
 .splat-profile.cuda-only { border-color:rgba(118,185,0,.2) }
 .splat-profile.cuda-only.on { border-color:#76b900; box-shadow:0 0 0 1px rgba(118,185,0,.35),
   0 14px 34px -18px rgba(118,185,0,.55) }
-.splat-profile.featured::before { content:'30K'; position:absolute; right:8px; bottom:8px;
+.splat-profile.featured::before { content:attr(data-badge); position:absolute; right:8px; bottom:8px;
   color:rgba(154,222,46,.22); font:700 var(--fs-3xl)/1 var(--mono); letter-spacing:var(--tr-display); z-index:-1 }
 .sp-profile-top { width:100%; display:flex; align-items:center; justify-content:space-between; gap:7px }
 .sp-profile-top b { font-size:var(--fs-md); color:var(--text) }

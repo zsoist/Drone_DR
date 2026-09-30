@@ -8,6 +8,11 @@ elsewhere.
 SUPPORTED_SPLAT_BACKENDS = ("metal", "cpu", "cuda")
 SPLAT_RESOLUTIONS = ("auto", "full", "half")
 
+# Preset pre-selected by the interactive UI for NEW splat jobs (W2 + W2b, docs/SPLAT_EXPERIMENTS.md).
+# This is a UI/product default only: a bare {"iters": N} request never resolves to it (select_only),
+# and a request with no preset keeps the legacy resolution. Existing splats are untouched.
+DEFAULT_SPLAT_PRESET = "mcmc1m"
+
 
 def _cuda_config():
     return {
@@ -158,14 +163,15 @@ SPLAT_PRESETS = {
             ],
         },
     },
-    # W2 (docs/SPLAT_EXPERIMENTS.md, 2026-09-29): gsplat MCMC densification with a hard Gaussian
-    # cap. Opt-in only (never a default, never resolved from a bare iteration count).
+    # W2/W2b (docs/SPLAT_EXPERIMENTS.md): gsplat MCMC densification with a hard Gaussian cap.
+    # mcmc1m is the interactive default (DEFAULT_SPLAT_PRESET) after winning on urban (W2) and rural (W2b)
+    # scenes; both are select_only: never resolved from a bare iteration count.
     "mcmc1m": {
         "iters": 15000,
-        "label": "MCMC 1M (15K)",
+        "label": "Equilibrado (MCMC 1M)",
         "eta_mps": "CUDA only",
         "eta_cpu": "CUDA only",
-        "eta_cuda": "~37 min, ~2.7 GB VRAM (Dialectica, RTX 4060 Ti)",
+        "eta_cuda": "~37-51 min, 2.7-4.7 GB VRAM (RTX 4060 Ti)",
         "description": "MCMC densification capped at 1M Gaussians: better PSNR/LPIPS than Ultra 15K "
                        "with ~40% fewer Gaussians and a smaller SOG.",
         "timeout": 8 * 3600,
@@ -185,12 +191,13 @@ SPLAT_PRESETS = {
     },
     "mcmc3m": {
         "iters": 15000,
-        "label": "MCMC 3M (15K)",
+        "label": "Calidad (MCMC 3M · experimental)",
         "eta_mps": "CUDA only",
         "eta_cpu": "CUDA only",
         "eta_cuda": "~53 min, ~4.8 GB VRAM (Dialectica, RTX 4060 Ti)",
         "description": "MCMC densification capped at 3M Gaussians: highest measured quality on 8 GB "
-                       "(+1.4 dB vs Ultra 15K) at the cost of a ~50% larger SOG.",
+                       "(+1.4 dB vs Ultra 15K) at the cost of a ~50% larger SOG. Experimental: crashed twice "
+                       "at ~7.6 GB on the rural scene recon_d77ef7af86 (gsplat isect_tiles) — scene-dependent.",
         "timeout": 10 * 3600,
         "select_only": True,
         "train_args": [],
@@ -368,6 +375,7 @@ def public_splat_profiles() -> list[dict]:
             "eta_mps": profile.get("eta_mps"),
             "eta_cpu": profile.get("eta_cpu"),
             "eta_cuda": profile.get("eta_cuda"),
+            "default": key == DEFAULT_SPLAT_PRESET,
             "cuda": {
                 "resolution": profile.get("cuda", {}).get("resolution", "auto"),
                 "strict": bool(profile.get("cuda", {}).get("strict", True)),

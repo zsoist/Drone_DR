@@ -465,7 +465,7 @@ function presetLabel(value) {
   return ({ rapido: 'Rápido', estandar: 'Estándar', alta: 'Alta', extra: 'Extra',
     ultra: 'Ultra 15K', ultra20: 'Ultra+ 20K', frontier: 'Frontier 30K',
     grandmaster: 'Grandmaster 40K', medium: 'Medium 2K', cinematic: 'Cinematic 7K',
-    fast: 'Fast 1K' })[value] || value || '—';
+    fast: 'Fast 1K', mcmc1m: 'Equilibrado (MCMC 1M)', mcmc3m: 'Calidad (MCMC 3M · experimental)' })[value] || value || '—';
 }
 function backendBadge(backend) {
   if (!backend) return '';

@@ -120,9 +120,22 @@ class MCMCPresetTests(unittest.TestCase):
                 self.assertEqual("splatfacto", gpu_lane.trainer_for_args(
                     preset.get("cuda", {}).get("train_args")))
 
-    def test_mcmc_is_not_the_default_or_a_normalized_request_by_accident(self):
+    def test_mcmc1m_is_the_ui_default_but_never_captures_bare_requests(self):
+        # W2b: default for NEW interactive jobs; legacy resolution paths stay exactly as before
+        self.assertEqual("mcmc1m", splat_presets.DEFAULT_SPLAT_PRESET)
+        self.assertEqual("Equilibrado (MCMC 1M)", splat_presets.SPLAT_PRESETS["mcmc1m"]["label"])
+        defaults = [p["key"] for p in splat_presets.public_splat_profiles() if p["default"]]
+        self.assertEqual(["mcmc1m"], defaults)
+        # select_only: bare iteration counts still resolve to the stock presets
+        self.assertTrue(splat_presets.SPLAT_PRESETS["mcmc1m"]["select_only"])
         self.assertEqual("frontier", splat_presets.resolve_splat_spec({"iters": 30000})["key"])
+        self.assertEqual("ultra", splat_presets.resolve_splat_spec({"iters": 15000})["key"])
+        self.assertEqual("medium", splat_presets.resolve_splat_spec({})["key"])
+        # every other preset stays selectable by name
+        for key in ("ultra", "ultra20", "frontier", "grandmaster", "mcmc3m"):
+            self.assertEqual(key, splat_presets.normalize_splat_request({"preset": key})["preset"])
         self.assertEqual("mcmc1m", splat_presets.normalize_splat_request({"preset": "mcmc1m"})["preset"])
+        self.assertEqual("mcmc1m", splat_presets.resolve_splat_spec({"preset": "mcmc"})["key"])
 
 
 if __name__ == "__main__":
