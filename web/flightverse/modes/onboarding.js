@@ -3,9 +3,9 @@
 // ctx.modes.onboarding.state. Pasos: 0–3 "Toca para empezar" · 3–8 despegue automático (1.5 s) +
 // "Arrastra para volar" · 8–14 aro azul a 25 m / +3 m · 14–20 dron objetivo quieto a 40 m,
 // el primer impacto termina el onboarding (medalla "Primer vuelo"). Saltable; ab_fv_onboarded.
-import * as THREE from '/flightverse/three.js?v=369';
-import { segmentPassesGate } from '/flightverse/collision-math.js?v=369';
-import { ONBOARD_KEY, ONBOARD_STEPS, onboardStepAt } from '/flightverse/modes/rules.js?v=369';
+import * as THREE from '/flightverse/three.js?v=370';
+import { segmentPassesGate } from '/flightverse/collision-math.js?v=370';
+import { ONBOARD_KEY, ONBOARD_STEPS, onboardStepAt } from '/flightverse/modes/rules.js?v=370';
 
 export function createOnboarding(ctx, events) {
   const { scene, state: S, audio } = ctx;

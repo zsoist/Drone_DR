@@ -54,7 +54,7 @@
 .hx-mission.on { display: block; }
 .hx-mission[data-rec]::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--h-hostile); margin-right: 8px; vertical-align: 1px; }
 .hx-sub { font: 500 12px/16px var(--hx-mono); color: var(--h-ink-2); padding: 2px 8px; }
-.hx-compass { pointer-events: auto; width: 200px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: var(--h-plate); position: relative;
+.hx-compass { pointer-events: auto; width: 216px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: var(--h-plate); position: relative;
   cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .hx-compass::after { content: ""; position: absolute; inset: -8px -4px; }          /* zona táctil >= 44 px */
 .hx-compass[hidden] { display: none; }
@@ -167,7 +167,7 @@
 .fv2.hx-fine .hx-heat { display: flex; gap: 10px; align-items: baseline; position: fixed; z-index: 4; right: calc(var(--hx-sr) + var(--hx-g)); bottom: calc(var(--hx-sb) + var(--hx-g));
   padding: 4px 10px; border-radius: 8px; background: var(--h-plate); font: 600 14px/20px var(--hx-mono); }
 .hx-heat span { color: var(--h-ink-2); font-variant-numeric: tabular-nums; }
-.fv2.hx-fine .hx-keys { display: block; position: fixed; z-index: 3; left: 50%; transform: translateX(-50%); bottom: calc(var(--hx-sb) + var(--hx-g));
+.fv2.hx-fine .hx-keys { display: block; max-width: calc(100vw - 640px); min-width: 280px; overflow: hidden; text-overflow: ellipsis; position: fixed; z-index: 3; left: 50%; transform: translateX(-50%); bottom: calc(var(--hx-sb) + var(--hx-g));
   padding: 4px 10px; border-radius: 8px; background: var(--h-plate); font: 500 12px/16px var(--hx-mono); color: var(--h-ink-2); transition: opacity 400ms var(--hx-ease); white-space: nowrap; }
 .fv2.hx-fine .hx.idle-keys .hx-keys { opacity: 0; pointer-events: none; }
 .hx-keys kbd { font: 600 12px/16px var(--hx-mono); color: var(--h-ink); background: rgba(255,255,255,.1); border: 1px solid var(--h-line); border-radius: 4px; padding: 0 4px; margin-right: 2px; }
@@ -198,8 +198,8 @@ html[data-lefty="1"] .hx-actions { right: auto; left: calc(var(--hx-sl) + var(--
   .fv2 .vl-stick { top: 35%; height: auto; width: 40%; }
   .fv2 .vl-stick-base { bottom: auto; }
   .hx-top { top: calc(var(--hx-st) + 8px); }
-  .hx-tape { top: 28%; }
-  .hx[data-cam="fpv"] .hx-tape { top: 28%; height: 44%; }
+  .hx-tape { top: 34%; }
+  .hx[data-cam="fpv"] .hx-tape { top: 34%; height: 22%; }          /* la cinta termina sobre el chip de arma / la rueda */
   .hx-actions { bottom: calc(var(--hx-sb) + 16px); }
   .hx-minimap { left: auto; right: calc(var(--hx-sr) + var(--hx-g)); transform: none; top: calc(var(--hx-st) + 8px + 44px + 8px); bottom: auto; width: 96px; height: 96px; }
   .hx-rail { bottom: calc(var(--hx-sb) + 6px); }
@@ -212,7 +212,8 @@ html[data-lefty="1"] .hx-actions { right: auto; left: calc(var(--hx-sl) + var(--
   .hx-tape.r { right: calc(var(--hx-sr) + 16px + 92px); }
   html[data-lefty="1"] .hx-tape.l { left: calc(var(--hx-sl) + 16px + 92px); }
   html[data-lefty="1"] .hx-tape.r { right: calc(var(--hx-sr) + 16px); }
-  .hx.mm-on .hx-tape.r { top: 46%; height: 36%; }
+  .hx.mm-on .hx-tape.r { top: 38%; }
+  .hx.mm-on[data-cam="fpv"] .hx-tape.r { top: 38%; height: 17%; }                /* bajo el minimapa (96 px + hueco) */
 }
 
 /* ── hoja de avisos / cuenta atrás de sistema ────────────────────────────── */
@@ -235,5 +236,3 @@ html[data-rm="1"] .hx-gimbal, html[data-rm="1"] .hx-banner { transform: translat
 body.hx-showcase .hx-actions, body.hx-showcase .hx-wstrip, body.hx-showcase .hx-heat, body.hx-showcase .hx-keys, body.hx-showcase .hx-tape,
 body.hx-showcase .hx-rail, body.hx-showcase .hx-canvas, body.hx-showcase .vl-stick, body.hx-showcase .vl-fv-btn, body.hx-showcase .hx-left,
 body.hx-showcase .hx-minimap, body.hx-showcase .hx-compass, body.hx-showcase .hx-sub { visibility: hidden !important; pointer-events: none !important; }
-/* rueda de armas abierta: el turbo / subir / bajar de C y la etiqueta del gimbal se apartan bajo el abanico */
-body:has(.hx-wheel.open) .vl-fv-btn, body:has(.hx-wheel.open) .hx-gimbal { opacity: .15 !important; pointer-events: none !important; }

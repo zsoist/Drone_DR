@@ -243,12 +243,12 @@ class VolarMobileHudContractTests(unittest.TestCase):
             "report.render",
         ):
             self.assertIn(contract, self.source)
-        self.assertIn("render(acc / STEP, dt * 1000)", runtime)
+        self.assertIn("render(accum.alpha, dt * 1000)", runtime)       # alpha viene del acumulador (loop-step.js), que el hit-stop escala
         self.assertNotIn("setInterval(() => {\n    if (calidad !== 'auto')", self.source)
 
     def test_loop_visibility_callbacks_reset_quality_without_physics_catchup(self):
         runtime = (ROOT / "web" / "flightverse" / "runtime.js").read_text()
-        self.assertIn("export function createLoop({ update, render, onPause, onResume })", runtime)
+        self.assertIn("export function createLoop({ update, render, onPause, onResume, timeScale = null })", runtime)
         self.assertIn("onPause?.()", runtime)
         self.assertIn("onResume?.()", runtime)
         self.assertIn("last = 0", runtime)

@@ -3,12 +3,13 @@
 // splits por gate. Circuito HONESTO: gates sobre la ruta del vuelo REAL
 // (track GPS en frame local); sin track: anillo procedural documentado como
 // fallback. Detección por proximidad en timestep fijo (determinista → replay).
-import * as THREE from '/flightverse/three.js?v=369';
-import { segmentPassesGate } from '/flightverse/collision-math.js?v=369';
+import * as THREE from '/flightverse/three.js?v=370';
+import { createSpeedTracker, topSpeedFor } from '/flightverse/gate-stats.js?v=370';
+import { segmentPassesGate } from '/flightverse/collision-math.js?v=370';
 import {
   courseLength, parTime, gateRushMedal, gateRushScore, paceDelta, timeText, findClearStart,
   ghostPoseAt, START_CLEARANCE_M, sanitizeGateCenters,
-} from '/flightverse/modes/rules.js?v=369';
+} from '/flightverse/modes/rules.js?v=370';
 
 export const DIFFS = {
   facil:   { label: 'Fácil',   n: 8,  r: 9,   pass: 1.25, color: 0x52C79A },
@@ -142,7 +143,7 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
   const st = {
     phase: 'idle',                 // idle | countdown | running | finished
     idx: 0, total: gates.length, difficulty,
-    t: 0, countdown: 0, time: null, topSpeed: 0,
+    t: 0, countdown: 0, time: null, topSpeed: 0, avgSpeed: 0,
     splits: [], lastSplit: null,   // tiempos por gate (el HUD muestra el delta)
     rec: [],
     // v2: par, fallos, medalla, inicio validado
@@ -166,6 +167,7 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
   let recSkip = 0;
   const prevPos = new THREE.Vector3();
   let havePrev = false;
+  const speedTracker = createSpeedTracker();
   const gateNormal = new THREE.Vector3();
   const flashes = [];              // anillos de celebración al pasar un gate
   const _d = new THREE.Vector3(), _d2 = new THREE.Vector3();
@@ -249,7 +251,8 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
     start() {
       gates.forEach(g => { g.passed = false; g.missed = false; });
       st.phase = 'countdown'; st.countdown = 3; st.idx = 0; st.t = 0;
-      st.time = null; st.topSpeed = 0; st.rec = []; st.splits = []; st.lastSplit = null;
+      speedTracker.reset();
+      st.time = null; st.topSpeed = 0; st.avgSpeed = 0; st.rec = []; st.splits = []; st.lastSplit = null;
       havePrev = false;
       st.misses = 0; st.medal = null; st.score = 0;
       if (v2) {
@@ -272,7 +275,12 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
         ghostMesh.visible = !!pose && !pose.done;
         if (pose) { ghostMesh.position.set(pose.x, pose.y, pose.z); ghostMesh.rotation.y = pose.yaw; }
       }
-      st.topSpeed = Math.max(st.topSpeed, droneVel.length());
+      if (v2) {
+        // v2: velocidad REAL por posición/tiempo (ventana 250 ms), ignorando teletransportes (gate-stats.js)
+        speedTracker.add(dt, dronePos);
+        st.avgSpeed = speedTracker.avg;
+        st.topSpeed = topSpeedFor({ tracked: speedTracker.top, avg: speedTracker.avg, reported: droneVel.length() });
+      } else st.topSpeed = Math.max(st.topSpeed, droneVel.length());
       if ((recSkip = (recSkip + 1) % 2) === 0) {
         st.rec.push([dronePos.x, dronePos.y, dronePos.z, droneYaw]);
       }

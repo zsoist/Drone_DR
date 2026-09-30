@@ -3,15 +3,17 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=369';
-import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=369';
-import { MIN_AGL as V2_MIN_AGL } from '/flightverse/physics/index.js?v=369';
+import * as THREE from '/flightverse/three.js?v=370';
+import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=370';
+import { createStepAccumulator } from '/flightverse/loop-step.js?v=370';
+import { MIN_AGL as V2_MIN_AGL } from '/flightverse/physics/index.js?v=370';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
 
-export function createLoop({ update, render, onPause, onResume }) {
-  let acc = 0, last = 0, raf = 0, running = false;
+export function createLoop({ update, render, onPause, onResume, timeScale = null }) {
+  const accum = createStepAccumulator({ step: STEP, maxSteps: MAX_STEPS, maxDt: 0.25 });
+  let last = 0, raf = 0, running = false;
   let frames = 0, fpsT = 0, fps = 0;
   const tick = (tms) => {
     if (!running) return;
@@ -19,11 +21,9 @@ export function createLoop({ update, render, onPause, onResume }) {
     const t = tms / 1000;
     let dt = Math.min(t - (last || t), 0.25);
     last = t;
-    acc += dt;
-    let n = 0;
-    while (acc >= STEP && n < MAX_STEPS) { update(STEP); acc -= STEP; n++; }
-    if (n === MAX_STEPS) acc = 0;         // descartar deuda: mejor saltar que congelar
-    render(acc / STEP, dt * 1000);
+    const n = accum.feed(dt, timeScale ? timeScale() : 1);   // hit-stop: escala el tiempo, no salta pasos
+    for (let i = 0; i < n; i++) update(STEP);
+    render(accum.alpha, dt * 1000);
     frames++; fpsT += dt;
     if (fpsT >= 1) { fps = frames / fpsT; frames = 0; fpsT = 0; }
   };

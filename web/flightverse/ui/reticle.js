@@ -8,7 +8,8 @@ const TAU = Math.PI * 2;
 export const HC = Object.freeze({
   ink: '#E6EBF2', ink2: '#B7C2D0', cand: '#E0A458', friend: '#45A0E6', ok: '#52C79A', hostile: '#D96A6A',
 });
-const FONT = '600 12px ui-monospace, SFMono-Regular, Menlo, monospace';
+export const FONT_PX = 13;      // rumbo y cintas: >= 12 px en móvil (spec 2.2); 13 para que se lea a pulso
+const FONT = `600 ${FONT_PX}px ui-monospace, SFMono-Regular, Menlo, monospace`;
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const mixHex = (a, b, t) => {
@@ -57,6 +58,12 @@ export function createHudCanvas(ctx, { canvas }) {
     canvas.style.width = `${L.w}px`;
     canvas.style.height = `${L.h}px`;
     L.phone = Math.min(L.w, L.h) < 700;
+    const probe = document.createElement('div');        // env(safe-area-inset-*) sólo se lee a través del padding
+    probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+    document.body.appendChild(probe);
+    const cs = getComputedStyle(probe);
+    L.safe = { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
+    probe.remove();
   }
   const rectOf = el => {
     if (!el || el.hidden) return null;
@@ -87,7 +94,7 @@ export function createHudCanvas(ctx, { canvas }) {
 
   // ── API de entrada ──
   const api = {
-    state: st, resize, layout,
+    state: st, resize, layout, fontPx: FONT_PX,
     setReticle(kind, s = {}) {
       st.externalReticle = true;
       if (kind) st.kind = kind;
@@ -99,9 +106,9 @@ export function createHudCanvas(ctx, { canvas }) {
       st.hits.push({ t0: now, type });
       if (st.hits.length > 6) st.hits.shift();
     },
-    damageArc(angle) {
+    damageArc(angle, kind = 'damage') {
       if (!Number.isFinite(angle)) return;
-      st.arcs.push({ t0: now, a: angle });
+      st.arcs.push({ t0: now, a: angle, kind });
       if (st.arcs.length > 3) st.arcs.shift();
     },
     setLock(l) {
@@ -137,8 +144,8 @@ export function createHudCanvas(ctx, { canvas }) {
       const major = dd % 15 === 0, cardinal = dd % 45 === 0;
       g.strokeStyle = cardinal ? HC.ink : 'rgba(183,194,208,.6)';
       line(px, y + h - 2, px, y + h - (cardinal ? 9 : major ? 7 : 4));
-      if (cardinal) plateText(CARD[dd / 45], px, y + 8, HC.ink);
-      else if (dd % 15 === 0 && Math.abs(px - mid) > 20) plateText(String(dd), px, y + 8, HC.ink2);
+      if (cardinal) plateText(CARD[dd / 45], px, y + 10, HC.ink);
+      else if (dd % 15 === 0 && Math.abs(px - mid) > 20) plateText(String(dd), px, y + 10, HC.ink2);
     }
     g.restore();
     g.fillStyle = HC.friend;
@@ -148,7 +155,7 @@ export function createHudCanvas(ctx, { canvas }) {
   function drawTape(rect, value, step, pxPerStep, labelEvery, side, alpha) {
     if (!rect) return;
     const cy = rect.y + rect.h / 2;
-    const half = 120;
+    const half = Math.max(56, Math.min(120, rect.h * 0.75));   // en apaisado la cinta es corta: sus marcas no invaden minimapa ni rueda
     const ex = side === 'l' ? rect.x + 6 : rect.x + rect.w - 6;
     const dir = side === 'l' ? 1 : -1;
     g.save();
@@ -369,7 +376,10 @@ export function createHudCanvas(ctx, { canvas }) {
       g.save();
       g.globalAlpha = 1 - age / 1.2; g.strokeStyle = HC.hostile; g.lineWidth = 4; g.lineCap = 'butt';
       const c = a.a - Math.PI / 2;                      // 0 = arriba, sentido horario
+      // telégrafo (aviso ANTES del impacto) = discontinuo (spec 2.5: estado de alerta = borde discontinuo); daño recibido = sólido
+      if (a.kind === 'telegraph') g.setLineDash([9, 6]);
       arc(L.w / 2, L.h / 2, R, c - Math.PI / 6, c + Math.PI / 6);
+      g.setLineDash([]);
       g.restore();
     }
   }
@@ -427,6 +437,23 @@ export function createHudCanvas(ctx, { canvas }) {
     }
   }
 
+  /** Punto del borde de pantalla (rect inset por zona segura + 16 px; arriba deja hueco a la barra superior) en la dirección `ang`. */
+  function edgePoint(ang) {
+    const m = 16, sf = L.safe || { t: 0, r: 0, b: 0, l: 0 };
+    const x0 = sf.l + m, x1 = L.w - sf.r - m, y0 = sf.t + 64, y1 = L.h - sf.b - m;
+    const cx = L.w / 2, cy = L.h / 2, dx = Math.cos(ang), dy = Math.sin(ang);
+    const tx = dx > 1e-6 ? (x1 - cx) / dx : dx < -1e-6 ? (x0 - cx) / dx : Infinity;
+    const ty = dy > 1e-6 ? (y1 - cy) / dy : dy < -1e-6 ? (y0 - cy) / dy : Infinity;
+    const t = Math.min(tx, ty);
+    let px = cx + dx * t, py = cy + dy * t;
+    if (L.phone) {                                  // el cúmulo de fuego (diestro: derecha; zurdo: izquierda) no debe tapar la flecha: se desliza por el borde
+      const lefty = document.documentElement.dataset.lefty === '1';
+      const fx = lefty ? px < 200 : px > L.w - 200, fy = py > L.h - 330;
+      if (fx && fy) { if (tx < ty) py = Math.min(py, L.h - 330); else px = lefty ? 200 : L.w - 200; }
+    }
+    return [px, py];
+  }
+
   function drawModeMarkers() {
     const m = st.modeMarkers; if (!m) return;
     const t = now;
@@ -445,11 +472,11 @@ export function createHudCanvas(ctx, { canvas }) {
       }
     }
     for (const e of m.edges || []) {
-      // D las pone en el borde de la pantalla, donde caen bajo el cluster de fuego / sticks: A las recoloca en una elipse
-      // interior (0.40 w x 0.26 h) que respeta la dirección hacia el enemigo
+      // Flechas FUERA de pantalla: en el borde real de la pantalla (dentro de la zona segura), apuntando hacia el enemigo.
+      // (Antes se recolocaban en una elipse interior, lejos del borde: parecían marcadores flotantes.)
       const ddx = (e.x - 0.5) * L.w, ddy = (e.y - 0.5) * L.h, ea = Math.atan2(ddy, ddx);
-      const ex = L.w / 2 + Math.cos(ea) * L.w * 0.40, ey = L.h / 2 + Math.sin(ea) * L.h * 0.26;
-      g.save(); g.translate(ex, ey); g.rotate(ea); g.globalAlpha = e.opacity ?? 1;
+      const p = edgePoint(ea);
+      g.save(); g.translate(p[0], p[1]); g.rotate(ea); g.globalAlpha = e.opacity ?? 1;
       g.beginPath(); g.moveTo(9, 0); g.lineTo(-7, -8); g.lineTo(-7, 8); g.closePath();
       g.fillStyle = HC.hostile; g.fill(); g.lineWidth = 1.5; g.strokeStyle = 'rgba(8,10,14,.85)'; g.stroke();
       g.restore();

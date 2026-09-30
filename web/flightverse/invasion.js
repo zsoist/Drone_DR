@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=369';
+import * as THREE from '/flightverse/three.js?v=370';
 import {
   capWaveQueue,
   createBurstSchedule,
@@ -33,8 +33,8 @@ import {
   COMBO_WINDOW_S,
   COMBO_MAX,
   interleaveQueue,
-} from '/flightverse/invasion-policy.js?v=369';
-import { applyDetail } from '/flightverse/enemy-materials.js?v=369';
+} from '/flightverse/invasion-policy.js?v=370';
+import { applyDetail, prewarmDetailTextures, detailClassesOf } from '/flightverse/enemy-materials.js?v=370';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -214,6 +214,19 @@ function telegraphGlow() {
   return sp;
 }
 
+/** Cede el hilo principal (scheduler.yield si existe; si no un macrotask). Evita tareas largas al cargar enemigos. */
+export function yieldToMain() {
+  if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') return scheduler.yield();
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+/** Espera a un hueco de inactividad (o `timeout` ms); en navegadores sin rIC, un macrotask. */
+export function whenIdle(timeout = 1500) {
+  return new Promise(resolve => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout });
+    else setTimeout(resolve, 50);
+  });
+}
+
 export function createInvasion(scene, {
   v2 = false,
   collision = null,
@@ -234,6 +247,9 @@ export function createInvasion(scene, {
   let catalogPromise = null;
   let GLTFLoader = null;
   let SkelUtils = null;
+  let parseLane = Promise.resolve();        // un GLB a la vez en el hilo principal, cediendo entre uno y otro
+  const bytesCache = new Map();             // file -> Promise<ArrayBuffer>: una sola petición por GLB y por sesión (prewarm + carga)
+  let prewarming = null;
   let session = 0;
   let disposed = false;
   let simTime = 0;
@@ -289,7 +305,7 @@ export function createInvasion(scene, {
 
   async function loadCatalog() {
     if (!catalogPromise) {
-      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=369', { cache: 'no-store' })
+      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=370', { cache: 'no-store' })
         .then(response => {
           if (!response.ok) throw new Error(`enemy catalog ${response.status}`);
           return response.json();
@@ -300,6 +316,46 @@ export function createInvasion(scene, {
         });
     }
     return catalogPromise;
+  }
+
+  function fetchBytes(file) {
+    let p = bytesCache.get(file);
+    if (!p) {
+      p = fetch(`/assets/enemies/${file}?v=370`).then(response => {
+        if (!response.ok) throw new Error(`enemy glb ${response.status}`);
+        return response.arrayBuffer();
+      });
+      p.catch(() => { if (bytesCache.get(file) === p) bytesCache.delete(file); });
+      bytesCache.set(file, p);
+    }
+    return p;
+  }
+
+  /**
+   * Calienta, en huecos de inactividad y de uno en uno, lo que Invasión necesita: módulos, catálogo, texturas de detalle
+   * (v2) y los bytes de los GLB lod1/lod2 de `types`. No parsea ni toca la escena: nada que limpiar al apagar la run.
+   */
+  function prewarm(types = ['zombie']) {
+    const wanted = (types || []).filter(t => ENEMIES[t]);
+    const job = async () => {
+      try {
+        await whenIdle();
+        await loadCatalog();
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=370'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=370');
+        if (v2) await prewarmDetailTextures(whenIdle);
+        for (const type of wanted) {
+          for (const lod of ['lod1', 'lod2']) {
+            const file = modelFile(type, lod);
+            if (!file || disposed) continue;
+            await whenIdle();
+            await fetchBytes(file).catch(() => {});
+          }
+        }
+      } catch { /* prewarm es best-effort */ }
+    };
+    prewarming = (prewarming || Promise.resolve()).then(job);
+    return prewarming;
   }
 
   function modelFile(type, lod) {
@@ -328,11 +384,21 @@ export function createInvasion(scene, {
         await loadCatalog();
         const file = modelFile(type, lod);
         if (!file) throw new Error(`catalog missing ${key}`);
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=369'));
-        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=369');
-        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=369`);
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=370'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=370');
+        const bytes = await fetchBytes(file);                       // la red va en paralelo; sólo el parseo se serializa
+        const lane = parseLane.then(async () => {
+          await yieldToMain();
+          return new GLTFLoader().parseAsync(bytes, '/assets/enemies/');
+        });
+        parseLane = lane.then(yieldToMain, yieldToMain);
+        const gltf = await lane;
+        await yieldToMain();
+        if (v2) {
+          await prewarmDetailTextures(yieldToMain, detailClassesOf(gltf.scene));      // una textura por tarea
+          styleEnemyTree(gltf.scene, type);
+        }
         const loaded = { scene: gltf.scene, clips: gltf.animations || [], type, lod };
-        if (v2) styleEnemyTree(loaded.scene, type);
         if (disposed || loadSession !== session) {
           disposeTree(loaded.scene);
           if (modelCache.get(key) === loadingEntry) modelCache.delete(key);
@@ -657,8 +723,11 @@ export function createInvasion(scene, {
     const token = session;
     S.phase = 'loading';
     S.countdown = 2;
-    const selectedLods = S.types.flatMap(type => ['lod1', 'lod2'].map(lod => loadModel(type, lod)));
+    S.loadWait = 0; S.preloadPending = true;
+    // lod2 primero (el LOD lejano: 100-220 KB) y luego lod1; las cargas son secuenciales en el hilo principal (ver loadModel)
+    const selectedLods = ['lod2', 'lod1'].flatMap(lod => S.types.map(type => loadModel(type, lod)));
     Promise.allSettled(selectedLods).then(() => {
+      if (token === session) S.preloadPending = false;
       if (!S.on || disposed || token !== session || S.phase !== 'loading') return;
       S.phase = 'countdown';
       S.countdown = 3;
@@ -709,6 +778,7 @@ export function createInvasion(scene, {
       }
       return rows;
     },
+    prewarm,
     clearShots() { for (let i = shots.length - 1; i >= 0; i--) removeShot(i); },
     setTypes(list) { if (list.length) S.types = list; },
     toggle(dronePos, types, difficulty = 'media') {
@@ -753,6 +823,7 @@ export function createInvasion(scene, {
       if (v2) {
         // Fases v2: loading → countdown (intro de oleada) → running → clear (outro) → countdown … → victory
         if (S.phase === 'victory') { refreshTelemetry(); return; }
+        if (S.phase === 'loading' && S.preloadPending && (S.loadWait += step) < 12) { refreshTelemetry(); return; }   // la intro de oleada sale ya; la horda espera a sus modelos
         const next = stepRunPhase(
           { phase: S.phase, countdown: S.countdown, wave: S.wave },
           step,

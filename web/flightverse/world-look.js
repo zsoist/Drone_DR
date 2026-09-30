@@ -9,7 +9,7 @@
 //   3. BRUMA INTERIOR (uFvNear.z): si la cámara está dentro de geometría, todo se funde a niebla
 //      (en vez del "vacío" gris/oscuro). Lo calcula tour/void-guard.js.
 // Con `uFvEdgeB.y = 0` y `uFvNear.w = 0` (legacy, sin ?fv=2) el aspecto es idéntico al anterior.
-import * as THREE from '/flightverse/three.js?v=369';
+import * as THREE from '/flightverse/three.js?v=370';
 
 export const WORLD_LOOK = {
   uFvEdgeA: { value: new THREE.Vector4(0, 0, 1e9, 1e9 + 1) },   // cx, cz, fog0, fog1

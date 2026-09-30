@@ -10,7 +10,7 @@
 import { CONTROL_DEFAULTS, loadSettings, saveSettings, normalizeSettings, mouseLook, clamp, DEG } from './curves.js';
 import { createHaptics } from './haptics.js';
 import { createGamepad } from './gamepad.js';
-import * as REG from '/flightverse/weapon-registry.js?v=369';
+import * as REG from '/flightverse/weapon-registry.js?v=370';
 
 const WEAPON_FALLBACK = ['mg', 'ac', 'm', 'sw', 'rg', 'tb'];
 export const weaponOrder = () => {
@@ -30,7 +30,7 @@ const STYLE = `
 .vl-fv-btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .vl-fv-lock{position:fixed;left:50%;bottom:calc(18% + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:20;
   padding:6px 12px;border-radius:8px;background:var(--media-scrim,rgba(8,10,14,.72));color:var(--on-media,#E6EBF2);
-  font:500 13px var(--font,system-ui);pointer-events:none;display:none}
+  font:500 14px var(--font,system-ui);pointer-events:none;display:none;border:1px solid var(--media-line,rgba(230,235,242,.22))}
 .vl-fv-lock.show{display:block}
 .vl-fv-fade{position:fixed;inset:0;z-index:50;background:#000;opacity:0;pointer-events:none}
 `;
@@ -226,7 +226,9 @@ export function createV2Input(ctx, { sticks, beginFiring, releaseFiring }) {
   const hint = doc.createElement('div');
   hint.className = 'vl-fv-lock';
   hint.setAttribute('role', 'status');
-  hint.textContent = 'Haz clic para capturar el mouse';
+  const HINT_FIRST = 'Clic para controlar · clic de nuevo para disparar';
+  const HINT_LOST = 'Haz clic para capturar el mouse';
+  hint.textContent = HINT_FIRST;
   if (!coarse) {
     const style = doc.createElement('style');
     style.textContent = STYLE;
@@ -235,6 +237,14 @@ export function createV2Input(ctx, { sticks, beginFiring, releaseFiring }) {
     doc.body.appendChild(hint);
   }
   let hadLock = false, wantLock = false;
+  // Escritorio: el primer clic SOLO captura el puntero (disparar con ese mismo clic gastaría munición sin querer y en
+  // menús/paneles no hay captura). Mientras el puntero no esté capturado y no haya un panel abierto, una placa lo dice.
+  const hintTimer = coarse ? 0 : setInterval(() => {
+    const locked = doc.pointerLockElement === canvas;
+    const free = !locked && !lockFailed && !ctx.ui.overlay?.active() && input.enabled && !ctx.state.director && !ctx.state.replay;
+    hint.textContent = hadLock ? HINT_LOST : HINT_FIRST;
+    hint.classList.toggle('show', free);
+  }, 300);
   const onLockChange = () => {
     const locked = doc.pointerLockElement === canvas;
     if (locked) { hadLock = true; hint.classList.remove('show'); return; }
@@ -337,6 +347,7 @@ export function createV2Input(ctx, { sticks, beginFiring, releaseFiring }) {
       canvas.removeEventListener('contextmenu', onContext);
       removeEventListener('pointerup', unlockHaptics);
       for (const b of buttons) b.remove();
+      clearInterval(hintTimer);
       hint.remove();
       haptics.dispose();
     },

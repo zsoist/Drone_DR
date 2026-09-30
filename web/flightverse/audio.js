@@ -21,7 +21,7 @@
 import {
   BUS_GAINS, CHARGE, DUCK, EXPLOSION, FIRE, FLIGHT, HIT_TICK, IMPACT, KILL,
   createKillStreak, dbToGain, distanceModel, engineFromMotors, lockBeepRate,
-} from './audio/recipes.js?v=369';
+} from './audio/recipes.js?v=370';
 
 const FV2 = (() => {
   try { const q = new URLSearchParams(location.search); return q.get('fv') === '2'; } catch { return false; }

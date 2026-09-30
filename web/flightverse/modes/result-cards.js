@@ -1,7 +1,7 @@
 // flightverse/modes/result-cards.js — tarjetas de VICTORIA y medalla de Gate Rush (WS D).
 // Fallback mientras A (ui/screens.js) no expone showVictory(): misma clase de tarjeta
 // (.vl-result-card.v2) y jerarquía. Si ctx.ui.screens.showVictory existe, se usa ese y esto no corre.
-import { MEDAL_LABEL, nextMedalTarget, timeText } from '/flightverse/modes/rules.js?v=369';
+import { MEDAL_LABEL, nextMedalTarget, timeText } from '/flightverse/modes/rules.js?v=370';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const MEDAL_COLOR = { bronze: '#C58A5A', silver: '#C3CCD8', gold: '#E0B24A' };

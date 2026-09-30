@@ -2,10 +2,11 @@
 // háptica), onboarding, resultados de Gate Rush / derrota / victoria (UNA tarjeta, botones apilados a ancho
 // completo en móvil), selectores de Invasión y dificultad, guía, director/cine y toast. La LÓGICA (récords,
 // medallas, par, oleadas) es de D; aquí solo se presenta lo que D publica en vm/run.
-import { ICON } from '/flightverse/ui/icons2.js?v=369';
-import { createOnboarding, shouldOnboard } from '/flightverse/ui/onboarding.js?v=369';
-import { MEDAL_TEXT, formatTime } from '/flightverse/ui/records.js?v=369';
-import { guideBody } from '/flightverse/ui/menu2.js?v=369';
+import { resultSpeeds } from '/flightverse/gate-stats.js?v=370';
+import { ICON } from '/flightverse/ui/icons2.js?v=370';
+import { createOnboarding, shouldOnboard } from '/flightverse/ui/onboarding.js?v=370';
+import { MEDAL_TEXT, formatTime } from '/flightverse/ui/records.js?v=370';
+import { guideBody } from '/flightverse/ui/menu2.js?v=370';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -133,6 +134,7 @@ export function createScreens2(ctx) {
   function showGateRushResult(vm) {
     const { st, t, retoMode, isNew, best, prev, delta, dist } = vm;
     $('#vl-fpv')?.classList.remove('show');
+    const spd = resultSpeeds({ topSpeed: st.topSpeed, dist, t });     // vel máx >= vel media siempre (no 0.9 m/s en 414 m)
     const segs = st.splits.map((s2, i) => i ? s2 - st.splits[i - 1] : s2);
     const bestSeg = Math.min(...segs);
     const splits = segs.map((s2, i) => `<div class="hx-split${s2 === bestSeg ? ' best' : ''}"><i>${i + 1}</i><b>${s2.toFixed(2)}s</b></div>`).join('');
@@ -148,7 +150,7 @@ export function createScreens2(ctx) {
       ${medalBadge(vm.medal)}${parLine ? `<p class="hx-par">${parLine}</p>` : ''}
       </div>
       <div class="hx-res-body">
-      <div class="hx-stats">${stat(st.total, 'aros')}${stat(st.topSpeed.toFixed(1), 'vel máx m/s')}${stat(t > 0 ? (dist / t).toFixed(1) : '—', 'vel media m/s')}${stat(Math.round(dist), 'metros')}</div>
+      <div class="hx-stats">${stat(st.total, 'aros')}${stat(spd.top.toFixed(1), 'vel máx m/s')}${stat(t > 0 ? spd.avg.toFixed(1) : '—', 'vel media m/s')}${stat(Math.round(dist), 'metros')}</div>
       <div class="hx-splits">${splits}</div>
       ${topList(vm.top, 'gr')}
       </div>

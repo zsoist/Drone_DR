@@ -121,6 +121,7 @@ def audit(*, vault: Path = VAULT, active_only: bool = True) -> dict:
             row.update({
                 "tris": collider["tris"],
                 "covered_pct": coverage["covered_pct"],
+                "covered_valid_pct": coverage.get("covered_valid_pct"),
             })
         except (OSError, KeyError, TypeError, ValueError) as error:
             failures.append({

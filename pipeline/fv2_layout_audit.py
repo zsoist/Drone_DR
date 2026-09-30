@@ -56,6 +56,27 @@ AUDIT_JS = r"""
     const ox = Math.min(r.right, q.right) - Math.max(r.left, q.left), oy = Math.min(r.bottom, q.bottom) - Math.max(r.top, q.top);
     if (ox > 2 && oy > 2) out.overlap.push([a.id || a.dataset.fv || a.className, b.id || b.dataset.fv || b.className]);
   }
+  // texto del canvas (rumbo, cintas, marcadores): el DOM no lo ve; la retícula publica el tamaño de fuente que usa
+  const fpx = window.__volar && window.__volar.ctx && window.__volar.ctx.ui.hud.canvas && window.__volar.ctx.ui.hud.canvas.fontPx;
+  if (fpx && fpx < 12) out.small.push(['canvas-font', fpx]);
+  return JSON.stringify(out);
+})()
+"""
+
+# rueda de armas abierta: ninguno de sus 6 iconos pisa otro control ni se sale del viewport
+WHEEL_JS = r"""
+(() => {
+  const OB = '.hx-fire, .vl-fv-btn, .hx-gimbal, .hx-tape, .hx-top button, .hx-compass, .hx-mission.on, .hx-left > :not([hidden]), .hx-minimap, .hx-rail > :not([hidden]), .hx-wchip';
+  const vis = e => { const c = getComputedStyle(e); return c.display !== 'none' && c.visibility !== 'hidden' && e.getBoundingClientRect().width > 0; };
+  const obs = [...document.querySelectorAll(OB)].filter(vis).map(e => [e.id || String(e.className).split(' ')[0], e.getBoundingClientRect()]);
+  const out = { overlap: [], clipped: [] };
+  const opts = [...document.querySelectorAll('.hx-wopt')];
+  if (opts.length !== 6) out.overlap.push(['wheel-options', opts.length]);
+  for (const o of opts) {
+    const r = o.getBoundingClientRect();
+    if (r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight) out.clipped.push([o.dataset.w, Math.round(r.left), Math.round(r.top)]);
+    for (const [n, b] of obs) if (r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top) out.overlap.push([o.dataset.w, n]);
+  }
   return JSON.stringify(out);
 })()
 """
@@ -95,8 +116,13 @@ def audit(base: str, cid: str) -> dict[str, list]:
                 "invasion": "&qa=1&fv=2&nostart=1",
                 "gaterush": "&qa=1&fv=2&nostart=1",
                 "tour": "&qa=1&fv=2&nostart=1",
+                "wheel": "&autotest=1&qa=1&fv=2&nostart=1",
+                "wheel_lefty": "&autotest=1&qa=1&fv=2&nostart=1",
+                "wheel_inv": "&qa=1&fv=2&nostart=1",          # con minimapa y cintas de modo
             }
             for scene, q in scenes.items():
+                if scene.startswith("wheel") and name == "desktop":
+                    continue                                   # escritorio usa la tira de 6 ranuras, no la rueda táctil
                 c = _session(port, name)
                 try:
                     c.send("Page.navigate", dict(url=f"{base}/volar.html?m={cid}{q}"))
@@ -118,6 +144,21 @@ def audit(base: str, cid: str) -> dict[str, list]:
                     elif scene == "modes":
                         c.eval("window.__volar.ctx.ui.menu.openModes()")
                         c.pump(0.8)
+                    if scene.startswith("wheel"):
+                        if scene == "wheel_inv":
+                            c.eval("window.__volar.ctx.actions.startInvasionRun(['zombie'],'media')")
+                            c.pump(4)
+                        if scene == "wheel_lefty":
+                            c.eval("window.__volar.ctx.ui.prefs.set('leftHanded', true)")
+                            c.pump(1.0)
+                        c.eval("window.__volar.ctx.controls.camera.setGimbal(-0.4)")
+                        c.eval("window.__volar.ctx.ui.weapons.picker.open()")
+                        c.pump(0.7)
+                        res = json.loads(c.eval(WHEEL_JS))
+                        for kind, rows in res.items():
+                            if rows:
+                                failures.setdefault(f"{name}/{scene}/{kind}", []).extend(rows)
+                        continue
                     res = json.loads(c.eval(AUDIT_JS))
                     for kind, rows in res.items():
                         if rows:

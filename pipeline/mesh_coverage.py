@@ -179,6 +179,7 @@ def build(cid: str, *, vault: Path = VAULT) -> dict:
         "bin": "mesh_coverage.bin",
         "grid": [rows, cols],
         "covered_pct": round(float(mask.mean() * 100), 2),
+        "covered_valid_pct": valid_coverage_pct(model_dir, mask),
         "source_fingerprint": collider["source_fingerprint"],
     }
     _atomic_write(model_dir / "mesh_coverage.bin", mask.tobytes())
@@ -187,6 +188,25 @@ def build(cid: str, *, vault: Path = VAULT) -> dict:
         json.dumps(meta, sort_keys=True, separators=(",", ":")).encode(),
     )
     return meta
+
+
+def valid_coverage_pct(model_dir: Path, mask) -> float | None:
+    """Coverage over cells where the DSM has data (dsm_lod256.mask.bin > 0).
+
+    covered_pct divides by the whole rectangular grid; for a circular AOI ~22% of it is
+    invalid corners, so that figure understates real coverage and isn't comparable across
+    worlds. None when the validity mask is missing or doesn't match the grid."""
+    path = Path(model_dir) / "dsm_lod256.mask.bin"
+    if not path.is_file():
+        return None
+    valid = np.frombuffer(path.read_bytes(), dtype=np.uint8)
+    flat = np.asarray(mask, dtype=np.uint8).reshape(-1)
+    if valid.size != flat.size:
+        return None
+    cells = valid > 0
+    if not cells.any():
+        return None
+    return round(float((flat[cells] > 0).mean() * 100), 2)
 
 
 def validate(cid: str, *, vault: Path = VAULT) -> dict:

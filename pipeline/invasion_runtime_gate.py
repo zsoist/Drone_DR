@@ -15,14 +15,37 @@ from browser_gate import DEFAULT_BASE_URL, QA_DIR, launch_chrome, new_page
 
 
 SELECTED_TYPES = ("zombie", "soldado", "ufo")
+# Presupuesto de hilo principal al ARRANCAR la Invasión (carga/parseo de GLB, texturas de detalle, minimapa): ninguna tarea
+# larga (PerformanceObserver 'longtask', > 50 ms) puede durar más de esto. Antes: una tarea de ~3,8 s (fv2).
+LONGTASK_BUDGET_MS = 200
+LONGTASK_OBSERVER_JS = (
+    "window.__lt=[];window.__invT0=0;"
+    "try{new PerformanceObserver(l=>{for(const e of l.getEntries())window.__lt.push([e.startTime,e.duration])})"
+    ".observe({type:'longtask',buffered:true})}catch(e){}"
+    "setInterval(()=>{if(!window.__invT0&&window.__volar&&window.__volar.invasion&&window.__volar.invasion.on)"
+    "window.__invT0=performance.now()},10);"
+)
 
 
 def _failure(reason: str, **detail) -> dict:
     return {"reason": reason, **detail}
 
 
+def validate_longtasks(sample: dict, budget_ms: float = LONGTASK_BUDGET_MS) -> list[dict]:
+    """Tareas largas del hilo principal DESDE el arranque de la Invasión. Sin datos (muestra sintética) no falla."""
+    info = sample.get("longtasks")
+    if not isinstance(info, dict):
+        return []
+    t0 = info.get("invasion_started_at") or 0
+    tasks = [(start, dur) for start, dur in (info.get("tasks") or []) if start + dur >= t0 - 50]
+    worst = max((dur for _, dur in tasks), default=0)
+    if worst > budget_ms:
+        return [_failure("longtask_budget", worst_ms=round(worst), budget_ms=budget_ms, tasks=[[round(a), round(b)] for a, b in tasks][:8])]
+    return []
+
+
 def validate_invasion_sample(sample: dict) -> list[dict]:
-    failures = []
+    failures = validate_longtasks(sample)
     fps = sample.get("fps")
     if not isinstance(fps, (int, float)) or not math.isfinite(fps) or fps < 50:
         failures.append(_failure("fps_below_50", fps=fps))
@@ -145,6 +168,7 @@ def _wait_for_sample(cdp, timeout: int) -> dict:
               return {
                 ok:r.ok, fps:r.fps, errors:[...(r.errors || [])],
                 invasion:inv, model_request_counts:requestCounts,
+                longtasks:{tasks:(window.__lt||[]), invasion_started_at:(window.__invT0||0)},
               };
             })()""")
         except RuntimeError:
@@ -174,6 +198,7 @@ def run_gate(
             "invDifficulty": "dificil",
             **({"fv": "2", "invWave": "6"} if fv2 else {}),
         })
+        cdp.send("Page.addScriptToEvaluateOnNewDocument", {"source": LONGTASK_OBSERVER_JS})
         cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/volar.html?{query}"})
         sample = _wait_for_sample(cdp, timeout)
         sample["console_errors"] = cdp.errors[:8]
@@ -181,11 +206,10 @@ def run_gate(
             sample.setdefault("errors", []).extend(cdp.errors[:8])
         failures = validate_invasion_sample(sample)
         if fv2:
-            # world_autotest_failed: the 5 s scripted flight is measured on a timer that also covers the ~4 s main-thread
-            # stall of the enemy GLB preload, and Physics v2 (30 deg tilt, ~10 m/s) covers < 20 m in the ~2 s left; movement is
-            # validated by the collision gate flight stress, so this gate only keeps the error/fps checks it already has
-            failures = [f for f in failures if f['reason'] not in (
-                'mixed_types_missing', 'glb_enemy_count', 'ai_telemetry_missing', 'world_autotest_failed')] + validate_v2_sample(sample)
+            # world_autotest_failed: Physics v2 (30 deg tilt, ~10 m/s) does not cover the legacy scripted-flight distance in
+            # the 5 s window; movement is validated by the collision gate flight stress. (The ~4 s enemy-preload stall that
+            # used to excuse the mixed-type / GLB / AI checks is gone: they are enforced again, plus the longtask budget.)
+            failures = [f for f in failures if f['reason'] not in ('world_autotest_failed',)] + validate_v2_sample(sample)
             if not (sample.get('fps') or 0) >= 50:
                 failures.append({'reason': 'fps_below_50', 'fps': sample.get('fps')})
         QA_DIR.mkdir(parents=True, exist_ok=True)

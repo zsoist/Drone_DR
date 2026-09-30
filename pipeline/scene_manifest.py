@@ -268,6 +268,7 @@ def build(cid: str) -> dict:
                 "source_fingerprint": collision_meta["source_fingerprint"],
                 "tris": collision_meta["tris"],
                 "coverage_pct": coverage_meta["covered_pct"],
+                "coverage_valid_pct": coverage_meta.get("covered_valid_pct"),
             }
         except (OSError, KeyError, TypeError, ValueError) as error:
             collision_ready = False

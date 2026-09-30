@@ -35,6 +35,8 @@ NODE_GROUPS = (
 # Add a module name here if one ever crosses 60 s.
 SLOW: frozenset[str] = frozenset()
 MODULE_TIMEOUT_S = 180
+# test_fv2_hud_contract drives Chrome through the whole fv2 layout audit (3 viewports x 10 scenes, incl. the weapon wheel): ~200 s.
+MODULE_TIMEOUTS = {"test_fv2_hud_contract": 420}
 
 
 _SANDBOX = None
@@ -126,10 +128,10 @@ def run_one(suite) -> dict:
         # stdin=DEVNULL: a suite whose mocks read stdin (`$(cat)`) otherwise blocks forever
         # when this runner itself sits on an open pipe (pre-commit hook, CI) — intermittent hang
         p = subprocess.run(argv, cwd=cwd, env=_env(), capture_output=True, text=True,
-                           stdin=subprocess.DEVNULL, timeout=MODULE_TIMEOUT_S)
+                           stdin=subprocess.DEVNULL, timeout=MODULE_TIMEOUTS.get(name, MODULE_TIMEOUT_S))
         rc, out = p.returncode, (p.stdout or "") + (p.stderr or "")
     except subprocess.TimeoutExpired:
-        rc, out = 124, f"timeout after {MODULE_TIMEOUT_S}s"
+        rc, out = 124, f"timeout after {MODULE_TIMEOUTS.get(name, MODULE_TIMEOUT_S)}s"
     if rc == 0:
         ran = tests_executed(name, out)
         if not ran:  # 0 tests, or no count at all: an empty suite is not a passing suite

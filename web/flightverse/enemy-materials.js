@@ -3,7 +3,7 @@
 // Gigante se veía como un maniquí liso. Aquí se generan texturas teselables (canvas 256², ruido de
 // valor con wrap) por clase de material y se asignan como map + bumpMap en ?fv=2. Contrato GLB
 // intacto (no se toca ningún .glb). Coste: ~7 canvas 256² una sola vez por sesión.
-import * as THREE from '/flightverse/three.js?v=369';
+import * as THREE from '/flightverse/three.js?v=370';
 
 const SIZE = 256;
 const cache = new Map();
@@ -31,15 +31,17 @@ function fbm(seed) {
   return (u, v) => (n1(u, v) * 0.45 + n2(u, v) * 0.3 + n3(u, v) * 0.17 + n4(u, v) * 0.08);
 }
 
+// Cada clase es una FÁBRICA (f) => pattern(u, v): los campos de ruido se crean UNA vez por textura. (Antes se
+// construían dentro del patrón, es decir 65 536 veces por canvas: una tarea de ~3,8 s en el hilo principal.)
 const CLASSES = {
   // [contraste, patrón]
-  skin:   { seed: 11, contrast: 0.30, pattern: (u, v, f) => 0.5 + (f(u * 2, v * 2) - 0.5) * 0.8 - Math.max(0, valueNoise(24, 5)(u, v) - 0.8) * 1.6 },
-  cloth:  { seed: 23, contrast: 0.24, pattern: (u, v, f) => 0.55 + 0.22 * Math.sin(u * 48 * 6.2832) * Math.sin(v * 48 * 6.2832) + (f(u, v) - 0.5) * 0.9 },
-  stone:  { seed: 31, contrast: 0.42, pattern: (u, v, f) => { const c = Math.abs(f(u * 3, v * 3) - 0.5); return 0.35 + f(u, v) * 0.7 - (c < 0.012 ? 0.35 : 0); } },
-  metal:  { seed: 41, contrast: 0.36, pattern: (u, v, f) => 0.5 + (valueNoise(64, 9)(u * 0.2, v * 6) - 0.5) * 0.5 + (f(u, v) - 0.5) * 0.9 },
-  scale:  { seed: 53, contrast: 0.40, pattern: (u, v) => { const s = 14; const a = (u * s) % 1, b = ((v + (Math.floor(u * s) % 2) * 0.5 / s) * s) % 1; const d = Math.hypot(a - 0.5, b - 0.5); return 0.85 - d * 1.1 + valueNoise(16, 3)(u, v) * 0.2; } },
-  bone:   { seed: 61, contrast: 0.22, pattern: (u, v, f) => 0.6 + (valueNoise(48, 7)(u * 0.3, v * 5) - 0.5) * 0.4 + (f(u, v) - 0.5) * 0.6 },
-  flat:   { seed: 71, contrast: 0.12, pattern: (u, v, f) => f(u, v) },
+  skin:   { seed: 11, contrast: 0.30, make: f => { const n = valueNoise(24, 5); return (u, v) => 0.5 + (f(u * 2, v * 2) - 0.5) * 0.8 - Math.max(0, n(u, v) - 0.8) * 1.6; } },
+  cloth:  { seed: 23, contrast: 0.24, make: f => (u, v) => 0.55 + 0.22 * Math.sin(u * 48 * 6.2832) * Math.sin(v * 48 * 6.2832) + (f(u, v) - 0.5) * 0.9 },
+  stone:  { seed: 31, contrast: 0.42, make: f => (u, v) => { const c = Math.abs(f(u * 3, v * 3) - 0.5); return 0.35 + f(u, v) * 0.7 - (c < 0.012 ? 0.35 : 0); } },
+  metal:  { seed: 41, contrast: 0.36, make: f => { const n = valueNoise(64, 9); return (u, v) => 0.5 + (n(u * 0.2, v * 6) - 0.5) * 0.5 + (f(u, v) - 0.5) * 0.9; } },
+  scale:  { seed: 53, contrast: 0.40, make: () => { const n = valueNoise(16, 3); return (u, v) => { const s = 14; const a = (u * s) % 1, b = ((v + (Math.floor(u * s) % 2) * 0.5 / s) * s) % 1; const d = Math.hypot(a - 0.5, b - 0.5); return 0.85 - d * 1.1 + n(u, v) * 0.2; }; } },
+  bone:   { seed: 61, contrast: 0.22, make: f => { const n = valueNoise(48, 7); return (u, v) => 0.6 + (n(u * 0.3, v * 5) - 0.5) * 0.4 + (f(u, v) - 0.5) * 0.6; } },
+  flat:   { seed: 71, contrast: 0.12, make: f => (u, v) => f(u, v) },
 };
 
 export function materialClass(name = '') {
@@ -57,13 +59,14 @@ export function materialClass(name = '') {
 function build(cls) {
   const def = CLASSES[cls];
   const f = fbm(def.seed);
+  const pattern = def.make(f);
   const cv = document.createElement('canvas');
   cv.width = cv.height = SIZE;
   const c = cv.getContext('2d');
   const img = c.createImageData(SIZE, SIZE);
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-      const p = def.pattern(x / SIZE, y / SIZE, f);
+      const p = pattern(x / SIZE, y / SIZE);
       // media ≈ 0.76 (lo que valían las texturas planas) ± contraste
       const v = Math.max(0.12, Math.min(1, 0.76 + (p - 0.5) * def.contrast * 2));
       const b = Math.round(v * 255), k = (y * SIZE + x) * 4;
@@ -98,6 +101,27 @@ export function applyDetail(material, { bump = 0.5 } = {}) {
   if (cls !== 'flat' && cls !== 'cloth') { material.bumpMap = tex; material.bumpScale = bump; }
   material.needsUpdate = true;
   return cls;
+}
+
+/** Construye las texturas de detalle una clase por hueco de inactividad (cada una ~2 ms; nunca una tarea larga). */
+export async function prewarmDetailTextures(idle = () => new Promise(r => setTimeout(r, 0)), classes = Object.keys(CLASSES)) {
+  for (const cls of classes) {
+    if (!cls || cache.has(cls)) continue;
+    await idle();
+    detailTexture(cls);
+  }
+}
+
+/** Clases de detalle que necesitará un árbol (para construirlas por adelantado, una por tarea). */
+export function detailClassesOf(root) {
+  const out = new Set();
+  root?.traverse?.(o => {
+    if (!o.isMesh) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (m?.isMeshStandardMaterial) { const c = materialClass(m.name); if (c) out.add(c); }
+    }
+  });
+  return [...out];
 }
 
 export function disposeDetailTextures() {

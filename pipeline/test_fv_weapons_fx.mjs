@@ -357,9 +357,10 @@ test('hit-stop window: scale 0.05 during the window, reduced motion skips, coold
   const hs = createHitStop();
   assert.equal(hs.scale(), 1);
   assert.equal(hs.request(60), true);
-  assert.equal(hs.scale(), 0.05);
-  hs.step(0.03); assert.equal(hs.scale(), 0.05);
-  hs.step(0.04); assert.equal(hs.scale(), 1);
+  assert.ok(hs.scale() < 1 && hs.scale() > 0.05, 'eased: the window starts decelerating, not snapping');
+  hs.step(0.02); assert.ok(Math.abs(hs.scale() - 0.05) < 0.02, 'plateau reaches ~0.05');
+  hs.step(0.001); assert.ok(Math.abs(hs.scale() - 0.05) < 0.02);
+  hs.step(0.05); assert.equal(hs.scale(), 1);
   assert.equal(hs.request(40), false, 'chained stops are rejected');
   hs.step(0.3);
   assert.equal(hs.request(40), true);

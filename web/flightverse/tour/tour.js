@@ -8,8 +8,8 @@
 // Eventos (bus, sólo ?fv=2): 'tour' {state:'start'|'stop'|'poi'|'loop', index, n, poi}
 import {
   validatePoiDoc, buildTimeline, auditTimeline, pushOutOfMasks, TOUR_LIMITS,
-} from '/flightverse/tour/poi.js?v=369';
-import { edgeMetric } from '/flightverse/tour/edge.js?v=369';
+} from '/flightverse/tour/poi.js?v=370';
+import { edgeMetric } from '/flightverse/tour/edge.js?v=370';
 
 /**
  * Carga los POIs del mundo. Consulta primero assets/tour/index.json (siempre existe) y sólo pide

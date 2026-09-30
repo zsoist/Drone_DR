@@ -15,14 +15,14 @@
 //   setObjective({x,y,z,label}|null)
 //   setWind({speed, fromDeg, gust}) · setIntegrity(0..1) · setBattery(0..1) · setAttitude(on)
 //   hitFlash() · gateFlash() · updateInvasionHud(inv, health) · announce(text) · message(text, ms)
-import { combatV2Markup } from '/flightverse/ui/weapons2.js?v=369';
-import { bootMarkup } from '/flightverse/ui/screens.js?v=369';
-import { createHudCanvas, reticleKindFor } from '/flightverse/ui/reticle.js?v=369';
-import { RIGS } from '/flightverse/runtime.js?v=369';
-import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=369';
-import { ICON } from '/flightverse/ui/icons2.js?v=369';
-import { hudMenuMarkup } from '/flightverse/ui/menu2.js?v=369';
-import { screensV2Markup } from '/flightverse/ui/screens2.js?v=369';
+import { combatV2Markup } from '/flightverse/ui/weapons2.js?v=370';
+import { bootMarkup } from '/flightverse/ui/screens.js?v=370';
+import { createHudCanvas, reticleKindFor } from '/flightverse/ui/reticle.js?v=370';
+import { RIGS } from '/flightverse/runtime.js?v=370';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=370';
+import { ICON } from '/flightverse/ui/icons2.js?v=370';
+import { hudMenuMarkup } from '/flightverse/ui/menu2.js?v=370';
+import { screensV2Markup } from '/flightverse/ui/screens2.js?v=370';
 
 export { ICON };
 
@@ -68,7 +68,7 @@ const instrumentsMarkup = () => `    <div class="hx-fpv" id="vl-fpv" aria-hidden
       <div class="hx-gauge" id="hx-integ" title="Casco"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" aria-label="Casco"><path d="M10 2.500l6 2.300v4.700c0 3.700-2.500 6.200-6 8-3.500-1.800-6-4.300-6-8V4.800z"/></svg><i><b></b></i><em>100 %</em></div>
       <div class="hx-gauge" id="hx-batt" title="Batería"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" aria-label="Batería"><rect x="2.500" y="6" width="13" height="8" rx="1.500"/><path d="M17.500 8.500v3"/></svg><i><b></b></i><em>100 %</em></div>
     </div>
-    <div class="hx-keys" id="hx-keys" aria-hidden="true"><kbd>WASD</kbd> mover <kbd>Shift</kbd> turbo <kbd>Esc</kbd> pausa <kbd>1</kbd>–<kbd>6</kbd> armas</div>
+    <div class="hx-keys" id="hx-keys" aria-hidden="true"><kbd>WASD</kbd> mover <kbd>Q</kbd><kbd>E</kbd> girar <kbd>R</kbd><kbd>F</kbd> subir/bajar <kbd>Shift</kbd> turbo <kbd>Clic</kbd> disparar <kbd>1</kbd>–<kbd>6</kbd> armas <kbd>C</kbd> cámara <kbd>Esc</kbd> pausa</div>
     <div class="hx-count" id="vl-count" aria-hidden="true"></div>
     <div class="hx-banner" id="hx-banner" aria-hidden="true"><b></b><small></small></div>
     <div class="hx-warn" id="hx-warn" role="alert"></div>
@@ -181,7 +181,15 @@ export function createHud2(ctx) {
     const { man } = ctx;
     if (man.assets?.ortho) {
       const im = new Image();
-      im.onload = () => { mm.img = im; mm.ready = true; };
+      // La ortofoto se decodifica y reduce FUERA del hilo principal (createImageBitmap al tamaño del canvas): dibujar el <img>
+      // grande la primera vez decodificaba el webp en el commit del compositor (~50 ms en desktop, ~200 ms en móvil) justo al
+      // arrancar Gate Rush / Invasión, que es cuando aparece el minimapa.
+      im.onload = () => {
+        const done = img => { mm.img = img; mm.ready = true; };
+        if (typeof createImageBitmap !== 'function') { done(im); return; }
+        const w = mm.cv.width, h = mm.cv.height;
+        createImageBitmap(im, { resizeWidth: w, resizeHeight: h, resizeQuality: 'medium' }).then(done, () => done(im));
+      };
       im.src = man.assets.ortho;
     }
     resize();
@@ -372,7 +380,7 @@ export function createHud2(ctx) {
     const cine = !!(ctx.tour?.active || ctx.photo?.active);   // Tour / Foto (E): sin cromo de combate ni de vuelo táctil
     cv.setModeMarkers(ctx.modeHud?.markers);
     for (const ar of ctx.modeHud?.arcs || []) {       // arcos de telégrafo de D (0 = derecha, + hacia arriba) -> arcos de A (0 = arriba, horario)
-      if (ar.t0 > lastModeArcT) { lastModeArcT = ar.t0; cv.damageArc(Math.PI / 2 - ar.angle); }
+      if (ar.t0 > lastModeArcT) { lastModeArcT = ar.t0; cv.damageArc(Math.PI / 2 - ar.angle, ar.kind); }
     }
     cv.state.bossY = (el.plate.getBoundingClientRect().bottom || 44) + (el.sub.hidden ? 26 : 56);
     const mh = ctx.modeHud, b = mh?.banner;
@@ -408,7 +416,7 @@ export function createHud2(ctx) {
     message: (text, ms) => ctx.ui.screens?.toast?.(text, ms),
     setReticle: (k, s) => cv.setReticle(k, s),
     hitMarker: t => cv.hitMarker(t),
-    damageArc: a => cv.damageArc(a),
+    damageArc: (a, k) => cv.damageArc(a, k),
     setLock: l => cv.setLock(l),
     setPipper: p => cv.setPipper(p),
     setThreats(list) { phys.externalThreatsAt = performance.now() / 1000; cv.setThreats(list); },

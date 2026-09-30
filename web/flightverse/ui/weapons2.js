@@ -4,8 +4,8 @@
 // sigue en fx/ y input/; aquí solo presentación. Mismo contrato que weapons-ui.js (A0):
 //   ctx.ui.weapons = { fireBtn, triggerBtn, weaponToggle, picker{close,open,toggle}, attach, setWeapon,
 //                      updateTriggerUi, flashFire, update, dispose }
-import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=369';
-import { ARSENAL } from '/flightverse/weapons.js?v=369';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=370';
+import { ARSENAL } from '/flightverse/weapons.js?v=370';
 
 /** Las 6 armas de la UI (spec §4). Las variantes M·S / M·L / VIPER-X siguen en el registro como perfiles internos. */
 export const UI_WEAPONS = Object.freeze(['mg', 'ac', 'm', 'sw', 'rg', 'tb']);
@@ -56,25 +56,83 @@ export function createWeaponsUi2(ctx) {
   const cur = () => ctx.fx?.weapons?.state?.weapon || 'm';
   const touch = () => { lastActive = performance.now(); actions.classList.remove('idle'); };
 
-  const place = () => {           // abanico de 6 iconos de 52 px a radio ~100 px, hacia el centro de la pantalla
+  // Rueda: 6 iconos de 52 px colocados en el primer hueco que NO pisa ningún control (fuego, turbo, subir/bajar, cintas,
+  // placas superiores, etiqueta del gimbal, minimapa) ni se sale de la zona segura. Candidatos, en orden: fila hacia el
+  // centro, columna hacia arriba, rejilla 2x3, abanicos de radio 104/132 (zurdo = espejo porque "hacia el centro" cambia).
+  const OB = '.hx-fire, .vl-fv-btn, .hx-gimbal, .hx-tape, .hx-top button, .hx-compass, .hx-mission.on, .hx-left > :not([hidden]), .hx-minimap, .hx-rail > :not([hidden])';
+  const SZ = 52, GAP = 8, MARGIN = 4;
+  const obstacleRects = () => {
+    const out = [];
+    for (const el of document.querySelectorAll(OB)) {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) out.push(r);
+    }
+    return out;
+  };
+  const safe = () => {
+    const pad = k => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(k)) || 0;
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);visibility:hidden';
+    document.body.appendChild(probe);
+    const cs = getComputedStyle(probe);
+    const v = { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
+    probe.remove(); void pad;
+    return v;
+  };
+  const hit = (c, r) => c[0] - SZ / 2 - MARGIN < r.right && c[0] + SZ / 2 + MARGIN > r.left && c[1] - SZ / 2 - MARGIN < r.bottom && c[1] + SZ / 2 + MARGIN > r.top;
+  const candidates = (cx, cy, sgn) => {
+    const pitch = SZ + GAP, off = 28 + GAP + SZ / 2;      // chip (56) -> primer icono
+    const list = [];
+    // rejillas (6x1, 3x2, 2x3) hacia el centro, subiendo de fila y separándose del chip si hace falta
+    for (const extra of [0, 36, 72]) {
+      for (const [cols, rows] of [[6, 1], [3, 2], [2, 3]]) {
+        for (let dyN = 0; dyN <= 4; dyN++) {
+          list.push(Array.from({ length: 6 }, (_, k) => {
+            const c = k % cols, rw = Math.floor(k / cols);
+            return [cx + sgn * (off + extra + c * pitch), cy - dyN * pitch / 2 - rw * pitch];
+          }));
+        }
+      }
+    }
+    list.push(Array.from({ length: 6 }, (_, k) => [cx, cy - off - k * pitch]));                                      // columna hacia arriba
+    for (const R0 of [104, 132]) {
+      for (const base of [0, -20, 20, -40, 40, -65, 65, -90, 90]) {
+        const a0 = (sgn > 0 ? 0 : 180) + base * (sgn > 0 ? -1 : 1);
+        const step = 2 * Math.asin((SZ + GAP) / 2 / R0) * 180 / Math.PI;
+        list.push(Array.from({ length: 6 }, (_, k) => {
+          const a = (a0 + (k - 2.5) * step) * Math.PI / 180;
+          return [cx + Math.cos(a) * R0, cy - Math.sin(a) * R0];
+        }));
+      }
+    }
+    return list;
+  };
+  const place = () => {
     const r = chip.getBoundingClientRect();
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const base = Math.atan2(innerHeight / 2 - cy, innerWidth / 2 - cx);
-    const n = opts.length, step = 32 * Math.PI / 180, R0 = 104;
+    const sgn = cx > innerWidth / 2 ? -1 : 1;                    // hacia el lado donde hay sitio
     const pr = actions.getBoundingClientRect();
-    // centros de los 6 iconos sobre el abanico; si el abanico se sale del viewport TODO se desplaza en bloque
-    // (antes cada icono se acotaba por separado y RAIL/NOVA acababan apilados en el borde derecho)
-    const pts = opts.map((b, i) => {
-      const a = base + (i - (n - 1) / 2) * step;
-      return [cx + Math.cos(a) * R0, cy + Math.sin(a) * R0];
-    });
-    const minX = Math.min(...pts.map(p => p[0])), maxX = Math.max(...pts.map(p => p[0]));
-    const minY = Math.min(...pts.map(p => p[1])), maxY = Math.max(...pts.map(p => p[1]));
-    const dx = maxX > innerWidth - 30 ? innerWidth - 30 - maxX : (minX < 30 ? 30 - minX : 0);
-    const dy = maxY > innerHeight - 30 ? innerHeight - 30 - maxY : (minY < 70 ? 70 - minY : 0);
+    const sf = safe(), obs = obstacleRects();
+    const box = { l: sf.l + 8 + SZ / 2, r: innerWidth - sf.r - 8 - SZ / 2, t: sf.t + 8 + SZ / 2, b: innerHeight - sf.b - 8 - SZ / 2 };
+    const centre = { left: innerWidth / 2 - 48, right: innerWidth / 2 + 48, top: innerHeight / 2 - 48, bottom: innerHeight / 2 + 48 };   // retícula
+    let best = null, bestScore = Infinity;
+    for (const pts of candidates(cx, cy, sgn)) {
+      if (pts.some(c => c[0] < box.l || c[0] > box.r || c[1] < box.t || c[1] > box.b)) continue;
+      let score = 0;
+      for (const c of pts) {
+        if (obs.some(o => hit(c, o))) score += 1000;
+        if (hit(c, centre)) score += 1;                          // preferible no tapar la retícula, pero es secundario
+        if (Math.hypot(c[0] - cx, c[1] - cy) < 50) score += 1000; // no encima del chip
+      }
+      if (score < bestScore) { best = pts; bestScore = score; if (score === 0) break; }
+    }
+    if (!best) best = candidates(cx, cy, sgn)[0].map(c => [Math.min(box.r, Math.max(box.l, c[0])), Math.min(box.b, Math.max(box.t, c[1]))]);
+    place.last = { pts: best, score: bestScore };
     opts.forEach((b, i) => {
-      b.style.left = `${pts[i][0] + dx - pr.left - 26}px`;
-      b.style.top = `${pts[i][1] + dy - pr.top - 26}px`;
+      b.style.left = `${best[i][0] - pr.left - SZ / 2}px`;
+      b.style.top = `${best[i][1] - pr.top - SZ / 2}px`;
       b.style.transitionDelay = `${i * 12}ms`;
     });
     wheel.style.setProperty('--ox', `${cx - pr.left}px`);
@@ -207,6 +265,7 @@ export function createWeaponsUi2(ctx) {
   }
 
   const api = {
+    wheelLayout: () => place.last || null,
     fireBtn, triggerBtn: stub, weaponToggle: chip, picker, slots: { cluster: actions },
     attach, setWeapon, updateTriggerUi, flashFire, update,
     dispose() { disposed = true; closeWheel('dispose'); },

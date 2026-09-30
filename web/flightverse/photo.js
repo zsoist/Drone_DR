@@ -8,10 +8,10 @@
 //   showDrone}), get(), focusAt(nx,ny), focusDistance(m), move(x,y,z), look(dyaw,dpitch), zoom(dmm),
 //   capture({download}) -> Promise<Blob|null>, state()
 // Eventos (bus, sólo ?fv=2): 'photo' {active, ...state}
-import { pushOutOfMasks } from '/flightverse/tour/poi.js?v=369';
-import { PHOTO_LIMITS, focalToVFov, focalToDiagFov, dofParams } from '/flightverse/tour/photo-math.js?v=369';
-import { edgeMetric, boundaryExtent } from '/flightverse/tour/edge.js?v=369';
-import { elevationOf, ELEV_MIN, ELEV_MAX } from '/flightverse/tour/tod.js?v=369';
+import { pushOutOfMasks } from '/flightverse/tour/poi.js?v=370';
+import { PHOTO_LIMITS, focalToVFov, focalToDiagFov, dofParams } from '/flightverse/tour/photo-math.js?v=370';
+import { edgeMetric, boundaryExtent } from '/flightverse/tour/edge.js?v=370';
+import { elevationOf, ELEV_MIN, ELEV_MAX } from '/flightverse/tour/tod.js?v=370';
 
 export { PHOTO_LIMITS, focalToVFov, focalToDiagFov, dofParams };
 
@@ -114,7 +114,7 @@ export function createPhoto(ctx, { doc = null, boundary = null, edge = null, gra
     return api.get();
   };
   api.get = () => ({ ...api.opts, focusDist: +focusDist.toFixed(1), fov: +camera.fov.toFixed(1) });
-  api.state = () => ({ active: api.active, ...api.get(), pos: pos.toArray().map(v => +v.toFixed(1)), yaw, pitch });
+  api.state = () => ({ active: api.active, framing: api.framing || null, ...api.get(), pos: pos.toArray().map(v => +v.toFixed(1)), yaw, pitch });
   api.move = (x = 0, y = 0, z = 0) => { mv.x = x; mv.y = y; mv.z = z; };
   api.look = (dyaw = 0, dpitch = 0) => {
     yaw -= dyaw; pitch = Math.max(-1.5, Math.min(1.5, pitch - dpitch));
@@ -201,6 +201,39 @@ export function createPhoto(ctx, { doc = null, boundary = null, edge = null, gra
     document.head.appendChild(styleEl);
   }
 
+  // Encuadre inicial favorecedor: antes la foto arrancaba con la cámara FPV inclinada 28° hacia arriba (sólo cielo). Se sitúa
+  // en el punto de vista del POI más cercano (los POI ya traen cámara y objetivo curados) y mira a su objetivo; si no hay
+  // POI a <= 250 m, vista 3/4 del dron (por detrás y a la derecha, inclinada ~20° hacia abajo) con el dron visible.
+  function frameFlattering() {
+    const from = camera.position;
+    let best = null, bd = 250;
+    for (const p of (doc?.pois || [])) {
+      const v = p.spline?.[0];
+      if (!v || !p.look) continue;
+      const d = Math.hypot(v[0] - from.x, v[1] - from.y, v[2] - from.z);
+      if (d < bd) { bd = d; best = p; }
+    }
+    if (best) {
+      const v = best.spline[0];
+      pos.set(v[0], v[1], v[2]);
+      dir.set(best.look[0] - pos.x, best.look[1] - pos.y, best.look[2] - pos.z);
+      yaw = Math.atan2(-dir.x, -dir.z); pitch = Math.atan2(dir.y, Math.hypot(dir.x, dir.z));
+      vel.set(0, 0, 0);
+      return { kind: 'poi', id: best.id, pitchDeg: +(pitch * 180 / Math.PI).toFixed(1) };
+    }
+    const d = ctx.drone?.pos;
+    if (!d) return { kind: 'keep' };
+    const hy = ctx.drone.yaw || 0;
+    const fx = -Math.sin(hy), fz = -Math.cos(hy);                 // avance del dron
+    const R = 10, back = 0.8, side = 0.6;                          // 3/4 trasero derecho
+    pos.set(d.x - fx * R * back + (-fz) * R * side * -1, d.y + R * Math.tan(20 * Math.PI / 180), d.z - fz * R * back + (fx) * R * side * -1);
+    dir.set(d.x - pos.x, d.y - pos.y, d.z - pos.z);
+    yaw = Math.atan2(-dir.x, -dir.z); pitch = Math.atan2(dir.y, Math.hypot(dir.x, dir.z));
+    vel.set(0, 0, 0);
+    api.opts.showDrone = true;
+    return { kind: 'drone', pitchDeg: +(pitch * 180 / Math.PI).toFixed(1) };
+  }
+
   api.enter = () => {
     if (api.active) return true;
     api.active = true;
@@ -211,6 +244,7 @@ export function createPhoto(ctx, { doc = null, boundary = null, edge = null, gra
     dir.set(0, 0, -1).applyQuaternion(camera.quaternion);
     yaw = Math.atan2(-dir.x, -dir.z); pitch = Math.asin(Math.max(-1, Math.min(1, dir.y)));
     ctx.state.photoActive = true;
+    api.framing = frameFlattering();
     if (api.opts.dof && ctx.gradeApi?.createDof) {
       dofFx = ctx.gradeApi.createDof();
       ctx.gradeApi.addPassBefore(dofFx.dofPass);

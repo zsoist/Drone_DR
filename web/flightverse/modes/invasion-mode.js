@@ -6,15 +6,15 @@
 // daño con gracia de 3 s / invulnerabilidad de 5 s al reaparecer / 3 vidas, telégrafos ≥ 0.5 s,
 // proyectiles que respetan los edificios, marcadores y flechas de amenaza, puntuación y top-10.
 // Sin el flag el comportamiento es el legado (oleadas infinitas, 1 vida).
-import * as THREE from '/flightverse/three.js?v=369';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=369';
-import { summarizeInvasionRun } from '/flightverse/hud-format.js?v=369';
+import * as THREE from '/flightverse/three.js?v=370';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=370';
+import { summarizeInvasionRun } from '/flightverse/hud-format.js?v=370';
 import {
   FAIR, VICTORY_WAVE, TYPE_INTRO, createPlayerVitals, fairHitDamage, computeMarkers,
   unlockedTypes, waveBonus, invasionMedal, hasLineOfSight,
-} from '/flightverse/invasion-policy.js?v=369';
-import { addRecord, getTop } from '/flightverse/modes/rules.js?v=369';
-import { showVictoryFallback } from '/flightverse/modes/result-cards.js?v=369';
+} from '/flightverse/invasion-policy.js?v=370';
+import { addRecord, getTop } from '/flightverse/modes/rules.js?v=370';
+import { showVictoryFallback } from '/flightverse/modes/result-cards.js?v=370';
 
 const BOSS_NAME = { dragon: 'DRAGÓN', gigante: 'GIGANTE' };
 const TYPE_LABEL = { zombie: 'Zombis', arquero: 'Arqueros', soldado: 'Soldados', avion: 'Aviones', ufo: 'OVNIs', dragon: 'Dragón', gigante: 'Gigante' };
@@ -40,6 +40,7 @@ export function createInvasionMode(ctx, events) {
   let warnUntil = 0;
   let warnedAt = -99;
   let lastPhase = 'idle';
+  let introFor = 0;                                // oleada cuya intro ya se mostró
   let outcomeHandled = false;
   const lastTelegraph = { at: -99, info: null };
   const packs = [];
@@ -333,6 +334,11 @@ export function createInvasionMode(ctx, events) {
   }
 
   let qaInvasionStarted = false;
+  // Calentamiento progresivo de assets de enemigos (módulos + catálogo + bytes GLB + texturas de detalle) en huecos de
+  // inactividad, DESPUÉS de cargar el mundo: así "Iniciar invasión" no paga descarga/parseo/texturas de golpe.
+  const conn = navigator.connection || {};
+  const slowNet = !!conn.saveData || /(^|-)(2|3)g$/.test(conn.effectiveType || '');
+  const warmTimer = setTimeout(() => { invasion.prewarm(['zombie']); }, 4000);
   // C: un choque que destruye el dron (evento `respawn`) cuesta UNA vida. Si la horda ya la quitó hace un momento
   // (hp<=0 -> loseLife) o el respawn ya descontó, no se cuenta dos veces.
   let lastLifeAt = -99;
@@ -377,6 +383,7 @@ export function createInvasionMode(ctx, events) {
         stopUi();
         return;
       }
+      invasion.prewarm(slowNet ? ['zombie'] : Object.keys(ENEMIES));   // mientras elige, se van trayendo los demás
       ctx.ui.overlay?.toggle('invasion');            // elegir enemigos
     },
     /** "INICIAR INVASIÓN" del selector. */
@@ -413,7 +420,7 @@ export function createInvasionMode(ctx, events) {
         if (v2 && Number(Q.get('invWave')) > 1) forceWave(Number(Q.get('invWave')));
       }
       if (!gamePaused) invasion.update(dt, drone.pos, drone.vel);
-      if (!invasion.state.on) return;
+      if (!invasion.state.on) { introFor = 0; return; }
       const st = invasion.state;
       if (v2) {
         vitals.noteMove(S.simT, drone.vel.length());
@@ -426,12 +433,17 @@ export function createInvasionMode(ctx, events) {
           events.emit('warn', { kind: 'move', text: 'Muévete', offer: 'reposition' });
         }
         if (st.phase !== lastPhase) {
-          if (st.phase === 'countdown') {
+          // La intro de oleada sale en cuanto arranca la run ('loading'), mientras se cargan los modelos; al pasar a
+          // 'countdown' no se repite para la misma oleada.
+          if (st.phase === 'countdown' || st.phase === 'loading') {
             const n = st.wave + 1;
-            const types = unlockedTypes(st.types, n);
-            const fresh = types.filter(t => TYPE_INTRO[t] === n || (n === 1));
-            events.emit('wave', { n, phase: 'intro', types, fresh, total: VICTORY_WAVE });
-            setBanner(`OLEADA ${n}`, fresh.length && n > 1 ? `Nuevo: ${fresh.map(t => TYPE_LABEL[t]).join(', ')}` : (n === VICTORY_WAVE ? 'Última oleada' : `de ${VICTORY_WAVE}`), 2.6);
+            if (introFor !== n) {
+              introFor = n;
+              const types = unlockedTypes(st.types, n);
+              const fresh = types.filter(t => TYPE_INTRO[t] === n || (n === 1));
+              events.emit('wave', { n, phase: 'intro', types, fresh, total: VICTORY_WAVE });
+              setBanner(`OLEADA ${n}`, fresh.length && n > 1 ? `Nuevo: ${fresh.map(t => TYPE_LABEL[t]).join(', ')}` : (n === VICTORY_WAVE ? 'Última oleada' : `de ${VICTORY_WAVE}`), 2.6);
+            }
           }
           lastPhase = st.phase;
         }
@@ -489,6 +501,6 @@ export function createInvasionMode(ctx, events) {
         warn: performance.now() < warnUntil ? 'Muévete' : null,
       };
     },
-    dispose() { invasion.dispose(); clearPacks(); },
+    dispose() { clearTimeout(warmTimer); invasion.dispose(); clearPacks(); },
   };
 }

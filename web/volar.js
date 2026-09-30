@@ -13,35 +13,35 @@
 //   modes/*  (D) enemigos, Invasión, Gate Rush → installEnemies(ctx)
 //   tour/*   (E) ghost, autopiloto, director   → installTour(ctx)
 // Contrato: docs/FLIGHTVERSE_DESIGN_SPEC.md §15. Flag ?fv=2 → ctx.flags.fv2.
-import * as THREE from '/flightverse/three.js?v=369';
+import * as THREE from '/flightverse/three.js?v=370';
 import {
   loadManifest, loadTerrain, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=369';
+} from '/flightverse/scene.js?v=370';
 import {
   createLoop, createInput, createDrone, MODES, STEP,
-} from '/flightverse/runtime.js?v=369';
-import { createAudio } from '/flightverse/audio.js?v=369';
-import { createSky } from '/flightverse/sky.js?v=369';
-import { createVegetation, reducedMotion } from '/flightverse/vegetation.js?v=369';
-import { loadSceneObjects } from '/flightverse/objects.js?v=369';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=369';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=369';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=369';
-import { splatAlignmentLabel } from '/flightverse/hud-format.js?v=369';
-import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=369';
-import { createBus } from '/flightverse/bus.js?v=369';
-import { mountUi, installUi } from '/flightverse/ui/index.js?v=369';
-import { bootProgress, markLayerUnavailable, bootError } from '/flightverse/ui/screens.js?v=369';
-import { installFx } from '/flightverse/fx/index.js?v=369';
-import { installControls, createDroneModel } from '/flightverse/input/index.js?v=369';
-import { installEnemies } from '/flightverse/modes/index.js?v=369';
-import { installTour } from '/flightverse/tour/index.js?v=369';
+} from '/flightverse/runtime.js?v=370';
+import { createAudio } from '/flightverse/audio.js?v=370';
+import { createSky } from '/flightverse/sky.js?v=370';
+import { createVegetation, reducedMotion } from '/flightverse/vegetation.js?v=370';
+import { loadSceneObjects } from '/flightverse/objects.js?v=370';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=370';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=370';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=370';
+import { splatAlignmentLabel } from '/flightverse/hud-format.js?v=370';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=370';
+import { createBus } from '/flightverse/bus.js?v=370';
+import { mountUi, installUi } from '/flightverse/ui/index.js?v=370';
+import { bootProgress, markLayerUnavailable, bootError } from '/flightverse/ui/screens.js?v=370';
+import { installFx } from '/flightverse/fx/index.js?v=370';
+import { installControls, createDroneModel } from '/flightverse/input/index.js?v=370';
+import { installEnemies } from '/flightverse/modes/index.js?v=370';
+import { installTour } from '/flightverse/tour/index.js?v=370';
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=369';
+} from '/vendor/postprocessing180.module.js?v=370';
 
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
@@ -506,11 +506,11 @@ async function main() {
 
   if (AT === 'record') tour.autotestRecord();
   let qualityGovernor = null;
-  let hitStopAcc = 0;
   let dprNow = Math.min(devicePixelRatio, 2);
   let renderReportFrame = 0;
   const renderLifecycle = { pauses: 0, resumes: 0 };
   const loop = createLoop({
+    timeScale: () => fx.timeScale(),
     onPause: () => {
       renderLifecycle.pauses += 1;
       controls.onPause();          // pausa/oculta: no dejar teclas ni disparo pegados
@@ -520,11 +520,9 @@ async function main() {
       if (qualityGovernor) qualityGovernor.reset();
     },
     update(dt) {
-      // Hit-stop (?fv=2, fx.timeScale() = 0.05 durante 40-80 ms): el MUNDO entero se congela a la vez — física del dron,
-      // enemigos, armas, reloj de Gate Rush, fantasma — no solo las armas. El paso fijo no admite dt variables, así que
-      // dt*escala se aplica acumulando la escala y saltando pasos (exacto en promedio, determinista, sin pasos de 50 µs).
-      const ts = fx.timeScale();
-      if (ts < 1) { hitStopAcc += ts; if (hitStopAcc < 1) return; hitStopAcc -= 1; } else hitStopAcc = 0;
+      // Hit-stop (?fv=2, fx.timeScale() suavizado hasta 0.05 durante 40-80 ms): el MUNDO entero se congela a la vez — física
+      // del dron, enemigos, armas, reloj de Gate Rush, fantasma. La escala entra en el acumulador de createLoop (loop-step.js):
+      // los pasos siguen siendo exactos (STEP) y no se salta ninguno; lo que se frena es el tiempo, y `alpha` interpola fluido.
       S.simT += dt;
       // Pausa real de juego: con cualquier panel abierto (menú, armamento, imagen, guía…) el
       // input ya está cortado; sin esto la horda seguía matando al jugador y el reloj de Gate

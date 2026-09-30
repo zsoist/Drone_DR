@@ -39,6 +39,23 @@ def healthy_sample():
     }
 
 
+class LongTaskBudgetTests(unittest.TestCase):
+    def test_no_longtask_data_does_not_fail_synthetic_samples(self):
+        self.assertEqual([], invasion_runtime_gate.validate_longtasks(healthy_sample()))
+
+    def test_freeze_after_invasion_start_fails(self):
+        sample = healthy_sample()
+        sample["longtasks"] = {"invasion_started_at": 5000, "tasks": [[100, 900], [5020, 3838]]}
+        failures = invasion_runtime_gate.validate_invasion_sample(sample)
+        self.assertEqual(["longtask_budget"], [f["reason"] for f in failures])
+        self.assertEqual(3838, failures[0]["worst_ms"])
+
+    def test_world_load_tasks_before_the_start_and_short_tasks_pass(self):
+        sample = healthy_sample()
+        sample["longtasks"] = {"invasion_started_at": 5000, "tasks": [[100, 900], [5030, 60], [5200, 199]]}
+        self.assertEqual([], invasion_runtime_gate.validate_invasion_sample(sample))
+
+
 class InvasionRuntimeGateTests(unittest.TestCase):
     def test_healthy_mixed_invasion_passes(self):
         self.assertEqual([], invasion_runtime_gate.validate_invasion_sample(healthy_sample()))
