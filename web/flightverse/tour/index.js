@@ -16,17 +16,17 @@
 //   ctx.masks   {list, pushOut(p, margin), inside(p)}  zonas sin cámara (para C: empuje de cámara)
 //   ctx.grade   {setGrade, setEvExtra}, ctx.gradeApi (pasadas de post)
 //   ctx.actions + startTour stopTour enterPhoto exitPhoto
-//   eventos (sólo fv2) en ctx.tour.events.on(type, fn) — y TAMBIÉN en el bus cuando A los registra en BUS_EVENTS:
+//   eventos (sólo fv2) en el bus (BUS_EVENTS; ctx.tour.events.on es un alias de bus.on):
 //     'tour'  {state:'start'|'stop'|'poi'|'loop', index, n, poi:{id,name,short,dwell,index,n}}
 //     'photo' {active, ...state}      'edge' {warn, s, fog, dist, m}      'tod' {key, elev}  (tod ya está en el bus)
 //   ctx.ui.external = {tour,photo,edge} (A) desactiva el chrome de respaldo de default-ui.js.
-import { createRecorder } from '/flightverse/recorder.js?v=368';
-import { createGhost } from '/flightverse/tour/ghost.js?v=368';
-import { createAutopilot } from '/flightverse/tour/autopilot.js?v=368';
-import { createDirector } from '/flightverse/tour/director.js?v=368';
-import { createCinematic } from '/flightverse/tour/cinematic.js?v=368';
-import { installPresentation } from '/flightverse/tour/presentation.js?v=368';
-import { freezePixelRatio } from '/flightverse/tour/render-guard.js?v=368';
+import { createRecorder } from '/flightverse/recorder.js?v=369';
+import { createGhost } from '/flightverse/tour/ghost.js?v=369';
+import { createAutopilot } from '/flightverse/tour/autopilot.js?v=369';
+import { createDirector } from '/flightverse/tour/director.js?v=369';
+import { createCinematic } from '/flightverse/tour/cinematic.js?v=369';
+import { installPresentation } from '/flightverse/tour/presentation.js?v=369';
+import { freezePixelRatio } from '/flightverse/tour/render-guard.js?v=369';
 
 export async function installTour(ctx) {
   const { report, AT } = ctx;

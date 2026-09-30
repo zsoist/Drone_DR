@@ -11,7 +11,7 @@
 import {
   createSim, profileForContext, windForContext, PROFILES, WIND_PRESETS, densityRatio,
   RESPAWN_DELAY, WRECK_CAM_TIME, INVULN_TIME, buildVegetationField,
-} from '/flightverse/physics/index.js?v=368';
+} from '/flightverse/physics/index.js?v=369';
 
 const hashString = (s) => {
   let h = 2166136261 >>> 0;

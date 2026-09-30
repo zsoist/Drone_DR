@@ -6,19 +6,19 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=368';
+import * as THREE from '/flightverse/three.js?v=369';
 import {
   earliestHit,
   normalizeTargetRadius,
   segmentSphereHit,
-} from '/flightverse/collision-math.js?v=368';
+} from '/flightverse/collision-math.js?v=369';
 import {
   EffectPool,
   ballisticStep,
   disposeOwnedRenderObject,
   impactTransform,
   projectileDirection,
-} from '/flightverse/aiming.js?v=368';
+} from '/flightverse/aiming.js?v=369';
 import {
   WEAPON_FAMILY,
   WEAPON_FX,
@@ -30,15 +30,15 @@ import {
   misilProfileKey,
   steerVector,
   usesHeat,
-} from '/flightverse/weapon-registry.js?v=368';
-import { createFxSystem } from '/flightverse/fx/fx-system.js?v=368';
-import { createProjectileModels, PROJECTILE_LENGTH } from '/flightverse/fx/projectile-models.js?v=368';
-import { surfaceOf } from '/flightverse/fx/surface.js?v=368';
-import { hitStopFor } from '/flightverse/fx/hitstop.js?v=368';
+} from '/flightverse/weapon-registry.js?v=369';
+import { createFxSystem } from '/flightverse/fx/fx-system.js?v=369';
+import { createProjectileModels, PROJECTILE_LENGTH } from '/flightverse/fx/projectile-models.js?v=369';
+import { surfaceOf } from '/flightverse/fx/surface.js?v=369';
+import { hitStopFor } from '/flightverse/fx/hitstop.js?v=369';
 import {
   createWeaponEffects,
   radialDamage,
-} from '/flightverse/weapon-effects.js?v=368';
+} from '/flightverse/weapon-effects.js?v=369';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -79,7 +79,7 @@ export const ARSENAL = WEAPON_PROFILES;
 let debrisFrags = null;
 (async () => {
   try {
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=368');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=369');
     const g = await new GLTFLoader().loadAsync('/assets/destruction/models/debris_pack.glb');
     const frags = [];
     g.scene.traverse(n => { if (n.isMesh && n.userData.role === 'fragment') frags.push(n); });

@@ -5,8 +5,8 @@
 // presupuesto móvil "tonemap + un grade"); el ToneMappingEffect pasa a AgX (spec §13).
 import {
   EffectPass, Effect, ToneMappingEffect, ToneMappingMode, DepthOfFieldEffect,
-} from '/vendor/postprocessing180.module.js?v=368';
-import * as THREE from '/flightverse/three.js?v=368';
+} from '/vendor/postprocessing180.module.js?v=369';
+import * as THREE from '/flightverse/three.js?v=369';
 
 const FRAG = `
 uniform vec3 uGain;

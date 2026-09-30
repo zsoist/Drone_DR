@@ -11,7 +11,7 @@
 // ?fv=2 añade (contrato con A/B/C/E — ver docs/FLIGHTVERSE_DESIGN_SPEC.md §9, §8):
 //   ctx.modes = { start(key, opts), stop(), current, onboarding }   // key: explorar|tour|gaterush|invasion
 //   ctx.actions.startMode / stopMode / repositionDrone / setGhost
-//   ctx.enemies.events.on(type, fn)  — emisor propio de los modos; reenvía al bus solo lo que ya está en BUS_EVENTS
+//   ctx.enemies.events.on(type, fn)  — alias de bus.on (todos los eventos de modos viajan por el bus compartido)
 //   ctx.enemies.markers  = { markers:[{id,type,x,y,dist,hpFrac,boss,telegraphing}], edges:[{id,x,y,angle,dist,opacity}], boss:{name,hpFrac} }   // x,y 0..1
 //   ctx.enemies.grHud()  = { phase, t, timerText, gate, total, par, pace, misses, countdown, medal }   (Gate Rush)
 //   ctx.enemies.beat     = S.modeBeat = { text, sub, dur } banner de intro/outro de oleada
@@ -23,20 +23,20 @@
 //   victory{wave,score,killed,medal,rank,livesLost}  defeat{...}  record{mode,rank,score}
 //   medal*{id,level,mode,medal,...} (id 'gaterush:<dif>'|'invasion:<dif>'|'primer-vuelo'; level bronze|silver|gold — formato de A)
 //   Resultado → ui: vm de Gate Rush lleva medal,par,misses,rank,top,score; Invasión usa ctx.ui.screens.showVictory(run) si existe (si no, tarjeta de respaldo en modes/result-cards.js)
-//   QA de desarrollo: ?fvd=1 activa SOLO la mecánica de modos v2 (sin la UI v2 de A); ?invWave=n empieza en la oleada n; ?onboard=1 fuerza el onboarding
+//   QA de desarrollo: ?invWave=n empieza en la oleada n; ?onboard=1 fuerza el onboarding
 //   markers{markers,edges,boss} (≈10 Hz)  game-mode{key,phase}  gr-miss  gr-penalty  onboard{step,copy}  reposition
-// Pendiente de A: registrar en BUS_EVENTS los tipos nuevos que quiera recibir por el bus.
-import { createInvasionMode } from '/flightverse/modes/invasion-mode.js?v=368';
-import { createGateRushMode } from '/flightverse/modes/gaterush-mode.js?v=368';
-import { createModeEvents } from '/flightverse/modes/events.js?v=368';
-import { createModeOverlay } from '/flightverse/modes/overlay.js?v=368';
-import { createOnboarding } from '/flightverse/modes/onboarding.js?v=368';
+// Todos los tipos están registrados en BUS_EVENTS (integración).
+import { createInvasionMode } from '/flightverse/modes/invasion-mode.js?v=369';
+import { createGateRushMode } from '/flightverse/modes/gaterush-mode.js?v=369';
+import { createModeEvents } from '/flightverse/modes/events.js?v=369';
+import { createModeOverlay } from '/flightverse/modes/overlay.js?v=369';
+import { createOnboarding } from '/flightverse/modes/onboarding.js?v=369';
 
 export function installEnemies(ctx) {
   const enemies = ctx.enemies;
-  const v2 = !!ctx.flags.fv2 || ctx.Q.get('fvd') === '1';
+  const v2 = !!ctx.flags.fv2;
   const events = createModeEvents(ctx.bus, ctx.report);
-  const overlay = v2 ? createModeOverlay(ctx) : null;
+  const overlay = v2 && !ctx.ui?.drawsModeHud ? createModeOverlay(ctx) : null;
   const inv = createInvasionMode(ctx, events);
   Object.assign(enemies, inv);
   enemies.gaterush = createGateRushMode(ctx, events);
@@ -111,10 +111,13 @@ export function installEnemies(ctx) {
     };
   };
   enemies.renderHud = () => {
+    // A (ui/hud2.js + ui/reticle.js) dibuja marcadores, flechas, jefe, placa, banner y aviso desde ctx.modeHud.
+    // modes/overlay.js queda SOLO como respaldo cuando no hay HUD v2 que dibuje (ctx.ui.drawsModeHud).
     const model = inv.renderHud() || enemies.gaterush.overlayModel() || {};
-    overlay.draw(model, performance.now());
+    if (overlay && !ctx.ui?.drawsModeHud) overlay.draw(model, performance.now());
+    return model;
   };
   const baseDispose = inv.dispose;
-  enemies.dispose = () => { baseDispose(); overlay.dispose(); };
+  enemies.dispose = () => { baseDispose(); overlay?.dispose(); };
   return enemies;
 }

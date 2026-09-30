@@ -3,9 +3,9 @@
 // ctx.modes.onboarding.state. Pasos: 0–3 "Toca para empezar" · 3–8 despegue automático (1.5 s) +
 // "Arrastra para volar" · 8–14 aro azul a 25 m / +3 m · 14–20 dron objetivo quieto a 40 m,
 // el primer impacto termina el onboarding (medalla "Primer vuelo"). Saltable; ab_fv_onboarded.
-import * as THREE from '/flightverse/three.js?v=368';
-import { segmentPassesGate } from '/flightverse/collision-math.js?v=368';
-import { ONBOARD_KEY, ONBOARD_STEPS, onboardStepAt } from '/flightverse/modes/rules.js?v=368';
+import * as THREE from '/flightverse/three.js?v=369';
+import { segmentPassesGate } from '/flightverse/collision-math.js?v=369';
+import { ONBOARD_KEY, ONBOARD_STEPS, onboardStepAt } from '/flightverse/modes/rules.js?v=369';
 
 export function createOnboarding(ctx, events) {
   const { scene, state: S, audio } = ctx;
@@ -49,7 +49,7 @@ export function createOnboarding(ctx, events) {
 
   return {
     state: st,
-    shouldRun() { return (ctx.flags.fv2 || ctx.Q.get('fvd') === '1') && !ctx.AT && !flagged(); },
+    shouldRun() { return ctx.flags.fv2 && !ctx.AT && !flagged(); },
     begin() { if (st.active || flagged()) return false; Object.assign(st, { active: true, t: 0, done: false, skipped: false, tapped: false, gatePassed: false }); lastStepId = ''; return true; },
     /** A llama al pulsar "Toca para empezar" (desbloquea audio/háptica). */
     tap() { st.tapped = true; if (st.t < 3) st.t = 3; },

@@ -445,7 +445,11 @@ export function createHudCanvas(ctx, { canvas }) {
       }
     }
     for (const e of m.edges || []) {
-      g.save(); g.translate(e.x * L.w, e.y * L.h); g.rotate(-e.angle); g.globalAlpha = e.opacity ?? 1;
+      // D las pone en el borde de la pantalla, donde caen bajo el cluster de fuego / sticks: A las recoloca en una elipse
+      // interior (0.40 w x 0.26 h) que respeta la dirección hacia el enemigo
+      const ddx = (e.x - 0.5) * L.w, ddy = (e.y - 0.5) * L.h, ea = Math.atan2(ddy, ddx);
+      const ex = L.w / 2 + Math.cos(ea) * L.w * 0.40, ey = L.h / 2 + Math.sin(ea) * L.h * 0.26;
+      g.save(); g.translate(ex, ey); g.rotate(ea); g.globalAlpha = e.opacity ?? 1;
       g.beginPath(); g.moveTo(9, 0); g.lineTo(-7, -8); g.lineTo(-7, 8); g.closePath();
       g.fillStyle = HC.hostile; g.fill(); g.lineWidth = 1.5; g.strokeStyle = 'rgba(8,10,14,.85)'; g.stroke();
       g.restore();

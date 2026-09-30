@@ -158,7 +158,7 @@
 .hx-wstrip, .hx-heat, .hx-keys { display: none; }
 .fv2.hx-fine .hx-actions { display: none; }
 .fv2.hx-fine .hx-wstrip { display: flex; position: fixed; z-index: 4; left: calc(var(--hx-sl) + var(--hx-g)); bottom: calc(var(--hx-sb) + var(--hx-g)); gap: 4px; }
-.hx-slot { position: relative; width: 44px; height: 52px; padding: 4px 0 2px; border-radius: 8px; background: var(--h-plate); border: 1px solid var(--h-line); color: var(--h-ink-2);
+.hx-slot { pointer-events: auto; position: relative; width: 44px; height: 52px; padding: 4px 0 2px; border-radius: 8px; background: var(--h-plate); border: 1px solid var(--h-line); color: var(--h-ink-2);
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 0; cursor: pointer; }
 .hx-slot svg { width: 20px; height: 20px; margin-bottom: 2px; }
 .hx-slot kbd { position: absolute; left: 4px; top: 2px; font: 500 12px/14px var(--hx-mono); color: var(--h-ink-2); background: none; border: 0; padding: 0; }
@@ -175,6 +175,10 @@
 .fv2.hx-fine .hx-tape.r { right: 10%; }
 .fv2.hx-fine .hx[data-cam="fpv"] .hx-tape { height: 36vh; }
 .fv2.hx-fine .hx-minimap { left: auto; right: calc(var(--hx-sr) + var(--hx-g)); transform: none; bottom: calc(var(--hx-sb) + 64px); width: 160px; height: 160px; }
+/* móvil vertical: el minimapa abajo-centro chocaba con subir/bajar/turbo (C) -> arriba a la izquierda, bajo la placa de velocidad */
+@media (orientation: portrait) and (pointer: coarse) {
+  .fv2 .hx-minimap { left: calc(var(--hx-sl) + var(--hx-g)); right: auto; transform: none; top: calc(var(--hx-st) + 8px + 44px + 8px + 34px + 10px); bottom: auto; width: 96px; height: 96px; }
+}
 .fv2.hx-fine .hx-rail { left: calc(var(--hx-sl) + var(--hx-g)); transform: none; bottom: calc(var(--hx-sb) + 12px + 52px + 10px); }
 
 /* zurdo: el cúmulo de acciones pasa a la izquierda */
@@ -197,17 +201,18 @@ html[data-lefty="1"] .hx-actions { right: auto; left: calc(var(--hx-sl) + var(--
   .hx-tape { top: 28%; }
   .hx[data-cam="fpv"] .hx-tape { top: 28%; height: 44%; }
   .hx-actions { bottom: calc(var(--hx-sb) + 16px); }
-  .vl-fv-btn[data-fv="boost"] { bottom: calc(var(--hx-sb) + 16px + 10px) !important; }
-  .vl-fv-btn[data-fv="up"] { bottom: calc(var(--hx-sb) + 16px + 10px + 56px + 8px) !important; }
-  .vl-fv-btn[data-fv="down"] { bottom: calc(var(--hx-sb) + 16px + 10px + 56px + 8px + 44px + 8px) !important; }
   .hx-minimap { left: auto; right: calc(var(--hx-sr) + var(--hx-g)); transform: none; top: calc(var(--hx-st) + 8px + 44px + 8px); bottom: auto; width: 96px; height: 96px; }
   .hx-rail { bottom: calc(var(--hx-sb) + 6px); }
   .hx-count { top: 22%; font-size: 72px; }
   .hx-banner { top: 24%; }
 }
 @media (orientation: landscape) and (max-height: 520px) and (pointer: coarse) {
+  /* las cintas se apartan de la columna de fuego (76 px + hueco): derecha en diestro, izquierda en zurdo */
   .hx-tape.l { left: calc(var(--hx-sl) + 16px); }
-  .hx-tape.r { right: calc(var(--hx-sr) + 16px); }
+  .hx-tape.r { right: calc(var(--hx-sr) + 16px + 92px); }
+  html[data-lefty="1"] .hx-tape.l { left: calc(var(--hx-sl) + 16px + 92px); }
+  html[data-lefty="1"] .hx-tape.r { right: calc(var(--hx-sr) + 16px); }
+  .hx.mm-on .hx-tape.r { top: 46%; height: 36%; }
 }
 
 /* ── hoja de avisos / cuenta atrás de sistema ────────────────────────────── */
@@ -225,3 +230,10 @@ html[data-rm="1"] .hx-gimbal, html[data-rm="1"] .hx-banner { transform: translat
 
 /* E (modo foto): ui.hud.setVisible(false) oculta el cromo */
 .vl-hud.hx.hx-off > :not(.hx-sheet):not(.hx-start):not(.vl-boot):not(.hx-scrim-ov):not(.hx-toast) { visibility: hidden !important; }
+
+/* Tour / Foto (E): el cromo de combate y de vuelo táctil sale de en medio; quedan volver, pausa y el cromo propio de E */
+body.hx-showcase .hx-actions, body.hx-showcase .hx-wstrip, body.hx-showcase .hx-heat, body.hx-showcase .hx-keys, body.hx-showcase .hx-tape,
+body.hx-showcase .hx-rail, body.hx-showcase .hx-canvas, body.hx-showcase .vl-stick, body.hx-showcase .vl-fv-btn, body.hx-showcase .hx-left,
+body.hx-showcase .hx-minimap, body.hx-showcase .hx-compass, body.hx-showcase .hx-sub { visibility: hidden !important; pointer-events: none !important; }
+/* rueda de armas abierta: el turbo / subir / bajar de C y la etiqueta del gimbal se apartan bajo el abanico */
+body:has(.hx-wheel.open) .vl-fv-btn, body:has(.hx-wheel.open) .hx-gimbal { opacity: .15 !important; pointer-events: none !important; }

@@ -3,10 +3,10 @@
 // imagen (grade), cine + director. Wiring: chips del dock, coordinador de
 // overlays, paneles arrastrables, grade/presets, sonido, compartir, grabar.
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { MODES } from '/flightverse/runtime.js?v=368';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=368';
-import { createOverlayCoordinator } from '/flightverse/touch.js?v=368';
-import { installGrade } from '/flightverse/ui/grade.js?v=368';
+import { MODES } from '/flightverse/runtime.js?v=369';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=369';
+import { createOverlayCoordinator } from '/flightverse/touch.js?v=369';
+import { installGrade } from '/flightverse/ui/grade.js?v=369';
 
 export const dockMarkup = () => `    <div class="vl-corner bl">
       <button class="vl-dockmin vl-solo-fino" id="vl-dockmin" title="Ocultar panel">«</button>
@@ -169,7 +169,7 @@ export function createMenu(ctx) {
       const preset = sky.cycle();
       ctx.syncLook();
       $('#vl-cielo').textContent = 'cielo · ' + CIELO_LB[preset];
-      bus.emit('tod', { key: preset });
+      bus.emit('tod', { key: preset, elev: ctx.sky.elevation });
     });
     $('#vl-cielo').textContent = 'cielo · ' + (CIELO_LB[sky.preset] || 'día');
     $('#vl-mode').addEventListener('click', () => {

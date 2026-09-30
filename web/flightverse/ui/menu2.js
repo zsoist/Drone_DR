@@ -2,10 +2,10 @@
 // Sonido · Controles · Foto · Grabar · Salir, subpáginas con flecha atrás) y selector de MODO (4 tarjetas:
 // Explorar / Tour / Gate Rush / Invasión). Reusa el coordinador de overlays de touch.js (inert + foco atrapado +
 // Esc) y las mismas acciones (ctx.actions) que el menú legado; NO hay ciclo de modos: cada modo se elige.
-import { MODES, RIGS } from '/flightverse/runtime.js?v=368';
-import { createOverlayCoordinator } from '/flightverse/touch.js?v=368';
-import { installGrade } from '/flightverse/ui/grade.js?v=368';
-import { ICON } from '/flightverse/ui/icons2.js?v=368';
+import { MODES, RIGS } from '/flightverse/runtime.js?v=369';
+import { createOverlayCoordinator } from '/flightverse/touch.js?v=369';
+import { installGrade } from '/flightverse/ui/grade.js?v=369';
+import { ICON } from '/flightverse/ui/icons2.js?v=369';
 
 const s24 = b => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${b}</svg>`;
 const MODE_ICON = {
@@ -119,7 +119,6 @@ export function pauseMarkup(touch) {
             ${slider('volSfx', 'Efectos', 0, 1, 0.05)}
             ${slider('volMusic', 'Música', 0, 1, 0.05)}
             ${toggle('vibration', 'Vibración', 'Respuesta háptica al disparar y al recibir daño')}
-            <p class="hx-note">Los controles de volumen se aplican cuando el motor de audio los admite.</p>
           </div>
           <div class="hx-page" data-page="ctl" hidden>
             <h3 class="hx-h">Mirar y volar</h3>
@@ -381,7 +380,7 @@ export function createMenu2(ctx) {
         setTimeout(syncVista, 50); syncVista(); return;
       }
       const tod = t.closest('[data-tod]');
-      if (tod) { ctx.sky.setPreset(tod.dataset.tod); ctx.syncLook(); bus.emit('tod', { key: tod.dataset.tod }); syncVista(); return; }
+      if (tod) { ctx.sky.setPreset(tod.dataset.tod); ctx.syncLook(); bus.emit('tod', { key: tod.dataset.tod, elev: ctx.sky.elevation }); syncVista(); return; }
       if (t.closest('#hx-calidad-row')) { A.cycleCalidad(); setTimeout(syncVista, 30); return; }
       if (t.closest('#hx-rec-row')) { A.toggleRec(); setTimeout(syncRoot, 60); return; }
       const sg = t.closest('[data-pref-seg]');

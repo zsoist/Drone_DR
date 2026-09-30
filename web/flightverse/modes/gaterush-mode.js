@@ -6,12 +6,12 @@
 // Con ?fv=2: inicio validado contra colisión (≥ 12 m de muros, 30 m libres al frente),
 // par por mundo/dificultad, medallas bronce/plata/oro, fallos, penalización de +3 s por
 // respawn, récords top-10 por (mundo, modo, dificultad) y fantasma de la mejor run.
-import { MODES, STEP } from '/flightverse/runtime.js?v=368';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=368';
+import { MODES, STEP } from '/flightverse/runtime.js?v=369';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=369';
 import {
   addRecord, getTop, bestMedal, encodeGhost, ghostKey, saveGhostIfBest, loadGhost, timeText,
-} from '/flightverse/modes/rules.js?v=368';
-import { decorateGateRushResult } from '/flightverse/modes/result-cards.js?v=368';
+} from '/flightverse/modes/rules.js?v=369';
+import { decorateGateRushResult } from '/flightverse/modes/result-cards.js?v=369';
 
 const GHOST_PREF = 'ab_fv_gr_ghost';
 
@@ -19,7 +19,7 @@ export function createGateRushMode(ctx, events) {
   const {
     scene, terrain, audio, report, AT, CID, state: S, actions: A, bus, W,
   } = ctx;
-  const v2 = !!ctx.flags.fv2 || ctx.Q.get('fvd') === '1';
+  const v2 = !!ctx.flags.fv2;
   const autoReto = AT === 'gaterush' ? { last: 0, replayed: false } : null;
   const sfx = { idx: 0, phase: '', count: 0 };
   const ghostPref = () => { try { return localStorage.getItem(GHOST_PREF) !== '0'; } catch { return true; } };
@@ -27,14 +27,25 @@ export function createGateRushMode(ctx, events) {
   let lastResult = null;
 
   if (v2) {
-    // fallos: choque (C) y penalización de respawn (+3 s)
-    bus.on('crash', () => { if (S.reto?.state.phase === 'running') { S.reto.noteMiss(); events.emit('gr-miss', { kind: 'crash', misses: S.reto.state.misses }); } });
+    // Un choque que destruye el dron cuenta UNA vez: el fallo + la penalización de +3 s se aplican en el evento
+    // `respawn` (C: clase crash/prop -> motores cortados -> reaparición). Los rebotes/roces (`crash` bounce|wobble) no
+    // son fallos; `soft` (camino v2 sin física v2) sí, salvo dentro de la invulnerabilidad posterior al respawn
+    // (ctx.phys.invuln > 0) para no contar dos veces el mismo golpe.
+    let lastPenaltyAt = -99;
+    bus.on('crash', d => {
+      if (d?.energyClass !== 'soft' || S.reto?.state.phase !== 'running') return;
+      if ((ctx.phys?.invuln || 0) > 0 || S.simT - lastPenaltyAt < 1) return;
+      lastPenaltyAt = S.simT;
+      S.reto.noteMiss(); events.emit('gr-miss', { kind: 'crash', misses: S.reto.state.misses });
+    });
     bus.on('respawn', () => {
       const st = S.reto?.state;
-      if (st?.phase === 'running') {
-        st.t += 3;
-        events.emit('gr-penalty', { seconds: 3, t: +st.t.toFixed(2) });
-      }
+      if (st?.phase !== 'running' || S.simT - lastPenaltyAt < 1) return;
+      lastPenaltyAt = S.simT;
+      S.reto.noteMiss();
+      st.t += 3;
+      events.emit('gr-miss', { kind: 'respawn', misses: st.misses });
+      events.emit('gr-penalty', { seconds: 3, t: +st.t.toFixed(2) });
     });
   }
 

@@ -21,18 +21,22 @@
 import {
   BUS_GAINS, CHARGE, DUCK, EXPLOSION, FIRE, FLIGHT, HIT_TICK, IMPACT, KILL,
   createKillStreak, dbToGain, distanceModel, engineFromMotors, lockBeepRate,
-} from './audio/recipes.js?v=368';
+} from './audio/recipes.js?v=369';
 
 const FV2 = (() => {
-  try { const q = new URLSearchParams(location.search); return q.get('fv') === '2' || q.get('fvfx') === '1'; } catch { return false; }
+  try { const q = new URLSearchParams(location.search); return q.get('fv') === '2'; } catch { return false; }
 })();
 
 export function createAudio() {
+  // Volúmenes del jugador (ui/prefs.js volMaster/volSfx/volMusic; defaults 0.85 / 0.8 / 0.35 = BUS_GAINS de fábrica).
+  // master = volMaster; efectos/motor/UI/ambiente escalan con volSfx/0.8; música con volMusic/0.35.
+  const vol = { master: BUS_GAINS.master, sfx: 0.8, music: 0.35 };
+  const busBase = name => BUS_GAINS[name] * (name === 'music' ? vol.music / 0.35 : vol.sfx / 0.8);
   let ctx = null, eng = null, master = null, muted = false;
   // ?fv=2: buses; sin ?fv=2 todos apuntan al master (salida idéntica a la de siempre)
   let B = null;
   let noiseBuf = null, reverbSend = null;
-  let listener = null, motorReader = null, busRef = null;
+  let listener = null, motorReader = null, busRef = null, unlockAnnounced = false;
   const motorState = { m: null, va: 0, gust: 0, integrity: 1, at: -1 };
   let stutterUntil = 0, stutterDepth = 0, whineDropUntil = 0;
   const voices = [];
@@ -57,8 +61,9 @@ export function createAudio() {
     B = { master, sfx: master, engine: master, ui: master, music: master, amb: master, comp };
     if (FV2) {
       for (const name of ['sfx', 'engine', 'ui', 'music', 'amb']) {
-        const g = ctx.createGain(); g.gain.value = BUS_GAINS[name]; g.connect(master); B[name] = g;
+        const g = ctx.createGain(); g.gain.value = busBase(name); g.connect(master); B[name] = g;
       }
+      master.gain.value = vol.master;
     }
     // ruido blanco compartido (2 s) para capas de ruido bajo demanda
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -236,7 +241,7 @@ export function createAudio() {
     const k = dbToGain(db);
     for (const name of DUCK.targets) {
       const g = B[name].gain;
-      const base = BUS_GAINS[name];
+      const base = busBase(name);
       g.cancelScheduledValues(at);
       g.setValueAtTime(g.value, at);
       g.setTargetAtTime(base * k, at, DUCK.attack / 3);
@@ -488,6 +493,7 @@ export function createAudio() {
       if (!ctx) boot();
       if (!ctx) return false;
       ctx.resume?.().catch(() => {});
+      if (busRef && !unlockAnnounced) { unlockAnnounced = true; busRef.emit('unlock', {}); }
       try {                                                 // iOS: un buffer de 1 muestra dentro del gesto
         const b = ctx.createBuffer(1, 1, 22050); const src = ctx.createBufferSource();
         src.buffer = b; src.connect(ctx.destination); src.start(0);
@@ -495,6 +501,15 @@ export function createAudio() {
       return true;
     },
     duck(db = 6) { duck(db); },
+    /** Volúmenes del jugador 0..1 (master, sfx, music). Sin ?fv=2 no hay buses: sólo master. */
+    setVolumes(v = {}) {
+      for (const k of ['master', 'sfx', 'music']) if (Number.isFinite(v[k])) vol[k] = Math.max(0, Math.min(1, v[k]));
+      if (!ctx || !B) return;
+      const t = ctx.currentTime;
+      master.gain.setTargetAtTime(vol.master, t, 0.03);
+      if (FV2) for (const n of ['sfx', 'engine', 'ui', 'music', 'amb']) B[n].gain.setTargetAtTime(busBase(n), t, 0.03);
+    },
+    get volumes() { return { ...vol }; },
     fire(key, opts = {}) { if (FV2) playFire(key, opts); else if (key === 'mg') api.mg(); else api.launch(); },
     charge(key, dur = 0.4) { if (FV2) playCharge(key, dur); },
     impact(surface, o = {}) { if (FV2) playImpact(surface, o); },

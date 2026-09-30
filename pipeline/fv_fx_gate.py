@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Flightverse workstream B browser gate (weapons / FX / audio), real Chrome via CDP.
 
-Runs the world with the B-only switch ?fvfx=1 (or ?fv=2 once the UI supports it) and checks:
+Runs the world with ?fv=2 and checks:
   * all 6 weapons fire with no console/app errors, projectiles and explosions appear
   * missile gravity is integrated (not overwritten): vertical velocity keeps falling
   * bullet drop matches 0.5*g*t^2 (the same math the lead pipper uses)
@@ -10,7 +10,7 @@ Runs the world with the B-only switch ?fvfx=1 (or ?fv=2 once the UI supports it)
   * fx.aimData is published; no world-space aim ring is drawn
   * hit-stop only on kills / big blasts; shake budget clamp
   * Director-mode path does not throw (reticleHit null)
-Usage: python3 pipeline/fv_fx_gate.py [--base http://localhost:8790] [--flag fvfx=1] [--json out.json]
+Usage: python3 pipeline/fv_fx_gate.py [--base http://localhost:8790] [--flag fv=2] [--json out.json]
 Exit code 1 when any check fails.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ WORLD = "recon_4e4245a1f4_aoi130"
 WEAPONS = ["mg", "ac", "m", "sw", "rg", "tb"]
 
 
-def run(base: str, flag: str, viewport: str) -> dict:
+def run(base: str, flag: str, viewport: str, world: str = WORLD) -> dict:
     proc, prof, port = bg.launch_chrome()
     out: dict = {"checks": [], "metrics": {}}
 
@@ -41,7 +41,7 @@ def run(base: str, flag: str, viewport: str) -> dict:
         c.send("Network.enable")
         c.send("Network.setExtraHTTPHeaders", {"headers": {"Accept-Encoding": "identity"}})
         bm.set_viewport(c, viewport)
-        c.send("Page.navigate", {"url": f"{base}/volar.html?m={WORLD}&qa=1&{flag}"})
+        c.send("Page.navigate", {"url": f"{base}/volar.html?m={world}&qa=1&{flag}"})
         bm.wait_for(c, "window.__volar && window.__volar.qa && window.__volar.qa.scene ? true : null", timeout=90, label="qa")
         c.pump(4)
         c.eval("document.getElementById('vl-guide-go') && document.getElementById('vl-guide-go').click()")
@@ -135,6 +135,31 @@ def run(base: str, flag: str, viewport: str) -> dict:
         check("shake total clamped to 0.35", hs["trauma"] <= 0.35 + 1e-9, json.dumps(hs))
         check("time scale 1 outside hit-stop", hs["before"] == 1)
 
+        # ── hit-stop freezes the WHOLE world (sim clock), not only weapons ──────────────────────
+        c.eval("window.__volar.ctx.fx.hitstop.reset()")
+        c.pump(0.3)
+        free = c.eval("(async()=>{const S=window.__volar.ctx.state; const a=S.simT; await new Promise(r=>setTimeout(r,250)); return S.simT-a})()")
+        frozen = c.eval(
+            """(async()=>{const c=window.__volar.ctx, S=c.state; c.fx.hitstop.reset(); const ok=c.fx.hitstop.request(400);
+              const a=S.simT, p=c.drone.pos.clone(); await new Promise(r=>setTimeout(r,250));
+              return JSON.stringify({ok, dt:S.simT-a, moved:c.drone.pos.distanceTo(p)})})()""")
+        fz = json.loads(frozen)
+        check("hit-stop slows the sim clock (world-wide)", fz["ok"] and free > 0.15 and fz["dt"] < free * 0.4,
+              f"free={free} stopped={fz}")
+        c.pump(0.6)
+
+        # ── FPV static overlay on crash classes (prop / crash), red edge in reduced motion ──────
+        st = json.loads(c.eval(
+            """(()=>{const c=window.__volar.ctx, f=c.fx.fpvStatic; const out={has:!!f};
+              if(!f) return JSON.stringify(out);
+              c.controls.camera.setRig(3); out.rig=window.__volar.camera.rig;
+              out.shown=f.show('crash'); out.activeAfter=f.active; out.kind=f.kind;
+              out.bounce=f.show('bounce'); return JSON.stringify(out)})()"""))
+        c.pump(1.4)
+        still = c.eval("window.__volar.ctx.fx.fpvStatic.active")
+        check("FPV static overlay shows on crash and clears itself", st.get("has") and st.get("shown") and st.get("activeAfter")
+              and st.get("bounce") is False and still is False, json.dumps(st) + f" still={still}")
+
         # ── Director mode no longer throws ──────────────────────────────────
         thrown = c.eval(
             """(()=>{try{ const c=window.__volar.ctx; const prev=c.state.director; c.state.director={}; c.fx.render(0.016); c.state.director=prev; return false }catch(e){ return String(e) }})()""")
@@ -151,12 +176,13 @@ def run(base: str, flag: str, viewport: str) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="http://localhost:8790")
-    ap.add_argument("--flag", default="fvfx=1")
+    ap.add_argument("--flag", default="fv=2")
     ap.add_argument("--viewport", default="mobile_portrait")
+    ap.add_argument("--cid", default=WORLD)
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
     t0 = time.time()
-    result = run(args.base, args.flag, args.viewport)
+    result = run(args.base, args.flag, args.viewport, args.cid)
     failed = [c for c in result["checks"] if not c["ok"]]
     for c in result["checks"]:
         print(("PASS " if c["ok"] else "FAIL ") + c["name"] + ("" if c["ok"] else f"  -> {c['detail'][:300]}"))

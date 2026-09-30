@@ -2,7 +2,7 @@
 // y 3 m de altura → derribar un dron objetivo a 40 m. Saltable con ×; se guarda en localStorage
 // 'ab_fv_onboarded' y no vuelve a mostrarse. Usa solo APIs públicas: ctx.drone, ctx.collision, ctx.scene,
 // ctx.ui.hud.setObjective, bus 'fire'/'hit', S.sceneObjects.hittables (destruibles del armamento).
-import { createMedalShelf, isOnboarded, setOnboarded } from '/flightverse/ui/records.js?v=368';
+import { createMedalShelf, isOnboarded, setOnboarded } from '/flightverse/ui/records.js?v=369';
 
 export function shouldOnboard(ctx, storage = globalThis.localStorage) {
   const { Q, AT, flags } = ctx;

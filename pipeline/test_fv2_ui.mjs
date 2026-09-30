@@ -84,5 +84,9 @@ test('HUD palette: red is reserved for hostile and distinct from candidate/frien
 });
 
 test('bus schema carries the A-owned events', () => {
-  for (const ev of ['prefs', 'medal', 'onboarding', 'pause', 'damage', 'hit']) assert.ok(ev in BUS_EVENTS, ev);
+  for (const ev of ['prefs', 'medal', 'onboarding', 'pause', 'damage', 'hit',
+    // integration pass: every cross-workstream event is on the shared bus (no local-only channels, no unknown-event warnings)
+    'tour', 'photo', 'edge', 'kill', 'overheat', 'unlock', 'telegraph', 'score', 'life', 'victory', 'defeat', 'record',
+    'markers', 'game-mode', 'warn', 'pack', 'reposition', 'onboard', 'damage-blocked', 'gr-miss', 'gr-penalty']) assert.ok(ev in BUS_EVENTS, ev);
+  assert.deepEqual(BUS_EVENTS.tod, ['key', 'elev']);
 });

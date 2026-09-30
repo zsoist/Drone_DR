@@ -94,3 +94,48 @@ test('ignores invalid and background-sized frame samples', () => {
   assert.equal(governor.snapshot().samples, 0);
   assert.equal(governor.snapshot().changes, 0);
 });
+
+// --- display-interval aware thresholds (30/50/60/120/144 Hz panels) -------------------------------------------
+import { estimateDisplayInterval } from '../web/flightverse/render-quality.js';
+
+function trace(intervalMs, n, jitter = 0.04) {
+  // deterministic pseudo-jitter around the display interval (frames are vsync-quantised, never faster)
+  return Array.from({ length: n }, (_, i) => intervalMs + Math.abs(Math.sin(i * 12.9898)) * jitter);
+}
+
+for (const [hz, ms] of [[30, 33.3], [50, 20], [60, 16.7], [120, 8.3], [144, 6.94]]) {
+  test(`${hz} Hz display: a healthy trace never downgrades and estimates the interval`, () => {
+    const g = createRenderQualityGovernor({ deviceDpr: 2, initialDpr: 2, windowSize: 30, cooldownMs: 0 });
+    const r = feed(g, trace(ms, 300), 0, ms);
+    assert.equal(r.dpr, 2);
+    assert.equal(r.changes, 0);
+    assert.ok(Math.abs(r.intervalMs - Math.max(8.3, ms)) < 0.6, `interval ${r.intervalMs}`);
+  });
+
+  test(`${hz} Hz display: recovers a tier after a load burst (does not stay stuck low)`, () => {
+    const g = createRenderQualityGovernor({ deviceDpr: 2, initialDpr: 1.5, windowSize: 30, cooldownMs: 0 });
+    const r = feed(g, trace(ms, 30 * 4), 0, ms);
+    assert.equal(r.reason, 'stable-recovery');
+    assert.ok(r.dpr > 1.5);
+  });
+}
+
+// overload factors chosen so the late frame does not land on another known display interval (a 60 Hz panel
+// delivering a steady 33 ms IS indistinguishable from a 30 Hz panel: that ambiguity is inherent, not a bug)
+for (const [hz, ms, k] of [[30, 33.3, 2], [50, 20, 2], [60, 16.7, 1.5], [120, 8.3, 1.7]]) {
+  test(`${hz} Hz display: sustained overload downgrades`, () => {
+    const g = createRenderQualityGovernor({ deviceDpr: 2, initialDpr: 2, windowSize: 30, cooldownMs: 0 });
+    const late = trace(ms * k, 30 * 3);
+    const r = feed(g, late, 0, ms);
+    assert.ok(r.dpr < 2, `${hz} Hz stayed at ${r.dpr} (interval ${r.intervalMs})`);
+  });
+}
+
+test('estimateDisplayInterval snaps the low quartile and floors between intervals', () => {
+  assert.equal(estimateDisplayInterval(trace(16.7, 40)), 16.7);
+  assert.equal(estimateDisplayInterval(trace(20, 40)), 20);
+  assert.equal(estimateDisplayInterval(trace(33.3, 40)), 33.3);
+  assert.equal(estimateDisplayInterval(trace(24, 40)), 20);       // between 50 and 30 Hz -> conservative
+  assert.equal(estimateDisplayInterval(trace(6.94, 40)), 8.3);    // 144 Hz clamps to the fastest known
+  assert.equal(estimateDisplayInterval([]), 16.7);
+});

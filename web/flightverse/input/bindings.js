@@ -2,13 +2,13 @@
 // fuego + tecla X), palancas táctiles, teclado/atajos globales, reset por orientación,
 // muestreo del input de vuelo y eco de choque. Sin lógica de UI (ver ui/*).
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { createTouchSticks } from '/flightverse/touch.js?v=368';
-import { createFirePointerBindings } from '/flightverse/mobile-command.js?v=368';
-import { ARSENAL } from '/flightverse/weapons.js?v=368';
-import { isContinuousWeaponKey } from '/flightverse/weapon-registry.js?v=368';
-import { CONTROL_DEFAULTS } from '/flightverse/input/curves.js?v=368';
-import { createV2Input } from '/flightverse/input/v2-input.js?v=368';
-import { installPhysicsV2, physicsRequested } from '/flightverse/input/physics-link.js?v=368';
+import { createTouchSticks } from '/flightverse/touch.js?v=369';
+import { createFirePointerBindings } from '/flightverse/mobile-command.js?v=369';
+import { ARSENAL } from '/flightverse/weapons.js?v=369';
+import { isContinuousWeaponKey } from '/flightverse/weapon-registry.js?v=369';
+import { CONTROL_DEFAULTS } from '/flightverse/input/curves.js?v=369';
+import { createV2Input } from '/flightverse/input/v2-input.js?v=369';
+import { installPhysicsV2, physicsRequested } from '/flightverse/input/physics-link.js?v=369';
 
 export function createBindings(ctx) {
   const { state: S, actions: A, input, audio, bus } = ctx;
@@ -137,6 +137,17 @@ export function createBindings(ctx) {
           fwd: 0, strafe: 0, yaw: 0, lift: 0,
           boost: false, brake: false, mouseDX: 0, mouseDY: 0,
         };
+      }
+      // E: borde del mundo. En la última banda (30 m) la componente de empuje hacia fuera se apaga (ctx.edge.limit);
+      // la frontera dura de colisión queda detrás. El empuje se pasa a mundo con el rumbo, se limita y vuelve al cuerpo.
+      if (ctx.edge && ctx.phys?.active && (inp.fwd || inp.strafe)) {
+        const sn = Math.sin(drone.yaw), cs = Math.cos(drone.yaw);
+        const tx = inp.fwd * -sn + inp.strafe * cs, tz = inp.fwd * -cs - inp.strafe * sn;
+        const lim = ctx.edge.limit(tx, tz, drone.pos.x, drone.pos.z);
+        if (lim[0] !== tx || lim[1] !== tz) {
+          inp.fwd = -(lim[0] * sn + lim[1] * cs);
+          inp.strafe = lim[0] * cs - lim[1] * sn;
+        }
       }
       lastFlightInput = { ...inp };
       const t0 = physLink ? performance.now() : 0;

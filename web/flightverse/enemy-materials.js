@@ -3,7 +3,7 @@
 // Gigante se veía como un maniquí liso. Aquí se generan texturas teselables (canvas 256², ruido de
 // valor con wrap) por clase de material y se asignan como map + bumpMap en ?fv=2. Contrato GLB
 // intacto (no se toca ningún .glb). Coste: ~7 canvas 256² una sola vez por sesión.
-import * as THREE from '/flightverse/three.js?v=368';
+import * as THREE from '/flightverse/three.js?v=369';
 
 const SIZE = 256;
 const cache = new Map();

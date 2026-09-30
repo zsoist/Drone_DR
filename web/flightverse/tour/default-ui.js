@@ -17,7 +17,7 @@ const CSS = `
 .fv-btn.txt{width:auto;padding:0 12px}
 .fv-btn:focus-visible{outline:2px solid #45A0E6;outline-offset:2px}
 .fv-btn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.fv-edge{left:50%;transform:translateX(-50%);bottom:max(150px,calc(env(safe-area-inset-bottom) + 130px));font-size:13px;font-weight:600;
+.fv-edge{left:50%;transform:translateX(-50%);top:max(124px,calc(env(safe-area-inset-top) + 100px));font-size:13px;font-weight:600;
   opacity:0;transition:opacity .15s ease-out;white-space:nowrap}
 .fv-edge.on{opacity:1}
 .fv-photo{left:50%;transform:translateX(-50%);bottom:max(12px,env(safe-area-inset-bottom));width:min(94vw,520px);pointer-events:auto;padding:10px 12px}

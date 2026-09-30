@@ -4,8 +4,8 @@
 // sigue en fx/ y input/; aquí solo presentación. Mismo contrato que weapons-ui.js (A0):
 //   ctx.ui.weapons = { fireBtn, triggerBtn, weaponToggle, picker{close,open,toggle}, attach, setWeapon,
 //                      updateTriggerUi, flashFire, update, dispose }
-import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=368';
-import { ARSENAL } from '/flightverse/weapons.js?v=368';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=369';
+import { ARSENAL } from '/flightverse/weapons.js?v=369';
 
 /** Las 6 armas de la UI (spec §4). Las variantes M·S / M·L / VIPER-X siguen en el registro como perfiles internos. */
 export const UI_WEAPONS = Object.freeze(['mg', 'ac', 'm', 'sw', 'rg', 'tb']);
@@ -62,13 +62,19 @@ export function createWeaponsUi2(ctx) {
     const base = Math.atan2(innerHeight / 2 - cy, innerWidth / 2 - cx);
     const n = opts.length, step = 32 * Math.PI / 180, R0 = 104;
     const pr = actions.getBoundingClientRect();
-    opts.forEach((b, i) => {
+    // centros de los 6 iconos sobre el abanico; si el abanico se sale del viewport TODO se desplaza en bloque
+    // (antes cada icono se acotaba por separado y RAIL/NOVA acababan apilados en el borde derecho)
+    const pts = opts.map((b, i) => {
       const a = base + (i - (n - 1) / 2) * step;
-      // centro del icono, acotado al viewport (la rueda nace junto al borde derecho)
-      const ix = Math.min(innerWidth - 30, Math.max(30, cx + Math.cos(a) * R0));
-      const iy = Math.min(innerHeight - 30, Math.max(70, cy + Math.sin(a) * R0));
-      b.style.left = `${ix - pr.left - 26}px`;
-      b.style.top = `${iy - pr.top - 26}px`;
+      return [cx + Math.cos(a) * R0, cy + Math.sin(a) * R0];
+    });
+    const minX = Math.min(...pts.map(p => p[0])), maxX = Math.max(...pts.map(p => p[0]));
+    const minY = Math.min(...pts.map(p => p[1])), maxY = Math.max(...pts.map(p => p[1]));
+    const dx = maxX > innerWidth - 30 ? innerWidth - 30 - maxX : (minX < 30 ? 30 - minX : 0);
+    const dy = maxY > innerHeight - 30 ? innerHeight - 30 - maxY : (minY < 70 ? 70 - minY : 0);
+    opts.forEach((b, i) => {
+      b.style.left = `${pts[i][0] + dx - pr.left - 26}px`;
+      b.style.top = `${pts[i][1] + dy - pr.top - 26}px`;
       b.style.transitionDelay = `${i * 12}ms`;
     });
     wheel.style.setProperty('--ox', `${cx - pr.left}px`);

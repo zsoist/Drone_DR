@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=368';
+import * as THREE from '/flightverse/three.js?v=369';
 import {
   capWaveQueue,
   createBurstSchedule,
@@ -33,8 +33,8 @@ import {
   COMBO_WINDOW_S,
   COMBO_MAX,
   interleaveQueue,
-} from '/flightverse/invasion-policy.js?v=368';
-import { applyDetail } from '/flightverse/enemy-materials.js?v=368';
+} from '/flightverse/invasion-policy.js?v=369';
+import { applyDetail } from '/flightverse/enemy-materials.js?v=369';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -289,7 +289,7 @@ export function createInvasion(scene, {
 
   async function loadCatalog() {
     if (!catalogPromise) {
-      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=368', { cache: 'no-store' })
+      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=369', { cache: 'no-store' })
         .then(response => {
           if (!response.ok) throw new Error(`enemy catalog ${response.status}`);
           return response.json();
@@ -328,9 +328,9 @@ export function createInvasion(scene, {
         await loadCatalog();
         const file = modelFile(type, lod);
         if (!file) throw new Error(`catalog missing ${key}`);
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=368'));
-        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=368');
-        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=368`);
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=369'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=369');
+        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=369`);
         const loaded = { scene: gltf.scene, clips: gltf.animations || [], type, lod };
         if (v2) styleEnemyTree(loaded.scene, type);
         if (disposed || loadSession !== session) {

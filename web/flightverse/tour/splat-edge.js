@@ -3,11 +3,11 @@
 // worldModifier (dyno): a partir de fog[0] el color se funde con la niebla y a partir del 85 % del
 // tramo la opacidad cae a 0 — el contorno de la captura se disuelve en bruma en vez de cortarse.
 // Comparte los uniformes de world-look.js (mismo centro, fog, color y fuerza que terreno/malla).
-import { WORLD_LOOK } from '/flightverse/world-look.js?v=368';
+import { WORLD_LOOK } from '/flightverse/world-look.js?v=369';
 
 let sparkMod = null;
 async function spark() {
-  if (!sparkMod) sparkMod = await import('/vendor/spark.module.js?v=368');
+  if (!sparkMod) sparkMod = await import('/vendor/spark.module.js?v=369');
   return sparkMod;
 }
 

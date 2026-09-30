@@ -23,10 +23,32 @@ export const BUS_EVENTS = Object.freeze({
   gate:    ['i', 'n'],
   mode:    ['key'],
   pause:   [],          // A0 añade { active } (opcional) al payload
-  tod:     ['key'],
+  tod:     ['key', 'elev'],         // E: preset + elevación solar en grados (A añade elev en los chips)
   prefs:   ['key', 'value'],   // A: preferencia del jugador cambiada (ui/prefs.js)
   medal:   ['id', 'level'],    // A: medalla concedida (ui/records.js)
   onboarding: ['completed'],   // A: primer vuelo terminado/omitido
+  // ── integración (handoffs de B/D/E): antes vivían en emisores locales (ctx.tour.events / ctx.enemies.events) ──
+  tour:    ['state', 'index', 'n', 'poi'],   // E: state start|poi|loop|stop
+  photo:   ['active'],                        // E: modo foto (active, captured?, bytes?)
+  edge:    ['warn'],                          // E: borde del mundo (warn, s, fog, dist, m)
+  kill:    ['target', 'weapon'],              // B: hit con kill:true reenviado
+  overheat: ['weapon'],                       // B: {weapon,cleared?} (arma sobrecalentada / enfriada, weapon:null + cleared)
+  unlock:  [],                                // B: audio desbloqueado por el primer gesto
+  telegraph: ['type'],                        // D: aviso previo de un disparo enemigo (id,type,kind,dur,dir,pos,dist)
+  score:   ['score', 'gained'],               // D: Invasión (combo, reason)
+  life:    ['lives'],                         // D: vida perdida / reaparición (hp, invulnerableS)
+  victory: ['wave', 'score'],                 // D: Invasión completada
+  defeat:  ['wave', 'score'],                 // D: Invasión perdida
+  record:  ['mode', 'rank'],                  // D: récord local guardado
+  markers: ['markers'],                       // D: marcadores de pantalla de enemigos (~10 Hz: markers, edges, boss)
+  'game-mode': ['key', 'phase'],              // D: select|start|go
+  warn:    ['kind'],                          // D: lowhp|move
+  pack:    ['phase'],                         // D: spawn|pickup de botiquín
+  reposition: ['pos'],                        // D: reposicionar al dron
+  onboard: ['step'],                          // D: pasos del primer vuelo
+  'damage-blocked': ['reason'],               // D: daño ignorado (invulnerable, ya contado por física…)
+  'gr-miss': ['kind'],                        // D: Gate Rush: fallo (crash)
+  'gr-penalty': ['seconds'],                  // D: Gate Rush: penalización de tiempo (+3 s por respawn)
 });
 
 export function createBus({ validate = false, strict = false } = {}) {

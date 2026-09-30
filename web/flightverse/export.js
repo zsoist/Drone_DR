@@ -7,8 +7,8 @@
 // WS E (robustez): códec negociado con isConfigSupported (VP9 → VP8), validación de tamaño del canvas
 // (un canvas que no está a width×height produciría frames mezclados), AbortSignal, el muxer y el
 // encoder se cierran SIEMPRE y cualquier error del encoder se relanza al caller con su causa.
-import { Muxer, ArrayBufferTarget } from '/vendor/webm-muxer.module.js?v=368';
-import { EXPORT_CODECS, pickExportCodec, validateExportArgs } from '/flightverse/export-utils.js?v=368';
+import { Muxer, ArrayBufferTarget } from '/vendor/webm-muxer.module.js?v=369';
+import { EXPORT_CODECS, pickExportCodec, validateExportArgs } from '/flightverse/export-utils.js?v=369';
 
 export const canExport = () => typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
 

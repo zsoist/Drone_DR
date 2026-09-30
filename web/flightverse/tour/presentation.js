@@ -3,23 +3,22 @@
 // Se engancha al render SIN tocar volar.js: envuelve `sky.update` (que el loop llama tras elegir la
 // cámara y antes de la sacudida/render) para poseer la cámara del Tour/Foto, y `composer.render`
 // para la captura PNG. Ver el encabezado de tour/index.js para la API pública.
-import { WORLD_LOOK, setWorldEdge } from '/flightverse/world-look.js?v=368';
-import { installGrade } from '/flightverse/tour/grade.js?v=368';
-import { boundaryFromCoverage, boundaryExtent, resolveEdge, edgeState, limitThrust, edgeMetric } from '/flightverse/tour/edge.js?v=368';
-import { pushOutOfMasks, insideAnyMask } from '/flightverse/tour/poi.js?v=368';
-import { TOD_ELEVATION, resolveTodKey, elevationOf, nearestTodKey, TOD_LABELS } from '/flightverse/tour/tod.js?v=368';
-import { createTour, loadPoiDoc, createLocalEvents, makeEmit } from '/flightverse/tour/tour.js?v=368';
-import { BUS_EVENTS } from '/flightverse/bus.js?v=368';
-import { createPhoto } from '/flightverse/photo.js?v=368';
-import { createVoidGuard } from '/flightverse/tour/void-guard.js?v=368';
-import { installDefaultUi } from '/flightverse/tour/default-ui.js?v=368';
-import { applySplatEdge, findSplatMesh } from '/flightverse/tour/splat-edge.js?v=368';
+import { WORLD_LOOK, setWorldEdge } from '/flightverse/world-look.js?v=369';
+import { installGrade } from '/flightverse/tour/grade.js?v=369';
+import { boundaryFromCoverage, boundaryExtent, resolveEdge, edgeState, limitThrust, edgeMetric } from '/flightverse/tour/edge.js?v=369';
+import { pushOutOfMasks, insideAnyMask } from '/flightverse/tour/poi.js?v=369';
+import { TOD_ELEVATION, resolveTodKey, elevationOf, nearestTodKey, TOD_LABELS } from '/flightverse/tour/tod.js?v=369';
+import { createTour, loadPoiDoc, createLocalEvents, makeEmit } from '/flightverse/tour/tour.js?v=369';
+import { createPhoto } from '/flightverse/photo.js?v=369';
+import { createVoidGuard } from '/flightverse/tour/void-guard.js?v=369';
+import { installDefaultUi } from '/flightverse/tour/default-ui.js?v=369';
+import { applySplatEdge, findSplatMesh } from '/flightverse/tour/splat-edge.js?v=369';
 
 export async function installPresentation(ctx) {
   const { THREE, camera, sky, composer, report, bus, CID, state: S, actions: A } = ctx;
   const tour = ctx.tour;
-  tour.events = createLocalEvents();                 // on/emit local: tour · photo · edge · tod (ver encabezado de index.js)
-  tour.emitEvt = makeEmit(ctx, BUS_EVENTS);
+  tour.events = createLocalEvents(bus);              // alias de bus.on/emit: tour · photo · edge · tod (ver encabezado de index.js)
+  tour.emitEvt = makeEmit(ctx);
   const fxOff = ctx.fxLevel === 'off';
 
   // ── frontera efectiva (la misma que usa la colisión) ──

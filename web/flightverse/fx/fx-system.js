@@ -8,9 +8,9 @@
 //   decals   : ring-buffered surface quads
 //   lights   : a fixed pool of PointLights (created up-front so no shader recompiles in combat)
 // Over cap the OLDEST entry is reused first; a flash is never skipped.
-import { SlotPool, fxCaps } from './budget.js?v=368';
-import { buildAtlasCanvas, cellRect } from './atlas.js?v=368';
-import { explosion, surfaceImpact, muzzleFlash, crashBurst } from './recipes.js?v=368';
+import { SlotPool, fxCaps } from './budget.js?v=369';
+import { buildAtlasCanvas, cellRect } from './atlas.js?v=369';
+import { explosion, surfaceImpact, muzzleFlash, crashBurst } from './recipes.js?v=369';
 
 const VERT = /* glsl */`
 attribute vec4 iA; attribute vec4 iB; attribute vec4 iC; attribute vec4 iD; attribute vec4 iE;

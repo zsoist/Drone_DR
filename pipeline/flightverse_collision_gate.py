@@ -27,7 +27,17 @@ WEAPON_SETTLE_SECONDS = {
     "vx": 3.0,
     "rg": 1.9,
     "tb": 5.0,
+    "m": 4.0,
 }
+# ?fv=2 UI: six weapons (mg ac m sw rg tb); VIPER-X/M·S/M·L are internal profiles of the missile family.
+# Selection goes through the real HUD (desktop strip slot / digit hotkey), fire through #hx-fire.
+# AC-30 and MG are heat-limited: they do not consume ammo, so "consumed" means heat went up instead.
+FV2_WEAPON_KEYS = ("ac", "m", "sw", "rg", "tb")
+FV2_HEAT_WEAPONS = frozenset({"mg", "ac"})
+# the missile family has no mounted 3D model (procedural projectile + smoke trail): model readiness is not required
+FV2_NO_MODEL = frozenset({"m"})
+FV2_DIGIT = {"mg": "Digit1", "ac": "Digit2", "m": "Digit3", "sw": "Digit4", "rg": "Digit5", "tb": "Digit6"}
+FIRE_SELECTORS = {False: ("#vl-fire",), True: ("#hx-fire", "canvas.vl-canvas")}
 
 
 def _finite_number(value) -> bool:
@@ -85,7 +95,7 @@ def validate_live_sample(
         or camera_hits < 0
     ):
         failures.append({"run": run, "reason": "camera_integration"})
-    failures.extend(validate_effect_snapshot(sample))
+    failures.extend(validate_effect_snapshot(sample, fv2))
     if fv2:
         failures.extend(validate_physics_sample(sample))
     return failures
@@ -134,7 +144,34 @@ def validate_fpv_camera(sample: dict) -> list[dict]:
     return [{"run": sample.get("run"), "reason": "fpv_camera_isolation"}]
 
 
-def validate_effect_snapshot(sample: dict) -> list[dict]:
+def validate_effect_snapshot_v2(sample: dict) -> list[dict]:
+    """?fv=2 FX report (fx/fx-system.js snapshot): hard caps per tier, pool peaks within them, few draw calls.
+
+    The legacy report carried budget.active / drawBatches / shockwaveViewportCap; the v2 system enforces its budget with
+    fixed-slot pools instead (over cap the OLDEST entry is reused), so the real invariant is live <= cap and peak <= cap.
+    """
+    effects = sample.get("effects") or {}
+    caps = effects.get("caps") or {}
+    live = effects.get("live") or {}
+    pools = effects.get("pools") or {}
+    bad = not effects.get("tier") or not caps
+    for kind in ("sprites", "debris", "decals"):
+        cap = caps.get(kind)
+        if not _finite_number(cap) or not _finite_number(live.get(kind)) or live[kind] > cap:
+            bad = True
+        peak = (pools.get(kind) or {}).get("peak")
+        if not _finite_number(peak) or peak > (cap if _finite_number(cap) else -1):
+            bad = True
+    if not _finite_number(live.get("lights")) or live.get("lights", 0) > caps.get("lights", -1):
+        bad = True
+    if not _finite_number(effects.get("drawCalls")) or effects["drawCalls"] > 5:
+        bad = True
+    return [{"run": sample.get("run"), "reason": "weapon_effect_budget", "effects": effects}] if bad else []
+
+
+def validate_effect_snapshot(sample: dict, fv2: bool = False) -> list[dict]:
+    if fv2:
+        return validate_effect_snapshot_v2(sample)
     effects = sample.get("effects") or {}
     budget = effects.get("budget") or {}
     active = effects.get("active")
@@ -175,19 +212,27 @@ def validate_stress_actions(actions: dict) -> list[dict]:
     return failures
 
 
-def validate_arsenal_actions(rows: list[dict]) -> list[dict]:
+def validate_arsenal_actions(rows: list[dict], fv2: bool = False) -> list[dict]:
     failures = []
     by_key = {row.get("key"): row for row in rows}
-    for key in NEW_WEAPON_KEYS:
+    for key in (FV2_WEAPON_KEYS if fv2 else NEW_WEAPON_KEYS):
         row = by_key.get(key)
         if not row:
             failures.append({"weapon": key, "reason": "weapon_not_exercised"})
+            continue
+        if row.get("error"):
+            failures.append({"weapon": key, "reason": row["error"]})
             continue
         if row.get("selected") != key:
             failures.append({"weapon": key, "reason": "weapon_not_selected"})
         before = row.get("ammo_before")
         after = row.get("ammo_after")
-        if (
+        if fv2 and key in FV2_HEAT_WEAPONS:
+            heat_up = _finite_number(row.get("heat_after")) and row["heat_after"] > (row.get("heat_before") or 0)
+            ammo_down = _finite_number(before) and _finite_number(after) and after < before
+            if not (heat_up or ammo_down):
+                failures.append({"weapon": key, "reason": "heat_not_raised"})
+        elif (
             not _finite_number(before)
             or not _finite_number(after)
             or after >= before
@@ -196,7 +241,7 @@ def validate_arsenal_actions(rows: list[dict]) -> list[dict]:
         expected = 8 if key == "sw" else 1
         if row.get("fired_delta", 0) < expected:
             failures.append({"weapon": key, "reason": "projectile_not_observed"})
-        if not row.get("model_ready"):
+        if not row.get("model_ready") and not (fv2 and key in FV2_NO_MODEL):
             failures.append({"weapon": key, "reason": "weapon_model_not_ready"})
         if row.get("impact_delta", 0) < 1 or row.get("impact_kind") not in {
             "structure", "terrain", "boundary", "target",
@@ -204,7 +249,15 @@ def validate_arsenal_actions(rows: list[dict]) -> list[dict]:
             failures.append({"weapon": key, "reason": "weapon_impact_not_observed"})
         if row.get("projectiles") != 0:
             failures.append({"weapon": key, "reason": "projectile_cleanup"})
-        if (
+        if fv2:
+            # fixed-slot pools: something was spawned, nothing went over a cap, few draw calls
+            if (
+                row.get("effect_emitted_delta", 0) < 1
+                or (row.get("effect_draw_batches") or 99) > 5
+                or row.get("effect_peak", 0) > row.get("effect_budget", -1)
+            ):
+                failures.append({"weapon": key, "reason": "weapon_effect_not_observed"})
+        elif (
             row.get("effect_emitted_delta", 0) < 1
             or row.get("effect_draw_batches") != 5
             or row.get("effect_peak", 0) > row.get("effect_budget", -1)
@@ -236,6 +289,9 @@ def cdp_click(cdp, selector: str) -> bool:
 
 def aim_fire_control_at_ground(cdp) -> bool:
     """Use the real FPV gimbal control so each fire click can reach terrain."""
+    # ?fv=2: the "Toca para empezar" card blocks input until it is tapped, exactly as it does for a player
+    if cdp_click(cdp, "#hx-start-go"):
+        cdp.pump(0.4)
     return bool(cdp.eval("""(() => {
       const control = document.querySelector('#vl-gimbal-range');
       if (!control) return false;
@@ -300,7 +356,32 @@ def _weapon_counts(cdp) -> dict:
     ) or {"fired": 0, "exploded": 0}
 
 
-def _arsenal_sample(cdp, key: str) -> dict:
+def _arsenal_sample(cdp, key: str, fv2: bool = False) -> dict:
+    if fv2:
+        return cdp.eval(
+            "(() => {"
+            f" const key={json.dumps(key)};"
+            " const r=window.__volar || {};"
+            " const w=r.weapons || {};"
+            " const state=r.weaponState || {};"
+            " const fired=w.fired_projectiles || {};"
+            " const models=w.models || {};"
+            " const fx=w.effects || {};"
+            " const pools=fx.pools || {};"
+            " const peak=Math.max(pools.sprites?.peak||0, pools.debris?.peak||0, pools.decals?.peak||0);"
+            " const impacts=(w.structure_hits||0)+(w.terrain_hits||0)"
+            " +(w.boundary_hits||0)+(w.item_hits||0)+(w.target_hits||0);"
+            " return {selected:state.weapon||null, ammo:state.ammo?.[key],"
+            " heat:w.v2?.heat?.[key]||0,"
+            " fired:fired[key]||0, impacts,"
+            " impactKind:w.impact?.kind||null,"
+            " modelReady:(models.ready||[]).includes(key),"
+            " modelTier:models.tier||null, projectiles:w.projectiles||0,"
+            " effectEmitted:fx.spawned||0, effectPeak:peak,"
+            " effectBudget:Math.min(fx.caps?.sprites??0, fx.caps?.debris??1e9)<1e9 ? Math.max(fx.caps?.sprites||0, fx.caps?.debris||0) : 0,"
+            " effectDrawBatches:fx.drawCalls||0};"
+            " })()"
+        ) or {}
     return cdp.eval(
         "(() => {"
         f" const key={json.dumps(key)};"
@@ -324,28 +405,39 @@ def _arsenal_sample(cdp, key: str) -> dict:
     ) or {}
 
 
-def exercise_weapon_arsenal(cdp, timeout: int = 20) -> list[dict]:
-    """Select and fire all new weapons through the real HUD controls."""
+def _select_weapon(cdp, key: str, fv2: bool) -> bool:
+    if fv2:
+        # real HUD: desktop strip slot; coarse layouts have no strip, so the digit hotkey (1-6) is the fallback
+        if cdp_click(cdp, f'#hx-wstrip .hx-slot[data-w="{key}"]'):
+            return True
+        code = FV2_DIGIT[key]
+        vk = 48 + int(code[-1])
+        for kind in ("keyDown", "keyUp"):
+            cdp.send("Input.dispatchKeyEvent", {"type": kind, "code": code, "key": code[-1],
+                                                "windowsVirtualKeyCode": vk})
+        return True
+    # Desktop exposes the combat-panel grid. Coarse layouts expose the compact picker.
+    selected = cdp_click(cdp, f'#vl-weps button[data-w="{key}"]')
+    if not selected and cdp_click(cdp, "#vl-weapon-toggle"):
+        selected = cdp_click(cdp, f'#vl-weapon-picker button[data-w="{key}"]')
+    return selected
+
+
+def exercise_weapon_arsenal(cdp, timeout: int = 20, fv2: bool = False) -> list[dict]:
+    """Select and fire the arsenal through the real HUD controls (legacy: 5 new weapons; ?fv=2: ac m sw rg tb)."""
     rows = []
-    for key in NEW_WEAPON_KEYS:
-        # Desktop exposes the combat-panel grid. Coarse layouts expose the
-        # compact picker. Always drive whichever real control is visible.
-        selected = cdp_click(cdp, f'#vl-weps button[data-w="{key}"]')
-        if not selected:
-            if cdp_click(cdp, "#vl-weapon-toggle"):
-                selected = cdp_click(
-                    cdp, f'#vl-weapon-picker button[data-w="{key}"]')
-        if not selected:
+    for key in (FV2_WEAPON_KEYS if fv2 else NEW_WEAPON_KEYS):
+        if not _select_weapon(cdp, key, fv2):
             rows.append({"key": key, "error": "weapon_option_missing"})
             continue
         deadline = time.time() + timeout
         before = {}
         while time.time() < deadline:
             cdp.pump(0.1)
-            before = _arsenal_sample(cdp, key)
-            if before.get("selected") == key and before.get("modelReady"):
+            before = _arsenal_sample(cdp, key, fv2)
+            if before.get("selected") == key and (before.get("modelReady") or (fv2 and key in FV2_NO_MODEL)):
                 break
-        if before.get("selected") != key or not before.get("modelReady"):
+        if before.get("selected") != key or not (before.get("modelReady") or (fv2 and key in FV2_NO_MODEL)):
             rows.append({
                 "key": key,
                 "selected": before.get("selected"),
@@ -353,21 +445,23 @@ def exercise_weapon_arsenal(cdp, timeout: int = 20) -> list[dict]:
                 "error": "weapon_selection_timeout",
             })
             continue
-        fired = cdp_click(cdp, "#vl-trigger")
-        if not fired:
-            fired = cdp_click(cdp, "#vl-fire")
+        fired = any(cdp_click(cdp, sel) for sel in FIRE_SELECTORS[fv2])
+        if not fired and not fv2:
+            fired = cdp_click(cdp, "#vl-trigger")
         if not fired:
             rows.append({"key": key, "error": "weapon_trigger_missing"})
             continue
         cdp.pump(0.08)
-        immediate = _arsenal_sample(cdp, key)
+        immediate = _arsenal_sample(cdp, key, fv2)
         cdp.pump(WEAPON_SETTLE_SECONDS[key])
-        after = _arsenal_sample(cdp, key)
+        after = _arsenal_sample(cdp, key, fv2)
         rows.append({
             "key": key,
             "selected": after.get("selected"),
             "ammo_before": before.get("ammo"),
             "ammo_after": immediate.get("ammo"),
+            "heat_before": before.get("heat"),
+            "heat_after": max(immediate.get("heat") or 0, after.get("heat") or 0),
             "fired_delta": (after.get("fired") or 0) - (before.get("fired") or 0),
             "impact_delta": (
                 (after.get("impacts") or 0) - (before.get("impacts") or 0)
@@ -583,7 +677,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120, fv
         previous_weapon_counts = _weapon_counts(cdp)
         reload_every = max(1, stress // 4)
         for index in range(stress):
-            if not cdp_click(cdp, "#vl-fire"):
+            if not any(cdp_click(cdp, sel) for sel in FIRE_SELECTORS[fv2]):
                 failures = [{"run": index + 1, "reason": "fire_control_missing"}]
                 break
             actions["attempts"] += 1
@@ -683,8 +777,8 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120, fv
         fpv_camera = None
         arsenal = []
         if ready:
-            arsenal = exercise_weapon_arsenal(cdp)
-            failures.extend(validate_arsenal_actions(arsenal))
+            arsenal = exercise_weapon_arsenal(cdp, fv2=fv2)
+            failures.extend(validate_arsenal_actions(arsenal, fv2))
             fpv_camera = cdp.eval(
                 "(() => { const r=window.__volar; return {cameraRig:r.camera?.rig,"
                 " cameraCollisionChecks:r.camera?.collision_checks,"

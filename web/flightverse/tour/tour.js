@@ -8,8 +8,8 @@
 // Eventos (bus, sólo ?fv=2): 'tour' {state:'start'|'stop'|'poi'|'loop', index, n, poi}
 import {
   validatePoiDoc, buildTimeline, auditTimeline, pushOutOfMasks, TOUR_LIMITS,
-} from '/flightverse/tour/poi.js?v=368';
-import { edgeMetric } from '/flightverse/tour/edge.js?v=368';
+} from '/flightverse/tour/poi.js?v=369';
+import { edgeMetric } from '/flightverse/tour/edge.js?v=369';
 
 /**
  * Carga los POIs del mundo. Consulta primero assets/tour/index.json (siempre existe) y sólo pide
@@ -27,26 +27,16 @@ export async function loadPoiDoc(cid) {
   } catch { return null; }
 }
 
-/** Emisor local mínimo (on/off/emit) para los eventos propios de WS E que aún no están en BUS_EVENTS. */
-export function createLocalEvents() {
-  const map = new Map();
-  return {
-    on(type, fn) { let s = map.get(type); if (!s) map.set(type, s = new Set()); s.add(fn); return () => s.delete(fn); },
-    emit(type, detail = {}) {
-      for (const fn of [...(map.get(type) || [])]) { try { fn(detail); } catch (e) { console.warn('[tour] handler', type, e); } }
-    },
-  };
+/** `ctx.tour.events` ya no es un canal aparte: on/off/emit son los del bus compartido (BUS_EVENTS registra tour · photo · edge · tod). */
+export function createLocalEvents(bus) {
+  return { on: (type, fn) => bus.on(type, fn), emit: (type, detail = {}) => bus.emit(type, detail) };
 }
 
-/**
- * Emite en el bus SOLO si el evento está registrado en BUS_EVENTS (A); siempre en el emisor local
- * `ctx.tour.events`. Así no hay "evento desconocido" en consola y A puede migrar al bus sin cambios.
- */
-export function makeEmit(ctx, knownEvents) {
+/** Emite en el bus (sólo con ?fv=2: el camino legado no debe ver estos eventos). */
+export function makeEmit(ctx) {
   return (type, detail) => {
     if (!ctx.flags.fv2) return;
-    ctx.tour.events?.emit(type, detail);
-    if (knownEvents && Object.prototype.hasOwnProperty.call(knownEvents, type)) ctx.bus.emit(type, detail);
+    ctx.bus.emit(type, detail);
   };
 }
 

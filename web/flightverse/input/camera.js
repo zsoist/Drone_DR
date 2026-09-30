@@ -2,9 +2,9 @@
 // Envuelve camera-rigs.js: selección de rig, gimbal (rueda/slider/botones), FOV kick,
 // pose por frame y colisión de cámara. Publica ctx.controls.{cameraController, flightTools}.
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { resolveCameraCollision, RIGS, STEP } from '/flightverse/runtime.js?v=368';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=368';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=368';
+import { resolveCameraCollision, RIGS, STEP } from '/flightverse/runtime.js?v=369';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=369';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=369';
 
 export function createCameraControls(ctx) {
   const { Q, camera, report, collision, input } = ctx;
@@ -63,6 +63,7 @@ export function createCameraControls(ctx) {
 
   let cameraCollisionHits = 0;
   let cameraCollisionChecks = 0;
+  let maskPushes = 0;
 
   // ── Flightverse v2 (?fv=2): resorte, colisión por esfera, empuje fuera de geometría, cámara de choque ──
   const v2 = !!ctx.flags.fv2 || Q.get('phys') === 'v2';
@@ -166,6 +167,16 @@ export function createCameraControls(ctx) {
       });
       camera.position.set(...cameraPose.position);
       camera.quaternion.set(...cameraPose.quaternion);
+      if (v2 && cameraPose.key !== 'fpv' && ctx.masks?.list?.length) {
+        // E: zonas sin cámara (malla rota…): la cámara que orbita/persigue sale de ellas a lo largo del gradiente.
+        // FPV no se toca: la vista ES el dron y mover el ojo sin mover el dron desorienta.
+        const cp = [camera.position.x, camera.position.y, camera.position.z];
+        if (ctx.masks.inside(cp, 2)) {
+          const out = ctx.masks.pushOut(cp, 2);
+          camera.position.set(out[0], out[1], out[2]);
+          maskPushes += 1;
+        }
+      }
       if (v2 && o.v2) {
         ctx.droneFade = cameraPose.droneFade;
         if (cameraPose.key !== 'fpv') {
@@ -193,6 +204,7 @@ export function createCameraControls(ctx) {
         rig: cameraPose.key,
         collision_checks: cameraCollisionChecks,
         collision_hits: cameraCollisionHits,
+        mask_pushes: maskPushes,
       };
     },
     dispose() {

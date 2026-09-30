@@ -29,7 +29,7 @@ DEFAULT_CID = "recon_4e4245a1f4_aoi130"
 AUDIT_JS = r"""
 (() => {
   const W = innerWidth, H = innerHeight, cx = W / 2, cy = H / 2, Z = 96;
-  const out = { small: [], centre: [], clipped: [], overflow: [] };
+  const out = { small: [], centre: [], clipped: [], overflow: [], overlap: [] };
   const root = document.getElementById('vl-hud');
   const shown = el => { for (let p = el; p && p !== document.body; p = p.parentElement) { const cs = getComputedStyle(p);
     if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.05 || p.hidden) return false; } return true; };
@@ -45,6 +45,16 @@ AUDIT_JS = r"""
     const chrome = el.matches('.hx-plate,.hx-chip,.hx-ibtn,.hx-fire,.hx-wchip,.hx-read,.hx-gauge,.hx-minimap,.hx-banner,.hx-warn,.hx-gimbal,.hx-slot,.hx-heat,.hx-coach,.hx-count,.hx-compass,.hx-toast,.hx-tape');
     if (chrome && !inSheet(el) && !el.matches('.hx-tape') && r.left < cx + Z && r.right > cx - Z && r.top < cy + Z && r.bottom > cy - Z) out.centre.push([label, Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)]);
     if (inSheet(el) && el.matches('button,a,.hx-btn,.hx-row') && (r.right > W + 1 || r.left < -1)) out.overflow.push([label, Math.round(r.left), Math.round(r.right)]);
+  }
+  // controles que el dedo/ojo necesita SEPARADOS: cúmulo de fuego, botones de vuelo de C, minimapa, cajas de estado, tira de armas
+  const ctl = [...root.querySelectorAll('#hx-fire,#hx-wchip,.hx-ibtn,.hx-slot,.hx-minimap,.hx-rail,.hx-gauge')]
+    .concat([...document.querySelectorAll('.vl-fv-btn')]).filter(e => shown(e) && e.getBoundingClientRect().width > 0 && !inSheet(e));
+  for (let i = 0; i < ctl.length; i++) for (let j = i + 1; j < ctl.length; j++) {
+    const a = ctl[i], b = ctl[j];
+    if (a.contains(b) || b.contains(a)) continue;
+    const r = a.getBoundingClientRect(), q = b.getBoundingClientRect();
+    const ox = Math.min(r.right, q.right) - Math.max(r.left, q.left), oy = Math.min(r.bottom, q.bottom) - Math.max(r.top, q.top);
+    if (ox > 2 && oy > 2) out.overlap.push([a.id || a.dataset.fv || a.className, b.id || b.dataset.fv || b.className]);
   }
   return JSON.stringify(out);
 })()
@@ -82,6 +92,9 @@ def audit(base: str, cid: str) -> dict[str, list]:
                 "chase": "&autotest=1&qa=1&fv=2&nostart=1&rig=cerca",
                 "pause": "&qa=1&fv=2&nostart=1",
                 "modes": "&qa=1&fv=2&nostart=1",
+                "invasion": "&qa=1&fv=2&nostart=1",
+                "gaterush": "&qa=1&fv=2&nostart=1",
+                "tour": "&qa=1&fv=2&nostart=1",
             }
             for scene, q in scenes.items():
                 c = _session(port, name)
@@ -89,6 +102,16 @@ def audit(base: str, cid: str) -> dict[str, list]:
                     c.send("Page.navigate", dict(url=f"{base}/volar.html?m={cid}{q}"))
                     bm.wait_for(c, "window.__volar && window.__volar.ready ? true : null", timeout=90, label="ready")
                     c.pump(5 if scene in ("fpv", "chase") else 2.5)
+                    if scene == "invasion":
+                        c.eval("window.__volar.ctx.actions.startMode('invasion',{types:['zombie','soldado','ufo'],difficulty:'media'})")
+                        c.pump(9)
+                    elif scene == "gaterush":
+                        c.eval("window.__volar.ctx.actions.startMode('gaterush',{difficulty:'facil'})")
+                        bm.wait_for(c, "(()=>{const S=window.__volar.ctx.state; return S.reto && S.reto.state.phase==='running' ? true : null})()", timeout=60, label="gate rush running")
+                        c.pump(1)
+                    elif scene == "tour":
+                        c.eval("window.__volar.ctx.actions.startTour()")
+                        c.pump(5)
                     if scene == "pause":
                         c.eval("document.getElementById('hx-pause').click()")
                         c.pump(0.8)

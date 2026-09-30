@@ -10,7 +10,7 @@
 import { CONTROL_DEFAULTS, loadSettings, saveSettings, normalizeSettings, mouseLook, clamp, DEG } from './curves.js';
 import { createHaptics } from './haptics.js';
 import { createGamepad } from './gamepad.js';
-import * as REG from '/flightverse/weapon-registry.js?v=368';
+import * as REG from '/flightverse/weapon-registry.js?v=369';
 
 const WEAPON_FALLBACK = ['mg', 'ac', 'm', 'sw', 'rg', 'tb'];
 export const weaponOrder = () => {
@@ -87,7 +87,7 @@ export function createV2Input(ctx, { sticks, beginFiring, releaseFiring }) {
     },
     holdBoost() { const h = prefs()?.get?.('holdBoost'); return h === undefined ? true : !!h; },
   };
-  const offPrefs = bus.on('prefs', () => { dirty = true; sticks?.applyLayout?.(); haptics.setEnabled(settings.get().haptics); });
+  const offPrefs = bus.on('prefs', () => { dirty = true; setTimeout(placeButtons, 60); setTimeout(placeButtons, 450); sticks?.applyLayout?.(); haptics.setEnabled(settings.get().haptics); });
 
   // ---- haptics ------------------------------------------------------------------------------
   const haptics = createHaptics({ enabled: settings.get().haptics });
@@ -191,7 +191,7 @@ export function createV2Input(ctx, { sticks, beginFiring, releaseFiring }) {
   }
   // anclados al botón de fuego real (A lo mueve): turbo a su izquierda, subir/bajar apilados a la izquierda del turbo
   function placeButtons() {
-    const fire = [doc.querySelector('#vl-trigger'), doc.querySelector('#vl-fire')]
+    const fire = [doc.querySelector('#hx-fire'), doc.querySelector('#vl-trigger'), doc.querySelector('#vl-fire')]
       .map(e => e?.getBoundingClientRect()).find(r => r && r.width > 0);
     const W = innerWidth, H = innerHeight;
     const r = fire || { left: W - 12 - 76, top: H - 150, width: 76, height: 76 };
@@ -202,10 +202,13 @@ export function createV2Input(ctx, { sticks, beginFiring, releaseFiring }) {
       el.style.left = `${Math.round(x)}px`; el.style.top = `${Math.round(y - size / 2)}px`;
       el.style.right = 'auto'; el.style.bottom = 'auto';
     };
-    const boostX = r.left - 8 - 56;
+    // zurdo (el fuego vive en la mitad izquierda): turbo a su DERECHA y subir/bajar más allá, espejo exacto
+    const left = r.left + r.width / 2 < W / 2;
+    const boostX = left ? r.left + r.width + 8 : r.left - 8 - 56;
+    const udX = left ? boostX + 56 + 8 : boostX - 8 - 44;
     place('boost', boostX, cy, 56);
-    place('up', boostX - 8 - 44, cy - 26, 44);
-    place('down', boostX - 8 - 44, cy + 26, 44);
+    place('up', udX, cy - 26, 44);
+    place('down', udX, cy + 26, 44);
   }
   makeButton('boost', 'Turbo', '<svg viewBox="0 0 24 24"><path d="M13 3 6 13h5l-1 8 8-11h-5z"/></svg>');
   makeButton('up', 'Subir', '<svg viewBox="0 0 24 24"><path d="M6 14l6-6 6 6"/></svg>');
@@ -213,6 +216,7 @@ export function createV2Input(ctx, { sticks, beginFiring, releaseFiring }) {
 
   placeButtons();
   addEventListener('resize', placeButtons);
+  setTimeout(placeButtons, 400);      // el CSS del HUD (hud.css) puede llegar después del primer montaje
   addEventListener('orientationchange', placeButtons);
   const placeTimer = setTimeout(placeButtons, 1500);
   buttons.push({ remove() { clearTimeout(placeTimer); removeEventListener('resize', placeButtons); removeEventListener('orientationchange', placeButtons); } });
@@ -240,14 +244,19 @@ export function createV2Input(ctx, { sticks, beginFiring, releaseFiring }) {
     }
   };
   doc.addEventListener('pointerlockchange', onLockChange);
+  let lockFailed = false;
+  const onLockError = () => { lockFailed = true; wantLock = false; };
+  doc.addEventListener('pointerlockerror', onLockError);
   const canLock = () => !coarse && !ctx.ui.overlay?.active() && input.enabled;
   const onPointerDown = (e) => {
     if (coarse || e.pointerType === 'touch') return;
     if (!canLock()) return;
-    if (doc.pointerLockElement !== canvas) {
+    if (doc.pointerLockElement !== canvas && !lockFailed) {
       if (e.button === 0) { input.requestLock(); wantLock = true; }
       return;                                                   // el primer clic solo captura
     }
+    // (si el navegador rechazó la captura -> pointerlockerror -> se dispara igual con el clic: sin ratón atrapado
+    //  el jugador no se queda sin poder disparar)
     if (e.button === 0) beginFiring('mouse');
     else if (e.button === 2) cycleWeapon(1);
   };
@@ -322,6 +331,7 @@ export function createV2Input(ctx, { sticks, beginFiring, releaseFiring }) {
     dispose() {
       offPrefs(); for (const o of offs) o();
       doc.removeEventListener('pointerlockchange', onLockChange);
+      doc.removeEventListener('pointerlockerror', onLockError);
       canvas.removeEventListener('pointerdown', onPointerDown);
       removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('contextmenu', onContext);

@@ -27,19 +27,19 @@
 //                  deciden en la liberación usando ctx.state.firing)
 // Bus: fire, hit{target,weapon,damage,kill,kind,pos}, explode{pos,size:'S'|'M'|'XL',big,weapon},
 // lock{target,state:'acquiring'|'locked'|'lost'|'none'}.
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=368';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=369';
 import {
   angleBetween, bulletDrop, createDwell, createLockTracker, createVelocityTracker, evaluateLead,
   pickLockCandidate, pickSwarmTargets, resolveAimRay,
-} from '/flightverse/aiming.js?v=368';
-import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=368';
-import { reducedMotion } from '/flightverse/vegetation.js?v=368';
+} from '/flightverse/aiming.js?v=369';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=369';
+import { reducedMotion } from '/flightverse/vegetation.js?v=369';
 import {
   LEAD, MISIL, SWARM_LOCK, WEAPON_FAMILY, WEAPON_FX, WEAPON_PROFILES, WEAPON_UI, WEAPON_UI_KEYS,
-} from '/flightverse/weapon-registry.js?v=368';
-import { createShake, shakeOffsets } from '/flightverse/fx/shake.js?v=368';
-import { createHitStop } from '/flightverse/fx/hitstop.js?v=368';
-import { BUS_EVENTS } from '/flightverse/bus.js?v=368';
+} from '/flightverse/weapon-registry.js?v=369';
+import { createShake, shakeOffsets } from '/flightverse/fx/shake.js?v=369';
+import { createHitStop } from '/flightverse/fx/hitstop.js?v=369';
+import { createFpvStatic } from '/flightverse/fx/fpv-static.js?v=369';
 
 export async function installFx(ctx) {
   const {
@@ -50,7 +50,7 @@ export async function installFx(ctx) {
   const shake = { mag: 0 };
   const weaponModelErrors = new Set();
   const { GLTFLoader: ArsenalGLTFLoader } = await import(
-    '/vendor/three-addons180/loaders/GLTFLoader.js?v=368'
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=369'
   );
   const weaponModels = createWeaponModelLibrary({
     quality: Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto',
@@ -66,9 +66,7 @@ export async function installFx(ctx) {
     }
     return null;
   });
-  // ?fvfx=1: interruptor SÓLO de B (armas/FX/audio v2) para probar aislado mientras ui/ input/ aún no
-  // soportan ?fv=2; en la pasada de integración se elimina y manda flags.fv2.
-  const V2 = Boolean(flags.fv2) || Q.get('fvfx') === '1';
+  const V2 = Boolean(flags.fv2);
   const shakeModel = V2 ? createShake({ reduced: reducedMotion }) : null;
   const hitstop = V2 ? createHitStop({ reduced: reducedMotion }) : null;
   const _right = { x: 1, y: 0, z: 0 };
@@ -93,7 +91,7 @@ export async function installFx(ctx) {
     explode: d => bus.emit('explode', d),
     hitstop: ms => hitstop.request(ms),
     shake: ({ tier, trauma, pos, ceiling }) => addShake(tier, trauma, pos, ceiling),
-    overheat: () => {},
+    overheat: d => bus.emit('overheat', { weapon: d?.weapon ?? null, ...(d?.cleared ? { cleared: true } : {}) }),
   } : null;
   const weapons = createWeapons(scene, {
     world: collision, heightAt: terrain.heightAt, audio, crater: terrain.crater,
@@ -362,7 +360,7 @@ export async function installFx(ctx) {
     /** weapons.update (congelado mientras hay un overlay abierto). */
     update(dt, gamePaused) {
       const allHit = ctx.enemies.hittables();
-      if (!gamePaused) weapons.update(dt * (V2 ? hitstop.scale() : 1), allHit);
+      if (!gamePaused) weapons.update(dt, allHit);   // el hit-stop lo aplica el loop de volar.js a TODO el mundo (timeScale)
       if (!gamePaused && V2) tickPending(dt);
     },
     /** Tras la horda: ganchos QA por URL (?fuego, ?boom) y auto-disparo del gatillo. */
@@ -411,7 +409,7 @@ export async function installFx(ctx) {
       if (V2) {
         report.weapons.v2 = {
           hits: weapons.state.hits, kills: weapons.state.kills,
-          shake: shakeModel.stats(), hitstop: hitstop.stats(),
+          shake: shakeModel.stats(), hitstop: hitstop.stats(), fpvStatic: fx.fpvStatic?.stats() || null,
           heat: { ...weapons.state.heat }, overheat: weapons.state.overheat,
           draw_calls_fx: weapons.fxs.snapshot().drawCalls,
         };
@@ -455,7 +453,10 @@ export async function installFx(ctx) {
         aim.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(
           reticleHit.normal.x, reticleHit.normal.y, reticleHit.normal.z,
         ));
-        aim.scale.setScalar((1 + Math.sin(S.simT * 6) * 0.1) * (1 + camera.position.distanceTo(hitP) * 0.015));
+        // anillo de radio 0.9: su radio angular (0.9*escala/dist) se acota a ~0.12 rad para que a corta distancia (p. ej. el
+        // límite de Dios pegado a la cámara) no llene la pantalla; lejos la escala sigue creciendo como siempre
+        const aimDist = camera.position.distanceTo(hitP);
+        aim.scale.setScalar(Math.min((1 + Math.sin(S.simT * 6) * 0.1) * (1 + aimDist * 0.015), Math.max(0.1, aimDist * 0.13)));
         report.aim = {
           kind: reticleHit.kind,
           point: { ...reticleHit.point },
@@ -483,6 +484,7 @@ export async function installFx(ctx) {
     },
     dispose() {
       offCrash?.();
+      fx.fpvStatic?.dispose();
       weapons.dispose();
       weaponModels.dispose();
     },
@@ -518,10 +520,10 @@ export async function installFx(ctx) {
       else if (cls === 'prop') addShake('T2', 0.08, null);
       else addShake('T1', 0.04, null);
     });
-    // bus 'kill' sólo si A lo añade a BUS_EVENTS (los kills viajan en hit{kill:true})
-    if (Object.prototype.hasOwnProperty.call(BUS_EVENTS, 'kill')) {
-      bus.on('hit', d => { if (d?.kill) bus.emit('kill', d); });
-    }
+    // estática de FPV en choques de clase prop/crash (la cámara FPV pierde la señal; reduced-motion = borde rojo)
+    fx.fpvStatic = createFpvStatic({ ctx, bus, reduced: reducedMotion });
+    // los kills viajan en hit{kill:true}; 'kill' es el evento derivado para audio/HUD
+    bus.on('hit', d => { if (d?.kill) bus.emit('kill', d); });
   }
   void fx.selectWeaponModel(weapons.state.weapon);
   return fx;

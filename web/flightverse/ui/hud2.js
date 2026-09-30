@@ -15,14 +15,14 @@
 //   setObjective({x,y,z,label}|null)
 //   setWind({speed, fromDeg, gust}) · setIntegrity(0..1) · setBattery(0..1) · setAttitude(on)
 //   hitFlash() · gateFlash() · updateInvasionHud(inv, health) · announce(text) · message(text, ms)
-import { combatV2Markup } from '/flightverse/ui/weapons2.js?v=368';
-import { bootMarkup } from '/flightverse/ui/screens.js?v=368';
-import { createHudCanvas, reticleKindFor } from '/flightverse/ui/reticle.js?v=368';
-import { RIGS } from '/flightverse/runtime.js?v=368';
-import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=368';
-import { ICON } from '/flightverse/ui/icons2.js?v=368';
-import { hudMenuMarkup } from '/flightverse/ui/menu2.js?v=368';
-import { screensV2Markup } from '/flightverse/ui/screens2.js?v=368';
+import { combatV2Markup } from '/flightverse/ui/weapons2.js?v=369';
+import { bootMarkup } from '/flightverse/ui/screens.js?v=369';
+import { createHudCanvas, reticleKindFor } from '/flightverse/ui/reticle.js?v=369';
+import { RIGS } from '/flightverse/runtime.js?v=369';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=369';
+import { ICON } from '/flightverse/ui/icons2.js?v=369';
+import { hudMenuMarkup } from '/flightverse/ui/menu2.js?v=369';
+import { screensV2Markup } from '/flightverse/ui/screens2.js?v=369';
 
 export { ICON };
 
@@ -110,6 +110,7 @@ export function createHud2(ctx) {
   // ── estado alimentado por C (física) o derivado ──
   const phys = { wind: null, integrity: null, battery: null, invasion: null, externalThreatsAt: -9 };
   let lastT = performance.now();
+  let lastModeArcT = 0;
   let layoutDirty = true;
   let camKey = '';
   let liveTimer = 0;
@@ -368,7 +369,11 @@ export function createHud2(ctx) {
     }
     // amenazas: derivadas de la horda si D/B no llaman setThreats
     if (now / 1000 - phys.externalThreatsAt > 1.5) cv.setThreats(ctx.enemies?.markerState ? [] : derivedThreats());
+    const cine = !!(ctx.tour?.active || ctx.photo?.active);   // Tour / Foto (E): sin cromo de combate ni de vuelo táctil
     cv.setModeMarkers(ctx.modeHud?.markers);
+    for (const ar of ctx.modeHud?.arcs || []) {       // arcos de telégrafo de D (0 = derecha, + hacia arriba) -> arcos de A (0 = arriba, horario)
+      if (ar.t0 > lastModeArcT) { lastModeArcT = ar.t0; cv.damageArc(Math.PI / 2 - ar.angle); }
+    }
     cv.state.bossY = (el.plate.getBoundingClientRect().bottom || 44) + (el.sub.hidden ? 26 : 56);
     const mh = ctx.modeHud, b = mh?.banner;
     if (b && now - b.t0 < b.dur * 1000) {
@@ -382,10 +387,11 @@ export function createHud2(ctx) {
       cv.layout({ compass: el.compass, spd: el.tapeL, agl: el.tapeR, att: el.att });
       layoutDirty = false;
     }
-    cv.draw({ dt, hdg, spd, agl: drone.agl, fpv, cam: ctx.camera, showReticle: !S.director && mode !== 'replay' });
+    cv.draw({ dt, hdg, spd, agl: drone.agl, fpv, cam: ctx.camera, showReticle: !S.director && mode !== 'replay' && !cine });
     drawMinimap();
     // minimapa solo si el modo lo necesita
     root.classList.toggle('mm-on', mode === 'gaterush' || mode === 'invasion' || mode === 'tour');
+    document.body.classList.toggle('hx-showcase', cine);
     root.classList.toggle('idle-keys', flags.coarse || S.simT > 12);
     void loop;
   }

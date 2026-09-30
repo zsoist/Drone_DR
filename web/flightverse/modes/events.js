@@ -1,32 +1,20 @@
-// flightverse/modes/events.js — emisor de eventos de modos (WS D).
-// Reenvía al bus compartido SOLO los eventos que ya existen en BUS_EVENTS (el bus avisa con
-// console.warn ante un tipo desconocido); el resto queda disponible en ctx.enemies.events.on(...)
-// y en report.modeEvents hasta que A registre los tipos nuevos en bus.js (ver lista en modes/index.js).
-import { BUS_EVENTS } from '/flightverse/bus.js?v=368';
+// flightverse/modes/events.js — fachada de eventos de modos (WS D).
+// Desde la pasada de integración TODOS los eventos viajan por el bus compartido (BUS_EVENTS los registra);
+// `on` es bus.on. Aquí solo quedan los contadores de diagnóstico: report.modeEvents = {counts, forwarded, tail}.
 
 export function createModeEvents(bus, report) {
-  const handlers = new Map();
   const tail = [];
   const counts = {};
   const forwarded = {};
-  function on(type, fn) {
-    if (!handlers.has(type)) handlers.set(type, new Set());
-    handlers.get(type).add(fn);
-    return () => handlers.get(type)?.delete(fn);
-  }
+  const on = (type, fn) => bus.on(type, fn);
   function emit(type, detail = {}) {
     counts[type] = (counts[type] || 0) + 1;
     if (type !== 'markers') {                       // markers es de alta frecuencia: no ensucia la cola
       tail.push({ type, at: +(performance.now() / 1000).toFixed(2), detail: summarize(detail) });
       if (tail.length > 40) tail.shift();
     }
-    for (const fn of [...(handlers.get(type) || [])]) {
-      try { fn(detail); } catch (error) { console.error(`[modes] handler "${type}":`, error); }
-    }
-    if (Object.hasOwn(BUS_EVENTS, type)) {
-      forwarded[type] = (forwarded[type] || 0) + 1;
-      bus.emit(type, detail);
-    }
+    forwarded[type] = (forwarded[type] || 0) + 1;
+    bus.emit(type, detail);
   }
   function summarize(d) {
     const out = {};

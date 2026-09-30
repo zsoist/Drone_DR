@@ -2,6 +2,29 @@ const BASE_TIERS = [1, 1.25, 1.5, 1.75, 2];
 
 const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
 
+// Display refresh intervals the governor understands (144/120, 90, 60, 50, 30 Hz). The interval is estimated from
+// the LOW QUARTILE of the frame times (the frames the GPU was not late for) and snapped to the nearest one within
+// 12 %; a value between two intervals is floored to the faster display (conservative: a GPU-bound 24 ms frame on a
+// 60 Hz panel is slow, not "a 50 Hz display"). All thresholds are relative to it, so 30 and 50 Hz panels recover.
+export const DISPLAY_INTERVALS_MS = Object.freeze([8.3, 11.1, 16.7, 20, 33.3]);
+const SNAP_TOLERANCE = 0.12;
+const SLOW_AVG = 1.11;      // avg > 1.11 x interval
+const SLOW_P95 = 1.23;      // or p95 > 1.23 x interval
+const OK_AVG = 1.04;        // recovered: avg < 1.04 x interval
+const OK_P95 = 1.08;        //            and p95 < 1.08 x interval
+
+export function estimateDisplayInterval(values) {
+  if (!values.length) return 16.7;
+  const sorted = [...values].sort((a, b) => a - b);
+  const low = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.25))];
+  let best = DISPLAY_INTERVALS_MS[0];
+  for (const candidate of DISPLAY_INTERVALS_MS) {
+    if (Math.abs(low - candidate) <= candidate * SNAP_TOLERANCE) return candidate;
+    if (candidate <= low) best = candidate;
+  }
+  return best;
+}
+
 function percentile95(values) {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -28,6 +51,7 @@ export function createRenderQualityGovernor(options = {}) {
     return {
       avgMs: samples.length ? total / samples.length : 0,
       p95Ms: percentile95(samples),
+      intervalMs: estimateDisplayInterval(samples),
       samples: samples.length,
     };
   };
@@ -49,6 +73,7 @@ export function createRenderQualityGovernor(options = {}) {
       reason,
       avgMs: measured.avgMs,
       p95Ms: measured.p95Ms,
+      intervalMs: measured.intervalMs,
       samples: measured.samples,
     };
   };
@@ -65,8 +90,9 @@ export function createRenderQualityGovernor(options = {}) {
     if (windowSamples >= windowSize && samples.length === windowSize) {
       windowSamples = 0;
       const measured = stats();
-      const slow = measured.avgMs > 18.5 || measured.p95Ms > 20.5;
-      const recovered = measured.avgMs < 17.3 && measured.p95Ms < 18;
+      const interval = measured.intervalMs;
+      const slow = measured.avgMs > interval * SLOW_AVG || measured.p95Ms > interval * SLOW_P95;
+      const recovered = measured.avgMs < interval * OK_AVG && measured.p95Ms < interval * OK_P95;
       slowWindows = slow ? slowWindows + 1 : 0;
       recoveryWindows = recovered ? recoveryWindows + 1 : 0;
 

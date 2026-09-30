@@ -6,15 +6,15 @@
 // daño con gracia de 3 s / invulnerabilidad de 5 s al reaparecer / 3 vidas, telégrafos ≥ 0.5 s,
 // proyectiles que respetan los edificios, marcadores y flechas de amenaza, puntuación y top-10.
 // Sin el flag el comportamiento es el legado (oleadas infinitas, 1 vida).
-import * as THREE from '/flightverse/three.js?v=368';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=368';
-import { summarizeInvasionRun } from '/flightverse/hud-format.js?v=368';
+import * as THREE from '/flightverse/three.js?v=369';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=369';
+import { summarizeInvasionRun } from '/flightverse/hud-format.js?v=369';
 import {
   FAIR, VICTORY_WAVE, TYPE_INTRO, createPlayerVitals, fairHitDamage, computeMarkers,
   unlockedTypes, waveBonus, invasionMedal, hasLineOfSight,
-} from '/flightverse/invasion-policy.js?v=368';
-import { addRecord, getTop } from '/flightverse/modes/rules.js?v=368';
-import { showVictoryFallback } from '/flightverse/modes/result-cards.js?v=368';
+} from '/flightverse/invasion-policy.js?v=369';
+import { addRecord, getTop } from '/flightverse/modes/rules.js?v=369';
+import { showVictoryFallback } from '/flightverse/modes/result-cards.js?v=369';
 
 const BOSS_NAME = { dragon: 'DRAGÓN', gigante: 'GIGANTE' };
 const TYPE_LABEL = { zombie: 'Zombis', arquero: 'Arqueros', soldado: 'Soldados', avion: 'Aviones', ufo: 'OVNIs', dragon: 'Dragón', gigante: 'Gigante' };
@@ -24,7 +24,7 @@ export function createInvasionMode(ctx, events) {
     scene, terrain, audio, report, Q, CID, state: S, actions: A, bus, P, flags, fx,
   } = ctx;
   const { weapons } = fx;
-  const v2 = !!flags.fv2 || Q.get('fvd') === '1';   // fvd=1: solo la mecánica de modos v2 (aislado de la UI v2 de A)
+  const v2 = !!flags.fv2;
 
   // ── vida del jugador ──
   const health = { hp: 100, lives: FAIR.lives, invulnerable: false, protect: false };
@@ -65,6 +65,10 @@ export function createInvasionMode(ctx, events) {
       ctx.ui.hud.hitFlash();
       audio.crash?.();
       bus.emit('damage', { amount: raw, dir: null, source: 'invasion' });
+      return;
+    }
+    if ((ctx.phys?.invuln || 0) > 0) {                // C: 1,75 s de invulnerabilidad tras reaparecer (mesh parpadea)
+      events.emit('damage-blocked', { reason: 'phys-invuln', type: info.type || null });
       return;
     }
     const dmg = fairHitDamage(raw, invasion.state.difficulty, invasion.state.wave, vitals.state.maxHp);
@@ -276,6 +280,7 @@ export function createInvasionMode(ctx, events) {
 
   /** Pierde una vida: reaparece con vida llena y 5 s de invulnerabilidad, o derrota si no quedan. */
   function loseLife() {
+    lastLifeAt = S.simT;
     run.livesLost += 1;
     invasion.clearShots();
     if (vitals.respawn(S.simT)) {
@@ -328,6 +333,15 @@ export function createInvasionMode(ctx, events) {
   }
 
   let qaInvasionStarted = false;
+  // C: un choque que destruye el dron (evento `respawn`) cuesta UNA vida. Si la horda ya la quitó hace un momento
+  // (hp<=0 -> loseLife) o el respawn ya descontó, no se cuenta dos veces.
+  let lastLifeAt = -99;
+  if (v2) {
+    bus.on('respawn', () => {
+      if (!invasion.state.on || outcomeHandled || S.simT - lastLifeAt < 1.5) return;
+      loseLife();
+    });
+  }
   let lastWave = 0;
 
   function computeMarkerState() {

@@ -186,3 +186,51 @@ uses the PC GPU (W2 training, W3 reconstruction, any Cycles bake) **serializes o
 
 Unreal runtime / Pixel Streaming · MCP servers in automation · TRELLIS.2 (24 GB) / MILo (≥10 GB)
 on this GPU · replacing three.js · hand-modeled assets.
+
+## W3 results — RealityScan blocked; ODM "building recipe" A/B (2026-09-30)
+
+**RealityScan: not possible on this PC.** The CPU is an Intel i7-3770S (Ivy Bridge, AVX but **no AVX2**); RealityScan 2.x
+exits with "required instruction set AVX2 is not supported". Hardware limit, nothing to install or sign in. It would need a
+newer CPU (the GPU is fine). The Epic launcher also had no RealityScan installed at the time (only UE 5.8).
+
+**Fallback experiment: ODM building recipe on the same 428 frames** (3072x1728, the parent `proj_recon_4e4245a1f4` images),
+PC CUDA lane, experiment workdir `/root/gpu-jobs/experiments/w3-odm/` (removed afterwards), production untouched.
+Recipe: `--pc-quality ultra --feature-quality ultra --mesh-octree-depth 12 --mesh-size 300000 --use-3dmesh --camera-lens brown
+--use-fixed-camera-params --rolling-shutter --pc-skip-geometric --orthophoto-resolution 2 --dem-resolution 4` (+ `--max-concurrency 8
+--dsm --dtm --skip-report`, 20 GB container cap, as `odm_gpu_lane.remote_run_argv`).
+
+Run log (what actually happened):
+1. SfM (feature-quality ultra, rolling-shutter two-pass): ~100 min (production medium-quality run: 28 min). 428/428 cameras, 391,939
+   sparse points (production: 208,922). `--rolling-shutter` made ODM run match/reconstruct twice and was a no-op: every shot logged
+   "Cannot compute velocity (delta time 0)" because the extracted video frames carry no per-frame capture time. Pure cost.
+2. `--pc-quality ultra`: DensifyPointCloud stalled at depth-map 317/428 for 40+ min (container 18-19 GiB of 20, IO pressure ~86%, WSL
+   commands hanging). Killed after 145 min wall. Peak VRAM 1.6 GB (OpenMVS runs `--cuda-device -1`; the GPU is used mainly for SIFT).
+3. `--pc-quality high`: OOM-killed at depth-map fusion 95% (20 GiB cap), ODM retried with tiling and **segfaulted (exit 139,
+   "strange values")**. 37 min lost.
+4. `--pc-quality medium` (= what production actually ran for this scene): completed, octree 12 did **not** crash here.
+   Stages: openmvs 966 s, meshing 337 s, texturing 288 s, georef 108 s, DEM 165 s, ortho 46 s; 34 min for this leg. VRAM < 2 GB, container RAM peak 6.7 GB.
+5. Ablation: re-mesh the same cloud with production mesh settings (octree 11, mesh-size 600k): meshing 100 s, texturing 476 s.
+
+| mesh (same 428 frames, AOI = recon_4e4245a1f4_aoi130 grid) | tris | mesh_coverage (AOI) | cameras | sparse pts |
+|---|---|---|---|---|
+| production aoi130 (published) | 529k | **72.53 %** (reproduced exactly by `w3_coverage.py`) | 428/428 | 208,922 |
+| production parent mesh, uncropped (600k target) | 812k | 79.74 % | 428/428 | 208,922 |
+| recipe (ultra SfM, octree 12, 300k) | 282k | 54.50 % (only-ODM cells 22.0 %, only-recipe 4.0 %) | 428/428 | 391,939 |
+| ablation: same ultra SfM, octree 11, 600k | 702k | 55.91 % (only-ODM 21.5 %) | 428/428 | 391,939 |
+
+Facade renders (Blender Workbench, flat textured, 5 fixed viewpoints incl. tower b01 and b02; side-by-sides in
+`sxs_recipe/` and `sxs_oct11/`): **the recipe is visibly worse**. The production tower has straight mullions and clean slabs; both
+recipe meshes have sheared/wavy facades, collapsed or noisy b02 wall (window grid broken, roofs melted into walls), floating junk above
+the tower and ragged vegetation. The ablation shows the mesh parameters are not the cause (55.9 % vs 54.5 %); the damage is upstream, in
+the cloud/SfM geometry of the ultra+brown+fixed-params+rolling-shutter run. I did not isolate which flag is responsible (one run is
+~100 min); `--rolling-shutter` and `--use-fixed-camera-params` are the prime suspects and the first things to drop.
+
+**Verdict: do not adopt the recipe (as a building preset or otherwise); keep the current ODM settings.** It is worse on coverage
+(-17 to -18 pts), worse on facades, ~4x slower in SfM, and `pc-quality ultra/high` do not fit the 20 GB WSL cap on this scene. Not
+evaluated: splats trained on the new cameras (pointless given geometry). Side finding: the uncropped parent mesh covers the AOI
+better (79.7 %) than the published aoi130 mesh (72.5 %); the AOI re-crop pipeline loses ~7 pts of coverage and is a cheaper lever than
+any recon change (not investigated). RealityScan remains unevaluated until a CPU with AVX2 is available.
+
+Artifacts: `/Volumes/SSD/drone-vault/experiments/w3-realityscan-2026-09-30/` (`scripts/` w3_coverage.py, w3_render.py, w3_montage.py,
+w3_cameras.py, w3_odm_run.sh, w3_sampler.sh; `odm_renders/`, `recipe_renders/`, `oct11_renders/`, `sxs_*`; `odm_exp/` logs, samples,
+coverage JSON/PNG, and the recipe + oct11 textured meshes). Frame: `w3_coverage.py --frame odm-geo` (x=X+22.98, y=Z-2586.79, z=-(Y+47.44)).

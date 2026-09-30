@@ -2959,6 +2959,140 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
             "visual": visual, **hud}
 
 
+def _fv2_state(cdp) -> dict:
+    return cdp.eval(js("""
+      const r = window.__volar || {};
+      const t = r.weaponState?.trigger || {};
+      return { weapon:r.weaponState?.weapon, cool:r.weaponState?.cool, fired:r.weapons?.fired || 0,
+               ammo:r.weaponState?.ammo || {}, presses:t.presses || 0, held:!!t.held, errors:[...(r.errors || [])] };
+    """))
+
+
+def _fv2_dismiss_start(cdp, touch: bool):
+    """The 'Toca para empezar' card must be dismissed with the same input a player uses."""
+    wait_for(cdp, js("const b=document.querySelector('#hx-start-go'); return b && b.getClientRects().length ? true : null"),
+             timeout=20, label="tarjeta de inicio fv2")
+    c = element_center(cdp, "#hx-start-go")
+    if touch:
+        touch_tap(cdp, 9, c, settle=0.5)
+    else:
+        for kind in ("mousePressed", "mouseReleased"):
+            cdp.send("Input.dispatchMouseEvent", {"type": kind, "x": c["x"], "y": c["y"], "button": "left",
+                                                   "buttons": 1 if kind == "mousePressed" else 0, "clickCount": 1})
+        cdp.pump(0.5)
+    wait_for(cdp, js("return window.__volar.ctx.ui.overlay.active() ? null : true"), timeout=5, label="cierre de inicio")
+
+
+def run_volar_fv2(cdp, base_url: str, cid: str, viewport: str) -> dict:
+    """?fv=2: new HUD + fire flow on a real device profile.
+
+    mobile: real touch -> tap FIRE (+1 shot), long-press the weapon chip -> radial wheel with the 6 weapons,
+    touch-select NOVA and fire it, layout never overflows the viewport, all HUD controls >= 44 px.
+    desktop: mouse -> weapon strip slot selects RAIL (hotkeys 1-6 exist), a mouse click on the world fires (also when the
+    browser refuses pointer lock), FIRE button is absent, no overflow.
+    """
+    mobile = VIEWPORTS[viewport]["mobile"]
+    cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/volar.html?m={cid}&autotest=1&fv=2"})
+    rep = wait_for(cdp, js("""
+      const r = window.__volar;
+      if (!r || !r.done) return null;
+      return { ok:r.ok, fps:r.fps, rig:r.camera?.rig, errors:r.errors || [], phys:r.physics?.active,
+               render:r.render, fv2:!!r.ctx?.flags?.fv2 };
+    """), timeout=120, label="volar fv2 autotest")
+    if not rep.get("ok") or not rep.get("fv2") or not rep.get("phys"):
+        raise RuntimeError(f"volar fv2 rojo: {rep}")
+    if rep.get("fps", 0) < 50:
+        raise RuntimeError(f"volar fv2 bajo presupuesto de 50 FPS: {rep}")
+    if rep.get("rig") != "fpv":
+        raise RuntimeError(f"FPV no fue la cámara inicial en fv2: {rep.get('rig')}")
+    _fv2_dismiss_start(cdp, mobile)
+    hud = cdp.eval(js("""
+      const need = ['#hx-back','#hx-pause','#hx-compass'];
+      const small = [...document.querySelectorAll('.hx-ibtn,.hx-fire,.hx-wchip,.hx-slot,.vl-fv-btn')]
+        .filter(e => e.getClientRects().length).map(e => { const r=e.getBoundingClientRect(); return [e.id||e.dataset.fv||e.className, Math.round(r.width), Math.round(r.height)]; })
+        .filter(([, w, h]) => w < 44 || h < 44);
+      const slots = [...document.querySelectorAll('#hx-wstrip .hx-slot')].filter(e => e.getClientRects().length).length;
+      const fire = document.querySelector('#hx-fire'), fr = fire && fire.getBoundingClientRect();
+      return { missing: need.filter(s => !document.querySelector(s)), small,
+               slots, fireVisible: !!(fr && fr.width > 0), overflow: document.documentElement.scrollWidth - innerWidth,
+               ov: window.__volar.ctx.ui.overlay.active() };
+    """))
+    if hud["missing"] or hud["overflow"] > 3 or hud["ov"]:
+        raise RuntimeError(f"HUD fv2 incompleto en {viewport}: {hud}")
+    result = {"surface": "volar-fv2", "viewport": viewport, "fps": rep["fps"], "hud": hud}
+    if mobile:
+        if not hud["fireVisible"] or hud["small"]:
+            raise RuntimeError(f"controles táctiles fv2 < 44 px o sin botón de fuego: {hud}")
+        cdp.eval(js("window.__volar.ctx.controls.camera.setGimbal(-0.6)"))
+        wait_for(cdp, js("const w=window.__volar.weaponState; return w && w.cool <= 0.01 ? true : null"), timeout=6, label="arma lista")
+        before = _fv2_state(cdp)
+        touch_tap(cdp, 2, element_center(cdp, "#hx-fire"), settle=0.3)
+        after = _fv2_state(cdp)
+        if after["fired"] != before["fired"] + 1 or after["held"]:
+            raise RuntimeError(f"FIRE táctil fv2 inválido: {before} -> {after}")
+        # long-press the chip: radial wheel with the six weapons
+        chip = element_center(cdp, "#hx-wchip")
+        active = [touch_point(3, chip["x"], chip["y"])]
+        dispatch_touches(cdp, "touchStart", active)
+        cdp.pump(0.6)
+        wheel = cdp.eval(js("""
+          const w=document.querySelector('#hx-wheel');
+          return { open: !!w && !w.hidden, keys:[...document.querySelectorAll('#hx-wheel .hx-wopt')].map(b=>b.dataset.w),
+                   offscreen:[...document.querySelectorAll('#hx-wheel .hx-wopt')].filter(b=>{const r=b.getBoundingClientRect();
+                     return r.left<0||r.top<0||r.right>innerWidth||r.bottom>innerHeight}).length };
+        """))
+        if not wheel["open"] or sorted(wheel["keys"]) != sorted(["mg", "ac", "m", "sw", "rg", "tb"]) or wheel["offscreen"]:
+            dispatch_touches(cdp, "touchEnd", [])
+            raise RuntimeError(f"rueda de armas fv2 inválida: {wheel}")
+        target = cdp.eval(js("""
+          const b=document.querySelector('#hx-wheel .hx-wopt[data-w="tb"]').getBoundingClientRect();
+          return { x:b.left+b.width/2, y:b.top+b.height/2 };
+        """))
+        steps = 8
+        for i in range(1, steps + 1):
+            k = i / steps
+            dispatch_touches(cdp, "touchMove", [touch_point(3, chip["x"] + (target["x"] - chip["x"]) * k,
+                                                            chip["y"] + (target["y"] - chip["y"]) * k)])
+            cdp.pump(0.03)
+        dispatch_touches(cdp, "touchEnd", [touch_point(3, target["x"], target["y"])])
+        cdp.pump(0.4)
+        if _fv2_state(cdp)["weapon"] != "tb":
+            raise RuntimeError(f"la rueda no seleccionó NOVA: {_fv2_state(cdp)}")
+        wait_for(cdp, js("const w=window.__volar.weaponState; return w && w.cool <= 0.01 ? true : null"), timeout=8, label="NOVA lista")
+        before = _fv2_state(cdp)
+        touch_tap(cdp, 2, element_center(cdp, "#hx-fire"), settle=0.4)
+        after = _fv2_state(cdp)
+        if after["fired"] != before["fired"] + 1 or after["ammo"].get("tb", 0) != before["ammo"].get("tb", 0) - 1:
+            raise RuntimeError(f"NOVA táctil no disparó una vez: {before} -> {after}")
+        result["touch"] = {"fire": True, "wheel": wheel["keys"], "selected": "tb"}
+    else:
+        if hud["fireVisible"] or hud["slots"] != 6:
+            raise RuntimeError(f"HUD de escritorio fv2 inesperado (sin botón de fuego, 6 ranuras): {hud}")
+        slot = element_center(cdp, '#hx-wstrip .hx-slot[data-w="rg"]')
+        for kind in ("mousePressed", "mouseReleased"):
+            cdp.send("Input.dispatchMouseEvent", {"type": kind, "x": slot["x"], "y": slot["y"], "button": "left",
+                                                   "buttons": 1 if kind == "mousePressed" else 0, "clickCount": 1})
+        cdp.pump(0.4)
+        if _fv2_state(cdp)["weapon"] != "rg":
+            raise RuntimeError(f"ranura RAIL no seleccionó: {_fv2_state(cdp)}")
+        cdp.eval(js("window.__volar.ctx.controls.camera.setGimbal(-0.6)"))
+        wait_for(cdp, js("const w=window.__volar.weaponState; return w && w.cool <= 0.01 ? true : null"), timeout=8, label="RAIL lista")
+        before = _fv2_state(cdp)
+        cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": 640, "y": 300, "button": "left", "buttons": 1, "clickCount": 1})
+        cdp.pump(0.06)
+        cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": 640, "y": 300, "button": "left", "buttons": 0, "clickCount": 1})
+        cdp.pump(0.3)
+        after = _fv2_state(cdp)
+        if after["fired"] != before["fired"] + 1:
+            raise RuntimeError(f"disparo con ratón fv2 inválido: {before} -> {after}")
+        result["desktop"] = {"slot": "rg", "mouseFire": True}
+    errors = _fv2_state(cdp)["errors"]
+    if errors:
+        raise RuntimeError(f"errores de app fv2 en {viewport}: {errors[:3]}")
+    screenshot(cdp, QA_DIR / f"matrix-volar-fv2-{viewport}.png")
+    return result
+
+
 def format_flightverse_result(result: dict) -> str:
     detail = (
         f"{result['fps']}fps"
@@ -2980,16 +3114,20 @@ def main():
                     help="Repeat to limit surfaces. Default: share, workspace, jobs.")
     ap.add_argument("--flightverse", action="store_true",
                     help="Matriz FLIGHTVERSE (mundo + volar) en vez de share/workspace.")
+    ap.add_argument("--fv2", action="store_true",
+                    help="Con --flightverse: ejecuta SOLO el flujo HUD/fuego de ?fv=2 (por defecto mobile_portrait + desktop).")
     args = ap.parse_args()
-    viewports = args.viewport or [
+    viewports = args.viewport or (["mobile_portrait", "desktop"] if args.fv2 else [
         "mobile_portrait", "mobile_landscape",
         "ipad_portrait", "ipad_landscape", "desktop",
-    ]
+    ])
     if args.flightverse:
         results = []
         for vp in viewports:
-            for runner in (lambda c, b, v=None: run_mundo(c, b, vp),
-                           lambda c, b, v=None: run_volar(c, b, args.clip_id, vp)):
+            runners = ((lambda c, b, v=None: run_volar_fv2(c, b, args.clip_id, vp)),) if args.fv2 else (
+                lambda c, b, v=None: run_mundo(c, b, vp),
+                lambda c, b, v=None: run_volar(c, b, args.clip_id, vp))
+            for runner in runners:
                 proc, profile, port = launch_chrome()
                 cdp = None
                 try:

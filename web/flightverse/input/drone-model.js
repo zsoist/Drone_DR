@@ -2,8 +2,8 @@
 // (~0.85 m) o GLB del operador (web/assets/drone.glb, docs/DRONE_MODEL_SPEC.md), hélices
 // con inercia, luces de navegación, hardpoints para armas y bob de hover.
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=368';
-import { STEP } from '/flightverse/runtime.js?v=368';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=369';
+import { STEP } from '/flightverse/runtime.js?v=369';
 
 export function createDroneModel(ctx) {
   const { THREE, scene, renderer, drone, report, state: S } = ctx;
@@ -102,9 +102,9 @@ export function createDroneModel(ctx) {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=368', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=369', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=368');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=369');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);

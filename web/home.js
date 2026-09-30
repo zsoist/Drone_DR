@@ -152,7 +152,7 @@ function mountDroneWhenIdle() {
   const lite = navigator.connection?.saveData || matchMedia('(max-width: 680px)').matches || matchMedia('(pointer: coarse)').matches;
   if (lite) { stage.classList.add('is-off'); return; }
   const fail = () => stage.classList.add('is-failed');
-  const mount = () => import('./home-drone.js?v=368')
+  const mount = () => import('./home-drone.js?v=369')
     .then(mod => mod.mountHomeDrone?.('#home-drone-stage'))
     .then(res => { if (!res) fail(); })
     .catch(fail);
