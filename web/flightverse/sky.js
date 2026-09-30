@@ -3,7 +3,8 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=367';
+import * as THREE from '/flightverse/three.js?v=368';
+import { todParams, resolveTodKey, elevationOf, nearestTodKey } from '/flightverse/tour/tod.js?v=368';
 
 const PRESETS = {
   dia: {
@@ -88,6 +89,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
     uScatter: { value: 0 },
     uFogC: { value: new THREE.Color() },
     uTime: { value: 0 },
+    uVoid: { value: 0 },       // WS E: bruma interior (cámara dentro de geometría) -> todo el cielo se funde a niebla
   };
   const dome = new THREE.Mesh(
     new THREE.SphereGeometry(radius, 32, 20),
@@ -98,7 +100,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }`,
       fragmentShader: `varying vec3 vDir;
         uniform vec3 uTop, uMid, uHorizon, uSunColor, uFogC; uniform vec3 uSunDir, uMoonDir;
-        uniform float uStars, uMidPos, uSunSize, uMoon, uGalaxy, uScatter, uTime, uTopPos;
+        uniform float uStars, uMidPos, uSunSize, uMoon, uGalaxy, uScatter, uTime, uTopPos, uVoid;
         float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
         float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
           return mix(mix(hash(i), hash(i+vec2(1.,0.)), f.x),
@@ -173,6 +175,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
               }
             }
           }
+          col = mix(col, uFogC, uVoid);
           col += (hash(gl_FragCoord.xy) - 0.5) * 0.012;        // dither anti-banding
           gl_FragColor = vec4(col, 1.);
         }`,
@@ -239,6 +242,67 @@ export function createSky(scene, { radius = 2600 } = {}) {
     puffs.push(g);
   }
 
+  // SIERRA de horizonte (WS E, ?fv=2): 3 capas de cordillera lejana con perspectiva atmosférica. Al
+  // volar hacia el borde el horizonte deja de ser un degradado vacío (los cerros de Bogotá al fondo).
+  const ridges = [];
+  {
+    const SEG = 360;
+    const layers = [[2460, 230, 1.3], [2310, 330, 4.1], [2160, 430, 7.7]];   // radio, altura, fase
+    for (const [rad, hmax, ph] of layers) {
+      // 3 anillos: cresta (color de la sierra) · y=12 (casi niebla) · base bajo el plano de bruma (niebla)
+      const pos = new Float32Array((SEG + 1) * 3 * 3);
+      const col = new Float32Array((SEG + 1) * 3 * 3).fill(1);
+      const idx = [];
+      for (let i = 0; i <= SEG; i++) {
+        const a = (i / SEG) * Math.PI * 2;
+        // cresta fractal periódica: suma de senos con amplitud decreciente (cierra sin costura en a = 2π)
+        let h = 0, amp = 1, tot = 0;
+        for (let o = 0; o < 6; o++) {
+          const f = 2 + o * o * 2 + o * 3;
+          h += Math.sin(a * f + ph * (o + 1) + Math.sin(a * 3 + ph) * 0.6) * amp;
+          tot += amp; amp *= 0.55;
+        }
+        h = Math.max(0, (h / tot) * 0.5 + 0.5);
+        const top = hmax * (0.25 + 0.75 * Math.pow(h, 1.4));
+        const cx = Math.cos(a) * rad, cz = Math.sin(a) * rad;
+        pos.set([cx, top, cz], i * 9);
+        pos.set([cx, 12, cz], i * 9 + 3);
+        pos.set([cx, -160, cz], i * 9 + 6);
+        if (i < SEG) {
+          const k = i * 3;
+          idx.push(k, k + 1, k + 3, k + 1, k + 4, k + 3, k + 1, k + 2, k + 4, k + 2, k + 5, k + 4);
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      g.setIndex(idx);
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+        color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, fog: false, depthWrite: false }));
+      m.renderOrder = -9; m.frustumCulled = false; m.visible = false;
+      m.userData.seg = SEG;
+      scene.add(m);
+      ridges.push(m);
+    }
+  }
+  const _rc = new THREE.Color(), _rm = new THREE.Color();
+  function tintRidges() {
+    // del más lejano (casi color de niebla) al más cercano (más azul/oscuro): perspectiva atmosférica
+    const mixes = [0.12, 0.22, 0.34];
+    ridges.forEach((m, i) => {
+      _rc.copy(fogColor).lerp(i === 2 ? uni.uTop.value : uni.uMid.value, mixes[i]).multiplyScalar(1 - 0.06 * i);
+      _rm.copy(_rc).lerp(fogColor, 0.85);
+      const col = m.geometry.attributes.color;
+      const n = m.userData.seg + 1;
+      for (let k = 0; k < n; k++) {
+        col.setXYZ(k * 3, _rc.r, _rc.g, _rc.b);
+        col.setXYZ(k * 3 + 1, _rm.r, _rm.g, _rm.b);
+        col.setXYZ(k * 3 + 2, fogColor.r, fogColor.g, fogColor.b);
+      }
+      col.needsUpdate = true;
+    });
+  }
+
   // ATMÓSFERA (W5): niebla exponencial ligada al tamaño del mundo (la Fog lineal 600-2200 m
   // de antes no tocaba nada: las islas miden 260-580 m) + plano de bruma bajo la isla que se
   // funde con el horizonte. Es atmósfera, no terreno: sin textura, mismo color que la niebla.
@@ -258,9 +322,11 @@ export function createSky(scene, { radius = 2600 } = {}) {
   const _ld = new THREE.Vector3();
   window.__skyUni = uni;                    // debug: inspección CDP de uniforms
   let cur = 'dia';
-  function setPreset(name) {
-    const p = PRESETS[name] || PRESETS.dia;
-    cur = name in PRESETS ? name : 'dia';
+  let lightIsMoon = false;
+  let todElev = 55;               // elevación solar actual (°)
+  let v2 = false;                 // ?fv=2: presets extra (dorada) + continuo por elevación
+  const todListeners = new Set();
+  function applyParams(p) {
     uni.uTop.value.set(p.top);
     uni.uMid.value.set(p.mid);
     uni.uHorizon.value.set(p.horizon);
@@ -281,18 +347,20 @@ export function createSky(scene, { radius = 2600 } = {}) {
     if (fogEnabled) uni.uHorizon.value.copy(fogColor);      // el cielo nace del color de la niebla: sin costura en el horizonte
     hazeGround.material.color.copy(fogColor).multiplyScalar(0.9);   // más cerca = apenas más oscuro; la niebla lo sube al color del cielo
     sun.color.set(p.sunTint || p.sun || 0xffffff); sun.intensity = p.sunI;
-    const lp = (p.moon > 0 && p.moonPos) ? p.moonPos : p.sunPos;
+    lightIsMoon = !!(p.moon > 0 && p.moonPos);
+    const lp = lightIsMoon ? p.moonPos : p.sunPos;
     sun.position.set(lp[0] * 600, lp[1] * 600, lp[2] * 600);
     ambient.intensity = p.ambient;
     scene.fog = fogEnabled ? new THREE.FogExp2(fogColor.clone(), fogDensity) : new THREE.Fog(p.fog, 600, 2200);   // off = niebla de siempre
     hazeGround.visible = fogEnabled;
+    tintRidges();
     for (const c of clouds) {
       c.m.material.opacity = (c.m.material.userData.base ?? c.m.material.opacity);
       c.m.material.userData.base = c.m.material.userData.base ?? c.m.material.opacity;
       c.m.material.opacity = c.m.material.userData.base * (p.clouds / 0.5);
       c.m.material.color.set(p.cloudTint);
     }
-    hemi.color.set(p.top); hemi.groundColor.set(p.fog); hemi.intensity = p.moon > 0 ? 0.22 : 0.45;
+    hemi.color.set(p.top); hemi.groundColor.set(p.fog); hemi.intensity = p.hemi ?? (p.moon > 0 ? 0.22 : 0.45);
     flare.material.color.set(p.sun || 0xffffff);
     flare.material.opacity = p.moon > 0 ? 0 : 1;
     flare.scale.setScalar(p.sunSize < 200 ? 260 : 150);   // sol bajo = flare grande
@@ -300,13 +368,47 @@ export function createSky(scene, { radius = 2600 } = {}) {
       sp.material.opacity = (sp.userData.baseOp ?? (sp.userData.baseOp = sp.material.opacity)) * (p.clouds / 0.5);
       sp.material.color.set(p.cloudTint).multiplyScalar(sp.userData.shade ?? 1);
     });
+  }
+  function setPreset(name) {
+    if (v2 && resolveTodKey(name)) return setTod(name);
+    const p = PRESETS[name] || PRESETS.dia;
+    cur = name in PRESETS ? name : 'dia';
+    todElev = cur === 'noche' ? -30 : cur === 'atardecer' ? 2 : 55;
+    applyParams(p);
+    return cur;
+  }
+  /** Hora del día (WS E): preset por nombre (dia|dorada|atardecer|noche) o elevación solar en grados. */
+  function setTod(keyOrElev) {
+    const tp = todParams(keyOrElev);
+    const key = typeof keyOrElev === 'string' ? (resolveTodKey(keyOrElev) || 'dia') : nearestTodKey(tp.elev);
+    cur = key;
+    todElev = tp.elev;
+    applyParams({
+      top: tp.hex.top, mid: tp.hex.mid, horizon: tp.hex.horizon, midPos: tp.midPos, topPos: tp.topPos,
+      sun: tp.hex.sun, sunTint: tp.moon > 0.5 ? tp.hex.sunTint : (tp.elev < 12 ? tp.hex.sun : null),
+      sunPos: tp.sunDir, sunSize: tp.sunSize, fog: tp.hex.horizon,
+      ambient: tp.ambient, sunI: tp.sunI, hemi: tp.hemi, stars: tp.stars, moon: tp.moon,
+      moonPos: tp.moon > 0 ? tp.moonDir : null, galaxy: tp.galaxy,
+      clouds: tp.clouds, cloudTint: tp.hex.cloudTint, scatter: tp.scatter,
+    });
+    for (const fn of todListeners) { try { fn(tp); } catch (e) { console.warn('[sky] tod listener', e); } }
     return cur;
   }
   setPreset('dia');
 
   return {
     get preset() { return cur; },
+    get elevation() { return todElev; },
     setPreset,
+    setTod,
+    /** Activa el modo v2: 'dorada' existe y cycle() recorre dia -> dorada -> atardecer -> noche. */
+    enableV2() { v2 = true; for (const r of ridges) r.visible = fogEnabled; tintRidges(); },
+    get v2() { return v2; },
+    /** Suscripción a cambios de hora (recibe los parámetros interpolados, incl. .grade). */
+    onTod(fn) { todListeners.add(fn); return () => todListeners.delete(fn); },
+    /** Bruma interior 0..1: la cámara está dentro de geometría (tour/void-guard.js). */
+    setVoid(v) { uni.uVoid.value = v; },
+    uniforms: uni,
     fogColor,
     // radio (m) de la isla: la niebla se calibra a su escala. enabled=false → sin niebla ni bruma
     setWorldScale(halfExtentM, { enabled = true } = {}) {
@@ -315,12 +417,13 @@ export function createSky(scene, { radius = 2600 } = {}) {
       setPreset(cur);
     },
     cycle() {
-      const ks = Object.keys(PRESETS);
+      const ks = v2 ? ['dia', 'dorada', 'atardecer', 'noche'] : Object.keys(PRESETS);
       return setPreset(ks[(ks.indexOf(cur) + 1) % ks.length]);
     },
     update(dt, camPos, focus) {
       dome.position.copy(camPos);                       // el domo sigue a la cámara
       hazeGround.position.x = camPos.x; hazeGround.position.z = camPos.z;
+      for (const r of ridges) { r.position.x = camPos.x; r.position.z = camPos.z; }
       hazeGround.updateMatrix();
       uni.uTime.value += dt;
       for (const c of clouds) {
@@ -331,7 +434,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
       for (const pg of puffs) { pg.position.x += dt * 1.7; if (pg.position.x > 900) pg.position.x = -900; }
       if (focus) {                                       // frustum de sombra sigue al dron
         sun.target.position.copy(focus);
-        const ld = (uni.uMoon.value > 0 && cur && PRESETS[cur] && PRESETS[cur].moonPos) ? uni.uMoonDir.value : uni.uSunDir.value;
+        const ld = lightIsMoon ? uni.uMoonDir.value : uni.uSunDir.value;
         sun.position.copy(focus).addScaledVector(_ld.copy(ld).normalize(), 420);
         sun.target.updateMatrixWorld();
       }

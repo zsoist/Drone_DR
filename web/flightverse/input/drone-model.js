@@ -2,8 +2,8 @@
 // (~0.85 m) o GLB del operador (web/assets/drone.glb, docs/DRONE_MODEL_SPEC.md), hélices
 // con inercia, luces de navegación, hardpoints para armas y bob de hover.
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=367';
-import { STEP } from '/flightverse/runtime.js?v=367';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=368';
+import { STEP } from '/flightverse/runtime.js?v=368';
 
 export function createDroneModel(ctx) {
   const { THREE, scene, renderer, drone, report, state: S } = ctx;
@@ -102,9 +102,9 @@ export function createDroneModel(ctx) {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=367', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=368', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=367');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=368');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -163,12 +163,64 @@ export function createDroneModel(ctx) {
     report.customDrone = true;
   }).catch(() => { /* GLB opcional */ });
   let propSpin = 14;
+  // v2: opacidad del dron (invulnerabilidad 8 Hz .4/1, cámara pegada a la malla -> 40 %)
+  let matCache = null, matCount = -1, lastOpacity = 1;
+  const PROP_MOTOR = [3, 0, 2, 1];             // hélice (FL, FR, BL, BR) -> motor del sim (0 FR, 1 BR, 2 BL, 3 FL)
+  const setOpacity = (a) => {
+    if (a === lastOpacity) return;
+    let count = 0;
+    dmesh.traverse(() => { count++; });
+    if (!matCache || count !== matCount) {                 // el swap a GLB cambia el árbol
+      matCache = new Set(); matCount = count;
+      const skip = new Set(propBlurs.map(b => b.material));
+      dmesh.traverse(o => {
+        if (!o.material || o.isSprite) return;
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+          if (!skip.has(m) && !(m.isMeshBasicMaterial && m.blending === THREE.AdditiveBlending)) matCache.add(m);
+        }
+      });
+    }
+    for (const m of matCache) {
+      if (m.userData.fvOpacity === undefined) { m.userData.fvOpacity = m.opacity; m.userData.fvTransparent = m.transparent; }
+      m.transparent = a < 1 || m.userData.fvTransparent || false;
+      m.opacity = m.userData.fvOpacity * a;
+    }
+    lastOpacity = a;
+  };
   return {
     mesh: dmesh, props, propBlurs, navLights, hardpoints,
+    /** Opacidad global del dron 0..1 (WS C: parpadeo de invulnerabilidad, cámara dentro de la malla). */
+    setOpacity,
     /** Velocidad angular de hélice suavizada (la usa el audio). */
     get spin() { return propSpin; },
     /** Por frame de render: hélices con inercia, luces, bob y pose del dron (P/o = pose interpolada). */
     update(P, o) {
+      const phys = o.quat && ctx.phys?.active ? ctx.phys : null;     // Physics v2: actitud real + motores reales
+      if (phys) {
+        // cada hélice gira con su motor (lag real, daño, corte en crash)
+        const m = phys.motors;
+        let mean = 0;
+        for (let i = 0; i < props.length; i++) {
+          const sp = 70 * (m[props.length === 4 ? PROP_MOTOR[i] : i % 4] || 0);
+          props[i].g.rotation.y += sp * 0.0166 * props[i].dir;       // paso de render (la malla no necesita 1/120)
+          mean += sp;
+        }
+        propSpin = mean / Math.max(1, props.length);
+        for (const bl of propBlurs) bl.material.opacity = Math.min(0.3, 0.02 + propSpin * 0.0042);
+        dmesh.position.copy(P);
+        dmesh.quaternion.copy(o.quat);
+        let a = 1;
+        if (phys.invuln > 0) a = (Math.floor(S.simT * 16) & 1) ? 0.4 : 1;   // 8 Hz
+        if (ctx.droneFade) a = Math.min(a, ctx.droneFade);
+        setOpacity(a);
+        if (navLights.length) {
+          const tk = S.simT % 1.2;
+          navLights[0].material.opacity = (tk < 0.07 || (tk > 0.18 && tk < 0.25)) ? 1 : 0.04;
+          const nv = 0.9 + Math.sin(S.simT * 3.1) * 0.1;
+          navLights[1].material.opacity = nv; navLights[2].material.opacity = nv;
+        }
+        return;
+      }
       // hélices con inercia (spin-up/down suave) + bob de hover premium
       propSpin += ((14 + drone.vel.length() * 3) - propSpin) * 0.06;
       for (const pr of props) pr.g.rotation.y += propSpin * STEP * pr.dir;

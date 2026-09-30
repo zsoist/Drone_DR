@@ -1,6 +1,6 @@
 // flightverse/tour/cinematic.js — cámaras de presentación (WS E): swoop de llegada
 // (de vista-mapa al rig chase) y tour orbital del modo Cinematico.
-import { reducedMotion } from '/flightverse/vegetation.js?v=367';
+import { reducedMotion } from '/flightverse/vegetation.js?v=368';
 
 export function createCinematic(ctx) {
   const { THREE, camera, W, AT } = ctx;

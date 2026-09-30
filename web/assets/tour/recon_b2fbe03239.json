@@ -1,0 +1,265 @@
+{
+ "world": "recon_b2fbe03239",
+ "speed": 7.0,
+ "pois": [
+  {
+   "id": "panoramica",
+   "name": "Casa orbital desde el aire",
+   "short": "Un barrio de ladrillo visto desde 60 metros.",
+   "spline": [
+    [
+     -58,
+     55.7,
+     172
+    ],
+    [
+     -46,
+     57.4,
+     174
+    ],
+    [
+     -34,
+     57.4,
+     174
+    ]
+   ],
+   "look": [
+    47,
+    7.2,
+    62
+   ],
+   "dwell": 5,
+   "fov": 58,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "conjunto",
+   "name": "Conjunto de ladrillo",
+   "short": "Bloques, parqueaderos y patios interiores.",
+   "spline": [
+    [
+     -30,
+     45.1,
+     92
+    ],
+    [
+     -50,
+     45.5,
+     94
+    ],
+    [
+     -70,
+     45.2,
+     92
+    ]
+   ],
+   "look": [
+    -70,
+    14.2,
+    10
+   ],
+   "dwell": 5.5,
+   "fov": 56,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "techo-solar",
+   "name": "Techo solar",
+   "short": "Paneles sobre una bodega blanca junto a la glorieta.",
+   "spline": [
+    [
+     -92,
+     36.5,
+     -30
+    ],
+    [
+     -104,
+     44.6,
+     -44
+    ],
+    [
+     -116,
+     38.8,
+     -56
+    ]
+   ],
+   "look": [
+    -130,
+    6.1,
+    -82
+   ],
+   "dwell": 5,
+   "fov": 55,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "avenida",
+   "name": "Avenida occidental",
+   "short": "Tres carriles hacia el norte, con la ciudad al lado.",
+   "spline": [
+    [
+     -176,
+     39.3,
+     100
+    ],
+    [
+     -182,
+     39.1,
+     60
+    ],
+    [
+     -188,
+     40.1,
+     20
+    ]
+   ],
+   "look": [
+    -192,
+    5.7,
+    -40
+   ],
+   "dwell": 5,
+   "fov": 58,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "cruce",
+   "name": "El gran cruce",
+   "short": "Semáforos, cebras y canchas en una esquina.",
+   "spline": [
+    [
+     -130,
+     46.2,
+     100
+    ],
+    [
+     -150,
+     41.5,
+     86
+    ],
+    [
+     -166,
+     41.1,
+     74
+    ]
+   ],
+   "look": [
+    -190,
+    3.0,
+    62
+   ],
+   "dwell": 4.5,
+   "fov": 56,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "glorieta",
+   "name": "Glorieta y zona verde",
+   "short": "Un pequeño parque redondo entre edificios.",
+   "spline": [
+    [
+     -120,
+     38.0,
+     30
+    ],
+    [
+     -134,
+     39.9,
+     14
+    ],
+    [
+     -148,
+     36.3,
+     0
+    ]
+   ],
+   "look": [
+    -170,
+    4.1,
+    -2
+   ],
+   "dwell": 4.5,
+   "fov": 54,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "eje-central",
+   "name": "Calle central",
+   "short": "El eje que une los conjuntos de punta a punta.",
+   "spline": [
+    [
+     30,
+     52.5,
+     -50
+    ],
+    [
+     34,
+     46.2,
+     -20
+    ],
+    [
+     36,
+     52.2,
+     10
+    ]
+   ],
+   "look": [
+    30,
+    5.6,
+    110
+   ],
+   "dwell": 5,
+   "fov": 58,
+   "tod": "dorada",
+   "mask": []
+  }
+ ],
+ "masks": [
+  {
+   "id": "este-barrido",
+   "type": "sphere",
+   "c": [
+    200,
+    14,
+    80
+   ],
+   "r": 60,
+   "why": "barridos al este (sin fotos)"
+  },
+  {
+   "id": "norte-estirado",
+   "type": "sphere",
+   "c": [
+    55,
+    20,
+    -200
+   ],
+   "r": 55,
+   "why": "bloques estirados al norte"
+  },
+  {
+   "id": "sur-cabanas",
+   "type": "sphere",
+   "c": [
+    -120,
+    14,
+    215
+   ],
+   "r": 50,
+   "why": "techos deformes al suroeste"
+  }
+ ],
+ "edge": {
+  "fog": [
+   196,
+   248
+  ],
+  "warn": 226
+ }
+}

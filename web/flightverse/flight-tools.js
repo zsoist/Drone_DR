@@ -163,8 +163,11 @@ export function createFlightTools({
     if (visibilityRoot.hidden) closeAll('visibilitychange');
   });
 
-  cameraPanel.hidden = true;
-  gimbalTray.hidden = true;
+  // v2: la lista de cámaras y el gimbal viven incrustados en la página «Cámara» de la pausa
+  // (data-embedded): no se ocultan como popovers.
+  const embedded = node => node?.getAttribute?.('data-embedded') != null;
+  if (!embedded(cameraPanel)) cameraPanel.hidden = true;
+  if (!embedded(gimbalTray)) gimbalTray.hidden = true;
   cameraPickerTrigger.setAttribute('aria-expanded', 'false');
   gimbalTrigger.setAttribute('aria-expanded', 'false');
   paintGimbal();

@@ -3,13 +3,14 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=367';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=367';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=367';
+import * as THREE from '/flightverse/three.js?v=368';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=368';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=368';
 import {
   applyVisualCoverageMask, coverageMaskBytes, underTerrainHeights, patchUnderTerrainShader,
-} from '/flightverse/visual-coverage.js?v=367';
-import { glbDeviceTier, glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=367';
+} from '/flightverse/visual-coverage.js?v=368';
+import { glbDeviceTier, glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=368';
+import { applyWorldLook } from '/flightverse/world-look.js?v=368';
 
 // ruido de valor 3D barato (hash sin seno costoso) para el grano del terreno/paredes
 const FX_NOISE_GLSL = `
@@ -328,6 +329,7 @@ export async function loadTerrain(man, { anisotropy = 4, fx = 'high' } = {}) {
        #include <opaque_fragment>`);
   };
 
+  applyWorldLook(material);          // WS E: niebla-muro del borde + disolución cercana (uniformes compartidos)
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'fv-terrain';
   // respaldo bajo la malla (ver visual-coverage.js): capa de FONDO que se dibuja antes que la malla y
@@ -348,6 +350,7 @@ export async function loadTerrain(man, { anisotropy = 4, fx = 'high' } = {}) {
     });
     umat.customProgramCacheKey = () => `fv-terrain-under-v2|${maskTex ? 'v' : '-'}`;
     umat.onBeforeCompile = sh => patchUnderTerrainShader(sh, { uMeshOn: meshMask.uMeshOn, validTex: maskTex });
+    applyWorldLook(umat);
     underMesh = new THREE.Mesh(ugeo, umat);
     underMesh.name = 'fv-terrain-under';
     underMesh.renderOrder = -5;                // tras el domo del cielo (-10), antes de malla/terreno (0)
@@ -472,6 +475,7 @@ function unlitFromGlb(root, { renderer, coverageMask }) {
         worldSize: coverageMask?.worldSize,
         texel: coverageMask?.texel,
       }) || coverageClipped;
+      applyWorldLook(m2);
       mat.dispose();                 // el PBR sale; el mapa se conserva en m2
       return m2;
     });
@@ -606,6 +610,7 @@ async function attachObjVisualMesh(
         worldSize: coverageMask?.worldSize,
         texel: coverageMask?.texel,
       }) || coverageClipped;
+      applyWorldLook(m2);
       return m2;
     });
     node.material = photo.length === 1 ? photo[0] : photo;
@@ -673,7 +678,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=367');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=368');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     sp.userData.fvRefs = 0;

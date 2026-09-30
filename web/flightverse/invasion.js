@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=367';
+import * as THREE from '/flightverse/three.js?v=368';
 import {
   capWaveQueue,
   createBurstSchedule,
@@ -16,7 +16,25 @@ import {
   selectEnemyLod,
   steerGroundEnemy,
   shouldCullStraggler,
-} from '/flightverse/invasion-policy.js?v=367';
+  ENEMY_COMBAT,
+  DIFFICULTY_TUNING,
+  FAIR,
+  unlockedTypes,
+  waveConcurrentCap,
+  telegraphFor,
+  firstAttackAllowed,
+  hasLineOfSight,
+  resolveShotStep,
+  createStuckTracker,
+  stepRunPhase,
+  killScore,
+  waveBonus,
+  VICTORY_WAVE,
+  COMBO_WINDOW_S,
+  COMBO_MAX,
+  interleaveQueue,
+} from '/flightverse/invasion-policy.js?v=368';
+import { applyDetail } from '/flightverse/enemy-materials.js?v=368';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -130,24 +148,77 @@ function bGigante() {
   return { g, anim: { aL, aR, lL, lR, torso } };
 }
 
-const SPECS = {
-  zombie:  { build: () => bZombie(false), hp: 100, speed: 1.6, radius: 1.7, y: 1.15, dmg: 8,  melee: 2.2 },
-  arquero: { build: () => bZombie(true),  hp: 90,  speed: 1.2, radius: 1.7, y: 1.15, shoot: { every: 3.2, speed: 26, dmg: 6, grav: 9, range: 90, band: { min: 24, max: 80 } } },
-  soldado: { build: bSoldado,             hp: 120, speed: 3.2, radius: 1.7, y: 1.2,  shoot: { every: 2.4, speed: 46, dmg: 3, grav: 0, range: 110, burst: 3, band: { min: 20, max: 95 } } },
-  ufo:     { build: bUfo,                 hp: 240, speed: 7,   radius: 4.5, y: 0,    fly: 'orbit', shoot: { every: 4, speed: 20, dmg: 10, grav: 0, range: 140, plasma: true, band: { min: 28, max: 115 } } },
-  avion:   { build: bAvion,               hp: 140, speed: 34,  radius: 6,   y: 0,    fly: 'pass', attackDistance: 120, dmg: 12, passHit: 16 },
-  dragon:  { build: bDragon,              hp: 700, speed: 9,   radius: 6,   y: 0,    fly: 'serp', shoot: { every: 4.5, speed: 17, dmg: 15, grav: 2, range: 150, fire: true, band: { min: 32, max: 125 } } },
-  gigante: { build: bGigante,             hp: 1600, speed: 2.1, radius: 14, y: 8.8,  dmg: 22, melee: 7, slope: 6, foot: 5 },
+// Números de combate: fuente única en invasion-policy.js (ENEMY_COMBAT); aquí solo lo visual.
+const VISUAL = {
+  zombie:  { build: () => bZombie(false), radius: 1.7, y: 1.15 },
+  arquero: { build: () => bZombie(true),  radius: 1.7, y: 1.15 },
+  soldado: { build: bSoldado,             radius: 1.7, y: 1.2 },
+  ufo:     { build: bUfo,                 radius: 4.5, y: 0 },
+  avion:   { build: bAvion,               radius: 6,   y: 0 },
+  dragon:  { build: bDragon,              radius: 6,   y: 0 },
+  gigante: { build: bGigante,             radius: 14,  y: 8.8 },
 };
+const SPECS = Object.fromEntries(Object.keys(VISUAL).map(k => [k, { ...ENEMY_COMBAT[k], ...VISUAL[k] }]));
 
-const DIFFICULTY = {
-  facil: { hp: 0.8, cadence: 1.25, accuracy: 0.72 },
-  media: { hp: 1, cadence: 1, accuracy: 0.86 },
-  dificil: { hp: 1.25, cadence: 0.78, accuracy: 0.95 },
-};
+const DIFFICULTY = DIFFICULTY_TUNING;
 const AI_STATES = ['spawn', 'pursue', 'strafe', 'orbit', 'attack', 'evade', 'recover', 'dead'];
 
+// ── v2: silueta (rim Fresnel), tinte hostil y glow de telégrafo ──
+const RIM_COLOR = new THREE.Color(0xFFB25A);
+const HOSTILE_TINT = new THREE.Color(0xE0653A);
+function rimifyMaterial(m, { tint = 0.15, lift = 1 } = {}) {
+  if (!m || m.userData?.fvRim) return;
+  if (!(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
+  m.userData = m.userData || {};
+  m.userData.fvRim = true;
+  if (m.color) {
+    if (lift !== 1) m.color.multiplyScalar(lift);
+    if (tint > 0) m.color.lerp(HOSTILE_TINT, tint);
+  }
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (shader, renderer) => {
+    prev?.(shader, renderer);
+    shader.uniforms.fvRimColor = { value: RIM_COLOR };
+    shader.uniforms.fvRimK = { value: 0.35 };
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', 'uniform vec3 fvRimColor;\nuniform float fvRimK;\nvoid main() {')
+      .replace('#include <dithering_fragment>',
+        'float fvR = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0), 2.2);\n'
+        + 'gl_FragColor.rgb += fvRimColor * fvR * fvRimK + diffuseColor.rgb * 0.12;\n#include <dithering_fragment>');
+  };
+  m.customProgramCacheKey = () => 'fv-rim';
+  m.needsUpdate = true;
+}
+/** Material por tipo: todos con rim; Gigante además se aclara (el GLB real es muy oscuro) y se tiñe 15 % hostil. */
+export function styleEnemyTree(root, type) {
+  const lift = type === 'gigante' ? 1.55 : (type === 'zombie' || type === 'arquero' ? 1.25 : 1.15);
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) { applyDetail(m); rimifyMaterial(m, { tint: 0.15, lift }); }
+  });
+}
+let _glowTex = null;
+function telegraphGlow() {
+  if (!_glowTex) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const c = cv.getContext('2d');
+    const g = c.createRadialGradient(32, 32, 2, 32, 32, 31);
+    g.addColorStop(0, 'rgba(255,120,110,.95)'); g.addColorStop(0.45, 'rgba(217,106,106,.45)'); g.addColorStop(1, 'rgba(217,106,106,0)');
+    c.fillStyle = g; c.fillRect(0, 0, 64, 64);
+    _glowTex = new THREE.CanvasTexture(cv);
+  }
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: _glowTex, transparent: true, depthWrite: false, depthTest: false,
+    blending: THREE.AdditiveBlending, color: 0xff5a4a, opacity: 0 }));
+  sp.renderOrder = 20; sp.visible = false;
+  return sp;
+}
+
 export function createInvasion(scene, {
+  v2 = false,
+  collision = null,
+  onTelegraph,
+  onEvent,
   heightAt,
   audio,
   onHit,
@@ -166,6 +237,8 @@ export function createInvasion(scene, {
   let session = 0;
   let disposed = false;
   let simTime = 0;
+  let idSeq = 0;
+  const _tmpA = new THREE.Vector3();
   const S = {
     on: false,
     phase: 'idle',
@@ -216,7 +289,7 @@ export function createInvasion(scene, {
 
   async function loadCatalog() {
     if (!catalogPromise) {
-      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=367', { cache: 'no-store' })
+      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=368', { cache: 'no-store' })
         .then(response => {
           if (!response.ok) throw new Error(`enemy catalog ${response.status}`);
           return response.json();
@@ -255,10 +328,11 @@ export function createInvasion(scene, {
         await loadCatalog();
         const file = modelFile(type, lod);
         if (!file) throw new Error(`catalog missing ${key}`);
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=367'));
-        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=367');
-        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=367`);
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=368'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=368');
+        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=368`);
         const loaded = { scene: gltf.scene, clips: gltf.animations || [], type, lod };
+        if (v2) styleEnemyTree(loaded.scene, type);
         if (disposed || loadSession !== session) {
           disposeTree(loaded.scene);
           if (modelCache.get(key) === loadingEntry) modelCache.delete(key);
@@ -332,6 +406,7 @@ export function createInvasion(scene, {
       };
     }
     const built = spec.build();
+    if (v2) styleEnemyTree(built.g, type);
     built.g.traverse(object => { object.castShadow = true; });
     return {
       root: built.g,
@@ -378,22 +453,39 @@ export function createInvasion(scene, {
     return true;
   }
 
-  function spawnOne(type, around) {
-    const spec = SPECS[type];
-    if (!spec || E.length >= runtimeCaps.enemies) return false;
-    for (let tries = 0; tries < 12; tries++) {
+  /** Punto de nacimiento válido. v2: anillo ≥ 80 m (FAIR.spawnMinRadius), nunca dentro de geometría sólida. */
+  function findSpawn(spec, around, rMin, rMax, tries = 12) {
+    for (let k = 0; k < tries; k++) {
       const a = Math.random() * 6.283;
-      const r = spec.fly ? 60 + Math.random() * 60 : 14 + Math.random() * 30;
+      const r = rMin + Math.random() * (rMax - rMin);
       const x = around.x + Math.cos(a) * r, z = around.z + Math.sin(a) * r;
       let y;
       if (spec.fly) {
         const g0 = heightAt(x, z);
         y = (g0 ?? around.y) + 25 + Math.random() * 20;
+        if (v2 && collision) {
+          const cp = { x, y, z };
+          if (collision.closest?.(cp, 6)?.kind === 'structure') continue;
+        }
       } else {
         const gy = walkable(heightAt, x, z, spec.slope || 4.5, spec.foot || 2.2);
         if (gy == null) continue;
         y = gy;
       }
+      return { x, y, z, r };
+    }
+    return null;
+  }
+
+  function spawnOne(type, around) {
+    const spec = SPECS[type];
+    if (!spec || E.length >= runtimeCaps.enemies) return false;
+    {
+      const found = v2
+        ? findSpawn(spec, around, FAIR.spawnMinRadius, FAIR.spawnMinRadius + (spec.fly ? 60 : 30))
+        : findSpawn(spec, around, spec.fly ? 60 : 14, spec.fly ? 120 : 44);
+      if (!found) return false;
+      const { x, y, z, r } = found;
       const lod = selectEnemyLod(type, r, deviceTier, { nearUsed: budget.nearDetail });
       const visual = makeVisual(type, lod, spec);
       const g = new THREE.Group();
@@ -427,7 +519,17 @@ export function createInvasion(scene, {
         blocked: false,
         passDir: null,
         seed: ((S.wave * 73856093) ^ (E.length * 19349663) ^ (type.length * 83492791)) >>> 0,
+        id: ++idSeq,
+        hpMax: 0,
+        age: 0,
+        los: true,
+        losAcc: Math.random() * 0.3,
+        stuck: v2 && !spec.fly ? createStuckTracker() : null,
+        nudgeUntil: 0,
+        nudgeSide: 1,
+        tele: null,
       };
+      e.hpMax = e.hp;
       if (visual.source === 'procedural') {
         S.telemetry.fallbackTotal++;
         S.telemetry.fallbackByType[type] = (S.telemetry.fallbackByType[type] || 0) + 1;
@@ -436,7 +538,6 @@ export function createInvasion(scene, {
       S.alive++;
       return true;
     }
-    return false;
   }
 
   function removeShot(index) {
@@ -477,7 +578,7 @@ export function createInvasion(scene, {
     }
     m.position.copy(from);
     group.add(m);
-    shots.push({ m, vel: dir, t: 0, dmg: sh.dmg, grav: sh.grav || 0, glow: sh.fire || sh.plasma });
+    shots.push({ m, vel: dir, t: 0, dmg: sh.dmg, grav: sh.grav || 0, glow: sh.fire || sh.plasma, src: e.type, from: from.clone() });
     return true;
   }
 
@@ -495,11 +596,41 @@ export function createInvasion(scene, {
     }
   }
 
+  function hitPlayer(e, dmg, dronePos) {
+    const dir = e.center.clone().sub(dronePos).normalize();
+    onHit?.(dmg, { type: e.type, src: e.id, dir: { x: dir.x, y: dir.y, z: dir.z } });
+  }
+
+  function beginTelegraph(e, dronePos) {
+    const dur = telegraphFor(e.type);
+    if (!e.glow) { e.glow = telegraphGlow(); e.g.add(e.glow); }
+    e.tele = { t: 0, dur };
+    e.glow.visible = true;
+    const kind = e.spec.melee ? 'melee' : (e.spec.fly === 'pass' ? 'pass' : 'ranged');
+    const dir = e.center.clone().sub(dronePos).normalize();
+    onTelegraph?.({ id: e.id, type: e.type, dur: kind === 'pass' ? 0.8 : dur, kind,
+      dir: { x: dir.x, y: dir.y, z: dir.z }, pos: e.center.clone(), dist: e.center.distanceTo(dronePos) });
+  }
+  function updateTelegraph(e, step) {
+    e.tele.t += step;
+    const k = Math.min(1, e.tele.t / e.tele.dur);
+    const r = Math.max(1.2, e.radius * 0.55);
+    e.glow.position.set(0, (e.yOff ?? e.spec.y) + (e.spec.fly ? 0 : e.radius * 0.1), 0);
+    e.glow.scale.setScalar(r * (1.4 + k));
+    e.glow.material.opacity = 0.25 + 0.75 * k;
+    if (e.state !== 'attack') endTelegraph(e);
+  }
+  function endTelegraph(e) {
+    e.tele = null;
+    if (e.glow) { e.glow.visible = false; e.glow.material.opacity = 0; }
+  }
+
   function removeEnemy(index) {
     const e = E[index];
     if (!e) return;
     bursts.splice(0, bursts.length, ...bursts.filter(job => job.e !== e));
     releaseVisual(e);
+    if (e.glow) { e.g.remove(e.glow); e.glow.material.dispose(); e.glow = null; }
     group.remove(e.g);
     E.splice(index, 1);
     S.alive = Math.max(0, S.alive - 1);
@@ -565,6 +696,20 @@ export function createInvasion(scene, {
   return {
     state: S,
     hittables: E,
+    /** Datos de marcadores de HUD: centro mundial, vida normalizada, jefe. */
+    enemyRows() {
+      const rows = [];
+      for (const e of E) {
+        if (e.g.userData.dead) continue;
+        rows.push({
+          id: e.id, type: e.type, pos: e.center, hpFrac: e.hpMax > 0 ? Math.max(0, Math.min(1, e.hp / e.hpMax)) : 1,
+          boss: e.type === 'dragon' || e.type === 'gigante', radius: e.radius,
+          telegraphing: !!e.tele, state: e.state,
+        });
+      }
+      return rows;
+    },
+    clearShots() { for (let i = shots.length - 1; i >= 0; i--) removeShot(i); },
     setTypes(list) { if (list.length) S.types = list; },
     toggle(dronePos, types, difficulty = 'media') {
       S.on = !S.on;
@@ -578,6 +723,12 @@ export function createInvasion(scene, {
         S.killed = 0;
         S.score = 0;
         S.combo = 0;
+        S.wavesCleared = 0;
+        S.victory = false;
+        S.waveKills = 0;
+        S.waveBonusTotal = 0;
+        S.waveClock = 0;
+        S.v2 = v2;
         S.queue = [];
         S.spawnAcc = 0;
         S.telemetry.spawnFailures = 0;
@@ -598,8 +749,34 @@ export function createInvasion(scene, {
       if (!S.on) return;
       const step = Math.min(0.05, Math.max(0, dt));
       simTime += step;
-      if (S.combo && simTime - (S.lastKillAt || 0) > 4) S.combo = 0;
-      if (S.phase === 'loading') {
+      if (S.combo && simTime - (S.lastKillAt || 0) > COMBO_WINDOW_S) S.combo = 0;
+      if (v2) {
+        // Fases v2: loading → countdown (intro de oleada) → running → clear (outro) → countdown … → victory
+        if (S.phase === 'victory') { refreshTelemetry(); return; }
+        const next = stepRunPhase(
+          { phase: S.phase, countdown: S.countdown, wave: S.wave },
+          step,
+          { alive: S.alive, queueLen: S.queue.length, burstsLen: bursts.length },
+        );
+        S.phase = next.phase; S.countdown = next.countdown;
+        if (next.event === 'wave-start') {
+          S.wave = next.wave;
+          const active = unlockedTypes(S.types, S.wave);
+          S.queue = interleaveQueue(capWaveQueue({
+            types: active, wave: S.wave, tier: deviceTier, difficulty: S.difficulty,
+            seed: session * 1009 + S.wave * 9176,
+          }));
+          S.waveClock = 0; S.waveKills = 0;
+          onEvent?.('wave-start', { n: S.wave, types: active, count: S.queue.length });
+        } else if (next.event === 'wave-clear') {
+          S.wavesCleared = S.wave;
+          onEvent?.('wave-clear', { n: S.wave });
+        } else if (next.event === 'victory') {
+          S.wavesCleared = S.wave; S.victory = true;
+          onEvent?.('victory', { n: S.wave });
+        }
+        if (S.phase === 'victory') { refreshTelemetry(); return; }
+      } else if (S.phase === 'loading') {
         S.countdown -= step;
         if (S.countdown <= 0) {
           S.phase = 'countdown';
@@ -636,7 +813,8 @@ export function createInvasion(scene, {
       } else S.waveClock = 0;
       if (S.queue.length) {
         S.spawnAcc += step;
-        if (S.spawnAcc > 0.35) {
+        const concurrentCap = v2 ? waveConcurrentCap(S.wave, { coarse: deviceTier === 'low', tierMax: runtimeCaps.enemies }) : Infinity;
+        if (S.spawnAcc > 0.35 && S.alive < concurrentCap) {
           S.spawnAcc = 0;
           const spawned = spawnOne(S.queue[0], dronePos);
           S.queue.shift();
@@ -662,6 +840,7 @@ export function createInvasion(scene, {
         const e = E[i];
         const p = e.g.position;
         e.stateTime += step;
+        e.age += step;
         e.phase += step * (e.spec.fly ? 2 : e.speed * 3.2);
         e.mixer?.update(step);
         e.center.set(p.x, p.y + (e.yOff ?? e.spec.y), p.z);
@@ -681,11 +860,14 @@ export function createInvasion(scene, {
           e._deathT -= step;
           if (e._deathT <= 0) {
             if (!e.blood) fx?.explode?.(e.center.clone(), e.type === 'dragon' ? 1.6 : 0.9);
-            const chained = S.lastKillAt != null && simTime - S.lastKillAt <= 4;
-            S.combo = chained ? Math.min(12, S.combo + 1) : 1;
+            const chained = S.lastKillAt != null && simTime - S.lastKillAt <= COMBO_WINDOW_S;
+            S.combo = chained ? Math.min(COMBO_MAX, S.combo + 1) : 1;
             S.lastKillAt = simTime;
-            S.score += 100 * S.combo;
+            const gained = v2 ? killScore(e.type, S.combo) : 100 * S.combo;
+            S.score += gained;
             S.killed++;
+            S.waveKills = (S.waveKills || 0) + 1;
+            if (v2) onEvent?.('kill', { type: e.type, gained, combo: S.combo, score: S.score, pos: e.center.clone() });
             removeEnemy(i);
           }
           continue;
@@ -695,21 +877,33 @@ export function createInvasion(scene, {
         const dz = dronePos.z - p.z;
         const dist = Math.hypot(dx, dz);
         e.cool = Math.max(0, e.cool - step);
+        let losBlocked = false;
+        if (v2) {
+          e.losAcc += step;
+          if (e.losAcc >= 0.3) {
+            e.losAcc = 0;
+            e.los = !collision || e.spec.melee ? true
+              : hasLineOfSight((a, b, r) => collision.castSegment(a, b, r), e.center, dronePos);
+          }
+          losBlocked = !e.los && !!e.spec.shoot;
+        }
+        const tele = v2 ? telegraphFor(e.type) : 0.45;
         const previous = e.state;
         const next = nextEnemyState({
           state: previous,
           timeInState: e.stateTime,
-          distance: dist,
+          // sin línea de visión un tirador de tierra sigue acercándose hasta tenerla
+          distance: losBlocked && !e.spec.fly ? (e.spec.shoot.band?.max ?? 80) + 1 : dist,
           dead: false,
           air: !!e.spec.fly,
           ranged: !!e.spec.shoot,
           blocked: e.blocked,
-          attackReady: e.cool <= 0,
+          attackReady: e.cool <= 0 && (!v2 || (firstAttackAllowed(S.waveClock, e.age) && !losBlocked)),
           band: e.spec.shoot?.band,
           attackDistance: e.spec.attackDistance || e.spec.melee || 80,
           spawnDuration: 0.5,
-          windup: e.spec.fly ? (e.spec.fly === 'pass' ? 1.8 : 0.55) : 0.45,
-          maxAttackDuration: e.spec.fly === 'pass' ? 1.8 : 0.55,
+          windup: e.spec.fly ? (e.spec.fly === 'pass' ? 1.8 : (v2 ? tele : 0.55)) : tele,
+          maxAttackDuration: e.spec.fly === 'pass' ? 1.8 : (v2 ? tele + 0.35 : 0.55),
           disengageDistance: e.spec.fly === 'pass' ? 145 : 120,
           recoverDuration: 0.75,
           evadeDuration: 0.6,
@@ -720,24 +914,28 @@ export function createInvasion(scene, {
           if (next === 'attack') {
             e.act?.attack?.reset().play();
             if (!e.act?.attack && e.anim.aR) e.anim.aR.rotation.x = 2.2;
-            if (e.spec.fly === 'pass') { e.passDir = dronePos.clone().sub(p).setY(0).normalize(); e.passHit = false; }
+            if (e.spec.fly === 'pass') { e.passDir = dronePos.clone().sub(p).setY(0).normalize(); e.passHit = false; e.passArmAt = simTime + 0.8; }
+            if (v2) beginTelegraph(e, dronePos);
           }
           if (previous === 'attack') {
             const cadence = DIFFICULTY[S.difficulty].cadence;
             if (e.spec.shoot) scheduleAttack(e);
             if (e.spec.melee && dist <= e.spec.melee
                 && Math.abs(dronePos.y - p.y - e.spec.y) < e.spec.melee * 1.4) {
-              onHit?.(e.spec.dmg);
+              hitPlayer(e, e.spec.dmg, dronePos);
             }
+            endTelegraph(e);
             e.cool = (e.spec.shoot?.every || 0.8) * cadence * (0.9 + Math.random() * 0.2);
           }
         }
 
         // Pasada de ataque: el avión daña al dron si lo cruza de cerca (una vez por pasada).
-        if (e.spec.fly === 'pass' && e.state === 'attack' && !e.passHit && dist <= e.spec.passHit) {
+        if (e.spec.fly === 'pass' && e.state === 'attack' && !e.passHit && dist <= e.spec.passHit
+            && (!v2 || simTime >= (e.passArmAt || 0))) {     // v2: 0.8 s de aviso antes de que la pasada pueda dañar
           e.passHit = true;
-          onHit?.(e.spec.dmg);
+          hitPlayer(e, e.spec.dmg, dronePos);
         }
+        if (e.tele) updateTelegraph(e, step);
 
         if (e.spec.fly) {
           const toward = dronePos.clone().sub(p);
@@ -771,6 +969,25 @@ export function createInvasion(scene, {
           }
         } else if (!['spawn', 'attack', 'recover'].includes(e.state)) {
           let target = { x: dronePos.x, z: dronePos.z };
+          if (v2 && e.stuck) {
+            const verdict = e.stuck.step(p.x, p.z, step, e.state === 'pursue' || e.state === 'strafe');
+            if (verdict === 'nudge') { e.nudgeUntil = simTime + 2.5; e.nudgeSide = Math.random() < 0.5 ? -1 : 1; S.telemetry.stuckNudges = (S.telemetry.stuckNudges || 0) + 1; }
+            else if (verdict === 'relocate') {
+              const spot = findSpawn(e.spec, dronePos, 35, 70, 16);
+              if (spot) {
+                p.set(spot.x, spot.y, spot.z); e.stuck.reset();
+                S.telemetry.stuckRelocated = (S.telemetry.stuckRelocated || 0) + 1;
+              } else {                                   // sin hueco: retirar sin puntuar (la oleada no se atasca)
+                removeEnemy(i);
+                S.telemetry.stragglersCulled = (S.telemetry.stragglersCulled || 0) + 1;
+                S.telemetry.stuckCulled = (S.telemetry.stuckCulled || 0) + 1;
+                continue;
+              }
+            }
+          }
+          if (v2 && simTime < e.nudgeUntil) {            // desvío lateral temporal para rodear el obstáculo
+            target = { x: p.x + (-dz) * e.nudgeSide, z: p.z + dx * e.nudgeSide };
+          }
           if (e.state === 'evade') target = { x: p.x - dx, z: p.z - dz };
           if (e.state === 'strafe') {
             const side = e.seed % 2 ? 1 : -1;
@@ -820,10 +1037,26 @@ export function createInvasion(scene, {
         const s2 = shots[i];
         s2.t += step;
         s2.vel.y -= s2.grav * step;
+        const before = v2 ? _tmpA.copy(s2.m.position) : null;
         s2.m.position.addScaledVector(s2.vel, step);
         if (!s2.glow) s2.m.lookAt(s2.m.position.clone().add(s2.vel));
         let dead = s2.t > 7;
-        if (s2.m.position.distanceTo(dronePos) < 1.8) {
+        if (v2) {
+          // proyectiles con cobertura: el segmento de este paso contra malla/objetos (castSegment) y barrido contra el dron
+          const res = resolveShotStep({
+            prev: before, next: s2.m.position, dronePos, hitRadius: 1.8,
+            castSegment: collision ? (a, b, r) => collision.castSegment(a, b, r) : null,
+          });
+          if (res.kind === 'world') {
+            if (res.hit?.point) s2.m.position.copy(res.hit.point);
+            fx?.impact?.(s2.m.position.clone());
+            S.telemetry.shotsBlocked = (S.telemetry.shotsBlocked || 0) + 1;
+            dead = true;
+          } else if (res.kind === 'drone') {
+            onHit?.(s2.dmg, { type: s2.src, src: 'shot', dir: s2.from ? (() => { const d = s2.from.clone().sub(dronePos).normalize(); return { x: d.x, y: d.y, z: d.z }; })() : null });
+            dead = true;
+          }
+        } else if (s2.m.position.distanceTo(dronePos) < 1.8) {
           onHit?.(s2.dmg);
           dead = true;
         }

@@ -2,10 +2,13 @@
 // fuego + tecla X), palancas táctiles, teclado/atajos globales, reset por orientación,
 // muestreo del input de vuelo y eco de choque. Sin lógica de UI (ver ui/*).
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { createTouchSticks } from '/flightverse/touch.js?v=367';
-import { createFirePointerBindings } from '/flightverse/mobile-command.js?v=367';
-import { ARSENAL } from '/flightverse/weapons.js?v=367';
-import { isContinuousWeaponKey } from '/flightverse/weapon-registry.js?v=367';
+import { createTouchSticks } from '/flightverse/touch.js?v=368';
+import { createFirePointerBindings } from '/flightverse/mobile-command.js?v=368';
+import { ARSENAL } from '/flightverse/weapons.js?v=368';
+import { isContinuousWeaponKey } from '/flightverse/weapon-registry.js?v=368';
+import { CONTROL_DEFAULTS } from '/flightverse/input/curves.js?v=368';
+import { createV2Input } from '/flightverse/input/v2-input.js?v=368';
+import { installPhysicsV2, physicsRequested } from '/flightverse/input/physics-link.js?v=368';
 
 export function createBindings(ctx) {
   const { state: S, actions: A, input, audio, bus } = ctx;
@@ -59,8 +62,19 @@ export function createBindings(ctx) {
   controls.firePointers = firePointers;
   Object.assign(A, { releaseFiring, beginFiring });
 
-  const sticks = createTouchSticks($('#vl-hud'));
+  // ?fv=2: sticks flotantes + zona de mirada, teclado/mouse/gamepad/háptica y Physics v2
+  const fv2 = !!ctx.flags.fv2;
+  let v2in = null;
+  const sticks = createTouchSticks($('#vl-hud'), fv2
+    ? { v2: true, settings: () => (v2in ? v2in.settings.get() : CONTROL_DEFAULTS) } : {});
   controls.sticks = sticks;
+  if (fv2) {
+    v2in = createV2Input(ctx, { sticks, beginFiring, releaseFiring });
+    controls.v2 = v2in;
+    sticks?.applyLayout?.();
+  }
+  const physLink = physicsRequested(ctx) ? installPhysicsV2(ctx, { settings: v2in?.settings }) : null;
+  controls.physLink = physLink;
   const resetCommandOnOrientation = () => {
     ctx.ui.weapons.picker?.close('orientation');
     controls.flightTools?.closeAll('orientation');
@@ -83,6 +97,7 @@ export function createBindings(ctx) {
     ctx.renderer.domElement.addEventListener('click', () => { if (S.modeKey === 'fpv') input.requestLock(); });
     addEventListener('keydown', e => {
       if (!globalHotkeyAllowed(e)) return;
+      if (v2in?.key(e)) return;                     // v2: 1-6 armas, Tab = siguiente arma
       if (modeKeys[e.code]) A.setMode(modeKeys[e.code]);
       if (e.code === 'KeyC') A.cycleRig();
       if (e.code === 'KeyG' && S.ghost) A.toggleGhost();
@@ -114,7 +129,8 @@ export function createBindings(ctx) {
       const { drone } = ctx;
       let inp = input.sample();
       const ts = sticks?.sample();
-      if (ts?.active) { inp.fwd = ts.fwd; inp.strafe = ts.strafe; inp.yaw = ts.yaw; inp.lift = ts.lift; }
+      if (v2in) inp = v2in.sample(inp, ts, dt);
+      else if (ts?.active) { inp.fwd = ts.fwd; inp.strafe = ts.strafe; inp.yaw = ts.yaw; inp.lift = ts.lift; }
       if (ctx.auto && S.simT < ctx.auto.until) inp = { fwd: 1, strafe: 0, yaw: 0.15, lift: 0.1, boost: S.simT > 2, brake: false, mouseDX: 0, mouseDY: 0 };
       if (ctx.ui.overlay?.active()) {
         inp = {
@@ -123,7 +139,10 @@ export function createBindings(ctx) {
         };
       }
       lastFlightInput = { ...inp };
+      const t0 = physLink ? performance.now() : 0;
+      physLink?.beforeStep();
       drone.step(dt, inp, S.modeKey);
+      physLink?.afterStep(t0);
     },
     /** Tras el paso de vuelo manual: audio + destello al primer toque blando. */
     afterStep() {
@@ -144,9 +163,13 @@ export function createBindings(ctx) {
         keyboardKeys: input.keys.size,
         lastInput: { ...lastFlightInput },
       };
+      if (v2in) ctx.report.controls.v2 = v2in.report();
+      physLink?.publish();
     },
     dispose() {
       removeEventListener('orientationchange', resetCommandOnOrientation);
+      v2in?.dispose();
+      physLink?.dispose();
       firePointers.dispose();
       sticks?.dispose();
     },

@@ -5,13 +5,31 @@
 //                  pantallas y minimapa.  ctx.ui.overlay queda disponible aquí.
 //   ctx.ui.update(frame) por frame; ctx.ui.dispose() en pagehide.
 // Refactor A0: sin cambio de comportamiento respecto al volar.js monolítico.
-import { installFlightSurfaceGuards } from '/flightverse/mobile-command.js?v=367';
-import { mountHudMarkup, createHud } from '/flightverse/ui/hud.js?v=367';
-import { createMenu } from '/flightverse/ui/menu.js?v=367';
-import { createScreens } from '/flightverse/ui/screens.js?v=367';
-import { createWeaponsUi } from '/flightverse/ui/weapons-ui.js?v=367';
+//
+// ?fv=2 (ctx.flags.fv2) → ui/v2.js monta el HUD v2 (hud2/weapons2/menu2/screens2 + css/hud.css, css/screens.css).
+// Contrato ctx.ui (igual en ambos modos): hud, menu, screens, weapons, overlay, setInvasionUi, update, dispose.
+// Solo v2 añade:
+//   ctx.ui.prefs            get/set/onChange/reducedMotion() — claves en ui/prefs.js; bus 'prefs' {key,value}
+//   ctx.ui.drawsModeHud     true: A dibuja marcadores/placa/banners de D desde ctx.modeHud (= enemies.renderHud())
+//   ctx.ui.hud.*            setReticle(kind,{screen|point,spreadPx,heat,overheated,cool,charge,swarm,splashPx})
+//                           hitMarker('hit'|'graze'|'deflect'|'kill') · damageArc(angleRad) · setLock({state,progress,world|rect})
+//                           setPipper({world|screen,locked}) · setThreats([{pos,hp,locked,tiered}]) · setObjective({x,y,z,label})
+//                           setWind({speed,fromDeg,gust}) · setIntegrity(0..1) · setBattery(0..1) · setVisible(bool)
+//                           announce(text) (aria-live) · message(text) · hitFlash() · gateFlash() · slots
+//   ctx.ui.screens.*        toast(msg,ms) · showGateRushResult(vm) · showDefeat(run) · showVictory(run) · clearResult()
+//   ctx.ui.menu.*           openModes() · openPause(page) · install(overlays)
+//   bus (escucha A)         hit{kill,damage} → marcador · damage{dir|angle} → arco · lock → caja · wave/gate → aria-live
+//   bus (emite A)           pause{active,overlay} · prefs{key,value} · medal{id,level} · onboarding{completed}
+//   ctx.actions opcionales  setProfile('cine'|'normal') · startTour() · enterPhoto() — los menús los usan si existen
+import { installFlightSurfaceGuards } from '/flightverse/mobile-command.js?v=368';
+import { mountHudMarkup, createHud } from '/flightverse/ui/hud.js?v=368';
+import { createMenu } from '/flightverse/ui/menu.js?v=368';
+import { createScreens } from '/flightverse/ui/screens.js?v=368';
+import { createWeaponsUi } from '/flightverse/ui/weapons-ui.js?v=368';
+import { mountUi2, installUi2 } from '/flightverse/ui/v2.js?v=368';
 
 export function mountUi(ctx) {
+  if (ctx.flags.fv2) return mountUi2(ctx);      // HUD v2 (?fv=2): ui/v2.js
   mountHudMarkup();
   const ui = ctx.ui;
   ui.guards = installFlightSurfaceGuards(document.body);
@@ -42,6 +60,7 @@ export function mountUi(ctx) {
 }
 
 export function installUi(ctx) {
+  if (ctx.flags.fv2) return installUi2(ctx);
   const ui = ctx.ui;
   ui.weapons.attach();      // selector de arma (antes del menú: el overlay lo cierra)
   ui.menu.install();        // crea ctx.ui.overlay

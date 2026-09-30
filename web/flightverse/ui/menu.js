@@ -3,9 +3,10 @@
 // imagen (grade), cine + director. Wiring: chips del dock, coordinador de
 // overlays, paneles arrastrables, grade/presets, sonido, compartir, grabar.
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { MODES } from '/flightverse/runtime.js?v=367';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=367';
-import { createOverlayCoordinator } from '/flightverse/touch.js?v=367';
+import { MODES } from '/flightverse/runtime.js?v=368';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=368';
+import { createOverlayCoordinator } from '/flightverse/touch.js?v=368';
+import { installGrade } from '/flightverse/ui/grade.js?v=368';
 
 export const dockMarkup = () => `    <div class="vl-corner bl">
       <button class="vl-dockmin vl-solo-fino" id="vl-dockmin" title="Ocultar panel">«</button>
@@ -172,7 +173,9 @@ export function createMenu(ctx) {
     });
     $('#vl-cielo').textContent = 'cielo · ' + (CIELO_LB[sky.preset] || 'día');
     $('#vl-mode').addEventListener('click', () => {
-      const ks = Object.keys(MODES);
+      // Arcade (autopiloto) solo existe con ruta real: sin ella setMode() volvía a 'Normal' y el ciclo
+      // nunca llegaba a Cine ni a Dios. Se salta lo no disponible.
+      const ks = Object.keys(MODES).filter(k => !MODES[k].autopilot || S.ghost);
       A.setMode(ks[(ks.indexOf(S.modeKey) + 1) % ks.length]);
     });
     $('#vl-rig').addEventListener('click', () => A.cycleRig());
@@ -273,47 +276,12 @@ export function createMenu(ctx) {
       b.classList.remove('zap'); void b.offsetWidth; b.classList.add('zap');
     });
 
-    // ── grade (imagen): sliders + presets, persistido ──
-    const GRADE_KEY = 'ab.fv.grade';
-    const applyGrade = g => {
-      fx.exp.uniforms.get('uExp').value = g.b;
-      fx.hs.hue = (g.h ?? 0) * Math.PI;
-      // bloom: con NEUTRAL casi nada supera lum 1.0 — el slider baja el UMBRAL
-      fx.bloom.luminanceMaterial.threshold = Math.max(0.55, 1.0 - (g.g ?? 0) * 0.28);
-      for (const [oid, k] of [['o-b','b'],['o-t','t'],['o-c','c'],['o-s','s'],['o-g','g'],['o-v','v'],['o-h','h']])
-        if ($('#'+oid)) $('#'+oid).textContent = (+(g[k] ?? 0)).toFixed(2);
-      terrain.mesh.material.color.setScalar(g.t ?? 1);   // ganancia SOLO del 3D
-      fx.bc.contrast = g.c;
-      fx.hs.saturation = g.s;
-      fx.bloom.intensity = g.g;
-      fx.vig.darkness = g.v;
-      for (const [id, k] of [['gr-b','b'],['gr-t','t'],['gr-c','c'],['gr-s','s'],['gr-g','g'],['gr-v','v'],['gr-h','h']]) if ($('#'+id)) $('#'+id).value = g[k] ?? 1;
-    };
-    const defGrade = { b: 0.88, t: 1, c: 0.06, s: 0.06, g: 0.25, v: 0.42, h: 0 };
-    let grade = { ...defGrade, ...(JSON.parse(localStorage.getItem(GRADE_KEY) || '{}')) };
-    applyGrade(grade);
-    document.getElementById('vl-grade').addEventListener('input', e => {
-      const map = { 'gr-b':'b','gr-t':'t','gr-c':'c','gr-s':'s','gr-g':'g','gr-v':'v','gr-h':'h' };
-      const k = map[e.target.id]; if (!k) return;
-      grade[k] = parseFloat(e.target.value);
-      applyGrade(grade);
-      localStorage.setItem(GRADE_KEY, JSON.stringify(grade));
+    // ── grade (imagen): sliders + presets, persistido (ui/grade.js) ──
+    installGrade(ctx, {
+      inputRoot: document.getElementById('vl-grade'),
+      presetsRoot: document.querySelector('.vl-presets'),
+      resetBtn: $('#gr-reset'),
     });
-    $('#gr-reset').addEventListener('click', () => { grade = { ...defGrade }; applyGrade(grade); localStorage.removeItem(GRADE_KEY); });
-    const PRESETS = {
-      natural: { b: 0.9, c: 0.04, s: 0.02, g: 0.18, v: 0.35 },
-      vivo:    { b: 1.0, c: 0.14, s: 0.22, g: 0.4, v: 0.4 },
-      cine:    { b: 0.82, c: 0.18, s: -0.06, g: 0.28, v: 0.62 },
-    };
-    document.querySelector('.vl-presets').addEventListener('click', e => {
-      const p = PRESETS[e.target.dataset.pr]; if (!p) return;
-      grade = { ...p }; applyGrade(grade);
-      localStorage.setItem(GRADE_KEY, JSON.stringify(grade));
-    });
-    // grade fuera de rango guardado (el bug del fondo blanco): sanear
-    grade.c = Math.max(-0.15, Math.min(0.55, grade.c));
-    if (!(grade.b >= 0.35 && grade.b <= 1.6)) grade.b = 0.88;  // migra esquemas viejos (y el 1.3 quemado)
-    applyGrade(grade);
 
     $('#vl-sound').addEventListener('pointerdown', e => {
       e.preventDefault();

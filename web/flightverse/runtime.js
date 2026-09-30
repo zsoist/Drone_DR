@@ -3,8 +3,9 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=367';
-import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=367';
+import * as THREE from '/flightverse/three.js?v=368';
+import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=368';
+import { MIN_AGL as V2_MIN_AGL } from '/flightverse/physics/index.js?v=368';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -83,7 +84,7 @@ export function createInput(el) {
   };
   return {
     keys,
-    requestLock: () => { if (enabled) el.requestPointerLock?.(); },
+    requestLock: () => { if (enabled) { try { el.requestPointerLock?.()?.catch?.(() => {}); } catch { /* sin gesto / sin foco */ } } },
     releaseLock: () => document.exitPointerLock?.(),
     reset,
     setEnabled(active) {
@@ -126,7 +127,7 @@ export function createInput(el) {
 // una skin: cambia el modelo de control (velocidad-objetivo vs tasas FPV).
 export const MODES = {
   cinematico: { label: 'Cinemático', vmax: 0, tour: true },
-  asistido:   { label: 'Normal', vmax: 14, vboost: 24, vy: 9, vyBoost: 16, resp: 3.2, yawRate: 1.6, autoLevel: true },
+  asistido:   { label: 'Normal', vmax: 14, vboost: 24, vy: 9, vyBoost: 16, resp: 3.2, yawRate: 1.6, autoLevel: true, physics: true },
   // Arcade = AUTOPILOTO del vuelo real: recorre el track con estela de luces
   arcade:     { label: 'Arcade', autopilot: true },
   dios:       { label: 'Dios', vmax: 34, vboost: 85, vy: 30, resp: 4.2, yawRate: 1.8, autoLevel: true, noclip: true },
@@ -207,7 +208,7 @@ function step6(d, inp, m, dt) {
   d.pitch = Math.asin(Math.max(-1, Math.min(1, f2.y)));
 }
 
-const MIN_AGL = 1.2;             // el dron nunca “entra” al terreno: piso duro honesto
+const MIN_AGL = V2_MIN_AGL;     // 1.2 m: el dron nunca “entra” al terreno: piso duro honesto (igual en v1 y v2)
 const DEFAULT_DRONE_COLLISION_RADIUS = 0.59;
 const MIN_DRONE_COLLISION_RADIUS = 0.42;
 const MAX_DRONE_COLLISION_RADIUS = 0.70;
@@ -242,7 +243,8 @@ export function createDrone({ world, spawn }) {
     vel: new THREE.Vector3(),
     quat: new THREE.Quaternion(), angVel: new THREE.Vector3(),
     yaw: 0, pitch: 0,
-    prev: { pos: new THREE.Vector3(), yaw: 0, pitch: 0 },
+    prev: { pos: new THREE.Vector3(), yaw: 0, pitch: 0, quat: new THREE.Quaternion() },
+    v2: null,                       // Physics v2 (?fv=2 / ?phys=v2): ver attachV2()
     agl: null, crashedSoft: false, distance: 0,
     collisionHits: 0, collisionFailures: 0, _t: 0,
     collisionRadius: DEFAULT_DRONE_COLLISION_RADIUS,
@@ -263,14 +265,72 @@ export function createDrone({ world, spawn }) {
     );
     collisionRadii.structure = d.collisionRadius;
     collisionRadii.boundary = d.collisionRadius;
+    if (d.v2) {
+      d.v2.sim.radii.structure = d.collisionRadius;
+      d.v2.sim.radii.boundary = d.collisionRadius;
+    }
     return d.collisionRadius;
   };
 
+  // ── Physics v2 (WS C, detrás de ?fv=2 / ?phys=v2) ──
+  // El sim (physics/sim.js) es puro y vive fuera de three; aquí solo se adapta:
+  // comandos del piloto -> sim, estado del sim -> d.pos/vel/quat/yaw (los demás
+  // módulos siguen leyendo el mismo objeto dron) y render interpolado con actitud.
+  const _qa = new THREE.Quaternion(), _fa = new THREE.Vector3(), _ra = new THREE.Vector3(), _ua = new THREE.Vector3();
+  d.attachV2 = (sim) => {
+    d.v2 = {
+      sim, seeded: false, active: false,
+      lastPos: new THREE.Vector3(), lastYaw: 0, steps: 0,
+    };
+    sim.radii.structure = d.collisionRadius;
+    sim.radii.boundary = d.collisionRadius;
+    return d.v2;
+  };
+  d.detachV2 = () => { d.v2 = null; };
+
+  function seedV2(v2) {
+    const sim = v2.sim;
+    sim.reseed(d.pos.x, d.pos.y, d.pos.z, d.yaw, d.vel.x, d.vel.y, d.vel.z);
+    d.quat.set(sim.s.q[1], sim.s.q[2], sim.s.q[3], sim.s.q[0]);
+    d.prev.quat.copy(d.quat);
+    v2.seeded = true;
+  }
+
+  function stepV2(dt, inp) {
+    const v2 = d.v2, sim = v2.sim, s = sim.s;
+    if (!v2.seeded || d.pos.distanceToSquared(v2.lastPos) > 1e-6 || Math.abs(d.yaw - v2.lastYaw) > 1e-5) {
+      seedV2(v2);                              // teletransporte externo (Gate Rush, autopiloto, replay…)
+    }
+    v2.active = true;
+    // mirada: radianes ya procesados por input/v2-input.js; sin eso (?phys=v2 solo), mouse legacy en px
+    let lookYaw = inp.lookYaw, lookPitch = inp.lookPitch;
+    if (lookYaw === undefined) { lookYaw = -(inp.mouseDX || 0) * 0.0022; lookPitch = -(inp.mouseDY || 0) * 0.0018; }
+    d.pitch = THREE.MathUtils.clamp(d.pitch + (lookPitch || 0), -1.2, 1.2);   // pitch de mirada: se mantiene
+    if (lookYaw) sim.addYaw(lookYaw);
+    const before = _start;
+    sim.step(dt, inp);
+    d.pos.set(s.p[0], s.p[1], s.p[2]);
+    d.vel.set(s.v[0], s.v[1], s.v[2]);
+    d.angVel.set(s.w[0], s.w[1], s.w[2]);
+    d.quat.set(s.q[1], s.q[2], s.q[3], s.q[0]);
+    d.yaw = sim.att.yaw;
+    const ground = world?.groundHeight?.(d.pos.x, d.pos.z);
+    d.agl = ground == null ? null : d.pos.y - ground;
+    d.crashedSoft = false;                     // v2 reporta impactos por hooks (bus crash)
+    d.collisionHits = sim.stats.contacts;
+    d.collisionFailures = sim.stats.collisionFailures;
+    d.distance += before.distanceTo(d.pos);
+    v2.lastPos.copy(d.pos); v2.lastYaw = d.yaw;
+    v2.steps += 1;
+  }
+
   d.step = (dt, inp, modeKey) => {
     const m = MODES[modeKey] || MODES.asistido;
-    d.prev.pos.copy(d.pos); d.prev.yaw = d.yaw; d.prev.pitch = d.pitch;
+    d.prev.pos.copy(d.pos); d.prev.yaw = d.yaw; d.prev.pitch = d.pitch; d.prev.quat.copy(d.quat);
     _start.copy(d.pos);
     if (m.tour) return;                       // cinemático: la cámara vuela, no el dron
+    if (d.v2 && m.physics) { stepV2(dt, inp); return; }
+    if (d.v2) { d.v2.seeded = false; d.v2.active = false; }   // Dios/Arcade: integrador viejo; al volver se re-siembra
 
     if (m.six) {                               // FPV/Arcade: rígido 6DOF real
       step6(d, inp, m, dt);
@@ -417,6 +477,21 @@ export function createDrone({ world, spawn }) {
 
   d.lerpPose = (alpha, outPos) => {
     outPos.lerpVectors(d.prev.pos, d.pos, alpha);
+    if (d.v2?.active) {
+      // v2: actitud real del cuerpo (slerp) -> el dron se inclina y cabecea de verdad
+      const q = _qa.slerpQuaternions(d.prev.quat, d.quat, alpha);
+      _fa.set(0, 0, -1).applyQuaternion(q);
+      _ra.set(1, 0, 0).applyQuaternion(q);
+      _ua.set(0, 1, 0).applyQuaternion(q);
+      return {
+        yaw: Math.atan2(-_fa.x, -_fa.z),
+        pitch: THREE.MathUtils.lerp(d.prev.pitch, d.pitch, alpha),       // pitch de mirada (apuntado)
+        bodyPitch: Math.asin(THREE.MathUtils.clamp(_fa.y, -1, 1)),
+        roll: Math.atan2(-_ra.y, _ua.y),
+        quat: q.clone(),
+        v2: true,
+      };
+    }
     return { yaw: THREE.MathUtils.lerp(d.prev.yaw, d.yaw, alpha),
              pitch: THREE.MathUtils.lerp(d.prev.pitch, d.pitch, alpha) };
   };

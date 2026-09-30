@@ -1,9 +1,10 @@
 // flightverse/tour/director.js — DIRECTOR (P6): keyframes de cámara sobre el replay
 // grabado de Gate Rush + reproducción del replay (WS E). Estado en ctx.state:
 // director, replay (la entrada/salida las dispara ui/screens vía ctx.actions).
-import CameraControls from '/vendor/camera-controls.module.js?v=367';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=367';
-import { STEP } from '/flightverse/runtime.js?v=367';
+import CameraControls from '/vendor/camera-controls.module.js?v=368';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=368';
+import { STEP } from '/flightverse/runtime.js?v=368';
+import { lockRenderSize } from '/flightverse/tour/render-guard.js?v=368';
 
 export function createDirector(ctx) {
   const { THREE, camera, renderer, report, CID, state: S, actions: A } = ctx;
@@ -87,14 +88,13 @@ export function createDirector(ctx) {
     if (!canExport()) { $('#dir-hd').textContent = 'sin WebCodecs — usa Grabar'; return; }
     const btn = $('#dir-hd');
     btn.disabled = true;
-    // resolución fija: cada frame es un paso del rec — determinista de verdad
-    const oldDpr = renderer.getPixelRatio();
-    renderer.setPixelRatio(1); renderer.setSize(1920, 1080, false);
-    composer.setSize(1920, 1080);
-    camera.aspect = 1920 / 1080; camera.updateProjectionMatrix();
+    // resolución fija: cada frame es un paso del rec — determinista de verdad. lockRenderSize aísla el
+    // export de `resize`, del gobernador de calidad (applyDpr) y del aspecto de cámara: mientras dura,
+    // setSize/setPixelRatio/composer.setSize se ignoran (se recuerda el último pedido) y el aspecto es 16:9.
+    const lock = lockRenderSize(ctx, { width: 1920, height: 1080 });
     try {
       const blob = await exportDeterministic({
-        frames: director.len, canvas: renderer.domElement,
+        frames: director.len, canvas: renderer.domElement, width: 1920, height: 1080,
         drawFrame: f => { recAt(f); drone.lerpPose(1, P); ctx.droneModel.mesh.position.copy(P);
           ctx.droneModel.mesh.rotation.set(0, drone.yaw, 0); dirCam(f); composer.render(); },
         onProgress: p => { btn.textContent = `Exportando ${(p * 100) | 0}%`; },
@@ -106,9 +106,7 @@ export function createDirector(ctx) {
       report.errors.push('export: ' + e.message);
     } finally {
       btn.disabled = false;
-      renderer.setPixelRatio(oldDpr); renderer.setSize(innerWidth, innerHeight);
-      composer.setSize(innerWidth, innerHeight);
-      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+      lock.release();
     }
   });
   A.enterDirector = enterDirector;

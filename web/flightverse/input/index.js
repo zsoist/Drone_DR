@@ -9,11 +9,14 @@
 // y en ctx.actions: setMode, setRig, cycleRig, releaseFiring, beginFiring.
 // Emite en el bus: mode{key}, crash{energyClass}.
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { MODES } from '/flightverse/runtime.js?v=367';
-import { createBindings } from '/flightverse/input/bindings.js?v=367';
-import { createCameraControls } from '/flightverse/input/camera.js?v=367';
+// ?fv=2 (o ?phys=v2): Physics v2 (input/physics-link.js -> ctx.phys / window.__volar.physics, bus crash/damage/respawn),
+// entradas v2 (input/v2-input.js: stick flotante, zona de mirada, mouse-look con pointer lock, gamepad, háptica,
+// ctx.controls.v2.settings) y cámaras v2 (camera-rigs.js). Sin la bandera todo corre como antes.
+import { MODES } from '/flightverse/runtime.js?v=368';
+import { createBindings } from '/flightverse/input/bindings.js?v=368';
+import { createCameraControls } from '/flightverse/input/camera.js?v=368';
 
-export { createDroneModel } from '/flightverse/input/drone-model.js?v=367';
+export { createDroneModel } from '/flightverse/input/drone-model.js?v=368';
 
 export function installControls(ctx) {
   const { state: S, bus } = ctx;

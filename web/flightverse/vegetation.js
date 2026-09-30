@@ -5,9 +5,9 @@
 // /assets/vegetation/ (≤ 10 KB). Es 100% visual: sin colisión, sin sombras, sin física.
 //
 // Cualquier fallo (red, GLB, JSON viejo) devuelve null y el mundo sigue como antes.
-import * as THREE from '/flightverse/three.js?v=367';
+import * as THREE from '/flightverse/three.js?v=368';
 
-const V = '?v=367';
+const V = '?v=368';
 // tope de instancias por nivel (el JSON viene barajado: el prefijo es un adelgazamiento uniforme)
 export const VEGETATION_CAPS = { high: 6000, lite: 1800 };
 // ancho relativo al alto del GLB normalizado (1 m de alto): árboles anchos, arbusto ya viene ancho
@@ -49,6 +49,7 @@ export async function createVegetation(man, parent, {
   if (!batches) return null;
 
   const { GLTFLoader } = await import(`/vendor/three-addons180/loaders/GLTFLoader.js${V}`);
+  const { applyWorldLook } = await import(`/flightverse/world-look.js${V}`);   // WS E: borde + disolución cercana (import dinámico: el test de planInstances corre sin navegador)
   const loader = new GLTFLoader();
   const group = new THREE.Group();
   group.name = 'fv-vegetation';
@@ -85,6 +86,7 @@ export async function createVegetation(man, parent, {
           transformed.z += cos(uVegT * 1.1 + fvPh * 1.3) * 0.015 * fvSw;`);
     };
     mat.customProgramCacheKey = () => 'fv-vegetation-sway';
+    applyWorldLook(mat);
     const im = new THREE.InstancedMesh(geo, mat, rows.length);
     im.name = `fv-veg-${name}`;
     im.castShadow = false;

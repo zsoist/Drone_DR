@@ -342,6 +342,8 @@ def launch_chrome():
             str(CHROME), "--headless=new", "--remote-debugging-port=0",
             f"--user-data-dir={profile.name}", "--no-first-run", "--no-default-browser-check",
             "--window-size=1280,900",
+            # tests must never be heard: headless runs share the Mac's speakers with the owner
+            "--mute-audio",
         ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
             start_new_session=True)
         _LIVE[proc.pid] = (proc, profile)

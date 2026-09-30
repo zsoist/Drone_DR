@@ -43,6 +43,7 @@ def validate_live_sample(
     *,
     requires_structural_collision: bool = True,
     expected_camera_rig: str = "muycerca",
+    fv2: bool = False,
 ) -> list[dict]:
     failures = []
     run = sample.get("run")
@@ -85,6 +86,41 @@ def validate_live_sample(
     ):
         failures.append({"run": run, "reason": "camera_integration"})
     failures.extend(validate_effect_snapshot(sample))
+    if fv2:
+        failures.extend(validate_physics_sample(sample))
+    return failures
+
+
+def validate_physics_sample(sample: dict) -> list[dict]:
+    """?fv=2: Physics v2 must be live, finite, and must never have lost the collision shell."""
+    run = sample.get("run")
+    phys = sample.get("physics")
+    if not phys or not phys.get("active"):
+        return [{"run": run, "reason": "physics_v2_inactive"}]
+    failures = []
+    stats = phys.get("stats") or {}
+    if not _finite_number(stats.get("steps")) or stats["steps"] < 1:
+        failures.append({"run": run, "reason": "physics_no_steps"})
+    if stats.get("nonFinite", 0) != 0:
+        failures.append({"run": run, "reason": "physics_nan", "count": stats.get("nonFinite")})
+    if stats.get("collisionFailures", 0) != 0:
+        failures.append({"run": run, "reason": "physics_collision_failure",
+                         "count": stats.get("collisionFailures")})
+    # the sweep keeps the centre out of geometry; a recover-sphere translation at the START of a
+    # step means the drone was found inside something (tunnelling / embedding)
+    if stats.get("embedded", 0) > 0:
+        failures.append({"run": run, "reason": "physics_embedded", "count": stats.get("embedded")})
+    for key in ("integrity", "battery", "stepUs"):
+        if not _finite_number(phys.get(key)):
+            failures.append({"run": run, "reason": f"physics_{key}_not_finite"})
+    if _finite_number(phys.get("stepUs")) and phys["stepUs"] > 400:
+        failures.append({"run": run, "reason": "physics_step_cost", "stepUs": phys["stepUs"]})
+    crash = phys.get("crash") or {}
+    if crash.get("active") and _finite_number(crash.get("t")) and crash["t"] > 1.0:
+        failures.append({"run": run, "reason": "physics_respawn_stuck", "t": crash["t"]})
+    pos = sample.get("hitCoordinates") or {}
+    if pos and not all(_finite_number(pos.get(axis)) for axis in ("x", "y", "z")):
+        failures.append({"run": run, "reason": "position_not_finite"})
     return failures
 
 
@@ -370,7 +406,12 @@ def _live_sample(cdp) -> dict:
         "projectiles:r?.weapons?.projectiles,"
         "effects:r?.weapons?.effects,"
         "fired:r?.weapons?.fired, exploded:r?.weapons?.exploded,"
-        "memory:r?.rendererMemory"
+        "memory:r?.rendererMemory,"
+        "moved:r?.moved,"
+        "physics:r?.physics ? {active:r.physics.active, profile:r.physics.profile,"
+        " stats:r.physics.stats, integrity:r.physics.integrity, battery:r.physics.battery,"
+        " stepUs:r.physics.stepUs, crash:r.physics.crash, wind:r.physics.wind?.speed,"
+        " tiltDeg:r.physics.attitude?.tiltDeg} : null"
         "}; })()"
     )
 
@@ -429,7 +470,75 @@ def fixture_gate(base_url: str, timeout: int = 30) -> dict:
         profile.cleanup()
 
 
-def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) -> dict:
+def _v2(url: str, fv2: bool) -> str:
+    return url + "&fv=2" if fv2 else url
+
+
+KEY_CODES = {
+    "KeyW": (87, "w"), "KeyA": (65, "a"), "KeyS": (83, "s"), "KeyD": (68, "d"), "KeyQ": (81, "q"),
+    "KeyE": (69, "e"), "KeyR": (82, "r"), "KeyF": (70, "f"), "ShiftLeft": (16, "Shift"), "Space": (32, " "),
+}
+
+
+def _key(cdp, code: str, down: bool) -> None:
+    vk, key = KEY_CODES[code]
+    cdp.send("Input.dispatchKeyEvent", {
+        "type": "keyDown" if down else "keyUp", "code": code, "key": key,
+        "windowsVirtualKeyCode": vk,
+    })
+
+
+def flight_stress(cdp, seconds: float = 24.0) -> dict:
+    """?fv=2: fly real keyboard input through the world (boost, turns, climbs) and watch Physics v2.
+
+    Samples once a second: nothing may go non-finite, the collision shell may never report a failure
+    or an embedded start, a crash must respawn (crash.t stays below 1 s), and the drone must keep
+    moving (no stuck). Returns a summary; raises nothing (the caller turns it into failures).
+    """
+    plan = [
+        ({"KeyW", "ShiftLeft"}, 3.0), ({"KeyW", "ShiftLeft", "KeyQ"}, 2.0), ({"KeyW", "KeyD"}, 2.0),
+        ({"KeyW", "ShiftLeft", "KeyR"}, 2.0), ({"KeyW", "ShiftLeft", "KeyE"}, 2.5), ({"KeyS"}, 1.5),
+        ({"KeyW", "ShiftLeft", "KeyF"}, 2.5), ({"KeyW", "ShiftLeft", "KeyQ", "KeyR"}, 2.5),
+        ({"KeyW", "ShiftLeft"}, 4.0), ({"Space"}, 1.0),
+    ]
+    held: set[str] = set()
+    failures: list[dict] = []
+    samples = []
+    t_total = 0.0
+    start_distance = cdp.eval("window.__volar?.ctx?.drone?.distance || 0") or 0
+    try:
+        for keys, duration in plan:
+            for code in held - keys:
+                _key(cdp, code, False)
+            for code in keys - held:
+                _key(cdp, code, True)
+            held = set(keys)
+            end = t_total + duration
+            while t_total < end and t_total < seconds:
+                cdp.pump(0.5)
+                t_total += 0.5
+                snap = _live_sample(cdp)
+                snap["run"] = f"flight:{t_total:.1f}"
+                samples.append(snap)
+                failures.extend(validate_physics_sample(snap))
+                if snap.get("errors"):
+                    failures.append({"run": snap["run"], "reason": "runtime_errors"})
+    finally:
+        for code in held:
+            _key(cdp, code, False)
+    distance = (cdp.eval("window.__volar?.ctx?.drone?.distance || 0") or 0) - start_distance
+    if distance < 60:
+        failures.append({"reason": "flight_stuck", "distance_m": distance})
+    last = (samples[-1].get("physics") or {}).get("stats") if samples else {}
+    return {
+        "seconds": t_total, "distance_m": round(distance, 1), "failures": failures,
+        "crashes": (last or {}).get("crashes"), "respawns": (last or {}).get("respawns"),
+        "bumps": (last or {}).get("bumps"), "contacts": (last or {}).get("contacts"),
+        "max_step_us": max(((s.get("physics") or {}).get("stepUs") or 0) for s in samples) if samples else None,
+    }
+
+
+def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120, fv2: bool = False) -> dict:
     """Sample one fully loaded world repeatedly and reject drift or resource growth."""
     if stress < 1 or stress > 1_000:
         raise ValueError("--stress debe estar entre 1 y 1000")
@@ -441,6 +550,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             f"{base_url.rstrip('/')}/volar.html"
             f"?m={urllib.parse.quote(cid)}&autotest=1&rig=0"
         )
+        url = _v2(url, fv2)
         origin = _time_origin(cdp)
         cdp.send("Page.navigate", {"url": url})
         ready = _wait_for_world_ready(cdp, timeout, origin)
@@ -456,6 +566,7 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             f"{base_url.rstrip('/')}/volar.html"
             f"?m={urllib.parse.quote(cid)}&autotest=1&rig=3"
         )
+        fpv_url = _v2(fpv_url, fv2)
         origin = _time_origin(cdp)
         cdp.send("Page.navigate", {"url": fpv_url})
         if not _wait_for_world_ready(cdp, timeout, origin):
@@ -525,12 +636,14 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             camera_integration,
             requires_structural_collision=needs_structure,
             expected_camera_rig="muycerca",
+            fv2=fv2,
         ))
         for sample in samples:
             failures.extend(validate_live_sample(
                 sample,
                 requires_structural_collision=needs_structure,
                 expected_camera_rig="fpv",
+                fv2=fv2,
             ))
         failures.extend(validate_stress_actions(actions))
 
@@ -549,6 +662,20 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
                         "first": values[0],
                         "last": values[-1],
                     })
+
+        flight = None
+        if fv2:
+            # real keyboard flight (boost / turns / climbs) on the Physics v2 build of this world
+            origin = _time_origin(cdp)
+            cdp.send("Page.navigate", {"url": fpv_url})
+            if _wait_for_world_ready(cdp, timeout, origin):
+                # the 5 s synthetic autotest flight is over once the report is done: keys take over
+                cdp.eval("document.querySelector('#vl-guide-go')?.click()")
+                cdp.pump(0.5)
+                flight = flight_stress(cdp)
+                failures.extend(flight["failures"])
+            else:
+                failures.append({"run": stress, "reason": "flight_stress_timeout"})
 
         origin = _time_origin(cdp)
         cdp.send("Page.navigate", {"url": fpv_url})
@@ -580,6 +707,8 @@ def live_world_gate(cid: str, base_url: str, stress: int, timeout: int = 120) ->
             "samples": samples,
             "fpv_camera": fpv_camera,
             "arsenal": arsenal,
+            "variant": "fv2" if fv2 else "legacy",
+            "flight": flight,
             "console_errors": cdp.errors[:6],
         }
         if failures:
@@ -603,6 +732,10 @@ def main() -> int:
     parser.add_argument("--stress", type=int)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--fv2", action="store_true",
+                        help="run the world with ?fv=2 (Physics v2): no tunnelling / stuck / NaN + flight stress")
+    parser.add_argument("--both", action="store_true",
+                        help="run the legacy variant first, then the ?fv=2 variant")
     args = parser.parse_args()
     if args.fixture:
         report = fixture_gate(args.base_url, min(args.timeout, 60))
@@ -610,13 +743,20 @@ def main() -> int:
         if not args.clip_id or args.stress is None:
             parser.error("usa <clip_id> --stress N o --fixture")
         fixture = fixture_gate(args.base_url, min(args.timeout, 60))
-        report = live_world_gate(
-            args.clip_id, args.base_url, args.stress, args.timeout
-        )
-        report["fixture"] = {
-            "queries": fixture["queries"],
-            "query_ms": fixture["query_ms"],
-            "assertions": len(fixture["assertions"]),
+        variants = [False, True] if args.both else [bool(args.fv2)]
+        reports = []
+        for fv2 in variants:
+            rep = live_world_gate(
+                args.clip_id, args.base_url, args.stress, args.timeout, fv2=fv2
+            )
+            rep["fixture"] = {
+                "queries": fixture["queries"],
+                "query_ms": fixture["query_ms"],
+                "assertions": len(fixture["assertions"]),
+            }
+            reports.append(rep)
+        report = reports[0] if len(reports) == 1 else {
+            "ok": all(r["ok"] for r in reports), "variants": reports,
         }
     print(json.dumps(report, ensure_ascii=False, indent=1))
     return 0

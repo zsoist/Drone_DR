@@ -90,6 +90,27 @@ def validate_invasion_sample(sample: dict) -> list[dict]:
     return failures
 
 
+def validate_v2_sample(sample: dict) -> list[dict]:
+    """?fv=2 (Invasión justa): rampa, vidas, marcadores y aviso de telégrafos presentes en el reporte."""
+    failures = []
+    invasion = sample.get("invasion") or {}
+    if not invasion.get("v2"):
+        failures.append(_failure("v2_flag_missing"))
+        return failures
+    if invasion.get("victoryWave") != 10:
+        failures.append(_failure("victory_wave", value=invasion.get("victoryWave")))
+    if invasion.get("lives") != 3 or not (0 < invasion.get("hp", 0) <= 100):
+        failures.append(_failure("vitals_invalid", hp=invasion.get("hp"), lives=invasion.get("lives")))
+    if invasion.get("wave") == 1:
+        active = {k for k, n in ((invasion.get("telemetry") or {}).get("activeByType") or {}).items() if n > 0}
+        if active - {"zombie"}:
+            failures.append(_failure("wave1_types_not_ramped", active=sorted(active)))
+    data = invasion.get("markerData") or {}
+    if invasion.get("alive", 0) and not (data.get("markers") or data.get("edges")):
+        failures.append(_failure("no_threat_markers", markers=invasion.get("markers"), edges=invasion.get("edges")))
+    return failures
+
+
 def _choose_active_world() -> str:
     result = audit_world.audit(active_only=True)
     candidates = [
@@ -138,6 +159,7 @@ def run_gate(
     cid: str | None = None,
     base_url: str = DEFAULT_BASE_URL,
     timeout: int = 90,
+    fv2: bool = False,
 ) -> dict:
     target = cid or _choose_active_world()
     proc, profile, port = launch_chrome()
@@ -150,6 +172,7 @@ def run_gate(
             "rig": "0",
             "invasion": ",".join(SELECTED_TYPES),
             "invDifficulty": "dificil",
+            **({"fvd": "1", "invWave": "6"} if fv2 else {}),
         })
         cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/volar.html?{query}"})
         sample = _wait_for_sample(cdp, timeout)
@@ -157,6 +180,8 @@ def run_gate(
         if cdp.errors:
             sample.setdefault("errors", []).extend(cdp.errors[:8])
         failures = validate_invasion_sample(sample)
+        if fv2:
+            failures = [f for f in failures if f['reason'] not in ('mixed_types_missing', 'glb_enemy_count', 'ai_telemetry_missing')] + validate_v2_sample(sample)
         QA_DIR.mkdir(parents=True, exist_ok=True)
         screenshot = QA_DIR / f"{target}-invasion-runtime.png"
         shot = cdp.send("Page.captureScreenshot", {
@@ -193,8 +218,9 @@ def main() -> int:
     parser.add_argument("--cid")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--timeout", type=int, default=90)
+    parser.add_argument("--fv2", action="store_true", help="validar la Invasión v2 (?fvd=1): vidas, rampa, marcadores")
     args = parser.parse_args()
-    result = run_gate(cid=args.cid, base_url=args.base_url, timeout=args.timeout)
+    result = run_gate(cid=args.cid, base_url=args.base_url, timeout=args.timeout, fv2=args.fv2)
     print(json.dumps(result, ensure_ascii=False, indent=1))
     return 0
 

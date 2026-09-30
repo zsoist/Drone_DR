@@ -1,0 +1,265 @@
+{
+ "world": "recon_4e4245a1f4_aoi130",
+ "speed": 7.0,
+ "pois": [
+  {
+   "id": "panoramica",
+   "name": "Bogotá desde el aire",
+   "short": "Un barrio real, reconstruido con fotos de dron.",
+   "spline": [
+    [
+     -58,
+     55.7,
+     62
+    ],
+    [
+     -44,
+     55.8,
+     66
+    ],
+    [
+     -28,
+     62.3,
+     70
+    ]
+   ],
+   "look": [
+    18,
+    5.8,
+    -32
+   ],
+   "dwell": 5,
+   "fov": 58,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "torre-bdb",
+   "name": "Torre Banco de Bogotá",
+   "short": "La más alta del sector: fachada de vidrio y aletas verticales.",
+   "spline": [
+    [
+     56,
+     62,
+     40
+    ],
+    [
+     62,
+     62,
+     20
+    ],
+    [
+     60,
+     62,
+     -2
+    ]
+   ],
+   "look": [
+    29,
+    30,
+    -29
+   ],
+   "dwell": 5.5,
+   "fov": 54,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "techo-verde",
+   "name": "Techo verde",
+   "short": "Una cubierta vegetal y una terraza en medio de la ciudad.",
+   "spline": [
+    [
+     -36,
+     59.5,
+     -18
+    ],
+    [
+     -36,
+     56.4,
+     -38
+    ],
+    [
+     -30,
+     51.5,
+     -58
+    ]
+   ],
+   "look": [
+    14,
+    35.6,
+    -52
+   ],
+   "dwell": 5,
+   "fov": 54,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "plazoleta",
+   "name": "Plazoleta del cruce",
+   "short": "Cebras, ciclorruta y el pulso de la calle.",
+   "spline": [
+    [
+     2,
+     76.9,
+     -84
+    ],
+    [
+     22,
+     61.5,
+     -88
+    ],
+    [
+     40,
+     66.8,
+     -84
+    ]
+   ],
+   "look": [
+    46,
+    4.2,
+    -56
+   ],
+   "dwell": 4.5,
+   "fov": 56,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "calles",
+   "name": "Calles del barrio",
+   "short": "El tráfico real, calle por calle.",
+   "spline": [
+    [
+     -20,
+     56,
+     -20
+    ],
+    [
+     -20,
+     56,
+     -40
+    ],
+    [
+     -18,
+     56,
+     -60
+    ]
+   ],
+   "look": [
+    -12,
+    14,
+    -96
+   ],
+   "dwell": 4.5,
+   "fov": 58,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "torre-vidrio",
+   "name": "Azotea verde y paneles solares",
+   "short": "Vidrio oscuro arriba, jardín y energía solar.",
+   "spline": [
+    [
+     2,
+     64,
+     -70
+    ],
+    [
+     -6,
+     62,
+     -74
+    ],
+    [
+     -14,
+     60,
+     -76
+    ]
+   ],
+   "look": [
+    -48,
+    38,
+    -80
+   ],
+   "dwell": 4.5,
+   "fov": 54,
+   "tod": "dorada",
+   "mask": []
+  },
+  {
+   "id": "casa-roja",
+   "name": "Casa del techo rojo",
+   "short": "Una casa de tejas entre los árboles del barrio.",
+   "spline": [
+    [
+     -52,
+     47.0,
+     -16
+    ],
+    [
+     -44,
+     64.7,
+     -12
+    ],
+    [
+     -36,
+     63.9,
+     -8
+    ]
+   ],
+   "look": [
+    -39,
+    16.6,
+    29
+   ],
+   "dwell": 5,
+   "fov": 54,
+   "tod": "dorada",
+   "mask": []
+  }
+ ],
+ "masks": [
+  {
+   "id": "obra-sur",
+   "type": "sphere",
+   "c": [
+    33,
+    18,
+    74
+   ],
+   "r": 24,
+   "why": "obra en construcción: malla rota y barridos"
+  },
+  {
+   "id": "este-barrido",
+   "type": "sphere",
+   "c": [
+    88,
+    14,
+    22
+   ],
+   "r": 30,
+   "why": "barrido estirado al este (sin fotos)"
+  },
+  {
+   "id": "oeste-parqueadero",
+   "type": "sphere",
+   "c": [
+    -98,
+    12,
+    -14
+   ],
+   "r": 24,
+   "why": "parqueadero con barridos y manchas"
+  }
+ ],
+ "edge": {
+  "fog": [
+   94,
+   124
+  ],
+  "warn": 100
+ }
+}

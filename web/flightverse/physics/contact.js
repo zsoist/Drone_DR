@@ -12,7 +12,7 @@ export const CLS_NONE = 0, CLS_SCRAPE = 1, CLS_WOBBLE = 2, CLS_PROP = 3, CLS_CRA
 
 const MX = [1, 1, -1, -1], MZ = [-1, 1, 1, -1];   // read-only, module level
 const RM = new Float64Array(9);
-const nb = new Float64Array(3), rb = new Float64Array(3), vb = new Float64Array(3);
+const nb = new Float64Array(3), rb = new Float64Array(3), rl = new Float64Array(3), vb = new Float64Array(3);
 const PLANE_HIT = { nx: 0, ny: 1, nz: 0, px: 0, py: 0, pz: 0, kind: KIND_TERRAIN };
 const tb = new Float64Array(3), tmp = new Float64Array(3), tmp2 = new Float64Array(3);
 
@@ -62,12 +62,17 @@ export function resolveContact(s, P, hit, out) {
   rb[0] = Math.abs(nb[0]) < 1e-3 ? 0 : (nb[0] > 0 ? -P.hx : P.hx);
   rb[1] = Math.abs(nb[1]) < 1e-3 ? 0 : (nb[1] > 0 ? -P.hy : P.hy);
   rb[2] = Math.abs(nb[2]) < 1e-3 ? 0 : (nb[2] > 0 ? -P.hz : P.hz);
+  // lever arm used by the impulse maths. 1 = the box corner (physical single-point contact);
+  // the game lowers it for benign touches (a level landing must not spin the drone) and
+  // restores it for crashes. `rb` itself still selects the motors for a prop strike.
+  const lev = P.contactLever === undefined ? 1 : P.contactLever;
+  rl[0] = rb[0] * lev; rl[1] = rb[1] * lev; rl[2] = rb[2] * lev;
   // contact point velocity (body frame)
   const v = s.v, w = s.w;
   vb[0] = RM[0] * v[0] + RM[3] * v[1] + RM[6] * v[2];
   vb[1] = RM[1] * v[0] + RM[4] * v[1] + RM[7] * v[2];
   vb[2] = RM[2] * v[0] + RM[5] * v[1] + RM[8] * v[2];
-  cross(w[0], w[1], w[2], rb[0], rb[1], rb[2], tmp);
+  cross(w[0], w[1], w[2], rl[0], rl[1], rl[2], tmp);
   const cvx = vb[0] + tmp[0], cvy = vb[1] + tmp[1], cvz = vb[2] + tmp[2];
   const vn = cvx * nb[0] + cvy * nb[1] + cvz * nb[2];
   if (vn >= 0) return CLS_NONE;
@@ -75,15 +80,15 @@ export function resolveContact(s, P, hit, out) {
   const invM = 1 / P.mass;
   const e = -vn < P.eMinVn ? 0 : restitutionFor(P, hit.kind);
   // effective mass along n: 1/m + n . ((I^-1 (r x n)) x r)
-  cross(rb[0], rb[1], rb[2], nb[0], nb[1], nb[2], tmp);
+  cross(rl[0], rl[1], rl[2], nb[0], nb[1], nb[2], tmp);
   tmp[0] *= P.invIx; tmp[1] *= P.invIy; tmp[2] *= P.invIz;
-  cross(tmp[0], tmp[1], tmp[2], rb[0], rb[1], rb[2], tmp2);
+  cross(tmp[0], tmp[1], tmp[2], rl[0], rl[1], rl[2], tmp2);
   const kn = invM + tmp2[0] * nb[0] + tmp2[1] * nb[1] + tmp2[2] * nb[2];
   const j = -(1 + e) * vn / kn;
   const E = 0.5 * P.mass * vn * vn;
   // apply normal impulse
   v[0] += j * nx * invM; v[1] += j * ny * invM; v[2] += j * nz * invM;
-  cross(rb[0], rb[1], rb[2], nb[0], nb[1], nb[2], tmp);
+  cross(rl[0], rl[1], rl[2], nb[0], nb[1], nb[2], tmp);
   w[0] += j * P.invIx * tmp[0]; w[1] += j * P.invIy * tmp[1]; w[2] += j * P.invIz * tmp[2];
 
   // friction (Coulomb, clamped so it never reverses tangential slip)
@@ -91,16 +96,16 @@ export function resolveContact(s, P, hit, out) {
   vb[0] = RM[0] * v[0] + RM[3] * v[1] + RM[6] * v[2];
   vb[1] = RM[1] * v[0] + RM[4] * v[1] + RM[7] * v[2];
   vb[2] = RM[2] * v[0] + RM[5] * v[1] + RM[8] * v[2];
-  cross(w[0], w[1], w[2], rb[0], rb[1], rb[2], tmp);
+  cross(w[0], w[1], w[2], rl[0], rl[1], rl[2], tmp);
   let ux = vb[0] + tmp[0], uy = vb[1] + tmp[1], uz = vb[2] + tmp[2];
   const un = ux * nb[0] + uy * nb[1] + uz * nb[2];
   ux -= un * nb[0]; uy -= un * nb[1]; uz -= un * nb[2];
   const ul = Math.sqrt(ux * ux + uy * uy + uz * uz);
   if (ul > 1e-9 && P.mu > 0) {
     tb[0] = ux / ul; tb[1] = uy / ul; tb[2] = uz / ul;
-    cross(rb[0], rb[1], rb[2], tb[0], tb[1], tb[2], tmp);
+    cross(rl[0], rl[1], rl[2], tb[0], tb[1], tb[2], tmp);
     tmp[0] *= P.invIx; tmp[1] *= P.invIy; tmp[2] *= P.invIz;
-    cross(tmp[0], tmp[1], tmp[2], rb[0], rb[1], rb[2], tmp2);
+    cross(tmp[0], tmp[1], tmp[2], rl[0], rl[1], rl[2], tmp2);
     const kt = invM + tmp2[0] * tb[0] + tmp2[1] * tb[1] + tmp2[2] * tb[2];
     let jt = ul / kt;
     const cap = P.mu * j;
@@ -110,7 +115,7 @@ export function resolveContact(s, P, hit, out) {
     const twy = RM[3] * tb[0] + RM[4] * tb[1] + RM[5] * tb[2];
     const twz = RM[6] * tb[0] + RM[7] * tb[1] + RM[8] * tb[2];
     v[0] -= jt * twx * invM; v[1] -= jt * twy * invM; v[2] -= jt * twz * invM;
-    cross(rb[0], rb[1], rb[2], tb[0], tb[1], tb[2], tmp);
+    cross(rl[0], rl[1], rl[2], tb[0], tb[1], tb[2], tmp);
     w[0] -= jt * P.invIx * tmp[0]; w[1] -= jt * P.invIy * tmp[1]; w[2] -= jt * P.invIz * tmp[2];
   }
 

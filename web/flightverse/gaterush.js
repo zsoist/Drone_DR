@@ -3,8 +3,12 @@
 // splits por gate. Circuito HONESTO: gates sobre la ruta del vuelo REAL
 // (track GPS en frame local); sin track: anillo procedural documentado como
 // fallback. Detección por proximidad en timestep fijo (determinista → replay).
-import * as THREE from '/flightverse/three.js?v=367';
-import { segmentPassesGate } from '/flightverse/collision-math.js?v=367';
+import * as THREE from '/flightverse/three.js?v=368';
+import { segmentPassesGate } from '/flightverse/collision-math.js?v=368';
+import {
+  courseLength, parTime, gateRushMedal, gateRushScore, paceDelta, timeText, findClearStart,
+  ghostPoseAt, START_CLEARANCE_M, sanitizeGateCenters,
+} from '/flightverse/modes/rules.js?v=368';
 
 export const DIFFS = {
   facil:   { label: 'Fácil',   n: 8,  r: 9,   pass: 1.25, color: 0x52C79A },
@@ -36,7 +40,7 @@ function disposeObject(o) {
   else disposeMaterial(o.material);
 }
 
-export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 'media' }) {
+export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 'media', v2 = false, collision = null, worldPar = null, ghost = null }) {
   const D = DIFFS[difficulty] || DIFFS.media;
   const GATE_R = D.r, PASS_R = GATE_R * D.pass;
 
@@ -57,6 +61,19 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
       const dy = difficulty === 'dificil' ? Math.sin(i * 2.1) * 14 : 0;
       centers.push(new THREE.Vector3(x, (g ?? 0) + 22 + dy, z));
     }
+  }
+  let sanitation = null;
+  if (v2 && collision?.boundaryClamp) {            // gates alcanzables: dentro del borde jugable y fuera de la malla
+    const res = sanitizeGateCenters(centers, {
+      radius: GATE_R,
+      nearest: p => {
+        const h = collision.closest?.(p, GATE_R);
+        return h && h.kind === 'structure' ? h.distance : Infinity;
+      },
+      clampFn: (p, r) => collision.boundaryClamp(p, r),
+    });
+    sanitation = res.report;
+    if (res.centers.length >= 4) centers = res.centers.map(c => new THREE.Vector3(c.x, c.y, c.z));
   }
   centers = centers.map(c => {                    // jamás bajo el terreno
     const g = heightAt(c.x, c.z);
@@ -128,12 +145,30 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
     t: 0, countdown: 0, time: null, topSpeed: 0,
     splits: [], lastSplit: null,   // tiempos por gate (el HUD muestra el delta)
     rec: [],
+    // v2: par, fallos, medalla, inicio validado
+    par: null, misses: 0, medal: null, score: 0, startInfo: null, sanitation,
   };
+  // ── v2: fantasma translúcido de la mejor run ──
+  let ghostMesh = null;
+  const ghostState = { data: ghost, enabled: !!ghost };
+  function buildGhostMesh() {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({ color: 0x45A0E6, transparent: true, opacity: 0.38, depthWrite: false });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.7), mat);
+    const armA = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 0.12), mat); armA.rotation.y = Math.PI / 4;
+    const armB = armA.clone(); armB.rotation.y = -Math.PI / 4;
+    g.add(body, armA, armB);
+    g.visible = false;
+    grp.add(g);
+    return g;
+  }
+  if (v2) ghostMesh = buildGhostMesh();
   let recSkip = 0;
   const prevPos = new THREE.Vector3();
   let havePrev = false;
   const gateNormal = new THREE.Vector3();
   const flashes = [];              // anillos de celebración al pasar un gate
+  const _d = new THREE.Vector3(), _d2 = new THREE.Vector3();
 
   function paint() {
     gates.forEach((g, i) => {
@@ -151,8 +186,40 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
     approach() {
       const c0 = centers[0], c1 = centers[1] || c0.clone().add(new THREE.Vector3(1, 0, 0));
       const dir = c0.clone().sub(c1).normalize();
-      return c0.clone().addScaledVector(dir, 16);
+      const nominal = c0.clone().addScaledVector(dir, 16);
+      if (!v2 || !collision) return nominal;
+      // v2: ≥ 12 m de cualquier muro y 30 m libres al frente; si no, se desliza por el eje de entrada
+      const axis = { x: -dir.x, y: -dir.y, z: -dir.z };     // dirección de vuelo hacia el gate 0
+      const structural = p => {
+        const hit = collision.closest?.(p, START_CLEARANCE_M);
+        if (!hit) return true;
+        if (hit.kind === 'terrain') return hit.distance > 3;      // el suelo solo importa muy cerca
+        return false;
+      };
+      const res = findClearStart({
+        approach: nominal, axis,
+        clearAt: structural,
+        rayClear: (p, a) => !collision.castSegment(p, { x: p.x + a.x * 30, y: p.y + a.y * 30, z: p.z + a.z * 30 }, 0.6),
+      });
+      st.startInfo = { ok: res.ok, moved: res.moved, attempts: res.attempts, nominalMoved: nominal.distanceTo(new THREE.Vector3(res.point.x, res.point.y, res.point.z)) };
+      return new THREE.Vector3(res.point.x, res.point.y, res.point.z);
     },
+    /** Datos que dibuja el HUD (A): cronómetro, contador de gates, par, ritmo. Siempre disponible. */
+    hud() {
+      return {
+        phase: st.phase, t: st.phase === 'running' ? st.t : (st.time ?? 0),
+        timerText: timeText(st.phase === 'running' ? st.t : (st.time ?? 0)),
+        gate: Math.min(st.idx + (st.phase === 'finished' ? 0 : 1), st.total), passed: st.idx, total: st.total,
+        par: st.par, misses: st.misses,
+        pace: st.par ? paceDelta({ t: st.t, idx: st.idx, total: st.total, par: st.par }) : 0,
+        countdown: st.phase === 'countdown' ? Math.max(1, Math.ceil(st.countdown)) : 0,
+        difficulty, medal: st.medal,
+      };
+    },
+    noteMiss() { if (st.phase === 'running') st.misses++; },
+    setGhost(data) { ghostState.data = data; if (ghostMesh) ghostMesh.visible = false; },
+    setGhostEnabled(v) { ghostState.enabled = !!v; if (!v && ghostMesh) ghostMesh.visible = false; },
+    get ghostActive() { return !!(ghostMesh && ghostState.enabled && ghostState.data); },
     pulse(t, dt = 0.016) {
       pathMat.opacity = 0.24 + Math.sin(t * 2.6) * 0.08;
       gates.forEach((gg, i) => {
@@ -180,10 +247,16 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
       }
     },
     start() {
-      gates.forEach(g => { g.passed = false; });
+      gates.forEach(g => { g.passed = false; g.missed = false; });
       st.phase = 'countdown'; st.countdown = 3; st.idx = 0; st.t = 0;
       st.time = null; st.topSpeed = 0; st.rec = []; st.splits = []; st.lastSplit = null;
       havePrev = false;
+      st.misses = 0; st.medal = null; st.score = 0;
+      if (v2) {
+        const a = this.approach();
+        const len = courseLength(centers) + a.distanceTo(centers[0]);
+        st.par = parTime({ pathLength: len, gates: centers.length, difficulty, worldPar });
+      }
       paint();
     },
     update(dt, dronePos, droneVel, droneYaw) {
@@ -194,6 +267,11 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
       }
       if (st.phase !== 'running') return;
       st.t += dt;
+      if (ghostMesh) {
+        const pose = ghostState.enabled && ghostState.data ? ghostPoseAt(ghostState.data, st.t) : null;
+        ghostMesh.visible = !!pose && !pose.done;
+        if (pose) { ghostMesh.position.set(pose.x, pose.y, pose.z); ghostMesh.rotation.y = pose.yaw; }
+      }
       st.topSpeed = Math.max(st.topSpeed, droneVel.length());
       if ((recSkip = (recSkip + 1) % 2) === 0) {
         st.rec.push([dronePos.x, dronePos.y, dronePos.z, droneYaw]);
@@ -208,6 +286,16 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
           : false;
         // primer paso tras arrancar: sin segmento previo, exigir estar prácticamente en el centro
         if (!havePrev) through = dronePos.distanceTo(g.center) < GATE_R * 0.35;
+      }
+      if (v2 && g && !through && havePrev && !g.missed) {
+        // cruzó el plano del aro pero por fuera del radio de paso → fallo (una vez por gate)
+        const s0 = _d.copy(prevPos).sub(g.center).dot(gateNormal);
+        const s1 = _d2.copy(dronePos).sub(g.center).dot(gateNormal);
+        if (s0 * s1 < 0) {
+          const k = s0 / (s0 - s1);
+          _d.copy(prevPos).lerp(dronePos, k).sub(g.center);
+          if (_d.length() > PASS_R && _d.length() < GATE_R * 4) { g.missed = true; st.misses++; }
+        }
       }
       prevPos.copy(dronePos); havePrev = true;
       if (g && through) {
@@ -224,7 +312,13 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
         flashes.push({ m: fm, k: 0 });
         st.idx++;
         paint();
-        if (st.idx >= gates.length) { st.phase = 'finished'; st.time = st.t; }
+        if (st.idx >= gates.length) {
+          st.phase = 'finished'; st.time = st.t;
+          if (v2 && st.par) {
+            st.medal = gateRushMedal({ time: st.time, par: st.par, misses: st.misses });
+            st.score = gateRushScore({ time: st.time, par: st.par, misses: st.misses });
+          }
+        }
       }
     },
     dispose() {

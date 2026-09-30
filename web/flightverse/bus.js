@@ -24,6 +24,9 @@ export const BUS_EVENTS = Object.freeze({
   mode:    ['key'],
   pause:   [],          // A0 añade { active } (opcional) al payload
   tod:     ['key'],
+  prefs:   ['key', 'value'],   // A: preferencia del jugador cambiada (ui/prefs.js)
+  medal:   ['id', 'level'],    // A: medalla concedida (ui/records.js)
+  onboarding: ['completed'],   // A: primer vuelo terminado/omitido
 });
 
 export function createBus({ validate = false, strict = false } = {}) {

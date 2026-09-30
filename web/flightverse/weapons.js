@@ -6,29 +6,39 @@
 // HONESTO: la fotogrametría es un escaneo real — recibe cráter/scorch/
 // metralla en el terreno de juego; lo destruible son objetos de juego.
 // Todo procedural (canvas + primitivas), pools con tope, cero assets.
-import * as THREE from '/flightverse/three.js?v=367';
+import * as THREE from '/flightverse/three.js?v=368';
 import {
   earliestHit,
   normalizeTargetRadius,
   segmentSphereHit,
-} from '/flightverse/collision-math.js?v=367';
+} from '/flightverse/collision-math.js?v=368';
 import {
   EffectPool,
+  ballisticStep,
   disposeOwnedRenderObject,
   impactTransform,
   projectileDirection,
-} from '/flightverse/aiming.js?v=367';
+} from '/flightverse/aiming.js?v=368';
 import {
+  WEAPON_FAMILY,
+  WEAPON_FX,
   WEAPON_PROFILES,
   advanceLaunchSchedules,
   createLaunchSchedule,
+  explosionClass,
   isGuidanceTargetVisible,
+  misilProfileKey,
   steerVector,
-} from '/flightverse/weapon-registry.js?v=367';
+  usesHeat,
+} from '/flightverse/weapon-registry.js?v=368';
+import { createFxSystem } from '/flightverse/fx/fx-system.js?v=368';
+import { createProjectileModels, PROJECTILE_LENGTH } from '/flightverse/fx/projectile-models.js?v=368';
+import { surfaceOf } from '/flightverse/fx/surface.js?v=368';
+import { hitStopFor } from '/flightverse/fx/hitstop.js?v=368';
 import {
   createWeaponEffects,
   radialDamage,
-} from '/flightverse/weapon-effects.js?v=367';
+} from '/flightverse/weapon-effects.js?v=368';
 
 function glowTex(stops, size = 64) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -69,7 +79,7 @@ export const ARSENAL = WEAPON_PROFILES;
 let debrisFrags = null;
 (async () => {
   try {
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=367');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=368');
     const g = await new GLTFLoader().loadAsync('/assets/destruction/models/debris_pack.glb');
     const frags = [];
     g.scene.traverse(n => { if (n.isMesh && n.userData.role === 'fragment') frags.push(n); });
@@ -88,7 +98,16 @@ export function createWeapons(scene, {
   cloneProjectile,
   useDebrisModels = true,
   effectTier = 'desktop',
+  // ?fv=2: pooled instanced FX, thin tracers, rocket models, charge, heat, events (see fx/index.js)
+  fv2 = false,
+  events = null,
+  reduced = () => false,
+  getMuzzle = null,
+  getAim = null,
+  cameraRef = null,
+  viewportHeight = null,
 } = {}) {
+  const V2 = !!fv2;
   const TEX = {
     fire: glowTex([[0, 'rgba(255,244,200,1)'], [0.25, 'rgba(255,150,40,.9)'], [0.6, 'rgba(200,60,10,.45)'], [1, 'rgba(120,20,0,0)']], 128),
     smoke: glowTex([[0, 'rgba(72,68,64,.5)'], [0.5, 'rgba(58,55,52,.28)'], [1, 'rgba(44,42,40,0)']]),
@@ -101,6 +120,9 @@ export function createWeapons(scene, {
   };
   const S = { missiles: [], bullets: [], schedules: [], parts: [], decals: [], frags: [], rubble: [], fires: [], booms: [],
     weapon: 'm', cool: 0, fired: 0, exploded: 0, destroyed: 0,
+    // ?fv=2 extras: heat (MG/AC), charge queue (RAIL/NOVA), hit/kill counters, last hittables
+    heat: { mg: 0, ac: 0 }, overheat: 0, charges: [], burst: 0, burstT: 0, hits: 0, kills: 0,
+    charge: null, lastHittables: [], lastMuzzle: null,
     structureHits: 0, terrainHits: 0, boundaryHits: 0, itemHits: 0, targetHits: 0,
     railHits: 0,
     proximityTriggers: 0, occludedFuses: 0,
@@ -116,12 +138,28 @@ export function createWeapons(scene, {
       Object.entries(WEAPON_PROFILES).map(([key, profile]) => [key, profile.max]),
     ) };
   const group = new THREE.Group(); group.name = 'fv-weapons'; scene.add(group);
-  const effects = createWeaponEffects(group, {
-    tier: effectTier,
-    textures: TEX,
-    heightAt,
+  const fxs = V2 ? createFxSystem({
     THREE,
-  });
+    parent: group,
+    tier: effectTier === 'phone' ? 'low' : effectTier === 'tablet' ? 'mid' : 'high',
+    heightAt,
+    reduced,
+  }) : null;
+  const projectileModels = V2 ? createProjectileModels(THREE) : null;
+  const effects = V2
+    ? {
+      emitImpact: () => 0,
+      emitTrail: () => 0,
+      update: () => {},
+      snapshot: () => fxs.snapshot(),
+      dispose: () => {},
+    }
+    : createWeaponEffects(group, {
+      tier: effectTier,
+      textures: TEX,
+      heightAt,
+      THREE,
+    });
 
   const effectPools = Object.fromEntries([
     ['muzzle', 18], ['tracer', 72], ['exhaust', 48], ['smoke', 96],
@@ -226,13 +264,32 @@ export function createWeapons(scene, {
   }
   function hitEnemy(h, dmg, pos) {
     h.hp -= dmg;
-    if (h.blood) bloodBurst(pos, 1);
+    let kill = false;
+    if (V2) {
+      fxs.impact(h.blood ? 'body' : 'energy', { pos: { x: pos.x, y: pos.y, z: pos.z }, normal: { x: 0, y: 1, z: 0 } });
+    } else if (h.blood) bloodBurst(pos, 1);
     else emit(TEX.dot, pos, new THREE.Vector3(0, 2, 0), 0.4, 1.1, 0.25, THREE.AdditiveBlending);
     if (h.hp <= 0 && !h.g.userData.dead) {
       h.g.userData.dead = true;
-      if (h.blood) bloodBurst(pos, 2.2);
+      if (!V2 && h.blood) bloodBurst(pos, 2.2);
       S.destroyed++;
+      kill = true;
     }
+    return kill;
+  }
+
+  // ── ?fv=2 events: hit / kill / hit-stop ──────────────────────────────────
+  const fxOf = key => WEAPON_FX[WEAPON_FAMILY[key] || key] || {};
+  function emitHit(target, key, damage, nominal, kill, point) {
+    if (!V2 || !key) return;
+    S.hits += 1;
+    if (kill) S.kills += 1;
+    const kind = damage <= 0 ? 'deflect' : damage < nominal * 0.4 ? 'graze' : 'full';
+    const pos = point ? { x: point.x, y: point.y, z: point.z } : null;
+    events?.hit?.({ target, weapon: key, damage, kill, kind, pos });
+    audio?.hit?.({ kill, kind, weapon: key, pos });
+    const ms = hitStopFor({ weaponFx: fxOf(key), kill, hit: true });
+    if (ms) events?.hitstop?.(ms, { kill, weapon: key });
   }
 
   const _from = new THREE.Vector3();
@@ -328,9 +385,11 @@ export function createWeapons(scene, {
     if (hit.source === 'item') S.itemHits += 1;
   }
 
-  function damageTarget(target, damage, point, missile = false, hit = null) {
+  function damageTarget(target, damage, point, missile = false, hit = null, weaponKey = null) {
+    const nominal = WEAPON_PROFILES[weaponKey]?.dmg ?? damage;
     if (target.enemy) {
-      hitEnemy(target, damage, point);
+      const kill = hitEnemy(target, damage, point);
+      emitHit(target, weaponKey, damage, nominal, kill, point);
       return;
     }
     target.hp = (
@@ -338,13 +397,67 @@ export function createWeapons(scene, {
       ?? target.node.userData.kit?.health
       ?? 60
     ) - damage;
-    if (missile || target.hp <= 0) {
+    const broken = missile || target.hp <= 0;
+    if (broken) {
       smash(target.node, target.color, point, hit?.normal);
-      if (!missile) explode(hit || { kind: 'target', point, normal: { x: 0, y: 1, z: 0 } }, 0.7);
+      if (!missile) explode(hit || { kind: 'target', point, normal: { x: 0, y: 1, z: 0 } }, 0.7, null, { weapon: weaponKey });
     }
+    emitHit(target, weaponKey, damage, nominal, broken, point);
   }
 
-  function explode(hitOrPoint, big = 1, profile = null) {
+  function explodeV2(hitOrPoint, big, profile, meta) {
+    S.exploded++;
+    const key = meta?.weapon || null;
+    const hit = hitOrPoint?.point
+      ? hitOrPoint
+      : { kind: 'air', point: hitOrPoint, normal: { x: 0, y: 1, z: 0 } };
+    const p = new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z);
+    const surface = impactTransform(hit, 0.035);
+    const normal = new THREE.Vector3(surface.normal.x, surface.normal.y, surface.normal.z);
+    const terrainImpact = hit.kind === 'terrain';
+    const cls = explosionClass(big);
+    S.impactEvidence = { kind: hit.kind, point: { ...surface.position }, normal: { ...surface.normal }, size: cls };
+    if (terrainImpact && crater && cls !== 'S' && effectPools.crater.entries.length < effectPools.crater.limit) {
+      crater(p.x, p.z, 3.4 * big, 1.15 * big);
+      poolEffect('crater', { point: p.clone(), t: 0, life: 18 }, null);
+    }
+    const nominal = cls === 'S' ? 0.6 : cls === 'M' ? 1.3 : 2.8;
+    const groundish = hit.kind !== 'air' && hit.kind !== 'target';
+    const counts = fxs.explosion(cls, {
+      pos: { x: p.x, y: p.y, z: p.z },
+      normal: { x: normal.x, y: normal.y, z: normal.z },
+      ground: groundish,
+      scale: Math.min(1.35, Math.max(0.7, big / nominal)),
+    });
+    let damaged = Boolean(meta?.targetHit);
+    let kills = 0;
+    if (S._enemies) {
+      radialDamage({
+        origin: p,
+        radius: 7 * big,
+        maxDamage: 220 * big,
+        targets: S._enemies.filter(enemy => !enemy.g.userData.dead),
+        castSegment: (start, end, radius) => world?.castSegment?.(start, end, radius),
+        applyDamage: (enemy, damage) => {
+          const kill = hitEnemy(enemy, damage, enemy.center.clone());
+          damaged = true;
+          if (kill) kills += 1;
+          emitHit(enemy, key, damage, 220 * big, kill, enemy.center);
+        },
+      });
+    }
+    if (terrainImpact && cls !== 'S' && S.fires.length < 3) {
+      S.fires.push(poolEffect('fire', { p: p.clone(), t: 0, life: cls === 'XL' ? 7 : 3.5, acc: 0, v2: true }, null));
+    }
+    audio?.explosion?.({ pos: { x: p.x, y: p.y, z: p.z }, size: cls, big, weapon: key });
+    onShake?.(p, big, { cls, weapon: key, v2: true });
+    events?.explode?.({ pos: p.clone(), size: cls, big, weapon: key, counts });
+    const ms = hitStopFor({ weaponFx: fxOf(key), size: cls, kill: kills > 0, hit: damaged, damaged });
+    if (ms && kills === 0) events?.hitstop?.(ms, { size: cls, weapon: key });
+  }
+
+  function explode(hitOrPoint, big = 1, profile = null, meta = null) {
+    if (V2) return explodeV2(hitOrPoint, big, profile, meta);
     S.exploded++;
     const hit = hitOrPoint?.point
       ? hitOrPoint
@@ -535,12 +648,96 @@ export function createWeapons(scene, {
       S.resources.disposed += 1;
     }
     effects.dispose();
+    fxs?.dispose();
+    projectileModels?.dispose();
     for (const texture of Object.values(TEX)) texture.dispose();
     scene.remove(group);
     syncEffectCounters();
   };
 
+  // ── ?fv=2 FPV parallax: when the camera sits at the muzzle (FPV) every projectile would fly down
+  // the lens and collapse to a dot. The DRAWN path starts offset (lower-left/right) and converges
+  // onto the true path over ~45 m; the simulated path and hit detection are untouched.
+  const _offTmp = new THREE.Vector3();
+  function fpvOffset(source, side) {
+    const cam = cameraRef?.();
+    if (!cam || !getCameraPosition || getCameraPosition().distanceTo(source) > 2.2) return null;
+    const e = cam.matrixWorld.elements;
+    return _offTmp.set(
+      e[0] * 0.6 * side - e[4] * 0.42, e[1] * 0.6 * side - e[5] * 0.42, e[2] * 0.6 * side - e[6] * 0.42,
+    ).clone();
+  }
+  const visualFade = (pos, origin) => Math.max(0, 1 - pos.distanceTo(origin) / 45);
+
+  // ── ?fv=2 projectile: rocket/bomb mesh, drop-compensated launch, real gravity ──
+  const _lob = new THREE.Vector3();
+  function lobVelocity(source, aimPoint, g, vmax = 46) {
+    // smallest flight time whose launch speed fits vmax: the bomb lands on the aim point
+    const dx = aimPoint.x - source.x; const dy = aimPoint.y - source.y; const dz = aimPoint.z - source.z;
+    for (let T = 0.3; T <= 9; T += 0.05) {
+      const vx = dx / T; const vz = dz / T; const vy = (dy + 0.5 * g * T * T) / T;
+      if (Math.hypot(vx, vy, vz) <= vmax) return _lob.set(vx, vy, vz).clone();
+    }
+    return null;
+  }
+
+  function spawnMissileV2(key, source, direction, aim = null, slot = 0) {
+    const profile = ARSENAL[key];
+    if (!profile) return null;
+    let dir = direction.clone().normalize();
+    const aimPoint = aim?.aimPoint || null;
+    const gravity = profile.gravity ?? 2.2;
+    let launchVel = null;
+    if (profile.kind === 'bomb' && aimPoint) {
+      launchVel = lobVelocity(source, aimPoint, gravity);
+      if (launchVel) dir = launchVel.clone().normalize();
+    } else if (profile.kind !== 'bomb' && aimPoint) {
+      const d = aimPoint.clone().sub(source);
+      const range = d.length();
+      if (range > 4 && range < 1200) {
+        const tf = (range / profile.speed) * 1.06;   // the motor ramp slows the first metres
+        d.y += 0.5 * gravity * tf * tf;
+        dir = d.normalize();
+      }
+    }
+    if (key === 'sw') {                               // 6° cone: a rocket wanders within 3° of the aim
+      const a = (WEAPON_FX.sw.cone / 2) * Math.sqrt(Math.random());
+      const t = Math.random() * Math.PI * 2;
+      const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+      if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+      side.normalize();
+      const upv = new THREE.Vector3().crossVectors(side, dir).normalize();
+      dir.addScaledVector(side, Math.cos(t) * Math.tan(a)).addScaledVector(upv, Math.sin(t) * Math.tan(a)).normalize();
+    }
+    const length = PROJECTILE_LENGTH[key] || 1.5;
+    const mesh = new THREE.Mesh(profile.kind === 'bomb' ? projectileModels.bombGeo : projectileModels.rocketGeo, projectileModels.material);
+    mesh.scale.setScalar(length);
+    const body = new THREE.Group();
+    body.add(mesh);
+    body.position.copy(source);
+    body.lookAt(source.clone().add(dir));
+    group.add(body);
+    const isBomb = profile.kind === 'bomb';
+    const missile = {
+      v2: true, body, mesh, glow: null, dir: dir.clone(), full: profile.speed, length, slot,
+      pos: source.clone(), origin: source.clone(), off: fpvOffset(source, slot % 2 ? 1 : -1)?.multiplyScalar(0.55) || null,
+      vel: launchVel ? launchVel.clone() : dir.clone().multiplyScalar(isBomb ? profile.speed : profile.speed * 0.25),
+      fall: 0, gravity, t: 0, trail: 0, big: profile.big,
+      radius: profile.radius || 0, proximity: profile.proximity || 0,
+      damage: profile.dmg || 900, key, kind: profile.kind, profile,
+      guidanceTarget: aim?.target || null,
+      guidancePoint: aimPoint?.clone?.() || null,
+      homing: key === 'sw' && aim?.target ? 1.3 : 0,
+      nearLod: null, farLod: null, ownedGeometries: [],
+      weapon: aim?.weaponKey || key,
+    };
+    S.missiles.push(missile);
+    S.firedProjectiles[key] += 1;
+    return missile;
+  }
+
   const spawnMissile = (key, source, direction, aim = null) => {
+    if (V2) return spawnMissileV2(key, source, direction, aim);
     const profile = ARSENAL[key];
     if (!profile) return null;
     const dir = direction.clone().normalize();
@@ -604,7 +801,72 @@ export function createWeapons(scene, {
     return missile;
   };
 
+  // RAIL (?fv=2): analytic ray that PIERCES every enemy up to the first structure. Visuals: white
+  // core + #8FD3FF edge for 0.25 s, distortion ripples along the line, 1.2 s afterglow.
+  const fireRailV2 = (source, direction, profile, aim) => {
+    const fx = WEAPON_FX.rg;
+    const end = source.clone().addScaledVector(direction, 1200);
+    const worldHit = world?.castSegment?.(source, end, 0) || null;
+    const hittables = S.lastHittables || [];
+    const exact = worldHit?.source === 'item'
+      ? hittables.find(t => activeTarget(t) && t.node === worldHit.node) : null;
+    const stop = worldHit
+      ? new THREE.Vector3(worldHit.point.x, worldHit.point.y, worldHit.point.z) : end.clone();
+    const victims = [];
+    for (const target of hittables) {
+      if (!activeTarget(target)) continue;
+      const h = segmentSphereHit(source, stop, target.center, normalizeTargetRadius(target));
+      if (h) victims.push({ target, h });
+    }
+    if (exact && !victims.some(v => v.target === exact)) victims.push({ target: exact, h: { point: stop, normal: worldHit.normal } });
+    victims.sort((a, b) => a.h.fraction - b.h.fraction);
+    let anyHit = false;
+    for (const { target, h } of victims) {
+      const pt = new THREE.Vector3(h.point.x, h.point.y, h.point.z);
+      recordImpact({ kind: 'target', source: target === exact ? 'item' : undefined, proximity: false });
+      damageTarget(target, profile.dmg, pt, false, { ...h, kind: 'target', normal: h.normal }, 'rg');
+      anyHit = true;
+    }
+    if (worldHit) recordImpact(worldHit);
+    S.railHits += victims.length + (worldHit ? 1 : 0);
+    const len = source.distanceTo(stop);
+    const railOff = fpvOffset(source, 1);
+    const from = railOff ? source.clone().addScaledVector(railOff, 1.3) : source;   // FPV: the beam sweeps in from the lower right
+    const edge = fx.beam.edge || '#8FD3FF';
+    const toRgb = hex => [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255];
+    const e = toRgb(edge);
+    fxs.beam({ from, to: stop, width: 0.3, life: 0.25, c0: [e[0] * 1.5, e[1] * 1.5, e[2] * 1.5, 0.9], c1: [e[0], e[1], e[2], 0], kind: 'beam-edge', minW: 9 });
+    fxs.beam({ from, to: stop, width: fx.beam.width, life: 0.25, c0: [2.8, 2.8, 2.8, 1], c1: [1.4, 1.6, 1.8, 0], kind: 'beam-core', minW: 3.2 });
+    fxs.beam({ from, to: stop, width: 0.55, life: 1.2, c0: [e[0] * 0.8, e[1] * 0.8, e[2] * 0.9, 0.22], c1: [e[0] * 0.5, e[1] * 0.6, e[2] * 0.8, 0], kind: 'beam-afterglow', minW: 15 });
+    const rings = Math.min(7, Math.max(2, Math.floor(len / 14)));
+    for (let j = 1; j <= rings; j += 1) {
+      const at = source.clone().addScaledVector(direction, (len * j) / (rings + 1));
+      fxs.sink.ring({
+        pos: { x: at.x, y: at.y, z: at.z }, normal: { x: direction.x, y: direction.y, z: direction.z },
+        r0: 0.15, r1: 1.1 + j * 0.05, life: 0.32, delay: j * 0.018, c0: [0.8, 1.3, 1.8, 0.5], c1: [0.4, 0.8, 1.2, 0], kind: 'ripple',
+      });
+    }
+    const lastHit = worldHit || (victims.length ? victims.at(-1).h : null);
+    if (lastHit) {
+      const hit = worldHit ? { ...worldHit } : { kind: 'target', point: lastHit.point, normal: lastHit.normal };
+      const surface = impactTransform(hit, 0.018);
+      S.impactEvidence = { kind: hit.kind, effect: profile.effect, point: surface.position, normal: surface.normal };
+      const sp = { x: hit.point.x, y: hit.point.y, z: hit.point.z };
+      const nn = { x: surface.normal.x, y: surface.normal.y, z: surface.normal.z };
+      fxs.sink.sprite({ pos: sp, vel: { x: 0, y: 0, z: 0 }, size0: 1.2, size1: 2.4, life: 0.12, cell: 'flash', layer: 'add', c0: [2.4, 2.6, 2.8, 1], c1: [0.8, 1.2, 1.8, 0], rot: Math.random() * 6, maxScreen: 0.5, kind: 'flash' });
+      fxs.sink.ring({ pos: sp, normal: nn, r0: 0.2, r1: 3, life: 0.3, c0: [1.4, 1.8, 2.2, 0.8], c1: [0.6, 1.0, 1.4, 0], kind: 'shockwave' });
+      fxs.impact(surfaceOf(hit), { pos: sp, normal: nn, heavy: true });
+      if (worldHit) fxs.spawnDecal({ pos: { x: sp.x + nn.x * 0.04, y: sp.y + nn.y * 0.04, z: sp.z + nn.z * 0.04 }, normal: nn, size: 0.7, life: 8, cell: 'crack', c0: [0.04, 0.04, 0.05, 0.85], rot: Math.random() * 6 });
+      audio?.impact?.(surfaceOf(hit), { pos: sp, weapon: 'rg', heavy: true });
+      const ms = hitStopFor({ weaponFx: fx, hit: anyHit || Boolean(worldHit) });
+      if (ms) events?.hitstop?.(ms, { weapon: 'rg', any: true });
+    }
+    S.firedProjectiles.rg += 1;
+    return true;
+  };
+
   const fireRail = (source, direction, profile, aim) => {
+    if (V2) return fireRailV2(source, direction, profile, aim);
     const end = source.clone().addScaledVector(direction, 1200);
     const collision = projectileHit(
       source,
@@ -635,7 +897,7 @@ export function createWeapons(scene, {
       recordImpact(collision);
       S.railHits += 1;
       if (collision.kind === 'target') {
-        damageTarget(collision.target, profile.dmg, point.clone(), false, collision);
+        damageTarget(collision.target, profile.dmg, point.clone(), false, collision, 'rg');
       }
       const surface = impactTransform(collision, 0.018);
       S.impactEvidence = {
@@ -655,6 +917,253 @@ export function createWeapons(scene, {
     audio?.mg?.();
     return true;
   };
+
+  // ── ?fv=2 fire: heat, charge, tracer cadence, muzzle flash, recoil shake ──
+  const _dirV2 = new THREE.Vector3();
+  function recoil(fxDef, key) {
+    const sk = fxDef.shake;
+    if (!sk) return;
+    let tier = sk.tier; let trauma = sk.trauma;
+    if (key === 'ac' && sk.escalateAt && S.burst >= sk.escalateAt) { tier = sk.escalateTier; trauma = sk.escalateTrauma; }
+    events?.shake?.({ tier, trauma, pos: null, weapon: key, ceiling: sk.cap === 'T2' ? 0.10 : null });
+  }
+
+  function launchCharged(charge) {
+    const src = getMuzzle?.() || charge.source;
+    const aim = getAim?.() || charge.aim;
+    const dir = aim?.aimPoint ? _dirV2.copy(aim.aimPoint).sub(src).normalize().clone() : charge.direction.clone();
+    const profile = ARSENAL[charge.key];
+    if (profile.kind === 'rail') {
+      fireRail(src, dir, profile, aim);
+      fxs.muzzle({ pos: src.clone().addScaledVector(dir, 0.6), dir, size: 0.5, life: 0.1, ring: true });
+    } else {
+      spawnMissileV2(charge.key, src, dir, aim);
+      fxs.muzzle({ pos: src.clone().addScaledVector(dir, 0.6), dir, size: 0.4, life: 0.1 });
+    }
+    audio?.fire?.(charge.key, { phase: 'release' });
+    recoil(fxOf(charge.key), charge.key);
+  }
+
+  function fireV2(W2, source, direction, aim) {
+    const key = S.weapon;
+    const fxDef = fxOf(key);
+    if (usesHeat(key) && S.overheat > 0) return false;
+    if (S.charges.some(c => c.key === key)) return false;
+    const hasAim = aim && (aim.aimPoint || aim.point);
+    if (W2.kind === 'swarm') {
+      if (!createLaunchSchedule(S.schedules, key, source.clone(), {
+        aimPoint: aim?.aimPoint?.clone?.() || source.clone().add(direction),
+        target: aim?.target || null,
+        targets: aim?.targets || null,
+        weaponKey: key,
+      })) return false;
+      S.ammo[key]--; S.cool = W2.cd; S.fired++;
+      return true;
+    }
+    S.ammo[key]--; S.cool = W2.rate ?? W2.cd; S.fired++;
+    const lookDir = direction.clone().normalize();
+    if (W2.kind === 'rail' || W2.kind === 'bomb') {
+      const dur = fxDef.charge || 0.4;
+      S.charges.push({
+        key, t: 0, dur, source: source.clone(), direction: lookDir, aim: hasAim ? {
+          aimPoint: aim.aimPoint?.clone?.() || null, target: aim.target || null,
+        } : null,
+      });
+      audio?.charge?.(key, dur);
+      return true;
+    }
+    if (W2.kind === 'bullet') {
+      const spread = fxDef.spread || 0.01;
+      const dir = lookDir.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * spread, (Math.random() - 0.5) * spread, (Math.random() - 0.5) * spread,
+      )).normalize();
+      S.burst = S.burstT > 0 ? S.burst + 1 : 1;
+      S.burstT = 0.45;
+      S.heat[key] = Math.min(1, (S.heat[key] || 0) + fxDef.heat.perShot);
+      if (S.heat[key] >= 1) { S.overheat = 1.2; events?.overheat?.({ weapon: key }); }
+      const shot = S.firedProjectiles[key];
+      const tracer = fxDef.tracer;
+      const bullet = {
+        v2: true, pos: source.clone(), vel: dir.clone().multiplyScalar(W2.speed), t: 0, key, damage: W2.dmg,
+        gravity: W2.gravity ?? 4, tracer: (shot % tracer.every) === 0, tracerDef: tracer,
+        origin: source.clone(), off: fpvOffset(source, shot % 2 ? 1 : -1),
+      };
+      S.bullets.push(poolEffect('tracer', bullet, () => {}));
+      S.firedProjectiles[key] += 1;
+      fxs.muzzle({
+        pos: source.clone().addScaledVector(dir, 0.55).add(bullet.off || _offTmp.set(0, 0, 0)), dir: { x: dir.x, y: dir.y, z: dir.z },
+        size: fxDef.muzzle.size, life: fxDef.muzzle.life, smoke: Boolean(fxDef.muzzle.smoke), casing: Boolean(fxDef.muzzle.casing),
+      });
+      audio?.fire?.(key, { burst: S.burst });
+      recoil(fxDef, key);
+      return true;
+    }
+    // missile family
+    const useKey = WEAPON_FAMILY[key] === 'm' && key === 'm'
+      ? misilProfileKey({ guided: aim?.guided, target: aim?.target }) : key;
+    spawnMissileV2(useKey, source, lookDir, { ...(aim || {}), weaponKey: key });
+    const back = lookDir.clone();
+    fxs.muzzle({ pos: source.clone().addScaledVector(back, 0.5), dir: back, size: fxDef.muzzle?.size || 0.5, life: fxDef.muzzle?.life || 0.09 });
+    if (fxDef.muzzle?.backblast) {
+      fxs.sink.sprite({
+        pos: { x: source.x - back.x * 0.6, y: source.y - back.y * 0.6, z: source.z - back.z * 0.6 }, vel: { x: -back.x * 4, y: 1, z: -back.z * 4 },
+        size0: 0.3, size1: 1.4, life: 0.35, cell: 'smokeB', layer: 'norm', c0: [0.6, 0.6, 0.6, 0], c1: [0.7, 0.7, 0.7, 0], drag: 2.2, maxScreen: 0.2, kind: 'smoke',
+      });
+    }
+    audio?.fire?.(useKey === 'vx' ? 'm' : key, { guided: useKey === 'vx' });
+    recoil(fxDef, key);
+    return true;
+  }
+
+  // ── ?fv=2 per-step simulation ───────────────────────────────────────────
+  const _b = new THREE.Vector3();
+  const _look = new THREE.Vector3();
+  const _axis = { x: 0, y: 0, z: 0 };
+  const _mid = { x: 0, y: 0, z: 0 };
+  const hexRgb = hex => [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255];
+  const TRACER_COLORS = {};
+  const tracerColors = def => (TRACER_COLORS[def.core + def.edge] ||= { core: hexRgb(def.core), edge: hexRgb(def.edge) });
+
+  function updateBulletsV2(dt, hittables) {
+    for (let i = S.bullets.length - 1; i >= 0; i--) {
+      const B = S.bullets[i];
+      if (B.evicted) { S.bullets.splice(i, 1); continue; }
+      B.t += dt;
+      _from.copy(B.pos);
+      _to.copy(_from);
+      ballisticStep(_to, B.vel, B.gravity, dt);          // exact: drop = ½·g·t², same as the pipper
+      const collision = projectileHit(_from, _to, 0, hittables);
+      const endP = collision?.point || _to;
+      if (B.tracer) {
+        const def = B.tracerDef;
+        const speed = B.vel.length();
+        const len = Math.max(def.length, speed * dt * 1.15);
+        _b.copy(B.vel).multiplyScalar(len / Math.max(speed, 1e-6));
+        _axis.x = _b.x; _axis.y = _b.y; _axis.z = _b.z;
+        const vf = B.off ? visualFade(endP, B.origin) : 0;
+        _mid.x = endP.x - _b.x * 0.5; _mid.y = endP.y - _b.y * 0.5; _mid.z = endP.z - _b.z * 0.5;
+        if (vf > 0) { _mid.x += B.off.x * vf; _mid.y += B.off.y * vf; _mid.z += B.off.z * vf; }
+        const col = tracerColors(def);
+        fxs.quad({ mode: 'streak', pos: _mid, axis: _axis, width: def.width * 3.2, cell: 'streak', minLen: 30, minW: 5,
+          color: [col.edge[0] * 1.6, col.edge[1] * 1.6, col.edge[2] * 1.6, 0.6 * def.alpha] });
+        fxs.quad({ mode: 'streak', pos: _mid, axis: _axis, width: def.width, cell: 'streak', minLen: 26, minW: 2.4,
+          color: [col.core[0] * 2.6, col.core[1] * 2.6, col.core[2] * 2.6, def.alpha] });
+      }
+      B.pos.copy(endP);
+      const bulletNear = (getCameraPosition?.() || B.pos).distanceTo(B.pos) < 90;
+      S.lod[bulletNear ? 'near' : 'far'] += 1;
+      let dead = B.t > 2.2;
+      if (collision) {
+        dead = true;
+        recordImpact(collision);
+        const nn = { x: collision.normal.x, y: collision.normal.y, z: collision.normal.z };
+        const pp = { x: endP.x, y: endP.y, z: endP.z };
+        if (collision.kind === 'target') {
+          damageTarget(collision.target, B.damage, endP.clone ? endP.clone() : new THREE.Vector3(endP.x, endP.y, endP.z), false, collision, B.key);
+        }
+        const surf = surfaceOf(collision);
+        const heavy = B.key === 'ac';
+        fxs.impact(surf, { pos: pp, normal: nn, heavy });
+        if (collision.kind !== 'target') {
+          const range = WEAPON_FX[B.key].impact.decal;
+          const size = range[0] + Math.random() * (range[1] - range[0]);
+          fxs.spawnDecal({
+            pos: { x: pp.x + nn.x * 0.03, y: pp.y + nn.y * 0.03, z: pp.z + nn.z * 0.03 }, normal: nn, size, life: 8,
+            cell: surf === 'ground' ? 'scorch' : 'hole', c0: [0.05, 0.05, 0.05, 0.75], rot: Math.random() * 6.28,
+          });
+        }
+        audio?.impact?.(surf, { pos: pp, weapon: B.key });
+        const surface = impactTransform(collision, 0.018);
+        S.impactEvidence = { kind: collision.kind, point: surface.position, normal: surface.normal };
+      }
+      if (dead) { releaseEffect(B); S.bullets.splice(i, 1); }
+    }
+  }
+
+  const _steerDir = new THREE.Vector3();
+  function updateMissilesV2(dt, hittables) {
+    for (let i = S.missiles.length - 1; i >= 0; i--) {
+      const M = S.missiles[i];
+      M.t += dt;
+      _from.copy(M.pos);
+      const turn = M.kind === 'guided' ? M.profile.turnRate : M.homing;
+      if (turn && activeTarget(M.guidanceTarget)) {
+        const targetPoint = M.guidanceTarget.center;
+        if (isGuidanceTargetVisible(_from, targetPoint, (a, b, r) => world?.castSegment?.(a, b, r), M.guidanceTarget.node || M.guidanceTarget.g)) {
+          _steerDir.set(targetPoint.x - _from.x, targetPoint.y - _from.y, targetPoint.z - _from.z).normalize();
+          const steered = steerVector(M.dir, _steerDir, turn, dt);
+          M.dir.set(steered.x, steered.y, steered.z);
+          M.fall *= Math.exp(-3.5 * dt);                 // the seeker flies level: sag is corrected
+        }
+      }
+      if (M.kind === 'bomb') {
+        M.vel.y -= M.gravity * dt;
+        _to.copy(_from).addScaledVector(M.vel, dt);
+        _to.y -= 0.5 * M.gravity * dt * dt;
+      } else {
+        const speed = M.t < 0.6 ? M.full * (0.25 + (M.t / 0.6) * 0.75) : M.full;
+        M.fall -= M.gravity * dt;                        // accumulates: no longer overwritten each step
+        M.vel.copy(M.dir).multiplyScalar(speed);
+        M.vel.y += M.fall;
+        _to.copy(_from).addScaledVector(M.vel, dt);
+      }
+      const collision = projectileHit(_from, _to, M.radius, hittables, M.proximity);
+      M.pos.copy(collision?.point || _to);
+      const vf = M.off ? visualFade(M.pos, M.origin) : 0;
+      if (vf > 0) M.body.position.copy(M.pos).addScaledVector(M.off, vf); else M.body.position.copy(M.pos);
+      _look.copy(M.body.position).add(M.vel);
+      M.body.lookAt(_look);
+      M.body.rotateZ(M.t * (M.kind === 'bomb' ? 1.4 : 7));
+      const pos = M.body.position;
+      const nozzle = M.length * 0.52;
+      const vdir = _b.copy(M.vel).normalize();
+      const missileNear = (getCameraPosition?.() || pos).distanceTo(pos) < 110;
+      S.lod[missileNear ? 'near' : 'far'] += 1;
+      // engine flare + flame (immediate additive quads)
+      const flick = 0.8 + Math.random() * 0.4;
+      const fxDef = fxOf(M.key);
+      if (M.kind !== 'bomb') {
+        const fs = (fxDef.flare || 0.4) * flick;
+        _mid.x = pos.x - vdir.x * nozzle; _mid.y = pos.y - vdir.y * nozzle; _mid.z = pos.z - vdir.z * nozzle;
+        fxs.quad({ mode: 'billboard', pos: _mid, size: fs, cell: 'glow', color: [2.0, 1.25, 0.55, 0.95], maxScreen: 0.12 });
+        _axis.x = -vdir.x * M.length * 0.9; _axis.y = -vdir.y * M.length * 0.9; _axis.z = -vdir.z * M.length * 0.9;
+        const flameMid = { x: _mid.x + _axis.x * 0.5, y: _mid.y + _axis.y * 0.5, z: _mid.z + _axis.z * 0.5 };
+        fxs.quad({ mode: 'streak', pos: flameMid, axis: { x: -_axis.x, y: -_axis.y, z: -_axis.z }, width: fs * 0.55, cell: 'streak', minLen: 16, minW: 3, color: [1.8, 0.9, 0.35, 0.85] });
+      } else {
+        _mid.x = pos.x; _mid.y = pos.y; _mid.z = pos.z;
+        fxs.quad({ mode: 'billboard', pos: _mid, size: 2.2 * flick, cell: 'glow', color: [1.3, 0.75, 0.3, 0.22], maxScreen: 0.25 });   // heat shimmer halo
+      }
+      // smoke trail: pooled puffs, rate*life <= the weapon's puff budget
+      const trailDef = fxDef.trail;
+      if (trailDef) {
+        M.trail += dt;
+        const interval = trailDef.life / trailDef.puffs;
+        while (M.trail >= interval) {
+          M.trail -= interval;
+          fxs.sink.sprite({
+            pos: { x: pos.x - vdir.x * nozzle, y: pos.y - vdir.y * nozzle, z: pos.z - vdir.z * nozzle },
+            vel: { x: (Math.random() - 0.5) * 0.5, y: 0.5 + Math.random() * 0.5, z: (Math.random() - 0.5) * 0.5 },
+            size0: trailDef.size * 0.3, size1: trailDef.size, life: trailDef.life * (0.85 + Math.random() * 0.3),
+            cell: Math.random() < 0.5 ? 'smokeA' : 'smokeB', layer: 'norm', c0: [0.55, 0.54, 0.52, 0], c1: [0.62, 0.61, 0.6, 0],
+            rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.8, drag: 1.4, buoy: 0.3, maxScreen: 0.3, kind: 'trail', peak: 0.42,
+          });
+        }
+      }
+      let hit = M.t > 6;
+      if (collision) {
+        hit = true;
+        recordImpact(collision);
+        if (collision.kind === 'target') {
+          damageTarget(collision.target, M.damage, M.pos.clone(), true, collision, M.weapon || M.key);
+        }
+      }
+      if (hit) {
+        disposeMissile(M);
+        S.missiles.splice(i, 1);
+        explode(collision || M.pos.clone(), M.big || 1.25, M.profile, { weapon: M.weapon || M.key, targetHit: collision?.kind === 'target' });
+      }
+    }
+  }
 
   return {
     state: S,
@@ -676,6 +1185,7 @@ export function createWeapons(scene, {
         ? legacyDirection
         : new THREE.Vector3(aimVector.x, aimVector.y, aimVector.z);
       if (!legacyAim && aim?.direction) direction.set(aim.direction.x, aim.direction.y, aim.direction.z).normalize();
+      if (V2 && !legacyAim) return fireV2(W2, source, direction, aim);
       if (W2.kind === 'swarm') {
         if (!createLaunchSchedule(
           S.schedules,
@@ -731,6 +1241,32 @@ export function createWeapons(scene, {
       S.cool = Math.max(0, S.cool - dt);
       S.lod.near = 0;
       S.lod.far = 0;
+      if (V2) {
+        S.lastHittables = hittables || [];
+        S.burstT = Math.max(0, S.burstT - dt);
+        if (S.burstT === 0) S.burst = 0;
+        for (const k of Object.keys(S.heat)) {
+          S.heat[k] = Math.max(0, S.heat[k] - WEAPON_FX[k].heat.cool * dt * (S.overheat > 0 ? 0.35 : 1));
+        }
+        if (S.overheat > 0) {
+          S.overheat = Math.max(0, S.overheat - dt);
+          if (S.overheat === 0) { for (const k of Object.keys(S.heat)) S.heat[k] = Math.min(S.heat[k], 0.5); events?.overheat?.({ weapon: null, cleared: true }); }
+        }
+        S.charge = null;
+        for (let c = S.charges.length - 1; c >= 0; c--) {
+          const ch = S.charges[c];
+          ch.t += dt;
+          const progress = Math.min(1, ch.t / ch.dur);
+          S.charge = { weapon: ch.key, progress, dur: ch.dur };
+          const at = getMuzzle?.() || ch.source;
+          const rail = ch.key === 'rg';
+          fxs.quad({
+            mode: 'billboard', pos: { x: at.x, y: at.y, z: at.z }, size: 0.08 + progress * (rail ? 0.55 : 0.4), cell: rail ? 'glow' : 'flare',
+            color: rail ? [0.8 + progress, 1.6, 2.4, 0.5 + progress * 0.5] : [2.2, 1.0 + progress * 0.4, 0.4, 0.4 + progress * 0.5], maxScreen: 0.1,
+          });
+          if (ch.t >= ch.dur) { S.charges.splice(c, 1); launchCharged(ch); }
+        }
+      }
       for (let i = S.booms.length - 1; i >= 0; i--) {   // detonaciones encadenadas
         S.booms[i].t -= dt;
         if (S.booms[i].t <= 0) { const b = S.booms.splice(i, 1)[0]; explode(b.p.clone(), b.big); }
@@ -747,8 +1283,24 @@ export function createWeapons(scene, {
         const direction = event.aim.aimPoint.clone().sub(origin).normalize();
         direction.x += (column - 1.5) * 0.006;
         direction.y += (row - 0.5) * 0.005;
+        if (V2) {
+          // each rocket takes the next locked target (round-robin) and homes gently on it
+          const list = event.aim.targets;
+          const target = list?.length ? list[event.index % list.length] : null;
+          const aim = { ...event.aim, target, weaponKey: event.key };
+          spawnMissileV2(event.key, origin, direction.normalize(), aim, event.index);
+          fxs.muzzle({ pos: origin.clone().addScaledVector(direction, 0.4), dir: direction, size: 0.25, life: 0.06 });
+          audio?.fire?.('sw', { index: event.index });
+          const fxDef = WEAPON_FX.sw;
+          events?.shake?.({ tier: fxDef.shake.tier, trauma: fxDef.shake.trauma * 0.6, pos: null, weapon: 'sw', ceiling: 0.10 });
+          return;
+        }
         spawnMissile(event.key, origin, direction.normalize(), event.aim);
       });
+      if (V2) {
+        updateBulletsV2(dt, hittables);
+        updateMissilesV2(dt, hittables);
+      } else {
       // ── balas MG: tracer balístico + impacto con daño acumulativo ──
       for (let i = S.bullets.length - 1; i >= 0; i--) {
         const B = S.bullets[i];
@@ -860,6 +1412,7 @@ export function createWeapons(scene, {
           explode(collision || p.clone(), M.big || 1.25, M.profile);
         }
       }
+      }
       // ── partículas ──
       for (let i = S.parts.length - 1; i >= 0; i--) {
         const P = S.parts[i];
@@ -918,6 +1471,20 @@ export function createWeapons(scene, {
       for (let i = S.fires.length - 1; i >= 0; i--) {
         const F = S.fires[i];
         if (F.evicted) { S.fires.splice(i, 1); continue; }
+        if (F.v2) {                                  // smouldering: a few smoke wisps + ember glints, no light
+          F.t += dt; F.acc += dt;
+          if (F.t < F.life && F.acc > 0.28) {
+            F.acc = 0;
+            const a = Math.random() * 6.28; const r = Math.random() * 1.6;
+            fxs.sink.sprite({
+              pos: { x: F.p.x + Math.cos(a) * r, y: F.p.y + 0.2, z: F.p.z + Math.sin(a) * r }, vel: { x: 0, y: 1.6, z: 0 },
+              size0: 0.4, size1: 1.6, life: 1.4, cell: 'smokeA', layer: 'norm', c0: [0.4, 0.39, 0.38, 0], c1: [0.5, 0.49, 0.48, 0],
+              rot: Math.random() * 6, drag: 0.8, buoy: 0.5, maxScreen: 0.3, kind: 'smoke', peak: 0.3,
+            });
+          }
+          if (F.t >= F.life) { releaseEffect(F); S.fires.splice(i, 1); }
+          continue;
+        }
         F.t += dt; F.acc += dt;
         if (F.light) F.light.intensity = Math.max(0, 14 * (1 - F.t / F.life)) * (0.75 + Math.random() * 0.5);
         if (F.t < F.life && F.acc > 0.09) {
@@ -963,9 +1530,12 @@ export function createWeapons(scene, {
           S.frags.splice(i, 1);
         }
       }
-      effects.update(dt, getCameraPosition?.() || null);
+      if (V2) fxs.update(dt, cameraRef?.(), viewportHeight?.());
+      else effects.update(dt, getCameraPosition?.() || null);
     },
     effects,
+    fxs,
+    v2: V2,
     dispose: disposeWeapons,
   };
 }

@@ -176,3 +176,10 @@ class GateLifecycle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HeadlessChromeIsSilentTests(unittest.TestCase):
+    def test_launch_args_mute_audio(self):
+        # the owner listens to audio while agents test; game sounds must never leak (2026-09-30)
+        src = Path(__file__).with_name("browser_gate.py").read_text()
+        self.assertIn('"--mute-audio"', src)

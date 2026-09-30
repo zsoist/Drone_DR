@@ -1,8 +1,7 @@
 # AeroBrain Flightverse — Physics v2
 
-Status: stages S0 (+ the pure parts of S2/S3/S4) are implemented as standalone
-modules under `web/flightverse/physics/`. **Nothing in the live game imports them yet.**
-Integration is stage S1 (below).
+Status: S0-S4 are implemented and **wired into the game behind `?fv=2` (or `?phys=v2`)**, see section 10.
+Without the flag the game runs the legacy integrator exactly as before.
 
 ```
 web/flightverse/physics/
@@ -12,6 +11,9 @@ web/flightverse/physics/
   aero.js      ground / ceiling / wall effect, VRS, battery sag, environment probe (injected rayDist)
   contact.js   impulse contact solver, energy classes, damage, respawn snapshot, vegetation drag
   rng.js       mulberry32 + gaussian (seeded, copyable state)
+  sim.js       game-side simulation (WS C): stick mapping, 30 Hz probes, wind, sweep/recover collision + contact, crash/respawn
+  vegetation-field.js  soft-drag density from scatter.json (same rows/cap as vegetation.js)
+  index.js     barrel: runtime.js imports this one file (single module instance)
 pipeline/test_physics_{quad,wind,contact,perf}.mjs   (node --test)
 ```
 
@@ -205,3 +207,46 @@ correlation, cache, seeds, shelter, canyon/updraft.
 energy classes, prop strike, tumble, snapshot, vegetation.
 `test_physics_perf.mjs` (6): bit-identical determinism, chunk independence, no-alloc source + heap tests, probe, speed
 (~0.85 us/step, 7200 steps in ~6 ms).
+
+
+## 10. What is wired (WS C, `?fv=2` / `?phys=v2`)
+
+**Files.** `physics/sim.js` (pure), `runtime.js` (`createDrone().attachV2`, `stepV2`, `lerpPose`), `input/physics-link.js`
+(builds the sim per world, profile / wind from context, bus + `ctx.phys`), `input/bindings.js` (samples, times the step).
+The fixed 120 Hz step of `createLoop` calls `drone.step` -> `sim.step`; the render interpolates `prev.quat -> quat` (slerp)
+so the drone banks and pitches for real. Dios (noclip), Arcade (autopilot) and Cinematico keep their old code; any external
+move of `drone.pos/yaw` (Gate Rush fly-in, autopilot, replay, director) re-seeds the sim on the next Normal step.
+
+**Mode -> profile.** `asistido` (Normal/Explorar) = `normal` (30 deg, ~10 m/s). `cine` only by user choice
+(`controls.physics.setProfile('cine')`, `?perfil=cine`, persisted `ab.fv.profile`). `sport` automatically while Gate Rush
+Dificil is running or Invasion is on. Gate Rush Facil/Media = normal. Boost = +30 % tilt, +35 % stick speed, smoothed 0.25 s.
+
+**Air.** `rho/rho0` from `man.world.elev_min + 12 m` via ISA (Bogota 0.74-0.77). Wind: power law saturating at 60 m AGL,
+Dryden turbulence, urban shelter through `collision.groundHeight`; presets are scaled by `windGain` 0.5 (Brisa flyable upwind).
+Sky -> wind: dia/atardecer = breezy, noche = calm, sport contexts = gusty; explicit choice (`ui.prefs.windPreset` calmo/racheado,
+`?viento=`, `controls.physics.setWind`) wins. Prevailing direction toward 2.75 rad (from ENE).
+
+**Collision.** The game's own sweep/recover (radii 0.59 structure/boundary, 1.2 terrain) still decides *where* the drone may be
+(3 slide iterations + MIN_AGL lift, no tunnelling: 120 random fast runs at a 0.3 m wall in `test_physics_integration.mjs`).
+`resolveContact` then decides *how* it reacts. Because the world collider is a sphere, the contact acts through the centre
+(`P.contactLever`, new in contact.js) and only crash-level hits (closing speed >= ~5 m/s) use the box corner and tumble.
+Damage is once per touch (0.3 s cooldown), resting/scraping is free, firm landings cost 2 %, invulnerable = no consequences.
+Ray adapters (`sim.rayDist`) over `castSegment` feed ground / ceiling / wall effect at 30 Hz (surface offsets subtracted).
+
+**Crash -> respawn.** crash class (> 3 J) cuts the motors, the body tumbles, `crash` event, wreck camera 0.8 s, fade, respawn
+at `0.9 s` from the newest stable snapshot (ring of 12 x 0.5 s, >= 1.5 s old, hover preferred) with integrity 100 %,
+invulnerability 1.75 s (mesh flickers 8 Hz .4/1). Tap during the wreck camera skips (>= 0.3 s).
+
+**Vegetation.** `scatter.json` rows -> spatial hash (6 m cells); inside a canopy `vegetationDrag` (no impulse, no damage).
+
+**Outputs** (`ctx.phys` === `window.__volar.physics`, refreshed every render frame): `active, profile, altM, densityRatio,
+wind{x,y,z,speed,gust,fromDeg,relDeg,preset,shelter}, attitude{rollDeg,pitchDeg,yawDeg,tiltDeg}, battery, integrity (0-100),
+motors[4], vrs, groundEffect, boost, invuln, agl, crash{active,phase('wreck'|'fade'),t,count,x,y,z}, impact{name,energy,speed,t,n},
+vegetation, stats{steps,contacts,bumps,crashes,respawns,nonFinite,collisionFailures,embedded,probes}, stepUs`.
+Bus: `crash{energyClass:'bounce'|'wobble'|'prop'|'crash',energy,speed,integrity,pos,normal}` (debounced 120 ms per class),
+`damage{amount,dir,source:'impact',integrity}`, `respawn{invulnerable,x,y,z,yaw}`.
+
+**Measured.** ~40-50 us per fixed step in the browser (probes + sweeps included), 0.007 ms/step in node; 7200 steps < 100 ms.
+Tests: `test_physics_integration.mjs` (hover, wind hold, crash->respawn, determinism across frame pacing, tunnelling, stuck,
+landing, teleport re-seed, vegetation), `test_fv_controls.mjs`, `test_fv_camera.mjs`. Gate: `pipeline/flightverse_collision_gate.py
+<cid> --stress 100 --fv2` (adds physics validators and a 24 s real-keyboard flight stress) or `--both`.
