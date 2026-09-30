@@ -158,6 +158,54 @@ SPLAT_PRESETS = {
             ],
         },
     },
+    # W2 (docs/SPLAT_EXPERIMENTS.md, 2026-09-29): gsplat MCMC densification with a hard Gaussian
+    # cap. Opt-in only (never a default, never resolved from a bare iteration count).
+    "mcmc1m": {
+        "iters": 15000,
+        "label": "MCMC 1M (15K)",
+        "eta_mps": "CUDA only",
+        "eta_cpu": "CUDA only",
+        "eta_cuda": "~37 min, ~2.7 GB VRAM (Dialectica, RTX 4060 Ti)",
+        "description": "MCMC densification capped at 1M Gaussians: better PSNR/LPIPS than Ultra 15K "
+                       "with ~40% fewer Gaussians and a smaller SOG.",
+        "timeout": 8 * 3600,
+        "select_only": True,
+        "train_args": [],
+        "supported_backends": ("cuda",),
+        "default_backend": "cuda",
+        "cuda": {
+            "resolution": "auto",
+            "strict": True,
+            "train_args": [
+                "--pipeline.model.cap-max", "1000000",
+                "--pipeline.model.sh-degree", "0",
+                "--pipeline.model.stop-split-at", "12500",
+            ],
+        },
+    },
+    "mcmc3m": {
+        "iters": 15000,
+        "label": "MCMC 3M (15K)",
+        "eta_mps": "CUDA only",
+        "eta_cpu": "CUDA only",
+        "eta_cuda": "~53 min, ~4.8 GB VRAM (Dialectica, RTX 4060 Ti)",
+        "description": "MCMC densification capped at 3M Gaussians: highest measured quality on 8 GB "
+                       "(+1.4 dB vs Ultra 15K) at the cost of a ~50% larger SOG.",
+        "timeout": 10 * 3600,
+        "select_only": True,
+        "train_args": [],
+        "supported_backends": ("cuda",),
+        "default_backend": "cuda",
+        "cuda": {
+            "resolution": "auto",
+            "strict": True,
+            "train_args": [
+                "--pipeline.model.cap-max", "3000000",
+                "--pipeline.model.sh-degree", "0",
+                "--pipeline.model.stop-split-at", "12500",
+            ],
+        },
+    },
 }
 
 _ALIASES = {
@@ -182,6 +230,9 @@ _ALIASES = {
     "grandmaster40": "grandmaster",
     "grandmaster40k": "grandmaster",
     "40k": "grandmaster",
+    "mcmc": "mcmc1m",
+    "mcmc-1m": "mcmc1m",
+    "mcmc-3m": "mcmc3m",
 }
 
 _BACKEND_ALIASES = {
@@ -216,7 +267,7 @@ def resolve_splat_spec(spec: dict | None) -> dict:
     except (TypeError, ValueError):
         iters = SPLAT_PRESETS["medium"]["iters"]
 
-    by_iters = {v["iters"]: k for k, v in SPLAT_PRESETS.items()}
+    by_iters = {v["iters"]: k for k, v in SPLAT_PRESETS.items() if not v.get("select_only")}
     if iters in by_iters:
         key = by_iters[iters]
         return {"key": key, **SPLAT_PRESETS[key]}

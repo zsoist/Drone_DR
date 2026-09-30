@@ -320,3 +320,72 @@ pose GLOBAL de la fusión, no con una fuente mala. Estado: firma de ojo n=1
 peso honesto (no es un delta medido de pose; medirse requeriría re-optimización
 de poses, que es... el lever bloqueado). Nota case study 2ª ed: "el negativo
 barato es el producto final de la infraestructura cara" (línea del review).
+
+## W2 - CUDA baseline + MCMC (Gaussian cap) A/B on Dialectica (2026-09-29)
+
+Plan: `docs/WORLD_UPGRADE_PLAN.md` W2. First **CUDA** baseline (the sections above are the frozen Mac/OpenSplat
+baseline on other scenes and are not comparable), then gsplat MCMC with a cap. All on the PC RTX 4060 Ti 8 GB.
+
+**Setup (identical for every arm).** Scene `recon_4e4245a1f4_aoi130` = 428 frames 3072x1728, OpenSfM->COLMAP export as
+shipped by the worker (`opensfm/colmap_export` of the parent project `proj_recon_4e4245a1f4`; the aoi130 project carries
+a byte-identical `images.txt` and identical shots but no images). `prep_dataset` FULL_OPENCV->OPENCV as in production.
+Held-out split = nerfstudio colmap default `eval-mode interval, eval-interval 8` (54 eval / 374 train views; the same
+split for all arms, and what production trains with anyway). 15,000 iterations, input `d1` (full res), image cache on CPU
+(production `image_cache_policy`). Env: nerfstudio 1.1.5, gsplat 1.4.0+pt24cu124, torch 2.4.1+cu124, driver 610.74.
+Metrics: nerfstudio's own PSNR / SSIM / LPIPS(alex) via `model.get_image_metrics_and_images` on the raw (pre auto-clean)
+model at full res, same script for every arm (`experiments/w2-mcmc-2026-09-29/lib/w2_eval.py`). Size = production chain:
+`ply_to_splat` -> `autoclean.mjs --preset aerial` -> `splat-transform` SOG.
+
+**Trainer.** The installed splatfacto hardcodes `DefaultStrategy` (no `strategy=mcmc`, no cap; it does expose
+`rasterize_mode=antialiased` and `use_bilateral_grid`). Instead of adding gsplat's `simple_trainer.py` (different data
+path/undistort/metrics = confounded A/B) `pipeline/splatfacto_mcmc.py` subclasses splatfacto with `gsplat.MCMCStrategy`,
+using gsplat's `simple_trainer mcmc` recipe (init opacity 0.5, init scale x0.1, opacity/scale reg 0.01, noise_lr 5e5,
+min opacity 0.005, +5%/refine step up to the cap, refine 500..12,500). Same dataparser, losses, optimizers, LR schedule
+and export as the baseline; only the densification strategy changes. Nothing in the installed env is modified.
+
+| arm | flags (on top of `--max-num-iterations 15000 ... colmap ... --downscale-factor 1`) |
+|---|---|
+| base | `ns-train splatfacto --pipeline.model.sh-degree 0 --pipeline.model.stop-split-at 15000` (= gpu_lane `_cuda_config`) |
+| mcmc1m | `splatfacto-mcmc --pipeline.model.cap-max 1000000 --pipeline.model.sh-degree 0 --pipeline.model.stop-split-at 12500` |
+| mcmc3m | same, `--pipeline.model.cap-max 3000000` |
+
+Results (54 held-out views; PSNR/SSIM/LPIPS mean; SOG = after auto-clean):
+
+| arm | PSNR | SSIM | LPIPS | Gaussians (trainer / after clean) | peak VRAM (nvidia-smi) | train | .splat clean | SOG clean |
+|---|---|---|---|---|---|---|---|---|
+| base (Ultra-15K recipe) | 21.21 | 0.685 | 0.339 | 1.68M / 1.48M | 6.2 GB | 33.4 min | 47.5 MB | 18.4 MB |
+| mcmc1m (default allocator) | 21.82 | 0.697 | 0.326 | 1.00M / 0.83M | **7.9 GB** | 35.7 min | 26.5 MB | 10.6 MB |
+| mcmc1m + expandable_segments | 21.76 | 0.696 | 0.327 | 1.00M / 0.83M | **2.7 GB** | 36.6 min | 26.5 MB | 10.6 MB |
+| mcmc3m (default allocator) | stalled | | | 3M | 7.9 GB, thrashing 6 s/iter at step 12.5K; killed. Ckpt@12K only: 22.19 / 0.717 / 0.294 | | | | |
+| mcmc3m + expandable_segments | **22.61** | **0.734** | **0.270** | 3.00M / 2.23M | 4.8 GB | 53.4 min | 71.3 MB | 27.9 MB |
+
+Findings.
+- MCMC beats the baseline on every quality metric at the same iterations: 1M cap = +0.55-0.61 dB PSNR, LPIPS -0.012, with
+  40% fewer Gaussians and a **42% smaller SOG**; 3M cap = +1.40 dB, SSIM +0.05, LPIPS -0.069 (-20%) but a 52% larger SOG.
+- The 7.9 GB peaks with the default allocator are fragmentation from the cap-growth reallocations, not live tensors:
+  `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` gives the same quality at 2.7 GB (1M) / 4.8 GB (3M). The MCMC
+  launcher now always sets it. Without it 3M is unusable on 8 GB.
+- Eye check (GT | base | mcmc, `scratchpad/worlds/w2/sxs_*.jpg`, eval views 2,9,16,23,30,37,44,51): MCMC has crisper
+  facade mullions / roof-garden texture and sharper edges; base is softer. No visible floaters or sky problems in any
+  arm; trees stay soft in all; moving cars are absent in all (dynamic objects).
+- Caveats: single scene, single seed; metrics are on the raw model, not the cleaned/SOG one; 15K iterations with the
+  stock LR schedule (means LR decays over 30K in splatfacto's method config), so absolute numbers are below a 30K run;
+  baseline peak includes WDDM/other-process memory. Arm (d) (antialiased / bilateral grid / SH>0) was **not run**:
+  antialiased PLYs are not compatible with the classic-mode web viewer and SH is dropped by the `.splat`/SOG chain, so
+  neither could transfer to the product. Not verified: rural scene, d2 fallback of an MCMC preset.
+- Verdict: MCMC wins. `mcmc1m` is the "better and smaller" option (wins PSNR, LPIPS and SOG size); `mcmc3m` is the quality
+  tier (best metrics, larger SOG, fits in 4.8 GB). Presets `mcmc1m`, `mcmc3m` added, opt-in (`select_only`; never
+  resolved from a bare `iters`, never default). Decision to promote pending a rural scene.
+
+Reproduce (Mac; artifacts in `/Volumes/SSD/drone-vault/experiments/w2-mcmc-2026-09-29/`, WSL scratch
+`/root/gpu-jobs/experiments/w2/` removed afterwards):
+```
+python3 w2_run.py base 15000
+python3 w2_run.py mcmc1m-es 15000 --mcmc 1000000 --alloc expandable_segments:True
+python3 w2_run.py mcmc3m-es 15000 --mcmc 3000000 --alloc expandable_segments:True
+python3 w2_chain.py <arm>            # ply -> .splat -> autoclean(aerial) -> SOG sizes
+./w2_pull_renders.sh <arm> && python3 w2_montage.py 16,44 base,mcmc1m-es,mcmc3m-es
+```
+`w2_run.py` builds the script with `gpu_lane.train_script` (paths rebased to the sandbox), then runs eval + `ns-export`.
+Use in production: `{"preset": "mcmc1m"}` (train_args carry `--pipeline.model.cap-max`, which makes `gpu_lane` launch
+`splatfacto_mcmc` and ship the module to `/root/gpu-jobs/lib`; `finalize_train` exports either method).

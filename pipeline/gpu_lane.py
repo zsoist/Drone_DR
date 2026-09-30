@@ -45,6 +45,12 @@ REMOTE_JOBS = "/root/gpu-jobs"
 REMOTE_DATA = f"{REMOTE_JOBS}/data"
 REMOTE_RUNS = f"{REMOTE_JOBS}/runs"
 REMOTE_CHECKPOINTS = f"{REMOTE_JOBS}/checkpoints"
+# W2: MCMC densification trainer (gsplat MCMCStrategy + cap) shipped as a tiny module next to
+# the env; selected purely by a train_args marker so worker/presets need no other switch.
+REMOTE_LIB = f"{REMOTE_JOBS}/lib"
+MCMC_METHOD = "splatfacto-mcmc"
+MCMC_MODULE_FILE = Path(__file__).resolve().parent / "splatfacto_mcmc.py"
+MCMC_CAP_FLAG = "--pipeline.model.cap-max"
 NERFSTUDIO_FULL_IMAGE_MANAGER = (
     f"{REMOTE_JOBS}/splat-env/lib/python3.10/site-packages/nerfstudio/"
     "data/datamanagers/full_images_datamanager.py"
@@ -455,6 +461,11 @@ echo "CHECKPOINT step=$STEP bytes=$BYTES sha256=$SHA path=$DST"
             "sha256": fields["sha256"], "path": path}
 
 
+def trainer_for_args(train_args: list[str] | tuple[str, ...] | None) -> str:
+    """Nerfstudio method for these trainer args: MCMC iff a Gaussian cap is requested."""
+    return MCMC_METHOD if MCMC_CAP_FLAG in [str(a) for a in (train_args or ())] else "splatfacto"
+
+
 def train_script_path(name: str) -> str:
     name = _safe_name(name)
     return f"{REMOTE_RUNS}/.scripts/train-{name}.sh"
@@ -478,6 +489,15 @@ def train_script(name: str, iters: int, downscale: int, run_id: str,
     extra = " ".join(shlex.quote(str(value)) for value in (train_args or ()))
     checkpoint = validate_resume_checkpoint(resume_checkpoint)
     resume = f"--load-checkpoint {shlex.quote(checkpoint)}" if checkpoint else ""
+    if trainer_for_args(train_args) == MCMC_METHOD:
+        # -c (not -m): the config.yml must record the importable module name, not __main__
+        # expandable_segments: measured W2 - same quality, peak VRAM 7.9 GB -> 2.7 GB at a 1M cap
+        # (allocator fragmentation from the cap-growth reallocations, not live tensors)
+        launcher = (f'env PYTHONPATH={REMOTE_LIB} PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True '
+                    '"$VIRTUAL_ENV/bin/python" '
+                    f'-c "import splatfacto_mcmc; splatfacto_mcmc.main()" {MCMC_METHOD}')
+    else:
+        launcher = '"$VIRTUAL_ENV/bin/ns-train" splatfacto'
     telemetry = f"{REMOTE_RUNS}/telemetry-{name}.csv"
     return f"""#!/usr/bin/env bash
 set -e
@@ -504,7 +524,7 @@ cleanup_monitor() {{
 }}
 trap cleanup_monitor EXIT
 set +e
-yes | "$VIRTUAL_ENV/bin/ns-train" splatfacto \
+yes | {launcher} \
   --data {REMOTE_DATA}/{name} --output-dir {REMOTE_RUNS} \
   --experiment-name {name} --timestamp {run_id} \
   --viewer.quit-on-train-completion True --max-num-iterations {iters} \
@@ -528,8 +548,14 @@ def install_train_script(name: str, iters: int, downscale: int, run_id: str,
         train_script(name, iters, downscale, run_id, train_args,
                      resume_checkpoint=resume_checkpoint).encode()
     ).decode()
+    module = ""
+    if trainer_for_args(train_args) == MCMC_METHOD:
+        module_b64 = base64.b64encode(MCMC_MODULE_FILE.read_bytes()).decode()
+        module = (f"mkdir -p {REMOTE_LIB}\n"
+                  f"printf %s {shlex.quote(module_b64)} | base64 -d > {REMOTE_LIB}/splatfacto_mcmc.py\n")
     _wsl(
         f"mkdir -p {REMOTE_RUNS}/.scripts\n"
+        f"{module}"
         f"printf %s {shlex.quote(encoded)} | base64 -d > {path}\n"
         f"chmod 700 {path}\n",
         timeout=60, label="instalar script CUDA",
@@ -578,7 +604,12 @@ def finalize_train(name: str, run_id: str) -> dict:
     run_id = _safe_name(run_id)
     out = _wsl(REMOTE_PRELUDE + f"""
 CFG={REMOTE_RUNS}/{name}/splatfacto/{run_id}/config.yml
+if [ -f "$CFG" ]; then
 ns-export gaussian-splat --load-config "$CFG" --output-dir {REMOTE_RUNS}/{name}/export >/dev/null 2>&1
+else
+CFG={REMOTE_RUNS}/{name}/{MCMC_METHOD}/{run_id}/config.yml
+PYTHONPATH={REMOTE_LIB} python -c "import splatfacto_mcmc; splatfacto_mcmc.export()" gaussian-splat --load-config "$CFG" --output-dir {REMOTE_RUNS}/{name}/export >/dev/null 2>&1
+fi
 mkdir -p {WSL_TRANSFER}
 cp {REMOTE_RUNS}/{name}/export/splat.ply {WSL_TRANSFER}/out-{name}.ply
 cp "$CFG" {WSL_TRANSFER}/out-{name}.yml

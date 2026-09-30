@@ -27,6 +27,7 @@
 | ultra20 | 20000 | CUDA estricto · refinamiento post-densificación |
 | frontier | 30000 | CUDA estricto · schedule completo (default interactivo) |
 | grandmaster | 40000 | CUDA estricto · campaña máxima |
+| mcmc1m / mcmc3m | 15000 | opt-in (W2): splatfacto + MCMC con tope de 1M / 3M gaussianas; ver SPLAT_EXPERIMENTS.md |
 
 Fast/Medium aceptan Metal/CPU (sólo `AEROBRAIN_COMPUTE=local`, legacy) o CUDA; bajo PC-only van a CUDA. Los otros cinco sólo aceptan CUDA. En CUDA,
 `auto = d1 → d2 únicamente por OOM clasificado`; `full = d1`; `half = d2`. Nunca existe
