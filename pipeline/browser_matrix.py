@@ -2849,10 +2849,16 @@ def run_volar(cdp, base_url: str, cid: str, viewport: str) -> dict:
         camera: r.camera,
         weapons: r.weapons,
         aim: r.aim,
+        meshCoverageOnFrac: r.meshCoverageOnFrac,
       };
     """), timeout=120, label="volar autotest")
     if not rep.get("ok"):
         raise RuntimeError(f"volar autotest rojo: {rep}")
+    # la máscara de cobertura debe llegar al shader como >=0.5 donde hay malla; si todo queda
+    # por debajo, la malla se descarta entera y se ven las "cortinas" del DSM (bug 0/1, sep-30)
+    cov = rep.get("meshCoverageOnFrac")
+    if cov is not None and cov <= 0:
+        raise RuntimeError(f"máscara de cobertura vacía para el shader (malla invisible): {cov}")
     if rep.get("fps", 0) < 50:
         raise RuntimeError(f"volar bajo presupuesto premium de 50 FPS: {rep}")
     if (rep.get("camera") or {}).get("rig") != "fpv":

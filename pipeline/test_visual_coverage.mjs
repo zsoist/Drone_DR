@@ -39,3 +39,13 @@ test('visual coverage mask maps world to UV and patches the shader', async () =>
   }), false);
 
 });
+
+// Regresión (2026-09-30, iPhone): mesh_coverage.py escribe bytes 0/1; como textura UnsignedByte
+// normalizada "1" llega al shader como 1/255 y ambos umbrales (0.5) fallaban → la malla se
+// descartaba SIEMPRE y el terreno DSM ("cortinas") se veía en su lugar. La textura debe ser 0/255.
+test('coverage bytes 0/1 (and legacy 0/255) become 0/255 so the 0.5 shader threshold works', async () => {
+  const { coverageMaskBytes } = await import('../web/flightverse/visual-coverage.js');
+  const out = coverageMaskBytes(new Uint8Array([0, 1, 0, 255, 7]).buffer);
+  assert.deepEqual([...out], [0, 255, 0, 255, 255]);
+  assert.ok(out[1] / 255 >= 0.5, 'covered texel must sample >= 0.5 once normalized');
+});

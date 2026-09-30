@@ -58,6 +58,7 @@ def _env() -> dict:
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
     env["PYTHONPATH"] = os.pathsep.join([str(ROOT), str(PIPELINE)])
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["AEROBRAIN_NO_REMOTE"] = "1"      # gpu_lane._wsl/_run fail fast instead of ssh to the PC
     return env
 
 

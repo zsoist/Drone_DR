@@ -122,7 +122,16 @@ def _safe_name(name: str) -> str:
     return name
 
 
+def _no_remote_guard(label: str) -> None:
+    """run_all_tests sets AEROBRAIN_NO_REMOTE=1: a unit test must never reach the real PC
+    (an unmocked best-effort call used to hang for minutes whenever the PC was asleep)."""
+    import os
+    if os.environ.get("AEROBRAIN_NO_REMOTE") == "1":
+        raise RuntimeError(f"{label}: acceso remoto deshabilitado en tests (AEROBRAIN_NO_REMOTE)")
+
+
 def _run(cmd: list[str], timeout: int, label: str) -> subprocess.CompletedProcess:
+    _no_remote_guard(label)
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if p.returncode != 0:
         raise RuntimeError(f"{label} fallo (rc={p.returncode}): "
@@ -132,6 +141,7 @@ def _run(cmd: list[str], timeout: int, label: str) -> subprocess.CompletedProces
 
 def _wsl(script: str, timeout: int, label: str) -> str:
     """Ejecuta un script bash dentro de WSL en UNA sesion ssh sostenida."""
+    _no_remote_guard(label)
     p = subprocess.run(["ssh", SSH_HOST, "wsl", "-d", "Ubuntu", "--", "bash", "-s"],
                        input=script, capture_output=True, text=True, timeout=timeout)
     if p.returncode != 0:

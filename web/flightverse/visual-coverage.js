@@ -5,6 +5,16 @@ export function worldCoverageUv(x, z, worldSize) {
   return [x / width + 0.5, 0.5 - z / height];
 }
 
+// mesh_coverage.bin trae bytes 0/1 (pipeline/mesh_coverage.py). Como textura UnsignedByte
+// normalizada, 1 → 1/255 y los umbrales 0.5 de los shaders (malla y terreno) nunca se
+// cumplían: malla siempre descartada, terreno DSM siempre visible. Normaliza a 0/255.
+export function coverageMaskBytes(buffer) {
+  const out = new Uint8Array(buffer.byteLength);
+  const src = new Uint8Array(buffer);
+  for (let i = 0; i < src.length; i++) out[i] = src[i] ? 255 : 0;
+  return out;
+}
+
 export function applyVisualCoverageMask(
   material,
   {
