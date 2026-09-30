@@ -3,11 +3,13 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=365';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=365';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=365';
-import { applyVisualCoverageMask, coverageMaskBytes } from '/flightverse/visual-coverage.js?v=365';
-import { glbDeviceTier, glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=365';
+import * as THREE from '/flightverse/three.js?v=366';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=366';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=366';
+import {
+  applyVisualCoverageMask, coverageMaskBytes, underTerrainHeights, patchUnderTerrainShader,
+} from '/flightverse/visual-coverage.js?v=366';
+import { glbDeviceTier, glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=366';
 
 // ruido de valor 3D barato (hash sin seno costoso) para el grano del terreno/paredes
 const FX_NOISE_GLSL = `
@@ -275,13 +277,13 @@ export async function loadTerrain(man, { anisotropy = 4, fx = 'high' } = {}) {
         + (meshCoverageTex
           ? `if (uMeshOn > .5) {
                float fvCv = texture2D(uMeshCoverage, vFvUv).r;
-               if (uFxOn > .5) {
-                 // misma erosión de 5 taps que visual-coverage.js: sin hueco de 1 texel en la costura
-                 fvCv = min(fvCv, texture2D(uMeshCoverage, vFvUv + vec2(uCovTexel.x, 0.)).r);
-                 fvCv = min(fvCv, texture2D(uMeshCoverage, vFvUv - vec2(uCovTexel.x, 0.)).r);
-                 fvCv = min(fvCv, texture2D(uMeshCoverage, vFvUv + vec2(0., uCovTexel.y)).r);
-                 fvCv = min(fvCv, texture2D(uMeshCoverage, vFvUv - vec2(0., uCovTexel.y)).r);
-               }
+               // misma erosión de 5 taps que visual-coverage.js (SIEMPRE, también con fx=0: la malla
+               // se recorta con ella, y descartar el terreno con la máscara cruda dejaba un anillo
+               // de 1 celda sin malla ni terreno = cielo)
+               fvCv = min(fvCv, texture2D(uMeshCoverage, vFvUv + vec2(uCovTexel.x, 0.)).r);
+               fvCv = min(fvCv, texture2D(uMeshCoverage, vFvUv - vec2(uCovTexel.x, 0.)).r);
+               fvCv = min(fvCv, texture2D(uMeshCoverage, vFvUv + vec2(0., uCovTexel.y)).r);
+               fvCv = min(fvCv, texture2D(uMeshCoverage, vFvUv - vec2(0., uCovTexel.y)).r);
                if (fvCv > 0.5) discard;
              }\n` : '')
         + `if (uSplatOn > .5) {
@@ -328,6 +330,46 @@ export async function loadTerrain(man, { anisotropy = 4, fx = 'high' } = {}) {
 
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'fv-terrain';
+  // respaldo bajo la malla (ver visual-coverage.js): capa de FONDO que se dibuja antes que la malla y
+  // el terreno y luego limpia el depth → solo asoma donde no queda ningún píxel de malla/terreno
+  // (huecos reales de la malla dentro de celdas "cubiertas"), en vez de dejar ver el cielo.
+  let underMesh = null;
+  if (meshCoverageTex) {
+    const uh = underTerrainHeights(hf, cols, rows, {
+      spacing: Math.min(...lodMeta.spacing_m), elevMin: lodMeta.elev_min });
+    const ugeo = new THREE.BufferGeometry();
+    ugeo.setIndex(geo.index);
+    ugeo.setAttribute('uv', geo.attributes.uv);
+    const upos = new Float32Array(geo.attributes.position.array);
+    for (let i = 0; i < uh.length; i++) upos[i * 3 + 1] = uh[i];
+    ugeo.setAttribute('position', new THREE.BufferAttribute(upos, 3));
+    const umat = new THREE.MeshBasicMaterial({
+      map: material.map || null, color: material.map ? 0xffffff : 0x39424f,
+    });
+    umat.customProgramCacheKey = () => `fv-terrain-under-v2|${maskTex ? 'v' : '-'}`;
+    umat.onBeforeCompile = sh => patchUnderTerrainShader(sh, { uMeshOn: meshMask.uMeshOn, validTex: maskTex });
+    underMesh = new THREE.Mesh(ugeo, umat);
+    underMesh.name = 'fv-terrain-under';
+    underMesh.renderOrder = -5;                // tras el domo del cielo (-10), antes de malla/terreno (0)
+    underMesh.matrixAutoUpdate = false;
+    underMesh.frustumCulled = false;
+    // sigue a la ortofoto (calidad extra la cambia) y a la ganancia de color del 3D
+    let hazeSorted = false;
+    underMesh.onBeforeRender = (_r, scene) => {
+      if (umat.map !== material.map) umat.map = material.map;
+      umat.color.copy(material.color);
+      // el plano de bruma (sky.js, y=-7, opaco, renderOrder 0) se dibuja DESPUÉS del respaldo y, tras
+      // limpiar el depth, lo taparía: debe ir antes que el respaldo (-5) para quedar debajo de él
+      if (!hazeSorted) {
+        const haze = scene?.getObjectByName?.('fv-haze-ground');
+        if (haze) { haze.renderOrder = -6; hazeSorted = true; }
+      }
+    };
+    // el respaldo ordena bien consigo mismo (depth) y después se borra el depth: la malla y el
+    // terreno lo sobrescriben SIEMPRE, sea cual sea su profundidad
+    underMesh.onAfterRender = renderer => { if (meshMask.uMeshOn.value > 0.5) renderer.clearDepth(); };
+    mesh.add(underMesh);
+  }
   // cráter REAL: deprime el heightfield (hf + geometría). heightAt cierra
   // sobre hf, así que colisión del dron y anclaje de objetos ven el cráter.
   // Normales recalculadas SOLO en el parche (diferencias centrales del grid).
@@ -371,6 +413,7 @@ export async function loadTerrain(man, { anisotropy = 4, fx = 'high' } = {}) {
       material.map?.dispose();
       maskTex?.dispose();
       meshCoverageTex?.dispose();
+      if (underMesh) { underMesh.geometry.dispose(); underMesh.material.dispose(); }
       dataMaskTex?.dispose();
       dataFillTex?.dispose();
       rimTex?.dispose();
@@ -630,7 +673,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=365');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=366');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     sp.userData.fvRefs = 0;

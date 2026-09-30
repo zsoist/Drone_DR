@@ -187,3 +187,13 @@ test('runtime caps bound enemies, shots, burst jobs, and model-cache entries', (
     modelCache: 9,
   });
 });
+
+test('stragglers are culled so a stuck enemy cannot block every later wave', async () => {
+  const { shouldCullStraggler, STRAGGLER_GROUND_S, STRAGGLER_ANY_S } = await import('../web/flightverse/invasion-policy.js');
+  assert.equal(shouldCullStraggler({ waveClock: 30, air: false, queueEmpty: true }), false);
+  assert.equal(shouldCullStraggler({ waveClock: STRAGGLER_GROUND_S, air: false, queueEmpty: true }), true);
+  assert.equal(shouldCullStraggler({ waveClock: STRAGGLER_GROUND_S + 1, air: true, queueEmpty: true }), false);
+  assert.equal(shouldCullStraggler({ waveClock: STRAGGLER_ANY_S, air: true, queueEmpty: true }), true);
+  assert.equal(shouldCullStraggler({ waveClock: 999, air: false, queueEmpty: false }), false, 'never while the wave is still spawning');
+  assert.equal(shouldCullStraggler({ waveClock: NaN, air: false, queueEmpty: true }), false);
+});

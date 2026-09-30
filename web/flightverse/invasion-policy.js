@@ -363,3 +363,13 @@ export function createBurstSchedule({
 export function isAirEnemy(type) {
   return AIR_TYPES.has(type);
 }
+
+// Una oleada solo termina con alive===0. Un enemigo de tierra que nace en un bolsillo sin camino
+// (steerGroundEnemy → blocked/evade para siempre) o un volador que se pierde bloqueaban TODAS las
+// oleadas siguientes. Tras el tiempo de gracia, los rezagados se retiran sin puntuar.
+export const STRAGGLER_GROUND_S = 90;
+export const STRAGGLER_ANY_S = 150;
+export function shouldCullStraggler({ waveClock, air, queueEmpty }) {
+  if (!queueEmpty || !Number.isFinite(waveClock)) return false;
+  return waveClock >= (air ? STRAGGLER_ANY_S : STRAGGLER_GROUND_S);
+}

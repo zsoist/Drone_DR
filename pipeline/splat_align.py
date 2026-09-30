@@ -54,6 +54,33 @@ def umeyama(src: np.ndarray, dst: np.ndarray) -> tuple[float, np.ndarray, np.nda
     return s, R, t
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    tmp.replace(path)
+
+
+def persist_world_transform(cid: str, transform: dict, vault: Path = VAULT) -> bool:
+    """scene_manifest.build REGENERATES scene.v2.json from splats/<cid>.meta.json[world_transform]
+    (splat_transform_contract). Writing the matrix only into the manifest lost it on the next
+    rebuild: 12/13 worlds ended 'unaligned'. Keep both in sync."""
+    meta_p = vault / "splats" / f"{cid}.meta.json"
+    try:
+        meta = json.loads(meta_p.read_text()) if meta_p.exists() else {}
+    except (OSError, ValueError):
+        return False
+    meta["world_transform"] = {
+        "status": transform.get("status"),
+        "matrix": transform.get("matrix"),
+        "rmse_m": transform.get("rmse_m"),
+        "method": "umeyama-cameras",
+        "source": "splat_align.py",
+    }
+    meta_p.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(meta_p, json.dumps(meta, ensure_ascii=False, indent=1))
+    return True
+
+
 def align(cid: str, max_rmse: float = 2.0) -> dict:
     cams = json.loads((VAULT / "splats" / f"{cid}.cameras.json").read_text())
     recon_p = VAULT / "odm" / f"proj_{cid}" / "opensfm" / "reconstruction.topocentric.json"
@@ -123,7 +150,8 @@ def align(cid: str, max_rmse: float = 2.0) -> dict:
         "scale": round(s, 6),
         "datum": datum,
     }
-    man_p.write_text(json.dumps(man, ensure_ascii=False, indent=1))
+    _atomic_write(man_p, json.dumps(man, ensure_ascii=False, indent=1))
+    persist_world_transform(cid, man["transforms"]["splat"])
     return {"cid": cid, "rmse_m": round(rmse, 3), "n_cams": len(used),
             "scale": round(s, 4), "datum": datum, "status": man["transforms"]["splat"]["status"]}
 

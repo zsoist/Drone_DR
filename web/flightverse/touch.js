@@ -14,7 +14,8 @@ export function createTouchSticks(host, options = {}) {
     || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0);
   if (!touchCapable || !host) return null;
 
-  const radius = options.radius ?? 56;
+  const fixedRadius = options.radius ?? null;
+  const DEFAULT_RADIUS = 56;
   const deadzone = options.deadzone ?? 0.12;
   const createElement = options.createElement
     || (tag => document.createElement(tag));
@@ -32,14 +33,28 @@ export function createTouchSticks(host, options = {}) {
     zone.appendChild(base);
     host.appendChild(zone);
 
-    const state = { x: 0, y: 0, id: null, cx: 0, cy: 0 };
+    const state = { x: 0, y: 0, id: null, cx: 0, cy: 0, radius: fixedRadius ?? DEFAULT_RADIUS };
+    // El radio sigue al tamaño CSS del aro (156px en horizontal, 112px en vertical): con 56 fijo el
+    // pulgar nunca llegaba al borde del aro en landscape.
+    const measureRadius = () => {
+      if (fixedRadius != null) return fixedRadius;
+      const half = (base.offsetWidth || 0) / 2;
+      return Number.isFinite(half) && half >= 28 ? half : DEFAULT_RADIUS;
+    };
+    // Al rotar/redimensionar, la base quedaba en los px del gesto anterior (media pantalla fuera).
+    const resetPlacement = () => {
+      base.style.left = '';
+      base.style.top = '';
+      base.style.bottom = '';
+      base.style.transform = '';
+    };
     const listeners = [];
     const listen = (type, handler) => {
       zone.addEventListener(type, handler);
       listeners.push([type, handler]);
     };
     const setNub = (dx, dy) => {
-      nub.style.transform = `translate(${dx * radius}px, ${dy * radius}px)`;
+      nub.style.transform = `translate(${dx * state.radius}px, ${dy * state.radius}px)`;
     };
     const reset = () => {
       if (state.id != null && zone.hasPointerCapture?.(state.id)) {
@@ -53,6 +68,8 @@ export function createTouchSticks(host, options = {}) {
     const down = event => {
       if (!enabled || disposed || state.id != null) return;
       const rect = zone.getBoundingClientRect();
+      state.radius = measureRadius();
+      const radius = state.radius;
       const localX = event.clientX - rect.left;
       const localY = event.clientY - rect.top;
       const maxX = Math.max(radius, rect.width - radius);
@@ -69,8 +86,8 @@ export function createTouchSticks(host, options = {}) {
     };
     const move = event => {
       if (!enabled || disposed || event.pointerId !== state.id) return;
-      let dx = (event.clientX - state.cx) / radius;
-      let dy = (event.clientY - state.cy) / radius;
+      let dx = (event.clientX - state.cx) / state.radius;
+      let dy = (event.clientY - state.cy) / state.radius;
       const length = Math.hypot(dx, dy);
       if (length > 1) {
         dx /= length;
@@ -95,6 +112,7 @@ export function createTouchSticks(host, options = {}) {
       zone,
       state,
       reset,
+      resetPlacement,
       setEnabled(active) {
         zone.setAttribute('aria-hidden', String(!active));
         zone.classList.toggle('disabled', !active);
@@ -146,14 +164,23 @@ export function createTouchSticks(host, options = {}) {
   };
   // Si la pestaña pierde foco a mitad de gesto no llega pointerup: soltar sticks.
   const releaseAll = () => controller.reset();
+  const onViewportChange = () => {
+    controller.reset();
+    left.resetPlacement();
+    right.resetPlacement();
+  };
   const onVisibility = () => { if (typeof document !== 'undefined' && document.hidden) releaseAll(); };
   const win = typeof window !== 'undefined' ? window : null;
   const doc = typeof document !== 'undefined' ? document : null;
   win?.addEventListener?.('blur', releaseAll);
+  win?.addEventListener?.('resize', onViewportChange);
+  win?.addEventListener?.('orientationchange', onViewportChange);
   doc?.addEventListener?.('visibilitychange', onVisibility);
   const baseDispose = controller.dispose;
   controller.dispose = () => {
     win?.removeEventListener?.('blur', releaseAll);
+    win?.removeEventListener?.('resize', onViewportChange);
+    win?.removeEventListener?.('orientationchange', onViewportChange);
     doc?.removeEventListener?.('visibilitychange', onVisibility);
     baseDispose();
   };

@@ -81,8 +81,14 @@ export function createAudio() {
     eng = { rotors, motorBus, whine, wg, noiseBp, ng, chop, windBp, windG, air, dist, pan };
   }
   // primer gesto arma el contexto (una sola vez)
-  const arm = () => { boot(); removeEventListener('pointerdown', arm); removeEventListener('keydown', arm); };
-  addEventListener('pointerdown', arm); addEventListener('keydown', arm);
+  // WebKit no cuenta pointerdown/touchstart como activación de usuario para WebAudio (sí touchend/click/keydown),
+  // y tras una interrupción (llamada, bloqueo, segundo plano) el contexto queda 'suspended'/'interrupted':
+  // los listeners permanecen y reanudan en cada gesto mientras el contexto no esté corriendo.
+  const arm = () => {
+    if (!ctx) boot();
+    else if (!muted && ctx.state !== 'running' && !document.hidden) ctx.resume?.().catch(() => {});
+  };
+  for (const type of ['pointerdown', 'touchend', 'click', 'keydown']) addEventListener(type, arm, { passive: true });
   document.addEventListener('visibilitychange', () => {
     if (!ctx) return;
     if (document.hidden) ctx.suspend(); else if (!muted) ctx.resume();

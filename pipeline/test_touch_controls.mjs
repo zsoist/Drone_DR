@@ -329,3 +329,30 @@ test('Tab and Shift+Tab cannot escape the active dialog', () => {
 
   coordinator.dispose();
 });
+
+test('stick radius follows the CSS ring size and viewport changes drop the stale base placement', () => {
+  const host = new FakeElement({ left: 0, top: 0, width: 900, height: 400 });
+  const made = [];
+  const createElement = () => {
+    const element = new FakeElement({ left: 0, top: 0, width: 300, height: 260 });
+    made.push(element);
+    return element;
+  };
+  const fakeWindow = new EventTarget();
+  globalThis.window = fakeWindow;
+  try {
+    const sticks = createTouchSticks(host, { force: true, createElement });   // no explicit radius
+    const [leftZone, leftBase] = made;
+    leftBase.offsetWidth = 156;         // landscape ring
+    leftZone.dispatchEvent(pointer('pointerdown', { id: 1, x: 100, y: 120 }));
+    leftZone.dispatchEvent(pointer('pointermove', { id: 1, x: 100 + 78, y: 120 }));
+    assert.equal(sticks.sample().yaw, -1, 'full throw reaches the ring edge (78px), not 56px');
+    assert.notEqual(leftBase.style.left, '', 'placement is set while touching');
+    fakeWindow.dispatchEvent(new Event('orientationchange'));
+    assert.equal(leftBase.style.left, '', 'stale px placement is dropped on rotation');
+    assert.equal(sticks.sample().active, false, 'rotation releases the stick');
+    sticks.dispose();
+  } finally {
+    delete globalThis.window;
+  }
+});

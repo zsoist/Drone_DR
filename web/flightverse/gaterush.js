@@ -3,7 +3,8 @@
 // splits por gate. Circuito HONESTO: gates sobre la ruta del vuelo REAL
 // (track GPS en frame local); sin track: anillo procedural documentado como
 // fallback. Detección por proximidad en timestep fijo (determinista → replay).
-import * as THREE from '/flightverse/three.js?v=365';
+import * as THREE from '/flightverse/three.js?v=366';
+import { segmentPassesGate } from '/flightverse/collision-math.js?v=366';
 
 export const DIFFS = {
   facil:   { label: 'Fácil',   n: 8,  r: 9,   pass: 1.25, color: 0x52C79A },
@@ -129,6 +130,9 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
     rec: [],
   };
   let recSkip = 0;
+  const prevPos = new THREE.Vector3();
+  let havePrev = false;
+  const gateNormal = new THREE.Vector3();
   const flashes = [];              // anillos de celebración al pasar un gate
 
   function paint() {
@@ -179,6 +183,7 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
       gates.forEach(g => { g.passed = false; });
       st.phase = 'countdown'; st.countdown = 3; st.idx = 0; st.t = 0;
       st.time = null; st.topSpeed = 0; st.rec = []; st.splits = []; st.lastSplit = null;
+      havePrev = false;
       paint();
     },
     update(dt, dronePos, droneVel, droneYaw) {
@@ -194,7 +199,18 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
         st.rec.push([dronePos.x, dronePos.y, dronePos.z, droneYaw]);
       }
       const g = gates[st.idx];
-      if (g && dronePos.distanceTo(g.center) < PASS_R) {
+      let through = false;
+      if (g) {
+        // el aro está en el plano local XY (lookAt hacia el siguiente): su eje es +Z local
+        gateNormal.set(0, 0, 1).applyQuaternion(g.mesh.quaternion);
+        through = havePrev
+          ? segmentPassesGate(prevPos, dronePos, g.center, gateNormal, PASS_R)
+          : false;
+        // primer paso tras arrancar: sin segmento previo, exigir estar prácticamente en el centro
+        if (!havePrev) through = dronePos.distanceTo(g.center) < GATE_R * 0.35;
+      }
+      prevPos.copy(dronePos); havePrev = true;
+      if (g && through) {
         g.passed = true;
         st.splits.push(st.t);
         st.lastSplit = { t: st.t, at: st.t,
@@ -225,10 +241,12 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
 // Mejores tiempos por escena+dificultad — localStorage hasta store server-side (P9).
 export function bestTime(cid, t, difficulty = 'media') {
   const k = `ab.fv.best.${cid}.gaterush.${difficulty}`;
-  const prevRaw = parseFloat(localStorage.getItem(k));
+  let prevRaw = NaN;
+  try { prevRaw = parseFloat(localStorage.getItem(k)); } catch { /* almacenamiento bloqueado */ }
   const prev = Number.isFinite(prevRaw) ? prevRaw : null;   // récord anterior (null = primera marca)
   if (t != null && (prev == null || t < prev)) {
-    localStorage.setItem(k, String(t));
+    // Safari privado / cuota llena lanzaba aquí y la tarjeta de resultado nunca aparecía
+    try { localStorage.setItem(k, String(t)); } catch { /* el récord no persiste, el resultado sí se muestra */ }
     return { best: t, isNew: true, prev };
   }
   return { best: prev, isNew: false, prev };

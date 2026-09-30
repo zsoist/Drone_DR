@@ -4,48 +4,49 @@
 // (track GPS 1Hz interpolado — el dato más honesto del juego: eso voló ahí).
 // HUD: arquitectura de 4 esquinas + barra inferior, cero solapamientos.
 // ?autotest=1 → 5s de vuelo sintético y reporte en window.__volar (gate CDP).
-import * as THREE from '/flightverse/three.js?v=365';
+import * as THREE from '/flightverse/three.js?v=366';
 import {
   loadManifest, loadTerrain, loadTrack, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=365';
+} from '/flightverse/scene.js?v=366';
 import {
   createLoop, createInput, createDrone, resolveCameraCollision, MODES, RIGS, STEP,
-} from '/flightverse/runtime.js?v=365';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=365';
-import { createRecorder } from '/flightverse/recorder.js?v=365';
-import { createAudio } from '/flightverse/audio.js?v=365';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=365';
-import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=365';
+} from '/flightverse/runtime.js?v=366';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=366';
+import { createRecorder } from '/flightverse/recorder.js?v=366';
+import { createAudio } from '/flightverse/audio.js?v=366';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=366';
+import { createOverlayCoordinator, createTouchSticks } from '/flightverse/touch.js?v=366';
 import {
   createFirePointerBindings, createWeaponPicker, installFlightSurfaceGuards,
-} from '/flightverse/mobile-command.js?v=365';
-import { createSky } from '/flightverse/sky.js?v=365';
-import { createVegetation, reducedMotion } from '/flightverse/vegetation.js?v=365';
-import { loadSceneObjects } from '/flightverse/objects.js?v=365';
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=365';
-import { resolveAimRay } from '/flightverse/aiming.js?v=365';
+} from '/flightverse/mobile-command.js?v=366';
+import { createSky } from '/flightverse/sky.js?v=366';
+import { createVegetation, reducedMotion } from '/flightverse/vegetation.js?v=366';
+import { loadSceneObjects } from '/flightverse/objects.js?v=366';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=366';
+import { resolveAimRay } from '/flightverse/aiming.js?v=366';
 import {
   WEAPON_PROFILES,
   isContinuousWeaponKey,
-} from '/flightverse/weapon-registry.js?v=365';
-import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=365';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=365';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=365';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=365';
-import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=365';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=365';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=365';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=365';
-import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=365';
-import CameraControls from '/vendor/camera-controls.module.js?v=365';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=365';
+} from '/flightverse/weapon-registry.js?v=366';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=366';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=366';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=366';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=366';
+import { deriveDroneEnvelope } from '/flightverse/drone-envelope.js?v=366';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=366';
+import { splatAlignmentLabel, summarizeInvasionRun } from '/flightverse/hud-format.js?v=366';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=366';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=366';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=366';
+import CameraControls from '/vendor/camera-controls.module.js?v=366';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=366';
 CameraControls.install({ THREE });
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=365';
+} from '/vendor/postprocessing180.module.js?v=366';
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
 // empujaba los blancos del splat a clip (puntos blancos, reporte del operador)
@@ -576,6 +577,7 @@ async function main() {
     report,
   });
   const collision = createMutableCollisionWorld(world);
+  if (report.qa) report.qa.collision = collision;   // ?qa=1: consultas de colisión para verificar alineación con lo dibujado
   report.collision = {
     ready: world.qa.ready,
     structure: world.qa.structure,
@@ -733,7 +735,7 @@ async function main() {
         return;
       }
       splat = s;
-      $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · foto-real ±${(s.rmse * 100).toFixed(0)}cm`;
+      $('#vl-scene').textContent = `${man.name} · ${coverageLabel} · foto-real ${splatAlignmentLabel(s)}`;
       report.splat = { aligned: s.aligned, rmse_m: s.rmse };
       markLoadStep(document, 'vb-splat');
       applyVista();
@@ -747,6 +749,7 @@ async function main() {
   // props que giran con la velocidad, gimbal frontal — solo primitivas three
   bootProgress(80, 'Preparando el dron');
   const drone = createDrone({ world: collision, spawn: man.spawn });
+  if (report.qa) report.qa.drone = drone;           // ?qa=1: estado del dron para pruebas de física/colisión
   report.collision.radius_m = +drone.collisionRadius.toFixed(3);
   report.collision.radius_source = 'fallback';
   report.customDrone = false;
@@ -850,9 +853,9 @@ async function main() {
   // modelo del operador: web/assets/drone.glb (spec en docs/DRONE_MODEL_SPEC.md).
   // Se normaliza a 0.85m de envergadura, centrado, nariz -Z. Si no existe,
   // vuela el procedural de arriba.
-  fetch('/assets/manifest.json?v=365', { cache: 'no-store' }).then(r => r.json()).then(async am => {
+  fetch('/assets/manifest.json?v=366', { cache: 'no-store' }).then(r => r.json()).then(async am => {
     if (!am.drone_glb) return;
-    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=365');
+    const { GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=366');
     const g = await new GLTFLoader().loadAsync('/assets/drone.glb');
     const m = g.scene;
     const bb = new THREE.Box3().setFromObject(m);
@@ -1007,7 +1010,7 @@ async function main() {
   const shake = { mag: 0 };
   let curYaw = 0;
   const { GLTFLoader: ArsenalGLTFLoader } = await import(
-    '/vendor/three-addons180/loaders/GLTFLoader.js?v=365'
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=366'
   );
   weaponModels = createWeaponModelLibrary({
     quality: Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto',
@@ -1032,6 +1035,7 @@ async function main() {
     cloneProjectile: key => weaponModels?.cloneProjectile(key),
     onDestroy: node => sceneObjects?.markDestroyed(node),
     onShake: (pos, big) => {
+      if (reducedMotion()) return;               // sacudida y patada de FOV son movimiento no esencial
       const d = camera.position.distanceTo(pos);
       shake.mag = Math.max(shake.mag, Math.min(0.9, (9 * big) / (5 + d)));
       shake.fov = Math.max(shake.fov || 0, Math.min(7, (26 * big) / (4 + d)));
@@ -1051,6 +1055,7 @@ async function main() {
   scene.add(aim);
   // ── MODO INVASIÓN: enemigos originales a elección (modal) ──
   const health = { hp: 100 };
+  if (report.qa) report.qa.health = health;         // ?qa=1: permite forzar derrota en pruebas
   const hitFlash = () => {
     const hx = $('#vl-hitfx'); hx.classList.remove('go'); void hx.offsetWidth; hx.classList.add('go');
   };
@@ -1088,6 +1093,7 @@ async function main() {
     },
   });
   weapons.state._enemies = invasion.hittables;     // splash de explosión a la horda
+  if (report.qa) report.qa.invasion = invasion;     // ?qa=1: inspección de la horda en pruebas
   let overlayCoordinator = null;
   const zBtn = $('#vl-zombies');
   const invModal = $('#vl-inv');
@@ -1281,7 +1287,10 @@ async function main() {
     $('#vl-cine').classList.toggle('show', k === 'cinematico');
     $('#vl-goto').classList.toggle('show', !!MODES[k].autopilot && !!ghost);
     if (MODES[k].autopilot) {
-      if (ghost && ghost.pts.length > 3) { initAuto(); goToStart(); }
+      // pistas degeneradas (4+ puntos idénticos) dan len 0 → u NaN → getPointAt lanza y congela el paso fijo
+      const trackUsable = ghost && ghost.pts.length > 3
+        && ghost.pts.some(p => p.distanceToSquared(ghost.pts[0]) > 1);
+      if (trackUsable) { initAuto(); goToStart(); }
       else {                                   // honesto: sin track no hay autopiloto
         modeKey = 'asistido';
         $('#vl-mode').textContent = 'modo · Normal';
@@ -1396,6 +1405,7 @@ async function main() {
       }
       input.setEnabled(!active);
       document.body.classList.toggle('vl-overlay-open', !!active);
+      document.body.dataset.vlOverlay = active || '';
       document.body.classList.toggle('vl-mobile-sheet-open', active === 'menu' || active === 'combat');
       sticks?.setEnabled(!active);
       if (active && (active === 'image' || !touchUi) && movable[active]) movable[active].clamp();
@@ -1506,11 +1516,14 @@ async function main() {
   });
 
   // ── Gate Rush (desafío del slice) + replay ──
-  let reto = null, replay = null, resultShown = false, retoFly = null;
+  let reto = null, replay = null, resultShown = false, retoFly = null, retoMode = 'asistido';
   const startReto = (diff) => {
     if (!diff) { overlayCoordinator.toggle('difficulty'); return; }   // sin dif → picker
     overlayCoordinator.close();
-    localStorage.setItem('ab.fv.gr.diff', diff);
+    // Arcade (autopiloto) tenía prioridad en el loop y retoFly/countdown nunca avanzaban: T no hacía nada
+    if (MODES[modeKey]?.autopilot) setMode('asistido');
+    retoMode = modeKey;                        // Dios (noclip, 85 m/s) no comparte récord con vuelo normal
+    try { localStorage.setItem('ab.fv.gr.diff', diff); } catch { /* bloqueado */ }
     $('#vl-result').innerHTML = '';
     replay = null; resultShown = false;
     if (reto) reto.dispose();
@@ -1537,7 +1550,8 @@ async function main() {
     $('#vl-fpv').classList.remove('show');       // el OSD FPV no pisa el modal
     const st = reto.state;
     const t = st.time;
-    const { best, isNew, prev } = bestTime(CID, t, st.difficulty);
+    const recordKey = retoMode === 'dios' ? `${st.difficulty}.dios` : st.difficulty;
+    const { best, isNew, prev } = bestTime(CID, t, recordKey);
     const delta = !isNew && best != null ? t - best : 0;
     // distancia real del recorrido (poses 60Hz) → velocidad media honesta
     let dist = 0;
@@ -1555,7 +1569,7 @@ async function main() {
     const DIFF_LB = { facil: 'FÁCIL', media: 'MEDIA', dificil: 'DIFÍCIL' };
     $('#vl-result').innerHTML = `
       <div class="vl-result-card v2">
-        <div class="vl-result-k">GATE RUSH · ${DIFF_LB[st.difficulty] || ''}
+        <div class="vl-result-k">GATE RUSH · ${DIFF_LB[st.difficulty] || ''}${retoMode === 'dios' ? ' · DIOS (récord aparte)' : ''}
           ${isNew ? '<em class="vl-newrec">NUEVO RÉCORD</em>' : ''}</div>
         <div class="vl-result-time">${t.toFixed(2)}<small>s</small></div>
         <div class="vl-result-sub">${isNew
@@ -1578,8 +1592,72 @@ async function main() {
       </div>`;
     overlayCoordinator.open('result');
   };
+  // ── INVASIÓN: pantalla real de derrota (antes solo un toast que se iba en 3 s y reseteaba la vida) ──
+  const INV_DIFF_LB = { facil: 'FÁCIL', media: 'MEDIA', dificil: 'DIFÍCIL' };
+  const invBestKey = () => `ab.fv.best.${CID}.invasion`;
+  const invReadBest = () => {
+    try {
+      const v = JSON.parse(localStorage.getItem(invBestKey()) || 'null');
+      return v && Number.isFinite(v.score) ? v : null;
+    } catch { return null; }
+  };
+  let lastInvasionRun = null;
+  const stopInvasionUi = () => {
+    zBtn.classList.remove('on');
+    $('#vl-zhud').classList.remove('show');
+    health.hp = 100;
+  };
+  const startInvasionRun = (types, difficulty) => {
+    if (invasion.state.on) return;
+    overlayCoordinator?.close('result');
+    invasion.toggle(P, types, difficulty);
+    health.hp = 100;
+    zBtn.classList.add('on');
+    $('#vl-zhud').classList.add('show');
+  };
+  const showDefeat = () => {
+    const prev = invReadBest();
+    const run = summarizeInvasionRun(invasion.state, prev);
+    if (run.newBest) {
+      try {
+        localStorage.setItem(invBestKey(), JSON.stringify({ score: run.score, wave: run.wave, killed: run.killed }));
+      } catch { /* almacenamiento bloqueado: la derrota igual se muestra */ }
+    }
+    lastInvasionRun = run;
+    resultShown = false;                      // la tarjeta de Gate Rush ya no está en #vl-result
+    (report.invasionRuns ||= []).push({ ...run, at: +simT.toFixed(2) });
+    invasion.toggle(P);                       // apaga la run: sin enemigos ni proyectiles vivos
+    stopInvasionUi();
+    releaseFiring();
+    $('#vl-fpv').classList.remove('show');
+    $('#vl-result').innerHTML = `
+      <div class="vl-result-card v2" role="alertdialog" aria-labelledby="vl-def-k">
+        <div class="vl-result-k" id="vl-def-k">INVASIÓN · ${INV_DIFF_LB[run.difficulty] || ''}
+          ${run.newBest ? '<em class="vl-newrec">NUEVO RÉCORD</em>' : ''}</div>
+        <div class="vl-result-time vl-def">DERRIBADO</div>
+        <div class="vl-result-sub">${run.best != null && !run.newBest
+          ? `récord ${run.best} pts` : 'tu dron cayó bajo el fuego enemigo'}</div>
+        <div class="vl-result-grid">
+          <div><b>${run.wave}</b><span>oleada</span></div>
+          <div><b>${run.killed}</b><span>abatidos</span></div>
+          <div><b>${run.score}</b><span>puntos</span></div>
+          <div><b>${run.types.length}</b><span>tipos</span></div>
+        </div>
+        <div class="vl-result-btns">
+          <button data-act="inv-retry">Reintentar</button>
+          <button data-act="inv-config">Cambiar enemigos</button>
+          <a href="mundo.html">Mundo</a>
+        </div>
+      </div>`;
+    overlayCoordinator.open('result');
+  };
   $('#vl-result').addEventListener('click', e => {
     const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'inv-retry' && lastInvasionRun) {
+      startInvasionRun(lastInvasionRun.types, lastInvasionRun.difficulty);
+      return;
+    }
+    if (act === 'inv-config') { overlayCoordinator.open('invasion'); return; }
     if (act === 'retry') startReto(reto.state.difficulty);
     if (act === 'diff') overlayCoordinator.open('difficulty');
     if (act === 'replay') startReplay();
@@ -1769,7 +1847,7 @@ async function main() {
   scene.add(trailLine);
 
   // llegada cinematográfica: swoop desde vista de mapa hacia el rig (skip en autotest)
-  let arrival = AT ? null : { t: 0, dur: 3.4 };
+  let arrival = AT || reducedMotion() ? null : { t: 0, dur: 3.4 };
 
   let simT = 0, propSpin = 14;
   const auto = AUTOTEST ? { until: 5 } : null;
@@ -1830,6 +1908,7 @@ async function main() {
     }, 1000);
   }
   const P = new THREE.Vector3();
+  let qaInvasionStarted = false;
   let qualityGovernor = null;
   let dprNow = Math.min(devicePixelRatio, 2);
   let renderReportFrame = 0;
@@ -1846,6 +1925,10 @@ async function main() {
     },
     update(dt) {
       simT += dt;
+      // Pausa real de juego: con cualquier panel abierto (menú, armamento, imagen, guía…) el
+      // input ya está cortado; sin esto la horda seguía matando al jugador y el reloj de Gate
+      // Rush seguía corriendo mientras el menú tapaba la pantalla (sobre todo en móvil).
+      const gamePaused = !!overlayCoordinator?.active();
       if (director) {
         if (director.playing) {
           director.f += dt * 60;
@@ -1880,7 +1963,7 @@ async function main() {
           drone.pos.y += Math.sin(e * Math.PI) * 6;      // arquito elegante
           drone.yaw += (Math.atan2(-(tr.to.x - tr.from.x), -(tr.to.z - tr.from.z)) - drone.yaw) * 0.06;
           if (k >= 1) apilot.transit = null;
-        } else if (apilot.curve) {
+        } else if (apilot.curve && apilot.len > 1e-3) {
           const boost = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
           apilot.u = (apilot.u + dt * (14 * (boost ? 2.5 : 1)) / apilot.len) % 1;
           const p2 = apilot.curve.getPointAt(apilot.u);
@@ -1942,7 +2025,7 @@ async function main() {
           }
         }
         if (reto) {
-          reto.update(dt, drone.pos, drone.vel, drone.yaw);
+          if (!gamePaused) reto.update(dt, drone.pos, drone.vel, drone.yaw);
           const st = reto.state;
           if (st.idx > sfx.idx) {
             audio.gate();
@@ -1965,8 +2048,9 @@ async function main() {
       const allHit = invasion.state.on
         ? [...(sceneObjects?.hittables || []), ...invasion.hittables]
         : sceneObjects?.hittables;
-      weapons.update(dt, allHit);
-      if (Q.get('invasion') && !invasion.state.on && simT > 0.5) {
+      if (!gamePaused) weapons.update(dt, allHit);
+      if (Q.get('invasion') && !invasion.state.on && simT > 0.5 && !qaInvasionStarted) {
+        qaInvasionStarted = true;               // solo una vez: si no, tras la derrota la URL reinicia la run detrás de la pantalla
         invasion.toggle(
           drone.pos,
           Q.get('invasion').split(',').filter(k => ENEMIES[k]),
@@ -1974,15 +2058,8 @@ async function main() {
         );
         zBtn.classList.add('on'); $('#vl-zhud').classList.add('show');
       }
-      invasion.update(dt, drone.pos, drone.vel);
-      if (invasion.state.on && health.hp <= 0) {     // HP a 0: fin de la run de invasión
-        const inv = invasion.state;
-        toast(`DERRIBADO · OLEADA ${inv.wave || 1} · ${inv.killed} abatidos · ${inv.score} PTS`);
-        invasion.toggle(P);
-        zBtn.classList.remove('on');
-        $('#vl-zhud').classList.remove('show');
-        health.hp = 100;
-      }
+      if (!gamePaused) invasion.update(dt, drone.pos, drone.vel);
+      if (invasion.state.on && health.hp <= 0) showDefeat();   // HP a 0: pantalla de derrota (no un toast)
       if (Q.get('fuego') === 'mg' && simT > 1 && simT < 2.6) {
         if (!weapons._mg) { weapons._mg = true; weapons.setWeapon('mg'); }
         doFire();
@@ -2011,8 +2088,11 @@ async function main() {
     render(alpha, frameMs) {
       const o = drone.lerpPose(alpha, P);
       curYaw = o.yaw;
+      // dt REAL del frame para animación de presentación: antes avanzaba STEP (1/120) por frame pintado,
+      // así el swoop de llegada (3.4 s) duraba ~9 s a 31-56 fps y la sacudida decaía según el FPS
+      const rdt = Number.isFinite(frameMs) && frameMs > 0 ? Math.min(0.1, frameMs / 1000) : 1 / 60;
       // FOV kick con turbo: sensación de velocidad AAA (lerp suave, barato)
-      if (shake.fov > 0.05) shake.fov *= Math.pow(0.006, STEP * 2);   // decae ~rápido
+      if (shake.fov > 0.05) shake.fov *= Math.pow(0.006, rdt);   // decae ~rápido
       const activeCamera = cameraController.snapshot();
       const wantFov = activeCamera.fov + (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') ? 9 : 0)
         + (shake.fov || 0);
@@ -2051,7 +2131,7 @@ async function main() {
         else cc.update(STEP);
       } else if (arrival) {
         // swoop de entrada: de vista-mapa al rig chase, easeOutCubic
-        arrival.t += STEP;
+        arrival.t += rdt;
         const k = Math.min(1, arrival.t / arrival.dur);
         const e = 1 - Math.pow(1 - k, 3);
         const back = new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)).multiplyScalar(14);
@@ -2061,7 +2141,7 @@ async function main() {
         camera.lookAt(P);
         if (k >= 1) arrival = null;
       } else if (modeKey === 'cinematico') {
-        tourT += STEP * cine.v;
+        tourT += rdt * 0.5 * cine.v;          // 0.5 = velocidad que ya veía el usuario a 60 fps
         const r = diag * 0.3;                        // más cerca (pedido)
         camera.position.set(Math.cos(tourT) * r, diag * cine.a, Math.sin(tourT) * r);
         camera.lookAt(0, (W.elev_max - W.elev_min) * 0.4, 0);
@@ -2197,7 +2277,7 @@ async function main() {
           camera.position.x += (Math.random() - 0.5) * shake.mag;
           camera.position.y += (Math.random() - 0.5) * shake.mag * 0.6;
           camera.rotation.z += (Math.random() - 0.5) * shake.mag * 0.02;
-          shake.mag *= Math.pow(0.02, STEP * 2); // ~decadencia 98%/s
+          shake.mag *= Math.pow(0.02, rdt); // ~decadencia 98%/s
         } else shake.mag = 0;
       }
       if (qaPose) {                            // ?qa=1: cámara libre para capturas de comparación
@@ -2322,7 +2402,13 @@ async function main() {
     '4k':  { label: '4K',    dpr: 3,    aniso: 16 },
     ultra: { label: 'ultra', dpr: 4,    aniso: 16 },
   };
-  let calidad = Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto';   // QA: calidad por URL
+  // En teléfono, 4K/ultra (DPR 3-4 = 6.4 MP con SMAA+bloom en half-float) superan el DPR real de la
+  // pantalla y Metal desaloja texturas/tab crashea; además el valor persistía y se repetía en cada recarga.
+  const CALIDAD_KEYS = COARSE_PTR ? ['auto', 'hd', 'extra'] : Object.keys(CALIDADES);
+  const readStoredCalidad = () => { try { return localStorage.getItem('ab.fv.calidad'); } catch { return null; } };
+  const storedCalidad = readStoredCalidad();
+  let calidad = Q.get('calidad')                                   // QA: calidad por URL (sin límite)
+    || (CALIDAD_KEYS.includes(storedCalidad) ? storedCalidad : 'auto');
   if (!CALIDADES[calidad]) calidad = 'auto';
   const applyDpr = d => {
     if (Math.abs(renderer.getPixelRatio() - d) < 0.001) return;
@@ -2374,12 +2460,12 @@ async function main() {
       dprNow = qualityGovernor.snapshot().dpr;
       applyDpr(dprNow);
     }
-    localStorage.setItem('ab.fv.calidad', k);
+    if (!Q.get('calidad')) { try { localStorage.setItem('ab.fv.calidad', k); } catch { /* bloqueado */ } }
     report.calidad = { k, dpr: +dprNow.toFixed(2) };
     upgradeMeshTex(k);
   };
   $('#vl-calidad').addEventListener('click', () => {
-    const ks = Object.keys(CALIDADES);
+    const ks = CALIDAD_KEYS;
     setCalidad(ks[(ks.indexOf(calidad) + 1) % ks.length]);
   });
 

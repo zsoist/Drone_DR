@@ -62,6 +62,7 @@
 .vl-result-k { font:700 var(--fs-xs) var(--mono); letter-spacing:var(--tr-eyebrow); color:var(--accent) }
 .vl-result-time { font:700 var(--fs-display)/1.1 var(--mono); color:#E6EBF2; margin:10px 0 4px }
 .vl-result-time small { font-size:var(--fs-2xl); color:#8A97A8 }
+.vl-result-time.vl-def { font-size:clamp(28px,9vw,44px); letter-spacing:var(--tr-caps); color:#E88A8A; margin:12px 0 6px }
 .vl-result-btns { display:flex; gap:10px; justify-content:center }
 .vl-result-btns button,.vl-result-btns a { font:600 var(--fs-sm) var(--font); letter-spacing:var(--tr-caps);
   padding:9px 16px; border-radius:var(--r-md); cursor:pointer; text-decoration:none;
@@ -1401,3 +1402,23 @@ html[data-theme="light"] body.vl-body {
 
 /* móvil vertical: la tira FLT no cabe con LNK → se oculta (la señal ya está en el corchete) */
 @media (max-width: 430px) { .vl-fpv-head .fh-lnk { display: none; } }
+
+/* ── Auditoría móvil 2026-09-30 ───────────────────────────────────────────── */
+/* Imagen: el scrim difuminado/oscurecido impedía juzgar el grade en vivo. Solo queda el receptor de taps. */
+body[data-vl-overlay="image"] .vl-overlay-scrim {
+  background:transparent; -webkit-backdrop-filter:none; backdrop-filter:none }
+/* Sticks: respetar notch/isla y home-indicator (zona táctil llegaba a y=908 de 932 en iPhone) */
+.vl-stick { bottom:calc(24px + env(safe-area-inset-bottom));
+  padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right); box-sizing:border-box }
+/* Picker de Gate Rush: "10 aros · 6.5m" se partía en 4 líneas en 430 px */
+.vl-diff button span { white-space:nowrap }
+/* Movimiento reducido: el HUD dejaba parpadeos/entradas animadas activas */
+@media (prefers-reduced-motion:reduce) {
+  .vl-hud *, .vl-hud *::before, .vl-hud *::after,
+  .vl-result, .vl-result *, .vl-diff, .vl-diff *, .vl-grade, .vl-guide, .vl-inv, .vl-dock, .vl-combat,
+  .vl-hitfx, .vl-flash, .vl-toast, #vl-toast {
+    animation-duration:.001ms !important; animation-iteration-count:1 !important;
+    transition-duration:.001ms !important; scroll-behavior:auto !important }
+}
+/* Sheets móviles (Menú/Combate) son fijos al borde: la etiqueta ARRASTRAR prometía un gesto que no existe */
+@media (pointer:coarse) { .vl-dock-head b small { display:none } }

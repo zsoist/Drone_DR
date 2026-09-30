@@ -1,14 +1,14 @@
 // Unified FLIGHTVERSE structural, terrain, and playable-boundary queries.
-import * as THREE from '/flightverse/three.js?v=365';
+import * as THREE from '/flightverse/three.js?v=366';
 import {
   MeshBVH,
   getTriangleHitPointInfo,
-} from '/vendor/three-mesh-bvh180.module.js?v=365';
+} from '/vendor/three-mesh-bvh180.module.js?v=366';
 import {
   earliestHit,
   segmentCircleBoundaryHit,
   segmentSquareBoundaryHit,
-} from '/flightverse/collision-math.js?v=365';
+} from '/flightverse/collision-math.js?v=366';
 
 const EPSILON = 1e-7;
 const ZERO = new THREE.Vector3();
@@ -330,7 +330,9 @@ export async function createWorldCollision(
       };
     }
     if (distance <= EPSILON) return null;
-    const steps = Math.min(512, Math.max(1, Math.ceil(distance / 0.25)));
+    // muestreo por distancia (0.25 m hasta 128 m, luego 0.5 m): con tope fijo de 512 muestras un rayo de
+    // 1200 m (retícula/RAIL) saltaba crestas de <3 m
+    const steps = Math.min(4096, Math.max(1, Math.ceil(distance / (distance > 128 ? 0.5 : 0.25))));
     let previousFraction = 0;
     let previousSigned = initial;
     for (let index = 1; index <= steps; index += 1) {
@@ -444,7 +446,8 @@ export async function createWorldCollision(
     }
     if (typeof heightAt === 'function') {
       const height = heightAt(point.x, point.z);
-      const legalY = Number(height) + radii.terrain;
+      // Number(null) === 0: fuera de la rejilla DSM (heightAt null) esto elevaba al dron a y=radio
+      const legalY = Number.isFinite(height) ? height + radii.terrain : NaN;
       if (Number.isFinite(legalY) && point.y < legalY) {
         candidates.push({
           kind: 'terrain',
@@ -474,6 +477,17 @@ export async function createWorldCollision(
     )[0] || null;
   }
 
+  // Noclip (Dios) ignora malla y terreno pero NO el borde jugable: sin esto el dron salía del mundo a
+  // 85 m/s y toda consulta desde fuera devolvía un hit de borde a fracción 0 (cámara colapsada, retícula
+  // en la cámara, misiles explotando en el cañón). Devuelve la traslación que lo devuelve al borde.
+  function boundaryClamp(pointValue, radius = 0) {
+    ensureActive();
+    const point = vector(pointValue);
+    const contact = boundaryHit(point, point, boundary, radius);
+    if (!contact || contact.fraction !== 0) return null;
+    return contact.point.clone().sub(point);
+  }
+
   function dispose() {
     if (disposed) return;
     disposed = true;
@@ -492,6 +506,7 @@ export async function createWorldCollision(
     castSegment,
     sweepSphere,
     recoverSphere,
+    boundaryClamp,
     closest,
     groundHeight: (x, z) => (
       typeof heightAt === 'function' ? heightAt(x, z) : null

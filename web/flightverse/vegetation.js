@@ -5,9 +5,9 @@
 // /assets/vegetation/ (≤ 10 KB). Es 100% visual: sin colisión, sin sombras, sin física.
 //
 // Cualquier fallo (red, GLB, JSON viejo) devuelve null y el mundo sigue como antes.
-import * as THREE from '/flightverse/three.js?v=365';
+import * as THREE from '/flightverse/three.js?v=366';
 
-const V = '?v=365';
+const V = '?v=366';
 // tope de instancias por nivel (el JSON viene barajado: el prefijo es un adelgazamiento uniforme)
 export const VEGETATION_CAPS = { high: 6000, lite: 1800 };
 // ancho relativo al alto del GLB normalizado (1 m de alto): árboles anchos, arbusto ya viene ancho

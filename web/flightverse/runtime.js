@@ -3,8 +3,8 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=365';
-import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=365';
+import * as THREE from '/flightverse/three.js?v=366';
+import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=366';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -321,7 +321,15 @@ export function createDrone({ world, spawn }) {
     const ground = world?.groundHeight?.(d.pos.x, d.pos.z);
     d.agl = ground == null ? null : d.pos.y - ground;
     d.crashedSoft = false;
-    if (m.noclip || !world?.sweepSphere) return;
+    if (m.noclip) {
+      const back = world?.boundaryClamp?.(d.pos, d.collisionRadius);
+      if (back) {
+        d.pos.add(back);
+        d.vel.x = 0; d.vel.z = 0;               // no acumular velocidad contra el borde
+      }
+      return;
+    }
+    if (!world?.sweepSphere) return;
 
     try {
       _desired.copy(d.pos);

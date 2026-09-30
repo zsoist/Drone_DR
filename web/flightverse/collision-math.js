@@ -167,3 +167,21 @@ export function normalizeTargetRadius(target) {
   }
   return 0;
 }
+
+// Gate Rush: did the segment prev→pos fly THROUGH the gate disc (plane crossing inside `radius`)?
+// The old sphere-proximity test counted a drone skimming past the OUTSIDE of the ring (pass radius
+// is 1.05–1.25x the ring radius). `normal` is the gate axis; direction of travel is irrelevant.
+// A step that ends on the plane inside a small core (teleports/autotest) also counts.
+export function segmentPassesGate(prev, pos, center, normal, radius) {
+  if (!finitePositive(radius)) return false;
+  const n = normalized(normal, { x: 0, y: 0, z: 1 });
+  const s0 = dot(subtract(prev, center), n);
+  const s1 = dot(subtract(pos, center), n);
+  if (![s0, s1].every(Number.isFinite)) return false;
+  const crossed = (s0 < 0 && s1 >= 0) || (s0 > 0 && s1 <= 0);
+  if (!crossed) return false;
+  const t = s0 / (s0 - s1);
+  const hit = pointAt(prev, subtract(pos, prev), t);
+  const off = subtract(hit, center);
+  return Math.hypot(off.x, off.y, off.z) < radius;
+}

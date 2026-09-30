@@ -44,6 +44,7 @@ from paths import VAULT, WEB  # noqa: E402
 
 SSIM_MIN = 0.97
 SHARPNESS_MIN = 0.95
+MIN_FRAME_STD = 4.0     # 0-255 pixel std-dev: two blank frames are 'identical' (SSIM 1.0) and must not pass
 WIDTH, HEIGHT = 960, 600
 HOST_PAGE = "/__glb_gate__.html"        # 404 document: same origin, no CSP
 CSP_HOST_PAGE = "/flightverse/world-collision-fixture.html"   # static page WITH the production CSP
@@ -230,16 +231,18 @@ def lap_var(rgb: np.ndarray) -> float:
 
 def compare_shots(ref: list[str], cand: list[str]) -> dict:
     from skimage.metrics import structural_similarity
-    ssims, ratios = [], []
+    ssims, ratios, stds = [], [], []
     for a, b in zip(ref, cand):
         ia, ib = _decode(a), _decode(b)
+        stds.append(min(float(ia.std()), float(ib.std())))
         ssims.append(float(structural_similarity(ia, ib, channel_axis=2, data_range=255.0)))
         la = lap_var(ia)
         ratios.append(lap_var(ib) / la if la > 0 else 1.0)
     return {"ssim_per_cam": [round(x, 4) for x in ssims], "ssim_mean": round(float(np.mean(ssims)), 4),
             "ssim_min": round(float(np.min(ssims)), 4),
             "sharpness_ratio_per_cam": [round(x, 3) for x in ratios],
-            "sharpness_ratio_mean": round(float(np.mean(ratios)), 3)}
+            "sharpness_ratio_mean": round(float(np.mean(ratios)), 3),
+            "frame_std_min": round(float(np.min(stds)), 2) if stds else 0.0}
 
 
 def gate_tier(base_url: str, cid: str, tier: str, shots_dir: Path | None, log=print,
@@ -270,6 +273,8 @@ def gate_tier(base_url: str, cid: str, tier: str, shots_dir: Path | None, log=pr
     checks = {
         "ssim": cmpr["ssim_mean"] >= SSIM_MIN,
         "sharpness": cmpr["sharpness_ratio_mean"] >= SHARPNESS_MIN,
+        # sin esto, dos frames vacíos (malla invisible) daban SSIM 1.0 y nitidez 1.0 = PASS
+        "non_blank": cmpr["frame_std_min"] >= MIN_FRAME_STD,
         "download": cand["wireBytes"] <= ref["wireBytes"],
         "gpu": cand["gpuTexMB"] <= ref["gpuTexMB"],
         "first_frame": cand["firstFrameMs"] <= ref["firstFrameMs"],

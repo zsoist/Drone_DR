@@ -385,6 +385,7 @@ export function composeCollisionWorld(world, sceneItems) {
         items?.recoverSphere?.(point, radius) || null,
       ]);
     },
+    boundaryClamp: (...args) => world?.boundaryClamp?.(...args) ?? null,
     closest(point, maxDistance = Infinity) {
       const candidates = [
         world?.closest?.(point, maxDistance) || null,
@@ -416,6 +417,7 @@ export function createMutableCollisionWorld(world) {
     castSegment: (...args) => composite.castSegment(...args),
     sweepSphere: (...args) => composite.sweepSphere(...args),
     recoverSphere: (...args) => composite.recoverSphere(...args),
+    boundaryClamp: (...args) => composite.boundaryClamp(...args),
     closest: (...args) => composite.closest(...args),
     groundHeight: (...args) => composite.groundHeight(...args),
     remove: node => composite.remove(node),
