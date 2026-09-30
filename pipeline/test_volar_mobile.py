@@ -1,5 +1,6 @@
 import sys
 import unittest
+from fv_source import module_source, volar_source
 from pathlib import Path
 
 
@@ -30,7 +31,7 @@ class VolarMobileHudContractTests(unittest.TestCase):
         return super().assertNotIn(member, container, msg)
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / "web" / "volar.js").read_text()
+        cls.source = volar_source()
         cls.styles = (ROOT / "web" / "css" / "volar.css").read_text()
 
     def test_mobile_launchers_are_named_and_control_real_sheets(self):
@@ -103,15 +104,17 @@ class VolarMobileHudContractTests(unittest.TestCase):
             "input.setEnabled(!active)",
             "const globalHotkeyAllowed = event =>",
             "if (!globalHotkeyAllowed(e)) return",
-            "overlayCoordinator?.active()",
+            "ctx.ui.overlay?.active()",
             "lastFlightInput",
         ):
             self.assertIn(contract, self.source)
         self.assertEqual(self.source.count("addEventListener('keydown'"), 1)
-        auto_input = self.source.index("if (auto && simT < auto.until)")
-        overlay_neutral = self.source.index("if (overlayCoordinator?.active())", auto_input)
-        sampled_input = self.source.index("lastFlightInput = { ...inp }", overlay_neutral)
-        drone_step = self.source.index("drone.step(dt, inp, modeKey)", sampled_input)
+        # el muestreo de vuelo vive en input/bindings.js (A0)
+        flight = module_source("input/bindings.js")
+        auto_input = flight.index("if (ctx.auto && S.simT < ctx.auto.until)")
+        overlay_neutral = flight.index("if (ctx.ui.overlay?.active())", auto_input)
+        sampled_input = flight.index("lastFlightInput = { ...inp }", overlay_neutral)
+        drone_step = flight.index("drone.step(dt, inp, S.modeKey)", sampled_input)
         self.assertLess(auto_input, overlay_neutral)
         self.assertLess(overlay_neutral, sampled_input)
         self.assertLess(sampled_input, drone_step)
@@ -159,7 +162,7 @@ class VolarMobileHudContractTests(unittest.TestCase):
         for contract in (
             'id="vl-rig"',
             'aria-label="Cambiar cámara"',
-            "$('#vl-rig').addEventListener('click', cycleRig)",
+            "$('#vl-rig').addEventListener('click', () => A.cycleRig())",
         ):
             self.assertIn(contract, self.source)
         self.assertNotIn('id="vl-fpv-camera"', self.source)
@@ -608,7 +611,7 @@ class VolarMobileHudContractTests(unittest.TestCase):
             "locked: false",
             "beginFiring",
             "releaseFiring",
-            "trigger: { ...triggerState }",
+            "trigger: { ...ctx.trigger }",
             "LIBERA PARA REARMAR",
         ):
             self.assertIn(contract, self.source)

@@ -1,11 +1,11 @@
-  import * as THREE from '/vendor/three180.module.js?v=366';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=366';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=366';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=366';
-  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=366';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=366';
-  import { mountSplatViewer } from '/splatview.js?v=366';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=366';
+  import * as THREE from '/vendor/three180.module.js?v=367';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=367';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=367';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=367';
+  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=367';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=367';
+  import { mountSplatViewer } from '/splatview.js?v=367';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=367';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };

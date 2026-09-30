@@ -2,10 +2,11 @@
 the gates; these pin the fixes so they cannot silently regress)."""
 import re
 import unittest
+from fv_source import volar_source
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-VOLAR = (ROOT / "web" / "volar.js").read_text()
+VOLAR = volar_source()
 CSS = (ROOT / "web" / "css" / "volar.css").read_text()
 AUDIO = (ROOT / "web" / "flightverse" / "audio.js").read_text()
 
@@ -20,8 +21,8 @@ class WorldHuntRegressions(unittest.TestCase):
             self.assertIn(f'data-act="{act}"', VOLAR)
 
     def test_game_pauses_while_any_overlay_is_open(self):
-        self.assertIn("const gamePaused = !!overlayCoordinator?.active()", VOLAR)
-        for call in ("invasion.update(dt", "weapons.update(dt", "reto.update(dt"):
+        self.assertIn("const gamePaused = !!ctx.ui.overlay?.active()", VOLAR)
+        for call in ("invasion.update(dt", "weapons.update(dt", "S.reto.update(dt"):
             m = re.search(r"if \(!gamePaused\) " + re.escape(call), VOLAR)
             self.assertIsNotNone(m, f"{call} must be skipped while paused")
 
@@ -52,7 +53,7 @@ class WorldHuntRegressions(unittest.TestCase):
     def test_arcade_degenerate_track_and_gate_rush_priority(self):
         self.assertIn("apilot.len > 1e-3", VOLAR)
         self.assertIn("trackUsable", VOLAR)
-        self.assertIn("if (MODES[modeKey]?.autopilot) setMode('asistido');", VOLAR)
+        self.assertIn("if (MODES[S.modeKey]?.autopilot) A.setMode('asistido');", VOLAR)
 
     def test_dios_gate_rush_has_its_own_record(self):
         self.assertIn("`${st.difficulty}.dios`", VOLAR)

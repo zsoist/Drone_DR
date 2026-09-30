@@ -4,6 +4,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from fv_source import volar_source
 from pathlib import Path
 from unittest import mock
 
@@ -448,7 +449,7 @@ class SceneObjectCollisionRuntimeWiringTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = Path(__file__).resolve().parent.parent
-        cls.volar = (cls.root / "web" / "volar.js").read_text()
+        cls.volar = volar_source()
         cls.objects = (cls.root / "web" / "flightverse" / "objects.js").read_text()
         cls.runtime = (cls.root / "web" / "flightverse" / "runtime.js").read_text()
         cls.weapons = (cls.root / "web" / "flightverse" / "weapons.js").read_text()
@@ -463,7 +464,7 @@ class SceneObjectCollisionRuntimeWiringTests(unittest.TestCase):
             "resolveAimRay({",
             "}, collision, hittables)",
             "world: collision",
-            "collision.setItems(sceneObjects.collision)",
+            "collision.setItems(S.sceneObjects.collision)",
         ):
             self.assertIn(contract, self.volar)
 

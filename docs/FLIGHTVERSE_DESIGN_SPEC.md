@@ -190,25 +190,65 @@ Min text 12 px on phone HUD; contrast ≥ 4.5:1 (all text on `--h-plate` ≥ 7:1
 
 ## 15. Implementation plan
 
-### 15.1 Splitting volar.js (blocks collisions)
-`web/volar.js` is a 2 557-line monolith with `hud()` markup (L98–345) and a 2 000-line `main()`. **Step 0 (Workstream A, 1 day, blocks nothing for B–E to start on their own files)**: extract without behaviour change into `web/flightverse/ui/`: `hud-markup.js`, `hud-tapes.js`, `hud-reticle.js`, `menus.js`, `screens.js`, `combat-ui.js`, `boot.js`. `volar.js` shrinks to orchestration (`main()`), wiring modules through a `ctx` object and a `bus` (`EventTarget`). A commits the stub `install(ctx)` entries first, in this order, so no other stream edits `volar.js`:
+### 15.1 Splitting volar.js — DONE (Phase A0, pure refactor, zero behaviour change)
+`web/volar.js` went from 2 557 to 773 lines and is now **orchestration only** (boot of the world, the fixed-step/render loop, lifecycle). Everything else lives in per-workstream modules wired through one shared `ctx` and an event `bus`. Install order in `main()` (this order is load-bearing: DOM listener order and dependencies):
 ```
-installFx(ctx)       // B: fx/*.js
-installControls(ctx) // C: controls + camera + physics
-installEnemies(ctx)  // D: invasion + gaterush loop
-installTour(ctx)     // E: tour + photo + world presentation
-installUi(ctx)       // A
+mountUi(ctx)              // A  HUD markup + surface guards (before anything touches the DOM)
+... world boot (manifest, renderer, terrain, collision, vista) ...   // stays in volar.js
+createDroneModel(ctx)     // C  drone mesh, props, nav lights, hardpoints
+await installTour(ctx)    // E  ghost (GPS track), autopilot, cinematic cams, recorder, director
+input/audio created in volar.js
+await installFx(ctx)      // B  weapons, weapon models, aim ring, shake, audio frame
+installEnemies(ctx)       // D  Invasion + Gate Rush (needs fx.weapons)
+installControls(ctx)      // C  trigger, sticks, hotkeys, camera rig, flight tools, setMode
+installUi(ctx)            // A  weapon picker, menu/overlays, grade, screens, minimap
 ```
-**Ownership rule:** `volar.js` is owned by A only; others expose `install(ctx)` and communicate via `bus` events: `fire{weapon,origin,dir}`, `hit{target,weapon,damage,kill}`, `explode{pos,size}`, `damage{amount,dir,source}`, `crash{energyClass}`, `respawn`, `lock{target,state}`, `wave{n}`, `gate{i,n}`, `mode{key}`, `pause`, `tod{key}`. Shared files: `runtime.js` (C only), `scene.js` (E only for presentation regions: sky/fog/tone; C never touches it), `sky.js` (E). CSS: A owns `web/css/volar.css`; new files `web/css/hud.css` (A), `web/css/screens.css` (A); others have no CSS except `fx` DOM-less.
+Loop contract (volar.js): `update(dt)` picks who moves the drone (`tour.director.stepDirector` > `tour.director.stepReplay` > `tour.autopilot.step` > `enemies.gaterush.stepFly` > `controls.step` + `enemies.gaterush.afterStep` + `controls.afterStep`), then `fx.update`, `enemies.update`, `fx.afterUpdate`, `tour.ghost.update`. `render()` calls `controls.camera.updateFov`, pulses, `ctx.droneModel.update`, one of the camera sources (director / arrival / orbit / `controls.camera.update`), reports (`enemies.report`, `fx.report`, `controls.report`), `ui.weapons.update`, `fx.render` (aim ring + shake), composer, then `fx.audioFrame` and `ui.update`.
 
-### 15.2 Workstreams and disjoint ownership
+**ctx (shared context, one object, created at module load in volar.js)**
+| Field | Meaning |
+|---|---|
+| `THREE, $, esc, Q, CID, AT, AUTOTEST, report, bus, flags, auto, P` | constants; `report` = `window.__volar`; `P` = interpolated drone position (Vector3); `auto` = `{until:5}` in autotest |
+| `flags` (frozen) | `fv2` (`?fv=2`, default false — parsed ONCE here, nothing reads it yet), `debug` (`?debug=1`), `autotest`, `coarse` (pointer:coarse) |
+| `state` (S) | shared mutable game state: `simT, modeKey, reto, replay, retoFly, retoMode, resultShown, director, ghost, sceneObjects, firing, lastInvasionRun`. Former closure `let`s of main(); read/write directly |
+| `trigger` | fire-trigger telemetry (`held, locked, source, pointerId, presses, releases, accepted, mode`), dumped in `report.weaponState.trigger` |
+| `actions` | named entry points modules register and call lazily: `setMode setRig cycleRig releaseFiring beginFiring startReto startReplay exitReplay startInvasionRun enterDirector toggleGhost toggleSound toggleRec cycleVista cycleCalidad` |
+| boot-assigned | `man W renderer scene camera worldGroup composer post(post-process effects) terrain fxLevel sky syncLook world collision drone droneModel input audio loop` |
+| module APIs | `ui`, `fx`, `controls`, `enemies`, `tour` (each filled by its install hook; shape documented in the header of each index.js) |
+`window.__volar.ctx` exposes it for debugging (non-enumerable, so `JSON.stringify(window.__volar)` is unchanged).
+
+**bus (`web/flightverse/bus.js`, no deps)**: `createBus({validate,strict})` -> `on(type,fn)` (returns unsubscribe), `once`, `off`, `emit(type, detail)`, `clear`, `count`, `stats`. A throwing handler is logged and never breaks the emitter. `BUS_EVENTS` is the schema: `fire{weapon,origin,dir}`, `hit{target,weapon,damage,kill}`, `explode{pos,size}`, `damage{amount,dir,source}`, `crash{energyClass}`, `respawn`, `lock{target,state}`, `wave{n}`, `gate{i,n}`, `mode{key}`, `pause` (A0 adds `{active, overlay}`), `tod{key}`. **Emitted today (A0)**: `fire` (fx.doFire), `mode` (controls.setMode), `pause` (overlay change), `tod` (sky chip), `gate` (Gate Rush gate passed, `i` = new index), `wave` (invasion wave change), `damage` (invasion hit, `dir:null`, `source:'invasion'`), `crash` (`energyClass:'soft'`, on the soft-crash edge). **Not emitted yet** (no source exists): `hit`, `explode`, `respawn`, `lock` — B/C/D add them at the point they are produced.
+
+### 15.2 Module map and ownership (ACTUAL)
+| File | Contents | WS |
+|---|---|---|
+| `web/volar.js` (773) | boot of world/renderer/terrain/collision/vista/quality, ctx creation, update/render loop, pagehide | A (orchestration; other streams do NOT edit it: they expose `install*`) |
+| `flightverse/bus.js` | typed event bus | A (contract; extend `BUS_EVENTS` by PR) |
+| `ui/index.js` | `mountUi`, `installUi`, `ctx.ui.{update,setInvasionUi,dispose,overlay}` | A |
+| `ui/hud.js` | full HUD markup assembly (fragments from all ui files, original DOM order), heading tape, minimap, FPV OSD, speed/AGL, challenge/count text, hit/gate flashes, invasion panel | A |
+| `ui/menu.js` | dock/FAB/camera-picker/gimbal/grade/cine/director markup; overlay coordinator, draggable panels, grade + presets, sound, share, rec button, dock chips | A |
+| `ui/screens.js` | boot/error screen, guide, invasion + difficulty pickers, Gate Rush result card, defeat card, toast | A |
+| `ui/weapons-ui.js` | combat panel + command HUD markup, weapon picker, ammo/cooldown readouts | A |
+| `fx/index.js` | `installFx`: weapons, weapon models, aim ring, shake, `doFire`, `resolveCombatAim`, weapons report, audio frame | B |
+| `input/index.js` | `installControls`, `setMode`; re-exports `createDroneModel` | C |
+| `input/bindings.js` | trigger state machine, fire pointers, touch sticks, hotkeys, blur/orientation reset, flight input sampling, crash edge | C |
+| `input/camera.js` | rig controller, gimbal, flight tools, FOV kick, camera pose + collision | C |
+| `input/drone-model.js` | procedural/GLB drone, props, nav lights, hover bob, hardpoints | C |
+| `modes/index.js` | `installEnemies` | D |
+| `modes/invasion-mode.js` | invasion + player HP, run start/stop, local best, defeat logic, QA URL start | D |
+| `modes/gaterush-mode.js` | start/fly-in/cues/result data/replay exit, `?autotest=gaterush` | D |
+| `tour/index.js` | `installTour`: ghost, autopilot, cinematic, director, recorder, `autotestRecord` | E |
+| `tour/ghost.js` `autopilot.js` `cinematic.js` `director.js` | real-flight ghost, Arcade autopilot + trail, arrival swoop + orbit, keyframe director + replay playback | E |
+Unchanged files keep the ownership table below. Shared: `runtime.js` (C only), `scene.js`/`sky.js` (E only for presentation). Tests that used to grep `volar.js` read `pipeline/fv_source.py` (volar.js + all module files) or the specific module.
+
+**Ownership of the pre-existing files (unchanged from plan)**
 | WS | Scope | Owns (only these files) | Depends on |
 |---|---|---|---|
-| A | HUD, reticle canvas, menus, screens, onboarding, settings UI, a11y, mode select, end screens, unified HUD | `web/volar.js`, `web/css/volar.css`, new `web/css/hud.css`, `web/css/screens.css`, new `web/flightverse/ui/*.js`, `hud-format.js`, `flight-tools.js`, `panels.js`, `mobile-command.js`, `web/flightverse/render-quality.js` (budget UI) | bus events from B–E |
-| B | Weapons, projectiles, tracers, FX library, impacts, decals, shake/hit-stop, audio buses/events | `weapons.js`, `weapon-effects.js`, `weapon-models.js`, `weapon-registry.js`, `aiming.js`, `audio.js`, new `web/flightverse/fx/*.js`, new `web/flightverse/audio/*.js` | bus `fire/hit/explode` |
-| C | Controls, cameras, physics v2 wiring, wind, haptics | `touch.js`, `camera-rigs.js`, `runtime.js`, `physics/*`, `collision-math.js`, `world-collision.js`, `scene-object-collision.js`, `drone-envelope.js`, new `web/flightverse/input/*.js` | emits `damage/crash/respawn`; reads `mode` |
-| D | Enemies, invasion, Gate Rush loop, medals/records data, difficulty | `invasion.js`, `invasion-policy.js`, `gaterush.js`, `objects.js`, enemy assets under `web/data/models/enemies/*`, new `web/flightverse/modes/*.js` (records, onboarding target) | A for screens, B for fx |
-| E | World presentation, Tour, photo mode, time of day, world edge | `sky.js`, `scene.js`, `visual-coverage.js`, `vegetation.js`, `layer-load-state.js`, `recorder.js`, `export.js`, new `web/flightverse/tour.js`, `photo.js`, `web/assets/tour/*.json` | A for menu entries |
+| A | HUD, reticle canvas, menus, screens, onboarding, settings UI, a11y, mode select, end screens | `web/volar.js`, `web/css/volar.css`, new `web/css/hud.css`, `web/css/screens.css`, `web/flightverse/ui/*.js`, `bus.js`, `hud-format.js`, `flight-tools.js`, `panels.js`, `mobile-command.js`, `render-quality.js` | bus events from B-E |
+| B | Weapons, projectiles, tracers, FX, impacts, decals, shake/hit-stop, audio | `weapons.js`, `weapon-effects.js`, `weapon-models.js`, `weapon-registry.js`, `aiming.js`, `audio.js`, `fx/*.js`, new `audio/*.js` | bus `fire/hit/explode` |
+| C | Controls, cameras, physics v2 wiring, wind, haptics | `touch.js`, `camera-rigs.js`, `runtime.js`, `physics/*`, `collision-math.js`, `world-collision.js`, `scene-object-collision.js`, `drone-envelope.js`, `input/*.js` | emits `damage/crash/respawn`; reads `mode` |
+| D | Enemies, invasion, Gate Rush loop, medals/records, difficulty | `invasion.js`, `invasion-policy.js`, `gaterush.js`, `objects.js`, enemy assets, `modes/*.js` | A for screens, B for fx |
+| E | World presentation, Tour, photo mode, time of day, world edge | `sky.js`, `scene.js`, `visual-coverage.js`, `vegetation.js`, `layer-load-state.js`, `recorder.js`, `export.js`, `tour/*.js`, `photo.js`, `web/assets/tour/*.json` | A for menu entries |
 
 ### 15.3 Order and acceptance
 Order: A step 0 (day 1) → B, C, D, E in parallel → A UI polish (day 3) → integration pass (day 4) → deploy gate. Every stream ships behind `?fv=2` until the integration pass, then flips default.

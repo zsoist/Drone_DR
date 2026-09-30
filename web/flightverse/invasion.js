@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=366';
+import * as THREE from '/flightverse/three.js?v=367';
 import {
   capWaveQueue,
   createBurstSchedule,
@@ -16,7 +16,7 @@ import {
   selectEnemyLod,
   steerGroundEnemy,
   shouldCullStraggler,
-} from '/flightverse/invasion-policy.js?v=366';
+} from '/flightverse/invasion-policy.js?v=367';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -216,7 +216,7 @@ export function createInvasion(scene, {
 
   async function loadCatalog() {
     if (!catalogPromise) {
-      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=366', { cache: 'no-store' })
+      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=367', { cache: 'no-store' })
         .then(response => {
           if (!response.ok) throw new Error(`enemy catalog ${response.status}`);
           return response.json();
@@ -255,9 +255,9 @@ export function createInvasion(scene, {
         await loadCatalog();
         const file = modelFile(type, lod);
         if (!file) throw new Error(`catalog missing ${key}`);
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=366'));
-        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=366');
-        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=366`);
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=367'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=367');
+        const gltf = await new GLTFLoader().loadAsync(`/assets/enemies/${file}?v=367`);
         const loaded = { scene: gltf.scene, clips: gltf.animations || [], type, lod };
         if (disposed || loadSession !== session) {
           disposeTree(loaded.scene);
