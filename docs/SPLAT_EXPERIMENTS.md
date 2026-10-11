@@ -1,347 +1,424 @@
-# SPLAT_EXPERIMENTS — resultados medidos (held-out)
+# SPLAT_EXPERIMENTS: measured results (held-out)
 
-> **Dataset experimental congelado (MPS/OpenSplat, 2026-07-11).** Sigue siendo evidencia
-> válida para esas corridas, pero no prescribe el backend premium actual. CUDA de producción y
-> sus tiers viven en [SPLAT_PIPELINE.md](SPLAT_PIPELINE.md).
-> Palabras como “corriendo”, “en curso”, “pendiente” y “siguiente” describen el diario de ese
-> día; no son estado operativo ni trabajo activo del 2026-07-14.
-
-> Regla: ningún cambio de calidad shippea sin número antes/después de este
-> harness. Los negativos se registran, nunca se borran. Cada fila tiene su
-> `run.json` con `params_hash` en `vault/eval/<cid>/<run_id>/`.
+> **Frozen experiment dataset (MPS/OpenSplat, 2026-07-11).** The data is still valid evidence for
+> those runs. It does not set the current premium backend. The production CUDA backend and its
+> tiers are in [SPLAT_PIPELINE.md](SPLAT_PIPELINE.md).
 >
-> Protocolo: split determinista (seed = clip_id → mismo split entre runs de la
-> misma escena), test views excluidas del training (cirugía de
-> reconstruction.json), render + GT por el camino interno del trainer
-> (`--render-cameras`, patch local), PSNR/SSIM full-res + LPIPS (AlexNet, lado
-> ≤1024). Los splats publicados ANTES del harness entrenaron con todas las
-> vistas — cualquier eval sobre ellos es train-view reproduction, NO baseline.
+> The words `running`, `in progress`, `pending` and `next` describe the log of that day.
+> They are not operational status. They are not active work on 2026-07-14.
 
-**Regla de resolución (verificada 2026-07-11):** el eval compara SIEMPRE a
-resolución GT completa (`render_px` en cada eval block lo evidencia) — el modo
-render no hereda el `-d` del training, así que un modelo entrenado a media res
-paga su pérdida de detalle en el número. Sin esto, fast@full vs ultra@half no
-serían comparables y todos los deltas de Phase 2 nacerían contaminados.
+> Rule: Do not release a quality change without a before/after number from this
+> harness. Record negative results. Never delete them. Each row has its
+> `run.json` with `params_hash` in `vault/eval/<cid>/<run_id>/`.
+>
+> Protocol: The split is deterministic (the seed is clip_id, so the split is the same between
+> runs of the same scene). The test views are not in the train set (surgery on
+> reconstruction.json). The render and the GT come from the internal path of the trainer
+> (`--render-cameras`, local patch). PSNR and SSIM are full-res. LPIPS uses AlexNet, with a side of
+> at most 1024 px.
+>
+> The splats published BEFORE the harness trained with all views. Any eval
+> on them is train-view reproduction, NOT a baseline.
 
-**Preset de baseline = cinematic** (lo que producción entrega en esta clase de
-escena). Ultra se registra igual: su techo de memoria ES parte de la baseline.
+**Resolution rule (checked 2026-07-11):** The eval ALWAYS compares at full GT
+resolution (`render_px` in each eval block shows it). The render mode does not inherit the `-d`
+of the train step. So a model trained at half resolution pays for its loss of detail in the
+number. Without this rule, fast@full and ultra@half are not comparable. All the deltas of
+Phase 2 start contaminated.
 
-## Baseline (Phase 1) — CONGELAR al completar las 3 escenas
+**Baseline preset: cinematic** (what production delivers for this class of
+scene). The table also records Ultra. The memory ceiling of Ultra IS part of the baseline.
 
-| Escena | Preset | PSNR | SSIM | LPIPS | train s | peak MiB | run_id |
+## Baseline (Phase 1): freeze when the 3 scenes are complete
+
+| Scene | Preset | PSNR | SSIM | LPIPS | train s | peak MiB | run_id |
 |---|---|---|---|---|---|---|---|
-| easy `…133809_0101_D` (30 cám) | cinematic | **BLOQUEADA: regresión ambiental P0** (abajo) | | | | | |
-| easy `…133809_0101_D` | ultra (3 escalones) | **FAIL: OOM ×3** — el preset insignia no puede con esta escena en 16GB (~200s/escalón hasta el cap footprint 11000) | — | — | 195+241+211 | 11000 (cap) | `20260711-085950-ultra/FAILED.json` |
-| grande `…133243_0100_D` (214 img) | cinematic | _pendiente_ | | | | | |
-| multi-source test #2 (0103+0104) | cinematic | _pendiente: regenerar recon_ | | | | | |
+| easy `…133809_0101_D` (30 cams) | cinematic | **BLOCKED: P0 environment regression** (below) | | | | | |
+| easy `…133809_0101_D` | ultra (3 tiers) | **FAIL: OOM 3 times.** The flagship preset cannot handle this scene in 16GB (about 200s per tier until the footprint cap 11000) | — | — | 195+241+211 | 11000 (cap) | `20260711-085950-ultra/FAILED.json` |
+| large `…133243_0100_D` (214 img) | cinematic | _pending_ | | | | | |
+| multi-source test #2 (0103+0104) | cinematic | _pending: regenerate recon_ | | | | | |
 
-Nota de contexto: los `peak` del run ultra fallido son RSS (subestiman MPS ~20×
-— medido en vivo: RSS 489 MiB vs phys_footprint 10 GB en el mismo proceso).
-PeakTracker corregido a `phys_footprint_peak` del kernel DESPUÉS de ese run;
-todos los runs siguientes reportan `peak_source: phys_footprint`. Las baselines
-corren con la máquina desacoplada del worker (headroom ≥ producción) —
-`machine_load` en cada run.json lo registra.
+Context note: The `peak` values of the failed ultra run are RSS. They underestimate MPS by about 20
+times. The live measurement was RSS 489 MiB compared with phys_footprint 10 GB in the same process.
+The team corrected PeakTracker to the kernel `phys_footprint_peak` AFTER that run.
 
-## Referencia (no baseline)
+All the runs after it report `peak_source: phys_footprint`. The baselines
+run with the machine decoupled from the worker (headroom at least equal to production).
+`machine_load` in each run.json records this.
 
-| Escena | Preset | PSNR | SSIM | LPIPS | train s | peak MiB | run_id | Nota |
+## Reference (not baseline)
+
+| Scene | Preset | PSNR | SSIM | LPIPS | train s | peak MiB | run_id | Note |
 |---|---|---|---|---|---|---|---|---|
-| easy `…133809_0101_D` | fast | 14.41 | 0.3935 | 0.7477 | 50.2 | 672 | `20260711-084640-fast` | shakedown del harness; side-by-side confirmó poses alineadas |
+| easy `…133809_0101_D` | fast | 14.41 | 0.3935 | 0.7477 | 50.2 | 672 | `20260711-084640-fast` | shakedown of the harness. The side-by-side comparison showed that the poses are aligned |
 
-## Experimentos Phase 2 (uno por fila, una variable por run)
+## Phase 2 experiments (one per row, one variable per run)
 
-| Lever | Escena | PSNR Δ | LPIPS Δ | train time Δ | peak MiB | Veredicto |
+| Lever | Scene | PSNR Δ | LPIPS Δ | train time Δ | peak MiB | Verdict |
 |---|---|---|---|---|---|---|
-| _2.0 SH 0→N (fix NaN)_ | | | | | | _pendiente de baseline_ |
+| _2.0 SH 0→N (NaN fix)_ | | | | | | _pending baseline_ |
 
-## Protocolo experimento 2.0 (SH-fix) — PRE-declarado (review 11-jul)
-COLISIÓN DE PRESUPUESTO: SH 0→3 = 3→48 coefs/gaussiana (~3-4× params+Adam).
-La cota 55KB/gaussiana y todo el preflight se midieron A SH=0 — inválidos para
-SH=3. Orden obligatorio: (1) REPRODUCIR el NaN (step, tensor, causa: ¿lr de SH
-en MPS? ¿fp16? ¿exposición variable?) — sin diagnóstico no hay experimento,
-hay ruleta; (2) re-medir KB/gaussiana con SH activo (run corto instrumentado)
-→ nuevo conteo máximo bajo cap; (3) comparación PRESUPUESTO-IGUAL: SH=3-bajo-cap
-vs SH=0-bajo-cap, cada uno al conteo que su presupuesto permita (NO conteo
-igual). Pregunta real: ¿cuánto LPIPS compra el color view-dependent a costa de
-la densificación perdida? (4) MÉTRICA PRE-DECLARADA: LPIPS decide; PSNR y el
-side-by-side de ojo VETAN (LPIPS mejor + artefactos nuevos visibles = FAIL).
-Decidir la métrica después de ver resultados = p-hacking.
+## Protocol of experiment 2.0 (SH-fix), declared in advance (review 11-jul)
 
-## Sweep escena 1 (en curso)
-- A: medium → PSNR 14.14 / SSIM 0.356 / LPIPS 0.572, bajo cap ✅ (trained_binary
-  clean-9fb62fd, anotado). Divergencia PSNR↔LPIPS vs fast: PSNR premia blur.
-- B: cinematic-acotado (7000 it, thresh 0.0008, refine 300) — corriendo.
-  Proyección: conteo ~180k ≤ 85% cap vía 55KB/gaussiana.
-- Fila baseline escena 1 = la que domine cuando B termine. NO congelar antes.
-- B FALLÓ: OOM 10925 a step 3430 — PASÓ el salto de resolución del schedule
-  (¼→½ en 3000) y los buffers ×4 lo mataron. El bounding de conteo compró
-  1200 steps vs cinematic (~2200). Memoria = f(conteo × resolución): el SALTO
-  del schedule es driver. Punto C candidato: B + --num-downscales 3 o
-  --resolution-schedule 8000 (nunca dobla en 7000 iters) — trade: detalle final.
-  Fila baseline escena 1 provisional = medium (único >fast bajo cap hoy).
+BUDGET COLLISION: SH 0 to 3 means 3 to 48 coefs per Gaussian (about 3-4 times the params plus Adam).
+The team measured the cap of 55KB per Gaussian and the whole preflight at SH=0. They are not valid
+for SH=3. The order is mandatory:
 
-## Forma funcional del presupuesto (serie instrumentada, 11-jul)
-peak(step) ≈ conteo×g(res) + B(res). MEDIDO en re-run de B: pre-salto 2.39
-MiB/step; salto ¼→½ = ESCALÓN +1336 MiB (aditivo) Y pendiente ×1.55 → 3.71
-MiB/step (multiplicativo). AMBOS términos existen. serieB/series.csv = evidencia.
-- C (7000 it, nunca dobla) PRE-CONDENADO por aritmética: pendiente sola toca cap
-  a ~step 3700. Noche ahorrada — no se corre.
-- D (derivado de la curva): 3000 steps, acotado, schedule 8000 → proy. 84% cap.
-  CORRIENDO. Es la "C afilada": steps extra dentro del régimen ¼.
-- CUARTA FILA (review): "resolución temprana bajo cap" — salto a ½ en step ~500
-  con conteo acotado agresivo: ~4GB + 1336 + 3.7/step ≈ ~1700 steps de
-  presupuesto a ½. CONSTRUIBLE (full-res NO cabe: 2º escalón+pendiente).
-  Se corre tras D. Si gana en LPIPS → la resolución era el lever dominante;
-  si pierde → régimen ¼ es el techo real y SH/appearance quedan confirmados
-  por eliminación como únicos levers (rama estructural, 3er sospechoso:
-  PSNR~14 puede ser resolución ¼-vs-GT-full, más barato de probar que el NaN).
-- REGLA DE TABLA: toda fila lleva train_res_regime (¼ | ½@N | full@N) — el
-  número viaja con su régimen de medición.
+1. REPRODUCE the NaN (step, tensor, cause). Is it the lr of SH on MPS? Is it fp16? Is it variable
+   exposure? Without a diagnosis there is no experiment. There is only roulette.
+2. Measure the KB per Gaussian again, with SH active (short instrumented run).
+   This gives a new maximum count under the cap.
+3. Compare with EQUAL BUDGET: SH=3 under the cap against SH=0 under the cap. Each one uses the
+   count that its budget allows (NOT equal count). The real question is this: how much LPIPS does
+   view-dependent color buy, at the cost of the lost densification?
+4. PRE-DECLARED METRIC: LPIPS decides. PSNR and the side-by-side check by eye VETO.
+   If LPIPS is better but new artifacts are visible, the result is a FAIL.
+   To decide the metric after you see the results is p-hacking.
 
-## Fila escena 1 — CERRADA provisional (11-jul, 5 puntos medidos)
-| punto | régimen | PSNR/SSIM/LPIPS | peak (proy→obs) |
+## Sweep scene 1 (in progress)
+
+- A: medium gives PSNR 14.14 / SSIM 0.356 / LPIPS 0.572, under the cap: OK (trained_binary
+  clean-9fb62fd, annotated). PSNR and LPIPS diverge compared with fast: PSNR rewards blur.
+- B: cinematic-bounded (7000 it, thresh 0.0008, refine 300), `running`.
+  Projection: a count of about 180k, which is at most 85% of the cap, from the 55KB per Gaussian figure.
+- The baseline row for scene 1 is the one that dominates when B ends. Do NOT freeze before that.
+- B FAILED: OOM 10925 at step 3430. It GOT PAST the resolution jump of the schedule
+  (quarter to half at 3000). Then the buffers (4 times larger) killed it. The count bound bought
+  1200 steps compared with cinematic (about 2200). Memory is a function of count times resolution.
+  The JUMP of the schedule is a driver.
+- Candidate point C: B plus `--num-downscales 3` or `--resolution-schedule 8000`
+  (never doubles in 7000 iters). The trade-off is the final detail.
+- The provisional baseline row for scene 1 is medium (the only preset better than fast under the cap today).
+
+## Functional form of the budget (instrumented series, 11-jul)
+
+`peak(step) ≈ count×g(res) + B(res)`.
+MEASURED in a re-run of B: before the jump the slope is 2.39 MiB/step. The jump from quarter
+to half is a one-time rise of +1336 MiB (additive). It is ALSO a slope increase of 1.55 times, to 3.71 MiB/step
+(multiplicative). BOTH terms exist. serieB/series.csv is the evidence.
+
+- C (7000 it, never doubles) is PRE-CONDEMNED by arithmetic. The slope alone reaches the cap at
+  about step 3700. This saves a night. C does not run.
+- D (derived from the curve): 3000 steps, bounded, schedule 8000, projected 84% of the cap.
+  RUNNING. It is the "sharpened C": extra steps inside the quarter regime.
+- FOURTH ROW (review): "early resolution under the cap". The jump to half is at step about 500,
+  with an aggressive bounded count. The budget is about 4GB + 1336 + 3.7/step, which gives about 1700 steps
+  at half. It is BUILDABLE (full-res does NOT fit: it adds a second rise and the slope). It runs after D.
+  - If it wins in LPIPS, resolution was the dominant lever.
+  - If it loses, the quarter regime is the real ceiling. Then SH and appearance stay as the
+    only levers, by elimination (structural branch).
+  - The third suspect: PSNR of about 14 can come from quarter resolution against full GT.
+    This is cheaper to test than the NaN.
+- TABLE RULE: each row carries train_res_regime (quarter | half@N | full@N). The number
+  travels with its measurement regime.
+
+## Scene 1 row: CLOSED provisionally (11-jul, 5 points measured)
+
+| point | regime | PSNR/SSIM/LPIPS | peak (proj→obs) |
 |---|---|---|---|
-| fast 1000 | ¼ | 14.41/.394/.748 | — |
-| **medium 2000** | ¼ | **14.14/.356/.572** ← FILA | — |
-| D 3000 acotado | ¼ | 14.23/.375/.640 | 9240→7449 (−24%) |
-| B 7000 acotado | ¼→½@3000 | OOM @3430 | ≤85%→10925 |
-| E 2000 acotado | ½ íntegra | 14.30/.386/.696 | 6749 (61%) |
-LECCIONES MEDIDAS: (1) conteo > steps (D pierde vs medium con +1000 steps);
-(2) conteo > resolución a este presupuesto (E a ½ pierde vs medium a ¼);
-(3) la pendiente MiB/step es config-dependiente (proyección D erró −24%,
-conservadora). CELDA ABIERTA: E' = ½ + densificación agresiva (E dejó 4GB sin
-usar) — candidata si algún lever de Phase 2 la necesita. TERCER SOSPECHOSO del
-PSNR~14 (res ¼) DEBILITADO: pagar ½ empeoró LPIPS → SH=0 + exposición quedan
-al frente por eliminación parcial. Experimento 2.0 re-confirmado como el
-siguiente, con su protocolo pre-declarado. Siguiente: escenas 2-3 (con punto-½
-propio de diseño), tabla congelada.
+| fast 1000 | quarter | 14.41/.394/.748 | — |
+| **medium 2000** | quarter | **14.14/.356/.572** ← ROW | — |
+| D 3000 bounded | quarter | 14.23/.375/.640 | 9240→7449 (−24%) |
+| B 7000 bounded | quarter, then half@3000 | OOM @3430 | ≤85%→10925 |
+| E 2000 bounded | whole half | 14.30/.386/.696 | 6749 (61%) |
 
-## E' (presupuesto-igual, cierra la escena 1 DE VERDAD) — corriendo 11-jul
-½ íntegra + densificación agresiva (0.0003/150) apuntando ~85% cap. Lecturas
-pre-escritas: E' pierde → "densificación es el uso dominante del presupuesto"
-DEMOSTRADA con presupuestos iguales, fila medium inatacable, y la vara del 2.0
-SUBE (el SH-fix compite por el mismo presupuesto que el lever dominante: debe
-comprar más LPIPS del que pierde cediendo conteo). E' gana → LA FILA cambia,
-tercer sospechoso (res ¼) revive. Escenas 2-3: puntos dirigidos a FALSIFICAR
-las leyes (¿medium-equivalente cabe con 214 img? ¿el estratificado protege a
-las fuentes?), no a repetir el sweep — 2-3 puntos por escena, proyectados.
-CANARIO: agendado explícito como ítem 1 de la sesión fresca (fin del limbo).
+MEASURED LESSONS:
 
-## ESCENA 1 — CERRADA (11-jul, presupuesto-igual satisfecho)
-Medium re-run instrumentado: peak 6992 (63.6%) — MISMA clase de gasto que E'
-(6763, 61.5%). LEY DEMOSTRADA con presupuestos iguales: **densificación
-agresiva a ¼ > resolución ½ al mismo gasto** (LPIPS 0.567 vs 0.630).
-FILA DEFINITIVA: medium — LPIPS 0.567±0.005 (reproducido: 0.572/0.567),
-PSNR 14.2±0.13, peak ~7GB, régimen ¼, trained clean-9fb62fd.
-Reproducibilidad del harness: ±1% LPIPS entre runs idénticos (incertidumbre
-de tabla). Nota de modelo (5ª corrección): TODOS los presets sub-cap aterrizan
-en 61-64% — la densificación se auto-limita a 2000 iters; la presión del cap
-viene de runs LARGOS donde el conteo compone. Vara del 2.0: ALTA (el SH-fix
-compite contra el lever dominante demostrado). Siguiente: escenas 2-3 como
-falsificación dirigida → tabla congelada → 2.0. Canario = ítem 1 sesión fresca.
+1. Count matters more than steps. D loses against medium with +1000 steps.
+2. Count matters more than resolution at this budget. E at half loses against medium at quarter.
+3. The MiB/step slope depends on the config. The projection for D missed by −24% (conservative).
 
-## Precisiones de cierre (review 11-jul noche)
-1. FORMULACIÓN EXACTA de la ley: "al gasto que ambas configs alcanzan
-   NATURALMENTE (~7GB), densificación ¼ > resolución ½". Región 64→85% sin
-   explorar. HALLAZGO IMPLÍCITO: **el cap NO es vinculante para presets
-   clase-medium en esta escena** — los OOMs del arco fueron todos por el salto
-   de resolución, nunca por conteo puro a ¼; la escena satura su densificación
-   bajo el presupuesto. Escena 2 (214 img) = primer test con el cap MORDIENDO.
-2. Reproducibilidad ±1% LPIPS: n=2, estimación PRELIMINAR — tercer punto gratis
-   con el re-run de control de escenas 2-3.
-3. VARA DEL 2.0 BAJÓ: cap no-vinculante → SH degree 3 (3→48 coefs + Adam) sobre
-   el conteo de medium probablemente CABE en los 4GB de headroom → caso (a)
-   comparación a CONTEO IGUAL (la versión más pura: mismas gaussianas ± color
-   view-dependent, LPIPS responde la pregunta limpia). Si la proyección del
-   modelo (5 cláusulas) dice que no cabe → caso (b) con cesión de conteo, vara
-   alta. La proyección decide el caso ANTES de quemar el run = 6º test del
-   modelo. El NaN sigue yendo PRIMERO — nada importa si la divergencia no tiene
-   causa arreglable. Tabla: anotar "gasto natural vs cap" por fila.
+OPEN CELL: E' combines half resolution with aggressive densification (E left 4GB unused). It is a
+candidate if a Phase 2 lever needs it. The THIRD SUSPECT of PSNR about 14 (res quarter) is WEAKENED:
+LPIPS got worse when the run paid for half resolution. So SH=0 and exposure stay in front, by partial
+elimination. Experiment 2.0 stays as the next one, with its pre-declared protocol. After it:
+scenes 2-3 (with their own half point by design), then the frozen table.
 
-## GUARDA para escenas 2-3 (review de cierre, 11-jul)
-"Es solo ejecución" precedió al P0, a la colisión de presupuesto y a la
-corrección de la serie — el patrón del arco. Tratamiento obligatorio:
-- Escena 2 (214 img): proyección PRE-escrita (7× puntos iniciales; las 5
-  cláusulas del modelo se midieron con 30 cám — territorio nuevo); evento con
-  cifras clave cableadas; presupuesto de ≥1 celda no planeada.
-- Escena 3: la regen multi-source es el PRIMER ejercicio real del merge gate
-  post-refactor — es un test propio ANTES de entrenar nada. Mismo tratamiento.
-Si son aburridas: 10 min perdidos. Si no: el diagnóstico ya tiene marco.
+## E' (equal budget, closes scene 1 FOR REAL): running 11-jul
 
-## Escena 2 (214 img) — TERCER TÉRMINO del modelo + régimen decidido (11-jul)
-La guarda pagó ANTES de encolar: sondas de 50 iters revelaron que OpenSplat
-carga TODAS las imágenes upfront como tensores (~64MB/img float32 a 3072px) →
-**escena 2 muere EN LA CARGA a full-res** (214×64MB≈13.7GB > cap; log termina
-a mitad de Loading sin error = SIGKILL). Con -d 2 completa. VEREDICTO: el
-régimen de la escena 2 es -d 2 DESDE LA CARGA — decidido por hardware, anotado
-como condición de todas sus filas. MODELO DE MEMORIA gana su 3er término:
-base_imgs ≈ n_train × px_w × px_h × 12B / d² — dominante en escenas grandes,
-invisible en la escena 1 (22 imgs = 1.4GB). El "PASS" pre-cap del 7-jul de
-esta escena (55MB splat) era otro swap-swim. U1.3 (preflight) hereda el
-término: es el PRIMER check, antes que densificación (barato y determinista).
-Celda escena 2: (c-extrema) → fila 1 = medium@-d2, corriendo.
+E' combines full use of half resolution with aggressive densification (0.0003/150). The target is about 85% of the cap.
+The readings come first, before the result:
 
-## Escena 2 — CERRADA (2 puntos dirigidos, 11-jul)
-| fila | LPIPS | PSNR | peak | veredicto |
+- E' loses: "densification is the dominant use of the budget" is DEMONSTRATED with equal budgets.
+  No one can attack the medium row. The bar for 2.0 RISES. The SH-fix competes for the same budget
+  as the dominant lever. It must buy more LPIPS than it loses when it gives up count.
+- E' wins: THE ROW changes. The third suspect (res quarter) revives.
+- Scenes 2-3: the points aim to FALSIFY the laws. They do not repeat the sweep. The questions are:
+  does a medium-equivalent fit with 214 img? Does the stratified split protect the sources?
+  Use 2-3 points per scene, projected.
+- CANARY: the plan lists it explicitly as item 1 of the fresh session (end of limbo).
+
+## SCENE 1: CLOSED (11-jul, equal budget met)
+
+The medium instrumented re-run has peak 6992 (63.6%). It is the SAME class of spend as E' (6763, 61.5%).
+The LAW is DEMONSTRATED with equal budgets: **at the same spend, aggressive densification at quarter resolution beats
+the half-resolution run** (LPIPS 0.567 compared with 0.630).
+
+FINAL ROW: medium. LPIPS 0.567 plus or minus 0.005 (reproduced: 0.572/0.567),
+PSNR 14.2 plus or minus 0.13, peak about 7GB, quarter regime, trained clean-9fb62fd.
+
+The reproducibility of the harness is plus or minus 1% LPIPS between identical runs (this is the
+uncertainty of the table).
+
+Model note (5th correction): ALL presets under the cap land at 61-64%.
+The densification limits itself at 2000 iters. The pressure of the cap comes from LONG runs, where the count
+compounds. The bar for 2.0 is HIGH (the SH-fix competes against the dominant lever that the data shows).
+Next: scenes 2-3 as directed falsification, then the frozen table, then 2.0. The canary is item 1 of the fresh session.
+
+## Closing precisions (review 11-jul night)
+
+1. EXACT WORDING of the law: "at the spend that both configs reach NATURALLY (about 7GB), densification
+   at quarter resolution is better than half resolution". The region from 64% to 85% is still open.
+   IMPLICIT FINDING: **the cap does NOT limit the presets of the medium class in this scene**.
+   All the OOMs of the arc came from the resolution jump. None came from pure count at quarter resolution.
+   The scene saturates its densification under the budget. Scene 2 (214 img) is the first test with the cap BITING.
+2. Reproducibility of plus or minus 1% LPIPS: n=2, PRELIMINARY estimate. A third point is free with the
+   control re-run of scenes 2-3.
+3. THE BAR FOR 2.0 DROPPED. The cap does not limit the count. So SH degree 3 (3 to 48 coefs + Adam) over the
+   count of medium probably FITS in the 4GB of headroom. That gives case (a): comparison at EQUAL COUNT.
+   This is the purest version: the same Gaussians with and without view-dependent color, and LPIPS answers
+   the clean question. If the projection of the model (5 clauses) says it does not fit, case (b) applies.
+   Case (b) gives up count and has a high bar. The projection decides the case BEFORE the run uses the
+   budget. This is the 6th test of the model. The NaN still goes FIRST: nothing matters if the divergence
+   has no fixable cause. Table: for each row, note the natural spend and the cap.
+
+## GUARD for scenes 2-3 (closing review, 11-jul)
+
+"It is only execution" came before the P0, before the budget collision and before the correction of the
+series. This is the pattern of the arc. The treatment is mandatory:
+
+- Scene 2 (214 img): the projection is WRITTEN IN ADVANCE (7 times the first points). The 5 clauses of the
+  model come from measurements with 30 cams, so this is new territory. The event has the key figures wired in.
+  The budget includes at least 1 unplanned cell.
+- Scene 3: the multi-source regen is the FIRST real exercise of the merge gate after the refactor.
+  It is a test of its own, BEFORE any train run. It has the same treatment.
+
+If the scenes are dull, you lose 10 min. If not, the diagnosis already has a frame.
+
+## Scene 2 (214 img): THIRD TERM of the model + regime decided (11-jul)
+
+The guard paid off BEFORE the job entered the queue. Probes of 50 iters showed that OpenSplat loads ALL the
+images upfront as tensors (about 64MB per img float32 at 3072px). **At full-res, scene 2 dies in the
+middle of the load step** (214×64MB≈13.7GB, which is more than the cap). The log stops in the middle of the load with no
+error. This is a SIGKILL. With `-d 2` it completes.
+
+VERDICT: the regime of scene 2 is `-d 2`, from the load step. The hardware decided it. Note it as the
+condition of all its rows.
+
+The MEMORY MODEL gets its 3rd term:
+`base_imgs ≈ n_train × px_w × px_h × 12B / d²`.
+This term dominates in large scenes. It is invisible in scene 1 (22 imgs, 1.4GB).
+The "PASS" of 7-jul for this scene before the cap (55MB splat) was another swap-swim.
+
+U1.3 (preflight) inherits the term. It is the FIRST check, before densification (cheap and deterministic).
+Scene 2 cell: (c-extreme). Row 1 is medium@-d2. Its run is in progress.
+
+## Scene 2: CLOSED (2 directed points, 11-jul)
+
+| row | LPIPS | PSNR | peak | verdict |
 |---|---|---|---|---|
-| medium@-d2 (agresivo) | **0.615** ← FILA | 13.53 | 8354 (76%) | error dominante: alta frecuencia (fachadas/vegetación), sin floaters ni deriva expo — firma del régimen -d2 |
-| acotado@-d2 | 0.628 | 13.57 | 8085 | LA LEY VIAJA con margen ENCOGIDO (Δ0.013 vs Δ0.058 escena 1): en régimen mordido la base aplana la ventaja |
-Régimen: -d2 desde carga (hardware), split 193/21, render GT full verificado.
+| medium@-d2 (aggressive) | **0.615** ← ROW | 13.53 | 8354 (76%) | dominant error: high frequency (facades/vegetation), no floaters and no exposure drift. This is the signature of the -d2 regime |
+| bounded@-d2 | 0.628 | 13.57 | 8085 | THE LAW TRAVELS with a SHRUNKEN margin (Δ0.013 compared with Δ0.058 in scene 1): in a biting regime the base flattens the advantage |
 
-## Escena 3 — EN CURSO: doble gate (leyes + entity E2E)
-Encolada por /api/odm real: **recon_c97cd120a1** (0103+0104, estandar) — primer
-combinado con identidad propia en producción. Checklist E2E al completar:
-merge_label FULL esperado (test #2: 17,006 matches) · card renderiza (join
-null-safe) · share ?m=recon_… · visor · splat → luego fila eval con split
-estratificado por fuente (by_source en el eval block).
+Regime: `-d2` from the load (hardware). Split 193/21. The check of the GT render at full-res passed.
 
-### Reglas de lectura escena 3 — PRE-escritas (review, antes del veredicto)
-1. ORDEN: merge_label primero (gate entity/pipeline), eval después (gate
-   calidad) — NO se mezclan. FULL con by_source desbalanceado = "merge OK,
-   calidad no uniforme"; PARTIAL con buen LPIPS global = "bueno DE LO QUE
-   QUEDÓ". Si label ≠ FULL: sospechoso 1 = plumbing recon_/--proj-id
-   (prefijos/geotag), NO la geometría — absuelta por test #2 (17,006 matches,
-   estas fuentes exactas, vía harness; esto corre vía producción).
-2. by_source estrena regla provisional de desbalance: con repro ±1% (n=2) y
-   ~4-6 vistas/fuente, ΔLPIPS per-source <0.03 = ruido de muestreo probable;
-   >0.08 = señal (fuente peor reconstruida); entre medio = se anota sin
-   concluir. Confound conocido: las vistas de cada fuente miran partes
-   DISTINTAS de la escena (contenido, no solo fuente).
-3. E2E que los fixtures no cubren: card → share ?m=recon_… → visor → carga
-   del splat, camino completo de producción. Si pasa, la entity queda
-   EJERCIDA, no solo migrada.
-4. Tabla: verificar qué régimen (-d) eligió el camino de producción ANTES de
-   comparar LPIPS. Cabecera: deltas comparan DENTRO de escena; entre escenas
-   viajan solo firmas cualitativas.
+## Scene 3: IN PROGRESS: double gate (laws + entity E2E)
 
-### Escena 3 — dos adendas pre-veredicto (review de medio vuelo)
-5. RÉGIMEN PROPIO SILENCIOSO: producción eligió 2688px (perfil balanced) — ni
-   3072 (escenas 1-2 origen) ni 1536 (-d2). La fila 3 estrena
-   train_input_px:2688 y su GT de eval será 2688-based → render_px esperado
-   [2687,~1511], NO [3071,1727]. Verificar AL CORRER el eval, no tras leer el
-   LPIPS. GT/render consistentes entre sí = válido; "full GT" significa otra
-   cosa en esta fila (anotar).
-6. EL VEREDICTO TESTEA EL PRUNING, no solo la entity: 81 frames (23+58, poda
-   activa) vs 169 del test #2 (sin poda, a propósito). TERCERA RAMA pre-escrita:
-   FULL con 81 = resultado MÁS FUERTE que test #2 (el merge sobrevive a la poda;
-   la enmienda "nunca dedup cross-source" validada en producción). PARTIAL =
-   sospechoso nuevo: la poda comiéndose frames-ancla de una fuente (hipótesis
-   del review #4 sesión 1) — ni plumbing (pre-absuelto con artefactos) ni
-   geometría (test #2).
+The job entered the queue through the real /api/odm: **recon_c97cd120a1** (0103+0104, standard).
+It is the first combined scene with its own identity in production.
+The E2E checklist at completion:
 
-# ══════════ TABLA BASELINE CONGELADA — 2026-07-11 ══════════
-Regla de cabecera: deltas comparan DENTRO de escena; entre escenas viajan solo
-firmas cualitativas. Todos los runs: split determinista seed=cid, test excluido
-del training, render+GT por camino interno del trainer, GT a resolución del
-régimen (render_px en cada eval block), preset=medium (el que cabe bajo cap).
+- merge_label FULL expected (test #2: 17,006 matches)
+- the card renders (null-safe join)
+- share `?m=recon_…`
+- the viewer
+- the splat
 
-| Escena | LPIPS | PSNR | SSIM | peak (cap%) | régimen | error dominante (ojo) | run_id |
+After this comes the eval row, with a split stratified by source (by_source in the eval block).
+
+### Reading rules for scene 3: WRITTEN IN ADVANCE (review, before the verdict)
+
+1. ORDER: merge_label first (gate entity/pipeline), eval after (quality gate). Do NOT mix them.
+   If the label is FULL but the by_source numbers differ a lot, the result is "merge OK, quality not uniform".
+   If the label is PARTIAL but the global LPIPS is good, the result is "good for what REMAINED". If the label is not FULL, suspect 1 is the recon_/--proj-id wiring
+   (prefixes/geotag). It is NOT the geometry. Test #2 cleared the geometry (17,006 matches, these exact
+   sources, through the harness). This run goes through production.
+2. by_source gets a provisional imbalance rule at its first use. The repro is plus or minus 1% (n=2), and
+   there are about 4-6 views per source. A per-source ΔLPIPS under 0.03 is probable noise from the small sample.
+   A ΔLPIPS over 0.08 is a signal (a source that is worse reconstructed). For a value in between, note it
+   and draw no conclusion. Known confound: the views of each source look at DIFFERENT parts of the scene
+   (content, not only source).
+3. E2E that the fixtures do not cover: card, then share ?m=recon_…, then viewer, then splat load. This is the full
+   production path. If it passes, the entity is EXERCISED, not only migrated.
+4. Table: check the regime (-d) that production chose, BEFORE you compare LPIPS.
+   Header: deltas compare WITHIN a scene. Across scenes, only qualitative signatures travel.
+
+### Scene 3: two addenda before the verdict (mid-flight review)
+
+5. SILENT OWN REGIME: production chose 2688px (balanced profile). It chose neither 3072 (origin of
+   scenes 1-2) nor 1536 (-d2). Row 3 is the first to use train_input_px:2688. Its eval GT has the 2688 size.
+   The expected render_px is [2687,~1511], NOT [3071,1727]. Check this WHEN the eval runs, not after you
+   read the LPIPS. If GT and render are consistent with each other, the result is valid. "Full GT" means
+   something else in this row (note it).
+6. The verdict tests the pruning, not only the entity: 81 frames (23+58, pruning active) against 169 in
+   test #2 (no pruning, on purpose). THIRD BRANCH written in advance: FULL with 81 is a STRONGER result
+   than test #2. The merge survives the pruning. The amendment "never dedup cross-source" holds in
+   production. PARTIAL gives a new suspect: the pruning removes anchor frames of one source (hypothesis of
+   review #4, session 1). It is neither wiring (cleared in advance with artifacts) nor geometry (test #2).
+
+# ══════════ FROZEN BASELINE TABLE, 2026-07-11 ══════════
+
+Header rule: deltas compare WITHIN a scene. Across scenes, only qualitative signatures travel.
+All runs use the same settings:
+
+- a deterministic split with seed=cid
+- test views not in the train set
+- render and GT from the internal path of the trainer
+- GT at the resolution of the regime (render_px in each eval block)
+- preset=medium (the one that fits under the cap)
+
+| Scene | LPIPS | PSNR | SSIM | peak (cap%) | regime | dominant error (eye) | run_id |
 |---|---|---|---|---|---|---|---|
-| 1 easy 30cám | **0.567±0.005** (n=2) | 14.2±0.13 | 0.357 | 6992 (64%) | ¼-schedule @3072 | blur global uniforme | 20260711-135601-medium |
-| 2 grande 214img | **0.615** | 13.53 | 0.355 | 8354 (76%) | -d2 desde carga (hardware) | alta frecuencia (fachadas/vegetación), 0 floaters, 0 deriva expo | 20260711-142911-medium_d2 |
-| 3 multi 0103+0104 | **0.667** | 11.16 | 0.255 | 8801 (80%) | 2688 balanced (producción) | desplazamiento pose/parallax en vistas cross-source + blur periférico; SIN banding expo | 20260711-144810-medium |
+| 1 easy 30cams | **0.567±0.005** (n=2) | 14.2±0.13 | 0.357 | 6992 (64%) | quarter-schedule @3072 | uniform global blur | 20260711-135601-medium |
+| 2 large 214img | **0.615** | 13.53 | 0.355 | 8354 (76%) | -d2 from the load (hardware) | high frequency (facades/vegetation), 0 floaters, 0 exposure drift | 20260711-142911-medium_d2 |
+| 3 multi 0103+0104 | **0.667** | 11.16 | 0.255 | 8801 (80%) | 2688 balanced (production) | pose/parallax shift in cross-source views + peripheral blur; NO exposure bands | 20260711-144810-medium |
 
-Escena 3 extra: merge FULL bajo poda (22/23+57/58); by_source Δ = ruido
-(ΔPSNR 0.07, ΔSSIM 0.024, n=2/6 — bajo umbral 0.03; nota: by_source aún sin
-LPIPS per-view — agregar antes del 2.0). Identity recon_c97cd120a1 (entity E2E ✓).
+Scene 3 extra: the merge is FULL under pruning (22/23+57/58). The by_source Δ is noise (ΔPSNR 0.07,
+ΔSSIM 0.024, n=2/6, under the threshold of 0.03). Note: by_source has no per-view LPIPS yet. Add it
+before 2.0. Identity recon_c97cd120a1 (entity E2E passed).
 
-LEYES (validez anotada): densificación agresiva > steps > resolución a
-presupuesto-igual (escena 1, verificada escena 2 con margen encogido Δ0.013);
-cap no vinculante en escenas chicas (1: 64%), mordido en grandes (2-3: 76-80%).
+LAWS (validity noted):
 
-SOSPECHOSOS PHASE 2 POR ESCENA (del ojo, no del promedio): escena 1 → SH=0 +
-resolución ¼ (E' debilitó resolución); escena 2 → resolución de carga (bloqueada
-por hardware/cap); escena 3 → POSE cross-source (2.1) sobre appearance (2.2) —
-el multi-source nominó a pose refinement, que OpenSplat NO expone (migración).
-El 2.0 (SH) corre en escena 1 con su protocolo pre-declarado; el caso de 2.1
-acaba de ganar su primera evidencia de producto.
+- At equal budget, aggressive densification beats more steps, and more steps beat resolution (scene 1).
+  Scene 2 shows the same law with a shrunken margin of Δ0.013.
+- The cap does not bind in small scenes (scene 1: 64%). It bites in large scenes (scenes 2-3: 76-80%).
+
+PHASE 2 SUSPECTS BY SCENE (from the eye, not from the average):
+
+- Scene 1: SH=0 and resolution quarter (E' weakened resolution).
+- Scene 2: load resolution (blocked by hardware and cap).
+- Scene 3: cross-source POSE (2.1) more than appearance (2.2). The multi-source scene points to pose
+  refinement, which OpenSplat does NOT expose (migration).
+
+2.0 (SH) runs in scene 1 with its pre-declared protocol. The case for 2.1 just won its first product evidence.
+
 # ═══════════════════════════════════════════════════════════
 
-### Protocolo 2.0 — adenda a la rama "supervivencia" del NaN-repro (pre-escrita)
-Si el repro sobrevive 3000 steps: NO "el fantasma murió" — absuelve ESTA celda
-(esta config, esta escena, este conteo, MPS); no absuelve cinematic@7000 con
-densificación completa (donde producción lo habría sufrido), ni sabemos en qué
-celda se diagnosticó originalmente el workaround. Lectura: "no reproducido en
-la celda probada → SH se LIBERA para el 2.0 con NaN-WATCH activo" (detección
-de nan en loss → abort con step+contexto, no crash silencioso — el abort_re
-del run_tracked ya lo hace en producción; el harness lo hereda). Si el 2.0
-completo también sobrevive → el workaround muere con evidencia de DOS celdas
-y el watch queda como guardia permanente barata. Canario: corridas 1-4
-CALIBRAN, no alertan (umbrales a priori → re-derivar de la serie al mes).
+### Protocol 2.0: addendum to the "survival" branch of the NaN-repro (written in advance)
 
-### NaN-repro: SOBREVIVIÓ (11-jul) — celda absuelta, no fantasma muerto
-3000 steps, SH degree 3, salto en 1000, MPS: CERO nan en loss (0.081 final,
-modelo 67MB — los 48 coefs visibles vs ~13-25MB de SH=0). Nota de proceso: el
-monitor gritó "NaN" por matchear el NOMBRE del dir nan-repro/ — falso positivo
-de mi propio naming, corregido leyendo el log. El 2.0 corre con NaN-watch
-(abort_re ya existe en producción; el harness lo hereda). Paso 1 del protocolo: ✓.
-Siguiente del 2.0: proyección de memoria con el modelo de 3 términos
-(el 67MB@3000steps ya insinúa el término de conteo×48coefs) → caso a/b → run.
+Suppose the repro survives 3000 steps. This does NOT mean "the ghost died". It clears THIS cell only
+(this config, this scene, this count, MPS). It does not clear cinematic@7000 with full densification, where
+production runs and can hit the NaN. The record does not name the cell of the first diagnosis for the workaround.
 
-# ═══ Phase 2 — experimentos vs baseline-v1 ═══
+Conclusion: "not reproduced in the tested cell, so SH is RELEASED for 2.0 with NaN-WATCH active".
+The NaN-WATCH detects nan in the loss and stops with step and context. It does not crash silently.
+The abort_re of run_tracked already does this in production, and the harness inherits it.
 
-## 2.0 SH-liberado — VEREDICTO: NEGATIVO con mecanismo nombrado (11-jul)
-| celda | LPIPS↓ | PSNR | peak (proy→obs) | n | régimen | ojo |
+If the full 2.0 also survives, the workaround dies with evidence from TWO cells. The watch stays as a
+cheap permanent guard. Canary: runs 1-4 CALIBRATE and do not alert (a-priori thresholds, to re-derive from the series after one month).
+
+### NaN-repro: SURVIVED (11-jul): cell cleared, ghost not dead
+
+The test ran 3000 steps, SH degree 3, jump at 1000, MPS. The result is ZERO nan in the loss (0.081 final,
+model 67MB: the 48 coefs are visible, compared with about 13-25MB at SH=0).
+
+Process note: the monitor
+shouted "NaN" because it matched the NAME of the dir nan-repro/. The name I chose caused this false positive.
+I corrected it after I read the log. 2.0 runs with NaN-watch (abort_re already exists in
+production, and the harness inherits it). Step 1 of the protocol: passed.
+
+Next in 2.0: the memory projection with the model of 3 terms (67MB@3000steps already hints at the term
+count×48coefs). Then case a/b, then the run.
+
+# ═══ Phase 2: experiments compared with baseline-v1 ═══
+
+## 2.0 SH released: VERDICT: NEGATIVE with named mechanism (11-jul)
+
+| cell | LPIPS↓ | PSNR | peak (proj→obs) | n | regime | eye |
 |---|---|---|---|---|---|---|
-| SH=0 (baseline-v1) | 0.567±0.005 | 14.2 | 6992 | 8 | ¼@3072, 2000it | borroso, LIMPIO |
-| SH=3, interval 1000 | 0.5675 (empate) | 14.18 | 7032→6668 (−5%, test nº7 ✓) | 8 | idem | VETADO: streaks direccionales |
-| SH=1, interval 1000 | 0.648 | 11.2 | 7005→6290 | 8 | idem | DESTRUCCIÓN total (esquirlas) |
+| SH=0 (baseline-v1) | 0.567±0.005 | 14.2 | 6992 | 8 | quarter@3072, 2000it | blurry, CLEAN |
+| SH=3, interval 1000 | 0.5675 (tie) | 14.18 | 7032→6668 (−5%, test no. 7 passed) | 8 | same | VETOED: directional streaks |
+| SH=1, interval 1000 | 0.648 | 11.2 | 7005→6290 | 8 | same | TOTAL DESTRUCTION (shards) |
 
-LECTURA (pre-declarada, rama 3 ejecutada; CLÁUSULA obligatoria): el workaround
-protegía la calidad **en OpenSplat, a 2000 iters, con transición mid-run** — la
-evidencia condena LA TRANSICIÓN VIOLENTA EN ESTE TRAINER, no SH per se.
-SH-desde-step-0 (como lo entrenan splatfacto/gsplat, con LR schedule propio
-para coefs) NO está testeado *porque OpenSplat no lo expone* — es motivo de
-migración, no conclusión sobre SH. Mecanismo: la TRANSICIÓN (activar
-coefs SH a mitad del run, step 1000) desestabiliza la optimización; degree
-menor NO suaviza (1 << 3 en calidad). En MPS ya no diverge (repro: 0 nan/3000
-steps) pero destroza igual. El veto del ojo salvó la conclusión: LPIPS promedió
-los streaks de SH=3 contra la ganancia de color y reportó "empate inofensivo" —
-edición perceptual del falso 82%.
-IMPLICACIONES (pre-escritas, ejecutan): (a) appearance/exposición (2.2) SUBE a
-sospechoso principal del techo de calidad; (b) la MIGRACIÓN de trainer revive
-con doble motivo — 2.1 pose (nominado por escena 3) y ahora SH-desde-step-0 /
-LR-warmup de coefs (cirugía que OpenSplat no expone); (c) el workaround se
-QUEDA (con razón documentada, ya no folklore). SIGUIENTE candidato 2.0b (NO
-corrido hoy — cero levers extra): sh activo desde step 0 vía --sh-degree-interval
-mínimo... NO existe como semántica en OpenSplat (interval=1 sube degree cada
-step: transiciones ×3) — confirmar semántica antes de diseñarlo; probablemente
-cae en la misma cirugía. Costo total del experimento: 2 celdas × ~95s + evals.
+READING (pre-declared, branch 3 ran, mandatory CLAUSE): the workaround protected quality
+**in OpenSplat, at 2000 iters, with a mid-run transition**. The evidence condemns the violent transition
+in this trainer. It does not condemn SH itself.
 
-### Evidencia del motivo "pose cross-source" (rastro completo, pedido del review)
-Origen: firma de OJO de la fila 3 de baseline-v1 — side-by-side
-eval/recon_c97cd120a1/20260711-144810-medium/renders/sxs_0_s0_f_0003.jpg.jpg:
-vista s0_ (fuente 0103) muestra DESPLAZAMIENTO de encuadre/pose vs GT (contenido
-correcto, posición corrida) + blur periférico; SIN banding de exposición pese a
-dos condiciones de luz. Corroboración numérica débil: PSNR de la escena 11.16
-(vs 13.5-14.2 single-source) con by_source parejo — consistente con error de
-pose GLOBAL de la fusión, no con una fuente mala. Estado: firma de ojo n=1
-+ corroboración indirecta — motivo VÁLIDO para la matriz de migración, con su
-peso honesto (no es un delta medido de pose; medirse requeriría re-optimización
-de poses, que es... el lever bloqueado). Nota case study 2ª ed: "el negativo
-barato es el producto final de la infraestructura cara" (línea del review).
+SH from step 0 is NOT tested, *because OpenSplat does not expose it*.
+This is how splatfacto and gsplat train it, with their own LR schedule for coefs. This is a reason to
+migrate. It is not a conclusion about SH.
+
+Mechanism: the TRANSITION (turn on the SH coefs in the middle of
+the run, at step 1000) destabilizes the optimization. A lower degree does NOT soften it (SH=1 is much worse
+than SH=3 in quality). On MPS it no longer diverges (repro: 0 nan/3000 steps), but it still wrecks the
+result.
+
+The veto by eye saved the conclusion. LPIPS averaged the streaks of SH=3 against the color gain
+and reported a "harmless tie". This is the perceptual version of the false 82%.
+
+IMPLICATIONS (written in advance, they run):
+
+- (a) Appearance and exposure (2.2) RISE to main suspect of the quality ceiling.
+- (b) The trainer MIGRATION revives with a double reason. One reason is 2.1 pose (named by scene 3).
+  The other is SH-from-step-0 and LR-warmup of coefs (surgery that OpenSplat does not expose).
+- (c) The workaround STAYS (with a documented reason, no longer folklore).
+
+NEXT candidate 2.0b (NOT run today, zero extra levers): SH active from step 0 through a minimal
+--sh-degree-interval. That semantic does NOT exist in OpenSplat (interval=1 raises the degree at every
+step: 3 times the transitions). Check the semantics before you design it. It probably falls into the same
+surgery. Total cost of the experiment: 2 cells of about 95s each, plus the evals.
+
+### Evidence for the "cross-source pose" reason (full trail, asked by the review)
+
+Origin: the EYE signature of row 3 of baseline-v1. In the side-by-side
+`eval/recon_c97cd120a1/20260711-144810-medium/renders/sxs_0_s0_f_0003.jpg.jpg`, view s0_ (source 0103) shows
+a SHIFT of frame position and pose against GT (correct content, shifted position) plus peripheral blur.
+There are NO exposure bands, in spite of two light conditions.
+
+Weak numeric corroboration: the PSNR of the
+scene is 11.16 (compared with 13.5-14.2 for single-source), with an even by_source. This is consistent with
+a GLOBAL pose error of the fusion. It is not consistent with one bad source.
+
+Status: one eye signature (n=1) and
+indirect corroboration. It is a VALID reason for the migration matrix, with its honest weight. It is not a
+measured pose delta. To measure it needs re-optimization of poses, which is the blocked lever.
+
+Case study, 2nd edition: "the cheap negative is the final product of the expensive
+infrastructure" (line from the review).
 
 ## W2 - CUDA baseline + MCMC (Gaussian cap) A/B on Dialectica (2026-09-29)
 
-Plan: `docs/WORLD_UPGRADE_PLAN.md` W2. First **CUDA** baseline (the sections above are the frozen Mac/OpenSplat
-baseline on other scenes and are not comparable), then gsplat MCMC with a cap. All on the PC RTX 4060 Ti 8 GB.
+Plan: `docs/WORLD_UPGRADE_PLAN.md` W2. This is the first **CUDA** baseline. The sections above are the frozen
+Mac/OpenSplat baseline on other scenes, so the numbers are not comparable. Then the test uses gsplat
+MCMC with a cap. All runs used the PC RTX 4060 Ti 8 GB.
 
-**Setup (identical for every arm).** Scene `recon_4e4245a1f4_aoi130` = 428 frames 3072x1728, OpenSfM->COLMAP export as
-shipped by the worker (`opensfm/colmap_export` of the parent project `proj_recon_4e4245a1f4`; the aoi130 project carries
-a byte-identical `images.txt` and identical shots but no images). `prep_dataset` FULL_OPENCV->OPENCV as in production.
-Held-out split = nerfstudio colmap default `eval-mode interval, eval-interval 8` (54 eval / 374 train views; the same
-split for all arms, and what production trains with anyway). 15,000 iterations, input `d1` (full res), image cache on CPU
-(production `image_cache_policy`). Env: nerfstudio 1.1.5, gsplat 1.4.0+pt24cu124, torch 2.4.1+cu124, driver 610.74.
-Metrics: nerfstudio's own PSNR / SSIM / LPIPS(alex) via `model.get_image_metrics_and_images` on the raw (pre auto-clean)
-model at full res, same script for every arm (`experiments/w2-mcmc-2026-09-29/lib/w2_eval.py`). Size = production chain:
-`ply_to_splat` -> `autoclean.mjs --preset aerial` -> `splat-transform` SOG.
+**Setup (identical for every arm).**
 
-**Trainer.** The installed splatfacto hardcodes `DefaultStrategy` (no `strategy=mcmc`, no cap; it does expose
-`rasterize_mode=antialiased` and `use_bilateral_grid`). Instead of adding gsplat's `simple_trainer.py` (different data
-path/undistort/metrics = confounded A/B) `pipeline/splatfacto_mcmc.py` subclasses splatfacto with `gsplat.MCMCStrategy`,
-using gsplat's `simple_trainer mcmc` recipe (init opacity 0.5, init scale x0.1, opacity/scale reg 0.01, noise_lr 5e5,
-min opacity 0.005, +5%/refine step up to the cap, refine 500..12,500). Same dataparser, losses, optimizers, LR schedule
-and export as the baseline; only the densification strategy changes. Nothing in the installed env is modified.
+- Scene `recon_4e4245a1f4_aoi130`: 428 frames, 3072x1728. The OpenSfM->COLMAP export is the one the worker
+  ships (`opensfm/colmap_export` of the parent project `proj_recon_4e4245a1f4`). The aoi130 project has a
+  byte-identical `images.txt` and identical shots, but it has no images.
+- `prep_dataset` converts FULL_OPENCV to OPENCV, as in production.
+- Held-out split: the default split of nerfstudio for colmap: `eval-mode interval, eval-interval 8` (54 eval / 374 train
+  views). All arms use the same split. Production trains with it anyway.
+- 15,000 iterations, input `d1` (full res), image cache on CPU (production `image_cache_policy`).
+- Env: nerfstudio 1.1.5, gsplat 1.4.0+pt24cu124, torch 2.4.1+cu124, driver 610.74.
+- Metrics: the PSNR / SSIM / LPIPS(alex) of nerfstudio itself, through `model.get_image_metrics_and_images`.
+  The script computes them on the raw (before auto-clean) model at full res. The same script runs every arm
+  (`experiments/w2-mcmc-2026-09-29/lib/w2_eval.py`).
+- Size: the numbers come from the production chain: `ply_to_splat`, then `autoclean.mjs --preset aerial`, then `splat-transform` SOG.
+
+**Trainer.**
+
+- The installed splatfacto has `DefaultStrategy` hardcoded. It has no `strategy=mcmc` and no cap.
+  It does expose `rasterize_mode=antialiased` and `use_bilateral_grid`.
+- The team did not add `simple_trainer.py` of gsplat, because it has a different data path, undistort and
+  metrics. That confounds the A/B.
+- Instead, `pipeline/splatfacto_mcmc.py` subclasses splatfacto with `gsplat.MCMCStrategy`. It uses the
+  `simple_trainer mcmc` recipe of gsplat. The recipe values are: init opacity 0.5, init scale x0.1,
+  opacity/scale reg 0.01, noise_lr 5e5. The other values are: min opacity 0.005,
+  +5% per refine step up to the cap, refine 500..12,500.
+- The dataparser, losses, optimizers, LR schedule and export are the same as the baseline.
+  Only the densification strategy changes. The run does not change the installed env.
 
 | arm | flags (on top of `--max-num-iterations 15000 ... colmap ... --downscale-factor 1`) |
 |---|---|
@@ -349,7 +426,7 @@ and export as the baseline; only the densification strategy changes. Nothing in 
 | mcmc1m | `splatfacto-mcmc --pipeline.model.cap-max 1000000 --pipeline.model.sh-degree 0 --pipeline.model.stop-split-at 12500` |
 | mcmc3m | same, `--pipeline.model.cap-max 3000000` |
 
-Results (54 held-out views; PSNR/SSIM/LPIPS mean; SOG = after auto-clean):
+Results on 54 held-out views. PSNR, SSIM and LPIPS are means. The SOG column is the size after auto-clean:
 
 | arm | PSNR | SSIM | LPIPS | Gaussians (trainer / after clean) | peak VRAM (nvidia-smi) | train | .splat clean | SOG clean |
 |---|---|---|---|---|---|---|---|---|
@@ -360,25 +437,33 @@ Results (54 held-out views; PSNR/SSIM/LPIPS mean; SOG = after auto-clean):
 | mcmc3m + expandable_segments | **22.61** | **0.734** | **0.270** | 3.00M / 2.23M | 4.8 GB | 53.4 min | 71.3 MB | 27.9 MB |
 
 Findings.
-- MCMC beats the baseline on every quality metric at the same iterations: 1M cap = +0.55-0.61 dB PSNR, LPIPS -0.012, with
-  40% fewer Gaussians and a **42% smaller SOG**; 3M cap = +1.40 dB, SSIM +0.05, LPIPS -0.069 (-20%) but a 52% larger SOG.
-- The 7.9 GB peaks with the default allocator are fragmentation from the cap-growth reallocations, not live tensors:
-  `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` gives the same quality at 2.7 GB (1M) / 4.8 GB (3M). The MCMC
-  launcher now always sets it. Without it 3M is unusable on 8 GB.
-- Eye check (GT | base | mcmc, `scratchpad/worlds/w2/sxs_*.jpg`, eval views 2,9,16,23,30,37,44,51): MCMC has crisper
-  facade mullions / roof-garden texture and sharper edges; base is softer. No visible floaters or sky problems in any
-  arm; trees stay soft in all; moving cars are absent in all (dynamic objects).
-- Caveats: single scene, single seed; metrics are on the raw model, not the cleaned/SOG one; 15K iterations with the
-  stock LR schedule (means LR decays over 30K in splatfacto's method config), so absolute numbers are below a 30K run;
-  baseline peak includes WDDM/other-process memory. Arm (d) (antialiased / bilateral grid / SH>0) was **not run**:
-  antialiased PLYs are not compatible with the classic-mode web viewer and SH is dropped by the `.splat`/SOG chain, so
-  neither could transfer to the product. Not verified: rural scene, d2 fallback of an MCMC preset.
-- Verdict: MCMC wins. `mcmc1m` is the "better and smaller" option (wins PSNR, LPIPS and SOG size); `mcmc3m` is the quality
-  tier (best metrics, larger SOG, fits in 4.8 GB). Presets `mcmc1m`, `mcmc3m` added, opt-in (`select_only`; never
-  resolved from a bare `iters`, never default). Decision to promote pending a rural scene.
 
-Reproduce (Mac; artifacts in `/Volumes/SSD/drone-vault/experiments/w2-mcmc-2026-09-29/`, WSL scratch
-`/root/gpu-jobs/experiments/w2/` removed afterwards):
+- MCMC beats the baseline on every quality metric at the same iterations. The 1M cap gives +0.55-0.61 dB
+  PSNR and LPIPS -0.012, with 40% fewer Gaussians and a **42% smaller SOG**. The 3M cap gives +1.40 dB,
+  SSIM +0.05 and LPIPS -0.069 (-20%), but the SOG is 52% larger.
+- The 7.9 GB peaks with the default allocator come from fragmentation. The reallocations for cap growth cause it.
+  Live tensors do not cause it. `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` gives the same quality at
+  2.7 GB (1M) and 4.8 GB (3M). The MCMC launcher now always sets it. Without it, 3M is unusable on 8 GB.
+- Eye check (GT | base | mcmc, `scratchpad/worlds/w2/sxs_*.jpg`, eval views 2,9,16,23,30,37,44,51):
+  MCMC has crisper facade mullions and roof-garden texture, and sharper edges. Base is softer.
+  No arm shows visible floaters or sky problems. Trees stay soft in all arms. Cars that move are absent
+  in all arms (dynamic objects).
+- Caveats:
+  - There is one scene and one seed.
+  - The metrics are on the raw model, not on the cleaned/SOG model.
+  - The run is 15K iterations with the stock LR schedule (the means LR decays over 30K in the method
+    config of splatfacto). So the absolute numbers are below a 30K run.
+  - The peak of the baseline includes memory of WDDM and of other processes.
+  - The test did **not run** arm (d) (antialiased / bilateral grid / SH>0). Antialiased PLYs are not compatible with
+    the classic-mode web viewer. The chain for `.splat` and SOG drops SH. So neither can transfer to the product.
+  - Not tested: rural scene, d2 fallback of an MCMC preset.
+- Verdict: MCMC wins. `mcmc1m` is the "better and smaller" option. It wins PSNR, LPIPS and SOG size.
+  `mcmc3m` is the quality tier: best metrics, larger SOG, fits in 4.8 GB. The change adds the presets `mcmc1m` and
+  `mcmc3m` as opt-in (`select_only`). The system never resolves them from a bare `iters`, and they are
+  never the default. The decision to promote waits for a rural scene.
+
+To reproduce, run these commands on the Mac. The artifacts are in `/Volumes/SSD/drone-vault/experiments/w2-mcmc-2026-09-29/`.
+Afterwards, the team removed the scratch directory in WSL: `/root/gpu-jobs/experiments/w2/`.
 ```
 python3 w2_run.py base 15000
 python3 w2_run.py mcmc1m-es 15000 --mcmc 1000000 --alloc expandable_segments:True
@@ -386,24 +471,31 @@ python3 w2_run.py mcmc3m-es 15000 --mcmc 3000000 --alloc expandable_segments:Tru
 python3 w2_chain.py <arm>            # ply -> .splat -> autoclean(aerial) -> SOG sizes
 ./w2_pull_renders.sh <arm> && python3 w2_montage.py 16,44 base,mcmc1m-es,mcmc3m-es
 ```
-`w2_run.py` builds the script with `gpu_lane.train_script` (paths rebased to the sandbox), then runs eval + `ns-export`.
-Use in production: `{"preset": "mcmc1m"}` (train_args carry `--pipeline.model.cap-max`, which makes `gpu_lane` launch
-`splatfacto_mcmc` and ship the module to `/root/gpu-jobs/lib`; `finalize_train` exports either method).
+`w2_run.py` builds the script with `gpu_lane.train_script` (paths rebased to the sandbox). Then it runs eval and `ns-export`.
+In production, use `{"preset": "mcmc1m"}`. The `train_args` carry `--pipeline.model.cap-max`. This makes `gpu_lane`
+start `splatfacto_mcmc` and ship the module to `/root/gpu-jobs/lib`. `finalize_train` exports either method.
 
 ## W2b - MCMC on a rural / vegetation-heavy scene, then promotion of mcmc1m to default (2026-09-30)
 
-Follow-up of W2 (which was one urban scene). Same harness, copied to `experiments/w2b-rural-2026-09-30/` (`w2_run.py`,
-`w2_chain.py`, `w2_montage.py`, `lib/w2_eval.py`, `lib/splatfacto_mcmc.py` identical to `pipeline/`). Same stack (nerfstudio
-1.1.5, gsplat 1.4.0, RTX 4060 Ti 8 GB), 15,000 iterations, input d1, image cache on CPU (production policy), eval = every 8th image
-(15 eval / 102 train views), `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for **all** arms, same flags as W2.
+This follows W2, which used one urban scene.
 
-**Scene: `recon_d77ef7af86`** (117 frames 3072x1728, OpenSfM->COLMAP export as shipped by the worker). Chosen by measuring
-greenness of `ortho_thumb.webp` (share of pixels with G > 1.05 R and G > 1.05 B, 400 px): d77 = **0.80**, next 0.50
-(`DJI_20260706133243_0100_D`, a sports park with lawns, urban), the rest 0.17-0.33. d77 is pasture, forest edges and
-a few farm buildings (Dialectica was 0.27). Caveat versus the "prefer full_3d" rule: d77 is published as `ortho_25d`
-(nadir-biased flight, 117 cameras); it is the only truly rural scene with a ready `colmap_export` and no full_3d scene is
-rural (the greenest full_3d, 0100_D, is 0.50 and needs Docker for the export). Held-out views therefore include some ground-level
-frames (s0/s2) that no arm reconstructs well.
+- The harness is the same. The team copied it to `experiments/w2b-rural-2026-09-30/` (`w2_run.py`, `w2_chain.py`,
+  `w2_montage.py`, `lib/w2_eval.py`, and `lib/splatfacto_mcmc.py`, identical to `pipeline/`).
+- The stack is the same: nerfstudio 1.1.5, gsplat 1.4.0, RTX 4060 Ti 8 GB.
+- The settings are 15,000 iterations, input d1, image cache on CPU (production policy).
+- The eval uses every 8th image (15 eval / 102 train views).
+- **All** arms use `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`. The flags are the same as W2.
+
+**Scene: `recon_d77ef7af86`** (117 frames 3072x1728, OpenSfM->COLMAP export as shipped by the worker).
+
+- The selection measured the greenness of `ortho_thumb.webp` at 400 px.
+  Greenness is the share of pixels where G is more than 1.05 times R and more than 1.05 times B. d77 scores **0.80**. The next is 0.50 (`DJI_20260706133243_0100_D`, a sports park with
+  lawns, urban). The rest score 0.17-0.33. d77 is pasture, forest edges and a few farm buildings.
+  Dialectica scored 0.27.
+- Caveat compared with the "prefer full_3d" rule: the system publishes d77 as `ortho_25d` (nadir-biased flight,
+  117 cameras). It is the only truly rural scene with a ready `colmap_export`. No full_3d scene is rural.
+  The greenest full_3d scene (0100_D, 0.50) needs Docker for the export.
+- So the held-out views include some ground-level frames (s0/s2). No arm reconstructs them well.
 
 | arm | PSNR | SSIM | LPIPS | Gaussians (trainer / after clean) | peak VRAM | train | SOG clean |
 |---|---|---|---|---|---|---|---|
@@ -411,27 +503,38 @@ frames (s0/s2) that no arm reconstructs well.
 | mcmc1m | **21.64** | **0.536** | **0.535** | 1.00M / 0.76M | 4.7 GB | 51.1 min | **9.75 MB** |
 | mcmc3m | crashed twice | | | | 7.6 GB | | |
 
-- mcmc1m vs base: +0.71 dB PSNR, LPIPS -0.052 (-9%), SSIM +0.007, SOG -5% (Dialectica: +0.55 dB, -0.012, -42%). The decision
-  rule (PSNR and LPIPS better AND SOG <= base) holds on the second scene, too.
-- The SOG gain is small here because plain splatfacto only reached 0.95M Gaussians on this smaller scene (nothing to cap); the win
-  is quality per Gaussian, not size. Costs vs base: +59% train time (51 vs 32 min) and 4.7 GB peak (W2 measured 2.7 GB on the
-  larger scene; still far below the 8 GB card).
-- mcmc3m **failed twice** at step ~7.3K (48%) with `CUDA driver error: device not ready` inside gsplat `isect_tiles`, telemetry at
-  7.6 GB used just before. On this scene the 3M cap does not fit reliably on the 8 GB card (it did on Dialectica, 4.8 GB).
-  No mitigation attempted; treat `mcmc3m` as scene-dependent / unsafe on 8 GB until measured per scene.
-- Eye check (6 held-out views, GT | base | mcmc1m, `scratchpad/worlds/w2b/sxs_*.jpg`, eval idx 1,3,5,8,10,13): base shows directional
-  streaking/smearing in the grass and pasture (looks like motion blur); mcmc1m renders grass as cleaner texture and keeps
-  roofs, car, fences and pond edges sharper. Trees: both soft; mcmc1m is slightly muddier in some dense canopy but no dropouts,
-  holes or floaters, and no sky problems in either arm (aerial views, sky barely visible). The 1M cap does not hurt vegetation here.
-  The ground-level eval view (terrace, id 3) is poor for both, expected from a nadir-biased flight.
-- 30K vs 15K for mcmc1m was **not measured**: ~100 min on this scene, over the 1.5 h budget. The default therefore ships at the
-  measured 15K schedule (`stop-split-at 12500`); `frontier`/`grandmaster` stay selectable for the long schedule.
+- mcmc1m compared with base: +0.71 dB PSNR, LPIPS -0.052 (-9%), SSIM +0.007, SOG -5% (Dialectica: +0.55 dB,
+  -0.012, -42%). The decision rule holds on the second scene, too. The rule is: PSNR and LPIPS are better AND
+  the SOG is not larger than base.
+- The SOG gain is small here. Plain splatfacto reached only 0.95M Gaussians on this smaller scene (nothing to
+  cap). The win is quality per Gaussian, not size. The costs compared with base are +59% train time (51 and
+  32 min) and a 4.7 GB peak. W2 measured 2.7 GB on the larger scene. 4.7 GB is still far below the 8 GB card.
+- mcmc3m **failed twice** at step about 7.3K (48%) with `CUDA driver error: device not ready` inside gsplat
+  `isect_tiles`. Telemetry showed 7.6 GB used just before. On this scene the 3M cap does not fit reliably on
+  the 8 GB card. It did fit on Dialectica, at 4.8 GB. The team tried no mitigation. Treat `mcmc3m` as
+  scene-dependent and unsafe on 8 GB until you measure it for each scene.
+- Eye check (6 held-out views, GT | base | mcmc1m, `scratchpad/worlds/w2b/sxs_*.jpg`, eval idx 1,3,5,8,10,13):
+  - Base shows directional streaks and smears in the grass and pasture (it looks like motion blur).
+  - mcmc1m renders grass as a cleaner texture. It keeps roofs, car, fences and pond edges sharper.
+  - Trees are soft in both arms. mcmc1m is slightly muddier in some dense canopy, but it has no dropouts,
+    holes or floaters.
+  - Neither arm has sky problems (aerial views, sky barely visible). The 1M cap does not hurt vegetation here.
+  - The ground-level eval view (terrace, id 3) is poor for both arms. A nadir-biased flight explains this.
+- The test did **not measure** 30K against 15K for mcmc1m. It takes about 100 min on this scene, which is over
+  the 1.5 h budget. So the default ships at the measured 15K schedule (`stop-split-at 12500`).
+  `frontier` and `grandmaster` stay selectable for the long schedule.
 - Caveats: two scenes, single seed, raw-model metrics, 15 eval views.
 
-**Promotion.** `mcmc1m` is now the interactive default for new splat jobs (`splat_presets.DEFAULT_SPLAT_PRESET`, exposed as
-`default: true` in `/api/splat_profiles`; UI label "Equilibrado (MCMC 1M)"; `mcmc3m` is "Calidad (MCMC 3M)"). Unchanged on purpose:
-bare `{"iters": N}` and preset-less API requests (still `select_only`), every other preset, existing splats, campaign
-allow-list (ultra/ultra20/frontier/grandmaster), and the phased ODM->splat server fallback.
+**Promotion.** `mcmc1m` is now the interactive default for new splat jobs (`splat_presets.DEFAULT_SPLAT_PRESET`,
+exposed as `default: true` in `/api/splat_profiles`). The UI label is `Equilibrado (MCMC 1M)`. The UI label of
+`mcmc3m` is `Calidad (MCMC 3M)`. These items stay the same, on purpose:
 
-Reproduce: same commands as W2 with `w2b-rural-2026-09-30/` scripts; dataset name `rural`, `EVAL_IDX="1,3,5,8,10,13"`, `--alloc expandable_segments:True`.
-Artifacts kept there: `chain/*/*.clean.sog`, `results/` (timing, metrics, telemetry, mcmc3m crash tail), `renders/`.
+- bare `{"iters": N}` and preset-less API requests (still `select_only`)
+- every other preset
+- splats that already exist
+- the campaign allow-list (ultra/ultra20/frontier/grandmaster)
+- the server fallback of the phased ODM->splat flow
+
+Reproduce: use the same commands as W2 with the scripts of `w2b-rural-2026-09-30/`.
+Dataset name `rural`, `EVAL_IDX="1,3,5,8,10,13"`, `--alloc expandable_segments:True`.
+The artifacts stay there: `chain/*/*.clean.sog`, `results/` (timing, metrics, telemetry, mcmc3m crash tail), `renders/`.

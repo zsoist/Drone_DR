@@ -13,35 +13,35 @@
 //   modes/*  (D) enemigos, Invasión, Gate Rush → installEnemies(ctx)
 //   tour/*   (E) ghost, autopiloto, director   → installTour(ctx)
 // Contrato: docs/FLIGHTVERSE_DESIGN_SPEC.md §15. Flag ?fv=2 → ctx.flags.fv2.
-import * as THREE from '/flightverse/three.js?v=370';
+import * as THREE from '/flightverse/three.js?v=371';
 import {
   loadManifest, loadTerrain, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=370';
+} from '/flightverse/scene.js?v=371';
 import {
   createLoop, createInput, createDrone, MODES, STEP,
-} from '/flightverse/runtime.js?v=370';
-import { createAudio } from '/flightverse/audio.js?v=370';
-import { createSky } from '/flightverse/sky.js?v=370';
-import { createVegetation, reducedMotion } from '/flightverse/vegetation.js?v=370';
-import { loadSceneObjects } from '/flightverse/objects.js?v=370';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=370';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=370';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=370';
-import { splatAlignmentLabel } from '/flightverse/hud-format.js?v=370';
-import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=370';
-import { createBus } from '/flightverse/bus.js?v=370';
-import { mountUi, installUi } from '/flightverse/ui/index.js?v=370';
-import { bootProgress, markLayerUnavailable, bootError } from '/flightverse/ui/screens.js?v=370';
-import { installFx } from '/flightverse/fx/index.js?v=370';
-import { installControls, createDroneModel } from '/flightverse/input/index.js?v=370';
-import { installEnemies } from '/flightverse/modes/index.js?v=370';
-import { installTour } from '/flightverse/tour/index.js?v=370';
+} from '/flightverse/runtime.js?v=371';
+import { createAudio } from '/flightverse/audio.js?v=371';
+import { createSky } from '/flightverse/sky.js?v=371';
+import { createVegetation, reducedMotion } from '/flightverse/vegetation.js?v=371';
+import { loadSceneObjects } from '/flightverse/objects.js?v=371';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=371';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=371';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=371';
+import { splatAlignmentLabel } from '/flightverse/hud-format.js?v=371';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=371';
+import { createBus } from '/flightverse/bus.js?v=371';
+import { mountUi, installUi } from '/flightverse/ui/index.js?v=371';
+import { bootProgress, markLayerUnavailable, bootError } from '/flightverse/ui/screens.js?v=371';
+import { installFx } from '/flightverse/fx/index.js?v=371';
+import { installControls, createDroneModel } from '/flightverse/input/index.js?v=371';
+import { installEnemies } from '/flightverse/modes/index.js?v=371';
+import { installTour } from '/flightverse/tour/index.js?v=371';
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=370';
+} from '/vendor/postprocessing180.module.js?v=371';
 
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel
@@ -509,6 +509,7 @@ async function main() {
   let dprNow = Math.min(devicePixelRatio, 2);
   let renderReportFrame = 0;
   const renderLifecycle = { pauses: 0, resumes: 0 };
+  let glLost = false;
   const loop = createLoop({
     timeScale: () => fx.timeScale(),
     onPause: () => {
@@ -520,6 +521,7 @@ async function main() {
       if (qualityGovernor) qualityGovernor.reset();
     },
     update(dt) {
+      if (glLost) return;              // contexto WebGL perdido: el mundo se congela hasta recuperarlo
       // Hit-stop (?fv=2, fx.timeScale() suavizado hasta 0.05 durante 40-80 ms): el MUNDO entero se congela a la vez — física
       // del dron, enemigos, armas, reloj de Gate Rush, fantasma. La escala entra en el acumulador de createLoop (loop-step.js):
       // los pasos siguen siendo exactos (STEP) y no se salta ninguno; lo que se frena es el tiempo, y `alpha` interpola fluido.
@@ -529,10 +531,13 @@ async function main() {
       // Rush seguía corriendo mientras el menú tapaba la pantalla (sobre todo en móvil).
       const gamePaused = !!ctx.ui.overlay?.active();
       // quién mueve al dron este paso: director > replay > autopiloto Arcade > aproximación a Gate Rush > vuelo manual
-      if (S.director) tour.director.stepDirector(dt);
-      else if (S.replay) tour.director.stepReplay(dt);
-      else if (MODES[S.modeKey]?.autopilot && S.ghost) tour.autopilot.step(dt);
-      else if (S.retoFly) enemies.gaterush.stepFly(dt);
+      // Con un panel abierto TAMBIÉN se congelan el fly-in de Gate Rush, el replay y el autopiloto (el Director
+      // abre su propio panel 'director' y sí avanza). Antes la aproximación seguía volando tras el menú de pausa.
+      const ovName = ctx.ui.overlay?.active?.();
+      if (S.director) { if (!gamePaused || ovName === 'director') tour.director.stepDirector(dt); }
+      else if (S.replay) { if (!gamePaused) tour.director.stepReplay(dt); }
+      else if (MODES[S.modeKey]?.autopilot && S.ghost) { if (!gamePaused) tour.autopilot.step(dt); }
+      else if (S.retoFly) { if (!gamePaused) enemies.gaterush.stepFly(dt); }
       else {
         controls.step(dt);
         enemies.gaterush.afterStep(dt, gamePaused);
@@ -545,6 +550,7 @@ async function main() {
       tour.ghost.update(dt);
     },
     render(alpha, frameMs) {
+      if (glLost) return;
       const o = drone.lerpPose(alpha, P);
       // dt REAL del frame para animación de presentación: antes avanzaba STEP (1/120) por frame pintado,
       // así el swoop de llegada (3.4 s) duraba ~9 s a 31-56 fps y la sacudida decaía según el FPS
@@ -618,6 +624,109 @@ async function main() {
     },
   });
   ctx.loop = loop;
+
+  // ── Pérdida / restauración del contexto WebGL (GPU reset, tab en segundo plano en iOS, presión de VRAM) ──
+  // three se reinicializa solo, pero Spark (splat) conserva texturas/buffers muertos y su sort lanza en cada
+  // frame → la vista foto-real quedaba lavada hasta recargar. Aquí: preventDefault (para que el navegador
+  // restaure), pausa del mundo, y al volver se reconstruye el splat con attachSplat; si algo falla, recarga
+  // conservando modo/vista/pose (sessionStorage) tras mostrar la placa «Recuperando gráficos…».
+  const CTX_KEY = 'ab.fv.ctxrecover';
+  const glRec = { lost: 0, restored: 0, rebuilt: null, reloads: 0, lastMs: null };
+  report.glRecovery = glRec;
+  let glPlate = null, glLostAt = 0, glForceT = 0, glGiveUpT = 0;
+  const showGlPlate = on => {
+    if (on && !glPlate) {
+      glPlate = document.createElement('div');
+      glPlate.id = 'vl-glplate';
+      glPlate.setAttribute('role', 'status');
+      glPlate.setAttribute('aria-live', 'polite');
+      glPlate.textContent = 'Recuperando gráficos…';
+      glPlate.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:60;'
+        + 'padding:12px 22px;border-radius:999px;background:rgba(10,14,22,.72);color:#E8EEF6;'
+        + 'font:500 14px/1.2 Inter,system-ui,-apple-system,sans-serif;letter-spacing:.01em;'
+        + 'backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);'
+        + 'pointer-events:none;box-shadow:0 8px 30px rgba(0,0,0,.35)';
+      document.body.appendChild(glPlate);
+    }
+    if (glPlate) glPlate.style.display = on ? '' : 'none';
+  };
+  const saveRecoverState = () => {
+    try {
+      sessionStorage.setItem(CTX_KEY, JSON.stringify({
+        cid: CID, at: Date.now(), mode: S.modeKey, vista: requestedRenderer,
+        x: drone.pos.x, y: drone.pos.y, z: drone.pos.z, yaw: drone.yaw, pitch: drone.pitch,
+      }));
+    } catch { /* storage bloqueado: recargar igualmente */ }
+  };
+  const reloadPreservingState = () => {
+    glRec.reloads += 1;
+    saveRecoverState();
+    location.reload();
+  };
+  const rebuildSplat = async () => {
+    const hadSplat = !!splat;
+    if (!hadSplat) return true;
+    const old = splat;
+    splat = null;
+    try { await old.dispose(); } catch { /* recursos muertos con el contexto */ }
+    const fresh = await attachSplat(man, worldGroup, { renderer });
+    if (!generation.isCurrent()) { fresh.dispose(); return false; }
+    splat = fresh;
+    return true;
+  };
+  const onGlLost = e => {
+    e.preventDefault();                                   // sin esto el navegador NO restaura el contexto
+    if (glLost) return;
+    glLost = true; glRec.lost += 1; glLostAt = performance.now();
+    input.reset?.();
+    controls.onPause?.();
+    showGlPlate(true);
+    // si el navegador no restaura solo: forzarlo; si aun así no vuelve, recargar con estado
+    clearTimeout(glForceT); clearTimeout(glGiveUpT);
+    glForceT = setTimeout(() => { if (glLost) { try { renderer.forceContextRestore(); } catch { /* sin extensión */ } } }, 4000);
+    glGiveUpT = setTimeout(() => { if (glLost) reloadPreservingState(); }, 12000);
+  };
+  const onGlRestored = async () => {
+    clearTimeout(glForceT); clearTimeout(glGiveUpT);
+    glRec.restored += 1;
+    try {
+      glRec.rebuilt = await rebuildSplat();
+      applyVista();
+      composer.setSize(innerWidth, innerHeight);
+    } catch (err) {
+      report.errors.push('glrecover: ' + (err?.message || err));
+      glRec.rebuilt = false;
+      reloadPreservingState();
+      return;
+    }
+    glRec.lastMs = Math.round(performance.now() - glLostAt);
+    glLost = false;
+    showGlPlate(false);
+    loop.resume();
+  };
+  renderer.domElement.addEventListener('webglcontextlost', onGlLost, false);
+  renderer.domElement.addEventListener('webglcontextrestored', onGlRestored, false);
+  // tras una recarga de recuperación: modo/vista/pose del momento de la pérdida
+  try {
+    const raw = sessionStorage.getItem(CTX_KEY);
+    if (raw) {
+      sessionStorage.removeItem(CTX_KEY);
+      const r = JSON.parse(raw);
+      if (r?.cid === CID && Date.now() - r.at < 60000 && [r.x, r.y, r.z, r.yaw].every(Number.isFinite)) {
+        if (MODES[r.mode] && r.mode !== S.modeKey) A.setMode(r.mode);
+        drone.pos.set(r.x, r.y, r.z); drone.prev.pos.copy(drone.pos);
+        drone.yaw = r.yaw; drone.prev.yaw = r.yaw;
+        if (Number.isFinite(r.pitch)) { drone.pitch = r.pitch; drone.prev.pitch = r.pitch; }
+        if (['terrain', 'mesh', 'splat'].includes(r.vista)) {
+          requestedRenderer = r.vista;
+          if (r.vista === 'mesh') void ensureVisualMesh();
+          applyVista();
+        }
+        S.recoveredFromGl = true;
+        report.glRecovery.recoveredState = true;
+      }
+    }
+  } catch { /* estado corrupto: arranque normal */ }
 
   // ── CALIDAD de render (desktop): auto | extra | 4k | ultra ──
   // auto = gobernador adaptativo (≤2 DPR); manual = DPR fijo + anisotropía 16.

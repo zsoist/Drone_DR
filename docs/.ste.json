@@ -1,0 +1,114 @@
+{
+ "version": 1,
+ "_comment": "STE lint config. level strict = must pass (0 non-advisory errors); report = print only. Paths are relative to the repo root. Front matter 'ste: strict' also works. Edit levels by hand.",
+ "defaults": {
+  "level": "report",
+  "mode": "mixed"
+ },
+ "files": {
+  "docs/STE_STYLE_GUIDE.md": {
+   "level": "strict"
+  },
+  "docs/README.md": {
+   "level": "strict"
+  },
+  "docs/ARCHITECTURE.md": {
+   "level": "strict"
+  },
+  "docs/AUTH_SECURITY.md": {
+   "level": "strict"
+  },
+  "docs/BUGHUNT_BACKLOG.md": {
+   "level": "strict"
+  },
+  "docs/CAPTURE_PROTOCOL.md": {
+   "level": "strict"
+  },
+  "docs/DRONE_MODEL_SPEC.md": {
+   "level": "strict"
+  },
+  "docs/ENEMY_MODEL_SPEC.md": {
+   "level": "strict"
+  },
+  "docs/FLIGHTVERSE_IMPLEMENTATION.md": {
+   "level": "strict"
+  },
+  "docs/FLIGHTVERSE_RENDERER_DECISION.md": {
+   "level": "strict"
+  },
+  "docs/GAME_ENGINE.md": {
+   "level": "strict"
+  },
+  "docs/MULTISOURCE_3D.md": {
+   "level": "strict"
+  },
+  "docs/OPERATIONS.md": {
+   "level": "strict"
+  },
+  "docs/RUNBOOKS.md": {
+   "level": "strict"
+  },
+  "docs/SCENE_OBJECTS.md": {
+   "level": "strict"
+  },
+  "docs/SPLATLAB_V2_PLAN.md": {
+   "level": "strict"
+  },
+  "docs/SPLAT_EXPERIMENTS.md": {
+   "level": "strict"
+  },
+  "docs/SPLAT_PIPELINE.md": {
+   "level": "strict"
+  },
+  "docs/WORLD_CONTEXT_PROMPT.md": {
+   "level": "strict"
+  },
+  "docs/WORLD_UPGRADE_PLAN.md": {
+   "level": "strict"
+  },
+  "docs/qa/design-qa.md": {
+   "level": "strict"
+  },
+  "README.md": {
+   "level": "strict"
+  },
+  "CLAUDE.md": {
+   "level": "strict"
+  },
+  "AGENTS.md": {
+   "level": "strict"
+  },
+  "pipeline/README.md": {
+   "level": "strict"
+  },
+  "pipeline/archive/README.md": {
+   "level": "strict"
+  },
+  "docs/FLIGHTVERSE_DESIGN_SPEC.md": {
+   "level": "strict"
+  },
+  "docs/PHYSICS_V2.md": {
+   "level": "strict"
+  },
+  "SPEC.md": {
+   "level": "strict"
+  },
+  "ROADMAP.md": {
+   "level": "strict"
+  },
+  "docs/REDESIGN_2026_10.md": {
+   "level": "strict"
+  }
+ },
+ "include": [
+  "docs/**/*.md",
+  "README.md",
+  "SPEC.md",
+  "ROADMAP.md",
+  "CLAUDE.md",
+  "AGENTS.md",
+  "pipeline/README.md",
+  "pipeline/archive/README.md"
+ ],
+ "exclude": []
+}

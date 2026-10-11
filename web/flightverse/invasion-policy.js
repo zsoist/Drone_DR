@@ -406,6 +406,10 @@ export const FAIR = Object.freeze({
   graceS: 3,                 // tras cualquier impacto: sin más daño
   respawnInvulnS: 5,         // tras reaparecer
   spawnMinRadius: 80,        // m mínimos de nacimiento respecto al jugador
+  introSpawnMin: 60,         // oleada 1: nace dentro del cono frontal de la cámara, visible, a 60–90 m
+  introSpawnMax: 90,
+  introConeHalfRad: 0.55,    // ±31° respecto a la dirección de la cámara
+  revealS: 1.1,              // aparición con escala/destello (ningún enemigo 'salta' al mundo)
   firstAttackDelayS: 6,      // nadie ataca antes de 6 s de oleada
   noDefeatBeforeS: 30,       // no se puede perder en < 30 s desde el inicio de una oleada
   idleWarnS: 10,             // quieto y golpeado → aviso "Muévete"

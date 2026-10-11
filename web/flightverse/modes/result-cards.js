@@ -1,7 +1,7 @@
 // flightverse/modes/result-cards.js — tarjetas de VICTORIA y medalla de Gate Rush (WS D).
 // Fallback mientras A (ui/screens.js) no expone showVictory(): misma clase de tarjeta
 // (.vl-result-card.v2) y jerarquía. Si ctx.ui.screens.showVictory existe, se usa ese y esto no corre.
-import { MEDAL_LABEL, nextMedalTarget, timeText } from '/flightverse/modes/rules.js?v=370';
+import { MEDAL_LABEL, nextMedalTarget, formatRecordRows, RECORD_COLUMNS, shortTime } from '/flightverse/modes/rules.js?v=371';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const MEDAL_COLOR = { bronze: '#C58A5A', silver: '#C3CCD8', gold: '#E0B24A' };
@@ -13,24 +13,31 @@ export function medalBadge(medal) {
 
 /** Añade medalla, par y top-10 a la tarjeta de Gate Rush ya renderizada por A (no toca su jerarquía). */
 export function decorateGateRushResult(root, vm) {
-  const card = root?.querySelector?.('.vl-result-card');
-  if (!card || card.querySelector('.vl-medal')) return;
+  const card = root?.querySelector?.('.vl-result-card, .hx-result');
+  if (!card) return;
+  if (card.querySelector('.vl-medal, .hx-medal, .hx-par')) return;      // la tarjeta v2 ya trae medalla y par
   const next = nextMedalTarget({ par: vm.par, medal: vm.medal });
   const block = document.createElement('div');
   block.className = 'vl-medal-block';
   block.style.cssText = 'margin:8px 0 4px;text-align:center';
   block.innerHTML = `${medalBadge(vm.medal)}
-    <div style="font:500 12px var(--mono,monospace);color:var(--on-media-2,#B7C2D0);margin-top:4px">par ${timeText(vm.par)}${vm.misses ? ` · ${vm.misses} ${vm.misses === 1 ? 'fallo' : 'fallos'}` : ' · sin fallos'}${next?.time ? ` · ${MEDAL_LABEL[next.medal]} ≤ ${next.time.toFixed(1)}s` : ''}</div>
-    ${topList(vm.top)}`;
-  const grid = card.querySelector('.vl-result-grid') || card.querySelector('.vl-result-btns');
+    <div style="font:500 12px var(--mono,monospace);color:var(--on-media-2,#B7C2D0);margin-top:4px">Par ${shortTime(vm.par)}${vm.misses ? ` · ${vm.misses} ${vm.misses === 1 ? 'fallo' : 'fallos'}` : ' · sin fallos'}${next?.time ? ` · ${MEDAL_LABEL[next.medal]} ≤ ${shortTime(next.time)}` : ''}</div>
+    ${''}`;
+  const grid = card.querySelector('.vl-result-grid') || card.querySelector('.vl-result-btns') || card.querySelector('.hx-stats');
   if (grid) grid.before(block); else card.append(block);
 }
 
-function topList(top) {
+/**
+ * Tabla de récords con la MISMA marca que ui/screens2.js (`.hx-top10.hx-rec`, estilos en css/screens.css): sin estilos
+ * en línea. Los datos salen de formatRecordRows/RECORD_COLUMNS (modes/rules.js). Sólo la usa la tarjeta de respaldo;
+ * la tarjeta v2 de F3 pinta su propia tabla con las mismas filas.
+ */
+export function topList(top, kind = 'inv') {
   if (!top?.length) return '';
-  const rows = top.slice(0, 5).map((r, i) =>
-    `<p style="margin:0;white-space:pre">${String(i + 1).padStart(2)}  ${r.time != null ? timeText(r.time) + '  ' : ''}${String(r.score).padStart(6)}${r.medal ? '  ' + MEDAL_LABEL[r.medal] : ''}</p>`).join('');
-  return `<div class="vl-top" style="margin:10px auto 14px;font:500 12px var(--mono,monospace);color:var(--on-media-2,#B7C2D0);text-align:center"><p style="margin:0 0 4px;text-transform:uppercase;letter-spacing:.06em;font-size:11px">Top ${Math.min(5, top.length)}</p>${rows}</div>`;
+  const cols = RECORD_COLUMNS[kind] || RECORD_COLUMNS.inv;
+  const rows = formatRecordRows(top, kind).map(r =>
+    `<tr><td>${r.rank}</td><td>${esc(r.value)}</td><td>${esc(r.date)}</td><td>${r.medal ? `<i class="dot" data-medal="${r.medal}" aria-hidden="true"></i>` : ''}${esc(r.medalLabel)}</td></tr>`).join('');
+  return `<div class="hx-top10 hx-rec"><h3>Mejores marcas</h3><table><thead><tr>${cols.map(c => `<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 const INV_LB = { facil: 'FÁCIL', media: 'MEDIA', dificil: 'DIFÍCIL' };
@@ -50,7 +57,7 @@ export function showVictoryFallback(ctx, run) {
         <div><b>${run.score}</b><span>puntos</span></div>
         <div><b>${run.rank ? `#${run.rank}` : '—'}</b><span>top 10</span></div>
       </div>
-      ${topList((run.top || []).map(r => ({ ...r, time: null })))}
+      ${topList(run.top || [], 'inv')}
       <div class="vl-result-btns">
         <button data-act="inv-retry">Jugar de nuevo</button>
         <button data-act="inv-config">Cambiar modo</button>

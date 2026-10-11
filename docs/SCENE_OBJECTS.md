@@ -1,10 +1,9 @@
-# Objetos de escena — la plataforma para hacer juegos sobre tus splats/ODM
+# Scene objects: the platform for games on your splats and ODM scenes
 
-Cada escena puede tener `models/<cid>/objects.json` con elementos 3D que el
-juego instancia ANCLADOS al terreno real (heightAt del DSM). Runtime:
-`web/flightverse/objects.js` · consumo automático en /volar.
+Each scene can have a file `models/<cid>/objects.json`. The file lists 3D elements. The game places them on the real terrain with `heightAt` of the DSM.
+The runtime is `web/flightverse/objects.js`. The `/volar` page loads the objects automatically.
 
-## Contrato objects.json (v1)
+## The objects.json contract (v1)
 ```json
 {"version":1,"objects":[
  {"type":"beacon","pos":[-40,0,30],"scale":1.6,"color":"#7dffc9","ground":true},
@@ -14,30 +13,33 @@ juego instancia ANCLADOS al terreno real (heightAt del DSM). Runtime:
   "collidable":true,"materialClass":"brick"}
 ]}
 ```
-- `type`: `glb` (de `web/assets/props/`) · `kit` (de
-  `web/assets/destruction/models/`) · `ring` · `beacon` · `box`.
-- `pos` [x,y,z] en METROS del frame de la escena (origen=centro del DSM,
-  +x este, +z sur). Con `ground:true` (default) la Y es ALTURA SOBRE EL
-  SUELO real en ese punto; con `false`, Y absoluta del mundo.
-- `yaw` rad · `scale` 0.05–50 · `spin`/`bob` animan (los estáticos congelan
-  matrices = gratis en render) · `color` para primitivas.
-- `collidable` es `true` por defecto para todo salvo `ring`; usa `false` sólo
-  para decoración atravesable. Dron, cámara, retícula y armamento consultan el
-  mismo collider.
-- `destructible:true` lo registra como blanco del armamento. Su collider se
-  invalida en el mismo paso fijo en que el objeto se rompe.
-- `materialClass` (`metal`, `wood`, `brick`, `concrete`, `crate`, etc.) conserva
-  la clase de superficie para impactos y efectos.
+- `type` has one of these values:
+  - `glb`: a file from `web/assets/props/`.
+  - `kit`: a file from `web/assets/destruction/models/`.
+  - `ring`, `beacon` and `box`: primitive shapes.
+- `pos` is `[x,y,z]` in METERS in the frame of the scene. The origin is the center of the DSM. East is the +x direction. South is the +z direction.
+  - With `ground:true` (the default), Y is the height above the real ground at that point.
+  - With `ground:false`, Y is the absolute height in the world.
+- `yaw` is in radians. `scale` is from 0.05 to 50.
+- `spin` and `bob` animate the object. Static objects freeze their matrices, so they cost nothing in the render.
+- `color` is for primitive shapes.
+- `collidable` is `true` by default for all objects except `ring`. Set it to `false` only for decoration that the drone can fly through. The drone, the camera, the reticle and the weapons use the same collider.
+- `destructible:true` makes the object a target for the weapons. The collider becomes invalid in the same fixed step in which the object breaks.
+- `materialClass` keeps the surface class for impacts and effects. The values are `metal`, `wood`, `brick`, `concrete`, `crate` and others.
 
-## Escribirlos
-- A mano en el vault, o vía API (auth):
-  `POST /api/scene_objects {"clip_id":"...","objects":[...]}`
-  — valida el contrato (máx 200, tipos/rangos) y escribe el json.
-- Tras editar: `python3 pipeline/scene_manifest.py <cid>` (expone el asset)
-  y recarga. Gate: `report.objects` = nº instanciado.
+## Write the objects
+- Write the file by hand in the vault, or use the API (needs authentication):
+  `POST /api/scene_objects {"clip_id":"...","objects":[...]}`.
+  The API checks the contract (maximum 200 objects, types and ranges) and writes the JSON.
+- After you edit the file, do these steps:
+  1. Run `python3 pipeline/scene_manifest.py <cid>`. This command exposes the asset.
+  2. Reload the page.
+  3. Check the gate: `report.objects` is the number of objects that the game placed.
 
-## Props GLB (mismas reglas que el dron)
-+Y arriba, origen en el centro-base, ≤20k tris, ≤2 materiales PBR,
-sin luces/cámaras/animaciones. Suéltalos en `web/assets/props/` +
-`bump_web_version.py`. Prompt LLM completo: ver DRONE_MODEL_SPEC.md
-(cambia proporciones/semántica del objeto).
+## GLB props (same rules as the drone)
+- The +Y axis points up.
+- The origin is at the center of the base.
+- The budget is at most 20k triangles and at most 2 PBR materials.
+- Do not put lights, cameras or animations in the file.
+- Put the files in `web/assets/props/`. Then run `bump_web_version.py`.
+- For the full LLM prompt, see `DRONE_MODEL_SPEC.md`. Change the proportions to fit the object.

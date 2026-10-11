@@ -1,0 +1,2337 @@
+{
+ "version": 1,
+ "description": "AeroBrain STE project dictionary. Machine-readable twin of docs/STE_STYLE_GUIDE.md. Not the official ASD-STE100 dictionary. basis: sheet = owner reference sheet, ste = widely documented STE substitution, project = project decision that follows the STE rule of one word for one meaning.",
+ "unapproved": {
+  "a lot of": {
+   "pos": "det",
+   "alternatives": [
+    "many",
+    "much"
+   ],
+   "basis": "project",
+   "note": "MANY or MUCH."
+  },
+  "a number of": {
+   "pos": "det",
+   "alternatives": [
+    "some",
+    "many"
+   ],
+   "basis": "project",
+   "note": "SOME or MANY."
+  },
+  "abort": {
+   "pos": "v",
+   "alternatives": [
+    "stop"
+   ],
+   "basis": "project",
+   "note": "STOP is the approved word."
+  },
+  "accomplish": {
+   "pos": "v",
+   "alternatives": [
+    "do"
+   ],
+   "basis": "project",
+   "note": "DO is the approved word."
+  },
+  "achieve": {
+   "pos": "v",
+   "alternatives": [
+    "get"
+   ],
+   "basis": "project",
+   "note": "GET a result. Do not use ACHIEVE."
+  },
+  "acquire": {
+   "pos": "v",
+   "alternatives": [
+    "get"
+   ],
+   "basis": "project",
+   "note": "GET is the approved word."
+  },
+  "activate": {
+   "pos": "v",
+   "alternatives": [
+    "turn on",
+    "start"
+   ],
+   "basis": "project",
+   "note": "TURN ON a switch. START a process."
+  },
+  "actually": {
+   "pos": "adv",
+   "alternatives": [
+    "(delete it)"
+   ],
+   "basis": "project",
+   "note": "Filler word. It adds no information. Delete it."
+  },
+  "additional": {
+   "pos": "adj",
+   "alternatives": [
+    "more",
+    "extra"
+   ],
+   "basis": "ste",
+   "note": "MORE is the approved word."
+  },
+  "additionally": {
+   "pos": "adv",
+   "alternatives": [
+    "also"
+   ],
+   "basis": "project",
+   "note": "ALSO is the approved word."
+  },
+  "adequate": {
+   "pos": "adj",
+   "alternatives": [
+    "enough"
+   ],
+   "basis": "project",
+   "note": "ENOUGH is the approved word."
+  },
+  "adjacent": {
+   "pos": "adj",
+   "alternatives": [
+    "next to"
+   ],
+   "basis": "project",
+   "note": "NEXT TO is the approved phrase."
+  },
+  "alter": {
+   "pos": "v",
+   "alternatives": [
+    "change"
+   ],
+   "basis": "project",
+   "note": "CHANGE is the approved word."
+  },
+  "appropriate": {
+   "pos": "adj",
+   "alternatives": [
+    "correct",
+    "applicable"
+   ],
+   "basis": "project",
+   "note": "CORRECT is the approved word."
+  },
+  "approximately": {
+   "pos": "adv",
+   "alternatives": [
+    "about"
+   ],
+   "basis": "sheet",
+   "note": "ABOUT is the approved word."
+  },
+  "are able to": {
+   "pos": "phr",
+   "alternatives": [
+    "can"
+   ],
+   "basis": "project",
+   "note": "CAN is the approved word."
+  },
+  "as well as": {
+   "pos": "conj",
+   "alternatives": [
+    "and"
+   ],
+   "basis": "project",
+   "note": "AND is the approved word."
+  },
+  "ascertain": {
+   "pos": "v",
+   "alternatives": [
+    "find"
+   ],
+   "basis": "project",
+   "note": "FIND is the approved word."
+  },
+  "assist": {
+   "pos": "v",
+   "alternatives": [
+    "help"
+   ],
+   "basis": "ste",
+   "note": "HELP is the approved word."
+  },
+  "assistance": {
+   "pos": "n",
+   "alternatives": [
+    "help"
+   ],
+   "basis": "project",
+   "note": "HELP is the approved word."
+  },
+  "assure": {
+   "pos": "v",
+   "alternatives": [
+    "make sure"
+   ],
+   "basis": "project",
+   "note": "Same meaning as ENSURE. Use MAKE SURE."
+  },
+  "at the present time": {
+   "pos": "adv",
+   "alternatives": [
+    "now"
+   ],
+   "basis": "project",
+   "note": "NOW is the approved word."
+  },
+  "at this time": {
+   "pos": "adv",
+   "alternatives": [
+    "now"
+   ],
+   "basis": "project",
+   "note": "NOW is the approved word."
+  },
+  "attempt": {
+   "pos": "v",
+   "alternatives": [
+    "try"
+   ],
+   "basis": "ste",
+   "note": "TRY is the approved word."
+  },
+  "basically": {
+   "pos": "adv",
+   "alternatives": [
+    "(delete it)"
+   ],
+   "basis": "project",
+   "note": "Filler word. It adds no information. Delete it."
+  },
+  "be able to": {
+   "pos": "phr",
+   "alternatives": [
+    "can"
+   ],
+   "basis": "project",
+   "note": "CAN is the approved word."
+  },
+  "begin": {
+   "pos": "v",
+   "alternatives": [
+    "start"
+   ],
+   "basis": "ste",
+   "note": "One word for one meaning: START."
+  },
+  "carry out": {
+   "pos": "phr",
+   "alternatives": [
+    "do"
+   ],
+   "basis": "project",
+   "note": "DO is the approved word."
+  },
+  "cease": {
+   "pos": "v",
+   "alternatives": [
+    "stop"
+   ],
+   "basis": "ste",
+   "note": "STOP is the approved word."
+  },
+  "close": {
+   "pos": "adj",
+   "alternatives": [
+    "near"
+   ],
+   "basis": "sheet",
+   "note": "CLOSE is approved only as a verb (to close a valve). As an adjective, use NEAR.",
+   "only_as": "adj"
+  },
+  "commence": {
+   "pos": "v",
+   "alternatives": [
+    "start"
+   ],
+   "basis": "sheet",
+   "note": "START is the approved word."
+  },
+  "concerning": {
+   "pos": "prep",
+   "alternatives": [
+    "about"
+   ],
+   "basis": "project",
+   "note": "ABOUT is the approved word."
+  },
+  "configure": {
+   "pos": "v",
+   "alternatives": [
+    "set",
+    "set up"
+   ],
+   "basis": "project",
+   "note": "SET an option. Use `config` for the name of the file."
+  },
+  "confirm": {
+   "pos": "v",
+   "alternatives": [
+    "make sure",
+    "check"
+   ],
+   "basis": "project",
+   "note": "Same decision as VERIFY."
+  },
+  "confirmation": {
+   "pos": "n",
+   "alternatives": [
+    "check"
+   ],
+   "basis": "project",
+   "note": "CHECK is the approved word."
+  },
+  "consequently": {
+   "pos": "adv",
+   "alternatives": [
+    "so"
+   ],
+   "basis": "project",
+   "note": "SO is the approved word."
+  },
+  "could": {
+   "pos": "modal",
+   "alternatives": [
+    "can"
+   ],
+   "basis": "project",
+   "note": "Use CAN. For a past event, use the simple past."
+  },
+  "currently": {
+   "pos": "adv",
+   "alternatives": [
+    "now"
+   ],
+   "basis": "project",
+   "note": "NOW is the approved word."
+  },
+  "deactivate": {
+   "pos": "v",
+   "alternatives": [
+    "turn off"
+   ],
+   "basis": "project",
+   "note": "TURN OFF is the approved phrase."
+  },
+  "demonstrate": {
+   "pos": "v",
+   "alternatives": [
+    "show"
+   ],
+   "basis": "ste",
+   "note": "SHOW is the approved word."
+  },
+  "determine": {
+   "pos": "v",
+   "alternatives": [
+    "find",
+    "decide"
+   ],
+   "basis": "project",
+   "note": "FIND a value. DECIDE a choice."
+  },
+  "disable": {
+   "pos": "v",
+   "alternatives": [
+    "turn off"
+   ],
+   "basis": "project",
+   "note": "Use TURN OFF for a switch or a flag."
+  },
+  "discontinue": {
+   "pos": "v",
+   "alternatives": [
+    "stop"
+   ],
+   "basis": "ste",
+   "note": "STOP is the approved word."
+  },
+  "display": {
+   "pos": "v",
+   "alternatives": [
+    "show"
+   ],
+   "basis": "project",
+   "note": "SHOW is the approved word (verb)."
+  },
+  "due to": {
+   "pos": "prep",
+   "alternatives": [
+    "because of"
+   ],
+   "basis": "ste",
+   "note": "BECAUSE OF is the approved phrase."
+  },
+  "due to the fact that": {
+   "pos": "conj",
+   "alternatives": [
+    "because"
+   ],
+   "basis": "ste",
+   "note": "BECAUSE is the approved word."
+  },
+  "e.g.": {
+   "pos": "abbr",
+   "alternatives": [
+    "for example"
+   ],
+   "basis": "project",
+   "note": "Do not use Latin abbreviations."
+  },
+  "easily": {
+   "pos": "adv",
+   "alternatives": [
+    "(delete it)"
+   ],
+   "basis": "project",
+   "note": "Vague. State the real condition or delete the word."
+  },
+  "eliminate": {
+   "pos": "v",
+   "alternatives": [
+    "remove"
+   ],
+   "basis": "project",
+   "note": "REMOVE is the approved word."
+  },
+  "employ": {
+   "pos": "v",
+   "alternatives": [
+    "use"
+   ],
+   "basis": "ste",
+   "note": "USE is the approved word."
+  },
+  "enable": {
+   "pos": "v",
+   "alternatives": [
+    "turn on"
+   ],
+   "basis": "project",
+   "note": "Use TURN ON for a switch or a flag. ENABLE is jargon."
+  },
+  "endeavor": {
+   "pos": "v",
+   "alternatives": [
+    "try"
+   ],
+   "basis": "project",
+   "note": "TRY is the approved word."
+  },
+  "endeavour": {
+   "pos": "v",
+   "alternatives": [
+    "try"
+   ],
+   "basis": "project",
+   "note": "TRY is the approved word."
+  },
+  "ensure": {
+   "pos": "v",
+   "alternatives": [
+    "make sure"
+   ],
+   "basis": "sheet",
+   "note": "MAKE SURE is the approved phrase for this meaning."
+  },
+  "essentially": {
+   "pos": "adv",
+   "alternatives": [
+    "(delete it)"
+   ],
+   "basis": "project",
+   "note": "Filler word. It adds no information. Delete it."
+  },
+  "etc": {
+   "pos": "abbr",
+   "alternatives": [
+    "and so on"
+   ],
+   "basis": "project",
+   "note": "Give the full list, or say what the other items are."
+  },
+  "etc.": {
+   "pos": "abbr",
+   "alternatives": [
+    "and so on"
+   ],
+   "basis": "project",
+   "note": "Give the full list, or say what the other items are."
+  },
+  "exceed": {
+   "pos": "v",
+   "alternatives": [
+    "be more than",
+    "go above"
+   ],
+   "basis": "project",
+   "note": "Say what is more than what."
+  },
+  "execute": {
+   "pos": "v",
+   "alternatives": [
+    "run"
+   ],
+   "basis": "project",
+   "note": "RUN a program, script or command."
+  },
+  "facilitate": {
+   "pos": "v",
+   "alternatives": [
+    "help",
+    "make easier"
+   ],
+   "basis": "ste",
+   "note": "HELP is the approved word."
+  },
+  "fall back": {
+   "pos": "v",
+   "alternatives": [
+    "use ... instead",
+    "go back to"
+   ],
+   "basis": "project",
+   "note": "Write what the system uses instead."
+  },
+  "fetch": {
+   "pos": "v",
+   "alternatives": [
+    "get"
+   ],
+   "basis": "project",
+   "note": "GET is the approved word."
+  },
+  "figure out": {
+   "pos": "v",
+   "alternatives": [
+    "find",
+    "decide"
+   ],
+   "basis": "project",
+   "note": "Jargon. FIND or DECIDE."
+  },
+  "fire up": {
+   "pos": "v",
+   "alternatives": [
+    "start"
+   ],
+   "basis": "project",
+   "note": "Jargon. Use START."
+  },
+  "functionality": {
+   "pos": "n",
+   "alternatives": [
+    "function",
+    "feature"
+   ],
+   "basis": "project",
+   "note": "FUNCTION or FEATURE."
+  },
+  "furthermore": {
+   "pos": "adv",
+   "alternatives": [
+    "also"
+   ],
+   "basis": "project",
+   "note": "ALSO is the approved word."
+  },
+  "halt": {
+   "pos": "v",
+   "alternatives": [
+    "stop"
+   ],
+   "basis": "project",
+   "note": "STOP is the approved word."
+  },
+  "hence": {
+   "pos": "adv",
+   "alternatives": [
+    "so"
+   ],
+   "basis": "project",
+   "note": "SO is the approved word."
+  },
+  "hook up": {
+   "pos": "v",
+   "alternatives": [
+    "connect"
+   ],
+   "basis": "project",
+   "note": "Jargon. Use CONNECT."
+  },
+  "however": {
+   "pos": "adv",
+   "alternatives": [
+    "but",
+    "(new sentence)"
+   ],
+   "basis": "project",
+   "note": "Use BUT or start a new sentence."
+  },
+  "i.e.": {
+   "pos": "abbr",
+   "alternatives": [
+    "that is"
+   ],
+   "basis": "project",
+   "note": "Do not use Latin abbreviations."
+  },
+  "identify": {
+   "pos": "v",
+   "alternatives": [
+    "find"
+   ],
+   "basis": "project",
+   "note": "FIND is the approved word."
+  },
+  "implement": {
+   "pos": "v",
+   "alternatives": [
+    "make",
+    "build"
+   ],
+   "basis": "project",
+   "note": "MAKE or BUILD."
+  },
+  "in addition": {
+   "pos": "adv",
+   "alternatives": [
+    "also"
+   ],
+   "basis": "project",
+   "note": "ALSO is the approved word."
+  },
+  "in addition to": {
+   "pos": "prep",
+   "alternatives": [
+    "and",
+    "also"
+   ],
+   "basis": "project",
+   "note": "Use AND or ALSO."
+  },
+  "in case of": {
+   "pos": "prep",
+   "alternatives": [
+    "if"
+   ],
+   "basis": "project",
+   "note": "IF is the approved word."
+  },
+  "in conjunction with": {
+   "pos": "prep",
+   "alternatives": [
+    "with"
+   ],
+   "basis": "project",
+   "note": "WITH is the approved word."
+  },
+  "in order to": {
+   "pos": "prep",
+   "alternatives": [
+    "to"
+   ],
+   "basis": "sheet",
+   "note": "TO is enough."
+  },
+  "in the case of": {
+   "pos": "prep",
+   "alternatives": [
+    "if",
+    "for"
+   ],
+   "basis": "project",
+   "note": "IF or FOR."
+  },
+  "in the event of": {
+   "pos": "prep",
+   "alternatives": [
+    "if"
+   ],
+   "basis": "ste",
+   "note": "IF is the approved word."
+  },
+  "in the event that": {
+   "pos": "conj",
+   "alternatives": [
+    "if"
+   ],
+   "basis": "ste",
+   "note": "IF is the approved word."
+  },
+  "incorporate": {
+   "pos": "v",
+   "alternatives": [
+    "put in",
+    "include"
+   ],
+   "basis": "project",
+   "note": "PUT IN is the approved phrase."
+  },
+  "indicate": {
+   "pos": "v",
+   "alternatives": [
+    "show"
+   ],
+   "basis": "ste",
+   "note": "SHOW is the approved word."
+  },
+  "inform": {
+   "pos": "v",
+   "alternatives": [
+    "tell"
+   ],
+   "basis": "project",
+   "note": "TELL is the approved word."
+  },
+  "initial": {
+   "pos": "adj",
+   "alternatives": [
+    "first"
+   ],
+   "basis": "project",
+   "note": "FIRST is the approved word."
+  },
+  "initialise": {
+   "pos": "v",
+   "alternatives": [
+    "start",
+    "set"
+   ],
+   "basis": "project",
+   "note": "START a program. SET a first value."
+  },
+  "initialize": {
+   "pos": "v",
+   "alternatives": [
+    "start",
+    "set"
+   ],
+   "basis": "project",
+   "note": "START a program. SET a first value."
+  },
+  "initiate": {
+   "pos": "v",
+   "alternatives": [
+    "start"
+   ],
+   "basis": "ste",
+   "note": "START is the approved word."
+  },
+  "invoke": {
+   "pos": "v",
+   "alternatives": [
+    "run",
+    "start"
+   ],
+   "basis": "project",
+   "note": "RUN a program or command. START a service."
+  },
+  "is able to": {
+   "pos": "phr",
+   "alternatives": [
+    "can"
+   ],
+   "basis": "project",
+   "note": "CAN is the approved word."
+  },
+  "kick off": {
+   "pos": "v",
+   "alternatives": [
+    "start"
+   ],
+   "basis": "project",
+   "note": "Jargon. Use START."
+  },
+  "launch": {
+   "pos": "v",
+   "alternatives": [
+    "start"
+   ],
+   "basis": "project",
+   "note": "Use START for a process. For a drone, use TAKE OFF."
+  },
+  "leverage": {
+   "pos": "v",
+   "alternatives": [
+    "use"
+   ],
+   "basis": "ste",
+   "note": "Business jargon. Use USE."
+  },
+  "lots of": {
+   "pos": "det",
+   "alternatives": [
+    "many",
+    "much"
+   ],
+   "basis": "project",
+   "note": "MANY or MUCH."
+  },
+  "maintain": {
+   "pos": "v",
+   "alternatives": [
+    "keep",
+    "do maintenance on"
+   ],
+   "basis": "project",
+   "note": "KEEP a state. DO MAINTENANCE ON equipment."
+  },
+  "make use of": {
+   "pos": "phr",
+   "alternatives": [
+    "use"
+   ],
+   "basis": "ste",
+   "note": "USE is the approved word."
+  },
+  "may": {
+   "pos": "modal",
+   "alternatives": [
+    "can",
+    "it is possible to"
+   ],
+   "basis": "project",
+   "note": "CAN shows a possibility. MAY is not approved."
+  },
+  "might": {
+   "pos": "modal",
+   "alternatives": [
+    "can"
+   ],
+   "basis": "project",
+   "note": "CAN shows a possibility."
+  },
+  "modification": {
+   "pos": "n",
+   "alternatives": [
+    "change"
+   ],
+   "basis": "project",
+   "note": "CHANGE is the approved word."
+  },
+  "modify": {
+   "pos": "v",
+   "alternatives": [
+    "change"
+   ],
+   "basis": "ste",
+   "note": "CHANGE is the approved word."
+  },
+  "moreover": {
+   "pos": "adv",
+   "alternatives": [
+    "also"
+   ],
+   "basis": "project",
+   "note": "ALSO is the approved word."
+  },
+  "multiple": {
+   "pos": "adj",
+   "alternatives": [
+    "many"
+   ],
+   "basis": "project",
+   "note": "MANY is the approved word. Use `multi-source` as a technical name."
+  },
+  "necessitate": {
+   "pos": "v",
+   "alternatives": [
+    "need"
+   ],
+   "basis": "project",
+   "note": "NEED is the approved word."
+  },
+  "notify": {
+   "pos": "v",
+   "alternatives": [
+    "tell",
+    "send a message to"
+   ],
+   "basis": "project",
+   "note": "TELL is the approved word."
+  },
+  "numerous": {
+   "pos": "adj",
+   "alternatives": [
+    "many"
+   ],
+   "basis": "ste",
+   "note": "MANY is the approved word."
+  },
+  "obtain": {
+   "pos": "v",
+   "alternatives": [
+    "get"
+   ],
+   "basis": "ste",
+   "note": "GET is the approved word."
+  },
+  "obviously": {
+   "pos": "adv",
+   "alternatives": [
+    "(delete it)"
+   ],
+   "basis": "project",
+   "note": "Filler word. It adds no information. Delete it."
+  },
+  "occur": {
+   "pos": "v",
+   "alternatives": [
+    "happen"
+   ],
+   "basis": "project",
+   "note": "HAPPEN is the approved word."
+  },
+  "of course": {
+   "pos": "adv",
+   "alternatives": [
+    "(delete it)"
+   ],
+   "basis": "project",
+   "note": "Filler word. It adds no information. Delete it."
+  },
+  "once": {
+   "pos": "conj",
+   "alternatives": [
+    "after",
+    "when"
+   ],
+   "basis": "project",
+   "note": "ONCE means one time only. Use AFTER or WHEN for time order.",
+   "only_as": "conj"
+  },
+  "optimal": {
+   "pos": "adj",
+   "alternatives": [
+    "best"
+   ],
+   "basis": "project",
+   "note": "BEST is the approved word."
+  },
+  "optimum": {
+   "pos": "adj",
+   "alternatives": [
+    "best"
+   ],
+   "basis": "project",
+   "note": "BEST is the approved word."
+  },
+  "ought": {
+   "pos": "modal",
+   "alternatives": [
+    "must"
+   ],
+   "basis": "project",
+   "note": "MUST shows a rule."
+  },
+  "perform": {
+   "pos": "v",
+   "alternatives": [
+    "do"
+   ],
+   "basis": "ste",
+   "note": "DO is the approved word."
+  },
+  "permit": {
+   "pos": "v",
+   "alternatives": [
+    "allow"
+   ],
+   "basis": "project",
+   "note": "ALLOW is the approved word."
+  },
+  "persist": {
+   "pos": "v",
+   "alternatives": [
+    "save",
+    "keep"
+   ],
+   "basis": "project",
+   "note": "SAVE data to disk. KEEP a value."
+  },
+  "possess": {
+   "pos": "v",
+   "alternatives": [
+    "have"
+   ],
+   "basis": "project",
+   "note": "HAVE is the approved word."
+  },
+  "presently": {
+   "pos": "adv",
+   "alternatives": [
+    "now"
+   ],
+   "basis": "project",
+   "note": "NOW is the approved word."
+  },
+  "previously": {
+   "pos": "adv",
+   "alternatives": [
+    "before",
+    "earlier"
+   ],
+   "basis": "project",
+   "note": "BEFORE is the approved word."
+  },
+  "prior to": {
+   "pos": "prep",
+   "alternatives": [
+    "before"
+   ],
+   "basis": "sheet",
+   "note": "BEFORE is the approved word."
+  },
+  "proceed": {
+   "pos": "v",
+   "alternatives": [
+    "continue",
+    "go"
+   ],
+   "basis": "project",
+   "note": "CONTINUE or GO."
+  },
+  "prohibit": {
+   "pos": "v",
+   "alternatives": [
+    "do not allow",
+    "do not"
+   ],
+   "basis": "project",
+   "note": "Write the prohibition as a command: Do not ..."
+  },
+  "provide": {
+   "pos": "v",
+   "alternatives": [
+    "give",
+    "supply"
+   ],
+   "basis": "project",
+   "note": "GIVE or SUPPLY. For a feature, use HAVE."
+  },
+  "quite": {
+   "pos": "adv",
+   "alternatives": [
+    "(delete it)"
+   ],
+   "basis": "project",
+   "note": "Filler word. It adds no information. Delete it."
+  },
+  "really": {
+   "pos": "adv",
+   "alternatives": [
+    "(delete it)"
+   ],
+   "basis": "project",
+   "note": "Filler word. It adds no information. Delete it."
+  },
+  "receive": {
+   "pos": "v",
+   "alternatives": [
+    "get"
+   ],
+   "basis": "project",
+   "note": "GET is the approved word."
+  },
+  "regarding": {
+   "pos": "prep",
+   "alternatives": [
+    "about"
+   ],
+   "basis": "project",
+   "note": "ABOUT is the approved word."
+  },
+  "remainder": {
+   "pos": "n",
+   "alternatives": [
+    "rest"
+   ],
+   "basis": "project",
+   "note": "REST is the approved word."
+  },
+  "replenish": {
+   "pos": "v",
+   "alternatives": [
+    "fill"
+   ],
+   "basis": "sheet",
+   "note": "FILL is the approved word."
+  },
+  "require": {
+   "pos": "v",
+   "alternatives": [
+    "need"
+   ],
+   "basis": "ste",
+   "note": "NEED is the approved word. Write: The job needs 8 GB."
+  },
+  "reside": {
+   "pos": "v",
+   "alternatives": [
+    "be"
+   ],
+   "basis": "project",
+   "note": "Write: The file is in ... Do not use RESIDE."
+  },
+  "retain": {
+   "pos": "v",
+   "alternatives": [
+    "keep"
+   ],
+   "basis": "project",
+   "note": "KEEP is the approved word."
+  },
+  "retrieve": {
+   "pos": "v",
+   "alternatives": [
+    "get"
+   ],
+   "basis": "project",
+   "note": "GET is the approved word."
+  },
+  "roughly": {
+   "pos": "adv",
+   "alternatives": [
+    "about"
+   ],
+   "basis": "project",
+   "note": "ABOUT is the approved word."
+  },
+  "shall": {
+   "pos": "modal",
+   "alternatives": [
+    "must",
+    "will"
+   ],
+   "basis": "project",
+   "note": "MUST shows a rule. WILL shows the future."
+  },
+  "should": {
+   "pos": "modal",
+   "alternatives": [
+    "must",
+    "(imperative)"
+   ],
+   "basis": "project",
+   "note": "MUST shows a rule. For advice, write an imperative or state the condition."
+  },
+  "simply": {
+   "pos": "adv",
+   "alternatives": [
+    "(delete it)"
+   ],
+   "basis": "project",
+   "note": "Filler word. It adds no information. Delete it."
+  },
+  "specify": {
+   "pos": "v",
+   "alternatives": [
+    "give",
+    "set",
+    "say"
+   ],
+   "basis": "project",
+   "note": "GIVE a value. SET an option."
+  },
+  "spin up": {
+   "pos": "v",
+   "alternatives": [
+    "start"
+   ],
+   "basis": "project",
+   "note": "Jargon. Use START."
+  },
+  "subsequent": {
+   "pos": "adj",
+   "alternatives": [
+    "next",
+    "after"
+   ],
+   "basis": "project",
+   "note": "NEXT is the approved word."
+  },
+  "subsequently": {
+   "pos": "adv",
+   "alternatives": [
+    "then",
+    "after that"
+   ],
+   "basis": "ste",
+   "note": "THEN or AFTER THAT."
+  },
+  "substantial": {
+   "pos": "adj",
+   "alternatives": [
+    "large"
+   ],
+   "basis": "project",
+   "note": "LARGE is the approved word."
+  },
+  "substitute": {
+   "pos": "v",
+   "alternatives": [
+    "replace"
+   ],
+   "basis": "project",
+   "note": "REPLACE is the approved word."
+  },
+  "sufficient": {
+   "pos": "adj",
+   "alternatives": [
+    "enough"
+   ],
+   "basis": "ste",
+   "note": "ENOUGH is the approved word."
+  },
+  "supplement": {
+   "pos": "v",
+   "alternatives": [
+    "add to"
+   ],
+   "basis": "project",
+   "note": "ADD TO is the approved phrase."
+  },
+  "take place": {
+   "pos": "phr",
+   "alternatives": [
+    "happen"
+   ],
+   "basis": "project",
+   "note": "HAPPEN is the approved word."
+  },
+  "tear down": {
+   "pos": "v",
+   "alternatives": [
+    "remove",
+    "stop"
+   ],
+   "basis": "project",
+   "note": "Jargon. REMOVE or STOP."
+  },
+  "terminate": {
+   "pos": "v",
+   "alternatives": [
+    "stop"
+   ],
+   "basis": "ste",
+   "note": "STOP is the approved word."
+  },
+  "the majority of": {
+   "pos": "det",
+   "alternatives": [
+    "most"
+   ],
+   "basis": "project",
+   "note": "MOST is the approved word."
+  },
+  "therefore": {
+   "pos": "adv",
+   "alternatives": [
+    "so"
+   ],
+   "basis": "project",
+   "note": "SO is the approved word."
+  },
+  "thus": {
+   "pos": "adv",
+   "alternatives": [
+    "so"
+   ],
+   "basis": "project",
+   "note": "SO is the approved word."
+  },
+  "transmit": {
+   "pos": "v",
+   "alternatives": [
+    "send"
+   ],
+   "basis": "project",
+   "note": "SEND is the approved word."
+  },
+  "trigger": {
+   "pos": "v",
+   "alternatives": [
+    "start",
+    "cause"
+   ],
+   "basis": "project",
+   "note": "START a process. CAUSE an effect."
+  },
+  "unless": {
+   "pos": "conj",
+   "alternatives": [
+    "if ... not"
+   ],
+   "basis": "project",
+   "note": "Write the condition with IF."
+  },
+  "upon": {
+   "pos": "prep",
+   "alternatives": [
+    "on",
+    "when"
+   ],
+   "basis": "project",
+   "note": "ON or WHEN."
+  },
+  "usage": {
+   "pos": "n",
+   "alternatives": [
+    "use"
+   ],
+   "basis": "project",
+   "note": "USE is the approved word."
+  },
+  "utilisation": {
+   "pos": "n",
+   "alternatives": [
+    "use"
+   ],
+   "basis": "project",
+   "note": "USE is the approved word."
+  },
+  "utilise": {
+   "pos": "v",
+   "alternatives": [
+    "use"
+   ],
+   "basis": "sheet",
+   "note": "USE is the approved word."
+  },
+  "utilization": {
+   "pos": "n",
+   "alternatives": [
+    "use"
+   ],
+   "basis": "project",
+   "note": "USE is the approved word."
+  },
+  "utilize": {
+   "pos": "v",
+   "alternatives": [
+    "use"
+   ],
+   "basis": "sheet",
+   "note": "USE is the approved word."
+  },
+  "validate": {
+   "pos": "v",
+   "alternatives": [
+    "check",
+    "make sure"
+   ],
+   "basis": "project",
+   "note": "Same decision as VERIFY. A gate that checks a rule is a CHECK."
+  },
+  "validation": {
+   "pos": "n",
+   "alternatives": [
+    "check"
+   ],
+   "basis": "project",
+   "note": "CHECK is the approved word."
+  },
+  "various": {
+   "pos": "adj",
+   "alternatives": [
+    "different",
+    "many"
+   ],
+   "basis": "project",
+   "note": "DIFFERENT or MANY."
+  },
+  "verification": {
+   "pos": "n",
+   "alternatives": [
+    "check"
+   ],
+   "basis": "project",
+   "note": "CHECK is the approved word."
+  },
+  "verify": {
+   "pos": "v",
+   "alternatives": [
+    "make sure",
+    "check"
+   ],
+   "basis": "project",
+   "note": "Use MAKE SURE when you state the result you expect. Use CHECK when you name the action (check the log). VERIFY has more than one meaning."
+  },
+  "via": {
+   "pos": "prep",
+   "alternatives": [
+    "through",
+    "with",
+    "by"
+   ],
+   "basis": "project",
+   "note": "THROUGH a path. WITH a tool."
+  },
+  "vs": {
+   "pos": "abbr",
+   "alternatives": [
+    "and",
+    "or",
+    "compared with"
+   ],
+   "basis": "project",
+   "note": "Write the full words."
+  },
+  "vs.": {
+   "pos": "abbr",
+   "alternatives": [
+    "and",
+    "or",
+    "compared with"
+   ],
+   "basis": "project",
+   "note": "Write the full words."
+  },
+  "whereas": {
+   "pos": "conj",
+   "alternatives": [
+    "but"
+   ],
+   "basis": "project",
+   "note": "BUT, or two sentences."
+  },
+  "with regard to": {
+   "pos": "prep",
+   "alternatives": [
+    "about"
+   ],
+   "basis": "project",
+   "note": "ABOUT is the approved word."
+  },
+  "with respect to": {
+   "pos": "prep",
+   "alternatives": [
+    "about"
+   ],
+   "basis": "project",
+   "note": "ABOUT is the approved word."
+  },
+  "would": {
+   "pos": "modal",
+   "alternatives": [
+    "will"
+   ],
+   "basis": "project",
+   "note": "Use the simple future (WILL)."
+  }
+ },
+ "approved_words": {
+  "about": {
+   "pos": "adv/prep",
+   "meaning": "Near to a number. Also: on the subject of.",
+   "example": "The job takes about 10 minutes."
+  },
+  "after": {
+   "pos": "prep/conj",
+   "meaning": "At a later time.",
+   "example": "After the job ends, check the log."
+  },
+  "allow": {
+   "pos": "v",
+   "meaning": "Make possible.",
+   "example": "The route allows only GET."
+  },
+  "also": {
+   "pos": "adv",
+   "meaning": "In addition.",
+   "example": "Also check the log."
+  },
+  "because of": {
+   "pos": "prep",
+   "meaning": "For the reason of.",
+   "example": "The job stops because of an error."
+  },
+  "before": {
+   "pos": "prep/conj",
+   "meaning": "At an earlier time.",
+   "example": "Before you start, stop the worker."
+  },
+  "can": {
+   "pos": "v",
+   "meaning": "It is possible to.",
+   "example": "You can cancel a job."
+  },
+  "change": {
+   "pos": "v/n",
+   "meaning": "Make different.",
+   "example": "Change the option."
+  },
+  "check": {
+   "pos": "v",
+   "meaning": "Look at something to see its state.",
+   "example": "Check the log."
+  },
+  "close": {
+   "pos": "v",
+   "meaning": "Shut something. (Not an adjective: use `near`.)",
+   "example": "Close the file."
+  },
+  "do": {
+   "pos": "v",
+   "meaning": "Carry out an action.",
+   "example": "Do the check again."
+  },
+  "enough": {
+   "pos": "adj",
+   "meaning": "As much as you need.",
+   "example": "The disk has enough space."
+  },
+  "fill": {
+   "pos": "v",
+   "meaning": "Make something full.",
+   "example": "Fill the disk with the data."
+  },
+  "find": {
+   "pos": "v",
+   "meaning": "Get a value by a search.",
+   "example": "Find the job in the log."
+  },
+  "full": {
+   "pos": "adj",
+   "meaning": "With no more space.",
+   "example": "The disk is full."
+  },
+  "get": {
+   "pos": "v",
+   "meaning": "Receive or fetch a value.",
+   "example": "Get the job state."
+  },
+  "give": {
+   "pos": "v",
+   "meaning": "Supply.",
+   "example": "Give the job ID."
+  },
+  "help": {
+   "pos": "v/n",
+   "meaning": "Make easier.",
+   "example": "The log helps you find the error."
+  },
+  "if": {
+   "pos": "conj",
+   "meaning": "In the condition that.",
+   "example": "If the PC is off, wake it."
+  },
+  "keep": {
+   "pos": "v",
+   "meaning": "Do not lose or change.",
+   "example": "Keep the raw files."
+  },
+  "make sure": {
+   "pos": "v",
+   "meaning": "Do an action or a check so that the result is certain.",
+   "example": "Make sure that the worker is idle."
+  },
+  "many": {
+   "pos": "adj",
+   "meaning": "A large number of.",
+   "example": "Many jobs are in the queue."
+  },
+  "more": {
+   "pos": "adj",
+   "meaning": "A larger number or amount.",
+   "example": "Add more photos."
+  },
+  "must": {
+   "pos": "v",
+   "meaning": "It is a rule.",
+   "example": "You must not delete `raw/`."
+  },
+  "near": {
+   "pos": "prep/adj",
+   "meaning": "A short distance from something.",
+   "example": "Do not fly near a building."
+  },
+  "need": {
+   "pos": "v",
+   "meaning": "Must have something.",
+   "example": "The job needs 8 GB."
+  },
+  "now": {
+   "pos": "adv",
+   "meaning": "At this time.",
+   "example": "The default is PC-only now."
+  },
+  "remove": {
+   "pos": "v",
+   "meaning": "Take away.",
+   "example": "Remove the old file."
+  },
+  "save": {
+   "pos": "v",
+   "meaning": "Write data to disk.",
+   "example": "Save the file."
+  },
+  "show": {
+   "pos": "v",
+   "meaning": "Make something visible.",
+   "example": "The page shows the job state."
+  },
+  "so": {
+   "pos": "adv",
+   "meaning": "For this reason.",
+   "example": "The key is wrong, so the request fails."
+  },
+  "start": {
+   "pos": "v",
+   "meaning": "Cause a process to begin.",
+   "example": "Start the worker."
+  },
+  "stop": {
+   "pos": "v",
+   "meaning": "Cause a process to end.",
+   "example": "Stop the job."
+  },
+  "test": {
+   "pos": "v/n",
+   "meaning": "Run a check on a function.",
+   "example": "Test the new gate."
+  },
+  "then": {
+   "pos": "adv",
+   "meaning": "At the next time.",
+   "example": "Stop the worker. Then restart the web."
+  },
+  "to": {
+   "pos": "prep",
+   "meaning": "For the purpose of (replaces `in order to`).",
+   "example": "Use `-k` to run one suite."
+  },
+  "try": {
+   "pos": "v",
+   "meaning": "Do an action that can fail.",
+   "example": "Try the request again."
+  },
+  "turn off": {
+   "pos": "v",
+   "meaning": "Make a switch or a flag not active.",
+   "example": "Turn off the flag."
+  },
+  "turn on": {
+   "pos": "v",
+   "meaning": "Make a switch or a flag active.",
+   "example": "Turn on the flag."
+  },
+  "use": {
+   "pos": "v",
+   "meaning": "Do work with a tool or a value.",
+   "example": "Use the `--fast` flag."
+  },
+  "when": {
+   "pos": "conj",
+   "meaning": "At the time that.",
+   "example": "When the job ends, the worker takes the next one."
+  },
+  "will": {
+   "pos": "v",
+   "meaning": "Future.",
+   "example": "The worker will start the next job."
+  }
+ },
+ "technical_names": {
+  "Software components": {
+   "AeroBrain": "The name of this project and of its web application.",
+   "Flightverse": "The 3D flight and game mode of the web application.",
+   "Splat Lab": "The web page where you edit and clean a splat.",
+   "SuperSplat": "The splat editor that the project hosts. The project keeps its own fork.",
+   "worker": "The one background process that takes jobs from the queue and runs them.",
+   "web origin": "The Python web server on 127.0.0.1:8790. It serves the web files, the APIs and the video.",
+   "watchdog": "The LaunchAgent that checks the web, the worker and the tunnel and starts them again.",
+   "tunnel": "The Cloudflare Tunnel process (`cloudflared`) that connects the web origin to the Internet.",
+   "LaunchAgent": "A macOS background service that `launchd` starts for one user.",
+   "launchd": "The macOS service manager.",
+   "manifest": "The JSON file or index that lists the clips, scenes and models in the vault.",
+   "vault": "The folder `/Volumes/SSD/drone-vault` that holds all drone data.",
+   "clip": "One video recording with its SRT file.",
+   "scene": "A 3D site with one or more versions.",
+   "scene version": "One reconstruction of a scene, for example `recon_<hash>`.",
+   "job": "One unit of work in the queue, for example an ODM job or a splat job.",
+   "queue": "The list of jobs in `jobs.db`. The worker takes one job at a time.",
+   "jobs.db": "The SQLite file that stores the job queue.",
+   "gate": "An automatic check that a result must pass before the next step starts.",
+   "preflight": "A set of checks that run before a restart or a publish.",
+   "sidecar": "A file next to another file, for example a `.gz` file next to a web asset.",
+   "proxy": "A small, low-resolution copy of a video.",
+   "thumbnail": "A small preview image.",
+   "edge Worker": "The Cloudflare Worker in `edge/` that signs the session cookie for the origin.",
+   "SQLite": "The file database that the project uses.",
+   "jobs console": "The page 3D, Trabajos in the web application.",
+   "auto-clean": "The Splat Lab function that removes floaters from a splat.",
+   "floater": "A stray splat or point that floats in the air and does not belong to the scene.",
+   "gz": "A gzip-compressed file."
+  },
+  "3D and capture": {
+   "splat": "A 3D model that is made of many Gaussian blobs. The file types are `.ply`, `.splat` and `.ksplat`.",
+   "Gaussian splat": "The full name of a splat.",
+   "GLB": "A binary glTF 3D model file.",
+   "mesh": "A 3D surface that is made of triangles.",
+   "DSM": "Digital Surface Model. A raster of the height of the ground and of all objects on it.",
+   "DTM": "Digital Terrain Model. A raster of the height of the bare ground.",
+   "ortho": "The orthophoto. A top view image of the site with no perspective distortion.",
+   "orthophoto": "The full name of ortho.",
+   "point cloud": "A set of 3D points that ODM makes from the photos.",
+   "collider": "A simple shape that the game uses to find hits between the drone and the world.",
+   "heightmap": "A raster image where each pixel is a height.",
+   "GCP": "Ground Control Point. A target with known coordinates.",
+   "EXIF": "The metadata in a photo file, for example the GPS position.",
+   "SRT": "The subtitle file that a DJI drone writes next to a video. It holds the GPS track.",
+   "nadir": "Straight down. A nadir photo has the camera at -90 degrees.",
+   "oblique": "At an angle. An oblique photo has the camera not straight down.",
+   "lawnmower": "A flight pattern of parallel straight lines.",
+   "AGL": "Above Ground Level.",
+   "gimbal": "The part that holds and turns the camera.",
+   "GNSS": "Satellite positioning, for example GPS.",
+   "doming": "A model error where flat ground bends like a bowl.",
+   "overlap": "The share of one photo that other photos also show.",
+   "LOD": "Level Of Detail. A simpler version of a model for far views.",
+   "rolling shutter": "A camera effect. The sensor reads the image line by line, so fast motion bends straight lines."
+  },
+  "Tools and platforms": {
+   "ODM": "OpenDroneMap. The photogrammetry program that makes the point cloud, the DSM and the ortho.",
+   "OpenSfM": "The structure-from-motion part of ODM.",
+   "OpenMVS": "The dense reconstruction part of ODM.",
+   "COLMAP": "A structure-from-motion program and file format.",
+   "gsplat": "The CUDA library that trains a splat.",
+   "OpenSplat": "The older splat trainer that ran on the Mac.",
+   "CUDA": "The NVIDIA GPU compute platform.",
+   "OOM": "Out Of Memory.",
+   "OrbStack": "The macOS program that runs Docker containers.",
+   "Docker": "The container system.",
+   "WSL": "Windows Subsystem for Linux.",
+   "WoL": "Wake-on-LAN. A network packet that wakes a sleeping computer.",
+   "SSH": "The secure remote shell.",
+   "Cloudflare": "The company and the network service that carries the public traffic.",
+   "Wrangler": "The Cloudflare command-line tool.",
+   "Vercel": "The web hosting service.",
+   "Supabase": "The hosted database service.",
+   "GitHub": "The code host.",
+   "ffmpeg": "The video command-line tool.",
+   "GDAL": "The raster data library.",
+   "PDAL": "The point cloud data library.",
+   "Node": "The JavaScript runtime.",
+   "npm": "The Node package manager.",
+   "Python": "The programming language of the pipeline.",
+   "HMAC": "A signature method with a shared key.",
+   "CSRF": "Cross-site request forgery. An attack that the project blocks.",
+   "SLO": "Service Level Objective.",
+   "API": "Application Programming Interface.",
+   "endpoint": "One URL path of the API.",
+   "JSON": "A text data format.",
+   "Markdown": "The text format of the docs.",
+   "LLM": "Large Language Model.",
+   "STE": "Simplified Technical English.",
+   "Fetch Metadata": "A web standard. The browser adds Sec-Fetch headers to a request. The headers show where the request comes from.",
+   "Pixel Streaming": "A product of Unreal Engine. It sends the rendered image of an Unreal application from a server GPU to a web browser."
+  },
+  "Hardware and drones": {
+   "RTX 4060 Ti": "The NVIDIA GPU in the PC. It has 8 GB of memory.",
+   "Mac Mini M4": "The Mac that runs the web, the worker and the tunnel.",
+   "the PC": "The Windows computer with the GPU. You reach it with `ssh pc`.",
+   "DJI Flip": "A small DJI camera drone. It flies by hand only.",
+   "DJI Neo 2": "A small DJI camera drone. It has a wide lens and flies by hand only.",
+   "SD card": "The memory card of the drone.",
+   "RPAS": "Remotely Piloted Aircraft System. A drone.",
+   "VLOS": "Visual Line Of Sight. The pilot sees the drone with the eyes.",
+   "FileVault": "The macOS disk encryption.",
+   "UPS": "Uninterruptible Power Supply."
+  },
+  "Files, paths and products": {
+   "ALERT": "The file `~/Library/Logs/AeroBrain/ALERT`. It exists only while a check fails.",
+   "ops_status.py": "The script that prints the PASS or FAIL status of the system.",
+   "safe_restart.sh": "The script that restarts a service in a safe way.",
+   "run_all_tests.py": "The script that runs all the test suites.",
+   "gcp_list.txt": "The ground control point file for ODM.",
+   "reconstruction.json": "The OpenSfM result file.",
+   "CLAUDE.md": "The file of pitfalls for coding agents.",
+   "AGENTS.md": "The file of access and acceptance rules for coding agents."
+  }
+ },
+ "technical_verbs": {
+  "Release and deploy": {
+   "deploy": "Put a new version of the code on a live service.",
+   "publish": "Make a result visible in the web application. It also means: send a file to the vault.",
+   "bump": "Increase a version number. For example `bump_web_version.py` increases `?v=N`.",
+   "rebake": "Make a baked file again, for example a collision file.",
+   "bake": "Calculate a result once and save it in a file.",
+   "rebuild": "Build a program or an index again from its sources.",
+   "regenerate": "Make a generated file again.",
+   "generate": "Make a file or data with a program.",
+   "promote": "Make a scene version the active version.",
+   "roll back": "Go back to the last good version."
+  },
+  "Version control": {
+   "commit": "Save a set of changes in the Git history.",
+   "push": "Send Git commits to the remote on GitHub.",
+   "pull": "Get Git commits from the remote.",
+   "merge": "Join two Git branches, or join the data of two sources.",
+   "tag": "Put a label on a Git commit."
+  },
+  "Process control": {
+   "restart": "Stop a service and start it again.",
+   "kickstart": "Start a LaunchAgent now with `launchctl kickstart`.",
+   "kill": "Stop a process at once with a signal.",
+   "cancel": "Stop a job before it is finished.",
+   "enqueue": "Put a job in the queue.",
+   "re-enqueue": "Put a job in the queue again.",
+   "rerun": "Run a job or a command again.",
+   "retry": "Try a failed action again.",
+   "probe": "Send a small test request to see if a service answers.",
+   "poll": "Ask a service for its state again and again.",
+   "tail": "Show the last lines of a log file.",
+   "drain": "Take all the jobs out of a queue and run them.",
+   "stage": "Copy files to a temporary place before a job.",
+   "wake": "Wake a sleeping computer with WoL."
+  },
+  "Data and files": {
+   "ingest": "Copy files from the SD card into the vault and register them.",
+   "extract": "Take frames or files out of a video or an archive.",
+   "convert": "Change a file from one format to another.",
+   "export": "Write data in a file format for use in another tool.",
+   "import": "Read data from another tool or format.",
+   "upload": "Send a file from the browser or the Mac to a server.",
+   "download": "Get a file from a server.",
+   "parse": "Read a text file and split it into its parts.",
+   "purge": "Delete files for good to free disk space.",
+   "delete": "Remove a file or a record.",
+   "trash": "Move a file to the trash folder. It is not deleted.",
+   "sync": "Make two copies of data the same.",
+   "rotate": "Replace a key or a log file with a new one.",
+   "crop": "Cut a part out of a model or an image.",
+   "gzip": "Compress a file with the gzip program.",
+   "register": "Add an item to a list or an index."
+  },
+  "3D and compute": {
+   "render": "Draw an image from a 3D model.",
+   "train": "Run an optimizer that makes a splat from photos.",
+   "retrain": "Train a splat again.",
+   "reconstruct": "Make a 3D model from photos.",
+   "align": "Move a model so that it fits a reference.",
+   "clean": "Remove floaters and noise from a splat.",
+   "filter": "Remove points or data that do not pass a rule.",
+   "sample": "Take a part of the data for a test.",
+   "bundle": "Join many files into one file.",
+   "downsample": "Make a copy of the data with fewer points."
+  },
+  "Software testing": {
+   "lint": "Run a program that checks the style of files.",
+   "typecheck": "Run the type checker.",
+   "gate": "Stop a step until a check passes.",
+   "stress": "Run a test with a high load.",
+   "mock": "Replace a real part with a fake part in a test."
+  }
+ },
+ "allowed_exceptions": {
+  "ing_words": [
+   "anything",
+   "bearing",
+   "bring",
+   "building",
+   "buildings",
+   "caching",
+   "ceiling",
+   "damping",
+   "drawing",
+   "ducking",
+   "during",
+   "engineering",
+   "evening",
+   "everything",
+   "falling",
+   "heading",
+   "headings",
+   "housing",
+   "king",
+   "landing",
+   "mapping",
+   "meaning",
+   "meanings",
+   "meshing",
+   "morning",
+   "nothing",
+   "onboarding",
+   "packing",
+   "padding",
+   "pending",
+   "ping",
+   "polling",
+   "pricing",
+   "pruning",
+   "rendering",
+   "ring",
+   "rings",
+   "routing",
+   "setting",
+   "settings",
+   "sing",
+   "something",
+   "spring",
+   "string",
+   "strings",
+   "texturing",
+   "thing",
+   "things",
+   "tiling",
+   "timing",
+   "training",
+   "tubing",
+   "tunnelling",
+   "warning",
+   "warnings",
+   "wing",
+   "wiring"
+  ],
+  "participle_adjectives": [
+   "closed",
+   "locked",
+   "unlocked",
+   "open",
+   "enabled",
+   "disabled",
+   "connected",
+   "disconnected",
+   "loaded",
+   "charged",
+   "discharged",
+   "finished",
+   "damaged",
+   "broken",
+   "stuck",
+   "paused",
+   "stopped",
+   "idle",
+   "ready",
+   "done",
+   "empty",
+   "sorted",
+   "unused",
+   "used",
+   "given",
+   "known",
+   "fixed",
+   "frozen",
+   "dead",
+   "queued",
+   "running",
+   "failed",
+   "cancelled",
+   "canceled",
+   "archived",
+   "deprecated",
+   "pinned",
+   "private",
+   "signed",
+   "shared"
+  ],
+  "words": [
+   "pc",
+   "ok"
+  ],
+  "ed_not_participle": [
+   "need",
+   "speed",
+   "feed",
+   "seed",
+   "bed",
+   "red",
+   "shed",
+   "embed",
+   "proceed",
+   "succeed",
+   "exceed",
+   "indeed",
+   "hundred",
+   "sacred",
+   "naked",
+   "wicked",
+   "bleed",
+   "breed",
+   "creed",
+   "deed",
+   "greed",
+   "heed",
+   "reed",
+   "weed",
+   "speed",
+   "guaranteed",
+   "hatred",
+   "kindred",
+   "shred",
+   "sled",
+   "wed",
+   "fled",
+   "bled",
+   "led",
+   "fed",
+   "bred",
+   "sped",
+   "thread",
+   "spread",
+   "bread",
+   "dread",
+   "head",
+   "instead",
+   "ahead",
+   "tread",
+   "tired"
+  ],
+  "irregular_participles": [
+   "been",
+   "done",
+   "gone",
+   "made",
+   "taken",
+   "given",
+   "shown",
+   "seen",
+   "run",
+   "begun",
+   "written",
+   "chosen",
+   "broken",
+   "kept",
+   "held",
+   "left",
+   "found",
+   "built",
+   "sent",
+   "set",
+   "put",
+   "read",
+   "cut",
+   "hit",
+   "let",
+   "lost",
+   "paid",
+   "said",
+   "sold",
+   "stuck",
+   "told",
+   "thought",
+   "understood",
+   "won",
+   "worn",
+   "torn",
+   "stolen",
+   "known",
+   "grown",
+   "drawn",
+   "driven",
+   "eaten",
+   "fallen",
+   "forgotten",
+   "frozen",
+   "gotten",
+   "hidden",
+   "ridden",
+   "risen",
+   "spoken",
+   "thrown",
+   "woken",
+   "become",
+   "come",
+   "got",
+   "met",
+   "shot",
+   "spent",
+   "stood",
+   "struck",
+   "swept",
+   "taught",
+   "woven",
+   "bound",
+   "brought",
+   "caught",
+   "dealt",
+   "fed",
+   "felt",
+   "fought",
+   "hung",
+   "laid",
+   "led",
+   "meant",
+   "overwritten",
+   "rebuilt",
+   "reset",
+   "shut",
+   "split",
+   "withdrawn",
+   "bought",
+   "burnt",
+   "dug",
+   "lit",
+   "slept",
+   "slid",
+   "sunk"
+  ]
+ },
+ "imperative_verbs": [
+  "add",
+  "ask",
+  "attach",
+  "avoid",
+  "bring",
+  "build",
+  "calculate",
+  "call",
+  "change",
+  "check",
+  "choose",
+  "clean",
+  "clear",
+  "close",
+  "collect",
+  "compare",
+  "connect",
+  "consider",
+  "continue",
+  "convert",
+  "copy",
+  "count",
+  "create",
+  "cut",
+  "decide",
+  "delete",
+  "disconnect",
+  "do",
+  "download",
+  "drop",
+  "edit",
+  "empty",
+  "enter",
+  "examine",
+  "expect",
+  "fill",
+  "find",
+  "fix",
+  "fly",
+  "follow",
+  "get",
+  "give",
+  "go",
+  "hold",
+  "increase",
+  "install",
+  "keep",
+  "land",
+  "leave",
+  "let",
+  "limit",
+  "link",
+  "list",
+  "load",
+  "lock",
+  "log",
+  "look",
+  "make",
+  "mark",
+  "measure",
+  "mention",
+  "mount",
+  "move",
+  "name",
+  "note",
+  "open",
+  "pass",
+  "paste",
+  "pause",
+  "pick",
+  "pin",
+  "place",
+  "plan",
+  "plug",
+  "point",
+  "press",
+  "prevent",
+  "print",
+  "protect",
+  "pull",
+  "push",
+  "put",
+  "read",
+  "rebuild",
+  "record",
+  "reduce",
+  "release",
+  "remove",
+  "rename",
+  "repair",
+  "repeat",
+  "replace",
+  "report",
+  "reset",
+  "rest",
+  "restart",
+  "restore",
+  "return",
+  "review",
+  "run",
+  "save",
+  "say",
+  "scroll",
+  "see",
+  "select",
+  "send",
+  "set",
+  "shoot",
+  "show",
+  "sign",
+  "skip",
+  "slow",
+  "sort",
+  "split",
+  "stack",
+  "stand",
+  "start",
+  "stay",
+  "stick",
+  "stop",
+  "store",
+  "submit",
+  "swap",
+  "switch",
+  "take",
+  "take off",
+  "tap",
+  "tell",
+  "test",
+  "tighten",
+  "touch",
+  "trust",
+  "try",
+  "turn",
+  "type",
+  "unlock",
+  "unpack",
+  "unplug",
+  "unzip",
+  "update",
+  "upload",
+  "use",
+  "verify",
+  "visit",
+  "wait",
+  "wake",
+  "walk",
+  "wash",
+  "watch",
+  "wear",
+  "wipe",
+  "wrap",
+  "write",
+  "zoom"
+ ],
+ "verb_noun_homographs": [
+  "align",
+  "bake",
+  "build",
+  "bump",
+  "bundle",
+  "cache",
+  "cancel",
+  "change",
+  "check",
+  "clean",
+  "commit",
+  "count",
+  "crop",
+  "cut",
+  "deploy",
+  "download",
+  "drain",
+  "drop",
+  "export",
+  "filter",
+  "fix",
+  "gate",
+  "hold",
+  "import",
+  "increase",
+  "install",
+  "kill",
+  "land",
+  "limit",
+  "link",
+  "lint",
+  "list",
+  "load",
+  "log",
+  "look",
+  "mark",
+  "measure",
+  "merge",
+  "mock",
+  "mount",
+  "name",
+  "note",
+  "pass",
+  "pause",
+  "pin",
+  "place",
+  "plan",
+  "point",
+  "poll",
+  "print",
+  "probe",
+  "process",
+  "publish",
+  "pull",
+  "purge",
+  "push",
+  "reconstruct",
+  "record",
+  "register",
+  "release",
+  "render",
+  "report",
+  "request",
+  "rerun",
+  "reset",
+  "rest",
+  "restart",
+  "retry",
+  "return",
+  "review",
+  "rotate",
+  "run",
+  "sample",
+  "scan",
+  "set",
+  "shoot",
+  "sign",
+  "slow",
+  "sort",
+  "split",
+  "stack",
+  "stage",
+  "stay",
+  "store",
+  "stream",
+  "stress",
+  "submit",
+  "switch",
+  "sync",
+  "tag",
+  "tail",
+  "test",
+  "train",
+  "trash",
+  "type",
+  "update",
+  "upload",
+  "wake"
+ ]
+}

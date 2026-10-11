@@ -8,10 +8,10 @@
 //   showDrone}), get(), focusAt(nx,ny), focusDistance(m), move(x,y,z), look(dyaw,dpitch), zoom(dmm),
 //   capture({download}) -> Promise<Blob|null>, state()
 // Eventos (bus, sólo ?fv=2): 'photo' {active, ...state}
-import { pushOutOfMasks } from '/flightverse/tour/poi.js?v=370';
-import { PHOTO_LIMITS, focalToVFov, focalToDiagFov, dofParams } from '/flightverse/tour/photo-math.js?v=370';
-import { edgeMetric, boundaryExtent } from '/flightverse/tour/edge.js?v=370';
-import { elevationOf, ELEV_MIN, ELEV_MAX } from '/flightverse/tour/tod.js?v=370';
+import { pushOutOfMasks } from '/flightverse/tour/poi.js?v=371';
+import { PHOTO_LIMITS, focalToVFov, focalToDiagFov, dofParams } from '/flightverse/tour/photo-math.js?v=371';
+import { edgeMetric, boundaryExtent } from '/flightverse/tour/edge.js?v=371';
+import { elevationOf, ELEV_MIN, ELEV_MAX } from '/flightverse/tour/tod.js?v=371';
 
 export { PHOTO_LIMITS, focalToVFov, focalToDiagFov, dofParams };
 
@@ -21,7 +21,7 @@ export function createPhoto(ctx, { doc = null, boundary = null, edge = null, gra
   const L = PHOTO_LIMITS;
   const api = {
     ready: true, active: false, externalUi: false,
-    opts: { focalMm: 35, fstop: 4, ev: 0, elev: null, hideHud: false, autoFocus: true, showDrone: false, dof: true },
+    opts: { focalMm: 35, fstop: 5.6, ev: 0, elev: null, hideHud: false, autoFocus: true, showDrone: false, dof: true },
   };
   const emit = ctx.tour.emitEvt || ((type, detail) => { if (flags.fv2) bus.emit(type, detail); });
   const pos = new THREE.Vector3();

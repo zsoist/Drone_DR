@@ -295,23 +295,38 @@ export function createTouchSticks(host, options = {}) {
   }
   // Si la pestaña pierde foco a mitad de gesto no llega pointerup: soltar sticks.
   const releaseAll = () => controller.reset();
-  const onViewportChange = () => {
+  const viewport = () => ({ w: win?.innerWidth || 0, h: win?.innerHeight || 0 });
+  let lastVp = null;
+  const fullReset = () => {
     controller.reset();
     left.resetPlacement();
     right.resetPlacement();
+    lastVp = viewport();
+  };
+  // orientationchange: siempre. resize: solo si el cambio es real (giro, o >12 % de ancho / >30 % de alto);
+  // la barra de direcciones móvil que se colapsa a mitad de arrastre (~10-15 % de alto) NO debe soltar el stick.
+  const onOrientation = () => fullReset();
+  const onResize = () => {
+    const cur = viewport();
+    if (!lastVp || !lastVp.w || !lastVp.h || !cur.w || !cur.h) { fullReset(); return; }
+    const flipped = (lastVp.w > lastVp.h) !== (cur.w > cur.h);
+    const dw = Math.abs(cur.w - lastVp.w) / lastVp.w, dh = Math.abs(cur.h - lastVp.h) / lastVp.h;
+    if (flipped || dw > 0.12 || dh > 0.3) fullReset();
+    // cambio menor: se conserva el gesto en curso y la colocación flotante
   };
   const onVisibility = () => { if (typeof document !== 'undefined' && document.hidden) releaseAll(); };
   const win = typeof window !== 'undefined' ? window : null;
   const doc = typeof document !== 'undefined' ? document : null;
+  lastVp = viewport();
   win?.addEventListener?.('blur', releaseAll);
-  win?.addEventListener?.('resize', onViewportChange);
-  win?.addEventListener?.('orientationchange', onViewportChange);
+  win?.addEventListener?.('resize', onResize);
+  win?.addEventListener?.('orientationchange', onOrientation);
   doc?.addEventListener?.('visibilitychange', onVisibility);
   const baseDispose = controller.dispose;
   controller.dispose = () => {
     win?.removeEventListener?.('blur', releaseAll);
-    win?.removeEventListener?.('resize', onViewportChange);
-    win?.removeEventListener?.('orientationchange', onViewportChange);
+    win?.removeEventListener?.('resize', onResize);
+    win?.removeEventListener?.('orientationchange', onOrientation);
     doc?.removeEventListener?.('visibilitychange', onVisibility);
     baseDispose();
   };

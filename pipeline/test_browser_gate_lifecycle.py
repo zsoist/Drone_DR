@@ -54,8 +54,11 @@ class GateLifecycle(unittest.TestCase):
         os.environ["FAKE_CHILD_PIDFILE"] = str(self.pidfile)
         self._chrome = bg.CHROME
         self._deadline = bg.STARTUP_DEADLINE_S
+        self._ssd_tmp = bg.SSD_TMP
+        bg.SSD_TMP = self.root            # private lock + profiles: real gates may hold the Mac slot
 
     def tearDown(self):
+        bg.SSD_TMP = self._ssd_tmp
         bg.CHROME = self._chrome
         bg.STARTUP_DEADLINE_S = self._deadline
         bg._cleanup_all()
@@ -102,14 +105,15 @@ class GateLifecycle(unittest.TestCase):
     def test_silent_chrome_honors_deadline_and_cleans_up(self):
         self.fake(FAKE_SILENT)
         bg.STARTUP_DEADLINE_S = 1.5
-        before = set(Path(tempfile.gettempdir()).glob(bg.PROFILE_PREFIX + "*"))
+        proot = Path(bg._profile_root() or tempfile.gettempdir())
+        before = set(proot.glob(bg.PROFILE_PREFIX + "*"))
         t0 = time.time()
         with self.assertRaises(RuntimeError):
             bg.launch_chrome()
         self.assertLess(time.time() - t0, 8)                    # antes: bloqueaba para siempre
         child = self.child_pid()
         self.assertTrue(wait_dead(child), "hijo huérfano tras arranque fallido")
-        after = set(Path(tempfile.gettempdir()).glob(bg.PROFILE_PREFIX + "*"))
+        after = set(proot.glob(bg.PROFILE_PREFIX + "*"))
         self.assertEqual(after - before, set(), "perfil temporal filtrado")
 
     def test_chrome_exit_before_devtools(self):
@@ -183,3 +187,56 @@ class HeadlessChromeIsSilentTests(unittest.TestCase):
         # the owner listens to audio while agents test; game sounds must never leak (2026-09-30)
         src = Path(__file__).with_name("browser_gate.py").read_text()
         self.assertIn('"--mute-audio"', src)
+
+
+class BrowserSlotTests(unittest.TestCase):
+    """One headless Chrome at a time on the Mac; no launch while memory or disk is low (2026-10-11)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self._ssd_tmp = bg.SSD_TMP
+        bg.SSD_TMP = Path(self.tmp.name)  # private lock: real gates may hold the Mac slot
+
+    def tearDown(self):
+        bg.SSD_TMP = self._ssd_tmp
+        self.tmp.cleanup()
+
+    def test_profile_holds_and_releases_the_slot(self):
+        p = bg._Profile()
+        self.assertEqual(bg._LOCK["depth"], 1)
+        self.assertTrue(p.name.startswith(self.tmp.name))
+        p.cleanup()
+        p.cleanup()                                             # idempotent
+        self.assertEqual(bg._LOCK["depth"], 0)
+        self.assertIsNone(bg._LOCK["fd"])
+
+    def test_slot_is_reentrant_in_one_process(self):
+        a, b = bg._Profile(), bg._Profile()
+        self.assertEqual(bg._LOCK["depth"], 2)
+        a.cleanup()
+        b.cleanup()
+        self.assertEqual(bg._LOCK["depth"], 0)
+
+    def test_second_process_waits_for_the_slot(self):
+        p = bg._Profile()
+        code = ("import time, browser_gate as bg; t=time.time(); q=bg._Profile(); "
+                "print(round(time.time()-t,1)); q.cleanup()")
+        env = dict(os.environ, AEROBRAIN_BROWSER_TMP=self.tmp.name)
+        child = subprocess.Popen([sys.executable, "-c", code], cwd=Path(__file__).parent,
+                                 stdout=subprocess.PIPE, text=True, env=env)
+        time.sleep(1.5)
+        p.cleanup()
+        waited = float(child.communicate(timeout=20)[0].strip())
+        self.assertGreaterEqual(waited, 1.0)
+
+    def test_low_resources_refuse_and_release(self):
+        orig_ok, orig_wait = bg._resources_ok, bg.RESOURCE_WAIT_S
+        bg._resources_ok = lambda: (False, "mem free 5%")
+        bg.RESOURCE_WAIT_S = 0
+        try:
+            with self.assertRaisesRegex(RuntimeError, "low resources"):
+                bg._Profile()
+            self.assertEqual(bg._LOCK["depth"], 0)
+            self.assertIsNone(bg._LOCK["fd"])
+        finally:
+            bg._resources_ok, bg.RESOURCE_WAIT_S = orig_ok, orig_wait

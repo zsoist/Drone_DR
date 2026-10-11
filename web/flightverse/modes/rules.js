@@ -76,6 +76,8 @@ export function addRecord(storage, { world, mode, difficulty, score, medal = nul
   const db = readRecords(storage);
   const k = recordListKey(world, mode, difficulty);
   const list = db.lists[k] || [];
+  // Una run sin puntos (derrota en 0) no es un récord: ni se guarda ni ocupa el puesto #1.
+  if (!(finite(score) > 0)) return { list: [...list], rank: null, isBest: false, prevBest: list.length ? list[0].score : null, skipped: 'zero-score' };
   const prevBest = list.length ? list[0].score : null;
   const entry = { score: Math.round(finite(score)), date: date || new Date().toISOString().slice(0, 10), medal, ...(time != null ? { time: +time.toFixed(2) } : {}) };
   list.push(entry);
@@ -87,6 +89,46 @@ export function addRecord(storage, { world, mode, difficulty, score, medal = nul
   const rank = idx < TOP_N ? idx + 1 : null;
   return { list: kept, rank, isBest: rank === 1 && (prevBest == null || entry.score > prevBest), prevBest };
 }
+// ── Presentación de récords (tabla con etiquetas; la UI sólo pinta estas filas) ──
+export const RECORD_COLUMNS = Object.freeze({
+  gr:  Object.freeze(['Puesto', 'Tiempo', 'Fecha', 'Medalla']),
+  inv: Object.freeze(['Puesto', 'Puntos', 'Fecha', 'Medalla']),
+});
+const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+/** '2026-09-30' → '30 sep 2026' (si no es ISO, se devuelve tal cual). */
+export function dateText(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  if (!m) return String(iso || '—');
+  return `${+m[3]} ${MONTHS[+m[2] - 1] || m[2]} ${m[1]}`;
+}
+/** Tiempo corto legible: 4.2 s · 1:09.8 */
+export function shortTime(t) {
+  if (!Number.isFinite(t)) return '—';
+  if (t < 60) return `${t.toFixed(1)} s`;
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return `${m}:${s.toFixed(1).padStart(4, '0')}`;
+}
+/**
+ * Filas listas para pintar: [{rank, value, date, medal, medalLabel, raw}], con cabeceras en RECORD_COLUMNS[kind].
+ * kind 'gr' → valor = tiempo; 'inv' → valor = puntos con separador de miles.
+ */
+export function formatRecordRows(list, kind = 'inv', limit = 5) {
+  return (list || []).slice(0, limit).map((r, i) => ({
+    rank: i + 1,
+    value: kind === 'gr' && r.time != null ? shortTime(r.time) : Number(r.score || 0).toLocaleString('es'),
+    date: dateText(r.date),
+    medal: r.medal || null,
+    medalLabel: r.medal ? (MEDAL_LABEL[r.medal] || '') : '—',
+    raw: r,
+  }));
+}
+/** Texto 'Récord ±x s' frente a un tiempo de referencia (negativo = mejor que la marca). */
+export function signedSeconds(v) {
+  if (!Number.isFinite(v)) return '';
+  const s = Math.abs(v).toFixed(1);
+  return `${v < 0 ? '−' : '+'}${s} s`;
+}
+
 /** Mejor medalla conseguida en una lista. */
 export function bestMedal(list) {
   let best = -1;

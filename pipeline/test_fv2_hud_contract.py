@@ -70,12 +70,24 @@ class Fv2CssContract(unittest.TestCase):
 
     def test_touch_targets_are_44px(self):
         css = self.css["hud.css"]
-        self.assertRegex(css, r"\.hx-ibtn \{[^}]*width: 44px; height: 44px")
+        self.assertRegex(css, r"\.hx-ibtn \{[^}]*width: calc\(44px \* var\(--hx-vs\)\); height: calc\(44px \* var\(--hx-vs\)\)")   # --hx-vs >= 1
         self.assertRegex(css, r"\.hx-fire \{[^}]*width: 76px; height: 76px")
         scr = self.css["screens.css"]
         self.assertRegex(scr, r"\.hx-btn \{[^}]*min-height: 48px")
         self.assertRegex(scr, r"\.hx-seg button \{[^}]*min-height: 44px")
         self.assertRegex(scr, r"\.hx-actions-col \.hx-btn \{[^}]*min-height: 48px")
+        self.assertRegex(scr, r"\.hx-sheet \.hx-chip \{[^}]*min-height: 44px")     # chips de menús: antes 36 px
+        self.assertRegex(scr, r"#gr-reset, \.hx-sheet \.hx-btn \{[^}]*font-size: max\(12px")
+
+    def test_desktop_hud_scales_with_viewport(self):
+        css = self.css["hud.css"]
+        self.assertIn("--hx-hs", css)
+        # toda la tipografía del HUD pasa por --hx-hs (viewport x tamaño de texto): ninguna fuente fija de 12-14 px en las placas
+        self.assertNotRegex(css, r"\.hx-plate \{[^}]*font: 600 14px")
+        self.assertRegex(css, r"\.hx-read b \{ font: 600 calc\(14px \* var\(--hx-hs\)\)")
+        v2 = (UI / "hud2.js").read_text()
+        self.assertIn("hudScale(", v2)
+        self.assertIn("cv.setScale(", v2)
 
     def test_results_stack_full_width_on_phone(self):
         scr = self.css["screens.css"]

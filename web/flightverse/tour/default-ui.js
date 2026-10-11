@@ -8,7 +8,7 @@ const CSS = `
 .fv-ui{position:fixed;z-index:30;font-family:var(--hx-sans,var(--font,system-ui,sans-serif));color:var(--h-ink,#E6EBF2);pointer-events:none}
 .fv-plate{background:var(--h-plate,rgba(8,10,14,.72));border:1px solid var(--h-line,rgba(255,255,255,.14));border-radius:8px;padding:4px 8px}
 .fv-card{background:var(--h-plate-2,rgba(8,10,14,.86));border:1px solid var(--h-line,rgba(255,255,255,.14));border-radius:12px}
-.fv-label{left:calc(var(--hx-sl,0px) + var(--hx-g,12px));bottom:calc(var(--hx-sb,0px) + 64px);width:min(calc(100vw - 2 * var(--hx-g,12px) - var(--hx-sl,0px) - var(--hx-sr,0px) - 128px),340px);
+.fv-label{left:calc(var(--hx-sl,0px) + var(--hx-g,12px));bottom:calc(var(--hx-sb,0px) + 64px);width:min(calc(100vw - 2 * var(--hx-g,12px) - var(--hx-sl,0px) - var(--hx-sr,0px) - 168px),340px);
   padding:10px 14px;opacity:0;transform:translateY(4px);transition:opacity 150ms var(--hx-ease,ease-out),transform 150ms var(--hx-ease,ease-out)}
 .fv-label.on{opacity:1;transform:none}
 .fv-label b{display:block;font:600 16px/22px var(--hx-sans,system-ui)}
@@ -54,6 +54,7 @@ const ICON = {
   cam: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
 };
+const LABEL_MS = 5200;   // tarjeta legible ~5 s por POI y luego se desvanece (dwell 4.5-5.5 s)
 const svg = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
 const mk = (tag, cls, html = '') => { const e = document.createElement(tag); e.className = cls; e.innerHTML = html; return e; };
 const btn = (k, label, fn, txt = '', primary = false) => {
@@ -85,7 +86,7 @@ export function installDefaultUi(ctx) {
       label.innerHTML = `<b>${ctx.esc(p.name)}</b><span>${ctx.esc(p.short)}</span><small>${p.index + 1}/${p.n}</small>`;
       label.classList.add('on');
       clearTimeout(labelTimer);
-      labelTimer = setTimeout(() => label.classList.remove('on'), 4000);
+      labelTimer = setTimeout(() => label.classList.remove('on'), LABEL_MS);
     }
   });
 

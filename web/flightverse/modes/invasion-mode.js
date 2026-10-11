@@ -6,20 +6,20 @@
 // daño con gracia de 3 s / invulnerabilidad de 5 s al reaparecer / 3 vidas, telégrafos ≥ 0.5 s,
 // proyectiles que respetan los edificios, marcadores y flechas de amenaza, puntuación y top-10.
 // Sin el flag el comportamiento es el legado (oleadas infinitas, 1 vida).
-import * as THREE from '/flightverse/three.js?v=370';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=370';
-import { summarizeInvasionRun } from '/flightverse/hud-format.js?v=370';
+import * as THREE from '/flightverse/three.js?v=371';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=371';
+import { summarizeInvasionRun } from '/flightverse/hud-format.js?v=371';
 import {
   FAIR, VICTORY_WAVE, TYPE_INTRO, createPlayerVitals, fairHitDamage, computeMarkers,
   unlockedTypes, waveBonus, invasionMedal, hasLineOfSight,
-} from '/flightverse/invasion-policy.js?v=370';
-import { addRecord, getTop } from '/flightverse/modes/rules.js?v=370';
-import { showVictoryFallback } from '/flightverse/modes/result-cards.js?v=370';
+} from '/flightverse/invasion-policy.js?v=371';
+import { addRecord, getTop } from '/flightverse/modes/rules.js?v=371';
+import { showVictoryFallback } from '/flightverse/modes/result-cards.js?v=371';
 
 const BOSS_NAME = { dragon: 'DRAGÓN', gigante: 'GIGANTE' };
 const TYPE_LABEL = { zombie: 'Zombis', arquero: 'Arqueros', soldado: 'Soldados', avion: 'Aviones', ufo: 'OVNIs', dragon: 'Dragón', gigante: 'Gigante' };
 
-export function createInvasionMode(ctx, events) {
+export function createInvasionMode(ctx, events, hooks = {}) {
   const {
     scene, terrain, audio, report, Q, CID, state: S, actions: A, bus, P, flags, fx,
   } = ctx;
@@ -89,6 +89,17 @@ export function createInvasionMode(ctx, events) {
     v2,
     collision: v2 ? ctx.collision : null,
     heightAt: terrain.heightAt, audio, deviceTier: invasionTier,
+    camera: ctx.camera,
+    getViewDir: () => {                               // dirección horizontal de la vista (oleada 1 nace en ese cono)
+      const cam = ctx.camera;
+      if (cam?.getWorldDirection) {
+        cam.updateMatrixWorld();
+        const d = cam.getWorldDirection(new THREE.Vector3());
+        if (Math.hypot(d.x, d.z) > 0.3) return { x: d.x, z: d.z };
+      }
+      const yaw = ctx.drone?.yaw;
+      return Number.isFinite(yaw) ? { x: -Math.sin(yaw), z: -Math.cos(yaw) } : null;
+    },
     onHit: (dmg, info) => applyDamage(dmg, info),
     onTelegraph: info => {
       lastTelegraph.at = S.simT; lastTelegraph.info = info;
@@ -208,6 +219,10 @@ export function createInvasionMode(ctx, events) {
     banner = null;
   };
   const beginRun = (types, difficulty) => {
+    cueWave = 0;
+    hooks.beforeStart?.('invasion');                // detiene Gate Rush u otro modo activo (modes/exclusive.js)
+    if (invasion.state.on) { invasion.toggle(P); stopUi(); }     // toggle() alterna: sin esto un segundo inicio APAGARÍA la run
+    ctx.ui.overlay?.close('result');
     outcomeHandled = false;
     lastPhase = 'idle';
     run.livesLost = 0; run.startedAt = S.simT;
@@ -350,6 +365,35 @@ export function createInvasionMode(ctx, events) {
   }
   let lastWave = 0;
 
+  /** Texto de rumbo de un punto del mundo respecto a la vista: «al frente», «a tu derecha», «a tu espalda». */
+  function bearingText(pos) {
+    const cam = ctx.camera;
+    cam.updateMatrixWorld();
+    const d = cam.getWorldDirection(new THREE.Vector3());
+    const fx = Math.hypot(d.x, d.z) > 0.3 ? d.x : -Math.sin(ctx.drone.yaw), fz = Math.hypot(d.x, d.z) > 0.3 ? d.z : -Math.cos(ctx.drone.yaw);
+    const dx = pos.x - ctx.drone.pos.x, dz = pos.z - ctx.drone.pos.z;
+    const ang = Math.atan2(fx * dz - fz * dx, fx * dx + fz * dz) * 180 / Math.PI;   // + = a la derecha (vista desde arriba, z hacia abajo)
+    const a = Math.abs(ang);
+    if (a < 28) return { text: 'al frente', arrow: '↑', ang };
+    if (a < 72) return { text: ang > 0 ? 'al frente a la derecha' : 'al frente a la izquierda', arrow: ang > 0 ? '↗' : '↖', ang };
+    if (a < 130) return { text: ang > 0 ? 'a tu derecha' : 'a tu izquierda', arrow: ang > 0 ? '→' : '←', ang };
+    return { text: 'a tu espalda', arrow: '↓', ang };
+  }
+  let cueWave = 0;
+  /** Al entrar los primeros enemigos de cada oleada: aviso de rumbo y distancia (la intro ya se fue; esto guía la mirada). */
+  function directionCue() {
+    const st = invasion.state;
+    if (!v2 || st.phase !== 'running' || cueWave === st.wave) return;
+    const rows = invasion.enemyRows();
+    if (!rows.length) return;
+    cueWave = st.wave;
+    const c = new THREE.Vector3(); for (const r of rows) c.add(r.pos); c.multiplyScalar(1 / rows.length);
+    const b = bearingText(c);
+    const dist = Math.round(c.distanceTo(ctx.drone.pos));
+    setBanner(`${b.arrow} HOSTILES ${b.text.toUpperCase()}`, `${rows.length} contacto${rows.length === 1 ? '' : 's'} · ${dist} m`, 3.2, '#FF6A4A');
+    events.emit('wave', { n: st.wave, phase: 'contact', bearing: +b.ang.toFixed(0), text: b.text, dist, count: rows.length });
+  }
+
   function computeMarkerState() {
     const cam = ctx.camera;
     cam.updateMatrixWorld();
@@ -410,6 +454,7 @@ export function createInvasionMode(ctx, events) {
       const drone = ctx.drone;
       if (Q.get('invasion') && !invasion.state.on && S.simT > 0.5 && !qaInvasionStarted) {
         qaInvasionStarted = true;               // solo una vez: si no, tras la derrota la URL reinicia la run detrás de la pantalla
+        hooks.beforeStart?.('invasion');
         invasion.toggle(
           drone.pos,
           Q.get('invasion').split(',').filter(k => ENEMIES[k]),
@@ -447,6 +492,7 @@ export function createInvasionMode(ctx, events) {
           }
           lastPhase = st.phase;
         }
+        directionCue();
         if (st.phase === 'victory') { showVictory(); return; }
         if (health.hp <= 0) loseLife();
       } else if (health.hp <= 0) showDefeat();       // HP a 0: pantalla de derrota (no un toast)

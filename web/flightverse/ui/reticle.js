@@ -8,8 +8,8 @@ const TAU = Math.PI * 2;
 export const HC = Object.freeze({
   ink: '#E6EBF2', ink2: '#B7C2D0', cand: '#E0A458', friend: '#45A0E6', ok: '#52C79A', hostile: '#D96A6A',
 });
-export const FONT_PX = 13;      // rumbo y cintas: >= 12 px en móvil (spec 2.2); 13 para que se lea a pulso
-const FONT = `600 ${FONT_PX}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+export const FONT_PX = 13;      // base (móvil, 100 %): >= 12 px (spec 2.2). Escritorio y «tamaño de texto» lo escalan con setScale().
+const fontFor = px => `600 ${px}px ui-monospace, SFMono-Regular, Menlo, monospace`;
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const mixHex = (a, b, t) => {
@@ -39,7 +39,9 @@ export function createHudCanvas(ctx, { canvas }) {
     w: 1, h: 1, dpr: 1,
     compass: null, spd: null, agl: null, att: null,   // rects (css px) leídos del DOM
     phone: true,
+    vs: 1, hs: 1,                                 // escala de geometría / de tipografía (hud-format.js hudScale)
   };
+  let FONT = fontFor(FONT_PX);
   const st = {
     kind: 'gun', weaponKey: 'm', screen: null, spreadPx: 22,
     heat: 0, overheated: false, cool: 1, readyFlash: 0, charge: 0, swarm: 0, splashPx: 0,
@@ -95,6 +97,12 @@ export function createHudCanvas(ctx, { canvas }) {
   // ── API de entrada ──
   const api = {
     state: st, resize, layout, fontPx: FONT_PX,
+    /** vs = escala de geometría (viewport), hs = vs × tamaño de texto. Reescala fuente del canvas y cintas. */
+    setScale(vs = 1, hs = 1) {
+      L.vs = vs; L.hs = hs;
+      api.fontPx = Math.round(FONT_PX * hs * 10) / 10;
+      FONT = fontFor(api.fontPx);
+    },
     setReticle(kind, s = {}) {
       st.externalReticle = true;
       if (kind) st.kind = kind;
@@ -128,7 +136,7 @@ export function createHudCanvas(ctx, { canvas }) {
   const arc = (x, y, r, a0, a1) => { g.beginPath(); g.arc(x, y, r, a0, a1); g.stroke(); };
   const plateText = (txt, x, y, color = HC.ink, align = 'center') => {
     g.font = FONT; g.textAlign = align; g.textBaseline = 'middle';
-    g.lineJoin = 'round'; g.lineWidth = 2; g.strokeStyle = 'rgba(8,10,14,.8)'; g.strokeText(txt, x, y);
+    g.lineJoin = 'round'; g.lineWidth = 3; g.strokeStyle = 'rgba(8,10,14,.9)'; g.strokeText(txt, x, y);
     g.fillStyle = color; g.fillText(txt, x, y);
   };
 
@@ -143,32 +151,40 @@ export function createHudCanvas(ctx, { canvas }) {
       const dd = ((d % 360) + 360) % 360, px = mid + (d - hdg) * ppd;
       const major = dd % 15 === 0, cardinal = dd % 45 === 0;
       g.strokeStyle = cardinal ? HC.ink : 'rgba(183,194,208,.6)';
-      line(px, y + h - 2, px, y + h - (cardinal ? 9 : major ? 7 : 4));
-      if (cardinal) plateText(CARD[dd / 45], px, y + 10, HC.ink);
-      else if (dd % 15 === 0 && Math.abs(px - mid) > 20) plateText(String(dd), px, y + 10, HC.ink2);
+      line(px, y + h - 2, px, y + h - (cardinal ? 9 : major ? 7 : 4) * L.vs);
+      if (cardinal) plateText(CARD[dd / 45], px, y + h * 0.36, HC.ink);
+      else if (dd % 15 === 0 && Math.abs(px - mid) > 20 * L.vs) plateText(String(dd), px, y + h * 0.36, HC.ink2);
     }
     g.restore();
     g.fillStyle = HC.friend;
-    g.beginPath(); g.moveTo(mid, y + h + 1); g.lineTo(mid - 4, y + h + 6); g.lineTo(mid + 4, y + h + 6); g.fill();
+    g.beginPath(); g.moveTo(mid, y + h + 1); g.lineTo(mid - 4 * L.vs, y + h + 6 * L.vs); g.lineTo(mid + 4 * L.vs, y + h + 6 * L.vs); g.fill();
   }
 
   function drawTape(rect, value, step, pxPerStep, labelEvery, side, alpha) {
     if (!rect) return;
-    const cy = rect.y + rect.h / 2;
-    const half = Math.max(56, Math.min(120, rect.h * 0.75));   // en apaisado la cinta es corta: sus marcas no invaden minimapa ni rueda
+    const k = L.vs, cy = rect.y + rect.h / 2;
+    pxPerStep *= k;
+    const half = Math.max(56 * k, Math.min(120 * k, rect.h * 0.75));   // en apaisado la cinta es corta: sus marcas no invaden minimapa ni rueda
     const ex = side === 'l' ? rect.x + 6 : rect.x + rect.w - 6;
     const dir = side === 'l' ? 1 : -1;
+    const gap = 22 * k;
     g.save();
+    // fondo: raíl oscuro tras la graduación (legible sobre fachadas claras); hueco para la placa de lectura
+    const railW = 34 * k + api.fontPx * 1.5, rx = side === 'l' ? rect.x : rect.x + rect.w - railW;
+    g.fillStyle = 'rgba(8,10,14,.46)';
+    for (const [y0, y1] of [[cy - half, cy - gap], [cy + gap, cy + half]]) {
+      g.beginPath(); g.roundRect ? g.roundRect(rx, y0, railW, y1 - y0, 8) : g.rect(rx, y0, railW, y1 - y0); g.fill();
+    }
     g.globalAlpha = alpha;
-    g.lineWidth = 1; g.strokeStyle = HC.ink2;
+    g.lineWidth = 1; g.strokeStyle = HC.ink;
     const v0 = Math.floor((value - half / pxPerStep * step) / step) * step;
     for (let v = v0; v <= value + half / pxPerStep * step; v += step) {
       if (v < 0) continue;
       const ty = cy - (v - value) / step * pxPerStep;
-      if (Math.abs(ty - cy) < 22 || Math.abs(ty - cy) > half) continue;   // hueco para la placa de lectura
+      if (Math.abs(ty - cy) < gap || Math.abs(ty - cy) > half) continue;
       const major = Math.round(v / step) % labelEvery === 0;
-      line(ex, ty, ex + dir * (major ? 10 : 6), ty);
-      if (major) plateText(String(Math.round(v)), ex + dir * 14 + (side === 'l' ? 12 : -12), ty, HC.ink2, 'center');
+      line(ex, ty, ex + dir * (major ? 10 : 6) * k, ty);
+      if (major) plateText(String(Math.round(v)), ex + dir * (14 * k + api.fontPx), ty, HC.ink, 'center');
     }
     g.restore();
   }
@@ -188,12 +204,12 @@ export function createHudCanvas(ctx, { canvas }) {
     g.globalAlpha = 0.4;
     g.strokeStyle = HC.ink; g.lineWidth = 1; g.fillStyle = HC.ink;
     const hy = pitch * pxPerRad;   // cámara mirando arriba → el horizonte baja
-    const gap = 64;
+    const gap = 64 * L.vs;
     const span = Math.min(L.w * 0.3, 170);
     line(-span, hy, -gap, hy); line(gap, hy, span, hy);
     for (const deg of [10, 20, 30, -10, -20, -30]) {
       const y = hy - deg * Math.PI / 180 * pxPerRad;
-      if (Math.abs(y) < 96 || Math.abs(y) > L.h * 0.45) continue;   // nada a <96 px del centro (salvo retícula)
+      if (Math.abs(y) < 96 * L.vs || Math.abs(y) > L.h * 0.45) continue;   // nada a <96 px del centro (salvo retícula)
       const w = 44;
       line(-w, y, -14, y); line(14, y, w, y);
       line(-w, y, -w, y + (deg > 0 ? 6 : -6)); line(w, y, w, y + (deg > 0 ? 6 : -6));
@@ -301,12 +317,25 @@ export function createHudCanvas(ctx, { canvas }) {
     g.moveTo(x + len, y + h); g.lineTo(x, y + h); g.lineTo(x, y + h - len);
     g.strokeStyle = c; g.lineWidth = 2; g.stroke();
   }
-  function lockRect(l) {
-    if (l.rect) return l.rect;
-    const s = toScreen(l.world || l.target || l);
-    if (!s) return null;
-    const half = Math.max(16, l.halfPx || 18);
-    return [s[0] - half, s[1] - half, half * 2, half * 2];
+  /** Posición de pantalla del objetivo: dentro (caja) o, si está detrás / fuera, anclada al borde (flecha). */
+  function lockPoint(l) {
+    if (l.rect) return { x: l.rect[0] + l.rect[2] / 2, y: l.rect[1] + l.rect[3] / 2, w: l.rect[2], h: l.rect[3], inside: true };
+    const p = l.world || l.target || l;
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) return null;
+    tmpV2.set(p.x, p.y, p.z).project(ctx.camera);
+    const behind = tmpV2.z > 1;
+    let sx = (tmpV2.x * 0.5 + 0.5) * L.w, sy = (-tmpV2.y * 0.5 + 0.5) * L.h;
+    const dist = ctx.camera.position.distanceTo(tmpV.set(p.x, p.y, p.z));
+    // tamaño: radio del objetivo proyectado (si se conoce) con mínimo legible; nunca colapsa sobre el cuerpo del dron
+    const vfov = ctx.camera.fov * Math.PI / 180, pxPerM = L.h / (2 * Math.tan(vfov / 2));
+    const radius = Number(l.radius) || 0;
+    const half = Math.min(110 * L.vs, Math.max(26 * L.vs, l.halfPx || 0, radius && dist > 0.5 ? radius * pxPerM / dist : 0));
+    const m = half + 4, sf = L.safe || { t: 0, r: 0, b: 0, l: 0 };
+    const x0 = sf.l + m, x1 = L.w - sf.r - m, y0 = sf.t + 64 + m, y1 = L.h - sf.b - m;
+    if (behind) { sx = L.w - sx; sy = L.h - sy; }
+    const inside = !behind && sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1;
+    const cx = Math.min(x1, Math.max(x0, sx)), cy = Math.min(y1, Math.max(y0, sy));
+    return { x: cx, y: cy, w: half * 2, h: half * 2, inside, ang: Math.atan2(sy - cy, sx - cx), dist };
   }
   function drawLock() {
     let l = st.lock, k = 1;
@@ -315,13 +344,20 @@ export function createHudCanvas(ctx, { canvas }) {
       if (f >= 1) st.lockFade = null; else { l = st.lockFade; k = 1 - f; }
     }
     if (!l) return;
-    const r = lockRect(l); if (!r) return;
+    const r = lockPoint(l); if (!r) return;
     const sh = l === st.lock ? 1 : 0.6 + 0.4 * k;
-    const w = Math.max(32, r[2]) * sh, h = Math.max(32, r[3]) * sh;
-    const x = r[0] + r[2] / 2 - w / 2, y = r[1] + r[3] / 2 - h / 2;
+    const w = Math.max(40 * L.vs, r.w) * sh, h = Math.max(40 * L.vs, r.h) * sh;
+    const x = r.x - w / 2, y = r.y - h / 2;
     const color = l.state === 'incoming' ? HC.hostile : l.state === 'locked' ? HC.friend : HC.cand;
     g.save(); g.globalAlpha = k;
-    bracket(x, y, w, h, color, 9);
+    if (!r.inside) {                                   // fuera de pantalla: chevron en el borde, apuntando al objetivo
+      g.translate(r.x, r.y); g.rotate(r.ang || 0);
+      g.fillStyle = color; g.strokeStyle = 'rgba(8,10,14,.85)'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(11 * L.vs, 0); g.lineTo(-7 * L.vs, -9 * L.vs); g.lineTo(-7 * L.vs, 9 * L.vs); g.closePath(); g.fill(); g.stroke();
+      g.restore(); return;
+    }
+    bracket(x, y, w, h, color, 9 * L.vs);
+    if (r.dist) plateText(`${Math.round(r.dist)} m`, r.x, y + h + 12 * L.vs + api.fontPx * 0.4, HC.ink);
     if (l.state === 'acquiring') {                      // progreso: línea de 1 px por el perímetro
       const per = 2 * (w + h), run = per * clamp01(l.progress || 0);
       g.strokeStyle = color; g.lineWidth = 1; g.beginPath();

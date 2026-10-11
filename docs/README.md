@@ -2,9 +2,12 @@
 
 Last audited: 2026-09-28.
 
-This index is the discoverability and freshness contract for first-party documentation. A document
-marked **current** describes live behavior; **evidence** records measured results; **historical** is
-preserved for provenance and must not override a current contract.
+Docs in English follow STE (see [STE_STYLE_GUIDE.md](STE_STYLE_GUIDE.md)). Run `python3 pipeline/ste_lint.py docs/<file>.md` to check a file.
+
+This index is the contract for discovery and freshness of first-party documents. A document marked
+**current** describes live behavior. A document marked **evidence** records measured results. A
+document marked **historical** stays for provenance. A **historical** document must not override a
+current contract.
 
 ## Start here
 
@@ -19,24 +22,29 @@ preserved for provenance and must not override a current contract.
 | [Splat pipeline](SPLAT_PIPELINE.md) | current | Trainer, tiers, retries, metadata and measured CUDA runs |
 | [Multi-source 3D](MULTISOURCE_3D.md) | current + live evidence | Scene/version semantics and shared-component registration gate |
 | [Roadmap](../ROADMAP.md) | current | Shipped scope and outstanding acceptance work |
+| [STE style guide](STE_STYLE_GUIDE.md) | current | Rules for Simplified Technical English (STE) in English docs, with the linter `pipeline/ste_lint.py` |
+| [Redesign plan, October 2026](REDESIGN_2026_10.md) | current | Full redesign: design decisions, anti-patterns, worktree process, workstreams and success criteria |
 
 ## Design system
 
-UI tokens, components and visual rules live in [`web/DESIGN.md`](../web/DESIGN.md); read it before touching `web/style.css`
-or adding UI. Acceptance evidence: [Design QA](qa/design-qa.md).
+UI tokens, components and visual rules are in [`web/DESIGN.md`](../web/DESIGN.md). Read it before you change `web/style.css`
+or add UI. Acceptance evidence: [Design QA](qa/design-qa.md).
 
 ## Current engineering contracts
 
 - [Agent access and acceptance](../AGENTS.md)
 - [Auth and security](AUTH_SECURITY.md)
 - [Splat Lab v2 plan](SPLATLAB_V2_PLAN.md)
-- [World upgrade plan — Blender, reconstruction, AI agents](WORLD_UPGRADE_PLAN.md) (2026-09-29, proposed)
-- [Capture protocol — DJI Flip / Neo 2 manual flights](CAPTURE_PROTOCOL.md) (W6; field checklist, also summarised in the upload flow)
+- [World upgrade plan: Blender, reconstruction, AI agents](WORLD_UPGRADE_PLAN.md) (2026-09-29, proposed)
+- [Capture protocol: DJI Flip / Neo 2 manual flights](CAPTURE_PROTOCOL.md) (W6). It is a field checklist. The upload flow also summarizes it.
 - [Engineering pitfalls](../CLAUDE.md)
-- Test entry point: `python3 pipeline/run_all_tests.py` (flags `--fast`, `-k NEEDLE`, `-j JOBS`, `-v`; runs
-  every `pipeline/test_*.py` except `test_smoke.py`, plus `node --test` over the `test_*.mjs` files in `pipeline/`, `edge/` and
-  `tools/`; the suite keeps growing, so list it with `ls pipeline/test_*` instead of trusting counts). `test_smoke.py` is the
-  pre-commit gate and calls it with `--fast`. See [Runbooks](RUNBOOKS.md#run-all-tests).
+- Test entry point: `python3 pipeline/run_all_tests.py`
+  - Flags: `--fast`, `-k NEEDLE`, `-j JOBS`, `-v`.
+  - The command runs every `pipeline/test_*.py` file except `test_smoke.py`.
+  - It also runs `node --test` on the `test_*.mjs` files in `pipeline/`, `edge/` and `tools/`.
+  - The number of tests increases, so do not trust counts. To list the tests, run `ls pipeline/test_*`.
+  - `test_smoke.py` is the pre-commit gate. It calls the command with `--fast`.
+  - See [Runbooks](RUNBOOKS.md#run-all-tests).
 - [Scene objects](SCENE_OBJECTS.md)
 - [Game engine](GAME_ENGINE.md)
 - [World collision/stability design](superpowers/specs/2026-07-25-flightverse-world-collision-stability-design.md)
@@ -52,28 +60,28 @@ or adding UI. Acceptance evidence: [Design QA](qa/design-qa.md).
 
 ## Evidence and active backlogs
 
-- [Bug Hunt backlog](BUGHUNT_BACKLOG.md) — active items plus explicitly closed forensic history.
-- [Design QA](qa/design-qa.md) — production acceptance evidence for Home V2 across desktop, tablet and iPhone (screenshots in `qa/home-v2-*.png`).
-- [Splat experiments](SPLAT_EXPERIMENTS.md) — frozen MPS/OpenSplat experiment dataset.
+- [Bug Hunt backlog](BUGHUNT_BACKLOG.md): active items and closed forensic history.
+- [Design QA](qa/design-qa.md): production acceptance evidence for Home V2 on desktop, tablet and iPhone (screenshots in `qa/home-v2-*.png`).
+- [Splat experiments](SPLAT_EXPERIMENTS.md): frozen dataset of MPS/OpenSplat experiments.
 
 ## Historical snapshots
 
-Kept in [`archive/`](archive/) (and the one below that code comments still cite). Their headers state what superseded them.
+These documents are in [`archive/`](archive/). One more document is below because code comments still cite it. The header of each document states what replaced it.
 
-- [3D processing audit](archive/3D_PROCESSING_AUDIT.md)
+- [3D pipeline audit](archive/3D_PROCESSING_AUDIT.md)
 - [3D frontier audit](archive/3D_FRONTIER_AUDIT.md)
-- [Case study baseline v1](archive/CASE_STUDY_BASELINE_V1.md) — frozen held-out baseline.
+- [Case study baseline v1](archive/CASE_STUDY_BASELINE_V1.md): frozen held-out baseline.
 - [Flightverse UI audit](archive/FLIGHTVERSE_UI_AUDIT.md)
 - [Game experience v1](archive/GAME_EXPERIENCE_SPEC.md)
 - [Trainer migration research](archive/MIGRATION_SPEC.md)
 - [2026-07-10 bug-hunt triage](archive/HUNT_2026-07-10_TRIAGE.md)
 - [Legacy Mac trainer (OpenSplat/MPS)](archive/LEGACY_MAC_TRAINER.md)
-- [Flightverse renderer decision](FLIGHTVERSE_RENDERER_DECISION.md) — still in `docs/` because `web/flightverse/scene.js` cites it.
+- [Flightverse renderer decision](FLIGHTVERSE_RENDERER_DECISION.md): it is still in `docs/` because `web/flightverse/scene.js` cites it.
 
 ## Dated implementation plans and design specs
 
-These files document approved intent at a point in time. The current contracts above win when a
-plan's future tense or task status no longer matches production.
+Each file records the approved intent at one point in time. If the future tense or the task status of
+a plan does not match production, the current contracts above win.
 
 Plans:
 
@@ -115,14 +123,15 @@ Design specs:
 
 ## Freshness rules
 
-1. Measured facts include date, scene/version and backend; estimates are labeled as estimates.
-2. Compute policy: since 2026-09-28 the default is **PC-only** (`pipeline/compute_policy.py`; all ODM and splats
-   on the RTX PC, `AEROBRAIN_COMPUTE=local` re-enables the legacy Mac paths). 7K–40K are NVIDIA CUDA-only; the
-   Mac-local envelope (Fast 1K, Medium 2K, legacy custom 500–2,000 iterations) is legacy. Details: [Architecture](ARCHITECTURE.md).
-3. Strict CUDA preserves tier/backend and retries only `d1→d2` after classified OOM.
-4. A multi-source splat waits for final persisted `reconstruction.json` validation against the
+1. Measured facts include the date, the scene/version and the backend. Label estimates as estimates.
+2. Since 2026-09-28, the default compute policy is **PC-only** (`pipeline/compute_policy.py`). All ODM and splat
+   jobs run on the RTX PC. `AEROBRAIN_COMPUTE=local` turns the legacy Mac paths on again. The tiers 7K–40K are
+   NVIDIA CUDA-only. The Mac-local envelope is legacy: Fast 1K, Medium 2K and legacy custom 500–2,000
+   iterations. Details: [Architecture](ARCHITECTURE.md).
+3. Strict CUDA keeps the tier and the backend. It retries only `d1→d2` after a classified OOM.
+4. A multi-source splat waits for the final saved `reconstruction.json` to pass the check against the
    current shared-component logic.
-5. Historical documents remain immutable except for supersession/freshness notices.
-6. Every `web/` documentation or code edit is followed by `pipeline/bump_web_version.py`.
-7. Live job stage, memory and progress belong to the jobs UI/SQLite/event log. Current Markdown
-   records only closed milestones and durable gates, never an unqualified “currently running”.
+5. Historical documents stay unchanged. Only supersession or freshness notices can change them.
+6. After each edit to `web/` documentation or code, run `pipeline/bump_web_version.py`.
+7. The jobs UI, SQLite and the event log hold live job stage, memory and progress. Current Markdown records
+   only closed milestones and durable gates. Never write an unqualified `currently running`.

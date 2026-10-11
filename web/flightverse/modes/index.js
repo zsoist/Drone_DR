@@ -26,20 +26,36 @@
 //   QA de desarrollo: ?invWave=n empieza en la oleada n; ?onboard=1 fuerza el onboarding
 //   markers{markers,edges,boss} (≈10 Hz)  game-mode{key,phase}  gr-miss  gr-penalty  onboard{step,copy}  reposition
 // Todos los tipos están registrados en BUS_EVENTS (integración).
-import { createInvasionMode } from '/flightverse/modes/invasion-mode.js?v=370';
-import { createGateRushMode } from '/flightverse/modes/gaterush-mode.js?v=370';
-import { createModeEvents } from '/flightverse/modes/events.js?v=370';
-import { createModeOverlay } from '/flightverse/modes/overlay.js?v=370';
-import { createOnboarding } from '/flightverse/modes/onboarding.js?v=370';
+import { createInvasionMode } from '/flightverse/modes/invasion-mode.js?v=371';
+import { createGateRushMode } from '/flightverse/modes/gaterush-mode.js?v=371';
+import { createModeEvents } from '/flightverse/modes/events.js?v=371';
+import { createModeOverlay } from '/flightverse/modes/overlay.js?v=371';
+import { createOnboarding } from '/flightverse/modes/onboarding.js?v=371';
+import { createModeArbiter, setTourChrome, tourActiveFrom } from '/flightverse/modes/exclusive.js?v=371';
 
 export function installEnemies(ctx) {
   const enemies = ctx.enemies;
   const v2 = !!ctx.flags.fv2;
   const events = createModeEvents(ctx.bus, ctx.report);
   const overlay = v2 && !ctx.ui?.drawsModeHud ? createModeOverlay(ctx) : null;
-  const inv = createInvasionMode(ctx, events);
+  // Exclusión mutua: TODO punto de entrada (ctx.modes.start, startReto, startRun, selector, URL de QA) llama a
+  // hooks.beforeStart(key) → arbiter.enter(key), que detiene cualquier otro modo. ctx.modes.start es la entrada canónica.
+  const hooks = { beforeStart: key => arbiter.enter(key) };
+  const inv = createInvasionMode(ctx, events, hooks);
   Object.assign(enemies, inv);
-  enemies.gaterush = createGateRushMode(ctx, events);
+  enemies.gaterush = createGateRushMode(ctx, events, hooks);
+  const stopGateRush = () => {
+    const S = ctx.state;
+    const had = !!(S.reto || S.retoFly || S.replay);
+    if (S.reto) { S.reto.dispose(); S.reto = null; }
+    S.retoFly = null; S.replay = null; S.resultShown = false;
+    ctx.ui.screens?.clearResult?.();
+    return had;
+  };
+  const arbiter = createModeArbiter({
+    invasion: () => { const was = !!enemies.stopRun?.(); ctx.ui.screens?.clearResult?.(); return was; },
+    gaterush: stopGateRush,
+  });
   enemies.events = events;
 
   Object.assign(ctx.actions, {
@@ -53,33 +69,32 @@ export function installEnemies(ctx) {
 
   // ── v2: orquestación de modos, onboarding, datos de HUD ──
   const onboarding = createOnboarding(ctx, events);
-  let current = 'explorar';
-  const stopAll = () => {
-    enemies.stopRun?.();
-    const S = ctx.state;
-    if (S.reto) { S.reto.dispose(); S.reto = null; }
-    S.retoFly = null; S.replay = null; S.resultShown = false;
-    ctx.ui.screens?.clearResult?.();
-  };
+  // Tour: oculta «Viento»/«Dron caído» mientras corre (evento `tour` del bus + modes.start('tour'))
+  const tourChrome = on => setTourChrome(document, on);
+  ctx.bus.on('tour', d => tourChrome(tourActiveFrom(d?.state)));
+  const stopAll = () => { tourChrome(false); return arbiter.leave(); };
   const modes = {
-    get current() { return current; },
+    get current() { return arbiter.current; },
     onboarding,
+    /** Entrada única a un modo: detiene todos los demás (stopAll) y arranca `key`. */
     start(key, opts = {}) {
-      stopAll();
-      current = key;
+      if (!['explorar', 'tour', 'gaterush', 'invasion'].includes(key)) return false;
+      arbiter.enter(key);
+      if (key !== 'tour') tourChrome(false);
       if (key === 'explorar') ctx.actions.setMode(opts.noCollision ? 'dios' : 'asistido');
-      else if (key === 'tour') ctx.actions.setMode('cinematico');
+      else if (key === 'tour') { ctx.actions.setMode('cinematico'); tourChrome(true); }
       else if (key === 'gaterush') {
         if (ctx.state.modeKey === 'cinematico') ctx.actions.setMode('asistido');
         ctx.actions.startReto(opts.difficulty || 'media');
       } else if (key === 'invasion') {
+        enemies.stopRun?.();                       // reinicio limpio si ya había una run
         if (ctx.state.modeKey === 'cinematico' || ctx.state.modeKey === 'arcade') ctx.actions.setMode('asistido');
         ctx.actions.startInvasionRun(opts.types?.length ? opts.types : ['zombie'], opts.difficulty || 'media');
       } else return false;
       events.emit('game-mode', { key, phase: 'select', opts: { difficulty: opts.difficulty || null } });
       return true;
     },
-    stop() { stopAll(); current = 'explorar'; events.emit('game-mode', { key: 'explorar', phase: 'select' }); },
+    stop() { stopAll(); events.emit('game-mode', { key: 'explorar', phase: 'select' }); },
   };
   ctx.modes = modes;
   Object.assign(ctx.actions, {
@@ -106,7 +121,7 @@ export function installEnemies(ctx) {
   enemies.report = () => {
     baseReport();
     ctx.report.modes = {
-      current, onboarding: { active: onboarding.state.active, step: onboarding.state.step, t: +onboarding.state.t.toFixed(1), done: onboarding.state.done },
+      current: arbiter.current, onboarding: { active: onboarding.state.active, step: onboarding.state.step, t: +onboarding.state.t.toFixed(1), done: onboarding.state.done },
       gr: enemies.gaterush.hud(), startInfo: ctx.state.reto?.state.startInfo || null,
     };
   };

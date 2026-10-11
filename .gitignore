@@ -20,3 +20,6 @@ tools/node_modules/
 .wrangler/
 .superpowers/sdd/
 roofer.log.json
+
+# preview server PID of a redesign worktree (docs/REDESIGN_2026_10.md)
+.preview.pid

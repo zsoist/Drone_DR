@@ -4,9 +4,9 @@
 // an effect is never skipped (the flash of an explosion always gets a slot).
 
 export const FX_CAPS = Object.freeze({
-  low: Object.freeze({ sprites: 64, debris: 24, decals: 16, lights: 2, imm: 48, haze: false, quality: 0.6 }),
-  mid: Object.freeze({ sprites: 160, debris: 48, decals: 32, lights: 3, imm: 96, haze: false, quality: 0.85 }),
-  high: Object.freeze({ sprites: 320, debris: 96, decals: 64, lights: 4, imm: 160, haze: true, quality: 1 }),
+  low: Object.freeze({ sprites: 64, debris: 24, decals: 16, lights: 2, imm: 96, haze: false, quality: 0.6 }),
+  mid: Object.freeze({ sprites: 160, debris: 48, decals: 32, lights: 3, imm: 160, haze: false, quality: 0.85 }),
+  high: Object.freeze({ sprites: 320, debris: 96, decals: 64, lights: 4, imm: 256, haze: true, quality: 1 }),
 });
 
 /** coarse pointer -> phone (<700 px short side) low, tablet mid; fine pointer -> high. */

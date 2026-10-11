@@ -230,7 +230,7 @@ export const WEAPON_FX = Object.freeze({
     sound: 'ac',
   }),
   m: Object.freeze({
-    trail: Object.freeze({ puffs: 24, size: 0.9, life: 1.2 }),
+    trail: Object.freeze({ puffs: 10, size: 1.1, life: 1.2 }),
     flare: 0.5,
     muzzle: Object.freeze({ size: 0.6, life: 0.09, backblast: true }),
     explosion: 'M',
@@ -254,7 +254,7 @@ export const WEAPON_FX = Object.freeze({
     muzzle: Object.freeze({ size: 0.5, life: 0.1, ring: true }),
     impact: Object.freeze({ flash: 0.12, shockwave: 3, hole: true }),
     shake: Object.freeze({ tier: 'T3', trauma: 0.14 }),
-    hitstop: Object.freeze({ any: 70 }),
+    hitstop: Object.freeze({ kill: 70 }),   // kills only (spec): terrain/structure hits never stop time
     sound: 'rail',
   }),
   tb: Object.freeze({

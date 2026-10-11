@@ -1,42 +1,47 @@
-# AeroBrain — Personal Drone Intelligence Platform
+# AeroBrain: Personal Drone Intelligence Platform
 
-"Conecto el dron, subo, y analiza." Convierte cada vuelo del DJI Flip / Neo 2
-en inteligencia: mapas, detección de objetos, escenas 3D y diarios de viaje.
+The idea in one sentence: "I connect the drone, I upload, and the system analyzes." AeroBrain turns each flight of the DJI Flip / Neo 2 into
+intelligence: maps, object detection, 3D scenes and travel diaries.
 
-## Arquitectura
-- **Mac Mini M4** = control plane y servidor: ingesta SD, proxies ffmpeg/VideoToolbox, web y
-  video, API/SQLite/vault/publicación/gates y reels. Post-proceso GDAL/PDAL/OpenSfM en OrbStack
-  **sólo bajo demanda** (apagado en reposo). Desde 2026-09-28 no entrena ni corre ODM.
-- **PC RTX 4060 Ti + WSL2** = fuerza de trabajo: todo ODM (CUDA, strict) y todo splat
-  (Nerfstudio/gsplat, 1K–40K). Nunca es autoridad de publicación; su scratch expira solo
-  (`pc_janitor.py`). `AEROBRAIN_COMPUTE=local` reactiva los caminos legacy del Mac.
-- **Cloudflare** = túnel + dominio (vuelos.metislab.work → localhost:8790) + el Worker de borde OBLIGATORIO en `edge/` (private-data-v1: gate de auth y puente HMAC hacia el origen; sin él no hay acceso). Sin Pages ni R2: el media se sirve del SSD local con HTTP Range + gzip sidecars — $0/mes real. (Actualizado 2026-07-05; ver docs/archive/3D_PROCESSING_AUDIT.md)
-- **drone-vault** (`/Volumes/SSD/drone-vault/`) = datos, fuera del repo
+## Architecture
+- **Mac Mini M4** is the control plane and the server. It does the SD ingest and the ffmpeg/VideoToolbox proxies.
+  It also runs the web and video service, the API, SQLite, the vault, the publish step, the gates and the reels.
+  GDAL/PDAL/OpenSfM post-processing runs in OrbStack **only on demand**, and OrbStack is off when the system is idle.
+  Since 2026-09-28 the Mac does not train and does not run ODM.
+- **PC RTX 4060 Ti + WSL2** is the workhorse. It runs all ODM (CUDA, strict) and all splats (Nerfstudio/gsplat, 1K–40K).
+  It is never the authority for a publish. Its scratch space expires by itself (`pc_janitor.py`).
+  `AEROBRAIN_COMPUTE=local` turns on the legacy Mac paths again.
+- **Cloudflare** gives the tunnel and the domain (`vuelos.metislab.work` to `localhost:8790`).
+  It also runs the REQUIRED edge Worker in `edge/` (private-data-v1: the auth gate and the HMAC bridge to the origin). Without the Worker there is no access.
+  There are no Pages and no R2. The system serves the media from the local SSD with HTTP Range and gzip sidecars, so the real cost is $0 per month.
+  (Updated 2026-07-05. See docs/archive/3D_PROCESSING_AUDIT.md.)
+- **drone-vault** (`/Volumes/SSD/drone-vault/`) holds the data. It is outside the repo.
 
 ## 3D contract
-- ODM runs from video frames, not WebODM SaaS: SRT → EXIF GPS → OpenSfM/OpenMVS →
-  DSM/DTM/ortho/cloud/mesh. Por política (`compute_policy.py`) todo ODM va al nodo CUDA en modo strict.
-- Preset `alta` is the stable video route (3072 px, DSM/DTM/ortho/cloud) and may use `--skip-3dmodel` for nadir.
-  Under the PC-only policy it also runs on the PC CUDA lane; the old "local Mac" execution exists only with
-  `AEROBRAIN_COMPUTE=local` (legacy). Remote CUDA Ultra is the full-product route for large orbital/oblique scene versions.
-- Gaussian splats are first-class outputs. Todos corren en CUDA (política PC-only);
-  7K–40K son CUDA estrictos, con `d1→d2` sólo tras OOM clasificado y sin fallback al Mac.
-  Publicación atómica, SOG/legacy formats, history versions, checksums y Chrome browser gate.
-- Una escena estable conserva versiones `recon_<hash>` inmutables. Una fuente sólo cuenta como
-  integrada si pertenece al componente compartido elegido y supera el gate por-fuente; no se
-  auto-entrena ningún splat antes de auditar el `reconstruction.json` final.
-- Done jobs must have real artifacts and QA. No empty QA, no stale artifact links, no current/history path confusion.
+- ODM runs from video frames, not from the WebODM SaaS: The steps are: SRT, EXIF GPS, OpenSfM/OpenMVS, and then DSM/DTM/ortho/cloud/mesh.
+  By policy (`compute_policy.py`), all ODM goes to the CUDA node in strict mode.
+- Preset `alta` is the stable video route (3072 px, DSM/DTM/ortho/cloud). For nadir video it can use `--skip-3dmodel`.
+  Under the PC-only policy it also runs on the PC CUDA lane.
+  The old "local Mac" run exists only with `AEROBRAIN_COMPUTE=local` (legacy).
+  Remote CUDA Ultra is the full-product route for large orbital or oblique scene versions.
+- Gaussian splats are first-class outputs. All of them run on CUDA (PC-only policy).
+  The tiers 7K–40K are strict CUDA. The system allows `d1→d2` only after a classified OOM, and there is no fallback to the Mac.
+  A publish is atomic. The system supports SOG and legacy formats, history versions, checksums and the Chrome browser gate.
+- A stable scene keeps immutable `recon_<hash>` versions.
+  A source counts as integrated only if it belongs to the chosen shared component and passes the gate for each source.
+  The system trains no splat before it audits the final `reconstruction.json`.
+- A finished job must have real artifacts and QA. Do not allow empty QA, stale artifact links, or confusion between the current and history paths.
 
-## Principios
-1. Originales bit-perfect, nunca re-encodear (checksums en manifest)
-2. Proxies 1080p por hardware (hevc_videotoolbox) para web
-3. Keyframes JPG baratos como input de AI vision
-4. Telemetría SRT → flight.json 1Hz (GPS, altitud, exposición)
-5. Tiers de procesamiento por clip — compute donde vale la pena
-6. LLM lanes: ai/router.py: vision = Gemini Flash (frames JPG), texto = DeepSeek, fallback = OpenAI (todas con API key paga); nunca OAuth headless
+## Principles
+1. Keep the originals bit-perfect. Never encode them again (checksums are in the manifest).
+2. Make 1080p proxies in hardware (hevc_videotoolbox) for the web.
+3. Make cheap JPG keyframes as input for AI vision.
+4. Convert the SRT telemetry to flight.json at 1 Hz (GPS, altitude, exposure).
+5. Set a tier of compute for each clip. Spend compute only where it pays.
+6. LLM lanes in `ai/router.py`: vision uses Gemini Flash (JPG frames), text uses DeepSeek, and the fallback is OpenAI. All of them use a paid API key. Never use OAuth in a headless job.
 
 ## Non-goals (v1)
-- No control de vuelo en vivo / DJI SDK
-- No multi-usuario ni SaaS
-- No VPS: Mac Mini + Cloudflare Tunnel
-- No fine-tuning de modelos
+- There is no live flight control and no DJI SDK.
+- There is no multi-user mode and no SaaS.
+- There is no VPS: the system uses the Mac Mini and a Cloudflare Tunnel.
+- There is no fine-tuning of models.

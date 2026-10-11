@@ -3,10 +3,10 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=370';
-import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=370';
-import { createStepAccumulator } from '/flightverse/loop-step.js?v=370';
-import { MIN_AGL as V2_MIN_AGL } from '/flightverse/physics/index.js?v=370';
+import * as THREE from '/flightverse/three.js?v=371';
+import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=371';
+import { createStepAccumulator } from '/flightverse/loop-step.js?v=371';
+import { MIN_AGL as V2_MIN_AGL } from '/flightverse/physics/index.js?v=371';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver
@@ -57,7 +57,7 @@ export function createInput(el) {
     if (!enabled) return;
     // Space = freno: sin esto también re-clickea el último botón enfocado del dock
     if (e.code === 'Space' && !typing(e.target)) e.preventDefault();
-    if (!e.repeat) keys.add(e.code);
+    keys.add(e.code);                       // Set dedups; also re-arms a key still held after pause/blur cleared it
   };
   const ku = e => {
     if (enabled && e.code === 'Space' && !typing(e.target)) e.preventDefault();   // el click de <button> sale en keyup (Firefox)

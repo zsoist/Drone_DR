@@ -2,12 +2,12 @@
 // Produce el MISMO contrato ctx.ui que el HUD legado (update, dispose, hud, menu, screens, weapons, overlay,
 // setInvasionUi) más: ctx.ui.prefs (preferencias), ctx.ui.drawsModeHud = true (A dibuja marcadores, placa y
 // banners de D a partir de ctx.modeHud) y las APIs de retícula/HUD documentadas en hud2.js.
-import { installFlightSurfaceGuards } from '/flightverse/mobile-command.js?v=370';
-import { buildHudMarkup2, createHud2 } from '/flightverse/ui/hud2.js?v=370';
-import { createMenu2 } from '/flightverse/ui/menu2.js?v=370';
-import { createScreens2 } from '/flightverse/ui/screens2.js?v=370';
-import { createWeaponsUi2 } from '/flightverse/ui/weapons2.js?v=370';
-import { createPrefs } from '/flightverse/ui/prefs.js?v=370';
+import { installFlightSurfaceGuards } from '/flightverse/mobile-command.js?v=371';
+import { buildHudMarkup2, createHud2 } from '/flightverse/ui/hud2.js?v=371';
+import { createMenu2 } from '/flightverse/ui/menu2.js?v=371';
+import { createScreens2 } from '/flightverse/ui/screens2.js?v=371';
+import { createWeaponsUi2 } from '/flightverse/ui/weapons2.js?v=371';
+import { createPrefs } from '/flightverse/ui/prefs.js?v=371';
 
 function loadCss(href) {
   const link = document.createElement('link');
@@ -28,8 +28,8 @@ export function mountUi2(ctx) {
   const ui = ctx.ui;
   document.documentElement.classList.add('fv2');
   document.body.classList.add('fv2', flags.coarse ? 'hx-touch' : 'hx-fine');
-  loadCss('css/hud.css?v=370');
-  loadCss('css/screens.css?v=370');
+  loadCss('css/hud.css?v=371');
+  loadCss('css/screens.css?v=371');
   const mq = matchMedia('(prefers-reduced-motion: reduce)');
   ui.prefs = createPrefs({ bus, systemReduced: () => mq.matches });
   applyPrefsToDocument(ui.prefs);
@@ -57,6 +57,28 @@ export function mountUi2(ctx) {
   return ui;
 }
 
+const PHOTO_MIN_KEY = 'ab_fv_photo_min';
+/** Panel de Foto (E, tour/default-ui.js): le añade cabecera con botón plegar/desplegar (compacto en móvil vertical). La lógica de foto no se toca. */
+function enhancePhotoPanel(panel) {
+  if (panel.querySelector('.fv-ph-head')) return;
+  let stored = null;
+  try { stored = localStorage.getItem(PHOTO_MIN_KEY); } catch { /* sin almacenamiento */ }
+  const min0 = stored != null ? stored === '1' : innerWidth < 600 && innerHeight > innerWidth;
+  const head = document.createElement('div');
+  head.className = 'fv-ph-head';
+  head.innerHTML = '<b>Ajustes de foto</b><button type="button" class="fv-ph-toggle" aria-expanded="true">Ocultar</button>';
+  const btn = head.querySelector('button');
+  const set = min => {
+    panel.classList.toggle('fv-min', min);
+    btn.textContent = min ? 'Ajustes' : 'Ocultar';
+    btn.setAttribute('aria-expanded', String(!min));
+    try { localStorage.setItem(PHOTO_MIN_KEY, min ? '1' : '0'); } catch { /* sin almacenamiento */ }
+  };
+  btn.addEventListener('click', () => set(!panel.classList.contains('fv-min')));
+  panel.prepend(head);
+  set(min0);
+}
+
 export function installUi2(ctx) {
   const ui = ctx.ui;
   // retícula en espacio de mundo (anillo rosa): fuera (spec §3). fx.render la reactiva cada frame; se ignora.
@@ -79,5 +101,9 @@ export function installUi2(ctx) {
   });
   ui.screens.install();
   ui.hud.init();
+  const photoObs = new MutationObserver(() => { const p = document.querySelector('.fv-photo[data-fv-photo-ui]'); if (p) enhancePhotoPanel(p); });
+  photoObs.observe(document.body, { childList: true });
+  const prevDispose = ui.dispose;
+  ui.dispose = () => { photoObs.disconnect(); prevDispose?.(); };
   return ui;
 }

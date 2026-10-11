@@ -16,6 +16,7 @@ Exit code 1 when any check fails.
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import sys
 import time
@@ -175,7 +176,7 @@ def run(base: str, flag: str, viewport: str, world: str = WORLD) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="http://localhost:8790")
+    ap.add_argument("--base", default=os.environ.get("AEROBRAIN_BASE_URL", "http://localhost:8790"))
     ap.add_argument("--flag", default="fv=2")
     ap.add_argument("--viewport", default="mobile_portrait")
     ap.add_argument("--cid", default=WORLD)

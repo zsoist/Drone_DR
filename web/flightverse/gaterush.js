@@ -3,13 +3,13 @@
 // splits por gate. Circuito HONESTO: gates sobre la ruta del vuelo REAL
 // (track GPS en frame local); sin track: anillo procedural documentado como
 // fallback. Detección por proximidad en timestep fijo (determinista → replay).
-import * as THREE from '/flightverse/three.js?v=370';
-import { createSpeedTracker, topSpeedFor } from '/flightverse/gate-stats.js?v=370';
-import { segmentPassesGate } from '/flightverse/collision-math.js?v=370';
+import * as THREE from '/flightverse/three.js?v=371';
+import { createSpeedTracker, topSpeedFor } from '/flightverse/gate-stats.js?v=371';
+import { segmentPassesGate } from '/flightverse/collision-math.js?v=371';
 import {
   courseLength, parTime, gateRushMedal, gateRushScore, paceDelta, timeText, findClearStart,
-  ghostPoseAt, START_CLEARANCE_M, sanitizeGateCenters,
-} from '/flightverse/modes/rules.js?v=370';
+  ghostPoseAt, START_CLEARANCE_M, sanitizeGateCenters, shortTime, signedSeconds,
+} from '/flightverse/modes/rules.js?v=371';
 
 export const DIFFS = {
   facil:   { label: 'Fácil',   n: 8,  r: 9,   pass: 1.25, color: 0x52C79A },
@@ -30,6 +30,25 @@ function glowSprite(color) {
   return sp;
 }
 
+// Halo de larga distancia: anillo nítido + resplandor, tamaño en PANTALLA (sizeAttenuation:false) para que un aro a
+// 150 m siga siendo un objetivo legible sobre la fotogrametría.
+function haloSprite(color) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 96;
+  const c = cv.getContext('2d');
+  const g = c.createRadialGradient(48, 48, 26, 48, 48, 47);
+  g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.55, 'rgba(255,255,255,.35)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = g; c.fillRect(0, 0, 96, 96);
+  c.lineWidth = 5; c.strokeStyle = '#fff'; c.beginPath(); c.arc(48, 48, 31, 0, 6.2832); c.stroke();
+  c.lineWidth = 2; c.strokeStyle = 'rgba(0,0,0,.55)'; c.beginPath(); c.arc(48, 48, 35, 0, 6.2832); c.stroke();   // filo oscuro: contraste sobre cielo claro
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false, depthTest: false,
+    blending: THREE.NormalBlending, color, sizeAttenuation: false, opacity: 0 }));
+  sp.renderOrder = 15; sp.visible = false;
+  return sp;
+}
+const g_done = g => !!(g.passed && g.doneMat);
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
 function disposeMaterial(m) {
   if (!m) return;
   if (m.map) m.map.dispose();
@@ -41,7 +60,7 @@ function disposeObject(o) {
   else disposeMaterial(o.material);
 }
 
-export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 'media', v2 = false, collision = null, worldPar = null, ghost = null }) {
+export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 'media', v2 = false, collision = null, worldPar = null, ghost = null, bestTimeS = null }) {
   const D = DIFFS[difficulty] || DIFFS.media;
   const GATE_R = D.r, PASS_R = GATE_R * D.pass;
 
@@ -84,8 +103,8 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
 
   const grp = new THREE.Group();
   const cNext = new THREE.Color(D.color);
-  const matNext = new THREE.MeshLambertMaterial({ color: D.color, emissive: cNext.clone().multiplyScalar(0.35) });
-  const matIdle = new THREE.MeshLambertMaterial({ color: 0x566274 });
+  const matNext = new THREE.MeshLambertMaterial({ color: v2 ? 0xBFE9FF : D.color, emissive: cNext.clone().lerp(new THREE.Color(0xffffff), 0.25).multiplyScalar(v2 ? 0.9 : 0.35), transparent: true });
+  const matIdle = new THREE.MeshLambertMaterial({ color: v2 ? 0x9DB8D8 : 0x566274, emissive: v2 ? 0x27405f : 0x000000 });
   const matDone = new THREE.MeshLambertMaterial({ color: 0x52C79A, transparent: true, opacity: 0.3 });
   // aros HD: torus denso + aro fino interior + glow + beam al suelo
   const ringGeo = new THREE.TorusGeometry(GATE_R, GATE_R * 0.06, 24, 96);
@@ -114,7 +133,9 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
     beam.position.set(c.x, gy + beamH / 2, c.z);
     grp.add(beam);
     grp.add(m);
-    return { mesh: m, trim, glow, beam, center: c, passed: false };
+    const halo = v2 ? haloSprite(0xffffff) : null;
+    if (halo) { halo.position.copy(c); grp.add(halo); }
+    return { mesh: m, trim, glow, beam, halo, center: c, passed: false, doneMat: null, doneT: 0 };
   });
 
   // camino con gradiente + MIGAS de luz que fluyen hacia el siguiente gate
@@ -174,9 +195,15 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
 
   function paint() {
     gates.forEach((g, i) => {
-      g.mesh.material = g.passed ? matDone : (i === st.idx ? matNext : matIdle);
+      g.mesh.material = g.passed ? (g.doneMat || matDone) : (i === st.idx ? matNext : matIdle);
     });
   }
+  const _cp = new THREE.Vector3();
+  let haloK = 0;
+  const pxScale = (cam, px) => {                          // escala de Sprite sin atenuación para `px` píxeles CSS de alto
+    const h = (typeof innerHeight === 'number' && innerHeight > 0) ? innerHeight : 800;
+    return (px / h) * 2 * Math.tan(((cam?.fov || 60) * Math.PI / 180) / 2);
+  };
   paint();
 
   return {
@@ -208,7 +235,16 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
     },
     /** Datos que dibuja el HUD (A): cronómetro, contador de gates, par, ritmo. Siempre disponible. */
     hud() {
+      const pace0 = st.par ? paceDelta({ t: st.t, idx: st.idx, total: st.total, par: st.par }) : 0;
+      const running = st.phase === 'running' && st.idx > 0;
+      const recDelta = bestTimeS && running ? +(st.t - bestTimeS * (st.idx / st.total)).toFixed(2) : null;
       return {
+        // textos listos para pintar (la UI no formatea): 'Par 1:09.8' · '−32.1 s adelante' · 'Récord 1:05.2 · +1.4 s'
+        parText: st.par ? `Par ${shortTime(st.par)}` : '',
+        paceText: running && st.par ? `${signedSeconds(pace0)} ${pace0 <= 0 ? 'adelante' : 'atrás'}` : '',
+        recordText: bestTimeS ? `Récord ${shortTime(bestTimeS)}${recDelta != null ? ` · ${signedSeconds(recDelta)}` : ''}` : '',
+        recordDelta: recDelta,
+        statusLine: [st.par ? `Par ${shortTime(st.par)}` : '', running && st.par ? `${signedSeconds(pace0)} ${pace0 <= 0 ? 'adelante' : 'atrás'}` : '', bestTimeS ? `Récord ${shortTime(bestTimeS)}${recDelta != null ? ` ${signedSeconds(recDelta)}` : ''}` : ''].filter(Boolean).join(' · '),
         phase: st.phase, t: st.phase === 'running' ? st.t : (st.time ?? 0),
         timerText: timeText(st.phase === 'running' ? st.t : (st.time ?? 0)),
         gate: Math.min(st.idx + (st.phase === 'finished' ? 0 : 1), st.total), passed: st.idx, total: st.total,
@@ -222,13 +258,39 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
     setGhost(data) { ghostState.data = data; if (ghostMesh) ghostMesh.visible = false; },
     setGhostEnabled(v) { ghostState.enabled = !!v; if (!v && ghostMesh) ghostMesh.visible = false; },
     get ghostActive() { return !!(ghostMesh && ghostState.enabled && ghostState.data); },
-    pulse(t, dt = 0.016) {
+    pulse(t, dt = 0.016, cam = null) {
       pathMat.opacity = 0.24 + Math.sin(t * 2.6) * 0.08;
+      const camPos = cam?.position;
       gates.forEach((gg, i) => {
         const active = i === st.idx && st.phase !== 'finished';
-        gg.glow.material.opacity = active ? 0.2 + Math.sin(t * 4) * 0.12 : 0.05;
-        gg.trim.material.opacity = active ? 0.4 + Math.sin(t * 6) * 0.2 : 0.1;
-        gg.beam.material.opacity = active ? 0.09 + Math.sin(t * 3) * 0.05 : 0;
+        const d = camPos ? _cp.copy(gg.center).sub(camPos).length() : 100;
+        // v2: el aro activo se desvanece al acercarse (no llena la pantalla con un anillo plano); lejos se ve pleno
+        const near = v2 && active ? 0.14 + 0.86 * smooth(GATE_R * 0.7, GATE_R * 2.6, d) : 1;
+        if (active) matNext.opacity = v2 ? near : 1;
+        gg.glow.material.opacity = (active ? 0.2 + Math.sin(t * 4) * 0.12 : 0.05) * (v2 && active ? near : 1);
+        gg.trim.material.opacity = (active ? 0.4 + Math.sin(t * 6) * 0.2 : 0.1) * (v2 && active ? near : 1);
+        // columna de luz: también se apaga si la cámara/dron está dentro o muy cerca de ella
+        const bh = camPos ? Math.hypot(camPos.x - gg.center.x, camPos.z - gg.center.z) : 99;
+        gg.beam.material.opacity = active ? (0.09 + Math.sin(t * 3) * 0.05) * (v2 ? smooth(3, 16, bh) : 1) : 0;
+        if (gg.halo) {
+          const isNext = active, isAfter = i === st.idx + 1 && st.phase !== 'finished';
+          const show = (isNext || isAfter) && camPos;
+          gg.halo.visible = !!show;
+          if (show) {
+            const px = isNext ? 58 : 30;
+            // pleno desde 45 m, se funde a 0 al llegar al aro real (ya es grande en pantalla)
+            const vis = isNext ? smooth(GATE_R * 2.2, 45, d) : 0.55 * smooth(20, 70, d);
+            gg.halo.material.opacity = vis * (0.75 + 0.25 * Math.sin(t * 5));
+            gg.halo.scale.setScalar(pxScale(cam, px * (1 + (isNext ? 0.08 * Math.sin(t * 5) : 0))));
+            gg.halo.visible = gg.halo.material.opacity > 0.02;
+          }
+        }
+        if (g_done(gg)) {
+          gg.doneT += dt;
+          const a = 0.3 * (1 - smooth(0.2, 1.6, gg.doneT));
+          gg.doneMat.opacity = Math.max(0.04, a);
+          gg.mesh.visible = gg.doneT < 6;                // tras unos segundos el aro pasado desaparece
+        }
         if (active) {
           gg.mesh.rotation.z += dt * 0.5;              // spin ceremonial
           const s = 1 + Math.sin(t * 3.2) * 0.025;
@@ -238,18 +300,19 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
       crumbs.forEach((sp, i) => {                      // migas fluyendo
         const u = (t * 0.022 + i / crumbs.length) % 1;
         sp.position.copy(curve.getPointAt(u));
-        sp.material.opacity = 0.35 + Math.sin(t * 5 + i) * 0.25;
+        const dc = camPos ? sp.position.distanceTo(camPos) : 99;
+        sp.material.opacity = (0.35 + Math.sin(t * 5 + i) * 0.25) * (v2 ? smooth(5, 16, dc) : 1);   // sin manchas enormes pegadas a la cámara
       });
       for (let i = flashes.length - 1; i >= 0; i--) {  // celebración de paso
         const f = flashes[i];
         f.k += dt * 2.2;
         if (f.k >= 1) { grp.remove(f.m); disposeObject(f.m); flashes.splice(i, 1); continue; }
-        f.m.scale.setScalar(1 + f.k * 1.1);
-        f.m.material.opacity = 0.7 * (1 - f.k);
+        f.m.scale.setScalar((f.base || 1) * (1 + f.k * (f.grow ?? 1.1)));
+        f.m.material.opacity = (f.o ?? 0.7) * (1 - f.k) * (1 - f.k);
       }
     },
     start() {
-      gates.forEach(g => { g.passed = false; g.missed = false; });
+      gates.forEach(g => { g.passed = false; g.missed = false; g.doneMat?.dispose(); g.doneMat = null; g.doneT = 0; g.mesh.visible = true; });
       st.phase = 'countdown'; st.countdown = 3; st.idx = 0; st.t = 0;
       speedTracker.reset();
       st.time = null; st.topSpeed = 0; st.avgSpeed = 0; st.rec = []; st.splits = []; st.lastSplit = null;
@@ -317,7 +380,15 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
             blending: THREE.AdditiveBlending, depthWrite: false }));
         fm.position.copy(g.center); fm.quaternion.copy(g.mesh.quaternion);
         grp.add(fm);
-        flashes.push({ m: fm, k: 0 });
+        flashes.push({ m: fm, k: 0, grow: v2 ? 1.6 : 1.1, o: v2 ? 0.85 : 0.7 });
+        if (v2) {                                      // destello al cruzar: resplandor blanco en el aro
+          const burst = glowSprite(0xffffff);
+          burst.position.copy(g.center); burst.scale.setScalar(GATE_R * 2.4);
+          burst.material.depthTest = true;
+          grp.add(burst);
+          flashes.push({ m: burst, k: 0, grow: 0.9, o: 0.8, base: GATE_R * 2.4 });
+        }
+        if (v2) { g.doneMat = matDone.clone(); g.doneT = 0; }
         st.idx++;
         paint();
         if (st.idx >= gates.length) {
@@ -335,7 +406,7 @@ export function createGateRush({ scene, trackPts, world, heightAt, difficulty = 
       grp.traverse(disposeObject);
       flashes.length = 0;
       ringGeo.dispose(); trimGeo.dispose(); matNext.dispose(); matIdle.dispose(); matDone.dispose();
-      pathGeo.dispose(); pathMat.dispose();
+      pathGeo.dispose(); pathMat.dispose(); gates.forEach(g => g.doneMat?.dispose());
     },
   };
 }

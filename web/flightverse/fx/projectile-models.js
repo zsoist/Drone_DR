@@ -55,17 +55,19 @@ export function buildRocketGeometry(THREE) {
     [0.0, -0.5], [0.07, -0.5], [0.055, -0.44], [0.09, -0.4], [0.09, 0.2], [0.085, 0.26],
     [0.07, 0.36], [0.045, 0.45], [0.0, 0.5],
   ], 12);
+  body.scale(1.35, 1.35, 1);                             // chunkier: readable at 40-120 m on a phone
   paintBy(THREE, body, (x, y, z) => {
     if (z < -0.39) return 0x25272b;                      // nozzle
-    if (z > 0.05 && z < 0.13) return 0xd9472a;           // warning band
-    if (z > 0.34) return 0xc8391f;                       // nose
-    return 0xc9ced6;                                     // airframe
+    if (z > 0.05 && z < 0.15) return 0xff6a1a;           // warning band (bright)
+    if (z > -0.2 && z < -0.12) return 0x22262d;          // dark band: silhouette contrast on a pale sky
+    if (z > 0.34) return 0xe0301a;                       // nose
+    return 0xf1f3f7;                                     // airframe
   });
   const fins = [];
   for (let i = 0; i < 4; i += 1) {
-    const f = box(THREE, 0.012, 0.17, 0.2, 0, 0.13, -0.36);
+    const f = box(THREE, 0.016, 0.22, 0.24, 0, 0.16, -0.36);
     f.rotateZ(i * Math.PI / 2);
-    fins.push(paintBy(THREE, f, () => 0x50565e));
+    fins.push(paintBy(THREE, f, () => 0x2a2f38));
   }
   return merge(THREE, [body, ...fins]);
 }
@@ -86,7 +88,7 @@ export function buildBombGeometry(THREE) {
 }
 
 /** Visual length (m) of each registry projectile. */
-export const PROJECTILE_LENGTH = Object.freeze({ s: 1.3, m: 1.7, l: 2.4, vx: 1.9, sw: 0.95, tb: 2.3 });
+export const PROJECTILE_LENGTH = Object.freeze({ s: 1.5, m: 1.9, l: 2.6, vx: 2.1, sw: 1.2, tb: 2.3 });
 
 export function createProjectileModels(THREE) {
   const rocketGeo = buildRocketGeometry(THREE);

@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import base64
+import fcntl
 import hashlib
 import json
 import os
@@ -35,7 +36,7 @@ from paths import VAULT
 
 CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 QA_DIR = VAULT / "qa"
-DEFAULT_BASE_URL = "http://127.0.0.1:8790"
+DEFAULT_BASE_URL = os.environ.get("AEROBRAIN_BASE_URL", "http://127.0.0.1:8790")   # preview worktrees set it
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
@@ -181,14 +182,80 @@ class CDP:
 
 PROFILE_PREFIX = "aerobrain-chrome-"
 STARTUP_DEADLINE_S = 12
+# Headless Chrome fills RAM, and swap files live on the small internal disk. Below ~12 GB free
+# the Mac panics (Jetsam low-swap, 2026-10-08/09). So: profiles on the SSD, one Chrome at a
+# time on the whole Mac, and no launch while memory or disk is low.
+SSD_TMP = Path(os.environ.get("AEROBRAIN_BROWSER_TMP", "/Volumes/SSD/tmp/agents/aerobrain"))
+MIN_FREE_MEM_PCT = 30
+MIN_FREE_DISK_GB = 15
+RESOURCE_WAIT_S = 600
+_LOCK = {"fd": None, "depth": 0}
+
+
+def _profile_root() -> str | None:
+    """SSD scratch dir for profiles and the lock; None = system temp (SSD not mounted)."""
+    try:
+        if SSD_TMP.parent.parent.is_dir():                 # /Volumes/SSD/tmp exists → SSD mounted
+            SSD_TMP.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return str(SSD_TMP) if SSD_TMP.is_dir() else None
+
+
+def _resources_ok() -> tuple[bool, str]:
+    try:
+        mem = int(subprocess.run(["sysctl", "-n", "kern.memorystatus_level"], capture_output=True,
+                                 text=True, timeout=5).stdout.strip())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        mem = 100
+    disk = shutil.disk_usage("/").free / 2**30
+    return mem >= MIN_FREE_MEM_PCT and disk >= MIN_FREE_DISK_GB, f"mem free {mem}% · disk free {disk:.1f} GB"
+
+
+def _acquire_browser_slot():
+    """Machine-wide lock (flock): one headless Chrome at a time across all gates and agents.
+    Re-entrant inside one process. Then wait until memory and internal disk are safe."""
+    if _LOCK["depth"] == 0:
+        root = _profile_root() or tempfile.gettempdir()
+        fd = os.open(os.path.join(root, "browser-gate.lock"), os.O_CREAT | os.O_RDWR, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        _LOCK["fd"] = fd
+        deadline = time.time() + RESOURCE_WAIT_S
+        ok, why = _resources_ok()
+        while not ok and time.time() < deadline:
+            time.sleep(10)
+            ok, why = _resources_ok()
+        if not ok:
+            _LOCK["depth"] = 1
+            _release_browser_slot()
+            raise RuntimeError(f"browser gate refused: low resources ({why})")
+    _LOCK["depth"] += 1
+
+
+def _release_browser_slot():
+    if _LOCK["depth"] <= 0:
+        return
+    _LOCK["depth"] -= 1
+    if _LOCK["depth"] == 0 and _LOCK["fd"] is not None:
+        fcntl.flock(_LOCK["fd"], fcntl.LOCK_UN)
+        os.close(_LOCK["fd"])
+        _LOCK["fd"] = None
 
 
 class _Profile:
     """Perfil temporal de Chrome. cleanup() es idempotente y NUNCA falla (la limpieza jamás
-    decide el estado de un job — el rmtree corre en race con Chrome escribiendo el perfil)."""
+    decide el estado de un job — el rmtree corre en race con Chrome escribiendo el perfil).
+    The profile holds the machine-wide browser slot from creation until cleanup()."""
 
     def __init__(self):
-        self.name = tempfile.mkdtemp(prefix=PROFILE_PREFIX)
+        _acquire_browser_slot()
+        self._slot = True
+        try:
+            self.name = tempfile.mkdtemp(prefix=PROFILE_PREFIX, dir=_profile_root())
+        except BaseException:
+            self._slot = False
+            _release_browser_slot()
+            raise
 
     def cleanup(self):
         for _ in range(2):
@@ -196,6 +263,9 @@ class _Profile:
             if not os.path.exists(self.name):
                 break
             time.sleep(0.3)
+        if self._slot:
+            self._slot = False
+            _release_browser_slot()
 
 
 def _signal_group(pgid: int, sig: int) -> bool:
@@ -287,9 +357,10 @@ def reap_stale_chrome(rows=None, tmp_root: str | None = None, kill: bool = True)
     """Mata árboles de Chrome headless HUÉRFANOS (ppid 1) de gates anteriores cuyo
     --user-data-dir cuelga del prefijo temporal de este módulo. Jamás toca el Chrome real del
     usuario (perfil propio, no headless, o con padre vivo). Devuelve los pids raíz encontrados."""
-    root = os.path.realpath(tmp_root or tempfile.gettempdir())
-    markers = tuple(f"--user-data-dir={base}{os.sep}{PROFILE_PREFIX}"
-                    for base in {root, tmp_root or tempfile.gettempdir()})
+    # SSD profile root + system temp (profiles from before 2026-10-11 lived there)
+    bases = [tmp_root] if tmp_root else [b for b in (_profile_root(), tempfile.gettempdir()) if b]
+    bases = sorted({x for b in bases for x in (b, os.path.realpath(b))})
+    markers = tuple(f"--user-data-dir={base}{os.sep}{PROFILE_PREFIX}" for base in bases)
     try:
         rows = rows if rows is not None else _ps_table()
     except (OSError, subprocess.SubprocessError):
@@ -321,12 +392,13 @@ def reap_stale_chrome(rows=None, tmp_root: str | None = None, kill: bool = True)
     if kill:
         # perfiles temporales viejos que ningún proceso usa (fugas de corridas muertas)
         in_use = "\n".join(cmd for _p, _pp, _pg, cmd in rows)
-        try:
-            for d in Path(root).glob(PROFILE_PREFIX + "*"):
-                if d.is_dir() and str(d) not in in_use and time.time() - d.stat().st_mtime > 3600:
-                    shutil.rmtree(d, ignore_errors=True)
-        except OSError:
-            pass
+        for base in bases:
+            try:
+                for d in Path(base).glob(PROFILE_PREFIX + "*"):
+                    if d.is_dir() and str(d) not in in_use and time.time() - d.stat().st_mtime > 3600:
+                        shutil.rmtree(d, ignore_errors=True)
+            except OSError:
+                pass
     return [pid for pid, _pg, _cmd in roots]
 
 

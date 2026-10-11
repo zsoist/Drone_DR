@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=370';
+import * as THREE from '/flightverse/three.js?v=371';
 import {
   capWaveQueue,
   createBurstSchedule,
@@ -33,8 +33,10 @@ import {
   COMBO_WINDOW_S,
   COMBO_MAX,
   interleaveQueue,
-} from '/flightverse/invasion-policy.js?v=370';
-import { applyDetail, prewarmDetailTextures, detailClassesOf } from '/flightverse/enemy-materials.js?v=370';
+} from '/flightverse/invasion-policy.js?v=371';
+import {
+  applyDetail, prewarmDetailTextures, detailClassesOf, upgradeMaterial, addOutline, addGlows, tickEnemyMaterials,
+} from '/flightverse/enemy-materials.js?v=371';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -163,39 +165,29 @@ const SPECS = Object.fromEntries(Object.keys(VISUAL).map(k => [k, { ...ENEMY_COM
 const DIFFICULTY = DIFFICULTY_TUNING;
 const AI_STATES = ['spawn', 'pursue', 'strafe', 'orbit', 'attack', 'evade', 'recover', 'dead'];
 
-// ── v2: silueta (rim Fresnel), tinte hostil y glow de telégrafo ──
-const RIM_COLOR = new THREE.Color(0xFFB25A);
-const HOSTILE_TINT = new THREE.Color(0xE0653A);
-function rimifyMaterial(m, { tint = 0.15, lift = 1 } = {}) {
-  if (!m || m.userData?.fvRim) return;
-  if (!(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
-  m.userData = m.userData || {};
-  m.userData.fvRim = true;
-  if (m.color) {
-    if (lift !== 1) m.color.multiplyScalar(lift);
-    if (tint > 0) m.color.lerp(HOSTILE_TINT, tint);
-  }
-  const prev = m.onBeforeCompile;
-  m.onBeforeCompile = (shader, renderer) => {
-    prev?.(shader, renderer);
-    shader.uniforms.fvRimColor = { value: RIM_COLOR };
-    shader.uniforms.fvRimK = { value: 0.35 };
-    shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', 'uniform vec3 fvRimColor;\nuniform float fvRimK;\nvoid main() {')
-      .replace('#include <dithering_fragment>',
-        'float fvR = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0), 2.2);\n'
-        + 'gl_FragColor.rgb += fvRimColor * fvR * fvRimK + diffuseColor.rgb * 0.12;\n#include <dithering_fragment>');
-  };
-  m.customProgramCacheKey = () => 'fv-rim';
-  m.needsUpdate = true;
-}
-/** Material por tipo: todos con rim; Gigante además se aclara (el GLB real es muy oscuro) y se tiñe 15 % hostil. */
+// ── v2: legibilidad sobre fotogrametría: rim hostil fuerte + contorno de casco + reflejo falso + brillos ──
+// Por tipo: terrestres (y Gigante) llevan contorno grueso y rim alto; aéreos rim medio (el cielo ya contrasta).
+const STYLE = {
+  zombie:  { lift: 1.3,  tint: 0.22, rimK: 0.85, outline: 0xFF4A2E, k: 0.0036 },
+  arquero: { lift: 1.3,  tint: 0.22, rimK: 0.85, outline: 0xFF4A2E, k: 0.0036 },
+  soldado: { lift: 1.3,  tint: 0.22, rimK: 0.85, outline: 0xFF4A2E, k: 0.0036 },
+  gigante: { lift: 1.7,  tint: 0.38, rimK: 1.05, outline: 0xFF3A1E, k: 0.0054 },
+  ufo:     { lift: 1.1,  tint: 0.06, rimK: 0.55, outline: 0xFF5A3C, k: 0.0038, envK: 1.6 },
+  avion:   { lift: 1.15, tint: 0.1,  rimK: 0.5,  outline: 0xFF5A3C, k: 0.0038, envK: 1.3 },
+  dragon:  { lift: 0.95, tint: 0.0, rimK: 0.22, outline: 0xE8481F, k: 0.0020, envK: 1.0 },
+};
+/** Material por tipo (ver STYLE). Se aplica UNA vez al árbol cacheado; los clones comparten materiales y cascos. */
 export function styleEnemyTree(root, type) {
-  const lift = type === 'gigante' ? 1.55 : (type === 'zombie' || type === 'arquero' ? 1.25 : 1.15);
+  const st = STYLE[type] || STYLE.zombie;
   root.traverse(o => {
     if (!o.isMesh) return;
-    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) { applyDetail(m); rimifyMaterial(m, { tint: 0.15, lift }); }
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      applyDetail(m);
+      upgradeMaterial(m, { tint: st.tint, lift: st.lift, rimK: st.rimK, envK: st.envK ?? 0.5 });
+    }
   });
+  addOutline(root, { color: st.outline, k: st.k });
+  addGlows(root, type);
 }
 let _glowTex = null;
 function telegraphGlow() {
@@ -213,6 +205,40 @@ function telegraphGlow() {
   sp.renderOrder = 20; sp.visible = false;
   return sp;
 }
+
+// ── marcador 3D, calcomanía de contacto, polvo, destello de impacto ──
+const _tex = {};
+function canvasTex(key, size, draw) {
+  if (_tex[key]) return _tex[key];
+  const cv = document.createElement('canvas'); cv.width = cv.height = size;
+  draw(cv.getContext('2d'), size);
+  _tex[key] = new THREE.CanvasTexture(cv);
+  _tex[key].userData = { shared: true };
+  return _tex[key];
+}
+const markerTexture = () => canvasTex('marker', 64, (c, n) => {            // rombo hostil con filo oscuro + chevron
+  c.translate(n / 2, n / 2);
+  c.beginPath(); c.moveTo(0, -26); c.lineTo(20, 0); c.lineTo(0, 26); c.lineTo(-20, 0); c.closePath();
+  c.fillStyle = '#FF4A2E'; c.fill();
+  c.lineWidth = 5; c.strokeStyle = 'rgba(10,8,8,.9)'; c.stroke();
+  c.lineWidth = 3; c.strokeStyle = '#FFE2B8'; c.stroke();
+  c.beginPath(); c.moveTo(-8, -3); c.lineTo(0, 7); c.lineTo(8, -3); c.lineWidth = 4; c.strokeStyle = '#fff'; c.stroke();
+});
+const decalTexture = ground => canvasTex(ground ? 'decal-g' : 'decal-a', 128, (c, n) => {
+  const g = c.createRadialGradient(n / 2, n / 2, 4, n / 2, n / 2, n / 2);
+  g.addColorStop(0, 'rgba(0,0,0,.62)'); g.addColorStop(0.55, 'rgba(0,0,0,.34)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g; c.fillRect(0, 0, n, n);
+  if (ground) {                                                              // anillo hostil tenue: la unidad se "ancla" al suelo
+    c.lineWidth = 5; c.strokeStyle = 'rgba(255,80,50,.75)';
+    c.beginPath(); c.arc(n / 2, n / 2, n * 0.40, 0, 6.2832); c.stroke();
+  }
+});
+const puffTexture = () => canvasTex('puff', 64, (c, n) => {
+  const g = c.createRadialGradient(n / 2, n / 2, 2, n / 2, n / 2, n / 2);
+  g.addColorStop(0, 'rgba(190,172,146,.75)'); g.addColorStop(0.6, 'rgba(170,152,128,.35)'); g.addColorStop(1, 'rgba(160,145,120,0)');
+  c.fillStyle = g; c.fillRect(0, 0, n, n);
+});
+let _decalGeo = null;
 
 /** Cede el hilo principal (scheduler.yield si existe; si no un macrotask). Evita tareas largas al cargar enemigos. */
 export function yieldToMain() {
@@ -237,6 +263,8 @@ export function createInvasion(scene, {
   onHit,
   fx,
   deviceTier = 'medium',
+  camera = null,
+  getViewDir = null,
 } = {}) {
   const group = new THREE.Group(); group.name = 'fv-invasion'; scene.add(group);
   const E = [], shots = [], bursts = [];
@@ -255,6 +283,47 @@ export function createInvasion(scene, {
   let simTime = 0;
   let idSeq = 0;
   const _tmpA = new THREE.Vector3();
+  const pxScale = px => {                       // escala de Sprite SIN atenuación que rinde `px` píxeles CSS de alto
+    const h = (typeof innerHeight === 'number' && innerHeight > 0) ? innerHeight : 800;
+    return (px / h) * 2 * Math.tan(((camera?.fov || 60) * Math.PI / 180) / 2);
+  };
+  // polvo: reserva compartida de sprites (máx. 24) — pisadas del Gigante, aparición y muerte de terrestres
+  const dust = [];
+  function emitDust(x, y, z, n = 3, size = 2.4, spread = 1.4) {
+    for (let i = 0; i < n; i++) {
+      let d = dust.find(q => !q.on);
+      if (!d) {
+        if (dust.length >= 24) return;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTexture(), transparent: true, depthWrite: false, opacity: 0 }));
+        sp.renderOrder = 3; group.add(sp);
+        d = { sp, on: false, t: 0, dur: 1, vy: 0, s0: 1, s1: 2 };
+        dust.push(d);
+      }
+      d.on = true; d.t = 0; d.dur = 0.7 + Math.random() * 0.5; d.vy = 0.8 + Math.random() * 0.9;
+      d.s0 = size * (0.45 + Math.random() * 0.25); d.s1 = size * (1.1 + Math.random() * 0.5);
+      d.sp.position.set(x + (Math.random() - 0.5) * spread * 2, y + 0.3, z + (Math.random() - 0.5) * spread * 2);
+      d.sp.visible = true;
+    }
+  }
+  function updateDust(step) {
+    for (const d of dust) {
+      if (!d.on) continue;
+      d.t += step;
+      const k = d.t / d.dur;
+      if (k >= 1) { d.on = false; d.sp.visible = false; continue; }
+      d.sp.position.y += d.vy * step;
+      d.sp.scale.setScalar(d.s0 + (d.s1 - d.s0) * k);
+      d.sp.material.opacity = 0.55 * (1 - k);
+    }
+  }
+  const beamAlpha = (() => {
+    let t = null;
+    return () => t || (t = canvasTex('beam-alpha', 64, (c, n) => {
+      const g = c.createLinearGradient(0, 0, 0, n);
+      g.addColorStop(0, '#000'); g.addColorStop(0.5, '#555'); g.addColorStop(1, '#fff');
+      c.fillStyle = g; c.fillRect(0, 0, n, n);
+    }));
+  })();
   const S = {
     on: false,
     phase: 'idle',
@@ -291,12 +360,12 @@ export function createInvasion(scene, {
 
   function disposeTree(root) {
     root?.traverse?.(object => {
-      object.geometry?.dispose?.();
+      if (!object.userData?.fvHull) object.geometry?.dispose?.();        // el casco comparte geometría con la malla
       const materials = Array.isArray(object.material) ? object.material : [object.material];
       for (const material of materials) {
-        if (!material) continue;
+        if (!material || material.userData?.shared) continue;           // materiales compartidos (cascos, brillos): no se liberan
         for (const value of Object.values(material)) {
-          if (value?.isTexture) value.dispose();
+          if (value?.isTexture && !value.userData?.shared) value.dispose();
         }
         material.dispose?.();
       }
@@ -305,7 +374,7 @@ export function createInvasion(scene, {
 
   async function loadCatalog() {
     if (!catalogPromise) {
-      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=370', { cache: 'no-store' })
+      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=371', { cache: 'no-store' })
         .then(response => {
           if (!response.ok) throw new Error(`enemy catalog ${response.status}`);
           return response.json();
@@ -321,7 +390,7 @@ export function createInvasion(scene, {
   function fetchBytes(file) {
     let p = bytesCache.get(file);
     if (!p) {
-      p = fetch(`/assets/enemies/${file}?v=370`).then(response => {
+      p = fetch(`/assets/enemies/${file}?v=371`).then(response => {
         if (!response.ok) throw new Error(`enemy glb ${response.status}`);
         return response.arrayBuffer();
       });
@@ -341,8 +410,8 @@ export function createInvasion(scene, {
       try {
         await whenIdle();
         await loadCatalog();
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=370'));
-        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=370');
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=371'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=371');
         if (v2) await prewarmDetailTextures(whenIdle);
         for (const type of wanted) {
           for (const lod of ['lod1', 'lod2']) {
@@ -384,8 +453,8 @@ export function createInvasion(scene, {
         await loadCatalog();
         const file = modelFile(type, lod);
         if (!file) throw new Error(`catalog missing ${key}`);
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=370'));
-        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=370');
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=371'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=371');
         const bytes = await fetchBytes(file);                       // la red va en paralelo; sólo el parseo se serializa
         const lane = parseLane.then(async () => {
           await yieldToMain();
@@ -459,8 +528,10 @@ export function createInvasion(scene, {
       const root = SkelUtils.clone(cached.scene);
       root.traverse(object => { object.castShadow = true; });
       const { mixer, act } = makeActions(root, cached.clips, spec);
-      const size = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
+      const bb = new THREE.Box3().setFromObject(root);
+      const size = bb.getSize(new THREE.Vector3());
       return {
+        height: bb.max.y, bottom: bb.min.y, foot: Math.max(size.x, size.z),
         root,
         anim: {},
         mixer,
@@ -474,7 +545,9 @@ export function createInvasion(scene, {
     const built = spec.build();
     if (v2) styleEnemyTree(built.g, type);
     built.g.traverse(object => { object.castShadow = true; });
+    const pbb = new THREE.Box3().setFromObject(built.g);
     return {
+      height: pbb.max.y, bottom: pbb.min.y, foot: Math.max(pbb.max.x - pbb.min.x, pbb.max.z - pbb.min.z),
       root: built.g,
       anim: built.anim,
       mixer: null,
@@ -515,20 +588,23 @@ export function createInvasion(scene, {
     e.yOff = visual.yOff;
     e.radius = visual.radius;
     e.radiusSq = visual.radius * visual.radius;
+    e.height = visual.height; e.foot = visual.foot;
+    if (e.marker) e.marker.position.y = e.height + 0.8 + (e.spec.fly ? 0.6 : 0);
     e.g.add(visual.root);
     return true;
   }
 
   /** Punto de nacimiento válido. v2: anillo ≥ 80 m (FAIR.spawnMinRadius), nunca dentro de geometría sólida. */
-  function findSpawn(spec, around, rMin, rMax, tries = 12) {
+  function findSpawn(spec, around, rMin, rMax, tries = 12, cone = null) {
     for (let k = 0; k < tries; k++) {
-      const a = Math.random() * 6.283;
+      const a = cone ? cone.a + (Math.random() * 2 - 1) * cone.half : Math.random() * 6.283;
       const r = rMin + Math.random() * (rMax - rMin);
       const x = around.x + Math.cos(a) * r, z = around.z + Math.sin(a) * r;
       let y;
       if (spec.fly) {
         const g0 = heightAt(x, z);
-        y = (g0 ?? around.y) + 25 + Math.random() * 20;
+        y = cone ? Math.max((g0 ?? around.y - 30) + 14, around.y + (Math.random() * 16 - 6))   // intro: a la altura de la vista
+          : (g0 ?? around.y) + 25 + Math.random() * 20;
         if (v2 && collision) {
           const cp = { x, y, z };
           if (collision.closest?.(cp, 6)?.kind === 'structure') continue;
@@ -538,6 +614,12 @@ export function createInvasion(scene, {
         if (gy == null) continue;
         y = gy;
       }
+      if (cone?.view && camera) {                         // debe proyectarse DENTRO de la pantalla (los tejados de la fotogrametría cuentan como suelo)
+        _tmpA.set(x, y + (spec.fly ? 0 : 1.2), z).project(camera);
+        if (!(Math.abs(_tmpA.x) < 0.78 && _tmpA.y > -0.8 && _tmpA.y < 0.72 && _tmpA.z < 1)) continue;
+      }
+      if (cone && !cone.noLos && collision?.castSegment && !hasLineOfSight((a0, b0, rr) => collision.castSegment(a0, b0, rr),
+        { x, y: y + (spec.fly ? 0 : 2), z }, around)) continue;       // intro: que no nazca tras un edificio
       return { x, y, z, r };
     }
     return null;
@@ -547,7 +629,21 @@ export function createInvasion(scene, {
     const spec = SPECS[type];
     if (!spec || E.length >= runtimeCaps.enemies) return false;
     {
-      const found = v2
+      let found = null;
+      if (v2 && S.wave === 1 && getViewDir) {            // primera oleada: entra A LA VISTA (60–90 m, cono frontal de la cámara)
+        const vd = getViewDir();
+        const ca = vd ? Math.atan2(vd.z, vd.x) : 0;
+        if (vd) {
+          // 1) cono ±31° en pantalla + línea de vista; 2) ±55°; 3) ±55° sin línea de vista; 4) hemisferio frontal (último recurso)
+          const R0 = FAIR.introSpawnMin, R1 = FAIR.introSpawnMax;
+          found = findSpawn(spec, around, R0, R1, 40, { a: ca, half: FAIR.introConeHalfRad, view: true })
+            || findSpawn(spec, around, R0, R1 + 10, 40, { a: ca, half: 0.95, view: true })
+            || findSpawn(spec, around, R0, R1 + 10, 40, { a: ca, half: 0.95, view: true, noLos: true })
+            || findSpawn(spec, around, R0, R1 + 25, 30, { a: ca, half: 1.4, noLos: true });
+        }
+        if (found) S.telemetry.introSpawns = (S.telemetry.introSpawns || 0) + 1;
+      }
+      if (!found) found = v2
         ? findSpawn(spec, around, FAIR.spawnMinRadius, FAIR.spawnMinRadius + (spec.fly ? 60 : 30))
         : findSpawn(spec, around, spec.fly ? 60 : 14, spec.fly ? 120 : 44);
       if (!found) return false;
@@ -600,9 +696,111 @@ export function createInvasion(scene, {
         S.telemetry.fallbackTotal++;
         S.telemetry.fallbackByType[type] = (S.telemetry.fallbackByType[type] || 0) + 1;
       }
+      e.height = visual.height; e.foot = visual.foot; e._hpPrev = e.hp;
+      e.revealT = 0; e.flashA = 0; e.flashRate = 4.5; e.flashScale = 1; e._stepK = 0;
+      if (v2) {
+        attachExtras(e, visual);
+        e.g.scale.setScalar(0.3);
+        e.flashA = 1; e.flashRate = 1.3; e.flashScale = 2.4;                 // destello de aparición
+        if (!spec.fly) emitDust(x, y, z, 5, Math.max(2.4, (e.foot || 1.5) * 1.6), 1.6);
+      }
       E.push(e);
       S.alive++;
       return true;
+    }
+  }
+
+  /** Marcador 3D sobre la cabeza (px constantes), calcomanía de contacto/sombra, destello de golpe y rayo del OVNI. */
+  function attachExtras(e, visual) {
+    const boss = e.type === 'dragon' || e.type === 'gigante';
+    e.markerPx = boss ? 22 : 16;
+    e.marker = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: markerTexture(), transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false, opacity: 0.95 }));
+    e.marker.renderOrder = 30;
+    e.marker.position.y = (e.height || 2) + 0.8 + (e.spec.fly ? 0.6 : 0);
+    e.g.add(e.marker);
+    if (!_decalGeo) _decalGeo = new THREE.PlaneGeometry(1, 1);
+    e.decal = new THREE.Mesh(_decalGeo, new THREE.MeshBasicMaterial({
+      map: decalTexture(!e.spec.fly), transparent: true, depthWrite: false, opacity: e.spec.fly ? 0.4 : 0.85,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    e.decal.rotation.x = -Math.PI / 2; e.decal.renderOrder = 2;
+    e.decal.userData.baseScale = e.spec.fly ? Math.max(6, (e.foot || 3) * 2.4) : Math.min(16, Math.max(2.6, (e.foot || 1.5) * 1.9));
+    if (e.spec.fly) group.add(e.decal); else { e.decal.position.y = 0.14; e.g.add(e.decal); }
+    e.flash = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: _glowTex || (telegraphGlow(), _glowTex), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xffd9a0, opacity: 0 }));
+    e.flash.visible = false; e.flash.renderOrder = 19;
+    e.g.add(e.flash);
+    if (e.type === 'ufo') {
+      const half = Math.max(1.8, (visual.foot || 3.5) / 2);
+      e.beamHalf = half; e.beamBottom = visual.bottom ?? -0.8;
+      e.beam = new THREE.Mesh(new THREE.CylinderGeometry(half * 0.28, half * 1.15, 1, 16, 1, true), new THREE.MeshBasicMaterial({
+        color: 0x5dffd6, transparent: true, opacity: 0.15, alphaMap: beamAlpha(), blending: THREE.AdditiveBlending,
+        depthWrite: false, side: THREE.DoubleSide }));
+      e.beam.renderOrder = 4; e.beam.frustumCulled = false;
+      group.add(e.beam);
+    }
+  }
+  function detachExtras(e) {
+    for (const k of ['marker', 'flash']) { if (e[k]) { e.g.remove(e[k]); e[k].material.dispose(); e[k] = null; } }
+    if (e.decal) { e.decal.parent?.remove(e.decal); e.decal.material.dispose(); e.decal = null; }
+    if (e.beam) { group.remove(e.beam); e.beam.geometry.dispose(); e.beam.material.dispose(); e.beam = null; }
+  }
+  /** Por frame: aparición, marcador, calcomanía, destello, rayo. p = posición del grupo. */
+  function updateExtras(e, step, p, dronePos) {
+    // aparición: escala 0.3→1 con rebote suave
+    let sc = 1;
+    if (e.revealT < FAIR.revealS) {
+      e.revealT += step;
+      const k = Math.min(1, e.revealT / FAIR.revealS), ease = 1 - Math.pow(1 - k, 3);
+      sc = 0.3 + 0.7 * ease * (1 + 0.1 * Math.sin(k * Math.PI));
+    }
+    // golpe: el HP bajó → destello + "punch" de escala
+    if (e.hp < e._hpPrev - 0.01) { e.flashA = 1; e.flashRate = 4.5; e.flashScale = 1; e.punch = 0.09; }
+    e._hpPrev = e.hp;
+    if (e.punch > 0) { sc *= 1 + e.punch; e.punch = Math.max(0, e.punch - step * 0.5); }
+    if (e.g.scale.x !== sc) e.g.scale.setScalar(sc);
+    const dist = e.g.position.distanceTo(dronePos);
+    if (e.flash) {
+      e.flashA = Math.max(0, e.flashA - step * e.flashRate);
+      e.flash.visible = e.flashA > 0.01;
+      if (e.flash.visible) {
+        e.flash.material.opacity = e.flashA * 0.95;
+        e.flash.position.y = (e.yOff ?? e.spec.y);
+        e.flash.scale.setScalar(Math.max(e.radius * 1.25, 2.6) * e.flashScale / Math.max(0.3, sc));
+      }
+    }
+    if (e.marker) {
+      const tele = !!e.tele;
+      const pulse = tele ? 1 + 0.25 * Math.sin(simTime * 18) : 1;
+      e.marker.scale.setScalar(pxScale(e.markerPx * pulse) / Math.max(0.3, sc));
+      e.marker.material.opacity = (dist < 16 ? 0.3 : 0.95) * (e.revealT < 0.3 ? e.revealT / 0.3 : 1);
+      e.marker.material.color.setHex(tele ? 0xFFF08A : 0xFFFFFF);
+      e.marker.position.y = ((e.height || 2) + 0.8 + (e.spec.fly ? 0.6 : 0)) + (tele ? 0.25 : 0);
+    }
+    if (e.decal) {
+      const base = e.decal.userData.baseScale;
+      if (e.spec.fly) {
+        const gy = heightAt(p.x, p.z);
+        e.decal.visible = gy != null;
+        if (gy != null) {
+          const alt = Math.max(0, p.y - gy);
+          e.decal.position.set(p.x, gy + 0.25, p.z);
+          e.decal.scale.setScalar(base * (1 + alt / 70));
+          e.decal.material.opacity = Math.max(0.1, 0.42 - alt / 160) * Math.min(1, e.revealT / 0.6);
+        }
+      } else e.decal.scale.setScalar(base / Math.max(0.3, sc));
+    }
+    if (e.beam) {
+      const gy = heightAt(p.x, p.z);
+      const len = Math.max(4, Math.min(18, (p.y - (gy ?? p.y - 14)) * 0.9));
+      e.beam.scale.set(1, len, 1);
+      e.beam.position.set(p.x, p.y + (e.beamBottom ?? -0.8) * sc - len / 2, p.z);
+      e.beam.material.opacity = (e.tele ? 0.45 + 0.2 * Math.sin(simTime * 16) : 0.16 + 0.07 * Math.sin(simTime * 4 + e.phase)) * Math.min(1, e.revealT / 0.6);
+    }
+    // pisadas del Gigante: sacudida de polvo
+    if (e.type === 'gigante' && e.state !== 'spawn' && e.state !== 'attack' && dist < 170) {
+      const sk = Math.floor(e.phase / Math.PI);
+      if (sk !== e._stepK) { e._stepK = sk; emitDust(p.x, p.y, p.z, 2, 5, 2.8); }
     }
   }
 
@@ -697,6 +895,7 @@ export function createInvasion(scene, {
     bursts.splice(0, bursts.length, ...bursts.filter(job => job.e !== e));
     releaseVisual(e);
     if (e.glow) { e.g.remove(e.glow); e.glow.material.dispose(); e.glow = null; }
+    detachExtras(e);
     group.remove(e.g);
     E.splice(index, 1);
     S.alive = Math.max(0, S.alive - 1);
@@ -709,6 +908,7 @@ export function createInvasion(scene, {
     S.queue.length = 0;
     S.alive = 0;
     S.spawnAcc = 0;
+    for (const d of dust) { d.on = false; d.sp.visible = false; }
     refreshTelemetry();
   }
 
@@ -819,6 +1019,7 @@ export function createInvasion(scene, {
       if (!S.on) return;
       const step = Math.min(0.05, Math.max(0, dt));
       simTime += step;
+      if (v2) { tickEnemyMaterials(simTime); updateDust(step); }
       if (S.combo && simTime - (S.lastKillAt || 0) > COMBO_WINDOW_S) S.combo = 0;
       if (v2) {
         // Fases v2: loading → countdown (intro de oleada) → running → clear (outro) → countdown … → victory
@@ -915,6 +1116,7 @@ export function createInvasion(scene, {
         e.phase += step * (e.spec.fly ? 2 : e.speed * 3.2);
         e.mixer?.update(step);
         e.center.set(p.x, p.y + (e.yOff ?? e.spec.y), p.z);
+        if (v2 && e.marker) updateExtras(e, step, p, dronePos);
 
         if (e.g.userData.dead) {
           if (e.state !== 'dead') {
@@ -928,9 +1130,13 @@ export function createInvasion(scene, {
               e._deathT = 0.15;
             }
           }
+          if (e.marker?.visible) e.marker.visible = false;
+          if (e.decal && e.decal.material.opacity > 0) e.decal.material.opacity = Math.max(0, e.decal.material.opacity - step * 1.5);
+          if (e.beam) e.beam.visible = false;
           e._deathT -= step;
           if (e._deathT <= 0) {
             if (!e.blood) fx?.explode?.(e.center.clone(), e.type === 'dragon' ? 1.6 : 0.9);
+            if (v2 && !e.spec.fly) emitDust(p.x, p.y, p.z, e.type === 'gigante' ? 6 : 3, e.type === 'gigante' ? 7 : 2.6, 1.4);
             const chained = S.lastKillAt != null && simTime - S.lastKillAt <= COMBO_WINDOW_S;
             S.combo = chained ? Math.min(COMBO_MAX, S.combo + 1) : 1;
             S.lastKillAt = simTime;

@@ -6,16 +6,16 @@
 // Con ?fv=2: inicio validado contra colisión (≥ 12 m de muros, 30 m libres al frente),
 // par por mundo/dificultad, medallas bronce/plata/oro, fallos, penalización de +3 s por
 // respawn, récords top-10 por (mundo, modo, dificultad) y fantasma de la mejor run.
-import { MODES, STEP } from '/flightverse/runtime.js?v=370';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=370';
+import { MODES, STEP } from '/flightverse/runtime.js?v=371';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=371';
 import {
   addRecord, getTop, bestMedal, encodeGhost, ghostKey, saveGhostIfBest, loadGhost, timeText,
-} from '/flightverse/modes/rules.js?v=370';
-import { decorateGateRushResult } from '/flightverse/modes/result-cards.js?v=370';
+} from '/flightverse/modes/rules.js?v=371';
+import { decorateGateRushResult } from '/flightverse/modes/result-cards.js?v=371';
 
 const GHOST_PREF = 'ab_fv_gr_ghost';
 
-export function createGateRushMode(ctx, events) {
+export function createGateRushMode(ctx, events, hooks = {}) {
   const {
     scene, terrain, audio, report, AT, CID, state: S, actions: A, bus, W,
   } = ctx;
@@ -53,6 +53,7 @@ export function createGateRushMode(ctx, events) {
   const startReto = (diff) => {
     const drone = ctx.drone;
     if (!diff) { ctx.ui.overlay.toggle('difficulty'); return; }   // sin dif → picker
+    hooks.beforeStart?.('gaterush');            // detiene Invasión si corría (modes/exclusive.js)
     ctx.ui.overlay.close();
     // Arcade (autopiloto) tenía prioridad en el loop y retoFly/countdown nunca avanzaban: T no hacía nada
     if (MODES[S.modeKey]?.autopilot) A.setMode('asistido');
@@ -66,13 +67,14 @@ export function createGateRushMode(ctx, events) {
     S.reto = createGateRush({
       scene, trackPts: S.ghost?.pts, world: W, heightAt: terrain.heightAt, difficulty: diff,
       v2, collision: v2 ? ctx.collision : null, worldPar: W?.gaterush?.par?.[diff] ?? null, ghost,
+      bestTimeS: v2 ? bestTime(CID, null, S.retoMode === 'dios' ? `${diff}.dios` : diff).best : null,
     });
     sfx.idx = 0; sfx.phase = ''; sfx.count = 0;
     const ap = S.reto.approach();
     if (v2) {
       report.grStart = { ...S.reto.state.startInfo, at: [+ap.x.toFixed(1), +ap.y.toFixed(1), +ap.z.toFixed(1)] };
       // perfil Sport en Difícil (spec §11), si C lo expone
-      ctx.controls?.setProfile?.(diff === 'dificil' ? 'sport' : 'normal');
+      ctx.actions.setProfile?.(diff === 'dificil' ? 'sport' : 'normal');
     }
     events.emit('game-mode', { key: 'gaterush', phase: 'start', difficulty: diff });
     if (drone.pos.distanceTo(ap) > 20) {
@@ -198,7 +200,7 @@ export function createGateRushMode(ctx, events) {
     },
     /** Pulso de los aros (por frame, antes del vuelo de cámara). */
     renderPulse() {
-      if (S.reto?.pulse) S.reto.pulse(S.simT, STEP * 2);
+      if (S.reto?.pulse) S.reto.pulse(S.simT, STEP * 2, ctx.camera);
     },
     /** Modelo de la capa de dibujo para este frame (?fv=2). */
     overlayModel() {
@@ -208,9 +210,8 @@ export function createGateRushMode(ctx, events) {
       const pace = h.pace;
       const lines = [{ text: h.phase === 'countdown' ? `GATE RUSH · ${h.difficulty.toUpperCase()}` : `${h.timerText}` , size: 16 }];
       if (h.phase === 'running' || h.phase === 'finished') {
-        const pz = h.par ? ` · par ${timeText(h.par).replace(/^00:/, '')}` : '';
-        const pc = h.phase === 'running' && h.passed > 0 ? ` · ${pace > 0 ? '+' : ''}${pace.toFixed(1)}s` : '';
-        lines.push({ text: `gate ${h.gate}/${h.total}${pz}${pc}`, size: 12, weight: 500,
+        const sl = h.statusLine ? ` · ${h.statusLine}` : (h.par ? ` · ${h.parText}` : '');
+        lines.push({ text: `gate ${h.gate}/${h.total}${sl}`, size: 12, weight: 500,
           color: h.phase === 'running' && h.passed > 0 ? (pace > 0 ? '#E0A458' : '#52C79A') : '#B7C2D0' });
       } else lines.push({ text: 'Prepárate', size: 12, weight: 500, color: '#B7C2D0' });
       const banner = h.countdown ? { text: String(h.countdown), dur: 1, t0: performance.now() - 300, color: '#45A0E6' } : null;

@@ -1,126 +1,174 @@
-# WORLD CONTEXT PROMPT — para Codex/ChatGPT (copia-pega)
+# WORLD CONTEXT PROMPT for Codex and ChatGPT (copy and paste)
 
-Prompt maestro para que un LLM externo entienda TODO el mundo FLIGHTVERSE
-antes de pedirle assets, análisis o propuestas de código. Adjunta los
-archivos de la lista del final.
+This is the master prompt for an external LLM. It gives the LLM the full context of the FLIGHTVERSE world.
+Use it before you ask the LLM for assets, analysis or code proposals.
+Attach the files from the list at the end of this document.
 
 ---
 
-## THE PROMPT (copy-paste everything between the lines)
+## THE PROMPT (copy and paste everything between the lines)
 
-You are joining **FLIGHTVERSE**, a production browser video game built on top
-of REAL photogrammetry scenes (the operator's own drone scans of Bogotá,
-Colombia), live at vuelos.metislab.work. Read this contract carefully — every
-suggestion you make must fit it.
+You work on **FLIGHTVERSE**. FLIGHTVERSE is a video game for the browser and it is in production.
+The game uses REAL photogrammetry scenes: the drone scans of Bogotá, Colombia, that the operator made.
+It is live at vuelos.metislab.work.
+Read this contract with care. Each suggestion you make must fit the contract.
 
-### Platform & hard constraints
-- **Stack**: vanilla JavaScript ES modules, **NO build step, NO npm at
-  runtime**. Everything is vendored under `web/vendor/`: three.js r180 (via
-  shim `web/flightverse/three.js`), Spark 2.1 (Gaussian splat renderer),
-  three-mesh-bvh, camera-controls, postprocessing (r180 build), webm-muxer,
-  GLTFLoader + BufferGeometryUtils + SkeletonUtils.
+### Platform and hard constraints
+- **Stack**: ES modules in vanilla JavaScript. There is **NO build step** and **NO npm at runtime**.
+  All libraries are in `web/vendor/`:
+  - three.js r180 (through the shim `web/flightverse/three.js`)
+  - Spark 2.1 (Gaussian splat renderer)
+  - three-mesh-bvh
+  - camera-controls
+  - `postprocessing` (r180 build)
+  - webm-muxer
+  - GLTFLoader, BufferGeometryUtils and SkeletonUtils
 - **CSP is strict**: `script-src 'self' 'wasm-unsafe-eval'`, `connect-src
-  'self' data: blob:` + two map tile hosts. No CDNs, no external fetches, no
-  eval. Any proposal that violates CSP is invalid.
-- **Determinism**: fixed timestep 1/120s (`STEP`) for physics/game logic;
-  rendering interpolates. Replays re-simulate — never use Date.now/random
-  inside fixed-step logic that must replay.
-- **Honesty rules**: no fake data ever. If a scene lacks a capability
-  (no GPS track → no Arcade), the UI says so and degrades gracefully.
-  The photogrammetry is a real scan: explosions crater the GAME terrain
-  heightfield but we never pretend to destroy the real world's splat.
-- **Language**: UI text in Spanish, code + comments in English or Spanish,
-  **NO emojis in UI** (SVG icons only). Original content only — no
-  copyrighted characters, logos, or franchise likenesses.
-- After ANY web file edit: `python3 pipeline/bump_web_version.py` rewrites
-  `?v=N` cache-busters and regenerates .gz. Verification is headless CDP
-  gates: `python3 pipeline/flightverse_spike_gate.py --page volar.html
+  'self' data: blob:` and two hosts for map tiles. There are no CDNs, no external requests and no eval.
+  A proposal that breaks the CSP is not valid.
+- **Determinism**: physics and game logic use a fixed timestep of 1/120 s (`STEP`).
+  Rendering interpolates between steps.
+  Replays re-simulate the game. Inside fixed-step logic that must replay, do not use `Date.now` or random numbers.
+- **Honesty rules**: never show fake data.
+  If a scene does not have a capability, the UI says so and degrades gracefully.
+  For example, a scene with no GPS track has no `Arcade` mode.
+  The photogrammetry is a real scan.
+  Explosions make craters in the GAME terrain heightfield.
+  The game never pretends to destroy the splat of the real world.
+- **Language**: UI text is in Spanish. Code and comments are in English or Spanish.
+  Do **NOT** use emojis in the UI. Use SVG icons only.
+  Use original content only. Do not use copyrighted characters, logos or franchise likenesses.
+- After ANY edit of a web file, run `python3 pipeline/bump_web_version.py`.
+  This script rewrites the `?v=N` cache-busters and regenerates the .gz files.
+  The checks use headless CDP gates.
+  The command `python3 pipeline/flightverse_spike_gate.py --page volar.html
   --global __volar --extra '&autotest=1'` must report 0 console errors and
-  fps ≥ 50.
+  at least 50 fps.
 
 ### World data model (per scene, `models/<cid>/`)
-- `scene.v2.json` — manifest: capabilities (only-if-exists), asset paths,
-  splat↔terrain alignment matrix (Umeyama, RMSE ~cm), datum.
-- `site.lod.json` — stable `scene_id`, active version, source-registration truth and
-  verified circle/square coverage products at 100/200/400/600/1000 m. Coverage is
-  an output diameter, never inferred from capture altitude. Pending extent is disabled.
-- `dsm_lod.bin/json` — 512² Float32 heightfield (meters, row 0 = north,
-  +x = east, +z = south, heights relative to elev_min) + nodata mask.
-  `makeHeightSampler` gives `heightAt(x, z) -> meters | null`. The terrain
-  mesh is a displaced PlaneGeometry; `terrain.crater(x, z, r, depth)`
-  deforms BOTH the mesh and the heightfield (collision follows).
-- `collision.bin` — pre-baked triangle soup (from the splat, band-filtered)
-  loaded into three-mesh-bvh for drone collision (slide + anti-stuck).
-- `<cid>.clean.sog / .ksplat` — Gaussian splat, rendered by Spark, aligned.
-- `objects.json` — scene objects: prims (ring/beacon/box) or GLBs from
-  `assets/props/` or `type:"kit"` from `assets/destruction/models/`
-  (pre-fractured GLBs with extras: role/massKg/mode/explosive). Flag
-  `destructible:true` registers them as weapon targets.
-- `track.json` — real GPS flight track (ghost replay + Gate Rush course).
+- `scene.v2.json` is the manifest. It holds the capabilities (listed only if they exist), the asset paths,
+  the splat-to-terrain alignment matrix (Umeyama, RMSE of about 1 cm) and the datum.
+- `site.lod.json` holds the stable `scene_id` and the active version.
+  It also holds the truth of the source registration and the checked circle and square coverage products at 100/200/400/600/1000 m.
+  Coverage is an output diameter. Do not infer it from the capture altitude.
+  The extent `pending` is off.
+- `dsm_lod.bin/json` is a 512² Float32 heightfield with a nodata mask.
+  Heights are in meters, relative to elev_min.
+  Row 0 is north, +x is east and +z is south.
+  `makeHeightSampler` gives `heightAt(x, z) -> meters | null`.
+  The terrain mesh is a displaced PlaneGeometry.
+  `terrain.crater(x, z, r, depth)` deforms BOTH the mesh and the heightfield, so the collision follows.
+- `collision.bin` is a pre-baked triangle soup. It comes from the splat. A band filter cleans it.
+  three-mesh-bvh loads it for the drone collision (slide and anti-stuck).
+- `<cid>.clean.sog / .ksplat` is the Gaussian splat. Spark renders the aligned splat.
+- `objects.json` lists the scene objects. An object is one of these types:
+  - a primitive (ring, beacon or box)
+  - a GLB from `assets/props/`
+  - `type:"kit"` from `assets/destruction/models/` (pre-fractured GLBs with extras: role, massKg, mode, explosive)
+
+  The flag `destructible:true` registers the object as a weapon target.
+- `track.json` is the track of the real flight, from GPS. The ghost replay and the Gate Rush course use it.
 
 ### Game modules (`web/flightverse/`)
-- `runtime.js` — fixed loop, input, `MODES` (cinematico/asistido='Normal'/
-  arcade=autopilot over real track/dios=noclip), `RIGS` (cameras: Muy cerca,
-  Cerca, Lejos, FPV, Cenital, Órbita, Lateral), drone physics (velocity-
-  target + deterministic wind), MIN_AGL ground clamp, BVH collision.
-- `volar.js` (~1400 lines) — the game page orchestrator: HUD, quality ladder
-  (auto/HD/extra/4K/ultra supersampling), grade panel (exposure/bloom/etc),
-  weapon UI, invasion modal, Gate Rush UI, replay/Director, camera shake +
-  FOV concussion punch, minimap, QA URL params (`&autotest=1`, `&fuego=1|mg`,
-  `&boom=1`, `&rig=N`, `&cielo=dia|atardecer|noche`, `&invasion=tipo,...`,
-  `&reto=1&dif=facil|media|dificil`).
-- `sky.js` — procedural sky v5: 3-stop gradient dome + below-horizon haze,
-  real moon (solid disc, value-noise mares, limb darkening), 2-layer
-  twinkling stars, Mie-toy sunset scattering, tileable fbm clouds + shaded
-  cumulus billboards, sun/moon DirectionalLight with follow-focus shadows.
-- `weapons.js` — `ARSENAL`: MG (auto 11.8/s, ballistic tracers, cumulative
-  damage) + missiles S/M/L (speed/boom/cooldown/ammo/regen per tier).
-  Explosions: white-hot core, tall flame sprites with color-over-life,
-  structured multi-lobe smoke (lit-by-fire ramp), ground dust ring, ejecta
-  chunks that persist as rubble, ember Points, velocity-stretched spark
-  streaks, double shockwave ring, PointLight flash, persistent soft scorch,
-  crater deformation, residual fires. Hittables contract: scene objects
-  `{node, center:Vector3, r2, color, hp?}` and enemies `{enemy:true, g,
-  center, r2, hp, blood}`. Sprite cap 460.
-- `invasion.js` — `ENEMIES`: zombie/arquero/soldado/ufo/avion/dragon/gigante.
-  Ground units walk ONLY on walkable terrain (per-type footprint + max slope,
-  smoothed height); flyers have per-type patterns (orbit/pass/serpentine).
-  Enemy projectiles damage player health. External GLBs per
-  `docs/ENEMY_MODEL_SPEC.md` (clips walk/fly/attack) with procedural
-  fallback. Waves scale hp/speed/count.
-- `gaterush.js` — `DIFFS` fácil/media/difícil (count/radius/colors), HD tori
-  rings with spin/beacon/pass-flash, flowing light crumbs, splits per gate,
-  graceful approach flight, records per difficulty (localStorage).
-- `objects.js` / `audio.js` (synth quad acoustics + weapon sounds) /
-  `recorder.js` (WebM) / `export.js` (deterministic 1080p WebCodecs) /
-  `touch.js` (mobile RC sticks) / `gaterush`, `director` in volar.
-- `mundo.html/js` — world select: island carousel + map (sat/dark/plano
-  layers, coverage footprints, real route lines, mission popups).
+- `runtime.js` has the fixed loop, the input, the `MODES` and the `RIGS`.
+  - `MODES`: `cinematico`, `asistido` (shown as `Normal`), `arcade` (autopilot over the real track) and `dios` (noclip).
+  - `RIGS` (cameras): `Muy cerca`, `Cerca`, `Lejos`, `FPV`, `Cenital`, `Órbita` and `Lateral`.
+  - It also has the drone physics (velocity target and deterministic wind), the MIN_AGL ground clamp and the BVH collision.
+- `volar.js` (about 1400 lines) is the orchestrator of the game page. It has these parts:
+  - the HUD
+  - the quality ladder (auto, HD, extra, 4K and ultra with supersamples)
+  - the grade panel (exposure, bloom and so on)
+  - the weapon UI
+  - the invasion modal
+  - the Gate Rush UI
+  - the replay and the Director
+  - the camera shake and the FOV concussion punch
+  - the minimap
+  - the QA URL parameters: `&autotest=1`, `&fuego=1|mg`, `&boom=1`, `&rig=N`, `&cielo=dia|atardecer|noche`, `&invasion=tipo,...` and `&reto=1&dif=facil|media|dificil`
+- `sky.js` is the procedural sky v5. It has these parts:
+  - a dome with a 3-stop gradient and a haze below the horizon
+  - a real moon (solid disc, value-noise mares, dark limb edge)
+  - 2 layers of stars that twinkle
+  - Mie-toy sunset scatter
+  - tileable fbm clouds and shaded cumulus billboards
+  - a sun and moon DirectionalLight with shadows that follow the focus
+- `weapons.js` has `ARSENAL`.
+  - `ARSENAL` has the MG (auto 11.8/s, ballistic tracers, cumulative damage) and the missiles S, M and L.
+  - Each missile tier has its own speed, boom, cooldown, ammo and regen.
+  - An explosion has these parts:
+    - a white-hot core
+    - tall flame sprites with color over life
+    - structured multi-lobe smoke (lit-by-fire ramp)
+    - a ground dust ring
+    - ejecta chunks that stay as rubble
+    - ember Points
+    - velocity-stretched spark streaks
+    - a double shockwave ring
+    - a PointLight flash
+    - a soft scorch mark that stays
+    - crater deformation
+    - residual fires
+  - The hittables contract for scene objects is `{node, center:Vector3, r2, color, hp?}`.
+  - The hittables contract for enemies is `{enemy:true, g, center, r2, hp, blood}`.
+  - The sprite cap is 460.
+- `invasion.js` has `ENEMIES`: `zombie`, `arquero`, `soldado`, `ufo`, `avion`, `dragon` and `gigante`.
+  - Ground units walk ONLY on walkable terrain. Each type has its own footprint and maximum slope, and the height is smooth.
+  - Each flyer type has its own pattern: orbit, pass or serpentine.
+  - Enemy projectiles damage the player health.
+  - External GLBs follow `docs/ENEMY_MODEL_SPEC.md` (clips walk, fly and attack). A procedural fallback exists.
+  - Waves scale the hp, the speed and the count.
+- `gaterush.js` has `DIFFS`: `fácil`, `media` and `difícil` (count, radius and colors).
+  - It has HD tori rings with spin, beacon and pass-flash.
+  - It has light crumbs that flow and splits for each gate.
+  - It has a graceful approach flight.
+  - It saves the records for each difficulty (localStorage).
+- Other modules:
+  - `objects.js`
+  - `audio.js` (synth quad acoustics and weapon sounds)
+  - `recorder.js` (WebM)
+  - `export.js` (deterministic 1080p WebCodecs)
+  - `touch.js` (mobile RC sticks)
+  - `gaterush` and `director`, which are inside volar
+- `mundo.html/js` is the world select screen. It has an island carousel and a map.
+  The map has the layers `sat`, `dark` and `plano`, coverage footprints, real route lines and mission popups.
 
 ### Performance budgets
-60fps target on M-series Safari/Chrome. DPR governor ≤2 in auto. Shadow
-map 2048 with tight follow frustum. Fragment-heavy assets must NOT cast
-per-fragment shadows (70-brick wall taught us: -24fps). Additive particles
-capped. GLB budgets: drone ≤120k tris, enemies ≤80k, props ≤40k.
+The target is 60 fps on M-series Safari and Chrome. In auto mode, the DPR governor is at most 2.
+The shadow map is 2048 with a tight follow frustum.
+Additive particles have a cap.
+GLB budgets: drone at most 120k tris, enemies at most 80k, props at most 40k.
+
+Assets with heavy fragment work must NOT cast shadows for each fragment.
+The 70-brick wall showed this: it changed the frame rate by -24 fps.
 
 ### What we want from you
-1. Answer questions about design/architecture within these constraints.
-2. When asked for assets: follow `DRONE_MODEL_SPEC.md` / `ENEMY_MODEL_SPEC.md`
-   exactly (axes -Z forward, +Y up, real meters, named nodes/clips, embedded
-   textures, glTF-Validator 0 errors, validation JSON alongside).
-3. When proposing code: full functions/patches referencing exact file +
-   anchor, vanilla ESM, CSP-safe, deterministic-safe, with a QA plan using
-   our gate params. Never introduce npm deps or external URLs.
-4. Flag anything that would break: CSP, determinism, honesty rules, 60fps.
+1. Answer questions about design and architecture. Stay inside these constraints.
+2. When we ask for assets, follow `DRONE_MODEL_SPEC.md` and `ENEMY_MODEL_SPEC.md` exactly.
+   The requirements are:
+   - axes -Z forward and +Y up
+   - real meters
+   - named nodes and clips
+   - embedded textures
+   - glTF-Validator with 0 errors
+   - a JSON file with the check results next to the asset
+3. When you propose code, give full functions or patches.
+   Name the exact file and anchor.
+   Use vanilla ESM that is CSP-safe and deterministic-safe.
+   Add a QA plan that uses our gate parameters.
+   Never add npm dependencies or external URLs.
+4. Flag each item that can break the CSP, the determinism, the honesty rules or the 60 fps target.
 
 ---
 
-## Archivos para adjuntar junto al prompt
-Mínimo (contexto de juego):
-1. `docs/FLIGHTVERSE_IMPLEMENTATION.md` — ledger completo de features
-2. `docs/GAME_ENGINE.md` — mapa de módulos + reglas de oro
+## Files to attach with the prompt
+Minimum (game context):
+1. `docs/FLIGHTVERSE_IMPLEMENTATION.md`: the full ledger of features
+2. `docs/GAME_ENGINE.md`: the module map and the golden rules
 3. `web/flightverse/runtime.js` · `weapons.js` · `invasion.js` · `sky.js`
 4. `web/volar.js`
-Si va a generar modelos: 5. `docs/DRONE_MODEL_SPEC.md` + `docs/ENEMY_MODEL_SPEC.md`
-Si va a tocar escena/objetos: 6. `docs/SCENE_OBJECTS.md` + `web/flightverse/objects.js` + `scene.js`
-Si va a proponer pipeline: 7. `pipeline/scene_manifest.py` + `dsm_lod.py` + `splat_align.py`
+
+If the LLM will generate models: 5. `docs/DRONE_MODEL_SPEC.md` + `docs/ENEMY_MODEL_SPEC.md`
+
+If the LLM will change the scene or the objects: 6. `docs/SCENE_OBJECTS.md` + `web/flightverse/objects.js` + `scene.js`
+
+If the LLM will propose pipeline changes: 7. `pipeline/scene_manifest.py` + `dsm_lod.py` + `splat_align.py`

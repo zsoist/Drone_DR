@@ -63,7 +63,7 @@ test('per-weapon FX table follows the spec (tracers, shake tiers, hit-stop)', ()
   assert.equal(WEAPON_FX.rg.shake.tier, 'T3'); assert.equal(WEAPON_FX.tb.shake.tier, 'T3');
   assert.equal(WEAPON_FX.sw.shake.cap, 'T2');
   assert.equal(mg.hitstop, null); assert.equal(ac.hitstop, null); assert.equal(WEAPON_FX.sw.hitstop, null);
-  assert.equal(WEAPON_FX.m.hitstop.kill, 50); assert.equal(WEAPON_FX.rg.hitstop.any, 70); assert.equal(WEAPON_FX.tb.hitstop.kill, 80);
+  assert.equal(WEAPON_FX.m.hitstop.kill, 50); assert.equal(WEAPON_FX.rg.hitstop.kill, 70); assert.equal(WEAPON_FX.rg.hitstop.any, undefined); assert.equal(WEAPON_FX.tb.hitstop.kill, 80);
   assert.ok(usesHeat('mg') && usesHeat('ac') && !usesHeat('m'));
   assert.ok(gunSpread('mg') > gunSpread('ac'));
   assert.equal(WEAPON_UI.mg.spreadPx, 22); assert.equal(WEAPON_UI.ac.spreadPx, 14);
@@ -349,7 +349,8 @@ test('hit-stop: 40/60/80 ms on kills / big blasts only', () => {
   assert.equal(hitStopFor({ weaponFx: WEAPON_FX.m, kill: true }), 50);
   assert.equal(hitStopFor({ weaponFx: WEAPON_FX.m, size: 'M', hit: false }), 0, 'a blast that hits nothing does not stop time');
   assert.equal(hitStopFor({ weaponFx: WEAPON_FX.m, size: 'M', damaged: true, hit: true }), 60);
-  assert.equal(hitStopFor({ weaponFx: WEAPON_FX.rg, hit: true }), 70);
+  assert.equal(hitStopFor({ weaponFx: WEAPON_FX.rg, hit: true }), 0, 'RAIL terrain/structure hits must not hit-stop');
+  assert.equal(hitStopFor({ weaponFx: WEAPON_FX.rg, kill: true, hit: true }), 70);
   assert.equal(hitStopFor({ weaponFx: WEAPON_FX.tb, size: 'XL' }), 80);
 });
 
@@ -425,4 +426,23 @@ test('engine follows motor speeds and airspeed, with a fallback', () => {
   assert.notEqual(uneven.freqs[1], uneven.freqs[3], 'each rotor follows its own motor');
   assert.ok(engineFromMotors([0.5, 0.5, 0.5, 0.5], 0, 0, 0.1).stutter > 0);
   assert.equal(engineFromMotors(null, 0).freqs.length, 4);
+});
+
+test('trail ribbons persist after the projectile dies and stay inside the quad budget', async () => {
+  const { createTrailSystem, TRAILS } = await import('../web/flightverse/fx/trails.js');
+  const quads = [];
+  const sys = createTrailSystem({ quad: q => { quads.push({ ...q, pos: { ...q.pos } }); return true; }, budget: 12 });
+  const t = sys.create(TRAILS.missile);
+  for (let i = 0; i < 60; i += 1) { sys.follow(t, { x: i * 0.5, y: 0, z: 0 }, 1 / 60); sys.draw(1 / 60); }
+  assert.ok(quads.length > 0, 'ribbon emitted quads while flying');
+  sys.close(t, { x: 30, y: 0, z: 0 });
+  quads.length = 0;
+  for (let i = 0; i < 60; i += 1) sys.draw(1 / 60);          // 1 s after impact: the plume is still there
+  assert.ok(quads.length > 0, 'plume persists ~1 s after the missile is gone');
+  for (let i = 0; i < 120; i += 1) sys.draw(1 / 60);
+  assert.equal(sys.count, 0, 'trail retired after its life');
+  const perStep = []; const s2 = createTrailSystem({ quad: () => true, budget: 10 });
+  for (let k = 0; k < 4; k += 1) { const tr = s2.create(TRAILS.missile); for (let i = 0; i < 40; i += 1) s2.follow(tr, { x: i, y: k, z: 0 }, 0.02); }
+  s2.draw(1 / 60); perStep.push(s2.stats().lastDrawn);
+  assert.ok(perStep[0] <= 10 * 3, 'budget bounds the quads per step');
 });

@@ -10,6 +10,7 @@ Uso:  python3 flightverse_spike_gate.py [clip_id] [--timeout 180]
 from __future__ import annotations
 
 import argparse
+import os
 import base64
 import json
 import time
@@ -63,7 +64,7 @@ def run(cid: str, base_url: str, timeout: int, page: str = "spike_flightverse.ht
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("clip_id", nargs="?", default="DJI_20260704160358_0104_D")
-    ap.add_argument("--base-url", default="http://127.0.0.1:8790")
+    ap.add_argument("--base-url", default=os.environ.get("AEROBRAIN_BASE_URL", "http://127.0.0.1:8790"))
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--page", default="spike_flightverse.html")
     ap.add_argument("--global", dest="gvar", default="__spike")

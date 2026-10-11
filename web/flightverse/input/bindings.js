@@ -2,13 +2,13 @@
 // fuego + tecla X), palancas táctiles, teclado/atajos globales, reset por orientación,
 // muestreo del input de vuelo y eco de choque. Sin lógica de UI (ver ui/*).
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { createTouchSticks } from '/flightverse/touch.js?v=370';
-import { createFirePointerBindings } from '/flightverse/mobile-command.js?v=370';
-import { ARSENAL } from '/flightverse/weapons.js?v=370';
-import { isContinuousWeaponKey } from '/flightverse/weapon-registry.js?v=370';
-import { CONTROL_DEFAULTS } from '/flightverse/input/curves.js?v=370';
-import { createV2Input } from '/flightverse/input/v2-input.js?v=370';
-import { installPhysicsV2, physicsRequested } from '/flightverse/input/physics-link.js?v=370';
+import { createTouchSticks } from '/flightverse/touch.js?v=371';
+import { createFirePointerBindings } from '/flightverse/mobile-command.js?v=371';
+import { ARSENAL } from '/flightverse/weapons.js?v=371';
+import { isContinuousWeaponKey } from '/flightverse/weapon-registry.js?v=371';
+import { CONTROL_DEFAULTS } from '/flightverse/input/curves.js?v=371';
+import { createV2Input } from '/flightverse/input/v2-input.js?v=371';
+import { installPhysicsV2, physicsRequested } from '/flightverse/input/physics-link.js?v=371';
 
 export function createBindings(ctx) {
   const { state: S, actions: A, input, audio, bus } = ctx;
@@ -84,6 +84,18 @@ export function createBindings(ctx) {
   };
   addEventListener('orientationchange', resetCommandOnOrientation);
 
+  // Invasión: al entrar los primeros contactos de la primera oleada (F2: wave{phase:'contact', bearing° + = derecha)
+  // el dron gira suave hacia ellos, para que el jugador vea la acción en vez de cielo vacío.
+  const offBus = bus.on?.('wave', e => {
+    if (!e || e.phase !== 'contact' || e.n !== 1 || !Number.isFinite(e.bearing) || Math.abs(e.bearing) < 20) return;
+    if (S.modeKey === 'cinematico' || S.director || S.replay) return;
+    const rad = -e.bearing * Math.PI / 180;               // + = izquierda en el yaw del juego
+    const sim = ctx.drone.v2?.sim;
+    if (sim) sim.addYaw(rad);
+    else ctx.drone.yaw += rad;
+    ctx.report.invasionFraming = { bearingDeg: e.bearing, at: +S.simT.toFixed(2) };
+  });
+
   let lastFlightInput = {
     fwd: 0, strafe: 0, yaw: 0, lift: 0,
     boost: false, brake: false, mouseDX: 0, mouseDY: 0,
@@ -102,7 +114,12 @@ export function createBindings(ctx) {
       if (e.code === 'KeyC') A.cycleRig();
       if (e.code === 'KeyG' && S.ghost) A.toggleGhost();
       if (e.code === 'KeyH') ctx.ui.overlay.toggle('guide');
-      if (e.code === 'KeyT') A.startReto(localStorage.getItem('ab.fv.gr.diff') || 'media');
+      if (e.code === 'KeyT' && !e.repeat) {
+        const diff = localStorage.getItem('ab.fv.gr.diff') || 'media';
+        // fv2: todo arranque de modo pasa por ctx.modes.start (detiene Invasión/replay antes)
+        if (ctx.modes?.start) ctx.modes.start('gaterush', { difficulty: diff });
+        else A.startReto(diff);
+      }
       if (e.code === 'KeyP') A.cycleVista();
       if (e.code === 'KeyM') A.toggleSound();
       if (e.code === 'KeyX' && !e.repeat) beginFiring('keyboard');
@@ -179,6 +196,7 @@ export function createBindings(ctx) {
     },
     dispose() {
       removeEventListener('orientationchange', resetCommandOnOrientation);
+      if (typeof offBus === 'function') offBus();
       v2in?.dispose();
       physLink?.dispose();
       firePointers.dispose();

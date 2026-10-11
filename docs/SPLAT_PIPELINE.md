@@ -1,125 +1,165 @@
-# SPLAT_PIPELINE — trainer y política estable (audit 2026-07-14, reorganizado 2026-09-28)
+# SPLAT_PIPELINE: trainer and stable policy (audit 2026-07-14, reorganized 2026-09-28)
 
-> Contrato vigente. **Camino de producción = CUDA en el PC RTX** (desde 2026-09-28 la política por defecto es
-> **PC-only**, `pipeline/compute_policy.py`). Todo lo de OpenSplat/MPS/Metal quedó en el apéndice
-> [Legacy Mac path](#legacy-mac-path-opensplat--mps) y sólo aplica con `AEROBRAIN_COMPUTE=local`.
-> Arquitectura general: [ARCHITECTURE.md](ARCHITECTURE.md); procedimientos: [RUNBOOKS.md](RUNBOOKS.md).
+> Current contract. The **production path** is CUDA on the RTX PC.
+> Since 2026-09-28 the default policy is **PC-only** (`pipeline/compute_policy.py`).
+>
+> All OpenSplat, MPS and Metal content is in the appendix, [Legacy Mac path](#legacy-mac-path-opensplat--mps).
+> That content applies only with `AEROBRAIN_COMPUTE=local`.
+>
+> General architecture: [ARCHITECTURE.md](ARCHITECTURE.md). Procedures: [RUNBOOKS.md](RUNBOOKS.md).
 
-## Camino de producción (CUDA)
+## Production path (CUDA)
 
-| Pieza | Detalle |
+| Item | Detail |
 |---|---|
-| Trainer | `nerfstudio` splatfacto + gsplat 1.4 (CUDA 12.4) en WSL2 Ubuntu del PC, RTX 4060 Ti 8 GB |
-| Carril | `pipeline/gpu_lane.py` (SSH `pc`, WoL, sesión SSH sostenida); ODM en `pipeline/odm_gpu_lane.py` |
-| Tiers | Fast 1K y Medium 2K también corren en CUDA bajo PC-only; Cinematic 7K a Grandmaster 40K sólo CUDA |
-| Autoridad | El Mac publica; el PC es un acelerador desechable. Retención del scratch: `pipeline/pc_janitor.py` |
-| Cola auxiliar | `com.macmini.pc-queue` (LaunchAgent, 120 s) drena JSON de `~/.local/pc-jobs/queue/` hacia el PC; es una cola genérica ajena a este carril |
+| Trainer | `nerfstudio` splatfacto + gsplat 1.4 (CUDA 12.4) in WSL2 Ubuntu on the PC, RTX 4060 Ti 8 GB |
+| Lane | `pipeline/gpu_lane.py` (SSH `pc`, WoL, held SSH session). ODM runs in `pipeline/odm_gpu_lane.py` |
+| Tiers | Fast 1K and Medium 2K also run on CUDA under PC-only. Cinematic 7K to Grandmaster 40K run only on CUDA |
+| Authority | The Mac publishes. The PC is a disposable accelerator. Scratch retention: `pipeline/pc_janitor.py` |
+| Auxiliary queue | `com.macmini.pc-queue` (LaunchAgent, 120 s) drains JSON from `~/.local/pc-jobs/queue/` to the PC. It is a generic queue. It is not part of this lane |
 
 
-## Presets (`pipeline/splat_presets.py`, única fuente de verdad)
+## Presets (`pipeline/splat_presets.py`, single source of truth)
 
 | Preset | iters | train_args |
 |---|---|---|
 | fast | 1000 | — |
 | medium | 2000 | — |
-| cinematic | 7000 | CUDA estricto · foto-real compartible |
-| ultra | 15000 | CUDA estricto · crecimiento completo |
-| ultra20 | 20000 | CUDA estricto · refinamiento post-densificación |
-| frontier | 30000 | CUDA estricto · schedule completo (default interactivo hasta 2026-09-30) |
-| grandmaster | 40000 | CUDA estricto · campaña máxima |
-| **mcmc1m** ("Equilibrado (MCMC 1M)") | 15000 | **default interactivo desde 2026-09-30** (`DEFAULT_SPLAT_PRESET`): splatfacto + MCMC, tope 1M gaussianas; ganó en PSNR/LPIPS/SOG en Dialectica (W2) y en una escena rural (W2b). `select_only` |
-| mcmc3m ("Calidad (MCMC 3M)") | 15000 | tope 3M; mejor calidad en Dialectica pero SOG mayor y en la escena rural crasheó dos veces en 8 GB (W2b). `select_only` |
+| cinematic | 7000 | CUDA strict · photo-real, shareable |
+| ultra | 15000 | CUDA strict · full growth |
+| ultra20 | 20000 | CUDA strict · refinement after densification |
+| frontier | 30000 | CUDA strict · full schedule (interactive default until 2026-09-30) |
+| grandmaster | 40000 | CUDA strict · maximum campaign |
+| **mcmc1m** (`Equilibrado (MCMC 1M)`) | 15000 | **interactive default since 2026-09-30** (`DEFAULT_SPLAT_PRESET`): splatfacto + MCMC, cap of 1M gaussians. It won on PSNR, LPIPS and SOG in Dialectica (W2) and in one rural scene (W2b). `select_only` |
+| mcmc3m (`Calidad (MCMC 3M)`) | 15000 | Cap of 3M. Best quality in Dialectica, but the SOG is larger. In the rural scene it crashed two times on 8 GB (W2b). `select_only` |
 
-`mcmc1m` es sólo el preset preseleccionado por la UI (`default: true` en `/api/splat_profiles`): un `iters` solo, o un request sin preset, sigue resolviendo como antes (`select_only`), y los splats existentes no se tocan.
+`Equilibrado (MCMC 1M)` and `Calidad (MCMC 3M)` are the product labels that the web app shows.
+They mean "Balanced (MCMC 1M)" and "Quality (MCMC 3M)".
 
-Fast/Medium aceptan Metal/CPU (sólo `AEROBRAIN_COMPUTE=local`, legacy) o CUDA; bajo PC-only van a CUDA. Los demás sólo aceptan CUDA. En CUDA,
-`auto = d1 → d2 únicamente por OOM clasificado`; `full = d1`; `half = d2`. Nunca existe
-Ultra→Medium ni CUDA→Mac implícito. El sidecar conserva solicitado/efectivo, resolución,
-intentos, GPU/driver, duración, gaussianas, parámetros y hash.
+`mcmc1m` is only the preset that the UI selects first (`default: true` in `/api/splat_profiles`).
+A request with only `iters`, or a request with no preset, resolves as before (`select_only`).
+The splats that exist now do not change.
 
-Los requests legacy `custom` conservan Metal/CPU sólo entre 500 y 2.000 iteraciones, dentro
-del sobre local Fast/Medium. Cualquier custom por encima de 2.000 es CUDA estricto; omitir el
-backend selecciona CUDA y pedir Metal/CPU se rechaza antes de encolar.
+Fast and Medium accept Metal/CPU (only with `AEROBRAIN_COMPUTE=local`, legacy) or CUDA.
+Under PC-only they go to CUDA.
+The other presets accept only CUDA.
+On CUDA, `auto` uses `d1` and goes to `d2` only after a classified OOM.
+In short: `full = d1` and `half = d2`.
 
-## Mac ↔ PC
+The system never changes Ultra to Medium on its own.
+It never changes CUDA to Mac on its own.
 
-`UI → API Mac → SQLite → worker Mac → SSH/WSL → RTX → PLY → Mac → .splat/SOG → gate`.
-El dataset se copia primero a ext4 WSL; NTFS es sólo puente. Tras recuperar/verificar el PLY,
-los staging remotos se limpian. El Mac conserva poses ODM, request, metadatos, current/history
-y es el único que puede publicar. La campaña `/api/splat_campaign` hace dry-run sobre sitios
-activos/modelos sueltos, verifica entorno/disco, estima cola y encola todo o nada.
+The sidecar keeps these values:
 
-Sin cap absoluto de gaussianas en el camino legacy OpenSplat (presupuesto de densificación acotado con flags, ver apéndice).
+- the requested preset and the effective preset
+- the resolution
+- the tries
+- the GPU and the driver
+- the duration
+- the number of gaussians
+- the parameters
+- the hash
 
-## Datos de entrenamiento — cómo consume el proyecto ODM
+The legacy `custom` requests keep Metal/CPU only between 500 and 2,000 iterations, inside the local Fast/Medium envelope.
+Any custom request above 2,000 iterations is CUDA strict.
+If the request gives no backend, the system selects CUDA.
+The system rejects a request for Metal/CPU before it enqueues the job.
 
-- Entrena desde `opensfm/reconstruction.json`: **itera TODOS los shots**
-  (`opensfm.cpp:75-126`). `image_list.txt` es solo un mapa filename→ruta.
-- ⇒ Un split train/test **no** se expresa por manifest: requiere quitar shots de
-  una **copia** de `reconstruction.json` (cirugía, nunca sobre el original).
-- Poses por shot: `rotation` (axis-angle) + `translation` + cámara Brown —
-  suficientes para renderizar vistas held-out.
+## Mac and PC
 
-## Ciclo de vida del artefacto
+The path of a job is `UI → Mac API → SQLite → Mac worker → SSH/WSL → RTX → PLY → Mac → .splat/SOG → gate`.
+The system first copies the dataset to WSL ext4. NTFS is only a bridge.
+After the system gets the PLY and checks it, it cleans the remote temporary folders.
+The Mac keeps the ODM poses, the request, the metadata, and current/history.
+Only the Mac can publish.
+
+The campaign `/api/splat_campaign` does these steps:
+
+1. It does a dry run on active sites and loose models.
+2. It checks the environment and the disk.
+3. It estimates the queue time.
+4. It enqueues all jobs or none.
+
+The legacy OpenSplat path has no absolute cap on gaussians.
+Flags limit the densification budget (see the appendix).
+
+## Training data: how the trainer uses the ODM project
+
+- The trainer reads `opensfm/reconstruction.json` and **iterates over ALL shots**
+  (`opensfm.cpp:75-126`). `image_list.txt` is only a map from filename to path.
+- So a manifest cannot make a train/test split.
+  To make a split, remove shots from a **copy** of `reconstruction.json`
+  (surgery, never on the original).
+- The pose of each shot has `rotation` (axis-angle), `translation` and a Brown camera.
+  These values are enough to render held-out views.
+
+## Artifact life cycle
 
 ```
 train → splats/.training/<job>/<cid>.splat
-  → quality gate (splat_quality: convergencia + tamaño + cámaras)
-  → publish_splat_stage: archiva versión anterior a splats/history/ (keep=6)
+  → quality gate (splat_quality: convergence + size + cameras)
+  → publish_splat_stage: archives the previous version to splats/history/ (keep=6)
   → splats/<cid>.splat + <cid>.meta.json (sidecar)
-  → crop_floaters (de-halo) → SOG comprimido con splat-transform
-  → Spark carga sog > spz > ksplat legado > splat fuente > ply
+  → crop_floaters (de-halo) → compressed SOG with splat-transform
+  → Spark loads sog > spz > legacy ksplat > source splat > ply
 ```
 
-**Retención**: el proyecto ODM (`images/` + `opensfm/`) SOBREVIVE al training —
-solo se borra el stage. Eval retroactivo posible, con la trampa: los splats
-existentes entrenaron con TODAS las vistas → cualquier eval sobre ellos es
-*train-view reproduction*, no held-out. La baseline honesta sale de re-entrenar
-con split.
+**Retention**: the ODM project (`images/` + `opensfm/`) SURVIVES the training run.
+The system deletes only the stage.
+A retroactive eval is possible, but it has a trap.
+The splats that exist now trained with ALL views.
+So any eval on them is *train-view reproduction*, not held-out.
+For an honest baseline, train again with a split.
 
-## Sidecar del run (`splats/<cid>.meta.json`) — schema semilla de `splat_runs[]`
+## Run sidecar (`splats/<cid>.meta.json`): seed schema of `splat_runs[]`
 
 ```json
 {"passed", "reason", "bytes", "cameras", "final_loss", "last_step",
  "steps_logged", "target_iters", "preset", "requested_preset", "effective_preset",
  "input_scale", "fallback", "attempts", "preset_label", "backend",
  "backend_note", "duration_s",
- "peak_mib",       // ← nuevo 2026-07-11: phys_footprint_peak del kernel — ps RSS
- "peak_source",    //   subestima ~20× los procesos MPS (RSS 489 MiB vs 10 GB reales)
- "mem_cap_mib"}    // ← cap vigente al entrenar (contexto del peak)
+ "peak_mib",       // ← new 2026-07-11: phys_footprint_peak of the kernel — ps RSS
+ "peak_source",    //   underestimates MPS processes by ~20× (RSS 489 MiB vs 10 GB real)
+ "mem_cap_mib"}    // ← cap in force at train time (context of the peak)
 ```
 
-El run también se añade a `reconstruction.splat_runs[]` y, si pertenece a una escena,
-a las métricas de esa versión. `params_hash`, `trainer`, `stage_timings`, intentos y
-telemetría CUDA ya se persisten. Sigue opcional/no universal: `eval:{psnr,ssim,lpips}`.
+The system also adds the run to `reconstruction.splat_runs[]`.
+If the run belongs to a scene, the system also adds it to the metrics of that scene version.
+The system already saves `params_hash`, `trainer`, `stage_timings`, the tries and the CUDA telemetry.
+The field `eval:{psnr,ssim,lpips}` is still optional and is not in every run.
 
-## Evidencia medida
+## Measured evidence
 
-Las corridas CUDA medidas (7K a 40K, tiempos, gaussianas, VRAM pico, `params_hash`) viven en un único lugar:
-[README, "Evidencia medida"](../README.md#evidencia-medida-registro-único). No se duplican aquí.
+The measured CUDA runs are in one place only.
+They include 7K to 40K, times, gaussians, peak VRAM and `params_hash`.
+See [README, section `Measured evidence`](../README.md#measured-evidence-single-record).
+This document does not copy them.
 
 ## Legacy Mac path (OpenSplat / MPS)
 
-> **Legacy.** Sólo con `AEROBRAIN_COMPUTE=local`; el build local de OpenSplat está roto hoy (dylibs de opencv).
-> Reglas y gotchas: [archive/LEGACY_MAC_TRAINER.md](archive/LEGACY_MAC_TRAINER.md).
-> Nota: `taskpolicy -m`, `--sh-degree-interval` y demás detalles de abajo describen ese camino.
-> El límite de SH grado 0 también aplica a la ruta pública `.splat` -> SOG.
+> **Legacy.** This path applies only with `AEROBRAIN_COMPUTE=local`.
+> The local OpenSplat build is broken today (opencv dylibs).
+> Rules and gotchas: [archive/LEGACY_MAC_TRAINER.md](archive/LEGACY_MAC_TRAINER.md).
+> Note: `taskpolicy -m`, `--sh-degree-interval` and the other details below describe this path.
+> The SH degree 0 limit also applies to the public route from `.splat` to SOG.
 
-### Identidad
+### Identity
 
-El contrato de producción tiene dos familias de trainer:
+The production contract has two families of trainer:
 
-| Build | Runtime (CMakeCache) | Uso |
+| Build | Runtime (CMakeCache) | Use |
 |---|---|---|
-| `splat/OpenSplat/build-mps/opensplat` | **MPS** (Metal) | Fast 1K/Medium 2K local |
-| `splat/OpenSplat/build/opensplat` | CPU | Fallback (`--cpu`) |
-| PC WSL2 `nerfstudio-splatfacto` + gsplat 1.4 | CUDA 12.4 / RTX 4060 Ti | Único camino 7K–40K |
+| `splat/OpenSplat/build-mps/opensplat` | **MPS** (Metal) | Local Fast 1K and Medium 2K |
+| `splat/OpenSplat/build/opensplat` | CPU | Backup (`--cpu`) |
+| PC WSL2 `nerfstudio-splatfacto` + gsplat 1.4 | CUDA 12.4 / RTX 4060 Ti | The only path for 7K to 40K |
 
-Selección: `choose_splat_backend()` (worker.py) — MPS si `GPU_RUNTIME==MPS` y
-`xcrun --find metal` responde; si no, CPU. Corre **nativo**, no Docker
-(Docker es solo para ODM). `DYLD_LIBRARY_PATH=splat/libtorch/lib`.
+`choose_splat_backend()` (worker.py) selects the backend.
+It selects MPS if `GPU_RUNTIME==MPS` and `xcrun --find metal` answers.
+If not, it selects CPU.
+The trainer runs **natively**, not in Docker (Docker is only for ODM).
+`DYLD_LIBRARY_PATH=splat/libtorch/lib`.
 
-### Invocación exacta (`opensplat_train_cmd`, worker.py)
+### Exact command (`opensplat_train_cmd`, worker.py)
 
 ```
 /usr/sbin/taskpolicy -m <caps.opensplat_mib> \
@@ -129,51 +169,58 @@ Selección: `choose_splat_backend()` (worker.py) — MPS si `GPU_RUNTIME==MPS` y
   <preset train_args...> <oom-rung extra...>
 ```
 
-- `taskpolicy -m`: cap duro de RSS → SIGKILL (-9) al superarlo. Valor en
-  `config/hardware.json` → `caps.opensplat_mib` (11000 MiB calibrado a 16GB).
-- **`--sh-degree-interval = iters+1` clava SH en grado 0 SIEMPRE** — workaround de
-  una divergencia NaN real (el salto de armónicos del step 1000 mataba el loss en
-  CPU, 3 corridas). Consecuencia: ningún splat entrenado tiene color
-  view-dependent, incluido "ultra". Nota original: el formato `.splat` no exporta
-  coeficientes SH, así que con exportación `.splat` no se pierde nada; si algún día
-  se exporta `.ply`/`.spz` con SH, este workaround pasa de inocuo a limitante.
-  → **Experimento 2.0 del plan frontier**: reproducir el NaN, causa, fix, medir.
-- Política de intentos explícita:
-  - Fast/Medium local usan el preflight de memoria M4 y pueden recomendar `-d2`.
-  - Los runs Metal antiguos de Cinematic/Ultra conservan su escalera histórica en metadata,
-    pero ya no son una ruta encolable desde producto.
-  - CUDA 7K–40K mantiene tier/backend: `auto` hace `d1→d2` sólo por OOM clasificado.
-  - Cada intento guarda preset, escala de entrada, causa, rc, duración y pico observado.
+- `taskpolicy -m` sets a hard cap on RSS.
+  The system sends SIGKILL (-9) when the process goes above the cap.
+  The value is `caps.opensplat_mib` in `config/hardware.json` (11000 MiB, calibrated for 16GB).
+- **`--sh-degree-interval = iters+1` ALWAYS locks SH at degree 0.**
+  This is a workaround for a real NaN divergence.
+  The harmonics jump at step 1000 made the loss NaN on CPU (3 runs).
+  So no trained splat has view-dependent color, "ultra" included.
+  Original note: the `.splat` format does not export SH coefficients.
+  So with `.splat` export the system loses nothing.
+  If the project exports `.ply` or `.spz` with SH one day, this workaround changes from harmless to a restriction.
+  The next step is **Experiment 2.0 of the frontier plan**: reproduce the NaN, find the cause, fix it, and measure.
+- The policy for tries is explicit:
+  - Local Fast and Medium use the M4 memory preflight and can recommend `-d2`.
+  - The old Metal runs of Cinematic and Ultra keep their historical ladder in the metadata.
+    Users can no longer enqueue them from the product.
+  - CUDA 7K to 40K keeps the tier and the backend. `auto` does `d1→d2` only after a classified OOM.
+  - Each try saves the preset, the input scale, the cause, the rc, the duration and the observed peak.
 
-### Qué expone el CLI (v1.1.5, `--help` verificado) — mapa de levers Phase 2
+### What the CLI exposes (v1.1.5, `--help` checked): map of Phase 2 levers
 
-| Lever | ¿Flag? | Implicación |
+| Lever | Flag? | Implication |
 |---|---|---|
-| Pose refinement (2.1) | ❌ | Requiere swap de trainer |
-| Appearance embeddings (2.2) | ❌ | Requiere swap |
-| Antialiasing / mip (2.3) | ❌ trainer (el viewer pone `antialiased:true` al render — no es el fix) | Requiere swap |
-| Depth regularization (2.4) | ❌ (solo `--ssim-weight`) | Requiere swap |
-| Densification budget (2.5) | ⚠️ indirecto (flags de arriba) | Tuneable en sitio |
-| SH degree (2.0, nuevo) | ✅ `--sh-degree`, `--sh-degree-interval` | Hoy anulado por el workaround NaN |
-| Validación | ✅ `--val`, `--val-image <name>`, `--val-render <dir>` | **Jamás usados por el pipeline.** Un solo hold-out por corrida |
+| Pose refinement (2.1) | ❌ | Needs a trainer swap |
+| Appearance embeddings (2.2) | ❌ | Needs a swap |
+| Antialiasing / mip (2.3) | ❌ in the trainer (the viewer sets `antialiased:true` at render, which is not the fix) | Needs a swap |
+| Depth regularization (2.4) | ❌ (only `--ssim-weight`) | Needs a swap |
+| Densification budget (2.5) | ⚠️ indirect (flags above) | Can be tuned in place |
+| SH degree (2.0, new) | ✅ `--sh-degree`, `--sh-degree-interval` | Turned off today by the NaN workaround |
+| Checks | ✅ `--val`, `--val-image <name>`, `--val-render <dir>` | **The pipeline never used them.** One hold-out for each run |
 
-**Decisión de trainer (stay vs migrate a nerfstudio/gsplat): se toma con la
-baseline de Phase 1 en la mano, no antes.**
+**Trainer decision (stay, or migrate to nerfstudio/gsplat): the team makes it when the Phase 1 baseline exists, not before.**
 
-### Config de hardware (`config/hardware.json`)
+### Hardware config (`config/hardware.json`)
 
-`pipeline/hwconfig.py` — única fuente de verdad. `machine` = hechos detectados
-(16GB, 4P+6E, 10 GPU cores, Docker 9.77 GiB); `caps` = límites operativos
-calibrados (opensplat 11000 MiB, ODM 7g×4 / 8500m×2). `load()` chequea RAM real
-vs registrada en cada arranque (~5ms); `--detect` regenera `machine`.
+`pipeline/hwconfig.py` is the single source of truth.
+`machine` has the detected facts (16GB, 4P+6E, 10 GPU cores, Docker 9.77 GiB).
+`caps` has the calibrated limits for operation (opensplat 11000 MiB, ODM 7g×4 / 8500m×2).
+At each start, `load()` compares the real RAM with the recorded RAM (about 5 ms).
+`--detect` regenerates `machine`.
 
-### Entorno de eval (verificado 2026-07-11)
+### Eval environment (checked 2026-07-11)
 
-Python 3.14.6 (`/Volumes/SSD/_system/venv`): torch 2.13.0 **MPS=True**,
-torchvision 0.28.0, lpips 0.1.4 (forward pass probado, pesos AlexNet cacheados),
-scikit-image 0.26.0 (PSNR/SSIM importables). LPIPS no es bloqueante — está.
+- Python 3.14.6 (`/Volumes/SSD/_system/venv`)
+- torch 2.13.0 **MPS=True**
+- torchvision 0.28.0
+- lpips 0.1.4 (forward pass tested, AlexNet weights cached)
+- scikit-image 0.26.0 (you can import PSNR and SSIM)
 
-### Medición legacy: "el Mac es capaz"
+LPIPS does not block the work. It is there.
 
-El M4 de 16 GB fue fallback local sólo para Fast 1K y Medium 2K (con `AEROBRAIN_COMPUTE=local`). Los tiers de
-7K a 40K nunca fueron rutas Mac vigentes; ver la evidencia CUDA enlazada arriba.
+### Legacy measurement: "the Mac can do it"
+
+The 16 GB M4 was the local backup only for Fast 1K and Medium 2K (with `AEROBRAIN_COMPUTE=local`).
+The tiers from 7K to 40K were never current Mac routes.
+See the CUDA evidence linked above.

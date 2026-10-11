@@ -11,6 +11,7 @@ Sale con código != 0 si hay incumplimientos. test_fv2_hud_contract.py lo ejecut
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import sys
 import urllib.request
@@ -29,7 +30,8 @@ DEFAULT_CID = "recon_4e4245a1f4_aoi130"
 AUDIT_JS = r"""
 (() => {
   const W = innerWidth, H = innerHeight, cx = W / 2, cy = H / 2, Z = 96;
-  const out = { small: [], centre: [], clipped: [], overflow: [], overlap: [] };
+  const out = { small: [], centre: [], clipped: [], overflow: [], overlap: [], targets: [] };
+  const MINF = W >= 1200 ? 14 : 12;   // escritorio: el HUD escala con el viewport (hud2.js applyScale); 12 px es el suelo móvil
   const root = document.getElementById('vl-hud');
   const shown = el => { for (let p = el; p && p !== document.body; p = p.parentElement) { const cs = getComputedStyle(p);
     if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.05 || p.hidden) return false; } return true; };
@@ -40,7 +42,7 @@ AUDIT_JS = r"""
     if (!r.width || !r.height) continue;
     const own = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
     const label = el.id || String(el.className).split(' ')[0] || el.tagName;
-    if (own && parseFloat(getComputedStyle(el).fontSize) < 12) out.small.push([label, parseFloat(getComputedStyle(el).fontSize)]);
+    if (own && parseFloat(getComputedStyle(el).fontSize) < (inSheet(el) ? 12 : MINF)) out.small.push([label, parseFloat(getComputedStyle(el).fontSize)]);
     if (r.left < -1 || r.right > W + 1) out.clipped.push([label, Math.round(r.left), Math.round(r.right)]);
     const chrome = el.matches('.hx-plate,.hx-chip,.hx-ibtn,.hx-fire,.hx-wchip,.hx-read,.hx-gauge,.hx-minimap,.hx-banner,.hx-warn,.hx-gimbal,.hx-slot,.hx-heat,.hx-coach,.hx-count,.hx-compass,.hx-toast,.hx-tape');
     if (chrome && !inSheet(el) && !el.matches('.hx-tape') && r.left < cx + Z && r.right > cx - Z && r.top < cy + Z && r.bottom > cy - Z) out.centre.push([label, Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)]);
@@ -58,7 +60,14 @@ AUDIT_JS = r"""
   }
   // texto del canvas (rumbo, cintas, marcadores): el DOM no lo ve; la retícula publica el tamaño de fuente que usa
   const fpx = window.__volar && window.__volar.ctx && window.__volar.ctx.ui.hud.canvas && window.__volar.ctx.ui.hud.canvas.fontPx;
-  if (fpx && fpx < 12) out.small.push(['canvas-font', fpx]);
+  if (fpx && fpx < MINF) out.small.push(['canvas-font', fpx]);
+  // zonas táctiles >= 44 px (botones, enlaces, radios, summary) en HUD y hojas
+  for (const el of root.querySelectorAll('button, a[href], [role=radio], summary')) {
+    if (!shown(el) || getComputedStyle(el).pointerEvents === 'none' || el.matches('.hx-compass')) continue;   // la brújula amplía su zona con ::after (-8 px)
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height || el.closest('#hx-compat')) continue;
+    if (Math.min(r.width, r.height) < 43.5) out.targets.push([el.id || el.dataset.go || el.dataset.profile || el.dataset.pr || String(el.className).split(' ')[0] || el.tagName, Math.round(r.width), Math.round(r.height)]);
+  }
   return JSON.stringify(out);
 })()
 """
@@ -174,7 +183,7 @@ def audit(base: str, cid: str) -> dict[str, list]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="http://localhost:8790")
+    ap.add_argument("--base", default=os.environ.get("AEROBRAIN_BASE_URL", "http://localhost:8790"))
     ap.add_argument("--cid", default=DEFAULT_CID)
     a = ap.parse_args()
     fails = audit(a.base, a.cid)

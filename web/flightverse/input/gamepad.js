@@ -30,6 +30,8 @@ export function mapGamepad(pad, prev, settings, out) {
   if (!pad || !pad.connected) {
     out.connected = false; out.fwd = out.strafe = out.lift = 0; out.lookYawRate = out.lookPitchRate = 0;
     out.boost = out.brake = out.fire = false;
+    e.fireUp = !!prev.fire;                 // pad unplugged / BT drop while RT held: release the trigger
+    prev.fire = false;
     prev.buttons = [];
     return out;
   }

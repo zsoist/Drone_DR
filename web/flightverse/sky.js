@@ -3,8 +3,8 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=370';
-import { todParams, resolveTodKey, elevationOf, nearestTodKey } from '/flightverse/tour/tod.js?v=370';
+import * as THREE from '/flightverse/three.js?v=371';
+import { todParams, resolveTodKey, elevationOf, nearestTodKey } from '/flightverse/tour/tod.js?v=371';
 
 const PRESETS = {
   dia: {
@@ -88,6 +88,8 @@ export function createSky(scene, { radius = 2600 } = {}) {
     uStars: { value: 0 },
     uScatter: { value: 0 },
     uFogC: { value: new THREE.Color() },
+    uGlowC: { value: new THREE.Color() },   // F5: color saturado del horizonte del preset (banda de resplandor SOBRE la bruma)
+    uGlowAmt: { value: 0 },
     uTime: { value: 0 },
     uVoid: { value: 0 },       // WS E: bruma interior (cámara dentro de geometría) -> todo el cielo se funde a niebla
   };
@@ -99,8 +101,8 @@ export function createSky(scene, { radius = 2600 } = {}) {
       vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }`,
       fragmentShader: `varying vec3 vDir;
-        uniform vec3 uTop, uMid, uHorizon, uSunColor, uFogC; uniform vec3 uSunDir, uMoonDir;
-        uniform float uStars, uMidPos, uSunSize, uMoon, uGalaxy, uScatter, uTime, uTopPos, uVoid;
+        uniform vec3 uTop, uMid, uHorizon, uSunColor, uFogC, uGlowC; uniform vec3 uSunDir, uMoonDir;
+        uniform float uStars, uMidPos, uSunSize, uMoon, uGalaxy, uScatter, uTime, uTopPos, uVoid, uGlowAmt;
         float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
         float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
           return mix(mix(hash(i), hash(i+vec2(1.,0.)), f.x),
@@ -113,22 +115,32 @@ export function createSky(scene, { radius = 2600 } = {}) {
           col = mix(col, uTop, smoothstep(uMidPos, uTopPos, h));
           float hb = clamp(-d.y, 0., 1.);
           col = mix(col, uFogC, smoothstep(0.015, 0.3, hb));
+          // F5: el resplandor del atardecer nace SOBRE una franja de bruma que es exactamente el color
+          // de la niebla (la niebla del suelo es uniforme): sin borde duro entre suelo neblinoso y cielo
+          float hz = smoothstep(0.0, 0.06, h);
           if (uScatter > 0.01) {
             // dispersión Mie de juguete: banda cálida alrededor del azimut del sol,
             // fuerte cerca del horizonte — el atardecer deja de ser un color plano
             vec3 sh = normalize(vec3(uSunDir.x, 0.001, uSunDir.z));
             float az = max(dot(normalize(vec3(d.x, 0.001, d.z)), sh), 0.);
             float low = 1.0 - smoothstep(0.0, 0.22, h);
-            col += uSunColor * pow(az, 6.0) * low * uScatter * 0.22;
-            col += vec3(1.0, 0.35, 0.15) * pow(az, 14.0) * low * uScatter * 0.18;
-            col = mix(col, col * vec3(0.92, 0.84, 1.06), (1.0 - az) * uScatter * 0.25);
+            col += uSunColor * pow(az, 6.0) * low * uScatter * 0.22 * hz;
+            col += vec3(1.0, 0.35, 0.15) * pow(az, 14.0) * low * uScatter * 0.18 * hz;
+            col = mix(col, col * vec3(0.92, 0.84, 1.06), (1.0 - az) * uScatter * 0.25 * hz);
+          }
+          if (uGlowAmt > 0.01) {
+            // banda de resplandor del horizonte: el color saturado del preset vive SOBRE la bruma (más fuerte hacia el sol)
+            vec3 sh2 = normalize(vec3(uSunDir.x, 0.001, uSunDir.z));
+            float az2 = max(dot(normalize(vec3(d.x, 0.001, d.z)), sh2), 0.);
+            float band = hz * (1.0 - smoothstep(0.0, 0.22, h)) * (0.30 + 0.70 * az2 * az2);
+            col = mix(col, uGlowC, clamp(uGlowAmt * band * 1.25, 0., 0.9));
           }
           float s = max(dot(d, normalize(uSunDir)), 0.);
           // disco de dos tonos (núcleo cálido claro + corona del color del preset)
           float disc = pow(s, uSunSize);
           col += mix(uSunColor, vec3(1.0, 0.97, 0.9), 0.55) * disc * 1.15;
           col += uSunColor * pow(s, 24.0) * 0.28;
-          col += uSunColor * pow(s, 5.0) * 0.10 * (1.0 - h);   // resplandor bajo del horizonte
+          col += uSunColor * pow(s, 5.0) * 0.10 * (1.0 - h) * hz;   // resplandor bajo del horizonte
           if (uMoon > 0.01) {
             // disco lunar REAL: UV local sobre el plano perpendicular a la luna,
             // mares por value-noise (estables) + limb darkening. mix() en vez de
@@ -176,7 +188,7 @@ export function createSky(scene, { radius = 2600 } = {}) {
             }
           }
           col = mix(col, uFogC, uVoid);
-          col += (hash(gl_FragCoord.xy) - 0.5) * 0.012;        // dither anti-banding
+          col += (hash(gl_FragCoord.xy) + hash(gl_FragCoord.yx + 7.3) - 1.0) * 0.011;        // dither anti-banding
           gl_FragColor = vec4(col, 1.);
         }`,
     }));
@@ -249,9 +261,12 @@ export function createSky(scene, { radius = 2600 } = {}) {
     const SEG = 360;
     const layers = [[2460, 230, 1.3], [2310, 330, 4.1], [2160, 430, 7.7]];   // radio, altura, fase
     for (const [rad, hmax, ph] of layers) {
-      // 3 anillos: cresta (color de la sierra) · y=12 (casi niebla) · base bajo el plano de bruma (niebla)
-      const pos = new Float32Array((SEG + 1) * 3 * 3);
-      const col = new Float32Array((SEG + 1) * 3 * 3).fill(1);
+      // 4 anillos: cresta (color de la sierra) · 55% de altura (medio velada) · y=12 y base (= niebla exacta).
+      // El suelo de bruma termina ANTES de la sierra (HAZE_R): la base de los cerros se funde con la
+      // niebla en vez de cortarse en una línea recta contra el borde del plano.
+      const R = 4;
+      const pos = new Float32Array((SEG + 1) * R * 3);
+      const col = new Float32Array((SEG + 1) * R * 3).fill(1);
       const idx = [];
       for (let i = 0; i <= SEG; i++) {
         const a = (i / SEG) * Math.PI * 2;
@@ -265,12 +280,13 @@ export function createSky(scene, { radius = 2600 } = {}) {
         h = Math.max(0, (h / tot) * 0.5 + 0.5);
         const top = hmax * (0.25 + 0.75 * Math.pow(h, 1.4));
         const cx = Math.cos(a) * rad, cz = Math.sin(a) * rad;
-        pos.set([cx, top, cz], i * 9);
-        pos.set([cx, 12, cz], i * 9 + 3);
-        pos.set([cx, -160, cz], i * 9 + 6);
+        pos.set([cx, top, cz], i * R * 3);
+        pos.set([cx, 12 + (top - 12) * 0.55, cz], i * R * 3 + 3);
+        pos.set([cx, 12, cz], i * R * 3 + 6);
+        pos.set([cx, -160, cz], i * R * 3 + 9);
         if (i < SEG) {
-          const k = i * 3;
-          idx.push(k, k + 1, k + 3, k + 1, k + 4, k + 3, k + 1, k + 2, k + 4, k + 2, k + 5, k + 4);
+          const k = i * R;
+          for (let r = 0; r < R - 1; r++) idx.push(k + r, k + r + 1, k + R + r, k + r + 1, k + R + r + 1, k + R + r);
         }
       }
       const g = new THREE.BufferGeometry();
@@ -285,19 +301,20 @@ export function createSky(scene, { radius = 2600 } = {}) {
       ridges.push(m);
     }
   }
-  const _rc = new THREE.Color(), _rm = new THREE.Color();
+  const _rc = new THREE.Color(), _rv = new THREE.Color();
   function tintRidges() {
     // del más lejano (casi color de niebla) al más cercano (más azul/oscuro): perspectiva atmosférica
     const mixes = [0.12, 0.22, 0.34];
     ridges.forEach((m, i) => {
       _rc.copy(fogColor).lerp(i === 2 ? uni.uTop.value : uni.uMid.value, mixes[i]).multiplyScalar(1 - 0.06 * i);
-      _rm.copy(_rc).lerp(fogColor, 0.85);
       const col = m.geometry.attributes.color;
       const n = m.userData.seg + 1;
+      _rv.copy(_rc).lerp(fogColor, 0.40);          // anillo medio: bruma de valle
       for (let k = 0; k < n; k++) {
-        col.setXYZ(k * 3, _rc.r, _rc.g, _rc.b);
-        col.setXYZ(k * 3 + 1, _rm.r, _rm.g, _rm.b);
-        col.setXYZ(k * 3 + 2, fogColor.r, fogColor.g, fogColor.b);
+        col.setXYZ(k * 4, _rc.r, _rc.g, _rc.b);
+        col.setXYZ(k * 4 + 1, _rv.r, _rv.g, _rv.b);
+        col.setXYZ(k * 4 + 2, fogColor.r, fogColor.g, fogColor.b);
+        col.setXYZ(k * 4 + 3, fogColor.r, fogColor.g, fogColor.b);
       }
       col.needsUpdate = true;
     });
@@ -307,8 +324,9 @@ export function createSky(scene, { radius = 2600 } = {}) {
   // de antes no tocaba nada: las islas miden 260-580 m) + plano de bruma bajo la isla que se
   // funde con el horizonte. Es atmósfera, no terreno: sin textura, mismo color que la niebla.
   const fogColor = new THREE.Color();
+  const HAZE_R = 1900;                         // < sierra (2160+): el suelo de bruma no corta los cerros
   const hazeGround = new THREE.Mesh(
-    new THREE.CircleGeometry(4500, 48),
+    new THREE.CircleGeometry(HAZE_R, 64),
     new THREE.MeshBasicMaterial({ color: 0xffffff, fog: true }));
   hazeGround.rotation.x = -Math.PI / 2;
   hazeGround.position.y = -7;
@@ -343,9 +361,18 @@ export function createSky(scene, { radius = 2600 } = {}) {
     // color de la niebla = franja de horizonte apenas hacia el cenit: el terreno lejano se funde
     // EXACTAMENTE con el cielo que tiene detrás (antes 0xcfe2f2 fijo vs horizonte del preset)
     fogColor.set(p.horizon).lerp(uni.uMid.value, 0.22);
+    uni.uGlowC.value.copy(fogColor);
+    // sol bajo: la bruma del suelo es más tenue/parda que la banda de resplandor sobre el horizonte
+    // (un mar plano de naranja saturado parecía un fallo; la luz vive en el cielo, no en el suelo)
+    const dull = Math.min(0.6, (p.scatter || 0) * 1.0);
+    if (dull > 0) {
+      const l = fogColor.r * 0.2126 + fogColor.g * 0.7152 + fogColor.b * 0.0722;
+      fogColor.r += (l * 0.86 - fogColor.r) * dull; fogColor.g += (l * 0.86 - fogColor.g) * dull; fogColor.b += (l * 0.95 - fogColor.b) * dull;
+    }
+    uni.uGlowAmt.value = Math.min(0.85, (p.scatter || 0) * 1.6);
     uni.uFogC.value.copy(fogEnabled ? fogColor : new THREE.Color(p.fog));
     if (fogEnabled) uni.uHorizon.value.copy(fogColor);      // el cielo nace del color de la niebla: sin costura en el horizonte
-    hazeGround.material.color.copy(fogColor).multiplyScalar(0.9);   // más cerca = apenas más oscuro; la niebla lo sube al color del cielo
+    hazeGround.material.color.copy(fogColor).multiplyScalar(0.95);   // más cerca = apenas más oscuro; la niebla lo sube al color del cielo
     sun.color.set(p.sunTint || p.sun || 0xffffff); sun.intensity = p.sunI;
     lightIsMoon = !!(p.moon > 0 && p.moonPos);
     const lp = lightIsMoon ? p.moonPos : p.sunPos;

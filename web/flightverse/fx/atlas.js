@@ -4,8 +4,10 @@
 export const ATLAS_CELLS = Object.freeze({
   glow: 0, flash: 1, ring: 2, streak: 3, spark: 4, smokeA: 5, smokeB: 6, scorch: 7,
   crater: 8, dust: 9, crack: 10, leaf: 11, puffHot: 12, flare: 13, hole: 14, star: 15,
+  ribbon: 16, ribbonHard: 17, orb: 18, smokeRibbon: 19,
 });
-const GRID = 4;
+const GRID = 4;          // columns
+const ROWS = 5;
 const SIZE = 128;
 
 /** uv rect [u0, v0, du, dv] for a cell name (canvas row 0 = top; texture flipY). */
@@ -13,8 +15,7 @@ export function cellRect(name) {
   const index = ATLAS_CELLS[name] ?? 0;
   const col = index % GRID;
   const row = Math.floor(index / GRID);
-  const d = 1 / GRID;
-  return [col * d, 1 - (row + 1) * d, d, d];
+  return [col / GRID, 1 - (row + 1) / ROWS, 1 / GRID, 1 / ROWS];
 }
 
 function mulberry32(seed) {
@@ -75,7 +76,7 @@ function lobes(seed, count, spread, minR, maxR, weight = 0.11) {
 /** Build the atlas canvas (browser only). */
 export function buildAtlasCanvas(doc = document) {
   const canvas = doc.createElement('canvas');
-  canvas.width = canvas.height = GRID * SIZE;
+  canvas.width = GRID * SIZE; canvas.height = ROWS * SIZE;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const C = ATLAS_CELLS;
@@ -159,6 +160,26 @@ export function buildAtlasCanvas(doc = document) {
     const across = 1 - smooth(0.2, 1.0, Math.abs(y));
     const along = Math.exp(-(x * x) / 0.3);
     return across * along * (1 - smooth(0.9, 1, Math.abs(x)));
+  });
+  // ribbon: soft across (gaussian), constant along x (segments chain seamlessly)
+  paint(ctx, C.ribbon, (x, y) => Math.exp(-2.6 * y * y) * (1 - smooth(0.96, 1, Math.abs(y))));
+  // ribbonHard: crisp flat core with a thin soft skirt — reads at 3-4 px
+  paint(ctx, C.ribbonHard, (x, y) => {
+    const a = Math.abs(y);
+    return (a < 0.42 ? 1 : Math.exp(-((a - 0.42) * (a - 0.42)) / 0.06)) * (1 - smooth(0.9, 1, a));
+  });
+  // orb: white-hot core, bright rim shell, soft halo (energy/plasma sphere seen head-on)
+  paint(ctx, C.orb, (x, y) => {
+    const r = Math.hypot(x, y);
+    const core = Math.exp(-16 * r * r);
+    const rim = Math.exp(-((r - 0.58) * (r - 0.58)) / 0.012) * 0.75;
+    const halo = Math.exp(-2.2 * r * r) * 0.42;
+    return Math.min(1, core + rim + halo) * (1 - smooth(0.86, 1, r));
+  });
+  // smokeRibbon: lumpy across y, stretched lumps along x (volumetric trail segment)
+  paint(ctx, C.smokeRibbon, (x, y) => {
+    const f = lobes(61, 26, 0.6, 0.22, 0.46, 0.2)(x * 0.85, y * 1.9);
+    return Math.min(1, f * 1.15 + 0.2 * Math.exp(-4 * y * y)) * (1 - smooth(0.8, 1, Math.abs(y)));
   });
   return canvas;
 }

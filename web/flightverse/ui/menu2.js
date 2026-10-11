@@ -2,10 +2,11 @@
 // Sonido · Controles · Foto · Grabar · Salir, subpáginas con flecha atrás) y selector de MODO (4 tarjetas:
 // Explorar / Tour / Gate Rush / Invasión). Reusa el coordinador de overlays de touch.js (inert + foco atrapado +
 // Esc) y las mismas acciones (ctx.actions) que el menú legado; NO hay ciclo de modos: cada modo se elige.
-import { MODES, RIGS } from '/flightverse/runtime.js?v=370';
-import { createOverlayCoordinator } from '/flightverse/touch.js?v=370';
-import { installGrade } from '/flightverse/ui/grade.js?v=370';
-import { ICON } from '/flightverse/ui/icons2.js?v=370';
+import { MODES, RIGS } from '/flightverse/runtime.js?v=371';
+import { createOverlayCoordinator } from '/flightverse/touch.js?v=371';
+import { installGrade } from '/flightverse/ui/grade.js?v=371';
+import { ICON } from '/flightverse/ui/icons2.js?v=371';
+import { FLIGHT_PROFILES, humanSceneLabel } from '/flightverse/hud-format.js?v=371';
 
 const s24 = b => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${b}</svg>`;
 const MODE_ICON = {
@@ -121,6 +122,12 @@ export function pauseMarkup(touch) {
             ${toggle('vibration', 'Vibración', 'Respuesta háptica al disparar y al recibir daño')}
           </div>
           <div class="hx-page" data-page="ctl" hidden>
+            <div id="hx-prof-sec">
+              <h3 class="hx-h">Perfil de vuelo</h3>
+              ${seg('data-profile', FLIGHT_PROFILES.map(p => [p.key, p.label]), 'normal', 'Perfil de vuelo')}
+              <p class="hx-note" id="hx-prof-desc"></p>
+              <p class="hx-note">Se guarda en este dispositivo y también rige en Gate Rush e Invasión.</p>
+            </div>
             <h3 class="hx-h">Mirar y volar</h3>
             ${slider('lookSens', 'Sensibilidad', 0.5, 2, 0.05)}
             ${slider('expo', 'Curva de palancas', 0, 0.6, 0.05)}
@@ -161,13 +168,24 @@ export function createMenu2(ctx) {
   const prefs = ctx.ui.prefs;
   let overlayCoordinator = null;
   let page = 'root';
+  // Perfiles de vuelo (Cine / Normal / Sport): la física v2 los expone en ctx.controls.physics.setProfile (persistido por ella en
+  // localStorage 'ab.fv.profile'). Se registra aquí la acción ctx.actions.setProfile que este menú usaba opcionalmente.
+  const hasProfile = () => !!ctx.controls?.physics?.setProfile;
+  if (!A.setProfile) A.setProfile = name => ctx.controls?.physics?.setProfile?.(name) ?? null;
   const pages = {};
+  let sceneObs = null;
   const PAGE_TITLE = { root: 'Pausa', cam: 'Cámara', vista: 'Vista', img: 'Imagen', snd: 'Sonido', ctl: 'Controles', photo: 'Foto', guide: 'Cómo jugar' };
 
   // ── construcción ──────────────────────────────────────────────────────────
   function buildPause() {
     pause.setAttribute('role', 'dialog');
-    pause.querySelector('.hx-scene-slot').replaceWith($('#vl-scene'));   // volar.js escribe aquí el estado de carga
+    const scene = $('#vl-scene');
+    pause.querySelector('.hx-scene-slot').replaceWith(scene);            // volar.js escribe aquí el estado de carga
+    // volar.js escribe datos crudos («200 m · círculo · 31.416 m²»): se reescribe a una etiqueta humana (idempotente)
+    const humanize = () => { const h = humanSceneLabel(scene.textContent); if (h !== scene.textContent) scene.textContent = h; };
+    sceneObs = new MutationObserver(humanize);
+    sceneObs.observe(scene, { childList: true, characterData: true, subtree: true });
+    humanize();
     for (const k of ['cam', 'vista', 'img', 'snd', 'ctl', 'photo', 'guide']) pages[k] = pause.querySelector(`[data-page="${k}"]`);
     pages.root = pause.querySelector('[data-page="root"]');
   }
@@ -185,10 +203,10 @@ export function createMenu2(ctx) {
           <article class="hx-mcard" data-card="explorar">
             <button type="button" class="hx-mcard-hit" data-mode="explorar" aria-label="Explorar. Recorre Bogotá a tu ritmo">${MODE_ICON.explorar}<span><b>Explorar</b><small>Recorre Bogotá a tu ritmo</small></span></button>
             <div class="hx-mcard-chips" role="group" aria-label="Variante de Explorar">
-              <button type="button" class="hx-chip" data-explore="asistido" aria-pressed="true">Normal</button>
-              ${ctx.actions.setProfile ? '<button type="button" class="hx-chip" data-explore="cine" aria-pressed="false">Cine</button>' : ''}
+              ${hasProfile() ? FLIGHT_PROFILES.map(p => `<button type="button" class="hx-chip" data-profile="${p.key}" aria-pressed="false">${p.label}</button>`).join('') : ''}
               <button type="button" class="hx-chip" data-explore="dios" aria-pressed="false">Sin colisión</button>
             </div>
+            ${hasProfile() ? '<p class="hx-mcard-desc" id="hx-mprof-desc"></p>' : ''}
           </article>
           <article class="hx-mcard" data-card="tour">
             <button type="button" class="hx-mcard-hit" data-mode="tour" aria-label="Tour. Un recorrido guiado">${MODE_ICON.tour}<span><b>Tour</b><small>Un recorrido guiado</small></span></button>
@@ -251,6 +269,16 @@ export function createMenu2(ctx) {
     $('#hx-tod-seg').innerHTML = seg('data-tod', keys.map(k => [k, LB[k]]), ctx.sky.preset, 'Hora del día');
     $('#hx-calidad-v').textContent = ctx.report.calidad?.k || 'auto';
   }
+  function syncProfile() {
+    const cur = ctx.controls?.physics?.profile || 'normal';
+    const desc = FLIGHT_PROFILES.find(p => p.key === cur)?.desc || '';
+    for (const b of document.querySelectorAll('#hx-psheet [data-profile], #hx-modes [data-profile]')) {
+      const on = b.dataset.profile === cur;
+      b.setAttribute(b.getAttribute('role') === 'radio' ? 'aria-checked' : 'aria-pressed', String(on));
+    }
+    for (const id of ['hx-prof-desc', 'hx-mprof-desc']) { const n = document.getElementById(id); if (n) n.textContent = desc; }
+    const sec = $('#hx-prof-sec'); if (sec) sec.hidden = !hasProfile();
+  }
   function syncPrefs() {
     for (const n of pause.querySelectorAll('[data-pref]')) {
       const k = n.dataset.pref;
@@ -277,6 +305,7 @@ export function createMenu2(ctx) {
     if (target === 'cam') syncCam();
     if (target === 'vista') syncVista();
     if (target === 'snd' || target === 'ctl') syncPrefs();
+    if (target === 'ctl') syncProfile();
     if (target === 'photo') $('#hx-photo-go').disabled = !(A.enterPhoto || ctx.tour.photo?.enter);
     pause.querySelector('.hx-pages').scrollTop = 0;
     const first = pages[target].querySelector('button:not([disabled]),input:not([disabled]),a');
@@ -293,8 +322,7 @@ export function createMenu2(ctx) {
     if (kind === 'explorar') {
       stopOthers();
       const k = opt === 'dios' ? 'dios' : 'asistido';
-      A.setMode(k);
-      if (opt === 'cine') A.setProfile?.('cine'); else if (k === 'asistido') A.setProfile?.('normal');
+      A.setMode(k);                                     // el perfil de vuelo elegido (Cine / Normal / Sport) se conserva
       close();
     } else if (kind === 'tour') {
       stopOthers();
@@ -317,6 +345,7 @@ export function createMenu2(ctx) {
   function syncModes() {
     const cur = S.reto ? 'gaterush' : ctx.enemies?.invasion?.state.on ? 'invasion' : S.modeKey === 'cinematico' ? 'tour' : 'explorar';
     for (const c of modes.querySelectorAll('.hx-mcard')) c.classList.toggle('sel', c.dataset.card === cur);
+    syncProfile();
     for (const b of modes.querySelectorAll('[data-explore]')) b.setAttribute('aria-pressed', String(b.dataset.explore === (S.modeKey === 'dios' ? 'dios' : 'asistido')));
     const last = localStorage.getItem('ab.fv.gr.diff') || 'media';
     for (const b of modes.querySelectorAll('[data-gr]')) b.classList.toggle('last', b.dataset.gr === last);
@@ -371,6 +400,8 @@ export function createMenu2(ctx) {
         if (nav.dataset.go === 'modes') overlayCoordinator.open('modes'); else go(nav.dataset.go);
         return;
       }
+      const pf = t.closest('[data-profile]');
+      if (pf) { A.setProfile(pf.dataset.profile); syncProfile(); return; }
       const cam = t.closest('[data-camera]');
       if (cam) { A.setRig(+cam.dataset.ix); if (S.modeKey === 'dios' || S.modeKey === 'cinematico') A.setMode('asistido'); syncCam(); return; }
       const fm = t.closest('[data-fmode]');
@@ -402,6 +433,7 @@ export function createMenu2(ctx) {
     });
     modes.addEventListener('click', e => {
       const t = e.target;
+      const pf = t.closest('[data-profile]'); if (pf) { A.setProfile(pf.dataset.profile); syncProfile(); return; }
       const ex = t.closest('[data-explore]'); if (ex) { startMode('explorar', ex.dataset.explore); return; }
       const gr = t.closest('[data-gr]'); if (gr) { startMode('gaterush', gr.dataset.gr); return; }
       const inv = t.closest('[data-inv]'); if (inv) { startMode('invasion', inv.dataset.inv); return; }
@@ -440,7 +472,7 @@ export function createMenu2(ctx) {
     recorderFailed() { ctx.ui.screens.toast('La grabación se detuvo por un error. Prueba de nuevo.'); ctx.audio.rec?.(false); },
     tickRec() {},
     get movable() { return null; },
-    dispose() { overlayCoordinator?.dispose(); },
+    dispose() { sceneObs?.disconnect(); overlayCoordinator?.dispose(); },
     openModes: () => overlayCoordinator.open('modes'),
     openPause: (pg = 'root') => { overlayCoordinator.open('menu'); if (pg !== 'root') go(pg); },
     MODES,

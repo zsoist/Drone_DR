@@ -75,7 +75,11 @@ OPERATOR_AUTH_FILE = VAULT / ".operator-auth.json"
 EDGE_AUTH_KEY_FILE = VAULT / ".edge-auth-key"
 AUTH_EVENT_LOG = VAULT / "ops" / "auth-events.jsonl"
 PUBLIC_ORIGINS = {"https://vuelos.metislab.work"}
-LOCAL_DEV_HOSTS = {"127.0.0.1:8790", "localhost:8790", "[::1]:8790"}
+# Preview mode (AEROBRAIN_PREVIEW_PORT): a second, READ-ONLY server for a git worktree, so agents
+# can test a redesign without touching prod (:8790 serves web/ from disk) or the vault.
+PREVIEW_PORT = int(os.environ.get("AEROBRAIN_PREVIEW_PORT") or 0)
+PORT = PREVIEW_PORT or 8790
+LOCAL_DEV_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"[::1]:{PORT}"}
 PUBLIC_RESOURCES = {
     "/login.html", "/login.js", "/login.css", "/icons.js", "/robots.txt",
     "/api/healthz", "/api/whoami",
@@ -4144,7 +4148,7 @@ class H(BaseHTTPRequestHandler):
         if site and site not in ("same-origin", "none"):
             return False
         origin = (self.headers.get("Origin") or "").rstrip("/")
-        if origin and origin not in ("http://127.0.0.1:8790", "http://localhost:8790"):
+        if origin and origin not in (f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"):
             return False
         return True
 
@@ -4188,6 +4192,8 @@ class H(BaseHTTPRequestHandler):
             pass  # cliente se fue; nada que enviar
 
     def do_POST(self):
+        if PREVIEW_PORT:
+            return self.send_json({"error": "preview server is read-only"}, 403)
         if self.enforce_external_host():
             return
         if self.redirect_external_http():
@@ -5930,7 +5936,12 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and PREVIEW_PORT:
+    # never mark prod jobs as orphans or purge prod temp files from a preview server
+    jobstore.init()
+    print(f"AeroBrain PREVIEW (read-only) :{PORT} · web = {WEB}")
+    QuietThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
+elif __name__ == "__main__":
     jobstore.init(orphan_kinds=jobstore.LIGHT_KINDS)   # solo el server marca huérfanos sus LIGHT
     # limpia temporales de subida huérfanos (.upload-<cid>-<hex>.<ext>): una subida cortada por
     # reinicio/OOM deja el tmp en splats/. best_splats ya los ignora, pero purgarlos evita acumular

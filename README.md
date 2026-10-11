@@ -1,12 +1,12 @@
-# 🛸 AeroBrain — Personal Drone Intelligence Platform
+# 🛸 AeroBrain: Personal Drone Intelligence Platform
 
 **Live:** https://vuelos.metislab.work · **Repo:** https://github.com/zsoist/Drone_DR
 
-Conectas la SD del DJI Flip / Neo 2 → el Mac Mini M4 procesa todo → tus vuelos
-quedan navegables en la web: mapa satelital sincronizado al video, análisis AI
-de escenas, y reels de viaje auto-editados.
+Connect the SD card of the DJI Flip / Neo 2. The Mac Mini M4 processes all the data. Then you can
+browse your flights on the web. The web has a satellite map that follows the video. It also
+has AI analysis of scenes and auto-edited travel reels.
 
-## Arquitectura ($0/mes — decisión deliberada)
+## Architecture ($0/month, a deliberate decision)
 
 ```
 SD card ──ingest──▶ drone-vault (SSD 1TB)          Mac Mini M4 · control plane
@@ -18,152 +18,169 @@ SD card ──ingest──▶ drone-vault (SSD 1TB)          Mac Mini M4 · cont
                             │              · ODM depthmaps CUDA
                             │              · gsplat 7K/15K/20K/30K/40K
                             ▼
-              Cloudflare Worker /*          ←── sesión HMAC + bypass de cache privado
+              Cloudflare Worker /*          ←── HMAC session + private cache bypass
                             │
-              Cloudflare Tunnel (metislab)  ←── $0: sin R2, sin VPS, sin egress
+              Cloudflare Tunnel (metislab)  ←── $0: no R2, no VPS, no egress
                             │
                             ▼
                 https://vuelos.metislab.work
 ```
 
-**Por qué no R2/VPS:** el M4 ya es un server 24/7 con SSD de sobra (el espacio libre cambia: `df -h /Volumes/SSD`). Cloudflare
-Tunnel sirve el vault directo — storage $0, egress $0, sin tarjeta. R2 queda
-como opción futura para viajes ([sync_r2.py](pipeline/archive/sync_r2.py), archivado, cap 9GB free tier).
+**Why not R2/VPS:** the M4 is already a 24/7 server with plenty of SSD space. The free space changes, so
+check it with `df -h /Volumes/SSD`. Cloudflare Tunnel serves the vault directly. Storage costs $0, egress
+costs $0 and you do not need a card. R2 is a possible future option for trips. The script
+[sync_r2.py](pipeline/archive/sync_r2.py) is archived, and its cap is 9GB on the free tier.
 
-## Acceso privado
+## Private access
 
-AeroBrain tiene una sola cuenta, `daniel`. El servidor exige autenticación antes
-de entregar cualquier página, API, video, foto, mapa, modelo, splat o enlace de
-share. La sesión es absoluta de 24 horas, se muestra en hora de Colombia y usa una
-cookie `__Host-` Secure/HttpOnly/SameSite=Strict. El password se verifica con
-scrypt; SQLite guarda sólo el hash de cada token de sesión. Codex y Claude Code
-conservan acceso de desarrollo únicamente por loopback estricto en
-`http://127.0.0.1:8790`. Supabase funciona como índice sólo de servidor:
-`anon`/`authenticated` no tienen acceso al esquema, tablas ni RPCs, y el Mac usa
-exclusivamente su secret key. Detalles y verificación:
-[docs/AUTH_SECURITY.md](docs/AUTH_SECURITY.md).
+AeroBrain has one account, `daniel`. The server needs authentication before it sends any page, API, video,
+photo, map, model, splat or share link. The session is absolute and lasts 24 hours. The UI shows the session
+time in Colombia time. The session cookie has the `__Host-` prefix and the Secure, HttpOnly and
+SameSite=Strict attributes. The password check uses scrypt.
 
-El Worker versionado en `edge/` protege todo el host antes del cache de Cloudflare.
-Convierte la cookie de Daniel en un sobre HMAC efímero para el origin, elimina
-headers falsificables y conserva streaming Range. Una entrada CDN antigua no puede
-saltarse el gate ni una regla de transformación puede romper la sesión.
+SQLite keeps only the hash of each session token. Codex and Claude Code have development access only
+through strict loopback at `http://127.0.0.1:8790`. Supabase works only as a server-side index. The roles
+`anon` and `authenticated` have no access to the schema, the tables or the RPCs. The Mac uses only its
+secret key. Details and checks: [docs/AUTH_SECURITY.md](docs/AUTH_SECURITY.md).
 
-## Módulos
+The versioned Worker in `edge/` protects the whole host before the Cloudflare cache. It converts the cookie
+of Daniel to an ephemeral HMAC envelope for the origin. It removes headers that an attacker can forge. It
+keeps `Range` support for video streams. An old CDN entry cannot skip the gate. A transformation rule cannot
+break the session.
 
-| Módulo | Qué hace |
+## Modules
+
+| Module | What it does |
 |---|---|
-| `pipeline/ingest.py` | SD → vault, rsync resumible + manifest de integridad |
-| `pipeline/srt_parser.py` | Telemetría DJI SRT → GPS 1Hz + stats (dist, alt, bbox) |
-| `pipeline/process.py` | Proxy 1080p H.264 (VideoToolbox) + keyframes + thumbs |
-| `pipeline/policy.py` | Tiers de compute por clip (full/standard/skim) |
-| `pipeline/build_index.py` | Agrega manifests → flights.json |
-| `ai/router.py` | Lanes multi-LLM: Gemini (vision) · DeepSeek (texto) · OpenAI (fallback) |
-| `ai/analyze.py` | Keyframes → resumen, tags, highlights, travel_score (~$0.002/clip) |
-| `ai/reel.py` | Auto-editor: top highlights → reel 1080p o 9:16 vertical |
-| `pipeline/worker.py` | Cola heavy única: todo ODM/splat al PC CUDA (política PC-only), publicación y gates |
-| `pipeline/compute_policy.py` | Enruta ODM/splat al PC (strict); `AEROBRAIN_COMPUTE=local` = legacy Mac |
-| `pipeline/docker_ondemand.py` | OrbStack sólo mientras un job usa un contenedor local; se apaga tras 5 min |
-| `pipeline/pc_janitor.py` | Retención del scratch del PC GPU (7 d terminales / 30 d huérfanos) |
-| `pipeline/scenes.py` | Sitios estables, versiones inmutables y aporte registrado por video |
-| `pipeline/scene_manifest.py` | Contrato Mundo/Flightverse con cobertura verificada 100/200/400/600/1000 m |
-| `pipeline/external_probe.py` | SLO público desde GitHub Actions (best-effort, ver OPERATIONS): healthz, redirect a login, `whoami` 401, manifest 401 y media 401 con headers del Worker |
-| `pipeline/browser_gate.py` | QA real en Chrome headless (CDP stdlib) antes de dar un job 3D por done |
-| `pipeline/browser_matrix.py` | QA multi-viewport de splats: share + workspace en mobile/iPad/desktop, macro zoom, overflow y screenshots |
-| `pipeline/audit_splats.py` | Auditor de salud de splats: assets, current/history, metadata, jobs, warnings legacy |
-| `pipeline/make_ksplat.mjs` | .splat/.ply → .ksplat con la lib vendoreada del viewer (sin npm) |
-| `/supersplat/` | Editor SuperSplat (MIT) self-hosted — post-pro de splats. Se sirve desde `splat/supersplat/dist` (gitignored); fork en `splat/supersplat` (rama `aerobrain-fork`, backup privado `github.com/zsoist/aerobrain-supersplat`); rebuild en [RUNBOOKS](docs/RUNBOOKS.md#rebuild-supersplat) |
-| `web/` | Flight Deck V2: Home cinematográfico, galería, mapa MapLibre/Esri y telemetría sincronizada |
-| `web/home-data.js` | Vista veraz del Home: vuelos, jobs, bóveda y siete módulos con fallos independientes |
+| `pipeline/ingest.py` | SD → vault, resumable rsync + integrity manifest |
+| `pipeline/srt_parser.py` | DJI SRT telemetry → GPS 1Hz + stats (dist, alt, bbox) |
+| `pipeline/process.py` | 1080p H.264 proxy (VideoToolbox) + keyframes + thumbs |
+| `pipeline/policy.py` | Compute tiers per clip (full/standard/skim) |
+| `pipeline/build_index.py` | Collects manifests → flights.json |
+| `ai/router.py` | LLM lanes: Gemini (vision) · DeepSeek (text) · OpenAI (fallback) |
+| `ai/analyze.py` | Keyframes → summary, tags, highlights, travel_score (about $0.002/clip) |
+| `ai/reel.py` | Auto-editor: top highlights → 1080p reel or 9:16 vertical reel |
+| `pipeline/worker.py` | Single heavy queue: all ODM/splat jobs go to the CUDA PC (PC-only policy), publish and gates |
+| `pipeline/compute_policy.py` | Routes ODM/splat to the PC (strict); `AEROBRAIN_COMPUTE=local` = legacy Mac |
+| `pipeline/docker_ondemand.py` | OrbStack runs only while a job uses a local container; it stops after 5 min |
+| `pipeline/pc_janitor.py` | Keeps scratch data on the GPU PC: 7 d for terminal jobs, 30 d for orphans |
+| `pipeline/scenes.py` | Stable sites, immutable versions and the registered contribution of each video |
+| `pipeline/scene_manifest.py` | `Mundo`/Flightverse contract with checked coverage at 100/200/400/600/1000 m |
+| `pipeline/external_probe.py` | Public SLO from GitHub Actions (best-effort, see OPERATIONS): healthz, redirect to login, `whoami` 401, manifest 401 and media 401 with Worker headers |
+| `pipeline/browser_gate.py` | Real QA in headless Chrome (CDP stdlib) before a 3D job is set to done |
+| `pipeline/browser_matrix.py` | QA of splats on different screen sizes: share + workspace on mobile/iPad/desktop, macro zoom, overflow and screenshots |
+| `pipeline/audit_splats.py` | Splat health auditor: assets, current/history, metadata, jobs, legacy warnings |
+| `pipeline/make_ksplat.mjs` | .splat/.ply → .ksplat with the vendored viewer library (no npm) |
+| `/supersplat/` | SuperSplat editor (MIT), self-hosted, for splat post-process work. It is served from `splat/supersplat/dist` (gitignored). The fork is in `splat/supersplat` (branch `aerobrain-fork`, private backup `github.com/zsoist/aerobrain-supersplat`). For the rebuild, see [RUNBOOKS](docs/RUNBOOKS.md#rebuild-supersplat) |
+| `web/` | Flight Deck V2: cinematic Home, gallery, MapLibre/Esri map and synchronized telemetry |
+| `web/home-data.js` | Truthful view of the Home: flights, jobs, vault and seven modules that fail independently |
 
-## 3D pipeline actual
+## Current 3D pipeline
 
-El control, el vault y la publicación son locales; el cómputo premium usa el PC RTX de la LAN:
+The control, the vault and the publication are local. The premium compute uses the RTX PC on the LAN:
 
-1. `odm_prep.py` extrae frames con VideoToolbox, filtra blur/duplicados y escribe GPS EXIF desde SRT.
-2. El worker (proceso launchd separado del server web) reclama el ODM de la cola SQLite y lo manda al PC GPU por SSH (política PC-only, `compute_policy.py`); Docker/OrbStack en el Mac sólo se enciende bajo demanda para post-proceso. Reiniciar la web no mata jobs.
-3. Preset `alta` usa 3072px, `pc-quality high`, `feature-quality high`, DSM/DTM/ortho y nube densa. La ruta remota CUDA puede producir malla completa para capturas orbitales/oblicuas; para nadir, DSM, ortho, nube y splat siguen siendo el producto principal.
-4. `tresd_publish.py` publica ortho/DSM/hillshade WebP con feather alpha, DSM binario para mediciones, nube PLY gzip, malla viewer re-centrada si existe, QA y `system.json` atómico.
-5. El contrato único de splat define Fast 1K y Medium 2K (Metal sólo con `AEROBRAIN_COMPUTE=local`, legacy; por defecto la política es **PC-only**, `pipeline/compute_policy.py`, y todo va a CUDA). Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K y Grandmaster 40K son NVIDIA CUDA estrictos: no bajan de tier ni caen al Mac. `auto` prueba resolución completa y sólo reintenta `-d2` tras OOM CUDA clasificado.
-6. Publicación de splats es atómica: current se archiva en `splats/history/`, se genera SOG, se reconstruye el índice y el gate de navegador debe pasar antes de marcar `done`.
-7. El viewer se verifica con matriz real: `share.html` y `tresd.html` en mobile, iPad y desktop deben renderizar canvas, exponer versiones, no desbordar horizontalmente y permitir macro zoom medible.
+1. `odm_prep.py` extracts frames with VideoToolbox, filters blur and duplicates, and writes GPS EXIF from the SRT.
+2. The worker is a launchd process, separate from the web server. It claims the ODM job from the SQLite queue. It sends the job to the GPU PC through SSH (PC-only policy, `compute_policy.py`). Docker/OrbStack on the Mac starts only on demand for the post-process step. A restart of the web server does not kill jobs.
+3. The preset `alta` uses 3072px, `pc-quality high`, `feature-quality high`, DSM/DTM/ortho and a dense cloud. The remote CUDA route can produce a full mesh for orbital/oblique captures. For nadir captures, DSM, ortho, cloud and splat stay the main product.
+4. `tresd_publish.py` publishes ortho/DSM/hillshade WebP files with alpha feather and a binary DSM for measurements. It also publishes a gzip PLY cloud and, if one exists, a re-centered viewer mesh. It publishes the QA result and an atomic `system.json`.
+5. The single splat contract defines Fast 1K and Medium 2K. Metal runs them only with `AEROBRAIN_COMPUTE=local` (legacy). By default, the policy is **PC-only** (`pipeline/compute_policy.py`) and all jobs go to CUDA. Cinematic 7K, Ultra 15K, Ultra+ 20K, Frontier 30K and Grandmaster 40K are strict NVIDIA CUDA tiers. They never use a lower tier and never run on the Mac. `auto` tries full resolution and retries with `-d2` only after a classified CUDA OOM.
+6. The publication of splats is atomic. The pipeline archives `current` in `splats/history/`. It generates SOG and rebuilds the index. The browser gate must pass before the pipeline marks the job `done`.
+7. The viewer gets a real matrix test. `share.html` and `tresd.html` on mobile, iPad and desktop must render a canvas. They must show the versions. They must not overflow horizontally. They must allow a measurable macro zoom.
 
-### Evidencia medida (registro único)
+### Measured evidence (single record)
 
-Éste es el único registro de mediciones CUDA; ROADMAP.md y SPLAT_PIPELINE.md enlazan aquí.
-Medido 2026-07-14 (`DJI_20260712135736_0117_D`, RTX 4060 Ti):
+This is the only record of CUDA measurements. ROADMAP.md and SPLAT_PIPELINE.md link here.
+Measured 2026-07-14 (`DJI_20260712135736_0117_D`, RTX 4060 Ti):
 
-- ODM `alta`: 238/238 cámaras, DSM/DTM/ortho/nube/malla, browser gate OK.
-- Cinematic 7K CUDA: 435.5 s end-to-end, 238 cámaras, `-d2`.
-- Ultra 15K CUDA: 928.4 s end-to-end, 649,150 gaussianas fuente, SOG 8.3 MB, browser gate OK.
-- Ultra+ 20K CUDA: 1,215.4 s end-to-end; `d1` OOM clasificado → `d2` exitoso,
-  649,314 gaussianas, pico 1,698 MiB VRAM y `params_hash` persistido.
-- Frontier 30K CUDA FULL sobre la versión acumulativa: 5.339,4 s de entrenamiento y 5.714,6 s
-  end-to-end, 3.236.419 gaussianas, pico 7.755 MiB VRAM, SOG 37,1 MB, publicación atómica y
-  browser QA.
-- Grandmaster 40K CUDA FULL sobre la misma versión: 7.500,3 s de entrenamiento y 7.877,2 s
-  end-to-end, 3.067.353 gaussianas a la salida del trainer y 2.881.394 tras de-halo, pico 7.730 MiB
-  VRAM, SOG 34.903.178 bytes, publicación atómica y browser QA. Completó en un único intento `d1`,
-  sin OOM, retry ni fallback (`params_hash=38db2479b3b89e748b3dac09c7789d7cb94e8c58b5d4e0d00de6c96103eca129`).
-- La versión acumulativa `recon_60b23208db` (1.019 entradas, 10 fuentes) ya pasó el gate OpenSfM:
-  componente compartido de 996 cámaras, 951.994 puntos y aporte válido de 10/10 fuentes. OpenMVS
-  produjo 46.731.480 puntos densos; un `rc=139` post-write sin OOM fue recuperado validando
-  37.473.907 puntos filtrados y reanudando desde `odm_filterpoints`. El paquete final cerró con
-  37.386.157 puntos densos filtrados, ortofoto/DSM/DTM de 30.539×33.664, nube publicada de
-  795.450 puntos y malla de 744.416 vértices. Los assets requeridos pasaron publicación atómica y
-  browser QA y el gate de splat quedó abierto. Estado actual verificado el 2026-09-28: la versión
-  **activa** de `scene_64f22e89f2` es `recon_b2fbe03239` (`manifest/scenes/scene_64f22e89f2.json`);
-  `recon_60b23208db` sigue `ready` pero no es la activa.
+- ODM `alta`: 238/238 cameras, DSM/DTM/ortho/cloud/mesh, browser gate OK.
+- Cinematic 7K CUDA: 435.5 s end-to-end, 238 cameras, `-d2`.
+- Ultra 15K CUDA: 928.4 s end-to-end, 649,150 source gaussians, SOG 8.3 MB, browser gate OK.
+- Ultra+ 20K CUDA: 1,215.4 s end-to-end. A classified OOM at `d1` came first, then `d2` succeeded.
+  It had 649,314 gaussians and peak 1,698 MiB VRAM. The job saved the `params_hash`.
+- Frontier 30K CUDA FULL on the cumulative version: 5,339.4 s train time and 5,714.6 s
+  end-to-end. It had 3,236,419 gaussians, peak 7,755 MiB VRAM and SOG 37.1 MB. It passed atomic
+  publication and browser QA.
+- Grandmaster 40K CUDA FULL on the same version: 7,500.3 s train time and 7,877.2 s
+  end-to-end. The trainer output had 3,067,353 gaussians. After de-halo, 2,881,394 gaussians remained.
+  Peak 7,730 MiB VRAM, SOG 34,903,178 bytes, atomic publication and browser QA. The job finished in one
+  `d1` try. It had no OOM, no retry and no fallback
+  (`params_hash=38db2479b3b89e748b3dac09c7789d7cb94e8c58b5d4e0d00de6c96103eca129`).
+- The cumulative version `recon_60b23208db` (1,019 entries, 10 sources):
+  - It already passed the OpenSfM gate. The shared component has 996 cameras and 951,994 points. The
+    contribution is valid for 10/10 sources.
+  - OpenMVS produced 46,731,480 dense points.
+  - A post-write `rc=139` without OOM happened. The recovery checked 37,473,907 filtered points and
+    resumed from `odm_filterpoints`.
+  - The final package closed with 37,386,157 filtered dense points. It has an orthophoto/DSM/DTM of
+    30,539×33,664, a published cloud of 795,450 points and a mesh of 744,416 vertices.
+  - All needed assets passed atomic publication and browser QA. The splat gate is open.
+  - Current state, checked on 2026-09-28: the **active** version of `scene_64f22e89f2` is
+    `recon_b2fbe03239` (`manifest/scenes/scene_64f22e89f2.json`). `recon_60b23208db` is still `ready`
+    but it is not the active version.
 
-## Sitios que mejoran con el tiempo
+## Sites that improve over time
 
-`scene_<id>` identifica un lugar real. Cada mejora crea un `recon_<hash>` reproducible con
-la lista completa de videos/fotos; la versión activa no se sobrescribe. OpenSfM registra el
-aporte por fuente (`submitted`, `registered`, ratio, motivo) y una fusión `PARTIAL` no se
-promueve ni auto-entrena. Fallar registro conserva la evidencia y el motivo: no equivale a
-integrarla. `scene.v2.json` y `site.lod.json` exponen productos circulares/cuadrados de
-100/200/400/600/1000 m, marcando `ready` sólo cuando la extensión real del ODM alcanza el
-diámetro. Estudio 3D y Mundo consumen la misma versión activa y el mismo contrato.
+`scene_<id>` is the ID of a real place. Each improvement creates a reproducible `recon_<hash>` with the full
+list of videos/photos. The system never overwrites the active version. OpenSfM records the contribution of
+each source (`submitted`, `registered`, ratio, reason). The system does not promote or auto-train a `PARTIAL`
+merge.
 
-## Operación
+If a registration fails, the system keeps the evidence and the reason. A failed registration does not mean
+that the system integrated the source.
+
+`scene.v2.json` and `site.lod.json` list circular/square products of 100/200/400/600/1000 m. They mark a
+product `ready` only when the real ODM extent reaches the diameter. `Estudio 3D` and `Mundo` use the same
+active version and the same contract.
+
+## Operation
 
 ```bash
-python3 pipeline/ingest.py            # SD insertada → copiar todo
-python3 pipeline/process.py --all     # procesar clips nuevos
-python3 ai/analyze.py --all           # análisis AI de escenas
-python3 pipeline/build_index.py       # refrescar flights.json (la web se actualiza sola)
-python3 ai/reel.py --vertical         # reel para IG/TikTok
-python3 pipeline/ops_status.py        # auditoría 24/7: servicios, health, streaming, recursos
-python3 pipeline/external_probe.py    # mismo probe público que ejecuta GitHub Actions
+python3 pipeline/ingest.py            # SD inserted → copy everything
+python3 pipeline/process.py --all     # process new clips
+python3 ai/analyze.py --all           # AI analysis of scenes
+python3 pipeline/build_index.py       # refresh flights.json (the web updates itself)
+python3 ai/reel.py --vertical         # reel for IG/TikTok
+python3 pipeline/ops_status.py        # 24/7 audit: services, health, streaming, resources
+python3 pipeline/external_probe.py    # same public probe that GitHub Actions runs
 ```
 
-Servicios launchd: `com.aerobrain.web` (:8790) · `com.aerobrain.worker`
-(cola 3D/splat) · `com.metislab.tunnel` (Cloudflare) ·
-`com.aerobrain.watchdog` (health check local cada minuto; es el chequeo de nivel minuto,
-el monitor externo de GitHub es best-effort). `com.macmini.pc-queue` (cada 120 s) es una cola
-genérica de comandos hacia el PC GPU (WoL + `ssh pc`), ajena al código de AeroBrain. Política PC-only (por defecto): todo ODM y
-splat pesado corre en el PC CUDA, así que el Mac sólo sirve web/video y hace post-proceso
-liviano; no hay compute pesado local que ceder ante un viewer. La prioridad adaptativa
-local (ODM 10→7 cores y OpenSplat a background durante reproducción, restaurándose tras
-45 s) sólo aplica con `AEROBRAIN_COMPUTE=local`. Logs de servicios en
-`~/Library/Logs/AeroBrain/` (`web.log`, `worker.log`, `tunnel.log`, `watchdog.log`,
+launchd services: `com.aerobrain.web` (:8790) · `com.aerobrain.worker` (3D/splat queue) ·
+`com.metislab.tunnel` (Cloudflare) · `com.aerobrain.watchdog` (local health check every minute).
+The watchdog is the check at minute level. The external GitHub monitor is best-effort.
+
+`com.macmini.pc-queue` (every 120 s) is a generic command queue to the GPU PC (WoL + `ssh pc`). It is
+separate from the AeroBrain code.
+
+PC-only policy (default): all ODM jobs and heavy splat jobs run on the CUDA PC. The Mac only serves web
+and video, and it does light post-process work. So there is no heavy local compute to give way to a viewer.
+
+The adaptive local priority applies only with `AEROBRAIN_COMPUTE=local`. During playback, ODM goes from 10
+to 7 cores and OpenSplat goes to background. The system restores the values after 45 s.
+
+Service logs are in `~/Library/Logs/AeroBrain/` (`web.log`, `worker.log`, `tunnel.log`, `watchdog.log`,
 `watchdog.launchd.log`). Runbook: [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
-El Home de producción usa un renderer híbrido: carga contenido y métricas antes del GLB, conserva
-un fallback estático si WebGL o el modelo fallan, pausa animación fuera de pantalla y limita el
-efecto de navegación a un canvas con presupuesto por viewport. En datos parciales muestra
-`Sin datos`; nunca convierte un fetch fallido en un cero inventado.
+The production Home uses a hybrid renderer. It loads content and metrics before the GLB. It keeps a static
+fallback if WebGL or the model fails. It pauses the animation when the canvas is off screen.
 
-## Documentación
+The renderer limits the navigation effect to one canvas with a budget per viewport. With partial data, it
+shows `Sin datos`. It never turns a failed request into an invented zero.
 
-El índice [docs/README.md](docs/README.md) clasifica cada documento como contrato actual,
-evidencia medida, runbook o snapshot histórico. Empieza por `SPEC.md` para producto,
-`docs/ARCHITECTURE.md` para cómo está armado hoy, `docs/RUNBOOKS.md` para procedimientos,
-`docs/SPLAT_PIPELINE.md` para el trainer, `docs/MULTISOURCE_3D.md` para escenas acumulativas y
-`pipeline/README.md` para el mapa de scripts.
+## Documentation
+
+The index [docs/README.md](docs/README.md) classifies each document as a current contract, measured
+evidence, a runbook or a historical snapshot. Read these documents first:
+
+- `SPEC.md` for the product
+- `docs/ARCHITECTURE.md` for the architecture of the system now
+- `docs/RUNBOOKS.md` for procedures
+- `docs/SPLAT_PIPELINE.md` for the trainer
+- `docs/MULTISOURCE_3D.md` for cumulative scenes
+- `pipeline/README.md` for the script map
 
 ## Roadmap
 
-Ver [ROADMAP.md](ROADMAP.md) (fuente única de alcance entregado y pendiente).
+See [ROADMAP.md](ROADMAP.md) (single source for the scope that is done and the scope that is not done).
 
 ---
-*Solo para uso personal de Daniel. Código EN, contenido ES.*
+*For personal use by Daniel only. Code is in English. Content is in Spanish.*

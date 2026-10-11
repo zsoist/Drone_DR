@@ -1,16 +1,21 @@
 # AeroBrain runbooks
 
-Short, copy-pasteable procedures. Context in [ARCHITECTURE.md](ARCHITECTURE.md); SLOs, Cloudflare and recovery
-background in [OPERATIONS.md](OPERATIONS.md). Local agent access needs no login: `http://127.0.0.1:8790`
-is in constrained dev mode (see [AGENTS.md](../AGENTS.md)); do not proxy it or change the Host header.
+These are short procedures that you can copy and paste.
+The context is in [ARCHITECTURE.md](ARCHITECTURE.md).
+The background on SLOs, Cloudflare and recovery is in [OPERATIONS.md](OPERATIONS.md).
+
+An agent on the local machine needs no login.
+`http://127.0.0.1:8790` is in constrained dev mode (see [AGENTS.md](../AGENTS.md)).
+Do not proxy it.
+Do not change the Host header.
 
 ## Where things are
 
 | What | Where |
 |---|---|
 | Service logs | `~/Library/Logs/AeroBrain/{web,worker,tunnel,watchdog,watchdog.launchd}.log` |
-| Active alert | `~/Library/Logs/AeroBrain/ALERT` (exists only while something fails; watchdog removes it on recovery) |
-| Per-job full log | `/Volumes/SSD/drone-vault/ops/job_logs/<job-id>.log` (also in UI: 3D, Trabajos) |
+| Active alert | `~/Library/Logs/AeroBrain/ALERT` (it exists only while a part fails, and the watchdog removes it on recovery) |
+| Per-job full log | `/Volumes/SSD/drone-vault/ops/job_logs/<job-id>.log` (also in the UI: `3D → Trabajos`) |
 | Error reports (DeepSeek triage) | `/Volumes/SSD/drone-vault/ops/reports/`, read through the authenticated endpoint |
 | Job queue | `/Volumes/SSD/drone-vault/manifest/jobs.db` (SQLite) and `curl http://127.0.0.1:8790/api/jobs` |
 | Generic PC queue log | `~/.local/logs/pc-queue.log` (`com.macmini.pc-queue`, see ARCHITECTURE) |
@@ -23,13 +28,27 @@ python3 pipeline/ops_status.py          # human summary, first line PASS or FAIL
 python3 pipeline/ops_status.py --json   # everything, machine readable
 ```
 
-The verdict is the AND of: the four LaunchAgents loaded (web, worker, tunnel, watchdog); local and public
-`/api/healthz` and `www`; the local Range probe returning 206; the public auth boundary (401, private cache, no
-shared `HIT`) and the HMAC bridge; jobs (no stale `running`); resources (heavy workload processes such as
-OpenSplat/ODM/ffmpeg without an active job make it FAIL; idle web+worker+tunnel should stay under 15% CPU and
-500 MB RSS); log rotation; latency p95; 24 h reliability; power settings; the tunnel config
-(`~/.cloudflared/metislab-work.yml` must contain both AeroBrain hostnames pointing at `http://127.0.0.1:8790`);
-`flights.json` and `system.json` parse. A FAIL names the failing block; fix that block, rerun.
+The verdict is PASS only if all of these checks pass:
+
+- The four LaunchAgents are loaded (web, worker, tunnel, watchdog).
+- Local and public `/api/healthz` and `www` answer.
+- The local probe for Range returns 206.
+- The public boundary for auth works (401, private cache, no shared `HIT`).
+  The HMAC bridge works.
+- Jobs: there is no stale `running` job.
+- Resources: heavy workload processes such as OpenSplat, ODM or ffmpeg without an active job make the verdict FAIL.
+  Idle web+worker+tunnel must stay under 15% CPU and 500 MB RSS.
+- Log rotation works.
+- The latency p95 is in range.
+- The 24 h reliability is in range.
+- The power settings are correct.
+- The tunnel config is correct: `~/.cloudflared/metislab-work.yml` must contain both AeroBrain hostnames.
+  Both hostnames must point to `http://127.0.0.1:8790`.
+- `flights.json` and `system.json` parse.
+
+A FAIL names the block that failed.
+Fix that block.
+Then rerun the command.
 
 ## Safe restart
 
@@ -40,35 +59,48 @@ pipeline/safe_restart.sh both     # worker first, then web
 pipeline/safe_restart.sh tunnel   # kickstarts com.metislab.tunnel only
 ```
 
-- `web`/`both` first run `audit_world.py`, `world_runtime_sweep.py` and `flightverse_collision_gate.py <active world> --stress 100`;
-  a red gate aborts the restart. After the kickstart it waits for `/api/healthz`.
-- Never `launchctl kickstart -k com.aerobrain.worker` by hand: it killed a 63% splat once (2026-07-05).
-  Check `curl http://127.0.0.1:8790/api/jobs` first, or use the script.
-- Break-glass for web only: `AEROBRAIN_SKIP_WORLD_GATE=1 AEROBRAIN_BREAK_GLASS_RECOVERY=I_UNDERSTAND_NO_WORLD_GATE pipeline/safe_restart.sh web`,
-  then run the audit, sweep and 100x gate manually.
-- Backend `.py` edits need a web restart; edits in `worker.py` need a worker restart.
+> **CAUTION:** Do not run `launchctl kickstart -k com.aerobrain.worker` by hand. It stopped a splat job at 63% once (2026-07-05).
+
+- Before a worker restart, check `curl http://127.0.0.1:8790/api/jobs`, or use the script.
+- `web` and `both` first run `audit_world.py`, `world_runtime_sweep.py` and `flightverse_collision_gate.py <active world> --stress 100`.
+  A red gate stops the restart.
+  After the kickstart, the script waits for `/api/healthz`.
+- Break-glass for the web only: run `AEROBRAIN_SKIP_WORLD_GATE=1 AEROBRAIN_BREAK_GLASS_RECOVERY=I_UNDERSTAND_NO_WORLD_GATE pipeline/safe_restart.sh web`.
+  Then run the audit, the sweep and the 100x gate by hand.
+- A change in a `.py` file of the backend needs a web restart.
+  A change in `worker.py` needs a worker restart.
 
 ## PC unreachable
 
-The PC is `ssh pc` = `192.168.1.5` (MAC `BC:5F:F4:45:7E:B8`). Check before assuming it is off.
+The PC is `ssh pc` at `192.168.1.5` (MAC `BC:5F:F4:45:7E:B8`).
+Check it before you decide that it is off.
 
-1. `ssh -o ConnectTimeout=5 pc 'echo ok'` and `nc -z -G 2 192.168.1.5 22`.
-2. `arp -a | grep -i "bc:5f:f4:45:7e:b8"`: the PC's MAC must appear at `192.168.1.5`. **The .3 vs .5 trap:** on
-   2026-09-28 `~/.ssh/config` pointed at `192.168.1.3` (a different device) and the GPU lane was silently broken.
-   `ssh -G pc | grep -i hostname` must print `192.168.1.5`; if the MAC shows up at another address (DHCP drift),
-   fix `HostName` and `HostKeyAlias` in `~/.ssh/config`, and keep the router reservation on .5.
-3. Asleep: `~/.local/scripts/pc-wake` sends the magic packet to `192.168.1.255:9`. `gpu_lane.py` resends it every 20 s while
-   waiting for SSH. Give Windows up to about 90 s.
-4. Verify the lane end to end: `python3 pipeline/gpu_lane.py --probe` (node + CUDA environment, exit 0/1).
-5. SSH answers but WSL jobs die: WSL exits about 15 s after the last session closes, and the lane holds a session on
-   purpose. Check free space on the PC (D: bridge and the WSL disk), then run `pc_janitor.py`.
-6. Failed job because the PC was down: the workdir is kept on the PC; re-enqueue (below) once `--probe` passes.
+**The .3 and .5 trap:** on 2026-09-28 `~/.ssh/config` pointed to `192.168.1.3`, a different device.
+The GPU lane was silently broken.
+
+<!-- ste:procedural -->
+
+1. Run `ssh -o ConnectTimeout=5 pc 'echo ok'`.
+2. Run `nc -z -G 2 192.168.1.5 22`.
+3. Run `arp -a | grep -i "bc:5f:f4:45:7e:b8"`. The MAC of the PC must appear at `192.168.1.5`.
+4. Run `ssh -G pc | grep -i hostname`. It must print `192.168.1.5`.
+5. If the MAC shows up at another address (DHCP drift), fix `HostName` and `HostKeyAlias` in `~/.ssh/config`.
+6. Keep the router reservation on .5.
+7. If the PC is asleep, run `~/.local/scripts/pc-wake`. It sends the magic packet to `192.168.1.255:9`. `gpu_lane.py` sends the packet again every 20 s while it waits for SSH. Wait up to about 90 s for Windows.
+8. Run `python3 pipeline/gpu_lane.py --probe`. It checks the node and the CUDA environment. The exit code is 0 or 1.
+9. If SSH answers but WSL jobs die, check the free space on the PC (D: and the WSL disk). WSL exits about 15 s after the last session closes. The lane holds a session on purpose.
+10. Run `pc_janitor.py` to free space.
+11. If a job failed because the PC was down, re-enqueue it after `--probe` passes. The workdir stays on the PC. See "Rerun a failed ODM or splat".
+
+<!-- ste:descriptive -->
 
 ## Rerun a failed ODM or splat
 
-There is no dedicated retry button; a rerun is a new request. Inspect the cause first (UI 3D, Trabajos, or the job log
-in `ops/job_logs/`). Never restart the worker while something is `queued|running`. Cancel with
-`curl -X POST http://127.0.0.1:8790/api/job_cancel -d '{"id":"<job-id>"}'`.
+There is no dedicated retry button.
+A rerun is a new request.
+First find the cause in the UI (`3D → Trabajos`) or in the job log in `ops/job_logs/`.
+Never restart the worker while a job is `queued|running`.
+To cancel a job, run `curl -X POST http://127.0.0.1:8790/api/job_cancel -d '{"id":"<job-id>"}'`.
 
 ```bash
 # ODM for a clip (PC CUDA strict by policy)
@@ -79,47 +111,89 @@ curl -X POST http://127.0.0.1:8790/api/splat -d '{"clip_id":"<id>","preset":"fro
 curl -X POST http://127.0.0.1:8790/api/scene_improve -d '{"scene_id":"<scene>","new_sources":["<clip>"]}'
 ```
 
-- A splat must not be queued for a multi-source scene until its persisted `opensfm/reconstruction.json` passes the
-  post-ODM gate (chosen component, exact cameras, per-source contribution); `PARTIAL` stops the handoff. Details in
-  [OPERATIONS.md](OPERATIONS.md#gates-post-odm-y-recuperación-multi-fuente).
-- Multi-source ODM runs with `--sfm-no-partial`; OpenMVS `rc=139` is not OOM without positive `oom_kill` evidence.
-- Undo a bad Auto-Clean: `POST /api/splat_revert?cid=<id>` (restores the pre-clean raw, or `&to=<history file>`).
+<!-- ste:procedural -->
+
+- Do not queue a splat for a multi-source scene before its saved `opensfm/reconstruction.json` passes the post-ODM gate.
+  The gate checks the chosen component, the exact cameras and the contribution of each source.
+  `PARTIAL` stops the handoff.
+  The details are in [OPERATIONS.md](OPERATIONS.md#post-odm-gates-and-multi-source-recovery).
+- Multi-source ODM runs with `--sfm-no-partial`.
+  Do not call an OpenMVS `rc=139` an OOM without positive `oom_kill` evidence.
+- To undo a bad Auto-Clean, run `POST /api/splat_revert?cid=<id>`.
+  It restores the raw file from before the clean.
+  Add `&to=<history file>` to restore a different file.
+
+<!-- ste:descriptive -->
 
 ## Promote a scene version
 
-Only a version with `status=ready`, `merge_label` `SINGLE` or `FULL`, and `required_artifacts_ok` can be promoted.
+You can promote only a version that has `status=ready`, a `merge_label` of `SINGLE` or `FULL`, and `required_artifacts_ok`.
+First list the versions of the scene.
 
 ```bash
 python3 -c "import json;d=json.load(open('/Volumes/SSD/drone-vault/manifest/scenes/<scene>.json'));print(d['active_version'],[(v['id'],v['status'],v.get('merge_label')) for v in d['versions']])"
+```
+
+Then promote the version.
+
+```bash
 curl -X POST http://127.0.0.1:8790/api/scene_promote -d '{"scene_id":"<scene>","version_id":"<recon_...>"}'
 ```
 
-The endpoint rewrites `active_version`, regenerates `models/<id>/scene.v2.json` for every version and rebuilds the
-index. A 409 carries the reason. Rolling back is promoting the previous ready version. Do not edit the scene JSON by hand.
+The endpoint rewrites `active_version`.
+It regenerates `models/<id>/scene.v2.json` for every version.
+It also rebuilds the index.
+A 409 gives the reason.
+To roll back, promote the previous ready version.
+Do not edit the scene JSON by hand.
 
 ## Purge trash and ODM projects safely
 
-Rules: `raw/` is never deleted. Nothing is removed while a job for that clip is pending. Delete by exact path, never by glob on a parent.
+These rules apply:
 
-- **Splat delete is reversible:** `/api/splat_delete` moves files to `drone-vault/trash/splats/`. Clip delete goes to `trash/clips/<cid>/`.
-  There is no purge endpoint; to reclaim space, list first (`du -sh /Volumes/SSD/drone-vault/trash/*`), confirm you no
-  longer need them, then `rm -r` the specific subfolder.
-- **Full model removal:** `POST /api/model_delete {"clip_id":"<id>"}` removes `models/<id>`, its splat set and history, and marks it
-  `failed` in any scene. It refuses (400) if the model is the scene's `active_version` (promote another first) and
-  (409) if a job is active. Add `"purge_source": true` to also delete `odm/proj_<id>` (GBs of frames and stages).
-- **Keep ODM projects** that back an active scene version or a splat you may retrain (`odm/proj_recon_<active>`): they
-  survive training on purpose.
-- **PC scratch:** `python3 pipeline/pc_janitor.py` (dry run), then `--apply`. It never touches active jobs or `splat-env`.
-- Check space after: `df -h /Volumes/SSD` (internal disk must not be used for any of this).
+- Never delete `raw/`.
+- Do not remove anything while a job for that clip is in the queue.
+- Delete by exact path.
+  Never delete by glob on a parent folder.
+
+Then use these methods:
+
+- **Splat delete can be undone.** `/api/splat_delete` moves the files to `drone-vault/trash/splats/`.
+  A clip delete moves them to `trash/clips/<cid>/`.
+  There is no purge endpoint.
+  To get space back, list the folder first (`du -sh /Volumes/SSD/drone-vault/trash/*`).
+  Make sure that you do not need the files.
+  Then run `rm -r` on the specific subfolder.
+- **Full model removal:** `POST /api/model_delete {"clip_id":"<id>"}` removes `models/<id>`, its splat set and its history.
+  It marks the model `failed` in any scene.
+  It refuses with 400 if the model is the `active_version` of the scene (promote another version first).
+  It refuses with 409 if a job is active.
+  Add `"purge_source": true` to also delete `odm/proj_<id>` (GBs of frames and stages).
+- **Keep the ODM projects** that back an active scene version or a splat that you can retrain (`odm/proj_recon_<active>`).
+  They survive training on purpose.
+- **PC scratch:** run `python3 pipeline/pc_janitor.py` (dry run), then `--apply`.
+  It never touches active jobs or `splat-env`.
+- After the purge, check the space with `df -h /Volumes/SSD`.
+  Do not use the internal disk for any of this.
 
 ## Rotate the edge auth key
 
-Documented in [AUTH_SECURITY.md](AUTH_SECURITY.md#credential-rotation) (do not duplicate secrets anywhere else). Summary:
-the key lives in `drone-vault/.edge-auth-key` (0600) and in the Worker secret `AEROBRAIN_EDGE_AUTH_KEY`; upload the exact
-file bytes without a trailing newline, wait for propagation, restart `com.aerobrain.web`. A mismatch fails closed with 401,
-a missing binding with 503. Wrangler needs a pseudo-TTY in non-interactive shells (`script -q /dev/null ...`) and
-`CLOUDFLARE_ACCOUNT_ID` exported. Then `node --test edge/test_private_data_worker.mjs` and an anonymous `curl -I` (401,
-`X-AeroBrain-Edge: private-data-v1`).
+The full procedure is in [AUTH_SECURITY.md](AUTH_SECURITY.md#credential-rotation).
+Do not copy secrets to any other place.
+The key lives in `drone-vault/.edge-auth-key` (0600) and in the Worker secret `AEROBRAIN_EDGE_AUTH_KEY`.
+A mismatch fails closed with 401.
+If the Worker has no secret for the key, the result is 503.
+In non-interactive shells, Wrangler needs a pseudo-TTY (`script -q /dev/null ...`) and an exported `CLOUDFLARE_ACCOUNT_ID`.
+
+<!-- ste:procedural -->
+
+1. Upload the exact bytes of the key file as the Worker secret. Do not add a newline at the end.
+2. Wait for propagation.
+3. Restart `com.aerobrain.web`.
+4. Run `node --test edge/test_private_data_worker.mjs`.
+5. Run an anonymous `curl -I`. The result must be 401 with `X-AeroBrain-Edge: private-data-v1`.
+
+<!-- ste:descriptive -->
 
 ## Run all tests
 
@@ -130,38 +204,47 @@ a missing binding with 503. Wrangler needs a pseudo-TTY in non-interactive shell
 /Volumes/SSD/_system/venv/bin/python3 pipeline/run_all_tests.py -j 4 -v    # 4 suites in parallel, show passing output
 ```
 
-It runs every `pipeline/test_*.py` except `test_smoke.py` (as `python -m unittest`), and `node --test` over
-`pipeline/test_*.mjs`, `edge/test_*.mjs` and `tools/test_*.mjs`. Tests run against a temp sandbox for job logs and
-`errors.jsonl`, never the live vault. `test_smoke.py` runs it with `--fast`. Run the smoke test **without a pipe**
-(or `set -o pipefail`) before any commit. Extra 3D acceptance checks: [AGENTS.md](../AGENTS.md#3d-acceptance-checks-for-agents).
+The script runs every `pipeline/test_*.py` except `test_smoke.py` (as `python -m unittest`).
+It also runs `node --test` on `pipeline/test_*.mjs`, `edge/test_*.mjs` and `tools/test_*.mjs`.
+Tests run against a temp sandbox for job logs and `errors.jsonl`, never the live vault.
+`test_smoke.py` runs the script with `--fast`.
+Run the smoke test **without a pipe** (or with `set -o pipefail`) before any commit.
+For more 3D acceptance checks, see [AGENTS.md](../AGENTS.md#3d-acceptance-checks-for-agents).
 
 ## Rebuild SuperSplat
 
-`/supersplat/` is served from `splat/supersplat/dist`, which is gitignored (build output). The source is a fork checked out
-in `splat/supersplat` (branch `aerobrain-fork`; `origin` = upstream playcanvas, `backup` = private `github.com/zsoist/aerobrain-supersplat`).
-Local patches are listed in `splat/supersplat/AEROBRAIN_PATCHES.md`.
+The server serves `/supersplat/` from `splat/supersplat/dist`.
+Git ignores that folder because it is build output.
+The source is a fork checked out in `splat/supersplat` (branch `aerobrain-fork`).
+The remote `origin` is the upstream playcanvas repository.
+The remote `backup` is the private repository `github.com/zsoist/aerobrain-supersplat`.
+The file `splat/supersplat/AEROBRAIN_PATCHES.md` lists the local patches.
 
 ```bash
 cd splat/supersplat && npm ci && npm run build    # npm ci only on a fresh checkout; regenerates dist/
 git push backup aerobrain-fork                     # keep the private backup current after fork commits
 ```
 
-No server restart is needed; the static server reads `dist` on demand.
+You do not need a server restart.
+The static server reads `dist` on demand.
 
 ## Node tooling in `tools/`
 
-`cd tools && npm ci` installs `@playcanvas/splat-transform` (lockfile-pinned). The server's splat convert/clean/export paths (`aerobrain_server.py`) shell out to
-`tools/node_modules/@playcanvas/splat-transform/bin/cli.mjs`, and Auto-Clean (`pipeline/autoclean.mjs`) uses it for the GPU floater filter
-(it degrades to the local filter result when missing); without `tools/node_modules` the server paths fail. `tools/node_modules` is gitignored.
+To install `@playcanvas/splat-transform` (locked by the lockfile), run `cd tools && npm ci`.
+The server paths for splat convert, clean and export (`aerobrain_server.py`) call `tools/node_modules/@playcanvas/splat-transform/bin/cli.mjs` in a subprocess.
+Auto-Clean (`pipeline/autoclean.mjs`) uses the same tool for the GPU floater filter.
+If the tool is not there, Auto-Clean uses the result of the local filter instead.
+Without `tools/node_modules`, the server paths fail.
+Git ignores `tools/node_modules`.
 
 ## Bump the web version
 
-After ANY edit under `web/` (code or docs):
+After any edit under `web/` (code or docs), bump the version:
 
 ```bash
 python3 pipeline/bump_web_version.py        # ?v=N -> max+1 in html/js/vendor, regenerates .gz sidecars
 python3 pipeline/bump_web_version.py 345    # explicit N
 ```
 
-Skipping it makes the browser/edge mix old and new modules (Safari incident 2026-07-12). `safe_restart.sh` also
-regenerates sidecars (`gzip_assets.sh`) but does not bump `?v=`.
+If you skip this step, the browser and the edge mix old and new modules (Safari incident 2026-07-12).
+`safe_restart.sh` also regenerates sidecars (`gzip_assets.sh`), but it does not bump `?v=`.

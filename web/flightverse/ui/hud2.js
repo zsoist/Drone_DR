@@ -15,14 +15,15 @@
 //   setObjective({x,y,z,label}|null)
 //   setWind({speed, fromDeg, gust}) · setIntegrity(0..1) · setBattery(0..1) · setAttitude(on)
 //   hitFlash() · gateFlash() · updateInvasionHud(inv, health) · announce(text) · message(text, ms)
-import { combatV2Markup } from '/flightverse/ui/weapons2.js?v=370';
-import { bootMarkup } from '/flightverse/ui/screens.js?v=370';
-import { createHudCanvas, reticleKindFor } from '/flightverse/ui/reticle.js?v=370';
-import { RIGS } from '/flightverse/runtime.js?v=370';
-import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=370';
-import { ICON } from '/flightverse/ui/icons2.js?v=370';
-import { hudMenuMarkup } from '/flightverse/ui/menu2.js?v=370';
-import { screensV2Markup } from '/flightverse/ui/screens2.js?v=370';
+import { combatV2Markup } from '/flightverse/ui/weapons2.js?v=371';
+import { bootMarkup } from '/flightverse/ui/screens.js?v=371';
+import { createHudCanvas, reticleKindFor } from '/flightverse/ui/reticle.js?v=371';
+import { RIGS } from '/flightverse/runtime.js?v=371';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=371';
+import { ICON } from '/flightverse/ui/icons2.js?v=371';
+import { hudMenuMarkup } from '/flightverse/ui/menu2.js?v=371';
+import { hudScale, crashCauseLabel } from '/flightverse/hud-format.js?v=371';
+import { screensV2Markup } from '/flightverse/ui/screens2.js?v=371';
 
 export { ICON };
 
@@ -52,9 +53,10 @@ const topMarkup = () => `    <div class="hx-scrim top" aria-hidden="true"></div>
       <button class="hx-ibtn" id="hx-pause" type="button" aria-label="Pausa" aria-haspopup="dialog">${ICON.pause}</button>
     </div>
     <div class="hx-left" id="hx-left">
-      <div class="hx-chip" id="hx-wind" hidden><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 3v12M5.5 10.5L10 15.5l4.5-5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg><span>0 m/s</span></div>
       <div class="hx-chip" id="hx-vs" hidden><span>0.0</span></div>
-      <div class="hx-att" id="hx-att" aria-hidden="true"></div>
+    </div>
+    <div class="hx-windbox" id="hx-windbox">
+      <div class="hx-chip hx-wind" id="hx-wind" hidden role="status" aria-label="Viento"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 3v12M5.5 10.5L10 15.5l4.5-5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Viento 0 m/s</span></div>
     </div>
 `;
 
@@ -72,6 +74,7 @@ const instrumentsMarkup = () => `    <div class="hx-fpv" id="vl-fpv" aria-hidden
     <div class="hx-count" id="vl-count" aria-hidden="true"></div>
     <div class="hx-banner" id="hx-banner" aria-hidden="true"><b></b><small></small></div>
     <div class="hx-warn" id="hx-warn" role="alert"></div>
+    <div class="hx-crash" id="hx-crash" role="status" aria-live="polite"><b>Dron caído</b><span>reapareciendo</span><i><u></u></i></div>
     <div class="hx-flash" id="vl-flash" aria-hidden="true"></div>
     <div class="hx-damage" id="vl-hitfx" aria-hidden="true"></div>
     <div class="hx-live sr-only" id="hx-live" aria-live="polite" role="status"></div>
@@ -96,7 +99,7 @@ export function createHud2(ctx) {
   const el = {
     plate: $('#vl-challenge'), sub: $('#hx-sub'), compass: $('#hx-compass'),
     spd: $('#hx-spd'), agl: $('#hx-agl'), tapeL: $('#hx-tape-l'), tapeR: $('#hx-tape-r'),
-    wind: $('#hx-wind'), vs: $('#hx-vs'), att: $('#hx-att'), rail: $('#hx-rail'),
+    wind: $('#hx-wind'), vs: $('#hx-vs'), rail: $('#hx-rail'), crash: $('#hx-crash'),
     integ: $('#hx-integ'), batt: $('#hx-batt'), count: $('#vl-count'), live: $('#hx-live'),
     hit: $('#vl-hitfx'), banner: $('#hx-banner'), warn: $('#hx-warn'), flash: $('#vl-flash'), keys: $('#hx-keys'), gimbal: $('#osd-gimbal'),
   };
@@ -118,6 +121,7 @@ export function createHud2(ctx) {
   let own = '';
   let frameN = 0;
   let lastIntegBand = 0, lastBattLow = false;
+  let crashCause = '';
 
   const announce = text => {
     el.live.textContent = '';
@@ -148,14 +152,18 @@ export function createHud2(ctx) {
       cv.damageArc(Math.atan2(d.dir.x, -d.dir.z) - cam);
     } else if (d && Number.isFinite(d.angle)) cv.damageArc(d.angle);
   }));
-  offs.push(bus.on('crash', () => hitFlash()));
+  offs.push(bus.on('crash', d => {
+    hitFlash();
+    const cls = d?.energyClass;
+    if (cls === 'crash' || cls === 'prop' || (Number.isFinite(d?.integrity) && d.integrity <= 0)) crashCause = crashCauseLabel(cls, d?.integrity);
+  }));
   offs.push(bus.on('wave', d => { if (d?.n) announce(`Oleada ${d.n}`); }));
   offs.push(bus.on('gate', d => { if (d) announce(`Puerta ${d.i} de ${d.n}`); }));
   offs.push(bus.on('lock', d => {
     if (!d) return;
     if (!d.target || d.state === 'lost') { cv.setLock(null); return; }
     const c = d.target.center || d.target.pos || d.target.position || d.target;
-    cv.setLock({ state: d.state === 'locked' ? 'locked' : d.state === 'incoming' ? 'incoming' : 'acquiring', progress: d.progress || 0, world: c, halfPx: d.halfPx });
+    cv.setLock({ state: d.state === 'locked' ? 'locked' : d.state === 'incoming' ? 'incoming' : 'acquiring', progress: d.progress || 0, world: c, halfPx: d.halfPx, radius: d.target.radius || d.target.r || d.target.hitRadius || 0 });
   }));
   offs.push(bus.on('pause', () => { layoutDirty = true; }));
 
@@ -194,7 +202,16 @@ export function createHud2(ctx) {
     }
     resize();
   }
-  function resize() { cv.resize(); layoutDirty = true; }
+  /** Escala del HUD por viewport y «tamaño de texto»: CSS (--hx-vs geometría, --hx-hs tipografía) + fuentes del canvas. */
+  function applyScale() {
+    const { vs, hs } = hudScale(innerWidth, innerHeight, ctx.ui.prefs?.get('textScale') ?? 100);
+    const st = document.documentElement.style;
+    st.setProperty('--hx-vs', String(vs)); st.setProperty('--hx-hs', String(hs));
+    cv.setScale(vs, hs);
+  }
+  function resize() { applyScale(); cv.resize(); layoutDirty = true; }
+  const offPrefs = ctx.ui.prefs?.onChange(k => { if (k === 'textScale') { applyScale(); layoutDirty = true; } });
+  applyScale();
   addEventListener('resize', resize);
   addEventListener('orientationchange', () => setTimeout(resize, 120));
 
@@ -328,10 +345,9 @@ export function createHud2(ctx) {
     if (windOn) {
       const rel = ((pw.fromDeg ?? 0) + 180 - hdg) % 360;
       el.wind.firstElementChild.style.transform = `rotate(${rel.toFixed(0)}deg)`;
-      setText(el.wind.lastElementChild, `${Math.round(pw.speed)} m/s`);
+      setText(el.wind.lastElementChild, `Viento ${Math.round(pw.speed)} m/s`);
       el.wind.classList.toggle('warn', (pw.gust || pw.speed) > 6);
     }
-    setHidden(el.att, fpv);
 
     // ── casco / batería (Invasión → vida; si no, física v2 cuando exista) ──
     let integ = phys.integrity, batt = phys.battery;
@@ -354,6 +370,15 @@ export function createHud2(ctx) {
       if (low && !lastBattLow) { announce('Batería baja'); ctx.ui.screens.toast('Batería baja', 2400); }
       lastBattLow = low;
     }
+    // ── «Dron caído · reapareciendo» (Physics v2: ctx.phys.crash) ──
+    const pc = ctx.phys?.crash;
+    const crashed = !!(pc && pc.active);
+    if (crashed !== el.crash.classList.contains('show')) {
+      el.crash.classList.toggle('show', crashed);
+      if (crashed) { { const cz = crashCause || crashCauseLabel(ctx.phys?.impact?.name, p2?.integrity); setText(el.crash.querySelector('span'), `${cz.charAt(0).toUpperCase()}${cz.slice(1)} · reapareciendo`); } announce('Dron caído. Reapareciendo'); }
+      else crashCause = '';
+    }
+    if (crashed) el.crash.querySelector('u').style.transform = `scaleX(${Math.min(1, (pc.t || 0) / (pc.respawnDelay || 0.9)).toFixed(3)})`;
     cv.setLowHealth(integ != null && integ < 0.4 ? (0.4 - integ) / 0.4 : 0);
 
     // ── cuenta atrás grande ──
@@ -392,7 +417,7 @@ export function createHud2(ctx) {
 
     if ((frameN = (frameN + 1) % 20) === 0) layoutDirty = true;   // las placas de viento / vel. vertical cambian la posición del horizonte
     if (layoutDirty) {
-      cv.layout({ compass: el.compass, spd: el.tapeL, agl: el.tapeR, att: el.att });
+      cv.layout({ compass: el.compass, spd: el.tapeL, agl: el.tapeR });
       layoutDirty = false;
     }
     cv.draw({ dt, hdg, spd, agl: drone.agl, fpv, cam: ctx.camera, showReticle: !S.director && mode !== 'replay' && !cine });
@@ -429,6 +454,6 @@ export function createHud2(ctx) {
     setAttitude() { /* el disco se alimenta de drone.quat; hook reservado para C */ },
     canvas: cv,
     slots: { cluster: null },
-    dispose() { offs.forEach(off => off()); removeEventListener('resize', resize); },
+    dispose() { offs.forEach(off => off()); offPrefs?.(); removeEventListener('resize', resize); },
   };
 }

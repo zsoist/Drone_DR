@@ -2,9 +2,9 @@
 // Envuelve camera-rigs.js: selección de rig, gimbal (rueda/slider/botones), FOV kick,
 // pose por frame y colisión de cámara. Publica ctx.controls.{cameraController, flightTools}.
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { resolveCameraCollision, RIGS, STEP } from '/flightverse/runtime.js?v=370';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=370';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=370';
+import { resolveCameraCollision, RIGS, STEP } from '/flightverse/runtime.js?v=371';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=371';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=371';
 
 export function createCameraControls(ctx) {
   const { Q, camera, report, collision, input } = ctx;
@@ -86,7 +86,18 @@ export function createCameraControls(ctx) {
       } catch { return null; }
     },
   };
-  const defaultGimbal = gimbalTilt;
+  // Encuadre de llegada: el spawn del mundo está a ~80-90 m AGL y el gimbal por defecto (-7°) deja ~70 % de cielo
+  // vacío en FPV. Si se sale alto sobre el suelo, el gimbal de referencia (inicio + recentrar) apunta ~28° hacia la
+  // ciudad. Sin override ?rig= / ?gimbal=; en vuelo la inclinación hacia delante del FPV v2 ya lo compensa.
+  let defaultGimbal = gimbalTilt;
+  {
+    const q = Q.get('gimbal');
+    const g0 = ctx.world?.groundHeight?.(ctx.drone.pos.x, ctx.drone.pos.z);
+    const agl0 = g0 == null || !Number.isFinite(g0) ? 0 : ctx.drone.pos.y - g0;
+    if (q != null && Number.isFinite(+q)) { defaultGimbal = +q * Math.PI / 180; setGimbal(defaultGimbal); }
+    else if (agl0 > 35 && RIGS[rigIx].key === 'fpv') { defaultGimbal = -28 * Math.PI / 180; setGimbal(defaultGimbal); }
+    ctx.report.camera && (ctx.report.camera.launchGimbalDeg = Math.round(defaultGimbal * 180 / Math.PI));
+  }
   let fadeEl = null;
   let fadeOut = 0;                 // s restantes del fundido de entrada tras reaparecer
   let crashShown = false;

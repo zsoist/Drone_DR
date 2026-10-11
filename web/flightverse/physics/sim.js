@@ -43,6 +43,15 @@ const SAFE_RING = 12;
 const SAFE_EVERY = 60;                        // steps between snapshot attempts (0.5 s)
 const BOOST_TILT = 1.3, BOOST_SPEED = 1.35;   // profile tilt / stick-speed multiplier at full boost
 const MAX_TILT_RAD = 48 * Math.PI / 180;
+// Landing assist (F4 iter3): the commanded descent rate is limited by the clearance to the surface
+// right below (env.agl, 30 Hz downward ray: terrain, roofs, any mesh). vLimit = LAND_V0 + LAND_K * clearance,
+// so a full-stick descent (sport 6 m/s) arrives at ~1 m/s instead of a 4.6 J crash. Walls and fast dives are
+// unaffected (they are not a vertical descent onto a surface within the probe).
+const LAND_V0 = 1.0, LAND_K = 0.6;
+// A floor-like contact (normal.y > 0.7) needs a harder closing speed to count as a crash (~7 m/s, 6.5 J).
+const LAND_ECRASH = 6.5;
+// Integrity regenerates slowly while flying free and stable (per second), after LAND_REGEN_DELAY s w/o contact.
+const REGEN_RATE = 0.005, REGEN_DELAY = 2.0;
 
 /** Sky preset -> default wind preset (the pause-menu selector overrides it). */
 export const SKY_WIND = Object.freeze({ dia: 'breezy', atardecer: 'breezy', noche: 'calm' });
@@ -196,6 +205,10 @@ export function createSim(opts = {}) {
     cmd.fwd = brake ? 0 : clamp(inp.fwd || 0, -1, 1);
     cmd.right = brake ? 0 : clamp(inp.strafe ?? inp.right ?? 0, -1, 1);
     cmd.climb = clamp(inp.lift ?? inp.climb ?? 0, -1, 1);
+    if (cmd.climb < 0 && env.agl < 1e5 && sim.invuln <= 0 && !s.cut) {    // landing assist
+      const lim = LAND_V0 + LAND_K * env.agl;
+      if (-cmd.climb * P.vzDown > lim) cmd.climb = -lim / P.vzDown;
+    }
     // heading: stick yaw (+ = left in the legacy convention) plus pending look yaw as a rate
     let yawRate = clamp(inp.yaw || 0, -1, 1) * P.yawRateMax;             // rad/s, + left
     if (pend.yaw !== 0) {
@@ -337,6 +350,7 @@ export function createSim(opts = {}) {
     if (ringCount < SAFE_RING) ringCount++;
   };
   const initialSafe = createSafeSnapshot();
+  const respawnSnap = createSafeSnapshot();      // where the last respawn put us: fallback for a quick 2nd crash
   function pickSafe() {
     // newest snapshot at least 1.5 s older than the crash; prefer a real hover
     let best = null, bestHover = null;
@@ -348,7 +362,8 @@ export function createSim(opts = {}) {
       if (best && bestHover) break;
     }
     const chosen = bestHover && bestHover.t > (best ? best.t - 8 : 0) ? bestHover : best;
-    return chosen ? chosen.snap : (initialSafe.valid ? initialSafe : null);
+    if (chosen) return chosen.snap;
+    return respawnSnap.valid ? respawnSnap : (initialSafe.valid ? initialSafe : null);
   }
 
   // ---- crash / respawn ------------------------------------------------------------------------
@@ -379,6 +394,8 @@ export function createSim(opts = {}) {
     sim.invuln = INVULN_TIME;
     pend.yaw = 0;
     ringCount = 0; ringHead = 0;
+    recordSafe(respawnSnap, s);                  // the respawn point is the first snapshot of the new ring
+    pushSafe(1);
     lastContactT = s.t;
     sim.stats.respawns += 1;
     sim.updateDerived();
@@ -403,9 +420,13 @@ export function createSim(opts = {}) {
       // crash-level hit (closing speed >= 5 m/s ~ 3 J) uses the box corner and tumbles the drone
       const close = -(s.v[0] * CT.nx[i] + s.v[1] * CT.ny[i] + s.v[2] * CT.nz[i]);
       P.contactLever = clamp((close - 3.5) / 1.5, 0, 1);
+      const eCrash0 = P.eCrash;
+      if (CT.ny[i] > 0.7 && !s.cut && !sim.crash.active) P.eCrash = Math.max(eCrash0, LAND_ECRASH);   // floor landing != crash
       const cls = resolveContact(s, P, hitObj, cOut);
+      P.eCrash = eCrash0;
       if (cls === CLS_NONE) continue;
-      let spare = cls === CLS_SCRAPE || invuln;      // resting / scraping costs nothing; invulnerable = no consequences
+      const floorLike = CT.ny[i] > 0.7;
+      let spare = cls === CLS_SCRAPE || invuln || (cls === CLS_WOBBLE && floorLike);   // soft touch-down on a floor is free      // resting / scraping costs nothing; invulnerable = no consequences
       if (!spare && cls < CLS_CRASH && s.t - dmgT < DAMAGE_COOLDOWN && cls <= dmgCls) spare = true;   // one hit = one damage
       if (spare) {
         s.integrity = integ0;
@@ -501,7 +522,13 @@ export function createSim(opts = {}) {
     if (c.active) {
       c.t += dt;
       if (c.t >= RESPAWN_DELAY || c.skip) respawn();
-    } else if (st.steps % SAFE_EVERY === 0) {
+    } else {
+      if (s.integrity < 1 && s.integrity > 0 && !s.cut && s.t - lastContactT > REGEN_DELAY
+          && s.tilt < 0.8 && (sim.agl == null || sim.agl > 3)) {
+        s.integrity = Math.min(1, s.integrity + REGEN_RATE * dt);
+      }
+    }
+    if (!c.active && st.steps % SAFE_EVERY === 0) {
       const stable = s.t - lastContactT > 1.0 && s.integrity > 0.3 && !s.cut
         && sim.speed < 14 && s.tilt < 0.8 && (sim.agl == null || sim.agl > 3) && sim.invuln <= 0;
       if (stable) pushSafe(sim.speed < 2 ? 1 : 0);

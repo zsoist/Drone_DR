@@ -2,14 +2,17 @@
 // háptica), onboarding, resultados de Gate Rush / derrota / victoria (UNA tarjeta, botones apilados a ancho
 // completo en móvil), selectores de Invasión y dificultad, guía, director/cine y toast. La LÓGICA (récords,
 // medallas, par, oleadas) es de D; aquí solo se presenta lo que D publica en vm/run.
-import { resultSpeeds } from '/flightverse/gate-stats.js?v=370';
-import { ICON } from '/flightverse/ui/icons2.js?v=370';
-import { createOnboarding, shouldOnboard } from '/flightverse/ui/onboarding.js?v=370';
-import { MEDAL_TEXT, formatTime } from '/flightverse/ui/records.js?v=370';
-import { guideBody } from '/flightverse/ui/menu2.js?v=370';
+import { resultSpeeds } from '/flightverse/gate-stats.js?v=371';
+import { ICON } from '/flightverse/ui/icons2.js?v=371';
+import { createOnboarding, shouldOnboard } from '/flightverse/ui/onboarding.js?v=371';
+import { MEDAL_TEXT } from '/flightverse/ui/records.js?v=371';
+import { guideBody } from '/flightverse/ui/menu2.js?v=371';
+import { RECORD_COLUMNS, formatRecordRows, shortTime } from '/flightverse/modes/rules.js?v=371';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/** Entero con separador de miles siempre (toLocaleString('es') no agrupa 4 cifras: «1800» junto a «12.450»). */
+const fmtInt = n => String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const DIFF_LB = { facil: 'Fácil', media: 'Media', dificil: 'Difícil' };
 const TYPES = [['zombie', 'Zombis'], ['arquero', 'Arqueros'], ['soldado', 'Soldados'], ['avion', 'Aviones'], ['ufo', 'OVNIs'], ['dragon', 'Dragón'], ['gigante', 'Gigante']];
 
@@ -18,11 +21,13 @@ const medalBadge = medal => medal ? `<div class="hx-medal" data-medal="${medal}"
 export const screensV2Markup = () => `    <div class="hx-toast" id="vl-toast" role="status" aria-live="polite"></div>
     <div class="hx-coach" id="hx-coach" data-where="left" role="status"><span class="hx-coach-t"></span><button type="button" class="hx-coach-x" aria-label="Omitir introducción">${ICON.close}</button></div>
     <section class="hx-start" id="hx-start" aria-labelledby="hx-start-t">
-      <button type="button" class="hx-start-hit" id="hx-start-go">
+      <div class="hx-start-card">
         <small>FLIGHTVERSE</small>
-        <b id="hx-start-t">Toca para empezar</b>
-        <span>Activa sonido y vibración</span>
-      </button>
+        <h2 id="hx-start-t"><span id="hx-start-world">Bogotá</span></h2>
+        <p class="hx-start-tag">Vuela sobre la ciudad real, reconstruida en 3D a partir de fotos de dron.</p>
+        <button type="button" class="hx-btn primary hx-start-btn" id="hx-start-go">Toca para empezar</button>
+        <span class="hx-start-hint">Activa sonido y vibración</span>
+      </div>
       <button type="button" class="hx-btn ghost" id="hx-start-fs" hidden>Pantalla completa</button>
     </section>
     <section class="hx-sheet hx-center" id="vl-result"></section>
@@ -102,6 +107,8 @@ export function createScreens2(ctx) {
     if (entered) return; entered = true;
     const skipStart = ctx.AT || ctx.Q.get('nostart') === '1';
     if (skipStart) return afterStart();
+    const w = $('#hx-start-world'); if (w) w.textContent = ctx.man?.name || 'Flightverse';
+    if (!flags.coarse) { $('#hx-start-go').textContent = 'Clic para empezar'; }
     ctx.ui.overlay.open('start');
     $('#hx-start-go').focus({ preventScroll: true });
     if (document.fullscreenEnabled && !flags.coarse) $('#hx-start-fs').hidden = false;
@@ -123,10 +130,13 @@ export function createScreens2(ctx) {
 
   // ── tarjetas de resultado: UN componente ──
   const stat = (v, l) => `<div><b>${esc(v)}</b><span>${esc(l)}</span></div>`;
+  /** Tabla de récords con cabeceras (Puesto · Tiempo/Puntos · Fecha · Medalla); filas ya formateadas por modes/rules.js (F2). */
   const topList = (top, mode) => {
     if (!Array.isArray(top) || !top.length) return '';
-    const rows = top.slice(0, 5).map((r, i) => `<li><span>${i + 1}</span><span>${mode === 'gr' && r.time != null ? formatTime(r.time) : esc(r.score)}</span><span>${esc(r.date || '')}</span><span>${r.medal ? MEDAL_TEXT[r.medal] || '' : ''}</span></li>`).join('');
-    return `<div class="hx-top10"><h3>Mejores marcas</h3><ol>${rows}</ol></div>`;
+    const kind = mode === 'gr' ? 'gr' : 'inv';
+    const cols = RECORD_COLUMNS[kind];
+    const rows = formatRecordRows(top, kind).map(r => `<tr${r.raw?.mine || r.raw?.isNew ? ' class="me"' : ''}><td>${r.rank}</td><td>${esc(kind === 'inv' ? fmtInt(r.raw?.score) : r.value)}</td><td>${esc(r.date)}</td><td>${r.medal ? `<i class="dot" data-medal="${r.medal}" aria-hidden="true"></i>` : ''}${esc(r.medalLabel)}</td></tr>`).join('');
+    return `<div class="hx-top10 hx-rec"><h3>Mejores marcas</h3><table><thead><tr>${cols.map((c, i) => `<th scope="col"${i === 1 ? ' class="num"' : ''}>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
   };
   const card = (inner, labelId) => `<div class="hx-sheet-card hx-result" role="alertdialog" aria-labelledby="${labelId}">${inner}</div>`;
 
@@ -141,7 +151,7 @@ export function createScreens2(ctx) {
     const sub = isNew
       ? (prev == null ? 'Primera marca de esta dificultad' : `Mejoras tu récord (${prev.toFixed(2)} s) por ${(prev - t).toFixed(2)} s`)
       : `Récord ${best.toFixed(2)} s · <b class="delta">+${delta.toFixed(2)} s</b>`;
-    const parLine = vm.par ? `Par ${formatTime(vm.par)} · ${vm.misses ? `${vm.misses} ${vm.misses === 1 ? 'fallo' : 'fallos'}` : 'sin fallos'}` : '';
+    const parLine = vm.par ? `Par ${shortTime(vm.par)} · ${vm.misses ? `${vm.misses} ${vm.misses === 1 ? 'fallo' : 'fallos'}` : 'sin fallos'}` : '';
     $('#vl-result').innerHTML = card(`
       <div class="hx-res-head">
       <p class="hx-k" id="hx-res-k">Gate Rush · ${DIFF_LB[st.difficulty] || ''}${retoMode === 'dios' ? ' · Dios (récord aparte)' : ''}${isNew ? '<em>Nuevo récord</em>' : ''}</p>
@@ -164,18 +174,25 @@ export function createScreens2(ctx) {
     ctx.ui.overlay.open('result');
   }
 
+  const EMBLEM = {
+    victory: '<svg viewBox="0 0 48 48" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M24 5l15 6v11c0 9-6 15-15 19-9-4-15-10-15-19V11z"/><path d="M16 24.500l6 6 11-12.500"/></svg>',
+    defeat: '<svg viewBox="0 0 48 48" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M24 5l15 6v11c0 9-6 15-15 19-9-4-15-10-15-19V11z"/><path d="M18 19l12 12M30 19L18 31"/></svg>',
+  };
   function invasionCard(run, kind) {
     const victory = kind === 'victory';
     $('#vl-fpv')?.classList.remove('show');
+    const score = fmtInt(run.score);
     const parts = ['<div class="hx-res-head">'];
+    parts.push(`<div class="hx-emblem" data-tone="${victory ? 'ok' : 'hostile'}">${EMBLEM[kind]}</div>`);
     parts.push(`<p class="hx-k" id="hx-res-k">Invasión · ${DIFF_LB[run.difficulty] || ''}${run.newBest ? '<em>Nuevo récord</em>' : ''}</p>`);
-    parts.push(`<div class="hx-big ${victory ? '' : 'def'}">${victory ? 'VICTORIA' : 'DERRIBADO'}</div>`);
+    parts.push(`<h2 class="hx-title ${victory ? 'win' : 'loss'}" id="hx-res-t">${victory ? 'Victoria' : 'Dron derribado'}</h2>`);
     parts.push(`<p class="hx-sub">${victory
       ? (run.livesLost ? `Ciudad defendida · ${run.livesLost} ${run.livesLost === 1 ? 'vida perdida' : 'vidas perdidas'}` : 'Ciudad defendida sin perder una vida')
-      : (run.best != null && !run.newBest ? `Récord ${run.best} pts` : 'Tu dron cayó bajo el fuego enemigo')}</p>`);
+      : (run.best != null && !run.newBest ? `Tu récord: ${fmtInt(run.best)} pts` : 'Tu dron cayó bajo el fuego enemigo')}</p>`);
+    parts.push(`<div class="hx-key"><b>${score}</b><span>puntos</span></div>`);
     parts.push(medalBadge(run.medal));
     parts.push('</div><div class="hx-res-body">');
-    parts.push(`<div class="hx-stats">${stat(run.wave, victory ? 'oleadas' : 'oleada')}${stat(run.killed, 'abatidos')}${stat(run.score, 'puntos')}${stat(run.rank ? `#${run.rank}` : (run.types?.length ?? '—'), run.rank ? 'top 10' : 'tipos')}</div>`);
+    parts.push(`<div class="hx-stats three">${stat(run.wave, victory ? 'oleadas' : 'oleada alcanzada')}${stat(run.killed, 'abatidos')}${stat(run.rank ? `#${run.rank}` : (run.types?.length ?? '—'), run.rank ? 'en tu top 10' : 'tipos de enemigo')}</div>`);
     parts.push(topList(run.top, 'inv'));
     parts.push('</div>');
     parts.push(`<div class="hx-actions-col">
@@ -184,7 +201,7 @@ export function createScreens2(ctx) {
         <button type="button" class="hx-btn" data-act="inv-config">Cambiar enemigos</button>
         <a class="hx-btn" href="mundo.html">Mundo</a>
       </div>`);
-    $('#vl-result').innerHTML = card(parts.join(''), 'hx-res-k');
+    $('#vl-result').innerHTML = card(parts.join(''), 'hx-res-t');
     ctx.ui.overlay.open('result');
   }
   const showDefeat = run => invasionCard(run, 'defeat');
@@ -197,6 +214,7 @@ export function createScreens2(ctx) {
       oc.close('start');
       afterStart();
     });
+    $('.hx-start-card').addEventListener('click', e => { if (!e.target.closest('#hx-start-go')) $('#hx-start-go').click(); });
     $('#hx-start-fs').addEventListener('click', e => { e.stopPropagation(); document.documentElement.requestFullscreen?.().catch(() => {}); });
     // picker de Invasión
     const inv = $('#vl-inv');

@@ -8,17 +8,18 @@
 //   decals   : ring-buffered surface quads
 //   lights   : a fixed pool of PointLights (created up-front so no shader recompiles in combat)
 // Over cap the OLDEST entry is reused first; a flash is never skipped.
-import { SlotPool, fxCaps } from './budget.js?v=370';
-import { buildAtlasCanvas, cellRect } from './atlas.js?v=370';
-import { explosion, surfaceImpact, muzzleFlash, crashBurst } from './recipes.js?v=370';
+import { SlotPool, fxCaps } from './budget.js?v=371';
+import { buildAtlasCanvas, cellRect } from './atlas.js?v=371';
+import { explosion, surfaceImpact, muzzleFlash, crashBurst } from './recipes.js?v=371';
 
 const VERT = /* glsl */`
 attribute vec4 iA; attribute vec4 iB; attribute vec4 iC; attribute vec4 iD; attribute vec4 iE;
 uniform float uFovH;     // 2*tan(fovY/2): world height per metre of distance
 uniform float uPxWorld;  // uFovH / viewport height in px
 uniform vec2 uViewport;  // viewport size in CSS px
-varying vec2 vUv; varying vec4 vCol;
+varying vec2 vUv; varying vec4 vCol; varying float vFade;
 void main() {
+  vFade = 1.0;
   float mode = iA.w;
   vec3 c = iA.xyz;
   vec3 camRight = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
@@ -31,6 +32,11 @@ void main() {
     float sx = iB.x, sy = iB.y;
     float cap = dist * uFovH * iB.w;                // never more than iB.w of the view height
     float k = min(1.0, cap / max(max(sx, sy), 1e-4));
+    if (iE.x > 0.0) {                               // minimum apparent size (px): phones need it at 40-120 m
+      float want = iE.x * dist * uPxWorld;
+      float big = max(max(sx, sy), 1e-4);
+      if (big * k < want) k = min(want / big, max(k, cap / big));
+    }
     sx *= k; sy *= k;
     float cs = cos(iB.z), sn = sin(iB.z);
     vec2 r = vec2(cs * q.x - sn * q.y, sn * q.x + cs * q.y) * vec2(sx, sy);
@@ -58,6 +64,7 @@ void main() {
     float w = mix(ct.w, ch.w, t);
     float z = mix(ct.z / ct.w, ch.z / ch.w, t);
     vUv = iC.xy + uv * iC.zw;
+    vFade = mix(1.0 - iE.w, 1.0, t);                 // iE.w = tail fade (0 = none)
     vCol = vec4(iD.rgb, iD.a * smoothstep(0.15, 0.9, dist));
     gl_Position = vec4(sp / hv * w, z * w, w);
     return;
@@ -78,10 +85,10 @@ void main() {
 
 const FRAG = /* glsl */`
 uniform sampler2D uMap;
-varying vec2 vUv; varying vec4 vCol;
+varying vec2 vUv; varying vec4 vCol; varying float vFade;
 void main() {
   vec4 t = texture2D(uMap, vUv);
-  float a = t.a * vCol.a;
+  float a = t.a * vCol.a * vFade;
   if (a < 0.004) discard;
   gl_FragColor = vec4(vCol.rgb * t.rgb, a);
   #include <tonemapping_fragment>
@@ -149,13 +156,14 @@ export function createFxSystem({
   };
   const layers = {
     decal: makeLayer(caps.decals, matDecal, 1),
-    norm: makeLayer(caps.sprites, matNorm, 2),
+    norm: makeLayer(caps.sprites + caps.imm, matNorm, 2),
     add: makeLayer(caps.sprites + caps.imm, matAdd, 3),
   };
 
   // debris (instanced, lit)
-  const debrisGeo = new THREE.BoxGeometry(1, 1, 1);
-  const debrisMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x2a2622 });
+  // irregular shard (flat-shaded tetrahedron, non-uniformly scaled per instance): never reads as a cube
+  const debrisGeo = new THREE.TetrahedronGeometry(0.8, 0);
+  const debrisMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x2a2622, flatShading: true });
   const debrisMesh = new THREE.InstancedMesh(debrisGeo, debrisMat, caps.debris);
   debrisMesh.frustumCulled = false;
   debrisMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -191,7 +199,7 @@ export function createFxSystem({
     live: false, layer: 'add', type: 'sprite', cell: 'glow', rect: cellRect('glow'),
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, age: 0, life: 1, s0: 1, s1: 1, rot: 0, spin: 0, drag: 0, buoy: 0, grav: 0,
     c0: [1, 1, 1, 1], c1: [1, 1, 1, 0], enveloped: false, peak: 1, maxScreen: 0.5, nx: 0, ny: 1, nz: 0,
-    stretch: 0.04, width: 0.05, roll: 0, ex: 0, ey: 0, ez: 0, kind: '', hold: 0,
+    stretch: 0.04, width: 0.05, roll: 0, ex: 0, ey: 0, ez: 0, kind: '', hold: 0, minPx: 0, tail: 0, minW: 0, delay: 0,
   }));
   const D = Array.from({ length: caps.debris }, () => ({
     live: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0, sx: 1, sy: 1, sz: 1, spin: 1,
@@ -201,6 +209,7 @@ export function createFxSystem({
     live: false, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0, size: 1, age: 0, life: 6, rect: cellRect('scorch'), c: [0, 0, 0, 0.8], rot: 0,
   }));
   const imm = [];           // per-frame immediate quads
+  const immPool = [];       // their backing records (copied in quad())
   const stats = {
     sprites: 0, debris: 0, decals: 0, lightsActive: 0, immediate: 0, immDropped: 0,
     byKind: {}, spawned: 0, updateMs: 0, lastFrameMs: 0,
@@ -250,6 +259,8 @@ export function createFxSystem({
     p.ex = s.end?.x ?? 0; p.ey = s.end?.y ?? 0; p.ez = s.end?.z ?? 0;
     p.hold = s.hold || 0;
     p.minW = s.minW || 0;
+    p.minPx = s.minPx || 0;
+    p.tail = s.tail || 0;
     stats.spawned += 1;
     stats.byKind[p.kind] = (stats.byKind[p.kind] || 0) + 1;
     return p;
@@ -270,10 +281,10 @@ export function createFxSystem({
   };
 
   /** Pooled straight beam p0 -> p1 (RAIL): fixed endpoints, core + edge, used with hold/afterglow. */
-  function beam({ from, to, width, life, c0, c1, cell = 'streak', hold = 0, kind = 'beam', minW = 0 }) {
+  function beam({ from, to, width, life, c0, c1, cell = 'streak', hold = 0, kind = 'beam', minW = 0, layer = 'add', tail = 0, s0 = 0, s1 = 0 }) {
     const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2, z: (from.z + to.z) / 2 };
     return spawnSprite({
-      pos: mid, end: { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z }, width, life, c0, c1, cell, layer: 'add', kind, hold, minW,
+      pos: mid, end: { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z }, width, life, c0, c1, cell, layer, kind, hold, minW, tail, size0: s0, size1: s1,
     }, 'beam');
   }
 
@@ -332,19 +343,29 @@ export function createFxSystem({
   function quad(q) {
     if (disposed) return false;
     if (imm.length >= caps.imm) { stats.immDropped += 1; return false; }
-    imm.push(q);
+    // callers reuse scratch vectors, so the quad is COPIED into a pooled record (was: shared reference,
+    // which collapsed every same-frame tracer onto the last one)
+    let r = immPool[imm.length];
+    if (!r) r = immPool[imm.length] = { pos: { x: 0, y: 0, z: 0 }, axis: { x: 0, y: 0, z: 0 }, color: [1, 1, 1, 1] };
+    r.mode = q.mode; r.layer = q.layer; r.cell = q.cell; r.size = q.size; r.sizeY = q.sizeY; r.rot = q.rot; r.maxScreen = q.maxScreen;
+    r.minLen = q.minLen; r.width = q.width; r.minW = q.minW; r.minPx = q.minPx; r.tail = q.tail;
+    r.pos.x = q.pos.x; r.pos.y = q.pos.y; r.pos.z = q.pos.z;
+    if (q.axis) { r.axis.x = q.axis.x; r.axis.y = q.axis.y; r.axis.z = q.axis.z; }
+    const c = q.color || [1, 1, 1, 1];
+    r.color[0] = c[0]; r.color[1] = c[1]; r.color[2] = c[2]; r.color[3] = c[3];
+    imm.push(r);
     return true;
   }
 
   // ── writers ────────────────────────────────────────────────────────────
-  function writeInstance(layer, i, mode, x, y, z, sx, sy, rot, maxScreen, rect, r, g, b, a, ex, ey, ez) {
+  function writeInstance(layer, i, mode, x, y, z, sx, sy, rot, maxScreen, rect, r, g, b, a, ex, ey, ez, ew = 0) {
     const A = layer.arrays;
     let o = i * 4;
     A.iA[o] = x; A.iA[o + 1] = y; A.iA[o + 2] = z; A.iA[o + 3] = mode;
     A.iB[o] = sx; A.iB[o + 1] = sy; A.iB[o + 2] = rot; A.iB[o + 3] = maxScreen;
     A.iC[o] = rect[0]; A.iC[o + 1] = rect[1]; A.iC[o + 2] = rect[2]; A.iC[o + 3] = rect[3];
     A.iD[o] = r; A.iD[o + 1] = g; A.iD[o + 2] = b; A.iD[o + 3] = a;
-    A.iE[o] = ex; A.iE[o + 1] = ey; A.iE[o + 2] = ez; A.iE[o + 3] = 0;
+    A.iE[o] = ex; A.iE[o + 1] = ey; A.iE[o + 2] = ez; A.iE[o + 3] = ew;
   }
 
   const easeOut = k => 1 - (1 - k) * (1 - k);
@@ -383,13 +404,13 @@ export function createFxSystem({
       const slot = p.layer === 'norm' ? nNorm++ : nAdd++;
       if (p.type === 'sprite') {
         const s = lerp(p.s0, p.s1, easeOut(k));
-        writeInstance(layer, slot, MODE.billboard, p.x, p.y, p.z, s, s, p.rot, p.maxScreen, p.rect, r, g, b, a, 0, 0, 0);
+        writeInstance(layer, slot, MODE.billboard, p.x, p.y, p.z, s, s, p.rot, p.maxScreen, p.rect, r, g, b, a, p.minPx * (s / Math.max(p.s0, p.s1, 1e-4)), 0, 0);
       } else if (p.type === 'streak') {
         // head at the particle, tail behind along velocity
         const ex = p.vx * p.stretch; const ey = p.vy * p.stretch; const ez = p.vz * p.stretch;
-        writeInstance(layer, slot, MODE.streak, p.x - ex * 0.5, p.y - ey * 0.5, p.z - ez * 0.5, 8, p.width, 0, 1, p.rect, r, g, b, a, ex, ey, ez);
+        writeInstance(layer, slot, MODE.streak, p.x - ex * 0.5, p.y - ey * 0.5, p.z - ez * 0.5, 8, p.width, p.minW || 0, 1, p.rect, r, g, b, a, ex, ey, ez, p.tail);
       } else if (p.type === 'beam') {
-        writeInstance(layer, slot, MODE.streak, p.x, p.y, p.z, 2, p.width * (p.s0 > 0 && p.s1 !== p.s0 ? lerp(p.s0, p.s1, k) : 1), p.minW || 0, 1, p.rect, r, g, b, a, p.ex, p.ey, p.ez);
+        writeInstance(layer, slot, MODE.streak, p.x, p.y, p.z, 2, p.width * (p.s0 > 0 && p.s1 !== p.s0 ? lerp(p.s0, p.s1, k) : 1), p.minW || 0, 1, p.rect, r, g, b, a, p.ex, p.ey, p.ez, p.tail);
       } else {   // ring
         const s = lerp(p.s0, p.s1, easeOut(k));
         writeInstance(layer, slot, MODE.surface, p.x, p.y, p.z, s, s, p.rot, p.maxScreen, p.rect, r, g, b, a, p.nx, p.ny, p.nz);
@@ -397,22 +418,25 @@ export function createFxSystem({
     }
     stats.sprites = live;
     // immediate quads last (additive)
-    let n = nAdd;
+    let n = nAdd; let nn = nNorm;
     for (const q of imm) {
-      if (n >= layers.add.capacity) break;
+      const L = q.layer === 'norm' ? layers.norm : layers.add;
+      const at = q.layer === 'norm' ? nn : n;
+      if (at >= L.capacity) continue;
+      if (q.layer === 'norm') nn += 1; else n += 1;
       const c = q.color || [1, 1, 1, 1];
       if (q.mode === 'streak') {
-        writeInstance(layers.add, n++, MODE.streak, q.pos.x, q.pos.y, q.pos.z, q.minLen ?? 8, q.width ?? 0.05, q.minW || 0, 1, cellRect(q.cell || 'streak'),
-          lin(c[0]), lin(c[1]), lin(c[2]), c[3], q.axis.x, q.axis.y, q.axis.z);
+        writeInstance(L, at, MODE.streak, q.pos.x, q.pos.y, q.pos.z, q.minLen ?? 8, q.width ?? 0.05, q.minW || 0, 1, cellRect(q.cell || 'streak'),
+          lin(c[0]), lin(c[1]), lin(c[2]), c[3], q.axis.x, q.axis.y, q.axis.z, q.tail || 0);
       } else {
-        writeInstance(layers.add, n++, MODE.billboard, q.pos.x, q.pos.y, q.pos.z, q.size, q.sizeY ?? q.size, q.rot || 0, q.maxScreen ?? 0.3, cellRect(q.cell || 'glow'),
-          lin(c[0]), lin(c[1]), lin(c[2]), c[3], 0, 0, 0);
+        writeInstance(L, at, MODE.billboard, q.pos.x, q.pos.y, q.pos.z, q.size, q.sizeY ?? q.size, q.rot || 0, q.maxScreen ?? 0.3, cellRect(q.cell || 'glow'),
+          lin(c[0]), lin(c[1]), lin(c[2]), c[3], q.minPx || 0, 0, 0);
       }
     }
     stats.immediate = Math.min(imm.length, caps.imm);
     imm.length = 0;
     layers.add.count = n;
-    layers.norm.count = nNorm;
+    layers.norm.count = nn;
   }
 
   function updateDebris(dt) {
@@ -534,6 +558,7 @@ export function createFxSystem({
       live: { sprites: stats.sprites, debris: stats.debris, decals: stats.decals, lights: stats.lightsActive, immediate: stats.immediate },
       pools: { sprites: spritePool.snapshot(), debris: debrisPool.snapshot(), decals: decalPool.snapshot() },
       drawCalls: 4 + (flashMesh.visible ? 1 : 0),
+      layerCounts: { add: layers.add.count, norm: layers.norm.count, decal: layers.decal.count, debris: debrisMesh.count },
       spawned: stats.spawned,
       immDropped: stats.immDropped,
       updateMs: +stats.updateMs.toFixed(3),
@@ -559,6 +584,7 @@ export function createFxSystem({
   const q = caps.quality * reducedFactor();
   return {
     tier, caps, sink, quad, beam, update, clear, snapshot, dispose,
+    immFree: () => caps.imm - imm.length,
     explosion: (kind, o = {}) => explosion(kind, sink, { rnd, q: caps.quality * reducedFactor(), ...o }),
     impact: (type, o = {}) => surfaceImpact(type, sink, { rnd, q: caps.quality, ...o }),
     muzzle: o => muzzleFlash(sink, { rnd, ...o }),
