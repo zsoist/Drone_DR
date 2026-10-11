@@ -3,10 +3,10 @@
 // 1/120s con acumulador (el replay y los desafíos dependen de que la física
 // NO dependa del framerate); el render interpola entre el estado previo y el
 // actual con alpha. Patrón "fix your timestep" clásico.
-import * as THREE from '/flightverse/three.js?v=371';
-import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=371';
-import { createStepAccumulator } from '/flightverse/loop-step.js?v=371';
-import { MIN_AGL as V2_MIN_AGL } from '/flightverse/physics/index.js?v=371';
+import * as THREE from '/flightverse/three.js?v=374';
+import { CAMERA_RIGS } from '/flightverse/camera-rigs.js?v=374';
+import { createStepAccumulator } from '/flightverse/loop-step.js?v=374';
+import { MIN_AGL as V2_MIN_AGL } from '/flightverse/physics/index.js?v=374';
 
 export const STEP = 1 / 120;
 const MAX_STEPS = 6;             // panic cap: tab de fondo no “explota” al volver

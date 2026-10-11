@@ -6,6 +6,9 @@
   "mode": "mixed"
  },
  "files": {
+  "docs/DESIGN_SYSTEM.md": {
+   "level": "strict"
+  },
   "docs/STE_STYLE_GUIDE.md": {
    "level": "strict"
   },

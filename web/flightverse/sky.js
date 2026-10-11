@@ -3,8 +3,8 @@
 // estrellas (solo noche), y 2 capas de nubes de ruido (canvas) a la deriva.
 // Presets: dia | atardecer | noche. La niebla y las luces de la escena se
 // sincronizan con el preset para que el terreno/splat vivan EN el cielo.
-import * as THREE from '/flightverse/three.js?v=371';
-import { todParams, resolveTodKey, elevationOf, nearestTodKey } from '/flightverse/tour/tod.js?v=371';
+import * as THREE from '/flightverse/three.js?v=374';
+import { todParams, resolveTodKey, elevationOf, nearestTodKey } from '/flightverse/tour/tod.js?v=374';
 
 const PRESETS = {
   dia: {

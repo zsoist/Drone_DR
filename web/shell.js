@@ -22,19 +22,27 @@ const DATA = 'data';
 })();
 
 const NAV = [
-  { href: 'home.html', ic: 'gauge', label: 'Inicio', tab: true },
-  { href: 'index.html', ic: 'grid', label: 'Vuelos', tab: true },
-  { href: 'drone.html', ic: 'drone', label: 'Dron' },
-  { href: 'trips.html', ic: 'pin', label: 'Viajes' },
-  { href: 'mundo.html', ic: 'globe', label: 'Mundo' },
-  { href: 'studio.html', ic: 'film', label: 'Studio', tab: true },
-  { href: 'tresd.html', ic: 'cube', label: '3D', tab: true },
-  { href: 'splatlab.html', ic: 'splat', label: 'Splat Lab' },
-  { href: 'ventas.html', ic: 'tag', label: 'Ventas' },
-  { href: 'system.html', ic: 'db', label: 'Sistema' },
+  { id: 'home', href: 'home.html', ic: 'gauge', label: 'Inicio', pages: ['home.html', 'index.html'] },
+  { id: 'trips', href: 'trips.html', ic: 'route', label: 'Viajes', pages: ['trips.html', 'map.html', 'flight.html'] },
+  { id: 'studio', href: 'studio.html', ic: 'film', label: 'Studio', pages: ['studio.html', 'subir.html'] },
+  { id: '3d', href: 'tresd.html', ic: 'cube', label: '3D', pages: ['tresd.html', 'mundo.html', 'splatlab.html', 'scene-improve.html', 'volar.html'] },
+  { id: 'more', ic: 'more', label: 'Más', pages: ['drone.html', 'system.html', 'guia.html', 'ventas.html'] },
 ];
-// destinos secundarios del móvil (hoja «Más») + Guía, que solo vive en el footer/hoja
-const NAV_MORE = [...NAV.filter(n => !n.tab), { href: 'guia.html', ic: 'list', label: 'Guía' }];
+const NAV_MORE = [
+  { href: 'drone.html', ic: 'drone', label: 'Dron' },
+  { href: 'system.html', ic: 'db', label: 'Sistema' },
+  { href: 'guia.html', ic: 'list', label: 'Guía' },
+  { href: 'ventas.html', ic: 'tag', label: 'Ventas' },
+];
+const SECTIONS = [
+  { href: 'home.html', label: 'Inicio' }, { href: 'index.html', label: 'Vuelos' },
+  { href: 'trips.html', label: 'Viajes' }, { href: 'map.html', label: 'Mapa' },
+  { href: 'flight.html', label: 'Detalle del vuelo' },
+  { href: 'studio.html', label: 'Studio' }, { href: 'subir.html', label: 'Subir', keywords: 'importar archivos' },
+  { href: 'tresd.html', label: 'Escenas 3D' }, { href: 'mundo.html', label: 'Mundo' },
+  { href: 'splatlab.html', label: 'Splat Lab' }, { href: 'scene-improve.html', label: 'Mejorar escena' },
+  { href: 'volar.html', label: 'Volar' }, ...NAV_MORE,
+];
 
 // Cabecera de página unificada (.page-head en style.css): título + subtítulo opcional + acciones a la derecha.
 // pageHead('Sistema', 'inventario · costos', '<button class="btn sm">…</button>')
@@ -345,13 +353,8 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 // Aviso no-bloqueante compartido (estilo .ed-toast en style.css; alert() rompe el flujo en móvil)
-function toast(msg) {
-  const t = document.createElement('div');
-  t.className = 'ed-toast';
-  t.textContent = msg;
-  document.body.appendChild(t);
-  requestAnimationFrame(() => t.classList.add('on'));
-  setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 350); }, 3600);
+function toast(msg, options) {
+  return shellComponents.then(([, , , module]) => module.showToast(msg, options));
 }
 // The server gates every document and data asset before this code runs. These
 // checks cover session expiry while a tab is already open or restored by bfcache.
@@ -928,7 +931,7 @@ document.addEventListener('click', async e => {
 document.addEventListener('input', e => { if (e.target.matches('[data-log-search], [data-log-level]')) renderJobLog(); });
 
 // tema: aplicar ANTES de pintar para evitar flash
-try { document.documentElement.dataset.theme = localStorage.getItem('ab_theme') || 'dark'; } catch { document.documentElement.dataset.theme = 'dark'; }
+// ui/theme.js initializes the theme in the head, before first paint.
 // Los toggles muestran el tema ACTUAL (icono luna/sol + «Tema oscuro/claro»), con aria-pressed = tema oscuro activo.
 function syncThemeToggles() {
   const light = document.documentElement.dataset.theme === 'light';
@@ -942,19 +945,12 @@ function syncThemeToggles() {
     b.title = `Cambiar a tema ${light ? 'oscuro' : 'claro'}`;
   });
 }
-let _themeT = 0;
 function toggleTheme() {
-  const root = document.documentElement;
-  const t = root.dataset.theme === 'light' ? 'dark' : 'light';
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {   // fundido de color 160ms (solo bg/color/border)
-    root.classList.add('theme-anim');
-    clearTimeout(_themeT);
-    _themeT = setTimeout(() => root.classList.remove('theme-anim'), 220);
-  }
-  root.dataset.theme = t;
-  try { localStorage.setItem('ab_theme', t); } catch {}
+  const value = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  window.AeroTheme?.set(value);
   syncThemeToggles();
 }
+document.addEventListener('ab-theme-change', syncThemeToggles);
 
 document.addEventListener('click', async e => {
   if (e.target.closest('[data-theme-toggle]')) toggleTheme();
@@ -970,112 +966,102 @@ document.addEventListener('click', async e => {
   }
 });
 
-// Hoja «Más» del móvil: diálogo de navegación (título + ×, Esc por la pila de capas, Tab atrapado, scroll lock,
-// el foco vuelve al disparador).
-function setupMoreSheet() {
-  const btn = document.getElementById('mnav-more');
-  const ov = document.getElementById('msheet-ov');
-  if (!btn || !ov) return;
-  const sheet = ov.querySelector('.msheet');
-  let layer = null, closeT = 0;
-  const close = () => {
-    if (ov.hidden || !layer) return;
-    ov.classList.remove('on');
-    btn.setAttribute('aria-expanded', 'false');
-    popLayer(layer); layer = null;
-    unlockScroll();
-    clearTimeout(closeT);
-    closeT = setTimeout(() => { if (!layer) ov.hidden = true; }, 220);
-    btn.focus({ preventScroll: true });
-  };
-  const onKey = e => {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
-    if (e.key !== 'Tab') return;
-    const f = [...sheet.querySelectorAll('a[href],button:not([disabled])')].filter(el => !el.hidden && el.offsetParent !== null);
-    if (!f.length) return;
-    const first = f[0], last = f[f.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-  };
-  const open = () => {
-    clearTimeout(closeT);
-    ov.hidden = false;
-    requestAnimationFrame(() => ov.classList.add('on'));
-    btn.setAttribute('aria-expanded', 'true');
-    layer = pushLayer({ onKey });
-    lockScroll();
-    sheet.querySelector('a[href]')?.focus({ preventScroll: true });
-  };
-  btn.addEventListener('click', () => (ov.hidden || !layer ? open() : close()));
-  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('[data-msheet-close]')) close(); });
-  sheet.addEventListener('click', e => { if (e.target.closest('[data-theme-toggle]')) setTimeout(close, 120); });
+// Public palette bridge for classic page scripts. ES modules can import palette.js directly.
+const shellComponents = Promise.all([
+  import('./ui/sheet.js?v=374'), import('./ui/palette.js?v=374'),
+  import('./ui/activity.js?v=374'), import('./ui/toast.js?v=374'),
+]);
+function registerPaletteSource(fn) {
+  let cancelled = false, unregister;
+  shellComponents.then(([, palette]) => { if (!cancelled) unregister = palette.registerPaletteSource(fn); });
+  return () => { cancelled = true; unregister?.(); };
 }
-
-function renderShell(active) {
-  const cur = active || location.pathname.split('/').pop() || 'index.html';
-  const isMore = NAV_MORE.some(n => n.href === cur);
-  const light = document.documentElement.dataset.theme === 'light';
+function renderShell(active, { navigationOnly = false } = {}) {
+  if (document.querySelector('.ab-shell')) return document.getElementById('main');
+  const page = location.pathname.split('/').pop() || 'index.html';
+  if (['share.html', 'p.html', 'login.html'].includes(page)) return null;
+  // Real location wins over legacy callers that pass the parent page.
+  const cur = page || active;
+  const query = new URLSearchParams(location.search);
+  const group = (cur === 'index.html' && query.get('v') === 'map') ? 'trips'
+    : (cur === 'drone.html' && query.get('via') === 'subir') ? 'studio'
+    : NAV.find(n => n.pages.includes(cur))?.id || 'home';
+  const navItems = NAV.map(n => {
+    const attrs = `class="ab-nav-item${group === n.id ? ' active' : ''}" aria-label="${n.label}" title="${n.label}"`;
+    const label = `${icon(n.ic)}<span class="ab-rail-label">${n.label}</span>`;
+    return n.id === 'more'
+      ? `<button ${attrs} type="button" data-more aria-haspopup="dialog" aria-expanded="false"${group === n.id ? ' aria-current="true"' : ''}>${label}</button>`
+      : `<a ${attrs} href="${n.href}"${group === n.id ? ' aria-current="page"' : ''}>${label}</a>`;
+  }).join('');
+  let expanded = false;
+  try { expanded = localStorage.getItem('ab_rail') === 'open'; } catch {}
+  document.documentElement.dataset.rail = expanded ? 'open' : 'closed';
   document.body.insertAdjacentHTML('afterbegin', `
-    <a class="skip-link" href="#main">Saltar al contenido</a>
-    <div class="shell">
-      <aside class="sidebar">
-        <a class="brand" href="index.html">
-          <span class="mark">${icon('drone')}</span>
-          <span><b>AeroBrain</b><span>Flight Intelligence</span></span>
-        </a>
-        ${NAV.map(n => `
-          <a class="nav-item ${n.href === cur ? 'active' : ''}" href="${n.href}"${n.href === cur ? ' aria-current="page"' : ''}>
-            ${icon(n.ic)}<span>${n.label}</span>
-          </a>`).join('')}
-        <button class="nav-item" type="button" data-theme-toggle aria-pressed="${!light}" aria-label="${light ? 'Tema claro' : 'Tema oscuro'}" title="Cambiar a tema ${light ? 'oscuro' : 'claro'}">${icon(light ? 'sun' : 'moon')}<span class="theme-lb">${light ? 'Tema claro' : 'Tema oscuro'}</span></button>
-        <div class="foot">
-          <span class="foot-status"><span class="dot"></span>Mac Mini M4 · vault local<span class="chip sm foot-dev" id="dev-chip" hidden>Dev local</span></span>
-          <div class="foot-btns">
-            <a class="btn sm ghost${cur === 'guia.html' ? ' on' : ''}" href="guia.html">${icon('list')} Guía</a>
-            <a class="btn sm ghost" href="#" id="auth-link">${icon('logOut')} Salir</a>
-          </div>
+    ${navigationOnly ? '' : '<a class="skip-link" href="#main">Saltar al contenido</a>'}
+    <div class="shell ab-shell${navigationOnly ? ' ab-shell--navigation-only' : ''}">
+      <nav class="ab-rail" aria-label="Navegación principal">
+        <a class="ab-nav-item ab-rail-brand" href="home.html" aria-label="AeroBrain · Inicio" title="AeroBrain">${icon('drone')}<b class="ab-rail-label">AeroBrain</b></a>
+        ${navItems}
+        <button class="ab-nav-item" type="button" data-palette aria-label="Buscar en AeroBrain" title="Buscar (⌘K / Ctrl+K)">${icon('search')}<span class="ab-rail-label">Buscar <kbd>⌘K</kbd></span></button>
+        <div class="ab-rail-foot">
+          <button class="ab-nav-item" type="button" data-theme-toggle>${icon('moon')}<span class="ab-rail-label theme-lb">Tema oscuro</span></button>
+          <button class="ab-nav-item" type="button" data-rail-toggle aria-label="${expanded ? 'Contraer' : 'Expandir'} navegación" aria-expanded="${expanded}">${icon(expanded ? 'chevL' : 'chevR')}<span class="ab-rail-label">Contraer</span></button>
         </div>
-      </aside>
-      <main class="main" id="main" tabindex="-1"></main>
+      </nav>
+      ${navigationOnly ? '' : '<main class="main" id="main" tabindex="-1"></main>'}
     </div>
-    <nav class="mnav" aria-label="Navegación principal">
-      ${NAV.filter(n => n.tab).map(n => `
-        <a class="mnav-i${n.href === cur ? ' active' : ''}" href="${n.href}"${n.href === cur ? ' aria-current="page"' : ''}>${icon(n.ic)}<span>${n.label}</span></a>`).join('')}
-      <button class="mnav-i${isMore ? ' active' : ''}" id="mnav-more" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="msheet-ov">${icon('more')}<span>Más</span></button>
-    </nav>
-    <div class="msheet-ov" id="msheet-ov" hidden>
-      <div class="msheet" role="dialog" aria-modal="true" aria-labelledby="msheet-t">
-        <div class="msheet-grip" aria-hidden="true"></div>
-        <div class="msheet-head"><b id="msheet-t">Más</b><button class="btn icon ghost sm" type="button" data-msheet-close aria-label="Cerrar">${icon('close')}</button></div>
-        <div class="msheet-grid">
-          ${NAV_MORE.map(n => `
-            <a class="ms-item${n.href === cur ? ' active' : ''}" href="${n.href}"${n.href === cur ? ' aria-current="page"' : ''}>${icon(n.ic)}<span>${n.label}</span></a>`).join('')}
-        </div>
-        <div class="msheet-foot">
-          <button class="btn ghost" type="button" data-theme-toggle aria-pressed="${!light}" aria-label="${light ? 'Tema claro' : 'Tema oscuro'}" title="Cambiar a tema ${light ? 'oscuro' : 'claro'}">${icon(light ? 'sun' : 'moon')} <span class="theme-lb">${light ? 'Tema claro' : 'Tema oscuro'}</span></button>
-          <a class="btn ghost" href="#" data-auth-link id="auth-link-m">${icon('logOut')} Salir</a>
-        </div>
-      </div>
-    </div>`);
-  setupMoreSheet();
-  document.querySelector('.skip-link')?.addEventListener('click', e => {
-    e.preventDefault();
-    const m = document.getElementById('main'); if (m) { m.focus({ preventScroll: true }); m.scrollIntoView({ block: 'start' }); }
+    <nav class="ab-tabs" aria-label="Navegación principal">${navItems}</nav>
+    <button class="ab-search" type="button" data-palette aria-label="Buscar en AeroBrain" aria-haspopup="dialog">${icon('search')}</button>`);
+  syncThemeToggles();
+  document.querySelector('[data-rail-toggle]')?.addEventListener('click', e => {
+    expanded = !expanded;
+    document.documentElement.dataset.rail = expanded ? 'open' : 'closed';
+    const button = e.currentTarget;
+    button.setAttribute('aria-expanded', String(expanded));
+    button.setAttribute('aria-label', `${expanded ? 'Contraer' : 'Expandir'} navegación`);
+    button.querySelector('svg').outerHTML = icon(expanded ? 'chevL' : 'chevR');
+    try { localStorage.setItem('ab_rail', expanded ? 'open' : 'closed'); } catch {}
   });
-  requireSession().then(session => {
-    if (!session) return;
-    const links = document.querySelectorAll('#auth-link, #auth-link-m');
-    if (session.dev_mode) {
-      // sesión local de desarrollo: no hay nada que cerrar → «Salir» desaparece y queda una etiqueta
-      links.forEach(l => { l.hidden = true; });
-      document.getElementById('dev-chip')?.removeAttribute('hidden');
-      document.querySelector('.foot-btns')?.classList.add('solo');
-    } else if (session.expires_at) {
-      const expiresInColombia = new Date(session.expires_at).toLocaleString('es-CO', {
-        timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'short',
-      });
-      links.forEach(l => { l.title = `Sesión activa hasta ${expiresInColombia}`; });
-    }
+  document.querySelector('.skip-link')?.addEventListener('click', e => {
+    e.preventDefault(); const main = document.getElementById('main');
+    main?.focus({ preventScroll: true }); main?.scrollIntoView({ block: 'start' });
+  });
+  shellComponents.then(([{ createSheet }, { mountPalette }, { mountActivity }]) => {
+    const content = document.createElement('div');
+    content.innerHTML = `<nav class="ab-menu-links" aria-label="Más secciones">${NAV_MORE.map(n => `<a class="ui-button ui-button--quiet" href="${n.href}"${cur === n.href ? ' aria-current="page"' : ''}>${icon(n.ic)}${n.label}</a>`).join('')}</nav>
+      <p class="ab-menu-heading">Todas las secciones</p>
+      <nav class="ab-menu-links" aria-label="Explorar AeroBrain">${SECTIONS.filter(n => !NAV_MORE.some(m => m.href === n.href)).map(n => `<a class="ui-button ui-button--quiet" href="${n.href}">${n.label}</a>`).join('')}</nav>
+      <p class="ab-menu-heading">Apariencia</p>
+      <div class="ab-theme-options" role="group" aria-label="Tema"><button class="ui-button ui-button--secondary" data-theme-choice="system">Sistema</button><button class="ui-button ui-button--secondary" data-theme-choice="dark">Oscuro</button><button class="ui-button ui-button--secondary" data-theme-choice="light">Claro</button></div>
+      <p><a class="ui-button ui-button--quiet" href="#" data-auth-link id="auth-link">Salir</a></p>`;
+    const moreButtons = [...document.querySelectorAll('[data-more]')];
+    const more = createSheet({ title: 'Más', content, size: 'full', onClose: () => moreButtons.forEach(b => b.setAttribute('aria-expanded', 'false')) });
+    moreButtons.forEach(b => {
+      b.setAttribute('aria-controls', more.element.id = 'ab-more');
+      b.addEventListener('click', () => { more.open(b); b.setAttribute('aria-expanded', 'true'); });
+    });
+    const themeControls = () => content.querySelectorAll('[data-theme-choice]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.themeChoice === window.AeroTheme?.preference)));
+    content.addEventListener('click', e => { const value = e.target.closest('[data-theme-choice]')?.dataset.themeChoice; if (value) window.AeroTheme?.set(value); });
+    document.addEventListener('ab-theme-change', themeControls); themeControls();
+    const palette = mountPalette([
+      ...SECTIONS.map(n => ({ id: n.href, label: n.label, href: n.href, keywords: n.keywords || '' })),
+      { id: 'theme', label: 'Cambiar tema', keywords: 'claro oscuro apariencia', action: toggleTheme },
+      { id: 'system-theme', label: 'Usar tema del sistema', action: () => window.AeroTheme?.set('system') },
+      { id: 'new-reel', label: 'Nuevo reel', keywords: 'crear editar video', href: 'studio.html' },
+    ]);
+    document.querySelectorAll('[data-palette]').forEach(b => b.addEventListener('click', () => palette.open(b)));
+    const stopActivity = mountActivity();
+    addEventListener('pagehide', e => { if (!e.persisted) stopActivity(); }, { once: true });
+    requireSession().then(session => {
+      const logout = content.querySelector('[data-auth-link]');
+      if (session?.dev_mode) logout.hidden = true;
+      else if (session?.expires_at) {
+        const expires = new Date(session.expires_at).toLocaleString('es-CO', {
+          timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'short',
+        });
+        logout.title = `Sesión activa hasta ${expires}`;
+      }
+    });
   });
   return document.getElementById('main');
 }

@@ -1,0 +1,211 @@
+# AeroBrain design system
+
+This document describes the W1 foundation for the October 2026 redesign.
+The page body remains the responsibility of its workstream.
+Use Spanish for interface text.
+Use the current local assets. Do not add CDN dependencies.
+
+## Load order
+
+Load `ui/theme.js` and `ui/transitions.js` as classic scripts in the document head.
+Load `css/shell.css` after the page styles.
+Load `ui/skeleton.css` after the shell styles.
+Keep `icons.js` before `shell.js`.
+Page scripts call `renderShell()` and get the main element.
+The function creates only one shell.
+
+Login keeps its current assets because its CSP and public resource list block the new assets.
+Do not expand the public resource list to apply the design system.
+Share, property, and login pages have no app navigation.
+Volar uses a separate navigation mount and keeps its canvas layout.
+
+## Fonts
+
+Mona Sans is the interface font. JetBrains Mono is the telemetry font.
+The Mona Sans subset uses the family name AeroBrain Sans because its license reserves the original name.
+Both fonts use WOFF2, variable weights, and `font-display: swap`.
+The files contain Latin characters, Spanish characters, punctuation, and the euro sign.
+
+Mona Sans has the `tnum` feature after the subset operation.
+Use `.ui-figures` for fixed-width telemetry and `.ui-unit` for units.
+Set `--figure-width` to the number width that you need. The default is `6ch`.
+
+The font sources, revisions, hashes, and axes are in `web/vendor/fonts/sources.json`.
+The source repositories are [Mona Sans](https://github.com/github/mona-sans) and [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono).
+Each font has an OFL license file in the same folder.
+
+## Tokens
+
+All color tokens use OKLCH. Current token names remain available to page code.
+
+| Token | Use |
+|---|---|
+| `--bg` | Page surface; dark lightness 0.14 |
+| `--surface` | Navigation and sheets; dark lightness 0.17 |
+| `--surface-2` | Raised content; dark lightness 0.21 |
+| `--surface-3` | Selected controls; dark lightness 0.25 |
+| `--text`, `--text-2`, `--text-3` | Main, secondary, and quiet text |
+| `--line`, `--line-strong` | Inner hairlines and control boundaries |
+| `--accent`, `--accent-fg` | Amber fill and text for active states |
+| `--data` | Cyan for GPS tracks and charts |
+| `--danger`, `--success` | Error and success states |
+| `--media-bg` | Pure black behind full-screen media |
+| `--r-sm`, `--r-lg`, `--r-xl` | Control, card, and sheet radii: 6, 12, 20 px |
+| `--sp-1` through `--sp-10` | 4, 8, 12, 16, 20, 24, 32, 40, 56, 72 px |
+| `--fs-xs`, `--fs-sm` | 12 and 13 px |
+| `--fs-md`, `--fs-lg` | Phone: 15 and 17 px; desktop: 14 and 16 px |
+| `--fs-xl`, `--fs-2xl`, `--fs-3xl` | 20 px; 24–26 px; 30–34 px |
+| `--fs-4xl`, `--fs-display` | 40–48 px; 40–64 px |
+| `--lh-base`, `--lh-tight` | Body: 1.45; title: 1.1 |
+| `--z-base`, `--z-sticky`, `--z-nav` | 0, 20, 100 |
+| `--z-overlay`, `--z-modal`, `--z-toast` | 200, 300, 400 |
+
+The light theme uses warm paper surfaces and dark text.
+Pair `--accent-solid` with `--text-on-accent`.
+Use `--accent-fg` for amber text. It changes with the theme.
+Do not use a hairline as the only control state indicator.
+
+Use one glass layer at most. Only the tab bar uses glass in the shell.
+Use a solid surface for sheets, dialogs, and content.
+
+## Theme
+
+`AeroTheme.set('dark' | 'light' | 'system')` changes the preference.
+`AeroTheme.preference` returns the current preference.
+Manual choices use the current `ab_theme` localStorage key.
+Storage failures do not stop the page.
+
+The app follows system changes when no manual choice exists.
+Guía, Ventas, and Propiedades use light as their default.
+The head script restores the preference after the legacy property initializer.
+Listen for `ab-theme-change` to update page controls.
+
+## Navigation and palette
+
+Phone navigation has five labeled destinations and a separate search button.
+The desktop rail starts at 1024 px. Its closed and open widths are 64 and 240 px.
+The rail stores its state in `ab_rail`.
+
+Más contains the secondary destinations and links to every current section.
+The map and upload aliases keep their current redirects.
+The destination state follows the actual URL, with each alias query.
+
+The palette opens with Command+K, Control+K, or the search button.
+Arrow keys select a result. Enter opens it. Escape closes the palette.
+Search ignores accents and supports ordered partial characters.
+Local results remain available if a data source fails.
+
+```js
+import { registerPaletteSource } from './ui/palette.js';
+const unregister = registerPaletteSource(async ({ query, signal }) => {
+  const response = await fetch(`/api/search-index?q=${encodeURIComponent(query)}`, { signal });
+  // This URL is an example. Supply the endpoint for your workstream.
+  return response.json();
+});
+// Item: {id, label, keywords?, href? OR action?}
+// unregister();
+```
+
+Use the same asset version query as `shell.js` for each module import.
+
+Classic scripts can call the global `registerPaletteSource(fn)` with the same contract.
+Use stable item IDs and same-origin links.
+Return Spanish labels. Use `action` for a function and `href` for navigation.
+The palette shows up to 40 results.
+
+## Sheet
+
+```js
+import { createSheet } from './ui/sheet.js';
+const content = document.createElement('p');
+content.textContent = 'Tu escena está lista.';
+const sheet = createSheet({ title: 'Escena', content, size: 'half' });
+sheet.open(button);
+// sheet.close(); sheet.setSize('full'); sheet.destroy();
+```
+
+`createSheet` accepts `title`, `content`, `size`, `className`, and `onClose`.
+It returns `element`, `body`, `open`, `close`, `setSize`, and `destroy`.
+Sizes are `peek`, `half`, and `full` on phone.
+Desktop sheets open as right panels. The palette opens in the center.
+
+Native dialogs make the background inert.
+The shared layer stack handles Escape and Tab. Close restores focus to the opener.
+A backdrop tap closes the sheet. A drag from its content does not.
+
+Use `textContent` for data. Destroy sheets after their last use.
+
+## Toast and activity
+
+```js
+import { showToast } from './ui/toast.js';
+const dismiss = showToast('Clip eliminado', { undo: restoreClip });
+// dismiss();
+```
+
+`showToast(message, {undo, duration})` replaces the current toast.
+The default duration is 5000 ms. Pointer hover and keyboard focus pause the timer.
+Undo messages remain until the user selects Deshacer or Cerrar.
+The legacy `toast(message, options)` function returns a Promise for the dismiss function.
+
+```js
+import { mountActivity } from './ui/activity.js';
+const stop = mountActivity({ interval: 10000 });
+// stop();
+```
+
+The shell mounts one activity pill. Do not mount another pill in a page.
+It reads GET `/api/jobs` and shows queued or active jobs.
+A tap opens a Sistema sheet with a link to the full page.
+
+The pill keeps its last count and shows a connection label after a request error.
+Hidden pages do not poll. `stop()` removes the pill and its listeners.
+Tests can supply `fetchJobs(signal)`, which returns an array or an object with a `jobs` array.
+
+## CSS components
+
+| Class | Contract |
+|---|---|
+| `.ui-button` | Base control with a minimum 44 px target |
+| `.ui-button--primary` | Main action; neutral high contrast |
+| `.ui-button--secondary` | Secondary action on a raised surface |
+| `.ui-button--quiet` | Quiet action without a filled surface |
+| `.ui-button--danger` | Destructive action |
+| `.ui-chip` | Static label; use a button for a filter |
+| `.ui-segmented` | Group of buttons with `aria-pressed` states |
+| `.ui-empty` | One sentence, one main action, one example |
+| `.ui-skeleton` | Base placeholder with an opacity pulse |
+| `.ui-skeleton--text` | Text placeholder; set `--skeleton-width` |
+| `.ui-skeleton--media` | Media placeholder; set `--dominant-color` and `--media-ratio` |
+
+Give segmented controls a group label. Update `aria-pressed` after selection.
+Use `aria-busy` on the content region and `aria-hidden` on skeleton elements.
+Match the skeleton geometry to the final content.
+Page workstreams must check legacy controls for 44 px targets and 12 px minimum text.
+New phone inputs must use at least 16 px text.
+
+## Motion
+
+| Token | Duration |
+|---|---|
+| `--dur-fast` | 140 ms for press and toggle |
+| `--dur-base` | 220 ms for menus |
+| `--dur-slow` | 340 ms for pages |
+| `--dur-sheet` | 450 ms for the sheet spring |
+| `--dur-exit` | 150 ms for menu exits |
+
+Animate only transform and opacity. `--ease-spring` uses `linear()` with a fallback curve.
+Cross-document transitions need no router. Unsupported browsers use normal navigation.
+The head script sets forward, back, or crossfade transition types.
+3D pages and Volar use only crossfades.
+
+For shared elements, set `data-transition-key` on one static element per document.
+Use the same key on the destination element.
+Keys start with `clip-`, `trip-`, `pin-`, or `world-`.
+The script sets transition names only during `pageswap` and `pagereveal`.
+Do not name a live WebGL canvas.
+
+Reduced motion uses a 150 ms opacity crossfade and a static skeleton.
+Page code can read `document.documentElement.dataset.motion`.
+When its value is `reduced`, stop automatic previews and camera moves.
+Page workstreams own these media behaviors.

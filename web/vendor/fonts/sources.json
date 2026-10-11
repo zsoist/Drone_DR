@@ -1,0 +1,25 @@
+[
+  {
+    "file": "mona-sans-latin.woff2",
+    "source": "https://raw.githubusercontent.com/github/mona-sans/4bc6ba8b354c36b4fb66d32cd67b4c1f2beb0a06/fonts/variable/MonaSansVF%5Bwdth%2Copsz%2Cwght%5D.ttf",
+    "sha256": "a7ab404df48f8cab6e2d23373c9e4c5580568187bc2fdb5b4932fb509782e848",
+    "axes": [
+      "wdth",
+      "wght",
+      "opsz"
+    ],
+    "tnum": true,
+    "bytes": 263016,
+    "subset_family": "AeroBrain Sans"
+  },
+  {
+    "file": "jetbrains-mono-latin.woff2",
+    "source": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/19371302b95d218af43299bce79ddbddd0bc364d/fonts/variable/JetBrainsMono%5Bwght%5D.ttf",
+    "sha256": "23d50880a7bdc0bbaa75497582ea532f20712387aaa8e5bc63dd59c800dd5f40",
+    "axes": [
+      "wght"
+    ],
+    "tnum": false,
+    "bytes": 51648
+  }
+]
