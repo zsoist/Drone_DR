@@ -2551,9 +2551,14 @@ def _probe_dur_strict(path, what="video") -> float:
     return d
 
 
-def _ff(cmd: list):
+def _ff(cmd: list, jid: str | None = None):
     """ffmpeg con stderr CAPTURADO y timeout: antes un fallo daba 'returned non-zero exit
     status 1' en la UI y la causa real moría en el stdout del server. 30 min por paso."""
+    if jid:
+        rc = jobstore.run_tracked(jid, cmd, timeout=1800)
+        if rc:
+            raise RuntimeError((jobstore.get(jid) or {}).get("log") or "ffmpeg falló")
+        return
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
     if r.returncode != 0:
         raise RuntimeError((r.stderr or "ffmpeg falló sin stderr").strip()[-300:])
@@ -2679,7 +2684,7 @@ def _audio_beats(path: Path) -> dict:
     return out
 
 
-def _burn_texts(video: Path, texts: list, bitrate: str) -> Path:
+def _burn_texts(video: Path, texts: list, bitrate: str, jid: str | None = None) -> Path:
     """PISTA DE TEXTO (independiente de los cortes): cada bloque aparece entre start y end
     del reel completo, no atado a un clip. Se quema en una sola pasada con drawtext y
     enable=between(t,...), así 10 textos cuestan lo mismo que uno."""
@@ -2724,13 +2729,13 @@ def _burn_texts(video: Path, texts: list, bitrate: str) -> Path:
         out = video.with_name(video.stem + ".txt.mp4")
         _ff(["ffmpeg", "-v", "error", "-y", *FF_PROTOCOLS, "-i", str(video), "-vf", ",".join(chain),
              "-c:v", "h264_videotoolbox", "-b:v", bitrate, "-pix_fmt", "yuv420p",
-             "-c:a", "copy", "-movflags", "+faststart", str(out)])
+             "-c:a", "copy", "-movflags", "+faststart", str(out)], jid=jid)
     video.unlink(missing_ok=True)
     out.rename(video)
     return video
 
 
-def _mix_music(video: Path, music: Path, opts: dict, has_audio: bool, dur: float) -> Path:
+def _mix_music(video: Path, music: Path, opts: dict, has_audio: bool, dur: float, jid: str | None = None) -> Path:
     """Mezcla la pista sobre el reel YA compuesto sin re-encodear el video (-c:v copy).
 
     - volume: 0..1 de la música
@@ -2770,7 +2775,7 @@ def _mix_music(video: Path, music: Path, opts: dict, has_audio: bool, dur: float
     _ff(["ffmpeg", "-v", "error", "-y", *FF_PROTOCOLS, "-i", str(video), *FF_PROTOCOLS, "-i", str(music),
          "-filter_complex", ";".join(fc), "-map", "0:v", "-map", "[aout]",
          "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-         "-movflags", "+faststart", "-shortest", str(out)])
+         "-movflags", "+faststart", "-shortest", str(out)], jid=jid)
     video.unlink(missing_ok=True)
     out.rename(video)
     return video
@@ -3090,7 +3095,7 @@ def run_edit(spec: dict, j):
             else:
                 cmd += ["-t", f"{out_dur:.3f}", "-vf", ",".join(vf), "-an",
                         *rate, "-c:v", "h264_videotoolbox", "-b:v", br, str(seg)]
-            _ff(cmd)
+            _ff(cmd, jid=j["id"])
             jobstore.update(j["id"], progress=(i + 1) / (len(raw_segs) + 1),
                             detail=f"corte {i + 1}/{len(raw_segs)}")
             segs.append(seg)
@@ -3098,7 +3103,8 @@ def run_edit(spec: dict, j):
             trans_durs.append(_clampf(s.get("transDur", XFADE_DEFAULT), 0.2, 1.5, XFADE_DEFAULT))
         if not segs:
             raise ValueError("sin segmentos válidos")
-        out = out0 = claimed = _claim_edit_out(bool(spec.get("vertical")))
+        claimed = _claim_edit_out(bool(spec.get("vertical")))
+        out = out0 = tmp / claimed.name
 
         # cualquier corte (idx>=1) con transición != 'none' entra a la ruta xfade encadenada
         def _xname(t):
@@ -3112,7 +3118,7 @@ def run_edit(spec: dict, j):
             # +faststart: el moov al principio = el reel empieza a verse al instante en
             # web/iOS en vez de esperar a descargar el archivo entero.
             _ff(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
-                 *FF_PROTOCOLS, "-i", str(lst), "-c", "copy", "-movflags", "+faststart", str(out)])
+                 *FF_PROTOCOLS, "-i", str(lst), "-c", "copy", "-movflags", "+faststart", str(out)], jid=j["id"])
             lst.unlink()
         else:
             # pase final con xfade encadenado en cada corte que pida transición de librería;
@@ -3166,7 +3172,7 @@ def run_edit(spec: dict, j):
                 cmd += ["-c:a", "aac", "-ar", "48000", "-ac", "2"]
             cmd.append(str(out))
             jobstore.update(j["id"], detail="componiendo transiciones", progress=0.92)
-            _ff(cmd)
+            _ff(cmd, jid=j["id"])
         for s in segs:
             s.unlink()
         # ---- pista de TEXTO: se quema sobre el reel compuesto, antes de la música ----
@@ -3176,7 +3182,7 @@ def run_edit(spec: dict, j):
             if join_ov:
                 # el cliente manda start/end en tiempo de timeline; el xfade acorta el archivo
                 texts = _remap_texts_for_overlap(texts, join_ov, _probe_dur_strict(out, "reel"))
-            _burn_texts(out, texts, br)
+            _burn_texts(out, texts, br, jid=j["id"])
         # ---- música (I2): se mezcla al final, sobre el reel ya compuesto ----
         music = spec.get("music") if isinstance(spec.get("music"), dict) else None
         mname = safe_name(music.get("name", "")) if music else ""
@@ -3188,21 +3194,16 @@ def run_edit(spec: dict, j):
                 mpath = None
             if mpath and mpath.is_file():
                 jobstore.update(j["id"], detail="mezclando música", progress=0.96)
-                _mix_music(out, mpath, music, keep_audio, _probe_dur_strict(out, "reel"))
+                _mix_music(out, mpath, music, keep_audio, _probe_dur_strict(out, "reel"), jid=j["id"])
         # ---- reemplazo (T2): si la edición nació de un reel existente y el usuario pidió
         # sustituirlo, el export exitoso toma su nombre (links, orden y posters se heredan)
         rep = safe_name(spec.get("replace", ""))
-        if rep and rep.endswith(".mp4"):
-            tgt = (VAULT / "reels" / rep).resolve()
-            try:
-                tgt.relative_to((VAULT / "reels").resolve())
-                out.replace(tgt)
-                out = tgt
-                out0 = None      # el destino de 'replace' NUNCA se borra si algo falla después
-                # el póster viejo es de otro contenido: fuera para que se regenere
-                (VAULT / "reel-posters" / f"{tgt.stem}.jpg").unlink(missing_ok=True)
-            except (ValueError, OSError):
-                pass          # nombre raro o fs: el reel queda con su nombre nuevo
+        target = VAULT / "reels" / rep if rep and rep.endswith(".mp4") else claimed
+        with jobstore.activation(j["id"]):
+            os.replace(out, target)
+        out = target
+        out0 = None
+        (VAULT / "reel-posters" / f"{out.stem}.jpg").unlink(missing_ok=True)
         _reel_poster(out)     # miniatura para el grid: el tile ya no descarga el MP4
         # ---- receta (T2): el spec completo viaja junto al reel — es lo que permite
         # "Reabrir en Estudio" un reel ya exportado con timeline, textos y música vivos
@@ -3861,12 +3862,12 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             out = {}
-            for key, sub, ext in (("reels", "reels", ".mp4"), ("photos", "photos", ".jpg")):
+            for key, sub, ext in (("reels", "reels", ".mp4"), ("photos", "photos", (".jpg", ".jpeg", ".png", ".webp"))):
                 base = VAULT / sub
                 items = []
                 if base.is_dir():
                     for f in base.iterdir():
-                        if f.name.startswith(".") or f.is_symlink() or not f.is_file() or f.suffix.lower() != ext:
+                        if f.name.startswith(".") or f.is_symlink() or not f.is_file() or f.suffix.lower() not in ((ext,) if isinstance(ext, str) else ext):
                             continue
                         st = f.stat()
                         if key == "reels" and st.st_size == 0:
@@ -3988,7 +3989,9 @@ class H(BaseHTTPRequestHandler):
         size = f.stat().st_size
         start, end = 0, size - 1
         if rng:
-            m = re.match(r"bytes=(\d*)-(\d*)", rng)
+            m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng)
+            if not m or not any(m.groups()):
+                rng = None  # Ignore unsupported or malformed ranges; send the complete file.
             if m:
                 if m.group(1):
                     start = int(m.group(1))
@@ -3999,6 +4002,7 @@ class H(BaseHTTPRequestHandler):
         if start > end or start >= size:
             self.send_response(416)
             self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("Content-Length", "0")
             self.end_headers()
             return
         self.send_response(206 if rng else 200)
@@ -4246,28 +4250,36 @@ class H(BaseHTTPRequestHandler):
             self.send_json({"error": "espacio insuficiente en el disco para esta subida"}, 507,
                            {"Connection": "close"})
             return None
+        tmp = dest.with_name(f".receive-{secrets.token_hex(12)}.part")
         read = 0
         try:
-            with open(dest, "wb") as f:
+            with open(tmp, "xb") as f:
                 while read < length:
                     chunk = self.rfile.read(min(chunk_size, length - read))
                     if not chunk:
                         break
                     f.write(chunk)
                     read += len(chunk)
+            if read == length:
+                os.link(tmp, dest)  # Atomic, exclusive publication; never truncate an existing file.
+        except FileExistsError:
+            self.send_json({"error": "ya existe un archivo con ese nombre; reintenta la subida"}, 409)
+            return None
         except TimeoutError:               # sin bytes durante H.timeout s: cliente estancado
-            dest.unlink(missing_ok=True)
+            tmp.unlink(missing_ok=True)
             self.close_connection = True
             self.send_json({"error": "subida detenida: el cliente dejó de enviar datos"}, 408,
                            {"Connection": "close"})
             return None
         except OSError as e:               # ENOSPC, EIO…: no dejar el archivo parcial
-            dest.unlink(missing_ok=True)
+            tmp.unlink(missing_ok=True)
             self.close_connection = True
             perfmod.log_error("upload-write", f"{type(e).__name__}: {e}"[:200], ctx={"path": self.path[:120]})
             self.send_json({"error": "no se pudo guardar el archivo: disco lleno o error de escritura"},
                            507, {"Connection": "close"})
             return None
+        finally:
+            tmp.unlink(missing_ok=True)
         return read
 
     def _post_gpu_node_wake(self, u, q):
@@ -4286,6 +4298,9 @@ class H(BaseHTTPRequestHandler):
             return
         spec = self.read_json(4096)
         ok = jobstore.cancel(str(spec.get("id", "")))
+        if ok:
+            from worker import reconcile_scene_versions
+            reconcile_scene_versions()
         return self.send_json({"ok": ok})
 
     def _post_edit(self, u, q):
@@ -4621,7 +4636,6 @@ class H(BaseHTTPRequestHandler):
         if read is None:
             return
         if read != length:
-            path.unlink(missing_ok=True)
             return self.send_json({"error": f"subida incompleta ({read}/{length})"}, 400)
         if not _media_format_ok(path) or _probe_dur(path) <= 0:   # no es audio real (o está corrupto / demuxer no permitido): no ensuciar la biblioteca
             path.unlink(missing_ok=True)
@@ -4651,7 +4665,6 @@ class H(BaseHTTPRequestHandler):
         if read is None:
             return
         if read != length:
-            path.unlink(missing_ok=True)   # corte de red/túnel: NO procesar un video truncado
             return self.send_json({"error": f"subida incompleta ({read}/{length} bytes) — reintenta"}, 400)
         j = job_add("upload", name)
         threading.Thread(target=process_upload, args=(path, j), daemon=True).start()
@@ -4673,12 +4686,10 @@ class H(BaseHTTPRequestHandler):
 
         def _run():
             try:
-                r = subprocess.run(["python3", str(PIPE.parent / "ai" / "analyze.py"),
-                                    cid, "--deep"], check=True, capture_output=True, text=True,
-                                   cwd=PIPE.parent / "ai", timeout=600)
-                if not (VAULT / "ai" / f"{cid}.json").exists():
-                    # exit 0 pero sin resultado (p.ej. clip sin frames ni proxy) ≠ éxito
-                    return job_end(j, "error", (r.stdout or "análisis sin resultado")[-250:])
+                rc = jobstore.run_tracked(j["id"], [sys.executable, str(PIPE.parent / "ai" / "analyze.py"),
+                                                   cid, "--deep"], timeout=600)
+                if rc or not (VAULT / "ai" / f"{cid}.json").exists():
+                    return job_end(j, "error", "análisis sin resultado")
                 rebuild_index()
                 job_end(j, "done", cid)
             except Exception as e:   # CUALQUIER fallo — un raise no atrapado dejaba el job "running" fantasma
@@ -5014,36 +5025,36 @@ class H(BaseHTTPRequestHandler):
         pdir = VAULT / "photos"
         pdir.mkdir(parents=True, exist_ok=True)
         safe = safe_upload_name_spaces(raw_name)
-        dst = pdir / safe
-        heic = ext in (".heic", ".heif")
-
-        def _taken(pth):    # HEIC → se convertirá a .jpg: ese nombre también debe estar libre
-            return pth.exists() or (heic and pth.with_suffix(".jpg").exists())
-        if _taken(dst):
-            stem0, n = Path(safe).stem, 0
-            while True:
-                tag = time.strftime("%H%M%S") + (f"-{n}" if n else "")
-                dst = pdir / f"{stem0}-{tag}{ext}"
-                if not _taken(dst):
-                    break
-                n += 1
+        dst = pdir / f".upload-{secrets.token_hex(12)}{ext}"
         read = self._receive_upload(dst, length, 1024 * 256)
         if read is None:
             return
         if read != length:
-            dst.unlink(missing_ok=True)
             return self.send_json({"error": f"subida incompleta ({read}/{length})"}, 400)
-        # HEIC del iPhone: el navegador no lo pinta — se convierte a JPG con sips
-        if ext in (".heic", ".heif"):
-            jpg = dst.with_suffix(".jpg")
-            try:
+        jpg = dst.with_suffix(".jpg")
+        try:
+            if ext in (".heic", ".heif", ".dng"):
                 subprocess.run(["sips", "-s", "format", "jpeg", str(dst), "--out", str(jpg)],
                                check=True, capture_output=True, timeout=120)
-                dst.unlink(missing_ok=True)
-                dst = jpg
-            except (OSError, subprocess.SubprocessError):
-                pass          # se queda el HEIC: descargable aunque no se previsualice
-        return self.send_json({"ok": True, "name": dst.name, "bytes": read})
+                if not jpg.is_file() or jpg.stat().st_size == 0:
+                    raise ValueError("conversión vacía")
+                safe = str(Path(safe).with_suffix(".jpg"))
+                source = jpg
+            else:
+                source = dst
+            final = pdir / safe
+            while True:
+                try:
+                    os.link(source, final)
+                    break
+                except FileExistsError:
+                    final = pdir / f"{Path(safe).stem}-{secrets.token_hex(6)}{Path(safe).suffix}"
+            return self.send_json({"ok": True, "name": final.name, "bytes": final.stat().st_size})
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return self.send_json({"error": "no se pudo convertir la foto; exporta una copia JPEG y reintenta"}, 400)
+        finally:
+            dst.unlink(missing_ok=True)
+            jpg.unlink(missing_ok=True)
 
     def _photo_set_reject(self, msg, code):
         """Rechazo previo a leer el body: cerrar el socket para no dejar bytes sin consumir."""
@@ -5126,8 +5137,8 @@ class H(BaseHTTPRequestHandler):
                 tag = time.strftime("%H%M%S") + (f"-{n}" if n > 1 else "")
                 final = dest_dir / f"{Path(name).stem}-{tag}{Path(name).suffix}"
             except OSError:
-                os.replace(tmp, final)            # FS sin hardlinks: replace atómico
-                break
+                tmp.unlink(missing_ok=True)
+                return self.send_json({"error": "no se pudo guardar la foto sin sobrescribir"}, 507)
         tmp.unlink(missing_ok=True)
         _DRONE_PHOTOS["ts"] = 0.0                 # que /api/drone_photos la liste ya
         return self.send_json({"ok": True, "duplicate": False, "name": final.name, "set": set_name,
@@ -5156,22 +5167,24 @@ class H(BaseHTTPRequestHandler):
             raw_keep = sdir / f"{cid}.raw.splat"
             if not raw_keep.exists():
                 shutil.copy2(cur_splat, raw_keep)      # reversibilidad garantizada
-            tmp = sdir / f".{cid}.ac.tmp.splat"
+            tmp = sdir / f".{cid}.{secrets.token_hex(12)}.ac.tmp.splat"
+            staged_sog = tmp.with_suffix(".sog")
             r = _sp.run(["node", str(PIPE / "autoclean.mjs"), str(cur_splat), str(tmp),
                          "--preset", preset, "--json"],
                         capture_output=True, text=True, timeout=600)
             if r.returncode != 0 or not tmp.exists():
                 raise RuntimeError((r.stderr or r.stdout or "autoclean falló")[-200:])
             report = json.loads(r.stdout.strip().splitlines()[-1])
-            os.replace(tmp, cur_splat)
             st = PIPE.parent / "tools" / "node_modules" / "@playcanvas" / "splat-transform" / "bin" / "cli.mjs"
             sog = sdir / f"{cid}.clean.sog"
-            r2 = _sp.run(["node", str(st), str(cur_splat), str(sog), "--overwrite", "--no-tty", "-q"],
+            r2 = _sp.run(["node", str(st), str(tmp), str(staged_sog), "--overwrite", "--no-tty", "-q"],
                          capture_output=True, text=True, timeout=600)
-            if r2.returncode != 0:
+            if r2.returncode != 0 or not staged_sog.is_file() or not staged_sog.stat().st_size:
                 raise RuntimeError((r2.stderr or r2.stdout or "SOG falló")[-160:])
             mf = sdir / f"{cid}.meta.json"
             with _manifest_lock(cid):
+                os.replace(staged_sog, sog)
+                os.replace(tmp, cur_splat)
                 if mf.exists():
                     m = json.loads(mf.read_text())
                     m["bytes"] = sog.stat().st_size
@@ -5182,7 +5195,9 @@ class H(BaseHTTPRequestHandler):
             rebuild_index()
             return self.send_json({"ok": True, "cid": cid, "report": report})
         except Exception as e:
-            (sdir / f".{cid}.ac.tmp.splat").unlink(missing_ok=True)
+            if "tmp" in locals():
+                tmp.unlink(missing_ok=True)
+                staged_sog.unlink(missing_ok=True)
             return self.send_json({"error": f"auto-clean falló: {_scrub(str(e))[-160:]}"}, 500)
         return _POST_FALLTHROUGH
 
@@ -5790,6 +5805,17 @@ class H(BaseHTTPRequestHandler):
         if read != length:
             tmp.unlink(missing_ok=True)
             return self.send_json({"error": f"subida incompleta ({read}/{length} bytes)"}, 400)
+        ktmp = sdir / f".upload-{cid}-{secrets.token_hex(12)}.sog"
+        try:
+            tool = PIPE.parent / "tools/node_modules/@playcanvas/splat-transform/bin/cli.mjs"
+            r = subprocess.run(["node", str(tool), str(tmp), str(ktmp), "--overwrite", "--no-tty"],
+                               capture_output=True, text=True, timeout=600)
+            if r.returncode != 0 or not ktmp.is_file() or ktmp.stat().st_size <= 1024:
+                raise ValueError("splat inválido")
+        except (ValueError, OSError, subprocess.SubprocessError):
+            tmp.unlink(missing_ok=True)
+            ktmp.unlink(missing_ok=True)
+            return self.send_json({"error": "no se pudo validar el splat; exporta de nuevo y reintenta"}, 400)
         # archiva TODAS las variantes publicadas: si quedara un .ksplat viejo, el
         # manifest lo preferiría sobre el archivo editado recién subido. Conservamos también
         # metadata/cámaras para que el selector de versiones no pierda calidad/iters/cámaras.
@@ -5835,20 +5861,8 @@ class H(BaseHTTPRequestHandler):
             new_meta = {k: v for k, v in old_meta.items() if k != "final_loss"}
             new_meta["edited"] = True          # editado en SuperSplat: el loss ya no aplica
             _atomic_write_text(meta_p, json.dumps(new_meta, indent=1))
-        optimized = None
-        if ext not in (".sog", ".spz", ".ksplat"):
-            ktmp = sdir / f".{cid}.clean.tmp.sog"
-            try:
-                tool = PIPE.parent / "tools/node_modules/@playcanvas/splat-transform/bin/cli.mjs"
-                r = subprocess.run(["node", str(tool), str(final), str(ktmp), "--overwrite"],
-                                   capture_output=True, text=True, timeout=600)
-                if r.returncode == 0 and ktmp.exists() and ktmp.stat().st_size > 1024:
-                    os.replace(ktmp, sdir / f"{cid}.clean.sog")
-                    optimized = f"{cid}.clean.sog"
-                else:
-                    ktmp.unlink(missing_ok=True)
-            except (OSError, subprocess.TimeoutExpired):
-                ktmp.unlink(missing_ok=True)
+        os.replace(ktmp, sdir / f"{cid}.clean.sog")
+        optimized = f"{cid}.clean.sog"
         rebuild_scene_manifest(cid)
         rebuild_index()
         return self.send_json({"ok": True, "published": final.name, "optimized": optimized,

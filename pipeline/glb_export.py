@@ -128,7 +128,7 @@ def mtl_pages(mtl: Path) -> list[str]:
 
 
 def source_fingerprint(viewer: Path, mtls: dict[str, Path]) -> str:
-    """sha256 over the viewer OBJ bytes, each tier MTL and the (name, size) of every page.
+    """sha256 over the viewer OBJ bytes, each tier MTL and the (name, content hash) of every page.
 
     Same idea as collision_bake._fingerprint (hash of the source geometry + contract):
     any change to the OBJ, the page assignment or a page file invalidates the GLBs."""
@@ -140,7 +140,7 @@ def source_fingerprint(viewer: Path, mtls: dict[str, Path]) -> str:
         digest.update(f"\n{name}:{hashlib.sha256(mtl.read_bytes()).hexdigest()}".encode())
         for page in mtl_pages(mtl):
             f = mtl.parent / page
-            digest.update(f"\n {page}:{f.stat().st_size if f.exists() else -1}".encode())
+            digest.update(f"\n {page}:{_sha256(f) if f.exists() else "missing"}".encode())
     return digest.hexdigest()
 
 

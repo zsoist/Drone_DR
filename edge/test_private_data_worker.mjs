@@ -140,3 +140,18 @@ test('anonymous clients cannot smuggle edge-auth headers to the origin', async (
     globalThis.fetch = originalFetch;
   }
 });
+
+test('SRV-11 preserves the origin no-store policy', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('{}', {
+    headers: { 'Cache-Control': 'private, no-store' },
+  });
+  try {
+    const response = await worker.fetch(new Request('https://vuelos.metislab.work/api/jobs'), {
+      AEROBRAIN_EDGE_AUTH_KEY: 'test-key',
+    });
+    assert.match(response.headers.get('Cache-Control'), /no-store/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

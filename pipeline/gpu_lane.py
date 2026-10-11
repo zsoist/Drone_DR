@@ -130,20 +130,32 @@ def _no_remote_guard(label: str) -> None:
         raise RuntimeError(f"{label}: acceso remoto deshabilitado en tests (AEROBRAIN_NO_REMOTE)")
 
 
-def _run(cmd: list[str], timeout: int, label: str) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], timeout: int, label: str, jid: str | None = None) -> subprocess.CompletedProcess:
     _no_remote_guard(label)
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if jid:
+        import jobs
+        lines = []
+        rc = jobs.run_tracked(jid, cmd, timeout, output=lines)
+        p = subprocess.CompletedProcess(cmd, rc, "".join(lines), "")
+    else:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if p.returncode != 0:
         raise RuntimeError(f"{label} fallo (rc={p.returncode}): "
                            f"{(p.stderr or p.stdout)[-800:]}")
     return p
 
 
-def _wsl(script: str, timeout: int, label: str) -> str:
+def _wsl(script: str, timeout: int, label: str, jid: str | None = None) -> str:
     """Ejecuta un script bash dentro de WSL en UNA sesion ssh sostenida."""
     _no_remote_guard(label)
-    p = subprocess.run(["ssh", SSH_HOST, "wsl", "-d", "Ubuntu", "--", "bash", "-s"],
-                       input=script, capture_output=True, text=True, timeout=timeout)
+    cmd = ["ssh", SSH_HOST, "wsl", "-d", "Ubuntu", "--", "bash", "-s"]
+    if jid:
+        import jobs
+        lines = []
+        rc = jobs.run_tracked(jid, cmd, timeout, input_text=script, output=lines)
+        p = subprocess.CompletedProcess(cmd, rc, "".join(lines), "")
+    else:
+        p = subprocess.run(cmd, input=script, capture_output=True, text=True, timeout=timeout)
     if p.returncode != 0:
         raise RuntimeError(f"{label} fallo (rc={p.returncode}):\n"
                            f"stderr: {p.stderr[-700:]}\nstdout: {p.stdout[-700:]}")
@@ -608,7 +620,7 @@ def cleanup(name: str, *, success: bool, active_names: set[str] | None = None) -
         label="cleanup remoto")
 
 
-def finalize_train(name: str, run_id: str) -> dict:
+def finalize_train(name: str, run_id: str, jid: str | None = None) -> dict:
     """Post-entrenamiento: export a PLY 3DGS + staging NTFS. Devuelve bytes."""
     name = _safe_name(name)
     run_id = _safe_name(run_id)
@@ -631,7 +643,7 @@ else
   PEAK=0; SAMPLES=0
 fi
 echo "BYTES=$(stat -c%s {REMOTE_RUNS}/{name}/export/splat.ply) PEAK_MIB=$PEAK SAMPLES=$SAMPLES"
-""", timeout=1200, label="export ply")
+""", timeout=1200, label="export ply", **({"jid": jid} if jid else {}))
     last = [ln for ln in out.splitlines() if ln.startswith("BYTES=")][-1]
     parts = dict(token.split("=", 1) for token in last.split())
     return {"run_id": run_id, "ply_bytes": int(parts["BYTES"]),
@@ -656,11 +668,11 @@ echo "BYTES=$(stat -c%s {REMOTE_RUNS}/{name}/export/splat.ply)"
 """
 
 
-def finalize_resume_checkpoint(name: str, resume_config: str) -> dict:
+def finalize_resume_checkpoint(name: str, resume_config: str, jid: str | None = None) -> dict:
     """Export a completed checkpoint without entering Nerfstudio's train loop."""
     name = _safe_name(name)
     out = _wsl(REMOTE_PRELUDE + resume_export_script(name, resume_config),
-               timeout=1200, label="export checkpoint CUDA")
+               timeout=1200, label="export checkpoint CUDA", **({"jid": jid} if jid else {}))
     last = [line for line in out.splitlines() if line.startswith("BYTES=")][-1]
     parts = dict(token.split("=", 1) for token in last.split())
     return {"run_id": "checkpoint-export", "ply_bytes": int(parts["BYTES"]),
@@ -700,22 +712,29 @@ echo "TRAIN_S=$((T1-T0)) EXPORT_S=$((T2-T1)) BYTES=$(stat -c%s {REMOTE_RUNS}/{na
             "export_s": int(parts["EXPORT_S"]), "ply_bytes": int(parts["BYTES"])}
 
 
-def fetch(name: str, out_dir: Path) -> Path:
+def fetch(name: str, out_dir: Path, jid: str | None = None) -> Path:
     name = _safe_name(name)
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"{name}.ply"
     _run(["scp", "-q", f"{SSH_HOST}:{NTFS_TRANSFER}/out-{name}.ply", str(dest)],
-         900, "scp artefacto")
+         900, "scp artefacto", **({"jid": jid} if jid else {}))
     with dest.open("rb") as fh:                   # un PLY pesa GBs: solo se lee la cabecera
         head = fh.read(400)
     if not head.startswith(b"ply"):
         raise RuntimeError("el artefacto no es un PLY valido (transferencia corrupta)")
     for suffix in ("yml", "csv"):
-        subprocess.run(["scp", "-q", f"{SSH_HOST}:{NTFS_TRANSFER}/out-{name}.{suffix}",
-                        str(out_dir / f"{name}.{suffix}")], capture_output=True, timeout=120)
+        try:
+            _run(["scp", "-q", f"{SSH_HOST}:{NTFS_TRANSFER}/out-{name}.{suffix}",
+                  str(out_dir / f"{name}.{suffix}")], 120, "scp metadata",
+                 **({"jid": jid} if jid else {}))
+        except RuntimeError:
+            if jid:
+                import jobs
+                if (jobs.get(jid) or {}).get("status") in jobs.CANCEL_STATES:
+                    raise
     _wsl(REMOTE_PRELUDE + f"; rm -f {WSL_TRANSFER}/out-{name}.ply "
          f"{WSL_TRANSFER}/out-{name}.yml {WSL_TRANSFER}/out-{name}.csv",
-         timeout=120, label="cleanup bridge salida")
+         timeout=120, label="cleanup bridge salida", **({"jid": jid} if jid else {}))
     return dest
 
 

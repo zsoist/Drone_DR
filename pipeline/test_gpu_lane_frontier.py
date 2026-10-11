@@ -497,6 +497,7 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
                                   return_value=["opensfm", "odm_orthophoto"]),
                 mock.patch.object(odm_gpu_lane, "cleanup"),
                 mock.patch.object(worker.jobstore, "event"),
+                mock.patch.object(worker.jobstore, "get", return_value={}),
                 mock.patch.object(worker.jobstore, "update") as update,
                 mock.patch.object(worker.jobstore, "run_tracked", return_value=0),
             ):
@@ -547,6 +548,7 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
                                   return_value=["opensfm", "odm_orthophoto"]),
                 mock.patch.object(odm_gpu_lane, "cleanup"),
                 mock.patch.object(worker.jobstore, "event"),
+                mock.patch.object(worker.jobstore, "get", return_value={}),
                 mock.patch.object(worker.jobstore, "update") as update,
                 mock.patch.object(worker.jobstore, "run_tracked", return_value=0),
             ):
@@ -690,8 +692,10 @@ class CudaCommandAndLifecycleTests(unittest.TestCase):
     def test_failed_cuda_attempt_archives_latest_checkpoint_before_cleanup(self):
         source = inspect.getsource(worker.run_splat_cuda)
 
-        self.assertIn("archive_latest_checkpoint", source)
-        self.assertIn('"cuda_checkpoint"', source)
+        self.assertIn("_archive_checkpoint_best_effort", source)
+        helper = inspect.getsource(worker._archive_checkpoint_best_effort)
+        self.assertIn("archive_latest_checkpoint", helper)
+        self.assertIn('"cuda_checkpoint"', helper)
         self.assertIn("checkpoint=checkpoint", source)
 
     def test_cuda_environment_is_activated_before_telemetry_is_backgrounded(self):

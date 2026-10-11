@@ -15,6 +15,7 @@ import secrets
 import subprocess
 import threading
 import time
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -23,7 +24,8 @@ from paths import VAULT
 DB = VAULT / "manifest" / "jobs.db"
 JOB_LOG_DIR = Path(os.environ.get("AEROBRAIN_JOB_LOG_DIR")
                    or str(VAULT / "ops" / "job_logs"))
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()
+_LIVE = {}
 _TERMINAL_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 SESSION_TTL_SECONDS = 24 * 60 * 60
 SESSION_USER_ID = "daniel"
@@ -109,20 +111,20 @@ def init(orphan_kinds: tuple = ()):
         # migraciones aditivas (SQLite no soporta ADD COLUMN IF NOT EXISTS)
         have = {r[1] for r in c.execute("PRAGMA table_info(jobs)").fetchall()}
         for col, typ in (("log", "TEXT"), ("spec", "TEXT"), ("stage", "TEXT"),
-                         ("progress", "REAL"), ("backend", "TEXT")):
+                         ("progress", "REAL"), ("backend", "TEXT"), ("process_identity", "TEXT")):
             if col not in have:
                 c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
         if orphan_kinds:
             ph = ",".join("?" * len(orphan_kinds))
-            orphans = c.execute(f"SELECT id, pid, container, backend FROM jobs "
+            orphans = c.execute(f"SELECT id, pid, container, backend, process_identity FROM jobs "
                                 f"WHERE status='running' AND kind IN ({ph})",
                                 orphan_kinds).fetchall()
             for o in orphans:
                 pid = o["pid"]
-                if pid and _proc_ours(pid):          # solo si el pid sigue siendo un job NUESTRO
+                if pid and _proc_ours(pid, o["process_identity"], o["id"]):          # solo si el pid sigue siendo un job NUESTRO
                     _kill_pg(pid, signal.SIGTERM)
                     time.sleep(0.2)
-                    if not _proc_gone(pid):
+                    if not _proc_gone(pid) and _proc_ours(pid, o["process_identity"], o["id"]):
                         _kill_pg(pid, signal.SIGKILL)
                 if o["container"]:
                     orphan_containers.append((o["container"], o["backend"]))
@@ -130,7 +132,7 @@ def init(orphan_kinds: tuple = ()):
                       f"durante el job', finished=?, pid=NULL "
                       f"WHERE status='running' AND kind IN ({ph})",
                       (time.time(), *orphan_kinds))
-        c.execute("UPDATE jobs SET pid=NULL WHERE status != 'running' AND pid IS NOT NULL")
+        c.execute("UPDATE jobs SET pid=NULL WHERE status NOT IN ('running','cancelling','cancel_failed') AND pid IS NOT NULL")
         c.execute("DELETE FROM sessions WHERE expiry < ?", (time.time(),))
     DB.chmod(0o600)
     for name, backend in orphan_containers:
@@ -186,6 +188,12 @@ def enqueue(kind: str, label: str, spec: dict | None = None) -> dict:
     j = {"id": new_job_id(kind), "kind": kind, "label": label,
          "status": "queued"}
     with _LOCK, _conn() as c:
+        c.execute("BEGIN IMMEDIATE")
+        row = c.execute("SELECT * FROM jobs WHERE kind=? AND label=? "
+                        "AND status IN ('queued','running','cancelling','cancel_failed') LIMIT 1",
+                        (kind, label)).fetchone()
+        if row:
+            return dict(row)
         c.execute("INSERT INTO jobs (id, kind, label, status, detail, started, spec) "
                   "VALUES (?,?,?,?,?,?,?)",
                   (j["id"], kind, label, "queued", "en cola", time.time(),
@@ -218,7 +226,7 @@ def pending(kind: str, label: str) -> bool:
     """¿Ya hay un job queued/running para este kind+label? (dedupe de doble tap)"""
     with _LOCK, _conn() as c:
         r = c.execute("SELECT 1 FROM jobs WHERE kind=? AND label=? "
-                      "AND status IN ('queued','running') LIMIT 1", (kind, label)).fetchone()
+                      "AND status IN ('queued','running','cancelling','cancel_failed') LIMIT 1", (kind, label)).fetchone()
         return bool(r)
 
 
@@ -236,6 +244,17 @@ def add(kind: str, label: str, container: str = "") -> dict:
 def update(jid: str, **kw):
     sets = ", ".join(f"{k}=?" for k in kw)
     with _LOCK, _conn() as c:
+        c.execute("BEGIN IMMEDIATE")
+        row = c.execute("SELECT status FROM jobs WHERE id=?", (jid,)).fetchone()
+        if row and row[0] == "cancelled" and kw.get("status") not in (None, "cancelled"):
+            return False
+        if row and row[0] in CANCEL_STATES and kw.get("status") not in CANCEL_STATES:
+            if "status" in kw:
+                return False
+            kw = {k: v for k, v in kw.items() if k in ("pid", "process_identity", "log")}
+            if not kw:
+                return False
+            sets = ", ".join(f"{k}=?" for k in kw)
         # cronología de fases sin columna nueva: cada cambio real de stage queda como
         # evento 'stage' — la UI deriva de ahí cuánto duró cada fase (dato, no estimación)
         if kw.get("stage"):
@@ -245,6 +264,7 @@ def update(jid: str, **kw):
                           "VALUES (?,?,?,?,?,?)",
                           (jid, time.time(), "debug", "stage", str(kw["stage"])[:80], "{}"))
         c.execute(f"UPDATE jobs SET {sets} WHERE id=?", (*kw.values(), jid))
+        return True
 
 
 def stage_history(jid: str) -> list:
@@ -315,8 +335,12 @@ def log_chunk(jid: str, after: int = 0, limit: int = 500) -> dict:
 
 def end(jid: str, status: str, detail: str = "", artifact: str = ""):
     # un job terminado nunca conserva pid (evita pids fantasma en la tabla)
-    update(jid, status=status, detail=detail[:400], artifact=artifact,
-           finished=time.time(), pid=None)
+    current = get(jid) or {}
+    if current.get("status") in CANCEL_STATES and status not in CANCEL_STATES:
+        return
+    if not update(jid, status=status, detail=detail[:400], artifact=artifact,
+                  finished=time.time(), **({} if status == "cancel_failed" else {"pid": None})):
+        return
     event(jid, "completed" if status == "done" else status, detail,
           level="error" if status == "error" else "warning" if status.startswith("cancel") else "info",
           data={"artifact": artifact} if artifact else {})
@@ -367,7 +391,10 @@ def get(jid: str) -> dict | None:
 
 def recent(n: int = 30) -> list[dict]:
     with _LOCK, _conn() as c:
-        rows = c.execute("SELECT * FROM jobs ORDER BY started DESC LIMIT ?", (n,)).fetchall()
+        rows = c.execute("SELECT * FROM jobs WHERE status IN ('queued','running','cancelling','cancel_failed') "
+                         "OR id IN (SELECT id FROM jobs WHERE status NOT IN "
+                         "('queued','running','cancelling','cancel_failed') ORDER BY started DESC LIMIT ?) "
+                         "ORDER BY started DESC", (n,)).fetchall()
     out = []
     for r in rows:
         d = dict(r)
@@ -448,32 +475,29 @@ def _kill_pg(pid: int, sig=signal.SIGTERM) -> bool:
             return False
 
 
-def _proc_ours(pid: int) -> bool:
-    """El pid huérfano en la BD PERTENECE a un job nuestro (python3/docker/opensplat/ffmpeg)?
-    Tras un reboot ese pid casi siempre lo reusa un proceso INOCENTE del sistema — matarlo a
-    ciegas (SIGKILL al process-group) podía tumbar dockerd, el server o cualquier cosa."""
+def _process_identity(pid: int) -> str:
     try:
-        out = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
-                             capture_output=True, text=True, timeout=3).stdout.lower()
-    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)],
+                              capture_output=True, text=True, timeout=3).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def _proc_ours(pid: int, identity: str = "", jid: str = "") -> bool:
+    """Require a recorded birth time, job token, and a private process group."""
+    proc = _LIVE.get(jid)
+    if proc is not None and proc.pid == pid:
+        return proc.poll() is None
+    if not identity or not jid or _process_identity(pid) != identity:
         return False
-    # "python3" solo existe en el argv durante ~10-50ms: el python3 de Homebrew se
-    # RE-EJECUTA en .../Python.app/Contents/MacOS/Python y ps deja de mostrarlo
-    # (P2 resuelto 11-jul: el flake del smoke era ESTA carrera — verde si init
-    # corría dentro de la ventana, rojo bajo carga). El término del framework
-    # cubre el post-re-exec sin ampliar a cualquier "python" inocente.
-    return _cmd_is_ours(out)
-
-
-def _cmd_is_ours(out: str) -> bool:
-    out = out.lower()
-    # ssh de NUESTROS carriles remotos (gpu_lane / odm_gpu_lane: `ssh pc wsl -d Ubuntu ...`
-    # o `ssh pc cmd /c ...`). Sin esto un restart del worker dejaba el ssh de entrenamiento
-    # huérfano. No se acepta "ssh" a secas: mataría sesiones interactivas del operador.
-    if re.search(r"\bssh\b.*\bpc (wsl|cmd)\b", out):
-        return True
-    return any(t in out for t in ("python3", "python.app/contents/macos/python",
-                                  "opensplat", "docker", "ffmpeg", "odm_prep", "tresd_publish"))
+    try:
+        if os.getpgid(pid) != pid:
+            return False
+        out = subprocess.run(["ps", "eww", "-p", str(pid), "-o", "command="],
+                             capture_output=True, text=True, timeout=3).stdout
+        return f"AEROBRAIN_JOB_ID={jid}" in out.split()
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def _proc_gone(pid: int) -> bool:
@@ -485,46 +509,55 @@ def _proc_gone(pid: int) -> bool:
 
 
 def cancel(jid: str) -> bool:
-    """Cancela un job. Sólo marca 'cancelled' si el kill se CONFIRMA (o no había
-    proceso vivo); si el kill falla, deja el estado con la advertencia explícita."""
-    j = get(jid)
-    if not j:
-        return False
-    if j["status"] == "queued":
-        end(jid, "cancelled", "cancelado en cola (no llegó a ejecutar)")
-        return True
-    if j["status"] != "running":
-        return False
+    """Record cancellation before signalling. Never signal an unverified process."""
+    with _LOCK, _conn() as c:
+        c.execute("BEGIN IMMEDIATE")
+        row = c.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()
+        if not row or row["status"] not in ("queued", "running", "cancel_failed"):
+            return False
+        j = dict(row)
+        c.execute("UPDATE jobs SET status='cancelling' WHERE id=?", (jid,))
     notes = []
-    # 1) matar el proceso (grupo) — SIGTERM y, si sobrevive, SIGKILL
     pid = j["pid"]
-    if pid and not _proc_gone(pid):
-        _kill_pg(pid, signal.SIGTERM)
-        for _ in range(15):
-            if _proc_gone(pid):
-                break
-            time.sleep(0.2)
-        if not _proc_gone(pid):
-            _kill_pg(pid, signal.SIGKILL)
-            time.sleep(0.5)
-        notes.append("pid vivo" if not _proc_gone(pid) else "pid terminado")
-    # 2) matar el contenedor docker si lo hay (los procesos python-cli no lo tumban)
-    #
-    # BUG (jul-20): esto SIEMPRE mataba en el Mac local. Los trabajos CUDA corren dentro de
-    # WSL2 en el PC, así que cancelar dejaba el contenedor VIVO ocupando la RTX durante
-    # horas mientras la UI decía 'cancelado'. El contenedor remoto se llama odm-gpu-*.
+    proc = _LIVE.get(jid)
+
+    def gone():
+        return not pid or (proc is not None and proc.poll() is not None) or _proc_gone(pid)
+
+    if not gone():
+        if _proc_ours(pid, j.get("process_identity"), jid):
+            _kill_pg(pid, signal.SIGTERM)
+            for _ in range(15):
+                if gone():
+                    break
+                time.sleep(0.2)
+            if not gone() and _proc_ours(pid, j.get("process_identity"), jid):
+                _kill_pg(pid, signal.SIGKILL)
+                time.sleep(0.5)
+        else:
+            notes.append("no se pudo verificar el dueño del proceso")
+    container_ok = True
     if j["container"]:
-        _ok, nota = kill_container(j["container"], j.get("backend"))
-        notes.append(nota)
-    # marca 'cancelled' para que el watcher de run_tracked corte la secuencia
-    confirmed = (not pid or _proc_gone(pid))
-    # estado honesto: 'cancelled' sólo si el kill se confirmó; si no, 'cancel_failed'
-    status = "cancelled" if confirmed else "cancel_failed"
-    end(jid, status, "cancelado · " + (" · ".join(notes) or "sin proceso activo"))
+        container_ok, note = kill_container(j["container"], j.get("backend"))
+        notes.append(note)
+    confirmed = gone() and container_ok
+    end(jid, "cancelled" if confirmed else "cancel_failed",
+        "cancelado" if confirmed else "cancelación pendiente · " + " · ".join(notes))
     return confirmed
 
 
-CANCEL_STATES = ("cancelled", "cancel_failed")
+CANCEL_STATES = ("cancelling", "cancelled", "cancel_failed")
+
+
+@contextmanager
+def activation(jid: str):
+    """Serialize a short publication step against cancellation across processes."""
+    with _LOCK, _conn() as c:
+        c.execute("BEGIN IMMEDIATE")
+        row = c.execute("SELECT status FROM jobs WHERE id=?", (jid,)).fetchone()
+        if row and row[0] in CANCEL_STATES:
+            raise RuntimeError("cancelado por el operador")
+        yield c
 
 
 def line_progress_fields(observed, current_progress: float = 0.0) -> dict:
@@ -550,15 +583,26 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                 progress_re: str | None = None,
                 progress_span: tuple = (0.05, 0.98),
                 line_progress=None,
-                tick=None, tick_interval: float = 5.0) -> int:
+                tick=None, tick_interval: float = 5.0, input_text: str | None = None,
+                output: list | None = None) -> int:
     """Popen con PID registrado. El control (timeout Y cancelación) se hace con
     proc.wait(timeout=1) en un bucle — INDEPENDIENTE del stdout, así un proceso
     totalmente silencioso también respeta timeout y cancel. Un hilo lector sólo
     actualiza el tail del log."""
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, encoding="utf-8", errors="replace",
-                            bufsize=1, env=env, start_new_session=True)
-    update(jid, pid=proc.pid)
+    with activation(jid) as c:
+        child_env = dict(os.environ if env is None else env)
+        child_env["AEROBRAIN_JOB_ID"] = jid
+        JOB_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryFile(mode="w+", dir=JOB_LOG_DIR) as stdin:
+            if input_text is not None:
+                stdin.write(input_text)
+                stdin.seek(0)
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    stdin=stdin, text=True, encoding="utf-8", errors="replace",
+                                    bufsize=1, env=child_env, start_new_session=True)
+        _LIVE[jid] = proc
+        c.execute("UPDATE jobs SET pid=?, process_identity=? WHERE id=?",
+                  (proc.pid, _process_identity(proc.pid), jid))
 
     lines: list[str] = []
     abort_hit = threading.Event()
@@ -580,6 +624,8 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
                 for line in proc.stdout:
                     try:
                         raw = line.rstrip("\n")
+                        if output is not None:
+                            output.append(line)
                         stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
                         durable.write(f"[{stamp}] {raw}\n")
                         lines.append(raw)
@@ -663,7 +709,8 @@ def run_tracked(jid: str, cmd: list, timeout: int, env: dict | None = None,
     reader_done.wait(5)
     if proc.stdout:
         proc.stdout.close()
-    update(jid, pid=None)
+    update(jid, pid=None, process_identity=None)
+    _LIVE.pop(jid, None)
     if reason == "timeout":
         # primitiva auto-consistente: deja el row en 'error' antes de lanzar
         end(jid, "error", f"timeout tras {timeout}s")

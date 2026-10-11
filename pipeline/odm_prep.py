@@ -561,6 +561,9 @@ def main():
                if "--proj-id" in argv and ("--sources" in argv or photo_groups) else entries[0])
     proj = VAULT / "odm" / f"proj_{proj_id}"
     images = proj / "images"
+    backup = proj / "images.previous"
+    if backup.is_dir() and not images.exists():
+        os.replace(backup, images)
     images.mkdir(parents=True, exist_ok=True)
     fps = PROFILE_FPS.get(profile, FPS)
     width = PROFILE_WIDTH.get(profile, WIDTH)
@@ -618,31 +621,31 @@ def main():
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise SystemExit("cero imágenes geotaggeadas — nada que procesar")
 
-    # SWAP atómico: fuera todas las imágenes viejas (cualquier prefijo), entran las nuevas
-    for old in images.iterdir():
-        if old.is_file() and old.suffix.lower() in (".jpg", ".jpeg", ".png"):
-            old.unlink()
-    for f in tmp_dir.iterdir():
-        if f.is_file():
-            os.replace(f, images / f.name)
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    # INVALIDA el opensfm viejo AQUÍ (frames nuevos, poses viejas = splat corrupto si cancelan)
-    for stale in (proj / "opensfm" / "image_list.txt",
-                  proj / "opensfm" / "reconstruction.json"):
-        stale.unlink(missing_ok=True)
-
     # geotag de TODAS las imágenes en una sola pasada de exiftool
     argfile = proj / ".geotag.args"
-    argfile.write_text("\n".join(geotag_args))
+    argfile.write_text("\n".join(arg.replace(str(images) + "/", str(tmp_dir) + "/") for arg in geotag_args))
     # -common_args: -overwrite_original aplica a TODOS los -execute (no solo el primero).
     # Sin argumentos (job solo de fotos con EXIF propio) exiftool no tiene nada que hacer: se omite.
     if geotag_args:
         subprocess.run(["exiftool", "-@", str(argfile), "-common_args", "-overwrite_original"],
                        check=True, capture_output=True)
-    for leak in images.glob("*.jpg_original"):
+    for leak in tmp_dir.glob("*.jpg_original"):
         leak.unlink()
     camera_override = argv[argv.index("--camera-profile") + 1] if "--camera-profile" in argv else None
-    camera = select_camera_profile(detect_camera_models(images), camera_override)
+    camera = select_camera_profile(detect_camera_models(tmp_dir), camera_override)
+    # Invalidate poses before changing images. A killed swap cannot expose stale poses.
+    backup = proj / "images.previous"
+    if backup.exists():
+        shutil.rmtree(backup)
+    for stale in (proj / "opensfm" / "image_list.txt", proj / "opensfm" / "reconstruction.json"):
+        stale.unlink(missing_ok=True)
+    os.replace(images, backup)
+    try:
+        os.replace(tmp_dir, images)
+    except BaseException:
+        os.replace(backup, images)
+        raise
+    shutil.rmtree(backup)
     atomic_write_json(proj / "frames_manifest.json",
         {"profile": profile, "sources": per_source, "photos": n_photos,
          "total_frames": total, "width": width, "fps": fps, "camera_profile": camera,

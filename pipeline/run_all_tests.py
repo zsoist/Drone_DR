@@ -54,6 +54,8 @@ def _sandbox() -> Path:
 def _env() -> dict:
     env = dict(os.environ)
     box = _sandbox()
+    (box / "vault").mkdir(exist_ok=True)
+    env["AEROBRAIN_VAULT"] = str(box / "vault")
     env["AEROBRAIN_JOB_LOG_DIR"] = str(box / "job_logs")
     env["AEROBRAIN_ERRLOG"] = str(box / "errors.jsonl")
     # Some tests shell out to a bare `python`: make it resolve to the interpreter running us.

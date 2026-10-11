@@ -319,8 +319,9 @@ check("orphans: restart del server NO mata el 3D del worker",
 check("orphans: restart del server SÍ limpia sus light huérfanos",
       jobs.get(_light)["status"] == "error")
 _heavy = jobs.add("3d", "worker-owned")
-_hp = subprocess.Popen(["python3", "-c", "import time; time.sleep(30)"], start_new_session=True)  # huérfano REALISTA: init() ahora verifica que el pid sea un job nuestro (python3/opensplat/docker) antes de matarlo
-jobs.update(_heavy["id"], pid=_hp.pid)
+_hp = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], start_new_session=True,
+                       env=dict(_os_env.environ, AEROBRAIN_JOB_ID=_heavy["id"]))
+jobs.update(_heavy["id"], pid=_hp.pid, process_identity=jobs._process_identity(_hp.pid))
 jobs.init(orphan_kinds=jobs.HEAVY_KINDS)  # reinicia el WORKER
 # polling con deadline (3er flake 11-jul): wait(timeout=N) depende del scheduling
 # del OS bajo carga — la regla era reescribir a la 3ª, no escalar timeouts
@@ -583,7 +584,7 @@ check("splat jobs: CUDA declara loss no disponible en vez de omitir contexto",
       and "238 cámaras" in _cuda_done_detail)
 import browser_gate
 check("browser gate: default usa 127.0.0.1 para evitar localhost IPv6 ajeno",
-      browser_gate.DEFAULT_BASE_URL == "http://127.0.0.1:8790"
+      browser_gate.DEFAULT_BASE_URL == _os_env.environ.get("AEROBRAIN_BASE_URL", "http://127.0.0.1:8790")
       and browser_gate.CHROME.name == "Google Chrome"
       and browser_gate.QA_DIR.name == "qa")
 _share_module_parse = subprocess.run([

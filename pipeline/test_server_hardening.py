@@ -86,7 +86,7 @@ class UploadFailureTests(ServerCase):
 
         def fake_open(p, mode="r", *a, **k):
             f = real_open(p, mode, *a, **k)
-            return Flaky(f) if "w" in mode and "audio" in str(p) else f
+            return Flaky(f) if any(flag in mode for flag in ("w", "x")) and "audio" in str(p) else f
 
         payload = b"x" * (600 * 1024)   # > un chunk de 256 KB → 3 writes
         with mock.patch.object(server, "open", fake_open, create=True):

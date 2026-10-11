@@ -29,11 +29,12 @@ class PreviewServerTests(unittest.TestCase):
         deadline = time.time() + 20
         while time.time() < deadline:
             try:
-                urllib.request.urlopen(cls.base + "/api/healthz", timeout=1)
+                urllib.request.urlopen(cls.base + "/api/whoami", timeout=1)
                 return
             except OSError:
                 time.sleep(0.2)
         cls.proc.kill()
+        cls.proc.wait(timeout=10)
         raise RuntimeError("preview server did not start")
 
     @classmethod

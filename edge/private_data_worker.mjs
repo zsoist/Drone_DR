@@ -65,7 +65,9 @@ export default {
     });
     const headers = new Headers(upstream.headers);
     headers.delete('Age');
-    headers.set('Cache-Control', 'private, no-cache, must-revalidate');
+    if (!/(?:^|,)\s*no-store\s*(?:,|$)/i.test(headers.get('Cache-Control') || '')) {
+      headers.set('Cache-Control', 'private, no-cache, must-revalidate');
+    }
     headers.set('Cloudflare-CDN-Cache-Control', 'no-store');
     headers.set('X-AeroBrain-Edge', 'private-data-v1');
 

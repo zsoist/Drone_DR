@@ -13,6 +13,9 @@ Usage:
     python3 analyze.py --all          # every clip with frames, skip analyzed
 """
 import json
+import math
+import os
+import tempfile
 import re
 import subprocess
 import sys
@@ -62,10 +65,18 @@ def extract_frames_from_proxy(cid: str, fdir) -> list:
     proxy = VAULT / "proxies" / f"{cid}.mp4"
     if not proxy.exists():
         return []
-    fdir.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(proxy),
-                    "-vf", "fps=1/2,scale=960:-2", "-q:v", "4", str(fdir / "f_%04d.jpg")],
-                   check=False, capture_output=True, timeout=300)
+    fdir.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".frames-", dir=fdir.parent) as td:
+        stage = Path(td) / "images"
+        stage.mkdir()
+        result = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(proxy),
+                         "-vf", "fps=1/2,scale=960:-2", "-q:v", "4", str(stage / "f_%04d.jpg")],
+                         capture_output=True, timeout=300)
+        if result.returncode or not list(stage.glob("f_*.jpg")):
+            raise RuntimeError("no se pudieron extraer todos los frames")
+        if fdir.exists():
+            fdir.rmdir()  # Only an empty destination can be replaced.
+        os.replace(stage, fdir)
     return sorted(fdir.glob("f_*.jpg"))
 
 
@@ -80,6 +91,44 @@ def sample_frames(frames: list, n_sample: int) -> tuple[list, int]:
     sample = [frames[i] for i in idxs]
     spacing = 2 * (n - 1) / (len(sample) - 1) if len(sample) > 1 else 2
     return sample, max(2, round(spacing))
+
+
+def validate_analysis(data: dict) -> dict:
+    """Reject unsafe field types before any stored analysis can change."""
+    if not isinstance(data, dict):
+        raise ValueError("el análisis debe ser un objeto JSON")
+    for key in ("summary", "scene_type", "camera_motion", "story_arc"):
+        if key in data and not isinstance(data[key], str):
+            raise ValueError(f"{key}: se esperaba texto")
+    for key in ("tags", "subjects", "edit_suggestions", "hashtags", "director_notes", "uses"):
+        value = data.get(key, [])
+        if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
+            raise ValueError(f"{key}: se esperaba una lista de textos")
+    def number(value, low, high):
+        return type(value) in (int, float) and math.isfinite(value) and low <= value <= high
+    if "travel_score" in data and not number(data["travel_score"], 0, 10):
+        raise ValueError("travel_score fuera de rango")
+    if "best_thumbnail_t" in data and not number(data["best_thumbnail_t"], 0, 86400):
+        raise ValueError("best_thumbnail_t fuera de rango")
+    highlights = data.get("highlights", [])
+    if not isinstance(highlights, list):
+        raise ValueError("highlights debe ser una lista")
+    for row in highlights:
+        if (not isinstance(row, dict) or not number(row.get("t"), 0, 86400)
+                or not isinstance(row.get("reason"), str)
+                or ("type" in row and not isinstance(row["type"], str))):
+            raise ValueError("highlight inválido")
+    if "quality" in data:
+        quality = data["quality"]
+        if not isinstance(quality, dict):
+            raise ValueError("quality debe ser un objeto")
+        for key in ("exposure", "stability", "light"):
+            if key in quality and not isinstance(quality[key], str):
+                raise ValueError(f"quality.{key} debe ser texto")
+        issues = quality.get("issues", [])
+        if not isinstance(issues, list) or any(not isinstance(v, str) for v in issues):
+            raise ValueError("quality.issues debe ser una lista de textos")
+    return data
 
 
 def analyze_clip(cid: str, keys: dict, deep: bool = False) -> dict | None:
@@ -97,15 +146,15 @@ def analyze_clip(cid: str, keys: dict, deep: bool = False) -> dict | None:
     prompt = tpl.format(n=len(sample), cid=cid, step=spacing_s)
     raw = gemini_vision(prompt, sample, keys)
     m = re.search(r"\{.*\}", raw, re.DOTALL)
-    data = json.loads(m.group()) if m else {"summary": raw, "tags": []}
+    data = validate_analysis(json.loads(m.group()) if m else {"summary": raw, "tags": []})
     data["clip_id"] = cid
     data["frames_analyzed"] = len(sample)
     data["deep"] = deep
     if deep:
-        try:
-            data.update(director_report(cid, data, keys))
-        except Exception as e:
-            print(f"  (informe del director falló, sigo sin él: {e})")
+        report = validate_analysis(director_report(cid, data, keys))
+        if not report.get("director_notes"):
+            raise ValueError("informe del director incompleto")
+        data.update({key: report[key] for key in ("director_notes", "story_arc", "uses") if key in report})
     out = VAULT / "ai" / f"{cid}.json"
     out.parent.mkdir(exist_ok=True)
     atomic_write_json(out, data, indent=1)

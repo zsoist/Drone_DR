@@ -20,6 +20,8 @@ Usage:  python3 pipeline/pc_janitor.py            # dry run
 from __future__ import annotations
 
 import argparse
+import json
+from contextlib import closing
 import re
 import shlex
 import sqlite3
@@ -32,7 +34,7 @@ from paths import VAULT
 RETAIN_DAYS = 7
 UNTRACKED_DAYS = 30
 JOBS_DB = VAULT / "manifest" / "jobs.db"
-ACTIVE = {"queued", "running", "claimed"}
+ACTIVE = {"queued", "running", "claimed", "cancelling", "cancel_failed"}
 TERMINAL = {"done", "error", "cancelled", "cancel_failed"}
 ROOTS = (
     "/root/gpu-jobs/data",
@@ -146,7 +148,20 @@ def remote_entries() -> list[Entry]:
 
 
 def sweep(apply: bool = False, now: float | None = None, protect=None) -> dict:
-    victims = plan(remote_entries(), mac_statuses(), now or time.time(), protect=protect)
+    protected = set(protect or ())
+    # Read every live recovery, not only the job that triggered this sweep.
+    with closing(sqlite3.connect(f"file:{JOBS_DB}?mode=ro", uri=True)) as con:
+        for status, raw in con.execute("SELECT status, spec FROM jobs"):
+            if status not in ACTIVE:
+                continue
+            spec = json.loads(raw or "{}")
+            for key in ("resume_checkpoint", "resume_config"):
+                if spec.get(key):
+                    protected.add(spec[key])
+            name = str(spec.get("odm_remote_resume") or "")
+            if name and _SAFE.fullmatch(name):
+                protected.add(f"/root/gpu-jobs/odm/{name}")
+    victims = plan(remote_entries(), mac_statuses(), now or time.time(), protect=protected)
     freed_gb = sum(e.kbytes for e, _ in victims) / 1024 / 1024
     if apply and victims:
         from gpu_lane import _wsl

@@ -1,4 +1,6 @@
 import sys
+import tempfile
+import jobs
 import unittest
 from pathlib import Path
 
@@ -76,11 +78,19 @@ class PcJanitorProtectTests(unittest.TestCase):
         self.assertEqual(["/root/gpu-jobs/odm/3d-3-cccccc"], [e.path for e, _ in got])
 
     def test_sweep_passes_protect_through(self):
-        with mock.patch.object(pc_janitor, "remote_entries", return_value=[]), \
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "jobs.db"
+            with mock.patch.object(jobs, "DB", db):
+                jobs.init()
+            self._check_sweep(db)
+
+    def _check_sweep(self, db):
+        with mock.patch.object(pc_janitor, "JOBS_DB", db), \
+                mock.patch.object(pc_janitor, "remote_entries", return_value=[]), \
                 mock.patch.object(pc_janitor, "mac_statuses", return_value={}), \
                 mock.patch.object(pc_janitor, "plan", return_value=[]) as plan:
             pc_janitor.sweep(apply=False, protect=["/x"])
-        self.assertEqual(["/x"], plan.call_args.kwargs["protect"])
+        self.assertEqual({"/x"}, plan.call_args.kwargs["protect"])
 
     def test_worker_collects_protect_paths_from_spec(self):
         spec = {"resume_checkpoint": "/root/gpu-jobs/checkpoints/A/step-000000100.ckpt",

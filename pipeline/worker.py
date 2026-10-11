@@ -268,28 +268,30 @@ def publish_splat_stage(stage: Path, cid: str, quality: dict, splat_dir: Path | 
     ts = time.strftime("%Y%m%d-%H%M%S")
     archived_splat = None
     archived_viewer = None
-    for old in (splat_dir / f"{cid}.clean.sog", splat_dir / f"{cid}.ksplat",
-                splat_dir / f"{cid}.splat", splat_dir / f"{cid}.ply",
-                splat_dir / f"{cid}.meta.json", splat_dir / f"{cid}.cameras.json"):
-        if old.is_file():
-            suffix = old.name[len(cid):]
-            dst = hist / f"{cid}-{ts}{suffix}"
-            os.replace(old, dst)
-            if suffix == ".splat":
-                archived_splat = f"splats/history/{dst.name}"
-            elif suffix in (".clean.sog", ".ksplat"):
-                archived_viewer = f"splats/history/{dst.name}"
+    from contextlib import nullcontext
+    jid = quality.get("job_id")
+    with jobstore.activation(jid) if jid else nullcontext():
+        for old in (splat_dir / f"{cid}.clean.sog", splat_dir / f"{cid}.ksplat",
+                    splat_dir / f"{cid}.splat", splat_dir / f"{cid}.ply",
+                    splat_dir / f"{cid}.raw.splat",
+                    splat_dir / f"{cid}.meta.json", splat_dir / f"{cid}.cameras.json"):
+            if old.is_file():
+                suffix = old.name[len(cid):]
+                dst = hist / f"{cid}-{ts}{suffix}"
+                os.replace(old, dst)
+                if suffix == ".splat":
+                    archived_splat = f"splats/history/{dst.name}"
+                elif suffix in (".clean.sog", ".ksplat"):
+                    archived_viewer = f"splats/history/{dst.name}"
+        os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
+        os.replace(tmp_out, final_out)
+        cam = stage / "cameras.json"
+        if cam.exists():
+            os.replace(cam, splat_dir / f"{cid}.cameras.json")
     if archived_splat or archived_viewer:
         jobstore.retarget_splat_artifacts(cid, archived_splat, archived_viewer)
-    # poda de versiones también en la ruta de ENTRENAMIENTO (antes solo en /api/splat_upload):
-    # iterar cinematic/ultra archivaba 20MB+ por corrida sin límite
     from splat_history import prune_splat_history
     prune_splat_history(hist, cid, keep=6)
-    os.replace(tmp_meta, splat_dir / f"{cid}.meta.json")
-    os.replace(tmp_out, final_out)
-    cam = stage / "cameras.json"
-    if cam.exists():
-        os.replace(cam, splat_dir / f"{cid}.cameras.json")
     shutil.rmtree(stage, ignore_errors=True)
     return final_out
 
@@ -510,6 +512,11 @@ def splat_attempt_plan(spec: dict | None) -> list[dict]:
     if normalized["backend"] == "cuda":
         resolution = normalized["resolution"]
         downscales = {"auto": (1, 2), "full": (1,), "half": (2,)}[resolution]
+        if spec.get("resume_checkpoint"):
+            resume_d = int(spec.get("resume_downscale") or 1)
+            if resume_d not in downscales:
+                raise ValueError("la resolución solicitada no coincide con el checkpoint")
+            downscales = tuple(d for d in downscales if d >= resume_d)
         return [{
             "preset": requested,
             "d": d,
@@ -1425,7 +1432,7 @@ def _cleanup_success_best_effort(gpu_lane, name: str) -> None:
         print(f"  cleanup CUDA (post-éxito) omitido, lo barre el janitor: {exc}", flush=True)
 
 
-def _archive_checkpoint_best_effort(gpu_lane, name: str, job_id: str) -> None:
+def _archive_checkpoint_best_effort(gpu_lane, name: str, job_id: str) -> dict | None:
     """After a timeout/cancel the run dir still holds the newest step-*.ckpt; preserve it
     so the job can be resumed. Never masks the original exception."""
     try:
@@ -1434,6 +1441,7 @@ def _archive_checkpoint_best_effort(gpu_lane, name: str, job_id: str) -> None:
             jobstore.event(job_id, "cuda_checkpoint",
                            f"checkpoint {checkpoint['step']:,} preservado para recuperación",
                            level="warning", data=checkpoint)
+        return checkpoint
     except Exception as exc:                      # noqa: BLE001
         print(f"  no se pudo preservar checkpoint tras corte: {exc}", flush=True)
 
@@ -1888,8 +1896,8 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
             jobstore.update(j["id"], detail="exportando checkpoint CUDA completo",
                             stage="publish", progress=0.8, backend="NVIDIA CUDA")
             m = {"train_s": 0.0}
-            m.update(gpu_lane.finalize_resume_checkpoint(name, resume_config))
-            ply = gpu_lane.fetch(name, stage)
+            m.update(gpu_lane.finalize_resume_checkpoint(name, resume_config, jid=j["id"]))
+            ply = gpu_lane.fetch(name, stage, jid=j["id"])
             conv = ply_to_splat(ply, tmp_out)
             ply.unlink()
             _cleanup_success_best_effort(gpu_lane, name)
@@ -1993,19 +2001,15 @@ def run_splat_cuda(j: dict, proj: Path, cid: str, stage: Path, tmp_out: Path,
             if _cancelled(j["id"]):
                 log += "\ncancelled by user"
             kind = gpu_lane.classify_cuda_failure(rc, log)
-            checkpoint = gpu_lane.archive_latest_checkpoint(name, j["id"])
-            if checkpoint:
-                jobstore.event(j["id"], "cuda_checkpoint",
-                               f"checkpoint {checkpoint['step']:,} preservado para recuperación",
-                               level="warning", data=checkpoint)
+            checkpoint = _archive_checkpoint_best_effort(gpu_lane, name, j["id"])
             raise gpu_lane.CudaLaneError(kind, f"ns-train CUDA falló ({kind}, rc={rc})",
                                          rc=rc, checkpoint=checkpoint)
 
         m = {"train_s": round(time.time() - t0, 1)}
         jobstore.update(j["id"], detail="exportando y trayendo el splat CUDA",
                         stage="publish", progress=0.8)
-        m.update(gpu_lane.finalize_train(name, run_id))
-        ply = gpu_lane.fetch(name, stage)
+        m.update(gpu_lane.finalize_train(name, run_id, jid=j["id"]))
+        ply = gpu_lane.fetch(name, stage, jid=j["id"])
         conv = ply_to_splat(ply, tmp_out)
         ply.unlink()
         _cleanup_success_best_effort(gpu_lane, name)
@@ -2315,6 +2319,7 @@ def run_splat(j: dict):
     quality["stage_timings"] = job_stage_timings(j["id"])
     if not quality["passed"]:
         raise RuntimeError(quality["reason"])
+    quality["job_id"] = j["id"]
     final_out = publish_splat_stage(stage, cid, quality, splat_dir)
     # entity U0: cada run publicado queda en reconstruction.splat_runs del modelo —
     # el historial con peak/preset/backend/caps_provisional que la UI (U3.2) renderiza
@@ -2482,6 +2487,10 @@ def main():
     print(f"worker listo · poll {POLL_S}s · kinds {jobstore.HEAVY_KINDS}", flush=True)
     idle_check = 0.0
     while True:
+        try:
+            reconcile_scene_versions()
+        except (OSError, ValueError) as exc:
+            print(f"scene reconciliation skipped: {exc}", flush=True)
         j = jobstore.claim(jobstore.HEAVY_KINDS)
         if not j:
             # OrbStack solo mientras un job lo usa: en reposo el Mac no paga la VM

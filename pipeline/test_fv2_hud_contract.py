@@ -1,6 +1,7 @@
 """Contratos del HUD v2 (?fv=2, WS A): elementos borrados ausentes del marcado, texto >= 12 px en el CSS,
 targets de 44 px, sin gradientes en controles, y (si el servidor local responde) auditoría de layout en Chrome."""
 import re
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -108,10 +109,11 @@ class Fv2CssContract(unittest.TestCase):
 class Fv2LayoutAudit(unittest.TestCase):
     def test_live_layout(self):
         import fv2_layout_audit as audit
-        if not audit.server_up():
-            self.skipTest("servidor local :8790 no disponible")
+        base = os.environ.get("AEROBRAIN_BASE_URL", "http://localhost:8790")
+        if not audit.server_up(base):
+            self.skipTest(f"preview server unavailable: {base}")
         try:
-            fails = audit.audit("http://localhost:8790", audit.DEFAULT_CID)
+            fails = audit.audit(base, audit.DEFAULT_CID)
         except RuntimeError as exc:                 # Chrome / mundo no disponible en este entorno
             self.skipTest(str(exc))
         self.assertEqual(fails, {}, fails)

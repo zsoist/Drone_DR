@@ -87,11 +87,15 @@ class KillContainerTests(JobsStoreCase):
         kill.assert_called_once()
         self.assertEqual("odm-gpu-abc", kill.call_args[0][0])
 
-    def test_proc_recognizer_accepts_our_remote_ssh_but_not_interactive_ssh(self):
-        self.assertTrue(jobs._cmd_is_ours("ssh pc wsl -d Ubuntu -- bash -lc docker run"))
-        self.assertTrue(jobs._cmd_is_ours("ssh -o ConnectTimeout=5 pc wsl -d Ubuntu -- bash"))
-        self.assertFalse(jobs._cmd_is_ours("ssh user@server"))
-        self.assertFalse(jobs._cmd_is_ours("/usr/bin/vim notes.txt"))
+    def test_orphan_identity_needs_birth_time_job_token_and_private_group(self):
+        with mock.patch.object(jobs, "_process_identity", return_value="birth"), \
+                mock.patch.object(jobs.os, "getpgid", return_value=123), \
+                mock.patch.object(jobs.subprocess, "run",
+                                  return_value=mock.Mock(stdout="python3 worker.py AEROBRAIN_JOB_ID=job-x")):
+            self.assertTrue(jobs._proc_ours(123, "birth", "job-x"))
+            self.assertFalse(jobs._proc_ours(123, "old birth", "job-x"))
+            self.assertFalse(jobs._proc_ours(123, "birth", "other-job"))
+            self.assertFalse(jobs._proc_ours(123))
 
 
 class PerfTests(unittest.TestCase):
