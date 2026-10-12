@@ -1,5 +1,32 @@
 """Strict JSON contract for suggested clip insights. No external dependencies."""
 import math
+import re
+
+PRAISE = re.compile(
+    r'\b(?:excelentes?|impresionantes?|majestuos[oa]s?|espectacular(?:es)?|'
+    r'increíbles?|increibles?|hermos[oa]s?|bell[oa]s?|maravillos[oa]s?|'
+    r'asombros[oa]s?|magnífic[oa]s?|magnific[oa]s?|perfect[oa]s?|'
+    r'fascinantes?|deslumbrantes?|precios[oa]s?|idílic[oa]s?)\b', re.I)
+
+
+def neutral_caption(value):
+    return re.sub(r'\s+([,.;:])', r'\1', ' '.join(PRAISE.sub('', value).split())).strip()
+
+
+def trim_caption(value):
+    """Keep a neutral first clause, with a word boundary at 60 characters."""
+    value = neutral_caption(value)
+    value = re.split(r'[.;!?]\s|,\s', value, maxsplit=1)[0].strip(' .;,:!?')
+    if len(value) > 60:
+        value = value[:61].rsplit(' ', 1)[0][:60].rstrip(' .;,:!?')
+        value = re.sub(r'(?:\s+(?:de|del|en|con|entre|y|o|a|al|el|la|los|las|un|una))+$', '', value, flags=re.I)
+    return value or 'Vista aérea'
+
+
+def valid_short(value):
+    return (isinstance(value, str) and value == value.strip()
+            and 1 <= len(value) <= 60 and not PRAISE.search(value)
+            and '\n' not in value and '\r' not in value)
 
 LOOKS = ['none', 'nolan', 'deakins', 'malick', 'fincher', 'kodak', 'goldenhour',
          'tealorange', 'cine', 'vivid', 'warm', 'moody', 'bw']
@@ -22,7 +49,8 @@ def array(item, minimum=0, maximum=20):
 
 TIME = {'type': 'number', 'minimum': 0, 'maximum': 86400}
 INSIGHT_SCHEMA = obj({
-    'caption': text(), 'tags': array(text(80), 1), 'subjects': array(text(100)),
+    'caption': text(), 'caption_short': text(60),
+    'tags': array(text(80), 1), 'subjects': array(text(100)),
     'shot_type': {'type': 'string', 'enum': SHOTS},
     'scene_type': {'type': 'string', 'enum': ['urbano', 'naturaleza', 'costa', 'montaña',
                                            'atardecer', 'interior', 'mixto']},
@@ -65,6 +93,8 @@ def validate(value, schema=INSIGHT_SCHEMA, path='$'):
 
 def validate_insight(value, duration, frame_times):
     validate(value)
+    if not valid_short(value['caption_short']):
+        raise ValueError('caption_short must be neutral and at most 60 characters')
     if any(t not in frame_times or t > duration for t in value['best_frame_times']):
         raise ValueError('best frames must be sampled frames inside the clip')
     for segment in value['highlight_segments']:

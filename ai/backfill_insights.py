@@ -6,20 +6,30 @@ import insights
 from router import load_keys
 
 
-def backfill(limit, dry_run=False, vault=insights.VAULT, keys=None):
+def backfill(limit, dry_run=False, vault=insights.VAULT, keys=None, force=False,
+             clip_ids=None, attempts=1):
+    if not 1 <= limit <= 1000 or not 1 <= attempts <= 2:
+        raise ValueError('limit must be 1–1000; attempts must be 1–2')
     rows = insights.flights(vault)
-    pending_trips = {f['clip_id'] for g in insights.trip_groups(rows)
-                     if insights.get_summary('trip', g['id'], vault)['status'] != 'ready'
-                     for f in g['flights']}
-    selected = [f for f in rows if list((vault / 'frames' / f['clip_id']).glob('f_*.jpg'))
-                and (insights.get_insight(f['clip_id'], vault)['status'] != 'ready'
-                     or insights.get_summary('flight', f['clip_id'], vault)['status'] != 'ready'
-                     or f['clip_id'] in pending_trips
-                     or not insights.has_embedding(insights.record(f['clip_id'], vault)))][:limit]
+    if clip_ids and (set(clip_ids) - {f['clip_id'] for f in rows}):
+        raise ValueError('unknown clip id')
+    selected = []
+    for f in rows:
+        cid = f['clip_id']
+        if clip_ids and cid not in clip_ids:
+            continue
+        data = insights.record(cid, vault)
+        complete = (insights.has_embedding(data) and insights.valid_short(data.get('caption_short')))
+        if not force and complete:
+            continue
+        if data.get('insight') or list((vault / 'frames' / cid).glob('f_*.jpg')):
+            selected.append(f)
+    selected = selected[:limit]
     ids = [f['clip_id'] for f in selected]
     trips = [g['id'] for g in insights.trip_groups(rows) if any(f['clip_id'] in ids for f in g['flights'])]
     print(json.dumps({'dry_run': dry_run, 'clip_ids': ids, 'trip_ids': trips,
-                      'estimated_usd': round(len(ids) * .005 + len(trips) * .002, 4),
+                      'attempts': attempts, 'force': force,
+                      'estimated_usd': round(len(ids) * .005 * attempts + len(trips) * .002, 4),
                       'note': 'Planning estimate, not a billing quote. No raw video reads.'}))
     if dry_run:
         return 0
@@ -30,17 +40,30 @@ def backfill(limit, dry_run=False, vault=insights.VAULT, keys=None):
     cost = 0
     for f in selected:
         cid = f['clip_id']
+        for attempt in range(1, attempts + 1):
+            try:
+                data = insights.record(cid, vault)
+                if force or not data.get('insight'):
+                    data = insights.build_record(cid, keys, vault)
+                    cost += data['usage']['estimated_usd'] + data['embedding']['estimated_usd']
+                    print(json.dumps({'clip_id': cid, 'attempt': attempt, 'vision_usage': data['usage'],
+                                      'embedding_estimated_usd': data['embedding']['estimated_usd']}))
+                else:
+                    if not insights.valid_short(data.get('caption_short')):
+                        data = insights.upgrade_caption(data, keys)
+                        print(json.dumps({'clip_id': cid, 'caption_short_source': data['caption_short_source']}))
+                    if not insights.has_embedding(data):
+                        data = insights.refresh_embedding(data, keys)
+                        cost += data['embedding']['estimated_usd']
+                insights.save_record(data, vault)
+                break
+            except Exception as exc:
+                # Provider errors can contain credentials. Only report the class.
+                print(json.dumps({'clip_id': cid, 'attempt': attempt, 'error': type(exc).__name__}))
+        else:
+            failures += 1
+            continue
         try:
-            if insights.get_insight(cid, vault)['status'] != 'ready':
-                data = insights.build_record(cid, keys, vault)
-                insights.save_record(data, vault)
-                cost += data['usage']['estimated_usd'] + data['embedding']['estimated_usd']
-                print(json.dumps({'clip_id': cid, 'vision_usage': data['usage'],
-                                  'embedding_estimated_usd': data['embedding']['estimated_usd']}))
-            elif not insights.has_embedding(insights.record(cid, vault)):
-                data = insights.refresh_embedding(insights.record(cid, vault), keys)
-                insights.save_record(data, vault)
-                cost += data['embedding']['estimated_usd']
             outcome = insights.cache_summary('flight', cid, keys, vault)
             print(json.dumps({'flight_id': cid, **outcome}))
         except Exception as exc:
@@ -74,10 +97,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--limit', type=int, required=True)
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--force', action='store_true', help='regenerate valid visual records')
+    parser.add_argument('--clip-id', action='append', help='restrict work to these clip IDs')
+    parser.add_argument('--attempts', type=int, choices=(1, 2), default=1)
     args = parser.parse_args()
     if not 1 <= args.limit <= 1000:
         parser.error('--limit must be 1–1000')
-    return backfill(args.limit, args.dry_run)
+    return backfill(args.limit, args.dry_run, force=args.force, clip_ids=args.clip_id, attempts=args.attempts)
 
 
 if __name__ == '__main__':

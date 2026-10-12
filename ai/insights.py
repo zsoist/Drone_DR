@@ -15,10 +15,10 @@ from keys import load_keys
 from paths import VAULT
 try:
     from . import router
-    from .insight_schema import INSIGHT_SCHEMA, validate_insight
+    from .insight_schema import INSIGHT_SCHEMA, validate_insight, neutral_caption, trim_caption, valid_short
 except ImportError:
     import router
-    from insight_schema import INSIGHT_SCHEMA, validate_insight
+    from insight_schema import INSIGHT_SCHEMA, validate_insight, neutral_caption, trim_caption, valid_short
 
 
 def read(path, default=None):
@@ -62,6 +62,10 @@ def record(cid, vault=VAULT):
             value.pop(key, None)
     if 'insight' in value:
         try:
+            # Read v1 without writes or paid calls. The backfill persists the upgrade.
+            if 'caption_short' not in value['insight']:
+                value['insight']['caption_short'] = (value.get('caption_short')
+                    if valid_short(value.get('caption_short')) else trim_caption(value['insight']['caption']))
             validate_insight(value['insight'], value['duration_s'], value['sampled_frame_times'])
         except (KeyError, TypeError, ValueError):
             value.pop('insight', None)
@@ -105,13 +109,19 @@ def build_record(cid, keys, vault=VAULT):
               'Devuelve el esquema JSON en español. Usa best_frame_times solo de esta lista. '
               'Los segmentos deben estar dentro del clip; score mide interés visual de 0 a 1. '
               'Describe solo evidencia visible. No inventes lugares. Son sugerencias, no decisiones del dueño. '
+              'caption y caption_short describen sujetos y acciones concretos, sin elogios: '
+              'no uses excelente, impresionante, majestuoso, espectacular, hermoso ni similares. '
+              'caption_short es una sola línea de hasta 60 caracteres. '
               'Con frames aislados no puedes confirmar estabilidad entre frames: marca solo problemas visibles. '
               'sobreexpuesto significa altas luces blancas quemadas, nunca una escena oscura. '
               'horizonte requiere un horizonte visible inclinado; no aplica a una toma cenital sin horizonte. '
               'Si ninguna bandera tiene evidencia clara, devuelve quality_flags vacío. '
               'Sugiere un preset existente y exposición EV conservadora.')
     raw, usage = router.gemini_insight(prompt, sample, keys, INSIGHT_SCHEMA)
-    insight = validate_insight(json.loads(raw), duration, times)
+    insight = json.loads(raw)
+    if isinstance(insight, dict) and isinstance(insight.get('caption'), str):
+        insight['caption'] = neutral_caption(insight['caption'])
+    insight = validate_insight(insight, duration, times)
     content = embedding_text(insight)
     vector = unit_vector(router.embed_text(content, keys), router.EMBEDDING_DIMENSIONS)
     usage['estimated_usd'] = round((usage['input_tokens'] * .30 + usage['output_tokens'] * 2.50) / 1e6, 8)
@@ -120,7 +130,7 @@ def build_record(cid, keys, vault=VAULT):
                  'source_hash': digest(content), 'estimated_tokens': math.ceil(len(content) / 3)}
     embedding['estimated_usd'] = round(embedding['estimated_tokens'] * .15 / 1e6, 8)
     segments = insight['highlight_segments']
-    result = {'schema_version': 1, 'clip_id': cid, 'suggested': True, 'insight': insight,
+    result = {'schema_version': 2, 'clip_id': cid, 'suggested': True, 'insight': insight,
               'duration_s': duration, 'sampled_frame_times': times, 'frames_analyzed': len(sample),
               'embedding': embedding, 'usage': usage,
               # Legacy fields keep cards, Studio and build_index compatible.
@@ -129,6 +139,22 @@ def build_record(cid, keys, vault=VAULT):
               'highlights': [{'t': s['start'], 'reason': s['reason'], 'type': insight['shot_type']} for s in segments],
               'best_thumbnail_t': insight['best_frame_times'][0],
               'travel_score': round(max(s['score'] for s in segments) * 10, 1)}
+    return result
+
+
+def upgrade_caption(data, keys):
+    """Use stored text only. A failed text call falls back to a deterministic trim."""
+    result = {**data, 'insight': dict(data['insight']), 'schema_version': 2}
+    try:
+        raw, _ = router.short_caption(data['insight']['caption'], keys)
+        short = json.loads(raw)['caption_short']
+        if not valid_short(short):
+            raise ValueError('invalid short caption')
+        result['caption_short_source'] = 'deepseek'
+    except Exception:
+        short = trim_caption(data['insight']['caption'])
+        result['caption_short_source'] = 'trim'
+    result['insight']['caption_short'] = short
     return result
 
 
@@ -164,7 +190,10 @@ def save_record(data, vault=VAULT):
         raise ValueError('embedding does not match insight')
     target = vault / 'ai' / f'{cid}.json'
     target.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(target, data, allow_nan=False)
+    # Keep the stored v1 insight shape readable by the running server during rollout.
+    stored = {**data, 'insight': dict(data['insight'])}
+    stored['caption_short'] = stored['insight'].pop('caption_short')
+    atomic_write_json(target, stored, allow_nan=False)
 
 
 def get_insight(cid, vault=VAULT):
@@ -248,7 +277,8 @@ def search(q, limit=12, vault=VAULT, embed=None):
                 pass
         if score > 0:
             results.append({'clip_id': f['clip_id'], 'score': round(score, 6), 'mode': mode,
-                            'caption': caption, 'tags': tags,
+                            'caption': caption, 'caption_short': ins.get('caption_short') or trim_caption(caption),
+                            'tags': tags,
                             'matched_moment': moment(f['clip_id'], data, q, vault)})
     results.sort(key=lambda r: (-r['score'], r['clip_id']))
     return {'q': q, 'mode': 'hybrid' if vec else 'tags', 'results': results[:limit]}
@@ -276,32 +306,109 @@ def trip_groups(rows):
     return groups
 
 
-def collections(vault=VAULT):
+MONTHS = ('Enero Febrero Marzo Abril Mayo Junio Julio Agosto Septiembre Octubre Noviembre Diciembre').split()
+SHOT_TITLES = dict(zip(
+    ['órbita', 'revelación', 'cenital', 'FPV', 'travelling', 'paneo', 'ascenso',
+     'descenso', 'estático', 'seguimiento', 'mixto'],
+    ['Órbitas', 'Revelaciones', 'Tomas cenitales', 'Vuelos FPV', 'Travellings', 'Paneos',
+     'Ascensos', 'Descensos', 'Tomas estáticas', 'Seguimientos', 'Tomas mixtas']))
+# Same known labels and coordinates as Viajes (trips.js).
+CITIES = [
+    ('Bogotá', 4.711, -74.072), ('Medellín', 6.244, -75.581), ('Cali', 3.452, -76.532),
+    ('Cartagena', 10.391, -75.479), ('Barranquilla', 10.964, -74.797), ('Santa Marta', 11.241, -74.199),
+    ('Bucaramanga', 7.119, -73.123), ('Pereira', 4.813, -75.696), ('Manizales', 5.070, -75.518),
+    ('Armenia', 4.535, -75.676), ('Ibagué', 4.439, -75.232), ('Villavicencio', 4.142, -73.627),
+    ('Tunja', 5.535, -73.368), ('Popayán', 2.444, -76.615), ('Neiva', 2.928, -75.288),
+    ('Girardot', 4.303, -74.804), ('Melgar', 4.204, -74.641), ('La Mesa', 4.631, -74.463),
+    ('Villeta', 5.013, -74.472), ('Anapoima', 4.548, -74.536), ('Fusagasugá', 4.337, -74.364),
+    ('Honda', 5.209, -74.737), ('Mariquita', 5.199, -74.893), ('La Vega', 4.999, -74.339),
+]
+
+
+def place_metadata(groups, meta):
+    """Resolve shifted trip anchors without modifying owner metadata on GET."""
+    used = {g['id'] for g in groups if g['id'] in meta}
+    resolved = {}
+    for g in groups:
+        saved = meta.get(g['id'])
+        if saved is None:
+            candidates = []
+            for key, value in meta.items():
+                if key in used or not re.fullmatch(r'-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?', key):
+                    continue
+                lat, lon = map(float, key.split(','))
+                distance = hav_km(g['home'], [lon, lat])
+                if distance < 30:
+                    candidates.append((distance, key, value))
+            if candidates:
+                _, key, saved = min(candidates)
+                used.add(key)
+        resolved[g['id']] = saved or {}
+    return resolved
+
+
+def place_title(group, saved, meta):
+    if saved.get('name'):
+        return saved['name']
+    known = [(hav_km(group['home'], [lon, lat]), name) for name, lat, lon in CITIES]
+    for key, value in meta.items():
+        if value.get('name') and re.fullmatch(r'-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?', key):
+            lat, lon = map(float, key.split(','))
+            known.append((hav_km(group['home'], [lon, lat]), value['name']))
+    distance, label = min(known)
+    return label if distance < 30 else f'Cerca de {label}'
+
+
+def collections(vault=VAULT, all_items=False):
     rows = flights(vault)
     meta = read(vault / 'manifest/trips_meta.json', {})
     records = {f['clip_id']: record(f['clip_id'], vault) for f in rows}
     groups = {}
-    for g in trip_groups(rows):
-        groups['place', g['id']] = (meta.get(g['id'], {}).get('name') or f"Zona {g['id']}", g['flights'])
+    places = trip_groups(rows)
+    saved_places = place_metadata(places, meta)
+    for g in places:
+        groups['place', g['id']] = (place_title(g, saved_places[g['id']], meta), g['flights'])
     for f in rows:
         ins = records[f['clip_id']].get('insight', {})
-        labels = [('month', str(f.get('date', ''))[:7])]
+        month = str(f.get('date', ''))[:7]
+        labels = [('month', month)] if re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', month) else []
         labels += [('subject', s) for s in ins.get('subjects', [])]
         labels += [('shot_type', ins['shot_type'])] if ins.get('shot_type') else []
         for kind, label in labels:
             if label:
                 key = (kind, normalized(label))
-                groups.setdefault(key, (label, []))[1].append(f)
+                title = (f'{MONTHS[int(label[5:7]) - 1]} {label[:4]}' if kind == 'month'
+                         else SHOT_TITLES[label] if kind == 'shot_type' else label[:1].upper() + label[1:])
+                groups.setdefault(key, (title, []))[1].append(f)
     result = []
     for (kind, key), (label, members) in sorted(groups.items()):
         ids = sorted({f['clip_id'] for f in members})
         covers = [moment(cid, records[cid], vault=vault) for cid in ids]
         cover = max(covers, key=lambda m: (m['score'], m['clip_id']))
-        owner_cover = meta.get(key, {}).get('cover') if kind == 'place' else None
+        owner_cover = saved_places.get(key, {}).get('cover') if kind == 'place' else None
         if owner_cover in ids:
             cover = {**next(m for m in covers if m['clip_id'] == owner_cover), 'selection': 'owner'}
+        members = {f['clip_id']: f for f in members}.values()
+        duration = sum(f.get('duration_s', 0) or 0 for f in members)
+        latest = max((str(f.get('date') or '') for f in members), default='')
+        data = records[cover['clip_id']]
+        short = data.get('insight', {}).get('caption_short') or trim_caption(data.get('summary', ''))
         result.append({'id': f'{kind}:{key}', 'kind': kind, 'label': label,
-                       'clip_ids': ids, 'count': len(ids), 'cover': cover})
+                       'subtitle': f"{len(ids)} {'clip' if len(ids) == 1 else 'clips'} · {max(1, math.ceil(duration / 60))} min",
+                       'duration_s': duration, 'latest_date': latest, 'caption_short': short,
+                       'clip_ids': ids, 'count': len(ids), 'cover': {**cover, 'caption_short': short}})
+    # Stable size ranking, then recency. Reserve up to three slots per kind.
+    result.sort(key=lambda c: c['latest_date'], reverse=True)
+    result.sort(key=lambda c: -c['count'])
+    if not all_items:
+        eligible = [c for c in result if c['count'] >= 3]
+        chosen = {c['id'] for kind in ('place', 'month', 'subject', 'shot_type')
+                  for c in [c for c in eligible if c['kind'] == kind][:3]}
+        for c in eligible:
+            if len(chosen) >= 12:
+                break
+            chosen.add(c['id'])
+        result = [c for c in eligible if c['id'] in chosen]
     return {'collections': result}
 
 
