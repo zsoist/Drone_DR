@@ -37,7 +37,11 @@ class AnalyzeClipEndToEndTests(unittest.TestCase):
                     mock.patch.object(analyze, "deepseek_text",
                                       return_value='{"director_notes": ["n"], "story_arc": "a", "uses": []}'):
                 data = analyze.analyze_clip("DJI_X", {}, deep=deep)
-            self.assertEqual(data, json.loads((v / "ai" / "DJI_X.json").read_text()))
+            stored = json.loads((v / "ai" / "DJI_X.json").read_text())
+            self.assertNotIn('caption_short', stored['insight'])
+            reloaded = insights.record('DJI_X', v)
+            self.assertEqual(data['insight']['caption_short'], reloaded.pop('caption_short'))
+            self.assertEqual(data, reloaded)
         return data, seen
 
     def test_analyze_clip_runs_and_reports_real_spacing(self):

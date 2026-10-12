@@ -3541,7 +3541,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json(insights.search((query.get('q') or [''])[0],
                     int((query.get('limit') or ['12'])[0]), VAULT))
             if path == '/api/collections':
-                return self.send_json(insights.collections(VAULT))
+                return self.send_json(insights.collections(VAULT, all_items=query.get('all') == ['1']))
             _, _, kind, identity, action = path.split('/')
             identity = urllib.parse.unquote(identity)
             if (kind, action) not in {('clip', 'insight'), ('flight', 'summary'), ('trip', 'recap')}:
