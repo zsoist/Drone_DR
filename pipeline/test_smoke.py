@@ -583,7 +583,7 @@ check("splat jobs: CUDA declara loss no disponible en vez de omitir contexto",
       and "238 cámaras" in _cuda_done_detail)
 import browser_gate
 check("browser gate: default usa 127.0.0.1 para evitar localhost IPv6 ajeno",
-      browser_gate.DEFAULT_BASE_URL == "http://127.0.0.1:8790"
+      browser_gate.DEFAULT_BASE_URL == _os_env.environ.get("AEROBRAIN_BASE_URL", "http://127.0.0.1:8790")
       and browser_gate.CHROME.name == "Google Chrome"
       and browser_gate.QA_DIR.name == "qa")
 _share_module_parse = subprocess.run([

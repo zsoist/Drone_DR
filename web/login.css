@@ -1,32 +1,44 @@
-/* AeroBrain login — standalone (login.html does not load style.css), same tokens as style.css */
-:root {
+/* Login keeps the public asset boundary. Tokens match the W1 foundation. */
+:root, :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #0A0C10; --surface: #11151C; --surface-2: #171D26;
-  --line: #1E2530; --line-strong: #2E3846;
-  --text: #E6EBF2; --text-2: #8A97A8; --text-3: #7B899C;
-  --accent: #45A0E6; --accent-fg: #45A0E6; --accent-solid: #45A0E6; --accent-hover: #5AB0F0; --accent-press: #3890D4;
-  --text-on-accent: #06111C;
-  --ok: #52C79A; --err: #D96A6A; --err-fg: #D96A6A;
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-  --fs-2xs: 10px; --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-lg: 14px; --fs-xl: 16px; --fs-2xl: 20px; --fs-3xl: 28px;
-  --tr-tight: -.02em;
-  --r-sm: 6px; --r-md: 8px; --r-xs: 4px;
-  --ctl-h: 44px;
-  --dur-fast: 140ms; --dur-slow: 320ms;
-  --ease-out: cubic-bezier(.16, 1, .3, 1);
-  font-family: var(--font);
-  font-synthesis: none;
+  --bg: oklch(.14 .008 255); --surface: oklch(.17 .009 255);
+  --surface-2: oklch(.21 .01 255); --surface-3: oklch(.25 .011 255);
+  --text: oklch(.95 .006 255); --text-2: oklch(.78 .014 255); --text-3: oklch(.70 .014 255);
+  --line: oklch(1 0 0 / .07); --line-strong: oklch(1 0 0 / .18);
+  --accent: oklch(.80 .145 78); --accent-fg: var(--accent); --accent-solid: var(--accent);
+  --accent-hover: oklch(.86 .13 78); --accent-press: oklch(.75 .14 78); --text-on-accent: oklch(.16 .012 78);
+  --data: oklch(.80 .115 215); --danger: oklch(.76 .14 25); --success: oklch(.79 .13 155);
+  --ok: var(--success); --ok-fg: var(--success); --err: var(--danger); --err-fg: var(--danger);
+  --warn: var(--accent); --warn-fg: var(--accent-fg);
+  --media-bg: oklch(0 0 0); --on-media: oklch(.98 0 0); --on-media-2: oklch(.83 0 0);
+  --overlay-scrim: oklch(0 0 0 / .60);
+  --accent-dim: color-mix(in oklch, var(--accent) 12%, transparent);
+  --font: system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --fs-2xs: 12px; --fs-xs: 12px; --fs-sm: 13px;
+  --fs-md: clamp(14px, 15.4px - .1vw, 15px); --fs-lg: clamp(16px, 17.4px - .1vw, 17px);
+  --fs-xl: 20px; --fs-2xl: clamp(24px, 23px + .22vw, 26px);
+  --fs-3xl: clamp(30px, 28px + .45vw, 34px); --fs-4xl: clamp(40px, 36px + .9vw, 48px);
+  --fs-display: clamp(40px, 30px + 2.4vw, 64px);
+  --lh-base: 1.45; --lh-tight: 1.1; --lh-snug: 1.3;
+  --sp-0: 2px; --sp-1: 4px; --sp-half: 6px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 40px; --sp-9: 56px; --sp-10: 72px;
+  --r-xs: 6px; --r-sm: 6px; --r-md: 6px; --r-lg: 12px; --r-xl: 20px; --r-2xl: 20px; --r-pill: 999px;
+  --ctl-h: 44px; --sidebar-w: 64px; --mnav-h: 64px;
+  --dur-fast: 140ms; --dur-base: 220ms; --dur-slow: 340ms; --dur-sheet: 450ms; --dur-exit: 150ms;
+  --ease-out: cubic-bezier(.16, 1, .3, 1); --ease-spring: var(--ease-out);
+  --z-base: 0; --z-sticky: 20; --z-nav: 100; --z-overlay: 200; --z-modal: 300; --z-toast: 400;
+  --shadow-3: 0 16px 48px oklch(0 0 0 / .32);
 }
-
-/* Light theme: same values as style.css (html[data-theme="light"]); login.js applies ab_theme */
-html[data-theme="light"] {
+:root[data-theme='light'] {
   color-scheme: light;
-  --bg: #F2F4F8; --surface: #FFFFFF; --surface-2: #EAEEF4;
-  --line: #DDE3EC; --line-strong: #C4CDDA;
-  --text: #17202B; --text-2: #4E5D70; --text-3: #5F6C7E;
-  --accent: #1E7FD1; --accent-fg: #1565B0; --accent-solid: #1668B5; --accent-hover: #135A9E; --accent-press: #114F8A;
-  --text-on-accent: #FFFFFF;
-  --ok: #1E8F63; --err: #C24C4C; --err-fg: #B03A3A;
+  --bg: oklch(.975 .008 85); --surface: oklch(.99 .004 85); --surface-2: oklch(.95 .008 85); --surface-3: oklch(.92 .008 85);
+  --text: oklch(.23 .015 255); --text-2: oklch(.39 .018 255); --text-3: oklch(.46 .018 255);
+  --line: oklch(.2 .01 255 / .08); --line-strong: oklch(.2 .01 255 / .23);
+  --accent: oklch(.80 .145 78); --accent-solid: var(--accent); --accent-fg: oklch(.43 .095 65);
+  --accent-hover: oklch(.86 .13 78); --accent-press: oklch(.75 .14 78); --text-on-accent: oklch(.16 .012 78);
+  --data: oklch(.43 .085 220); --danger: oklch(.45 .16 25); --success: oklch(.43 .10 155);
+  --ok: var(--success); --ok-fg: var(--success); --err: var(--danger); --err-fg: var(--danger);
+  --warn: var(--accent); --warn-fg: var(--accent-fg);
 }
 
 * { box-sizing: border-box; }
@@ -44,22 +56,20 @@ button, input, select, textarea { font: inherit; }
   padding: max(28px, env(safe-area-inset-top)) max(22px, env(safe-area-inset-right))
            max(28px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left));
 }
-.login-panel { width: min(100%, 370px); animation: login-enter var(--dur-slow) var(--ease-out) both; }
+.login-panel { width: min(100%, 400px); animation: login-enter var(--dur-slow) var(--ease-out) both; }
 .login-heading { display: flex; align-items: center; gap: 12px; padding-bottom: 28px; border-bottom: 1px solid var(--line); }
-.login-mark { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: var(--r-sm); color: var(--accent-fg); background: var(--surface); }
+.login-mark { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: var(--r-sm); color: var(--text); background: var(--surface); }
 .login-mark svg, [data-icon] svg { width: 20px; height: 20px; }
-.login-product, .login-context, .login-eyebrow, .login-meta { margin: 0; }
+.login-product, .login-context, .login-meta { margin: 0; }
 .login-product { font-size: var(--fs-xl); font-weight: 600; }
-.login-context { margin-top: 2px; color: var(--text-2); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; }
+.login-context { margin-top: 2px; color: var(--text-2); font-size: var(--fs-xs);  }
 .login-copy { padding: 34px 0 28px; }
-.login-eyebrow { color: var(--accent-fg); font-size: var(--fs-sm); font-weight: 600; }
-.login-copy h1 { margin: 8px 0 0; font-size: var(--fs-3xl); line-height: 1.15; font-weight: 600; letter-spacing: var(--tr-tight); }
+.login-copy h1 { margin: 8px 0 0; font-size: var(--fs-4xl); line-height: 1.15; font-weight: 600; letter-spacing: var(--tr-tight); }
 .login-label { display: block; margin-bottom: 8px; color: var(--text-2); font-size: var(--fs-sm); }
 .login-field { position: relative; }
 .login-field input {
   width: 100%; height: 52px; padding: 0 50px 0 14px; border: 1px solid var(--line-strong); border-radius: var(--r-md);
-  outline: 0; color: var(--text); background: var(--surface);
-  transition: border-color var(--dur-fast) var(--ease-out);
+  font-size: 17px; outline: 0; color: var(--text); background: var(--surface);
 }
 .login-field input:focus { border-color: var(--accent); }
 .login-field input[aria-invalid="true"] { border-color: var(--err); }
@@ -67,25 +77,23 @@ button, input, select, textarea { font: inherit; }
 .login-reveal {
   position: absolute; top: 4px; right: 4px; width: 44px; height: 44px; display: grid; place-items: center;
   border: 0; border-radius: var(--r-sm); color: var(--text-2); background: transparent; cursor: pointer;
-  transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 }
 .login-reveal:focus-visible { color: var(--text); background: var(--surface-2); outline: 2px solid var(--accent); outline-offset: 2px; }
 .login-error { min-height: 38px; margin: 0; padding: 9px 0 7px; color: var(--err-fg); font-size: var(--fs-sm); line-height: 1.4; }
 .login-submit {
   width: 100%; height: 50px; display: flex; align-items: center; justify-content: center; gap: 8px;
-  border: 1px solid var(--accent-solid); border-radius: var(--r-md); color: var(--text-on-accent); background: var(--accent-solid);
+  border: 1px solid var(--text); border-radius: var(--r-md); color: var(--bg); background: var(--text);
   font-size: var(--fs-md); font-weight: 600; cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  transition: transform var(--dur-fast) var(--ease-out);
 }
-.login-submit:active { background: var(--accent-press); transform: scale(.98); }
+.login-submit:active { background: var(--text); transform: scale(.98); }
 .login-submit:disabled { cursor: wait; opacity: .4; transform: none; }
 .login-submit svg { width: 16px; height: 16px; }
 .login-meta { display: flex; align-items: center; gap: 8px; margin-top: 24px; color: var(--text-2); font-size: var(--fs-xs); }
-.login-status { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
 @media (hover: hover) {
   .login-field input:hover { border-color: var(--text-3); }
   .login-reveal:hover { color: var(--text); background: var(--surface-2); }
-  .login-submit:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .login-submit:hover:not(:disabled) { background: var(--text-2); border-color: var(--text-2); }
 }
 @keyframes login-enter { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 @media (max-width: 480px) {
@@ -96,3 +104,5 @@ button, input, select, textarea { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+:root { font-family:var(--font); font-synthesis:none; }

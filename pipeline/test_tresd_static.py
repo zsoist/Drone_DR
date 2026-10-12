@@ -128,22 +128,23 @@ console.log(JSON.stringify(policy.resolveActiveModel([requested, active], reques
 
     def test_system_feed_uses_authoritative_job_times_and_never_future_queue_time(self):
         web = (Path(__file__).resolve().parent.parent / "web" / "system.js").read_text()
-        match = re.search(
-            r"function jobRelativeTime\(job, now\)\s*\{.*?\n\}", web, re.DOTALL)
-        self.assertIsNotNone(match, "system.js must expose a testable job time formatter")
+        self.assertIn("jobRelativeTime", web)
+        self.assertIn("./system.logic.js", web)
         jobs = [
             {"status": "queued", "started": 2000},
             {"status": "running", "started": 940},
             {"status": "done", "started": 100, "finished": 880},
         ]
-        script = (match.group(0) + "\nconsole.log(JSON.stringify(" +
-                  json.dumps(jobs) + ".map(j => jobRelativeTime(j, 1000000))));\n")
-        result = subprocess.run(["node", "-e", script], capture_output=True,
-                                text=True, check=True)
+        module = Path(__file__).resolve().parent.parent / "web" / "system.logic.js"
+        script = (f"import {{ jobRelativeTime }} from {json.dumps(module.as_uri())};\n" +
+                  "console.log(JSON.stringify(" + json.dumps(jobs) +
+                  ".map(j => jobRelativeTime(j, 1000000))));\n")
+        result = subprocess.run(["node", "--input-type=module", "-e", script],
+                                capture_output=True, text=True, check=True)
         self.assertEqual(["en cola", "hace 1 min", "hace 2 min"],
                          json.loads(result.stdout))
         self.assertNotIn("split('-').pop()", web)
-        self.assertIn("orderJobsForDisplay(jobs).slice(0, 9)", web)
+        self.assertIn("rows.slice(0, shown)", web)
 
     def test_modern_sog_viewer_asset_is_generated_and_visible_everywhere(self):
         root = Path(__file__).resolve().parent.parent
