@@ -1,5 +1,5 @@
-import { loadFlights, registerFlights, openPageSheet, save, suggestion, wireSuggestions, renderFailure, skeleton, dataColor } from './home-shared.js?v=383';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=383';
+import { loadFlights, registerFlights, openPageSheet, save, suggestion, wireSuggestions, renderFailure, skeleton, dataColor, decision, summaryExcerpt } from './home-shared.js?v=386';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=386';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
 const cid = new URLSearchParams(location.search).get('id');
@@ -51,6 +51,16 @@ main.innerHTML = skeleton(2);
     s.home && `<a class="exp" href="https://maps.apple.com/?ll=${s.home[1]},${s.home[0]}&q=Despegue" target="_blank" rel="noopener">${icon('pin')}<div><b>Ver despegue</b><span>Apple Maps</span></div></a>`,
   ].filter(Boolean);
 
+  const highlights = aiData?.highlights || [];
+  const manualHighlights = highlights.filter(h => h.type === 'manual');
+  const suggestedHighlights = highlights.filter(h => h.type !== 'manual');
+  const highlightRows = rows => rows.map(h => `<div class="hl-item">
+    <button class="tc hit44" data-t="${+h.t || 0}">${fmt.dur(+h.t || 0)}</button>
+    <p>${esc(h.reason)}${h.type === 'manual' ? ' <span class="fl-type">Marcado por ti</span>' : ''}</p>
+    <a class="ui-button ui-button--secondary" href="studio.html?clip=${encodeURIComponent(cid)}&a=${Math.max(0, (+h.t || 0) - 3)}&b=${(+h.t || 0) + 4}">Editar</a>
+  </div>`).join('');
+  const bestMoment = decision(`moments-${cid}`) === 'dismissed' ? null : suggestedHighlights[0];
+
   main.innerHTML = `
   <div class="fl">
     <header class="fl-head">
@@ -58,7 +68,7 @@ main.innerHTML = skeleton(2);
       <div class="fl-title"><h1>${esc(meta.label || fmt.date(meta.date) + ' · ' + meta.time)}</h1><p>${durTxt} · ${meta.resolution === '3840x2160' ? '4K' : esc(meta.resolution)} · ${Math.round(meta.fps)} fps</p></div>
       <div class="fl-actions">${navBtn(older, 'chevL', 'Vuelo anterior')}${navBtn(newer, 'chevR', 'Vuelo siguiente')}<button class="ui-button ui-button--quiet" id="btn-label">${icon('edit')} Editar</button>${meta.has_proxy ? `<a class="ui-button ui-button--primary" href="studio.html?clip=${cid}">Abrir en Studio</a>` : ''}<button class="ui-button ui-button--quiet" id="btn-arch" aria-label="${meta.archived ? 'Desarchivar vuelo' : 'Archivar vuelo'}">${icon('db')}</button></div>
     </header>
-    <section class="fl-summary" aria-label="Resumen del vuelo"><dl><div><dt>Recorrido</dt><dd>${fmt.km(s.distance_m || 0)}</dd></div><div><dt>Altura máxima</dt><dd>${s.max_rel_alt_m == null ? '—' : Math.round(s.max_rel_alt_m) + ' m'}</dd></div></dl><div><details class="fl-summary-copy" ><summary>Resumen del vuelo</summary>${aiData?.summary ? suggestion(`flight-${cid}`, aiData.summary) : '<p class="fl-hint">Sin análisis aún. Aquí aparecerá el resumen del vuelo.</p>'}</details>${aiData?.highlights?.[0] ? `<button class="ui-button ui-button--quiet tc" data-t="${+aiData.highlights[0].t || 0}">${icon('play')} Mejor momento · ${fmt.dur(+aiData.highlights[0].t || 0)}</button>` : ''}</div></section>
+    <section class="fl-summary" aria-label="Resumen del vuelo"><dl><div><dt>Recorrido</dt><dd>${s.distance_m == null ? '—' : fmt.km(s.distance_m)}</dd></div><div><dt>Altura máxima</dt><dd>${s.max_rel_alt_m == null ? '—' : Math.round(s.max_rel_alt_m) + ' m'}</dd></div></dl><div><div class="fl-summary-copy">${aiData?.summary ? suggestion(`flight-${cid}`, summaryExcerpt(aiData.summary)) : '<p class="fl-hint">Sin análisis aún. Aquí aparecerá el resumen del vuelo.</p>'}</div>${bestMoment ? `<button class="ui-button ui-button--quiet tc" id="fl-best-moment" data-t="${+bestMoment.t || 0}">${icon('play')} Ver momento · ${fmt.dur(+bestMoment.t || 0)}</button>` : ''}</div></section>
 
     <div class="fl-layout">
       <div class="fl-main">
@@ -67,7 +77,7 @@ main.innerHTML = skeleton(2);
           <div class="fl-timeline"><button class="ui-button ui-button--quiet" id="fl-play" aria-label="Reproducir">${icon('play')}</button><output id="fl-clock" class="ui-figures">0:00</output><label class="sr-only" for="fl-seek">Tiempo del vuelo</label><div class="fl-scrubber"><input id="fl-seek" type="range" min="0" max="${meta.duration_s || 0}" step="0.1" value="0"><div class="fl-ticks" aria-hidden="true">${[0,1,2,3,4].map(i => `<span>${fmt.dur((meta.duration_s || 0) * i / 4)}</span>`).join('')}</div></div></div>
           <div class="fl-bar">
             <div class="seg ui-segmented" id="q-seg" role="group" aria-label="Calidad de video"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720" data-tip="720p · ligero, ideal en LTE">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd" data-tip="1080p · balance calidad/datos">1080p</button>' : ''}${meta.raw_rel && hevcOK ? '<button data-q="4k" data-tip="Original 4K HEVC · pesado, mejor en WiFi">4K</button>' : ''}</div>
-            <button class="btn ui-button ui-button--primary" id="btn-photo" data-tip="Extrae el frame actual del original 4K">${icon('iso')} Foto 4K</button>
+            <button class="btn ui-button ui-button--secondary" id="btn-photo" data-tip="Extrae el frame actual del original 4K">${icon('iso')} Foto 4K</button>
           </div>
           <div class="hud" id="hud"></div>
         </div>
@@ -87,21 +97,19 @@ main.innerHTML = skeleton(2);
 
         <div class="panel fl-moments">
           <div class="ph">${icon('activity')} Momentos
-            <button class="btn ph-push ui-button ui-button--primary" id="btn-hl">${icon('plus')} Marcar aquí</button>
+            <button class="btn ph-push ui-button ui-button--secondary" id="btn-hl">${icon('plus')} Marcar aquí</button>
           </div>
           <div class="pb" id="hl-list">
-            ${(aiData?.highlights || []).map(h => `<div class="hl-item">
-              <button class="tc hit44" data-t="${+h.t || 0}">${fmt.dur(+h.t || 0)}</button>
-              <p>${esc(h.reason)}${h.type ? ` <span class="mono fl-type${h.type === 'manual' ? ' manual' : ''}">${esc(h.type)}</span>` : ''}</p>
-              <a class="btn ui-button ui-button--secondary" href="studio.html?clip=${cid}&a=${Math.max(0, (+h.t || 0) - 3)}&b=${(+h.t || 0) + 4}">Editar</a>
-            </div>`).join('') || '<p class="fl-hint">Sin momentos aún — pausa el video donde quieras y márcalo.</p>'}
+            ${manualHighlights.length ? highlightRows(manualHighlights) : ''}
+            ${suggestedHighlights.length ? suggestion(`moments-${cid}`, 'Momentos del análisis del vuelo.', '', highlightRows(suggestedHighlights)) : ''}
+            ${!highlights.length ? '<p class="fl-hint">Sin momentos aún. Pausa el video donde quieras y selecciona Marcar aquí.</p>' : ''}
           </div>
         </div>
 
         ${aiData?.edit_suggestions?.length ? `<div class="panel fl-edits">
           <div class="ph">${icon('film')} Sugerencias de edición</div>
           <div class="pb">
-            ${aiData.edit_suggestions.map(s => `<div class="hl-item"><p>${esc(s)}</p></div>`).join('')}
+            ${suggestion(`edits-${cid}`, '', '', `<ul class="fl-edit-notes">${aiData.edit_suggestions.map(note => `<li>${esc(note)}</li>`).join('')}</ul>`)}
             ${aiData.hashtags?.length ? `<div class="chips fl-chips">${aiData.hashtags.map(h => `<span class="chip ui-chip">${esc(h)}</span>`).join('')}</div>` : ''}
           </div>
         </div>` : ''}
@@ -157,6 +165,11 @@ main.innerHTML = skeleton(2);
   downloadTitle.querySelector('button').addEventListener('click', e => { downloadBody.hidden = !downloadBody.hidden; e.currentTarget.setAttribute('aria-expanded', String(!downloadBody.hidden)); });
   document.getElementById('gps-retry')?.addEventListener('click', () => location.reload());
   wireSuggestions(main);
+  main.addEventListener('click', event => {
+    if (event.target.closest('[data-decision="dismissed"]') && decision(`moments-${cid}`) === 'dismissed') {
+      document.getElementById('fl-best-moment')?.remove();
+    }
+  });
   const telemetry = main.querySelector('.fl-tel');
   if (telemetry) main.querySelector('.fl-map')?.after(telemetry);
 
@@ -310,7 +323,7 @@ main.innerHTML = skeleton(2);
       const reason = ov.querySelector('#hl-reason').value.trim() || 'momento favorito';
       e.submitter && (e.submitter.disabled = true);
       try { await save('/api/highlight', { clip_id: cid, t, reason }); location.reload(); }
-      catch { const er = ov.querySelector('#hl-err'); er.textContent = 'No se pudo guardar — revisa tu sesión.'; er.hidden = false; e.submitter && (e.submitter.disabled = false); }
+      catch (error) { const er = ov.querySelector('#hl-err'); er.textContent = error.message; er.hidden = false; e.submitter && (e.submitter.disabled = false); }
     });
   });
 
@@ -325,16 +338,20 @@ main.innerHTML = skeleton(2);
           <input id="m-label" class="m-ipt fl-grow" maxlength="80" placeholder="${esc(fmt.date(meta.date))} · ${esc(meta.time)}" value="${esc(meta.label || '')}">
           <button class="btn ui-button ui-button--primary" id="m-save">Guardar</button>
         </div>
+        <p class="fl-hint" id="m-error" role="alert" hidden></p>
         <div class="mlb">Galería</div>
         <button class="btn ui-button ui-button--secondary" id="m-arch" data-tip="${meta.archived ? 'Vuelve a aparecer en la galería' : 'Se oculta de la galería; nada se borra'}">${icon('db')} ${meta.archived ? 'Desarchivar' : 'Archivar'}</button>
         <div class="mlb fl-danger-lb">Papelera</div>
         <button class="btn ui-button ui-button--danger" id="m-del">${icon('warn')} Borrar este vuelo</button>
-        <p class="fl-hint fl-danger-note">El video y sus datos se mueven a la papelera. Puedes recuperarlos desde Sistema.</p>
+        <p class="fl-hint fl-danger-note">El video y sus datos se mueven a la papelera. La recuperación aún no está disponible en la app.</p>
       </div></div>`;
     openPageSheet(ov, { size: 'full', initialFocus: '#m-label' });
-    ov.querySelector('#m-save').addEventListener('click', async () => {
+    ov.querySelector('#m-save').addEventListener('click', async event => {
+      const button = event.currentTarget; button.disabled = true;
+      const errorLine = ov.querySelector('#m-error'); errorLine.hidden = true;
       try { await save('/api/clip', { clip_id: cid, label: ov.querySelector('#m-label').value.trim() }); location.reload(); }
-      catch { toast('No se pudo guardar el nombre — revisa tu sesión.'); }
+      catch (error) { errorLine.textContent = error.message; errorLine.hidden = false; }
+      finally { button.disabled = false; }
     });
     ov.querySelector('#m-label').addEventListener('keydown', e => {
       if (e.key === 'Enter') ov.querySelector('#m-save').click();

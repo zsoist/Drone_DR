@@ -1,4 +1,4 @@
-import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestion, wireSuggestions } from './home-shared.js?v=383';
+import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestion, wireSuggestions } from './home-shared.js?v=386';
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
 let flights = [], ai = {}, semRank = null, models = new Set();
@@ -35,7 +35,7 @@ main.innerHTML = `
       </div>
       <div class="vf-fld vf-fld-chips"><span class="tool-lb vf-lb">Filtrar</span>
       <div class="chip-row vf-chips" role="toolbar" aria-label="Filtros">
-        ${TIERS.map(([k, l]) => `<button class="chip ${k === 'all' ? 'on' : ''}" data-tier="${k}" aria-pressed="${k === 'all'}" data-tip="${TIER_TIPS[k]}">${l}</button>`).join('')}
+        ${TIERS.map(([k, l]) => `<button class="chip ui-chip ${k === 'all' ? 'on' : ''}" data-tier="${k}" aria-pressed="${k === 'all'}" data-tip="${TIER_TIPS[k]}">${l}</button>`).join('')}
         <span class="chip-div" aria-hidden="true"></span>
         <button class="chip ui-chip" data-qf="video" aria-pressed="false" data-tip="Solo clips con video disponible">${icon('play')} Video</button>
         <button class="chip ui-chip" data-qf="model" aria-pressed="false" data-tip="Con modelo 3D procesado">${icon('cube')} 3D</button>
@@ -53,9 +53,9 @@ main.innerHTML = `
     <div class="panel vf-mappanel">
       <div class="tool-row vf-maptools">
         <span class="tool-lb">Color</span>
-        <button class="chip on ui-chip" data-mc="uni">Ruta</button>
-        <button class="chip ui-chip" data-mc="alt">Altura</button>
-        <button class="chip ui-chip" data-mc="year">Año</button>
+        <button class="chip on ui-chip" data-mc="uni" aria-pressed="true">Ruta</button>
+        <button class="chip ui-chip" data-mc="alt" aria-pressed="false">Altura</button>
+        <button class="chip ui-chip" data-mc="year" aria-pressed="false">Año</button>
       </div>
       <div id="vmap" class="vf-map"></div>
       <button class="map-recenter" id="vm-fit" title="Ver todo" aria-label="Ver todos los vuelos">${icon('map')}</button>
@@ -141,7 +141,7 @@ function chipsRow() {
   setHTML(document.getElementById('scene-chips'),
     (clear || scenes.length ? '<span class="chip-div" aria-hidden="true"></span>' : '') + clear +
     scenes.map(sc =>
-      `<button class="chip ${state.scene === sc ? 'on' : ''}" data-scene="${esc(sc)}" aria-pressed="${state.scene === sc}">${esc(sc)}</button>`).join(''));
+      `<button class="chip ui-chip ${state.scene === sc ? 'on' : ''}" data-scene="${esc(sc)}" aria-pressed="${state.scene === sc}">${esc(sc)}</button>`).join(''));
 }
 
 // Entrada de tarjetas: solo en el primer montaje y solo las del primer viewport.
@@ -209,9 +209,10 @@ function noResults(ic, title, base) {
   return emptyState({ icon: ic, title,
     help: !n ? base : onlyQ ? 'Nada coincide con tu búsqueda. Prueba otras palabras o bórrala.'
       : `${n} filtros activos dejan la lista vacía. Quítalos para ver todos los vuelos.`,
-    action: n ? `<button type="button" class="btn ui-button ui-button--secondary" data-clear-filters>${onlyQ ? 'Borrar búsqueda' : 'Limpiar filtros'}</button>` : '', cls: 'vf-span' });
+    action: n ? `<button type="button" class="btn ui-button ui-button--secondary" data-clear-filters>${onlyQ ? 'Borrar búsqueda' : 'Limpiar filtros'}</button>` : '<a class="ui-button ui-button--primary" href="studio.html?via=subir">Subir video</a><p>Por ejemplo, un vuelo sobre los cerros.</p>', cls: 'vf-span' });
 }
 function clearFilters() {
+  semSeq++;
   state.q = ''; state.tier = 'all'; state.scene = null; state.spot = null; state.has.clear();
   if (state.semantic) { state.semantic = false; semRank = null; const t = document.getElementById('sem-toggle'); t.classList.remove('on'); t.setAttribute('aria-pressed', 'false'); qEl.placeholder = 'Buscar vuelos'; }
   qEl.value = '';
@@ -336,7 +337,7 @@ function openRename(f) {
     try {                                                 // api() puede rechazar (403/red)
       await save('/api/clip', { clip_id: f.clip_id, label });
       f.label = label; close(); render();
-    } catch { btn.disabled = false; err.textContent = 'No se pudo renombrar — revisa tu sesión.'; err.hidden = false; }
+    } catch (error) { btn.disabled = false; err.textContent = error.message; err.hidden = false; }
   });
 }
 
@@ -435,7 +436,7 @@ function renderMap(list) {
     });
     document.addEventListener('ab-theme-change', () => document.querySelector('[data-mc].on')?.click());
     document.querySelectorAll('[data-mc]').forEach(b => b.addEventListener('click', () => {
-      document.querySelectorAll('[data-mc]').forEach(x => x.classList.toggle('on', x === b));
+      document.querySelectorAll('[data-mc]').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
       if (vmap.getLayer('routes')) vmap.setPaintProperty('routes', 'line-color', colors()[b.dataset.mc]);
       if (vmap.getLayer('routes-glow')) vmap.setPaintProperty('routes-glow', 'line-color', colors()[b.dataset.mc]);
     }));
@@ -477,7 +478,11 @@ function openPreview(f) {
 }
 
 const qEl = document.getElementById('q');
-qEl.addEventListener('input', e => { state.q = e.target.value; if (!state.semantic) render(); });
+qEl.addEventListener('input', e => {
+  semSeq++;
+  state.q = e.target.value; semRank = null;
+  render();
+});
 let semSeq = 0;
 qEl.addEventListener('keydown', async e => {
   if (e.key === 'Enter' && state.semantic && state.q.trim()) {
@@ -495,6 +500,7 @@ qEl.addEventListener('keydown', async e => {
 });
 document.getElementById('sem-toggle').addEventListener('click', e => {
   e.preventDefault();
+  semSeq++;
   state.semantic = !state.semantic;
   const t = document.getElementById('sem-toggle');
   t.classList.toggle('on', state.semantic);

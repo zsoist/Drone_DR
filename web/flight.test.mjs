@@ -33,3 +33,64 @@ test('semantic membership intersects every selected library filter', () => {
   state.spot = null; state.scene = 'ciudad'; assert.equal(context.matches(clip), false);
   state.scene = null; state.has.add('video'); assert.equal(context.matches({ ...clip, has_proxy: false }), false);
 });
+
+test('editing a semantic query invalidates its pending response', async () => {
+  const source = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+  const handlers = new Map();
+  const elements = new Map();
+  const element = id => {
+    if (!elements.has(id)) elements.set(id, {
+      addEventListener: (event, fn) => handlers.set(`${id}:${event}`, fn),
+      blur() {}, focus() {}, setAttribute() {}, classList: { toggle() {} },
+    });
+    return elements.get(id);
+  };
+  let resolveSearch;
+  const state = { semantic: true, q: 'bosque' };
+  const context = {
+    state, semRank: null,
+    document: { getElementById: element },
+    api: () => new Promise(resolve => { resolveSearch = resolve; }),
+    render: () => { element('count').textContent = state.q; },
+  };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf("const qEl ="), source.indexOf("document.querySelectorAll('[data-qf]').forEach(b => b.addEventListener")), context);
+  const pending = handlers.get('q:keydown')({ key: 'Enter' });
+  handlers.get('q:input')({ target: { value: 'montaña' } });
+  resolveSearch({ results: [{ clip_id: 'old-result' }] });
+  await pending;
+  assert.equal(context.semRank, null);
+  assert.equal(element('count').textContent, 'montaña');
+  const toggled = handlers.get('q:keydown')({ key: 'Enter' });
+  handlers.get('sem-toggle:click')({ preventDefault() {} });
+  resolveSearch({ results: [{ clip_id: 'old-result' }] });
+  await toggled;
+  assert.equal(context.semRank, null);
+  assert.equal(state.semantic, false);
+});
+
+test('accepted suggestions keep content; dismissed suggestions omit it', () => {
+  const source = fs.readFileSync(new URL('./home-shared.js', import.meta.url), 'utf8');
+  let saved = null;
+  const context = { localStorage: { getItem: () => JSON.stringify(saved) }, esc: value => String(value) };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('export function decision'), source.indexOf('export function wireSuggestions')).replaceAll('export ', ''), context);
+  const render = () => context.suggestion('test', 'Resumen', '', '<div>Selected frames</div>');
+  assert.match(render(), /Sugerido/);
+  assert.match(render(), /data-decision="accepted"/);
+  saved = 'accepted';
+  assert.match(render(), /Selected frames/);
+  assert.doesNotMatch(render(), /data-decision=/);
+  saved = 'dismissed';
+  assert.doesNotMatch(render(), /Selected frames|Resumen/);
+});
+
+test('flight summary keeps at most two complete Spanish sentences', () => {
+  const source = fs.readFileSync(new URL('./home-shared.js', import.meta.url), 'utf8');
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('export function summaryExcerpt')).replace('export ', ''), context);
+  assert.equal(context.summaryExcerpt('Sube sobre los tejados. Mira hacia los cerros. Regresa al parque.'), 'Sube sobre los tejados. Mira hacia los cerros.');
+  assert.equal(context.summaryExcerpt('Una sola frase.'), 'Una sola frase.');
+  assert.equal(context.summaryExcerpt(null), '');
+});

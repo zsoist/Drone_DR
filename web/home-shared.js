@@ -35,7 +35,7 @@ export function registerFlights(flights) {
   unregisterFlights = registerPaletteSource(async () => [...clips, ...await trips]);
 }
 export { registerPaletteSource };
-export function openPageSheet(node, { title, size = 'half', onClose } = {}) {
+export function openPageSheet(node, { title, size = 'half', initialFocus, opener = document.activeElement, onClose } = {}) {
   const heading = node.querySelector('.modal-h');
   const label = title || heading?.querySelector('b')?.textContent || 'Detalles';
   heading?.remove();
@@ -46,7 +46,8 @@ export function openPageSheet(node, { title, size = 'half', onClose } = {}) {
     onClose?.();
     sheet.element.remove();
   } });
-  sheet.open();
+  sheet.open(opener);
+  if (initialFocus) node.querySelector(initialFocus)?.focus({ preventScroll: true });
   return () => sheet.destroy();
 }
 export const skeleton = (count = 3) => `<div class="w2-loading" aria-busy="true" aria-label="Cargando">${Array.from({ length: count }, () => '<div aria-hidden="true"><div class="ui-skeleton ui-skeleton--media"></div><div class="ui-skeleton ui-skeleton--text"></div></div>').join('')}</div>`;
@@ -65,10 +66,10 @@ export function frameFor(f, time) {
 export function decision(key) {
   try { return JSON.parse(localStorage.getItem(`ab.suggestion.${key}`) || 'null'); } catch { return null; }
 }
-export function suggestion(key, copy, href = '') {
+export function suggestion(key, copy, href = '', content = '') {
   const state = decision(key);
   if (state === 'dismissed') return '<p class="w2-note">Sugerencia descartada en este dispositivo.</p>';
-  return `<section class="w2-suggestion" data-suggestion="${esc(key)}"><span class="ui-chip">${state === 'accepted' ? 'Aceptado en este dispositivo' : 'Sugerido'}</span><p>${esc(copy)}</p><div class="w2-actions">${href ? `<a class="ui-button ui-button--secondary" href="${esc(href)}">Ver selección</a>` : ''}${state !== 'accepted' ? '<button class="ui-button ui-button--quiet" data-decision="accepted">Aceptar</button><button class="ui-button ui-button--quiet" data-decision="dismissed">Descartar</button>' : ''}</div></section>`;
+  return `<section class="w2-suggestion" data-suggestion="${esc(key)}"><span class="ui-chip">${state === 'accepted' ? 'Aceptado en este dispositivo' : 'Sugerido'}</span><div class="w2-suggestion-content">${copy ? `<p>${esc(copy)}</p>` : ''}${content}</div><div class="w2-actions">${href ? `<a class="ui-button ui-button--secondary" href="${esc(href)}">Ver selección</a>` : ''}${state !== 'accepted' ? '<button class="ui-button ui-button--quiet" data-decision="accepted">Aceptar</button><button class="ui-button ui-button--quiet" data-decision="dismissed">Descartar</button>' : ''}</div></section>`;
 }
 export function wireSuggestions(root) {
   root.addEventListener('click', e => {
@@ -80,7 +81,8 @@ export function wireSuggestions(root) {
     panel.querySelector('.ui-chip').textContent = button.dataset.decision === 'accepted' ? 'Aceptado en este dispositivo' : 'Descartado en este dispositivo';
     panel.querySelectorAll('[data-decision]').forEach(b => b.remove());
     if (button.dataset.decision === 'dismissed') {
-      panel.querySelectorAll('p,a').forEach(n => n.remove());
+      panel.querySelector('.w2-suggestion-content')?.remove();
+      panel.querySelectorAll('a').forEach(n => n.remove());
       showToast('Sugerencia descartada en este dispositivo', { undo: () => {
         try { localStorage.removeItem(`ab.suggestion.${panel.dataset.suggestion}`); location.reload(); } catch { showToast('No se pudo restaurar la sugerencia.'); }
       } });
@@ -96,4 +98,9 @@ export function dataColor(strength = 100) {
   context.fillRect(0, 0, 1, 1);
   const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
   return `rgb(${r},${g},${b})`;
+}
+
+export function summaryExcerpt(text) {
+  return [...new Intl.Segmenter('es', { granularity: 'sentence' }).segment(String(text || ''))]
+    .slice(0, 2).map(part => part.segment).join('').trim();
 }

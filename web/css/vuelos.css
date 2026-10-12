@@ -174,3 +174,5 @@
 @media(max-width:599px) { .vf-page .grid:not(.list) { grid-template-columns:1fr; } }
 .w2-sheet .w2-suggestion { margin-block:var(--sp-4); }
 .w2-sheet .w2-actions { display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+
+.vf-maptools .tool-lb { text-transform:none; letter-spacing:0; font-family:var(--font); }

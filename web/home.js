@@ -1,4 +1,4 @@
-import { loadFlights, registerFlights, frameFor, skeleton, renderFailure, suggestion, wireSuggestions } from './home-shared.js?v=383';
+import { loadFlights, registerFlights, frameFor, skeleton, renderFailure, suggestion, wireSuggestions } from './home-shared.js?v=386';
 const main = renderShell('home.html');
 main.classList.add('home-page');
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;

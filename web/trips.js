@@ -1,4 +1,4 @@
-import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, suggestion, wireSuggestions, dataColor } from './home-shared.js?v=383';
+import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, suggestion, wireSuggestions, dataColor } from './home-shared.js?v=386';
 const main = renderShell('trips.html');
 main.classList.add('tr-page');
 const CITIES = [
@@ -94,7 +94,7 @@ function renderDetail(c) {
     <div class="tr-overview"><img class="tr-cover" src="${frameFor(c.cover, c.coverTime)}" alt="Vista aérea de ${esc(c.name)}" data-transition-key="trip-${esc(c.key.replace(/[^\w-]/g, '-'))}"><div class="tr-map" id="trip-map" aria-label="Rutas del viaje"></div></div>
     <dl class="tr-facts"><div><dt>Vuelos</dt><dd>${c.flights.length}</dd></div><div><dt>En el aire</dt><dd>${fmt.hours(c.dur)}</dd></div><div><dt>Recorrido</dt><dd>${fmt.km(c.dist)}</dd></div><div><dt>Altura máxima</dt><dd>${Math.round(c.alt)} m</dd></div></dl>
     <section class="tr-recap"><h2>El viaje en una mirada</h2>${c.best.ai?.summary ? suggestion(`trip-${c.key}`, `Del vuelo destacado: ${c.best.ai.summary}`, flightLink(c.best)) : '<p class="w2-note">Sin análisis aún. Cuando esté listo, verás el resumen y los mejores momentos.</p>'}</section>
-    <section class="tr-section"><h2>Mejores momentos</h2>${highlights.length ? `<p class="w2-note">Sugerido a partir de tus vuelos analizados.</p><div class="tr-frames">${highlights.map(({ f, h }) => `<a href="${flightLink(f)}&t=${Math.max(0, +h.t || 0)}"><img src="${frameFor(f, h.t)}" alt="${esc(h.reason || 'Momento destacado')}" loading="lazy"><span>${fmt.dur(h.t)} · ${esc(h.reason || 'Ver momento')}</span></a>`).join('')}</div>` : '<p class="w2-note">Sin análisis aún. Abre un vuelo para marcar un momento.</p>'}</section>
+    <section class="tr-section"><h2>Mejores momentos</h2>${highlights.length ? suggestion(`trip-moments-${c.key}`, 'Selección de tus vuelos analizados.', '', `<div class="tr-frames">${highlights.map(({ f, h }) => `<a href="${flightLink(f)}&t=${Math.max(0, +h.t || 0)}"><img src="${frameFor(f, h.t)}" alt="${esc(h.reason || 'Momento destacado')}" loading="lazy"><span>${fmt.dur(h.t)} · ${esc(h.reason || 'Ver momento')}</span></a>`).join('')}</div>`) : '<p class="w2-note">Sin análisis aún. Abre un vuelo para marcar un momento.</p>'}</section>
     <section class="tr-section"><h2>Diario de vuelos</h2>${dates.map(date => `<section class="tr-day"><h3>${fmt.date(date)}</h3><div class="tr-flights">${c.flights.filter(f => f.date === date).map(f => `<a class="tr-flight" href="${flightLink(f)}"><img src="${frameFor(f)}" alt="" loading="lazy" data-transition-key="clip-${esc(f.clip_id)}"><span><strong>${esc(flightTitle(f))}</strong><span>${fmt.dur(f.duration_s)} · ${fmt.km(f.stats?.distance_m || 0)}</span></span>${icon('arrowR')}</a>`).join('')}</div></section>`).join('')}</section>`;
   mountMap(c.flights);
   bindActions();
@@ -127,7 +127,7 @@ function bindActions() {
 function renameCity(c) {
   const node = document.createElement('form'); node.className = 'tr-form';
   node.innerHTML = `<label for="tm-name">Nombre del lugar</label><input class="ctl" id="tm-name" maxlength="60" value="${esc(c.name)}" required><p role="alert" class="tr-error" hidden></p><button class="ui-button ui-button--primary" type="submit">Guardar</button>`;
-  const close = openPageSheet(node, { title: 'Renombrar lugar', size: 'half' });
+  const close = openPageSheet(node, { title: 'Renombrar lugar', size: 'half', initialFocus: '#tm-name' });
   node.addEventListener('submit', async e => {
     e.preventDefault(); const button = node.querySelector('button'); button.disabled = true;
     try { const name = node.querySelector('input').value.trim(); if (!name) throw new Error('Escribe un nombre.'); await save('/api/trip_meta', { key: c.key, name }); c.name = name; close(); render(); }
