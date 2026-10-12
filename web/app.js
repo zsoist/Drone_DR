@@ -1,20 +1,21 @@
+import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestion, wireSuggestions } from './home-shared.js?v=383';
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
 let flights = [], ai = {}, semRank = null, models = new Set();
 let state = { q: '', tier: 'all', sort: 'date', scene: null, semantic: false, spot: null, has: new Set(),
               view: localStorage.getItem('ab.vview') || 'grid' };
 
-const TIERS = [['all', 'Todos'], ['full', 'Full'], ['standard', 'Standard'], ['skim', 'Skim'], ['archived', 'Archivados']];
-const TIER_TIPS = { all: 'Todos los tiers', full: 'Con video y análisis AI', standard: 'Análisis AI sin proxy', skim: 'Solo telemetría', archived: 'Vuelos archivados' };
+const TIERS = [['all', 'Todos'], ['full', 'Completo'], ['standard', 'Estándar'], ['skim', 'Básico'], ['archived', 'Archivados']];
+const TIER_TIPS = { all: 'Todos los vuelos', full: 'Video, análisis, GPS y fotogramas', standard: 'Video, análisis y GPS', skim: 'Video y telemetría', archived: 'Vuelos archivados' };
 
 main.classList.add('vf-page');
 main.innerHTML = `
-  ${pageHead('Vuelos', '', '', { subId: 'count' })}
+  ${pageHead('Vuelos', '', '<a class="ui-button ui-button--quiet" href="trips.html">Viajes</a>', { subId: 'count' })}<nav class="vf-view ui-segmented" aria-label="Vista de vuelos"><button class="ui-button ui-button--quiet" data-view="grid">${icon('grid')} Galería</button><button class="ui-button ui-button--quiet" data-view="list">${icon('list')} Lista</button><button class="ui-button ui-button--quiet" data-view="map">${icon('map')} Mapa</button></nav>
   <div class="vf-bar" role="search">
     <label class="search vf-search">${icon('search')}<input id="q" type="search" placeholder="Buscar vuelos" aria-label="Buscar vuelos" autocomplete="off">
-      <button type="button" class="vf-sem hit44" id="sem-toggle" aria-pressed="false" aria-label="Búsqueda semántica" data-tip="Semántica: busca por significado con embeddings — escribe y pulsa Enter">${icon('spark')}</button>
+      <button type="button" class="vf-sem hit44" id="sem-toggle" aria-pressed="false" aria-label="Búsqueda semántica" data-tip="Semántica: busca por significado — escribe y pulsa Enter">${icon('search')}</button>
       <kbd>/</kbd></label>
-    <button type="button" class="btn vf-filters-btn" id="vf-filters-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="vf-more">${icon('sliders')} Filtros <span class="vf-badge" id="vf-badge" hidden></span></button>
+    <button type="button" class="btn vf-filters-btn ui-button ui-button--secondary" id="vf-filters-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="vf-more">${icon('sliders')} Filtros <span class="vf-badge" id="vf-badge" hidden></span></button>
     <div class="vf-more" id="vf-more">
       <div class="vf-tools">
         <div class="vf-fld"><span class="tool-lb vf-lb">Ordenar por</span>
@@ -23,15 +24,10 @@ main.innerHTML = `
           <option value="dur">Más largos</option>
           <option value="dist">Más distancia</option>
           <option value="alt">Más altura</option>
-          <option value="score">Mejor score AI</option>
+          <option value="score">Mejor puntuación</option>
         </select></div>
-        <div class="vf-fld"><span class="tool-lb vf-lb">Vista</span>
-        <div class="seg" role="group" aria-label="Vista">
-          <button data-view="grid" class="on" data-tip="Cuadrícula" aria-label="Vista de cuadrícula">${icon('grid')}<span class="seg-lb">Cuadrícula</span></button>
-          <button data-view="list" data-tip="Lista compacta" aria-label="Vista de lista">${icon('list')}<span class="seg-lb">Lista</span></button>
-        </div></div>
         <div class="vf-fld"><span class="tool-lb vf-lb">Explorar por</span>
-        <div class="seg vf-explore" role="group" aria-label="Explorar por">
+        <div class="seg vf-explore ui-segmented" role="group" aria-label="Explorar por">
           <button data-view="map" data-tip="Rutas en el mapa" aria-label="Explorar en el mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
           <button data-view="places" data-tip="Agrupados por lugar de despegue" aria-label="Agrupar por lugares">${icon('pin')}<span class="seg-lb">Lugares</span></button>
           <button data-view="dates" data-tip="Agrupados por fecha" aria-label="Agrupar por fechas">${icon('cal')}<span class="seg-lb">Fechas</span></button>
@@ -41,32 +37,32 @@ main.innerHTML = `
       <div class="chip-row vf-chips" role="toolbar" aria-label="Filtros">
         ${TIERS.map(([k, l]) => `<button class="chip ${k === 'all' ? 'on' : ''}" data-tier="${k}" aria-pressed="${k === 'all'}" data-tip="${TIER_TIPS[k]}">${l}</button>`).join('')}
         <span class="chip-div" aria-hidden="true"></span>
-        <button class="chip" data-qf="video" aria-pressed="false" data-tip="Solo clips con streaming">${icon('play')} Video</button>
-        <button class="chip" data-qf="model" aria-pressed="false" data-tip="Con modelo 3D procesado">${icon('cube')} 3D</button>
-        <button class="chip" data-qf="ai" aria-pressed="false" data-tip="Con análisis AI">${icon('spark')} AI</button>
-        <button class="chip" data-qf="alto" aria-pressed="false" data-tip="Altura máxima sobre 100 m">${icon('mountain')} +100 m</button>
-        <button class="chip" data-qf="4k60" aria-pressed="false" data-tip="4K a 60 cuadros">${icon('film')} 4K60</button>
-        <button class="chip" data-qf="largo" aria-pressed="false" data-tip="Duración sobre 1 minuto">${icon('clock')} +1 min</button>
-        <button class="chip" data-qf="top" aria-pressed="false" data-tip="Score AI de 6 o más">${icon('spark')} Score 6+</button>
+        <button class="chip ui-chip" data-qf="video" aria-pressed="false" data-tip="Solo clips con video disponible">${icon('play')} Video</button>
+        <button class="chip ui-chip" data-qf="model" aria-pressed="false" data-tip="Con modelo 3D procesado">${icon('cube')} 3D</button>
+        <button class="chip ui-chip" data-qf="ai" aria-pressed="false" data-tip="Con análisis AI">${icon('search')} Análisis</button>
+        <button class="chip ui-chip" data-qf="alto" aria-pressed="false" data-tip="Altura máxima sobre 100 m">${icon('mountain')} +100 m</button>
+        <button class="chip ui-chip" data-qf="4k60" aria-pressed="false" data-tip="4K a 60 cuadros">${icon('film')} 4K60</button>
+        <button class="chip ui-chip" data-qf="largo" aria-pressed="false" data-tip="Duración sobre 1 minuto">${icon('clock')} +1 min</button>
+        <button class="chip ui-chip" data-qf="top" aria-pressed="false" data-tip="Score AI de 6 o más">${icon('search')} Destacados</button>
         <span class="vf-scenes" id="scene-chips"></span>
       </div></div>
     </div>
   </div>
-  <div class="grid" id="grid">${'<div class="sk vf-sk"></div>'.repeat(6)}</div>
+  <div class="grid" id="grid">${skeleton(6)}</div>
   <div id="mapview" hidden>
     <div class="panel vf-mappanel">
       <div class="tool-row vf-maptools">
         <span class="tool-lb">Color</span>
-        <button class="chip on" data-mc="uni">Ruta</button>
-        <button class="chip" data-mc="alt">Altura</button>
-        <button class="chip" data-mc="year">Año</button>
+        <button class="chip on ui-chip" data-mc="uni">Ruta</button>
+        <button class="chip ui-chip" data-mc="alt">Altura</button>
+        <button class="chip ui-chip" data-mc="year">Año</button>
       </div>
       <div id="vmap" class="vf-map"></div>
       <button class="map-recenter" id="vm-fit" title="Ver todo" aria-label="Ver todos los vuelos">${icon('map')}</button>
     </div>
-    <p class="page-foot vf-note">Los filtros y la búsqueda de arriba también filtran el mapa. Toca una ruta o un pin de lugar para ver el preview.</p>
+    <div class="vf-map-list" id="vf-map-list"></div><p class="page-foot vf-note">Los filtros y la búsqueda de arriba también filtran el mapa. Los números indican vuelos. Amplía un grupo o elige un vuelo de la lista.</p>
   </div>
-  <footer class="page-foot" id="vf-foot">Los clips en tier full incluyen video 1080p; standard tienen análisis AI sin proxy; skim solo telemetría. Procesado localmente en el Mac Mini M4.</footer>`;
+  <footer class="page-foot" id="vf-foot">Todos los niveles preparan video para reproducción. La disponibilidad se muestra en cada vuelo.</footer>`;
 
 function setHTML(el, html) {
   if (el.__h === html) return false;
@@ -78,7 +74,6 @@ function setHTML(el, html) {
 
 const spotKey = f => f.stats?.home ? `${Math.round(f.stats.home[0] / 0.005)}:${Math.round(f.stats.home[1] / 0.005)}` : null;
 function matches(f) {
-  if (state.semantic && semRank) return semRank.has(f.clip_id) && (!f.archived || state.tier === 'archived');   // la semántica no resucita archivados
   if (state.spot && spotKey(f) !== state.spot) return false;
   if (state.has.has('video') && !f.has_proxy) return false;
   if (state.has.has('model') && !models.has(f.clip_id)) return false;
@@ -91,6 +86,7 @@ function matches(f) {
   else if (f.archived) return false;
   if (state.tier !== 'all' && state.tier !== 'archived' && f.tier !== state.tier) return false;
   if (state.scene && ai[f.clip_id]?.scene_type !== state.scene) return false;
+  if (state.semantic && semRank) return semRank.has(f.clip_id);
   if (!state.q) return true;
   const a = ai[f.clip_id];
   const hay = [f.clip_id, f.date, f.time, f.label, a?.summary, a?.scene_type, ...(a?.tags || [])]
@@ -106,7 +102,7 @@ const SORTS = {
 };
 
 // Título corto: etiqueta manual > arranque del resumen AI (sin muletilla "El vuelo inicia con…") > fecha.
-const flightTitle = (f, a) => f.label || shortTitle(a?.summary) || `Sin título${f.time ? ' · ' + f.time : ''}`;
+const flightTitle = f => f.label || `${fmt.date(f.date)}${f.time ? ' · ' + f.time : ''}`;
 // Altura relativa al punto de despegue: valores negativos (barómetro bajo el home) no son "altura" → guion.
 const altM = v => { const n = Math.round(v || 0); return n < 0 ? '—' : n + ' m'; };
 const metric = (ico, label, value) =>
@@ -115,36 +111,33 @@ const metric = (ico, label, value) =>
 function card(f) {
   const a = ai[f.clip_id];
   const title = flightTitle(f, a);
-  const untitled = !f.label && title.startsWith('Sin título');
-  const named = !untitled;
   return `
-  <a class="card scrub" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
-    <div class="thumb">
+  <article class="card"><a class="vf-card-link scrub" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
+    <div class="thumb" data-transition-key="clip-${esc(f.clip_id)}">
       <img src="${DATA}/thumbs/${f.clip_id}.jpg" alt="" loading="lazy" width="960" height="540">
-      <span class="tierdot ${f.tier}"><i></i>${f.tier}</span>
-      ${a?.travel_score != null ? `<span class="score-pill" title="Score AI">${a.travel_score}/10</span>` : ''}
+
+      ${a?.travel_score != null ? `<span class="score-pill" title="Puntuación sugerida">${a.travel_score}/10</span>` : ''}
       <span class="ovl mono">${fmt.dur(f.duration_s)}</span>
-      ${f.has_proxy ? `<span class="play-badge" data-tip="Ver vuelo con streaming">${icon('play')}</span>` : ''}
+      ${f.has_proxy ? `<span class="play-badge" data-tip="Ver vuelo con video disponible">${icon('play')}</span>` : ''}
       <span class="scrub-line"></span>
-      <button class="rename-btn" data-rename="${f.clip_id}" title="Renombrar" aria-label="Renombrar vuelo">${icon('tag')}</button>
     </div>
     <div class="body">
       <div class="t"><span class="vf-title">${esc(title)}</span></div>
-      <div class="vf-when"><time>${named ? fmt.date(f.date) + (f.time ? ' · ' + f.time : '') : fmt.date(f.date)}</time></div>
+      ${f.label ? `<div class="vf-when"><time>${fmt.date(f.date)}${f.time ? ' · ' + f.time : ''}</time></div>` : ''}
       <div class="metrics">
         ${metric('route', 'Distancia', fmt.km(f.stats.distance_m || 0))}
         ${metric('mountain', 'Altura máxima', altM(f.stats.max_rel_alt_m))}
         ${metric('film', 'Resolución y fps', ((f.resolution || '').split('x')[1] || '?') + 'p' + Math.round(f.fps || 0))}
       </div>
-      ${f.label && a?.summary ? `<p class="ai-line">${esc(a.summary)}</p>` : ''}
+
     </div>
-  </a>`;
+  </a><div class="vf-card-tools">${(a?.tags || []).slice(0, 2).map(tag => `<a class="ui-chip" href="index.html?q=${encodeURIComponent(tag)}">${esc(tag)}</a>`).join('')}<button class="ui-button ui-button--quiet rename-btn" data-rename="${esc(f.clip_id)}" aria-label="Renombrar vuelo">${icon('edit')}</button></div></article>`;
 }
 
 function chipsRow() {
   const scenes = [...new Set(flights.map(f => ai[f.clip_id]?.scene_type).filter(Boolean))];
   const clear = state.spot && spots[state.spot]
-    ? `<button class="chip on" data-clearspot aria-label="Quitar lugar ${esc(spots[state.spot].name)}">${icon('close')} ${esc(spots[state.spot].name)}</button>` : '';
+    ? `<button class="chip on ui-chip" data-clearspot aria-label="Quitar lugar ${esc(spots[state.spot].name)}">${icon('close')} ${esc(spots[state.spot].name)}</button>` : '';
   setHTML(document.getElementById('scene-chips'),
     (clear || scenes.length ? '<span class="chip-div" aria-hidden="true"></span>' : '') + clear +
     scenes.map(sc =>
@@ -161,7 +154,7 @@ function enterOnce(grid) {
   const vh = innerHeight;
   [...grid.querySelectorAll('.card')]
     .filter(c => c.getBoundingClientRect().top < vh)
-    .slice(0, 12)
+    .slice(0, 4)
     .forEach((c, i) => { c.style.setProperty('--in-delay', `${Math.min(i, 4) * 30}ms`); c.classList.add('vf-in'); });
 }
 
@@ -196,7 +189,7 @@ function render() {
   mapv.hidden = !isMap;
   chipsRow();
   syncControls();
-  if (isMap) { renderMap(list); syncFoot(list.length, true); return; }
+  if (isMap) { renderMap(list); document.getElementById('vf-map-list').innerHTML = list.slice(0, 30).map(f => `<button class="vf-map-item" data-preview="${esc(f.clip_id)}"><img src="${DATA}/thumbs/${encodeURIComponent(f.clip_id)}.jpg" alt=""><span>${esc(flightTitle(f, ai[f.clip_id]))}<small>${fmt.dur(f.duration_s)} · ${fmt.km(f.stats?.distance_m || 0)}</small></span></button>`).join('') || noResults('map', 'Sin vuelos', 'Sube un vuelo con GPS para ver su ruta.'); syncFoot(list.length, true); return; }
   if (state.view === 'places') { renderPlaces(list); return; }
   if (state.view === 'dates') { renderDates(list); return; }
   grid.className = `grid ${state.view === 'list' ? 'list' : ''}`;
@@ -216,7 +209,7 @@ function noResults(ic, title, base) {
   return emptyState({ icon: ic, title,
     help: !n ? base : onlyQ ? 'Nada coincide con tu búsqueda. Prueba otras palabras o bórrala.'
       : `${n} filtros activos dejan la lista vacía. Quítalos para ver todos los vuelos.`,
-    action: n ? `<button type="button" class="btn sm" data-clear-filters>${onlyQ ? 'Borrar búsqueda' : 'Limpiar filtros'}</button>` : '', cls: 'vf-span' });
+    action: n ? `<button type="button" class="btn ui-button ui-button--secondary" data-clear-filters>${onlyQ ? 'Borrar búsqueda' : 'Limpiar filtros'}</button>` : '', cls: 'vf-span' });
 }
 function clearFilters() {
   state.q = ''; state.tier = 'all'; state.scene = null; state.spot = null; state.has.clear();
@@ -238,7 +231,7 @@ function buildSpots() {
   Object.values(spots).forEach(sp => {
     sp.lng = sp.flights.reduce((a, f) => a + f.stats.home[0], 0) / sp.flights.length;
     sp.lat = sp.flights.reduce((a, f) => a + f.stats.home[1], 0) / sp.flights.length;
-    sp.name = sp.flights.find(f => f.label)?.label || `Spot · ${fmt.date(sp.flights[0].date)}`;
+    sp.name = sp.flights.find(f => f.label)?.label || `Lugar · ${fmt.date(sp.flights[0].date)}`;
   });
 }
 
@@ -257,7 +250,7 @@ function renderPlaces(list) {
     const dur = fs.reduce((a, f) => a + f.duration_s, 0);
     const best = [...fs].sort((a, b) => (ai[b.clip_id]?.travel_score || 0) - (ai[a.clip_id]?.travel_score || 0))[0];
     return `
-    <a class="card" data-spotcard="${esc(sp.key)}">
+    <a class="card" href="index.html?spot=${encodeURIComponent(sp.key)}&v=grid" data-spotcard="${esc(sp.key)}">
       <div class="thumb">
         <img src="${DATA}/thumbs/${esc(best.clip_id)}.jpg" alt="" loading="lazy" width="960" height="540">
         <span class="ovl mono">${fs.length} ${fs.length === 1 ? 'vuelo' : 'vuelos'}</span>
@@ -299,16 +292,17 @@ function renderDates(list) {
   attachScrub(grid);
 }
 document.addEventListener('click', async e => {
+  const preview = e.target.closest('[data-preview]');
+  if (preview) { openPreview(flights.find(f => f.clip_id === preview.dataset.preview)); return; }
   const sc = e.target.closest('[data-scene]');
   if (sc) { state.scene = state.scene === sc.dataset.scene ? null : sc.dataset.scene; render(); }
   const spc = e.target.closest('[data-spotcard]');
-  if (spc) { e.preventDefault(); state.spot = spc.dataset.spotcard; setView('grid'); }
+  if (spc && !e.metaKey && !e.ctrlKey) { e.preventDefault(); state.spot = spc.dataset.spotcard; setView('grid'); }
   if (e.target.closest('[data-clearspot]')) { state.spot = null; render(); }
   if (e.target.closest('[data-clear-filters]')) { clearFilters(); return; }
   const rn = e.target.closest('[data-rename]');
   if (rn) {
     e.preventDefault(); e.stopPropagation();
-    if (!getToken()) return;
     const f = flights.find(x => x.clip_id === rn.dataset.rename);
     if (f) openRename(f);
   }
@@ -326,11 +320,11 @@ function openRename(f) {
       <input class="ctl" id="vf-rn-in" maxlength="120" autocomplete="off" placeholder="Ej. Fachada norte, atardecer" value="${esc(f.label || '')}">
       <p class="vf-rn-err" id="vf-rn-err" role="alert" hidden></p>
       <div class="navrow vf-prev-actions">
-        <button class="btn primary" type="submit">Guardar</button>
-        <button class="btn" type="button" data-cancel>Cancelar</button>
+        <button class="btn ui-button ui-button--primary" type="submit">Guardar</button>
+        <button class="btn ui-button ui-button--secondary" type="button" data-cancel>Cancelar</button>
       </div>
     </div></form>`;
-  const close = openModal(ov, { initialFocus: '#vf-rn-in' });
+  const close = openPageSheet(ov, { initialFocus: '#vf-rn-in' });
   ov.querySelector('[data-cancel]').addEventListener('click', () => close());
   const form = ov.querySelector('form'), input = ov.querySelector('#vf-rn-in'), err = ov.querySelector('#vf-rn-err');
   input.select();
@@ -340,7 +334,7 @@ function openRename(f) {
     const btn = form.querySelector('[type=submit]');
     btn.disabled = true; err.hidden = true;
     try {                                                 // api() puede rechazar (403/red)
-      await api('/api/clip', { clip_id: f.clip_id, label });
+      await save('/api/clip', { clip_id: f.clip_id, label });
       f.label = label; close(); render();
     } catch { btn.disabled = false; err.textContent = 'No se pudo renombrar — revisa tu sesión.'; err.hidden = false; }
   });
@@ -348,7 +342,43 @@ function openRename(f) {
 
 // ---------- vista mapa: rutas + pins de lugar, filtrados por la barra de arriba ----------
 let vmap = null, vmapLoaded = false;
-const spotPills = {};
+let spotMarkers = [];
+function updateSpotMarkers() {
+  spotMarkers.forEach(marker => marker.remove());
+  const groups = [];
+  Object.values(spots).filter(sp => sp.flights.some(matches)).forEach(sp => {
+    const point = vmap.project([sp.lng, sp.lat]);
+    const group = groups.find(g => Math.hypot(point.x - g.point.x, point.y - g.point.y) < 56);
+    if (group) group.spots.push(sp);
+    else groups.push({ point, spots: [sp] });
+  });
+  spotMarkers = groups.map(group => {
+    const places = group.spots, first = places[0];
+    const rows = places.flatMap(sp => sp.flights.filter(matches));
+    const score = Math.max(0, ...rows.map(f => ai[f.clip_id]?.travel_score || 0));
+    const el = document.createElement('button');
+    el.className = 'vf-map-pin';
+    el.dataset.transitionKey = `pin-${rows[0].clip_id}`;
+    el.classList.toggle('on', places.some(sp => sp.key === state.spot));
+    el.style.setProperty('--moment-size', `${24 + score * 2}px`);
+    el.setAttribute('aria-label', places.length > 1 ? `Ampliar ${places.length} lugares: ${places.map(sp => sp.name).join(', ')}` : `Ver ${rows.length} vuelos de ${first.name}`);
+    el.title = el.getAttribute('aria-label');
+    el.innerHTML = `<span>${rows.length}</span>`;
+    el.addEventListener('click', () => {
+      const duration = document.documentElement.dataset.motion === 'reduced' ? 0 : 340;
+      if (places.length > 1) {
+        const bounds = new maplibregl.LngLatBounds();
+        places.forEach(sp => bounds.extend([sp.lng, sp.lat]));
+        vmap.fitBounds(bounds, { padding: 84, maxZoom: 17, duration });
+      } else {
+        state.spot = state.spot === first.key ? null : first.key;
+        render();
+        if (state.spot) vmap.flyTo({ center: [first.lng, first.lat], zoom: 15.5, duration });
+      }
+    });
+    return new maplibregl.Marker({ element: el }).setLngLat([first.lng, first.lat]).addTo(vmap);
+  });
+}
 function renderMap(list) {
   const ids = list.map(f => f.clip_id);
   if (!vmap) {
@@ -359,7 +389,7 @@ function renderMap(list) {
     // arranca el mapa centrado por defecto y no intenta encuadrar la nada
     const hasBounds = withBox.length > 0;
     const opts = { container: 'vmap', style: SAT_STYLE, attributionControl: { compact: true } };
-    if (hasBounds) { opts.bounds = bounds; opts.fitBoundsOptions = { padding: 60 }; }
+    if (hasBounds) { opts.bounds = bounds; opts.fitBoundsOptions = { padding: 84 }; }
     else { opts.center = [-74.08, 4.65]; opts.zoom = 9; }   // Bogotá por defecto
     vmap = new maplibregl.Map(opts);
     vmap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
@@ -367,7 +397,7 @@ function renderMap(list) {
     document.getElementById('vm-fit').addEventListener('click', () => {
       state.spot = null;
       render();
-      if (hasBounds) vmap.fitBounds(bounds, { padding: 60, duration: 1200 });
+      if (hasBounds) vmap.fitBounds(bounds, { padding: 84, duration: document.documentElement.dataset.motion === 'reduced' ? 0 : 340 });
     });
     vmap.on('load', () => {
       fetch(`${DATA}/manifest/routes.json`).then(r => r.json()).then(({ routes }) => {
@@ -378,8 +408,8 @@ function renderMap(list) {
                         year: (byId[r.cid]?.date || '').slice(0, 4) },
           geometry: { type: 'LineString', coordinates: r.line } }));
         vmap.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features } });
-        vmap.addLayer({ id: 'routes-glow', type: 'line', source: 'routes', paint: { 'line-color': '#45A0E6', 'line-width': 6, 'line-opacity': 0.18 } });
-        vmap.addLayer({ id: 'routes', type: 'line', source: 'routes', paint: { 'line-color': '#45A0E6', 'line-width': 1.8, 'line-opacity': 0.9 } });
+        vmap.addLayer({ id: 'routes-glow', type: 'line', source: 'routes', paint: { 'line-color': dataColor(), 'line-width': 6, 'line-opacity': 0.18 } });
+        vmap.addLayer({ id: 'routes', type: 'line', source: 'routes', paint: { 'line-color': dataColor(), 'line-width': 1.8, 'line-opacity': 0.9 } });
         vmap.on('click', 'routes', e => {
           const f = flights.find(x => x.clip_id === e.features[0].properties.cid);
           if (f) openPreview(f);
@@ -388,42 +418,29 @@ function renderMap(list) {
         vmap.on('mouseleave', 'routes', () => { vmap.getCanvas().style.cursor = ''; });
         vmapLoaded = true;
         applyMapFilter(flights.filter(matches).map(f => f.clip_id));
-      });
-      Object.values(spots).forEach(sp => {
-        const el = document.createElement('button');
-        el.className = 'spot-pill';
-        el.innerHTML = `${icon('drone')} ${esc(sp.name.length > 18 ? sp.name.slice(0, 17) + '…' : sp.name)}
-          ${sp.flights.length > 1 ? `<b>${sp.flights.length}</b>` : ''}`;
-        el.addEventListener('click', () => {
-          state.spot = state.spot === sp.key ? null : sp.key;
-          render();
-          if (state.spot) vmap.flyTo({ center: [sp.lng, sp.lat], zoom: 15.5, speed: 1.3, curve: 1.5 });
-        });
-        spotPills[sp.key] = el;
-        new maplibregl.Marker({ element: el }).setLngLat([sp.lng, sp.lat]).addTo(vmap);
-      });
+      }).catch(() => { document.querySelector('.vf-note').textContent = 'No se pudieron cargar las rutas. Recarga para intentarlo de nuevo.'; });
+      updateSpotMarkers();
+      vmap.on('moveend', updateSpotMarkers);
     });
   }
   vmap.resize();
   if (vmapLoaded) applyMapFilter(ids);
   if (!renderMap._colorWired) {
     renderMap._colorWired = true;
-    const COLORS = {
-      uni: '#45A0E6',
+    const colors = () => ({
+      uni: dataColor(),
       alt: ['interpolate', ['linear'], ['get', 'alt'],
-            0, '#45A0E6', 80, '#52C79A', 150, '#E0A458', 260, '#D96A6A'],
-      year: ['match', ['get', 'year'], '2025', '#E0A458', '2026', '#45A0E6', '#8A97A8'],
-    };
+            0, dataColor(35), 80, dataColor(55), 150, dataColor(75), 260, dataColor()],
+      year: ['match', ['get', 'year'], '2025', dataColor(50), '2026', dataColor(), dataColor(35)],
+    });
+    document.addEventListener('ab-theme-change', () => document.querySelector('[data-mc].on')?.click());
     document.querySelectorAll('[data-mc]').forEach(b => b.addEventListener('click', () => {
       document.querySelectorAll('[data-mc]').forEach(x => x.classList.toggle('on', x === b));
-      if (vmap.getLayer('routes')) vmap.setPaintProperty('routes', 'line-color', COLORS[b.dataset.mc]);
-      if (vmap.getLayer('routes-glow')) vmap.setPaintProperty('routes-glow', 'line-color', COLORS[b.dataset.mc]);
+      if (vmap.getLayer('routes')) vmap.setPaintProperty('routes', 'line-color', colors()[b.dataset.mc]);
+      if (vmap.getLayer('routes-glow')) vmap.setPaintProperty('routes-glow', 'line-color', colors()[b.dataset.mc]);
     }));
   }
-  Object.entries(spotPills).forEach(([k, el]) => {
-    el.classList.toggle('on', k === state.spot);
-    el.style.display = spots[k].flights.some(f => ids.includes(f.clip_id)) ? '' : 'none';
-  });
+  if (vmapLoaded) updateSpotMarkers();
 }
 function applyMapFilter(ids) {
   ['routes', 'routes-glow'].forEach(l => {
@@ -441,21 +458,22 @@ function openPreview(f) {
       <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
     <div class="modal-b">
       ${f.has_proxy
-        ? `<video class="m-prev vf-prev" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" controls muted playsinline preload="none"></video>`
+        ? `<video class="m-prev vf-prev" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" controls muted playsinline preload="metadata"></video>`
         : `<img class="vf-prev-img" src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" alt="Miniatura de ${esc(flightTitle(f, a))}" width="960" height="540">`}
       <div class="tool-row vf-prev-chips">
-        <span class="chip">${fmt.dur(f.duration_s)}</span>
-        <span class="chip">${altM(f.stats.max_rel_alt_m)} alt</span>
-        <span class="chip">${fmt.km(f.stats.distance_m || 0)}</span>
-        ${models.has(f.clip_id) ? `<span class="chip on">3D</span>` : ''}
+        <span class="chip ui-chip">${fmt.dur(f.duration_s)}</span>
+        <span class="chip ui-chip">${altM(f.stats.max_rel_alt_m)} alt</span>
+        <span class="chip ui-chip">${fmt.km(f.stats.distance_m || 0)}</span>
+        ${models.has(f.clip_id) ? `<span class="chip on ui-chip">3D</span>` : ''}
       </div>
-      ${a?.summary ? `<p class="vf-prev-note">${esc(a.summary)}</p>` : ''}
+      ${a?.summary ? suggestion(`flight-${f.clip_id}`, a.summary) : '<p class="vf-prev-note">Sin análisis aún.</p>'}
       <div class="navrow vf-prev-actions">
-        <a class="btn primary" href="flight.html?id=${encodeURIComponent(f.clip_id)}">${icon('film')} Ver vuelo completo</a>
-        ${models.has(f.clip_id) ? `<a class="btn" href="tresd.html">${icon('cube')} Modelo 3D</a>` : ''}
+        <a class="btn ui-button ui-button--primary" href="flight.html?id=${encodeURIComponent(f.clip_id)}">${icon('film')} Ver vuelo completo</a>
+        ${models.has(f.clip_id) ? `<a class="btn ui-button ui-button--secondary" href="tresd.html">${icon('cube')} Modelo 3D</a>` : ''}
       </div>
     </div></div>`;
-  openModal(ov, { onClose: () => ov.querySelector('video')?.pause() });
+  wireSuggestions(ov);
+  openPageSheet(ov, { size: 'full', onClose: () => ov.querySelector('video')?.pause() });
 }
 
 const qEl = document.getElementById('q');
@@ -472,7 +490,7 @@ qEl.addEventListener('keydown', async e => {
       if (error) { document.getElementById('count').textContent = 'error: ' + error; return; }
       semRank = new Map(results.map((r, i) => [r.clip_id, results.length - i]));
       render();
-    } catch (err) { if (mySeq === semSeq) document.getElementById('count').textContent = 'sin sesión para búsqueda AI'; }
+    } catch (err) { if (mySeq === semSeq) document.getElementById('count').textContent = 'No se pudo buscar. Pulsa Enter para reintentar.'; }
   }
 });
 document.getElementById('sem-toggle').addEventListener('click', e => {
@@ -506,13 +524,13 @@ filtersBtn.addEventListener('click', () => {
   ov.innerHTML = `<div class="modal vf-sheet">
     <div class="modal-h"><b>${icon('sliders')} Filtros</b><button class="modal-x" type="button" aria-label="Cerrar">${icon('close')}</button></div>
     <div class="modal-b"></div>
-    <div class="vf-sheet-f"><button type="button" class="btn ghost" data-reset>Limpiar</button><button type="button" class="btn primary" data-done></button></div>
+    <div class="vf-sheet-f"><button type="button" class="btn ui-button ui-button--quiet" data-reset>Limpiar</button><button type="button" class="btn ui-button ui-button--primary" data-done></button></div>
   </div>`;
   ov.querySelector('.modal-b').appendChild(more);
   more.classList.add('in-sheet');
   sheetOpen = true;
   filtersBtn.setAttribute('aria-expanded', 'true');
-  const close = openModal(ov, { initialFocus: '#sort', onClose: () => {
+  const close = openPageSheet(ov, { size: 'full', initialFocus: '#sort', onClose: () => {
     sheetOpen = false; filtersBtn.setAttribute('aria-expanded', 'false');
     more.classList.remove('in-sheet'); mark.replaceWith(more);
   } });
@@ -529,6 +547,9 @@ document.querySelectorAll('[data-view]').forEach(b =>
 function setView(v) {
   state.view = v;
   localStorage.setItem('ab.vview', v);
+  const url = new URL(location.href); url.searchParams.set('v', v);
+  if (state.spot) url.searchParams.set('spot', state.spot); else url.searchParams.delete('spot');
+  history.replaceState(null, '', url);
   syncViewButtons();
   render();
 }
@@ -539,7 +560,7 @@ function syncViewButtons() {
   });
 }
 document.addEventListener('keydown', e => {
-  if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+  if (e.key === '/' && !e.defaultPrevented && !e.target.closest('input,textarea,select,button,a,[contenteditable],dialog')) {
     e.preventDefault(); document.getElementById('q').focus();
   }
 });
@@ -549,12 +570,15 @@ document.addEventListener('keydown', e => {
   if (params.get('q')) { state.q = params.get('q'); document.getElementById('q').value = state.q; }
   if (['grid', 'list', 'map', 'places', 'dates'].includes(params.get('v'))) state.view = params.get('v');
   syncViewButtons();
-  flights = await getFlights();
+  flights = await loadFlights();
+  registerFlights(flights);
+  state.spot = params.get('spot');
   ai = await getAIAll(flights);   // embebido en flights.json: sin requests extra
   buildSpots();
   render();                       // un solo pintado inicial (con títulos AI): la entrada se anima una vez
   fetch(`${DATA}/manifest/system.json`).then(r => r.json())
     .then(sy => { models = new Set((sy.models || []).map(m => m.clip_id)); if (state.has.has('model')) render(); }).catch(() => {});
 })().catch(e => {
-  main.querySelector('#grid').innerHTML = emptyState({ icon: 'warn', title: 'No se pudo cargar', help: e.message, cls: 'vf-span' });
+  main.querySelector('#grid').innerHTML = emptyState({ icon: 'warn', title: 'No se pudieron cargar los vuelos', help: 'Revisa la conexión y vuelve a intentarlo.', action: '<button class="ui-button ui-button--primary" id="vf-retry">Reintentar</button>', cls: 'vf-span' });
+  document.getElementById('vf-retry').addEventListener('click', () => location.reload());
 });

@@ -79,15 +79,25 @@ class HomeMarkupTests(unittest.TestCase):
 
     def test_renderer_exposes_full_card_links(self):
         source = (ROOT / "web/home.js").read_text()
-        self.assertIn('class="hv2-card', source)
-        self.assertIn('class="hv2-go"', source)
-        self.assertIn("HomeData.buildHomeViewModel", source)
+        self.assertIn('class="home-feature-media" href=', source)
+        self.assertIn('class="home-recent-item"', source)
+        self.assertIn("loadFlights()", source)
+        self.assertIn("registerFlights(flights)", source)
+        self.assertNotIn("attachVoidNavigation", source)
 
     def test_home_v2_has_keyboard_focus_and_responsive_mobile_rules(self):
         css = (ROOT / "web/css/home.css").read_text()   # hv2 base layer moved out of style.css (2026-09 consolidation)
-        self.assertIn(".hv2-card:focus-visible", css)
-        self.assertIn("@media (max-width: 680px)", css)
-        self.assertIn(".hv2-telemetry", css)
+        self.assertIn("@media(max-width:820px)", css)
+        self.assertIn(".home-feature { grid-template-columns:1fr; }", css)
+        self.assertIn("var(--fs-sm)", css)
+        self.assertIn("prefers-reduced-motion", css)
+
+    def test_flight_clock_and_library_filters(self):
+        result = subprocess.run(
+            ["node", "--test", str(ROOT / "web/flight.test.mjs")],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_void_effect_is_bounded_by_viewport_and_motion_preference(self):
         self.assertEqual(0, run_commonjs("web/home-effects.js", "particleBudget", [1440, True]))

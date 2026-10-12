@@ -2,7 +2,9 @@
 targets de 44 px, sin gradientes en controles, y (si el servidor local responde) auditoría de layout en Chrome."""
 import re
 import sys
+import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -108,10 +110,17 @@ class Fv2CssContract(unittest.TestCase):
 class Fv2LayoutAudit(unittest.TestCase):
     def test_live_layout(self):
         import fv2_layout_audit as audit
-        if not audit.server_up():
-            self.skipTest("servidor local :8790 no disponible")
+        base = audit.bg.DEFAULT_BASE_URL
+        if not audit.server_up(base):
+            self.skipTest(f"servidor local {base} no disponible")
         try:
-            fails = audit.audit("http://localhost:8790", audit.DEFAULT_CID)
+            make_temp = tempfile.mkdtemp
+            def profile(*args, **kwargs):
+                kwargs["dir"] = tempfile.gettempdir()
+                return make_temp(*args, **kwargs)
+            # Keep the global browser lock. Only profiles use the test scratch path.
+            with mock.patch.object(audit.bg.tempfile, "mkdtemp", side_effect=profile):
+                fails = audit.audit(base, audit.DEFAULT_CID)
         except RuntimeError as exc:                 # Chrome / mundo no disponible en este entorno
             self.skipTest(str(exc))
         self.assertEqual(fails, {}, fails)

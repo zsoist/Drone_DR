@@ -1,23 +1,29 @@
+import { loadFlights, registerFlights, openPageSheet, save, suggestion, wireSuggestions, renderFailure, skeleton, dataColor } from './home-shared.js?v=383';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=383';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
 const cid = new URLSearchParams(location.search).get('id');
+main.innerHTML = skeleton(2);
 
 (async () => {
-  const flights = await getFlights();
+  const flights = await loadFlights();
+  registerFlights(flights);
   const idx = flights.findIndex(f => f.clip_id === cid);
   const meta = flights[idx];
-  if (!meta) { main.innerHTML = emptyState({ icon: 'warn', title: 'Vuelo no encontrado', help: 'El enlace no corresponde a ningún vuelo.', action: '<a class="btn" href="index.html">Ver vuelos</a>' }); return; }
+  if (!meta) { main.innerHTML = emptyState({ icon: 'warn', title: 'Vuelo no encontrado', help: 'El enlace no corresponde a ningún vuelo.', action: '<a class="btn ui-button ui-button--secondary" href="index.html">Ver vuelos</a>' }); return; }
+  let trackFailed = false;
   const [aiData, track] = await Promise.all([
     getAI(cid),
-    meta.has_srt ? fetch(`${DATA}/tracks/${cid}.flight.json`).then(r => r.json()) : null,
+    meta.has_srt ? fetch(`${DATA}/tracks/${encodeURIComponent(cid)}.flight.json`).then(r => { if (!r.ok) throw new Error('GPS'); return r.json(); }).catch(() => { trackFailed = true; return null; }) : null,
   ]);
-  const pts = track?.points || [];
+  const pts = (Array.isArray(track?.points) ? track.points : []).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+  const times = sampleTimes(pts);
   const s = meta.stats || {};
   const cum = [0];
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
   // El reproductor nativo muestra el tiempo truncado (0:24); la cabecera usa el mismo criterio.
   const durTxt = fmt.dur(Math.floor(meta.duration_s));
-  const speeds = pts.map((p, i) => i ? haversine(pts[i - 1], p) * 3.6 : 0);
+  const speeds = pts.map((p, i) => i ? haversine(pts[i - 1], p) * 3.6 / Math.max(.001, times[i] - times[i - 1]) : 0);
 
   let has3D = false;
   try {
@@ -34,56 +40,38 @@ const cid = new URLSearchParams(location.search).get('id');
   const flatSpeed = pts.length > 0 && maxSpeed < 2;      // serie plana: no merece una curva
   const older = flights[idx + 1], newer = flights[idx - 1];
   const navBtn = (f, ic, label) => f
-    ? `<a class="btn icon" href="flight.html?id=${f.clip_id}" aria-label="${label}" data-tip="${label}">${icon(ic)}</a>`
-    : `<button class="btn icon" type="button" disabled aria-label="${label}">${icon(ic)}</button>`;
+    ? `<a class="btn icon ui-button ui-button--quiet" href="flight.html?id=${f.clip_id}" aria-label="${label}" data-tip="${label}">${icon(ic)}</a>`
+    : `<button class="btn icon ui-button ui-button--quiet" type="button" disabled aria-label="${label}">${icon(ic)}</button>`;
   const dlItems = [
-    meta.has_proxy && `<button class="exp" id="share-video">${icon('ext')}<div><b>Guardar en Fotos</b><span>iPhone · share sheet</span></div></button>`,
+    meta.has_proxy && `<button class="exp" id="share-video">${icon('ext')}<div><b>Guardar en Fotos</b><span>Compartir o descargar</span></div></button>`,
     meta.has_proxy && `<a class="exp" href="${DATA}/proxies/${cid}.mp4" download>${icon('dl')}<div><b>Video 1080p</b><span>MP4 · ${meta.proxy_bytes ? fmt.gb(meta.proxy_bytes) : ''}</span></div></a>`,
     meta.has_proxy720 && `<a class="exp" href="${DATA}/proxies720/${cid}.mp4" download>${icon('dl')}<div><b>Video 720p</b><span>MP4 · ligero</span></div></a>`,
-    meta.raw_rel && `<a class="exp" href="${DATA}/raw/${meta.raw_rel}" download>${icon('db')}<div><b>Original 4K</b><span>HEVC · ${fmt.gb(meta.size_bytes)}</span></div></a>`,
-    meta.has_srt && `<a class="exp" href="${DATA}/tracks/${cid}.flight.json" download>${icon('route')}<div><b>Track GPS</b><span>JSON · 1 Hz</span></div></a>`,
+    meta.raw_rel && `<a class="exp" href="/api/raw_video?clip=${encodeURIComponent(cid)}" download>${icon('db')}<div><b>Original 4K</b><span>HEVC · ${fmt.gb(meta.size_bytes)}</span></div></a>`,
+    meta.has_srt && `<a class="exp" href="${DATA}/tracks/${cid}.flight.json" download>${icon('route')}<div><b>Ruta GPS</b><span>JSON · 1 Hz</span></div></a>`,
     s.home && `<a class="exp" href="https://maps.apple.com/?ll=${s.home[1]},${s.home[0]}&q=Despegue" target="_blank" rel="noopener">${icon('pin')}<div><b>Ver despegue</b><span>Apple Maps</span></div></a>`,
   ].filter(Boolean);
 
   main.innerHTML = `
   <div class="fl">
-    <div class="hero glass rise fl-head">
-      <a class="btn hero-back" href="index.html" aria-label="Volver a Vuelos" data-tip="Volver a la galería">${icon('arrowL')}<span class="hero-back-l">Vuelos</span></a>
-      <div class="hero-t">
-        <h1>${esc(meta.label || fmt.date(meta.date) + ' · ' + meta.time)}</h1>
-        <div class="hero-sub mono">${meta.label ? fmt.date(meta.date) + ' ' + meta.time + ' · ' : ''}${cid}</div>
-      </div>
-      <div class="hero-chips">
-        <span class="gchip ${meta.tier}" data-tip="${meta.tier === 'full' ? 'Tier full: video + AI + GPS + frames' : meta.tier === 'standard' ? 'Tier standard: video + AI + GPS' : 'Tier skim: video + telemetría'}">${esc(meta.tier)}</span>
-        <span class="gchip" data-tip="Resolución y cuadros por segundo del original">${meta.resolution === '3840x2160' ? '4K' : esc(meta.resolution)}${Math.round(meta.fps) >= 50 ? '60' : ''}</span>
-        <span class="gchip" data-tip="Duración del clip">${durTxt}</span>
-        ${meta.has_srt ? `<span class="gchip" data-tip="Telemetría GPS de 1 Hz disponible">${icon('route')} GPS</span>` : ''}
-        ${has3D ? `<span class="gchip mint" data-tip="Este vuelo tiene modelo 3D procesado">${icon('cube')} 3D listo</span>` : ''}
-      </div>
-      <div class="hero-actions fl-actions">
-        <div class="fl-group fl-nav" role="group" aria-label="Navegar entre vuelos">
-          ${navBtn(older, 'chevL', 'Vuelo anterior')}${navBtn(newer, 'chevR', 'Vuelo siguiente')}
-        </div>
-        <div class="fl-group fl-acts" role="group" aria-label="Acciones del vuelo">
-          <button class="btn" id="btn-label" data-tip="Ponle nombre a este vuelo">${icon('edit')} Editar</button>
-          ${meta.has_proxy ? `<a class="btn" href="studio.html?clip=${cid}" data-tip="Cortes, reels y LUTs">${icon('film')} Studio</a>` : ''}
-          ${has3D ? `<a class="btn primary" href="tresd.html" data-tip="Abrir el proyecto de fotogrametría">${icon('cube')} Ver en 3D</a>` : ''}
-          <button class="btn icon" id="btn-arch" aria-label="${meta.archived ? 'Devolver a la galería' : 'Archivar vuelo'}" data-tip="${meta.archived ? 'Devolver a la galería' : 'Ocultar de la galería (no borra nada)'}">${icon('db')}</button>
-        </div>
-      </div>
-    </div>
+    <header class="fl-head">
+      <a class="ui-button ui-button--quiet" href="index.html">${icon('arrowL')} Vuelos</a>
+      <div class="fl-title"><h1>${esc(meta.label || fmt.date(meta.date) + ' · ' + meta.time)}</h1><p>${durTxt} · ${meta.resolution === '3840x2160' ? '4K' : esc(meta.resolution)} · ${Math.round(meta.fps)} fps</p></div>
+      <div class="fl-actions">${navBtn(older, 'chevL', 'Vuelo anterior')}${navBtn(newer, 'chevR', 'Vuelo siguiente')}<button class="ui-button ui-button--quiet" id="btn-label">${icon('edit')} Editar</button>${meta.has_proxy ? `<a class="ui-button ui-button--primary" href="studio.html?clip=${cid}">Abrir en Studio</a>` : ''}<button class="ui-button ui-button--quiet" id="btn-arch" aria-label="${meta.archived ? 'Desarchivar vuelo' : 'Archivar vuelo'}">${icon('db')}</button></div>
+    </header>
+    <section class="fl-summary" aria-label="Resumen del vuelo"><dl><div><dt>Recorrido</dt><dd>${fmt.km(s.distance_m || 0)}</dd></div><div><dt>Altura máxima</dt><dd>${s.max_rel_alt_m == null ? '—' : Math.round(s.max_rel_alt_m) + ' m'}</dd></div></dl><div><details class="fl-summary-copy" ><summary>Resumen del vuelo</summary>${aiData?.summary ? suggestion(`flight-${cid}`, aiData.summary) : '<p class="fl-hint">Sin análisis aún. Aquí aparecerá el resumen del vuelo.</p>'}</details>${aiData?.highlights?.[0] ? `<button class="ui-button ui-button--quiet tc" data-t="${+aiData.highlights[0].t || 0}">${icon('play')} Mejor momento · ${fmt.dur(+aiData.highlights[0].t || 0)}</button>` : ''}</div></section>
 
     <div class="fl-layout">
       <div class="fl-main">
         <div class="panel videobox fl-video">
-          <div id="video-slot"></div>
+          <div id="video-slot" data-transition-key="clip-${esc(cid)}"></div>
+          <div class="fl-timeline"><button class="ui-button ui-button--quiet" id="fl-play" aria-label="Reproducir">${icon('play')}</button><output id="fl-clock" class="ui-figures">0:00</output><label class="sr-only" for="fl-seek">Tiempo del vuelo</label><div class="fl-scrubber"><input id="fl-seek" type="range" min="0" max="${meta.duration_s || 0}" step="0.1" value="0"><div class="fl-ticks" aria-hidden="true">${[0,1,2,3,4].map(i => `<span>${fmt.dur((meta.duration_s || 0) * i / 4)}</span>`).join('')}</div></div></div>
           <div class="fl-bar">
-            <div class="seg" id="q-seg" role="group" aria-label="Calidad de video"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720" data-tip="720p · ligero, ideal en LTE">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd" data-tip="1080p · balance calidad/datos">1080p</button>' : ''}${meta.raw_rel && hevcOK ? '<button data-q="4k" data-tip="Original 4K HEVC · pesado, mejor en WiFi">4K</button>' : ''}</div>
-            <button class="btn primary" id="btn-photo" data-tip="Extrae el frame actual del original 4K">${icon('iso')} Foto 4K</button>
+            <div class="seg ui-segmented" id="q-seg" role="group" aria-label="Calidad de video"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720" data-tip="720p · ligero, ideal en LTE">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd" data-tip="1080p · balance calidad/datos">1080p</button>' : ''}${meta.raw_rel && hevcOK ? '<button data-q="4k" data-tip="Original 4K HEVC · pesado, mejor en WiFi">4K</button>' : ''}</div>
+            <button class="btn ui-button ui-button--primary" id="btn-photo" data-tip="Extrae el frame actual del original 4K">${icon('iso')} Foto 4K</button>
           </div>
           <div class="hud" id="hud"></div>
         </div>
-        ${pts.length ? `<div class="panel rise fl-tel" data-collapsible>
+        ${pts.length ? `<div class="panel rise fl-tel">
           <div class="ph">${icon('activity')} Telemetría <span class="hint">Toca la curva para saltar</span></div>
           <div class="pb fl-tel-b">
             <div class="chart-wrap" id="ch-alt"></div>
@@ -92,33 +80,33 @@ const cid = new URLSearchParams(location.search).get('id');
               : '<div class="chart-wrap" id="ch-speed"></div>'}
           </div>
         </div>` : ''}
-        ${meta.frame_count ? `<div class="panel fl-film" data-collapsible>
+        ${meta.frame_count ? `<div class="panel fl-film">
           <div class="ph">${icon('film')} Fotogramas <span class="hint">Toca para saltar</span></div>
           <div class="filmstrip" id="strip"></div>
         </div>` : ''}
 
-        <div class="panel fl-moments" data-collapsible>
+        <div class="panel fl-moments">
           <div class="ph">${icon('activity')} Momentos
-            <button class="btn sm primary ph-push" id="btn-hl">${icon('plus')} Marcar aquí</button>
+            <button class="btn ph-push ui-button ui-button--primary" id="btn-hl">${icon('plus')} Marcar aquí</button>
           </div>
           <div class="pb" id="hl-list">
             ${(aiData?.highlights || []).map(h => `<div class="hl-item">
               <button class="tc hit44" data-t="${+h.t || 0}">${fmt.dur(+h.t || 0)}</button>
               <p>${esc(h.reason)}${h.type ? ` <span class="mono fl-type${h.type === 'manual' ? ' manual' : ''}">${esc(h.type)}</span>` : ''}</p>
-              <a class="btn sm" href="studio.html?clip=${cid}&a=${Math.max(0, (+h.t || 0) - 3)}&b=${(+h.t || 0) + 4}">Editar</a>
+              <a class="btn ui-button ui-button--secondary" href="studio.html?clip=${cid}&a=${Math.max(0, (+h.t || 0) - 3)}&b=${(+h.t || 0) + 4}">Editar</a>
             </div>`).join('') || '<p class="fl-hint">Sin momentos aún — pausa el video donde quieras y márcalo.</p>'}
           </div>
         </div>
 
-        ${aiData?.edit_suggestions?.length ? `<div class="panel fl-edits" data-collapsible>
+        ${aiData?.edit_suggestions?.length ? `<div class="panel fl-edits">
           <div class="ph">${icon('film')} Sugerencias de edición</div>
           <div class="pb">
             ${aiData.edit_suggestions.map(s => `<div class="hl-item"><p>${esc(s)}</p></div>`).join('')}
-            ${aiData.hashtags?.length ? `<div class="chips fl-chips">${aiData.hashtags.map(h => `<span class="chip">${esc(h)}</span>`).join('')}</div>` : ''}
+            ${aiData.hashtags?.length ? `<div class="chips fl-chips">${aiData.hashtags.map(h => `<span class="chip ui-chip">${esc(h)}</span>`).join('')}</div>` : ''}
           </div>
         </div>` : ''}
 
-        <div class="panel fl-tech" data-collapsible>
+        <div class="panel fl-tech">
           <div class="ph">${icon('gauge')} Datos técnicos</div>
           <div class="pb">
           <div class="kv2">
@@ -134,16 +122,16 @@ const cid = new URLSearchParams(location.search).get('id');
             <table class="kv">
               <tr><td colspan="2" class="kv-h">Cámara y archivo</td></tr>
               <tr><td>Resolución</td><td>${meta.resolution}<br><small>@ ${Math.round(meta.fps)} fps</small></td></tr>
-              <tr><td>Codec</td><td>HEVC 10-bit<br><small>${(meta.size_bytes * 8 / meta.duration_s / 1e6).toFixed(0)} Mbps</small></td></tr>
+              <tr><td>Códec</td><td>HEVC 10-bit<br><small>${(meta.size_bytes * 8 / meta.duration_s / 1e6).toFixed(0)} Mbps</small></td></tr>
               <tr><td>Original</td><td>${fmt.gb(meta.size_bytes)}</td></tr>
-              ${meta.proxy_bytes ? `<tr><td>Proxy 1080</td><td>${fmt.gb(meta.proxy_bytes)}</td></tr>` : ''}
-              <tr><td>Frames</td><td>${Math.round(meta.duration_s * meta.fps).toLocaleString()}</td></tr>
+              ${meta.proxy_bytes ? `<tr><td>Video 1080p</td><td>${fmt.gb(meta.proxy_bytes)}</td></tr>` : ''}
+              <tr><td>Fotogramas</td><td>${Math.round(meta.duration_s * meta.fps).toLocaleString()}</td></tr>
               ${pts.length ? `<tr><td>ISO rango</td><td>${Math.min(...pts.map(p => p.iso))} – ${Math.max(...pts.map(p => p.iso))}</td></tr>` : ''}
             </table>
           </div></div>
         </div>
 
-        <div class="panel fl-dl" id="fl-dl" data-collapsible>
+        <div class="panel fl-dl" id="fl-dl">
           <div class="ph">${icon('dl')} Descargas y accesos <span class="hint">${dlItems.length} elementos</span></div>
           <div class="pb"><div class="fl-dl-grid">
             ${dlItems.join('')}
@@ -152,47 +140,25 @@ const cid = new URLSearchParams(location.search).get('id');
       </div>
 
       <div class="fl-side">
-        <div class="panel fl-map"><div id="map"></div></div>
+        ${pts.length ? '<div class="panel fl-map"><h2 class="ph">Ruta del vuelo</h2><div id="map"></div></div>' : `<div class="fl-no-gps"><h2>${trackFailed ? 'No se pudo cargar el GPS' : 'Sin GPS'}</h2><p>${trackFailed ? 'El video está disponible. Reintenta para recuperar la ruta y la telemetría.' : 'Este video no tiene una ruta registrada.'}</p>${trackFailed ? '<button class="ui-button ui-button--secondary" id="gps-retry">Reintentar GPS</button>' : ''}</div>`}
 
-        <div class="panel fl-ai" data-collapsible>
-          <div class="ph">${icon('spark')} Análisis AI${aiData?.deep ? ' · profundo' : ''}
-            <button class="btn sm ph-push" id="btn-deep">${aiData ? 'Re-analizar' : 'Analizar ahora'}</button>
-          </div>
-          <div class="pb">
-            ${aiData ? `
-            <div class="gauge">${scoreRing(aiData.travel_score)}<p>${esc(aiData.summary || '')}</p></div>
-            ${aiData.camera_motion || aiData.quality ? `<table class="kv fl-kvtxt">
-              ${aiData.camera_motion ? `<tr><td>Cámara</td><td>${esc(aiData.camera_motion)}</td></tr>` : ''}
-              ${aiData.quality ? `<tr><td>Calidad</td><td>
-                exposición ${esc(aiData.quality.exposure)} · ${esc(aiData.quality.stability)} · luz ${esc(aiData.quality.light)}
-                ${aiData.quality.issues?.length ? `<br><span class="fl-issue">${icon('warn')} ${esc(aiData.quality.issues.join(' · '))}</span>` : ''}</td></tr>` : ''}
-              ${aiData.subjects?.length ? `<tr><td>Sujetos</td><td>${esc(aiData.subjects.join(' · '))}</td></tr>` : ''}
-            </table>` : ''}
-            ${aiData.story_arc ? `<p class="ai-arc">«${esc(aiData.story_arc)}»</p>` : ''}
-            ${aiData.director_notes?.length ? `<div class="dir-notes">
-              <p class="mlb fl-sub">Informe del director</p>
-              ${aiData.director_notes.map(n => `<p>${esc(n)}</p>`).join('')}</div>` : ''}
-            ${aiData.highlights?.length ? `<p class="mlb fl-sub">Momentos <span class="fl-subhint">toca para saltar</span></p>
-            <div class="chips">${aiData.highlights.map(h =>
-              `<button class="chip tc mom" data-t="${+h.t || 0}">${icon('play')} ${fmt.dur(+h.t || 0)}${h.type ? ' · ' + esc(h.type) : ''}</button>`).join('')}</div>
-            ${aiData.highlights[0]?.reason ? `<p class="fl-hint fl-why" id="mom-why">${esc(aiData.highlights[0].reason)}</p>` : ''}` : ''}
-            ${aiData.edit_suggestions?.length ? `<p class="mlb fl-sub">Sugerencias de edición</p>
-            <ul class="ai-edits">${aiData.edit_suggestions.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-            ${aiData.uses?.length ? `<p class="mlb fl-sub">Úsalo para</p>
-            <ul class="ai-edits">${aiData.uses.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-            ${aiData.hashtags?.length ? `<div class="chips fl-chips">
-              ${aiData.hashtags.map(t => `<span class="chip fl-tag">${esc(t)}</span>`).join('')}</div>` : ''}
-            ${aiData.tags?.length ? `<div class="chips fl-chips">
-              ${aiData.tags.map(t => `<a class="chip" href="index.html?q=${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}
-            </div>` : ''}` : `<p class="fl-hint">Este clip aún no tiene análisis — pídelo con el botón.</p>`}
-          </div>
-        </div>
+        <section class="panel fl-ai"><h2 class="ph">Análisis del vuelo</h2><div class="pb"><p class="fl-hint">${aiData ? 'Revisa las observaciones antes de usarlas en una edición.' : 'Sin análisis aún. Solicita el análisis para encontrar momentos y etiquetas.'}</p>${aiData?.quality?.issues?.length ? `<p class="fl-issue">${esc(aiData.quality.issues.join(' · '))}</p>` : ''}${aiData?.tags?.length ? `<div class="fl-tags">${aiData.tags.map(tag => `<a class="ui-chip" href="index.html?q=${encodeURIComponent(tag)}">${esc(tag)}</a>`).join('')}</div>` : ''}<button class="ui-button ui-button--secondary" id="btn-deep">${aiData ? 'Actualizar análisis' : 'Analizar vuelo'}</button><p class="fl-hint" id="analysis-status" role="status"></p></div></section>
       </div>
     </div>
   </div>
 `;
   // Descargas: abierto en escritorio (datos primero), colapsado en móvil
-  if (matchMedia('(max-width: 820px)').matches) document.getElementById('fl-dl')?.classList.add('clpsd');
+  const downloads = document.getElementById('fl-dl');
+  const downloadBody = downloads.querySelector('.pb');
+  downloadBody.id = 'fl-downloads';
+  const downloadTitle = downloads.querySelector('.ph');
+  downloadTitle.innerHTML = '<button class="ui-button ui-button--quiet" aria-expanded="false" aria-controls="fl-downloads">Descargas y accesos</button>';
+  downloadBody.hidden = true;
+  downloadTitle.querySelector('button').addEventListener('click', e => { downloadBody.hidden = !downloadBody.hidden; e.currentTarget.setAttribute('aria-expanded', String(!downloadBody.hidden)); });
+  document.getElementById('gps-retry')?.addEventListener('click', () => location.reload());
+  wireSuggestions(main);
+  const telemetry = main.querySelector('.fl-tel');
+  if (telemetry) main.querySelector('.fl-map')?.after(telemetry);
 
   // ---- video ----
   const slot = document.getElementById('video-slot');
@@ -222,11 +188,11 @@ const cid = new URLSearchParams(location.search).get('id');
       <div class="fl-noproxy">
         <img src="${DATA}/thumbs/${cid}.jpg" alt="Miniatura del vuelo (el video aún no está disponible)" width="960" height="540">
         <div class="fl-noproxy-msg">
-          <div class="glass">
-            <b>${icon('film')} Proxy de video en proceso</b>
+          <div class="fl-unavailable">
+            <b>${icon('film')} Video no disponible</b>
             <p class="fl-hint">${meta.raw_rel && !hevcOK
-              ? 'El original es 4K HEVC y este navegador no lo decodifica. El proxy H.264 se está generando — recarga en unos minutos.'
-              : 'El video web de este clip se está generando en el Mac. Recarga en unos minutos.'}</p>
+              ? 'El original es 4K HEVC y este navegador no lo decodifica. Prueba el video 1080p cuando esté disponible.'
+              : 'No hay una versión de video compatible. Puedes descargar el original.'}</p>
           </div>
         </div>
       </div>`;
@@ -246,8 +212,8 @@ const cid = new URLSearchParams(location.search).get('id');
   video?.addEventListener('ended', stopViewerPing);
   addEventListener('pagehide', stopViewerPing, { once: true });
   function paintQ() {
-    document.querySelectorAll('#q-seg [data-q]').forEach(b =>
-      b.classList.toggle('on', b.dataset.q === quality));
+    document.querySelectorAll('#q-seg [data-q]').forEach(b => {
+      b.classList.toggle('on', b.dataset.q === quality); b.setAttribute('aria-pressed', String(b.dataset.q === quality)); });
   }
   let onMeta = null; // guarda contra listeners duplicados si cambian calidad rápido
   function setQuality(k) {
@@ -261,7 +227,7 @@ const cid = new URLSearchParams(location.search).get('id');
     if (onMeta) video.removeEventListener('loadedmetadata', onMeta);
     onMeta = () => {
       video.currentTime = t;      // seek recién con metadata del nuevo source
-      if (playing) video.play();
+      if (playing) video.play().catch(() => {});
       onMeta = null;
     };
     video.addEventListener('loadedmetadata', onMeta, { once: true });
@@ -278,7 +244,7 @@ const cid = new URLSearchParams(location.search).get('id');
   // "Guardar video/imagen" directo al carrete; fallback = descarga normal
   async function shareFile(url, name, type, btn) {
     const orig = btn.innerHTML;
-    btn.innerHTML = 'Preparando…';
+    btn.innerHTML = 'Preparando…'; btn.disabled = true;
     try {
       const r = await fetch(url);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -296,7 +262,7 @@ const cid = new URLSearchParams(location.search).get('id');
     } catch (err) {
       if (err?.name !== 'AbortError') toast(`No se pudo guardar el archivo: ${err?.message || err}`);
     }
-    btn.innerHTML = orig;
+    btn.innerHTML = orig; btn.disabled = false;
   }
   document.getElementById('share-video')?.addEventListener('click', e => {
     const src = meta.has_proxy720 ? `${DATA}/proxies720/${cid}.mp4` : `${DATA}/proxies/${cid}.mp4`;
@@ -305,34 +271,26 @@ const cid = new URLSearchParams(location.search).get('id');
 
   // Foto 4K: el server extrae el frame del ORIGINAL en el segundo actual
   document.getElementById('btn-photo').addEventListener('click', async e => {
-    const token = getToken();
-    if (!token) return;
-    const btn = e.currentTarget;
-    btn.textContent = 'Capturando…';
-    const d = await api('/api/frame', { clip_id: cid, t: +(video?.currentTime || 0).toFixed(1) });
-    btn.innerHTML = `${icon('iso')} Foto 4K`;
-    if (!d.ok) return toast(d.error || 'No se pudo capturar el frame.');
-    // modal (iOS Safari bloquea window.open async y no siempre respeta download):
-    // imagen inline + botón descargar + hint de guardar con long-press
-    openPhotoEditor({ url: d.url, name: `${cid}_foto.jpg` });
+    const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Capturando…';
+    try {
+      const data = await save('/api/frame', { clip_id: cid, t: +(video?.currentTime || 0).toFixed(1) });
+      const content = document.createElement('div');
+      content.innerHTML = `<img class="fl-photo-result" src="${esc(data.url)}" alt="Fotograma extraído del vuelo"><a class="ui-button ui-button--primary" href="${esc(data.url)}" download="${esc(cid)}_foto.jpg">Descargar foto</a>`;
+      openPageSheet(content, { title: 'Foto del vuelo', size: 'full' });
+    } catch (error) { toast(error.message); }
+    finally { btn.disabled = false; btn.innerHTML = `${icon('iso')} Foto 4K`; }
   });
-
-  // análisis profundo on-demand (16 frames, prompt de director de fotografía)
   document.getElementById('btn-deep')?.addEventListener('click', async e => {
-    const token = getToken();
-    if (!token) return;
-    e.currentTarget.textContent = 'Analizando… (~30s)';
-    await api('/api/analyze', { clip_id: cid });
-    const poll = setInterval(async () => {
-      const { jobs } = await (await authFetch('/api/jobs')).json();
-      const j = jobs.find(x => x.kind === 'analyze' && x.label.includes(cid));
-      if (j && j.status !== 'running') { clearInterval(poll); location.reload(); }
-    }, 3000);
+    const button = e.currentTarget; button.disabled = true;
+    try {
+      await save('/api/analyze', { clip_id: cid });
+      document.getElementById('analysis-status').textContent = 'Análisis en cola. Consulta su progreso en Actividad.';
+    } catch (error) { document.getElementById('analysis-status').textContent = error.message; }
+    finally { button.disabled = false; }
   });
 
   // highlight manual en el segundo actual del video (modal canónico, sin prompt())
   document.getElementById('btn-hl')?.addEventListener('click', () => {
-    if (!getToken()) return;
     const t = +(video?.currentTime || 0).toFixed(1);
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
@@ -342,16 +300,16 @@ const cid = new URLSearchParams(location.search).get('id');
         <label class="mlb" for="hl-reason">¿Por qué es especial?</label>
         <input id="hl-reason" class="m-ipt fl-grow" maxlength="140" value="momento favorito" autocomplete="off">
         <p class="fl-hint" id="hl-err" role="alert" hidden></p>
-        <div class="tool-row fl-actions-row"><button class="btn primary" type="submit">Marcar</button><button class="btn" type="button" data-cancel>Cancelar</button></div>
+        <div class="tool-row fl-actions-row"><button class="btn ui-button ui-button--primary" type="submit">Marcar</button><button class="btn ui-button ui-button--secondary" type="button" data-cancel>Cancelar</button></div>
       </div></form>`;
-    const close = openModal(ov, { initialFocus: '#hl-reason' });
+    const close = openPageSheet(ov, { initialFocus: '#hl-reason' });
     ov.querySelector('#hl-reason').select();
     ov.querySelector('[data-cancel]').addEventListener('click', () => close());
     ov.querySelector('form').addEventListener('submit', async e => {
       e.preventDefault();
       const reason = ov.querySelector('#hl-reason').value.trim() || 'momento favorito';
       e.submitter && (e.submitter.disabled = true);
-      try { await api('/api/highlight', { clip_id: cid, t, reason }); location.reload(); }
+      try { await save('/api/highlight', { clip_id: cid, t, reason }); location.reload(); }
       catch { const er = ov.querySelector('#hl-err'); er.textContent = 'No se pudo guardar — revisa tu sesión.'; er.hidden = false; e.submitter && (e.submitter.disabled = false); }
     });
   });
@@ -362,61 +320,59 @@ const cid = new URLSearchParams(location.search).get('id');
     ov.innerHTML = `<div class="modal fl-modal">
       <div class="modal-h"><b>${icon('edit')} Editar vuelo</b><button class="modal-x" type="button" aria-label="Cerrar">${icon('close')}</button></div>
       <div class="modal-b">
-        <div class="mlb">Nombre</div>
+        <label class="mlb" for="m-label">Nombre</label>
         <div class="tool-row">
           <input id="m-label" class="m-ipt fl-grow" maxlength="80" placeholder="${esc(fmt.date(meta.date))} · ${esc(meta.time)}" value="${esc(meta.label || '')}">
-          <button class="btn primary" id="m-save">Guardar</button>
+          <button class="btn ui-button ui-button--primary" id="m-save">Guardar</button>
         </div>
         <div class="mlb">Galería</div>
-        <button class="btn" id="m-arch" data-tip="${meta.archived ? 'Vuelve a aparecer en la galería' : 'Se oculta de la galería; nada se borra'}">${icon('db')} ${meta.archived ? 'Desarchivar' : 'Archivar'}</button>
-        <div class="mlb fl-danger-lb">Zona de peligro</div>
-        <button class="btn danger" id="m-del">${icon('warn')} Borrar este vuelo</button>
-        <p class="fl-hint fl-danger-note">Borrar mueve el original 4K, proxies y telemetría a la papelera del vault — reversible desde el Mac, no destructivo.</p>
+        <button class="btn ui-button ui-button--secondary" id="m-arch" data-tip="${meta.archived ? 'Vuelve a aparecer en la galería' : 'Se oculta de la galería; nada se borra'}">${icon('db')} ${meta.archived ? 'Desarchivar' : 'Archivar'}</button>
+        <div class="mlb fl-danger-lb">Papelera</div>
+        <button class="btn ui-button ui-button--danger" id="m-del">${icon('warn')} Borrar este vuelo</button>
+        <p class="fl-hint fl-danger-note">El video y sus datos se mueven a la papelera. Puedes recuperarlos desde Sistema.</p>
       </div></div>`;
-    openModal(ov, { initialFocus: '#m-label' });
+    openPageSheet(ov, { size: 'full', initialFocus: '#m-label' });
     ov.querySelector('#m-save').addEventListener('click', async () => {
-      try { await api('/api/clip', { clip_id: cid, label: ov.querySelector('#m-label').value.trim() }); location.reload(); }
+      try { await save('/api/clip', { clip_id: cid, label: ov.querySelector('#m-label').value.trim() }); location.reload(); }
       catch { toast('No se pudo guardar el nombre — revisa tu sesión.'); }
     });
     ov.querySelector('#m-label').addEventListener('keydown', e => {
       if (e.key === 'Enter') ov.querySelector('#m-save').click();
     });
     ov.querySelector('#m-arch').addEventListener('click', async () => {
-      await api('/api/clip', { clip_id: cid, archived: !meta.archived });
-      location.href = 'index.html';
+      try { await save('/api/clip', { clip_id: cid, archived: !meta.archived }); location.href = 'index.html'; } catch (error) { toast(error.message); }
     });
     ov.querySelector('#m-del').addEventListener('click', async e => {
       const b = e.currentTarget;
       if (!b.dataset.armed) {           // confirmación en dos pasos, sin confirm() nativo
         b.dataset.armed = '1';
-        b.innerHTML = `${icon('warn')} ¿Seguro? Click otra vez para borrar`;
+        b.innerHTML = `${icon('warn')} Confirmar: mover a la papelera`;
         b.classList.add('armed');
         return;
       }
       b.disabled = true;
       b.innerHTML = 'Borrando…';
-      const r = await api('/api/clip', { clip_id: cid, delete: true });
+      let r;
+      try { r = await save('/api/clip', { clip_id: cid, delete: true }); } catch (error) { b.disabled = false; b.textContent = 'Reintentar borrado'; toast(error.message); return; }
       if (r?.ok) location.href = 'index.html';
       else { b.disabled = false; b.innerHTML = `${icon('warn')} Error: ${esc(r?.error || 'no se pudo')}`; }
     });
   });
   document.getElementById('btn-arch').addEventListener('click', async () => {
-    const token = getToken();
-    if (!token) return;
-    await api('/api/clip', { clip_id: cid, archived: !meta.archived });
-    location.href = 'index.html';
+    try { await save('/api/clip', { clip_id: cid, archived: !meta.archived }); location.href = 'index.html'; } catch (error) { toast(error.message); }
   });
 
   // ---- HUD ----
-  const HUDS = [['alt', 'Altura', 'm'], ['dist', 'Recorrido', ''], ['speed', 'Velocidad', 'km/h'],
-                ['head', 'Rumbo', ''], ['home', 'Al despegue', 'm'], ['iso', 'ISO', ''], ['shutter', 'Shutter', '']];
+  document.getElementById('hud').hidden = !pts.length;
+  const HUDS = [['alt', 'Altura relativa', 'm'], ['dist', 'Recorrido', ''], ['speed', 'Velocidad', 'km/h'],
+                ['head', 'Rumbo', ''], ['home', 'Al despegue', 'm'], ['iso', 'ISO', ''], ['shutter', 'Obturación', '']];
   document.getElementById('hud').innerHTML = HUDS.map(([k, lb]) =>
     `<div><div class="lb">${lb}</div><div class="v" id="hud-${k}">—</div></div>`).join('');
   function showPoint(i) {
     if (!pts.length) return;
     i = Math.max(0, Math.min(i, pts.length - 1));
     const p = pts[i];
-    set('alt', `${p.rel_alt.toFixed(0)}<small> m</small>`);
+    set('alt', `${Number.isFinite(p.rel_alt) ? p.rel_alt.toFixed(0) : '—'}<small> m</small>`);
     set('dist', cum[i] >= 1000 ? `${(cum[i] / 1000).toFixed(2)}<small> km</small>` : `${Math.round(cum[i])}<small> m</small>`);
     set('speed', `${Math.round(speeds[i] || 0)}<small> km/h</small>`);
     set('iso', esc(p.iso));
@@ -446,32 +402,31 @@ const cid = new URLSearchParams(location.search).get('id');
               Math.cos(la1 * R0) * Math.cos(la2 * R0) * Math.sin((lo2 - lo1) * R0 / 2) ** 2;
     return 12742000 * Math.asin(Math.sqrt(h));
   }
-  const seek = t => { if (video) { video.currentTime = t; video.play(); } };
+  const seek = t => { if (video) { video.currentTime = Math.max(0, Math.min(t, video.duration || meta.duration_s)); syncClock(); } };
 
   // ---- filmstrip (frame n = segundo n*2) ----
   if (meta.frame_count) {
     const strip = document.getElementById('strip');
     strip.innerHTML = Array.from({ length: meta.frame_count }, (_, i) =>
-      `<img src="${DATA}/frames/${cid}/f_${String(i + 1).padStart(4, '0')}.jpg" loading="lazy" data-t="${i * 2}" alt="Fotograma en ${fmt.dur(i * 2)}">`).join('');
-    strip.addEventListener('click', e => { if (e.target.dataset.t) seek(+e.target.dataset.t); });
+      `<button class="fl-frame" data-t="${i * 2}" aria-label="Ir a ${fmt.dur(i * 2)}"><img src="${DATA}/frames/${cid}/f_${String(i + 1).padStart(4, '0')}.jpg" loading="lazy" alt=""><span>${fmt.dur(i * 2)}</span></button>`).join('');
+    strip.addEventListener('click', e => { const button = e.target.closest('[data-t]'); if (button) seek(+button.dataset.t); });
   }
 
   // ---- charts SVG ----
   // colores desde los tokens del tema (los atributos SVG no resuelven var())
-  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const C = { accent: css('--accent') || '#45A0E6', ok: css('--ok') || '#52C79A' };
+  const C = { accent: dataColor(), ok: dataColor() };
   const CHARTS = {};
   function chart(el, series, label, unit, color) {
-    const w = 800, h = 130, max = Math.max(...series, 1), pad = 8;
-    const X = i => (i / Math.max(series.length - 1, 1)) * w;
-    const Y = v => h - pad - (v / max) * (h - 34);
+    const w = 800, h = 130, max = Math.max(...series, 1), min = Math.min(...series, 0), pad = 8;
+    const X = i => ((times[i] || 0) / Math.max(times.at(-1) || 1, 1)) * w;
+    const Y = v => h - pad - ((v - min) / (max - min)) * (h - 34);
     const pth = series.map((v, i) => `${X(i)},${Y(v)}`).join(' ');
     const gid = `g-${el.id}`;
     el.innerHTML = `
       <span class="chart-lb">${label}</span>
       <span class="chart-badge mono" id="${el.id}-v">— ${unit}</span>
       <span class="chart-ax mono max">${Math.round(max)} ${unit}</span>
-      <span class="chart-ax mono min">0 ${unit}</span>
+      <span class="chart-ax mono min">${Math.round(min)} ${unit}</span>
       <div class="chart-plot">
       <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="${label}: toca para saltar el video" role="img">
         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
@@ -489,18 +444,9 @@ const cid = new URLSearchParams(location.search).get('id');
     CHARTS[el.id] = { series, unit, X, Y, w, h };
     const svg = el.querySelector('svg');
     svg.style.touchAction = 'pan-y';               // deslizar horizontal = scrub; vertical sigue scrolleando
-    svg.addEventListener('pointermove', e => {     // pointermove cubre mouse Y dedo (mousemove era desktop-only)
-      const r = svg.getBoundingClientRect();
-      const i = Math.max(0, Math.min(series.length - 1, Math.round(((e.clientX - r.left) / r.width) * (series.length - 1))));
-      document.getElementById(`${el.id}-v`).textContent = `${Math.round(series[i] || 0)} ${unit} · ${fmt.dur(i)}`;
-      const c = document.getElementById(`${el.id}-c`);
-      c.setAttribute('x1', X(i)); c.setAttribute('x2', X(i));
-      c.setAttribute('opacity', 0.3);
-    });
-    svg.addEventListener('pointerleave', () => document.getElementById(`${el.id}-c`).setAttribute('opacity', 0));
     svg.addEventListener('click', e => {
       const r = svg.getBoundingClientRect();
-      seek(Math.round(((e.clientX - r.left) / r.width) * (series.length - 1)));
+      seek(((e.clientX - r.left) / r.width) * (times.at(-1) || 0));
     });
   }
   let cursorAt = () => {};
@@ -513,7 +459,7 @@ const cid = new URLSearchParams(location.search).get('id');
       const dot = document.getElementById(`${id}-dot`);
       if (dot) { dot.style.left = `${(ch.X(i) / ch.w * 100).toFixed(2)}%`; dot.style.top = `${(ch.Y(ch.series[i] || 0) / ch.h * 100).toFixed(2)}%`; }
       const badge = document.getElementById(`${id}-v`);
-      if (badge) badge.textContent = `${Math.round(ch.series[i] || 0)} ${ch.unit} · ${fmt.dur(i)}`;
+      if (badge) badge.textContent = `${Math.round(ch.series[i] || 0)} ${ch.unit} · ${fmt.dur(times[i] || 0)}`;
     });
   }
 
@@ -524,16 +470,24 @@ const cid = new URLSearchParams(location.search).get('id');
     const map = new maplibregl.Map({
       cooperativeGestures: true,                   // mapa mid-page: 1 dedo scrollea la página, 2 mueven el mapa
       container: 'map', style: SAT_STYLE,
-      bounds: [[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]],
+      bounds: coords.reduce((bounds, point) => bounds.extend(point), new maplibregl.LngLatBounds()),
       fitBoundsOptions: FIT_OPTS, attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    document.addEventListener('ab-theme-change', () => {
+      const color = dataColor();
+      ['route', 'route-glow'].forEach(layer => { if (map.getLayer(layer)) map.setPaintProperty(layer, 'line-color', color); });
+      main.querySelectorAll('.ch-line').forEach(line => line.setAttribute('stroke', color));
+      main.querySelectorAll('.chart-plot stop').forEach(stop => stop.setAttribute('stop-color', color));
+      main.querySelectorAll('.chart-dot').forEach(dot => dot.style.setProperty('--dot', color));
+    });
     map.on('load', () => {
       map.addSource('route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } } });
-      map.addLayer({ id: 'route-glow', type: 'line', source: 'route', paint: { 'line-color': C.accent, 'line-width': 7, 'line-opacity': 0.22 } });
-      map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-color': C.accent, 'line-width': 2.2 } });
+      map.addLayer({ id: 'route-glow', type: 'line', source: 'route', paint: { 'line-color': dataColor(), 'line-width': 7, 'line-opacity': 0.22 } });
+      map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-color': dataColor(), 'line-width': 2.2 } });
       const el = document.createElement('div');
       el.className = 'fl-marker';
+      el.dataset.transitionKey = `pin-${cid}`;
       el.innerHTML = `<svg width="26" height="26" viewBox="0 0 20 20"><circle class="o" cx="10" cy="10" r="5"/><circle class="i" cx="10" cy="10" r="1.6"/></svg>`;
       marker = new maplibregl.Marker({ element: el, rotationAlignment: 'map' }).setLngLat(coords[0]).addTo(map);
       map.on('click', 'route', e => {
@@ -542,20 +496,36 @@ const cid = new URLSearchParams(location.search).get('id');
           const d = (lon - e.lngLat.lng) ** 2 + (lat - e.lngLat.lat) ** 2;
           if (d < bd) { bd = d; best = i; }
         });
-        seek(best);
+        seek(times[best]);
       });
       map.on('mouseenter', 'route', () => map.getCanvas().style.cursor = 'pointer');
       map.on('mouseleave', 'route', () => map.getCanvas().style.cursor = '');
-      showPoint(0);
+      syncClock();
     });
   }
 
   // ---- sync + shortcuts ----
-  video?.addEventListener('timeupdate', () => {
-    const i = Math.floor(video.currentTime);
-    showPoint(i);
-    document.querySelectorAll('#strip img').forEach(im => im.classList.toggle('on', +im.dataset.t === i - (i % 2)));
-  });
+  const scrubber = document.getElementById('fl-seek');
+  const playButton = document.getElementById('fl-play');
+  function syncClock() {
+    const time = video?.currentTime || 0;
+    scrubber.value = time;
+    scrubber.setAttribute('aria-valuetext', `${fmt.dur(time)} de ${durTxt}`);
+    document.getElementById('fl-clock').textContent = fmt.dur(time);
+    showPoint(sampleAt(times, time));
+    document.querySelectorAll('#strip .fl-frame').forEach(button => button.classList.toggle('on', Math.floor(time / 2) * 2 === +button.dataset.t));
+    playButton.innerHTML = icon(video && !video.paused ? 'pause' : 'play');
+    playButton.setAttribute('aria-label', video && !video.paused ? 'Pausar' : 'Reproducir');
+  }
+  scrubber.disabled = !video; playButton.disabled = !video;
+  scrubber.addEventListener('input', () => seek(+scrubber.value));
+  playButton.addEventListener('click', () => { if (video) video.paused ? video.play().catch(() => {}) : video.pause(); });
+  ['timeupdate', 'seeked', 'play', 'pause'].forEach(event => video?.addEventListener(event, syncClock));
+  const initialTime = Math.max(0, Number(new URLSearchParams(location.search).get('t')) || 0);
+  if (video && initialTime) {
+    if (video.readyState) seek(initialTime); else video.addEventListener('loadedmetadata', () => seek(initialTime), { once: true });
+  }
+  syncClock();
   main.addEventListener('pointerover', e => {
     const m = e.target.closest('.mom');
     if (!m || !aiData?.highlights) return;
@@ -573,19 +543,10 @@ const cid = new URLSearchParams(location.search).get('id');
     }
   });
   document.addEventListener('keydown', e => {
-    if (!video || e.target.tagName === 'INPUT') return;
-    if (e.key === ' ') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
-    if (e.key === 'ArrowLeft') video.currentTime -= 5;
-    if (e.key === 'ArrowRight') video.currentTime += 5;
+    if (!video || !acceptsShortcut(e) || document.querySelector('dialog[open]')) return;
+    if (e.key === ' ') { e.preventDefault(); video.paused ? video.play().catch(() => {}) : video.pause(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); seek(video.currentTime - 5); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); seek(video.currentTime + 5); }
     if (e.key === 'f') video.requestFullscreen?.();
   });
-})();
-
-function scoreRing(score = 0) {
-  const r = 24, c = 2 * Math.PI * r, pct = Math.max(0, Math.min(10, score)) / 10;
-  return `<span class="ring"><svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
-    <circle class="trk" cx="28" cy="28" r="${r}" fill="none" stroke-width="4"/>
-    <circle class="val" cx="28" cy="28" r="${r}" fill="none" stroke-width="4"
-      stroke-dasharray="${c * pct} ${c}" stroke-linecap="round"/>
-  </svg><b>${score}</b></span>`;
-}
+})().catch(() => renderFailure(main));
