@@ -14,7 +14,7 @@ __pycache__/
 *.pyc
 splat/supersplat/
 .gstack/
-tools/node_modules/
+tools/node_modules
 .dev.vars
 .dev.vars.*
 .wrangler/
