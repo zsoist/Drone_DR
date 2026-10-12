@@ -1,6 +1,100 @@
-// Subir — panel plegable «Cómo capturar para 3D» dentro de Dron > Subida directa (subir.html redirige a drone.html?via=subir).
-// Resumen corto + modal con el checklist completo en español. Fuente larga: docs/CAPTURE_PROTOCOL.md.
-(function () {
+
+
+// Dron still loads this file for its legacy capture panel. That page owns its uploader.
+(async () => {
+if (location.pathname.endsWith('/subir.html')) {
+  const { showToast } = await import('./ui/toast.js?v=374');
+  const { registerPaletteSource } = await import('./ui/palette.js?v=374');
+  const main = renderShell('studio.html');
+  main.classList.add('sb-page');
+  main.innerHTML = `
+    <a class="sb-back ui-button ui-button--quiet" href="studio.html">${icon('chevL')} Studio</a>
+    <header class="sb-heading"><h1>Subir</h1><p>Tus próximas historias empiezan aquí.</p></header>
+    <section class="sb-drop" id="sb-drop" aria-label="Añadir archivos">
+      <div class="sb-drop-mark">${icon('film')}${icon('image')}</div>
+      <h2>Trae tus videos y fotos</h2>
+      <p class="sb-desktop-hint">Arrastra los archivos aquí o elígelos en tu dispositivo.</p>
+      <p class="sb-phone-hint">Elige videos y fotos de tu iPhone.</p>
+      <div class="sb-pickers">
+        <button class="ui-button ui-button--primary" id="sb-pick">${icon('plus')} Elegir archivos</button>
+        <button class="ui-button ui-button--secondary sb-phone-hint" id="sb-photos">Abrir Fotos</button>
+      </div>
+      <input type="file" id="sb-file" multiple hidden accept=".mp4,.mov,.m4v,.mkv,.avi,.mts,.webm,.jpg,.jpeg,.png,.heic,.heif,.webp,.dng">
+      <input type="file" id="sb-library" multiple hidden accept="video/*,image/*">
+      <small>MP4, MOV, JPG, HEIC y DNG, entre otros.</small>
+    </section>
+    <section class="sb-queue" aria-labelledby="sb-queue-title">
+      <div class="sb-queue-head"><h2 id="sb-queue-title">Archivos</h2><span id="sb-count" role="status">Sin archivos pendientes</span></div>
+      <div id="sb-list"><div class="ui-empty"><p>Aún no has elegido archivos.</p><p>Por ejemplo, añade los videos de tu último vuelo.</p></div></div>
+      <p class="sb-note">Mantén esta página abierta durante la transferencia. Si se interrumpe, puedes reintentar el archivo desde el inicio.</p>
+    </section>
+    <aside class="sb-next"><h2>Después de subir</h2><p>Los videos pasan a la cola de procesamiento. Consulta el avance en Actividad y edítalos cuando estén listos.</p><a class="ui-button ui-button--quiet" href="studio.html">Volver a Studio ${icon('chevR')}</a></aside>`;
+  const items = [];
+  let running = false;
+  const input = main.querySelector('#sb-file'), photos = main.querySelector('#sb-library');
+  main.querySelector('#sb-pick').onclick = () => input.click();
+  main.querySelector('#sb-photos').onclick = () => photos.click();
+  registerPaletteSource(() => [{ id:'studio-upload', label:'Subir videos y fotos', action:()=>input.click() }]);
+  const size = bytes => `${(bytes / 1024 / 1024).toLocaleString('es', {maximumFractionDigits:1})} MB`;
+  function update(item) {
+    item.status.textContent = item.message;
+    item.progress.value = item.percent;
+    item.progress.setAttribute('aria-label', `Transferencia de ${item.file.name}`);
+    item.retry.hidden = item.state !== 'error';
+    item.cancel.hidden = !['queued','uploading'].includes(item.state);
+    item.el.dataset.state = item.state;
+    const pending=items.filter(x=>['queued','uploading'].includes(x.state)).length;
+    main.querySelector('#sb-count').textContent = pending ? `${pending} pendientes · ${items.filter(x=>x.state==='done').length} enviados` : `${items.filter(x=>x.state==='done').length} enviados · ${items.filter(x=>x.state==='error').length} con error`;
+  }
+  function add(files) {
+    if (!files.length) return;
+    if (!items.length) main.querySelector('#sb-list').replaceChildren();
+    for (const file of files) {
+      if(items.some(i=>i.file.name===file.name && i.file.size===file.size && i.file.lastModified===file.lastModified && i.state!=='cancelled')) continue;
+      const video = /\.(mp4|mov|m4v|mkv|avi|mts|webm)$/i.test(file.name);
+      const valid = video || /\.(jpe?g|png|heic|heif|webp|dng)$/i.test(file.name);
+      const item={file,video,state:valid?'queued':'error',message:valid?'En cola':'Formato no compatible',percent:0};
+      const row=document.createElement('article');row.className='sb-file-row';
+      row.innerHTML=`<span class="sb-file-icon">${icon(video?'film':'image')}</span><div class="sb-file-info"><h3></h3><span class="sb-file-size"></span><p role="status"></p><progress max="100" value="0"></progress></div><div class="sb-file-actions"><button class="ui-button ui-button--secondary" data-retry>Reintentar</button><button class="ui-button ui-button--quiet" data-cancel>Cancelar</button></div>`;
+      row.querySelector('h3').textContent=file.name;row.querySelector('.sb-file-size').textContent=size(file.size);
+      Object.assign(item,{el:row,status:row.querySelector('[role=status]'),progress:row.querySelector('progress'),retry:row.querySelector('[data-retry]'),cancel:row.querySelector('[data-cancel]')});
+      item.retry.onclick=()=>{if(!valid)return showToast('Elige un formato compatible.');item.state='queued';item.message='En cola';item.percent=0;update(item);drain();};
+      item.cancel.onclick=()=>{item.state='cancelled';item.message='Cancelado';item.xhr?.abort();update(item);};
+      items.push(item);main.querySelector('#sb-list').append(row);update(item);
+    }
+    drain();
+  }
+  function send(item) {
+    return new Promise(resolve=>{
+      const xhr=item.xhr=new XMLHttpRequest();
+      item.state='uploading';item.message='Conectando…';update(item);
+      xhr.open('POST',`${item.video?'/upload':'/api/photo_upload'}?name=${encodeURIComponent(item.file.name)}`);
+      xhr.setRequestHeader('X-AeroBrain-CSRF','1');
+      xhr.withCredentials=true; xhr.timeout=30*60*1000;
+      xhr.upload.onprogress=e=>{if(!e.lengthComputable)return;item.percent=Math.round(e.loaded/e.total*100);item.message=item.percent===100?'Transferido · esperando confirmación':`${item.percent}% · ${size(e.loaded)} de ${size(e.total)}`;update(item);};
+      const fail=message=>{if(item.state!=='cancelled'){item.state='error';item.message=message;update(item);}resolve();};
+      xhr.onload=()=>{
+        let data;try{data=JSON.parse(xhr.responseText);}catch{return fail('Respuesta no válida. Reintenta.');}
+        if(xhr.status<200||xhr.status>=300||data.error||data.ok===false)return fail(xhr.status===403?'Subida no permitida en este preview.':data.error||`No se pudo subir (${xhr.status}).`);
+        item.state='done';item.percent=100;item.message=item.video?'Recibido · consulta el procesamiento en Actividad':'Foto recibida';update(item);resolve();
+      };
+      xhr.onerror=()=>fail('Sin conexión. Reintenta desde el inicio.');
+      xhr.ontimeout=()=>fail('La transferencia tardó demasiado. Reintenta.');
+      xhr.onabort=()=>{resolve();};xhr.send(item.file);
+    });
+  }
+  async function drain(){if(running)return;running=true;try{let next;while((next=items.find(i=>i.state==='queued')))await send(next);}finally{running=false;}}
+  for(const field of [input,photos])field.onchange=()=>{add([...field.files]);field.value='';};
+  const drop=main.querySelector('#sb-drop');
+  drop.ondragover=e=>{e.preventDefault();drop.classList.add('dragging');};
+  drop.ondragleave=e=>{if(!drop.contains(e.relatedTarget))drop.classList.remove('dragging');};
+  drop.ondrop=e=>{e.preventDefault();drop.classList.remove('dragging');add([...e.dataTransfer.files]);};
+  window.addEventListener('beforeunload',e=>{if(items.some(i=>['queued','uploading'].includes(i.state))){e.preventDefault();e.returnValue='';}});
+}
+
+})();
+
+if (!location.pathname.endsWith('/subir.html')) (function () {
   const KEY = 'ab_capture_tips_open';
   const ic = n => (typeof icon === 'function' ? icon(n) : '');
 
@@ -76,7 +170,8 @@
     return true;
   }
 
-  function openFull() {
+  async function openFull() {
+    const { createSheet } = await import('./ui/sheet.js?v=374');
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
     ov.innerHTML = `<div class="modal sb-modal">
@@ -85,9 +180,9 @@
       <div class="modal-b">${FULL.map(([t, l]) => `<h3>${t}</h3><ul class="sb-list">${lis(l)}</ul>`).join('')}</div>
       <div class="modal-foot"><span class="modal-hint">Buenas prácticas generales de fotogrametría, no verificadas en estos dos modelos: contrasta con tu primer vuelo.</span></div>
     </div>`;
-    document.body.appendChild(ov);
-    if (typeof openModal === 'function') openModal(ov, { label: 'Protocolo de captura 3D' });
-    else { ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.modal-x')) ov.remove(); }); }
+    const content = ov.querySelector('.modal-b');
+    const sheet = createSheet({ title: 'Protocolo de captura 3D', content, size:'full', onClose:()=>queueMicrotask(()=>sheet.destroy()) });
+    sheet.open();
   }
 
   if (!build()) {

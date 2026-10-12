@@ -1,11 +1,16 @@
 // Editor de fotos premium compartido (flight + studio). Requiere shell.js e icons.js.
-function openPhotoEditor({ url, name }) {
+async function openPhotoEditor({ url, name }) {
+  if (!document.querySelector('link[href*="css/studio.css"]')) {
+    const link=document.createElement('link');link.rel='stylesheet';link.href='css/studio.css?v=384';document.head.append(link);
+  }
+  const { createSheet } = await import('./ui/sheet.js?v=374');
+  const { showToast } = await import('./ui/toast.js?v=374');
   const ov = document.createElement('div');
   ov.className = 'photo-editor-ov';
   const SLIDERS = {
     luz: [
       ['bright', 'Brillo', 60, 140, 100], ['contrast', 'Contraste', 60, 140, 100],
-      ['high', 'Luces', -50, 50, 0], ['shadow', 'Sombras', -50, 50, 0], ['fade', 'Fade', 0, 60, 0],
+      ['high', 'Luces', -50, 50, 0], ['shadow', 'Sombras', -50, 50, 0], ['fade', 'Desvanecer', 0, 60, 0],
     ],
     color: [
       ['sat', 'Saturación', 0, 200, 100], ['temp', 'Temperatura', -40, 40, 0], ['tint', 'Tinte', -40, 40, 0],
@@ -15,22 +20,22 @@ function openPhotoEditor({ url, name }) {
     ],
   };
   const sliderRow = ([k, lb, mn, mx, dv]) => `
-    <div class="pm-row"><span class="tool-lb" data-dbl="${k}" data-tip="Doble click = reset">${lb}</span>
-      <input type="range" class="pm-range" data-f="${k}" min="${mn}" max="${mx}" value="${dv}">
+    <div class="pm-row"><label for="pm-${k}" class="tool-lb" data-dbl="${k}" data-tip="Doble click = reset">${lb}</label>
+      <input type="range" class="pm-range" id="pm-${k}" data-f="${k}" min="${mn}" max="${mx}" value="${dv}">
       <span class="mono pm-val" data-v="${k}">${dv}</span></div>`;
   ov.innerHTML = `
     <div class="photo-modal pm2">
-      <div class="pm-stage"><canvas id="pm-cv"></canvas></div>
+      <div class="pm-stage"><canvas id="pm-cv"></canvas><div class="pm-load" role="status"><span class="ui-skeleton ui-skeleton--media" aria-hidden="true"></span><p>Cargando foto…</p><button class="ui-button ui-button--secondary" data-retry hidden>Reintentar</button></div></div>
       <div class="pm-tools">
-        <div class="pm-row"><span class="tool-lb">Preset</span>
+        <div class="pm-row"><span class="tool-lb">Estilo</span>
           <button class="chip on" data-preset="orig">Original</button>
           <button class="chip" data-preset="cine">Cine</button>
-          <button class="chip" data-preset="vivid">Vivid</button>
+          <button class="chip" data-preset="vivid">Vívido</button>
           <button class="chip" data-preset="dorado">Dorado</button>
           <button class="chip" data-preset="bn">B&N</button></div>
         <div class="pm-tabs">
           <button class="on" data-tab="luz">${icon('sun')} Luz</button>
-          <button data-tab="color">${icon('spark')} Color</button>
+          <button data-tab="color">${icon('sun')} Color</button>
           <button data-tab="fx">${icon('film')} Efectos</button>
           <span class="pm-ink"></span>
         </div>
@@ -45,13 +50,13 @@ function openPhotoEditor({ url, name }) {
           <button class="chip" data-ratio="169">16:9</button></div>
         <div class="pm-row"><span class="tool-lb">Calidad</span>
           <button class="chip" data-size="ig">Instagram (1080)</button>
-          <button class="chip on" data-size="max">Máxima (4K)</button>
-          <button class="chip" data-size="custom">Custom</button>
-          <input type="number" class="ctl" id="pm-custom" min="480" max="3840" value="1600"
-            style="width:86px;display:none;padding:3px 8px;font-size:12px"> <span class="mono" id="pm-dims"></span></div>
+          <button class="chip on" data-size="max">Máxima disponible</button>
+          <button class="chip" data-size="custom">Personalizada</button>
+          <input type="number" class="ctl" id="pm-custom" aria-label="Ancho de salida en píxeles" min="480" max="3840" value="1600"
+            style="width:86px;display:none"> <span class="mono" id="pm-dims"></span></div>
       </div>
       <div class="pm-bar">
-        <button class="btn" data-reset data-tip="Volver al original">Reset</button>
+        <button class="btn" data-reset data-tip="Volver al original">Restablecer</button>
         <span class="spacer" style="flex:1"></span>
         <button class="btn primary" data-sharephoto>${icon('ext')} Guardar en Fotos</button>
         <button class="btn" data-dl>${icon('dl')} Descargar</button>
@@ -59,7 +64,10 @@ function openPhotoEditor({ url, name }) {
       </div>
     </div>`;
   // openModal (shell.js): role=dialog, foco atrapado, Esc por la pila de capas, scroll lock; cleanup en onClose
-  openModal(ov, { label: 'Editor de foto', initialFocus: '[data-close]', onClose: () => release() });
+  ov.classList.add('st-sheet-content');
+  ov.querySelectorAll('button').forEach(b=>{b.classList.add('ui-button');if(b.classList.contains('primary'))b.classList.add('ui-button--primary');});
+  const sheet = createSheet({ title: 'Editar foto', content: ov, size: 'full', className:'st-sheet st-photo-sheet', onClose: () => { release(); queueMicrotask(()=>sheet.destroy()); } });
+  sheet.open();
 
   // --- motor: pixel-math unificado — preview 720p EXACTO al export ---
   const cv = ov.querySelector('#pm-cv');
@@ -157,9 +165,27 @@ function openPhotoEditor({ url, name }) {
     });
     schedulePrepare();
   }
-  img.onload = draw;
+  let loaded = false, disposed = false;
+  const loadState = ov.querySelector('.pm-load');
+  const exportButtons = [...ov.querySelectorAll('[data-dl],[data-sharephoto]')];
+  exportButtons.forEach(b=>b.disabled=true);
+  img.onload = () => {
+    if(disposed) return;
+    loaded=true;loadState.hidden=true;exportButtons.forEach(b=>b.disabled=false);draw();
+  };
+  img.onerror = () => {
+    if(disposed) return;
+    loaded=false;loadState.hidden=false;loadState.querySelector('.ui-skeleton').hidden=true;
+    loadState.querySelector('p').textContent='No se pudo cargar la foto. Revisa la conexión y reintenta.';
+    loadState.querySelector('[data-retry]').hidden=false;exportButtons.forEach(b=>b.disabled=true);
+  };
+  loadState.querySelector('[data-retry]').onclick=()=>{
+    loadState.querySelector('p').textContent='Cargando foto…';loadState.querySelector('[data-retry]').hidden=true;
+    img.src=url;
+  };
   img.src = url;
   async function exportBlob() {
+    if (!loaded || disposed) throw new Error('La foto aún no está disponible.');
     const w = fx.size === 'ig' ? 1080 : fx.size === 'custom' ? fx.custom : 3840;
     const out = document.createElement('canvas');
     renderTo(out, w);                          // export: mismo motor, full res
@@ -172,7 +198,7 @@ function openPhotoEditor({ url, name }) {
   // el blob se PRERRENDERIZA cuando los ajustes se asientan: en iOS, navigator.share tras un
   // await largo (export 4K) pierde la activación del usuario y falla en silencio
   const outName = name.replace(/\.[^./\\]+$/, '') + '.jpg';   // el blob es JPEG aunque la fuente sea .DNG
-  const notify = m => { if (typeof toast === 'function') toast(m); else alert(m); };
+  const notify = showToast;
   let prep = { key: '', blob: null, p: null }, prepT = null;
   function prepare() {
     const key = JSON.stringify(fx);
@@ -196,6 +222,7 @@ function openPhotoEditor({ url, name }) {
     ov.querySelectorAll('.pm-val').forEach(v => { v.textContent = fx[v.dataset.v]; });
     ov.querySelectorAll('[data-ratio]').forEach(x => x.classList.toggle('on', x.dataset.ratio === fx.ratio));
     ov.querySelectorAll('[data-size]').forEach(x => x.classList.toggle('on', x.dataset.size === fx.size));
+    ov.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',String(x.classList.contains('on'))));
     ov.querySelector('#pm-custom').style.display = fx.size === 'custom' ? '' : 'none';
   }
   // tabs con tinta deslizante
@@ -208,13 +235,15 @@ function openPhotoEditor({ url, name }) {
   setTimeout(moveInk, 30);   // tras layout; rAF no dispara con tab oculto
   const onRs = () => moveInk();
   window.addEventListener('resize', onRs);
-  function release() {        // quita el listener global y suelta la imagen decodificada (Esc, fondo y Cerrar pasan por aquí)
+  function release() {
+    disposed = true; loaded = false; img.onerror = null;        // quita el listener global y suelta la imagen decodificada (Esc, fondo y Cerrar pasan por aquí)
     window.removeEventListener('resize', onRs);
     clearTimeout(prepT);
     img.onload = null; img.removeAttribute('src');
+    cv.width = cv.height = 0;
     prep = { key: '', blob: null, p: null };
   }
-  const close = () => ov.remove();
+  const close = () => sheet.close();
   ov.querySelector('.pm-tabs').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]');
     if (!b) return;
@@ -224,7 +253,7 @@ function openPhotoEditor({ url, name }) {
       const show = g.dataset.group === b.dataset.tab;
       if (show && g.style.display === 'none') {
         g.style.display = '';
-        g.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'translateY(0)' }],
+        if (document.documentElement.dataset.motion !== 'reduced') g.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'translateY(0)' }],
                   { duration: 200, easing: 'ease-out' });
       } else if (!show) g.style.display = 'none';
     });
