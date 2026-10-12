@@ -12,11 +12,11 @@
 // ?fv=2 (o ?phys=v2): Physics v2 (input/physics-link.js -> ctx.phys / window.__volar.physics, bus crash/damage/respawn),
 // entradas v2 (input/v2-input.js: stick flotante, zona de mirada, mouse-look con pointer lock, gamepad, háptica,
 // ctx.controls.v2.settings) y cámaras v2 (camera-rigs.js). Sin la bandera todo corre como antes.
-import { MODES } from '/flightverse/runtime.js?v=374';
-import { createBindings } from '/flightverse/input/bindings.js?v=374';
-import { createCameraControls } from '/flightverse/input/camera.js?v=374';
+import { MODES } from '/flightverse/runtime.js?v=378';
+import { createBindings } from '/flightverse/input/bindings.js?v=378';
+import { createCameraControls } from '/flightverse/input/camera.js?v=378';
 
-export { createDroneModel } from '/flightverse/input/drone-model.js?v=374';
+export { createDroneModel } from '/flightverse/input/drone-model.js?v=378';
 
 export function installControls(ctx) {
   const { state: S, bus } = ctx;

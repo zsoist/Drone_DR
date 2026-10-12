@@ -29,19 +29,22 @@ const NAV = [
   { id: 'more', ic: 'more', label: 'Más', pages: ['drone.html', 'system.html', 'guia.html', 'ventas.html'] },
 ];
 const NAV_MORE = [
-  { href: 'drone.html', ic: 'drone', label: 'Dron' },
-  { href: 'system.html', ic: 'db', label: 'Sistema' },
-  { href: 'guia.html', ic: 'list', label: 'Guía' },
-  { href: 'ventas.html', ic: 'tag', label: 'Ventas' },
+  { href: 'drone.html', ic: 'drone', label: 'Dron', hint: 'Equipo y archivos' },
+  { href: 'system.html', ic: 'db', label: 'Sistema', hint: 'Procesos y estado' },
+  { href: 'guia.html', ic: 'list', label: 'Guía', hint: 'Aprende a volar' },
+  { href: 'ventas.html', ic: 'tag', label: 'Ventas', hint: 'Servicios y entregas' },
 ];
 const SECTIONS = [
-  { href: 'home.html', label: 'Inicio' }, { href: 'index.html', label: 'Vuelos' },
-  { href: 'trips.html', label: 'Viajes' }, { href: 'map.html', label: 'Mapa' },
-  { href: 'flight.html', label: 'Detalle del vuelo' },
-  { href: 'studio.html', label: 'Studio' }, { href: 'subir.html', label: 'Subir', keywords: 'importar archivos' },
-  { href: 'tresd.html', label: 'Escenas 3D' }, { href: 'mundo.html', label: 'Mundo' },
-  { href: 'splatlab.html', label: 'Splat Lab' }, { href: 'scene-improve.html', label: 'Mejorar escena' },
-  { href: 'volar.html', label: 'Volar' }, ...NAV_MORE,
+  { href: 'home.html', label: 'Inicio', ic: 'gauge' }, { href: 'index.html', label: 'Vuelos', ic: 'drone' },
+  { href: 'trips.html', label: 'Viajes', ic: 'route' }, { href: 'map.html', label: 'Mapa', ic: 'map', section: 'Viajes' },
+  { href: 'flight.html', label: 'Detalle del vuelo', ic: 'drone', section: 'Viajes' },
+  { href: 'studio.html', label: 'Studio', ic: 'film' },
+  { href: 'subir.html', label: 'Subir', ic: 'plus', group: 'Acciones', keywords: 'importar archivos' },
+  { href: 'tresd.html', label: 'Escenas 3D', ic: 'cube', section: '3D' },
+  { href: 'mundo.html', label: 'Mundo', ic: 'globe', section: '3D' },
+  { href: 'splatlab.html', label: 'Splat Lab', ic: 'cube', section: '3D' },
+  { href: 'scene-improve.html', label: 'Mejorar escena', ic: 'layers', section: '3D' },
+  { href: 'volar.html', label: 'Volar', ic: 'drone', section: '3D' }, ...NAV_MORE,
 ];
 
 // Cabecera de página unificada (.page-head en style.css): título + subtítulo opcional + acciones a la derecha.
@@ -406,7 +409,7 @@ async function api(path, body) {
 // compat: código viejo llama getToken() como gate; auth vive en la cookie HttpOnly
 function getToken() { return 'session'; }
 // migración: borra el token que versiones anteriores dejaron en localStorage
-localStorage.removeItem('ab_token');
+try { localStorage.removeItem('ab_token'); } catch {}
 // páginas con teardown en pagehide (volar/mundo/home/system) marcan __abReloadOnRestore:
 // al restaurarse desde bfcache quedan rotas, así que se recargan completas.
 addEventListener('pageshow', event => {
@@ -968,8 +971,8 @@ document.addEventListener('click', async e => {
 
 // Public palette bridge for classic page scripts. ES modules can import palette.js directly.
 const shellComponents = Promise.all([
-  import('./ui/sheet.js?v=374'), import('./ui/palette.js?v=374'),
-  import('./ui/activity.js?v=374'), import('./ui/toast.js?v=374'),
+  import('./ui/sheet.js?v=378'), import('./ui/palette.js?v=378'),
+  import('./ui/activity.js?v=378'), import('./ui/toast.js?v=378'),
 ]);
 function registerPaletteSource(fn) {
   let cancelled = false, unregister;
@@ -1012,6 +1015,29 @@ function renderShell(active, { navigationOnly = false } = {}) {
     </div>
     <nav class="ab-tabs" aria-label="Navegación principal">${navItems}</nav>
     <button class="ab-search" type="button" data-palette aria-label="Buscar en AeroBrain" aria-haspopup="dialog">${icon('search')}</button>`);
+  const rail = document.querySelector('.ab-rail');
+  const tooltip = document.createElement('div');
+  tooltip.className = 'ab-rail-tooltip'; tooltip.hidden = true; tooltip.setAttribute('aria-hidden', 'true');
+  document.body.append(tooltip);
+  rail.querySelectorAll('[title]').forEach(el => el.removeAttribute('title'));
+  const hideTooltip = () => { tooltip.hidden = true; };
+  const showTooltip = e => {
+    const button = e.target.closest('.ab-nav-item');
+    if (!button || expanded || !matchMedia('(min-width: 1024px)').matches) return hideTooltip();
+    tooltip.textContent = button.getAttribute('aria-label');
+    const rect = button.getBoundingClientRect();
+    tooltip.style.left = `${rect.right + 12}px`;
+    tooltip.style.top = `${Math.max(8, Math.min(innerHeight - 48, rect.top + (rect.height - 40) / 2))}px`;
+    tooltip.hidden = false;
+  };
+  rail.addEventListener('pointerover', showTooltip);
+  rail.addEventListener('focusin', showTooltip);
+  rail.addEventListener('pointerleave', hideTooltip);
+  rail.addEventListener('focusout', hideTooltip);
+  rail.addEventListener('click', hideTooltip);
+  rail.addEventListener('scroll', hideTooltip);
+  window.addEventListener('resize', hideTooltip);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTooltip(); });
   syncThemeToggles();
   document.querySelector('[data-rail-toggle]')?.addEventListener('click', e => {
     expanded = !expanded;
@@ -1027,15 +1053,15 @@ function renderShell(active, { navigationOnly = false } = {}) {
     main?.focus({ preventScroll: true }); main?.scrollIntoView({ block: 'start' });
   });
   shellComponents.then(([{ createSheet }, { mountPalette }, { mountActivity }]) => {
-    const content = document.createElement('div');
-    content.innerHTML = `<nav class="ab-menu-links" aria-label="Más secciones">${NAV_MORE.map(n => `<a class="ui-button ui-button--quiet" href="${n.href}"${cur === n.href ? ' aria-current="page"' : ''}>${icon(n.ic)}${n.label}</a>`).join('')}</nav>
-      <p class="ab-menu-heading">Todas las secciones</p>
-      <nav class="ab-menu-links" aria-label="Explorar AeroBrain">${SECTIONS.filter(n => !NAV_MORE.some(m => m.href === n.href)).map(n => `<a class="ui-button ui-button--quiet" href="${n.href}">${n.label}</a>`).join('')}</nav>
-      <p class="ab-menu-heading">Apariencia</p>
-      <div class="ab-theme-options" role="group" aria-label="Tema"><button class="ui-button ui-button--secondary" data-theme-choice="system">Sistema</button><button class="ui-button ui-button--secondary" data-theme-choice="dark">Oscuro</button><button class="ui-button ui-button--secondary" data-theme-choice="light">Claro</button></div>
-      <p><a class="ui-button ui-button--quiet" href="#" data-auth-link id="auth-link">Salir</a></p>`;
+    const content = document.createElement('div'); content.className = 'ab-more-content';
+    content.innerHTML = `<nav class="ab-more-grid" aria-label="Más secciones">${NAV_MORE.map(n => `<a class="ab-more-tile" href="${n.href}"${cur === n.href ? ' aria-current="page"' : ''}>${icon(n.ic)}<b>${n.label}</b><span>${n.hint}</span></a>`).join('')}</nav>
+      <div class="ab-more-footer">
+        <p class="ab-menu-heading">Apariencia</p>
+        <div class="ab-theme-options ui-segmented" role="group" aria-label="Tema"><button type="button" data-theme-choice="system">Sistema</button><button type="button" data-theme-choice="light">Claro</button><button type="button" data-theme-choice="dark">Oscuro</button></div>
+        <a class="ui-button ui-button--quiet" href="#" data-auth-link id="auth-link">Salir</a>
+      </div>`;
     const moreButtons = [...document.querySelectorAll('[data-more]')];
-    const more = createSheet({ title: 'Más', content, size: 'full', onClose: () => moreButtons.forEach(b => b.setAttribute('aria-expanded', 'false')) });
+    const more = createSheet({ title: 'Más', content, size: 'half', className: 'ab-more', onClose: () => moreButtons.forEach(b => b.setAttribute('aria-expanded', 'false')) });
     moreButtons.forEach(b => {
       b.setAttribute('aria-controls', more.element.id = 'ab-more');
       b.addEventListener('click', () => { more.open(b); b.setAttribute('aria-expanded', 'true'); });
@@ -1044,10 +1070,10 @@ function renderShell(active, { navigationOnly = false } = {}) {
     content.addEventListener('click', e => { const value = e.target.closest('[data-theme-choice]')?.dataset.themeChoice; if (value) window.AeroTheme?.set(value); });
     document.addEventListener('ab-theme-change', themeControls); themeControls();
     const palette = mountPalette([
-      ...SECTIONS.map(n => ({ id: n.href, label: n.label, href: n.href, keywords: n.keywords || '' })),
-      { id: 'theme', label: 'Cambiar tema', keywords: 'claro oscuro apariencia', action: toggleTheme },
-      { id: 'system-theme', label: 'Usar tema del sistema', action: () => window.AeroTheme?.set('system') },
-      { id: 'new-reel', label: 'Nuevo reel', keywords: 'crear editar video', href: 'studio.html' },
+      ...SECTIONS.map(n => ({ id: n.href, label: n.label, href: n.href, icon: n.ic, group: n.group || 'Secciones', hint: n.group === 'Acciones' ? 'Acción' : `${n.section || n.label} · sección`, keywords: n.keywords || '' })),
+      { id: 'theme', label: 'Cambiar tema', icon: 'sun', group: 'Acciones', keywords: 'claro oscuro apariencia', action: toggleTheme },
+      { id: 'system-theme', label: 'Usar tema del sistema', icon: 'sliders', group: 'Acciones', action: () => window.AeroTheme?.set('system') },
+      { id: 'new-reel', label: 'Nuevo reel', icon: 'film', group: 'Acciones', keywords: 'crear editar video', href: 'studio.html' },
     ]);
     document.querySelectorAll('[data-palette]').forEach(b => b.addEventListener('click', () => palette.open(b)));
     const stopActivity = mountActivity();

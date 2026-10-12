@@ -73,3 +73,32 @@ test('transitions use back for history and crossfade for 3D or reduced motion', 
   assert.ok(swap('/studio.html').has('crossfade'));
   handlers.pagereveal({}); // No View Transition support remains a normal navigation.
 });
+
+test('palette highlights Spanish accents and ordered partial matches', async () => {
+  const { matchPositions } = await import('./palette.js');
+  assert.deepEqual(matchPositions('guia', 'Guía'), [0, 1, 2, 3]);
+  assert.deepEqual(matchPositions('vjs', 'Viajes'), [0, 3, 5]);
+  assert.deepEqual(matchPositions('xyz', 'Viajes'), []);
+  assert.deepEqual(matchPositions(' ', 'Inicio'), []);
+});
+
+test('palette recent destinations stay unique, bounded, local, and safe without storage', async () => {
+  const { readRecents, rememberVisit } = await import('./palette.js');
+  const storage = new Map();
+  globalThis.location = { href: 'https://example.test/home.html', origin: 'https://example.test' };
+  globalThis.localStorage = { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) };
+  try {
+    for (let i = 0; i < 7; i++) rememberVisit({ id: `trip-${i}`, label: `Viaje ${i}`, href: `trips.html?id=${i}`, group: 'Viajes' });
+    assert.deepEqual(readRecents().map(item => item.id), ['trip-6', 'trip-5', 'trip-4', 'trip-3', 'trip-2']);
+    rememberVisit({ id: 'alternate', label: 'Viaje 4', href: '/trips.html?id=4' });
+    assert.deepEqual(readRecents().map(item => item.id), ['alternate', 'trip-6', 'trip-5', 'trip-3', 'trip-2']);
+    rememberVisit({ id: 'external', label: 'External', href: 'https://other.test/' });
+    rememberVisit({ id: 'action', label: 'Action', action() {} });
+    assert.equal(readRecents()[0].id, 'alternate');
+    storage.set('ab_palette_recent', '{broken'); assert.deepEqual(readRecents(), []);
+    storage.set('ab_palette_recent', '[null, {"href":"javascript:alert(1)"}]'); assert.deepEqual(readRecents(), []);
+    globalThis.localStorage = { getItem() { throw new Error('Denied'); }, setItem() { throw new Error('Denied'); } };
+    assert.deepEqual(readRecents(), []);
+    assert.doesNotThrow(() => rememberVisit({ id: 'home', label: 'Inicio', href: 'home.html' }));
+  } finally { delete globalThis.location; delete globalThis.localStorage; }
+});

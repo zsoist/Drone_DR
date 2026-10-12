@@ -68,6 +68,13 @@ Do not use a hairline as the only control state indicator.
 Use one glass layer at most. Only the tab bar uses glass in the shell.
 Use a solid surface for sheets, dialogs, and content.
 
+Eyebrows use sentence case, the interface font, and the secondary text color.
+Use `.ui-eyebrow` for new labels. The legacy `.eyebrow` class uses the same style.
+
+The `--tr-eyebrow` token is `0.01em`. The `--tr-caps` token is `0.02em`.
+Set letter space between zero and `0.02em`. Reserve the mono font for telemetry.
+Write label text in sentence case. Do not use uppercase mono labels.
+
 ## Theme
 
 `AeroTheme.set('dark' | 'light' | 'system')` changes the preference.
@@ -86,7 +93,13 @@ Phone navigation has five labeled destinations and a separate search button.
 The desktop rail starts at 1024 px. Its closed and open widths are 64 and 240 px.
 The rail stores its state in `ab_rail`.
 
-Más contains the secondary destinations and links to every current section.
+The bottom toggle expands or closes it. Closed controls show labels on hover and keyboard focus.
+The active destination uses an amber pill. Dots show real activity only.
+
+Más contains four large tiles: Dron, Sistema, Guía, and Ventas.
+Each tile has an icon, a label, and one short description.
+The theme control sits below the tiles: Sistema, Claro, Oscuro.
+Other sections remain available through the tabs and palette.
 The map and upload aliases keep their current redirects.
 The destination state follows the actual URL, with each alias query.
 
@@ -95,6 +108,16 @@ Arrow keys select a result. Enter opens it. Escape closes the palette.
 Search ignores accents and supports ordered partial characters.
 Local results remain available if a data source fails.
 
+Each result has an icon and a secondary hint. Matched label characters have an underline and increased weight.
+Results appear in groups: Acciones, Secciones, Viajes, Clips, and Mundos.
+A query puts the group with the best match first.
+An empty query shows Recientes first, followed by actions and sections.
+
+The `ab_palette_recent` key stores the last five unique destinations. Storage errors do not stop navigation.
+The shell records section visits. The palette also records destinations opened from registered sources.
+
+The desktop palette is a centered 640 px panel. Its entrance uses a subtle scale and fade.
+
 ```js
 import { registerPaletteSource } from './ui/palette.js';
 const unregister = registerPaletteSource(async ({ query, signal }) => {
@@ -102,7 +125,7 @@ const unregister = registerPaletteSource(async ({ query, signal }) => {
   // This URL is an example. Supply the endpoint for your workstream.
   return response.json();
 });
-// Item: {id, label, keywords?, href? OR action?}
+// Item: {id, label, keywords?, icon?, hint?, group?, href? OR action?}
 // unregister();
 ```
 
@@ -111,7 +134,11 @@ Use the same asset version query as `shell.js` for each module import.
 Classic scripts can call the global `registerPaletteSource(fn)` with the same contract.
 Use stable item IDs and same-origin links.
 Return Spanish labels. Use `action` for a function and `href` for navigation.
-The palette shows up to 40 results.
+
+Set `group` to Acciones, Secciones, Viajes, Clips, or Mundos.
+Set `icon` to a name from `icons.js`. Set `hint` to short Spanish context.
+Without these fields, the palette supplies a group icon and hint.
+The palette shows up to 40 search results and five recent destinations.
 
 ## Sheet
 
