@@ -1,7 +1,7 @@
 // Page contracts for Inicio, Viajes, and Flight Deck.
-import { createSheet } from './ui/sheet.js?v=374';
-import { registerPaletteSource } from './ui/palette.js?v=374';
-import { showToast } from './ui/toast.js?v=374';
+import { createSheet } from './ui/sheet.js?v=391';
+import { registerPaletteSource } from './ui/palette.js?v=391';
+import { showToast } from './ui/toast.js?v=391';
 
 export { showToast };
 export async function loadFlights() {

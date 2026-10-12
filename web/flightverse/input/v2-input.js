@@ -10,7 +10,7 @@
 import { CONTROL_DEFAULTS, loadSettings, saveSettings, normalizeSettings, mouseLook, clamp, DEG } from './curves.js';
 import { createHaptics } from './haptics.js';
 import { createGamepad } from './gamepad.js';
-import * as REG from '/flightverse/weapon-registry.js?v=390';
+import * as REG from '/flightverse/weapon-registry.js?v=391';
 
 const WEAPON_FALLBACK = ['mg', 'ac', 'm', 'sw', 'rg', 'tb'];
 export const weaponOrder = () => {

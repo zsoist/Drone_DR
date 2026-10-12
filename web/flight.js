@@ -1,5 +1,5 @@
-import { loadFlights, registerFlights, openPageSheet, save, suggestion, wireSuggestions, renderFailure, skeleton, dataColor, decision, summaryExcerpt } from './home-shared.js?v=386';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=386';
+import { loadFlights, registerFlights, openPageSheet, save, suggestion, wireSuggestions, renderFailure, skeleton, dataColor, decision, summaryExcerpt } from './home-shared.js?v=391';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=391';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
 const cid = new URLSearchParams(location.search).get('id');

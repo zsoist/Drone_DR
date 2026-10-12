@@ -1,5 +1,5 @@
-import { areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, descriptionText, reducedMotion } from './scene-improve-ui.js?v=384';
-import { coverageRows, analysisFor } from './scene-improve-state.js?v=384';
+import { areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, descriptionText, reducedMotion } from './scene-improve-ui.js?v=391';
+import { coverageRows, analysisFor } from './scene-improve-state.js?v=391';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,

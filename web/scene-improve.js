@@ -1,5 +1,5 @@
-import { originalInputs } from './scene-improve-state.js?v=384';
-import { areaNav } from './scene-improve-ui.js?v=384';
+import { originalInputs } from './scene-improve-state.js?v=391';
+import { areaNav } from './scene-improve-ui.js?v=391';
 /* global renderShell, pageHead, getFlights, authFetch, api, fmt, icon, haversine, SceneImprovePolicy */
 
 const root = document.getElementById('scene-improve-root');

@@ -971,8 +971,8 @@ document.addEventListener('click', async e => {
 
 // Public palette bridge for classic page scripts. ES modules can import palette.js directly.
 const shellComponents = Promise.all([
-  import('./ui/sheet.js?v=390'), import('./ui/palette.js?v=390'),
-  import('./ui/activity.js?v=390'), import('./ui/toast.js?v=390'),
+  import('./ui/sheet.js?v=391'), import('./ui/palette.js?v=391'),
+  import('./ui/activity.js?v=391'), import('./ui/toast.js?v=391'),
 ]);
 function registerPaletteSource(fn) {
   let cancelled = false, unregister;

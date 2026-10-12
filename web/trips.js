@@ -1,4 +1,4 @@
-import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, suggestion, wireSuggestions, dataColor } from './home-shared.js?v=386';
+import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, suggestion, wireSuggestions, dataColor } from './home-shared.js?v=391';
 const main = renderShell('trips.html');
 main.classList.add('tr-page');
 const CITIES = [

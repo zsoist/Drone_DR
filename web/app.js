@@ -1,4 +1,4 @@
-import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestion, wireSuggestions } from './home-shared.js?v=386';
+import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestion, wireSuggestions } from './home-shared.js?v=391';
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
 let flights = [], ai = {}, semRank = null, models = new Set();
