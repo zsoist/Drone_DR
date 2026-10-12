@@ -1,112 +1,77 @@
-/* AeroBrain · Mundo (mundo.html) — loads AFTER style.css. Tokens only; see DESIGN.md. */
-
-/* ── Filtros + navegación del carrusel en una sola fila ──── */
-.w-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-2); flex-wrap: nowrap; }
-.w-bar .w-filters { margin: 0; flex: 1 1 auto; min-width: 0; }
-.w-nav { display: inline-flex; gap: var(--sp-1); flex: none; }
-.w-nav .btn:disabled { opacity: .4; }
-@media (pointer: coarse), (max-width: 820px) { .w-nav { display: none; } }
-@media (max-width: 640px) {
-  .w-bar .w-filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: calc(var(--sp-4) * -1); padding-inline: var(--sp-4); }
-  .w-bar .w-filters::-webkit-scrollbar { display: none; }
+/* Mundo: a gallery of captured places, with flight settings in a W1 sheet. */
+.fv-page { padding:0; }
+.fv-hero { padding:0; margin-bottom:var(--sp-6); }
+.fv-hero h1 { font-size:var(--fs-4xl); line-height:var(--lh-tight); letter-spacing:-.03em; margin:0 0 var(--sp-3); }
+.fv-sub { font-size:var(--fs-lg); color:var(--text-2); margin:0; }
+.fv-statbar { display:flex; flex-wrap:wrap; gap:var(--sp-5); margin-top:var(--sp-5); }
+.fv-statbar > span { display:flex; gap:var(--sp-2); align-items:baseline; }
+.fv-statbar b { font:500 var(--fs-lg)/var(--lh-base) var(--mono); color:var(--text); }
+.fv-statbar em { font-size:var(--fs-sm); font-style:normal; color:var(--text-2); }
+.fv-viewseg { margin-top:var(--sp-5); width:fit-content; }
+.w-bar { display:flex; align-items:center; gap:var(--sp-4); justify-content:space-between; margin-bottom:var(--sp-4); }
+.w-filters { display:flex; gap:var(--sp-2); margin:0; overflow:auto; }
+.w-filters button { font:500 var(--fs-sm) var(--font); min-height:44px; border-radius:var(--r-sm); background:transparent; color:var(--text-2); padding:var(--sp-2) var(--sp-3); border:1px solid transparent; white-space:nowrap; }
+.w-filters button.on { background:var(--surface-3); color:var(--text); border-color:var(--line-strong); }
+.w-nav { display:flex; gap:var(--sp-2); }
+.w-railwrap { margin:0; }
+.w-rail { display:flex; gap:var(--sp-5); padding:0 0 var(--sp-5); overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding:0; mask:none; scrollbar-width:thin; }
+.wi { flex:0 0 calc(50% - var(--sp-3)); min-width:0; height:auto; display:flex; flex-direction:column; scroll-snap-align:start; border:0; border-radius:0; background:none; box-shadow:none; animation:none; opacity:1; transform:none; position:relative; }
+.wi:hover,.wi.sel { box-shadow:none; transform:none; border:0; }
+.wi.sel .wi-name { color:var(--accent-fg); }
+.wi.sel .wi-name::after { content:'Seleccionada'; font:500 var(--fs-xs) var(--font); margin-left:var(--sp-3); }
+.wi:focus-visible { outline-offset:3px; }
+.wi-poster { position:relative; inset:auto; aspect-ratio:8/5; width:100%; background-color:var(--media-bg); background-size:cover; background-position:center; border-radius:0; }
+.wi-poster::before { content:'Sin vista previa'; position:absolute; inset:0; display:grid; place-items:center; background:var(--surface-2); font:400 var(--fs-md) var(--font); color:var(--text-2); }
+.wi-poster.has-img::before { display:none; }
+.wi-body { position:static; padding:var(--sp-4) 0 0; display:flex; flex-direction:column; gap:var(--sp-2); }
+.wi-name { color:var(--text); font-size:var(--fs-xl); line-height:var(--lh-base); font-weight:600; }
+.wi-meta { display:flex; gap:var(--sp-3); font-size:var(--fs-sm); color:var(--text-2); }
+.wi-description { color:var(--text-2); font-size:var(--fs-md); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin:0; }
+.wi-stats { display:flex; flex-wrap:wrap; gap:var(--sp-3); margin:0; }
+.wi-stats i { border:0; padding:0; font:400 var(--fs-xs) var(--mono); color:var(--text-2); background:none; }
+.wi-badge,.wi-badge.mesh,.wi-rec { position:absolute; top:var(--sp-3); background:var(--media-bg); color:var(--on-media); border:0; border-radius:var(--r-sm); font:500 var(--fs-xs) var(--font); padding:var(--sp-2) var(--sp-3); }
+.wi-badge { left:var(--sp-3); }.wi-rec { right:var(--sp-3); }
+.w-panel { margin:var(--sp-5) 0 0; }
+.wp-in { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,.7fr); gap:var(--sp-7); padding:var(--sp-6) 0 0; border:0; border-top:1px solid var(--line); border-radius:0; background:transparent; }
+.wp-name { font-size:var(--fs-2xl); font-weight:600; }
+.wp-description { font-size:var(--fs-lg); color:var(--text-2); max-width:60ch; margin:var(--sp-3) 0; }
+.wp-chips { display:none; }
+.wp-data { display:flex; flex-wrap:wrap; gap:var(--sp-5); margin-top:var(--sp-5); }
+.wp-data div { display:flex; flex-direction:column; gap:var(--sp-1); }
+.wp-data b { font:500 var(--fs-xl) var(--mono); color:var(--text); }
+.wp-data span { font-size:var(--fs-xs); color:var(--text-2); text-transform:none; letter-spacing:normal; }
+.wp-go { display:flex; flex-direction:column; gap:var(--sp-4); align-items:stretch; border:0; padding:0; }
+.wp-go .scene-actions { display:grid; grid-template-columns:1fr 1fr; }
+.wp-go .scene-actions > a { grid-column:1/-1; }
+.wp-modes { display:flex; width:100%; }
+.wp-modes button { flex:1; padding:var(--sp-2); font-size:var(--fs-sm); }
+.wp-modes svg { display:none; }
+.wp-mis-sub { margin:0; font-size:var(--fs-sm); color:var(--text-2); }
+.wp-fly { width:100%; }
+.wp-cfg { display:flex; flex-direction:column; gap:var(--sp-6); margin:0; }
+.wp-cfg-g { display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+.wp-cfg-g > span { width:100%; font-size:var(--fs-lg); font-weight:600; margin-bottom:var(--sp-1); }
+.wp-cfg-g button { min-height:44px; font:500 var(--fs-md) var(--font); color:var(--text); background:var(--surface-2); border:1px solid var(--line-strong); border-radius:var(--r-sm); padding:var(--sp-2) var(--sp-4); }
+.wp-cfg-g button.on { background:var(--surface-3); border-color:var(--accent); }
+.wp-cfg-g button:disabled { color:var(--text-2); opacity:.55; cursor:not-allowed; }
+.fv-mapbar { display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-bottom:var(--sp-3); }
+.fv-map { min-height:60dvh; }
+.fv-pop { background:var(--surface); color:var(--text); font-size:var(--fs-md); }
+.fv-pop-btns a { min-height:44px; display:inline-flex; align-items:center; }
+.w-launch { background:var(--media-bg); }.wl-bg { background-color:var(--media-bg); }
+@media(max-width:820px) {
+ .fv-hero h1 { font-size:var(--fs-3xl); }
+ .w-nav { display:none; }
+ .wi { flex-basis:88%; }
+ .w-rail { gap:var(--sp-4); }
+ .wp-in { grid-template-columns:1fr; gap:var(--sp-6); }
+ .fv-statbar { gap:var(--sp-3); }
+ .fv-statbar > span:last-child { display:none; }
+ .wp-data { gap:var(--sp-4) var(--sp-5); }
 }
-
-/* ── Carrusel: snap real, sin flechas encima de las tarjetas ── */
-.w-railwrap { margin-inline: calc(var(--sp-5) * -1); }
-.w-rail {
-  scroll-snap-type: x mandatory; scroll-padding-inline: var(--sp-5);
-  padding: var(--sp-half) var(--sp-5) var(--sp-4); gap: var(--sp-4); overscroll-behavior-x: contain;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 calc(100% - var(--sp-10)), transparent 100%);
-          mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 calc(100% - var(--sp-10)), transparent 100%);
-}
-.wi { flex: 0 0 min(340px, 78vw); scroll-snap-align: start; }
-.wi:focus-visible { outline-offset: -3px; }
-.wi.sel { border-color: var(--accent); }
-.wi-body { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); }
-.wi-name {
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
-  font-size: var(--fs-xl); font-weight: var(--fw-semibold); line-height: var(--lh-snug);
-  text-wrap: balance; color: var(--on-media);
-}
-.wi-meta { font-size: var(--fs-xs); color: var(--on-media-2); margin: calc(var(--sp-1) * -1) 0 0; }   /* meta pegada bajo el título; el gap separa las stats */
-.wi-stats { flex-wrap: nowrap; overflow: hidden; margin-top: 0; }
-.wi-stats i {
-  flex: none; white-space: nowrap; font-size: var(--fs-xs); color: var(--on-media-2);
-  border-radius: var(--r-pill); background: var(--media-scrim); border-color: var(--media-line);
-}
-.wi-stats i:nth-child(n+4) { display: none; }
-.wi-badge { font-size: var(--fs-2xs); color: var(--media-accent); background: var(--media-scrim); border-color: var(--media-line); }
-.wi-badge.mesh { color: var(--media-ok); background: var(--media-scrim); }
-.wi-rec { font-size: var(--fs-2xs); color: var(--media-warn); background: var(--media-scrim); border-color: var(--media-line); }
-
-/* ── Panel de misión ──────────────────────────────────────── */
-.wp-in {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, auto);
-  gap: var(--sp-5) var(--sp-7); align-items: start; padding: var(--sp-5) var(--sp-6);
-  border-radius: var(--r-xl);
-}
-.wp-name { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); line-height: var(--lh-snug); text-wrap: balance; }
-.wp-chips { margin-top: var(--sp-2); }
-.wp-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: var(--sp-4) var(--sp-5); margin-top: var(--sp-4); }
-.wp-data b { font-size: var(--fs-xl); white-space: nowrap; }
-.wp-data span { font-size: var(--fs-xs); letter-spacing: var(--tr-caps); color: var(--text-2); }
-.wp-cfg { margin: 0; gap: var(--sp-2); }
-.wp-cfg-g > span { font-size: var(--fs-xs); color: var(--text-2); min-width: 64px; }
-.wp-cfg-g.coverage button, .wp-cfg-g button { font-size: var(--fs-sm); }
-.wp-go {
-  grid-column: 1 / -1; display: flex; align-items: center; gap: var(--sp-4) var(--sp-5); flex-wrap: wrap;
-  padding-top: var(--sp-5); border-top: 1px solid var(--line);
-}
-.wp-modes { flex: none; }
-.wp-modes button { display: inline-flex; align-items: center; gap: var(--sp-2); }
-.wp-modes button svg { flex: none; }
-.wp-mis-sub { flex: 1 1 160px; margin: 0; font-size: var(--fs-md); color: var(--text-2); }
-.wp-fly { min-width: 200px; height: 48px; padding: 0 var(--sp-6); font-size: var(--fs-xl); font-weight: var(--fw-semibold); gap: var(--sp-2); }
-@media (max-width: 820px) {
-  .wp-in { grid-template-columns: minmax(0, 1fr); padding: var(--sp-4); gap: var(--sp-4); }
-  .wp-go { flex-direction: column; align-items: stretch; padding-top: var(--sp-4); gap: var(--sp-3); }
-  .wp-modes { display: grid; grid-template-columns: repeat(3, 1fr); }
-  .wp-modes button { justify-content: center; padding-inline: var(--sp-1); gap: var(--sp-1); font-size: var(--fs-sm); }
-  .wp-modes button svg { display: none; }
-  .wp-mis-sub { flex: none; text-align: center; }
-  .wp-fly { width: 100%; }
-}
-
-/* ── Poster: los splats renderizados tienen huecos transparentes → respaldo oscuro fijo en ambos temas ── */
-.wi-poster, .fv-pop-poster, .fv-pin-img, .wl-bg { background-color: #0A0C10; }   /* fixed dark backing (media chrome), same in both themes */
-
-/* meta de la isla: misma estructura en todas (fecha · vuelo), una línea, nunca se parte */
-.wi-meta { display: flex; gap: var(--sp-2); white-space: nowrap; overflow: hidden; }
-.wi-meta > span + span::before { content: "·"; margin-right: var(--sp-2); }
-
-/* estadísticas de la cabecera: valor arriba, etiqueta debajo → nada queda huérfano al envolver */
-.fv-statbar { gap: var(--sp-3) var(--sp-6); }
-.fv-statbar > span { display: flex; flex-direction: column; gap: var(--sp-0); white-space: nowrap; }
-.fv-statbar b { font-size: var(--fs-xl); font-weight: var(--fw-semibold); line-height: var(--lh-tight); }
-.fv-statbar em { font-style: normal; font-size: var(--fs-xs); color: var(--text-2); }
-
-/* entrada de las islas: solo la primera vez; cambiar de filtro no re-escalona */
-.w-rail.settled .wi { animation: none; opacity: 1; }
-
-/* toggle de vista + barra del mapa */
-.fv-viewseg { margin-top: var(--sp-4); width: fit-content; }
-.fv-mapbar .spacer { flex: 1; }
-@media (max-width: 640px) { .fv-mapbar { flex-wrap: wrap; } .fv-mapbar .spacer { display: none; } .fv-mapbar .seg { flex: 0 1 auto; width: fit-content; max-width: 100%; } .fv-mapbar .btn { flex: 1 1 calc(50% - var(--sp-1)); } }
-
-.w-panel { margin-bottom: 0; }   /* el padding inferior de <main> ya deja aire; sin ~150px muertos bajo el panel */
-
-/* ── Cabecera: mismo título que el resto de páginas (20px/600); se conserva el eyebrow FLIGHTVERSE ── */
-.fv-hero h1 { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); letter-spacing: var(--tr-tight); line-height: var(--lh-tight); margin: var(--sp-2) 0 var(--sp-1); }
-
-/* ── Placeholder neutro mientras la miniatura carga / no existe ── */
-.wi-poster::before {
-  content: attr(data-ini); position: absolute; inset: 0; display: grid; place-items: center; padding-bottom: 38%;   /* letra en la mitad alta: el texto vive abajo */
-  font: var(--fw-bold) 56px/1 var(--mono); color: color-mix(in srgb, var(--media-accent, #7cc4ff) 45%, transparent);
-  background: linear-gradient(135deg, #1a2433 0%, #0e141d 60%, #0A0C10 100%);
-  transition: opacity var(--dur-slow) var(--ease-out);
-}
-.wi-poster.has-img::before { opacity: 0; }
-.w-rail.at-end {
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 100%);
-          mask-image: linear-gradient(90deg, transparent 0, #000 var(--sp-5), #000 100%);
-}
+.wi { aspect-ratio:auto; overflow:visible; }
+.wi-poster { flex:none; transform:none!important; }
+.wp-description { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+@media(max-width:820px) { .wp-go { order:-1; } }
+.w-filters { max-width:100%; }
+.w-filters button { flex:0 0 auto; }

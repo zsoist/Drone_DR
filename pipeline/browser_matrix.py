@@ -372,7 +372,7 @@ def run_share(cdp, base_url: str, cid: str, viewport: str, expected_path: str) -
 def run_workspace(cdp, base_url: str, cid: str, viewport: str, expected_path: str) -> dict:
     url = f"{base_url.rstrip('/')}/tresd.html"
     cdp.send("Page.navigate", {"url": url})
-    wait_for(cdp, "document.body && /Proyectos 3D/i.test(document.body.innerText)", timeout=45, label="3D workspace")
+    wait_for(cdp, "document.querySelector('.page-3d') && /Tus escenas/i.test(document.querySelector('.page-3d').textContent)", timeout=45, label="3D workspace")
     cdp.eval(f"localStorage.setItem('ab.proj3d', {json.dumps(cid)}); location.reload();")
     wait_for(cdp, js("""
       return !!(document.querySelector('#proj-view')
@@ -419,7 +419,7 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
         )
     target_id = str(target["id"])
     cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/tresd.html"})
-    wait_for(cdp, "document.body && /Proyectos 3D/i.test(document.body.innerText)",
+    wait_for(cdp, "document.querySelector('.page-3d') && /Tus escenas/i.test(document.querySelector('.page-3d').textContent)",
              timeout=45, label="3D jobs shell")
     clicked = cdp.eval(js("""
       const tab = document.querySelector('[data-tab="jobs"]');

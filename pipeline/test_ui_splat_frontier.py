@@ -26,7 +26,7 @@ class SplatFrontierUiContractTests(unittest.TestCase):
 
     def test_ui_exposes_strict_cuda_resolution_and_truthful_eta_sources(self):
         for token in ("data-splat-resolution", "projected_from_measured",
-                      "Primera medición", "CUDA estricto", "Sin fallback local",
+                      "Primera medición", "CUDA estricto", "Sin respaldo local",
                       "iterations_per_second", "iteration_time_ms"):
             self.assertIn(token, self.tresd)
 
