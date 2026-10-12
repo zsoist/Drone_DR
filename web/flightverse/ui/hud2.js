@@ -15,15 +15,15 @@
 //   setObjective({x,y,z,label}|null)
 //   setWind({speed, fromDeg, gust}) · setIntegrity(0..1) · setBattery(0..1) · setAttitude(on)
 //   hitFlash() · gateFlash() · updateInvasionHud(inv, health) · announce(text) · message(text, ms)
-import { combatV2Markup } from '/flightverse/ui/weapons2.js?v=371';
-import { bootMarkup } from '/flightverse/ui/screens.js?v=371';
-import { createHudCanvas, reticleKindFor } from '/flightverse/ui/reticle.js?v=371';
-import { RIGS } from '/flightverse/runtime.js?v=371';
-import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=371';
-import { ICON } from '/flightverse/ui/icons2.js?v=371';
-import { hudMenuMarkup } from '/flightverse/ui/menu2.js?v=371';
-import { hudScale, crashCauseLabel } from '/flightverse/hud-format.js?v=371';
-import { screensV2Markup } from '/flightverse/ui/screens2.js?v=371';
+import { combatV2Markup } from '/flightverse/ui/weapons2.js?v=379';
+import { bootMarkup } from '/flightverse/ui/screens.js?v=379';
+import { createHudCanvas, reticleKindFor } from '/flightverse/ui/reticle.js?v=379';
+import { RIGS } from '/flightverse/runtime.js?v=379';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=379';
+import { ICON } from '/flightverse/ui/icons2.js?v=379';
+import { hudMenuMarkup } from '/flightverse/ui/menu2.js?v=379';
+import { hudScale, crashCauseLabel } from '/flightverse/hud-format.js?v=379';
+import { screensV2Markup } from '/flightverse/ui/screens2.js?v=379';
 
 export { ICON };
 

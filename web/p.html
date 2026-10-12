@@ -2,6 +2,9 @@
 <!-- data-theme=light: respaldo sin JS; p.js aplica ab_theme / prefers-color-scheme -->
 <html lang="es" data-theme="light">
 <head>
+  <script src="ui/theme.js?v=379"></script>
+  <script src="ui/transitions.js?v=379"></script>
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#F2F4F8" media="(prefers-color-scheme: light)">
@@ -16,14 +19,18 @@
   <meta property="og:description" content="Fotogrametría de dron, mapa interactivo y modelo 3D de la propiedad.">
   <meta property="og:image" content="/assets/touch-icon.png">
   <meta name="twitter:card" content="summary">
-  <link rel="stylesheet" href="style.css?v=371">
-  <link rel="stylesheet" href="css/p.css?v=371">
+  <link rel="stylesheet" href="style.css?v=379">
+  <link rel="stylesheet" href="css/p.css?v=379">
   <link rel="stylesheet" href="vendor/maplibre-gl.css">
   <script src="vendor/maplibre-gl.js" defer></script>
-  <script src="icons.js?v=371"></script>
+  <script src="icons.js?v=379"></script>
+
+  <link rel="preload" href="vendor/fonts/mona-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/shell.css?v=379">
+  <link rel="stylesheet" href="ui/skeleton.css?v=379">
 </head>
 <body>
   <div class="prop" id="root"><p class="p-loading" role="status">Cargando propiedad…</p></div>
-  <script src="p.js?v=371" defer></script>
+  <script src="p.js?v=379" defer></script>
 </body>
 </html>
