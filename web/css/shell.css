@@ -27,6 +27,7 @@
   --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 40px; --sp-9: 56px; --sp-10: 72px;
   --r-xs: 6px; --r-sm: 6px; --r-md: 6px; --r-lg: 12px; --r-xl: 20px; --r-2xl: 20px; --r-pill: 999px;
   --ctl-h: 44px; --sidebar-w: 64px; --mnav-h: 64px;
+  --page-content-max: 1280px; --page-editor-max: 1600px; --page-grid-gap: var(--sp-6);
   --dur-fast: 140ms; --dur-base: 220ms; --dur-slow: 340ms; --dur-sheet: 450ms; --dur-exit: 150ms;
   --ease-out: cubic-bezier(.16, 1, .3, 1); --ease-spring: var(--ease-out);
   --z-base: 0; --z-sticky: 20; --z-nav: 100; --z-overlay: 200; --z-modal: 300; --z-toast: 400;
@@ -77,18 +78,25 @@ button.ui-chip, a.ui-chip { min-height: 44px; min-width: 44px; cursor: pointer; 
 .ui-empty { display: grid; justify-items: start; gap: 16px; max-width: 48ch; padding: 32px 0; color: var(--text); }
 .ui-empty p { margin: 0; font-size: var(--fs-lg); line-height: var(--lh-base); }
 .ui-empty small { color: var(--text-2); font-size: var(--fs-sm); }
+/* Opt-in page grid. Apply to the shell main; direct children span the full row by default. */
+.ab-page, .ab-shell > .main.ab-page { --ab-page-limit: var(--page-content-max); display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--page-grid-gap); width: 100%; min-width: 0; max-width: calc(var(--ab-page-limit) + 2 * var(--main-px)); margin-inline: auto; padding-inline: var(--main-px); box-sizing: border-box; }
+.ab-page.ab-page--wide, .ab-shell > .main.ab-page--wide { --ab-page-limit: var(--page-editor-max); }
+:where(.ab-page) > * { min-width: 0; grid-column: 1 / -1; }
+@media (min-width: 1024px) {
+  .ab-page, .ab-shell > .main.ab-page { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+}
 /* Navigation is isolated from legacy .sidebar and .nav-item rules. */
 .ab-shell { --sidebar-w: 64px; }
 .ab-shell.ab-shell--navigation-only { min-height: 0; height: 0; padding: 0; }
 .ab-rail { display: none; }
-.ab-tabs { position: fixed; z-index: var(--z-nav); bottom: calc(10px + env(safe-area-inset-bottom)); left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); height: var(--mnav-h); padding: 4px; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-3); }
+.ab-tabs { position: fixed; z-index: var(--z-nav); bottom: calc(10px + env(safe-area-inset-bottom)); left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) 44px; column-gap: 4px; height: var(--mnav-h); padding: 4px; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-3); }
 @supports (backdrop-filter: blur(16px)) {
   .ab-tabs { background: color-mix(in oklch, var(--surface) 90%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 }
 .ab-nav-item { position: relative; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 3px; min-width: 44px; min-height: 44px; padding: 4px; color: var(--text-2); background: transparent; border: 0; border-radius: 12px; font: 500 12px/1.3 var(--font); text-decoration: none; cursor: pointer; }
 .ab-nav-item svg { width: 22px; height: 22px; flex: none; }
 .ab-nav-item.active { color: var(--accent-fg); background: var(--accent-dim); }
-.ab-search { position: fixed; z-index: var(--z-nav); bottom: calc(84px + env(safe-area-inset-bottom)); right: max(16px, env(safe-area-inset-right)); width: 44px; height: 44px; padding: 0; border: 1px solid var(--line-strong); border-radius: 50%; display: grid; place-items: center; background: var(--surface); color: var(--text); box-shadow: var(--shadow-3); cursor: pointer; }
+.ab-search { align-self: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line-strong); border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); color: var(--text); cursor: pointer; }
 .ab-search svg { width: 20px; height: 20px; }
 .ab-shell > .main { padding-bottom: calc(144px + env(safe-area-inset-bottom)); }
 .ab-more.ui-sheet { height: min(520px, 85dvh); }

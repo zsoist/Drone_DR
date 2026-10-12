@@ -75,6 +75,41 @@ The `--tr-eyebrow` token is `0.01em`. The `--tr-caps` token is `0.02em`.
 Set letter space between zero and `0.02em`. Reserve the mono font for telemetry.
 Write label text in sentence case. Do not use uppercase mono labels.
 
+## Page layout
+
+Use `.ab-page` on the main element from `renderShell()` for new page layouts.
+Use `.ab-page--wide` with `.ab-page` for editors that need more space.
+These classes are optional. Current pages keep their layout until their workstream adopts the grid.
+
+| Token or class | Contract |
+|---|---|
+| `--page-content-max` | Maximum content width: 1280 px, plus the outer padding |
+| `--page-editor-max` | Maximum editor width: 1600 px, plus the outer padding |
+| `--page-grid-gap` | Space between rows and columns: 24 px |
+| `.ab-page` | Centered grid; one column below 1024 px, twelve columns from 1024 px |
+| `.ab-page--wide` | Uses the editor width limit |
+
+The grid uses the available width after the desktop rail.
+The shell keeps its bottom space for phone navigation and its outer padding from `--main-px`.
+Direct children use the full row by default.
+
+Set column spans in page CSS at the desktop breakpoint.
+Keep headers across the full row. Put related content and controls in columns next to each other.
+Do not add a second narrow container around the page grid.
+
+```js
+const main = renderShell();
+main.classList.add('ab-page');
+// For an editor: main.classList.add('ab-page', 'ab-page--wide');
+```
+
+```css
+@media (min-width: 1024px) {
+  .page-content { grid-column: span 8; }
+  .page-controls { grid-column: span 4; }
+}
+```
+
 ## Theme
 
 `AeroTheme.set('dark' | 'light' | 'system')` changes the preference.
@@ -89,7 +124,11 @@ Listen for `ab-theme-change` to update page controls.
 
 ## Navigation and palette
 
-Phone navigation has five labeled destinations and a separate search button.
+Phone navigation has five labeled destinations and a circular search button at the right end of the same bar.
+The search target is 44 px. Its screen reader label is Buscar.
+The button stays inside the bar and shares its single glass layer.
+Do not position search above page content.
+
 The desktop rail starts at 1024 px. Its closed and open widths are 64 and 240 px.
 The rail stores its state in `ab_rail`.
 

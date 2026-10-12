@@ -971,8 +971,8 @@ document.addEventListener('click', async e => {
 
 // Public palette bridge for classic page scripts. ES modules can import palette.js directly.
 const shellComponents = Promise.all([
-  import('./ui/sheet.js?v=378'), import('./ui/palette.js?v=378'),
-  import('./ui/activity.js?v=378'), import('./ui/toast.js?v=378'),
+  import('./ui/sheet.js?v=379'), import('./ui/palette.js?v=379'),
+  import('./ui/activity.js?v=379'), import('./ui/toast.js?v=379'),
 ]);
 function registerPaletteSource(fn) {
   let cancelled = false, unregister;
@@ -1013,8 +1013,9 @@ function renderShell(active, { navigationOnly = false } = {}) {
       </nav>
       ${navigationOnly ? '' : '<main class="main" id="main" tabindex="-1"></main>'}
     </div>
-    <nav class="ab-tabs" aria-label="Navegación principal">${navItems}</nav>
-    <button class="ab-search" type="button" data-palette aria-label="Buscar en AeroBrain" aria-haspopup="dialog">${icon('search')}</button>`);
+    <nav class="ab-tabs" aria-label="Navegación principal">${navItems}
+      <button class="ab-search" type="button" data-palette aria-label="Buscar" aria-haspopup="dialog">${icon('search')}</button>
+    </nav>`);
   const rail = document.querySelector('.ab-rail');
   const tooltip = document.createElement('div');
   tooltip.className = 'ab-rail-tooltip'; tooltip.hidden = true; tooltip.setAttribute('aria-hidden', 'true');
