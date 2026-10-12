@@ -1,5 +1,5 @@
 const main = renderShell('guia.html');
-main.classList.add('gd-page');
+main.classList.add('ab-page', 'gd-page');
 const guides = [
   {id:'importar',title:'Traer tus vuelos',intro:'De la tarjeta al archivo, con el video y su ruta juntos.',href:'drone.html',action:'Abrir Dron',steps:[['Conecta la tarjeta','Inserta la microSD en el Mac y abre Dron.'],['Elige los archivos','Pulsa Importar nuevos. Puedes seleccionar videos y fotos.'],['Conserva la tarjeta','Espera a que termine la importación. Revisa el resultado antes de borrar archivos por tu cuenta.']],note:'El archivo SRT del video aporta la ruta, la altura y la velocidad. Conserva ambos archivos juntos.'},
   {id:'subir',title:'Subir videos y fotos',intro:'También puedes empezar desde el teléfono o el computador.',href:'drone.html?via=subir',action:'Elegir archivos',steps:[['Abre Subida directa','En Dron, elige Videos o Fotos.'],['Selecciona el material','Usa Elegir videos, Elegir fotos o arrastra los archivos desde el computador.'],['Consulta el avance','La actividad de la parte inferior abre Sistema. Ahí puedes ver el progreso y los errores.']],note:'Un video sin su archivo de telemetría no incluye una ruta GPS. Las fotos pueden conservar el GPS de sus metadatos.'},

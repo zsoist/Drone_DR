@@ -1,10 +1,10 @@
-import { jobState, jobRelativeTime } from './system.logic.js?v=379';
+import { jobState, jobRelativeTime, jobEmptyState } from './system.logic.js?v=380';
 import { createSheet } from './ui/sheet.js?v=374';
 import { showToast } from './ui/toast.js?v=374';
 import { registerPaletteSource } from './ui/palette.js?v=374';
 
 const main = renderShell('system.html');
-main.classList.add('sy-page');
+main.classList.add('ab-page', 'sy-page');
 const kinds = { '3d': 'Modelo 3D', splat: 'Splat', foto4k: 'Foto', edit: 'Edición', upload: 'Subida', analyze: 'Análisis', ingest: 'Importación' };
 const active = j => jobState(j)[1] === 'active';
 const failed = j => jobState(j)[1] === 'error';
@@ -21,10 +21,12 @@ main.innerHTML = `
     <aside class="sy-health" aria-labelledby="sy-health-title"><div class="sy-section-head"><h2 id="sy-health-title">Salud del equipo</h2></div>
       <p id="sy-connection" role="status">Consultando el Mac…</p><dl id="sy-metrics">${skeleton}</dl>
       <div class="sy-node"><h3>PC de procesamiento</h3><p id="sy-gpu">Consultando…</p><div class="sy-actions"><button class="ui-button ui-button--secondary" id="sy-wake" disabled>Despertar</button><button class="ui-button ui-button--quiet" id="sy-sleep" disabled>Suspender</button></div></div>
-      <button class="ui-button ui-button--secondary" id="sy-inventory">Ver almacenamiento</button>
-      <button class="ui-button ui-button--quiet" id="sy-reports">Ver diagnósticos</button>
     </aside>
   </div>
+  <section class="sy-tools" aria-label="Consultas del sistema">
+    <div><h2>Almacenamiento</h2><p>Espacio ocupado por originales y archivos generados.</p><button class="ui-button ui-button--secondary" id="sy-inventory">Ver almacenamiento</button></div>
+    <div><h2>Diagnósticos</h2><p>Errores recientes e informes guardados.</p><button class="ui-button ui-button--secondary" id="sy-reports">Ver diagnósticos</button></div>
+  </section>
   <section class="sy-review"><div><h2>Revisión de duplicados</h2><p>La cola de revisión aún no está disponible. Tus originales se conservan.</p></div><a class="ui-button ui-button--secondary" href="studio.html">Abrir Studio</a></section>`;
 const $ = id => document.getElementById(id);
 async function read(url, options) {
@@ -44,6 +46,7 @@ function paintJobs() {
     .sort((a,b) => Number(active(b)) - Number(active(a)) || Number(b.started || 0) - Number(a.started || 0));
   $('sy-count').textContent = `${jobs.filter(active).length} en curso · ${jobs.filter(failed).length} con errores`;
   $('sy-jobs').setAttribute('aria-busy', 'false');
+  const empty = jobEmptyState(jobs, filter, Date.now());
   const html = rows.length ? rows.slice(0, shown).map(j => {
     const [label,tone] = jobState(j);
     const progress = Math.round(Math.max(0, Math.min(1, Number(j.progress) || 0)) * 100);
@@ -52,7 +55,7 @@ function paintJobs() {
       ${active(j) ? `<div class="sy-progress"><progress max="100" value="${progress}" aria-label="Progreso"></progress><span class="ui-figures">${progress}%</span></div>` : ''}
       <p>${esc(j.detail || (j.status === 'queued' ? 'Esperando su turno.' : label))}</p>
       <div class="sy-job-foot"><span class="sy-note">${esc(jobRelativeTime(j, Date.now()))}</span><button class="ui-button ui-button--secondary" data-job="${esc(j.id)}">Ver detalles</button></div></article>`;
-  }).join('') : `<div class="ui-empty"><h3>${filter === 'error' ? 'No hay trabajos con errores' : filter === 'active' ? 'Todo está en pausa' : 'Tu primer trabajo empieza en Studio'}</h3><p>${filter === 'active' ? 'No hay trabajos en cola ni en proceso.' : 'Aquí verás el estado de tus importaciones y ediciones.'}</p><a class="ui-button ui-button--primary" href="studio.html">Abrir Studio</a><small>Por ejemplo, sube un video para editarlo.</small></div>`;
+  }).join('') : `<div class="ui-empty"><h3>${empty.title}</h3>${empty.action ? `<button class="ui-button ui-button--primary" data-review-errors>${empty.action}</button>` : `<small>${esc(empty.note)}</small>`}</div>`;
   if ($('sy-jobs').dataset.html !== html) { $('sy-jobs').innerHTML = html; $('sy-jobs').dataset.html = html; }
   $('sy-more').hidden = rows.length <= shown;
 }
@@ -142,6 +145,9 @@ $('sy-reports').addEventListener('click', async e => {
   } catch { if (view.element.isConnected) view.body.textContent = 'No se pudieron cargar los diagnósticos.'; }
 });
 main.addEventListener('click', e => {
+  if (e.target.closest('[data-review-errors]')) {
+    const tab = main.querySelector('[data-filter="error"]'); tab.click(); tab.focus();
+  }
   const f = e.target.closest('[data-filter]');
   if (f) { filter = f.dataset.filter; shown = 20; main.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',b===f)); paintJobs(); }
   const b = e.target.closest('[data-job]'); if (b) openJob(jobs.find(j=>j.id===b.dataset.job), b);

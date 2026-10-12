@@ -1,3 +1,7 @@
+/* Match the W1 page grid while its shared rule is integrated. */
+.main.dr-page { width:100%; max-width:calc(1280px + 2 * var(--main-px)); }
+.ab-shell > .main.dr-page { padding-bottom:calc(var(--sp-10) * 2 + env(safe-area-inset-bottom)); }
+@media(min-width:1024px) { .ab-shell > .main.dr-page { padding-bottom:var(--sp-10); } }
 .dr-page { padding-top:var(--sp-8); }
 .dr-head { display:flex; justify-content:space-between; align-items:center; gap:var(--sp-6); margin-bottom:var(--sp-8); }
 .dr-head h1 { margin:0 0 var(--sp-3); font-size:var(--fs-4xl); line-height:var(--lh-tight); letter-spacing:-.03em; }

@@ -1,10 +1,10 @@
-import { canonicalPropertyURL } from './ventas.logic.js?v=379';
+import { canonicalPropertyURL } from './ventas.logic.js?v=380';
 import { createSheet } from './ui/sheet.js?v=374';
 import { showToast } from './ui/toast.js?v=374';
 import { registerPaletteSource } from './ui/palette.js?v=374';
 
 const main = renderShell('ventas.html');
-main.classList.add('vt-page');
+main.classList.add('ab-page', 'vt-page');
 let properties = [], flights = [], reels = [], editor = null;
 const fields = [['titulo','Nombre','Casa campestre en Cajicá'],['slug','Nombre del enlace','casa-cajica'],['ubicacion','Ubicación','Cajicá, Cundinamarca'],['precio','Precio','850.000.000 COP'],['area','Área (m²)','240'],['habitaciones','Habitaciones','4'],['banos','Baños','3'],['parqueaderos','Parqueaderos','2'],['estrato','Estrato','5'],['whatsapp','WhatsApp con indicativo','573001234567'],['telefono','Teléfono','300 123 4567']];
 async function read(url, options) {

@@ -1,6 +1,6 @@
 // Drone equipment, read-only library statistics, SD import, and direct upload.
 const main = renderShell('drone.html');
-main.classList.add('dr-page');
+main.classList.add('ab-page', 'dr-page');
 const drMotionMs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-base')) || 220;
 main.innerHTML = `
   <header class="dr-head"><div><h1>Dron</h1><p>Tu equipo y el material de cada vuelo.</p></div><button class="ui-button ui-button--primary" id="dr-import">Importar archivos</button></header>

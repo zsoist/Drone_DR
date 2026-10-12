@@ -15,3 +15,14 @@ export function jobRelativeTime(job, now) {
   if (minutes < 1440) return `hace ${Math.floor(minutes / 60)} h`;
   return `hace ${Math.floor(minutes / 1440)} días`;
 }
+
+export function jobEmptyState(jobs, filter, now) {
+  const errors = jobs.filter(job => jobState(job)[1] === 'error').length;
+  const latest = jobs.filter(job => job.status === 'done')
+    .sort((a, b) => Number(b.finished || b.started || 0) - Number(a.finished || a.started || 0))[0];
+  return {
+    title: filter === 'active' ? 'Sin trabajos activos' : filter === 'error' ? 'Sin trabajos con errores' : 'Sin trabajos registrados',
+    action: filter === 'active' && errors ? `Revisar ${errors} con errores` : '',
+    note: latest ? `Último finalizado: ${latest.title || latest.label || 'Trabajo'} · ${jobRelativeTime(latest, now)}.` : 'Los trabajos aparecerán aquí cuando se inicien.',
+  };
+}
