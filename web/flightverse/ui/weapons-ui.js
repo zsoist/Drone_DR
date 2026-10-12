@@ -2,9 +2,9 @@
 // botones de disparo y sus lecturas (munición, enfriamiento) (WS A).
 // La lógica de disparo vive en fx/index.js (doFire) e input/bindings.js (gatillo).
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { createWeaponPicker } from '/flightverse/mobile-command.js?v=379';
-import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=379';
-import { ARSENAL } from '/flightverse/weapons.js?v=379';
+import { createWeaponPicker } from '/flightverse/mobile-command.js?v=390';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=390';
+import { ARSENAL } from '/flightverse/weapons.js?v=390';
 
 export const combatMarkup = () => `    <div class="vl-corner br">
       <div class="vl-combat" id="vl-combat" role="dialog" aria-modal="false" aria-labelledby="vl-combat-title">

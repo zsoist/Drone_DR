@@ -3,7 +3,7 @@
  * Sources may return unfiltered items; accent-insensitive fuzzy ranking runs here.
  * mountPalette(items) -> {open(opener?), close(), destroy()}. One palette per shell.
  */
-import { createSheet } from './sheet.js?v=379';
+import { createSheet } from './sheet.js?v=390';
 const sources = new Set();
 const listeners = new Set();
 export function registerPaletteSource(fn) {

@@ -1,7 +1,7 @@
-import { jobState, jobRelativeTime, jobEmptyState } from './system.logic.js?v=380';
-import { createSheet } from './ui/sheet.js?v=374';
-import { showToast } from './ui/toast.js?v=374';
-import { registerPaletteSource } from './ui/palette.js?v=374';
+import { jobState, jobRelativeTime, jobEmptyState } from './system.logic.js?v=390';
+import { createSheet } from './ui/sheet.js?v=390';
+import { showToast } from './ui/toast.js?v=390';
+import { registerPaletteSource } from './ui/palette.js?v=390';
 
 const main = renderShell('system.html');
 main.classList.add('ab-page', 'sy-page');
