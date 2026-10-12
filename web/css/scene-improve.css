@@ -52,3 +52,56 @@ html[data-theme="light"] .si-capture > input[type=checkbox]:checked {
   .si-review { bottom: calc(var(--mnav-h, 56px) + env(safe-area-inset-bottom)); }
   .si-workspace { padding-bottom: calc(var(--mnav-h, 56px) + 112px + env(safe-area-inset-bottom)); }
 }
+
+/* A capture review, with the version summary beside the working list. */
+.si-workspace .page-head h1 { font-size:var(--fs-3xl); max-width:24ch; }
+.si-workspace .page-head-sub { max-width:65ch; font-size:var(--fs-lg); }
+.si-layout { grid-template-columns:minmax(0,1fr) 300px; gap:var(--sp-7); }
+.si-section { background:none; border:0; padding:0 0 var(--sp-7); border-bottom:1px solid var(--line); border-radius:0; }
+.si-step > span { display:none; }
+.si-step { padding:0; margin-bottom:var(--sp-5); }
+.si-step h2 { font-size:var(--fs-xl); }
+.si-step p { font-size:var(--fs-md); color:var(--text-2); }
+.si-base-card { background:none; border:0; padding:0; gap:var(--sp-5); }
+.si-base-card img { border-radius:0; }
+.si-base-card h3 { font-size:var(--fs-xl); }
+.si-current { margin-top:var(--sp-6); }
+.si-capture { background:var(--surface); border-radius:var(--r-sm); padding:var(--sp-3); }
+.si-capture .si-evidence,.si-capture .si-reason,.si-capture .si-role { font-size:var(--fs-xs); }
+.si-callout { border:0; border-radius:0; background:none; padding:0; margin-bottom:var(--sp-4); }
+.si-callout small { font-size:var(--fs-sm); }
+.si-build-choice { background:none; border:0; border-bottom:1px solid var(--line); border-radius:0; padding:var(--sp-4) 0; }
+.si-build-choice em { display:none; }
+.si-build-choice small { font-size:var(--fs-sm); }
+.si-review { background:var(--surface); border:0; border-radius:var(--r-lg); padding:var(--sp-5); }
+.si-review h2 { font-size:var(--fs-xl); }
+.si-truth small,.si-action-status { font-size:var(--fs-sm); }
+.si-loading .sk { display:block; height:160px; background:var(--surface-2); }
+@media(max-width:1120px) {
+ .si-layout { display:flex; flex-direction:column; }
+ .si-review { position:static; width:100%; box-shadow:none; }
+ .si-review > .si-cancel { display:flex; }
+ .si-mobile-review { display:none; }
+ .si-workspace { padding-bottom:var(--sp-7); }
+}
+@media(max-width:820px) {
+ .si-base-card { display:flex; flex-direction:column; align-items:stretch; }
+ .si-base-card img { width:100%; height:auto; max-height:220px; object-fit:cover; }
+ .si-settings { grid-template-columns:1fr; }
+ .si-capture { padding:var(--sp-3); }
+ .si-capture-title { gap:var(--sp-2); }
+ .si-capture > input[type=checkbox] { width:24px; height:24px; }
+}
+@media(max-width:1120px) {
+ .si-review h2 { display:block; }
+ .si-review .si-review-kpis, .si-review .si-truth { display:flex; }
+ .si-review .si-budget { display:block; }
+ .si-review .si-submit { display:inline-flex; }
+ .si-workspace { padding-bottom:calc(var(--mnav-h) + var(--sp-7) + env(safe-area-inset-bottom)); }
+}
+@media(max-width:1120px) {
+ .si-review { display:flex; flex-direction:column; align-items:stretch; gap:var(--sp-4); }
+ .si-review .si-review-kpis { display:grid; }
+ .si-review .si-role-summary { flex-wrap:wrap; }
+ .si-review .si-submit { width:100%; }
+}

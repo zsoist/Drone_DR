@@ -58,3 +58,40 @@
 @media (max-width: 480px) { .sh-dl-grid { grid-template-columns: 1fr; } }
 
 /* estados vacíos */
+
+/* The scene fills the page. Details open only when requested. */
+.share-page { background:var(--media-bg); color:var(--on-media); }
+.share-main { max-width:none; padding:var(--sp-4) var(--sp-5) max(var(--sp-4),env(safe-area-inset-bottom)); gap:var(--sp-4); min-height:100dvh; }
+.sh-head { margin:0; }
+.sh-head h1 { font-size:var(--fs-xl); }
+.sh-head .ui-button { color:var(--on-media); }
+.sh-sub { color:var(--on-media-2); font-size:var(--fs-xs); }
+.sh-chips { display:none; }
+.sh-viewer { border:0; border-radius:0; background:var(--media-bg); }
+.sh-ph { background:var(--surface); border:0; border-radius:var(--r-sm); padding:var(--sp-2); }
+.sh-ph-t { padding-inline:var(--sp-3); color:var(--text-2); font-size:var(--fs-sm); }
+.sh-view { height:calc(100dvh - 225px); min-height:420px; background:var(--media-bg); }
+.sh-start { position:absolute; bottom:var(--sp-6); left:50%; transform:translateX(-50%); box-shadow:var(--shadow-2); }
+.sh-actions { justify-content:center; }
+.sh-actions .ui-button { color:var(--on-media); }
+.sh-actions .ui-button--secondary { background:var(--media-scrim-strong); }
+.share-page .share-splat-select { height:44px; font-size:var(--fs-sm); }
+.share-page .sh-tabs button { min-height:44px; }
+.share-page .scene-sheet { color:var(--text); }
+.share-page .scene-sheet .panel { border:0; background:none; }
+.share-page .scene-sheet .ph { display:none; }
+.share-page .scene-sheet .pb { padding:0; }
+.sh-dl-grid { grid-template-columns:1fr; gap:0; }
+.sh-dl { border:0; border-bottom:1px solid var(--line); border-radius:0; padding:var(--sp-4) 0; }
+.sh-dl .sh-dl-sub { font-size:var(--fs-xs); letter-spacing:0; }
+.share-page .cmp { min-height:260px; }
+@media(max-width:820px) {
+ .share-main { padding:var(--sp-3) var(--sp-3) max(var(--sp-4),env(safe-area-inset-bottom)); }
+ .sh-head h1 { font-size:var(--fs-lg); }
+ .sh-ph-t { display:none; }
+ .share-page .sh-tabs { flex:1; display:flex; }
+ .sh-volar { order:2; }
+ .sh-view { min-height:360px; height:60dvh; }
+ .sh-actions { justify-content:flex-start; gap:var(--sp-1); }
+ .sh-actions button { font-size:var(--fs-sm); }
+}

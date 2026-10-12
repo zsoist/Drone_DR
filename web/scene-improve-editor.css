@@ -1,0 +1,17 @@
+/* W4 embeds the W1 foundation in the self-hosted editor. */
+@import url('/css/shell.css?v=374');
+body, button, input, select, textarea, .pcui-label, .font-thin, .font-light, .font-regular, .font-bold { font-family:var(--font); }
+.pcui-label, button, input, select, textarea { font-size:var(--fs-xs); }
+.pcui-button.status-bar-toggle { font-size:var(--fs-xs); }
+body.ab-mobile #menu-bar, body.ab-mobile #bottom-toolbar { transform:none!important; }
+body.ab-mobile #bottom-toolbar { left:var(--sp-1)!important; right:var(--sp-1)!important; bottom:calc(var(--sp-2) + env(safe-area-inset-bottom))!important; overflow-x:auto; }
+body.ab-mobile #right-toolbar { transform:translateY(-50%)!important; top:50%!important; max-height:calc(100% - 180px); overflow-y:auto; }
+body.ab-mobile .pcui-button { min-width:44px; min-height:44px; flex-shrink:0; }
+body.ab-mobile :is(#bottom-toolbar, #right-toolbar) > .pcui-button { min-width:44px; min-height:44px; }
+body.ab-mobile :is(#bottom-toolbar, #right-toolbar) > :is(.bottom-toolbar-separator, .right-toolbar-separator) { min-width:0; min-height:0; flex-shrink:0; }
+body.ab-mobile #view-cube-container { display:none; }
+body.ab-mobile .menu-icon { min-width:44px; min-height:44px; box-sizing:border-box; padding:14px; }
+body.ab-mobile #status-bar { min-height:44px; overflow-x:auto; }
+body.ab-mobile #status-bar :is(.status-bar-stats, .status-bar-stat, .pcui-label) { flex-shrink:0; }
+body.ab-mobile input:not([type=checkbox],[type=range]), body.ab-mobile select { font-size:16px; min-height:44px; }
+@media(prefers-reduced-motion:reduce) { * { animation:none!important; transition-duration:150ms!important; } }

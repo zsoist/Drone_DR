@@ -1,3 +1,5 @@
+import { originalInputs } from './scene-improve-state.js?v=384';
+import { areaNav } from './scene-improve-ui.js?v=384';
 /* global renderShell, pageHead, getFlights, authFetch, api, fmt, icon, haversine, SceneImprovePolicy */
 
 const root = document.getElementById('scene-improve-root');
@@ -20,6 +22,7 @@ const state = {
   scene: null,
   limits: SceneImprovePolicy.DEFAULT_LIMITS,
   baseSources: [],
+  basePhotos: [],
   candidates: [],
   plan: null,
   selected: new Set(),
@@ -68,7 +71,7 @@ function photoSetRow(source, { selected = false, locked = false } = {}) {
   const evidence = [count ? `${count} fotos` : 'fotos', cov, source.status ? `estado: ${source.status}` : null]
     .filter(Boolean).join(' · ');
   const thumb = source.thumbRel
-    ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(source.thumbRel).replace(/%2F/g, '/')}&w=160" alt="Vista previa de ${esc(sourceLabel(source.id))}" loading="lazy" onerror="this.style.visibility='hidden'">`
+    ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(source.thumbRel).replace(/%2F/g, '/')}&w=160" alt="Vista previa de ${esc(sourceLabel(source.id))}" loading="lazy" >`
     : '<span class="si-thumb-empty" aria-hidden="true"></span>';
   return `<label class="si-capture si-photo-set${selected ? ' is-selected' : ''}${locked ? ' is-locked' : ''}">
     <input type="checkbox" data-source-id="${esc(source.id)}" ${selected ? 'checked' : ''} ${locked ? 'disabled' : ''}>
@@ -122,10 +125,15 @@ function updateReview() {
     node.textContent = sets ? `${validation.totals.sources - sets} + ${sets} fotos` : validation.totals.sources;
   });
   document.querySelectorAll('[data-si-duration]').forEach(node => { node.textContent = fmt.dur(validation.totals.durationS); });
-  const roleNode = document.querySelector('[data-si-roles]');
-  if (roleNode) roleNode.innerHTML = roles.length
+  document.querySelectorAll('[data-si-roles]').forEach(roleNode => { roleNode.innerHTML = roles.length
     ? roles.map(role => `<span>${esc(role)}</span>`).join('')
-    : '<span>Selecciona al menos una captura nueva</span>';
+    : '<span>Selecciona al menos una captura nueva</span>'; });
+  const preset = document.getElementById('si-splat-preset');
+  const label = document.getElementById('si-splat-summary');
+  if (label && preset) label.textContent = document.getElementById('si-then-splat').checked ? `Splat · ${preset.selectedOptions[0].textContent}` : 'Sin splat';
+  const odm = document.getElementById('si-preset');
+  const odmLabel = document.getElementById('si-odm-summary');
+  if (odmLabel && odm) odmLabel.textContent = `Fotogrametría · ${odm.selectedOptions[0].textContent}`;
   const error = state.error || validation.errors[0] || (!additions.length ? 'Añade una captura nueva para crear otra versión.' : '');
   const status = document.getElementById('si-action-status');
   if (status) status.textContent = error;
@@ -138,7 +146,8 @@ function updateReview() {
 function wireSelection() {
   root.addEventListener('change', event => {
     const input = event.target.closest('[data-source-id]');
-    if (!input || input.disabled) return;
+    if (!input) { updateReview(); return; }
+    if (input.disabled) return;
     const id = input.dataset.sourceId;
     if (input.checked) state.selected.add(id); else state.selected.delete(id);
     const validation = validateSelection(selectedSources(), state.limits);
@@ -163,31 +172,31 @@ function renderWorkspace() {
   root.className = 'si-workspace';
   root.setAttribute('aria-busy', 'false');
   root.innerHTML = `
-    <a class="si-back" href="tresd.html">${icon('chevL')} Volver a 3D</a>
+    ${areaNav('escenas')}<a class="si-back" href="tresd.html?project=${encodeURIComponent(modelId)}">${icon('chevL')} Volver a 3D</a>
     ${pageHead(`Mejorar ${esc(model.title || 'esta escena')}`,
-      'Combina nuevas tomas del mismo edificio. La versión visible no cambia hasta que la nueva pase registro y control de calidad.',
+      'Añade tomas del mismo lugar. Conserva la versión actual hasta revisar el resultado.',
       `<span class="chip ok">${icon('check')} Versión actual protegida</span>`)}
 
     <div class="si-layout">
       <div class="si-flow">
         <section class="panel si-section" aria-labelledby="si-base-title">
-          <div class="si-step"><span>01</span><div><h2 id="si-base-title">Base de la mejora</h2><p>Esta es la geometría que vamos a reconstruir con más evidencia.</p></div></div>
+          <div class="si-step"><span>01</span><div><h2 id="si-base-title">Base de la mejora</h2><p>Conserva estas capturas y añade nuevos ángulos.</p></div></div>
           <div class="si-base-card">
             <img src="${modelThumb(model)}" alt="Ortofoto actual de ${esc(model.title || 'la escena')}">
-            <div><span class="eyebrow">ESCENA ACTIVA</span><h3>${esc(model.title || model.clip_id)}</h3>
+            <div><h3>${esc(model.title || model.clip_id)}</h3>
               <p class="mono">${q.cameras_reconstructed ?? '—'} cámaras · ${q.gsd_cm_px ?? '—'} cm/px · ${q.area_m2 ? (q.area_m2 / 10000).toFixed(1) + ' ha' : 'área no medida'}</p>
-              <p>Se crea una versión independiente; podrás comparar y promoverla después.</p></div>
+              <p>Podrás comparar ambas versiones antes de elegir.</p></div>
           </div>
-          <div class="si-current"><h3>Fuentes actuales</h3><div class="si-capture-list">${currentRows}</div></div>
+          <div class="si-current"><h3>Capturas actuales${state.basePhotos.length ? ` · ${state.basePhotos.length} fotos conservadas` : ''}</h3><div class="si-capture-list">${currentRows}</div></div>
         </section>
 
         <section class="panel si-section" aria-labelledby="si-captures-title">
-          <div class="si-step"><span>02</span><div><h2 id="si-captures-title">Capturas que realmente aportan</h2>
-            <p>Priorizamos paralaje, ángulos complementarios y calidad 3D; no solo cercanía.</p></div></div>
-          <div class="si-callout">${icon('spark')} <span><b>${recommended.length} capturas recomendadas</b>
+          <div class="si-step"><span>02</span><div><h2 id="si-captures-title">Añadir capturas</h2>
+            <p>Elige tomas que muestren lados y alturas diferentes.</p></div></div>
+          <div class="si-callout">${icon('layers')} <span><b>${recommended.length} capturas recomendadas</b>
             <small>Selección automática dentro del límite real de ${state.limits.max_sources} videos y ${state.limits.max_duration_s / 60} minutos.</small></span></div>
-          <div class="si-capture-list">${recommended.map(candidate => captureRow(candidate, { selected: state.selected.has(candidate.id) })).join('')}</div>
-          <details class="si-other">
+          <div class="si-capture-list">${recommended.length ? recommended.map(candidate => captureRow(candidate, { selected: state.selected.has(candidate.id) })).join('') : '<div class="ui-empty"><p>No hay capturas nuevas recomendadas para esta escena.</p><a class="ui-button ui-button--secondary" href="subir.html">Subir capturas</a><p>Prueba con una órbita baja y una vista cenital del mismo lugar.</p></div>'}</div>
+          <details class="si-other"${others.length ? '' : ' hidden'}>
             <summary>Otras capturas compatibles <span>${others.length}</span></summary>
             <p>Disponibles para revisión manual. Las capturas débiles explican por qué no fueron seleccionadas.</p>
             <div class="si-capture-list">${others.map(candidate => captureRow(candidate, { selected: state.selected.has(candidate.id) })).join('')}</div>
@@ -196,20 +205,20 @@ function renderWorkspace() {
 
         <section class="panel si-section" aria-labelledby="si-build-title">
           <div class="si-step"><span>03</span><div><h2 id="si-build-title">Reconstrucción</h2>
-            <p>Una ruta volumétrica para recuperar fachadas, cubierta y contexto sin ocultar fallbacks.</p></div></div>
+            <p>Reconstruye la escena con todas las capturas seleccionadas.</p></div></div>
           <div class="si-build-choice">
-            <span>${icon('cube')}</span><div><b>ODM Extra 3D · NVIDIA CUDA</b><small>Malla volumétrica de edificio, nube, DSM, ortofoto y texturas.</small></div><em>RECOMENDADO</em>
+            <span>${icon('cube')}</span><div><b id="si-odm-summary">Fotogrametría · Extra 3D</b><small>Malla volumétrica de edificio, nube, DSM, ortofoto y texturas.</small></div><em>Recomendado</em>
           </div>
           <div class="si-build-choice">
-            <span>${icon('spark')}</span><div><b>Gaussian Grandmaster 40K · CUDA</b><small>Máximo refinamiento estricto; no sustituye la solicitud por un tier inferior.</small></div><em>40K</em>
+            <span>${icon('layers')}</span><div><b id="si-splat-summary">Splat · Equilibrado (MCMC 1M)</b><small>Conserva la calidad elegida durante todo el proceso.</small></div>
           </div>
           <details class="si-advanced">
             <summary>Ajustes avanzados</summary>
             <div class="si-settings">
-              <label>Calidad ODM<select class="ctl" id="si-preset"><option value="extra">Extra 3D · edificio</option><option value="alta">Alta · nube/DSM</option><option value="estandar">Estándar</option><option value="rapido">Rápida</option><option value="ultra">Ultra 3D</option></select></label>
-              <label>Gaussian<select class="ctl" id="si-splat-preset"><option value="mcmc1m">Equilibrado (MCMC 1M)</option><option value="mcmc3m">Calidad (MCMC 3M · experimental)</option><option value="grandmaster">Grandmaster 40K</option><option value="frontier">Frontier 30K</option><option value="ultra20">Ultra+ 20K</option><option value="ultra">Ultra 15K</option></select></label>
-              <label>Resolución CUDA<select class="ctl" id="si-resolution"><option value="auto">Completa → ½ solo por OOM</option><option value="full">Solo completa</option><option value="half">½ desde el inicio</option></select></label>
-              <label class="si-check"><input type="checkbox" id="si-then-splat" checked> Generar Gaussian después de ODM</label>
+              <label>Calidad del modelo<select class="ctl" id="si-preset"><option value="extra">Extra 3D · edificio</option><option value="alta">Alta · nube/DSM</option><option value="estandar">Estándar</option><option value="rapido">Rápida</option><option value="ultra">Ultra 3D</option></select></label>
+              <label>Splat<select class="ctl" id="si-splat-preset"><option value="mcmc1m">Equilibrado (MCMC 1M)</option><option value="mcmc3m">Calidad (MCMC 3M · experimental)</option><option value="grandmaster">Grandmaster 40K</option><option value="frontier">Frontier 30K</option><option value="ultra20">Ultra+ 20K</option><option value="ultra">Ultra 15K</option></select></label>
+              <label>Resolución<select class="ctl" id="si-resolution"><option value="auto">Automática según memoria disponible</option><option value="full">Solo completa</option><option value="half">Media resolución</option></select></label>
+              <label class="si-check"><input type="checkbox" id="si-then-splat" checked> Generar splat después del modelo</label>
             </div>
           </details>
         </section>
@@ -221,15 +230,15 @@ function renderWorkspace() {
       </div>
 
       <aside class="si-review" aria-labelledby="si-review-title">
-        <span class="eyebrow">PLAN DE MEJORA</span><h2 id="si-review-title">Lista para reconstruir</h2>
+        <h2 id="si-review-title">Revisar selección</h2>
         <div class="si-review-kpis"><div><b data-si-source-count></b><span>videos / ${state.limits.max_sources}</span></div>
           <div><b data-si-duration></b><span>duración / ${state.limits.max_duration_s / 60} min</span></div></div>
         <div class="si-budget"><i data-si-budget-fill></i></div>
         <div class="si-role-summary" data-si-roles></div>
-        <div class="si-truth">${icon('shield')} <span><b>Sin reemplazo automático</b><small>La versión nueva se promueve solo después de confirmar registro FULL y artefactos.</small></span></div>
+        <div class="si-truth">${icon('shield')} <span><b>Sin reemplazo automático</b><small>Revisa el resultado antes de usarlo como versión actual.</small></span></div>
         <p id="si-action-status" class="si-action-status" aria-live="polite"></p>
-        <button class="btn primary si-submit" id="si-submit">${icon('layers')} Crear versión mejorada</button>
-        <a href="tresd.html" class="btn ghost si-cancel">Cancelar y volver</a>
+        <button class="ui-button ui-button--primary si-submit" id="si-submit">${icon('layers')} Crear versión mejorada</button>
+        <a href="tresd.html?project=${encodeURIComponent(modelId)}" class="btn ghost si-cancel">Cancelar y volver</a>
       </aside>
     </div>`;
   wireSelection();
@@ -253,7 +262,7 @@ async function submitImprovement() {
         title: state.model.title || 'Escena mejorada',
         anchor: center ? { lat: center.lat, lon: center.lon } : {},
         sources: state.baseSources.map(source => source.id),
-        photos: [],
+        photos: state.basePhotos,
         existing_version: state.model.clip_id,
       });
       if (created.error) throw new Error(created.error);
@@ -264,7 +273,7 @@ async function submitImprovement() {
       scene_id: scene.id,
       title: state.model.title || scene.title,
       sources: selectedSources().map(source => source.id),
-      photos: [],
+      photos: state.basePhotos,
       preset: document.getElementById('si-preset').value,
       backend: 'cuda',
       then_splat: splatEnabled,
@@ -288,10 +297,10 @@ function renderSuccess(result) {
     <span class="si-success-icon">${icon('check')}</span>
     <span class="eyebrow">VERSIÓN EN COLA</span>
     <h1>La escena actual sigue intacta.</h1>
-    <p>La nueva reconstrucción combinará <b>${result.sources}</b> videos. Cuando termine podrás comparar registro, malla y Gaussian antes de promoverla.</p>
+    <p>La nueva reconstrucción combinará <b>${result.sources}</b> videos. Cuando termine podrás comparar registro, malla y Splat antes de promoverla.</p>
     <div class="si-success-facts"><span><small>Trabajo</small><b class="mono">${esc(result.job)}</b></span>
       <span><small>Reconstrucción</small><b class="mono">${esc(result.reconstruction)}</b></span></div>
-    <div class="si-success-actions"><a class="btn primary" href="tresd.html?tab=jobs&job=${encodeURIComponent(result.job)}">${icon('activity')} Ver procesamiento</a>
+    <div class="si-success-actions"><a class="ui-button ui-button--primary" href="tresd.html?tab=jobs&job=${encodeURIComponent(result.job)}">${icon('activity')} Ver procesamiento</a>
       <a class="btn" href="tresd.html">Volver a 3D</a></div>
   </section>`;
   root.focus?.();
@@ -300,8 +309,8 @@ function renderSuccess(result) {
 function renderFailure(message) {
   root.className = 'si-failure';
   root.setAttribute('aria-busy', 'false');
-  root.innerHTML = `<div class="panel"><span>${icon('warn')}</span><h1>No pudimos abrir esta escena</h1>
-    <p>${esc(message)}</p><a class="btn primary" href="tresd.html">Volver a 3D</a></div>`;
+  root.innerHTML = `${areaNav('escenas')}<div class="ui-empty"><h1>No se pudo abrir la escena</h1>
+    <p>${esc(message)}</p><a class="ui-button ui-button--primary" href="tresd.html">Volver a 3D</a></div>`;
 }
 
 async function load() {
@@ -325,7 +334,10 @@ async function load() {
     state.scene = findScene(requestedModel);
     const version = activeVersion(state.scene);
     state.model = resolveActiveModel(models, requestedModel, state.scene);
-    const baseIds = version?.sources?.length ? version.sources : [state.model.clip_id];
+    const inputs = originalInputs(state.model, version);
+    const baseIds = inputs.sources;
+    state.basePhotos = inputs.photos;
+    if (!baseIds.length && !state.basePhotos.length) return renderFailure('No se encontraron las capturas originales de esta escena.');
     const evidenceById = Object.fromEntries((state.scene?.source_evidence || []).map(row => [row.clip_id, row]));
     state.baseSources = baseIds.map(id => {
       if (isPhotoSetSource(id)) {

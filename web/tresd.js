@@ -1,11 +1,13 @@
-  import * as THREE from '/vendor/three180.module.js?v=390';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=390';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=390';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=390';
-  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=390';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=390';
-  import { mountSplatViewer } from '/splatview.js?v=390';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=390';
+import { areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=384';
+import { mapLayerIds, centerReplacement, analysisFor } from './scene-improve-state.js?v=384';
+  import * as THREE from '/vendor/three180.module.js?v=374';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=374';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=374';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=374';
+  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=374';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=374';
+  import { mountSplatViewer } from '/splatview.js?v=384';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=374';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -82,7 +84,7 @@
       const onlyCuda = profile.supported_backends?.length === 1 && profile.supported_backends[0] === 'cuda';
       const eta = splatEta(profile);
       return `<button type="button" class="mpreset splat-profile${profile.key === selected ? ' on' : ''}${onlyCuda ? ' cuda-only' : ' local-ok'}${profile.key === defaultSplatKey(profiles) ? ' featured' : ''}"
-        data-badge="${esc(profile.key === 'mcmc1m' ? '1M' : profile.iters >= 1000 ? profile.iters / 1000 + 'K' : profile.iters)}" data-splat-profile="${esc(profile.key)}" data-iters="${esc(profile.iters)}" data-cuda-only="${onlyCuda ? '1' : '0'}">
+        aria-pressed="${profile.key === selected}" data-badge="${esc(profile.key === 'mcmc1m' ? '1M' : profile.iters >= 1000 ? profile.iters / 1000 + 'K' : profile.iters)}" data-splat-profile="${esc(profile.key)}" data-iters="${esc(profile.iters)}" data-cuda-only="${onlyCuda ? '1' : '0'}">
         <span class="sp-profile-top"><b>${esc(profile.label)}</b><em>${onlyCuda ? 'NVIDIA CUDA' : 'MAC / CUDA'}</em></span>
         <span class="sp-eta ${eta.cls}">${esc(eta.main)}</span>
         <small>${esc(eta.sub)}</small><small class="sp-desc">${esc(splatCopy(profile.key) || profile.description)}</small>
@@ -117,12 +119,12 @@
       }
       root.querySelector('[data-resolution-box]')?.classList.toggle('muted', request.backend !== 'cuda');
       if (policy) policy.innerHTML = request.backend === 'cuda'
-        ? `<b>CUDA estricto</b> · ${request.cudaOnly ? (pcOnly() ? 'Todo el procesamiento corre en el PC con GPU NVIDIA. ' : 'Requerido por este perfil. ') : ''}Sin fallback local; si el PC no está disponible, el job conserva la solicitud y reporta el error.`
+        ? `<b>CUDA estricto</b> · ${request.cudaOnly ? (pcOnly() ? 'Todo el procesamiento corre en el PC con GPU NVIDIA. ' : 'Requerido por este perfil. ') : ''}Sin respaldo local; si el PC no está disponible, el trabajo conserva la solicitud y reporta el error.`
         : '<b>Apple Metal local</b> · disponible únicamente para Fast 1K y Medium 2K.';
       onChange?.(request);
     };
     root.querySelectorAll('[data-splat-profile]').forEach(card => card.addEventListener('click', () => {
-      root.querySelectorAll('[data-splat-profile]').forEach(item => item.classList.toggle('on', item === card));
+      root.querySelectorAll('[data-splat-profile]').forEach(item => { item.classList.toggle('on', item === card); item.setAttribute('aria-pressed',item === card); });
       sync();
     }));
     root.querySelector('[data-cuda-toggle]')?.addEventListener('change', sync);
@@ -167,7 +169,7 @@
         <div class="scan-hd">${icon('activity')} ESCÁNER DE CAPTURA
           <span class="scan-verdict ${cls(verdictV)}">${verdict}</span>
           <span class="count mono">${num(rep.recommended_frames) || '—'} frames</span></div>
-        ${bar('Ortofoto/DSM', num(su.ortho_dsm))}${bar('Malla 3D', num(su.mesh))}${bar('Gaussian', num(su.splat))}
+        ${bar('Ortofoto/DSM', num(su.ortho_dsm))}${bar('Malla 3D', num(su.mesh))}${bar('Splat', num(su.splat))}
         ${mem.level ? `<div class="scan-mem ${memCls}">${icon(mem.level === 'bajo' ? 'check' : 'warn')}
           <span><b>Memoria (gaussian): ${esc(mem.level)}</b>${mem.oom_previos ? ` · ${mem.oom_previos} OOM previos` : ''}
           · ${esc(mem.advice || '')}</span></div>` : ''}
@@ -194,21 +196,22 @@
   const main = renderShell('tresd.html');
   main.classList.add('page-3d');
   main.innerHTML = `
-    ${pageHead('3D', 'Fotogrametría · nube de puntos · splats')}
+    ${areaNav('escenas')}
+    ${pageHead('Tus escenas', 'Vuelve a los lugares que capturaste.', '<button class="ui-button ui-button--primary" data-open-run3d>Crear escena</button>')}
 
     <div class="pm-tabs rise td-tabs" id="td-tabs">
       <i class="pm-ink"></i>
-      <button class="on" data-tab="projects">${icon('layers')} Proyectos</button>
-      <button data-tab="process">${icon('activity')} Procesamiento</button>
-      <button data-tab="jobs">${icon('cpu')} Trabajos</button>
+      <button class="on" data-tab="projects">Biblioteca</button>
+      <button data-tab="process">Herramientas</button>
+      <button data-tab="jobs">Actividad</button>
     </div>
 
     <section class="td-mod" data-mod="projects">
-    <div class="panel">
-      <div class="ph">${icon('layers')} Proyectos 3D <span class="count" id="proj-count"></span></div>
+    <div class="scene-library">
+      <div class="scene-library-count" id="proj-count" aria-live="polite"></div>
       <div class="pb">
         <div class="td-browserbar">
-          <div class="search td-search">${icon('search')}<input id="proj-q" type="search" placeholder="Buscar proyecto, fecha, lugar…" aria-label="Buscar proyecto" autocomplete="off"></div>
+          <div class="search td-search">${icon('search')}<input id="proj-q" type="search" placeholder="Buscar escena…" aria-label="Buscar proyecto" autocomplete="off"></div>
           <select class="ctl" id="proj-filter" aria-label="Filtrar proyectos" data-tip="Filtra por lo que tiene cada proyecto">
             <option value="all">Todos</option>
             <option value="dsm">Con DSM</option>
@@ -229,15 +232,15 @@
             <button data-proj-mode="list">${icon('list')} Lista</button>
           </div>
         </div>
-        <p class="td-project-hint">Selecciona un proyecto para abrir mapa, visores, descargas y enlaces públicos.</p>
-        <div class="proj-grid" id="proj-grid"></div>
+
+        <div class="proj-grid" id="proj-grid" aria-busy="true">${skeletonCards()}</div>
       </div>
     </div>
     </section>
 
     <section class="td-mod" data-mod="process" style="display:none">
     <div class="panel td-flow">
-      <div class="ph">${icon('activity')} Pipeline de procesamiento
+      <div class="ph">${icon('activity')} Crear desde tus capturas
         <span class="spacer"></span>
         <button class="linklike" id="td-how">¿Cómo funciona?</button>
       </div>
@@ -251,8 +254,8 @@
               'OpenSfM reconstruye las cámaras (SfM), OpenMVS densifica con depthmaps, y salen malla texturizada, DSM de elevación y ortofoto georreferenciada.'],
              ['layers', 'Nube / Malla', 'visores 3D', null,
               'Nube de ~800k puntos con color real y malla texturizada — visor three.js con BVH, medición de distancias, áreas y volúmenes.'],
-             ['spark', 'Splat', '<span id="td-splat-dev">CUDA · PC</span>', 'td-live-splats',
-              'Gaussian splatting foto-realista entrenado en la GPU NVIDIA del PC (CUDA estricto, de Fast 1K a Grandmaster 40K).'],
+             ['splat', 'Splat', '<span id="td-splat-dev">CUDA · PC</span>', 'td-live-splats',
+              'Splatting foto-realista entrenado en la GPU NVIDIA del PC (CUDA estricto, de Fast 1K a Grandmaster 40K).'],
              ['ext', 'Publicar', 'share + QA', null,
               'Un gate de navegador real verifica que el asset renderiza (0 errores de consola) antes de publicar el link compartible.']]
             .map(([ic, t, sub, liveId, pop], i, a) => `
@@ -264,11 +267,11 @@
             ${i < a.length - 1 ? '<div class="td-flowline"><i></i></div>' : ''}`).join('')}
         </div>
         <div class="td-actions">
-          <button class="btn primary td-cta" id="btn-run3d" data-open-run3d>
+          <button class="ui-button ui-button--primary td-cta" id="btn-run3d" data-open-run3d>
             ${icon('cube')}<span><b>Procesar un vuelo…</b><small>frames + geotag + fotogrametría · combina tomas del mismo lugar</small></span>
             <i class="td-cta-arrow">${icon('chevR')}</i></button>
           <button class="btn td-cta" id="btn-splat" data-open-splat>
-            ${icon('spark')}<span><b>Generar splat…</b><small data-splat-cta-sub>PC NVIDIA CUDA · 1K a 40K</small></span>
+            ${icon('splat')}<span><b>Generar splat…</b><small data-splat-cta-sub>PC NVIDIA CUDA · 1K a 40K</small></span>
             <i class="td-cta-arrow">${icon('chevR')}</i></button>
           <button class="btn td-cta" id="btn-cuda-campaign">
             ${icon('cpu')}<span><b>Campaña CUDA…</b><small>reprocesar sitios activos · 15K/20K/30K/40K estricto</small></span>
@@ -280,7 +283,7 @@
       </div>
     </div>
     <div class="panel">
-      <div class="ph">${icon('cube')} Gaussian Splats <span class="count" id="splat-count"></span>
+      <div class="ph">${icon('cube')} Splats <span class="count" id="splat-count"></span>
         <span class="spacer"></span>
         <button class="linklike" id="td-what-splat">¿Qué es un splat?</button>
       </div>
@@ -353,12 +356,12 @@
           <div class="td-jobkinds" aria-label="Tipo">
             <button class="chip on" data-job-kind="all">Todo tipo</button>
             <button class="chip" data-job-kind="3d">ODM</button>
-            <button class="chip" data-job-kind="splat">Gaussian</button>
+            <button class="chip" data-job-kind="splat">Splat</button>
             <button class="chip" data-job-kind="ingest">Importación</button>
           </div>
         </div>
         <p class="footer-note job-note">Una tarea pesada a la vez. Solicitada y efectiva se muestran por separado;
-        cada retry, fallback y diagnóstico queda en el historial.</p>
+        cada reintento, respaldo y diagnóstico queda en el historial.</p>
         <div id="jobs3d" class="job-console"></div>
       </div>
     </div>
@@ -403,12 +406,12 @@
         <div class="scene-viewer-tabs" id="scene-viewer-tabs" role="tablist" aria-label="Representación 3D">
           <button type="button" class="on" role="tab" aria-selected="true" aria-controls="scene-viewer-box" data-viewer-mode="cloud">${icon('layers')} Nube</button>
           <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="mesh">${icon('cube')} Malla</button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="splat">${icon('spark')} Gaussian</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="splat">${icon('splat')} Splat</button>
         </div>
         <span class="chip scene-viewer-status" id="scene-viewer-status"></span>
         <span class="spacer"></span>
-        <select id="sp-select" class="scene-viewer-version" title="Versión del splat" aria-label="Versión del Gaussian splat"></select>
-        <button class="btn primary" id="viewer-load">Cargar nube</button>
+        <select id="sp-select" class="scene-viewer-version" title="Versión del splat" aria-label="Versión del Splat"></select>
+        <button class="ui-button ui-button--primary" id="viewer-load">Cargar nube</button>
       </div>
       <div id="scene-viewer-box" class="scene-viewer-box" role="tabpanel" aria-live="polite" aria-label="Nube de puntos">
         <p class="footer-note scene-viewer-note">Nube con color real — arrastra para mover, botón derecho rota, rueda o pellizco acerca y doble toque enfoca.</p>
@@ -418,14 +421,19 @@
     <div class="panel">
       <div class="ph">${icon('gauge')} Reporte de calidad & descargas
         <span class="spacer"></span>
-        <button class="btn primary" id="improve-scene">${icon('layers')} Mejorar con nuevas capturas</button>
+        <button class="ui-button ui-button--primary" id="improve-scene">${icon('layers')} Mejorar con nuevas capturas</button>
       </div>
       <div class="pb" id="dls"></div>
     </div>
     </div>`;
 
   const projView = document.getElementById('proj-view');
-  main.querySelector('.panel')?.after(projView);
+  main.querySelector('.scene-library')?.after(projView);
+  const sceneViewerPanel = projView.querySelector('.scene-viewer-panel');
+  projView.querySelector('.td-crumb').after(sceneViewerPanel);
+  const infoButton = document.createElement('button'); infoButton.className = 'ui-button ui-button--secondary'; infoButton.textContent = 'Información';
+  infoButton.addEventListener('click', () => { if (cur) sceneInfo({model:cur, ai:analysisFor(cur,flights), opener:infoButton}); });
+  projView.querySelector('.td-crumb').append(infoButton);
 
   const tdTabs = document.getElementById('td-tabs');
   const tdInk = tdTabs?.querySelector('.pm-ink');
@@ -452,12 +460,12 @@
   }
   function showTdMod(name) {
     document.documentElement.dataset.tdTab = name;
-    tdTabs?.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+    tdTabs?.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.tab === name); b.setAttribute('aria-pressed',b.dataset.tab === name); });
     document.querySelectorAll('.td-mod').forEach(m => {
       const show = m.dataset.mod === name;
       if (show && m.style.display === 'none') {
         m.style.display = '';
-        m.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }],
+        if (!reducedMotion()) m.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }],
           { duration: 190, easing: 'ease-out' });
       } else if (!show) {
         m.style.display = 'none';
@@ -473,6 +481,13 @@
   window.addEventListener('resize', () => setTimeout(moveTdInk, 30));
   setTimeout(moveTdInk, 30);
 
+  const filterContent=document.createElement('div'); filterContent.className='scene-filters';
+  const filterSheet=createSheet({title:'Organizar escenas',content:filterContent,size:'half',className:'scene-sheet'});
+  const bar=main.querySelector('.td-browserbar');
+  const filterButton=document.createElement('button');filterButton.className='ui-button ui-button--secondary';filterButton.textContent='Filtrar';filterButton.id='scene-filter-open';
+  ['proj-filter','proj-sort'].forEach((id,i)=>{const select=document.getElementById(id);const label=document.createElement('label');label.textContent=i?'Orden':'Mostrar';label.append(select);filterContent.append(label);});
+  filterContent.append(main.querySelector('.td-viewseg'));
+  filterButton.onclick=()=>filterSheet.open(filterButton);bar.append(filterButton);
   // popovers del stepper: hover en desktop (CSS) + tap/click en táctil — un solo abierto
   document.querySelector('.td-stepper.v2')?.addEventListener('click', e => {
     const step = e.target.closest('.td-step');
@@ -493,7 +508,7 @@
     const dev = document.getElementById('td-splat-dev');
     if (dev) dev.innerHTML = subToks('Metal/MPS');
     const pop = dev?.closest('.td-step')?.querySelector('.td-pop p');
-    if (pop) pop.textContent = 'Gaussian splatting foto-realista: Fast/Medium en Apple Metal; Cinematic 7K hasta Grandmaster 40K en NVIDIA CUDA estricto.';
+    if (pop) pop.textContent = 'Splatting foto-realista: Fast/Medium en Apple Metal; Cinematic 7K hasta Grandmaster 40K en NVIDIA CUDA estricto.';
     const sub = document.querySelector('[data-splat-cta-sub]');
     if (sub) sub.textContent = 'Mac 1K/2K · NVIDIA CUDA 7K/15K/20K/30K/40K';
   });
@@ -567,9 +582,11 @@
     });
   })();
 
-  document.querySelector('.td-pipeline-grid')?.addEventListener('click', e => {
-    if (e.target.closest('[data-open-run3d]')) document.getElementById('btn-run3d')?.click();
-    if (e.target.closest('[data-open-splat]')) document.getElementById('btn-splat')?.click();
+  main.addEventListener('click', e => {
+    const trigger=e.target.closest('[data-open-run3d]');
+    if (trigger && trigger.id !== 'btn-run3d') document.getElementById('btn-run3d')?.click();
+    const splatTrigger=e.target.closest('[data-open-splat]');
+    if (splatTrigger && splatTrigger.id !== 'btn-splat') document.getElementById('btn-splat')?.click();
   });
 
   // telemetría en vivo del módulo Trabajos — datos reales de /api/perf y /api/gpu_node
@@ -742,13 +759,13 @@
       gpu: { t: 'GPU del Mac (Metal/MPS)', co: '82,199,154', src: '/api/perf · muestreo 2s',
         fmt: v => Math.round(v * 100) + '%', data: () => [...hist.gpu, shown.gpu],
         desc: 'La GPU integrada del M4 renderiza el visor 3D/FLIGHTVERSE y los gates de ' +
-          'navegador. El entrenamiento de gaussian splats (Fast 1K a Grandmaster 40K) ' +
+          'navegador. El entrenamiento de splats (Fast 1K a Grandmaster 40K) ' +
           'corre en el PC con CUDA estricto — esta curva no sube durante un entreno.',
         extra: () => [] },
       ram: { t: 'Memoria unificada del Mac', co: '224,164,88', src: '/api/perf · muestreo 2s',
         fmt: v => (v * ramTotal).toFixed(1) + ' GB', data: () => [...hist.ram, shown.ram],
         desc: '16 GB compartidos entre CPU y GPU — por eso OpenSplat corre con cap de ' +
-          'memoria (taskpolicy 11 GB) y los presets tienen escalera de fallback por OOM. ' +
+          'memoria (taskpolicy 11 GB) y los presets reducen la calidad si falta memoria. ' +
           'El swap crece cuando ODM y splat coinciden: mover carga al PC lo alivia.',
         extra: () => lastPerf ? [['swap', ((lastPerf.swap_used_mb || 0) / 1024).toFixed(1) + ' GB'],
           ['disco vault', Math.round(lastPerf.disk_free_gb || 0) + ' GB libres']] : [] },
@@ -935,8 +952,9 @@
     (s.format || s.name.split('.').pop() || 'splat').toUpperCase(),
   ].filter(Boolean).join(' · ');
   let sysErr = false;   // distinguir "no hay proyectos" de "no se pudo CARGAR el índice"
-  try { sys = await (await fetch('data/manifest/system.json')).json(); } catch { sysErr = true; }
+  try { const response=await fetch('data/manifest/system.json');if(!response.ok)throw new Error('Scene index unavailable');sys=await response.json(); } catch { sysErr = true; }
   models = sys.models || [];
+  registerScenes(models);
   const flights = await getFlights();
   // nombres de lugar server-side (compartidos con Viajes) — key "lat,lon" a 2 decimales
   let tripsMeta = {};
@@ -1053,43 +1071,28 @@
     const splats = splatAssetsFor(m.clip_id);
     const sp = splatAssetFor(m.clip_id);
     const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(1) + ' ha' : Math.round(q.area_m2 || 0) + ' m²';
-    const cuda = splats.some(s => /cuda|nvidia/i.test(s.backend || ''));
-    const qCls = sp?.loss == null ? '' : sp.loss <= 0.05 ? ' q-exc' : sp.loss <= 0.09 ? ' q-good' : sp.loss <= 0.15 ? ' q-mid' : ' q-basic';
-    const bestIters = splats.reduce((a, s) => Math.max(a, s.iters || 0), 0);
-    const status = [
-      ['', m.has_dsm ? 'DSM' : null, 'Modelo de elevación disponible'],
-      ['', m.mesh_ok === false ? 'malla débil' : 'malla', m.mesh_ok === false ? 'La malla reconstruyó con huecos' : 'Malla texturizada OK'],
-      ['', splats.length ? `${splats.length} splat${splats.length === 1 ? '' : 's'}` : null, 'Versiones gaussian splat'],
-      [cuda ? ' b-nv' : '', splats.length ? (cuda ? 'NVIDIA' : 'Metal') : null,
-       cuda ? 'Entrenado en la RTX 4060 Ti (CUDA)' : 'Entrenado en el Mac (Metal/MPS)'],
-    ];
-    return `<div class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}"${cur?.clip_id === m.clip_id ? ' aria-current="true"' : ''}>
-      <div class="pc-cover">
-        <img src="${m.thumb ? esc(m.thumb.includes('/') ? m.thumb : `data/models/${m.clip_id}/${m.thumb}`) : `data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}`}" data-fb="data/models/${esc(m.clip_id)}/${esc(m.ortho_asset || 'ortho.jpg')}" loading="lazy" alt="" width="320" height="180">
-        <span class="pc-ph" aria-hidden="true">${icon('image')}<span>Sin vista previa</span></span>
-        ${(f?.date || dateKeyFor(m)) ? `<span class="pc-date mono">${esc(f ? `${fmt.date(f.date)} · ${f.time || ''}` : dateKeyFor(m))}</span>` : ''}
-      </div>
+    const poster = m.thumb ? (m.thumb.includes('/') ? m.thumb : `data/models/${m.clip_id}/${m.thumb}`) : `data/models/${m.clip_id}/${m.ortho_asset || 'ortho.jpg'}`;
+    return `<article class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
+      <a class="pc-cover" href="share.html?m=${encodeURIComponent(m.clip_id)}" aria-label="Ver ${esc(titleFor(m))}">
+        <img src="${esc(poster)}" loading="lazy" alt="" width="640" height="400" data-transition-key="world-${esc(m.clip_id)}">
+        <span class="pc-ph" aria-hidden="true">Sin vista previa</span>
+      </a>
       <div class="pc-body">
-        <div class="pc-top"><p class="pc-title" title="${esc(m.clip_id)}">${esc(titleFor(m))}</p></div>
-        <p class="pc-meta mono">${mtoks([f?.duration_s ? fmt.dur(f.duration_s) + ' vuelo' : '', q.gsd_cm_px ? q.gsd_cm_px + ' cm/px' : '', q.area_m2 ? ha : '',
-          bestIters ? `${bestIters >= 1000 ? bestIters / 1000 + 'K' : bestIters} iters` : ''])}</p>
-        <div class="pc-badges">${status.filter(([, s]) => s).map(([cls, s, tip]) => `<span class="${cls.trim()}" data-tip="${esc(tip)}">${esc(s)}</span>`).join('')}</div>
-        <div class="pc-kpis">
-          <span data-tip="Cámaras reconstruidas por SfM" title="Cámaras reconstruidas"><b>${q.cameras_reconstructed ?? '—'}</b><small>cám.</small></span>
-          <span class="${qCls.trim()}" data-tip="${sp?.loss != null ? 'Loss ' + sp.loss + ' del splat activo' : 'Aún sin splat'}"><b>${sp ? splatQualityLabel(sp.loss) : '—'}</b><small>gaussian</small></span>
-          <span data-tip="Tamaño de la nube de puntos"><b>${m.cloud_bytes ? (m.cloud_bytes / 1e6).toFixed(0) + 'MB' : '—'}</b><small>nube</small></span>
-        </div>
+        <div class="pc-top"><h2 class="pc-title">${esc(titleFor(m))}</h2>
+          <button class="ui-button ui-button--quiet pc-more" data-act="more" data-cid="${esc(m.clip_id)}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(titleFor(m))}">${icon('more')}</button></div>
+        <p class="pc-meta">${esc([f?.date ? fmt.date(f.date) : dateKeyFor(m), q.area_m2 ? ha : '', sp ? 'Splat disponible' : 'Fotogrametría'].filter(Boolean).join(' · '))}</p>
         <div class="pc-actions">
-          <button class="btn sm primary" data-act="open">Abrir</button>
-          <button class="btn sm pc-improve" data-act="improve">${icon('layers')} Mejorar</button>
-          <button class="btn sm icon pc-more" data-act="more" data-cid="${esc(m.clip_id)}" aria-haspopup="menu" aria-expanded="false"
-            aria-label="Más acciones de ${esc(titleFor(m))}" data-tip="Renombrar, compartir, borrar">${icon('more')}</button>
+          <button class="ui-button ui-button--secondary" data-act="open">Explorar</button>
+          <button class="ui-button ui-button--quiet pc-improve" data-act="improve">Mejorar</button>
         </div>
       </div>
-    </div>`;
+    </article>`;
   }
+  let stopCardPreviews = [];
   function renderCards() {
+    stopCardPreviews.splice(0).forEach(stop=>stop?.());
     const grid = document.getElementById('proj-grid');
+    grid.setAttribute('aria-busy', 'false');
     const shown = models.filter(projectVisible).sort(SORTS[projSort] || SORTS.recent);
     document.getElementById('proj-count').textContent = models.length ? `(${shown.length}/${models.length})` : '';
     grid.classList.toggle('proj-list', projMode === 'list');
@@ -1114,13 +1117,12 @@
       return `
       <div class="proj-group-h">
         <b>${icon('pin')} ${esc(g.name)}</b>
-        <span class="mono">${g.items.length} proyecto${g.items.length === 1 ? '' : 's'}${area ? ` · ${area >= 10000 ? (area / 10000).toFixed(1) + ' ha' : Math.round(area) + ' m²'}` : ''}${nSplats ? ` · ${nSplats} splats` : ''}</span>
+        <span>${g.items.length} escena${g.items.length === 1 ? '' : 's'}${area ? ` · ${area >= 10000 ? (area / 10000).toFixed(1) + ' ha' : Math.round(area) + ' m²'}` : ''}${nSplats ? ` · ${nSplats} splats` : ''}</span>
       </div>
       <div class="proj-group">${g.items.map(projCard).join('')}</div>`;
-    }).join('') : `<p class="footer-note td-flush">${sysErr
-      ? 'No se pudo cargar el índice de proyectos — revisa la conexión y <a href="#" data-reload class="td-link">recarga</a>.'
-      : models.length ? 'No hay proyectos que coincidan con ese filtro.'
-        : 'Sin proyectos 3D aún — ve a la pestaña <b>Procesamiento</b> (arriba) para crear el primero.'}</p>`;
+    }).join('') : `<div class="ui-empty"><h2>${sysErr ? 'No se pudieron cargar las escenas' : models.length ? 'No hay coincidencias' : 'Aún no tienes escenas'}</h2><p>${sysErr ? 'Revisa la conexión y vuelve a intentarlo.' : models.length ? 'Prueba otro nombre o elimina los filtros.' : 'Empieza con tomas del mismo lugar, por ejemplo una órbita de tu casa.'}</p>${sysErr ? '<button class="ui-button ui-button--primary" data-reload>Reintentar</button>' : models.length ? '<button class="ui-button ui-button--secondary" data-reset-filters>Ver todas</button>' : '<button class="ui-button ui-button--primary" data-open-run3d>Crear escena</button>'}</div>`;
+    grid.querySelector('[data-reset-filters]')?.addEventListener('click',()=>{projQ='';projFilter='all';document.getElementById('proj-q').value='';document.getElementById('proj-filter').value='all';renderCards();});
+    grid.querySelectorAll('.pc-cover').forEach(card => { const model = models.find(m => m.clip_id === card.closest('[data-cid]').dataset.cid); stopCardPreviews.push(wireOrbitPreview(card, model?.orbit_preview || model?.assets?.orbit_preview)); });
   }
   // miniatura ligera 404 → cae al ortho original (error no burbujea: captura)
   document.addEventListener('error', e => {
@@ -1156,7 +1158,7 @@
       renderCards();
     });
   }
-  document.querySelector('.td-viewseg')?.addEventListener('click', e => {
+  filterContent.querySelector('.td-viewseg')?.addEventListener('click', e => {
     const b = e.target.closest('[data-proj-mode]');
     if (!b) return;
     projMode = b.dataset.projMode;
@@ -1165,8 +1167,9 @@
   });
   // ---- menú "más" de la tarjeta: openMenu() canónico (shell.js) ----
   const openProjMenu = btn => openMenu(btn, [
+    { id: 'info', label: 'Información', icon: 'info' },
     { id: 'rename', label: 'Renombrar', icon: 'edit' },
-    { id: 'share', label: 'Copiar link público', icon: 'link' },
+    { id: 'share', label: 'Copiar enlace privado', icon: 'link' },
     { sep: true },
     { id: 'del', label: 'Borrar proyecto…', icon: 'trash', danger: true },
   ], { label: 'Acciones del proyecto', onSelect: id => runProjAct(id, btn.dataset.cid, btn) });
@@ -1174,6 +1177,7 @@
   async function runProjAct(act, cid, btn) {
     const card = document.querySelector(`.proj-card[data-cid="${CSS.escape(cid)}"]`);
     const m = models.find(x => x.clip_id === cid);
+    if (act === 'info') { sceneInfo({model:m, ai:analysisFor(m,flights), opener:btn}); return; }
     if (!m) return;
     if (act === 'open') {
       if (card) { card.classList.add('smash'); setTimeout(() => card.classList.remove('smash'), 420); }
@@ -1190,7 +1194,7 @@
         const title = inp.value.trim();
         try {
           const r = await api('/api/model_update', { clip_id: cid, title });
-          if (r.error) alert(r.error);
+          if (r.error) showToast(r.error);
           else m.title = r.title;
         } catch { /* login cancelado / red: conserva el título anterior sin romper */ }
         renderCards();
@@ -1200,15 +1204,14 @@
     }
     if (act === 'share') {
       const url = `${location.origin}/share.html?m=${encodeURIComponent(cid)}`;
-      try { await navigator.clipboard.writeText(url); toast('Link público copiado'); }
-      catch { prompt('Copia el link:', url); }
+      await copyLink(url, btn);
     }
     if (act === 'del') {
-      if (!confirm(`¿Borrar "${titleFor(m)}"?\n\nSe eliminan el modelo 3D, sus splats y los archivos de procesamiento. El video original NO se toca.`)) return;
+      if (!await confirmSheet(`¿Borrar "${titleFor(m)}"?\n\nSe eliminan el modelo 3D, sus splats y los archivos de procesamiento. El video original NO se toca.`)) return;
       let r;
       try { r = await api('/api/model_delete', { clip_id: cid, purge_source: true }); }
-      catch (err) { return alert(String(err?.message || err)); }
-      if (r.error) return alert(r.error);
+      catch (err) { return showToast(String(err?.message || err)); }
+      if (r.error) return showToast(r.error);
       models = models.filter(x => x.clip_id !== cid);
       if (cur?.clip_id === cid) closeProject();
       renderCards();
@@ -1216,7 +1219,7 @@
   }
   document.getElementById('proj-grid').addEventListener('click', async e => {
     if (e.target.closest('[data-reload]')) { e.preventDefault(); location.reload(); return; }   // CSP: sin onclick inline
-    if (e.target.tagName === 'INPUT') return;      // click DENTRO del input de renombrar ≠ acción de card
+    if (e.target.closest('a[href]') || e.target.tagName === 'INPUT') return;      // click DENTRO del input de renombrar ≠ acción de card
     const btn = e.target.closest('[data-act]');
     const card = e.target.closest('.proj-card');
     if (!card) return;
@@ -1255,34 +1258,37 @@
   // ---------- mini-modal reutilizable ----------
   // Modal de página sobre el openModal del shell (dialog role, foco atrapado, Esc por la pila, scroll lock).
   function tdModal(title, body, cls = '') {
-    const ov = document.createElement('div');
-    ov.className = 'modal-ov';
-    ov.innerHTML = `<div class="modal ${cls}">
-      <div class="modal-h"><b>${title}</b><button class="modal-x" type="button" aria-label="Cerrar">${icon('close')}</button></div>
-      <div class="modal-b">${body}</div></div>`;
-    // onClose(fn): limpieza al cerrar (mapas WebGL, listeners de window/document, previews)
+    const content = document.createElement('div');
+    content.className = 'modal-b';
+    content.innerHTML = body;
     const cleanups = [];
-    const onClose = fn => { cleanups.push(fn); };
-    const close = window.openModal(ov, { onClose: () => cleanups.splice(0).forEach(fn => { try { fn(); } catch {} }) });
-    return { ov, close, onClose };
+    const plainTitle = document.createElement('div'); plainTitle.innerHTML = title;
+    const sheet = createSheet({ title: plainTitle.textContent.trim(), content, size: 'full', className: `scene-sheet ${cls}`,
+      onClose: () => { cleanups.splice(0).forEach(fn => { try { fn(); } catch {} }); sheet.destroy(); } });
+    const ov = sheet.element;
+    sheet.open();
+    return { ov, close: sheet.close, onClose: fn => cleanups.push(fn) };
   }
 
   document.getElementById('btn-cuda-campaign')?.addEventListener('click', async () => {
     const profiles = (await splatProfilesPromise).filter(p => ['ultra','ultra20','frontier','grandmaster'].includes(p.key));
-    const { ov, close } = tdModal(`${icon('cpu')} Campaña NVIDIA CUDA`, `
+    const { ov, close, onClose } = tdModal(`${icon('cpu')} Campaña NVIDIA CUDA`, `
       <p class="footer-note td-note">Reentrena cada sitio activo y cada modelo suelto elegible sin reemplazar el asset actual hasta que publicación y gate de navegador terminen.</p>
       <div class="campaign-controls">
         <label><span>Calidad</span><select class="ctl" data-campaign-preset>${profiles.map(p => `<option value="${p.key}"${p.key==='grandmaster'?' selected':''}>${esc(p.label)} · ${p.iters/1000}K</option>`).join('')}</select></label>
         <label><span>Alcance</span><select class="ctl" data-campaign-scope><option value="active_sites">Sitios activos + modelos sueltos</option><option value="all_models">Todos los modelos, incluidas versiones antiguas</option></select></label>
         <label><span>Entrada</span><select class="ctl" data-campaign-resolution><option value="auto">Completa → ½ solo por OOM CUDA</option><option value="full">Solo completa</option><option value="half">½ desde el inicio</option></select></label>
       </div>
-      <div class="campaign-plan" data-campaign-plan><div class="fv-loading">Midiendo proyectos y nodo RTX…</div></div>
-      <button class="btn primary td-block" data-campaign-go disabled>Encolar campaña verificada</button>`, 'cuda-campaign-modal');
+      <div class="campaign-plan" data-campaign-plan><p>Revisa la calidad y las escenas antes de verificar el lote.</p></div>
+      <button class="ui-button ui-button--primary td-block" data-campaign-check>Verificar campaña</button>
+      <button class="ui-button ui-button--primary td-block" data-campaign-go hidden disabled>Iniciar campaña</button>`, 'cuda-campaign-modal');
     const planBox = ov.querySelector('[data-campaign-plan]');
     const go = ov.querySelector('[data-campaign-go]');
+    const verify=ov.querySelector('[data-campaign-check]');
     let currentPlan = null;
     const renderPlan = plan => {
       currentPlan = plan;
+      verify.className='ui-button ui-button--secondary td-block';go.hidden=false;
       const eligible = plan.eligible || [], blocked = plan.blocked || [], skipped = plan.skipped || [];
       const profile = profiles.find(p => p.key === plan.preset);
       const eta = profile?.eta?.seconds ? profile.eta.seconds * eligible.length : null;
@@ -1296,24 +1302,35 @@
         <div class="${blocked.length?'bad':'good'}"><span>Nodo</span><b>${blocked.length?'Bloqueado':'Verificado'}</b><small>${esc(nodeState)}</small></div>
         <div><span>Tiempo cola</span><b>${eta?fmtEta(eta):'por medir'}</b><small>secuencial · 1 tarea pesada</small></div>
       </div>
-      <div class="campaign-list">${eligible.map((row,i) => `<div><b>${i+1}. ${esc(row.title)}</b><span>${row.cameras} cámaras · ${(row.input_bytes/1048576).toFixed(0)} MB · ${row.achieved_iterations?`${row.achieved_iterations/1000}K actual`:'sin CUDA previo'}</span><em>${esc(verdictLabel(row.preflight?.verdict))}</em></div>`).join('') || '<p class="footer-note">No hay modelos pendientes para este tier.</p>'}</div>
+      <div class="campaign-list">${eligible.map((row,i) => `<div><b>${i+1}. ${esc(row.title)}</b><span>${row.cameras} cámaras · ${(row.input_bytes/1048576).toFixed(0)} MB · ${row.achieved_iterations?`${row.achieved_iterations/1000}K actual`:'sin CUDA previo'}</span><em>${esc(verdictLabel(row.preflight?.verdict))}</em></div>`).join('') || '<p class="footer-note">No hay modelos pendientes para esta calidad.</p>'}</div>
       ${blocked.length?`<div class="campaign-blocked"><b>No se encolará nada todavía</b>${blocked.map(row=>`<span>${esc(row.clip_id)} · ${esc(row.verdict)} · ${esc(row.note||'')}</span>`).join('')}</div>`:''}
       ${skipped.length?`<details class="campaign-skipped"><summary>${skipped.length} omitidos con razón</summary>${skipped.map(row=>`<span>${esc(row.clip_id)} · ${esc(row.reason)}</span>`).join('')}</details>`:''}`;
       go.disabled = !plan.ready_to_enqueue;
       go.textContent = plan.ready_to_enqueue ? `Encolar ${eligible.length} trabajos ${plan.label}` : 'Campaña aún no verificable';
     };
+    let planRequest = 0;
+    onClose(() => { planRequest++; });
     const refresh = async () => {
-      go.disabled = true; planBox.innerHTML = '<div class="fv-loading">Midiendo proyectos y nodo RTX…</div>';
-      const result = await api('/api/splat_campaign', {
-        preset: ov.querySelector('[data-campaign-preset]').value,
-        scope: ov.querySelector('[data-campaign-scope]').value,
-        resolution: ov.querySelector('[data-campaign-resolution]').value,
-        confirm: false,
-      });
-      if (result.error) { planBox.innerHTML = `<div class="campaign-blocked">${esc(result.error)}</div>`; return; }
-      renderPlan(result.plan);
+      const request = ++planRequest;
+      currentPlan=null;go.hidden=true;go.disabled=true;verify.disabled=true;planBox.innerHTML='<div class="ui-skeleton ui-skeleton--text" aria-label="Verificando escenas"></div>';
+      try {
+        const result = await api('/api/splat_campaign', {
+          preset: ov.querySelector('[data-campaign-preset]').value,
+          scope: ov.querySelector('[data-campaign-scope]').value,
+          resolution: ov.querySelector('[data-campaign-resolution]').value,
+          confirm: false,
+        });
+        if (request !== planRequest) return;
+        if (result.error) throw new Error(result.error);
+        renderPlan(result.plan);
+      } catch (error) {
+        if (request === planRequest) planBox.textContent = error.message || 'No se pudo verificar el lote. Intenta de nuevo.';
+      } finally {
+        if (request === planRequest) verify.disabled=false;
+      }
     };
-    ov.querySelectorAll('.campaign-controls select').forEach(select => select.addEventListener('change', refresh));
+    verify.addEventListener('click',refresh);
+    ov.querySelectorAll('.campaign-controls select').forEach(select=>select.addEventListener('change',()=>{planRequest++;currentPlan=null;go.hidden=true;go.disabled=true;verify.disabled=false;verify.className='ui-button ui-button--primary td-block';planBox.innerHTML='<p>Verifica el lote con estos ajustes.</p>';}));
     go.addEventListener('click', async () => {
       if (!currentPlan?.ready_to_enqueue) return;
       go.disabled = true; go.textContent = 'Encolando…';
@@ -1321,10 +1338,9 @@
         preset: currentPlan.preset, scope: currentPlan.scope,
         resolution: currentPlan.resolution, confirm: true,
       });
-      if (result.error) { alert(result.error); return refresh(); }
+      if (result.error) { showToast(result.error); return refresh(); }
       close(); showTdMod('jobs'); document.querySelector('[data-job-filter="all"]')?.click();
     });
-    refresh();
   });
 
   // ---------- asistente: procesar un vuelo ----------
@@ -1336,7 +1352,7 @@
       const r = await authFetch('/api/photo_sets');
       if (r.ok) { const d = await r.json(); if (Array.isArray(d.sets)) psInv = d; }
     } catch { /* sin sets: el modal funciona como siempre */ }
-    if (!candidates.length && !psInv.sets.length) return alert('Sin vuelos con GPS listos para 3D — sube un video con telemetría o un set de fotos.');
+    if (!candidates.length && !psInv.sets.length) return showToast('Sin vuelos con GPS listos para 3D — sube un video con telemetría o un set de fotos.');
     const splatProfiles = await splatProfilesPromise;
     const PRE = [
       { k: 'rapido', n: 'Rápido', t: '~25-40 min', d: 'Borrador · 8 cm/px' },
@@ -1383,8 +1399,8 @@
              data-q="${esc(((f.label || '') + ' ' + (f.date || '') + ' ' + fmt.date(f.date) + ' ' + (f.time || '') + ' ' + (f.place || '')
                + ' ' + (f.ai?.tags || []).join(' ') + ' ' + (f.ai?.scene_type || '')).toLowerCase())}">
         <input type="checkbox" ${sel.has(f.clip_id) ? 'checked' : ''}>
-        <span class="pc-thumb" data-preview="${esc(f.clip_id)}" title="Ver preview">
-          <img src="data/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">${icon('play')}</span>
+        <button type="button" class="pc-thumb" data-preview="${esc(f.clip_id)}" aria-label="Revisar captura">
+          <img src="data/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">${icon('play')}</button>
         <div class="pc-meta">
           <b>${esc(f.label) || fmt.date(f.date) + ' ' + f.time}</b>
           <span class="pc-sub mono">${fmt.dur(f.duration_s)} · ${fmt.date(f.date)} ${esc(f.time || '')}</span>
@@ -1444,7 +1460,7 @@
       </div>`;
     }
 
-    const { ov, close, onClose } = tdModal(`${icon('cube')} Estudio 3D`, `
+    const { ov, close, onClose } = tdModal('Crear escena', `
       <div class="st-steps"><span class="st-step on" data-st="1">1 · Seleccionar<span class="st-x"> tomas</span></span>
         <span class="st-sep">${icon('chevR')}</span><span class="st-step" data-st="2">2 · Configurar<span class="st-x"> y encolar</span></span></div>
 
@@ -1494,8 +1510,8 @@
                 </div>
                 <div class="pg-clips">${fs.map(clipRow).join('')}</div>
               </div>`; }).join('')}</div>
-            <section class="ps-sets" id="st-psets" aria-label="Sets de fotos"${psInv.sets.length ? '' : ' hidden'}>
-              <div class="ps-head">${icon('iso')} <b>Sets de fotos</b>
+            <section class="ps-sets" id="st-psets" aria-label="Grupos de fotos"${psInv.sets.length ? '' : ' hidden'}>
+              <div class="ps-head">${icon('iso')} <b>Grupos de fotos</b>
                 <span class="ps-note">JPG con GPS propio en el EXIF · sin video</span></div>
               ${psInv.sets.map(setRow).join('')}
             </section>
@@ -1518,19 +1534,19 @@
           <span class="st-node-note" id="st-node-note">CUDA remoto · verificando RTX, VRAM y carga</span>
         </div>
         <div id="m-preflight"></div>
-        <p class="mlb">Nombre del proyecto <span class="td-opt">(opcional)</span></p>
+        <p class="mlb">Nombre de la escena <span class="td-opt">(opcional)</span></p>
         <div class="st-namer"><input class="ctl" id="m-title" maxlength="80" placeholder="p. ej. Casa 4 Julio — combinado">
-          <button class="btn" id="m-suggest" title="Sugerir con IA (DeepSeek)">${icon('spark')} Sugerir</button></div>
+          <button class="btn" id="m-suggest" title="Sugerir con IA (DeepSeek)">${icon('splat')} Sugerir</button></div>
         <p class="mlb">Calidad de la fotogrametría</p>
         <div class="mpresets">${PRE.map(p => `
-          <div class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
-            <b>${p.n}</b><span class="mono" title="Tiempo aproximado en el PC CUDA; varía con el nº de imágenes y la carga del nodo">${p.t}</span><small>${p.d}</small></div>`).join('')}</div>
+          <button type="button" aria-pressed="${p.k === 'estandar'}" class="mpreset${p.k === 'estandar' ? ' on' : ''}" data-k="${p.k}">
+            <b>${p.n}</b><span class="mono" title="Tiempo aproximado en el PC CUDA; varía con el nº de imágenes y la carga del nodo">${p.t}</span><small>${p.d}</small></button>`).join('')}</div>
         <label class="proc-phase compute-choice" id="m-odm-compute"><input type="checkbox" id="m-odm-cuda" checked disabled>
           <span>${icon('cpu')} <b>Fotogrametría en PC CUDA</b><small>Todo el procesamiento corre en el PC GPU (CUDA estricto, con fusión densa preflight); nunca cae al Mac. Si el PC está apagado, se despierta solo.</small></span></label>
         <label class="proc-phase"><input type="checkbox" id="m-splat">
-          <span>${icon('spark')} <b>También entrenar gaussian splat</b> al terminar el 3D (foto-realista)</span></label>
+          <span>${icon('splat')} <b>También entrenar splat</b> al terminar el 3D (foto-realista)</span></label>
         <div id="m-splatpreset" class="splat-config" style="display:none">
-          <div class="splat-contract-head"><span><b>Calidad gaussian</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC (CUDA estricto).' : 'Fast/Medium pueden correr en el Mac. 7K–40K son CUDA-only.'}</small></span>
+          <div class="splat-contract-head"><span><b>Calidad del splat</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC (CUDA estricto).' : 'Fast/Medium pueden correr en el Mac. 7K–40K son CUDA-only.'}</small></span>
             <span class="splat-contract-badge">MCMC 1M READY</span></div>
           <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles)}</div>
           <label class="proc-phase compute-choice" id="m-cuda-row"><input type="checkbox" id="m-cuda" data-cuda-toggle checked>
@@ -1543,8 +1559,8 @@
       <div class="st-footer modal-foot">
         <div class="st-tray modal-hint" id="st-tray"></div>
         <button class="btn" id="st-back" style="display:none">${icon('chevL')} Atrás</button>
-        <button class="btn primary" id="st-next">Continuar ${icon('chevR')}</button>
-        <button class="btn primary" id="m-go" style="display:none">${icon('cube')} Encolar procesamiento</button>
+        <button class="ui-button ui-button--primary" id="st-next">Continuar ${icon('chevR')}</button>
+        <button class="ui-button ui-button--primary" id="m-go" style="display:none">${icon('cube')} Crear escena</button>
       </div>`, 'modal--studio');
 
     // mapa ocultable (transform/opacity — 60fps) + preferencia persistida
@@ -1724,7 +1740,7 @@
     });
     ov.querySelector('.mpresets').addEventListener('click', e => {
       const c = e.target.closest('.mpreset'); if (!c) return;
-      c.parentElement.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
+      c.parentElement.querySelectorAll('.mpreset').forEach(x => { x.classList.toggle('on', x === c); x.setAttribute('aria-pressed', x === c); });
     });
     splatChk.addEventListener('change', () => {
       splatPre.style.display = splatChk.checked ? '' : 'none';
@@ -1732,7 +1748,7 @@
     });
     splatPre.addEventListener('click', e => {
       const c = e.target.closest('.mpreset'); if (!c) return;
-      splatPre.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
+      splatPre.querySelectorAll('.mpreset').forEach(x => { x.classList.toggle('on', x === c); x.setAttribute('aria-pressed', x === c); });
       renderPreflight();
     });
 
@@ -1856,8 +1872,9 @@
     };
     function openPreviewAt(cid) {
       const pv = document.createElement('div');
-      pv.className = 'st-preview-ov';
-      document.body.appendChild(pv);
+      pv.className = 'scene-capture-preview';
+      const previewSheet = createSheet({title:'Revisar captura', content:pv, size:'full', className:'scene-sheet', onClose:()=>{pv.querySelector('video')?.pause(); removeEventListener('keydown',onKey); removeEventListener('ab:ai-ready',onAI); previewSheet.destroy();}});
+      previewSheet.open();
       const auto = { on: localStorage.getItem('ab.pv.auto') === '1' };
       const render = (slideDir = 0) => {
         const f = byCid[cid] || {};
@@ -1882,13 +1899,13 @@
               </div>
             </div>
             <span class="spacer"></span>
-            ${sc ? aiRing(sc) : `<button class="btn sm" data-pv="analyze">${icon('spark')} Analizar</button>`}
-            <button class="modal-x" aria-label="Cerrar">${icon('close')}</button>
+            ${sc ? aiRing(sc) : `<button class="btn sm" data-pv="analyze">${icon('splat')} Analizar</button>`}
+
           </div>
           <div class="pv-body${slideDir ? (slideDir > 0 ? ' slide-l' : ' slide-r') : ''}">
-            <video src="data/proxies/${encodeURIComponent(cid)}.mp4" controls autoplay muted playsinline
+            <video src="data/proxies/${encodeURIComponent(cid)}.mp4" controls ${reducedMotion() ? '' : 'autoplay'} muted playsinline
                    poster="data/thumbs/${encodeURIComponent(cid)}.jpg"></video>
-            ${ai.summary ? `<p class="st-pv-sum">${esc(ai.summary)}</p>` : ''}
+            <div class="pv-suggestion"></div>
             ${(ai.tags || []).length ? `<div class="pv-tags">${(ai.tags || []).slice(0, 8).map(t =>
               `<button class="pv-tag" data-tag="${esc(t)}" data-tip="Filtrar la lista por este tag">${esc(t)}</button>`).join('')}
               ${ai.scene_type ? `<span class="pv-tag scene">${esc(ai.scene_type)}</span>` : ''}</div>` : ''}
@@ -1896,16 +1913,17 @@
           <div class="st-pv-f">
             <button class="btn" data-pv="prev" data-tip="Toma anterior (←)">${icon('chevL')} Anterior</button>
             <div class="pv-center">
-              <button class="btn ${sel.has(cid) ? 'pv-on' : 'primary'}" data-pv="toggle">${sel.has(cid) ? `${icon('check')} En la selección — quitar` : '+ Seleccionar para procesar'}</button>
+              <button class="ui-button ${sel.has(cid) ? 'ui-button--secondary' : 'ui-button--primary'}" data-pv="toggle">${sel.has(cid) ? `${icon('check')} En la selección — quitar` : '+ Seleccionar para procesar'}</button>
               <span class="pv-selcount mono">${sel.size} seleccionada${sel.size === 1 ? '' : 's'}</span>
             </div>
             <div class="pv-right">
-              <button class="pv-auto${auto.on ? ' on' : ''}" data-pv="auto" data-tip="Al terminar el video, pasa solo a la siguiente toma">▶▶ auto</button>
+              <button class="pv-auto${auto.on ? ' on' : ''}" data-pv="auto" data-tip="Al terminar el video, pasa solo a la siguiente toma">Continuar automáticamente</button>
               <button class="btn" data-pv="next" data-tip="Siguiente toma (→)">Siguiente ${icon('chevR')}</button>
             </div>
           </div>
           <div class="pv-kbd mono"><kbd>Espacio</kbd> pausa · <kbd>Enter</kbd> seleccionar · <kbd>←</kbd><kbd>→</kbd> navegar · <kbd>Esc</kbd> cerrar</div>
         </div>`;
+        pv.querySelector('.pv-suggestion').append(suggestionBlock({id:`${cid}.capture`,title:'Descripción de la captura',text:ai.summary}));
         const v = pv.querySelector('video');
         v.addEventListener('ended', () => { if (auto.on) step(1); });
       };
@@ -1922,9 +1940,9 @@
         sel.has(cid) ? sel.delete(cid) : sel.add(cid);
         syncClip(cid); renderCombined(); applyFilters();
         render();
-        pv.querySelector('[data-pv="toggle"]')?.animate(
-          [{ transform: 'scale(0.94)' }, { transform: 'scale(1.04)' }, { transform: 'scale(1)' }],
-          { duration: 260, easing: 'ease-out' });
+        if(!reducedMotion())pv.querySelector('[data-pv="toggle"]')?.animate(
+          [{transform:'scale(.98)'},{transform:'scale(1)'}],
+          {duration:140,easing:'ease-out'});
       };
       pv.addEventListener('click', ev => {
         const tag = ev.target.closest('[data-tag]');
@@ -1945,16 +1963,16 @@
           } else if (b.dataset.pv === 'analyze') {
             // reusa el flujo del chip de la fila (poll + pintado); el preview se refresca al volver
             const chip = ov.querySelector(`[data-ai="${CSS.escape(cid)}"]`);
-            if (chip) { chip.click(); b.innerHTML = `${icon('spark')} Analizando…`; b.disabled = true; }
+            if (chip) { chip.click(); b.innerHTML = `${icon('splat')} Analizando…`; b.disabled = true; }
           } else step(b.dataset.pv === 'next' ? 1 : -1);
           return;
         }
-        if (ev.target === pv || ev.target.closest('.modal-x')) { pv.querySelector('video')?.pause(); pv.remove(); }
+        if (ev.target === pv || ev.target.closest('.modal-x')) { pv.querySelector('video')?.pause(); previewSheet.destroy(); }
       });
       const onKey = ev => {
         if (!document.body.contains(pv)) { removeEventListener('keydown', onKey); return; }
-        if (ev.key === 'Escape') { pv.querySelector('video')?.pause(); pv.remove(); }
-        else if (ev.key === 'ArrowRight') step(1);
+        if (!previewSheet.element.open || ev.target.matches('input,select,textarea,button')) return;
+        if (ev.key === 'ArrowRight') step(1);
         else if (ev.key === 'ArrowLeft') step(-1);
         else if (ev.key === 'Enter') { ev.preventDefault(); toggleSel(); }
         else if (ev.key === ' ' && !ev.target.closest('input,select')) {
@@ -1963,8 +1981,8 @@
           if (v) v.paused ? v.play().catch(() => {}) : v.pause();
         }
       };
-      addEventListener('keydown', onKey);
-      onClose(() => { removeEventListener('keydown', onKey); removeEventListener('ab:ai-ready', onAI); pv.remove(); });
+      pv.addEventListener('keydown', onKey);
+      onClose(() => { removeEventListener('keydown', onKey); removeEventListener('ab:ai-ready', onAI); previewSheet.destroy(); });
       const onAI = e => {
         if (!document.body.contains(pv)) { removeEventListener('ab:ai-ready', onAI); return; }
         if (e.detail === cid) render();
@@ -2059,7 +2077,7 @@
       tiles: ['https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'],
       tileSize: 256, attribution: 'CARTO · OSM' } }, layers: [{ id: 'v', type: 'raster', source: 'v' }] };
     const mapBounds = new maplibregl.LngLatBounds();
-    const fitAll = () => { if (!mapBounds.isEmpty() && stMap) stMap.fitBounds(mapBounds, { padding: 46, maxZoom: 16, duration: 900 }); };
+    const fitAll = () => { if (!mapBounds.isEmpty() && stMap) stMap.fitBounds(mapBounds, { padding: 46, maxZoom: 16, duration: reducedMotion() ? 0 : 340 }); };
     const selCenter = () => {
       const f = byCid[[...sel][0]]; const c = f && centroid(f);
       return c || (mapBounds.isEmpty() ? null : mapBounds.getCenter().toArray());
@@ -2097,7 +2115,7 @@
           el.className = 'st-pin';
           el.innerHTML = `<b>${fs.length}</b>`;
           el.addEventListener('click', () => {
-            stMap.flyTo({ center: c, zoom: 15.5, duration: 850, essential: true });
+            stMap.flyTo({ center: c, zoom: 15.5, duration: reducedMotion() ? 0 : 340, essential: false });
             const g = ov.querySelector(`.proc-group[data-spot="${CSS.escape(sk)}"]`);
             if (g) { g.scrollIntoView({ behavior: 'smooth', block: 'start' }); g.classList.add('flash'); setTimeout(() => g.classList.remove('flash'), 1200); }
           });
@@ -2136,7 +2154,7 @@
           const r = +R.dataset.r;                       // radio en metros → bounds del círculo
           const dLat = r / 111320, dLon = r / (111320 * Math.cos(c[1] * Math.PI / 180));
           stMap.fitBounds([[c[0] - dLon, c[1] - dLat], [c[0] + dLon, c[1] + dLat]],
-                          { duration: 850, essential: true });
+                          { duration: reducedMotion() ? 0 : 340, essential: false });
         });
       }
     } catch { /* sin mapa no se bloquea el flujo */ }
@@ -2184,7 +2202,7 @@
           const nodeFacts = [r.gpu, r.driver ? `driver ${r.driver}` : '', `${nEst} imágenes`].filter(Boolean).join(' · ');
           box.innerHTML = `<div class="scan-mem ${cls}">${icon(cls === 'bad' ? 'warn' : 'check')}
             <span><b>Preflight CUDA · ${esc(r.verdict)}</b> · ${esc(nodeFacts)}. ${esc(r.note || '')}
-            <i class="st-proj-note">Auto comienza a resolución completa y solo reintenta a ½ ante OOM CUDA clasificado. Sin fallback local.</i></span></div>`;
+            <i class="st-proj-note">Auto comienza a resolución completa y solo reintenta a ½ ante OOM CUDA clasificado. Sin respaldo local.</i></span></div>`;
           return;
         }
         const measured = r.confidence === 'calibrated'
@@ -2210,8 +2228,8 @@
           place: ((f ? (gEl?.textContent || f.place) : ps0?.set) || '').trim(),
           date: f ? fmt.date(f.date) : psDateRange(ps0?.date_min, ps0?.date_min), n: sel.size + psSel.size });
         if (r.name) { const t = ov.querySelector('#m-title'); t.value = r.name; t.focus(); }
-        else if (r.error) alert(r.error);
-      } finally { b.disabled = false; b.innerHTML = `${icon('spark')} Sugerir`; }
+        else if (r.error) showToast(r.error);
+      } finally { b.disabled = false; b.innerHTML = `${icon('splat')} Sugerir`; }
     });
 
     ov.querySelector('#m-go').addEventListener('click', async e2 => {
@@ -2233,7 +2251,7 @@
           splat_resolution: splatChk.checked ? selectedSplatRequest(splatPre).resolution : undefined,
           best_available: !splatChk.checked || selectedSplatRequest(splatPre).backend !== 'cuda',
         });
-        if (r.error) return alert(r.error);
+        if (r.error) return showToast(r.error);
         close();
         showTdMod('jobs');
         document.querySelector('[data-job-filter="all"]')?.click();
@@ -2248,6 +2266,7 @@
     try {
       sys = await (await fetch('data/manifest/system.json')).json();
       models = sys.models || [];
+  registerScenes(models);
       delete _scanCache[job.label];                // el escáner re-lee estado/historial del clip
       // no re-pintar el grid con un rename en curso (destruiría el input a mitad de tecleo)
       if (!document.querySelector('#proj-grid input')) renderCards();
@@ -2355,7 +2374,7 @@
         const ev = evidenceById[id] || {};
         const cov = ev.gps_coverage != null ? ` · ${Math.round(ev.gps_coverage * 100)}% GPS` : '';
         const thumb = ev.thumb_rel
-          ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(ev.thumb_rel)}&w=160" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<img alt="">';
+          ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(ev.thumb_rel)}&w=160" alt="" loading="lazy" >` : `<span class="scene-source-placeholder" aria-label="Sin vista previa">${icon('image')}</span>`;
         return `<label class="scene-source on same-site photo-set" data-distance="">
           <input type="checkbox" value="${esc(id)}" checked>
           ${thumb}
@@ -2387,14 +2406,14 @@
       <p class="mlb">ODM de la nueva versión</p>
       <div class="mpresets scene-odm">
         ${[['estandar', 'Estándar', 'poses + mapa estable'], ['alta', 'Alta', 'detalle preferido'], ['extra', 'Extra', 'malla más densa'], ['ultra', 'Ultra', 'máximo detalle ODM']]
-          .map(([k, n, d]) => `<div class="mpreset${k === 'alta' ? ' on' : ''}" data-scene-odm="${k}"><b>${n}</b><small>${d}</small></div>`).join('')}
+          .map(([k, n, d]) => `<button type="button" class="mpreset${k === 'alta' ? ' on' : ''}" aria-pressed="${k === 'alta'}" data-scene-odm="${k}"><b>${n}</b><small>${d}</small></button>`).join('')}
       </div>
       <label class="proc-phase compute-choice"><input type="checkbox" data-scene-odm-cuda checked>
-        <span>${icon('cpu')} <b>ODM en PC NVIDIA CUDA</b><small>Alta/Extra/Ultra: CUDA estricto, con fusión densa preflight y evidencia remota preservada; sin fallback local.</small></span></label>
+        <span>${icon('cpu')} <b>ODM en PC NVIDIA CUDA</b><small>Alta/Extra/Ultra: CUDA estricto, con fusión densa preflight y evidencia remota preservada; sin respaldo local.</small></span></label>
       <label class="proc-phase"><input type="checkbox" data-scene-splat checked>
-        <span>${icon('spark')} <b>Entrenar Gaussian al terminar</b><small>MCMC 1M por defecto; 7K–40K conservan la solicitud y nunca caen al Mac.</small></span></label>
+        <span>${icon('splat')} <b>Entrenar Splat al terminar</b><small>MCMC 1M por defecto; 7K–40K conservan la solicitud y nunca caen al Mac.</small></span></label>
       <div class="splat-config scene-splat" data-scene-splat-config>
-        <div class="splat-contract-head"><span><b>Calidad Gaussian</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC (CUDA estricto).' : 'Fast/Medium: Mac o CUDA · 7K–40K: CUDA estricto.'}</small></span>
+        <div class="splat-contract-head"><span><b>Calidad Splat</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC (CUDA estricto).' : 'Fast/Medium: Mac o CUDA · 7K–40K: CUDA estricto.'}</small></span>
           <span class="splat-contract-badge">MCMC 1M READY</span></div>
         <div class="mpresets splat-presets">${renderSplatProfiles(splatProfiles)}</div>
         <label class="proc-phase compute-choice"><input type="checkbox" data-cuda-toggle checked>
@@ -2402,10 +2421,10 @@
         ${splatResolutionControls()}
         <div class="splat-policy" data-splat-policy></div>
       </div>
-      <button class="btn primary td-block td-mt" data-scene-go>Crear versión mejorada</button>`, 'scene-improve-modal');
+      <button class="ui-button ui-button--primary td-block td-mt" data-scene-go>Crear versión mejorada</button>`, 'scene-improve-modal');
     ov.querySelectorAll('.mpresets').forEach(group => group.addEventListener('click', e => {
       const pick = e.target.closest('.mpreset'); if (!pick) return;
-      group.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === pick));
+      group.querySelectorAll('.mpreset').forEach(x => { x.classList.toggle('on', x === pick); x.setAttribute('aria-pressed', x === pick); });
     }));
     const sceneSplatConfig = ov.querySelector('[data-scene-splat-config]');
     wireSplatCompute(sceneSplatConfig);
@@ -2431,28 +2450,28 @@
       const promote = e.target.closest('[data-scene-promote]');
       if (promote && scene) {
         const r = await api('/api/scene_promote', { scene_id: scene.id, version_id: promote.dataset.scenePromote });
-        if (r.error) return alert(r.error);
+        if (r.error) return showToast(r.error);
         sys.scenes = (await (await authFetch('/api/scenes')).json()).scenes || [];
         return close();
       }
       const go = e.target.closest('[data-scene-go]'); if (!go) return;
       const selectedSources = [...ov.querySelectorAll('.scene-source input:checked')].map(x => x.value);
       const selectedPhotos = [...ov.querySelectorAll('.scene-photos input:checked')].map(x => x.value);
-      if (!selectedSources.length) return alert('Selecciona al menos un video con GPS.');
-      if (selectedSources.length > 24) return alert('Esta versión admite máximo 24 videos. Divide la mejora en una versión compatible más pequeña.');
+      if (!selectedSources.length) return showToast('Selecciona al menos un video con GPS.');
+      if (selectedSources.length > 24) return showToast('Esta versión admite máximo 24 videos. Divide la mejora en una versión compatible más pequeña.');
       go.disabled = true;
       try {
         if (!scene) {
           const anchor = origin ? { lon: origin[0], lat: origin[1] } : {};
           const created = await api('/api/scene_create', { title: titleFor(model), anchor,
             sources: currentSources, photos: currentPhotos, existing_version: model.clip_id });
-          if (created.error) return alert(created.error);
+          if (created.error) return showToast(created.error);
           scene = created.scene;
         }
         const sameSources = [...selectedSources].sort().join('|') === [...currentSources].sort().join('|');
         const samePhotos = [...selectedPhotos].sort().join('|') === [...currentPhotos].sort().join('|');
         if (sameSources && samePhotos) {
-          alert('La escena quedó versionada. Agrega otra captura o foto para crear una mejora nueva.');
+          showToast('La escena quedó versionada. Agrega otra captura o foto para crear una mejora nueva.');
           return close();
         }
         const r = await api('/api/scene_improve', {
@@ -2465,7 +2484,7 @@
           splat_resolution: selectedSplatRequest(sceneSplatConfig).resolution,
           best_available: selectedSplatRequest(sceneSplatConfig).backend !== 'cuda',
         });
-        if (r.error) return alert(r.error);
+        if (r.error) return showToast(r.error);
         close(); showTdMod('jobs'); document.querySelector('[data-job-filter="all"]')?.click();
       } finally { go.disabled = false; }
     });
@@ -2548,7 +2567,7 @@
         <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>Nube de puntos</b><span class="exp-m"><em>PLY</em>CloudCompare</span></div></a>
         ${cur.cloud_copc_asset ? `<a class="exp" href="${base}/${cur.cloud_copc_asset}" download>${icon('db')}<div><b>Nube optimizada</b><span class="exp-m"><em>COPC</em>${(cur.cloud_copc_bytes / 1e6).toFixed(0)} MB · GIS</span></div></a>` : ''}
         ${meshOk ? `<a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span class="exp-m"><em>OBJ</em>Blender / 3D</span></div></a>` : ''}
-        ${sp ? `<a class="exp" href="${splatUrl(sp)}" download>${icon('spark')}<div><b>Gaussian splat</b><span class="exp-m"><em>${spFmt}</em>SuperSplat</span></div></a>` : ''}
+        ${sp ? `<a class="exp" href="${splatUrl(sp)}" download>${icon('splat')}<div><b>Splat</b><span class="exp-m"><em>${spFmt}</em>SuperSplat</span></div></a>` : ''}
         <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Visor privado</b><span class="exp-m"><em>LINK</em>con sesión</span></div></a>
       </div>`;
     if (omap) omap.remove();
@@ -2687,7 +2706,8 @@
     const id = b.dataset.layer;
     const vis = b.classList.contains('on') ? 'visible' : 'none';
     if (id === 'contours' && vis === 'visible') ensureContours();
-    omap.getLayer(id) && omap.setLayoutProperty(id, 'visibility', vis);
+    mapLayerIds(id).forEach(layer => { if (omap.getLayer(layer)) omap.setLayoutProperty(layer, 'visibility', vis); });
+    b.setAttribute('aria-pressed', vis === 'visible');
   }));
   function ensureContours() {
     if (!cur?.dsm_corners) return;
@@ -2725,7 +2745,7 @@
     mpts = []; measSeq++; paintDraw();
     const noSecond = tool === 'compare' && document.getElementById('cmp-date').options.length && !document.getElementById('cmp-date').value;
     if (!noSecond) result(tool ? ({ dist: 'Toca puntos en el mapa para medir distancia.',
-      area: 'Toca los vértices del área.', volume: 'Dibuja el polígono sobre el stockpile/edificio y toca "Calcular".',
+      area: 'Toca los vértices del área.', volume: 'Dibuja el polígono sobre el montículo o edificio y toca "Calcular".',
       profile: 'Toca 2 puntos: inicio y fin del perfil.',
       compare: 'Dibuja el polígono del área a comparar entre las dos fechas y toca "Comparar".' })[tool] : null);
   }));
@@ -2762,7 +2782,7 @@
         <span class="footer-note td-result-n">área · ${mpts.length} vértices</span>`);
     }
     if (tool === 'volume' && mpts.length > 2) {
-      result(`<button class="btn primary" id="calc-vol">Calcular volumen (${mpts.length} vértices)</button>`);
+      result(`<button class="ui-button ui-button--primary" id="calc-vol">Calcular volumen (${mpts.length} vértices)</button>`);
       document.getElementById('calc-vol').onclick = async () => {
         result('Calculando contra el DSM…');
         const mySeq = ++measSeq, myCid = cur.clip_id;
@@ -2778,7 +2798,7 @@
       };
     }
     if (tool === 'compare' && mpts.length > 2) {
-      result(`<button class="btn primary" id="calc-cmp">Comparar (${mpts.length} vértices)</button>`);
+      result(`<button class="ui-button ui-button--primary" id="calc-cmp">Comparar (${mpts.length} vértices)</button>`);
       document.getElementById('calc-cmp').onclick = async () => {
         const other = document.getElementById('cmp-date').value;
         if (!other) return result('Elige la fecha a comparar.');
@@ -2857,8 +2877,8 @@
   function viewerPlaceholder(mode) {
     if (mode === 'mesh') return 'Modelo sólido con textura fotográfica — arrastra para mover, botón derecho rota y doble toque enfoca.';
     if (mode === 'splat') return splatAssetFor(cur?.clip_id)
-      ? 'Gaussian listo — selecciona una versión y cárgala para inspección foto-realista.'
-      : 'Este proyecto aún no tiene Gaussian. Entrénalo desde Procesamiento.';
+      ? 'Splat listo — selecciona una versión y cárgala para inspección foto-realista.'
+      : 'Este proyecto aún no tiene Splat. Entrénalo desde Procesamiento.';
     return 'Nube con color real — arrastra para mover, botón derecho rota, rueda o pellizco acerca y doble toque enfoca.';
   }
 
@@ -2903,7 +2923,7 @@
       tab.setAttribute('aria-selected', String(active));
       tab.disabled = availability[tab.dataset.viewerMode] === false;
       if (tab.dataset.viewerMode === 'mesh' && tab.disabled) tab.title = 'ODM marcó esta malla como no concluyente';
-      else if (tab.dataset.viewerMode === 'splat' && tab.disabled) tab.title = 'Este proyecto todavía no tiene Gaussian';
+      else if (tab.dataset.viewerMode === 'splat' && tab.disabled) tab.title = 'Este proyecto todavía no tiene Splat';
       else tab.title = '';
     });
     const status = document.getElementById('scene-viewer-status');
@@ -2927,7 +2947,7 @@
     const box = unifiedViewerBox();
     disposeUnifiedViewer(box);
     renderViewerHeader();
-    box.innerHTML = `<p class="footer-note scene-viewer-note">${viewerPlaceholder(viewerMode)}</p>`;
+    box.innerHTML = `<img class="scene-poster" src="data/models/${encodeURIComponent(cur.clip_id)}/${esc(cur.ortho_asset || 'ortho.jpg')}" alt="Vista previa" data-transition-key="world-${esc(cur.clip_id)}"><p class="footer-note scene-viewer-note">${viewerPlaceholder(viewerMode)}</p>`;
     if (autoload) autoloadTimer = setTimeout(loadActiveViewer, 0);
   }
 
@@ -3010,7 +3030,8 @@
       const d = cam.position.distanceTo(p);
       const toPos = p.clone().addScaledVector(cam.position.clone().sub(p).normalize(),
         Math.max(d * 0.45, (controls.minDistance || 0.003) * 3));
-      const t0 = performance.now(), dur = 420;
+      if (reducedMotion()) { controls.target.copy(p); cam.position.copy(toPos); controls.update(); wake(); return; }
+      const t0 = performance.now(), dur = 340;
       const sT = controls.target.clone(), sP = cam.position.clone();
       cancelAnimationFrame(fAnim);
       (function step() {
@@ -3111,6 +3132,8 @@
       <button data-vt="fs" title="Pantalla completa">${icon('ext')}</button>`;
     box.style.position = 'relative';
     box.appendChild(bar);
+    bar.querySelectorAll('button').forEach(button=>button.setAttribute('aria-label',button.title));
+    box.onkeydown=e=>{if(e.key==='Escape'&&box.classList.contains('viewer-fs'))bar.querySelector('[data-vt=fs]').click();};
     const cam0 = cam ? cam.position.clone() : null;
     bar.addEventListener('click', e => {
       const b = e.target.closest('[data-vt]');
@@ -3135,9 +3158,10 @@
       }
       if (b.dataset.vt === 'fs') {
         const on = box.classList.toggle('viewer-fs');
-        b.innerHTML = on ? icon('chevL') : icon('ext');
+        b.innerHTML = on ? 'Salir' : icon('ext');
+        b.title = on ? 'Salir de pantalla completa' : 'Pantalla completa'; b.setAttribute('aria-label',b.title);
         document.body.style.overflow = on ? 'hidden' : '';
-        // GaussianSplats3D dimensiona con window.resize (no ResizeObserver)
+        // SplatSplats3D dimensiona con window.resize (no ResizeObserver)
         window.dispatchEvent(new Event('resize'));
       }
     });
@@ -3277,7 +3301,7 @@
         scene.remove(obj);
         glbLoaded.dispose();
         obj = next.root; glbLoaded = next; curGlb = want;
-        obj.rotation.x = -Math.PI / 2;
+        centerReplacement(obj, THREE);
         scene.add(obj);
         swatches.length = 0;
         buildSwatches(obj);
@@ -3505,7 +3529,7 @@
         : '';
       return `
       <div class="splat-row" data-cid="${esc(scid)}">
-        <div class="sr-thumb${thumb ? '' : ' is-empty'}">${thumb || icon('spark')}</div>
+        <div class="sr-thumb${thumb ? '' : ' is-empty'}">${thumb || icon('splat')}</div>
         <div class="sr-main">
           <div class="sr-hd">
             <b>${esc(title)}</b>
@@ -3514,7 +3538,7 @@
           </div>
           <div class="sr-sub">${s.archived_at ? esc(s.archived_at) + ' · ' : ''}${esc(s.preset_label || s.preset || '')}${s.iters ? ` · ${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters} iteraciones` : ''} · .${esc(sFmt)}</div>
           <div class="sr-stats mono">
-            ${s.gaussians ? `<span title="Gaussianas del modelo">${icon('spark')}${gfmt(s.gaussians)} gaussianas</span>` : ''}
+            ${s.gaussians ? `<span title="Splatas del modelo">${icon('splat')}${gfmt(s.gaussians)} gaussianas</span>` : ''}
             ${s.cameras ? `<span title="Cámaras de entrenamiento">${icon('film')}${s.cameras} cámaras</span>` : ''}
             ${s.backend ? `<span class="sr-be ${isCuda ? 'cuda' : 'metal'}" title="Backend de entrenamiento">${icon('cpu')}${esc(s.backend)}</span>` : ''}
             ${s.duration_s ? `<span title="Tiempo de entrenamiento">${icon('clock')}${fmtRun(s.duration_s)}</span>` : ''}
@@ -3531,7 +3555,7 @@
             <a class="btn sm icon" href="${splatUrl(s)}" download title="Descargar .${sFmt}" aria-label="Descargar .${sFmt} de ${esc(title)}">${icon('dl')}</a>
             <a class="btn sm icon" target="_blank" rel="noopener" title="Editar en SuperSplat" aria-label="Editar ${esc(title)} en SuperSplat"
                href="/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}">${icon('broom')}</a>
-            ${hasModel ? `<button class="btn sm icon" data-share="${esc(scid)}" data-splat="${esc(splatKey(s))}" title="Copiar link público" aria-label="Copiar link público de ${esc(title)}">${icon('ext')}</button>` : ''}
+            ${hasModel ? `<button class="btn sm icon" data-share="${esc(scid)}" data-splat="${esc(splatKey(s))}" title="Copiar enlace privado" aria-label="Copiar enlace privado de ${esc(title)}">${icon('ext')}</button>` : ''}
             <button class="btn sm icon ghost sr-del" data-del="${esc(scid)}" data-title="${esc(title)}" title="Borrar splats del proyecto (papelera)" aria-label="Borrar splats de ${esc(title)}">${icon('trash')}</button>
           </div>
         </div>
@@ -3561,7 +3585,7 @@
 
   renderSplatList();
   document.getElementById('btn-splat').addEventListener('click', async () => {
-    if (!flights.length) return alert('No hay vuelos en el vault.');
+    if (!flights.length) return showToast('No hay vuelos en el vault.');
     const splatProfiles = await splatProfilesPromise;
     const modelIds = new Set(models.map(m => m.clip_id));
     const modelChoices = models.map((m, i) => ({ kind: 'model', m, f: flights.find(x => x.clip_id === m.clip_id), i }));
@@ -3573,7 +3597,7 @@
       .reverse()
       .map((f, i) => ({ kind: 'video', f, i }));
     const choices = modelChoices.concat(videoChoices);
-    const { ov, close } = tdModal(`${icon('spark')} Generar gaussian splat`, `
+    const { ov, close } = tdModal(`${icon('splat')} Generar splat`, `
       <p class="footer-note td-note">Entrena un archivo <b>.splat</b> nuevo con las
       fotos y poses del proyecto elegido — <b>no modifica</b> la nube ni la malla. Al terminar
       aparece en la lista, en el visor y en el enlace privado.</p>
@@ -3595,8 +3619,8 @@
         </div>`; }).join('')}</div>
       <p class="mlb">Modelo base si partes de video</p>
       <div class="mpresets">
-        <div class="mpreset on" data-model-preset="estandar"><b>Estándar</b><span class="mono">poses fiables</span><small>Más rápido para crear la base</small></div>
-        <div class="mpreset" data-model-preset="alta"><b>Alta</b><span class="mono">más detalle</span><small>Mejor base, tarda más</small></div>
+        <button type="button" class="mpreset on" aria-pressed="true" data-model-preset="estandar"><b>Estándar</b><span class="mono">poses fiables</span><small>Más rápido para crear la base</small></button>
+        <button type="button" class="mpreset" aria-pressed="false" data-model-preset="alta"><b>Alta</b><span class="mono">más detalle</span><small>Mejor base, tarda más</small></button>
       </div>
       <div id="ms-score"></div>
       <div class="splat-contract-head"><span><b>Calidad del entrenamiento</b><small>Tiempo medido cuando existe; proyección identificada cuando todavía no.</small></span>
@@ -3606,7 +3630,7 @@
         <span>${icon('cpu')} <b>Entrenar en nodo NVIDIA CUDA</b><small>${pcOnly() ? 'Todo el entrenamiento corre en el PC; la solicitud es CUDA estricta.' : 'Fast/Medium pueden usar Apple Metal; 7K–40K bloquean CUDA por calidad.'}</small></span></label>
       ${splatResolutionControls()}
       <div class="splat-policy" data-splat-policy></div>
-      <button class="btn primary td-block td-mt" id="m-go">${icon('spark')} Entrenar splat</button>`, 'modal--splat-train');
+      <button class="ui-button ui-button--primary td-block td-mt" id="m-go">${icon('splat')} Entrenar splat</button>`, 'modal--splat-train');
     wireSplatCompute(ov);
     // Estado visible incluso dormido: ocultarlo confundía "no disponible" con "Mac".
     authFetch('/api/gpu_node').then(r => r.json()).then(d => {
@@ -3641,7 +3665,7 @@
     ov.querySelectorAll('.mpresets:not(.splat-presets)').forEach(group => group.addEventListener('click', e => {
       const c = e.target.closest('.mpreset');
       if (!c) return;
-      group.querySelectorAll('.mpreset').forEach(x => x.classList.toggle('on', x === c));
+      group.querySelectorAll('.mpreset').forEach(x => { x.classList.toggle('on', x === c); x.setAttribute('aria-pressed', x === c); });
     }));
     ov.querySelector('#m-go').addEventListener('click', async e2 => {
       const btn = e2.currentTarget;
@@ -3658,7 +3682,7 @@
           resolution: request.resolution,
           best_available: request.backend !== 'cuda',
         });
-        if (r.error) return alert(r.error);
+        if (r.error) return showToast(r.error);
         close();
         showTdMod('jobs');                          // feedback inmediato del encolado
         document.querySelector('[data-job-filter="all"]')?.click();
@@ -3671,7 +3695,7 @@
     const delBtn = e.target.closest('[data-del]');
     if (viewBtn && !viewBtn.disabled) {
       const scid = viewBtn.dataset.cid || viewBtn.dataset.view.replace(SPLAT_EXT, '');
-      if (!models.some(m => m.clip_id === scid)) return alert('Este splat no tiene proyecto 3D publicado.');
+      if (!models.some(m => m.clip_id === scid)) return showToast('Este splat no tiene proyecto 3D publicado.');
       selectedSplatByClip[scid] = viewBtn.dataset.view;
       saveSplatChoice();
       setProject(scid);
@@ -3680,19 +3704,19 @@
     } else if (shareBtn) {
       const url = `${location.origin}/share.html?m=${encodeURIComponent(shareBtn.dataset.share)}${shareBtn.dataset.splat ? `&s=${encodeURIComponent(shareBtn.dataset.splat)}` : ''}`;
       try { await navigator.clipboard.writeText(url); shareBtn.innerHTML = icon('check'); setTimeout(() => { shareBtn.innerHTML = icon('ext'); }, 1300); }
-      catch { prompt('Link público (cópialo):', url); }
+      catch { await copyLink(url, shareBtn); }
     } else if (delBtn) {
       const scid = delBtn.dataset.del, title = delBtn.dataset.title || scid;
-      if (!confirm(`¿Borrar el splat "${title}"?\n\nVa a la papelera (reversible). El modelo 3D, la nube y el video NO se tocan.`)) return;
+      if (!await confirmSheet(`¿Borrar el splat "${title}"?\n\nVa a la papelera (reversible). El modelo 3D, la nube y el video NO se tocan.`)) return;
       delBtn.disabled = true;
       let r;
       try {
         r = await api('/api/splat_delete', { clip_id: scid });
       } catch (err) {
         delBtn.disabled = false;                    // login cancelado / red: el botón no queda muerto
-        return alert(String(err?.message || err));
+        return showToast(String(err?.message || err));
       }
-      if (r.error) { delBtn.disabled = false; return alert(r.error); }
+      if (r.error) { delBtn.disabled = false; return showToast(r.error); }
       // saca el splat del estado del cliente: si no, splatAssetFor lo sigue viendo y RESUCITA
       // (botón "Cargar" reaparece, apunta a un archivo ya en la papelera → 404) al reabrir el proyecto
       if (sys.splats) sys.splats = sys.splats.filter(s => (s.clip_id || s.name.replace(SPLAT_EXT, '')) !== scid);
@@ -3760,13 +3784,13 @@
     box._splatDispose = handle.dispose;           // dispose premium (HUD + listeners + viewer)
     box._pcid = cur.clip_id;                       // qué clip está en pantalla (para borrar en vivo)
     box.querySelector('.splat-load')?.remove();
-    loadBtn.textContent = 'Recargar Gaussian';
+    loadBtn.textContent = 'Recargar Splat';
     loadBtn.disabled = false;
   }
 
   // sin auto-abrir: solo se restaura una selección previa del usuario
   renderCards();
-  const saved = localStorage.getItem(PROJ_KEY);
+  const saved = new URLSearchParams(location.search).get('project') || localStorage.getItem(PROJ_KEY);
   if (saved && models.some(m => m.clip_id === saved)) setProject(saved, { restore: true });
   const requestedTab = new URLSearchParams(location.search).get('tab');
   if (['projects', 'process', 'jobs'].includes(requestedTab)) showTdMod(requestedTab);

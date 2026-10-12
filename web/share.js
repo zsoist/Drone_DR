@@ -1,29 +1,28 @@
+import { areaNav, contentSheet, sceneInfo, reducedMotion } from './scene-improve-ui.js?v=384';
+import { loadIsCurrent, analysisFor } from './scene-improve-state.js?v=384';
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
-import * as THREE from '/vendor/three180.module.js?v=390';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=390';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=390';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=390';
-import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=390';
-import { mountSplatViewer } from '/splatview.js?v=390';
+import * as THREE from '/vendor/three180.module.js?v=374';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=374';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=374';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=374';
+import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=374';
+import { mountSplatViewer } from '/splatview.js?v=384';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-// Tema: esta página pública no carga shell.js; honra la preferencia guardada (ab_theme) igual que la app.
-try { document.documentElement.dataset.theme = localStorage.getItem('ab_theme') === 'light' ? 'light' : 'dark'; } catch { document.documentElement.dataset.theme = 'dark'; }
 
 const cid = (new URLSearchParams(location.search).get('m') || '').replace(/[^\w-]/g, '');
 document.body.classList.add('share-page');
 document.body.innerHTML = `<div class="share-main">
   <header class="sh-head rise">
-    <span class="sh-mark" aria-hidden="true">${icon('drone')}</span>
+    <a class="ui-button ui-button--quiet" href="tresd.html" aria-label="Volver a Escenas">${icon('chevL')}</a>
     <div class="sh-head-t">
       <h1 id="sh-title">Modelo 3D</h1>
-      <span class="sh-sub">AeroBrain · fotogrametría de dron</span>
+      <span class="sh-sub">Visor 3D · enlace privado</span>
     </div>
   </header>
-  <div id="sh-body"><p class="footer-note">Cargando…</p></div>
+  <div id="sh-body" aria-busy="true"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div>
 </div>
 <svg class="sh-defs" width="0" height="0" aria-hidden="true" focusable="false"><filter id="sh-hard" color-interpolation-filters="sRGB"><feComponentTransfer><feFuncA type="discrete" tableValues="0 1"/></feComponentTransfer></filter></svg>`;
 const body = document.getElementById('sh-body');
@@ -69,14 +68,14 @@ function splatAssetFor(clipId, system) {
 let meta = null, sys = {};
 if (!cid) {
   // sin ?m= no hay nada que pedir: antes hacía fetch a data/models//meta.json (404) y lanzaba
-  body.innerHTML = `<div class="empty">${icon('link')}<p>Falta el modelo en el link (parámetro <code>?m=</code>).</p></div>`;
+  body.innerHTML = `<div class="ui-empty"><p>El enlace no indica qué escena abrir.</p><a class="ui-button ui-button--primary" href="tresd.html">Ver escenas</a><p>Abre una escena desde tu biblioteca.</p></div>`;
 } else try {
   meta = await jfetch(`data/models/${cid}/meta.json`);
   sys = await jfetch('data/manifest/system.json').catch(() => ({}));
 } catch {
-  body.innerHTML = `<div class="empty">${icon('warn')}<p>Este modelo no existe o el link ya no está activo.</p></div>`;
+  body.innerHTML = `<div class="ui-empty"><p>La escena no está disponible.</p><a class="ui-button ui-button--primary" href="tresd.html">Ver escenas</a><p>Comprueba el enlace desde tu biblioteca.</p></div>`;
 }
-if (!meta) await new Promise(() => {});   // página vacía con mensaje: no seguir montando visores
+if (!meta) { body.setAttribute('aria-busy','false'); await new Promise(() => {}); }   // página vacía con mensaje: no seguir montando visores
 
 document.getElementById('sh-title').textContent = meta.title || `Vuelo ${cid.slice(-6)}`;
 document.title = `AeroBrain — ${meta.title || cid}`;
@@ -92,32 +91,35 @@ const dlRow = (href, name, sub, opts = '') =>
   `<a class="exp sh-dl" href="${href}" ${opts}>${icon('dl')}<div><b>${name}</b><span class="sh-dl-sub" data-size-url="${href}">${sub}</span></div></a>`;
 const sizeOf = b => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`;
 
+body.setAttribute('aria-busy','false');
 body.innerHTML = `
   <div class="sh-chips rise">
     ${q.gsd_cm_px ? `<span class="chip on">${q.gsd_cm_px} cm/px</span>` : ''}
     ${q.area_m2 ? `<span class="chip on">${ha}</span>` : ''}
     ${q.cameras_reconstructed ? `<span class="chip">${q.cameras_reconstructed} cámaras</span>` : ''}
     ${meta.has_dsm ? `<span class="chip">Elevación DSM</span>` : ''}
-    ${splat ? `<span class="chip">Gaussian splat</span>` : ''}
+    ${splat ? `<span class="chip">Splat</span>` : ''}
   </div>
 
   <div class="panel rise sh-viewer">
     <div class="ph sh-ph">
       <span class="sh-ph-t">Visor 3D</span>
-      <a id="sh-volar" class="btn primary sh-volar" href="volar.html?m=${encodeURIComponent(cid)}" hidden>${icon('drone')} Volar en 3D</a>
+      <a id="sh-volar" class="ui-button ui-button--quiet sh-volar" href="volar.html?m=${encodeURIComponent(cid)}" hidden>${icon('drone')} Volar en 3D</a>
       <div class="seg sh-tabs" role="tablist" aria-label="Tipo de visor">
         <button class="on" data-v="cloud" role="tab" aria-selected="true">Nube</button>
         ${meshOk ? '<button data-v="mesh" role="tab" aria-selected="false">Malla</button>' : ''}
         ${splat ? '<button data-v="splat" role="tab" aria-selected="false">Splat</button>' : ''}
       </div>
     </div>
-    <div id="sh-view" class="sh-view"></div>
+    <div id="sh-view" class="sh-view"><img class="scene-poster" src="${base}/${esc(meta.ortho_asset || 'ortho.jpg')}" alt="Vista previa de ${esc(meta.title || 'la escena')}" data-transition-key="world-${esc(cid)}"><button class="ui-button ui-button--primary sh-start" id="sh-start">Cargar escena</button></div>
   </div>
 
+  <div class="sh-actions"><button class="ui-button ui-button--secondary" id="sh-info">Información</button><button class="ui-button ui-button--quiet" id="sh-downloads">Descargas</button>${meta.cmp_asset && meta.has_dsm ? '<button class="ui-button ui-button--quiet" id="sh-compare">Comparar elevación</button>' : ''}</div>
+  <div id="sh-details" hidden>
   ${meta.cmp_asset && meta.has_dsm ? `
   <div class="panel rise">
     <div class="ph">Foto real y elevación <span class="hint">Arrastra el divisor</span></div>
-    <div class="cmp" id="cmp" role="img" aria-label="Comparador de foto real y mapa de elevación">
+    <div class="cmp" id="cmp" role="slider" tabindex="0" aria-valuemin="2" aria-valuemax="98" aria-valuenow="50" aria-label="Comparar foto y elevación">
       <img src="${base}/dsm_color.webp" alt="Mapa de elevación en color" draggable="false">
       <img class="cmp-over" src="${base}/${esc(meta.cmp_asset)}" alt="Foto real del sitio" draggable="false" style="clip-path:inset(0 50% 0 0)">
       <div class="cmp-handle" style="left:50%"><span></span></div>
@@ -131,10 +133,20 @@ body.innerHTML = `
       ${dlRow(`${base}/cloud.ply`, 'Nube de puntos', 'PLY', 'download')}
       ${meta.cloud_copc_asset ? dlRow(`${base}/${meta.cloud_copc_asset}`, 'Nube optimizada', 'COPC', 'download') : ''}
       ${meshOk ? dlRow(`${base}/model/odm_textured_model_geo.obj`, 'Malla 3D', 'OBJ', 'download') : ''}
-      ${splat ? dlRow(splatUrl(splat), 'Gaussian splat', `${splatFmt}${splat.bytes ? ' · ' + sizeOf(splat.bytes) : ''}`, 'download') : ''}
+      ${splat ? dlRow(splatUrl(splat), 'Splat', `${splatFmt}${splat.bytes ? ' · ' + sizeOf(splat.bytes) : ''}`, 'download') : ''}
     </div>
     <p class="page-foot sh-foot">Procesado localmente con AeroBrain — fotogrametría ODM sobre video de dron DJI.</p></div>
-  </div>`;
+  </div></div>`;
+
+const detailNodes = [...document.querySelectorAll('#sh-details > .panel')];
+function openDetail(node, title, opener) {
+  node.hidden = false;
+  const sheet = contentSheet(title,node,opener);
+  sheet.element.addEventListener('close',()=>document.getElementById('sh-details').append(node),{once:true});
+}
+document.getElementById('sh-downloads').onclick=e=>openDetail(detailNodes.at(-1),'Descargas',e.currentTarget);
+document.getElementById('sh-compare')?.addEventListener('click',e=>openDetail(detailNodes[0],'Foto y elevación',e.currentTarget));
+document.getElementById('sh-info').onclick=async e=>{const opener=e.currentTarget; let flights=[];try{const r=await fetch('data/manifest/flights.json');if(r.ok)flights=(await r.json()).flights||[];}catch{}sceneInfo({model:{...meta,clip_id:cid},ai:analysisFor({...meta,clip_id:cid},flights),opener});};
 
 // tamaño de cada descarga como subtítulo (HEAD, solo lectura; si falla queda el formato)
 document.querySelectorAll('[data-size-url]').forEach(el => {
@@ -178,7 +190,9 @@ if (cmp) {
     const p = Math.max(2, Math.min(98, (x - r.left) / r.width * 100));
     over.style.clipPath = `inset(0 ${(100 - p).toFixed(2)}% 0 0)`;
     handle.style.left = p + '%';
+    cmp.setAttribute('aria-valuenow', Math.round(p));
   };
+  cmp.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();const r=cmp.getBoundingClientRect();move(r.left+r.width*(+cmp.getAttribute('aria-valuenow')+(e.key==='ArrowRight'?2:-2))/100);});
   cmp.addEventListener('pointerdown', e => { cmp.setPointerCapture(e.pointerId); move(e.clientX); });
   cmp.addEventListener('pointermove', e => { if (e.buttons) move(e.clientX); });
 }
@@ -211,8 +225,11 @@ function makeScene() {
   controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
   controls.screenSpacePanning = false;   // el pan corre sobre el plano del suelo
   if ('zoomToCursor' in controls) controls.zoomToCursor = true;
-  controls.autoRotate = true;            // efecto de entrada — se apaga al tocar
+  controls.autoRotate = !reducedMotion();            // efecto de entrada — se apaga al tocar
   controls.autoRotateSpeed = 0.7;
+  const motionPreference=matchMedia('(prefers-reduced-motion: reduce)');
+  const stopAutoplay=()=>{if(motionPreference.matches)controls.autoRotate=false;};
+  motionPreference.addEventListener('change',stopAutoplay);
   renderer.domElement.addEventListener('pointerdown', () => { controls.autoRotate = false; }, { once: true });
   scene.add(new THREE.AmbientLight(0xffffff, 1.15));
   const dl = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -235,6 +252,8 @@ function makeScene() {
     // tab cambiado: libera geometría+materiales+texturas y suelta el contexto WebGL
     if (!renderer.domElement.isConnected) {
       ro.disconnect();
+      motionPreference.removeEventListener('change',stopAutoplay);
+      controls.dispose();
       const freed = new Set();
       scene.traverse(o => {
         o.geometry?.dispose();
@@ -251,6 +270,16 @@ function makeScene() {
     if (controls.update()) renderFrames = Math.max(renderFrames, 2);   // damping/autoRotate
     if (renderFrames > 0) { renderer.render(scene, cam); renderFrames--; }
   })();
+  const home=()=>{cam.position.copy(savedPosition);controls.target.copy(savedTarget);controls.update();wake();};
+  const savedPosition=new THREE.Vector3(),savedTarget=new THREE.Vector3();
+  requestAnimationFrame(()=>{savedPosition.copy(cam.position);savedTarget.copy(controls.target);});
+  const nav=document.createElement('div');nav.className='viewer-tools';
+  nav.innerHTML='<button class="ui-button ui-button--secondary" data-camera="home" aria-label="Reiniciar vista">'+icon('home')+'</button><button class="ui-button ui-button--secondary" data-camera="full">Ampliar</button>';
+  const exit=()=>{view.classList.remove('sv-fullscreen');nav.querySelector('[data-camera="full"]').textContent='Ampliar';};
+  nav.addEventListener('click',e=>{const b=e.target.closest('[data-camera]');if(!b)return;if(b.dataset.camera==='home')home();else{view.classList.toggle('sv-fullscreen');b.textContent=view.classList.contains('sv-fullscreen')?'Salir':'Ampliar';}});
+  renderer.domElement.tabIndex=0;
+  view.onkeydown=e=>{if(e.key==='Escape')exit();};
+  view.append(nav);
   return { scene, cam, controls, renderer };
 }
 
@@ -399,7 +428,7 @@ const loaders = {
   },
   async splat() {
     const myLoad = view._loadToken;
-    const st = spinner('Descargando gaussian splat…');
+    const st = spinner('Descargando splat…');
     const ac = view._loadAbort = new AbortController();   // cambiar de tab aborta el mount en vuelo
     let handle;
     try {
@@ -427,13 +456,12 @@ document.querySelector('.sh-tabs').addEventListener('click', e => {
   if (view._splatDispose) { const d = view._splatDispose; view._splatDispose = null; view._splatViewer = null; try { d(); } catch {} }
   else if (view._splatViewer) { const v = view._splatViewer; view._splatViewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
   document.querySelectorAll('.sh-tabs button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', String(x === b)); });
-  const NAMES = { cloud: 'la nube de puntos (cloud.ply)', mesh: 'la malla texturizada (OBJ/MTL)', splat: `el gaussian splat (.${splatFmt.toLowerCase()})` };
+  const NAMES = { cloud: 'la nube de puntos (cloud.ply)', mesh: 'la malla texturizada (OBJ/MTL)', splat: `el splat (.${splatFmt.toLowerCase()})` };
+  const token = view._loadToken;
   loaders[b.dataset.v]().catch(err => {
+    if (!loadIsCurrent(view, token)) return;
     view.innerHTML = `<p class="footer-note">No se pudo cargar ${NAMES[b.dataset.v]} del modelo ${esc(cid)}.
       <span class="sh-err">${esc(String(err && err.message || err).slice(0, 120))}</span></p>`;
   });
 });
-loaders.cloud().catch(err => {
-  view.innerHTML = `<p class="footer-note">No se pudo cargar la nube de puntos (cloud.ply) del modelo ${esc(cid)}.
-    <span class="sh-err">${esc(String(err && err.message || err).slice(0, 120))}</span></p>`;
-});
+document.getElementById('sh-start').addEventListener('click',()=>document.querySelector('.sh-tabs [data-v="cloud"]').click());

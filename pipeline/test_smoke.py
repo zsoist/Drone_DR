@@ -897,7 +897,7 @@ check("modal v2: agrupa por CENTROIDE del bbox (U1.1 — spotKey del despegue re
       "(b[0] + b[2]) / 2" in _td_src and "0.0012" in _td_src)
 check("modal v2: CUDA premium usa preflight real sin inventar pico ni fallback local",
       "Preflight CUDA" in _td_src and "/api/preflight" in _td_src
-      and "UNVERIFIED_FULL_RES" in _td_src and "Sin fallback local" in _td_src)
+      and "UNVERIFIED_FULL_RES" in _td_src and "Sin respaldo local" in _td_src)
 
 
 check("server: geocode en do_GET con caché + urllib.request al TOP (import local envenena _post: UnboundLocalError en todo urllib.parse previo)",

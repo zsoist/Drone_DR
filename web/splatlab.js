@@ -1,19 +1,27 @@
+import { areaNav, createSheet, confirmSheet, showToast, skeletonCards, registerScenes } from './scene-improve-ui.js?v=384';
 // Splat Lab — SuperSplat (MIT, self-hosted en /supersplat/) integrado al shell.
 // Flujo completo: elegir splat → editar (floaters/crop/transform) → File > Export
 // → SUBIR AQUÍ MISMO (drag&drop o botón) → se publica versionado (history/) y el
 // viewer/manifest se actualizan solos. El original nunca se pierde.
 const main = renderShell('splatlab.html');
 main.classList.add('lab-main');
+main.setAttribute('aria-busy','true');
+main.innerHTML=areaNav('escenas')+skeletonCards();
 
 (async () => {
   let sys = {}, splats = [], cur = 0;
   const load_sys = async () => {
-    sys = await (await fetch(`${DATA}/manifest/system.json`, { cache: 'no-store' })).json();
+    const response=await fetch(`${DATA}/manifest/system.json`, {cache:'no-store'});
+    if(!response.ok)throw new Error('Scene index unavailable');
+    sys=await response.json();
     // solo versiones ACTUALES: Limpiar publicado / Revertir / Subir actúan sobre el archivo
     // vigente del clip, no sobre una copia archivada en history/ (que el picker mostraba sin etiqueta)
     splats = (sys.splats || []).filter(s => s.current !== false);
   };
-  try { await load_sys(); } catch {}
+  try { await load_sys(); } catch { main.setAttribute('aria-busy','false');main.innerHTML=areaNav('escenas')+'<div class="ui-empty"><h1>No se pudo cargar el editor</h1><p>Revisa la conexión y vuelve a intentarlo.</p><a class="ui-button ui-button--primary" href="splatlab.html">Reintentar</a></div>';return; }
+  main.setAttribute('aria-busy','false');
+  registerScenes(sys.models || []);
+  if(!splats.length){main.innerHTML=areaNav('escenas')+'<div class="ui-empty"><h1>Aún no tienes splats</h1><p>Crea una escena para editarla aquí.</p><a class="ui-button ui-button--primary" href="tresd.html?tab=process">Crear escena</a><p>Empieza con una órbita del mismo lugar.</p></div>';return;}
   const models = () => sys.models || [];
   const title = s => {
     const m = models().find(x => x.clip_id === s.clip_id);
@@ -27,10 +35,10 @@ main.classList.add('lab-main');
     `/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}`;
 
   main.innerHTML = `
-    ${pageHead('Splat Lab', 'Edición de gaussian splats · SuperSplat', '<div class="sl-switch" id="lab-picker"></div>')}
+    ${areaNav('escenas')}${pageHead('Editar splat', 'Limpia la escena y conserva una versión anterior.', '<div class="sl-switch" id="lab-picker"></div>')}
     <div class="sl-bar" role="toolbar" aria-label="Herramientas del splat">
       <div class="sl-files" id="lab-actions" role="group" aria-label="Archivo del splat"></div>
-      <div class="sl-clean" id="lab-clean" role="group" aria-label="Auto-Clean del splat"></div>
+      <div class="sl-clean" id="lab-clean" role="group" aria-label="Limpieza automática del splat"></div>
       <button class="btn icon sl-full" id="lab-full" title="Editor a pantalla completa (Esc para salir)" aria-label="Editor a pantalla completa">${icon('fit')}</button>
     </div>
     <div class="sl-status" role="status" aria-live="polite"><span id="lab-status"></span><span id="lab-clean-status"></span></div>
@@ -39,9 +47,9 @@ main.classList.add('lab-main');
       <button class="btn lab-exit" id="lab-exit" hidden aria-label="Salir de pantalla completa">${icon('close')} Salir</button>
       <div class="lab-drophint" id="lab-drophint" hidden>Suelta el splat editado (.ply / .splat / .ksplat) para publicarlo</div>
     </div>
-    <p class="page-foot lab-tip"><b>Flujo:</b> limpia floaters con pincel/lazo + borrar · recorta con crop ·
-      <b>File → Export</b> descarga el resultado · súbelo aquí (botón o arrástralo) y queda publicado —
-      la versión anterior se archiva en <span class="mono">splats/history/</span>.</p>
+    <p class="page-foot lab-tip"><b>Flujo:</b> selecciona y borra puntos sueltos · recorta los bordes ·
+      <b>File → Export</b> descarga el resultado · súbelo aquí (botón o arrástralo) y se guarda una versión nueva —
+      puedes recuperar la versión anterior.</p>
     <input type="file" id="lab-file" accept=".ply,.splat,.ksplat" hidden aria-hidden="true">`;
 
   // ---- Ajustes finos: popover canónico (openPopover) anclado a su botón; el nodo vive aquí y persiste entre aperturas ----
@@ -49,19 +57,19 @@ main.classList.add('lab-main');
   tuneNode.className = 'sl-tune';
   tuneNode.id = 'lab-tune-panel';
   tuneNode.setAttribute('role', 'group');
-  tuneNode.setAttribute('aria-label', 'Ajustes finos del Auto-Clean');
+  tuneNode.setAttribute('aria-label', 'Ajustes finos de limpieza automática');
   tuneNode.innerHTML = `
-      ${[['op', 'Neblina', 'Gaussianas casi transparentes = niebla. Desmarca para conservarlas', 'Umbral neblina', 0.5, 20, 3.5, 0.5, '3.5%'],
-         ['k', 'Picos', 'Gaussianas gigantes vs la mediana = picos y manchas. Más bajo = más agresivo', 'Umbral picos', 2, 10, 6, 0.5, '6.0×'],
-         ['an', 'Agujas', 'Agujas: eje máximo >> eje intermedio (no toca discos-superficie). Más bajo = más agujas fuera', 'Umbral agujas', 5, 25, 15, 1, '15'],
-         ['rad', 'Borde', 'Spray radial más allá del footprint de vuelo. Desmarca si tu escena es alargada', 'Umbral borde', 95, 99.9, 99.5, 0.1, 'P99.5']]
+      ${[['op', 'Neblina', 'Quita puntos casi transparentes. Desmarca para conservarlos', 'Umbral neblina', 0.5, 20, 3.5, 0.5, '3.5%'],
+         ['k', 'Picos', 'Quita puntos muy grandes. Un valor menor quita más puntos', 'Umbral picos', 2, 10, 6, 0.5, '6.0×'],
+         ['an', 'Agujas', 'Quita puntos muy alargados. Un valor menor quita más puntos', 'Umbral agujas', 5, 25, 15, 1, '15'],
+         ['rad', 'Borde', 'Quita puntos fuera del área capturada. Desmarca si la escena es alargada', 'Umbral borde', 95, 99.9, 99.5, 0.1, 'P99.5']]
         .map(([k, lb, tip, aria, mn, mx, v, st, txt]) => `
       <div class="tn-stage" title="${tip}">
         <label class="tn-lb"><input type="checkbox" id="tn-${k}-on" checked>${lb}</label>
         <input type="range" id="tn-${k}" aria-label="${aria}" min="${mn}" max="${mx}" value="${v}" step="${st}">
         <b class="mono" id="tn-${k}-v">${txt}</b>
         <em class="mono tn-count" id="tn-${k}-c"></em></div>`).join('')}
-      <p class="sl-tune-note">Cada limpieza es UN paso de undo — prueba, mira los contadores por etapa, deshaz y ajusta.
+      <p class="sl-tune-note">Cada limpieza se puede deshacer — prueba, mira los contadores por etapa, deshaz y ajusta.
         <button type="button" class="btn ghost sm" id="tn-reset">Restablecer</button></p>`;
   const tn = id => tuneNode.querySelector('#' + id);
   let tuneTouched = false;          // el usuario movió algo → los valores del panel se aplican al próximo «Limpiar en editor»
@@ -95,6 +103,9 @@ main.classList.add('lab-main');
   });
 
   // ---- puente con el editor (same-origin): origen fijo, nunca '*' ----
+  let editorReady=false, readyStarted=0;
+  const syncEditorActions=()=>{['lab-ac-ed','lab-undo','lab-redo'].forEach(id=>{const b=document.getElementById(id);if(b)b.disabled=!editorReady;});};
+  const resetReady=()=>{editorReady=false;readyStarted=performance.now();syncEditorActions();document.getElementById('lab-status').textContent='Cargando editor…';};
   const toEditor = msg => { try { frame.contentWindow?.postMessage(msg, location.origin); return true; } catch { return false; } };
   const fromEditor = e => e.origin === location.origin && e.source === frame.contentWindow;
   // ¿hay ediciones sin exportar? SuperSplat responde a 'supersplat:is-scene-dirty' (iframe-api.ts)
@@ -108,20 +119,18 @@ main.classList.add('lab-main');
     if (!toEditor({ type: 'supersplat:is-scene-dirty' })) fin(false);
   });
   const okToDiscard = async () =>
-    !(await editorDirty()) || confirm('Hay ediciones sin exportar en el editor. ¿Descartarlas?');
+    !(await editorDirty()) || await confirmSheet('Hay ediciones sin exportar en el editor. ¿Descartarlas?');
 
   const toggleTune = btn => {
-    const pop = openPopover(btn, tuneNode, {
-      role: 'group', haspopup: 'true', label: 'Ajustes finos del Auto-Clean', className: 'pop-pad sl-tune-pop', focus: 'input[type=checkbox]',
-      onClose: () => { tunePop = null; markTune(tuneTouched); },
-    });
+    const pop = createSheet({title:'Ajustes de limpieza',content:tuneNode,size:'half',className:'scene-sheet',onClose:()=>{tunePop=null;markTune(tuneTouched);pop.destroy();}});
+    pop.open(btn);
     tunePop = pop;                                       // null = estaba abierto y openPopover lo cerró (toggle)
     markTune(tuneTouched);
   };
   // clic dentro del editor (iframe): el documento padre nunca ve el pointerdown → cerramos por blur de la ventana
   window.addEventListener('blur', () => { if (tunePop) tunePop.close(); });
   const sizeMB = s => `${((s.bytes || 0) / 1e6).toFixed(1)} MB`;
-  const itersK = s => s.iters ? `${s.iters >= 1000 ? s.iters / 1000 + 'K' : s.iters} iters` : '';
+  const itersK = s => s.iters ? `${s.iters >= 1000 ? s.iters / 1000 + 'K' : s.iters} pasos` : '';
   let pickerQ = '';
   const renderList = () => {
     const list = document.getElementById('lab-list');
@@ -162,18 +171,7 @@ main.classList.add('lab-main');
     box.innerHTML = `
       <div class="search sl-pop-search">${icon('search')}<input type="search" id="lab-pq" placeholder="Buscar…" aria-label="Buscar splat" autocomplete="off"></div>
       <div class="sl-list" id="lab-list" role="listbox" aria-label="Splats disponibles"></div>`;
-    const pop = openPopover(btn, box, {
-      haspopup: 'listbox', className: 'pop-pad sl-pop-list', focus: '#lab-pq',
-      onKey: e => {
-        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-        const items = [...box.querySelectorAll('.sl-opt')];
-        if (!items.length) return;
-        e.preventDefault();
-        const i = items.indexOf(document.activeElement);
-        const n = e.key === 'ArrowDown' ? Math.min(items.length - 1, i + 1) : i - 1;
-        (n < 0 ? box.querySelector('#lab-pq') : items[n]).focus();
-      },
-    });
+    const pop=createSheet({title:'Elegir splat',content:box,size:'full',className:'scene-sheet',onClose:()=>pop.destroy()});pop.open(btn);
     if (!pop) return;
     box.addEventListener('input', e => { if (e.target.id === 'lab-pq') { pickerQ = e.target.value; renderList(); } });
     box.addEventListener('click', async e => {
@@ -192,14 +190,14 @@ main.classList.add('lab-main');
       <a class="btn ghost" href="${splatUrl(s)}" download title="Descarga el .splat actual tal cual está publicado" aria-label="Descargar splat actual">${icon('dl')} Descargar</a>
       <button class="btn ghost" id="lab-upload" title="Sube un splat editado (.ply/.splat/.ksplat) — la versión anterior se archiva en history/" aria-label="Subir splat editado">${icon('save')} Subir editado</button>
       <a class="btn ghost" href="share.html?m=${encodeURIComponent(s.clip_id)}" target="_blank" rel="noopener" title="Abre el visor privado de este modelo" aria-label="Abrir visor privado">${icon('ext')} Abrir visor</a>
-      <a class="btn ghost" href="tresd.html" title="Abre el proyecto en el tab 3D (mapa, malla, nube)" aria-label="Ver en el tab 3D">${icon('cube')} Ver en 3D</a>`;
+      <a class="btn ghost" href="tresd.html?project=${encodeURIComponent(s.clip_id)}" title="Abre el proyecto en el tab 3D (mapa, malla, nube)" aria-label="Ver en el tab 3D">${icon('cube')} Ver en 3D</a>`;
     document.getElementById('lab-upload').addEventListener('click', () => fileIn.click());
     renderClean();
     renderLazy();
   };
   const rawUrl = s => 'data/splats/' + encodeURIComponent(`${s.clip_id}.raw.splat`);
   let abRaw = false;                       // A/B: viendo el crudo pre-clean en el editor
-  const rawOk = {};                        // clip_id → ¿existe <cid>.raw.splat? (solo hay tras un Auto-Clean)
+  const rawOk = {};                        // clip_id → ¿existe <cid>.raw.splat? (solo hay tras un Limpieza automática)
   function renderClean() {
     const s = splats[cur];
     const box = document.getElementById('lab-clean');
@@ -207,18 +205,18 @@ main.classList.add('lab-main');
     if (tunePop) tunePop.close();                // el ancla se re-crea: cerrar antes de reemplazarla
     const tuneOn = tuneTouched;
     box.innerHTML = `
-      <select class="ctl sl-preset" id="lab-preset" aria-label="Preset de Auto-Clean" title="Preset de limpieza — aéreo conserva estructuras dispersas legítimas; agresivo quita más spray de borde">
+      <select class="ctl sl-preset" id="lab-preset" aria-label="Preset de Limpieza automática" title="Preset de limpieza — aéreo conserva estructuras dispersas legítimas; agresivo quita más spray de borde">
         <option value="aerial">Aéreo (seguro)</option>
         <option value="aerial_aggressive">Aéreo agresivo</option>
         <option value="object">Objeto / interior</option>
       </select>
-      <button class="btn primary" id="lab-ac-ed" title="Limpia DENTRO del editor: selecciona flotantes/neblina/agujas y los borra como pasos de undo (Ctrl+Z ×2 deshace; Edit→Reset restaura todo). Luego File→Export para publicar">${icon('spark')} Limpiar en editor</button>
+      <button class="ui-button ui-button--primary" id="lab-ac-ed" title="Limpia DENTRO del editor: selecciona flotantes/neblina/agujas y los borra como pasos de undo (Ctrl+Z ×2 deshace; Edit→Reset restaura todo). Luego File→Export para publicar">${icon('splat')} Limpiar en editor</button>
       <div class="btn-group" role="group" aria-label="Historial del editor">
-        <button class="btn icon" id="lab-undo" title="Deshace el último paso dentro del editor (el Auto-Clean es UN solo paso)" aria-label="Deshacer en el editor">${icon('undo')}</button>
+        <button class="btn icon" id="lab-undo" title="Deshace el último paso dentro del editor (la limpieza automática es UN solo paso)" aria-label="Deshacer en el editor">${icon('undo')}</button>
         <button class="btn icon" id="lab-redo" title="Rehace el paso deshecho dentro del editor" aria-label="Rehacer en el editor">${icon('redo')}</button>
       </div>
       <button class="btn${abRaw ? ' on' : ''}" id="lab-ab" title="Alterna el editor entre el crudo y la versión actual para comparar antes/después (requiere un crudo pre-clean)" aria-pressed="${abRaw}"${rawOk[s.clip_id] === false && !abRaw ? ' disabled' : ''}>${abRaw ? 'Viendo: crudo' : 'A/B'}</button>
-      <button class="btn${tuneOn ? ' on' : ''}" id="lab-tune" title="Ajustes finos del Auto-Clean: umbral de neblina, factor de picos y agujas — se aplican al próximo Limpiar" aria-haspopup="true" aria-expanded="false">${icon('gauge')} Ajustes</button>
+      <button class="btn${tuneOn ? ' on' : ''}" id="lab-tune" title="Ajustes finos de limpieza automática: umbral de neblina, factor de picos y agujas — se aplican al próximo Limpiar" aria-haspopup="true" aria-expanded="false">${icon('gauge')} Ajustes</button>
       <button class="btn icon" id="lab-more" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones sobre el archivo publicado" title="Más acciones">${icon('more')}</button>`;
     if (rawOk[s.clip_id] === undefined && typeof s.has_raw === 'boolean') rawOk[s.clip_id] = s.has_raw;
     if (rawOk[s.clip_id] === undefined) {
@@ -244,8 +242,9 @@ main.classList.add('lab-main');
                radialPct: on('tn-rad-on') ? v('tn-rad') / 100 : 0 };
     };
     document.getElementById('lab-ac-ed').addEventListener('click', () => {
+      if(!editorReady)return;
       const preset = document.getElementById('lab-preset').value;
-      cst('limpiando en el editor…');
+      cst('Limpiando en el editor…');
       if (!toEditor({ type: 'aerobrain:autoclean', preset, overrides: tuneOverrides() })) cst('Error: el editor no respondió');
     });
     document.getElementById('lab-more').addEventListener('click', e2 => openMenu(e2.currentTarget, [
@@ -282,6 +281,7 @@ main.classList.add('lab-main');
         await load_sys(); abRaw = false; load(cur);
       } catch (err) { cst(`Error: ${String(err.message || err).slice(0, 90)}`); }
     };
+    syncEditorActions();
     document.getElementById('lab-ab').addEventListener('click', async () => {
       if (!(await okToDiscard())) return;
       abRaw = !abRaw;
@@ -289,14 +289,13 @@ main.classList.add('lab-main');
       const src = abRaw
         ? `/supersplat/?load=${encodeURIComponent('/' + rawUrl(s))}&filename=${encodeURIComponent(s.clip_id + '.raw.splat')}`
         : editorUrl(s);
-      frame.src = src;
+      resetReady(); frame.src = src;
       renderClean();
     });
   }
   // móvil/táctil: el editor pesa ~25 MB (index.js + .sog) y el iframe queda bajo el pliegue →
   // no fijamos src hasta que el usuario toque "Cargar editor" o elija un splat
-  const LAZY = matchMedia('(max-width: 800px), (pointer: coarse)').matches;
-  let armed = !LAZY;
+  let armed = false;
   const lazyBox = document.createElement('div');
   lazyBox.className = 'lab-lazy empty sl-empty';
   const wrapEmpty = on => drop.classList.toggle('is-empty', on);
@@ -304,11 +303,11 @@ main.classList.add('lab-main');
     const s = splats[cur];
     lazyBox.innerHTML = `
       ${icon('cube')}
-      <b>Editor SuperSplat · ~25 MB</b>
-      <p>Se descarga solo cuando vayas a editar.</p>
+      <b>Abre tu escena para editar</b>
+      <p>Carga el editor cuando lo necesites. La descarga inicial es de unos 25 MB.</p>
       ${s ? `<span class="sl-empty-stats"><span class="chip sm">${esc(title(s))}</span>
         <span class="chip sm mono">${sizeMB(s)}</span>${s.iters ? `<span class="chip sm mono">${esc(itersK(s))}</span>` : ''}</span>` : ''}
-      <button class="btn primary" id="lab-load-ed" aria-label="Cargar editor SuperSplat">${icon('cube')} Cargar editor</button>`;
+      <button class="ui-button ui-button--primary" id="lab-load-ed" aria-label="Cargar editor SuperSplat">${icon('cube')} Cargar editor</button>`;
     lazyBox.querySelector('button').addEventListener('click', arm);
   };
   lazyBox.hidden = armed;
@@ -318,6 +317,7 @@ main.classList.add('lab-main');
     if (armed) return;
     armed = true; lazyBox.hidden = true; wrapEmpty(false);
     const s = splats[cur];
+    resetReady();
     if (s) frame.src = abRaw
       ? `/supersplat/?load=${encodeURIComponent('/' + rawUrl(s))}&filename=${encodeURIComponent(s.clip_id + '.raw.splat')}`
       : editorUrl(s);
@@ -326,6 +326,7 @@ main.classList.add('lab-main');
     if (!splats[i]) return;
     cur = i;
     if (user && !armed) { armed = true; lazyBox.hidden = true; wrapEmpty(false); }
+    resetReady();
     if (armed) frame.src = editorUrl(splats[i]);
     renderPicker(); renderActions(); renderClean();
   };
@@ -409,6 +410,14 @@ main.classList.add('lab-main');
       st.textContent = `body:not(.ab-mobile) #view-cube-container { transform: scale(.72); transform-origin: top right; }
         body:not(.ab-mobile) #right-toolbar { top: max(50%, 300px) !important; }`;
       doc.head.appendChild(st);
+      const foundation=document.createElement('link');foundation.rel='stylesheet';foundation.href='/scene-improve-editor.css?v=384';doc.head.appendChild(foundation);
+      doc.documentElement.dataset.theme=document.documentElement.dataset.theme || 'dark';
+      doc.addEventListener('keydown', e => { if(e.key==='Escape' && drop.classList.contains('lab-fullscreen')) { setFull(false); document.getElementById('lab-full').focus(); } });
+      doc.querySelectorAll('#menu-arrow, #menu-collapse').forEach(button => {
+        button.setAttribute('role','button'); button.setAttribute('tabindex','0');
+        button.setAttribute('aria-label',button.id==='menu-arrow'?'Abrir menú del editor':'Cerrar menú del editor');
+        button.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();button.dispatchEvent(new MouseEvent('click',{bubbles:true}));}});
+      });
     } catch { /* mismo origen: no debería fallar */ }
   });
 
@@ -434,7 +443,7 @@ main.classList.add('lab-main');
   if (matchMedia('(pointer: coarse)').matches && !localStorage.getItem('ab.lab.gestures')) {
     const g = document.createElement('div');
     g.className = 'lab-gestures';
-    g.innerHTML = '<b>1 dedo</b> orbitar · <b>pellizco</b> zoom · <b>2 dedos</b> mover · <b>Auto-Clean</b> limpia con un tap<button aria-label="Entendido">Entendido</button>';
+    g.innerHTML = '<b>1 dedo</b> orbitar · <b>pellizco</b> zoom · <b>2 dedos</b> mover · <b>Limpieza automática</b> limpia con un tap<button aria-label="Entendido">Entendido</button>';
     document.querySelector('.lab-frame-wrap')?.appendChild(g);
     g.querySelector('button').addEventListener('click', () => {
       localStorage.setItem('ab.lab.gestures', '1'); g.remove();
@@ -444,6 +453,7 @@ main.classList.add('lab-main');
   window.addEventListener('message', e => {
     if (!fromEditor(e)) return;
     const d = e.data;
+    if(d?.type==='supersplat:is-scene-dirty'&&frame.getAttribute('src')){editorReady=true;lazyBox.hidden=true;wrapEmpty(false);document.getElementById('lab-status').textContent='Editor listo';syncEditorActions();}
     if (!d || d.type !== 'aerobrain:autoclean:done') return;
     const el = document.getElementById('lab-clean-status');
     if (!el) return;
@@ -461,6 +471,20 @@ main.classList.add('lab-main');
     });
   });
 
+  // API acknowledgement, not iframe load, enables editing actions.
+  const readyPoll=setInterval(()=>{
+    if(!frame.isConnected||!frame.getAttribute('src')||editorReady||document.hidden)return;
+    if(performance.now()-readyStarted>60000){
+      frame.removeAttribute('src');armed=false;wrapEmpty(true);lazyBox.hidden=false;
+      lazyBox.innerHTML='<b>El editor no respondió</b><p>Revisa la conexión e intenta cargarlo de nuevo.</p><button class="ui-button ui-button--primary">Reintentar</button>';
+      lazyBox.querySelector('button').addEventListener('click',arm);
+      document.getElementById('lab-status').textContent='No se pudo cargar el editor';
+      return;
+    }
+    toEditor({type:'supersplat:is-scene-dirty'});
+  },1000);
+  addEventListener('pagehide',()=>clearInterval(readyPoll),{once:true});
   renderPicker(); renderActions();
   if (splats.length) load(0);
+  document.getElementById('lab-status').textContent='';
 })();

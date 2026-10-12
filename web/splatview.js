@@ -1,3 +1,4 @@
+import { reducedMotion } from './scene-improve-ui.js?v=384';
 // splatview.js — visor PREMIUM de gaussian splats, compartido por tresd.js y share.js.
 // MOTOR: Spark 2.1 (r180) — migrado desde GaussianSplats3D 0.4.7 (fase E del
 // plan FLIGHTVERSE; el autor de GS3D descontinuó la lib y recomienda Spark).
@@ -38,7 +39,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(holder.clientWidth || 640, holder.clientHeight || 420);
-  renderer.setClearColor(0x0a0e14, 1);
+  renderer.setClearColor(0x000000, 1);
   holder.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(55, 16 / 9, 0.02, 5000);
@@ -56,7 +57,9 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   ctrl.screenSpacePanning = false;
   ctrl.maxPolarAngle = Math.PI * 0.495;            // splat: no cruzar bajo el horizonte
   if ('zoomToCursor' in ctrl) ctrl.zoomToCursor = true;
-  try { ctrl.listenToKeyEvents(window); } catch {}
+  renderer.domElement.tabIndex = 0;
+  renderer.domElement.setAttribute('aria-label', 'Escena 3D. Usa las flechas para mover la cámara.');
+  try { ctrl.listenToKeyEvents(renderer.domElement); } catch {}
 
   let rafId = 0, running = true;
   // render ON-DEMAND (idéntico a makeScene de tresd.js): ~90 frames tras cada cambio, luego DUERME.
@@ -208,7 +211,9 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   // ---- FOCUS por doble-click: rayo al plano del suelo -> target ahí ----
   let anim = 0;
   function animateTo(toTarget, toPos, toMin) {
-    const t0 = performance.now(), dur = 550;
+    touched = true;
+    if (reducedMotion()) { cancelAnimationFrame(anim); ctrl.target.copy(toTarget); cam.position.copy(toPos); if (toMin != null) ctrl.minDistance = toMin; ctrl.update(); wake(); return; }
+    const t0 = performance.now(), dur = 340;
     const sT = ctrl.target.clone(), sP = cam.position.clone();
     cancelAnimationFrame(anim);
     (function step() {
@@ -238,6 +243,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
     return true;
   }
   function dolly(mult) {
+    touched = true;
     const dir = cam.position.clone().sub(ctrl.target);
     const d = dir.length();
     if (!Number.isFinite(d) || d <= 0) return;
@@ -336,7 +342,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
     btn('inspect', 'Acercamiento de detalle', I.target) +
     btn('measure', 'Medir distancia — 2 clics sobre el suelo (≈ metros); el 3º inicia otra medición', I.rule) +
     `<span class="sv-sep"></span>` +
-    `<label class="sv-slider" title="Campo de visión">${svg(I.fov)}<input type="range" data-sv="fov" min="30" max="80" value="${Math.round(cam.fov)}"></label>` +
+    `<label class="sv-slider" title="Campo de visión">${svg(I.fov)}<input type="range" aria-label="Campo de visión" data-sv="fov" min="30" max="80" value="${Math.round(cam.fov)}"></label>` +
     `<span class="sv-sep"></span>` +
     btn('shot', 'Captura PNG', I.cam);
   host.appendChild(hud);
@@ -387,6 +393,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   function setFull(on) {
     if (on === host.classList.contains('sv-fullscreen')) return;
     host.classList.toggle('sv-fullscreen', on);
+    const button=nav.querySelector('[data-sv=full]'); button.innerHTML=on?'Salir':svg(I.full);button.setAttribute('aria-label',on?'Salir de pantalla completa':'Pantalla completa');
     document.documentElement.classList.toggle('sv-noscroll', on);
   }
   function toggleFull() {
@@ -404,7 +411,9 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   window.addEventListener('popstate', onPop);
   function onKey(e) {
     if (!holder.isConnected) return;
+    if (!host.contains(document.activeElement) && e.key !== 'Escape') return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;          // Cmd+F / Ctrl± son del navegador
+    if (e.key === 'Escape' && host.classList.contains('sv-fullscreen')) { toggleFull(); return; }
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
     if (e.key === 'r' || e.key === 'R') nav.querySelector('[data-sv="home"]').click();
