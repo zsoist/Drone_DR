@@ -1,10 +1,52 @@
+import { createSheet } from './ui/sheet.js?v=374';
+import { showToast as toast } from './ui/toast.js?v=374';
+import { registerPaletteSource } from './ui/palette.js?v=374';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption } from './studio.logic.js?v=389';
+
+// Keep each editor's DOM and cleanup contract inside the W1 sheet lifecycle.
+function openModal(content, options = {}) {
+  const title = options.label || content.querySelector('.modal-h b')?.textContent || 'Editar';
+  const sheet = createSheet({ title, content, size: 'full', className: 'st-sheet', onClose: () => {
+    content.querySelectorAll('video,audio').forEach(el => el.pause());
+    options.onClose?.();
+    content.removeEventListener('click', dismiss);
+    delete content.remove;
+    queueMicrotask(() => sheet.element.remove());
+  }});
+  const dismiss = e => { if (e.target.closest('.modal-x,[data-peek-close],[data-close]')) sheet.close(); };
+  content.classList.add('st-sheet-content');
+  content.addEventListener('click', dismiss);
+  content.remove = () => sheet.close();
+  sheet.open();
+  content.querySelector(options.initialFocus || '[autofocus]')?.focus();
+  return sheet.close;
+}
+function ask(title, value) {
+  return new Promise(resolve => {
+    const body = document.createElement('div');
+    const label = document.createElement('label'); label.textContent = title;
+    const input = document.createElement('input'); input.className = 'ctl'; input.value = value ?? ''; label.append(input);
+    if (value !== undefined) body.append(label);
+    const actions = document.createElement('div'); actions.className = 'st-sheet-actions';
+    const cancel = document.createElement('button'); cancel.className = 'ui-button ui-button--quiet'; cancel.textContent = 'Cancelar';
+    const accept = document.createElement('button'); accept.className = 'ui-button ui-button--primary'; accept.textContent = value === undefined ? 'Confirmar' : 'Guardar';
+    actions.append(cancel, accept); body.append(actions);
+    let result = null;
+    const sheet = createSheet({ title, content: body, size: 'peek', className:'st-sheet', onClose: () => { resolve(result); queueMicrotask(() => sheet.destroy()); }});
+    cancel.onclick = () => sheet.close(); accept.onclick = () => { result = value === undefined ? true : input.value; sheet.close(); };
+    sheet.open(); if (value !== undefined) input.focus();
+  });
+}
+
 // Studio v5 — motor de medios: 4 módulos en tabs (Editor · Reels · Fotos · Trabajos).
-// El editor de video v4 (carrusel, timeline arrastrable, Momentos AI, exportbar) vive
+// El editor de video v4 (carrusel, timeline arrastrable, Reel automático, exportbar) vive
 // intacto dentro del módulo Editor; Reels/Fotos gestionan la biblioteca vía /api/media_op.
 const main = renderShell('studio.html');
 main.classList.add('st-page');
+main.dataset.module = 'editor';
 main.innerHTML = `
-  ${pageHead('Studio', 'Motor de medios — edita, gestiona y comparte', '<span class="gchip" id="st-count">cargando…</span>')}
+  <header class="st-heading"><div><h1>Studio</h1><p>De tu vuelo a una historia.</p></div><a class="ui-button ui-button--primary" href="subir.html">${icon('plus')} Subir</a></header>
+  <div class="st-library-count" id="st-count" aria-live="polite">Cargando biblioteca…</div>
 
   <div class="pm-tabs st-tabs rise" id="st-tabs" role="tablist" aria-label="Módulos de Studio">
     <button class="on" data-tab="editor" role="tab" aria-selected="true">${icon('film')} Editor</button>
@@ -14,15 +56,10 @@ main.innerHTML = `
     <span class="pm-ink"></span>
   </div>
 
-  <div class="st-up" id="up-zone">
-    <button class="st-up-cta" id="up-pick">
-      <span class="st-up-ic">${icon('dl')}</span>
-      <span class="st-up-t"><b>Subir desde tu teléfono</b><small>Videos y fotos del carrete — se procesan solos al llegar</small></span>
-      <span class="st-up-go">${icon('chevR')}</span>
-    </button>
-    <input type="file" id="up-file" accept="video/*,image/*" multiple hidden>
-    <div class="st-up-list" id="up-list" hidden></div>
-  </div>
+  <section class="st-auto-entry" id="up-zone">
+    <div><h2>Reel automático</h2><p id="st-ai-summary">Tus mejores momentos, listos para revisar.</p></div>
+    <button class="ui-button ui-button--secondary" id="st-auto-start">Revisar sugerencia ${icon('chevR')}</button>
+  </section>
 
   <section class="st-mod" data-mod="editor">
     <div class="tl-editor" id="tl-editor">
@@ -30,7 +67,7 @@ main.innerHTML = `
       <div class="panel st-panel">
         <!-- encabezado del editor: título + contador + proyecto (nuevo · guardar · abrir) -->
         <div class="ph st-ph" data-no-collapse>
-          <span class="st-ph-t">${icon('film')} Editor</span>
+          <span id="st-save-state" class="st-save-state" role="status">Borrador local</span><span class="st-ph-t">${icon('film')} Editor</span>
           <span class="gchip" id="tl-stat">0 clips · 0:00</span>
           <span class="spacer"></span>
           <div class="st-ph-actions">
@@ -47,7 +84,7 @@ main.innerHTML = `
           <span><kbd>S</kbd> cortar en el playhead</span>
           <span><kbd>T</kbd> añadir texto</span>
           <span><kbd>Supr</kbd> eliminar clip</span>
-          <span><kbd>←</kbd><kbd>→</kbd> mover playhead (<kbd>Shift</kbd> = 1 s)</span>
+          <span><kbd>←</kbd><kbd>→</kbd> mover el cursor (<kbd>Shift</kbd> = 1 s)</span>
           <span><kbd>Alt</kbd><kbd>←</kbd><kbd>→</kbd> reordenar clip</span>
           <span><kbd>Cmd</kbd><kbd>Z</kbd> deshacer</span>
           <span><kbd>Cmd</kbd><kbd>Shift</kbd><kbd>Z</kbd> rehacer</span>
@@ -61,8 +98,8 @@ main.innerHTML = `
             <div class="tl-aspect-mask" id="tl-mask" data-aspect="16:9" hidden></div>
             <div class="tl-empty" id="tl-empty">
               ${icon('film')}
-              <p><b>Tu timeline está vacío</b></p>
-              <p>Toca un clip de la biblioteca para añadirlo, o usa <b>Momentos AI</b> para autoarmar el reel.</p>
+              <p><b>Empieza con una toma</b></p>
+              <p>Elige un video de tu biblioteca o revisa un reel sugerido.</p>
             </div>
           </div>
 
@@ -72,7 +109,7 @@ main.innerHTML = `
             <div class="tb-g">
               <button class="btn icon sm ghost" data-tp="start" data-tip="Ir al inicio" aria-label="Ir al inicio">${icon('skipStart')}</button>
               <button class="btn icon sm ghost" data-tp="prev" data-tip="Clip anterior" aria-label="Clip anterior">${icon('prev')}</button>
-              <button class="btn sm primary tb-play" data-tp="play" data-tip="Reproducir / Pausa (Espacio)" aria-label="Reproducir o pausar">${icon('play')}<span>Play</span></button>
+              <button class="btn sm primary tb-play" data-tp="play" data-tip="Reproducir / Pausa (Espacio)" aria-label="Reproducir o pausar">${icon('play')}<span>Reproducir</span></button>
               <button class="btn icon sm ghost" data-tp="next" data-tip="Clip siguiente" aria-label="Clip siguiente">${icon('next')}</button>
               <button class="btn icon sm ghost" data-tp="end" data-tip="Ir al final" aria-label="Ir al final">${icon('skipEnd')}</button>
             </div>
@@ -82,15 +119,15 @@ main.innerHTML = `
               <button class="btn icon sm ghost" data-tp="loop" data-tip="Repetir en bucle" aria-label="Bucle">${icon('loop')}</button>
             </div>
             <div class="tb-g">
-              <button class="btn sm ghost" data-tool="razor" data-tip="Cortar en playhead (S)" aria-label="Cortar">${icon('scissors')}<span>Cortar</span></button>
+              <button class="btn sm ghost" data-tool="razor" data-tip="Cortar aquí (S)" aria-label="Cortar">${icon('scissors')}<span>Cortar</span></button>
               <button class="btn icon sm ghost" data-tool="dup" data-tip="Duplicar clip" aria-label="Duplicar clip">${icon('copy')}</button>
               <button class="btn icon sm ghost" data-tool="left" data-tip="Mover antes (⌥←)" aria-label="Mover clip antes">${icon('chevL')}</button>
               <button class="btn icon sm ghost" data-tool="right" data-tip="Mover después (⌥→)" aria-label="Mover clip después">${icon('chevR')}</button>
               <button class="btn icon sm ghost" data-tool="del" data-tip="Eliminar clip (Supr)" aria-label="Eliminar clip">${icon('trash')}</button>
-              <button class="btn icon sm ghost" data-tool="clear" data-tip="Vaciar todo el timeline" aria-label="Vaciar timeline">${icon('broom')}</button>
+              <button class="btn icon sm ghost" data-tool="clear" data-tip="Vaciar todo el montaje" aria-label="Vaciar timeline">${icon('broom')}</button>
             </div>
             <div class="tb-g">
-              <button class="btn sm ghost tb-ai" data-tool="magic" id="btn-magic" data-tip="Autoarmar el reel con los mejores momentos" aria-label="Momentos AI">${icon('spark')}<span>Momentos AI</span></button>
+              <button class="btn sm ghost tb-ai" data-tool="magic" id="btn-magic" data-tip="Autoarmar el reel con los mejores momentos" aria-label="Reel automático">${icon('film')}<span>Reel automático</span></button>
               <button class="btn icon sm ghost" data-tool="music" id="btn-music" data-tip="Ponle música al reel (tu biblioteca)" aria-label="Música">${icon('volume')}</button>
               <button class="btn icon sm ghost" data-tool="text" id="btn-text" data-tip="Añadir texto en el playhead (T)" aria-label="Añadir texto">${icon('tag')}</button>
             </div>
@@ -122,7 +159,7 @@ main.innerHTML = `
             </div>
 
             <!-- copiar/pegar atributos entre clips -->
-            <div class="tl-copybar">
+            <div class="tl-copybar"><button class="ui-button ui-button--secondary" id="st-trim">Recortar toma</button>
               <button class="btn" id="tli-copy" data-tip="Copiar estilo de este clip">${icon('copy')} Copiar estilo</button>
               <button class="btn" id="tli-paste-sel" data-tip="Pegar al clip seleccionado">${icon('check')} Pegar</button>
               <button class="btn" id="tli-paste-all" data-tip="Pegar a todos los clips">${icon('layers')} Pegar a todos</button>
@@ -151,7 +188,7 @@ main.innerHTML = `
             <div class="tl-sec" data-sec="color">
               <div class="tl-seclabel">${icon('sun')} Color
                 <span class="spacer"></span>
-                <button class="btn sm" id="tli-grade-reset" data-tip="Restablecer color">Reset color</button>
+                <button class="btn sm" id="tli-grade-reset" data-tip="Restablecer color">Restablecer</button>
               </div>
               <div class="tl-grade">
                 <div class="tl-inspect-row"><label>Brillo</label>
@@ -250,7 +287,7 @@ main.innerHTML = `
                 <select class="u-f1 ctl" id="tli-trans">
                   <option value="none">Ninguna</option>
                   <option value="fade">Fundido</option>
-                  <option value="crossfade">Crossfade</option>
+                  <option value="crossfade">Fundido</option>
                   <option value="dissolve">Disolver</option>
                   <option value="wipeleft">Cortina izq.</option>
                   <option value="wiperight">Cortina der.</option>
@@ -277,11 +314,11 @@ main.innerHTML = `
 
       <!-- 24-27 · biblioteca de clips fuente -->
       <div class="tl-lib panel">
-        <div class="ph" data-no-collapse>${icon('film')} Paso 1 · Elige tu video
+        <div class="ph" data-no-collapse>Biblioteca de tomas
           <span class="spacer"></span>
-          <span class="st-note">Toca = añadir al final · + = insertar en el playhead</span>
+          <span class="st-note">Elige una toma para añadirla</span>
         </div>
-        <div class="pb"><div class="clip-rail" id="rail"></div></div>
+        <div class="pb"><div class="clip-rail" id="rail" aria-busy="true"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div></div>
       </div>
 
       <!-- 47 · barra de export (v7 · presets + resolución + proyectos) -->
@@ -299,7 +336,7 @@ main.innerHTML = `
           </div>
           <div class="ex-body">
             <div class="ex-row">
-              <label class="eb-field"><span>Preset</span>
+              <label class="eb-field"><span>Destino</span>
               <select class="ctl" id="ed-preset">
                 <option value="">Manual…</option>
                 <option value="tiktok">TikTok</option>
@@ -347,7 +384,7 @@ main.innerHTML = `
               <input class="tl-range" id="ed-bitrate" type="range" min="5" max="50" step="1" value="10">
             </div>
             <div class="ex-row">
-              <label class="eb-field"><span>Look global</span>
+              <label class="eb-field"><span>Estilo global</span>
               <select class="ctl" id="ed-lut">
                 <option value="none">Sin look</option>
                 <optgroup label="Cine">
@@ -370,7 +407,7 @@ main.innerHTML = `
               <select class="ctl" id="ed-trans">
                 <option value="none">Sin transición</option>
                 <option value="fade">Fundido</option>
-                <option value="crossfade" selected>Crossfade</option>
+                <option value="crossfade" selected>Fundido</option>
                 <option value="dissolve">Disolver</option>
                 <option value="wipeleft">Cortina izq.</option>
                 <option value="wiperight">Cortina der.</option>
@@ -391,7 +428,7 @@ main.innerHTML = `
             <div class="ex-row">
               <label class="eb-field grow"><span>Título del reel</span>
               <input class="ctl" id="ed-title" placeholder="Escríbelo aquí…" maxlength="60"></label>
-              <label class="ex-check"><input type="checkbox" id="ed-fade" checked> Fades de entrada/salida</label>
+              <label class="ex-check"><input type="checkbox" id="ed-fade" checked> Fundidos de entrada y salida</label>
             </div>
             <div class="ex-row" id="ed-replace-row" style="display:none">
               <label class="ex-check" data-tip="El reel original se sustituye por esta versión al exportar">
@@ -426,7 +463,7 @@ main.innerHTML = `
         <span class="rm-cta-b">Elegir tomas ${icon('chevR')}</span>
       </button>
       <div class="rm-auto">
-        <div class="rm-auto-h"><b>${icon('spark')} Reel automático</b><small>Un toque y listo: elige la sesión y la duración</small></div>
+        <div class="rm-auto-h"><b>${icon('film')} Montaje por duración</b><small>Elige una sesión y revisa el montaje en el editor.</small></div>
         <label class="rm-daypick"><span>Sesión</span>
           <select class="ctl" id="rm-day"><option value="">Mejor día automático</option></select></label>
         <div class="rm-auto-b">
@@ -447,7 +484,7 @@ main.innerHTML = `
         <button class="btn" id="btn-ord" data-tip="Modo reordenar: mueve los reels con las flechas y guarda el orden" aria-pressed="false">${icon('swap')} Reordenar</button>
       </div>
     </div>
-    <div class="media-grid" id="grid-reels"><div class="sk-card sk"></div><div class="sk-card sk"></div></div>
+    <div class="media-grid" id="grid-reels" aria-busy="true"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div>
   </section>
 
   <section class="st-mod" data-mod="fotos" style="display:none">
@@ -463,8 +500,8 @@ main.innerHTML = `
         <option value="nombre">Nombre A–Z</option>
       </select>
     </div>
-    <div class="media-grid" id="grid-fotos"><div class="sk-card sk"></div><div class="sk-card sk"></div></div>
-    <div class="media-grid" id="grid-dron" style="display:none"><div class="sk-card sk"></div><div class="sk-card sk"></div></div>
+    <div class="media-grid" id="grid-fotos" aria-busy="true"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div>
+    <div class="media-grid" id="grid-dron" style="display:none"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div>
   </section>
 
   <section class="st-mod" data-mod="jobs" style="display:none">
@@ -481,6 +518,7 @@ main.innerHTML = `
   </section>`;
 
 // ---- tabs de módulo con tinta deslizante (mismo patrón que el photo editor) ----
+document.querySelector('.st-heading').append(document.getElementById('exportbar'));
 const stTabs = document.getElementById('st-tabs');
 const stInk = stTabs.querySelector('.pm-ink');
 function moveInk() {
@@ -493,6 +531,7 @@ window.addEventListener('resize', () => setTimeout(moveInk, 30));
 
 const seenMods = new Set(['editor']);
 function showMod(name) {
+  main.dataset.module = name;
   stTabs.querySelectorAll('button').forEach(b => {
     const on = b.dataset.tab === name;
     b.classList.toggle('on', on);
@@ -570,100 +609,6 @@ function primeShare(url, name, mime) {
 // liberar memoria al salir de la pestaña (iOS mata la página si acumulas blobs)
 addEventListener('visibilitychange', () => { if (document.hidden) shareCache.clear(); });
 
-// ================= SUBIDA DESDE EL TELÉFONO =================
-// Un input file con accept="video/*,image/*" abre el CARRETE en iOS. Se sube archivo a
-// archivo (no en paralelo): el túnel y el iPhone rinden mejor así, y el progreso es honesto.
-(() => {
-  const zone = document.getElementById('up-zone');
-  if (!zone) return;
-  const input = document.getElementById('up-file');
-  const list = document.getElementById('up-list');
-  const VID = /\.(mp4|mov|m4v|mkv|avi|mts|webm)$/i;
-  const IMG = /\.(jpe?g|png|heic|heif|webp|dng)$/i;
-
-  const row = f => {
-    const el = document.createElement('div');
-    el.className = 'st-up-row';
-    el.innerHTML = `<span class="st-up-n">${esc(f.name)}</span>
-      <span class="st-up-sz mono">${fmt.gb(f.size)}</span>
-      <span class="st-up-bar"><i></i></span>
-      <span class="st-up-st mono">en cola</span>`;
-    list.appendChild(el);
-    return el;
-  };
-
-  async function send(file, el) {
-    const isVid = VID.test(file.name);
-    const isImg = IMG.test(file.name);
-    if (!isVid && !isImg) {
-      el.querySelector('.st-up-st').textContent = 'formato no soportado';
-      el.classList.add('bad');
-      return null;
-    }
-    const url = isVid ? `/upload?name=${encodeURIComponent(file.name)}`
-      : `/api/photo_upload?name=${encodeURIComponent(file.name)}`;
-    // XHR (no fetch): es la única forma de tener progreso REAL de subida
-    return new Promise(resolve => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', url);
-      xhr.withCredentials = true;
-      xhr.upload.addEventListener('progress', e => {
-        if (!e.lengthComputable) return;
-        const p = e.loaded / e.total;
-        el.querySelector('.st-up-bar i').style.setProperty('--p', p.toFixed(3));
-        el.querySelector('.st-up-st').textContent = `${Math.round(p * 100)}%`;
-      });
-      xhr.addEventListener('load', () => {
-        let d = {};
-        try { d = JSON.parse(xhr.responseText); } catch {}
-        if (xhr.status >= 400 || d.error) {
-          el.classList.add('bad');
-          el.querySelector('.st-up-st').textContent = (d.error || `error ${xhr.status}`).slice(0, 40);
-        } else {
-          el.classList.add('ok');
-          el.querySelector('.st-up-bar i').style.setProperty('--p', '1');
-          el.querySelector('.st-up-st').textContent = isVid ? 'procesando…' : 'listo';
-        }
-        resolve(d);
-      });
-      xhr.addEventListener('error', () => {
-        el.classList.add('bad');
-        el.querySelector('.st-up-st').textContent = 'falló la red';
-        resolve(null);
-      });
-      xhr.send(file);
-    });
-  }
-
-  async function handle(files) {
-    const arr = [...files];
-    if (!arr.length) return;
-    list.hidden = false;
-    let vids = 0, imgs = 0;
-    for (const f of arr) {
-      const el = row(f);
-      const r = await send(f, el);          // secuencial a propósito
-      if (r && !r.error) { VID.test(f.name) ? vids++ : imgs++; }
-    }
-    await loadMedia();
-    toast(`Subida lista: ${vids} video${vids === 1 ? '' : 's'} y ${imgs} foto${imgs === 1 ? '' : 's'}`
-      + (vids ? ' — los videos se están procesando, míralos en Trabajos' : ''));
-    setTimeout(() => { list.innerHTML = ''; list.hidden = true; }, 9000);
-  }
-
-  document.getElementById('up-pick').addEventListener('click', () => input.click());
-  input.addEventListener('change', e => { handle(e.target.files); e.target.value = ''; });
-  ['dragover', 'dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, e => {
-    if (!e.dataTransfer?.types?.includes('Files')) return;
-    e.preventDefault();
-    zone.classList.toggle('hot', ev === 'dragover');
-    if (ev === 'drop') handle(e.dataTransfer.files);
-  }));
-})();
-
-// ================= VISOR DE REELS (R2) =================
-// Pantalla dedicada para ver un reel terminado: reproductor grande sobre el póster
-// difuminado, ficha con datos reales, navegación entre reels y acciones sin salir.
 function reelFormatLabel(it) {
   const ar = it?.w && it?.h ? it.w / it.h : 0;
   if (!ar) return '';
@@ -702,7 +647,7 @@ function openReelViewer(name) {
         </div>
         <div class="rv-stage${vert ? ' vert' : ''}">
           ${list.length > 1 ? `<button class="rv-nav prev" data-rv="prev" aria-label="Anterior">${icon('chevL')}</button>` : ''}
-          <video src="${url}" poster="${poster}" controls autoplay playsinline preload="metadata"></video>
+          <video src="${url}" poster="${poster}" controls playsinline preload="metadata"></video>
           ${list.length > 1 ? `<button class="rv-nav next" data-rv="next" aria-label="Siguiente">${icon('chevR')}</button>` : ''}
         </div>
         <div class="rv-facts">
@@ -750,7 +695,7 @@ function openReelViewer(name) {
         <div class="rv-kbd"><span><kbd>←</kbd><kbd>→</kbd> cambiar reel</span><span><kbd>Espacio</kbd> pausa</span><span><kbd>Esc</kbd> cerrar</span></div>
       </div>`;
     // cebar el compartir en cuanto se abre: el gesto del click no se pierde
-    primeShare(url, it.name, 'video/mp4').catch(() => {});
+
   };
   render();
 
@@ -764,8 +709,8 @@ function openReelViewer(name) {
   const close = openModal(ov, { label: 'Visor de reel', closeOnBackdrop: false, initialFocus: '[data-rv="share"]',
     onClose: () => { ov.querySelector('video')?.pause(); removeEventListener('keydown', onKey); } });
   const onKey = ev => {
-    if (_modalStack[_modalStack.length - 1] !== ov) return;   // un modal (p. ej. Textos) o menú manda sobre el visor
-    if (ev.target.tagName === 'INPUT' || document.querySelector('.pop')) return;
+    if ([...document.querySelectorAll('dialog[open]')].at(-1) !== ov.closest('dialog')) return;   // un modal (p. ej. Textos) o menú manda sobre el visor
+    if (ev.defaultPrevented || ev.target.closest('input,select,textarea,button,a') || document.querySelector('.pop')) return;
     if (ev.key === 'ArrowRight' && list.length > 1) go(1);
     else if (ev.key === 'ArrowLeft' && list.length > 1) go(-1);
     else if (ev.key === ' ') {
@@ -889,7 +834,7 @@ function openReelViewer(name) {
     if (a === 'copy') {
       const full = location.origin + url;
       try { await navigator.clipboard.writeText(full); toast('Link copiado'); }
-      catch { prompt('Copia el link:', full); }
+      catch { await ask('Enlace privado:', full); }
       return;
     }
     if (a === 'ren') {
@@ -948,7 +893,12 @@ async function loadDronePhotos() {
     const r = await authFetch('/api/drone_photos');
     if (r.status !== 200) throw 0;
     dronePhotos = (await r.json()).photos || [];
-  } catch { dronePhotos = []; }
+  } catch {
+    const grid=document.getElementById('grid-dron');
+    grid.setAttribute('aria-busy','false');
+    grid.innerHTML='<div class="ui-empty"><h3>No se pudieron cargar las fotos</h3><p>Revisa la conexión y vuelve a intentar.</p><button class="ui-button ui-button--primary">Reintentar</button></div>';
+    grid.querySelector('button').onclick=loadDronePhotos; return;
+  }
   const c = document.getElementById('dron-count');
   if (c) c.textContent = dronePhotos.length;
   renderGrid('dron');
@@ -1031,6 +981,7 @@ function openBurnTexts(it, onDone) {
     const del = e.target.closest('[data-btx]');
     if (del) { collect(); items.splice(+del.dataset.btx, 1); render(); return; }
     if (e.target.closest('#bt-add')) {
+      if (items.length >= 24) return toast('Máximo 24 textos por reel.');
       collect();
       const last = items[items.length - 1];
       items.push({ text: '', start: +Math.min(dur - 3.5, last.end + 0.5).toFixed(1),
@@ -1075,14 +1026,23 @@ function midName(base) {
   return `<span class="mn-a">${esc(base.slice(0, -k))}</span><span class="mn-b">${esc(base.slice(-k))}</span>`;
 }
 
+function mediaError() {
+  document.getElementById('st-count').textContent = 'Biblioteca sin conexión';
+  for (const id of ['grid-reels','grid-fotos']) {
+    const box=document.getElementById(id);
+    if (media) continue;
+    box.setAttribute('aria-busy','false');
+    box.innerHTML='<div class="ui-empty"><h3>No se pudo cargar la biblioteca</h3><p>Revisa la conexión y vuelve a intentar.</p><button class="ui-button ui-button--primary">Reintentar</button></div>';
+    box.querySelector('button').onclick=loadMedia;
+  }
+}
 async function loadMedia() {
   let r = null;
-  try { r = await authFetch('/api/studio_media'); } catch { return; }
+  try { r = await authFetch('/api/studio_media'); } catch { mediaError(); return; }
   if (!r.ok) {
-    document.getElementById('st-count').textContent = 'No se pudo cargar la biblioteca';
-    return;
+    mediaError(); return;
   }
-  const fresh = await r.json();
+  let fresh; try { fresh = await r.json(); } catch { mediaError(); return; }
   if (orderMode && media) {
     // ordenando: no pisar el orden sin guardar — conserva el local, quita borrados y pone lo nuevo al frente
     const srv = new Map((fresh.reels || []).map(x => [x.name, x]));
@@ -1120,7 +1080,7 @@ document.getElementById('grid-dron')?.addEventListener('click', e => {
   }
   // tap o botón editor → photoeditor con preview 2048 (el DNG no abre nativo en browser)
   if (act === 'edit' || e.target.closest('.m-prevbox'))
-    openPhotoEditor({ url: `/api/photo_thumb?rel=${rel}&w=2048`, name: card.dataset.name });
+    openPhotoEditor({ url: `/api/photo_thumb?rel=${rel}&w=${/\.dng$/i.test(card.dataset.name) ? 2048 : 0}`, name: card.dataset.name });
 });
 
 // .m-prevbox es role=button: Enter / Espacio equivalen al clic (teclado)
@@ -1220,16 +1180,17 @@ function renderGrid(kind) {
   // libera los decoders de los <video> previos antes de reemplazar el grid (si no, quedan
   // huérfanos decodificando hasta el GC)
   grid.querySelectorAll('video').forEach(v => { try { v.pause(); v.removeAttribute('src'); v.load(); } catch {} });
+  grid.setAttribute('aria-busy','false');
   const items = viewOf(kind);
   grid.innerHTML = items.map(it => cardHTML(kind, it)).join('') ||
-    emptyState(kind === 'reels' ? { icon: 'play', title: 'Aún no hay reels', help: 'Exporta uno desde el Editor.', cls: 'u-span-all' } : { icon: 'iso', title: 'Aún no hay fotos', help: 'Captura fotos desde un video del editor.', cls: 'u-span-all' });
+    `<div class="ui-empty"><h3>${mstate[kind].q ? 'Sin resultados' : kind === 'reels' ? 'Aún no hay reels' : 'Aún no hay fotos'}</h3><p>${mstate[kind].q ? 'Prueba con otro nombre.' : 'Añade material de tu último vuelo para empezar.'}</p><a class="ui-button ui-button--primary" href="subir.html">Subir archivos</a></div>`;
   if (kind === 'reels') grid.querySelectorAll('video').forEach(v => {
     v.addEventListener('loadedmetadata', () => {
       const chip = v.parentElement.querySelector('.m-dur');
       if (chip && isFinite(v.duration)) { chip.textContent = fmt.dur(v.duration); chip.style.display = ''; }
     });
     // preview al pasar el mouse; al salir vuelve al frame de portada
-    v.addEventListener('mouseenter', () => v.play().catch(() => {}));
+    v.addEventListener('mouseenter', () => { if (document.documentElement.dataset.motion !== 'reduced') v.play().catch(() => {}); });
     v.addEventListener('mouseleave', () => { v.pause(); v.currentTime = 0.5; });
   });
 }
@@ -1320,18 +1281,18 @@ async function runCardAct(kind, name, act) {
   let body = null;
   if (act === 'dup') body = { op: 'duplicate', type, name };
   if (act === 'del') {
-    if (!confirm(`Se moverá a la papelera. ¿Eliminar "${name}"?`)) return;
+    if (!await ask(`¿Mover "${name}" a la papelera?`)) return;
     body = { op: 'delete', type, name };
   }
   if (act === 'ren') {
     const dot = name.lastIndexOf('.');
-    const nn = prompt('Nuevo nombre:', dot > 0 ? name.slice(0, dot) : name);
+    const nn = await ask('Nuevo nombre:', dot > 0 ? name.slice(0, dot) : name);
     if (!nn || !nn.trim()) return;
     body = { op: 'rename', type, name, new_name: nn.trim() };
   }
   if (!body) return;
   const r = await api('/api/media_op', body);
-  if (r.error) { alert(r.error); return; }
+  if (r.error) { toast(r.error); return; }
   await loadMedia();
 }
 
@@ -1419,7 +1380,19 @@ pollJobs(jobsEl, 2500, j => {
 
 // ---- módulo Editor (v5 · timeline horizontal tipo CapCut/Premiere) ----
 (async () => {
-  const flights = await getFlights();
+  let flights;
+  try {
+    const response = await fetch(`${DATA}/manifest/flights.json`);
+    if (!response.ok) throw new Error('catalog');
+    const data = await response.json();
+    if (!Array.isArray(data.flights)) throw new Error('catalog');
+    flights = data.flights;
+  } catch {
+    document.getElementById('tl-empty').innerHTML = '<p><b>No se pudo cargar la biblioteca</b></p><p>Tu borrador sigue guardado.</p><button class="ui-button ui-button--primary" id="st-retry">Reintentar</button>';
+    document.getElementById('st-retry').onclick = () => location.reload();
+    document.getElementById('st-ai-summary').textContent = 'Sin conexión. Reintenta cargar la biblioteca.';
+    return;
+  }
   const ai = await getAIAll(flights);
   const editable = flights.filter(f => f.has_proxy && !f.archived);
   const byId = Object.fromEntries(editable.map(f => [f.clip_id, f]));
@@ -1516,13 +1489,14 @@ pollJobs(jobsEl, 2500, j => {
   const timeEl  = document.getElementById('tl-time');
   const exportbar = document.getElementById('exportbar');
 
+  if (editable[0]) video.poster = `${DATA}/thumbs/${encodeURIComponent(editable[0].clip_id)}.jpg`;
   video.muted = muted;
   video.loop = false;   // el bucle lo maneja el compositor, no el <video>
 
   // ---- geometría del compositor ----
   // freeze REEMPLAZA la duración: el exporter usa out_dur = freeze (congela el frame 'a');
   // ver aerobrain_server.py:709. Sumarlo desincronizaría timeline vs. reel exportado.
-  const segDur = s => s.freeze > 0 ? s.freeze : (s.b - s.a) / s.speed;   // duración en timeline
+  const segDur = segmentDuration;   // duración en timeline
   const total  = () => tl.reduce((a, s) => a + segDur(s), 0);
   const offset = i => { let o = 0; for (let k = 0; k < i; k++) o += segDur(tl[k]); return o; };
   function clipAt(gt) {                                       // {clip,idx,local}
@@ -1555,7 +1529,7 @@ pollJobs(jobsEl, 2500, j => {
       else { musicEl.pause(); musicEl.removeAttribute('src'); }
     } catch {}
   }
-  // un proyecto NUEVO (vaciar, cargar, Momentos AI, montaje) no hereda el reel reabierto ni sus textos/música
+  // un proyecto NUEVO (vaciar, cargar, Reel automático, montaje) no hereda el reel reabierto ni sus textos/música
   function resetProjectState({ keepMusic = false } = {}) {
     replaceTarget = null;
     const row = document.getElementById('ed-replace-row');
@@ -1565,8 +1539,40 @@ pollJobs(jobsEl, 2500, j => {
   }
   function clampSel() { if (sel >= tl.length) sel = tl.length - 1; }
 
+  const inspectHome = inspect.parentElement;
+  const inspectButton = document.createElement('button'); inspectButton.className = 'ui-button ui-button--secondary';
+  inspectButton.id='st-inspect-open'; inspectButton.textContent='Ajustar toma';
+  document.querySelector('.st-ph-actions').prepend(inspectButton);
+  inspectButton.onclick = () => {
+    if (!tl.length) return toast('Añade una toma para ajustar su color, velocidad o título.');
+    if (sel < 0) sel = 0; renderInspector();
+    delete inspect.remove;
+    openModal(inspect,{label:'Ajustar toma',onClose:()=>queueMicrotask(()=>{delete inspect.remove;inspectHome.append(inspect);})});
+    loadColorSuggestion(tl[sel]);
+  };
+  document.getElementById('st-trim').onclick = () => { if (sel >= 0) openClipEditor(sel); };
+  const dismissedColors = new Set();
+  async function loadColorSuggestion(segment) {
+    let box=inspect.querySelector('#st-color-suggestion');
+    if(!box) {box=document.createElement('div');box.id='st-color-suggestion';box.className='st-color-suggestion';inspect.prepend(box);}
+    box.innerHTML='<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>';
+    const data=await getAI(segment.clip_id);
+    if(!box.isConnected || tl[sel] !== segment) return;
+    const suggestion=data?.color_suggestion;
+    const look=typeof suggestion === 'string' ? suggestion : suggestion?.preset;
+    if(!look || !(look in CSS_LUTS) || dismissedColors.has(segment.clip_id)) {
+      box.textContent='Sin sugerencia de color aún. Elige un estilo o ajusta el color.'; return;
+    }
+    const lookLabel = document.querySelector(`#tli-filter option[value="${look}"]`)?.textContent.split(' — ')[0] || look;
+    box.innerHTML=`<span class="ui-chip">Sugerido</span><p>${esc(lookLabel)}</p>${suggestion?.label ? `<details class="st-analysis-detail"><summary>Ver análisis</summary><p>${esc(suggestion.label)}</p></details>` : ''}<div class="st-sheet-actions"><button class="ui-button ui-button--secondary" data-color-accept>Aceptar</button><button class="ui-button ui-button--quiet" data-color-dismiss>Descartar</button></div>`;
+    box.querySelector('[data-color-accept]').onclick=()=>{pushUndo();segment.filter=look;renderAll();seek(playhead);box.textContent='Estilo aplicado';};
+    box.querySelector('[data-color-dismiss]').onclick=()=>{dismissedColors.add(segment.clip_id);box.textContent='Sugerencia descartada';};
+  }
+
   // ---- render maestro ----
   function renderAll() {
+    main.classList.toggle('st-has-project', tl.length > 0);
+    document.querySelector('.st-heading>a').classList.toggle('ui-button--primary', !tl.length);
     renderRuler();
     renderTrack();
     renderTextLane();
@@ -1598,12 +1604,12 @@ pollJobs(jobsEl, 2500, j => {
       const isMajor = Math.abs(t / major - Math.round(t / major)) < 0.001;
       const isMid = !isMajor && Math.abs(t / (major / 2) - Math.round(t / (major / 2))) < 0.001;
       html += isMajor
-        ? `<span class="tl-tick major" style="left:${x}px" data-t="${fmt.dur(t)}"></span>`
+        ? `<span class="tl-tick major" style="left:${x}px" data-t="${x + 64 <= W ? fmt.dur(t) : ''}"></span>`
         : `<span class="tl-tick ${isMid ? 'mid' : 'minor'}" style="left:${x}px"></span>`;
     }
     // 50 · markers de highlights AI sobre la regla
     tl.forEach((s, i) => {
-      if (s._mark) html += `<span class="tl-tick mark" style="left:${offset(i) * pps}px" data-tip="Highlight AI">${icon('marker')}</span>`;
+      if (s._mark) html += `<span class="tl-marker" style="left:${offset(i) * pps}px" title="Momento sugerido" aria-label="Momento sugerido"></span>`;
     });
     // I3 · pulso de la música sobre la regla (solo si el zoom lo hace legible)
     if (music?.beats?.length && pps >= 14) {
@@ -1626,6 +1632,7 @@ pollJobs(jobsEl, 2500, j => {
     crossfade: 'Fundido',
   };
   function renderTrack() {
+    if (typeof autosave === 'function') autosave();
     track.innerHTML = tl.map((s, i) => {
       const f = byId[s.clip_id];
       const w = segDur(s) * pps;
@@ -1652,21 +1659,21 @@ pollJobs(jobsEl, 2500, j => {
       // minúsculo no interactivo + select enterrado en el inspector que nadie encontraba)
       const txSet = s.transition && s.transition !== 'none';
       const trans = i > 0
-        ? `<button class="tl-junction${txSet ? ' set' : ''}" data-j="${i}"
+        ? `<button class="tl-junction${txSet ? ' set' : ''}" data-j="${i}" style="left:${offset(i) * pps}px"
              data-tip="${txSet ? esc((TX_LABELS[s.transition] || s.transition) + ' · ' + (s.transDur || 0.4) + 's — click para cambiar') : 'Corte seco — click para elegir transición'}" aria-label="Transición entre tomas">${txSet ? icon('layers') : icon('plus')}</button>` : '';
       const lb = esc(f?.label) || esc(`${fmtDayShort(f?.date)} ${f?.time || ''}`.trim());   // '24 jul 16:24' (sin año: es el dato que se trunca)
-      return `${trans}<div class="tl-clip${i === sel ? ' sel' : ''}" data-i="${i}" data-cid="${s.clip_id}"
-                style="width:${w}px" draggable="false">
+      return `${trans}<div class="tl-clip${w < 100 ? ' compact' : ''}${i === sel ? ' sel' : ''}" data-i="${i}" data-cid="${s.clip_id}" title="${lb} · ${fmt.dur(segDur(s))}"
+                style="width:${w}px;left:${offset(i)*pps}px" draggable="false">
           <div class="tl-thumbs">${thumbs}</div>
-          <span class="tl-clip-lb">${lb} · ${(s.b - s.a).toFixed(1)}s</span>
+          <span class="tl-clip-lb">${esc(fmtDayShort(f?.date))}</span>
           <span class="tl-badges">${badges}</span>
-          <button class="tl-x" data-x="${i}" data-tip="Quitar del timeline" aria-label="Quitar del timeline">${icon('close')}</button>
+          <button class="tl-x" data-x="${i}" data-tip="Quitar del montaje" aria-label="Quitar del montaje">${icon('close')}</button>
           <button class="tl-expand" data-expand="${i}" data-tip="Abrir en grande y elegir el tramo (doble click)" aria-label="Abrir en grande">${icon('fit')}</button>
           <div class="tl-handle l" data-i="${i}"></div>
           <div class="tl-handle r" data-i="${i}"></div>
         </div>`;
     }).join('') + (tl.length
-      ? `<button class="tl-add" data-tip="Añadir más clips">${icon('plus')}</button>` : '');
+      ? `<button class="tl-add ui-button" style="position:absolute;left:${total()*pps}px" aria-label="Añadir más clips" data-tip="Añadir más clips">${icon('plus')}</button>` : '');
   }
 
   // 18-23 · inspector del clip seleccionado (v7 · velocidad+color+título+transición)
@@ -1684,7 +1691,7 @@ pollJobs(jobsEl, 2500, j => {
     if (s.freeze == null) s.freeze = 0;
     const g = (id) => document.getElementById(id);
     inspect.hidden = false;
-    g('tli-io').innerHTML = [['In', fmt.dur(s.a)], ['Out', fmt.dur(s.b)], ['Duración', `${segDur(s).toFixed(1)}s`],
+    g('tli-io').innerHTML = [['Entrada', fmt.dur(s.a)], ['Salida', fmt.dur(s.b)], ['Duración', `${segDur(s).toFixed(1)}s`],
       ['Fuente', `${(s.b - s.a).toFixed(1)}s`]].map(([k, v]) => `<div><dt>${k}</dt><dd class="mono">${v}</dd></div>`).join('');
     // velocidad: chips + slider + input numérico sincronizados
     g('tli-speed').innerHTML = SPEEDS.map(v =>
@@ -1826,7 +1833,7 @@ pollJobs(jobsEl, 2500, j => {
     preVideo.src = srcFor(cid);
     preVideo.load();
   }
-  // precarga el clip idx+1 relativo a un índice (el "siguiente" en el timeline)
+  // precarga el clip idx+1 relativo a un índice (el "siguiente" en el montaje)
   function preloadNextOf(idx) {
     const next = (idx >= 0 && idx + 1 < tl.length) ? tl[idx + 1].clip_id : null;
     preloadClip(next);
@@ -1841,10 +1848,10 @@ pollJobs(jobsEl, 2500, j => {
     paintPlayhead();
     musicSync(gt, !!andPlay);      // la música sigue al playhead como una pista más
     if (!tl.length) return;
-    const at = clipAt(gt);                       // una sola pasada por el timeline
+    const at = clipAt(gt);                       // una sola pasada por el montaje
     const clip = at.clip, idx = at.idx;
     // freeze fija el frame 'a' (coincide con el exporter); si no, tiempo fuente escalado por speed
-    const target = clip.freeze > 0 ? clip.a : clip.a + at.local * clip.speed;
+    const target = sourceTime(clip, at.local);
     video.playbackRate = clip.speed;
     video.style.filter = cssFilterFor(clip);
     // recarga SOLO si cambia el clip fuente; el mismo clip (scrub, trim, arrastre del
@@ -1853,6 +1860,7 @@ pollJobs(jobsEl, 2500, j => {
       cancelSeek();   // cancela el ciclo anterior
       holdFrame();    // congela el último fotograma: sin esto el <video> parpadea en negro
       curCid = clip.clip_id;
+      video.dataset.transitionKey = `clip-${clip.clip_id}`;
       pendingTarget = target; pendingPlay = !!andPlay;
       video.src = srcFor(clip.clip_id);
       // arranca con 'canplay' (readyState>=3) para evitar stutter; fija currentTime solo
@@ -1866,10 +1874,10 @@ pollJobs(jobsEl, 2500, j => {
       };
       const start = () => {
         if (done) return; done = true; cleanup();
-        // el timeline pudo vaciarse/cambiar de clip durante la carga (pause/clearTL/delClip)
+        // el montaje pudo vaciarse/cambiar de clip durante la carga (pause/clearTL/delClip)
         if (!tl.length || curCid !== clip.clip_id) { releaseFrame(); return; }
         if (video.readyState >= 1) { try { video.currentTime = pendingTarget; } catch {} }
-        if (pendingPlay && playing) video.play().catch(() => {});   // no reanudar si el usuario pausó
+        if (pendingPlay && playing && !clip.reverse && !clip.freeze) video.play().catch(() => {});   // no reanudar si el usuario pausó
         // suelta el fotograma congelado cuando el nuevo clip YA está posicionado
         if (video.readyState >= 2) requestAnimationFrame(releaseFrame);
         else video.addEventListener('seeked', () => requestAnimationFrame(releaseFrame), { once: true });
@@ -1889,7 +1897,7 @@ pollJobs(jobsEl, 2500, j => {
       // (si no, un scrub/trim durante la carga aplicaría el target viejo al llegar canplay/safety)
       if (pendingCancel) { pendingTarget = target; pendingPlay = pendingPlay || !!andPlay; }
       try { video.currentTime = target; } catch {}
-      if (andPlay) video.play().catch(() => {});
+      if (andPlay && !clip.reverse && !clip.freeze) video.play().catch(() => {});
     }
     // mantén caliente el clip siguiente al del playhead
     preloadNextOf(idx);
@@ -1908,7 +1916,7 @@ pollJobs(jobsEl, 2500, j => {
       lastW = now;
       const at = clipAt(playhead);
       if (at && curCid === at.clip.clip_id) {
-        // false = fin del timeline sin bucle (ya pausado)
+        // false = fin del montaje sin bucle (ya pausado)
         const advance = () => {
           if (at.idx < tl.length - 1) seek(offset(at.idx + 1) + 0.001, true);
           else if (loop) seek(0, true);
@@ -1924,6 +1932,12 @@ pollJobs(jobsEl, 2500, j => {
           }
           playhead += dt;
           if (playhead >= offset(at.idx) + segDur(at.clip) - 0.02) { if (!advance()) return; }
+          else paintPlayhead();
+        } else if (at.clip.reverse) {
+          video.pause();
+          playhead += dt;
+          if (!video.seeking) video.currentTime = sourceTime(at.clip, playhead - offset(at.idx));
+          if (playhead >= offset(at.idx) + segDur(at.clip) - .02) { if (!advance()) return; }
           else paintPlayhead();
         } else {
           // gt = offset del clip actual + progreso local escalado por speed
@@ -1948,7 +1962,7 @@ pollJobs(jobsEl, 2500, j => {
   window.__abEditorPause = () => { if (playing) pause(); else { try { musicEl.pause(); } catch {} } };
   function setPlayIcon() {
     const b = document.querySelector('[data-tp="play"]');
-    b.innerHTML = (playing ? icon('pause') : icon('play')) + `<span>${playing ? 'Pausa' : 'Play'}</span>`;
+    b.innerHTML = (playing ? icon('pause') : icon('play')) + `<span>${playing ? 'Pausa' : 'Reproducir'}</span>`;
   }
 
   // ---- añadir / insertar clips ----
@@ -1992,41 +2006,57 @@ pollJobs(jobsEl, 2500, j => {
     const { clip, idx, local } = clipAt(playhead);
     if (local < 0.1 || local > segDur(clip) - 0.1) return;
     pushUndo();
-    const cutSrc = clip.a + local * clip.speed;             // punto de corte en tiempo fuente
-    // el título se queda en la mitad izquierda (si no, se dibuja dos veces); un freeze reparte su duración
-    const frz = clip.freeze > 0;
-    const right = { ...cloneSeg(clip), a: frz ? clip.a : +cutSrc.toFixed(2), transition: 'none', title: '',
-                    freeze: frz ? +(segDur(clip) - local).toFixed(2) : 0 };
-    const left  = frz ? { ...clip, freeze: +local.toFixed(2) } : { ...clip, b: +cutSrc.toFixed(2) };
+    const [left, second] = splitSegment(clip, local);
+    const right = cloneSeg(second);
     tl.splice(idx, 1, left, right);
     sel = idx + 1; renderAll();
   }
-  function clearTL() {
+  async function clearTL() {
     if (!tl.length) return;
-    if (!confirm('¿Vaciar el timeline?')) return;
+    if (!await ask('¿Vaciar el montaje?')) return;
     cancelSeek();   // aborta cualquier ciclo de carga en vuelo antes de vaciar
     pushUndo(); tl = []; resetProjectState(); sel = -1; playhead = 0; curCid = null; renderAll();
   }
 
-  // ---- 45 · Momentos AI: llena el timeline con highlights ----
-  function magic() {
-    const magicSegs = [];
-    editable.forEach(f => (ai[f.clip_id]?.highlights || []).forEach(h =>
-      magicSegs.push({ cid: f.clip_id, t: +h.t, dur: f.duration_s, score: ai[f.clip_id].travel_score || 0 })));
-    magicSegs.sort((x, y) => y.score - x.score);
-    const top = magicSegs.slice(0, 10);
-    top.sort((x, y) => x.cid.localeCompare(y.cid) || x.t - y.t);
-    if (!top.length) return;
-    pushUndo();
-    resetProjectState({ keepMusic: !replaceTarget });   // la música elegida a mano se conserva salvo que venga de un reel reabierto
-    tl = top.map(h => {
-      const s = makeSeg(h.cid, Math.max(0, h.t - 2.5), Math.min(h.dur, h.t + 2.5),
-        { speed: 1, transition: 'crossfade' });
-      s._mark = true;   // 50 · marker en la regla
-      return s;
+  // ---- 45 · Reel automático: llena el montaje con highlights ----
+  async function magic() {
+    const body = document.createElement('div'); body.className = 'st-suggestion';
+    const suggestions = highlightSuggestions(editable, ai);
+    body.innerHTML = suggestions.length
+      ? `<p><span class="ui-chip">Sugerido</span> ${suggestions.length} momentos de tus vuelos. Revisa las tomas antes de aceptar.</p>
+        <video controls muted playsinline class="st-suggestion-video"></video>
+        <div class="st-suggestion-list">${suggestions.map((h,i) => `<div class="st-suggestion-item"><button class="st-suggestion-row ui-button ui-button--quiet" data-moment="${i}"><img src="${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg" alt=""><span><b>${esc(h.caption)}</b><small>${esc(h.label || h.cid)} · ${fmt.dur(h.a)}–${fmt.dur(h.b)}</small></span></button>${h.reason ? `<details class="st-analysis-detail"><summary>Ver análisis</summary><p>${esc(h.reason)}</p></details>` : ''}</div>`).join('')}</div>
+        <p class="st-note">Aceptar reemplaza el montaje. Puedes deshacer el cambio.</p>
+        <div class="st-sheet-actions"><button class="ui-button ui-button--quiet" data-dismiss>Descartar</button><button class="ui-button ui-button--primary" data-accept>Aceptar y editar</button></div>`
+      : '<div class="ui-empty"><h3>Sin análisis aún</h3><p>Cuando tus videos tengan momentos destacados, podrás revisarlos aquí.</p><button class="ui-button ui-button--primary" data-manual>Elegir tomas</button><p>Por ejemplo, combina una toma abierta y un acercamiento.</p></div>';
+    const sheet = createSheet({title:'Reel automático',content:body,size:'full',className:'st-sheet',onClose:()=>{body.querySelector('video')?.pause();queueMicrotask(()=>sheet.destroy());}});
+    const preview = index => {
+      const h = suggestions[index], v = body.querySelector('video');
+      v.src = srcFor(h.cid); v.poster = `${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg`;
+      v.onloadedmetadata = () => { v.currentTime = h.a; };
+      v.ontimeupdate = () => { if(v.currentTime >= h.b) v.pause(); };
+      body.querySelectorAll('[data-moment]').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.moment === index)));
+    };
+    body.addEventListener('click',e=>{
+      const moment=e.target.closest('[data-moment]'); if(moment) preview(+moment.dataset.moment);
+      if(e.target.closest('[data-dismiss]')) sheet.close();
+      if(e.target.closest('[data-manual]')) {sheet.close();openReelMaker();}
+      if(e.target.closest('[data-accept]')) {
+        pushUndo(); resetProjectState({keepMusic:!replaceTarget});
+        tl=suggestions.map(h=>makeSeg(h.cid,h.a,h.b,{transition:'none',_mark:true}));
+        sel=0;playhead=0;curCid=null;showMod('editor');renderAll();fit();seek(0);sheet.close();
+      }
     });
-    sel = 0; playhead = 0; curCid = null; renderAll(); seek(0);
+    sheet.open(); if(suggestions.length) preview(0);
   }
+  document.getElementById('st-auto-start').onclick = magic;
+  const suggestions = highlightSuggestions(editable, ai);
+  document.getElementById('st-ai-summary').textContent = suggestions.length
+    ? `${suggestions.length} momentos sugeridos. Tú decides qué conservar.` : 'Sin análisis aún. Puedes empezar eligiendo tus tomas.';
+  registerPaletteSource(() => [
+    {id:'studio-auto',label:'Nuevo reel automático',action:magic},
+    ...editable.map(f=>({id:`studio-${f.clip_id}`,label:f.label || `${fmt.date(f.date)} · ${f.time || 'Video'}`,keywords:[f.clip_id,...(f.ai?.tags || [])].join(' '),href:`studio.html?clip=${encodeURIComponent(f.clip_id)}`}))
+  ]);
 
   // ================= PISTA DE TEXTO =================
   // Los títulos viven PEGADOS a un corte: si mueves el corte, el título se va con él y no
@@ -2037,7 +2067,8 @@ pollJobs(jobsEl, 2500, j => {
   const TEXT_DEF = { pos: 'bottom', size: 46, color: 'ffffff', box: false, style: 'clean', font: 'sans' };
 
   function addText() {
-    if (!tl.length) return toast('Primero añade tomas al timeline');
+    if (texts.length >= 24) return toast('Puedes exportar hasta 24 textos. Elimina uno para añadir otro.');
+    if (!tl.length) return toast('Primero añade tomas al montaje');
     const start = Math.min(playhead, Math.max(0, total() - 1));
     pushUndo();
     const t = { id: uid(), text: 'Tu texto', start: +start.toFixed(2),
@@ -2079,6 +2110,10 @@ pollJobs(jobsEl, 2500, j => {
       document.getElementById('tl-stage')?.appendChild(ov);
     }
     const vis = texts.filter(t => playhead >= t.start && playhead <= t.end);
+    const active = clipAt(playhead);
+    if (active?.clip.title) vis.push({ id: active.clip.id, text: active.clip.title, style: active.clip.titleStyle });
+    const reelTitle = document.getElementById('ed-title').value.trim();
+    if (reelTitle && active?.idx === 0 && reelTitle !== active.clip.title) vis.push({ id: 'reel-title', text: reelTitle, style: TITLE_DEFAULT });
     // se llama en cada frame de reproducción: reconstruir el DOM reiniciaba la animación CSS de entrada
     const key = vis.map(t => `${t.id}|${t.text}|${JSON.stringify(t.style)}`).join('¦');
     if (ov._key === key) return;
@@ -2297,6 +2332,7 @@ pollJobs(jobsEl, 2500, j => {
     G('ed-fade').checked = recipe.fade !== false;
     if (recipe.audio) G('ed-audio').value = recipe.audio;
     if (recipe.bitrate) G('ed-bitrate').value = recipe.bitrate;
+    edFps = recipe.fps || ''; syncFpsChips();
     if (recipe.framing != null && G('ed-framing')) G('ed-framing').value = recipe.framing;
     if (recipe.vfit) document.querySelector(`[data-vfit="${recipe.vfit}"]`)?.click();
     music = null;
@@ -2347,7 +2383,7 @@ pollJobs(jobsEl, 2500, j => {
     if (andPlay) musicEl.play().catch(() => {});
   }
 
-  // I3 · re-cronometra el timeline para que CADA corte caiga en un golpe de la música.
+  // I3 · re-cronometra el montaje para que CADA corte caiga en un golpe de la música.
   // Mantiene el punto de entrada (a) de cada toma y ajusta la salida (b) — el montaje no
   // cambia, cambia su respiración. Si una toma no da para el hueco, usa lo que tenga.
   function beatSync(every = 2) {
@@ -2362,14 +2398,15 @@ pollJobs(jobsEl, 2500, j => {
     tl.forEach((s, i) => {
       const target = grid.find(g => g > t + 0.3);
       if (target === undefined) return;
-      const want = target - t;                       // duración de salida deseada
+      const want = target - t + (i + 1 < tl.length ? joinOverlap(tl, i + 1, edFps) : 0);                       // duración de salida deseada
       const src = byId[s.clip_id];
       const maxOut = src ? (src.duration_s - s.a) / (s.speed || 1) : want;
       const out = Math.max(0.35, Math.min(want, maxOut, 120));
       s.b = +Math.min(src ? src.duration_s : s.b, s.a + out * (s.speed || 1)).toFixed(2);
       if (Math.abs(out - want) < 0.08) hit++;        // cortes que sí calzaron en el golpe
-      t += segDur(s);
+      t += segDur(s) - (i + 1 < tl.length ? joinOverlap(tl, i + 1, edFps) : 0);
     });
+    toast('Ritmo ajustado. La vista previa usa cortes; la exportación aplica los fundidos.');
     renderAll(); seek(0);
     return hit;
   }
@@ -2424,11 +2461,11 @@ pollJobs(jobsEl, 2500, j => {
       mdl.innerHTML = `
         <div class="modal-h"><b>${icon('volume')} Música del reel</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
         <div class="modal-b">
-          <div class="mus-drop" id="mus-drop">
+          <button type="button" class="mus-drop ui-button" id="mus-drop">
             <b>${icon('dl')} Sube tu pista</b>
             <small>MP3, M4A, WAV, FLAC u OGG — arrastra aquí o toca para elegir</small>
             <input type="file" id="mus-file" accept="audio/*" hidden>
-          </div>
+          </button>
           <p class="footer-note mus-note">${icon('warn')} Spotify y Apple Music no permiten extraer audio (DRM + condiciones de uso).
             Usa pistas tuyas o libres de derechos. Si vas a publicar en Instagram/TikTok, lo más seguro
             es exportar sin música y ponerla desde la app: así usas su catálogo con licencia.</p>
@@ -2487,7 +2524,8 @@ pollJobs(jobsEl, 2500, j => {
     };
     await load();
     render();
-    openModal(ovr, { initialFocus: '#mu-ok', onClose: () => { try { musicEl.pause(); } catch {} } });
+    const audition = new Audio();
+    openModal(ovr, { initialFocus: '#mu-ok', onClose: () => { audition.pause(); audition.removeAttribute('src'); } });
 
     const upload = async file => {
       if (!file || busy) return;
@@ -2541,9 +2579,9 @@ pollJobs(jobsEl, 2500, j => {
       if (pv) {
         e.stopPropagation();
         const src = `${DATA}/audio/${encodeURIComponent(pv.dataset.prev)}`;
-        if (musicEl.src.endsWith(encodeURIComponent(pv.dataset.prev)) && !musicEl.paused) { musicEl.pause(); return; }
-        musicEl.src = src; musicEl.currentTime = 0; musicEl.volume = 0.8;
-        musicEl.play().catch(() => {});
+        if (audition.src.endsWith(encodeURIComponent(pv.dataset.prev)) && !audition.paused) { audition.pause(); return; }
+        audition.src = src; audition.currentTime = 0; audition.volume = 0.8;
+        audition.play().catch(() => {});
         return;
       }
       const del = e.target.closest('[data-del]');
@@ -2591,7 +2629,7 @@ pollJobs(jobsEl, 2500, j => {
 
   // ================= REELS MAKER (I1) =================
   // "de una toma a un reel": el usuario elige tomas + una receta, y esto arma el montaje.
-  // Reparto de tiempo PONDERADO por score AI (las mejores tomas salen más) pero garantizando
+  // Reparto de tiempo PONDERADO por valoración del análisis (las mejores tomas salen más) pero garantizando
   // que TODA toma elegida aparezca al menos una vez — si no, la selección mentiría.
   const RM_RHYTHM = {
     rapido: { seg: 1.3, trans: 'none', dur: 0.25, lb: 'Rápido', sub: 'cortes secos, energía' },
@@ -2826,7 +2864,7 @@ pollJobs(jobsEl, 2500, j => {
     const pk = document.createElement('div');
     pk.className = 'rm-peek';
     pk.innerHTML = `<div class="rm-peek-card">
-      <video src="${DATA}/proxies/${encodeURIComponent(cid)}.mp4" controls autoplay muted playsinline
+      <video src="${DATA}/proxies/${encodeURIComponent(cid)}.mp4" controls muted playsinline
              poster="${DATA}/thumbs/${encodeURIComponent(cid)}.jpg"></video>
       <div class="rm-peek-f">
         <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
@@ -2889,7 +2927,7 @@ pollJobs(jobsEl, 2500, j => {
     const render = () => {
       const vis = visible();
       mdl.innerHTML = `
-        <div class="modal-h"><b>${icon('spark')} Crear reel</b>
+        <div class="modal-h"><b>${icon('film')} Crear reel</b>
           <span class="rm-steps"><i class="${st.step === 1 ? 'on' : ''}">1 · Tomas</i><i class="${st.step === 2 ? 'on' : ''}">2 · Receta</i></span>
           <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
         <div class="modal-b">
@@ -2919,32 +2957,32 @@ pollJobs(jobsEl, 2500, j => {
             // OJO: la caja con proporción NO puede ser el <button> — Safari no aplica
             // aspect-ratio a los botones y las tarjetas colapsaban unas sobre otras.
             return `<div class="rm-clip${pick.has(f.clip_id) ? ' on' : ''}" data-pick="${esc(f.clip_id)}"
-                         role="button" tabindex="0" aria-pressed="${pick.has(f.clip_id)}">
+                         role="button" tabindex="0" title="${esc([f.label, fmt.date(f.date), f.time].filter(Boolean).join(' · '))}" aria-pressed="${pick.has(f.clip_id)}">
               <div class="rm-thumb" data-hover="${esc(f.clip_id)}">
                 <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="" width="320" height="180">
                 <span class="rm-check">${ord > 0 ? ord : ''}</span>
                 ${sc ? `<span class="rm-sc ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}">${icon('star')}${sc}</span>` : ''}
                 <button class="rm-eye" data-eye="${esc(f.clip_id)}" aria-label="Ver toma">${icon('play')}</button>
+                <span class="rm-duration" aria-label="Duración ${fmt.dur(f.duration_s)}">${fmt.dur(f.duration_s)}</span>
               </div>
-              <div class="rm-lb"><b>${esc((f.label || f.time || fmt.date(f.date)).slice(0, 24))}</b><em>${fmt.dur(f.duration_s)}</em></div>
             </div>`;
           }).join('')}</div>
           </div>`).join('') || '<p class="footer-note">Nada coincide con esos filtros.</p>'}` : `
           <div class="mlb">Duración objetivo</div>
           <div class="rm-opts">${[15, 30, 60].map(t => `
-            <button class="rm-opt${st.target === t ? ' on' : ''}" data-target="${t}"><b>${t}s</b><small>${t === 15 ? 'gancho rápido' : t === 30 ? 'el punto dulce' : 'historia completa'}</small></button>`).join('')}</div>
+            <button class="rm-opt${st.target === t ? ' on' : ''}" data-target="${t}"><b>${t}s</b><small>${t === 15 ? 'Breve' : t === 30 ? 'Medio' : 'Largo'}</small></button>`).join('')}</div>
           <div class="mlb">Ritmo</div>
           <div class="rm-opts">${Object.entries(RM_RHYTHM).map(([k, v]) => `
             <button class="rm-opt${st.rhythm === k ? ' on' : ''}" data-rhythm="${k}"><b>${v.lb}</b><small>${v.sub}</small></button>`).join('')}</div>
           <div class="mlb">Formato</div>
           <div class="rm-opts">${Object.entries(RM_FORMATS).map(([k, v]) => `
             <button class="rm-opt${st.aspect === k ? ' on' : ''}" data-aspect="${k}"><span class="rm-ar ar${k.replace(':', '')}"></span><b>${v.lb}</b><small>${v.sub}</small></button>`).join('')}</div>
-          <div class="mlb">Look</div>
+          <div class="mlb">Estilo</div>
           <div class="rm-opts look">${[['nolan', 'Nolan'], ['deakins', 'Deakins'], ['malick', 'Malick'],
             ['kodak', 'Kodak'], ['cine', 'Cine'], ['warm', 'Cálido'], ['bw', 'B&N'], ['none', 'Sin look']].map(([k, lb]) => `
             <button class="rm-opt sm${st.look === k ? ' on' : ''}" data-look="${k}"><b>${lb}</b></button>`).join('')}</div>
           <div class="rm-plan">
-            <b>${icon('spark')} Lo que va a pasar</b>
+            <b>${icon('film')} Resumen del montaje</b>
             <p>${(() => {
               const R = RM_RHYTHM[st.rhythm];
               const { quotaMap } = rmQuota([...pick].map(c => byId[c]).filter(Boolean), st.target);
@@ -2952,9 +2990,9 @@ pollJobs(jobsEl, 2500, j => {
               const used = quotaMap.size;
               const per = (st.target / n).toFixed(1);
               const who = used >= pick.size
-                ? `repartidos entre tus <b>${pick.size} toma${pick.size === 1 ? '' : 's'}</b>, dando más espacio a las de mejor score AI
+                ? `repartidos entre tus <b>${pick.size} toma${pick.size === 1 ? '' : 's'}</b>, dando más espacio a las de mejor valoración del análisis
                 pero sin dejar ninguna fuera`
-                : `de las <b>${used} mejores</b> de tus <b>${pick.size} tomas</b> (por score AI): las otras ${pick.size - used}
+                : `de las <b>${used} mejores</b> de tus <b>${pick.size} tomas</b> (por valoración del análisis): las otras ${pick.size - used}
                 no tienen cupo en ${st.target}s y quedan fuera — sube la duración o elige menos`;
               return `Se arman <b>${n} cortes</b> de ~<b>${per}s</b> ${who}. Unión: <b>${TX_LABELS[R.trans] || R.trans}</b>.
                 Al terminar se abre en el Editor para que lo retoques.`;
@@ -2965,7 +3003,7 @@ pollJobs(jobsEl, 2500, j => {
           <span class="rm-count modal-hint">${pick.size ? `${pick.size} toma${pick.size === 1 ? '' : 's'} · ${estimate()}` : 'Elige al menos una toma'}</span>
           <span class="u-f1 spacer"></span>
           ${st.step === 2 ? `<button class="btn" id="rm-back">${icon('chevL')} Tomas</button>` : ''}
-          <button class="btn primary" id="rm-go" ${pick.size ? '' : 'disabled'}>${st.step === 1 ? `Continuar ${icon('chevR')}` : `${icon('spark')} Crear reel`}</button>
+          <button class="btn primary" id="rm-go" ${pick.size ? '' : 'disabled'}>${st.step === 1 ? `Continuar ${icon('chevR')}` : `${icon('film')} Crear reel`}</button>
         </div>`;
     };
     render();
@@ -3032,7 +3070,7 @@ pollJobs(jobsEl, 2500, j => {
       v.src = `${DATA}/proxies/${encodeURIComponent(th.dataset.hover)}.mp4`;
       v.muted = true; v.loop = true; v.playsInline = true; v.className = 'rm-hovervid';
       th.appendChild(v);
-      v.play().catch(() => {});
+      if (document.documentElement.dataset.motion !== 'reduced') v.play().catch(() => {});
       hoverV = v;
     });
     ovr.addEventListener('pointerout', e => {
@@ -3053,7 +3091,7 @@ pollJobs(jobsEl, 2500, j => {
   }
   document.getElementById('rm-open')?.addEventListener('click', openReelMaker);
 
-  // ⚡ REEL AUTOMÁTICO: sin wizard. Elige el mejor DÍA (el que suma más score AI), toma
+  // ⚡ REEL AUTOMÁTICO: sin wizard. Elige el mejor DÍA (el que suma más valoración del análisis), toma
   // sus mejores clips y arma el montaje. Un toque = reel editable en el Editor.
   // ---- filtro de usabilidad: un clip nocturno es NEGRO, no "un plano oscuro" ----
   // El reel automático elegía tomas de las 22:54 con brillo 17/255 (tramos enteros a 0-3)
@@ -3137,21 +3175,23 @@ pollJobs(jobsEl, 2500, j => {
 
   // ================= carrusel de clips fuente (24-27) =================
   const rail = document.getElementById('rail');
-  // etiqueta = hora primero + duración; la fecha se dice UNA vez por día (separador), no en cada tarjeta
+  // The badge shows duration. Capture time stays in the tooltip.
   let railDay = null;
   rail.innerHTML = editable.map(f => {
     const day = f.date !== railDay ? `<div class="cr-day" role="presentation"><b>${esc(fmtDayShort(f.date))}</b></div>` : '';
     railDay = f.date;
     return `${day}
-    <div class="cr-item" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
+    <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(f.label || f.clip_id)}" title="${esc([f.label, fmtDayShort(f.date), f.time].filter(Boolean).join(' · '))}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
       <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="" width="320" height="180">
       <span class="scrub-line"></span>
-      <span class="cr-lb"><b>${esc(f.label || f.time || fmtDayShort(f.date))}</b><em>${fmt.dur(f.duration_s)}</em></span>
-      <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar en playhead" aria-label="Insertar en el playhead">${icon('plus')}</button>
+      <span class="cr-lb" aria-label="Duración ${fmt.dur(f.duration_s)}">${fmt.dur(f.duration_s)}</span>
+      <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar aquí" aria-label="Insertar aquí">${icon('plus')}</button>
     </div>`;
   }).join('') || emptyState({ icon: 'film', title: 'Sin clips disponibles', help: 'Ningún clip tiene proxy todavía.' });
   rail.querySelectorAll('.cr-item').forEach(el => el.classList.add('scrub'));
-  attachScrub(rail);   // 27 · scrub por hover reutilizando el helper del repo
+  rail.setAttribute('aria-busy','false');
+  if (document.documentElement.dataset.motion !== 'reduced') attachScrub(rail);   // 27 · scrub por hover reutilizando el helper del repo
+  rail.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.cr-item')) { e.preventDefault(); e.target.click(); } });
   rail.addEventListener('click', e => {
     const ins = e.target.closest('[data-ins]');
     if (ins) { addClip(ins.dataset.ins, true); return; }
@@ -3173,7 +3213,7 @@ pollJobs(jobsEl, 2500, j => {
   // índice de inserción según dónde suelte el cursor (mitad izquierda = antes de ese corte)
   const dropIndexAt = clientX => {
     const rect = track.getBoundingClientRect();
-    const x = clientX - rect.left + scroll.scrollLeft;
+    const x = clientX - rect.left;
     let acc = 0;
     for (let i = 0; i < tl.length; i++) {
       const w = segDur(tl[i]) * pps;
@@ -3219,7 +3259,7 @@ pollJobs(jobsEl, 2500, j => {
   // selección + drag para recorte de bordes / reordenar
   let action = null;   // {type:'trim-l'|'trim-r'|'reorder', i, startX, ...}
   track.addEventListener('pointerdown', e => {
-    if (e.target.closest('.tl-x')) return;   // la ⨯ no inicia drag/selección
+    if (e.target.closest('button')) return;   // la ⨯ no inicia drag/selección
     const handle = e.target.closest('.tl-handle');
     const clip = e.target.closest('.tl-clip');
     if (!clip) return;
@@ -3272,7 +3312,7 @@ pollJobs(jobsEl, 2500, j => {
     if (e.target.closest('.tl-clip') || e.target.closest('.tl-handle') || e.target.closest('.tl-junction')) return;
     if (!e.target.closest('.tl-ruler') && !e.target.closest('.tl-track') && e.target !== scroll) return;
     const r = track.getBoundingClientRect();
-    let gt = (e.clientX - r.left + scroll.scrollLeft) / pps;
+    let gt = (e.clientX - r.left) / pps;
     // snap a bordes de clip si está cerca
     for (let i = 0; i <= tl.length; i++) {
       const edge = offset(i);
@@ -3299,7 +3339,7 @@ pollJobs(jobsEl, 2500, j => {
     phEl.setPointerCapture(e.pointerId);
     const drag = ev => {
       const r = track.getBoundingClientRect();
-      const gt = Math.max(0, Math.min(total(), (ev.clientX - r.left + scroll.scrollLeft) / pps));
+      const gt = Math.max(0, Math.min(total(), (ev.clientX - r.left) / pps));
       seek(gt); syncTools();   // seek recarga solo si cruza a otro clip; dentro del mismo = fluido
     };
     // pointercancel (touch interrumpido) también debe soltar los listeners, si no se acumulan (#20)
@@ -3341,13 +3381,13 @@ pollJobs(jobsEl, 2500, j => {
     else if (t === 'undo') undo();
     else if (t === 'redo') redo();
   });
-  // rueda sobre el timeline: scroll vertical → desplazamiento horizontal (natural en
+  // rueda sobre el montaje: scroll vertical → desplazamiento horizontal (natural en
   // timelines); ⌘/Ctrl+rueda = zoom anclado al cursor. "la barra es difícil de navegar".
   scroll.addEventListener('wheel', e => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       const r = track.getBoundingClientRect();
-      const tAtCursor = (e.clientX - r.left + scroll.scrollLeft) / pps;
+      const tAtCursor = (e.clientX - r.left) / pps;
       pps = Math.max(8, Math.min(240, pps * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
       renderAll();
       scroll.scrollLeft = Math.max(0, tAtCursor * pps - (e.clientX - scroll.getBoundingClientRect().left));
@@ -3357,7 +3397,7 @@ pollJobs(jobsEl, 2500, j => {
     }
   }, { passive: false });
 
-  // pinch con dos dedos = zoom del timeline (móvil)
+  // pinch con dos dedos = zoom del montaje (móvil)
   let pinch = null;
   const pdist = e => Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
                                 e.touches[0].clientY - e.touches[1].clientY);
@@ -3400,8 +3440,8 @@ pollJobs(jobsEl, 2500, j => {
   });
   $('tli-speed-range').addEventListener('change', e => setSpeed(posToSpeed(e.target.value)));
   $('tli-speed-num').addEventListener('change', e => setSpeed(e.target.value));
-  $('tli-reverse').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.reverse = e.target.checked; renderTrack(); } });
-  $('tli-freeze').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.freeze = Math.max(0, +e.target.value || 0); renderTrack(); } });
+  $('tli-reverse').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.reverse = e.target.checked; renderAll(); seek(playhead); } });
+  $('tli-freeze').addEventListener('change', e => { const s = selSeg(); if (s) { pushUndo(); s.freeze = Math.max(0, +e.target.value || 0); renderAll(); seek(playhead); } });
 
   // --- color grade: 4 sliders + reset; preview en vivo ---
   const gradeBind = (id, key, vId) => $(id).addEventListener('input', e => {
@@ -3564,10 +3604,10 @@ pollJobs(jobsEl, 2500, j => {
   // ================= atajos de teclado (36-40) =================
   function editorVisible() { return document.querySelector('.st-mod[data-mod="editor"]')?.style.display !== 'none'; }
   window.addEventListener('keydown', e => {
-    if (!editorVisible()) return;
+    if (e.defaultPrevented || !editorVisible() || e.target.closest('button,a,dialog')) return;
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
-    // con un modal/hoja/visor encima los atajos del timeline no deben actuar por debajo
+    // con un modal/hoja/visor encima los atajos del montaje no deben actuar por debajo
     if (document.querySelector('.modal-ov, .ce-ov, .rv-ov, .tx-pop, .rm-peek')) return;
     const meta = e.metaKey || e.ctrlKey;
     if (meta && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
@@ -3705,22 +3745,22 @@ pollJobs(jobsEl, 2500, j => {
         <span class="ce-ph" id="ce-ph"></span>
       </div>
       <div class="ce-times mono">
-        <span>In <b id="ce-a">${fmt.dur(s.a)}</b></span>
+        <span>Entrada <b id="ce-a">${fmt.dur(s.a)}</b></span>
         <span class="ce-dur">dura <b id="ce-d">${(s.b - s.a).toFixed(1)}s</b></span>
-        <span>Out <b id="ce-b">${fmt.dur(s.b)}</b></span>
+        <span>Salida <b id="ce-b">${fmt.dur(s.b)}</b></span>
       </div>
       <div class="ce-facts">
         <span><i>${icon('mountain')}</i><b>${Math.round(f.stats?.max_rel_alt_m || 0)} m</b><em>altura</em></span>
         <span><i>${icon('route')}</i><b>${fmt.km(f.stats?.distance_m || 0)}</b><em>recorrido</em></span>
         <span><i>${icon('clock')}</i><b>${esc(f.time || '—')}</b><em>hora</em></span>
-        ${A.travel_score ? `<span><i>${icon('spark')}</i><b>${A.travel_score}/10</b><em>AI vision</em></span>` : ''}
+        ${A.travel_score ? `<span><i>${icon('film')}</i><b>${A.travel_score}/10</b><em>AI vision</em></span>` : ''}
         <span><i>${icon('layers')}</i><b>${SCALE_LB[shotScale(f)]}</b><em>tipo de plano</em></span>
       </div>
-      ${A.summary ? `<p class="ce-sum">${esc(A.summary)}</p>` : ''}
+      ${A.summary ? `<p class="ce-sum"><span class="ui-chip">Sugerido</span> ${esc(analysisCaption(A.summary))}</p><details class="st-analysis-detail"><summary>Ver análisis</summary><p>${esc(A.summary)}</p></details>` : ''}
       ${(A.highlights || []).length ? `<div class="ce-hl">
-        <span class="ce-hl-lb">Momentos que la AI marcó:</span>
+        <span class="ce-hl-lb">Momentos sugeridos:</span>
         ${(A.highlights || []).slice(0, 5).map(h =>
-          `<button class="chip" data-jump="${(+h.t || 0).toFixed(1)}" data-tip="${esc(h.reason || '')}">${fmt.dur(+h.t || 0)} · ${esc(h.type || 'momento')}</button>`).join('')}
+          `<button class="chip" data-jump="${(+h.t || 0).toFixed(1)}" data-tip="${esc(h.reason || '')}">${fmt.dur(+h.t || 0)} · ${esc(analysisCaption(h.reason || h.label))}</button>`).join('')}
       </div>` : ''}
       <div class="ce-f">
         <button class="btn" data-ce="prev" ${i === 0 ? 'disabled' : ''}>${icon('chevL')} Corte anterior</button>
@@ -3752,7 +3792,7 @@ pollJobs(jobsEl, 2500, j => {
       if (v.currentTime >= s.b - 0.02 || v.currentTime < s.a - 0.3) v.currentTime = s.a;
       ov.querySelector('#ce-ph').style.left = `${(v.currentTime / D) * 100}%`;
     });
-    v.play().catch(() => {});
+    if (document.documentElement.dataset.motion !== 'reduced') v.play().catch(() => {});
     let drag = null;
     const tAt = clientX => {
       const r = scrub.getBoundingClientRect();
@@ -3795,7 +3835,7 @@ pollJobs(jobsEl, 2500, j => {
       }
     });
     function ck(ev) {
-      if (_modalStack[_modalStack.length - 1] !== ov) return;
+      if ([...document.querySelectorAll('dialog[open]')].at(-1) !== ov.closest('dialog')) return;
       if (ev.key === 'Enter' && !/^(BUTTON|INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) {
         commitUndo(); committed = true; ov.remove(); renderAll();
       }
@@ -3838,9 +3878,7 @@ pollJobs(jobsEl, 2500, j => {
         // la hoja es DOM fijo de la página (updateExportUI la consulta por id): vuelve a su sitio, oculta
         queueMicrotask(() => { exSheet.style.display = 'none'; delete exSheet.remove; exHome.appendChild(exSheet); });
       } });
-    exSheet.querySelector('.ex-card').animate(
-      [{ transform: 'translateY(40px)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }],
-      { duration: 260, easing: 'cubic-bezier(.22,1.2,.36,1)' });
+
   }
   function closeExSheet() { exClose?.(); }
   document.getElementById('eb-open').addEventListener('click', openExSheet);
@@ -3858,9 +3896,10 @@ pollJobs(jobsEl, 2500, j => {
   function updateExportUI() {
     const br = +document.getElementById('ed-bitrate').value;
     document.getElementById('ed-bitrate-v').textContent = `${br} Mbps`;
-    const mb = (br * total()) / 8;
+    const outputDuration = total() - tl.reduce((sum,_,i)=>sum+joinOverlap(tl,i,edFps),0);
+    const mb = (br * outputDuration) / 8;
     document.getElementById('ex-est').textContent =
-      tl.length ? `≈ ${mb < 1000 ? mb.toFixed(0) + ' MB' : (mb / 1000).toFixed(2) + ' GB'} estimados · ${fmt.dur(total())} · ${document.getElementById('ed-res').value}p${edFps ? ' · ' + edFps + ' fps' : ''}` : '—';
+      tl.length ? `≈ ${mb < 1000 ? mb.toFixed(0) + ' MB' : (mb / 1000).toFixed(2) + ' GB'} estimados · ${fmt.dur(outputDuration)} · ${document.getElementById('ed-res').value}p${edFps ? ' · ' + edFps + ' fps' : ''}` : '—';
     const sum = document.getElementById('eb-sum');
     if (sum) sum.textContent = `${tl.length} clip${tl.length === 1 ? '' : 's'} · ${fmt.dur(total())} · ${document.getElementById('ed-aspect').value} · ${document.getElementById('ed-res').value}p`;
   }
@@ -3870,10 +3909,11 @@ pollJobs(jobsEl, 2500, j => {
     setTimeout(() => e2.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250));  // el teclado iOS tapaba el input (sheet fija)
   document.getElementById('ed-export').addEventListener('click', async e => {
     if (!tl.length) return;
+    if (texts.length > 24) return toast('Máximo 24 textos por exportación. Elimina los sobrantes para continuar.');
     const exBtn = e.currentTarget;
     if (exBtn.disabled) return;
     exBtn.disabled = true;     // doble tap móvil = 2 exports concurrentes que se pisaban
-    setTimeout(() => { exBtn.disabled = false; }, 4000);
+    try {
     const segments = tl.map(s => {
       const seg = {
         clip_id: s.clip_id, a: +s.a.toFixed(2), b: +s.b.toFixed(2), speed: s.speed,
@@ -3904,24 +3944,26 @@ pollJobs(jobsEl, 2500, j => {
       fps: edFps ? +edFps : undefined,
       bitrate: +document.getElementById('ed-bitrate').value,
     });
+    if (!r || r.error) { toast(r?.error || 'No se pudo iniciar la exportación. Reintenta.'); return; }
     closeExSheet();
-    if (r && r.error) { alert(r.error); return; }
     if (r) {   // el reemplazo se consumió con este export: el siguiente no debe pisar el mismo reel
       replaceTarget = null;
       const rr = document.getElementById('ed-replace-row');
       if (rr) rr.style.display = 'none';
     }
-    // NO vaciar el timeline aquí: el job apenas se ENCOLÓ. Si el export falla (fps mezclados,
+    // NO vaciar el montaje aquí: el job apenas se ENCOLÓ. Si el export falla (fps mezclados,
     // ffmpeg, cancel), vaciarlo destruía la edición del usuario — solo la rescataba un undo
     // que muere al recargar. El reel aparece solo vía el hook onDone de pollJobs.
-    toast('Export encolado — míralo en Trabajos. Tu timeline sigue intacto.');
+    document.getElementById('st-save-state').textContent = 'Exportación en cola · consulta Actividad';
+    } catch { toast('No se pudo iniciar la exportación. Revisa la conexión y reintenta.'); }
+    finally { exBtn.disabled = false; }
   });
 
   // ================= guardar / cargar proyectos (localStorage · v7) =================
   const PROJ_KEY = 'ab.studio.projects';
   const loadProjects = () => { try { return JSON.parse(localStorage.getItem(PROJ_KEY)) || []; } catch { return []; } };
-  const saveProjects = list => { try { localStorage.setItem(PROJ_KEY, JSON.stringify(list)); } catch (e) { alert('No se pudo guardar (almacenamiento lleno).'); } };
-  // snapshot completo: clips del timeline + ajustes globales del exportbar
+  const saveProjects = list => { try { localStorage.setItem(PROJ_KEY, JSON.stringify(list)); return true; } catch { toast('No se pudo guardar (almacenamiento lleno).'); return false; } };
+  // snapshot completo: clips del montaje + ajustes globales del exportbar
   function projectPayload() {
     const G = id => document.getElementById(id);
     return {
@@ -3937,20 +3979,36 @@ pollJobs(jobsEl, 2500, j => {
       },
     };
   }
-  // ---- AUTOGUARDADO: el timeline se perdía entero al recargar la pestaña ----
+  // ---- AUTOGUARDADO: el montaje se perdía entero al recargar la pestaña ----
   // Guardar era manual, así que un F5 (o el bump de versión de la app) borraba el montaje.
   const AUTO_KEY = 'ab.studio.autosave';
   let autoT = null;
-  function autosave() {
+  let recoveryBlocked = false;
+  function saveNow() {
     clearTimeout(autoT);
-    autoT = setTimeout(() => {
-      try {
-        if (!tl.length && !(texts || []).length) { localStorage.removeItem(AUTO_KEY); return; }
-        localStorage.setItem(AUTO_KEY, JSON.stringify({ ...projectPayload(), ts: Date.now() }));
-      } catch { /* almacenamiento lleno: el guardado manual sigue disponible */ }
-    }, 700);
+    if (recoveryBlocked) return;
+    try {
+      if (!tl.length && !texts.length) localStorage.removeItem(AUTO_KEY);
+      else localStorage.setItem(AUTO_KEY, JSON.stringify({ ...projectPayload(), ts: Date.now() }));
+      document.getElementById('st-save-state').textContent = 'Guardado en este dispositivo';
+    } catch { document.getElementById('st-save-state').textContent = 'No se pudo guardar. Libera espacio.'; }
   }
+  function autosave() { clearTimeout(autoT); autoT = setTimeout(saveNow, 700); }
+  main.addEventListener('input', () => { autosave(); paintTextOverlay(); });
+  main.addEventListener('change', autosave);
+  document.addEventListener('click', e => { if (e.target.closest('#tl-editor,.st-sheet')) autosave(); });
+  document.addEventListener('input', e => { if (e.target.closest('.st-sheet')) { autosave(); paintTextOverlay(); } });
+  document.addEventListener('change', e => { if (e.target.closest('.st-sheet')) autosave(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
+  window.addEventListener('pagehide', saveNow);
   function restoreProject(p) {
+    if (missingSources(p, byId)) {
+      recoveryBlocked = true;
+      document.getElementById('st-save-state').textContent = 'Borrador protegido: faltan fuentes. Guarda una copia para continuar.';
+      toast('No se pudo recuperar el borrador completo. La copia original sigue guardada.');
+      return false;
+    }
+    recoveryBlocked = false;
     // descarta segmentos cuyo clip_id ya no existe (proyecto viejo / clip archivado / manipulado):
     // uno huérfano rompería byId[cid] en makeSeg/render y dejaría el editor inconsistente
     cancelSeek(); pause();
@@ -3961,7 +4019,7 @@ pollJobs(jobsEl, 2500, j => {
     set('ed-aspect', g.aspect); set('ed-res', g.resolution); set('ed-preset', g.preset);
     set('ed-lut', g.lut); set('ed-trans', g.trans); set('ed-audio', g.audio);
     set('ed-title', g.title); set('ed-fade', g.fade, true);
-    set('ed-bitrate', g.bitrate); if (g.fps != null) edFps = g.fps;
+    set('ed-bitrate', g.bitrate); edFps = g.fps || '';
     set('ed-framing', g.framing);
     if (g.vfit) { edVfit = g.vfit; try { syncVfit(); } catch {} }
     // texto y música también forman parte del proyecto
@@ -3980,13 +4038,14 @@ pollJobs(jobsEl, 2500, j => {
   document.getElementById('ed-new').addEventListener('click', () => {
     if (tl.length) clearTL(); else { document.getElementById('ed-title').value = ''; }
   });
-  document.getElementById('ed-save').addEventListener('click', () => {
-    if (!tl.length) { alert('Timeline vacío — nada que guardar.'); return; }
-    const name = prompt('Nombre del proyecto:', 'Proyecto ' + new Date().toLocaleDateString('es'));
+  document.getElementById('ed-save').addEventListener('click', async () => {
+    if (!tl.length) { toast('Añade una toma antes de guardar.'); return; }
+    const name = await ask('Nombre del proyecto:', 'Proyecto ' + new Date().toLocaleDateString('es'));
     if (!name || !name.trim()) return;
     const list = loadProjects();
     list.unshift({ name: name.trim(), date: Date.now(), payload: projectPayload() });
-    saveProjects(list.slice(0, 40));   // tope razonable
+    if (!saveProjects(list.slice(0, 40))) return;
+    recoveryBlocked = false; saveNow();   // tope razonable
     flashBtn('ed-save');
   });
   // modal de proyectos: listar / cargar / borrar
@@ -4020,15 +4079,15 @@ pollJobs(jobsEl, 2500, j => {
   }
   function closeProjModal() { projClose?.(); }
   document.getElementById('ed-open').addEventListener('click', openProjModal);
-  projModal.addEventListener('click', e => {
+  projModal.addEventListener('click', async e => {
     const b = e.target.closest('[data-proj]'); if (!b) return;
     const i = +b.dataset.i, list = loadProjects();
     if (b.dataset.proj === 'load') {
       const p = list[i]; if (!p) return;
-      if (tl.length && !confirm('Se reemplazará el timeline actual. ¿Cargar proyecto?')) return;
+      if (tl.length && !await ask('¿Reemplazar el montaje con este proyecto?')) return;
       restoreProject(p.payload); closeProjModal();
     } else if (b.dataset.proj === 'del') {
-      if (!confirm(`¿Borrar "${list[i]?.name}"?`)) return;
+      if (!await ask(`¿Borrar "${list[i]?.name}"?`)) return;
       list.splice(i, 1); saveProjects(list); renderProjList();
     }
   });
@@ -4060,7 +4119,7 @@ pollJobs(jobsEl, 2500, j => {
         const p = JSON.parse(raw);
         const n = (p.tl || []).length;
         if (n) {
-          restoreProject(p);
+          if (restoreProject(p) === false) return;
           const min = Math.round((Date.now() - (p.ts || Date.now())) / 60000);
           toast(`Recuperado tu montaje de hace ${min < 1 ? 'un momento' : min + ' min'}: `
             + `${n} corte${n === 1 ? '' : 's'}`);
@@ -4071,3 +4130,24 @@ pollJobs(jobsEl, 2500, j => {
   }, 30);
 
 })();
+
+const polishControls = root => {
+  root.querySelectorAll('.btn,.chip,.rm-autobtn,.cr-ins,.tl-x,.tl-expand,.tl-junction,.tl-txt-x').forEach(el => {
+    el.classList.add(el.classList.contains('chip') ? 'ui-chip' : 'ui-button');
+    if (el.classList.contains('primary')) el.classList.add('ui-button--primary');
+    if (el.classList.contains('chip')) el.setAttribute('aria-pressed', String(el.classList.contains('on')));
+  });
+  root.querySelectorAll('button').forEach(el => {
+    if (!el.textContent.trim() && !el.getAttribute('aria-label') && (el.dataset.tip || el.title)) el.setAttribute('aria-label', el.dataset.tip || el.title);
+  });
+  root.querySelectorAll('input,select,textarea').forEach(el => {
+    if (el.type === 'hidden' || el.getAttribute('aria-label') || el.labels?.length) return;
+    const row = el.closest('.tl-inspect-row,.tx-row,.ex-sec,.ex-frame,.mus-ctl');
+    const label = row?.querySelector('label,span,.ex-lb')?.textContent.trim() || el.placeholder || el.id.replace(/^(tli|ed|tx)-/, '').replaceAll('-', ' ');
+    if (label) el.setAttribute('aria-label', label);
+  });
+};
+polishControls(document);
+new MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1) polishControls(n.parentElement || n); }).observe(document.body, { childList: true, subtree: true });
+
+document.addEventListener('click',()=>queueMicrotask(()=>document.querySelectorAll('.st-page .chip,.st-sheet .chip').forEach(el=>el.setAttribute('aria-pressed',String(el.classList.contains('on'))))));
