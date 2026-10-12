@@ -14,7 +14,7 @@
   }
 
   function navigationDelay(reducedMotion) {
-    return reducedMotion ? 70 : 560;
+    return 0;
   }
 
   function attachVoidNavigation(rootNode, options = {}) {

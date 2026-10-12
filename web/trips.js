@@ -1,8 +1,6 @@
-// Viajes — selector de nivel por CIUDAD (estilo videojuego): tarjetas con portada,
-// mini-mapa satelital y stats; dentro, el diario por fechas. Postal descargable.
+import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, suggestion, wireSuggestions, dataColor } from './home-shared.js?v=386';
 const main = renderShell('trips.html');
-
-// ciudades conocidas (lat, lon) — el cluster más cercano <30 km toma el nombre
+main.classList.add('tr-page');
 const CITIES = [
   ['Bogotá', 4.711, -74.072], ['Medellín', 6.244, -75.581], ['Cali', 3.452, -76.532],
   ['Cartagena', 10.391, -75.479], ['Barranquilla', 10.964, -74.797], ['Santa Marta', 11.241, -74.199],
@@ -17,266 +15,138 @@ const R0 = Math.PI / 180;
 const havKm = (a, b, c, d) => 12742 * Math.asin(Math.sqrt(
   Math.sin((c - a) * R0 / 2) ** 2 + Math.cos(a * R0) * Math.cos(c * R0) * Math.sin((d - b) * R0 / 2) ** 2));
 
-main.classList.add('tr-page');
-main.innerHTML = `
-  ${pageHead('Viajes', '', '', { subId: 'count' })}
-  <div class="statgrid tr-kpis" id="t-stats">${'<div class="sk tr-sk-stat"></div>'.repeat(4)}</div>
-  <div id="cities" class="city-grid">${'<div class="sk tr-sk-city"></div>'.repeat(3)}</div>
-  <div id="detail" hidden></div>`;
 
-(async () => {
-  const flights = (await getFlights()).filter(f => !f.archived);
-  const ai = await getAIAll(flights);
-  let diaries = {};
+let clusters = [], flights = [], tripsMeta = {}, routeData = [], map = null;
+document.addEventListener('ab-theme-change', () => { if (map?.getLayer('routes')) map.setPaintProperty('routes', 'line-color', dataColor()); });
+const params = () => new URLSearchParams(location.search);
+const linkFor = c => `trips.html?trip=${encodeURIComponent(c.key)}`;
+const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;
+const flightTitle = f => f.label || `${fmt.date(f.date)} · ${f.time || 'Vuelo'}`;
+const rangeFor = c => `${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates.at(-1)) : ''}`;
+
+async function optionalJSON(url, fallback) {
+  try { const r = await authFetch(url); return r.ok ? await r.json() : fallback; } catch { return fallback; }
+}
+async function load() {
+  main.innerHTML = `<h1>Viajes</h1>${skeleton(2)}`;
   try {
-    const r = await fetch(`${DATA}/ai/trips.json`);
-    if (r.ok) diaries = await r.json();
-  } catch {}
-  // meta por lugar (nombre + carátula) — server-side: sincroniza entre dispositivos
-  let tripsMeta = {};
-  try {
-    const r = await fetch(`${DATA}/manifest/trips_meta.json`);
-    if (r.ok) tripsMeta = await r.json();
-  } catch {}
-
-  // ---------- clusters de ciudad (~30 km) ----------
-  const clusters = [];
-  flights.forEach(f => {
-    const h = f.stats?.home;
-    if (!Array.isArray(h) || h.length < 2) return;   // home malformado no debe tumbar el cluster (#19)
-    let c = clusters.find(x => havKm(x.lat, x.lon, h[1], h[0]) < 30);
-    if (!c) {
-      c = { lat: h[1], lon: h[0], flights: [] };
-      clusters.push(c);
-    }
-    c.flights.push(f);
-  });
-  clusters.forEach(c => { c.key = `${c.lat.toFixed(2)},${c.lon.toFixed(2)}`; });
-  // la clave sale del despegue del primer vuelo (el más nuevo): un vuelo nuevo desde otro punto la cambia
-  // y perdería nombre/carátula. Si no hay meta para la clave, adoptar la más cercana (<30 km) no usada
-  // por otro cluster y migrarla a la clave nueva.
-  const usedMetaKeys = new Set(clusters.map(c => c.key).filter(k => tripsMeta[k]));
-  clusters.forEach(c => {
-    if (tripsMeta[c.key]) return;
-    let best = null, bestD = 30;
-    for (const k of Object.keys(tripsMeta)) {
-      if (usedMetaKeys.has(k)) continue;
-      const m = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(k);
-      if (!m) continue;
-      const d = havKm(c.lat, c.lon, +m[1], +m[2]);
-      if (d < bestD) { bestD = d; best = k; }
-    }
-    if (!best) return;
-    usedMetaKeys.add(best);
-    // el server mueve + borra la clave vieja de forma atómica (ya no se copia y se deja huérfana)
-    tripsMeta[c.key] = { ...(tripsMeta[best] || {}) };
-    delete tripsMeta[best];
-    api('/api/trip_meta', { key: c.key, migrate_from: best }).catch(() => {});
-  });
-  clusters.forEach(c => {
-    const srv = tripsMeta[c.key] || {};
-    const saved = localStorage.getItem(`ab.city.${c.key}`);
-    const near = CITIES.map(([n, la, lo]) => [n, havKm(c.lat, c.lon, la, lo)]).sort((a, b) => a[1] - b[1])[0];
-    // prioridad: server > localStorage (legado; se migra al server al abrir) > ciudad conocida > Zona
-    c.name = srv.name || saved || (near && near[1] < 30 ? near[0] : `Zona ${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}`);
-    if (!srv.name && saved) api('/api/trip_meta', { key: c.key, name: saved }).catch(() => {});
-    c.dates = [...new Set(c.flights.map(f => f.date))].sort();
-    c.dist = c.flights.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
-    c.dur = c.flights.reduce((a, f) => a + (f.duration_s || 0), 0);   // duration_s ausente → 0, no NaN
-    c.alt = Math.max(0, ...c.flights.map(f => f.stats.max_rel_alt_m || 0));
-    c.best = [...c.flights].sort((a, b) => (ai[b.clip_id]?.travel_score || 0) - (ai[a.clip_id]?.travel_score || 0))[0];
-    // carátula: elección manual (si el clip sigue en el cluster) gana sobre la mejor por AI
-    c.cover = c.flights.find(f => f.clip_id === srv.cover) || c.best;
-    c.score = ai[c.best?.clip_id]?.travel_score || 0;
-  });
-  clusters.sort((a, b) => b.flights.length - a.flights.length);
-
-  const days = new Set(flights.map(f => f.date)).size;
-  document.getElementById('count').textContent = `${clusters.length} ${clusters.length === 1 ? 'lugar' : 'lugares'} · ${days} días`;
-  document.getElementById('t-stats').innerHTML = `
-    <div class="stat"><div class="lb">${icon('pin')} Lugares</div><div class="v">${clusters.length}</div><div class="sub">explorados desde el aire</div></div>
-    <div class="stat"><div class="lb">${icon('cal')} Días</div><div class="v">${days}</div><div class="sub">de vuelo registrados</div></div>
-    <div class="stat"><div class="lb">${icon('drone')} Vuelos</div><div class="v">${flights.length}</div><div class="sub">en el diario</div></div>
-    <div class="stat"><div class="lb">${icon('route')} Distancia</div><div class="v">${fmt.km(flights.reduce((a, f) => a + (f.stats.distance_m || 0), 0))}</div><div class="sub">recorrida en total</div></div>`;
-
-  // ---------- vista 1: selector de ciudades ----------
-  let citiesEntered = false;
-  function renderCities() {
-    const el = document.getElementById('cities');
-    el.hidden = false;
-    document.getElementById('t-stats').hidden = false;
-    document.getElementById('detail').hidden = true;
-    const anim = !citiesEntered && !matchMedia('(prefers-reduced-motion: reduce)').matches;
-    citiesEntered = true;
-    el.innerHTML = clusters.map((c, i) => `
-      <div class="city-card ${anim ? 'cc-in' : ''}" data-city="${esc(c.key)}" role="button" tabindex="0" aria-label="Abrir ${esc(c.name)}" style="--in-delay:${Math.min(i, 4) * 30}ms">
-        <div class="cc-cover">
-          <img src="${DATA}/thumbs/${esc(c.cover?.clip_id || '')}.jpg" loading="lazy" alt="" width="960" height="540">
-          <div class="scrim"></div>
-          ${c.score ? `<span class="score-pill cc-score" data-tip="Mejor score AI del lugar">${c.score}/10</span>` : ''}
-          <div class="cc-cap">
-            <h2>${esc(c.name)}</h2>
-            <span class="cc-range">${icon('pin')} ${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates[c.dates.length - 1]) : ''}</span>
-          </div>
-        </div>
-        <div class="cc-stats">
-          <span data-tip="Vuelos en este lugar">${icon('drone')} ${c.flights.length}<i class="sr-only"> vuelos</i></span>
-          <span data-tip="Días distintos">${icon('cal')} ${c.dates.length}<i class="sr-only"> días</i></span>
-          <span data-tip="Tiempo total en el aire">${icon('clock')} ${fmt.hours(c.dur)}</span>
-          <span data-tip="Distancia total volada">${icon('route')} ${fmt.km(c.dist)}</span>
-          <span data-tip="Altura máxima alcanzada">${icon('mountain')} ${Math.round(c.alt)} m</span>
-          <button class="btn icon sm tr-more hit44" data-city-menu="${esc(c.key)}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(c.name)}">${icon('more')}</button>
-        </div>
-      </div>`).join('') ||
-      emptyState({ icon: 'pin', title: 'Sin viajes todavía', help: 'Aparecerán cuando haya vuelos con GPS.', cls: 'tr-span' });
-  }
-
-  // ---------- menú de acciones por lugar: openMenu() canónico (shell.js) ----------
-  function openCityMenu(btn) {
-    const c = clusters.find(x => x.key === btn.dataset.cityMenu);
-    if (!c) return;
-    openMenu(btn, [
-      { id: 'postal', label: 'Descargar postal', icon: 'dl' },
-      { id: 'cover', label: 'Elegir portada', icon: 'image' },
-      { id: 'rename', label: 'Renombrar', icon: 'edit' },
-    ], { label: `Acciones de ${c.name}`, align: 'end', onSelect: act => {
-      if (act === 'postal') makePostal(c, btn);
-      else if (act === 'cover') pickCover(c);
-      else renameCity(c);
-    } });
-  }
-
-  // ---------- vista 2: detalle de ciudad (días adentro) ----------
-  const dstate = { q: '', has: new Set(), scene: null };
-  function renderDetail(c, animate = false) {
-    const el = document.getElementById('detail');
-    document.getElementById('cities').hidden = true;
-    document.getElementById('t-stats').hidden = true;   // los KPI globales solo en la vista de lugares
-    el.hidden = false;
-    const rise = animate && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'rise' : '';
-    const list = c.flights.filter(f => {
-      if (dstate.has.has('video') && !f.has_proxy) return false;
-      if (dstate.has.has('ai') && !ai[f.clip_id]) return false;
-      if (dstate.has.has('top') && (ai[f.clip_id]?.travel_score || 0) < 6) return false;
-      if (dstate.scene && ai[f.clip_id]?.scene_type !== dstate.scene) return false;
-      const hay = `${f.label || ''} ${f.date} ${ai[f.clip_id]?.summary || ''}`.toLowerCase();
-      return !dstate.q || hay.includes(dstate.q.toLowerCase());   // q se guarda crudo; se compara insensible
+    flights = (await loadFlights()).filter(f => !f.archived);
+    [tripsMeta, routeData] = await Promise.all([
+      optionalJSON(`${DATA}/manifest/trips_meta.json`, {}),
+      optionalJSON(`${DATA}/manifest/routes.json`, { routes: [] }),
+    ]);
+    clusters = [];
+    flights.forEach(f => {
+      const h = f.stats?.home;
+      if (!Array.isArray(h) || !h.every(Number.isFinite)) return;
+      let c = clusters.find(x => havKm(x.lat, x.lon, h[1], h[0]) < 30);
+      if (!c) { c = { lat: h[1], lon: h[0], flights: [] }; clusters.push(c); }
+      c.flights.push(f);
     });
-    const scenes = [...new Set(c.flights.map(f => ai[f.clip_id]?.scene_type).filter(Boolean))];
-    const byDay = {};
-    list.forEach(f => (byDay[f.date] = byDay[f.date] || []).push(f));
-    const days = Object.entries(byDay).sort((a, b) => b[0].localeCompare(a[0]));
-    const range = `${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates[c.dates.length - 1]) : ''}`;
-    const filterChips = [['video', 'play', 'Video'], ['ai', 'spark', 'AI'], ['top', 'star', 'Score 6+']]
-      .map(([k, ic, l]) => `<button class="chip ${dstate.has.has(k) ? 'on' : ''}" data-df="${k}" aria-pressed="${dstate.has.has(k)}">${icon(ic)} ${l}</button>`).join('');
-    el.innerHTML = `
-      <div class="hero glass tr-hero ${rise}">
-        <button class="btn hero-back" id="city-back" data-tip="Volver a los lugares" aria-label="Volver a los lugares">${icon('chevL')}</button>
-        <div class="hero-t"><h1>${esc(c.name)}</h1>
-          <div class="hero-sub">${range}</div></div>
-        <div class="hero-chips">
-          <span class="gchip" data-tip="Vuelos filtrados / totales">${list.length}/${c.flights.length} vuelos</span>
-          <span class="gchip" data-tip="Tiempo total en el aire">${fmt.hours(c.dur)}</span>
-          ${c.score ? `<span class="chip sm tr-score" data-tip="Mejor score AI">${icon('star')} ${c.score}/10</span>` : ''}
-        </div>
-        <div class="hero-actions">
-          <a class="btn" href="index.html?v=map" data-tip="Ver las rutas en el mapa">${icon('map')} Mapa</a>
-          <button class="btn primary" data-postal="${esc(c.key)}">${icon('dl')} Postal</button>
-        </div>
-      </div>
-      <div class="tr-bar ${rise}">
-        <label class="search tr-search">${icon('search')}<input id="d-q" type="search" placeholder="Buscar en ${esc(c.name)}" aria-label="Buscar en ${esc(c.name)}" value="${esc(dstate.q)}"></label>
-        <div class="chip-row" role="toolbar" aria-label="Filtros">
-          ${filterChips}
-          ${scenes.length ? '<span class="chip-div" aria-hidden="true"></span>' : ''}
-          ${scenes.map(sc => `<button class="chip ${dstate.scene === sc ? 'on' : ''}" data-dscene="${esc(sc)}" aria-pressed="${dstate.scene === sc}">${esc(sc)}</button>`).join('')}
-        </div>
-      </div>
-      ${days.length > 1 ? `<nav class="tr-days chip-row" aria-label="Ir a un día">
-        ${days.map(([date, dl]) => `<a class="chip" href="#day-${esc(date)}" data-day="${esc(date)}" data-tip="${dl.length} ${dl.length === 1 ? 'vuelo' : 'vuelos'}">${fmt.date(date)}</a>`).join('')}
-      </nav>` : ''}
-      ${days.map(([date, dl], di) => {
-        const dist = dl.reduce((a, f) => a + (f.stats.distance_m || 0), 0);
-        const dur = dl.reduce((a, f) => a + (f.duration_s || 0), 0);   // idem: sin NaN min por día
-        const diary = diaries[date];
-        return `
-        <section class="trip ${di < 3 ? rise : ''}" id="day-${esc(date)}">
-          <div class="trip-head">
-            <h2>${fmt.date(date)}</h2>
-            <span class="tr-daymeta">${dl.length} ${dl.length === 1 ? 'vuelo' : 'vuelos'} · ${fmt.km(dist)} · ${fmt.hours(dur)}</span>
-          </div>
-          ${diary ? `<div class="summary">${esc(diary)}</div>` : ''}
-          <div class="grid">${dl.map(f => {
-            const a = ai[f.clip_id];
-            const title = f.label || shortTitle(a?.summary) || `Sin título${f.time ? ' · ' + f.time : ''}`;
-            return `
-            <a class="card scrub" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
-              <div class="thumb">
-                <img src="${DATA}/thumbs/${f.clip_id}.jpg" alt="" loading="lazy" width="960" height="540">
-                <span class="tierdot ${f.tier}"><i></i>${f.tier}</span>
-                ${a?.travel_score != null ? `<span class="score-pill" title="Score AI">${a.travel_score}/10</span>` : ''}
-                <span class="ovl mono">${fmt.dur(f.duration_s)}</span>
-                <span class="scrub-line"></span>
-              </div>
-              <div class="body">
-                <div class="t"><span class="tr-title">${esc(title)}</span></div>
-                ${f.label || a?.summary ? `<div class="tr-when"><time>${f.time || ''}</time></div>` : ''}
-                <div class="metrics">
-                  <span title="Distancia">${icon('route')}<b>${fmt.km(f.stats.distance_m || 0)}</b><i class="sr-only">Distancia</i></span>
-                  <span title="Altura máxima">${icon('mountain')}<b>${(f.stats.max_rel_alt_m || 0) < 0 ? '—' : Math.round(f.stats.max_rel_alt_m || 0) + ' m'}</b><i class="sr-only">Altura máxima</i></span>
-                </div>
-                ${f.label && a?.summary ? `<p class="ai-line">${esc(a.summary)}</p>` : ''}
-              </div>
-            </a>`;
-          }).join('')}
-          </div>
-        </section>`;
-      }).join('') || emptyState({ icon: 'search', title: 'Nada con esos filtros', help: 'Quita algún filtro para ver más días.' })}`;
-    el.querySelector('#city-back').addEventListener('click', () => {
-      if (dstate._leaving) return;                        // ya saliendo → evita doble animación y su race
-      dstate._leaving = true;
-      clearTimeout(dstate._t);                            // cancela el debounce: no re-abrir el detalle tras volver (#14)
-      const back = () => {
-        dstate._leaving = false;
-        Object.assign(dstate, { q: '', scene: null });
-        dstate.has.clear();
-        renderCities();
-        const cg = document.getElementById('cities');
-        cg.animate([{ opacity: 0, transform: 'translateX(-18px)' }, { opacity: 1, transform: 'translateX(0)' }],
-                   { duration: 220, easing: 'ease-out' });
-      };
-      el.animate([{ opacity: 1, transform: 'translateX(0)' }, { opacity: 0, transform: 'translateX(24px)' }],
-                 { duration: 180, easing: 'ease-in' })
-        .finished.then(back).catch(() => { dstate._leaving = false; });   // AbortError al interrumpir → sin unhandled rejection
+    const used = new Set();
+    clusters.forEach(c => {
+      const generated = `${c.lat.toFixed(2)},${c.lon.toFixed(2)}`;
+      // Keep the saved key stable. A read must never migrate owner data.
+      const saved = Object.keys(tripsMeta).filter(k => !used.has(k) && /^-?[\d.]+,-?[\d.]+$/.test(k))
+        .map(k => [k, havKm(c.lat, c.lon, ...k.split(',').map(Number))]).sort((a, b) => a[1] - b[1])[0];
+      c.key = saved?.[1] < 30 ? saved[0] : generated;
+      used.add(c.key);
+      const meta = tripsMeta[c.key] || {};
+      const near = CITIES.map(([n, la, lo]) => [n, havKm(c.lat, c.lon, la, lo)]).sort((a, b) => a[1] - b[1])[0];
+      c.name = meta.name || (near?.[1] < 30 ? near[0] : `Zona ${generated}`);
+      c.dates = [...new Set(c.flights.map(f => f.date))].sort();
+      c.dist = c.flights.reduce((a, f) => a + (f.stats?.distance_m || 0), 0);
+      c.dur = c.flights.reduce((a, f) => a + (f.duration_s || 0), 0);
+      c.alt = Math.max(0, ...c.flights.map(f => f.stats?.max_rel_alt_m || 0));
+      c.best = [...c.flights].sort((a, b) => (b.ai?.travel_score || 0) - (a.ai?.travel_score || 0))[0];
+      c.cover = c.flights.find(f => f.clip_id === meta.cover) || c.best;
+      c.coverTime = meta.cover ? undefined : c.cover.ai?.highlights?.[0]?.t;
     });
-    el.querySelector('#d-q').addEventListener('input', e => {
-      dstate.q = e.target.value;                          // crudo (sin lowercase): no muta lo tecleado al re-render
-      clearTimeout(dstate._t);
-      dstate._t = setTimeout(() => {
-        const cur = document.getElementById('d-q');
-        const caret = cur ? cur.selectionStart : null;    // preserva caret y evita el salto de scroll
-        renderDetail(c);
-        const next = document.getElementById('d-q');
-        if (next) { next.focus({ preventScroll: true }); if (caret != null) { try { next.setSelectionRange(caret, caret); } catch {} } }
-      }, 220);
-    });
-    el.querySelectorAll('[data-df]').forEach(b => b.addEventListener('click', () => {
-      dstate.has.has(b.dataset.df) ? dstate.has.delete(b.dataset.df) : dstate.has.add(b.dataset.df);
-      renderDetail(c);
-    }));
-    el.querySelectorAll('[data-dscene]').forEach(b => b.addEventListener('click', () => {
-      dstate.scene = dstate.scene === b.dataset.dscene ? null : b.dataset.dscene;
-      renderDetail(c);
-    }));
-    el.querySelectorAll('[data-day]').forEach(a => a.addEventListener('click', e => {
-      e.preventDefault();
-      document.getElementById(`day-${a.dataset.day}`)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
-    }));
-    attachScrub(el);
-    if (animate) window.scrollTo({ top: 0, behavior: 'smooth' });
+    clusters.sort((a, b) => b.dates.at(-1).localeCompare(a.dates.at(-1)));
+    registerFlights(flights);
+    registerPaletteSource(() => clusters.map(c => ({ id: `trip-${c.key}`, label: c.name, keywords: c.dates.join(' '), href: linkFor(c) })));
+    render();
+  } catch { renderFailure(main, load); }
+}
+function render() {
+  map?.remove(); map = null;
+  const selected = params().get('trip');
+  if (selected) {
+    const c = clusters.find(c => c.key === selected);
+    if (c) { renderDetail(c); return; }
+    main.innerHTML = '<div class="ui-empty"><h1>Viaje no encontrado</h1><p>Abre un lugar de tu lista de viajes.</p><a class="ui-button ui-button--primary" href="trips.html">Ver viajes</a></div>';
+    return;
   }
-
-  // ---------- postal descargable (canvas: portada + nombre + stats) ----------
+  const isMap = params().get('view') === 'map';
+  main.innerHTML = `<header class="tr-heading"><div><h1>Viajes</h1><p>${clusters.length} lugares · ${flights.length} vuelos</p></div><a class="ui-button ui-button--primary" href="index.html">Ver vuelos ${icon('arrowR')}</a></header>
+    <nav class="tr-view ui-segmented" aria-label="Vista de viajes"><a class="ui-button ui-button--quiet" ${!isMap ? 'aria-current="page"' : ''} href="trips.html">${icon('list')} Lista</a><a class="ui-button ui-button--quiet" ${isMap ? 'aria-current="page"' : ''} href="trips.html?view=map">${icon('map')} Mapa</a></nav>
+    ${isMap && clusters.length ? '<div class="tr-map" id="trip-map" aria-label="Mapa de viajes"></div>' : ''}
+    <div class="tr-places ${isMap ? 'tr-places-compact' : ''}">${clusters.map(c => `<article class="tr-place"><a href="${linkFor(c)}" class="tr-place-link"><img src="${frameFor(c.cover, c.coverTime)}" alt="Vista aérea de ${esc(c.name)}" data-transition-key="trip-${esc(c.key.replace(/[^\w-]/g, '-'))}"><div class="tr-place-copy"><h2>${esc(c.name)}</h2><p>${rangeFor(c)}</p><span>${c.flights.length} vuelos · ${fmt.km(c.dist)} · ${fmt.hours(c.dur)}</span></div></a><button class="ui-button ui-button--quiet tr-more" data-menu="${esc(c.key)}" aria-label="Opciones de ${esc(c.name)}">${icon('more')}</button></article>`).join('') || '<div class="ui-empty"><h2>Tus lugares aparecerán aquí</h2><p>Sube un vuelo con GPS para empezar tu diario.</p><a class="ui-button ui-button--primary" href="studio.html?via=subir">Subir video</a><p>Por ejemplo, tu próxima visita a los cerros.</p></div>'}</div>`;
+  if (isMap && clusters.length) mountMap(clusters.flatMap(c => c.flights), true);
+  bindActions();
+}
+function renderDetail(c) {
+  const highlights = c.flights.flatMap(f => (f.ai?.highlights || []).map(h => ({ f, h })))
+    .sort((a, b) => (b.f.ai?.travel_score || 0) - (a.f.ai?.travel_score || 0)).slice(0, 6);
+  const dates = [...c.dates].reverse();
+  main.innerHTML = `<a class="ui-button ui-button--quiet tr-back" href="trips.html">${icon('arrowL')} Viajes</a>
+    <header class="tr-detail-head"><div><h1>${esc(c.name)}</h1><p>${rangeFor(c)}</p></div><div class="tr-actions"><button class="ui-button ui-button--primary" data-postal="${esc(c.key)}">${icon('dl')} Descargar postal</button><button class="ui-button ui-button--quiet" data-menu="${esc(c.key)}" aria-label="Opciones de ${esc(c.name)}">${icon('more')}</button></div></header>
+    <div class="tr-overview"><img class="tr-cover" src="${frameFor(c.cover, c.coverTime)}" alt="Vista aérea de ${esc(c.name)}" data-transition-key="trip-${esc(c.key.replace(/[^\w-]/g, '-'))}"><div class="tr-map" id="trip-map" aria-label="Rutas del viaje"></div></div>
+    <dl class="tr-facts"><div><dt>Vuelos</dt><dd>${c.flights.length}</dd></div><div><dt>En el aire</dt><dd>${fmt.hours(c.dur)}</dd></div><div><dt>Recorrido</dt><dd>${fmt.km(c.dist)}</dd></div><div><dt>Altura máxima</dt><dd>${Math.round(c.alt)} m</dd></div></dl>
+    <section class="tr-recap"><h2>El viaje en una mirada</h2>${c.best.ai?.summary ? suggestion(`trip-${c.key}`, `Del vuelo destacado: ${c.best.ai.summary}`, flightLink(c.best)) : '<p class="w2-note">Sin análisis aún. Cuando esté listo, verás el resumen y los mejores momentos.</p>'}</section>
+    <section class="tr-section"><h2>Mejores momentos</h2>${highlights.length ? suggestion(`trip-moments-${c.key}`, 'Selección de tus vuelos analizados.', '', `<div class="tr-frames">${highlights.map(({ f, h }) => `<a href="${flightLink(f)}&t=${Math.max(0, +h.t || 0)}"><img src="${frameFor(f, h.t)}" alt="${esc(h.reason || 'Momento destacado')}" loading="lazy"><span>${fmt.dur(h.t)} · ${esc(h.reason || 'Ver momento')}</span></a>`).join('')}</div>`) : '<p class="w2-note">Sin análisis aún. Abre un vuelo para marcar un momento.</p>'}</section>
+    <section class="tr-section"><h2>Diario de vuelos</h2>${dates.map(date => `<section class="tr-day"><h3>${fmt.date(date)}</h3><div class="tr-flights">${c.flights.filter(f => f.date === date).map(f => `<a class="tr-flight" href="${flightLink(f)}"><img src="${frameFor(f)}" alt="" loading="lazy" data-transition-key="clip-${esc(f.clip_id)}"><span><strong>${esc(flightTitle(f))}</strong><span>${fmt.dur(f.duration_s)} · ${fmt.km(f.stats?.distance_m || 0)}</span></span>${icon('arrowR')}</a>`).join('')}</div></section>`).join('')}</section>`;
+  mountMap(c.flights);
+  bindActions();
+}
+function mountMap(rows, pins = false) {
+  const bounds = new maplibregl.LngLatBounds();
+  rows.forEach(f => { if (f.stats?.bbox) { bounds.extend(f.stats.bbox.slice(0, 2)); bounds.extend(f.stats.bbox.slice(2)); } });
+  if (bounds.isEmpty()) { document.getElementById('trip-map').innerHTML = '<p class="ui-empty">Sin rutas GPS para este viaje.</p>'; return; }
+  map = new maplibregl.Map({ container: 'trip-map', style: SAT_STYLE, cooperativeGestures: true, bounds, fitBoundsOptions: { ...FIT_OPTS, padding: pins ? { top: 128, right: 112, bottom: 80, left: 80 } : 64 }, attributionControl: { compact: true } });
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  const current = map;
+  current.on('load', () => {
+    const ids = new Set(rows.map(f => f.clip_id));
+    const features = (routeData.routes || []).filter(r => ids.has(r.cid)).map(r => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: r.line } }));
+    current.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features } });
+    current.addLayer({ id: 'routes', type: 'line', source: 'routes', paint: { 'line-color': dataColor(), 'line-width': 3 } });
+    if (pins) clusters.forEach(c => {
+      const el = document.createElement('a'); el.className = 'ui-button ui-button--secondary tr-pin'; el.href = linkFor(c); el.textContent = c.name;
+      new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(current);
+    });
+  });
+}
+function bindActions() {
+  main.querySelectorAll('[data-menu]').forEach(button => button.addEventListener('click', () => {
+    const c = clusters.find(c => c.key === button.dataset.menu);
+    openMenu(button, [{ id: 'rename', label: 'Renombrar', icon: 'edit' }, { id: 'cover', label: 'Elegir portada', icon: 'image' }, { id: 'postal', label: 'Descargar postal', icon: 'dl' }], { onSelect: id => id === 'rename' ? renameCity(c) : id === 'cover' ? pickCover(c) : makePostal(c, button) });
+  }));
+  main.querySelectorAll('[data-postal]').forEach(button => button.addEventListener('click', () => makePostal(clusters.find(c => c.key === button.dataset.postal), button)));
+}
+function renameCity(c) {
+  const node = document.createElement('form'); node.className = 'tr-form';
+  node.innerHTML = `<label for="tm-name">Nombre del lugar</label><input class="ctl" id="tm-name" maxlength="60" value="${esc(c.name)}" required><p role="alert" class="tr-error" hidden></p><button class="ui-button ui-button--primary" type="submit">Guardar</button>`;
+  const close = openPageSheet(node, { title: 'Renombrar lugar', size: 'half', initialFocus: '#tm-name' });
+  node.addEventListener('submit', async e => {
+    e.preventDefault(); const button = node.querySelector('button'); button.disabled = true;
+    try { const name = node.querySelector('input').value.trim(); if (!name) throw new Error('Escribe un nombre.'); await save('/api/trip_meta', { key: c.key, name }); c.name = name; close(); render(); }
+    catch (error) { const p = node.querySelector('[role=alert]'); p.textContent = error.message; p.hidden = false; }
+    finally { button.disabled = false; }
+  });
+}
+function pickCover(c) {
+  const node = document.createElement('div');
+  node.innerHTML = `<p>Elige la imagen que abre este viaje.</p><p class="tr-error" role="alert" hidden></p><div class="tr-cover-options">${c.flights.map(f => `<button class="tr-cover-option" data-pick="${esc(f.clip_id)}" aria-pressed="${c.cover.clip_id === f.clip_id}"><img src="${frameFor(f)}" alt=""><span>${esc(flightTitle(f))}${c.cover.clip_id === f.clip_id ? ' · Portada actual' : ''}</span></button>`).join('')}</div>`;
+  const close = openPageSheet(node, { title: `Portada de ${c.name}`, size: 'full' });
+  node.addEventListener('click', async e => {
+    const button = e.target.closest('[data-pick]'); if (!button) return;
+    node.querySelectorAll('button').forEach(b => b.disabled = true);
+    try { await save('/api/trip_meta', { key: c.key, cover: button.dataset.pick }); c.cover = c.flights.find(f => f.clip_id === button.dataset.pick); c.coverTime = undefined; close(); render(); }
+    catch (error) { const p = node.querySelector('[role=alert]'); p.textContent = error.message; p.hidden = false; }
+    finally { node.querySelectorAll('button').forEach(b => b.disabled = false); }
+  });
+}
   async function makePostal(c, btn) {
     if (btn._busy) return;                                // doble-click en vuelo corrompía el botón (#16)
     btn._busy = true;
@@ -284,7 +154,7 @@ main.innerHTML = `
     btn.innerHTML = '…';
     try {
       const img = new Image();
-      await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = `${DATA}/thumbs/${(c.cover || c.best).clip_id}.jpg`; });
+      await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = frameFor(c.cover || c.best, c.coverTime); });
       const cv = document.createElement('canvas');
       cv.width = 1080;
       cv.height = 1350;                                       // 4:5 para redes
@@ -298,10 +168,11 @@ main.innerHTML = `
       x.fillStyle = g;
       x.fillRect(0, 0, cv.width, cv.height);
       x.fillStyle = '#fff';
-      x.font = '700 84px -apple-system, sans-serif';
+      await document.fonts.ready;
+      x.font = '700 84px AeroBrain Sans';
       x.fillText(c.name, 60, cv.height - 180);
       x.fillStyle = 'rgba(255,255,255,0.75)';
-      x.font = '400 34px ui-monospace, monospace';
+      x.font = '400 34px JetBrains Mono';
       x.fillText(`${c.flights.length} vuelos · ${fmt.km(c.dist)} · alt máx ${Math.round(c.alt)} m`, 62, cv.height - 118);
       x.fillText(`${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates[c.dates.length - 1]) : ''} · AeroBrain`, 62, cv.height - 66);
       const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
@@ -319,91 +190,6 @@ main.innerHTML = `
     btn.innerHTML = orig; btn._busy = false;
   }
 
-  // ---------- renombrar lugar (server-side, sincroniza entre dispositivos) ----------
-  function renameCity(c) {
-    const ov = document.createElement('div');
-    ov.className = 'modal-ov';
-    ov.innerHTML = `<div class="modal tr-modal-sm">
-      <div class="modal-h"><b>${icon('edit')} Renombrar lugar</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
-      <div class="modal-b">
-        <div class="tool-row">
-          <input class="m-ipt tr-name" id="tm-name" maxlength="60" value="${esc(c.name)}">
-          <button class="btn primary" id="tm-save">Guardar</button>
-        </div>
-        <p class="page-foot tr-note">El nombre se guarda en el servidor: lo verás igual en el iPhone, iPad y desktop.</p>
-      </div></div>`;
-    openModal(ov, { initialFocus: '#tm-name' });
-    const save = async () => {
-      const name = ov.querySelector('#tm-name').value.trim();
-      if (!name) return;
-      try { await api('/api/trip_meta', { key: c.key, name }); }
-      catch { toast('No se pudo guardar el nombre — revisa tu sesión.'); return; }
-      localStorage.setItem(`ab.city.${c.key}`, name);   // cache local por si el fetch server falla
-      c.name = name;
-      ov.remove();
-      renderCities();
-    };
-    ov.querySelector('#tm-save').addEventListener('click', save);
-    ov.querySelector('#tm-name').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
-    ov.querySelector('#tm-name').select();
-  }
 
-  // ---------- elegir carátula (grid de thumbs del lugar) ----------
-  function pickCover(c) {
-    const ov = document.createElement('div');
-    ov.className = 'modal-ov';
-    const sorted = [...c.flights].sort((a, b) =>
-      (ai[b.clip_id]?.travel_score || 0) - (ai[a.clip_id]?.travel_score || 0));
-    ov.innerHTML = `<div class="modal tr-modal-md">
-      <div class="modal-h"><b>${icon('image')} Portada de ${esc(c.name)}</b><button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
-      <div class="modal-b">
-        <div class="mflights tr-covers">
-          ${sorted.map(f => `
-            <div class="mflight ${f.clip_id === c.cover?.clip_id ? 'on' : ''}" data-pick="${esc(f.clip_id)}" role="button" tabindex="0" aria-label="Usar como portada: ${esc(f.label || fmt.date(f.date))}">
-              <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="" width="960" height="540">
-              <div class="mf-t"><b>${esc(f.label || `${fmt.date(f.date)} · ${f.time || ''}`)}</b>
-                <span>${fmt.dur(f.duration_s)}${ai[f.clip_id]?.travel_score ? ` · ${ai[f.clip_id].travel_score}/10 AI` : ''}</span></div>
-            </div>`).join('')}
-        </div>
-        <p class="page-foot tr-note">Se guarda en el servidor. La estrella AI seguirá eligiendo si borras la elección manual.</p>
-      </div></div>`;
-    openModal(ov);
-    const doPick = async row => {
-      const cid2 = row.dataset.pick;
-      try { await api('/api/trip_meta', { key: c.key, cover: cid2 }); }
-      catch { toast('No se pudo guardar la portada — revisa tu sesión.'); return; }
-      c.cover = c.flights.find(f => f.clip_id === cid2) || c.cover;
-      ov.remove();
-      renderCities();
-    };
-    ov.addEventListener('click', e => { const row = e.target.closest('[data-pick]'); if (row) doPick(row); });
-    ov.addEventListener('keydown', e => {
-      const row = e.target.closest('[data-pick]');
-      if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); doPick(row); }
-    });
-  }
-
-  // ---------- interacciones ----------
-  main.addEventListener('click', e => {
-    const pb = e.target.closest('[data-postal]');
-    if (pb) { e.stopPropagation(); makePostal(clusters.find(x => x.key === pb.dataset.postal), pb); return; }
-    const mb = e.target.closest('[data-city-menu]');
-    if (mb) { e.stopPropagation(); openCityMenu(mb); return; }
-    const cc = e.target.closest('[data-city]');
-    if (cc) {
-      const c = clusters.find(x => x.key === cc.dataset.city);
-      if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
-        cc.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.98)' }, { transform: 'scale(1)' }], { duration: 180 });
-      setTimeout(() => renderDetail(c, true), 120);
-    }
-  });
-
-  // tarjetas de ciudad alcanzables por teclado (Enter / Espacio); los botones internos conservan lo suyo
-  main.addEventListener('keydown', e => {
-    if ((e.key !== 'Enter' && e.key !== ' ') || e.target !== e.target.closest('.city-card')) return;   // los botones internos (menú) conservan lo suyo
-    e.preventDefault();
-    e.target.click();
-  });
-
-  renderCities();
-})();
+wireSuggestions(main);
+load();
