@@ -24,6 +24,36 @@ export function highlightSuggestions(flights, ai) {
     const t = Number(h.t);
     if (!Number.isFinite(t) || !(f.duration_s > 0)) return [];
     const a = Math.max(0, t - 2.5), b = Math.min(f.duration_s, t + 2.5);
-    return b > a ? [{ cid: f.clip_id, a, b, label: f.label || f.date, reason: h.reason || h.label || '', score: ai[f.clip_id].travel_score || 0 }] : [];
+    return b > a ? [{ cid: f.clip_id, a, b, label: f.label || f.date, reason: h.reason || h.label || '', caption: analysisCaption(h.reason || h.label), score: ai[f.clip_id].travel_score || 0 }] : [];
   })).sort((a, b) => b.score - a.score).slice(0, 10);
+}
+
+// Use only subjects present in the stored text. Keep the original in the details row.
+export function analysisCaption(text) {
+  const subjects = [
+    [/\b(ciudad|urban[oa]|bogot[aá])/i, 'Ciudad'],
+    [/\b(monta[ñn]|cerros?|cordillera)/i, 'Montañas'],
+    [/\b(casa|vivienda)/i, 'Casa'],
+    [/\b(persona|gente)/i, 'Personas'],
+    [/\b(parque|jardin)/i, 'Parque'],
+    [/\b(valle)/i, 'Valle'],
+    [/\b(colina)/i, 'Colinas'],
+    [/\b(edific|fachada|arquitectura)/i, 'Edificios'],
+    [/\b(tejados?|techos?)/i, 'Tejados'],
+    [/\b(calles?|carretera|intersecci[oó]n)/i, 'Calles'],
+    [/\b(tr[aá]fico|veh[ií]culos?)/i, 'Tráfico'],
+    [/\b(bosque|[aá]rbol|vegetaci[oó]n|zonas? verdes?)/i, 'Vegetación'],
+    [/\b(r[ií]o|cascada)/i, 'Río'],
+    [/\b(lago|embalse)/i, 'Lago'],
+    [/\b(playa|costa)/i, 'Costa'],
+    [/\b(nubes?|cielo)/i, 'Cielo'],
+    [/\b(atardecer|ocaso)/i, 'Atardecer'],
+    [/\b(amanecer)/i, 'Amanecer'],
+  ];
+  const normalized = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const shot = /\b(panoram|plano abierto)/i.test(normalized) ? 'Plano abierto'
+    : /\b(cenital|zenital)/i.test(normalized) ? 'Vista cenital' : '';
+  const caption = subjects.filter(([pattern]) => pattern.test(normalized)).slice(0, shot ? 2 : 3)
+    .map(([, label]) => label).join(' · ');
+  return [shot, caption].filter(Boolean).join(': ') || 'Momento del vuelo';
 }

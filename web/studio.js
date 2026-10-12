@@ -1,7 +1,7 @@
 import { createSheet } from './ui/sheet.js?v=374';
 import { showToast as toast } from './ui/toast.js?v=374';
 import { registerPaletteSource } from './ui/palette.js?v=374';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions } from './studio.logic.js?v=384';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption } from './studio.logic.js?v=389';
 
 // Keep each editor's DOM and cleanup contract inside the W1 sheet lifecycle.
 function openModal(content, options = {}) {
@@ -1563,7 +1563,8 @@ pollJobs(jobsEl, 2500, j => {
     if(!look || !(look in CSS_LUTS) || dismissedColors.has(segment.clip_id)) {
       box.textContent='Sin sugerencia de color aún. Elige un estilo o ajusta el color.'; return;
     }
-    box.innerHTML=`<span class="ui-chip">Sugerido</span><p>${esc(suggestion?.label || look)}</p><div class="st-sheet-actions"><button class="ui-button ui-button--secondary" data-color-accept>Aceptar</button><button class="ui-button ui-button--quiet" data-color-dismiss>Descartar</button></div>`;
+    const lookLabel = document.querySelector(`#tli-filter option[value="${look}"]`)?.textContent.split(' — ')[0] || look;
+    box.innerHTML=`<span class="ui-chip">Sugerido</span><p>${esc(lookLabel)}</p>${suggestion?.label ? `<details class="st-analysis-detail"><summary>Ver análisis</summary><p>${esc(suggestion.label)}</p></details>` : ''}<div class="st-sheet-actions"><button class="ui-button ui-button--secondary" data-color-accept>Aceptar</button><button class="ui-button ui-button--quiet" data-color-dismiss>Descartar</button></div>`;
     box.querySelector('[data-color-accept]').onclick=()=>{pushUndo();segment.filter=look;renderAll();seek(playhead);box.textContent='Estilo aplicado';};
     box.querySelector('[data-color-dismiss]').onclick=()=>{dismissedColors.add(segment.clip_id);box.textContent='Sugerencia descartada';};
   }
@@ -1603,12 +1604,12 @@ pollJobs(jobsEl, 2500, j => {
       const isMajor = Math.abs(t / major - Math.round(t / major)) < 0.001;
       const isMid = !isMajor && Math.abs(t / (major / 2) - Math.round(t / (major / 2))) < 0.001;
       html += isMajor
-        ? `<span class="tl-tick major" style="left:${x}px" data-t="${fmt.dur(t)}"></span>`
+        ? `<span class="tl-tick major" style="left:${x}px" data-t="${x + 64 <= W ? fmt.dur(t) : ''}"></span>`
         : `<span class="tl-tick ${isMid ? 'mid' : 'minor'}" style="left:${x}px"></span>`;
     }
     // 50 · markers de highlights AI sobre la regla
     tl.forEach((s, i) => {
-      if (s._mark) html += `<span class="tl-tick mark" style="left:${offset(i) * pps}px" data-tip="Highlight AI">${icon('marker')}</span>`;
+      if (s._mark) html += `<span class="tl-marker" style="left:${offset(i) * pps}px" title="Momento sugerido" aria-label="Momento sugerido"></span>`;
     });
     // I3 · pulso de la música sobre la regla (solo si el zoom lo hace legible)
     if (music?.beats?.length && pps >= 14) {
@@ -1661,10 +1662,10 @@ pollJobs(jobsEl, 2500, j => {
         ? `<button class="tl-junction${txSet ? ' set' : ''}" data-j="${i}" style="left:${offset(i) * pps}px"
              data-tip="${txSet ? esc((TX_LABELS[s.transition] || s.transition) + ' · ' + (s.transDur || 0.4) + 's — click para cambiar') : 'Corte seco — click para elegir transición'}" aria-label="Transición entre tomas">${txSet ? icon('layers') : icon('plus')}</button>` : '';
       const lb = esc(f?.label) || esc(`${fmtDayShort(f?.date)} ${f?.time || ''}`.trim());   // '24 jul 16:24' (sin año: es el dato que se trunca)
-      return `${trans}<div class="tl-clip${w < 100 ? ' compact' : ''}${i === sel ? ' sel' : ''}" data-i="${i}" data-cid="${s.clip_id}"
+      return `${trans}<div class="tl-clip${w < 100 ? ' compact' : ''}${i === sel ? ' sel' : ''}" data-i="${i}" data-cid="${s.clip_id}" title="${lb} · ${fmt.dur(segDur(s))}"
                 style="width:${w}px;left:${offset(i)*pps}px" draggable="false">
           <div class="tl-thumbs">${thumbs}</div>
-          <span class="tl-clip-lb">${lb} · ${(s.b - s.a).toFixed(1)}s</span>
+          <span class="tl-clip-lb">${esc(fmtDayShort(f?.date))}</span>
           <span class="tl-badges">${badges}</span>
           <button class="tl-x" data-x="${i}" data-tip="Quitar del montaje" aria-label="Quitar del montaje">${icon('close')}</button>
           <button class="tl-expand" data-expand="${i}" data-tip="Abrir en grande y elegir el tramo (doble click)" aria-label="Abrir en grande">${icon('fit')}</button>
@@ -2024,7 +2025,7 @@ pollJobs(jobsEl, 2500, j => {
     body.innerHTML = suggestions.length
       ? `<p><span class="ui-chip">Sugerido</span> ${suggestions.length} momentos de tus vuelos. Revisa las tomas antes de aceptar.</p>
         <video controls muted playsinline class="st-suggestion-video"></video>
-        <div class="st-suggestion-list">${suggestions.map((h,i) => `<button class="st-suggestion-row ui-button ui-button--quiet" data-moment="${i}"><img src="${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg" alt=""><span><b>${esc(h.label || h.cid)}</b><small>${fmt.dur(h.a)}–${fmt.dur(h.b)}${h.reason ? ' · ' + esc(h.reason) : ''}</small></span></button>`).join('')}</div>
+        <div class="st-suggestion-list">${suggestions.map((h,i) => `<div class="st-suggestion-item"><button class="st-suggestion-row ui-button ui-button--quiet" data-moment="${i}"><img src="${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg" alt=""><span><b>${esc(h.caption)}</b><small>${esc(h.label || h.cid)} · ${fmt.dur(h.a)}–${fmt.dur(h.b)}</small></span></button>${h.reason ? `<details class="st-analysis-detail"><summary>Ver análisis</summary><p>${esc(h.reason)}</p></details>` : ''}</div>`).join('')}</div>
         <p class="st-note">Aceptar reemplaza el montaje. Puedes deshacer el cambio.</p>
         <div class="st-sheet-actions"><button class="ui-button ui-button--quiet" data-dismiss>Descartar</button><button class="ui-button ui-button--primary" data-accept>Aceptar y editar</button></div>`
       : '<div class="ui-empty"><h3>Sin análisis aún</h3><p>Cuando tus videos tengan momentos destacados, podrás revisarlos aquí.</p><button class="ui-button ui-button--primary" data-manual>Elegir tomas</button><p>Por ejemplo, combina una toma abierta y un acercamiento.</p></div>';
@@ -2956,14 +2957,14 @@ pollJobs(jobsEl, 2500, j => {
             // OJO: la caja con proporción NO puede ser el <button> — Safari no aplica
             // aspect-ratio a los botones y las tarjetas colapsaban unas sobre otras.
             return `<div class="rm-clip${pick.has(f.clip_id) ? ' on' : ''}" data-pick="${esc(f.clip_id)}"
-                         role="button" tabindex="0" aria-pressed="${pick.has(f.clip_id)}">
+                         role="button" tabindex="0" title="${esc([f.label, fmt.date(f.date), f.time].filter(Boolean).join(' · '))}" aria-pressed="${pick.has(f.clip_id)}">
               <div class="rm-thumb" data-hover="${esc(f.clip_id)}">
                 <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="" width="320" height="180">
                 <span class="rm-check">${ord > 0 ? ord : ''}</span>
                 ${sc ? `<span class="rm-sc ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}">${icon('star')}${sc}</span>` : ''}
                 <button class="rm-eye" data-eye="${esc(f.clip_id)}" aria-label="Ver toma">${icon('play')}</button>
+                <span class="rm-duration" aria-label="Duración ${fmt.dur(f.duration_s)}">${fmt.dur(f.duration_s)}</span>
               </div>
-              <div class="rm-lb"><b>${esc((f.label || f.time || fmt.date(f.date)).slice(0, 24))}</b><em>${fmt.dur(f.duration_s)}</em></div>
             </div>`;
           }).join('')}</div>
           </div>`).join('') || '<p class="footer-note">Nada coincide con esos filtros.</p>'}` : `
@@ -3174,16 +3175,16 @@ pollJobs(jobsEl, 2500, j => {
 
   // ================= carrusel de clips fuente (24-27) =================
   const rail = document.getElementById('rail');
-  // etiqueta = hora primero + duración; la fecha se dice UNA vez por día (separador), no en cada tarjeta
+  // The badge shows duration. Capture time stays in the tooltip.
   let railDay = null;
   rail.innerHTML = editable.map(f => {
     const day = f.date !== railDay ? `<div class="cr-day" role="presentation"><b>${esc(fmtDayShort(f.date))}</b></div>` : '';
     railDay = f.date;
     return `${day}
-    <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(f.label || f.clip_id)}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
+    <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(f.label || f.clip_id)}" title="${esc([f.label, fmtDayShort(f.date), f.time].filter(Boolean).join(' · '))}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
       <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="" width="320" height="180">
       <span class="scrub-line"></span>
-      <span class="cr-lb"><b>${esc(f.label || f.time || fmtDayShort(f.date))}</b><em>${fmt.dur(f.duration_s)}</em></span>
+      <span class="cr-lb" aria-label="Duración ${fmt.dur(f.duration_s)}">${fmt.dur(f.duration_s)}</span>
       <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar aquí" aria-label="Insertar aquí">${icon('plus')}</button>
     </div>`;
   }).join('') || emptyState({ icon: 'film', title: 'Sin clips disponibles', help: 'Ningún clip tiene proxy todavía.' });
@@ -3755,11 +3756,11 @@ pollJobs(jobsEl, 2500, j => {
         ${A.travel_score ? `<span><i>${icon('film')}</i><b>${A.travel_score}/10</b><em>AI vision</em></span>` : ''}
         <span><i>${icon('layers')}</i><b>${SCALE_LB[shotScale(f)]}</b><em>tipo de plano</em></span>
       </div>
-      ${A.summary ? `<p class="ce-sum">${esc(A.summary)}</p>` : ''}
+      ${A.summary ? `<p class="ce-sum"><span class="ui-chip">Sugerido</span> ${esc(analysisCaption(A.summary))}</p><details class="st-analysis-detail"><summary>Ver análisis</summary><p>${esc(A.summary)}</p></details>` : ''}
       ${(A.highlights || []).length ? `<div class="ce-hl">
-        <span class="ce-hl-lb">Momentos que la AI marcó:</span>
+        <span class="ce-hl-lb">Momentos sugeridos:</span>
         ${(A.highlights || []).slice(0, 5).map(h =>
-          `<button class="chip" data-jump="${(+h.t || 0).toFixed(1)}" data-tip="${esc(h.reason || '')}">${fmt.dur(+h.t || 0)} · ${esc(h.type || 'momento')}</button>`).join('')}
+          `<button class="chip" data-jump="${(+h.t || 0).toFixed(1)}" data-tip="${esc(h.reason || '')}">${fmt.dur(+h.t || 0)} · ${esc(analysisCaption(h.reason || h.label))}</button>`).join('')}
       </div>` : ''}
       <div class="ce-f">
         <button class="btn" data-ce="prev" ${i === 0 ? 'disabled' : ''}>${icon('chevL')} Corte anterior</button>
