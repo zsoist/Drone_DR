@@ -613,8 +613,8 @@ class AuthSecurityTests(unittest.TestCase):
         semantic_source = server_source[
             server_source.index("def semantic_search"):server_source.index("def _deepseek")
         ]
-        self.assertIn("SUPABASE_DRONE_SECRET_KEY", semantic_source)
-        self.assertNotIn("SUPABASE_DRONE_PUBLISHABLE_KEY", semantic_source)
+        self.assertIn("insights.search(q, k, VAULT)", semantic_source)
+        self.assertNotIn("SUPABASE_", semantic_source)
 
         migrations = sorted((Path(server.__file__).parent.parent / "supabase" / "migrations").glob("*.sql"))
         migration = "\n".join(path.read_text().lower() for path in migrations)

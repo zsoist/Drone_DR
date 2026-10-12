@@ -55,6 +55,8 @@ from splat_presets import (normalize_splat_request, public_splat_profiles,
                            resolve_splat_spec)
 from pathlib import Path
 
+sys.path.insert(0, str(REPO))
+
 os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "/usr/bin:/bin")
 
 # binarios 3D grandes con URL estable: cachean con revalidación 304 (nunca stale, nunca re-bajar MBs)
@@ -411,6 +413,25 @@ def _run_process_clip(path: Path) -> str | None:
     return None
 
 
+def cache_ingested_summaries(cids):
+    """Cache suggestions after the index exists. AI failures do not fail media ingest."""
+    from ai import insights
+    if os.environ.get('AEROBRAIN_NO_REMOTE') == '1':
+        return
+    keys = keystore.load_keys()
+    if not keys.get('DEEPSEEK_API_KEY'):
+        return
+    ready = [cid for cid in cids if insights.get_insight(cid, VAULT)['status'] == 'ready']
+    targets = [('flight', cid) for cid in ready]
+    targets += [('trip', g['id']) for g in insights.trip_groups(insights.flights(VAULT))
+                if any(f['clip_id'] in ready for f in g['flights'])]
+    for kind, identity in targets:
+        try:
+            insights.cache_summary(kind, identity, keys, VAULT)
+        except Exception as exc:
+            print(f'AI summary pending: {type(exc).__name__}', flush=True)
+
+
 def process_upload(path: Path, j):
     try:
         err = _run_process_clip(path)
@@ -418,6 +439,7 @@ def process_upload(path: Path, j):
             job_end(j, "error", err)
             return
         rebuild_index()
+        cache_ingested_summaries([path.stem])
         job_end(j, "done", path.stem)
     except Exception as e:                       # noqa: BLE001 — el job nunca queda en 'running'
         job_end(j, "error", str(e)[-300:])
@@ -690,24 +712,9 @@ def _auth_event(event: str, client_ip: str, **detail):
 
 
 def semantic_search(q: str, k: int = 12) -> dict:
-    """Embeds la consulta (OpenAI, server-side) y pide a Supabase los vuelos más
-    parecidos vía el RPC match_flights. La OpenAI key NUNCA toca el frontend."""
-    keys = _sb_keys()
-    url = keys.get("SUPABASE_DRONE_URL", "").rstrip("/")
-    secret = (keys.get("SUPABASE_DRONE_SECRET_KEY", "")
-              or keys.get("SUPABASE_DRONE_SERVICE_KEY", ""))
-    oa = keys.get("OPENAI_API_KEY", "")
-    if not (url and secret and oa):
-        return {"error": "Supabase/OpenAI no configurados", "results": []}
-    er = urllib.request.Request("https://api.openai.com/v1/embeddings",
-        data=json.dumps({"model": "text-embedding-3-small", "input": q[:400]}).encode(),
-        headers={"Authorization": f"Bearer {oa}", "Content-Type": "application/json"})
-    vec = json.loads(urllib.request.urlopen(er, timeout=30).read())["data"][0]["embedding"]
-    rr = urllib.request.Request(f"{url}/rest/v1/rpc/match_flights",
-        data=json.dumps({"query": vec, "k": k}).encode(),
-        headers={"apikey": secret, "Authorization": f"Bearer {secret}",
-                 "Content-Type": "application/json"})
-    return {"results": json.loads(urllib.request.urlopen(rr, timeout=30).read())}
+    """Search local AI vectors with a lexical fallback; no external database."""
+    from ai import insights
+    return insights.search(q, k, VAULT)
 
 
 def _deepseek(prompt: str) -> str:
@@ -1054,6 +1061,7 @@ def run_sd_import(spec: dict, j):
                     src.unlink()
                     cleaned += 1
         rebuild_index()
+        cache_ingested_summaries([dest.stem for _, dest in vids_copied])
         jobstore.update(j["id"], progress=1.0)
         if failed:
             job_end(j, "error", (f"{len(failed)}/{len(vids_copied)} clips sin procesar (SD intacta): "
@@ -3525,6 +3533,31 @@ class H(BaseHTTPRequestHandler):
                 return None
         return f if f.is_file() else None
 
+    def _get_visual_ai(self, path):
+        from ai import insights
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        try:
+            if path == '/api/search':
+                return self.send_json(insights.search((query.get('q') or [''])[0],
+                    int((query.get('limit') or ['12'])[0]), VAULT))
+            if path == '/api/collections':
+                return self.send_json(insights.collections(VAULT))
+            _, _, kind, identity, action = path.split('/')
+            identity = urllib.parse.unquote(identity)
+            if (kind, action) not in {('clip', 'insight'), ('flight', 'summary'), ('trip', 'recap')}:
+                return self.send_json({'error': 'ruta no encontrada'}, 404)
+            if kind in ('clip', 'flight') and not insights.valid_id(identity):
+                raise ValueError('invalid id')
+            if kind == 'clip':
+                if identity not in {f['clip_id'] for f in insights.flights(VAULT)}:
+                    raise KeyError(identity)
+                return self.send_json(insights.get_insight(identity, VAULT))
+            return self.send_json(insights.get_summary(kind, identity, VAULT))
+        except ValueError:
+            return self.send_json({'error': 'parámetros inválidos'}, 400)
+        except KeyError:
+            return self.send_json({'error': 'no encontrado'}, 404)
+
     def do_GET(self):
         if self.enforce_external_host():
             return
@@ -3551,6 +3584,9 @@ class H(BaseHTTPRequestHandler):
             return
         if not self._require_read_access():
             return
+        if (path in ('/api/search', '/api/collections')
+                or re.fullmatch(r'/api/(clip|flight|trip)/[^/]+/(insight|summary|recap)', path)):
+            return self._get_visual_ai(path)
         if self.path.startswith("/api/viewer_ping"):
             mark_viewer_activity()
             return self.send_json({"ok": True})
@@ -4691,6 +4727,7 @@ class H(BaseHTTPRequestHandler):
                 if rc or not (VAULT / "ai" / f"{cid}.json").exists():
                     return job_end(j, "error", "análisis sin resultado")
                 rebuild_index()
+                cache_ingested_summaries([cid])
                 job_end(j, "done", cid)
             except Exception as e:   # CUALQUIER fallo — un raise no atrapado dejaba el job "running" fantasma
                 err = getattr(e, "stderr", "") or str(e)

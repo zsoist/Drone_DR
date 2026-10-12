@@ -21,41 +21,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from router import load_keys, gemini_vision, deepseek_text
+from router import load_keys, deepseek_text
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
 from paths import VAULT  # noqa: E402
-from fsutil import atomic_write_json, atomic_write_text  # noqa: E402
-
-# Daniel: este prompt es la personalidad del analista — edítalo a tu gusto.
-PROMPT = """Eres el analista de vuelos de un dron DJI (footage aéreo, Bogotá/viajes).
-Estas son {n} imágenes muestreadas cronológicamente del clip {cid}; hay un frame cada {step}s.
-Responde SOLO JSON válido (sin markdown) con este shape:
-{{
- "summary": "1-2 frases en español describiendo la escena y el movimiento del vuelo",
- "scene_type": "urbano|naturaleza|costa|montaña|atardecer|interior|mixto",
- "tags": ["5-10 tags en español: objetos, lugares, texturas visibles"],
- "highlights": [{{"t": <segundos aprox del mejor momento>, "reason": "por qué"}}],
- "travel_score": <0-10: qué tan memorable/compartible es este footage>
-}}"""
-
-DEEP_PROMPT = """Eres un director de fotografía y editor senior analizando footage de dron DJI.
-Estas son {n} imágenes muestreadas cronológicamente del clip {cid}; hay un frame cada {step}s.
-Analiza a fondo y responde SOLO JSON válido (sin markdown) con este shape exacto:
-{{
- "summary": "2-3 frases en español: escena, movimiento de cámara, narrativa del vuelo",
- "scene_type": "urbano|naturaleza|costa|montaña|atardecer|interior|mixto",
- "tags": ["10-15 tags en español: objetos, lugares, personas, texturas, colores"],
- "subjects": ["sujetos principales y qué hacen"],
- "camera_motion": "describe el movimiento: picado, órbita, dolly, revelación, seguimiento…",
- "quality": {{"exposure": "sub|ok|sobre", "stability": "estable|leve vibración|inestable",
-             "light": "dura|suave|dorada|nublada", "issues": ["problemas visibles o []"]}},
- "highlights": [{{"t": <seg>, "reason": "por qué es el mejor momento", "type": "revelación|acción|paisaje|detalle"}}],
- "edit_suggestions": ["3-4 sugerencias concretas de edición: qué cortar, dónde slow-mo, qué look"],
- "best_thumbnail_t": <segundo del frame más fotogénico>,
- "hashtags": ["5 hashtags para redes"],
- "travel_score": <0-10>
-}}"""
 
 
 def extract_frames_from_proxy(cid: str, fdir) -> list:
@@ -132,33 +101,16 @@ def validate_analysis(data: dict) -> dict:
 
 
 def analyze_clip(cid: str, keys: dict, deep: bool = False) -> dict | None:
-    fdir = VAULT / "frames" / cid
-    frames = sorted(fdir.glob("f_*.jpg"))
-    if not frames:
-        frames = extract_frames_from_proxy(cid, fdir)
-    if not frames:
-        print(f"— {cid}: sin frames ni proxy, skip")
-        return None
-    n_sample = 16 if deep else 8
-    sample, spacing_s = sample_frames(frames, n_sample)
-    # frames are 1-every-2s → frame index i ≈ second i*2 in the video
-    tpl = DEEP_PROMPT if deep else PROMPT
-    prompt = tpl.format(n=len(sample), cid=cid, step=spacing_s)
-    raw = gemini_vision(prompt, sample, keys)
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
-    data = validate_analysis(json.loads(m.group()) if m else {"summary": raw, "tags": []})
-    data["clip_id"] = cid
-    data["frames_analyzed"] = len(sample)
-    data["deep"] = deep
+    import insights
+    data = insights.build_record(cid, keys, VAULT)
+    data['deep'] = deep
     if deep:
         report = validate_analysis(director_report(cid, data, keys))
-        if not report.get("director_notes"):
-            raise ValueError("informe del director incompleto")
-        data.update({key: report[key] for key in ("director_notes", "story_arc", "uses") if key in report})
-    out = VAULT / "ai" / f"{cid}.json"
-    out.parent.mkdir(exist_ok=True)
-    atomic_write_json(out, data, indent=1)
-    print(f"🧠 {cid}: {data.get('scene_type', '?')} · score {data.get('travel_score', '?')}/10 · {len(data.get('tags', []))} tags")
+        if not report.get('director_notes'):
+            raise ValueError('informe del director incompleto')
+        data.update({key: report[key] for key in ('director_notes', 'story_arc', 'uses') if key in report})
+    insights.save_record(data, VAULT)
+    print(f"AI {cid}: {data['scene_type']} · score {data['travel_score']}/10")
     return data
 
 

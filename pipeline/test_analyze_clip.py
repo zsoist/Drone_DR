@@ -14,19 +14,26 @@ sys.path.insert(0, str(HERE.parent / "ai"))
 class AnalyzeClipEndToEndTests(unittest.TestCase):
     def _run(self, deep, n_frames):
         import analyze
+        import insights
+        from test_visual_ai import fixture_insight
         with tempfile.TemporaryDirectory() as td:
             v = Path(td)
             fdir = v / "frames" / "DJI_X"
             fdir.mkdir(parents=True)
             for i in range(n_frames):
-                (fdir / f"f_{i:04d}.jpg").write_bytes(b"\xff")
+                (fdir / f"f_{i+1:04d}.jpg").write_bytes(b"\xff")
+            (v / "manifest").mkdir()
+            (v / "manifest/DJI_X.json").write_text(json.dumps({"duration_s": n_frames * 2}))
             seen = {}
 
-            def vision(prompt, sample, keys):
+            def vision(prompt, sample, keys, schema):
                 seen["prompt"], seen["n"] = prompt, len(sample)
-                return 'ok {"summary": "s", "scene_type": "urbano", "tags": ["a"], "travel_score": 7}'
+                value = fixture_insight()
+                value["best_frame_times"] = [0]
+                return json.dumps(value), {"input_tokens": 1, "output_tokens": 1}
             with mock.patch.object(analyze, "VAULT", v), \
-                    mock.patch.object(analyze, "gemini_vision", side_effect=vision), \
+                    mock.patch.object(insights.router, "gemini_insight", side_effect=vision), \
+                    mock.patch.object(insights.router, "embed_text", return_value=[1] + [0] * 767), \
                     mock.patch.object(analyze, "deepseek_text",
                                       return_value='{"director_notes": ["n"], "story_arc": "a", "uses": []}'):
                 data = analyze.analyze_clip("DJI_X", {}, deep=deep)
@@ -35,14 +42,14 @@ class AnalyzeClipEndToEndTests(unittest.TestCase):
 
     def test_analyze_clip_runs_and_reports_real_spacing(self):
         data, seen = self._run(False, 100)
-        self.assertEqual("urbano", data["scene_type"])
+        self.assertEqual("naturaleza", data["scene_type"])
         self.assertEqual(8, seen["n"])
-        self.assertIn("un frame cada 28s", seen["prompt"])
+        self.assertEqual([0, 28, 56, 84, 114, 142, 170, 198], data["sampled_frame_times"])
 
     def test_analyze_clip_short_clip_and_deep(self):
         data, seen = self._run(True, 5)
         self.assertEqual(5, data["frames_analyzed"])
-        self.assertIn("un frame cada 2s", seen["prompt"])
+        self.assertEqual([0, 2, 4, 6, 8], data["sampled_frame_times"])
         self.assertEqual("a", data["story_arc"])
 
 

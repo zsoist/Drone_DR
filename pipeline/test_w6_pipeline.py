@@ -69,8 +69,10 @@ class PipelineRegressions(unittest.TestCase):
         target = self.root / 'ai' / 'clip.json'
         target.parent.mkdir()
         target.write_text('{"summary": "previous"}')
+        (self.root / 'manifest').mkdir()
+        (self.root / 'manifest/clip.json').write_text('{"duration_s": 2}')
         invalid = {'summary': 'new', 'tags': 'paisaje', 'travel_score': 99}
-        with mock.patch.object(analyze, 'gemini_vision', return_value=json.dumps(invalid)):
+        with mock.patch('insights.router.gemini_insight', return_value=(json.dumps(invalid), {})):
             with self.assertRaises(ValueError):
                 analyze.analyze_clip('clip', {})
         self.assertEqual({'summary': 'previous'}, json.loads(target.read_text()))
@@ -97,7 +99,7 @@ class PipelineRegressions(unittest.TestCase):
         target.parent.mkdir()
         old = {'summary': 'old', 'deep': True, 'director_notes': ['complete']}
         target.write_text(json.dumps(old))
-        with mock.patch.object(analyze, 'gemini_vision', return_value='{"summary":"new","tags":[]}'), \
+        with mock.patch("insights.build_record", return_value={"summary": "new", "tags": []}), \
                 mock.patch.object(analyze, 'director_report', side_effect=TimeoutError('director')):
             with self.assertRaises(TimeoutError):
                 analyze.analyze_clip('clip', {}, deep=True)

@@ -22,7 +22,7 @@ from fsutil import atomic_write_json
 from srt_parser import parse_srt
 from policy import processing_tier
 
-VAULT = Path("/Volumes/SSD/drone-vault")
+from paths import VAULT
 
 
 # Medios no confiables (subidas): solo file/pipe, y el demuxer real debe estar en la lista cerrada
@@ -139,7 +139,26 @@ def process_clip(mp4: Path) -> dict:
     print(f"✅ {cid} [{tier}] {meta['duration_s']}s "
           f"proxy={'%.0fMB' % (meta.get('proxy_bytes', 0) / 1e6) if 'proxy_bytes' in meta else '—'} "
           f"frames={meta.get('frame_count', '—')}")
+    # Optional AI must never turn a successful media ingest into a failed import.
+    analyze_ingested_clip(cid)
     return meta
+
+
+def analyze_ingested_clip(cid):
+    import os
+    if os.environ.get('AEROBRAIN_NO_REMOTE') == '1':
+        return
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from ai import insights
+    keys = insights.load_keys()
+    if not keys.get('GEMINI_API_KEY') or not list((VAULT / 'frames' / cid).glob('f_*.jpg')):
+        return
+    if insights.get_insight(cid, VAULT)['status'] == 'ready':
+        return
+    try:
+        insights.save_record(insights.build_record(cid, keys, VAULT), VAULT)
+    except Exception as exc:
+        print(f'AI pending for {cid}: {type(exc).__name__}')
 
 
 def main():
