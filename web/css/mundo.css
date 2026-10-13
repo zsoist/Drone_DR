@@ -138,8 +138,7 @@
 .wi { cursor:pointer; }
 .wi-heading { align-items:flex-start; }
 .wi-heading .wi-name { padding-top:var(--sp-2); }
-.wi-description { display:flex; flex-direction:column; gap:var(--sp-1); }
-.wi-moment { color:var(--text-2); font-size:var(--fs-sm); display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.wi-description { display:block; }
 .wp-go .scene-actions { gap:var(--sp-3); }
 .wp-go .scene-actions button { flex:1; }
 .wp-description .scene-suggestion summary { min-height:44px; font-size:var(--fs-sm); }

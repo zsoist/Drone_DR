@@ -1,7 +1,7 @@
 import { fmt } from './ui/format.js?v=423';
 import { term } from './ui/terms.js?v=423';
-import { originalInputs } from './scene-improve-state.js?v=423';
-import { sceneTitle, areaNav } from './scene-improve-ui.js?v=423';
+import { originalInputs } from './scene-improve-state.js?v=427';
+import { sceneTitle, areaNav, hydrateSceneCovers } from './scene-improve-ui.js?v=427';
 /* global renderShell, pageHead, getFlights, authFetch, api, fmt, icon, haversine, SceneImprovePolicy */
 
 const root = document.getElementById('scene-improve-root');
@@ -37,8 +37,6 @@ const finite = value => Number.isFinite(Number(value)) ? Number(value) : null;
 const durationFor = flight => finite(flight?.duration_s) || finite(flight?.stats?.duration_s) || 0;
 const dateLabel = flight => [flight?.date ? fmt.date(flight.date) : '', flight?.time || '']
   .filter(Boolean).join(' · ') || 'Fecha no registrada';
-const thumbFor = id => `data/thumbs/${encodeURIComponent(id)}.jpg`;
-const modelThumb = model => `data/models/${encodeURIComponent(model.clip_id)}/${encodeURIComponent(model.ortho_asset || 'ortho.jpg')}`;
 
 function bboxCenter(value) {
   if (!Array.isArray(value) || value.length !== 4 || !value.every(item => Number.isFinite(Number(item)))) return null;
@@ -73,7 +71,7 @@ function photoSetRow(source, { selected = false, locked = false } = {}) {
   const cov = Number.isFinite(Number(source.gpsCoverage)) ? `${Math.round(Number(source.gpsCoverage) * 100)}% GPS` : null;
   const evidence = [count ? `${count} fotos` : 'fotos', cov, source.status ? `estado: ${source.status}` : null]
     .filter(Boolean).join(' · ');
-  const thumb = source.thumbRel
+  const thumb = source.quality?.eligible === true && source.thumbRel
     ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(source.thumbRel).replace(/%2F/g, '/')}&w=160" alt="Vista previa de ${esc(sourceLabel(source.id))}" loading="lazy" >`
     : '<span class="si-thumb-empty" aria-hidden="true"></span>';
   return `<label class="si-capture si-photo-set${selected ? ' is-selected' : ''}${locked ? ' is-locked' : ''}">
@@ -101,7 +99,7 @@ function captureRow(candidate, { selected = false, locked = false } = {}) {
   ].filter(Boolean).join(' · ');
   return `<label class="si-capture${selected ? ' is-selected' : ''}${classification.weak ? ' is-weak' : ''}${locked ? ' is-locked' : ''}">
     <input type="checkbox" data-source-id="${esc(candidate.id)}" ${selected ? 'checked' : ''} ${locked ? 'disabled' : ''}>
-    <img src="${thumbFor(candidate.id)}" alt="Vista previa del vuelo ${esc(dateLabel(flight))}" loading="lazy">
+    <img hidden data-scene-cover="${esc(candidate.id)}" alt="Vista previa del vuelo ${esc(dateLabel(flight))}" loading="lazy">
     <span class="si-capture-copy">
       <span class="si-capture-title"><b>${esc(dateLabel(flight))}</b>
         <span class="si-role">${esc(classification.role)}</span></span>
@@ -185,7 +183,7 @@ function renderWorkspace() {
         <section class="panel si-section" aria-labelledby="si-base-title">
           <div class="si-step"><span>01</span><div><h2 id="si-base-title">Base de la mejora</h2><p>Conserva estas capturas y añade nuevos ángulos.</p></div></div>
           <div class="si-base-card">
-            <img src="${modelThumb(model)}" alt="Ortofoto actual de ${esc(sceneTitle(model.title || 'la escena'))}">
+            <img hidden data-scene-cover="${esc(model.clip_id)}" alt="Captura de ${esc(sceneTitle(model.title || 'la escena'))}">
             <div><h3>${esc(sceneTitle(model.title || model.clip_id))}</h3>
               <p>${q.cameras_reconstructed ?? '—'} cámaras · ${fmt.number(q.gsd_cm_px,1)} cm/px · ${q.area_m2 ? fmt.area(q.area_m2 / 10000) : 'área no medida'}</p>
               <p>Podrás comparar ambas versiones antes de elegir.</p></div>
@@ -244,6 +242,7 @@ function renderWorkspace() {
         <a href="tresd.html?project=${encodeURIComponent(modelId)}" class="btn ghost si-cancel">Cancelar y volver</a>
       </aside>
     </div>`;
+  hydrateSceneCovers(root, [model]);
   wireSelection();
   document.getElementById('si-submit')?.addEventListener('click', submitImprovement);
   updateReview();
@@ -349,7 +348,7 @@ async function load() {
           .find(row => row && row.clip_id === id) || {};
         return { id, kind: 'photo_set', durationS: 0, sameSite: true, distanceM: 0,
           photoCount: ev.photo_count ?? ev.submitted, gpsCoverage: ev.gps_coverage,
-          thumbRel: ev.thumb_rel, status: ev.status,
+          thumbRel: ev.thumb_rel, quality: ev.quality, status: ev.status,
           classification: { role: 'Fotos', weak: false, reasons: [] } };
       }
       const flight = flights.find(item => item.clip_id === id) || {};

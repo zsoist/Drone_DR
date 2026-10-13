@@ -73,6 +73,33 @@ export function sceneSources(model) {
     .filter(id=>/^[A-Za-z0-9_-]{1,120}$/.test(id || ''));
 }
 const insightRequests=new Map();
+const coverRequests=new Map();
+// Only backend-approved frames from integrated sources can become automatic covers.
+export async function sceneCover(model) {
+  for (const clipId of sceneSources(model)) {
+    if (!coverRequests.has(clipId)) {
+      const request=readSceneData(`/api/flight/${encodeURIComponent(clipId)}/summary`)
+        .then(async response => {
+          if (!response.ok) throw Error('Cover unavailable');
+          const {cover}=await response.json();
+          return cover?.quality?.eligible === true && cover.clip_id === clipId
+            && cover.frame_url?.startsWith(`/data/frames/${clipId}/`)
+            && /^\/data\/frames\/[\w-]+\/f_\d+\.jpg$/.test(cover.frame_url || '') ? cover : null;
+        }).catch(() => { coverRequests.delete(clipId); return null; });
+      coverRequests.set(clipId,request);
+    }
+    const cover=await coverRequests.get(clipId);
+    if (cover) return cover;
+  }
+  return null;
+}
+export function hydrateSceneCovers(root, models = []) {
+  root.querySelectorAll('[data-scene-cover]').forEach(async image => {
+    const id = image.dataset.sceneCover;
+    const cover = await sceneCover(models.find(model => model.clip_id === id) || {clip_id:id});
+    if (cover && image.isConnected) { image.src = cover.frame_url; image.hidden = false; }
+  });
+}
 export async function sceneInsight(model) {
   const results=await Promise.allSettled(sceneSources(model).map(clipId=>{
     if(!insightRequests.has(clipId)){

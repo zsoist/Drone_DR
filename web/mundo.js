@@ -2,19 +2,17 @@ import { fmt } from './ui/format.js?v=423';
 import { term } from './ui/terms.js?v=423';
 import { Suggested } from './ui/suggested.js?v=423';
 import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=423';
-import { sceneTitle, sceneSources, sceneInsight, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=423';
-import { coverageRows } from './scene-improve-state.js?v=423';
+import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=427';
+import { coverageRows } from './scene-improve-state.js?v=427';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,
 // transición de carga de consola. 60fps: solo transform/opacity.
 const fechaDe = cid => { const m = /(\d{4})(\d{2})(\d{2})/.exec(cid||''); return m ? fmt.date(`${m[1]}-${m[2]}-${m[3]}`) : ''; };
 const dur = fmt.duration;
-const sceneMoment = insight => [...(insight?.highlight_segments || [])].sort((a,b) => b.score-a.score)[0];
 const cardDescription = insight => {
   if (!insight?.caption_short) return insight?.error ? 'Descripción no disponible.' : '';
-  const moment = sceneMoment(insight);
-  return `<span>${esc(insight.caption_short)}</span>${moment?.reason ? `<span class="wi-moment">${esc(moment.reason)}</span>` : ''}`;
+  return esc(insight.caption_short);
 };
 // Keep measured ranges together in saved scene names.
 const nbh = t => String(t).replace(/(\d)-(?=\d)/g, '$1\u2011');
@@ -121,7 +119,7 @@ function isla(sc, i) {
   return `
   <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms"
 >
-    <a class="wi-open" href="share.html?m=${encodeURIComponent(sc.clip_id)}" aria-label="Explorar ${esc(sceneTitle(sc.displayName || sc.name))}"><div class="wi-poster" data-ini="${esc(([...String(sc.name||'').trim()][0]||'·').toUpperCase())}" data-preview="${esc(sc.assets?.poster||'')}" data-transition-key="world-${esc(sc.clip_id)}"></div></a>
+    <a class="wi-open" href="share.html?m=${encodeURIComponent(sc.clip_id)}" aria-label="Explorar ${esc(sceneTitle(sc.displayName || sc.name))}"><div class="wi-poster" data-ini="${esc(([...String(sc.name||'').trim()][0]||'·').toUpperCase())}" data-preview="${esc(sc.cover?.frame_url||'')}" data-transition-key="world-${esc(sc.clip_id)}"></div></a>
 
 
 
@@ -183,7 +181,7 @@ function pick(i) {
         <button class="ui-button ui-button--primary wp-fly" data-go="${goUrl}">${I.plane} Empezar vuelo</button>
       </div>
       <div class="wp-go"><a class="ui-button ui-button--primary" href="share.html?m=${encodeURIComponent(sel.clip_id)}">Explorar escena</a>
-        <div class="scene-actions"><button class="ui-button ui-button--quiet" data-world-info>Detalles</button><button class="ui-button ui-button--quiet" data-world-settings>${I.plane} Volar</button></div>
+        <div class="scene-actions"><button class="ui-button ui-button--secondary" data-world-info>Detalles</button><button class="ui-button ui-button--secondary" data-world-settings>${I.plane} Volar</button></div>
       </div>
     </div>` : `<div class="wp-in"><div class="wp-name">${nbh(esc(sceneTitle(sel.displayName || sel.name)))}</div>
       <a class="btn" href="tresd.html">Procesar en Estudio 3D</a></div>`;
@@ -238,11 +236,6 @@ async function boot() {
     </div>
     <div class="fv-mapwrap" id="fv-mapwrap" hidden>
       <div class="fv-mapbar">
-        <div class="ui-segmented" id="fv-layers" role="group" aria-label="Capa base">
-          <button class="on" data-ly="sat" aria-pressed="true">Satélite</button>
-          <button data-ly="dark" aria-pressed="false">Oscuro</button>
-          <button data-ly="plano" aria-pressed="false">Plano</button>
-        </div>
         <span class="spacer"></span>
         <button class="btn sm" id="fv-rutas" aria-pressed="false">Rutas reales</button>
         <button class="btn sm" id="fv-fit">Encuadrar todo</button>
@@ -285,17 +278,26 @@ async function boot() {
     }
     const model = (sys.models || []).find(m => m.clip_id === man.clip_id);
     man.reconstruction = model?.reconstruction; man.ai = model?.ai;
+    man.name = target.site?.title || model?.title || man.name;
     return man;
   }).filter(Boolean);
   scenes.sort((a,b) => ((b.capabilities?.terrain|0)-(a.capabilities?.terrain|0))
     || ((b.capabilities?.splat|0)-(a.capabilities?.splat|0))
     || String(b.clip_id).localeCompare(String(a.clip_id)));
 
+  await Promise.all(scenes.map(async sc => { sc.cover = await sceneCover(sc); }));
   const titleCounts = new Map();
-  scenes.forEach(sc => { const title=sceneTitle(sc.displayName || sc.name); titleCounts.set(title,(titleCounts.get(title)||0)+1); });
+  scenes.forEach(sc => { const title=sceneTitle(sc.name).replace(/(Bogotá) · Bogotá$/i, '$1'); titleCounts.set(title,(titleCounts.get(title)||0)+1); });
   scenes.forEach(sc => {
-    const title=sceneTitle(sc.displayName || sc.name);
+    const title=sceneTitle(sc.name).replace(/(Bogotá) · Bogotá$/i, '$1');
     sc.displayName = titleCounts.get(title)>1 ? `${title} · ${fechaDe(sceneSources(sc)[0]) || 'Captura '+(scenes.indexOf(sc)+1)}` : title;
+  });
+  const usedTitles = new Set();
+  scenes.forEach(sc => {
+    const title = sc.displayName;
+    let n = 2;
+    while (usedTitles.has(sc.displayName)) sc.displayName = `${title} · ${n++}`;
+    usedTitles.add(sc.displayName);
   });
   registerScenes(scenes, 'Mundo');
   const nFly = scenes.filter(s=>s.capabilities?.terrain).length;
@@ -315,7 +317,7 @@ async function boot() {
   }
   const gallerySuggestion = Suggested({content:document.querySelector('.w-railwrap')});
   gallerySuggestion.classList.add('world-descriptions');
-  gallerySuggestion.querySelector('.ui-suggested-label').prepend('Descripciones y momentos · ');
+  gallerySuggestion.querySelector('.ui-suggested-label').prepend('Descripciones · ');
   document.querySelector('.w-bar').after(gallerySuggestion);
   let previewObserver = null;
   const observePreviews = () => {
@@ -418,7 +420,7 @@ async function boot() {
       return;
     }
     const b = e.target.closest('[data-go]'); if (!b) return;
-    launch(b.dataset.go, sel?.assets?.poster || '');
+    launch(b.dataset.go, sel?.cover?.frame_url || '');
   });
   // ── MAPA v2: capas, huellas de cobertura, rutas reales, popup de misión ──
   let map = null, rutasOn = false, routeRequest = 0;
@@ -426,8 +428,6 @@ async function boot() {
     layers:[{ id:'b', type:'raster', source:'b' }] });
   const LAYERS = {
     sat: RASTER('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', '© Esri'),
-    dark: RASTER('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png', '© CARTO © OpenStreetMap'),
-    plano: RASTER('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', '© CARTO © OpenStreetMap'),
   };
   let mapBounds = null;
   const MLAT = 111320;
@@ -466,18 +466,18 @@ async function boot() {
     if (!map.getSource('rt')) {
       map.addSource('rt', { type:'geojson', data:{ type:'FeatureCollection', features: feats } });
       map.addLayer({ id:'rt-line', type:'line', source:'rt',
-        paint:{ 'line-color':'#52C79A', 'line-width':2.2, 'line-opacity':0.85 } });
+        paint:{ 'line-color':'#45A0E6', 'line-width':2.2, 'line-opacity':0.85 } });
     }
   }
   const missionPopup = sc => {
     const rec = best(sc.clip_id), st = sc.stats || {};
       return `<div class="fv-pop">
-      <div class="fv-pop-poster" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></div>
+      <div class="fv-pop-poster" style="background-image:${esc(bgLayers(sc.cover?.frame_url||'', "'"))}"></div>
       <b>${esc(sceneTitle(sc.displayName || sc.name))}</b>
       ${descriptions.get(sc.clip_id)?.caption_short ? suggestionBlock({title:'',text:descriptions.get(sc.clip_id).caption_short,fullText:descriptions.get(sc.clip_id).caption}).outerHTML : ''}
       <span>${st.gsd_cm_px ? fmt.number(st.gsd_cm_px,1) + ' cm/px · ' : ''}${st.track_duration_s ? dur(st.track_duration_s) + ' vuelo real' : ''}${rec != null ? ' · récord ' + fmt.number(rec,1) + 's' : ''}</span>
-      <div class="fv-pop-btns"><a href="share.html?m=${encodeURIComponent(sc.clip_id)}">Explorar escena</a>
-        ${sc.capabilities?.terrain ? `<button class="ui-button ui-button--quiet" data-map-fly="${scenes.indexOf(sc)}">Volar</button>` : ''}</div>
+      <div class="fv-pop-btns"><a class="ui-button ui-button--primary" href="share.html?m=${encodeURIComponent(sc.clip_id)}">Explorar escena</a>
+        ${sc.capabilities?.terrain ? `<button class="ui-button ui-button--secondary" data-map-fly="${scenes.indexOf(sc)}">Volar</button>` : ''}</div>
     </div>`;
   };
   async function showMap() {
@@ -503,17 +503,11 @@ async function boot() {
         .setHTML(missionPopup(sc));
       const dot = document.createElement('div');
       dot.className = 'fv-pin2' + (sc.capabilities?.splat ? ' splat' : '');
-      dot.innerHTML = `<span class="fv-pin-img" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></span><span class="fv-pin-lb">${esc(sceneTitle(sc.displayName || sc.name).split(' · ')[0])}</span>`;
+      dot.innerHTML = `<span class="fv-pin-img" style="background-image:${esc(bgLayers(sc.cover?.frame_url||'', "'"))}"></span><span class="fv-pin-lb">${esc(sceneTitle(sc.displayName || sc.name).split(' · ')[0])}</span>`;
       new maplibregl.Marker({ element: dot }).setLngLat(c).setPopup(pop).addTo(map);
       dot.addEventListener('click', () => map.flyTo({ center: c, zoom: 15.5, duration: reducedMotion() ? 0 : 340 }));
     }
     if (!mapBounds.isEmpty()) map.fitBounds(mapBounds, { padding: 70, maxZoom: 14 });
-    document.getElementById('fv-layers').addEventListener('click', e => {
-      const b = e.target.closest('[data-ly]'); if (!b) return;
-      document.querySelectorAll('#fv-layers button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); });
-      map.setStyle(LAYERS[b.dataset.ly]);
-      map.once('styledata', () => setTimeout(addOverlays, 80));
-    });
     document.getElementById('fv-rutas').addEventListener('click', e => {
       rutasOn = !rutasOn;
       routeRequest++;

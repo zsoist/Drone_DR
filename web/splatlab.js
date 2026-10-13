@@ -1,6 +1,6 @@
 import { fmt } from './ui/format.js?v=423';
 import { term } from './ui/terms.js?v=423';
-import { sceneTitle, areaNav, createSheet, confirmSheet, showToast, skeletonCards, registerScenes } from './scene-improve-ui.js?v=423';
+import { sceneTitle, sceneCover, areaNav, createSheet, confirmSheet, showToast, skeletonCards, registerScenes } from './scene-improve-ui.js?v=427';
 // Splat Lab — SuperSplat (MIT, self-hosted en /supersplat/) integrado al shell.
 // Flujo completo: elegir splat → editar (floaters/crop/transform) → File > Export
 // → SUBIR AQUÍ MISMO (drag&drop o botón) → se publica versionado (history/) y el
@@ -190,10 +190,10 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
     const s = splats[cur];
     if (!s) { actions.innerHTML = ''; return; }
     actions.innerHTML = `
-      <a class="btn ghost" href="${splatUrl(s)}" download title="Descarga el .splat actual tal cual está publicado" aria-label="Descargar escena actual">${icon('dl')} Descargar</a>
-      <button class="btn ghost" id="lab-upload" title="Sube un splat editado (.ply/.splat/.ksplat) — la versión anterior se archiva en history/" aria-label="Subir escena editada">${icon('save')} Subir editado</button>
-      <a class="btn ghost" href="share.html?m=${encodeURIComponent(s.clip_id)}" target="_blank" rel="noopener" title="Abre el visor privado de este modelo" aria-label="Abrir visor privado">${icon('ext')} Abrir visor</a>
-      <a class="btn ghost" href="tresd.html?project=${encodeURIComponent(s.clip_id)}" title="Abre el proyecto en el tab 3D (mapa, malla, nube)" aria-label="Ver en el tab 3D">${icon('cube')} Ver en 3D</a>`;
+      <a class="ui-button ui-button--secondary" href="${splatUrl(s)}" download title="Descarga el .splat actual tal cual está publicado" aria-label="Descargar escena actual">${icon('dl')} Descargar</a>
+      <button class="ui-button ui-button--secondary" id="lab-upload" title="Sube un splat editado (.ply/.splat/.ksplat) — la versión anterior se archiva en history/" aria-label="Subir escena editada">${icon('save')} Subir editado</button>
+      <a class="ui-button ui-button--secondary" href="share.html?m=${encodeURIComponent(s.clip_id)}" target="_blank" rel="noopener" title="Abre el visor privado de este modelo" aria-label="Abrir visor privado">${icon('ext')} Abrir visor</a>
+      <a class="ui-button ui-button--secondary" href="tresd.html?project=${encodeURIComponent(s.clip_id)}" title="Abre el proyecto en el tab 3D (mapa, malla, nube)" aria-label="Ver en el tab 3D">${icon('cube')} Ver en 3D</a>`;
     document.getElementById('lab-upload').addEventListener('click', () => fileIn.click());
     renderClean();
     renderLazy();
@@ -305,7 +305,10 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
   const renderLazy = () => {
     const s = splats[cur];
     const model = sys.models?.find(model => model.clip_id === s?.clip_id);
-    lazyBox.style.backgroundImage = model ? `linear-gradient(rgba(0,0,0,.7),rgba(0,0,0,.7)), url("data/models/${encodeURIComponent(model.clip_id)}/${encodeURIComponent(model.ortho_asset || 'ortho.jpg')}")` : '';
+    lazyBox.style.backgroundImage = '';
+    if (model) sceneCover(model).then(cover => {
+      if (cover && splats[cur] === s) lazyBox.style.backgroundImage = `linear-gradient(rgba(0,0,0,.7),rgba(0,0,0,.7)), url("${cover.frame_url}")`;
+    });
     lazyBox.innerHTML = `
       ${icon('cube')}
       <b>Abre tu escena para editar</b>
@@ -415,7 +418,7 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
       st.textContent = `body:not(.ab-mobile) #view-cube-container { transform: scale(.72); transform-origin: top right; }
         body:not(.ab-mobile) #right-toolbar { top: max(50%, 300px) !important; }`;
       doc.head.appendChild(st);
-      const foundation=document.createElement('link');foundation.rel='stylesheet';foundation.href='/scene-improve-editor.css?v=423';doc.head.appendChild(foundation);
+      const foundation=document.createElement('link');foundation.rel='stylesheet';foundation.href='/scene-improve-editor.css?v=427';doc.head.appendChild(foundation);
       doc.documentElement.dataset.theme=document.documentElement.dataset.theme || 'dark';
       doc.addEventListener('keydown', e => { if(e.key==='Escape' && drop.classList.contains('lab-fullscreen')) { setFull(false); document.getElementById('lab-full').focus(); } });
       doc.querySelectorAll('#menu-arrow, #menu-collapse').forEach(button => {
