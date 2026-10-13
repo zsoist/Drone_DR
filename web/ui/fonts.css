@@ -1,0 +1,4 @@
+@font-face { font-family: 'AeroBrain Sans'; src: url('../vendor/fonts/mona-sans-latin.woff2') format('woff2'); font-weight: 200 900; font-stretch: 75% 125%; font-display: swap; }
+@font-face { font-family: 'JetBrains Mono'; src: url('../vendor/fonts/jetbrains-mono-latin.woff2') format('woff2'); font-weight: 100 800; font-display: swap; }
+:root { --font: 'AeroBrain Sans', system-ui, sans-serif; }
+html, body { font-family: 'AeroBrain Sans', system-ui, sans-serif; }

@@ -1,5 +1,5 @@
-import { readAI, loadInsights, clipChips, captionView } from './home.ai.js?v=400';
-import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor } from './home-shared.js?v=400';
+import { readAI, loadInsights, clipChips, captionView } from './home.ai.js?v=402';
+import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor } from './home-shared.js?v=402';
 const main = renderShell('trips.html');
 main.classList.add('tr-page', 'ab-page');
 const CITIES = [

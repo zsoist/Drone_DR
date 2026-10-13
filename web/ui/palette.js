@@ -5,7 +5,8 @@
  * Optional thumbnail and suggested fields add media and one group disclosure.
  * mountPalette(items) -> {open(opener?), close(), destroy()}. One palette per shell.
  */
-import { createSheet } from './sheet.js?v=400';
+import './format.js?v=402';
+import { createSheet } from './sheet.js?v=402';
 // Pages can retain older version queries during a scoped asset bump.
 // Share registrations across module URLs so their sources still reach the shell.
 const registryKey = Symbol.for('aerobrain.palette.sources');
@@ -43,7 +44,7 @@ const groupNames = ['Acciones', 'Secciones', 'Viajes', 'Clips', 'Mundos'];
 const groupOf = item => groupNames.includes(item.group) ? item.group : typeof item.action === 'function' ? 'Acciones' : 'Secciones';
 const groupIcons = { Acciones: 'bolt', Secciones: 'grid', Viajes: 'route', Clips: 'film', Mundos: 'globe' };
 function destination(href) {
-  try { const url = new URL(href, location.href); return url.origin === location.origin && /^https?:$/.test(url.protocol) ? url : null; }
+  try { const url = new URL(href, globalThis.document?.baseURI || location.href); return url.origin === location.origin && /^https?:$/.test(url.protocol) ? url : null; }
   catch { return null; }
 }
 export function readRecents() {
@@ -89,8 +90,12 @@ export function mountPalette(items = []) {
   const loading = document.createElement('div'); loading.className = 'ui-palette-loading'; loading.hidden = true;
   loading.setAttribute('aria-hidden', 'true');
   loading.innerHTML = '<div class="ui-palette-thumb ui-skeleton"></div><div class="ui-palette-copy"><div class="ui-skeleton ui-skeleton--text"></div><div class="ui-skeleton ui-skeleton--text"></div></div>';
-  content.append(field, status, loading, list);
+  const footer = document.createElement('footer'); footer.className = 'ui-palette-footer';
+  footer.innerHTML = '<span><kbd>↑↓</kbd> Elegir</span><span><kbd>↵</kbd> Abrir</span><span><kbd>Esc</kbd> Cerrar</span>';
+  content.append(field, status, loading, list, footer);
   const sheet = createSheet({ title: 'Buscar', content, size: 'full', className: 'ui-palette', onClose: () => controller?.abort() });
+  const dismiss = sheet.element.querySelector('.ui-sheet-header button');
+  dismiss.innerHTML = '<span class="ui-palette-close-text">Cerrar</span><kbd class="ui-palette-close-key">Esc</kbd>';
   let selected = 0, matches = [], controller, revision = 0;
   const current = items.find(item => item.href && destination(item.href)?.href === location.href);
   if (current) rememberVisit(current);
@@ -127,7 +132,10 @@ export function mountPalette(items = []) {
         && (!matchedIds.has(item.id) || item.queryMatch) && !seen.has(item.id) && seen.add(item.id))
         .map(item => ({ item, score: query && item.queryMatch ? 50 : fuzzyScore(query, `${item.label} ${item.keywords || ''}`) }))
         .filter(r => Number.isFinite(r.score)).sort((a, b) => a.score - b.score).slice(0, 40).map(r => r.item);
-      const recent = query.trim() ? [] : readRecents();
+      const recent = query.trim() ? [] : readRecents().filter(item => {
+        const url = destination(item.href), current = new URL(location.href);
+        return url && (url.pathname !== current.pathname || url.search !== current.search);
+      });
       const recentURLs = new Set(recent.map(item => destination(item.href).href));
       const groups = [['Recientes', recent], ...groupNames.map(name => [name, ranked.filter(item => groupOf(item) === name && !(name !== 'Acciones' && item.href && recentURLs.has(destination(item.href)?.href)))])].filter(([, entries]) => entries.length);
       if (query.trim()) groups.sort((a, b) => ranked.indexOf(a[1][0]) - ranked.indexOf(b[1][0]));
@@ -137,7 +145,7 @@ export function mountPalette(items = []) {
         const heading = document.createElement('div'); heading.className = 'ui-palette-group-label';
         heading.id = `ui-palette-group-${groups.findIndex(g => g[0] === name)}`; heading.textContent = name;
         if (entries.some(item => item.suggested)) {
-          const note = document.createElement('span'); note.textContent = 'Sugerido'; heading.append(note);
+          const note = document.createElement('span'); note.className = 'ui-suggested-label'; note.textContent = 'Sugerido'; heading.append(note);
         }
         group.setAttribute('aria-labelledby', heading.id); group.append(heading);
         for (const item of entries) {
@@ -152,8 +160,13 @@ export function mountPalette(items = []) {
           } else if (window.icon) row.innerHTML = window.icon(item.icon || groupIcons[groupOf(item)]);
           const copy = document.createElement('span'); copy.className = 'ui-palette-copy';
           const hint = document.createElement('small');
-          hint.textContent = item.hint || (groupOf(item) === 'Acciones' ? 'Acción' : groupOf(item) === 'Secciones' ? `${item.label} · sección` : groupOf(item));
-          copy.append(highlightedLabel(item.label, query), hint); row.append(copy);
+          hint.textContent = item.hint || (groupOf(item) === 'Acciones' ? 'Ejecutar esta acción' : 'Abrir en tu archivo');
+          copy.append(highlightedLabel(item.label, query));
+          const evidence = item.matchText || (query && !Number.isFinite(fuzzyScore(query, item.label)) && item.keywords);
+          if (evidence) {
+            const reason = highlightedLabel(String(evidence), query); reason.className = 'ui-palette-evidence'; copy.append(reason);
+          }
+          copy.append(hint); row.append(copy);
           row.addEventListener('mousedown', e => e.preventDefault());
           row.addEventListener('click', () => activate(i)); group.append(row);
         }

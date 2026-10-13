@@ -21,12 +21,12 @@
 //   bus (escucha A)         hit{kill,damage} → marcador · damage{dir|angle} → arco · lock → caja · wave/gate → aria-live
 //   bus (emite A)           pause{active,overlay} · prefs{key,value} · medal{id,level} · onboarding{completed}
 //   ctx.actions opcionales  setProfile('cine'|'normal') · startTour() · enterPhoto() — los menús los usan si existen
-import { installFlightSurfaceGuards } from '/flightverse/mobile-command.js?v=400';
-import { mountHudMarkup, createHud } from '/flightverse/ui/hud.js?v=400';
-import { createMenu } from '/flightverse/ui/menu.js?v=400';
-import { createScreens } from '/flightverse/ui/screens.js?v=400';
-import { createWeaponsUi } from '/flightverse/ui/weapons-ui.js?v=400';
-import { mountUi2, installUi2 } from '/flightverse/ui/v2.js?v=400';
+import { installFlightSurfaceGuards } from '/flightverse/mobile-command.js?v=402';
+import { mountHudMarkup, createHud } from '/flightverse/ui/hud.js?v=402';
+import { createMenu } from '/flightverse/ui/menu.js?v=402';
+import { createScreens } from '/flightverse/ui/screens.js?v=402';
+import { createWeaponsUi } from '/flightverse/ui/weapons-ui.js?v=402';
+import { mountUi2, installUi2 } from '/flightverse/ui/v2.js?v=402';
 
 export function mountUi(ctx) {
   if (ctx.flags.fv2) return mountUi2(ctx);      // HUD v2 (?fv=2): ui/v2.js

@@ -2,6 +2,13 @@
    Explicit preferences win. Guide and sales pages default to paper; others follow OS.
    The ab-theme-change event lets existing and new controls update their labels. */
 (() => {
+  // Start font loading before page styles and scripts. shell.css keeps the visual cascade.
+  const source = document.currentScript?.src;
+  if (source && !document.querySelector('link[data-ui-fonts]')) {
+    const fonts = document.createElement('link'); fonts.rel = 'stylesheet'; fonts.dataset.uiFonts = '';
+    fonts.href = new URL('./fonts.css', source).href;
+    document.head.append(fonts);
+  }
   const root = document.documentElement;
   const system = matchMedia('(prefers-color-scheme: light)');
   const paper = /\/(guia|ventas|p)\.html$/.test(location.pathname);

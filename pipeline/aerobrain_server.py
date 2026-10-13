@@ -85,9 +85,10 @@ LOCAL_DEV_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"[::1]:{PORT}"}
 PUBLIC_RESOURCES = {
     "/login.html", "/login.js", "/login.css", "/icons.js", "/robots.txt",
     "/api/healthz", "/api/whoami",
+    "/vendor/fonts/mona-sans-latin.woff2", "/vendor/fonts/jetbrains-mono-latin.woff2",
 }
 LOGIN_CSP = (
-    "default-src 'none'; script-src 'self'; style-src 'self'; "
+    "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; "
     "img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
     "form-action 'self'; object-src 'none'; frame-ancestors 'none'"
 )
