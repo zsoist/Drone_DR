@@ -372,7 +372,7 @@ def run_share(cdp, base_url: str, cid: str, viewport: str, expected_path: str) -
 def run_workspace(cdp, base_url: str, cid: str, viewport: str, expected_path: str) -> dict:
     url = f"{base_url.rstrip('/')}/tresd.html"
     cdp.send("Page.navigate", {"url": url})
-    wait_for(cdp, "document.querySelector('.page-3d') && /Tus escenas/i.test(document.querySelector('.page-3d').textContent)", timeout=45, label="3D workspace")
+    wait_for(cdp, "document.querySelector('.page-3d') && /Escenas/i.test(document.querySelector('.page-3d').textContent)", timeout=45, label="3D workspace")
     cdp.eval(f"localStorage.setItem('ab.proj3d', {json.dumps(cid)}); location.reload();")
     wait_for(cdp, js("""
       return !!(document.querySelector('#proj-view')
@@ -419,7 +419,7 @@ def run_jobs(cdp, base_url: str, cid: str, viewport: str, _expected_path: str) -
         )
     target_id = str(target["id"])
     cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/tresd.html"})
-    wait_for(cdp, "document.querySelector('.page-3d') && /Tus escenas/i.test(document.querySelector('.page-3d').textContent)",
+    wait_for(cdp, "document.querySelector('.page-3d') && /Escenas/i.test(document.querySelector('.page-3d').textContent)",
              timeout=45, label="3D jobs shell")
     clicked = cdp.eval(js("""
       const tab = document.querySelector('[data-tab="jobs"]');
@@ -537,7 +537,7 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
       return {
         islas,
         filtros: document.querySelectorAll('#w-filters button').length,
-        misiones: document.querySelectorAll('.w-panel [data-mis]').length,
+        misiones: document.querySelectorAll('[data-k="mision"] button[data-v], .w-panel [data-mis]').length,
         overflow: document.documentElement.scrollWidth - window.innerWidth,
       };
     """), timeout=30, label="mundo world-select")
@@ -630,7 +630,7 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
         """))
         wait_for(cdp, js("""
           return document.querySelectorAll('.wi').length > 1
-            && document.querySelectorAll('.w-panel [data-mis]').length >= 2;
+            && document.querySelectorAll('[data-k="mision"] button[data-v], .w-panel [data-mis]').length >= 2;
         """), timeout=30, label="Mundo con cobertura 100 m recordada")
         coverage_fallback = cdp.eval(js("""
           const cards=[...document.querySelectorAll('.wi')];
@@ -692,7 +692,7 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
         cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/mundo.html"})
         wait_for(cdp, js("""
           return document.querySelectorAll('.wi').length > 1
-            && document.querySelectorAll('.w-panel [data-mis]').length >= 2;
+            && document.querySelectorAll('[data-k="mision"] button[data-v], .w-panel [data-mis]').length >= 2;
         """), timeout=30, label="Mundo restaurado tras fallback nativo")
     screenshot(cdp, QA_DIR / f"matrix-mundo-{viewport}.png")
     return {"surface": "mundo", "viewport": viewport, **state,
