@@ -1,4 +1,4 @@
-import { approvedFrame } from './p.logic.js?v=437';
+import { approvedFrame } from './p.logic.js?v=438';
 const main = renderShell('guia.html');
 main.classList.add('ab-page', 'gd-page');
 const guides = [

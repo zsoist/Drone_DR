@@ -8,10 +8,10 @@
 //   showDrone}), get(), focusAt(nx,ny), focusDistance(m), move(x,y,z), look(dyaw,dpitch), zoom(dmm),
 //   capture({download}) -> Promise<Blob|null>, state()
 // Eventos (bus, sólo ?fv=2): 'photo' {active, ...state}
-import { pushOutOfMasks } from '/flightverse/tour/poi.js?v=434';
-import { PHOTO_LIMITS, focalToVFov, focalToDiagFov, dofParams } from '/flightverse/tour/photo-math.js?v=434';
-import { edgeMetric, boundaryExtent } from '/flightverse/tour/edge.js?v=434';
-import { elevationOf, ELEV_MIN, ELEV_MAX } from '/flightverse/tour/tod.js?v=434';
+import { pushOutOfMasks } from '/flightverse/tour/poi.js?v=438';
+import { PHOTO_LIMITS, focalToVFov, focalToDiagFov, dofParams } from '/flightverse/tour/photo-math.js?v=438';
+import { edgeMetric, boundaryExtent } from '/flightverse/tour/edge.js?v=438';
+import { elevationOf, ELEV_MIN, ELEV_MAX } from '/flightverse/tour/tod.js?v=438';
 
 export { PHOTO_LIMITS, focalToVFov, focalToDiagFov, dofParams };
 

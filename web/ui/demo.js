@@ -1,9 +1,9 @@
-import { fmt, figure } from './format.js?v=437';
-import { Suggested } from './suggested.js?v=437';
-import { mountTabs } from './tabs.js?v=437';
-import { skinMap, mapSkinOptions } from './map-skin.js?v=437';
-import { skinPlayer } from './player.js?v=437';
-import { registerPaletteSource } from './palette.js?v=437';
+import { fmt, figure } from './format.js?v=438';
+import { Suggested } from './suggested.js?v=438';
+import { mountTabs } from './tabs.js?v=438';
+import { skinMap, mapSkinOptions } from './map-skin.js?v=438';
+import { skinPlayer } from './player.js?v=438';
+import { registerPaletteSource } from './palette.js?v=438';
 await shell.ready;
 const main = renderShell(); main.classList.add('ab-page');
 main.innerHTML = `${shell.backLink('Inicio', '/home.html')}

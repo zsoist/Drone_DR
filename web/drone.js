@@ -1,4 +1,4 @@
-import { fmt } from './ui/format.js?v=434';
+import { fmt } from './ui/format.js?v=438';
 // Drone equipment, archive statistics, and SD or grouped-photo imports.
 const main = renderShell('drone.html');
 main.classList.add('ab-page', 'dr-page');
@@ -76,7 +76,7 @@ main.innerHTML = `
 if (new URLSearchParams(location.search).get('via') === 'subir') location.replace('subir.html');
 document.getElementById('dr-photo-set').addEventListener('click', async e => {
   const opener=e.currentTarget, content=document.getElementById('dr-up');
-  const {createSheet}=await import('./ui/sheet.js?v=434');
+  const {createSheet}=await import('./ui/sheet.js?v=438');
   content.hidden=false;
   const view=createSheet({title:'Importar grupo de fotos',content,size:'full',onClose:()=>{
     content.hidden=true; main.append(content); view.destroy();
@@ -257,7 +257,7 @@ document.getElementById('sd-list').addEventListener('click', e => {
 // Import includes photos. Keep originals until content verification is available.
 async function openImport(v) {
   const opener = document.activeElement;
-  const { createSheet } = await import('./ui/sheet.js?v=434');
+  const { createSheet } = await import('./ui/sheet.js?v=438');
   const files = [...v.videos, ...v.photos].filter(x => !x.in_vault);
   const content = document.createElement('form'); content.className = 'dr-import-form';
   content.innerHTML = `<p>Elige los archivos que quieres importar. Los originales se conservan en la tarjeta.</p><div class="dr-import-files">${files.map(f=>`<label><input type="checkbox" checked data-rel="${esc(f.rel)}"><span><b>${esc(f.name)}</b><small>${gb(f.bytes)}${f.srt ? ' · con GPS' : ''}</small></span></label>`).join('')}</div><label for="sd-drone">Carpeta de destino</label><input class="ctl" id="sd-drone" value="${esc(v.volume)}" maxlength="40" required><p class="dr-import-error" role="alert"></p><button type="submit" class="ui-button ui-button--primary">Importar archivos</button>`;
@@ -276,7 +276,7 @@ async function openImport(v) {
 }
 async function openOptimize() {
   const opener = document.activeElement;
-  const { createSheet } = await import('./ui/sheet.js?v=434');
+  const { createSheet } = await import('./ui/sheet.js?v=438');
   const content=document.createElement('p'); content.textContent='La limpieza está deshabilitada hasta que el servidor pueda verificar el contenido completo de cada copia. Conserva los originales en la tarjeta.';
   const view=createSheet({title:'Conserva tus originales',content,size:'peek',onClose:()=>view.destroy()}); view.open(opener);
 }
@@ -486,7 +486,7 @@ phEl('ph-dir').addEventListener('change', e => {
 // The manifest has no drone assignment. Keep recording formats in the equipment sheet.
 let captureFormats = [];
 document.getElementById('dr-specs').addEventListener('click',async e=>{
-  const opener=e.currentTarget; const {createSheet}=await import('./ui/sheet.js?v=434');
+  const opener=e.currentTarget; const {createSheet}=await import('./ui/sheet.js?v=438');
   const content=document.createElement('div'); content.className='dr-specs';
   content.innerHTML='<h3>DJI Flip</h3><dl><div><dt>Sensor</dt><dd>1/1,3 pulgadas</dd></div><div><dt>Foto</dt><dd>48 MP · JPEG y DNG</dd></div><div><dt>Vuelo máximo</dt><dd>31 min</dd></div></dl><a class="ui-button ui-button--quiet" href="https://www.dji.com/flip/specs" target="_blank" rel="noopener">Especificaciones de DJI Flip</a><h3>Neo 2</h3><dl><div><dt>Sensor</dt><dd>1/2 pulgada</dd></div><div><dt>Foto</dt><dd>12 MP</dd></div><div><dt>Vuelo máximo</dt><dd>19 min</dd></div></dl><a class="ui-button ui-button--quiet" href="https://store.dji.com/sg/product/dji-neo-2" target="_blank" rel="noopener">Especificaciones de DJI Neo 2</a><p>Datos del fabricante. La autonomía máxima se mide en condiciones de prueba; el tiempo real depende del vuelo.</p><p>Los vuelos del archivo aún no están asignados a un dron.</p>';
   if (captureFormats.length) { const formats=document.createElement('p'); formats.textContent=`Resoluciones del archivo: ${captureFormats.join(' · ')}`; content.append(formats); }
