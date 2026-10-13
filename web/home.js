@@ -1,5 +1,5 @@
-import { readAI } from './home.ai.js?v=399';
-import { loadFlights, registerFlights, frameFor, skeleton, renderFailure } from './home-shared.js?v=399';
+import { readAI } from './home.ai.js?v=400';
+import { loadFlights, registerFlights, frameFor, skeleton, renderFailure } from './home-shared.js?v=400';
 const main = renderShell('home.html');
 main.classList.add('home-page', 'ab-page');
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;

@@ -1,4 +1,4 @@
-import { sceneTitle, areaNav, createSheet, confirmSheet, showToast, skeletonCards, registerScenes } from './scene-improve-ui.js?v=399';
+import { sceneTitle, areaNav, createSheet, confirmSheet, showToast, skeletonCards, registerScenes } from './scene-improve-ui.js?v=400';
 // Splat Lab — SuperSplat (MIT, self-hosted en /supersplat/) integrado al shell.
 // Flujo completo: elegir splat → editar (floaters/crop/transform) → File > Export
 // → SUBIR AQUÍ MISMO (drag&drop o botón) → se publica versionado (history/) y el
@@ -410,7 +410,7 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
       st.textContent = `body:not(.ab-mobile) #view-cube-container { transform: scale(.72); transform-origin: top right; }
         body:not(.ab-mobile) #right-toolbar { top: max(50%, 300px) !important; }`;
       doc.head.appendChild(st);
-      const foundation=document.createElement('link');foundation.rel='stylesheet';foundation.href='/scene-improve-editor.css?v=399';doc.head.appendChild(foundation);
+      const foundation=document.createElement('link');foundation.rel='stylesheet';foundation.href='/scene-improve-editor.css?v=400';doc.head.appendChild(foundation);
       doc.documentElement.dataset.theme=document.documentElement.dataset.theme || 'dark';
       doc.addEventListener('keydown', e => { if(e.key==='Escape' && drop.classList.contains('lab-fullscreen')) { setFull(false); document.getElementById('lab-full').focus(); } });
       doc.querySelectorAll('#menu-arrow, #menu-collapse').forEach(button => {

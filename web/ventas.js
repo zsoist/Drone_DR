@@ -1,7 +1,7 @@
-import { canonicalPropertyURL } from './ventas.logic.js?v=397';
-import { createSheet } from './ui/sheet.js?v=397';
-import { showToast } from './ui/toast.js?v=397';
-import { registerPaletteSource } from './ui/palette.js?v=397';
+import { canonicalPropertyURL } from './ventas.logic.js?v=400';
+import { createSheet } from './ui/sheet.js?v=400';
+import { showToast } from './ui/toast.js?v=400';
+import { registerPaletteSource } from './ui/palette.js?v=400';
 
 const main = renderShell('ventas.html');
 main.classList.add('ab-page', 'vt-page');

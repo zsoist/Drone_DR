@@ -2,13 +2,13 @@
 // fuego + tecla X), palancas táctiles, teclado/atajos globales, reset por orientación,
 // muestreo del input de vuelo y eco de choque. Sin lógica de UI (ver ui/*).
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { createTouchSticks } from '/flightverse/touch.js?v=391';
-import { createFirePointerBindings } from '/flightverse/mobile-command.js?v=391';
-import { ARSENAL } from '/flightverse/weapons.js?v=391';
-import { isContinuousWeaponKey } from '/flightverse/weapon-registry.js?v=391';
-import { CONTROL_DEFAULTS } from '/flightverse/input/curves.js?v=391';
-import { createV2Input } from '/flightverse/input/v2-input.js?v=391';
-import { installPhysicsV2, physicsRequested } from '/flightverse/input/physics-link.js?v=391';
+import { createTouchSticks } from '/flightverse/touch.js?v=400';
+import { createFirePointerBindings } from '/flightverse/mobile-command.js?v=400';
+import { ARSENAL } from '/flightverse/weapons.js?v=400';
+import { isContinuousWeaponKey } from '/flightverse/weapon-registry.js?v=400';
+import { CONTROL_DEFAULTS } from '/flightverse/input/curves.js?v=400';
+import { createV2Input } from '/flightverse/input/v2-input.js?v=400';
+import { installPhysicsV2, physicsRequested } from '/flightverse/input/physics-link.js?v=400';
 
 export function createBindings(ctx) {
   const { state: S, actions: A, input, audio, bus } = ctx;
