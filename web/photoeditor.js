@@ -1,8 +1,9 @@
 // Editor de fotos premium compartido (flight + studio). Requiere shell.js e icons.js.
 async function openPhotoEditor({ url, name }) {
   if (!document.querySelector('link[href*="css/studio.css"]')) {
-    const link=document.createElement('link');link.rel='stylesheet';link.href='css/studio.css?v=402';document.head.append(link);
+    const link=document.createElement('link');link.rel='stylesheet';link.href='css/studio.css?v=407';document.head.append(link);
   }
+  const { mountTabs } = await import('./ui/tabs.js?v=402');
   const { createSheet } = await import('./ui/sheet.js?v=402');
   const { showToast } = await import('./ui/toast.js?v=402');
   const ov = document.createElement('div');
@@ -33,15 +34,14 @@ async function openPhotoEditor({ url, name }) {
           <button class="chip" data-preset="vivid">Vívido</button>
           <button class="chip" data-preset="dorado">Dorado</button>
           <button class="chip" data-preset="bn">B&N</button></div>
-        <div class="pm-tabs">
-          <button class="on" data-tab="luz">${icon('sun')} Luz</button>
-          <button data-tab="color">${icon('sun')} Color</button>
-          <button data-tab="fx">${icon('film')} Efectos</button>
-          <span class="pm-ink"></span>
+        <div class="ui-tabs pm-tabs" aria-label="Ajustes de foto">
+          <button data-tab="luz" role="tab" aria-controls="pm-group-luz" aria-selected="true">${icon('sun')} Luz</button>
+          <button data-tab="color" role="tab" aria-controls="pm-group-color" aria-selected="false">${icon('sun')} Color</button>
+          <button data-tab="fx" role="tab" aria-controls="pm-group-fx" aria-selected="false">${icon('film')} Efectos</button>
         </div>
-        <div class="pm-group" data-group="luz">${SLIDERS.luz.map(sliderRow).join('')}</div>
-        <div class="pm-group" data-group="color" style="display:none">${SLIDERS.color.map(sliderRow).join('')}</div>
-        <div class="pm-group" data-group="fx" style="display:none">${SLIDERS.fx.map(sliderRow).join('')}</div>
+        <div class="pm-group" id="pm-group-luz" data-group="luz">${SLIDERS.luz.map(sliderRow).join('')}</div>
+        <div class="pm-group" id="pm-group-color" data-group="color">${SLIDERS.color.map(sliderRow).join('')}</div>
+        <div class="pm-group" id="pm-group-fx" data-group="fx">${SLIDERS.fx.map(sliderRow).join('')}</div>
         <div class="pm-row"><span class="tool-lb">Formato</span>
           <button class="chip on" data-ratio="orig">Original</button>
           <button class="chip" data-ratio="45">4:5 Feed</button>
@@ -225,39 +225,16 @@ async function openPhotoEditor({ url, name }) {
     ov.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',String(x.classList.contains('on'))));
     ov.querySelector('#pm-custom').style.display = fx.size === 'custom' ? '' : 'none';
   }
-  // tabs con tinta deslizante
-  const ink = ov.querySelector('.pm-ink');
-  function moveInk() {
-    const on = ov.querySelector('.pm-tabs button.on');
-    ink.style.setProperty('--ink-x', on.offsetLeft + 'px');
-    ink.style.setProperty('--ink-w', on.offsetWidth + 'px');
-  }
-  setTimeout(moveInk, 30);   // tras layout; rAF no dispara con tab oculto
-  const onRs = () => moveInk();
-  window.addEventListener('resize', onRs);
+  const tabs = mountTabs(ov.querySelector('.ui-tabs'));
   function release() {
     disposed = true; loaded = false; img.onerror = null;        // quita el listener global y suelta la imagen decodificada (Esc, fondo y Cerrar pasan por aquí)
-    window.removeEventListener('resize', onRs);
+    tabs.destroy();
     clearTimeout(prepT);
     img.onload = null; img.removeAttribute('src');
     cv.width = cv.height = 0;
     prep = { key: '', blob: null, p: null };
   }
   const close = () => sheet.close();
-  ov.querySelector('.pm-tabs').addEventListener('click', e => {
-    const b = e.target.closest('[data-tab]');
-    if (!b) return;
-    ov.querySelectorAll('.pm-tabs button').forEach(x => x.classList.toggle('on', x === b));
-    moveInk();
-    ov.querySelectorAll('.pm-group').forEach(g => {
-      const show = g.dataset.group === b.dataset.tab;
-      if (show && g.style.display === 'none') {
-        g.style.display = '';
-        if (document.documentElement.dataset.motion !== 'reduced') g.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'translateY(0)' }],
-                  { duration: 200, easing: 'ease-out' });
-      } else if (!show) g.style.display = 'none';
-    });
-  });
   ov.addEventListener('input', ev => {
     const f = ev.target.dataset.f;
     if (f) {
