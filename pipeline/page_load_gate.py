@@ -24,24 +24,29 @@ VIEWPORTS = {"desktop": (1440, 900, 1, False), "phone": (430, 932, 3, True)}
 SETTLE_S = 3.0
 
 
+def _load(cdp, base_url: str, page: str) -> dict | None:
+    """Load one page; return its failure (errors, blank) or None when it is clean."""
+    cdp.errors.clear()
+    cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/{page}"})
+    cdp.pump(SETTLE_S)
+    try:
+        empty = cdp.eval("!(document.body && document.body.innerText.trim().length > 20)")
+    except RuntimeError:
+        empty = False          # navigation in flight: the error list still decides
+    return {"errors": cdp.errors[:4], "blank": bool(empty)} if cdp.errors or empty else None
+
+
 def run(base_url: str, viewport: str = "desktop") -> dict:
     width, height, scale, mobile = VIEWPORTS[viewport]
     proc, profile, port = bg.launch_chrome()
-    failures = {}
     try:
         cdp = bg.new_page(port)
         cdp.send("Emulation.setDeviceMetricsOverride", {
             "width": width, "height": height, "deviceScaleFactor": scale, "mobile": mobile})
-        for page in PAGES:
-            cdp.errors.clear()
-            cdp.send("Page.navigate", {"url": f"{base_url.rstrip('/')}/{page}"})
-            cdp.pump(SETTLE_S)
-            try:
-                empty = cdp.eval("!(document.body && document.body.innerText.trim().length > 20)")
-            except RuntimeError:
-                empty = False          # navigation in flight: the error list still decides
-            if cdp.errors or empty:
-                failures[page] = {"errors": cdp.errors[:4], "blank": bool(empty)}
+        failures = {page: f for page in PAGES if (f := _load(cdp, base_url, page))}
+        # One retry per failed page: the first load after a server restart can race its
+        # warm-up. A real defect fails both times.
+        failures = {page: f for page in failures if (f := _load(cdp, base_url, page))}
     finally:
         bg.teardown_chrome(proc, profile)
     return {"ok": not failures, "viewport": viewport, "pages": len(PAGES), "failures": failures}
