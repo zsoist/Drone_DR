@@ -1,6 +1,7 @@
-import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, suggestion, wireSuggestions, dataColor } from './home-shared.js?v=391';
+import { readAI, loadInsights, clipChips, captionView } from './home.ai.js?v=396';
+import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor } from './home-shared.js?v=396';
 const main = renderShell('trips.html');
-main.classList.add('tr-page');
+main.classList.add('tr-page', 'ab-page');
 const CITIES = [
   ['Bogotá', 4.711, -74.072], ['Medellín', 6.244, -75.581], ['Cali', 3.452, -76.532],
   ['Cartagena', 10.391, -75.479], ['Barranquilla', 10.964, -74.797], ['Santa Marta', 11.241, -74.199],
@@ -30,7 +31,7 @@ async function optionalJSON(url, fallback) {
 async function load() {
   main.innerHTML = `<h1>Viajes</h1>${skeleton(2)}`;
   try {
-    flights = (await loadFlights()).filter(f => !f.archived);
+    flights = (await loadFlights()).filter(f => !f.archived).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
     [tripsMeta, routeData] = await Promise.all([
       optionalJSON(`${DATA}/manifest/trips_meta.json`, {}),
       optionalJSON(`${DATA}/manifest/routes.json`, { routes: [] }),
@@ -46,6 +47,7 @@ async function load() {
     const used = new Set();
     clusters.forEach(c => {
       const generated = `${c.lat.toFixed(2)},${c.lon.toFixed(2)}`;
+      c.recapKey = generated;
       // Keep the saved key stable. A read must never migrate owner data.
       const saved = Object.keys(tripsMeta).filter(k => !used.has(k) && /^-?[\d.]+,-?[\d.]+$/.test(k))
         .map(k => [k, havKm(c.lat, c.lon, ...k.split(',').map(Number))]).sort((a, b) => a[1] - b[1])[0];
@@ -86,20 +88,18 @@ function render() {
   bindActions();
 }
 function renderDetail(c) {
-  const highlights = c.flights.flatMap(f => (f.ai?.highlights || []).map(h => ({ f, h })))
-    .sort((a, b) => (b.f.ai?.travel_score || 0) - (a.f.ai?.travel_score || 0)).slice(0, 6);
   const dates = [...c.dates].reverse();
   main.innerHTML = `<a class="ui-button ui-button--quiet tr-back" href="trips.html">${icon('arrowL')} Viajes</a>
     <header class="tr-detail-head"><div><h1>${esc(c.name)}</h1><p>${rangeFor(c)}</p></div><div class="tr-actions"><button class="ui-button ui-button--primary" data-postal="${esc(c.key)}">${icon('dl')} Descargar postal</button><button class="ui-button ui-button--quiet" data-menu="${esc(c.key)}" aria-label="Opciones de ${esc(c.name)}">${icon('more')}</button></div></header>
     <div class="tr-overview"><img class="tr-cover" src="${frameFor(c.cover, c.coverTime)}" alt="Vista aérea de ${esc(c.name)}" data-transition-key="trip-${esc(c.key.replace(/[^\w-]/g, '-'))}"><div class="tr-map" id="trip-map" aria-label="Rutas del viaje"></div></div>
     <dl class="tr-facts"><div><dt>Vuelos</dt><dd>${c.flights.length}</dd></div><div><dt>En el aire</dt><dd>${fmt.hours(c.dur)}</dd></div><div><dt>Recorrido</dt><dd>${fmt.km(c.dist)}</dd></div><div><dt>Altura máxima</dt><dd>${Math.round(c.alt)} m</dd></div></dl>
-    <section class="tr-recap"><h2>El viaje en una mirada</h2>${c.best.ai?.summary ? suggestion(`trip-${c.key}`, `Del vuelo destacado: ${c.best.ai.summary}`, flightLink(c.best)) : '<p class="w2-note">Sin análisis aún. Cuando esté listo, verás el resumen y los mejores momentos.</p>'}</section>
-    <section class="tr-section"><h2>Mejores momentos</h2>${highlights.length ? suggestion(`trip-moments-${c.key}`, 'Selección de tus vuelos analizados.', '', `<div class="tr-frames">${highlights.map(({ f, h }) => `<a href="${flightLink(f)}&t=${Math.max(0, +h.t || 0)}"><img src="${frameFor(f, h.t)}" alt="${esc(h.reason || 'Momento destacado')}" loading="lazy"><span>${fmt.dur(h.t)} · ${esc(h.reason || 'Ver momento')}</span></a>`).join('')}</div>`) : '<p class="w2-note">Sin análisis aún. Abre un vuelo para marcar un momento.</p>'}</section>
-    <section class="tr-section"><h2>Diario de vuelos</h2>${dates.map(date => `<section class="tr-day"><h3>${fmt.date(date)}</h3><div class="tr-flights">${c.flights.filter(f => f.date === date).map(f => `<a class="tr-flight" href="${flightLink(f)}"><img src="${frameFor(f)}" alt="" loading="lazy" data-transition-key="clip-${esc(f.clip_id)}"><span><strong>${esc(flightTitle(f))}</strong><span>${fmt.dur(f.duration_s)} · ${fmt.km(f.stats?.distance_m || 0)}</span></span>${icon('arrowR')}</a>`).join('')}</div></section>`).join('')}</section>`;
-  mountMap(c.flights);
+    <section class="tr-recap" id="trip-recap" aria-busy="true"><h2>El viaje en una mirada</h2>${skeleton(2)}</section>
+    <section class="tr-section"><h2>Diario de vuelos</h2><p class="w2-note">Sugerido · Etiquetas y observaciones</p>${dates.map(date => `<section class="tr-day"><h3>${fmt.date(date)}</h3><div class="tr-flights">${c.flights.filter(f => f.date === date).map(f => `<article class="tr-journal-clip" data-clip="${esc(f.clip_id)}"><a class="tr-flight" href="${flightLink(f)}"><img src="${frameFor(f)}" alt="" loading="lazy" data-transition-key="clip-${esc(f.clip_id)}"><span><strong>${esc(flightTitle(f))}</strong><span>${fmt.dur(f.duration_s)} · ${fmt.km(f.stats?.distance_m || 0)}</span></span>${icon('arrowR')}</a><div class="tr-clip-insight" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div></article>`).join('')}</div></section>`).join('')}</section>`;
+  loadRecap(c);
+  loadJournalInsights(c);
   bindActions();
 }
-function mountMap(rows, pins = false) {
+function mountMap(rows, pins = false, routes = routeData.routes || []) {
   const bounds = new maplibregl.LngLatBounds();
   rows.forEach(f => { if (f.stats?.bbox) { bounds.extend(f.stats.bbox.slice(0, 2)); bounds.extend(f.stats.bbox.slice(2)); } });
   if (bounds.isEmpty()) { document.getElementById('trip-map').innerHTML = '<p class="ui-empty">Sin rutas GPS para este viaje.</p>'; return; }
@@ -108,7 +108,7 @@ function mountMap(rows, pins = false) {
   const current = map;
   current.on('load', () => {
     const ids = new Set(rows.map(f => f.clip_id));
-    const features = (routeData.routes || []).filter(r => ids.has(r.cid)).map(r => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: r.line } }));
+    const features = routes.filter(r => ids.has(r.cid)).map(r => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: r.line } }));
     current.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features } });
     current.addLayer({ id: 'routes', type: 'line', source: 'routes', paint: { 'line-color': dataColor(), 'line-width': 3 } });
     if (pins) clusters.forEach(c => {
@@ -116,6 +116,27 @@ function mountMap(rows, pins = false) {
       new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(current);
     });
   });
+}
+async function loadJournalInsights(c) {
+  const entries = [...main.querySelectorAll('.tr-journal-clip')];
+  const { insights, failed } = await loadInsights(c.flights);
+  for (const entry of entries) {
+    const region = entry.querySelector('.tr-clip-insight');
+    region.innerHTML = `${captionView(insights[entry.dataset.clip])}${clipChips(insights[entry.dataset.clip])}`;
+    region.setAttribute('aria-busy', 'false');
+  }
+  if (failed && entries[0]?.isConnected) entries[0].querySelector('.tr-clip-insight').insertAdjacentHTML('beforeend', '<p class="w2-note">No se pudieron cargar algunas etiquetas.</p>');
+}
+async function loadRecap(c) {
+  const region = document.getElementById('trip-recap');
+  try {
+    const recap = await readAI(`/api/trip/${encodeURIComponent(c.recapKey)}/recap`);
+    if (!region.isConnected) return;
+    region.innerHTML = `<div><h2>El viaje en una mirada</h2><span class="w2-note">Sugerido</span></div><div><p class="tr-summary">${esc(recap.summary || 'El resumen aún no está disponible.')}</p></div><div class="tr-frames">${(recap.best_frames || []).slice(0, 6).map(frame => `<a href="flight.html?id=${encodeURIComponent(frame.clip_id)}&t=${frame.time_s}"><img src="${esc(frame.frame_url)}" alt="Fotograma del viaje" loading="lazy"><span>${fmt.dur(frame.time_s)} · Ver momento</span></a>`).join('')}</div>`;
+    map?.remove(); map = null;
+    mountMap(c.flights, false, (recap.route || []).map(r => ({ cid: r.clip_id, line: r.coordinates })));
+  } catch { if (!region.isConnected) return; if (!map) mountMap(c.flights); region.innerHTML = '<h2>El viaje en una mirada</h2><p class="w2-note">No se pudo cargar el resumen. <button class="ui-button ui-button--quiet">Reintentar</button></p>'; region.querySelector('button').addEventListener('click', () => loadRecap(c)); }
+  finally { region.setAttribute('aria-busy', 'false'); }
 }
 function bindActions() {
   main.querySelectorAll('[data-menu]').forEach(button => button.addEventListener('click', () => {
@@ -172,7 +193,7 @@ function pickCover(c) {
       x.font = '700 84px AeroBrain Sans';
       x.fillText(c.name, 60, cv.height - 180);
       x.fillStyle = 'rgba(255,255,255,0.75)';
-      x.font = '400 34px JetBrains Mono';
+      x.font = '400 34px AeroBrain Sans';
       x.fillText(`${c.flights.length} vuelos · ${fmt.km(c.dist)} · alt máx ${Math.round(c.alt)} m`, 62, cv.height - 118);
       x.fillText(`${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates[c.dates.length - 1]) : ''} · AeroBrain`, 62, cv.height - 66);
       const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
@@ -191,5 +212,5 @@ function pickCover(c) {
   }
 
 
-wireSuggestions(main);
+
 load();

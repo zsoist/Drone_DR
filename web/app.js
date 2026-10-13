@@ -1,6 +1,14 @@
-import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestion, wireSuggestions } from './home-shared.js?v=391';
+import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=396';
+import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor } from './home-shared.js?v=396';
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
+// The clip library belongs to Viajes, including collection and tag links.
+document.querySelectorAll('.ab-nav-item[href="home.html"], .ab-nav-item[href="trips.html"]').forEach(link => {
+  if (link.classList.contains('ab-rail-brand')) return;
+  const active = link.getAttribute('href') === 'trips.html';
+  link.classList.toggle('active', active);
+  if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
+});
 let flights = [], ai = {}, semRank = null, models = new Set();
 let state = { q: '', tier: 'all', sort: 'date', scene: null, semantic: false, spot: null, has: new Set(),
               view: localStorage.getItem('ab.vview') || 'grid' };
@@ -8,12 +16,12 @@ let state = { q: '', tier: 'all', sort: 'date', scene: null, semantic: false, sp
 const TIERS = [['all', 'Todos'], ['full', 'Completo'], ['standard', 'Estándar'], ['skim', 'Básico'], ['archived', 'Archivados']];
 const TIER_TIPS = { all: 'Todos los vuelos', full: 'Video, análisis, GPS y fotogramas', standard: 'Video, análisis y GPS', skim: 'Video y telemetría', archived: 'Vuelos archivados' };
 
-main.classList.add('vf-page');
+main.classList.add('vf-page', 'ab-page');
 main.innerHTML = `
   ${pageHead('Vuelos', '', '<a class="ui-button ui-button--quiet" href="trips.html">Viajes</a>', { subId: 'count' })}<nav class="vf-view ui-segmented" aria-label="Vista de vuelos"><button class="ui-button ui-button--quiet" data-view="grid">${icon('grid')} Galería</button><button class="ui-button ui-button--quiet" data-view="list">${icon('list')} Lista</button><button class="ui-button ui-button--quiet" data-view="map">${icon('map')} Mapa</button></nav>
   <div class="vf-bar" role="search">
     <label class="search vf-search">${icon('search')}<input id="q" type="search" placeholder="Buscar vuelos" aria-label="Buscar vuelos" autocomplete="off">
-      <button type="button" class="vf-sem hit44" id="sem-toggle" aria-pressed="false" aria-label="Búsqueda semántica" data-tip="Semántica: busca por significado — escribe y pulsa Enter">${icon('search')}</button>
+      <button type="button" class="vf-sem hit44" id="sem-toggle" aria-pressed="false" aria-label="Buscar por significado" data-tip="Describe una escena y pulsa Enter">${icon('search')}</button>
       <kbd>/</kbd></label>
     <button type="button" class="btn vf-filters-btn ui-button ui-button--secondary" id="vf-filters-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="vf-more">${icon('sliders')} Filtros <span class="vf-badge" id="vf-badge" hidden></span></button>
     <div class="vf-more" id="vf-more">
@@ -39,15 +47,17 @@ main.innerHTML = `
         <span class="chip-div" aria-hidden="true"></span>
         <button class="chip ui-chip" data-qf="video" aria-pressed="false" data-tip="Solo clips con video disponible">${icon('play')} Video</button>
         <button class="chip ui-chip" data-qf="model" aria-pressed="false" data-tip="Con modelo 3D procesado">${icon('cube')} 3D</button>
-        <button class="chip ui-chip" data-qf="ai" aria-pressed="false" data-tip="Con análisis AI">${icon('search')} Análisis</button>
+        <button class="chip ui-chip" data-qf="ai" aria-pressed="false" data-tip="Con análisis del vuelo">${icon('search')} Análisis</button>
         <button class="chip ui-chip" data-qf="alto" aria-pressed="false" data-tip="Altura máxima sobre 100 m">${icon('mountain')} +100 m</button>
         <button class="chip ui-chip" data-qf="4k60" aria-pressed="false" data-tip="4K a 60 cuadros">${icon('film')} 4K60</button>
         <button class="chip ui-chip" data-qf="largo" aria-pressed="false" data-tip="Duración sobre 1 minuto">${icon('clock')} +1 min</button>
-        <button class="chip ui-chip" data-qf="top" aria-pressed="false" data-tip="Score AI de 6 o más">${icon('search')} Destacados</button>
+        <button class="chip ui-chip" data-qf="top" aria-pressed="false" data-tip="Puntuación sugerida de 6 o más">${icon('search')} Destacados</button>
         <span class="vf-scenes" id="scene-chips"></span>
       </div></div>
     </div>
   </div>
+  <div class="vf-selection" id="vf-selection" hidden></div>
+  <p class="vf-note" id="ai-status" role="status">Cargando etiquetas…</p>
   <div class="grid" id="grid">${skeleton(6)}</div>
   <div id="mapview" hidden>
     <div class="panel vf-mappanel">
@@ -74,6 +84,9 @@ function setHTML(el, html) {
 
 const spotKey = f => f.stats?.home ? `${Math.round(f.stats.home[0] / 0.005)}:${Math.round(f.stats.home[1] / 0.005)}` : null;
 function matches(f) {
+  if (state.collection && !state.collection.has(f.clip_id)) return false;
+  if (state.tag && !ai[f.clip_id]?.tags?.includes(state.tag)) return false;
+  if (state.flag && !ai[f.clip_id]?.quality_flags?.includes(state.flag)) return false;
   if (state.spot && spotKey(f) !== state.spot) return false;
   if (state.has.has('video') && !f.has_proxy) return false;
   if (state.has.has('model') && !models.has(f.clip_id)) return false;
@@ -131,7 +144,7 @@ function card(f) {
       </div>
 
     </div>
-  </a><div class="vf-card-tools">${(a?.tags || []).slice(0, 2).map(tag => `<a class="ui-chip" href="index.html?q=${encodeURIComponent(tag)}">${esc(tag)}</a>`).join('')}<button class="ui-button ui-button--quiet rename-btn" data-rename="${esc(f.clip_id)}" aria-label="Renombrar vuelo">${icon('edit')}</button></div></article>`;
+  </a><div class="vf-card-tools">${clipChips(a)}<button class="ui-button ui-button--quiet rename-btn" data-rename="${esc(f.clip_id)}" aria-label="Renombrar vuelo">${icon('edit')}</button></div>${captionView(a)}</article>`;
 }
 
 function chipsRow() {
@@ -177,6 +190,10 @@ function syncControls() {
 }
 
 function render() {
+  const selection = document.getElementById('vf-selection');
+  const labels = [state.collectionLabel, state.tag, qualityLabels[state.flag]].filter(Boolean);
+  selection.hidden = !labels.length;
+  selection.innerHTML = labels.length ? `<span>${esc(labels.join(' · '))}</span><button class="ui-button ui-button--quiet" data-clear-filters>Quitar filtros ${icon('close')}</button>` : '';
   const list = flights.filter(matches).sort(
     state.semantic && semRank ? (a, b) => (semRank.get(b.clip_id) || 0) - (semRank.get(a.clip_id) || 0) : SORTS[state.sort]);
   lastCount = list.length;
@@ -202,7 +219,7 @@ function render() {
 }
 
 // Estado vacío único de la página: con filtros activos explica por qué y ofrece limpiarlos.
-const activeFilters = () => state.has.size + (state.tier !== 'all' ? 1 : 0) + (state.scene ? 1 : 0) + (state.spot ? 1 : 0) + (state.q ? 1 : 0);
+const activeFilters = () => state.has.size + (state.tier !== 'all' ? 1 : 0) + (state.scene ? 1 : 0) + (state.spot ? 1 : 0) + (state.q ? 1 : 0) + (state.collection ? 1 : 0) + (state.tag ? 1 : 0) + (state.flag ? 1 : 0);
 function noResults(ic, title, base) {
   const n = activeFilters();
   const onlyQ = n === 1 && state.q;
@@ -213,6 +230,8 @@ function noResults(ic, title, base) {
 }
 function clearFilters() {
   semSeq++;
+  state.collection = null; state.collectionLabel = ''; state.tag = null; state.flag = null;
+  const url = new URL(location.href); ['collection', 'tag', 'flag', 'q'].forEach(key => url.searchParams.delete(key)); history.replaceState(null, '', url);
   state.q = ''; state.tier = 'all'; state.scene = null; state.spot = null; state.has.clear();
   if (state.semantic) { state.semantic = false; semRank = null; const t = document.getElementById('sem-toggle'); t.classList.remove('on'); t.setAttribute('aria-pressed', 'false'); qEl.placeholder = 'Buscar vuelos'; }
   qEl.value = '';
@@ -254,7 +273,7 @@ function renderPlaces(list) {
     <a class="card" href="index.html?spot=${encodeURIComponent(sp.key)}&v=grid" data-spotcard="${esc(sp.key)}">
       <div class="thumb">
         <img src="${DATA}/thumbs/${esc(best.clip_id)}.jpg" alt="" loading="lazy" width="960" height="540">
-        <span class="ovl mono">${fs.length} ${fs.length === 1 ? 'vuelo' : 'vuelos'}</span>
+        <span class="ovl">${fs.length} ${fs.length === 1 ? 'vuelo' : 'vuelos'}</span>
       </div>
       <div class="body">
         <div class="t"><span class="vf-title">${esc(sp.name)}</span></div>
@@ -285,7 +304,7 @@ function renderDates(list) {
     const dur = fs.reduce((a, f) => a + f.duration_s, 0);
     return `<div class="month-head vf-span">
       <b>${esc(name.charAt(0).toUpperCase() + name.slice(1))}</b>
-      <span class="mono">${fs.length} vuelos · ${fmt.km(dist)} · ${fmt.hours(dur)}</span></div>` +
+      <span>${fs.length} vuelos · <span class="mono">${fmt.km(dist)} · ${fmt.hours(dur)}</span></span></div>` +
       fs.map(card).join('');
   }).join('') : noResults('cal', 'Sin vuelos', 'Todavía no hay vuelos para agrupar por fecha.');
   grid.classList.toggle('is-empty', !months.length);
@@ -467,13 +486,13 @@ function openPreview(f) {
         <span class="chip ui-chip">${fmt.km(f.stats.distance_m || 0)}</span>
         ${models.has(f.clip_id) ? `<span class="chip on ui-chip">3D</span>` : ''}
       </div>
-      ${a?.summary ? suggestion(`flight-${f.clip_id}`, a.summary) : '<p class="vf-prev-note">Sin análisis aún.</p>'}
+      ${a?.caption_short ? `<span class="vf-note">Sugerido</span>${captionView(a)}` : '<p class="vf-prev-note">Sin análisis aún.</p>'}
       <div class="navrow vf-prev-actions">
         <a class="btn ui-button ui-button--primary" href="flight.html?id=${encodeURIComponent(f.clip_id)}">${icon('film')} Ver vuelo completo</a>
         ${models.has(f.clip_id) ? `<a class="btn ui-button ui-button--secondary" href="tresd.html">${icon('cube')} Modelo 3D</a>` : ''}
       </div>
     </div></div>`;
-  wireSuggestions(ov);
+
   openPageSheet(ov, { size: 'full', onClose: () => ov.querySelector('video')?.pause() });
 }
 
@@ -490,7 +509,7 @@ qEl.addEventListener('keydown', async e => {
     const mySeq = ++semSeq;                              // token: respuestas fuera de orden no pisan (#6)
     document.getElementById('count').textContent = 'buscando por significado…';
     try {
-      const { results, error } = await api('/api/search', { q: state.q.trim() });
+      const { results, error } = await readAI(`/api/search?q=${encodeURIComponent(state.q.trim())}&limit=50`);
       if (mySeq !== semSeq) return;                      // llegó una búsqueda más nueva → descarta esta
       if (error) { document.getElementById('count').textContent = 'error: ' + error; return; }
       semRank = new Map(results.map((r, i) => [r.clip_id, results.length - i]));
@@ -579,7 +598,21 @@ document.addEventListener('keydown', e => {
   flights = await loadFlights();
   registerFlights(flights);
   state.spot = params.get('spot');
+  state.tag = params.get('tag'); state.flag = params.get('flag');
+  if (params.has('collection')) {
+    state.collection = new Set();
+    try {
+      const { collections } = await readAI('/api/collections');
+      const collection = collections.find(c => c.id === params.get('collection'));
+      state.collection = new Set(collection?.clip_ids || []);
+      state.collectionLabel = collection?.label || 'Colección no disponible';
+    } catch { state.collectionLabel = 'No se pudo cargar la colección. Vuelve a abrirla para reintentar.'; }
+  }
   ai = await getAIAll(flights);   // embebido en flights.json: sin requests extra
+  const { insights, failed } = await loadInsights(flights.filter(f => !f.archived));
+  for (const [id, insight] of Object.entries(insights)) if (insight) ai[id] = { ...ai[id], ...insight };
+  const aiStatus = document.getElementById('ai-status');
+  aiStatus.textContent = failed ? 'No se pudieron cargar algunas etiquetas.' : 'Sugerido · Etiquetas y observaciones';
   buildSpots();
   render();                       // un solo pintado inicial (con títulos AI): la entrada se anima una vez
   fetch(`${DATA}/manifest/system.json`).then(r => r.json())

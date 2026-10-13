@@ -145,3 +145,18 @@
  .fl-summary .w2-suggestion { display:block; }
  .fl-summary .w2-actions { margin-top:var(--sp-2); }
 }
+
+/* Keep labels outside the plot at every viewport width. */
+.fl .chart-wrap { height:180px; }
+.fl .chart-lb { position:static; display:inline-block; padding:var(--sp-2) 0; }
+.fl .chart-badge { top:var(--sp-2); right:0; }
+.fl .chart-ax { left:0; width:64px; text-align:right; }
+.fl .chart-ax.max { top:48px; }
+.fl .chart-ax.min { bottom:12px; }
+.fl .chart-plot { inset:44px 8px 12px 80px; }
+.fl-alt-note { font:var(--fs-xs)/var(--lh-base) var(--font); color:var(--text-2); margin:var(--sp-3) 0; }
+.fl .hud .lb,.fl .chart-lb,.fl .kv-h,.fl .tc#fl-best-moment { font-family:var(--font); }
+.fl .kv-h { text-align:left; }
+.fl-video:fullscreen { overflow:auto; background:var(--media-bg); }
+.fl-video:fullscreen video { max-height:calc(100dvh - 240px); }
+#fl-media-status { padding:var(--sp-3); }

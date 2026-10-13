@@ -1,0 +1,8 @@
+/* Read-only AI copy and filters. */
+.ai-caption { color:var(--text-2); font:var(--fs-md)/var(--lh-base) var(--font); margin:var(--sp-3) 0; }
+.ai-caption-detail { color:var(--text-2); font:var(--fs-sm)/var(--lh-base) var(--font); }
+.ai-caption-detail summary { display:list-item; cursor:pointer; padding-block:var(--sp-3); min-height:44px; box-sizing:border-box; color:var(--text); }
+.ai-caption-detail p { margin:0 0 var(--sp-4); max-width:72ch; }
+.ai-clip-chips { display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); }
+.ai-clip-chips a { display:inline-flex; align-items:center; min-height:44px; text-decoration:none; font:var(--fs-xs)/var(--lh-base) var(--font); }
+.ai-quality { color:var(--text-2); padding-inline:var(--sp-2); }

@@ -71,3 +71,12 @@
 .tr-map .maplibregl-ctrl.maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button { width:44px; height:44px; background-repeat:no-repeat; background-position:center; background-color:var(--on-media); border-radius:var(--r-sm); }
 .tr-map .maplibregl-ctrl-attrib.maplibregl-compact { min-height:44px; padding-right:44px; }
 .tr-map .maplibregl-ctrl-attrib a { display:inline-flex; align-items:center; min-height:44px; }
+
+.tr-page .tr-heading,.tr-page .tr-detail-head,.tr-page .tr-view,.tr-page .tr-back { margin-bottom:0; }
+.tr-back { justify-self:start; }
+.tr-recap .tr-frames { grid-column:1 / -1; }
+.tr-summary { margin:0; color:var(--text-2); font:var(--fs-lg)/var(--lh-base) var(--font); max-width:72ch; }
+.tr-recap { margin-top:var(--sp-3); }
+.tr-clip-insight { margin-left:136px; }
+.tr-journal-clip { padding-bottom:var(--sp-3); }
+@media(max-width:820px) { .tr-clip-insight { margin-left:0; } }

@@ -50,7 +50,7 @@ test('editing a semantic query invalidates its pending response', async () => {
   const context = {
     state, semRank: null,
     document: { getElementById: element },
-    api: () => new Promise(resolve => { resolveSearch = resolve; }),
+    readAI: () => new Promise(resolve => { resolveSearch = resolve; }),
     render: () => { element('count').textContent = state.q; },
   };
   vm.createContext(context);
@@ -93,4 +93,18 @@ test('flight summary keeps at most two complete Spanish sentences', () => {
   assert.equal(context.summaryExcerpt('Sube sobre los tejados. Mira hacia los cerros. Regresa al parque.'), 'Sube sobre los tejados. Mira hacia los cerros.');
   assert.equal(context.summaryExcerpt('Una sola frase.'), 'Una sola frase.');
   assert.equal(context.summaryExcerpt(null), '');
+});
+
+test('collection membership and exact AI filters intersect the library', () => {
+  const source = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+  const state = { tier: 'all', has: new Set(), collection: new Set(['inside']), tag: 'río', flag: 'horizonte' };
+  const context = { state, ai: { inside: { tags: ['río'], quality_flags: ['horizonte'] } }, models: new Set() };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('function matches('), source.indexOf('const SORTS')), context);
+  assert.equal(context.matches({ clip_id: 'outside' }), false);
+  assert.equal(context.matches({ clip_id: 'inside' }), true);
+  state.tag = 'montañas';
+  assert.equal(context.matches({ clip_id: 'inside' }), false);
+  state.tag = null; state.flag = 'inestable';
+  assert.equal(context.matches({ clip_id: 'inside' }), false);
 });
