@@ -1,7 +1,9 @@
-import { loadFlights, registerFlights, openPageSheet, save, suggestion, wireSuggestions, renderFailure, skeleton, dataColor, decision, summaryExcerpt } from './home-shared.js?v=391';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=391';
+import { readAI, captionView, clipChips } from './home.ai.js?v=396';
+import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor } from './home-shared.js?v=396';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=396';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
+main.classList.add('ab-page', 'ab-page--wide');
 const cid = new URLSearchParams(location.search).get('id');
 main.innerHTML = skeleton(2);
 
@@ -59,7 +61,7 @@ main.innerHTML = skeleton(2);
     <p>${esc(h.reason)}${h.type === 'manual' ? ' <span class="fl-type">Marcado por ti</span>' : ''}</p>
     <a class="ui-button ui-button--secondary" href="studio.html?clip=${encodeURIComponent(cid)}&a=${Math.max(0, (+h.t || 0) - 3)}&b=${(+h.t || 0) + 4}">Editar</a>
   </div>`).join('');
-  const bestMoment = decision(`moments-${cid}`) === 'dismissed' ? null : suggestedHighlights[0];
+
 
   main.innerHTML = `
   <div class="fl">
@@ -68,25 +70,25 @@ main.innerHTML = skeleton(2);
       <div class="fl-title"><h1>${esc(meta.label || fmt.date(meta.date) + ' · ' + meta.time)}</h1><p>${durTxt} · ${meta.resolution === '3840x2160' ? '4K' : esc(meta.resolution)} · ${Math.round(meta.fps)} fps</p></div>
       <div class="fl-actions">${navBtn(older, 'chevL', 'Vuelo anterior')}${navBtn(newer, 'chevR', 'Vuelo siguiente')}<button class="ui-button ui-button--quiet" id="btn-label">${icon('edit')} Editar</button>${meta.has_proxy ? `<a class="ui-button ui-button--primary" href="studio.html?clip=${cid}">Abrir en Studio</a>` : ''}<button class="ui-button ui-button--quiet" id="btn-arch" aria-label="${meta.archived ? 'Desarchivar vuelo' : 'Archivar vuelo'}">${icon('db')}</button></div>
     </header>
-    <section class="fl-summary" aria-label="Resumen del vuelo"><dl><div><dt>Recorrido</dt><dd>${s.distance_m == null ? '—' : fmt.km(s.distance_m)}</dd></div><div><dt>Altura máxima</dt><dd>${s.max_rel_alt_m == null ? '—' : Math.round(s.max_rel_alt_m) + ' m'}</dd></div></dl><div><div class="fl-summary-copy">${aiData?.summary ? suggestion(`flight-${cid}`, summaryExcerpt(aiData.summary)) : '<p class="fl-hint">Sin análisis aún. Aquí aparecerá el resumen del vuelo.</p>'}</div>${bestMoment ? `<button class="ui-button ui-button--quiet tc" id="fl-best-moment" data-t="${+bestMoment.t || 0}">${icon('play')} Ver momento · ${fmt.dur(+bestMoment.t || 0)}</button>` : ''}</div></section>
+    <section class="fl-summary" id="flight-summary" aria-label="Resumen del vuelo" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></section>
 
     <div class="fl-layout">
       <div class="fl-main">
         <div class="panel videobox fl-video">
           <div id="video-slot" data-transition-key="clip-${esc(cid)}"></div>
           <div class="fl-timeline"><button class="ui-button ui-button--quiet" id="fl-play" aria-label="Reproducir">${icon('play')}</button><output id="fl-clock" class="ui-figures">0:00</output><label class="sr-only" for="fl-seek">Tiempo del vuelo</label><div class="fl-scrubber"><input id="fl-seek" type="range" min="0" max="${meta.duration_s || 0}" step="0.1" value="0"><div class="fl-ticks" aria-hidden="true">${[0,1,2,3,4].map(i => `<span>${fmt.dur((meta.duration_s || 0) * i / 4)}</span>`).join('')}</div></div></div>
-          <div class="fl-bar">
+          <p id="fl-media-status" class="fl-hint" role="status" hidden></p><div class="fl-bar">
             <div class="seg ui-segmented" id="q-seg" role="group" aria-label="Calidad de video"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720" data-tip="720p · ligero, ideal en LTE">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd" data-tip="1080p · balance calidad/datos">1080p</button>' : ''}${meta.raw_rel && hevcOK ? '<button data-q="4k" data-tip="Original 4K HEVC · pesado, mejor en WiFi">4K</button>' : ''}</div>
-            <button class="btn ui-button ui-button--secondary" id="btn-photo" data-tip="Extrae el frame actual del original 4K">${icon('iso')} Foto 4K</button>
+            <button class="ui-button ui-button--quiet" id="fl-fullscreen" aria-label="Pantalla completa">Pantalla completa</button><button class="ui-button ui-button--quiet" id="btn-details">Detalles</button><button class="btn ui-button ui-button--secondary" id="btn-photo" data-tip="Extrae el frame actual del original 4K">${icon('iso')} Foto 4K</button>
           </div>
           <div class="hud" id="hud"></div>
         </div>
         ${pts.length ? `<div class="panel rise fl-tel">
           <div class="ph">${icon('activity')} Telemetría <span class="hint">Toca la curva para saltar</span></div>
           <div class="pb fl-tel-b">
-            <div class="chart-wrap" id="ch-alt"></div>
+            <div class="chart-wrap" id="ch-alt"></div><p class="fl-alt-note">Altura respecto al despegue. Los valores por debajo se muestran como 0 m.</p>
             ${flatSpeed
-              ? `<div class="fl-flat"><b>Velocidad</b><span class="mono">sin desplazamiento apreciable · máx ${maxSpeed.toFixed(1)} km/h</span></div>`
+              ? `<div class="fl-flat"><b>Velocidad</b><span>Sin desplazamiento apreciable · máx <span class="mono">${maxSpeed.toFixed(1)} km/h</span></span></div>`
               : '<div class="chart-wrap" id="ch-speed"></div>'}
           </div>
         </div>` : ''}
@@ -101,7 +103,7 @@ main.innerHTML = skeleton(2);
           </div>
           <div class="pb" id="hl-list">
             ${manualHighlights.length ? highlightRows(manualHighlights) : ''}
-            ${suggestedHighlights.length ? suggestion(`moments-${cid}`, 'Momentos del análisis del vuelo.', '', highlightRows(suggestedHighlights)) : ''}
+            ${suggestedHighlights.length ? `<section><span class="fl-hint">Sugerido</span>${highlightRows(suggestedHighlights)}</section>` : ''}
             ${!highlights.length ? '<p class="fl-hint">Sin momentos aún. Pausa el video donde quieras y selecciona Marcar aquí.</p>' : ''}
           </div>
         </div>
@@ -109,7 +111,7 @@ main.innerHTML = skeleton(2);
         ${aiData?.edit_suggestions?.length ? `<div class="panel fl-edits">
           <div class="ph">${icon('film')} Sugerencias de edición</div>
           <div class="pb">
-            ${suggestion(`edits-${cid}`, '', '', `<ul class="fl-edit-notes">${aiData.edit_suggestions.map(note => `<li>${esc(note)}</li>`).join('')}</ul>`)}
+            <span class="fl-hint">Sugerido</span><ul class="fl-edit-notes">${aiData.edit_suggestions.map(note => `<li>${esc(note)}</li>`).join('')}</ul>
             ${aiData.hashtags?.length ? `<div class="chips fl-chips">${aiData.hashtags.map(h => `<span class="chip ui-chip">${esc(h)}</span>`).join('')}</div>` : ''}
           </div>
         </div>` : ''}
@@ -155,6 +157,19 @@ main.innerHTML = skeleton(2);
     </div>
   </div>
 `;
+  const technical = document.querySelector('.fl-tech');
+  const technicalBody = technical.querySelector('.pb');
+  technical.remove();
+  document.getElementById('btn-details').addEventListener('click', () => {
+    const content = technicalBody.cloneNode(true);
+    content.classList.add('fl');
+    content.querySelector('#copy-home')?.addEventListener('click', async e => {
+      const button = e.currentTarget;
+      try { await navigator.clipboard.writeText(`${s.home[1]}, ${s.home[0]}`); button.textContent = 'Copiado'; }
+      catch { toast('No se pudieron copiar las coordenadas.'); }
+    });
+    openPageSheet(content, { title: 'Detalles', size: 'full' });
+  });
   // Descargas: abierto en escritorio (datos primero), colapsado en móvil
   const downloads = document.getElementById('fl-dl');
   const downloadBody = downloads.querySelector('.pb');
@@ -164,12 +179,8 @@ main.innerHTML = skeleton(2);
   downloadBody.hidden = true;
   downloadTitle.querySelector('button').addEventListener('click', e => { downloadBody.hidden = !downloadBody.hidden; e.currentTarget.setAttribute('aria-expanded', String(!downloadBody.hidden)); });
   document.getElementById('gps-retry')?.addEventListener('click', () => location.reload());
-  wireSuggestions(main);
-  main.addEventListener('click', event => {
-    if (event.target.closest('[data-decision="dismissed"]') && decision(`moments-${cid}`) === 'dismissed') {
-      document.getElementById('fl-best-moment')?.remove();
-    }
-  });
+
+
   const telemetry = main.querySelector('.fl-tel');
   if (telemetry) main.querySelector('.fl-map')?.after(telemetry);
 
@@ -193,7 +204,7 @@ main.innerHTML = skeleton(2);
   let quality = localStorage.getItem('ab.vq') || 'auto';
   const resolved = () => quality === 'auto' ? autoPick() : (SRC[quality] ? quality : autoPick());
   if (SRC.hd || SRC['720'] || SRC['4k']) {
-    slot.innerHTML = `<video src="${SRC[resolved()]}" controls playsinline webkit-playsinline preload="metadata" poster="${DATA}/thumbs/${cid}.jpg"></video>`;
+    slot.innerHTML = `<video src="${SRC[resolved()]}" playsinline webkit-playsinline preload="metadata" poster="${DATA}/thumbs/${cid}.jpg"></video>`;
     video = slot.querySelector('video');
   } else {
     // sin fuente reproducible: estado honesto — el thumb + qué falta y por qué
@@ -248,6 +259,8 @@ main.innerHTML = skeleton(2);
     video.load();
   }
   paintQ();
+  document.getElementById('fl-fullscreen').addEventListener('click', () => document.querySelector('.fl-video').requestFullscreen?.());
+  video?.addEventListener('error', () => { const status = document.getElementById('fl-media-status'); status.hidden = false; status.textContent = 'No se pudo cargar el video. Prueba otra calidad.'; });
   document.getElementById('q-seg')?.addEventListener('click', e => {
     const b = e.target.closest('[data-q]');
     if (b) setQuality(b.dataset.q);
@@ -389,7 +402,7 @@ main.innerHTML = skeleton(2);
     if (!pts.length) return;
     i = Math.max(0, Math.min(i, pts.length - 1));
     const p = pts[i];
-    set('alt', `${Number.isFinite(p.rel_alt) ? p.rel_alt.toFixed(0) : '—'}<small> m</small>`);
+    set('alt', `${Number.isFinite(p.rel_alt) ? Math.max(0, p.rel_alt).toFixed(0) : '—'}<small> m</small>`);
     set('dist', cum[i] >= 1000 ? `${(cum[i] / 1000).toFixed(2)}<small> km</small>` : `${Math.round(cum[i])}<small> m</small>`);
     set('speed', `${Math.round(speeds[i] || 0)}<small> km/h</small>`);
     set('iso', esc(p.iso));
@@ -419,7 +432,7 @@ main.innerHTML = skeleton(2);
               Math.cos(la1 * R0) * Math.cos(la2 * R0) * Math.sin((lo2 - lo1) * R0 / 2) ** 2;
     return 12742000 * Math.asin(Math.sqrt(h));
   }
-  const seek = t => { if (video) { video.currentTime = Math.max(0, Math.min(t, video.duration || meta.duration_s)); syncClock(); } };
+  const seek = t => { if (video) { video.currentTime = Math.max(0, Math.min(t, Number.isFinite(video.duration) ? video.duration : meta.duration_s)); syncClock(); } };
 
   // ---- filmstrip (frame n = segundo n*2) ----
   if (meta.frame_count) {
@@ -468,7 +481,7 @@ main.innerHTML = skeleton(2);
   }
   let cursorAt = () => {};
   if (pts.length) {
-    chart(document.getElementById('ch-alt'), pts.map(p => p.rel_alt), 'Altitud', 'm', C.accent);
+    chart(document.getElementById('ch-alt'), pts.map(p => Math.max(0, Number(p.rel_alt) || 0)), 'Altura relativa', 'm', C.accent);
     if (!flatSpeed) chart(document.getElementById('ch-speed'), speeds, 'Velocidad', 'km/h', C.ok);
     cursorAt = i => ['ch-alt', 'ch-speed'].forEach(id => {
       const ch = CHARTS[id];
@@ -543,6 +556,24 @@ main.innerHTML = skeleton(2);
     if (video.readyState) seek(initialTime); else video.addEventListener('loadedmetadata', () => seek(initialTime), { once: true });
   }
   syncClock();
+  loadSummary();
+  async function loadSummary() {
+    const region = document.getElementById('flight-summary');
+    try {
+      const [summary, detail] = await Promise.all([
+        readAI(`/api/flight/${encodeURIComponent(cid)}/summary`),
+        readAI(`/api/clip/${encodeURIComponent(cid)}/insight`),
+      ]);
+      const insight = detail.insight;
+      region.innerHTML = `<dl><div><dt>Recorrido</dt><dd>${summary.distance_m == null ? '—' : fmt.km(summary.distance_m)}</dd></div><div><dt>Altura máxima</dt><dd>${summary.max_altitude_m == null ? '—' : Math.max(0, Math.round(summary.max_altitude_m)) + ' m'}</dd></div></dl><div><span class="fl-hint">Sugerido</span>${captionView(insight, summary.summary)}${!insight?.caption_short ? '<p class="fl-hint">El resumen aún no está disponible.</p>' : ''}${summary.best_moment ? `<button class="ui-button ui-button--quiet tc" id="fl-best-moment" data-t="${summary.best_moment.time_s}">${icon('play')} Mejor momento · ${fmt.dur(summary.best_moment.time_s)}</button>` : ''}</div>`;
+      const tags = document.querySelector('.fl-ai .fl-tags');
+      if (tags && insight) tags.innerHTML = clipChips(insight);
+      if (insight?.highlight_segments?.length) document.getElementById('hl-list').innerHTML = `${highlightRows(manualHighlights)}<section><span class="fl-hint">Sugerido</span>${highlightRows(insight.highlight_segments.map(h => ({ t: h.start, reason: h.reason })))}</section>`;
+    } catch {
+      region.innerHTML = '<p class="fl-hint">No se pudo cargar el resumen. <button class="ui-button ui-button--quiet">Reintentar</button></p>';
+      region.querySelector('button').addEventListener('click', loadSummary);
+    } finally { region.setAttribute('aria-busy', 'false'); }
+  }
   main.addEventListener('pointerover', e => {
     const m = e.target.closest('.mom');
     if (!m || !aiData?.highlights) return;
@@ -553,17 +584,12 @@ main.innerHTML = skeleton(2);
   main.addEventListener('click', e => {
     const b = e.target.closest('[data-t]');
     if (b && b.classList.contains('tc')) seek(+b.dataset.t);
-    if (e.target.id === 'copy-home') {
-      navigator.clipboard.writeText(`${s.home[1]}, ${s.home[0]}`);
-      e.target.textContent = 'copiado';
-      setTimeout(() => { e.target.textContent = `${s.home[1].toFixed(5)}, ${s.home[0].toFixed(5)}`; }, 1200);
-    }
   });
   document.addEventListener('keydown', e => {
     if (!video || !acceptsShortcut(e) || document.querySelector('dialog[open]')) return;
     if (e.key === ' ') { e.preventDefault(); video.paused ? video.play().catch(() => {}) : video.pause(); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); seek(video.currentTime - 5); }
     if (e.key === 'ArrowRight') { e.preventDefault(); seek(video.currentTime + 5); }
-    if (e.key === 'f') video.requestFullscreen?.();
+    if (e.key === 'f') document.querySelector('.fl-video').requestFullscreen?.();
   });
 })().catch(() => renderFailure(main));

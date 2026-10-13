@@ -176,3 +176,13 @@
 .w2-sheet .w2-actions { display:flex; flex-wrap:wrap; gap:var(--sp-2); }
 
 .vf-maptools .tool-lb { text-transform:none; letter-spacing:0; font-family:var(--font); }
+
+.vf-page .vf-selection { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); border-bottom:1px solid var(--line); }
+.vf-page .card>.ai-caption,.vf-page .card>.ai-caption-detail { margin-inline:var(--sp-3); }
+.vf-page .vf-card-tools { align-items:start; }
+.vf-page .list .card>.ai-caption,.vf-page .list .card>.ai-caption-detail { grid-column:1 / -1; margin-block:0; }
+.vf-page .vf-card-tools>.ai-clip-chips { flex:1; }
+.vf-page .vf-selection[hidden] { display:none; }
+.vf-card-tools .ai-clip-chips .ui-chip { max-width:100%; white-space:normal; }
+.vf-page .list .vf-card-tools { grid-column:1 / -1; }
+.vf-page .list .vf-card-tools .ui-chip { display:inline-flex; }
