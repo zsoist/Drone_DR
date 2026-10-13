@@ -5,11 +5,11 @@
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
 import {
   dockMarkup, toolsLeftMarkup, gimbalToolsMarkup, gradeMarkup, panelsMarkup,
-} from '/flightverse/ui/menu.js?v=372';
-import { combatMarkup, commandMarkup } from '/flightverse/ui/weapons-ui.js?v=372';
+} from '/flightverse/ui/menu.js?v=429';
+import { combatMarkup, commandMarkup } from '/flightverse/ui/weapons-ui.js?v=429';
 import {
   bootMarkup, invasionPickerMarkup, difficultyMarkup, resultMarkup, guideMarkup, helpMarkup,
-} from '/flightverse/ui/screens.js?v=372';
+} from '/flightverse/ui/screens.js?v=429';
 
 const hudTopMarkup = () => `  <div class="vl-hud" id="vl-hud">
     <div class="vl-corner tl">

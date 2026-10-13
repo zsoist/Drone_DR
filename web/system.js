@@ -1,9 +1,9 @@
-import { fmt } from './ui/format.js?v=428';
-import { term } from './ui/terms.js?v=428';
-import { jobState, jobRelativeTime, jobEmptyState, groupFailedJobs, jobFailureReason } from './system.logic.js?v=428';
-import { createSheet } from './ui/sheet.js?v=428';
-import { showToast } from './ui/toast.js?v=428';
-import { registerPaletteSource } from './ui/palette.js?v=428';
+import { fmt } from './ui/format.js?v=429';
+import { term } from './ui/terms.js?v=429';
+import { jobState, jobRelativeTime, jobEmptyState, groupFailedJobs, jobFailureReason } from './system.logic.js?v=429';
+import { createSheet } from './ui/sheet.js?v=429';
+import { showToast } from './ui/toast.js?v=429';
+import { registerPaletteSource } from './ui/palette.js?v=429';
 
 const main = renderShell('system.html');
 main.classList.add('ab-page', 'sy-page');

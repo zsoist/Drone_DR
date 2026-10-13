@@ -1,4 +1,4 @@
-import { fmt } from './ui/format.js?v=428';
+import { fmt } from './ui/format.js?v=429';
 // Read-only AI views shared by the H1 pages.
 const insightRequests = new Map();
 export function credibleHighlights(insight, sampledTimes = insight?.sampled_frame_times || []) {

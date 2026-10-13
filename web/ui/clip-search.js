@@ -1,4 +1,4 @@
-import { fmt } from './format.js?v=425';
+import { fmt } from './format.js?v=429';
 // One source per shell. Cache only completed queries for this page session.
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
 export function matchEvidence(row, query) {

@@ -1,4 +1,4 @@
-import { fmt } from './format.js?v=425';
+import { fmt } from './format.js?v=429';
 const players = new WeakMap();
 /** Custom controls for a real video. Returns destroy(); does not start playback on mount. */
 export function skinPlayer(video, { label = 'Video del vuelo' } = {}) {

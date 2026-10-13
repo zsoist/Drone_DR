@@ -5,8 +5,8 @@
  * Optional thumbnail and suggested fields add media and one group disclosure.
  * mountPalette(items) -> {open(opener?), close(), destroy()}. One palette per shell.
  */
-import './format.js?v=425';
-import { createSheet } from './sheet.js?v=425';
+import './format.js?v=429';
+import { createSheet } from './sheet.js?v=429';
 // Pages can retain older version queries during a scoped asset bump.
 // Share registrations across module URLs so their sources still reach the shell.
 const registryKey = Symbol.for('aerobrain.palette.sources');

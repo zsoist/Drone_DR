@@ -1,9 +1,9 @@
-import { fmt } from './ui/format.js?v=428';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=428';
-import { skinPlayer } from './ui/player.js?v=428';
-import { readAI, clipChips, credibleHighlights, eligibleFrame } from './home.ai.js?v=428';
-import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=428';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=428';
+import { fmt } from './ui/format.js?v=429';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=429';
+import { skinPlayer } from './ui/player.js?v=429';
+import { readAI, clipChips, credibleHighlights, eligibleFrame } from './home.ai.js?v=429';
+import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=429';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=429';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
 main.classList.add('ab-page');
