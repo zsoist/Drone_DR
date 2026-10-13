@@ -1,23 +1,23 @@
-import { fmt } from './ui/format.js?v=416';
+import { mountTabs } from './ui/tabs.js?v=417';
+import { fmt } from './ui/format.js?v=417';
 // Drone equipment, read-only library statistics, SD import, and direct upload.
 const main = renderShell('drone.html');
 main.classList.add('ab-page', 'dr-page');
 const drMotionMs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-base')) || 220;
 main.innerHTML = `
-  <header class="dr-head"><div><h1>Dron</h1><p>Tu equipo y el material de cada vuelo.</p></div><button class="ui-button ui-button--quiet" id="dr-import">Importar archivos</button></header>
+  <header class="dr-head"><div><h1>Dron</h1><p>Tu equipo y el material de cada vuelo.</p></div></header>
   <figure class="dr-footage" id="dr-footage" hidden></figure>
-  <section class="dr-fleet" aria-label="Tus drones"><div class="dr-equipment"><h2>Tu equipo</h2><p>DJI Flip · Neo 2</p><button class="ui-button ui-button--secondary" id="dr-specs">Ver ficha del equipo</button></div><div id="dr-library" class="dr-library" aria-busy="true"><dl>${['Vuelos en el archivo','Video en el archivo','Ubicados en Viajes'].map(label=>`<div><dt>${label}</dt><dd class="ui-skeleton" aria-hidden="true">&nbsp;</dd></div>`).join('')}</dl></div></section>
 
-  <div class="ui-segmented dr-tabs" id="dr-tabs" role="group" aria-label="Vía de importación">
-    <button class="on" aria-pressed="true" data-tab="sd" data-tip="La vía recomendada: los .SRT traen GPS, mapa y telemetría">${icon('db')} Tarjeta SD</button>
-    <button aria-pressed="false" data-tab="up" data-tip="Videos o fotos desde iPhone/iPad o arrastrando en PC — sin telemetría de vuelo">${icon('dl')} Subida directa</button>
+  <div class="ui-tabs dr-tabs" id="dr-tabs" aria-label="Vía de importación">
+    <button role="tab" aria-selected="true" aria-controls="dr-sd" data-tab="sd" data-tip="La vía recomendada: los .SRT traen GPS, mapa y telemetría">${icon('db')} Tarjeta SD</button>
+    <button role="tab" aria-selected="false" aria-controls="dr-up" data-tab="up" data-tip="Videos o fotos desde iPhone/iPad o arrastrando en PC — sin telemetría de vuelo">${icon('dl')} Subida directa</button>
   </div>
 
-  <section class="dr-mod" data-mod="sd">
+  <section class="dr-mod" id="dr-sd" data-mod="sd">
     <div class="dr-stats" id="d-stats"></div>
 
     <div class="panel dr-panel">
-      <div class="ph">${icon('db')} Importar desde tarjeta
+      <div class="ph">
         <span class="spacer" style="flex:1"></span>
         <button class="ui-button ui-button--secondary" id="sd-rescan" data-tip="Vuelve a buscar tarjetas montadas (carpeta DCIM)">${icon('loop')} Escanear</button>
       </div>
@@ -27,7 +27,7 @@ main.innerHTML = `
     <p class="dr-note">Conserva la tarjeta hasta revisar tus archivos importados. <a href="guia.html#g-importar">Ver guía de importación</a></p>
   </section>
 
-  <section class="dr-mod" data-mod="up" hidden>
+  <section class="dr-mod" id="dr-up" data-mod="up" hidden>
     <div class="dr-up-wrap">
       <label class="dr-kind">Tipo de archivo <select class="ctl" id="up-kind"><option value="video">Videos</option><option value="foto">Fotos</option></select></label>
 
@@ -98,29 +98,14 @@ main.innerHTML = `
     </div>
   </section>
 
+  <section class="dr-fleet" aria-label="Tus drones"><div class="dr-equipment"><h2>Tu equipo</h2><p>DJI Flip · Neo 2</p><button class="ui-button ui-button--secondary" id="dr-specs">Ver ficha del equipo</button></div><div id="dr-library" class="dr-library" aria-busy="true"><dl>${['Vuelos en el archivo','Video en el archivo','Ubicados en Viajes'].map(label=>`<div><dt>${label}</dt><dd class="ui-skeleton" aria-hidden="true">&nbsp;</dd></div>`).join('')}</dl></div></section>
+
   <div class="dr-recent"><h2>Importaciones</h2><p>Sigue el progreso y revisa los resultados en Sistema.</p><a class="ui-button ui-button--secondary" href="system.html">Ver trabajos</a></div>`;
 
-// Import methods use the W1 segmented control.
+// Import methods are one navigation layer; file type remains a setting.
 const drTabs = document.getElementById('dr-tabs');
-function showVia(name) {
-  drTabs.querySelectorAll('button').forEach(b => {
-    b.classList.toggle('on', b.dataset.tab === name);
-    b.setAttribute('aria-pressed', b.dataset.tab === name);
-  });
-  document.querySelectorAll('.dr-mod').forEach(m => {
-    const show = m.dataset.mod === name;
-    if (show && m.hidden) {
-      m.hidden = false;
-      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) m.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'translateY(0)' }],
-                { duration: drMotionMs, easing: 'cubic-bezier(.16,1,.3,1)' });
-    } else if (!show) m.hidden = true;
-  });
-}
-drTabs.addEventListener('click', e => {
-  const b = e.target.closest('[data-tab]');
-  if (b) showVia(b.dataset.tab);
-});
-if (new URLSearchParams(location.search).get('via') === 'subir') showVia('up');
+mountTabs(drTabs);
+if (new URLSearchParams(location.search).get('via') === 'subir') drTabs.querySelector('[data-tab="up"]').click();
 
 let volumes = [];
 
@@ -164,6 +149,7 @@ async function scan() {
     [...v.videos, ...v.photos].filter(x => !x.in_vault).length]));
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
+  const primaryVolume = volumes.find(v => [...v.videos, ...v.photos].some(file => !file.in_vault))?.volume;
   el.innerHTML = volumes.length ? volumes.map(v => {
     const nuevos = [...v.videos, ...v.photos].filter(x => !x.in_vault);
     const backed = backedOf(v);
@@ -179,7 +165,7 @@ async function scan() {
         <span class="spacer" style="flex:1"></span>
         <div class="sd-acts">
           ${nuevos.length
-            ? `<button class="ui-button ui-button--primary" data-import="${esc(v.volume)}">${icon('dl')} Importar ${nuevos.length}</button>`
+            ? `<button class="ui-button ui-button--${v.volume === primaryVolume ? 'primary' : 'secondary'}" data-import="${esc(v.volume)}">${icon('dl')} Importar ${nuevos.length}</button>`
             : `<span class="ui-chip sd-ok">${icon('check')} Sin archivos nuevos</span>`}
           <button class="ui-button ui-button--quiet" data-optimize="${esc(v.volume)}">Sobre la limpieza</button>
         </div>
@@ -294,7 +280,7 @@ document.getElementById('sd-list').addEventListener('click', e => {
 // Import includes photos. Keep originals until content verification is available.
 async function openImport(v) {
   const opener = document.activeElement;
-  const { createSheet } = await import('./ui/sheet.js?v=416');
+  const { createSheet } = await import('./ui/sheet.js?v=417');
   const files = [...v.videos, ...v.photos].filter(x => !x.in_vault);
   const content = document.createElement('form'); content.className = 'dr-import-form';
   content.innerHTML = `<p>Elige los archivos que quieres importar. Los originales se conservan en la tarjeta.</p><div class="dr-import-files">${files.map(f=>`<label><input type="checkbox" checked data-rel="${esc(f.rel)}"><span><b>${esc(f.name)}</b><small>${gb(f.bytes)}${f.srt ? ' · con GPS' : ''}</small></span></label>`).join('')}</div><label for="sd-drone">Carpeta de destino</label><input class="ctl" id="sd-drone" value="${esc(v.volume)}" maxlength="40" required><p class="dr-import-error" role="alert"></p><button type="submit" class="ui-button ui-button--primary">Importar archivos</button>`;
@@ -313,7 +299,7 @@ async function openImport(v) {
 }
 async function openOptimize() {
   const opener = document.activeElement;
-  const { createSheet } = await import('./ui/sheet.js?v=416');
+  const { createSheet } = await import('./ui/sheet.js?v=417');
   const content=document.createElement('p'); content.textContent='La limpieza está deshabilitada hasta que el servidor pueda verificar el contenido completo de cada copia. Conserva los originales en la tarjeta.';
   const view=createSheet({title:'Conserva tus originales',content,size:'peek',onClose:()=>view.destroy()}); view.open(opener);
 }
@@ -644,22 +630,24 @@ phEl('ph-dir').addEventListener('change', e => {
   phStageEntries([...e.target.files].map(f => ({ file: f, rel: f.webkitRelativePath || f.name }))); e.target.value = '';
 });
 
-// Equipment is documented in the capture guide. The manifest has no drone assignment.
-document.getElementById('dr-import').addEventListener('click',()=>{ document.getElementById('dr-tabs').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'}); (document.querySelector('[data-rescan]') || document.getElementById('sd-rescan')).focus({preventScroll:true}); });
+// The manifest has no drone assignment. Keep recording formats in the equipment sheet.
+let captureFormats = [];
 document.getElementById('dr-specs').addEventListener('click',async e=>{
-  const opener=e.currentTarget; const {createSheet}=await import('./ui/sheet.js?v=416');
+  const opener=e.currentTarget; const {createSheet}=await import('./ui/sheet.js?v=417');
   const content=document.createElement('div'); content.className='dr-specs';
   content.innerHTML='<h3>DJI Flip</h3><dl><div><dt>Sensor</dt><dd>1/1,3 pulgadas</dd></div><div><dt>Foto</dt><dd>48 MP · JPEG y DNG</dd></div><div><dt>Vuelo máximo</dt><dd>31 min</dd></div></dl><a class="ui-button ui-button--quiet" href="https://www.dji.com/flip/specs" target="_blank" rel="noopener">Especificaciones de DJI Flip</a><h3>Neo 2</h3><dl><div><dt>Sensor</dt><dd>1/2 pulgada</dd></div><div><dt>Foto</dt><dd>12 MP</dd></div><div><dt>Vuelo máximo</dt><dd>19 min</dd></div></dl><a class="ui-button ui-button--quiet" href="https://store.dji.com/sg/product/dji-neo-2" target="_blank" rel="noopener">Especificaciones de DJI Neo 2</a><p>Datos del fabricante. La autonomía máxima se mide en condiciones de prueba; el tiempo real depende del vuelo.</p><p>Los vuelos del archivo aún no están asignados a un dron.</p>';
+  if (captureFormats.length) { const formats=document.createElement('p'); formats.textContent=`Resoluciones del archivo: ${captureFormats.join(' · ')}`; content.append(formats); }
   const view=createSheet({title:'Tu equipo',content,size:'half',onClose:()=>view.destroy()}); view.open(opener);
 });
 async function loadLibrary() {
   const el=document.getElementById('dr-library');
   try {
     const r=await fetch(`${DATA}/manifest/flights.json`); if(!r.ok) throw new Error('flights'); const data=await r.json(); const flights=(data.flights || []).filter(f=>!f.archived);
-    const cover=flights.find(f=>f.frame_count && f.has_srt);
+    captureFormats = [...new Set(flights.map(f=>f.resolution).filter(Boolean))];
+    const cover=[...flights].sort((a,b)=>`${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)).find(f=>f.frame_count && f.has_srt);
     if (cover) { const figure=document.getElementById('dr-footage'); figure.innerHTML=`<img src="${DATA}/frames/${encodeURIComponent(cover.clip_id)}/f_${String(Math.max(1,Math.ceil(cover.frame_count/2))).padStart(4,'0')}.jpg" alt="Vista aérea de tu archivo"><figcaption>Último vuelo · ${fmt.date(cover.date)}</figcaption>`; figure.hidden=false; }
     const seconds=flights.reduce((n,f)=>n+(Number(f.duration_s)||0),0), gps=flights.filter(f=>Array.isArray(f.stats?.home) && f.stats.home.every(Number.isFinite)).length;
-    el.innerHTML=`<dl><div><dt>Vuelos en el archivo</dt><dd class="ui-figure">${fmt.number(flights.length)}</dd></div><div><dt>Video en el archivo</dt><dd>${fmt.duration(seconds).replace(/(\d[\d.,]*)/g,'<span class="ui-figure">$1</span>').replace(/ (h|min|s)/g,' <span class="ui-unit">$1</span>')}</dd></div><div><dt>Ubicados en Viajes</dt><dd class="ui-figure">${fmt.number(gps)}</dd></div></dl><p>Capturas: ${[...new Set(flights.map(f=>f.resolution).filter(Boolean))].map(esc).join(' · ') || 'Sin datos aún'}</p>`;
+    el.innerHTML=`<dl><div><dt>Vuelos en el archivo</dt><dd class="ui-figure">${fmt.number(flights.length)}</dd></div><div><dt>Video en el archivo</dt><dd>${fmt.duration(seconds).replace(/(\d[\d.,]*)/g,'<span class="ui-figure">$1</span>').replace(/ (h|min|s)/g,' <span class="ui-unit">$1</span>')}</dd></div><div><dt>Ubicados en Viajes</dt><dd class="ui-figure">${fmt.number(gps)}</dd></div></dl>`;
   } catch { el.innerHTML='<p>No se pudo cargar el archivo.</p><button class="ui-button ui-button--secondary" id="dr-retry-library">Reintentar</button>'; el.querySelector('button').onclick=loadLibrary; }
   finally { el.setAttribute('aria-busy','false'); }
 }

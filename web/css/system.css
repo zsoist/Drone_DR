@@ -30,7 +30,10 @@
 .sy-health dt,.sy-storage dt { color:var(--text-2); }
 .sy-health dd,.sy-storage dd { margin:0; font-size:var(--fs-lg); font-variant-numeric:tabular-nums; text-align:right; }
 .sy-node { border-top:1px solid var(--line-strong); padding:var(--sp-3) 0 var(--sp-6); }
-.sy-node p { color:var(--text-2); }
+.sy-node p { color:var(--text-2); margin:var(--sp-3) 0 var(--sp-5); }
+.sy-node .sy-actions { justify-content:flex-start; }
+.sy-attempt { padding-bottom:var(--sp-5); border-bottom:1px solid var(--line); }
+.sy-attempt p { color:var(--text-2); margin:var(--sp-3) 0 var(--sp-5); }
 .sy-sheet-content { display:grid; gap:var(--sp-4); }
 .sy-sheet-content .ui-chip { justify-self:start; }
 .sy-log { white-space:pre-wrap; overflow-wrap:anywhere; font:var(--fs-xs)/1.6 var(--font); padding:var(--sp-4); background:var(--surface-2); border-radius:var(--r-sm); max-width:100%; }

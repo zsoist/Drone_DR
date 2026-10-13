@@ -1,10 +1,10 @@
-import { fmt } from './ui/format.js?v=416';
-import { Suggested } from './ui/suggested.js?v=416';
-import { propertyCover } from './p.logic.js?v=416';
-import { canonicalPropertyURL } from './ventas.logic.js?v=416';
-import { createSheet } from './ui/sheet.js?v=416';
-import { showToast } from './ui/toast.js?v=416';
-import { registerPaletteSource } from './ui/palette.js?v=416';
+import { fmt } from './ui/format.js?v=417';
+import { Suggested } from './ui/suggested.js?v=417';
+import { propertyCover } from './p.logic.js?v=417';
+import { canonicalPropertyURL } from './ventas.logic.js?v=417';
+import { createSheet } from './ui/sheet.js?v=417';
+import { showToast } from './ui/toast.js?v=417';
+import { registerPaletteSource } from './ui/palette.js?v=417';
 
 const main = renderShell('ventas.html');
 main.classList.add('ab-page', 'vt-page');
@@ -16,7 +16,7 @@ async function read(url, options) {
   return d;
 }
 main.innerHTML = `<header class="vt-head"><div><h1>Ventas</h1></div><button class="ui-button ui-button--primary" id="vt-new">Nueva propiedad</button></header>
-  <p class="vt-private">Acceso privado · Los enlaces requieren tu sesión de AeroBrain.</p>
+  <p class="vt-private">Fichas privadas · Solo tú puedes abrir estos enlaces.</p>
   <div id="plist" class="vt-list" aria-busy="true"><article class="vt-property" aria-hidden="true"><div class="vt-cover ui-skeleton"></div><div class="vt-property-info"><div class="ui-skeleton ui-skeleton--text"></div><div class="ui-skeleton ui-skeleton--text"></div></div></article></div>`;
 async function loadList() {
   const list = document.getElementById('plist');

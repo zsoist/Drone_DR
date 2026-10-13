@@ -1,9 +1,9 @@
-import { fmt } from './ui/format.js?v=416';
-import { term } from './ui/terms.js?v=416';
-import { jobState, jobRelativeTime, jobEmptyState } from './system.logic.js?v=416';
-import { createSheet } from './ui/sheet.js?v=416';
-import { showToast } from './ui/toast.js?v=416';
-import { registerPaletteSource } from './ui/palette.js?v=416';
+import { fmt } from './ui/format.js?v=417';
+import { term } from './ui/terms.js?v=417';
+import { jobState, jobRelativeTime, jobEmptyState, groupFailedJobs, jobFailureReason } from './system.logic.js?v=417';
+import { createSheet } from './ui/sheet.js?v=417';
+import { showToast } from './ui/toast.js?v=417';
+import { registerPaletteSource } from './ui/palette.js?v=417';
 
 const main = renderShell('system.html');
 main.classList.add('ab-page', 'sy-page');
@@ -44,22 +44,34 @@ function sheet(title, html, opener) {
 }
 let shown = 20;
 function paintJobs() {
-  const rows = jobs.filter(j => filter === 'all' || (filter === 'active' ? active(j) : failed(j)))
+  const sorted = jobs.filter(j => filter === 'all' || (filter === 'active' ? active(j) : failed(j)))
     .sort((a,b) => Number(active(b)) - Number(active(a)) || Number(b.started || 0) - Number(a.started || 0));
   $('sy-count').textContent = `${jobs.filter(active).length} en curso · ${jobs.filter(failed).length} con errores`;
   $('sy-jobs').setAttribute('aria-busy', 'false');
   const empty = jobEmptyState(jobs, filter, Date.now());
-  const html = rows.length ? rows.slice(0, shown).map(j => {
+  const rows = groupFailedJobs(sorted);
+  const html = rows.length ? rows.slice(0, shown).map(attempts => {
+    const j = attempts[0];
     const [label,tone] = jobState(j);
     const progress = Math.round(Math.max(0, Math.min(1, Number(j.progress) || 0)) * 100);
-    return `<article class="sy-job"><div class="sy-job-top"><span class="sy-state ${tone}">${label}</span><span class="sy-note">${esc(kinds[j.kind] || 'Trabajo')}</span></div>
+    return `<article class="sy-job"><div class="sy-job-top"><span class="sy-state ${tone}">${attempts.length > 1 ? `${fmt.number(attempts.length)} intentos fallidos` : label}</span><span class="sy-note">${esc(kinds[j.kind] || 'Trabajo')}</span></div>
       <h3>${esc(j.title || j.label || 'Sin título')}</h3>
       ${active(j) ? `<div class="sy-progress"><progress max="100" value="${progress}" aria-label="Progreso"></progress><span class="ui-figures">${progress}%</span></div>` : ''}
-      <p>${esc(j.status === 'queued' ? 'Esperando su turno.' : active(j) ? 'Procesando tus archivos.' : failed(j) ? 'Abre los detalles para revisar qué ocurrió.' : label)}</p>
-      <div class="sy-job-foot"><span class="sy-note">${esc(jobRelativeTime(j, Date.now()))}</span><button class="ui-button ui-button--secondary" data-job="${esc(j.id)}">Ver detalles</button></div></article>`;
+      <p>${esc(j.status === 'queued' ? 'Esperando su turno.' : active(j) ? 'Procesando tus archivos.' : failed(j) ? `${attempts.length > 1 ? 'Último intento: ' : ''}${jobFailureReason(j)}` : label)}</p>
+      <div class="sy-job-foot"><span class="sy-note">${esc(jobRelativeTime(j, Date.now()))}</span><button class="ui-button ui-button--secondary" data-job="${esc(j.id)}" ${attempts.length > 1 ? 'data-attempts' : ''}>${attempts.length > 1 ? 'Ver intentos' : 'Ver detalles'}</button></div></article>`;
   }).join('') : `<div class="ui-empty"><h3>${empty.title}</h3>${empty.action ? `<button class="ui-button ui-button--secondary" data-review-errors>${empty.action}</button>` : `<small>${esc(empty.note)}</small>`}</div>`;
   if ($('sy-jobs').dataset.html !== html) { $('sy-jobs').innerHTML = html; $('sy-jobs').dataset.html = html; }
   $('sy-more').hidden = rows.length <= shown;
+}
+function openAttempts(job, opener) {
+  const attempts = groupFailedJobs(jobs.filter(failed).sort((a,b)=>Number(b.started || 0)-Number(a.started || 0)))
+    .find(group=>group.some(j=>j.id===job.id)) || [job];
+  const view = sheet(job.title || job.label || 'Intentos fallidos', attempts.map(j=>`<article class="sy-attempt"><h3>${esc(fmt.date(j.started * 1000))} · ${esc(new Date(j.started * 1000).toLocaleTimeString('es-CO',{timeZone:'America/Bogota',hour:'2-digit',minute:'2-digit',hour12:false}))}</h3><p>${esc(jobFailureReason(j))}</p><button class="ui-button ui-button--secondary" data-attempt="${esc(j.id)}">Ver detalles</button></article>`).join(''), opener);
+  view.body.addEventListener('click', e=>{
+    const button = e.target.closest('[data-attempt]');
+    if (!button) return;
+    view.close(); openJob(attempts.find(j=>j.id===button.dataset.attempt), opener);
+  });
 }
 async function loadJobs() {
   try {
@@ -153,7 +165,7 @@ main.addEventListener('click', e => {
   }
   const f = e.target.closest('[data-filter]');
   if (f) { filter = f.dataset.filter; shown = 20; main.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',b===f)); paintJobs(); }
-  const b = e.target.closest('[data-job]'); if (b) openJob(jobs.find(j=>j.id===b.dataset.job), b);
+  const b = e.target.closest('[data-job]'); if (b) (b.hasAttribute('data-attempts') ? openAttempts : openJob)(jobs.find(j=>j.id===b.dataset.job), b);
 });
 $('sy-more').addEventListener('click',()=>{ shown += 20; paintJobs(); });
 async function refresh() { if (busy) return; busy = true; $('sy-refresh').disabled = true; await Promise.allSettled([loadJobs(),loadHealth(),loadGPU()]); $('sy-refresh').disabled = false; busy = false; }

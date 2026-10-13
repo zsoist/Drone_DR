@@ -5,15 +5,26 @@
 
   // The embedded archive frame needs no access to private media routes.
   const cover = document.querySelector('.login-cover');
+  const shell = document.querySelector('.login-layout');
   const layout = matchMedia('(min-width: 900px)');
   function layoutCover() {
     const desktop = layout.matches;
+    // Body-only layout until the shared login stylesheet adopts the solid phone surface.
+    Object.assign(shell.style, {
+      position: 'relative', isolation: 'isolate', overflow: 'hidden',
+      minHeight: '100dvh', display: 'grid',
+      gridTemplateColumns: desktop ? '1fr 1fr' : '1fr',
+      placeItems: desktop ? 'center' : 'start center', gap: desktop ? '64px' : '0',
+      padding: desktop ? '28px 22px' : 'max(56px, calc(env(safe-area-inset-top) + 36px)) max(22px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left))',
+      background: 'var(--bg)',
+    });
+    cover.hidden = !desktop;
     Object.assign(cover.style, {
       position: 'absolute', zIndex: '-1', objectFit: 'cover',
-      top: desktop ? '28px' : '16px', left: desktop ? '28px' : '16px',
-      width: desktop ? 'calc(48% - 28px)' : 'calc(100% - 32px)',
-      height: desktop ? 'calc(100% - 56px)' : 'calc(100% - 32px)',
-      borderRadius: '20px', opacity: desktop ? '1' : '.16',
+      top: '28px', left: '28px',
+      width: 'calc(48% - 28px)',
+      height: 'calc(100% - 56px)',
+      borderRadius: '20px',
     });
   }
   layoutCover();
