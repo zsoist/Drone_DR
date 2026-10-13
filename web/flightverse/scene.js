@@ -3,14 +3,14 @@
 // terreno (heightfield métrico + orto), splat (DropInViewer en la MISMA escena),
 // y muestreo de altura para vuelo/colisión honesta. Validado por el spike P1
 // (docs/FLIGHTVERSE_RENDERER_DECISION.md): 3 draw calls, enter/exit sin fuga.
-import * as THREE from '/flightverse/three.js?v=402';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=402';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=402';
+import * as THREE from '/flightverse/three.js?v=415';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=415';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=415';
 import {
   applyVisualCoverageMask, coverageMaskBytes, underTerrainHeights, patchUnderTerrainShader,
-} from '/flightverse/visual-coverage.js?v=402';
-import { glbDeviceTier, glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=402';
-import { applyWorldLook } from '/flightverse/world-look.js?v=402';
+} from '/flightverse/visual-coverage.js?v=415';
+import { glbDeviceTier, glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=415';
+import { applyWorldLook } from '/flightverse/world-look.js?v=415';
 
 // ruido de valor 3D barato (hash sin seno costoso) para el grano del terreno/paredes
 const FX_NOISE_GLSL = `
@@ -678,7 +678,7 @@ export async function attachSplat(man, scene, { renderer, onProgress } = {}) {
   // Spark 2.1 (sucesor oficial de GS3D): ksplat nativo, LOD de presupuesto
   // fijo (~coste constante), sort asíncrono en worker — el splat aparece 1-2
   // frames tras el primer render, irrelevante con nuestro loop.
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=402');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=415');
   if (!scene.userData.fvSpark) {
     const sp = new SparkRenderer({ renderer });   // extends THREE.Mesh
     sp.userData.fvRefs = 0;

@@ -2,11 +2,11 @@
 // Sonido · Controles · Foto · Grabar · Salir, subpáginas con flecha atrás) y selector de MODO (4 tarjetas:
 // Explorar / Tour / Gate Rush / Invasión). Reusa el coordinador de overlays de touch.js (inert + foco atrapado +
 // Esc) y las mismas acciones (ctx.actions) que el menú legado; NO hay ciclo de modos: cada modo se elige.
-import { MODES, RIGS } from '/flightverse/runtime.js?v=402';
-import { createOverlayCoordinator } from '/flightverse/touch.js?v=402';
-import { installGrade } from '/flightverse/ui/grade.js?v=402';
-import { ICON } from '/flightverse/ui/icons2.js?v=402';
-import { FLIGHT_PROFILES, humanSceneLabel } from '/flightverse/hud-format.js?v=402';
+import { MODES, RIGS } from '/flightverse/runtime.js?v=415';
+import { createOverlayCoordinator } from '/flightverse/touch.js?v=415';
+import { installGrade } from '/flightverse/ui/grade.js?v=415';
+import { ICON } from '/flightverse/ui/icons2.js?v=415';
+import { FLIGHT_PROFILES, humanSceneLabel } from '/flightverse/hud-format.js?v=415';
 
 const s24 = b => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${b}</svg>`;
 const MODE_ICON = {

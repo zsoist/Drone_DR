@@ -1,9 +1,9 @@
 // Page contracts for Inicio, Viajes, and Flight Deck.
-import { createSheet } from './ui/sheet.js?v=407';
-import { registerPaletteSource } from './ui/palette.js?v=407';
-import { showToast } from './ui/toast.js?v=407';
-import { fmt } from './ui/format.js?v=407';
-import { Suggested } from './ui/suggested.js?v=407';
+import { createSheet } from './ui/sheet.js?v=415';
+import { registerPaletteSource } from './ui/palette.js?v=415';
+import { showToast } from './ui/toast.js?v=415';
+import { fmt } from './ui/format.js?v=415';
+import { Suggested } from './ui/suggested.js?v=415';
 
 export function figure(value) {
   return esc(value).replace(/([\d.,:−-]+)/g, '<span class="ui-figure">$1</span>').replace(/\b(km\/h|km|ha|min|fps|m|h|s)\b/g, '<span class="ui-unit">$1</span>');

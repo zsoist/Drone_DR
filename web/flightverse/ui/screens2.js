@@ -2,12 +2,12 @@
 // háptica), onboarding, resultados de Gate Rush / derrota / victoria (UNA tarjeta, botones apilados a ancho
 // completo en móvil), selectores de Invasión y dificultad, guía, director/cine y toast. La LÓGICA (récords,
 // medallas, par, oleadas) es de D; aquí solo se presenta lo que D publica en vm/run.
-import { resultSpeeds } from '/flightverse/gate-stats.js?v=402';
-import { ICON } from '/flightverse/ui/icons2.js?v=402';
-import { createOnboarding, shouldOnboard } from '/flightverse/ui/onboarding.js?v=402';
-import { MEDAL_TEXT } from '/flightverse/ui/records.js?v=402';
-import { guideBody } from '/flightverse/ui/menu2.js?v=402';
-import { RECORD_COLUMNS, formatRecordRows, shortTime } from '/flightverse/modes/rules.js?v=402';
+import { resultSpeeds } from '/flightverse/gate-stats.js?v=415';
+import { ICON } from '/flightverse/ui/icons2.js?v=415';
+import { createOnboarding, shouldOnboard } from '/flightverse/ui/onboarding.js?v=415';
+import { MEDAL_TEXT } from '/flightverse/ui/records.js?v=415';
+import { guideBody } from '/flightverse/ui/menu2.js?v=415';
+import { RECORD_COLUMNS, formatRecordRows, shortTime } from '/flightverse/modes/rules.js?v=415';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

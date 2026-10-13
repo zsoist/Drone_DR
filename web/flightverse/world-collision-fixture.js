@@ -1,14 +1,14 @@
-import * as THREE from '/flightverse/three.js?v=402';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=402';
+import * as THREE from '/flightverse/three.js?v=415';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=415';
 import {
   composeCollisionWorld,
   createSceneObjectCollision,
-} from '/flightverse/scene-object-collision.js?v=402';
-import { createDrone, STEP } from '/flightverse/runtime.js?v=402';
-import { createWeapons } from '/flightverse/weapons.js?v=402';
-import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=402';
-import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=402';
-import { radialDamage } from '/flightverse/weapon-effects.js?v=402';
+} from '/flightverse/scene-object-collision.js?v=415';
+import { createDrone, STEP } from '/flightverse/runtime.js?v=415';
+import { createWeapons } from '/flightverse/weapons.js?v=415';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=415';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=415';
+import { radialDamage } from '/flightverse/weapon-effects.js?v=415';
 
 const report = {
   done: false,
@@ -236,7 +236,7 @@ function runRenderedEffectMemoryPressure(terrainWorld) {
 }
 
 async function run() {
-  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=402');
+  const { resolveCameraCollision } = await import('/flightverse/runtime.js?v=415');
   const urls = colliderUrls();
   const man = {
     capabilities: { mesh: true, terrain: true, collision: true },
@@ -558,7 +558,7 @@ async function run() {
     }),
   );
 
-  const { resolveAimRay } = await import('/flightverse/aiming.js?v=402');
+  const { resolveAimRay } = await import('/flightverse/aiming.js?v=415');
   const reticleAim = resolveAimRay(
     { position: new THREE.Vector3(0, 2, 0), direction: new THREE.Vector3(1, 0, 0), far: 100 },
     world,
@@ -757,7 +757,7 @@ async function run() {
   nova.dispose();
 
   const { GLTFLoader } = await import(
-    '/vendor/three-addons180/loaders/GLTFLoader.js?v=402'
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=415'
   );
   const modelLibrary = createWeaponModelLibrary({
     quality: 'auto',
