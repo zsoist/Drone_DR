@@ -340,7 +340,7 @@ def screenshot(cdp, out: Path):
 def run_share(cdp, base_url: str, cid: str, viewport: str, expected_path: str) -> dict:
     url = f"{base_url.rstrip('/')}/share.html?m={urllib.parse.quote(cid)}"
     cdp.send("Page.navigate", {"url": url})
-    wait_for(cdp, "document.body && /VISOR 3D/i.test(document.body.innerText)", timeout=45, label="share shell")
+    wait_for(cdp, "!!document.querySelector('#sh-view canvas, #sh-view [data-viewer], .sh-viewer') || /VISOR 3D/i.test(document.body.innerText)", timeout=45, label="share shell")
     clicked = cdp.eval(js("""
       const b = document.querySelector('[data-v="splat"]');
       if (!b) return false;
@@ -545,27 +545,23 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
         raise RuntimeError(f"mundo incompleto: {state}")
     if state["overflow"] > 3:
         raise RuntimeError(f"overflow horizontal {state['overflow']}px en mundo/{viewport}")
+    # Redesign 2026-10: a card is a native link to its scene plus a native "Detalles" button
+    # (no custom role=button/aria-selected). Both are keyboard reachable by construction.
     keyboard = cdp.eval(js("""
       const cards = [...document.querySelectorAll('.wi')];
       const target = cards[1] || cards[0];
       if (!target) return { error:'sin islas' };
-      const semantic = cards.every(card => card.getAttribute('role') === 'button'
-        && card.tabIndex === 0 && ['true','false'].includes(card.getAttribute('aria-selected')));
-      target.focus();
-      target.dispatchEvent(new KeyboardEvent('keydown', {
-        key:'Enter', code:'Enter', bubbles:true, cancelable:true,
-      }));
-      return {
-        semantic,
-        focused:document.activeElement === target,
-        selected:target.getAttribute('aria-selected') === 'true'
-          && target.classList.contains('sel'),
-        selectedCount:cards.filter(card => card.getAttribute('aria-selected') === 'true').length,
-      };
+      const semantic = cards.every(card => card.querySelector('a[href*="share.html"]')
+        && card.querySelector('button[data-world-detail]'));
+      const button = target.querySelector('button[data-world-detail]');
+      button.focus();
+      const focused = document.activeElement === button;
+      button.click();
+      const panel = document.getElementById('w-panel');
+      return { semantic, focused, opened: !!panel && panel.classList.contains('show') };
     """))
-    if (keyboard.get("error") or not keyboard.get("semantic") \
-            or not keyboard.get("focused") or not keyboard.get("selected") \
-            or keyboard.get("selectedCount") != 1):
+    if keyboard.get("error") or not keyboard.get("semantic") \
+            or not keyboard.get("focused") or not keyboard.get("opened"):
         raise RuntimeError(f"islas no navegables por teclado: {keyboard}")
     preview_initial = cdp.eval(js("""
       const cards = [...document.querySelectorAll('.wi')];
@@ -580,19 +576,18 @@ def run_mundo(cdp, base_url: str, viewport: str) -> dict:
             preview_initial["hydrated"] >= preview_initial["cards"]
             or preview_initial["resources"] >= preview_initial["cards"]):
         raise RuntimeError(f"previews de Mundo cargadas de forma ansiosa: {preview_initial}")
-    preview_selected = cdp.eval(js("""
+    # Redesign 2026-10: cards are no longer "selected"; a card hydrates when it scrolls into view.
+    preview_selected = cdp.eval("""(async () => {
       const card = [...document.querySelectorAll('.wi')].at(-1);
-      card?.focus();
-      card?.dispatchEvent(new KeyboardEvent('keydown', {
-        key:'Enter', code:'Enter', bubbles:true, cancelable:true,
-      }));
+      card?.scrollIntoView({ block: 'center', inline: 'center' });
+      await new Promise(r => setTimeout(r, 800));
       const poster = card?.querySelector('.wi-poster');
       return {
-        selected:card?.getAttribute('aria-selected') === 'true',
-        hydrated:poster?.dataset.previewLoaded === 'true',
-        hasImage:/url\\(/.test(poster?.style.backgroundImage || ''),
+        visible: !!card,
+        hydrated: poster?.dataset.previewLoaded === 'true',
+        hasImage: /url\\(/.test(poster?.style.backgroundImage || '') || !poster?.dataset.preview,
       };
-    """))
+    })()""")
     if not all(preview_selected.values()):
         raise RuntimeError(f"preview seleccionada no se hidrató: {preview_selected}")
     map_initial = cdp.eval(js("""

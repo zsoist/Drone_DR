@@ -1,4 +1,4 @@
-import { fmt } from './ui/format.js?v=415';
+import { fmt } from './ui/format.js?v=416';
 const main = renderShell('guia.html');
 main.classList.add('ab-page', 'gd-page');
 const guides = [

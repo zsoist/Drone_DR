@@ -3,10 +3,10 @@
 // imagen (grade), cine + director. Wiring: chips del dock, coordinador de
 // overlays, paneles arrastrables, grade/presets, sonido, compartir, grabar.
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { MODES } from '/flightverse/runtime.js?v=415';
-import { makeDraggablePanel } from '/flightverse/panels.js?v=415';
-import { createOverlayCoordinator } from '/flightverse/touch.js?v=415';
-import { installGrade } from '/flightverse/ui/grade.js?v=415';
+import { MODES } from '/flightverse/runtime.js?v=416';
+import { makeDraggablePanel } from '/flightverse/panels.js?v=416';
+import { createOverlayCoordinator } from '/flightverse/touch.js?v=416';
+import { installGrade } from '/flightverse/ui/grade.js?v=416';
 
 export const dockMarkup = () => `    <div class="vl-corner bl">
       <button class="vl-dockmin vl-solo-fino" id="vl-dockmin" title="Ocultar panel">«</button>

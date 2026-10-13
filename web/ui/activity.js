@@ -3,7 +3,7 @@
  * Polls only while visible. Unknown state retains the last count with a stale label.
  * fetchJobs must resolve to a job array or {jobs: []}. stop removes all listeners.
  */
-import { createSheet } from './sheet.js?v=415';
+import { createSheet } from './sheet.js?v=416';
 export function mountActivity({ fetchJobs = async signal => {
   const r = await fetch('/api/jobs', { signal });
   if (!r.ok) throw new Error(`jobs: ${r.status}`);

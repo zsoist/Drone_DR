@@ -2,12 +2,12 @@
 // Produce el MISMO contrato ctx.ui que el HUD legado (update, dispose, hud, menu, screens, weapons, overlay,
 // setInvasionUi) más: ctx.ui.prefs (preferencias), ctx.ui.drawsModeHud = true (A dibuja marcadores, placa y
 // banners de D a partir de ctx.modeHud) y las APIs de retícula/HUD documentadas en hud2.js.
-import { installFlightSurfaceGuards } from '/flightverse/mobile-command.js?v=415';
-import { buildHudMarkup2, createHud2 } from '/flightverse/ui/hud2.js?v=415';
-import { createMenu2 } from '/flightverse/ui/menu2.js?v=415';
-import { createScreens2 } from '/flightverse/ui/screens2.js?v=415';
-import { createWeaponsUi2 } from '/flightverse/ui/weapons2.js?v=415';
-import { createPrefs } from '/flightverse/ui/prefs.js?v=415';
+import { installFlightSurfaceGuards } from '/flightverse/mobile-command.js?v=416';
+import { buildHudMarkup2, createHud2 } from '/flightverse/ui/hud2.js?v=416';
+import { createMenu2 } from '/flightverse/ui/menu2.js?v=416';
+import { createScreens2 } from '/flightverse/ui/screens2.js?v=416';
+import { createWeaponsUi2 } from '/flightverse/ui/weapons2.js?v=416';
+import { createPrefs } from '/flightverse/ui/prefs.js?v=416';
 
 function loadCss(href) {
   const link = document.createElement('link');
@@ -28,8 +28,8 @@ export function mountUi2(ctx) {
   const ui = ctx.ui;
   document.documentElement.classList.add('fv2');
   document.body.classList.add('fv2', flags.coarse ? 'hx-touch' : 'hx-fine');
-  loadCss('css/hud.css?v=415');
-  loadCss('css/screens.css?v=415');
+  loadCss('css/hud.css?v=416');
+  loadCss('css/screens.css?v=416');
   const mq = matchMedia('(prefers-reduced-motion: reduce)');
   ui.prefs = createPrefs({ bus, systemReduced: () => mq.matches });
   applyPrefsToDocument(ui.prefs);

@@ -478,20 +478,27 @@ def gate(kind: str, cid: str, base_url: str, timeout: int) -> Path:
         cdp = new_page(port)
         url = f"{base_url.rstrip('/')}/share.html?m={urllib.parse.quote(cid)}"
         cdp.send("Page.navigate", {"url": url})
-        body = ""
+        # Readiness by DOM, not by copy (the 2026-10 redesign removed the "Visor 3D" label):
+        # ready = the viewer panel exists; missing = the empty state. Old copy still accepted.
+        probe = """(() => {
+          const t = (document.body && document.body.innerText || '').toLowerCase();
+          const missing = !!document.querySelector('#sh-body .ui-empty')
+            || t.includes('este modelo no existe') || t.includes('no está disponible');
+          const ready = !!document.querySelector('.sh-viewer, #sh-view') || t.includes('visor 3d');
+          return { ready, missing, text: t.slice(0, 180) };
+        })()"""
+        state = {}
         deadline = time.time() + timeout
         while time.time() < deadline:
             cdp.pump(0.5)
             try:
-                body = cdp.eval("document.body.innerText") or ""
+                state = cdp.eval(probe) or {}
             except RuntimeError:
                 continue   # navegación en vuelo: "Execution context was destroyed" no es fallo
-            body_l = body.lower()
-            if "visor 3d" in body_l or "este modelo no existe" in body_l:
+            if state.get("ready") or state.get("missing"):
                 break
-        body_l = body.lower()
-        if "este modelo no existe" in body_l or "visor 3d" not in body_l:
-            raise RuntimeError(f"share.html no cargó el modelo 3D · body={body[:180]!r} · errors={cdp.errors[:3]}")
+        if state.get("missing") or not state.get("ready"):
+            raise RuntimeError(f"share.html no cargó el modelo 3D · body={state.get('text', '')!r} · errors={cdp.errors[:3]}")
         if kind == "splat":
             clicked = cdp.eval("(() => { const b = document.querySelector('[data-v=\"splat\"]'); if (b) b.click(); return !!b; })()")
             if not clicked:

@@ -1,4 +1,4 @@
-import { fmt } from './ui/format.js?v=415';
+import { fmt } from './ui/format.js?v=416';
 
 export function jobState(job) {
   if (['cancelled', 'canceled'].includes(job.status)) return ['Cancelado', 'quiet'];

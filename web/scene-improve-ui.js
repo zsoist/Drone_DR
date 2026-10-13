@@ -1,9 +1,9 @@
-import { fmt } from './ui/format.js?v=415';
-import { term } from './ui/terms.js?v=415';
-import { Suggested } from './ui/suggested.js?v=415';
-import { createSheet } from './ui/sheet.js?v=415';
-import { showToast } from './ui/toast.js?v=415';
-import { registerPaletteSource } from './ui/palette.js?v=415';
+import { fmt } from './ui/format.js?v=416';
+import { term } from './ui/terms.js?v=416';
+import { Suggested } from './ui/suggested.js?v=416';
+import { createSheet } from './ui/sheet.js?v=416';
+import { showToast } from './ui/toast.js?v=416';
+import { registerPaletteSource } from './ui/palette.js?v=416';
 export { createSheet, showToast };
 export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 export const escapeText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

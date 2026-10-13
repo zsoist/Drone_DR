@@ -1,9 +1,9 @@
-import { fmt } from './ui/format.js?v=415';
-import { term } from './ui/terms.js?v=415';
-import { Suggested } from './ui/suggested.js?v=415';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=415';
-import { sceneTitle, sceneSources, sceneInsight, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=415';
-import { coverageRows } from './scene-improve-state.js?v=415';
+import { fmt } from './ui/format.js?v=416';
+import { term } from './ui/terms.js?v=416';
+import { Suggested } from './ui/suggested.js?v=416';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=416';
+import { sceneTitle, sceneSources, sceneInsight, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=416';
+import { coverageRows } from './scene-improve-state.js?v=416';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,
@@ -329,7 +329,7 @@ async function boot() {
         hydratePreview(entry.target);
         previewObserver?.unobserve(entry.target);
       });
-    }, { root: rail, rootMargin: '0px 280px', threshold: 0.01 });
+    }, { root: getComputedStyle(rail).overflowX === 'visible' ? null : rail, rootMargin: '200px 280px', threshold: 0.01 });   // desktop grid scrolls with the page
     cards.forEach(card => previewObserver.observe(card));
   };
   let railShown = false, stopPreviews = [];
