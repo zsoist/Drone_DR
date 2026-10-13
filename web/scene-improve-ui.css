@@ -27,6 +27,8 @@ body:has(.area-nav), .share-page { --fs-2xs: var(--fs-xs); }
 .scene-suggestion h3 { font-size:var(--fs-xl); font-weight:600; }
 .scene-suggestion p { margin-top:var(--sp-4); font-size:var(--fs-lg); color:var(--text); }
 .scene-suggestion small { display:block; margin-top:var(--sp-3); color:var(--text-2); font-size:var(--fs-xs); }
+.scene-suggestion summary { display:flex; align-items:center; width:fit-content; cursor:pointer; color:var(--text-2); text-decoration:underline; text-underline-offset:4px; }
+.scene-suggestion .ui-skeleton--text { margin-top:var(--sp-4); }
 .scene-orbit { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none; }
 .scene-poster { width:100%; height:100%; position:absolute; inset:0; object-fit:contain; }
 :where(.page-3d,.fv-page,.lab-main,.si-workspace,.share-page,.scene-sheet) :is(button,.btn,.chip,summary,select) { min-height:44px; }

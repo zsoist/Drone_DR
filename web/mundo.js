@@ -1,5 +1,5 @@
-import { areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, descriptionText, reducedMotion } from './scene-improve-ui.js?v=391';
-import { coverageRows, analysisFor } from './scene-improve-state.js?v=391';
+import { sceneTitle, sceneSources, sceneInsight, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion } from './scene-improve-ui.js?v=399';
+import { coverageRows } from './scene-improve-state.js?v=399';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,
@@ -48,6 +48,8 @@ const I = {
   trophy: SV('<path d="M6 3.5h8v4a4 4 0 01-8 0zM6 5H3.5a2.5 2.5 0 002.5 3M14 5h2.5A2.5 2.5 0 0114 8M10 11.5V15M7 16.5h6"/>', 11),
 };
 const main = renderShell('mundo.html');
+main.classList.add('ab-page');
+const descriptions = new Map();
 let cfg = { cielo: 'dia', calidad: 'auto', modo: 'asistido', cobertura: 'auto', forma: 'circle', mision: 'libre' };
 try { cfg = { ...cfg, ...JSON.parse(localStorage.getItem('ab.fv.launchcfg') || '{}') } } catch {}
 cfg.cobertura = ['auto','100','200','400','600','1000'].includes(String(cfg.cobertura)) ? String(cfg.cobertura) : 'auto';
@@ -69,7 +71,7 @@ const cfgExtra = (scene=sel) =>
     : '')
   + (cfg.forma !== 'circle' ? `&forma=${cfg.forma}` : '');
 let filtro = 'todas';
-let scenes = [], sel = null, flights = [], settingsSheet = null;
+let scenes = [], sel = null, settingsSheet = null;
 let mapLibrePromise = null;
 
 function loadMapLibre() {
@@ -108,28 +110,21 @@ function loadMapLibre() {
 }
 
 function isla(sc, i) {
-  const c = sc.capabilities||{}, st = sc.stats||{};
-  const site = sc.site || {};
+  const c = sc.capabilities||{};
   const rec = best(sc.clip_id);
   return `
   <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms"
     role="button" tabindex="0" aria-pressed="false"
-    aria-label="Seleccionar ${esc(sc.name)}">
+    aria-label="Seleccionar ${esc(sceneTitle(sc.name))}">
     <div class="wi-poster" data-ini="${esc(([...String(sc.name||'').trim()][0]||'·').toUpperCase())}" data-preview="${esc(sc.assets?.poster||'')}" data-transition-key="world-${esc(sc.clip_id)}"></div>
 
 
     ${c.splat?'<span class="wi-badge">Splat</span>':c.mesh?'<span class="wi-badge mesh">Malla</span>':''}
     ${rec!=null?`<span class="wi-rec">${I.trophy} ${rec.toFixed(1)}s</span>`:''}
     <div class="wi-body">
-      <div class="wi-name">${nbh(esc(sc.name))}</div>
-      <div class="wi-meta"><span>${fechaDe(sc.clip_id) || (site.scene_id ? 'Sitio estable' : 'Sin fecha')}</span>${st.track_duration_s?`<span>vuelo ${dur(st.track_duration_s)}</span>`:''}</div>
-      <p class="wi-description">${esc(descriptionText(sc, analysisFor(sc, flights)))}</p><div class="wi-stats">
-        ${sc.world?.size_m?`<i>${(sc.world.size_m[0]*sc.world.size_m[1]/10000).toFixed(1)}&nbsp;ha</i>`:''}
-        ${st.gsd_cm_px?`<i>${st.gsd_cm_px}&nbsp;cm/px</i>`:''}
-        ${site.source_count?`<i>${site.source_count}&nbsp;${site.source_count===1?'video':'videos'}</i>`:''}
-        ${c.track?'<i>ruta&nbsp;GPS</i>':''}
-        ${site.scene_id?`<i>sitio&nbsp;·&nbsp;v${site.version_count||1}</i>`:''}
-      </div>
+      <div class="wi-name">${nbh(esc(sceneTitle(sc.name)))}</div>
+      <div class="wi-meta">${fechaDe(sceneSources(sc)[0])?`<span>${fechaDe(sceneSources(sc)[0])}</span>`:''}${sc.world?.size_m?`<span>${(sc.world.size_m[0]*sc.world.size_m[1]/10000).toLocaleString('es-CO',{maximumFractionDigits:1})} ha</span>`:''}</div>
+      <p class="wi-description" aria-busy="${!descriptions.has(sc.clip_id)}">${descriptions.has(sc.clip_id)?esc(descriptions.get(sc.clip_id)?.caption_short || (descriptions.get(sc.clip_id)?.error?'Descripción no disponible.':'')):'<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>'}</p>
     </div>
   </article>`;
 }
@@ -153,8 +148,8 @@ function pick(i) {
   p.innerHTML = c.terrain ? `
     <div class="wp-in">
       <div>
-        <div class="wp-name">${nbh(esc(sel.name))}</div>
-        <p class="wp-description">${esc(descriptionText(sel, analysisFor(sel, flights)))}</p><div class="wp-chips">
+        <div class="wp-name">${nbh(esc(sceneTitle(sel.name)))}</div>
+        <p class="wp-description">${esc(descriptions.get(sel.clip_id)?.caption_short || '')}</p><div class="wp-chips">
           ${site.scene_id?`<span class="fv-chip on">sitio estable · ${site.version_count||1} versiones</span>`:''}
           ${site.source_count?`<span class="fv-chip">${integrated}/${site.source_count} videos integrados</span>`:''}
           ${coverage.length?`<span class="fv-chip">cobertura lista ${readyCoverage.length?readyCoverage.join(' / ')+' m':'pendiente'}</span>`:''}
@@ -189,7 +184,7 @@ function pick(i) {
         <p class="wp-mis-sub">${cfg.mision==='gaterush'&&rec!=null?`Bate tu ${rec.toFixed(1)}s`:mis.sub}</p>
         <button class="ui-button ui-button--secondary wp-fly" data-go="${goUrl}">${I.plane} Volar</button>
       </div>
-    </div>` : `<div class="wp-in"><div class="wp-name">${nbh(esc(sel.name))}</div>
+    </div>` : `<div class="wp-in"><div class="wp-name">${nbh(esc(sceneTitle(sel.name)))}</div>
       <a class="btn" href="tresd.html">Procesar en Estudio 3D</a></div>`;
   p.classList.add('show');
   p.querySelectorAll('.wp-cfg-g').forEach(g => {
@@ -220,6 +215,7 @@ async function boot() {
         <button data-fvv="map" aria-pressed="false">Mapa</button>
       </div>
     </header>
+    <p class="world-suggested" id="world-suggested" hidden>Descripciones · Sugerido</p>
     <div id="w-cards">
       <div class="w-bar">
         <div class="w-filters" id="w-filters" role="group" aria-label="Filtrar islas">
@@ -254,7 +250,7 @@ async function boot() {
     <div class="w-launch" id="w-launch"><div class="wl-bg"></div><div class="wl-txt">CARGANDO ESCENA<span class="wl-bar"></span></div></div>
   </div>`;
   let sys;
-  try { const response = await fetch('data/manifest/system.json'); if (!response.ok) throw Error(); sys = await response.json(); flights = await getFlights(); }
+  try { const response = await fetch('data/manifest/system.json'); if (!response.ok) throw Error(); sys = await response.json(); }
   catch { document.getElementById('w-rail').setAttribute('aria-busy','false');document.getElementById('w-rail').innerHTML = '<div class="ui-empty"><p>No se pudo cargar Mundo.</p><a class="ui-button ui-button--primary" href="mundo.html">Reintentar</a></div>'; return; }
   // Una isla por sitio estable: solo la versión activa entra al Mundo. Los modelos
   // todavía no asociados a un sitio permanecen visibles como escenas independientes.
@@ -327,7 +323,7 @@ async function boot() {
     cards.forEach(card => previewObserver.observe(card));
   };
   let railShown = false, stopPreviews = [];
-  document.addEventListener('scene:suggestion',()=>{rail.querySelectorAll('.wi').forEach(card=>{const sc=scenes[+card.dataset.i];card.querySelector('.wi-description').textContent=descriptionText(sc,analysisFor(sc,flights));});if(sel){const description=document.querySelector('.wp-description');if(description)description.textContent=descriptionText(sel,analysisFor(sel,flights));}});
+
   const applyFiltro = () => {
     stopPreviews.splice(0).forEach(stop=>stop?.());
     const f = filtro;
@@ -371,9 +367,20 @@ async function boot() {
   addEventListener('resize', syncArrows);
   applyFiltro();
   syncArrows();
+  scenes.forEach(async sc=>{
+    let insight=null;
+    let failed=false;
+    try { insight=await sceneInsight(sc); } catch { failed=true; }
+    descriptions.set(sc.clip_id,insight || {error:failed});
+    const card=rail.querySelector(`[data-i="${scenes.indexOf(sc)}"] .wi-description`);
+    if(card){card.setAttribute('aria-busy','false');card.textContent=insight?.caption_short || (failed?'Descripción no disponible.':'');}
+    if(insight)document.getElementById('world-suggested').hidden=false;
+    if(sel===sc){const text=document.querySelector('.wp-description');if(text)text.textContent=insight?.caption_short || '';}
+  });
   const activateCard = el => {
     pick(+el.dataset.i);
-    el.scrollIntoView({ behavior:reducedMotion()?'instant':'smooth', inline:'nearest', block:'nearest' });
+    const target=matchMedia('(min-width:1024px)').matches ? document.getElementById('w-panel') : el;
+    target.scrollIntoView({ behavior:reducedMotion()?'instant':'smooth', inline:'nearest', block:'nearest' });
   };
   rail.addEventListener('click', e => {
     const el = e.target.closest('.wi'); if (!el) return;
@@ -386,7 +393,7 @@ async function boot() {
     activateCard(el);
   });
   document.addEventListener('click', e => {
-    if (e.target.closest('[data-world-info]')) { sceneInfo({model:sel,ai:analysisFor(sel,flights),opener:e.target.closest('button')}); return; }
+    if (e.target.closest('[data-world-info]')) { sceneInfo({model:sel,opener:e.target.closest('button')}); return; }
     if (e.target.closest('[data-world-settings]')) {
       const content=document.getElementById('wp-cfg').cloneNode(true); content.removeAttribute('id'); content.hidden=false;
       settingsSheet=createSheet({title:'Ajustes de vuelo',content,size:'full',className:'scene-sheet',onClose:()=>{const sheet=settingsSheet; settingsSheet=null; sheet?.destroy();}}); settingsSheet.open(e.target.closest('button'));return;
@@ -465,7 +472,8 @@ async function boot() {
     const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}${cfgExtra(sc)}`;
     return `<div class="fv-pop">
       <div class="fv-pop-poster" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></div>
-      <b>${esc(sc.name)}</b>
+      <b>${esc(sceneTitle(sc.name))}</b>
+      <p class="fv-pop-description">${esc(descriptions.get(sc.clip_id)?.caption_short || '')}</p>
       <span>${st.gsd_cm_px ? st.gsd_cm_px + ' cm/px · ' : ''}${st.track_duration_s ? dur(st.track_duration_s) + ' vuelo real' : ''}${rec != null ? ' · récord ' + rec.toFixed(1) + 's' : ''}</span>
       ${sc.capabilities?.terrain ? `<div class="fv-pop-btns">
         <a href="${go('')}" data-golaunch="${go('')}" data-poster="${esc(sc.assets?.poster||'')}">Libre</a>
@@ -497,7 +505,7 @@ async function boot() {
         .setHTML(missionPopup(sc));
       const dot = document.createElement('div');
       dot.className = 'fv-pin2' + (sc.capabilities?.splat ? ' splat' : '');
-      dot.innerHTML = `<span class="fv-pin-img" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></span><span class="fv-pin-lb">${esc(sc.name.split(' · ')[0])}</span>`;
+      dot.innerHTML = `<span class="fv-pin-img" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></span><span class="fv-pin-lb">${esc(sceneTitle(sc.name).split(' · ')[0])}</span>`;
       new maplibregl.Marker({ element: dot }).setLngLat(c).setPopup(pop).addTo(map);
       dot.addEventListener('click', () => map.flyTo({ center: c, zoom: 15.5, duration: reducedMotion() ? 0 : 340 }));
     }

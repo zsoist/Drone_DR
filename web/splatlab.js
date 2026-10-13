@@ -1,4 +1,4 @@
-import { areaNav, createSheet, confirmSheet, showToast, skeletonCards, registerScenes } from './scene-improve-ui.js?v=391';
+import { sceneTitle, areaNav, createSheet, confirmSheet, showToast, skeletonCards, registerScenes } from './scene-improve-ui.js?v=399';
 // Splat Lab — SuperSplat (MIT, self-hosted en /supersplat/) integrado al shell.
 // Flujo completo: elegir splat → editar (floaters/crop/transform) → File > Export
 // → SUBIR AQUÍ MISMO (drag&drop o botón) → se publica versionado (history/) y el
@@ -25,7 +25,7 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
   const models = () => sys.models || [];
   const title = s => {
     const m = models().find(x => x.clip_id === s.clip_id);
-    if (m && m.title) return m.title;
+    if (m && m.title) return sceneTitle(m.title);
     const ts = ((s.clip_id || '').split('_')[1] || '');
     return ts ? `${fmt.date(`${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)}`)} · ${ts.slice(8, 10)}:${ts.slice(10, 12)}` : s.clip_id;
   };
@@ -410,7 +410,7 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
       st.textContent = `body:not(.ab-mobile) #view-cube-container { transform: scale(.72); transform-origin: top right; }
         body:not(.ab-mobile) #right-toolbar { top: max(50%, 300px) !important; }`;
       doc.head.appendChild(st);
-      const foundation=document.createElement('link');foundation.rel='stylesheet';foundation.href='/scene-improve-editor.css?v=391';doc.head.appendChild(foundation);
+      const foundation=document.createElement('link');foundation.rel='stylesheet';foundation.href='/scene-improve-editor.css?v=399';doc.head.appendChild(foundation);
       doc.documentElement.dataset.theme=document.documentElement.dataset.theme || 'dark';
       doc.addEventListener('keydown', e => { if(e.key==='Escape' && drop.classList.contains('lab-fullscreen')) { setFull(false); document.getElementById('lab-full').focus(); } });
       doc.querySelectorAll('#menu-arrow, #menu-collapse').forEach(button => {

@@ -1,5 +1,5 @@
-import { originalInputs } from './scene-improve-state.js?v=391';
-import { areaNav } from './scene-improve-ui.js?v=391';
+import { originalInputs } from './scene-improve-state.js?v=399';
+import { sceneTitle, areaNav } from './scene-improve-ui.js?v=399';
 /* global renderShell, pageHead, getFlights, authFetch, api, fmt, icon, haversine, SceneImprovePolicy */
 
 const root = document.getElementById('scene-improve-root');
@@ -173,7 +173,7 @@ function renderWorkspace() {
   root.setAttribute('aria-busy', 'false');
   root.innerHTML = `
     ${areaNav('escenas')}<a class="si-back" href="tresd.html?project=${encodeURIComponent(modelId)}">${icon('chevL')} Volver a 3D</a>
-    ${pageHead(`Mejorar ${esc(model.title || 'esta escena')}`,
+    ${pageHead(`Mejorar ${esc(sceneTitle(model.title || 'esta escena'))}`,
       'Añade tomas del mismo lugar. Conserva la versión actual hasta revisar el resultado.',
       `<span class="chip ok">${icon('check')} Versión actual protegida</span>`)}
 
@@ -182,8 +182,8 @@ function renderWorkspace() {
         <section class="panel si-section" aria-labelledby="si-base-title">
           <div class="si-step"><span>01</span><div><h2 id="si-base-title">Base de la mejora</h2><p>Conserva estas capturas y añade nuevos ángulos.</p></div></div>
           <div class="si-base-card">
-            <img src="${modelThumb(model)}" alt="Ortofoto actual de ${esc(model.title || 'la escena')}">
-            <div><h3>${esc(model.title || model.clip_id)}</h3>
+            <img src="${modelThumb(model)}" alt="Ortofoto actual de ${esc(sceneTitle(model.title || 'la escena'))}">
+            <div><h3>${esc(sceneTitle(model.title || model.clip_id))}</h3>
               <p class="mono">${q.cameras_reconstructed ?? '—'} cámaras · ${q.gsd_cm_px ?? '—'} cm/px · ${q.area_m2 ? (q.area_m2 / 10000).toFixed(1) + ' ha' : 'área no medida'}</p>
               <p>Podrás comparar ambas versiones antes de elegir.</p></div>
           </div>

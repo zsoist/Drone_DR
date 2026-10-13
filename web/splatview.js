@@ -1,4 +1,4 @@
-import { reducedMotion } from './scene-improve-ui.js?v=391';
+import { reducedMotion } from './scene-improve-ui.js?v=399';
 // splatview.js — visor PREMIUM de gaussian splats, compartido por tresd.js y share.js.
 // MOTOR: Spark 2.1 (r180) — migrado desde GaussianSplats3D 0.4.7 (fase E del
 // plan FLIGHTVERSE; el autor de GS3D descontinuó la lib y recomienda Spark).
