@@ -20,13 +20,13 @@
 //     'tour'  {state:'start'|'stop'|'poi'|'loop', index, n, poi:{id,name,short,dwell,index,n}}
 //     'photo' {active, ...state}      'edge' {warn, s, fog, dist, m}      'tod' {key, elev}  (tod ya está en el bus)
 //   ctx.ui.external = {tour,photo,edge} (A) desactiva el chrome de respaldo de default-ui.js.
-import { createRecorder } from '/flightverse/recorder.js?v=423';
-import { createGhost } from '/flightverse/tour/ghost.js?v=423';
-import { createAutopilot } from '/flightverse/tour/autopilot.js?v=423';
-import { createDirector } from '/flightverse/tour/director.js?v=423';
-import { createCinematic } from '/flightverse/tour/cinematic.js?v=423';
-import { installPresentation } from '/flightverse/tour/presentation.js?v=423';
-import { freezePixelRatio } from '/flightverse/tour/render-guard.js?v=423';
+import { createRecorder } from '/flightverse/recorder.js?v=372';
+import { createGhost } from '/flightverse/tour/ghost.js?v=372';
+import { createAutopilot } from '/flightverse/tour/autopilot.js?v=372';
+import { createDirector } from '/flightverse/tour/director.js?v=372';
+import { createCinematic } from '/flightverse/tour/cinematic.js?v=372';
+import { installPresentation } from '/flightverse/tour/presentation.js?v=372';
+import { freezePixelRatio } from '/flightverse/tour/render-guard.js?v=372';
 
 export async function installTour(ctx) {
   const { report, AT } = ctx;

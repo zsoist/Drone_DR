@@ -19,16 +19,14 @@
   <meta property="og:description" content="Imágenes aéreas y datos de la propiedad.">
   <meta property="og:image" content="/assets/touch-icon.png">
   <meta name="twitter:card" content="summary">
-  <link rel="stylesheet" href="style.css?v=428">
-  <link rel="stylesheet" href="css/p.css?v=428">
-  <script src="icons.js?v=428"></script>
-
-  <link rel="preload" href="vendor/fonts/mona-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="css/shell.css?v=428">
-  <link rel="stylesheet" href="ui/skeleton.css?v=428">
+  <link rel="stylesheet" href="style.css?v=372">
+  <link rel="stylesheet" href="css/p.css?v=372">
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
+  <script src="vendor/maplibre-gl.js" defer></script>
+  <script src="icons.js?v=372"></script>
 </head>
 <body>
-  <main class="prop ab-page" id="root" aria-busy="true"><p role="status">Cargando propiedad…</p><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></main>
-  <script type="module" src="p.js?v=428" defer></script>
+  <div class="prop" id="root"><p class="p-loading" role="status">Cargando propiedad…</p></div>
+  <script src="p.js?v=372" defer></script>
 </body>
 </html>

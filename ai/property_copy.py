@@ -11,13 +11,13 @@ except ImportError:
 
 # Describe the footage, not parcel boundaries, rights, services, or guaranteed access.
 FEATURES = [
-    (r'\bvalle\b', 'El entorno visible incluye un valle'),
-    (r'\b(?:montanas?|montanoso|cerros?)\b', 'Se observan montañas en el paisaje'),
+    (r'\bvalle\b', 'El recorrido muestra el valle desde el aire'),
+    (r'\b(?:montanas?|montanoso|cerros?)\b', 'Las montañas marcan el relieve del paisaje'),
     (r'\b(?:vegetacion|arboles|palmeras|bosque|selva)\b', 'Las tomas muestran vegetación alrededor de las construcciones'),
-    (r'\b(?:calle|calles)\b', 'Se observa una calle entre las construcciones'),
+    (r'\b(?:calle|calles)\b', 'Una calle pasa entre las construcciones'),
     (r'\b(?:carretera|carreteras|camino|caminos)\b', 'En las tomas se ve una vía en el entorno'),
     (r'\b(?:casas|pueblo|edificios)\b', 'Se ven construcciones en los alrededores'),
-    (r'\b(?:rio|laguna|embalse)\b', 'En el paisaje se observa un cuerpo de agua'),
+    (r'\b(?:rio|laguna|embalse)\b', 'El paisaje incluye un cuerpo de agua'),
 ]
 
 
@@ -64,7 +64,7 @@ def validate_copy(text, evidence=None):
         allowed = observations(evidence)
         return len(set(sentences)) == len(sentences) and all(s in allowed for s in sentences)
     return all(s in [line + '.' for _, line in FEATURES] or s in (
-        'Las tomas muestran vegetación en el paisaje.', 'Se observa una calle en el entorno.') for s in sentences)
+        'Las tomas muestran vegetación en el paisaje.', 'Una calle pasa en el entorno.') for s in sentences)
 
 
 def template(prop, evidence=()):

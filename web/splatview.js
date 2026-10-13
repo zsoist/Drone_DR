@@ -6,8 +6,8 @@ import { reducedMotion } from './scene-improve-ui.js?v=427';
 // La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
 // auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
 // contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
-import * as THREE from '/vendor/three180.module.js?v=423';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=423';
+import * as THREE from '/vendor/three180.module.js?v=372';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=372';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -30,7 +30,7 @@ const btn = (id, label, path) =>
 export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, unitsMeters = null, signal = null, compact = false } = {}) {
   const abortErr = () => new DOMException('carga de splat cancelada', 'AbortError');
   if (signal?.aborted) throw abortErr();
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=423');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=372');
   if (signal?.aborted) throw abortErr();
   if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
   const holder = document.createElement('div');

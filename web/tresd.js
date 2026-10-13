@@ -1,17 +1,11 @@
-import { skinPlayer } from './ui/player.js?v=423';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=423';
-import { fmt } from './ui/format.js?v=423';
-import { term } from './ui/terms.js?v=423';
-import { sceneInsight, sceneCover, hydrateSceneCovers, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=427';
-import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=427';
-  import * as THREE from '/vendor/three180.module.js?v=423';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=423';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=423';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=423';
-  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=423';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=423';
-  import { mountSplatViewer } from '/splatview.js?v=427';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=423';
+  import * as THREE from '/vendor/three180.module.js?v=372';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=372';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=372';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=372';
+  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=372';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=372';
+  import { mountSplatViewer } from '/splatview.js?v=372';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=372';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };

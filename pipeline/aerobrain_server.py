@@ -3944,6 +3944,29 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             return self.do_GET_properties()
+        # Legacy clients construct thumbnail and frame URLs without reading AI metadata.
+        from ai import frame_api
+        selected_frame = frame_api.media_frame(path, VAULT)
+        if selected_frame is not None:
+            if not selected_frame['quality']['eligible']:
+                # A neutral image keeps old cards usable without exposing rejected footage.
+                payload = b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"><path fill="#20242a" d="M0 0h16v9H0z"/></svg>'
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/svg+xml')
+                self.send_header('Content-Length', str(len(payload)))
+                self.send_header('Cache-Control', 'private, no-store')
+                self.send_header('X-Frame-Quality', 'rejected')
+                self.end_headers()
+                if self.command != 'HEAD':
+                    self.wfile.write(payload)
+                return
+            if '/thumbs/' in urllib.parse.unquote(path).lower():
+                self.send_response(302)
+                self.send_header('Location', selected_frame['frame_url'])
+                self.send_header('Content-Length', '0')
+                self.send_header('Cache-Control', 'private, no-store')
+                self.end_headers()
+                return
         f = self.resolve()
         if not f:
             return self.send_error(404)
@@ -3964,7 +3987,20 @@ class H(BaseHTTPRequestHandler):
                         flight['ai'] = {k: data.get(k) for k in (
                             'summary', 'caption_short', 'scene_type', 'tags', 'highlights',
                             'travel_score', 'synthetic', 'owner_highlights', 'cover')}
+                    else:
+                        flight.pop('ai', None)
+                    cover = data.get('cover')
+                    flight['thumbnail'] = cover
+                    flight['thumb_url'] = cover['frame_url'] if cover else None
             return self.send_json(payload)
+        if re.fullmatch(r'/data/properties/[A-Za-z0-9_-]+\.json', path):
+            from ai import insights, property_copy
+            prop = insights.property_media(read_json_file(f), VAULT)
+            if prop.get('descripcion_source', '').startswith('ai'):
+                prop['descripcion'] = property_copy.template(prop, property_copy.visual_evidence(prop, VAULT))
+            return self.send_json(prop)
+        if path.startswith('/data/') and f.suffix.lower() == '.json':
+            return self.send_json(read_json_file(f))
         if f.suffix.lower() == ".html" and str(f).startswith(str(WEB)):
             payload = render_html(f)
             self.send_response(200)
@@ -4235,6 +4271,9 @@ class H(BaseHTTPRequestHandler):
             self.rfile.read(n)
 
     def send_json(self, obj, code=200, extra_headers=None):
+        if self.command in ('GET', 'HEAD') and code == 200:
+            from ai.frame_api import project
+            obj = project(obj, VAULT)
         body = json.dumps(obj).encode()
         try:
             self.send_response(code)
