@@ -20,6 +20,7 @@ os.environ['AEROBRAIN_NO_REMOTE'] = '1'
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'ai'))
 import insights
 import backfill_insights
+import backfill_summaries
 from insight_schema import validate_insight
 
 
@@ -250,20 +251,29 @@ class VisualAI(unittest.TestCase):
     def test_summary_cache_invalidation_failure_and_read_only_get(self):
         tid = insights.trip_groups(self.rows)[0]['id']
         for kind, identity in [('flight', 'clip_a'), ('trip', tid)]:
+            distance = '100 m' if kind == 'flight' else '151 m'
             with patch.object(insights.router, 'summary_text', return_value=(
-                    '{"sentences":["El dron recorre el río.","La luz es suave."]}', {'total_tokens': 20})) as api:
+                    json.dumps({'sentences': [f'El recorrido suma {distance}.', 'El río se ve con luz suave.']}),
+                    {'total_tokens': 20})) as api:
                 self.assertFalse(insights.cache_summary(kind, identity, {}, self.vault)['cached'])
                 self.assertTrue(insights.cache_summary(kind, identity, {}, self.vault)['cached'])
                 self.assertEqual(1, api.call_count)
                 self.assertEqual('ready', insights.get_summary(kind, identity, self.vault)['status'])
+                stored = json.loads(insights.summary_path(kind, identity, self.vault).read_text())
+                result, source = insights.summary_source(kind, identity, self.vault)
+                old_evidence = [{'clip_id': f['clip_id'], 'caption': insights.record(f['clip_id'], self.vault).get('summary', ''),
+                                 'stats': f['stats']} for f in self.rows if f['clip_id'] in result['clip_ids']]
+                self.assertEqual(insights.digest({'data': result, 'evidence': old_evidence}), stored['source_hash'])
+                self.assertEqual(insights.digest(source), stored['summary_hash'])
             target = insights.summary_path(kind, identity, self.vault)
             before = target.read_bytes()
             self.rows[0]['stats']['distance_m'] += 1
             self.write('manifest/flights.json', {'flights': self.rows})
             self.assertEqual('pending', insights.get_summary(kind, identity, self.vault)['status'])
-            with patch.object(insights.router, 'summary_text', return_value=('{}', {})), self.assertRaises(ValueError):
+            with patch.object(insights.router, 'summary_text', return_value=('{}', {})):
                 insights.cache_summary(kind, identity, {}, self.vault)
-            self.assertEqual(before, target.read_bytes())
+            self.assertNotEqual(before, target.read_bytes())
+            self.assertEqual('template', json.loads(target.read_text())['origin'])
         self.assertEqual(30, insights.get_summary('trip', tid, self.vault)['max_altitude_m'])
         self.assertLessEqual(len(insights.get_summary('trip', tid, self.vault)['best_frames']), 6)
 
@@ -287,12 +297,115 @@ class VisualAI(unittest.TestCase):
         insights.query_vector('rio', {}); insights.query_vector('rio', {})
         self.embed_mock.assert_called_once_with('rio', {}, 'RETRIEVAL_QUERY')
 
-    def test_packed_summary_keeps_two_sentences_and_decimal_values(self):
+    def test_summary_validation_and_deterministic_fallback(self):
+        bad = ['DJI_20260704160159_0103_D', 'clip_a', 'score 0.9', 'puntuación 1',
+               'selección de IA', 'viaje sugerido', 'paisaje impresionante', '10.880,5 metros',
+               'calidad 9/10', '52 vuelos', '1000 metros']
+        for phrase in bad:
+            with self.subTest(phrase=phrase):
+                target = insights.summary_path('flight', 'clip_a', self.vault)
+                target.unlink(missing_ok=True)
+                raw = json.dumps({'sentences': ['El recorrido suma 100 m.', f'Se ve {phrase}.']})
+                with patch.object(insights.router, 'summary_text', return_value=(raw, {'total_tokens': 20})):
+                    outcome = insights.cache_summary('flight', 'clip_a', {}, self.vault)
+                self.assertEqual('template', outcome['origin'])
+                self.assertEqual(20, outcome['usage']['total_tokens'])
+                text = insights.get_summary('flight', 'clip_a', self.vault)['summary']
+                self.assertIn('100 m.', text)
+                self.assertIn('río', text)
+                self.assertIn('luz suave', text)
+        for raw in ['{}', 'not json', '{"sentences": [null, 2]}',
+                    '{"sentences": ["Uno. Dos.", "Tres."]}']:
+            target.unlink()
+            with patch.object(insights.router, 'summary_text', return_value=(raw, {})):
+                self.assertEqual('template', insights.cache_summary('flight', 'clip_a', {}, self.vault)['origin'])
+        target.unlink()
+        with patch.object(insights.router, 'summary_text', side_effect=TimeoutError):
+            self.assertEqual('template', insights.cache_summary('flight', 'clip_a', {}, self.vault)['origin'])
+        _, source = insights.summary_source('flight', 'clip_a', self.vault)
+        self.assertFalse(insights.valid_summary('El río se ve a 100 m. La luz es suave.', source))
+
+    def test_distance_format_and_valid_model_summary(self):
+        for distance, expected in [(None, ''), (327.5, '328 m'), (999, '999 m'),
+                                    (1000, '1,0 km'), (10880.5, '10,9 km')]:
+            self.assertEqual(expected, insights.format_distance(distance))
+        self.rows[0]['stats']['distance_m'] = 10880.5
+        self.write('manifest/flights.json', {'flights': self.rows})
+        text = 'El recorrido suma 10,9 km entre montañas. El río se ve con luz suave.'
         with patch.object(insights.router, 'summary_text', return_value=(
-                '{"sentences":["El dron recorrió 327.5 metros. La altura fue 52.4 metros."]}', {})):
-            insights.cache_summary('flight', 'clip_a', {}, self.vault)
-        summary = insights.get_summary('flight', 'clip_a', self.vault)['summary']
-        self.assertEqual('El dron recorrió 327.5 metros. La altura fue 52.4 metros.', summary)
+                json.dumps({'sentences': ['El recorrido suma 10,9 km entre montañas.',
+                                           'El río se ve con luz suave.']}), {})):
+            result = insights.cache_summary('flight', 'clip_a', {}, self.vault)
+        self.assertEqual('deepseek', result['origin'])
+        self.assertEqual(text, insights.get_summary('flight', 'clip_a', self.vault)['summary'])
+
+    def test_summary_prompt_has_visual_evidence_without_telemetry(self):
+        _, source = insights.summary_source('flight', 'clip_a', self.vault)
+        response = {'choices': [{'message': {'content': '{}'}}], 'usage': {}}
+        with patch.object(insights.router, '_post', return_value=response) as api:
+            insights.router.summary_text(source, {'DEEPSEEK_API_KEY': 'test'})
+        prompt = api.call_args.args[1]['messages'][0]['content'].split('Datos: ')[1]
+        for internal in ['clip_a', 'best_moment', 'suggested', 'score', 'max_altitude']:
+            self.assertNotIn(internal, prompt)
+        for field in ['río', 'Luz suave', '100 m']:
+            self.assertIn(field, prompt)
+
+    def test_summary_only_backfill_bounds_cache_version_and_no_vision(self):
+        tid = insights.trip_groups(self.rows)[0]['id']
+        for kind, identity in [('flight', 'clip_a'), ('trip', tid)]:
+            target = insights.summary_path(kind, identity, self.vault)
+            target.parent.mkdir(exist_ok=True)
+            target.write_text(json.dumps({'source_hash': 'old', 'summary': 'El viaje sugerido.'}))
+        before = {p: p.read_bytes() for p in self.vault.rglob('*.json')}
+        self.vision_mock.reset_mock(); self.embed_mock.reset_mock()
+        with patch.object(insights.router, 'summary_text', return_value=('{}', {})) as api:
+            self.assertEqual(1, backfill_summaries.backfill(1, True, self.vault)['selected'])
+            api.assert_not_called()
+            self.assertEqual(before, {p: p.read_bytes() for p in self.vault.rglob('*.json')})
+            self.assertEqual(1, backfill_summaries.backfill(1, vault=self.vault, keys={})['calls'])
+            self.assertEqual(1, api.call_count)
+            self.assertEqual(1, backfill_summaries.backfill(10, vault=self.vault, deterministic=True)['templates'])
+            self.assertEqual(0, backfill_summaries.backfill(10, vault=self.vault, keys={})['selected'])
+        self.vision_mock.assert_not_called(); self.embed_mock.assert_not_called()
+
+    def test_collection_covers_are_unique_clean_and_best_frames(self):
+        b = copy.deepcopy(self.data)
+        b['clip_id'] = 'clip_b'
+        b['insight']['highlight_segments'][0]['score'] = 1
+        b['insight']['caption'] = 'Un letrero SE VENDE con teléfono.'
+        self.write('ai/clip_b.json', b)
+        result = insights.collections(self.vault, True)['collections']
+        place = next(c for c in result if c['kind'] == 'place')
+        self.assertEqual('clip_a', place['cover']['clip_id'])
+        self.assertEqual(2, place['cover']['frame_time_s'])
+        urls = [c['cover']['frame_url'] for c in result]
+        self.assertEqual(len(urls), len(set(urls)))
+        for field, value in [('caption', 'Texto sobre el edificio.'), ('tags', ['cartel']),
+                             ('caption', 'Un lote en venta.')]:
+            b['insight'] = fixture_insight()
+            b['insight'][field] = value
+            b['insight']['highlight_segments'][0]['score'] = 1
+            self.write('ai/clip_b.json', b)
+            place = next(c for c in insights.collections(self.vault, True)['collections'] if c['kind'] == 'place')
+            self.assertEqual('clip_a', place['cover']['clip_id'])
+        b['insight'] = fixture_insight()
+        b['insight']['highlight_segments'][0]['score'] = 1
+        b['insight']['quality_flags'] = ['sobreexpuesto']
+        self.write('ai/clip_b.json', b)
+        place = next(c for c in insights.collections(self.vault, True)['collections'] if c['kind'] == 'place')
+        self.assertEqual('clip_a', place['cover']['clip_id'])
+        b['insight']['quality_flags'] = []
+        b['insight']['highlight_segments'][0]['reason'] = 'Un letrero SE VENDE.'
+        self.write('ai/clip_b.json', b)
+        place = next(c for c in insights.collections(self.vault, True)['collections'] if c['kind'] == 'place')
+        self.assertEqual('clip_a', place['cover']['clip_id'])
+
+    def test_exhausted_covers_do_not_repeat_and_get_does_not_write(self):
+        before = {p: p.read_bytes() for p in self.vault.rglob('*') if p.is_file()}
+        with patch.object(insights, 'moment', return_value={
+                'clip_id': 'clip_a', 'frame_url': '/same.jpg', 'score': 1, 'selection': 'ai'}):
+            self.assertEqual(1, len(insights.collections(self.vault, True)['collections']))
+        self.assertEqual(before, {p: p.read_bytes() for p in self.vault.rglob('*') if p.is_file()})
 
     def test_embedding_repair_reuses_insight_without_vision(self):
         data = copy.deepcopy(self.data)
