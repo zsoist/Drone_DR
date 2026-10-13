@@ -79,7 +79,8 @@ Write label text in sentence case. Do not use uppercase mono labels.
 
 Use `.ab-page` on the main element from `renderShell()` for new page layouts.
 Use `.ab-page--wide` with `.ab-page` for editors that need more space.
-These classes are optional. Current pages keep their layout until their workstream adopts the grid.
+All app pages use these classes.
+Login keeps a centered form and local styles within its public asset boundary.
 
 | Token or class | Contract |
 |---|---|
@@ -155,7 +156,19 @@ An empty query shows Recientes first, followed by actions and sections.
 The `ab_palette_recent` key stores the last five unique destinations. Storage errors do not stop navigation.
 The shell records section visits. The palette also records destinations opened from registered sources.
 
-The desktop palette is a centered 640 px panel. Its entrance uses a subtle scale and fade.
+The desktop palette is a centered 640 px panel. Its height follows the content, with a maximum of 70vh.
+Results scroll within the panel. Its entrance uses a subtle scale and fade.
+
+The shell uses GET `/api/search` for queries with at least two characters.
+The source waits 200 ms and cancels the previous request when the query changes.
+It caches up to 64 completed queries in memory for the page session.
+Clip results keep the server order, even without a literal text match.
+Each clip shows its thumbnail, `caption_short`, and matched time.
+Query-specific results replace duplicate entries from the local index.
+
+The Clips heading shows `Sugerido` once. These read-only results need no accept or dismiss controls.
+Enter or a tap opens `flight.html?id=<clip_id>&t=<seconds>`.
+A skeleton appears while the request runs. Errors show an inline message and preserve local navigation.
 
 ```js
 import { registerPaletteSource } from './ui/palette.js';
@@ -165,6 +178,7 @@ const unregister = registerPaletteSource(async ({ query, signal }) => {
   return response.json();
 });
 // Item: {id, label, keywords?, icon?, hint?, group?, href? OR action?}
+// Optional: thumbnail, suggested, queryMatch (the source already matched this query).
 // unregister();
 ```
 

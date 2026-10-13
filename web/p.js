@@ -1,5 +1,5 @@
-import { galleryFrames } from './p.logic.js?v=391';
-import { createSheet } from './ui/sheet.js?v=391';
+import { galleryFrames } from './p.logic.js?v=397';
+import { createSheet } from './ui/sheet.js?v=397';
 const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const root = document.getElementById('root');
 function empty(title, text, retry=false) {

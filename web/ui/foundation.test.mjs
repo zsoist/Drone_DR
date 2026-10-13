@@ -71,6 +71,9 @@ test('transitions use back for history and crossfade for 3D or reduced motion', 
   assert.ok(swap('/tresd.html').has('crossfade'));
   media.matches = true;
   assert.ok(swap('/studio.html').has('crossfade'));
+  handlers.pageswap({ viewTransition: { types: new Set(), ready: Promise.reject(new Error('Skipped transition')), finished: Promise.resolve() } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(element.style.viewTransitionName, '');
   handlers.pagereveal({}); // No View Transition support remains a normal navigation.
 });
 

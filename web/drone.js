@@ -44,8 +44,8 @@ main.innerHTML = `
           </div>
 
 
-          <p class="dr-note">Sin telemetría: esta vía no trae GPS ni mapa. Si el video salió del dron con su .SRT,
-            usa la <b>Tarjeta SD</b>: es la diferencia entre un clip y un vuelo completo.</p>
+          <p class="dr-note">Esta vía no incluye la ruta ni los datos del vuelo. Para conservarlos junto al video,
+            importa desde la <b>Tarjeta SD</b>.</p>
 
           <div id="queue" class="dr-up-queue"></div>
         </div>
@@ -56,7 +56,7 @@ main.innerHTML = `
 
             ${icon('iso')}
             <p class="dr-up-t">Arrastra fotos o una carpeta</p>
-            <p class="dr-up-s">JPG, JPEG y DNG del dron. Hasta 200 MB por foto y 25 GB por set.</p>
+            <p class="dr-up-s">JPG, JPEG y DNG del dron. Hasta 200 MB por foto y 25 GB por grupo.</p>
             <div class="dr-up-devices">
               <button type="button" class="ui-button ui-button--secondary" id="ph-pick">${icon('plus')} Elegir fotos</button>
               <button type="button" class="ui-button ui-button--secondary" id="ph-pick-dir">${icon('folder')} Elegir carpeta</button>
@@ -66,13 +66,13 @@ main.innerHTML = `
           </div>
 
           <div class="panel dr-panel dr-ph" id="ph-stage" hidden>
-            <div class="ph">${icon('layers')} Set de fotos
+            <div class="ph">${icon('layers')} Grupo de fotos
               <span class="spacer"></span>
               <button type="button" class="ui-button ui-button--quiet" id="ph-clear">${icon('trash')} Vaciar</button>
             </div>
             <div class="pb">
               <div class="dr-ph-fields">
-                <label class="dr-ph-f"><span class="dr-ph-lb">Set</span>
+                <label class="dr-ph-f"><span class="dr-ph-lb">Grupo</span>
                   <input class="ctl" id="ph-set" maxlength="60" autocomplete="off" placeholder="Ej. Edificio Dialectica"></label>
                 <label class="dr-ph-f"><span class="dr-ph-lb">Pasada</span>
                   <input class="ctl" id="ph-pass" list="ph-pass-list" maxlength="60" autocomplete="off" placeholder="nadir, anillo A, fachada…"></label>
@@ -80,7 +80,7 @@ main.innerHTML = `
               </div>
               <div class="dr-ph-sum" id="ph-sum" aria-live="polite"></div>
               <div class="dr-ph-prog" id="ph-prog" hidden>
-                <div class="dr-up-meta mono" id="ph-meta" aria-live="polite"></div>
+                <div class="dr-up-meta" id="ph-meta" aria-live="polite"></div>
                 <div class="dr-up-bar"><i id="ph-bar" style="--p:0"></i></div>
               </div>
               <div id="ph-msg"></div>
@@ -93,7 +93,7 @@ main.innerHTML = `
           </div>
 
 
-          <p class="dr-note">Las fotos conservan su EXIF (GPS, lente) y su nombre original: no las renombres, el protocolo de captura depende de ello.</p>
+          <p class="dr-note">Las fotos conservan la ubicación, los datos de la cámara y sus nombres originales. Mantén esos nombres para agrupar cada pasada.</p>
         </div>
       </div>
     </div>
@@ -175,7 +175,7 @@ async function scan() {
         ${gauge(pct)}
         <div class="sd-title">
           <b>${esc(v.volume)}</b>
-          <span class="mono">${gb(v.total - v.free)} de ${gb(v.total)} · ${v.videos.length} videos · ${v.photos.length} fotos</span>
+          <span>${gb(v.total - v.free)} de ${gb(v.total)} · ${v.videos.length} videos · ${v.photos.length} fotos</span>
         </div>
         <span class="spacer" style="flex:1"></span>
         <div class="sd-acts">
@@ -244,7 +244,7 @@ function renderBrowser(v) {
     <div class="sd-files">${rows.slice(0, 120).map(x => `
       <div class="sd-file">
         <span class="sf-ic">${icon(x.tipo === 'video' ? 'film' : 'iso')}</span>
-        <span class="sf-name mono">${esc(x.name)}</span>
+        <span class="sf-name">${esc(x.name)}</span>
         ${x.srt ? '<span class="ui-chip">GPS</span>' : ''}
         <span class="spacer" style="flex:1"></span>
         <span class="mono sf-size">${x.bytes > 1e9 ? gb(x.bytes) : (x.bytes / 1e6).toFixed(0) + ' MB'}</span>
@@ -295,7 +295,7 @@ document.getElementById('sd-list').addEventListener('click', e => {
 // Import includes photos. Keep originals until content verification is available.
 async function openImport(v) {
   const opener = document.activeElement;
-  const { createSheet } = await import('./ui/sheet.js?v=391');
+  const { createSheet } = await import('./ui/sheet.js?v=397');
   const files = [...v.videos, ...v.photos].filter(x => !x.in_vault);
   const content = document.createElement('form'); content.className = 'dr-import-form';
   content.innerHTML = `<p>Elige los archivos que quieres importar. Los originales se conservan en la tarjeta.</p><div class="dr-import-files">${files.map(f=>`<label><input type="checkbox" checked data-rel="${esc(f.rel)}"><span><b>${esc(f.name)}</b><small>${gb(f.bytes)}${f.srt ? ' · con GPS' : ''}</small></span></label>`).join('')}</div><label for="sd-drone">Carpeta de destino</label><input class="ctl" id="sd-drone" value="${esc(v.volume)}" maxlength="40" required><p class="dr-import-error" role="alert"></p><button type="submit" class="ui-button ui-button--primary">Importar archivos</button>`;
@@ -314,7 +314,7 @@ async function openImport(v) {
 }
 async function openOptimize() {
   const opener = document.activeElement;
-  const { createSheet } = await import('./ui/sheet.js?v=391');
+  const { createSheet } = await import('./ui/sheet.js?v=397');
   const content=document.createElement('p'); content.textContent='La limpieza está deshabilitada hasta que el servidor pueda verificar el contenido completo de cada copia. Conserva los originales en la tarjeta.';
   const view=createSheet({title:'Conserva tus originales',content,size:'peek',onClose:()=>view.destroy()}); view.open(opener);
 }
@@ -402,7 +402,7 @@ function upRender() {
       <span class="dr-up-ic">${icon(UP_STATE[it.status].ic)}</span>
       <div class="dr-up-info">
         <div class="dr-up-name">${esc(it.file.name)}</div>
-        <div class="dr-up-meta mono" data-meta="${i}">${upMeta(it)}</div>
+        <div class="dr-up-meta" data-meta="${i}">${upMeta(it)}</div>
         <div class="dr-up-bar"><i data-bar="${i}" style="--p:${it.pct / 100}"></i></div>
       </div>
       <div class="dr-up-acts">
@@ -503,7 +503,7 @@ async function phStageEntries(entries) {
   const notes = [];
   if (skipped) notes.push(`${skipped} archivo${skipped === 1 ? '' : 's'} omitido${skipped === 1 ? '' : 's'} (solo JPG, JPEG y DNG)`);
   if (tooBig) notes.push(`${tooBig} pesa${tooBig === 1 ? '' : 'n'} más de 200 MB`);
-  if (over) notes.push(`${over} no caben en el set (máx. 2000 fotos y 25 GB)`);
+  if (over) notes.push(`${over} no caben en el grupo (máx. 2000 fotos y 25 GB)`);
   if (notes.length) toast(notes.join(' · '));
   phFatal = '';
   phRender();
@@ -541,13 +541,13 @@ function phRender() {
   phEl('ph-clear').disabled = phBusy;
   phEl('ph-set').disabled = phEl('ph-pass').disabled = phBusy;
   const many = passes.size > 1;
-  phEl('ph-dest').innerHTML = `Destino: <span class="mono">raw/${esc(phSetName())}/${many ? '&lt;pasada&gt;' : esc([...passes][0])}/</span> · nombres originales, sin recomprimir.`;
+  phEl('ph-dest').innerHTML = `Grupo: ${esc(phSetName())} · ${many ? 'varias pasadas' : esc([...passes][0])}. Se conservan los nombres y la calidad original.`;
   // mensaje de estado: error fatal, errores por foto, o éxito
   const msg = phEl('ph-msg');
   if (phFatal) {
     msg.innerHTML = `<div class="dr-ph-alert bad" role="alert">${icon('warn')}<span>${esc(phFatal)}</span></div>`;
   } else if (failed.length && !phBusy) {
-    const first = failed.slice(0, 4).map(i => `<li><span class="mono">${esc(i.file.name)}</span> · ${esc(i.err || 'error')}</li>`).join('');
+    const first = failed.slice(0, 4).map(i => `<li><span>${esc(i.file.name)}</span> · ${esc(i.err || 'error')}</li>`).join('');
     msg.innerHTML = `<div class="dr-ph-alert bad" role="alert">${icon('warn')}<div><b>${failed.length} foto${failed.length === 1 ? '' : 's'} no se subió${failed.length === 1 ? '' : 'eron'}.</b>
       <ul>${first}${failed.length > 4 ? `<li>y ${failed.length - 4} más…</li>` : ''}</ul></div></div>`;
   } else if (done.length && !pend.length && !phBusy) {
@@ -652,7 +652,7 @@ phEl('ph-dir').addEventListener('change', e => {
 // Equipment is documented in the capture guide. The manifest has no drone assignment.
 document.getElementById('dr-import').addEventListener('click',()=>{ document.getElementById('dr-tabs').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'}); (document.querySelector('[data-rescan]') || document.getElementById('sd-rescan')).focus({preventScroll:true}); });
 document.getElementById('dr-specs').addEventListener('click',async e=>{
-  const opener=e.currentTarget; const {createSheet}=await import('./ui/sheet.js?v=391');
+  const opener=e.currentTarget; const {createSheet}=await import('./ui/sheet.js?v=397');
   const content=document.createElement('div'); content.className='dr-specs';
   content.innerHTML='<h3>DJI Flip</h3><dl><div><dt>Sensor</dt><dd>1/1,3 pulgadas</dd></div><div><dt>Foto</dt><dd>48 MP · JPEG y DNG</dd></div><div><dt>Vuelo máximo</dt><dd>31 min</dd></div></dl><a class="ui-button ui-button--quiet" href="https://www.dji.com/flip/specs" target="_blank" rel="noopener">Especificaciones de DJI Flip</a><h3>Neo 2</h3><dl><div><dt>Sensor</dt><dd>1/2 pulgada</dd></div><div><dt>Foto</dt><dd>12 MP</dd></div><div><dt>Vuelo máximo</dt><dd>19 min</dd></div></dl><a class="ui-button ui-button--quiet" href="https://store.dji.com/sg/product/dji-neo-2" target="_blank" rel="noopener">Especificaciones de DJI Neo 2</a><p>Datos del fabricante. La autonomía máxima se mide en condiciones de prueba; el tiempo real depende del vuelo.</p><p>Los vuelos del archivo aún no están asignados a un dron.</p>';
   const view=createSheet({title:'Tu equipo',content,size:'half',onClose:()=>view.destroy()}); view.open(opener);
