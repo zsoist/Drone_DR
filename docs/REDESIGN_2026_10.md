@@ -74,7 +74,7 @@ The target score is 10/10 from an independent design QA agent on each page, on p
 - Phone: a tab bar that floats, with 5 tabs and visible labels. A search button opens the command palette as a full-height sheet.
 - Desktop: a left rail (64 px closed, 240 px open) with the same groups. `⌘K` opens the command palette.
 - The palette finds sections, trips, clips, worlds and actions (`Subir`, `Nuevo reel`, `Ir al vuelo del 3 oct`).
-- Share pages and property pages are public. They are not in the app navigation.
+- Share pages and property pages are not in the app navigation. They need a session, like all other pages. Do not add them to `PUBLIC_RESOURCES` (see `CLAUDE.md`).
 
 ### Components
 
