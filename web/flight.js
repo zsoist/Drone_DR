@@ -1,10 +1,10 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=434';
-import { fmt } from './ui/format.js?v=434';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=434';
-import { skinPlayer } from './ui/player.js?v=434';
-import { readAI, clipChips, credibleHighlights } from './home.ai.js?v=434';
-import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=434';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=434';
+import { thumbnailURL } from './ui/thumbnail.js?v=436';
+import { fmt } from './ui/format.js?v=436';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=436';
+import { skinPlayer } from './ui/player.js?v=436';
+import { readAI, clipChips, credibleHighlights, eligibleFrame } from './home.ai.js?v=436';
+import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=436';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=436';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
 main.classList.add('ab-page');
@@ -57,8 +57,8 @@ main.innerHTML = skeleton(2);
   const highlights = aiData?.highlights || [];
   const manualHighlights = [...highlights, ...(aiData?.owner_highlights || [])].filter((h, i, rows) => h.type === 'manual' && rows.findIndex(row => row.type === 'manual' && row.t === h.t) === i);
   const highlightRows = rows => rows.map(h => `<div class="hl-item">
-    <button class="tc hit44" data-t="${+h.t || 0}">${fmt.dur(+h.t || 0)}</button>
-    <p>${esc(h.reason)}${h.type === 'manual' ? ' <span class="fl-type">Marcado por ti</span>' : ''}</p>
+    <button class="tc hit44 fl-moment-jump" data-t="${+h.t || 0}" aria-label="Ir a ${fmt.clock(+h.t || 0)}">${h.frame ? `<img src="${esc(h.frame.frame_url)}" alt="">` : ''}<span>${fmt.clock(+h.t || 0)}</span></button>
+    ${h.reason || h.type === 'manual' ? `<p>${esc(h.reason || '')}${h.type === 'manual' ? ' <span class="fl-type">Marcado por ti</span>' : ''}</p>` : ''}
     <button class="ui-button ui-button--quiet fl-moment-menu" data-edit-start="${h.start ?? Math.max(0, (+h.t || 0) - 3)}" data-edit-end="${h.end ?? Math.min(meta.duration_s, (+h.t || 0) + 4)}" aria-label="Opciones del momento">${icon('more')}</button>
   </div>`).join('');
 
@@ -216,9 +216,9 @@ main.innerHTML = skeleton(2);
     slot.innerHTML = `<video src="${SRC[resolved()]}" playsinline webkit-playsinline preload="metadata" poster="${esc(thumbnailURL(meta))}"></video>`;
     video = slot.querySelector('video');
     const player = skinPlayer(video, { label: 'Recorrido del vuelo' });
-    const qualityControl = document.createElement('button'); qualityControl.className = 'ui-button ui-button--secondary fl-quality';
+    const qualityControl = document.createElement('button'); qualityControl.className = 'ui-button ui-button--quiet fl-quality';
     qualityControl.id = 'fl-quality'; qualityControl.type = 'button'; qualityControl.setAttribute('aria-label', 'Calidad de video');
-    document.querySelector('.fl-bar .fl-actions').insertBefore(qualityControl, document.getElementById('fl-more'));
+    player.element.querySelector('.ui-player-controls').append(qualityControl);
     qualityControl.addEventListener('click', () => openMenu(qualityControl,
       [{ id: 'auto', label: 'Automática' }, ...Object.entries(SRC).filter(([, url]) => url).map(([id]) => ({ id, label: { '720': '720p', hd: '1080p', '4k': '4K' }[id] }))]
         .map(item => ({ ...item, hint: item.id === quality ? 'Actual' : '' })), { onSelect: setQuality }));
@@ -455,7 +455,7 @@ main.innerHTML = skeleton(2);
   }
   const seek = t => { if (video) { video.currentTime = Math.max(0, Math.min(t, Number.isFinite(video.duration) ? video.duration : meta.duration_s)); syncClock(); } };
 
-  // ---- filmstrip (frame n = segundo n*2) ----
+  // The filmstrip is filled from approved, timestamped backend frames.
   if (meta.frame_count) {
     const strip = document.getElementById('strip');
     strip.innerHTML = '<div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div>';
@@ -584,21 +584,27 @@ main.innerHTML = skeleton(2);
       const moments = credibleHighlights(insight, aiData?.sampled_frame_times).filter(h => !manualHighlights.some(m => Math.abs(m.t - h.start) < 1));
       const best = summary.best_moment;
       const verifiedBest = best?.selection === 'ai' && !best.synthetic && best.time_s >= 0 && moments.some(h => best.time_s >= h.start && best.time_s < h.end);
-      const summaryText = summary.summary || insight?.caption_short;
+      const summaryText = insight?.caption_short || summary.summary;
       if (summaryText) region.append(suggestedContent(`<p>${esc(summaryText)}</p>${insight?.caption ? `<details class="ai-caption-detail"><summary>Ver descripción</summary><p>${esc(insight.caption)}</p></details>` : ''}${verifiedBest ? `<button class="ui-button ui-button--secondary tc" id="fl-best-moment" data-t="${best.time_s}">${icon('play')} Mejor momento · ${fmt.clock(best.time_s)}</button>` : ''}`));
       else region.insertAdjacentHTML('beforeend', '<p class="fl-hint">El resumen aún no está disponible.</p>');
-      const frames = (detail.frames?.length ? detail.frames : [{...detail, frame_time_s: 0}])
-        .map(frame => {
-          const url = thumbnailURL(frame), index = url.match(/f_(\d+)\.jpg$/);
-          return {...frame, frame_url: url, frame_time_s: index ? (Number(index[1]) - 1) * 2 : 0};
-        })
+      const frames = (detail.frames || [])
+        .filter(frame => eligibleFrame(frame) && Number.isFinite(frame.frame_time_s)
+          && frame.frame_time_s >= 0 && frame.frame_time_s <= meta.duration_s)
+        .sort((a, b) => a.frame_time_s - b.frame_time_s)
         .filter((frame, i, rows) => rows.findIndex(row => row.frame_url === frame.frame_url) === i);
       if (frames.length) {
         if (video) video.poster = thumbnailURL(detail);
         else { const img = slot.querySelector('img'); if (img) { img.src = thumbnailURL(detail); img.hidden = false; } }
       }
+      // Ten targets cover the complete available timeline, including both ends.
+      const count = Math.min(10, frames.length);
+      const filmstrip = [...new Set(Array.from({ length: count }, (_, i) => {
+        const target = frames[0].frame_time_s + (frames.at(-1).frame_time_s - frames[0].frame_time_s) * i / Math.max(1, count - 1);
+        return frames.reduce((best, frame) => Math.abs(frame.frame_time_s - target) < Math.abs(best.frame_time_s - target) ? frame : best);
+      }))];
       const strip = document.getElementById('strip');
-      if (strip) strip.innerHTML = frames.map(frame => `<button class="fl-frame" data-t="${frame.frame_time_s ?? frame.time_s}" aria-label="Ir a ${fmt.clock(frame.frame_time_s ?? frame.time_s)}"><img src="${esc(frame.frame_url)}" alt="" loading="lazy"><span>${fmt.clock(frame.frame_time_s ?? frame.time_s)}</span></button>`).join('') || '<p class="fl-hint">No hay fotogramas seleccionados.</p>';
+      if (strip) strip.innerHTML = filmstrip.map(frame => `<button class="fl-frame" data-t="${frame.frame_time_s}" aria-label="Ir a ${fmt.clock(frame.frame_time_s)}"><img src="${esc(frame.frame_url)}" alt="" loading="lazy"><span>${fmt.clock(frame.frame_time_s)}</span></button>`).join('') || '<p class="fl-hint">No hay fotogramas seleccionados.</p>';
+      syncClock();
       const analysisBody = document.querySelector('.fl-ai .pb');
       analysisBody.querySelector('.ui-suggested')?.remove();
       analysisBody.querySelector('.fl-hint')?.remove();
@@ -613,8 +619,13 @@ main.innerHTML = skeleton(2);
         for (const h of moments) {
           const key = `ab.moment.dismissed.${cid}.${h.start}`;
           if (localStorage.getItem(key)) continue;
-          const item = suggestedContent(highlightRows([{ ...h, t: h.start }]), {
-            onAccept: async () => { await save('/api/highlight', { clip_id: cid, t: h.start, reason: h.reason }); manualHighlights.push({ t: h.start, reason: h.reason, type: 'manual' }); },
+          const reason = h.reason && !/^Cambio de escena/i.test(h.reason)
+            && moments.filter(row => row.reason === h.reason).length === 1 ? h.reason : '';
+          const target = h.evidence?.peak_time_s ?? h.start;
+          const frame = frames.filter(frame => frame.frame_time_s >= h.start && frame.frame_time_s < h.end)
+            .sort((a, b) => Math.abs(a.frame_time_s - target) - Math.abs(b.frame_time_s - target))[0];
+          const item = suggestedContent(highlightRows([{ ...h, reason, frame, t: h.start }]), {
+            onAccept: async () => { const label = reason || fmt.clock(h.start); await save('/api/highlight', { clip_id: cid, t: h.start, reason: label }); manualHighlights.push({ t: h.start, reason: label, type: 'manual' }); },
             onDismiss: () => { localStorage.setItem(key, '1'); item.remove(); if (!container.childElementCount) container.closest('.ui-suggested')?.remove(); },
           });
           item.classList.add('fl-moment-suggestion');
