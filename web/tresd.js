@@ -2,15 +2,15 @@ import { skinPlayer } from './ui/player.js?v=423';
 import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=423';
 import { fmt } from './ui/format.js?v=423';
 import { term } from './ui/terms.js?v=423';
-import { sceneInsight, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=423';
-import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
+import { sceneInsight, sceneCover, hydrateSceneCovers, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=427';
+import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=427';
   import * as THREE from '/vendor/three180.module.js?v=423';
   import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=423';
   import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=423';
   import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=423';
   import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=423';
   import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=423';
-  import { mountSplatViewer } from '/splatview.js?v=423';
+  import { mountSplatViewer } from '/splatview.js?v=427';
   import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=423';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
@@ -1090,16 +1090,15 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
     const splats = splatAssetsFor(m.clip_id);
     const sp = splatAssetFor(m.clip_id);
     const ha = q.area_m2 >= 10000 ? fmt.area(q.area_m2 / 10000) : fmt.number(q.area_m2 || 0) + ' m²';
-    const poster = m.thumb ? (m.thumb.includes('/') ? m.thumb : `data/models/${m.clip_id}/${m.thumb}`) : `data/models/${m.clip_id}/${m.ortho_asset || 'ortho.jpg'}`;
     return `<article class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
       <a class="pc-cover" href="share.html?m=${encodeURIComponent(m.clip_id)}" aria-label="Ver ${esc(titleFor(m))}">
-        <img src="${esc(poster)}" loading="lazy" alt="" width="640" height="400" data-transition-key="world-${esc(m.clip_id)}">
+        <img hidden alt="" width="640" height="400" data-transition-key="world-${esc(m.clip_id)}">
         <span class="pc-ph" aria-hidden="true">Sin vista previa</span>
       </a>
       <div class="pc-body">
-        <div class="pc-top"><h2 class="pc-title"><a href="share.html?m=${encodeURIComponent(m.clip_id)}">${esc(titleFor(m))}</a></h2>
+        <div class="pc-top"><h2 class="pc-title"><a href="share.html?m=${encodeURIComponent(m.clip_id)}" title="${esc(titleFor(m))}">${esc(titleFor(m))}</a></h2>
           <button class="ui-button ui-button--quiet pc-more" data-act="more" data-cid="${esc(m.clip_id)}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(titleFor(m))}">${icon('more')}</button></div>
-        <p class="pc-meta">${esc([fmt.date(f?.date || dateKeyFor(m)), q.area_m2 ? ha : '', sp ? term('splat') : term('mesh')].filter(Boolean).join(' · '))}</p>
+        <p class="pc-meta">${esc([fmt.date(f?.date || dateKeyFor(m)), q.area_m2 ? ha : '', sp ? '' : term('mesh')].filter(Boolean).join(' · '))}</p>
 
       </div>
     </article>`;
@@ -1138,29 +1137,23 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
       <div class="proj-group">${g.items.map(projCard).join('')}</div>`;
     }).join('') : `<div class="ui-empty"><h2>${sysErr ? 'No se pudieron cargar las escenas' : models.length ? 'No hay coincidencias' : 'Aún no tienes escenas'}</h2><p>${sysErr ? 'Revisa la conexión y vuelve a intentarlo.' : models.length ? 'Prueba otro nombre o elimina los filtros.' : 'Empieza con tomas del mismo lugar, por ejemplo una órbita de tu casa.'}</p>${sysErr ? '<button class="ui-button ui-button--primary" data-reload>Reintentar</button>' : models.length ? '<button class="ui-button ui-button--secondary" data-reset-filters>Ver todas</button>' : '<button class="ui-button ui-button--primary" data-open-run3d>Crear escena</button>'}</div>`;
     grid.querySelector('[data-reset-filters]')?.addEventListener('click',()=>{projQ='';projFilter='all';document.getElementById('proj-q').value='';document.getElementById('proj-filter').value='all';renderCards();});
-    grid.querySelectorAll('.pc-cover').forEach(card => { const model = models.find(m => m.clip_id === card.closest('[data-cid]').dataset.cid); stopCardPreviews.push(wireOrbitPreview(card, model?.orbit_preview || model?.assets?.orbit_preview)); });
+    grid.querySelectorAll('.pc-cover').forEach(async card => {
+      const model = models.find(m => m.clip_id === card.closest('[data-cid]').dataset.cid);
+      card.setAttribute('aria-busy','true');
+      const cover = await sceneCover(model);
+      if (!card.isConnected) return;
+      card.setAttribute('aria-busy','false');
+      const image = card.querySelector('img');
+      if (cover) { image.src = cover.frame_url; image.hidden = false; }
+      else card.classList.add('is-blank');
+      stopCardPreviews.push(wireOrbitPreview(card, model?.orbit_preview || model?.assets?.orbit_preview));
+    });
   }
   // miniatura ligera 404 → cae al ortho original (error no burbujea: captura)
   document.addEventListener('error', e => {
     const im = e.target;
     if (im?.tagName === 'IMG' && im.dataset.fb && im.getAttribute('src') !== im.dataset.fb) im.src = im.dataset.fb;
     else if (im?.tagName === 'IMG' && im.closest('.pc-cover')) im.closest('.pc-cover').classList.add('is-blank');
-  }, true);
-  // miniatura vacía (nube casi negra / sin ortofoto): muestra el placeholder en vez de un bloque negro
-  const blankThumb = im => {
-    try {
-      const c = document.createElement('canvas'); c.width = 16; c.height = 9;
-      const x = c.getContext('2d', { willReadFrequently: true });
-      x.drawImage(im, 0, 0, 16, 9);
-      const d = x.getImageData(0, 0, 16, 9).data;
-      let sum = 0, bright = 0;
-      for (let i = 0; i < d.length; i += 4) { const l = (d[i] + d[i + 1] + d[i + 2]) / 3; sum += l; if (l > 40) bright++; }
-      return sum / 144 < 16 && bright < 30;   // casi todo negro: la nube apenas tiene puntos
-    } catch { return false; }
-  };
-  document.addEventListener('load', e => {
-    const im = e.target;
-    if (im?.tagName === 'IMG' && im.closest('.pc-cover')) im.closest('.pc-cover').classList.toggle('is-blank', blankThumb(im));
   }, true);
   document.getElementById('proj-q')?.addEventListener('input', e => { projQ = e.target.value; renderCards(); });
   document.getElementById('proj-filter')?.addEventListener('change', e => { projFilter = e.target.value; renderCards(); });
@@ -1286,6 +1279,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
       onClose: () => { cleanups.splice(0).forEach(fn => { try { fn(); } catch {} }); sheet.destroy(); } });
     const ov = sheet.element;
     sheet.open();
+    hydrateSceneCovers(content, models);
     return { ov, close: sheet.close, onClose: fn => cleanups.push(fn) };
   }
 
@@ -1419,7 +1413,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
                + ' ' + (f.ai?.tags || []).join(' ') + ' ' + (f.ai?.scene_type || '')).toLowerCase())}">
         <input type="checkbox" ${sel.has(f.clip_id) ? 'checked' : ''}>
         <button type="button" class="pc-thumb" data-preview="${esc(f.clip_id)}" aria-label="Revisar captura">
-          <img src="data/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="">${icon('play')}</button>
+          <img hidden data-scene-cover="${esc(f.clip_id)}" loading="lazy" alt="">${icon('play')}</button>
         <div class="pc-meta">
           <b>${esc(f.label) || fmt.date(f.date) + ' ' + f.time}</b>
           <span class="pc-sub mono">${fmt.dur(f.duration_s)} · ${fmt.date(f.date)} ${esc(f.time || '')}</span>
@@ -1456,7 +1450,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
       return `
       <label class="ps-row${psSel.has(p.token) ? ' on' : ''}${usable ? '' : ' off'}" data-ps="${esc(p.token)}">
         <input type="checkbox" ${psSel.has(p.token) ? 'checked' : ''} ${usable ? '' : 'disabled'}>
-        <span class="ps-thumb">${p.sample ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(p.sample)}&w=160" loading="lazy" alt="">` : ''}</span>
+        <span class="ps-thumb">${p.quality?.eligible === true && p.sample ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(p.sample)}&w=160" loading="lazy" alt="">` : ''}</span>
         <div class="pc-meta">
           <b>${esc(p.pass)}</b>
           <span class="pc-sub mono">${p.count} foto${p.count === 1 ? '' : 's'}${psModels(p.models) ? ` · ${psModels(p.models)}` : ''}${psDateRange(p.date_min, p.date_max) ? ` · ${esc(psDateRange(p.date_min, p.date_max))}` : ''}</span>
@@ -1925,7 +1919,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
           </div>
           <div class="pv-body${slideDir ? (slideDir > 0 ? ' slide-l' : ' slide-r') : ''}">
             <video src="data/proxies/${encodeURIComponent(cid)}.mp4" ${reducedMotion() ? '' : 'autoplay'} muted playsinline
-                   poster="data/thumbs/${encodeURIComponent(cid)}.jpg"></video>
+                   ></video>
             <div class="pv-suggestion"></div>
             ${(ai.tags || []).length ? `<div class="pv-tags">${(ai.tags || []).slice(0, 8).map(t =>
               `<button class="pv-tag" data-tag="${esc(t)}" data-tip="Filtrar la lista por este tag">${esc(t)}</button>`).join('')}
@@ -2102,9 +2096,6 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
     // maplibre (flyTo/easeTo); el fitBounds corre en 'load' Y tras el layout del modal
     // (el bug del zoom-mundial: fit con contenedor sin altura calcula zoom 0).
     let stMap = null;
-    const PLANO_STYLE = { version: 8, sources: { v: { type: 'raster',
-      tiles: ['https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'],
-      tileSize: 256, attribution: 'CARTO · OSM' } }, layers: [{ id: 'v', type: 'raster', source: 'v' }] };
     const mapBounds = new maplibregl.LngLatBounds();
     const fitAll = () => { if (!mapBounds.isEmpty() && stMap) stMap.fitBounds(mapBounds, { padding: 46, maxZoom: 16, duration: reducedMotion() ? 0 : 340 }); };
     const selCenter = () => {
@@ -2159,8 +2150,6 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
         ctl.innerHTML = `
           <div class="st-mc-row" data-role="layers">
             <button class="on" data-layer="sat">Satélite</button>
-            <button data-layer="plano">Plano</button>
-            <button data-layer="oscuro">Oscuro</button>
           </div>
           <div class="st-mc-row" data-role="radius">
             <button data-r="200">Spot</button><button data-r="400">S</button>
@@ -2172,7 +2161,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
           const L = e.target.closest('[data-layer]');
           if (L) {
             ctl.querySelectorAll('[data-layer]').forEach(b => b.classList.toggle('on', b === L));
-            stMap.setStyle({ sat: SAT_STYLE, plano: PLANO_STYLE, oscuro: DARK_STYLE }[L.dataset.layer]);
+            stMap.setStyle(SAT_STYLE);
             return;
           }
           const R = e.target.closest('[data-r]');
@@ -2402,7 +2391,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
       <div class="scene-sources">${setSources.map(id => {
         const ev = evidenceById[id] || {};
         const cov = ev.gps_coverage != null ? ` · ${Math.round(ev.gps_coverage * 100)}% GPS` : '';
-        const thumb = ev.thumb_rel
+        const thumb = ev.quality?.eligible === true && ev.thumb_rel
           ? `<img src="/api/photo_thumb?rel=${encodeURIComponent(ev.thumb_rel)}&w=160" alt="" loading="lazy" >` : `<span class="scene-source-placeholder" aria-label="Sin vista previa">${icon('image')}</span>`;
         return `<label class="scene-source on same-site photo-set" data-distance="">
           <input type="checkbox" value="${esc(id)}" checked>
@@ -2423,7 +2412,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
         const spatialState = selected ? 'sitio activo' : sameSite ? 'mismo sitio' : crossSite ? 'otro sitio' : 'cobertura sin medir';
         return `<label class="scene-source${selected ? ' on' : ''}${sameSite ? ' same-site' : ''}${unavailable ? ' cross-site' : ''}" data-distance="${distance == null ? '' : distance}">
           <input type="checkbox" value="${esc(f.clip_id)}"${selected ? ' checked' : ''}${unavailable ? ' disabled' : ''}>
-          <img src="data/thumbs/${encodeURIComponent(f.clip_id)}.jpg" alt="" loading="lazy">
+          <img hidden data-scene-cover="${esc(f.clip_id)}" alt="" loading="lazy">
           <span><b>${esc(f.label || `${fmt.date(f.date)} · ${f.time}`)}</b><small>${esc(spatialState)} · ${esc(dist)} · ${alt || '—'} m · banda ${altitudeBand} m</small>
           <small class="scene-evidence ${esc(evidence?.status || 'new')}">${esc(evidenceState)}${evidence?.reason ? ` · ${esc(evidence.reason)}` : ''}</small></span></label>`;
       }).join('')}</div>
@@ -3638,11 +3627,10 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=423';
         const m = c.m, f = c.f;
         const cid = (m || f).clip_id;
         const active = cur ? cid === cur.clip_id : i === 0;
-        const img = m ? `data/models/${esc(cid)}/${esc(m.ortho_asset || 'ortho.jpg')}` : `data/thumbs/${esc(cid)}.jpg`;
         const title = m ? titleFor(m) : `${fmt.date(f.date)} · ${f.time}`;
         return `
         <div class="mflight${active ? ' on' : ''}" data-cid="${esc(cid)}" data-auto-model="${m ? '0' : '1'}">
-          <img src="${img}" loading="lazy" alt="">
+          <img hidden data-scene-cover="${esc(cid)}" alt="">
           <div class="mf-t"><b>${esc(title)}</b>
           <span class="mono">${m ? `${m.qa?.cameras_reconstructed || '?'} cámaras` : 'video → ODM base → splat'}</span></div>
         </div>`; }).join('')}</div>

@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sceneTitle, sceneSources, sceneInsight } from './scene-improve-ui.js';
+import { sceneTitle, sceneSources, sceneInsight, sceneCover } from './scene-improve-ui.js';
 
 test('scene labels hide technical suffixes without changing owner data', () => {
   const model = { title: 'Casa — ODM+splat en NVIDIA CUDA (F5 v2)' };
   assert.equal(sceneTitle(model.title), 'Casa');
   assert.equal(model.title, 'Casa — ODM+splat en NVIDIA CUDA (F5 v2)');
-  assert.equal(sceneTitle('Guatavita 19 jul — banda aérea 18-65m'), 'Guatavita 19 jul — banda aérea 18-65m');
+  assert.equal(sceneTitle('Guatavita 19 jul — banda aérea 18-65m'), 'Guatavita 19 jul');
   assert.equal(sceneTitle('Dialectica v1.0'), 'Dialectica');
   assert.equal(sceneTitle('0101 alta stable no mesh'), 'Escena 0101');
   assert.equal(sceneTitle('0100 alta fixed 9500m retry-medium'), 'Escena 0100');
@@ -47,4 +47,24 @@ test('version names keep processing details out of the picker', async () => {
   const { sceneVersionLabel } = await import('./scene-improve-ui.js');
   assert.equal(sceneVersionLabel({current:true,preset:'ultra20',preset_label:'Ultra+ 20K',backend:'NVIDIA CUDA',iters:20000,loss:.04}), 'Actual · Detalle superior');
   assert.equal(sceneVersionLabel({current:false,archived_at:'2026-07-14',preset:'medium',preset_label:'Medium 2K'}), '14 jul 2026 · Detalle medio');
+});
+
+ test('automatic covers require backend approval and an integrated source', async () => {
+  const previous = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async path => {
+    calls.push(path);
+    const id = path.split('/')[3];
+    return {ok:true,json:async()=>({cover:{clip_id:id,frame_url:`/data/frames/${id}/f_0001.jpg`,
+      ...(id === 'approved_cover' ? {quality:{eligible:true}} : id === 'rejected_cover' ? {quality:{eligible:false}} : {})}})};
+  };
+  try {
+    assert.equal(await sceneCover({clip_id:'missing_quality'}), null);
+    assert.equal(await sceneCover({clip_id:'rejected_cover'}), null);
+    const cover = await sceneCover({clip_id:'recon_cover',reconstruction:{sources:[
+      {clip_id:'excluded_cover',merged:false}, 'missing_quality', 'approved_cover']}});
+    assert.equal(cover.clip_id, 'approved_cover');
+    assert.equal(calls.some(path => path.includes('excluded_cover')), false);
+    assert.equal(calls.filter(path => path.includes('missing_quality')).length, 1);
+  } finally { globalThis.fetch=previous; }
 });

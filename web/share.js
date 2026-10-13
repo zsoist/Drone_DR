@@ -1,7 +1,8 @@
 import { fmt } from './ui/format.js?v=423';
 import { term } from './ui/terms.js?v=423';
-import { sceneTitle, sceneVersionLabel, contentSheet, sceneInfo, sceneInsight, suggestionBlock, reducedMotion } from './scene-improve-ui.js?v=423';
-import { loadIsCurrent } from './scene-improve-state.js?v=423';
+import { Suggested } from './ui/suggested.js?v=423';
+import { sceneTitle, sceneVersionLabel, contentSheet, sceneInfo, sceneInsight, suggestionBlock, reducedMotion } from './scene-improve-ui.js?v=427';
+import { loadIsCurrent } from './scene-improve-state.js?v=427';
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
 import * as THREE from '/vendor/three180.module.js?v=423';
@@ -9,7 +10,7 @@ import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js
 import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=423';
 import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=423';
 import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=423';
-import { mountSplatViewer } from '/splatview.js?v=423';
+import { mountSplatViewer } from '/splatview.js?v=427';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -115,7 +116,7 @@ body.innerHTML = `
         ${splat ? `<button data-v="splat" aria-pressed="false">${term('splat')}</button>` : ''}
       </div>
     </div>
-    <div id="sh-view" class="sh-view"><img class="scene-poster" src="${base}/${esc(meta.ortho_asset || 'ortho.jpg')}" alt="Vista previa de ${esc(sceneTitle(meta.title || 'la escena'))}" data-transition-key="world-${esc(cid)}"><button class="ui-button ui-button--primary sh-start" id="sh-start">Cargar escena</button></div>
+    <div id="sh-view" class="sh-view"></div>
   </div>
 
   <div class="sh-description" id="sh-description" aria-busy="true"><span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span></div>
@@ -195,8 +196,25 @@ document.getElementById('sh-options').onclick = e => {
   sheet.element.addEventListener('close', () => { options.hidden = true; body.append(options); }, {once:true});
 };
 const description = document.getElementById('sh-description');
+const peekKey = `ab.scene-description.${cid}`;
+let peek;
+const closePeek = () => { peek?.remove(); peek = null; };
+document.getElementById('sh-options').addEventListener('click', closePeek);
 sceneInsight({...meta, clip_id:cid}).then(insight => {
   description.replaceChildren(...(insight ? [suggestionBlock({title:'', text:insight.caption_short, fullText:insight.caption})] : []));
+  let seen = false;
+  try { seen = sessionStorage.getItem(peekKey) === 'seen'; } catch {}
+  if (insight?.caption_short && !seen) {
+    peek = Suggested({content:insight.caption_short});
+    peek.classList.add('sh-peek');
+    const dismiss = document.createElement('button');
+    dismiss.className = 'ui-button ui-button--quiet';
+    dismiss.type = 'button'; dismiss.setAttribute('aria-label','Ocultar descripción');
+    dismiss.innerHTML = icon('close'); dismiss.onclick = closePeek;
+    peek.append(dismiss); document.querySelector('.share-main').append(peek);
+    try { sessionStorage.setItem(peekKey,'seen'); } catch {}
+    document.getElementById('sh-view').addEventListener('pointerdown',closePeek,{once:true});
+  }
 }).catch(() => { description.textContent = 'Descripción no disponible.'; })
   .finally(() => description.setAttribute('aria-busy','false'));
 

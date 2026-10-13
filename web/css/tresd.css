@@ -518,9 +518,9 @@ html[data-td-tab=process] .page-3d .page-head-actions > [data-open-run3d] { disp
 
 /* R6: fixed title rows and compact phone media. */
 .page-3d .proj-card .pc-top { align-items:flex-start; }
-.page-3d .proj-card .pc-title { min-height:calc(2.9em + var(--sp-2)); }
-.page-3d .proj-card .pc-title a { padding-top:var(--sp-2); }
-.page-3d .proj-card .pc-meta { margin-top:var(--sp-2); }
+.page-3d .proj-card .pc-title { display:block; min-width:0; min-height:44px; }
+.page-3d .proj-card .pc-title a { display:block; line-height:44px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.page-3d .proj-card .pc-meta { margin:0; }
 @media(max-width:820px) {
  .page-3d .proj-card { display:grid; grid-template-columns:112px minmax(0,1fr); gap:var(--sp-4); align-items:start; }
  .page-3d .proj-card .pc-cover { width:112px; aspect-ratio:1; }
