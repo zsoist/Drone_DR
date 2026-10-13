@@ -127,50 +127,53 @@ function aiSelectionContext(extra = {}) {
   return context;
 }
 
-test('real highlights include zero and regular intervals; invalid or synthetic segments do not', () => {
+test('sampling-grid moments stay hidden even when the backend calls them real', () => {
   const context = aiSelectionContext();
-  const real = [0, 90, 180, 270].map(start => ({ start, end: start + 46, score: .8 }));
-  const result = context.credibleHighlights({ highlight_segments: [...real,
-    { start: 1, end: 3, synthetic: true }, { start: -1, end: 3 }, { start: 5, end: 5 }] });
-  assert.deepEqual(Array.from(result, h => h.start), [0, 90, 180, 270]);
+  const samples = [0, 46, 90, 136, 180, 226, 270, 316];
+  const grid = [0, 90, 180, 270].map(start => ({ start, end: start + 46, score: .8, synthetic: false }));
+  assert.equal(context.credibleHighlights({ highlight_segments: grid }, samples).length, 0);
+  assert.equal(context.credibleHighlights({ highlight_segments: grid, best_frame_times: samples.slice(0, 6) }).length, 0);
+  const observed = { start: 17, end: 26, score: .8 };
+  assert.deepEqual(Array.from(context.credibleHighlights({ highlight_segments: [observed] }, samples), h => h.start), [17]);
 });
 
-test('cover selection excludes people and signs, including evidence outside the short caption', () => {
+test('automatic frames require an explicit backend quality approval and a local frame URL', () => {
   const context = aiSelectionContext();
-  for (const caption of ['Un hombre camina en una azotea.', 'Un cartel con texto y teléfonos.', 'Dos personas junto al río.', 'Un lote en venta en una zona rural.']) {
-    assert.equal(context.coverEligible({ caption_short: 'Paisaje urbano', caption }), false);
-  }
-  assert.equal(context.coverEligible({ caption: 'Edificios con tejados verdes y montañas.' }), true);
-  assert.equal(context.coverEligible(null), false);
+  const frame = { frame_url: '/data/frames/sample/f_0001.jpg' };
+  assert.equal(context.eligibleFrame(frame), false);
+  assert.equal(context.eligibleFrame({ ...frame, quality: { eligible: false, reasons: ['person'] } }), false);
+  assert.equal(context.eligibleFrame({ ...frame, quality: { eligible: true } }), true);
+  assert.equal(context.eligibleFrame({ frame_url: 'https://example.com/image.jpg', quality: { eligible: true } }), false);
 });
 
-test('best cover chooses the brightest usable sample and respects excluded covers', async () => {
-  let pixels;
-  const values = { 'frame-0': 20, 'frame-2': 120, 'frame-4': 180, 'frame-6': 255 };
-  const context = aiSelectionContext({
-    frameFor: (_, t) => `frame-${t}`,
-    Image: class { set src(url) { this.luma = values[url]; this.onload(); } },
-    document: { createElement: () => ({ getContext: () => ({
-      drawImage: img => { pixels = new Uint8ClampedArray(48 * 32 * 4).fill(img.luma); },
-      getImageData: () => ({ data: pixels }),
-    }) }) },
-  });
-  const flight = { frame_count: 5, duration_s: 10 };
-  const insight = { caption: 'Edificios y montañas.', best_frame_times: [0, 2, 4, 6] };
-  assert.equal((await context.bestCover(flight, insight)).time, 4);
-  assert.equal((await context.bestCover(flight, insight, { exclude: new Set(['frame-4']) })).time, 2);
-  assert.equal(await context.bestCover(flight, { ...insight, best_frame_times: [0, 6] }), null);
+test('cover selection preserves backend frame times and matches the frame to its moment text', async () => {
+  const context = aiSelectionContext();
+  const cover = { clip_id: 'sample', frame_url: '/data/frames/sample/f_0008.jpg', frame_time_s: 14,
+    quality: { eligible: true } };
+  const other = { ...cover, frame_url: '/data/frames/sample/f_0020.jpg', frame_time_s: 38 };
+  const flight = { clip_id: 'sample' };
+  const insight = { caption_short: 'Unrelated clip opening', cover, frames: [other],
+    highlight_segments: [{ start: 8, end: 14, reason: 'Mountains on the horizon.' }] };
+  const result = await context.bestCover(flight, insight);
+  assert.equal(result.time, 14);
+  assert.equal(result.url, cover.frame_url);
+  assert.equal(result.caption, 'Mountains on the horizon.');
+  assert.equal((await context.bestCover(flight, insight, { exclude: new Set(['data/frames/sample/f_0008.jpg']) })).time, 38);
+  assert.equal(await context.bestCover(flight, { best_frame_times: [14] }), null);
+  assert.equal(await context.bestCover({ clip_id: 'different' }, insight), null);
 });
 
-test('filmstrip keeps ten navigable frames across the complete flight', () => {
+test('filmstrip preserves approved frame seek times and excludes unsafe or duplicate images', () => {
   const source = fs.readFileSync(new URL('./flight.js', import.meta.url), 'utf8');
-  const strip = { innerHTML: '', addEventListener() {} };
-  const context = vm.createContext({ meta: { frame_count: 159 }, cid: 'sample', DATA: '/data', fmt: { dur: String }, document: { getElementById: () => strip } });
-  const start = source.indexOf('  if (meta.frame_count) {', source.indexOf('// ---- filmstrip'));
-  vm.runInContext(source.slice(start, source.indexOf('// ---- charts', start)), context);
-  const times = [...strip.innerHTML.matchAll(/data-t="(\d+)"/g)].map(match => Number(match[1]));
-  assert.equal(times.length, 10);
-  assert.equal(times[0], 0);
-  assert.equal(times.at(-1), 316);
-  assert.equal(new Set(times).size, 10);
+  const strip = { innerHTML: '' };
+  const safe = { frame_url: '/data/frames/sample/f_0001.jpg', frame_time_s: 0, quality: { eligible: true } };
+  const context = aiSelectionContext({ detail: { cover: safe, frames: [safe,
+    { ...safe, frame_url: '/data/frames/sample/f_0005.jpg', frame_time_s: 8 },
+    { ...safe, frame_url: '/data/frames/sample/f_0007.jpg', frame_time_s: 12, quality: { eligible: false } }] },
+    video: {}, fmt: { clock: String }, esc: String, document: { getElementById: () => strip } });
+  const start = source.indexOf('      const frames = [detail.cover');
+  vm.runInContext(source.slice(start, source.indexOf('      const analysisBody', start)), context);
+  assert.deepEqual([...strip.innerHTML.matchAll(/data-t="(\d+)"/g)].map(match => Number(match[1])), [0, 8]);
+  assert.equal(context.video.poster, safe.frame_url);
+  assert.doesNotMatch(strip.innerHTML, /f_0007/);
 });
