@@ -2,9 +2,9 @@
 // Envuelve camera-rigs.js: selección de rig, gimbal (rueda/slider/botones), FOV kick,
 // pose por frame y colisión de cámara. Publica ctx.controls.{cameraController, flightTools}.
 // Refactor A0: extraído de volar.js sin cambio de comportamiento.
-import { resolveCameraCollision, RIGS, STEP } from '/flightverse/runtime.js?v=429';
-import { createCameraRigController } from '/flightverse/camera-rigs.js?v=429';
-import { createFlightTools } from '/flightverse/flight-tools.js?v=429';
+import { resolveCameraCollision, RIGS, STEP } from '/flightverse/runtime.js?v=431';
+import { createCameraRigController } from '/flightverse/camera-rigs.js?v=431';
+import { createFlightTools } from '/flightverse/flight-tools.js?v=431';
 
 export function createCameraControls(ctx) {
   const { Q, camera, report, collision, input } = ctx;

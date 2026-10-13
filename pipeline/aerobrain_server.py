@@ -3944,25 +3944,14 @@ class H(BaseHTTPRequestHandler):
             if not self.auth():
                 return
             return self.do_GET_properties()
-        # Legacy clients construct thumbnail and frame URLs without reading AI metadata.
+        # Authenticated archive URLs serve real media. Featured APIs select approved frames.
         from ai import frame_api
-        selected_frame = frame_api.media_frame(path, VAULT)
-        if selected_frame is not None:
-            if not selected_frame['quality']['eligible']:
-                # A neutral image keeps old cards usable without exposing rejected footage.
-                payload = b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"><path fill="#20242a" d="M0 0h16v9H0z"/></svg>'
-                self.send_response(200)
-                self.send_header('Content-Type', 'image/svg+xml')
-                self.send_header('Content-Length', str(len(payload)))
-                self.send_header('Cache-Control', 'private, no-store')
-                self.send_header('X-Frame-Quality', 'rejected')
-                self.end_headers()
-                if self.command != 'HEAD':
-                    self.wfile.write(payload)
-                return
-            if '/thumbs/' in urllib.parse.unquote(path).lower():
+        thumb = re.fullmatch(r'/data/thumbs/([A-Za-z0-9_-]{1,120})\.jpg', path)
+        if thumb:
+            selected = frame_api.thumbnail_url(thumb[1], VAULT)
+            if selected != path:
                 self.send_response(302)
-                self.send_header('Location', selected_frame['frame_url'])
+                self.send_header('Location', selected)
                 self.send_header('Content-Length', '0')
                 self.send_header('Cache-Control', 'private, no-store')
                 self.end_headers()

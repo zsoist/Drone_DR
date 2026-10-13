@@ -1,6 +1,7 @@
-import { fmt } from './ui/format.js?v=429';
-import { readAI, loadInsights, captionView, bestCover, flightCaption } from './home.ai.js?v=429';
-import { loadFlights, registerFlights, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=429';
+import { thumbnailURL } from './ui/thumbnail.js?v=431';
+import { fmt } from './ui/format.js?v=431';
+import { readAI, loadInsights, captionView, bestCover, flightCaption } from './home.ai.js?v=431';
+import { loadFlights, registerFlights, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=431';
 const main = renderShell('home.html');
 main.classList.add('home-page', 'ab-page');
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;
@@ -28,7 +29,7 @@ async function load() {
         <div class="home-feature-copy"><p class="home-date">Último vuelo · ${esc(latest.time || '')}</p><h2>${esc(latest.label || fmt.date(latest.date))}</h2><div id="home-summary" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div><div class="home-flight-meta"><span>${esc(fmt.duration(latest.duration_s))} en el aire</span><span>${esc(fmt.distance(latest.stats?.distance_m))} de recorrido</span></div><a class="ui-button ui-button--primary" href="${flightLink(latest)}">${icon('play')} Ver vuelo</a></div>
       </section>
       <section class="home-section home-collection-section"><div class="home-section-head"><h2>Colecciones</h2><div class="home-collection-controls"><button class="ui-button ui-button--quiet" id="collections-prev" aria-label="Colecciones anteriores" disabled>${icon('arrowL')}</button><button class="ui-button ui-button--quiet" id="collections-next" aria-label="Más colecciones">${icon('arrowR')}</button></div><a class="ui-button ui-button--quiet" href="trips.html">Ver viajes ${icon('arrowR')}</a></div><div id="home-collections" aria-busy="true">${skeleton(3)}</div></section>
-      <section class="home-section home-recent-section"><div class="home-section-head"><h2>Vuelos recientes</h2><a class="ui-button ui-button--quiet" href="index.html">Ver todos ${icon('arrowR')}</a></div><div class="home-recent" id="home-recent">${flights.slice(1, 5).map(f => `<a href="${flightLink(f)}" class="home-recent-item" data-clip="${esc(f.clip_id)}"><img hidden alt="" loading="lazy"><span><strong>${esc(titleFor(f))}</strong><span>${esc(fmt.date(f.date))} · ${esc(f.time || '')} · ${esc(fmt.duration(f.duration_s))}</span></span>${icon('arrowR')}</a>`).join('') || '<p>Tu próximo vuelo aparecerá aquí.</p>'}</div></section>
+      <section class="home-section home-recent-section"><div class="home-section-head"><h2>Vuelos recientes</h2><a class="ui-button ui-button--quiet" href="index.html">Ver todos ${icon('arrowR')}</a></div><div class="home-recent" id="home-recent">${flights.slice(1, 5).map(f => `<a href="${flightLink(f)}" class="home-recent-item" data-clip="${esc(f.clip_id)}"><img src="${esc(thumbnailURL(f))}" alt="" loading="lazy"><span><strong>${esc(titleFor(f))}</strong><span>${esc(fmt.date(f.date))} · ${esc(f.time || '')} · ${esc(fmt.duration(f.duration_s))}</span></span>${icon('arrowR')}</a>`).join('') || '<p>Tu próximo vuelo aparecerá aquí.</p>'}</div></section>
       <section class="home-section home-bottom">${events.length ? `<div><h2>Actividad reciente</h2><ul class="home-activity">${events.map(event => `<li><a href="${esc(event.href)}"><strong>${esc(event.text)}</strong><span>${esc(fmt.relative(event.finished * 1000))}</span></a></li>`).join('')}</ul></div>` : ''}${jobsError ? '<p class="w2-note">No se pudo cargar la actividad. <button class="ui-button ui-button--quiet" id="home-jobs-retry">Reintentar</button></p>' : ''}</section>`;
     loadCollections(flights);
     loadRecent(flights.slice(0, 5));
@@ -117,7 +118,7 @@ async function loadRecent(rows) {
     if (!entry) continue;
     const cover = await bestCover(f, insights[f.clip_id]);
     entry.querySelector('strong').textContent = f.label || cover?.caption || flightCaption(f, insights[f.clip_id]);
-    if (cover) { const img = entry.querySelector('img'); img.src = cover.url; img.hidden = false; }
+    const img = entry.querySelector('img'); img.src = thumbnailURL(f); img.hidden = false;
   }
   const latest = rows[0], insight = insights[latest.clip_id];
   document.querySelector('.home-feature h2').textContent = latest.label || place(latest) || fmt.date(latest.date);

@@ -163,17 +163,18 @@ test('cover selection preserves backend frame times and matches the frame to its
   assert.equal(await context.bestCover({ clip_id: 'different' }, insight), null);
 });
 
-test('filmstrip preserves approved frame seek times and excludes unsafe or duplicate images', () => {
+test('filmstrip preserves archive frame seek times without requiring featured approval', async () => {
+  const { thumbnailURL } = await import('./ui/thumbnail.js');
   const source = fs.readFileSync(new URL('./flight.js', import.meta.url), 'utf8');
   const strip = { innerHTML: '' };
-  const safe = { frame_url: '/data/frames/sample/f_0001.jpg', frame_time_s: 0, quality: { eligible: true } };
-  const context = aiSelectionContext({ detail: { cover: safe, frames: [safe,
-    { ...safe, frame_url: '/data/frames/sample/f_0005.jpg', frame_time_s: 8 },
-    { ...safe, frame_url: '/data/frames/sample/f_0007.jpg', frame_time_s: 12, quality: { eligible: false } }] },
-    video: {}, fmt: { clock: String }, esc: String, document: { getElementById: () => strip } });
-  const start = source.indexOf('      const frames = [detail.cover');
+  const safe = { clip_id: 'sample', thumbnail_url: '/data/frames/sample/f_0001.jpg', frame_url: '/data/frames/sample/f_0001.jpg', frame_time_s: 0, quality: { eligible: true } };
+  const context = aiSelectionContext({ detail: { clip_id: 'sample', thumbnail_url: safe.frame_url, cover: safe, frames: [safe,
+    { ...safe, thumbnail_url: '/data/frames/sample/f_0005.jpg', frame_url: '/data/frames/sample/f_0005.jpg', frame_time_s: 8 },
+    { ...safe, thumbnail_url: '/data/frames/sample/f_0007.jpg', frame_url: '/data/frames/sample/f_0003.jpg', frame_time_s: 4, quality: { eligible: false } }] },
+    thumbnailURL, video: {}, fmt: { clock: String }, esc: String, document: { getElementById: () => strip } });
+  const start = source.indexOf('      const frames = (detail.frames');
   vm.runInContext(source.slice(start, source.indexOf('      const analysisBody', start)), context);
-  assert.deepEqual([...strip.innerHTML.matchAll(/data-t="(\d+)"/g)].map(match => Number(match[1])), [0, 8]);
+  assert.deepEqual([...strip.innerHTML.matchAll(/data-t="(\d+)"/g)].map(match => Number(match[1])), [0, 8, 12]);
   assert.equal(context.video.poster, safe.frame_url);
-  assert.doesNotMatch(strip.innerHTML, /f_0007/);
+  assert.match(strip.innerHTML, /f_0007/);
 });

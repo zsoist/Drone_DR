@@ -1,9 +1,10 @@
+import { thumbnailURL } from './ui/thumbnail.js?v=431';
 // Page contracts for Inicio, Viajes, and Flight Deck.
-import { createSheet } from './ui/sheet.js?v=429';
-import { registerPaletteSource } from './ui/palette.js?v=429';
-import { showToast } from './ui/toast.js?v=429';
-import { fmt } from './ui/format.js?v=429';
-import { Suggested } from './ui/suggested.js?v=429';
+import { createSheet } from './ui/sheet.js?v=431';
+import { registerPaletteSource } from './ui/palette.js?v=431';
+import { showToast } from './ui/toast.js?v=431';
+import { fmt } from './ui/format.js?v=431';
+import { Suggested } from './ui/suggested.js?v=431';
 
 // Use only for standalone statistics, telemetry, and timecodes; use esc() in prose.
 export function figure(value) {
@@ -35,6 +36,7 @@ export function registerFlights(flights) {
   const clips = flights.filter(f => !f.archived).map(f => ({
     id: `clip-${f.clip_id}`, label: f.label || `${fmt.date(f.date)} · ${f.time || 'Vuelo'}`,
     keywords: [f.clip_id, f.ai?.summary, ...(f.ai?.tags || [])].join(' '),
+    thumbnail: thumbnailURL(f),
     href: `flight.html?id=${encodeURIComponent(f.clip_id)}`,
   }));
   const trips = authFetch(`${DATA}/manifest/trips_meta.json`).then(async response => {
@@ -73,7 +75,7 @@ export function frameFor(f, time) {
     const index = Math.min(f.frame_count, Math.max(1, Math.floor(+time / 2) + 1));
     return `${DATA}/frames/${encodeURIComponent(f.clip_id)}/f_${String(index).padStart(4, '0')}.jpg`;
   }
-  return `${DATA}/thumbs/${encodeURIComponent(f.clip_id)}.jpg`;
+  return thumbnailURL(f);
 }
 export function decision(key) {
   try { return JSON.parse(localStorage.getItem(`ab.suggestion.${key}`) || 'null'); } catch { return null; }

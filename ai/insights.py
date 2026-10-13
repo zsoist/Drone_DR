@@ -264,12 +264,16 @@ def public_record(cid, vault=VAULT):
 
 def get_insight(cid, vault=VAULT):
     data = record(cid, vault)
+    frames = [{'clip_id': cid, 'frame_url': f'/data/frames/{cid}/{p.name}',
+               'frame_time_s': (int(p.stem[2:]) - 1) * 2}
+              for p in sorted((vault / 'frames' / cid).glob('f_*.jpg'))
+              if re.fullmatch(r'f_\d+', p.stem)]
     try:
         validate_insight(data['insight'], data['duration_s'], data['sampled_frame_times'])
     except (KeyError, TypeError, ValueError):
-        return {'clip_id': cid, 'status': 'pending', 'suggested': True, 'insight': None, 'synthetic': True}
+        return {'clip_id': cid, 'status': 'pending', 'suggested': True, 'insight': None, 'synthetic': True, 'frames': frames}
     data = evidence_record(data, vault)
-    return {'clip_id': cid, 'status': 'ready', 'suggested': True, 'insight': data['insight'],
+    return {'clip_id': cid, 'status': 'ready', 'suggested': True, 'insight': data['insight'], 'frames': frames,
             'synthetic': not bool(data['insight']['highlight_segments']),
             'cover': next(cover_candidates([cid], {cid: data}, vault), None)}
 
@@ -356,8 +360,6 @@ def search(q, limit=12, vault=VAULT, embed=None):
                 pass
         if score > 0:
             matched = moment(f['clip_id'], data, q, vault)
-            if not matched['quality']['eligible']:
-                continue
             results.append({'clip_id': f['clip_id'], 'score': round(score, 6), 'mode': mode,
                             'caption': caption, 'caption_short': ins.get('caption_short') or trim_caption(caption),
                             'tags': tags,

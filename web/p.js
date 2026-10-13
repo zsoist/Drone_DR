@@ -1,8 +1,8 @@
-import { fmt } from './ui/format.js?v=429';
-import { Suggested } from './ui/suggested.js?v=429';
-import { skinPlayer } from './ui/player.js?v=429';
-import { galleryFrames, propertyCover, propertyDescription, propertyMedia } from './p.logic.js?v=429';
-import { createSheet } from './ui/sheet.js?v=429';
+import { fmt } from './ui/format.js?v=431';
+import { Suggested } from './ui/suggested.js?v=431';
+import { skinPlayer } from './ui/player.js?v=431';
+import { galleryFrames, propertyCover, propertyDescription } from './p.logic.js?v=431';
+import { createSheet } from './ui/sheet.js?v=431';
 const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const root = document.getElementById('root');
 function empty(title, text, retry=false) {
@@ -13,17 +13,16 @@ function empty(title, text, retry=false) {
 async function load() {
   const slug=new URLSearchParams(location.search).get('id');
   if (!slug || !/^[\w-]+$/.test(slug)) { empty('Enlace incompleto','Pide el enlace completo de la propiedad a quien te lo compartió.'); return; }
-  let p,media=[];
+  let p;
   try {
     const r=await fetch(`data/properties/${encodeURIComponent(slug)}.json`);
     if (!r.ok) { empty('Propiedad no disponible','Pide un enlace actualizado a quien te lo compartió.'); return; }
     p=await r.json();
-    try { media=await propertyMedia(p.clip); } catch { /* Keep the saved property available. */ }
   } catch { empty('No se pudo cargar la propiedad','Revisa tu conexión y vuelve a intentarlo.',true); return; }
   document.title=`${p.titulo || 'Propiedad'} — AeroBrain`;
   const video=p.video?(p.video.endsWith('.mp4')?`data/reels/${encodeURIComponent(p.video)}`:`data/proxies/${encodeURIComponent(p.video)}.mp4`):'';
-  const frames=galleryFrames(p,media);
-  const hero=propertyCover(p,media);
+  const frames=galleryFrames(p);
+  const hero=propertyCover(p);
   const specs=[[p.habitaciones,'habitaciones'],[p.banos,'baños'],[p.parqueaderos,'parqueaderos'],[p.estrato,'estrato']].filter(([v])=>v);
   const wa=String(p.whatsapp || '').replace(/\D/g,''),tel=String(p.telefono || '').replace(/[^\d+]/g,'');
   const coords=Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon)) && p.lat != null && p.lon != null && p.lat !== '' && p.lon !== '';

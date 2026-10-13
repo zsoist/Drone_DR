@@ -1,7 +1,8 @@
-import { fmt } from './ui/format.js?v=429';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=429';
-import { readAI, loadInsights, clipChips, bestCover, flightCaption } from './home.ai.js?v=429';
-import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor, figure, suggestedContent } from './home-shared.js?v=429';
+import { thumbnailURL } from './ui/thumbnail.js?v=431';
+import { fmt } from './ui/format.js?v=431';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=431';
+import { readAI, loadInsights, clipChips, bestCover, flightCaption } from './home.ai.js?v=431';
+import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor, figure, suggestedContent } from './home-shared.js?v=431';
 const main = renderShell('trips.html');
 main.classList.add('tr-page', 'ab-page');
 const CITIES = [
@@ -79,6 +80,7 @@ async function loadCovers() {
     const { insights } = await loadInsights(c.flights);
     const scores = Object.values(insights).map(insight => insight?.cover?.score).filter(Number.isFinite);
     c.highlightScore = scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0;
+    c.coverUrl = thumbnailURL(c.cover);
     if (tripsMeta[c.key]?.cover) { c.coverUrl = frameFor(c.cover); continue; }
     for (const flight of [...c.flights].sort((a, b) => (b.ai?.travel_score || 0) - (a.ai?.travel_score || 0))) {
       const cover = await bestCover(flight, insights[flight.clip_id]);
@@ -120,7 +122,7 @@ function renderDetail(c) {
   function renderJournal() {
     const rows = expanded ? c.flights : c.flights.slice(0, 10);
     const dates = [...new Set(rows.map(f => f.date))];
-    const content = dates.map(date => `<section class="tr-day"><h3>${fmt.date(date)}</h3><div class="tr-flights">${rows.filter(f => f.date === date).map(f => `<article class="tr-journal-clip" data-clip="${esc(f.clip_id)}"><a class="tr-flight" href="${flightLink(f)}"><img hidden alt="" loading="lazy" data-transition-key="clip-${esc(f.clip_id)}"><span><strong>${esc(f.label || 'Vuelo')}</strong><span>${esc(f.time || '')} · ${esc(fmt.duration(f.duration_s))} · ${esc(fmt.distance(f.stats?.distance_m))}</span></span>${icon('arrowR')}</a><div class="tr-clip-insight" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div></article>`).join('')}</div></section>`).join('');
+    const content = dates.map(date => `<section class="tr-day"><h3>${fmt.date(date)}</h3><div class="tr-flights">${rows.filter(f => f.date === date).map(f => `<article class="tr-journal-clip" data-clip="${esc(f.clip_id)}"><a class="tr-flight" href="${flightLink(f)}"><img src="${esc(thumbnailURL(f))}" alt="" loading="lazy" data-transition-key="clip-${esc(f.clip_id)}"><span><strong>${esc(f.label || 'Vuelo')}</strong><span>${esc(f.time || '')} · ${esc(fmt.duration(f.duration_s))} · ${esc(fmt.distance(f.stats?.distance_m))}</span></span>${icon('arrowR')}</a><div class="tr-clip-insight" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div></article>`).join('')}</div></section>`).join('');
     journal.innerHTML = content;
     loadJournalInsights(rows);
   }
@@ -200,7 +202,7 @@ async function loadJournalInsights(rows) {
     const insight = insights[entry.dataset.clip], flight = rows.find(f => f.clip_id === entry.dataset.clip);
     const cover = await bestCover(flight, insight);
     entry.querySelector('strong').textContent = flight.label || cover?.caption || flightCaption(flight, insight);
-    if (cover) { const img = entry.querySelector('img'); img.src = cover.url; img.hidden = false; }
+    const img = entry.querySelector('img'); img.src = thumbnailURL(flight); img.hidden = false;
     const region = entry.querySelector('.tr-clip-insight');
     region.innerHTML = clipChips(insight, { compact: true });
     region.setAttribute('aria-busy', 'false');

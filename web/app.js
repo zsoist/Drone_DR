@@ -1,8 +1,9 @@
-import { fmt } from './ui/format.js?v=429';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=429';
-import { skinPlayer } from './ui/player.js?v=429';
-import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=429';
-import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestedContent } from './home-shared.js?v=429';
+import { thumbnailURL } from './ui/thumbnail.js?v=431';
+import { fmt } from './ui/format.js?v=431';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=431';
+import { skinPlayer } from './ui/player.js?v=431';
+import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=431';
+import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestedContent } from './home-shared.js?v=431';
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
 // The clip library belongs to Viajes, including collection and tag links.
@@ -126,7 +127,7 @@ function card(f) {
   return `
   <article class="card"><a class="vf-card-link scrub" href="flight.html?id=${f.clip_id}" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
     <div class="thumb" data-transition-key="clip-${esc(f.clip_id)}">
-      <img src="${DATA}/thumbs/${f.clip_id}.jpg" alt="" loading="lazy" width="960" height="540">
+      <img src="${esc(thumbnailURL(f))}" alt="" loading="lazy" width="960" height="540">
 
       ${a?.travel_score != null ? `<span class="score-pill" title="Puntuación sugerida">${a.travel_score}/10</span>` : ''}
       <span class="ovl mono">${fmt.dur(f.duration_s)}</span>
@@ -205,7 +206,7 @@ function render() {
   mapv.hidden = !isMap;
   chipsRow();
   syncControls();
-  if (isMap) { renderMap(list); document.getElementById('vf-map-list').innerHTML = list.slice(0, 30).map(f => `<button class="vf-map-item" data-preview="${esc(f.clip_id)}"><img src="${DATA}/thumbs/${encodeURIComponent(f.clip_id)}.jpg" alt=""><span>${esc(flightTitle(f, ai[f.clip_id]))}<small>${fmt.dur(f.duration_s)} · ${fmt.km(f.stats?.distance_m || 0)}</small></span></button>`).join('') || noResults('map', 'Sin vuelos', 'Sube un vuelo con GPS para ver su ruta.'); syncFoot(list.length, true); return; }
+  if (isMap) { renderMap(list); document.getElementById('vf-map-list').innerHTML = list.slice(0, 30).map(f => `<button class="vf-map-item" data-preview="${esc(f.clip_id)}"><img src="${esc(thumbnailURL(f))}" alt=""><span>${esc(flightTitle(f, ai[f.clip_id]))}<small>${fmt.dur(f.duration_s)} · ${fmt.km(f.stats?.distance_m || 0)}</small></span></button>`).join('') || noResults('map', 'Sin vuelos', 'Sube un vuelo con GPS para ver su ruta.'); syncFoot(list.length, true); return; }
   if (state.view === 'places') { renderPlaces(list); return; }
   if (state.view === 'dates') { renderDates(list); return; }
   grid.className = `grid ${state.view === 'list' ? 'list' : ''}`;
@@ -271,7 +272,7 @@ function renderPlaces(list) {
     return `
     <a class="card" href="index.html?spot=${encodeURIComponent(sp.key)}&v=grid" data-spotcard="${esc(sp.key)}">
       <div class="thumb">
-        <img src="${DATA}/thumbs/${esc(best.clip_id)}.jpg" alt="" loading="lazy" width="960" height="540">
+        <img src="${esc(thumbnailURL(best))}" alt="" loading="lazy" width="960" height="540">
         <span class="ovl">${fs.length} ${fs.length === 1 ? 'vuelo' : 'vuelos'}</span>
       </div>
       <div class="body">
@@ -477,8 +478,8 @@ function openPreview(f) {
       <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
     <div class="modal-b">
       ${f.has_proxy
-        ? `<video class="m-prev vf-prev" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" muted playsinline preload="metadata"></video>`
-        : `<img class="vf-prev-img" src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" alt="Miniatura de ${esc(flightTitle(f, a))}" width="960" height="540">`}
+        ? `<video class="m-prev vf-prev" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${esc(thumbnailURL(f))}" muted playsinline preload="metadata"></video>`
+        : `<img class="vf-prev-img" src="${esc(thumbnailURL(f))}" alt="Miniatura de ${esc(flightTitle(f, a))}" width="960" height="540">`}
       <div class="tool-row vf-prev-chips">
         <span class="chip ui-chip">${fmt.dur(f.duration_s)}</span>
         <span class="chip ui-chip">${altM(f.stats.max_rel_alt_m)} alt</span>

@@ -1,11 +1,12 @@
-import { createSheet } from './ui/sheet.js?v=429';
-import { showToast as toast } from './ui/toast.js?v=429';
-import { registerPaletteSource } from './ui/palette.js?v=429';
-import { fmt } from './ui/format.js?v=429';
-import { mountTabs } from './ui/tabs.js?v=429';
-import { Suggested } from './ui/suggested.js?v=429';
-import { skinPlayer } from './ui/player.js?v=429';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=429';
+import { thumbnailURL } from './ui/thumbnail.js?v=431';
+import { createSheet } from './ui/sheet.js?v=431';
+import { showToast as toast } from './ui/toast.js?v=431';
+import { registerPaletteSource } from './ui/palette.js?v=431';
+import { fmt } from './ui/format.js?v=431';
+import { mountTabs } from './ui/tabs.js?v=431';
+import { Suggested } from './ui/suggested.js?v=431';
+import { skinPlayer } from './ui/player.js?v=431';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=431';
 
 // The shared player owns chrome; this adapter maps its single scrubber to the cut list.
 function mountReelPreview(video, segments, sourceURL, posterFor, onSegment) {
@@ -1433,8 +1434,8 @@ pollJobs(jobsEl, 2500, j => {
   const editable = flights.filter(f => f.has_proxy && !f.archived);
   const byId = Object.fromEntries(editable.map(f => [f.clip_id, f]));
   const insights = {};
-  const covers = Object.fromEntries(editable.map(f => [f.clip_id, f.ai?.cover]));
-  const posterFor = cid => approvedFrameURL(covers[cid]);
+  const covers = Object.fromEntries(editable.map(f => [f.clip_id, f]));
+  const posterFor = cid => thumbnailURL(covers[cid]);
   const thumbnail = (cid, width = 96, height = 54) => {
     const url = posterFor(cid);
     return url ? `<img src="${esc(url)}" loading="lazy" alt="" width="${width}" height="${height}">`
@@ -1453,7 +1454,7 @@ pollJobs(jobsEl, 2500, j => {
           insights[cid] = data.status === 'ready' ? {...data.insight,
             synthetic: data.synthetic ?? data.insight.synthetic,
             sampled_frame_times: data.sampled_frame_times || data.insight.sampled_frame_times} : null;
-          covers[cid] = data.cover;
+          covers[cid] = data;
           insightErrors.delete(cid);
           return insights[cid];
         } catch {
@@ -1747,7 +1748,7 @@ pollJobs(jobsEl, 2500, j => {
     track.innerHTML = tl.map((s, i) => {
       const f = byId[s.clip_id];
       const w = segDur(s) * pps;
-      // A cover needs backend quality evidence; do not infer safe frames from time alone.
+      // Timeline thumbnails belong to the source clip in the private archive.
       const thumbs = thumbnail(s.clip_id);
       const badges = [
         s.speed !== 1 ? `<span class="tl-badge speed">${s.speed}x</span>` : '',

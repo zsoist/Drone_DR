@@ -1,28 +1,26 @@
-// Automatic media requires an explicit, frame-specific backend quality decision.
+// Featured media requires an affirmative frame-quality decision from the property API.
 export function approvedFrame(frame) {
-  return frame?.quality?.eligible === true
-    && Array.isArray(frame.quality.reasons) && frame.quality.reasons.length === 0
+  return frame?.quality?.status === 'ok'
     && /^\/?data\/frames\/[\w-]+\/f_\d+\.jpg$/.test(frame.frame_url || '');
 }
 
-export function galleryFrames(property, frames = []) {
-  const saved = Array.isArray(property.gallery) ? new Set(property.gallery.map(path => String(path).replace(/^\//, ''))) : null;
+export function galleryFrames(property) {
+  const linked = new Set([property.clip, ...(property.clips || [])]);
   const selected = [], urls = new Set();
-  // Respect backend rank. Spread views across the clip; never invent frame indices.
-  for (const frame of Array.isArray(frames) ? frames : []) {
-    if (!approvedFrame(frame) || frame.clip_id !== property.clip) continue;
-    const path = frame.frame_url.replace(/^\//, '');
-    if ((saved && !saved.has(path)) || urls.has(path)) continue;
-    const time = frame.frame_time_s;
-    if (!Number.isFinite(time) || selected.some(other => Math.abs(other.frame_time_s - time) < 10)) continue;
-    urls.add(path); selected.push(frame);
+  for (const frame of Array.isArray(property.gallery) ? property.gallery : []) {
+    if (!approvedFrame(frame) || !linked.has(frame.clip_id) || urls.has(frame.frame_url)) continue;
+    if (selected.some(other => other.clip_id === frame.clip_id
+      && Math.abs(other.frame_time_s - frame.frame_time_s) < 10)) continue;
+    urls.add(frame.frame_url); selected.push(frame);
     if (selected.length === 6) break;
   }
-  return selected.map(frame => frame.frame_url.replace(/^\//, ''));
+  return selected.map(frame => frame.frame_url);
 }
 
-export function propertyCover(property, frames = []) {
-  return galleryFrames(property, frames)[0] || '';
+export function propertyCover(property) {
+  const cover = property.cover;
+  return approvedFrame(cover) && [property.clip, ...(property.clips || [])].includes(cover.clip_id)
+    ? cover.frame_url : '';
 }
 
 // These substitutions apply only to the legacy generated template, never owner text.
@@ -44,13 +42,4 @@ export function propertyDescription(property) {
     .replace('Se observan montañas en el paisaje.', 'Las montañas forman parte del entorno.')
     .replace('Se ven construcciones en los alrededores.', 'Hay construcciones en los alrededores.')
     .replace('En el paisaje se observa un cuerpo de agua.', 'El paisaje incluye un cuerpo de agua.');
-}
-
-export async function propertyMedia(clip, request = fetch) {
-  if (!clip) return [];
-  const response = await request(`/api/clip/${encodeURIComponent(clip)}/insight`);
-  if (!response.ok) throw new Error('No se pudieron consultar las imágenes.');
-  const data = await response.json();
-  // Older responses supply only a cover. Do not fill missing quality data locally.
-  return [data.cover, ...(data.best_frames || [])].filter(approvedFrame);
 }

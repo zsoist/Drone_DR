@@ -66,16 +66,16 @@ class VisualAI(unittest.TestCase):
     def write(self, path, value):
         (self.vault / path).write_text(json.dumps(value))
 
-    def test_search_never_returns_private_or_dark_frames(self):
+    def test_search_retains_private_archive_matches_with_quality(self):
         from PIL import Image
         data = copy.deepcopy(self.data)
         data['insight']['caption'] = 'Río junto a un cartel con teléfono.'
         self.write('ai/clip_a.json', data)
-        self.assertEqual([], insights.search('río', vault=self.vault)['results'])
+        self.assertEqual('rejected', insights.search('río', vault=self.vault)['results'][0]['matched_moment']['quality']['status'])
         self.write('ai/clip_a.json', self.data)
         for frame in (self.vault / 'frames/clip_a').glob('*.jpg'):
             Image.new('RGB', (16, 16), (5,) * 3).save(frame)
-        self.assertEqual([], insights.search('río', vault=self.vault)['results'])
+        self.assertEqual('rejected', insights.search('río', vault=self.vault)['results'][0]['matched_moment']['quality']['status'])
 
     def test_uniform_sample_grid_is_not_a_real_highlight(self):
         data = insights.public_record('clip_a', self.vault)
@@ -920,12 +920,12 @@ class VisualAI(unittest.TestCase):
                 with urllib.request.urlopen(base + '/data/manifest/flights.json') as response:
                     flight = json.load(response)['flights'][0]
                     self.assertIsNone(flight['thumbnail'])
-                    self.assertIsNone(flight['thumb_url'])
+                    self.assertTrue(flight['thumbnail_url'].startswith('/data/frames/clip_a/'))
+                    self.assertEqual(flight['thumbnail_url'], flight['thumb_url'])
                 for path in ['/data/thumbs/clip_a.jpg', '/data/frames/clip_a/f_0002.jpg']:
                     with urllib.request.urlopen(base + path) as response:
-                        self.assertEqual('rejected', response.headers['X-Frame-Quality'])
-                        self.assertEqual('image/svg+xml', response.headers['Content-Type'])
-                        self.assertNotIn(b'JPEG', response.read())
+                        self.assertEqual('image/jpeg', response.headers['Content-Type'])
+                        self.assertTrue(response.read().startswith(b'\xff\xd8'))
                 for path, status in [('/api/search', 400), ('/api/search?q=a&limit=0', 400),
                                      ('/api/clip/missing/insight', 404), ('/api/clip/%2E%2E/insight', 400)]:
                     with self.assertRaises(urllib.error.HTTPError) as error:

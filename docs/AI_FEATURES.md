@@ -107,6 +107,23 @@ Unknown clips or trips return HTTP 404 with `{"error":"no encontrado"}`.
 Unauthenticated requests return HTTP 401 through the central gate.
 Known clips without insights return HTTP 200 with `status: "pending"`.
 
+### Archive thumbnails and featured images
+
+Private clip lists use `thumbnail_url` from the API.
+This field prefers an approved frame from the same clip, then its normal thumbnail.
+A clip and its thumbnail stay visible without quality evidence.
+Text, sign, or phone rejection selects another sampled frame when one exists.
+Legacy clip evidence cannot locate the text within a specific frame.
+The API does not use another clip as a thumbnail fallback.
+
+Clip insight responses include `frames` with a `quality` result and a `thumbnail_url` for each frame.
+Search keeps clips that match the query regardless of cover approval.
+Authenticated image paths return archive media, not neutral placeholders.
+
+Featured covers and galleries still need `quality.status: "ok"`.
+This rule applies to Home heroes, collections, recaps, properties, and Mundo.
+Property pages use `cover.frame_url` and approved `gallery` objects from the property response.
+
 ### Search
 
 `GET /api/search?q=<text>&limit=12`

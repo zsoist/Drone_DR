@@ -1,9 +1,10 @@
-import { fmt } from './ui/format.js?v=429';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=429';
-import { skinPlayer } from './ui/player.js?v=429';
-import { readAI, clipChips, credibleHighlights, eligibleFrame } from './home.ai.js?v=429';
-import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=429';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=429';
+import { thumbnailURL } from './ui/thumbnail.js?v=431';
+import { fmt } from './ui/format.js?v=431';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=431';
+import { skinPlayer } from './ui/player.js?v=431';
+import { readAI, clipChips, credibleHighlights } from './home.ai.js?v=431';
+import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=431';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=431';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
 main.classList.add('ab-page');
@@ -212,7 +213,7 @@ main.innerHTML = skeleton(2);
   if (quality !== 'auto' && !SRC[quality]) quality = 'auto';
   const resolved = () => quality === 'auto' ? autoPick() : (SRC[quality] ? quality : autoPick());
   if (SRC.hd || SRC['720'] || SRC['4k']) {
-    slot.innerHTML = `<video src="${SRC[resolved()]}" playsinline webkit-playsinline preload="metadata" ></video>`;
+    slot.innerHTML = `<video src="${SRC[resolved()]}" playsinline webkit-playsinline preload="metadata" poster="${esc(thumbnailURL(meta))}"></video>`;
     video = slot.querySelector('video');
     const player = skinPlayer(video, { label: 'Recorrido del vuelo' });
     const qualityControl = document.createElement('button'); qualityControl.className = 'ui-button ui-button--secondary fl-quality';
@@ -226,7 +227,7 @@ main.innerHTML = skeleton(2);
     // sin fuente reproducible: estado honesto — el thumb + qué falta y por qué
     slot.innerHTML = `
       <div class="fl-noproxy">
-        <img hidden alt="Vista del vuelo" width="960" height="540">
+        <img src="${esc(thumbnailURL(meta))}" alt="Vista del vuelo" width="960" height="540">
         <div class="fl-noproxy-msg">
           <div class="fl-unavailable">
             <b>${icon('film')} Video no disponible</b>
@@ -586,11 +587,15 @@ main.innerHTML = skeleton(2);
       const summaryText = summary.summary || insight?.caption_short;
       if (summaryText) region.append(suggestedContent(`<p>${esc(summaryText)}</p>${insight?.caption ? `<details class="ai-caption-detail"><summary>Ver descripción</summary><p>${esc(insight.caption)}</p></details>` : ''}${verifiedBest ? `<button class="ui-button ui-button--secondary tc" id="fl-best-moment" data-t="${best.time_s}">${icon('play')} Mejor momento · ${fmt.clock(best.time_s)}</button>` : ''}`));
       else region.insertAdjacentHTML('beforeend', '<p class="fl-hint">El resumen aún no está disponible.</p>');
-      const frames = [detail.cover, ...(detail.frames || [])].filter(eligibleFrame)
+      const frames = (detail.frames?.length ? detail.frames : [{...detail, frame_time_s: 0}])
+        .map(frame => {
+          const url = thumbnailURL(frame), index = url.match(/f_(\d+)\.jpg$/);
+          return {...frame, frame_url: url, frame_time_s: index ? (Number(index[1]) - 1) * 2 : 0};
+        })
         .filter((frame, i, rows) => rows.findIndex(row => row.frame_url === frame.frame_url) === i);
       if (frames.length) {
-        if (video) video.poster = frames[0].frame_url;
-        else { const img = slot.querySelector('img'); if (img) { img.src = frames[0].frame_url; img.hidden = false; } }
+        if (video) video.poster = thumbnailURL(detail);
+        else { const img = slot.querySelector('img'); if (img) { img.src = thumbnailURL(detail); img.hidden = false; } }
       }
       const strip = document.getElementById('strip');
       if (strip) strip.innerHTML = frames.map(frame => `<button class="fl-frame" data-t="${frame.frame_time_s ?? frame.time_s}" aria-label="Ir a ${fmt.clock(frame.frame_time_s ?? frame.time_s)}"><img src="${esc(frame.frame_url)}" alt="" loading="lazy"><span>${fmt.clock(frame.frame_time_s ?? frame.time_s)}</span></button>`).join('') || '<p class="fl-hint">No hay fotogramas seleccionados.</p>';
