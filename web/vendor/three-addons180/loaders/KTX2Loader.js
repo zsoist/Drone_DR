@@ -40,7 +40,7 @@ import {
 	UnsignedByteType,
 	UnsignedInt5999Type,
 	UnsignedInt101111Type
-} from '/vendor/three180.module.js?v=400';
+} from '/vendor/three180.module.js?v=402';
 import { WorkerPool } from '../utils/WorkerPool.js';
 import {
 	read,

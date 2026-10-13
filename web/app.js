@@ -1,5 +1,5 @@
-import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=400';
-import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor } from './home-shared.js?v=400';
+import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=402';
+import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor } from './home-shared.js?v=402';
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
 // The clip library belongs to Viajes, including collection and tag links.

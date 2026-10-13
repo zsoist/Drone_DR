@@ -1,6 +1,6 @@
-import { readAI, captionView, clipChips } from './home.ai.js?v=400';
-import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor } from './home-shared.js?v=400';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=400';
+import { readAI, captionView, clipChips } from './home.ai.js?v=402';
+import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor } from './home-shared.js?v=402';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=402';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
 main.classList.add('ab-page', 'ab-page--wide');

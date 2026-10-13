@@ -1,0 +1,13 @@
+.demo-heading h1 { margin: 0; }
+.demo-heading p, .demo-note { margin: 8px 0 0; color: var(--text-2); font-size: var(--fs-sm); max-width: 70ch; }
+.demo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.demo-stats { display: flex; flex-wrap: wrap; gap: 24px; margin: 0; }
+.demo-stats div { display: grid; gap: 4px; }
+.demo-stats dt { font-size: var(--fs-sm); color: var(--text-2); }
+.demo-stats dd { margin: 0; font-size: var(--fs-xl); }
+.demo-panel h2 { font-size: var(--fs-xl); margin: 0 0 16px; }
+.demo-map { width: 100%; height: clamp(360px, 52dvh, 560px); }
+.demo-player { max-width: 960px; }
+.demo-player video { aspect-ratio: 16 / 9; min-height: 280px; }
+.demo-error { color: var(--text-2); }
+.demo-panel:focus-visible { outline-offset: 4px; }

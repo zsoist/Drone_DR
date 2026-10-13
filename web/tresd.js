@@ -1,13 +1,13 @@
-import { sceneInsight, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=400';
-import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=400';
-  import * as THREE from '/vendor/three180.module.js?v=400';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=400';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=400';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=400';
-  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=400';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=400';
-  import { mountSplatViewer } from '/splatview.js?v=400';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=400';
+import { sceneInsight, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=402';
+import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
+  import * as THREE from '/vendor/three180.module.js?v=402';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=402';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=402';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=402';
+  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=402';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=402';
+  import { mountSplatViewer } from '/splatview.js?v=402';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=402';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };

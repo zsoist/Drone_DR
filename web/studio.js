@@ -1,7 +1,7 @@
-import { createSheet } from './ui/sheet.js?v=400';
-import { showToast as toast } from './ui/toast.js?v=400';
-import { registerPaletteSource } from './ui/palette.js?v=400';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions } from './studio.logic.js?v=400';
+import { createSheet } from './ui/sheet.js?v=402';
+import { showToast as toast } from './ui/toast.js?v=402';
+import { registerPaletteSource } from './ui/palette.js?v=402';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions } from './studio.logic.js?v=402';
 
 // Keep each editor's DOM and cleanup contract inside the W1 sheet lifecycle.
 function openModal(content, options = {}) {

@@ -20,7 +20,8 @@ export function createSheet({ title, content, size = 'half', className = '', onC
   header.append(heading, dismiss);
   const body = document.createElement('div'); body.className = 'ui-sheet-body';
   if (content) body.append(content);
-  element.append(header, body);
+  const handle = document.createElement('div'); handle.className = 'ui-sheet-handle'; handle.setAttribute('aria-hidden', 'true');
+  element.append(handle, header, body);
   document.body.append(element);
   let opener, layer, locked = false, downOutside = false;
   const outside = e => {

@@ -1,5 +1,19 @@
 // App shell: sidebar nav, shared formatters, data access. Requires icons.js.
 const DATA = 'data';
+// The shell stays a classic script for existing pages. New modules can import these APIs directly.
+const formatReady = import('./ui/format.js?v=402');
+window.shell = {
+  backLink,
+  ready: Promise.all([formatReady, import('./ui/terms.js?v=402')]).then(([{ fmt }, { term }]) => {
+    Object.assign(window.shell, { fmt, term });
+    return window.shell;
+  }),
+};
+function backLink(label, href) {
+  const url = new URL(href, document.baseURI);
+  if (url.origin !== location.origin || !/^https?:$/.test(url.protocol)) throw new TypeError('Back links must stay on this origin');
+  return `<a class="ui-back" href="${esc(url.pathname + url.search + url.hash)}">${icon('arrowL')}<span>${esc(label)}</span></a>`;
+}
 
 // ---- captura global de errores JS → /api/client_error (registro central + reporte DeepSeek).
 // sendBeacon: no bloquea ni falla ruidoso; máx 5 por sesión de página (anti-loop de un error
@@ -31,9 +45,17 @@ const NAV = [
 const NAV_MORE = [
   { href: 'drone.html', ic: 'drone', label: 'Dron', hint: 'Equipo y archivos' },
   { href: 'system.html', ic: 'db', label: 'Sistema', hint: 'Procesos y estado' },
-  { href: 'guia.html', ic: 'list', label: 'Guía', hint: 'Aprende a volar' },
-  { href: 'ventas.html', ic: 'tag', label: 'Ventas', hint: 'Servicios y entregas' },
+  { href: 'guia.html', ic: 'list', label: 'Guía', hint: 'Cómo usar AeroBrain' },
+  { href: 'ventas.html', ic: 'tag', label: 'Ventas', hint: 'Propiedades en venta' },
 ];
+const SECTION_HINTS = {
+  'home.html': 'Últimos vuelos y colecciones', 'index.html': 'Todos los videos del archivo',
+  'trips.html': 'Recorridos por lugar y fecha', 'map.html': 'Ubicar tus recorridos',
+  'flight.html': 'Video, ruta y datos de captura', 'studio.html': 'Editar videos y fotos',
+  'subir.html': 'Añadir videos y fotos al archivo', 'tresd.html': 'Explorar tus reconstrucciones',
+  'mundo.html': 'Terrenos y recorridos en 3D', 'splatlab.html': 'Preparar una escena fotorrealista',
+  'scene-improve.html': 'Añadir detalle a una escena', 'volar.html': 'Recorrer una escena con el dron',
+};
 const SECTIONS = [
   { href: 'home.html', label: 'Inicio', ic: 'gauge' }, { href: 'index.html', label: 'Vuelos', ic: 'drone' },
   { href: 'trips.html', label: 'Viajes', ic: 'route' }, { href: 'map.html', label: 'Mapa', ic: 'map', section: 'Viajes' },
@@ -42,7 +64,7 @@ const SECTIONS = [
   { href: 'subir.html', label: 'Subir', ic: 'plus', group: 'Acciones', keywords: 'importar archivos' },
   { href: 'tresd.html', label: 'Escenas 3D', ic: 'cube', section: '3D' },
   { href: 'mundo.html', label: 'Mundo', ic: 'globe', section: '3D' },
-  { href: 'splatlab.html', label: 'Splat Lab', ic: 'cube', section: '3D' },
+  { href: 'splatlab.html', label: 'Taller de escenas', ic: 'cube', section: '3D' },
   { href: 'scene-improve.html', label: 'Mejorar escena', ic: 'layers', section: '3D' },
   { href: 'volar.html', label: 'Volar', ic: 'drone', section: '3D' }, ...NAV_MORE,
 ];
@@ -390,6 +412,7 @@ async function requireSession() {
   }
 }
 async function authFetch(path, options = {}) {
+  await formatReady;
   const method = String(options.method || 'GET').toUpperCase();
   const headers = new Headers(options.headers || {});
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) headers.set('X-AeroBrain-CSRF', '1');
@@ -971,9 +994,9 @@ document.addEventListener('click', async e => {
 
 // Public palette bridge for classic page scripts. ES modules can import palette.js directly.
 const shellComponents = Promise.all([
-  import('./ui/sheet.js?v=400'), import('./ui/palette.js?v=400'),
-  import('./ui/activity.js?v=400'), import('./ui/toast.js?v=400'),
-  import('./ui/clip-search.js?v=400'),
+  import('./ui/sheet.js?v=402'), import('./ui/palette.js?v=402'),
+  import('./ui/activity.js?v=402'), import('./ui/toast.js?v=402'),
+  import('./ui/clip-search.js?v=402'),
 ]);
 function registerPaletteSource(fn) {
   let cancelled = false, unregister;
@@ -1060,7 +1083,7 @@ function renderShell(active, { navigationOnly = false } = {}) {
     content.innerHTML = `<nav class="ab-more-grid" aria-label="Más secciones">${NAV_MORE.map(n => `<a class="ab-more-tile" href="${n.href}"${cur === n.href ? ' aria-current="page"' : ''}>${icon(n.ic)}<b>${n.label}</b><span>${n.hint}</span></a>`).join('')}</nav>
       <div class="ab-more-footer">
         <p class="ab-menu-heading">Apariencia</p>
-        <div class="ab-theme-options ui-segmented" role="group" aria-label="Tema"><button type="button" data-theme-choice="system">Sistema</button><button type="button" data-theme-choice="light">Claro</button><button type="button" data-theme-choice="dark">Oscuro</button></div>
+        <div class="ab-theme-options ui-segmented" role="group" aria-label="Tema"><button type="button" data-theme-choice="system">Automático</button><button type="button" data-theme-choice="light">Claro</button><button type="button" data-theme-choice="dark">Oscuro</button></div>
         <a class="ui-button ui-button--quiet" href="#" data-auth-link id="auth-link">Salir</a>
       </div>`;
     const moreButtons = [...document.querySelectorAll('[data-more]')];
@@ -1073,9 +1096,9 @@ function renderShell(active, { navigationOnly = false } = {}) {
     content.addEventListener('click', e => { const value = e.target.closest('[data-theme-choice]')?.dataset.themeChoice; if (value) window.AeroTheme?.set(value); });
     document.addEventListener('ab-theme-change', themeControls); themeControls();
     const palette = mountPalette([
-      ...SECTIONS.map(n => ({ id: n.href, label: n.label, href: n.href, icon: n.ic, group: n.group || 'Secciones', hint: n.group === 'Acciones' ? 'Acción' : `${n.section || n.label} · sección`, keywords: n.keywords || '' })),
+      ...SECTIONS.map(n => ({ id: n.href, label: n.label, href: n.href, icon: n.ic, group: n.group || 'Secciones', hint: n.hint || SECTION_HINTS[n.href] || 'Abrir esta sección', keywords: n.keywords || '' })),
       { id: 'theme', label: 'Cambiar tema', icon: 'sun', group: 'Acciones', keywords: 'claro oscuro apariencia', action: toggleTheme },
-      { id: 'system-theme', label: 'Usar tema del sistema', icon: 'sliders', group: 'Acciones', action: () => window.AeroTheme?.set('system') },
+      { id: 'system-theme', label: 'Usar tema automático', icon: 'sliders', group: 'Acciones', action: () => window.AeroTheme?.set('system') },
       { id: 'new-reel', label: 'Nuevo reel', icon: 'film', group: 'Acciones', keywords: 'crear editar video', href: 'studio.html' },
     ]);
     document.querySelectorAll('[data-palette]').forEach(b => b.addEventListener('click', () => palette.open(b)));
@@ -1095,25 +1118,10 @@ function renderShell(active, { navigationOnly = false } = {}) {
   return document.getElementById('main');
 }
 
-const fmt = {
-  // Math.floor en los segundos también (no Math.round) → nunca "0:60"/"1:60"; guard de NaN
-  dur: s => {
-    s = Math.max(0, Math.round(+s || 0));
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  },
-  km: m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`,
-  gb: b => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`,
-  date: d => {
-    if (!d || typeof d !== 'string') return '';        // fmt.date(undefined) ya no tumba la página
-    const M = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-    const [y, m, day] = d.split('-');
-    return `${+day} ${M[+m - 1]} ${y}`;
-  },
-  hours: s => s >= 3600 ? `${(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`,
-};
 
 let _flights = null;
 async function getFlights() {
+  await formatReady;
   if (!_flights) {
     try {
       const r = await fetch(`${DATA}/manifest/flights.json`);
