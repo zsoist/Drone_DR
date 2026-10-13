@@ -1,7 +1,7 @@
 import { createSheet } from './ui/sheet.js?v=391';
 import { showToast as toast } from './ui/toast.js?v=391';
 import { registerPaletteSource } from './ui/palette.js?v=391';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption } from './studio.logic.js?v=391';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions } from './studio.logic.js?v=394';
 
 // Keep each editor's DOM and cleanup contract inside the W1 sheet lifecycle.
 function openModal(content, options = {}) {
@@ -42,7 +42,7 @@ function ask(title, value) {
 // El editor de video v4 (carrusel, timeline arrastrable, Reel automático, exportbar) vive
 // intacto dentro del módulo Editor; Reels/Fotos gestionan la biblioteca vía /api/media_op.
 const main = renderShell('studio.html');
-main.classList.add('st-page');
+main.classList.add('st-page', 'ab-page', 'ab-page--wide');
 main.dataset.module = 'editor';
 main.innerHTML = `
   <header class="st-heading"><div><h1>Studio</h1><p>De tu vuelo a una historia.</p></div><a class="ui-button ui-button--primary" href="subir.html">${icon('plus')} Subir</a></header>
@@ -318,6 +318,11 @@ main.innerHTML = `
           <span class="spacer"></span>
           <span class="st-note">Elige una toma para añadirla</span>
         </div>
+        <div class="st-library-filters" role="group" aria-label="Filtrar tomas">
+          <label class="st-tag-filter"><span>Etiquetas</span><select class="ctl" id="st-tag-filter" disabled><option value="">Todas las etiquetas</option></select></label>
+          <button class="ui-button ui-button--secondary" id="st-quality-filter" aria-pressed="false" disabled>Sin problemas</button>
+        </div>
+        <p class="st-note" id="st-insight-status" role="status">Cargando sugerencias…</p>
         <div class="pb"><div class="clip-rail" id="rail" aria-busy="true"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div></div>
       </div>
 
@@ -1396,6 +1401,41 @@ pollJobs(jobsEl, 2500, j => {
   const ai = await getAIAll(flights);
   const editable = flights.filter(f => f.has_proxy && !f.archived);
   const byId = Object.fromEntries(editable.map(f => [f.clip_id, f]));
+  const insights = {};
+  const insightRequests = new Map();
+  const insightErrors = new Set();
+  function loadInsight(cid) {
+    if (!insightRequests.has(cid)) {
+      insightRequests.set(cid, (async () => {
+        try {
+          const response = await authFetch(`/api/clip/${encodeURIComponent(cid)}/insight`, {signal: AbortSignal.timeout(12000)});
+          if (!response.ok) throw new Error('insight');
+          const data = await response.json();
+          if (data.status !== 'ready' && data.status !== 'pending') throw new Error('insight');
+          insights[cid] = data.status === 'ready' ? data.insight : null;
+          insightErrors.delete(cid);
+          return insights[cid];
+        } catch {
+          insightErrors.add(cid);
+          insightRequests.delete(cid);
+          return null;
+        }
+      })());
+    }
+    return insightRequests.get(cid);
+  }
+  // Keep requests bounded. Manual editing remains available during the read.
+  let insightBatch = null;
+  function loadInsights() {
+    if (!insightBatch) {
+      const queue = editable.slice();
+      insightBatch = Promise.all(Array.from({length:4}, async () => {
+        while (queue.length) await loadInsight(queue.shift().clip_id);
+      })).finally(() => { insightBatch = null; });
+    }
+    return insightBatch;
+  }
+
 
   // filtros CSS por LUT (idénticos al backend/export)
   // Aproximación CSS de cada look para el PREVIEW. Sin esto, elegir "Nolan" mostraba el
@@ -1553,20 +1593,34 @@ pollJobs(jobsEl, 2500, j => {
   document.getElementById('st-trim').onclick = () => { if (sel >= 0) openClipEditor(sel); };
   const dismissedColors = new Set();
   async function loadColorSuggestion(segment) {
-    let box=inspect.querySelector('#st-color-suggestion');
-    if(!box) {box=document.createElement('div');box.id='st-color-suggestion';box.className='st-color-suggestion';inspect.prepend(box);}
-    box.innerHTML='<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>';
-    const data=await getAI(segment.clip_id);
-    if(!box.isConnected || tl[sel] !== segment) return;
-    const suggestion=data?.color_suggestion;
-    const look=typeof suggestion === 'string' ? suggestion : suggestion?.preset;
-    if(!look || !(look in CSS_LUTS) || dismissedColors.has(segment.clip_id)) {
-      box.textContent='Sin sugerencia de color aún. Elige un estilo o ajusta el color.'; return;
+    let box = inspect.querySelector('#st-color-suggestion');
+    if (!box) {
+      box = document.createElement('div'); box.id = 'st-color-suggestion'; box.className = 'st-color-suggestion';
+      inspect.querySelector('[data-sec="look"]').append(box);
+    }
+    box.setAttribute('aria-busy', 'true');
+    box.innerHTML = '<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>';
+    const data = await loadInsight(segment.clip_id);
+    if (!box.isConnected || tl[sel] !== segment) return;
+    box.setAttribute('aria-busy', 'false');
+    if (insightErrors.has(segment.clip_id)) {
+      box.textContent = 'No se pudo cargar la sugerencia de color. Vuelve a abrir los ajustes para reintentar.'; return;
+    }
+    if (dismissedColors.has(segment.clip_id)) { box.textContent = ''; return; }
+    const look = data?.suggested_look?.preset_id;
+    if (!look || !Object.hasOwn(CSS_LUTS, look)) {
+      box.textContent = 'Sin sugerencia de color aún.'; return;
     }
     const lookLabel = document.querySelector(`#tli-filter option[value="${look}"]`)?.textContent.split(' — ')[0] || look;
-    box.innerHTML=`<span class="ui-chip">Sugerido</span><p>${esc(lookLabel)}</p>${suggestion?.label ? `<details class="st-analysis-detail"><summary>Ver análisis</summary><p>${esc(suggestion.label)}</p></details>` : ''}<div class="st-sheet-actions"><button class="ui-button ui-button--secondary" data-color-accept>Aceptar</button><button class="ui-button ui-button--quiet" data-color-dismiss>Descartar</button></div>`;
-    box.querySelector('[data-color-accept]').onclick=()=>{pushUndo();segment.filter=look;renderAll();seek(playhead);box.textContent='Estilo aplicado';};
-    box.querySelector('[data-color-dismiss]').onclick=()=>{dismissedColors.add(segment.clip_id);box.textContent='Sugerencia descartada';};
+    box.innerHTML = `<p class="st-suggested-look">Sugerido: <b>${esc(lookLabel)}</b></p><div class="st-color-actions"><button class="ui-button ui-button--secondary" data-color-accept>Aplicar</button><button class="ui-button ui-button--quiet" data-color-dismiss>Descartar</button></div>`;
+    box.querySelector('[data-color-accept]').onclick = () => {
+      if (tl[sel] !== segment) return;
+      pushUndo(); segment.filter = look; dismissedColors.add(segment.clip_id);
+      renderAll(); seek(playhead); box.textContent = 'Estilo aplicado';
+    };
+    box.querySelector('[data-color-dismiss]').onclick = () => {
+      dismissedColors.add(segment.clip_id); box.textContent = 'Sugerencia descartada';
+    };
   }
 
   // ---- render maestro ----
@@ -2021,15 +2075,23 @@ pollJobs(jobsEl, 2500, j => {
   // ---- 45 · Reel automático: llena el montaje con highlights ----
   async function magic() {
     const body = document.createElement('div'); body.className = 'st-suggestion';
-    const suggestions = highlightSuggestions(editable, ai);
+    body.setAttribute('aria-busy', 'true');
+    body.innerHTML = '<div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div>';
+    let closed = false;
+    const sheet = createSheet({title:'Reel automático',content:body,size:'full',className:'st-sheet',onClose:()=>{closed=true;body.querySelector('video')?.pause();queueMicrotask(()=>sheet.destroy());}});
+    pause(); sheet.open();
+    await loadInsights();
+    if (closed) return;
+    body.setAttribute('aria-busy', 'false');
+    const suggestions = highlightSuggestions(editable, insights);
     body.innerHTML = suggestions.length
       ? `<p><span class="ui-chip">Sugerido</span> ${suggestions.length} momentos de tus vuelos. Revisa las tomas antes de aceptar.</p>
         <video controls muted playsinline class="st-suggestion-video"></video>
-        <div class="st-suggestion-list">${suggestions.map((h,i) => `<div class="st-suggestion-item"><button class="st-suggestion-row ui-button ui-button--quiet" data-moment="${i}"><img src="${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg" alt=""><span><b>${esc(h.caption)}</b><small>${esc(h.label || h.cid)} · ${fmt.dur(h.a)}–${fmt.dur(h.b)}</small></span></button>${h.reason ? `<details class="st-analysis-detail"><summary>Ver análisis</summary><p>${esc(h.reason)}</p></details>` : ''}</div>`).join('')}</div>
+        <div class="st-suggestion-list">${suggestions.map((h,i) => `<div class="st-suggestion-item"><button class="st-suggestion-row ui-button ui-button--quiet" data-moment="${i}"><img src="${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg" alt=""><span><b>${esc(h.caption)}</b><small>${esc(h.label || h.cid)} · ${fmt.dur(h.a)}–${fmt.dur(h.b)}</small></span></button>${h.description ? `<details class="st-analysis-detail"><summary>Ver descripción</summary><p>${esc(h.description)}</p></details>` : ''}</div>`).join('')}</div>
+        ${insightErrors.size ? '<p class="st-note">No se pudieron cargar algunas sugerencias. Puedes revisar las disponibles.</p>' : ''}
         <p class="st-note">Aceptar reemplaza el montaje. Puedes deshacer el cambio.</p>
         <div class="st-sheet-actions"><button class="ui-button ui-button--quiet" data-dismiss>Descartar</button><button class="ui-button ui-button--primary" data-accept>Aceptar y editar</button></div>`
-      : '<div class="ui-empty"><h3>Sin análisis aún</h3><p>Cuando tus videos tengan momentos destacados, podrás revisarlos aquí.</p><button class="ui-button ui-button--primary" data-manual>Elegir tomas</button><p>Por ejemplo, combina una toma abierta y un acercamiento.</p></div>';
-    const sheet = createSheet({title:'Reel automático',content:body,size:'full',className:'st-sheet',onClose:()=>{body.querySelector('video')?.pause();queueMicrotask(()=>sheet.destroy());}});
+      : insightErrors.size ? '<p class="st-note">No se pudieron cargar las sugerencias. Cierra y vuelve a abrir para reintentar.</p>' : '<div class="ui-empty"><h3>Sin análisis aún</h3><p>Cuando tus videos tengan momentos destacados, podrás revisarlos aquí.</p><button class="ui-button ui-button--primary" data-manual>Elegir tomas</button><p>Por ejemplo, combina una toma abierta y un acercamiento.</p></div>';
     const preview = index => {
       const h = suggestions[index], v = body.querySelector('video');
       v.src = srcFor(h.cid); v.poster = `${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg`;
@@ -2047,12 +2109,10 @@ pollJobs(jobsEl, 2500, j => {
         sel=0;playhead=0;curCid=null;showMod('editor');renderAll();fit();seek(0);sheet.close();
       }
     });
-    sheet.open(); if(suggestions.length) preview(0);
+    if(suggestions.length) preview(0);
   }
   document.getElementById('st-auto-start').onclick = magic;
-  const suggestions = highlightSuggestions(editable, ai);
-  document.getElementById('st-ai-summary').textContent = suggestions.length
-    ? `${suggestions.length} momentos sugeridos. Tú decides qué conservar.` : 'Sin análisis aún. Puedes empezar eligiendo tus tomas.';
+  document.getElementById('st-ai-summary').textContent = 'Cargando momentos…';
   registerPaletteSource(() => [
     {id:'studio-auto',label:'Nuevo reel automático',action:magic},
     ...editable.map(f=>({id:`studio-${f.clip_id}`,label:f.label || `${fmt.date(f.date)} · ${f.time || 'Video'}`,keywords:[f.clip_id,...(f.ai?.tags || [])].join(' '),href:`studio.html?clip=${encodeURIComponent(f.clip_id)}`}))
@@ -3175,22 +3235,58 @@ pollJobs(jobsEl, 2500, j => {
 
   // ================= carrusel de clips fuente (24-27) =================
   const rail = document.getElementById('rail');
-  // The badge shows duration. Capture time stays in the tooltip.
-  let railDay = null;
-  rail.innerHTML = editable.map(f => {
-    const day = f.date !== railDay ? `<div class="cr-day" role="presentation"><b>${esc(fmtDayShort(f.date))}</b></div>` : '';
-    railDay = f.date;
-    return `${day}
-    <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(f.label || f.clip_id)}" title="${esc([f.label, fmtDayShort(f.date), f.time].filter(Boolean).join(' · '))}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
-      <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="" width="320" height="180">
-      <span class="scrub-line"></span>
-      <span class="cr-lb" aria-label="Duración ${fmt.dur(f.duration_s)}">${fmt.dur(f.duration_s)}</span>
-      <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar aquí" aria-label="Insertar aquí">${icon('plus')}</button>
-    </div>`;
-  }).join('') || emptyState({ icon: 'film', title: 'Sin clips disponibles', help: 'Ningún clip tiene proxy todavía.' });
-  rail.querySelectorAll('.cr-item').forEach(el => el.classList.add('scrub'));
-  rail.setAttribute('aria-busy','false');
-  if (document.documentElement.dataset.motion !== 'reduced') attachScrub(rail);   // 27 · scrub por hover reutilizando el helper del repo
+  const tagFilter = document.getElementById('st-tag-filter');
+  const qualityFilter = document.getElementById('st-quality-filter');
+  const insightStatus = document.getElementById('st-insight-status');
+  const qualityLabels = {inestable:'Inestable', horizonte:'Horizonte', sobreexpuesto:'Sobreexpuesto'};
+  let onlyClean = false, insightsLoaded = false;
+  function renderLibrary() {
+    let railDay = null;
+    const visible = editable.filter(f => {
+      const insight = insights[f.clip_id];
+      return (!tagFilter.value || insight?.tags?.includes(tagFilter.value))
+        && (!onlyClean || (insight && Array.isArray(insight.quality_flags) && !insight.quality_flags.length));
+    });
+    rail.innerHTML = visible.map(f => {
+      const insight = insights[f.clip_id];
+      const day = f.date !== railDay ? `<div class="cr-day" role="presentation"><b>${esc(fmtDayShort(f.date))}</b></div>` : '';
+      railDay = f.date;
+      const tags = (insight?.tags || []).slice(0,3);
+      const flags = (insight?.quality_flags || []).filter(flag => qualityLabels[flag]);
+      return `${day}<div class="st-source-card">
+        <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(f.label || f.clip_id)}" title="${esc([f.label, fmtDayShort(f.date), f.time].filter(Boolean).join(' · '))}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
+          <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="" width="320" height="180">
+          <span class="scrub-line"></span>
+          <span class="cr-lb" aria-label="Duración ${fmt.dur(f.duration_s)}">${fmt.dur(f.duration_s)}</span>
+          <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar aquí" aria-label="Insertar aquí">${icon('plus')}</button>
+        </div>
+        <div class="st-source-tags">${tags.map(tag=>`<span class="ui-chip">${esc(tag)}</span>`).join('')}</div>
+        ${flags.length ? `<div class="st-source-flags">${flags.map(flag=>`<span>${esc(qualityLabels[flag])}</span>`).join('')}</div>` : ''}
+        ${!insightsLoaded && !insight ? '<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>' : ''}
+      </div>`;
+    }).join('') || '<p class="st-note">No hay tomas con estos filtros.</p>';
+    rail.querySelectorAll('.cr-item').forEach(el => el.classList.add('scrub'));
+    rail.setAttribute('aria-busy', String(!insightsLoaded));
+    if (document.documentElement.dataset.motion !== 'reduced') attachScrub(rail);
+  }
+  tagFilter.onchange = renderLibrary;
+  qualityFilter.onclick = () => {
+    onlyClean = !onlyClean; qualityFilter.setAttribute('aria-pressed', String(onlyClean)); renderLibrary();
+  };
+  renderLibrary();
+  loadInsights().then(() => {
+    insightsLoaded = true;
+    const tags = [...new Set(Object.values(insights).flatMap(insight=>insight?.tags || []))].sort((a,b)=>a.localeCompare(b,'es'));
+    tagFilter.innerHTML = '<option value="">Todas las etiquetas</option>' + tags.map(tag=>`<option value="${esc(tag)}">${esc(tag)}</option>`).join('');
+    tagFilter.disabled = !tags.length; qualityFilter.disabled = !Object.values(insights).some(Boolean);
+    insightStatus.textContent = insightErrors.size ? 'No se pudieron cargar algunas etiquetas. Vuelve a abrir Studio para reintentar.'
+      : tags.length ? 'Sugerido · Etiquetas y avisos de las tomas' : 'Aún no hay etiquetas sugeridas.';
+    const suggestions = highlightSuggestions(editable, insights);
+    document.getElementById('st-ai-summary').textContent = suggestions.length
+      ? `${suggestions.length} momentos para revisar. Tú decides qué conservar.`
+      : insightErrors.size ? 'No se pudieron cargar los momentos. Abre la sugerencia para reintentar.' : 'Sin análisis aún. Puedes empezar eligiendo tus tomas.';
+    renderLibrary();
+  });
   rail.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.cr-item')) { e.preventDefault(); e.target.click(); } });
   rail.addEventListener('click', e => {
     const ins = e.target.closest('[data-ins]');

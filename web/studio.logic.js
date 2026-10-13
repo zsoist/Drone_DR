@@ -19,13 +19,18 @@ export function joinOverlap(segments, index, fps = 30) {
 export function missingSources(project, byId) {
   return (project.tl || []).filter(s => !s || !byId[s.clip_id]).length;
 }
-export function highlightSuggestions(flights, ai) {
-  return flights.flatMap(f => (ai[f.clip_id]?.highlights || []).flatMap(h => {
-    const t = Number(h.t);
-    if (!Number.isFinite(t) || !(f.duration_s > 0)) return [];
-    const a = Math.max(0, t - 2.5), b = Math.min(f.duration_s, t + 2.5);
-    return b > a ? [{ cid: f.clip_id, a, b, label: f.label || f.date, reason: h.reason || h.label || '', caption: analysisCaption(h.reason || h.label), score: ai[f.clip_id].travel_score || 0 }] : [];
-  })).sort((a, b) => b.score - a.score).slice(0, 10);
+export function highlightSuggestions(flights, insights) {
+  return flights.flatMap(f => {
+    const insight = insights[f.clip_id];
+    return (insight?.highlight_segments || []).flatMap(h => {
+      const { start: a, end: b, score } = h;
+      if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b <= a || b > f.duration_s
+          || !Number.isFinite(f.duration_s) || !Number.isFinite(score) || score < 0 || score > 1) return [];
+      return [{ cid: f.clip_id, a, b, label: f.label || f.date,
+        caption: insight.caption_short || analysisCaption(insight.caption),
+        description: insight.caption || '', reason: h.reason || '', score }];
+    });
+  }).sort((a, b) => b.score - a.score).slice(0, 10);
 }
 
 // Use only subjects present in the stored text. Keep the original in the details row.
