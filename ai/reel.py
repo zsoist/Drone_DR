@@ -10,7 +10,6 @@ Usage:
     python3 reel.py --date 2026-07-04  # solo vuelos de ese día
     python3 reel.py --vertical         # 1080x1920 para IG/TikTok
 """
-import json
 import subprocess
 import sys
 import time
@@ -18,6 +17,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
 from paths import VAULT  # noqa: E402
+try:
+    from .insights import public_record
+except ImportError:
+    from insights import public_record
 SEG_LEN = 5          # segundos por highlight
 MAX_SEGS = 10        # reel máximo ≈ 50s
 
@@ -25,8 +28,8 @@ MAX_SEGS = 10        # reel máximo ≈ 50s
 def collect(date_filter: str | None) -> list[dict]:
     moments = []
     for f in sorted((VAULT / "ai").glob("DJI_*.json")):
-        a = json.loads(f.read_text())
-        cid = a["clip_id"]
+        cid = f.stem
+        a = public_record(cid, VAULT)
         if date_filter and date_filter.replace("-", "") not in cid:
             continue
         proxy = VAULT / "proxies" / f"{cid}.mp4"
@@ -34,8 +37,9 @@ def collect(date_filter: str | None) -> list[dict]:
             continue
         for h in a.get("highlights", []):
             moments.append({
-                "clip": proxy, "t": max(0, h["t"] - SEG_LEN // 2),
-                "score": a.get("travel_score", 5), "reason": h.get("reason", ""),
+                "clip": proxy, "t": h["start"],
+                "duration_s": min(SEG_LEN, h["end"] - h["start"]),
+                "score": h["score"], "reason": h["reason"],
             })
     moments.sort(key=lambda m: -m["score"])
     return moments[:MAX_SEGS]
@@ -58,7 +62,7 @@ def main():
     for i, m in enumerate(moments):
         seg = tmp / f"seg_{i:02d}.mp4"
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(m["t"]),
-                        "-i", str(m["clip"]), "-t", str(SEG_LEN),
+                        "-i", str(m["clip"]), "-t", str(m['duration_s']),
                         "-vf", vf, "-c:v", "h264_videotoolbox", "-b:v", "8M",
                         "-an", str(seg)], check=True)
         segs.append(seg)

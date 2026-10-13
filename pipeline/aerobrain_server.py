@@ -3947,6 +3947,24 @@ class H(BaseHTTPRequestHandler):
         f = self.resolve()
         if not f:
             return self.send_error(404)
+        # Normalize legacy JSON readers under the same auth and path checks.
+        if re.fullmatch(r'/data/ai/[A-Za-z0-9_-]{1,120}\.json', path):
+            from ai import insights
+            data = insights.public_record(f.stem, VAULT)
+            if data.get('clip_id') == f.stem:
+                return self.send_json(data)
+        if path == '/data/manifest/flights.json':
+            from ai import insights
+            payload = read_json_file(f)
+            for flight in payload.get('flights', []):
+                cid = flight.get('clip_id')
+                if insights.valid_id(cid):
+                    data = insights.public_record(cid, VAULT)
+                    if data:
+                        flight['ai'] = {k: data.get(k) for k in (
+                            'summary', 'caption_short', 'scene_type', 'tags', 'highlights',
+                            'travel_score', 'synthetic', 'owner_highlights')}
+            return self.send_json(payload)
         if f.suffix.lower() == ".html" and str(f).startswith(str(WEB)):
             payload = render_html(f)
             self.send_response(200)
@@ -4446,12 +4464,9 @@ class H(BaseHTTPRequestHandler):
         if not pf.exists():
             return self.send_json({"error": "propiedad no existe"}, 404)
         p = read_json_file(pf)
-        prompt = (
-            "Escribe la descripción de venta para una propiedad, en español, tono premium "
-            "inmobiliario, 2 párrafos cortos + 4 líneas de características precedidas por '· '. "
-            "TEXTO PLANO: sin markdown, sin asteriscos, sin títulos, sin emojis, sin exagerar. "
-            "Datos: " + json.dumps(p, ensure_ascii=False))
-        p["descripcion"] = _deepseek(prompt)
+        from ai.property_copy import generate
+        p["descripcion"] = generate(p, _deepseek)
+        p['descripcion_source'] = 'ai'
         atomic_write_json(pf, p, indent=1, ensure_ascii=False)
         return self.send_json({"ok": True, "descripcion": p["descripcion"]})
 
