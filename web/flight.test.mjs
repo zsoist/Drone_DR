@@ -146,35 +146,60 @@ test('automatic frames require an explicit backend quality approval and a local 
   assert.equal(context.eligibleFrame({ frame_url: 'https://example.com/image.jpg', quality: { eligible: true } }), false);
 });
 
-test('cover selection preserves backend frame times and matches the frame to its moment text', async () => {
+test('cover selection preserves frame times and uses the clip caption, never a moment label', async () => {
   const context = aiSelectionContext();
   const cover = { clip_id: 'sample', frame_url: '/data/frames/sample/f_0008.jpg', frame_time_s: 14,
     quality: { eligible: true } };
   const other = { ...cover, frame_url: '/data/frames/sample/f_0020.jpg', frame_time_s: 38 };
   const flight = { clip_id: 'sample' };
-  const insight = { caption_short: 'Unrelated clip opening', cover, frames: [other],
+  const insight = { caption_short: 'Edificios y montañas', cover, frames: [other],
     highlight_segments: [{ start: 8, end: 14, reason: 'Mountains on the horizon.' }] };
   const result = await context.bestCover(flight, insight);
   assert.equal(result.time, 14);
   assert.equal(result.url, cover.frame_url);
-  assert.equal(result.caption, 'Mountains on the horizon.');
+  assert.equal(result.caption, 'Edificios y montañas');
   assert.equal((await context.bestCover(flight, insight, { exclude: new Set(['data/frames/sample/f_0008.jpg']) })).time, 38);
   assert.equal(await context.bestCover(flight, { best_frame_times: [14] }), null);
   assert.equal(await context.bestCover({ clip_id: 'different' }, insight), null);
 });
 
-test('filmstrip preserves archive frame seek times without requiring featured approval', async () => {
+test('filmstrip spans the clip with approved frames and keeps backend timestamps', async () => {
   const { thumbnailURL } = await import('./ui/thumbnail.js');
   const source = fs.readFileSync(new URL('./flight.js', import.meta.url), 'utf8');
   const strip = { innerHTML: '' };
-  const safe = { clip_id: 'sample', thumbnail_url: '/data/frames/sample/f_0001.jpg', frame_url: '/data/frames/sample/f_0001.jpg', frame_time_s: 0, quality: { eligible: true } };
-  const context = aiSelectionContext({ detail: { clip_id: 'sample', thumbnail_url: safe.frame_url, cover: safe, frames: [safe,
-    { ...safe, thumbnail_url: '/data/frames/sample/f_0005.jpg', frame_url: '/data/frames/sample/f_0005.jpg', frame_time_s: 8 },
-    { ...safe, thumbnail_url: '/data/frames/sample/f_0007.jpg', frame_url: '/data/frames/sample/f_0003.jpg', frame_time_s: 4, quality: { eligible: false } }] },
-    thumbnailURL, video: {}, fmt: { clock: String }, esc: String, document: { getElementById: () => strip } });
+  const frames = Array.from({ length: 160 }, (_, i) => ({
+    clip_id: 'sample', frame_url: `/data/frames/sample/f_${String(i + 1).padStart(4, '0')}.jpg`,
+    frame_time_s: i * 2 + .5, quality: { eligible: true },
+  }));
+  frames[0].quality = { eligible: false };
+  frames[159].quality = undefined;
+  const context = aiSelectionContext({ detail: { clip_id: 'sample', thumbnail_url: frames[1].frame_url, frames },
+    meta: { duration_s: 320 }, syncClock() {}, thumbnailURL, video: {}, fmt: { clock: String }, esc: String,
+    document: { getElementById: () => strip } });
   const start = source.indexOf('      const frames = (detail.frames');
-  vm.runInContext(source.slice(start, source.indexOf('      const analysisBody', start)), context);
-  assert.deepEqual([...strip.innerHTML.matchAll(/data-t="(\d+)"/g)].map(match => Number(match[1])), [0, 8, 12]);
-  assert.equal(context.video.poster, safe.frame_url);
-  assert.match(strip.innerHTML, /f_0007/);
+  const render = () => vm.runInContext(`{${source.slice(start, source.indexOf('      const analysisBody', start))}}`, context);
+  render();
+  const times = [...strip.innerHTML.matchAll(/data-t="([\d.]+)"/g)].map(match => Number(match[1]));
+  assert.equal(times.length, 10);
+  assert.equal(times[0], 2.5);
+  assert.equal(times.at(-1), 316.5);
+  assert.ok(times.slice(1).every((t, i) => t - times[i] >= 32));
+  assert.doesNotMatch(strip.innerHTML, /f_0001|f_0160/);
+  assert.equal(context.video.poster, frames[1].frame_url);
+  context.detail.frames = [frames[20]];
+  render();
+  assert.match(strip.innerHTML, /data-t="40.5"/);
+  context.detail.frames = [];
+  render();
+  assert.match(strip.innerHTML, /No hay fotogramas seleccionados/);
+});
+
+test('flight titles preserve owner text, then captions, then the recorded date and time', async () => {
+  const { fmt } = await import('./ui/format.js');
+  const context = aiSelectionContext({ fmt });
+  const flight = { clip_id: 'sample', date: '2026-07-24', time: '16:24', duration_s: 10 };
+  const insight = { caption_short: 'Ventanas reflectantes', highlight_segments: [{ reason: 'Cambio de escena' }] };
+  assert.equal(context.flightCaption({ ...flight, label: 'Mi toma' }, insight), 'Mi toma');
+  assert.equal(context.flightCaption(flight, insight), 'Ventanas reflectantes');
+  assert.equal(context.flightCaption(flight, null), '24 jul 2026 · 16:24');
 });

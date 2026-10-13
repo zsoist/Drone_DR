@@ -1,4 +1,4 @@
-import { fmt } from './ui/format.js?v=434';
+import { fmt } from './ui/format.js?v=436';
 // Read-only AI views shared by the H1 pages.
 const insightRequests = new Map();
 export function credibleHighlights(insight, sampledTimes = insight?.sampled_frame_times || []) {
@@ -54,16 +54,12 @@ export async function bestCover(flight, insight, { exclude = new Set() } = {}) {
   const frame = frames.find(frame => eligibleFrame(frame) && frame.clip_id === flight.clip_id
     && !exclude.has(frame.frame_url.replace(/^\//, '')));
   const time = frame?.frame_time_s ?? frame?.time_s;
-  const moment = (insight?.highlight_segments || []).find(segment => time >= segment.start && time <= segment.end);
   return frame ? { url: frame.frame_url, time,
-    caption: frame.caption_short || frame.caption || moment?.reason || '', flight } : null;
+    caption: insight?.caption_short || '', flight } : null;
 }
 export function flightCaption(flight, insight) {
   if (flight.label) return flight.label;
   const short = insight?.caption_short || flight.ai?.caption_short;
-  if (short && short.split(/\s+/).length > 3) return short;
-  const shot = insight?.shot_type;
-  const altitude = flight.stats?.max_rel_alt_m;
-  return [short || 'Vuelo', shot && shot !== 'mixto' ? shot : null,
-    Number.isFinite(altitude) && altitude > 0 ? `a ${fmt.distance(altitude)}` : fmt.duration(flight.duration_s)].filter(Boolean).join(' · ');
+  if (short) return short;
+  return [fmt.date(flight.date), flight.time].filter(Boolean).join(' · ');
 }

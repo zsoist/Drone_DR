@@ -1,7 +1,7 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=434';
-import { fmt } from './ui/format.js?v=434';
-import { readAI, loadInsights, captionView, bestCover, flightCaption } from './home.ai.js?v=434';
-import { loadFlights, registerFlights, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=434';
+import { thumbnailURL } from './ui/thumbnail.js?v=436';
+import { fmt } from './ui/format.js?v=436';
+import { readAI, loadInsights, captionView, bestCover, flightCaption } from './home.ai.js?v=436';
+import { loadFlights, registerFlights, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=436';
 const main = renderShell('home.html');
 main.classList.add('home-page', 'ab-page');
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;
@@ -116,8 +116,7 @@ async function loadRecent(rows) {
   for (const f of rows) {
     const entry = document.querySelector(`.home-recent-item[data-clip="${f.clip_id}"]`);
     if (!entry) continue;
-    const cover = await bestCover(f, insights[f.clip_id]);
-    entry.querySelector('strong').textContent = f.label || cover?.caption || flightCaption(f, insights[f.clip_id]);
+    entry.querySelector('strong').textContent = flightCaption(f, insights[f.clip_id]);
     const img = entry.querySelector('img'); img.src = thumbnailURL(f); img.hidden = false;
   }
   const latest = rows[0], insight = insights[latest.clip_id];
@@ -126,8 +125,7 @@ async function loadRecent(rows) {
   const cover = await bestCover(latest, insight);
   if (cover) { const img = document.querySelector('.home-feature-media img'); img.src = cover.url; img.hidden = false; }
   region.replaceChildren();
-  if (cover?.caption) region.append(suggestedContent(captionView({ caption_short: cover.caption, caption: insight?.caption })));
-  else if (insight?.caption_short) region.append(suggestedContent(`<details class="ai-caption-detail"><summary>Descripción del vuelo</summary><p>${esc(insight.caption || insight.caption_short)}</p></details>`));
+  if (insight?.caption_short || insight?.caption) region.append(suggestedContent(captionView(insight)));
   else if (failed) region.textContent = 'No se pudo cargar el resumen.';
   region.setAttribute('aria-busy', 'false');
   // One shared disclosure identifies the suggested recent-flight titles.
