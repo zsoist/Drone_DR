@@ -15,7 +15,6 @@ if (location.pathname.endsWith('/subir.html')) {
     <section class="sb-drop" id="sb-drop" aria-label="Añadir archivos">
       <h2>Añade videos y fotos</h2>
       <p class="sb-desktop-hint">Arrastra los archivos aquí o elígelos en tu dispositivo.</p>
-      <p class="sb-phone-hint">Selecciona videos y fotos de tu dispositivo.</p>
       <div class="sb-pickers">
         <button class="ui-button ui-button--primary" id="sb-pick">${icon('plus')} Seleccionar videos y fotos</button>
       </div>
@@ -27,7 +26,7 @@ if (location.pathname.endsWith('/subir.html')) {
       <div id="sb-list"><p class="sb-empty">Aquí verás el avance de los archivos que selecciones.</p></div>
       <p class="sb-note">Mantén esta página abierta durante la transferencia. Si se interrumpe, puedes reintentar el archivo desde el inicio.</p>
     </section>
-    <aside class="sb-next"><h2>Después de subir</h2><p>Los videos pasan a la cola de procesamiento. Consulta el avance en Actividad y edítalos cuando estén listos.</p><a class="ui-button ui-button--quiet" href="studio.html">Volver a Studio ${icon('chevR')}</a></aside></div>`;
+    <aside class="sb-next"><h2>Después de subir</h2><p>Los videos pasan a la cola de procesamiento. Consulta el avance en Actividad y edítalos cuando estén listos.</p></aside></div>`;
   const items = [];
   let running = false;
   const input = main.querySelector('#sb-file');
