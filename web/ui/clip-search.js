@@ -1,5 +1,5 @@
-import { thumbnailURL } from './thumbnail.js?v=449';
-import { fmt } from './format.js?v=449';
+import { thumbnailURL } from './thumbnail.js?v=450';
+import { fmt } from './format.js?v=450';
 // One source per shell. Cache only completed queries for this page session.
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
 export function matchEvidence(row, query) {

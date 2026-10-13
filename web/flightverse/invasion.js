@@ -4,7 +4,7 @@
 // fuego) y gigantes (cuerpo a cuerpo). Los terrestres SOLO pisan suelo
 // caminable (pendiente <4.5m, altura suavizada — sin escalones); los aéreos
 // vuelan con sus propios patrones. Todos son hittables del armamento.
-import * as THREE from '/flightverse/three.js?v=449';
+import * as THREE from '/flightverse/three.js?v=450';
 import {
   capWaveQueue,
   createBurstSchedule,
@@ -33,10 +33,10 @@ import {
   COMBO_WINDOW_S,
   COMBO_MAX,
   interleaveQueue,
-} from '/flightverse/invasion-policy.js?v=449';
+} from '/flightverse/invasion-policy.js?v=450';
 import {
   applyDetail, prewarmDetailTextures, detailClassesOf, upgradeMaterial, addOutline, addGlows, tickEnemyMaterials,
-} from '/flightverse/enemy-materials.js?v=449';
+} from '/flightverse/enemy-materials.js?v=450';
 
 export const ENEMIES = {
   zombie:  { label: 'Zombies',   ground: true,  blood: true },
@@ -374,7 +374,7 @@ export function createInvasion(scene, {
 
   async function loadCatalog() {
     if (!catalogPromise) {
-      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=449', { cache: 'no-store' })
+      catalogPromise = fetch('/assets/enemies/enemy_catalog.json?v=450', { cache: 'no-store' })
         .then(response => {
           if (!response.ok) throw new Error(`enemy catalog ${response.status}`);
           return response.json();
@@ -390,7 +390,7 @@ export function createInvasion(scene, {
   function fetchBytes(file) {
     let p = bytesCache.get(file);
     if (!p) {
-      p = fetch(`/assets/enemies/${file}?v=449`).then(response => {
+      p = fetch(`/assets/enemies/${file}?v=450`).then(response => {
         if (!response.ok) throw new Error(`enemy glb ${response.status}`);
         return response.arrayBuffer();
       });
@@ -410,8 +410,8 @@ export function createInvasion(scene, {
       try {
         await whenIdle();
         await loadCatalog();
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=449'));
-        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=449');
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=450'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=450');
         if (v2) await prewarmDetailTextures(whenIdle);
         for (const type of wanted) {
           for (const lod of ['lod1', 'lod2']) {
@@ -453,8 +453,8 @@ export function createInvasion(scene, {
         await loadCatalog();
         const file = modelFile(type, lod);
         if (!file) throw new Error(`catalog missing ${key}`);
-        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=449'));
-        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=449');
+        if (!GLTFLoader) ({ GLTFLoader } = await import('/vendor/three-addons180/loaders/GLTFLoader.js?v=450'));
+        if (!SkelUtils) SkelUtils = await import('/vendor/three-addons180/utils/SkeletonUtils.js?v=450');
         const bytes = await fetchBytes(file);                       // la red va en paralelo; sólo el parseo se serializa
         const lane = parseLane.then(async () => {
           await yieldToMain();

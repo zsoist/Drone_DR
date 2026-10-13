@@ -1,17 +1,19 @@
-import { skinPlayer } from './ui/player.js?v=449';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=449';
-import { fmt } from './ui/format.js?v=449';
-import { term } from './ui/terms.js?v=449';
-import { sceneInsight, sceneCover, hydrateSceneCovers, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=449';
-import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=449';
-  import * as THREE from '/vendor/three180.module.js?v=449';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=449';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=449';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=449';
-  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=449';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=449';
-  import { mountSplatViewer } from '/splatview.js?v=449';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=449';
+import { skinPlayer } from './ui/player.js?v=450';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=450';
+import { fmt } from './ui/format.js?v=450';
+import { term } from './ui/terms.js?v=450';
+import { uniqueSceneNames } from './ui/display-name.js?v=450';
+import { thumbnailURL } from './ui/thumbnail.js?v=450';
+import { sceneInsight, sceneCover, hydrateSceneCovers, sceneSources, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=450';
+import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=450';
+  import * as THREE from '/vendor/three180.module.js?v=450';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=450';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=450';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=450';
+  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=450';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=450';
+  import { mountSplatViewer } from '/splatview.js?v=450';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=450';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1070,9 +1072,18 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=449';
     return /^\d{14}$/.test(ts)
       ? `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)} ${ts.slice(8, 10)}:${ts.slice(10, 12)}` : '';
   };
+  // Same display names as Mundo (generic stored titles become "Place · d mmm").
+  let namesFor = null, names = new Map();
+  const sceneName = m => {
+    if (namesFor !== models) {
+      namesFor = models;
+      names = uniqueSceneNames(models.filter(x => x.title), flights, { nameOf: x => x.title, clean: sceneTitle, sourcesOf: sceneSources });
+    }
+    return names.get(m.clip_id);
+  };
   const titleFor = m => {
     const f = flightFor(m);
-    if (m.title) return sceneTitle(m.title);
+    if (m.title) return sceneName(m) || sceneTitle(m.title);
     if (f?.label) return sceneTitle(f.label);
     const p = placeFor(m);
     return p.key !== 'sin-gps' ? `${p.name} · ${fmt.date(f?.date || dateKeyFor(m).slice(0, 10))}`
@@ -1170,8 +1181,17 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=449';
       if (!card.isConnected) return;
       card.setAttribute('aria-busy','false');
       const image = card.querySelector('img');
-      if (cover) { image.src = cover.frame_url; image.hidden = false; }
-      else card.classList.add('is-blank');
+      // Same fallback chain as Mundo: approved cover, scene poster or ortho, then each source clip.
+      const urls = [...new Set([cover?.frame_url, model?.assets?.poster, model?.assets?.ortho,
+        model?.ortho_asset && `data/models/${encodeURIComponent(model.clip_id)}/${model.ortho_asset}`,
+        ...sceneSources(model || {}).map(clip_id => thumbnailURL({ clip_id }))].filter(Boolean))];
+      const next = () => {
+        const url = urls.shift();
+        if (!url) { image.hidden = true; card.classList.add('is-blank'); return; }
+        image.onerror = next; image.onload = () => { image.hidden = false; card.classList.remove('is-blank'); };
+        image.src = url;
+      };
+      next();
       stopCardPreviews.push(wireOrbitPreview(card, model?.orbit_preview || model?.assets?.orbit_preview));
     });
   }

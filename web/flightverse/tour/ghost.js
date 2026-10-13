@@ -1,6 +1,6 @@
 // flightverse/tour/ghost.js — ghost del vuelo REAL (track GPS 1 Hz interpolado) (WS E).
 // Tubo de la ruta + marcador que recorre el track. Estado en ctx.state.ghost.
-import { loadTrack } from '/flightverse/scene.js?v=449';
+import { loadTrack } from '/flightverse/scene.js?v=450';
 
 const M_LAT = 111320;
 

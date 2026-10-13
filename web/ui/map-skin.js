@@ -1,4 +1,4 @@
-import { createSheet } from './sheet.js?v=449';
+import { createSheet } from './sheet.js?v=450';
 export const mapLocale = Object.freeze({
   'NavigationControl.ZoomIn': 'Acercar', 'NavigationControl.ZoomOut': 'Alejar',
   'NavigationControl.ResetBearing': 'Orientar al norte',

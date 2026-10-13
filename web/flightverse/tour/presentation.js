@@ -3,16 +3,16 @@
 // Se engancha al render SIN tocar volar.js: envuelve `sky.update` (que el loop llama tras elegir la
 // cámara y antes de la sacudida/render) para poseer la cámara del Tour/Foto, y `composer.render`
 // para la captura PNG. Ver el encabezado de tour/index.js para la API pública.
-import { WORLD_LOOK, setWorldEdge } from '/flightverse/world-look.js?v=449';
-import { installGrade } from '/flightverse/tour/grade.js?v=449';
-import { boundaryFromCoverage, boundaryExtent, resolveEdge, edgeState, limitThrust, edgeMetric } from '/flightverse/tour/edge.js?v=449';
-import { pushOutOfMasks, insideAnyMask } from '/flightverse/tour/poi.js?v=449';
-import { TOD_ELEVATION, resolveTodKey, elevationOf, nearestTodKey, TOD_LABELS } from '/flightverse/tour/tod.js?v=449';
-import { createTour, loadPoiDoc, createLocalEvents, makeEmit } from '/flightverse/tour/tour.js?v=449';
-import { createPhoto } from '/flightverse/photo.js?v=449';
-import { createVoidGuard } from '/flightverse/tour/void-guard.js?v=449';
-import { installDefaultUi } from '/flightverse/tour/default-ui.js?v=449';
-import { applySplatEdge, findSplatMesh } from '/flightverse/tour/splat-edge.js?v=449';
+import { WORLD_LOOK, setWorldEdge } from '/flightverse/world-look.js?v=450';
+import { installGrade } from '/flightverse/tour/grade.js?v=450';
+import { boundaryFromCoverage, boundaryExtent, resolveEdge, edgeState, limitThrust, edgeMetric } from '/flightverse/tour/edge.js?v=450';
+import { pushOutOfMasks, insideAnyMask } from '/flightverse/tour/poi.js?v=450';
+import { TOD_ELEVATION, resolveTodKey, elevationOf, nearestTodKey, TOD_LABELS } from '/flightverse/tour/tod.js?v=450';
+import { createTour, loadPoiDoc, createLocalEvents, makeEmit } from '/flightverse/tour/tour.js?v=450';
+import { createPhoto } from '/flightverse/photo.js?v=450';
+import { createVoidGuard } from '/flightverse/tour/void-guard.js?v=450';
+import { installDefaultUi } from '/flightverse/tour/default-ui.js?v=450';
+import { applySplatEdge, findSplatMesh } from '/flightverse/tour/splat-edge.js?v=450';
 
 export async function installPresentation(ctx) {
   const { THREE, camera, sky, composer, report, bus, CID, state: S, actions: A } = ctx;

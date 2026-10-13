@@ -1,9 +1,9 @@
-import { flightFallback } from './ui/display-name.js?v=449';
-import { thumbnailURL } from './ui/thumbnail.js?v=449';
-import { fmt } from './ui/format.js?v=449';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=449';
-import { readAI, loadInsights, clipChips, bestCover, flightCaption } from './home.ai.js?v=449';
-import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor, figure, suggestedContent } from './home-shared.js?v=449';
+import { flightFallback } from './ui/display-name.js?v=450';
+import { thumbnailURL } from './ui/thumbnail.js?v=450';
+import { fmt } from './ui/format.js?v=450';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=450';
+import { readAI, loadInsights, clipChips, bestCover, flightCaption } from './home.ai.js?v=450';
+import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor, figure, suggestedContent } from './home-shared.js?v=450';
 const main = renderShell('trips.html');
 main.classList.add('tr-page', 'ab-page');
 const CITIES = [

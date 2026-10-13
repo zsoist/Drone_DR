@@ -1,11 +1,11 @@
-import { sceneDisplayName } from './ui/display-name.js?v=449';
-import { thumbnailURL } from './ui/thumbnail.js?v=449';
-import { fmt } from './ui/format.js?v=449';
-import { term } from './ui/terms.js?v=449';
-import { Suggested } from './ui/suggested.js?v=449';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=449';
-import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=449';
-import { coverageRows } from './scene-improve-state.js?v=449';
+import { uniqueSceneNames } from './ui/display-name.js?v=450';
+import { thumbnailURL } from './ui/thumbnail.js?v=450';
+import { fmt } from './ui/format.js?v=450';
+import { term } from './ui/terms.js?v=450';
+import { Suggested } from './ui/suggested.js?v=450';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=450';
+import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=450';
+import { coverageRows } from './scene-improve-state.js?v=450';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,
@@ -295,21 +295,8 @@ async function boot() {
   const flightRows = await fetch('data/manifest/flights.json')
     .then(response => response.ok ? response.json() : {})
     .then(data => data.flights || []).catch(() => []);
-  const displayTitle = sc => sceneDisplayName({ ...sc, name: sceneTitle(sc.name), sources: sceneSources(sc) }, flightRows);
-  const titleCounts = new Map();
-  scenes.forEach(sc => { const title=sceneTitle(displayTitle(sc)).replace(/(Bogotá) · Bogotá$/i, '$1'); titleCounts.set(title,(titleCounts.get(title)||0)+1); });
-  scenes.forEach(sc => {
-    const title=sceneTitle(displayTitle(sc)).replace(/(Bogotá) · Bogotá$/i, '$1');
-    const flight = flightRows.find(row => sceneSources(sc).includes(row.clip_id));
-    sc.displayName = titleCounts.get(title)>1 ? `${title} · ${flight?.time?.slice(0, 5) || 'Captura '+(scenes.indexOf(sc)+1)}` : title;
-  });
-  const usedTitles = new Set();
-  scenes.forEach(sc => {
-    const title = sc.displayName;
-    let n = 2;
-    while (usedTitles.has(sc.displayName)) sc.displayName = `${title} · ${n++}`;
-    usedTitles.add(sc.displayName);
-  });
+  const names = uniqueSceneNames(scenes, flightRows, { clean: sceneTitle, sourcesOf: sceneSources });
+  scenes.forEach(sc => { sc.displayName = names.get(sc.clip_id); });
   registerScenes(scenes, 'Mundo');
   const nFly = scenes.filter(s=>s.capabilities?.terrain).length;
   const nSp = scenes.filter(s=>s.capabilities?.splat).length;

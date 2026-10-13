@@ -304,8 +304,9 @@ button.ui-chip, a.ui-chip { min-height: 44px; min-width: 44px; cursor: pointer; 
 .ui-player:fullscreen { display: grid; align-items: center; }
 .ui-player:fullscreen video { max-height: 100dvh; height: 100%; }
 @media (max-width: 600px) {
-  .ui-player-controls { flex-wrap: wrap; gap: 4px; padding: 4px 8px; }
-  .ui-player-controls input[type='range'] { order: -1; flex-basis: 100%; }
+  /* one 44 px row on phones: the scrubber shrinks instead of taking its own row (QA R7) */
+  .ui-player-controls { flex-wrap: nowrap; gap: 4px; padding: 0 8px; min-height: 44px; }
+  .ui-player-controls input[type='range'] { flex: 1 1 44px; width: 0; }
   .ui-player-clock { margin-right: auto; }
 }
 @media (min-width: 1024px) {

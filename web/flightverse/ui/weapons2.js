@@ -4,8 +4,8 @@
 // sigue en fx/ y input/; aquí solo presentación. Mismo contrato que weapons-ui.js (A0):
 //   ctx.ui.weapons = { fireBtn, triggerBtn, weaponToggle, picker{close,open,toggle}, attach, setWeapon,
 //                      updateTriggerUi, flashFire, update, dispose }
-import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=449';
-import { ARSENAL } from '/flightverse/weapons.js?v=449';
+import { WEAPON_PROFILES } from '/flightverse/weapon-registry.js?v=450';
+import { ARSENAL } from '/flightverse/weapons.js?v=450';
 
 /** Las 6 armas de la UI (spec §4). Las variantes M·S / M·L / VIPER-X siguen en el registro como perfiles internos. */
 export const UI_WEAPONS = Object.freeze(['mg', 'ac', 'm', 'sw', 'rg', 'tb']);
