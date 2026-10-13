@@ -70,7 +70,7 @@ main.innerHTML = `
 
   <section class="dr-fleet" aria-label="Tus drones"><div class="dr-equipment"><h2>Tu equipo</h2><p>DJI Flip · Neo 2</p><button class="ui-button ui-button--secondary" id="dr-specs">Ver ficha del equipo</button></div><div id="dr-library" class="dr-library" aria-busy="true"><dl>${['Vuelos en el archivo','Video en el archivo','Ubicados en Viajes'].map(label=>`<div><dt>${label}</dt><dd class="ui-skeleton" aria-hidden="true">&nbsp;</dd></div>`).join('')}</dl></div></section>
 
-  <aside class="dr-recent"><h2>Desde otro dispositivo</h2><p>Sube videos y fotos desde tu teléfono o computador.</p><a class="ui-button ui-button--secondary" href="subir.html">Subida directa</a><button class="ui-button ui-button--secondary" id="dr-photo-set">Importar grupo de fotos</button><a class="ui-button ui-button--secondary" href="system.html">Ver trabajos en Sistema</a></aside>`;
+  <aside class="dr-recent"><h2>Desde otro dispositivo</h2><p>Sube videos y fotos desde tu teléfono o computador.</p><a class="ui-button ui-button--primary" href="subir.html">Subida directa</a><button class="ui-button ui-button--secondary" id="dr-photo-set">Importar grupo de fotos</button><a class="ui-button ui-button--quiet" href="system.html">Ver trabajos en Sistema</a></aside>`;
 
 // Keep old upload links working through the single upload page.
 if (new URLSearchParams(location.search).get('via') === 'subir') location.replace('subir.html');

@@ -1,6 +1,6 @@
 import { fmt } from './ui/format.js?v=442';
 import { term } from './ui/terms.js?v=442';
-import { jobState, jobRelativeTime, jobEmptyState, groupFailedJobs, jobFailureReason } from './system.logic.js?v=442';
+import { jobState, jobRelativeTime, systemRelativeTime, jobEmptyState, groupFailedJobs, jobFailureReason } from './system.logic.js?v=442';
 import { createSheet } from './ui/sheet.js?v=442';
 import { showToast } from './ui/toast.js?v=442';
 import { registerPaletteSource } from './ui/palette.js?v=442';
@@ -119,7 +119,7 @@ async function loadHealth() {
     const d = await read('/api/perf'), n = d.now;
     if (!n) throw new Error('Sin muestra');
     const age = Math.max(0, Date.now()/1000 - Number(n.ts || 0));
-    $('sy-connection').textContent = age > 15 ? `Última muestra ${fmt.relative(n.ts * 1000)}` : `Mac conectado · ${new Date(n.ts*1000).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+    $('sy-connection').textContent = age > 15 ? `Última muestra ${systemRelativeTime(n.ts * 1000)}` : `Mac conectado · ${new Date(n.ts*1000).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
     $('sy-connection').className = 'sy-note';
     const figure = (value, unit='') => `<span class="ui-figure">${fmt.number(value, 1)}</span>${unit ? ` <span class="ui-unit">${unit}</span>` : ''}`;
     $('sy-metrics').innerHTML = [['Procesador',figure(n.cpu,'%')],['Memoria',`${figure(n.ram_used_gb)} / ${figure(n.ram_total_gb,'GB')}`],['Disco libre',figure(n.disk_free_gb,'GB')],['Temperatura',n.thermal ? n.thermal.throttling ? 'Rendimiento limitado' : 'Normal' : 'Sin datos']].map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');

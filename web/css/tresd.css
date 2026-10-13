@@ -557,3 +557,9 @@ html[data-td-tab=process] .page-3d .page-head-actions > [data-open-run3d] { disp
 }
 
 .page-3d .scene-viewer-box .sv-tip { top:auto; bottom:var(--sp-4); width:max-content; max-width:calc(100% - 32px); border-radius:var(--r-sm); color:var(--on-media-2); background:var(--media-bg); border-color:var(--media-line); backdrop-filter:none; }
+
+/* Keep camera actions below the sticky workspace controls while the canvas scrolls. */
+.page-3d .scene-viewer-box .viewer-tools { top:var(--viewer-tools-top,10px); }
+.page-3d .scene-viewer-box.sv-fullscreen .viewer-tools,
+.page-3d .scene-viewer-box.viewer-fs .viewer-tools,
+.page-3d .scene-viewer-box:fullscreen .viewer-tools { top:calc(10px + env(safe-area-inset-top)); }

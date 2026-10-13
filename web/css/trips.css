@@ -134,3 +134,6 @@
  .tr-list-map { display:none; }
  .tr-overview .tr-map { aspect-ratio:16/10; height:auto; }
 }
+
+.tr-route-count { width:44px; height:44px; border:2px solid oklch(1 0 0); border-radius:50%; background:oklch(0.23 0.035 230); color:oklch(1 0 0); font:600 15px var(--mono); cursor:pointer; box-shadow:0 2px 8px oklch(0 0 0 / .4); }
+.tr-route-count:focus-visible { outline:3px solid var(--accent-fg); outline-offset:3px; }

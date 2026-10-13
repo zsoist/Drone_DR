@@ -1,6 +1,6 @@
 import { thumbnailURL } from './ui/thumbnail.js?v=442';
 import { fmt } from './ui/format.js?v=442';
-import { readAI, loadInsights, captionView, bestCover, flightCaption } from './home.ai.js?v=442';
+import { readAI, loadInsights, bestCover } from './home.ai.js?v=442';
 import { loadFlights, registerFlights, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=442';
 const main = renderShell('home.html');
 main.classList.add('home-page', 'ab-page');
@@ -116,16 +116,16 @@ async function loadRecent(rows) {
   for (const f of rows) {
     const entry = document.querySelector(`.home-recent-item[data-clip="${f.clip_id}"]`);
     if (!entry) continue;
-    entry.querySelector('strong').textContent = flightCaption(f, insights[f.clip_id]);
+    entry.querySelector('strong').textContent = f.label || insights[f.clip_id]?.caption_short || f.ai?.caption_short || 'Vuelo sin título';
     const img = entry.querySelector('img'); img.src = thumbnailURL(f); img.hidden = false;
   }
   const latest = rows[0], insight = insights[latest.clip_id];
-  document.querySelector('.home-feature h2').textContent = latest.label || place(latest) || fmt.date(latest.date);
+  document.querySelector('.home-feature h2').textContent = latest.label || place(latest) || 'Último vuelo';
   document.querySelector('.home-date').textContent = `Último vuelo · ${fmt.date(latest.date)} · ${latest.time || ''}`;
   const cover = await bestCover(latest, insight);
-  if (cover) { const img = document.querySelector('.home-feature-media img'); img.src = cover.url; img.hidden = false; }
+  if (cover) { const img = document.querySelector('.home-feature-media img'); img.src = cover.url; img.alt = cover.caption || 'Vista del vuelo'; img.hidden = false; }
   region.replaceChildren();
-  if (insight?.caption_short || insight?.caption) region.append(suggestedContent(captionView(insight)));
+  if (cover?.caption) region.append(suggestedContent(`<p class="home-frame-time">Fotograma · ${esc(fmt.clock(cover.time))}</p><p class="ai-caption">${esc(cover.caption)}</p>`));
   else if (failed) region.textContent = 'No se pudo cargar el resumen.';
   region.setAttribute('aria-busy', 'false');
   // One shared disclosure identifies the suggested recent-flight titles.

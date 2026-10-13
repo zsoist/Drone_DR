@@ -148,6 +148,31 @@ function mountMap(rows, pins = false, routes = routeData.routes || []) {
   map = new maplibregl.Map({ ...mapSkinOptions, container: 'trip-map', style, cooperativeGestures: true, bounds, fitBoundsOptions: { padding: pins ? { top: 72, right: 124, bottom: 64, left: 52 } : { top: 32, right: 72, bottom: 80, left: 32 }, maxZoom: 17 } });
   mapSkin = skinMap(map);
   const current = map;
+  let showRouteCounts = true, routeMarkers = [];
+  function updateRouteCounts() {
+    routeMarkers.forEach(marker => marker.remove()); routeMarkers = [];
+    if (pins || !showRouteCounts) return;
+    const groups = [];
+    for (const route of selected) {
+      const point = current.project(route.line[0]);
+      let group = groups.find(g => Math.hypot(g.point.x - point.x, g.point.y - point.y) < 44);
+      if (!group) { group = { point, routes: [] }; groups.push(group); }
+      group.routes.push(route);
+    }
+    for (const group of groups) {
+      const button = document.createElement('button'); button.className = 'tr-route-count';
+      button.textContent = fmt.number(group.routes.length);
+      button.setAttribute('aria-label', `Acercar ${group.routes.length} ${group.routes.length === 1 ? 'ruta' : 'rutas'}`);
+      button.onclick = () => {
+        const box = new maplibregl.LngLatBounds();
+        group.routes.forEach(route => route.line.forEach(point => box.extend(point)));
+        current.fitBounds(box, { padding: 72, maxZoom: 17, duration: document.documentElement.dataset.motion === 'reduced' ? 0 : 340 });
+      };
+      routeMarkers.push(new maplibregl.Marker({ element: button }).setLngLat(group.routes[0].line[0]).addTo(current));
+    }
+  }
+  current.on('moveend', updateRouteCounts);
+  current.on('remove', () => routeMarkers.forEach(marker => marker.remove()));
   if (recent) {
     const context = document.createElement('div'); context.className = 'tr-map-context';
     const flight = rows.find(f => f.clip_id === recent.cid);
@@ -160,7 +185,8 @@ function mountMap(rows, pins = false, routes = routeData.routes || []) {
       const all = e.currentTarget.getAttribute('aria-pressed') !== 'true';
       e.currentTarget.setAttribute('aria-pressed', String(all));
       e.currentTarget.textContent = all ? 'Ver ruta reciente' : `Ver ${fmt.number(selected.length)} rutas`;
-      if (current.getLayer('routes')) current.setFilter('routes', all ? null : ['==', 'cid', recent.cid]);
+      for (const layer of ['routes', 'routes-halo']) if (current.getLayer(layer)) current.setFilter(layer, all ? null : ['==', 'cid', recent.cid]);
+      showRouteCounts = all; updateRouteCounts();
       current.fitBounds(all ? bounds : recentBounds, { padding: { top: 32, right: 72, bottom: 100, left: 32 }, maxZoom: 17, duration: document.documentElement.dataset.motion === 'reduced' ? 0 : 340 });
     });
   }
@@ -174,7 +200,9 @@ function mountMap(rows, pins = false, routes = routeData.routes || []) {
   current.on('load', () => {
     const features = selected.map(r => ({ type: 'Feature', properties: { cid: r.cid }, geometry: { type: 'LineString', coordinates: r.line } }));
     current.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features } });
-    current.addLayer({ id: 'routes', type: 'line', source: 'routes', paint: { 'line-color': dataColor(), 'line-width': 3 } });
+    current.addLayer({ id: 'routes-halo', type: 'line', source: 'routes', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': 7, 'line-opacity': .85 } });
+    current.addLayer({ id: 'routes', type: 'line', source: 'routes', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': dataColor(), 'line-width': 4 } });
+    updateRouteCounts();
     current.addLayer({ id: 'route-selected', type: 'line', source: 'routes', filter: ['in', 'cid', ''], paint: { 'line-color': dataColor(), 'line-width': 7 } });
     if (pins) clusters.forEach(c => {
       const el = document.createElement('a'); el.className = 'tr-pin'; el.href = linkFor(c);
