@@ -1,5 +1,5 @@
 /* W4 embeds the W1 foundation in the self-hosted editor. */
-@import url('/css/shell.css?v=374');
+@import url('/css/shell.css?v=415');
 body, button, input, select, textarea, .pcui-label, .font-thin, .font-light, .font-regular, .font-bold { font-family:var(--font); }
 .pcui-label, button, input, select, textarea { font-size:var(--fs-xs); }
 .pcui-button.status-bar-toggle { font-size:var(--fs-xs); }

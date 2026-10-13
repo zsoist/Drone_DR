@@ -1,21 +1,27 @@
-import { fmt } from './ui/format.js?v=416';
-import { term } from './ui/terms.js?v=416';
-import { Suggested } from './ui/suggested.js?v=416';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=416';
-import { sceneTitle, sceneSources, sceneInsight, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=416';
-import { coverageRows } from './scene-improve-state.js?v=416';
+import { fmt } from './ui/format.js?v=415';
+import { term } from './ui/terms.js?v=415';
+import { Suggested } from './ui/suggested.js?v=415';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=415';
+import { sceneTitle, sceneSources, sceneInsight, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=422';
+import { coverageRows } from './scene-improve-state.js?v=422';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,
 // transición de carga de consola. 60fps: solo transform/opacity.
 const fechaDe = cid => { const m = /(\d{4})(\d{2})(\d{2})/.exec(cid||''); return m ? fmt.date(`${m[1]}-${m[2]}-${m[3]}`) : ''; };
 const dur = fmt.duration;
-// guion no separable en rangos ("18-65m" nunca parte en el guion)
+const sceneMoment = insight => [...(insight?.highlight_segments || [])].sort((a,b) => b.score-a.score)[0];
+const cardDescription = insight => {
+  if (!insight?.caption_short) return insight?.error ? 'Descripción no disponible.' : '';
+  const moment = sceneMoment(insight);
+  return `<span>${esc(insight.caption_short)}</span>${moment?.reason ? `<span class="wi-moment">${esc(moment.reason)}</span>` : ''}`;
+};
+// Keep measured ranges together in saved scene names.
 const nbh = t => String(t).replace(/(\d)-(?=\d)/g, '$1\u2011');
 const MISSIONS = {
-  libre: { label: 'Vuelo libre', sub: '', extra: '' },
-  gaterush: { label: term('gateRush'), sub: 'Aros sobre tu ruta real', extra: '&reto=1' },
-  cine: { label: 'Cinemático', sub: 'Tour orbital automático', extra: '&modo=cinematico' },
+  libre: { label: 'Vuelo libre', extra: '' },
+  gaterush: { label: term('gateRush'), extra: '&reto=1' },
+  cine: { label: 'Cinemático', extra: '&modo=cinematico' },
 };
 const best = cid => { try { const t = parseFloat(localStorage.getItem(`ab.fv.best.${cid}.gaterush`)); return Number.isFinite(t) ? t : null; } catch { return null; } };
 // poster ligero (ortho_thumb.webp) con capa de respaldo al ortho.webp: si la miniatura da 404
@@ -45,9 +51,6 @@ const I = {
   plane: SV('<path d="M2.5 10.5L17 3l-4.5 14-3-6z"/>', 16),
   flag: SV('<path d="M5 17V4c3-1.8 6 1.8 9 0v8c-3 1.8-6-1.8-9 0"/>'),
   cam: SV('<rect x="2.5" y="5.5" width="11" height="9" rx="2"/><path d="M13.5 9l4-2.5v7l-4-2.5z"/>'),
-  libre: SV('<path d="M2.5 10.5L17 3l-4.5 14-3-6z"/>', 16),
-  gaterush: SV('<path d="M5 17V4c3-1.8 6 1.8 9 0v8c-3 1.8-6-1.8-9 0"/>', 16),
-  cine: SV('<rect x="2.5" y="5.5" width="11" height="9" rx="2"/><path d="M13.5 9l4-2.5v7l-4-2.5z"/>', 16),
   trophy: SV('<path d="M6 3.5h8v4a4 4 0 01-8 0zM6 5H3.5a2.5 2.5 0 002.5 3M14 5h2.5A2.5 2.5 0 0114 8M10 11.5V15M7 16.5h6"/>', 11),
 };
 const main = renderShell('mundo.html');
@@ -126,7 +129,7 @@ function isla(sc, i) {
     <div class="wi-body">
       <div class="wi-heading"><a class="wi-name" href="share.html?m=${encodeURIComponent(sc.clip_id)}">${nbh(esc(sceneTitle(sc.displayName || sc.name)))}</a><button class="ui-button ui-button--quiet" data-world-detail="${i}" aria-label="Detalles de ${esc(sceneTitle(sc.displayName || sc.name))}">${icon('more')}</button></div>
       <div class="wi-meta">${fechaDe(sceneSources(sc)[0])?`<span>${fechaDe(sceneSources(sc)[0])}</span>`:''}${sc.world?.size_m?`<span>${fmt.area(sc.world.size_m[0]*sc.world.size_m[1]/10000)}</span>`:''}</div>
-      <p class="wi-description" aria-busy="${!descriptions.has(sc.clip_id)}">${descriptions.has(sc.clip_id)?esc(descriptions.get(sc.clip_id)?.caption_short || (descriptions.get(sc.clip_id)?.error?'Descripción no disponible.':'')):'<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>'}</p>
+      <p class="wi-description" aria-busy="${!descriptions.has(sc.clip_id)}">${descriptions.has(sc.clip_id)?cardDescription(descriptions.get(sc.clip_id)):'<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>'}</p>
     </div>
   </article>`;
 }
@@ -165,23 +168,22 @@ function pick(i) {
         </div>
       </div>
       <div class="wp-cfg" id="wp-cfg" hidden>
-        <div class="wp-cfg-g" data-k="cielo"><span>Cielo</span>
+        <div class="wp-cfg-g ui-segmented" data-k="mision"><span>Tipo de vuelo</span>
+          ${Object.entries(MISSIONS).map(([key, mission]) => `<button data-v="${key}">${mission.label}</button>`).join('')}</div>
+        <div class="wp-cfg-g ui-segmented" data-k="cielo"><span>Cielo</span>
           <button data-v="dia">Día</button><button data-v="atardecer">Atardecer</button><button data-v="noche">Noche</button></div>
-        <div class="wp-cfg-g" data-k="calidad"><span>Calidad</span>
+        <div class="wp-cfg-g ui-segmented" data-k="calidad"><span>Calidad</span>
           <button data-v="auto">Auto</button><button data-v="hd">HD</button><button data-v="extra">Extra</button></div>
-        <div class="wp-cfg-g" data-k="modo"><span>Modo</span>
+        <div class="wp-cfg-g ui-segmented" data-k="modo"><span>Modo</span>
           <button data-v="asistido">Normal</button><button data-v="arcade">Arcade</button><button data-v="dios">Dios</button></div>
-        ${sel.coverage?.shapes?`<div class="wp-cfg-g coverage" data-k="cobertura"><span>Cobertura</span>
+        ${sel.coverage?.shapes?`<div class="wp-cfg-g ui-segmented coverage" data-k="cobertura"><span>Cobertura</span>
           <button data-v="auto">Auto</button>${coverage.map(row => `<button data-v="${row.diameter_m}" title="${row.ready?`${Math.round(row.area_m2).toLocaleString('es-CO')} m²`:`Cobertura pendiente: disponible ${row.available_diameter_m||'—'} m`}"${row.ready?'':' disabled'}>${row.diameter_m} m${row.ready?'':' · pendiente'}</button>`).join('')}</div>
-        <div class="wp-cfg-g" data-k="forma"><span>Forma</span>
+        <div class="wp-cfg-g ui-segmented" data-k="forma"><span>Forma</span>
           <button data-v="circle">Círculo</button><button data-v="square">Cuadrado</button></div>`:''}
+        <button class="ui-button ui-button--primary wp-fly" data-go="${goUrl}">${I.plane} Empezar vuelo</button>
       </div>
-      <div class="wp-go"><div class="scene-actions"><a class="ui-button ui-button--primary" href="share.html?m=${encodeURIComponent(sel.clip_id)}">Explorar escena</a><button class="ui-button ui-button--secondary" data-world-info>Información</button><button class="ui-button ui-button--quiet" data-world-settings>Ajustes de vuelo</button></div>
-        <div class="ui-segmented wp-modes" id="wp-modes" role="group" aria-label="Misión">
-          ${Object.entries(MISSIONS).map(([k, m]) => `<button type="button" data-mis="${k}" aria-pressed="${k===cfg.mision}" class="${k===cfg.mision?'on':''}">${I[k]} ${m.label}</button>`).join('')}
-        </div>
-        <p class="wp-mis-sub">${cfg.mision==='gaterush'&&rec!=null?`Bate tu ${fmt.number(rec,1)}s`:mis.sub}</p>
-        <button class="ui-button ui-button--secondary wp-fly" data-go="${goUrl}">${I.plane} Volar</button>
+      <div class="wp-go"><a class="ui-button ui-button--primary" href="share.html?m=${encodeURIComponent(sel.clip_id)}">Explorar escena</a>
+        <div class="scene-actions"><button class="ui-button ui-button--quiet" data-world-info>Detalles</button><button class="ui-button ui-button--quiet" data-world-settings>${I.plane} Volar</button></div>
       </div>
     </div>` : `<div class="wp-in"><div class="wp-name">${nbh(esc(sceneTitle(sel.displayName || sel.name)))}</div>
       <a class="btn" href="tresd.html">Procesar en Estudio 3D</a></div>`;
@@ -192,7 +194,7 @@ function pick(i) {
     const k = g.dataset.k;
     const selected = k === 'cobertura' ? effectiveCoverageChoice(sel) : cfg[k];
     g.setAttribute('role','group'); g.setAttribute('aria-label',g.querySelector('span').textContent);
-    g.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.v === selected); b.setAttribute('aria-pressed',b.dataset.v === selected); });
+    g.querySelectorAll('button').forEach(b => { b.setAttribute('aria-pressed',b.dataset.v === selected); });
   });
 }
 
@@ -216,7 +218,6 @@ async function boot() {
         <button class="ui-button ui-button--quiet" data-fvv="map" aria-pressed="false">Ver mapa</button>
       </div>
     </header>
-    <div id="world-suggested" hidden></div>
     <div id="w-cards">
       <div class="w-bar">
         <div class="w-filters" id="w-filters" role="group" aria-label="Filtrar islas">
@@ -301,8 +302,8 @@ async function boot() {
   const nSp = scenes.filter(s=>s.capabilities?.splat).length;
   const secs = scenes.reduce((t,s)=>t+(s.stats?.track_duration_s||0),0);
   document.getElementById('fv-stats').innerHTML =
-    `<span><b class="ui-figure">${fmt.number(nFly)}</b><em>lugares para volar</em></span><span><b class="ui-figure">${fmt.number(nSp)}</b><em>fotorrealistas</em></span>`+
-    (secs?`<span><b>${dur(secs)}</b><em>de vuelo real</em></span>`:'');
+    `<span><b>${fmt.number(nFly)}</b> lugares para volar</span><span><b>${fmt.number(nSp)}</b> fotorrealistas</span>`+
+    (secs?`<span><b>${dur(secs)}</b> de vuelo real</span>`:'');
 
   const rail = document.getElementById('w-rail');
   if(!scenes.length){
@@ -314,6 +315,7 @@ async function boot() {
   }
   const gallerySuggestion = Suggested({content:document.querySelector('.w-railwrap')});
   gallerySuggestion.classList.add('world-descriptions');
+  gallerySuggestion.querySelector('.ui-suggested-label').prepend('Descripciones y momentos · ');
   document.querySelector('.w-bar').after(gallerySuggestion);
   let previewObserver = null;
   const observePreviews = () => {
@@ -329,7 +331,7 @@ async function boot() {
         hydratePreview(entry.target);
         previewObserver?.unobserve(entry.target);
       });
-    }, { root: getComputedStyle(rail).overflowX === 'visible' ? null : rail, rootMargin: '200px 280px', threshold: 0.01 });   // desktop grid scrolls with the page
+    }, { rootMargin: '280px', threshold: 0.01 });
     cards.forEach(card => previewObserver.observe(card));
   };
   let railShown = false, stopPreviews = [];
@@ -383,13 +385,17 @@ async function boot() {
     try { insight=await sceneInsight(sc); } catch { failed=true; }
     descriptions.set(sc.clip_id,insight || {error:failed});
     const card=rail.querySelector(`[data-i="${scenes.indexOf(sc)}"] .wi-description`);
-    if(card){card.setAttribute('aria-busy','false');card.textContent=insight?.caption_short || (failed?'Descripción no disponible.':'');}
+    if(card){card.setAttribute('aria-busy','false');card.innerHTML=cardDescription(insight || {error:failed});}
 
     if(sel===sc){const text=document.querySelector('.wp-description');if(text && insight)text.replaceChildren(suggestionBlock({title:'',text:insight.caption_short,fullText:insight.caption}));}
   });
   rail.addEventListener('click', e => {
     const button = e.target.closest('[data-world-detail]');
-    if (!button) return;
+    if (!button) {
+      const card=e.target.closest('.wi');
+      if(card && !e.target.closest('a,button,summary,details') && !getSelection()?.toString()) location.href=card.querySelector('.wi-open').href;
+      return;
+    }
     pick(+button.dataset.worldDetail);
     if (matchMedia('(min-width:1024px)').matches) return;
     const panel = document.getElementById('w-panel');
@@ -400,7 +406,7 @@ async function boot() {
     if (e.target.closest('[data-world-info]')) { sceneInfo({model:sel,opener:e.target.closest('button')}); return; }
     if (e.target.closest('[data-world-settings]')) {
       const content=document.getElementById('wp-cfg').cloneNode(true); content.removeAttribute('id'); content.hidden=false;
-      settingsSheet=createSheet({title:'Ajustes de vuelo',content,size:'full',className:'scene-sheet',onClose:()=>{const sheet=settingsSheet; settingsSheet=null; sheet?.destroy();}}); settingsSheet.open(e.target.closest('button'));return;
+      settingsSheet=createSheet({title:'Volar en '+sceneTitle(sel.displayName || sel.name),content,size:'full',className:'scene-sheet',onClose:()=>{const sheet=settingsSheet; settingsSheet=null; sheet?.destroy();}}); settingsSheet.open(e.target.closest('button'));return;
     }
     const cb = e.target.closest('.wp-cfg-g button[data-v]');
     if (cb) {
@@ -409,14 +415,6 @@ async function boot() {
       try { localStorage.setItem('ab.fv.launchcfg', JSON.stringify(cfg)); } catch {}
       pick(scenes.indexOf(sel));
       if(settingsSheet){const content=document.getElementById('wp-cfg').cloneNode(true);content.removeAttribute('id');content.hidden=false;settingsSheet.body.replaceChildren(content); content.querySelector(`[data-k="${g.dataset.k}"] [data-v="${cb.dataset.v}"]`)?.focus();}
-      return;
-    }
-    const mb = e.target.closest('[data-mis]');
-    if (mb) {
-      cfg.mision = mb.dataset.mis;
-      try { localStorage.setItem('ab.fv.launchcfg', JSON.stringify(cfg)); } catch {}
-      pick(scenes.indexOf(sel));
-      document.querySelector(`#wp-modes [data-mis="${cfg.mision}"]`)?.focus({ preventScroll: true });
       return;
     }
     const b = e.target.closest('[data-go]'); if (!b) return;
@@ -473,17 +471,13 @@ async function boot() {
   }
   const missionPopup = sc => {
     const rec = best(sc.clip_id), st = sc.stats || {};
-    const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}${cfgExtra(sc)}`;
-    return `<div class="fv-pop">
+      return `<div class="fv-pop">
       <div class="fv-pop-poster" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></div>
       <b>${esc(sceneTitle(sc.displayName || sc.name))}</b>
       ${descriptions.get(sc.clip_id)?.caption_short ? suggestionBlock({title:'',text:descriptions.get(sc.clip_id).caption_short,fullText:descriptions.get(sc.clip_id).caption}).outerHTML : ''}
       <span>${st.gsd_cm_px ? fmt.number(st.gsd_cm_px,1) + ' cm/px · ' : ''}${st.track_duration_s ? dur(st.track_duration_s) + ' vuelo real' : ''}${rec != null ? ' · récord ' + fmt.number(rec,1) + 's' : ''}</span>
-      ${sc.capabilities?.terrain ? `<div class="fv-pop-btns">
-        <a href="${go('')}" data-golaunch="${go('')}" data-poster="${esc(sc.assets?.poster||'')}">Libre</a>
-        <a href="${go('&reto=1')}" class="hot" data-golaunch="${go('&reto=1')}" data-poster="${esc(sc.assets?.poster||'')}">${term('gateRush')}</a>
-        <a href="${go('&modo=cinematico')}" data-golaunch="${go('&modo=cinematico')}" data-poster="${esc(sc.assets?.poster||'')}">Cine</a>
-      </div>` : '<em>en preparación</em>'}
+      <div class="fv-pop-btns"><a href="share.html?m=${encodeURIComponent(sc.clip_id)}">Explorar escena</a>
+        ${sc.capabilities?.terrain ? `<button class="ui-button ui-button--quiet" data-map-fly="${scenes.indexOf(sc)}">Volar</button>` : ''}</div>
     </div>`;
   };
   async function showMap() {
@@ -530,9 +524,8 @@ async function boot() {
     document.getElementById('fv-fit').addEventListener('click', () =>
       map.fitBounds(mapBounds, { padding: 70, maxZoom: 14, duration: reducedMotion()?0:340 }));
     document.getElementById('fv-map').addEventListener('click', e => {
-      const a = e.target.closest('[data-golaunch]'); if (!a) return;
-      if(e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)return;
-      e.preventDefault(); launch(a.dataset.golaunch, a.dataset.poster);
+      const fly = e.target.closest('[data-map-fly]');
+      if(fly){pick(+fly.dataset.mapFly);document.querySelector('[data-world-settings]').click();return;}
     });
   }
   document.querySelector('.fv-viewseg').addEventListener('click', e => {

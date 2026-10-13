@@ -27,7 +27,7 @@ body:has(.area-nav), .share-page { --fs-2xs: var(--fs-xs); }
 .scene-suggestion h3 { font-size:var(--fs-xl); font-weight:600; }
 .scene-suggestion p { margin-top:var(--sp-4); font-size:var(--fs-lg); color:var(--text); }
 .scene-suggestion small { display:block; margin-top:var(--sp-3); color:var(--text-2); font-size:var(--fs-xs); }
-.scene-suggestion summary { display:flex; align-items:center; width:fit-content; cursor:pointer; color:var(--text-2); text-decoration:underline; text-underline-offset:4px; }
+.scene-suggestion summary { display:list-item; width:fit-content; min-height:44px; padding-block:var(--sp-3); cursor:pointer; color:var(--text-2); }
 .scene-suggestion .ui-skeleton--text { margin-top:var(--sp-4); }
 .scene-orbit { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none; }
 .scene-poster { width:100%; height:100%; position:absolute; inset:0; object-fit:contain; }
@@ -56,7 +56,6 @@ body:has(.area-nav), .share-page { --fs-2xs: var(--fs-xs); }
 .scene-filters label { display:flex; flex-direction:column; gap:var(--sp-2); }
 .scene-filters .ctl { width:100%; }
 .scene-sheet .wp-cfg-g > span { font:600 var(--fs-lg) var(--font); text-transform:none; letter-spacing:0; color:var(--text); }
-.scene-sheet .wp-cfg-g button.on { background:var(--surface-3); color:var(--text); border-color:var(--accent); }
 .area-nav a { min-width:44px; }
 .page-3d .td-search input { min-height:44px; }
 .scene-sheet .td-viewseg button,.fv-page .fv-viewseg button,.fv-page .wp-modes button { min-height:44px; }

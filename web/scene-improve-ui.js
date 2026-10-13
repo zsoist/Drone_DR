@@ -9,7 +9,7 @@ export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)'
 export const escapeText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // Display only: keep the saved title intact for edits and provenance.
 export const sceneTitle = value => String(value || 'Escena')
-  .replace(/\s+[—–·-]\s+(?=[^\n]*(?:\bODM\b|\bCUDA\b|\bF\d+\s+v\d+\b|\bentity E2E\b|\bsitio progresivo\b)).*$/i, '')
+  .replace(/\s+[—–·-]\s+(?=[^\n]*(?:\bbanda aérea\b|\bODM\b|\bCUDA\b|\bF\d+\s+v\d+\b|\bentity E2E\b|\bsitio progresivo\b)).*$/i, '')
   .replace(/\s+(?:alta\s+(?:fixed|stable)\b|iso\s+low\b).*$/i, '')
   .replace(/\s+v\d+(?:\.\d+)*\s*$/i, '').trim().replace(/^(\d+)$/, 'Escena $1') || 'Escena';
 export const sceneVersionLabel = splat => [
@@ -58,7 +58,7 @@ export function suggestionBlock({title='Descripción de la escena', text, fullTe
   node.append(text ? Suggested({content:p}) : p);
   if(text && fullText && fullText!==text){
     const details=document.createElement('details');
-    const summary=document.createElement('summary');summary.textContent='Ver más';
+    const summary=document.createElement('summary');summary.textContent='Ver descripción';
     const full=document.createElement('p');full.textContent=fullText;
     details.append(summary,full);node.append(details);
   }
