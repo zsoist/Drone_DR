@@ -172,3 +172,26 @@ Flightverse (`web/volar.*`, `web/flightverse/`) has its own plan (`docs/FLIGHTVE
 ## R0 findings
 
 The R0 bug hunt reports are in `/Volumes/SSD/tmp/agents/aerobrain/r0/`. The integrator gives each defect to the workstream that owns the file.
+
+## Status (2026-10-13)
+
+The redesign is complete and in production. The independent design QA gives every page 10/10 on phone and desktop (round 9).
+
+| Round | Typical page score | Main change |
+|---|---|---|
+| 1 | 5 to 7.5 | First integration of W1 to W5 |
+| 2 | 7 to 8.5 | Shared formatter, tabs, Suggested component, map and player skins |
+| 3 | 8 to 9 | Fewer controls on media pages, real AI moments, place names |
+| 4 | 8 to 9.5 | Frame-quality filter for featured images, Ventas hotfix |
+| 5 to 8 | 9 to 10 | AI labels, own thumbnails in lists, owner media first, shared scene names |
+| 9 | 10 | No defects left |
+
+The QA reports for each round are in `/Volumes/SSD/archive/aerobrain-qa-captures-2026-10/redesign-2026-10/`.
+
+Rules that the QA rounds added (keep them):
+
+- Owner data always wins over AI and over filters. This includes owner titles, owner covers and the clip that the owner selects for a property.
+- The strict frame-quality filter applies only to featured images that the AI selects. A flight always shows its own thumbnail in lists.
+- Titles and summaries use the AI caption fields, never a highlight label.
+- Escenas and Mundo name scenes through one function: `uniqueSceneNames()` in `web/ui/display-name.js`.
+- Before you deploy web changes, run `python3 pipeline/page_load_gate.py` for desktop and for `--viewport phone`.
