@@ -68,3 +68,22 @@ test('version names keep processing details out of the picker', async () => {
     assert.equal(calls.filter(path => path.includes('missing_quality')).length, 1);
   } finally { globalThis.fetch=previous; }
 });
+
+test('version choices distinguish repeated dates and timestamps', async () => {
+  const { sceneVersionLabel } = await import('./scene-improve-ui.js');
+  const rows = [
+    {current:true,preset:'ultra20'},
+    {archived_at:'2026-07-15T17:00:00Z',preset:'ultra20'},
+    {archived_at:'2026-07-15T19:00:00Z',preset:'ultra20'},
+    {archived_at:'2026-07-15T19:00:00Z',preset:'ultra20'},
+    {preset:'medium'}, {preset:'medium'},
+  ];
+  const labels = rows.map(row => sceneVersionLabel(row, rows));
+  assert.equal(new Set(labels).size, rows.length);
+  assert.equal(labels[0], 'Actual · Detalle superior');
+  assert.match(labels[1], /15 jul 2026.*12:00/);
+  assert.match(labels[2], /14:00.*Variante 1/);
+  assert.match(labels[3], /14:00.*Variante 2/);
+  assert.match(labels[4], /Variante 1/);
+  assert.match(labels[5], /Variante 2/);
+});

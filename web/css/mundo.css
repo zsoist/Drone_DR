@@ -156,3 +156,6 @@
  .w-filters { flex-wrap:wrap; gap:var(--sp-1); }
  .wi-rec { left:var(--sp-1); right:auto; max-width:104px; }
 }
+
+/* Disclose suggested descriptions where the first description starts. */
+.wi-description .ui-suggested-label { display:block; margin:0 0 var(--sp-1); font-size:var(--fs-xs); color:var(--text-2); }

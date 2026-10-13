@@ -2,15 +2,15 @@ import { skinPlayer } from './ui/player.js?v=434';
 import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=434';
 import { fmt } from './ui/format.js?v=434';
 import { term } from './ui/terms.js?v=434';
-import { sceneInsight, sceneCover, hydrateSceneCovers, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=434';
-import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
+import { sceneInsight, sceneCover, hydrateSceneCovers, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=435';
+import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=435';
   import * as THREE from '/vendor/three180.module.js?v=434';
   import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=434';
   import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=434';
   import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=434';
   import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=434';
   import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=434';
-  import { mountSplatViewer } from '/splatview.js?v=434';
+  import { mountSplatViewer } from '/splatview.js?v=435';
   import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=434';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
@@ -372,7 +372,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
 
     <div id="proj-view" style="display:none">
     <div class="td-crumb" id="td-crumb" role="navigation" aria-label="Proyecto abierto">
-      <button class="btn ghost sm" id="proj-back" type="button">${icon('chevL')} Proyectos</button>
+      ${shell.backLink('Escenas', 'tresd.html')}
       <span class="td-crumb-sep" aria-hidden="true">/</span>
       <b class="td-crumb-t" id="td-crumb-t"></b>
       <span class="td-crumb-meta mono" id="td-crumb-m"></span>
@@ -406,7 +406,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
 
     <div class="panel scene-viewer-panel">
       <div class="ph scene-viewer-head" data-no-collapse="true">
-        <div class="scene-viewer-tabs ui-tabs" id="scene-viewer-tabs" role="tablist" aria-label="Representación 3D">
+        <div class="td-viewer-tabs ui-tabs" id="scene-viewer-tabs" role="tablist" aria-label="Representación 3D">
           <button type="button" class="on" role="tab" aria-selected="true" aria-controls="scene-viewer-box" data-viewer-mode="cloud">${icon('layers')} ${term('cloud')}</button>
           <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="mesh">${icon('cube')} ${term('mesh')}</button>
           <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="splat">${icon('splat')} ${term('splat')}</button>
@@ -414,9 +414,9 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
         <span class="chip scene-viewer-status" id="scene-viewer-status"></span>
         <span class="spacer"></span>
         <select id="sp-select" class="scene-viewer-version" title="Versión de la escena" aria-label="Versión de la escena"></select>
-        <button class="ui-button ui-button--primary" id="viewer-load">Cargar nube</button>
+        <button class="ui-button ui-button--primary" id="viewer-load">Cargar puntos</button>
       </div>
-      <div id="scene-viewer-box" class="scene-viewer-box" role="tabpanel" aria-live="polite" aria-label="Nube de puntos">
+      <div id="scene-viewer-box" class="scene-viewer-box" role="tabpanel" aria-live="polite" aria-label="Puntos">
         <p class="footer-note scene-viewer-note">Puntos con color real — arrastra para mover, botón derecho rota, rueda o pellizco acerca y doble toque enfoca.</p>
       </div>
     </div>
@@ -433,7 +433,12 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
   const projView = document.getElementById('proj-view');
   main.querySelector('.scene-library')?.after(projView);
   const sceneViewerPanel = projView.querySelector('.scene-viewer-panel');
-  projView.querySelector('.td-crumb').after(sceneViewerPanel);
+  const workspaceHead = document.createElement('header');
+  workspaceHead.className = 'td-workspace-head';
+  projView.prepend(workspaceHead);
+  workspaceHead.append(projView.querySelector('.td-crumb'), sceneViewerPanel.querySelector('.scene-viewer-head'));
+  workspaceHead.after(sceneViewerPanel);
+  workspaceHead.querySelector('.ui-back').id = 'proj-back';
   const infoButton = document.createElement('button'); infoButton.className = 'ui-button ui-button--secondary'; infoButton.textContent = 'Información';
   infoButton.addEventListener('click', () => { if (cur) sceneInfo({model:cur, processing:splatDetails(splatAssetFor(cur.clip_id)), opener:infoButton}); });
   projView.querySelector('.td-crumb').append(infoButton);
@@ -1272,8 +1277,8 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
       card?.querySelector('.pc-cover')?.focus({ preventScroll: true });
     });
   }
-  document.getElementById('proj-back')?.addEventListener('click', backToList);
-  document.getElementById('proj-close')?.addEventListener('click', backToList);
+  document.getElementById('proj-back')?.addEventListener('click', event => { event.preventDefault(); backToList(); });
+  document.getElementById('proj-close')?.addEventListener('click', event => { event.preventDefault(); backToList(); });
 
   // ---------- mini-modal reutilizable ----------
   // Modal de página sobre el openModal del shell (dialog role, foco atrapado, Esc por la pila, scroll lock).
@@ -2643,14 +2648,18 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
                                'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } });
       omap.on('click', onMapClick);
     });
-    // recentrar: volver al encuadre del proyecto cuando te pierdes navegando
-    document.querySelectorAll('#omap .map-recenter').forEach(x => x.remove());  // no acumular uno por setProject
+    // Keep recentering inside the shared map controls, clear of navigation.
     const rc = document.createElement('button');
-    rc.className = 'map-recenter';
-    rc.title = 'Recentrar en el proyecto';
+    rc.className = 'td-map-recenter';
+    rc.type = 'button';
+    rc.title = 'Centrar proyecto';
+    rc.setAttribute('aria-label', rc.title);
     rc.innerHTML = icon('pin');
-    rc.addEventListener('click', () => omap.fitBounds(b, { padding: 40 }));
-    document.getElementById('omap').appendChild(rc);
+    rc.addEventListener('click', () => omap.fitBounds(b, { padding: 40, duration: reducedMotion() ? 0 : 300 }));
+    const recenter = document.createElement('div');
+    recenter.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+    recenter.append(rc);
+    omap.addControl({onAdd: () => recenter, onRemove: () => recenter.remove()}, 'top-right');
     document.getElementById('op').oninput = e => {
       const v = +e.target.value / 100;
       const z0 = cur.tiles_minzoom || 15;
@@ -2666,7 +2675,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
     const spStatusFmt = (spMeta?.format || spMeta?.name.split('.').pop() || 'splat').toUpperCase();
     spSel.style.display = spList.length > 1 ? 'inline-block' : 'none';   // '' would fall back to the base rule display:none
     spSel.innerHTML = spList.map(s => {
-      const label = splatVersionLabel(s);
+      const label = splatVersionLabel(s, spList);
       return `<option value="${esc(splatKey(s))}"${spMeta && splatKey(s) === splatKey(spMeta) ? ' selected' : ''}>${esc(label)}</option>`;
     }).join('');
     // estado PARCIAL visible: con un splat de ESTE clip en cola/entrenando, decía 'sin entrenar'
@@ -2675,7 +2684,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
       const act = (d.jobs || []).find(x => x.kind === 'splat' && x.label === cid
         && ['running', 'queued'].includes(x.status));
       if (act && viewerMode === 'splat') document.getElementById('scene-viewer-status').textContent =
-        act.status === 'queued' ? 'splat en cola…' : `entrenando… ${Math.round((act.progress || 0) * 100)}%`;
+        act.status === 'queued' ? 'Escena en cola…' : `entrenando… ${Math.round((act.progress || 0) * 100)}%`;
     }).catch(() => {});
     // capas/herramientas que REQUIEREN DSM: deshabilitadas sin él (antes fallaban en silencio)
     [['data-layer', ['dsm', 'hills', 'contours']], ['data-tool', ['volume', 'profile']]].forEach(([attr, keys]) =>
@@ -2948,22 +2957,24 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
       tab.classList.toggle('on', active);
       tab.setAttribute('aria-selected', String(active));
       tab.disabled = availability[tab.dataset.viewerMode] === false;
-      if (tab.dataset.viewerMode === 'mesh' && tab.disabled) tab.title = 'ODM marcó esta malla como no concluyente';
+      if (tab.dataset.viewerMode === 'mesh' && tab.disabled) tab.title = 'El modelo aún no tiene suficiente detalle';
       else if (tab.dataset.viewerMode === 'splat' && tab.disabled) tab.title = 'Esta escena aún no tiene una vista fotorrealista';
       else tab.title = '';
     });
     const status = document.getElementById('scene-viewer-status');
-    status.textContent = state.status;
+    status.textContent = viewerMode === 'splat'
+      ? `${fmt.number(splatAssetsFor(cur.clip_id).length)} versiones`
+      : viewerMode === 'cloud' ? `${fmt.number((cur.cloud_bytes || 0) / 1e6, 1)} MB` : state.status;
     status.classList.toggle('td-tint-warn', viewerMode === 'mesh' && cur.mesh_ok === false);
     const select = document.getElementById('sp-select');
     select.style.display = viewerMode === 'splat' && splatAssetsFor(cur.clip_id).length > 1 ? 'inline-block' : 'none';
     const load = document.getElementById('viewer-load');
-    load.textContent = state.loadLabel;
+    load.textContent = viewerMode === 'splat' ? 'Cargar escena' : viewerMode === 'mesh' ? 'Cargar modelo' : 'Cargar puntos';
     load.disabled = availability[viewerMode] === false;
     load.style.display = availability[viewerMode] === false ? 'none' : '';
     const box = unifiedViewerBox();
     box.dataset.viewerMode = viewerMode;
-    box.setAttribute('aria-label', state.title);
+    box.setAttribute('aria-label', term(viewerMode));
   }
 
   function activateViewerMode(mode, { autoload = false } = {}) {
@@ -2998,7 +3009,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
   { const lb = document.getElementById('viewer-load');
     new MutationObserver(() => {
       const re = /^Recargar/.test(lb.textContent);
-      lb.classList.toggle('ghost', re); lb.classList.toggle('primary', !re);
+      lb.classList.toggle('ui-button--secondary', re); lb.classList.toggle('ui-button--primary', !re);
     }).observe(lb, { childList: true, characterData: true, subtree: true }); }
 
   // ---------- three.js viewers ----------
@@ -3219,7 +3230,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
       return;
     }
     if (box._loadToken === myLoad && viewerMode === 'mesh') {
-      meshLoadBtn.textContent = 'Recargar malla';
+      meshLoadBtn.textContent = 'Recargar modelo';
       meshLoadBtn.disabled = false;
     }
   }
@@ -3403,12 +3414,12 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
     const cloudBtn = document.getElementById('viewer-load');
     cloudBtn.disabled = true;
     cloudBtn.textContent = 'Cargando…';
-    const stC = spin(box, 'Descargando nube de puntos…');
+    const stC = spin(box, 'Descargando puntos…');
     let geo;
     try {
       geo = await new PLYLoader().loadAsync(`data/models/${cur.clip_id}/cloud.ply`,
-        ev => { stC.textContent = ev.total ? `Nube · ${Math.round(ev.loaded / ev.total * 100)}%`
-                                           : `Nube · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
+        ev => { stC.textContent = ev.total ? `Puntos · ${Math.round(ev.loaded / ev.total * 100)}%`
+                                           : `Puntos · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
     } catch (err) {
       // 404/red caída: sin esto el skeleton giraba para siempre (y el autoload lo dispara solo)
       if (box._loadToken !== myLoad || viewerMode !== 'cloud') return;
@@ -3493,7 +3504,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
       arr.needsUpdate = true;
       box._wake?.();                                          // redibuja el nuevo color (#6/#17)
     });
-    cloudBtn.textContent = 'Recargar nube';
+    cloudBtn.textContent = 'Recargar puntos';
     cloudBtn.disabled = false;
   }
 
@@ -3792,7 +3803,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
     let handle;
     try {
       handle = await mountSplatViewer(box, splatUrl(asset),
-        { bytes: asset.bytes, signal: loadAbort.signal, onStatus: t => { if (st) st.textContent = t; },
+        { bytes: asset.bytes, compact: true, signal: loadAbort.signal, onStatus: t => { if (st) st.textContent = t; },
           // medición honesta: Metal/MPS entrena topocéntrico (= metros); el lane CUDA
           // normaliza poses (nerfstudio) → unidades relativas hasta tener scene_to_meters
           unitsMeters: asset.backend ? !/cuda|nvidia/i.test(asset.backend) : null });
@@ -3814,7 +3825,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=434';
     box._splatDispose = handle.dispose;           // dispose premium (HUD + listeners + viewer)
     box._pcid = cur.clip_id;                       // qué clip está en pantalla (para borrar en vivo)
     box.querySelector('.splat-load')?.remove();
-    loadBtn.textContent = 'Recargar Splat';
+    loadBtn.textContent = 'Recargar escena';
     loadBtn.disabled = false;
   }
 

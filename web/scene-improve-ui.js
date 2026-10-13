@@ -12,10 +12,25 @@ export const sceneTitle = value => String(value || 'Escena')
   .replace(/\s+[—–·-]\s+(?=[^\n]*(?:\bbanda aérea\b|\bODM\b|\bCUDA\b|\bF\d+\s+v\d+\b|\bentity E2E\b|\bsitio progresivo\b)).*$/i, '')
   .replace(/\s+(?:alta\s+(?:fixed|stable)\b|iso\s+low\b).*$/i, '')
   .replace(/\s+v\d+(?:\.\d+)*\s*$/i, '').trim().replace(/^(\d+)$/, 'Escena $1') || 'Escena';
-export const sceneVersionLabel = splat => [
+const versionTitle = splat => [
   splat.current ? 'Actual' : (fmt.date(splat.archived_at) || 'Versión anterior'),
   term(splat.preset) !== splat.preset ? term(splat.preset) : '',
 ].filter(Boolean).join(' · ');
+export function sceneVersionLabel(splat, versions = []) {
+  const title = versionTitle(splat);
+  const peers = versions.filter(row => versionTitle(row) === title);
+  if (peers.length < 2) return title;
+  const clock = row => {
+    const date = new Date(row.archived_at);
+    return Number.isFinite(date.getTime()) && /T\d{2}:\d{2}/.test(row.archived_at || '')
+      ? new Intl.DateTimeFormat('es-CO', {timeZone:'America/Bogota', hour:'2-digit', minute:'2-digit', hourCycle:'h23'}).format(date) : '';
+  };
+  const time = clock(splat);
+  const sameTime = peers.filter(row => clock(row) === time);
+  const variant = sameTime.length > 1 ? `Variante ${sameTime.indexOf(splat) + 1}` : '';
+  const [date, ...detail] = title.split(' · ');
+  return [date, time, variant, ...detail].filter(Boolean).join(' · ');
+}
 export const areaNav = active => `<nav class="area-nav ui-tabs" aria-label="Área 3D">${[['escenas','tresd.html','Escenas'],['mundo','mundo.html','Mundo'],['volar','volar.html','Volar']].map(([key,href,label]) => `<a href="${href}"${key===active?' aria-current="page"':''}>${label}</a>`).join('')}</nav>`;
 export const skeletonCards = () => `<div class="scene-skeleton" aria-hidden="true">${Array.from({length:2},()=>'<div><div class="ui-skeleton ui-skeleton--media"></div><div class="ui-skeleton ui-skeleton--text"></div></div>').join('')}</div>`;
 export function registerScenes(rows, label = 'Escena') {

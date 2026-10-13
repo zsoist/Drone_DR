@@ -1,8 +1,8 @@
 import { fmt } from './ui/format.js?v=434';
 import { term } from './ui/terms.js?v=434';
 import { Suggested } from './ui/suggested.js?v=434';
-import { sceneTitle, sceneVersionLabel, contentSheet, sceneInfo, sceneInsight, suggestionBlock, reducedMotion } from './scene-improve-ui.js?v=434';
-import { loadIsCurrent } from './scene-improve-state.js?v=434';
+import { sceneTitle, sceneVersionLabel, contentSheet, sceneInfo, sceneInsight, suggestionBlock, reducedMotion } from './scene-improve-ui.js?v=435';
+import { loadIsCurrent } from './scene-improve-state.js?v=435';
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
 import * as THREE from '/vendor/three180.module.js?v=434';
@@ -10,7 +10,7 @@ import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js
 import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=434';
 import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=434';
 import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=434';
-import { mountSplatViewer } from '/splatview.js?v=434';
+import { mountSplatViewer } from '/splatview.js?v=435';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -176,7 +176,7 @@ if (splat && splats.length > 1) {
   sel.title = 'Versión de la escena';
   sel.setAttribute('aria-label', 'Versión de la escena');
   sel.innerHTML = splats.map(s => {
-    const label = splatVersionLabel(s);
+    const label = splatVersionLabel(s, splats);
     return `<option value="${esc(splatKey(s))}"${splatKey(s) === splatKey(splat) ? ' selected' : ''}>${esc(label)}</option>`;
   }).join('');
   sel.addEventListener('change', () => {
