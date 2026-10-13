@@ -37,3 +37,6 @@
 @media(prefers-reduced-motion:reduce) { .vt-cover img { transition:none; } .vt-cover:hover img { transform:none; } }
 
 .vt-property h2 a { display:inline-block; min-height:44px; }
+
+.vt-property:has(.vt-cover>span) { grid-template-columns:minmax(0,1fr); }
+.vt-cover:has(>span) { aspect-ratio:auto; min-height:120px; }

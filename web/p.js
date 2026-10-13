@@ -1,8 +1,8 @@
-import { fmt } from './ui/format.js?v=423';
-import { Suggested } from './ui/suggested.js?v=423';
-import { skinPlayer } from './ui/player.js?v=423';
-import { galleryFrames, propertyCover, propertyDescription } from './p.logic.js?v=423';
-import { createSheet } from './ui/sheet.js?v=423';
+import { fmt } from './ui/format.js?v=428';
+import { Suggested } from './ui/suggested.js?v=428';
+import { skinPlayer } from './ui/player.js?v=428';
+import { galleryFrames, propertyCover, propertyDescription, propertyMedia } from './p.logic.js?v=428';
+import { createSheet } from './ui/sheet.js?v=428';
 const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const root = document.getElementById('root');
 function empty(title, text, retry=false) {
@@ -13,28 +13,26 @@ function empty(title, text, retry=false) {
 async function load() {
   const slug=new URLSearchParams(location.search).get('id');
   if (!slug || !/^[\w-]+$/.test(slug)) { empty('Enlace incompleto','Pide el enlace completo de la propiedad a quien te lo compartió.'); return; }
-  let p,clip;
+  let p,media=[];
   try {
     const r=await fetch(`data/properties/${encodeURIComponent(slug)}.json`);
     if (!r.ok) { empty('Propiedad no disponible','Pide un enlace actualizado a quien te lo compartió.'); return; }
     p=await r.json();
-    if (p.clip && !Array.isArray(p.gallery)) {
-      try { const r=await fetch('data/manifest/flights.json'); if(r.ok) clip=(await r.json()).flights?.find(f=>f.clip_id===p.clip); } catch { /* Hero and property remain available. */ }
-    }
+    try { media=await propertyMedia(p.clip); } catch { /* Keep the saved property available. */ }
   } catch { empty('No se pudo cargar la propiedad','Revisa tu conexión y vuelve a intentarlo.',true); return; }
   document.title=`${p.titulo || 'Propiedad'} — AeroBrain`;
   const video=p.video?(p.video.endsWith('.mp4')?`data/reels/${encodeURIComponent(p.video)}`:`data/proxies/${encodeURIComponent(p.video)}.mp4`):'';
-  const frames=galleryFrames(p,clip);
-  const hero=propertyCover(p,clip);
+  const frames=galleryFrames(p,media);
+  const hero=propertyCover(p,media);
   const specs=[[p.habitaciones,'habitaciones'],[p.banos,'baños'],[p.parqueaderos,'parqueaderos'],[p.estrato,'estrato']].filter(([v])=>v);
   const wa=String(p.whatsapp || '').replace(/\D/g,''),tel=String(p.telefono || '').replace(/[^\d+]/g,'');
   const coords=Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon)) && p.lat != null && p.lon != null && p.lat !== '' && p.lon !== '';
-  root.innerHTML=`<header class="p-top"><span class="p-brand">AeroBrain</span><span>Ficha privada</span></header>
+  root.innerHTML=`<header class="p-top"><span class="p-brand">AeroBrain</span><span>Ficha privada · Requiere tu sesión</span></header>
     <section class="p-intro"><div><p class="p-location">${esc(p.ubicacion || 'Ubicación por confirmar')}${p.area ? ` · ${esc(fmt.number(p.area))} m²` : ''}</p><h1>${esc(p.titulo || 'Propiedad en venta')}</h1></div><div class="p-price">${esc(p.precio || 'Precio a consultar')}</div></section>
     <div class="p-hero">${hero?`<img src="${hero}" alt="Vista aérea de ${esc(p.titulo || 'la propiedad')}" fetchpriority="high">`:'<div class="p-no-cover">La vista aérea aún no está disponible.</div>'}${video?'<button class="ui-button ui-button--secondary p-play" id="p-video">Ver recorrido</button>':''}</div>
     <div class="p-content"><div>${specs.length?`<dl class="p-specs">${specs.map(([v,l])=>`<div><dt>${l}</dt><dd><span class="ui-figure">${esc(Number.isFinite(Number(v)) ? fmt.number(v) : v)}</span></dd></div>`).join('')}</dl>`:''}
       <section class="p-description"><h2>Sobre la propiedad</h2><div id="p-description"></div></section>
-      ${frames.length?`<section class="p-gallery-section"><h2>Desde el aire</h2><div class="p-gallery">${frames.map((f,i)=>`<button class="p-frame" data-frame="${i}" aria-label="Ampliar vista aérea ${i+1}"><img src="${f}" loading="eager" decoding="async" alt="Vista aérea ${i+1}"></button>`).join('')}</div></section>`:''}
+      ${frames.length?`<section class="p-gallery-section"><h2>Desde el aire</h2><div class="p-gallery">${frames.map((f,i)=>`<button class="p-frame" data-frame="${i}" aria-label="Ampliar vista aérea ${i+1}"><img src="${f}" loading="eager" decoding="async" alt="Vista aérea ${i+1}"></button>`).join('')}</div></section>`:'<section class="p-gallery-section"><h2>Desde el aire</h2><p>No hay imágenes revisadas disponibles para esta propiedad.</p></section>'}
       ${coords?`<section class="p-location-section"><h2>Ubicación</h2><p>${esc(p.ubicacion || 'Ubicación de la propiedad')}</p><a class="ui-button ui-button--secondary" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.lat+','+p.lon)}" target="_blank" rel="noopener">Ver ubicación en el mapa ${icon('ext')}</a></section>`:''}
     </div><aside class="p-contact"><h2>Conoce la propiedad</h2><p>Consulta los detalles y acuerda una visita.</p>${wa?`<a class="ui-button ui-button--primary" href="https://wa.me/${wa}?text=${encodeURIComponent('Hola, me interesa '+(p.titulo || 'esta propiedad'))}">Consultar por WhatsApp</a>`:tel?`<a class="ui-button ui-button--primary" href="tel:${tel}">Llamar para consultar</a>`:'<p>Los datos de contacto aún no están disponibles.</p>'}${wa&&tel?`<a class="ui-button ui-button--quiet" href="tel:${tel}">Llamar</a>`:''}</aside></div>
     <footer class="p-footer">Imágenes del archivo aéreo de AeroBrain.</footer>`;

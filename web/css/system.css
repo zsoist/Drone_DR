@@ -46,3 +46,6 @@
 
 .sy-health dt { font-size:var(--fs-sm); }
 .sy-health dl>div:last-child { border-bottom:0; }
+
+.sy-job-foot { flex-wrap:wrap; justify-content:flex-start; }
+.sy-job-foot>.sy-note { margin-right:auto; }

@@ -1,4 +1,4 @@
-import { fmt } from './ui/format.js?v=423';
+import { fmt } from './ui/format.js?v=428';
 
 export function jobState(job) {
   if (['cancelled', 'canceled'].includes(job.status)) return ['Cancelado', 'quiet'];
@@ -11,7 +11,7 @@ export function jobRelativeTime(job, now) {
   if (job.status === 'queued') return 'en cola';
   const timestamp = Number(job.status === 'running' ? job.started : job.finished || job.started);
   if (!Number.isFinite(timestamp) || timestamp <= 0) return 'sin fecha';
-  return fmt.relative(timestamp * 1000, now);
+  return fmt.relative(timestamp * 1000, now).replace(/\b(\d+) m\b/g, (_, count) => `${count} ${count === '1' ? 'mes' : 'meses'}`);
 }
 
 // Keep each attempt available while collapsing repeated failures for the same source.
