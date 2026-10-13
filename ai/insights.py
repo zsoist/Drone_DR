@@ -14,11 +14,12 @@ from fsutil import atomic_write_json
 from keys import load_keys
 from paths import VAULT
 try:
-    from . import router
+    from . import router, cover_quality
     from .insight_schema import (INSIGHT_SCHEMA, PRAISE, validate_insight, neutral_caption,
                                  trim_caption, valid_short, normalize_tags, repair_short)
 except ImportError:
     import router
+    import cover_quality
     from insight_schema import (INSIGHT_SCHEMA, PRAISE, validate_insight, neutral_caption,
                                 trim_caption, valid_short, normalize_tags, repair_short)
 
@@ -67,8 +68,8 @@ def record(cid, vault=VAULT):
             # Read v1 without writes or paid calls. The backfill persists the upgrade.
             if not valid_short(value['insight'].get('caption_short')):
                 value['insight']['caption_short'] = repair_short(
-                    value['insight'].get('caption_short') or value.get('caption_short')
-                    or trim_caption(value['insight']['caption']),
+                    value.get('caption_short') if valid_short(value.get('caption_short'))
+                    else value['insight']['caption'],
                     value['insight'].get('subjects', []))
             if isinstance(value['insight'].get('tags'), list):
                 value['insight']['tags'] = normalize_tags(value['insight']['tags'])
@@ -121,7 +122,7 @@ def build_record(cid, keys, vault=VAULT):
               'Describe solo evidencia visible. No inventes lugares. Son sugerencias, no decisiones del dueño. '
               'caption y caption_short describen sujetos y acciones concretos, sin elogios: '
               'no uses excelente, impresionante, majestuoso, espectacular, hermoso ni similares. '
-              'caption_short es una frase completa de hasta 60 caracteres que empieza por el sujeto. '
+              'caption_short tiene de 4 a 9 palabras y hasta 100 caracteres: sujeto concreto más entorno o luz. '
               'Nunca empieces con Dron muestra, Dron o Vista aérea de. Etiquetas solo en español, '
               'sin duplicados ni etiquetas genéricas como dron o vista aérea. '
               'Con frames aislados no puedes confirmar estabilidad entre frames: marca solo problemas visibles. '
@@ -134,7 +135,7 @@ def build_record(cid, keys, vault=VAULT):
     if isinstance(insight, dict) and isinstance(insight.get('caption'), str):
         insight['caption'] = neutral_caption(insight['caption'])
         if not valid_short(insight.get('caption_short')):
-            insight['caption_short'] = repair_short(insight.get('caption_short') or insight['caption'],
+            insight['caption_short'] = repair_short(insight['caption'],
                                                     insight.get('subjects', []))
         if isinstance(insight.get('tags'), list):
             insight['tags'] = normalize_tags(insight['tags'])
@@ -165,6 +166,8 @@ def upgrade_caption(data, keys):
     try:
         raw, _ = router.short_caption(data['insight']['caption'], keys)
         short = json.loads(raw)['caption_short']
+        if isinstance(short, str):
+            short = short.rstrip('.')
         if not valid_short(short):
             raise ValueError('invalid short caption')
         result['caption_short_source'] = 'deepseek'
@@ -214,7 +217,8 @@ def save_record(data, vault=VAULT):
 
 
 def segment_highlights(insight):
-    return [{'t': s['start'], 'start': s['start'], 'end': s['end'], 'score': s['score'],
+    return [{'t': s['start'], 'time_s': s['start'], 'label': s['reason'],
+             'start': s['start'], 'end': s['end'], 'score': s['score'],
              'reason': s['reason'], 'type': insight['shot_type'], 'synthetic': False}
             for s in insight.get('highlight_segments', [])]
 
@@ -231,7 +235,8 @@ def public_record(cid, vault=VAULT):
     return {**data, 'tags': insight.get('tags', data.get('tags', [])),
             'caption_short': insight.get('caption_short') or trim_caption(data.get('summary', '')),
             'highlights': segment_highlights(insight), 'owner_highlights': manual,
-            'synthetic': not bool(insight.get('highlight_segments'))}
+            'synthetic': not bool(insight.get('highlight_segments')),
+            'cover': next(cover_candidates([cid], {cid: data}, vault), None)}
 
 
 def get_insight(cid, vault=VAULT):
@@ -240,7 +245,8 @@ def get_insight(cid, vault=VAULT):
         validate_insight(data['insight'], data['duration_s'], data['sampled_frame_times'])
     except (KeyError, TypeError, ValueError):
         return {'clip_id': cid, 'status': 'pending', 'suggested': True, 'insight': None}
-    return {'clip_id': cid, 'status': 'ready', 'suggested': True, 'insight': data['insight']}
+    return {'clip_id': cid, 'status': 'ready', 'suggested': True, 'insight': data['insight'],
+            'cover': next(cover_candidates([cid], {cid: data}, vault), None)}
 
 
 def normalized(text):
@@ -267,6 +273,7 @@ def moment(cid, data, query='', vault=VAULT, *, highlight=False):
     frame_time, name = min(available, key=lambda row: abs(row[0] - t)) if available else (None, None)
     return {'clip_id': cid, 'time_s': t, 'frame_time_s': frame_time,
             'frame_url': f'/data/frames/{cid}/{name}' if name else f'/data/thumbs/{cid}.jpg',
+            'label': selected['reason'] if selected else insight.get('caption_short', ''),
             'score': selected['score'] if selected else (data.get('travel_score') or 0) / 10,
             'selection': 'ai' if insight or data.get('travel_score') else 'sample',
             'synthetic': not bool(selected) if highlight or query else not bool(insight)}
@@ -402,30 +409,36 @@ def place_title(group, saved, meta):
 
 
 def cover_candidates(ids, records, vault):
-    best = {cid: moment(cid, records[cid], vault=vault) for cid in ids}
-
-    def rank(cid):
+    candidates = []
+    for cid in ids:
         data = records[cid]
+        if cover_quality.evidence_reasons(data):
+            continue
         ins = data.get('insight', {})
-        descriptions = [ins.get('caption', data.get('summary', '')), *ins.get('tags', data.get('tags', [])),
-                        *[s['reason'] for s in ins.get('highlight_segments', [])]]
-        text = ' '.join(s for s in descriptions if isinstance(s, str))
-        signage = bool(re.search(r'\b(letreros?|cartel(?:es)?|textos?|se vende|en venta|tel[eé]fono|signs?|billboards?)\b', text, re.I))
-        return (signage, bool(ins.get('quality_flags')), -best[cid]['score'], cid)
-
-    ranks = {cid: rank(cid) for cid in ids}
-    ranked = sorted(ids, key=ranks.get)
-    # Prefer another clean clip's best frame before other frames from the same clip.
-    for risk in sorted({ranks[cid][:2] for cid in ranked}):
-        peers = [cid for cid in ranked if ranks[cid][:2] == risk]
-        for cid in peers:
-            yield best[cid]
-        for cid in peers:
-            data = records[cid]
-            times = data.get('insight', {}).get('best_frame_times', [])[1:]
-            times += [t for t in data.get('sampled_frame_times', []) if t not in times]
-            for t in times:
-                yield moment(cid, {**data, 'insight': {}, 'best_thumbnail_t': t}, vault=vault)
+        times = list(dict.fromkeys([*ins.get('best_frame_times', []),
+                                   *data.get('sampled_frame_times', []), data.get('best_thumbnail_t', 0)]))
+        seen = set()
+        for t in times:
+            frame = moment(cid, {**data, 'insight': {**ins, 'best_frame_times': [t]}}, vault=vault)
+            if frame['frame_url'] in seen:
+                continue
+            seen.add(frame['frame_url'])
+            quality = cover_quality.assess(data, frame, vault)
+            if quality['eligible']:
+                candidates.append({**frame, 'label': ins.get('caption_short', ''), 'quality': quality,
+                                   'is_best_frame': t in ins.get('best_frame_times', [])})
+    # Brightest eligible frame within each clip; visual interest ranks clips.
+    candidates.sort(key=lambda m: (not m['is_best_frame'], -m['score'], -m['quality']['mean_luminance'], m['clip_id']))
+    # Give each clip one cover before reusing another frame from the same clip.
+    ranks = {}
+    ordered = []
+    for frame in candidates:
+        cid = frame['clip_id']
+        rank = ranks.get(cid, 0)
+        ordered.append((rank, frame))
+        ranks[cid] = rank + 1
+    ordered.sort(key=lambda row: row[0])
+    yield from (frame for _, frame in ordered)
 
 
 def collections(vault=VAULT, all_items=False):
@@ -452,11 +465,14 @@ def collections(vault=VAULT, all_items=False):
     result = []
     for (kind, key), (label, members) in sorted(groups.items()):
         ids = sorted({f['clip_id'] for f in members})
-        covers = [moment(cid, records[cid], vault=vault) for cid in ids]
-        cover = max(covers, key=lambda m: (m['score'], m['clip_id']))
+        covers = list(cover_candidates(ids, records, vault))
+        if not covers:
+            continue
+        cover = covers[0]
         owner_cover = saved_places.get(key, {}).get('cover') if kind == 'place' else None
-        if owner_cover in ids:
-            cover = {**next(m for m in covers if m['clip_id'] == owner_cover), 'selection': 'owner'}
+        owner = next((m for m in covers if m['clip_id'] == owner_cover), None)
+        if owner:
+            cover = {**owner, 'selection': 'owner'}
         members = {f['clip_id']: f for f in members}.values()
         duration = sum(f.get('duration_s', 0) or 0 for f in members)
         latest = max((str(f.get('date') or '') for f in members), default='')
@@ -513,23 +529,15 @@ def summary_source(kind, identity, vault=VAULT):
         rows = next((g['flights'] for g in trip_groups(rows) if g['id'] == identity), [])
     if not rows:
         raise KeyError(identity)
-    moments, routes, evidence, highlights = [], [], [], []
+    moments, routes, evidence, highlights, segments = [], [], [], [], []
     for f in rows:
         cid = f['clip_id']
         data = record(cid, vault)
         insight = data.get('insight', {})
+        segments.extend({'clip_id': cid, **h} for h in segment_highlights(insight))
         if insight.get('highlight_segments'):
             highlights.append(moment(cid, data, vault=vault, highlight=True))
-        moments.append(moment(cid, data, vault=vault))
-        for t in insight.get('best_frame_times', []):
-            moments.append(moment(cid, {'best_thumbnail_t': t, 'travel_score': data.get('travel_score', 0)}, vault=vault))
-        if kind == 'trip':
-            chosen = set(insight.get('best_frame_times', []))
-            for t in data.get('sampled_frame_times', []):
-                if t not in chosen:
-                    extra = moment(cid, {'best_thumbnail_t': t}, vault=vault)
-                    extra['selection'] = 'sample'
-                    moments.append(extra)
+        moments.extend(cover_candidates([cid], {cid: data}, vault))
         track = read(vault / 'tracks' / f'{cid}.flight.json', {})
         line = [[p['lon'], p['lat']] for p in track.get('points', [])[::4]
                 if type(p.get('lon')) in (int, float) and type(p.get('lat')) in (int, float)
@@ -539,7 +547,7 @@ def summary_source(kind, identity, vault=VAULT):
         evidence.append({'caption': insight.get('caption', data.get('summary', '')),
                          'tags': insight.get('tags', data.get('tags', [])),
                          'subjects': insight.get('subjects', []), 'light': insight.get('light_notes', '')})
-    moments.sort(key=lambda m: (-m['score'], m['clip_id'], m['time_s']))
+    moments.sort(key=lambda m: (not m['is_best_frame'], -m['score'], -m['quality']['mean_luminance'], m['clip_id']))
     unique = list({(m['clip_id'], m['frame_time_s']): m for m in reversed(moments)}.values())[::-1]
     stats = [f.get('stats', {}) for f in rows]
     distance = [s['distance_m'] for s in stats if type(s.get('distance_m')) in (int, float) and math.isfinite(s['distance_m'])]
@@ -548,10 +556,11 @@ def summary_source(kind, identity, vault=VAULT):
               'clip_ids': [f['clip_id'] for f in rows],
               'distance_m': round(sum(distance), 1) if distance else None,
               'max_altitude_m': max(alt) if alt else None,
+              'highlights': segments, 'cover': unique[0] if unique else None,
               'best_moment': max(highlights, key=lambda m: (m['score'], m['time_s'] >= 1), default=None)}
     if kind == 'trip':
         result.update(route=routes, best_frames=unique[:6])
-    return result, {'version': 2, 'data': result, 'place': place,
+    return result, {'version': 3, 'data': result, 'place': place,
                     'distance': format_distance(result['distance_m']), 'evidence': evidence}
 
 
