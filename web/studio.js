@@ -5,10 +5,10 @@ import { fmt } from './ui/format.js?v=423';
 import { mountTabs } from './ui/tabs.js?v=423';
 import { Suggested } from './ui/suggested.js?v=423';
 import { skinPlayer } from './ui/player.js?v=423';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition } from './studio.logic.js?v=423';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=423';
 
 // The shared player owns chrome; this adapter maps its single scrubber to the cut list.
-function mountReelPreview(video, segments, sourceURL, onSegment) {
+function mountReelPreview(video, segments, sourceURL, posterFor, onSegment) {
   const player = skinPlayer(video, {label:'Reel automático'});
   const seekControl = player.element.querySelector('input[type="range"]');
   const clock = player.element.querySelector('.ui-player-clock');
@@ -35,10 +35,14 @@ function mountReelPreview(video, segments, sourceURL, onSegment) {
     video.onloadedmetadata = () => {
       if (disposed) return;
       video.currentTime = next.source; loading = false;
+      player.element.classList.toggle('st-reel-portrait', video.videoHeight > video.videoWidth);
+      player.element.style.setProperty('--reel-ratio', `${video.videoWidth} / ${video.videoHeight}`);
+      player.element.style.setProperty('--reel-width', `${300 * video.videoWidth / video.videoHeight}px`);
       if (resume) video.play().catch(showError);
       paint();
     };
-    video.poster = `${DATA}/thumbs/${encodeURIComponent(segments[index].cid)}.jpg`;
+    const poster = posterFor(segments[index].cid);
+    if (poster) video.poster = poster; else video.removeAttribute('poster');
     video.src = sourceURL(segments[index].cid); paint();
   }
   function showError() { status.textContent='No se pudo reproducir. Inténtalo de nuevo.'; status.hidden=false; }
@@ -60,12 +64,14 @@ function mountReelPreview(video, segments, sourceURL, onSegment) {
   };
   seekControl.addEventListener('input',scrub,true);
   player.element.addEventListener('click',replay,true);
-  const events=['loadedmetadata','durationchange','timeupdate','play','pause','ended','emptied'];
+  const events=['loadedmetadata','durationchange','timeupdate','play','pause','ended','emptied','volumechange'];
   events.forEach(event=>video.addEventListener(event,paint));
   video.addEventListener('ended',advance);
+  document.addEventListener('fullscreenchange',paint);
   seek(0,false); frame=requestAnimationFrame(tick);
   return {seek, destroy() {
     disposed=true; cancelAnimationFrame(frame); video.onloadedmetadata=null;
+    document.removeEventListener('fullscreenchange',paint);
     events.forEach(event=>video.removeEventListener(event,paint)); video.removeEventListener('ended',advance);
     seekControl.removeEventListener('input',scrub,true); player.element.removeEventListener('click',replay,true);
     player.destroy(); video.removeAttribute('src'); video.load();
@@ -116,7 +122,7 @@ const main = renderShell('studio.html');
 main.classList.add('st-page', 'ab-page', 'ab-page--wide');
 main.dataset.module = 'editor';
 main.innerHTML = `
-  <header class="st-heading"><h1>Studio</h1><span class="st-library-count" id="st-count" aria-live="polite">Cargando biblioteca…</span><button class="ui-button ui-button--quiet" id="st-project-open" aria-label="Opciones del proyecto">${icon('folder')}<span>Proyecto</span></button><button class="ui-button ui-button--quiet" id="st-auto-start">Reel automático</button><a class="ui-button ui-button--primary" href="subir.html">${icon('plus')} Subir</a></header>
+  <header class="st-heading"><h1>Studio</h1><span class="st-library-count" id="st-count" aria-live="polite">Cargando biblioteca…</span><button class="ui-button ui-button--quiet" id="st-project-open" aria-label="Opciones del proyecto">${icon('folder')}<span>Proyecto</span></button><a class="ui-button ui-button--primary" href="subir.html">${icon('plus')} Subir</a></header>
 
   <div class="ui-tabs st-tabs" id="st-tabs" role="tablist" aria-label="Módulos de Studio">
     <button class="on" data-tab="editor" role="tab" aria-controls="st-panel-editor" aria-selected="true">${icon('film')} Editor</button>
@@ -163,7 +169,8 @@ main.innerHTML = `
             <div class="tl-empty" id="tl-empty">
               ${icon('film')}
               <p><b>Empieza con una toma</b></p>
-              <p>Elige un video de tu biblioteca o revisa un reel sugerido.</p>
+              <p>Elige una toma de la biblioteca o arrástrala aquí.</p>
+              <button class="ui-button ui-button--primary" id="st-auto-start">Revisar reel sugerido</button>
             </div>
           </div>
 
@@ -383,7 +390,7 @@ main.innerHTML = `
         </div>
         <div class="st-library-filters" role="group" aria-label="Filtrar tomas">
           <label class="st-tag-filter"><span>Etiquetas</span><select class="ctl" id="st-tag-filter" disabled><option value="">Todas las etiquetas</option></select></label>
-          <button class="ui-button ui-button--secondary" id="st-quality-filter" aria-pressed="false" disabled>Sin avisos</button>
+          <button class="ui-button ui-button--secondary" id="st-quality-filter" aria-pressed="false" disabled>Ocultar tomas con avisos</button>
         </div>
         <p class="st-note" id="st-insight-status" role="status">Cargando sugerencias…</p>
         <div class="pb st-library-content"><div class="clip-rail" id="rail" aria-busy="true"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div><button class="ui-button ui-button--quiet st-library-more" id="st-library-more" hidden>Ver más tomas</button></div>
@@ -426,7 +433,7 @@ main.innerHTML = `
               </select></label>
             </div>
             <div class="ex-sec" id="ex-vfit-sec">
-              <span class="ex-lb">Cómo llenar el vertical <b class="mono" id="ed-vfit-v">recorte</b></span>
+              <span class="ex-lb">Cómo llenar el vertical <b id="ed-vfit-v">recorte</b></span>
               <div class="tl-chips" id="ed-vfit">
                 <button class="chip on" data-vfit="crop" data-tip="Recorta a lo alto: se pierde lo que no cabe, pero llena la pantalla">Recorte</button>
                 <button class="chip" data-vfit="blur" data-tip="Conserva el encuadre completo sobre un fondo difuminado — el look de los reels">Fondo difuminado</button>
@@ -435,7 +442,7 @@ main.innerHTML = `
               <div class="ex-frame" id="ex-frame-row">
                 <span>Punto focal</span>
                 <input class="tl-range" id="ed-framing" type="range" min="-1" max="1" step="0.05" value="0">
-                <b class="mono" id="ed-framing-v">centro</b>
+                <b id="ed-framing-v">centro</b>
               </div>
             </div>
             <div class="ex-sec">
@@ -501,7 +508,7 @@ main.innerHTML = `
             <div class="ex-row" id="ed-replace-row" style="display:none">
               <label class="ex-check" data-tip="El reel original se sustituye por esta versión al exportar">
                 <input type="checkbox" id="ed-replace" checked>
-                Reemplazar <b id="ed-replace-name" class="mono"></b></label>
+                Reemplazar <b id="ed-replace-name"></b></label>
             </div>
             <div class="ex-est mono" id="ex-est">—</div>
           </div>
@@ -556,7 +563,7 @@ main.innerHTML = `
   </section>
 
   <section class="st-mod" id="st-panel-fotos" data-mod="fotos" style="display:none">
-    <label class="st-photo-source">Origen <select class="ctl" id="fotos-sub"><option value="fotos">Capturas</option><option value="dron">Del dron</option></select><span id="dron-count" class="ui-figure"></span></label>
+    <label class="st-photo-source">Origen <select class="ctl" id="fotos-sub"><option value="fotos">Capturas</option><option value="dron">Del dron</option></select><span id="dron-count"></span></label>
     <div class="media-toolbar">
       <label class="search u-f1 u-minw150"><input id="q-fotos" type="search" placeholder="Buscar foto…" aria-label="Buscar foto"></label>
       <select class="ctl" id="s-fotos" aria-label="Ordenar por">
@@ -590,9 +597,9 @@ const moduleTabs = mountTabs(stTabs, { onChange: tab => showMod(tab.dataset.tab)
 function showMod(name) {
   main.dataset.module = name;
   document.getElementById('exportbar').hidden = name !== 'editor';
-  document.querySelector('.st-heading>a').classList.toggle('ui-button--primary', name !== 'editor' || !main.classList.contains('st-has-project'));
+  document.querySelector('.st-heading>a').classList.toggle('ui-button--primary', name !== 'editor');
   moduleTabs.select(stTabs.querySelector(`[data-tab="${name}"]`), false);
-  document.getElementById('st-auto-start').hidden = name === 'jobs';
+
   document.getElementById('st-project-open').hidden = name !== 'editor';
   document.querySelectorAll('.st-mod').forEach(panel => {
     panel.style.display = '';
@@ -672,7 +679,7 @@ function openReelViewer(name) {
     if (!it) { ov.remove(); return; }
     const base = it.name.replace(/\.[^.]+$/, '');
     const url = `/data/reels/${encodeURIComponent(it.name)}`;
-    const poster = `/data/reel-posters/${encodeURIComponent(base)}.jpg`;
+    const poster = approvedFrameURL(it.poster);
     const vert = it.w && it.h && it.w / it.h < 0.9;
     ov.innerHTML = `
       <div class="rv-bg" style="background-image:url('${poster}')"></div>
@@ -680,14 +687,14 @@ function openReelViewer(name) {
         <div class="rv-head">
           <div class="rv-title">
             <b id="rv-name">${esc(base)}</b>
-            <span class="mono">${list.length > 1 ? `${idx + 1} / ${list.length} · ` : ''}${mdate(it.mtime)}</span>
+            <span>${list.length > 1 ? `${idx + 1} / ${list.length} · ` : ''}${mdate(it.mtime)}</span>
           </div>
           <span class="u-f1 spacer"></span>
           <button class="btn icon ghost rv-x" data-rv="close" aria-label="Cerrar">${icon('close')}</button>
         </div>
         <div class="rv-stage${vert ? ' vert' : ''}">
           ${list.length > 1 ? `<button class="rv-nav prev" data-rv="prev" aria-label="Anterior">${icon('chevL')}</button>` : ''}
-          <video src="${url}" poster="${poster}" controls playsinline preload="metadata"></video>
+          <video src="${url}" ${poster ? `poster="${esc(poster)}"` : ''} controls playsinline preload="metadata"></video>
           ${list.length > 1 ? `<button class="rv-nav next" data-rv="next" aria-label="Siguiente">${icon('chevR')}</button>` : ''}
         </div>
         <div class="rv-facts">
@@ -1157,7 +1164,7 @@ function cardHTML(kind, it) {
         <span class="m-fmt ${it.kind === 'DNG' ? 'dng' : ''}">${esc(it.kind)}</span>
       </div>
       <div class="m-head"><div class="m-name" title="${esc(base)}">${midName(base)}</div></div>
-      <div class="m-meta mono">${fmt.gb(it.bytes)} · ${it.date ? fmt.date(it.date) : mdate(it.mtime)}</div>
+      <div class="m-meta">${fmt.gb(it.bytes)} · ${it.date ? fmt.date(it.date) : mdate(it.mtime)}</div>
       <div class="m-actions">
         <button class="btn sm" data-act="edit" aria-label="Abrir en el editor">${icon('iso')} Editar</button>
         <button class="btn sm icon" data-act="dl" data-tip="Descargar original ${esc(it.kind)}" aria-label="Descargar original ${esc(it.kind)}">${icon('dl')}</button>
@@ -1168,7 +1175,7 @@ function cardHTML(kind, it) {
     // preload="none" + póster server-side: el tile pinta con ~20KB en vez de bajar el MP4.
     // El <video> solo carga cuando el hover/tap lo pide (ver onMediaHover).
     ? `<video src="/data/reels/${enc}#t=0.5" preload="none" muted playsinline loop
-              poster="/data/reel-posters/${encodeURIComponent(it.name.replace(/\.[^.]+$/, ''))}.jpg"></video>
+              ${approvedFrameURL(it.poster) ? `poster="${esc(approvedFrameURL(it.poster))}"` : ''}></video>
        <span class="gchip m-dur" style="display:none"></span>`
     : `<img loading="lazy" src="/data/photos/${enc}" alt="" class="u-ptr">`;
   const fmtBadge = kind === 'reels' ? fmtBadgeOf(it) : '';
@@ -1185,7 +1192,7 @@ function cardHTML(kind, it) {
       <div class="m-name" title="${esc(base)}">${midName(base)}</div>
       ${fmtBadge}
     </div>
-    <div class="m-meta mono">${fmt.gb(it.bytes)} · ${mdate(it.mtime)}${it.h ? ` · ${it.h}p` : ''}</div>
+    <div class="m-meta">${fmt.gb(it.bytes)} · ${mdate(it.mtime)}${it.h ? ` · ${it.h}p` : ''}</div>
     <div class="m-actions">
       ${kind === 'reels'
         ? `<button class="btn sm" data-act="share" aria-label="Compartir">${icon('ext')} ${IS_IOS ? 'Guardar o compartir' : 'Compartir'}</button>`
@@ -1419,13 +1426,20 @@ pollJobs(jobsEl, 2500, j => {
   } catch {
     document.getElementById('tl-empty').innerHTML = '<p><b>No se pudo cargar la biblioteca</b></p><p>Tu borrador sigue guardado.</p><button class="ui-button ui-button--primary" id="st-retry">Reintentar</button>';
     document.getElementById('st-retry').onclick = () => location.reload();
-    document.getElementById('st-auto-start').title = 'Sin conexión. Reintenta cargar la biblioteca.';
+
     return;
   }
   const ai = await getAIAll(flights);
   const editable = flights.filter(f => f.has_proxy && !f.archived);
   const byId = Object.fromEntries(editable.map(f => [f.clip_id, f]));
   const insights = {};
+  const covers = Object.fromEntries(editable.map(f => [f.clip_id, f.ai?.cover]));
+  const posterFor = cid => approvedFrameURL(covers[cid]);
+  const thumbnail = (cid, width = 96, height = 54) => {
+    const url = posterFor(cid);
+    return url ? `<img src="${esc(url)}" loading="lazy" alt="" width="${width}" height="${height}">`
+      : `<span class="st-frame-pending" role="img" aria-label="Sin imagen revisada">${icon('film')}</span>`;
+  };
   const insightRequests = new Map();
   const insightErrors = new Set();
   function loadInsight(cid) {
@@ -1436,7 +1450,10 @@ pollJobs(jobsEl, 2500, j => {
           if (!response.ok) throw new Error('insight');
           const data = await response.json();
           if (data.status !== 'ready' && data.status !== 'pending') throw new Error('insight');
-          insights[cid] = data.status === 'ready' ? data.insight : null;
+          insights[cid] = data.status === 'ready' ? {...data.insight,
+            synthetic: data.synthetic ?? data.insight.synthetic,
+            sampled_frame_times: data.sampled_frame_times || data.insight.sampled_frame_times} : null;
+          covers[cid] = data.cover;
           insightErrors.delete(cid);
           return insights[cid];
         } catch {
@@ -1612,7 +1629,10 @@ pollJobs(jobsEl, 2500, j => {
   projectContent.append(document.querySelector('.st-ph'), document.getElementById('tl-help'));
   const uploadLink = document.createElement('a'); uploadLink.href = 'subir.html';
   uploadLink.className = 'ui-button ui-button--quiet'; uploadLink.textContent = 'Subir videos y fotos';
-  projectContent.append(uploadLink);
+  const autoButton = document.createElement('button');
+  autoButton.className = 'ui-button ui-button--secondary'; autoButton.textContent = 'Reel automático';
+  autoButton.onclick = () => { projectSheet.close(); magic(); };
+  projectContent.append(autoButton, uploadLink);
   const projectSheet = createSheet({title:'Proyecto', content:projectContent, size:'peek', className:'st-sheet'});
   document.getElementById('st-project-open').onclick = event => projectSheet.open(event.currentTarget);
   projectContent.addEventListener('click', event => {
@@ -1660,7 +1680,7 @@ pollJobs(jobsEl, 2500, j => {
   // ---- render maestro ----
   function renderAll() {
     main.classList.toggle('st-has-project', tl.length > 0);
-    document.querySelector('.st-heading>a').classList.toggle('ui-button--primary', !tl.length);
+    document.querySelector('.st-heading>a').classList.toggle('ui-button--primary', main.dataset.module !== 'editor');
     renderRuler();
     renderTrack();
     renderTextLane();
@@ -1727,17 +1747,8 @@ pollJobs(jobsEl, 2500, j => {
     track.innerHTML = tl.map((s, i) => {
       const f = byId[s.clip_id];
       const w = segDur(s) * pps;
-      const n = f?.frame_count || 0;
-      // tira de miniaturas: frames del clip repartidos por el rango [a,b]
-      const nThumbs = Math.max(1, Math.min(8, Math.round(w / 90)));
-      let thumbs = '';
-      for (let k = 0; k < nThumbs; k++) {
-        const tt = s.a + (s.b - s.a) * ((k + 0.5) / nThumbs);
-        const fi = n ? Math.max(1, Math.min(n, Math.round((tt / f.duration_s) * n))) : 0;
-        const src = fi ? `${DATA}/frames/${s.clip_id}/f_${String(fi).padStart(4, '0')}.jpg`
-                       : `${DATA}/thumbs/${s.clip_id}.jpg`;
-        thumbs += `<img src="${src}" loading="lazy" alt="">`;
-      }
+      // A cover needs backend quality evidence; do not infer safe frames from time alone.
+      const thumbs = thumbnail(s.clip_id);
       const badges = [
         s.speed !== 1 ? `<span class="tl-badge speed">${s.speed}x</span>` : '',
         s.reverse ? `<span class="tl-badge rev" data-tip="Reversa">${icon('reverse')}</span>` : '',
@@ -2140,7 +2151,7 @@ pollJobs(jobsEl, 2500, j => {
         const flight = byId[h.cid];
         return `<article class="st-suggestion-item">
           <button class="st-suggestion-row ui-button ui-button--quiet" data-moment="${i}" aria-label="Ver toma ${i+1}: ${esc(h.caption)}">
-            <img src="${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg" alt="" width="96" height="54">
+            ${thumbnail(h.cid)}
             <span><b>${esc(h.caption)}</b><small>${esc(flight.label || fmt.date(flight.date))} · ${fmt.clock(h.a)}–${fmt.clock(h.b)}</small></span>
           </button>
           ${h.description ? `<details class="st-analysis-detail"><summary aria-label="Descripción de la toma ${i+1}">${icon('chevD')}</summary><p>${esc(h.description)}</p></details>` : ''}
@@ -2172,7 +2183,7 @@ pollJobs(jobsEl, 2500, j => {
     // Discard is the single visible exit; Escape and backdrop still close the sheet.
     sheet.element.querySelector('.ui-sheet-header button').remove();
     accept.focus({preventScroll:true});
-    preview = mountReelPreview(content.querySelector('video'), suggestions, srcFor, index => {
+    preview = mountReelPreview(content.querySelector('video'), suggestions, srcFor, posterFor, index => {
       content.querySelectorAll('[data-moment]').forEach(button => button.setAttribute('aria-pressed',String(+button.dataset.moment===index)));
     });
     content.addEventListener('click', event => {
@@ -2598,7 +2609,7 @@ pollJobs(jobsEl, 2500, j => {
           <p class="footer-note mus-note">${icon('warn')} Spotify y Apple Music no permiten extraer audio (DRM + condiciones de uso).
             Usa pistas tuyas o libres de derechos. Si vas a publicar en Instagram/TikTok, lo más seguro
             es exportar sin música y ponerla desde la app: así usas su catálogo con licencia.</p>
-          <div class="mlb">Biblioteca ${tracks.length ? `<span class="mono">(${tracks.length})</span>` : ''}</div>
+          <div class="mlb">Biblioteca ${tracks.length ? `<span>(${fmt.number(tracks.length)})</span>` : ''}</div>
           <div class="mus-list">${tracks.map(t => `
             <div class="mus-item${music?.name === t.name ? ' on' : ''}" data-track="${esc(t.name)}">
               <button class="mus-play" data-prev="${esc(t.name)}" data-tip="Escuchar">${icon('play')}</button>
@@ -2994,7 +3005,7 @@ pollJobs(jobsEl, 2500, j => {
     pk.className = 'rm-peek';
     pk.innerHTML = `<div class="rm-peek-card">
       <video src="${DATA}/proxies/${encodeURIComponent(cid)}.mp4" controls muted playsinline
-             poster="${DATA}/thumbs/${encodeURIComponent(cid)}.jpg"></video>
+             ${posterFor(cid) ? `poster="${esc(posterFor(cid))}"` : ''}></video>
       <div class="rm-peek-f">
         <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
         <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m</span>
@@ -3088,7 +3099,7 @@ pollJobs(jobsEl, 2500, j => {
             return `<div class="rm-clip${pick.has(f.clip_id) ? ' on' : ''}" data-pick="${esc(f.clip_id)}"
                          role="button" tabindex="0" title="${esc([f.label, fmt.date(f.date), f.time].filter(Boolean).join(' · '))}" aria-pressed="${pick.has(f.clip_id)}">
               <div class="rm-thumb" data-hover="${esc(f.clip_id)}">
-                <img src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" loading="lazy" alt="" width="320" height="180">
+                ${thumbnail(f.clip_id,320,180)}
                 <span class="rm-check">${ord > 0 ? ord : ''}</span>
                 ${sc ? `<span class="rm-sc ${sc >= 7 ? 'ok' : sc >= 4 ? 'mid' : 'bad'}">${icon('star')}${sc}</span>` : ''}
                 <button class="rm-eye" data-eye="${esc(f.clip_id)}" aria-label="Ver toma">${icon('play')}</button>
@@ -3309,13 +3320,13 @@ pollJobs(jobsEl, 2500, j => {
   const qualityFilter = document.getElementById('st-quality-filter');
   const insightStatus = document.getElementById('st-insight-status');
   const qualityLabels = {inestable:'Inestable', horizonte:'Horizonte', sobreexpuesto:'Sobreexpuesto'};
-  const libraryContent = main.querySelector('.st-library-content');
+  const library = main.querySelector('.tl-lib');
+  const libraryContent = document.createElement('div');
+  libraryContent.append(...library.childNodes);
   const librarySuggestion = Suggested({content: libraryContent});
-  const analysisHeading = document.createElement('div'); analysisHeading.className = 'st-analysis-heading';
-  const analysisTitle = document.createElement('span'); analysisTitle.textContent = 'Descripciones y etiquetas';
-  analysisHeading.append(analysisTitle, librarySuggestion.querySelector('.ui-suggested-label'));
-  librarySuggestion.prepend(analysisHeading);
-  main.querySelector('.tl-lib').append(librarySuggestion);
+  const suggestionLabel = librarySuggestion.querySelector('.ui-suggested-label');
+  libraryContent.querySelector('.ph').append(suggestionLabel);
+  library.append(librarySuggestion);
   const moreLibrary = document.getElementById('st-library-more');
   let onlyClean = false, insightsLoaded = false, libraryLimit = 12;
   function renderLibrary() {
@@ -3334,26 +3345,27 @@ pollJobs(jobsEl, 2500, j => {
       const caption = insight?.caption_short || (insight?.caption ? analysisCaption(insight.caption) : '');
       return `${day}<div class="st-source-card">
         <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(f.label || f.clip_id)}" title="${esc([f.label, fmtDayShort(f.date), f.time].filter(Boolean).join(' · '))}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
-          <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="" width="320" height="180">
+          ${thumbnail(f.clip_id,320,180)}
           <span class="scrub-line"></span>
           <span class="cr-lb" aria-label="Duración ${fmt.dur(f.duration_s)}">${fmt.dur(f.duration_s)}</span>
           <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar aquí" aria-label="Insertar aquí">${icon('plus')}</button>
         </div>
-        ${caption ? `<details class="st-source-caption"><summary><span>${esc(caption)}</span>${icon('chevD')}</summary><p>${esc(insight.caption || caption)}</p></details>` : ''}
+        ${caption ? `<details class="st-source-caption"><summary><span>${esc(caption)}</span>${icon('chevD')}</summary><p>${esc(insight.caption || caption)}</p></details>` : `<p class="st-source-title">${esc(f.label || 'Toma del vuelo')}</p>`}
         <div class="st-source-tags">${tags.map(tag=>`<span class="ui-chip">${esc(tag)}</span>`).join('')}</div>
-        ${flags.length ? `<div class="st-source-flags">${flags.map(flag=>`<span>${esc(qualityLabels[flag])}</span>`).join('')}</div>` : ''}
+        <div class="st-source-flags">${flags.map(flag=>`<span>${esc(qualityLabels[flag])}</span>`).join('')}</div>
         ${!insightsLoaded && !insight ? '<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>' : ''}
       </div>`;
     }).join('') || '<p class="st-note">No hay tomas con estos filtros.</p>';
     moreLibrary.hidden = visible.length <= libraryLimit;
-    rail.querySelectorAll('.cr-item').forEach(el => el.classList.add('scrub'));
+    suggestionLabel.hidden = !visible.some(f => insights[f.clip_id]?.caption);
     rail.setAttribute('aria-busy', String(!insightsLoaded));
-    if (document.documentElement.dataset.motion !== 'reduced') attachScrub(rail);
+
   }
   moreLibrary.onclick = () => { libraryLimit += 12; renderLibrary(); };
   tagFilter.onchange = () => { libraryLimit = 12; renderLibrary(); };
   qualityFilter.onclick = () => {
-    onlyClean = !onlyClean; libraryLimit = 12; qualityFilter.setAttribute('aria-pressed', String(onlyClean)); renderLibrary();
+    onlyClean = !onlyClean; libraryLimit = 12;
+    qualityFilter.textContent = onlyClean ? 'Mostrar todas las tomas' : 'Ocultar tomas con avisos'; qualityFilter.setAttribute('aria-pressed', String(onlyClean)); renderLibrary();
   };
   renderLibrary();
   loadInsights().then(() => {
@@ -3408,29 +3420,31 @@ pollJobs(jobsEl, 2500, j => {
     m.style.left = `${offset(i) * pps}px`;
     track.appendChild(m);
   };
-  ['dragover', 'dragenter'].forEach(ev => scroll.addEventListener(ev, e => {
-    if (!e.dataTransfer?.types?.includes('text/ab-clip')) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-    dropIdx = dropIndexAt(e.clientX);
-    paintDropMark(dropIdx);
-  }));
-  scroll.addEventListener('dragleave', e => {
-    if (!scroll.contains(e.relatedTarget)) { dropIdx = -1; paintDropMark(-1); }
-  });
-  scroll.addEventListener('drop', e => {
-    const cid = e.dataTransfer?.getData('text/ab-clip');
-    if (!cid || !byId[cid]) return;
-    e.preventDefault();
-    const at = dropIdx < 0 ? tl.length : dropIdx;
-    dropIdx = -1; paintDropMark(-1);
-    pushUndo();
-    const f = byId[cid];
-    tl.splice(at, 0, makeSeg(cid, 0, Math.min(5, f.duration_s)));
-    sel = at;
-    renderAll();
-    seek(offset(at));
-    toast(`Toma insertada en el corte ${at + 1}`);
+  [stage, scroll].forEach(target => {
+    ['dragover', 'dragenter'].forEach(ev => target.addEventListener(ev, e => {
+      if (!e.dataTransfer?.types?.includes('text/ab-clip')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      dropIdx = target === stage ? tl.length : dropIndexAt(e.clientX);
+      paintDropMark(dropIdx);
+    }));
+    target.addEventListener('dragleave', e => {
+      if (!target.contains(e.relatedTarget)) { dropIdx = -1; paintDropMark(-1); }
+    });
+    target.addEventListener('drop', e => {
+      const cid = e.dataTransfer?.getData('text/ab-clip');
+      if (!cid || !byId[cid]) return;
+      e.preventDefault();
+      const at = dropIdx < 0 ? tl.length : dropIdx;
+      dropIdx = -1; paintDropMark(-1);
+      pushUndo();
+      const f = byId[cid];
+      tl.splice(at, 0, makeSeg(cid, 0, Math.min(5, f.duration_s)));
+      sel = at;
+      renderAll();
+      seek(offset(at));
+      toast(`Toma insertada en el corte ${at + 1}`);
+    });
   });
 
   // ================= interacción del track =================
@@ -4241,7 +4255,7 @@ pollJobs(jobsEl, 2500, j => {
       <div class="tl-projrow" data-i="${i}">
         <div class="tl-projmeta">
           <b>${esc(p.name)}</b>
-          <span class="mono">${(p.payload?.tl?.length || 0)} clips · ${mdate(p.date / 1000)}</span>
+          <span>${fmt.number(p.payload?.tl?.length || 0)} clips · ${mdate(p.date / 1000)}</span>
         </div>
         <span class="spacer"></span>
         <button class="btn" data-proj="load" data-i="${i}">${icon('play')} Cargar</button>
