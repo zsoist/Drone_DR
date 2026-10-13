@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createClipSearchSource } from './clip-search.js';
+import { createClipSearchSource as createSource } from './clip-search.js';
 
+const createClipSearchSource = options => createSource({ loadCover: async () => '', ...options });
 const query = (source, text, controller = new AbortController()) => source({ query: text, signal: controller.signal });
 const fixture = { results: [{ clip_id: 'DJI_test', caption: 'Full caption stays out of the result.', caption_short: 'Río entre montañas', matched_moment: { time_s: 10.5, frame_url: '/data/frames/DJI_test/f_0001.jpg' } }] };
 
@@ -33,7 +34,7 @@ test('server matches retain short captions, moment URLs, order, and an in-memory
   assert.equal(items[0].queryMatch, true);
   assert.equal(items[0].hint, 'Lugar sin identificar · a los 0:10');
   assert.equal(items[0].href, 'flight.html?id=DJI_test&t=10.5');
-  assert.equal(items[0].thumbnail, fixture.results[0].matched_moment.frame_url);
+  assert.equal(items[0].thumbnail, '');
   assert.deepEqual(await query(source, ' ATARDECER '), items);
   assert.equal(calls, 1);
 });
@@ -99,11 +100,62 @@ test('search explains tags, captions and honest semantic matches with date/place
   const { matchEvidence } = await import('./clip-search.js');
   assert.equal(matchEvidence({ tags: ['Atardecer', 'Bosque'] }, 'atardecer'), 'Etiqueta: Atardecer');
   assert.equal(matchEvidence({ caption: 'Árboles junto al río' }, 'rio'), 'Árboles junto al río');
-  assert.equal(matchEvidence({ caption: 'Árboles' }, 'puesta del sol'), 'Contenido relacionado');
+  assert.equal(matchEvidence({ caption: 'Árboles' }, 'puesta del sol'), 'Descripción: Árboles');
   t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => ({ results: [{ ...fixture.results[0], tags: ['Atardecer'], matched_moment: null }] }) }));
   const source = createClipSearchSource({ loadContext: async () => [{ clip_id: 'DJI_test', date: '2026-07-24', place: 'Bogotá' }] });
   const [item] = await query(source, 'atardecer');
   assert.equal(item.hint, 'Bogotá · 24 jul 2026');
   assert.equal(item.matchText, 'Etiqueta: Atardecer');
   assert.ok(!item.hint.includes('0:00'));
+});
+
+
+test('semantic evidence uses stored captions or tags and never invents a match', async () => {
+  const { matchEvidence } = await import('./clip-search.js');
+  assert.equal(matchEvidence({ caption: '   ', caption_short: 'Luz cálida sobre la ciudad' }, 'atardecer'), 'Descripción: Luz cálida sobre la ciudad');
+  assert.equal(matchEvidence({ tags: ['Luz cálida', 'Ciudad'] }, 'atardecer'), 'Etiquetas: Luz cálida · Ciudad');
+  assert.equal(matchEvidence({}, 'atardecer'), '');
+  const text = matchEvidence({ caption: 'Ciudad '.repeat(40) }, 'atardecer');
+  assert.ok(text.length <= 194);
+  assert.ok(text.endsWith('…'));
+});
+
+test('only filtered covers from the same clip appear; unsafe frames have no thumbnail fallback', async t => {
+  for (const cover of [
+    null,
+    { clip_id: 'DJI_test', frame_url: '/data/frames/DJI_test/f_0003.jpg', quality: { eligible: false } },
+    { clip_id: 'DJI_test', frame_url: '/data/frames/DJI_test/f_0003.jpg' },
+    { clip_id: 'another', frame_url: '/data/frames/another/f_0003.jpg', quality: { eligible: true } },
+    { clip_id: 'DJI_test', frame_url: 'https://other.test/image.jpg', quality: { eligible: true } },
+    { clip_id: 'DJI_test', frame_url: '/data/frames/DJI_test/f_0003.jpg', quality: { eligible: true } },
+  ]) {
+    let coverCalls = 0;
+    t.mock.method(globalThis, 'fetch', async url => {
+      if (url.startsWith('/api/search?')) return { ok: true, json: async () => fixture };
+      assert.equal(url, '/api/clip/DJI_test/insight');
+      coverCalls++;
+      return { ok: true, json: async () => ({ cover }) };
+    });
+    const source = createSource({ loadContext: async () => [] });
+    const [item] = await query(source, 'atardecer');
+    assert.equal(item.thumbnail, cover?.quality?.eligible && cover.clip_id === 'DJI_test' && cover.frame_url.startsWith('/data/frames/DJI_test/') ? cover.frame_url : '');
+    assert.equal(item.href, 'flight.html?id=DJI_test&t=10.5');
+    await query(source, 'ciudad');
+    assert.equal(coverCalls, 1);
+    t.mock.restoreAll();
+  }
+});
+
+test('cover failures preserve results and retry; aborts do not cache cover work', async t => {
+  t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => fixture }));
+  let calls = 0;
+  const source = createClipSearchSource({ loadContext: async () => [], loadCover: async () => {
+    if (++calls === 1) throw new Error('offline');
+    return '/data/frames/DJI_test/f_0003.jpg';
+  } });
+  assert.equal((await query(source, 'atardecer'))[0].thumbnail, '');
+  assert.equal((await query(source, 'ciudad'))[0].thumbnail, '/data/frames/DJI_test/f_0003.jpg');
+  const controller = new AbortController();
+  const aborted = createClipSearchSource({ loadContext: async () => [], loadCover: async () => { controller.abort(); return ''; } });
+  await assert.rejects(query(aborted, 'río', controller), { name: 'AbortError' });
 });

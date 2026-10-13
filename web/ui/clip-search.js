@@ -1,4 +1,4 @@
-import { fmt } from './format.js?v=423';
+import { fmt } from './format.js?v=425';
 // One source per shell. Cache only completed queries for this page session.
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
 export function matchEvidence(row, query) {
@@ -12,7 +12,19 @@ export function matchEvidence(row, query) {
     const start = Math.max(0, index - 48), end = Math.min(caption.length, index + 112);
     return `${start ? '…' : ''}${caption.slice(start, end)}${end < caption.length ? '…' : ''}`;
   }
-  return 'Contenido relacionado';
+  // Semantic similarity has no literal match. Show stored evidence, not a guessed reason.
+  const description = caption.trim() || row.caption_short?.trim();
+  if (description) return `Descripción: ${description.slice(0, 180)}${description.length > 180 ? '…' : ''}`;
+  const evidence = (Array.isArray(row.tags) ? row.tags : []).filter(tag => typeof tag === 'string' && tag.trim());
+  return evidence.length ? `Etiquetas: ${evidence.slice(0, 3).join(' · ')}` : '';
+}
+async function fetchCover(clipId, signal) {
+  const response = await fetch(`/api/clip/${encodeURIComponent(clipId)}/insight`, { signal });
+  if (!response.ok) throw new Error('Clip cover unavailable');
+  const { cover } = await response.json();
+  // This API uses the same text, person and brightness filter as collection covers.
+  return cover?.clip_id === clipId && cover.quality?.eligible === true
+    && new RegExp(`^/data/frames/${clipId}/f_\\d+\\.jpg$`).test(cover.frame_url) ? cover.frame_url : '';
 }
 async function fetchContext() {
   const read = async url => {
@@ -33,10 +45,11 @@ async function fetchContext() {
 }
 // Never show generated coordinate labels, including legacy "Zona lat,lon" names.
 const placeName = value => typeof value === 'string' && !/[−-]?\d+[.,]\d+\s*°?\s*[,;]\s*[−-]?\d+[.,]\d+/.test(value) ? value.trim() : '';
-export function createClipSearchSource({ loadContext = fetchContext } = {}) {
+export function createClipSearchSource({ loadContext = fetchContext, loadCover = fetchCover } = {}) {
   let context;
   const getContext = () => context ||= Promise.resolve().then(loadContext).catch(() => { context = null; return []; });
   const cache = new Map();
+  const covers = new Map();
   return async ({ query, signal }) => {
     const q = query.trim().toLocaleLowerCase('es');
     if (q.length < 2) return [];
@@ -54,7 +67,14 @@ export function createClipSearchSource({ loadContext = fetchContext } = {}) {
     signal.throwIfAborted();
     const flights = await getContext();
     signal.throwIfAborted();
-    const items = data.results.filter(row => /^[\w-]{1,120}$/.test(row.clip_id || '')).map(row => {
+    const items = await Promise.all(data.results.filter(row => /^[\w-]{1,120}$/.test(row.clip_id || '') && matchEvidence(row, q)).map(async row => {
+      if (!covers.has(row.clip_id)) {
+        try {
+          const cover = await loadCover(row.clip_id, signal);
+          signal.throwIfAborted();
+          covers.set(row.clip_id, cover);
+        } catch { signal.throwIfAborted(); } // Keep results available when a cover request fails.
+      }
       const time = Math.max(0, Number(row.matched_moment?.time_s) || 0);
       const seconds = Number.isFinite(time) ? time : 0;
       const flight = flights.find(flight => flight.clip_id === row.clip_id) || {};
@@ -65,10 +85,11 @@ export function createClipSearchSource({ loadContext = fetchContext } = {}) {
       return {
         id: `clip-${row.clip_id}`, group: 'Clips', suggested: true, queryMatch: true,
         label: row.caption_short?.trim() || 'Clip de tu archivo',
-        hint: context.join(' · ') || 'Ver vuelo', matchText: matchEvidence(row, q), thumbnail: row.matched_moment?.frame_url || `/data/thumbs/${row.clip_id}.jpg`,
+        hint: context.join(' · ') || 'Ver vuelo', matchText: matchEvidence(row, q), thumbnail: covers.get(row.clip_id) || '',
         href: `flight.html?id=${encodeURIComponent(row.clip_id)}&t=${seconds}`,
       };
-    });
+    }));
+    signal.throwIfAborted();
     cache.set(q, items);
     if (cache.size > 64) cache.delete(cache.keys().next().value);
     return items;
