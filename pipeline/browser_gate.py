@@ -499,6 +499,13 @@ def gate(kind: str, cid: str, base_url: str, timeout: int) -> Path:
                 break
         if state.get("missing") or not state.get("ready"):
             raise RuntimeError(f"share.html no cargó el modelo 3D · body={state.get('text', '')!r} · errors={cdp.errors[:3]}")
+        if kind == "model":
+            # the 2026-10 viewer is a black full-screen stage: wait until the scene draws before
+            # the screenshot, else an early black frame trips the 20 KB size check
+            end = time.time() + min(timeout, 20)
+            while time.time() < end and not cdp.eval("!!document.querySelector('#sh-view canvas')"):
+                cdp.pump(0.5)
+            cdp.pump(1.5)
         if kind == "splat":
             clicked = cdp.eval("(() => { const b = document.querySelector('[data-v=\"splat\"]'); if (b) b.click(); return !!b; })()")
             if not clicked:
