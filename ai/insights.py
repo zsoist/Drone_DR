@@ -15,10 +15,10 @@ from keys import load_keys
 from paths import VAULT
 try:
     from . import router
-    from .insight_schema import INSIGHT_SCHEMA, validate_insight, neutral_caption, trim_caption, valid_short
+    from .insight_schema import INSIGHT_SCHEMA, PRAISE, validate_insight, neutral_caption, trim_caption, valid_short
 except ImportError:
     import router
-    from insight_schema import INSIGHT_SCHEMA, validate_insight, neutral_caption, trim_caption, valid_short
+    from insight_schema import INSIGHT_SCHEMA, PRAISE, validate_insight, neutral_caption, trim_caption, valid_short
 
 
 def read(path, default=None):
@@ -359,6 +359,33 @@ def place_title(group, saved, meta):
     return label if distance < 30 else f'Cerca de {label}'
 
 
+def cover_candidates(ids, records, vault):
+    best = {cid: moment(cid, records[cid], vault=vault) for cid in ids}
+
+    def rank(cid):
+        data = records[cid]
+        ins = data.get('insight', {})
+        descriptions = [ins.get('caption', data.get('summary', '')), *ins.get('tags', data.get('tags', [])),
+                        *[s['reason'] for s in ins.get('highlight_segments', [])]]
+        text = ' '.join(s for s in descriptions if isinstance(s, str))
+        signage = bool(re.search(r'\b(letreros?|cartel(?:es)?|textos?|se vende|en venta|tel[eé]fono|signs?|billboards?)\b', text, re.I))
+        return (signage, bool(ins.get('quality_flags')), -best[cid]['score'], cid)
+
+    ranks = {cid: rank(cid) for cid in ids}
+    ranked = sorted(ids, key=ranks.get)
+    # Prefer another clean clip's best frame before other frames from the same clip.
+    for risk in sorted({ranks[cid][:2] for cid in ranked}):
+        peers = [cid for cid in ranked if ranks[cid][:2] == risk]
+        for cid in peers:
+            yield best[cid]
+        for cid in peers:
+            data = records[cid]
+            times = data.get('insight', {}).get('best_frame_times', [])[1:]
+            times += [t for t in data.get('sampled_frame_times', []) if t not in times]
+            for t in times:
+                yield moment(cid, {**data, 'insight': {}, 'best_thumbnail_t': t}, vault=vault)
+
+
 def collections(vault=VAULT, all_items=False):
     rows = flights(vault)
     meta = read(vault / 'manifest/trips_meta.json', {})
@@ -409,11 +436,32 @@ def collections(vault=VAULT, all_items=False):
                 break
             chosen.add(c['id'])
         result = [c for c in eligible if c['id'] in chosen]
+    # Reserve owner choices first. Keep the returned ranking unchanged.
+    used, exhausted = set(), set()
+    priority = sorted(result, key=lambda c: (c['cover']['selection'] != 'owner', c['kind'] != 'place'))
+    for c in priority:
+        candidates = cover_candidates(c['clip_ids'], records, vault)
+        if c['cover']['selection'] == 'owner':
+            candidates = iter([c['cover'], *candidates])
+        cover = next((m for m in candidates if m['frame_url'] not in used), None)
+        if cover is None:
+            exhausted.add(c['id'])
+            continue
+        used.add(cover['frame_url'])
+        data = records[cover['clip_id']]
+        short = data.get('insight', {}).get('caption_short') or trim_caption(data.get('summary', ''))
+        c.update(cover={**cover, 'caption_short': short}, caption_short=short)
+    result = [c for c in result if c['id'] not in exhausted]
     return {'collections': result}
 
 
 def summary_source(kind, identity, vault=VAULT):
     rows = flights(vault)
+    groups = trip_groups(rows)
+    group = next((g for g in groups if (g['id'] == identity if kind == 'trip'
+                 else any(f['clip_id'] == identity for f in g['flights']))), None)
+    meta = read(vault / 'manifest/trips_meta.json', {})
+    place = place_title(group, place_metadata(groups, meta)[group['id']], meta) if group else ''
     if kind == 'flight':
         rows = [f for f in rows if f['clip_id'] == identity]
     else:
@@ -441,7 +489,9 @@ def summary_source(kind, identity, vault=VAULT):
                 and math.isfinite(p['lon']) and math.isfinite(p['lat'])]
         if line:
             routes.append({'clip_id': cid, 'coordinates': line})
-        evidence.append({'clip_id': cid, 'caption': data.get('summary', ''), 'stats': f.get('stats', {})})
+        evidence.append({'caption': insight.get('caption', data.get('summary', '')),
+                         'tags': insight.get('tags', data.get('tags', [])),
+                         'subjects': insight.get('subjects', []), 'light': insight.get('light_notes', '')})
     moments.sort(key=lambda m: (-m['score'], m['clip_id'], m['time_s']))
     unique = list({(m['clip_id'], m['frame_time_s']): m for m in reversed(moments)}.values())[::-1]
     stats = [f.get('stats', {}) for f in rows]
@@ -454,40 +504,112 @@ def summary_source(kind, identity, vault=VAULT):
               'best_moment': unique[0] if unique else None}
     if kind == 'trip':
         result.update(route=routes, best_frames=unique[:6])
-    return result, {'data': result, 'evidence': evidence}
+    return result, {'version': 2, 'data': result, 'place': place,
+                    'distance': format_distance(result['distance_m']), 'evidence': evidence}
+
+
+def format_distance(meters):
+    if meters is None or meters < 0:
+        return ''
+    return f'{meters / 1000:.1f} km'.replace('.', ',') if meters >= 1000 else f'{meters:.0f} m'
+
+
+SUMMARY_INTERNALS = re.compile(
+    r'\b(?:DJI\w*|(?:clip|recon|scene)[_-]\w+|score|scores|puntuaci[oó]n|puntaje|'
+    r'sugerid[oa]s?|selecci[oó]n|IA|inteligencia artificial|clip(?:s)?|frame(?:s)?)\b|\w+_\w+', re.I)
+
+
+def safe_summary_text(text, source):
+    return (not SUMMARY_INTERNALS.search(text) and not PRAISE.search(text)
+            and not any(cid.casefold() in text.casefold() for cid in source['data']['clip_ids']))
+
+
+def valid_summary(text, source):
+    if not isinstance(text, str) or not safe_summary_text(text, source):
+        return False
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    if len(sentences) != 2 or any(not s.endswith('.') or not 2 <= len(s.split()) <= 28 for s in sentences):
+        return False
+    distance = source['distance']
+    # The only allowed number is the known distance, already formatted for Spanish.
+    return ((not distance or text.count(distance) == 1)
+            and (not distance or any(distance in s and re.search(r'\b(recorr\w*|ruta|distancia)\b', s, re.I)
+                                     for s in sentences))
+            and not re.search(r'\d', text.replace(distance, '') if distance else text))
+
+
+def template_summary(source):
+    def fragment(value):
+        return (isinstance(value, str) and 0 < len(value.split()) <= 5
+                and not re.search(r'[\d.!?\n_]', value) and safe_summary_text(value, source))
+
+    subjects = []
+    for evidence in source['evidence']:
+        for subject in evidence['subjects'] or evidence['tags']:
+            if fragment(subject) and subject.casefold() not in subjects:
+                subjects.append(subject.casefold())
+    subject = ' y '.join(subjects[:2]) or 'el paisaje'
+    place = source['place'] if fragment(source['place']) else ''
+    location = f' en {place}' if place else ''
+    distance = source['distance']
+    first = f'El recorrido{location} suma {distance}.' if distance else f'El vuelo muestra {subject}{location}.'
+    notes = normalized(' '.join(e['light'] for e in source['evidence']))
+    light = next((label for pattern, label in [
+        (r'atardecer', 'la luz del atardecer'), (r'amanecer', 'la luz del amanecer'),
+        (r'dorada|calida', 'luz cálida'), (r'suave|difusa|nublado', 'luz suave'),
+        (r'sol directo|luz directa', 'luz directa'), (r'natural|diurna', 'luz natural')]
+        if re.search(pattern, notes)), '')
+    second = f'Las tomas muestran {subject}' + (f' con {light}.' if light else ' desde el aire.')
+    if not distance:
+        second = f'La escena se ve con {light}.' if light else 'Las tomas reúnen distintas vistas del recorrido.'
+    return first + ' ' + second
 
 
 def summary_path(kind, identity, vault):
     return vault / 'ai' / 'summaries' / f'{kind}-{digest(identity)[:24]}.json'
 
 
+def legacy_summary_hash(result, vault):
+    """Keep the running server's cache key valid during the worktree rollout."""
+    rows = {f['clip_id']: f for f in flights(vault)}
+    evidence = [{'clip_id': cid, 'caption': record(cid, vault).get('summary', ''),
+                 'stats': rows[cid].get('stats', {})} for cid in result['clip_ids']]
+    return digest({'data': result, 'evidence': evidence})
+
+
 def get_summary(kind, identity, vault=VAULT):
     result, source = summary_source(kind, identity, vault)
     cached = read(summary_path(kind, identity, vault), {})
-    ready = cached.get('source_hash') == digest(source) and isinstance(cached.get('summary'), str)
+    ready = cached.get('summary_hash', cached.get('source_hash')) == digest(source) and valid_summary(cached.get('summary'), source)
     return {**result, 'status': 'ready' if ready else 'pending',
             'summary': cached['summary'] if ready else None}
 
 
-def cache_summary(kind, identity, keys, vault=VAULT):
+def cache_summary(kind, identity, keys, vault=VAULT, *, deterministic=False):
     result, source = summary_source(kind, identity, vault)
     target = summary_path(kind, identity, vault)
     cached = read(target, {})
     fingerprint = digest(source)
-    if cached.get('source_hash') == fingerprint and isinstance(cached.get('summary'), str):
+    if cached.get('summary_hash', cached.get('source_hash')) == fingerprint and valid_summary(cached.get('summary'), source):
+        if 'summary_hash' not in cached:
+            atomic_write_json(target, {**cached, 'summary_hash': fingerprint,
+                                      'source_hash': legacy_summary_hash(result, vault)}, allow_nan=False)
         return {'cached': True, 'usage': {}}
-    raw, usage = router.summary_text(source, keys)
-    value = json.loads(raw)
-    sentences = value.get('sentences') if isinstance(value, dict) else None
-    if (not isinstance(sentences, list) or not 1 <= len(sentences) <= 6
-            or any(not isinstance(s, str) or not 1 <= len(s.strip()) <= 500 for s in sentences)):
-        raise ValueError('summary must have two sentences')
-    # Normalize packed or extra sentences without splitting decimal measurements.
-    sentences = re.split(r'(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÜÑ¿¡])', ' '.join(sentences))
-    if len(sentences) < 2:
-        raise ValueError('summary must have two sentences')
-    sentences = sentences[:2]
+    summary, usage, origin = template_summary(source), {}, 'template'
+    if not deterministic:
+        try:
+            raw, usage = router.summary_text(source, keys)
+            sentences = json.loads(raw)['sentences']
+            if (isinstance(sentences, list) and len(sentences) == 2
+                    and all(isinstance(s, str) for s in sentences)
+                    and valid_summary(' '.join(sentences), source)):
+                summary, origin = ' '.join(sentences), 'deepseek'
+        except Exception:
+            pass  # Invalid JSON and provider failures use the same local fallback.
+    if not valid_summary(summary, source):
+        raise ValueError('invalid summary template')
     target.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(target, {'source_hash': fingerprint, 'summary': ' '.join(sentences),
+    atomic_write_json(target, {'source_hash': legacy_summary_hash(result, vault), 'summary_hash': fingerprint,
+                              'summary': summary, 'origin': origin,
                               'usage': usage}, allow_nan=False)
-    return {'cached': False, 'usage': usage}
+    return {'cached': False, 'usage': usage, 'origin': origin}
