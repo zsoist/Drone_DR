@@ -1,4 +1,4 @@
-import { fmt } from './format.js?v=450';
+import { fmt } from './format.js?v=451';
 
 export function flightFallback(flight = {}) {
   const time = flight.time?.slice(0, 5) || /DJI_\d{8}(\d{2})(\d{2})/.exec(flight.clip_id || '')?.slice(1).join(':');

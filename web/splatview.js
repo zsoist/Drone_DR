@@ -1,13 +1,13 @@
-import { fmt } from './ui/format.js?v=450';
-import { reducedMotion } from './scene-improve-ui.js?v=450';
+import { fmt } from './ui/format.js?v=451';
+import { reducedMotion } from './scene-improve-ui.js?v=451';
 // splatview.js — visor PREMIUM de gaussian splats, compartido por tresd.js y share.js.
 // MOTOR: Spark 2.1 (r180) — migrado desde GaussianSplats3D 0.4.7 (fase E del
 // plan FLIGHTVERSE; el autor de GS3D descontinuó la lib y recomienda Spark).
 // La UX se conserva completa: doble-click/doble-tap enfoca, home, macro, zoom,
 // auto-rotar, FOV, captura, fullscreen con history-state, teclado, y el mismo
 // contrato mountSplatViewer(host, url, {bytes, onStatus}) → { viewer, dispose }.
-import * as THREE from '/vendor/three180.module.js?v=450';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=450';
+import * as THREE from '/vendor/three180.module.js?v=451';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=451';
 
 const SPLAT_ROT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // OpenSfM Z-up -> viewer Y-up
 
@@ -30,7 +30,7 @@ const btn = (id, label, path) =>
 export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, unitsMeters = null, signal = null, compact = false } = {}) {
   const abortErr = () => new DOMException('carga de splat cancelada', 'AbortError');
   if (signal?.aborted) throw abortErr();
-  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=450');
+  const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=451');
   if (signal?.aborted) throw abortErr();
   if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
   const holder = document.createElement('div');

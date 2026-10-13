@@ -22,7 +22,11 @@ test('property uses approved API cover and gallery objects including linked clip
   assert.deepEqual(galleryFrames({clip:'clip',gallery:['data/frames/clip/f_0001.jpg']}), []);
 });
 
-test('property never enlarges a list thumbnail', () => {
-  assert.equal(propertyCover({clip:'clip'}), '');
-  assert.equal(propertyCover({clip:'clip',cover:{clip_id:'clip',width:540,frame_url:'/data/thumbs/clip.jpg'}}), '');
+test('property prefers a full-resolution cover; the owner thumbnail is only the last fallback', () => {
+  // ai/owner_frames.property_cover picks a >= 1600 px frame of the owner's clip when one exists
+  assert.equal(propertyCover({clip:'clip',cover:{clip_id:'clip',width:1920,frame_url:'/data/frames/clip/f_0007.jpg'}}), '/data/frames/clip/f_0007.jpg');
+  // no full-resolution frame at all: show the owner's own clip, never an empty hero (QA R4)
+  assert.equal(propertyCover({clip:'clip'}), 'data/thumbs/clip.jpg');
+  assert.equal(propertyCover({clip:'clip',cover:{clip_id:'clip',width:540,frame_url:'/data/thumbs/clip.jpg'}}), 'data/thumbs/clip.jpg');
+  assert.equal(propertyCover({}), '');
 });

@@ -26,9 +26,11 @@ from pathlib import Path
 PIPELINE = Path(__file__).resolve().parent
 ROOT = PIPELINE.parent
 NODE_GROUPS = (
-    ("node:pipeline", PIPELINE),
-    ("node:edge", ROOT / "edge"),
-    ("node:tools", ROOT / "tools"),
+    ("node:pipeline", PIPELINE, "test_*.mjs"),
+    ("node:edge", ROOT / "edge", "test_*.mjs"),
+    ("node:tools", ROOT / "tools", "test_*.mjs"),
+    # web modules keep their tests next to the code (web/ui/format.test.mjs, web/studio.test.mjs)
+    ("node:web", ROOT / "web", "**/*.test.mjs"),
 )
 # Modules that take > 60 s are skipped by --fast. Measured 2026-09-28: the slowest module
 # (test_weapon_assets) takes ~16 s and the whole run ~30 s, so nothing qualifies yet.
@@ -76,12 +78,14 @@ def discover(fast: bool, needles: list[str] | None) -> list[tuple[str, list[str]
             continue
         suites.append((name, [sys.executable, "-m", "unittest", name], PIPELINE))
     node = None
-    for label, folder in NODE_GROUPS:
+    for label, folder, pattern in NODE_GROUPS:
         # One suite per file so a file that registers zero tests is reported by name
         # (a combined `node --test a b c` hides an empty file behind its neighbours).
-        for file in sorted(folder.glob("test_*.mjs")):
+        for file in sorted(folder.glob(pattern)):
+            if "vendor" in file.parts or "node_modules" in file.parts:
+                continue
             node = node or _which_node()
-            name = f"{label}/{file.stem}"
+            name = f"{label}/{file.relative_to(folder).with_suffix('')}"
             if node is None:
                 suites.append((name, None, folder))
             else:

@@ -1,11 +1,11 @@
-import { flightFallback } from './ui/display-name.js?v=450';
-import { thumbnailURL } from './ui/thumbnail.js?v=450';
+import { flightFallback } from './ui/display-name.js?v=451';
+import { thumbnailURL } from './ui/thumbnail.js?v=451';
 // Page contracts for Inicio, Viajes, and Flight Deck.
-import { createSheet } from './ui/sheet.js?v=450';
-import { registerPaletteSource } from './ui/palette.js?v=450';
-import { showToast } from './ui/toast.js?v=450';
-import { fmt } from './ui/format.js?v=450';
-import { Suggested } from './ui/suggested.js?v=450';
+import { createSheet } from './ui/sheet.js?v=451';
+import { registerPaletteSource } from './ui/palette.js?v=451';
+import { showToast } from './ui/toast.js?v=451';
+import { fmt } from './ui/format.js?v=451';
+import { Suggested } from './ui/suggested.js?v=451';
 
 // Use only for standalone statistics, telemetry, and timecodes; use esc() in prose.
 export function figure(value) {

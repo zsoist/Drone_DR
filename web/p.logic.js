@@ -21,7 +21,8 @@ export function propertyCover(property) {
   const cover = property.cover;
   if (cover && [property.clip, ...(property.clips || [])].includes(cover.clip_id)
     && cover.width >= 1600 && /^\/?data\/frames\/[\w-]+\/f_\d+\.jpg$/.test(cover.frame_url || '')) return cover.frame_url;
-  return '';
+  // No full-resolution cover yet: the owner's listing clip is owner data, so show its thumbnail.
+  return property.clip ? `data/thumbs/${encodeURIComponent(property.clip)}.jpg` : '';
 }
 
 // These substitutions apply only to the legacy generated template, never owner text.

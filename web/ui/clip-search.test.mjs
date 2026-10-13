@@ -34,7 +34,7 @@ test('server matches retain short captions, moment URLs, order, and an in-memory
   assert.equal(items[0].queryMatch, true);
   assert.equal(items[0].hint, 'Lugar sin identificar · a los 0:10');
   assert.equal(items[0].href, 'flight.html?id=DJI_test&t=10.5');
-  assert.equal(items[0].thumbnail, '');
+  assert.equal(items[0].thumbnail, '/data/thumbs/DJI_test.jpg');   // own clip thumbnail (K1 rule)
   assert.deepEqual(await query(source, ' ATARDECER '), items);
   assert.equal(calls, 1);
 });
@@ -120,7 +120,7 @@ test('semantic evidence uses stored captions or tags and never invents a match',
   assert.ok(text.endsWith('…'));
 });
 
-test('automatic search previews require backend frame approval', async t => {
+test('list previews use the backend thumbnail without requiring AI quality data', async t => {
   for (const quality of [null, {status:'rejected'}, {status:'ok'}]) {
     const frame_url = '/data/frames/DJI_test/f_0003.jpg';
     t.mock.method(globalThis, 'fetch', async url => ({ok:true, json:async()=>
@@ -128,7 +128,7 @@ test('automatic search previews require backend frame approval', async t => {
         : {clip_id:'DJI_test', thumbnail_url:frame_url, cover:{frame_url, quality}}}));
     const source = createSource({loadContext:async()=>[]});
     const [item] = await query(source, 'atardecer');
-    assert.equal(item.thumbnail, quality?.status === 'ok' ? frame_url : '');
+    assert.equal(item.thumbnail, frame_url);   // the clip's own frame shows in private lists
     assert.equal(item.href, 'flight.html?id=DJI_test&t=10.5');
     t.mock.restoreAll();
   }
@@ -141,7 +141,7 @@ test('cover failures preserve results and retry; aborts do not cache cover work'
     if (++calls === 1) throw new Error('offline');
     return '/data/frames/DJI_test/f_0003.jpg';
   } });
-  assert.equal((await query(source, 'atardecer'))[0].thumbnail, '');
+  assert.equal((await query(source, 'atardecer'))[0].thumbnail, '/data/thumbs/DJI_test.jpg');   // cover failed: own thumbnail
   assert.equal((await query(source, 'ciudad'))[0].thumbnail, '/data/frames/DJI_test/f_0003.jpg');
   const controller = new AbortController();
   const aborted = createClipSearchSource({ loadContext: async () => [], loadCover: async () => { controller.abort(); return ''; } });

@@ -1,5 +1,5 @@
-import { thumbnailURL } from './thumbnail.js?v=450';
-import { fmt } from './format.js?v=450';
+import { thumbnailURL } from './thumbnail.js?v=451';
+import { fmt } from './format.js?v=451';
 // One source per shell. Cache only completed queries for this page session.
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
 export function matchEvidence(row, query) {
@@ -22,7 +22,10 @@ export function matchEvidence(row, query) {
 async function fetchCover(clipId, signal) {
   const response = await fetch(`/api/clip/${encodeURIComponent(clipId)}/insight`, { signal });
   if (!response.ok) throw new Error('Clip cover unavailable');
-  return thumbnailURL({ ...await response.json(), clip_id: clipId });
+  const data = await response.json();
+  // An owner-chosen cover always wins over the automatic choice.
+  if (data.cover?.selection === 'owner' && new RegExp(`^/data/frames/${clipId}/f_\\d+\\.jpg$`).test(data.cover.frame_url || '')) return data.cover.frame_url;
+  return thumbnailURL({ ...data, clip_id: clipId });
 }
 async function fetchContext() {
   const read = async url => {
