@@ -7,11 +7,18 @@
 .sb-drop p {color:var(--text-2);margin:0 0 var(--sp-6);}
 .sb-pickers {display:flex;justify-content:center;}
 .sb-drop small {display:block;margin-top:var(--sp-5);font-size:var(--fs-xs);color:var(--text-2);}
-.sb-sidebar {min-width:0;}
+.sb-sidebar {min-width:0;display:flex;flex-direction:column;}
 .sb-queue-head {display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:var(--sp-2);}
 .sb-queue h2,.sb-next h2 {font-size:var(--fs-lg);margin:0;}
-.sb-queue-head span,.sb-note,.sb-next p,.sb-empty {font-size:var(--fs-sm);color:var(--text-2);line-height:var(--lh-base);}
-.sb-empty {padding-block:var(--sp-5);margin:0;}
+.sb-queue-head span,.sb-note,.sb-next p,.sb-empty {font-size:var(--fs-md);color:var(--text-2);line-height:var(--lh-base);}
+.sb-queue {background:var(--surface);border-radius:var(--r-lg);padding:var(--sp-5);}
+.sb-empty {padding:var(--sp-6) 0;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;}
+.sb-empty h3 {color:var(--text);font-size:var(--fs-xl);font-weight:500;margin:var(--sp-3) 0 var(--sp-2);}
+.sb-empty p {margin:0;max-width:36ch;}
+.sb-empty-icon {color:var(--text-2);}
+.sb-empty-icon .ic {width:28px;height:28px;}
+.sb-note {margin:0;max-width:52ch;}
+.sb-next p {margin:var(--sp-2) 0 var(--sp-4);max-width:42ch;}
 .sb-file-row {display:grid;grid-template-columns:44px minmax(0,1fr);gap:var(--sp-3);padding:var(--sp-5) 0;border-top:1px solid var(--line);align-items:start;}
 .sb-file-icon {display:grid;place-items:center;width:44px;height:44px;background:var(--surface-2);border-radius:var(--r-sm);}
 .sb-file-info h3 {margin:0;font-size:var(--fs-md);overflow-wrap:anywhere;}
@@ -22,8 +29,11 @@
 .sb-file-actions {display:flex;gap:var(--sp-2);grid-column:2;}
 .sb-next {margin-top:var(--sp-7);padding-top:var(--sp-5);border-top:1px solid var(--line);}
 @media(min-width:1024px) {
- .sb-page>.sb-drop {grid-column:span 7;}
+ .sb-page>.sb-drop {grid-column:span 7;min-height:min(600px,calc(100dvh - 200px));}
  .sb-page>.sb-sidebar {grid-column:span 5;}
+ .sb-queue {flex:1;display:flex;flex-direction:column;}
+ .sb-queue #sb-list {flex:1;display:flex;flex-direction:column;}
+ .sb-empty {flex:1;}
 }
 @media(max-width:640px) {
  .sb-drop {padding:var(--sp-7) var(--sp-4);min-height:300px;}

@@ -22,7 +22,14 @@ export function missingSources(project, byId) {
 export function highlightSuggestions(flights, insights) {
   return flights.flatMap(f => {
     const insight = insights[f.clip_id];
-    return (insight?.highlight_segments || []).flatMap(h => {
+    if (insight?.synthetic === true) return [];
+    const segments = insight?.highlight_segments || [];
+    const samples = insight?.sampled_frame_times || [];
+    const onSample = time => samples.some(sample => Math.abs(sample - time) < .1);
+    if (segments.length > 1 && segments.every(h => onSample(h.start) && onSample(h.end))
+        && segments.every(h => Math.abs((h.end - h.start) - (segments[0].end - segments[0].start)) < .1)) return [];
+    return segments.flatMap(h => {
+      if (h.synthetic === true) return [];
       const { start: a, end: b, score } = h;
       if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b <= a || b > f.duration_s
           || !Number.isFinite(f.duration_s) || !Number.isFinite(score) || score < 0 || score > 1) return [];
@@ -76,4 +83,10 @@ export function reelPosition(segments, seconds) {
     offset += duration;
   }
   return null;
+}
+
+// Automatic imagery must carry the backend's affirmative frame-quality decision.
+export function approvedFrameURL(frame) {
+  return frame?.quality?.eligible === true && /^\/data\/(frames|thumbs|reel-posters)\/[A-Za-z0-9_./%-]+$/.test(frame.frame_url || '')
+    ? frame.frame_url : '';
 }

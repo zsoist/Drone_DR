@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition} from './studio.logic.js';
+import {segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL} from './studio.logic.js';
 test('reverse split preserves playback order and speed', () => {
  const s = {a:2,b:12,speed:2,reverse:true,title:'Title'};
  const [left,right] = splitSegment(s,2);
@@ -92,4 +92,24 @@ test('reel seek preserves fractional cut durations and the last frame', () => {
  assert.equal(reelPosition(cuts,3.5).index,1);
  assert.equal(reelPosition(cuts,3.5).source,20.1);
  assert.equal(reelPosition(cuts,6).source,22.6);
+});
+
+test('automatic frames require positive backend quality evidence and local media URLs', () => {
+ const frame = {frame_url:'/data/frames/clip/f_0001.jpg', quality:{eligible:true}};
+ assert.equal(approvedFrameURL(frame),frame.frame_url);
+ for (const bad of [null, {frame_url:frame.frame_url}, {...frame,quality:{eligible:false}},
+   {...frame,quality:{eligible:'true'}}, {...frame,frame_url:'https://example.com/frame.jpg'}]) {
+   assert.equal(approvedFrameURL(bad),'');
+ }
+});
+test('reel suggestions exclude synthetic moments and uniform sampling-grid ranges', () => {
+ const flights=[{clip_id:'a',duration_s:120}];
+ const insight={sampled_frame_times:[0,30,60,90],highlight_segments:[
+   {start:0,end:30,score:.8},{start:60,end:90,score:.9}]};
+ assert.deepEqual(highlightSuggestions(flights,{a:insight}),[]);
+ insight.highlight_segments[1].end=85;
+ assert.equal(highlightSuggestions(flights,{a:insight}).length,2);
+ assert.deepEqual(highlightSuggestions(flights,{a:{...insight,synthetic:true}}),[]);
+ insight.highlight_segments[0].synthetic=true;
+ assert.equal(highlightSuggestions(flights,{a:insight}).length,1);
 });

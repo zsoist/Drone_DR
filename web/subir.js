@@ -23,10 +23,10 @@ if (location.pathname.endsWith('/subir.html')) {
     </section>
     <div class="sb-sidebar"><section class="sb-queue" aria-labelledby="sb-queue-title">
       <div class="sb-queue-head"><h2 id="sb-queue-title">Archivos</h2><span id="sb-count" role="status">Sin archivos pendientes</span></div>
-      <div id="sb-list"><p class="sb-empty">Aquí verás el avance de los archivos que selecciones.</p></div>
+      <div id="sb-list"><div class="sb-empty"><span class="sb-empty-icon" aria-hidden="true">${icon('plusFile')}</span><h3>Ningún archivo seleccionado</h3><p>Selecciona archivos para ver su transferencia en esta cola.</p></div></div>
       <p class="sb-note">Mantén esta página abierta durante la transferencia. Si se interrumpe, puedes reintentar el archivo desde el inicio.</p>
     </section>
-    <aside class="sb-next"><h2>Después de subir</h2><p>Los videos pasan a la cola de procesamiento. Consulta el avance en Actividad y edítalos cuando estén listos.</p></aside></div>`;
+    <aside class="sb-next"><h2>Después de subir</h2><p>Los videos se preparan para editarlos en Studio.</p><a class="ui-button ui-button--secondary" href="system.html">${icon('activity')} Ver avance en Sistema</a></aside></div>`;
   const items = [];
   let running = false;
   const input = main.querySelector('#sb-file');
@@ -73,7 +73,7 @@ if (location.pathname.endsWith('/subir.html')) {
       xhr.onload=()=>{
         let data;try{data=JSON.parse(xhr.responseText);}catch{return fail('Respuesta no válida. Reintenta.');}
         if(xhr.status<200||xhr.status>=300||data.error||data.ok===false)return fail(xhr.status===403?'Esta vista de prueba no permite subir archivos.':data.error||`No se pudo subir (${xhr.status}).`);
-        item.state='done';item.percent=100;item.message=item.video?'Recibido · consulta el procesamiento en Actividad':'Foto recibida';update(item);resolve();
+        item.state='done';item.percent=100;item.message=item.video?'Recibido · consulta el procesamiento en Sistema':'Foto recibida';update(item);resolve();
       };
       xhr.onerror=()=>fail('Sin conexión. Reintenta desde el inicio.');
       xhr.ontimeout=()=>fail('La transferencia tardó demasiado. Reintenta.');
