@@ -62,3 +62,18 @@ export function analysisCaption(text) {
     .map(([, label]) => label).join(' · ');
   return [shot, caption].filter(Boolean).join(': ') || 'Momento del vuelo';
 }
+
+// Resolve a position on the assembled reel to its source clip and source time.
+export function reelPosition(segments, seconds) {
+  const total = segments.reduce((sum, segment) => sum + segment.b - segment.a, 0);
+  const time = Math.max(0, Math.min(total, Number(seconds) || 0));
+  let offset = 0;
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index], duration = segment.b - segment.a;
+    if (time < offset + duration || index === segments.length - 1) {
+      return { index, offset, time, total, source: segment.a + time - offset };
+    }
+    offset += duration;
+  }
+  return null;
+}

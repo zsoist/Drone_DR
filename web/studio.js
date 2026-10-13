@@ -1,13 +1,83 @@
 import { createSheet } from './ui/sheet.js?v=402';
 import { showToast as toast } from './ui/toast.js?v=402';
 import { registerPaletteSource } from './ui/palette.js?v=402';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions } from './studio.logic.js?v=402';
+import { fmt } from './ui/format.js?v=402';
+import { mountTabs } from './ui/tabs.js?v=402';
+import { Suggested } from './ui/suggested.js?v=402';
+import { skinPlayer } from './ui/player.js?v=402';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition } from './studio.logic.js?v=407';
+
+// The shared player owns chrome; this adapter maps its single scrubber to the cut list.
+function mountReelPreview(video, segments, sourceURL, onSegment) {
+  const player = skinPlayer(video, {label:'Reel automático'});
+  const seekControl = player.element.querySelector('input[type="range"]');
+  const clock = player.element.querySelector('.ui-player-clock');
+  const status = player.element.querySelector('.ui-player-status');
+  const total = segments.reduce((sum,segment)=>sum+segment.b-segment.a,0);
+  let index = -1, offset = 0, position = 0, loading = false, disposed = false, frame;
+  function paint() {
+    if (!loading && index >= 0) position = offset + Math.max(0, Math.min(segments[index].b-segments[index].a, video.currentTime-segments[index].a));
+    seekControl.disabled = false; seekControl.max = String(total); seekControl.value = String(position);
+    seekControl.setAttribute('aria-label','Posición del reel');
+    seekControl.setAttribute('aria-valuetext',`${fmt.duration(position)} de ${fmt.duration(total)}`);
+    clock.textContent = `${fmt.clock(position)} / ${fmt.clock(total)}`;
+  }
+  function seek(seconds, resume = !video.paused) {
+    const next = reelPosition(segments, seconds);
+    position = next.time;
+    if (index === next.index && !loading) {
+      video.currentTime = next.source;
+      if (resume) video.play().catch(showError);
+      paint(); return;
+    }
+    loading = true; video.pause(); index = next.index; offset = next.offset;
+    onSegment(index);
+    video.onloadedmetadata = () => {
+      if (disposed) return;
+      video.currentTime = next.source; loading = false;
+      if (resume) video.play().catch(showError);
+      paint();
+    };
+    video.poster = `${DATA}/thumbs/${encodeURIComponent(segments[index].cid)}.jpg`;
+    video.src = sourceURL(segments[index].cid); paint();
+  }
+  function showError() { status.textContent='No se pudo reproducir. Inténtalo de nuevo.'; status.hidden=false; }
+  function advance() {
+    if (disposed || loading || index < 0) return;
+    if (index < segments.length-1) seek(offset+segments[index].b-segments[index].a, true);
+    else { video.pause(); video.currentTime=segments[index].b; position=total; paint(); }
+  }
+  function tick() {
+    if (disposed) return;
+    if (!loading && !video.paused && video.currentTime >= segments[index].b-.02) advance();
+    if (!video.paused) paint();
+    frame=requestAnimationFrame(tick);
+  }
+  const scrub = event => { event.stopImmediatePropagation(); seek(Number(seekControl.value)); };
+  const replay = event => {
+    if (position < total-.02 || (event.target !== video && !event.target.closest('.ui-player-controls button:first-child'))) return;
+    event.preventDefault(); event.stopImmediatePropagation(); seek(0,true);
+  };
+  seekControl.addEventListener('input',scrub,true);
+  player.element.addEventListener('click',replay,true);
+  const events=['loadedmetadata','durationchange','timeupdate','play','pause','ended','emptied'];
+  events.forEach(event=>video.addEventListener(event,paint));
+  video.addEventListener('ended',advance);
+  seek(0,false); frame=requestAnimationFrame(tick);
+  return {seek, destroy() {
+    disposed=true; cancelAnimationFrame(frame); video.onloadedmetadata=null;
+    events.forEach(event=>video.removeEventListener(event,paint)); video.removeEventListener('ended',advance);
+    seekControl.removeEventListener('input',scrub,true); player.element.removeEventListener('click',replay,true);
+    player.destroy(); video.removeAttribute('src'); video.load();
+  }};
+}
 
 // Keep each editor's DOM and cleanup contract inside the W1 sheet lifecycle.
 function openModal(content, options = {}) {
   const title = options.label || content.querySelector('.modal-h b')?.textContent || 'Editar';
   const sheet = createSheet({ title, content, size: 'full', className: 'st-sheet', onClose: () => {
     content.querySelectorAll('video,audio').forEach(el => el.pause());
+    players.forEach(player => player.destroy());
     options.onClose?.();
     content.removeEventListener('click', dismiss);
     delete content.remove;
@@ -17,6 +87,7 @@ function openModal(content, options = {}) {
   content.classList.add('st-sheet-content');
   content.addEventListener('click', dismiss);
   content.remove = () => sheet.close();
+  const players = [...content.querySelectorAll('video[controls]')].map(video => skinPlayer(video));
   sheet.open();
   content.querySelector(options.initialFocus || '[autofocus]')?.focus();
   return sheet.close;
@@ -45,23 +116,16 @@ const main = renderShell('studio.html');
 main.classList.add('st-page', 'ab-page', 'ab-page--wide');
 main.dataset.module = 'editor';
 main.innerHTML = `
-  <header class="st-heading"><div><h1>Studio</h1><p>De tu vuelo a una historia.</p></div><a class="ui-button ui-button--primary" href="subir.html">${icon('plus')} Subir</a></header>
-  <div class="st-library-count" id="st-count" aria-live="polite">Cargando biblioteca…</div>
+  <header class="st-heading"><h1>Studio</h1><span class="st-library-count" id="st-count" aria-live="polite">Cargando biblioteca…</span><button class="ui-button ui-button--quiet" id="st-auto-start">Reel automático</button><a class="ui-button ui-button--primary" href="subir.html">${icon('plus')} Subir</a></header>
 
-  <div class="pm-tabs st-tabs rise" id="st-tabs" role="tablist" aria-label="Módulos de Studio">
-    <button class="on" data-tab="editor" role="tab" aria-selected="true">${icon('film')} Editor</button>
-    <button data-tab="reels" role="tab" aria-selected="false">${icon('play')} Reels</button>
-    <button data-tab="fotos" role="tab" aria-selected="false">${icon('iso')} Fotos</button>
-    <button data-tab="jobs" role="tab" aria-selected="false">${icon('activity')} Trabajos</button>
-    <span class="pm-ink"></span>
+  <div class="ui-tabs st-tabs" id="st-tabs" role="tablist" aria-label="Módulos de Studio">
+    <button class="on" data-tab="editor" role="tab" aria-controls="st-panel-editor" aria-selected="true">${icon('film')} Editor</button>
+    <button data-tab="reels" role="tab" aria-controls="st-panel-reels" aria-selected="false">${icon('play')} Reels</button>
+    <button data-tab="fotos" role="tab" aria-controls="st-panel-fotos" aria-selected="false">${icon('iso')} Fotos</button>
+    <button data-tab="jobs" role="tab" aria-controls="st-panel-jobs" aria-selected="false">${icon('activity')} Trabajos</button>
   </div>
 
-  <section class="st-auto-entry" id="up-zone">
-    <div><h2>Reel automático</h2><p id="st-ai-summary">Tus mejores momentos, listos para revisar.</p></div>
-    <button class="ui-button ui-button--secondary" id="st-auto-start">Revisar sugerencia ${icon('chevR')}</button>
-  </section>
-
-  <section class="st-mod" data-mod="editor">
+  <section class="st-mod" id="st-panel-editor" data-mod="editor">
     <div class="tl-editor" id="tl-editor">
 
       <div class="panel st-panel">
@@ -71,9 +135,9 @@ main.innerHTML = `
           <span class="gchip" id="tl-stat">0 clips · 0:00</span>
           <span class="spacer"></span>
           <div class="st-ph-actions">
-            <button class="btn sm ghost" id="ed-new" data-tip="Nuevo proyecto: vaciar y empezar de cero" aria-label="Nuevo proyecto">${icon('plusFile')}<span class="st-hide-sm">Nuevo</span></button>
-            <button class="btn sm ghost" id="ed-save" data-tip="Guardar este proyecto" aria-label="Guardar proyecto">${icon('save')}<span class="st-hide-sm">Guardar</span></button>
-            <button class="btn sm ghost" id="ed-open" data-tip="Abrir proyectos guardados" aria-label="Proyectos guardados">${icon('folder')}<span class="st-hide-sm">Proyectos</span></button>
+            <button class="btn sm ghost" id="ed-new" data-tip="Nuevo proyecto: vaciar y empezar de cero" aria-label="Nuevo proyecto">${icon('plusFile')}<span>Nuevo</span></button>
+            <button class="btn sm ghost" id="ed-save" data-tip="Guardar este proyecto" aria-label="Guardar proyecto">${icon('save')}<span>Guardar</span></button>
+            <button class="btn sm ghost" id="ed-open" data-tip="Abrir proyectos guardados" aria-label="Proyectos guardados">${icon('folder')}<span>Proyectos</span></button>
             <span class="st-vsep" aria-hidden="true"></span>
             <button class="btn sm ghost" id="ed-keys" aria-label="Atajos de teclado" aria-expanded="false" aria-controls="tl-help" data-tip="Atajos de teclado">${icon('keyboard')}<span class="st-hide-sm">Atajos</span></button>
           </div>
@@ -109,7 +173,7 @@ main.innerHTML = `
             <div class="tb-g">
               <button class="btn icon sm ghost" data-tp="start" data-tip="Ir al inicio" aria-label="Ir al inicio">${icon('skipStart')}</button>
               <button class="btn icon sm ghost" data-tp="prev" data-tip="Clip anterior" aria-label="Clip anterior">${icon('prev')}</button>
-              <button class="btn sm primary tb-play" data-tp="play" data-tip="Reproducir / Pausa (Espacio)" aria-label="Reproducir o pausar">${icon('play')}<span>Reproducir</span></button>
+              <button class="btn sm ghost tb-play" data-tp="play" data-tip="Reproducir / Pausa (Espacio)" aria-label="Reproducir o pausar">${icon('play')}<span>Reproducir</span></button>
               <button class="btn icon sm ghost" data-tp="next" data-tip="Clip siguiente" aria-label="Clip siguiente">${icon('next')}</button>
               <button class="btn icon sm ghost" data-tp="end" data-tip="Ir al final" aria-label="Ir al final">${icon('skipEnd')}</button>
             </div>
@@ -320,10 +384,10 @@ main.innerHTML = `
         </div>
         <div class="st-library-filters" role="group" aria-label="Filtrar tomas">
           <label class="st-tag-filter"><span>Etiquetas</span><select class="ctl" id="st-tag-filter" disabled><option value="">Todas las etiquetas</option></select></label>
-          <button class="ui-button ui-button--secondary" id="st-quality-filter" aria-pressed="false" disabled>Sin problemas</button>
+          <button class="ui-button ui-button--secondary" id="st-quality-filter" aria-pressed="false" disabled>Sin avisos</button>
         </div>
         <p class="st-note" id="st-insight-status" role="status">Cargando sugerencias…</p>
-        <div class="pb"><div class="clip-rail" id="rail" aria-busy="true"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div></div>
+        <div class="pb st-library-content"><div class="clip-rail" id="rail" aria-busy="true"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div><button class="ui-button ui-button--quiet st-library-more" id="st-library-more" hidden>Ver más tomas</button></div>
       </div>
 
       <!-- 47 · barra de export (v7 · presets + resolución + proyectos) -->
@@ -461,7 +525,7 @@ main.innerHTML = `
     </div>
   </section>
 
-  <section class="st-mod" data-mod="reels" style="display:none">
+  <section class="st-mod" id="st-panel-reels" data-mod="reels" style="display:none">
     <div class="rm-ctas">
       <button class="rm-cta" id="rm-open">
         <span class="rm-auto-h"><b>${icon('film')} Crear reel</b><small>Elige tus tomas y AeroBrain arma el montaje; luego lo editas</small></span>
@@ -492,11 +556,8 @@ main.innerHTML = `
     <div class="media-grid" id="grid-reels" aria-busy="true"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div>
   </section>
 
-  <section class="st-mod" data-mod="fotos" style="display:none">
-    <div class="td-jobbar" id="fotos-sub" aria-label="Origen de fotos">
-      <button class="chip on" data-fsub="fotos">Capturas</button>
-      <button class="chip" data-fsub="dron">Del dron <span class="mono" id="dron-count"></span></button>
-    </div>
+  <section class="st-mod" id="st-panel-fotos" data-mod="fotos" style="display:none">
+    <label class="st-photo-source">Origen <select class="ctl" id="fotos-sub"><option value="fotos">Capturas</option><option value="dron">Del dron</option></select><span id="dron-count" class="ui-figure"></span></label>
     <div class="media-toolbar">
       <label class="search u-f1 u-minw150"><input id="q-fotos" type="search" placeholder="Buscar foto…" aria-label="Buscar foto"></label>
       <select class="ctl" id="s-fotos" aria-label="Ordenar por">
@@ -509,7 +570,7 @@ main.innerHTML = `
     <div class="media-grid" id="grid-dron" style="display:none"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div>
   </section>
 
-  <section class="st-mod" data-mod="jobs" style="display:none">
+  <section class="st-mod" id="st-panel-jobs" data-mod="jobs" style="display:none">
     <div class="panel">
       <div class="ph" data-no-collapse>${icon('activity')} Trabajos recientes
         <span class="spacer"></span>
@@ -525,51 +586,22 @@ main.innerHTML = `
 // ---- tabs de módulo con tinta deslizante (mismo patrón que el photo editor) ----
 document.querySelector('.st-heading').append(document.getElementById('exportbar'));
 const stTabs = document.getElementById('st-tabs');
-const stInk = stTabs.querySelector('.pm-ink');
-function moveInk() {
-  const on = stTabs.querySelector('button.on');
-  stInk.style.setProperty('--ink-x', on.offsetLeft + 'px');
-  stInk.style.setProperty('--ink-w', on.offsetWidth + 'px');
-}
-setTimeout(moveInk, 30);   // tras layout; rAF no dispara con tab oculto
-window.addEventListener('resize', () => setTimeout(moveInk, 30));
-
-const seenMods = new Set(['editor']);
+const moduleTabs = mountTabs(stTabs, { onChange: tab => showMod(tab.dataset.tab) });
 function showMod(name) {
   main.dataset.module = name;
-  stTabs.querySelectorAll('button').forEach(b => {
-    const on = b.dataset.tab === name;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-selected', String(on));
-  });
-  const upz = document.getElementById('up-zone');
-  if (upz) upz.hidden = name === 'jobs';
-  moveInk();
-  document.querySelectorAll('.st-mod').forEach(m => {
-    const show = m.dataset.mod === name;
-    if (show && m.style.display === 'none') {
-      m.style.display = '';
-      // la entrada corre UNA vez por módulo (primer montaje), no en cada cambio de tab
-      if (!seenMods.has(name)) {
-        seenMods.add(name);
-        m.classList.add('st-enter');
-        m.addEventListener('animationend', () => m.classList.remove('st-enter'), { once: true });
-      }
-    } else if (!show) {
-      // teardown SPA: los <video> del grid siguen decodificando si no se pausan al ocultar el tab
-      m.querySelectorAll('.media-grid video').forEach(v => { try { v.pause(); } catch {} });
-      if (m.dataset.mod === 'editor' || m.querySelector('#tl-video')) {
-        try { document.getElementById('tl-video')?.pause(); } catch {}
-        try { window.__abEditorPause?.(); } catch {}   // corta también la música y el rAF de reproducción
-      }
-      m.style.display = 'none';
+  document.getElementById('exportbar').hidden = name !== 'editor';
+  document.querySelector('.st-heading>a').classList.toggle('ui-button--primary', name !== 'editor' || !main.classList.contains('st-has-project'));
+  moduleTabs.select(stTabs.querySelector(`[data-tab="${name}"]`), false);
+  document.getElementById('st-auto-start').hidden = name === 'jobs';
+  document.querySelectorAll('.st-mod').forEach(panel => {
+    panel.style.display = '';
+    if (panel.dataset.mod !== name) {
+      panel.querySelectorAll('video').forEach(video => video.pause());
+      if (panel.dataset.mod === 'editor') window.__abEditorPause?.();
     }
   });
 }
-stTabs.addEventListener('click', e => {
-  const b = e.target.closest('[data-tab]');
-  if (b) showMod(b.dataset.tab);
-});
+showMod('editor');
 // deep-link: studio.html?tab=jobs|reels|fotos|editor (Dron enlaza a Trabajos)
 {
   const want = new URLSearchParams(location.search).get('tab');
@@ -628,11 +660,13 @@ function openReelViewer(name) {
   if (idx < 0) return;
   const ov = document.createElement('div');
   ov.className = 'rv-ov';
+  let viewerPlayer;
   let armedDelete = false;
   let edit = false;                       // panel de edición desplegado
   let trim = { a: 0, b: null };           // recorte en curso
 
   const render = () => {
+    viewerPlayer?.destroy();
     const it = list[idx];
     if (!it) { ov.remove(); return; }
     const base = it.name.replace(/\.[^.]+$/, '');
@@ -699,6 +733,7 @@ function openReelViewer(name) {
         </div>
         <div class="rv-kbd"><span><kbd>←</kbd><kbd>→</kbd> cambiar reel</span><span><kbd>Espacio</kbd> pausa</span><span><kbd>Esc</kbd> cerrar</span></div>
       </div>`;
+    viewerPlayer = skinPlayer(ov.querySelector('video'), {label:'Reel'});
     // cebar el compartir en cuanto se abre: el gesto del click no se pierde
 
   };
@@ -712,7 +747,7 @@ function openReelViewer(name) {
   };
   // openModal: role=dialog, foco atrapado, Esc por la pila de capas (solo cierra la capa de arriba)
   const close = openModal(ov, { label: 'Visor de reel', closeOnBackdrop: false, initialFocus: '[data-rv="share"]',
-    onClose: () => { ov.querySelector('video')?.pause(); removeEventListener('keydown', onKey); } });
+    onClose: () => { viewerPlayer?.destroy(); removeEventListener('keydown', onKey); } });
   const onKey = ev => {
     if ([...document.querySelectorAll('dialog[open]')].at(-1) !== ov.closest('dialog')) return;   // un modal (p. ej. Textos) o menú manda sobre el visor
     if (ev.defaultPrevented || ev.target.closest('input,select,textarea,button,a') || document.querySelector('.pop')) return;
@@ -1013,17 +1048,8 @@ function openBurnTexts(it, onDone) {
   });
 }
 
-const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-// fecha corta: sin año si es el actual ("20 jul"); con año si no ("20 jul 2025")
-function mdate(mtime) {
-  const d = new Date(mtime * 1000);
-  return `${d.getDate()} ${MES[d.getMonth()]}${d.getFullYear() === new Date().getFullYear() ? '' : ' ' + d.getFullYear()}`;
-}
-function fmtDayShort(iso) {   // '2026-07-24' → '24 jul' (año solo si no es el actual)
-  const [y, m, day] = String(iso || '').split('-');
-  if (!m) return '';
-  return `${+day} ${MES[+m - 1]}${+y === new Date().getFullYear() ? '' : ' ' + y}`;
-}
+const mdate = mtime => fmt.date(mtime * 1000);
+const fmtDayShort = iso => fmt.date(iso);
 // nombre con elipsis en el MEDIO: se conserva el inicio y el final (lo que distingue a DJI_…_0099_D_000X)
 function midName(base) {
   if (base.length <= 18) return esc(base);
@@ -1063,11 +1089,8 @@ async function loadMedia() {
 }
 
 // sub-tabs de Fotos: Capturas (biblioteca) vs Del dron (nativas raw/)
-document.getElementById('fotos-sub')?.addEventListener('click', e => {
-  const b = e.target.closest('[data-fsub]');
-  if (!b) return;
-  fotosSub = b.dataset.fsub;
-  document.querySelectorAll('#fotos-sub .chip').forEach(x => x.classList.toggle('on', x === b));
+document.getElementById('fotos-sub')?.addEventListener('change', e => {
+  fotosSub = e.target.value;
   document.getElementById('grid-fotos').style.display = fotosSub === 'fotos' ? '' : 'none';
   document.getElementById('grid-dron').style.display = fotosSub === 'dron' ? '' : 'none';
   if (fotosSub === 'dron') loadDronePhotos();
@@ -1133,9 +1156,9 @@ function cardHTML(kind, it) {
         <span class="m-fmt ${it.kind === 'DNG' ? 'dng' : ''}">${esc(it.kind)}</span>
       </div>
       <div class="m-head"><div class="m-name" title="${esc(base)}">${midName(base)}</div></div>
-      <div class="m-meta mono">${fmt.gb(it.bytes)} · ${it.date ? esc(it.date) : mdate(it.mtime)}</div>
+      <div class="m-meta mono">${fmt.gb(it.bytes)} · ${it.date ? fmt.date(it.date) : mdate(it.mtime)}</div>
       <div class="m-actions">
-        <button class="btn sm primary" data-act="edit" aria-label="Abrir en el editor">${icon('iso')} Editar</button>
+        <button class="btn sm" data-act="edit" aria-label="Abrir en el editor">${icon('iso')} Editar</button>
         <button class="btn sm icon" data-act="dl" data-tip="Descargar original ${esc(it.kind)}" aria-label="Descargar original ${esc(it.kind)}">${icon('dl')}</button>
       </div>
     </div>`;
@@ -1164,8 +1187,8 @@ function cardHTML(kind, it) {
     <div class="m-meta mono">${fmt.gb(it.bytes)} · ${mdate(it.mtime)}${it.h ? ` · ${it.h}p` : ''}</div>
     <div class="m-actions">
       ${kind === 'reels'
-        ? `<button class="btn sm primary" data-act="share" aria-label="Compartir">${icon('ext')} ${IS_IOS ? 'Guardar o compartir' : 'Compartir'}</button>`
-        : `<button class="btn sm primary" data-act="edit" aria-label="Abrir en el editor">${icon('iso')} Editar</button>`}
+        ? `<button class="btn sm" data-act="share" aria-label="Compartir">${icon('ext')} ${IS_IOS ? 'Guardar o compartir' : 'Compartir'}</button>`
+        : `<button class="btn sm" data-act="edit" aria-label="Abrir en el editor">${icon('iso')} Editar</button>`}
       <button class="btn sm icon" data-act="more" data-tip="Más acciones" aria-label="Más acciones" aria-haspopup="menu">${icon('more')}</button>
     </div>
   </div>`;
@@ -1395,7 +1418,7 @@ pollJobs(jobsEl, 2500, j => {
   } catch {
     document.getElementById('tl-empty').innerHTML = '<p><b>No se pudo cargar la biblioteca</b></p><p>Tu borrador sigue guardado.</p><button class="ui-button ui-button--primary" id="st-retry">Reintentar</button>';
     document.getElementById('st-retry').onclick = () => location.reload();
-    document.getElementById('st-ai-summary').textContent = 'Sin conexión. Reintenta cargar la biblioteca.';
+    document.getElementById('st-auto-start').title = 'Sin conexión. Reintenta cargar la biblioteca.';
     return;
   }
   const ai = await getAIAll(flights);
@@ -1581,7 +1604,7 @@ pollJobs(jobsEl, 2500, j => {
 
   const inspectHome = inspect.parentElement;
   const inspectButton = document.createElement('button'); inspectButton.className = 'ui-button ui-button--secondary';
-  inspectButton.id='st-inspect-open'; inspectButton.textContent='Ajustar toma';
+  inspectButton.id='st-inspect-open'; inspectButton.textContent='Ajustar toma'; inspectButton.disabled=true;
   document.querySelector('.st-ph-actions').prepend(inspectButton);
   inspectButton.onclick = () => {
     if (!tl.length) return toast('Añade una toma para ajustar su color, velocidad o título.');
@@ -1612,15 +1635,14 @@ pollJobs(jobsEl, 2500, j => {
       box.textContent = 'Sin sugerencia de color aún.'; return;
     }
     const lookLabel = document.querySelector(`#tli-filter option[value="${look}"]`)?.textContent.split(' — ')[0] || look;
-    box.innerHTML = `<p class="st-suggested-look">Sugerido: <b>${esc(lookLabel)}</b></p><div class="st-color-actions"><button class="ui-button ui-button--secondary" data-color-accept>Aplicar</button><button class="ui-button ui-button--quiet" data-color-dismiss>Descartar</button></div>`;
-    box.querySelector('[data-color-accept]').onclick = () => {
-      if (tl[sel] !== segment) return;
-      pushUndo(); segment.filter = look; dismissedColors.add(segment.clip_id);
-      renderAll(); seek(playhead); box.textContent = 'Estilo aplicado';
-    };
-    box.querySelector('[data-color-dismiss]').onclick = () => {
-      dismissedColors.add(segment.clip_id); box.textContent = 'Sugerencia descartada';
-    };
+    box.replaceChildren(Suggested({ content: lookLabel,
+      onAccept: () => {
+        if (tl[sel] !== segment) return;
+        pushUndo(); segment.filter = look; dismissedColors.add(segment.clip_id);
+        renderAll(); seek(playhead);
+      },
+      onDismiss: () => { dismissedColors.add(segment.clip_id); },
+    }));
   }
 
   // ---- render maestro ----
@@ -1745,8 +1767,8 @@ pollJobs(jobsEl, 2500, j => {
     if (s.freeze == null) s.freeze = 0;
     const g = (id) => document.getElementById(id);
     inspect.hidden = false;
-    g('tli-io').innerHTML = [['Entrada', fmt.dur(s.a)], ['Salida', fmt.dur(s.b)], ['Duración', `${segDur(s).toFixed(1)}s`],
-      ['Fuente', `${(s.b - s.a).toFixed(1)}s`]].map(([k, v]) => `<div><dt>${k}</dt><dd class="mono">${v}</dd></div>`).join('');
+    g('tli-io').innerHTML = [['Entrada', fmt.dur(s.a)], ['Salida', fmt.dur(s.b)], ['Duración', `${fmt.number(segDur(s),1)} s`],
+      ['Fuente', `${fmt.number(s.b - s.a,1)} s`]].map(([k, v]) => `<div><dt>${k}</dt><dd class="mono">${v}</dd></div>`).join('');
     // velocidad: chips + slider + input numérico sincronizados
     g('tli-speed').innerHTML = SPEEDS.map(v =>
       `<button class="chip${s.speed === v ? ' on' : ''}" data-spd="${v}">${v}x</button>`).join('');
@@ -1774,7 +1796,7 @@ pollJobs(jobsEl, 2500, j => {
     // transición
     g('tli-trans').value = s.transition || 'none';
     g('tli-trans-dur').value = s.transDur;
-    g('tli-trans-dur-v').textContent = (+s.transDur).toFixed(1) + 's';
+    g('tli-trans-dur-v').textContent = fmt.number(s.transDur,1) + ' s';
   }
 
   function updateStat() {
@@ -1785,6 +1807,8 @@ pollJobs(jobsEl, 2500, j => {
   // 44 · deshabilitar herramientas según contexto
   function syncTools() {
     const has = tl.length > 0, hasSel = sel >= 0;
+    inspectButton.disabled = !has;
+    document.querySelectorAll('[data-tp]').forEach(button => { button.disabled = !has; });
     const at = clipAt(playhead);
     const canRazor = has && at && at.local > 0.1 && at.local < segDur(at.clip) - 0.1;
     const set = (name, on) => {
@@ -2077,42 +2101,73 @@ pollJobs(jobsEl, 2500, j => {
     const body = document.createElement('div'); body.className = 'st-suggestion';
     body.setAttribute('aria-busy', 'true');
     body.innerHTML = '<div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div>';
-    let closed = false;
-    const sheet = createSheet({title:'Reel automático',content:body,size:'full',className:'st-sheet',onClose:()=>{closed=true;body.querySelector('video')?.pause();queueMicrotask(()=>sheet.destroy());}});
+    let closed = false, preview;
+    const sheet = createSheet({title:'Reel automático',content:body,size:'full',className:'st-sheet st-reel-sheet',onClose:()=>{
+      closed=true; preview?.destroy(); queueMicrotask(()=>sheet.destroy());
+    }});
     pause(); sheet.open();
     await loadInsights();
     if (closed) return;
     body.setAttribute('aria-busy', 'false');
     const suggestions = highlightSuggestions(editable, insights);
-    body.innerHTML = suggestions.length
-      ? `<p><span class="ui-chip">Sugerido</span> ${suggestions.length} momentos de tus vuelos. Revisa las tomas antes de aceptar.</p>
-        <video controls muted playsinline class="st-suggestion-video"></video>
-        <div class="st-suggestion-list">${suggestions.map((h,i) => `<div class="st-suggestion-item"><button class="st-suggestion-row ui-button ui-button--quiet" data-moment="${i}"><img src="${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg" alt=""><span><b>${esc(h.caption)}</b><small>${esc(h.label || h.cid)} · ${fmt.dur(h.a)}–${fmt.dur(h.b)}</small></span></button>${h.description ? `<details class="st-analysis-detail"><summary>Ver descripción</summary><p>${esc(h.description)}</p></details>` : ''}</div>`).join('')}</div>
-        ${insightErrors.size ? '<p class="st-note">No se pudieron cargar algunas sugerencias. Puedes revisar las disponibles.</p>' : ''}
-        <p class="st-note">Aceptar reemplaza el montaje. Puedes deshacer el cambio.</p>
-        <div class="st-sheet-actions"><button class="ui-button ui-button--quiet" data-dismiss>Descartar</button><button class="ui-button ui-button--primary" data-accept>Aceptar y editar</button></div>`
-      : insightErrors.size ? '<p class="st-note">No se pudieron cargar las sugerencias. Cierra y vuelve a abrir para reintentar.</p>' : '<div class="ui-empty"><h3>Sin análisis aún</h3><p>Cuando tus videos tengan momentos destacados, podrás revisarlos aquí.</p><button class="ui-button ui-button--primary" data-manual>Elegir tomas</button><p>Por ejemplo, combina una toma abierta y un acercamiento.</p></div>';
-    const preview = index => {
-      const h = suggestions[index], v = body.querySelector('video');
-      v.src = srcFor(h.cid); v.poster = `${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg`;
-      v.onloadedmetadata = () => { v.currentTime = h.a; };
-      v.ontimeupdate = () => { if(v.currentTime >= h.b) v.pause(); };
-      body.querySelectorAll('[data-moment]').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.moment === index)));
-    };
-    body.addEventListener('click',e=>{
-      const moment=e.target.closest('[data-moment]'); if(moment) preview(+moment.dataset.moment);
-      if(e.target.closest('[data-dismiss]')) sheet.close();
-      if(e.target.closest('[data-manual]')) {sheet.close();openReelMaker();}
-      if(e.target.closest('[data-accept]')) {
-        pushUndo(); resetProjectState({keepMusic:!replaceTarget});
+    if (!suggestions.length) {
+      body.innerHTML = insightErrors.size
+        ? '<p class="st-note">No se pudieron cargar las sugerencias. Cierra y vuelve a abrir para reintentar.</p>'
+        : '<div class="ui-empty"><h3>Sin análisis aún</h3><p>Elige las tomas para empezar tu reel.</p><button class="ui-button ui-button--primary" data-manual>Elegir tomas</button></div>';
+      body.querySelector('[data-manual]')?.addEventListener('click',()=>{sheet.close();openReelMaker();});
+      return;
+    }
+    const content = document.createElement('div');
+    const duration = suggestions.reduce((sum,h)=>sum+h.b-h.a,0);
+    const durationLabel = fmt.duration(duration).split(' ').map((part,i)=>`<span class="${i%2 ? 'ui-unit' : 'ui-figure'}">${part}</span>`).join(' ');
+    content.innerHTML = `<p class="st-note"><span class="ui-figure">${fmt.number(suggestions.length)}</span> tomas · ${durationLabel}</p>
+      <video muted playsinline preload="metadata" class="st-suggestion-video" aria-label="Vista previa del reel"></video>
+      <div class="st-suggestion-list">${suggestions.map((h,i) => {
+        const flight = byId[h.cid];
+        return `<article class="st-suggestion-item">
+          <button class="st-suggestion-row ui-button ui-button--quiet" data-moment="${i}" aria-label="Ver toma ${i+1}: ${esc(h.caption)}">
+            <img src="${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg" alt="" width="96" height="54">
+            <span><b>${esc(h.caption)}</b><small>${esc(flight.label || fmt.date(flight.date))} · <span class="ui-figure">${fmt.clock(h.a)}–${fmt.clock(h.b)}</span></small></span>
+          </button>
+          ${h.description ? `<details class="st-analysis-detail"><summary aria-label="Descripción de la toma ${i+1}">${icon('chevD')}</summary><p>${esc(h.description)}</p></details>` : ''}
+        </article>`;
+      }).join('')}</div>
+      ${insightErrors.size ? '<p class="st-note">No se pudieron cargar algunas sugerencias. Puedes revisar las disponibles.</p>' : ''}`;
+    const suggested = Suggested({content,
+      onAccept: () => {
+        pushUndo(); resetProjectState();
+        document.getElementById('ed-title').value='';
+        document.getElementById('ed-lut').value='none';
         tl=suggestions.map(h=>makeSeg(h.cid,h.a,h.b,{transition:'none',_mark:true}));
+        // The accepted cut list must match the preview duration.
+        document.getElementById('ed-fade').checked = false;
         sel=0;playhead=0;curCid=null;showMod('editor');renderAll();fit();seek(0);sheet.close();
-      }
+      },
+      onDismiss: () => sheet.close(),
     });
-    if(suggestions.length) preview(0);
+    body.replaceChildren(suggested);
+    const footer = document.createElement('footer'); footer.className = 'st-reel-footer';
+    if (tl.length) {
+      const note = document.createElement('p'); note.className = 'st-note';
+      note.textContent = 'Reemplaza el montaje actual. Puedes deshacer el cambio.'; footer.append(note);
+    }
+    const actions = suggested.querySelector('.ui-suggested-actions');
+    const accept = actions.querySelector('button'); accept.textContent = 'Aceptar y editar';
+    accept.className = 'ui-button ui-button--primary'; actions.append(accept);
+    footer.append(actions); sheet.element.append(footer);
+    // Discard is the single visible exit; Escape and backdrop still close the sheet.
+    sheet.element.querySelector('.ui-sheet-header button').remove();
+    accept.focus({preventScroll:true});
+    preview = mountReelPreview(content.querySelector('video'), suggestions, srcFor, index => {
+      content.querySelectorAll('[data-moment]').forEach(button => button.setAttribute('aria-pressed',String(+button.dataset.moment===index)));
+    });
+    content.addEventListener('click', event => {
+      const moment = event.target.closest('[data-moment]');
+      if (moment) preview.seek(suggestions.slice(0,+moment.dataset.moment).reduce((sum,h)=>sum+h.b-h.a,0));
+    });
   }
   document.getElementById('st-auto-start').onclick = magic;
-  document.getElementById('st-ai-summary').textContent = 'Cargando momentos…';
+
   registerPaletteSource(() => [
     {id:'studio-auto',label:'Nuevo reel automático',action:magic},
     ...editable.map(f=>({id:`studio-${f.clip_id}`,label:f.label || `${fmt.date(f.date)} · ${f.time || 'Video'}`,keywords:[f.clip_id,...(f.ai?.tags || [])].join(' '),href:`studio.html?clip=${encodeURIComponent(f.clip_id)}`}))
@@ -3236,10 +3291,15 @@ pollJobs(jobsEl, 2500, j => {
   // ================= carrusel de clips fuente (24-27) =================
   const rail = document.getElementById('rail');
   const tagFilter = document.getElementById('st-tag-filter');
+  const displayTag = tag => tag.toLowerCase() === 'drone' ? 'dron' : tag;
   const qualityFilter = document.getElementById('st-quality-filter');
   const insightStatus = document.getElementById('st-insight-status');
   const qualityLabels = {inestable:'Inestable', horizonte:'Horizonte', sobreexpuesto:'Sobreexpuesto'};
-  let onlyClean = false, insightsLoaded = false;
+  const libraryContent = main.querySelector('.st-library-content');
+  const librarySuggestion = Suggested({content: libraryContent});
+  main.querySelector('.tl-lib').append(librarySuggestion);
+  const moreLibrary = document.getElementById('st-library-more');
+  let onlyClean = false, insightsLoaded = false, libraryLimit = 12;
   function renderLibrary() {
     let railDay = null;
     const visible = editable.filter(f => {
@@ -3247,11 +3307,11 @@ pollJobs(jobsEl, 2500, j => {
       return (!tagFilter.value || insight?.tags?.includes(tagFilter.value))
         && (!onlyClean || (insight && Array.isArray(insight.quality_flags) && !insight.quality_flags.length));
     });
-    rail.innerHTML = visible.map(f => {
+    rail.innerHTML = visible.slice(0, libraryLimit).map(f => {
       const insight = insights[f.clip_id];
       const day = f.date !== railDay ? `<div class="cr-day" role="presentation"><b>${esc(fmtDayShort(f.date))}</b></div>` : '';
       railDay = f.date;
-      const tags = (insight?.tags || []).slice(0,3);
+      const tags = (insight?.tags || []).map(tag => tag.toLowerCase() === 'drone' ? 'dron' : tag).slice(0,2);
       const flags = (insight?.quality_flags || []).filter(flag => qualityLabels[flag]);
       return `${day}<div class="st-source-card">
         <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(f.label || f.clip_id)}" title="${esc([f.label, fmtDayShort(f.date), f.time].filter(Boolean).join(' · '))}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
@@ -3265,25 +3325,27 @@ pollJobs(jobsEl, 2500, j => {
         ${!insightsLoaded && !insight ? '<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>' : ''}
       </div>`;
     }).join('') || '<p class="st-note">No hay tomas con estos filtros.</p>';
+    moreLibrary.hidden = visible.length <= libraryLimit;
     rail.querySelectorAll('.cr-item').forEach(el => el.classList.add('scrub'));
     rail.setAttribute('aria-busy', String(!insightsLoaded));
     if (document.documentElement.dataset.motion !== 'reduced') attachScrub(rail);
   }
-  tagFilter.onchange = renderLibrary;
+  moreLibrary.onclick = () => { libraryLimit += 12; renderLibrary(); };
+  tagFilter.onchange = () => { libraryLimit = 12; renderLibrary(); };
   qualityFilter.onclick = () => {
-    onlyClean = !onlyClean; qualityFilter.setAttribute('aria-pressed', String(onlyClean)); renderLibrary();
+    onlyClean = !onlyClean; libraryLimit = 12; qualityFilter.setAttribute('aria-pressed', String(onlyClean)); renderLibrary();
   };
   renderLibrary();
   loadInsights().then(() => {
     insightsLoaded = true;
     const tags = [...new Set(Object.values(insights).flatMap(insight=>insight?.tags || []))].sort((a,b)=>a.localeCompare(b,'es'));
-    tagFilter.innerHTML = '<option value="">Todas las etiquetas</option>' + tags.map(tag=>`<option value="${esc(tag)}">${esc(tag)}</option>`).join('');
+    tagFilter.innerHTML = '<option value="">Todas las etiquetas</option>' + tags.map(tag=>`<option value="${esc(tag)}">${esc(displayTag(tag))}</option>`).join('');
     tagFilter.disabled = !tags.length; qualityFilter.disabled = !Object.values(insights).some(Boolean);
     insightStatus.textContent = insightErrors.size ? 'No se pudieron cargar algunas etiquetas. Vuelve a abrir Studio para reintentar.'
-      : tags.length ? 'Sugerido · Etiquetas y avisos de las tomas' : 'Aún no hay etiquetas sugeridas.';
+      : tags.length ? '' : 'Aún no hay etiquetas sugeridas.';
     const suggestions = highlightSuggestions(editable, insights);
-    document.getElementById('st-ai-summary').textContent = suggestions.length
-      ? `${suggestions.length} momentos para revisar. Tú decides qué conservar.`
+    document.getElementById('st-auto-start').title = suggestions.length
+      ? `${fmt.number(suggestions.length)} momentos para revisar`
       : insightErrors.size ? 'No se pudieron cargar los momentos. Abre la sugerencia para reintentar.' : 'Sin análisis aún. Puedes empezar eligiendo tus tomas.';
     renderLibrary();
   });
@@ -3825,7 +3887,7 @@ pollJobs(jobsEl, 2500, j => {
       <div class="ce-h">
         <div class="ce-t">
           <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
-          <span class="mono">corte ${i + 1} de ${tl.length} · fuente ${fmt.dur(f.duration_s)}</span>
+          <span>Corte <span class="ui-figure">${i + 1}</span> de <span class="ui-figure">${tl.length}</span> · fuente ${fmt.duration(f.duration_s)}</span>
         </div>
         <span class="u-f1 spacer"></span>
         <button class="btn icon ghost rv-x" data-ce="close" aria-label="Cerrar">${icon('close')}</button>
@@ -3840,19 +3902,18 @@ pollJobs(jobsEl, 2500, j => {
         <span class="ce-h2" data-ce="hb"></span>
         <span class="ce-ph" id="ce-ph"></span>
       </div>
-      <div class="ce-times mono">
+      <div class="ce-times">
         <span>Entrada <b id="ce-a">${fmt.dur(s.a)}</b></span>
-        <span class="ce-dur">dura <b id="ce-d">${(s.b - s.a).toFixed(1)}s</b></span>
+        <span class="ce-dur">dura <b id="ce-d">${fmt.number(s.b - s.a,1)} s</b></span>
         <span>Salida <b id="ce-b">${fmt.dur(s.b)}</b></span>
       </div>
       <div class="ce-facts">
         <span><i>${icon('mountain')}</i><b>${Math.round(f.stats?.max_rel_alt_m || 0)} m</b><em>altura</em></span>
         <span><i>${icon('route')}</i><b>${fmt.km(f.stats?.distance_m || 0)}</b><em>recorrido</em></span>
         <span><i>${icon('clock')}</i><b>${esc(f.time || '—')}</b><em>hora</em></span>
-        ${A.travel_score ? `<span><i>${icon('film')}</i><b>${A.travel_score}/10</b><em>AI vision</em></span>` : ''}
         <span><i>${icon('layers')}</i><b>${SCALE_LB[shotScale(f)]}</b><em>tipo de plano</em></span>
       </div>
-      ${A.summary ? `<p class="ce-sum"><span class="ui-chip">Sugerido</span> ${esc(analysisCaption(A.summary))}</p><details class="st-analysis-detail"><summary>Ver análisis</summary><p>${esc(A.summary)}</p></details>` : ''}
+      <div class="ce-analysis"></div>
       ${(A.highlights || []).length ? `<div class="ce-hl">
         <span class="ce-hl-lb">Momentos sugeridos:</span>
         ${(A.highlights || []).slice(0, 5).map(h =>
@@ -3866,6 +3927,13 @@ pollJobs(jobsEl, 2500, j => {
         <button class="btn" data-ce="next" ${i === tl.length - 1 ? 'disabled' : ''}>Siguiente corte ${icon('chevR')}</button>
       </div>
     </div>`;
+    if (A.summary) {
+      const description = document.createElement('div');
+      description.innerHTML = `<p>${esc(insights[s.clip_id]?.caption_short || analysisCaption(A.summary))}</p><details class="st-analysis-detail"><summary>Descripción</summary><p>${esc(insights[s.clip_id]?.caption || A.summary)}</p></details>`;
+      const highlights = ov.querySelector('.ce-hl');
+      if (highlights) description.append(highlights);
+      ov.querySelector('.ce-analysis').append(Suggested({content:description}));
+    }
     let committed = false;   // Esc / × / Cancelar / fondo revierten el corte (onClose); Aplicar y navegar lo confirman
     openModal(ov, { label: 'Editar corte', initialFocus: '[data-ce="ok"]',
       onClose: () => { removeEventListener('keydown', ck); if (!committed) { s.a = a0; s.b = b0; renderAll(); } } });
@@ -3879,7 +3947,7 @@ pollJobs(jobsEl, 2500, j => {
       ov.querySelector('[data-ce="hb"]').style.left = `${L + W}%`;
       ov.querySelector('#ce-a').textContent = fmt.dur(s.a);
       ov.querySelector('#ce-b').textContent = fmt.dur(s.b);
-      ov.querySelector('#ce-d').textContent = `${(s.b - s.a).toFixed(1)}s`;
+      ov.querySelector('#ce-d').textContent = `${fmt.number(s.b - s.a,1)} s`;
     };
     paint();
     v.addEventListener('loadedmetadata', () => { v.currentTime = s.a; }, { once: true });
@@ -3995,7 +4063,7 @@ pollJobs(jobsEl, 2500, j => {
     const outputDuration = total() - tl.reduce((sum,_,i)=>sum+joinOverlap(tl,i,edFps),0);
     const mb = (br * outputDuration) / 8;
     document.getElementById('ex-est').textContent =
-      tl.length ? `≈ ${mb < 1000 ? mb.toFixed(0) + ' MB' : (mb / 1000).toFixed(2) + ' GB'} estimados · ${fmt.dur(outputDuration)} · ${document.getElementById('ed-res').value}p${edFps ? ' · ' + edFps + ' fps' : ''}` : '—';
+      tl.length ? `≈ ${fmt.gb(mb * 1e6)} estimados · ${fmt.duration(outputDuration)} · ${document.getElementById('ed-res').value}p${edFps ? ' · ' + edFps + ' fps' : ''}` : '—';
     const sum = document.getElementById('eb-sum');
     if (sum) sum.textContent = `${tl.length} clip${tl.length === 1 ? '' : 's'} · ${fmt.dur(total())} · ${document.getElementById('ed-aspect').value} · ${document.getElementById('ed-res').value}p`;
   }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption} from './studio.logic.js';
+import {segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition} from './studio.logic.js';
 test('reverse split preserves playback order and speed', () => {
  const s = {a:2,b:12,speed:2,reverse:true,title:'Title'};
  const [left,right] = splitSegment(s,2);
@@ -76,4 +76,20 @@ test('Studio and the shell share the same UI module instances', async () => {
    const pattern = new RegExp(`\\./ui/${name}\\.js\\?v=\\d+`);
    assert.equal(studio.match(pattern)?.[0],shell.match(pattern)?.[0],name);
  }
+});
+
+test('assembled reel seek uses clip boundaries and trims, not source durations', () => {
+ const cuts=[{a:98,b:115},{a:18,b:24},{a:20,b:31}];
+ assert.deepEqual(reelPosition(cuts,0),{index:0,offset:0,time:0,total:34,source:98});
+ assert.deepEqual(reelPosition(cuts,17),{index:1,offset:17,time:17,total:34,source:18});
+ assert.deepEqual(reelPosition(cuts,25),{index:2,offset:23,time:25,total:34,source:22});
+ assert.equal(reelPosition(cuts,-3).source,98);
+ assert.equal(reelPosition(cuts,100).source,31);
+ assert.equal(reelPosition([],0),null);
+});
+test('reel seek preserves fractional cut durations and the last frame', () => {
+ const cuts=[{a:2.25,b:5.75},{a:20.1,b:22.6}];
+ assert.equal(reelPosition(cuts,3.5).index,1);
+ assert.equal(reelPosition(cuts,3.5).source,20.1);
+ assert.equal(reelPosition(cuts,6).source,22.6);
 });
