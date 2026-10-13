@@ -1,10 +1,11 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=443';
-import { fmt } from './ui/format.js?v=443';
-import { term } from './ui/terms.js?v=443';
-import { Suggested } from './ui/suggested.js?v=443';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=443';
-import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=443';
-import { coverageRows } from './scene-improve-state.js?v=443';
+import { sceneDisplayName } from './ui/display-name.js?v=449';
+import { thumbnailURL } from './ui/thumbnail.js?v=449';
+import { fmt } from './ui/format.js?v=449';
+import { term } from './ui/terms.js?v=449';
+import { Suggested } from './ui/suggested.js?v=449';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=449';
+import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=449';
+import { coverageRows } from './scene-improve-state.js?v=449';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,
@@ -291,11 +292,16 @@ async function boot() {
     || String(b.clip_id).localeCompare(String(a.clip_id)));
 
   await Promise.all(scenes.map(async sc => { sc.cover = await sceneCover(sc); }));
+  const flightRows = await fetch('data/manifest/flights.json')
+    .then(response => response.ok ? response.json() : {})
+    .then(data => data.flights || []).catch(() => []);
+  const displayTitle = sc => sceneDisplayName({ ...sc, name: sceneTitle(sc.name), sources: sceneSources(sc) }, flightRows);
   const titleCounts = new Map();
-  scenes.forEach(sc => { const title=sceneTitle(sc.name).replace(/(Bogotá) · Bogotá$/i, '$1'); titleCounts.set(title,(titleCounts.get(title)||0)+1); });
+  scenes.forEach(sc => { const title=sceneTitle(displayTitle(sc)).replace(/(Bogotá) · Bogotá$/i, '$1'); titleCounts.set(title,(titleCounts.get(title)||0)+1); });
   scenes.forEach(sc => {
-    const title=sceneTitle(sc.name).replace(/(Bogotá) · Bogotá$/i, '$1');
-    sc.displayName = titleCounts.get(title)>1 ? `${title} · ${fechaDe(sceneSources(sc)[0]) || 'Captura '+(scenes.indexOf(sc)+1)}` : title;
+    const title=sceneTitle(displayTitle(sc)).replace(/(Bogotá) · Bogotá$/i, '$1');
+    const flight = flightRows.find(row => sceneSources(sc).includes(row.clip_id));
+    sc.displayName = titleCounts.get(title)>1 ? `${title} · ${flight?.time?.slice(0, 5) || 'Captura '+(scenes.indexOf(sc)+1)}` : title;
   });
   const usedTitles = new Set();
   scenes.forEach(sc => {

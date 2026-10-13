@@ -1,8 +1,8 @@
-import { fmt } from './ui/format.js?v=443';
-import { Suggested } from './ui/suggested.js?v=443';
-import { skinPlayer } from './ui/player.js?v=443';
-import { galleryFrames, propertyCover, propertyDescription } from './p.logic.js?v=443';
-import { createSheet } from './ui/sheet.js?v=443';
+import { fmt } from './ui/format.js?v=449';
+import { Suggested } from './ui/suggested.js?v=449';
+import { skinPlayer } from './ui/player.js?v=449';
+import { galleryFrames, propertyCover, propertyDescription } from './p.logic.js?v=449';
+import { createSheet } from './ui/sheet.js?v=449';
 const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const root = document.getElementById('root');
 function empty(title, text, retry=false) {

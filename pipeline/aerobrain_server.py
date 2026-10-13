@@ -3968,7 +3968,13 @@ class H(BaseHTTPRequestHandler):
         if path == '/data/manifest/flights.json':
             from ai import insights
             payload = read_json_file(f)
+            groups = insights.trip_groups(payload.get('flights', []))
+            place_meta = insights.read(VAULT / 'manifest/trips_meta.json', {})
+            saved_places = insights.place_metadata(groups, place_meta)
+            places = {f['clip_id']: insights.place_title(g, saved_places[g['id']], place_meta)
+                      for g in groups for f in g['flights']}
             for flight in payload.get('flights', []):
+                flight['place'] = places.get(flight.get('clip_id'), 'Lugar sin identificar')
                 cid = flight.get('clip_id')
                 if insights.valid_id(cid):
                     data = insights.public_record(cid, VAULT)
@@ -4432,6 +4438,14 @@ class H(BaseHTTPRequestHandler):
         spec["updated"] = time.strftime("%Y-%m-%d %H:%M")
         pdir = VAULT / "properties"
         pdir.mkdir(exist_ok=True)
+        from ai import insights
+        existing = read_json_file(pdir / f"{slug}.json") if (pdir / f"{slug}.json").is_file() else {}
+        if ('cover' not in spec and existing.get('cover')
+                and existing.get('clip') == spec.get('clip')):
+            spec['cover'] = existing['cover']
+        selected = insights.property_media(spec, VAULT)['cover']
+        if selected and not spec.get('cover'):
+            spec['cover'] = selected
         atomic_write_json(pdir / f"{slug}.json", spec, indent=1, ensure_ascii=False)
         return self.send_json({"ok": True, "url": f"https://vuelos.metislab.work/p.html?id={slug}"})
 

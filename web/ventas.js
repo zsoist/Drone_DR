@@ -1,10 +1,10 @@
-import { fmt } from './ui/format.js?v=443';
-import { Suggested } from './ui/suggested.js?v=443';
-import { propertyCover } from './p.logic.js?v=443';
-import { canonicalPropertyURL } from './ventas.logic.js?v=443';
-import { createSheet } from './ui/sheet.js?v=443';
-import { showToast } from './ui/toast.js?v=443';
-import { registerPaletteSource } from './ui/palette.js?v=443';
+import { fmt } from './ui/format.js?v=449';
+import { Suggested } from './ui/suggested.js?v=449';
+import { propertyCover } from './p.logic.js?v=449';
+import { canonicalPropertyURL } from './ventas.logic.js?v=449';
+import { createSheet } from './ui/sheet.js?v=449';
+import { showToast } from './ui/toast.js?v=449';
+import { registerPaletteSource } from './ui/palette.js?v=449';
 
 const main = renderShell('ventas.html');
 main.classList.add('ab-page', 'vt-page');
@@ -80,11 +80,11 @@ async function openEditor(property = {}, opener) {
     e.preventDefault(); const button=content.querySelector('[type=submit]'), error=content.querySelector('#vt-error');
     error.textContent=''; content.querySelector('#vt-result').innerHTML='';
     const p={...property,...Object.fromEntries(new FormData(content)),descripcion_source:descriptionSource};
-    if (p.clip !== property.clip) delete p.gallery;
+    if (p.clip !== property.clip) { delete p.gallery; delete p.cover; }
     if (!p.titulo.trim() || !p.slug.trim()) { error.textContent='Escribe el nombre y el nombre del enlace.'; return; }
     const f=flights.find(f=>f.clip_id===p.clip);
     if (f?.stats?.home) { p.lon=f.stats.home[0]; p.lat=f.stats.home[1]; }
-    // Keep saved owner selections. Automatic frames stay in the reviewed media response.
+    // Keep the saved cover unless the owner selects a different source clip.
     button.disabled=true; button.textContent='Guardando…';
     try {
       const result=await read('/api/property',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});

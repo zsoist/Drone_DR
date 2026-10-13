@@ -2,7 +2,7 @@
 import re
 from urllib.parse import unquote, urlsplit
 
-from . import cover_quality, insights
+from . import cover_quality, insights, owner_frames
 
 
 def media_frame(url, vault, records=None, *, featured=True):
@@ -44,8 +44,13 @@ def thumbnail_url(cid, vault, records=None):
     if cid not in records:
         records[cid] = insights.record(cid, vault)
     cover = next(insights.cover_candidates([cid], records, vault), None)
-    if cover:
+    if cover and (cover.get('quality', {}).get('mean_luminance') or 0) >= 60:
         return cover['frame_url']
+    # Private archive results must remain readable even when every frame is below
+    # the featured threshold. Choose the brightest frame from this same clip.
+    brightest = max(owner_frames.frames(cid, vault), key=lambda f: f['mean_luminance'], default=None)
+    if brightest:
+        return brightest['frame_url']
     normal = f'/data/thumbs/{cid}.jpg'
     frames = sorted(p for p in (vault / 'frames' / cid).glob('f_*.jpg')
                     if re.fullmatch(r'f_\d+\.jpg', p.name))
@@ -70,7 +75,12 @@ def project(payload, vault):
                 and 'frame_url' in item)]
         if isinstance(value, dict):
             result = {}
+            is_property = bool(value.get('slug') and insights.valid_id(value.get('clip')))
             for key, item in value.items():
+                if is_property and key == 'cover':
+                    # Owner listing media is private data, not a public-feature candidate.
+                    result[key] = insights.property_media(value, vault)['cover']
+                    continue
                 if key in ('thumbnail_url', 'thumb_url') and insights.valid_id(value.get('clip_id')):
                     continue
                 frame = media_frame(item, vault, records, featured=not archive)

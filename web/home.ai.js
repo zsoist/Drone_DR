@@ -1,4 +1,5 @@
-import { fmt } from './ui/format.js?v=443';
+import { flightFallback } from './ui/display-name.js?v=449';
+import { fmt } from './ui/format.js?v=449';
 // Read-only AI views shared by the H1 pages.
 const insightRequests = new Map();
 // Reviewed against this exact image. Other frames keep their own stored description.
@@ -68,5 +69,5 @@ export function flightCaption(flight, insight) {
   if (flight.label) return flight.label;
   const short = insight?.caption_short || flight.ai?.caption_short;
   if (short) return short;
-  return [fmt.date(flight.date), flight.time].filter(Boolean).join(' · ');
+  return flightFallback(flight);
 }

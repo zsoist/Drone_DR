@@ -591,8 +591,9 @@ def property_media(prop, vault=VAULT):
     ids = list(dict.fromkeys(cid for cid in [prop.get('clip'), *linked] if valid_id(cid)))
     records = {cid: record(cid, vault) for cid in ids}
     gallery = distinct_frames(cover_candidates(ids, records, vault))
+    from ai.owner_frames import property_cover
     return {**prop, 'gallery': gallery, 'gallery_n': len(gallery),
-            'cover': gallery[0] if gallery else None}
+            'cover': property_cover(prop, records, vault)}
 
 
 def summary_source(kind, identity, vault=VAULT):

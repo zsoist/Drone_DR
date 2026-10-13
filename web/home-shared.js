@@ -1,10 +1,11 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=443';
+import { flightFallback } from './ui/display-name.js?v=449';
+import { thumbnailURL } from './ui/thumbnail.js?v=449';
 // Page contracts for Inicio, Viajes, and Flight Deck.
-import { createSheet } from './ui/sheet.js?v=443';
-import { registerPaletteSource } from './ui/palette.js?v=443';
-import { showToast } from './ui/toast.js?v=443';
-import { fmt } from './ui/format.js?v=443';
-import { Suggested } from './ui/suggested.js?v=443';
+import { createSheet } from './ui/sheet.js?v=449';
+import { registerPaletteSource } from './ui/palette.js?v=449';
+import { showToast } from './ui/toast.js?v=449';
+import { fmt } from './ui/format.js?v=449';
+import { Suggested } from './ui/suggested.js?v=449';
 
 // Use only for standalone statistics, telemetry, and timecodes; use esc() in prose.
 export function figure(value) {
@@ -34,7 +35,7 @@ let unregisterFlights;
 export function registerFlights(flights) {
   unregisterFlights?.();
   const clips = flights.filter(f => !f.archived).map(f => ({
-    id: `clip-${f.clip_id}`, label: f.label || `${fmt.date(f.date)} · ${f.time || 'Vuelo'}`,
+    id: `clip-${f.clip_id}`, label: f.label || flightFallback(f),
     keywords: [f.clip_id, f.ai?.summary, ...(f.ai?.tags || [])].join(' '),
     thumbnail: thumbnailURL(f),
     href: `flight.html?id=${encodeURIComponent(f.clip_id)}`,

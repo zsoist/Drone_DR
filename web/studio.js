@@ -1,12 +1,13 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=443';
-import { createSheet } from './ui/sheet.js?v=443';
-import { showToast as toast } from './ui/toast.js?v=443';
-import { registerPaletteSource } from './ui/palette.js?v=443';
-import { fmt } from './ui/format.js?v=443';
-import { mountTabs } from './ui/tabs.js?v=443';
-import { Suggested } from './ui/suggested.js?v=443';
-import { skinPlayer } from './ui/player.js?v=443';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, clipCaption, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=443';
+import { flightFallback } from './ui/display-name.js?v=449';
+import { thumbnailURL } from './ui/thumbnail.js?v=449';
+import { createSheet } from './ui/sheet.js?v=449';
+import { showToast as toast } from './ui/toast.js?v=449';
+import { registerPaletteSource } from './ui/palette.js?v=449';
+import { fmt } from './ui/format.js?v=449';
+import { mountTabs } from './ui/tabs.js?v=449';
+import { Suggested } from './ui/suggested.js?v=449';
+import { skinPlayer } from './ui/player.js?v=449';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, clipCaption, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=449';
 
 // The shared player owns chrome; this adapter maps its single scrubber to the cut list.
 function mountReelPreview(video, segments, sourceURL, posterFor, onSegment) {
@@ -1770,7 +1771,7 @@ pollJobs(jobsEl, 2500, j => {
       const trans = i > 0
         ? `<button class="tl-junction${txSet ? ' set' : ''}" data-j="${i}" style="left:${offset(i) * pps}px"
              data-tip="${txSet ? esc((TX_LABELS[s.transition] || s.transition) + ' · ' + (s.transDur || 0.4) + 's — click para cambiar') : 'Corte seco — click para elegir transición'}" aria-label="Transición entre tomas">${txSet ? icon('layers') : icon('plus')}</button>` : '';
-      const lb = esc(f?.label) || esc(`${fmtDayShort(f?.date)} ${f?.time || ''}`.trim());   // '24 jul 16:24' (sin año: es el dato que se trunca)
+      const lb = esc(f?.label || flightFallback(f));
       return `${trans}<div class="tl-clip${w < 100 ? ' compact' : ''}${i === sel ? ' sel' : ''}" data-i="${i}" data-cid="${s.clip_id}" title="${lb} · ${fmt.dur(segDur(s))}"
                 style="width:${w}px;left:${offset(i)*pps}px" draggable="false">
           <div class="tl-thumbs">${thumbs}</div>
@@ -2202,7 +2203,7 @@ pollJobs(jobsEl, 2500, j => {
 
   registerPaletteSource(() => [
     {id:'studio-auto',label:'Nuevo reel automático',action:magic},
-    ...editable.map(f=>({id:`studio-${f.clip_id}`,label:f.label || `${fmt.date(f.date)} · ${f.time || 'Video'}`,keywords:[f.clip_id,...(f.ai?.tags || [])].join(' '),href:`studio.html?clip=${encodeURIComponent(f.clip_id)}`}))
+    ...editable.map(f=>({id:`studio-${f.clip_id}`,label:f.label || flightFallback(f),keywords:[f.clip_id,...(f.ai?.tags || [])].join(' '),href:`studio.html?clip=${encodeURIComponent(f.clip_id)}`}))
   ]);
 
   // ================= PISTA DE TEXTO =================
@@ -3014,7 +3015,7 @@ pollJobs(jobsEl, 2500, j => {
       <video src="${DATA}/proxies/${encodeURIComponent(cid)}.mp4" controls muted playsinline
              ${posterFor(cid) ? `poster="${esc(posterFor(cid))}"` : ''}></video>
       <div class="rm-peek-f">
-        <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
+        <b>${esc(f.label || flightFallback(f))}</b>
         <span class="mono">${fmt.dur(f.duration_s)} · ${Math.round(f.stats?.max_rel_alt_m || 0)} m</span>
         <span class="u-f1 spacer"></span>
         <button class="btn sm" data-peek-close>Cerrar</button>
@@ -3349,7 +3350,7 @@ pollJobs(jobsEl, 2500, j => {
       railDay = f.date;
       const tags = (f.tags || insight?.tags || []).map(tag => tag.toLowerCase() === 'drone' ? 'dron' : tag).slice(0,2);
       const flags = (insight?.quality_flags || []).filter(flag => qualityLabels[flag]);
-      const caption = clipCaption(f, insight) || [fmt.date(f.date), f.time].filter(Boolean).join(' · ');
+      const caption = clipCaption(f, insight) || flightFallback(f);
       return `${day}<div class="st-source-card">
         <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(caption)}" title="${esc([f.label, fmtDayShort(f.date), f.time].filter(Boolean).join(' · '))}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
           ${thumbnail(f.clip_id,320,180)}
@@ -3927,7 +3928,7 @@ pollJobs(jobsEl, 2500, j => {
     ov.innerHTML = `<div class="ce-card">
       <div class="ce-h">
         <div class="ce-t">
-          <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
+          <b>${esc(f.label || flightFallback(f))}</b>
           <span>Corte ${i + 1} de ${tl.length} · fuente ${fmt.duration(f.duration_s)}</span>
         </div>
         <span class="u-f1 spacer"></span>

@@ -19,9 +19,9 @@ export function galleryFrames(property) {
 
 export function propertyCover(property) {
   const cover = property.cover;
-  if (approvedFrame(cover) && [property.clip, ...(property.clips || [])].includes(cover.clip_id)) return cover.frame_url;
-  // The owner chose this clip for the listing: its thumbnail is owner data, never filtered away.
-  return property.clip ? `data/thumbs/${encodeURIComponent(property.clip)}.jpg` : '';
+  if (cover && [property.clip, ...(property.clips || [])].includes(cover.clip_id)
+    && cover.width >= 1600 && /^\/?data\/frames\/[\w-]+\/f_\d+\.jpg$/.test(cover.frame_url || '')) return cover.frame_url;
+  return '';
 }
 
 // These substitutions apply only to the legacy generated template, never owner text.

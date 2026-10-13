@@ -1,8 +1,9 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=443';
-import { fmt } from './ui/format.js?v=443';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=443';
-import { readAI, loadInsights, clipChips, bestCover, flightCaption } from './home.ai.js?v=443';
-import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor, figure, suggestedContent } from './home-shared.js?v=443';
+import { flightFallback } from './ui/display-name.js?v=449';
+import { thumbnailURL } from './ui/thumbnail.js?v=449';
+import { fmt } from './ui/format.js?v=449';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=449';
+import { readAI, loadInsights, clipChips, bestCover, flightCaption } from './home.ai.js?v=449';
+import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor, figure, suggestedContent } from './home-shared.js?v=449';
 const main = renderShell('trips.html');
 main.classList.add('tr-page', 'ab-page');
 const CITIES = [
@@ -25,7 +26,7 @@ document.addEventListener('ab-theme-change', () => { if (map?.getLayer('routes')
 const params = () => new URLSearchParams(location.search);
 const linkFor = c => `trips.html?trip=${encodeURIComponent(c.key)}`;
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;
-const flightTitle = f => f.label || `${fmt.date(f.date)} · ${f.time || 'Vuelo'}`;
+const flightTitle = f => f.label || flightFallback(f);
 const tripDistance = fmt.distance;
 const rangeFor = c => `${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates.at(-1)) : ''}`;
 

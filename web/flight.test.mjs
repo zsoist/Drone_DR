@@ -194,12 +194,13 @@ test('filmstrip spans the clip with approved frames and keeps backend timestamps
   assert.match(strip.innerHTML, /No hay fotogramas seleccionados/);
 });
 
-test('flight titles preserve owner text, then captions, then the recorded date and time', async () => {
+test('flight titles preserve owner text, then captions, then place and time', async () => {
   const { fmt } = await import('./ui/format.js');
-  const context = aiSelectionContext({ fmt });
-  const flight = { clip_id: 'sample', date: '2026-07-24', time: '16:24', duration_s: 10 };
+  const { flightFallback } = await import('./ui/display-name.js');
+  const context = aiSelectionContext({ fmt, flightFallback });
+  const flight = { place: 'Bogotá', clip_id: 'sample', date: '2026-07-24', time: '16:24', duration_s: 10 };
   const insight = { caption_short: 'Ventanas reflectantes', highlight_segments: [{ reason: 'Cambio de escena' }] };
   assert.equal(context.flightCaption({ ...flight, label: 'Mi toma' }, insight), 'Mi toma');
   assert.equal(context.flightCaption(flight, insight), 'Ventanas reflectantes');
-  assert.equal(context.flightCaption(flight, null), '24 jul 2026 · 16:24');
+  assert.equal(context.flightCaption(flight, null), 'Bogotá · 16:24');
 });

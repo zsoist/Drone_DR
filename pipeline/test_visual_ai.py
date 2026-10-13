@@ -108,11 +108,27 @@ class VisualAI(unittest.TestCase):
                            'Cambio de escena en el recorrido.', 'Giro junto al río azul'])
         result = insights.public_record('clip_a', self.vault)
         labels = [h.get('label') for h in result['highlights']]
-        self.assertEqual(['Paso sobre la fachada de ladrillo', 'Giro junto al río azul', 'Cámara muestra río', 'Giro junto al río azul'], labels)
+        self.assertEqual(['Paso sobre la fachada de ladrillo', 'Giro junto al río azul', 'Río'], labels)
         self.assertTrue(all(len(label) <= 40 for label in labels if label))
 
+    def test_label_backfill_preserves_owner_moments_and_provider_evidence(self):
+        from ai.backfill_display_media import repair
+        data = self.peak_fixture(['Paso sobre el río azul'] * 4)
+        manual = {'type': 'manual', 't': 5, 'reason': 'Mi selección'}
+        data['highlights'] = [manual]
+        self.write('ai/clip_a.json', data)
+        backup = self.vault / 'backup'
+        result = repair(self.vault, backup)
+        stored = json.loads((self.vault / 'ai/clip_a.json').read_text())
+        self.assertIn(manual, stored['highlights'])
+        self.assertEqual(data['insight'], stored['insight'])
+        self.assertEqual(data['embedding'], stored['embedding'])
+        self.assertEqual(data, json.loads((backup / 'ai/clip_a.json').read_text()))
+        self.assertEqual(0, result['cost_usd'])
+        self.assertEqual(0, repair(self.vault, backup)['clips_written'])
+
     def test_peak_width_controls_duration(self):
-        self.peak_fixture(['Paso sobre el río azul'] * 4)
+        self.peak_fixture(['Paso sobre el río azul', 'Giro junto al río azul', 'Ascenso sobre el río azul', 'Descenso sobre el río azul'])
         spans = insights.public_record('clip_a', self.vault)['highlights']
         self.assertEqual([3, 6, 3, 3], [round(h['end'] - h['start'], 3) for h in spans])
         for h in spans:
@@ -143,11 +159,11 @@ class VisualAI(unittest.TestCase):
         data['insight']['highlight_segments'][-1]['start'] = 71
         self.write('ai/clip_a.json', data)
         labels = [h.get('label') for h in insights.public_record('clip_a', self.vault)['highlights']]
-        self.assertEqual(['Cámara muestra fachada de ladrillo', 'Cámara muestra río', 'Paso sobre la fachada de ladrillo', 'Cámara muestra río'], labels)
+        self.assertEqual(['Fachada de ladrillo', 'Río', 'Paso sobre la fachada de ladrillo'], labels)
 
     def test_trimming_does_not_leave_an_action_without_its_subject(self):
         self.peak_fixture(['Movimiento de transición que revela nuevos edificios y zonas verdes.'])
-        self.assertTrue(all(h.get('label') == 'Cámara muestra río' for h in insights.public_record('clip_a', self.vault)['highlights']))
+        self.assertTrue(all(h.get('label') == 'Río' for h in insights.public_record('clip_a', self.vault)['highlights']))
 
     def test_wide_peak_and_clip_edges_bound_duration(self):
         from PIL import Image
@@ -164,7 +180,10 @@ class VisualAI(unittest.TestCase):
             Image.new('RGB', (16, 16), (level,) * 3).save(
                 self.vault / 'frames/clip_a' / f'f_{t // 2 + 1:04d}.jpg')
         self.write('ai/clip_a.json', data)
-        spans = insights.public_record('clip_a', self.vault)['highlights']
+        # Distinct labels isolate width measurement from duplicate suppression.
+        with patch.object(insights.highlight_peaks, 'peak_label', side_effect=lambda ins, t, samples: f'Río · {t}'):
+            insights.highlight_peaks._derive.cache_clear()
+            spans = insights.public_record('clip_a', self.vault)['highlights']
         self.assertEqual([3, 12, 3], [s['end'] - s['start'] for s in spans])
         for s in spans:
             self.assertTrue(0 <= s['start'] <= s['evidence']['peak_time_s'] < s['end'] <= 80)
@@ -181,7 +200,7 @@ class VisualAI(unittest.TestCase):
         (self.vault / 'proxies/DJI_a.mp4').write_bytes(b'proxy')
         with patch.object(reel, 'VAULT', self.vault):
             spans = reel.collect(None)
-        self.assertEqual([3, 3, 3, 6], sorted(s['duration_s'] for s in spans))
+        self.assertEqual([3, 3, 6], sorted(s['duration_s'] for s in spans))
 
     def test_property_copy_has_no_observation_stutter(self):
         import property_copy

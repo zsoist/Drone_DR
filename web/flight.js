@@ -1,10 +1,11 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=443';
-import { fmt } from './ui/format.js?v=443';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=443';
-import { skinPlayer } from './ui/player.js?v=443';
-import { readAI, clipChips, credibleHighlights, eligibleFrame } from './home.ai.js?v=443';
-import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=443';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=443';
+import { flightFallback } from './ui/display-name.js?v=449';
+import { thumbnailURL } from './ui/thumbnail.js?v=449';
+import { fmt } from './ui/format.js?v=449';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=449';
+import { skinPlayer } from './ui/player.js?v=449';
+import { readAI, clipChips, credibleHighlights, eligibleFrame } from './home.ai.js?v=449';
+import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=449';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=449';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
 main.classList.add('ab-page');
@@ -67,7 +68,7 @@ main.innerHTML = skeleton(2);
   <div class="fl">
     ${shell.backLink('Vuelos', '/index.html')}
     <header class="fl-head">
-      <div class="fl-title"><h1>${esc(meta.label || fmt.date(meta.date) + ' · ' + meta.time)}</h1><p>${durTxt} · ${meta.resolution === '3840x2160' ? '4K' : esc(meta.resolution)} · ${Math.round(meta.fps)} fps</p></div>
+      <div class="fl-title"><h1>${esc(meta.label || flightFallback(meta))}</h1><p>${durTxt} · ${meta.resolution === '3840x2160' ? '4K' : esc(meta.resolution)} · ${Math.round(meta.fps)} fps</p></div>
       <div class="fl-actions">${meta.has_proxy ? `<a class="ui-button ui-button--primary" href="studio.html?clip=${cid}">Abrir en Studio</a>` : ''}<button class="ui-button ui-button--quiet" id="fl-more" aria-label="Más opciones del vuelo">${icon('more')}</button></div>
     </header>
     <section class="fl-summary" id="flight-summary" aria-label="Resumen del vuelo" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></section>
@@ -227,11 +228,13 @@ main.innerHTML = skeleton(2);
     more.setAttribute('aria-label', 'Opciones del video'); more.innerHTML = icon('more');
     controls.append(more);
     more.addEventListener('click', () => openMenu(more, [
-      ...secondary.filter(button => !button.hidden).map((button, i) => ({id: `control-${i}`, label: button.getAttribute('aria-label')})),
+      ...secondary.flatMap((button, i) => button.hidden ? [] : [{id: `control-${i}`, label: button.getAttribute('aria-label')}]),
       {id: 'quality', label: 'Calidad de video', hint: qualityControl.textContent},
+      ...flightMenuItems,
     ], {onSelect: id => {
       if (id === 'quality') openMenu(more, qualityItems(), {onSelect: setQuality});
-      else secondary[Number(id.split('-')[1])]?.click();
+      else if (id.startsWith('control-')) secondary[Number(id.split('-')[1])]?.click();
+      else selectFlightAction(id);
     }}));
     const qualityItems = () => [{ id: 'auto', label: 'Automática' },
       ...Object.entries(SRC).filter(([, url]) => url).map(([id]) => ({id, label: {'720': '720p', hd: '1080p', '4k': '4K'}[id]}))]
@@ -324,7 +327,8 @@ main.innerHTML = skeleton(2);
 
   // Foto 4K: el server extrae el frame del ORIGINAL en el segundo actual
   async function capturePhoto() {
-    const btn = document.getElementById('fl-more'); btn.disabled = true; btn.textContent = 'Capturando…';
+    const btn = [...document.querySelectorAll('#fl-more, .fl-player-more')].find(button => button.getClientRects().length);
+    btn.disabled = true; btn.textContent = 'Capturando…';
     try {
       const data = await save('/api/frame', { clip_id: cid, t: +(video?.currentTime || 0).toFixed(1) });
       const content = document.createElement('div');
@@ -416,19 +420,22 @@ main.innerHTML = skeleton(2);
     });
   }
 
-  document.getElementById('fl-more').addEventListener('click', e => openMenu(e.currentTarget, [
+  const flightMenuItems = [
     { id: 'edit', label: 'Editar vuelo', icon: 'edit' },
     { id: 'details', label: 'Detalles', icon: 'info' },
     { id: 'photo', label: 'Extraer foto 4K', icon: 'image' },
     { id: 'previous', label: 'Vuelo anterior', icon: 'arrowL', disabled: !older },
     { id: 'next', label: 'Vuelo siguiente', icon: 'arrowR', disabled: !newer },
-  ], { onSelect: id => {
+  ];
+  function selectFlightAction(id) {
     if (id === 'edit') editFlight();
     if (id === 'details') showDetails();
     if (id === 'photo') capturePhoto();
     if (id === 'previous' && older) location.href = `flight.html?id=${encodeURIComponent(older.clip_id)}`;
     if (id === 'next' && newer) location.href = `flight.html?id=${encodeURIComponent(newer.clip_id)}`;
-  } }));
+  }
+  document.getElementById('fl-more').addEventListener('click', e => openMenu(e.currentTarget, flightMenuItems, { onSelect: selectFlightAction }));
+  if (video) document.getElementById('fl-more').classList.add('fl-flight-secondary');
 
   // ---- HUD ----
   document.getElementById('hud').hidden = !pts.length;
@@ -596,7 +603,13 @@ main.innerHTML = skeleton(2);
       ]);
       const insight = detail.insight;
       region.innerHTML = `<dl><div><dt>Recorrido</dt><dd>${figure(fmt.distance(summary.distance_m))}</dd></div><div><dt>Altura máxima</dt><dd>${figure(fmt.distance(summary.max_altitude_m == null ? null : Math.max(0, summary.max_altitude_m)))}</dd></div></dl>`;
-      const moments = credibleHighlights(insight, aiData?.sampled_frame_times).filter(h => !manualHighlights.some(m => Math.abs(m.t - h.start) < 1));
+      const seenMomentLabels = new Set();
+      const moments = credibleHighlights(insight, aiData?.sampled_frame_times).filter(h => {
+        const label = (h.reason || '').trim().toLocaleLowerCase('es');
+        if (label && seenMomentLabels.has(label)) return false;
+        if (label) seenMomentLabels.add(label);
+        return !manualHighlights.some(m => Math.abs(m.t - h.start) < 1);
+      });
       const best = summary.best_moment;
       const verifiedBest = best?.selection === 'ai' && !best.synthetic && best.time_s >= 0 && moments.some(h => best.time_s >= h.start && best.time_s < h.end);
       const summaryText = insight?.caption_short || summary.summary;

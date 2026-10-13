@@ -1,7 +1,7 @@
-import { fmt } from './ui/format.js?v=443';
-import { term } from './ui/terms.js?v=443';
-import { originalInputs } from './scene-improve-state.js?v=443';
-import { sceneTitle, areaNav, hydrateSceneCovers } from './scene-improve-ui.js?v=443';
+import { fmt } from './ui/format.js?v=449';
+import { term } from './ui/terms.js?v=449';
+import { originalInputs } from './scene-improve-state.js?v=449';
+import { sceneTitle, areaNav, hydrateSceneCovers } from './scene-improve-ui.js?v=449';
 /* global renderShell, pageHead, getFlights, authFetch, api, fmt, icon, haversine, SceneImprovePolicy */
 
 const root = document.getElementById('scene-improve-root');

@@ -12,8 +12,14 @@ try:
 except ImportError:
     from insight_schema import DANGLING, PRAISE
 
-VERSION = 3
+VERSION = 4
 MAX_FRAMES = 600
+
+
+def clean_label(value):
+    label = ' '.join(value.split()).strip(' .;,:!?…')
+    label = re.sub(r'^(?:(?:la\s+)?c[aá]mara\s+muestra|(?:el\s+)?dron\s+muestra|vista\s+a[eé]rea\s+de)\s+', '', label, flags=re.I)
+    return label[:1].upper() + label[1:]
 
 
 def peak_label(insight, time_s, sampled_times=()):
@@ -21,7 +27,7 @@ def peak_label(insight, time_s, sampled_times=()):
     segments = sorted((s for s in insight['highlight_segments']
                        if s['start'] <= time_s < s['end']), key=lambda s: -s['score'])
     for segment in segments:
-        label = ' '.join(segment['reason'].split()).strip(' .;,:!?…')
+        label = clean_label(segment['reason'])
         # A scene change is measured evidence, but it does not name a subject.
         if (PRAISE.search(label) or re.search(
                 r'\b(?:cambio de escena|momento destacado|escena del vuelo|recorrido|interés visual)\b', label, re.I)):
@@ -58,12 +64,12 @@ def peak_label(insight, time_s, sampled_times=()):
     subjects.sort(key=lambda subject: -sum(word.casefold().rstrip('s') in note
                                           for word in subject.split() if len(word) > 3))
     subject = subjects[0] if subjects else insight.get('scene_type', 'entorno')
-    label = 'Cámara muestra ' + subject[:1].lower() + subject[1:]
+    label = clean_label(subject)
     if len(label) > 40:
         label = label[:41].rsplit(' ', 1)[0]
     while DANGLING.search(label):
         label = label.rsplit(' ', 1)[0]
-    return label
+    return label[:1].upper() + label[1:]
 
 
 def derive(data, vault):
@@ -141,8 +147,12 @@ def _derive(insight_json, duration, signature, sampled_times):
         # Keep the peak inside the segment when clipping a wide or asymmetric peak.
         start = max(t - length + .5, min(t - .5, start))
         start = round(max(0, min(start, duration - length)), 3)
+        label = peak_label(ins, t, sampled_times)
+        # Peaks arrive in score order. Keep the strongest evidence for each subject/action.
+        if any(s['reason'].casefold() == label.casefold() for s in segments):
+            continue
         segments.append({'start': start, 'end': round(start + length, 3), 'score': score,
-                         'reason': peak_label(ins, t, sampled_times),
+                         'reason': label,
                          'evidence': {'method': 'keyframe_difference', 'peak_time_s': t,
                                       'onset_s': onset, 'offset_s': offset,
                                       'previous_time_s': row['previous_time_s'],

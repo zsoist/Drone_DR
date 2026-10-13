@@ -202,4 +202,5 @@
  .fl .ui-player-clock { margin-right:0; }
  .fl .fl-player-secondary, .fl .fl-quality { display:none; }
  .fl .fl-player-more { display:inline-flex; }
+ .fl .fl-flight-secondary { display:none; }
 }
