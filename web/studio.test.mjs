@@ -26,21 +26,34 @@ test('missing sources block recovery without discarding saved clips', () => {
  const p={tl:[{clip_id:'a'},{clip_id:'b'}]};
  assert.equal(missingSources(p,{a:{}}),1); assert.equal(p.tl.length,2);
 });
-test('AI accepts only stored, finite highlights within source bounds', () => {
- const f=[{clip_id:'a',duration_s:3}];
- assert.equal(highlightSuggestions(f,{}).length,0);
- assert.deepEqual(highlightSuggestions(f,{a:{highlights:[{t:0},{t:'bad'},{t:100}]}}).map(s=>[s.a,s.b]),[[0,2.5]]);
+test('AI moments use exact insight bounds, short captions, and full descriptions', () => {
+ const caption = 'Una vista cenital de una casa entre árboles.';
+ const [h] = highlightSuggestions([{clip_id:'a',duration_s:30}], {a:{
+   caption, caption_short:'Casa entre árboles',
+   highlight_segments:[{start:4,end:19,score:.8,reason:'La casa ocupa el encuadre.'}]
+ }});
+ assert.deepEqual([h.a,h.b,h.caption,h.description,h.score], [4,19,'Casa entre árboles',caption,.8]);
 });
-
-test('AI moment captions are short subject lines while full reasons stay intact', () => {
- const reason='Excelente composición que captura la densidad urbana de Bogotá en contraste con la majestuosidad de los Cerros Orientales.';
- const [h]=highlightSuggestions([{clip_id:'a',duration_s:20}],{a:{highlights:[{t:5,reason}]}});
- assert.equal(h.caption,'Ciudad · Montañas');
- assert.equal(h.reason,reason);
+test('AI rejects invalid bounds and does not use legacy highlight timestamps', () => {
+ const flights = [{clip_id:'a',duration_s:30}];
+ assert.deepEqual(highlightSuggestions(flights,{a:{highlights:[{t:5}]}}), []);
+ const segments = [{start:-1,end:3}, {start:4,end:31}, {start:4,end:4},
+   {start:'2',end:3}, {start:0,end:Infinity}, {start:NaN,end:4}];
+ assert.deepEqual(highlightSuggestions(flights,{a:{highlight_segments:segments.map(h=>({...h,score:.5}))}}), []);
 });
-test('AI captions handle missing descriptions without inventing subjects', () => {
- const [h]=highlightSuggestions([{clip_id:'a',duration_s:20}],{a:{highlights:[{t:5}]}});
- assert.equal(h.caption,'Momento del vuelo');
+test('AI ranks moments by segment score and keeps the ten highest', () => {
+ const highlight_segments = Array.from({length:12}, (_,i)=>({start:i,end:i+1,score:i/12}));
+ const moments = highlightSuggestions([{clip_id:'a',duration_s:30}], {a:{highlight_segments}});
+ assert.equal(moments.length,10);
+ assert.equal(moments[0].a,11);
+ assert.equal(moments[9].a,2);
+});
+test('AI captions use neutral subjects if an older insight has no short caption', () => {
+ const [h] = highlightSuggestions([{clip_id:'a',duration_s:30}], {a:{
+   caption:'Excelente panorámica de Bogotá y los Cerros Orientales.',
+   highlight_segments:[{start:0,end:4,score:.5}]
+ }});
+ assert.equal(h.caption,'Plano abierto: Ciudad · Montañas');
 });
 test('AI subject captions stay under 60 characters for dense descriptions', () => {
  const caption=analysisCaption('Una vista espectacular de la ciudad, edificios, tejados, montañas, calles, tráfico, árboles y cielo.');
@@ -53,4 +66,14 @@ test('AI captions retain the shot and common rural subjects without praise', () 
  assert.equal(analysisCaption('Excelente panorámica de Bogotá y los Cerros Orientales.'),'Plano abierto: Ciudad · Montañas');
  assert.equal(analysisCaption('La casa y las personas en el patio crean una imagen acogedora.'),'Casa · Personas');
  assert.equal(analysisCaption('Vista amplia del valle y las colinas.'),'Valle · Colinas');
+});
+
+test('Studio and the shell share the same UI module instances', async () => {
+ const {readFile} = await import('node:fs/promises');
+ const studio = await readFile(new URL('./studio.js',import.meta.url),'utf8');
+ const shell = await readFile(new URL('./shell.js',import.meta.url),'utf8');
+ for (const name of ['sheet','toast','palette']) {
+   const pattern = new RegExp(`\\./ui/${name}\\.js\\?v=\\d+`);
+   assert.equal(studio.match(pattern)?.[0],shell.match(pattern)?.[0],name);
+ }
 });
