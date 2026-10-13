@@ -3,6 +3,22 @@
 
   try { if (localStorage.getItem('ab_theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch { /* dark by default */ }
 
+  // The embedded archive frame needs no access to private media routes.
+  const cover = document.querySelector('.login-cover');
+  const layout = matchMedia('(min-width: 900px)');
+  function layoutCover() {
+    const desktop = layout.matches;
+    Object.assign(cover.style, {
+      position: 'absolute', zIndex: '-1', objectFit: 'cover',
+      top: desktop ? '28px' : '16px', left: desktop ? '28px' : '16px',
+      width: desktop ? 'calc(48% - 28px)' : 'calc(100% - 32px)',
+      height: desktop ? 'calc(100% - 56px)' : 'calc(100% - 32px)',
+      borderRadius: '20px', opacity: desktop ? '1' : '.16',
+    });
+  }
+  layoutCover();
+  layout.addEventListener('change', layoutCover);
+
   const form = document.getElementById('login-form');
   const password = document.getElementById('login-password');
   const submit = document.getElementById('login-submit');

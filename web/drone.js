@@ -1,11 +1,13 @@
+import { fmt } from './ui/format.js?v=404';
 // Drone equipment, read-only library statistics, SD import, and direct upload.
 const main = renderShell('drone.html');
 main.classList.add('ab-page', 'dr-page');
 const drMotionMs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-base')) || 220;
 main.innerHTML = `
-  <header class="dr-head"><div><h1>Dron</h1><p>Tu equipo y el material de cada vuelo.</p></div><button class="ui-button ui-button--primary" id="dr-import">Importar archivos</button></header>
-  <section class="dr-fleet" aria-label="Tus drones"><div class="dr-equipment"><h2>Tu equipo</h2><p>DJI Flip · Neo 2</p><button class="ui-button ui-button--secondary" id="dr-specs">Ver ficha del equipo</button></div><div id="dr-library" class="dr-library" aria-busy="true"><dl>${['Clips en el archivo','Tiempo grabado','Con ruta GPS'].map(label=>`<div><dt>${label}</dt><dd class="ui-skeleton" aria-hidden="true">&nbsp;</dd></div>`).join('')}</dl></div></section>
-  <p class="dr-attribution">Los vuelos aún no incluyen el modelo de dron. Las cifras corresponden a todo el archivo.</p>
+  <header class="dr-head"><div><h1>Dron</h1><p>Tu equipo y el material de cada vuelo.</p></div><button class="ui-button ui-button--quiet" id="dr-import">Importar archivos</button></header>
+  <figure class="dr-footage" id="dr-footage" hidden></figure>
+  <section class="dr-fleet" aria-label="Tus drones"><div class="dr-equipment"><h2>Tu equipo</h2><p>DJI Flip · Neo 2</p><button class="ui-button ui-button--secondary" id="dr-specs">Ver ficha del equipo</button></div><div id="dr-library" class="dr-library" aria-busy="true"><dl>${['Vuelos en el archivo','Video en el archivo','Ubicados en Viajes'].map(label=>`<div><dt>${label}</dt><dd class="ui-skeleton" aria-hidden="true">&nbsp;</dd></div>`).join('')}</dl></div></section>
+
   <div class="ui-segmented dr-tabs" id="dr-tabs" role="group" aria-label="Vía de importación">
     <button class="on" aria-pressed="true" data-tab="sd" data-tip="La vía recomendada: los .SRT traen GPS, mapa y telemetría">${icon('db')} Tarjeta SD</button>
     <button aria-pressed="false" data-tab="up" data-tip="Videos o fotos desde iPhone/iPad o arrastrando en PC — sin telemetría de vuelo">${icon('dl')} Subida directa</button>
@@ -15,7 +17,7 @@ main.innerHTML = `
     <div class="dr-stats" id="d-stats"></div>
 
     <div class="panel dr-panel">
-      <div class="ph">${icon('db')} Tarjetas SD detectadas
+      <div class="ph">${icon('db')} Importar desde tarjeta
         <span class="spacer" style="flex:1"></span>
         <button class="ui-button ui-button--secondary" id="sd-rescan" data-tip="Vuelve a buscar tarjetas montadas (carpeta DCIM)">${icon('loop')} Escanear</button>
       </div>
@@ -27,17 +29,14 @@ main.innerHTML = `
 
   <section class="dr-mod" data-mod="up" hidden>
     <div class="dr-up-wrap">
-      <div class="ui-segmented dr-kind" id="up-kind" role="group" aria-label="Qué vas a subir">
-        <button class="on" aria-pressed="true" data-kind="video" data-tip="Clips de video: reproducción, análisis y galería">${icon('film')} Videos</button>
-        <button aria-pressed="false" data-kind="foto" data-tip="Fotos fijas JPG o DNG: la entrada recomendada para malla 3D">${icon('iso')} Fotos · malla 3D</button>
-      </div>
+      <label class="dr-kind">Tipo de archivo <select class="ctl" id="up-kind"><option value="video">Videos</option><option value="foto">Fotos</option></select></label>
 
       <div class="dr-up-panes" id="up-panes">
         <div class="dr-up-pane" data-pane="video">
           <div class="dr-up-zone rise" id="drop" data-tip="También puedes soltar varios a la vez — van en cola">
 
             ${icon('dl')}
-            <p class="dr-up-t">Trae los videos de tu próximo montaje</p><button type="button" class="ui-button ui-button--primary" id="video-pick">Elegir videos</button>
+            <p class="dr-up-t">Subir videos</p><button type="button" class="ui-button ui-button--primary" id="video-pick">Elegir videos</button>
             <p class="dr-up-s">En iPhone y iPad se abre tu app de <b>Fotos</b> directamente.</p>
 
             <input type="file" id="file" multiple accept="video/*,.mts,.mkv" hidden>
@@ -58,7 +57,7 @@ main.innerHTML = `
             <p class="dr-up-t">Arrastra fotos o una carpeta</p>
             <p class="dr-up-s">JPG, JPEG y DNG del dron. Hasta 200 MB por foto y 25 GB por grupo.</p>
             <div class="dr-up-devices">
-              <button type="button" class="ui-button ui-button--secondary" id="ph-pick">${icon('plus')} Elegir fotos</button>
+              <button type="button" class="ui-button ui-button--primary" id="ph-pick">${icon('plus')} Elegir fotos</button>
               <button type="button" class="ui-button ui-button--secondary" id="ph-pick-dir">${icon('folder')} Elegir carpeta</button>
             </div>
             <input type="file" id="ph-file" multiple accept=".jpg,.jpeg,.dng,image/jpeg" hidden>
@@ -125,7 +124,7 @@ if (new URLSearchParams(location.search).get('via') === 'subir') showVia('up');
 
 let volumes = [];
 
-const gb = b => (b / 1e9).toFixed(1) + ' GB';
+const gb = b => fmt.gb(b);
 function lastFlight(v) {
   const dates = [...v.videos, ...v.photos]
     .map(x => ((x.name || '').match(/DJI_(\d{4})(\d{2})(\d{2})/) || []).slice(1))
@@ -203,7 +202,7 @@ async function scan() {
       <div class="sd-browser" data-browser="${esc(v.volume)}" hidden></div>
     </div>`;
   }).join('') : `
-    <div class="ui-empty"><h3>No hay una tarjeta conectada</h3><p>Inserta la microSD en el Mac para importar tus vuelos.</p><button class="ui-button ui-button--primary" data-rescan>Buscar tarjeta</button><small>Por ejemplo, la tarjeta de tu último vuelo.</small></div>`;
+    <div class="ui-empty"><h3>No hay una tarjeta conectada</h3><p>Inserta la microSD en el Mac para importar tus vuelos.</p><button class="ui-button ui-button--primary" data-rescan>Buscar tarjeta</button></div>`;
   // el re-scan cada 10s reconstruye las tarjetas → re-abre el explorador que estuviera abierto
   // (antes se colapsaba solo y perdía sus listeners de filtro/búsqueda) (#8/#9/#11)
   volumes.forEach(v => { if (typeof bstate !== 'undefined' && bstate[v.volume]?.open) renderBrowser(v); });
@@ -247,7 +246,7 @@ function renderBrowser(v) {
         <span class="sf-name">${esc(x.name)}</span>
         ${x.srt ? '<span class="ui-chip">GPS</span>' : ''}
         <span class="spacer" style="flex:1"></span>
-        <span class="mono sf-size">${x.bytes > 1e9 ? gb(x.bytes) : (x.bytes / 1e6).toFixed(0) + ' MB'}</span>
+        <span class="mono sf-size">${x.bytes > 1e9 ? gb(x.bytes) : fmt.number(x.bytes / 1e6) + ' MB'}</span>
         <span class="sf-st ${x.in_vault ? 'in' : 'new'}">${x.in_vault ? 'En el archivo' : 'Nuevo'}</span>
       </div>`).join('')}
       ${rows.length > 120 ? `<p class="dr-note">…y ${rows.length - 120} más (usa los filtros).</p>` : ''}
@@ -295,7 +294,7 @@ document.getElementById('sd-list').addEventListener('click', e => {
 // Import includes photos. Keep originals until content verification is available.
 async function openImport(v) {
   const opener = document.activeElement;
-  const { createSheet } = await import('./ui/sheet.js?v=402');
+  const { createSheet } = await import('./ui/sheet.js?v=404');
   const files = [...v.videos, ...v.photos].filter(x => !x.in_vault);
   const content = document.createElement('form'); content.className = 'dr-import-form';
   content.innerHTML = `<p>Elige los archivos que quieres importar. Los originales se conservan en la tarjeta.</p><div class="dr-import-files">${files.map(f=>`<label><input type="checkbox" checked data-rel="${esc(f.rel)}"><span><b>${esc(f.name)}</b><small>${gb(f.bytes)}${f.srt ? ' · con GPS' : ''}</small></span></label>`).join('')}</div><label for="sd-drone">Carpeta de destino</label><input class="ctl" id="sd-drone" value="${esc(v.volume)}" maxlength="40" required><p class="dr-import-error" role="alert"></p><button type="submit" class="ui-button ui-button--primary">Importar archivos</button>`;
@@ -314,7 +313,7 @@ async function openImport(v) {
 }
 async function openOptimize() {
   const opener = document.activeElement;
-  const { createSheet } = await import('./ui/sheet.js?v=402');
+  const { createSheet } = await import('./ui/sheet.js?v=404');
   const content=document.createElement('p'); content.textContent='La limpieza está deshabilitada hasta que el servidor pueda verificar el contenido completo de cada copia. Conserva los originales en la tarjeta.';
   const view=createSheet({title:'Conserva tus originales',content,size:'peek',onClose:()=>view.destroy()}); view.open(opener);
 }
@@ -412,9 +411,9 @@ function upRender() {
     </div>`).join('');
 }
 function upMeta(it) {
-  const mb = v => (v / 1e6).toFixed(0);
+  const mb = v => fmt.number(v / 1e6);
   if (it.status === 'subiendo')
-    return `${it.pct}% · ${mb(it.loaded)}/${mb(it.file.size)} MB · ${(it.speed / 1e6).toFixed(1)} MB/s · ~${fmt.dur(Math.min(5940, it.eta))} restantes`;
+    return `${it.pct}% · ${mb(it.loaded)}/${mb(it.file.size)} MB · ${fmt.number(it.speed / 1e6, 1)} MB/s · ~${fmt.duration(Math.min(5940, it.eta))} restantes`;
   if (it.status === 'procesando') return `${mb(it.file.size)} MB · preparación y análisis en curso`;
   if (it.status === 'error') return esc(it.err || 'error');
   return `${mb(it.file.size)} MB`;
@@ -444,22 +443,16 @@ let phItems = [];          // {file, rel, pass, status: 'pend'|'sub'|'ok'|'dup'|
 let phBusy = false, phStop = false, phXhr = null, phFatal = '';
 
 function setUpKind(kind) {
-  document.querySelectorAll('#up-kind [data-kind]').forEach(b => {
-    b.classList.toggle('on', b.dataset.kind === kind);
-    b.setAttribute('aria-pressed', b.dataset.kind === kind);
-  });
+  phEl('up-kind').value = kind;
   document.querySelectorAll('#up-panes [data-pane]').forEach(p => { p.hidden = p.dataset.pane !== kind; });
   try { localStorage.setItem('ab_up_kind', kind); } catch { /* modo privado */ }
 }
-phEl('up-kind').addEventListener('click', e => {
-  const b = e.target.closest('[data-kind]');
-  if (b) setUpKind(b.dataset.kind);
-});
+phEl('up-kind').addEventListener('change', e => setUpKind(e.target.value));
 try {
   if (localStorage.getItem('ab_up_kind') === 'foto' && new URLSearchParams(location.search).get('via') === 'subir') setUpKind('foto');
 } catch { /* sin storage */ }
 
-const phMB = v => v >= 1e9 ? (v / 1e9).toFixed(1) + ' GB' : (v / 1e6).toFixed(0) + ' MB';
+const phMB = v => v >= 1e9 ? fmt.gb(v) : fmt.number(v / 1e6) + ' MB';
 const phDefaultSet = () => 'Fotos ' + new Date().toISOString().slice(0, 10);
 if (!('webkitdirectory' in phEl('ph-dir'))) phEl('ph-pick-dir').hidden = true;   // iOS Safari: sin carpetas
 
@@ -515,6 +508,8 @@ function phPassOf(it) { return it.pass || (phEl('ph-pass').value || '').trim() |
 function phRender() {
   const stage = phEl('ph-stage');
   stage.hidden = !phItems.length;
+  phEl('ph-pick').classList.toggle('ui-button--primary', !phItems.length);
+  phEl('ph-pick').classList.toggle('ui-button--secondary', !!phItems.length);
   if (!phItems.length) return;
   if (!phEl('ph-set').value) phEl('ph-set').placeholder = phDefaultSet();
   const pend = phItems.filter(i => i.status === 'pend' || i.status === 'err');
@@ -592,7 +587,7 @@ async function phRun() {
     bar.style.setProperty('--p', total ? Math.min(1, loaded / total) : 1);
     const eta = speed > 0 ? (total - loaded) / speed : 0;
     meta.textContent = `${nDone}/${todo.length} fotos · ${phMB(loaded)} de ${phMB(total)}`
-      + (speed > 0 ? ` · ${(speed / 1e6).toFixed(1)} MB/s · ~${fmt.dur(Math.min(5940, eta))} restantes` : '');
+      + (speed > 0 ? ` · ${fmt.number(speed / 1e6, 1)} MB/s · ~${fmt.duration(Math.min(5940, eta))} restantes` : '');
   };
   phRender(); paint();
   for (const it of todo) {
@@ -652,7 +647,7 @@ phEl('ph-dir').addEventListener('change', e => {
 // Equipment is documented in the capture guide. The manifest has no drone assignment.
 document.getElementById('dr-import').addEventListener('click',()=>{ document.getElementById('dr-tabs').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'}); (document.querySelector('[data-rescan]') || document.getElementById('sd-rescan')).focus({preventScroll:true}); });
 document.getElementById('dr-specs').addEventListener('click',async e=>{
-  const opener=e.currentTarget; const {createSheet}=await import('./ui/sheet.js?v=402');
+  const opener=e.currentTarget; const {createSheet}=await import('./ui/sheet.js?v=404');
   const content=document.createElement('div'); content.className='dr-specs';
   content.innerHTML='<h3>DJI Flip</h3><dl><div><dt>Sensor</dt><dd>1/1,3 pulgadas</dd></div><div><dt>Foto</dt><dd>48 MP · JPEG y DNG</dd></div><div><dt>Vuelo máximo</dt><dd>31 min</dd></div></dl><a class="ui-button ui-button--quiet" href="https://www.dji.com/flip/specs" target="_blank" rel="noopener">Especificaciones de DJI Flip</a><h3>Neo 2</h3><dl><div><dt>Sensor</dt><dd>1/2 pulgada</dd></div><div><dt>Foto</dt><dd>12 MP</dd></div><div><dt>Vuelo máximo</dt><dd>19 min</dd></div></dl><a class="ui-button ui-button--quiet" href="https://store.dji.com/sg/product/dji-neo-2" target="_blank" rel="noopener">Especificaciones de DJI Neo 2</a><p>Datos del fabricante. La autonomía máxima se mide en condiciones de prueba; el tiempo real depende del vuelo.</p><p>Los vuelos del archivo aún no están asignados a un dron.</p>';
   const view=createSheet({title:'Tu equipo',content,size:'half',onClose:()=>view.destroy()}); view.open(opener);
@@ -660,9 +655,11 @@ document.getElementById('dr-specs').addEventListener('click',async e=>{
 async function loadLibrary() {
   const el=document.getElementById('dr-library');
   try {
-    const r=await fetch(`${DATA}/manifest/flights.json`); if(!r.ok) throw new Error('flights'); const {flights=[]}=await r.json();
-    const seconds=flights.reduce((n,f)=>n+(Number(f.duration_s)||0),0), gps=flights.filter(f=>f.has_srt).length;
-    el.innerHTML=`<dl><div><dt>Clips en el archivo</dt><dd>${flights.length}</dd></div><div><dt>Tiempo grabado</dt><dd>${Math.round(seconds/60)} <small>min</small></dd></div><div><dt>Con ruta GPS</dt><dd>${gps}</dd></div></dl><p>Capturas: ${[...new Set(flights.map(f=>f.resolution).filter(Boolean))].map(esc).join(' · ') || 'Sin datos aún'}</p>`;
+    const r=await fetch(`${DATA}/manifest/flights.json`); if(!r.ok) throw new Error('flights'); const data=await r.json(); const flights=(data.flights || []).filter(f=>!f.archived);
+    const cover=flights.find(f=>f.frame_count && f.has_srt);
+    if (cover) { const figure=document.getElementById('dr-footage'); figure.innerHTML=`<img src="${DATA}/frames/${encodeURIComponent(cover.clip_id)}/f_${String(Math.max(1,Math.ceil(cover.frame_count/2))).padStart(4,'0')}.jpg" alt="Vista aérea de tu archivo"><figcaption>Último vuelo · ${fmt.date(cover.date)}</figcaption>`; figure.hidden=false; }
+    const seconds=flights.reduce((n,f)=>n+(Number(f.duration_s)||0),0), gps=flights.filter(f=>Array.isArray(f.stats?.home) && f.stats.home.every(Number.isFinite)).length;
+    el.innerHTML=`<dl><div><dt>Vuelos en el archivo</dt><dd class="ui-figure">${fmt.number(flights.length)}</dd></div><div><dt>Video en el archivo</dt><dd>${fmt.duration(seconds).replace(/(\d[\d.,]*)/g,'<span class="ui-figure">$1</span>').replace(/ (h|min|s)/g,' <span class="ui-unit">$1</span>')}</dd></div><div><dt>Ubicados en Viajes</dt><dd class="ui-figure">${fmt.number(gps)}</dd></div></dl><p>Capturas: ${[...new Set(flights.map(f=>f.resolution).filter(Boolean))].map(esc).join(' · ') || 'Sin datos aún'}</p>`;
   } catch { el.innerHTML='<p>No se pudo cargar el archivo.</p><button class="ui-button ui-button--secondary" id="dr-retry-library">Reintentar</button>'; el.querySelector('button').onclick=loadLibrary; }
   finally { el.setAttribute('aria-busy','false'); }
 }

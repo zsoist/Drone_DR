@@ -1,7 +1,10 @@
-import { canonicalPropertyURL } from './ventas.logic.js?v=402';
-import { createSheet } from './ui/sheet.js?v=402';
-import { showToast } from './ui/toast.js?v=402';
-import { registerPaletteSource } from './ui/palette.js?v=402';
+import { fmt } from './ui/format.js?v=404';
+import { Suggested } from './ui/suggested.js?v=404';
+import { propertyCover } from './p.logic.js?v=404';
+import { canonicalPropertyURL } from './ventas.logic.js?v=404';
+import { createSheet } from './ui/sheet.js?v=404';
+import { showToast } from './ui/toast.js?v=404';
+import { registerPaletteSource } from './ui/palette.js?v=404';
 
 const main = renderShell('ventas.html');
 main.classList.add('ab-page', 'vt-page');
@@ -12,7 +15,7 @@ async function read(url, options) {
   if (!r.ok || d.error) throw new Error(d.error || 'No se pudo conectar.');
   return d;
 }
-main.innerHTML = `<header class="vt-head"><div><h1>Propiedades</h1><p>El lugar, desde una nueva perspectiva.</p></div><button class="ui-button ui-button--primary" id="vt-new">Nueva propiedad</button></header>
+main.innerHTML = `<header class="vt-head"><div><h1>Ventas</h1></div><button class="ui-button ui-button--primary" id="vt-new">Nueva propiedad</button></header>
   <p class="vt-private">Acceso privado · Los enlaces requieren tu sesión de AeroBrain.</p>
   <div id="plist" class="vt-list" aria-busy="true"><article class="vt-property" aria-hidden="true"><div class="vt-cover ui-skeleton"></div><div class="vt-property-info"><div class="ui-skeleton ui-skeleton--text"></div><div class="ui-skeleton ui-skeleton--text"></div></div></article></div>`;
 async function loadList() {
@@ -23,10 +26,10 @@ async function loadList() {
     const details = await Promise.allSettled(properties.map(p=>read(`${DATA}/properties/${encodeURIComponent(p.slug)}.json`)));
     properties = properties.map((p,i)=>details[i].status === 'fulfilled' ? {...p,...details[i].value} : p);
     list.innerHTML = properties.length ? properties.map(p=>`<article class="vt-property">
-      <a class="vt-cover" href="p.html?id=${encodeURIComponent(p.slug)}" aria-label="Ver ${esc(p.titulo || p.slug)}">${p.clip ? `<img src="${DATA}/thumbs/${encodeURIComponent(p.clip)}.jpg" alt="Vista aérea de ${esc(p.titulo)}" loading="lazy">` : '<span>Portada pendiente</span>'}</a>
-      <div class="vt-property-info"><div><p class="vt-location">${esc(p.ubicacion || 'Ubicación pendiente')}</p><h2><a href="p.html?id=${encodeURIComponent(p.slug)}">${esc(p.titulo || p.slug)}</a></h2><p class="vt-price">${esc(p.precio || 'Precio por definir')}</p></div><div class="vt-property-actions"><a class="ui-button ui-button--secondary" href="p.html?id=${encodeURIComponent(p.slug)}">Ver propiedad</a><button class="ui-button ui-button--quiet" data-edit="${esc(p.slug)}">Editar</button></div></div></article>`).join('') : `<div class="ui-empty"><h2>Tu primera propiedad empieza con un vuelo</h2><p>Añade sus datos y elige una vista aérea de tu archivo.</p><button class="ui-button ui-button--primary" id="vt-empty-new">Nueva propiedad</button><small>Por ejemplo, una casa campestre en Cajicá.</small></div>`;
+      <a class="vt-cover" href="p.html?id=${encodeURIComponent(p.slug)}" aria-label="Ver ${esc(p.titulo || p.slug)}">${p.clip ? `<img src="${propertyCover(p, flights.find(f=>f.clip_id===p.clip))}" alt="Vista aérea de ${esc(p.titulo)}" loading="eager">` : '<span>Portada pendiente</span>'}</a>
+      <div class="vt-property-info"><div><p class="vt-location">${esc(p.ubicacion || 'Ubicación pendiente')}</p><h2><a href="p.html?id=${encodeURIComponent(p.slug)}">${esc(p.titulo || p.slug)}</a></h2><p class="vt-price">${esc(p.precio || 'Precio por definir')}</p></div><div class="vt-property-actions"><a class="ui-button ui-button--secondary" href="p.html?id=${encodeURIComponent(p.slug)}">Ver propiedad</a><button class="ui-button ui-button--quiet" data-edit="${esc(p.slug)}">Editar</button></div></div></article>`).join('') : `<div class="ui-empty"><h2>Tu primera propiedad empieza con un vuelo</h2><p>Añade sus datos y elige una vista aérea de tu archivo.</p><button class="ui-button ui-button--secondary" id="vt-empty-new">Nueva propiedad</button><small>Por ejemplo, una casa campestre en Cajicá.</small></div>`;
     list.querySelector('#vt-empty-new')?.addEventListener('click', e=>openEditor({},e.currentTarget));
-  } catch { list.innerHTML = '<div class="ui-empty"><p>No se pudieron cargar las propiedades.</p><button class="ui-button ui-button--primary" id="vt-retry">Reintentar</button></div>'; list.querySelector('button').onclick=loadList; }
+  } catch { list.innerHTML = '<div class="ui-empty"><p>No se pudieron cargar las propiedades.</p><button class="ui-button ui-button--secondary" id="vt-retry">Reintentar</button></div>'; list.querySelector('button').onclick=loadList; }
   finally { list.setAttribute('aria-busy','false'); }
 }
 async function openEditor(property = {}, opener) {
@@ -36,7 +39,7 @@ async function openEditor(property = {}, opener) {
   content.innerHTML = `<p class="vt-note">Guarda una ficha privada con los datos y las imágenes de la propiedad.</p><div class="vt-fields">${fields.map(([key,label,placeholder],i)=>`<label class="vt-field ${i<4?'vt-full':''}"><span>${label}${['titulo','slug'].includes(key)?' *':''}</span><input class="ctl" name="${key}" value="${esc(property[key] || '')}" placeholder="${placeholder}" ${['titulo','slug'].includes(key)?'required':''} ${i>=4?`inputmode="${i<9?'decimal':'tel'}"`:''} ${key==='slug'?'maxlength="40"':''}></label>`).join('')}</div>
     <h3>Recorrido aéreo</h3><label class="vt-field"><span>Portada y galería</span><select class="ctl" name="clip"><option value="">Sin portada</option>${flights.filter(f=>f.frame_count).map(f=>`<option value="${esc(f.clip_id)}">${esc(f.label || fmt.date(f.date)+' · '+(f.time || ''))}</option>`).join('')}</select></label>
     <label class="vt-field"><span>Video principal</span><select class="ctl" name="video"><option value="">Sin video</option>${flights.filter(f=>f.has_proxy).map(f=>`<option value="${esc(f.clip_id)}">${esc(f.label || fmt.date(f.date)+' · '+(f.time || ''))}</option>`).join('')}${reels.map(r=>`<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('')}</select></label>
-    <h3>Descripción</h3><label class="vt-field"><span>Texto de la propiedad</span><textarea class="ctl" name="descripcion" rows="6" placeholder="Qué hace especial este lugar">${esc(property.descripcion || '')}</textarea></label>
+    <h3>Descripción</h3><label class="vt-field"><span>Texto de la propiedad</span><textarea class="ctl" name="descripcion" rows="6" placeholder="Describe el lugar y sus características">${esc(property.descripcion || '')}</textarea></label>
     <section class="vt-suggestion" aria-label="Sugerencia de descripción" id="vt-suggestion"></section>
     <p class="vt-error" role="alert" id="vt-error"></p><div id="vt-result" role="status"></div><div class="vt-save"><button class="ui-button ui-button--primary" type="submit">Guardar propiedad</button></div>`;
   const view = createSheet({title:property.slug ? 'Editar propiedad' : 'Nueva propiedad',content,size:'full',className:'vt-editor',onClose:()=>{ insightRequest?.abort(); view.destroy(); if (editor===view) editor=null; }}); editor=view;
@@ -62,9 +65,13 @@ async function openEditor(property = {}, opener) {
     }
     box.setAttribute('aria-busy', 'false');
     const text = insight?.caption;
-    box.innerHTML = text ? `<span class="ui-chip">Sugerido</span><p>${esc(insight.caption_short || 'Descripción del vuelo disponible.')}</p><details><summary>Ver descripción completa</summary><p>${esc(text)}</p></details><div class="vt-suggestion-actions"><button class="ui-button ui-button--secondary" type="button" data-accept>Usar descripción</button><button class="ui-button ui-button--quiet" type="button" data-dismiss>Descartar</button></div>` : '<h4>Sin análisis aún</h4><p>Este vuelo aún no tiene una descripción. Puedes escribir la tuya.</p>';
-    box.querySelector('[data-accept]')?.addEventListener('click',()=>{ input('descripcion').value=text; box.innerHTML='<p>Descripción añadida. Puedes editarla antes de guardar.</p>'; });
-    box.querySelector('[data-dismiss]')?.addEventListener('click',()=>{ box.innerHTML='<p>Sugerencia descartada. Tu descripción se conserva.</p>'; });
+    if (!text) { box.innerHTML = '<p>Este vuelo aún no tiene una descripción. Puedes escribir la tuya.</p>'; return; }
+    const description=document.createElement('div');
+    description.innerHTML=`<p>${esc(insight.caption_short || 'Descripción del vuelo disponible.')}</p><details><summary>Ver descripción completa</summary><p>${esc(text)}</p></details>`;
+    box.replaceChildren(Suggested({content:description,
+      onAccept:()=>{ input('descripcion').value=text; },
+      onDismiss:()=>{},
+    }));
   }
   input('clip').addEventListener('change',suggestion); suggestion();
   content.addEventListener('submit',async e=>{
@@ -97,5 +104,6 @@ async function loadMedia() {
   try { const d=await read(`${DATA}/manifest/system.json`); reels=d.reels || []; } catch { /* optional media */ }
 }
 document.getElementById('vt-new').disabled=true;
-await Promise.allSettled([loadList(),loadMedia()]);
+await loadMedia();
+await loadList();
 document.getElementById('vt-new').disabled=false;
