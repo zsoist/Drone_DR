@@ -39,7 +39,7 @@ POST_ROUTES = [
 
 GET_EXACT_ROUTES = [
     "/api/healthz", "/api/whoami", "/login.html", "/api/splat_profiles", "/api/scenes",
-    "/api/scene", "/api/job_log", "/api/job", "/api/jobs",
+    "/api/scene", "/api/job_log", "/api/job", "/api/jobs", "/data/manifest/flights.json",
 ]
 
 GET_PREFIX_ROUTES = [
