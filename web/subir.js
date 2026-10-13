@@ -22,11 +22,40 @@ if (location.pathname.endsWith('/subir.html')) {
       <small>MP4, MOV, JPG, HEIC y DNG, entre otros.</small>
     </section>
     <div class="sb-sidebar"><section class="sb-queue" aria-labelledby="sb-queue-title">
-      <div class="sb-queue-head"><h2 id="sb-queue-title">Archivos</h2><span id="sb-count" role="status">Sin archivos pendientes</span></div>
-      <div id="sb-list"><div class="sb-empty"><span class="sb-empty-icon" aria-hidden="true">${icon('plusFile')}</span><h3>Ningún archivo seleccionado</h3><p>Selecciona archivos para ver su transferencia en esta cola.</p></div></div>
-      <p class="sb-note">Mantén esta página abierta durante la transferencia. Si se interrumpe, puedes reintentar el archivo desde el inicio.</p>
+      <div class="sb-queue-head"><h2 id="sb-queue-title">Cola de subida</h2><span id="sb-count" role="status">Sin pendientes</span></div>
+      <div id="sb-list"><div class="sb-empty"><span class="sb-empty-icon" aria-hidden="true">${icon('plusFile')}</span><h3>La cola está vacía</h3><p>Al elegir archivos, verás aquí el avance de cada uno.</p></div></div>
+      <p class="sb-note" id="sb-transfer-note" hidden>Mantén esta página abierta hasta que termine la transferencia.</p>
     </section>
-    <aside class="sb-next"><h2>Después de subir</h2><p>Los videos se preparan para editarlos en Studio.</p><a class="ui-button ui-button--secondary" href="system.html">${icon('activity')} Ver avance en Sistema</a></aside></div>`;
+    <aside class="sb-history" aria-labelledby="sb-history-title"><div class="sb-queue-head"><h2 id="sb-history-title">Importaciones recientes</h2></div>
+      <div id="sb-history-list" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div>
+      <a class="ui-button ui-button--secondary" href="system.html">${icon('activity')} Ver todas en Sistema</a>
+    </aside></div>`;
+  async function loadHistory() {
+    const list = main.querySelector('#sb-history-list');
+    try {
+      const response = await authFetch('/api/jobs');
+      if (!response.ok) throw new Error('history');
+      const data = await response.json();
+      if (!Array.isArray(data.jobs)) throw new Error('history');
+      const jobs = data.jobs.filter(job => job.kind === 'ingest')
+        .sort((a,b) => b.started - a.started).slice(0,3);
+      const states = {queued:'En cola', running:'En proceso', done:'Importado', error:'No se completó', cancelled:'Cancelado'};
+      list.replaceChildren();
+      for (const job of jobs) {
+        const row = document.createElement('article'); row.className = 'sb-history-row';
+        row.innerHTML = `<span class="sb-file-icon" aria-hidden="true">${icon('folder')}</span><div><h3></h3><p></p><span class="sb-history-state"></span></div>`;
+        row.querySelector('h3').textContent = job.title || 'Importación de archivos';
+        row.querySelector('p').textContent = fmt.date(job.started * 1000);
+        row.querySelector('.sb-history-state').textContent = states[job.status] || 'Consulta el estado en Sistema';
+        list.append(row);
+      }
+      if (!jobs.length) list.innerHTML = '<p class="sb-history-empty">Aún no hay importaciones. Las próximas aparecerán aquí con su estado.</p>';
+    } catch {
+      list.innerHTML = '<p class="sb-history-empty">No se pudo cargar el historial.</p><button class="ui-button ui-button--secondary" id="sb-history-retry">Reintentar</button>';
+      list.querySelector('button').onclick = () => {list.setAttribute('aria-busy','true');loadHistory();};
+    } finally { list.setAttribute('aria-busy','false'); }
+  }
+  loadHistory();
   const items = [];
   let running = false;
   const input = main.querySelector('#sb-file');
@@ -41,6 +70,7 @@ if (location.pathname.endsWith('/subir.html')) {
     item.cancel.hidden = !['queued','uploading'].includes(item.state);
     item.el.dataset.state = item.state;
     const pending=items.filter(x=>['queued','uploading'].includes(x.state)).length;
+    main.querySelector('#sb-transfer-note').hidden = !pending;
     main.querySelector('#sb-count').textContent = pending ? `${pending} pendientes · ${items.filter(x=>x.state==='done').length} enviados` : `${items.filter(x=>x.state==='done').length} enviados · ${items.filter(x=>x.state==='error').length} con error`;
   }
   function add(files) {
@@ -53,7 +83,7 @@ if (location.pathname.endsWith('/subir.html')) {
       const item={file,video,state:valid?'queued':'error',message:valid?'En cola':'Formato no compatible',percent:0};
       const row=document.createElement('article');row.className='sb-file-row';
       row.innerHTML=`<span class="sb-file-icon">${icon(video?'film':'image')}</span><div class="sb-file-info"><h3></h3><span class="sb-file-size"></span><p role="status"></p><progress max="100" value="0"></progress></div><div class="sb-file-actions"><button class="ui-button ui-button--secondary" data-retry>Reintentar</button><button class="ui-button ui-button--quiet" data-cancel>Cancelar</button></div>`;
-      row.querySelector('h3').textContent=file.name;const [amount, unit] = size(file.size).split(' '); row.querySelector('.sb-file-size').innerHTML=`<span class="ui-figure">${amount}</span> <span class="ui-unit">${unit}</span>`;
+      row.querySelector('h3').textContent=file.name;row.querySelector('.sb-file-size').textContent=size(file.size);
       Object.assign(item,{el:row,status:row.querySelector('[role=status]'),progress:row.querySelector('progress'),retry:row.querySelector('[data-retry]'),cancel:row.querySelector('[data-cancel]')});
       item.retry.onclick=()=>{if(!valid)return showToast('Elige un formato compatible.');item.state='queued';item.message='En cola';item.percent=0;update(item);drain();};
       item.cancel.onclick=()=>{item.state='cancelled';item.message='Cancelado';item.xhr?.abort();update(item);};

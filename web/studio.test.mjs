@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL} from './studio.logic.js';
+import {segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, clipCaption, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL} from './studio.logic.js';
 test('reverse split preserves playback order and speed', () => {
  const s = {a:2,b:12,speed:2,reverse:true,title:'Title'};
  const [left,right] = splitSegment(s,2);
@@ -48,12 +48,27 @@ test('AI ranks moments by segment score and keeps the ten highest', () => {
  assert.equal(moments[0].a,11);
  assert.equal(moments[9].a,2);
 });
-test('AI captions use neutral subjects if an older insight has no short caption', () => {
+test('AI titles retain the stored caption when no short caption exists', () => {
  const [h] = highlightSuggestions([{clip_id:'a',duration_s:30}], {a:{
-   caption:'Excelente panorámica de Bogotá y los Cerros Orientales.',
+   caption:'Vista de Bogotá y los Cerros Orientales.',
    highlight_segments:[{start:0,end:4,score:.5}]
  }});
- assert.equal(h.caption,'Plano abierto: Ciudad · Montañas');
+ assert.equal(h.caption,'Vista de Bogotá y los Cerros Orientales.');
+});
+test('clip titles prefer owner data, then captions, never highlight labels', () => {
+ const insight={caption_short:'Edificio entre árboles',caption:'Un edificio entre árboles junto a la calle.',highlights:[{label:'Cambio de escena'}]};
+ assert.equal(clipCaption({label:'Mi oficina'},insight),'Mi oficina');
+ assert.equal(clipCaption({},insight),'Edificio entre árboles');
+ assert.equal(clipCaption({ai:{caption_short:'Río junto al bosque'}},null),'Río junto al bosque');
+ assert.equal(clipCaption({}, {highlights:insight.highlights}), '');
+});
+test('reel cuts retain unequal and fractional API spans through preview and timeline', () => {
+ const moments=highlightSuggestions([{clip_id:'a',duration_s:80}], {a:{caption_short:'Río entre montañas',
+   highlight_segments:[{start:2.25,end:5.75,score:.9},{start:20,end:31,score:.8},{start:55,end:72.5,score:.7}]}});
+ assert.deepEqual(moments.map(h=>[h.a,h.b]),[[2.25,5.75],[20,31],[55,72.5]]);
+ assert.deepEqual(moments.map(h=>segmentDuration({...h,speed:1})),[3.5,11,17.5]);
+ assert.equal(reelPosition(moments,14.5).source,55);
+ assert.equal(reelPosition(moments,32).source,72.5);
 });
 test('AI subject captions stay under 60 characters for dense descriptions', () => {
  const caption=analysisCaption('Una vista espectacular de la ciudad, edificios, tejados, montañas, calles, tráfico, árboles y cielo.');

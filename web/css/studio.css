@@ -273,7 +273,7 @@
 .st-page .st-library-more {margin-top:var(--sp-4);width:100%;}
 .st-page .st-source-tags {height:32px;min-width:0;}
 .st-page .st-source-flags {min-height:18px;}
-.st-page .tl-lib .st-source-card {align-self:start;min-width:0;}
+.st-page .tl-lib .st-source-card {align-self:stretch;min-width:0;}
 .st-page .st-library-filters [aria-pressed=true] {background:var(--surface-3);color:var(--text);border-color:var(--line-strong);}
 
 .st-page .st-panel {position:sticky;top:var(--sp-3);}
@@ -351,7 +351,8 @@
 .st-page #tl-toolbar[hidden] {display:none;}
 .st-page .tl-scroll.is-empty {display:none;}
 .st-page .tl-scroll.is-empty :is(.tl-track,.tl-ruler) {display:none;}
-.st-page .st-source-caption {margin-top:var(--sp-2);font-size:var(--fs-sm);}
+.st-page .st-source-heading {padding-top:var(--sp-2);min-height:52px;}
+.st-page .st-source-caption {margin:0;font-size:var(--fs-sm);}
 .st-page .st-source-caption summary {height:44px;min-height:44px;cursor:pointer;display:flex;align-items:center;gap:var(--sp-2);font-weight:500;}
 .st-page .st-source-caption summary .ic {margin-left:auto;flex:none;color:var(--text-2);}
 .st-page .st-source-caption[open] summary .ic {transform:rotate(180deg);}
@@ -378,8 +379,8 @@
 
 /* R7: one empty workspace and equal library summaries. */
 .st-page #st-auto-start {margin-top:var(--sp-3);}
-.st-page .st-source-caption summary>span {display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.45;}
-.st-page .st-source-title {height:44px;display:flex;align-items:center;margin:var(--sp-2) 0 0;font-size:var(--fs-sm);}
+.st-page .st-source-caption summary>span,.st-page .st-source-title>span {display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.45;}
+.st-page .st-source-title {height:44px;display:flex;align-items:center;margin:0;font-size:var(--fs-sm);}
 .st-page .st-source-caption summary>.ic {padding:var(--sp-1);width:28px;height:28px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);}
 .st-page .st-source-tags {flex-wrap:nowrap;}
 .st-page .st-source-flags {height:24px;}
