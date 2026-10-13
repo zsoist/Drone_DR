@@ -120,6 +120,8 @@ def build_record(cid, keys, vault=VAULT):
               'Los segmentos deben estar dentro del clip; score mide interés visual de 0 a 1. '
               'Devuelve highlight_segments vacío cuando no haya evidencia de un momento destacado. '
               'No repartas segmentos a intervalos fijos ni inventes movimiento entre imágenes aisladas. '
+              'reason es una etiqueta distinta de hasta 40 caracteres: sujeto y acción observados en ese segmento. '
+              'No uses frases genéricas como Cambio de escena en el recorrido. '
               'Describe solo evidencia visible. No inventes lugares. Son sugerencias, no decisiones del dueño. '
               'caption y caption_short describen sujetos y acciones concretos, sin elogios: '
               'no uses excelente, impresionante, majestuoso, espectacular, hermoso ni similares. '
@@ -222,7 +224,8 @@ def save_record(data, vault=VAULT):
 
 
 def segment_highlights(insight):
-    return [{'t': s['start'], 'time_s': s['start'], 'label': s['reason'],
+    return [{'t': s['start'], 'time_s': s['start'],
+             **({'label': s['reason']} if s['reason'] else {}),
              'start': s['start'], 'end': s['end'], 'score': s['score'],
              'reason': s['reason'], 'type': insight['shot_type'], 'synthetic': False,
              **({'evidence': s['evidence']} if 'evidence' in s else {})}
@@ -256,6 +259,7 @@ def public_record(cid, vault=VAULT):
         summary = summary + '.' if summary else ''
     return {**data, 'tags': insight.get('tags', data.get('tags', [])),
             'summary': summary,
+            'caption': insight.get('caption', data.get('summary', '')),
             'caption_short': insight.get('caption_short') or trim_caption(data.get('summary', '')),
             'highlights': segment_highlights(insight), 'owner_highlights': manual,
             'synthetic': not bool(insight.get('highlight_segments')),
@@ -264,8 +268,11 @@ def public_record(cid, vault=VAULT):
 
 def get_insight(cid, vault=VAULT):
     data = record(cid, vault)
+    insight = data.get('insight', {})
     frames = [{'clip_id': cid, 'frame_url': f'/data/frames/{cid}/{p.name}',
-               'frame_time_s': (int(p.stem[2:]) - 1) * 2}
+               'frame_time_s': (int(p.stem[2:]) - 1) * 2,
+               'caption': insight.get('caption', data.get('summary', '')),
+               'caption_short': insight.get('caption_short', data.get('caption_short', ''))}
               for p in sorted((vault / 'frames' / cid).glob('f_*.jpg'))
               if re.fullmatch(r'f_\d+', p.stem)]
     try:
@@ -303,10 +310,15 @@ def moment(cid, data, query='', vault=VAULT, *, highlight=False):
     frame_time, name = min(available, key=lambda row: abs(row[0] - t)) if available else (None, None)
     frame = {'clip_id': cid, 'time_s': t, 'frame_time_s': frame_time,
             'frame_url': f'/data/frames/{cid}/{name}' if name else f'/data/thumbs/{cid}.jpg',
-            'label': selected['reason'] if selected else insight.get('caption_short', ''),
+            'caption': insight.get('caption', data.get('summary', '')),
+            'caption_short': insight.get('caption_short', data.get('caption_short', '')),
             'score': selected['score'] if selected else (data.get('travel_score') or 0) / 10,
             'selection': 'ai' if insight or data.get('travel_score') else 'sample',
             'synthetic': not bool(selected) if highlight or query else not bool(insight)}
+    label = (selected['reason'] if selected and (query or highlight)
+             else frame['caption_short'])
+    if label:
+        frame['label'] = label
     frame['quality'] = cover_quality.assess(data, frame, vault)
     if not frame['quality']['eligible']:
         frame['frame_url'] = None
