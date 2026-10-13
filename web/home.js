@@ -1,7 +1,7 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=442';
-import { fmt } from './ui/format.js?v=442';
-import { readAI, loadInsights, bestCover } from './home.ai.js?v=442';
-import { loadFlights, registerFlights, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=442';
+import { thumbnailURL } from './ui/thumbnail.js?v=443';
+import { fmt } from './ui/format.js?v=443';
+import { readAI, loadInsights, bestCover } from './home.ai.js?v=443';
+import { loadFlights, registerFlights, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=443';
 const main = renderShell('home.html');
 main.classList.add('home-page', 'ab-page');
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;

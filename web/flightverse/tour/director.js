@@ -1,10 +1,10 @@
 // flightverse/tour/director.js — DIRECTOR (P6): keyframes de cámara sobre el replay
 // grabado de Gate Rush + reproducción del replay (WS E). Estado en ctx.state:
 // director, replay (la entrada/salida las dispara ui/screens vía ctx.actions).
-import CameraControls from '/vendor/camera-controls.module.js?v=442';
-import { canExport, exportDeterministic } from '/flightverse/export.js?v=442';
-import { STEP } from '/flightverse/runtime.js?v=442';
-import { lockRenderSize } from '/flightverse/tour/render-guard.js?v=442';
+import CameraControls from '/vendor/camera-controls.module.js?v=443';
+import { canExport, exportDeterministic } from '/flightverse/export.js?v=443';
+import { STEP } from '/flightverse/runtime.js?v=443';
+import { lockRenderSize } from '/flightverse/tour/render-guard.js?v=443';
 
 export function createDirector(ctx) {
   const { THREE, camera, renderer, report, CID, state: S, actions: A } = ctx;

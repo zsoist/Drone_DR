@@ -1,4 +1,4 @@
-import { fmt } from './ui/format.js?v=442';
+import { fmt } from './ui/format.js?v=443';
 // Read-only AI views shared by the H1 pages.
 const insightRequests = new Map();
 // Reviewed against this exact image. Other frames keep their own stored description.

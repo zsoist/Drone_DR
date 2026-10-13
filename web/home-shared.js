@@ -1,10 +1,10 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=442';
+import { thumbnailURL } from './ui/thumbnail.js?v=443';
 // Page contracts for Inicio, Viajes, and Flight Deck.
-import { createSheet } from './ui/sheet.js?v=442';
-import { registerPaletteSource } from './ui/palette.js?v=442';
-import { showToast } from './ui/toast.js?v=442';
-import { fmt } from './ui/format.js?v=442';
-import { Suggested } from './ui/suggested.js?v=442';
+import { createSheet } from './ui/sheet.js?v=443';
+import { registerPaletteSource } from './ui/palette.js?v=443';
+import { showToast } from './ui/toast.js?v=443';
+import { fmt } from './ui/format.js?v=443';
+import { Suggested } from './ui/suggested.js?v=443';
 
 // Use only for standalone statistics, telemetry, and timecodes; use esc() in prose.
 export function figure(value) {

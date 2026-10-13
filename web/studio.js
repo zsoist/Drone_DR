@@ -1,12 +1,12 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=442';
-import { createSheet } from './ui/sheet.js?v=442';
-import { showToast as toast } from './ui/toast.js?v=442';
-import { registerPaletteSource } from './ui/palette.js?v=442';
-import { fmt } from './ui/format.js?v=442';
-import { mountTabs } from './ui/tabs.js?v=442';
-import { Suggested } from './ui/suggested.js?v=442';
-import { skinPlayer } from './ui/player.js?v=442';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, clipCaption, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=442';
+import { thumbnailURL } from './ui/thumbnail.js?v=443';
+import { createSheet } from './ui/sheet.js?v=443';
+import { showToast as toast } from './ui/toast.js?v=443';
+import { registerPaletteSource } from './ui/palette.js?v=443';
+import { fmt } from './ui/format.js?v=443';
+import { mountTabs } from './ui/tabs.js?v=443';
+import { Suggested } from './ui/suggested.js?v=443';
+import { skinPlayer } from './ui/player.js?v=443';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, clipCaption, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=443';
 
 // The shared player owns chrome; this adapter maps its single scrubber to the cut list.
 function mountReelPreview(video, segments, sourceURL, posterFor, onSegment) {

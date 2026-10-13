@@ -6,15 +6,15 @@
 // daño con gracia de 3 s / invulnerabilidad de 5 s al reaparecer / 3 vidas, telégrafos ≥ 0.5 s,
 // proyectiles que respetan los edificios, marcadores y flechas de amenaza, puntuación y top-10.
 // Sin el flag el comportamiento es el legado (oleadas infinitas, 1 vida).
-import * as THREE from '/flightverse/three.js?v=442';
-import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=442';
-import { summarizeInvasionRun } from '/flightverse/hud-format.js?v=442';
+import * as THREE from '/flightverse/three.js?v=443';
+import { createInvasion, ENEMIES } from '/flightverse/invasion.js?v=443';
+import { summarizeInvasionRun } from '/flightverse/hud-format.js?v=443';
 import {
   FAIR, VICTORY_WAVE, TYPE_INTRO, createPlayerVitals, fairHitDamage, computeMarkers,
   unlockedTypes, waveBonus, invasionMedal, hasLineOfSight,
-} from '/flightverse/invasion-policy.js?v=442';
-import { addRecord, getTop } from '/flightverse/modes/rules.js?v=442';
-import { showVictoryFallback } from '/flightverse/modes/result-cards.js?v=442';
+} from '/flightverse/invasion-policy.js?v=443';
+import { addRecord, getTop } from '/flightverse/modes/rules.js?v=443';
+import { showVictoryFallback } from '/flightverse/modes/result-cards.js?v=443';
 
 const BOSS_NAME = { dragon: 'DRAGÓN', gigante: 'GIGANTE' };
 const TYPE_LABEL = { zombie: 'Zombis', arquero: 'Arqueros', soldado: 'Soldados', avion: 'Aviones', ufo: 'OVNIs', dragon: 'Dragón', gigante: 'Gigante' };
