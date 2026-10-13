@@ -1,7 +1,7 @@
 import {
   WEAPON_PROFILES,
   weaponAssetTier,
-} from './weapon-registry.js?v=433';
+} from './weapon-registry.js?v=434';
 
 const textureSlots = [
   'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap',

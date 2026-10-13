@@ -1,10 +1,10 @@
-import { fmt } from './ui/format.js?v=433';
-import { Suggested } from './ui/suggested.js?v=433';
-import { propertyCover } from './p.logic.js?v=433';
-import { canonicalPropertyURL } from './ventas.logic.js?v=433';
-import { createSheet } from './ui/sheet.js?v=433';
-import { showToast } from './ui/toast.js?v=433';
-import { registerPaletteSource } from './ui/palette.js?v=433';
+import { fmt } from './ui/format.js?v=434';
+import { Suggested } from './ui/suggested.js?v=434';
+import { propertyCover } from './p.logic.js?v=434';
+import { canonicalPropertyURL } from './ventas.logic.js?v=434';
+import { createSheet } from './ui/sheet.js?v=434';
+import { showToast } from './ui/toast.js?v=434';
+import { registerPaletteSource } from './ui/palette.js?v=434';
 
 const main = renderShell('ventas.html');
 main.classList.add('ab-page', 'vt-page');

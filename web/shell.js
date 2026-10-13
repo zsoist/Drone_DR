@@ -1,10 +1,10 @@
 // App shell: sidebar nav, shared formatters, data access. Requires icons.js.
 const DATA = 'data';
 // The shell stays a classic script for existing pages. New modules can import these APIs directly.
-const formatReady = import('./ui/format.js?v=433');
+const formatReady = import('./ui/format.js?v=434');
 window.shell = {
   backLink,
-  ready: Promise.all([formatReady, import('./ui/terms.js?v=433')]).then(([{ fmt, figure }, { term }]) => {
+  ready: Promise.all([formatReady, import('./ui/terms.js?v=434')]).then(([{ fmt, figure }, { term }]) => {
     Object.assign(window.shell, { fmt, figure, term });
     return window.shell;
   }),
@@ -994,9 +994,9 @@ document.addEventListener('click', async e => {
 
 // Public palette bridge for classic page scripts. ES modules can import palette.js directly.
 const shellComponents = Promise.all([
-  import('./ui/sheet.js?v=433'), import('./ui/palette.js?v=433'),
-  import('./ui/activity.js?v=433'), import('./ui/toast.js?v=433'),
-  import('./ui/clip-search.js?v=433'),
+  import('./ui/sheet.js?v=434'), import('./ui/palette.js?v=434'),
+  import('./ui/activity.js?v=434'), import('./ui/toast.js?v=434'),
+  import('./ui/clip-search.js?v=434'),
 ]);
 function registerPaletteSource(fn) {
   let cancelled = false, unregister;

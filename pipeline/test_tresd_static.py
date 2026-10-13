@@ -65,6 +65,12 @@ console.log(JSON.stringify(policy.resolveActiveModel([requested, active], reques
         self.assertLess(early, wired)
         self.assertIn("document.removeEventListener('click', rememberViewerTab)", tresd[wired:])
 
+    def test_version_selector_is_shown_explicitly(self):
+        # style.css hides .scene-viewer-version by default; display '' kept it hidden (2026-08 → 2026-10)
+        tresd = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
+        self.assertNotRegex(tresd, r"(spSel|select)\.style\.display = [^;]*\? '' :")
+        self.assertEqual(tresd.count("? 'inline-block' : 'none'"), 2)
+
     def test_splat_controls_exist_before_first_combined_render(self):
         source = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
         self.assertLess(source.index("const splatChk"), source.index("renderCombined();"))
