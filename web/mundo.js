@@ -2,8 +2,8 @@ import { fmt } from './ui/format.js?v=434';
 import { term } from './ui/terms.js?v=434';
 import { Suggested } from './ui/suggested.js?v=434';
 import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=434';
-import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=434';
-import { coverageRows } from './scene-improve-state.js?v=434';
+import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=435';
+import { coverageRows } from './scene-improve-state.js?v=435';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,
@@ -317,7 +317,14 @@ async function boot() {
   }
   const gallerySuggestion = Suggested({content:document.querySelector('.w-railwrap')});
   gallerySuggestion.classList.add('world-descriptions');
-  gallerySuggestion.querySelector('.ui-suggested-label').prepend('Descripciones · ');
+  const descriptionLabel = gallerySuggestion.querySelector('.ui-suggested-label');
+  descriptionLabel.remove();
+  const attachDescriptionLabel = () => {
+    descriptionLabel.remove();
+    const first = [...rail.querySelectorAll('.wi-description')].find(node =>
+      descriptions.get(scenes[+node.closest('.wi').dataset.i].clip_id)?.caption_short);
+    first?.prepend(descriptionLabel);
+  };
   document.querySelector('.w-bar').after(gallerySuggestion);
   let previewObserver = null;
   const observePreviews = () => {
@@ -352,6 +359,7 @@ async function boot() {
       ? list.map(({ sc, i }) => isla(sc, i)).join('')
       : '<div class="ui-empty"><p>No hay escenas con este filtro.</p><button class="ui-button ui-button--secondary" data-reset-world>Ver todas</button><p>Prueba con una escena sin récord.</p></div>';
     rail.setAttribute('aria-busy','false');
+    attachDescriptionLabel();
     observePreviews();
     rail.scrollLeft = 0;
     requestAnimationFrame(() => syncArrows());
@@ -388,6 +396,7 @@ async function boot() {
     descriptions.set(sc.clip_id,insight || {error:failed});
     const card=rail.querySelector(`[data-i="${scenes.indexOf(sc)}"] .wi-description`);
     if(card){card.setAttribute('aria-busy','false');card.innerHTML=cardDescription(insight || {error:failed});}
+    attachDescriptionLabel();
 
     if(sel===sc){const text=document.querySelector('.wp-description');if(text && insight)text.replaceChildren(suggestionBlock({title:'',text:insight.caption_short,fullText:insight.caption}));}
   });

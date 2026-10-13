@@ -1,5 +1,5 @@
 import { fmt } from './ui/format.js?v=434';
-import { reducedMotion } from './scene-improve-ui.js?v=434';
+import { reducedMotion } from './scene-improve-ui.js?v=435';
 // splatview.js — visor PREMIUM de gaussian splats, compartido por tresd.js y share.js.
 // MOTOR: Spark 2.1 (r180) — migrado desde GaussianSplats3D 0.4.7 (fase E del
 // plan FLIGHTVERSE; el autor de GS3D descontinuó la lib y recomienda Spark).
@@ -354,8 +354,8 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   tip.className = 'sv-tip';
   const coarse = matchMedia('(hover: none), (pointer: coarse)').matches;
   tip.textContent = coarse
-    ? 'Arrastra = mover · pellizca = zoom · 2 dedos = rotar · doble-toca = enfocar'
-    : 'Arrastra = mover el mapa · rueda = zoom · click-derecho = rotar · doble-click = enfocar';
+    ? 'Arrastra para mover · Pellizca para acercar · Gira con dos dedos · Toca dos veces para enfocar'
+    : 'Arrastra para mover · Acerca con la rueda · Gira con el botón derecho · Haz doble clic para enfocar';
   host.appendChild(tip);
   setTimeout(() => tip.classList.add('fade'), 4200);
 
